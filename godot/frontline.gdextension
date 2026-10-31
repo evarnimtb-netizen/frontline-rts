@@ -1,0 +1,24 @@
+; Rust GDExtension (crates/godot-bridge). `tools/build_bridge.sh` builds it
+; with `cargo build -p godot-bridge --release` and copies the library into
+; godot/bin/ (git-ignored), so the project is self-contained for exports and
+; the editor never holds a lock on cargo's output (Windows).
+; Debug and release feature tags both load the release build (the editor and
+; debug exports use the "debug" tag).
+; Linux / Steam Deck binaries must be built inside the Steam Runtime (sniper)
+; SDK container so they load under the Steam Linux Runtime (not done yet).
+[configuration]
+
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = false
+
+[libraries]
+
+macos.debug = "res://bin/libfrontline_godot.dylib"
+macos.release = "res://bin/libfrontline_godot.dylib"
+linux.debug.x86_64 = "res://bin/libfrontline_godot.so"
+linux.release.x86_64 = "res://bin/libfrontline_godot.so"
+linux.debug.arm64 = "res://bin/libfrontline_godot.so"
+linux.release.arm64 = "res://bin/libfrontline_godot.so"
+windows.debug.x86_64 = "res://bin/frontline_godot.dll"
+windows.release.x86_64 = "res://bin/frontline_godot.dll"

@@ -1,0 +1,58 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/sim",
+    "crates/simbench",
+    "crates/godot-bridge",
+    "sdk/crates/content",
+    "sdk/crates/cli",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+version = "0.0.1"
+publish = false
+
+[workspace.dependencies]
+# Internal crates.
+frontline-sim = { path = "crates/sim" }
+frontline-content = { path = "sdk/crates/content" }
+
+# Determinism-relevant: the state hash and the save format depend on these
+# exact versions, so they are pinned. Bump only as a "sim-changing" change.
+xxhash-rust = { version = "=0.8.19", features = ["xxh3"] }
+postcard = { version = "=1.1.3", default-features = false, features = ["alloc"] }
+
+# Scheduling only (never affects results); caret is fine, Cargo.lock pins it.
+rayon = "1.12"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.1"
+schemars = "1.2"
+clap = { version = "4.6", features = ["derive"] }
+thiserror = "2.0"
+anyhow = "1.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+debug = "line-tables-only"
+codegen-units = 16
+
+# Integer overflow in the sim must fail the same way in every build: a loud
+# panic, not a silent wrap that only release builds do (§5.11). Intentional
+# wrapping in the sim is spelled `wrapping_*`.
+[profile.release.package.frontline-sim]
+overflow-checks = true
+
+# Benchmarks want full optimisation; build with `--profile bench-release`.
+[profile.bench-release]
+inherits = "release"
+codegen-units = 1
+lto = "thin"
+
+[profile.bench-release.package.frontline-sim]
+overflow-checks = true

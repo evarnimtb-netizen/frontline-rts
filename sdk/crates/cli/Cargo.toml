@@ -1,0 +1,29 @@
+[package]
+name = "frontline-cli"
+description = "frontline-cli: validate, simulate and inspect Frontline content headlessly (§8.1)."
+license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "frontline_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "frontline-cli"
+path = "src/main.rs"
+
+[dependencies]
+# M0 links the sim directly. From M3 the open SDK reaches the closed sim only
+# through the prebuilt `sim-ffi` library via `sim-sys` (§7.9, §13).
+frontline-sim.workspace = true
+frontline-content.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

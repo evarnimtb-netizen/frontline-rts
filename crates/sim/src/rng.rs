@@ -1,0 +1,138 @@
+//! Counter-based random numbers (§5.11).
+//!
+//! There is no RNG *state*: every roll is a pure function of
+//! `(world_seed, tick, sim_id, purpose)`, so the result never depends on the
+//! order in which entities or threads ask for it. Several rolls for the same
+//! key come from [`RngStream`], which adds a draw counter to the key.
+//!
+//! The mixer is the SplitMix64 finaliser, chained over the key words.
+//! (`tick_salt` from §5.11 joins the key with networking in M1.)
+
+use crate::ecs::SimId;
+use crate::fx::Fx;
+
+/// What a roll is for. Distinct purposes give independent streams for the
+/// same entity and tick. New systems add constants here; never reuse a value.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Purpose(pub u32);
+
+impl Purpose {
+    pub const SPAWN: Purpose = Purpose(1);
+    pub const WAYPOINT: Purpose = Purpose(2);
+    pub const WEAPON_COOLDOWN: Purpose = Purpose(3);
+    pub const WEAPON_SHOT: Purpose = Purpose(4);
+    /// Initial soldier positions in `World::new` (kept apart from `SPAWN`,
+    /// which `spawn_soldier` draws yaw and speed from for the same id).
+    pub const SPAWN_POS: Purpose = Purpose(5);
+    /// First waypoint at spawn (kept apart from `WAYPOINT`, which a re-pick
+    /// on the same tick would otherwise repeat).
+    pub const SPAWN_WAYPOINT: Purpose = Purpose(6);
+    /// Terrain lattice values; `TERRAIN + octave`.
+    pub const TERRAIN: Purpose = Purpose(100);
+}
+
+/// SplitMix64 finaliser (Stafford variant 13).
+#[inline]
+pub const fn mix64(mut z: u64) -> u64 {
+    z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// One 64-bit roll for `(world_seed, tick, sim_id, purpose)`.
+#[inline]
+pub const fn rng(world_seed: u64, tick: u64, sim_id: SimId, purpose: Purpose) -> u64 {
+    let h = mix64(world_seed ^ 0x6A09_E667_F3BC_C908);
+    let h = mix64(h ^ tick);
+    mix64(h ^ (((sim_id.0 as u64) << 32) | purpose.0 as u64))
+}
+
+/// Uniform integer in `[0, n)` from a roll (multiply-shift, no modulo bias
+/// worth caring about for n < 2^32).
+#[inline]
+pub const fn below(roll: u64, n: u32) -> u32 {
+    (((roll >> 32) * n as u64) >> 32) as u32
+}
+
+/// Uniform integer in `[lo, hi]` (inclusive).
+#[inline]
+pub const fn range_i32(roll: u64, lo: i32, hi: i32) -> i32 {
+    if hi <= lo {
+        return lo;
+    }
+    let span = (hi as i64 - lo as i64 + 1) as u64;
+    // The offset is < span, so the sum stays in [lo, hi]; add in i64 because
+    // the offset alone can exceed i32::MAX when the span is wider than 2^31.
+    (lo as i64 + (((roll >> 32) * span) >> 32) as i64) as i32
+}
+
+/// Uniform fixed-point value in `[lo, hi)`.
+#[inline]
+pub const fn range_fx(roll: u64, lo: Fx, hi: Fx) -> Fx {
+    if hi.raw() <= lo.raw() {
+        return lo;
+    }
+    let span = (hi.raw() as i64 - lo.raw() as i64) as u64;
+    // As in `range_i32`: the offset is < span, so the i64 sum fits in i32.
+    Fx::from_raw((lo.raw() as i64 + (((roll >> 32) * span) >> 32) as i64) as i32)
+}
+
+/// Several independent rolls for one key: draw `k` is
+/// `mix64(rng(key) ^ mix64(k))`.
+#[derive(Clone, Debug)]
+pub struct RngStream {
+    base: u64,
+    counter: u64,
+}
+
+impl RngStream {
+    #[inline]
+    pub const fn new(world_seed: u64, tick: u64, sim_id: SimId, purpose: Purpose) -> RngStream {
+        RngStream {
+            base: rng(world_seed, tick, sim_id, purpose),
+            counter: 0,
+        }
+    }
+
+    #[inline]
+    pub fn next_u64(&mut self) -> u64 {
+        let v = mix64(self.base ^ mix64(self.counter));
+        self.counter += 1;
+        v
+    }
+
+    #[inline]
+    pub fn range_i32(&mut self, lo: i32, hi: i32) -> i32 {
+        range_i32(self.next_u64(), lo, hi)
+    }
+
+    #[inline]
+    pub fn range_fx(&mut self, lo: Fx, hi: Fx) -> Fx {
+        range_fx(self.next_u64(), lo, hi)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ranges_wider_than_2_pow_31_stay_in_bounds() {
+        for k in 0..2000u64 {
+            let roll = mix64(k);
+            let v = range_i32(roll, i32::MIN, i32::MAX);
+            let _ = v; // full range: any value is in bounds, must not overflow
+            let v = range_i32(roll, -2_000_000_000, 2_000_000_000);
+            assert!((-2_000_000_000..=2_000_000_000).contains(&v));
+            let (lo, hi) = (Fx::from_int(-20_000), Fx::from_int(20_000));
+            let f = range_fx(roll, lo, hi);
+            assert!(f >= lo && f < hi, "{f:?}");
+        }
+        // Extremes of the roll.
+        assert_eq!(range_i32(0, i32::MIN, i32::MAX), i32::MIN);
+        assert_eq!(range_i32(u64::MAX, i32::MIN, i32::MAX), i32::MAX);
+        assert_eq!(range_fx(0, Fx::MIN, Fx::MAX), Fx::MIN);
+        assert!(range_fx(u64::MAX, Fx::MIN, Fx::MAX) < Fx::MAX);
+    }
+}

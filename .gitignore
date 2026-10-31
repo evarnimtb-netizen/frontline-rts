@@ -1,0 +1,10 @@
+target/
+*.profraw
+.DS_Store
+# Scratch bench output. Reference baselines (recorded on an idle machine,
+# load average below half the CPUs) go in bench/results/baselines/, which
+# is committed.
+/bench/results/*.json
+.godot/
+/godot/bin/
+/bench/results/m0-det/

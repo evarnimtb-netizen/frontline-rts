@@ -1,0 +1,64 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/rts_camera.gd" id="1_cam"]
+[ext_resource type="Script" path="res://scripts/smoke_field.gd" id="2_smoke"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="3_hud"]
+[ext_resource type="Shader" path="res://shaders/soldier_skinned.gdshader" id="4_soldier"]
+[ext_resource type="Shader" path="res://shaders/vehicle.gdshader" id="5_vehicle"]
+[ext_resource type="Shader" path="res://shaders/tracer.gdshader" id="6_tracer"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.42, 0.52, 0.66, 1)
+sky_horizon_color = Color(0.68, 0.70, 0.72, 1)
+ground_horizon_color = Color(0.68, 0.70, 0.72, 1)
+ground_bottom_color = Color(0.25, 0.24, 0.22, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_energy = 0.8
+tonemap_mode = 2
+glow_enabled = true
+fog_enabled = true
+fog_light_color = Color(0.64, 0.66, 0.68, 1)
+fog_density = 0.0012
+
+[node name="Main" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.9, 0.6, 0)
+light_energy = 1.1
+shadow_enabled = true
+directional_shadow_mode = 1
+directional_shadow_max_distance = 150.0
+
+[node name="FrontlineSim" type="FrontlineSim" parent="." node_paths=PackedStringArray("sun")]
+soldiers = 2000
+vehicles = 300
+projectile_cap = 5000
+map_size_m = 1024
+spawn_area_m = 256
+seed = 1
+sim_threads = 3
+tick_hz = 30
+sun = NodePath("../Sun")
+soldier_shader = ExtResource("4_soldier")
+vehicle_shader = ExtResource("5_vehicle")
+tracer_shader = ExtResource("6_tracer")
+
+[node name="Camera" type="Camera3D" parent="."]
+current = true
+script = ExtResource("1_cam")
+
+[node name="Smoke" type="Node3D" parent="."]
+script = ExtResource("2_smoke")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("3_hud")

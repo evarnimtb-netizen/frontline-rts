@@ -1,0 +1,27 @@
+[package]
+name = "frontline-simbench"
+description = "Kernel and composed-tick benchmarks for the Frontline sim (M0 spike, §2.2)."
+license = "LicenseRef-Proprietary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "frontline_simbench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "simbench"
+path = "src/main.rs"
+
+[dependencies]
+frontline-sim.workspace = true
+rayon.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

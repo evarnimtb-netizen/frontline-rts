@@ -1,0 +1,18 @@
+# Smallest useful scenario: smoke tests and CI. Runs in milliseconds.
+name = "empty"
+description = "Tiny flat map with a handful of soldiers; for smoke tests, not timing."
+seed = 1
+tick_hz = 30
+hash_interval = 30
+
+[map]
+size_m = 256
+heightfield = { kind = "flat" }
+
+[forces]
+players = 2
+soldiers = 16
+
+[projectiles]
+pool_cap = 64
+fire_interval_ms = { min = 700, max = 2500 }

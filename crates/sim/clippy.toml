@@ -1,0 +1,39 @@
+# Sim determinism lints (§5.2, §5.11): no HashMap/HashSet iteration, no
+# atomics, no wall-clock reads feeding sim decisions. Enforced in CI by
+# `cargo clippy --workspace --all-targets --locked -- -D warnings`.
+#
+# Not covered by these lists: float *method* calls (`.sqrt()`) and `as f32`
+# casts are not caught by `clippy::float_arithmetic`; review sim changes for
+# them (the only sanctioned float code is presenter conversion, e.g.
+# `Fx::to_f32` and `RenderSnapshot`).
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "iteration order is not deterministic; use BTreeMap or sorted Vec" },
+    { path = "std::collections::HashSet", reason = "iteration order is not deterministic; use BTreeSet or sorted Vec" },
+    { path = "std::sync::atomic::AtomicBool", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicU8", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicU16", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicU32", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicU64", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicUsize", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicI8", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicI16", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicI32", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicI64", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicIsize", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::sync::atomic::AtomicPtr", reason = "no atomics for sim decisions (§5.2)" },
+    { path = "std::time::SystemTime", reason = "wall-clock time must never feed the sim" },
+    # Third-party hash maps (not dependencies today; listed so adding one is
+    # caught). `allow-invalid` keeps clippy quiet while they are absent.
+    { path = "hashbrown::HashMap", reason = "iteration order is not deterministic", allow-invalid = true },
+    { path = "hashbrown::HashSet", reason = "iteration order is not deterministic", allow-invalid = true },
+    { path = "rustc_hash::FxHashMap", reason = "iteration order is not deterministic", allow-invalid = true },
+    { path = "rustc_hash::FxHashSet", reason = "iteration order is not deterministic", allow-invalid = true },
+    { path = "ahash::AHashMap", reason = "iteration order is not deterministic", allow-invalid = true },
+    { path = "ahash::AHashSet", reason = "iteration order is not deterministic", allow-invalid = true },
+    { path = "indexmap::IndexMap", reason = "insertion order is easy to make thread-dependent; use BTreeMap", allow-invalid = true },
+]
+# `Instant::now` is allowed only for diagnostics (stage timers), with a local
+# `#[allow(clippy::disallowed_methods)]` at each use.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "wall-clock time must never feed the sim; stage timers opt in with #[allow]" },
+]

@@ -1,0 +1,178 @@
+# Frontline RTS CI (§6, §14, §15 M0).
+#
+#   lint         rustfmt check and `cargo clippy -D warnings`; this is what
+#                enforces crates/sim/clippy.toml (no HashMap/atomics/clock in
+#                the sim) and `#![deny(clippy::float_arithmetic)]` (§5.2).
+#   build-test   build + `cargo test --workspace --release` on every OS (the
+#                sim's tests include a committed golden hash, so each OS is
+#                checked against the same constant), the sim's tests again
+#                in a debug build, then a
+#                headless `frontline-cli simulate` of bench/scenarios/battalion.toml
+#                with a fixed seed at 1/2/3/8 sim workers; uploads each report.
+#   determinism  downloads every report and fails if any final hash differs
+#                across OS or thread count (tools/compare_hashes.py).
+#   licenses     cargo-deny (licences, bans, sources) via the official action;
+#                advisories run separately and do not block.
+#   notices      regenerates THIRD_PARTY_NOTICES and fails if the committed
+#                file is stale; uploads the generated file as an artifact.
+#
+# Not in CI: SteamOS native and SteamOS + Proton runs (§5.11, §15 M0) need a
+# Deck and are run by hand: build the Windows and Linux binaries from this
+# workflow, run the same `simulate` command on the Deck, and feed the reports
+# to tools/compare_hashes.py together with this run's reports.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # Fixed inputs for the cross-platform hash check. Change both together with
+  # the expected report count in the determinism job.
+  SIM_SCENARIO: bench/scenarios/battalion.toml
+  SIM_SEED: "7"
+  SIM_TICKS: "1800"
+
+jobs:
+  lint:
+    name: clippy + rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustup component add clippy rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  build-test:
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 is Apple Silicon (ARM64).
+        os: [ubuntu-latest, windows-latest, macos-14]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel; install exactly that.
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --release --locked
+
+      - name: Test
+        run: cargo test --workspace --release --locked
+
+      # Debug build: overflow checks and debug_asserts on. Release builds of
+      # the sim keep overflow checks too (root Cargo.toml), but the
+      # debug_asserts only run here.
+      - name: Test sim (debug)
+        run: cargo test -p frontline-sim --locked
+
+      - name: Simulate (threads 1, 2, 3, 8)
+        run: |
+          mkdir -p reports
+          os="${{ runner.os }}-${{ runner.arch }}"
+          for t in 1 2 3 8; do
+            echo "::group::simulate threads=$t"
+            cargo run --release --locked -p frontline-cli -- simulate \
+              --scenario "$SIM_SCENARIO" \
+              --ticks "$SIM_TICKS" \
+              --seed "$SIM_SEED" \
+              --threads "$t" \
+              --report "reports/report-${os}-t${t}.json"
+            echo "::endgroup::"
+          done
+          ls -l reports
+
+      - name: Upload simulate reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-reports-${{ matrix.os }}
+          path: reports/*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  determinism:
+    name: cross-platform hash check
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sim-reports-*
+          path: reports
+          merge-multiple: true
+
+      # 3 OS x 4 thread counts = 12 reports; a missing one is a failure too.
+      - name: Compare final hashes
+        run: python3 -I tools/compare_hashes.py reports --expect 12
+
+  licenses:
+    name: cargo-deny (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        checks:
+          - licenses bans sources
+          - advisories
+    # New RustSec advisories can appear without any change on our side; report
+    # them without blocking merges.
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
+
+  notices:
+    name: THIRD_PARTY_NOTICES
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup toolchain install
+      # cargo metadata needs the crate sources in the local registry to find
+      # licence files.
+      - name: Fetch dependencies
+        run: cargo fetch --locked
+      - name: Generate
+        run: python3 -I tools/gen_third_party_notices.py --locked
+      - name: Committed file is up to date
+        run: git diff --exit-code -- THIRD_PARTY_NOTICES
+      - uses: actions/upload-artifact@v4
+        with:
+          name: THIRD_PARTY_NOTICES
+          path: THIRD_PARTY_NOTICES
+          if-no-files-found: error

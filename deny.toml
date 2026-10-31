@@ -1,0 +1,84 @@
+# cargo-deny configuration (§7.9 compliance, §15 M0: licence allowlist in CI).
+#
+# Run locally:  cargo deny check
+#           or  tools/deny.sh   (falls back to a cargo-metadata licence scan
+#                                when cargo-deny is not installed)
+# CI runs it via EmbarkStudios/cargo-deny-action (.github/workflows/ci.yml).
+
+[graph]
+# Check every feature combination we might ship, not just the defaults.
+all-features = true
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Security advisories (RustSec). Needs network access to fetch the database.
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+# A yanked crate in Cargo.lock is almost always a mistake; fail on it.
+yanked = "deny"
+# Add RUSTSEC ids here only with a comment explaining why it does not apply.
+ignore = []
+
+# ---------------------------------------------------------------------------
+# Licences. Everything here is permissive or weak (file-level) copyleft that
+# a closed game can ship with notices (§7.9). Strong copyleft (GPL, LGPL,
+# AGPL) and non-commercial licences are deliberately absent.
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# The list also covers expected future deps (godot = MPL-2.0, wasmtime =
+# Apache-2.0 WITH LLVM-exception, ...); do not warn on currently unused entries.
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+    # Weak copyleft: allowed, but every executable containing MPL code must
+    # point recipients to the exact source (THIRD_PARTY_NOTICES) and we
+    # publish any modified MPL files (§7.9, godot-rust).
+    "MPL-2.0",
+]
+
+# Workspace crates are unpublished (publish = false). The closed crates carry
+# `LicenseRef-Proprietary`, the SDK crates `MIT OR Apache-2.0`; neither needs
+# to pass the third-party allowlist.
+[licenses.private]
+ignore = true
+
+# ---------------------------------------------------------------------------
+# Bans: duplicate versions and wildcard requirements.
+# ---------------------------------------------------------------------------
+[bans]
+# Duplicates bloat builds but are common in the ecosystem (windows-sys etc.);
+# warn so they show up in CI logs without blocking.
+multiple-versions = "warn"
+highlight = "all"
+# `foo = "*"` makes builds non-reproducible; workspace path deps are exempt.
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = []
+skip = []
+skip-tree = []
+
+# ---------------------------------------------------------------------------
+# Sources: crates.io only. Git or alternative registries need an explicit entry.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

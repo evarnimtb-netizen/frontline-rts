@@ -1,0 +1,23 @@
+[package]
+name = "godot-bridge"
+description = "GDExtension adapter between the Frontline sim and the Godot 4.7.2 presenter (§4.1, §13)."
+license = "LicenseRef-Proprietary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "frontline_godot"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+frontline-sim.workspace = true
+godot = { version = "=0.5.5", features = ["api-4-7"] }
+triple_buffer = "9.0"
+
+# Not `workspace = true`: the GDExtension entry point needs `unsafe` (the
+# workspace forbids it). Everything else in this crate stays safe; the one
+# `unsafe impl` lives in `src/entry.rs` behind a module-level allow.
+[lints.rust]
+unsafe_code = "deny"

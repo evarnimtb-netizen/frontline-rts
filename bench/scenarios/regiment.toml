@@ -1,0 +1,24 @@
+# Regiment tier caps (§2.2): 2,000 soldiers, 5,000-round projectile pool, 4 x 4 km.
+# Vehicles arrive in M2; this is the infantry part of the tier.
+# Note: the M0 sim spawns soldiers uniformly over the whole map, so crowds are
+# sparse at this map size; ORCA load is light until spawn areas exist.
+name = "regiment"
+description = "Regiment tier: 2,000 soldiers, projectile pool 5,000, 4 x 4 km noise terrain."
+seed = 1
+tick_hz = 30
+hash_interval = 30
+
+[map]
+size_m = 4096
+heightfield = { kind = "noise", amplitude_m = 14 }
+
+[forces]
+players = 2
+soldiers = 2000
+
+[projectiles]
+# Heavy fighting: the fire interval is tuned so the pool runs at roughly 85-90 %
+# with no dropped shots (over 1,800 ticks, seed 1: about 4,320 live rounds on average,
+# peak about 4,590 of 5,000).
+pool_cap = 5000
+fire_interval_ms = { min = 450, max = 1350 }
