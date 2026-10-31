@@ -61,7 +61,7 @@ func tile_rect(i: int) -> Rect2:
 ## Why a catalog entry cannot be called in now ("" = it can).
 func blocked_reason(c: Dictionary) -> String:
 	if view.input_blocked():
-		return "Paused."
+		return "paused"
 	var me := view.player(view.local_player)
 	var short := int(c.cost) - int(me.get("manpower", 0.0))
 	if short > 0:

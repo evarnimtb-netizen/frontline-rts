@@ -92,7 +92,7 @@ func enabled(id: StringName) -> bool:
 		return false
 	var sel: Node = view.selection
 	if id in STANCE_IDS or id == &"auto":
-		return not sel.selected.is_empty()
+		return not sel.selected.is_empty() and not view.proxy_soldiers
 	return sel.can(id)
 
 
@@ -104,7 +104,7 @@ func active(id: StringName) -> bool:
 	if id in ITEMS:
 		return sel.tool == &"throw" and StringName(sel.throw_item) == id
 	if id in STANCE_IDS or id == &"auto":
-		return not sel.selected.is_empty() and StringName(sel.active_stance()) == id
+		return enabled(id) and StringName(sel.active_stance()) == id
 	return false
 
 

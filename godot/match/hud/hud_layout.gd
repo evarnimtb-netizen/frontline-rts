@@ -32,6 +32,7 @@ var console_base := 0.0
 var force_size := Vector2.ZERO
 
 var _last_vp := Vector2.ZERO
+var _last_win := Vector2i.ZERO
 var _last_dock := ""
 
 
@@ -43,9 +44,11 @@ func bind(v: MatchView) -> void:
 
 func update_state(_s: Dictionary) -> void:
 	var vp := get_viewport().get_visible_rect().size
+	var win := get_window().size
 	var dock: String = view.minimap.dock
-	if vp != _last_vp or dock != _last_dock or force_size != Vector2.ZERO:
+	if vp != _last_vp or win != _last_win or dock != _last_dock or force_size != Vector2.ZERO:
 		_last_vp = vp
+		_last_win = win
 		_last_dock = dock
 		relayout()
 

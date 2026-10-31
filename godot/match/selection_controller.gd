@@ -306,13 +306,15 @@ func active_stance() -> String:
 ## Stance key: sets `stance` on the selection; when every selected man
 ## already has it, returns them to Auto instead.
 func press_stance(stance: String) -> void:
-	if selected.is_empty() or view.input_blocked():
+	if selected.is_empty() or view.input_blocked() or view.proxy_soldiers:
 		return
 	set_stance(&"auto" if active_stance() == stance else StringName(stance))
 
 
 func set_stance(stance: StringName) -> void:
-	if selected.is_empty():
+	# Stand-in soldiers (no `soldiers` in the state) carry squad ids: no
+	# per-soldier commands for them.
+	if selected.is_empty() or view.proxy_soldiers:
 		return
 	var now := Time.get_ticks_msec()
 	for id in selected:

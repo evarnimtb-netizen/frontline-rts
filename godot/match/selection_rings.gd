@@ -43,15 +43,14 @@ func _reserve(n: int) -> void:
 	_buf.fill(0.0)
 
 
-## Rings at these ground points (feet) with these colours; one upload.
-func set_rings(points: PackedVector3Array, colors: PackedColorArray, height_fn: Callable) -> void:
+## Rings at these points (the soldiers' feet, already on the ground) with
+## these colours; one upload.
+func set_rings(points: PackedVector3Array, colors: PackedColorArray) -> void:
 	var n := points.size()
 	_reserve(n)
 	for i in n:
 		var p := points[i]
 		var y := p.y
-		if height_fn.is_valid():
-			y = maxf(y, height_fn.call(p.x, p.z))
 		var o := i * STRIDE
 		_buf[o + 0] = 1.0
 		_buf[o + 1] = 0.0

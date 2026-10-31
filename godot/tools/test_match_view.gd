@@ -64,6 +64,7 @@ func _run() -> void:
 	await _test_tools(eng, mortar)
 	await _test_minimap()
 	await _test_hud(eng, eng_men, rifle)
+	_test_cost()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -474,6 +475,39 @@ func _check_layout(hud: Control, sz: Vector2, label: String) -> void:
 	var fe: Rect2 = hud.rect_of(_view.event_feed)
 	_check(absf(fe.end.x - (sz.x - 12.0)) < 0.5 and fe.position.y == tb.size.y + 8.0 and not fe.intersects(mm), "%s: feed top-right" % label)
 	_check(ci.position.y > fe.end.y and not ci.intersects(orr), "%s: no overlaps on the right" % label)
+
+
+## S1b budget: picking 240 soldiers and their rings under 0.3 ms per frame
+## on the M3. Measured here on a synthetic 240-man state (index + project +
+## one pick + one ring upload); the check is loose (headless, debug build),
+## the number is printed for the report.
+func _test_cost() -> void:
+	var s: Dictionary = _view.state.duplicate()
+	var list: Array = []
+	var c: Vector3 = _cam.focus
+	for i in 240:
+		list.append({"id": 5000 + i, "squad": 1, "owner": 0, "slot": i % 8, "pos": c + Vector3((i % 20) * 2.0 - 20.0, 0, floorf(i / 20.0) * 2.0 - 12.0), "hp": 100.0, "stance": "crouch"})
+	s.soldiers = list
+	var ids := PackedInt32Array()
+	for so in list:
+		ids.append(so.id)
+	var rings: SelectionRings = _match.get_node("GroundOverlay/SelectionRings")
+	var pts := PackedVector3Array()
+	var cols := PackedColorArray()
+	for so in list:
+		pts.append(so.pos)
+		cols.append(Color.WHITE)
+	var t0 := Time.get_ticks_usec()
+	var n := 50
+	for k in n:
+		_view.state = s
+		_view._index_soldiers(s, _view.get_viewport().get_visible_rect())
+		_sel.pick(Vector2(800, 450), -1)
+		rings.set_rings(pts, cols)
+	var per := (Time.get_ticks_usec() - t0) / float(n) / 1000.0
+	print("cost: pick index + rings for 240 soldiers: %.3f ms/frame" % per)
+	_check(_view.pick_ids.size() > 200 and per < 2.0, "240-soldier picking + rings stay cheap (%.3f ms, headless)" % per)
+	_view.update_state(_source.get_state())
 
 
 func _test_end() -> void:

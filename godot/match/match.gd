@@ -10,7 +10,8 @@ extends Node3D
 ## - match_mock.tscn: MockMatchSource and MockWorld (HUD work and tests).
 ##
 ## --capture_setup (see Session) stages a screenshot on the mock: "hud",
-## "throw", "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
+## "throw", "rotated" (minimap turning with the camera), "docked" (minimap
+## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
 
 const AUTOPLAY := preload("res://match/autoplay.gd")
 
@@ -107,7 +108,7 @@ func _line(pts: Array) -> PackedVector3Array:
 ## Screenshot staging (Session --capture_setup).
 func _stage(what: String) -> void:
 	match what:
-		"hud", "pause", "throw":
+		"hud", "pause", "throw", "rotated", "docked":
 			# A firefight in the open south-west of D: four of ours facing
 			# three of theirs about 110 m away.
 			source.prewarm(60.0)
@@ -120,8 +121,8 @@ func _stage(what: String) -> void:
 				source.place_squad(foes[i], Vector2(205 + i * 30, 205 - i * 12), Vector2(-1, 1))
 			source.prewarm(12.0)
 			_stage_soldiers(ids)
-			camera.height = 85.0
-			camera.jump_to(Vector3(175, 0, 268))
+			camera.height = 76.0
+			camera.jump_to(Vector3(176, 0, 276))
 			view.update_state(source.get_state())
 			source.handle_intent(&"call_in", {"type": "rifle"})
 			source.handle_intent(&"call_in", {"type": "mg"})
@@ -134,6 +135,13 @@ func _stage(what: String) -> void:
 				view.selection.cursor_override = camera.unproject_position(c + Vector3(16, 0, -16))
 			if what == "pause":
 				view.pause_menu.open()
+			elif what == "rotated":
+				# Minimap turning with the camera (not saved as a setting).
+				view.minimap.rotate_with_camera = true
+				camera.yaw_deg = 30.0
+				camera.jump_to(Vector3(176, 0, 276))
+			elif what == "docked":
+				view.minimap.dock = "bottom_left"
 		"dig":
 			var eng := _own_ids("engineer")
 			var rifles := _own_ids("rifle")

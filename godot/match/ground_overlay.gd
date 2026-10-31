@@ -121,7 +121,7 @@ func _update_rings(view: MatchView, sel: Node) -> void:
 		var hs: Dictionary = view.soldiers_by_id[h]
 		pts.append(hs.pos)
 		cols.append(Color(UiPalette.owner_color(int(hs.owner), view.local_player), 0.8))
-	_rings.set_rings(pts, cols, view.height_fn)
+	_rings.set_rings(pts, cols)
 
 
 ## Own detached men with an order target: a small ring at the target; a
@@ -139,15 +139,32 @@ func _draw_detached(view: MatchView, sel: Node) -> void:
 			_dashed(so.pos, t, 0.07, col)
 
 
+## Range ring of the man who would throw (the eligible one nearest the
+## cursor) with his minimum range; the other eligible men get faint rings
+## (they all throw with Shift). Then the blast or cloud radius at the
+## target, accent in range and red out of it.
 func _draw_throw_tool(view: MatchView, sel: Node) -> void:
 	var item: String = sel.throw_item
 	var rr := view.throw_range(item)
-	for id in sel.throwers(item):
-		var p: Vector3 = view.soldiers_by_id[id].pos
-		_ring(p, rr.y, 0.35, Color(HudStyle.ACCENT, 0.5), 64)
-		if rr.x > 0.5:
-			_ring(p, rr.x, 0.2, Color(HudStyle.DANGER, 0.45), 24)
 	var g: Variant = view.ground_pick(sel.cursor())
+	var men: PackedInt32Array = sel.throwers(item)
+	var lead := -1
+	var best := INF
+	if g != null:
+		for id in men:
+			var p: Vector3 = view.soldiers_by_id[id].pos
+			var d := Vector2(p.x, p.z).distance_to(Vector2(g.x, g.z))
+			if d < best:
+				best = d
+				lead = id
+	for id in men:
+		var p: Vector3 = view.soldiers_by_id[id].pos
+		if id == lead:
+			_ring(p, rr.y, 0.35, Color(HudStyle.ACCENT, 0.6), 64)
+			if rr.x > 0.5:
+				_ring(p, rr.x, 0.2, Color(HudStyle.DANGER, 0.5), 24)
+		else:
+			_ring(p, rr.y, 0.2, Color(HudStyle.ACCENT, 0.14), 48)
 	if g == null:
 		return
 	var ok: bool = sel.throw_in_range(item, g)

@@ -111,11 +111,6 @@ static func bold() -> Font:
 	return _bold
 
 
-## The regular HUD font (the project theme's default).
-static func regular() -> Font:
-	return ThemeDB.fallback_font if ThemeDB.get_project_theme() == null else ThemeDB.get_project_theme().default_font
-
-
 static func text_w(font: Font, text: String, font_size: int) -> float:
 	return font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 
