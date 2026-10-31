@@ -1,0 +1,18 @@
+# Licence manifest for ui_error.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://kenney.nl/assets/interface-sounds"
+file_url = "Interface Sounds 1.0 zip, Audio/error_004.ogg"
+platform_id = "kenney"
+uploader = "Kenney"
+author = "Kenney (www.kenney.nl)"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "0b574cea597d96507e782ae9764f88482ce49f46e931e57054bf7150047f2d69"
+sha256_original = "0b574cea597d96507e782ae9764f88482ce49f46e931e57054bf7150047f2d69"
+sha256_derived = []
+parents = []
+derivation = "none (copied unchanged)"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

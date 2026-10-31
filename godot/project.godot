@@ -1,4 +1,6 @@
-; Frontline M0 render spike (SYSTEM_DESIGN.md §2.2 gate 7, §4.1, §15 M0).
+; Frontline (S1 skirmish slice; docs/slices/S1-skirmish.md). Boots to the
+; main menu. The M0 render spike stays in main.tscn, driven by bench.tscn
+; (SYSTEM_DESIGN.md §2.2 gate 7, §4.1, §15 M0).
 ; Godot 4.7.2, Forward+ by default. Run `--rendering-method mobile` for the
 ; Mobile A/B. The Rust GDExtension is in ../crates/godot-bridge.
 
@@ -6,14 +8,28 @@ config_version=5
 
 [application]
 
-config/name="Frontline M0 Render Spike"
-run/main_scene="res://main.tscn"
+config/name="Frontline"
+run/main_scene="res://ui/menu/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+
+[autoload]
+
+; Order matters: AudioManager creates the buses Settings applies volumes to.
+AudioManager="*res://autoload/audio_manager.gd"
+Settings="*res://autoload/settings.gd"
+Session="*res://autoload/session.gd"
 
 [display]
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+; UI is laid out for 1600x900 and scales with the window (800p on the Deck).
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[gui]
+
+theme/custom="res://ui/theme/frontline_theme.tres"
 
 [rendering]
 

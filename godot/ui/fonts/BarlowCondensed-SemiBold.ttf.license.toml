@@ -1,0 +1,17 @@
+# Licence manifest for BarlowCondensed-SemiBold.ttf (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://github.com/google/fonts/tree/main/ofl/barlowcondensed"
+file_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowcondensed/BarlowCondensed-SemiBold.ttf"
+platform_id = "google-fonts"
+uploader = "google/fonts"
+author = "The Barlow Project Authors (https://github.com/jpt/barlow)"
+spdx = "OFL-1.1"
+licence_file = "OFL.txt"
+downloaded = 2026-10-31
+sha256 = "7b619d14bc2327509a9ef32b0890f709626f7ecc9ff61191c2a4314c5499d2d9"
+sha256_original = "7b619d14bc2327509a9ef32b0890f709626f7ecc9ff61191c2a4314c5499d2d9"
+sha256_derived = []
+parents = []
+derivation = "none (copied unchanged)"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""

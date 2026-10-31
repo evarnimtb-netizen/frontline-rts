@@ -1,0 +1,18 @@
+# Licence manifest for mg_shot.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://opengameart.org/content/the-free-firearm-sound-library"
+file_url = "https://opengameart.org/sites/default/files/ak47.ogg"
+platform_id = "opengameart"
+uploader = "bart"
+author = "The Free Firearm Sound Library (Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney)"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "5f111bfd495c6e283b983a8f9f1d2ed9cf4a210a0efed8522c02b5f838a66638"
+sha256_original = "5914c1b1367d0f0e811fe2e01c2af468ba4a23994bba1dbed4bf77adf4cd6beb"
+sha256_derived = ["5f111bfd495c6e283b983a8f9f1d2ed9cf4a210a0efed8522c02b5f838a66638"]
+parents = []
+derivation = "ffmpeg: 1.02 s + 0.55 s (last shot of the first burst), fade in 4 ms / out 0.25 s, Vorbis"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"
