@@ -20,7 +20,7 @@ const TREES_PER_M2 := 1.0 / 45.0
 ## Blast scale by explosion size (the mortar rig is 1).
 const BLAST_SCALE := {"mortar": 1.0, "frag": 0.45, "satchel": 1.6}
 ## Smoke: puffs per cloud, clouds drawn at most (the sim caps them at 64).
-const PUFFS := 22
+const PUFFS := 28
 const MAX_CLOUDS := 64
 const PUFF_STRIDE := 16
 
@@ -137,10 +137,14 @@ func _make_smoke_batch() -> MultiMeshInstance3D:
 	mat.billboard_keep_scale = true
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_texture = _soft_disc()
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.disable_receive_shadows = true
+	# Soft where the puffs cut into the ground (no hard bottom edge).
+	mat.proximity_fade_enabled = true
+	mat.proximity_fade_distance = 2.5
 	q.material = mat
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -192,11 +196,13 @@ func _update_smoke(clouds: Array) -> void:
 			_smoke_buf[o + 9] = 0.0
 			_smoke_buf[o + 10] = size
 			_smoke_buf[o + 11] = p.z
-			var g := 0.78 + 0.1 * h.x
+			# Grey, darker low down and lighter on top (no lighting on the
+			# billboards).
+			var g := 0.5 + 0.22 * clampf(up / (2.0 * r), 0.0, 1.0) + 0.06 * h.x
 			_smoke_buf[o + 12] = g
 			_smoke_buf[o + 13] = g
-			_smoke_buf[o + 14] = g * 0.97
-			_smoke_buf[o + 15] = clampf(dens, 0.0, 1.0) * (0.55 + 0.25 * h.y)
+			_smoke_buf[o + 14] = g * 0.96
+			_smoke_buf[o + 15] = clampf(dens, 0.0, 1.0) * (0.35 + 0.2 * h.y)
 			n += 1
 	if n == 0 and _smoke_n == 0:
 		return

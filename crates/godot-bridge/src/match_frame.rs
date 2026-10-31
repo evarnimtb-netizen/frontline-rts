@@ -152,6 +152,9 @@ pub struct MatchFrame {
     pub hp: Vec<u16>,
     pub suppression: Vec<u8>,
     pub pinned: Vec<bool>,
+    /// Standing in a dug trench (feet at least the sim's trench depth below
+    /// the undug surface).
+    pub in_trench: Vec<bool>,
     /// Per soldier (S1b): `StanceOrder as u8` (0 auto, 1 stand, 2 crouch,
     /// 3 prone), detached, items by [`ItemKind::index`], winding up a
     /// throw, and his formation slot (stable for his life; see
@@ -195,6 +198,7 @@ impl MatchFrame {
             hp: Vec::new(),
             suppression: Vec::new(),
             pinned: Vec::new(),
+            in_trench: Vec::new(),
             stance_order: Vec::new(),
             detached: Vec::new(),
             items: Vec::new(),
@@ -254,6 +258,12 @@ impl MatchFrame {
                 }),
         );
         let ents = world.entities();
+        self.in_trench.clear();
+        self.in_trench.extend(
+            self.ids
+                .iter()
+                .map(|&id| ents.combat()[id as usize].in_trench),
+        );
         let vel = ents.velocity();
         self.speeds.clear();
         for &id in &self.ids {
@@ -775,6 +785,7 @@ mod tests {
             f.hp.len(),
             f.suppression.len(),
             f.pinned.len(),
+            f.in_trench.len(),
             f.stance_order.len(),
             f.detached.len(),
             f.items.len(),

@@ -145,6 +145,12 @@ impl TerrainStore {
         lerp(a, b, fy)
     }
 
+    /// How far the ground at sim `(x, y)` lies below the undug surface (m;
+    /// trenches and craters; 0 on untouched ground, negative on a parapet).
+    pub fn dug_depth(&self, x: f32, y: f32) -> f32 {
+        self.base_at(x, y) - self.height_at(x, y)
+    }
+
     /// Godot `(x, z)` in, Godot Y out.
     pub fn height_at_godot(&self, x: f32, z: f32) -> f32 {
         self.height_at(x + self.half, -z + self.half)
@@ -376,6 +382,11 @@ mod tests {
         }
         let (dug, _) = probe(&w, &store, 309.0, 201.5);
         assert!(store.base_at(309.0, 201.5) - dug > 1.2, "trench is deep");
+        assert!(store.dug_depth(309.0, 201.5) > 1.2);
+        assert!(
+            store.dug_depth(100.0, 100.0).abs() < 1e-4,
+            "untouched ground"
+        );
         // Chunk (4, 3) holds (300, 200): it is meshed at detail resolution.
         assert!(dirty.contains(&(4, 3)));
         let m = store.chunk_mesh(4, 3);

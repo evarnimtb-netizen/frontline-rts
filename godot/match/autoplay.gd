@@ -12,11 +12,16 @@ extends Node
 ##   s1_autoplay_end.png       the end screen (the script surrenders at the
 ##                             time limit if nobody has won)
 ##
+## and the S1b steps of match/autoplay_s1b.gd (soldier selection, unit
+## orders, stance, groups, smoke and a frag into an enemy trench, as
+## s1b_*.png). The run exits with code 3 if any screenshot is missing.
+##
 ## It plays through the same intents a human sends (MatchView.emit_intent),
 ## so it exercises the whole presenter → command path. Decisions use only
 ## what the state shows the local player (own squads, spotted enemies).
 
 const SHOT_PREFIX := "s1_autoplay_"
+const S1B := preload("res://match/autoplay_s1b.gd")
 ## Wall-clock seconds to wait after the time limit before giving up.
 const GRACE_S := 90.0
 
@@ -44,6 +49,7 @@ var _next_log := 0.0
 var _orders := {}
 var _order_from := {}
 var _size := Vector2i(1600, 900)
+var s1b: RefCounted
 
 
 func begin(match_root: Node3D) -> void:
@@ -58,6 +64,7 @@ func begin(match_root: Node3D) -> void:
 	source.set_speed(Session.autoplay_speed)
 	camera.input_enabled = false
 	_size = get_window().size
+	s1b = S1B.new(self)
 	print("autoplay: %.1f game minutes at %.1fx, screenshots in %s" % [minutes, Session.autoplay_speed, dir])
 
 
@@ -99,6 +106,8 @@ func _play(s: Dictionary, t: float) -> void:
 			c += sq.pos / maxf(own_now.size(), 1)
 		var ahead: Vector3 = (_point(s, "B").pos - c).normalized()
 		_snap_at(c + ahead * 35.0, 60.0, -42.0, "overview")
+		return
+	if s1b.step(s, t):
 		return
 	# Engineers dig in front of B once they get there.
 	if not dig_ordered and not dig_site.is_empty():
@@ -155,7 +164,7 @@ func _play(s: Dictionary, t: float) -> void:
 	# Idle riflemen and MGs push to the nearest point we do not hold; so do
 	# attackers that have not got anywhere for two minutes (re-path).
 	for sq in own:
-		if not sq.type in ["rifle", "mg"]:
+		if not sq.type in ["rifle", "mg"] or s1b.reserved.has(int(sq.id)):
 			continue
 		var since: float = t - float(_orders.get(sq.id, -999.0))
 		var stalled: bool = sq.order == "attack_move" and since > 120.0 \
@@ -280,6 +289,7 @@ func _finish(s: Dictionary) -> void:
 	for k in ["overview", "trench", "explosion", "battle", "end"]:
 		if not shots.has(k):
 			missing.append(k)
+	missing.append_array(s1b.missing())
 	print("autoplay: done; screenshots %s%s" % [shots.keys(), "" if missing.is_empty() else ", missing %s" % [missing]])
 	Session.quit_game(0 if missing.is_empty() else 3)
 

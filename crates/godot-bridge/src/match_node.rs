@@ -278,6 +278,17 @@ impl FrontlineMatch {
         self.height_at(x, z)
     }
 
+    /// How deep the ground at Godot (x, z) is dug below the undug surface
+    /// (m): trenches and craters, as the player sees them. Scripted runs use
+    /// it to find trenches.
+    #[func]
+    fn dug_depth_at(&self, x: f32, z: f32) -> f32 {
+        self.rt.as_ref().map_or(0.0, |rt| {
+            rt.terrain
+                .dug_depth(x + rt.terrain.half(), -z + rt.terrain.half())
+        })
+    }
+
     /// Static map layout for presenter scenery: size, woods, points, bases
     /// (Godot space), and the local player.
     #[func]
@@ -1298,6 +1309,7 @@ impl MatchRuntime {
                 },
                 "pinned" => f.pinned[i],
                 "suppression" => f.suppression[i] as f32 / 100.0,
+                "in_trench" => f.in_trench[i],
             };
             if owner == self.local {
                 d.set("stance_override", stance_order_name(f.stance_order[i]));

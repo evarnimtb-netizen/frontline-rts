@@ -136,6 +136,7 @@ state = {
       stance: String,            # "stand" | "crouch" | "prone" (effective)
       pinned: bool,              # suppressed past the pinned threshold
       suppression: float,        # opt, 0..1
+      in_trench: bool,           # opt; standing in a dug trench (bridge)
       # Own soldiers only (leave these out for enemies):
       stance_override: String,   # "auto" | "stand" | "crouch" | "prone"
       detached: bool,            # follows his own unit order
@@ -149,10 +150,12 @@ state = {
     }, ...
   ],
   smokes: [                      # S1b; active smoke clouds
-    { pos: Vector3, radius: float, density: float },   # radius m, density 0..1
+    { pos: Vector3, radius: float, density: float,     # radius m, density 0..1
+      id: int },                 # opt; stable per cloud (puff placement)
   ],
   thrown: [                      # S1b; items in flight (and fused on the ground)
-    { kind: String, pos: Vector3, landed: bool },      # "frag" | "smoke" | "satchel"
+    { kind: String, pos: Vector3, landed: bool,        # "frag" | "smoke" | "satchel"
+      id: int, owner: int },     # opt
   ],
   callin: {                      # local player only
     catalog: [ { type: String, name: String, cost: int, delay_s: float, men: int,
@@ -212,8 +215,26 @@ What it fills, beyond the schema above:
 - `stats[].squads_called` and `trench_m` are counted presenter-side (squads
   that arrived after the start; dig orders' line length × progress).
 - `effects`: one `shot` per firing squad per frame (fog-filtered),
-  `mortar_launch` per shell, `explosion` per burst, `dig` about once a
-  second per digging squad in view.
+  `mortar_launch` per shell, `explosion` per burst (with `size`: `mortar`,
+  `frag` or `satchel`), `dig` about once a second per digging squad in view.
+- S1b: `soldiers` (own, and enemies the local player sees) with `pos` the
+  interpolated position the bridge draws this frame; `slot` is kept for a
+  man's life (newcomers take the lowest free slot); `in_trench`; own men
+  also `stance_override`, `detached`, `items`, and for detached men
+  `order` and `target` (move, attack-move, retreat: own base, dig: middle
+  of the line; `throw` while winding up). `squads[].units` lists the ids
+  sent in `soldiers`. `smokes` are the clouds within sight range of one of
+  the local player's men; `thrown` are his own items, items whose thrower
+  he sees, and items within 40 m of his men. `rules.throw_range_m` comes
+  from the local faction's items.
+- S1b intents: `move_units`, `attack_move_units`, `stop_units`,
+  `retreat_units`, `dig_units`, `set_stance`, `throw`, `throw_each` keep
+  only the local player's living men (as of the newest frame), sorted,
+  deduplicated, at most 120, and become one `MoveUnits` /
+  `AttackMoveUnits` / `StopUnits` / `RetreatUnits` / `DigUnits` /
+  `SetStance` / `Throw` / `ThrowEach` each; positions are quantised to
+  millimetres once (`crates/godot-bridge/src/intents.rs`). `regroup`
+  sends the sim's `Regroup { squad }` per own squad.
 - `events` are derived from frame diffs (point owner changes, own squads
   arriving, lost, losing men or getting suppressed, tickets below 100, the
   match result).
@@ -221,9 +242,12 @@ What it fills, beyond the schema above:
 Other methods: `get_map_info()` (woods, points, bases in Godot space,
 factions, own base), `squad_ids(owner, type)`, `squad_pos(id)`,
 `set_speed(x)` (0.25–8, scripted runs), `get_stats()`, `get_last_error()`.
-Soldiers, corpses (death fall, 30 s), tracers, mortar shells, muzzle
-flashes and the chunked terrain are drawn by the bridge;
-`match/world_fx.gd` draws woods, flags and explosions from the state.
+Soldiers (stance poses follow stance orders: the sim's stance already
+includes them), corpses (death fall, 30 s), tracers, mortar shells, thrown
+items (dark body and a pale trail), muzzle flashes and the chunked terrain
+are drawn by the bridge; `match/world_fx.gd` draws woods, flags,
+explosions scaled by `size`, and smoke clouds (pooled billboard puffs in
+one MultiMesh) from the state.
 
 Where the bridge gets it (S1 spec, "Data flow to the presenter"): squads and
 soldiers from the `RenderSnapshot` per-soldier/squad data; `points`, `players`,
@@ -248,7 +272,7 @@ own soldier ids.
 | `retreat` | `{squads}` | `retreat_ordered(squad_ids)` | Retreat |
 | `dig` | `{squads, polyline: PackedVector3Array}` | `dig_ordered(squad_ids, polyline)` | Dig (≤ `rules.dig_max_m`; only rifle/engineer squads) |
 | `barrage` | `{squads, target: Vector3}` | `barrage_ordered(squad_ids, target)` | Barrage (only mortar squads in range; a selected mortar man sends his squad) |
-| `regroup` | `{squads}` | `regroup_ordered(squad_ids)` | S1b: clear `detached` for these squads, the men rejoin the formation where the squad is. The sim spec has no Regroup command: add one, or map it to a squad-level Move to the squad's anchor |
+| `regroup` | `{squads}` | `regroup_ordered(squad_ids)` | Regroup (S1b sim): clears `detached`, the men rejoin the formation; the squad keeps its order |
 | `move_units` | `{units, target: Vector3}` | `move_units_ordered(unit_ids, target)` | MoveUnits |
 | `attack_move_units` | `{units, target: Vector3}` | `attack_move_units_ordered(unit_ids, target)` | AttackMoveUnits |
 | `stop_units` | `{units}` | `stop_units_ordered(unit_ids)` | StopUnits |
@@ -342,7 +366,12 @@ detached men's targets, throw range rings and the throw target are drawn by
 starts a skirmish and lets `match/autoplay.gd` play the local side through
 the same intents (call-ins, moves, a trench in front of B, a mortar
 barrage), saving `s1_autoplay_*.png` to `docs/slices/screens/`, then
-surrenders at the time limit and saves the end screen.
+surrenders at the time limit and saves the end screen. The S1b steps
+(`match/autoplay_s1b.gd`) push mouse and key events into the viewport:
+click one man, double-click his squad, box two squads (Ctrl+1), send one
+man forward, Z prone, recall group 1, T smoke, the HUD at 1600x900 and
+1280x800, and G frag into a trench holding a spotted enemy, saving
+`s1b_*.png`.
 
 ## Running the mock
 
