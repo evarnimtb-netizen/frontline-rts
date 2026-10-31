@@ -149,3 +149,36 @@ AI-vs-AI determinism is tested in two places:
   `frontline-cli skirmish`. Over 5 minutes at 1, 2, 3 and 8 threads, and saved
   at tick 7,207 then continued on another thread count, the final hash is the
   same. The 5-seed `fortify-test` runs in release builds.
+
+## Re-run after the S1 fix pass (2026-10-31, 21:40–22:20 CET)
+
+The fix pass changed the sim's behaviour, so the hashes above no longer
+apply. What changed:
+
+- AttackMove halts only while a man has a target in clear line (before:
+  any focus, even over a crest nobody could shoot across).
+- Squads arriving take cover: trench floor spots within 10 m first, then
+  spots with terrain between them and the nearest seen enemy.
+- Fire intervals keep their fraction (MG42 1200 rpm instead of 900).
+- Spotting also checks corpses; mortars stuck out of range re-path or drop
+  the order.
+
+These runs use the default 8 threads.
+
+| Seed | Winner | Length | Final hash | Tickets left (G / U) | Kills (G / U) | Deaths | P99 (ms) |
+|---|---|---|---|---|---|---|---|
+| 1 | Germany | 13:24 | `0x37ab1c82a7fe7332` | 499 / 0 | 86 / 82 | 168 | 0.39 |
+| 2 | Germany | 15:02 | `0x454f09af3079a08b` | 500 / 0 | 94 / 116 | 210 | 0.45 |
+| 3 | Germany | 18:44 | `0xb31d1fa997a497f6` | 437 / 0 | 126 / 145 | 271 | 0.53 |
+| 4 | Germany | 23:55 | `0x9b54233828ced903` | 207 / 0 | 208 / 201 | 409 | 0.59 |
+| 5 | USA | 22:49 | `0x992cdb93ba373057` | 0 / 144 | 181 / 170 | 351 | 0.58 |
+
+- **Determinism.** Seed 2 gives `0x454f09af3079a08b` at 1, 3 and 8
+  threads. It gives the same hash when saved at tick 12,345 on 2 threads
+  and continued on 5.
+- **Small arms.** They now hit 227–465 times per match, against 141 before
+  for seed 1.
+- **`fortify-test`.** Unchanged: rifles 0 vs 80 (0 %), mortar 28 vs 74
+  (37.8 %). Both pass.
+- **Stress run.** Seed 3 with `--start-manpower 20000` peaks at 238
+  soldiers. P99 at peak is 0.94 ms (max 1.38 ms), with no overruns.

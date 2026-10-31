@@ -18,10 +18,11 @@
 //! 5. squads steer their members (`crate::squad`).
 //!
 //! Implemented: Move, AttackMove (halts to fight while the squad has a focus
-//! target), Stop, Retreat, CallIn, Surrender, Dig (the squad walks to the
-//! line, splits it and digs it in passes) and Barrage (a mortar team in
-//! range holds and fires; out of range it first walks to 90 % of its range
-//! from the target). Combat (`crate::combat`) and spotting
+//! target and a man with a clear shot), Stop, Retreat, CallIn, Surrender,
+//! Dig (the squad walks to the line, splits it and digs it in passes) and
+//! Barrage (a mortar team in range holds and fires; out of range it first
+//! walks to 90 % of its range from the target, and gives up when it cannot
+//! get into range). Combat (`crate::combat`) and spotting
 //! (`crate::spotting`) keep their per-match state here too: squad focus
 //! targets, kills and losses, and the spotting cursors. Capture, income,
 //! tickets and victory are in `crate::rules`; the AI commander's per-player
@@ -504,6 +505,9 @@ impl MatchState {
         let facing = (target - lead).normalize_or_zero();
         if dist <= max {
             hold_in_place(sq, ctx.ents, facing);
+            // Where the team stands is where it "walked" (see the retry
+            // rule in `combat::fire_mortars`).
+            sq.nav.goal = lead;
         } else {
             // Walk up to 90 % of the range first.
             let spot = ctx

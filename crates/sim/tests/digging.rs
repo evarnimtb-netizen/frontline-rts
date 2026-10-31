@@ -224,6 +224,46 @@ fn trench_deepens_in_passes_and_diggers_stand_on_the_floor() {
 }
 
 #[test]
+fn squads_arriving_next_to_a_trench_take_cover_in_it() {
+    let mut w = world(6, 2);
+    let eng = squads(&w, 0, "ww2:ger_engineer_squad")[0];
+    let rifle = squads(&w, 0, "ww2:ger_rifle_squad")[0];
+    let line = line_near(&w, eng, 20);
+    dig_seconds(&mut w, eng, line.clone());
+    // Send the riflemen to a spot 5 m behind the middle of the trench.
+    let mid = line[0] + (line[1] - line[0]).div_int(2);
+    let to_base = (leader_pos(&w, rifle) - mid).normalize_or_zero();
+    let target = mid + to_base * Fx::from_int(5);
+    w.step(&[cmd(
+        0,
+        1,
+        CommandKind::Move {
+            squad: rifle,
+            target,
+        },
+    )]);
+    while !matches!(w.game().unwrap().squad(rifle).unwrap().order, Order::Idle) {
+        w.step(&[]);
+        assert!(w.tick() < 30 * 900, "never arrived");
+    }
+    // Arrived counts from 2 m off the slot; let them step down.
+    for _ in 0..30 * 10 {
+        w.step(&[]);
+    }
+    let s = w.game().unwrap().squad(rifle).unwrap();
+    let deep = Fx::from_milli(1000);
+    let in_trench = s
+        .members
+        .iter()
+        .filter(|m| {
+            let p = w.entities().transform()[m.index()].pos;
+            w.terrain().base_height_at(p.xy()) - p.z >= deep
+        })
+        .count();
+    assert!(in_trench >= 6, "only {in_trench} of 8 in the trench");
+}
+
+#[test]
 fn trench_edge_stops_fire_at_a_crouched_man() {
     let mut w = world(5, 2);
     let sq = squads(&w, 0, "ww2:ger_rifle_squad")[0];

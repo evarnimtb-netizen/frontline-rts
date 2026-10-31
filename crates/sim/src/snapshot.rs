@@ -61,6 +61,9 @@ pub struct CorpseSnapshot {
     pub owner: u8,
     /// Ticks until the body is removed.
     pub ticks_left: u16,
+    /// Players that see the body (`Combat::seen_by`; spotting keeps checking
+    /// corpses), so fog of war hides bodies like men.
+    pub seen_by: u16,
 }
 
 /// A round fired this tick (muzzle flash, tracer, sound).
@@ -225,6 +228,7 @@ impl RenderSnapshot {
                     pos: [x, y, z, t.yaw.to_f32()],
                     owner,
                     ticks_left: c.corpse,
+                    seen_by: c.seen_by,
                 }),
                 EntityKind::Vacant => {}
             }

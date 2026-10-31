@@ -101,7 +101,7 @@ pub struct MatchFrame {
     /// Seen by the local player (own soldiers: always).
     pub visible: Vec<bool>,
     pub corpses: Vec<CorpseSnapshot>,
-    /// Per corpse: the local player saw him when he died (own: always).
+    /// Per corpse: the local player sees the body (own: always).
     pub corpse_visible: Vec<bool>,
     pub rounds: Vec<RoundView>,
     pub squads: Vec<SquadView>,
@@ -164,29 +164,12 @@ impl MatchFrame {
             let [vx, vy] = vel[id as usize].lin.to_f32();
             self.speeds.push((vx * vx + vy * vy).sqrt());
         }
-        // Who the local player saw this tick: a corpse is shown when he was
-        // seen as he fell (it stays shown for its 30 s).
-        ctx.seen.resize(ents.kind().len(), false);
+        // The sim spots corpses like prone men.
         self.corpses.clone_from(&snap.corpses);
         self.corpse_visible.clear();
         for c in &self.corpses {
-            let i = c.id.0 as usize;
             self.corpse_visible
-                .push(c.owner == local || ctx.seen.get(i).copied().unwrap_or(false));
-        }
-        for v in ctx.seen.iter_mut() {
-            *v = false;
-        }
-        for (i, &id) in self.ids.iter().enumerate() {
-            if self.visible[i] {
-                ctx.seen[id as usize] = true;
-            }
-        }
-        // Corpses keep the flag they died with.
-        for (c, &v) in self.corpses.iter().zip(&self.corpse_visible) {
-            if let Some(s) = ctx.seen.get_mut(c.id.0 as usize) {
-                *s = v;
-            }
+                .push(c.owner == local || c.seen_by & bit != 0);
         }
 
         let combat = ents.combat();
@@ -280,8 +263,6 @@ pub struct WeaponInfo {
 pub struct FrameCtx {
     pub local: u8,
     pub weapons: Vec<WeaponInfo>,
-    /// Per entity slot: the local player saw him last tick.
-    seen: Vec<bool>,
     /// Squads seen so far: owner, dig line length (m) and progress.
     squads: BTreeMap<u32, (u8, f32, u8)>,
     started: bool,

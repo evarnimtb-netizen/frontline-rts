@@ -632,6 +632,9 @@ impl MapFileDef {
         if self.capture_points.is_empty() {
             out.push(Issue::new("capture_points", "need at least one point"));
         }
+        if self.capture_points.len() > crate::MAX_CAPTURE_POINTS {
+            out.push(Issue::new("capture_points", "too many points"));
+        }
         for (i, c) in self.capture_points.iter().enumerate() {
             check_name(&mut out, &format!("capture_points[{i}].name"), &c.name);
             inside(&mut out, format!("capture_points[{i}].pos"), c.pos);

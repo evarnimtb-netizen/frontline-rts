@@ -166,6 +166,10 @@ impl AiState {
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
+                // `buy` indexes the squad types by pending call-ins.
+                CommandKind::CallIn { squad_type } => {
+                    *squad_type as usize >= g.setup.squad_types.len()
+                }
                 CommandKind::MoveSoldier { .. }
                 | CommandKind::Spawn { .. }
                 | CommandKind::Despawn { .. } => true,

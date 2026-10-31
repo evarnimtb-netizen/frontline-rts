@@ -7,7 +7,8 @@ extends Node
 ##   s1_autoplay_overview.png  own base and the first moves
 ##   s1_autoplay_trench.png    engineers digging a trench in front of B
 ##   s1_autoplay_explosion.png a mortar shell landing
-##   s1_autoplay_battle.png    a firefight (or the front, late in the match)
+##   s1_autoplay_battle.png    small-arms fire near our men (or the front,
+##                             late in the run)
 ##   s1_autoplay_end.png       the end screen (the script surrenders at the
 ##                             time limit if nobody has won)
 ##
@@ -41,6 +42,7 @@ var _busy := false
 var _next_buy := 0.0
 var _next_log := 0.0
 var _orders := {}
+var _order_from := {}
 var _size := Vector2i(1600, 900)
 
 
@@ -150,15 +152,32 @@ func _play(s: Dictionary, t: float) -> void:
 		_next_buy = t + 20.0
 		var kind := "mg" if int(t / 20.0) % 3 == 1 else "rifle"
 		_intent(&"call_in", {"type": kind})
-	# Idle riflemen and MGs push to the nearest point we do not hold.
+	# Idle riflemen and MGs push to the nearest point we do not hold; so do
+	# attackers that have not got anywhere for two minutes (re-path).
 	for sq in own:
-		if sq.type in ["rifle", "mg"] and sq.order == "idle" and float(_orders.get(sq.id, -999.0)) < t - 40.0:
+		if not sq.type in ["rifle", "mg"]:
+			continue
+		var since: float = t - float(_orders.get(sq.id, -999.0))
+		var stalled: bool = sq.order == "attack_move" and since > 120.0 \
+			and sq.pos.distance_to(_order_from.get(sq.id, Vector3.INF)) < 15.0
+		if (sq.order == "idle" and since > 40.0) or stalled:
 			var p: Variant = _next_point(s, sq.pos)
 			if p != null:
 				_orders[sq.id] = t
+				_order_from[sq.id] = sq.pos
 				_intent(&"attack_move", {"squads": PackedInt32Array([sq.id]), "target": p}, p)
-	if not shots.has("battle") and t > maxf(150.0, minutes * 36.0) and _fight_near(s) != null:
-		_snap_front(s, "battle")
+		elif sq.order == "attack_move" and since > 120.0:
+			# Still moving: measure the next two minutes from here.
+			_orders[sq.id] = t - 1.0
+			_order_from[sq.id] = sq.pos
+	# The battle shot waits for small-arms fire near our men (or, late in the
+	# run, settles for the front).
+	if not shots.has("battle") and t > maxf(150.0, minutes * 36.0):
+		var fire: Variant = _firefight(s)
+		if fire != null:
+			_snap_at(fire, 55.0, -45.0, "battle")
+		elif t > minutes * 54.0 and _fight_near(s) != null:
+			_snap_front(s, "battle")
 
 
 func _opening(s: Dictionary, own: Array) -> void:
@@ -302,6 +321,18 @@ func _near_own(s: Dictionary, pos: Vector3, r: float) -> bool:
 		if sq.pos.distance_to(pos) < r:
 			return true
 	return false
+
+
+## Centre of this frame's shot cues (one per firing squad) within 150 m of
+## our squads, if at least two squads fire (a firefight in view).
+func _firefight(s: Dictionary) -> Variant:
+	var sum := Vector3.ZERO
+	var n := 0
+	for fx in s.get("effects", []):
+		if fx.kind == "shot" and _near_own(s, fx.pos, 150.0):
+			sum += fx.pos
+			n += 1
+	return sum / n if n >= 2 else null
 
 
 ## Midpoint of the closest own/enemy pair under 220 m, if any.

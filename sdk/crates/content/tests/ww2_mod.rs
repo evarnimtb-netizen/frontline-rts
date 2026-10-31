@@ -119,10 +119,10 @@ fn skirmish_resolves_to_fixed_point() {
     assert_eq!(rifle.call_in_ticks, 600);
     assert_eq!(s.weapons[rifle.weapon as usize].id, "ww2:kar98k");
     // 15 rpm at 30 Hz: 120 ticks between rounds.
-    assert_eq!(s.weapons[rifle.weapon as usize].interval_ticks, 120);
+    assert_eq!(s.weapons[rifle.weapon as usize].interval_milli, 120_000);
     let mg42 = s.weapons.iter().find(|w| w.id == "ww2:mg42").unwrap();
-    // 1200 rpm is 1.5 ticks at 30 Hz: rounds half up to 2.
-    assert_eq!(mg42.interval_ticks, 2);
+    // 1200 rpm is 1.5 ticks at 30 Hz, kept exact in milli-ticks.
+    assert_eq!(mg42.interval_milli, 1500);
     assert_eq!(mg42.setup_ticks, 90);
     let mortar = s.weapons.iter().find(|w| w.id == "ww2:grw34").unwrap();
     assert_eq!(mortar.class, WeaponClass::Mortar);

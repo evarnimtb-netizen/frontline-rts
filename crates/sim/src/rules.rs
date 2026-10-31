@@ -71,16 +71,19 @@ impl MatchState {
             .sum()
     }
 
-    /// `player`'s manpower income per minute right now.
+    /// `player`'s manpower income per minute right now (saturating: the
+    /// content ranges allow products past `u32`).
     pub fn income_per_min(&self, player: PlayerId) -> u32 {
         let r = &self.setup.rules;
-        let base = r.income_per_min + r.point_income_per_min * self.held_value(player);
+        let base = r.income_per_min as u64
+            + r.point_income_per_min as u64 * self.held_value(player) as u64;
         let ps = &self.setup.players[player.0 as usize];
-        if ps.is_ai {
-            base * r.difficulty.get(ps.difficulty).income_pct / 100
+        let income = if ps.is_ai {
+            base * r.difficulty.get(ps.difficulty).income_pct as u64 / 100
         } else {
             base
-        }
+        };
+        income.min(u32::MAX as u64) as u32
     }
 
     /// `player`'s ticket loss per minute right now: the point value gap to
@@ -92,7 +95,8 @@ impl MatchState {
             .map(|q| self.held_value(PlayerId(q as u8)))
             .max()
             .unwrap_or(0);
-        best.saturating_sub(mine) * self.setup.rules.ticket_drain_per_min_per_point
+        best.saturating_sub(mine)
+            .saturating_mul(self.setup.rules.ticket_drain_per_min_per_point)
     }
 
     /// Capture, income, tickets and victory for this tick (module docs).
@@ -113,13 +117,16 @@ impl MatchState {
             let pl = &mut self.players[p];
             pl.point_ticks += held as u64;
             // Income in 1/(100 · per_min) manpower, drain in 1/per_min tickets.
-            let den = 100 * per_min;
-            pl.income_acc += income * 100;
-            pl.manpower = pl.manpower.saturating_add(pl.income_acc / den);
-            pl.income_acc %= den;
-            pl.drain_acc += drain;
-            pl.tickets = pl.tickets.saturating_sub(pl.drain_acc / per_min);
-            pl.drain_acc %= per_min;
+            // Sums in u64: both accumulators stay below their divisor.
+            let den = 100 * per_min as u64;
+            let acc = pl.income_acc as u64 + income as u64 * 100;
+            let gain = (acc / den).min(u32::MAX as u64) as u32;
+            pl.manpower = pl.manpower.saturating_add(gain);
+            pl.income_acc = (acc % den) as u32;
+            let acc = pl.drain_acc as u64 + drain as u64;
+            let loss = (acc / per_min as u64).min(u32::MAX as u64) as u32;
+            pl.tickets = pl.tickets.saturating_sub(loss);
+            pl.drain_acc = (acc % per_min as u64) as u32;
         }
         self.check_defeats(ents);
     }

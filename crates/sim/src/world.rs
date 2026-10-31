@@ -365,8 +365,9 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// and dig jobs. 4: combat (entity `combat` column, corpses, projectile
 /// weapons, squad focus, kills, spotting cursors, combat counters).
 /// 5: match rules (defeats, point time, income and drain fractions,
-/// contested points) and AI commander state.
-const SAVE_VERSION: u32 = 5;
+/// contested points) and AI commander state. 6: weapon fire intervals in
+/// milli-ticks (`WeaponSetup::interval_milli`).
+const SAVE_VERSION: u32 = 6;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -1778,6 +1779,55 @@ mod tests {
             });
         });
         assert!(load_err(&bytes).contains("AI"));
+        // A pending call-in of an unknown squad type would crash the next
+        // plan (`buy` indexes the squad types with it).
+        let bytes = save_edited(&w, |s| {
+            let ai = s.game.as_mut().unwrap().ai[1].as_mut().unwrap();
+            ai.pending.push(crate::ai::AiCommand {
+                due: u64::MAX,
+                seq: 0,
+                kind: CommandKind::CallIn { squad_type: 999 },
+            });
+        });
+        assert!(load_err(&bytes).contains("AI"));
+        // Economy values past the content ranges never reach the sim.
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().setup.rules.point_income_per_min = u32::MAX;
+        });
+        assert!(load_err(&bytes).contains("economy"));
+    }
+
+    #[test]
+    fn huge_income_saturates_instead_of_overflowing() {
+        // The largest values the content allows: 1e6 per minute per point
+        // value, points worth 100, AI income at 1000 %.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let defs = frontline_content::ModDefs::load(&root).unwrap();
+        let req = frontline_content::MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Hard,
+        );
+        let mut setup = defs.resolve(&req).unwrap();
+        setup.rules.point_income_per_min = 1_000_000;
+        setup.rules.ticket_drain_per_min_per_point = 100_000;
+        setup.rules.difficulty.hard.income_pct = 1000;
+        for p in &mut setup.map.points {
+            p.value = 100;
+        }
+        let mut w = World::new_match(setup, 1).unwrap();
+        let g = w.state.game.as_mut().unwrap();
+        for c in &mut g.points {
+            c.owner = Some(PlayerId(1));
+        }
+        assert_eq!(g.income_per_min(PlayerId(1)), u32::MAX);
+        for _ in 0..3 {
+            w.step(&[]);
+        }
+        let g = w.game().unwrap();
+        assert!(g.players()[1].manpower > 1_000_000);
+        assert_eq!(g.players()[0].tickets, 0);
     }
 
     #[test]

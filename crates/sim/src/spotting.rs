@@ -9,10 +9,12 @@
 //!
 //! 1. the player's soldiers become observers, each with an eye point and a
 //!    sight range from his squad type;
-//! 2. a rotating cursor walks the enemy soldiers in ascending id from where
-//!    it stopped last tick. A tick checks at most `enemies / spot_period`
-//!    targets (rounded up), so every enemy is re-checked at least once per
-//!    period, and stops early when the player's ray budget would run out;
+//! 2. a rotating cursor walks the enemy soldiers and corpses (checked like
+//!    a prone man, so a body is drawn only where the player can see it) in
+//!    ascending id from where it stopped last tick. A tick checks at most
+//!    `enemies / spot_period` targets (rounded up), so every enemy is
+//!    re-checked at least once per period, and stops early when the
+//!    player's ray budget would run out;
 //!    the cursor then resumes there next tick, so a dense front slows the
 //!    cadence identically on every client;
 //! 3. a check scales each observer's range by the target's concealment
@@ -71,12 +73,16 @@ pub(crate) fn spot(
     out.cursor = if n == 0 { 0 } else { (cursor % n) as u32 };
     out.observers.clear();
     let mut enemies = 0u32;
-    for id in ents.soldiers() {
-        let i = id.index();
+    for i in 0..n {
+        let kind = ents.kind[i];
         if ents.owner[i] != p {
-            enemies += 1;
+            enemies += matches!(kind, EntityKind::Soldier | EntityKind::Corpse) as u32;
             continue;
         }
+        if kind != EntityKind::Soldier {
+            continue;
+        }
+        let id = SimId(i as u32);
         let c = &ents.combat[i];
         let Some(sq) = ents.squad[i].and_then(|s| game.squad(s)) else {
             continue;
@@ -99,7 +105,8 @@ pub(crate) fn spot(
     let start = out.cursor as usize;
     for step in 0..n {
         let i = (start + step) % n;
-        if ents.kind[i] != EntityKind::Soldier || ents.owner[i] == p {
+        let corpse = ents.kind[i] == EntityKind::Corpse;
+        if !(corpse || ents.kind[i] == EntityKind::Soldier) || ents.owner[i] == p {
             continue;
         }
         if checked == quota || out.rays + k_max as u32 > budget {
@@ -110,7 +117,7 @@ pub(crate) fn spot(
         out.cursor = ((i + 1) % n) as u32;
         let c = &ents.combat[i];
         let pos = ents.transform[i].pos;
-        let pct = if (c.since_shot as u32) < rules.reveal_ticks {
+        let pct = if !corpse && (c.since_shot as u32) < rules.reveal_ticks {
             rules.firing_spot_pct
         } else {
             let mut pct = 100;

@@ -5,7 +5,7 @@ extends HFlowContainer
 ## then a "+N" tile. Wraps to a second row.
 
 const MAX_CARDS := 10
-const CARD := Vector2(128, 84)
+const CARD := Vector2(140, 84)
 const STATUS := {
 	"ok": ["READY", UiPalette.OK],
 	"suppressed": ["SUPPRESSED", UiPalette.WARN],
@@ -78,7 +78,12 @@ func _draw_card(c: Control) -> void:
 	c.draw_rect(Rect2(0, 0, 3, r.size.y), UiPalette.OWN)
 	UiPalette.draw_glyph(c, sq.type, Rect2(Vector2(10, 7), Vector2(26, 18)), UiPalette.OWN, 2.0)
 	var title: String = sq.get("name", UiPalette.SQUAD_NAMES.get(sq.type, sq.type))
-	c.draw_string(font, Vector2(42, 23), _fit(font, title, r.size.x - 46, 14), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiPalette.TEXT)
+	# Long names (Granatwerfertrupp) step the size down before eliding.
+	var title_w := r.size.x - 46
+	var title_size := 14
+	while title_size > 10 and font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x > title_w:
+		title_size -= 1
+	c.draw_string(font, Vector2(42, 23), _fit(font, title, title_w, title_size), HORIZONTAL_ALIGNMENT_LEFT, -1, title_size, UiPalette.TEXT)
 	var men := int(sq.get("men", 0))
 	var men_max := maxi(int(sq.get("men_max", 1)), 1)
 	c.draw_string(font, Vector2(10, 35), "%d/%d men" % [men, men_max], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiPalette.TEXT_DIM)

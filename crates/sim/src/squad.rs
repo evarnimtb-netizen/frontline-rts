@@ -13,15 +13,25 @@
 //!   direction (or along the trench line for Dig). Slots are assigned by
 //!   each man's position across the line, so paths do not cross.
 //! * **Holding:** men stay on their slots and face `facing`.
-//! * **AttackMove** squads that have a focus target (`crate::combat`) halt
-//!   where each man stands until the fight is over, then walk on.
+//! * **AttackMove** squads that have a focus target (`crate::combat`) and at
+//!   least one man with a target in clear line halt where each man stands
+//!   until the fight is over, then walk on.
 //!
 //! Digging squads get their slots from `crate::dig` (each man's spot on his
-//! share of the line). Seeking cover on arrival (trench cells, terrain
-//! between the man and the enemy) comes with spotting in a later stage.
+//! share of the line).
+//!
+//! **Cover on arrival** (all orders but Dig and Retreat): each man, in
+//! member order, moves his line slot to the nearest free trench spot within
+//! [`COVER_RADIUS_M`] (on the floor: dug `combat::TRENCH_MM` below the base
+//! surface there and [`TRENCH_MARGIN_MM`] around; sampled every 0.25 m);
+//! failing that, if his owner sees an enemy within [`COVER_ENEMY_M`], to the
+//! nearest spot on a 2.5 m grid with terrain between it and that enemy's
+//! eyes (at most [`COVER_RAYS`] sight rays per man). Spots keep
+//! [`COVER_GAP_MM`] apart, also from where other friendly squads stand.
 
+use crate::combat::TRENCH_MM;
 use crate::ecs::{Entities, SimId};
-use crate::fx::{Fx, FxVec2};
+use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, NavPhase, Order, Squad};
 use crate::terrain::Heightfield;
 
@@ -38,6 +48,23 @@ const STRETCHED_SPEED_PCT: i32 = 70;
 const SLOT_LEAD_MM: i32 = 1500;
 /// Arriving gives up waiting for stragglers after this long (s).
 const ARRIVE_TIMEOUT_S: u32 = 20;
+/// Men look for cover this far from their line slot (m).
+const COVER_RADIUS_M: i32 = 10;
+/// Only enemies this close to the goal count for terrain cover (m).
+const COVER_ENEMY_M: i32 = 400;
+/// Most sight rays one man spends looking for terrain cover.
+const COVER_RAYS: usize = 12;
+/// Cover spots of two men keep at least this far apart (mm).
+const COVER_GAP_MM: i32 = 1200;
+/// Trench spots are sampled on this grid (one detail cell, mm) ...
+const TRENCH_STEP_MM: i32 = 250;
+/// ... and need dug ground this far around them too (mm).
+const TRENCH_MARGIN_MM: i32 = 400;
+/// Terrain cover spots are sampled on this grid (mm).
+const COVER_STEP_MM: i32 = 2500;
+/// Enemy eye height and the covered man's chest height for cover rays (mm).
+const COVER_EYE_MM: i32 = 1500;
+const COVER_CHEST_MM: i32 = 1000;
 
 /// Total length of a polyline.
 pub(crate) fn polyline_length(line: &[FxVec2]) -> Fx {
@@ -122,7 +149,117 @@ fn arrival(
         }
     };
     let slots: Vec<FxVec2> = slots.into_iter().map(|p| terrain.clamp(p)).collect();
-    (assign_by_axis(&sq.members, ents, &slots, axis), facing)
+    let mut slots = assign_by_axis(&sq.members, ents, &slots, axis);
+    if !matches!(sq.order, Order::Dig { .. } | Order::Retreat) {
+        seek_cover(sq, ents, terrain, &mut slots);
+    }
+    (slots, facing)
+}
+
+/// Offsets within [`COVER_RADIUS_M`] on a grid of `step_mm`, nearest first
+/// (ties by `(y, x)`), the zero offset included.
+fn cover_offsets(step_mm: i32) -> Vec<FxVec2> {
+    let r = COVER_RADIUS_M * 1000 / step_mm;
+    let mut v: Vec<(i32, i32, i32)> = (-r..=r)
+        .flat_map(|y| (-r..=r).map(move |x| (x * x + y * y, y, x)))
+        .filter(|&(d, _, _)| d <= r * r)
+        .collect();
+    v.sort_unstable();
+    v.into_iter()
+        .map(|(_, y, x)| FxVec2::new(Fx::from_milli(x * step_mm), Fx::from_milli(y * step_mm)))
+        .collect()
+}
+
+/// Trench and terrain cover search offsets (built once; pure data).
+fn offsets() -> &'static (Vec<FxVec2>, Vec<FxVec2>) {
+    static OFFSETS: std::sync::OnceLock<(Vec<FxVec2>, Vec<FxVec2>)> = std::sync::OnceLock::new();
+    OFFSETS.get_or_init(|| (cover_offsets(TRENCH_STEP_MM), cover_offsets(COVER_STEP_MM)))
+}
+
+/// Whether a trench cell lies within reach of `p` (grid pre-check).
+fn trench_near(terrain: &Heightfield, p: FxVec2) -> bool {
+    let reach = Fx::from_int(COVER_RADIUS_M + crate::terrain::SPACING_M);
+    let (x0, y0) = terrain.nearest_grid(p - FxVec2::new(reach, reach));
+    let (x1, y1) = terrain.nearest_grid(p + FxVec2::new(reach, reach));
+    (y0..=y1).any(|gy| (x0..=x1).any(|gx| terrain.is_trench(gx, gy)))
+}
+
+/// A trench spot: `p` and the four points [`TRENCH_MARGIN_MM`] around it
+/// are all `combat::TRENCH_MM` below the base surface, so `p` is near the
+/// middle of the floor and a man who stops within the arrive radius of it
+/// still stands in the trench.
+fn trench_spot(terrain: &Heightfield, p: FxVec2) -> bool {
+    let deep = Fx::from_milli(TRENCH_MM);
+    let m = Fx::from_milli(TRENCH_MARGIN_MM);
+    let dug = |q: FxVec2| {
+        terrain.has_detail_at(q) && terrain.base_height_at(q) - terrain.height_at(q) >= deep
+    };
+    dug(p)
+        && [(m, Fx::ZERO), (-m, Fx::ZERO), (Fx::ZERO, m), (Fx::ZERO, -m)]
+            .iter()
+            .all(|&(x, y)| dug(p + FxVec2::new(x, y)))
+}
+
+/// Moves arrival `slots` into cover (see the module docs).
+fn seek_cover(sq: &Squad, ents: &Entities, terrain: &Heightfield, slots: &mut [FxVec2]) {
+    let gap = (Fx::from_milli(COVER_GAP_MM).raw() as u64).pow(2);
+    let free = |taken: &[FxVec2], p: FxVec2| taken.iter().all(|t| (*t - p).length_sq_raw() >= gap);
+    let owner = sq.owner.0;
+    let goal = sq.nav.goal;
+    // Spots friends of other squads stand on or walk to.
+    let near_goal = (Fx::from_int(3 * COVER_RADIUS_M).raw() as u64).pow(2);
+    let mut taken: Vec<FxVec2> = ents
+        .soldiers()
+        .filter(|id| {
+            let i = id.index();
+            ents.owner[i].0 == owner
+                && !sq.members.contains(id)
+                && (ents.mover[i].waypoint - goal).length_sq_raw() <= near_goal
+        })
+        .map(|id| ents.mover[id.index()].waypoint)
+        .collect();
+    // Nearest enemy the owner sees, by distance to the goal (ties by id).
+    let reach = (Fx::from_int(COVER_ENEMY_M).raw() as u64).pow(2);
+    let enemy = ents
+        .soldiers()
+        .filter(|id| {
+            let i = id.index();
+            ents.owner[i].0 != owner && ents.combat[i].seen_by & (1 << owner) != 0
+        })
+        .map(|id| {
+            let pos = ents.transform[id.index()].pos;
+            ((pos.xy() - goal).length_sq_raw(), id, pos)
+        })
+        .filter(|(d, _, _)| *d <= reach)
+        .min_by_key(|(d, id, _)| (*d, *id))
+        .map(|(_, _, pos)| FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(COVER_EYE_MM)));
+    let (fine, coarse) = offsets();
+    let trenches = slots.iter().any(|&p| trench_near(terrain, p));
+    for slot in slots.iter_mut() {
+        let in_trench = trenches
+            .then(|| {
+                fine.iter()
+                    .map(|&o| *slot + o)
+                    .find(|&p| terrain.contains(p) && trench_spot(terrain, p) && free(&taken, p))
+            })
+            .flatten();
+        let pick = in_trench.or_else(|| {
+            let eye = enemy?;
+            coarse
+                .iter()
+                .map(|&o| *slot + o)
+                .filter(|&p| terrain.contains(p) && free(&taken, p))
+                .take(COVER_RAYS)
+                .find(|&p| {
+                    let chest = p.extend(terrain.height_at(p) + Fx::from_milli(COVER_CHEST_MM));
+                    !terrain.line_of_sight(eye, chest)
+                })
+        });
+        if let Some(p) = pick {
+            *slot = p;
+        }
+        taken.push(*slot);
+    }
 }
 
 /// Staggered-column slot `k` (`k >= 1`) behind a leader at `lead` heading
@@ -171,8 +308,18 @@ impl MatchState {
             match sq.nav.phase {
                 // Men keep their last targets until the path arrives.
                 NavPhase::PathPending => {}
+                // Halt only while someone can actually shoot: a man's target
+                // always had a clear line from his muzzle when it was picked
+                // and is re-checked once a second, whereas the focus needs no
+                // line. Halting on the focus alone froze squads that saw each
+                // other across a crest they could not shoot over.
                 NavPhase::Moving
-                    if matches!(sq.order, Order::AttackMove { .. }) && sq.focus.is_some() =>
+                    if matches!(sq.order, Order::AttackMove { .. })
+                        && sq.focus.is_some()
+                        && sq
+                            .members
+                            .iter()
+                            .any(|m| ctx.ents.combat[m.index()].target.is_some()) =>
                 {
                     for &m in &sq.members {
                         let here = ctx.ents.transform[m.index()].pos.xy();

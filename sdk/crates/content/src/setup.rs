@@ -335,8 +335,10 @@ pub struct WeaponSetup {
     pub range_min: Fixed,
     pub range_max: Fixed,
     pub damage: u32,
-    /// Ticks between rounds (at least 1).
-    pub interval_ticks: u32,
+    /// Time between rounds in thousandths of a tick (at least 1000). The
+    /// sim spreads the fraction over successive shots, so 1200 rpm at 30 Hz
+    /// (1.5 ticks) fires at 1, 2, 1, 2 ... ticks instead of rounding.
+    pub interval_milli: u32,
     pub magazine: u32,
     pub reload_ticks: u32,
     /// Dispersion half-angle in radians.
@@ -458,10 +460,11 @@ impl ModDefs {
                 range_min: Fixed::from_int(w.min_range_m as i32),
                 range_max: Fixed::from_int(w.range_m as i32),
                 damage: w.damage,
-                // 60 s * hz / rpm, rounded half up, at least one tick.
-                interval_ticks: ((120 * hz as u64 + w.rounds_per_min as u64)
+                // 60 s * hz / rpm in milli-ticks, rounded half up, at least
+                // one tick.
+                interval_milli: ((120_000 * hz as u64 + w.rounds_per_min as u64)
                     / (2 * w.rounds_per_min as u64))
-                    .max(1) as u32,
+                    .max(1000) as u32,
                 magazine: w.magazine,
                 reload_ticks: ms_to_ticks(w.reload_ms, hz),
                 spread: Fixed::from_ratio(w.spread_mrad as i64, 1000),
@@ -782,8 +785,18 @@ impl MatchSetup {
             "map.points",
             "need at least one",
         );
+        check(
+            self.map.points.len() <= crate::MAX_CAPTURE_POINTS,
+            "map.points",
+            "too many points",
+        );
         for p in &self.map.points {
             check(on_map(p.pos), "map.points.pos", "off the map");
+            check(
+                (1..=100).contains(&p.value),
+                "map.points.value",
+                "out of range",
+            );
         }
 
         let r = &self.rules;
@@ -890,6 +903,16 @@ impl MatchSetup {
             "out of range",
         );
 
+        // Same bounds as the defs; the sim's economy maths relies on them.
+        check(
+            r.start_manpower <= 1_000_000
+                && r.income_per_min <= 1_000_000
+                && r.point_income_per_min <= 1_000_000
+                && r.ticket_drain_per_min_per_point <= 100_000
+                && r.tickets <= 1_000_000,
+            "rules.economy",
+            "out of range",
+        );
         check(
             r.tickets >= 1 && r.capture_ticks >= 1 && r.capture_max_men >= 1,
             "rules.capture",
@@ -921,9 +944,9 @@ impl MatchSetup {
 
         for w in &self.weapons {
             check(
-                w.interval_ticks >= 1,
-                "weapons.interval_ticks",
-                "must be at least 1",
+                w.interval_milli >= 1000,
+                "weapons.interval_milli",
+                "must be at least 1000 (one tick)",
             );
             check(
                 fx_in(w.range_max, 1, 5000),
@@ -946,7 +969,7 @@ impl MatchSetup {
                     && w.suppression <= 100
                     && w.reload_ticks <= 60 * 30
                     && w.setup_ticks <= 60 * 30
-                    && w.interval_ticks <= 60 * 30
+                    && w.interval_milli <= 60 * 30 * 1000
                     && w.spread >= Fixed::ZERO
                     && fx_in(w.spread, 0, 1),
                 "weapons.values",

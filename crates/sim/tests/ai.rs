@@ -336,3 +336,32 @@ fn ai_commands_are_ordinary_commands() {
     }]);
     assert_eq!(w.stats().commands_rejected, before + 1);
 }
+
+#[test]
+fn human_attack_move_over_the_ridge_reaches_a_firefight() {
+    // Regression: squads halted on a focus they saw over the C ridge crest
+    // but could not shoot, and both sides froze there for the whole match.
+    // A scripted human sends every idle squad to C; small arms must fire
+    // within five minutes.
+    let mut w =
+        World::new_match(setup(1, Difficulty::Normal, Difficulty::Normal, false), 2).unwrap();
+    let target = FxVec2::from_int(512, 512);
+    let mut seq = 0;
+    while w.tick() < 5 * 60 * 30 && w.stats().shots_fired == 0 {
+        let mut cmds = Vec::new();
+        if w.tick().is_multiple_of(60) {
+            for (id, sq) in w.game().unwrap().squads() {
+                if sq.owner == PlayerId(0) && sq.order == Order::Idle {
+                    cmds.push(frontline_sim::Command {
+                        player: PlayerId(0),
+                        seq,
+                        kind: CommandKind::AttackMove { squad: *id, target },
+                    });
+                    seq += 1;
+                }
+            }
+        }
+        w.step(&cmds);
+    }
+    assert!(w.stats().shots_fired > 0, "no shots in five minutes");
+}

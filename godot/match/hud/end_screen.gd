@@ -1,6 +1,6 @@
 extends Control
 ## End screen: victory or defeat, why, match length, and per-side stats
-## (kills, losses, time holding points, squads called in, trench dug), then
+## (kills, losses, points held on average, squads called in, trench dug), then
 ## back to the menu.
 
 const REASONS := {
@@ -11,7 +11,9 @@ const REASONS := {
 const ROWS := [
 	["kills", "Kills", "%d"],
 	["losses", "Losses", "%d"],
-	["points_held_s", "Time holding points", "time"],
+	# Point-seconds summed over points, shown per second of match: the
+	# average number of points held (a sum of times read like a clock).
+	["points_held_s", "Avg. points held", "avg"],
 	["squads_called", "Squads called in", "%d"],
 	["trench_m", "Trench dug", "%d m"],
 ]
@@ -90,9 +92,18 @@ func show_result(s: Dictionary) -> void:
 		for p in [view.local_player, 1 - view.local_player]:
 			var st: Dictionary = stats[p] if p < stats.size() else {}
 			var v: float = float(st.get(row[0], 0))
-			_cell(UiPalette.mmss(v) if row[2] == "time" else row[2] % int(v), UiPalette.TEXT)
+			_cell(_format(row[2], v, float(s.get("time_s", 0.0))), UiPalette.TEXT)
 	visible = true
 	Session.last_result = {"result": result, "stats": stats, "time_s": s.get("time_s", 0.0)}
+
+
+func _format(fmt: String, v: float, time_s: float) -> String:
+	match fmt:
+		"time":
+			return UiPalette.mmss(v)
+		"avg":
+			return "%.1f" % (v / time_s if time_s > 0.0 else 0.0)
+	return fmt % int(v)
 
 
 func _cell(text: String, col: Color) -> void:

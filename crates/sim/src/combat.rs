@@ -27,7 +27,9 @@
 //!   4. *Mortars* (serial): a team on a Barrage order, holding, set up and in
 //!      range fires one shell per interval on a ballistic arc whose flight
 //!      time grows with range (steep, about 60°), scattered by the spread.
-//!      The order ends with its last round.
+//!      The order ends with its last round. Holding out of range, the team
+//!      walks to 90 % of its range again, or drops the order when it already
+//!      tried that spot (unreachable) or the target is inside the minimum.
 //!   5. Requests are spawned in sorted order, HE shells first; small arms
 //!      may not take the pool's last `HE_RESERVE` slots. Dropped rounds are
 //!      counted (`Stats::shots_dropped`).
@@ -102,6 +104,9 @@ const SWEEP_POOL: usize = 4;
 /// [`SHELL_MIN_FLIGHT_S`] (about a 60° arc at every range).
 const SHELL_FLIGHT_MILLI: i32 = 350;
 const SHELL_MIN_FLIGHT_S: i32 = 4;
+/// A mortar team holding out of range walks to 90 % of its range again
+/// unless that spot is within this distance of where it last walked (m).
+const BARRAGE_RETRY_M: i32 = 20;
 /// Crater depth roll, percent of the weapon's crater depth.
 const CRATER_DEPTH_PCT: (i32, i32) = (75, 140);
 
@@ -355,6 +360,20 @@ fn shot_velocity(from: FxVec3, aim: FxVec3, speed: Fx, spread: Fx, r: &mut RngSt
     turned.normalize_or_zero() * speed
 }
 
+/// Ticks until the shot after shot number `shots` (1-based): the weapon's
+/// milli-tick interval spread over successive shots, so the long-run rate is
+/// exact (Bresenham on the soldier's shot counter, which is hashed).
+pub(crate) fn interval_after(w: &WeaponSetup, shots: u32) -> u32 {
+    let n = shots.max(1) as u64;
+    let i = w.interval_milli as u64;
+    (n * i / 1000 - (n - 1) * i / 1000) as u32
+}
+
+/// A whole number of ticks no shorter than the interval.
+fn interval_ceil(w: &WeaponSetup) -> u32 {
+    w.interval_milli.div_ceil(1000)
+}
+
 /// Substeps a round of `w` lives: 1.25 × its range in flight, plus two.
 fn round_ttl(w: &WeaponSetup) -> u16 {
     let t = Fx::from(w.range_max)
@@ -456,9 +475,9 @@ pub(crate) fn aim_and_fire(
         c.mag = c.mag.saturating_sub(1);
         if c.mag == 0 {
             c.mag = w.magazine.min(u16::MAX as u32) as u16;
-            ws.cooldown = w.reload_ticks.max(w.interval_ticks).min(u16::MAX as u32) as u16;
+            ws.cooldown = w.reload_ticks.max(interval_ceil(w)).min(u16::MAX as u32) as u16;
         } else {
-            ws.cooldown = w.interval_ticks.min(u16::MAX as u32) as u16;
+            ws.cooldown = interval_after(w, ws.shots).min(u16::MAX as u32) as u16;
         }
     }
     changed
@@ -479,7 +498,8 @@ impl MatchState {
         out: &mut Vec<FireRequest>,
     ) {
         let setup = &self.setup;
-        for sq in self.squads.values_mut() {
+        let mut repath = Vec::new();
+        for (&id, sq) in self.squads.iter_mut() {
             let Order::Barrage { target, rounds } = &mut sq.order else {
                 continue;
             };
@@ -493,19 +513,34 @@ impl MatchState {
             }
             let gunner = sq.members[0];
             let i = gunner.index();
+            let pos = ents.transform[i].pos;
+            let d = (*target - pos.xy()).length();
+            let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
+            if d < min || d > max {
+                // Holding out of range (the gunner fell and the next man
+                // stands elsewhere, or the walk ended short): walk to 90 % of
+                // the range again, unless the last walk already went for
+                // that spot; then it cannot be reached and the order ends.
+                let facing = (*target - pos.xy()).normalize_or_zero();
+                let spot = terrain.clamp(*target - facing * max.mul_int(9).div_int(10));
+                let tried =
+                    (spot - sq.nav.goal).length_sq_raw() <= range_sq(Fx::from_int(BARRAGE_RETRY_M));
+                if d < min || tried {
+                    sq.order = Order::Idle;
+                } else {
+                    repath.push((id, spot));
+                }
+                continue;
+            }
             let c = &ents.combat[i];
             if ents.weapon[i].cooldown > 0 || (c.still as u32) < w.setup_ticks {
                 continue;
             }
-            let pos = ents.transform[i].pos;
-            let d = (*target - pos.xy()).length();
-            if d < Fx::from(w.range_min) || d > Fx::from(w.range_max) {
-                continue;
-            }
             // Scatter the aim point by the spread over the range.
             let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
-            let pct = 100 + (c.suppression / 1000) as i32;
-            let s = d.mul(w.spread.into()).mul_int(pct).div_int(100);
+            let pct = 100 + (c.suppression / 1000) as i64;
+            let s = d.mul(w.spread.into()).raw() as i64 * pct / 100;
+            let s = Fx::from_raw(s.min(i32::MAX as i64) as i32);
             let aim_xy = terrain.clamp(*target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
             let from = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(SHELL_MUZZLE_MM));
             let dxy = aim_xy - from.xy();
@@ -530,13 +565,16 @@ impl MatchState {
             });
             let ws = &mut ents.weapon[i];
             ws.shots = ws.shots.wrapping_add(1);
-            ws.cooldown = w.interval_ticks.max(w.reload_ticks).min(u16::MAX as u32) as u16;
+            ws.cooldown = interval_ceil(w).max(w.reload_ticks).min(u16::MAX as u32) as u16;
             ents.combat[i].since_shot = 0;
             hash.mark_entity_chunk(gunner.chunk());
             *rounds -= 1;
             if *rounds == 0 {
                 sq.order = Order::Idle;
             }
+        }
+        for (id, spot) in repath {
+            self.request_path(id, spot);
         }
     }
 }
@@ -1156,6 +1194,20 @@ mod tests {
         // Parallel segments.
         let (_, d) = seg_seg(v(0, 300, 0), v(0, 0, 1000), v(0, 0, 0), v(0, 0, 1000));
         assert!((d - Fx::from_milli(90)).abs() <= Fx::from_milli(2), "{d:?}");
+    }
+
+    #[test]
+    fn fractional_fire_interval_keeps_the_rate() {
+        let mut w = setup().weapons[0].clone();
+        // 1200 rpm at 30 Hz: 1.5 ticks, so 1, 2, 1, 2 ...
+        w.interval_milli = 1500;
+        let gaps: Vec<u32> = (1..=6).map(|n| interval_after(&w, n)).collect();
+        assert_eq!(gaps, [1, 2, 1, 2, 1, 2]);
+        // 500 rpm: 3.6 ticks; 1000 shots take exactly 3600 ticks.
+        w.interval_milli = 3600;
+        let total: u32 = (1..=1000).map(|n| interval_after(&w, n)).sum();
+        assert_eq!(total, 3600);
+        assert_eq!(interval_ceil(&w), 4);
     }
 
     #[test]

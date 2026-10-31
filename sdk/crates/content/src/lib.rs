@@ -32,6 +32,10 @@ pub use setup::{
     Difficulty, Fixed, FixedVec2, MatchRequest, MatchSetup, PlayerRequest, PlayerSetup,
 };
 
+/// Most capture points on a map (the sim's AI keeps point indices in a
+/// byte with one value reserved).
+pub const MAX_CAPTURE_POINTS: usize = 64;
+
 /// One exported JSON Schema.
 pub struct SchemaDoc {
     /// Def type name; the file is written as `<name>.schema.json`.
