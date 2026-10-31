@@ -241,7 +241,10 @@ What it fills, beyond the schema above:
 
 Other methods: `get_map_info()` (woods, points, bases in Godot space,
 factions, own base), `squad_ids(owner, type)`, `squad_pos(id)`,
-`set_speed(x)` (0.25–8, scripted runs), `get_stats()`, `get_last_error()`.
+`set_speed(x)` (0.25–8, scripted runs), `get_stats()`, `get_last_error()`,
+and (S1b) `dug_depth_at(x, z)`: how far the ground lies below the undug
+surface there (trenches and craters as drawn; scripted runs use it to find
+trenches).
 Soldiers (stance poses follow stance orders: the sim's stance already
 includes them), corpses (death fall, 30 s), tracers, mortar shells, thrown
 items (dark body and a pale trail), muzzle flashes and the chunked terrain

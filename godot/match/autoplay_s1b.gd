@@ -14,11 +14,15 @@ extends RefCounted
 ##   s1b_smoke_tool.png       T armed on a squad: range ring and target
 ##   s1b_throw_flight.png     the smoke grenade in the air (its trail)
 ##   s1b_smoke.png            the smoke cloud standing
+##   s1b_frag_blast.png       the lone man's practice frag (G, click) going
+##                            off on open ground: the frag-sized blast
 ##   s1b_hud_1600.png         the full HUD at 1600x900
 ##   s1b_hud_1280.png         the full HUD at 1280x800
 ##   s1b_frag_tool.png        G armed on a man within 30 m of an enemy in
 ##                            a trench
 ##   s1b_frag_trench.png      the frag bursting in the enemy trench
+##   s1b_frag_enemy.png       (only if the trench throw has not happened by
+##                            9:00) a frag at any spotted enemy in range
 ##
 ## Mouse and keys are InputEvents pushed into the viewport (GUI first, then
 ## the selection controller's _unhandled_input), at the screen positions
@@ -33,7 +37,7 @@ extends RefCounted
 
 const SHOTS := [
 	"click_one", "double_click", "box_two_squads", "one_man_forward", "prone",
-	"group_recall", "smoke_tool", "throw_flight", "smoke", "hud_1600", "hud_1280", "frag_tool",
+	"group_recall", "smoke_tool", "throw_flight", "smoke", "frag_blast", "hud_1600", "hud_1280", "frag_tool",
 	"frag_trench",
 ]
 const PREFIX := "s1b_"
@@ -41,10 +45,14 @@ const PREFIX := "s1b_"
 const FRAG_RANGE_M := 26.0
 ## Game seconds an assault squad gets to close in before the script tries
 ## another target: this plus the walk at ASSAULT_SPEED.
-const ASSAULT_S := 60.0
-const ASSAULT_SPEED := 1.1
+const ASSAULT_S := 120.0
+const ASSAULT_SPEED := 0.8
+## Only trenches this close to one of our squads are assaulted (m).
+const ASSAULT_REACH_M := 320.0
 ## Game seconds to wait for the frag burst after the throw.
 const BURST_WAIT_S := 12.0
+## Game time after which any spotted enemy in range is a frag target too.
+const OPEN_FRAG_S := 540.0
 ## Dug at least this deep (m), and long (see _elongated), counts as a
 ## trench. The AI's trenches are often left half dug (about 0.8 m), so
 ## this does not wait for full depth (1.6 m).
@@ -61,6 +69,9 @@ var _lone := -1
 var _assault := {}
 var _next_scan := 0.0
 var _next_scan_log := 0.0
+var _next_try := 0.0
+## Known enemy trench spots ({pos, foe}), nearest our squads first.
+var _cells: Array = []
 var _tried := {}
 
 
@@ -89,7 +100,7 @@ func step(s: Dictionary, t: float) -> bool:
 	if done_selection and not ap.shots.has(PREFIX + "hud_1600") and t >= 160.0:
 		# Where an own squad and a spotted enemy squad are within 140 m,
 		# else whatever the front is by 6:40.
-		var pair := _contact(s, 140.0 if t < 400.0 else 2000.0)
+		var pair := _contact(s, 120.0 if t < 400.0 else 2000.0)
 		if not pair.is_empty():
 			_hud_shots(pair)
 			return true
@@ -166,8 +177,8 @@ func _selection_tour(s: Dictionary) -> void:
 	print("autoplay s1b: group 1 recalled, %d men" % view.selection.selected.size())
 	await _snap("group_recall", 0.4)
 
-	# Smoke from squad A (its carrier throws), 18 m toward C: double-click
-	# a man to select the squad, T, click the spot.
+	# Smoke from squad A (its carrier throws), 18 m to its side:
+	# double-click a man to select the squad, T, click the spot.
 	var carrier := -1
 	for id in view.squad_units.get(int(a.id), PackedInt32Array()):
 		if view.item_count(view.soldiers_by_id[id], "smoke") > 0:
@@ -178,9 +189,12 @@ func _selection_tour(s: Dictionary) -> void:
 		ap._busy = false
 		return
 	var lead_pos: Vector3 = view.soldiers_by_id[carrier].pos
+	# Off to the side of the march (toward C), so the squad does not walk
+	# into the minimum range while the tool is up.
 	var to_c: Vector3 = ap._point(s, "C").pos - lead_pos
 	to_c.y = 0.0
-	var spot: Vector3 = ap._ground(lead_pos + to_c.normalized() * 18.0)
+	var aside := Vector3(to_c.z, 0.0, -to_c.x).normalized()
+	var spot: Vector3 = ap._ground(lead_pos + aside * 18.0)
 	await _look_at(lead_pos.lerp(spot, 0.5), 42.0, -55.0)
 	var pick_man := _central_man(int(a.id))
 	if pick_man >= 0:
@@ -216,6 +230,10 @@ func _selection_tour(s: Dictionary) -> void:
 			break
 	if flying >= 0.0:
 		await _snap("throw_flight", 0.0)
+		for th in view.state.get("thrown", []):
+			print("autoplay s1b:   in flight: %s at %s (%.1f m above the ground, %d m from the camera), landed %s; trails drawn %d" % [
+				th.kind, th.pos, th.pos.y - ap.source.height_at(th.pos.x, th.pos.z), roundi(camera.global_position.distance_to(th.pos)),
+				th.landed, int(ap.source.get_stats().get("thrown_trails_drawn", -1))])
 	else:
 		print("autoplay s1b: did not see the smoke grenade in flight (%d thrown entries seen)" % seen)
 	var cloud: Variant = await _wait_cloud(spot, 14.0)
@@ -225,6 +243,29 @@ func _selection_tour(s: Dictionary) -> void:
 		await _look_at(cloud.pos, 40.0, -38.0)
 	await _snap("smoke", 0.3)
 
+	# A practice frag from the lone man, onto open ground away from
+	# everyone: the whole G path and the frag-sized blast, even if the run
+	# never gets a man within 30 m of an enemy trench.
+	if view.soldiers_by_id.has(_lone) and view.item_count(view.soldiers_by_id[_lone], "frag") > 0:
+		var lone_pos: Vector3 = view.soldiers_by_id[_lone].pos
+		var away: Vector3 = lone_pos - view.squads_by_id.get(int(a.id), a).pos
+		away.y = 0.0
+		var blast_at: Vector3 = ap._ground(lone_pos + (away.normalized() if away.length() > 1.0 else Vector3(1, 0, 0)) * 18.0)
+		await _look_at(lone_pos.lerp(blast_at, 0.5), 34.0, -50.0)
+		await _click_soldier(_lone, false)
+		await _key(KEY_G)
+		await _click_screen(camera.unproject_position(blast_at), false)
+		var tb: float = view.state.get("time_s", 0.0)
+		var burst_seen := false
+		while not burst_seen and float(view.state.get("time_s", 0.0)) - tb < BURST_WAIT_S:
+			await ap.get_tree().process_frame
+			for fx in view.state.get("effects", []):
+				if fx.kind == "explosion" and fx.get("size", "") == "frag" and fx.pos.distance_to(blast_at) < 10.0:
+					burst_seen = true
+		if burst_seen:
+			await _snap("frag_blast", 0.12)
+		else:
+			print("autoplay s1b: the practice frag did not go off near %s" % [blast_at])
 	view.selection.select_only(PackedInt32Array())
 	ap._busy = false
 
@@ -253,10 +294,18 @@ func _hud_shots(pair: Array) -> void:
 	var best: Dictionary = pair[0]
 	var foe: Dictionary = pair[1]
 	var gap: float = best.pos.distance_to(foe.pos)
-	await _look_at(best.pos.lerp(foe.pos, 0.4), clampf(gap * 0.75, 55.0, 110.0), -50.0)
+	# Both squads in the clear band above the console: centre a little
+	# toward the enemy, steep enough that the near squad stays up.
+	await _look_at(best.pos.lerp(foe.pos, 0.55), clampf(gap * 0.6, 50.0, 95.0), -62.0)
 	var man := _central_man(int(best.id))
+	if man < 0:
+		# Our squad fell outside the picture: frame it alone.
+		await _look_at(best.pos, 60.0, -55.0)
+		man = _central_man(int(best.id))
 	if man >= 0:
 		await _click_soldier(man, true)
+	if not view.selection.selected_squads().has(int(best.id)):
+		view.selection.select_squads(PackedInt32Array([int(best.id)]))
 	await _snap("hud_1600", 0.4)
 	var win := ap.get_window()
 	if win.mode == Window.MODE_WINDOWED and DisplayServer.get_name() != "headless":
@@ -311,14 +360,18 @@ func _box_between(sa: int, sb: int) -> Rect2:
 	return r.grow(5.0)
 
 
-## The squad's man drawn nearest the screen centre, or -1.
+## The squad's man drawn nearest the screen centre, inside the clear band
+## between the minimap and the console (a click there reaches the world),
+## or -1.
 func _central_man(squad_id: int) -> int:
-	var mid := view.get_viewport().get_visible_rect().size * 0.5
+	var size := view.get_viewport().get_visible_rect().size
+	var mid := size * 0.5
+	var clear := Rect2(Vector2(280, 40), size - Vector2(280 + 150, 40 + 180))
 	var best := -1
 	var best_d := INF
 	for id in view.squad_units.get(squad_id, PackedInt32Array()):
 		var i := view.pick_ids.find(id)
-		if i >= 0 and view.pick_screen[i].distance_to(mid) < best_d:
+		if i >= 0 and clear.has_point(view.pick_screen[i]) and view.pick_screen[i].distance_to(mid) < best_d:
 			best_d = view.pick_screen[i].distance_to(mid)
 			best = id
 	return best
@@ -343,64 +396,141 @@ func _mean(pts: PackedVector2Array) -> Vector2:
 # --- frag into an enemy trench ------------------------------------------------
 
 func _frag_assault(s: Dictionary, t: float) -> bool:
+	if t >= _next_scan:
+		_next_scan = t + 8.0
+		_cells = _trench_cells(s)
+		# Late in the run, with no trench in reach yet, any spotted enemy
+		# in throwing range will do for a frag (saved as s1b_frag_enemy;
+		# the trench shot is still wanted).
+		if t >= OPEN_FRAG_S and not ap.shots.has(PREFIX + "frag_enemy"):
+			for so in s.get("soldiers", []):
+				if int(so.owner) != local:
+					_cells.append({"pos": so.pos, "foe": int(so.id), "open": true})
+	# Any man of ours already in range of an enemy trench throws (the S1
+	# script keeps pushing riflemen at the points the AI digs in at).
+	if t >= _next_try and not _cells.is_empty():
+		_next_try = t + 1.0
+		var shot := _thrower_for(_cells)
+		if not shot.is_empty():
+			_throw_frag(shot)
+			return true
+	# Else assault the trench spot nearest one of our squads (within
+	# ASSAULT_REACH_M): walk to 45 m short, screen the last stretch with
+	# the squad's smoke, then walk in to 16 m short (plain moves, so the
+	# men do not stop to trade fire at range). The throw itself is the
+	# check above.
 	if _assault.is_empty():
-		if t < _next_scan:
-			return false
-		_next_scan = t + 5.0
-		var tgt := _frag_target(s)
-		if tgt.is_empty():
-			return false
-		var sq := _assault_squad(s, tgt.pos)
-		if sq.is_empty():
-			return false
-		var limit: float = ASSAULT_S + sq.pos.distance_to(tgt.pos) / ASSAULT_SPEED
-		_assault = {"squad": int(sq.id), "foe": int(tgt.foe), "pos": tgt.pos, "since": t, "limit": limit}
-		reserved[int(sq.id)] = true
-		var stop: Vector3 = ap._ground(tgt.pos + (sq.pos - tgt.pos).normalized() * 18.0)
-		ap._intent(&"move", {"squads": PackedInt32Array([int(sq.id)]), "target": stop}, stop)
-		print("autoplay s1b: %s#%d goes for an enemy trench at (%d,%d)%s, %d m away" % [
-			sq.type, sq.id, roundi(tgt.pos.x), roundi(tgt.pos.z),
-			" with enemy %d in it" % tgt.foe if int(tgt.foe) >= 0 else " (nobody seen in it)",
-			roundi(sq.pos.distance_to(tgt.pos))])
+		for tgt in _cells:
+			if tgt.get("open", false):
+				continue
+			var sq := _assault_squad(s, tgt.pos)
+			if sq.is_empty() or sq.pos.distance_to(tgt.pos) > ASSAULT_REACH_M:
+				continue
+			var limit: float = ASSAULT_S + sq.pos.distance_to(tgt.pos) / ASSAULT_SPEED
+			_assault = {"squad": int(sq.id), "pos": tgt.pos, "since": t, "limit": limit, "phase": "approach"}
+			reserved[int(sq.id)] = true
+			_assault_move(sq, 45.0)
+			print("autoplay s1b: %s#%d (%d men) goes for an enemy trench at (%d,%d)%s, %d m away (%d trench spots known)" % [
+				sq.type, sq.id, sq.men, roundi(tgt.pos.x), roundi(tgt.pos.z),
+				" with enemy %d in it" % tgt.foe if int(tgt.foe) >= 0 else " (nobody seen in it)",
+				roundi(sq.pos.distance_to(tgt.pos)), _cells.size()])
+			break
 		return false
 	var sid: int = _assault.squad
-	var foe_so: Dictionary = view.soldiers_by_id.get(int(_assault.foe), {})
-	if not foe_so.is_empty() and foe_so.get("in_trench", false):
-		_assault.pos = foe_so.pos
-	var target: Vector3 = _assault.pos
-	if not view.squads_by_id.has(sid) or t - float(_assault.since) > float(_assault.limit):
-		print("autoplay s1b: assault by squad %d gave up at %s" % [sid, UiPalette.mmss(t)])
+	var sq_now: Dictionary = view.squads_by_id.get(sid, {})
+	if sq_now.is_empty() or t - float(_assault.since) > float(_assault.limit):
+		print("autoplay s1b: assault by squad %d gave up at %s (%s)" % [sid, UiPalette.mmss(t),
+			"squad gone" if sq_now.is_empty() else "%d men, %s, still %d m away" % [int(sq_now.men), sq_now.status, roundi(sq_now.pos.distance_to(_assault.pos))]])
+		_tried[_key_of(_assault.pos)] = true
 		reserved.erase(sid)
 		_assault = {}
 		return false
-	# A man in range who can throw.
-	var thrower := -1
+	var near := INF
 	for id in view.squad_units.get(sid, PackedInt32Array()):
+		var p: Vector3 = view.soldiers_by_id[id].pos
+		near = minf(near, Vector2(p.x, p.z).distance_to(Vector2(_assault.pos.x, _assault.pos.z)))
+	var men: PackedInt32Array = view.squad_units.get(sid, PackedInt32Array())
+	if _assault.phase == "approach" and near < 130.0:
+		# Within rifle range of the trench: go prone and crawl (harder to
+		# spot, and prone men are not pinned flat as fast).
+		_assault.phase = "crawl"
+		view.emit_intent(&"set_stance", {"units": men, "stance": "prone"})
+		print("autoplay s1b:   squad %d crawls from %d m" % [sid, roundi(near)])
+	if _assault.phase in ["approach", "crawl"] and (near < 52.0 or sq_now.order == "idle"):
+		_assault.phase = "close"
+		var to: Vector3 = (_assault.pos - sq_now.pos)
+		to.y = 0.0
+		var cover: Vector3 = ap._ground(sq_now.pos + to.normalized() * minf(24.0, to.length() * 0.5))
+		if int(sq_now.get("items", {}).get("smoke", 0)) > 0:
+			view.emit_intent(&"throw", {"units": men, "item": "smoke", "target": cover})
+			print("autoplay s1b:   smoke to cover the last %d m" % roundi(near))
+		_assault_move(sq_now, 16.0)
+	return false
+
+
+## Orders the assault squad to `short_m` short of the target (plain move).
+func _assault_move(sq: Dictionary, short_m: float) -> void:
+	var tgt: Vector3 = _assault.pos
+	var back: Vector3 = sq.pos - tgt
+	back.y = 0.0
+	var stop: Vector3 = ap._ground(tgt + back.normalized() * minf(short_m, back.length()))
+	ap._intent(&"move", {"squads": PackedInt32Array([int(sq.id)]), "target": stop}, stop)
+
+
+## The best throw now: an own unpinned man with a frag 8..FRAG_RANGE_M m
+## from a trench spot, spots with a seen enemy first, then the nearest.
+## {squad, man, pos, foe} or {}.
+func _thrower_for(cells: Array) -> Dictionary:
+	var best := {}
+	var best_score := INF
+	for id in view.soldiers_by_id:
 		var so: Dictionary = view.soldiers_by_id[id]
-		var d := Vector2(so.pos.x, so.pos.z).distance_to(Vector2(target.x, target.z))
-		if d <= FRAG_RANGE_M and d >= 6.0 and view.item_count(so, "frag") > 0 and not so.get("pinned", false):
-			thrower = id
-			break
-	if thrower == -1:
-		return false
-	_throw_frag(sid, thrower, target)
-	return true
+		if int(so.owner) != local or so.get("pinned", false) or view.item_count(so, "frag") == 0:
+			continue
+		var p := Vector2(so.pos.x, so.pos.z)
+		for c in cells:
+			var d := p.distance_to(Vector2(c.pos.x, c.pos.z))
+			if d < 8.0 or d > FRAG_RANGE_M:
+				continue
+			var score := d + (0.0 if int(c.foe) >= 0 else 100.0) + (1000.0 if c.get("open", false) else 0.0)
+			if score < best_score:
+				best_score = score
+				best = {"squad": int(so.squad), "man": int(id), "pos": c.pos, "foe": int(c.foe), "open": c.get("open", false)}
+	return best
 
 
-func _throw_frag(sid: int, thrower: int, target: Vector3) -> void:
+func _throw_frag(shot: Dictionary) -> void:
 	ap._busy = true
+	var sid: int = shot.squad
+	var thrower: int = shot.man
+	var target: Vector3 = shot.pos
+	var foe: int = shot.foe
+	var open: bool = shot.get("open", false)
 	var thrower_pos: Vector3 = view.soldiers_by_id[thrower].pos
-	await _look_at(thrower_pos.lerp(target, 0.6), 34.0, -50.0)
+	await _look_at(thrower_pos.lerp(target, 0.5), 42.0, -52.0)
 	# Click the thrower (one man), arm G, aim at the man in the trench.
 	await _click_soldier(thrower, false)
 	if view.selection.selected.is_empty():
 		view.selection.select_squads(PackedInt32Array([sid]))
 	await _key(KEY_G)
+	# Aim at the enemy where he is now if he is still in range, else at
+	# the spot found; give up if the thrower is out of range of both.
 	var aim: Vector3 = target
-	if int(_assault.foe) >= 0 and view.soldiers_by_id.has(int(_assault.foe)):
-		aim = view.soldiers_by_id[int(_assault.foe)].pos
+	var from := Vector2(view.soldiers_by_id.get(thrower, {"pos": thrower_pos}).pos.x, view.soldiers_by_id.get(thrower, {"pos": thrower_pos}).pos.z)
+	var reach := func(p: Vector3) -> bool:
+		var d := from.distance_to(Vector2(p.x, p.z))
+		return d >= 6.0 and d <= FRAG_RANGE_M + 2.0
+	if foe >= 0 and (open or view.soldiers_by_id.get(foe, {}).get("in_trench", false)) and view.soldiers_by_id.has(foe) \
+			and reach.call(view.soldiers_by_id[foe].pos):
+		aim = view.soldiers_by_id[foe].pos
+	if not reach.call(aim):
+		print("autoplay s1b: frag target out of the thrower's range by now; skipping it")
+		_tried[_key_of(target)] = true
+		view.selection.select_only(PackedInt32Array())
+		ap._busy = false
+		return
 	view.selection.cursor_override = camera.unproject_position(aim)
-	await _snap("frag_tool", 0.25)
+	await _snap("frag_enemy_tool" if open else "frag_tool", 0.25)
 	view.selection.cursor_override = null
 	var t0: float = view.state.get("time_s", 0.0)
 	var frags0 := view.item_count(view.soldiers_by_id.get(thrower, {}), "frag")
@@ -425,100 +555,94 @@ func _throw_frag(sid: int, thrower: int, target: Vector3) -> void:
 				burst = fx.pos
 			elif fx.pos.distance_to(aim) < 40.0:
 				print("autoplay s1b:   %s burst %d m from the aim point" % [fx.get("size", "?"), roundi(fx.pos.distance_to(aim))])
+	_tried[_key_of(target)] = true
+	_cells = _cells.filter(func(c: Dictionary) -> bool: return not _tried.has(_key_of(c.pos)))
 	if burst == null:
-		print("autoplay s1b: no frag burst seen near the target; trying again")
+		print("autoplay s1b: no frag burst seen near the target; trying again elsewhere")
+		view.selection.select_only(PackedInt32Array())
 		ap._busy = false
-		_assault.since = -INF  # give up this target on the next state
 		return
-	ap.shots[PREFIX + "frag_trench"] = true
+	var shot_name := "frag_enemy" if open else "frag_trench"
+	ap.shots[PREFIX + shot_name] = true
 	await _wait_real(0.05)
-	await Session.save_screenshot(ap.dir.path_join(PREFIX + "frag_trench.png"))
+	await Session.save_screenshot(ap.dir.path_join(PREFIX + shot_name + ".png"))
 	var depth: float = ap.source.dug_depth_at(burst.x, burst.z) if ap.source.has_method("dug_depth_at") else 0.0
 	print("autoplay s1b: frag burst at (%d,%d), ground dug %.1f m there; target enemy %d: %s" % [
-		roundi(burst.x), roundi(burst.z), depth, int(_assault.foe),
-		"none seen" if int(_assault.foe) < 0 else str(view.soldiers_by_id.get(int(_assault.foe), {}).get("in_trench", "dead or unseen"))])
-	reserved.erase(sid)
+		roundi(burst.x), roundi(burst.z), depth, foe,
+		"none seen" if foe < 0 else "in trench %s" % view.soldiers_by_id.get(foe, {}).get("in_trench", "(dead or unseen)")])
+	if not _assault.is_empty():
+		reserved.erase(int(_assault.squad))
 	_assault = {}
 	view.selection.select_only(PackedInt32Array())
 	ap._busy = false
 
 
-## Where to throw: a spotted enemy soldier standing in a trench (nearest
-## our squads), else a dug trench cell (at least TRENCH_DEPTH_M deep, so
-## not a shell crater) within 35 m of a point we do not hold and away from
-## our own trench work. `foe` is the enemy in it, or -1. Each spot is
-## tried once.
-func _frag_target(s: Dictionary) -> Dictionary:
+## Enemy trench spots, nearest our squads first: spotted enemy soldiers
+## standing in a trench, and dug ground (at least TRENCH_DEPTH_M deep and
+## long, see _elongated) within 35 m of a point we do not hold, away from
+## our own trench work. Each is {pos, foe} (foe: a spotted enemy right
+## there, or -1). Spots already tried are left out.
+func _trench_cells(s: Dictionary) -> Array:
 	var own: Array = ap._own(s)
+	var out: Array = []
+	for so in s.get("soldiers", []):
+		if int(so.owner) != local and so.get("in_trench", false) and not _tried.has(_key_of(so.pos)):
+			out.append({"pos": so.pos, "foe": int(so.id)})
+	var src: Node = ap.source
+	if src.has_method("dug_depth_at"):
+		var ours: Array = []
+		if not ap.dig_site.is_empty():
+			ours.append(ap.dig_site.center)
+		for sq in own:
+			if sq.has("dig_line") and sq.dig_line.size() > 0:
+				ours.append(sq.dig_line[0])
+		var t: float = s.get("time_s", 0.0)
+		var log_scan := t >= _next_scan_log
+		if log_scan:
+			_next_scan_log = t + 60.0
+		for p in s.get("points", []):
+			if int(p.owner) == local:
+				continue
+			var c: Vector3 = p.pos
+			var deepest := 0.0
+			var found := 0
+			for i in range(-12, 13):
+				for j in range(-12, 13):
+					var q := c + Vector3(i * 3.0, 0.0, j * 3.0)
+					if Vector2(q.x - c.x, q.z - c.z).length() > 35.0:
+						continue
+					var dd: float = src.dug_depth_at(q.x, q.z)
+					deepest = maxf(deepest, dd)
+					if dd < TRENCH_DEPTH_M or _tried.has(_key_of(q)) or not _elongated(src, q):
+						continue
+					if ours.any(func(o: Vector3) -> bool: return Vector2(o.x - q.x, o.z - q.z).length() < 40.0):
+						continue
+					var cell := {"pos": ap._ground(q), "foe": -1}
+					for so in s.get("soldiers", []):
+						if int(so.owner) != local and so.pos.distance_to(q) < 5.0:
+							cell.foe = int(so.id)
+					out.append(cell)
+					found += 1
+			if log_scan:
+				print("autoplay s1b: point %s (owner %d): deepest dug ground within 35 m %.2f m, %d trench spots" % [p.id, int(p.owner), deepest, found])
 	var near_own := func(p: Vector3) -> float:
 		var best_d := INF
 		for sq in own:
 			best_d = minf(best_d, sq.pos.distance_to(p))
 		return best_d
-	var best := {}
-	var best_d := INF
-	for so in s.get("soldiers", []):
-		if int(so.owner) == local or not so.get("in_trench", false) or _tried.has(_key_of(so.pos)):
-			continue
-		var d: float = near_own.call(so.pos)
-		if d < best_d:
-			best_d = d
-			best = {"pos": so.pos, "foe": int(so.id)}
-	if not best.is_empty():
-		_tried[_key_of(best.pos)] = true
-		return best
-	var src: Node = ap.source
-	if not src.has_method("dug_depth_at"):
-		return {}
-	var ours: Array = []
-	if not ap.dig_site.is_empty():
-		ours.append(ap.dig_site.center)
-	for sq in own:
-		if sq.has("dig_line") and sq.dig_line.size() > 0:
-			ours.append(sq.dig_line[0])
-	var log_scan: bool = float(s.get("time_s", 0.0)) >= _next_scan_log
-	if log_scan:
-		_next_scan_log = float(s.get("time_s", 0.0)) + 60.0
-	for p in s.get("points", []):
-		if int(p.owner) == local:
-			continue
-		var c: Vector3 = p.pos
-		var deepest := 0.0
-		for i in range(-12, 13):
-			for j in range(-12, 13):
-				var q := c + Vector3(i * 3.0, 0.0, j * 3.0)
-				if Vector2(q.x - c.x, q.z - c.z).length() > 35.0:
-					continue
-				var dd: float = src.dug_depth_at(q.x, q.z)
-				deepest = maxf(deepest, dd)
-				if dd < TRENCH_DEPTH_M or _tried.has(_key_of(q)) or not _elongated(src, q):
-					continue
-				if ours.any(func(o: Vector3) -> bool: return Vector2(o.x - q.x, o.z - q.z).length() < 40.0):
-					continue
-				var d: float = near_own.call(q)
-				if d < best_d:
-					best_d = d
-					best = {"pos": ap._ground(q), "foe": -1}
-		if log_scan:
-			print("autoplay s1b: point %s (owner %d): deepest dug ground within 35 m: %.2f m" % [p.id, int(p.owner), deepest])
-	if not best.is_empty():
-		_tried[_key_of(best.pos)] = true
-		# Anyone of theirs seen right there?
-		for so in s.get("soldiers", []):
-			if int(so.owner) != local and so.pos.distance_to(best.pos) < 5.0:
-				best.foe = int(so.id)
-	return best
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return near_own.call(a.pos) < near_own.call(b.pos))
+	return out
 
 
-## A trench, not a crater: along one of eight directions the ground stays
-## dug for 12 m (every 2 m from -6 to +6). A shell crater is about 4 m
-## across, and a field of them rarely lines up that far.
+## A trench, not a crater: along one of sixteen directions the ground
+## stays dug for 10 m (every 2.5 m from -5 to +5). A shell crater is about
+## 4 m across, and a field of them rarely lines up that far.
 func _elongated(src: Node, q: Vector3) -> bool:
-	for k in 8:
-		var a := PI * k / 8.0
+	for k in 16:
+		var a := PI * k / 16.0
 		var dir := Vector3(cos(a), 0.0, sin(a))
 		var ok := true
-		for step in [-6.0, -4.0, -2.0, 2.0, 4.0, 6.0]:
+		for step in [-5.0, -2.5, 2.5, 5.0]:
 			var p: Vector3 = q + dir * step
 			if float(src.dug_depth_at(p.x, p.z)) < 0.35:
 				ok = false
@@ -533,16 +657,17 @@ func _key_of(p: Vector3) -> Vector2i:
 	return Vector2i(roundi(p.x / 10.0), roundi(p.z / 10.0))
 
 
-## Own rifle or engineer squad with frags and at least 3 men, nearest `at`.
+## Own rifle or engineer squad with frags and at least 4 men, not pinned
+## or retreating, nearest `at` (a squad with smoke counts 60 m nearer).
 func _assault_squad(s: Dictionary, at: Vector3) -> Dictionary:
 	var best := {}
 	var best_d := INF
 	for sq in ap._own(s):
-		if not sq.type in ["rifle", "engineer"] or int(sq.men) < 3 or sq.status == "retreating":
+		if not sq.type in ["rifle", "engineer"] or int(sq.men) < 4 or sq.status in ["retreating", "pinned"]:
 			continue
 		if int(sq.get("items", {}).get("frag", 0)) == 0:
 			continue
-		var d: float = sq.pos.distance_to(at)
+		var d: float = sq.pos.distance_to(at) - (60.0 if int(sq.get("items", {}).get("smoke", 0)) > 0 else 0.0)
 		if d < best_d:
 			best_d = d
 			best = sq

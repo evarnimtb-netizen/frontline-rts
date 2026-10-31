@@ -91,6 +91,8 @@ pub struct ThrownView {
     pub kind: ItemKind,
     pub owner: u8,
     pub pos: [f32; 3],
+    /// Velocity now (m/s, sim axes; zero once landed), for the trail.
+    pub vel: [f32; 3],
     pub landed: bool,
     pub visible: bool,
 }
@@ -316,11 +318,20 @@ impl MatchFrame {
         self.thrown.clear();
         if let Some(game) = world.game() {
             for (t, ts) in game.thrown().iter().zip(&snap.thrown) {
+                // The sim flies the exact parabola from the release; its
+                // slope now is the release velocity minus g·t.
+                let [vx, vy, vz] = t.vel.to_f32();
+                let flown = t.step as f32 / SUBSTEP_HZ as f32;
                 self.thrown.push(ThrownView {
                     id: ts.id,
                     kind: ts.kind,
                     owner: ts.owner,
                     pos: ts.pos,
+                    vel: if ts.landed {
+                        [0.0; 3]
+                    } else {
+                        [vx, vy, vz - 9.81 * flown]
+                    },
                     landed: ts.landed,
                     visible: ts.owner == local
                         || seen_by(t.thrower.0)
@@ -866,15 +877,19 @@ mod tests {
         for _ in 0..30 * 10 {
             w.step(&[]);
             f.fill(&w, &mut ctx, 0.0, Instant::now());
-            flew |= f
-                .thrown
-                .iter()
-                .any(|t| t.kind == ItemKind::Smoke && t.visible && !t.landed);
+            for t in &f.thrown {
+                if t.kind == ItemKind::Smoke && t.visible && !t.landed {
+                    flew = true;
+                    let v = t.vel;
+                    assert!((v[0] * v[0] + v[1] * v[1]).sqrt() > 1.0, "{v:?}");
+                }
+            }
             if !f.smoke.is_empty() {
                 break;
             }
         }
         assert!(flew, "the smoke grenade was seen in flight");
+        assert!(f.thrown.iter().all(|t| t.landed && t.vel == [0.0; 3]));
         assert!(f.smoke[0].visible);
         // Slots stay with the men while the squad changes.
         for (k, m) in sq.members.iter().enumerate() {

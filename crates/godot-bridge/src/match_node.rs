@@ -186,7 +186,12 @@ impl INode3D for FrontlineMatch {
         let margin_s = (self.interp_margin_ms.max(0.0) / 1000.0) as f64;
         let rebuilds = self.chunk_rebuilds_per_frame.max(1) as usize;
         if let Some(rt) = self.rt.as_mut() {
-            rt.delay = rt.period as f64 + margin_s;
+            // One tick behind real time, plus the margin. Above 1x speed
+            // (scripted runs) ticks come faster: a fixed 1x delay would put
+            // the render time before the oldest kept frame, and nothing
+            // would interpolate.
+            let speed = rt.sim.speed().max(0.25) as f64;
+            rt.delay = rt.period as f64 / speed + margin_s;
             rt.update(&frustum, &cull, delta as f32, lods, rebuilds);
             rt.present_us = t0.elapsed().as_secs_f32() * 1e6;
             if !rt.sim.is_alive() && !rt.sim_dead_reported {
@@ -364,6 +369,7 @@ impl FrontlineMatch {
             "rounds" => f.rounds.len() as i64,
             "soldiers_drawn" => rt.soldier_layers.iter().map(|l| l.count as i64).sum::<i64>(),
             "tracers_drawn" => rt.tracer_layer.count as i64,
+            "thrown_trails_drawn" => rt.thrown_layer.count as i64,
             "detail_tiles" => rt.terrain.tile_count() as i64,
             "chunks_pending" => rt.dirty_chunks.len() as i64,
             "chunk_rebuilds" => rt.chunk_rebuilds as i64,
@@ -609,7 +615,7 @@ impl MatchRuntime {
         let mut trail_mat = ShaderMaterial::new_gd();
         trail_mat.set_shader(&tracer_sh);
         trail_mat.set_shader_parameter("color", &Color::from_rgb(0.72, 0.7, 0.62).to_variant());
-        trail_mat.set_shader_parameter("energy", &0.9f32.to_variant());
+        trail_mat.set_shader_parameter("energy", &1.4f32.to_variant());
         let trail = build_mesh(&meshgen::tracer_mesh(), Some(trail_mat.upcast()));
         let thrown_layer = Layer::new(
             &mut rs,
@@ -1050,25 +1056,27 @@ impl MatchRuntime {
             if dist2(head) > draw_2 || !frustum.sphere_visible(head, 3.0) {
                 continue;
             }
-            let lift = if t.landed { 0.08 } else { 0.0 };
+            // Real size up close; never under about 2 px at RTS heights.
+            let dist = dist2(head).sqrt();
+            let size = (dist * 0.0045).max(0.13);
+            let lift = if t.landed { size * 0.6 } else { 0.0 };
             let body = [head[0], head[1] + lift, head[2]];
-            if let Some(slot) = shell_layer.push(body, 0.3) {
-                write_streak_instance(slot, body, [1.0, 0.0, 0.0], 0.24, 0.13, [0.0; 4]);
+            if let Some(slot) = shell_layer.push(body, size * 2.0) {
+                write_streak_instance(slot, body, [1.0, 0.0, 0.0], size * 1.8, size, [0.0; 4]);
             }
-            let d = sim_to_godot(
-                [t.pos[0] - prev[0], t.pos[1] - prev[1], t.pos[2] - prev[2]],
-                0.0,
-            );
-            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            if t.landed || len < 0.05 {
+            // Along the item's velocity (not the frame-to-frame motion: at
+            // sim speeds above 1 the interpolation pair can be one frame).
+            let d = sim_to_godot(t.vel, 0.0);
+            let speed = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            if t.landed || speed < 0.5 {
                 continue;
             }
-            let dir = [d[0] / len, d[1] / len, d[2] / len];
-            // One tick of flight, at least 1.5 m, so a lob reads at RTS
+            let dir = [d[0] / speed, d[1] / speed, d[2] / speed];
+            // About 0.15 s of flight, at least 1.5 m, so a lob reads at RTS
             // camera heights.
-            let trail = len.clamp(1.5, 6.0);
+            let trail = (speed * 0.15).clamp(1.5, 6.0);
             if let Some(slot) = thrown_layer.push(head, trail) {
-                write_streak_instance(slot, head, dir, trail, 0.1, [1.0, 0.0, 0.0, 0.0]);
+                write_streak_instance(slot, head, dir, trail, size * 0.8, [1.0, 0.0, 0.0, 0.0]);
             }
         }
 
