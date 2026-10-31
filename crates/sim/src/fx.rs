@@ -338,6 +338,21 @@ impl DivAssign for Fx {
     }
 }
 
+/// Content setups carry Q16.16 as raw `i32` ([`frontline_content::Fixed`]).
+impl From<frontline_content::Fixed> for Fx {
+    #[inline]
+    fn from(v: frontline_content::Fixed) -> Fx {
+        Fx(v.0)
+    }
+}
+
+impl From<frontline_content::FixedVec2> for FxVec2 {
+    #[inline]
+    fn from(v: frontline_content::FixedVec2) -> FxVec2 {
+        FxVec2::new(v.x.into(), v.y.into())
+    }
+}
+
 /// 2D fixed-point vector (sim ground plane: x east, y north).
 #[derive(
     Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize,

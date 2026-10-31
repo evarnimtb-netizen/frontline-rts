@@ -195,6 +195,7 @@ dependencies = [
 name = "frontline-sim"
 version = "0.0.1"
 dependencies = [
+ "frontline-content",
  "postcard",
  "rayon",
  "serde",

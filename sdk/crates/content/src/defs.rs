@@ -21,7 +21,9 @@ pub const MAX_SQUAD_MEN: u8 = 16;
 
 /// What a squad does on the field. Drives AI choices and which orders apply
 /// (only squads that can dig take `Dig`, only mortars take `Barrage`).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SquadRole {
     Rifle,
@@ -70,7 +72,9 @@ fn default_hp() -> u32 {
 }
 
 /// Weapon family; decides how the sim fires it.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum WeaponClass {
     Rifle,
@@ -395,7 +399,13 @@ impl WeaponDef {
         range(&mut out, "magazine", self.magazine, 1, 1000);
         range(&mut out, "reload_ms", self.reload_ms, 0, 60_000);
         range(&mut out, "spread_mrad", self.spread_mrad, 0, 500);
-        range(&mut out, "muzzle_velocity_m_s", self.muzzle_velocity_m_s, 1, 3000);
+        range(
+            &mut out,
+            "muzzle_velocity_m_s",
+            self.muzzle_velocity_m_s,
+            1,
+            3000,
+        );
         range(&mut out, "setup_ms", self.setup_ms, 0, 60_000);
         range(&mut out, "suppression", self.suppression, 0, 100);
         match (&self.he, self.class) {
@@ -404,16 +414,40 @@ impl WeaponDef {
                     .with_hint("[he] lethal_radius_cm = 300 ..."),
             ),
             (Some(he), _) => {
-                range(&mut out, "he.lethal_radius_cm", he.lethal_radius_cm, 1, 5000);
+                range(
+                    &mut out,
+                    "he.lethal_radius_cm",
+                    he.lethal_radius_cm,
+                    1,
+                    5000,
+                );
                 if he.damage_radius_cm < he.lethal_radius_cm {
                     out.push(Issue::new(
                         "he.damage_radius_cm",
                         "must be at least lethal_radius_cm",
                     ));
                 }
-                range(&mut out, "he.damage_radius_cm", he.damage_radius_cm, 1, 10_000);
-                range(&mut out, "he.suppression_radius_m", he.suppression_radius_m, 1, 200);
-                range(&mut out, "he.crater_radius_cm", he.crater_radius_cm, 0, 2000);
+                range(
+                    &mut out,
+                    "he.damage_radius_cm",
+                    he.damage_radius_cm,
+                    1,
+                    10_000,
+                );
+                range(
+                    &mut out,
+                    "he.suppression_radius_m",
+                    he.suppression_radius_m,
+                    1,
+                    200,
+                );
+                range(
+                    &mut out,
+                    "he.crater_radius_cm",
+                    he.crater_radius_cm,
+                    0,
+                    2000,
+                );
                 range(&mut out, "he.crater_depth_cm", he.crater_depth_cm, 0, 500);
             }
             (None, _) => {}
@@ -492,7 +526,13 @@ impl MapFileDef {
                     format!("must be a multiple of 4 in 8..=size_m, got {}", o.period_m),
                 ));
             }
-            range(&mut out, &format!("{p}.amplitude_cm"), o.amplitude_cm, 0, 10_000);
+            range(
+                &mut out,
+                &format!("{p}.amplitude_cm"),
+                o.amplitude_cm,
+                0,
+                10_000,
+            );
         }
         for (i, r) in t.ridges.iter().enumerate() {
             let p = format!("terrain.ridges[{i}]");
@@ -510,7 +550,13 @@ impl MapFileDef {
         }
         for (i, w) in self.woods.iter().enumerate() {
             inside(&mut out, format!("woods[{i}].center"), w.center);
-            range(&mut out, &format!("woods[{i}].radius_m"), w.radius_m, 1, 1000);
+            range(
+                &mut out,
+                &format!("woods[{i}].radius_m"),
+                w.radius_m,
+                1,
+                1000,
+            );
         }
         if self.capture_points.is_empty() {
             out.push(Issue::new("capture_points", "need at least one point"));
@@ -518,14 +564,29 @@ impl MapFileDef {
         for (i, c) in self.capture_points.iter().enumerate() {
             check_name(&mut out, &format!("capture_points[{i}].name"), &c.name);
             inside(&mut out, format!("capture_points[{i}].pos"), c.pos);
-            range(&mut out, &format!("capture_points[{i}].value"), c.value, 1, 100);
+            range(
+                &mut out,
+                &format!("capture_points[{i}].value"),
+                c.value,
+                1,
+                100,
+            );
         }
         if self.bases.len() < 2 {
-            out.push(Issue::new("bases", "need at least two bases (one per player)"));
+            out.push(Issue::new(
+                "bases",
+                "need at least two bases (one per player)",
+            ));
         }
         for (i, b) in self.bases.iter().enumerate() {
             inside(&mut out, format!("bases[{i}].pos"), b.pos);
-            range(&mut out, &format!("bases[{i}].radius_m"), b.radius_m, 4, 500);
+            range(
+                &mut out,
+                &format!("bases[{i}].radius_m"),
+                b.radius_m,
+                4,
+                500,
+            );
         }
         out
     }
@@ -546,8 +607,20 @@ impl RulesDef {
         range(&mut out, "tickets", self.tickets, 1, 1_000_000);
         range(&mut out, "pop_cap", self.pop_cap, 1, 10_000);
         range(&mut out, "projectile_cap", self.projectile_cap, 1, 1 << 20);
-        range(&mut out, "economy.start_manpower", self.economy.start_manpower, 0, 1_000_000);
-        range(&mut out, "economy.income_per_min", self.economy.income_per_min, 0, 1_000_000);
+        range(
+            &mut out,
+            "economy.start_manpower",
+            self.economy.start_manpower,
+            0,
+            1_000_000,
+        );
+        range(
+            &mut out,
+            "economy.income_per_min",
+            self.economy.income_per_min,
+            0,
+            1_000_000,
+        );
         range(
             &mut out,
             "economy.point_income_per_min",
@@ -564,13 +637,37 @@ impl RulesDef {
         );
         range(&mut out, "capture.radius_m", self.capture.radius_m, 1, 100);
         range(&mut out, "capture.time_s", self.capture.time_s, 1, 600);
-        range(&mut out, "capture.max_men", self.capture.max_men as u32, 1, 64);
+        range(
+            &mut out,
+            "capture.max_men",
+            self.capture.max_men as u32,
+            1,
+            64,
+        );
         let m = &self.movement;
-        range(&mut out, "movement.slope_cost_pct", m.slope_cost_pct, 0, 10_000);
+        range(
+            &mut out,
+            "movement.slope_cost_pct",
+            m.slope_cost_pct,
+            0,
+            10_000,
+        );
         range(&mut out, "movement.max_slope_pct", m.max_slope_pct, 1, 1000);
         range(&mut out, "movement.arrive_cm", m.arrive_cm, 5, 500);
-        range(&mut out, "movement.retreat_speed_pct", m.retreat_speed_pct, 10, 500);
-        range(&mut out, "movement.catch_up_speed_pct", m.catch_up_speed_pct, 100, 300);
+        range(
+            &mut out,
+            "movement.retreat_speed_pct",
+            m.retreat_speed_pct,
+            10,
+            500,
+        );
+        range(
+            &mut out,
+            "movement.catch_up_speed_pct",
+            m.catch_up_speed_pct,
+            100,
+            300,
+        );
         range(
             &mut out,
             "movement.path_budget_per_tick",
@@ -598,8 +695,20 @@ impl RulesDef {
         ] {
             let p = format!("difficulty.{name}");
             range(&mut out, &format!("{p}.income_pct"), t.income_pct, 0, 1000);
-            range(&mut out, &format!("{p}.reaction_ms"), t.reaction_ms, 0, 60_000);
-            range(&mut out, &format!("{p}.replan_ms"), t.replan_ms, 100, 60_000);
+            range(
+                &mut out,
+                &format!("{p}.reaction_ms"),
+                t.reaction_ms,
+                0,
+                60_000,
+            );
+            range(
+                &mut out,
+                &format!("{p}.replan_ms"),
+                t.replan_ms,
+                100,
+                60_000,
+            );
             range(
                 &mut out,
                 &format!("{p}.decision_quality_pct"),

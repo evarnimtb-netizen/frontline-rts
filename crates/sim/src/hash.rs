@@ -5,7 +5,11 @@
 //!   marked dirty since the last update (every tick, in the World/Hash stage).
 //! * A "globals" hash over everything that is not per-chunk: config, tick,
 //!   id allocator (high-water mark and free list), projectile free list,
-//!   stats counters and the terrain.
+//!   stats counters, the terrain and, in match mode, the match setup bytes
+//!   and the whole [`MatchState`] (players, squads, queues: small, so it is
+//!   simply re-hashed at every publish).
+//! * In match mode each entity also hashes its `squad` link. Bench worlds
+//!   skip that column, so their hashes are unchanged by match mode.
 //! * The combined hash is xxh3 over `globals ‖ entity chunks ‖ pool chunks`.
 //!   It is published every K ticks; [`full_hash`] recomputes it from scratch
 //!   and must always match the incremental value.
@@ -16,8 +20,9 @@ use std::cell::RefCell;
 
 use xxhash_rust::xxh3::xxh3_64;
 
-use crate::ecs::{CHUNK_SIZE, Entities, EntityKind};
+use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, PlayerId};
 use crate::fx::{Fx, FxVec2, FxVec3};
+use crate::game::{MatchState, Order, Outcome};
 use crate::projectile::{Projectile, ProjectilePool};
 use crate::world::SimState;
 
@@ -92,8 +97,26 @@ fn hash_with(f: impl FnOnce(&mut Vec<u8>)) -> u64 {
     })
 }
 
+impl<T: StableHash> StableHash for [T] {
+    fn put(&self, out: &mut Vec<u8>) {
+        (self.len() as u32).put(out);
+        for v in self {
+            v.put(out);
+        }
+    }
+}
+impl StableHash for Option<PlayerId> {
+    fn put(&self, out: &mut Vec<u8>) {
+        match self {
+            None => 0xFFu8.put(out),
+            Some(p) => p.0.put(out),
+        }
+    }
+}
+
 /// Hash of entity chunk `c` (all columns of ids `c*256 .. c*256+256`).
-pub(crate) fn entity_chunk(ents: &Entities, c: usize) -> u64 {
+/// `squads` adds the squad column (match mode).
+pub(crate) fn entity_chunk(ents: &Entities, c: usize, squads: bool) -> u64 {
     let lo = c * CHUNK_SIZE;
     let hi = (lo + CHUNK_SIZE).min(ents.len());
     hash_with(|out| {
@@ -116,6 +139,9 @@ pub(crate) fn entity_chunk(ents: &Entities, c: usize) -> u64 {
             let w = &ents.weapon[i];
             w.cooldown.put(out);
             w.shots.put(out);
+            if squads {
+                ents.squad[i].map_or(u32::MAX, |s| s.0).put(out);
+            }
         }
     })
 }
@@ -138,7 +164,7 @@ pub(crate) fn pool_chunk(pool: &ProjectilePool, c: usize) -> u64 {
     })
 }
 
-/// Hash of the terrain heights (immutable in M0).
+/// Hash of the terrain heights and flags (immutable in M0 and S1 stage 1).
 pub(crate) fn terrain(state: &SimState) -> u64 {
     hash_with(|out| {
         (state.terrain.size_m() as u32).put(out);
@@ -146,11 +172,90 @@ pub(crate) fn terrain(state: &SimState) -> u64 {
         for h in state.terrain.heights() {
             h.put(out);
         }
+        // Bench terrain has no flags; hashing none keeps its hash unchanged.
+        if !state.terrain.flags().is_empty() {
+            out.extend_from_slice(state.terrain.flags());
+        }
     })
 }
 
-/// Hash of all non-chunked state.
-pub(crate) fn globals(state: &SimState, config_bytes: &[u8], terrain_hash: u64) -> u64 {
+/// Encodes the whole match state (the setup goes in as bytes separately).
+fn put_game(g: &MatchState, out: &mut Vec<u8>) {
+    (g.players.len() as u32).put(out);
+    for p in &g.players {
+        p.manpower.put(out);
+        p.tickets.put(out);
+        p.surrendered.put(out);
+        (p.call_ins.len() as u32).put(out);
+        for c in &p.call_ins {
+            c.squad_type.put(out);
+            c.ready_tick.put(out);
+        }
+    }
+    g.next_squad.put(out);
+    (g.squads.len() as u32).put(out);
+    for (id, sq) in &g.squads {
+        id.0.put(out);
+        sq.type_idx.put(out);
+        sq.owner.0.put(out);
+        (sq.members.len() as u32).put(out);
+        for m in &sq.members {
+            m.0.put(out);
+        }
+        (sq.order.kind() as u8).put(out);
+        match &sq.order {
+            Order::Idle | Order::Retreat => {}
+            Order::Move { target } | Order::AttackMove { target } => target.put(out),
+            Order::Dig { line } => line.put(out),
+            Order::Barrage { target, rounds } => {
+                target.put(out);
+                rounds.put(out);
+            }
+        }
+        let n = &sq.nav;
+        (n.phase as u8).put(out);
+        n.goal.put(out);
+        n.path.put(out);
+        n.next.put(out);
+        n.partial.put(out);
+        n.heading.put(out);
+        n.facing.put(out);
+        n.slots.put(out);
+        n.phase_ticks.put(out);
+    }
+    (g.points.len() as u32).put(out);
+    for c in &g.points {
+        c.owner.put(out);
+        c.progress.put(out);
+        c.capturer.put(out);
+    }
+    let q = &g.path_queue;
+    (q.queues.len() as u32).put(out);
+    for list in &q.queues {
+        (list.len() as u32).put(out);
+        for id in list {
+            id.0.put(out);
+        }
+    }
+    q.cursor.put(out);
+    q.debt.put(out);
+    match g.outcome {
+        Outcome::Running => 0u8.put(out),
+        Outcome::Won { winner } => {
+            1u8.put(out);
+            winner.0.put(out);
+        }
+    }
+}
+
+/// Hash of all non-chunked state. `setup_bytes` is the postcard encoding of
+/// the match setup (empty in bench mode).
+pub(crate) fn globals(
+    state: &SimState,
+    config_bytes: &[u8],
+    setup_bytes: &[u8],
+    terrain_hash: u64,
+) -> u64 {
     hash_with(|out| {
         out.extend_from_slice(config_bytes);
         state.tick.put(out);
@@ -178,6 +283,11 @@ pub(crate) fn globals(state: &SimState, config_bytes: &[u8], terrain_hash: u64) 
             v.put(out);
         }
         terrain_hash.put(out);
+        if let Some(g) = &state.game {
+            (setup_bytes.len() as u32).put(out);
+            out.extend_from_slice(setup_bytes);
+            put_game(g, out);
+        }
     })
 }
 
@@ -197,14 +307,19 @@ pub(crate) fn combine(globals: u64, entity_chunks: &[u64], pool_chunks: &[u64]) 
 }
 
 /// Full recompute from scratch (no cache).
-pub(crate) fn full_hash(state: &SimState, config_bytes: &[u8]) -> u64 {
+pub(crate) fn full_hash(state: &SimState, config_bytes: &[u8], setup_bytes: &[u8]) -> u64 {
+    let squads = state.game.is_some();
     let ent: Vec<u64> = (0..state.entities.chunk_count())
-        .map(|c| entity_chunk(&state.entities, c))
+        .map(|c| entity_chunk(&state.entities, c, squads))
         .collect();
     let pool: Vec<u64> = (0..state.projectiles.chunk_count())
         .map(|c| pool_chunk(&state.projectiles, c))
         .collect();
-    combine(globals(state, config_bytes, terrain(state)), &ent, &pool)
+    combine(
+        globals(state, config_bytes, setup_bytes, terrain(state)),
+        &ent,
+        &pool,
+    )
 }
 
 /// Cached per-chunk hashes with dirty flags. Derived data: rebuilt on load.

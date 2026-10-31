@@ -2,16 +2,21 @@
 //!
 //! [`World::step`] runs one tick in the fixed stage order of §5.2:
 //!
-//! | # | Stage | M0 work | Parallel? |
+//! | # | Stage | Work | Parallel? |
 //! |---|-------|---------|-----------|
-//! | 1 | Intent | sorted command apply; waypoint re-pick | serial apply, per-chunk re-pick |
+//! | 1 | Intent | sorted command apply; bench: waypoint re-pick; match: call-ins, path queue, squad steering | serial apply, per-chunk re-pick; match work serial |
 //! | 2 | Perception | placeholder | – |
 //! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate | serial rebuild, per-chunk plan + integrate |
-//! | 4 | Weapons | cooldowns; fire → spawn requests | per-chunk, sorted serial spawn |
+//! | 4 | Weapons | bench: cooldowns; fire → spawn requests (match: none yet) | per-chunk, sorted serial spawn |
 //! | 5 | Ballistics | 60 Hz substeps, ground test, despawn | per-slot-chunk, serial free-list merge |
 //! | 6 | Damage | placeholder | – |
 //! | 7 | Status | placeholder | – |
 //! | 8 | World/Hash | tick++, dirty chunk re-hash, publish every K; snapshot | per-chunk hash |
+//!
+//! A world is either a **bench** world ([`World::new`] from a [`SimConfig`]:
+//! M0 soldiers wandering and firing at random) or a **match** world
+//! ([`World::new_match`] from a content [`MatchSetup`]: players, squads and
+//! orders, see [`crate::game`]). The mode is fixed for the world's lifetime.
 //!
 //! Parallel stages run on a rayon pool owned by the world. A chunk task writes
 //! only its own chunk's slices, or appends to its own per-chunk buffer; the
@@ -21,13 +26,16 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use frontline_content::MatchSetup;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::command::{Command, CommandKind};
 use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
+use crate::game::{Ctx, MatchState};
 use crate::hash::{self, HashCache};
+use crate::path::PathScratch;
 use crate::projectile::{ProjectileEnd, ProjectilePool, SUBSTEP_HZ};
 use crate::rng::{Purpose, RngStream};
 use crate::snapshot::RenderSnapshot;
@@ -245,6 +253,37 @@ impl SimConfig {
     }
 }
 
+/// The [`SimConfig`] a match world runs with, derived from its setup (and
+/// checked against it on load).
+pub fn match_config(setup: &MatchSetup) -> SimConfig {
+    let speeds = setup.squad_types.iter().map(|t| Fx::from(t.speed));
+    let speed_min = speeds.clone().min().unwrap_or(Fx::ONE);
+    let speed_max = speeds.max().unwrap_or(Fx::ONE);
+    SimConfig {
+        seed: setup.seed,
+        tick_rate: if setup.tick_hz == 20 {
+            TickRate::Hz20
+        } else {
+            TickRate::Hz30
+        },
+        hash_interval: setup.hash_interval,
+        map_size_m: setup.map.size_m,
+        terrain: TerrainKind::Map,
+        soldiers: 0,
+        spawn_area_m: 0,
+        players: setup.players.len() as u8,
+        projectile_cap: setup.rules.projectile_cap,
+        soldier: SoldierParams {
+            speed_min,
+            speed_max,
+            arrive_radius: setup.rules.movement.arrive_radius.into(),
+            wander_radius: Fx::ZERO,
+            ..SoldierParams::default()
+        },
+        weapon: WeaponParams::default(),
+    }
+}
+
 /// Counters that are part of the state (and the hash).
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct Stats {
@@ -270,6 +309,8 @@ pub struct SimState {
     pub(crate) projectiles: ProjectilePool,
     pub(crate) terrain: Heightfield,
     pub(crate) stats: Stats,
+    /// Match mode only.
+    pub(crate) game: Option<MatchState>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -312,7 +353,8 @@ impl StageTimes {
 }
 
 const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
-const SAVE_VERSION: u32 = 1;
+/// 2: match state and the entity `squad` column.
+const SAVE_VERSION: u32 = 2;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -333,6 +375,8 @@ pub struct World {
     state: SimState,
     /// postcard encoding of the config, hashed into every published hash.
     config_bytes: Vec<u8>,
+    /// postcard encoding of the match setup (empty in bench mode).
+    setup_bytes: Vec<u8>,
     /// Shared so `step` can run on a worker of this pool (see [`World::step`]).
     threads: Arc<rayon::ThreadPool>,
     thread_count: usize,
@@ -349,6 +393,7 @@ pub struct World {
     ended_bufs: Vec<Vec<(u32, ProjectileEnd)>>,
     cmd_order: Vec<usize>,
     hash_out: Vec<u64>,
+    path_scratch: PathScratch,
 }
 
 impl World {
@@ -357,6 +402,11 @@ impl World {
     /// (at least 1); it never affects results.
     pub fn new(config: SimConfig, threads: usize) -> Result<World, SimError> {
         config.validate()?;
+        if config.terrain == TerrainKind::Map {
+            return Err(SimError::InvalidConfig(
+                "map terrain needs a match setup (World::new_match)".into(),
+            ));
+        }
         let terrain = Heightfield::generate(config.terrain, config.map_size_m, config.seed);
         let state = SimState {
             projectiles: ProjectilePool::new(config.projectile_cap),
@@ -365,6 +415,7 @@ impl World {
             stats: Stats::default(),
             tick: 0,
             config,
+            game: None,
         };
         let mut world = World::from_state(state, threads)?;
         let cfg = &world.state.config;
@@ -387,6 +438,53 @@ impl World {
         Ok(world)
     }
 
+    /// Creates a match world: terrain generated from the map def, players
+    /// from the setup, each faction's starting squads at its base.
+    pub fn new_match(setup: MatchSetup, threads: usize) -> Result<World, SimError> {
+        let issues = setup.validate();
+        if !issues.is_empty() {
+            let list: Vec<String> = issues.iter().map(|i| i.to_string()).collect();
+            return Err(SimError::InvalidConfig(format!(
+                "match setup: {}",
+                list.join("; ")
+            )));
+        }
+        let config = match_config(&setup);
+        config.validate()?;
+        let state = SimState {
+            projectiles: ProjectilePool::new(config.projectile_cap),
+            entities: Entities::default(),
+            terrain: Heightfield::generate_map(&setup.map),
+            stats: Stats::default(),
+            tick: 0,
+            config,
+            game: Some(MatchState::new(setup)),
+        };
+        let mut world = World::from_state(state, threads)?;
+        {
+            let World { state, hash, .. } = &mut world;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                tick,
+                ..
+            } = state;
+            let mut ctx = Ctx {
+                ents: entities,
+                terrain,
+                hash,
+                tick: *tick,
+            };
+            game.as_mut()
+                .expect("match world")
+                .spawn_start_squads(&mut ctx);
+        }
+        world.refresh_hashes();
+        world.fill_snapshot();
+        Ok(world)
+    }
+
     fn from_state(state: SimState, threads: usize) -> Result<World, SimError> {
         let thread_count = threads.max(1);
         let pool = rayon::ThreadPoolBuilder::new()
@@ -397,10 +495,17 @@ impl World {
             .map_err(|e| SimError::ThreadPool(e.to_string()))?;
         let config_bytes =
             postcard::to_allocvec(&state.config).map_err(|e| SimError::Save(e.to_string()))?;
+        let setup_bytes = match &state.game {
+            Some(g) => {
+                postcard::to_allocvec(g.setup()).map_err(|e| SimError::Save(e.to_string()))?
+            }
+            None => Vec::new(),
+        };
         let mut world = World {
             spatial: SpatialHash::new(state.config.map_size_m),
             hash: HashCache::new(&state),
             config_bytes,
+            setup_bytes,
             threads: pool,
             thread_count,
             snapshot: RenderSnapshot::default(),
@@ -413,6 +518,7 @@ impl World {
             ended_bufs: Vec::new(),
             cmd_order: Vec::new(),
             hash_out: Vec::new(),
+            path_scratch: PathScratch::default(),
             state,
         };
         world.refresh_hashes();
@@ -446,6 +552,16 @@ impl World {
     pub fn stats(&self) -> &Stats {
         &self.state.stats
     }
+    /// Match state (players, squads, ...); `None` for bench worlds.
+    #[inline]
+    pub fn game(&self) -> Option<&MatchState> {
+        self.state.game.as_ref()
+    }
+    /// The match setup; `None` for bench worlds.
+    #[inline]
+    pub fn match_setup(&self) -> Option<&MatchSetup> {
+        self.state.game.as_ref().map(|g| g.setup())
+    }
     #[inline]
     pub fn state(&self) -> &SimState {
         &self.state
@@ -475,13 +591,18 @@ impl World {
         debug_assert!(
             !self.hash.entity_dirty.iter().any(|d| *d) && !self.hash.pool_dirty.iter().any(|d| *d)
         );
-        let g = hash::globals(&self.state, &self.config_bytes, self.hash.terrain);
+        let g = hash::globals(
+            &self.state,
+            &self.config_bytes,
+            &self.setup_bytes,
+            self.hash.terrain,
+        );
         hash::combine(g, &self.hash.entity, &self.hash.pool)
     }
 
     /// Combined state hash recomputed from scratch (ignores the cache).
     pub fn full_state_hash(&self) -> u64 {
-        hash::full_hash(&self.state, &self.config_bytes)
+        hash::full_hash(&self.state, &self.config_bytes, &self.setup_bytes)
     }
 
     // ---------------------------------------------------------- save/load --
@@ -534,6 +655,25 @@ impl World {
         if st.terrain.size_m() != st.config.map_size_m {
             return Err(err("terrain size disagrees with config"));
         }
+        match &st.game {
+            None if st.config.terrain == TerrainKind::Map => {
+                return Err(err("map terrain without a match state"));
+            }
+            None if st.entities.squad.iter().any(|s| s.is_some()) => {
+                return Err(err("squad links in a bench world"));
+            }
+            None => {}
+            Some(g) => {
+                let issues = g.setup().validate();
+                if let Some(i) = issues.first() {
+                    return Err(SimError::Save(format!("match setup: {i}")));
+                }
+                if st.config != match_config(g.setup()) {
+                    return Err(err("config disagrees with the match setup"));
+                }
+                g.validate(&st.entities).map_err(err)?;
+            }
+        }
         World::from_state(s.state, threads)
     }
 
@@ -566,10 +706,35 @@ impl World {
         let hz = self.state.config.tick_rate.hz();
         let substeps = self.state.config.tick_rate.substeps();
 
-        // 1. Intent: serial command apply, then per-chunk waypoint re-pick.
+        // 1. Intent: serial command apply, then per-chunk waypoint re-pick
+        //    (bench) or call-ins, paths and squad steering (match).
         let t0 = Instant::now();
         self.apply_commands(cmds);
-        {
+        if self.state.game.is_some() {
+            let World {
+                state,
+                hash,
+                path_scratch,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                tick,
+                ..
+            } = state;
+            let game = game.as_mut().expect("match world");
+            let mut ctx = Ctx {
+                ents: entities,
+                terrain,
+                hash,
+                tick: *tick,
+            };
+            game.spawn_call_ins(&mut ctx);
+            game.serve_paths(ctx.ents, ctx.terrain, path_scratch);
+            game.steer_squads(&mut ctx);
+        } else {
             let World {
                 state,
                 threads,
@@ -658,8 +823,9 @@ impl World {
         let t3 = Instant::now();
 
         // 4. Weapons: per-chunk fire into per-chunk buffers, then a sorted
-        //    serial spawn into the capped pool.
-        {
+        //    serial spawn into the capped pool. Bench only: match combat is
+        //    a later stage.
+        if self.state.game.is_none() {
             let World {
                 state,
                 threads,
@@ -805,8 +971,22 @@ impl World {
         let order = std::mem::take(&mut self.cmd_order);
         for &i in &order {
             let c = &cmds[i];
+            if let Some(game) = &mut self.state.game {
+                let mut ctx = Ctx {
+                    ents: &mut self.state.entities,
+                    terrain: &self.state.terrain,
+                    hash: &mut self.hash,
+                    tick: self.state.tick,
+                };
+                if game.apply(c, &mut ctx) {
+                    self.state.stats.commands_applied += 1;
+                } else {
+                    self.state.stats.commands_rejected += 1;
+                }
+                continue;
+            }
             let ok = match c.kind {
-                CommandKind::Move { unit, target } => {
+                CommandKind::MoveSoldier { unit, target } => {
                     self.owned_by(unit, c.player) && {
                         let target = self.state.terrain.clamp(target);
                         let m = &mut self.state.entities.mover[unit.index()];
@@ -831,6 +1011,8 @@ impl World {
                         true
                     }
                 }
+                // Squad orders need a match world.
+                _ => false,
             };
             if ok {
                 self.state.stats.commands_applied += 1;
@@ -885,6 +1067,7 @@ impl World {
         hash.resize_entities(state.entities.chunk_count());
         let ents = &state.entities;
         let pool = &state.projectiles;
+        let squads = state.game.is_some();
 
         hash.scratch.clear();
         hash.scratch.extend(
@@ -898,7 +1081,7 @@ impl World {
         threads.install(|| {
             dirty
                 .par_iter()
-                .map(|&c| hash::entity_chunk(ents, c))
+                .map(|&c| hash::entity_chunk(ents, c, squads))
                 .collect_into_vec(hash_out)
         });
         for (&c, &h) in hash.scratch.iter().zip(hash_out.iter()) {
@@ -932,6 +1115,7 @@ impl World {
             self.state.tick,
             &self.state.entities,
             &self.state.projectiles,
+            self.state.game.as_ref(),
         );
     }
 }
@@ -1049,6 +1233,73 @@ mod tests {
         let w = busy_world();
         let bytes = save_edited(&w, |s| s.config.projectile_cap = u32::MAX);
         assert!(load_err(&bytes).contains("projectile_cap"));
+    }
+
+    fn match_world() -> World {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let defs = frontline_content::ModDefs::load(&root).unwrap();
+        let req = frontline_content::MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Normal,
+        );
+        let mut w = World::new_match(defs.resolve(&req).unwrap(), 1).unwrap();
+        for _ in 0..5 {
+            w.step(&[]);
+        }
+        w
+    }
+
+    #[test]
+    fn load_accepts_clean_match_save() {
+        let w = match_world();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state_hash(), w.state_hash());
+        assert_eq!(loaded.state(), w.state());
+    }
+
+    #[test]
+    fn load_rejects_inconsistent_match_state() {
+        let w = match_world();
+        // A squad member that no longer links back to its squad.
+        let bytes = save_edited(&w, |s| s.entities.squad[0] = None);
+        assert!(load_err(&bytes).contains("squad"));
+        // A soldier claiming a squad that does not list him.
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            let first = *g.squads.keys().next().unwrap();
+            g.squads.get_mut(&first).unwrap().members.pop();
+        });
+        assert!(load_err(&bytes).contains("squad"));
+        // Config that does not match the setup.
+        let bytes = save_edited(&w, |s| s.config.projectile_cap += 1);
+        assert!(load_err(&bytes).contains("config"));
+        // Out-of-range squad type.
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            g.squads.values_mut().next().unwrap().type_idx = 999;
+        });
+        assert!(load_err(&bytes).contains("squad"));
+        // Match state dropped from a map world.
+        let bytes = save_edited(&w, |s| s.game = None);
+        assert!(load_err(&bytes).contains("match"));
+    }
+
+    #[test]
+    fn bench_world_rejects_map_terrain_and_squad_orders() {
+        let cfg = SimConfig {
+            terrain: TerrainKind::Map,
+            ..small()
+        };
+        assert!(World::new(cfg, 1).is_err());
+        let mut w = World::new(small(), 1).unwrap();
+        w.step(&[Command {
+            player: PlayerId(0),
+            seq: 0,
+            kind: CommandKind::Surrender,
+        }]);
+        assert_eq!(w.stats().commands_rejected, 1);
     }
 
     #[test]

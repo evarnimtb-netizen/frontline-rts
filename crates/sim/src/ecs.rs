@@ -26,6 +26,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::fx::{Fx, FxVec2, FxVec3};
+use crate::game::SquadId;
 
 /// Ids per hash/parallel chunk.
 pub const CHUNK_SIZE: usize = 256;
@@ -176,6 +177,8 @@ pub struct Entities {
     pub(crate) velocity: Vec<Velocity>,
     pub(crate) mover: Vec<Mover>,
     pub(crate) weapon: Vec<Weapon>,
+    /// Squad a soldier belongs to (match mode; `None` for bench soldiers).
+    pub(crate) squad: Vec<Option<SquadId>>,
 }
 
 impl Entities {
@@ -206,6 +209,10 @@ impl Entities {
     #[inline]
     pub fn weapon(&self) -> &[Weapon] {
         &self.weapon
+    }
+    #[inline]
+    pub fn squad(&self) -> &[Option<SquadId>] {
+        &self.squad
     }
 
     /// Column length (= allocator high-water mark).
@@ -257,6 +264,7 @@ impl Entities {
             self.velocity.push(Velocity::default());
             self.mover.push(Mover::default());
             self.weapon.push(Weapon::default());
+            self.squad.push(None);
         }
         debug_assert_eq!(self.kind.len(), self.alloc.high_water() as usize);
         debug_assert_eq!(self.kind[i], EntityKind::Vacant);
@@ -268,6 +276,7 @@ impl Entities {
         self.velocity[i] = Velocity::default();
         self.mover[i] = Mover::default();
         self.weapon[i] = Weapon::default();
+        self.squad[i] = None;
         id
     }
 
@@ -285,6 +294,7 @@ impl Entities {
             self.velocity.len(),
             self.mover.len(),
             self.weapon.len(),
+            self.squad.len(),
         ];
         if columns.iter().any(|&l| l != n) {
             return Err("entity column lengths disagree with the allocator");
@@ -311,7 +321,8 @@ impl Entities {
                     || self.transform[i] != Transform::default()
                     || self.velocity[i] != Velocity::default()
                     || self.mover[i] != Mover::default()
-                    || self.weapon[i] != Weapon::default())
+                    || self.weapon[i] != Weapon::default()
+                    || self.squad[i].is_some())
         });
         if dirty_vacant {
             return Err("a vacant entity slot holds non-default values");
@@ -331,6 +342,7 @@ impl Entities {
         self.velocity[i] = Velocity::default();
         self.mover[i] = Mover::default();
         self.weapon[i] = Weapon::default();
+        self.squad[i] = None;
         self.alloc.free(id);
         true
     }

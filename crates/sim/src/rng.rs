@@ -29,6 +29,8 @@ impl Purpose {
     pub const SPAWN_WAYPOINT: Purpose = Purpose(6);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
+    /// Match-map lattice values; `MAP_TERRAIN + octave`.
+    pub const MAP_TERRAIN: Purpose = Purpose(120);
 }
 
 /// SplitMix64 finaliser (Stafford variant 13).

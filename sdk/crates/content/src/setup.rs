@@ -361,7 +361,10 @@ impl ModDefs {
         let mut issues = Vec::new();
         let rules = self.rules.get(&req.rules);
         if rules.is_none() {
-            issues.push(Issue::new("rules", format!("unknown rules `{}`", req.rules)));
+            issues.push(Issue::new(
+                "rules",
+                format!("unknown rules `{}`", req.rules),
+            ));
         }
         let map = self.maps.get(&req.map);
         if map.is_none() {
@@ -624,14 +627,19 @@ impl MatchSetup {
                 out.push(Issue::new(path, msg));
             }
         };
-        let fx_in = |v: Fixed, lo: i32, hi: i32| v >= Fixed::from_int(lo) && v <= Fixed::from_int(hi);
+        let fx_in =
+            |v: Fixed, lo: i32, hi: i32| v >= Fixed::from_int(lo) && v <= Fixed::from_int(hi);
 
         check(
             crate::TICK_HZ_ALLOWED.contains(&self.tick_hz),
             "tick_hz",
             "must be 30 or 20",
         );
-        check(self.hash_interval >= 1, "hash_interval", "must be at least 1");
+        check(
+            self.hash_interval >= 1,
+            "hash_interval",
+            "must be at least 1",
+        );
         let size = self.map.size_m;
         check(
             (64..=8192).contains(&size) && size % 64 == 0,
@@ -640,18 +648,34 @@ impl MatchSetup {
         );
         let on_map = |p: FixedVec2| fx_in(p.x, 0, size) && fx_in(p.y, 0, size);
         let t = &self.map.terrain;
-        check(fx_in(t.base_height, -1000, 1000), "map.terrain.base_height", "out of range");
+        check(
+            fx_in(t.base_height, -1000, 1000),
+            "map.terrain.base_height",
+            "out of range",
+        );
         for o in &t.octaves {
             check(
                 o.period_m >= 8 && o.period_m <= size.max(8) && o.period_m % 4 == 0,
                 "map.terrain.octaves.period_m",
                 "must be a multiple of 4 in 8..=size_m",
             );
-            check(fx_in(o.amplitude, 0, 100), "map.terrain.octaves.amplitude", "out of range");
+            check(
+                fx_in(o.amplitude, 0, 100),
+                "map.terrain.octaves.amplitude",
+                "out of range",
+            );
         }
         for b in &t.bands {
-            check(on_map(b.from) && on_map(b.to), "map.terrain.bands", "off the map");
-            check(fx_in(b.height, -200, 200), "map.terrain.bands.height", "out of range");
+            check(
+                on_map(b.from) && on_map(b.to),
+                "map.terrain.bands",
+                "off the map",
+            );
+            check(
+                fx_in(b.height, -200, 200),
+                "map.terrain.bands.height",
+                "out of range",
+            );
             check(
                 b.half_width >= Fixed::from_int(4) && fx_in(b.half_width, 4, 2000),
                 "map.terrain.bands.half_width",
@@ -660,21 +684,37 @@ impl MatchSetup {
         }
         for c in self.map.woods.iter().chain(&self.map.bases) {
             check(on_map(c.center), "map.circles", "off the map");
-            check(c.radius > Fixed::ZERO && fx_in(c.radius, 0, 1000), "map.circles.radius", "out of range");
+            check(
+                c.radius > Fixed::ZERO && fx_in(c.radius, 0, 1000),
+                "map.circles.radius",
+                "out of range",
+            );
         }
-        check(!self.map.points.is_empty(), "map.points", "need at least one");
+        check(
+            !self.map.points.is_empty(),
+            "map.points",
+            "need at least one",
+        );
         for p in &self.map.points {
             check(on_map(p.pos), "map.points.pos", "off the map");
         }
 
         let r = &self.rules;
-        check(r.pop_cap >= 1 && r.pop_cap <= 10_000, "rules.pop_cap", "out of range");
+        check(
+            r.pop_cap >= 1 && r.pop_cap <= 10_000,
+            "rules.pop_cap",
+            "out of range",
+        );
         check(
             r.projectile_cap <= 1 << 20,
             "rules.projectile_cap",
             "must be at most 1048576",
         );
-        check(fx_in(r.capture_radius, 1, 100), "rules.capture_radius", "out of range");
+        check(
+            fx_in(r.capture_radius, 1, 100),
+            "rules.capture_radius",
+            "out of range",
+        );
         let m = &r.movement;
         check(
             m.arrive_radius > Fixed::ZERO && fx_in(m.arrive_radius, 0, 5),
@@ -687,7 +727,8 @@ impl MatchSetup {
             "out of range",
         );
         check(
-            (10..=500).contains(&m.retreat_speed_pct) && (100..=300).contains(&m.catch_up_speed_pct),
+            (10..=500).contains(&m.retreat_speed_pct)
+                && (100..=300).contains(&m.catch_up_speed_pct),
             "rules.movement.speed_pct",
             "out of range",
         );
@@ -704,15 +745,43 @@ impl MatchSetup {
         );
 
         for w in &self.weapons {
-            check(w.interval_ticks >= 1, "weapons.interval_ticks", "must be at least 1");
-            check(fx_in(w.range_max, 1, 5000), "weapons.range_max", "out of range");
-            check(fx_in(w.muzzle_speed, 1, 3000), "weapons.muzzle_speed", "out of range");
+            check(
+                w.interval_ticks >= 1,
+                "weapons.interval_ticks",
+                "must be at least 1",
+            );
+            check(
+                fx_in(w.range_max, 1, 5000),
+                "weapons.range_max",
+                "out of range",
+            );
+            check(
+                fx_in(w.muzzle_speed, 1, 3000),
+                "weapons.muzzle_speed",
+                "out of range",
+            );
         }
-        let (nw, nf, nt) = (self.weapons.len(), self.factions.len(), self.squad_types.len());
+        let (nw, nf, nt) = (
+            self.weapons.len(),
+            self.factions.len(),
+            self.squad_types.len(),
+        );
         for s in &self.squad_types {
-            check((s.weapon as usize) < nw, "squad_types.weapon", "index out of range");
-            check((s.faction as usize) < nf, "squad_types.faction", "index out of range");
-            check((1..=16).contains(&s.men), "squad_types.men", "must be in 1..=16");
+            check(
+                (s.weapon as usize) < nw,
+                "squad_types.weapon",
+                "index out of range",
+            );
+            check(
+                (s.faction as usize) < nf,
+                "squad_types.faction",
+                "index out of range",
+            );
+            check(
+                (1..=16).contains(&s.men),
+                "squad_types.men",
+                "must be in 1..=16",
+            );
             check(
                 s.speed > Fixed::ZERO && fx_in(s.speed, 0, 20),
                 "squad_types.speed",
@@ -726,7 +795,10 @@ impl MatchSetup {
         }
         for f in &self.factions {
             check(
-                f.roster.iter().chain(&f.start_squads).all(|&i| (i as usize) < nt),
+                f.roster
+                    .iter()
+                    .chain(&f.start_squads)
+                    .all(|&i| (i as usize) < nt),
                 "factions.roster",
                 "index out of range",
             );
@@ -737,7 +809,11 @@ impl MatchSetup {
             "need 2..=10 players",
         );
         for p in &self.players {
-            check((p.faction as usize) < nf, "players.faction", "index out of range");
+            check(
+                (p.faction as usize) < nf,
+                "players.faction",
+                "index out of range",
+            );
             check(
                 (p.base as usize) < self.map.bases.len(),
                 "players.base",

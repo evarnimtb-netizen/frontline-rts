@@ -8,6 +8,10 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Match setups (defs resolved to fixed point) come from the open content
+# crate; the sim reads them but never touches files (§7.9: closed code may
+# depend on the open SDK, not the other way round).
+frontline-content.workspace = true
 serde.workspace = true
 postcard.workspace = true
 xxhash-rust.workspace = true

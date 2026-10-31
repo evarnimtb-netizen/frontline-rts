@@ -28,13 +28,13 @@ fn commands_for(tick: u64) -> Vec<Command> {
         cmds.push(Command {
             player: PlayerId((unit.0 % 2) as u8),
             seq: t,
-            kind: CommandKind::Move { unit, target },
+            kind: CommandKind::MoveSoldier { unit, target },
         });
         // Wrong owner: rejected.
         cmds.push(Command {
             player: PlayerId(((unit.0 + 1) % 2) as u8),
             seq: t,
-            kind: CommandKind::Move { unit, target },
+            kind: CommandKind::MoveSoldier { unit, target },
         });
     }
     if tick % 50 == 10 {
@@ -338,7 +338,7 @@ fn soldiers_walk_and_avoid_each_other() {
     let order = |player: u8, unit: u32, x: i32| Command {
         player: PlayerId(player),
         seq: 1,
-        kind: CommandKind::Move {
+        kind: CommandKind::MoveSoldier {
             unit: SimId(unit),
             target: FxVec2::from_int(x, 100),
         },

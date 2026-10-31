@@ -101,7 +101,7 @@ fn skirmish_resolves_to_fixed_point() {
 
     let rifle = &s.squad_types[s.squad_type_index("ww2:ger_rifle_squad").unwrap() as usize];
     assert_eq!(rifle.men, 8);
-    assert_eq!(rifle.speed, Fixed((160 << 16) / 100));
+    assert_eq!(rifle.speed, Fixed(3 << 16));
     assert_eq!(rifle.spacing, Fixed(3 << 16));
     assert_eq!(rifle.call_in_ticks, 600);
     assert_eq!(s.weapons[rifle.weapon as usize].id, "ww2:kar98k");
@@ -152,11 +152,7 @@ fn broken_mod_reports_file_qualified_issues() {
             "weapon = \"ww2:kar98k\"",
             "weapon = \"ww2:kar99\"",
         );
-        replace_in(
-            &r.join("defs/units/usa_mg_team.toml"),
-            "men = 3",
-            "men = 0",
-        );
+        replace_in(&r.join("defs/units/usa_mg_team.toml"), "men = 3", "men = 0");
         replace_in(
             &r.join("defs/weapons/mp40.toml"),
             "id = \"ww2:mp40\"",
@@ -177,7 +173,10 @@ fn broken_mod_reports_file_qualified_issues() {
         // The engineer squad still names the renamed SMG.
         "squad `ww2:ger_engineer_squad`: weapon",
     ] {
-        assert!(paths.iter().any(|p| p == want), "missing {want:?} in {paths:?}");
+        assert!(
+            paths.iter().any(|p| p == want),
+            "missing {want:?} in {paths:?}"
+        );
     }
     let _ = std::fs::remove_dir_all(root);
 }
@@ -192,7 +191,10 @@ fn unknown_keys_are_reported_with_location() {
         );
     });
     let e = ModDefs::load(&root).unwrap_err().to_string();
-    assert!(e.contains("rules/skirmish.toml") && e.contains("popcap"), "{e}");
+    assert!(
+        e.contains("rules/skirmish.toml") && e.contains("popcap"),
+        "{e}"
+    );
     assert!(e.contains("line"), "{e}");
     let _ = std::fs::remove_dir_all(root);
 }

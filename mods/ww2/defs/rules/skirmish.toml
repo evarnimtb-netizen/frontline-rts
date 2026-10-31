@@ -34,8 +34,8 @@ retreat_speed_pct = 140
 # Members behind their formation slot walk this much faster.
 catch_up_speed_pct = 125
 # A* node expansions per tick (all players), and per single search.
-path_budget_per_tick = 6000
-path_max_expansions = 16000
+path_budget_per_tick = 4000
+path_max_expansions = 8000
 
 [dig]
 depth_cm = 160

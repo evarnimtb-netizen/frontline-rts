@@ -127,8 +127,11 @@ impl Loader {
             if !ns.is_empty() && !def_id.starts_with(&format!("{ns}:")) {
                 self.push(
                     &file,
-                    Issue::new("id", format!("`{def_id}` is not in this mod's namespace `{ns}`"))
-                        .with_hint(format!("id = \"{ns}:...\"")),
+                    Issue::new(
+                        "id",
+                        format!("`{def_id}` is not in this mod's namespace `{ns}`"),
+                    )
+                    .with_hint(format!("id = \"{ns}:...\"")),
                 );
             }
             if out.contains_key(&def_id) {
@@ -165,7 +168,12 @@ impl ModDefs {
         let mut defs = ModDefs {
             squads: l.load_kind("units", &ns, |d: &SquadDef| &d.id, SquadDef::validate),
             weapons: l.load_kind("weapons", &ns, |d: &WeaponDef| &d.id, WeaponDef::validate),
-            factions: l.load_kind("factions", &ns, |d: &FactionDef| &d.id, FactionDef::validate),
+            factions: l.load_kind(
+                "factions",
+                &ns,
+                |d: &FactionDef| &d.id,
+                FactionDef::validate,
+            ),
             maps: l.load_kind("maps", &ns, |d: &MapFileDef| &d.id, MapFileDef::validate),
             rules: l.load_kind("rules", &ns, |d: &RulesDef| &d.id, RulesDef::validate),
             manifest,

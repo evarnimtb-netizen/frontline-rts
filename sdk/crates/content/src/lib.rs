@@ -22,9 +22,7 @@ pub mod modset;
 pub mod scenario;
 pub mod setup;
 
-pub use defs::{
-    FactionDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef,
-};
+pub use defs::{FactionDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef};
 pub use issue::{ContentError, Issue};
 pub use modset::{ModDefs, ModManifest};
 pub use scenario::{

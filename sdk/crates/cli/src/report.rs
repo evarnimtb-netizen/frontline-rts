@@ -73,6 +73,7 @@ impl ConfigEcho {
             terrain: match c.terrain {
                 TerrainKind::Flat => "flat",
                 TerrainKind::Noise => "noise",
+                TerrainKind::Map => "map",
             },
             soldiers: c.soldiers,
             players: c.players,
