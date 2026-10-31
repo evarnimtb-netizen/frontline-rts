@@ -826,10 +826,22 @@ impl MatchState {
     // -------------------------------------------------------- validation --
 
     /// Checks a loaded match state against the entity store (untrusted
-    /// saves): references in range, squad membership consistent both ways.
-    pub(crate) fn validate(&self, ents: &Entities) -> Result<(), &'static str> {
+    /// saves) at `tick`: references in range, squad membership consistent
+    /// both ways.
+    pub(crate) fn validate(&self, ents: &Entities, tick: u64) -> Result<(), &'static str> {
         let s = &self.setup;
         let np = s.players.len();
+        // Id counters are bumped unchecked; one at the top would overflow.
+        if [
+            self.next_squad,
+            self.next_unit_dig,
+            self.next_thrown,
+            self.next_smoke,
+        ]
+        .contains(&u32::MAX)
+        {
+            return Err("an id counter is exhausted");
+        }
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
@@ -882,7 +894,7 @@ impl MatchState {
                 return Err("AI state disagrees with the setup");
             }
             if let Some(ai) = &self.ai[p] {
-                ai.validate(self)?;
+                ai.validate(self, tick)?;
             }
         }
         for pl in &self.players {

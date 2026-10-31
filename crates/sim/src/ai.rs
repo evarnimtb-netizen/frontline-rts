@@ -171,8 +171,8 @@ impl AiState {
         self.issued += 1;
     }
 
-    /// Checks a loaded AI state (untrusted saves).
-    pub(crate) fn validate(&self, g: &MatchState) -> Result<(), &'static str> {
+    /// Checks a loaded AI state (untrusted saves) at `tick`.
+    pub(crate) fn validate(&self, g: &MatchState, tick: u64) -> Result<(), &'static str> {
         let np = g.points.len();
         let bad_squad = |id: &SquadId| id.0 >= g.next_squad;
         if self.pending.len() > MAX_PENDING
@@ -180,6 +180,7 @@ impl AiState {
             || self.rejected > self.issued
             || self.tasks.keys().any(bad_squad)
             || self.last_throw.keys().any(bad_squad)
+            || self.last_throw.values().any(|&t| t > tick)
             || self
                 .tasks
                 .values()
@@ -362,7 +363,7 @@ impl Planner<'_> {
             mine.push(Mine {
                 id,
                 role: ty.role,
-                lead: self.ents.transform[sq.members[0].index()].pos.xy(),
+                lead: self.ents.transform[sq.lead(self.ents).index()].pos.xy(),
                 strength_pct: sq.members.len() as u32 * 100 / ty.men.max(1) as u32,
             });
         }
@@ -851,7 +852,7 @@ impl Planner<'_> {
         let tick = self.tick;
         self.ai
             .last_throw
-            .retain(|id, t| g.squads.contains_key(id) && tick < *t + cool);
+            .retain(|id, t| g.squads.contains_key(id) && tick < t.saturating_add(cool));
         for m in mine {
             let sq = &g.squads[&m.id];
             if sq.order == Order::Retreat || self.ai.last_throw.contains_key(&m.id) {
@@ -881,7 +882,13 @@ impl Planner<'_> {
             let unit = |id: &SimId| &self.ents.unit[id.index()];
             let kit = |id: &SimId| &self.ents.kit[id.index()];
             let detached = sq.members.iter().filter(|id| unit(id).detached);
-            if matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
+            let pending = self
+                .ai
+                .pending
+                .iter()
+                .any(|c| matches!(c.kind, CommandKind::Regroup { squad } if squad == m.id));
+            if !pending
+                && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
                 && detached.clone().next().is_some()
                 && detached.clone().all(|id| kit(id).windup.is_none())
             {

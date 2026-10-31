@@ -743,7 +743,7 @@ impl World {
                 if st.config != match_config(g.setup()) {
                     return Err(err("config disagrees with the match setup"));
                 }
-                g.validate(&st.entities).map_err(err)?;
+                g.validate(&st.entities, st.tick).map_err(err)?;
                 let (nw, np) = (g.setup().weapons.len(), g.setup().players.len());
                 if st
                     .projectiles
@@ -2047,10 +2047,19 @@ mod tests {
             .find(|id| ents.kit[id.index()].windup.is_some())
             .unwrap()
             .index();
+        let leader = ents
+            .soldiers()
+            .find(|id| ents.kit[id.index()].leader)
+            .unwrap()
+            .index();
         let base = w.full_state_hash();
         type Edit = Box<dyn Fn(&mut SimState)>;
         let edits: [Edit; 8] = [
-            Box::new(move |s| s.entities.kit[winder].leader = true),
+            // Off the leader kit, with no more than a rifleman carries.
+            Box::new(move |s| {
+                s.entities.kit[leader].leader = false;
+                s.entities.kit[leader].items = Default::default();
+            }),
             Box::new(move |s| s.entities.kit[winder].resupply = 3),
             Box::new(move |s| s.entities.kit[winder].windup.as_mut().unwrap().ticks -= 1),
             Box::new(move |s| s.entities.kit[winder].throws += 1),
@@ -2066,6 +2075,35 @@ mod tests {
         // More items than the loadout, or a wind-up for an item he lacks.
         let bytes = save_edited(&w, move |s| s.entities.kit[winder].items[0] = 5);
         assert!(load_err(&bytes).contains("kit"));
+        // A second leader kit in one squad (more items for everyone).
+        let bytes = save_edited(&w, |s| {
+            for k in s.entities.kit.iter_mut() {
+                k.leader = true;
+            }
+        });
+        assert!(load_err(&bytes).contains("leader"));
+        // Exhausted id counters would overflow on the next throw, cloud,
+        // unit dig or squad.
+        type Counter = fn(&mut crate::game::MatchState) -> &mut u32;
+        let counters: [Counter; 4] = [
+            |g| &mut g.next_thrown,
+            |g| &mut g.next_smoke,
+            |g| &mut g.next_unit_dig,
+            |g| &mut g.next_squad,
+        ];
+        for c in counters {
+            let bytes = save_edited(&w, move |s| *c(s.game.as_mut().unwrap()) = u32::MAX);
+            assert!(load_err(&bytes).contains("counter"));
+        }
+        // An AI throw stamped in the future (overflow, or never again).
+        for t in [u64::MAX, 1 << 40] {
+            let bytes = save_edited(&w, move |s| {
+                let g = s.game.as_mut().unwrap();
+                let sq = *g.squads.keys().next().unwrap();
+                g.ai[1].as_mut().unwrap().last_throw.insert(sq, t);
+            });
+            assert!(load_err(&bytes).contains("AI"));
+        }
         let bytes = save_edited(&w, move |s| {
             s.entities.kit[winder].windup.as_mut().unwrap().kind = ItemKind::Satchel
         });

@@ -16,7 +16,7 @@
 //!   not fire meanwhile; in a trench he rises to the fire step to throw.
 //! * **Release** (Weapons stage, serial, ascending id). A wind-up is called
 //!   off, and the item put back, when the man is pinned or given another
-//!   order. When it ends, the item leaves his hand (fire height − 0.15 m)
+//!   order (`StopUnits` included). When it ends, the item leaves his hand (fire height − 0.15 m)
 //!   on an arc to the target scattered by `scatter_pct` % of the distance
 //!   (triangular per axis, counter RNG keyed by the thrower and his throw
 //!   count). The arc is a 45° lob: flight time `sqrt(2 d / g)`, about
@@ -282,6 +282,20 @@ impl MatchState {
         ctx.hash.mark_entity_chunk(m.chunk());
     }
 
+    /// Calls off `m`'s wind-up, if any, and puts the item back in his kit
+    /// (`StopUnits`).
+    pub(crate) fn call_off_throw(&self, ctx: &mut Ctx, m: SimId) {
+        let Some(w) = ctx.ents.kit[m.index()].windup else {
+            return;
+        };
+        let full = self.full_kit(ctx.ents, m)[w.kind.index()];
+        let k = &mut ctx.ents.kit[m.index()];
+        let n = &mut k.items[w.kind.index()];
+        *n = n.saturating_add(1).min(full);
+        k.windup = None;
+        ctx.hash.mark_entity_chunk(m.chunk());
+    }
+
     // ------------------------------------------------------------- stages --
 
     /// Counts wind-ups down and releases finished throws (Weapons stage;
@@ -529,6 +543,16 @@ impl MatchState {
             if bad {
                 return Err("soldier kit is inconsistent");
             }
+        }
+        // Only the first man at spawn gets the leader loadout.
+        if self.squads.values().any(|sq| {
+            sq.members
+                .iter()
+                .filter(|m| ents.kit[m.index()].leader)
+                .count()
+                > 1
+        }) {
+            return Err("a squad has more than one leader kit");
         }
         let np = s.players.len();
         let in_air = |v: FxVec3| on_map(v.xy()) && v.z.abs() < Fx::from_int(5000);

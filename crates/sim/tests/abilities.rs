@@ -357,6 +357,11 @@ fn a_wind_up_is_called_off_by_another_order() {
     assert!(order(&mut w, 0, throw(vec![m], ItemKind::Frag, aim)));
     assert!(order(&mut w, 0, CommandKind::Stop { squad: sq }));
     assert!(!winding(&w, m) && items(&w, m, ItemKind::Frag) == 1);
+    // StopUnits on him alone (he stays detached and idle): same.
+    let aim = pos(&w, m) + at(20, 0);
+    assert!(order(&mut w, 0, throw(vec![m], ItemKind::Frag, aim)));
+    assert!(order(&mut w, 0, CommandKind::StopUnits { units: vec![m] }));
+    assert!(!winding(&w, m) && items(&w, m, ItemKind::Frag) == 1);
     w.step(&[]);
     assert!(w.game().unwrap().thrown().is_empty() && w.stats().throws == 0);
 }

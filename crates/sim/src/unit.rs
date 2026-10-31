@@ -271,6 +271,7 @@ impl MatchState {
         }
         for m in rest {
             let t = ctx.ents.transform[m.index()];
+            self.call_off_throw(ctx, m);
             self.detach(ctx, m, UnitOrder::Idle, yaw_dir(t.yaw));
             let nav = &mut ctx.ents.unit[m.index()].nav;
             nav.phase = NavPhase::Holding;
