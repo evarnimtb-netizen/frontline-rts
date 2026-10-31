@@ -19,7 +19,8 @@
 //! squads, orders; [`path`]: grid A*; [`squad`]: formations; [`dig`]:
 //! trenches; `spotting`: per-player visibility; [`combat`]: targeting,
 //! projectiles, suppression, stance, mortars and deaths; [`rules`]:
-//! capture, income, tickets and victory; [`ai`]: the AI commander). Terrain
+//! capture, income, tickets and victory; [`ai`]: the AI commander; [`unit`]:
+//! soldier-level orders, stance orders and detached men). Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
 //!
@@ -45,6 +46,7 @@ mod spotting;
 mod squad;
 mod systems;
 pub mod terrain;
+pub mod unit;
 pub mod world;
 
 pub use ai::{AiCommand, AiState, AiTrench, Task, TaskKind};
@@ -54,17 +56,18 @@ pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, S
 pub use frontline_content::MatchSetup;
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{
-    CallIn, CapturePoint, MatchState, NavPhase, Order, OrderKind, Outcome, PlayerState, Squad,
-    SquadId,
+    CallIn, CapturePoint, MatchState, NavPhase, Order, OrderKind, Outcome, PathReq, PlayerState,
+    Squad, SquadId,
 };
 pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;
 pub use snapshot::{
     CorpseSnapshot, ExplosionSnapshot, NO_SQUAD, PlayerSnapshot, PointSnapshot, RenderSnapshot,
-    ShotSnapshot, SquadSnapshot, tile_heights_f32,
+    ShotSnapshot, SquadSnapshot, UnitSnapshot, tile_heights_f32,
 };
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
+pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};
 pub use world::{
     SimConfig, SimError, SimState, SoldierParams, StageTimes, Stats, TickRate, WeaponParams, World,
     match_config,

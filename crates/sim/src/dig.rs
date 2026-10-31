@@ -24,15 +24,25 @@
 //! the current surface and the base minus the profile depth, so crossing
 //! trenches merge; the parapet only raises undug ground. A new Dig order on
 //! a partly dug line credits the depth already there.
+//!
+//! Detached men (S1b) do not dig for their squad: a man who detaches lets
+//! his segment go. `DigUnits` jobs ([`crate::unit::UnitDig`]) are worked
+//! the same way after the squads, in ascending job id: their diggers are
+//! the detached men whose order names the job (ascending id), each at his
+//! own squad type's rate; a man takes a new segment only once he stands
+//! (arriving or holding), and his spot becomes his goal. A job with no
+//! diggers left is dropped; a finished one sets its diggers `Idle`.
 
 use frontline_content::setup::DigSetup;
 use serde::{Deserialize, Serialize};
 
-use crate::ecs::{Entities, PlayerId, SimId};
+use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::game::{MatchState, NavPhase, Order};
+use crate::hash::HashCache;
 use crate::squad::{point_along, polyline_length};
 use crate::terrain::{DETAIL_SHIFT, Heightfield};
+use crate::unit::UnitOrder;
 
 /// Horizontal run of a trench wall, floor edge to lip (mm).
 pub const WALL_RUN_MM: i32 = 400;
@@ -293,8 +303,20 @@ pub(crate) fn stamp(
 }
 
 impl MatchState {
-    /// Advances every digging squad by one tick (see the module docs).
-    pub(crate) fn dig_work(&mut self, ents: &Entities, terrain: &mut Heightfield, tick: u64) {
+    /// Advances every digging squad and unit dig job by one tick (see the
+    /// module docs).
+    pub(crate) fn dig_work(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &mut Heightfield,
+        hash: &mut HashCache,
+        tick: u64,
+    ) {
+        self.squad_dig_work(ents, terrain, tick);
+        self.unit_dig_work(ents, terrain, hash, tick);
+    }
+
+    fn squad_dig_work(&mut self, ents: &Entities, terrain: &mut Heightfield, tick: u64) {
         let hz = self.setup.tick_hz;
         let dig = &self.setup.rules.dig;
         let n = dig.passes as i32;
@@ -311,18 +333,18 @@ impl MatchState {
             let Order::Dig { line, job } = &mut sq.order else {
                 continue;
             };
-            // 1. Let go of men who left or finished.
+            let detached = |m: SimId| ents.unit[m.index()].detached;
+            // 1. Let go of men who left, detached or finished.
             for seg in job.segments.iter_mut() {
-                if seg
-                    .digger
-                    .is_some_and(|d| seg.passes as i32 >= n || !sq.members.contains(&d))
-                {
+                if seg.digger.is_some_and(|d| {
+                    seg.passes as i32 >= n || !sq.members.contains(&d) || detached(d)
+                }) {
                     seg.digger = None;
                 }
             }
             // 2. Idle men take the nearest open segment.
             for (k, &m) in sq.members.iter().enumerate() {
-                if job.segments.iter().any(|g| g.digger == Some(m)) {
+                if detached(m) || job.segments.iter().any(|g| g.digger == Some(m)) {
                     continue;
                 }
                 let slot = sq.nav.slots[k];
@@ -367,6 +389,126 @@ impl MatchState {
             if job.finished(dig) {
                 sq.order = Order::Idle;
             }
+        }
+    }
+
+    fn unit_dig_work(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &mut Heightfield,
+        hash: &mut HashCache,
+        tick: u64,
+    ) {
+        if self.unit_digs.is_empty() {
+            return;
+        }
+        let hz = self.setup.tick_hz;
+        let dig = &self.setup.rules.dig;
+        let n = dig.passes as i32;
+        let reach_sq = Fx::from_milli(DIG_REACH_MM).raw() as u64;
+        let reach_sq = reach_sq * reach_sq;
+        // `(job, man, dig rate)`, ascending.
+        let mut diggers: Vec<(u32, SimId, u64)> = Vec::new();
+        for (i, u) in ents.unit.iter().enumerate() {
+            let UnitOrder::Dig { job } = u.order else {
+                continue;
+            };
+            if ents.kind[i] != EntityKind::Soldier || !u.detached {
+                continue;
+            }
+            let Some(sq) = ents.squad[i].and_then(|s| self.squads.get(&s)) else {
+                continue;
+            };
+            let rate = self.setup.squad_types[sq.type_idx as usize].dig_rate_pct as u64;
+            diggers.push((job, SimId(i as u32), rate));
+        }
+        diggers.sort_unstable();
+        let mut done = Vec::new();
+        for (&id, ud) in self.unit_digs.iter_mut() {
+            let lo = diggers.partition_point(|d| d.0 < id);
+            let hi = diggers.partition_point(|d| d.0 <= id);
+            let men = &diggers[lo..hi];
+            if men.is_empty() {
+                done.push(id);
+                continue;
+            }
+            let (line, job) = (&ud.line, &mut ud.job);
+            let standing = |m: SimId| {
+                matches!(
+                    ents.unit[m.index()].nav.phase,
+                    NavPhase::Arriving | NavPhase::Holding
+                )
+            };
+            // 1. Let go of men who left or finished.
+            for seg in job.segments.iter_mut() {
+                if seg.digger.is_some_and(|d| {
+                    seg.passes as i32 >= n || men.binary_search_by_key(&d, |x| x.1).is_err()
+                }) {
+                    seg.digger = None;
+                }
+            }
+            // 2. Idle men who stand take the nearest open segment.
+            for &(_, m, _) in men {
+                if !standing(m) || job.segments.iter().any(|g| g.digger == Some(m)) {
+                    continue;
+                }
+                let from = ents.unit[m.index()].nav.goal;
+                let pick = job
+                    .segments
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, g)| g.digger.is_none() && (g.passes as i32) < n)
+                    .map(|(i, g)| {
+                        let c = point_along(line, (g.from + g.to).div_int(2));
+                        ((c - from).length_sq_raw(), i)
+                    })
+                    .min();
+                if let Some((_, i)) = pick {
+                    job.segments[i].digger = Some(m);
+                }
+            }
+            // 3–4. Walk to the spot, work there, stamp finished passes.
+            for seg in job.segments.iter_mut() {
+                let Some(d) = seg.digger else { continue };
+                let phase = ents.unit[d.index()].nav.phase;
+                if !matches!(phase, NavPhase::Arriving | NavPhase::Holding) {
+                    continue;
+                }
+                let Ok(k) = men.binary_search_by_key(&d, |x| x.1) else {
+                    continue;
+                };
+                let spot = terrain.clamp(point_along(line, (seg.from + seg.to).div_int(2)));
+                let nav = &mut ents.unit[d.index()].nav;
+                if nav.goal != spot {
+                    nav.goal = spot;
+                    hash.mark_entity_chunk(d.chunk());
+                }
+                let at = ents.transform[d.index()].pos.xy();
+                // A man firing at the enemy puts the spade down.
+                if (spot - at).length_sq_raw() > reach_sq || ents.combat[d.index()].target.is_some()
+                {
+                    continue;
+                }
+                let need = DigJob::required(seg, dig, hz);
+                seg.work = (seg.work + men[k].2).min(need);
+                let passes = (seg.work * n as u64 / need) as i32;
+                if passes > seg.passes as i32 {
+                    seg.passes = passes as u8;
+                    stamp(
+                        terrain, line, job.front, seg.from, seg.to, passes, n, dig, tick,
+                    );
+                }
+            }
+            if job.finished(dig) {
+                for &(_, m, _) in men {
+                    ents.unit[m.index()].order = UnitOrder::Idle;
+                    hash.mark_entity_chunk(m.chunk());
+                }
+                done.push(id);
+            }
+        }
+        for id in done {
+            self.unit_digs.remove(&id);
         }
     }
 }

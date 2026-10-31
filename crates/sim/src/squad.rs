@@ -20,6 +20,10 @@
 //! Digging squads get their slots from `crate::dig` (each man's spot on his
 //! share of the line).
 //!
+//! Detached men (S1b, `crate::unit`) are left out: the formation is the
+//! members still in it, led by the first of them ([`Squad::lead`]). A man
+//! ordered prone walks at the rules' `prone_speed_pct`.
+//!
 //! **Cover on arrival** (all orders but Dig and Retreat): each man, in
 //! member order, moves his line slot to the nearest free trench spot within
 //! [`COVER_RADIUS_M`] (on the floor: dug `combat::TRENCH_MM` below the base
@@ -30,10 +34,11 @@
 //! [`COVER_GAP_MM`] apart, also from where other friendly squads stand.
 
 use crate::combat::TRENCH_MM;
-use crate::ecs::{Entities, SimId};
+use crate::ecs::{Entities, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, NavPhase, Order, Squad};
 use crate::terrain::Heightfield;
+use crate::unit::StanceOrder;
 
 /// The leader moves on to the next waypoint within this distance (m).
 const WAYPOINT_REACH_M: i32 = 2;
@@ -103,9 +108,18 @@ pub(crate) fn line_slots(center: FxVec2, facing: FxVec2, n: usize, spacing: Fx) 
         .collect()
 }
 
+/// Walking speed of a man with stance order `stance`.
+pub(crate) fn stance_speed(speed: Fx, stance: StanceOrder, prone_pct: u32) -> Fx {
+    if stance == StanceOrder::Prone {
+        speed.mul_int(prone_pct as i32).div_int(100)
+    } else {
+        speed
+    }
+}
+
 /// Assigns `slots` (ordered along `axis`) to members by where they stand
 /// along `axis`, ties by id. Returns the slot of each member, in member order.
-fn assign_by_axis(
+pub(crate) fn assign_by_axis(
     members: &[SimId],
     ents: &Entities,
     slots: &[FxVec2],
@@ -124,14 +138,16 @@ fn assign_by_axis(
     out
 }
 
-/// Arrival slots and facing for a squad reaching its goal.
+/// Arrival slots and facing for a squad reaching its goal: slots for the
+/// men in formation (`form`); detached men keep where they stand.
 fn arrival(
     sq: &Squad,
+    form: &[SimId],
     ents: &Entities,
     terrain: &Heightfield,
     spacing: Fx,
 ) -> (Vec<FxVec2>, FxVec2) {
-    let n = sq.members.len();
+    let n = form.len();
     let (slots, facing, axis) = match &sq.order {
         Order::Dig { line, job } => {
             // Spread along the trench line, facing the parapet side.
@@ -149,11 +165,22 @@ fn arrival(
         }
     };
     let slots: Vec<FxVec2> = slots.into_iter().map(|p| terrain.clamp(p)).collect();
-    let mut slots = assign_by_axis(&sq.members, ents, &slots, axis);
+    let mut slots = assign_by_axis(form, ents, &slots, axis);
     if !matches!(sq.order, Order::Dig { .. } | Order::Retreat) {
-        seek_cover(sq, ents, terrain, &mut slots);
+        seek_cover(sq.owner, sq.nav.goal, form, ents, terrain, &mut slots);
     }
-    (slots, facing)
+    // Back to member order.
+    let mut out = Vec::with_capacity(sq.members.len());
+    let mut k = 0;
+    for &m in &sq.members {
+        if form.get(k) == Some(&m) {
+            out.push(slots[k]);
+            k += 1;
+        } else {
+            out.push(ents.transform[m.index()].pos.xy());
+        }
+    }
+    (out, facing)
 }
 
 /// Offsets within [`COVER_RADIUS_M`] on a grid of `step_mm`, nearest first
@@ -200,20 +227,27 @@ fn trench_spot(terrain: &Heightfield, p: FxVec2) -> bool {
             .all(|&(x, y)| dug(p + FxVec2::new(x, y)))
 }
 
-/// Moves arrival `slots` into cover (see the module docs).
-fn seek_cover(sq: &Squad, ents: &Entities, terrain: &Heightfield, slots: &mut [FxVec2]) {
+/// Moves arrival `slots` of men `own` (of `owner`, arriving near `goal`)
+/// into cover (see the module docs).
+pub(crate) fn seek_cover(
+    owner: PlayerId,
+    goal: FxVec2,
+    own: &[SimId],
+    ents: &Entities,
+    terrain: &Heightfield,
+    slots: &mut [FxVec2],
+) {
     let gap = (Fx::from_milli(COVER_GAP_MM).raw() as u64).pow(2);
     let free = |taken: &[FxVec2], p: FxVec2| taken.iter().all(|t| (*t - p).length_sq_raw() >= gap);
-    let owner = sq.owner.0;
-    let goal = sq.nav.goal;
-    // Spots friends of other squads stand on or walk to.
+    let owner = owner.0;
+    // Spots other friends stand on or walk to.
     let near_goal = (Fx::from_int(3 * COVER_RADIUS_M).raw() as u64).pow(2);
     let mut taken: Vec<FxVec2> = ents
         .soldiers()
         .filter(|id| {
             let i = id.index();
             ents.owner[i].0 == owner
-                && !sq.members.contains(id)
+                && !own.contains(id)
                 && (ents.mover[i].waypoint - goal).length_sq_raw() <= near_goal
         })
         .map(|id| ents.mover[id.index()].waypoint)
@@ -271,7 +305,7 @@ fn column_slot(lead: FxVec2, f: FxVec2, k: usize, spacing: Fx) -> FxVec2 {
 }
 
 /// Writes a member's target and speed (only marking the chunk on change).
-fn set_target(ctx: &mut Ctx, m: SimId, target: FxVec2, speed: Fx) {
+pub(crate) fn set_target(ctx: &mut Ctx, m: SimId, target: FxVec2, speed: Fx) {
     let mv = &mut ctx.ents.mover[m.index()];
     if mv.waypoint != target || mv.speed != speed {
         mv.waypoint = target;
@@ -291,10 +325,20 @@ impl MatchState {
         let catch_sq = Fx::from_int(CATCH_UP_M * CATCH_UP_M);
         let stretched_sq = Fx::from_int(STRETCHED_M * STRETCHED_M);
         let mut repath = Vec::new();
+        let prone_pct = mv.prone_speed_pct;
+        let mut form: Vec<SimId> = Vec::new();
         for (&id, sq) in self.squads.iter_mut() {
-            if sq.members.is_empty() {
+            form.clear();
+            form.extend(
+                sq.members
+                    .iter()
+                    .copied()
+                    .filter(|m| !ctx.ents.unit[m.index()].detached),
+            );
+            // Every man detached: nobody to steer.
+            let Some(&lead) = form.first() else {
                 continue;
-            }
+            };
             let ty = &self.setup.squad_types[sq.type_idx as usize];
             let spacing: Fx = ty.spacing.into();
             let mut speed: Fx = ty.speed.into();
@@ -302,7 +346,10 @@ impl MatchState {
                 speed = speed.mul_int(mv.retreat_speed_pct as i32).div_int(100);
             }
             let fast = speed.mul_int(mv.catch_up_speed_pct as i32).div_int(100);
-            let lead = sq.members[0];
+            // A man's own pace (prone men crawl).
+            let pace = |ents: &Entities, m: SimId, v: Fx| {
+                stance_speed(v, ents.unit[m.index()].stance, prone_pct)
+            };
             let lpos = ctx.ents.transform[lead.index()].pos.xy();
             sq.nav.phase_ticks = sq.nav.phase_ticks.saturating_add(1);
             match sq.nav.phase {
@@ -316,14 +363,14 @@ impl MatchState {
                 NavPhase::Moving
                     if matches!(sq.order, Order::AttackMove { .. })
                         && sq.focus.is_some()
-                        && sq
-                            .members
+                        && form
                             .iter()
                             .any(|m| ctx.ents.combat[m.index()].target.is_some()) =>
                 {
-                    for &m in &sq.members {
+                    for &m in &form {
                         let here = ctx.ents.transform[m.index()].pos.xy();
-                        set_target(ctx, m, here, speed);
+                        let v = pace(ctx.ents, m, speed);
+                        set_target(ctx, m, here, v);
                     }
                 }
                 NavPhase::Moving => {
@@ -343,7 +390,8 @@ impl MatchState {
                         if nav.partial {
                             repath.push((id, nav.goal));
                         } else {
-                            let (slots, facing) = arrival(sq, ctx.ents, ctx.terrain, spacing);
+                            let (slots, facing) =
+                                arrival(sq, &form, ctx.ents, ctx.terrain, spacing);
                             let nav = &mut sq.nav;
                             nav.slots = slots;
                             nav.facing = facing;
@@ -355,8 +403,7 @@ impl MatchState {
                     let f = nav.heading;
                     let lead_by = f * Fx::from_milli(SLOT_LEAD_MM);
                     let mut strung_out = false;
-                    for k in 1..sq.members.len() {
-                        let m = sq.members[k];
+                    for (k, &m) in form.iter().enumerate().skip(1) {
                         let slot = column_slot(lpos, f, k, spacing);
                         let off = slot - ctx.ents.transform[m.index()].pos.xy();
                         let gap = off.length_sq();
@@ -368,24 +415,30 @@ impl MatchState {
                             slot + lead_by
                         };
                         let target = ctx.terrain.clamp(target);
-                        set_target(ctx, m, target, if gap > catch_sq { fast } else { speed });
+                        let v = pace(ctx.ents, m, if gap > catch_sq { fast } else { speed });
+                        set_target(ctx, m, target, v);
                     }
                     let lead_speed = if strung_out {
                         speed.mul_int(STRETCHED_SPEED_PCT).div_int(100)
                     } else {
                         speed
                     };
-                    set_target(ctx, lead, wp, lead_speed);
+                    let v = pace(ctx.ents, lead, lead_speed);
+                    set_target(ctx, lead, wp, v);
                 }
                 NavPhase::Arriving | NavPhase::Holding => {
                     let yaw = Fx::atan2(sq.nav.facing.y, sq.nav.facing.x);
                     let mut all_there = true;
                     for (k, &m) in sq.members.iter().enumerate() {
+                        if ctx.ents.unit[m.index()].detached {
+                            continue;
+                        }
                         let slot = sq.nav.slots[k];
                         let gap = (slot - ctx.ents.transform[m.index()].pos.xy()).length_sq();
                         let there = gap <= arrive_sq;
                         all_there &= there;
-                        set_target(ctx, m, slot, if gap > catch_sq { fast } else { speed });
+                        let v = pace(ctx.ents, m, if gap > catch_sq { fast } else { speed });
+                        set_target(ctx, m, slot, v);
                         // In position: face the line's direction.
                         let t = &mut ctx.ents.transform[m.index()];
                         if there && t.yaw != yaw {

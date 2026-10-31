@@ -27,6 +27,10 @@
 //! targets, kills and losses, and the spotting cursors. Capture, income,
 //! tickets and victory are in `crate::rules`; the AI commander's per-player
 //! state (`crate::ai`) is kept here too.
+//!
+//! Soldier-level orders (S1b) are in `crate::unit`: detached men keep their
+//! own order in the `unit` entity column, path through the same queues
+//! ([`PathReq::Unit`]) and dig trenches as [`UnitDig`] jobs kept here.
 
 use std::collections::BTreeMap;
 
@@ -44,6 +48,7 @@ use crate::path::{PathCost, PathScratch, find_path};
 use crate::rules::{Defeat, capture_full};
 use crate::squad;
 use crate::terrain::Heightfield;
+use crate::unit::{UnitDig, UnitOrder};
 
 /// Most points in a Dig polyline.
 pub const MAX_DIG_POINTS: usize = 16;
@@ -166,6 +171,18 @@ pub struct Squad {
     pub focus: Option<SimId>,
 }
 
+impl Squad {
+    /// Formation leader: the first member who is not detached (S1b), else
+    /// `members[0]`. The squad must have members.
+    pub fn lead(&self, ents: &Entities) -> SimId {
+        self.members
+            .iter()
+            .copied()
+            .find(|m| !ents.unit[m.index()].detached)
+            .unwrap_or(self.members[0])
+    }
+}
+
 /// A bought squad on its way.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct CallIn {
@@ -219,11 +236,20 @@ pub enum Outcome {
     Draw,
 }
 
+/// Who a queued path is for.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum PathReq {
+    /// The squad's formation leader walks it.
+    Squad(SquadId),
+    /// A detached soldier walks it to his own spot (`crate::unit`).
+    Unit(SimId),
+}
+
 /// Path requests: one FIFO per player served round-robin, and the expansion
 /// debt carried over from a search that overran the tick budget.
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct PathQueue {
-    pub queues: Vec<Vec<SquadId>>,
+    pub queues: Vec<Vec<PathReq>>,
     /// Player whose queue is served first next.
     pub cursor: u8,
     pub debt: u32,
@@ -243,6 +269,9 @@ pub struct MatchState {
     pub(crate) spot_cursor: Vec<u32>,
     /// Per player: AI commander state (`None` for human players).
     pub(crate) ai: Vec<Option<AiState>>,
+    /// Trenches dug by detached men (`DigUnits`), by never-reused job id.
+    pub(crate) unit_digs: BTreeMap<u32, UnitDig>,
+    pub(crate) next_unit_dig: u32,
 }
 
 /// Mutable world parts a match operation needs.
@@ -299,6 +328,8 @@ impl MatchState {
             outcome: Outcome::Running,
             spot_cursor: vec![0; setup.players.len()],
             ai,
+            unit_digs: BTreeMap::new(),
+            next_unit_dig: 0,
             setup,
         }
     }
@@ -343,6 +374,11 @@ impl MatchState {
     #[inline]
     pub fn ai(&self, player: PlayerId) -> Option<&AiState> {
         self.ai.get(player.0 as usize).and_then(|a| a.as_ref())
+    }
+    /// Trenches dug by detached men, by job id (`UnitOrder::Dig`).
+    #[inline]
+    pub fn unit_digs(&self) -> &BTreeMap<u32, UnitDig> {
+        &self.unit_digs
     }
 
     /// Base centre of `player`.
@@ -403,20 +439,42 @@ impl MatchState {
                 self.update_outcome();
                 true
             }
+            CommandKind::MoveUnits { units, target } => {
+                self.units_move(ctx, p, units, UnitOrder::Move { target: *target })
+            }
+            CommandKind::AttackMoveUnits { units, target } => {
+                self.units_move(ctx, p, units, UnitOrder::AttackMove { target: *target })
+            }
+            CommandKind::RetreatUnits { units } => {
+                self.units_move(ctx, p, units, UnitOrder::Retreat)
+            }
+            CommandKind::StopUnits { units } => self.units_stop(ctx, p, units),
+            CommandKind::DigUnits { units, line } => self.units_dig(ctx, p, units, line),
+            CommandKind::SetStance { units, stance } => self.set_stance(ctx, p, units, *stance),
+            &CommandKind::Regroup { squad } => self.regroup(ctx, p, squad),
         }
     }
 
     /// A live squad owned by `player`.
-    fn owned(&self, player: PlayerId, id: SquadId) -> bool {
+    pub(crate) fn owned(&self, player: PlayerId, id: SquadId) -> bool {
         self.squads
             .get(&id)
             .is_some_and(|s| s.owner == player && !s.members.is_empty())
     }
 
-    fn order_move(&mut self, ctx: &mut Ctx, p: PlayerId, id: SquadId, order: Order) -> bool {
+    /// Squad orders clear `detached` for the whole squad (`crate::unit`);
+    /// walking orders regroup the men through the formation.
+    pub(crate) fn order_move(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        id: SquadId,
+        order: Order,
+    ) -> bool {
         if !self.owned(p, id) {
             return false;
         }
+        self.clear_detached(ctx, id);
         let goal = match &order {
             Order::Move { target } | Order::AttackMove { target } => ctx.terrain.clamp(*target),
             _ => self.base_of(p),
@@ -431,32 +489,39 @@ impl MatchState {
         true
     }
 
-    fn order_stop(&mut self, ctx: &mut Ctx, p: PlayerId, id: SquadId) -> bool {
+    /// Detached men make the squad form a line around its leader instead.
+    pub(crate) fn order_stop(&mut self, ctx: &mut Ctx, p: PlayerId, id: SquadId) -> bool {
         if !self.owned(p, id) {
             return false;
         }
+        let regroup = self.clear_detached(ctx, id);
         let sq = self.squads.get_mut(&id).expect("owned");
         sq.order = Order::Idle;
         let facing = sq.nav.heading;
-        hold_in_place(sq, ctx.ents, facing);
+        if regroup {
+            self.regroup_here(ctx, id, facing);
+        } else {
+            hold_in_place(sq, ctx.ents, facing);
+        }
         true
     }
 
-    fn order_dig(&mut self, ctx: &mut Ctx, p: PlayerId, id: SquadId, line: &[FxVec2]) -> bool {
+    pub(crate) fn order_dig(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        id: SquadId,
+        line: &[FxVec2],
+    ) -> bool {
         if !self.owned(p, id) {
             return false;
         }
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
-        if ty.dig_rate_pct == 0 || !(2..=MAX_DIG_POINTS).contains(&line.len()) {
+        if ty.dig_rate_pct == 0 || !self.dig_line_ok(ctx, line) {
             return false;
         }
-        if !line.iter().all(|q| ctx.terrain.contains(*q)) {
-            return false;
-        }
+        self.clear_detached(ctx, id);
         let len = squad::polyline_length(line);
-        if len.is_zero() || len > Fx::from(self.setup.rules.dig.max_length) {
-            return false;
-        }
         let goal = squad::point_along(line, len.div_int(2));
         let base = self.base_of(p);
         let sq = self.squads.get_mut(&id).expect("owned");
@@ -495,16 +560,23 @@ impl MatchState {
         }
         let w = &self.setup.weapons[ty.weapon as usize];
         let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
-        let sq = self.squads.get_mut(&id).expect("owned");
-        let lead = ctx.ents.transform[sq.members[0].index()].pos.xy();
+        let lead = self.squads[&id].lead(ctx.ents);
+        let lead = ctx.ents.transform[lead.index()].pos.xy();
         let dist = (target - lead).length();
         if dist < min {
             return false;
         }
+        let regroup = self.clear_detached(ctx, id);
+        let sq = self.squads.get_mut(&id).expect("owned");
         sq.order = Order::Barrage { target, rounds };
         let facing = (target - lead).normalize_or_zero();
         if dist <= max {
-            hold_in_place(sq, ctx.ents, facing);
+            if regroup {
+                self.regroup_here(ctx, id, facing);
+            } else {
+                hold_in_place(sq, ctx.ents, facing);
+            }
+            let sq = self.squads.get_mut(&id).expect("owned");
             // Where the team stands is where it "walked" (see the retry
             // rule in `combat::fire_mortars`).
             sq.nav.goal = lead;
@@ -552,8 +624,8 @@ impl MatchState {
         sq.nav.slots.clear();
         sq.nav.phase_ticks = 0;
         let q = &mut self.path_queue.queues[sq.owner.0 as usize];
-        if !q.contains(&id) {
-            q.push(id);
+        if !q.contains(&PathReq::Squad(id)) {
+            q.push(PathReq::Squad(id));
         }
     }
 
@@ -658,12 +730,8 @@ impl MatchState {
 
     /// Serves queued path requests round-robin by player until this tick's
     /// expansion budget (minus last tick's overrun) is spent.
-    pub(crate) fn serve_paths(
-        &mut self,
-        ents: &Entities,
-        terrain: &Heightfield,
-        scratch: &mut PathScratch,
-    ) {
+    pub(crate) fn serve_paths(&mut self, ctx: &mut Ctx, scratch: &mut PathScratch) {
+        let terrain = ctx.terrain;
         let mv = &self.setup.rules.movement;
         let cost = PathCost {
             slope_cost_pct: mv.slope_cost_pct,
@@ -681,23 +749,47 @@ impl MatchState {
             else {
                 break;
             };
-            let id = pq.queues[p].remove(0);
+            let req = pq.queues[p].remove(0);
             pq.cursor = ((p + 1) % n) as u8;
-            let Some(sq) = self.squads.get_mut(&id) else {
-                continue;
-            };
-            if sq.nav.phase != NavPhase::PathPending || sq.members.is_empty() {
-                continue;
+            match req {
+                PathReq::Squad(id) => {
+                    let Some(sq) = self.squads.get_mut(&id) else {
+                        continue;
+                    };
+                    if sq.nav.phase != NavPhase::PathPending || sq.members.is_empty() {
+                        continue;
+                    }
+                    let from = ctx.ents.transform[sq.lead(ctx.ents).index()].pos.xy();
+                    let r = find_path(terrain, from, sq.nav.goal, &cost, max_exp, scratch);
+                    avail -= r.expansions as i64;
+                    let nav = &mut sq.nav;
+                    nav.path = r.points;
+                    nav.next = 0;
+                    nav.partial = !r.reached && !r.exhausted;
+                    nav.phase = NavPhase::Moving;
+                    nav.phase_ticks = 0;
+                }
+                PathReq::Unit(m) => {
+                    let i = m.index();
+                    if ctx.ents.kind.get(i) != Some(&EntityKind::Soldier)
+                        || !ctx.ents.unit[i].detached
+                        || ctx.ents.unit[i].nav.phase != NavPhase::PathPending
+                    {
+                        continue;
+                    }
+                    let from = ctx.ents.transform[i].pos.xy();
+                    let goal = ctx.ents.unit[i].nav.goal;
+                    let r = find_path(terrain, from, goal, &cost, max_exp, scratch);
+                    avail -= r.expansions as i64;
+                    let nav = &mut ctx.ents.unit[i].nav;
+                    nav.path = r.points;
+                    nav.next = 0;
+                    nav.partial = !r.reached && !r.exhausted;
+                    nav.phase = NavPhase::Moving;
+                    nav.phase_ticks = 0;
+                    ctx.hash.mark_entity_chunk(m.chunk());
+                }
             }
-            let from = ents.transform[sq.members[0].index()].pos.xy();
-            let r = find_path(terrain, from, sq.nav.goal, &cost, max_exp, scratch);
-            avail -= r.expansions as i64;
-            let nav = &mut sq.nav;
-            nav.path = r.points;
-            nav.next = 0;
-            nav.partial = !r.reached && !r.exhausted;
-            nav.phase = NavPhase::Moving;
-            nav.phase_ticks = 0;
         }
         pq.debt = if avail < 0 { (-avail) as u32 } else { 0 };
     }
@@ -806,26 +898,41 @@ impl MatchState {
             {
                 return Err("squad navigation state is inconsistent");
             }
-            if let Order::Dig { line, job } = &sq.order {
-                let len = squad::polyline_length(line);
-                let size = Fx::from_int(s.map.size_m);
-                let on_map =
-                    |q: &FxVec2| q.x >= Fx::ZERO && q.y >= Fx::ZERO && q.x <= size && q.y <= size;
-                if !(2..=MAX_DIG_POINTS).contains(&line.len())
-                    || !line.iter().all(on_map)
-                    || len > Fx::from(s.rules.dig.max_length)
-                    || !(1..=16).contains(&job.segments.len())
-                    || job.front.abs() != 1
-                    || job.segments.iter().any(|g| {
-                        g.from < Fx::ZERO
-                            || g.from > g.to
-                            || g.to > len
-                            || g.passes as u32 > s.rules.dig.passes
-                            || g.work > DigJob::required(g, &s.rules.dig, s.tick_hz)
-                    })
-                {
-                    return Err("dig order is inconsistent");
-                }
+            if let Order::Dig { line, job } = &sq.order
+                && !dig_consistent(s, line, job, 16, ents)
+            {
+                return Err("dig order is inconsistent");
+            }
+        }
+        for (&id, d) in &self.unit_digs {
+            if id >= self.next_unit_dig
+                || d.owner.0 as usize >= np
+                || !dig_consistent(s, &d.line, &d.job, crate::unit::MAX_UNITS, ents)
+            {
+                return Err("unit dig job is inconsistent");
+            }
+        }
+        for (i, u) in ents.unit.iter().enumerate() {
+            let soldier = ents.kind[i] == EntityKind::Soldier;
+            let nav = &u.nav;
+            let bad = if !u.detached {
+                // Corpses lose their stance order too (vacant slots are
+                // checked by the entity store).
+                u.order != UnitOrder::Idle
+                    || *nav != Default::default()
+                    || (!soldier && u.stance != Default::default())
+            } else {
+                !soldier
+                    || nav.path.len() > MAX_PATH_POINTS
+                    || nav.next as usize > nav.path.len()
+                    || (nav.phase == NavPhase::Moving && nav.next as usize >= nav.path.len())
+                    || matches!(u.order, UnitOrder::Dig { job } if self
+                        .unit_digs
+                        .get(&job)
+                        .is_none_or(|d| d.owner != ents.owner[i]))
+            };
+            if bad {
+                return Err("soldier unit order state is inconsistent");
             }
         }
         if self.spot_cursor.iter().any(|&c| c as usize > ents.len()) {
@@ -846,15 +953,48 @@ impl MatchState {
         if linked != members {
             return Err("soldier squad links disagree with squad member lists");
         }
-        let mut queued: Vec<SquadId> = self.path_queue.queues.iter().flatten().copied().collect();
+        let mut queued: Vec<PathReq> = self.path_queue.queues.iter().flatten().copied().collect();
+        if queued
+            .iter()
+            .any(|r| matches!(r, PathReq::Unit(m) if m.index() >= ents.len()))
+        {
+            return Err("a path request names an unknown soldier");
+        }
         let n = queued.len();
         queued.sort_unstable();
         queued.dedup();
         if queued.len() != n {
-            return Err("a squad is queued for a path twice");
+            return Err("a squad or soldier is queued for a path twice");
         }
         Ok(())
     }
+}
+
+/// Whether a dig order's `line` and `job` are in range (loaded saves):
+/// at most `max_segments` segments, diggers inside the entity store.
+fn dig_consistent(
+    s: &MatchSetup,
+    line: &[FxVec2],
+    job: &DigJob,
+    max_segments: usize,
+    ents: &Entities,
+) -> bool {
+    let len = squad::polyline_length(line);
+    let size = Fx::from_int(s.map.size_m);
+    let on_map = |q: &FxVec2| q.x >= Fx::ZERO && q.y >= Fx::ZERO && q.x <= size && q.y <= size;
+    (2..=MAX_DIG_POINTS).contains(&line.len())
+        && line.iter().all(on_map)
+        && len <= Fx::from(s.rules.dig.max_length)
+        && (1..=max_segments).contains(&job.segments.len())
+        && job.front.abs() == 1
+        && job.segments.iter().all(|g| {
+            g.from >= Fx::ZERO
+                && g.from <= g.to
+                && g.to <= len
+                && g.passes as u32 <= s.rules.dig.passes
+                && g.work <= DigJob::required(g, &s.rules.dig, s.tick_hz)
+                && g.digger.is_none_or(|d| d.index() < ents.len())
+        })
 }
 
 /// Stops `sq` where its men stand, facing `facing` (kept if zero).

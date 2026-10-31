@@ -33,6 +33,8 @@ arrive_cm = 40
 retreat_speed_pct = 140
 # Members behind their formation slot walk this much faster.
 catch_up_speed_pct = 125
+# A man ordered prone crawls at this much of his walking speed.
+prone_speed_pct = 30
 # A* node expansions per tick (all players), and per single search.
 path_budget_per_tick = 4000
 path_max_expansions = 8000

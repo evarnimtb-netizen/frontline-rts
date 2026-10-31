@@ -209,6 +209,8 @@ pub struct MovementSetup {
     pub arrive_radius: Fixed,
     pub retreat_speed_pct: u32,
     pub catch_up_speed_pct: u32,
+    /// Walking speed of a man ordered prone (crawling), in percent.
+    pub prone_speed_pct: u32,
     pub path_budget_per_tick: u32,
     pub path_max_expansions: u32,
     /// Path step cost between two trench cells, in percent of normal.
@@ -574,6 +576,7 @@ impl ModDefs {
                     arrive_radius: Fixed::from_cm(m.arrive_cm),
                     retreat_speed_pct: m.retreat_speed_pct,
                     catch_up_speed_pct: m.catch_up_speed_pct,
+                    prone_speed_pct: m.prone_speed_pct,
                     path_budget_per_tick: m.path_budget_per_tick,
                     path_max_expansions: m.path_max_expansions,
                     trench_cost_pct: m.trench_cost_pct,
@@ -828,7 +831,8 @@ impl MatchSetup {
         );
         check(
             (10..=500).contains(&m.retreat_speed_pct)
-                && (100..=300).contains(&m.catch_up_speed_pct),
+                && (100..=300).contains(&m.catch_up_speed_pct)
+                && (10..=100).contains(&m.prone_speed_pct),
             "rules.movement.speed_pct",
             "out of range",
         );

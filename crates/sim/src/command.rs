@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::ecs::{PlayerId, SimId};
 use crate::fx::FxVec2;
 use crate::game::SquadId;
+use crate::unit::StanceOrder;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct Command {
@@ -52,4 +53,33 @@ pub enum CommandKind {
     CallIn { squad_type: u16 },
     /// Give up; the last player standing wins.
     Surrender,
+    // ---- Soldier-level orders (S1b, `crate::unit`). `units` holds 1 to
+    // `unit::MAX_UNITS` ids; it is sorted and deduplicated when applied,
+    // and dead, foreign and non-soldier ids are dropped (none left: the
+    // command is ignored). A squad whose every living man is named gets the
+    // matching squad order instead; the other men are detached.
+    /// The men walk to `target` (clamped to the map) and spread in a small
+    /// line around it.
+    MoveUnits { units: Vec<SimId>, target: FxVec2 },
+    /// Like `MoveUnits`, engaging enemies on the way.
+    AttackMoveUnits { units: Vec<SimId>, target: FxVec2 },
+    /// The men stop where they stand.
+    StopUnits { units: Vec<SimId> },
+    /// Only these men fall back to the own base.
+    RetreatUnits { units: Vec<SimId> },
+    /// These men dig a trench along `line` (as `Dig`), split among them.
+    /// Men of squads that cannot dig are dropped. Naming exactly one whole
+    /// squad gives that squad a `Dig` order.
+    DigUnits {
+        units: Vec<SimId>,
+        line: Vec<FxVec2>,
+    },
+    /// Stance order for the men. Not an order to go anywhere: it neither
+    /// detaches nor regroups anyone.
+    SetStance {
+        units: Vec<SimId>,
+        stance: StanceOrder,
+    },
+    /// The squad's detached men rejoin it (its order is kept).
+    Regroup { squad: SquadId },
 }

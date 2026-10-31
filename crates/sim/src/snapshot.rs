@@ -9,7 +9,9 @@
 //! bursts of the tick, per-squad and per-player summaries (manpower and
 //! income, tickets and drain, pop, kills, losses, time holding points,
 //! defeat), the capture points and the match outcome; bench worlds leave
-//! those empty except the owner.
+//! those empty except the owner. S1b adds per soldier the stance order and
+//! the detached flag, and for each detached man his own order and spot
+//! ([`UnitSnapshot`], for order markers).
 //!
 //! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
 //! soldier (own soldiers always). A presenter for local player `p` draws an
@@ -30,6 +32,7 @@ use crate::projectile::ProjectilePool;
 use crate::rules::{Defeat, capture_full};
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
+use crate::unit::{StanceOrder, UnitOrder};
 
 /// `soldier_squad` value for a soldier without a squad.
 pub const NO_SQUAD: u32 = u32::MAX;
@@ -42,14 +45,33 @@ pub struct SquadSnapshot {
     pub type_idx: u16,
     pub owner: u8,
     pub members: u8,
+    /// Members that are detached (S1b; counted in `members` too).
+    pub detached: u8,
     pub order: OrderKind,
     pub phase: NavPhase,
-    /// Selection anchor: the leader's position `[x, y, z]`.
+    /// Selection anchor: the formation leader's position `[x, y, z]`.
     pub anchor: [f32; 3],
     /// Where the squad is headed (its position when holding).
     pub goal: [f32; 2],
     /// Dig orders: trench progress in percent (0 otherwise).
     pub dig_pct: u8,
+}
+
+/// A detached soldier's own order (S1b), for order markers.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UnitSnapshot {
+    pub id: SimId,
+    pub owner: u8,
+    pub squad: u32,
+    /// `Idle`, `Move`, `AttackMove`, `Retreat` or `Dig`.
+    pub order: OrderKind,
+    pub phase: NavPhase,
+    /// What the order aims at: the move target, the own base for a
+    /// retreat, the middle of the trench line for a dig, his spot when idle.
+    pub target: [f32; 2],
+    /// His own spot: where he walks to and stands (his slot on the line,
+    /// after cover-seeking once there).
+    pub goal: [f32; 2],
 }
 
 /// A dead soldier, kept for 30 s (rules `combat.corpse_s`).
@@ -142,6 +164,12 @@ pub struct RenderSnapshot {
     pub soldier_suppression: Vec<u8>,
     pub soldier_pinned: Vec<bool>,
     pub soldier_visible: Vec<u16>,
+    /// Per entry of `soldiers` (match mode only, S1b): the stance order
+    /// (`SetStance`) and whether he is detached from his squad's formation.
+    pub soldier_stance_order: Vec<StanceOrder>,
+    pub soldier_detached: Vec<bool>,
+    /// Detached soldiers, ascending id (match mode only).
+    pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
     pub corpses: Vec<CorpseSnapshot>,
     /// Rounds fired this tick, in fire order (match mode only).
@@ -201,6 +229,9 @@ impl RenderSnapshot {
         self.soldier_suppression.clear();
         self.soldier_pinned.clear();
         self.soldier_visible.clear();
+        self.soldier_stance_order.clear();
+        self.soldier_detached.clear();
+        self.units.clear();
         self.corpses.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
             let t = &ents.transform()[i];
@@ -221,6 +252,36 @@ impl RenderSnapshot {
                             .push((c.suppression / 1000).min(100) as u8);
                         self.soldier_pinned.push(c.pinned);
                         self.soldier_visible.push(c.seen_by | (1 << owner));
+                        let u = &ents.unit()[i];
+                        self.soldier_stance_order.push(u.stance);
+                        self.soldier_detached.push(u.detached);
+                        if u.detached
+                            && let Some(g) = game
+                        {
+                            let target = match &u.order {
+                                UnitOrder::Idle => u.nav.goal,
+                                UnitOrder::Move { target } | UnitOrder::AttackMove { target } => {
+                                    *target
+                                }
+                                UnitOrder::Retreat => g.base_of(PlayerId(owner)),
+                                UnitOrder::Dig { job } => {
+                                    g.unit_digs().get(job).map_or(u.nav.goal, |d| {
+                                        let line = &d.line;
+                                        let len = crate::squad::polyline_length(line);
+                                        crate::squad::point_along(line, len.div_int(2))
+                                    })
+                                }
+                            };
+                            self.units.push(UnitSnapshot {
+                                id: SimId(i as u32),
+                                owner,
+                                squad: ents.squad()[i].map_or(NO_SQUAD, |s| s.0),
+                                order: u.order.kind(),
+                                phase: u.nav.phase,
+                                target: target.to_f32(),
+                                goal: u.nav.goal.to_f32(),
+                            });
+                        }
                     }
                 }
                 EntityKind::Corpse => self.corpses.push(CorpseSnapshot {
@@ -246,14 +307,20 @@ impl RenderSnapshot {
             return;
         };
         for (id, sq) in g.squads() {
-            let Some(&lead) = sq.members.first() else {
+            if sq.members.is_empty() {
                 continue;
-            };
+            }
+            let lead = sq.lead(ents);
             self.squads.push(SquadSnapshot {
                 id: id.0,
                 type_idx: sq.type_idx,
                 owner: sq.owner.0,
                 members: sq.members.len() as u8,
+                detached: sq
+                    .members
+                    .iter()
+                    .filter(|m| ents.unit()[m.index()].detached)
+                    .count() as u8,
                 order: sq.order.kind(),
                 phase: sq.nav.phase,
                 anchor: ents.transform()[lead.index()].pos.to_f32(),

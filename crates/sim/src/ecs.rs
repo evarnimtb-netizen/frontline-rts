@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::SquadId;
+use crate::unit::Unit;
 
 /// Ids per hash/parallel chunk.
 pub const CHUNK_SIZE: usize = 256;
@@ -228,6 +229,10 @@ pub struct Entities {
     pub(crate) squad: Vec<Option<SquadId>>,
     /// Combat state (match mode; default for bench soldiers).
     pub(crate) combat: Vec<Combat>,
+    /// Soldier-level orders: stance order, detached flag and own order
+    /// (match mode, S1b; default for bench soldiers, corpses and men in
+    /// formation apart from the stance order).
+    pub(crate) unit: Vec<Unit>,
 }
 
 impl Entities {
@@ -266,6 +271,10 @@ impl Entities {
     #[inline]
     pub fn combat(&self) -> &[Combat] {
         &self.combat
+    }
+    #[inline]
+    pub fn unit(&self) -> &[Unit] {
+        &self.unit
     }
 
     /// Column length (= allocator high-water mark).
@@ -319,6 +328,7 @@ impl Entities {
             self.weapon.push(Weapon::default());
             self.squad.push(None);
             self.combat.push(Combat::default());
+            self.unit.push(Unit::default());
         }
         debug_assert_eq!(self.kind.len(), self.alloc.high_water() as usize);
         debug_assert_eq!(self.kind[i], EntityKind::Vacant);
@@ -332,6 +342,7 @@ impl Entities {
         self.weapon[i] = Weapon::default();
         self.squad[i] = None;
         self.combat[i] = Combat::default();
+        self.unit[i] = Unit::default();
         id
     }
 
@@ -351,6 +362,7 @@ impl Entities {
             self.weapon.len(),
             self.squad.len(),
             self.combat.len(),
+            self.unit.len(),
         ];
         if columns.iter().any(|&l| l != n) {
             return Err("entity column lengths disagree with the allocator");
@@ -379,7 +391,8 @@ impl Entities {
                     || self.mover[i] != Mover::default()
                     || self.weapon[i] != Weapon::default()
                     || self.squad[i].is_some()
-                    || self.combat[i] != Combat::default())
+                    || self.combat[i] != Combat::default()
+                    || self.unit[i] != Unit::default())
         });
         if dirty_vacant {
             return Err("a vacant entity slot holds non-default values");
@@ -401,6 +414,7 @@ impl Entities {
         self.weapon[i] = Weapon::default();
         self.squad[i] = None;
         self.combat[i] = Combat::default();
+        self.unit[i] = Unit::default();
         self.alloc.free(id);
         true
     }

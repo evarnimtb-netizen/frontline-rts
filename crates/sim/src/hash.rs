@@ -13,8 +13,9 @@
 //!   stats counters, the terrain hash and, in match mode, the match setup
 //!   bytes and the whole [`MatchState`] (players, squads, queues: small, so
 //!   it is simply re-hashed at every publish).
-//! * In match mode each entity also hashes its `squad` link and its combat
-//!   state, and match projectiles hash their weapon and player. Bench worlds
+//! * In match mode each entity also hashes its `squad` link, its combat
+//!   state and its soldier-level order state (`unit`), and match projectiles
+//!   hash their weapon and player. Bench worlds
 //!   skip those (always default there, checked on load), so their hashes
 //!   are unchanged by match mode.
 //! * The combined hash is xxh3 over `globals ‖ entity chunks ‖ pool chunks`.
@@ -27,11 +28,13 @@ use std::cell::RefCell;
 
 use xxhash_rust::xxh3::xxh3_64;
 
+use crate::dig::DigJob;
 use crate::ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::game::{MatchState, Order, Outcome};
+use crate::game::{MatchState, Order, Outcome, PathReq};
 use crate::projectile::{NO_WEAPON, Projectile, ProjectilePool};
 use crate::terrain::{DetailTile, Heightfield};
+use crate::unit::{Unit, UnitOrder};
 use crate::world::SimState;
 
 /// Explicit byte encoding for hashing.
@@ -119,6 +122,40 @@ impl StableHash for Combat {
     }
 }
 
+impl StableHash for Unit {
+    fn put(&self, out: &mut Vec<u8>) {
+        (self.stance as u8).put(out);
+        self.detached.put(out);
+        (self.order.kind() as u8).put(out);
+        match self.order {
+            UnitOrder::Idle | UnitOrder::Retreat => {}
+            UnitOrder::Move { target } | UnitOrder::AttackMove { target } => target.put(out),
+            UnitOrder::Dig { job } => job.put(out),
+        }
+        let n = &self.nav;
+        (n.phase as u8).put(out);
+        n.goal.put(out);
+        n.path.put(out);
+        n.next.put(out);
+        n.partial.put(out);
+        n.facing.put(out);
+        n.phase_ticks.put(out);
+    }
+}
+
+fn put_dig(line: &[FxVec2], job: &DigJob, out: &mut Vec<u8>) {
+    line.put(out);
+    (job.front as u8).put(out);
+    (job.segments.len() as u32).put(out);
+    for g in &job.segments {
+        g.from.put(out);
+        g.to.put(out);
+        g.work.put(out);
+        g.passes.put(out);
+        g.digger.map_or(u32::MAX, |d| d.0).put(out);
+    }
+}
+
 thread_local! {
     static BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(CHUNK_SIZE * 64));
 }
@@ -177,6 +214,7 @@ pub(crate) fn entity_chunk(ents: &Entities, c: usize, squads: bool) -> u64 {
             if squads {
                 ents.squad[i].map_or(u32::MAX, |s| s.0).put(out);
                 ents.combat[i].put(out);
+                ents.unit[i].put(out);
             }
         }
     })
@@ -279,18 +317,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         match &sq.order {
             Order::Idle | Order::Retreat => {}
             Order::Move { target } | Order::AttackMove { target } => target.put(out),
-            Order::Dig { line, job } => {
-                line.put(out);
-                (job.front as u8).put(out);
-                (job.segments.len() as u32).put(out);
-                for g in &job.segments {
-                    g.from.put(out);
-                    g.to.put(out);
-                    g.work.put(out);
-                    g.passes.put(out);
-                    g.digger.map_or(u32::MAX, |d| d.0).put(out);
-                }
-            }
+            Order::Dig { line, job } => put_dig(line, job, out),
             Order::Barrage { target, rounds } => {
                 target.put(out);
                 rounds.put(out);
@@ -319,8 +346,17 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     (q.queues.len() as u32).put(out);
     for list in &q.queues {
         (list.len() as u32).put(out);
-        for id in list {
-            id.0.put(out);
+        for r in list {
+            match r {
+                PathReq::Squad(id) => {
+                    0u8.put(out);
+                    id.0.put(out);
+                }
+                PathReq::Unit(m) => {
+                    1u8.put(out);
+                    m.0.put(out);
+                }
+            }
         }
     }
     q.cursor.put(out);
@@ -333,6 +369,13 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             winner.0.put(out);
         }
         Outcome::Draw => 2u8.put(out),
+    }
+    g.next_unit_dig.put(out);
+    (g.unit_digs.len() as u32).put(out);
+    for (id, d) in &g.unit_digs {
+        id.put(out);
+        d.owner.0.put(out);
+        put_dig(&d.line, &d.job, out);
     }
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).

@@ -49,11 +49,17 @@
 //!   corpses, leave their squad (squads left empty are deleted) and count
 //!   as a loss and a kill.
 //! * **Status** (stage 7, per entity chunk): suppression decays; stance is
-//!   set (pinned → prone; in a trench → crouched below the lip, standing on
-//!   the fire step while aiming; a set-up MG → prone; suppressed →
-//!   crouched; else standing) with
+//!   set (pinned → prone; in a trench → crouched below the lip, or lying
+//!   on the floor when ordered prone, standing on the fire step while
+//!   aiming; elsewhere by the man's stance order (S1b): `Auto` → a set-up
+//!   MG prone, suppressed crouched, else standing; `Stand` → standing,
+//!   crouched when suppressed; `Crouch` and `Prone` as ordered) with
 //!   the matching capsule heights; the stillness and shot timers advance;
 //!   corpses count down and are removed.
+//!
+//! Detached men (S1b, `crate::unit`) engage by their own order (`Idle` and
+//! `AttackMove` always, `Move` and `Dig` while still, `Retreat` never) and
+//! ignore the squad focus; focus and mortar fire use the formation leader.
 //!
 //! No friendly fire in S1: rounds and blasts ignore the firing player's own
 //! soldiers. Rounds have no drag, so the drop compensation is exact.
@@ -65,13 +71,14 @@ use crate::ecs::{
     Combat, Entities, EntityKind, PlayerId, SimId, Stance, Transform, Velocity, Weapon,
 };
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::game::{MatchState, NavPhase, Order, SquadId};
+use crate::game::{MatchState, NavPhase, Order, PathReq, SquadId};
 use crate::hash::HashCache;
 use crate::projectile::{Projectile, ProjectileEnd, SUBSTEP_HZ, advance, finish};
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
+use crate::unit::{StanceOrder, Unit, UnitOrder};
 use crate::world::Stats;
 
 /// Hit capsule heights by stance (mm).
@@ -127,6 +134,18 @@ pub(crate) fn engage(order: &Order) -> Engage {
         Order::Retreat | Order::Barrage { .. } => Engage::Never,
         Order::Move { .. } | Order::Dig { .. } => Engage::Still,
         Order::Idle | Order::AttackMove { .. } => Engage::Always,
+    }
+}
+
+/// Engage rule of a soldier: his own order if detached, else his squad's.
+pub(crate) fn engage_of(squad: &Order, u: &Unit) -> Engage {
+    if !u.detached {
+        return engage(squad);
+    }
+    match u.order {
+        UnitOrder::Retreat => Engage::Never,
+        UnitOrder::Move { .. } | UnitOrder::Dig { .. } => Engage::Still,
+        UnitOrder::Idle | UnitOrder::AttackMove { .. } => Engage::Always,
     }
 }
 
@@ -214,7 +233,7 @@ impl MatchState {
                 sq.focus = None;
                 continue;
             }
-            let lead = ents.transform[sq.members[0].index()].pos.xy();
+            let lead = ents.transform[sq.lead(ents).index()].pos.xy();
             let owner = sq.owner.0;
             let r = range_sq(w.range_max.into());
             if sq
@@ -243,6 +262,7 @@ pub(crate) struct FireCtx<'a> {
     pub transform: &'a [Transform],
     pub velocity: &'a [Velocity],
     pub squad: &'a [Option<SquadId>],
+    pub unit: &'a [Unit],
     pub marks: &'a [Mark],
     pub mark_of: &'a [u32],
     pub game: &'a MatchState,
@@ -412,8 +432,9 @@ pub(crate) fn aim_and_fire(
         let ty = &setup.squad_types[sq.type_idx as usize];
         let w = &setup.weapons[ty.weapon as usize];
         let still = is_still(&ctx.velocity[i]);
+        let u = &ctx.unit[i];
         let may = w.he.is_none()
-            && match engage(&sq.order) {
+            && match engage_of(&sq.order, u) {
                 Engage::Never => false,
                 Engage::Still => still,
                 Engage::Always => true,
@@ -438,7 +459,8 @@ pub(crate) fn aim_and_fire(
                     RngStream::new(ctx.seed, ctx.tick, SimId(i as u32), Purpose::SWEEP).next_u64();
                 search(ctx, i, from, r, None, SWEEP_POOL, (roll >> 32) as usize)
             } else {
-                search(ctx, i, from, r, sq.focus, LOS_TRIES, 0)
+                let focus = if u.detached { None } else { sq.focus };
+                search(ctx, i, from, r, focus, LOS_TRIES, 0)
             };
             c.retarget = if c.target.is_some() { hz } else { hz / 3 }.max(1) as u16;
             if c.target.is_some() && before.is_none() {
@@ -500,10 +522,18 @@ impl MatchState {
         let setup = &self.setup;
         let mut repath = Vec::new();
         for (&id, sq) in self.squads.iter_mut() {
+            if sq.members.is_empty() {
+                continue;
+            }
+            // The formation leader fires; with every man detached, nobody.
+            let gunner = sq.lead(ents);
             let Order::Barrage { target, rounds } = &mut sq.order else {
                 continue;
             };
-            if sq.members.is_empty() || sq.nav.phase != NavPhase::Holding || *rounds == 0 {
+            if sq.nav.phase != NavPhase::Holding
+                || *rounds == 0
+                || ents.unit[gunner.index()].detached
+            {
                 continue;
             }
             let ty = &setup.squad_types[sq.type_idx as usize];
@@ -511,7 +541,6 @@ impl MatchState {
             if w.he.is_none() {
                 continue;
             }
-            let gunner = sq.members[0];
             let i = gunner.index();
             let pos = ents.transform[i].pos;
             let d = (*target - pos.xy()).length();
@@ -1026,6 +1055,7 @@ impl MatchState {
             seen_by: c.seen_by,
             ..Combat::default()
         };
+        ents.unit[i] = Unit::default();
         hash.mark_entity_chunk(id.chunk());
         if let Some(p) = self.players.get_mut(owner) {
             p.losses += 1;
@@ -1045,10 +1075,13 @@ impl MatchState {
         if sq.focus == Some(id) {
             sq.focus = None;
         }
+        for q in &mut self.path_queue.queues {
+            q.retain(|r| *r != PathReq::Unit(id));
+        }
         if sq.members.is_empty() {
             self.squads.remove(&sid);
             for q in &mut self.path_queue.queues {
-                q.retain(|s| *s != sid);
+                q.retain(|r| *r != PathReq::Squad(sid));
             }
         }
     }
@@ -1063,6 +1096,7 @@ pub(crate) struct StatusCtx<'a> {
     pub velocity: &'a [Velocity],
     pub weapon: &'a [Weapon],
     pub squad: &'a [Option<SquadId>],
+    pub unit: &'a [Unit],
     pub game: &'a MatchState,
     pub terrain: &'a Heightfield,
 }
@@ -1098,7 +1132,12 @@ pub(crate) fn status(
         }
         changed = true;
         let sq = ctx.squad[i].and_then(|s| ctx.game.squad(s));
-        let retreating = sq.is_some_and(|s| s.order == Order::Retreat);
+        let u = &ctx.unit[i];
+        let retreating = if u.detached {
+            u.order == UnitOrder::Retreat
+        } else {
+            sq.is_some_and(|s| s.order == Order::Retreat)
+        };
         let weapon =
             sq.map(|s| &setup.weapons[setup.squad_types[s.type_idx as usize].weapon as usize]);
         c.suppression = c.suppression.saturating_sub(rules.suppression_decay_milli);
@@ -1126,23 +1165,35 @@ pub(crate) fn status(
             Fx::from_milli(PRONE_MM),
         );
         let step = (base_z + parapet + exposure - pos.z).max(stand);
+        // Suppression only ever lowers the ordered stance.
         (c.stance, c.height, c.fire_height) = if c.pinned {
             (Stance::Prone, prone, prone)
         } else if c.in_trench {
             if aiming {
                 (Stance::Stand, step, step)
+            } else if u.stance == StanceOrder::Prone {
+                (Stance::Prone, prone, step)
             } else {
                 (Stance::Crouch, crouch, step)
             }
-        } else if weapon
-            .is_some_and(|w| w.class == WeaponClass::Mg && c.still as u32 >= w.setup_ticks)
-        {
-            // A set-up MG fires lying down.
-            (Stance::Prone, prone, prone)
-        } else if crouched {
-            (Stance::Crouch, crouch, crouch)
         } else {
-            (Stance::Stand, stand, stand)
+            match u.stance {
+                StanceOrder::Auto
+                    if weapon.is_some_and(|w| {
+                        w.class == WeaponClass::Mg && c.still as u32 >= w.setup_ticks
+                    }) =>
+                {
+                    // A set-up MG fires lying down.
+                    (Stance::Prone, prone, prone)
+                }
+                StanceOrder::Auto | StanceOrder::Stand if !crouched => {
+                    (Stance::Stand, stand, stand)
+                }
+                StanceOrder::Auto | StanceOrder::Stand | StanceOrder::Crouch => {
+                    (Stance::Crouch, crouch, crouch)
+                }
+                StanceOrder::Prone => (Stance::Prone, prone, prone),
+            }
         };
     }
     changed
@@ -1308,6 +1359,7 @@ mod tests {
                 velocity: &self.ents.velocity,
                 weapon: &self.ents.weapon,
                 squad: &self.ents.squad,
+                unit: &self.ents.unit,
                 game: &self.game,
                 terrain: &self.terrain,
             };
@@ -1537,6 +1589,87 @@ mod tests {
     }
 
     #[test]
+    fn stance_orders_hold_unless_suppression_forces_lower() {
+        let mut r = rig(false);
+        let man = r.put(0, 500, 500);
+        let rules = r.game.setup().rules.combat.clone();
+        let decay = rules.suppression_decay_milli;
+        let check = |r: &mut Rig, order: StanceOrder, points: u32, want: Stance| {
+            r.ents.unit[man.index()].stance = order;
+            r.ents.combat[man.index()].suppression = points * 1000 + decay;
+            r.status();
+            let c = r.ents.combat[man.index()];
+            assert_eq!(c.stance, want, "{order:?} at {points}");
+            let h = match want {
+                Stance::Stand => STAND_MM,
+                Stance::Crouch => CROUCH_MM,
+                Stance::Prone => PRONE_MM,
+            };
+            assert_eq!(
+                (c.height, c.fire_height),
+                (Fx::from_milli(h), Fx::from_milli(h))
+            );
+        };
+        let (crouch, pin) = (rules.crouch_suppression, rules.pin_suppression);
+        use Stance as S;
+        use StanceOrder as O;
+        for (order, calm, shaken, pinned) in [
+            (O::Auto, S::Stand, S::Crouch, S::Prone),
+            (O::Stand, S::Stand, S::Crouch, S::Prone),
+            (O::Crouch, S::Crouch, S::Crouch, S::Prone),
+            (O::Prone, S::Prone, S::Prone, S::Prone),
+        ] {
+            check(&mut r, order, 0, calm);
+            check(&mut r, order, crouch, shaken);
+            check(&mut r, order, pin, pinned);
+        }
+        // An ordered stance beats the set-up MG's automatic prone.
+        let mg = r
+            .game
+            .setup()
+            .squad_types
+            .iter()
+            .position(|t| r.game.setup().weapons[t.weapon as usize].class == WeaponClass::Mg)
+            .unwrap();
+        r.game.squads.get_mut(&r.squad).unwrap().type_idx = mg as u16;
+        r.ents.combat[man.index()].still = u16::MAX;
+        check(&mut r, O::Auto, 0, S::Prone);
+        check(&mut r, O::Crouch, 0, S::Crouch);
+    }
+
+    #[test]
+    fn stance_orders_in_a_trench_still_crouch_and_rise_to_fire() {
+        let mut r = rig(true);
+        let man = r.put(0, TRENCH_X, 500);
+        for order in [
+            StanceOrder::Auto,
+            StanceOrder::Stand,
+            StanceOrder::Crouch,
+            StanceOrder::Prone,
+        ] {
+            r.ents.unit[man.index()].stance = order;
+            r.ents.combat[man.index()].target = None;
+            r.status();
+            let low = r.ents.combat[man.index()];
+            let want = if order == StanceOrder::Prone {
+                Stance::Prone
+            } else {
+                Stance::Crouch
+            };
+            assert!(low.in_trench && low.stance == want, "{order:?}: {low:?}");
+            // Below the lip: near misses count half.
+            assert!(covered(&low), "{order:?}");
+            // Rises to the fire step to shoot, whatever the order.
+            r.ents.combat[man.index()].target = Some(SimId(9999));
+            r.status();
+            let up = r.ents.combat[man.index()];
+            assert_eq!(up.stance, Stance::Stand, "{order:?}");
+            assert_eq!(up.height, low.fire_height, "{order:?}");
+            assert_eq!(up.height, up.fire_height);
+        }
+    }
+
+    #[test]
     fn trench_walls_stop_blast_damage_except_near_direct_hits() {
         // Men crouched on the floor; bursts 3 m to either side of the
         // trench line (inside the lethal radius) do no damage.
@@ -1589,6 +1722,7 @@ mod tests {
                 velocity: &r.ents.velocity,
                 weapon: &r.ents.weapon,
                 squad: &r.ents.squad,
+                unit: &r.ents.unit,
                 game: &r.game,
                 terrain: &r.terrain,
             };

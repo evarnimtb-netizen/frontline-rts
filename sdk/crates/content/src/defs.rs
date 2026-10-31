@@ -299,6 +299,8 @@ pub struct MovementDef {
     pub arrive_cm: u32,
     pub retreat_speed_pct: u32,
     pub catch_up_speed_pct: u32,
+    /// Walking speed of a man ordered prone (crawling), in percent.
+    pub prone_speed_pct: u32,
     pub path_budget_per_tick: u32,
     pub path_max_expansions: u32,
     /// Path step cost between two trench cells, in percent of normal.
@@ -741,6 +743,13 @@ impl RulesDef {
             m.catch_up_speed_pct,
             100,
             300,
+        );
+        range(
+            &mut out,
+            "movement.prone_speed_pct",
+            m.prone_speed_pct,
+            10,
+            100,
         );
         range(
             &mut out,

@@ -366,8 +366,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// weapons, squad focus, kills, spotting cursors, combat counters).
 /// 5: match rules (defeats, point time, income and drain fractions,
 /// contested points) and AI commander state. 6: weapon fire intervals in
-/// milli-ticks (`WeaponSetup::interval_milli`).
-const SAVE_VERSION: u32 = 6;
+/// milli-ticks (`WeaponSetup::interval_milli`). 7: soldier-level orders
+/// (entity `unit` column, unit dig jobs, soldier path requests, the
+/// `prone_speed_pct` movement rule).
+const SAVE_VERSION: u32 = 7;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -714,6 +716,7 @@ impl World {
                 .iter()
                 .zip(&st.entities.combat)
                 .any(|(k, c)| *k == EntityKind::Corpse || *c != Default::default())
+                || st.entities.unit.iter().any(|u| *u != Default::default())
                 || st
                     .projectiles
                     .slots()
@@ -805,8 +808,8 @@ impl World {
             };
             game.spawn_call_ins(&mut ctx);
             game.run_ai(ctx.ents, ctx.terrain, *tick);
-            game.serve_paths(ctx.ents, ctx.terrain, path_scratch);
-            game.dig_work(entities, terrain, *tick);
+            game.serve_paths(&mut ctx, path_scratch);
+            game.dig_work(entities, terrain, hash, *tick);
             let mut ctx = Ctx {
                 ents: entities,
                 terrain,
@@ -814,6 +817,7 @@ impl World {
                 tick: *tick,
             };
             game.steer_squads(&mut ctx);
+            game.steer_units(&mut ctx);
         } else {
             let World {
                 state,
@@ -1040,6 +1044,7 @@ impl World {
                     squad,
                     combat,
                     weapon,
+                    unit,
                     ..
                 } = &mut *entities;
                 let ctx = FireCtx {
@@ -1048,6 +1053,7 @@ impl World {
                     transform,
                     velocity,
                     squad,
+                    unit,
                     marks,
                     mark_of,
                     game: &*game,
@@ -1225,6 +1231,7 @@ impl World {
                     weapon,
                     squad,
                     combat,
+                    unit,
                     ..
                 } = &mut *entities;
                 let ctx = StatusCtx {
@@ -1233,6 +1240,7 @@ impl World {
                     velocity,
                     weapon,
                     squad,
+                    unit,
                     game,
                     terrain,
                 };
@@ -1321,6 +1329,11 @@ impl World {
             ents.transform[i].yaw = yaw;
             ents.velocity[i] = Default::default();
             ents.mover[i].waypoint = q;
+            let stance = ents.unit[i].stance;
+            ents.unit[i] = crate::unit::Unit {
+                stance,
+                ..Default::default()
+            };
             self.hash.mark_entity_chunk(m.chunk());
         }
         sq.order = Order::Idle;
@@ -1332,8 +1345,12 @@ impl World {
             slots,
             ..Nav::default()
         };
+        let members = sq.members.clone();
         for q in &mut game.path_queue.queues {
-            q.retain(|s| *s != id);
+            q.retain(|r| match r {
+                crate::game::PathReq::Squad(s) => *s != id,
+                crate::game::PathReq::Unit(m) => !members.contains(m),
+            });
         }
         self.refresh_hashes();
         self.fill_snapshot();
@@ -1844,6 +1861,113 @@ mod tests {
             let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
             assert_ne!(w2.full_state_hash(), base);
         }
+    }
+
+    /// `match_world` with player 0's first two soldiers sent off on their own
+    /// (one still waiting for his path) and the third ordered prone.
+    fn unit_world() -> World {
+        let mut w = match_world();
+        let men: Vec<SimId> = w
+            .entities()
+            .soldiers()
+            .filter(|id| w.entities().owner()[id.index()] == PlayerId(0))
+            .take(3)
+            .collect();
+        w.step(&[
+            Command {
+                player: PlayerId(0),
+                seq: 0,
+                kind: CommandKind::MoveUnits {
+                    units: men[..2].to_vec(),
+                    target: FxVec2::from_int(300, 300),
+                },
+            },
+            Command {
+                player: PlayerId(0),
+                seq: 1,
+                kind: CommandKind::SetStance {
+                    units: vec![men[2]],
+                    stance: crate::unit::StanceOrder::Prone,
+                },
+            },
+        ]);
+        w
+    }
+
+    #[test]
+    fn unit_state_is_saved_hashed_and_checked_on_load() {
+        use crate::game::PathReq;
+        use crate::unit::{StanceOrder, UnitOrder};
+        let w = unit_world();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.state_hash(), w.state_hash());
+        let ents = w.entities();
+        let men: Vec<SimId> = ents
+            .soldiers()
+            .filter(|id| ents.unit[id.index()].detached)
+            .collect();
+        assert_eq!(men.len(), 2);
+        let (a, b) = (men[0].index(), men[1].index());
+        let base = w.full_state_hash();
+        type Edit = Box<dyn Fn(&mut SimState)>;
+        let edits: [Edit; 4] = [
+            Box::new(move |s| s.entities.unit[a].stance = StanceOrder::Crouch),
+            Box::new(move |s| s.entities.unit[a].nav.goal.x += Fx::ONE),
+            Box::new(move |s| {
+                s.entities.unit[b].order = UnitOrder::AttackMove {
+                    target: FxVec2::from_int(300, 300),
+                }
+            }),
+            Box::new(|s| s.game.as_mut().unwrap().next_unit_dig += 1),
+        ];
+        for edit in edits {
+            let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base);
+        }
+        // A man in formation with an order of his own.
+        let bytes = save_edited(&w, |s| {
+            let k = s
+                .entities
+                .soldiers()
+                .find(|id| !s.entities.unit[id.index()].detached)
+                .unwrap();
+            s.entities.unit[k.index()].order = UnitOrder::Retreat;
+        });
+        assert!(load_err(&bytes).contains("unit order"));
+        // A digger of a job that does not exist.
+        let bytes = save_edited(&w, move |s| {
+            s.entities.unit[a].order = UnitOrder::Dig { job: 7 }
+        });
+        assert!(load_err(&bytes).contains("unit order"));
+        // A walking man whose path is used up.
+        let bytes = save_edited(&w, move |s| {
+            let nav = &mut s.entities.unit[b].nav;
+            nav.phase = NavPhase::Moving;
+            nav.path.clear();
+        });
+        assert!(load_err(&bytes).contains("unit order"));
+        // A path request for a soldier outside the store, or queued twice.
+        let bytes = save_edited(&w, |s| {
+            let q = &mut s.game.as_mut().unwrap().path_queue.queues[0];
+            q.push(PathReq::Unit(SimId(1 << 20)));
+        });
+        assert!(load_err(&bytes).contains("unknown soldier"));
+        let bytes = save_edited(&w, move |s| {
+            let q = &mut s.game.as_mut().unwrap().path_queue.queues[0];
+            q.push(PathReq::Unit(SimId(a as u32)));
+            q.push(PathReq::Unit(SimId(a as u32)));
+        });
+        assert!(load_err(&bytes).contains("twice"));
+    }
+
+    #[test]
+    fn load_rejects_unit_state_in_bench_worlds() {
+        let w = busy_world();
+        let bytes = save_edited(&w, |s| {
+            s.entities.unit[0].stance = crate::unit::StanceOrder::Prone;
+        });
+        assert!(load_err(&bytes).contains("bench"));
     }
 
     #[test]
