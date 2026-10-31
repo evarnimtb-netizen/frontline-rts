@@ -1,0 +1,12 @@
+id = "ww2:usa_rifle_squad"
+name = "Rifle Squad"
+faction = "ww2:usa"
+role = "rifle"
+men = 8
+weapon = "ww2:m1_garand"
+cost = 250
+call_in_s = 20
+speed_cm_s = 160
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100

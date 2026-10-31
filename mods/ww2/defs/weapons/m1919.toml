@@ -1,0 +1,12 @@
+id = "ww2:m1919"
+name = "M1919A4"
+class = "mg"
+range_m = 450
+damage = 45
+rounds_per_min = 500
+magazine = 100
+reload_ms = 6000
+spread_mrad = 10
+muzzle_velocity_m_s = 850
+setup_ms = 3000
+suppression = 14

@@ -1,0 +1,11 @@
+id = "ww2:kar98k"
+name = "Kar98k"
+class = "rifle"
+range_m = 300
+damage = 70
+rounds_per_min = 15
+magazine = 5
+reload_ms = 3500
+spread_mrad = 4
+muzzle_velocity_m_s = 760
+suppression = 8

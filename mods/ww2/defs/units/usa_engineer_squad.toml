@@ -1,0 +1,12 @@
+id = "ww2:usa_engineer_squad"
+name = "Engineer Squad"
+faction = "ww2:usa"
+role = "engineer"
+men = 5
+weapon = "ww2:m3_smg"
+cost = 220
+call_in_s = 20
+speed_cm_s = 155
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 200

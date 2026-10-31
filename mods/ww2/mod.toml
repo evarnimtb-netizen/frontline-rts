@@ -1,0 +1,8 @@
+# Base game content (Base Content License, §7.9). Loaded by
+# `frontline_content::ModDefs::load`.
+id          = "ww2"
+name        = "Frontline: WW2"
+version     = "0.1.0"
+kind        = "content"
+api_version = "1"
+deterministic = true

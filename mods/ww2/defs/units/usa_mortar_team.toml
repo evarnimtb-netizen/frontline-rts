@@ -1,0 +1,12 @@
+id = "ww2:usa_mortar_team"
+name = "Mortar Team"
+faction = "ww2:usa"
+role = "mortar"
+men = 3
+weapon = "ww2:m1_mortar"
+cost = 280
+call_in_s = 30
+speed_cm_s = 130
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0

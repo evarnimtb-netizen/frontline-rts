@@ -1,0 +1,65 @@
+# Skirmish rules (docs/slices/S1-skirmish.md "Economy", "Victory", "Capture").
+id = "ww2:skirmish"
+name = "Skirmish"
+tick_hz = 30
+hash_interval = 30
+tickets = 500
+# Soldiers per side, alive or called in.
+pop_cap = 120
+projectile_cap = 2048
+
+[economy]
+start_manpower = 600
+income_per_min = 240
+# Extra income per held capture point.
+point_income_per_min = 60
+
+[tickets_drain]
+# Per point of difference in held points.
+per_min_per_point = 6
+
+[capture]
+radius_m = 15
+time_s = 20
+# Capture speeds up with each man up to this many.
+max_men = 4
+
+[movement]
+# Path cost multiplier per 100 % grade: cost = base * (100 + grade_pct * slope_cost_pct / 100) / 100.
+slope_cost_pct = 300
+# Grid steps steeper than this are impassable.
+max_slope_pct = 80
+arrive_cm = 40
+retreat_speed_pct = 140
+# Members behind their formation slot walk this much faster.
+catch_up_speed_pct = 125
+# A* node expansions per tick (all players), and per single search.
+path_budget_per_tick = 6000
+path_max_expansions = 16000
+
+[dig]
+depth_cm = 160
+floor_cm = 80
+parapet_cm = 30
+max_length_m = 60
+# Work points per metre of trench. One man at dig_rate_pct = 100 does 100
+# work points per second: a rifle squad digs 20 m in about 3.5 min.
+work_per_m = 8400
+
+[difficulty.easy]
+income_pct = 80
+reaction_ms = 4000
+replan_ms = 3000
+decision_quality_pct = 50
+
+[difficulty.normal]
+income_pct = 100
+reaction_ms = 2000
+replan_ms = 2000
+decision_quality_pct = 80
+
+[difficulty.hard]
+income_pct = 125
+reaction_ms = 1000
+replan_ms = 2000
+decision_quality_pct = 100

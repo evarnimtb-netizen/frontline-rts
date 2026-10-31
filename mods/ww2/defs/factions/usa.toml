@@ -1,0 +1,11 @@
+id = "ww2:usa"
+name = "USA"
+color = "#7d8b4a"
+roster = [
+    "ww2:usa_rifle_squad",
+    "ww2:usa_mg_team",
+    "ww2:usa_engineer_squad",
+    "ww2:usa_mortar_team",
+]
+# Squads on the field at tick 0, at the player's base.
+start_squads = ["ww2:usa_rifle_squad", "ww2:usa_rifle_squad", "ww2:usa_engineer_squad"]

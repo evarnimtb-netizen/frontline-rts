@@ -1,0 +1,12 @@
+id = "ww2:ger_engineer_squad"
+name = "Pioniergruppe"
+faction = "ww2:germany"
+role = "engineer"
+men = 5
+weapon = "ww2:mp40"
+cost = 220
+call_in_s = 20
+speed_cm_s = 155
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 200

@@ -1,0 +1,12 @@
+id = "ww2:ger_rifle_squad"
+name = "Schützengruppe"
+faction = "ww2:germany"
+role = "rifle"
+men = 8
+weapon = "ww2:kar98k"
+cost = 240
+call_in_s = 20
+speed_cm_s = 160
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100

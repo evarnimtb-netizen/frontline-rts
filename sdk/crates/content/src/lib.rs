@@ -1,20 +1,37 @@
 //! Def and scenario types for Frontline content: TOML in, JSON Schema out.
 //!
 //! Everything here is plain data plus validation. The crate does not depend on
-//! the simulation; tools such as `frontline-cli` lower these types into sim
-//! configuration themselves. Validation collects every problem it finds and
-//! reports each as an [`Issue`] with a dotted field path and, where possible, a
-//! concrete fix, so a human or an agent can repair a file in one pass (§8.2).
+//! the simulation (it is part of the open SDK, §7.9); the sim depends on it
+//! and runs the [`MatchSetup`] this crate resolves. Validation collects every
+//! problem it finds and reports each as an [`Issue`] with a dotted field path
+//! and, where possible, a concrete fix, so a human or an agent can repair a
+//! file in one pass (§8.2).
+//!
+//! * [`scenario`]: headless benchmark battles (`frontline-cli simulate`).
+//! * [`defs`] + [`modset`]: a content mod's def files (squads, weapons,
+//!   factions, maps, rules), loaded with [`ModDefs::load`].
+//! * [`setup`]: [`ModDefs::resolve`] turns defs plus a [`MatchRequest`] into a
+//!   fixed-point [`MatchSetup`] for `frontline_sim::World::new_match`.
 //!
 //! Content values are integers only (metres, milliseconds, hertz), so lowering
 //! them into the fixed-point sim never depends on float rounding.
 
+pub mod defs;
 mod issue;
+pub mod modset;
 pub mod scenario;
+pub mod setup;
 
+pub use defs::{
+    FactionDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef,
+};
 pub use issue::{ContentError, Issue};
+pub use modset::{ModDefs, ModManifest};
 pub use scenario::{
     ForcesDef, HeightfieldDef, IntervalMs, MapDef, ProjectilesDef, Scenario, TICK_HZ_ALLOWED,
+};
+pub use setup::{
+    Difficulty, Fixed, FixedVec2, MatchRequest, MatchSetup, PlayerRequest, PlayerSetup,
 };
 
 /// One exported JSON Schema.
@@ -26,8 +43,38 @@ pub struct SchemaDoc {
 
 /// JSON Schemas for every def type, in a stable order.
 pub fn schemas() -> Vec<SchemaDoc> {
-    vec![SchemaDoc {
-        name: "scenario",
-        schema: schemars::schema_for!(Scenario),
-    }]
+    vec![
+        SchemaDoc {
+            name: "scenario",
+            schema: schemars::schema_for!(Scenario),
+        },
+        SchemaDoc {
+            name: "mod",
+            schema: schemars::schema_for!(ModManifest),
+        },
+        SchemaDoc {
+            name: "squad",
+            schema: schemars::schema_for!(SquadDef),
+        },
+        SchemaDoc {
+            name: "weapon",
+            schema: schemars::schema_for!(WeaponDef),
+        },
+        SchemaDoc {
+            name: "faction",
+            schema: schemars::schema_for!(FactionDef),
+        },
+        SchemaDoc {
+            name: "map",
+            schema: schemars::schema_for!(MapFileDef),
+        },
+        SchemaDoc {
+            name: "rules",
+            schema: schemars::schema_for!(RulesDef),
+        },
+        SchemaDoc {
+            name: "match_request",
+            schema: schemars::schema_for!(MatchRequest),
+        },
+    ]
 }

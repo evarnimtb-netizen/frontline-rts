@@ -184,7 +184,20 @@ fn schema_export_writes_valid_json() {
     let dir = tmp("schemas");
     let _ = std::fs::remove_dir_all(&dir);
     let written = schema::export(&dir).unwrap();
-    assert_eq!(written, vec![dir.join("scenario.schema.json")]);
+    let names: Vec<_> = [
+        "scenario",
+        "mod",
+        "squad",
+        "weapon",
+        "faction",
+        "map",
+        "rules",
+        "match_request",
+    ]
+    .iter()
+    .map(|n| dir.join(format!("{n}.schema.json")))
+    .collect();
+    assert_eq!(written, names);
     let json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&written[0]).unwrap()).unwrap();
     assert_eq!(json["title"], "Scenario");

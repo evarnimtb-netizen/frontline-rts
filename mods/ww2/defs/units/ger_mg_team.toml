@@ -1,0 +1,12 @@
+id = "ww2:ger_mg_team"
+name = "MG-Trupp"
+faction = "ww2:germany"
+role = "mg"
+men = 3
+weapon = "ww2:mg42"
+cost = 200
+call_in_s = 25
+speed_cm_s = 140
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0

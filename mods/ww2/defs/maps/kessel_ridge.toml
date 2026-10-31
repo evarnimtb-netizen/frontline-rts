@@ -1,0 +1,81 @@
+# Kessel Ridge: 1 km square. A ridge runs north-west to south-east through the
+# centre (point C on its crest); a shallow valley crosses the south. Bases sit
+# in the south-west and north-east corners. Coordinates are metres, x east,
+# y north.
+id = "ww2:kessel_ridge"
+name = "Kessel Ridge"
+size_m = 1024
+
+[terrain]
+# Terrain is fixed per map: this seed, not the match seed, shapes it.
+seed = 1944
+base_height_m = 20
+octaves = [
+    { period_m = 128, amplitude_cm = 500 },
+    { period_m = 32, amplitude_cm = 100 },
+]
+
+[[terrain.ridges]]
+from = [160, 870]
+to = [870, 160]
+height_m = 14
+width_m = 320
+
+[[terrain.valleys]]
+from = [0, 280]
+to = [1024, 340]
+depth_m = 5
+width_m = 200
+
+[[woods]]
+center = [330, 560]
+radius_m = 55
+
+[[woods]]
+center = [690, 470]
+radius_m = 55
+
+[[woods]]
+center = [180, 420]
+radius_m = 40
+
+[[woods]]
+center = [850, 610]
+radius_m = 40
+
+[[woods]]
+center = [560, 160]
+radius_m = 45
+
+[[woods]]
+center = [460, 870]
+radius_m = 45
+
+[[capture_points]]
+name = "A"
+pos = [220, 700]
+
+[[capture_points]]
+name = "B"
+pos = [300, 300]
+
+[[capture_points]]
+name = "C"
+pos = [512, 512]
+value = 2
+
+[[capture_points]]
+name = "D"
+pos = [724, 724]
+
+[[capture_points]]
+name = "E"
+pos = [800, 320]
+
+[[bases]]
+pos = [96, 96]
+radius_m = 40
+
+[[bases]]
+pos = [928, 928]
+radius_m = 40

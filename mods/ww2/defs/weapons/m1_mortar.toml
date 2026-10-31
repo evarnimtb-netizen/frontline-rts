@@ -1,0 +1,20 @@
+id = "ww2:m1_mortar"
+name = "81 mm M1"
+class = "mortar"
+min_range_m = 60
+range_m = 600
+damage = 150
+rounds_per_min = 15
+magazine = 1
+reload_ms = 0
+spread_mrad = 30
+muzzle_velocity_m_s = 180
+setup_ms = 3000
+suppression = 30
+
+[he]
+lethal_radius_cm = 300
+damage_radius_cm = 800
+suppression_radius_m = 15
+crater_radius_cm = 200
+crater_depth_cm = 70
