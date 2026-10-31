@@ -1,129 +1,185 @@
-extends PanelContainer
-## Top bar: own manpower and income, population, both sides' tickets (with
-## a drain marker on the side that is bleeding), match clock, menu button.
+extends Control
+## Top bar (HUD v2): one slim translucent strip. Left: faction, manpower
+## and income, population. Centre: own tickets and bar, the A–E capture
+## chips, enemy bar and tickets. Right: match clock and the menu button.
+##
+## Chips: owner colour fill; capture progress drawn inside the chip in the
+## capturing side's colour; a hatched rest and an accent frame while
+## contested. Click a chip to look at the point. A blinking triangle next
+## to a side's tickets marks a drain.
 
 var view: MatchView
-var _faction: Label
-var _manpower: Label
-var _income: Label
-var _pop: Label
-var _own_name: Label
-var _own_tickets: Label
-var _own_bar: ProgressBar
-var _enemy_name: Label
-var _enemy_tickets: Label
-var _enemy_bar: ProgressBar
-var _own_drain: Label
-var _enemy_drain: Label
-var _clock: Label
+var _points: Array = []
 var _blink := 0.0
+var _hover := -2  # chip index, -1 menu, -2 nothing
 
 
 func bind(v: MatchView) -> void:
 	view = v
-	theme_type_variation = &"HudPanel"
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 18)
-	add_child(row)
-
-	_faction = _label(row, "", 18)
-	_faction.add_theme_font_override("font", load("res://ui/fonts/BarlowCondensed-SemiBold.ttf"))
-	row.add_child(_sep())
-	_manpower = _stat(row, "MANPOWER")
-	_income = _label(row, "", 15)
-	_income.add_theme_color_override("font_color", UiPalette.OK)
-	row.add_child(_sep())
-	_pop = _stat(row, "POP")
-
-	var fill_l := Control.new()
-	fill_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(fill_l)
-
-	_own_name = _label(row, "", 16)
-	_own_drain = _label(row, "", 16)
-	_own_drain.add_theme_color_override("font_color", UiPalette.DANGER)
-	_own_tickets = _label(row, "", 20)
-	_own_bar = _bar(row, UiPalette.OWN, ProgressBar.FILL_END_TO_BEGIN)
-	var vs := _label(row, "TICKETS", 12)
-	vs.add_theme_color_override("font_color", UiPalette.TEXT_DIM)
-	_enemy_bar = _bar(row, UiPalette.ENEMY, ProgressBar.FILL_BEGIN_TO_END)
-	_enemy_tickets = _label(row, "", 20)
-	_enemy_drain = _label(row, "", 16)
-	_enemy_drain.add_theme_color_override("font_color", UiPalette.DANGER)
-	_enemy_name = _label(row, "", 16)
-
-	var fill_r := Control.new()
-	fill_r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(fill_r)
-
-	_clock = _label(row, "0:00", 20)
-	var menu := Button.new()
-	menu.text = "Menu  [Esc]"
-	menu.theme_type_variation = &"HudButton"
-	menu.focus_mode = Control.FOCUS_NONE
-	menu.pressed.connect(func() -> void: view.pause_menu.open())
-	row.add_child(menu)
+	tooltip_text = " "  # enables _get_tooltip
 
 
 func update_state(s: Dictionary) -> void:
+	_points = s.get("points", [])
+	_blink += get_process_delta_time()
+	queue_redraw()
+
+
+func _m() -> Dictionary:
+	return view.hud.m
+
+
+func chip_rect(i: int) -> Rect2:
+	var m := _m()
+	var cw: float = m.chip_w
+	var n := _points.size()
+	var chips_w := n * cw + maxf(n - 1, 0) * 4.0
+	var x0 := size.x * 0.5 - chips_w * 0.5
+	return Rect2(x0 + i * (cw + 4.0), 3.0, cw, size.y - 6.0)
+
+
+func menu_rect() -> Rect2:
+	return Rect2(size.x - 100.0, 3.0, 88.0, size.y - 6.0)
+
+
+func _draw() -> void:
+	if view == null:
+		return
+	var m := _m()
+	var font := get_theme_default_font()
+	var bold := HudStyle.bold()
+	var fs := HudStyle.FONT
+	var fs_small := HudStyle.FONT_SMALL
+	draw_rect(Rect2(Vector2.ZERO, size), HudStyle.BG_TOP)
 	var me := view.player(view.local_player)
 	var them := view.player(1 - view.local_player)
 	if me.is_empty() or them.is_empty():
 		return
-	_blink += get_process_delta_time()
+	var by := size.y * 0.5 + 5.0
 	var rules := view.rules()
-	var tmax := float(rules.get("tickets_max", 500))
-	_faction.text = String(UiPalette.FACTION_NAMES.get(me.faction, me.faction)).to_upper()
-	_faction.add_theme_color_override("font_color", UiPalette.faction_color(me.faction).lightened(0.25))
-	_manpower.text = "%d" % int(me.manpower)
-	_income.text = "+%.1f/s" % float(me.income)
-	_pop.text = "%d / %d" % [int(me.pop), int(rules.get("pop_cap", 120))]
-	_own_name.text = UiPalette.FACTION_SHORT.get(me.faction, "YOU")
-	_enemy_name.text = UiPalette.FACTION_SHORT.get(them.faction, "AI")
-	_own_tickets.text = "%d" % int(me.tickets)
-	_enemy_tickets.text = "%d" % int(them.tickets)
-	_own_bar.value = float(me.tickets) / tmax * 100.0
-	_enemy_bar.value = float(them.tickets) / tmax * 100.0
+	# Left: faction, MP, income, POP.
+	var x := 12.0
+	var fac: String = (UiPalette.FACTION_SHORT if m.compact else UiPalette.FACTION_NAMES).get(me.faction, me.faction)
+	fac = fac.to_upper()
+	HudStyle.text(self, bold, Vector2(x, by), fac, fs, HudStyle.TEXT)
+	x += HudStyle.text_w(bold, fac, fs) + 16.0
+	x = _pair(font, bold, x, by, "MP", "%d" % int(me.manpower))
+	HudStyle.text(self, font, Vector2(x, by), "+%.1f/s" % float(me.income), fs, HudStyle.DIM)
+	x += HudStyle.text_w(font, "+%.1f/s" % float(me.income), fs) + 16.0
+	_pair(font, bold, x, by, "POP", "%d/%d" % [int(me.pop), int(rules.get("pop_cap", 120))])
+
+	# Centre: tickets and chips.
+	var tmax := maxf(float(rules.get("tickets_max", 500)), 1.0)
+	var bw: float = m.ticket_w
+	var first := chip_rect(0) if not _points.is_empty() else Rect2(size.x * 0.5, 3, 0, 0)
+	var last := chip_rect(_points.size() - 1) if not _points.is_empty() else first
 	var on := fmod(_blink, 1.0) < 0.6
-	_own_drain.text = "▼" if float(me.get("ticket_drain", 0.0)) > 0.0 and on else " "
-	_enemy_drain.text = "▼" if float(them.get("ticket_drain", 0.0)) > 0.0 and on else " "
-	_clock.text = UiPalette.mmss(s.get("time_s", 0.0))
-	if s.get("paused", false):
-		_clock.text += "  PAUSED"
+	var own_bar := Rect2(first.position.x - 10.0 - bw, by - 9.0, bw, 8.0)
+	HudStyle.box(self, own_bar, Color(0, 0, 0, 0.35), 2)
+	HudStyle.box(self, Rect2(own_bar.position, Vector2(bw * clampf(float(me.tickets) / tmax, 0.0, 1.0), 8.0)), HudStyle.OWN, 2)
+	var own_t := "%d" % int(me.tickets)
+	HudStyle.text(self, bold, Vector2(own_bar.position.x - 8.0, by), own_t, fs, HudStyle.TEXT, 1)
+	if float(me.get("ticket_drain", 0.0)) > 0.0 and on:
+		_drain_mark(Vector2(own_bar.position.x - 14.0 - HudStyle.text_w(bold, own_t, fs), by - 5.0))
+	var foe_bar := Rect2(last.end.x + 10.0, by - 9.0, bw, 8.0)
+	HudStyle.box(self, foe_bar, Color(0, 0, 0, 0.35), 2)
+	HudStyle.box(self, Rect2(foe_bar.position, Vector2(bw * clampf(float(them.tickets) / tmax, 0.0, 1.0), 8.0)), HudStyle.ENEMY, 2)
+	var foe_t := "%d" % int(them.tickets)
+	HudStyle.text(self, bold, Vector2(foe_bar.end.x + 8.0, by), foe_t, fs, HudStyle.TEXT)
+	if float(them.get("ticket_drain", 0.0)) > 0.0 and on:
+		_drain_mark(Vector2(foe_bar.end.x + 14.0 + HudStyle.text_w(bold, foe_t, fs), by - 5.0))
+	for i in _points.size():
+		_draw_chip(i, bold, by)
+
+	# Right: clock and menu.
+	var clock := UiPalette.mmss(view.state.get("time_s", 0.0))
+	HudStyle.text(self, bold, Vector2(size.x - 112.0, by), clock, fs_small, HudStyle.TEXT, 1)
+	if view.state.get("paused", false):
+		HudStyle.text(self, bold, Vector2(size.x - 120.0 - HudStyle.text_w(bold, clock, fs_small), by), "PAUSED", fs, HudStyle.ACCENT, 1)
+	var mr := menu_rect()
+	HudStyle.box(self, mr, Color(1, 1, 1, 0.18 if _hover == -1 else 0.10), 3)
+	HudStyle.text(self, font, Vector2(mr.get_center().x, by), "Menu  Esc", fs_small, HudStyle.TEXT, 0)
 
 
-func _label(parent: Control, text: String, font_size: int) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", font_size)
-	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	parent.add_child(l)
-	return l
+## Caption (dim, 13 px badge) and value (bold); returns the next x.
+func _pair(font: Font, bold: Font, x: float, by: float, caption: String, value: String) -> float:
+	HudStyle.text(self, font, Vector2(x, by), caption, HudStyle.FONT_SMALL, HudStyle.DIM)
+	x += HudStyle.text_w(font, caption, HudStyle.FONT_SMALL) + 6.0
+	HudStyle.text(self, bold, Vector2(x, by), value, HudStyle.FONT, HudStyle.TEXT)
+	return x + HudStyle.text_w(bold, value, HudStyle.FONT) + 10.0
 
 
-func _stat(parent: Control, caption: String) -> Label:
-	var c := _label(parent, caption, 12)
-	c.add_theme_color_override("font_color", UiPalette.TEXT_DIM)
-	return _label(parent, "", 20)
+func _drain_mark(c: Vector2) -> void:
+	draw_colored_polygon(PackedVector2Array([c + Vector2(-4, -3), c + Vector2(4, -3), c + Vector2(0, 3)]), HudStyle.DANGER)
 
 
-func _sep() -> Control:
-	var r := ColorRect.new()
-	r.color = UiPalette.BORDER
-	r.custom_minimum_size = Vector2(1, 22)
-	r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	return r
+func _draw_chip(i: int, bold: Font, by: float) -> void:
+	var p: Dictionary = _points[i]
+	var r := chip_rect(i)
+	var local := view.local_player
+	var owner_i := int(p.get("owner", -1))
+	HudStyle.box(self, r, HudStyle.BG_CHIP if _hover != i else Color(1, 1, 1, 0.18), 3)
+	if owner_i >= 0:
+		HudStyle.box(self, r, Color(HudStyle.side_color(owner_i, local), 0.75), 3)
+	var cap := int(p.get("capturing", -1))
+	var prog := clampf(float(p.get("progress", 0.0)), 0.0, 1.0)
+	if cap >= 0 and prog > 0.0:
+		var fill := Rect2(r.position, Vector2(r.size.x * prog, r.size.y))
+		draw_rect(fill, Color(HudStyle.side_color(cap, local), 0.9))
+		draw_line(Vector2(fill.end.x, r.position.y), Vector2(fill.end.x, r.end.y), HudStyle.TEXT, 1.0)
+	if p.get("contested", false):
+		var rest := Rect2(r.position.x + r.size.x * prog, r.position.y, r.size.x * (1.0 - prog), r.size.y)
+		HudStyle.hatch(self, rest, Color(HudStyle.TEXT, 0.5), 4.0, 1.4)
+		HudStyle.box(self, r.grow(-0.5), Color(0, 0, 0, 0), 3, HudStyle.ACCENT, 2)
+	HudStyle.text(self, bold, Vector2(r.get_center().x, by), str(p.id), HudStyle.FONT, Color.WHITE, 0)
 
 
-func _bar(parent: Control, col: Color, mode: int) -> ProgressBar:
-	var b := ProgressBar.new()
-	b.custom_minimum_size = Vector2(170, 12)
-	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	b.show_percentage = false
-	b.fill_mode = mode
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = col
-	b.add_theme_stylebox_override("fill", fill)
-	parent.add_child(b)
-	return b
+func _chip_at(pos: Vector2) -> int:
+	for i in _points.size():
+		if chip_rect(i).has_point(pos):
+			return i
+	if menu_rect().has_point(pos):
+		return -1
+	return -2
+
+
+func _gui_input(event: InputEvent) -> void:
+	if view == null:
+		return
+	if event is InputEventMouseMotion:
+		var h := _chip_at(event.position)
+		if h != _hover:
+			_hover = h
+			queue_redraw()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var i := _chip_at(event.position)
+		if i >= 0:
+			view.jump_camera(_points[i].pos)
+		elif i == -1:
+			view.pause_menu.open()
+		accept_event()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT and _hover != -2:
+		_hover = -2
+		queue_redraw()
+
+
+func _get_tooltip(at: Vector2) -> String:
+	var i := _chip_at(at)
+	if i == -1:
+		return "Match menu  [Esc]"
+	if i < 0:
+		return ""
+	var p: Dictionary = _points[i]
+	var local := view.local_player
+	var owner_i := int(p.get("owner", -1))
+	var who := "neutral" if owner_i < 0 else ("held by you" if owner_i == local else "held by the enemy")
+	var line := "Point %s, %s" % [p.id, who]
+	if p.get("contested", false):
+		line += ", contested"
+	elif int(p.get("capturing", -1)) >= 0:
+		line += ", %s %d %%" % ["you capture" if int(p.capturing) == local else "enemy captures", roundi(float(p.progress) * 100.0)]
+	return line + "\nClick to look."

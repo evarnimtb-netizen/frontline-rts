@@ -10,7 +10,7 @@ extends Node3D
 ## - match_mock.tscn: MockMatchSource and MockWorld (HUD work and tests).
 ##
 ## --capture_setup (see Session) stages a screenshot on the mock: "hud",
-## "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
+## "throw", "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
 
 const AUTOPLAY := preload("res://match/autoplay.gd")
 
@@ -107,7 +107,7 @@ func _line(pts: Array) -> PackedVector3Array:
 ## Screenshot staging (Session --capture_setup).
 func _stage(what: String) -> void:
 	match what:
-		"hud", "pause":
+		"hud", "pause", "throw":
 			# A firefight in the open south-west of D: four of ours facing
 			# three of theirs about 110 m away.
 			source.prewarm(60.0)
@@ -119,12 +119,19 @@ func _stage(what: String) -> void:
 			for i in mini(foes.size(), 3):
 				source.place_squad(foes[i], Vector2(205 + i * 30, 205 - i * 12), Vector2(-1, 1))
 			source.prewarm(12.0)
+			_stage_soldiers(ids)
 			camera.height = 85.0
 			camera.jump_to(Vector3(175, 0, 268))
 			view.update_state(source.get_state())
-			view.selection.select_only(ids.slice(0, 4))
 			source.handle_intent(&"call_in", {"type": "rifle"})
 			source.handle_intent(&"call_in", {"type": "mg"})
+			if what == "throw":
+				# Frag tool armed for the first rifle squad, cursor on the
+				# nearest enemy man (in range or not, the screenshot shows it).
+				view.selection.select_squads(ids.slice(0, 1))
+				view.selection.activate(&"frag")
+				var c := _centroid(ids.slice(0, 1))
+				view.selection.cursor_override = camera.unproject_position(c + Vector3(16, 0, -16))
 			if what == "pause":
 				view.pause_menu.open()
 		"dig":
@@ -140,7 +147,7 @@ func _stage(what: String) -> void:
 			camera.yaw_deg = 0.0
 			camera.jump_to(e + Vector3(4, 0, -22))
 			view.update_state(source.get_state())
-			view.selection.select_only(eng)
+			view.selection.select_squads(eng)
 			view.selection.activate(&"dig")
 			view.selection.dig_points.append_array(_line([Vector2(e.x - 16, e.z - 20), Vector2(e.x - 2, e.z - 27)]))
 			var cur: Vector3 = _line([Vector2(e.x + 14, e.z - 24)])[0]
@@ -148,6 +155,36 @@ func _stage(what: String) -> void:
 		"end":
 			source.prewarm(150.0)
 			source.force_end(0, "tickets")
+
+
+## HUD staging for S1b: wounded and pinned men, one man detached and
+## sent ahead, two men of the first squad selected and stanced, a group.
+func _stage_soldiers(ids: PackedInt32Array) -> void:
+	if ids.size() < 3:
+		return
+	var r1: PackedInt32Array = source.unit_ids(ids[0])
+	var r2: PackedInt32Array = source.unit_ids(ids[1])
+	var mg: PackedInt32Array = source.unit_ids(ids[2])
+	if r1.size() >= 6:
+		source.set_soldier(r1[5], 42.0)
+	if r2.size() >= 5:
+		source.set_soldier(r2[2], 35.0)
+		source.set_soldier(r2[3], 80.0, 0.95)
+		var ahead: Vector3 = source.soldier_pos(r2[4]) + Vector3(22, 0, -18)
+		ahead.y = source.height_at(ahead.x, ahead.z)
+		source.handle_intent(&"move_units", {"units": PackedInt32Array([r2[4]]), "target": ahead})
+	for i in mini(mg.size(), 2):
+		source.set_soldier(mg[i], 90.0, 0.95)
+	source.prewarm(2.0)
+	view.update_state(source.get_state())
+	view.selection.select_squads(ids.slice(0, 3))
+	view.selection.groups[1] = view.selection.selected.duplicate()
+	view.selection.select_squads(ids.slice(0, 1))
+	view.selection.groups[2] = view.selection.selected.duplicate()
+	view.selection.set_stance(&"crouch")
+	view.selection.groups[3] = source.unit_ids(ids[3])
+	if r1.size() >= 6:
+		view.selection.select_only(PackedInt32Array([r1[2], r1[5]]))
 
 
 func _centroid(ids: PackedInt32Array) -> Vector3:

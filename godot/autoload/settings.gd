@@ -4,8 +4,10 @@ extends Node
 ## only; nothing here reaches the sim.
 ##
 ## Values: resolution (windowed size), fullscreen, render_scale (3D scaling,
-## FSR 1 below 1.0), master_volume and sfx_volume (linear 0..1). Change one
-## with set_value(); it applies at once and saves.
+## FSR 1 below 1.0), master_volume and sfx_volume (linear 0..1),
+## minimap_rotate (turn the minimap with the camera; default north-up) and
+## minimap_dock ("top_left" or "bottom_left"). Change one with set_value();
+## it applies at once and saves.
 
 signal changed(key: String, value: Variant)
 
@@ -24,7 +26,10 @@ const DEFAULTS := {
 	"render_scale": 1.0,
 	"master_volume": 0.8,
 	"sfx_volume": 0.8,
+	"minimap_rotate": false,
+	"minimap_dock": "top_left",
 }
+const MINIMAP_DOCKS: Array[String] = ["top_left", "bottom_left"]
 
 var values := DEFAULTS.duplicate()
 ## True once the file had a resolution: until then the window keeps the
@@ -51,6 +56,8 @@ func load_settings() -> void:
 	values.render_scale = clampf(values.render_scale, 0.5, 1.0)
 	values.master_volume = clampf(values.master_volume, 0.0, 1.0)
 	values.sfx_volume = clampf(values.sfx_volume, 0.0, 1.0)
+	if not values.minimap_dock in MINIMAP_DOCKS:
+		values.minimap_dock = DEFAULTS.minimap_dock
 
 
 func save_settings() -> void:

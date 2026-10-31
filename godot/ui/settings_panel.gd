@@ -13,6 +13,8 @@ var _master: HSlider
 var _master_lbl: Label
 var _sfx: HSlider
 var _sfx_lbl: Label
+var _mm_rotate: CheckButton
+var _mm_dock: OptionButton
 
 
 func _ready() -> void:
@@ -60,6 +62,17 @@ func _ready() -> void:
 		_sfx_lbl.text = "%d %%" % roundi(v * 100.0))
 	_row(grid, "Effects volume", _sfx, _sfx_lbl)
 
+	_mm_rotate = CheckButton.new()
+	_mm_rotate.toggled.connect(func(on: bool) -> void: Settings.set_value("minimap_rotate", on))
+	_row(grid, "Rotate minimap", _mm_rotate, _dim("off = north-up"))
+
+	_mm_dock = OptionButton.new()
+	_mm_dock.custom_minimum_size.x = 220
+	_mm_dock.add_item("Top left")
+	_mm_dock.add_item("Bottom left")
+	_mm_dock.item_selected.connect(func(i: int) -> void: Settings.set_value("minimap_dock", Settings.MINIMAP_DOCKS[i]))
+	_row(grid, "Minimap position", _mm_dock, Control.new())
+
 	var note := _dim("Saved to user://settings.cfg")
 	add_child(note)
 
@@ -84,6 +97,8 @@ func refresh() -> void:
 	_master_lbl.text = "%d %%" % roundi(_master.value * 100.0)
 	_sfx.set_value_no_signal(Settings.get_value("sfx_volume"))
 	_sfx_lbl.text = "%d %%" % roundi(_sfx.value * 100.0)
+	_mm_rotate.set_pressed_no_signal(Settings.get_value("minimap_rotate"))
+	_mm_dock.select(maxi(Settings.MINIMAP_DOCKS.find(Settings.get_value("minimap_dock")), 0))
 
 
 func _row(grid: GridContainer, label: String, control: Control, suffix: Control) -> void:

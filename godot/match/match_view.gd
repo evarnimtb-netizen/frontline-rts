@@ -1,14 +1,21 @@
 class_name MatchView
 extends CanvasLayer
-## The match presenter's single interface (S1). Feed it one plain
-## Dictionary per frame with update_state(); it draws the HUD and the
-## ground overlay, plays effect sounds, runs selection and order input, and
-## reports what the player wants through signals. It never touches the sim.
+## The match presenter's single interface (S1, soldier-level since S1b).
+## Feed it one plain Dictionary per frame with update_state(); it draws the
+## HUD and the ground overlay, plays effect sounds, runs selection and order
+## input, and reports what the player wants through signals. It never
+## touches the sim.
 ##
 ## The state schema is in godot/docs/match_state.md. Every intent is emitted
 ## twice: as `intent(kind, data)` (one handler can map all of them to sim
-## Commands) and as the specific signal below. Squad ids are sorted
-## ascending in every PackedInt32Array, matching the sim's iteration order.
+## Commands) and as the specific signal below. Squad and soldier ids are
+## sorted ascending in every PackedInt32Array, matching the sim's iteration
+## order.
+##
+## Selection is a set of soldier ids (S1b-soldier-control.md). A state
+## without `soldiers` (the S1 bridge) gets one stand-in soldier per squad,
+## with the squad's id, so squad-level play keeps working until the bridge
+## sends soldiers.
 ##
 ## Wiring (see match.gd):
 ##   view.camera = $Camera            # rts_camera.gd
@@ -18,12 +25,21 @@ extends CanvasLayer
 
 signal intent(kind: StringName, data: Dictionary)
 signal selection_changed(squad_ids: PackedInt32Array)
+signal soldier_selection_changed(unit_ids: PackedInt32Array)
 signal move_ordered(squad_ids: PackedInt32Array, target: Vector3)
 signal attack_move_ordered(squad_ids: PackedInt32Array, target: Vector3)
 signal stop_ordered(squad_ids: PackedInt32Array)
 signal retreat_ordered(squad_ids: PackedInt32Array)
 signal dig_ordered(squad_ids: PackedInt32Array, polyline: PackedVector3Array)
 signal barrage_ordered(squad_ids: PackedInt32Array, target: Vector3)
+signal regroup_ordered(squad_ids: PackedInt32Array)
+signal move_units_ordered(unit_ids: PackedInt32Array, target: Vector3)
+signal attack_move_units_ordered(unit_ids: PackedInt32Array, target: Vector3)
+signal stop_units_ordered(unit_ids: PackedInt32Array)
+signal retreat_units_ordered(unit_ids: PackedInt32Array)
+signal dig_units_ordered(unit_ids: PackedInt32Array, polyline: PackedVector3Array)
+signal stance_ordered(unit_ids: PackedInt32Array, stance: String)
+signal throw_ordered(unit_ids: PackedInt32Array, item: String, target: Vector3, each: bool)
 signal call_in_requested(squad_type: String)
 signal surrender_requested
 signal pause_requested(paused: bool)
@@ -32,6 +48,37 @@ signal quit_to_menu_requested
 ## Squad types that can dig / fire a barrage (S1 roster).
 const DIGGERS := ["rifle", "engineer"]
 const MORTARS := ["mortar"]
+## Throwable items, in ability-row order.
+const ITEMS := ["frag", "smoke", "satchel"]
+## Throw range (min, max) in m when the state's rules do not say
+## (S1b-abilities.md "Items").
+const THROW_RANGE := {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)}
+## Ground radius the throw tool previews at the target (m).
+const THROW_EFFECT_M := {"frag": 6.0, "smoke": 8.0, "satchel": 10.0}
+const STANCES := ["auto", "stand", "crouch", "prone"]
+## Body-centre height above the feet per stance, for picking (m).
+const PICK_LIFT := {"stand": 1.0, "crouch": 0.7, "prone": 0.25}
+## Below this HP (of 100) a man shows as wounded.
+const WOUNDED_HP := 60.0
+## Names by squad type and slot when the state gives none.
+const MAN_NAMES := {
+	"rifle": ["Sgt (lead)", "Rifle 2", "Rifle 3", "Rifle 4", "Rifle 5", "Rifle 6", "Rifle 7", "Rifle 8"],
+	"mg": ["Gunner", "Asst gunner", "Ammo bearer"],
+	"engineer": ["Sgt (lead)", "Sapper 2", "Sapper 3", "Sapper 4", "Sapper 5"],
+	"mortar": ["Gunner", "Loader", "Ammo bearer"],
+}
+## Weapon by faction and squad type when the state gives none.
+const WEAPONS := {
+	"germany": {"rifle": "Kar98k", "mg": "MG42", "engineer": "MP40", "mortar": "GrW 34"},
+	"usa": {"rifle": "M1 Garand", "mg": "M1919", "engineer": "M3", "mortar": "M1 mortar"},
+}
+const ORDER_TEXT := {
+	"idle": "Holding", "move": "Moving", "attack_move": "Attacking", "retreat": "Retreating",
+	"dig": "Digging", "barrage": "Firing", "setup": "Setting up", "hold": "Holding",
+	"throw": "Throwing",
+}
+## Short squad names for cards and tiles.
+const SHORT_NAMES := {"rifle": "Rifle", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar"}
 
 @export var camera_path: NodePath
 @export var overlay_path: NodePath
@@ -48,18 +95,33 @@ var map_half := 512.0
 ## the camera (filled each update).
 var squads_by_id: Dictionary = {}
 var squad_screen: Dictionary = {}
+## id -> soldier Dictionary (own and spotted enemy, living).
+var soldiers_by_id: Dictionary = {}
+## squad id -> PackedInt32Array of its living soldier ids, ascending.
+var squad_units: Dictionary = {}
+## True when the state had no `soldiers` (one stand-in per squad).
+var proxy_soldiers := false
+## Picking arrays, parallel: soldiers in front of the camera, their body
+## centre on screen, camera distance and side (1 own, 0 enemy).
+var pick_ids := PackedInt32Array()
+var pick_screen := PackedVector2Array()
+var pick_depth := PackedFloat32Array()
+var pick_own := PackedByteArray()
 var paused := false
 var ended := false
+## Stable per-type squad numbers for labels: id -> n, "owner:type" -> count.
+var _squad_no := {}
+var _type_count := {}
 
 @onready var hud: Control = $Hud
-@onready var units: Control = $Hud/UnitOverlay
+@onready var units: Control = $UnitOverlay
 @onready var top_bar: Control = $Hud/TopBar
-@onready var point_strip: Control = $Hud/PointStrip
-@onready var event_feed: Control = $Hud/EventFeed
 @onready var minimap: Control = $Hud/Minimap
-@onready var call_in: Control = $Hud/CallInPanel
-@onready var cards: Control = $Hud/SquadCards
-@onready var commands: Control = $Hud/CommandPanel
+@onready var event_feed: Control = $Hud/EventFeed
+@onready var roster: Control = $Hud/Roster
+@onready var detail: Control = $Hud/Detail
+@onready var orders: Control = $Hud/Orders
+@onready var call_in: Control = $Hud/CallIn
 @onready var pause_menu: Control = $PauseMenu
 @onready var end_screen: Control = $EndScreen
 @onready var selection: Node = $Selection
@@ -70,7 +132,7 @@ func _ready() -> void:
 		camera = get_node_or_null(camera_path)
 	if overlay == null and not overlay_path.is_empty():
 		overlay = get_node_or_null(overlay_path)
-	for c in [top_bar, point_strip, event_feed, minimap, call_in, cards, commands, units, pause_menu, end_screen, selection]:
+	for c in [hud, top_bar, minimap, event_feed, roster, detail, orders, call_in, units, pause_menu, end_screen, selection]:
 		if c.has_method("bind"):
 			c.bind(self)
 	MatchInput.ensure_actions()
@@ -87,6 +149,10 @@ func update_state(s: Dictionary) -> void:
 	for sq in s.get("squads", []):
 		var id: int = sq.id
 		squads_by_id[id] = sq
+		if not _squad_no.has(id):
+			var key := "%d:%s" % [int(sq.owner), sq.type]
+			_type_count[key] = int(_type_count.get(key, 0)) + 1
+			_squad_no[id] = _type_count[key]
 		var sp: Variant = sq.get("screen")
 		if sp == null and camera != null:
 			var p: Vector3 = sq.pos + Vector3(0, 1.8, 0)
@@ -94,13 +160,16 @@ func update_state(s: Dictionary) -> void:
 				sp = camera.unproject_position(p)
 		if sp != null and vp.grow(40.0).has_point(sp):
 			squad_screen[id] = sp
+	_index_soldiers(s, vp)
 	selection.prune()
-	for c in [top_bar, point_strip, minimap, call_in, cards, commands, units]:
+	hud.update_state(s)
+	for c in [top_bar, minimap, call_in, roster, detail, orders, units]:
 		c.update_state(s)
 	if overlay != null:
 		overlay.update_state(s, self)
 	for e in s.get("events", []):
 		event_feed.push(e)
+	event_feed.update_state(s)
 	_play_effects(s.get("effects", []))
 	var result: Dictionary = s.get("result", {})
 	if not ended and result.get("status", "running") != "running":
@@ -109,6 +178,57 @@ func update_state(s: Dictionary) -> void:
 		pause_menu.close(false)
 		end_screen.show_result(s)
 		AudioManager.play_ui(&"confirm" if result.status == "won" else &"error")
+
+
+func _index_soldiers(s: Dictionary, vp: Rect2) -> void:
+	soldiers_by_id.clear()
+	squad_units.clear()
+	proxy_soldiers = not s.has("soldiers")
+	var list: Array = s.get("soldiers", []) if not proxy_soldiers else _proxy_soldiers()
+	pick_ids.clear()
+	pick_screen.clear()
+	pick_depth.clear()
+	pick_own.clear()
+	var cam_pos := camera.global_position if camera != null else Vector3.ZERO
+	var area := vp.grow(20.0)
+	for so in list:
+		var id: int = so.id
+		soldiers_by_id[id] = so
+		var sid: int = so.squad
+		if not squad_units.has(sid):
+			squad_units[sid] = PackedInt32Array()
+		squad_units[sid].append(id)
+		if camera == null:
+			continue
+		var p: Vector3 = so.pos + Vector3(0, PICK_LIFT.get(so.get("stance", "stand"), 1.0), 0)
+		if proxy_soldiers:
+			p = so.pos + Vector3(0, 1.8, 0)
+		if camera.is_position_behind(p):
+			continue
+		var sp := camera.unproject_position(p)
+		if not area.has_point(sp):
+			continue
+		pick_ids.append(id)
+		pick_screen.append(sp)
+		pick_depth.append(cam_pos.distance_to(p))
+		pick_own.append(1 if int(so.owner) == local_player else 0)
+	# Lists arrive ascending; keep squad_units ascending even if not.
+	for sid in squad_units:
+		squad_units[sid].sort()
+
+
+## One stand-in soldier per squad (id = squad id) for states without
+## `soldiers`: whole-squad selection only, squad-level intents only.
+func _proxy_soldiers() -> Array:
+	var out: Array = []
+	for sq in state.get("squads", []):
+		out.append({
+			"id": sq.id, "squad": sq.id, "owner": sq.owner, "slot": 0, "pos": sq.pos,
+			"hp": 100.0 * float(sq.get("health", 1.0)), "stance": "stand",
+			"stance_override": "auto", "detached": false, "items": sq.get("items", {}),
+			"pinned": sq.get("status", "") == "pinned",
+		})
+	return out
 
 
 func _play_effects(effects: Array) -> void:
@@ -133,6 +253,78 @@ func input_blocked() -> bool:
 func own_squad(id: int) -> bool:
 	var sq: Dictionary = squads_by_id.get(id, {})
 	return not sq.is_empty() and int(sq.owner) == local_player
+
+
+func own_soldier(id: int) -> bool:
+	var so: Dictionary = soldiers_by_id.get(id, {})
+	return not so.is_empty() and int(so.owner) == local_player
+
+
+func soldier_squad(id: int) -> int:
+	var so: Dictionary = soldiers_by_id.get(id, {})
+	return int(so.get("squad", -1))
+
+
+func squad_type(squad_id: int) -> String:
+	return String(squads_by_id.get(squad_id, {}).get("type", ""))
+
+
+## Card label: short type name, numbered when the side has had several of
+## that type ("Rifle 2"). Numbers are given in order of first sighting and
+## never reused, so a card keeps its name when another squad dies.
+func squad_label(squad_id: int, long := false) -> String:
+	var sq: Dictionary = squads_by_id.get(squad_id, {})
+	if sq.is_empty():
+		return ""
+	var base: String = sq.get("name", UiPalette.SQUAD_NAMES.get(sq.type, sq.type)) if long else SHORT_NAMES.get(sq.type, sq.get("name", sq.type))
+	var key := "%d:%s" % [int(sq.owner), sq.type]
+	return "%s %d" % [base, _squad_no.get(squad_id, 1)] if int(_type_count.get(key, 0)) > 1 else base
+
+
+## Card status: [text, alarm]; alarm (accent) for under fire and pinned.
+func squad_status(sq: Dictionary) -> Array:
+	match sq.get("status", "ok"):
+		"pinned":
+			return ["Pinned", true]
+		"suppressed":
+			return ["Under fire", true]
+		"retreating":
+			return ["Retreating", false]
+	var o: String = sq.get("order", "idle")
+	return [ORDER_TEXT.get(o, o.capitalize()), false]
+
+
+func soldier_name(so: Dictionary) -> String:
+	if so.has("name"):
+		return so.name
+	var names: Array = MAN_NAMES.get(squad_type(int(so.get("squad", -1))), [])
+	var slot := int(so.get("slot", 0))
+	return names[slot] if slot >= 0 and slot < names.size() else "Man %d" % (slot + 1)
+
+
+func soldier_weapon(so: Dictionary) -> String:
+	if so.has("weapon"):
+		return so.weapon
+	var faction: String = player(int(so.get("owner", 0))).get("faction", "germany")
+	return WEAPONS.get(faction, {}).get(squad_type(int(so.get("squad", -1))), "")
+
+
+func soldier_pinned(so: Dictionary) -> bool:
+	return bool(so.get("pinned", false))
+
+
+func soldier_wounded(so: Dictionary) -> bool:
+	return float(so.get("hp", 100.0)) < WOUNDED_HP
+
+
+func item_count(so: Dictionary, item: String) -> int:
+	return int(so.get("items", {}).get(item, 0))
+
+
+## (min, max) throw range in m for an item.
+func throw_range(item: String) -> Vector2:
+	var r: Variant = rules().get("throw_range_m", {}).get(item)
+	return r if r is Vector2 else THROW_RANGE.get(item, Vector2(5, 30))
 
 
 func player(idx: int) -> Dictionary:
@@ -195,9 +387,11 @@ func jump_camera(pos: Vector3) -> void:
 func emit_intent(kind: StringName, data: Dictionary) -> void:
 	intent.emit(kind, data)
 	var ids: PackedInt32Array = data.get("squads", PackedInt32Array())
+	var uids: PackedInt32Array = data.get("units", PackedInt32Array())
 	match kind:
 		&"select":
 			selection_changed.emit(ids)
+			soldier_selection_changed.emit(uids)
 		&"move":
 			move_ordered.emit(ids, data.target)
 		&"attack_move":
@@ -210,6 +404,22 @@ func emit_intent(kind: StringName, data: Dictionary) -> void:
 			dig_ordered.emit(ids, data.polyline)
 		&"barrage":
 			barrage_ordered.emit(ids, data.target)
+		&"regroup":
+			regroup_ordered.emit(ids)
+		&"move_units":
+			move_units_ordered.emit(uids, data.target)
+		&"attack_move_units":
+			attack_move_units_ordered.emit(uids, data.target)
+		&"stop_units":
+			stop_units_ordered.emit(uids)
+		&"retreat_units":
+			retreat_units_ordered.emit(uids)
+		&"dig_units":
+			dig_units_ordered.emit(uids, data.polyline)
+		&"set_stance":
+			stance_ordered.emit(uids, data.stance)
+		&"throw", &"throw_each":
+			throw_ordered.emit(uids, data.item, data.target, kind == &"throw_each")
 		&"call_in":
 			call_in_requested.emit(data.type)
 		&"surrender":

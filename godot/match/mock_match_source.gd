@@ -2,10 +2,13 @@ class_name MockMatchSource
 extends Node
 ## Fake match for running and screenshotting the HUD without the sim. It
 ## produces the same Dictionary as the bridge will (docs/match_state.md)
-## and accepts the same intents, with a crude stand-in for S1 rules:
+## and accepts the same intents, with a crude stand-in for S1/S1b rules:
 ## movement, capture, ticket drain, income, call-ins, dice-roll firefights
-## with suppression, mortar barrages, digging, fog by distance, and an
-## enemy that walks to points and buys squads.
+## with per-man suppression and wounds, mortar barrages, digging, fog by
+## distance, an enemy that walks to points and buys squads, and (S1b)
+## individual soldiers: detached men with their own orders, stance
+## overrides, grenades, smoke and satchel charges with item counts and
+## resupply at base.
 ##
 ## Presenter-only and non-deterministic on purpose: none of this is the
 ## sim, and nothing here may be copied into crates/sim.
@@ -28,6 +31,7 @@ const RULES := {
 	"mortar_min_m": 60.0,
 	"mortar_max_m": 600.0,
 	"capture_radius_m": 15.0,
+	"throw_range_m": {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)},
 }
 const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6}
 const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0}
@@ -39,6 +43,21 @@ const QUEUE_MAX := 5
 ## Mock digging runs this much faster than §5.10.9 pacing so it shows.
 const DIG_SPEEDUP := 6.0
 const DIFFICULTY_INCOME := {"easy": 0.8, "normal": 1.0, "hard": 1.25}
+const SLOT_SPACING := 2.5
+const PINNED := 0.7
+const SUPPRESSED := 0.35
+## Throws (S1b-abilities.md): wind-up, flight speed, total fuse from the
+## start of the throw, blast radii (lethal, damage, suppression).
+const WIND_UP_S := 1.0
+const THROW_SPEED := 30.0
+const FUSE_S := {"frag": 4.0, "satchel": 5.0}
+const BLAST := {"frag": Vector3(2, 6, 10), "satchel": Vector3(4, 10, 18), "mortar": Vector3(3, 8, 15)}
+const SMOKE_GROW_S := 3.0
+const SMOKE_HOLD_S := 25.0
+const SMOKE_THIN_S := 5.0
+const SMOKE_R := 8.0
+const SMOKE_CAP := 64
+const RESUPPLY_S := 20.0
 
 @export var time_scale := 1.0
 
@@ -51,14 +70,22 @@ var players: Array[Dictionary] = []
 var points: Array[Dictionary] = []
 ## id -> squad (internal fields; see _squad_state for what is exported).
 var squads := {}
+## soldier id -> squad id (living men).
+var man_squad := {}
 var stats: Array[Dictionary] = []
 var result := {"status": "running", "winner": -1, "reason": ""}
+## Re-call cooldowns shown on the call-in tiles (type -> [left, total]);
+## not an S1 rule, only here so the HUD's optional field is exercised.
+var recall_cooldown := {}
 
 var _next_id := 1
+var _next_man := 1001
 var _queues: Array = [[], []]
 var _events: Array[Dictionary] = []
 var _effects: Array[Dictionary] = []
 var _shells: Array[Dictionary] = []
+var _thrown: Array[Dictionary] = []
+var _smokes: Array[Dictionary] = []
 var _ai_t := 0.0
 var _tick := 0
 var _minimap: Texture2D
@@ -88,7 +115,9 @@ func start(s: Dictionary) -> void:
 	points[0].owner = 0
 	points[4].owner = 1
 	squads.clear()
+	man_squad.clear()
 	_next_id = 1
+	_next_man = 1001
 	# Opening positions: both sides already pushing towards the middle.
 	var own := [["rifle", Vector2(-250, 170)], ["rifle", Vector2(-215, -150)], ["mg", Vector2(-120, 80)],
 		["engineer", Vector2(-285, 228)], ["mortar", Vector2(-330, 310)], ["rifle", Vector2(-60, 40)]]
@@ -104,6 +133,9 @@ func start(s: Dictionary) -> void:
 	_events.clear()
 	_effects.clear()
 	_shells.clear()
+	_thrown.clear()
+	_smokes.clear()
+	recall_cooldown.clear()
 	_push_event(0, "info", "Skirmish on Kessel Ridge. Hold the points.", null)
 
 
@@ -115,6 +147,19 @@ func _v3(p: Vector2) -> Vector3:
 	return Vector3(p.x, MockMap.height(p.x, p.y), p.y)
 
 
+## Starting items by squad type and slot (S1b-abilities.md "Items"): frags
+## for rifle and engineer men (leader 2), smoke for their leaders, one
+## satchel per engineer squad (slot 1). MG and mortar teams carry nothing.
+static func loadout(type: String, slot: int) -> Dictionary:
+	var out := {"frag": 0, "smoke": 0, "satchel": 0}
+	if type in ["rifle", "engineer"]:
+		out.frag = 2 if slot == 0 else 1
+		out.smoke = 1 if slot == 0 else 0
+	if type == "engineer" and slot == 1:
+		out.satchel = 1
+	return out
+
+
 func _spawn(owner: int, type: String, at: Vector2) -> int:
 	var def: Dictionary = {}
 	for c in CATALOG:
@@ -122,16 +167,24 @@ func _spawn(owner: int, type: String, at: Vector2) -> int:
 			def = c
 	var id := _next_id
 	_next_id += 1
-	var hp: Array[float] = []
-	for i in int(def.men):
-		hp.append(100.0)
 	var face := (Vector2.ZERO - at).normalized()
-	squads[id] = {
+	var sq := {
 		"id": id, "owner": owner, "type": type, "name": def.name,
-		"hp": hp, "men_max": int(def.men), "suppression": 0.0,
+		"men": [], "men_max": int(def.men),
 		"order": "idle", "pos": at, "target": at, "facing": face,
-		"fire_t": rng.randf() * 2.0, "setup_t": 0.0, "dig": {}, "barrage": {},
+		"fire_t": rng.randf() * 2.0, "setup_t": 0.0, "dig": {}, "barrage": {}, "unit_dig": {},
 	}
+	squads[id] = sq
+	for slot in int(def.men):
+		var man := {
+			"id": _next_man, "slot": slot, "hp": 100.0, "pos": at, "supp": 0.0,
+			"detached": false, "order": "", "target": at, "stance_override": "auto",
+			"items": loadout(type, slot), "throw": {}, "resupply_t": 0.0,
+		}
+		_next_man += 1
+		sq.men.append(man)
+		man_squad[man.id] = id
+		man.pos = _slot_pos(sq, slot)
 	return id
 
 
@@ -139,47 +192,40 @@ func _spawn(owner: int, type: String, at: Vector2) -> int:
 
 func handle_intent(kind: StringName, data: Dictionary) -> void:
 	var ids: PackedInt32Array = data.get("squads", PackedInt32Array())
+	var uids: PackedInt32Array = data.get("units", PackedInt32Array())
 	match kind:
 		&"move", &"attack_move":
-			var t: Vector3 = data.target
-			var n := 0
-			for id in ids:
-				var sq: Dictionary = squads.get(id, {})
-				if sq.is_empty() or sq.owner != local_player:
-					continue
-				# Spread the group around the target so they do not stack.
-				var off := Vector2(n % 3 - 1, floorf(n / 3.0)) * 14.0
-				_order(sq, String(kind), Vector2(t.x, t.z) + off)
-				n += 1
+			_squads_move(ids, String(kind), data.target)
 		&"stop":
-			for id in ids:
-				var sq: Dictionary = squads.get(id, {})
-				if not sq.is_empty() and sq.owner == local_player:
-					sq.order = "idle"
-					sq.target = sq.pos
-					sq.dig = {}
-					sq.barrage = {}
+			for sq in _own_squads(ids):
+				_order(sq, "idle", sq.pos)
 		&"retreat":
-			for id in ids:
-				var sq: Dictionary = squads.get(id, {})
-				if not sq.is_empty() and sq.owner == local_player:
-					_order(sq, "retreat", MockMap.BASES[local_player])
+			for sq in _own_squads(ids):
+				_order(sq, "retreat", MockMap.BASES[local_player])
 		&"dig":
-			var line: PackedVector3Array = data.polyline
-			for id in ids:
-				var sq: Dictionary = squads.get(id, {})
-				if sq.is_empty() or sq.owner != local_player or not sq.type in ["rifle", "engineer"]:
-					continue
-				_order(sq, "dig", Vector2(line[0].x, line[0].z))
-				sq.dig = {"line": line, "len": _poly_len(line), "progress": 0.0, "sound_t": 0.0}
+			for sq in _own_squads(ids):
+				if sq.type in ["rifle", "engineer"]:
+					_squad_dig(sq, data.polyline)
 		&"barrage":
 			var t: Vector3 = data.target
-			for id in ids:
-				var sq: Dictionary = squads.get(id, {})
-				if not sq.is_empty() and sq.owner == local_player and sq.type == "mortar":
+			for sq in _own_squads(ids):
+				if sq.type == "mortar":
 					sq.order = "barrage"
 					sq.target = sq.pos
 					sq.barrage = {"target": Vector2(t.x, t.z), "rounds": 8, "t": 0.5}
+		&"regroup":
+			for sq in _own_squads(ids):
+				for man in sq.men:
+					_rejoin(man)
+		&"move_units", &"attack_move_units", &"stop_units", &"retreat_units", &"dig_units":
+			_unit_order(String(kind).trim_suffix("_units"), uids, data)
+		&"set_stance":
+			var st: String = data.get("stance", "auto")
+			if st in ["auto", "stand", "crouch", "prone"]:
+				for man in _own_men(uids):
+					man.stance_override = st
+		&"throw", &"throw_each":
+			_throw(uids, String(data.item), data.target, kind == &"throw_each")
 		&"call_in":
 			_call_in(local_player, data.type)
 		&"surrender":
@@ -211,7 +257,7 @@ func force_end(winner: int, reason: String) -> void:
 
 
 ## Moves a squad to a ground position at once and makes it hold there
-## (screenshot staging).
+## (screenshot staging); its men snap to their slots.
 func place_squad(id: int, at: Vector2, facing := Vector2.UP) -> void:
 	if not squads.has(id):
 		return
@@ -219,6 +265,8 @@ func place_squad(id: int, at: Vector2, facing := Vector2.UP) -> void:
 	_order(sq, "idle", at)
 	sq.pos = at
 	sq.facing = facing.normalized()
+	for man in sq.men:
+		man.pos = _slot_pos(sq, man.slot)
 
 
 ## World position of a squad (Vector3.ZERO when gone).
@@ -237,12 +285,183 @@ func squad_ids(owner: int, type := "") -> PackedInt32Array:
 	return out
 
 
+## Living soldier ids of a squad, ascending.
+func unit_ids(squad_id: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if squads.has(squad_id):
+		for man in squads[squad_id].men:
+			out.append(man.id)
+	out.sort()
+	return out
+
+
+## World position of a soldier (Vector3.ZERO when gone).
+func soldier_pos(id: int) -> Vector3:
+	var man := _man(id)
+	return _v3(man.pos) if not man.is_empty() else Vector3.ZERO
+
+
+## Staging: set a soldier's health and suppression (0..1); a suppression
+## above PINNED is held for `hold_s` so a screenshot taken later shows it.
+func set_soldier(id: int, hp: float, supp := -1.0, hold_s := 20.0) -> void:
+	var man := _man(id)
+	if man.is_empty():
+		return
+	man.hp = clampf(hp, 1.0, 100.0)
+	if supp >= 0.0:
+		man.supp = clampf(supp, 0.0, 1.0)
+		if supp > PINNED:
+			man.pin_t = hold_s
+
+
+## Tests: kill a soldier now.
+func kill_soldier(id: int) -> void:
+	var man := _man(id)
+	if not man.is_empty():
+		_hurt(squads[man_squad[id]], man, 1000.0, 1 - squads[man_squad[id]].owner)
+
+
 func set_minimap_texture(tex: Texture2D) -> void:
 	_minimap = tex
 
 
-# --- simulation stand-in -----------------------------------------------------
+# --- orders ------------------------------------------------------------------
 
+func _own_squads(ids: PackedInt32Array) -> Array:
+	var out: Array = []
+	for id in ids:
+		var sq: Dictionary = squads.get(id, {})
+		if not sq.is_empty() and sq.owner == local_player:
+			out.append(sq)
+	return out
+
+
+## Living own men among `uids`, sorted and deduplicated (the sim's
+## validation: wrong owner, dead and unknown ids are dropped).
+func _own_men(uids: PackedInt32Array) -> Array:
+	var ids := uids.duplicate()
+	ids.sort()
+	var out: Array = []
+	var last := -1
+	for id in ids:
+		if id == last:
+			continue
+		last = id
+		var man := _man(id)
+		if not man.is_empty() and squads[man_squad[id]].owner == local_player:
+			out.append(man)
+	return out
+
+
+func _man(id: int) -> Dictionary:
+	if not man_squad.has(id):
+		return {}
+	for man in squads[man_squad[id]].men:
+		if man.id == id:
+			return man
+	return {}
+
+
+func _squads_move(ids: PackedInt32Array, kind: String, t: Vector3) -> void:
+	var n := 0
+	for sq in _own_squads(ids):
+		# Spread the group around the target so they do not stack.
+		var off := Vector2(n % 3 - 1, floorf(n / 3.0)) * 14.0
+		_order(sq, kind, Vector2(t.x, t.z) + off)
+		n += 1
+
+
+func _squad_dig(sq: Dictionary, line: PackedVector3Array) -> void:
+	_order(sq, "dig", Vector2(line[0].x, line[0].z))
+	sq.dig = {"line": line, "len": _poly_len(line), "progress": 0.0, "sound_t": 0.0}
+
+
+## A unit order: men of squads fully covered get the squad order (and
+## regroup), the rest detach and follow their own order.
+func _unit_order(order: String, uids: PackedInt32Array, data: Dictionary) -> void:
+	var men := _own_men(uids)
+	if order == "dig":
+		men = men.filter(func(m: Dictionary) -> bool: return squads[man_squad[m.id]].type in ["rifle", "engineer"])
+	if men.is_empty():
+		return
+	var per_squad := {}
+	for man in men:
+		var sid: int = man_squad[man.id]
+		if not per_squad.has(sid):
+			per_squad[sid] = 0
+		per_squad[sid] += 1
+	var loose: Array = []
+	for man in men:
+		var sq: Dictionary = squads[man_squad[man.id]]
+		if per_squad[sq.id] == sq.men.size():
+			continue
+		loose.append(man)
+	for sid in per_squad:
+		var sq: Dictionary = squads[sid]
+		if per_squad[sid] != sq.men.size():
+			continue
+		match order:
+			"move", "attack_move":
+				_order(sq, order, Vector2(data.target.x, data.target.z))
+			"stop":
+				_order(sq, "idle", sq.pos)
+			"retreat":
+				_order(sq, "retreat", MockMap.BASES[local_player])
+			"dig":
+				_squad_dig(sq, data.polyline)
+	if loose.is_empty():
+		return
+	match order:
+		"move", "attack_move":
+			var t := Vector2(data.target.x, data.target.z)
+			var c := Vector2.ZERO
+			for man in loose:
+				c += man.pos
+			c /= loose.size()
+			var dir := (t - c).normalized() if t.distance_to(c) > 0.1 else Vector2.UP
+			var side := Vector2(-dir.y, dir.x)
+			for i in loose.size():
+				var k := (i - (loose.size() - 1) * 0.5) * SLOT_SPACING
+				_detach(loose[i], order, t + side * k)
+		"stop":
+			for man in loose:
+				_detach(man, "hold", man.pos)
+		"retreat":
+			var base: Vector2 = MockMap.BASES[local_player]
+			for i in loose.size():
+				_detach(loose[i], "retreat", base + Vector2(i % 4, floorf(i / 4.0)) * SLOT_SPACING)
+		"dig":
+			# Split the line among the diggers: each takes a stretch and
+			# works from its middle.
+			var line: PackedVector3Array = data.polyline
+			var total := _poly_len(line)
+			for i in loose.size():
+				var at := _poly_at(line, total * (i + 0.5) / loose.size())
+				_detach(loose[i], "dig", Vector2(at.x, at.z))
+			var by_squad := {}
+			for man in loose:
+				var sid: int = man_squad[man.id]
+				if not by_squad.has(sid):
+					by_squad[sid] = PackedInt32Array()
+				by_squad[sid].append(man.id)
+			for sid in by_squad:
+				squads[sid].unit_dig = {"line": line, "len": total, "progress": 0.0, "men": by_squad[sid], "sound_t": 0.0}
+
+
+func _detach(man: Dictionary, order: String, target: Vector2) -> void:
+	man.detached = true
+	man.order = order
+	man.target = target
+	man.throw = {}
+
+
+func _rejoin(man: Dictionary) -> void:
+	man.detached = false
+	man.order = ""
+	man.throw = {}
+
+
+## Squad-level order: also clears `detached` for the whole squad.
 func _order(sq: Dictionary, order: String, target: Vector2) -> void:
 	sq.order = order
 	sq.target = target
@@ -250,7 +469,35 @@ func _order(sq: Dictionary, order: String, target: Vector2) -> void:
 	if order != "dig":
 		sq.dig = {}
 	sq.setup_t = 0.0
+	sq.unit_dig = {}
+	for man in sq.men:
+		_rejoin(man)
 
+
+## Throw / throw_each: eligible = alive, own, not pinned, carrying the
+## item, target within range. One thrower (nearest, then lowest id) or all.
+func _throw(uids: PackedInt32Array, item: String, target: Vector3, each: bool) -> void:
+	var t := Vector2(target.x, target.z)
+	var r: Vector2 = RULES.throw_range_m.get(item, Vector2(5, 30))
+	var eligible: Array = []
+	for man in _own_men(uids):
+		var d: float = man.pos.distance_to(t)
+		if int(man.items.get(item, 0)) > 0 and man.supp <= PINNED and man.throw.is_empty() and d >= r.x and d <= r.y:
+			eligible.append(man)
+	if eligible.is_empty():
+		return
+	if not each:
+		eligible.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var da: float = a.pos.distance_to(t)
+			var db: float = b.pos.distance_to(t)
+			return da < db or (da == db and a.id < b.id))
+		eligible = [eligible[0]]
+	for man in eligible:
+		_detach(man, "throw", man.pos)
+		man.throw = {"item": item, "target": t, "t": WIND_UP_S}
+
+
+# --- simulation stand-in -----------------------------------------------------
 
 func _step(dt: float) -> void:
 	_tick += 1
@@ -266,6 +513,10 @@ func _step(dt: float) -> void:
 		pl.manpower += pl.income * dt
 		pl.points_held = held[i]
 		stats[i].points_held_s += held[i] * dt
+	for type in recall_cooldown.keys():
+		recall_cooldown[type][0] -= dt
+		if recall_cooldown[type][0] <= 0.0:
+			recall_cooldown.erase(type)
 	_step_queues(dt)
 	_ai_t -= dt
 	if _ai_t <= 0.0:
@@ -277,6 +528,8 @@ func _step(dt: float) -> void:
 		if squads.has(id):
 			_step_squad(squads[id], dt)
 	_step_shells(dt)
+	_step_thrown(dt)
+	_step_smoke(dt)
 	_step_capture(dt)
 	_step_tickets(dt, held)
 	_check_end()
@@ -311,9 +564,13 @@ func _call_in(owner: int, type: String) -> bool:
 		queued += int(q.men)
 	if pl.manpower < def.cost or _queues[owner].size() >= QUEUE_MAX or _pop(owner) + queued + def.men > RULES.pop_cap:
 		return false
+	if owner == local_player and recall_cooldown.has(type):
+		return false
 	pl.manpower -= def.cost
 	_queues[owner].append({"type": type, "remaining_s": float(def.delay_s), "total_s": float(def.delay_s), "men": def.men})
 	stats[owner].squads_called += 1
+	if owner == local_player and type == "mg":
+		recall_cooldown[type] = [12.0, 12.0]
 	return true
 
 
@@ -321,7 +578,7 @@ func _pop(owner: int) -> int:
 	var n := 0
 	for id in squads:
 		if squads[id].owner == owner:
-			n += squads[id].hp.size()
+			n += squads[id].men.size()
 	return n
 
 
@@ -333,7 +590,7 @@ func _ai_plan(ai: int) -> void:
 		var sq: Dictionary = squads[id]
 		if sq.owner != ai:
 			continue
-		if sq.hp.size() * 1.0 / sq.men_max < 0.4 and sq.order != "retreat":
+		if sq.men.size() * 1.0 / sq.men_max < 0.4 and sq.order != "retreat":
 			_order(sq, "retreat", MockMap.BASES[ai])
 			continue
 		if sq.type == "mortar":
@@ -359,13 +616,36 @@ func _ai_plan(ai: int) -> void:
 				_order(sq, "attack_move", Vector2(p.x, p.z) + Vector2(rng.randf_range(-10, 10), rng.randf_range(-10, 10)))
 
 
-func _visible_to(viewer: int, sq: Dictionary) -> bool:
-	if sq.owner == viewer:
-		return true
-	var sight := SIGHT_M * (0.5 if MockMap.in_woods(sq.pos) else 1.0)
+## Whether a spotting ray from `a` to `b` passes through smoke.
+func _smoked(a: Vector2, b: Vector2) -> bool:
+	for c in _smokes:
+		var r := _smoke_radius(c)
+		if r <= 0.5 or _smoke_density(c) < 0.5:
+			continue
+		var cp := Geometry2D.get_closest_point_to_segment(c.pos, a, b)
+		if cp.distance_to(c.pos) < r:
+			return true
+	return false
+
+
+## Points `viewer` sees from: squad anchors and detached men.
+func _eyes(viewer: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
 	for id in squads:
 		var o: Dictionary = squads[id]
-		if o.owner == viewer and o.pos.distance_to(sq.pos) <= sight:
+		if o.owner != viewer:
+			continue
+		out.append(o.pos)
+		for man in o.men:
+			if man.detached:
+				out.append(man.pos)
+	return out
+
+
+func _sees(eyes: PackedVector2Array, p: Vector2) -> bool:
+	var sight := SIGHT_M * (0.5 if MockMap.in_woods(p) else 1.0)
+	for e in eyes:
+		if e.distance_to(p) <= sight and not _smoked(e, p):
 			return true
 	return false
 
@@ -373,41 +653,82 @@ func _visible_to(viewer: int, sq: Dictionary) -> bool:
 func _nearest_enemy(sq: Dictionary, max_d: float) -> int:
 	var best := -1
 	var best_d := max_d
+	var eyes := _eyes(sq.owner)
 	for id in squads:
 		var o: Dictionary = squads[id]
-		if o.owner == sq.owner or not _visible_to(sq.owner, o):
+		if o.owner == sq.owner:
 			continue
 		var d: float = o.pos.distance_to(sq.pos)
-		if d < best_d:
+		if d < best_d and _sees(eyes, o.pos):
 			best_d = d
 			best = id
 	return best
 
 
+func _suppression(sq: Dictionary) -> float:
+	if sq.men.is_empty():
+		return 0.0
+	var s := 0.0
+	for man in sq.men:
+		s += man.supp
+	return s / sq.men.size()
+
+
 func _status(sq: Dictionary) -> String:
 	if sq.order == "retreat":
 		return "retreating"
-	if sq.suppression > 0.7:
+	var s := _suppression(sq)
+	if s > PINNED:
 		return "pinned"
-	if sq.suppression > 0.35:
+	if s > SUPPRESSED:
 		return "suppressed"
 	return "ok"
 
 
+## Formation slot of a man around the squad anchor: a line across the
+## facing, SLOT_SPACING apart, with a little jitter.
+func _slot_pos(sq: Dictionary, slot: int) -> Vector2:
+	var n: int = sq.men_max
+	var f: Vector2 = sq.facing
+	var side := Vector2(-f.y, f.x)
+	var k := (slot - (n - 1) * 0.5) * SLOT_SPACING
+	var jitter := Vector2(sin(sq.id * 3.1 + slot * 1.7), cos(sq.id * 1.3 + slot * 2.3)) * 0.8
+	return sq.pos + side * k + f * (absf(k) * -0.15) + jitter
+
+
+## Effective stance: the override (or Auto: stand while moving, else
+## crouch); suppression forces lower, never higher.
+func _stance(man: Dictionary, moving: bool) -> String:
+	var order := ["stand", "crouch", "prone"]
+	var want: String = man.stance_override
+	if want == "auto":
+		want = "stand" if moving else "crouch"
+	var forced := "stand"
+	if man.supp > PINNED:
+		forced = "prone"
+	elif man.supp > SUPPRESSED:
+		forced = "crouch"
+	return order[maxi(order.find(want), order.find(forced))]
+
+
 func _step_squad(sq: Dictionary, dt: float) -> void:
-	sq.suppression = maxf(sq.suppression - 0.12 * dt, 0.0)
+	for man in sq.men:
+		man.supp = maxf(man.supp - 0.12 * dt, 0.0)
+		if man.get("pin_t", 0.0) > 0.0:
+			man.pin_t -= dt
+			man.supp = maxf(man.supp, 0.9)
 	var status := _status(sq)
 	var enemy := -1
 	if sq.type != "mortar" and sq.order != "retreat":
 		enemy = _nearest_enemy(sq, RANGE[sq.type])
-	# Movement.
+	# Squad anchor movement.
 	var moving: bool = sq.order in ["move", "attack_move", "retreat", "dig"]
 	if sq.order == "attack_move" and enemy != -1:
 		moving = false
 	if sq.order == "dig" and sq.pos.distance_to(sq.target) < 2.0:
 		moving = false
+	var speed: float = SPEED[sq.type] * (1.6 if sq.order == "retreat" else 1.0) * (0.5 if status == "suppressed" else 1.0)
 	if moving and status != "pinned":
-		var speed: float = SPEED[sq.type] * (1.6 if sq.order == "retreat" else 1.0) * (0.5 if status == "suppressed" else 1.0)
 		var to: Vector2 = sq.target - sq.pos
 		var step := speed * dt
 		if to.length() <= step:
@@ -422,21 +743,35 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 		sq.setup_t -= dt
 		if sq.setup_t <= 0.0:
 			sq.order = "idle"
-	# Digging.
+	_step_men(sq, dt, speed, enemy != -1)
+	# Digging (squad order).
 	if sq.order == "dig" and not moving and not sq.dig.is_empty():
 		var rate := 20.0 / 210.0 * (2.0 if sq.type == "engineer" else 1.0) * DIG_SPEEDUP
 		sq.dig.progress = minf(sq.dig.progress + rate * dt / maxf(sq.dig.len, 1.0), 1.0)
-		sq.dig.sound_t -= dt
-		if sq.dig.sound_t <= 0.0:
-			sq.dig.sound_t = 0.6 + rng.randf() * 0.6
-			var line: PackedVector3Array = sq.dig.line
-			_effects.append({"kind": "dig", "pos": line[rng.randi() % line.size()]})
+		_dig_sound(sq.dig, dt)
 		if sq.dig.progress >= 1.0:
 			stats[sq.owner].trench_m += sq.dig.len
 			if sq.owner == local_player:
 				_push_event(sq.owner, "info", "%s finished a %d m trench." % [sq.name, roundi(sq.dig.len)], _v3(sq.pos))
 			sq.order = "idle"
 			sq.dig = {}
+	# Digging (detached men): progress per man at his spot.
+	if not sq.unit_dig.is_empty():
+		var job: Dictionary = sq.unit_dig
+		var n := 0
+		for man in sq.men:
+			if job.men.has(man.id) and man.detached and man.order == "dig" and man.pos.distance_to(man.target) < 1.5:
+				n += 1
+		if n > 0:
+			var per_man := 20.0 / 210.0 / 8.0 * (2.0 if sq.type == "engineer" else 1.0) * DIG_SPEEDUP
+			job.progress = minf(job.progress + per_man * n * dt / maxf(job.len, 1.0), 1.0)
+			_dig_sound(job, dt)
+		if job.progress >= 1.0:
+			stats[sq.owner].trench_m += job.len
+			for man in sq.men:
+				if job.men.has(man.id) and man.order == "dig":
+					man.order = "hold"
+			sq.unit_dig = {}
 	# Mortar barrage.
 	if sq.order == "barrage" and not sq.barrage.is_empty() and status != "pinned":
 		sq.barrage.t -= dt
@@ -449,50 +784,191 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 			if sq.barrage.rounds <= 0:
 				sq.order = "idle"
 				sq.barrage = {}
-	# Small arms.
-	if enemy != -1 and status != "pinned" and not sq.hp.is_empty():
+	# Small arms (whole squad, from the anchor).
+	if enemy != -1 and status != "pinned" and not sq.men.is_empty():
 		sq.fire_t -= dt
 		if sq.fire_t <= 0.0:
 			var gap: float = FIRE_GAP.get(sq.type, 0.7)
-			sq.fire_t = gap * (0.6 + rng.randf() * 0.8) * (6.0 / maxf(sq.hp.size(), 1.0) if sq.type == "rifle" else 1.0)
+			sq.fire_t = gap * (0.6 + rng.randf() * 0.8) * (6.0 / maxf(sq.men.size(), 1.0) if sq.type == "rifle" else 1.0)
 			if sq.type == "mg" and rng.randf() < 0.08:
 				sq.fire_t = 1.5  # burst gap
 			_effects.append({"kind": "shot", "weapon": WEAPON[sq.type], "pos": _v3(sq.pos)})
 			_shot_at(sq, squads[enemy])
 
 
+func _step_men(sq: Dictionary, dt: float, speed: float, engaged: bool) -> void:
+	var base: Vector2 = MockMap.BASES[sq.owner]
+	for man in sq.men:
+		man.moving = false
+		# Resupply inside the own base zone.
+		if man.pos.distance_to(base) < MockMap.BASE_RADIUS:
+			man.resupply_t += dt
+			if man.resupply_t >= RESUPPLY_S:
+				man.resupply_t = 0.0
+				var full := loadout(sq.type, man.slot)
+				for item in full:
+					if man.items[item] < full[item]:
+						man.items[item] += 1
+						break
+		if man.supp > PINNED:
+			continue
+		if not man.throw.is_empty():
+			man.throw.t -= dt
+			if man.throw.t <= 0.0:
+				_release_throw(sq, man)
+			continue
+		var goal: Vector2
+		var pace := speed
+		if man.detached:
+			if not man.order in ["move", "attack_move", "retreat", "dig"]:
+				continue
+			if man.order == "attack_move" and engaged:
+				continue
+			goal = man.target
+			if man.order == "retreat":
+				pace *= 1.6
+		else:
+			goal = _slot_pos(sq, man.slot)
+			pace *= 1.4  # catch up with the formation
+		var to: Vector2 = goal - man.pos
+		var step := pace * dt
+		if to.length() <= step:
+			man.pos = goal
+			if man.detached and man.order in ["move", "attack_move", "retreat"]:
+				man.order = "hold"
+		else:
+			man.pos += to.normalized() * step
+			man.moving = to.length() > 0.6
+
+
+func _release_throw(sq: Dictionary, man: Dictionary) -> void:
+	var item: String = man.throw.item
+	var t: Vector2 = man.throw.target
+	man.throw = {}
+	man.order = "hold"
+	if int(man.items.get(item, 0)) <= 0:
+		return
+	man.items[item] -= 1
+	var d: float = man.pos.distance_to(t)
+	# Scatter: 6 % of the distance.
+	var land := t + Vector2(rng.randfn(0.0, 1.0), rng.randfn(0.0, 1.0)) * d * 0.06
+	var dur := maxf(d / THROW_SPEED, 0.3)
+	_thrown.append({
+		"kind": item, "from": man.pos, "to": land, "t": 0.0, "dur": dur, "owner": sq.owner,
+		"fuse": maxf(float(FUSE_S.get(item, 0.0)) - WIND_UP_S - dur, 0.2), "landed": false,
+	})
+
+
+func _step_thrown(dt: float) -> void:
+	var done: Array[Dictionary] = []
+	for th in _thrown:
+		if not th.landed:
+			th.t += dt
+			if th.t >= th.dur:
+				th.landed = true
+				if th.kind == "smoke":
+					_smokes.append({"pos": th.to, "age": 0.0})
+					while _smokes.size() > SMOKE_CAP:
+						_smokes.pop_front()
+					done.append(th)
+			continue
+		th.fuse -= dt
+		if th.fuse <= 0.0:
+			_explode(th.to, th.kind, th.owner)
+			done.append(th)
+	for th in done:
+		_thrown.erase(th)
+
+
+func _thrown_pos(th: Dictionary) -> Vector3:
+	var f := clampf(th.t / th.dur, 0.0, 1.0)
+	var p: Vector2 = th.from.lerp(th.to, f)
+	var arc: float = sin(PI * f) * th.from.distance_to(th.to) * 0.25
+	return _v3(p) + Vector3(0, 1.5 * (1.0 - f) + arc + 0.1, 0)
+
+
+func _step_smoke(dt: float) -> void:
+	for c in _smokes:
+		c.age += dt
+	_smokes = _smokes.filter(func(c: Dictionary) -> bool: return c.age < SMOKE_GROW_S + SMOKE_HOLD_S + SMOKE_THIN_S)
+
+
+func _smoke_radius(c: Dictionary) -> float:
+	return SMOKE_R * clampf(c.age / SMOKE_GROW_S, 0.0, 1.0)
+
+
+func _smoke_density(c: Dictionary) -> float:
+	var thin: float = c.age - SMOKE_GROW_S - SMOKE_HOLD_S
+	return 1.0 if thin <= 0.0 else clampf(1.0 - thin / SMOKE_THIN_S, 0.0, 1.0)
+
+
+func _dig_sound(job: Dictionary, dt: float) -> void:
+	job.sound_t -= dt
+	if job.sound_t <= 0.0:
+		job.sound_t = 0.6 + rng.randf() * 0.6
+		var line: PackedVector3Array = job.line
+		_effects.append({"kind": "dig", "pos": line[rng.randi() % line.size()]})
+
+
 func _shot_at(shooter: Dictionary, target: Dictionary) -> void:
+	if target.men.is_empty():
+		return
 	var d: float = shooter.pos.distance_to(target.pos)
 	var p := 0.05 * clampf(1.4 - d / 200.0, 0.2, 1.2)
-	if target.order == "idle" and _in_trench(target):
+	if target.order == "idle" and target.get("in_trench", false):
 		p *= 0.35
-	if _status(target) == "pinned":
+	var man: Dictionary = target.men[rng.randi() % target.men.size()]
+	if man.supp > PINNED:
 		p *= 0.5
-	target.suppression = minf(target.suppression + (0.06 if shooter.type == "mg" else 0.025), 1.0)
+	var s := 0.12 if shooter.type == "mg" else 0.05
+	man.supp = minf(man.supp + s, 1.0)
+	for other in target.men:
+		if other.pos.distance_to(man.pos) < 6.0:
+			other.supp = minf(other.supp + s * 0.3, 1.0)
 	if rng.randf() < p:
-		_hurt(target, rng.randf_range(35.0, 100.0), shooter.owner)
+		_hurt(target, man, rng.randf_range(35.0, 100.0), shooter.owner)
 
 
-func _in_trench(sq: Dictionary) -> bool:
-	return sq.get("in_trench", false)
-
-
-func _hurt(sq: Dictionary, dmg: float, by: int) -> void:
-	if sq.hp.is_empty():
-		return
-	var i: int = rng.randi() % sq.hp.size()
-	sq.hp[i] -= dmg
-	if sq.hp[i] <= 0.0:
-		sq.hp.remove_at(i)
+func _hurt(sq: Dictionary, man: Dictionary, dmg: float, by: int) -> void:
+	man.hp -= dmg
+	if man.hp <= 0.0:
+		sq.men.erase(man)
+		man_squad.erase(man.id)
 		stats[by].kills += 1
 		stats[sq.owner].losses += 1
-	if sq.hp.is_empty():
+		if sq.unit_dig.has("men"):
+			var i: int = sq.unit_dig.men.find(man.id)
+			if i >= 0:
+				sq.unit_dig.men.remove_at(i)
+	if sq.men.is_empty():
 		if sq.owner == local_player:
 			_push_event(sq.owner, "squad_lost", "%s lost." % sq.name, _v3(sq.pos))
 		squads.erase(sq.id)
 	elif sq.owner == local_player and time_s - sq.get("alert_t", -99.0) > 30.0:
 		sq.alert_t = time_s
 		_push_event(sq.owner, "under_attack", "%s under fire." % sq.name, _v3(sq.pos))
+
+
+## HE at `at`: lethal core, damage falloff, suppression (radii in BLAST).
+func _explode(at: Vector2, kind: String, owner: int) -> void:
+	_effects.append({"kind": "explosion", "pos": _v3(at), "size": kind})
+	var b: Vector3 = BLAST.get(kind, BLAST.mortar)
+	var ids := squads.keys()
+	ids.sort()
+	for id in ids:
+		if not squads.has(id):
+			continue
+		var sq: Dictionary = squads[id]
+		for man in sq.men.duplicate():
+			if not squads.has(id):
+				break
+			var d: float = man.pos.distance_to(at)
+			if d < b.z:
+				man.supp = minf(man.supp + 0.6 * (1.0 - d / b.z), 1.0)
+			if d < b.x:
+				_hurt(sq, man, 100.0, owner)
+			elif d < b.y and rng.randf() < 0.7 * (1.0 - d / b.y):
+				_hurt(sq, man, rng.randf_range(30.0, 90.0), owner)
 
 
 func _step_shells(dt: float) -> void:
@@ -503,20 +979,7 @@ func _step_shells(dt: float) -> void:
 			landed.append(s)
 	for s in landed:
 		_shells.erase(s)
-		_effects.append({"kind": "explosion", "pos": _v3(s.pos)})
-		var ids := squads.keys()
-		ids.sort()
-		for id in ids:
-			if not squads.has(id):
-				continue
-			var sq: Dictionary = squads[id]
-			var d: float = sq.pos.distance_to(s.pos)
-			if d < 15.0:
-				sq.suppression = minf(sq.suppression + 0.5 * (1.0 - d / 15.0), 1.0)
-			if d < 8.0 and sq.owner != s.owner:
-				var chance := 0.8 * (1.0 - d / 8.0) * (0.3 if _in_trench(sq) else 1.0)
-				if rng.randf() < chance:
-					_hurt(sq, 100.0, s.owner)
+		_explode(s.pos, "mortar", s.owner)
 
 
 func _step_capture(dt: float) -> void:
@@ -526,7 +989,7 @@ func _step_capture(dt: float) -> void:
 		for id in squads:
 			var sq: Dictionary = squads[id]
 			if sq.pos.distance_to(pp) <= p.radius + 6.0:
-				men[sq.owner] += sq.hp.size()
+				men[sq.owner] += sq.men.size()
 		p.contested = men[0] > 0 and men[1] > 0
 		if p.contested:
 			continue
@@ -596,6 +1059,16 @@ func _poly_len(line: PackedVector3Array) -> float:
 	return n
 
 
+## Point at `dist` m along a polyline.
+func _poly_at(line: PackedVector3Array, dist: float) -> Vector3:
+	for i in range(1, line.size()):
+		var seg := line[i - 1].distance_to(line[i])
+		if dist <= seg:
+			return line[i - 1].lerp(line[i], dist / maxf(seg, 0.001))
+		dist -= seg
+	return line[line.size() - 1]
+
+
 # --- export ------------------------------------------------------------------
 
 func _build_state() -> Dictionary:
@@ -608,15 +1081,39 @@ func _build_state() -> Dictionary:
 	for p in points:
 		out_points.append(p.duplicate())
 	var out_squads: Array = []
+	var out_soldiers: Array = []
+	var eyes := _eyes(local_player)
 	var ids := squads.keys()
 	ids.sort()
 	for id in ids:
 		var sq: Dictionary = squads[id]
-		if _visible_to(local_player, sq):
-			out_squads.append(_squad_state(sq))
+		var own: bool = sq.owner == local_player
+		var seen: Array = []
+		for man in sq.men:
+			if own or _sees(eyes, man.pos):
+				seen.append(man)
+		if seen.is_empty():
+			continue
+		out_squads.append(_squad_state(sq, seen))
+		for man in seen:
+			out_soldiers.append(_soldier_state(sq, man, own))
+	out_soldiers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.id < b.id)
 	var q: Array = []
 	for e in _queues[local_player]:
 		q.append(e.duplicate())
+	var catalog: Array = []
+	for c in CATALOG:
+		var entry: Dictionary = c.duplicate()
+		if recall_cooldown.has(c.type):
+			entry.cooldown_s = recall_cooldown[c.type][0]
+			entry.cooldown_total_s = recall_cooldown[c.type][1]
+		catalog.append(entry)
+	var smokes: Array = []
+	for c in _smokes:
+		smokes.append({"pos": _v3(c.pos), "radius": _smoke_radius(c), "density": _smoke_density(c)})
+	var thrown: Array = []
+	for th in _thrown:
+		thrown.append({"kind": th.kind, "pos": _thrown_pos(th) if not th.landed else _v3(th.to) + Vector3(0, 0.1, 0), "landed": th.landed})
 	var state := {
 		"tick": _tick,
 		"time_s": time_s,
@@ -627,7 +1124,10 @@ func _build_state() -> Dictionary:
 		"players": out_players,
 		"points": out_points,
 		"squads": out_squads,
-		"callin": {"catalog": CATALOG, "queue": q, "queue_max": QUEUE_MAX},
+		"soldiers": out_soldiers,
+		"smokes": smokes,
+		"thrown": thrown,
+		"callin": {"catalog": catalog, "queue": q, "queue_max": QUEUE_MAX},
 		"events": _events,
 		"effects": _effects,
 		"result": result.duplicate(),
@@ -638,11 +1138,18 @@ func _build_state() -> Dictionary:
 	return state
 
 
-func _squad_state(sq: Dictionary) -> Dictionary:
-	var men: int = sq.hp.size()
+func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
+	var men: int = sq.men.size()
 	var hp_sum := 0.0
-	for h in sq.hp:
-		hp_sum += h
+	var units := PackedInt32Array()
+	var items := {"frag": 0, "smoke": 0, "satchel": 0}
+	for man in sq.men:
+		hp_sum += man.hp
+	for man in seen:
+		units.append(man.id)
+		for k in items:
+			items[k] += int(man.items.get(k, 0))
+	units.sort()
 	var out := {
 		"id": sq.id,
 		"owner": sq.owner,
@@ -651,15 +1158,20 @@ func _squad_state(sq: Dictionary) -> Dictionary:
 		"men": men,
 		"men_max": sq.men_max,
 		"health": hp_sum / (100.0 * sq.men_max),
-		"suppression": sq.suppression,
+		"suppression": _suppression(sq),
 		"status": _status(sq),
 		"order": sq.order,
 		"pos": _v3(sq.pos),
-		"members": _members(sq),
+		"units": units,
 	}
-	if not sq.dig.is_empty():
-		out.dig_line = sq.dig.line
-		out.dig_progress = sq.dig.progress
+	if sq.owner == local_player:
+		out.items = items
+		if not sq.dig.is_empty():
+			out.dig_line = sq.dig.line
+			out.dig_progress = sq.dig.progress
+		elif not sq.unit_dig.is_empty():
+			out.dig_line = sq.unit_dig.line
+			out.dig_progress = sq.unit_dig.progress
 	if not sq.barrage.is_empty():
 		out.target = _v3(sq.barrage.target)
 	elif sq.order in ["move", "attack_move", "retreat"]:
@@ -667,15 +1179,27 @@ func _squad_state(sq: Dictionary) -> Dictionary:
 	return out
 
 
-## Member positions: a line across the facing, 2.5 m apart.
-func _members(sq: Dictionary) -> PackedVector3Array:
-	var out := PackedVector3Array()
-	var n: int = sq.hp.size()
-	var f: Vector2 = sq.facing
-	var side := Vector2(-f.y, f.x)
-	for i in n:
-		var k := (i - (n - 1) * 0.5) * 2.5
-		var jitter := Vector2(sin(sq.id * 3.1 + i * 1.7), cos(sq.id * 1.3 + i * 2.3)) * 0.8
-		var p: Vector2 = sq.pos + side * k + f * (absf(k) * -0.15) + jitter
-		out.append(_v3(p))
+func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
+	var moving: bool = man.get("moving", false)
+	var out := {
+		"id": man.id,
+		"squad": sq.id,
+		"owner": sq.owner,
+		"slot": man.slot,
+		"pos": _v3(man.pos),
+		"hp": man.hp,
+		"stance": _stance(man, moving),
+		"pinned": man.supp > PINNED,
+		"suppression": man.supp,
+	}
+	if own:
+		out.stance_override = man.stance_override
+		out.detached = man.detached
+		out.items = man.items.duplicate()
+		if man.detached:
+			out.order = man.order
+			if man.order in ["move", "attack_move", "retreat", "dig"]:
+				out.target = _v3(man.target)
+			elif man.order == "throw" and not man.throw.is_empty():
+				out.target = _v3(man.throw.target)
 	return out

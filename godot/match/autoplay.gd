@@ -105,7 +105,7 @@ func _play(s: Dictionary, t: float) -> void:
 		for sq in own:
 			if sq.type == "engineer" and sq.pos.distance_to(dig_site.center) < 14.0 and sq.order in ["idle", "move"]:
 				dig_ordered = true
-				view.selection.select_only(PackedInt32Array([sq.id]))
+				view.selection.select_squads(PackedInt32Array([sq.id]))
 				_intent(&"dig", {"squads": PackedInt32Array([sq.id]), "polyline": dig_site.line}, dig_site.center)
 				print("autoplay: engineers digging at %s" % [dig_site.center])
 	if dig_ordered and not shots.has("trench"):
@@ -129,7 +129,7 @@ func _play(s: Dictionary, t: float) -> void:
 			if tgt != null:
 				barrage_target = tgt
 				barrage_at = t
-				view.selection.select_only(PackedInt32Array([sq.id]))
+				view.selection.select_squads(PackedInt32Array([sq.id]))
 				_intent(&"barrage", {"squads": PackedInt32Array([sq.id]), "target": tgt}, tgt)
 				print("autoplay: barrage on %s at %s" % [tgt, UiPalette.mmss(t)])
 				camera.height = 75.0

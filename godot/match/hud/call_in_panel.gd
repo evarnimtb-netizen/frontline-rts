@@ -1,134 +1,250 @@
-extends PanelContainer
-## Call-in panel: one button per squad type from state.callin.catalog (cost,
-## men, arrival delay), disabled when manpower, population or the queue
-## does not allow it, and the queue with time left for each squad.
+extends Control
+## Call-in column (HUD v2), bottom right above the orders, callin_w wide:
+## one shared strip with a tile per squad type from state.callin.catalog,
+## then one queue bar. Every tile always shows its name and cost; a tile
+## the player cannot buy now is dimmed and says why ("need 25" when short
+## of manpower). An optional re-call cooldown (catalog `cooldown_s` /
+## `cooldown_total_s`) fills the tile from the bottom with a clock and the
+## seconds left. The queue bar shows "Next: <unit> <s>", "n/5" and the
+## head's progress.
+##
+## Click a tile to call it in. Tab focuses the column: Up/Down pick a tile,
+## Enter or Space calls it in, Tab or Esc leaves (the camera's keys pause
+## meanwhile).
+
+const TILE_NAMES := {"rifle": "Rifle squad", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar"}
 
 var view: MatchView
-var _list: VBoxContainer
-var _queue: VBoxContainer
-var _buttons := {}
-var _catalog_sig := ""
+var focused := false
+var cursor := 0
+var _catalog: Array = []
+var _queue: Array = []
+var _queue_max := 5
+var _hover := -1
 
 
 func bind(v: MatchView) -> void:
 	view = v
-	theme_type_variation = &"HudPanel"
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
-	add_child(box)
-	var head := Label.new()
-	head.text = "CALL-IN"
-	head.theme_type_variation = &"HeaderLabel"
-	head.add_theme_font_size_override("font_size", 18)
-	box.add_child(head)
-	_list = VBoxContainer.new()
-	_list.add_theme_constant_override("separation", 3)
-	box.add_child(_list)
-	_queue = VBoxContainer.new()
-	_queue.add_theme_constant_override("separation", 2)
-	box.add_child(_queue)
+	focus_mode = Control.FOCUS_CLICK
+	tooltip_text = " "
+	focus_exited.connect(func() -> void: _set_focus(false))
+
+
+## Column height for a metrics set (the HUD layout calls this).
+func column_height(m: Dictionary) -> float:
+	var n := maxi(view.state.get("callin", {}).get("catalog", []).size(), 1)
+	return _strip_h(m, n) + 4.0 + float(m.ci_q)
+
+
+func _strip_h(m: Dictionary, n: int) -> float:
+	return float(m.ci_head) + n * float(m.tile_h)
 
 
 func update_state(s: Dictionary) -> void:
 	var ci: Dictionary = s.get("callin", {})
-	var catalog: Array = ci.get("catalog", [])
-	var sig := str(catalog.map(func(c: Dictionary) -> String: return c.type))
-	if sig != _catalog_sig:
-		_catalog_sig = sig
-		_rebuild(catalog)
+	var before := _catalog.size()
+	_catalog = ci.get("catalog", [])
+	_queue = ci.get("queue", [])
+	_queue_max = int(ci.get("queue_max", 5))
+	if _catalog.size() != before:
+		view.hud.relayout()
+	cursor = clampi(cursor, 0, maxi(_catalog.size() - 1, 0))
+	queue_redraw()
+
+
+func tile_rect(i: int) -> Rect2:
+	var m: Dictionary = view.hud.m
+	return Rect2(0, float(m.ci_head) + i * float(m.tile_h), size.x, float(m.tile_h))
+
+
+## Why a catalog entry cannot be called in now ("" = it can).
+func blocked_reason(c: Dictionary) -> String:
+	if view.input_blocked():
+		return "Paused."
 	var me := view.player(view.local_player)
-	var rules := view.rules()
-	var queue: Array = ci.get("queue", [])
-	var queue_full := queue.size() >= int(ci.get("queue_max", 5))
-	var pop_cap := int(rules.get("pop_cap", 120))
-	var queued_men := 0
-	for q in queue:
-		queued_men += int(q.get("men", 0))
-	for c in catalog:
-		var b: Button = _buttons.get(c.type)
-		if b == null:
-			continue
-		var afford := float(me.get("manpower", 0.0)) >= float(c.cost)
-		var room := int(me.get("pop", 0)) + queued_men + int(c.men) <= pop_cap
-		b.disabled = view.input_blocked() or not afford or not room or queue_full
-		var why := "" if afford else "\nNot enough manpower."
-		if not room:
-			why += "\nPopulation cap reached."
-		if queue_full:
-			why += "\nQueue full."
-		b.tooltip_text = "%s: %d men, %d manpower, arrives at base after %d s.%s" % [c.name, c.men, c.cost, c.delay_s, why]
-	_update_queue(queue)
+	var short := int(c.cost) - int(me.get("manpower", 0.0))
+	if short > 0:
+		return "need %d" % short
+	if _queue.size() >= _queue_max:
+		return "queue full"
+	var queued := 0
+	for q in _queue:
+		queued += int(q.get("men", 0))
+	if int(me.get("pop", 0)) + queued + int(c.get("men", 0)) > int(view.rules().get("pop_cap", 120)):
+		return "pop cap"
+	if float(c.get("cooldown_s", 0.0)) > 0.0:
+		return "cooldown"
+	return ""
 
 
-func _rebuild(catalog: Array) -> void:
-	for c in _list.get_children():
-		c.queue_free()
-	_buttons.clear()
-	for c in catalog:
-		var b := Button.new()
-		b.theme_type_variation = &"HudButton"
-		b.set_meta("no_click_sound", true)  # plays "confirm" instead
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(250, 34)
-		b.text = ""
-		var type: String = c.type
-		b.pressed.connect(func() -> void:
-			view.emit_intent(&"call_in", {"type": type})
-			AudioManager.play_ui(&"confirm"))
-		var row := HBoxContainer.new()
-		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		row.offset_left = 6
-		row.offset_right = -8
-		row.add_theme_constant_override("separation", 8)
-		var glyph := Control.new()
-		glyph.custom_minimum_size = Vector2(24, 34)
-		glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		glyph.draw.connect(func() -> void:
-			UiPalette.draw_glyph(glyph, type, Rect2(Vector2(0, 9), Vector2(24, 16)), UiPalette.TEXT_DIM if b.disabled else UiPalette.OWN, 1.5))
-		row.add_child(glyph)
-		var name_l := Label.new()
-		name_l.text = "%s  ·  %d" % [c.name, c.men]
-		name_l.add_theme_font_size_override("font_size", 14)
-		name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(name_l)
-		var cost := Label.new()
-		cost.text = "%d MP" % c.cost
-		cost.add_theme_font_size_override("font_size", 14)
-		cost.add_theme_color_override("font_color", UiPalette.ACCENT)
-		cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(cost)
-		b.add_child(row)
-		b.draw.connect(glyph.queue_redraw)
-		_list.add_child(b)
-		_buttons[type] = b
+## Calls in catalog entry `i` (tile click, Enter); false when blocked.
+func call_in_index(i: int) -> bool:
+	if i < 0 or i >= _catalog.size():
+		return false
+	var c: Dictionary = _catalog[i]
+	if blocked_reason(c) != "":
+		AudioManager.play_ui(&"error")
+		return false
+	view.emit_intent(&"call_in", {"type": c.type})
+	AudioManager.play_ui(&"confirm")
+	return true
 
 
-func _update_queue(queue: Array) -> void:
-	while _queue.get_child_count() < queue.size():
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		var l := Label.new()
-		l.add_theme_font_size_override("font_size", 13)
-		l.custom_minimum_size.x = 150
-		row.add_child(l)
-		var bar := ProgressBar.new()
-		bar.show_percentage = false
-		bar.custom_minimum_size = Vector2(60, 8)
-		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		row.add_child(bar)
-		_queue.add_child(row)
-	while _queue.get_child_count() > queue.size():
-		var last := _queue.get_child(_queue.get_child_count() - 1)
-		_queue.remove_child(last)
-		last.queue_free()
-	for i in queue.size():
-		var q: Dictionary = queue[i]
-		var row := _queue.get_child(i)
-		var total := maxf(float(q.get("total_s", 1.0)), 0.01)
-		var left := float(q.get("remaining_s", 0.0))
-		(row.get_child(0) as Label).text = "%s  %ds" % [UiPalette.SQUAD_NAMES.get(q.type, q.type), ceili(left)]
-		(row.get_child(1) as ProgressBar).value = (1.0 - left / total) * 100.0
+## Index of a squad type in the catalog, or -1.
+func index_of(type: String) -> int:
+	for i in _catalog.size():
+		if _catalog[i].type == type:
+			return i
+	return -1
+
+
+func toggle_focus() -> void:
+	_set_focus(not focused)
+
+
+func _set_focus(on: bool) -> void:
+	if on == focused:
+		return
+	focused = on
+	if on and is_inside_tree() and is_visible_in_tree():
+		grab_focus()
+	elif not on and has_focus():
+		release_focus()
+	if view != null and view.camera != null:
+		view.camera.set("input_enabled", not on)
+	queue_redraw()
+
+
+func _draw() -> void:
+	if view == null:
+		return
+	var m: Dictionary = view.hud.m
+	var font := get_theme_default_font()
+	var bold := HudStyle.bold()
+	var w := size.x
+	var strip := Rect2(0, 0, w, _strip_h(m, _catalog.size()))
+	HudStyle.box(self, strip, HudStyle.BG_CALLIN, 5)
+	if focused:
+		HudStyle.box(self, strip.grow(1.0), Color(0, 0, 0, 0), 5, HudStyle.ACCENT, 2)
+	HudStyle.text(self, bold, Vector2(8, float(m.ci_head) - 4.0), "CALL-IN", HudStyle.FONT, HudStyle.DIM)
+	HudStyle.text(self, font, Vector2(w - 8, float(m.ci_head) - 4.0), "Tab", HudStyle.FONT_SMALL, HudStyle.ACCENT if focused else HudStyle.DIM, 1)
+	for i in _catalog.size():
+		_draw_tile(i, font, bold)
+	# Queue bar.
+	var qy := strip.size.y + 4.0
+	var qh: float = m.ci_q
+	var qr := Rect2(0, qy, w, qh)
+	HudStyle.box(self, qr, HudStyle.BG_CALLIN, 5)
+	var count := "%d/%d" % [_queue.size(), _queue_max]
+	HudStyle.text(self, bold, Vector2(w - 6, qy + 15.0), count, HudStyle.FONT_SMALL, HudStyle.TEXT, 1)
+	var avail := w - 18.0 - HudStyle.text_w(bold, count, HudStyle.FONT_SMALL)
+	if _queue.is_empty():
+		HudStyle.text(self, font, Vector2(6, qy + 15.0), "Queue empty", HudStyle.FONT, HudStyle.OFF_TEXT)
+		return
+	var head: Dictionary = _queue[0]
+	# "Next: Rifle" (14) then the time (13, a time). Drop "Next:" when the
+	# column is too narrow for both.
+	var unit: String = MatchView.SHORT_NAMES.get(head.type, head.type)
+	var secs := "%ds" % ceili(float(head.get("remaining_s", 0.0)))
+	var label := "Next: " + unit
+	var secs_w := HudStyle.text_w(bold, secs, HudStyle.FONT_SMALL) + 4.0
+	if HudStyle.text_w(font, label, HudStyle.FONT) + secs_w > avail:
+		label = unit
+	label = HudStyle.fit(font, label, avail - secs_w, HudStyle.FONT)
+	HudStyle.text(self, font, Vector2(6, qy + 15.0), label, HudStyle.FONT, HudStyle.TEXT)
+	HudStyle.text(self, bold, Vector2(10.0 + HudStyle.text_w(font, label, HudStyle.FONT), qy + 15.0), secs, HudStyle.FONT_SMALL, HudStyle.TEXT)
+	var total := maxf(float(head.get("total_s", 1.0)), 0.01)
+	var frac := clampf(1.0 - float(head.get("remaining_s", 0.0)) / total, 0.0, 1.0)
+	var bar := Rect2(6, qy + qh - 6.0, w - 12.0, 3.0)
+	draw_rect(bar, Color(1, 1, 1, 0.18))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), HudStyle.ACCENT)
+
+
+func _draw_tile(i: int, font: Font, bold: Font) -> void:
+	var c: Dictionary = _catalog[i]
+	var r := tile_rect(i)
+	var why := blocked_reason(c)
+	var off := why != ""
+	draw_rect(Rect2(8, r.position.y, r.size.x - 16, 1), Color(HudStyle.TEXT, 0.14))
+	var cd := float(c.get("cooldown_s", 0.0))
+	if cd > 0.0:
+		var frac := clampf(cd / maxf(float(c.get("cooldown_total_s", cd)), 0.01), 0.0, 1.0)
+		draw_rect(Rect2(1, r.end.y - r.size.y * frac, r.size.x - 2, r.size.y * frac - 1), Color(HudStyle.TEXT, 0.12))
+	if (_hover == i and not off) or (focused and cursor == i):
+		draw_rect(r.grow_individual(-1, -1, -1, -1), HudStyle.HOVER)
+	if focused and cursor == i:
+		draw_rect(Rect2(r.position + Vector2(0, 2), Vector2(3, r.size.y - 4)), HudStyle.ACCENT)
+	var title := HudStyle.fit(bold, _short(c.type, c.get("short", "")), r.size.x - 16.0, HudStyle.FONT)
+	HudStyle.text(self, bold, Vector2(8, r.position.y + 16.0), title, HudStyle.FONT, HudStyle.OFF_TEXT if off else HudStyle.TEXT)
+	var cost := "%d MP" % int(c.cost)
+	HudStyle.text(self, bold, Vector2(8, r.end.y - 5.0), cost, HudStyle.FONT, HudStyle.OFF_ACCENT if off else HudStyle.ACCENT)
+	if cd > 0.0:
+		var secs := "%ds" % ceili(cd)
+		HudStyle.text(self, bold, Vector2(r.size.x - 8.0, r.end.y - 5.0), secs, HudStyle.FONT_SMALL, HudStyle.TEXT, 1)
+		HudStyle.clock(self, Vector2(r.size.x - 14.0 - HudStyle.text_w(bold, secs, HudStyle.FONT_SMALL) - 6.0, r.end.y - 10.0), 5.5, HudStyle.TEXT)
+	elif off:
+		# The reason, if it fits next to the cost (always at 120 px).
+		var room := r.size.x - 20.0 - HudStyle.text_w(bold, cost, HudStyle.FONT)
+		if HudStyle.text_w(font, why, HudStyle.FONT) <= room:
+			HudStyle.text(self, font, Vector2(r.size.x - 8.0, r.end.y - 5.0), why, HudStyle.FONT, Color(HudStyle.TEXT, 0.75), 1)
+
+
+## Tile name (catalog `short`, else TILE_NAMES); the queue bar uses the
+## card names ("Next: Rifle 7s").
+func _short(type: String, given := "") -> String:
+	if given != "":
+		return given
+	return TILE_NAMES.get(type, MatchView.SHORT_NAMES.get(type, type))
+
+
+func _tile_at(p: Vector2) -> int:
+	for i in _catalog.size():
+		if tile_rect(i).has_point(p):
+			return i
+	return -1
+
+
+func _gui_input(event: InputEvent) -> void:
+	if view == null:
+		return
+	if event is InputEventMouseMotion:
+		var h := _tile_at(event.position)
+		if h != _hover:
+			_hover = h
+			queue_redraw()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var i := _tile_at(event.position)
+		if i >= 0:
+			cursor = i
+			call_in_index(i)
+		accept_event()
+	elif event is InputEventKey and event.pressed and focused:
+		match event.physical_keycode:
+			KEY_UP:
+				cursor = posmod(cursor - 1, maxi(_catalog.size(), 1))
+			KEY_DOWN:
+				cursor = posmod(cursor + 1, maxi(_catalog.size(), 1))
+			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+				call_in_index(cursor)
+			KEY_TAB, KEY_ESCAPE:
+				_set_focus(false)
+			_:
+				return
+		queue_redraw()
+		accept_event()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT and _hover != -1:
+		_hover = -1
+		queue_redraw()
+
+
+func _get_tooltip(at: Vector2) -> String:
+	var i := _tile_at(at)
+	if i < 0:
+		return "Call-in  [Tab]: Up/Down pick, Enter calls in."
+	var c: Dictionary = _catalog[i]
+	var why := blocked_reason(c)
+	return "%s: %d men, %d manpower, arrives at base after %d s.%s" % [c.name, int(c.men), int(c.cost), int(c.delay_s), "" if why == "" else "\nNot now: " + why]
