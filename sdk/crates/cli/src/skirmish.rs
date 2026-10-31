@@ -93,7 +93,8 @@ pub struct SkirmishArgs {
     /// Run at the real tick rate (sleep to each tick's deadline).
     #[arg(long)]
     pub paced: bool,
-    /// Save the full sim state to this file (at --save-at, else at the end).
+    /// Save the full sim state to this file: at --save-at, or at the end of
+    /// the run when it is not given or the match ends first.
     #[arg(long, value_name = "FILE")]
     pub save: Option<PathBuf>,
     /// Absolute tick at which to write --save.

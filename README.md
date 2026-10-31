@@ -37,7 +37,8 @@ crates/
 godot/                  Godot 4.7.2 project: M0 render spike scene + bench
 sdk/                    open-source SDK (MIT OR Apache-2.0, §7.9)
   crates/content/       def and scenario types, TOML loading, JSON Schema
-  crates/cli/           frontline-cli: simulate, validate, schema, ... (§8.1)
+  crates/cli/           frontline-cli: simulate, skirmish, fortify-test,
+                        validate, schema (§8.1)
 bench/
   scenarios/            benchmark and determinism scenarios (battalion.toml, ...)
   results/              benchmark output (JSON results are git-ignored)
@@ -73,6 +74,50 @@ The report holds casualties, timings and the final state hash (`final_hash`).
 For a fixed scenario, seed and tick count the hash must be identical on every
 OS and for any `--threads` value; CI checks this (below). Run
 `frontline-cli simulate --help` for all options.
+
+## Run a headless skirmish (S1)
+
+`skirmish` plays a whole match on Kessel Ridge (rules and content from
+`mods/ww2`), AI against AI, and prints the winner, the match length, per-player
+stats (tickets, manpower, kills, losses, squads fielded, point time, AI
+commands) and tick timings for the whole match and for its peak:
+
+```sh
+cargo build --release -p frontline-cli
+F=target/release/frontline-cli
+$F skirmish --ai-vs-ai --seed 3                       # Germany (SW base) vs USA (NE base), Normal
+$F skirmish --ai-vs-ai --seed 3 --difficulty hard --difficulty1 easy --minutes 20
+$F skirmish --ai-vs-ai --seed 3 --report json         # full report on stdout
+$F skirmish --ai-vs-ai --seed 3 --faction0 ww2:usa --faction1 ww2:germany
+$F skirmish --ai-vs-ai --seed 3 --swap-bases          # player 0 starts at the NE base
+```
+
+It exits 0 when someone won and 3 on a draw or when `--minutes` (default 30)
+ran out. `--threads` never changes the result. To check save → load →
+continue on a whole match, save at an absolute tick and continue the save on
+another thread count; the final hash must match the straight run:
+
+```sh
+$F skirmish --ai-vs-ai --seed 3 --threads 2 --save /tmp/s3.sav --save-at 18000
+$F skirmish --load /tmp/s3.sav --threads 8
+```
+
+Timing: `--paced` runs at the real 30 Hz tick rate (a 20-minute match takes
+20 minutes); `--start-manpower 20000` lets both AIs fill the 120-soldier pop
+cap early, for a worst-case peak of about 240 soldiers (a different match, so
+different hashes). Results on the M3 are in
+[`bench/results/S1-sim-apple-m3.md`](bench/results/S1-sim-apple-m3.md).
+
+`fortify-test` checks that trenches work as cover. Over seeds 1–5, with each
+faction entrenched in turn, it stages a rifle squad in a finished trench
+against a rifle squad in the open 150 m away (pass: the trench side's losses
+are at most 50 % of the open side's) and a 10-round mortar barrage on a rifle
+squad in a trench and in the open (pass: at most 40 %). It prints every run
+and exits 0 only when both pass:
+
+```sh
+$F fortify-test                  # --seeds N --first-seed S --json
+```
 
 ## Run the benchmarks
 
