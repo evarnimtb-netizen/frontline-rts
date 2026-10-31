@@ -2,8 +2,9 @@
 
 [ext_resource type="Script" path="res://match/match.gd" id="1_match"]
 [ext_resource type="Script" path="res://scripts/rts_camera.gd" id="2_cam"]
-[ext_resource type="Script" path="res://match/mock_match_source.gd" id="3_source"]
-[ext_resource type="Script" path="res://match/mock_world.gd" id="4_world"]
+[ext_resource type="Shader" path="res://shaders/soldier_skinned.gdshader" id="3_soldier"]
+[ext_resource type="Shader" path="res://shaders/tracer.gdshader" id="3_tracer"]
+[ext_resource type="Script" path="res://match/world_fx.gd" id="4_world"]
 [ext_resource type="Script" path="res://match/ground_overlay.gd" id="5_overlay"]
 [ext_resource type="Script" path="res://match/match_view.gd" id="6_view"]
 [ext_resource type="Script" path="res://match/hud/unit_overlay.gd" id="7_units"]
@@ -31,12 +32,12 @@ sky_material = SubResource("ProceduralSkyMaterial_sky")
 background_mode = 2
 sky = SubResource("Sky_main")
 ambient_light_source = 3
-ambient_light_energy = 0.8
+ambient_light_energy = 0.55
 tonemap_mode = 2
 glow_enabled = true
 fog_enabled = true
 fog_light_color = Color(0.64, 0.66, 0.68, 1)
-fog_density = 0.0012
+fog_density = 0.0005
 
 [node name="Match" type="Node3D"]
 script = ExtResource("1_match")
@@ -45,16 +46,18 @@ script = ExtResource("1_match")
 environment = SubResource("Environment_main")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation = Vector3(-0.9, 0.6, 0)
-light_energy = 1.1
+rotation = Vector3(-0.68, 0.75, 0)
+light_energy = 1.35
 shadow_enabled = true
 directional_shadow_mode = 1
 directional_shadow_max_distance = 200.0
 
-[node name="Source" type="Node" parent="."]
-script = ExtResource("3_source")
+[node name="Source" type="FrontlineMatch" parent="." node_paths=PackedStringArray("sun")]
+sun = NodePath("../Sun")
+soldier_shader = ExtResource("3_soldier")
+tracer_shader = ExtResource("3_tracer")
 
-[node name="MockWorld" type="Node3D" parent="."]
+[node name="WorldFx" type="Node3D" parent="."]
 script = ExtResource("4_world")
 
 [node name="GroundOverlay" type="MeshInstance3D" parent="."]

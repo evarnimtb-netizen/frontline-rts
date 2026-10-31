@@ -11,6 +11,13 @@ extends Node
 ##       --capture /abs/out.png [--capture_after 2.5] [--capture_setup NAME]
 ## saves the viewport after the delay and quits. --capture_setup is read by
 ## the scene (e.g. match.gd: "hud", "dig", "pause", "end").
+##
+## Autoplay (windowed; S1 "Done when" 4):
+##   Godot --path godot --resolution 1600x900 -- --autoplay 6 \
+##       [--autoplay_speed 3] [--autoplay_shots /abs/dir] [--seed N] \
+##       [--faction usa] [--difficulty hard] [--tickets N]
+## shows the menu, starts a skirmish, and lets match/autoplay.gd play the
+## local side for that many game minutes, saving screenshots, then quits.
 
 const MENU_SCENE := "res://ui/menu/main_menu.tscn"
 const MATCH_SCENE := "res://match/match.tscn"
@@ -34,6 +41,13 @@ var setup := {
 }
 ## Filled by the match when it ends, for anything shown after it.
 var last_result := {}
+
+## Autoplay: game minutes to play (0 = off), sim speed, screenshot folder.
+var autoplay_minutes := 0.0
+var autoplay_speed := 3.0
+var autoplay_shots := ""
+## Match overrides for scripted runs (0 = rules default).
+var tickets_override := 0
 
 var _capture_path := ""
 var _capture_after := 2.5
@@ -70,13 +84,64 @@ func _ready() -> void:
 			"--seed":
 				setup.seed = v.to_int()
 				i += 1
+			"--autoplay":
+				autoplay_minutes = maxf(v.to_float(), 0.5) if v.is_valid_float() else 5.0
+				if v.is_valid_float():
+					i += 1
+			"--autoplay_speed":
+				autoplay_speed = clampf(v.to_float(), 0.25, 8.0)
+				i += 1
+			"--autoplay_shots":
+				autoplay_shots = v
+				i += 1
+			"--tickets":
+				tickets_override = maxi(v.to_int(), 0)
+				i += 1
 		i += 1
 	if _capture_path != "":
 		_run_capture.call_deferred()
+	elif autoplay_enabled():
+		_run_autoplay_menu.call_deferred()
 
 
 func capture_setup() -> String:
 	return _capture_setup
+
+
+func autoplay_enabled() -> bool:
+	return autoplay_minutes > 0.0
+
+
+## Folder for autoplay screenshots (absolute): --autoplay_shots, else the
+## repository's docs/slices/screens.
+func autoplay_dir() -> String:
+	if autoplay_shots != "":
+		return autoplay_shots
+	return ProjectSettings.globalize_path("res://").path_join("../docs/slices/screens").simplify_path()
+
+
+## What FrontlineMatch.start_match() takes: the menu choice plus overrides.
+func match_setup() -> Dictionary:
+	var out := setup.duplicate()
+	if tickets_override > 0:
+		out.tickets = tickets_override
+	return out
+
+
+## Saves the current frame as PNG (after it is drawn). Returns OK or an error.
+func save_screenshot(path: String) -> int:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	# HiDPI or maximised windows: keep docs screenshots at 1600 px wide.
+	if img.get_width() > 1600:
+		img.resize(1600, int(1600.0 * img.get_height() / img.get_width()), Image.INTERPOLATE_LANCZOS)
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var err := img.save_png(path)
+	if err != OK:
+		push_error("Session: screenshot failed (%s): %s" % [error_string(err), path])
+	else:
+		print("Session: saved %s (%dx%d)" % [path, img.get_width(), img.get_height()])
+	return err
 
 
 func start_skirmish(new_setup: Dictionary) -> void:
@@ -105,6 +170,14 @@ func quit_game(code := 0) -> void:
 
 func map_info(id: String) -> Dictionary:
 	return MAPS.get(id, {})
+
+
+func _run_autoplay_menu() -> void:
+	# The menu is the main scene: let it settle, record it, start the match.
+	await get_tree().create_timer(1.5, true, false, true).timeout
+	await save_screenshot(autoplay_dir().path_join("s1_autoplay_menu.png"))
+	print("autoplay: starting skirmish %s" % [match_setup()])
+	start_skirmish({})
 
 
 func _run_capture() -> void:

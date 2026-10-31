@@ -40,7 +40,7 @@ use godot::classes::image::Format as ImageFormat;
 use godot::classes::light_3d::Param as LightParam;
 use godot::classes::rendering_server::ShadowCastingSetting;
 use godot::classes::{
-    ArrayMesh, Camera3D, DirectionalLight3D, Engine, INode3D, Image, ImageTexture, Node3D,
+    ArrayMesh, DirectionalLight3D, Engine, INode3D, Image, ImageTexture, Material, Node3D,
     ProjectSettings, RenderingServer, Shader, ShaderMaterial, StandardMaterial3D,
 };
 use godot::prelude::*;
@@ -64,6 +64,7 @@ use crate::terrain_view::TerrainStore;
 
 const SOLDIER_SHADER: &str = "res://shaders/soldier_skinned.gdshader";
 const TRACER_SHADER: &str = "res://shaders/tracer.gdshader";
+const TERRAIN_SHADER: &str = "res://shaders/terrain.gdshader";
 /// Planar jump (m) between two snapshots treated as a new entity.
 const MAX_JUMP_M: f32 = 10.0;
 /// Frames kept for interpolation (oldest first).
@@ -72,6 +73,9 @@ const HIST: usize = 3;
 const FLASH_S: f32 = 0.06;
 /// Seconds between `dig` sound cues of one digging squad.
 const DIG_CUE_S: f32 = 1.1;
+/// Presenter frames the sim waits before its first tick, so start-up work
+/// (shader compiles, the first terrain upload) does not make it late.
+const WARMUP_FRAMES: u32 = 8;
 
 #[derive(GodotClass)]
 #[class(base = Node3D)]
@@ -103,6 +107,9 @@ pub struct FrontlineMatch {
     soldier_shader: Option<Gd<Shader>>,
     #[export]
     tracer_shader: Option<Gd<Shader>>,
+    /// Terrain look; without one the chunks use plain vertex colours.
+    #[export]
+    terrain_shader: Option<Gd<Shader>>,
     /// Player slot of this client (set by `start_match`).
     #[var]
     local_player: i32,
@@ -126,6 +133,7 @@ impl INode3D for FrontlineMatch {
             sun: None,
             soldier_shader: None,
             tracer_shader: None,
+            terrain_shader: None,
             local_player: 0,
             rt: None,
             last_error: GString::new(),
@@ -242,9 +250,8 @@ impl FrontlineMatch {
     /// `effects` hold what is new since the previous call.
     #[func]
     fn get_state(&mut self) -> VarDictionary {
-        let cam = self.base().get_viewport().and_then(|vp| vp.get_camera_3d());
         match self.rt.as_mut() {
-            Some(rt) => rt.state_dict(cam.as_ref()),
+            Some(rt) => rt.state_dict(),
             None => VarDictionary::new(),
         }
     }
@@ -338,6 +345,7 @@ impl FrontlineMatch {
             "sim_alive" => rt.sim.is_alive(),
             "sim_step_ms_last" => c.last_step_us.load(Relaxed) as f32 / 1000.0,
             "sim_step_ms_max" => c.max_step_us.load(Relaxed) as f32 / 1000.0,
+            "sim_step_max_tick" => c.max_step_tick.load(Relaxed) as i64,
             "sim_late_ticks" => c.late_ticks.load(Relaxed) as i64,
             "commands_sent" => c.commands_sent.load(Relaxed) as i64,
             "soldiers" => f.soldiers.len() as i64,
@@ -396,9 +404,16 @@ impl FrontlineMatch {
             shader_or_load(&self.soldier_shader, SOLDIER_SHADER).ok_or("missing soldier shader")?;
         let tracer_sh =
             shader_or_load(&self.tracer_shader, TRACER_SHADER).ok_or("missing tracer shader")?;
+        let terrain_sh = shader_or_load(&self.terrain_shader, TERRAIN_SHADER);
         let local = 0u8;
-        let rt = MatchRuntime::new(world, local, world3d.get_scenario(), soldier_sh, tracer_sh)
-            .map_err(|e| format!("could not start the sim thread: {e}"))?;
+        let rt = MatchRuntime::new(
+            world,
+            local,
+            world3d.get_scenario(),
+            [soldier_sh, tracer_sh],
+            terrain_sh,
+        )
+        .map_err(|e| format!("could not start the sim thread: {e}"))?;
         self.local_player = local as i32;
         self.rt = Some(rt);
         Ok(())
@@ -444,7 +459,7 @@ struct MatchRuntime {
     anchors: BTreeMap<u32, [f32; 3]>,
     terrain: TerrainStore,
     scenario: Rid,
-    terrain_mat: Gd<StandardMaterial3D>,
+    terrain_mat: Gd<Material>,
     chunks: Vec<Option<Chunk>>,
     dirty_chunks: BTreeSet<(i32, i32)>,
     chunk_rebuilds: u64,
@@ -464,6 +479,8 @@ struct MatchRuntime {
     minimap: Option<Gd<ImageTexture>>,
     present_us: f32,
     sim_dead_reported: bool,
+    warmup: u32,
+    user_paused: bool,
     _resources: Vec<Gd<Resource>>,
 }
 
@@ -472,8 +489,8 @@ impl MatchRuntime {
         world: World,
         local: u8,
         scenario: Rid,
-        soldier_sh: Gd<Shader>,
-        tracer_sh: Gd<Shader>,
+        [soldier_sh, tracer_sh]: [Gd<Shader>; 2],
+        terrain_sh: Option<Gd<Shader>>,
     ) -> std::io::Result<MatchRuntime> {
         let mut rs = RenderingServer::singleton();
         let setup = world.match_setup().cloned().expect("match world");
@@ -486,9 +503,19 @@ impl MatchRuntime {
         );
         let mut resources: Vec<Gd<Resource>> = Vec::new();
 
-        let mut terrain_mat = StandardMaterial3D::new_gd();
-        terrain_mat.set_flag(MatFlags::ALBEDO_FROM_VERTEX_COLOR, true);
-        terrain_mat.set_roughness(1.0);
+        let terrain_mat: Gd<Material> = match terrain_sh {
+            Some(sh) => {
+                let mut m = ShaderMaterial::new_gd();
+                m.set_shader(&sh);
+                m.upcast()
+            }
+            None => {
+                let mut m = StandardMaterial3D::new_gd();
+                m.set_flag(MatFlags::ALBEDO_FROM_VERTEX_COLOR, true);
+                m.set_roughness(1.0);
+                m.upcast()
+            }
+        };
 
         let (soldier_mat, anim_tex) = soldier_material(&soldier_sh);
         resources.push(anim_tex.upcast());
@@ -573,6 +600,7 @@ impl MatchRuntime {
         let minimap = minimap_texture(&terrain, &setup, 256);
         let hz = setup.tick_hz.max(1) as f32;
         let mut sim = MatchHandle::spawn(world, local)?;
+        sim.set_paused(true);
         let mut hist = [
             MatchFrame::empty(),
             MatchFrame::empty(),
@@ -617,6 +645,8 @@ impl MatchRuntime {
             minimap,
             present_us: 0.0,
             sim_dead_reported: false,
+            warmup: WARMUP_FRAMES,
+            user_paused: false,
             _resources: resources,
             setup,
         };
@@ -696,7 +726,7 @@ impl MatchRuntime {
                 break;
             };
             let md = self.terrain.chunk_mesh(cx, cy);
-            let mesh = build_mesh(&md, Some(self.terrain_mat.clone().upcast()));
+            let mesh = build_mesh(&md, Some(self.terrain_mat.clone()));
             let slot = &mut self.chunks[(cy * per_side + cx) as usize];
             match slot {
                 Some(c) => {
@@ -723,6 +753,12 @@ impl MatchRuntime {
     ) {
         let mut rs = RenderingServer::singleton();
         self.clock += dt as f64;
+        if self.warmup > 0 {
+            self.warmup -= 1;
+            if self.warmup == 0 && !self.user_paused {
+                self.sim.set_paused(false);
+            }
+        }
         self.pull();
         self.rebuild_chunks(rebuilds);
 
@@ -1054,7 +1090,7 @@ impl MatchRuntime {
 
     // ------------------------------------------------------------ state --
 
-    fn state_dict(&mut self, cam: Option<&Gd<Camera3D>>) -> VarDictionary {
+    fn state_dict(&mut self) -> VarDictionary {
         let f = &self.hist[HIST - 1];
         let setup = &self.setup;
         let local = self.local as usize;
@@ -1138,7 +1174,7 @@ impl MatchRuntime {
 
         let mut squads = VarArray::new();
         for s in f.squads.iter().filter(|s| s.visible) {
-            squads.push(&self.squad_dict(s, cam).to_variant());
+            squads.push(&self.squad_dict(s).to_variant());
         }
 
         let fac = &setup.factions[local_faction];
@@ -1265,7 +1301,7 @@ impl MatchRuntime {
         }
     }
 
-    fn squad_dict(&self, s: &SquadView, cam: Option<&Gd<Camera3D>>) -> VarDictionary {
+    fn squad_dict(&self, s: &SquadView) -> VarDictionary {
         let setup = &self.setup;
         let ty = &setup.squad_types[s.type_idx as usize];
         let men = s.men.max(1) as u32;
@@ -1309,12 +1345,6 @@ impl MatchRuntime {
             "order" => order,
             "pos" => pos,
         };
-        if let Some(cam) = cam {
-            let top = pos + Vector3::new(0.0, 1.8, 0.0);
-            if !cam.is_position_behind(top) {
-                d.set("screen", cam.unproject_position(top));
-            }
-        }
         if let Some(t) = s.target {
             d.set("target", self.ground(t));
         }
@@ -1479,7 +1509,10 @@ impl MatchRuntime {
                     .get("paused")
                     .and_then(|v| v.try_to::<bool>().ok())
                     .unwrap_or(false);
-                self.sim.set_paused(p);
+                self.user_paused = p;
+                if self.warmup == 0 {
+                    self.sim.set_paused(p);
+                }
             }
             _ => {}
         }

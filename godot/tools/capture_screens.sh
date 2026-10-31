@@ -23,8 +23,8 @@ shot() {
 
 shot s1_menu "" "" 2.0
 shot s1_menu_settings "" settings 2.0
-shot s1_hud_mock res://match/match.tscn hud 3.0
-shot s1_dig_tool_mock res://match/match.tscn dig 3.0
-shot s1_pause_mock res://match/match.tscn pause 3.0
-shot s1_end_mock res://match/match.tscn end 3.0
+shot s1_hud_mock res://match/match_mock.tscn hud 3.0
+shot s1_dig_tool_mock res://match/match_mock.tscn dig 3.0
+shot s1_pause_mock res://match/match_mock.tscn pause 3.0
+shot s1_end_mock res://match/match_mock.tscn end 3.0
 echo "capture_screens: $OUT"

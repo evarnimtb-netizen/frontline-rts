@@ -146,6 +146,38 @@ state = {
 }
 ```
 
+### The bridge source (`FrontlineMatch`, crates/godot-bridge/src/match_node.rs)
+
+`match/match.tscn` uses the GDExtension node `FrontlineMatch` as its source.
+`match.gd` calls `start_match(Session.match_setup())` (faction, difficulty,
+map, seed; optional `tickets`, `start_manpower`, `ai_vs_ai`); the bridge reads
+`mods/ww2` (next to the project, the executable or the source tree, or the
+node's `mods_dir`), resolves a `MatchSetup` and runs the sim on its own
+thread with the AI inside it. The local player is slot 0.
+
+What it fills, beyond the schema above:
+- `squads[].pos` is the leader's interpolated position (the drawn one);
+  `screen` is not sent, the view projects `pos` (the camera runs first in the
+  frame, so the projection matches the picture).
+- `squads[].rounds` (barrage rounds left), `points[].value`.
+- `players[].pop` counts living soldiers only (the call-in panel adds the
+  queue); `income` and `ticket_drain` are per second.
+- `stats[].squads_called` and `trench_m` are counted presenter-side (squads
+  that arrived after the start; dig orders' line length × progress).
+- `effects`: one `shot` per firing squad per frame (fog-filtered),
+  `mortar_launch` per shell, `explosion` per burst, `dig` about once a
+  second per digging squad in view.
+- `events` are derived from frame diffs (point owner changes, own squads
+  arriving, lost, losing men or getting suppressed, tickets below 100, the
+  match result).
+
+Other methods: `get_map_info()` (woods, points, bases in Godot space,
+factions, own base), `squad_ids(owner, type)`, `squad_pos(id)`,
+`set_speed(x)` (0.25–8, scripted runs), `get_stats()`, `get_last_error()`.
+Soldiers, corpses (death fall, 30 s), tracers, mortar shells, muzzle
+flashes and the chunked terrain are drawn by the bridge;
+`match/world_fx.gd` draws woods, flags and explosions from the state.
+
 Where the bridge gets it (S1 spec, "Data flow to the presenter"): squads and
 soldiers from the `RenderSnapshot` per-soldier/squad data; `points`, `players`,
 `result` from the match state; `events` from point owner changes, squad deaths
@@ -202,9 +234,17 @@ rebindable through InputMap):
 | Esc / F10 | cancel tool, else match menu |
 | Arrows, screen edges | pan; Q/E rotate; wheel zoom (10–150 m); middle-drag rotate/tilt |
 
+## Autoplay
+
+`godot/tools/autoplay.sh <Godot> [minutes] [speed]` boots to the menu,
+starts a skirmish and lets `match/autoplay.gd` play the local side through
+the same intents (call-ins, moves, a trench in front of B, a mortar
+barrage), saving `s1_autoplay_*.png` to `docs/slices/screens/`, then
+surrenders at the time limit and saves the end screen.
+
 ## Running the mock
 
-- `Godot --path godot res://match/match.tscn` runs the HUD on the mock source.
+- `Godot --path godot res://match/match_mock.tscn` runs the HUD on the mock source; `res://match/match.tscn` is the real match (FrontlineMatch).
 - `godot/tools/capture_screens.sh <Godot>` saves the menu and HUD screenshots
   to `docs/slices/screens/`.
 - `Godot --headless --path godot -s res://tools/check_project.gd` loads every

@@ -6,10 +6,11 @@ extends SceneTree
 ##
 ##   Godot --headless --path godot -s res://tools/check_project.gd
 ##
-## main.tscn needs the Rust bridge (godot/bin); it is loaded only when the
-## FrontlineSim class is registered.
+## main.tscn and match/match.tscn need the Rust bridge (godot/bin); they
+## are loaded and run only when its classes are registered. The real match
+## runs a few seconds of the sim against the AI.
 
-const RUN_SCENES := ["res://ui/menu/main_menu.tscn", "res://match/match.tscn"]
+const RUN_SCENES := ["res://ui/menu/main_menu.tscn", "res://match/match_mock.tscn", "res://match/match.tscn"]
 const FRAMES := 240
 
 var _failures := 0
@@ -19,7 +20,7 @@ var _frames := 0
 
 func _initialize() -> void:
 	for path in _files("res://", ["gd", "tscn", "tres"]):
-		if path == "res://main.tscn" and not ClassDB.class_exists(&"FrontlineSim"):
+		if path in ["res://main.tscn", "res://match/match.tscn"] and not ClassDB.class_exists(&"FrontlineMatch"):
 			print("skip %s (bridge not built)" % path)
 			continue
 		var res := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE)
@@ -46,6 +47,9 @@ func _process(_delta: float) -> bool:
 
 func _next_scene() -> void:
 	var path: String = RUN_SCENES[_scene_i]
+	if path == "res://match/match.tscn" and not ClassDB.class_exists(&"FrontlineMatch"):
+		print("skip %s (bridge not built)" % path)
+		return
 	var packed: PackedScene = load(path)
 	if packed == null:
 		_fail("scene missing: %s" % path)

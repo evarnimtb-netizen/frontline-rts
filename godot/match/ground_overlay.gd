@@ -67,9 +67,11 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 	# Trench work orders in progress: outline plus the dug share.
 	for sq in state.get("squads", []):
 		if sq.has("dig_line") and int(sq.owner) == local:
+			# The dug trench itself is terrain; mark the work line and the
+			# share done with thin lines along its edges.
 			var line: PackedVector3Array = sq.dig_line
-			_trench(line, Color(0.42, 0.33, 0.2, 0.45))
-			_trench(_polyline_head(line, float(sq.get("dig_progress", 0.0))), Color(0.62, 0.46, 0.25, 0.9))
+			_edges(line, Color(UiPalette.TEXT, 0.35), 0.06)
+			_edges(_polyline_head(line, float(sq.get("dig_progress", 0.0))), Color(UiPalette.ACCENT, 0.85), 0.1)
 	var sel: Node = view.selection
 	for id in sel.selected:
 		var sq: Dictionary = view.squads_by_id.get(id, {})
@@ -202,6 +204,20 @@ func _polyline_head(pts: PackedVector3Array, frac: float) -> PackedVector3Array:
 		want -= seg
 		out.append(pts[i])
 	return out
+
+
+## Two lines along the trench edges (TRENCH_HALF_W + 0.5 m out).
+func _edges(pts: PackedVector3Array, col: Color, half_w: float) -> void:
+	for i in range(1, pts.size()):
+		var a := pts[i - 1]
+		var b := pts[i]
+		var d := Vector2(b.x - a.x, b.z - a.z)
+		if d.length() < 0.01:
+			continue
+		var n := Vector2(-d.y, d.x).normalized() * (TRENCH_HALF_W + 0.5)
+		for k in [-1.0, 1.0]:
+			var o := Vector3(n.x * k, 0, n.y * k)
+			_line(a + o, b + o, half_w, col)
 
 
 func _trench(pts: PackedVector3Array, col: Color) -> void:

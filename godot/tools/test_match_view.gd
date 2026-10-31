@@ -27,7 +27,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_match = load("res://match/match.tscn").instantiate()
+	_match = load("res://match/match_mock.tscn").instantiate()
 	root.add_child(_match)
 	await _frames(5)
 	_view = _match.view

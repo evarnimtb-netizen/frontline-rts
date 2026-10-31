@@ -34,6 +34,8 @@ pub struct MatchCounters {
     pub late_ticks: AtomicU64,
     pub last_step_us: AtomicU32,
     pub max_step_us: AtomicU32,
+    /// Tick whose step took `max_step_us`.
+    pub max_step_tick: AtomicU64,
     pub commands_sent: AtomicU64,
     pub paused: AtomicBool,
     /// Sim speed in percent of real time (100 = real time).
@@ -277,7 +279,11 @@ fn run_loop(
         let us = step.as_micros().min(u32::MAX as u128) as u32;
         counters.ticks.fetch_add(1, Ordering::Relaxed);
         counters.last_step_us.store(us, Ordering::Relaxed);
-        counters.max_step_us.fetch_max(us, Ordering::Relaxed);
+        if counters.max_step_us.fetch_max(us, Ordering::Relaxed) < us {
+            counters
+                .max_step_tick
+                .store(world.tick(), Ordering::Relaxed);
+        }
         let done = Instant::now();
         next += period;
         if done > next {
