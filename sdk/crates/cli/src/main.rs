@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use frontline_cli::{SimulateArgs, schema, simulate, validate};
+use frontline_cli::skirmish::ReportFormat;
+use frontline_cli::{
+    FortifyArgs, SimulateArgs, SkirmishArgs, fortify, schema, simulate, skirmish, validate,
+};
 
 #[derive(Parser)]
 #[command(
@@ -21,6 +24,15 @@ struct Cli {
 enum Command {
     /// Run a headless battle and report hashes, timings and counts.
     Simulate(SimulateArgs),
+    /// Play a whole skirmish headlessly (AI vs AI) and print winner and stats.
+    ///
+    /// Exits 0 when the match has a winner, 3 when it ended in a draw or hit
+    /// the --minutes limit.
+    Skirmish(SkirmishArgs),
+    /// Stage trench-vs-open fights and check the S1 cover thresholds.
+    ///
+    /// Exits 0 when both experiments pass, 1 otherwise.
+    FortifyTest(FortifyArgs),
     /// Export JSON Schemas for every def type.
     Schema {
         /// Output directory (created if missing).
@@ -56,6 +68,31 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             }
             eprintln!("{}", simulate::summary_line(&report));
             Ok(ExitCode::SUCCESS)
+        }
+        Command::Skirmish(args) => {
+            let report = skirmish::skirmish(&args)?;
+            match args.report {
+                ReportFormat::Text => println!("{}", skirmish::summary_text(&report)),
+                ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+            }
+            Ok(if report.winner.is_some() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(3)
+            })
+        }
+        Command::FortifyTest(args) => {
+            let report = fortify::fortify_test(&args)?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("{}", fortify::summary_text(&report));
+            }
+            Ok(if report.pass {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            })
         }
         Command::Schema { out } => {
             for path in schema::export(&out)? {
