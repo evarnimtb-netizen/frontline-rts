@@ -14,7 +14,7 @@ use frontline_sim::{
 fn world(seed: u64, threads: usize) -> World {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
     let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
-    let setup = defs
+    let mut setup = defs
         .resolve(&MatchRequest::skirmish(
             seed,
             "ww2:germany",
@@ -22,6 +22,8 @@ fn world(seed: u64, threads: usize) -> World {
             Difficulty::Normal,
         ))
         .unwrap_or_else(|e| panic!("{e}"));
+    // These tests drive both sides by hand.
+    setup.players.iter_mut().for_each(|p| p.is_ai = false);
     World::new_match(setup, threads).unwrap()
 }
 

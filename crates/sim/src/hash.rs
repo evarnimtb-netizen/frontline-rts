@@ -260,6 +260,10 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         }
         p.kills.put(out);
         p.losses.put(out);
+        p.defeat.map_or(0u8, |d| d as u8).put(out);
+        p.point_ticks.put(out);
+        p.income_acc.put(out);
+        p.drain_acc.put(out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -309,6 +313,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         c.owner.put(out);
         c.progress.put(out);
         c.capturer.put(out);
+        c.contested.put(out);
     }
     let q = &g.path_queue;
     (q.queues.len() as u32).put(out);
@@ -326,6 +331,20 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         Outcome::Won { winner } => {
             1u8.put(out);
             winner.0.put(out);
+        }
+        Outcome::Draw => 2u8.put(out),
+    }
+    // AI commander state: postcard's encoding is explicit and stable (varint
+    // integers, fields in declaration order, maps in key order).
+    for ai in &g.ai {
+        match ai {
+            None => 0u8.put(out),
+            Some(ai) => {
+                1u8.put(out);
+                let bytes = postcard::to_allocvec(ai).expect("serialising AI state cannot fail");
+                (bytes.len() as u32).put(out);
+                out.extend_from_slice(&bytes);
+            }
         }
     }
 }

@@ -104,6 +104,13 @@ fn skirmish_resolves_to_fixed_point() {
     assert_eq!(c.near_miss, Fixed::from_int(2));
     assert_eq!(c.corpse_ticks, 30 * 30);
     assert_eq!(c.suppression_decay_milli, 8 * 1000 / 30);
+    assert_eq!(s.rules.ticket_drain_per_min_per_point, 20);
+    let ai = &s.rules.ai;
+    assert_eq!(ai.retreat_strength_pct, 40);
+    assert_eq!(ai.threat_radius, Fixed::from_int(80));
+    assert_eq!(ai.mix_pct, [50, 20, 15, 15]);
+    assert_eq!(ai.dig_length, Fixed::from_int(20));
+    assert!(ai.dig_length <= s.rules.dig.max_length);
 
     let rifle = &s.squad_types[s.squad_type_index("ww2:ger_rifle_squad").unwrap() as usize];
     assert_eq!(rifle.men, 8);
@@ -169,12 +176,18 @@ fn broken_mod_reports_file_qualified_issues() {
             "size_m = 1024",
             "size_m = 1000",
         );
+        replace_in(
+            &r.join("defs/rules/skirmish.toml"),
+            "dig_length_m = 20",
+            "dig_length_m = 90",
+        );
     });
     let paths = issue_paths(ModDefs::load(&root).unwrap_err());
     for want in [
         "defs/units/usa_mg_team.toml: men",
         "defs/weapons/mp40.toml: id",
         "defs/maps/kessel_ridge.toml: size_m",
+        "defs/rules/skirmish.toml: ai.dig_length_m",
         "squad `ww2:ger_rifle_squad`: weapon",
         // The engineer squad still names the renamed SMG.
         "squad `ww2:ger_engineer_squad`: weapon",

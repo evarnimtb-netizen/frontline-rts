@@ -4,13 +4,13 @@
 //!
 //! | # | Stage | Work | Parallel? |
 //! |---|-------|---------|-----------|
-//! | 1 | Intent | sorted command apply; bench: waypoint re-pick; match: call-ins, path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
+//! | 1 | Intent | sorted command apply (match: human and due AI commands together); bench: waypoint re-pick; match: call-ins, AI plans ([`crate::ai`]), path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
 //! | 2 | Perception | match: spotting per player ([`crate::spotting`]) | per player, serial apply |
 //! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate (pinned men stay) | serial rebuild, per-chunk plan + integrate |
 //! | 4 | Weapons | bench: cooldowns, random fire; match: marks, squad focus, targeting and fire, mortars ([`crate::combat`]); sorted spawn into the pool | per-chunk, serial focus/mortars/spawn |
 //! | 5 | Ballistics | 60 Hz substeps, ground test (match: capsule hits, near misses), despawn | per-slot-chunk, serial free-list merge |
 //! | 6 | Damage | match: hits, suppression, HE bursts and craters, deaths | serial |
-//! | 7 | Status | match: suppression decay, stance, timers, corpse removal | per-chunk, serial removal |
+//! | 7 | Status | match: suppression decay, stance, timers, corpse removal; capture, income, tickets, victory ([`crate::rules`]) | per-chunk, serial removal and rules |
 //! | 8 | World/Hash | tick++, dirty chunk and terrain tile re-hash, publish every K; snapshot | per-chunk hash |
 //!
 //! A world is either a **bench** world ([`World::new`] from a [`SimConfig`]:
@@ -364,7 +364,9 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// 2: match state and the entity `squad` column. 3: terrain detail tiles
 /// and dig jobs. 4: combat (entity `combat` column, corpses, projectile
 /// weapons, squad focus, kills, spotting cursors, combat counters).
-const SAVE_VERSION: u32 = 4;
+/// 5: match rules (defeats, point time, income and drain fractions,
+/// contested points) and AI commander state.
+const SAVE_VERSION: u32 = 5;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -402,6 +404,8 @@ pub struct World {
     fire_merged: Vec<FireRequest>,
     ended_bufs: Vec<Vec<(u32, ProjectileEnd)>>,
     cmd_order: Vec<usize>,
+    /// AI commands due this tick (match mode), merged with the human ones.
+    ai_cmds: Vec<Command>,
     hash_out: Vec<u64>,
     path_scratch: PathScratch,
     /// Terrain tiles changed in the last tick (for the snapshot).
@@ -539,6 +543,7 @@ impl World {
             fire_merged: Vec::new(),
             ended_bufs: Vec::new(),
             cmd_order: Vec::new(),
+            ai_cmds: Vec::new(),
             hash_out: Vec::new(),
             path_scratch: PathScratch::default(),
             dirty_tiles: Vec::new(),
@@ -798,6 +803,7 @@ impl World {
                 tick: *tick,
             };
             game.spawn_call_ins(&mut ctx);
+            game.run_ai(ctx.ents, ctx.terrain, *tick);
             game.serve_paths(ctx.ents, ctx.terrain, path_scratch);
             game.dig_work(entities, terrain, *tick);
             let mut ctx = Ctx {
@@ -1248,6 +1254,9 @@ impl World {
                     hash.mark_entity_chunk(id.chunk());
                 }
             }
+            if let Some(game) = &mut self.state.game {
+                game.update_rules(&self.state.entities);
+            }
         }
         let t7 = Instant::now();
 
@@ -1362,14 +1371,23 @@ impl World {
     // ----------------------------------------------------------- internals --
 
     fn apply_commands(&mut self, cmds: &[Command]) {
+        // Match mode: AI commands due now join the human ones. Indices past
+        // `cmds.len()` refer to `ai`.
+        let mut ai = std::mem::take(&mut self.ai_cmds);
+        ai.clear();
+        if let Some(game) = &mut self.state.game {
+            game.take_ai_commands(self.state.tick, &mut ai);
+        }
+        let n = cmds.len();
+        let get = |i: usize| if i < n { &cmds[i] } else { &ai[i - n] };
         self.cmd_order.clear();
-        self.cmd_order.extend(0..cmds.len());
+        self.cmd_order.extend(0..n + ai.len());
         // Total order on (player, seq, payload); identical commands are
         // interchangeable, so a stable sort of indices is fully deterministic.
-        self.cmd_order.sort_by(|&a, &b| cmds[a].cmp(&cmds[b]));
+        self.cmd_order.sort_by(|&a, &b| get(a).cmp(get(b)));
         let order = std::mem::take(&mut self.cmd_order);
         for &i in &order {
-            let c = &cmds[i];
+            let c = get(i);
             if let Some(game) = &mut self.state.game {
                 let mut ctx = Ctx {
                     ents: &mut self.state.entities,
@@ -1381,6 +1399,9 @@ impl World {
                     self.state.stats.commands_applied += 1;
                 } else {
                     self.state.stats.commands_rejected += 1;
+                    if i >= n {
+                        game.ai_rejected(c.player);
+                    }
                 }
                 continue;
             }
@@ -1420,6 +1441,7 @@ impl World {
             }
         }
         self.cmd_order = order;
+        self.ai_cmds = ai;
     }
 
     fn owned_by(&self, unit: SimId, player: PlayerId) -> bool {
@@ -1712,6 +1734,66 @@ mod tests {
             });
         });
         assert!(load_err(&bytes).contains("weapon"));
+        // Capture progress without a capturer, or past full.
+        let bytes = save_edited(&w, |s| s.game.as_mut().unwrap().points[0].progress = 5);
+        assert!(load_err(&bytes).contains("capture"));
+        let bytes = save_edited(&w, |s| {
+            let c = &mut s.game.as_mut().unwrap().points[0];
+            c.capturer = Some(PlayerId(0));
+            c.progress = u32::MAX;
+        });
+        assert!(load_err(&bytes).contains("capture"));
+        // A winner while both players still stand; a defeat that is not
+        // reflected in the outcome.
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().outcome = crate::game::Outcome::Won {
+                winner: PlayerId(0),
+            }
+        });
+        assert!(load_err(&bytes).contains("outcome"));
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().players[1].defeat = Some(crate::rules::Defeat::Tickets)
+        });
+        assert!(load_err(&bytes).contains("outcome"));
+        // Income fraction past a whole unit.
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().players[0].income_acc = 1 << 30
+        });
+        assert!(load_err(&bytes).contains("player"));
+        // AI state on a human player, AI state dropped, and a bench command
+        // smuggled into the AI queue.
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            g.ai[0] = g.ai[1].clone();
+        });
+        assert!(load_err(&bytes).contains("AI"));
+        let bytes = save_edited(&w, |s| s.game.as_mut().unwrap().ai[1] = None);
+        assert!(load_err(&bytes).contains("AI"));
+        let bytes = save_edited(&w, |s| {
+            let ai = s.game.as_mut().unwrap().ai[1].as_mut().unwrap();
+            ai.pending.push(crate::ai::AiCommand {
+                due: u64::MAX,
+                seq: 0,
+                kind: CommandKind::Spawn { pos: FxVec2::ZERO },
+            });
+        });
+        assert!(load_err(&bytes).contains("AI"));
+    }
+
+    #[test]
+    fn match_rules_and_ai_state_are_hashed() {
+        let w = match_world();
+        let base = w.full_state_hash();
+        let edits: [fn(&mut SimState); 4] = [
+            |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
+            |s| s.game.as_mut().unwrap().points[2].contested = true,
+            |s| s.game.as_mut().unwrap().ai[1].as_mut().unwrap().next_seq += 1,
+            |s| s.game.as_mut().unwrap().players[1].drain_acc += 1,
+        ];
+        for edit in edits {
+            let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base);
+        }
     }
 
     #[test]

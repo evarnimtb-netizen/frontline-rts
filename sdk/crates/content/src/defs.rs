@@ -259,6 +259,7 @@ pub struct RulesDef {
     pub dig: DigDef,
     pub combat: CombatDef,
     pub difficulty: DifficultyTableDef,
+    pub ai: AiDef,
 }
 
 fn default_tick_hz() -> u32 {
@@ -357,6 +358,28 @@ pub struct CombatDef {
     pub fire_exposure_cm: u32,
     /// Corpses stay this long (for the presenter).
     pub corpse_s: u32,
+}
+
+/// AI commander tuning (weights in data, §9). Difficulty is separate.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AiDef {
+    /// Squads below this strength (percent of full men) fall back to base
+    /// while enemies are near.
+    pub retreat_strength_pct: u32,
+    /// Spotted enemies this close to a point or squad count as a threat.
+    pub threat_radius_m: u32,
+    /// Target army mix by squad role, in percent of squads.
+    pub mix_rifle_pct: u32,
+    pub mix_mg_pct: u32,
+    pub mix_engineer_pct: u32,
+    pub mix_mortar_pct: u32,
+    /// Rounds per mortar Barrage order.
+    pub barrage_rounds: u32,
+    /// Trench length engineers dig at a held point ...
+    pub dig_length_m: u32,
+    /// ... this far in front of it, toward the nearest enemy.
+    pub dig_offset_m: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -807,6 +830,32 @@ impl RulesDef {
                 0,
                 100,
             );
+        }
+        let a = &self.ai;
+        for (name, v, lo, hi) in [
+            ("retreat_strength_pct", a.retreat_strength_pct, 0, 100),
+            ("threat_radius_m", a.threat_radius_m, 1, 500),
+            ("mix_rifle_pct", a.mix_rifle_pct, 0, 100),
+            ("mix_mg_pct", a.mix_mg_pct, 0, 100),
+            ("mix_engineer_pct", a.mix_engineer_pct, 0, 100),
+            ("mix_mortar_pct", a.mix_mortar_pct, 0, 100),
+            ("barrage_rounds", a.barrage_rounds, 1, 50),
+            ("dig_length_m", a.dig_length_m, 2, 1000),
+            ("dig_offset_m", a.dig_offset_m, 0, 100),
+        ] {
+            range(&mut out, &format!("ai.{name}"), v, lo, hi);
+        }
+        if a.mix_rifle_pct + a.mix_mg_pct + a.mix_engineer_pct + a.mix_mortar_pct == 0 {
+            out.push(Issue::new(
+                "ai.mix_rifle_pct",
+                "the mix must not be all zero",
+            ));
+        }
+        if a.dig_length_m > self.dig.max_length_m {
+            out.push(Issue::new(
+                "ai.dig_length_m",
+                "must be at most dig.max_length_m",
+            ));
         }
         out
     }

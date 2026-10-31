@@ -35,6 +35,8 @@ impl Purpose {
     pub const CRATER: Purpose = Purpose(9);
     /// MG target pick among the nearest enemies.
     pub const SWEEP: Purpose = Purpose(10);
+    /// AI commander plan noise (keyed by the player as the id).
+    pub const AI_PLAN: Purpose = Purpose(11);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

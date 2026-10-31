@@ -6,8 +6,10 @@
 //!
 //! Match worlds add per-soldier owner, squad and combat state (stance, hit
 //! points, suppression, who sees him), corpses, the rounds fired and HE
-//! bursts of the tick, and per-squad and per-player summaries; bench worlds
-//! leave those empty except the owner.
+//! bursts of the tick, per-squad and per-player summaries (manpower and
+//! income, tickets and drain, pop, kills, losses, time holding points,
+//! defeat), the capture points and the match outcome; bench worlds leave
+//! those empty except the owner.
 //!
 //! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
 //! soldier (own soldiers always). A presenter for local player `p` draws an
@@ -21,9 +23,11 @@
 //! snapshots can catch up by comparing each tile's `changed_tick`.
 
 use crate::combat::Explosion;
+use crate::ecs::PlayerId;
 use crate::ecs::{Entities, EntityKind, SimId, Stance};
 use crate::game::{MatchState, NavPhase, Order, OrderKind, Outcome};
 use crate::projectile::ProjectilePool;
+use crate::rules::{Defeat, capture_full};
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
 
@@ -82,14 +86,37 @@ pub struct ExplosionSnapshot {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlayerSnapshot {
     pub manpower: u32,
+    /// Manpower per minute right now (base, points held, AI difficulty).
+    pub income_per_min: u32,
     pub tickets: u32,
+    /// Tickets lost per minute right now.
+    pub drain_per_min: u32,
     pub surrendered: bool,
+    /// Set once the player is out.
+    pub defeat: Option<Defeat>,
     /// Alive soldiers plus soldiers on order.
     pub pop: u32,
+    pub pop_cap: u32,
     pub kills: u32,
     pub losses: u32,
+    /// Points held now, and point-seconds held so far (end screen).
+    pub points_held: u8,
+    pub hold_s: u32,
     /// Queued call-ins: `(squad type, ticks until arrival)`.
     pub call_ins: Vec<(u16, u32)>,
+}
+
+/// One capture point, in map order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PointSnapshot {
+    pub pos: [f32; 2],
+    pub radius: f32,
+    pub value: u32,
+    pub owner: Option<u8>,
+    /// Who is capturing it, and how far (0..=100).
+    pub capturer: Option<u8>,
+    pub progress_pct: u8,
+    pub contested: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -124,6 +151,10 @@ pub struct RenderSnapshot {
     pub squads: Vec<SquadSnapshot>,
     /// Per player slot (match mode only).
     pub players: Vec<PlayerSnapshot>,
+    /// Capture points in map order (match mode only).
+    pub points: Vec<PointSnapshot>,
+    /// Running, won or drawn.
+    pub outcome: Outcome,
     /// Winner's player slot once the match is over.
     pub winner: Option<u8>,
     /// Terrain detail tiles `(x, y)` changed in this tick, ascending
@@ -204,6 +235,8 @@ impl RenderSnapshot {
 
         self.squads.clear();
         self.players.clear();
+        self.points.clear();
+        self.outcome = Outcome::Running;
         self.winner = None;
         let Some(g) = game else {
             return;
@@ -240,13 +273,20 @@ impl RenderSnapshot {
                 .iter()
                 .map(|c| types[c.squad_type as usize].men as u32)
                 .sum();
+            let id = PlayerId(p as u8);
             self.players.push(PlayerSnapshot {
                 manpower: pl.manpower,
+                income_per_min: g.income_per_min(id),
                 tickets: pl.tickets,
+                drain_per_min: g.drain_per_min(id),
                 surrendered: pl.surrendered,
+                defeat: pl.defeat,
                 pop: alive + queued,
+                pop_cap: g.setup().rules.pop_cap,
                 kills: pl.kills,
                 losses: pl.losses,
+                points_held: g.points().iter().filter(|c| c.owner == Some(id)).count() as u8,
+                hold_s: (pl.point_ticks / g.setup().tick_hz as u64) as u32,
                 call_ins: pl
                     .call_ins
                     .iter()
@@ -254,6 +294,20 @@ impl RenderSnapshot {
                     .collect(),
             });
         }
+        let r = &g.setup().rules;
+        let full = capture_full(r.capture_ticks).max(1);
+        for (c, ps) in g.points().iter().zip(&g.setup().map.points) {
+            self.points.push(PointSnapshot {
+                pos: crate::fx::FxVec2::from(ps.pos).to_f32(),
+                radius: crate::fx::Fx::from(r.capture_radius).to_f32(),
+                value: ps.value,
+                owner: c.owner.map(|o| o.0),
+                capturer: c.capturer.map(|o| o.0),
+                progress_pct: (c.progress as u64 * 100 / full as u64) as u8,
+                contested: c.contested,
+            });
+        }
+        self.outcome = g.outcome();
         if let Outcome::Won { winner } = g.outcome() {
             self.winner = Some(winner.0);
         }

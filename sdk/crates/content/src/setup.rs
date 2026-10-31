@@ -185,6 +185,20 @@ pub struct RulesSetup {
     pub dig: DigSetup,
     pub combat: CombatSetup,
     pub difficulty: DifficultyTable,
+    pub ai: AiSetup,
+}
+
+/// AI commander tuning (see `AiDef`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiSetup {
+    pub retreat_strength_pct: u32,
+    pub threat_radius: Fixed,
+    /// Target share per [`SquadRole`] in role order (rifle, MG, engineer,
+    /// mortar), percent.
+    pub mix_pct: [u32; 4],
+    pub barrage_rounds: u16,
+    pub dig_length: Fixed,
+    pub dig_offset: Fixed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -597,6 +611,22 @@ impl ModDefs {
                     normal: diff(&rules.difficulty.normal),
                     hard: diff(&rules.difficulty.hard),
                 },
+                ai: {
+                    let a = &rules.ai;
+                    AiSetup {
+                        retreat_strength_pct: a.retreat_strength_pct,
+                        threat_radius: Fixed::from_int(a.threat_radius_m as i32),
+                        mix_pct: [
+                            a.mix_rifle_pct,
+                            a.mix_mg_pct,
+                            a.mix_engineer_pct,
+                            a.mix_mortar_pct,
+                        ],
+                        barrage_rounds: a.barrage_rounds as u16,
+                        dig_length: Fixed::from_int(a.dig_length_m as i32),
+                        dig_offset: Fixed::from_int(a.dig_offset_m as i32),
+                    }
+                },
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -857,6 +887,35 @@ impl MatchSetup {
         check(
             fx_in(c.near_miss, 0, 20) && fx_in(c.fire_exposure, 0, 2) && c.corpse_ticks <= 600 * 30,
             "rules.combat.values",
+            "out of range",
+        );
+
+        check(
+            r.tickets >= 1 && r.capture_ticks >= 1 && r.capture_max_men >= 1,
+            "rules.capture",
+            "tickets, capture time and capture men must be at least 1",
+        );
+        for t in [&r.difficulty.easy, &r.difficulty.normal, &r.difficulty.hard] {
+            check(
+                t.income_pct <= 1000
+                    && t.reaction_ticks <= 60 * 30
+                    && (1..=60 * 30).contains(&t.replan_ticks)
+                    && t.decision_quality_pct <= 100,
+                "rules.difficulty",
+                "out of range",
+            );
+        }
+        let a = &r.ai;
+        check(
+            a.retreat_strength_pct <= 100
+                && fx_in(a.threat_radius, 1, 500)
+                && a.mix_pct.iter().all(|&v| v <= 100)
+                && a.mix_pct.iter().sum::<u32>() > 0
+                && (1..=50).contains(&a.barrage_rounds)
+                && fx_in(a.dig_length, 2, 1000)
+                && a.dig_length <= d.max_length
+                && fx_in(a.dig_offset, 0, 100),
+            "rules.ai",
             "out of range",
         );
 

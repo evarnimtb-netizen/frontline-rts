@@ -23,14 +23,16 @@
 //! range holds and fires; out of range it first walks to 90 % of its range
 //! from the target). Combat (`crate::combat`) and spotting
 //! (`crate::spotting`) keep their per-match state here too: squad focus
-//! targets, kills and losses, and the spotting cursors. Economy income,
-//! tickets and capture are later stages.
+//! targets, kills and losses, and the spotting cursors. Capture, income,
+//! tickets and victory are in `crate::rules`; the AI commander's per-player
+//! state (`crate::ai`) is kept here too.
 
 use std::collections::BTreeMap;
 
 use frontline_content::{MatchSetup, SquadRole};
 use serde::{Deserialize, Serialize};
 
+use crate::ai::AiState;
 use crate::combat;
 use crate::command::{Command, CommandKind};
 use crate::dig::DigJob;
@@ -38,6 +40,7 @@ use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::hash::HashCache;
 use crate::path::{PathCost, PathScratch, find_path};
+use crate::rules::{Defeat, capture_full};
 use crate::squad;
 use crate::terrain::Heightfield;
 
@@ -181,15 +184,27 @@ pub struct PlayerState {
     pub kills: u32,
     /// Own soldiers lost.
     pub losses: u32,
+    /// Set once the player is out of the match (`crate::rules`).
+    pub defeat: Option<Defeat>,
+    /// Sum over ticks of the points held (point-ticks), for the end screen.
+    pub point_ticks: u64,
+    /// Income fraction carried to the next tick (`crate::rules`).
+    pub income_acc: u32,
+    /// Ticket-drain fraction carried to the next tick.
+    pub drain_acc: u32,
 }
 
-/// Capture point state (capture logic: economy stage).
+/// Capture point state (`crate::rules`).
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct CapturePoint {
     pub owner: Option<PlayerId>,
-    /// Capture progress in ticks toward `capturer`.
+    /// Progress toward `capturer`, in percent-ticks of one man's work
+    /// (full at `rules::capture_full`). Zero when `capturer` is `None`.
     pub progress: u32,
+    /// Never the owner.
     pub capturer: Option<PlayerId>,
+    /// Soldiers of two or more players were on the point this tick.
+    pub contested: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -199,6 +214,8 @@ pub enum Outcome {
     Won {
         winner: PlayerId,
     },
+    /// Every remaining player was knocked out in the same tick.
+    Draw,
 }
 
 /// Path requests: one FIFO per player served round-robin, and the expansion
@@ -223,6 +240,8 @@ pub struct MatchState {
     pub(crate) outcome: Outcome,
     /// Per player: entity index the spotting pass resumes at.
     pub(crate) spot_cursor: Vec<u32>,
+    /// Per player: AI commander state (`None` for human players).
+    pub(crate) ai: Vec<Option<AiState>>,
 }
 
 /// Mutable world parts a match operation needs.
@@ -247,6 +266,23 @@ impl MatchState {
                 call_ins: Vec::new(),
                 kills: 0,
                 losses: 0,
+                defeat: None,
+                point_ticks: 0,
+                income_acc: 0,
+                drain_acc: 0,
+            })
+            .collect();
+        let np = setup.players.len();
+        let ai = setup
+            .players
+            .iter()
+            .enumerate()
+            .map(|(p, ps)| {
+                ps.is_ai.then(|| {
+                    let replan = r.difficulty.get(ps.difficulty).replan_ticks;
+                    // Stagger AI players across the re-plan period.
+                    AiState::new(replan as u64 * p as u64 / np as u64)
+                })
             })
             .collect();
         MatchState {
@@ -261,6 +297,7 @@ impl MatchState {
             },
             outcome: Outcome::Running,
             spot_cursor: vec![0; setup.players.len()],
+            ai,
             setup,
         }
     }
@@ -301,6 +338,11 @@ impl MatchState {
     pub fn spot_cursor(&self) -> &[u32] {
         &self.spot_cursor
     }
+    /// AI commander state of `player` (`None` for a human player).
+    #[inline]
+    pub fn ai(&self, player: PlayerId) -> Option<&AiState> {
+        self.ai.get(player.0 as usize).and_then(|a| a.as_ref())
+    }
 
     /// Base centre of `player`.
     pub fn base_of(&self, player: PlayerId) -> FxVec2 {
@@ -329,7 +371,7 @@ impl MatchState {
     pub(crate) fn apply(&mut self, c: &Command, ctx: &mut Ctx) -> bool {
         let p = c.player;
         if p.0 as usize >= self.players.len()
-            || self.players[p.0 as usize].surrendered
+            || self.players[p.0 as usize].defeat.is_some()
             || self.outcome != Outcome::Running
         {
             return false;
@@ -354,7 +396,9 @@ impl MatchState {
             } => self.order_barrage(ctx, p, squad, target, rounds),
             &CommandKind::CallIn { squad_type } => self.call_in(ctx, p, squad_type),
             CommandKind::Surrender => {
-                self.players[p.0 as usize].surrendered = true;
+                let pl = &mut self.players[p.0 as usize];
+                pl.surrendered = true;
+                pl.defeat = Some(Defeat::Surrendered);
                 self.update_outcome();
                 true
             }
@@ -491,23 +535,6 @@ impl MatchState {
             ready_tick: ctx.tick + delay as u64,
         });
         true
-    }
-
-    /// A player wins when every other player has surrendered.
-    fn update_outcome(&mut self) {
-        if self.outcome != Outcome::Running {
-            return;
-        }
-        let mut standing = self
-            .players
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| !p.surrendered);
-        if let (Some((w, _)), None) = (standing.next(), standing.next()) {
-            self.outcome = Outcome::Won {
-                winner: PlayerId(w as u8),
-            };
-        }
     }
 
     /// Asks for a path to `goal`; the squad waits in place until it is served.
@@ -682,6 +709,7 @@ impl MatchState {
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
             || self.spot_cursor.len() != np
+            || self.ai.len() != np
         {
             return Err("match player count disagrees with the setup");
         }
@@ -696,10 +724,41 @@ impl MatchState {
         {
             return Err("capture point owned by an unknown player");
         }
-        if let Outcome::Won { winner } = self.outcome
-            && winner.0 as usize >= np
-        {
-            return Err("match winner is not a player");
+        let full = capture_full(s.rules.capture_ticks);
+        if self.points.iter().any(|c| {
+            c.progress > full
+                || (c.capturer.is_none() != (c.progress == 0))
+                || (c.capturer.is_some() && c.capturer == c.owner)
+        }) {
+            return Err("capture point progress is inconsistent");
+        }
+        let standing = self.players.iter().filter(|p| p.defeat.is_none()).count();
+        let consistent = match self.outcome {
+            Outcome::Running => standing >= 2,
+            Outcome::Won { winner } => {
+                (winner.0 as usize) < np
+                    && standing <= 1
+                    && self.players[winner.0 as usize].defeat.is_none()
+            }
+            Outcome::Draw => standing == 0,
+        };
+        if !consistent {
+            return Err("match outcome disagrees with the players");
+        }
+        let per_min = 60 * s.tick_hz;
+        for (p, pl) in self.players.iter().enumerate() {
+            if pl.surrendered != (pl.defeat == Some(Defeat::Surrendered))
+                || pl.income_acc >= 100 * per_min
+                || pl.drain_acc >= per_min
+            {
+                return Err("bad player state");
+            }
+            if self.ai[p].is_some() != s.players[p].is_ai {
+                return Err("AI state disagrees with the setup");
+            }
+            if let Some(ai) = &self.ai[p] {
+                ai.validate(self)?;
+            }
         }
         for pl in &self.players {
             if pl.call_ins.len() > MAX_CALL_IN_QUEUE

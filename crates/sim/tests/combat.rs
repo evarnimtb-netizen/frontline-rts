@@ -24,6 +24,11 @@ fn setup(seed: u64) -> MatchSetup {
         "ww2:usa",
         Difficulty::Normal,
     ))
+    .map(|mut s| {
+        // These tests drive both sides by hand.
+        s.players.iter_mut().for_each(|p| p.is_ai = false);
+        s
+    })
     .unwrap_or_else(|e| panic!("{e}"))
 }
 

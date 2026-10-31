@@ -16,7 +16,7 @@ point_income_per_min = 60
 
 [tickets_drain]
 # Per point of difference in held points.
-per_min_per_point = 6
+per_min_per_point = 20
 
 [capture]
 radius_m = 15
@@ -101,3 +101,21 @@ income_pct = 125
 reaction_ms = 1000
 replan_ms = 2000
 decision_quality_pct = 100
+
+[ai]
+# Squads below this strength (percent of their full men) fall back to base
+# while enemies are near.
+retreat_strength_pct = 40
+# Spotted enemies this close to a point or squad count as a threat to it.
+threat_radius_m = 80
+# Target army mix by squad role, in percent of squads.
+mix_rifle_pct = 50
+mix_mg_pct = 20
+mix_engineer_pct = 15
+mix_mortar_pct = 15
+# Rounds per mortar barrage order.
+barrage_rounds = 6
+# Engineers dig a trench this long at each held point, this far in front of
+# it toward the nearest enemy.
+dig_length_m = 20
+dig_offset_m = 10
