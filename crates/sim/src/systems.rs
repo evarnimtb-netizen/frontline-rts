@@ -12,7 +12,7 @@ use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::projectile::{Projectile, ProjectileEnd, substep};
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
-use crate::terrain::Heightfield;
+use crate::terrain::{DETAIL_PER_M, Heightfield};
 use crate::world::{SoldierParams, WeaponParams};
 
 /// Hard cap on ORCA neighbours (§5.5).
@@ -236,7 +236,31 @@ pub(crate) fn plan_velocities(
     }
 }
 
-/// Applies planned velocities: position, terrain height and heading.
+/// Grades up to this (percent) on detail ground do not slow a soldier.
+const STEEP_FREE_PCT: i64 = 60;
+/// Slowest pace on steep detail ground (percent of the planned speed).
+const STEEP_MIN_PCT: i64 = 15;
+
+/// Speed factor (percent) for a soldier at `xy` moving along `v` on detail
+/// ground: 100 up to [`STEEP_FREE_PCT`] grade over the next 0.25 m, then
+/// falling as `100 · 100 / (100 + 2 · (grade − 60))`, at least
+/// [`STEEP_MIN_PCT`]. A 1.6 m trench wall (~400 %) is climbed at ~15 %.
+fn steep_pct(terrain: &Heightfield, xy: FxVec2, v: FxVec2) -> i64 {
+    let ahead = terrain.clamp(xy + v.normalize_or_zero().div_int(DETAIL_PER_M));
+    let dh = (terrain.height_at(ahead).raw() as i64 - terrain.height_at(xy).raw() as i64).abs();
+    // dh / 0.25 m in percent.
+    let grade = (dh * 100 * DETAIL_PER_M as i64) >> Fx::FRAC_BITS;
+    if grade <= STEEP_FREE_PCT {
+        100
+    } else {
+        (100 * 100 / (100 + 2 * (grade - STEEP_FREE_PCT))).max(STEEP_MIN_PCT)
+    }
+}
+
+/// Applies planned velocities: position, terrain height and heading. On
+/// detail ground (dug or cratered) steep slopes slow the soldier down
+/// ([`steep_pct`]); his stored velocity is the slowed one. Elsewhere the
+/// planned velocity is used as is.
 pub(crate) fn integrate_soldiers(
     kind: &[EntityKind],
     transform: &mut [Transform],
@@ -252,10 +276,17 @@ pub(crate) fn integrate_soldiers(
             continue;
         }
         changed = true;
-        let v = planned[j];
-        velocity[j].lin = v;
+        let mut v = planned[j];
         let t = &mut transform[j];
-        let xy = terrain.clamp(t.pos.xy() + v.div_int(tick_hz));
+        let from = t.pos.xy();
+        if v != FxVec2::ZERO && terrain.has_detail_at(from) {
+            let pct = steep_pct(terrain, from, v);
+            if pct < 100 {
+                v = v.mul_int(pct as i32).div_int(100);
+            }
+        }
+        velocity[j].lin = v;
+        let xy = terrain.clamp(from + v.div_int(tick_hz));
         t.pos = xy.extend(terrain.height_at(xy));
         if v.length_sq() > min_turn_speed_sq {
             t.yaw = Fx::atan2(v.y, v.x);

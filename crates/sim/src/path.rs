@@ -3,7 +3,18 @@
 //! * Nodes are heightfield grid points, 8-connected. A step costs its length
 //!   (1000 straight, 1414 diagonal) times `1 + grade · slope_cost_pct`; steps
 //!   steeper than `max_slope_pct` are impassable, and a diagonal step needs
-//!   both straight steps beside it passable. The heuristic is the octile
+//!   both straight steps beside it passable. A step between two trench
+//!   nodes (`Heightfield::is_trench`) costs `trench_cost_pct` of that.
+//!   Grades are measured on the base tier: trench walls are sub-grid detail
+//!   and never block a path (the Movement stage slows men on steep detail
+//!   ground instead).
+//! * Trench lines: a search that starts on a trench node with its goal
+//!   within [`TRENCH_SEARCH_NODES`] scales its heuristic by
+//!   `trench_cost_pct` too, so it really finds routes along the trench
+//!   network ("cheaper for infantry already in a trench line"). Other
+//!   searches keep the fast heuristic and the discount only nudges them
+//!   locally. Smoothing never cuts a corner off an all-trench stretch.
+//!   The heuristic is the octile
 //!   distance weighted by 1.3 (weighted A*): paths are within 30 % of the
 //!   cheapest and searches expand far fewer nodes on hilly ground.
 //! * The open list is a binary heap keyed by `(f, h, node)`: a total order,
@@ -33,6 +44,10 @@ const SMOOTH_LOOKAHEAD: usize = 12;
 /// more than optimal, for far fewer expansions on rolling terrain, where the
 /// slope term makes the plain octile bound weak.
 const H_WEIGHT_PCT: u32 = 130;
+/// A search from a trench node uses the trench-scaled heuristic only when
+/// its goal is at most this many grid steps away (100 m): local moves along
+/// a trench network, not cross-map searches, which would expand far more.
+const TRENCH_SEARCH_NODES: u32 = 25;
 /// Grades up to this (percent) are always fine for a smoothed shortcut.
 const SMOOTH_GENTLE_PCT: u32 = 10;
 
@@ -41,6 +56,8 @@ const SMOOTH_GENTLE_PCT: u32 = 10;
 pub struct PathCost {
     pub slope_cost_pct: u32,
     pub max_slope_pct: u32,
+    /// Step cost between two trench nodes, in percent.
+    pub trench_cost_pct: u32,
 }
 
 /// Result of [`find_path`].
@@ -111,13 +128,13 @@ fn step_cost(h0: Fx, h1: Fx, base: u32, c: &PathCost) -> Option<u32> {
     Some((base as u64 * mult / 100).min(u32::MAX as u64 / 4) as u32)
 }
 
-/// Octile distance times [`H_WEIGHT_PCT`].
+/// Octile distance times `weight_pct` / 100.
 #[inline]
-fn octile(ax: u32, ay: u32, bx: u32, by: u32) -> u32 {
+fn octile(ax: u32, ay: u32, bx: u32, by: u32, weight_pct: u32) -> u32 {
     let dx = ax.abs_diff(bx);
     let dy = ay.abs_diff(by);
     let (lo, hi) = if dx < dy { (dx, dy) } else { (dy, dx) };
-    (STRAIGHT * hi + (DIAGONAL - STRAIGHT) * lo) * H_WEIGHT_PCT / 100
+    ((STRAIGHT * hi + (DIAGONAL - STRAIGHT) * lo) as u64 * weight_pct as u64 / 100) as u32
 }
 
 #[inline]
@@ -146,7 +163,13 @@ pub fn find_path(
     s.g[start as usize] = 0;
     s.parent[start as usize] = start;
     s.seen[start as usize] = stamp;
-    let h0 = octile(sx, sy, tx, ty);
+    let near = sx.abs_diff(tx).max(sy.abs_diff(ty)) <= TRENCH_SEARCH_NODES;
+    let weight = if near && terrain.is_trench(sx, sy) {
+        H_WEIGHT_PCT * cost.trench_cost_pct / 100
+    } else {
+        H_WEIGHT_PCT
+    };
+    let h0 = octile(sx, sy, tx, ty, weight);
     s.heap.push(Reverse((h0, h0, start)));
     // Closest expanded node to the goal: (h, g, node).
     let mut best = (h0, 0u32, start);
@@ -175,6 +198,7 @@ pub fn find_path(
         expansions += 1;
         let (nx, ny) = (n % dim, n / dim);
         let hn = terrain.grid_height(nx, ny);
+        let n_trench = terrain.is_trench(nx, ny);
         let g_n = s.g[ni];
         // Fixed neighbour order (irrelevant for the result, which the heap
         // key fully orders, but kept stable anyway).
@@ -208,9 +232,12 @@ pub fn find_path(
                 continue;
             }
             let base = if diagonal { DIAGONAL } else { STRAIGHT };
-            let Some(c) = step_cost(hn, terrain.grid_height(mx, my), base, cost) else {
+            let Some(mut c) = step_cost(hn, terrain.grid_height(mx, my), base, cost) else {
                 continue;
             };
+            if n_trench && terrain.is_trench(mx, my) {
+                c = (c as u64 * cost.trench_cost_pct as u64 / 100) as u32;
+            }
             // Saturating: extreme slope rules on a large map could exceed
             // u32 (the sim panics on overflow).
             let g = g_n.saturating_add(c);
@@ -220,7 +247,7 @@ pub fn find_path(
             s.seen[mi] = stamp;
             s.g[mi] = g;
             s.parent[mi] = n;
-            let h = octile(mx, my, tx, ty);
+            let h = octile(mx, my, tx, ty, weight);
             s.heap.push(Reverse((g.saturating_add(h), h, m)));
         }
     }
@@ -252,27 +279,41 @@ pub fn find_path(
     }
 }
 
-/// Greatest grade along the straight segment `a → b`, sampled every 2 m.
+/// Greatest grade along the straight segment `a → b`, sampled every 2 m on
+/// the base tier (like the grid search).
 fn segment_grade(terrain: &Heightfield, a: FxVec2, b: FxVec2) -> u32 {
     let d = b - a;
     let len = d.length();
     let steps = (len.raw() >> (Fx::FRAC_BITS + 1)).max(1);
     // Units per sample step: len/steps metres, 1000 units per 4 m.
     let units = ((len.raw() as i64 * 250 / steps as i64) >> Fx::FRAC_BITS).max(1) as u32;
-    let mut prev = terrain.height_at(a);
+    let mut prev = terrain.base_height_at(a);
     let mut worst = 0;
     for k in 1..=steps {
         let p = a + FxVec2::new(d.x.mul_int(k).div_int(steps), d.y.mul_int(k).div_int(steps));
-        let h = terrain.height_at(p);
+        let h = terrain.base_height_at(p);
         worst = worst.max(grade_pct(prev, h, units));
         prev = h;
     }
     worst
 }
 
+/// Whether every 2 m sample of the straight segment `a → b` (end points
+/// included) is nearest to a trench node.
+fn segment_in_trench(terrain: &Heightfield, a: FxVec2, b: FxVec2) -> bool {
+    let d = b - a;
+    let steps = (d.length().raw() >> (Fx::FRAC_BITS + 1)).max(1);
+    (0..=steps).all(|k| {
+        let p = a + FxVec2::new(d.x.mul_int(k).div_int(steps), d.y.mul_int(k).div_int(steps));
+        let (gx, gy) = terrain.nearest_grid(p);
+        terrain.is_trench(gx, gy)
+    })
+}
+
 /// String-pulls a grid path: from each anchor, jump to the furthest of the
 /// next [`SMOOTH_LOOKAHEAD`] nodes whose straight segment is no steeper than
-/// the grid path it replaces (or gentle anyway).
+/// the grid path it replaces (or gentle anyway), and stays in the trench
+/// network if the grid path it replaces does.
 fn smooth(terrain: &Heightfield, from: FxVec2, grid: &[FxVec2], cost: &PathCost) -> Vec<FxVec2> {
     let mut out = Vec::new();
     let mut anchor = from;
@@ -281,15 +322,23 @@ fn smooth(terrain: &Heightfield, from: FxVec2, grid: &[FxVec2], cost: &PathCost)
         let mut best = i;
         let mut path_worst = 0u32;
         let mut prev = anchor;
+        let at = |p: FxVec2| {
+            let (gx, gy) = terrain.nearest_grid(p);
+            terrain.is_trench(gx, gy)
+        };
+        let mut all_trench = at(anchor);
         let hi = (i + SMOOTH_LOOKAHEAD).min(grid.len() - 1);
         for (j, &node) in grid.iter().enumerate().take(hi + 1).skip(i) {
             path_worst = path_worst.max(segment_grade(terrain, prev, node));
+            all_trench &= at(node);
             prev = node;
             if j == i {
                 continue;
             }
             let allowed = path_worst.max(SMOOTH_GENTLE_PCT).min(cost.max_slope_pct);
-            if segment_grade(terrain, anchor, node) <= allowed {
+            if segment_grade(terrain, anchor, node) <= allowed
+                && (!all_trench || segment_in_trench(terrain, anchor, node))
+            {
                 best = j;
             }
         }
@@ -308,6 +357,7 @@ mod tests {
     const COST: PathCost = PathCost {
         slope_cost_pct: 300,
         max_slope_pct: 80,
+        trench_cost_pct: 60,
     };
 
     fn flat(size: i32) -> Heightfield {
@@ -398,6 +448,51 @@ mod tests {
             &mut s,
         );
         assert!(!r.reached && r.exhausted);
+    }
+
+    #[test]
+    fn trench_lines_are_followed_when_cheaper() {
+        // An L-shaped trench (20, 20) → (100, 20) → (100, 100); the direct
+        // diagonal is shorter, but at 20 % step cost the trench wins.
+        let mut t = flat(128);
+        let dig = |t: &mut Heightfield, (x0, y0): (i32, i32), (x1, y1): (i32, i32)| {
+            t.edit(
+                (x0 * 4 - 2, y0 * 4 - 2),
+                (x1 * 4 + 2, y1 * 4 + 2),
+                1,
+                |_, _, b, _| b - Fx::from_milli(1500),
+            );
+        };
+        dig(&mut t, (20, 20), (100, 20));
+        dig(&mut t, (100, 20), (100, 100));
+        assert!(t.is_trench(15, 5) && t.is_trench(25, 15) && !t.is_trench(15, 15));
+        let mut s = PathScratch::default();
+        let (from, to) = (FxVec2::from_int(20, 20), FxVec2::from_int(100, 100));
+        let cheap = PathCost {
+            trench_cost_pct: 20,
+            ..COST
+        };
+        let r = find_path(&t, from, to, &cheap, 100_000, &mut s);
+        assert!(r.reached);
+        let corner = FxVec2::from_int(100, 20);
+        assert!(
+            r.points
+                .iter()
+                .any(|p| (*p - corner).length() < Fx::from_int(6)),
+            "{:?}",
+            r.points
+        );
+        // Without a discount the diagonal is the better route.
+        let full = PathCost {
+            trench_cost_pct: 100,
+            ..COST
+        };
+        let r = find_path(&t, from, to, &full, 100_000, &mut s);
+        assert!(
+            r.points
+                .iter()
+                .all(|p| (*p - corner).length() > Fx::from_int(20))
+        );
     }
 
     #[test]

@@ -36,6 +36,9 @@ catch_up_speed_pct = 125
 # A* node expansions per tick (all players), and per single search.
 path_budget_per_tick = 4000
 path_max_expansions = 8000
+# Steps between two trench cells cost this much of a normal step, so squads
+# already in a trench line prefer to follow it.
+trench_cost_pct = 60
 
 [dig]
 depth_cm = 160
@@ -45,6 +48,8 @@ max_length_m = 60
 # Work points per metre of trench. One man at dig_rate_pct = 100 does 100
 # work points per second: a rifle squad digs 20 m in about 3.5 min.
 work_per_m = 8400
+# The trench deepens in this many equal passes (each pass is visible).
+passes = 8
 
 [difficulty.easy]
 income_pct = 80

@@ -325,8 +325,8 @@ fn dig_and_barrage_orders_are_stored() {
     });
     assert!(arrived);
     let s = w.game().unwrap().squad(eng).unwrap();
-    assert_eq!(s.order, Order::Dig { line });
-    // Men stand along the line, facing away from their base (north-east).
+    assert!(matches!(&s.order, Order::Dig { line: l, .. } if *l == line));
+    // Men stand along the line, facing the nearest enemy (north-east).
     for &m in &s.members {
         let p = pos(&w, m);
         assert!(p.y > Fx::from_int(175) && p.y < Fx::from_int(190), "{p:?}");

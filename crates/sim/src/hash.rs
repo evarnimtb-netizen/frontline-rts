@@ -3,11 +3,16 @@
 //! * One xxh3-64 per chunk of [`CHUNK_SIZE`] entity ids and per chunk of
 //!   projectile slots, kept in [`HashCache`] and recomputed only for chunks
 //!   marked dirty since the last update (every tick, in the World/Hash stage).
+//! * One xxh3-64 per terrain detail tile, recomputed only for tiles the
+//!   world drained from the terrain's dirty list this tick. The base tier
+//!   is hashed once. The terrain hash is the base hash alone while there
+//!   are no tiles (so bench hashes are unchanged), else xxh3 over the base
+//!   hash, pool cap and drop count, and the tile hashes in pool order.
 //! * A "globals" hash over everything that is not per-chunk: config, tick,
 //!   id allocator (high-water mark and free list), projectile free list,
-//!   stats counters, the terrain and, in match mode, the match setup bytes
-//!   and the whole [`MatchState`] (players, squads, queues: small, so it is
-//!   simply re-hashed at every publish).
+//!   stats counters, the terrain hash and, in match mode, the match setup
+//!   bytes and the whole [`MatchState`] (players, squads, queues: small, so
+//!   it is simply re-hashed at every publish).
 //! * In match mode each entity also hashes its `squad` link. Bench worlds
 //!   skip that column, so their hashes are unchanged by match mode.
 //! * The combined hash is xxh3 over `globals ‖ entity chunks ‖ pool chunks`.
@@ -24,6 +29,7 @@ use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, PlayerId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{MatchState, Order, Outcome};
 use crate::projectile::{Projectile, ProjectilePool};
+use crate::terrain::{DetailTile, Heightfield};
 use crate::world::SimState;
 
 /// Explicit byte encoding for hashing.
@@ -164,7 +170,7 @@ pub(crate) fn pool_chunk(pool: &ProjectilePool, c: usize) -> u64 {
     })
 }
 
-/// Hash of the terrain heights and flags (immutable in M0 and S1 stage 1).
+/// Hash of the base tier's heights and flags (immutable).
 pub(crate) fn terrain(state: &SimState) -> u64 {
     hash_with(|out| {
         (state.terrain.size_m() as u32).put(out);
@@ -175,6 +181,37 @@ pub(crate) fn terrain(state: &SimState) -> u64 {
         // Bench terrain has no flags; hashing none keeps its hash unchanged.
         if !state.terrain.flags().is_empty() {
             out.extend_from_slice(state.terrain.flags());
+        }
+    })
+}
+
+/// Hash of one detail tile (coordinates, last-change tick, heights).
+pub(crate) fn tile(t: &DetailTile) -> u64 {
+    hash_with(|out| {
+        let (x, y) = t.coords();
+        x.put(out);
+        y.put(out);
+        t.changed_tick().put(out);
+        for h in t.heights() {
+            h.put(out);
+        }
+    })
+}
+
+/// Combined terrain hash from the base hash and the tile hashes (in pool
+/// order). Equal to `base` while the detail tier is empty and untouched.
+pub(crate) fn terrain_combined(base: u64, terrain: &Heightfield, tiles: &[u64]) -> u64 {
+    let d = terrain.detail();
+    if d.tiles().is_empty() && d.dropped() == 0 {
+        return base;
+    }
+    hash_with(|out| {
+        base.put(out);
+        d.cap().put(out);
+        d.dropped().put(out);
+        (tiles.len() as u32).put(out);
+        for h in tiles {
+            h.put(out);
         }
     })
 }
@@ -206,7 +243,18 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         match &sq.order {
             Order::Idle | Order::Retreat => {}
             Order::Move { target } | Order::AttackMove { target } => target.put(out),
-            Order::Dig { line } => line.put(out),
+            Order::Dig { line, job } => {
+                line.put(out);
+                (job.front as u8).put(out);
+                (job.segments.len() as u32).put(out);
+                for g in &job.segments {
+                    g.from.put(out);
+                    g.to.put(out);
+                    g.work.put(out);
+                    g.passes.put(out);
+                    g.digger.map_or(u32::MAX, |d| d.0).put(out);
+                }
+            }
             Order::Barrage { target, rounds } => {
                 target.put(out);
                 rounds.put(out);
@@ -315,8 +363,10 @@ pub(crate) fn full_hash(state: &SimState, config_bytes: &[u8], setup_bytes: &[u8
     let pool: Vec<u64> = (0..state.projectiles.chunk_count())
         .map(|c| pool_chunk(&state.projectiles, c))
         .collect();
+    let tiles: Vec<u64> = state.terrain.detail().tiles().iter().map(tile).collect();
+    let terrain = terrain_combined(terrain(state), &state.terrain, &tiles);
     combine(
-        globals(state, config_bytes, setup_bytes, terrain(state)),
+        globals(state, config_bytes, setup_bytes, terrain),
         &ent,
         &pool,
     )
@@ -329,7 +379,10 @@ pub(crate) struct HashCache {
     pub entity_dirty: Vec<bool>,
     pub pool: Vec<u64>,
     pub pool_dirty: Vec<bool>,
+    /// Base tier hash (computed once).
     pub terrain: u64,
+    /// Per detail tile, in pool order.
+    pub tiles: Vec<u64>,
     /// Scratch list of dirty chunk indices.
     pub scratch: Vec<usize>,
 }
@@ -345,8 +398,25 @@ impl HashCache {
             pool: vec![0; np],
             pool_dirty: vec![true; np],
             terrain: terrain(state),
+            tiles: state.terrain.detail().tiles().iter().map(tile).collect(),
             scratch: Vec::new(),
         }
+    }
+
+    /// Re-hashes the listed (dirty) tiles that still exist.
+    pub fn update_tiles(&mut self, terrain: &Heightfield, dirty: &[(u16, u16)]) {
+        let tiles = terrain.detail().tiles();
+        self.tiles.resize(tiles.len(), 0);
+        for &(x, y) in dirty {
+            if let Some(i) = terrain.tile_index(x, y) {
+                self.tiles[i] = tile(&tiles[i]);
+            }
+        }
+    }
+
+    /// The current combined terrain hash.
+    pub fn terrain_hash(&self, terrain: &Heightfield) -> u64 {
+        terrain_combined(self.terrain, terrain, &self.tiles)
     }
 
     /// Keeps the entity chunk list in step with the column length.

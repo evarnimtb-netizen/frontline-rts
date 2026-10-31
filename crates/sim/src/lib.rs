@@ -16,13 +16,16 @@
 //! Worlds come in two modes: bench worlds from a [`SimConfig`] (the M0
 //! load test) and match worlds from a content [`MatchSetup`] resolved by
 //! `frontline_content` from the defs under `mods/` ([`game`]: players,
-//! squads, orders; [`path`]: grid A*; [`squad`]: formations).
+//! squads, orders; [`path`]: grid A*; [`squad`]: formations; [`dig`]:
+//! trenches). Terrain is a two-tier heightfield whose sparse detail tiles
+//! are edited by digging and craters ([`terrain`]).
 //!
 //! It has no Godot, rendering or audio dependency, and does no file IO.
 
 #![deny(clippy::float_arithmetic)]
 
 pub mod command;
+pub mod dig;
 pub mod ecs;
 pub mod fx;
 pub mod game;
@@ -38,14 +41,15 @@ pub mod terrain;
 pub mod world;
 
 pub use command::{Command, CommandKind};
+pub use dig::{DigJob, DigSegment};
 pub use ecs::{CHUNK_SIZE, Entities, EntityKind, IdAllocator, PlayerId, SimId};
 pub use frontline_content::MatchSetup;
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{MatchState, NavPhase, Order, OrderKind, Outcome, Squad, SquadId};
 pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
-pub use snapshot::{NO_SQUAD, PlayerSnapshot, RenderSnapshot, SquadSnapshot};
-pub use terrain::{Heightfield, TerrainKind};
+pub use snapshot::{NO_SQUAD, PlayerSnapshot, RenderSnapshot, SquadSnapshot, tile_heights_f32};
+pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use world::{
     SimConfig, SimError, SimState, SoldierParams, StageTimes, Stats, TickRate, WeaponParams, World,
     match_config,

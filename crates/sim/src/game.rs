@@ -14,13 +14,14 @@
 //! 2. ready call-ins spawn at their owner's base;
 //! 3. the [`PathQueue`] serves path requests round-robin by player within a
 //!    node-expansion budget (`crate::path`);
-//! 4. squads steer their members (`crate::squad`).
+//! 4. digging squads work on their trench (`crate::dig`);
+//! 5. squads steer their members (`crate::squad`).
 //!
-//! S1 stage 1 implements Move, AttackMove (moves like Move; engaging comes
-//! with combat), Stop, Retreat, CallIn and Surrender. Dig and Barrage are
-//! validated and stored as orders; Dig walks the squad to the trench line and
-//! spreads it along it, Barrage stops the squad facing the target. Digging
-//! progress, firing, economy income, tickets and capture are later stages.
+//! Implemented: Move, AttackMove (moves like Move; engaging comes with
+//! combat), Stop, Retreat, CallIn, Surrender and Dig (the squad walks to the
+//! line, splits it and digs it in passes). Barrage is validated and stored;
+//! it stops the squad facing the target. Firing, economy income, tickets and
+//! capture are later stages.
 
 use std::collections::BTreeMap;
 
@@ -28,6 +29,7 @@ use frontline_content::{MatchSetup, SquadRole};
 use serde::{Deserialize, Serialize};
 
 use crate::command::{Command, CommandKind};
+use crate::dig::DigJob;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::hash::HashCache;
@@ -65,9 +67,11 @@ pub enum Order {
     },
     /// To the own base, faster; ignores enemies.
     Retreat,
-    /// Dig a trench along `line` (digging itself: trench stage).
+    /// Dig a trench along `line`; `job` tracks who digs what and how far.
+    /// The order becomes `Idle` when the trench is finished.
     Dig {
         line: Vec<FxVec2>,
+        job: DigJob,
     },
     /// Mortar fire on `target` (firing: HE stage).
     Barrage {
@@ -388,8 +392,21 @@ impl MatchState {
             return false;
         }
         let goal = squad::point_along(line, len.div_int(2));
-        self.squads.get_mut(&id).expect("owned").order = Order::Dig {
+        let base = self.base_of(p);
+        let sq = self.squads.get_mut(&id).expect("owned");
+        let job = DigJob::new(
+            line,
+            sq.members.len(),
+            p,
+            base,
+            ctx.ents,
+            ctx.terrain,
+            &self.setup.rules.dig,
+            self.setup.tick_hz,
+        );
+        sq.order = Order::Dig {
             line: line.to_vec(),
+            job,
         };
         self.request_path(id, goal);
         true
@@ -582,6 +599,7 @@ impl MatchState {
         let cost = PathCost {
             slope_cost_pct: mv.slope_cost_pct,
             max_slope_pct: mv.max_slope_pct,
+            trench_cost_pct: mv.trench_cost_pct,
         };
         let max_exp = mv.path_max_expansions;
         let pq = &mut self.path_queue;
@@ -683,11 +701,26 @@ impl MatchState {
             {
                 return Err("squad navigation state is inconsistent");
             }
-            match &sq.order {
-                Order::Dig { line } if !(2..=MAX_DIG_POINTS).contains(&line.len()) => {
-                    return Err("dig order has a bad line");
+            if let Order::Dig { line, job } = &sq.order {
+                let len = squad::polyline_length(line);
+                let size = Fx::from_int(s.map.size_m);
+                let on_map =
+                    |q: &FxVec2| q.x >= Fx::ZERO && q.y >= Fx::ZERO && q.x <= size && q.y <= size;
+                if !(2..=MAX_DIG_POINTS).contains(&line.len())
+                    || !line.iter().all(on_map)
+                    || len > Fx::from(s.rules.dig.max_length)
+                    || !(1..=16).contains(&job.segments.len())
+                    || job.front.abs() != 1
+                    || job.segments.iter().any(|g| {
+                        g.from < Fx::ZERO
+                            || g.from > g.to
+                            || g.to > len
+                            || g.passes as u32 > s.rules.dig.passes
+                            || g.work > DigJob::required(g, &s.rules.dig, s.tick_hz)
+                    })
+                {
+                    return Err("dig order is inconsistent");
                 }
-                _ => {}
             }
         }
         let linked = ents.squad.iter().filter(|s| s.is_some()).count();

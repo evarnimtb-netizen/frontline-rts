@@ -4,14 +4,14 @@
 //!
 //! | # | Stage | Work | Parallel? |
 //! |---|-------|---------|-----------|
-//! | 1 | Intent | sorted command apply; bench: waypoint re-pick; match: call-ins, path queue, squad steering | serial apply, per-chunk re-pick; match work serial |
+//! | 1 | Intent | sorted command apply; bench: waypoint re-pick; match: call-ins, path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
 //! | 2 | Perception | placeholder | – |
 //! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate | serial rebuild, per-chunk plan + integrate |
 //! | 4 | Weapons | bench: cooldowns; fire → spawn requests (match: none yet) | per-chunk, sorted serial spawn |
 //! | 5 | Ballistics | 60 Hz substeps, ground test, despawn | per-slot-chunk, serial free-list merge |
 //! | 6 | Damage | placeholder | – |
 //! | 7 | Status | placeholder | – |
-//! | 8 | World/Hash | tick++, dirty chunk re-hash, publish every K; snapshot | per-chunk hash |
+//! | 8 | World/Hash | tick++, dirty chunk and terrain tile re-hash, publish every K; snapshot | per-chunk hash |
 //!
 //! A world is either a **bench** world ([`World::new`] from a [`SimConfig`]:
 //! M0 soldiers wandering and firing at random) or a **match** world
@@ -353,8 +353,9 @@ impl StageTimes {
 }
 
 const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
-/// 2: match state and the entity `squad` column.
-const SAVE_VERSION: u32 = 2;
+/// 2: match state and the entity `squad` column. 3: terrain detail tiles
+/// and dig jobs.
+const SAVE_VERSION: u32 = 3;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -394,6 +395,8 @@ pub struct World {
     cmd_order: Vec<usize>,
     hash_out: Vec<u64>,
     path_scratch: PathScratch,
+    /// Terrain tiles changed in the last tick (for the snapshot).
+    dirty_tiles: Vec<(u16, u16)>,
 }
 
 impl World {
@@ -519,6 +522,7 @@ impl World {
             cmd_order: Vec::new(),
             hash_out: Vec::new(),
             path_scratch: PathScratch::default(),
+            dirty_tiles: Vec::new(),
             state,
         };
         world.refresh_hashes();
@@ -595,7 +599,7 @@ impl World {
             &self.state,
             &self.config_bytes,
             &self.setup_bytes,
-            self.hash.terrain,
+            self.hash.terrain_hash(&self.state.terrain),
         );
         hash::combine(g, &self.hash.entity, &self.hash.pool)
     }
@@ -619,7 +623,7 @@ impl World {
 
     /// Restores a world from [`World::save`] output with `threads` workers.
     pub fn load(bytes: &[u8], threads: usize) -> Result<World, SimError> {
-        let s: SaveOwned =
+        let mut s: SaveOwned =
             postcard::from_bytes(bytes).map_err(|e| SimError::Save(e.to_string()))?;
         if s.magic != SAVE_MAGIC {
             return Err(SimError::Save("not a sim save (bad magic)".into()));
@@ -655,6 +659,15 @@ impl World {
         if st.terrain.size_m() != st.config.map_size_m {
             return Err(err("terrain size disagrees with config"));
         }
+        if st
+            .terrain
+            .detail()
+            .tiles()
+            .iter()
+            .any(|t| t.changed_tick() > st.tick)
+        {
+            return Err(err("terrain detail tile changed in the future"));
+        }
         match &st.game {
             None if st.config.terrain == TerrainKind::Map => {
                 return Err(err("map terrain without a match state"));
@@ -674,6 +687,7 @@ impl World {
                 g.validate(&st.entities).map_err(err)?;
             }
         }
+        s.state.terrain.rebuild_derived();
         World::from_state(s.state, threads)
     }
 
@@ -726,13 +740,20 @@ impl World {
             } = state;
             let game = game.as_mut().expect("match world");
             let mut ctx = Ctx {
+                ents: &mut *entities,
+                terrain: &*terrain,
+                hash: &mut *hash,
+                tick: *tick,
+            };
+            game.spawn_call_ins(&mut ctx);
+            game.serve_paths(ctx.ents, ctx.terrain, path_scratch);
+            game.dig_work(entities, terrain, *tick);
+            let mut ctx = Ctx {
                 ents: entities,
                 terrain,
                 hash,
                 tick: *tick,
             };
-            game.spawn_call_ins(&mut ctx);
-            game.serve_paths(ctx.ents, ctx.terrain, path_scratch);
             game.steer_squads(&mut ctx);
         } else {
             let World {
@@ -1062,9 +1083,12 @@ impl World {
             threads,
             hash,
             hash_out,
+            dirty_tiles,
             ..
         } = self;
         hash.resize_entities(state.entities.chunk_count());
+        state.terrain.take_dirty(dirty_tiles);
+        hash.update_tiles(&state.terrain, dirty_tiles);
         let ents = &state.entities;
         let pool = &state.projectiles;
         let squads = state.game.is_some();
@@ -1116,6 +1140,7 @@ impl World {
             &self.state.entities,
             &self.state.projectiles,
             self.state.game.as_ref(),
+            &self.dirty_tiles,
         );
     }
 }
@@ -1284,6 +1309,40 @@ mod tests {
         // Match state dropped from a map world.
         let bytes = save_edited(&w, |s| s.game = None);
         assert!(load_err(&bytes).contains("match"));
+    }
+
+    #[test]
+    fn terrain_edits_are_hashed_and_checked_on_load() {
+        let mut w = match_world();
+        let before = w.full_state_hash();
+        let c = FxVec2::from_int(300, 300);
+        w.state.terrain.crater(c, Fx::from_int(2), Fx::ONE, 3);
+        w.refresh_hashes();
+        assert_eq!(w.dirty_tiles, vec![(18, 18)]);
+        assert_ne!(w.full_state_hash(), before);
+        assert_eq!(w.state_hash(), w.full_state_hash());
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.state_hash(), w.state_hash());
+        // Each tile height is covered: change one behind the cache.
+        let mut other = w.state.clone();
+        other
+            .terrain
+            .edit((1200, 1200), (1200, 1200), 3, |_, _, _, h| h + Fx::ONE);
+        assert_ne!(
+            hash::full_hash(&other, &w.config_bytes, &w.setup_bytes),
+            w.full_state_hash()
+        );
+        // A tile from the future, or listed twice, does not load.
+        let bytes = save_edited(&w, |s| s.tick = 2);
+        assert!(load_err(&bytes).contains("future"));
+        let bytes = save_edited(&w, |s| {
+            let mut t = s.terrain.clone();
+            t.crater(FxVec2::from_int(400, 400), Fx::from_int(2), Fx::ONE, 3);
+            t.duplicate_first_tile_for_test();
+            s.terrain = t;
+        });
+        assert!(load_err(&bytes).contains("twice"));
     }
 
     #[test]

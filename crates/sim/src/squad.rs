@@ -14,8 +14,9 @@
 //!   each man's position across the line, so paths do not cross.
 //! * **Holding:** men stay on their slots and face `facing`.
 //!
-//! Seeking cover on arrival (trench cells, terrain between the man and the
-//! enemy) comes with spotting and trenches in later stages.
+//! Digging squads get their slots from `crate::dig` (each man's spot on his
+//! share of the line). Seeking cover on arrival (trench cells, terrain
+//! between the man and the enemy) comes with spotting in a later stage.
 
 use crate::ecs::{Entities, SimId};
 use crate::fx::{Fx, FxVec2};
@@ -100,22 +101,17 @@ fn arrival(
     ents: &Entities,
     terrain: &Heightfield,
     spacing: Fx,
-    base: FxVec2,
 ) -> (Vec<FxVec2>, FxVec2) {
     let n = sq.members.len();
     let (slots, facing, axis) = match &sq.order {
-        Order::Dig { line } => {
-            // Spread along the trench line, facing away from the own base.
+        Order::Dig { line, job } => {
+            // Spread along the trench line, facing the parapet side.
             let len = polyline_length(line);
             let slots: Vec<FxVec2> = (0..n)
                 .map(|i| point_along(line, len.mul_int(2 * i as i32 + 1).div_int(2 * n as i32)))
                 .collect();
             let along = (line[line.len() - 1] - line[0]).normalize_or_zero();
-            let mut facing = along.perp();
-            if facing.dot_raw(point_along(line, len.div_int(2)) - base) < 0 {
-                facing = -facing;
-            }
-            (slots, facing, along)
+            (slots, job.facing(line), along)
         }
         _ => {
             let facing = sq.nav.heading;
@@ -190,11 +186,7 @@ impl MatchState {
                         if nav.partial {
                             repath.push((id, nav.goal));
                         } else {
-                            let base = {
-                                let b = self.setup.players[sq.owner.0 as usize].base as usize;
-                                self.setup.map.bases[b].center.into()
-                            };
-                            let (slots, facing) = arrival(sq, ctx.ents, ctx.terrain, spacing, base);
+                            let (slots, facing) = arrival(sq, ctx.ents, ctx.terrain, spacing);
                             let nav = &mut sq.nav;
                             nav.slots = slots;
                             nav.facing = facing;

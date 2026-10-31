@@ -6,10 +6,18 @@
 //!
 //! Match worlds add per-soldier owner and squad, and per-squad and
 //! per-player summaries; bench worlds leave those empty except the owner.
+//!
+//! Terrain: `dirty_tiles` lists the detail tiles that changed in this tick.
+//! The presenter reads their heights with [`tile_heights_f32`] (or
+//! `World::terrain().detail_tile(x, y)`) on the sim thread, when it copies
+//! the snapshot out, and rebuilds only those chunks; a listed tile that is
+//! gone was demoted back to the base surface. A presenter that skips
+//! snapshots can catch up by comparing each tile's `changed_tick`.
 
 use crate::ecs::{Entities, EntityKind, SimId};
-use crate::game::{MatchState, NavPhase, OrderKind, Outcome};
+use crate::game::{MatchState, NavPhase, Order, OrderKind, Outcome};
 use crate::projectile::ProjectilePool;
+use crate::terrain::Heightfield;
 
 /// `soldier_squad` value for a soldier without a squad.
 pub const NO_SQUAD: u32 = u32::MAX;
@@ -28,6 +36,8 @@ pub struct SquadSnapshot {
     pub anchor: [f32; 3],
     /// Where the squad is headed (its position when holding).
     pub goal: [f32; 2],
+    /// Dig orders: trench progress in percent (0 otherwise).
+    pub dig_pct: u8,
 }
 
 /// One player's match status.
@@ -62,6 +72,23 @@ pub struct RenderSnapshot {
     pub players: Vec<PlayerSnapshot>,
     /// Winner's player slot once the match is over.
     pub winner: Option<u8>,
+    /// Terrain detail tiles `(x, y)` changed in this tick, ascending
+    /// `(y, x)`. Tile `(x, y)` covers `[x, x+1) × [y, y+1) · TILE_M` metres.
+    pub dirty_tiles: Vec<(u16, u16)>,
+}
+
+/// Copies detail tile `(x, y)`'s heights into `out` as `f32` metres (64 × 64,
+/// row-major, see `DetailTile::heights`). Returns `false` (and leaves `out`
+/// empty) if the tile does not exist, i.e. that chunk is the base surface.
+pub fn tile_heights_f32(terrain: &Heightfield, x: u16, y: u16, out: &mut Vec<f32>) -> bool {
+    out.clear();
+    match terrain.detail_tile(x, y) {
+        Some(t) => {
+            out.extend(t.heights().iter().map(|h| h.to_f32()));
+            true
+        }
+        None => false,
+    }
 }
 
 impl RenderSnapshot {
@@ -72,8 +99,11 @@ impl RenderSnapshot {
         ents: &Entities,
         pool: &ProjectilePool,
         game: Option<&MatchState>,
+        dirty_tiles: &[(u16, u16)],
     ) {
         self.tick = tick;
+        self.dirty_tiles.clear();
+        self.dirty_tiles.extend_from_slice(dirty_tiles);
         self.soldiers.clear();
         self.soldier_ids.clear();
         self.soldier_owner.clear();
@@ -114,6 +144,12 @@ impl RenderSnapshot {
                 phase: sq.nav.phase,
                 anchor: ents.transform()[lead.index()].pos.to_f32(),
                 goal: sq.nav.goal.to_f32(),
+                dig_pct: match &sq.order {
+                    Order::Dig { job, .. } => {
+                        job.progress_pct(&g.setup().rules.dig, g.setup().tick_hz)
+                    }
+                    _ => 0,
+                },
             });
         }
         for (p, pl) in g.players().iter().enumerate() {

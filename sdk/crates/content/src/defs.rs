@@ -299,6 +299,8 @@ pub struct MovementDef {
     pub catch_up_speed_pct: u32,
     pub path_budget_per_tick: u32,
     pub path_max_expansions: u32,
+    /// Path step cost between two trench cells, in percent of normal.
+    pub trench_cost_pct: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -309,6 +311,8 @@ pub struct DigDef {
     pub parapet_cm: u32,
     pub max_length_m: u32,
     pub work_per_m: u32,
+    /// The trench deepens in this many equal passes.
+    pub passes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -682,12 +686,20 @@ impl RulesDef {
             64,
             1_000_000,
         );
+        range(
+            &mut out,
+            "movement.trench_cost_pct",
+            m.trench_cost_pct,
+            10,
+            100,
+        );
         let d = &self.dig;
         range(&mut out, "dig.depth_cm", d.depth_cm, 10, 1000);
         range(&mut out, "dig.floor_cm", d.floor_cm, 10, 1000);
         range(&mut out, "dig.parapet_cm", d.parapet_cm, 0, 300);
         range(&mut out, "dig.max_length_m", d.max_length_m, 1, 1000);
         range(&mut out, "dig.work_per_m", d.work_per_m, 1, 10_000_000);
+        range(&mut out, "dig.passes", d.passes, 1, 32);
         for (name, t) in [
             ("easy", &self.difficulty.easy),
             ("normal", &self.difficulty.normal),

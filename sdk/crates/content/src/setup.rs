@@ -196,8 +196,12 @@ pub struct MovementSetup {
     pub catch_up_speed_pct: u32,
     pub path_budget_per_tick: u32,
     pub path_max_expansions: u32,
+    /// Path step cost between two trench cells, in percent of normal.
+    pub trench_cost_pct: u32,
 }
 
+/// Trench profile and digging pace. One man at `dig_rate_pct = 100` does
+/// 100 work points per second.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DigSetup {
     pub depth: Fixed,
@@ -205,6 +209,8 @@ pub struct DigSetup {
     pub parapet_height: Fixed,
     pub max_length: Fixed,
     pub work_per_m: u32,
+    /// The trench deepens in this many equal passes.
+    pub passes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -527,6 +533,7 @@ impl ModDefs {
                     catch_up_speed_pct: m.catch_up_speed_pct,
                     path_budget_per_tick: m.path_budget_per_tick,
                     path_max_expansions: m.path_max_expansions,
+                    trench_cost_pct: m.trench_cost_pct,
                 },
                 dig: DigSetup {
                     depth: Fixed::from_cm(rules.dig.depth_cm),
@@ -534,6 +541,7 @@ impl ModDefs {
                     parapet_height: Fixed::from_cm(rules.dig.parapet_cm),
                     max_length: Fixed::from_int(rules.dig.max_length_m as i32),
                     work_per_m: rules.dig.work_per_m,
+                    passes: rules.dig.passes,
                 },
                 difficulty: DifficultyTable {
                     easy: diff(&rules.difficulty.easy),
@@ -739,8 +747,29 @@ impl MatchSetup {
             "out of range",
         );
         check(
-            fx_in(r.dig.max_length, 1, 1000),
+            (10..=100).contains(&m.trench_cost_pct),
+            "rules.movement.trench_cost_pct",
+            "out of range",
+        );
+        let d = &r.dig;
+        check(
+            fx_in(d.max_length, 1, 1000),
             "rules.dig.max_length",
+            "out of range",
+        );
+        check(
+            d.depth >= Fixed::from_cm(10)
+                && fx_in(d.depth, 0, 10)
+                && d.floor_width >= Fixed::from_cm(10)
+                && fx_in(d.floor_width, 0, 10)
+                && d.parapet_height >= Fixed::ZERO
+                && fx_in(d.parapet_height, 0, 3),
+            "rules.dig.profile",
+            "out of range",
+        );
+        check(
+            (1..=10_000_000).contains(&d.work_per_m) && (1..=32).contains(&d.passes),
+            "rules.dig.work",
             "out of range",
         );
 
