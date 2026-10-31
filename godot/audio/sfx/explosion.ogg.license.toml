@@ -1,0 +1,18 @@
+# Licence manifest for explosion.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://opengameart.org/content/chunky-explosion"
+file_url = "https://opengameart.org/sites/default/files/Chunky%20Explosion.mp3"
+platform_id = "opengameart"
+uploader = "Joth"
+author = "Joth"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "7449c273fbd40452d32b1d21d3294c8a4eea74c488f43a54aa0c8108d54a3d4d"
+sha256_original = "4de53bffac187e59d3f5b43096df2f8fcb4160076b65b71a67074947950e025f"
+sha256_derived = ["7449c273fbd40452d32b1d21d3294c8a4eea74c488f43a54aa0c8108d54a3d4d"]
+parents = []
+derivation = "ffmpeg: first 3.2 s, fade out 0.8 s, Vorbis"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

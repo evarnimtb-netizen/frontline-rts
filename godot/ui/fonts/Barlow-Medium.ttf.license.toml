@@ -1,0 +1,17 @@
+# Licence manifest for Barlow-Medium.ttf (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://github.com/google/fonts/tree/main/ofl/barlow"
+file_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/barlow/Barlow-Medium.ttf"
+platform_id = "google-fonts"
+uploader = "google/fonts"
+author = "The Barlow Project Authors (https://github.com/jpt/barlow)"
+spdx = "OFL-1.1"
+licence_file = "OFL.txt"
+downloaded = 2026-10-31
+sha256 = "f8906f762cb73dca441da034bc363b2d8e2e68bc10d5c05e58717646c20cc4b4"
+sha256_original = "f8906f762cb73dca441da034bc363b2d8e2e68bc10d5c05e58717646c20cc4b4"
+sha256_derived = []
+parents = []
+derivation = "none (copied unchanged)"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""

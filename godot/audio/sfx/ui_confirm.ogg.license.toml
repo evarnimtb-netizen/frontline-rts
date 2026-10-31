@@ -1,0 +1,18 @@
+# Licence manifest for ui_confirm.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://kenney.nl/assets/interface-sounds"
+file_url = "Interface Sounds 1.0 zip, Audio/confirmation_001.ogg"
+platform_id = "kenney"
+uploader = "Kenney"
+author = "Kenney (www.kenney.nl)"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a"
+sha256_original = "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a"
+sha256_derived = []
+parents = []
+derivation = "none (copied unchanged)"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

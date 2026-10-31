@@ -1,0 +1,22 @@
+# Presenter asset credits
+
+Every file listed here has a `<file>.license.toml` manifest next to it
+(source, author, SPDX id, download date, hashes, derivation; SYSTEM_DESIGN.md
+§12.1). CC0 needs no credit; we credit anyway.
+
+## Audio (`audio/sfx/`, CC0-1.0, 296 KB total)
+
+| File | Source | Author | Change |
+|---|---|---|---|
+| `rifle_shot.ogg` | opengameart.org/content/gunshots ("Black Powder.wav") | kurt | one shot trimmed, Vorbis |
+| `mg_shot.ogg` | opengameart.org/content/the-free-firearm-sound-library (`ak47.ogg`) | The Free Firearm Sound Library team | one shot from a burst, Vorbis |
+| `mortar_launch.ogg` | opengameart.org/content/battle-at-sea (`cannon_fire_1.ogg`) | Thimras | first 1.6 s |
+| `explosion.ogg` | opengameart.org/content/chunky-explosion | Joth | first 3.2 s, Vorbis |
+| `dig.ogg` | opengameart.org/content/shovel-sound (from freesound.org/s/503672, CC0) | themightyglider, RavenWolfProds | re-encoded |
+| `wind_loop.ogg` | opengameart.org/content/mild-wind-background-noise | Bashar3A | 14 s excerpt, 22 kHz |
+| `ui_click.ogg`, `ui_confirm.ogg`, `ui_error.ogg` | kenney.nl/assets/interface-sounds | Kenney | unchanged |
+
+## Fonts (`ui/fonts/`, OFL-1.1, see `ui/fonts/OFL.txt`)
+
+Barlow Medium, Barlow SemiBold and Barlow Condensed SemiBold, by The Barlow
+Project Authors (github.com/jpt/barlow), from github.com/google/fonts.

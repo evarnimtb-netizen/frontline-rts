@@ -1,0 +1,18 @@
+# Licence manifest for wind_loop.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://opengameart.org/content/mild-wind-background-noise"
+file_url = "https://opengameart.org/sites/default/files/wind%20background%20noise%202_01.mp3"
+platform_id = "opengameart"
+uploader = "Bashar3A"
+author = "Bashar3A"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "ba49ef0e5f30b44cef0f5b3d07e58d20003049b15da323ca444bcd6df73dd054"
+sha256_original = "4d76b41680662520d7f7075a3413b8b6b1c9fb809d4133296236bb52b78a4c80"
+sha256_derived = ["ba49ef0e5f30b44cef0f5b3d07e58d20003049b15da323ca444bcd6df73dd054"]
+parents = []
+derivation = "ffmpeg: 3 s + 14 s, fade in/out 1 s, 22.05 kHz, Vorbis q low (ambient loop)"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

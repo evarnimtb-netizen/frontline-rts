@@ -1,0 +1,18 @@
+# Licence manifest for dig.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://opengameart.org/content/shovel-sound"
+file_url = "https://opengameart.org/sites/default/files/shovel.ogg"
+platform_id = "opengameart"
+uploader = "themightyglider"
+author = "themightyglider (derived from RavenWolfProds, freesound.org/s/503672, CC0)"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "9ef881a6bf4943cea1429592fc318bfce75e1e7310a50157831c6c525d2e0026"
+sha256_original = "1ad178afa5d959ecd4454c3d8388abb23451a1f43a028f476aa37aa3a944d195"
+sha256_derived = ["9ef881a6bf4943cea1429592fc318bfce75e1e7310a50157831c6c525d2e0026"]
+parents = []
+derivation = "ffmpeg: re-encoded, Vorbis"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

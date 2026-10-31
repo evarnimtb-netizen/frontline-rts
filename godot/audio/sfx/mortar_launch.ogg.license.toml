@@ -1,0 +1,18 @@
+# Licence manifest for mortar_launch.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://opengameart.org/content/battle-at-sea"
+file_url = "https://opengameart.org/sites/default/files/cannon_fire_1.ogg"
+platform_id = "opengameart"
+uploader = "Thimras"
+author = "Thimras"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "c764f744a8203a9a556045dd821df3bb04c3963aad4c544d192e851802e3e4e4"
+sha256_original = "2b21ffa41e5c3be4eecdfbd3490544f5aa8b6d1581787265863e13de1a8e599d"
+sha256_derived = ["c764f744a8203a9a556045dd821df3bb04c3963aad4c544d192e851802e3e4e4"]
+parents = []
+derivation = "ffmpeg: first 1.6 s, fade out 0.5 s, 44.1 kHz, Vorbis"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

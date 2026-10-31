@@ -1,0 +1,18 @@
+# Licence manifest for rifle_shot.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "https://opengameart.org/content/gunshots"
+file_url = "https://opengameart.org/sites/default/files/Black%20Powder.wav"
+platform_id = "opengameart"
+uploader = "kurt"
+author = "kurt"
+spdx = "CC0-1.0"
+downloaded = 2026-10-31
+sha256 = "4b90a5c8ee403631c4ad2aae5e364f26a43a75bff67d2a2bf99120a9e5f548e0"
+sha256_original = "495eadf1c1e41a1264ff75f08a58de9004b3f9792391a174d70fc5c796c41744"
+sha256_derived = ["4b90a5c8ee403631c4ad2aae5e364f26a43a75bff67d2a2bf99120a9e5f548e0"]
+parents = []
+derivation = "ffmpeg: 0.80 s + 0.75 s (one shot), fade in 5 ms / out 0.25 s, 44.1 kHz stereo, Vorbis"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"
