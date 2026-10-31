@@ -13,8 +13,10 @@
 //!   stats counters, the terrain hash and, in match mode, the match setup
 //!   bytes and the whole [`MatchState`] (players, squads, queues: small, so
 //!   it is simply re-hashed at every publish).
-//! * In match mode each entity also hashes its `squad` link. Bench worlds
-//!   skip that column, so their hashes are unchanged by match mode.
+//! * In match mode each entity also hashes its `squad` link and its combat
+//!   state, and match projectiles hash their weapon and player. Bench worlds
+//!   skip those (always default there, checked on load), so their hashes
+//!   are unchanged by match mode.
 //! * The combined hash is xxh3 over `globals ‖ entity chunks ‖ pool chunks`.
 //!   It is published every K ticks; [`full_hash`] recomputes it from scratch
 //!   and must always match the incremental value.
@@ -25,10 +27,10 @@ use std::cell::RefCell;
 
 use xxhash_rust::xxh3::xxh3_64;
 
-use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, PlayerId};
+use crate::ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{MatchState, Order, Outcome};
-use crate::projectile::{Projectile, ProjectilePool};
+use crate::projectile::{NO_WEAPON, Projectile, ProjectilePool};
 use crate::terrain::{DetailTile, Heightfield};
 use crate::world::SimState;
 
@@ -87,6 +89,33 @@ impl StableHash for Projectile {
         self.owner.0.put(out);
         self.drag.put(out);
         self.ttl.put(out);
+        if self.weapon != NO_WEAPON {
+            self.weapon.put(out);
+            self.player.put(out);
+        }
+    }
+}
+impl StableHash for Option<SimId> {
+    fn put(&self, out: &mut Vec<u8>) {
+        self.map_or(u32::MAX, |s| s.0).put(out);
+    }
+}
+impl StableHash for Combat {
+    fn put(&self, out: &mut Vec<u8>) {
+        self.hp.put(out);
+        (self.stance as u8).put(out);
+        self.in_trench.put(out);
+        self.pinned.put(out);
+        self.suppression.put(out);
+        self.height.put(out);
+        self.fire_height.put(out);
+        self.target.put(out);
+        self.mag.put(out);
+        self.still.put(out);
+        self.since_shot.put(out);
+        self.retarget.put(out);
+        self.seen_by.put(out);
+        self.corpse.put(out);
     }
 }
 
@@ -121,7 +150,7 @@ impl StableHash for Option<PlayerId> {
 }
 
 /// Hash of entity chunk `c` (all columns of ids `c*256 .. c*256+256`).
-/// `squads` adds the squad column (match mode).
+/// `squads` adds the squad and combat columns (match mode).
 pub(crate) fn entity_chunk(ents: &Entities, c: usize, squads: bool) -> u64 {
     let lo = c * CHUNK_SIZE;
     let hi = (lo + CHUNK_SIZE).min(ents.len());
@@ -147,6 +176,7 @@ pub(crate) fn entity_chunk(ents: &Entities, c: usize, squads: bool) -> u64 {
             w.shots.put(out);
             if squads {
                 ents.squad[i].map_or(u32::MAX, |s| s.0).put(out);
+                ents.combat[i].put(out);
             }
         }
     })
@@ -228,6 +258,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             c.squad_type.put(out);
             c.ready_tick.put(out);
         }
+        p.kills.put(out);
+        p.losses.put(out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -270,6 +302,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         n.facing.put(out);
         n.slots.put(out);
         n.phase_ticks.put(out);
+        sq.focus.put(out);
     }
     (g.points.len() as u32).put(out);
     for c in &g.points {
@@ -287,6 +320,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     }
     q.cursor.put(out);
     q.debt.put(out);
+    g.spot_cursor.put(out);
     match g.outcome {
         Outcome::Running => 0u8.put(out),
         Outcome::Won { winner } => {
@@ -332,6 +366,9 @@ pub(crate) fn globals(
         }
         terrain_hash.put(out);
         if let Some(g) = &state.game {
+            for v in [st.soldier_hits, st.near_misses, st.explosions, st.deaths] {
+                v.put(out);
+            }
             (setup_bytes.len() as u32).put(out);
             out.extend_from_slice(setup_bytes);
             put_game(g, out);

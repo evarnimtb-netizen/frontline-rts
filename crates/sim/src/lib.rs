@@ -17,13 +17,15 @@
 //! load test) and match worlds from a content [`MatchSetup`] resolved by
 //! `frontline_content` from the defs under `mods/` ([`game`]: players,
 //! squads, orders; [`path`]: grid A*; [`squad`]: formations; [`dig`]:
-//! trenches). Terrain is a two-tier heightfield whose sparse detail tiles
+//! trenches; `spotting`: per-player visibility; [`combat`]: targeting,
+//! projectiles, suppression, stance, mortars and deaths). Terrain is a two-tier heightfield whose sparse detail tiles
 //! are edited by digging and craters ([`terrain`]).
 //!
 //! It has no Godot, rendering or audio dependency, and does no file IO.
 
 #![deny(clippy::float_arithmetic)]
 
+pub mod combat;
 pub mod command;
 pub mod dig;
 pub mod ecs;
@@ -35,6 +37,7 @@ pub mod projectile;
 pub mod rng;
 pub mod snapshot;
 pub mod spatial;
+mod spotting;
 mod squad;
 mod systems;
 pub mod terrain;
@@ -42,13 +45,16 @@ pub mod world;
 
 pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
-pub use ecs::{CHUNK_SIZE, Entities, EntityKind, IdAllocator, PlayerId, SimId};
+pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, SimId, Stance};
 pub use frontline_content::MatchSetup;
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{MatchState, NavPhase, Order, OrderKind, Outcome, Squad, SquadId};
 pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
-pub use snapshot::{NO_SQUAD, PlayerSnapshot, RenderSnapshot, SquadSnapshot, tile_heights_f32};
+pub use snapshot::{
+    CorpseSnapshot, ExplosionSnapshot, NO_SQUAD, PlayerSnapshot, RenderSnapshot, ShotSnapshot,
+    SquadSnapshot, tile_heights_f32,
+};
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use world::{
     SimConfig, SimError, SimState, SoldierParams, StageTimes, Stats, TickRate, WeaponParams, World,

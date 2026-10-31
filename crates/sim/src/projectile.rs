@@ -3,7 +3,15 @@
 //! Projectiles are not entities: they live in a fixed-capacity slot array with
 //! a LIFO free list. Slots are hashed in chunks of [`CHUNK_SIZE`] like entities.
 //! Spawn requests that find the pool full are dropped deterministically (in
-//! sorted request order) and counted; burst bundling (§5.7) comes later.
+//! sorted request order) and counted; burst bundling (§5.7) comes later. In
+//! match mode HE shells are spawned before small-arms rounds and the last
+//! [`HE_RESERVE`] slots are kept for them, so a saturated pool never drops a
+//! shell (§2.2 "AP/HE/AT shells are always fully simulated").
+//!
+//! Bench projectiles carry [`NO_WEAPON`]; match rounds carry their weapon
+//! (index into `MatchSetup::weapons`) and the firing player. Match rounds are
+//! integrated by `crate::combat` (soldier hits and near misses); [`substep`]
+//! is the shared flight and ground test.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +22,12 @@ use crate::terrain::Heightfield;
 /// Ballistic substep rate: projectiles integrate at a fixed 60 Hz at every
 /// tick rate, so trajectories match at 20 and 30 Hz.
 pub const SUBSTEP_HZ: i32 = 60;
+
+/// [`Projectile::weapon`] of bench rounds.
+pub const NO_WEAPON: u16 = u16::MAX;
+
+/// Pool slots small-arms rounds may not take (kept for HE shells).
+pub const HE_RESERVE: usize = 32;
 
 /// Gravity per substep (9.81 m/s² / 60).
 const GRAVITY_PER_SUBSTEP: Fx = Fx::from_ratio(981, 100 * SUBSTEP_HZ as i64);
@@ -28,12 +42,18 @@ pub struct Projectile {
     pub drag: Fx,
     /// Substeps left before expiry.
     pub ttl: u16,
+    /// Index into `MatchSetup::weapons`, or [`NO_WEAPON`] (bench).
+    pub weapon: u16,
+    /// Firing player (match rounds; 0 for bench rounds).
+    pub player: u8,
 }
 
 /// How a projectile left the pool.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ProjectileEnd {
     GroundHit,
+    /// Hit a soldier's capsule (match mode).
+    SoldierHit,
     Expired,
     OutOfBounds,
 }
@@ -73,6 +93,11 @@ impl ProjectilePool {
         &self.free
     }
 
+    #[inline]
+    pub fn free_count(&self) -> usize {
+        self.free.len()
+    }
+
     #[cfg(test)]
     pub(crate) fn free_mut_for_test(&mut self) -> &mut Vec<u32> {
         &mut self.free
@@ -100,6 +125,14 @@ impl ProjectilePool {
         if self.slots.iter().filter(|s| s.is_none()).count() != self.free.len() {
             return Err("empty projectile slots and the free list disagree");
         }
+        if self
+            .slots
+            .iter()
+            .flatten()
+            .any(|p| p.weapon == NO_WEAPON && p.player != 0)
+        {
+            return Err("bench projectile with a player");
+        }
         Ok(())
     }
 
@@ -122,22 +155,28 @@ impl ProjectilePool {
     }
 }
 
-/// Advances one projectile by one 1/60 s substep: semi-implicit Euler with
-/// gravity and quadratic drag, then a swept-segment ground test.
-/// Returns `Some(end)` if the projectile is gone.
-pub fn substep(p: &mut Projectile, terrain: &Heightfield) -> Option<ProjectileEnd> {
+/// Updates `p.vel` for one 1/60 s substep (semi-implicit Euler: gravity and
+/// quadratic drag) and returns the end of the swept segment.
+#[inline]
+pub(crate) fn advance(p: &mut Projectile) -> FxVec3 {
     // v += (g + drag) * dt
     let speed = p.vel.length();
     let drag_factor = p.drag * speed; // 1/s
     let dv_drag = (p.vel * drag_factor).div_int(SUBSTEP_HZ);
     p.vel -= dv_drag;
     p.vel.z -= GRAVITY_PER_SUBSTEP;
-    // x += v * dt, testing the swept segment.
-    let next = p.pos + p.vel.div_int(SUBSTEP_HZ);
-    if let Some(hit) = terrain.segment_hit(p.pos, next) {
-        p.pos = hit;
-        return Some(ProjectileEnd::GroundHit);
-    }
+    // x += v * dt
+    p.pos + p.vel.div_int(SUBSTEP_HZ)
+}
+
+/// Moves `p` to `next` (the end of its swept segment), then applies the map
+/// bounds and lifetime. Returns `Some(end)` if the projectile is gone.
+#[inline]
+pub(crate) fn finish(
+    p: &mut Projectile,
+    next: FxVec3,
+    terrain: &Heightfield,
+) -> Option<ProjectileEnd> {
     p.pos = next;
     if !terrain.contains(p.pos.xy()) {
         return Some(ProjectileEnd::OutOfBounds);
@@ -147,4 +186,16 @@ pub fn substep(p: &mut Projectile, terrain: &Heightfield) -> Option<ProjectileEn
         return Some(ProjectileEnd::Expired);
     }
     None
+}
+
+/// Advances one projectile by one 1/60 s substep: semi-implicit Euler with
+/// gravity and quadratic drag, then a swept-segment ground test.
+/// Returns `Some(end)` if the projectile is gone.
+pub fn substep(p: &mut Projectile, terrain: &Heightfield) -> Option<ProjectileEnd> {
+    let next = advance(p);
+    if let Some(hit) = terrain.segment_hit(p.pos, next) {
+        p.pos = hit;
+        return Some(ProjectileEnd::GroundHit);
+    }
+    finish(p, next, terrain)
 }

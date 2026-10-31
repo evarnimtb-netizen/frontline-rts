@@ -51,6 +51,39 @@ work_per_m = 8400
 # The trench deepens in this many equal passes (each pass is visible).
 passes = 8
 
+[combat]
+# Spotting: LOS rays per player per tick, and how often each enemy soldier
+# is re-checked while the budget lasts. Each check tries the nearest few
+# observers in range (one ray each).
+spot_rays_per_tick = 160
+spot_period_ms = 200
+spot_observers = 2
+# Sight range against prone, entrenched, wooded and firing targets (percent
+# of the observer's sight; a recent shot replaces the other three).
+prone_spot_pct = 50
+trench_spot_pct = 60
+woods_spot_pct = 50
+firing_spot_pct = 150
+reveal_ms = 2000
+# Suppression, in points out of 100: rounds passing within near_miss_cm add
+# the weapon's `suppression`, a hit adds hit_suppression. Soldiers crouch at
+# crouch_suppression and are pinned (prone, no movement, worse aim) at
+# pin_suppression.
+near_miss_cm = 200
+hit_suppression = 25
+suppression_decay_per_s = 8
+crouch_suppression = 30
+pin_suppression = 70
+# Accuracy: weapon spread is scaled while moving and while pinned, and grows
+# linearly with range up to range_spread_pct extra at full range.
+moving_spread_pct = 250
+pinned_spread_pct = 200
+range_spread_pct = 50
+# A man firing from a trench stands on the fire step, this much above the
+# parapet.
+fire_exposure_cm = 30
+corpse_s = 30
+
 [difficulty.easy]
 income_pct = 80
 reaction_ms = 4000

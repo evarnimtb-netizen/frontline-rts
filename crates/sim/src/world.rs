@@ -5,12 +5,12 @@
 //! | # | Stage | Work | Parallel? |
 //! |---|-------|---------|-----------|
 //! | 1 | Intent | sorted command apply; bench: waypoint re-pick; match: call-ins, path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
-//! | 2 | Perception | placeholder | – |
-//! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate | serial rebuild, per-chunk plan + integrate |
-//! | 4 | Weapons | bench: cooldowns; fire → spawn requests (match: none yet) | per-chunk, sorted serial spawn |
-//! | 5 | Ballistics | 60 Hz substeps, ground test, despawn | per-slot-chunk, serial free-list merge |
-//! | 6 | Damage | placeholder | – |
-//! | 7 | Status | placeholder | – |
+//! | 2 | Perception | match: spotting per player ([`crate::spotting`]) | per player, serial apply |
+//! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate (pinned men stay) | serial rebuild, per-chunk plan + integrate |
+//! | 4 | Weapons | bench: cooldowns, random fire; match: marks, squad focus, targeting and fire, mortars ([`crate::combat`]); sorted spawn into the pool | per-chunk, serial focus/mortars/spawn |
+//! | 5 | Ballistics | 60 Hz substeps, ground test (match: capsule hits, near misses), despawn | per-slot-chunk, serial free-list merge |
+//! | 6 | Damage | match: hits, suppression, HE bursts and craters, deaths | serial |
+//! | 7 | Status | match: suppression decay, stance, timers, corpse removal | per-chunk, serial removal |
 //! | 8 | World/Hash | tick++, dirty chunk and terrain tile re-hash, publish every K; snapshot | per-chunk hash |
 //!
 //! A world is either a **bench** world ([`World::new`] from a [`SimConfig`]:
@@ -30,16 +30,18 @@ use frontline_content::MatchSetup;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::combat::{self, BallisticEvent, Explosion, FireCtx, FlightCtx, Mark, StatusCtx};
 use crate::command::{Command, CommandKind};
 use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
-use crate::game::{Ctx, MatchState};
+use crate::game::{Ctx, MatchState, Nav, NavPhase, Order, SquadId};
 use crate::hash::{self, HashCache};
 use crate::path::PathScratch;
-use crate::projectile::{ProjectileEnd, ProjectilePool, SUBSTEP_HZ};
+use crate::projectile::{NO_WEAPON, ProjectileEnd, ProjectilePool, SUBSTEP_HZ};
 use crate::rng::{Purpose, RngStream};
 use crate::snapshot::RenderSnapshot;
 use crate::spatial::SpatialHash;
+use crate::spotting::{self, SpotPass};
 use crate::systems::{self, FireRequest};
 use crate::terrain::{Heightfield, TerrainKind};
 
@@ -295,6 +297,12 @@ pub struct Stats {
     pub out_of_bounds: u64,
     pub commands_applied: u64,
     pub commands_rejected: u64,
+    /// Match mode (hashed only there): rounds that hit a soldier, near
+    /// misses, HE bursts and soldiers killed.
+    pub soldier_hits: u64,
+    pub near_misses: u64,
+    pub explosions: u64,
+    pub deaths: u64,
 }
 
 /// Everything that is saved. All of it is covered by the state hash, except
@@ -354,8 +362,9 @@ impl StageTimes {
 
 const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// 2: match state and the entity `squad` column. 3: terrain detail tiles
-/// and dig jobs.
-const SAVE_VERSION: u32 = 3;
+/// and dig jobs. 4: combat (entity `combat` column, corpses, projectile
+/// weapons, squad focus, kills, spotting cursors, combat counters).
+const SAVE_VERSION: u32 = 4;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -397,6 +406,16 @@ pub struct World {
     path_scratch: PathScratch,
     /// Terrain tiles changed in the last tick (for the snapshot).
     dirty_tiles: Vec<(u16, u16)>,
+    // Match combat scratch, and the last tick's events for the snapshot.
+    spot_passes: Vec<SpotPass>,
+    marks: Vec<Mark>,
+    mark_of: Vec<u32>,
+    blow_bufs: Vec<Vec<BallisticEvent>>,
+    blows: Vec<BallisticEvent>,
+    gone_bufs: Vec<Vec<SimId>>,
+    /// Rounds fired in the last tick (including dropped ones), sorted.
+    shots: Vec<FireRequest>,
+    explosions: Vec<Explosion>,
 }
 
 impl World {
@@ -523,6 +542,14 @@ impl World {
             hash_out: Vec::new(),
             path_scratch: PathScratch::default(),
             dirty_tiles: Vec::new(),
+            spot_passes: Vec::new(),
+            marks: Vec::new(),
+            mark_of: Vec::new(),
+            blow_bufs: Vec::new(),
+            blows: Vec::new(),
+            gone_bufs: Vec::new(),
+            shots: Vec::new(),
+            explosions: Vec::new(),
             state,
         };
         world.refresh_hashes();
@@ -675,6 +702,21 @@ impl World {
             None if st.entities.squad.iter().any(|s| s.is_some()) => {
                 return Err(err("squad links in a bench world"));
             }
+            None if st
+                .entities
+                .kind
+                .iter()
+                .zip(&st.entities.combat)
+                .any(|(k, c)| *k == EntityKind::Corpse || *c != Default::default())
+                || st
+                    .projectiles
+                    .slots()
+                    .iter()
+                    .flatten()
+                    .any(|p| p.weapon != NO_WEAPON) =>
+            {
+                return Err(err("combat state in a bench world"));
+            }
             None => {}
             Some(g) => {
                 let issues = g.setup().validate();
@@ -685,6 +727,16 @@ impl World {
                     return Err(err("config disagrees with the match setup"));
                 }
                 g.validate(&st.entities).map_err(err)?;
+                let (nw, np) = (g.setup().weapons.len(), g.setup().players.len());
+                if st
+                    .projectiles
+                    .slots()
+                    .iter()
+                    .flatten()
+                    .any(|p| p.weapon as usize >= nw || p.player as usize >= np)
+                {
+                    return Err(err("projectile with an unknown weapon or player"));
+                }
             }
         }
         s.state.terrain.rebuild_derived();
@@ -791,7 +843,45 @@ impl World {
         }
         let t1 = Instant::now();
 
-        // 2. Perception: placeholder (M1).
+        // 2. Perception: spotting, one task per player reading the previous
+        //    tick's state; results applied serially in player order.
+        if self.state.game.is_some() {
+            let World {
+                state,
+                threads,
+                hash,
+                spot_passes,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                ..
+            } = state;
+            let game = game.as_mut().expect("match world");
+            spot_passes.resize_with(game.players.len(), SpotPass::default);
+            {
+                let (ents, terrain, g) = (&*entities, &*terrain, &*game);
+                threads.install(|| {
+                    spot_passes.par_iter_mut().enumerate().for_each(|(p, out)| {
+                        spotting::spot(PlayerId(p as u8), ents, terrain, g, out)
+                    })
+                });
+            }
+            for (p, pass) in spot_passes.iter().enumerate() {
+                game.spot_cursor[p] = pass.cursor;
+                for &(id, seen) in &pass.changes {
+                    let c = &mut entities.combat[id.index()];
+                    if seen {
+                        c.seen_by |= 1 << p;
+                    } else {
+                        c.seen_by &= !(1u16 << p);
+                    }
+                    hash.mark_entity_chunk(id.chunk());
+                }
+            }
+        }
         let t2 = Instant::now();
 
         // 3. Movement: rebuild the spatial hash, plan (reads only the
@@ -815,31 +905,41 @@ impl World {
             spatial.rebuild(entities);
             planned.clear();
             planned.resize(entities.len(), FxVec2::ZERO);
-            let (ents, spatial, params) = (&*entities, &*spatial, &config.soldier);
-            threads.install(|| {
-                planned
-                    .par_chunks_mut(CHUNK_SIZE)
-                    .enumerate()
-                    .for_each(|(c, out)| {
-                        systems::plan_velocities(c, out, ents, spatial, params, hz)
-                    })
-            });
+            {
+                let (ents, spatial, params) = (&*entities, &*spatial, &config.soldier);
+                threads.install(|| {
+                    planned
+                        .par_chunks_mut(CHUNK_SIZE)
+                        .enumerate()
+                        .for_each(|(c, out)| {
+                            systems::plan_velocities(c, out, ents, spatial, params, hz)
+                        })
+                });
+            }
             let Entities {
                 kind,
                 transform,
                 velocity,
+                combat,
                 ..
             } = entities;
-            let (terrain, planned) = (&*terrain, &*planned);
+            let (terrain, planned, combat) = (&*terrain, &*planned, &*combat);
             threads.install(|| {
                 kind.par_chunks(CHUNK_SIZE)
                     .zip(transform.par_chunks_mut(CHUNK_SIZE))
                     .zip(velocity.par_chunks_mut(CHUNK_SIZE))
+                    .zip(combat.par_chunks(CHUNK_SIZE))
                     .zip(planned.par_chunks(CHUNK_SIZE))
-                    .map(|(((k, t), v), p)| systems::integrate_soldiers(k, t, v, p, terrain, hz))
+                    .map(|((((k, t), v), c), p)| {
+                        systems::integrate_soldiers(k, t, v, c, p, terrain, hz)
+                    })
                     .collect_into_vec(flags)
             });
             hash.merge_entity_flags(flags);
+            // Ballistics and blasts test soldiers where they now stand.
+            if state.game.is_some() {
+                spatial.rebuild(&state.entities);
+            }
         }
         let t3 = Instant::now();
 
@@ -899,6 +999,79 @@ impl World {
                     None => stats.shots_dropped += 1,
                 }
             }
+        } else {
+            let World {
+                state,
+                threads,
+                hash,
+                flags,
+                fire_bufs,
+                fire_merged,
+                marks,
+                mark_of,
+                shots,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                projectiles,
+                stats,
+                game,
+                ..
+            } = state;
+            let game = game.as_mut().expect("match world");
+            combat::build_marks(entities, marks, mark_of);
+            game.update_focus(entities, marks, mark_of);
+            fire_bufs.resize_with(entities.chunk_count(), Vec::new);
+            {
+                let Entities {
+                    kind,
+                    owner,
+                    transform,
+                    velocity,
+                    squad,
+                    combat,
+                    weapon,
+                    ..
+                } = &mut *entities;
+                let ctx = FireCtx {
+                    kind,
+                    owner,
+                    transform,
+                    velocity,
+                    squad,
+                    marks,
+                    mark_of,
+                    game: &*game,
+                    terrain,
+                    seed,
+                    tick,
+                };
+                threads.install(|| {
+                    combat
+                        .par_chunks_mut(CHUNK_SIZE)
+                        .zip(weapon.par_chunks_mut(CHUNK_SIZE))
+                        .zip(fire_bufs.par_iter_mut())
+                        .enumerate()
+                        .map(|(c, ((cb, w), out))| {
+                            out.clear();
+                            combat::aim_and_fire(c, &ctx, cb, w, out)
+                        })
+                        .collect_into_vec(flags)
+                });
+            }
+            hash.merge_entity_flags(flags);
+            fire_merged.clear();
+            for b in fire_bufs.iter() {
+                fire_merged.extend_from_slice(b);
+            }
+            game.fire_mortars(entities, terrain, hash, seed, tick, fire_merged);
+            fire_merged.sort_unstable();
+            let (fired, dropped) = combat::spawn_rounds(fire_merged, projectiles, hash);
+            stats.shots_fired += fired;
+            stats.shots_dropped += dropped;
+            shots.clone_from(fire_merged);
         }
         let t4 = Instant::now();
 
@@ -910,28 +1083,64 @@ impl World {
                 hash,
                 flags,
                 ended_bufs,
+                blow_bufs,
+                blows,
+                spatial,
                 ..
             } = self;
             let SimState {
                 projectiles,
                 terrain,
                 stats,
+                entities,
+                game,
                 ..
             } = state;
+            let (entities, game, spatial) = (&*entities, game.as_ref(), &*spatial);
             ended_bufs.resize_with(projectiles.chunk_count(), Vec::new);
             let terrain = &*terrain;
-            threads.install(|| {
-                projectiles
-                    .slots_mut()
-                    .par_chunks_mut(CHUNK_SIZE)
-                    .zip(ended_bufs.par_iter_mut())
-                    .enumerate()
-                    .map(|(c, (s, out))| {
-                        out.clear();
-                        systems::integrate_projectiles(c, s, terrain, substeps, out)
-                    })
-                    .collect_into_vec(flags)
-            });
+            match game {
+                None => threads.install(|| {
+                    projectiles
+                        .slots_mut()
+                        .par_chunks_mut(CHUNK_SIZE)
+                        .zip(ended_bufs.par_iter_mut())
+                        .enumerate()
+                        .map(|(c, (s, out))| {
+                            out.clear();
+                            systems::integrate_projectiles(c, s, terrain, substeps, out)
+                        })
+                        .collect_into_vec(flags)
+                }),
+                Some(g) => {
+                    blow_bufs.resize_with(ended_bufs.len(), Vec::new);
+                    let ctx = FlightCtx {
+                        ents: entities,
+                        spatial,
+                        terrain,
+                        weapons: &g.setup().weapons,
+                        near_miss: g.setup().rules.combat.near_miss.into(),
+                    };
+                    threads.install(|| {
+                        projectiles
+                            .slots_mut()
+                            .par_chunks_mut(CHUNK_SIZE)
+                            .zip(ended_bufs.par_iter_mut())
+                            .zip(blow_bufs.par_iter_mut())
+                            .enumerate()
+                            .map(|(c, ((s, out), ev))| {
+                                out.clear();
+                                ev.clear();
+                                combat::fly(c, s, &ctx, substeps, out, ev)
+                            })
+                            .collect_into_vec(flags)
+                    });
+                    blows.clear();
+                    for b in blow_bufs.iter() {
+                        blows.extend_from_slice(b);
+                    }
+                }
+            }
             hash.merge_pool_flags(flags);
             for buf in ended_bufs.iter() {
                 for &(slot, end) in buf {
@@ -939,6 +1148,8 @@ impl World {
                     hash.mark_pool_slot(slot);
                     match end {
                         ProjectileEnd::GroundHit => stats.ground_hits += 1,
+                        // Counted as `soldier_hits` by the damage stage.
+                        ProjectileEnd::SoldierHit => {}
                         ProjectileEnd::Expired => stats.expired += 1,
                         ProjectileEnd::OutOfBounds => stats.out_of_bounds += 1,
                     }
@@ -947,8 +1158,97 @@ impl World {
         }
         let t5 = Instant::now();
 
-        // 6. Damage and 7. Status: placeholders (M1+).
+        // 6. Damage: serial, in projectile slot order.
+        self.explosions.clear();
+        if self.state.game.is_some() {
+            let World {
+                state,
+                hash,
+                spatial,
+                blows,
+                explosions,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                stats,
+                ..
+            } = state;
+            let mut ctx = combat::DamageCtx {
+                ents: entities,
+                terrain,
+                spatial,
+                hash,
+                stats,
+                seed,
+                tick,
+            };
+            game.as_mut()
+                .expect("match world")
+                .apply_blows(&mut ctx, blows, explosions);
+        }
         let t6 = Instant::now();
+
+        // 7. Status: per-chunk stance and timers, then corpse removal in
+        //    ascending id.
+        if self.state.game.is_some() {
+            let World {
+                state,
+                threads,
+                hash,
+                flags,
+                gone_bufs,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                ..
+            } = state;
+            let game = game.as_ref().expect("match world");
+            gone_bufs.resize_with(entities.chunk_count(), Vec::new);
+            {
+                let Entities {
+                    kind,
+                    transform,
+                    velocity,
+                    weapon,
+                    squad,
+                    combat,
+                    ..
+                } = &mut *entities;
+                let ctx = StatusCtx {
+                    kind,
+                    transform,
+                    velocity,
+                    weapon,
+                    squad,
+                    game,
+                    terrain,
+                };
+                threads.install(|| {
+                    combat
+                        .par_chunks_mut(CHUNK_SIZE)
+                        .zip(gone_bufs.par_iter_mut())
+                        .enumerate()
+                        .map(|(c, (cb, gone))| {
+                            gone.clear();
+                            combat::status(c, &ctx, cb, gone)
+                        })
+                        .collect_into_vec(flags)
+                });
+            }
+            hash.merge_entity_flags(flags);
+            for gone in gone_bufs.iter() {
+                for &id in gone {
+                    entities.despawn(id);
+                    hash.mark_entity_chunk(id.chunk());
+                }
+            }
+        }
         let t7 = Instant::now();
 
         // 8. World/Hash: advance the tick, re-hash dirty chunks, publish.
@@ -979,6 +1279,84 @@ impl World {
             snapshot: t9 - t8,
         };
         published
+    }
+
+    // -------------------------------------------------------- setup tools --
+    //
+    // Direct state edits for tests and tools that stage a situation (the
+    // CLI's `fortify-test`). They are not commands: using them in a
+    // networked match would break lockstep. The state hash stays current.
+
+    /// Puts squad `id`'s men on a line through `center` across `facing` (a
+    /// unit vector), holding and idle. Returns false for an unknown squad.
+    pub fn place_squad(&mut self, id: SquadId, center: FxVec2, facing: FxVec2) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let Some(sq) = game.squads.get_mut(&id) else {
+            return false;
+        };
+        let spacing: Fx = game.setup.squad_types[sq.type_idx as usize].spacing.into();
+        let t = &self.state.terrain;
+        let slots: Vec<FxVec2> =
+            crate::squad::line_slots(center, facing, sq.members.len(), spacing)
+                .into_iter()
+                .map(|q| t.clamp(q))
+                .collect();
+        let yaw = Fx::atan2(facing.y, facing.x);
+        for (&m, &q) in sq.members.iter().zip(&slots) {
+            let i = m.index();
+            let ents = &mut self.state.entities;
+            ents.transform[i].pos = q.extend(t.height_at(q));
+            ents.transform[i].yaw = yaw;
+            ents.velocity[i] = Default::default();
+            ents.mover[i].waypoint = q;
+            self.hash.mark_entity_chunk(m.chunk());
+        }
+        sq.order = Order::Idle;
+        sq.nav = Nav {
+            phase: NavPhase::Holding,
+            goal: center,
+            heading: facing,
+            facing,
+            slots,
+            ..Nav::default()
+        };
+        for q in &mut game.path_queue.queues {
+            q.retain(|s| *s != id);
+        }
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Digs a finished trench along `line` at once (the rules' profile),
+    /// parapet on the left of the line direction for `front = 1`, on the
+    /// right for `-1`. Match worlds only.
+    pub fn dig_trench_now(&mut self, line: &[FxVec2], front: i8) -> bool {
+        let Some(game) = self.state.game.as_ref() else {
+            return false;
+        };
+        if line.len() < 2 {
+            return false;
+        }
+        let dig = &game.setup.rules.dig;
+        let n = dig.passes as i32;
+        let len = crate::squad::polyline_length(line);
+        crate::dig::stamp(
+            &mut self.state.terrain,
+            line,
+            front,
+            Fx::ZERO,
+            len,
+            n,
+            n,
+            dig,
+            self.state.tick,
+        );
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
     }
 
     // ----------------------------------------------------------- internals --
@@ -1142,6 +1520,7 @@ impl World {
             self.state.game.as_ref(),
             &self.dirty_tiles,
         );
+        self.snapshot.fill_events(&self.shots, &self.explosions);
     }
 }
 
@@ -1309,6 +1688,37 @@ mod tests {
         // Match state dropped from a map world.
         let bytes = save_edited(&w, |s| s.game = None);
         assert!(load_err(&bytes).contains("match"));
+        // Seen by a player that does not exist.
+        let bytes = save_edited(&w, |s| s.entities.combat[0].seen_by = 1 << 5);
+        assert!(load_err(&bytes).contains("combat"));
+        // A living soldier at 0 HP, or a corpse still in a squad.
+        let bytes = save_edited(&w, |s| s.entities.combat[0].hp = 0);
+        assert!(load_err(&bytes).contains("combat"));
+        let bytes = save_edited(&w, |s| {
+            s.entities.kind[0] = EntityKind::Corpse;
+            s.entities.combat[0].corpse = 10;
+        });
+        assert!(load_err(&bytes).contains("squad"));
+        // A round of an unknown weapon.
+        let bytes = save_edited(&w, |s| {
+            s.projectiles.spawn(crate::projectile::Projectile {
+                pos: FxVec2::from_int(10, 10).extend(Fx::from_int(30)),
+                vel: Default::default(),
+                owner: SimId(0),
+                drag: Fx::ZERO,
+                ttl: 5,
+                weapon: 200,
+                player: 0,
+            });
+        });
+        assert!(load_err(&bytes).contains("weapon"));
+    }
+
+    #[test]
+    fn load_rejects_combat_state_in_bench_worlds() {
+        let w = busy_world();
+        let bytes = save_edited(&w, |s| s.entities.combat[0].hp = 50);
+        assert!(load_err(&bytes).contains("bench"));
     }
 
     #[test]

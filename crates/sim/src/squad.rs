@@ -13,6 +13,8 @@
 //!   direction (or along the trench line for Dig). Slots are assigned by
 //!   each man's position across the line, so paths do not cross.
 //! * **Holding:** men stay on their slots and face `facing`.
+//! * **AttackMove** squads that have a focus target (`crate::combat`) halt
+//!   where each man stands until the fight is over, then walk on.
 //!
 //! Digging squads get their slots from `crate::dig` (each man's spot on his
 //! share of the line). Seeking cover on arrival (trench cells, terrain
@@ -169,6 +171,14 @@ impl MatchState {
             match sq.nav.phase {
                 // Men keep their last targets until the path arrives.
                 NavPhase::PathPending => {}
+                NavPhase::Moving
+                    if matches!(sq.order, Order::AttackMove { .. }) && sq.focus.is_some() =>
+                {
+                    for &m in &sq.members {
+                        let here = ctx.ents.transform[m.index()].pos.xy();
+                        set_target(ctx, m, here, speed);
+                    }
+                }
                 NavPhase::Moving => {
                     let nav = &mut sq.nav;
                     let last = nav.path.len() as u32 - 1;

@@ -4,8 +4,14 @@
 //! back by the sim. Coordinates are sim axes (x east, y north, z up, metres);
 //! the Godot bridge converts to its y-up frame.
 //!
-//! Match worlds add per-soldier owner and squad, and per-squad and
-//! per-player summaries; bench worlds leave those empty except the owner.
+//! Match worlds add per-soldier owner, squad and combat state (stance, hit
+//! points, suppression, who sees him), corpses, the rounds fired and HE
+//! bursts of the tick, and per-squad and per-player summaries; bench worlds
+//! leave those empty except the owner.
+//!
+//! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
+//! soldier (own soldiers always). A presenter for local player `p` draws an
+//! enemy only when his bit is set.
 //!
 //! Terrain: `dirty_tiles` lists the detail tiles that changed in this tick.
 //! The presenter reads their heights with [`tile_heights_f32`] (or
@@ -14,9 +20,11 @@
 //! gone was demoted back to the base surface. A presenter that skips
 //! snapshots can catch up by comparing each tile's `changed_tick`.
 
-use crate::ecs::{Entities, EntityKind, SimId};
+use crate::combat::Explosion;
+use crate::ecs::{Entities, EntityKind, SimId, Stance};
 use crate::game::{MatchState, NavPhase, Order, OrderKind, Outcome};
 use crate::projectile::ProjectilePool;
+use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
 
 /// `soldier_squad` value for a soldier without a squad.
@@ -40,6 +48,36 @@ pub struct SquadSnapshot {
     pub dig_pct: u8,
 }
 
+/// A dead soldier, kept for 30 s (rules `combat.corpse_s`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CorpseSnapshot {
+    pub id: SimId,
+    /// `[x, y, z, yaw]`.
+    pub pos: [f32; 4],
+    pub owner: u8,
+    /// Ticks until the body is removed.
+    pub ticks_left: u16,
+}
+
+/// A round fired this tick (muzzle flash, tracer, sound).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShotSnapshot {
+    pub shooter: SimId,
+    /// Index into `MatchSetup::weapons`.
+    pub weapon: u16,
+    /// Muzzle position.
+    pub from: [f32; 3],
+    /// Initial velocity (m/s).
+    pub vel: [f32; 3],
+}
+
+/// An HE burst this tick (explosion, light flash, dust).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ExplosionSnapshot {
+    pub pos: [f32; 3],
+    pub weapon: u16,
+}
+
 /// One player's match status.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlayerSnapshot {
@@ -48,6 +86,8 @@ pub struct PlayerSnapshot {
     pub surrendered: bool,
     /// Alive soldiers plus soldiers on order.
     pub pop: u32,
+    pub kills: u32,
+    pub losses: u32,
     /// Queued call-ins: `(squad type, ticks until arrival)`.
     pub call_ins: Vec<(u16, u32)>,
 }
@@ -64,6 +104,20 @@ pub struct RenderSnapshot {
     pub soldier_owner: Vec<u8>,
     /// Squad id per entry of `soldiers`, or [`NO_SQUAD`] (match mode only).
     pub soldier_squad: Vec<u32>,
+    /// Per entry of `soldiers` (match mode only): stance, hit points,
+    /// suppression (0..=100), pinned, and the players that see him
+    /// (bit per player slot, own player always set).
+    pub soldier_stance: Vec<Stance>,
+    pub soldier_hp: Vec<u16>,
+    pub soldier_suppression: Vec<u8>,
+    pub soldier_pinned: Vec<bool>,
+    pub soldier_visible: Vec<u16>,
+    /// Dead soldiers, ascending id (match mode only).
+    pub corpses: Vec<CorpseSnapshot>,
+    /// Rounds fired this tick, in fire order (match mode only).
+    pub shots: Vec<ShotSnapshot>,
+    /// HE bursts this tick, in order (match mode only).
+    pub explosions: Vec<ExplosionSnapshot>,
     /// Per live projectile, in slot order: `[x, y, z]`.
     pub projectiles: Vec<[f32; 3]>,
     /// Squads in ascending id order (match mode only).
@@ -108,17 +162,40 @@ impl RenderSnapshot {
         self.soldier_ids.clear();
         self.soldier_owner.clear();
         self.soldier_squad.clear();
+        self.soldier_stance.clear();
+        self.soldier_hp.clear();
+        self.soldier_suppression.clear();
+        self.soldier_pinned.clear();
+        self.soldier_visible.clear();
+        self.corpses.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
-            if *kind == EntityKind::Soldier {
-                let t = &ents.transform()[i];
-                let [x, y, z] = t.pos.to_f32();
-                self.soldiers.push([x, y, z, t.yaw.to_f32()]);
-                self.soldier_ids.push(SimId(i as u32));
-                self.soldier_owner.push(ents.owner()[i].0);
-                if game.is_some() {
-                    self.soldier_squad
-                        .push(ents.squad()[i].map_or(NO_SQUAD, |s| s.0));
+            let t = &ents.transform()[i];
+            let [x, y, z] = t.pos.to_f32();
+            let owner = ents.owner()[i].0;
+            let c = &ents.combat()[i];
+            match kind {
+                EntityKind::Soldier => {
+                    self.soldiers.push([x, y, z, t.yaw.to_f32()]);
+                    self.soldier_ids.push(SimId(i as u32));
+                    self.soldier_owner.push(owner);
+                    if game.is_some() {
+                        self.soldier_squad
+                            .push(ents.squad()[i].map_or(NO_SQUAD, |s| s.0));
+                        self.soldier_stance.push(c.stance);
+                        self.soldier_hp.push(c.hp);
+                        self.soldier_suppression
+                            .push((c.suppression / 1000).min(100) as u8);
+                        self.soldier_pinned.push(c.pinned);
+                        self.soldier_visible.push(c.seen_by | (1 << owner));
+                    }
                 }
+                EntityKind::Corpse => self.corpses.push(CorpseSnapshot {
+                    id: SimId(i as u32),
+                    pos: [x, y, z, t.yaw.to_f32()],
+                    owner,
+                    ticks_left: c.corpse,
+                }),
+                EntityKind::Vacant => {}
             }
         }
         self.projectiles.clear();
@@ -168,6 +245,8 @@ impl RenderSnapshot {
                 tickets: pl.tickets,
                 surrendered: pl.surrendered,
                 pop: alive + queued,
+                kills: pl.kills,
+                losses: pl.losses,
                 call_ins: pl
                     .call_ins
                     .iter()
@@ -178,5 +257,22 @@ impl RenderSnapshot {
         if let Outcome::Won { winner } = g.outcome() {
             self.winner = Some(winner.0);
         }
+    }
+
+    /// Refills this tick's shots and bursts.
+    pub(crate) fn fill_events(&mut self, shots: &[FireRequest], explosions: &[Explosion]) {
+        self.shots.clear();
+        self.shots.extend(shots.iter().map(|r| ShotSnapshot {
+            shooter: r.shooter,
+            weapon: r.weapon,
+            from: r.pos.to_f32(),
+            vel: r.vel.to_f32(),
+        }));
+        self.explosions.clear();
+        self.explosions
+            .extend(explosions.iter().map(|e| ExplosionSnapshot {
+                pos: e.pos.to_f32(),
+                weapon: e.weapon,
+            }));
     }
 }

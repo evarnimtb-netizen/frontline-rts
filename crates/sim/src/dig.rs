@@ -9,7 +9,8 @@
 //!    slot; ties by segment index), so survivors and early finishers pick
 //!    up the rest of the line;
 //! 3. each digger's slot is his segment's midpoint; once he stands within
-//!    [`DIG_REACH_MM`] of it he adds his squad type's `dig_rate_pct` work
+//!    [`DIG_REACH_MM`] of it (and is not busy firing at a target) he adds
+//!    his squad type's `dig_rate_pct` work
 //!    points per tick (one man at 100 % does 100 work points per second;
 //!    work is counted in points × tick rate so it stays integral);
 //! 4. when a segment's work crosses the next of `passes` equal steps, the
@@ -18,8 +19,8 @@
 //!
 //! The profile (rules: depth, floor width, parapet height): a flat floor,
 //! walls sloping out over [`WALL_RUN_MM`] to the lip, and a spoil parapet
-//! just beyond the lip on the front side only (toward the nearest enemy when
-//! the order was given). The ends are rounded. Cutting takes the minimum of
+//! just beyond the lip on the front side only (toward the nearest spotted
+//! enemy when the order was given). The ends are rounded. Cutting takes the minimum of
 //! the current surface and the base minus the profile depth, so crossing
 //! trenches merge; the parapet only raises undug ground. A new Dig order on
 //! a partly dug line credits the depth already there.
@@ -101,7 +102,7 @@ impl DigJob {
     }
 
     /// A job for `line` split among `men`, with the parapet facing the
-    /// nearest soldier not owned by `owner` (or away from `base` if there is
+    /// nearest enemy soldier `owner` sees (or away from `base` if there is
     /// none). Depth already dug at each segment's midpoint is credited.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -118,7 +119,10 @@ impl DigJob {
         let mid = point_along(line, len.div_int(2));
         let enemy = ents
             .soldiers()
-            .filter(|id| ents.owner[id.index()] != owner)
+            .filter(|id| {
+                let i = id.index();
+                ents.owner[i] != owner && ents.combat[i].seen_by & (1 << owner.0) != 0
+            })
             .map(|id| {
                 let p = ents.transform[id.index()].pos.xy();
                 ((p - mid).length_sq_raw(), id, p)
@@ -345,7 +349,9 @@ impl MatchState {
                 let spot = terrain.clamp(point_along(line, (seg.from + seg.to).div_int(2)));
                 sq.nav.slots[k] = spot;
                 let at = ents.transform[d.index()].pos.xy();
-                if (spot - at).length_sq_raw() > reach_sq {
+                // A man firing at the enemy puts the spade down.
+                if (spot - at).length_sq_raw() > reach_sq || ents.combat[d.index()].target.is_some()
+                {
                     continue;
                 }
                 let need = DigJob::required(seg, dig, hz);

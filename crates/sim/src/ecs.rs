@@ -130,6 +130,9 @@ pub enum EntityKind {
     #[default]
     Vacant = 0,
     Soldier = 1,
+    /// A dead soldier, kept for the presenter until `Combat::corpse` runs
+    /// out (match mode). Not in squads, the spatial hash or `soldiers()`.
+    Corpse = 2,
 }
 
 /// Position (z is terrain height for ground units) and heading.
@@ -166,6 +169,50 @@ pub struct Weapon {
     pub shots: u32,
 }
 
+/// Infantry posture. Automatic: suppression, trenches and firing set it
+/// each tick (`crate::combat`).
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default, Serialize, Deserialize,
+)]
+#[repr(u8)]
+pub enum Stance {
+    #[default]
+    Stand = 0,
+    Crouch = 1,
+    Prone = 2,
+}
+
+/// Match-mode combat state of a soldier (S1 combat). Bench soldiers keep
+/// the default, which is not hashed.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Combat {
+    pub hp: u16,
+    pub stance: Stance,
+    /// Standing in a trench or crater at least 1 m below the base surface.
+    pub in_trench: bool,
+    /// Prone and unable to move (suppression at the pin threshold).
+    pub pinned: bool,
+    /// Suppression in thousandths of a point (0..=100_000).
+    pub suppression: u32,
+    /// Hit capsule height above the feet in the current posture (m).
+    pub height: Fx,
+    /// Capsule height while firing: on the fire step in a trench (m).
+    pub fire_height: Fx,
+    pub target: Option<SimId>,
+    /// Rounds left in the magazine.
+    pub mag: u16,
+    /// Ticks spent standing still (weapon setup), saturating.
+    pub still: u16,
+    /// Ticks since the last shot, saturating.
+    pub since_shot: u16,
+    /// Ticks until the next target search.
+    pub retarget: u16,
+    /// Players that see this soldier: bit `p` for player slot `p`.
+    pub seen_by: u16,
+    /// Corpses: ticks left before the body is removed.
+    pub corpse: u16,
+}
+
 /// SoA entity store. Columns are public for reading; mutate through
 /// [`crate::World`] so hash dirty flags stay correct.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +226,8 @@ pub struct Entities {
     pub(crate) weapon: Vec<Weapon>,
     /// Squad a soldier belongs to (match mode; `None` for bench soldiers).
     pub(crate) squad: Vec<Option<SquadId>>,
+    /// Combat state (match mode; default for bench soldiers).
+    pub(crate) combat: Vec<Combat>,
 }
 
 impl Entities {
@@ -213,6 +262,10 @@ impl Entities {
     #[inline]
     pub fn squad(&self) -> &[Option<SquadId>] {
         &self.squad
+    }
+    #[inline]
+    pub fn combat(&self) -> &[Combat] {
+        &self.combat
     }
 
     /// Column length (= allocator high-water mark).
@@ -265,6 +318,7 @@ impl Entities {
             self.mover.push(Mover::default());
             self.weapon.push(Weapon::default());
             self.squad.push(None);
+            self.combat.push(Combat::default());
         }
         debug_assert_eq!(self.kind.len(), self.alloc.high_water() as usize);
         debug_assert_eq!(self.kind[i], EntityKind::Vacant);
@@ -277,6 +331,7 @@ impl Entities {
         self.mover[i] = Mover::default();
         self.weapon[i] = Weapon::default();
         self.squad[i] = None;
+        self.combat[i] = Combat::default();
         id
     }
 
@@ -295,6 +350,7 @@ impl Entities {
             self.mover.len(),
             self.weapon.len(),
             self.squad.len(),
+            self.combat.len(),
         ];
         if columns.iter().any(|&l| l != n) {
             return Err("entity column lengths disagree with the allocator");
@@ -322,7 +378,8 @@ impl Entities {
                     || self.velocity[i] != Velocity::default()
                     || self.mover[i] != Mover::default()
                     || self.weapon[i] != Weapon::default()
-                    || self.squad[i].is_some())
+                    || self.squad[i].is_some()
+                    || self.combat[i] != Combat::default())
         });
         if dirty_vacant {
             return Err("a vacant entity slot holds non-default values");
@@ -343,6 +400,7 @@ impl Entities {
         self.mover[i] = Mover::default();
         self.weapon[i] = Weapon::default();
         self.squad[i] = None;
+        self.combat[i] = Combat::default();
         self.alloc.free(id);
         true
     }

@@ -6,6 +6,6 @@ damage = 65
 rounds_per_min = 24
 magazine = 8
 reload_ms = 3000
-spread_mrad = 5
+spread_mrad = 11
 muzzle_velocity_m_s = 850
 suppression = 8

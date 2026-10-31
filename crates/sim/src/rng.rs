@@ -27,6 +27,14 @@ impl Purpose {
     /// First waypoint at spawn (kept apart from `WAYPOINT`, which a re-pick
     /// on the same tick would otherwise repeat).
     pub const SPAWN_WAYPOINT: Purpose = Purpose(6);
+    /// Aim error of a small-arms shot (match mode).
+    pub const AIM: Purpose = Purpose(7);
+    /// Scatter of a mortar shell's aim point.
+    pub const SHELL_AIM: Purpose = Purpose(8);
+    /// Crater depth of a burst (keyed by its event index in the tick).
+    pub const CRATER: Purpose = Purpose(9);
+    /// MG target pick among the nearest enemies.
+    pub const SWEEP: Purpose = Purpose(10);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

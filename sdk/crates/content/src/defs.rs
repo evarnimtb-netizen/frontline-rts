@@ -257,6 +257,7 @@ pub struct RulesDef {
     pub capture: CaptureDef,
     pub movement: MovementDef,
     pub dig: DigDef,
+    pub combat: CombatDef,
     pub difficulty: DifficultyTableDef,
 }
 
@@ -313,6 +314,49 @@ pub struct DigDef {
     pub work_per_m: u32,
     /// The trench deepens in this many equal passes.
     pub passes: u32,
+}
+
+/// Spotting, accuracy, suppression and corpse rules. Suppression is in
+/// points out of 100 (a weapon's `suppression` is added per near miss).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CombatDef {
+    /// Spotting LOS rays per player per tick.
+    pub spot_rays_per_tick: u32,
+    /// Each enemy soldier is re-checked this often while the ray budget lasts.
+    pub spot_period_ms: u32,
+    /// Most observers tried per target (rays per target check).
+    pub spot_observers: u32,
+    /// Sight range against a prone target, in percent.
+    pub prone_spot_pct: u32,
+    /// Sight range against a target in a trench, in percent.
+    pub trench_spot_pct: u32,
+    /// Sight range against a target in woods, in percent.
+    pub woods_spot_pct: u32,
+    /// Sight range against a soldier who fired recently (replaces the
+    /// prone, trench and woods factors), in percent.
+    pub firing_spot_pct: u32,
+    /// How long a shot gives the shooter away.
+    pub reveal_ms: u32,
+    /// A round passing this close suppresses.
+    pub near_miss_cm: u32,
+    /// Suppression added by being hit.
+    pub hit_suppression: u32,
+    pub suppression_decay_per_s: u32,
+    /// At this suppression a soldier crouches ...
+    pub crouch_suppression: u32,
+    /// ... and at this one he is pinned (prone, does not move).
+    pub pin_suppression: u32,
+    /// Weapon spread while the shooter moves, in percent.
+    pub moving_spread_pct: u32,
+    /// Weapon spread while pinned, in percent.
+    pub pinned_spread_pct: u32,
+    /// Extra spread at the weapon's full range, in percent (linear in range).
+    pub range_spread_pct: u32,
+    /// A soldier firing from a trench shows this much above the parapet.
+    pub fire_exposure_cm: u32,
+    /// Corpses stay this long (for the presenter).
+    pub corpse_s: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -700,6 +744,41 @@ impl RulesDef {
         range(&mut out, "dig.max_length_m", d.max_length_m, 1, 1000);
         range(&mut out, "dig.work_per_m", d.work_per_m, 1, 10_000_000);
         range(&mut out, "dig.passes", d.passes, 1, 32);
+        let c = &self.combat;
+        for (name, v, lo, hi) in [
+            ("spot_rays_per_tick", c.spot_rays_per_tick, 1, 100_000),
+            ("spot_period_ms", c.spot_period_ms, 1, 10_000),
+            ("spot_observers", c.spot_observers, 1, 16),
+            ("prone_spot_pct", c.prone_spot_pct, 1, 1000),
+            ("trench_spot_pct", c.trench_spot_pct, 1, 1000),
+            ("woods_spot_pct", c.woods_spot_pct, 1, 1000),
+            ("firing_spot_pct", c.firing_spot_pct, 1, 1000),
+            ("reveal_ms", c.reveal_ms, 0, 60_000),
+            ("near_miss_cm", c.near_miss_cm, 0, 2000),
+            ("hit_suppression", c.hit_suppression, 0, 100),
+            ("suppression_decay_per_s", c.suppression_decay_per_s, 0, 100),
+            ("crouch_suppression", c.crouch_suppression, 1, 100),
+            ("pin_suppression", c.pin_suppression, 1, 100),
+            ("moving_spread_pct", c.moving_spread_pct, 1, 1000),
+            ("pinned_spread_pct", c.pinned_spread_pct, 1, 1000),
+            ("range_spread_pct", c.range_spread_pct, 0, 1000),
+            ("fire_exposure_cm", c.fire_exposure_cm, 0, 200),
+            ("corpse_s", c.corpse_s, 0, 600),
+        ] {
+            range(&mut out, &format!("combat.{name}"), v, lo, hi);
+        }
+        if c.pin_suppression < c.crouch_suppression {
+            out.push(Issue::new(
+                "combat.pin_suppression",
+                "must be at least crouch_suppression",
+            ));
+        }
+        if c.spot_rays_per_tick < c.spot_observers {
+            out.push(Issue::new(
+                "combat.spot_rays_per_tick",
+                "must be at least spot_observers",
+            ));
+        }
         for (name, t) in [
             ("easy", &self.difficulty.easy),
             ("normal", &self.difficulty.normal),

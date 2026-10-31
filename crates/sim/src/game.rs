@@ -17,17 +17,21 @@
 //! 4. digging squads work on their trench (`crate::dig`);
 //! 5. squads steer their members (`crate::squad`).
 //!
-//! Implemented: Move, AttackMove (moves like Move; engaging comes with
-//! combat), Stop, Retreat, CallIn, Surrender and Dig (the squad walks to the
-//! line, splits it and digs it in passes). Barrage is validated and stored;
-//! it stops the squad facing the target. Firing, economy income, tickets and
-//! capture are later stages.
+//! Implemented: Move, AttackMove (halts to fight while the squad has a focus
+//! target), Stop, Retreat, CallIn, Surrender, Dig (the squad walks to the
+//! line, splits it and digs it in passes) and Barrage (a mortar team in
+//! range holds and fires; out of range it first walks to 90 % of its range
+//! from the target). Combat (`crate::combat`) and spotting
+//! (`crate::spotting`) keep their per-match state here too: squad focus
+//! targets, kills and losses, and the spotting cursors. Economy income,
+//! tickets and capture are later stages.
 
 use std::collections::BTreeMap;
 
 use frontline_content::{MatchSetup, SquadRole};
 use serde::{Deserialize, Serialize};
 
+use crate::combat;
 use crate::command::{Command, CommandKind};
 use crate::dig::DigJob;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
@@ -73,7 +77,8 @@ pub enum Order {
         line: Vec<FxVec2>,
         job: DigJob,
     },
-    /// Mortar fire on `target` (firing: HE stage).
+    /// Mortar fire on `target`; `rounds` left. The order becomes `Idle`
+    /// after the last round.
     Barrage {
         target: FxVec2,
         rounds: u16,
@@ -153,6 +158,8 @@ pub struct Squad {
     pub members: Vec<SimId>,
     pub order: Order,
     pub nav: Nav,
+    /// Enemy the squad concentrates fire on (`crate::combat`).
+    pub focus: Option<SimId>,
 }
 
 /// A bought squad on its way.
@@ -170,6 +177,10 @@ pub struct PlayerState {
     pub surrendered: bool,
     /// In purchase order.
     pub call_ins: Vec<CallIn>,
+    /// Enemy soldiers this player killed.
+    pub kills: u32,
+    /// Own soldiers lost.
+    pub losses: u32,
 }
 
 /// Capture point state (capture logic: economy stage).
@@ -210,6 +221,8 @@ pub struct MatchState {
     pub(crate) points: Vec<CapturePoint>,
     pub(crate) path_queue: PathQueue,
     pub(crate) outcome: Outcome,
+    /// Per player: entity index the spotting pass resumes at.
+    pub(crate) spot_cursor: Vec<u32>,
 }
 
 /// Mutable world parts a match operation needs.
@@ -232,6 +245,8 @@ impl MatchState {
                 tickets: r.tickets,
                 surrendered: false,
                 call_ins: Vec::new(),
+                kills: 0,
+                losses: 0,
             })
             .collect();
         MatchState {
@@ -245,6 +260,7 @@ impl MatchState {
                 debt: 0,
             },
             outcome: Outcome::Running,
+            spot_cursor: vec![0; setup.players.len()],
             setup,
         }
     }
@@ -279,6 +295,11 @@ impl MatchState {
     #[inline]
     pub fn outcome(&self) -> Outcome {
         self.outcome
+    }
+    /// Per player: where the spotting cursor resumes (an entity index).
+    #[inline]
+    pub fn spot_cursor(&self) -> &[u32] {
+        &self.spot_cursor
     }
 
     /// Base centre of `player`.
@@ -427,11 +448,25 @@ impl MatchState {
         if ty.role != SquadRole::Mortar || !(1..=MAX_BARRAGE_ROUNDS).contains(&rounds) {
             return false;
         }
+        let w = &self.setup.weapons[ty.weapon as usize];
+        let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
         let sq = self.squads.get_mut(&id).expect("owned");
-        sq.order = Order::Barrage { target, rounds };
         let lead = ctx.ents.transform[sq.members[0].index()].pos.xy();
+        let dist = (target - lead).length();
+        if dist < min {
+            return false;
+        }
+        sq.order = Order::Barrage { target, rounds };
         let facing = (target - lead).normalize_or_zero();
-        hold_in_place(sq, ctx.ents, facing);
+        if dist <= max {
+            hold_in_place(sq, ctx.ents, facing);
+        } else {
+            // Walk up to 90 % of the range first.
+            let spot = ctx
+                .terrain
+                .clamp(target - facing * max.mul_int(9).div_int(10));
+            self.request_path(id, spot);
+        }
         true
     }
 
@@ -553,6 +588,7 @@ impl MatchState {
                 .collect();
         let yaw = Fx::atan2(facing.y, facing.x);
         let speed: Fx = ty.speed.into();
+        let combat = combat::spawn_combat(ty.hp, &self.setup.weapons[ty.weapon as usize]);
         let mut members = Vec::with_capacity(slots.len());
         for &q in &slots {
             let sid = ctx.ents.spawn(EntityKind::Soldier, owner);
@@ -562,6 +598,7 @@ impl MatchState {
             ctx.ents.mover[i].waypoint = q;
             ctx.ents.mover[i].speed = speed;
             ctx.ents.squad[i] = Some(id);
+            ctx.ents.combat[i] = combat;
             ctx.hash.mark_entity_chunk(sid.chunk());
             members.push(sid);
         }
@@ -580,6 +617,7 @@ impl MatchState {
                     slots,
                     ..Nav::default()
                 },
+                focus: None,
             },
         );
         id
@@ -643,6 +681,7 @@ impl MatchState {
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
+            || self.spot_cursor.len() != np
         {
             return Err("match player count disagrees with the setup");
         }
@@ -691,6 +730,9 @@ impl MatchState {
                 }
             }
             members += sq.members.len();
+            if sq.members.is_empty() || sq.focus.is_some_and(|f| f.index() >= ents.len()) {
+                return Err("squad out of range");
+            }
             let nav = &sq.nav;
             if nav.path.len() > MAX_PATH_POINTS
                 || nav.next as usize > nav.path.len()
@@ -721,6 +763,20 @@ impl MatchState {
                 {
                     return Err("dig order is inconsistent");
                 }
+            }
+        }
+        if self.spot_cursor.iter().any(|&c| c as usize > ents.len()) {
+            return Err("spotting cursor out of range");
+        }
+        for (i, c) in ents.combat.iter().enumerate() {
+            let kind = ents.kind[i];
+            let bad = c.seen_by >> np != 0
+                || c.target.is_some_and(|t| t.index() >= ents.len())
+                || c.suppression > 100_000
+                || (kind == EntityKind::Soldier && (c.hp == 0 || c.corpse != 0))
+                || (kind == EntityKind::Corpse && (c.corpse == 0 || ents.squad[i].is_some()));
+            if bad {
+                return Err("soldier combat state is inconsistent");
             }
         }
         let linked = ents.squad.iter().filter(|s| s.is_some()).count();

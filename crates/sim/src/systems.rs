@@ -7,9 +7,10 @@
 //! (for hash dirty flags) and, where needed, events that the caller merges
 //! serially in chunk order.
 
+use crate::ecs::Combat;
 use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, Mover, SimId, Transform, Velocity, Weapon};
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::projectile::{Projectile, ProjectileEnd, substep};
+use crate::projectile::{NO_WEAPON, Projectile, ProjectileEnd, substep};
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
 use crate::terrain::{DETAIL_PER_M, Heightfield};
@@ -260,11 +261,12 @@ fn steep_pct(terrain: &Heightfield, xy: FxVec2, v: FxVec2) -> i64 {
 /// Applies planned velocities: position, terrain height and heading. On
 /// detail ground (dug or cratered) steep slopes slow the soldier down
 /// ([`steep_pct`]); his stored velocity is the slowed one. Elsewhere the
-/// planned velocity is used as is.
+/// planned velocity is used as is. Pinned soldiers (match mode) stay put.
 pub(crate) fn integrate_soldiers(
     kind: &[EntityKind],
     transform: &mut [Transform],
     velocity: &mut [Velocity],
+    combat: &[Combat],
     planned: &[FxVec2],
     terrain: &Heightfield,
     tick_hz: i32,
@@ -276,7 +278,11 @@ pub(crate) fn integrate_soldiers(
             continue;
         }
         changed = true;
-        let mut v = planned[j];
+        let mut v = if combat[j].pinned {
+            FxVec2::ZERO
+        } else {
+            planned[j]
+        };
         let t = &mut transform[j];
         let from = t.pos.xy();
         if v != FxVec2::ZERO && terrain.has_detail_at(from) {
@@ -304,6 +310,13 @@ pub(crate) struct FireRequest {
     pub seq: u16,
     pub pos: FxVec3,
     pub vel: FxVec3,
+    /// Weapon index, or `NO_WEAPON` (bench).
+    pub weapon: u16,
+    pub player: u8,
+    /// Lifetime in substeps (match rounds; bench uses its config).
+    pub ttl: u16,
+    /// HE shell: spawned first, may use the reserved pool slots.
+    pub he: bool,
 }
 
 /// Counts down weapon cooldowns and fires seeded shots when ready.
@@ -345,6 +358,10 @@ pub(crate) fn fire_weapons(
             seq: 0,
             pos,
             vel,
+            weapon: NO_WEAPON,
+            player: 0,
+            ttl: 0,
+            he: false,
         });
         w.shots = w.shots.wrapping_add(1);
         let mut rc = RngStream::new(seed, tick, id, Purpose::WEAPON_COOLDOWN);
@@ -361,6 +378,8 @@ pub(crate) fn projectile_from(req: &FireRequest, p: &WeaponParams) -> Projectile
         owner: req.shooter,
         drag: p.drag,
         ttl: p.ttl_substeps.max(1),
+        weapon: NO_WEAPON,
+        player: 0,
     }
 }
 

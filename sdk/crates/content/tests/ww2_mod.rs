@@ -98,6 +98,12 @@ fn skirmish_resolves_to_fixed_point() {
     assert_eq!(s.rules.capture_ticks, 20 * 30);
     assert_eq!(s.rules.capture_radius, Fixed::from_int(15));
     assert_eq!(s.rules.difficulty.get(Difficulty::Hard).reaction_ticks, 30);
+    let c = &s.rules.combat;
+    assert_eq!(c.spot_period_ticks, 6);
+    assert_eq!(c.reveal_ticks, 60);
+    assert_eq!(c.near_miss, Fixed::from_int(2));
+    assert_eq!(c.corpse_ticks, 30 * 30);
+    assert_eq!(c.suppression_decay_milli, 8 * 1000 / 30);
 
     let rifle = &s.squad_types[s.squad_type_index("ww2:ger_rifle_squad").unwrap() as usize];
     assert_eq!(rifle.men, 8);

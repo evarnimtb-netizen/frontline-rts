@@ -183,6 +183,7 @@ pub struct RulesSetup {
     pub capture_max_men: u8,
     pub movement: MovementSetup,
     pub dig: DigSetup,
+    pub combat: CombatSetup,
     pub difficulty: DifficultyTable,
 }
 
@@ -211,6 +212,31 @@ pub struct DigSetup {
     pub work_per_m: u32,
     /// The trench deepens in this many equal passes.
     pub passes: u32,
+}
+
+/// Spotting, accuracy, suppression and corpse rules (see `CombatDef`).
+/// Suppression is in points out of 100; the sim keeps it in thousandths.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CombatSetup {
+    pub spot_rays_per_tick: u32,
+    pub spot_period_ticks: u32,
+    pub spot_observers: u32,
+    pub prone_spot_pct: u32,
+    pub trench_spot_pct: u32,
+    pub woods_spot_pct: u32,
+    pub firing_spot_pct: u32,
+    pub reveal_ticks: u32,
+    pub near_miss: Fixed,
+    pub hit_suppression: u32,
+    /// Suppression lost per tick, in thousandths of a point.
+    pub suppression_decay_milli: u32,
+    pub crouch_suppression: u32,
+    pub pin_suppression: u32,
+    pub moving_spread_pct: u32,
+    pub pinned_spread_pct: u32,
+    pub range_spread_pct: u32,
+    pub fire_exposure: Fixed,
+    pub corpse_ticks: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -543,6 +569,29 @@ impl ModDefs {
                     work_per_m: rules.dig.work_per_m,
                     passes: rules.dig.passes,
                 },
+                combat: {
+                    let c = &rules.combat;
+                    CombatSetup {
+                        spot_rays_per_tick: c.spot_rays_per_tick,
+                        spot_period_ticks: ms_to_ticks(c.spot_period_ms, hz).max(1),
+                        spot_observers: c.spot_observers,
+                        prone_spot_pct: c.prone_spot_pct,
+                        trench_spot_pct: c.trench_spot_pct,
+                        woods_spot_pct: c.woods_spot_pct,
+                        firing_spot_pct: c.firing_spot_pct,
+                        reveal_ticks: ms_to_ticks(c.reveal_ms, hz),
+                        near_miss: Fixed::from_cm(c.near_miss_cm),
+                        hit_suppression: c.hit_suppression,
+                        suppression_decay_milli: c.suppression_decay_per_s * 1000 / hz,
+                        crouch_suppression: c.crouch_suppression,
+                        pin_suppression: c.pin_suppression,
+                        moving_spread_pct: c.moving_spread_pct,
+                        pinned_spread_pct: c.pinned_spread_pct,
+                        range_spread_pct: c.range_spread_pct,
+                        fire_exposure: Fixed::from_cm(c.fire_exposure_cm),
+                        corpse_ticks: c.corpse_s * hz,
+                    }
+                },
                 difficulty: DifficultyTable {
                     easy: diff(&rules.difficulty.easy),
                     normal: diff(&rules.difficulty.normal),
@@ -772,6 +821,44 @@ impl MatchSetup {
             "rules.dig.work",
             "out of range",
         );
+        let c = &r.combat;
+        check(
+            (1..=100_000).contains(&c.spot_rays_per_tick)
+                && (1..=16).contains(&c.spot_observers)
+                && c.spot_observers <= c.spot_rays_per_tick
+                && (1..=10_000).contains(&c.spot_period_ticks)
+                && c.reveal_ticks <= 10_000,
+            "rules.combat.spotting",
+            "out of range",
+        );
+        check(
+            [
+                c.prone_spot_pct,
+                c.trench_spot_pct,
+                c.woods_spot_pct,
+                c.firing_spot_pct,
+                c.moving_spread_pct,
+                c.pinned_spread_pct,
+            ]
+            .iter()
+            .all(|v| (1..=1000).contains(v))
+                && c.range_spread_pct <= 1000,
+            "rules.combat.pct",
+            "out of range",
+        );
+        check(
+            (1..=100).contains(&c.crouch_suppression)
+                && (c.crouch_suppression..=100).contains(&c.pin_suppression)
+                && c.hit_suppression <= 100
+                && c.suppression_decay_milli <= 100_000,
+            "rules.combat.suppression",
+            "out of range",
+        );
+        check(
+            fx_in(c.near_miss, 0, 20) && fx_in(c.fire_exposure, 0, 2) && c.corpse_ticks <= 600 * 30,
+            "rules.combat.values",
+            "out of range",
+        );
 
         for w in &self.weapons {
             check(
@@ -789,6 +876,35 @@ impl MatchSetup {
                 "weapons.muzzle_speed",
                 "out of range",
             );
+            check(
+                w.range_min >= Fixed::ZERO && w.range_min < w.range_max,
+                "weapons.range_min",
+                "must be in 0..range_max",
+            );
+            check(
+                (1..=1000).contains(&w.magazine)
+                    && w.damage <= 10_000
+                    && w.suppression <= 100
+                    && w.reload_ticks <= 60 * 30
+                    && w.setup_ticks <= 60 * 30
+                    && w.interval_ticks <= 60 * 30
+                    && w.spread >= Fixed::ZERO
+                    && fx_in(w.spread, 0, 1),
+                "weapons.values",
+                "out of range",
+            );
+            if let Some(he) = &w.he {
+                check(
+                    he.lethal_radius > Fixed::ZERO
+                        && he.lethal_radius <= he.damage_radius
+                        && fx_in(he.damage_radius, 0, 100)
+                        && fx_in(he.suppression_radius, 0, 200)
+                        && fx_in(he.crater_radius, 0, 20)
+                        && fx_in(he.crater_depth, 0, 5),
+                    "weapons.he",
+                    "out of range",
+                );
+            }
         }
         let (nw, nf, nt) = (
             self.weapons.len(),
@@ -815,6 +931,11 @@ impl MatchSetup {
                 s.speed > Fixed::ZERO && fx_in(s.speed, 0, 20),
                 "squad_types.speed",
                 "must be in (0, 20] m/s",
+            );
+            check(
+                (1..=10_000).contains(&s.hp) && fx_in(s.sight, 1, 2000),
+                "squad_types.hp_sight",
+                "out of range",
             );
             check(
                 s.spacing > Fixed::ZERO && fx_in(s.spacing, 0, 20),
