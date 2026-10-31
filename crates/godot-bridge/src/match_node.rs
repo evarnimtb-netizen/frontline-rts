@@ -32,7 +32,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use frontline_content::{MatchSetup, SquadRole, WeaponClass};
+use frontline_content::{ItemKind, MatchSetup, SquadRole, WeaponClass};
 use frontline_sim::game::MAX_CALL_IN_QUEUE;
 use frontline_sim::{CommandKind, Fx, NavPhase, OrderKind, Outcome, SquadId, World};
 use godot::classes::base_material_3d::{Flags as MatFlags, ShadingMode};
@@ -47,8 +47,8 @@ use godot::prelude::*;
 
 use crate::gfx::{Layer, build_mesh, soldier_material};
 use crate::intents::{
-    GROUP_SPACING_M, MIN_DIG_PIECE_M, call_in_type, dig_command, role_name, sim_to_fx,
-    split_polyline, spread_targets,
+    GROUP_SPACING_M, MIN_DIG_PIECE_M, call_in_type, dig_command, item_name, role_name, sim_to_fx,
+    split_polyline, spread_targets, stance_order_name, unit_command, unit_set,
 };
 use crate::match_events::{EffectCue, EventTracker, UiEvent, effect_cues};
 use crate::match_frame::{MatchFrame, SquadView, TickEvents};
@@ -457,6 +457,10 @@ struct MatchRuntime {
     phases: Vec<[f32; 2]>,
     /// Interpolated leader position (Godot) per drawn squad id.
     anchors: BTreeMap<u32, [f32; 3]>,
+    /// Interpolated position (Godot, feet) per soldier of the drawn frame,
+    /// ascending id: what the state's `soldiers[].pos` reports, so picking
+    /// matches the picture.
+    drawn: Vec<(u32, [f32; 3])>,
     terrain: TerrainStore,
     scenario: Rid,
     terrain_mat: Gd<Material>,
@@ -467,6 +471,9 @@ struct MatchRuntime {
     soldier_casters: Layer,
     tracer_layer: Layer,
     shell_layer: Layer,
+    /// Pale motion trails behind thrown items (their bodies go in
+    /// `shell_layer`).
+    thrown_layer: Layer,
     flash_layer: Layer,
     flashes: Vec<Flash>,
     /// Faction colour index per player slot (shader team tint).
@@ -588,6 +595,21 @@ impl MatchRuntime {
             aabb,
         );
         resources.push(shell.upcast());
+        let mut trail_mat = ShaderMaterial::new_gd();
+        trail_mat.set_shader(&tracer_sh);
+        trail_mat.set_shader_parameter("color", &Color::from_rgb(0.72, 0.7, 0.62).to_variant());
+        trail_mat.set_shader_parameter("energy", &0.9f32.to_variant());
+        let trail = build_mesh(&meshgen::tracer_mesh(), Some(trail_mat.upcast()));
+        let thrown_layer = Layer::new(
+            &mut rs,
+            trail.get_rid(),
+            scenario,
+            16,
+            frontline_sim::MAX_THROWN.max(16),
+            ShadowCastingSetting::OFF,
+            aabb,
+        );
+        resources.push(trail.upcast());
 
         let team_tint = setup.players.iter().map(|p| p.faction as f32).collect();
         let per_side = terrain.chunks_per_side();
@@ -624,6 +646,7 @@ impl MatchRuntime {
             snapped: Vec::new(),
             phases: Vec::new(),
             anchors: BTreeMap::new(),
+            drawn: Vec::new(),
             terrain,
             scenario,
             terrain_mat,
@@ -634,6 +657,7 @@ impl MatchRuntime {
             soldier_casters,
             tracer_layer,
             shell_layer,
+            thrown_layer,
             flash_layer,
             flashes: Vec::new(),
             team_tint,
@@ -807,10 +831,12 @@ impl MatchRuntime {
             start,
             phases,
             anchors,
+            drawn,
             soldier_layers,
             soldier_casters,
             tracer_layer,
             shell_layer,
+            thrown_layer,
             flash_layer,
             flashes,
             team_tint,
@@ -823,6 +849,7 @@ impl MatchRuntime {
             ..
         } = self;
         let (half, period, hz) = (*half, *period, *hz);
+        let a = &hist[ai];
         let b = &hist[bi];
         let cam = cull.cam;
         let (lod0_2, lod1_2, draw_2) = (lod0 * lod0, lod1 * lod1, draw * draw);
@@ -838,6 +865,7 @@ impl MatchRuntime {
         }
         soldier_casters.begin();
         anchors.clear();
+        drawn.clear();
         let mut leaders: BTreeMap<u32, u32> = BTreeMap::new();
         for s in &b.squads {
             leaders.insert(s.leader, s.id);
@@ -884,15 +912,22 @@ impl MatchRuntime {
             if let Some(&sq) = leaders.get(&id) {
                 anchors.insert(sq, gp);
             }
+            drawn.push((id, gp));
             if !b.visible[i] {
                 continue;
             }
+            // The sim's stance already follows stance orders (S1b), so the
+            // pose clips show them. There is no crouch-walk or crawl clip:
+            // a crouched man walking keeps half the crouch pose, and a prone
+            // man crawling runs the prone loop faster.
             let stance = b.stance[i].min(2);
             let spd = if stance == 2 { 0.0 } else { b.speeds[i] };
+            let crawl = if stance == 2 { b.speeds[i] * 2.0 } else { 0.0 };
             let ph = &mut phases[id as usize];
             ph[0] = (ph[0] + dt_anim * spd / rig::STRIDE_M).fract();
-            ph[1] = (ph[1] + dt_anim * 0.25).fract();
-            let walk = ((spd - 0.25) / 0.75).clamp(0.0, 1.0);
+            ph[1] = (ph[1] + dt_anim * (0.25 + crawl)).fract();
+            let walk_max = if stance == 1 { 0.5 } else { 1.0 };
+            let walk = ((spd - 0.25) / 0.75).clamp(0.0, walk_max);
             let custom = [
                 walk,
                 ph[0],
@@ -986,6 +1021,46 @@ impl MatchRuntime {
             write_streak_instance(slot, head, dir, len, width, [1.0, 0.0, 0.0, 0.0]);
         }
 
+        // Thrown items: a small dark body (in the shell layer) and, while
+        // in the air, a pale trail along the motion since the last frame.
+        thrown_layer.begin();
+        for t in b.thrown.iter().filter(|t| t.visible) {
+            let prev = a
+                .thrown
+                .iter()
+                .find(|p| p.id == t.id)
+                .map_or(t.pos, |p| p.pos);
+            let p = [
+                lerp(prev[0], t.pos[0], alpha),
+                lerp(prev[1], t.pos[1], alpha),
+                lerp(prev[2], t.pos[2], alpha),
+            ];
+            let head = sim_to_godot(p, half);
+            if dist2(head) > draw_2 || !frustum.sphere_visible(head, 3.0) {
+                continue;
+            }
+            let lift = if t.landed { 0.08 } else { 0.0 };
+            let body = [head[0], head[1] + lift, head[2]];
+            if let Some(slot) = shell_layer.push(body, 0.3) {
+                write_streak_instance(slot, body, [1.0, 0.0, 0.0], 0.24, 0.13, [0.0; 4]);
+            }
+            let d = sim_to_godot(
+                [t.pos[0] - prev[0], t.pos[1] - prev[1], t.pos[2] - prev[2]],
+                0.0,
+            );
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            if t.landed || len < 0.05 {
+                continue;
+            }
+            let dir = [d[0] / len, d[1] / len, d[2] / len];
+            // One tick of flight, at least 1.5 m, so a lob reads at RTS
+            // camera heights.
+            let trail = len.clamp(1.5, 6.0);
+            if let Some(slot) = thrown_layer.push(head, trail) {
+                write_streak_instance(slot, head, dir, trail, 0.1, [1.0, 0.0, 0.0, 0.0]);
+            }
+        }
+
         // Muzzle flashes for this frame's visible shots.
         let now = *clock;
         for ev in events_in.iter() {
@@ -1042,6 +1117,7 @@ impl MatchRuntime {
         soldier_casters.commit(&mut rs);
         tracer_layer.commit(&mut rs);
         shell_layer.commit(&mut rs);
+        thrown_layer.commit(&mut rs);
         flash_layer.commit(&mut rs);
 
         // Dig cues: about once a second per digging squad the player sees.
@@ -1081,6 +1157,7 @@ impl MatchRuntime {
         self.soldier_casters.free(&mut rs);
         self.tracer_layer.free(&mut rs);
         self.shell_layer.free(&mut rs);
+        self.thrown_layer.free(&mut rs);
         self.flash_layer.free(&mut rs);
         for c in self.chunks.iter_mut().flatten() {
             rs.free_rid(c.inst);
@@ -1114,6 +1191,21 @@ impl MatchRuntime {
         if let Some(t) = &self.minimap {
             map.set("minimap", &t.to_variant());
         }
+        // Throw ranges: the local faction's item of each kind (the first
+        // squad type in the roster that carries one).
+        let mut throw_range = VarDictionary::new();
+        for kind in ItemKind::ALL {
+            let item = setup.factions[local_faction]
+                .roster
+                .iter()
+                .find_map(|&t| setup.squad_types[t as usize].kit(&setup.items, kind));
+            if let Some((_, it)) = item {
+                throw_range.set(
+                    item_name(kind),
+                    Vector2::new(fx(it.range_min), fx(it.range_max)),
+                );
+            }
+        }
         let rules_d = vdict! {
             "pop_cap" => rules.pop_cap as i64,
             "tickets_max" => rules.tickets as i64,
@@ -1121,6 +1213,7 @@ impl MatchRuntime {
             "mortar_min_m" => mortar.map_or(60.0, |w| fx(w.range_min)),
             "mortar_max_m" => mortar.map_or(600.0, |w| fx(w.range_max)),
             "capture_radius_m" => fx(rules.capture_radius),
+            "throw_range_m" => &throw_range,
         };
 
         let mut players = VarArray::new();
@@ -1172,9 +1265,101 @@ impl MatchRuntime {
             );
         }
 
+        // Soldiers the local player sees (own: all), ascending id; each
+        // squad lists the ids it has among them.
+        let mut soldiers = VarArray::new();
+        let mut units: BTreeMap<u32, PackedInt32Array> = BTreeMap::new();
+        let mut detached = f.units.iter().peekable();
+        for (i, &id) in f.ids.iter().enumerate() {
+            if !f.visible[i] {
+                continue;
+            }
+            let owner = f.owner[i];
+            let sq = f.squad[i];
+            units.entry(sq).or_default().push(id as i32);
+            let pos = match self.drawn.binary_search_by_key(&id, |d| d.0) {
+                Ok(k) => self.drawn[k].1,
+                Err(_) => sim_to_godot(
+                    [f.soldiers[i][0], f.soldiers[i][1], f.soldiers[i][2]],
+                    self.half,
+                ),
+            };
+            let mut d = vdict! {
+                "id" => id as i64,
+                "squad" => sq as i64,
+                "owner" => owner as i64,
+                "slot" => f.slot[i] as i64,
+                "pos" => Vector3::new(pos[0], pos[1], pos[2]),
+                "hp" => f.hp[i] as f32,
+                "stance" => match f.stance[i] {
+                    0 => "stand",
+                    1 => "crouch",
+                    _ => "prone",
+                },
+                "pinned" => f.pinned[i],
+                "suppression" => f.suppression[i] as f32 / 100.0,
+            };
+            if owner == self.local {
+                d.set("stance_override", stance_order_name(f.stance_order[i]));
+                d.set("detached", f.detached[i]);
+                d.set("items", &items_dict(f.items[i].map(u16::from)));
+                while detached.next_if(|u| u.id < id).is_some() {}
+                if f.throwing[i] {
+                    d.set("order", "throw");
+                }
+                if let Some(u) = detached.next_if(|u| u.id == id) {
+                    let (order, target) = match u.order {
+                        OrderKind::Move => ("move", true),
+                        OrderKind::AttackMove => ("attack_move", true),
+                        OrderKind::Retreat => ("retreat", true),
+                        OrderKind::Dig => ("dig", true),
+                        _ => ("hold", false),
+                    };
+                    if !f.throwing[i] {
+                        d.set("order", order);
+                    }
+                    if target {
+                        d.set("target", self.ground(u.target));
+                    }
+                }
+            }
+            soldiers.push(&d.to_variant());
+        }
+
         let mut squads = VarArray::new();
         for s in f.squads.iter().filter(|s| s.visible) {
-            squads.push(&self.squad_dict(s).to_variant());
+            let mut d = self.squad_dict(s);
+            d.set("units", &units.remove(&s.id).unwrap_or_default());
+            if s.owner == self.local {
+                d.set("items", &items_dict(s.items));
+            }
+            squads.push(&d.to_variant());
+        }
+
+        let mut smokes = VarArray::new();
+        for c in f.smoke.iter().filter(|c| c.visible) {
+            smokes.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "pos" => self.godot(c.pos),
+                    "radius" => c.radius,
+                    "density" => c.density,
+                }
+                .to_variant(),
+            );
+        }
+        let mut thrown = VarArray::new();
+        for t in f.thrown.iter().filter(|t| t.visible) {
+            thrown.push(
+                &vdict! {
+                    "id" => t.id as i64,
+                    "kind" => item_name(t.kind),
+                    "owner" => t.owner as i64,
+                    "pos" => self.godot(t.pos),
+                    "landed" => t.landed,
+                }
+                .to_variant(),
+            );
         }
 
         let fac = &setup.factions[local_faction];
@@ -1230,7 +1415,9 @@ impl MatchRuntime {
                 "kind" => c.kind,
                 "pos" => Vector3::new(g[0], g[1], g[2]),
             };
-            if !c.weapon.is_empty() {
+            if c.kind == "explosion" {
+                d.set("size", c.weapon);
+            } else if !c.weapon.is_empty() {
                 d.set("weapon", c.weapon);
             }
             effects.push(&d.to_variant());
@@ -1285,6 +1472,9 @@ impl MatchRuntime {
             "players" => &players,
             "points" => &points,
             "squads" => &squads,
+            "soldiers" => &soldiers,
+            "smokes" => &smokes,
+            "thrown" => &thrown,
             "callin" => &vdict! {
                 "catalog" => &catalog,
                 "queue" => &queue,
@@ -1503,6 +1693,46 @@ impl MatchRuntime {
                     }
                 }
             }
+            "regroup" => out.extend(own.iter().map(|s| CommandKind::Regroup {
+                squad: SquadId(s.id),
+            })),
+            "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
+            | "set_stance" | "throw" | "throw_each" => {
+                let raw = data
+                    .get("units")
+                    .and_then(|v| v.try_to::<PackedInt32Array>().ok())
+                    .unwrap_or_default();
+                // The local player's living men, as the newest frame knows them.
+                let f = self.newest();
+                let units = unit_set(raw.as_slice(), |id| {
+                    f.ids
+                        .binary_search(&id)
+                        .is_ok_and(|i| f.owner[i] == self.local)
+                });
+                if units.is_empty() {
+                    return;
+                }
+                let line: Vec<[f32; 2]> = data
+                    .get("polyline")
+                    .and_then(|v| v.try_to::<PackedVector3Array>().ok())
+                    .map(|l| l.as_slice().iter().map(|v| to_sim(*v, self.half)).collect())
+                    .unwrap_or_default();
+                let word = data
+                    .get(if kind == "set_stance" {
+                        "stance"
+                    } else {
+                        "item"
+                    })
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let t = target.map(|t| to_sim(t, self.half));
+                match unit_command(kind, units, t, &line, &word) {
+                    Some(c) => out.push(c),
+                    None => {
+                        godot_warn!("FrontlineMatch: incomplete {kind} intent");
+                    }
+                }
+            }
             "surrender" => out.push(CommandKind::Surrender),
             "pause" => {
                 let p = data
@@ -1520,6 +1750,15 @@ impl MatchRuntime {
             self.sim.send(c);
         }
     }
+}
+
+/// `{frag, smoke, satchel}` counts.
+fn items_dict(n: [u16; frontline_sim::ITEM_KINDS]) -> VarDictionary {
+    let mut d = VarDictionary::new();
+    for kind in ItemKind::ALL {
+        d.set(item_name(kind), n[kind.index()] as i64);
+    }
+    d
 }
 
 /// Shaded top-down map image (north up), woods and contour lines, for the

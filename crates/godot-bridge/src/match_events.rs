@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use frontline_content::{MatchSetup, WeaponClass};
-use frontline_sim::{OrderKind, Outcome};
+use frontline_sim::{BlastKind, OrderKind, Outcome};
 
 use crate::match_frame::{MatchFrame, TickEvents};
 
@@ -197,7 +197,8 @@ impl EventTracker {
 pub struct EffectCue {
     /// `shot`, `mortar_launch`, `explosion` or `dig`.
     pub kind: &'static str,
-    /// Shots: `rifle`, `mg` or `smg`.
+    /// Shots: `rifle`, `mg` or `smg`. Explosions: the blast size
+    /// (`mortar`, `frag` or `satchel`; the state's `size`).
     pub weapon: &'static str,
     /// Sim axes.
     pub pos: [f32; 3],
@@ -236,7 +237,11 @@ pub fn effect_cues(batch: &[TickEvents], setup: &MatchSetup, out: &mut Vec<Effec
         for e in &ev.explosions {
             out.push(EffectCue {
                 kind: "explosion",
-                weapon: "",
+                weapon: match e.kind {
+                    BlastKind::Shell => "mortar",
+                    BlastKind::Frag => "frag",
+                    BlastKind::Satchel => "satchel",
+                },
                 pos: e.pos,
             });
         }

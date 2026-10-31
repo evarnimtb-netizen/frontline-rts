@@ -5,10 +5,14 @@
 //! quantised to millimetres once, here, and the resulting commands are what
 //! the sim (and a replay or a lockstep peer) sees, so the conversion never
 //! has to be bit-identical across machines.
+//!
+//! S1b soldier-level intents carry `units` (soldier ids). They are filtered
+//! to the local player's living men, sorted, deduplicated and capped at
+//! [`MAX_UNITS`] here ([`unit_set`]); the sim validates them again.
 
-use frontline_content::{MatchSetup, SquadRole};
+use frontline_content::{ItemKind, MatchSetup, SquadRole};
 use frontline_sim::game::MAX_DIG_POINTS;
-use frontline_sim::{CommandKind, Fx, FxVec2, SquadId};
+use frontline_sim::{CommandKind, Fx, FxVec2, MAX_UNITS, SimId, SquadId, StanceOrder};
 
 /// Lateral spacing (m) between squads sent to one point together.
 pub const GROUP_SPACING_M: f32 = 18.0;
@@ -140,6 +144,105 @@ pub fn dig_command(squad: u32, line: &[[f32; 2]]) -> CommandKind {
     }
 }
 
+/// The soldier set of a `*_units`, `set_stance` or `throw` intent: ids that
+/// pass `own` (the local player's living men), ascending, without
+/// duplicates, at most [`MAX_UNITS`]. Empty means the intent is dropped.
+pub fn unit_set(raw: &[i32], own: impl Fn(u32) -> bool) -> Vec<SimId> {
+    let mut ids: Vec<u32> = raw
+        .iter()
+        .filter(|&&i| i >= 0)
+        .map(|&i| i as u32)
+        .filter(|&i| own(i))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.truncate(MAX_UNITS);
+    ids.into_iter().map(SimId).collect()
+}
+
+/// `set_stance` names (`match_state.md`).
+pub fn stance_order(name: &str) -> Option<StanceOrder> {
+    Some(match name {
+        "auto" => StanceOrder::Auto,
+        "stand" => StanceOrder::Stand,
+        "crouch" => StanceOrder::Crouch,
+        "prone" => StanceOrder::Prone,
+        _ => return None,
+    })
+}
+
+pub fn stance_order_name(s: u8) -> &'static str {
+    match s {
+        1 => "stand",
+        2 => "crouch",
+        3 => "prone",
+        _ => "auto",
+    }
+}
+
+/// Throw intent item names.
+pub fn item_kind(name: &str) -> Option<ItemKind> {
+    Some(match name {
+        "frag" => ItemKind::Frag,
+        "smoke" => ItemKind::Smoke,
+        "satchel" => ItemKind::Satchel,
+        _ => return None,
+    })
+}
+
+pub fn item_name(k: ItemKind) -> &'static str {
+    match k {
+        ItemKind::Frag => "frag",
+        ItemKind::Smoke => "smoke",
+        ItemKind::Satchel => "satchel",
+    }
+}
+
+/// The Command for a soldier-level intent `kind` on `units` (already
+/// filtered by [`unit_set`], non-empty). `target` and `line` are sim xy;
+/// they are quantised here, once. `None` when the intent lacks what it
+/// needs (a target, a line of two points, a known stance or item).
+pub fn unit_command(
+    kind: &str,
+    units: Vec<SimId>,
+    target: Option<[f32; 2]>,
+    line: &[[f32; 2]],
+    word: &str,
+) -> Option<CommandKind> {
+    let t = || target.map(sim_to_fx);
+    Some(match kind {
+        "move_units" => CommandKind::MoveUnits {
+            units,
+            target: t()?,
+        },
+        "attack_move_units" => CommandKind::AttackMoveUnits {
+            units,
+            target: t()?,
+        },
+        "stop_units" => CommandKind::StopUnits { units },
+        "retreat_units" => CommandKind::RetreatUnits { units },
+        "dig_units" if line.len() >= 2 => CommandKind::DigUnits {
+            units,
+            line: cap_points(line).into_iter().map(sim_to_fx).collect(),
+        },
+        "set_stance" => CommandKind::SetStance {
+            units,
+            stance: stance_order(word)?,
+        },
+        "throw" => CommandKind::Throw {
+            units,
+            item: item_kind(word)?,
+            target: t()?,
+        },
+        "throw_each" => CommandKind::ThrowEach {
+            units,
+            item: item_kind(word)?,
+            target: t()?,
+        },
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +288,80 @@ mod tests {
         let two = split_polyline(&[[0.0, 0.0], [10.0, 0.0]], 4, 4.0);
         assert_eq!(two.len(), 2);
         assert!((polyline_len(&two[1]) - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn unit_sets_are_own_sorted_unique_and_capped() {
+        let own = |i: u32| i.is_multiple_of(2);
+        let ids = unit_set(&[8, 2, -1, 3, 2, 6], own);
+        assert_eq!(ids, vec![SimId(2), SimId(6), SimId(8)]);
+        assert!(unit_set(&[1, 3], own).is_empty());
+        let many: Vec<i32> = (0..400).collect();
+        let capped = unit_set(&many, |_| true);
+        assert_eq!(capped.len(), MAX_UNITS);
+        assert_eq!(capped.last(), Some(&SimId(MAX_UNITS as u32 - 1)));
+    }
+
+    #[test]
+    fn unit_intents_become_commands() {
+        let u = || vec![SimId(4), SimId(9)];
+        let t = Some([100.0006, 20.0]);
+        match unit_command("move_units", u(), t, &[], "") {
+            Some(CommandKind::MoveUnits { units, target }) => {
+                assert_eq!(units, u());
+                assert_eq!(target, sim_to_fx([100.0006, 20.0]));
+                assert_eq!(target.x, Fx::from_milli(100_001));
+            }
+            c => panic!("{c:?}"),
+        }
+        assert!(matches!(
+            unit_command("attack_move_units", u(), t, &[], ""),
+            Some(CommandKind::AttackMoveUnits { .. })
+        ));
+        assert!(unit_command("move_units", u(), None, &[], "").is_none());
+        assert!(matches!(
+            unit_command("stop_units", u(), None, &[], ""),
+            Some(CommandKind::StopUnits { .. })
+        ));
+        assert!(matches!(
+            unit_command("retreat_units", u(), None, &[], ""),
+            Some(CommandKind::RetreatUnits { .. })
+        ));
+        let line: Vec<[f32; 2]> = (0..40).map(|i| [i as f32, 0.0]).collect();
+        match unit_command("dig_units", u(), None, &line, "") {
+            Some(CommandKind::DigUnits { line, .. }) => assert_eq!(line.len(), MAX_DIG_POINTS),
+            c => panic!("{c:?}"),
+        }
+        assert!(unit_command("dig_units", u(), None, &line[..1], "").is_none());
+        assert!(matches!(
+            unit_command("set_stance", u(), None, &[], "prone"),
+            Some(CommandKind::SetStance {
+                stance: StanceOrder::Prone,
+                ..
+            })
+        ));
+        assert!(unit_command("set_stance", u(), None, &[], "lie").is_none());
+        assert!(matches!(
+            unit_command("throw", u(), t, &[], "smoke"),
+            Some(CommandKind::Throw {
+                item: ItemKind::Smoke,
+                ..
+            })
+        ));
+        assert!(matches!(
+            unit_command("throw_each", u(), t, &[], "frag"),
+            Some(CommandKind::ThrowEach {
+                item: ItemKind::Frag,
+                ..
+            })
+        ));
+        assert!(unit_command("throw", u(), t, &[], "rock").is_none());
+        for s in ["auto", "stand", "crouch", "prone"] {
+            assert_eq!(stance_order_name(stance_order(s).unwrap() as u8), s);
+        }
+        for k in ItemKind::ALL {
+            assert_eq!(item_kind(item_name(k)), Some(k));
+        }
     }
 
     #[test]

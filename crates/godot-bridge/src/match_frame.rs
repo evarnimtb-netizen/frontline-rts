@@ -15,16 +15,27 @@
 //! Fog of war is applied here, in Rust (§5.12.3): every soldier, squad,
 //! round and shot carries whether the local player sees it, and the
 //! presenter draws, lists and plays only those (own ones always).
+//!
+//! S1b adds per soldier the state the soldier-level HUD needs (hit points,
+//! suppression, stance order, detached, items, a stable formation slot),
+//! detached men's own orders, thrown items and smoke clouds. Thrown items
+//! and clouds have no spotting of their own: the local player sees his own,
+//! items whose thrower he sees or that land near his men, and clouds
+//! within sight of one of his men.
 
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use frontline_content::{MatchSetup, SquadRole, WeaponClass};
+use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup, SquadRole, WeaponClass};
 use frontline_sim::projectile::SUBSTEP_HZ;
 use frontline_sim::{
     CorpseSnapshot, EntityKind, ExplosionSnapshot, NavPhase, Order, OrderKind, Outcome,
     PlayerSnapshot, PointSnapshot, World, tile_heights_f32,
 };
+
+/// Enemy thrown items landing or flying this close (m) to one of the local
+/// player's men are shown even when he does not see the thrower.
+pub const THROWN_NEAR_M: f32 = 40.0;
 
 /// A squad as the presenter needs it (cards, markers, overlays, events).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -33,9 +44,12 @@ pub struct SquadView {
     pub type_idx: u16,
     pub owner: u8,
     pub men: u8,
+    /// Members following their own unit order (S1b).
+    pub detached: u8,
     pub order: OrderKind,
     pub phase: NavPhase,
-    /// Sim id of the leader (`members[0]`), for the interpolated anchor.
+    /// Sim id of the formation leader (`Squad::lead`), for the
+    /// interpolated anchor.
     pub leader: u32,
     /// Leader position (sim axes) and where the squad is headed.
     pub anchor: [f32; 3],
@@ -56,6 +70,40 @@ pub struct SquadView {
     pub target: Option<[f32; 2]>,
     /// Barrage rounds left.
     pub rounds: u16,
+    /// Items the men carry, by [`ItemKind::index`].
+    pub items: [u16; ITEM_KINDS],
+}
+
+/// A detached own soldier's order (S1b), for markers and the HUD.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct UnitView {
+    pub id: u32,
+    pub order: OrderKind,
+    /// Move target, own base (retreat), middle of the trench line (dig),
+    /// his spot (idle). Sim xy.
+    pub target: [f32; 2],
+}
+
+/// A thrown item in the air or lying fused.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct ThrownView {
+    pub id: u32,
+    pub kind: ItemKind,
+    pub owner: u8,
+    pub pos: [f32; 3],
+    pub landed: bool,
+    pub visible: bool,
+}
+
+/// A smoke cloud (a cylinder standing at `pos`, as tall as it is wide).
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct SmokeView {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub radius: f32,
+    /// 1 while it blocks every sight line, falling to 0 as it thins.
+    pub density: f32,
+    pub visible: bool,
 }
 
 /// A round or shell in flight.
@@ -100,6 +148,23 @@ pub struct MatchFrame {
     pub stance: Vec<u8>,
     /// Seen by the local player (own soldiers: always).
     pub visible: Vec<bool>,
+    /// Per soldier (S1b): hit points, suppression (0..=100), pinned.
+    pub hp: Vec<u16>,
+    pub suppression: Vec<u8>,
+    pub pinned: Vec<bool>,
+    /// Per soldier (S1b): `StanceOrder as u8` (0 auto, 1 stand, 2 crouch,
+    /// 3 prone), detached, items by [`ItemKind::index`], winding up a
+    /// throw, and his formation slot (stable for his life; see
+    /// [`FrameCtx`]).
+    pub stance_order: Vec<u8>,
+    pub detached: Vec<bool>,
+    pub items: Vec<[u8; ITEM_KINDS]>,
+    pub throwing: Vec<bool>,
+    pub slot: Vec<u8>,
+    /// The local player's detached men, ascending id.
+    pub units: Vec<UnitView>,
+    pub thrown: Vec<ThrownView>,
+    pub smoke: Vec<SmokeView>,
     pub corpses: Vec<CorpseSnapshot>,
     /// Per corpse: the local player sees the body (own: always).
     pub corpse_visible: Vec<bool>,
@@ -127,6 +192,17 @@ impl MatchFrame {
             speeds: Vec::new(),
             stance: Vec::new(),
             visible: Vec::new(),
+            hp: Vec::new(),
+            suppression: Vec::new(),
+            pinned: Vec::new(),
+            stance_order: Vec::new(),
+            detached: Vec::new(),
+            items: Vec::new(),
+            throwing: Vec::new(),
+            slot: Vec::new(),
+            units: Vec::new(),
+            thrown: Vec::new(),
+            smoke: Vec::new(),
             corpses: Vec::new(),
             corpse_visible: Vec::new(),
             rounds: Vec::new(),
@@ -157,6 +233,26 @@ impl MatchFrame {
         self.visible.clear();
         self.visible
             .extend(snap.soldier_visible.iter().map(|v| v & bit != 0));
+        self.hp.clone_from(&snap.soldier_hp);
+        self.suppression.clone_from(&snap.soldier_suppression);
+        self.pinned.clone_from(&snap.soldier_pinned);
+        self.stance_order.clear();
+        self.stance_order
+            .extend(snap.soldier_stance_order.iter().map(|s| *s as u8));
+        self.detached.clone_from(&snap.soldier_detached);
+        self.items.clone_from(&snap.soldier_items);
+        self.throwing.clone_from(&snap.soldier_throwing);
+        self.units.clear();
+        self.units.extend(
+            snap.units
+                .iter()
+                .filter(|u| u.owner == local)
+                .map(|u| UnitView {
+                    id: u.id.0,
+                    order: u.order,
+                    target: u.target,
+                }),
+        );
         let ents = world.entities();
         let vel = ents.velocity();
         self.speeds.clear();
@@ -192,18 +288,65 @@ impl MatchFrame {
             });
         }
 
+        // Own men's positions (sim xy) for the thrown-item and smoke fog.
+        let own: Vec<[f32; 2]> = self
+            .soldiers
+            .iter()
+            .zip(&self.owner)
+            .filter(|(_, o)| **o == local)
+            .map(|(p, _)| [p[0], p[1]])
+            .collect();
+        let near = |p: [f32; 3], r: f32| {
+            let r2 = r * r;
+            own.iter().any(|o| {
+                let (dx, dy) = (o[0] - p[0], o[1] - p[1]);
+                dx * dx + dy * dy <= r2
+            })
+        };
+        self.thrown.clear();
+        if let Some(game) = world.game() {
+            for (t, ts) in game.thrown().iter().zip(&snap.thrown) {
+                self.thrown.push(ThrownView {
+                    id: ts.id,
+                    kind: ts.kind,
+                    owner: ts.owner,
+                    pos: ts.pos,
+                    landed: ts.landed,
+                    visible: ts.owner == local
+                        || seen_by(t.thrower.0)
+                        || near(ts.pos, THROWN_NEAR_M),
+                });
+            }
+        }
+        self.smoke.clear();
+        for c in &snap.smoke {
+            self.smoke.push(SmokeView {
+                id: c.id,
+                pos: c.pos,
+                radius: c.radius,
+                density: c.density,
+                visible: near(c.pos, ctx.sight_m + c.radius),
+            });
+        }
+
         self.squads.clear();
         self.players.clone_from(&snap.players);
         self.points.clone_from(&snap.points);
         self.outcome = snap.outcome;
+        self.slot.clear();
         let Some(game) = world.game() else {
+            self.slot.resize(self.ids.len(), 0);
             return;
         };
         let setup = game.setup();
+        ctx.slots_prev.clear();
+        std::mem::swap(&mut ctx.slots, &mut ctx.slots_prev);
         for (sid, sq) in game.squads() {
-            let Some(&lead) = sq.members.first() else {
+            if sq.members.is_empty() {
                 continue;
-            };
+            }
+            let lead = sq.lead(ents);
+            assign_slots(&sq.members, &ctx.slots_prev, &mut ctx.slots);
             let ty = &setup.squad_types[sq.type_idx as usize];
             let mut v = SquadView {
                 id: sid.0,
@@ -220,6 +363,10 @@ impl MatchFrame {
             };
             for m in &sq.members {
                 let c = &combat[m.index()];
+                v.detached += ents.unit()[m.index()].detached as u8;
+                for (n, k) in v.items.iter_mut().zip(ents.kit()[m.index()].items) {
+                    *n += k as u16;
+                }
                 v.hp_sum += c.hp as u32;
                 v.suppression_sum += (c.suppression / 1000).min(100);
                 v.pinned += c.pinned as u8;
@@ -245,6 +392,11 @@ impl MatchFrame {
             }
             self.squads.push(v);
         }
+        self.slot.extend(
+            self.ids
+                .iter()
+                .map(|id| ctx.slots.get(id).copied().unwrap_or(0)),
+        );
         ctx.track(&self.squads, setup.players.len());
         self.extra.clone_from(&ctx.extra);
     }
@@ -258,11 +410,43 @@ pub struct WeaponInfo {
     pub ttl0: f32,
 }
 
+/// Gives each member of a squad a formation slot that stays his for life:
+/// men already known keep theirs (from `prev`), newcomers take the lowest
+/// free slots in member order. A fresh squad's slots follow `members`.
+pub fn assign_slots(
+    members: &[frontline_sim::SimId],
+    prev: &BTreeMap<u32, u8>,
+    out: &mut BTreeMap<u32, u8>,
+) {
+    let mut used = 0u128;
+    let mut fresh = Vec::new();
+    for m in members {
+        match prev.get(&m.0) {
+            Some(&s) if s < 128 && used & (1 << s) == 0 => {
+                used |= 1 << s;
+                out.insert(m.0, s);
+            }
+            _ => fresh.push(m.0),
+        }
+    }
+    for id in fresh {
+        let s = (!used).trailing_zeros().min(127) as u8;
+        used |= 1 << s;
+        out.insert(id, s);
+    }
+}
+
 /// Sim-thread state carried across ticks while filling frames.
 #[derive(Clone, Debug, Default)]
 pub struct FrameCtx {
     pub local: u8,
     pub weapons: Vec<WeaponInfo>,
+    /// Longest sight range (m) of the local faction's squad types (smoke
+    /// cloud fog).
+    pub sight_m: f32,
+    /// Soldier id → formation slot, this tick and the last.
+    slots: BTreeMap<u32, u8>,
+    slots_prev: BTreeMap<u32, u8>,
     /// Squads seen so far: owner, dig line length (m) and progress.
     squads: BTreeMap<u32, (u8, f32, u8)>,
     started: bool,
@@ -283,9 +467,17 @@ impl FrameCtx {
                 }
             })
             .collect();
+        let faction = setup.players.get(local as usize).map(|p| p.faction);
+        let sight_m = setup
+            .squad_types
+            .iter()
+            .filter(|t| Some(t.faction) == faction)
+            .map(|t| frontline_sim::Fx::from(t.sight).to_f32())
+            .fold(150.0f32, f32::max);
         FrameCtx {
             local,
             weapons,
+            sight_m,
             ..FrameCtx::default()
         }
     }
@@ -569,6 +761,135 @@ mod tests {
             TickEvents::all_tiles(&w).len(),
             w.terrain().detail().tiles().len()
         );
+    }
+
+    #[test]
+    fn frame_carries_soldier_orders_items_and_throws() {
+        use frontline_sim::{ItemKind, SimId, StanceOrder};
+        let mut w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        for v in [
+            f.hp.len(),
+            f.suppression.len(),
+            f.pinned.len(),
+            f.stance_order.len(),
+            f.detached.len(),
+            f.items.len(),
+            f.throwing.len(),
+            f.slot.len(),
+        ] {
+            assert_eq!(v, f.ids.len());
+        }
+        // A rifle squad: slots 0..n in member order; the leader carries
+        // the most items.
+        let (sid, sq) = w
+            .game()
+            .unwrap()
+            .squads()
+            .iter()
+            .find(|(_, s)| {
+                s.owner.0 == 0 && setup.squad_types[s.type_idx as usize].role == SquadRole::Rifle
+            })
+            .map(|(id, s)| (*id, s.clone()))
+            .unwrap();
+        let idx = |f: &MatchFrame, id: SimId| f.ids.binary_search(&id.0).unwrap();
+        for (k, m) in sq.members.iter().enumerate() {
+            assert_eq!(f.slot[idx(&f, *m)] as usize, k);
+        }
+        let v = f.squads.iter().find(|s| s.id == sid.0).unwrap();
+        let frags: u16 = sq
+            .members
+            .iter()
+            .map(|m| f.items[idx(&f, *m)][ItemKind::Frag.index()] as u16)
+            .sum();
+        assert!(frags > 0);
+        assert_eq!(v.items[ItemKind::Frag.index()], frags);
+
+        // One man sent ahead and set prone; another throws smoke.
+        let (lone, thrower) = (sq.members[3], sq.members[0]);
+        let p = w.entities().transform()[lone.index()].pos;
+        let ahead = FxVec2::new(p.x, p.y) + FxVec2::from_int(0, 40);
+        let cmd = |seq, kind| Command {
+            player: PlayerId(0),
+            seq,
+            kind,
+        };
+        w.step(&[
+            cmd(
+                0,
+                CommandKind::MoveUnits {
+                    units: vec![lone],
+                    target: ahead,
+                },
+            ),
+            cmd(
+                1,
+                CommandKind::SetStance {
+                    units: vec![lone],
+                    stance: StanceOrder::Prone,
+                },
+            ),
+            cmd(
+                2,
+                CommandKind::Throw {
+                    units: vec![thrower],
+                    item: ItemKind::Smoke,
+                    target: FxVec2::new(p.x, p.y) + FxVec2::from_int(15, 0),
+                },
+            ),
+        ]);
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        let i = idx(&f, lone);
+        assert!(f.detached[i]);
+        assert_eq!(f.stance_order[i], StanceOrder::Prone as u8);
+        assert_eq!(f.squads.iter().find(|s| s.id == sid.0).unwrap().detached, 2);
+        let u = f.units.iter().find(|u| u.id == lone.0).unwrap();
+        assert_eq!(u.order, OrderKind::Move);
+        assert_eq!(u.target, ahead.to_f32());
+        assert!(f.throwing[idx(&f, thrower)]);
+        // The smoke flies, lands and makes a cloud the owner sees.
+        let mut flew = false;
+        for _ in 0..30 * 10 {
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+            flew |= f
+                .thrown
+                .iter()
+                .any(|t| t.kind == ItemKind::Smoke && t.visible && !t.landed);
+            if !f.smoke.is_empty() {
+                break;
+            }
+        }
+        assert!(flew, "the smoke grenade was seen in flight");
+        assert!(f.smoke[0].visible);
+        // Slots stay with the men while the squad changes.
+        for (k, m) in sq.members.iter().enumerate() {
+            assert_eq!(f.slot[idx(&f, *m)] as usize, k);
+        }
+    }
+
+    #[test]
+    fn slots_are_kept_for_life_and_refilled_lowest_first() {
+        let ids = |v: &[u32]| {
+            v.iter()
+                .map(|&i| frontline_sim::SimId(i))
+                .collect::<Vec<_>>()
+        };
+        let mut prev = BTreeMap::new();
+        let mut out = BTreeMap::new();
+        assign_slots(&ids(&[10, 11, 12, 13]), &prev, &mut out);
+        assert_eq!(out.values().copied().collect::<Vec<_>>(), vec![0, 1, 2, 3]);
+        // 11 dies, 20 joins: 20 takes slot 1, the rest keep theirs.
+        std::mem::swap(&mut prev, &mut out);
+        out.clear();
+        assign_slots(&ids(&[10, 12, 13, 20]), &prev, &mut out);
+        assert_eq!(out[&10], 0);
+        assert_eq!(out[&12], 2);
+        assert_eq!(out[&13], 3);
+        assert_eq!(out[&20], 1);
     }
 
     #[test]

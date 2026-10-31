@@ -1,23 +1,37 @@
 extends Node3D
 ## Presenter scenery and effects around the FrontlineMatch node (S1
-## "World"): woods, capture point flags, and explosions (light flash,
-## fireball, flying earth, dust, a lingering smoke column). Units, rounds,
-## muzzle flashes and the terrain are drawn by the Rust bridge.
+## "World"): woods, capture point flags, explosions (light flash, fireball,
+## flying earth, dust, a lingering smoke column) and, since S1b, smoke
+## grenade clouds. Units, rounds, thrown items, muzzle flashes and the
+## terrain are drawn by the Rust bridge.
 ##
 ## Everything here is cosmetic and non-deterministic (§12): it reads the
 ## match state and get_map_info() and never feeds the sim. Explosions come
-## from state.effects (kind "explosion") and reuse a fixed pool of effect
-## rigs, oldest first, so a barrage never creates nodes.
+## from state.effects (kind "explosion", scaled by its `size`: mortar, frag
+## or satchel) and reuse a fixed pool of effect rigs, oldest first, so a
+## barrage never creates nodes. Smoke clouds (state.smokes) are a pooled
+## set of soft billboard puffs in ONE MultiMesh: PUFFS per cloud, placed by
+## a hash of the cloud id inside its cylinder, sized by its radius and
+## faded by its density; one buffer upload per frame (§4.1).
 
 const POOL := 14
 const FLAG_POLE_M := 8.0
 const TREES_PER_M2 := 1.0 / 45.0
+## Blast scale by explosion size (the mortar rig is 1).
+const BLAST_SCALE := {"mortar": 1.0, "frag": 0.45, "satchel": 1.6}
+## Smoke: puffs per cloud, clouds drawn at most (the sim caps them at 64).
+const PUFFS := 22
+const MAX_CLOUDS := 64
+const PUFF_STRIDE := 16
 
 var _flags: Array[Dictionary] = []
 var _pool: Array[Dictionary] = []
 var _next := 0
 var _t := 0.0
 var _local := 0
+var _smoke: MultiMeshInstance3D
+var _smoke_buf := PackedFloat32Array()
+var _smoke_n := 0
 
 
 ## Builds the static scenery from FrontlineMatch.get_map_info().
@@ -28,6 +42,7 @@ func setup(info: Dictionary, height_fn: Callable) -> void:
 		_flags.append(_make_flag(p.pos))
 	for i in POOL:
 		_pool.append(_make_explosion())
+	_smoke = _make_smoke_batch()
 
 
 func update_state(state: Dictionary) -> void:
@@ -38,13 +53,14 @@ func update_state(state: Dictionary) -> void:
 		_update_flag(_flags[i], pts[i], dt)
 	for fx in state.get("effects", []):
 		if fx.get("kind", "") == "explosion":
-			_explode(fx.pos)
+			_explode(fx.pos, float(BLAST_SCALE.get(fx.get("size", "mortar"), 1.0)))
+	_update_smoke(state.get("smokes", []))
 	for e in _pool:
 		if e.t >= 0.0:
 			e.t += dt
 			var k: float = e.t
 			var light: OmniLight3D = e.light
-			light.light_energy = 14.0 * maxf(1.0 - k / 0.28, 0.0)
+			light.light_energy = 14.0 * float(e.scale) * maxf(1.0 - k / 0.28, 0.0)
 			light.visible = k < 0.3
 			var ball: MeshInstance3D = e.ball
 			ball.visible = k < 0.2
@@ -57,11 +73,16 @@ func update_state(state: Dictionary) -> void:
 
 # --- explosions ---------------------------------------------------------------
 
-func _explode(pos: Vector3) -> void:
+func _explode(pos: Vector3, scale: float = 1.0) -> void:
 	var e: Dictionary = _pool[_next]
 	_next = (_next + 1) % _pool.size()
 	var root: Node3D = e.root
-	root.global_position = pos
+	# The particles emit in world space; the root's scale shrinks or grows
+	# their emission shape, size and speed with it.
+	root.global_transform = Transform3D(Basis().scaled(Vector3.ONE * scale), pos)
+	var light: OmniLight3D = e.light
+	light.omni_range = 28.0 * sqrt(scale)
+	e.scale = scale
 	e.t = 0.0
 	for p in [e.debris, e.dust, e.smoke]:
 		var gp: GPUParticles3D = p
@@ -103,7 +124,95 @@ func _make_explosion() -> Dictionary:
 	smoke.explosiveness = 0.6
 	for p in [debris, dust, smoke]:
 		root.add_child(p)
-	return {"root": root, "light": light, "ball": ball, "debris": debris, "dust": dust, "smoke": smoke, "t": -1.0}
+	return {"root": root, "light": light, "ball": ball, "debris": debris, "dust": dust, "smoke": smoke, "t": -1.0, "scale": 1.0}
+
+
+# --- smoke grenade clouds -----------------------------------------------------
+
+func _make_smoke_batch() -> MultiMeshInstance3D:
+	var q := QuadMesh.new()
+	q.size = Vector2(1.0, 1.0)
+	var mat := StandardMaterial3D.new()
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.billboard_keep_scale = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_texture = _soft_disc()
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.disable_receive_shadows = true
+	q.material = mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = q
+	mm.instance_count = PUFFS * MAX_CLOUDS
+	mm.visible_instance_count = 0
+	var inst := MultiMeshInstance3D.new()
+	inst.name = "SmokeClouds"
+	inst.multimesh = mm
+	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	inst.custom_aabb = AABB(Vector3(-2048, -256, -2048), Vector3(4096, 1024, 4096))
+	add_child(inst)
+	_smoke_buf.resize(PUFFS * MAX_CLOUDS * PUFF_STRIDE)
+	return inst
+
+
+## Fills the puff batch from state.smokes (one upload).
+func _update_smoke(clouds: Array) -> void:
+	var n := 0
+	for c in clouds:
+		if n >= PUFFS * MAX_CLOUDS:
+			break
+		var r := float(c.radius)
+		var dens := float(c.density)
+		if r < 0.2 or dens <= 0.01:
+			continue
+		var id := int(c.get("id", 0))
+		var base: Vector3 = c.pos
+		for k in PUFFS:
+			var h := _hash3(id * 131 + k)
+			# Spread over the cylinder (radius r, about 2r tall, denser low),
+			# drifting slowly around its axis.
+			var a := h.x * TAU + _t * (0.05 + 0.04 * h.z)
+			var d := sqrt(h.y) * r * 0.8
+			var up := (0.15 + 1.1 * h.z * h.z) * r
+			var p := base + Vector3(cos(a) * d, up, sin(a) * d)
+			var size := r * (0.85 + 0.5 * h.z) + 1.0
+			var o := n * PUFF_STRIDE
+			_smoke_buf[o + 0] = size
+			_smoke_buf[o + 1] = 0.0
+			_smoke_buf[o + 2] = 0.0
+			_smoke_buf[o + 3] = p.x
+			_smoke_buf[o + 4] = 0.0
+			_smoke_buf[o + 5] = size
+			_smoke_buf[o + 6] = 0.0
+			_smoke_buf[o + 7] = p.y
+			_smoke_buf[o + 8] = 0.0
+			_smoke_buf[o + 9] = 0.0
+			_smoke_buf[o + 10] = size
+			_smoke_buf[o + 11] = p.z
+			var g := 0.78 + 0.1 * h.x
+			_smoke_buf[o + 12] = g
+			_smoke_buf[o + 13] = g
+			_smoke_buf[o + 14] = g * 0.97
+			_smoke_buf[o + 15] = clampf(dens, 0.0, 1.0) * (0.55 + 0.25 * h.y)
+			n += 1
+	if n == 0 and _smoke_n == 0:
+		return
+	_smoke_n = n
+	var mm := _smoke.multimesh
+	mm.buffer = _smoke_buf
+	mm.visible_instance_count = n
+
+
+## Three stable pseudo-random numbers in [0, 1) for an integer.
+static func _hash3(i: int) -> Vector3:
+	var x := (i * 374761393 + 668265263) & 0x7fffffff
+	x = ((x ^ (x >> 13)) * 1274126177) & 0x7fffffff
+	var y := ((x ^ (x >> 16)) * 2246822519) & 0x7fffffff
+	var z := ((y ^ (y >> 13)) * 3266489917) & 0x7fffffff
+	return Vector3(float(x & 0xffff) / 65536.0, float(y & 0xffff) / 65536.0, float(z & 0xffff) / 65536.0)
 
 
 func _particles(amount: int, life: float, mat: ParticleProcessMaterial, mesh: Mesh) -> GPUParticles3D:

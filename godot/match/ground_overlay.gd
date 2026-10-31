@@ -106,7 +106,9 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 	_im.surface_end()
 
 
-## One ring per selected soldier (white) and the hovered one (side colour).
+## One ring per selected soldier (white), the hovered one (side colour),
+## and a faint accent ring under own detached men who are not selected, so
+## the men following their own orders stand out from the formations.
 func _update_rings(view: MatchView, sel: Node) -> void:
 	var pts := PackedVector3Array()
 	var cols := PackedColorArray()
@@ -116,6 +118,11 @@ func _update_rings(view: MatchView, sel: Node) -> void:
 			continue
 		pts.append(so.pos)
 		cols.append(Color(UiPalette.TEXT, 0.9))
+	for id in view.soldiers_by_id:
+		var so: Dictionary = view.soldiers_by_id[id]
+		if so.get("detached", false) and int(so.owner) == view.local_player and not sel.is_selected(id):
+			pts.append(so.pos)
+			cols.append(Color(HudStyle.ACCENT, 0.55))
 	var h: int = sel.hover_id
 	if h != -1 and not sel.is_selected(h) and view.soldiers_by_id.has(h):
 		var hs: Dictionary = view.soldiers_by_id[h]
