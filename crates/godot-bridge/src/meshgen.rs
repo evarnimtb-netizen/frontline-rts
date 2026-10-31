@@ -34,7 +34,13 @@ impl MeshData {
         self.indices.len() / 3
     }
 
-    fn vert(&mut self, p: [f32; 3], n: [f32; 3], c: [f32; 4], skin: Option<Skin>) -> i32 {
+    pub(crate) fn vert(
+        &mut self,
+        p: [f32; 3],
+        n: [f32; 3],
+        c: [f32; 4],
+        skin: Option<Skin>,
+    ) -> i32 {
         self.positions.push(p);
         self.normals.push(normalize(n));
         self.colors.push(c);
@@ -45,7 +51,7 @@ impl MeshData {
     }
 
     /// Pushes a triangle given counter-clockwise from outside.
-    fn tri_ccw(&mut self, a: i32, b: i32, c: i32) {
+    pub(crate) fn tri_ccw(&mut self, a: i32, b: i32, c: i32) {
         self.indices.extend_from_slice(&[a, c, b]);
     }
 

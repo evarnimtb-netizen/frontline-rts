@@ -8,6 +8,14 @@
 //! rows of that bone's 3×4 skinning matrix (`pose × inverse bind`). The
 //! shader (`godot/shaders/soldier_skinned.gdshader`) picks clip, frame and
 //! blend from `INSTANCE_CUSTOM`.
+//!
+//! Clips: walk, then the pose clips idle (stand), crouch, prone and death,
+//! in that row order. The pose clips are addressed as `IDLE_ROW0 + k ·
+//! FRAMES_PER_CLIP` with `k` = [`Clip::pose_index`]; the instance writes
+//! `k + phase` into one custom float, so bench instances (which write a
+//! plain idle phase in `[0, 1)`) still get the idle clip. Death is the only
+//! clip that does not loop: phase 0 stands, phase 1 lies on his back (the
+//! corpse pose).
 
 use crate::meshgen::{FIXED, MeshData, Skin, TEAM_TINT, rigid};
 
@@ -16,8 +24,14 @@ pub const BONE_COUNT: usize = 11;
 pub const FRAMES_PER_CLIP: usize = 32;
 pub const WALK_ROW0: usize = 0;
 pub const IDLE_ROW0: usize = FRAMES_PER_CLIP;
+pub const CROUCH_ROW0: usize = 2 * FRAMES_PER_CLIP;
+pub const PRONE_ROW0: usize = 3 * FRAMES_PER_CLIP;
+pub const DEATH_ROW0: usize = 4 * FRAMES_PER_CLIP;
 pub const TEX_WIDTH: usize = BONE_COUNT * 3;
-pub const TEX_HEIGHT: usize = 2 * FRAMES_PER_CLIP;
+pub const TEX_HEIGHT: usize = 5 * FRAMES_PER_CLIP;
+/// Seconds the death fall takes (the presenter maps time since death to the
+/// death clip's phase).
+pub const DEATH_FALL_S: f32 = 1.1;
 /// Metres walked per walk cycle (two steps).
 pub const STRIDE_M: f32 = 1.5;
 
@@ -52,6 +66,59 @@ pub const BONES: [(Option<usize>, [f32; 3]); BONE_COUNT] = [
 pub enum Clip {
     Walk,
     Idle,
+    /// Kneeling, rifle ready.
+    Crouch,
+    /// Lying on the belly, arms forward.
+    Prone,
+    /// Falls backward; non-looping (phase 0 → 1).
+    Death,
+}
+
+impl Clip {
+    /// Every clip in texture row order.
+    pub const ALL: [Clip; 5] = [
+        Clip::Walk,
+        Clip::Idle,
+        Clip::Crouch,
+        Clip::Prone,
+        Clip::Death,
+    ];
+
+    pub fn row0(self) -> usize {
+        match self {
+            Clip::Walk => WALK_ROW0,
+            Clip::Idle => IDLE_ROW0,
+            Clip::Crouch => CROUCH_ROW0,
+            Clip::Prone => PRONE_ROW0,
+            Clip::Death => DEATH_ROW0,
+        }
+    }
+
+    /// Index among the pose clips (idle 0, crouch 1, prone 2, death 3), the
+    /// integer part of the instance's pose value. Walk has none.
+    pub fn pose_index(self) -> Option<u8> {
+        match self {
+            Clip::Walk => None,
+            Clip::Idle => Some(0),
+            Clip::Crouch => Some(1),
+            Clip::Prone => Some(2),
+            Clip::Death => Some(3),
+        }
+    }
+
+    pub fn loops(self) -> bool {
+        self != Clip::Death
+    }
+
+    /// Phase of texture frame `f`: looping clips cover `[0, 1)`, death
+    /// covers `[0, 1]` so its last frame is the final lying pose.
+    pub fn frame_phase(self, f: usize) -> f32 {
+        if self.loops() {
+            f as f32 / FRAMES_PER_CLIP as f32
+        } else {
+            f as f32 / (FRAMES_PER_CLIP - 1) as f32
+        }
+    }
 }
 
 // ------------------------------------------------------------- mesh LODs --
@@ -341,6 +408,60 @@ pub fn pose(clip: Clip, phase: f32) -> ([[f32; 3]; BONE_COUNT], [f32; 3]) {
             rot[R_THIGH][2] = 0.04;
             root[1] = -0.005 + 0.004 * b;
         }
+        Clip::Crouch => {
+            // Pelvis down to about 0.52 m: left foot planted with the thigh
+            // near horizontal, right knee on the ground and the shin back.
+            let b = s;
+            root[1] = -0.37 + 0.004 * b;
+            rot[PELVIS][1] = 0.15;
+            rot[CHEST] = [0.28 + 0.02 * b, -0.15, 0.0];
+            rot[HEAD] = [-0.2, 0.1 + 0.15 * (0.5 * w).sin(), 0.0];
+            rot[L_THIGH] = [1.45, 0.0, -0.06];
+            rot[L_SHIN][0] = -1.4;
+            rot[R_THIGH] = [0.25, 0.0, 0.06];
+            rot[R_SHIN][0] = -1.75;
+            rot[L_UPPER_ARM] = [0.55, 0.0, 0.25];
+            rot[L_FOREARM][0] = 0.9;
+            // Rifle level at low ready: forearm hanging in world space.
+            rot[R_UPPER_ARM] = [0.9, 0.0, 0.15];
+            rot[R_FOREARM] = [-1.18, 0.0, -0.1];
+        }
+        Clip::Prone => {
+            // The whole body pitched forward onto the belly about the
+            // pelvis, head toward −Z; arms reach forward to the rifle.
+            let b = s;
+            root = [0.0, -0.78 + 0.004 * b, -0.15];
+            rot[PELVIS][0] = -std::f32::consts::FRAC_PI_2;
+            rot[HEAD][0] = -1.0;
+            rot[L_UPPER_ARM] = [2.55, 0.0, 0.35];
+            rot[L_FOREARM][0] = 0.55;
+            rot[R_UPPER_ARM] = [2.95, 0.0, -0.3];
+            rot[R_FOREARM] = [1.8, 0.0, 0.0];
+            rot[L_THIGH][2] = -0.12;
+            rot[R_THIGH][2] = 0.12;
+            rot[L_SHIN][0] = -0.05;
+            rot[R_SHIN][0] = -0.05;
+        }
+        Clip::Death => {
+            // Falls backward about the pelvis, knees buckling half way;
+            // `phase` runs 0 → 1 once (ease-in, like a body dropping).
+            let t = phase.clamp(0.0, 1.0);
+            let fall = t * t;
+            let buckle = (std::f32::consts::PI * t).sin();
+            root = [0.0, -0.80 * t.powf(1.3), 0.25 * fall];
+            rot[PELVIS][0] = std::f32::consts::FRAC_PI_2 * fall;
+            rot[CHEST][0] = -0.15 * fall;
+            rot[HEAD][0] = 0.4 * buckle - 0.2 * fall;
+            rot[L_THIGH] = [0.7 * buckle, 0.0, -0.1 * t];
+            rot[R_THIGH] = [0.5 * buckle, 0.0, 0.15 * t];
+            rot[L_SHIN][0] = -buckle;
+            rot[R_SHIN][0] = -0.8 * buckle;
+            rot[L_UPPER_ARM] = [0.6 * buckle, 0.0, -1.1 * t];
+            rot[L_FOREARM][0] = 0.4 * t;
+            rot[R_UPPER_ARM] = [0.35 * (1.0 - t) + 0.5 * buckle, 0.0, 0.15 + 0.9 * t];
+            // The rifle (fixed across the forearm) ends flat on the ground.
+            rot[R_FOREARM] = [1.25 * (1.0 - t) - 1.42 * t, 0.0, -0.25 * (1.0 - t)];
+        }
     }
     (rot, root)
 }
@@ -370,13 +491,13 @@ pub fn skin_matrices(clip: Clip, phase: f32) -> [Mat34; BONE_COUNT] {
     out
 }
 
-/// Bakes both clips into RGBA32F texel data (`TEX_WIDTH × TEX_HEIGHT × 4`).
+/// Bakes every clip into RGBA32F texel data (`TEX_WIDTH × TEX_HEIGHT × 4`).
 pub fn bake_animation_texture() -> Vec<f32> {
     let mut data = vec![0.0f32; TEX_WIDTH * TEX_HEIGHT * 4];
-    for (clip, row0) in [(Clip::Walk, WALK_ROW0), (Clip::Idle, IDLE_ROW0)] {
+    for clip in Clip::ALL {
         for f in 0..FRAMES_PER_CLIP {
-            let mats = skin_matrices(clip, f as f32 / FRAMES_PER_CLIP as f32);
-            let row = row0 + f;
+            let mats = skin_matrices(clip, clip.frame_phase(f));
+            let row = clip.row0() + f;
             for (b, m) in mats.iter().enumerate() {
                 for (r, mrow) in m.iter().enumerate() {
                     let i = (row * TEX_WIDTH + b * 3 + r) * 4;
@@ -464,6 +585,52 @@ mod tests {
         for i in 0..3 {
             assert!((k1[i] - k2[i]).abs() < 1e-5);
         }
+    }
+
+    /// Lowest point of the posed LOD1 mesh and its extent along Z.
+    fn posed_bounds(clip: Clip, phase: f32) -> (f32, f32, f32, f32) {
+        let mats = skin_matrices(clip, phase);
+        let m = soldier_mesh(1);
+        let (mut lo, mut hi, mut zlo, mut zhi) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for (p, s) in m.positions.iter().zip(&m.custom0) {
+            let a = apply(&mats[s[0] as usize], *p);
+            let b = apply(&mats[s[1] as usize], *p);
+            let q = [
+                a[0] * s[2] + b[0] * s[3],
+                a[1] * s[2] + b[1] * s[3],
+                a[2] * s[2] + b[2] * s[3],
+            ];
+            lo = lo.min(q[1]);
+            hi = hi.max(q[1]);
+            zlo = zlo.min(q[2]);
+            zhi = zhi.max(q[2]);
+        }
+        (lo, hi, zlo, zhi)
+    }
+
+    #[test]
+    fn stance_poses_have_plausible_heights() {
+        let (lo, stand, ..) = posed_bounds(Clip::Idle, 0.0);
+        assert!(lo.abs() < 0.08 && stand > 1.65, "stand {lo} {stand}");
+        let (lo, crouch, ..) = posed_bounds(Clip::Crouch, 0.0);
+        assert!(lo > -0.12 && lo < 0.1, "crouch feet {lo}");
+        assert!((1.0..1.4).contains(&crouch), "crouch top {crouch}");
+        let (lo, prone, zlo, zhi) = posed_bounds(Clip::Prone, 0.0);
+        assert!(lo > -0.15 && prone < 0.6, "prone {lo}..{prone}");
+        assert!(zhi - zlo > 1.5, "prone body lies along Z: {zlo}..{zhi}");
+        let (_, dead, ..) = posed_bounds(Clip::Death, 1.0);
+        assert!(dead < 0.6, "corpse lies flat: top {dead}");
+        let (_, start, ..) = posed_bounds(Clip::Death, 0.0);
+        assert!(start > 1.6, "death starts standing: {start}");
+    }
+
+    #[test]
+    fn prone_head_is_forward() {
+        // The face (head bone) ends up ahead of the pelvis, toward −Z.
+        let m = skin_matrices(Clip::Prone, 0.0);
+        let head = apply(&m[HEAD], [0.0, 1.63, 0.0]);
+        let hip = apply(&m[PELVIS], BONES[PELVIS].1);
+        assert!(head[2] < hip[2] - 0.5, "head {head:?} hip {hip:?}");
     }
 
     #[test]

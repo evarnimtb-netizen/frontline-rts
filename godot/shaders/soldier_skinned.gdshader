@@ -6,8 +6,11 @@
 //           bone's 3x4 skinning matrix (pose * inverse bind).
 // CUSTOM0 (per vertex): (bone0, bone1, weight0, weight1).
 // INSTANCE_CUSTOM (per instance, written by the Rust bridge):
-//   x = walk weight (0 = idle, 1 = walk), y = walk phase, z = idle phase,
-//   w = team (player index, 0-9).
+//   x = walk weight (0 = pose clip, 1 = walk), y = walk phase,
+//   z = pose clip + its phase: [0,1) idle, [1,2) crouch, [2,3) prone,
+//       [3,4] death fall (non-looping; 4.0 = lying, the corpse pose),
+//   w = team colour index (0-9).
+// Pose clip k starts at row idle_row0 + k * frames_per_clip (rig.rs).
 shader_type spatial;
 render_mode cull_back, diffuse_lambert, specular_disabled;
 
@@ -35,11 +38,14 @@ void accum(int bone, int row, float w, inout vec4 a0, inout vec4 a1, inout vec4 
 }
 
 // Adds one clip's contribution (two frames, up to two bones) with weight k.
-void add_clip(int row0, float phase, float k, int b0, int b1, float w0, float w1,
+// A non-looping clip maps phase 0..1 onto its frames 0..last and holds the
+// last one.
+void add_clip(int row0, float phase, bool looping, float k, int b0, int b1, float w0, float w1,
 		inout vec4 a0, inout vec4 a1, inout vec4 a2) {
-	float f = fract(phase) * float(frames_per_clip);
-	int f0 = int(floor(f));
-	int f1 = (f0 + 1) % frames_per_clip;
+	int last = frames_per_clip - 1;
+	float f = looping ? fract(phase) * float(frames_per_clip) : clamp(phase, 0.0, 1.0) * float(last);
+	int f0 = min(int(floor(f)), last);
+	int f1 = looping ? (f0 + 1) % frames_per_clip : min(f0 + 1, last);
 	float t = f - float(f0);
 	accum(b0, row0 + f0, k * w0 * (1.0 - t), a0, a1, a2);
 	accum(b0, row0 + f1, k * w0 * t, a0, a1, a2);
@@ -61,10 +67,12 @@ void vertex() {
 	vec4 a2 = vec4(0.0);
 	// Exact 0 / 1 thresholds: the clip weights always sum to 1.
 	if (walk > 0.0) {
-		add_clip(walk_row0, ic.y, walk, b0, b1, w0, w1, a0, a1, a2);
+		add_clip(walk_row0, ic.y, true, walk, b0, b1, w0, w1, a0, a1, a2);
 	}
 	if (walk < 1.0) {
-		add_clip(idle_row0, ic.z, 1.0 - walk, b0, b1, w0, w1, a0, a1, a2);
+		int clip = clamp(int(floor(ic.z)), 0, 3);
+		float phase = ic.z - float(clip);
+		add_clip(idle_row0 + clip * frames_per_clip, phase, clip < 3, 1.0 - walk, b0, b1, w0, w1, a0, a1, a2);
 	}
 	vec4 p = vec4(VERTEX, 1.0);
 	VERTEX = vec3(dot(a0, p), dot(a1, p), dot(a2, p));

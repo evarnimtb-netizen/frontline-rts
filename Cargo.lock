@@ -250,6 +250,7 @@ dependencies = [
 name = "godot-bridge"
 version = "0.0.1"
 dependencies = [
+ "frontline-content",
  "frontline-sim",
  "godot",
  "triple_buffer",

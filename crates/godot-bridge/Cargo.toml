@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 frontline-sim.workspace = true
+frontline-content.workspace = true
 godot = { version = "=0.5.5", features = ["api-4-7"] }
 triple_buffer = "9.0"
 
