@@ -9,12 +9,13 @@
 [ext_resource type="Script" path="res://match/match_view.gd" id="6_view"]
 [ext_resource type="Script" path="res://match/hud/unit_overlay.gd" id="7_units"]
 [ext_resource type="Script" path="res://match/hud/top_bar.gd" id="8_top"]
-[ext_resource type="Script" path="res://match/hud/point_strip.gd" id="9_points"]
+[ext_resource type="Script" path="res://match/hud/hud_layout.gd" id="9_layout"]
 [ext_resource type="Script" path="res://match/hud/event_feed.gd" id="10_events"]
 [ext_resource type="Script" path="res://match/hud/minimap.gd" id="11_minimap"]
 [ext_resource type="Script" path="res://match/hud/call_in_panel.gd" id="12_callin"]
-[ext_resource type="Script" path="res://match/hud/squad_cards.gd" id="13_cards"]
-[ext_resource type="Script" path="res://match/hud/command_panel.gd" id="14_commands"]
+[ext_resource type="Script" path="res://match/hud/roster.gd" id="13_roster"]
+[ext_resource type="Script" path="res://match/hud/orders_grid.gd" id="14_orders"]
+[ext_resource type="Script" path="res://match/hud/detail_panel.gd" id="18_detail"]
 [ext_resource type="Script" path="res://match/hud/pause_menu.gd" id="15_pause"]
 [ext_resource type="Script" path="res://match/hud/end_screen.gd" id="16_end"]
 [ext_resource type="Script" path="res://match/selection_controller.gd" id="17_select"]
@@ -68,7 +69,7 @@ current = true
 script = ExtResource("2_cam")
 sim_path = NodePath("")
 height = 85.0
-wasd_pan = false
+wasd_pan = true
 right_drag_rotate = false
 edge_scroll = true
 min_height = 10.0
@@ -78,17 +79,8 @@ bounds_half_m = 512.0
 [node name="View" type="CanvasLayer" parent="."]
 script = ExtResource("6_view")
 
-[node name="Hud" type="Control" parent="View"]
+[node name="UnitOverlay" type="Control" parent="View"]
 layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="UnitOverlay" type="Control" parent="View/Hud"]
-layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -97,91 +89,68 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("7_units")
 
-[node name="TopBar" type="PanelContainer" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_left = 8.0
-offset_top = 8.0
-offset_right = -8.0
-offset_bottom = 52.0
-grow_horizontal = 2
+[node name="Hud" type="Control" parent="View"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1600.0
+offset_bottom = 900.0
+mouse_filter = 2
+script = ExtResource("9_layout")
+
+[node name="TopBar" type="Control" parent="View/Hud"]
+layout_mode = 0
+offset_right = 1600.0
+offset_bottom = 28.0
 script = ExtResource("8_top")
 
-[node name="PointStrip" type="Control" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 0
-offset_left = 760.0
-offset_top = 62.0
-offset_right = 960.0
-offset_bottom = 108.0
-script = ExtResource("9_points")
+[node name="Minimap" type="Control" parent="View/Hud"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 36.0
+offset_right = 262.0
+offset_bottom = 286.0
+script = ExtResource("11_minimap")
 
-[node name="EventFeed" type="VBoxContainer" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -460.0
-offset_top = 64.0
-offset_right = -12.0
-offset_bottom = 320.0
-grow_horizontal = 0
+[node name="EventFeed" type="Control" parent="View/Hud"]
+layout_mode = 0
+offset_left = 1288.0
+offset_top = 36.0
+offset_right = 1588.0
+offset_bottom = 108.0
 mouse_filter = 2
 script = ExtResource("10_events")
 
-[node name="Minimap" type="Control" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
+[node name="Roster" type="Control" parent="View/Hud"]
+layout_mode = 0
 offset_left = 12.0
-offset_top = -232.0
-offset_right = 232.0
-offset_bottom = -12.0
-grow_vertical = 0
-script = ExtResource("11_minimap")
+offset_top = 760.0
+offset_right = 908.0
+offset_bottom = 890.0
+script = ExtResource("13_roster")
 
-[node name="CallInPanel" type="PanelContainer" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 242.0
-offset_top = -232.0
-offset_right = 520.0
-offset_bottom = -12.0
-grow_vertical = 0
+[node name="Detail" type="Control" parent="View/Hud"]
+layout_mode = 0
+offset_left = 920.0
+offset_top = 760.0
+offset_right = 1220.0
+offset_bottom = 890.0
+script = ExtResource("18_detail")
+
+[node name="Orders" type="Control" parent="View/Hud"]
+layout_mode = 0
+offset_left = 1232.0
+offset_top = 760.0
+offset_right = 1588.0
+offset_bottom = 890.0
+script = ExtResource("14_orders")
+
+[node name="CallIn" type="Control" parent="View/Hud"]
+layout_mode = 0
+offset_left = 1468.0
+offset_top = 540.0
+offset_right = 1588.0
+offset_bottom = 750.0
 script = ExtResource("12_callin")
-
-[node name="SquadCards" type="HFlowContainer" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 532.0
-offset_top = -186.0
-offset_right = -372.0
-offset_bottom = -12.0
-grow_horizontal = 2
-grow_vertical = 0
-script = ExtResource("13_cards")
-
-[node name="CommandPanel" type="PanelContainer" parent="View/Hud"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -360.0
-offset_top = -180.0
-offset_right = -12.0
-offset_bottom = -12.0
-grow_horizontal = 0
-grow_vertical = 0
-script = ExtResource("14_commands")
 
 [node name="PauseMenu" type="Control" parent="View"]
 layout_mode = 3

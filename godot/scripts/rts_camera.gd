@@ -4,9 +4,9 @@ extends Camera3D
 ## `edge_scroll` the screen edges pan. Starts ~85 m above the map centre
 ## looking down at the battle.
 ##
-## The match scene sets: wasd_pan off (A/S/D are order hotkeys), right-drag
-## off (right-click orders), edge scroll on, height 10–150 m, and
-## `bounds_half_m` to clamp the focus to the map.
+## The match scenes set: wasd_pan on (S1b hotkeys keep WASD/QE on the
+## camera), right-drag off (right-click orders), edge scroll on, height
+## 10–150 m, and `bounds_half_m` to clamp the focus to the map.
 
 @export var sim_path: NodePath = ^"../FrontlineSim"
 @export var height := 85.0

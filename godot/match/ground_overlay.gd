@@ -1,11 +1,15 @@
 extends MeshInstance3D
 ## World-space overlay lines drawn on the ground from the match state:
-## capture point rings, selection rings, order markers, the dig tool's
-## ghost trench and the mortar range ring while the barrage tool is armed.
+## capture point rings, order markers, detached men's own order targets
+## (a ring at the target, and a dashed line from the man while selected),
+## the dig tool's ghost trench, the mortar range ring while the barrage
+## tool is armed, and the throw tool's range rings and target.
 ##
 ## One ImmediateMesh rebuilt per frame (a few hundred vertices; §4.1 keeps
 ## units out of Nodes, and this is a single node). Lines follow the ground
-## through MatchView.ground_y and sit slightly above it.
+## through MatchView.ground_y and sit slightly above it. The rings under
+## selected and hovered soldiers are a separate MultiMesh batch
+## (SelectionRings, a child), one buffer upload per frame.
 
 const LIFT := 0.35
 const TRENCH_HALF_W := 1.2
@@ -17,9 +21,13 @@ var _markers: Array[Dictionary] = []
 var _flash: PackedVector3Array = PackedVector3Array()
 var _flash_t := 0.0
 var _t := 0.0
+var _rings: SelectionRings
 
 
 func _ready() -> void:
+	_rings = SelectionRings.new()
+	_rings.name = "SelectionRings"
+	add_child(_rings)
 	mesh = _im
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var mat := StandardMaterial3D.new()
@@ -34,7 +42,8 @@ func _ready() -> void:
 	custom_aabb = AABB(Vector3(-4096, -512, -4096), Vector3(8192, 1024, 8192))
 
 
-## Short-lived marker at an order target. kind: move, attack_move, barrage, dig.
+## Short-lived marker at an order target. kind: move, attack_move, barrage,
+## dig, throw.
 func marker(pos: Vector3, kind: StringName) -> void:
 	_markers.append({"pos": pos, "kind": kind, "t": 0.0})
 
@@ -73,25 +82,20 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 			_edges(line, Color(UiPalette.TEXT, 0.35), 0.06)
 			_edges(_polyline_head(line, float(sq.get("dig_progress", 0.0))), Color(UiPalette.ACCENT, 0.85), 0.1)
 	var sel: Node = view.selection
-	for id in sel.selected:
-		var sq: Dictionary = view.squads_by_id.get(id, {})
-		if not sq.is_empty():
-			_ring(sq.pos, 5.0, 0.35, Color(UiPalette.TEXT, 0.85))
-	if sel.hover_id != -1 and not sel.is_selected(sel.hover_id):
-		var hs: Dictionary = view.squads_by_id.get(sel.hover_id, {})
-		if not hs.is_empty():
-			var hc := UiPalette.owner_color(hs.owner, local)
-			_ring(hs.pos, 5.0, 0.25, Color(hc, 0.6))
+	_update_rings(view, sel)
+	_draw_detached(view, sel)
 	if sel.tool == &"barrage":
 		var hi := float(view.rules().get("mortar_max_m", 600.0))
 		var lo := float(view.rules().get("mortar_min_m", 60.0))
-		for id in sel.selected:
-			var sq: Dictionary = view.squads_by_id.get(id, {})
+		for sid in sel.selected_squads():
+			var sq: Dictionary = view.squads_by_id.get(sid, {})
 			if not sq.is_empty() and sq.type in MatchView.MORTARS:
 				_ring(sq.pos, hi, 1.5, Color(UiPalette.WARN, 0.45), 128)
 				_ring(sq.pos, lo, 0.8, Color(UiPalette.DANGER, 0.5), 48)
 	if sel.tool == &"dig":
 		_draw_dig_ghost(sel)
+	elif sel.tool == &"throw":
+		_draw_throw_tool(view, sel)
 	if _flash_t > 0.0:
 		_flash_t -= dt
 		_trench(_flash, Color(UiPalette.OK, clampf(_flash_t, 0.0, 0.8)))
@@ -100,6 +104,74 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 		_draw_marker(m)
 	_markers = _markers.filter(func(m: Dictionary) -> bool: return m.t < MARKER_TIME)
 	_im.surface_end()
+
+
+## One ring per selected soldier (white) and the hovered one (side colour).
+func _update_rings(view: MatchView, sel: Node) -> void:
+	var pts := PackedVector3Array()
+	var cols := PackedColorArray()
+	for id in sel.selected:
+		var so: Dictionary = view.soldiers_by_id.get(id, {})
+		if so.is_empty():
+			continue
+		pts.append(so.pos)
+		cols.append(Color(UiPalette.TEXT, 0.9))
+	var h: int = sel.hover_id
+	if h != -1 and not sel.is_selected(h) and view.soldiers_by_id.has(h):
+		var hs: Dictionary = view.soldiers_by_id[h]
+		pts.append(hs.pos)
+		cols.append(Color(UiPalette.owner_color(int(hs.owner), view.local_player), 0.8))
+	_rings.set_rings(pts, cols)
+
+
+## Own detached men with an order target: a small ring at the target; a
+## dashed line from a selected man to his target.
+func _draw_detached(view: MatchView, sel: Node) -> void:
+	for id in view.soldiers_by_id:
+		var so: Dictionary = view.soldiers_by_id[id]
+		if not so.get("detached", false) or not so.has("target") or int(so.owner) != view.local_player:
+			continue
+		var t: Vector3 = so.target
+		var picked: bool = sel.is_selected(id)
+		var col := Color(HudStyle.ACCENT, 0.95 if picked else 0.5)
+		_ring(t, 0.9, 0.18, col, 16)
+		if picked:
+			_dashed(so.pos, t, 0.07, col)
+
+
+## Range ring of the man who would throw (the eligible one nearest the
+## cursor) with his minimum range; the other eligible men get faint rings
+## (they all throw with Shift). Then the blast or cloud radius at the
+## target, accent in range and red out of it.
+func _draw_throw_tool(view: MatchView, sel: Node) -> void:
+	var item: String = sel.throw_item
+	var rr := view.throw_range(item)
+	var g: Variant = view.ground_pick(sel.cursor())
+	var men: PackedInt32Array = sel.throwers(item)
+	var lead := -1
+	var best := INF
+	if g != null:
+		for id in men:
+			var p: Vector3 = view.soldiers_by_id[id].pos
+			var d := Vector2(p.x, p.z).distance_to(Vector2(g.x, g.z))
+			if d < best:
+				best = d
+				lead = id
+	for id in men:
+		var p: Vector3 = view.soldiers_by_id[id].pos
+		if id == lead:
+			_ring(p, rr.y, 0.35, Color(HudStyle.ACCENT, 0.6), 64)
+			if rr.x > 0.5:
+				_ring(p, rr.x, 0.2, Color(HudStyle.DANGER, 0.5), 24)
+		else:
+			_ring(p, rr.y, 0.2, Color(HudStyle.ACCENT, 0.14), 48)
+	if g == null:
+		return
+	var ok: bool = sel.throw_in_range(item, g)
+	var col := Color(HudStyle.ACCENT if ok else HudStyle.DANGER, 0.85)
+	var fx: float = MatchView.THROW_EFFECT_M.get(item, 6.0)
+	_ring(g, fx, 0.25, col, 40)
+	_ring(g, 0.8, 0.25, col, 12)
 
 
 func _draw_dig_ghost(sel: Node) -> void:
@@ -130,6 +202,8 @@ func _draw_marker(m: Dictionary) -> void:
 	match m.kind:
 		&"attack_move":
 			_ring(m.pos, 2.0 + 4.0 * k, 0.5, Color(UiPalette.DANGER, a))
+		&"throw":
+			_ring(m.pos, 1.0 + 2.0 * k, 0.4, Color(HudStyle.ACCENT, a), 24)
 		&"barrage":
 			var c := Color(UiPalette.WARN, a)
 			_ring(m.pos, 8.0, 0.6, c, 40)
@@ -184,6 +258,17 @@ func _line(a: Vector3, b: Vector3, half_w: float, col: Color) -> void:
 		var p0 := Vector2(a.x, a.z) + d * (float(i) / steps)
 		var p1 := Vector2(a.x, a.z) + d * (float(i + 1) / steps)
 		_quad(_gp(p0.x - n.x, p0.y - n.y), _gp(p0.x + n.x, p0.y + n.y), _gp(p1.x + n.x, p1.y + n.y), _gp(p1.x - n.x, p1.y - n.y), col)
+
+
+func _dashed(a: Vector3, b: Vector3, half_w: float, col: Color, dash := 1.2, gap := 0.9) -> void:
+	var total := Vector2(b.x - a.x, b.z - a.z).length()
+	if total < 0.01:
+		return
+	var t := 0.0
+	while t < total:
+		var t1 := minf(t + dash, total)
+		_line(a.lerp(b, t / total), a.lerp(b, t1 / total), half_w, col)
+		t += dash + gap
 
 
 ## The first `frac` (0..1) of a polyline by length.

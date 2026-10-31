@@ -4,29 +4,50 @@ extends RefCounted
 ## place and can be rebound through InputMap later (§5.12.2). Physical
 ## keycodes, so the layout does not move the keys.
 ##
-## Camera keys (arrows, Q/E, wheel, middle-drag) stay in rts_camera.gd.
+## Defaults are the owner's S1b hotkeys (docs/slices/S1b-hud.md): orders
+## RMB move, Ctrl+RMB attack-move, H stop, R retreat, Y dig, B barrage,
+## L regroup; abilities G frag, T smoke, F satchel; stance X stand,
+## C crouch, Z prone (the direct-control keys; pressing the active stance
+## again returns to Auto). WASD, arrows and Q/E stay on the camera
+## (rts_camera.gd). M arms the move tool (no default button needs it).
 
 const ACTIONS := {
 	&"order_move": KEY_M,
-	&"order_attack_move": KEY_A,
-	&"order_stop": KEY_S,
+	&"order_stop": KEY_H,
 	&"order_retreat": KEY_R,
-	&"order_dig": KEY_D,
+	&"order_dig": KEY_Y,
 	&"order_barrage": KEY_B,
+	&"order_regroup": KEY_L,
+	&"ability_frag": KEY_G,
+	&"ability_smoke": KEY_T,
+	&"ability_satchel": KEY_F,
+	&"stance_stand": KEY_X,
+	&"stance_crouch": KEY_C,
+	&"stance_prone": KEY_Z,
+	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
 	&"match_menu": KEY_ESCAPE,
 	&"match_menu_alt": KEY_F10,
 }
 
-## Hotkey labels for buttons and tooltips.
+## Hotkey labels for buttons and tooltips. Attack-move has no action: it
+## is Ctrl+right-click (or its button, which arms the tool).
 const LABELS := {
-	&"order_move": "M",
-	&"order_attack_move": "A",
-	&"order_stop": "S",
+	&"order_move": "RMB",
+	&"order_attack_move": "Ctrl+RMB",
+	&"order_stop": "H",
 	&"order_retreat": "R",
-	&"order_dig": "D",
+	&"order_dig": "Y",
 	&"order_barrage": "B",
+	&"order_regroup": "L",
+	&"ability_frag": "G",
+	&"ability_smoke": "T",
+	&"ability_satchel": "F",
+	&"stance_stand": "X",
+	&"stance_crouch": "C",
+	&"stance_prone": "Z",
+	&"focus_call_in": "Tab",
 }
 
 

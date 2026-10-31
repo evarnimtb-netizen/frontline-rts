@@ -8,9 +8,11 @@ extends Node
 ##
 ## Capture (windowed run, not --headless):
 ##   Godot --path godot --resolution 1600x900 [res://scene.tscn] -- \
-##       --capture /abs/out.png [--capture_after 2.5] [--capture_setup NAME]
+##       --capture /abs/out.png [--capture_after 2.5] [--capture_setup NAME] \
+##       [--capture_size 1600x900]
 ## saves the viewport after the delay and quits. --capture_setup is read by
-## the scene (e.g. match.gd: "hud", "dig", "pause", "end").
+## the scene (e.g. match.gd: "hud", "throw", "dig", "pause", "end");
+## --capture_size forces the window to that many pixels first.
 ##
 ## Autoplay (windowed; S1 "Done when" 4):
 ##   Godot --path godot --resolution 1600x900 -- --autoplay 6 \
@@ -52,6 +54,9 @@ var tickets_override := 0
 var _capture_path := ""
 var _capture_after := 2.5
 var _capture_setup := ""
+## Window size in pixels to force before a capture (macOS sometimes opens
+## the window zoomed to the whole screen); zero = keep.
+var _capture_size := Vector2i.ZERO
 
 
 func _ready() -> void:
@@ -72,6 +77,11 @@ func _ready() -> void:
 				i += 1
 			"--capture_setup":
 				_capture_setup = v
+				i += 1
+			"--capture_size":
+				var wh := v.split("x")
+				if wh.size() == 2:
+					_capture_size = Vector2i(wh[0].to_int(), wh[1].to_int())
 				i += 1
 			"--faction":
 				if v in FACTIONS:
@@ -181,6 +191,10 @@ func _run_autoplay_menu() -> void:
 
 
 func _run_capture() -> void:
+	if _capture_size != Vector2i.ZERO and DisplayServer.get_name() != "headless":
+		var win := get_window()
+		win.mode = Window.MODE_WINDOWED
+		win.size = _capture_size
 	await get_tree().create_timer(_capture_after, true, false, true).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

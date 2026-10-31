@@ -1,58 +1,129 @@
 extends Node3D
 ## Placeholder 3D world for the mock match: a ground mesh from MockMap's
-## height function, woods as cone trees, and soldiers as team-coloured
-## capsules from state squads[].members. The integrator replaces this node
-## with the FrontlineSim terrain and MultiMesh presenter (§4.1); it exists
-## so the HUD can be run and screenshotted on its own.
+## height function, woods as cone trees, soldiers as team-coloured capsules
+## from state.soldiers (stance-posed), smoke clouds from state.smokes and
+## thrown items from state.thrown. The integrator replaces this node with
+## the FrontlineSim terrain and MultiMesh presenter (§4.1); it exists so the
+## HUD can be run and screenshotted on its own.
+##
+## Each batch is one MultiMesh filled with one buffer upload per frame.
 
 const GRID_M := 8.0
 const MAX_SOLDIERS := 512
+const MAX_SMOKE := 64
+const MAX_THROWN := 64
+const STRIDE := 16
 
 var _soldiers: MultiMeshInstance3D
+var _smoke: MultiMeshInstance3D
+var _thrown: MultiMeshInstance3D
+var _buf := PackedFloat32Array()
 
 
 func _ready() -> void:
 	_build_ground()
 	_build_trees()
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
 	var cap := CapsuleMesh.new()
 	cap.radius = 0.32
 	cap.height = 1.75
 	cap.radial_segments = 8
 	cap.rings = 2
-	mm.mesh = cap
-	mm.instance_count = MAX_SOLDIERS
+	_soldiers = _batch(cap, MAX_SOLDIERS, false)
+	var puff := SphereMesh.new()
+	puff.radius = 1.0
+	puff.height = 1.2
+	puff.radial_segments = 16
+	puff.rings = 6
+	_smoke = _batch(puff, MAX_SMOKE, true)
+	var ball := SphereMesh.new()
+	ball.radius = 0.18
+	ball.height = 0.36
+	ball.radial_segments = 6
+	ball.rings = 3
+	_thrown = _batch(ball, MAX_THROWN, false)
+
+
+func _batch(mesh: Mesh, count: int, translucent: bool) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = count
 	mm.visible_instance_count = 0
-	_soldiers = MultiMeshInstance3D.new()
-	_soldiers.multimesh = mm
+	var inst := MultiMeshInstance3D.new()
+	inst.multimesh = mm
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.vertex_color_is_srgb = true
 	mat.roughness = 0.9
-	_soldiers.material_override = mat
-	add_child(_soldiers)
+	if translucent:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	inst.material_override = mat
+	inst.custom_aabb = AABB(Vector3(-1024, -128, -1024), Vector3(2048, 512, 2048))
+	add_child(inst)
+	return inst
 
 
 func update_state(s: Dictionary) -> void:
-	var mm := _soldiers.multimesh
 	var local: int = s.get("local_player", 0)
-	var n := 0
-	for sq in s.get("squads", []):
-		var col := Color(0.30, 0.45, 0.62) if int(sq.owner) == local else Color(0.62, 0.30, 0.25)
-		var pinned: bool = sq.get("status", "") == "pinned"
-		for p in sq.get("members", PackedVector3Array()):
-			if n >= MAX_SOLDIERS:
-				break
-			var b := Basis()
-			var lift := 0.875
-			if pinned:
-				b = Basis(Vector3.RIGHT, PI * 0.5)  # prone
+	# Soldiers: capsules posed by stance.
+	var items: Array = []
+	for so in s.get("soldiers", []):
+		var col := Color(0.30, 0.45, 0.62) if int(so.owner) == local else Color(0.62, 0.30, 0.25)
+		var b := Basis()
+		var lift := 0.875
+		match so.get("stance", "stand"):
+			"prone":
+				b = Basis(Vector3.RIGHT, PI * 0.5)
 				lift = 0.35
-			mm.set_instance_transform(n, Transform3D(b, p + Vector3(0, lift, 0)))
-			mm.set_instance_color(n, col)
-			n += 1
+			"crouch":
+				b = Basis().scaled(Vector3(1.0, 0.68, 1.0))
+				lift = 0.6
+		items.append([Transform3D(b, so.pos + Vector3(0, lift, 0)), col])
+	_upload(_soldiers, items, MAX_SOLDIERS)
+	# Smoke: flattened grey spheres, alpha from density.
+	items = []
+	for c in s.get("smokes", []):
+		var r := maxf(float(c.radius), 0.3)
+		var b := Basis().scaled(Vector3(r, r * 0.55, r))
+		items.append([Transform3D(b, c.pos + Vector3(0, r * 0.35, 0)), Color(0.78, 0.78, 0.74, 0.82 * float(c.density))])
+	_upload(_smoke, items, MAX_SMOKE)
+	# Items in flight (and fused on the ground).
+	items = []
+	for th in s.get("thrown", []):
+		var col := Color(0.85, 0.85, 0.80) if th.kind == "smoke" else (Color(0.55, 0.42, 0.25) if th.kind == "satchel" else Color(0.25, 0.30, 0.22))
+		items.append([Transform3D(Basis(), th.pos), col])
+	_upload(_thrown, items, MAX_THROWN)
+
+
+## One buffer upload: [Transform3D, Color] per instance.
+func _upload(inst: MultiMeshInstance3D, items: Array, cap: int) -> void:
+	var mm := inst.multimesh
+	var n := mini(items.size(), cap)
+	_buf.resize(cap * STRIDE)
+	for i in n:
+		var t: Transform3D = items[i][0]
+		var c: Color = items[i][1]
+		var o := i * STRIDE
+		_buf[o + 0] = t.basis.x.x
+		_buf[o + 1] = t.basis.y.x
+		_buf[o + 2] = t.basis.z.x
+		_buf[o + 3] = t.origin.x
+		_buf[o + 4] = t.basis.x.y
+		_buf[o + 5] = t.basis.y.y
+		_buf[o + 6] = t.basis.z.y
+		_buf[o + 7] = t.origin.y
+		_buf[o + 8] = t.basis.x.z
+		_buf[o + 9] = t.basis.y.z
+		_buf[o + 10] = t.basis.z.z
+		_buf[o + 11] = t.origin.z
+		_buf[o + 12] = c.r
+		_buf[o + 13] = c.g
+		_buf[o + 14] = c.b
+		_buf[o + 15] = c.a
+	mm.buffer = _buf
 	mm.visible_instance_count = n
 
 
