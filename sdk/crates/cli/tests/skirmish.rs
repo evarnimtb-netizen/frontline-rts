@@ -118,7 +118,8 @@ fn binary_runs_a_skirmish_and_prints_json() {
 }
 
 /// The S1 cover bar over the default five seeds, both factions entrenched
-/// in turn. Slow in debug builds; `cargo test --release` runs it.
+/// in turn, plus the S1b grenade assault and smoke screen. Slow in debug
+/// builds; `cargo test --release` runs it.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
 fn fortify_test_passes() {
@@ -129,6 +130,17 @@ fn fortify_test_passes() {
     assert!(r.mortar.open_losses >= 40, "{}", r.mortar.open_losses);
     assert!(r.rifles.pass, "{r:#?}");
     assert!(r.mortar.pass, "{r:#?}");
+    assert!(r.smoke.pass, "{:#?}", r.smoke);
+    assert_eq!(r.grenade.runs.len(), 40);
+    assert_eq!(r.smoke.runs.len(), 20);
+    // Frags thrown from 25 m cost the defenders clearly more than rifles.
+    let close = &r.grenade.variants[1];
+    assert_eq!(close.start_m, 25);
+    assert!(close.grenades.frags_thrown >= 40, "{close:?}");
+    assert!(
+        close.grenades.defender_losses >= 2 * close.rifle_only.defender_losses.max(1),
+        "{close:?}"
+    );
     assert!(r.pass);
 }
 
@@ -142,6 +154,13 @@ fn fortify_test_reports_each_run() {
     .unwrap();
     assert_eq!(r.rifles.runs.len(), 2);
     assert_eq!(r.mortar.runs.len(), 4);
+    assert_eq!(r.grenade.runs.len(), 8);
+    assert_eq!(r.grenade.variants.len(), 2);
+    assert_eq!(r.smoke.runs.len(), 4);
+    // Behind smoke: never seen or fired on; the control is.
+    for run in &r.smoke.runs {
+        assert_eq!(run.smoke, run.seen_ticks == 0, "{run:?}");
+    }
     assert_eq!(r.rifles.runs[0].entrenched, "ww2:germany");
     assert_eq!(r.rifles.runs[1].entrenched, "ww2:usa");
     // The open squad is the one that suffers.

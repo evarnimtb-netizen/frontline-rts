@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest};
-use frontline_sim::{Outcome, PlayerId, SquadId, World};
+use frontline_sim::{BlastKind, Outcome, PlayerId, SquadId, World};
 use serde::Serialize;
 
 use crate::report::{Summary, hex, ns, round3};
@@ -201,6 +201,12 @@ pub struct Totals {
     pub near_misses: u64,
     pub explosions: u64,
     pub deaths: u64,
+    /// Thrown items released (S1b), and the frag and satchel bursts and
+    /// smoke clouds among them, counted since the start (or the load).
+    pub throws: u64,
+    pub frag_bursts: u64,
+    pub satchel_bursts: u64,
+    pub smoke_clouds: u64,
     pub detail_tiles: usize,
     pub peak_soldiers: usize,
     pub peak_tick: u64,
@@ -337,6 +343,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
 
     let start = Instant::now();
     let running = |w: &World| w.game().is_some_and(|g| g.outcome() == Outcome::Running);
+    let (mut frag_bursts, mut satchel_bursts) = (0u64, 0u64);
+    let smoke_at_start = world.snapshot().smoke.last().map_or(0, |c| c.id as u64 + 1);
+    let mut smoke_seen = smoke_at_start;
+    let throws_at_start = world.stats().throws;
     while running(&world) && world.tick() < limit {
         if args.paced {
             let deadline = start + period * (world.tick() - start_tick) as u32;
@@ -358,6 +368,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             (peak, peak_tick) = (n, world.tick());
         }
         peak_proj = peak_proj.max(world.projectiles().live());
+        for e in &world.snapshot().explosions {
+            match e.kind {
+                BlastKind::Frag => frag_bursts += 1,
+                BlastKind::Satchel => satchel_bursts += 1,
+                BlastKind::Shell => {}
+            }
+        }
+        for c in &world.snapshot().smoke {
+            smoke_seen = smoke_seen.max(c.id as u64 + 1);
+        }
         note_squads(&world, &mut fielded);
         maybe_save(&world, false)?;
     }
@@ -442,6 +462,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             near_misses: st.near_misses,
             explosions: st.explosions,
             deaths: st.deaths,
+            throws: st.throws - throws_at_start,
+            frag_bursts,
+            satchel_bursts,
+            smoke_clouds: smoke_seen - smoke_at_start,
             detail_tiles: world.terrain().detail().tiles().len(),
             peak_soldiers: peak,
             peak_tick,
@@ -509,14 +533,19 @@ pub fn summary_text(r: &SkirmishReport) -> String {
     let t = &r.totals;
     out += &format!(
         "shots {} ({} dropped), hits {}, near misses {}, explosions {}, deaths {}, \
-         terrain tiles {}\n",
+         terrain tiles {}\n\
+         throws {}: frag bursts {}, satchel bursts {}, smoke clouds {}\n",
         t.shots_fired,
         t.shots_dropped,
         t.soldier_hits,
         t.near_misses,
         t.explosions,
         t.deaths,
-        t.detail_tiles
+        t.detail_tiles,
+        t.throws,
+        t.frag_bursts,
+        t.satchel_bursts,
+        t.smoke_clouds
     );
     let (a, k) = (&r.timing.all, &r.timing.peak);
     out += &format!(

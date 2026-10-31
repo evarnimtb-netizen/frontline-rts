@@ -303,14 +303,14 @@ impl MatchState {
             let u = &ents.unit[i];
             let item = self
                 .item_of(ents, m, w.kind)
-                .map(|(idx, it)| (idx, it.clone()));
+                .map(|(idx, it)| (idx, it.scatter_pct, it.fuse_ticks, it.windup_ticks));
             let full = self.full_kit(ents, m)[w.kind.index()];
             let keep_on = ents.kind[i] == EntityKind::Soldier
                 && !ents.combat[i].pinned
                 && u.detached
                 && u.order == UnitOrder::Idle;
             let k = &mut ents.kit[i];
-            let (Some((idx, it)), true) = (item, keep_on) else {
+            let (Some((idx, scatter_pct, fuse_ticks, windup_ticks)), true) = (item, keep_on) else {
                 // Called off: the item goes back into his kit.
                 let n = &mut k.items[w.kind.index()];
                 *n = n.saturating_add(1).min(full);
@@ -334,10 +334,10 @@ impl MatchState {
             let lift = ents.combat[i].fire_height - Fx::from_milli(RELEASE_DROP_MM);
             let from = FxVec3::new(pos.x, pos.y, pos.z + lift.max(Fx::from_milli(200)));
             let d = (w.target - from.xy()).length();
-            let s = d.mul_int(it.scatter_pct as i32).div_int(100);
+            let s = d.mul_int(scatter_pct as i32).div_int(100);
             let aim = terrain.clamp(w.target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
             let (from, vel) = lob(from, aim.extend(terrain.height_at(aim)));
-            let fuse = it.fuse_ticks.saturating_sub(it.windup_ticks) + 1;
+            let fuse = fuse_ticks.saturating_sub(windup_ticks) + 1;
             self.thrown.push(Thrown {
                 id: self.next_thrown,
                 item: idx,
