@@ -31,6 +31,8 @@
 //! Soldier-level orders (S1b) are in `crate::unit`: detached men keep their
 //! own order in the `unit` entity column, path through the same queues
 //! ([`PathReq::Unit`]) and dig trenches as [`UnitDig`] jobs kept here.
+//! Thrown items (S1b) are in `crate::items`: per-soldier kits in the `kit`
+//! entity column, items in flight and smoke clouds kept here.
 
 use std::collections::BTreeMap;
 
@@ -44,6 +46,7 @@ use crate::dig::DigJob;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::hash::HashCache;
+use crate::items::{Kit, SmokeCloud, Thrown};
 use crate::path::{PathCost, PathScratch, find_path};
 use crate::rules::{Defeat, capture_full};
 use crate::squad;
@@ -272,6 +275,12 @@ pub struct MatchState {
     /// Trenches dug by detached men (`DigUnits`), by never-reused job id.
     pub(crate) unit_digs: BTreeMap<u32, UnitDig>,
     pub(crate) next_unit_dig: u32,
+    /// Items in flight or waiting for their fuse, ascending id.
+    pub(crate) thrown: Vec<Thrown>,
+    pub(crate) next_thrown: u32,
+    /// Smoke clouds, ascending id.
+    pub(crate) smoke: Vec<SmokeCloud>,
+    pub(crate) next_smoke: u32,
 }
 
 /// Mutable world parts a match operation needs.
@@ -330,6 +339,10 @@ impl MatchState {
             ai,
             unit_digs: BTreeMap::new(),
             next_unit_dig: 0,
+            thrown: Vec::new(),
+            next_thrown: 0,
+            smoke: Vec::new(),
+            next_smoke: 0,
             setup,
         }
     }
@@ -452,6 +465,16 @@ impl MatchState {
             CommandKind::DigUnits { units, line } => self.units_dig(ctx, p, units, line),
             CommandKind::SetStance { units, stance } => self.set_stance(ctx, p, units, *stance),
             &CommandKind::Regroup { squad } => self.regroup(ctx, p, squad),
+            CommandKind::Throw {
+                units,
+                item,
+                target,
+            } => self.throw(ctx, p, units, *item, *target, false),
+            CommandKind::ThrowEach {
+                units,
+                item,
+                target,
+            } => self.throw(ctx, p, units, *item, *target, true),
         }
     }
 
@@ -693,7 +716,7 @@ impl MatchState {
         let speed: Fx = ty.speed.into();
         let combat = combat::spawn_combat(ty.hp, &self.setup.weapons[ty.weapon as usize]);
         let mut members = Vec::with_capacity(slots.len());
-        for &q in &slots {
+        for (k, &q) in slots.iter().enumerate() {
             let sid = ctx.ents.spawn(EntityKind::Soldier, owner);
             let i = sid.index();
             ctx.ents.transform[i].pos = q.extend(ctx.terrain.height_at(q));
@@ -702,6 +725,12 @@ impl MatchState {
             ctx.ents.mover[i].speed = speed;
             ctx.ents.squad[i] = Some(id);
             ctx.ents.combat[i] = combat;
+            // The first man leads the squad and carries the leader's kit.
+            ctx.ents.kit[i] = Kit {
+                items: ty.full_kit(&self.setup.items, k == 0),
+                leader: k == 0,
+                ..Kit::default()
+            };
             ctx.hash.mark_entity_chunk(sid.chunk());
             members.push(sid);
         }
@@ -953,6 +982,7 @@ impl MatchState {
         if linked != members {
             return Err("soldier squad links disagree with squad member lists");
         }
+        self.validate_items(ents)?;
         let mut queued: Vec<PathReq> = self.path_queue.queues.iter().flatten().copied().collect();
         if queued
             .iter()

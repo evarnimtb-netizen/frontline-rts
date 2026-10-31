@@ -14,7 +14,8 @@
 //!   bytes and the whole [`MatchState`] (players, squads, queues: small, so
 //!   it is simply re-hashed at every publish).
 //! * In match mode each entity also hashes its `squad` link, its combat
-//!   state and its soldier-level order state (`unit`), and match projectiles
+//!   state, its soldier-level order state (`unit`) and its items (`kit`),
+//!   and match projectiles
 //!   hash their weapon and player. Bench worlds
 //!   skip those (always default there, checked on load), so their hashes
 //!   are unchanged by match mode.
@@ -32,6 +33,7 @@ use crate::dig::DigJob;
 use crate::ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{MatchState, Order, Outcome, PathReq};
+use crate::items::Kit;
 use crate::projectile::{NO_WEAPON, Projectile, ProjectilePool};
 use crate::terrain::{DetailTile, Heightfield};
 use crate::unit::{Unit, UnitOrder};
@@ -143,6 +145,23 @@ impl StableHash for Unit {
     }
 }
 
+impl StableHash for Kit {
+    fn put(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.items);
+        self.leader.put(out);
+        self.throws.put(out);
+        self.resupply.put(out);
+        match self.windup {
+            None => 0xFFu8.put(out),
+            Some(w) => {
+                (w.kind as u8).put(out);
+                w.target.put(out);
+                w.ticks.put(out);
+            }
+        }
+    }
+}
+
 fn put_dig(line: &[FxVec2], job: &DigJob, out: &mut Vec<u8>) {
     line.put(out);
     (job.front as u8).put(out);
@@ -215,6 +234,7 @@ pub(crate) fn entity_chunk(ents: &Entities, c: usize, squads: bool) -> u64 {
                 ents.squad[i].map_or(u32::MAX, |s| s.0).put(out);
                 ents.combat[i].put(out);
                 ents.unit[i].put(out);
+                ents.kit[i].put(out);
             }
         }
     })
@@ -377,6 +397,28 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         d.owner.0.put(out);
         put_dig(&d.line, &d.job, out);
     }
+    g.next_thrown.put(out);
+    (g.thrown.len() as u32).put(out);
+    for t in &g.thrown {
+        t.id.put(out);
+        t.item.put(out);
+        t.owner.0.put(out);
+        t.thrower.0.put(out);
+        t.from.put(out);
+        t.vel.put(out);
+        t.step.put(out);
+        t.pos.put(out);
+        t.landed.put(out);
+        t.fuse.put(out);
+    }
+    g.next_smoke.put(out);
+    (g.smoke.len() as u32).put(out);
+    for c in &g.smoke {
+        c.id.put(out);
+        c.item.put(out);
+        c.pos.put(out);
+        c.age.put(out);
+    }
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {
@@ -428,7 +470,13 @@ pub(crate) fn globals(
         }
         terrain_hash.put(out);
         if let Some(g) = &state.game {
-            for v in [st.soldier_hits, st.near_misses, st.explosions, st.deaths] {
+            for v in [
+                st.soldier_hits,
+                st.near_misses,
+                st.explosions,
+                st.deaths,
+                st.throws,
+            ] {
                 v.put(out);
             }
             (setup_bytes.len() as u32).put(out);

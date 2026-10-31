@@ -8,8 +8,9 @@
 //! * distances and speeds become [`Fixed`] (Q16.16 raw `i32`, read by the sim
 //!   as `Fx::from_raw`), via integer `num / den` truncated toward zero;
 //! * durations become whole ticks at the rules' tick rate, rounding half up;
-//! * def ids become indices into the sorted `weapons`, `squad_types` and
-//!   `factions` lists (sorted by id, so indices are stable for a def set).
+//! * def ids become indices into the sorted `weapons`, `items`,
+//!   `squad_types` and `factions` lists (sorted by id, so indices are stable
+//!   for a def set).
 //!
 //! [`MatchSetup::validate`] re-checks the structure without the defs, since a
 //! setup also arrives inside untrusted save files.
@@ -17,7 +18,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::defs::{SquadRole, WeaponClass, parse_color};
+use crate::defs::{ITEM_KINDS, ItemKind, MAX_ITEM_COUNT, SquadRole, WeaponClass, parse_color};
 use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
@@ -161,6 +162,8 @@ pub struct MatchSetup {
     pub map: MapSetup,
     /// Sorted by id.
     pub weapons: Vec<WeaponSetup>,
+    /// Thrown items (S1b abilities), sorted by id.
+    pub items: Vec<ItemSetup>,
     /// Sorted by id.
     pub squad_types: Vec<SquadTypeSetup>,
     /// Sorted by id.
@@ -184,8 +187,16 @@ pub struct RulesSetup {
     pub movement: MovementSetup,
     pub dig: DigSetup,
     pub combat: CombatSetup,
+    pub items: ItemRulesSetup,
     pub difficulty: DifficultyTable,
     pub ai: AiSetup,
+}
+
+/// Thrown-item rules (see `ItemRulesDef`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemRulesSetup {
+    /// A man in his own base gets one item back every this many ticks.
+    pub resupply_ticks: u32,
 }
 
 /// AI commander tuning (see `AiDef`).
@@ -199,6 +210,9 @@ pub struct AiSetup {
     pub barrage_rounds: u16,
     pub dig_length: Fixed,
     pub dig_offset: Fixed,
+    /// A squad throws at most one item this often.
+    pub throw_cooldown_ticks: u32,
+    pub frag_group_men: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -360,6 +374,57 @@ pub struct HeSetup {
     pub crater_depth: Fixed,
 }
 
+/// A thrown item (see `ItemDef`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemSetup {
+    pub id: String,
+    pub name: String,
+    pub kind: ItemKind,
+    pub range_min: Fixed,
+    pub range_max: Fixed,
+    pub windup_ticks: u32,
+    /// From the start of the throw; never before landing.
+    pub fuse_ticks: u32,
+    pub scatter_pct: u32,
+    pub he: Option<ItemHeSetup>,
+    pub smoke: Option<SmokeSetup>,
+}
+
+/// An item's blast: a weapon-style [`HeSetup`] plus its own damage and
+/// suppression.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemHeSetup {
+    pub damage: u32,
+    pub suppression: u32,
+    pub blast: HeSetup,
+    /// The crater levels a trench or parapet instead of deepening it.
+    pub cuts_trenches: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmokeSetup {
+    pub radius: Fixed,
+    pub grow_ticks: u32,
+    pub hold_ticks: u32,
+    pub fade_ticks: u32,
+}
+
+impl SmokeSetup {
+    /// Ticks from landing until the cloud is gone.
+    pub fn life_ticks(&self) -> u32 {
+        self.grow_ticks + self.hold_ticks + self.fade_ticks
+    }
+}
+
+/// One loadout entry: `count` per man, `leader_count` for the squad leader.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitSetup {
+    /// Index into [`MatchSetup::items`].
+    pub item: u16,
+    pub count: u8,
+    pub leader_count: u8,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SquadTypeSetup {
     pub id: String,
@@ -379,6 +444,33 @@ pub struct SquadTypeSetup {
     /// Formation spacing (m).
     pub spacing: Fixed,
     pub dig_rate_pct: u32,
+    /// What the men carry, at most one entry per item kind.
+    pub loadout: Vec<KitSetup>,
+}
+
+impl SquadTypeSetup {
+    /// The loadout entry for items of `kind`, with the item's setup.
+    pub fn kit<'a>(
+        &'a self,
+        items: &'a [ItemSetup],
+        kind: ItemKind,
+    ) -> Option<(&'a KitSetup, &'a ItemSetup)> {
+        self.loadout.iter().find_map(|k| {
+            let it = items.get(k.item as usize)?;
+            (it.kind == kind).then_some((k, it))
+        })
+    }
+
+    /// Items a man of this type carries when full, by [`ItemKind`].
+    pub fn full_kit(&self, items: &[ItemSetup], leader: bool) -> [u8; ITEM_KINDS] {
+        let mut out = [0; ITEM_KINDS];
+        for kind in ItemKind::ALL {
+            if let Some((k, _)) = self.kit(items, kind) {
+                out[kind.index()] = if leader { k.leader_count } else { k.count };
+            }
+        }
+        out
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -482,6 +574,38 @@ impl ModDefs {
                 }),
             })
             .collect();
+        let items: Vec<ItemSetup> = self
+            .items
+            .values()
+            .map(|it| ItemSetup {
+                id: it.id.clone(),
+                name: it.name.clone(),
+                kind: it.kind,
+                range_min: Fixed::from_int(it.min_range_m as i32),
+                range_max: Fixed::from_int(it.range_m as i32),
+                windup_ticks: ms_to_ticks(it.windup_ms, hz),
+                fuse_ticks: ms_to_ticks(it.fuse_ms, hz),
+                scatter_pct: it.scatter_pct,
+                he: it.he.as_ref().map(|h| ItemHeSetup {
+                    damage: h.damage,
+                    suppression: h.suppression,
+                    blast: HeSetup {
+                        lethal_radius: Fixed::from_cm(h.lethal_radius_cm),
+                        damage_radius: Fixed::from_cm(h.damage_radius_cm),
+                        suppression_radius: Fixed::from_int(h.suppression_radius_m as i32),
+                        crater_radius: Fixed::from_cm(h.crater_radius_cm),
+                        crater_depth: Fixed::from_cm(h.crater_depth_cm),
+                    },
+                    cuts_trenches: h.cuts_trenches,
+                }),
+                smoke: it.smoke.as_ref().map(|m| SmokeSetup {
+                    radius: Fixed::from_int(m.radius_m as i32),
+                    grow_ticks: ms_to_ticks(m.grow_ms, hz),
+                    hold_ticks: ms_to_ticks(m.hold_ms, hz),
+                    fade_ticks: ms_to_ticks(m.fade_ms, hz),
+                }),
+            })
+            .collect();
         let squad_types: Vec<SquadTypeSetup> = self
             .squads
             .values()
@@ -499,6 +623,15 @@ impl ModDefs {
                 sight: Fixed::from_int(s.sight_m as i32),
                 spacing: Fixed::from_ratio(s.spacing_dm as i64, 10),
                 dig_rate_pct: s.dig_rate_pct,
+                loadout: s
+                    .loadout
+                    .iter()
+                    .map(|l| KitSetup {
+                        item: index_of(self.items.keys(), &l.item).unwrap_or(0),
+                        count: l.count,
+                        leader_count: l.leader_count,
+                    })
+                    .collect(),
             })
             .collect();
         let squad_idx = |id: &String| index_of(self.squads.keys(), id).unwrap_or(0);
@@ -612,6 +745,9 @@ impl ModDefs {
                         corpse_ticks: c.corpse_s * hz,
                     }
                 },
+                items: ItemRulesSetup {
+                    resupply_ticks: rules.items.resupply_s * hz,
+                },
                 difficulty: DifficultyTable {
                     easy: diff(&rules.difficulty.easy),
                     normal: diff(&rules.difficulty.normal),
@@ -631,6 +767,8 @@ impl ModDefs {
                         barrage_rounds: a.barrage_rounds as u16,
                         dig_length: Fixed::from_int(a.dig_length_m as i32),
                         dig_offset: Fixed::from_int(a.dig_offset_m as i32),
+                        throw_cooldown_ticks: a.throw_cooldown_s * hz,
+                        frag_group_men: a.frag_group_men,
                     }
                 },
             },
@@ -678,6 +816,7 @@ impl ModDefs {
                     .collect(),
             },
             weapons,
+            items,
             squad_types,
             factions,
             players,
@@ -941,10 +1080,63 @@ impl MatchSetup {
                 && (1..=50).contains(&a.barrage_rounds)
                 && fx_in(a.dig_length, 2, 1000)
                 && a.dig_length <= d.max_length
-                && fx_in(a.dig_offset, 0, 100),
+                && fx_in(a.dig_offset, 0, 100)
+                && (1..=600 * 30).contains(&a.throw_cooldown_ticks)
+                && (1..=16).contains(&a.frag_group_men),
             "rules.ai",
             "out of range",
         );
+        check(
+            (1..=600 * 30).contains(&r.items.resupply_ticks),
+            "rules.items.resupply_ticks",
+            "out of range",
+        );
+        for it in &self.items {
+            check(
+                it.range_min >= Fixed::ZERO
+                    && it.range_min < it.range_max
+                    && fx_in(it.range_max, 1, 100),
+                "items.range",
+                "out of range",
+            );
+            check(
+                it.windup_ticks <= 10 * 30 && it.fuse_ticks <= 30 * 30 && it.scatter_pct <= 100,
+                "items.values",
+                "out of range",
+            );
+            let he = matches!(it.kind, ItemKind::Frag | ItemKind::Satchel);
+            check(
+                he == it.he.is_some() && (it.kind == ItemKind::Smoke) == it.smoke.is_some(),
+                "items.effect",
+                "frag and satchel items need a blast, smoke items a cloud",
+            );
+            if let Some(h) = &it.he {
+                let b = &h.blast;
+                check(
+                    h.damage <= 10_000
+                        && h.suppression <= 100
+                        && b.lethal_radius > Fixed::ZERO
+                        && b.lethal_radius <= b.damage_radius
+                        && fx_in(b.damage_radius, 0, 100)
+                        && fx_in(b.suppression_radius, 0, 200)
+                        && fx_in(b.crater_radius, 0, 20)
+                        && fx_in(b.crater_depth, 0, 5),
+                    "items.he",
+                    "out of range",
+                );
+            }
+            if let Some(m) = &it.smoke {
+                check(
+                    m.radius > Fixed::ZERO
+                        && fx_in(m.radius, 0, 50)
+                        && m.grow_ticks <= 60 * 30
+                        && m.hold_ticks <= 300 * 30
+                        && m.fade_ticks <= 60 * 30,
+                    "items.smoke",
+                    "out of range",
+                );
+            }
+        }
 
         for w in &self.weapons {
             check(
@@ -1028,6 +1220,19 @@ impl MatchSetup {
                 "squad_types.spacing",
                 "must be in (0, 20] m",
             );
+            let mut kinds = [false; ITEM_KINDS];
+            for k in &s.loadout {
+                let ok = self.items.get(k.item as usize).is_some_and(|it| {
+                    !std::mem::replace(&mut kinds[it.kind.index()], true)
+                        && k.count <= MAX_ITEM_COUNT
+                        && k.leader_count <= MAX_ITEM_COUNT
+                });
+                check(
+                    ok,
+                    "squad_types.loadout",
+                    "unknown item, a kind twice, or too many",
+                );
+            }
         }
         for f in &self.factions {
             check(

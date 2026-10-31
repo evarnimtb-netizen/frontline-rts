@@ -1,0 +1,21 @@
+# German stick grenade (S1b abilities). Values are starting points for
+# tuning (docs/slices/S1b-abilities.md "Items").
+id = "ww2:stielhandgranate"
+name = "Stielhandgranate 24"
+kind = "frag"
+min_range_m = 5
+range_m = 30
+windup_ms = 1000
+# From the start of the throw; it never goes off before it lands.
+fuse_ms = 4000
+# Landing point scatter, percent of the throw distance.
+scatter_pct = 6
+
+[he]
+damage = 150
+suppression = 50
+lethal_radius_cm = 200
+damage_radius_cm = 600
+suppression_radius_m = 10
+crater_radius_cm = 50
+crater_depth_cm = 20

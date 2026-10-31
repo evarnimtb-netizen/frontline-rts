@@ -11,7 +11,11 @@
 //! defeat), the capture points and the match outcome; bench worlds leave
 //! those empty except the owner. S1b adds per soldier the stance order and
 //! the detached flag, and for each detached man his own order and spot
-//! ([`UnitSnapshot`], for order markers).
+//! ([`UnitSnapshot`], for order markers). Thrown items (S1b) add per
+//! soldier his item counts and whether he is winding up a throw, per squad
+//! the item totals (ability buttons), the items in flight or lying fused
+//! ([`ThrownSnapshot`]), the smoke clouds ([`SmokeSnapshot`]) and a
+//! [`BlastKind`] per explosion.
 //!
 //! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
 //! soldier (own soldiers always). A presenter for local player `p` draws an
@@ -28,11 +32,13 @@ use crate::combat::Explosion;
 use crate::ecs::PlayerId;
 use crate::ecs::{Entities, EntityKind, SimId, Stance};
 use crate::game::{MatchState, NavPhase, Order, OrderKind, Outcome};
+use crate::items::{BlastKind, cloud_now};
 use crate::projectile::ProjectilePool;
 use crate::rules::{Defeat, capture_full};
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
 use crate::unit::{StanceOrder, UnitOrder};
+use frontline_content::{ITEM_KINDS, ItemKind};
 
 /// `soldier_squad` value for a soldier without a squad.
 pub const NO_SQUAD: u32 = u32::MAX;
@@ -55,6 +61,31 @@ pub struct SquadSnapshot {
     pub goal: [f32; 2],
     /// Dig orders: trench progress in percent (0 otherwise).
     pub dig_pct: u8,
+    /// Items the men carry, by [`ItemKind::index`] (frag, smoke, satchel).
+    pub items: [u16; ITEM_KINDS],
+}
+
+/// A thrown item in the air, or landed and waiting for its fuse.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThrownSnapshot {
+    pub id: u32,
+    pub kind: ItemKind,
+    /// Index into `MatchSetup::items`.
+    pub item: u16,
+    pub owner: u8,
+    pub pos: [f32; 3],
+    pub landed: bool,
+}
+
+/// A smoke cloud: a vertical cylinder standing at `pos`, as tall as it is
+/// wide.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SmokeSnapshot {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub radius: f32,
+    /// 1 while it blocks every sight line, falling to 0 as it thins out.
+    pub density: f32,
 }
 
 /// A detached soldier's own order (S1b), for order markers.
@@ -104,7 +135,10 @@ pub struct ShotSnapshot {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ExplosionSnapshot {
     pub pos: [f32; 3],
+    /// Index into `MatchSetup::weapons` for a shell, into
+    /// `MatchSetup::items` for a frag or satchel.
     pub weapon: u16,
+    pub kind: BlastKind,
 }
 
 /// One player's match status.
@@ -168,6 +202,10 @@ pub struct RenderSnapshot {
     /// (`SetStance`) and whether he is detached from his squad's formation.
     pub soldier_stance_order: Vec<StanceOrder>,
     pub soldier_detached: Vec<bool>,
+    /// Per entry of `soldiers` (match mode only, S1b): items carried by
+    /// [`ItemKind::index`], and whether he is winding up a throw.
+    pub soldier_items: Vec<[u8; ITEM_KINDS]>,
+    pub soldier_throwing: Vec<bool>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -176,6 +214,10 @@ pub struct RenderSnapshot {
     pub shots: Vec<ShotSnapshot>,
     /// HE bursts this tick, in order (match mode only).
     pub explosions: Vec<ExplosionSnapshot>,
+    /// Thrown items, ascending id (match mode only).
+    pub thrown: Vec<ThrownSnapshot>,
+    /// Smoke clouds, ascending id (match mode only).
+    pub smoke: Vec<SmokeSnapshot>,
     /// Per live projectile, in slot order: `[x, y, z]`.
     pub projectiles: Vec<[f32; 3]>,
     /// Squads in ascending id order (match mode only).
@@ -231,6 +273,8 @@ impl RenderSnapshot {
         self.soldier_visible.clear();
         self.soldier_stance_order.clear();
         self.soldier_detached.clear();
+        self.soldier_items.clear();
+        self.soldier_throwing.clear();
         self.units.clear();
         self.corpses.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
@@ -255,6 +299,9 @@ impl RenderSnapshot {
                         let u = &ents.unit()[i];
                         self.soldier_stance_order.push(u.stance);
                         self.soldier_detached.push(u.detached);
+                        let k = &ents.kit()[i];
+                        self.soldier_items.push(k.items);
+                        self.soldier_throwing.push(k.windup.is_some());
                         if u.detached
                             && let Some(g) = game
                         {
@@ -301,6 +348,8 @@ impl RenderSnapshot {
         self.squads.clear();
         self.players.clear();
         self.points.clear();
+        self.thrown.clear();
+        self.smoke.clear();
         self.outcome = Outcome::Running;
         self.winner = None;
         let Some(g) = game else {
@@ -311,6 +360,12 @@ impl RenderSnapshot {
                 continue;
             }
             let lead = sq.lead(ents);
+            let mut items = [0u16; ITEM_KINDS];
+            for m in &sq.members {
+                for (n, c) in items.iter_mut().zip(ents.kit()[m.index()].items) {
+                    *n += c as u16;
+                }
+            }
             self.squads.push(SquadSnapshot {
                 id: id.0,
                 type_idx: sq.type_idx,
@@ -331,6 +386,30 @@ impl RenderSnapshot {
                     }
                     _ => 0,
                 },
+                items,
+            });
+        }
+        let items = &g.setup().items;
+        for t in g.thrown() {
+            self.thrown.push(ThrownSnapshot {
+                id: t.id,
+                kind: items[t.item as usize].kind,
+                item: t.item,
+                owner: t.owner.0,
+                pos: t.pos.to_f32(),
+                landed: t.landed,
+            });
+        }
+        for c in g.smoke() {
+            let Some(s) = items[c.item as usize].smoke.as_ref() else {
+                continue;
+            };
+            let (r, density) = cloud_now(s, c.age);
+            self.smoke.push(SmokeSnapshot {
+                id: c.id,
+                pos: c.pos.to_f32(),
+                radius: r.to_f32(),
+                density: crate::fx::Fx::from_ratio(density as i64, 1000).to_f32(),
             });
         }
         for (p, pl) in g.players().iter().enumerate() {
@@ -398,6 +477,7 @@ impl RenderSnapshot {
             .extend(explosions.iter().map(|e| ExplosionSnapshot {
                 pos: e.pos.to_f32(),
                 weapon: e.weapon,
+                kind: e.kind,
             }));
     }
 }

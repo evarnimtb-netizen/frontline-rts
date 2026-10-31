@@ -1,5 +1,5 @@
-//! Def files of a content mod (§7.1, §7.4): squads, weapons, factions, maps
-//! and rules, one TOML file each under `defs/<kind>/`.
+//! Def files of a content mod (§7.1, §7.4): squads, weapons, items,
+//! factions, maps and rules, one TOML file each under `defs/<kind>/`.
 //!
 //! Every def has a namespaced id (`ww2:kar98k`, §7.3). Values are integers
 //! with the unit in the field name (`range_m`, `reload_ms`, `spread_mrad`),
@@ -65,10 +65,134 @@ pub struct SquadDef {
     /// Digging speed per man in percent of the base rate; 0 = cannot dig.
     #[serde(default)]
     pub dig_rate_pct: u32,
+    /// Items the men carry (S1b abilities); at most one entry per item
+    /// kind. Empty: nothing to throw.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loadout: Vec<LoadoutDef>,
 }
+
+/// How many of one item a squad's men carry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoadoutDef {
+    /// Item id, e.g. `ww2:stielhandgranate`.
+    pub item: String,
+    /// Carried by every man but the squad leader.
+    #[serde(default)]
+    pub count: u8,
+    /// Carried by the squad leader (the first man at spawn).
+    #[serde(default)]
+    pub leader_count: u8,
+}
+
+/// Most of one item a man carries.
+pub const MAX_ITEM_COUNT: u8 = 10;
 
 fn default_hp() -> u32 {
     100
+}
+
+/// What a thrown item does. The sim keeps per-soldier counts by kind, and
+/// the presenter's ability buttons (G, T, F) map to kinds.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum ItemKind {
+    /// Fragmentation grenade: a small HE blast.
+    #[default]
+    Frag = 0,
+    /// Smoke grenade: a cloud that blocks spotting.
+    Smoke = 1,
+    /// Satchel charge: a big HE blast whose crater cuts trenches.
+    Satchel = 2,
+}
+
+/// Number of [`ItemKind`]s.
+pub const ITEM_KINDS: usize = 3;
+
+impl ItemKind {
+    pub const ALL: [ItemKind; ITEM_KINDS] = [ItemKind::Frag, ItemKind::Smoke, ItemKind::Satchel];
+
+    /// Position in [`ItemKind::ALL`] (per-soldier count arrays).
+    #[inline]
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// A throwable item (`defs/items/*.toml`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ItemDef {
+    pub id: String,
+    pub name: String,
+    pub kind: ItemKind,
+    /// Closest target, in metres.
+    #[serde(default)]
+    pub min_range_m: u32,
+    /// Farthest target, in metres.
+    pub range_m: u32,
+    /// The thrower stands still this long before the item leaves his hand.
+    pub windup_ms: u32,
+    /// Fuse from the start of the throw (wind-up included). The item never
+    /// goes off before it lands; 0 = on landing.
+    #[serde(default)]
+    pub fuse_ms: u32,
+    /// Scatter of the landing point, in percent of the throw distance.
+    pub scatter_pct: u32,
+    /// Frag and satchel: the blast.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub he: Option<ItemHeDef>,
+    /// Smoke: the cloud.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smoke: Option<SmokeDef>,
+}
+
+/// An item's blast (like a weapon's [`HeDef`], plus damage and suppression).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ItemHeDef {
+    /// Damage inside the lethal radius.
+    pub damage: u32,
+    /// Suppression at the blast point (out of 100), falling to zero at the
+    /// suppression radius.
+    pub suppression: u32,
+    pub lethal_radius_cm: u32,
+    pub damage_radius_cm: u32,
+    pub suppression_radius_m: u32,
+    pub crater_radius_cm: u32,
+    pub crater_depth_cm: u32,
+    /// The crater levels what it hits instead of deepening it: a trench
+    /// inside it fills in and a parapet is blown away (satchel charges).
+    #[serde(default)]
+    pub cuts_trenches: bool,
+}
+
+/// A smoke cloud: a cylinder that grows, holds, then thins out.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SmokeDef {
+    /// Full radius (the cloud is as tall as it is wide).
+    pub radius_m: u32,
+    /// Growth from nothing to the full radius.
+    pub grow_ms: u32,
+    /// Full density after growing.
+    pub hold_ms: u32,
+    /// Thinning out: sight lines get through more and more often.
+    pub fade_ms: u32,
 }
 
 /// Weapon family; decides how the sim fires it.
@@ -258,8 +382,18 @@ pub struct RulesDef {
     pub movement: MovementDef,
     pub dig: DigDef,
     pub combat: CombatDef,
+    pub items: ItemRulesDef,
     pub difficulty: DifficultyTableDef,
     pub ai: AiDef,
+}
+
+/// Thrown items (S1b abilities).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ItemRulesDef {
+    /// A soldier in his own base gets one item back this often, up to his
+    /// loadout.
+    pub resupply_s: u32,
 }
 
 fn default_tick_hz() -> u32 {
@@ -382,6 +516,11 @@ pub struct AiDef {
     pub dig_length_m: u32,
     /// ... this far in front of it, toward the nearest enemy.
     pub dig_offset_m: u32,
+    /// A squad throws at most one item this often.
+    pub throw_cooldown_s: u32,
+    /// Frags go at enemies in a trench, or at a group of at least this many
+    /// spotted men within 5 m of each other.
+    pub frag_group_men: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -448,6 +587,100 @@ impl SquadDef {
         range(&mut out, "spacing_dm", self.spacing_dm, 5, 200);
         range(&mut out, "dig_rate_pct", self.dig_rate_pct, 0, 1000);
         range(&mut out, "cost", self.cost, 0, 100_000);
+        for (i, l) in self.loadout.iter().enumerate() {
+            let max = MAX_ITEM_COUNT as u32;
+            range(
+                &mut out,
+                &format!("loadout[{i}].count"),
+                l.count as u32,
+                0,
+                max,
+            );
+            range(
+                &mut out,
+                &format!("loadout[{i}].leader_count"),
+                l.leader_count as u32,
+                0,
+                max,
+            );
+            if self.loadout[..i].iter().any(|o| o.item == l.item) {
+                out.push(Issue::new(
+                    format!("loadout[{i}].item"),
+                    format!("`{}` is listed twice", l.item),
+                ));
+            }
+        }
+        out
+    }
+}
+
+impl ItemDef {
+    pub fn validate(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        check_id(&mut out, "id", &self.id);
+        check_name(&mut out, "name", &self.name);
+        range(&mut out, "range_m", self.range_m, 1, 100);
+        if self.min_range_m >= self.range_m {
+            out.push(Issue::new(
+                "min_range_m",
+                format!(
+                    "must be below range_m ({}), got {}",
+                    self.range_m, self.min_range_m
+                ),
+            ));
+        }
+        range(&mut out, "windup_ms", self.windup_ms, 0, 10_000);
+        range(&mut out, "fuse_ms", self.fuse_ms, 0, 30_000);
+        range(&mut out, "scatter_pct", self.scatter_pct, 0, 100);
+        let he = matches!(self.kind, ItemKind::Frag | ItemKind::Satchel);
+        if he != self.he.is_some() {
+            out.push(
+                Issue::new(
+                    "he",
+                    "frag and satchel items need an [he] table, smoke must not",
+                )
+                .with_hint("[he] damage = 150 ..."),
+            );
+        }
+        if (self.kind == ItemKind::Smoke) != self.smoke.is_some() {
+            out.push(
+                Issue::new("smoke", "smoke items need a [smoke] table, others must not")
+                    .with_hint("[smoke] radius_m = 8 ..."),
+            );
+        }
+        if let Some(h) = &self.he {
+            range(&mut out, "he.damage", h.damage, 0, 10_000);
+            range(&mut out, "he.suppression", h.suppression, 0, 100);
+            range(&mut out, "he.lethal_radius_cm", h.lethal_radius_cm, 1, 5000);
+            range(
+                &mut out,
+                "he.damage_radius_cm",
+                h.damage_radius_cm,
+                1,
+                10_000,
+            );
+            if h.damage_radius_cm < h.lethal_radius_cm {
+                out.push(Issue::new(
+                    "he.damage_radius_cm",
+                    "must be at least lethal_radius_cm",
+                ));
+            }
+            range(
+                &mut out,
+                "he.suppression_radius_m",
+                h.suppression_radius_m,
+                1,
+                200,
+            );
+            range(&mut out, "he.crater_radius_cm", h.crater_radius_cm, 0, 2000);
+            range(&mut out, "he.crater_depth_cm", h.crater_depth_cm, 0, 500);
+        }
+        if let Some(s) = &self.smoke {
+            range(&mut out, "smoke.radius_m", s.radius_m, 1, 50);
+            range(&mut out, "smoke.grow_ms", s.grow_ms, 0, 60_000);
+            range(&mut out, "smoke.hold_ms", s.hold_ms, 0, 300_000);
+            range(&mut out, "smoke.fade_ms", s.fade_ms, 0, 60_000);
+        }
         out
     }
 }
@@ -808,6 +1041,7 @@ impl RulesDef {
                 "must be at least crouch_suppression",
             ));
         }
+        range(&mut out, "items.resupply_s", self.items.resupply_s, 1, 600);
         if c.spot_rays_per_tick < c.spot_observers {
             out.push(Issue::new(
                 "combat.spot_rays_per_tick",
@@ -854,6 +1088,8 @@ impl RulesDef {
             ("barrage_rounds", a.barrage_rounds, 1, 50),
             ("dig_length_m", a.dig_length_m, 2, 1000),
             ("dig_offset_m", a.dig_offset_m, 0, 100),
+            ("throw_cooldown_s", a.throw_cooldown_s, 1, 600),
+            ("frag_group_men", a.frag_group_men, 1, 16),
         ] {
             range(&mut out, &format!("ai.{name}"), v, lo, hi);
         }

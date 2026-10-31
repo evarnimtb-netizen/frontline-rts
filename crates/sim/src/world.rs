@@ -7,10 +7,10 @@
 //! | 1 | Intent | sorted command apply (match: human and due AI commands together); bench: waypoint re-pick; match: call-ins, AI plans ([`crate::ai`]), path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
 //! | 2 | Perception | match: spotting per player ([`crate::spotting`]) | per player, serial apply |
 //! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate (pinned men stay) | serial rebuild, per-chunk plan + integrate |
-//! | 4 | Weapons | bench: cooldowns, random fire; match: marks, squad focus, targeting and fire, mortars ([`crate::combat`]); sorted spawn into the pool | per-chunk, serial focus/mortars/spawn |
-//! | 5 | Ballistics | 60 Hz substeps, ground test (match: capsule hits, near misses), despawn | per-slot-chunk, serial free-list merge |
-//! | 6 | Damage | match: hits, suppression, HE bursts and craters, deaths | serial |
-//! | 7 | Status | match: suppression decay, stance, timers, corpse removal; capture, income, tickets, victory ([`crate::rules`]) | per-chunk, serial removal and rules |
+//! | 4 | Weapons | bench: cooldowns, random fire; match: marks, squad focus, targeting and fire, mortars ([`crate::combat`]), throw wind-ups and releases ([`crate::items`]); sorted spawn into the pool | per-chunk, serial focus/mortars/throws/spawn |
+//! | 5 | Ballistics | 60 Hz substeps, ground test (match: capsule hits, near misses; thrown items), despawn | per-slot-chunk, serial free-list merge and thrown items |
+//! | 6 | Damage | match: hits, suppression, HE bursts and craters, thrown items going off (blasts, smoke), deaths | serial |
+//! | 7 | Status | match: suppression decay, stance, timers, corpse removal; smoke ageing and resupply; capture, income, tickets, victory ([`crate::rules`]) | per-chunk, serial removal, items and rules |
 //! | 8 | World/Hash | tick++, dirty chunk and terrain tile re-hash, publish every K; snapshot | per-chunk hash |
 //!
 //! A world is either a **bench** world ([`World::new`] from a [`SimConfig`]:
@@ -298,11 +298,13 @@ pub struct Stats {
     pub commands_applied: u64,
     pub commands_rejected: u64,
     /// Match mode (hashed only there): rounds that hit a soldier, near
-    /// misses, HE bursts and soldiers killed.
+    /// misses, HE bursts (shells and thrown items), soldiers killed and
+    /// items thrown.
     pub soldier_hits: u64,
     pub near_misses: u64,
     pub explosions: u64,
     pub deaths: u64,
+    pub throws: u64,
 }
 
 /// Everything that is saved. All of it is covered by the state hash, except
@@ -368,8 +370,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// contested points) and AI commander state. 6: weapon fire intervals in
 /// milli-ticks (`WeaponSetup::interval_milli`). 7: soldier-level orders
 /// (entity `unit` column, unit dig jobs, soldier path requests, the
-/// `prone_speed_pct` movement rule).
-const SAVE_VERSION: u32 = 7;
+/// `prone_speed_pct` movement rule). 8: thrown items (entity `kit` column,
+/// items in flight, smoke clouds, item defs and loadouts in the setup, the
+/// item and AI throw rules, AI throw cooldowns, the `throws` counter).
+const SAVE_VERSION: u32 = 8;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -423,6 +427,8 @@ pub struct World {
     /// Rounds fired in the last tick (including dropped ones), sorted.
     shots: Vec<FireRequest>,
     explosions: Vec<Explosion>,
+    /// Damage-stage scratch: thrown items going off this tick.
+    fused: Vec<crate::items::Thrown>,
 }
 
 impl World {
@@ -558,6 +564,7 @@ impl World {
             gone_bufs: Vec::new(),
             shots: Vec::new(),
             explosions: Vec::new(),
+            fused: Vec::new(),
             state,
         };
         world.refresh_hashes();
@@ -717,6 +724,7 @@ impl World {
                 .zip(&st.entities.combat)
                 .any(|(k, c)| *k == EntityKind::Corpse || *c != Default::default())
                 || st.entities.unit.iter().any(|u| *u != Default::default())
+                || st.entities.kit.iter().any(|k| *k != Default::default())
                 || st
                     .projectiles
                     .slots()
@@ -876,7 +884,7 @@ impl World {
                 let (ents, terrain, g) = (&*entities, &*terrain, &*game);
                 threads.install(|| {
                     spot_passes.par_iter_mut().enumerate().for_each(|(p, out)| {
-                        spotting::spot(PlayerId(p as u8), ents, terrain, g, out)
+                        spotting::spot(PlayerId(p as u8), ents, terrain, g, tick, out)
                     })
                 });
             }
@@ -1045,6 +1053,7 @@ impl World {
                     combat,
                     weapon,
                     unit,
+                    kit,
                     ..
                 } = &mut *entities;
                 let ctx = FireCtx {
@@ -1054,6 +1063,7 @@ impl World {
                     velocity,
                     squad,
                     unit,
+                    kit,
                     marks,
                     mark_of,
                     game: &*game,
@@ -1080,6 +1090,7 @@ impl World {
                 fire_merged.extend_from_slice(b);
             }
             game.fire_mortars(entities, terrain, hash, seed, tick, fire_merged);
+            stats.throws += game.release_throws(entities, terrain, hash, seed);
             fire_merged.sort_unstable();
             let (fired, dropped) = combat::spawn_rounds(fire_merged, projectiles, hash);
             stats.shots_fired += fired;
@@ -1154,6 +1165,9 @@ impl World {
                     }
                 }
             }
+            if let Some(g) = state.game.as_mut() {
+                g.fly_thrown(&state.terrain, substeps);
+            }
             hash.merge_pool_flags(flags);
             for buf in ended_bufs.iter() {
                 for &(slot, end) in buf {
@@ -1180,6 +1194,7 @@ impl World {
                 spatial,
                 blows,
                 explosions,
+                fused,
                 ..
             } = self;
             let SimState {
@@ -1200,7 +1215,7 @@ impl World {
             };
             game.as_mut()
                 .expect("match world")
-                .apply_blows(&mut ctx, blows, explosions);
+                .apply_blows(&mut ctx, blows, explosions, fused);
         }
         let t6 = Instant::now();
 
@@ -1232,6 +1247,7 @@ impl World {
                     squad,
                     combat,
                     unit,
+                    kit,
                     ..
                 } = &mut *entities;
                 let ctx = StatusCtx {
@@ -1241,6 +1257,7 @@ impl World {
                     weapon,
                     squad,
                     unit,
+                    kit,
                     game,
                     terrain,
                 };
@@ -1264,6 +1281,7 @@ impl World {
                 }
             }
             if let Some(game) = &mut self.state.game {
+                game.update_items(&mut self.state.entities, &mut self.hash);
                 game.update_rules(&self.state.entities);
             }
         }
@@ -1967,6 +1985,134 @@ mod tests {
         let bytes = save_edited(&w, |s| {
             s.entities.unit[0].stance = crate::unit::StanceOrder::Prone;
         });
+        assert!(load_err(&bytes).contains("bench"));
+    }
+
+    /// A match world with a smoke cloud up, a frag in the air and a man
+    /// winding up a throw (player 0's men in their base).
+    fn item_world() -> World {
+        use frontline_content::ItemKind;
+        let mut w = match_world();
+        let men: Vec<SimId> = {
+            let g = w.game().unwrap();
+            let sq = g
+                .squads()
+                .values()
+                .find(|s| s.owner == PlayerId(0))
+                .unwrap();
+            sq.members.clone()
+        };
+        let throw = |w: &mut World, m: SimId, item: ItemKind| {
+            let at = w.entities().transform()[m.index()].pos.xy() + FxVec2::from_int(15, 0);
+            let seq = w.tick() as u32;
+            w.step(&[Command {
+                player: PlayerId(0),
+                seq,
+                kind: CommandKind::Throw {
+                    units: vec![m],
+                    item,
+                    target: at,
+                },
+            }]);
+        };
+        throw(&mut w, men[0], ItemKind::Smoke);
+        for _ in 0..70 {
+            w.step(&[]);
+        }
+        throw(&mut w, men[1], ItemKind::Frag);
+        for _ in 0..40 {
+            w.step(&[]);
+        }
+        throw(&mut w, men[2], ItemKind::Frag);
+        for _ in 0..5 {
+            w.step(&[]);
+        }
+        let g = w.game().unwrap();
+        assert_eq!(g.smoke().len(), 1);
+        assert!(g.thrown().len() == 1 && !g.thrown()[0].landed);
+        assert!(w.entities().kit[men[2].index()].windup.is_some());
+        w
+    }
+
+    #[test]
+    fn item_state_is_saved_hashed_and_checked_on_load() {
+        use frontline_content::ItemKind;
+        let w = item_world();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.state_hash(), w.state_hash());
+        let ents = w.entities();
+        let winder = ents
+            .soldiers()
+            .find(|id| ents.kit[id.index()].windup.is_some())
+            .unwrap()
+            .index();
+        let base = w.full_state_hash();
+        type Edit = Box<dyn Fn(&mut SimState)>;
+        let edits: [Edit; 8] = [
+            Box::new(move |s| s.entities.kit[winder].leader = true),
+            Box::new(move |s| s.entities.kit[winder].resupply = 3),
+            Box::new(move |s| s.entities.kit[winder].windup.as_mut().unwrap().ticks -= 1),
+            Box::new(move |s| s.entities.kit[winder].throws += 1),
+            Box::new(|s| s.game.as_mut().unwrap().thrown[0].pos.z += Fx::ONE),
+            Box::new(|s| s.game.as_mut().unwrap().smoke[0].age += 1),
+            Box::new(|s| s.game.as_mut().unwrap().next_thrown += 1),
+            Box::new(|s| s.stats.throws += 1),
+        ];
+        for edit in edits {
+            let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base);
+        }
+        // More items than the loadout, or a wind-up for an item he lacks.
+        let bytes = save_edited(&w, move |s| s.entities.kit[winder].items[0] = 5);
+        assert!(load_err(&bytes).contains("kit"));
+        let bytes = save_edited(&w, move |s| {
+            s.entities.kit[winder].windup.as_mut().unwrap().kind = ItemKind::Satchel
+        });
+        assert!(load_err(&bytes).contains("kit"));
+        // A corpse with items.
+        let bytes = save_edited(&w, |s| {
+            let i = s.entities.soldiers().next().unwrap().index();
+            s.entities.kind[i] = EntityKind::Corpse;
+            s.entities.combat[i].corpse = 10;
+            s.entities.combat[i].hp = 0;
+            let sq = s.entities.squad[i].take().unwrap();
+            let g = s.game.as_mut().unwrap();
+            let q = g.squads.get_mut(&sq).unwrap();
+            let k = q.members.iter().position(|m| m.index() == i).unwrap();
+            q.members.remove(k);
+            q.nav.slots.remove(k);
+            s.entities.unit[i] = Default::default();
+        });
+        let e = load_err(&bytes);
+        assert!(e.contains("items"), "{e}");
+        // Items in flight: unknown item, ids out of order.
+        let bytes = save_edited(&w, |s| s.game.as_mut().unwrap().thrown[0].item = 99);
+        assert!(load_err(&bytes).contains("thrown"));
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            let t = g.thrown[0].clone();
+            g.thrown.push(t);
+        });
+        assert!(load_err(&bytes).contains("thrown"));
+        // Smoke from a frag, or a cloud past its life.
+        let frag = w
+            .match_setup()
+            .unwrap()
+            .items
+            .iter()
+            .position(|it| it.kind == ItemKind::Frag)
+            .unwrap() as u16;
+        let bytes = save_edited(&w, move |s| s.game.as_mut().unwrap().smoke[0].item = frag);
+        assert!(load_err(&bytes).contains("smoke"));
+        let bytes = save_edited(&w, |s| s.game.as_mut().unwrap().smoke[0].age = 1_000_000);
+        assert!(load_err(&bytes).contains("smoke"));
+    }
+
+    #[test]
+    fn load_rejects_item_state_in_bench_worlds() {
+        let w = busy_world();
+        let bytes = save_edited(&w, |s| s.entities.kit[0].items[0] = 1);
         assert!(load_err(&bytes).contains("bench"));
     }
 

@@ -813,6 +813,20 @@ impl Heightfield {
     /// 0.5 R and 1.5 R. Additive, so craters on craters (or in a trench)
     /// deepen what is there.
     pub fn crater(&mut self, center: FxVec2, radius: Fx, depth: Fx, tick: u64) {
+        self.crater_with(center, radius, depth, tick, false);
+    }
+
+    /// A crater that levels what it hits instead of deepening it (satchel
+    /// charges): inside `radius` the ground becomes the crater bowl below
+    /// the *base* surface, so a trench there fills in and its walls are
+    /// gone; in the rim band nothing stays above the base surface plus the
+    /// rim, so a parapet is blown down, while deeper ground (the trench
+    /// beyond the crater) is kept.
+    pub fn crater_cut(&mut self, center: FxVec2, radius: Fx, depth: Fx, tick: u64) {
+        self.crater_with(center, radius, depth, tick, true);
+    }
+
+    fn crater_with(&mut self, center: FxVec2, radius: Fx, depth: Fx, tick: u64, cut: bool) {
         if radius <= Fx::ZERO || depth <= Fx::ZERO {
             return;
         }
@@ -825,7 +839,7 @@ impl Heightfield {
             (lo(center.x), lo(center.y)),
             (hi(center.x), hi(center.y)),
             tick,
-            |px, py, _base, cur| {
+            |px, py, base, cur| {
                 let p = FxVec2::new(
                     Fx::from_raw(px << DETAIL_SHIFT),
                     Fx::from_raw(py << DETAIL_SHIFT),
@@ -846,7 +860,11 @@ impl Heightfield {
                 if off < Fx::HALF {
                     delta += rim.mul(Fx::ONE - off.mul_int(2));
                 }
-                cur + delta
+                match (cut, dist < radius) {
+                    (false, _) => cur + delta,
+                    (true, true) => base + delta,
+                    (true, false) => cur.min(base + delta),
+                }
             },
         );
     }

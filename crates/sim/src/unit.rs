@@ -155,7 +155,7 @@ impl MatchState {
 
     /// The command's men: at most [`MAX_UNITS`] ids, sorted, deduplicated,
     /// keeping live soldiers of `p` in a squad. `None` if nothing is left.
-    fn unit_set(&self, ctx: &Ctx, p: PlayerId, ids: &[SimId]) -> Option<Vec<SimId>> {
+    pub(crate) fn unit_set(&self, ctx: &Ctx, p: PlayerId, ids: &[SimId]) -> Option<Vec<SimId>> {
         if ids.is_empty() || ids.len() > MAX_UNITS {
             return None;
         }
@@ -381,7 +381,7 @@ impl MatchState {
 
     /// Makes `m` detached with `order`, facing `facing` once there. His
     /// navigation state is reset; the caller sets a goal or a path.
-    fn detach(&mut self, ctx: &mut Ctx, m: SimId, order: UnitOrder, facing: FxVec2) {
+    pub(crate) fn detach(&mut self, ctx: &mut Ctx, m: SimId, order: UnitOrder, facing: FxVec2) {
         let u = &mut ctx.ents.unit[m.index()];
         u.detached = true;
         u.order = order;

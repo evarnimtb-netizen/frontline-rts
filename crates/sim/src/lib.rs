@@ -20,7 +20,8 @@
 //! trenches; `spotting`: per-player visibility; [`combat`]: targeting,
 //! projectiles, suppression, stance, mortars and deaths; [`rules`]:
 //! capture, income, tickets and victory; [`ai`]: the AI commander; [`unit`]:
-//! soldier-level orders, stance orders and detached men). Terrain
+//! soldier-level orders, stance orders and detached men; [`items`]: thrown
+//! frag, smoke and satchel items and smoke clouds). Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
 //!
@@ -36,6 +37,7 @@ pub mod ecs;
 pub mod fx;
 pub mod game;
 mod hash;
+pub mod items;
 pub mod path;
 pub mod projectile;
 pub mod rng;
@@ -53,18 +55,19 @@ pub use ai::{AiCommand, AiState, AiTrench, Task, TaskKind};
 pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
 pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, SimId, Stance};
-pub use frontline_content::MatchSetup;
+pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{
     CallIn, CapturePoint, MatchState, NavPhase, Order, OrderKind, Outcome, PathReq, PlayerState,
     Squad, SquadId,
 };
+pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, Windup};
 pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;
 pub use snapshot::{
     CorpseSnapshot, ExplosionSnapshot, NO_SQUAD, PlayerSnapshot, PointSnapshot, RenderSnapshot,
-    ShotSnapshot, SquadSnapshot, UnitSnapshot, tile_heights_f32,
+    ShotSnapshot, SmokeSnapshot, SquadSnapshot, ThrownSnapshot, UnitSnapshot, tile_heights_f32,
 };
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};

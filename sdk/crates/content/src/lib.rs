@@ -9,7 +9,7 @@
 //!
 //! * [`scenario`]: headless benchmark battles (`frontline-cli simulate`).
 //! * [`defs`] + [`modset`]: a content mod's def files (squads, weapons,
-//!   factions, maps, rules), loaded with [`ModDefs::load`].
+//!   items, factions, maps, rules), loaded with [`ModDefs::load`].
 //! * [`setup`]: [`ModDefs::resolve`] turns defs plus a [`MatchRequest`] into a
 //!   fixed-point [`MatchSetup`] for `frontline_sim::World::new_match`.
 //!
@@ -22,7 +22,10 @@ pub mod modset;
 pub mod scenario;
 pub mod setup;
 
-pub use defs::{FactionDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef};
+pub use defs::{
+    FactionDef, ITEM_KINDS, ItemDef, ItemKind, MapFileDef, RulesDef, SquadDef, SquadRole,
+    WeaponClass, WeaponDef,
+};
 pub use issue::{ContentError, Issue};
 pub use modset::{ModDefs, ModManifest};
 pub use scenario::{
@@ -61,6 +64,10 @@ pub fn schemas() -> Vec<SchemaDoc> {
         SchemaDoc {
             name: "weapon",
             schema: schemars::schema_for!(WeaponDef),
+        },
+        SchemaDoc {
+            name: "item",
+            schema: schemars::schema_for!(ItemDef),
         },
         SchemaDoc {
             name: "faction",

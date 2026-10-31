@@ -33,6 +33,21 @@
 //!    higher; never within [`DANGER_CLOSE_M`] of own men); otherwise it
 //!    moves to a support spot [`SUPPORT_BACK_M`] behind the most important
 //!    point.
+//! 6. **Throws** (S1b, `crate::items`), at most one per squad per
+//!    `throw_cooldown`, for squads not retreating, first that applies:
+//!    * *satchel:* engineers throw at a spotted enemy in a trench within
+//!      satchel range of a carrier;
+//!    * *frag:* at a spotted enemy in a trench, or with at least
+//!      `frag_group_men` spotted men within [`FRAG_GROUP_M`] of him
+//!      (bigger groups, then trenches, then the nearest first), within
+//!      frag range of a man;
+//!    * *smoke:* a moving or attack-moving squad with a third of its men
+//!      pinned throws smoke halfway toward the nearest spotted enemy (at
+//!      most to the smoke's range).
+//!
+//!    `Throw` names every man who could throw it; the sim picks the
+//!    thrower. Throwers end up detached: a squad that is walking again
+//!    while all its detached men are done throwing is regrouped.
 //!
 //! An order is only sent when the squad's task changed or its order no
 //! longer matches the task, and never while a command for that squad is
@@ -55,9 +70,10 @@ use serde::{Deserialize, Serialize};
 use crate::command::CommandKind;
 use crate::ecs::{Entities, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
-use crate::game::{MAX_CALL_IN_QUEUE, MAX_DIG_POINTS, MatchState, Order, SquadId};
+use crate::game::{MAX_CALL_IN_QUEUE, MAX_DIG_POINTS, MatchState, NavPhase, Order, SquadId};
 use crate::rng::{Purpose, RngStream};
 use crate::terrain::Heightfield;
+use frontline_content::ItemKind;
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -71,6 +87,8 @@ pub const DANGER_CLOSE_M: i32 = 35;
 pub const SUPPORT_BACK_M: i32 = 200;
 /// No point index (support and retreat tasks).
 pub const NO_POINT: u8 = u8::MAX;
+/// Frag targets: spotted men within this distance count as one group (m).
+pub const FRAG_GROUP_M: i32 = 5;
 
 /// A command waiting for the AI's reaction delay.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -122,6 +140,8 @@ pub struct AiState {
     /// Commands emitted, and how many of them `apply` rejected.
     pub issued: u32,
     pub rejected: u32,
+    /// Tick of each squad's last throw order, while it cools down.
+    pub last_throw: BTreeMap<SquadId, u64>,
 }
 
 impl AiState {
@@ -134,6 +154,7 @@ impl AiState {
             trenches: Vec::new(),
             issued: 0,
             rejected: 0,
+            last_throw: BTreeMap::new(),
         }
     }
 
@@ -158,6 +179,7 @@ impl AiState {
             || self.trenches.len() > MAX_TRENCHES
             || self.rejected > self.issued
             || self.tasks.keys().any(bad_squad)
+            || self.last_throw.keys().any(bad_squad)
             || self
                 .tasks
                 .values()
@@ -169,6 +191,9 @@ impl AiState {
                 // `buy` indexes the squad types by pending call-ins.
                 CommandKind::CallIn { squad_type } => {
                     *squad_type as usize >= g.setup.squad_types.len()
+                }
+                CommandKind::Throw { units, .. } | CommandKind::ThrowEach { units, .. } => {
+                    units.len() > crate::unit::MAX_UNITS
                 }
                 CommandKind::MoveSoldier { .. }
                 | CommandKind::Spawn { .. }
@@ -215,6 +240,7 @@ fn dist_m(a: FxVec2, b: FxVec2) -> i64 {
 
 /// A spotted enemy soldier.
 struct Known {
+    id: SimId,
     pos: FxVec2,
     squad: u32,
     in_trench: bool,
@@ -289,6 +315,7 @@ impl MatchState {
                     ents,
                     terrain,
                     due,
+                    tick,
                     quality: d.decision_quality_pct.min(100) as i64,
                     rng: RngStream::new(self.setup.seed, tick, SimId(p as u32), Purpose::AI_PLAN),
                 }
@@ -306,6 +333,7 @@ struct Planner<'a> {
     ents: &'a Entities,
     terrain: &'a Heightfield,
     due: u64,
+    tick: u64,
     quality: i64,
     rng: RngStream,
 }
@@ -345,6 +373,7 @@ impl Planner<'_> {
         let assigned = self.assign(&mine, &mut points);
         self.order_infantry(&mine, &assigned, &mut points, &known);
         self.mortars(&mine, &points, &known);
+        self.throws(&mine, &known);
     }
 
     /// Uniform integer in `[0, n)`.
@@ -372,6 +401,7 @@ impl Planner<'_> {
             .map(|id| {
                 let i = id.index();
                 Known {
+                    id,
                     pos: self.ents.transform[i].pos.xy(),
                     squad: self.ents.squad[i].map_or(u32::MAX, |s| s.0),
                     in_trench: self.ents.combat[i].in_trench,
@@ -805,6 +835,159 @@ impl Planner<'_> {
             }
             self.task(m.id, TaskKind::Support, NO_POINT, spot);
         }
+    }
+}
+
+/// A throw the planner wants: item, the men who could throw it, target.
+type ThrowPick = (ItemKind, Vec<SimId>, FxVec2);
+
+impl Planner<'_> {
+    // ----------------------------------------------------------- throws --
+
+    /// Satchel, frag and smoke throws, then regrouping (module docs).
+    fn throws(&mut self, mine: &[Mine], known: &[Known]) {
+        let g = self.g;
+        let cool = g.setup.rules.ai.throw_cooldown_ticks as u64;
+        let tick = self.tick;
+        self.ai
+            .last_throw
+            .retain(|id, t| g.squads.contains_key(id) && tick < *t + cool);
+        for m in mine {
+            let sq = &g.squads[&m.id];
+            if sq.order == Order::Retreat || self.ai.last_throw.contains_key(&m.id) {
+                continue;
+            }
+            let pick = self
+                .satchel(sq, known)
+                .or_else(|| self.frag(sq, known))
+                .or_else(|| self.smoke(sq, known));
+            let Some((item, units, target)) = pick else {
+                continue;
+            };
+            self.ai.emit(
+                self.due,
+                CommandKind::Throw {
+                    units,
+                    item,
+                    target,
+                },
+            );
+            self.ai.last_throw.insert(m.id, tick);
+        }
+        // Throwers stay detached where they stood; take them along again
+        // once their squad walks on.
+        for m in mine {
+            let sq = &g.squads[&m.id];
+            let unit = |id: &SimId| &self.ents.unit[id.index()];
+            let kit = |id: &SimId| &self.ents.kit[id.index()];
+            let detached = sq.members.iter().filter(|id| unit(id).detached);
+            if matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
+                && detached.clone().next().is_some()
+                && detached.clone().all(|id| kit(id).windup.is_none())
+            {
+                self.ai.emit(self.due, CommandKind::Regroup { squad: m.id });
+            }
+        }
+    }
+
+    /// Men of `sq` who may throw a `kind` item at `target` now.
+    fn throwers(&self, sq: &crate::game::Squad, kind: ItemKind, target: FxVec2) -> Vec<SimId> {
+        let mut out: Vec<SimId> = sq
+            .members
+            .iter()
+            .copied()
+            .filter(|&id| self.g.can_throw(self.ents, id, kind, target).is_some())
+            .collect();
+        out.sort_unstable();
+        out
+    }
+
+    /// Engineers: a satchel at a spotted enemy in a trench in range.
+    fn satchel(&self, sq: &crate::game::Squad, known: &[Known]) -> Option<ThrowPick> {
+        let ty = &self.g.setup.squad_types[sq.type_idx as usize];
+        if ty.role != SquadRole::Engineer {
+            return None;
+        }
+        known.iter().filter(|k| k.in_trench).find_map(|k| {
+            let men = self.throwers(sq, ItemKind::Satchel, k.pos);
+            (!men.is_empty()).then_some((ItemKind::Satchel, men, k.pos))
+        })
+    }
+
+    /// A frag at the best spotted target in range (module docs).
+    fn frag(&self, sq: &crate::game::Squad, known: &[Known]) -> Option<ThrowPick> {
+        let g = self.g;
+        let ty = &g.setup.squad_types[sq.type_idx as usize];
+        let (_, it) = ty.kit(&g.setup.items, ItemKind::Frag)?;
+        let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
+        // Only enemies a squad of this size could reach are worth a look.
+        let reach = sq_m(Fx::from(it.range_max) + Fx::from_int(40));
+        let near: Vec<&Known> = known
+            .iter()
+            .filter(|k| (k.pos - lead).length_sq_raw() <= reach)
+            .collect();
+        let group = sq_m(Fx::from_int(FRAG_GROUP_M));
+        let need = g.setup.rules.ai.frag_group_men as i64;
+        // Bigger groups, then trenches, then the nearest, then by id.
+        let mut best: Option<((i64, bool, i64, SimId), ThrowPick)> = None;
+        for k in &near {
+            let men = near
+                .iter()
+                .filter(|o| (o.pos - k.pos).length_sq_raw() <= group)
+                .count() as i64;
+            if !k.in_trench && men < need {
+                continue;
+            }
+            let key = (
+                men,
+                k.in_trench,
+                -dist_m(k.pos, lead),
+                SimId(u32::MAX - k.id.0),
+            );
+            if best.as_ref().is_some_and(|(b, _)| *b >= key) {
+                continue;
+            }
+            let throwers = self.throwers(sq, ItemKind::Frag, k.pos);
+            if !throwers.is_empty() {
+                best = Some((key, (ItemKind::Frag, throwers, k.pos)));
+            }
+        }
+        best.map(|(_, pick)| pick)
+    }
+
+    /// Smoke for a squad pinned on the move (module docs).
+    fn smoke(&self, sq: &crate::game::Squad, known: &[Known]) -> Option<ThrowPick> {
+        if !matches!(sq.order, Order::Move { .. } | Order::AttackMove { .. }) {
+            return None;
+        }
+        let pinned = sq
+            .members
+            .iter()
+            .filter(|id| self.ents.combat[id.index()].pinned)
+            .count();
+        if pinned == 0 || pinned * 3 < sq.members.len() {
+            return None;
+        }
+        let g = self.g;
+        let ty = &g.setup.squad_types[sq.type_idx as usize];
+        let (_, it) = ty.kit(&g.setup.items, ItemKind::Smoke)?;
+        let max = Fx::from(it.range_max) - Fx::ONE;
+        // The carriers: men with smoke who are not pinned.
+        sq.members.iter().find_map(|&id| {
+            let k = &self.ents.kit[id.index()];
+            if k.items[ItemKind::Smoke.index()] == 0 || self.ents.combat[id.index()].pinned {
+                return None;
+            }
+            let from = self.ents.transform[id.index()].pos.xy();
+            let enemy = known
+                .iter()
+                .min_by_key(|k| ((k.pos - from).length_sq_raw(), k.id))?;
+            let d = (enemy.pos - from).length();
+            let dir = (enemy.pos - from).normalize_or_zero();
+            let at = self.terrain.clamp(from + dir * d.div_int(2).min(max));
+            let men = self.throwers(sq, ItemKind::Smoke, at);
+            (!men.is_empty()).then_some((ItemKind::Smoke, men, at))
+        })
     }
 }
 

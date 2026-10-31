@@ -57,6 +57,7 @@ fn ww2_mod_loads_clean() {
     assert_eq!(d.manifest.as_ref().unwrap().id, "ww2");
     assert_eq!(d.squads.len(), 8);
     assert_eq!(d.weapons.len(), 8);
+    assert_eq!(d.items.len(), 6);
     assert_eq!(
         d.factions.keys().collect::<Vec<_>>(),
         ["ww2:germany", "ww2:usa"]
@@ -215,5 +216,106 @@ fn unknown_keys_are_reported_with_location() {
         "{e}"
     );
     assert!(e.contains("line"), "{e}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn items_and_loadouts_resolve() {
+    use frontline_content::ItemKind;
+    let d = load();
+    assert_eq!(d.items.len(), 6);
+    let s = d
+        .resolve(&MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            Difficulty::Normal,
+        ))
+        .unwrap();
+    assert_eq!(s.rules.items.resupply_ticks, 20 * 30);
+    assert_eq!(s.rules.ai.throw_cooldown_ticks, 10 * 30);
+    let frag = s
+        .items
+        .iter()
+        .find(|i| i.id == "ww2:stielhandgranate")
+        .unwrap();
+    assert_eq!(frag.kind, ItemKind::Frag);
+    assert_eq!(frag.range_max, Fixed::from_int(30));
+    assert_eq!((frag.windup_ticks, frag.fuse_ticks), (30, 120));
+    let he = frag.he.as_ref().unwrap();
+    assert_eq!(he.blast.lethal_radius, Fixed::from_int(2));
+    assert!(!he.cuts_trenches && frag.smoke.is_none());
+    let satchel = s
+        .items
+        .iter()
+        .find(|i| i.kind == ItemKind::Satchel)
+        .unwrap();
+    assert!(satchel.he.as_ref().unwrap().cuts_trenches);
+    let smoke = s.items.iter().find(|i| i.kind == ItemKind::Smoke).unwrap();
+    assert_eq!(smoke.smoke.as_ref().unwrap().life_ticks(), 33 * 30);
+    let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
+    // Rifles: a frag each, two and a smoke for the leader; engineers add
+    // the satchel; MG and mortar teams carry nothing.
+    assert_eq!(
+        ty("ww2:ger_rifle_squad").full_kit(&s.items, false),
+        [1, 0, 0]
+    );
+    assert_eq!(
+        ty("ww2:ger_rifle_squad").full_kit(&s.items, true),
+        [2, 1, 0]
+    );
+    assert_eq!(
+        ty("ww2:usa_engineer_squad").full_kit(&s.items, true),
+        [2, 1, 1]
+    );
+    assert_eq!(ty("ww2:usa_mg_team").full_kit(&s.items, true), [0, 0, 0]);
+    assert_eq!(
+        ty("ww2:ger_mortar_team").full_kit(&s.items, true),
+        [0, 0, 0]
+    );
+    let (_, it) = ty("ww2:usa_rifle_squad")
+        .kit(&s.items, ItemKind::Frag)
+        .unwrap();
+    assert_eq!(it.id, "ww2:mk2_grenade");
+}
+
+#[test]
+fn broken_items_and_loadouts_are_reported() {
+    // Smoke without its cloud, a second frag in a loadout, an unknown item,
+    // and a minimum range beyond the range.
+    let root = broken_copy("items", |r| {
+        replace_in(
+            &r.join("defs/units/usa_rifle_squad.toml"),
+            "item = \"ww2:m15_smoke\"",
+            "item = \"ww2:stielhandgranate\"",
+        );
+        replace_in(
+            &r.join("defs/units/usa_engineer_squad.toml"),
+            "item = \"ww2:m37_satchel\"",
+            "item = \"ww2:tnt\"",
+        );
+        replace_in(
+            &r.join("defs/items/mk2_grenade.toml"),
+            "min_range_m = 5",
+            "min_range_m = 50",
+        );
+        replace_in(&r.join("defs/items/nbhgr39.toml"), "[smoke]\n", "");
+        replace_in(&r.join("defs/items/nbhgr39.toml"), "radius_m = 8\n", "");
+        replace_in(&r.join("defs/items/nbhgr39.toml"), "grow_ms = 3000\n", "");
+        replace_in(&r.join("defs/items/nbhgr39.toml"), "hold_ms = 25000\n", "");
+        replace_in(&r.join("defs/items/nbhgr39.toml"), "fade_ms = 5000\n", "");
+    });
+    let paths = issue_paths(ModDefs::load(&root).unwrap_err());
+    for want in [
+        "defs/items/nbhgr39.toml: smoke",
+        "defs/items/mk2_grenade.toml: min_range_m",
+        "squad `ww2:usa_rifle_squad`: loadout[1].item",
+        "squad `ww2:usa_engineer_squad`: loadout[2].item",
+    ] {
+        assert!(
+            paths.iter().any(|p| p == want),
+            "missing {want:?} in {paths:?}"
+        );
+    }
     let _ = std::fs::remove_dir_all(root);
 }

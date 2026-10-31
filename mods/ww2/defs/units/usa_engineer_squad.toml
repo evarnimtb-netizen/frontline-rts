@@ -10,3 +10,18 @@ speed_cm_s = 290
 sight_m = 150
 spacing_dm = 30
 dig_rate_pct = 200
+
+# Items (S1b abilities): one frag each, two and a smoke grenade for the
+# squad leader, who also carries the squad's satchel charge.
+[[loadout]]
+item = "ww2:mk2_grenade"
+count = 1
+leader_count = 2
+
+[[loadout]]
+item = "ww2:m15_smoke"
+leader_count = 1
+
+[[loadout]]
+item = "ww2:m37_satchel"
+leader_count = 1

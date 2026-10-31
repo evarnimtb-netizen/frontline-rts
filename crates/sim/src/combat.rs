@@ -16,7 +16,9 @@
 //!      drops a target that is dead, unseen or out of range, and searches
 //!      again when he has none or once a second: the squad focus first, then
 //!      the nearest seen enemies in range, at most [`LOS_TRIES`] LOS rays
-//!      from his firing muzzle. Opening fire costs half a second of aiming.
+//!      from his firing muzzle (a ray through smoke counts as blocked,
+//!      `crate::items`). A man winding up a throw does not fire. Opening
+//!      fire costs half a second of aiming.
 //!      When his cooldown is up and his weapon is set up (MG: still for
 //!      `setup_ticks`), he fires a real round at the target's aim point,
 //!      compensated for drop, with angular error from the weapon spread
@@ -45,13 +47,16 @@
 //!   body point is in clear line from the blast point (+0.3 m): full damage
 //!   inside the lethal radius, falling linearly to zero at the damage radius;
 //!   it suppresses to the suppression radius (halved behind earth) and
-//!   carves a crater. Soldiers at 0 HP die in ascending id: they become
+//!   carves a crater. Thrown frags and satchels that go off this tick burst
+//!   the same way with their own damage, suppression and crater (a satchel's
+//!   levels trenches), after the projectile events, in item id order; smoke
+//!   items start their cloud. Soldiers at 0 HP die in ascending id: they become
 //!   corpses, leave their squad (squads left empty are deleted) and count
 //!   as a loss and a kill.
 //! * **Status** (stage 7, per entity chunk): suppression decays; stance is
 //!   set (pinned → prone; in a trench → crouched below the lip, or lying
 //!   on the floor when ordered prone, standing on the fire step while
-//!   aiming; elsewhere by the man's stance order (S1b): `Auto` → a set-up
+//!   aiming or winding up a throw; elsewhere by the man's stance order (S1b): `Auto` → a set-up
 //!   MG prone, suppressed crouched, else standing; `Stand` → standing,
 //!   crouched when suppressed; `Crouch` and `Prone` as ordered) with
 //!   the matching capsule heights; the stillness and shot timers advance;
@@ -65,7 +70,7 @@
 //! soldiers. Rounds have no drag, so the drop compensation is exact.
 
 use frontline_content::WeaponClass;
-use frontline_content::setup::{CombatSetup, WeaponSetup};
+use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
 
 use crate::ecs::{
     Combat, Entities, EntityKind, PlayerId, SimId, Stance, Transform, Velocity, Weapon,
@@ -73,6 +78,7 @@ use crate::ecs::{
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{MatchState, NavPhase, Order, PathReq, SquadId};
 use crate::hash::HashCache;
+use crate::items::{BlastKind, Kit, Thrown};
 use crate::projectile::{Projectile, ProjectileEnd, SUBSTEP_HZ, advance, finish};
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
@@ -263,6 +269,7 @@ pub(crate) struct FireCtx<'a> {
     pub velocity: &'a [Velocity],
     pub squad: &'a [Option<SquadId>],
     pub unit: &'a [Unit],
+    pub kit: &'a [Kit],
     pub marks: &'a [Mark],
     pub mark_of: &'a [u32],
     pub game: &'a MatchState,
@@ -338,15 +345,18 @@ fn search(
     }
     (0..n.min(LOS_TRIES)).find_map(|k| {
         let (_, id, m) = cands[(rot + k) % n];
-        ctx.terrain
-            .line_of_sight(from, ctx.marks[m as usize].aim)
-            .then_some(id)
+        let aim = ctx.marks[m as usize].aim;
+        (ctx.terrain.line_of_sight(from, aim)
+            && !ctx
+                .game
+                .smoke_blocks(from, aim, ctx.tick, (id, SimId(i as u32))))
+        .then_some(id)
     })
 }
 
 /// Triangular roll in `[-s, s]`.
 #[inline]
-fn tri(r: &mut RngStream, s: Fx) -> Fx {
+pub(crate) fn tri(r: &mut RngStream, s: Fx) -> Fx {
     (r.range_fx(-s, s) + r.range_fx(-s, s)).div_int(2)
 }
 
@@ -433,7 +443,9 @@ pub(crate) fn aim_and_fire(
         let w = &setup.weapons[ty.weapon as usize];
         let still = is_still(&ctx.velocity[i]);
         let u = &ctx.unit[i];
+        // A man winding up a throw does not fire.
         let may = w.he.is_none()
+            && ctx.kit[i].windup.is_none()
             && match engage_of(&sq.order, u) {
                 Engage::Never => false,
                 Engage::Still => still,
@@ -888,7 +900,24 @@ pub(crate) fn fly(
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Explosion {
     pub pos: FxVec3,
+    /// Weapon index (shells) or item index (frags, satchels).
     pub weapon: u16,
+    pub kind: BlastKind,
+}
+
+/// One HE burst: a mortar shell or a thrown item going off.
+pub(crate) struct Burst<'a> {
+    /// On the surface.
+    pub pos: FxVec3,
+    pub player: u8,
+    pub he: &'a HeSetup,
+    pub damage: u32,
+    /// Suppression points at the blast point.
+    pub suppression: u32,
+    /// Satchel: the crater levels trenches (`Heightfield::crater_cut`).
+    pub cut: bool,
+    /// Crater depth roll.
+    pub key: (SimId, Purpose),
 }
 
 /// Mutable world parts the damage stage needs.
@@ -900,6 +929,82 @@ pub(crate) struct DamageCtx<'a> {
     pub stats: &'a mut Stats,
     pub seed: u64,
     pub tick: u64,
+}
+
+/// Takes `dmg` hit points from soldier `id`; one who drops to 0 joins
+/// `dead` with the player who killed him.
+fn hurt(
+    ents: &mut Entities,
+    hash: &mut HashCache,
+    dead: &mut Vec<(SimId, u8)>,
+    id: SimId,
+    dmg: u32,
+    by: u8,
+) {
+    let c = &mut ents.combat[id.index()];
+    if c.hp == 0 {
+        return;
+    }
+    c.hp = c.hp.saturating_sub(dmg.min(u16::MAX as u32) as u16);
+    if c.hp == 0 {
+        dead.push((id, by));
+    }
+    hash.mark_entity_chunk(id.chunk());
+}
+
+/// Damages and suppresses the enemies of `b.player` around a burst and
+/// carves its crater (see the module docs).
+fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<(SimId, u8)>) {
+    let pos = b.pos;
+    let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(BLAST_LIFT_MM));
+    let he = b.he;
+    let (lethal, reach): (Fx, Fx) = (he.lethal_radius.into(), he.damage_radius.into());
+    let supp_r: Fx = he.suppression_radius.into();
+    let mut ids = Vec::new();
+    ctx.spatial
+        .for_each_near(pos.xy(), supp_r, |id| ids.push(id));
+    for id in ids {
+        let i = id.index();
+        if ctx.ents.kind[i] != EntityKind::Soldier || ctx.ents.owner[i].0 == b.player {
+            continue;
+        }
+        let c = ctx.ents.combat[i];
+        if c.hp == 0 {
+            continue;
+        }
+        let body = body_point(ctx.ents.transform[i].pos, &c);
+        let dist = (body - pos).length();
+        if dist > supp_r {
+            continue;
+        }
+        let clear = ctx.terrain.line_of_sight(lift, body);
+        let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
+            / supp_r.raw().max(1) as i64) as u32;
+        if !clear {
+            add /= 2;
+        }
+        add_suppression(&mut ctx.ents.combat[i], add);
+        ctx.hash.mark_entity_chunk(id.chunk());
+        if clear && dist < reach {
+            let dmg = if dist <= lethal {
+                b.damage
+            } else {
+                (b.damage as i64 * (reach - dist).raw() as i64
+                    / (reach - lethal).raw().max(1) as i64) as u32
+            };
+            hurt(ctx.ents, ctx.hash, dead, id, dmg, b.player);
+        }
+    }
+    let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, b.key.1);
+    let pct = rng.range_i32(CRATER_DEPTH_PCT.0, CRATER_DEPTH_PCT.1);
+    let depth = Fx::from(he.crater_depth).mul_int(pct).div_int(100);
+    if b.cut {
+        ctx.terrain
+            .crater_cut(pos.xy(), he.crater_radius.into(), depth, ctx.tick);
+    } else {
+        ctx.terrain
+            .crater(pos.xy(), he.crater_radius.into(), depth, ctx.tick);
+    }
 }
 
 #[inline]
@@ -914,30 +1019,20 @@ fn covered(c: &Combat) -> bool {
 }
 
 impl MatchState {
-    /// Applies this tick's ballistic events in order, then kills soldiers
-    /// left at 0 HP (see the module docs). Bursts are reported in
-    /// `explosions`.
+    /// Applies this tick's ballistic events in order, then the thrown items
+    /// that go off now (`crate::items`, in id order: blasts, smoke), then
+    /// kills soldiers left at 0 HP (see the module docs). Bursts are
+    /// reported in `explosions`; `fused` is scratch.
     pub(crate) fn apply_blows(
         &mut self,
         ctx: &mut DamageCtx,
         events: &[BallisticEvent],
         explosions: &mut Vec<Explosion>,
+        fused: &mut Vec<Thrown>,
     ) {
         let rules = self.setup.rules.combat.clone();
         // (victim, killer) in the order they fell.
         let mut dead: Vec<(SimId, u8)> = Vec::new();
-        let mut damage =
-            |ents: &mut Entities, hash: &mut HashCache, id: SimId, dmg: u32, by: u8| {
-                let c = &mut ents.combat[id.index()];
-                if c.hp == 0 {
-                    return;
-                }
-                c.hp = c.hp.saturating_sub(dmg.min(u16::MAX as u32) as u16);
-                if c.hp == 0 {
-                    dead.push((id, by));
-                }
-                hash.mark_entity_chunk(id.chunk());
-            };
         for (k, e) in events.iter().enumerate() {
             let w = &self.setup.weapons[e.weapon as usize];
             match e.blow {
@@ -950,7 +1045,7 @@ impl MatchState {
                         &mut ctx.ents.combat[id.index()],
                         rules.hit_suppression * 1000,
                     );
-                    damage(ctx.ents, ctx.hash, id, w.damage, e.player);
+                    hurt(ctx.ents, ctx.hash, &mut dead, id, w.damage, e.player);
                 }
                 Blow::NearMiss(id) => {
                     let c = &mut ctx.ents.combat[id.index()];
@@ -971,57 +1066,51 @@ impl MatchState {
                     explosions.push(Explosion {
                         pos,
                         weapon: e.weapon,
+                        kind: BlastKind::Shell,
                     });
-                    let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(BLAST_LIFT_MM));
-                    let (lethal, reach): (Fx, Fx) =
-                        (he.lethal_radius.into(), he.damage_radius.into());
-                    let supp_r: Fx = he.suppression_radius.into();
-                    let mut ids = Vec::new();
-                    ctx.spatial
-                        .for_each_near(pos.xy(), supp_r, |id| ids.push(id));
-                    for id in ids {
-                        let i = id.index();
-                        if ctx.ents.kind[i] != EntityKind::Soldier
-                            || ctx.ents.owner[i].0 == e.player
-                        {
-                            continue;
-                        }
-                        let c = ctx.ents.combat[i];
-                        if c.hp == 0 {
-                            continue;
-                        }
-                        let body = body_point(ctx.ents.transform[i].pos, &c);
-                        let dist = (body - pos).length();
-                        if dist > supp_r {
-                            continue;
-                        }
-                        let clear = ctx.terrain.line_of_sight(lift, body);
-                        let mut add = (w.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
-                            / supp_r.raw().max(1) as i64)
-                            as u32;
-                        if !clear {
-                            add /= 2;
-                        }
-                        add_suppression(&mut ctx.ents.combat[i], add);
-                        ctx.hash.mark_entity_chunk(id.chunk());
-                        if clear && dist < reach {
-                            let dmg = if dist <= lethal {
-                                w.damage
-                            } else {
-                                (w.damage as i64 * (reach - dist).raw() as i64
-                                    / (reach - lethal).raw().max(1) as i64)
-                                    as u32
-                            };
-                            damage(ctx.ents, ctx.hash, id, dmg, e.player);
-                        }
-                    }
-                    let mut rng =
-                        RngStream::new(ctx.seed, ctx.tick, SimId(k as u32), Purpose::CRATER);
-                    let pct = rng.range_i32(CRATER_DEPTH_PCT.0, CRATER_DEPTH_PCT.1);
-                    let depth = Fx::from(he.crater_depth).mul_int(pct).div_int(100);
-                    ctx.terrain
-                        .crater(pos.xy(), he.crater_radius.into(), depth, ctx.tick);
+                    let b = Burst {
+                        pos,
+                        player: e.player,
+                        he,
+                        damage: w.damage,
+                        suppression: w.suppression,
+                        cut: false,
+                        key: (SimId(k as u32), Purpose::CRATER),
+                    };
+                    burst(ctx, &b, &mut dead);
                 }
+            }
+        }
+        self.take_fused(fused);
+        for t in fused.iter() {
+            let it = &self.setup.items[t.item as usize];
+            if let Some(h) = &it.he {
+                ctx.stats.explosions += 1;
+                let kind = if h.cuts_trenches {
+                    BlastKind::Satchel
+                } else {
+                    BlastKind::Frag
+                };
+                explosions.push(Explosion {
+                    pos: t.pos,
+                    weapon: t.item,
+                    kind,
+                });
+                let b = Burst {
+                    pos: t.pos,
+                    player: t.owner.0,
+                    he: &h.blast,
+                    damage: h.damage,
+                    suppression: h.suppression,
+                    cut: h.cuts_trenches,
+                    key: (SimId(t.id), Purpose::ITEM_CRATER),
+                };
+                burst(ctx, &b, &mut dead);
+            }
+        }
+        for t in fused.iter() {
+            if self.setup.items[t.item as usize].smoke.is_some() {
+                self.start_smoke(t.item, t.pos);
             }
         }
         dead.sort_unstable();
@@ -1056,6 +1145,7 @@ impl MatchState {
             ..Combat::default()
         };
         ents.unit[i] = Unit::default();
+        ents.kit[i] = Kit::default();
         hash.mark_entity_chunk(id.chunk());
         if let Some(p) = self.players.get_mut(owner) {
             p.losses += 1;
@@ -1097,6 +1187,7 @@ pub(crate) struct StatusCtx<'a> {
     pub weapon: &'a [Weapon],
     pub squad: &'a [Option<SquadId>],
     pub unit: &'a [Unit],
+    pub kit: &'a [Kit],
     pub game: &'a MatchState,
     pub terrain: &'a Heightfield,
 }
@@ -1156,8 +1247,10 @@ pub(crate) fn status(
             c.still = 0;
         }
         c.since_shot = c.since_shot.saturating_add(1);
-        let aiming =
-            c.target.is_some() && (ctx.weapon[i].cooldown <= aim_ticks || c.since_shot < aim_ticks);
+        // Winding up a throw counts as aiming: up on the fire step.
+        let aiming = (c.target.is_some()
+            && (ctx.weapon[i].cooldown <= aim_ticks || c.since_shot < aim_ticks))
+            || ctx.kit[i].windup.is_some();
         let crouched = points >= rules.crouch_suppression;
         let (stand, crouch, prone) = (
             Fx::from_milli(STAND_MM),
@@ -1360,6 +1453,7 @@ mod tests {
                 weapon: &self.ents.weapon,
                 squad: &self.ents.squad,
                 unit: &self.ents.unit,
+                kit: &self.ents.kit,
                 game: &self.game,
                 terrain: &self.terrain,
             };
@@ -1430,7 +1524,8 @@ mod tests {
                 player: 0,
                 blow: Blow::Burst(pos),
             }];
-            self.game.apply_blows(&mut ctx, &ev, &mut Vec::new());
+            self.game
+                .apply_blows(&mut ctx, &ev, &mut Vec::new(), &mut Vec::new());
         }
 
         fn hp(&self, id: SimId) -> u16 {
@@ -1582,7 +1677,8 @@ mod tests {
             player: 0,
             blow: Blow::NearMiss(man),
         };
-        r.game.apply_blows(&mut ctx, &[ev; 3], &mut Vec::new());
+        r.game
+            .apply_blows(&mut ctx, &[ev; 3], &mut Vec::new(), &mut Vec::new());
         let per = r.game.setup().weapons[mg].suppression;
         assert_eq!(r.ents.combat[man.index()].suppression, 3 * per * 1000);
         assert_eq!(stats.near_misses, 3);
@@ -1723,6 +1819,7 @@ mod tests {
                 weapon: &r.ents.weapon,
                 squad: &r.ents.squad,
                 unit: &r.ents.unit,
+                kit: &r.ents.kit,
                 game: &r.game,
                 terrain: &r.terrain,
             };

@@ -22,7 +22,8 @@
 //!    `firing_spot_pct`) and casts one LOS ray (`Heightfield::line_of_sight`,
 //!    against the combined surface including dug terrain) from each of the
 //!    nearest `spot_observers` observers in range, nearest first, to the
-//!    target's head; the first clear ray spots him. No observer in range, or
+//!    target's head; the first clear ray spots him. A ray through a smoke
+//!    cloud counts as blocked (`crate::items`). No observer in range, or
 //!    all rays blocked, hides him. The result holds until his next check.
 //!
 //! The per-player results are applied serially in player order. A
@@ -62,6 +63,7 @@ pub(crate) fn spot(
     ents: &Entities,
     terrain: &Heightfield,
     game: &MatchState,
+    tick: u64,
     out: &mut SpotPass,
 ) {
     let setup = game.setup();
@@ -152,9 +154,11 @@ pub(crate) fn spot(
         }
         let target = head(pos, c.height);
         let mut seen = false;
-        for &(_, _, eye) in &near {
+        for &(_, oid, eye) in &near {
             out.rays += 1;
-            if terrain.line_of_sight(eye, target) {
+            if terrain.line_of_sight(eye, target)
+                && !game.smoke_blocks(eye, target, tick, (SimId(i as u32), oid))
+            {
                 seen = true;
                 break;
             }

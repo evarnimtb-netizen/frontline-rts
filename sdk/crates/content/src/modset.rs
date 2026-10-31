@@ -16,7 +16,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::defs::{
-    FactionDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef, check_id,
+    FactionDef, ITEM_KINDS, ItemDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass,
+    WeaponDef, check_id,
 };
 use crate::issue::{ContentError, Issue};
 
@@ -49,6 +50,7 @@ pub struct ModDefs {
     pub manifest: Option<ModManifest>,
     pub squads: BTreeMap<String, SquadDef>,
     pub weapons: BTreeMap<String, WeaponDef>,
+    pub items: BTreeMap<String, ItemDef>,
     pub factions: BTreeMap<String, FactionDef>,
     pub maps: BTreeMap<String, MapFileDef>,
     pub rules: BTreeMap<String, RulesDef>,
@@ -168,6 +170,7 @@ impl ModDefs {
         let mut defs = ModDefs {
             squads: l.load_kind("units", &ns, |d: &SquadDef| &d.id, SquadDef::validate),
             weapons: l.load_kind("weapons", &ns, |d: &WeaponDef| &d.id, WeaponDef::validate),
+            items: l.load_kind("items", &ns, |d: &ItemDef| &d.id, ItemDef::validate),
             factions: l.load_kind(
                 "factions",
                 &ns,
@@ -190,8 +193,9 @@ impl ModDefs {
         }
     }
 
-    /// References between defs: squads → factions and weapons, faction
-    /// rosters → squads, and role/weapon agreement.
+    /// References between defs: squads → factions, weapons and items,
+    /// faction rosters → squads, role/weapon agreement, and at most one item
+    /// of each kind per loadout.
     pub fn cross_check(&self) -> Vec<Issue> {
         let mut out = Vec::new();
         let squad_file = |id: &str| format!("squad `{id}`");
@@ -216,6 +220,20 @@ impl ModDefs {
                             "mortar squads carry a mortar weapon, other squads must not",
                         ));
                     }
+                }
+            }
+            let mut kinds = [false; ITEM_KINDS];
+            for (i, l) in s.loadout.iter().enumerate() {
+                match self.items.get(&l.item) {
+                    None => out.push(Issue::new(
+                        format!("{}: loadout[{i}].item", squad_file(id)),
+                        format!("unknown item `{}`", l.item),
+                    )),
+                    Some(it) if kinds[it.kind.index()] => out.push(Issue::new(
+                        format!("{}: loadout[{i}].item", squad_file(id)),
+                        format!("a second {:?} item; carry one of each kind", it.kind),
+                    )),
+                    Some(it) => kinds[it.kind.index()] = true,
                 }
             }
         }

@@ -86,6 +86,11 @@ range_spread_pct = 50
 fire_exposure_cm = 30
 corpse_s = 30
 
+[items]
+# A soldier in his own base gets one item back this often, up to his
+# loadout.
+resupply_s = 20
+
 [difficulty.easy]
 income_pct = 80
 reaction_ms = 4000
@@ -121,3 +126,8 @@ barrage_rounds = 6
 # it toward the nearest enemy.
 dig_length_m = 20
 dig_offset_m = 10
+# A squad throws at most one item (frag, smoke, satchel) this often.
+throw_cooldown_s = 10
+# Frags go at spotted enemies in a trench, or at a group of at least this
+# many men within 5 m of each other.
+frag_group_men = 3

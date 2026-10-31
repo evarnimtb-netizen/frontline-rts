@@ -5,6 +5,7 @@
 //! payload breaks any remaining ties, so the order is total). Invalid commands
 //! (dead unit, wrong owner) are ignored, identically on every client.
 
+use frontline_content::ItemKind;
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::{PlayerId, SimId};
@@ -82,4 +83,22 @@ pub enum CommandKind {
     },
     /// The squad's detached men rejoin it (its order is kept).
     Regroup { squad: SquadId },
+    // ---- Thrown items (S1b abilities, `crate::items`). `units` as above;
+    // there is no squad-level throw (a whole squad sends its men).
+    /// The eligible man nearest `target` (ties: lowest id) throws one
+    /// `item` there: he carries it, is not pinned or already throwing, and
+    /// `target` is within his item's range. Nobody eligible: ignored. The
+    /// thrower is detached and stays where he stands.
+    Throw {
+        units: Vec<SimId>,
+        item: ItemKind,
+        target: FxVec2,
+    },
+    /// Every eligible man throws one `item` at `target`, each with his own
+    /// scatter.
+    ThrowEach {
+        units: Vec<SimId>,
+        item: ItemKind,
+        target: FxVec2,
+    },
 }

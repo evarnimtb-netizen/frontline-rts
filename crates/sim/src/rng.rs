@@ -37,6 +37,13 @@ impl Purpose {
     pub const SWEEP: Purpose = Purpose(10);
     /// AI commander plan noise (keyed by the player as the id).
     pub const AI_PLAN: Purpose = Purpose(11);
+    /// Landing scatter of a thrown item (keyed by the thrower, with his
+    /// throw count as the tick).
+    pub const THROW: Purpose = Purpose(12);
+    /// A thinning smoke cloud's sight-line roll (keyed by the target).
+    pub const SMOKE: Purpose = Purpose(13);
+    /// Crater depth of a thrown item's burst (keyed by the item id).
+    pub const ITEM_CRATER: Purpose = Purpose(14);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.
