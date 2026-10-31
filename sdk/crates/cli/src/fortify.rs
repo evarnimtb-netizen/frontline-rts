@@ -62,6 +62,11 @@ pub const ASSAULT_GAP_M: i32 = 25;
 pub const ASSAULT_S: u64 = 90;
 /// Throwing starts once the attackers' lead is this close to the trench.
 pub const ASSAULT_THROW_M: i32 = 27;
+/// Smoke variant: from [`ASSAULT_START_M`] the leader throws smoke this far
+/// toward the trench (it stands about 32 m in front of it), and the squad
+/// walks to this distance, inside the cloud.
+pub const ASSAULT_SMOKE_THROW_M: i32 = 28;
+pub const ASSAULT_SMOKE_GAP_M: i32 = 27;
 /// Smoke: the MG stands this far from the squad ...
 pub const SMOKE_GAP_M: i32 = 100;
 /// ... the smoke is thrown this far toward it ...
@@ -136,6 +141,8 @@ pub struct GrenadeExperiment {
 pub struct AssaultVariant {
     /// Where the attackers start, metres from the trench.
     pub start_m: i32,
+    /// Smoke first (see [`AssaultRun::smoke`]).
+    pub smoke: bool,
     pub grenades: AssaultTotals,
     pub rifle_only: AssaultTotals,
     /// Defender losses with grenades as a percentage of rifle-only (null
@@ -159,6 +166,8 @@ pub struct AssaultRun {
     /// Faction id of the dug-in squad.
     pub entrenched: String,
     pub grenades: bool,
+    /// The leader screened the trench with smoke before the advance.
+    pub smoke: bool,
     pub frags_thrown: u32,
     pub frags_in_trench: u32,
     pub defender_losses: u32,
@@ -431,6 +440,7 @@ fn assault_run(
     dug: u8,
     start_m: i32,
     grenades: bool,
+    smoke: bool,
 ) -> Result<AssaultRun> {
     let mut w = world(args, seed)?;
     let att = 1 - dug;
@@ -443,12 +453,35 @@ fn assault_run(
     let start = w.tick();
     let (lost_d, lost_a) = (losses(&w, dug), losses(&w, att));
     let throws = w.stats().throws;
+    let mut goal = at(TRENCH_X + ASSAULT_GAP_M, LINE_Y);
+    if smoke {
+        // The leader screens the trench first; the squad walks into the
+        // cloud once it stands and throws from inside it.
+        let leader = w.game().unwrap().squad(b).unwrap().lead(w.entities());
+        let target = pos(&w, leader) - at(ASSAULT_SMOKE_THROW_M, 0);
+        goal = FxVec2::new(Fx::from_int(TRENCH_X + ASSAULT_SMOKE_GAP_M), target.y);
+        step_with(
+            &mut w,
+            att,
+            vec![CommandKind::Throw {
+                units: vec![leader],
+                item: ItemKind::Smoke,
+                target,
+            }],
+        );
+        while w.snapshot().smoke.first().is_none_or(|c| c.radius < 7.99) {
+            if w.tick() > start + 15 * hz {
+                bail!("seed {seed}: the assault's smoke never came up");
+            }
+            w.step(&[]);
+        }
+    }
     step_with(
         &mut w,
         att,
         vec![CommandKind::Move {
             squad: b,
-            target: at(TRENCH_X + ASSAULT_GAP_M, LINE_Y),
+            target: goal,
         }],
     );
     let base = w.terrain().base_height_at(at(TRENCH_X, LINE_Y));
@@ -471,7 +504,8 @@ fn assault_run(
         start_m,
         entrenched: faction(w.match_setup().unwrap(), dug),
         grenades,
-        frags_thrown: (w.stats().throws - throws) as u32,
+        smoke,
+        frags_thrown: (w.stats().throws - throws - smoke as u64) as u32,
         frags_in_trench: in_trench,
         defender_losses: losses(&w, dug) - lost_d,
         attacker_losses: losses(&w, att) - lost_a,
@@ -588,8 +622,18 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
             rifles.push(rifle_run(args, seed, side)?);
             for start in [ASSAULT_START_M, ASSAULT_GAP_M] {
                 for grenades in [true, false] {
-                    assault.push(assault_run(args, seed, side, start, grenades)?);
+                    assault.push(assault_run(args, seed, side, start, grenades, false)?);
                 }
+            }
+            for grenades in [true, false] {
+                assault.push(assault_run(
+                    args,
+                    seed,
+                    side,
+                    ASSAULT_START_M,
+                    grenades,
+                    true,
+                )?);
             }
             for with in [true, false] {
                 smoke.push(smoke_run(args, seed, side, with)?);
@@ -623,11 +667,11 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         mortar,
         MORTAR_LIMIT_PCT,
     );
-    let totals = |start: i32, g: bool| {
+    let totals = |start: i32, g: bool, smoke: bool| {
         let mut t = AssaultTotals::default();
         for r in assault
             .iter()
-            .filter(|r| r.grenades == g && r.start_m == start)
+            .filter(|r| r.grenades == g && r.start_m == start && r.smoke == smoke)
         {
             t.defender_losses += r.defender_losses;
             t.attacker_losses += r.attacker_losses;
@@ -636,21 +680,26 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         }
         t
     };
-    let variants = [ASSAULT_START_M, ASSAULT_GAP_M]
-        .into_iter()
-        .map(|start| {
-            let (with, without) = (totals(start, true), totals(start, false));
-            AssaultVariant {
-                start_m: start,
-                ratio_pct: (without.defender_losses > 0).then(|| {
-                    (with.defender_losses as f64 * 1000.0 / without.defender_losses as f64).round()
-                        / 10.0
-                }),
-                grenades: with,
-                rifle_only: without,
-            }
-        })
-        .collect();
+    let variants = [
+        (ASSAULT_START_M, false),
+        (ASSAULT_GAP_M, false),
+        (ASSAULT_START_M, true),
+    ]
+    .into_iter()
+    .map(|(start, smoke)| {
+        let (with, without) = (totals(start, true, smoke), totals(start, false, smoke));
+        AssaultVariant {
+            start_m: start,
+            smoke,
+            ratio_pct: (without.defender_losses > 0).then(|| {
+                (with.defender_losses as f64 * 1000.0 / without.defender_losses as f64).round()
+                    / 10.0
+            }),
+            grenades: with,
+            rifle_only: without,
+        }
+    })
+    .collect();
     let grenade = GrenadeExperiment {
         name: "grenade assault on a dug-in rifle squad, frags from 25 m",
         variants,
@@ -708,13 +757,14 @@ pub fn summary_text(r: &FortifyReport) -> String {
     }
     let g = &r.grenade;
     out += &format!("{}\n", g.name);
-    out += "  seed  entrenched    start  grenades  frags  in_trench  defender_losses  attacker_losses\n";
+    out += "  seed  entrenched    start  smoke  grenades  frags  in_trench  defender_losses  attacker_losses\n";
     for run in &g.runs {
         out += &format!(
-            "  {:<5} {:<13} {:>3} m  {:<9} {:>5}  {:>9}  {:>15}  {:>15}\n",
+            "  {:<5} {:<13} {:>3} m  {:<6} {:<9} {:>5}  {:>9}  {:>15}  {:>15}\n",
             run.seed,
             run.entrenched,
             run.start_m,
+            if run.smoke { "yes" } else { "no" },
             if run.grenades { "yes" } else { "no" },
             run.frags_thrown,
             run.frags_in_trench,
@@ -727,8 +777,9 @@ pub fn summary_text(r: &FortifyReport) -> String {
             .ratio_pct
             .map_or_else(|| "n/a".into(), |p| format!("{p:.1} %"));
         out += &format!(
-            "  from {} m: defenders lost {} with grenades ({} frags, {} in the trench) vs {} to rifles alone = {ratio}; attackers lost {} vs {} (no threshold yet)\n",
+            "  from {} m{}: defenders lost {} with grenades ({} frags, {} in the trench) vs {} to rifles alone = {ratio}; attackers lost {} vs {} (no threshold yet)\n",
             v.start_m,
+            if v.smoke { " behind smoke" } else { "" },
             v.grenades.defender_losses,
             v.grenades.frags_thrown,
             v.grenades.frags_in_trench,

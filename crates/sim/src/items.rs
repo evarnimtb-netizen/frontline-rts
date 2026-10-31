@@ -21,6 +21,8 @@
 //!   (triangular per axis, counter RNG keyed by the thrower and his throw
 //!   count). The arc is a 45° lob: flight time `sqrt(2 d / g)`, about
 //!   2.5 s at 30 m, so it comes down steeply enough to drop into a trench.
+//!   Over dug ground it is aimed half-way down (between the floor and the
+//!   undug surface), so it clears the lip and parapet in front.
 //! * **Flight** (Ballistics stage, serial, ascending id): the exact
 //!   parabola sampled at 60 Hz, each step swept against the terrain
 //!   (including dug ground). Where it meets the ground the item lands and
@@ -350,7 +352,7 @@ impl MatchState {
             let d = (w.target - from.xy()).length();
             let s = d.mul_int(scatter_pct as i32).div_int(100);
             let aim = terrain.clamp(w.target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
-            let (from, vel) = lob(from, aim.extend(terrain.height_at(aim)));
+            let (from, vel) = lob(from, aim.extend(lob_height(terrain, aim)));
             let fuse = fuse_ticks.saturating_sub(windup_ticks) + 1;
             self.thrown.push(Thrown {
                 id: self.next_thrown,
@@ -599,6 +601,19 @@ fn ascending(ids: impl Iterator<Item = u32>, next: u32) -> bool {
         last = Some(id);
     }
     true
+}
+
+/// Height the lob is aimed at over `aim`: the ground, but over dug ground
+/// half-way between the floor and the undug surface, so the arc clears the
+/// lip and parapet in front of a trench and drops in (aimed at the floor
+/// itself, it would come down on the near parapet).
+fn lob_height(terrain: &Heightfield, aim: FxVec2) -> Fx {
+    let (ground, base) = (terrain.height_at(aim), terrain.base_height_at(aim));
+    if ground < base {
+        Fx::from_raw(((ground.raw() as i64 + base.raw() as i64) / 2) as i32)
+    } else {
+        ground
+    }
 }
 
 /// Release point and velocity of a 45° lob from `from` to `to` (flight time

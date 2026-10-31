@@ -447,6 +447,36 @@ fn frags_lobbed_into_a_trench_hit_the_men_in_it() {
 }
 
 #[test]
+fn a_frag_aimed_at_the_trench_clears_the_parapet() {
+    // No scatter: only the arc decides. Aimed at the floor itself, a 45°
+    // lob used to come down on the near parapet.
+    let mut s = setup(4, [false, false]);
+    for it in &mut s.items {
+        it.scatter_pct = 0;
+    }
+    let mut w = World::new_match(s, 1).unwrap();
+    trench(&mut w);
+    park_enemy(&mut w);
+    let base = w.terrain().base_height_at(at(500, 500));
+    let sq = squads(&w, 0, "ww2:ger_rifle_squad")[0];
+    w.place_squad(sq, at(525, 500), WEST);
+    let m = members(&w, sq)[3];
+    let aim = FxVec2::new(Fx::from_int(500), pos(&w, m).y);
+    assert!(order(&mut w, 0, throw(vec![m], ItemKind::Frag, aim)));
+    assert!(run_until(&mut w, 300, |w| {
+        let g = w.game().unwrap();
+        !g.thrown().is_empty() && g.thrown().iter().all(|t| t.landed)
+    }));
+    let t = &w.game().unwrap().thrown()[0];
+    assert!(
+        t.pos.z < base - Fx::ONE && (t.pos.x - Fx::from_int(500)).abs() < Fx::ONE,
+        "landed at {:?}, trench floor at {:?}",
+        t.pos,
+        base - Fx::from_milli(1600)
+    );
+}
+
+#[test]
 fn a_satchel_charge_cuts_the_trench() {
     let mut w = world(5);
     park_enemy(&mut w);
