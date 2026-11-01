@@ -66,6 +66,26 @@
 //! `AttackMove` always, `Move` and `Dig` while still, `Retreat` never) and
 //! ignore the squad focus; focus and mortar fire use the formation leader.
 //!
+//! **Launchers (S3).** An AT team ([`crate::game::Launcher`]) has one
+//! launcher, carried by its first man; the others use the squad type's
+//! sidearm (as do men past `weapon_men` in other squads, [`weapon_of`]),
+//! and the squad focus uses the sidearm's range. After the soldiers' aim
+//! and fire, serially in ascending squad id, the carrier
+//! ([`MatchState::fire_launchers`]) engages only enemy vehicles he sees,
+//! within the weapon's `engage_still` (or `engage_moving` for a vehicle
+//! faster than the rules' moving speed): the `AttackUnit` vehicle first,
+//! then the nearest, at most [`LOS_TRIES`] tried for a part in a clear line
+//! of fire (the hull, or the turret if its chance is better by the rules'
+//! margin, `crate::gunnery::aim_choice`). Opening fire costs half a second
+//! of aiming (up on the fire step in a trench, as for any aiming man); the
+//! rocket leads the target by its averaged velocity, gets the weapon's
+//! spread scaled as for small arms, and takes a shell slot. The next one
+//! comes after the weapon's reload, twice that with no second man left.
+//! When the carrier falls, the launcher waits `handover` and the first
+//! living man takes it up. Rockets come back one per `items.resupply` while
+//! the carrier stands in the own base. Firing reveals a man by his weapon's
+//! `fire_reveal_pct` for `fire_reveal_ticks` (`crate::spotting`).
+//!
 //! No friendly fire in S1: rounds and blasts ignore the firing player's own
 //! soldiers. Rounds have no drag, so the drop compensation is exact.
 
@@ -750,11 +770,8 @@ impl MatchState {
         let ty = &setup.squad_types[sq.type_idx as usize];
         let w = &setup.weapons[ty.weapon as usize];
         let mut l = sq.launcher.clone().expect("launcher squad");
-        // Hand-over: the carrier fell; the next living man takes it up.
-        if l.carrier.is_some_and(|c| !sq.members.contains(&c)) {
-            l.carrier = None;
-            l.handover = w.handover_ticks.min(u16::MAX as u32) as u16;
-        }
+        // Hand-over: the carrier fell (`kill` started the count); the next
+        // living man takes it up when it runs out.
         if l.carrier.is_none() {
             l.handover = l.handover.saturating_sub(1);
             if l.handover == 0
@@ -1621,6 +1638,16 @@ impl MatchState {
         }
         if sq.focus == Some(id) {
             sq.focus = None;
+        }
+        // An AT team's gunner fell: the launcher waits for the next man
+        // (S3, `fire_launchers`).
+        if let Some(l) = &mut sq.launcher
+            && l.carrier == Some(id)
+        {
+            let ty = &self.setup.squad_types[sq.type_idx as usize];
+            let w = &self.setup.weapons[ty.weapon as usize];
+            l.carrier = None;
+            l.handover = w.handover_ticks.min(u16::MAX as u32) as u16;
         }
         for q in &mut self.path_queue.queues {
             q.retain(|r| *r != PathReq::Unit(id));

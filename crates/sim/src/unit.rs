@@ -27,8 +27,11 @@
 //!
 //! **Vehicles (S3).** A vehicle id in `MoveUnits`, `AttackMoveUnits`,
 //! `RetreatUnits` or `StopUnits` stands for its squad of one, which gets the
-//! squad order; soldiers in the same command are handled as above. Every
-//! other soldier-level command drops vehicle ids.
+//! squad order; soldiers in the same command are handled as above. The
+//! vehicle commands (`ReverseUnits`, `FaceUnits`, `AttackUnit`, `SetAmmo`,
+//! `RepairUnits`, `FollowUnits`) are in `crate::orders`. Every other
+//! soldier-level command drops vehicle ids. `DigUnits` keeps only men who
+//! may dig the named profile (the AT ditch: engineers).
 //!
 //! Several men sent to one point get slots on a line through it across the
 //! direction from their centroid (spacing of the lowest id's squad type),

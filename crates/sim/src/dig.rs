@@ -25,6 +25,14 @@
 //! trenches merge; the parapet only raises undug ground. A new Dig order on
 //! a partly dug line credits the depth already there.
 //!
+//! **Profiles (S3).** A job digs one named profile of the rules
+//! (`DigProfile`: the standard trench or the AT ditch, engineers only);
+//! depth, widths, spoil, pace, passes and the longest line come from it.
+//! An AT-ditch job records its line in `MatchState::at_ditches` when it
+//! starts, so the ditch blocks vehicles section by section as it gets deep
+//! enough (`crate::vehicle`), and infantry paths pay for crossing it
+//! (`crate::path`).
+//!
 //! Detached men (S1b) do not dig for their squad: a man who detaches lets
 //! his segment go. `DigUnits` jobs ([`crate::unit::UnitDig`]) are worked
 //! the same way after the squads, in ascending job id: their diggers are

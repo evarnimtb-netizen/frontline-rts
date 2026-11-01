@@ -171,7 +171,11 @@ fn orca_line(
 /// S3: in match worlds with vehicles, `obstacles` adds up to
 /// [`MAX_VEHICLE_CIRCLES`] vehicle and wreck circles (two per hull, along
 /// its axis) after the soldier neighbours. The soldier takes all of the
-/// avoidance against them; vehicles never avoid soldiers.
+/// avoidance against them; vehicles never avoid soldiers. Within
+/// [`SLIDE_GAP_MM`] of the nearest circle and heading into it (within 60°),
+/// his preferred velocity turns to the tangent that keeps the hull on his
+/// left, so men walk round a parked tank or a wreck instead of stopping
+/// dead in front of it.
 ///
 /// Writes the new velocity of every id in the chunk into `out` (zero for
 /// non-soldiers). Reads previous-tick positions and velocities only, and
@@ -207,7 +211,7 @@ pub(crate) fn plan_velocities(
 
         // Preferred velocity: toward the waypoint at preferred speed.
         let to_wp = mover.waypoint - pos;
-        let pref = if to_wp.length_sq() <= p.arrive_radius.mul(p.arrive_radius) {
+        let mut pref = if to_wp.length_sq() <= p.arrive_radius.mul(p.arrive_radius) {
             FxVec2::ZERO
         } else {
             to_wp.normalize_or_zero() * mover.speed
@@ -270,6 +274,21 @@ pub(crate) fn plan_velocities(
         if let Some(ob) = obstacles.filter(|_| !ents.combat[i].in_trench) {
             let mut circles = [(FxVec2::ZERO, Fx::ZERO, FxVec2::ZERO); MAX_VEHICLE_CIRCLES];
             let k = ob.near(pos, p.neighbour_dist, &mut circles);
+            // Walking straight at a hull, ORCA alone stops a man dead in
+            // front of it (the two circles' constraints cancel). Close to
+            // the nearest circle and heading into it, he slides round it
+            // instead, keeping it on his left, so every man takes the same
+            // way round the whole hull.
+            if k > 0 && pref != FxVec2::ZERO {
+                let (c, r, _) = circles[0];
+                let to = c - pos;
+                let dir = to.normalize_or_zero();
+                if to.length() - r - p.radius < Fx::from_milli(SLIDE_GAP_MM)
+                    && pref.normalize_or_zero().dot(dir) > Fx::HALF
+                {
+                    pref = FxVec2::new(dir.y, -dir.x) * mover.speed;
+                }
+            }
             for &(c, r, v) in &circles[..k] {
                 let cr = p.radius + r;
                 if let Some(line) = orca_line(
@@ -298,6 +317,10 @@ pub(crate) fn plan_velocities(
         *out_v = v.clamp_length(mover.speed);
     }
 }
+
+/// A man this close to a vehicle circle's rim, heading into it, slides
+/// round it (S3, mm).
+const SLIDE_GAP_MM: i32 = 1500;
 
 /// Grades up to this (percent) on detail ground do not slow a soldier.
 const STEEP_FREE_PCT: i64 = 60;

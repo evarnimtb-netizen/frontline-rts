@@ -806,4 +806,78 @@ mod tests {
         let r = find_vehicle_path(&t, from, to, &COST, &v, 100_000, &mut s);
         assert!(passes_near(&[&[from][..], &r.points].concat(), mid, 1));
     }
+
+    #[test]
+    fn infantry_cross_an_at_ditch_but_never_walk_along_it() {
+        use frontline_content::Fixed;
+        use frontline_content::setup::DigSetup;
+        let ditch = DigSetup {
+            depth: Fixed::from_cm(230),
+            floor_width: Fixed::from_cm(100),
+            wall_run: Fixed::from_cm(120),
+            parapet_height: Fixed::from_cm(60),
+            max_length: Fixed::from_int(30),
+            work_per_m: 22_000,
+            passes: 10,
+            engineers_only: true,
+        };
+        // The same 60 m line along y = 128, as a ditch and as a trench.
+        let line = [FxVec2::from_int(100, 128), FxVec2::from_int(160, 128)];
+        let mut t = flat(256);
+        crate::dig::stamp(
+            &mut t,
+            &line,
+            1,
+            Fx::ZERO,
+            Fx::from_int(60),
+            10,
+            10,
+            &ditch,
+            0,
+        );
+        let mut b = BlockLayer::new(t.dim(), 19);
+        b.mark_all();
+        b.update(&t, &[line.to_vec()], &[]);
+        let mid = crate::vehicle::node_at(&t, FxVec2::from_int(130, 128));
+        assert!(b.is_ditch(mid) && b.is_blocked(mid));
+        let mut s = PathScratch::default();
+        // Along the line, from one end of it to the other: the trench
+        // discount does not apply in a ditch, so the path costs at least
+        // the open ground's.
+        let (a, z) = (FxVec2::from_int(104, 128), FxVec2::from_int(156, 128));
+        let cheap = PathCost {
+            trench_cost_pct: 20,
+            ..COST
+        };
+        let open = find_path(&flat(256), a, z, &cheap, 100_000, &mut s);
+        let along = find_infantry_path(&t, a, z, &cheap, &b, 100_000, &mut s);
+        let in_ditch = |r: &PathResult| {
+            r.points
+                .iter()
+                .filter(|p| b.is_ditch(crate::vehicle::node_at(&t, **p)))
+                .count()
+        };
+        assert!(along.reached);
+        assert!(in_ditch(&along) <= 1, "{:?}", along.points);
+        assert!(open.reached);
+        // Across it: reached, through it.
+        let r = find_infantry_path(
+            &t,
+            FxVec2::from_int(130, 110),
+            FxVec2::from_int(130, 146),
+            &cheap,
+            &b,
+            100_000,
+            &mut s,
+        );
+        assert!(r.reached);
+        // The plain search (no ditch layer) treats it as a trench.
+        let plain = find_path(&t, a, z, &cheap, 100_000, &mut s);
+        // The plain search (no ditch layer) takes it as a trench: straight
+        // along it; the infantry search walks beside it and steps in only
+        // at the goal.
+        assert_eq!(plain.points.len(), 1, "{:?}", plain.points);
+        assert!(along.points.len() >= 2, "{:?}", along.points);
+        assert!(!b.is_ditch(crate::vehicle::node_at(&t, along.points[0])));
+    }
 }

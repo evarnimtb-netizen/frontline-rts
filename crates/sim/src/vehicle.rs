@@ -32,6 +32,10 @@
 //! sample over ground dug 1 m or more after 2 s with none) rolls `bog_pct`
 //! once (RNG `BOG`, keyed by the crossing count).
 //!
+//! **Orders (S3, `crate::orders`).** A holding vehicle with a `FaceUnits`
+//! point pivots until its front is within 2° of it. A vehicle with escort
+//! followers drives no faster than the slowest of them walks.
+//!
 //! **Path follower** ([`MatchState::move_vehicles`], Movement stage,
 //! serial in ascending id after the soldiers): turns the squad's path into
 //! throttle and steer, halts on an attack-move while its main gun has a

@@ -779,6 +779,122 @@ mod tests {
         assert_eq!(encode(1, &big, &mut buf), Err(EncodeError::TooLarge));
     }
 
+    /// Every command with a unit list or a line, filled to `n` ids and `k`
+    /// points (S3: the new vehicle commands too).
+    fn listed(n: usize, k: usize) -> Vec<CommandKind> {
+        use frontline_content::{DigProfile, ItemKind};
+        use frontline_sim::vehicle::AmmoChoice;
+        let units: Vec<SimId> = (0..n as u32).map(SimId).collect();
+        let line: Vec<FxVec2> = (0..k as i32).map(|i| FxVec2::from_int(i, i)).collect();
+        let t = FxVec2::from_int(5, 5);
+        vec![
+            CommandKind::MoveUnits {
+                units: units.clone(),
+                target: t,
+            },
+            CommandKind::AttackMoveUnits {
+                units: units.clone(),
+                target: t,
+            },
+            CommandKind::StopUnits {
+                units: units.clone(),
+            },
+            CommandKind::RetreatUnits {
+                units: units.clone(),
+            },
+            CommandKind::DigUnits {
+                units: units.clone(),
+                line: line.clone(),
+                profile: DigProfile::AtDitch,
+            },
+            CommandKind::SetStance {
+                units: units.clone(),
+                stance: frontline_sim::StanceOrder::Crouch,
+            },
+            CommandKind::Throw {
+                units: units.clone(),
+                item: ItemKind::Satchel,
+                target: t,
+            },
+            CommandKind::ThrowEach {
+                units: units.clone(),
+                item: ItemKind::Frag,
+                target: t,
+            },
+            CommandKind::ReverseUnits {
+                units: units.clone(),
+                target: t,
+            },
+            CommandKind::FaceUnits {
+                units: units.clone(),
+                toward: t,
+            },
+            CommandKind::AttackUnit {
+                units: units.clone(),
+                target: SimId(9),
+            },
+            CommandKind::SetAmmo {
+                units: units.clone(),
+                ammo: AmmoChoice::He,
+            },
+            CommandKind::RepairUnits {
+                units: units.clone(),
+            },
+            CommandKind::FollowUnits {
+                units,
+                vehicle: SimId(9),
+            },
+            CommandKind::Dig {
+                squad: SquadId(1),
+                line,
+                profile: DigProfile::AtDitch,
+            },
+        ]
+    }
+
+    #[test]
+    fn every_listed_command_is_bounded_on_the_wire() {
+        let input = |k: CommandKind| {
+            Packet::Input(Input {
+                ack: BundleAck::default(),
+                turns: vec![InputTurn {
+                    target: 0,
+                    seq0: 0,
+                    cmds: vec![k],
+                }],
+            })
+        };
+        let mut buf = Vec::new();
+        // At the limits (120 ids, 16 points): in limits and decoded.
+        for k in listed(MAX_UNITS, MAX_DIG_POINTS) {
+            assert!(command_in_limits(&k), "{k:?}");
+            encode(1, &input(k.clone()), &mut buf).unwrap();
+            assert!(decode(&buf).is_ok(), "{k:?}");
+        }
+        // One id over (121): every listed command is refused, so the relay
+        // drops the datagram (`Dig` has no id list).
+        let refused = |k: &CommandKind, buf: &mut Vec<u8>| {
+            assert!(!command_in_limits(k), "{k:?}");
+            if encode(1, &input(k.clone()), buf).is_ok() {
+                assert_eq!(decode(buf), Err(DecodeError::Limit), "{k:?}");
+            }
+        };
+        let mut n = 0;
+        for k in listed(MAX_UNITS + 1, MAX_DIG_POINTS) {
+            if !matches!(k, CommandKind::Dig { .. }) {
+                refused(&k, &mut buf);
+                n += 1;
+            }
+        }
+        assert_eq!(n, 14, "every command with a unit list");
+        // One point over (17): both dig commands are refused.
+        for k in listed(MAX_UNITS, MAX_DIG_POINTS + 1) {
+            if matches!(k, CommandKind::Dig { .. } | CommandKind::DigUnits { .. }) {
+                refused(&k, &mut buf);
+            }
+        }
+    }
+
     #[test]
     fn bundle_ack_bits() {
         let a = BundleAck {

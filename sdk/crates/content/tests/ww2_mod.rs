@@ -75,21 +75,21 @@ fn ww2_mod_loads_clean() {
     assert_eq!(map.size_m, 1024);
     assert_eq!(map.capture_points.len(), 5);
     assert_eq!(map.bases.len(), 2);
-    // Every faction fields one squad of each role (S3: and its tank; the
-    // AT teams join with the AT-team stage, spec step 5).
+    // Every faction fields one squad of each role (S3: its AT team and its
+    // tank too).
     for f in d.factions.values() {
         let mut roles: Vec<SquadRole> = f.roster.iter().map(|s| d.squads[s].role).collect();
         roles.sort();
-        assert_eq!(
-            roles,
-            [
-                SquadRole::Rifle,
-                SquadRole::Mg,
-                SquadRole::Engineer,
-                SquadRole::Mortar,
-                SquadRole::Vehicle
-            ]
-        );
+        let mut want = vec![
+            SquadRole::Rifle,
+            SquadRole::Mg,
+            SquadRole::Engineer,
+            SquadRole::Mortar,
+            SquadRole::AntiTank,
+            SquadRole::Vehicle,
+        ];
+        want.sort();
+        assert_eq!(roles, want);
     }
 }
 

@@ -1627,6 +1627,44 @@ impl World {
         true
     }
 
+    /// Edits AT team `id`'s launcher directly (staged tests: rockets
+    /// left, carrier). The caller keeps it consistent with the squad.
+    pub fn edit_launcher(
+        &mut self,
+        id: SquadId,
+        f: impl FnOnce(&mut crate::game::Launcher),
+    ) -> bool {
+        let Some(l) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.squads.get_mut(&id))
+            .and_then(|sq| sq.launcher.as_mut())
+        else {
+            return false;
+        };
+        f(l);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Kills soldier `id` at once (staged tests): a corpse, out of his
+    /// squad, a loss for his owner and a kill for nobody.
+    pub fn kill_soldier(&mut self, id: SimId) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Soldier) {
+            return false;
+        }
+        let ticks = game.setup.rules.combat.corpse_ticks;
+        game.kill(&mut self.state.entities, &mut self.hash, id, ticks);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Starts a field repair of vehicle `id` (staged tests; `RepairUnits`
     /// and the AI call `MatchState::start_repair` the same way). False if
     /// nothing is repairable.
@@ -3539,5 +3577,366 @@ mod tests {
         assert!(outcomes.iter().any(|o| *o != (a.1.clone(), a.2)));
         // Something inside was hurt.
         assert!(a.1.iter().any(|s| s.hp < 100) || a.2 != [100, 100, 100, 80, 80, 60]);
+    }
+
+    /// Puts a US 60 mm mortar shell in flight straight down onto `at`
+    /// from 20 m up.
+    fn drop_mortar(w: &mut World, at: FxVec2) {
+        let s = w.match_setup().unwrap();
+        let weapon = s
+            .weapons
+            .iter()
+            .position(|x| x.id == "ww2:m1_mortar")
+            .unwrap() as u16;
+        let from = at.extend(w.state.terrain.height_at(at) + Fx::from_int(20));
+        let slot = w
+            .state
+            .projectiles
+            .spawn(crate::projectile::Projectile {
+                pos: from,
+                vel: FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_int(-60)),
+                owner: SimId(9999),
+                drag: Fx::ZERO,
+                ttl: 120,
+                weapon,
+                player: 1,
+                ammo: crate::projectile::NO_AMMO,
+                origin: from,
+            })
+            .unwrap();
+        w.hash.mark_pool_slot(slot);
+    }
+
+    #[test]
+    fn mortar_blasts_break_tracks_but_never_reach_inside() {
+        use crate::snapshot::ArmourEventKind as K;
+        let (mut w, v) = flat_tank_world();
+        let hp = |w: &World, k: ComponentKind| w.game().unwrap().vehicles[&v].component(k);
+        let seats = |w: &World| -> Vec<u16> {
+            w.game().unwrap().vehicles[&v]
+                .seats
+                .iter()
+                .map(|s| s.hp)
+                .collect()
+        };
+        let crew = seats(&w);
+        // 1 m outside the right (south) track: 150 × 40 % on that track.
+        let beside = FxVec2::new(Fx::from_int(500), Fx::from_milli(497_750));
+        drop_mortar(&mut w, beside);
+        let evs = fly_out(&mut w);
+        assert_eq!(hp(&w, ComponentKind::TrackRight), 40, "{evs:?}");
+        assert_eq!(
+            hp(&w, ComponentKind::TrackLeft),
+            100,
+            "3.5 m off: outside 3 m"
+        );
+        assert!(evs.iter().any(|e| e.kind == K::ComponentHit as u8));
+        drop_mortar(&mut w, beside);
+        let evs = fly_out(&mut w);
+        assert_eq!(hp(&w, ComponentKind::TrackRight), 0, "two near hits");
+        assert_eq!(
+            evs.iter()
+                .filter(|e| e.kind == K::Disabled as u8
+                    && e.component == ComponentKind::TrackRight as u8)
+                .count(),
+            1
+        );
+        assert_eq!(w.stats().blast_track_hits, 2);
+        // A direct hit on the hull top: 8 mm against 12 mm, and its blast
+        // spares the vehicle it struck.
+        // (Mortar shells on plates make no armour event; the feed shows
+        // main-gun and rocket matters only.)
+        let (mut w, v) = flat_tank_world();
+        let tiles = w.terrain().detail().tiles().len();
+        drop_mortar(&mut w, FxVec2::from_int(500, 500));
+        let evs = fly_out(&mut w);
+        assert!(evs.is_empty(), "{evs:?}");
+        assert_eq!(w.stats().explosions, 1, "it burst on the tank");
+        assert_eq!(w.terrain().detail().tiles().len(), tiles, "no crater");
+        let vs = &w.game().unwrap().vehicles[&v];
+        assert_eq!(
+            vs.components,
+            VehicleState::new(
+                vs.type_idx,
+                &w.match_setup().unwrap().vehicles[vs.type_idx as usize],
+                &w.match_setup().unwrap().rules.vehicles
+            )
+            .components
+        );
+        assert_eq!(seats(&w), crew);
+        assert_eq!(w.stats().knockouts, 0);
+        assert_eq!(w.stats().penetrations, 0);
+    }
+
+    /// Flat ground, test unlock: a German tank at (500, 500) with a rifle
+    /// squad following it and one detached rifleman following it too, a
+    /// Panzerschreck team attacking a US tank at (600, 500), and an
+    /// engineer squad digging an AT ditch.
+    fn order_world() -> (World, SimId, SimId, SquadId, SquadId) {
+        let (mut w, va) = flat_tank_world();
+        let ty = |w: &World, id: &str| w.match_setup().unwrap().squad_type_index(id).unwrap();
+        let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+        let north = FxVec2::new(Fx::ZERO, Fx::ONE);
+        let usa = ty(&w, "ww2:usa_m4a3_75_squad");
+        let b = w
+            .spawn_squad_at(PlayerId(1), usa, FxVec2::from_int(600, 500), -east)
+            .unwrap();
+        let vb = w.game().unwrap().squads[&b].members[0];
+        let rif = ty(&w, "ww2:ger_rifle_squad");
+        let r = w
+            .spawn_squad_at(PlayerId(0), rif, FxVec2::from_int(480, 520), north)
+            .unwrap();
+        let at = ty(&w, "ww2:ger_panzerschreck_team");
+        let t = w
+            .spawn_squad_at(PlayerId(0), at, FxVec2::from_int(540, 470), east)
+            .unwrap();
+        let eng = ty(&w, "ww2:ger_engineer_squad");
+        let e = w
+            .spawn_squad_at(PlayerId(0), eng, FxVec2::from_int(400, 400), north)
+            .unwrap();
+        let g = w.game().unwrap();
+        let men = g.squads[&r].members.clone();
+        let team = g.squads[&t].members.clone();
+        let cmd = |seq, kind| Command {
+            player: PlayerId(0),
+            seq,
+            kind,
+        };
+        // Let both sides see each other first.
+        for _ in 0..60 {
+            w.step(&[]);
+        }
+        w.step(&[
+            cmd(
+                0,
+                CommandKind::FollowUnits {
+                    units: men[..men.len() - 1].to_vec(),
+                    vehicle: va,
+                },
+            ),
+            cmd(
+                1,
+                CommandKind::FollowUnits {
+                    units: men.clone(),
+                    vehicle: va,
+                },
+            ),
+            cmd(
+                2,
+                CommandKind::AttackUnit {
+                    units: team.clone(),
+                    target: vb,
+                },
+            ),
+            cmd(
+                3,
+                CommandKind::Dig {
+                    squad: e,
+                    line: vec![FxVec2::from_int(390, 380), FxVec2::from_int(410, 380)],
+                    profile: frontline_content::DigProfile::AtDitch,
+                },
+            ),
+        ]);
+        // Detach one man with his own follow order.
+        w.step(&[cmd(
+            4,
+            CommandKind::FollowUnits {
+                units: vec![men[0]],
+                vehicle: va,
+            },
+        )]);
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        (w, va, vb, r, t)
+    }
+
+    #[test]
+    fn launcher_escort_and_dig_profile_state_is_saved_hashed_and_checked() {
+        use crate::game::{Launcher, Order};
+        use crate::unit::UnitOrder;
+        let (w, va, vb, r, t) = order_world();
+        let g = w.game().unwrap();
+        assert!(matches!(g.squads[&r].order, Order::Follow { vehicle } if vehicle == va));
+        assert_eq!(g.vehicles[&va].followers.len(), g.squads[&r].members.len());
+        let l = g.squads[&t].launcher.clone().unwrap();
+        assert_eq!(l.attack, Some(vb));
+        assert_eq!(g.at_ditches.len(), 1);
+        let digging = g
+            .squads
+            .values()
+            .find(|s| matches!(s.order, Order::Dig { .. }))
+            .unwrap();
+        let Order::Dig { job, .. } = &digging.order else {
+            unreachable!()
+        };
+        assert_eq!(job.profile, frontline_content::DigProfile::AtDitch);
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+
+        // Every launcher field changes the hash; the destructure fails to
+        // compile when a field is added and not listed.
+        let Launcher {
+            carrier: _,
+            handover: _,
+            rounds: _,
+            resupply: _,
+            attack: _,
+            aim_turret: _,
+        } = l;
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        fn game(s: &mut SimState) -> &mut MatchState {
+            s.game.as_mut().unwrap()
+        }
+        fn launcher_of(s: &mut SimState, t: SquadId) -> &mut Launcher {
+            game(s)
+                .squads
+                .get_mut(&t)
+                .unwrap()
+                .launcher
+                .as_mut()
+                .unwrap()
+        }
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            (
+                "carrier",
+                Box::new(move |s| launcher_of(s, t).carrier = None),
+            ),
+            (
+                "handover",
+                Box::new(move |s| launcher_of(s, t).handover = 3),
+            ),
+            ("rounds", Box::new(move |s| launcher_of(s, t).rounds -= 1)),
+            (
+                "resupply",
+                Box::new(move |s| launcher_of(s, t).resupply += 1),
+            ),
+            ("attack", Box::new(move |s| launcher_of(s, t).attack = None)),
+            (
+                "aim_turret",
+                Box::new(move |s| launcher_of(s, t).aim_turret ^= true),
+            ),
+            (
+                "follow",
+                Box::new(move |s| {
+                    game(s).squads.get_mut(&r).unwrap().order = Order::Follow { vehicle: vb }
+                }),
+            ),
+            (
+                "unit follow",
+                Box::new(move |s| {
+                    let m = game(s).squads[&r].members[0];
+                    s.entities.unit[m.index()].order = UnitOrder::Follow { vehicle: vb };
+                }),
+            ),
+            (
+                "dig profile",
+                Box::new(|s| {
+                    for sq in game(s).squads.values_mut() {
+                        if let Order::Dig { job, .. } = &mut sq.order {
+                            job.profile = frontline_content::DigProfile::Trench;
+                        }
+                    }
+                }),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(w2.full_state_hash(), w2.state_hash());
+        }
+
+        // Loads reject broken launcher and follow state.
+        let bad: Vec<(StateEdit, &str)> = vec![
+            (Box::new(move |s| launcher_of(s, t).rounds = 7), "launcher"),
+            (
+                Box::new(move |s| launcher_of(s, t).carrier = Some(va)),
+                "launcher",
+            ),
+            (
+                Box::new(move |s| launcher_of(s, t).attack = Some(va)),
+                "launcher",
+            ),
+            (
+                Box::new(move |s| launcher_of(s, t).handover = 9999),
+                "launcher",
+            ),
+            (
+                Box::new(move |s| {
+                    game(s).squads.get_mut(&r).unwrap().launcher = Some(Launcher::default())
+                }),
+                "launcher",
+            ),
+            (
+                Box::new(move |s| game(s).squads.get_mut(&t).unwrap().launcher = None),
+                "launcher",
+            ),
+            (
+                Box::new(move |s| {
+                    game(s).squads.get_mut(&r).unwrap().order = Order::Follow { vehicle: vb }
+                }),
+                "follow",
+            ),
+            (
+                Box::new(move |s| {
+                    let m = game(s).squads[&r].members[0];
+                    s.entities.unit[m.index()].order = UnitOrder::Follow { vehicle: vb };
+                }),
+                "unit order",
+            ),
+        ];
+        for (edit, want) in bad {
+            let bytes = save_edited(&w, edit);
+            let e = load_err(&bytes);
+            assert!(e.contains(want), "{want}: {e}");
+        }
+    }
+
+    #[test]
+    fn satchel_craters_can_breach_an_at_ditch() {
+        // A 30 m AT ditch running north-south; satchel craters (the item's
+        // radius and depth, levelling) at the ditch floor, 2 m apart, out
+        // from the middle, until a tank has a way across.
+        let (mut w, _) = flat_tank_world();
+        let line = [FxVec2::from_int(600, 485), FxVec2::from_int(600, 515)];
+        assert!(w.dig_at_ditch_now(&line, 1));
+        let s = w.match_setup().unwrap().clone();
+        let satchel = s.items.iter().find(|i| i.id == "ww2:m37_satchel").unwrap();
+        let he = &satchel.he.as_ref().unwrap().blast;
+        let (r, d): (Fx, Fx) = (he.crater_radius.into(), he.crater_depth.into());
+        let mid = FxVec2::from_int(600, 500);
+        let open = |w: &World| {
+            let g = w.game().unwrap();
+            let b = &g.vderived.block;
+            !b.blocked_at(w.terrain(), mid)
+        };
+        assert!(!open(&w));
+        let mut used = 0;
+        for k in 0..16 {
+            // 0, +2, −2, +4, −4 ... m along the ditch.
+            let off = if k % 2 == 1 { k / 2 + 1 } else { -(k / 2) } * 2;
+            let at = FxVec2::from_int(600, 500 + off);
+            w.state.terrain.crater_cut(at, r, d, w.state.tick);
+            w.refresh_hashes();
+            used = k + 1;
+            if open(&w) {
+                break;
+            }
+        }
+        assert!(open(&w), "16 satchels did not open the ditch");
+        // About 12 m of ditch has to be filled: the 4 m grid cell keeps its
+        // deepest point, and the block layer is dilated by one node.
+        assert!((5..=9).contains(&used), "{used} satchels");
+        // A straight drive across the gap touches no blocked node now.
+        let b = &w.game().unwrap().vderived.block;
+        assert!(!b.segment_blocked(
+            w.terrain(),
+            FxVec2::from_int(580, 500),
+            FxVec2::from_int(620, 500)
+        ));
     }
 }

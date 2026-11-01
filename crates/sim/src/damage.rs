@@ -36,6 +36,13 @@
 //! HP is dead: a loss for the owner and a kill for the attacker. A hit
 //! stops a field repair.
 //!
+//! **Blasts near a vehicle** ([`MatchState::blast_tracks`], after each
+//! burst of a shell, rocket or thrown item): every enemy vehicle with a
+//! track anchor within the blast's lethal radius and in clear line from
+//! 0.3 m above the blast point takes `damage × vs_vehicle_pct` on that
+//! track (once per track). Nothing else of a closed vehicle is touched; the
+//! vehicle a bursting round struck is left to its plate hit.
+//!
 //! **Knock-out** ([`MatchState::knock_out`]): when every seat is empty, the
 //! ammo rack detonates or a fire has burned `fire_burnout`. The remaining
 //! crew die (losses; kills for the last attacker), followers get Stop,
