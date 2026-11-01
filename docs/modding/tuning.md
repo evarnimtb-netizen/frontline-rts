@@ -84,7 +84,12 @@ frontline-cli skirmish --ai-vs-ai --seeds 10 --both-bases --ab --rules-override 
 - `--both-bases` plays each seed twice, once with the bases swapped.
 - `--summary` prints one table instead of every report: wins per faction and
   per base, match length, tanks lost, knock-out causes, HE share, rockets,
-  satchels and tick p99, plus one line per match.
+  satchels and tick p99, plus one line per match. S3c adds report-only
+  rows (`sdk/crates/cli/src/s3c_tally.rs`): tank base returns and how
+  long MGs were dry or HE at the reserve, satchel hunts and how they
+  ended, crew alive at each knock-out, and per base side when each point
+  was first taken and how long it was held. `--report json` also has
+  each knock-out's position and its shooter's (`s3c.ko_spots`).
 - `--ab` plays the same matches without the overrides too. It prints both
   tables and the change in each headline number.
 

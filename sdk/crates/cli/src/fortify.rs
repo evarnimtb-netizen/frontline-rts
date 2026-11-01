@@ -1120,6 +1120,7 @@ pub fn summary_text(r: &FortifyReport) -> String {
     let mut factions: Vec<&str> = x.runs.iter().map(|r| r.entrenched.as_str()).collect();
     factions.sort_unstable();
     factions.dedup();
+    let factions_all = factions.clone();
     for f in factions {
         let (mut dl, mut dm, mut al, mut am) = (0, 0, 0, 0);
         for r in x
@@ -1132,8 +1133,13 @@ pub fn summary_text(r: &FortifyReport) -> String {
             al += r.attacker_losses;
             am += r.attacker_men;
         }
+        // S3c: name the attacking faction too (S3b-41: T10 per attacker).
+        let attacker = factions_all
+            .iter()
+            .find(|g| **g != f)
+            .map_or("the other faction", |g| *g);
         out += &format!(
-            "  T10, {f} entrenched: defenders lost {dl} of {dm} ({:.1} %), attackers {al} of {am} ({:.1} %)\n",
+            "  T10, {f} entrenched ({attacker} attacking): defenders lost {dl} of {dm} ({:.1} %), attackers {al} of {am} ({:.1} %)\n",
             pct(dl, dm),
             pct(al, am)
         );

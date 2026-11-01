@@ -21,6 +21,7 @@ use frontline_sim::{
 use serde::Serialize;
 
 use crate::report::{Summary, hex, ns, round3};
+use crate::s3c_tally::{S3cPlayer, S3cSummary, S3cTally};
 
 /// Ticks with at least this share of the peak soldier count are "peak".
 pub const PEAK_SHARE_PCT: usize = 90;
@@ -195,6 +196,8 @@ pub struct SkirmishReport {
     pub limit_minutes: u32,
     pub final_hash: String,
     pub players: Vec<PlayerReport>,
+    /// S3c: the map's capture point names, in point order.
+    pub point_names: Vec<String>,
     pub totals: Totals,
     /// S3: vehicles, AT teams and kills by weapon class.
     pub armour: ArmourTotals,
@@ -292,6 +295,8 @@ pub struct SavedMatch {
 pub struct PlayerReport {
     pub player: u8,
     pub faction: String,
+    /// S3c: the base it started at (the map side).
+    pub base: u8,
     pub difficulty: String,
     /// `tickets`, `wiped` or `surrendered` when the player lost.
     pub defeat: Option<String>,
@@ -311,6 +316,8 @@ pub struct PlayerReport {
     pub ai_rejected: u32,
     pub trenches_planned: u32,
     pub armour: PlayerArmour,
+    /// S3c baseline counters (report only, `crate::s3c_tally`).
+    pub s3c: S3cPlayer,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -646,6 +653,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         }
     };
     let mut tally = ArmourTally::new(world.match_setup().expect("match world"));
+    let mut s3c = S3cTally::new(world.match_setup().expect("match world"));
     let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded);
 
@@ -688,6 +696,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         }
         note_squads(&world, &mut fielded);
         tally.observe(&world);
+        s3c.observe(&world);
         if args.trace_vehicles && world.tick().is_multiple_of(10 * hz) {
             trace_vehicles(&world);
         }
@@ -695,6 +704,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     }
     let wall = start.elapsed();
     maybe_save(&world, true)?;
+    s3c.finish();
 
     let threshold = (peak * PEAK_SHARE_PCT).div_ceil(100);
     let mut peak_ns: Vec<u64> = tick_ns
@@ -779,6 +789,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             PlayerReport {
                 player: p as u8,
                 faction: faction(p),
+                base: s.players[p].base,
                 difficulty: format!("{:?}", s.players[p].difficulty).to_lowercase(),
                 defeat: pl.defeat.map(|d| format!("{d:?}").to_lowercase()),
                 tickets: pl.tickets,
@@ -798,6 +809,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 ai_rejected: ai.map_or(0, |a| a.rejected),
                 trenches_planned: ai.map_or(0, |a| a.trenches.len() as u32),
                 armour,
+                s3c: std::mem::take(&mut s3c.players[p]),
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -870,6 +882,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         limit_minutes: args.minutes,
         final_hash: hex(world.state_hash()),
         players,
+        point_names: s.map.points.iter().map(|p| p.name.clone()).collect(),
         totals: Totals {
             shots_fired: st.shots_fired,
             shots_dropped: st.shots_dropped,
@@ -1182,6 +1195,8 @@ pub struct ManySummary {
     pub all_p99_max_ms: f64,
     /// Matches run at once.
     pub jobs: usize,
+    /// S3c baseline lines (report only).
+    pub s3c: S3cSummary,
 }
 
 /// The result of `skirmish --seeds`.
@@ -1339,6 +1354,23 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
     s.minutes_max = round3(s.minutes_max);
     s.he_share_mean_pct = round3(he / n);
     s.factions = factions.into_values().collect();
+    let views: Vec<crate::s3c_tally::MatchView> = matches
+        .iter()
+        .map(|m| {
+            let r = &m.report;
+            crate::s3c_tally::MatchView {
+                factions: r.players.iter().map(|p| p.faction.as_str()).collect(),
+                bases: r.players.iter().map(|p| p.base).collect(),
+                s3c: r.players.iter().map(|p| &p.s3c).collect(),
+                winner: r.winner,
+                seconds: r.game_seconds,
+            }
+        })
+        .collect();
+    let names = matches
+        .first()
+        .map_or_else(Vec::new, |m| m.report.point_names.clone());
+    s.s3c = crate::s3c_tally::summarise(&views, names);
     s
 }
 
@@ -1435,6 +1467,7 @@ pub fn many_text(r: &ManyReport) -> String {
             rp.final_hash,
         );
     }
+    out += &crate::s3c_tally::text(&s.s3c);
     out
 }
 

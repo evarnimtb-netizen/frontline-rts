@@ -25,6 +25,7 @@ pub mod fortify;
 pub mod lower;
 pub mod overrides;
 pub mod report;
+pub mod s3c_tally;
 pub mod schema;
 pub mod simulate;
 pub mod skirmish;

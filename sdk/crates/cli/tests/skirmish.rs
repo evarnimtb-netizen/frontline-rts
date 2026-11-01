@@ -80,6 +80,20 @@ fn skirmish_report_is_filled_in() {
         assert!(p.soldiers_alive > 0 && p.defeat.is_none());
     }
     assert!(r.totals.peak_soldiers >= 2 * 19);
+    // S3c report-only counters: the map's points, each player's base, and
+    // the near point (B for base 0, D for base 1) taken within 2 minutes.
+    assert_eq!(r.point_names, ["A", "B", "C", "D", "E"]);
+    assert_eq!((r.players[0].base, r.players[1].base), (1, 0));
+    for p in &r.players {
+        let s = &p.s3c;
+        assert_eq!(s.first_capture_s.len(), 5);
+        assert_eq!(s.points_at.len(), 4);
+        assert!(s.points_at.iter().all(Option::is_none), "match under 5 min");
+        let near = if p.base == 0 { 1 } else { 3 };
+        assert!(s.first_capture_s[near].is_some_and(|t| t <= 120), "{s:?}");
+        assert!(s.point_hold_s.iter().all(|&h| h <= 120));
+        assert_eq!(s.tank_alive_s, 0, "no tanks before the unlock");
+    }
     assert!(r.timing.peak_ticks > 0 && r.timing.all.p99_ms > 0.0);
     let text = frontline_cli::skirmish::summary_text(&r);
     assert!(text.contains("no winner within 2 min"), "{text}");
