@@ -466,11 +466,17 @@ impl NetSession {
             }
             Phase::Disconnected => "disconnected",
         };
-        let slots = if self.slot.is_some() {
+        let mut slots: Vec<SlotView> = if self.slot.is_some() {
             self.lobby.slots.iter().map(slot_view).collect()
         } else {
             Vec::new()
         };
+        // The relay starts without a last lobby update: both were ready.
+        if self.phase == Phase::Started {
+            for s in &mut slots {
+                s.ready = true;
+            }
+        }
         let (seed, map, d) = match &self.start {
             Some(s) => (s.seed, short_id(&s.map).to_owned(), s.d),
             None => (
