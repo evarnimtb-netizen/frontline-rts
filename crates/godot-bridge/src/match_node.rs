@@ -2181,6 +2181,16 @@ impl MatchRuntime {
                 // S3b Fix: MG rounds left in stowage (mounts with a limit).
                 if v.mg_rounds != u32::MAX {
                     ammo.set("mg", v.mg_rounds as i64);
+                    // S3c (B9): the full stowage, for the card's colour.
+                    let full: u64 = self.setup.vehicles.get(v.type_idx as usize).map_or(0, |t| {
+                        t.mounts
+                            .iter()
+                            .skip(1)
+                            .filter_map(|m| m.rounds)
+                            .map(u64::from)
+                            .sum()
+                    });
+                    ammo.set("mg_full", full as i64);
                 }
                 d.set("ammo", &ammo);
                 d.set(

@@ -377,6 +377,9 @@ follow-up. Work proceeds on (A) of each question below.
   110 vs 102, base 1 wins 52.5 %. (A) Mirror the valley (data) and make
   the spawn ring symmetric (code). (B) A point-symmetric terrain flag.
   (C) Leave it.
+  Part B: (A) built (mirrored valley; spawn ring turned to face the map
+  centre). 80 matches: base 1 won 41 of 80, tank losses base 0 112 / base
+  1 123; C held 38 % / 37 %. (B) is built as an option (S3c-24).
 - [ ] **S3c-9. Shooting abandoned tanks.** (A) Not auto-targeted;
   `AttackUnit` can; the AI denies enemy abandoned tanks when idle. (B)
   Auto-targeted.
@@ -417,6 +420,64 @@ follow-up. Work proceeds on (A) of each question below.
   ordered to shoot any abandoned vehicle (denial); AT teams keep their
   rockets for live vehicles (`AttackUnit` on an abandoned one gives the
   launcher no target). (B) Rockets too.
+- [ ] **S3c-20. Satchels at tanks (T3)** (Part B). Sticky hunts are in,
+  but over 80 matches 70 of ~130 hunts ended "spent": each engineer
+  squad has one satchel, on its leader, who walks first and falls on the
+  ~100 m approach to a tank with MGs and escorts. Probe with a satchel for
+  every man: 13 thrown in 4 of 40 matches, hunts then end by the squad
+  falling below retreat strength (59). So the approach, not the AI's
+  stickiness, limits it. (A) Keep the loadouts; the Tune stage tries a
+  satchel pick-up from a fallen carrier by the nearest squadmate (physical,
+  like the launcher hand-over), then lowers T3 if it still misses. (B) A
+  second satchel per squad (pioneer squads carried several charges). (C)
+  Lower T3 now.
+- [ ] **S3c-21. AT teams following tanks** (Part B, B3). Measured one at
+  a time over 80 matches: with AT teams trailing their own assault tanks
+  (150 m) rockets knocked out 33 of 233 tanks; without, 48 of 243 and 260
+  rockets fired instead of 216 (measured before the S3c-26 shell fix).
+  (A) Off (`at_follow_m = 0`). (B) On.
+  The stuck-tank stalk (`at_hunt_stuck_m` 500) made 3 hunts and no
+  measurable difference; (A) keep it on.
+- [ ] **S3c-22. Fragments over a falling edge (T9)** (Part B, B8). Ground
+  bursts threw fragments only 2-45 deg above the horizontal, so a tank HE
+  shell on a parapet crest could never reach men below the lip (5b: 0
+  kills). Now the ground is sampled 1.5 m around a ground burst and the
+  steepest fall adds rays below the band at the band's density
+  (`combat.blast.frag_fall_probe_cm`). 5b: 4 of 160 defenders killed (was
+  0); fortify T10 attackers lose less (grenades on the lip reach the
+  trench too). (A) Keep. (B) Off (0).
+- [ ] **S3c-23. Parapet erosion (T14)** (Part B, B8). Checked: a 75 mm HE
+  crater is 0.6 m x 0.3 m in compact ground; in spoil the depth share
+  (150 %) already gives about 1.5x the volume, inside the 1.5-2x loose-fill
+  range of cratering rules, so the crater size is not the cause of 0.035 m
+  per burst. (A) No change, T14 stays a report. (B) A radius share for
+  spoil (about 2x volume).
+- [ ] **S3c-24. Point-symmetric terrain** (Part B, B6). Built as a map key
+  (`[terrain] symmetry = "point"`), off on Kessel Ridge: over 80 matches
+  the mirrored valley (A) gave base 1 41 of 80 wins, tank losses 112 vs
+  123, C held 38 vs 37 %; the symmetric terrain gave 45 of 80 wins and
+  106 vs 104 (before the S3c-26 shell fix; after it, with (A): base 1 41
+  of 80, losses 190 vs 207). (A) Keep the mirrored valley only. (B) Turn
+  symmetry on.
+- [ ] **S3c-25. Hunter stance** (Part B, B2). (A) Hunters crouch on the
+  approach and crawl within 25 m while the tank's hull MG arc covers them;
+  a hunting squad screens itself with its smoke when pinned on the move
+  and keeps its satchel for the tank (no satchel at trench infantry). (B)
+  Automatic stance.
+- [ ] **S3c-26. Shells now fly their full range** (Part B, found by case
+  3f). A main-gun shell's lifetime was computed in Q16.16 as `range x
+  125` first, which saturated, so every shell of a 600 m gun vanished
+  after ~330 m. Fixed (`gunnery::shell_ttl`). Effect over 80 AI matches:
+  tanks lost 243 -> 397, rocket knock-outs 48 -> 21, rockets fired in 35
+  -> 22 of 40 normal-base matches (T2, T4 now missed); 3a (300 m)
+  unchanged; 3f Panzer IV 14 of 20. (A) Keep the fix and re-tune T2/T4 in
+  the Tune stage (AT reach, tank standoff, spotting). (B) Also cap tank
+  fire at the spotting range in the AI (no change to the physics).
+- [ ] **S3c-27. 600 m duel target** (S3b-38 (A)). 3f on seeds 1-10: Panzer
+  IV 14 of 20, Sherman 6 (Sherman hull hits penetrate 4 of 10, turret 6
+  of 6), staged spotted (two still tanks 600 m apart never see each other:
+  sight 175 m x 200 %). (A) Target "Panzer IV >= 6 of 10 at 600 m"
+  written. (B) Report only.
 
 ## S3 owner checklist (needs a person)
 

@@ -364,6 +364,25 @@ static func component_seg(ci: CanvasItem, r: Rect2, f: float, repairing: bool) -
 ## `AP 24 · HE 18` ending (align 1) or starting (-1) at `at` (baseline):
 ## the loaded round in the accent colour, a forced choice boxed. Returns
 ## the width drawn.
+## S3c (B9): the vehicle card's MG stowage text and colour: "MG 2,950",
+## amber under a quarter of the full stowage, red "MG dry" at 0; "" when the
+## mounts are unlimited (no "mg" key).
+static func mg_label(ammo: Dictionary) -> Array:
+	if not ammo.has("mg"):
+		return ["", HudStyle.TEXT]
+	var mg := int(ammo.get("mg", 0))
+	if mg <= 0:
+		return ["MG dry", HudStyle.DANGER]
+	var full := int(ammo.get("mg_full", 0))
+	var digits := str(mg)
+	var txt := ""
+	for i in digits.length():
+		if i > 0 and (digits.length() - i) % 3 == 0:
+			txt += ","
+		txt += digits[i]
+	return ["MG " + txt, HudStyle.ACCENT if full > 0 and mg * 4 < full else HudStyle.TEXT]
+
+
 static func draw_ammo(ci: CanvasItem, font: Font, bold: Font, at: Vector2, v: Dictionary, align: int) -> float:
 	var ammo: Dictionary = v.get("ammo", {})
 	var parts := ["AP %d" % int(ammo.get("ap", 0)), " · ", "HE %d" % int(ammo.get("he", 0))]

@@ -299,6 +299,10 @@ pub struct PlayerArmour {
     pub crew_bailed: u32,
     pub crew_out: u32,
     pub crew_home: u32,
+    /// S3c Part B AI counters (`AiCounters`): rearm trips, sticky hunts
+    /// (kept unseen, throws, ends by reason), second bases, AT stuck hunts
+    /// and follows, re-crews, crew retreats, denials.
+    pub ai_s3c: BTreeMap<String, u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -899,6 +903,27 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 armour.bounds = c.bounds;
                 armour.at_hunts = c.at_hunts;
                 armour.satchel_hunts = c.satchel_hunts;
+                let mut m = BTreeMap::new();
+                for (k, v) in [
+                    ("rearms", c.rearms),
+                    ("hunts_kept_unseen", c.hunts_kept_unseen),
+                    ("hunt_throws", c.hunt_throws),
+                    ("second_bases", c.second_bases),
+                    ("at_stuck_hunts", c.at_stuck_hunts),
+                    ("at_follows", c.at_follows),
+                    ("recrews", c.recrews),
+                    ("crew_retreats", c.crew_retreats),
+                    ("denials", c.denials),
+                ] {
+                    m.insert(k.to_string(), v);
+                }
+                for (k, &v) in c.hunt_ends.iter().enumerate() {
+                    m.insert(
+                        format!("hunt_end_{}", frontline_sim::ai::HUNT_END_NAMES[k]),
+                        v,
+                    );
+                }
+                armour.ai_s3c = m;
             }
             PlayerReport {
                 player: p as u8,
@@ -1296,6 +1321,8 @@ pub struct FactionSummary {
     pub crew_bailed: u32,
     pub crew_out: u32,
     pub crew_home: u32,
+    /// S3c Part B AI counters, summed.
+    pub ai_s3c: BTreeMap<String, u32>,
 }
 
 /// The compact table of a `--seeds` run (`--summary`).
@@ -1473,6 +1500,9 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             for (k, v) in &a.abandon_causes {
                 *f.abandon_causes.entry(k.clone()).or_default() += v;
             }
+            for (k, v) in &a.ai_s3c {
+                *f.ai_s3c.entry(k.clone()).or_default() += v;
+            }
             for (k, v) in &a.abandoned_fates {
                 *f.abandoned_fates.entry(k.clone()).or_default() += v;
             }
@@ -1610,6 +1640,9 @@ pub fn many_text(r: &ManyReport) -> String {
             f.crew_out,
             f.crew_home,
         );
+    }
+    for f in &s.factions {
+        out += &format!("S3c AI {}: {}\n", f.faction, join(&f.ai_s3c));
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
     for m in &r.matches {

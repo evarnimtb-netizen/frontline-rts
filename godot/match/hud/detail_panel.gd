@@ -193,6 +193,11 @@ func _draw_vehicle(vid: int) -> void:
 	y += 2.0 * rh
 	# Ammo: counts with the loaded round, the choice (N), the reload.
 	var w := ROSTER.draw_ammo(self, font, bold, Vector2(PAD - 2.0, y + base), v, -1)
+	# S3c (B9): MG stowage left (amber under a quarter, red when dry).
+	var mg: Array = ROSTER.mg_label(v.get("ammo", {}))
+	if mg[0] != "":
+		HudStyle.text(self, bold, Vector2(PAD + w + 4.0, y + base), mg[0], HudStyle.FONT, mg[1])
+		w += HudStyle.text_w(bold, mg[0], HudStyle.FONT) + 8.0
 	var choice: String = view.selection.ammo_choice() if view.selection.is_selected(vid) else String(v.get("ammo_choice", "auto"))
 	var chip := "%s N" % Vehicles.AMMO_TEXT.get(choice, "Auto")
 	var cw := HudStyle.text_w(bold, chip, HudStyle.FONT_SMALL) + 10.0

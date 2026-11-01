@@ -784,6 +784,15 @@ func _test_vehicles() -> void:
 	_click(centre)
 	_check(_sel.selected == PackedInt32Array([tp]) and _last(&"select").units == PackedInt32Array([tp]), "click on a tank selects it (units carry the vehicle id)")
 	_check(_view.detail.mode() == "vehicle", "detail panel shows the vehicle")
+	# S3c (B9): MG stowage on the vehicle card.
+	# Loaded at run time: roster.gd needs the autoloads, which a -s script
+	# does not have while it compiles.
+	var roster_s: GDScript = load("res://match/hud/roster.gd")
+	var mgl: Array = roster_s.mg_label(_vstate(tp).get("ammo", {}))
+	_check(mgl[0] == "MG 2,950" and mgl[1] == HudStyle.TEXT, "vehicle card shows MG stowage (%s)" % mgl[0])
+	var low: Array = roster_s.mg_label({"mg": 700, "mg_full": 3150})
+	var dry: Array = roster_s.mg_label({"mg": 0, "mg_full": 3150})
+	_check(low[1] == HudStyle.ACCENT and dry[0] == "MG dry" and dry[1] == HudStyle.DANGER and roster_s.mg_label({})[0] == "", "MG amber under a quarter, red 'MG dry' at 0, none for unlimited mounts")
 	var v0 := _vstate(tp)
 	var vt0: Dictionary = _view.vehicle_type(tp)
 	var fwd := Vector3(-sin(v0.yaw), 0, -cos(v0.yaw))

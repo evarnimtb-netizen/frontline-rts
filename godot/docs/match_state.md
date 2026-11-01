@@ -567,7 +567,10 @@ vehicles: [                        # own + seen enemy + every wreck, ascending i
                                    # | "transmission"
     ammo: { ap: int, he: int,      # main-gun rounds left; S3b: apcr only on a
             apcr: int,             # gun that carries a special round (Panzer IV);
-            mg: int },             # S3b Fix: MG rounds left in stowage (if limited)
+            mg: int,               # S3b Fix: MG rounds left in stowage (if limited)
+            mg_full: int },        # S3c: the full stowage (with mg); the vehicle
+                                   #   card shows "MG 2,950", amber under a
+                                   #   quarter, red "MG dry" at 0
     loaded: String,                # round in the breech: "ap" | "he" | "apcr" | ""
     ammo_choice: String,           # "auto" | "ap" | "he" | "apcr" (SetAmmo)
     reload: float,                 # 0..1, 1 = ready to fire

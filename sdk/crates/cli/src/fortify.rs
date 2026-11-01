@@ -41,7 +41,10 @@
 //!   report-only variant gives the trench an MG team of its own
 //!   ([`DEF_MG_DY`] beside the rifle squad) against the supported assault,
 //!   so equal forces can be compared; the report also splits T10 by the
-//!   entrenched faction.
+//!   entrenched faction. S3c (S3b-41 (A), B4): a fourth, report-only
+//!   variant adds a rifle squad suppressing the same line from 20 m on the
+//!   other side of the start (the AI's second base of fire), lifting with
+//!   the MG; T10 per attacking faction is reported with it too.
 //!
 //! Squads are staged with the sim's setup tools (`World::place_squad`,
 //! `World::dig_trench_now`), not commands, and the AI is off for both
@@ -247,6 +250,11 @@ pub struct SuppressRun {
     pub mg: bool,
     /// S3b Fix (review M5): the trench had its own MG team as well.
     pub def_mg: bool,
+    /// S3c (S3b-41 (A), B4): a rifle squad suppressed the trench too, as
+    /// the AI's second base of fire (from 20 m on the other side of the
+    /// start), lifting with the MG.
+    #[serde(default)]
+    pub second: bool,
     pub defender_losses: u32,
     pub attacker_losses: u32,
     pub attacker_men: u32,
@@ -607,6 +615,7 @@ fn suppress_run(
     dug: u8,
     mg: bool,
     def_mg: bool,
+    second: bool,
 ) -> Result<SuppressRun> {
     let mut w = world(args, seed)?;
     let att = 1 - dug;
@@ -626,6 +635,21 @@ fn suppress_run(
     let hz = w.match_setup().unwrap().tick_hz as u64;
     let (def_men, att_men) = (def_members(&w).len() as u32, members(&w, b).len() as u32);
     let mut mg_squad = None;
+    let mut second_squad = None;
+    if second {
+        let r = call_in(&mut w, att, "rifle_squad")?;
+        second_squad = Some(r);
+        w.place_squad(r, at(TRENCH_X + SUPPRESS_START_M, LINE_Y + 20), WEST);
+        let units = members(&w, r);
+        step_with(
+            &mut w,
+            att,
+            vec![CommandKind::SuppressUnits {
+                units,
+                line: vec![at(TRENCH_X, LINE_Y - 15), at(TRENCH_X, LINE_Y + 15)],
+            }],
+        );
+    }
     if mg {
         let m = call_in(&mut w, att, "mg_team")?;
         mg_squad = Some(m);
@@ -701,7 +725,11 @@ fn suppress_run(
             && lead_x.is_some_and(|(_, x)| x <= lift_x)
         {
             lifted = true;
-            step_with(&mut w, att, vec![CommandKind::Stop { squad: m }]);
+            let mut stops = vec![CommandKind::Stop { squad: m }];
+            if let Some(r) = second_squad {
+                stops.push(CommandKind::Stop { squad: r });
+            }
+            step_with(&mut w, att, stops);
         } else if close && !closing && (w.tick() - start).is_multiple_of(hz) {
             throw_wave(&mut w, att, b);
         } else {
@@ -723,6 +751,7 @@ fn suppress_run(
         defender_losses: losses(&w, dug) - lost_d,
         attacker_losses: losses(&w, att) - lost_a,
         attacker_men: att_men,
+        second,
         defender_men: def_men,
         ducked_pct: share(ticks.1),
         pinned_pct: share(ticks.2),
@@ -840,8 +869,13 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     for seed in seeds {
         for side in [0u8, 1] {
             rifles.push(rifle_run(args, seed, side)?);
-            for (mg, def_mg) in [(true, false), (false, false), (true, true)] {
-                suppress.push(suppress_run(args, seed, side, mg, def_mg)?);
+            for (mg, def_mg, second) in [
+                (true, false, false),
+                (false, false, false),
+                (true, true, false),
+                (true, false, true),
+            ] {
+                suppress.push(suppress_run(args, seed, side, mg, def_mg, second)?);
             }
             for start in [ASSAULT_START_M, ASSAULT_GAP_M] {
                 for grenades in [true, false] {
@@ -944,7 +978,10 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     };
     let sum = |mg: bool, def_mg: bool| {
         let mut t = SuppressTotals::default();
-        for r in suppress.iter().filter(|r| r.mg == mg && r.def_mg == def_mg) {
+        for r in suppress
+            .iter()
+            .filter(|r| r.mg == mg && r.def_mg == def_mg && !r.second)
+        {
             t.defender_losses += r.defender_losses;
             t.defender_men += r.defender_men;
             t.attacker_losses += r.attacker_losses;
@@ -1057,13 +1094,18 @@ pub fn summary_text(r: &FortifyReport) -> String {
     );
     let x = &r.suppress;
     out += &format!("{}\n", x.name);
+    out += "  (mg 2: MG + a rifle squad suppressing, S3c second base of fire)\n";
     out += "  seed  entrenched    mg   def_mg  defender_losses  attacker_losses  frags  ducked  pinned\n";
     for run in &x.runs {
         out += &format!(
             "  {:<5} {:<13} {:<4} {:<7} {:>9} of {:<4} {:>9} of {:<4} {:>5}  {:>5.1} %  {:>5.1} %\n",
             run.seed,
             run.entrenched,
-            if run.mg { "yes" } else { "no" },
+            match (run.mg, run.second) {
+                (true, true) => "2",
+                (true, false) => "yes",
+                _ => "no",
+            },
             if run.def_mg { "yes" } else { "no" },
             run.defender_losses,
             run.defender_men,
@@ -1126,12 +1168,21 @@ pub fn summary_text(r: &FortifyReport) -> String {
         for r in x
             .runs
             .iter()
-            .filter(|r| r.mg && !r.def_mg && r.entrenched == f)
+            .filter(|r| r.mg && !r.def_mg && !r.second && r.entrenched == f)
         {
             dl += r.defender_losses;
             dm += r.defender_men;
             al += r.attacker_losses;
             am += r.attacker_men;
+        }
+        // S3c (B4): the same with a second base of fire (MG + rifle squad
+        // suppressing); the attackers counted are the assaulting squad.
+        let (mut dl2, mut dm2, mut al2, mut am2) = (0, 0, 0, 0);
+        for r in x.runs.iter().filter(|r| r.second && r.entrenched == f) {
+            dl2 += r.defender_losses;
+            dm2 += r.defender_men;
+            al2 += r.attacker_losses;
+            am2 += r.attacker_men;
         }
         // S3c: name the attacking faction too (S3b-41: T10 per attacker).
         let attacker = factions_all
@@ -1142,6 +1193,11 @@ pub fn summary_text(r: &FortifyReport) -> String {
             "  T10, {f} entrenched ({attacker} attacking): defenders lost {dl} of {dm} ({:.1} %), attackers {al} of {am} ({:.1} %)\n",
             pct(dl, dm),
             pct(al, am)
+        );
+        out += &format!(
+            "  T10, {f} entrenched ({attacker} attacking with two bases of fire, MG + rifle squad suppressing): defenders lost {dl2} of {dm2} ({:.1} %), attackers {al2} of {am2} ({:.1} %)\n",
+            pct(dl2, dm2),
+            pct(al2, am2)
         );
     }
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });

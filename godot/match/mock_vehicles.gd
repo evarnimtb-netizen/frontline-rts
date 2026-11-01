@@ -100,7 +100,7 @@ func spawn(owner: int, type_key: String, at: Vector2, yaw := 0.0) -> int:
 		"crew": {"driver": "ok", "gunner": "ok", "commander": "ok", "loader": "ok", "radio_mg": "ok"},
 		"swap": {},
 		"comp": {"engine": 1.0, "track_l": 1.0, "track_r": 1.0, "gun": 1.0, "ring": 1.0, "ammo_rack": 1.0, "transmission": 1.0},
-		"repairing": "", "ammo": {"ap": int(vt.ammo[0].max), "he": int(vt.ammo[1].max)},
+		"repairing": "", "ammo": {"ap": int(vt.ammo[0].max), "he": int(vt.ammo[1].max), "mg": 2950, "mg_full": 3150},
 		"loaded": "ap", "ammo_choice": "auto", "reload": 1.0,
 		"aim": -1, "aim_squad": -1, "attack": -1, "focus_shots": 0,
 		"bog_t": 0.0, "crossing": false, "burn_t": -1.0, "fire_roll_t": 4.0,

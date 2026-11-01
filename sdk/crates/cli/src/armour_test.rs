@@ -448,6 +448,10 @@ struct DuelStat {
     first_shot: [Vec<u64>; 2],
     /// S3c: abandonments by trigger (`bail::AB_*`, index 0 unused).
     abandoned: [u32; 7],
+    /// S3c (3f): penetrations by (shooter player, part), and main-gun
+    /// shots fired (Panzer IV, Sherman).
+    pens: BTreeMap<(u8, BoxPart), u64>,
+    shots: [u32; 2],
 }
 
 /// S3b 3b check: how far (m, at the target's range) the Sherman's laid
@@ -498,6 +502,7 @@ fn case3(env: &Env) -> Result<CaseReport> {
             ("b 300 m, Panzer IV angled 30°", Duel::Angled300),
             ("c 150 m, Sherman on the flank", Duel::Flank150),
             ("e 150 m, Panzer IV on the flank", Duel::PzFlank150),
+            ("f 600 m frontal", Duel::Frontal600),
         ] {
             let mut s = scenarios::duel(env.setup(seed)?, env.threads, kind, flip == 1)?;
             r.runs += 1;
@@ -524,6 +529,7 @@ fn case3(env: &Env) -> Result<CaseReport> {
                         }
                     } else if e.kind == ArmourEventKind::Fired as u8 {
                         let side = (e.vehicle == sh.0) as usize;
+                        st.shots[side] += 1;
                         if shot[side].is_none() {
                             shot[side] = Some(w.tick() - start);
                         }
@@ -538,6 +544,9 @@ fn case3(env: &Env) -> Result<CaseReport> {
                 }
                 for h in w.take_hit_log() {
                     *st.hits.entry((h.player, h.part)).or_default() += 1;
+                    if h.result == frontline_sim::armour::PenResult::Penetration {
+                        *st.pens.entry((h.player, h.part)).or_default() += 1;
+                    }
                 }
                 let dis = w.snapshot().armour_events.iter().any(|e| {
                     e.kind == ArmourEventKind::Disabled as u8
@@ -580,9 +589,15 @@ fn case3(env: &Env) -> Result<CaseReport> {
             .get(t.len() / 2)
             .map_or("none".into(), |&x| mmss(x, tick_hz));
         let hits = |p: u8| {
-            let h = st.hits.get(&(p, BoxPart::Hull)).copied().unwrap_or(0);
-            let tu = st.hits.get(&(p, BoxPart::Turret)).copied().unwrap_or(0);
-            format!("{h} hull / {tu} turret")
+            let n =
+                |m: &BTreeMap<(u8, BoxPart), u64>, part| m.get(&(p, part)).copied().unwrap_or(0);
+            format!(
+                "{} hull / {} turret (penetrated {} / {})",
+                n(&st.hits, BoxPart::Hull),
+                n(&st.hits, BoxPart::Turret),
+                n(&st.pens, BoxPart::Hull),
+                n(&st.pens, BoxPart::Turret)
+            )
         };
         let med = |v: &Vec<u64>| {
             let mut v = v.clone();
@@ -596,7 +611,7 @@ fn case3(env: &Env) -> Result<CaseReport> {
             format!(
                 "destroyed: crew {}, ammo rack {}, fire {}, ammo fire {}; S3c abandoned: \
                  ammo fire {}, engine fire {}, crew {}, gun and mobility {}, under fire {}; \
-                 first main-gun shot (median) Panzer IV {}, Sherman {}",
+                 first main-gun shot (median) Panzer IV {}, Sherman {}; shots fired {} / {}",
                 st.ko_cause[0],
                 st.ko_cause[1],
                 st.ko_cause[2],
@@ -607,7 +622,9 @@ fn case3(env: &Env) -> Result<CaseReport> {
                 st.abandoned[4],
                 st.abandoned[5],
                 med(&st.first_shot[0]),
-                med(&st.first_shot[1])
+                med(&st.first_shot[1]),
+                st.shots[0],
+                st.shots[1]
             ),
         );
         r.row(
@@ -665,6 +682,29 @@ fn case3(env: &Env) -> Result<CaseReport> {
             "3a 300 m frontal: Panzer IV wins",
             format!("{} of {}", st.pz_wins, st.runs),
             "6–8 of 10",
+        );
+    }
+    // S3c (S3b-38 (A)): 600 m frontal. The target is written because seeds
+    // 1-10 support it (Panzer IV 14 of 20 once shells flew their full
+    // range): the M61 is just under the Panzer IV H's 80 mm hull front at
+    // 600 m, the PzGr 39 still beats the Sherman's glacis.
+    if let Some(st) = stats.get("f 600 m frontal") {
+        r.target(
+            "3f 600 m frontal: Panzer IV wins",
+            format!("{} of {}", st.pz_wins, st.runs),
+            "≥ 6 of 10",
+        );
+        r.row(
+            "3f 600 m frontal (S3b-38): wins",
+            format!(
+                "Panzer IV {} ({}), Sherman {} ({}), neither {} of {}",
+                st.pz_wins,
+                pct(f64::from(st.pz_wins), f64::from(st.runs)),
+                st.sh_wins,
+                pct(f64::from(st.sh_wins), f64::from(st.runs)),
+                st.runs - st.pz_wins - st.sh_wins,
+                st.runs
+            ),
         );
     }
     let ko: [u32; 4] = stats.values().fold([0; 4], |mut a, st| {

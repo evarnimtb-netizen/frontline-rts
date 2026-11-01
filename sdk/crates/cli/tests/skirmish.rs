@@ -187,7 +187,8 @@ fn fortify_test_reports_each_run() {
     assert!(r.rifles.open_losses > r.rifles.trench_losses);
     // S3b Fix (review M5): supported, unsupported, and supported against a
     // trench with its own MG team, per side.
-    assert_eq!(r.suppress.runs.len(), 6);
+    assert_eq!(r.suppress.runs.len(), 8);
+    assert_eq!(r.suppress.runs.iter().filter(|r| r.second).count(), 2);
     let defended: Vec<_> = r.suppress.runs.iter().filter(|r| r.def_mg).collect();
     assert_eq!(defended.len(), 2);
     for run in defended {

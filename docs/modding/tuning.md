@@ -30,6 +30,10 @@ needed.
 | Coax cone, spall reach; S3b: HE group radius, lead estimation error, when Auto loads APCR | same | `[vehicles.gunnery]` |
 | AI difficulty | same | `[difficulty.*]` |
 | AI commander (S3b: `tank_reserve_mp` in `[ai.armour]`; fire-and-move, AT and satchel hunts in `[ai.assault]`) | same | `[ai]`, `[ai.infantry]`, `[ai.armour]`, `[ai.assault]` |
+| S3c AI armour habits: rearm trips (`rearm_ap_below`, `rearm_full_pct`, `rearm_max_s`), crews re-crewing (`recrew_clear_m`, `recrew_reach_m`), denial fire at enemy abandoned tanks (`deny_m`) | same | `[ai.armour]` |
+| S3c sticky satchel hunts (`satchel_stick_s`, `satchel_chase_s`, `satchel_leash_m`, `satchel_crawl_m`, `satchel_hunt_max_s`), the second base of fire (`second_base_below_pct`, `second_base_gap_m`), AT stalks of stuck tanks and following own tanks (`at_hunt_stuck_m`, `at_follow_m`, `at_follow_back_m`) | same | `[ai.assault]` |
+| S3c fragments over a falling edge (a burst on a parapet crest reaches the trench behind it): `frag_fall_probe_cm` | same | `[combat.blast]` |
+| S3c point-symmetric terrain (the base-0 half mirrored through the centre; woods, points and bases are placed by hand) | `defs/maps/*.toml` | `[terrain] symmetry = "point"` (default `"none"`) |
 | How steady a squad type is under fire (S3b `steadiness_pct`, scales the duck and pin thresholds; the veterancy hook) | `defs/units/*.toml` | `steadiness_pct` (default 100) |
 | Where bought squads spawn in the base (S3b) | same | `[call_in]` |
 | One unit, weapon, item, vehicle, round | `defs/units/`, `defs/weapons/`, `defs/items/`, `defs/vehicles/`, `defs/ammo/` | the def's own file |
@@ -100,7 +104,12 @@ frontline-cli skirmish --ai-vs-ai --seeds 10 --both-bases --ab --rules-override 
   counts crewmen alive at bail-outs, out and dismissed in base; an `S3c
   crews` line gives the abandonments with crew inside where at least one
   man got out, and the men out still alive 60 s later. Rockets are
-  credited for an abandonment by the last hit, as for a knock-out.
+  credited for an abandonment by the last hit, as for a knock-out. S3c
+  Part B: an `S3c AI <faction>` line sums the AI's rearm trips, satchel
+  hunts kept through a loss of sight, satchels thrown by hunters, hunt
+  ends by reason (`gone`, `unseen`, `fast`, `leash`, `timeout`, `spent`,
+  `retreat`), second bases of fire, AT stalks of stuck tanks and follows,
+  re-crew orders, crews sent back and denial orders.
 - `--ab` plays the same matches without the overrides too. It prints both
   tables and the change in each headline number.
 
