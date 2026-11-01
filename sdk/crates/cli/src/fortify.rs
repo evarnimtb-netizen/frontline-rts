@@ -68,6 +68,11 @@ pub const SUPPRESS_START_M: i32 = 150;
 pub const SUPPRESS_LEAD_S: u64 = 5;
 /// ... and the fight lasts this long from the MG's order, game seconds.
 pub const SUPPRESS_S: u64 = 150;
+/// S3b Tune: the squad closes into the trench this long after its first
+/// grenade wave at the latest (s); the MG lifts at the rules'
+/// `ai.assault.lift_fire_m`.
+pub const CLOSE_IN_S: u64 = 10;
+
 /// Time given to a barrage (fire, flight and the last burst), game seconds.
 const BARRAGE_S: u64 = 90;
 /// Grenade assault: the attackers start this far from the trench (the
@@ -593,8 +598,10 @@ fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<Supp
     w.place_squad(b, at(TRENCH_X + SUPPRESS_START_M, LINE_Y), WEST);
     let hz = w.match_setup().unwrap().tick_hz as u64;
     let (def_men, att_men) = (members(&w, a).len() as u32, members(&w, b).len() as u32);
+    let mut mg_squad = None;
     if mg {
         let m = call_in(&mut w, att, "mg_team")?;
+        mg_squad = Some(m);
         w.place_squad(m, at(TRENCH_X + SUPPRESS_START_M, LINE_Y - 20), WEST);
         let units = members(&w, m);
         step_with(
@@ -630,13 +637,45 @@ fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<Supp
         ],
     );
     let throw_x = Fx::from_int(TRENCH_X + ASSAULT_THROW_M);
+    let lift_x =
+        Fx::from_int(TRENCH_X + w.match_setup().unwrap().rules.ai.assault.lift_fire_m as i32);
     let mut ticks = (0u64, 0u64, 0u64);
+    // S3b Tune: the assault closes into the trench once its grenades are
+    // out (or CLOSE_IN_S after the first wave), and the MG lifts its fire
+    // when the squad's lead is within the AI's `ai.assault.lift_fire_m` of
+    // the trench: fire and move, then grenades, then in.
+    let (mut first_wave, mut closing, mut lifted) = (None, false, false);
     while w.tick() < start + SUPPRESS_S * hz {
-        let close = w.game().unwrap().squad(b).is_some_and(|s| {
-            let lead = pos(&w, s.lead(w.entities()));
-            s.nav.phase == frontline_sim::NavPhase::Holding || lead.x <= throw_x
-        });
-        if close && (w.tick() - start).is_multiple_of(hz) {
+        let lead_x = w
+            .game()
+            .unwrap()
+            .squad(b)
+            .map(|s| (s.nav.phase, pos(&w, s.lead(w.entities())).x));
+        let close = lead_x
+            .is_some_and(|(phase, x)| phase == frontline_sim::NavPhase::Holding || x <= throw_x);
+        let frags_left = members(&w, b)
+            .iter()
+            .any(|m| w.entities().kit()[m.index()].items[ItemKind::Frag.index()] > 0);
+        if close && first_wave.is_none() {
+            first_wave = Some(w.tick());
+        }
+        if !closing && first_wave.is_some_and(|t| !frags_left || w.tick() >= t + CLOSE_IN_S * hz) {
+            closing = true;
+            step_with(
+                &mut w,
+                att,
+                vec![CommandKind::Move {
+                    squad: b,
+                    target: at(TRENCH_X, LINE_Y),
+                }],
+            );
+        } else if let Some(m) = mg_squad
+            && !lifted
+            && lead_x.is_some_and(|(_, x)| x <= lift_x)
+        {
+            lifted = true;
+            step_with(&mut w, att, vec![CommandKind::Stop { squad: m }]);
+        } else if close && !closing && (w.tick() - start).is_multiple_of(hz) {
             throw_wave(&mut w, att, b);
         } else {
             w.step(&[]);

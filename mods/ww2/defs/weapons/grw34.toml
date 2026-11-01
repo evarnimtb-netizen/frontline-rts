@@ -27,7 +27,12 @@ blast_radius_cm = 150
 # frag_far_pct % of it at full reach, and frag_track_damage to a track whose
 # band it strikes. Starting values from the spec, set to keep the old
 # lethality in the open within about 20 % (the Tune stage measures it).
-frag_count = 96
+# S3b Tune (owner question S3b-23 (A)): frag_count 96 -> 120. With 96 a
+# 10-round barrage killed 58 men in the open in fortify-test (the S1 value
+# before fragments was 74, -22 %); 120 gives 60 (-19 %, inside the spec's
+# +-20 %) and the trench still loses 6 (10 %). A real 81 mm bomb throws
+# hundreds of fragments; the rays are a sample.
+frag_count = 120
 frag_reach_cm = 1500
 frag_damage = 70
 frag_far_pct = 30

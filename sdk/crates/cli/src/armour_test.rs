@@ -1110,6 +1110,10 @@ fn throw_wave(w: &mut World, p: u8, squad: SquadId) {
     order(w, p, kinds);
 }
 
+/// S3b Tune, case 7: the rifles close into the trench at the latest this
+/// long after their first grenade wave (s).
+const CLOSE_IN_S: u64 = 10;
+
 #[derive(Default)]
 struct AssaultStat {
     att_lost: u32,
@@ -1187,7 +1191,56 @@ fn case7(env: &Env) -> Result<CaseReport> {
             let mut released = tank.is_none();
             let limit = start + 120 * hz(w);
             let throw_x = Fx::from_int(TRENCH_X + 27);
+            // S3b Tune: in 7 and 7b the rifles close into the trench once
+            // their grenades are out (or CLOSE_IN_S after the first wave),
+            // and the tank lifts its Suppress when their lead is within the
+            // AI's `ai.assault.lift_fire_m` of the trench (fortify-test's
+            // suppressed assault does the same). 7c keeps the S3 run.
+            let close_in = k != 2;
+            let lift_x = Fx::from_int(
+                TRENCH_X + w.match_setup().unwrap().rules.ai.assault.lift_fire_m as i32,
+            );
+            let (mut first_wave, mut closing, mut lifted) = (None, false, !suppress);
             while w.tick() < limit {
+                if close_in && released {
+                    let lead_x = w
+                        .game()
+                        .unwrap()
+                        .squad(att)
+                        .map(|q| (q.nav.phase, pos(w, q.lead(w.entities())).x));
+                    let near = lead_x.is_some_and(|(ph, x)| {
+                        ph == frontline_sim::NavPhase::Holding || x <= throw_x
+                    });
+                    if near && first_wave.is_none() {
+                        first_wave = Some(w.tick());
+                    }
+                    let frags_left = members(w, att)
+                        .iter()
+                        .any(|m| w.entities().kit()[m.index()].items[ItemKind::Frag.index()] > 0);
+                    if !closing
+                        && first_wave
+                            .is_some_and(|t| !frags_left || w.tick() >= t + CLOSE_IN_S * hz(w))
+                    {
+                        closing = true;
+                        order(
+                            w,
+                            p,
+                            vec![CommandKind::Move {
+                                squad: att,
+                                target: at(TRENCH_X, LANE_Y + 6),
+                            }],
+                        );
+                        continue;
+                    }
+                    if !lifted
+                        && let Some((tsq, _)) = tank
+                        && lead_x.is_some_and(|(_, x)| x <= lift_x)
+                    {
+                        lifted = true;
+                        order(w, p, vec![CommandKind::Stop { squad: tsq }]);
+                        continue;
+                    }
+                }
                 if !released && let Some((tsq, _)) = tank {
                     let arrived = w
                         .game()
@@ -1215,7 +1268,7 @@ fn case7(env: &Env) -> Result<CaseReport> {
                         q.nav.phase == frontline_sim::NavPhase::Holding
                             || pos(w, q.lead(w.entities())).x <= throw_x
                     });
-                if close && (w.tick() - start).is_multiple_of(hz(w)) {
+                if close && !closing && (w.tick() - start).is_multiple_of(hz(w)) {
                     throw_wave(w, p, att);
                 } else {
                     w.step(&[]);
@@ -1481,6 +1534,10 @@ fn case9(env: &Env) -> Result<CaseReport> {
     let mut lost = [0u32; 2];
     let mut fired = [0u64; 2];
     let (mut lip_lost, mut trench_hits, mut gaps) = (0f64, 0u64, Vec::new());
+    // S3b Tune (owner question S3b-22 (A)): the lip lost within 1 m of
+    // each burst (along the trench) that lands within 3 m of it, measured
+    // across that tick: the local effect the 41 m mean dilutes.
+    let (mut local_lost, mut local_bursts) = (0f64, 0u64);
     for (seed, p) in env.runs() {
         for (k, trench) in [(0usize, false), (1, true)] {
             let mut s = scenarios::he_infantry(env.setup(seed)?, env.threads, p, trench)?;
@@ -1492,8 +1549,39 @@ fn case9(env: &Env) -> Result<CaseReport> {
             let limit = w.tick() + 150 * hz(w);
             let mut he = 0u64;
             let mut done_at = None;
+            let mut prev = lip0.clone();
             while w.tick() < limit && done_at.is_none_or(|t| w.tick() < t + 15 * hz(w)) {
                 w.step(&[]);
+                if trench {
+                    let near: Vec<f32> = w
+                        .snapshot()
+                        .explosions
+                        .iter()
+                        .filter(|e| {
+                            e.kind == BlastKind::Shell
+                                && (e.pos[0] - TRENCH_X as f32).abs() <= 3.0
+                                && (e.pos[1] - LANE_Y as f32).abs() <= 20.0
+                        })
+                        .map(|e| e.pos[1])
+                        .collect();
+                    if !near.is_empty() {
+                        let now = lip_profile(w);
+                        for y in near {
+                            // Profile samples are 1 m apart from LANE_Y - 20.
+                            let (mut sum, mut n) = (0f64, 0u32);
+                            for (k, (a, b)) in prev.iter().zip(&now).enumerate() {
+                                let sy = (LANE_Y - 20 + k as i32) as f32;
+                                if (sy - y).abs() <= 1.0 {
+                                    sum += f64::from(a - b).max(0.0);
+                                    n += 1;
+                                }
+                            }
+                            local_lost += sum / f64::from(n.max(1));
+                            local_bursts += 1;
+                        }
+                        prev = now;
+                    }
+                }
                 he += w
                     .snapshot()
                     .armour_events
@@ -1574,6 +1662,14 @@ fn case9(env: &Env) -> Result<CaseReport> {
             gaps.len(),
             lip_lost / trench_hits.max(1) as f64
         ),
+    );
+    r.target(
+        "T14: lip lost within 1 m of each HE burst within 3 m of the trench (S3b-22 (A))",
+        format!(
+            "{:.3} m per burst over {local_bursts} bursts",
+            local_lost / local_bursts.max(1) as f64
+        ),
+        "≥ 0.05 m",
     );
     let opened = gaps.iter().filter(|g| **g >= 4).count();
     r.row(

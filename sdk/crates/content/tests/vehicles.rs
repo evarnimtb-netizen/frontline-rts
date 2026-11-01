@@ -422,8 +422,10 @@ fn seat_box_outside_its_frame_is_reported() {
         let f = r.join("defs/vehicles/ger_pz4_h.toml");
         // The driver's box pokes out of the hull's front.
         replace_in(&f, "center = [190, 60, 115]", "center = [280, 60, 115]");
-        // The gunner sits in the turret frame but below the turret box.
-        replace_in(&f, "center = [10, 45, 35]", "center = [10, 45, -30]");
+        // The gunner sits in the turret frame but below the turret basket
+        // (S3b Tune: a turret-frame box may reach down to the hull floor,
+        // 136 cm below the pivot, not below it).
+        replace_in(&f, "center = [10, 45, 0]", "center = [10, 45, -100]");
         // An engine box in the turret frame lies outside the turret.
         replace_in(
             &f,
@@ -509,7 +511,7 @@ fn vehicle_structure_errors_are_reported() {
 fn ammo_and_at_team_errors_are_reported() {
     let i = issues_of("ammo", |r| {
         let a = r.join("defs/ammo/75mm_m61.toml");
-        replace_in(&a, "[[100, 76], [500, 70]", "[[500, 76], [100, 70]");
+        replace_in(&a, "[[100, 70], [500, 66]", "[[500, 70], [100, 66]");
         replace_in(&a, "ricochet_angle_deg = 70", "ricochet_angle_deg = 85");
         replace_in(&a, "[filler]", "[fillr]");
         let h = r.join("defs/ammo/75mm_sprgr34.toml");
@@ -538,7 +540,7 @@ fn ammo_and_at_team_errors_are_reported() {
     );
     let i = issues_of("ammo2", |r| {
         let a = r.join("defs/ammo/75mm_m61.toml");
-        replace_in(&a, "[[100, 76], [500, 70]", "[[500, 76], [100, 70]");
+        replace_in(&a, "[[100, 70], [500, 66]", "[[500, 70], [100, 66]");
         replace_in(&a, "ricochet_angle_deg = 70", "ricochet_angle_deg = 85");
     });
     has(

@@ -139,7 +139,8 @@ fn skirmish_resolves_to_fixed_point() {
     assert_eq!(mortar.class, WeaponClass::Mortar);
     let mhe = mortar.he.as_ref().unwrap();
     assert_eq!(mhe.blast_radius, Fixed::from_ratio(3, 2));
-    assert_eq!((mhe.frag_count, mhe.frag_reach), (96, Fixed::from_int(15)));
+    // S3b Tune: 96 -> 120 fragments (owner question S3b-23 (A)).
+    assert_eq!((mhe.frag_count, mhe.frag_reach), (120, Fixed::from_int(15)));
     // Ridge plus valley.
     assert_eq!(s.map.terrain.bands.len(), 2);
     assert!(s.map.terrain.bands[1].height < Fixed::ZERO);

@@ -9,7 +9,9 @@
 # +-7 % band) or pen_pct = [lo, hi] (closed-form chance, inclusive). Rows
 # 1-27 are the spec's table in order; the rest come from the --table grid
 # and the edges. If the data changes, this file changes in the same
-# commit, on purpose.
+# commit, on purpose. S3b Tune: the 75 mm M61 rows (12-16, 18, 19, 28, 29,
+# 32) moved with the M61's penetration table, corrected to the US
+# published figures (defs/ammo/75mm_m61.toml).
 
 
 [[row]] # 1
@@ -116,8 +118,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 100
 angle = 0
-pen_pct = [99, 100]
-note = "80 @ 10 -> 81.2 mm; clears the -7 % edge by 0.4 mm"
+pen_pct = [40, 46]
+note = "S3b Tune: M61 to the US published table (Hunnicutt); 80 @ 10 -> 81.2 mm vs pen0 81.0: 43.1 %"
 
 [[row]] # 13
 ammo = "ww2:75mm_m61"
@@ -125,8 +127,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 150
 angle = 0
-pen_pct = [99, 100]
-note = "99.8 %"
+pen_pct = [31, 37]
+note = "S3b Tune: 34.0 %"
 
 [[row]] # 14
 ammo = "ww2:75mm_m61"
@@ -134,8 +136,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 300
 angle = 0
-pen_pct = [86, 91]
-note = "88.4 %"
+pen_pct = [10, 16]
+note = "S3b Tune: 12.8 % (was 88.4 % with the old M61 row)"
 
 [[row]] # 15
 ammo = "ww2:75mm_m61"
@@ -143,8 +145,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 450
 angle = 0
-pen_pct = [55, 60]
-note = "57.7 %"
+pen_pct = [0, 3]
+note = "S3b Tune: 1.5 %"
 
 [[row]] # 16
 ammo = "ww2:75mm_m61"
@@ -152,8 +154,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 500
 angle = 0
-pen_pct = [40, 46]
-note = "43.1 %"
+pen_pct = [0, 1]
+note = "S3b Tune: 0.2 %"
 
 [[row]] # 17
 ammo = "ww2:75mm_m61"
@@ -169,8 +171,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 150
 angle = 20
-pen_pct = [54, 60]
-note = "impact 22.3 deg, 86.4 mm; 57.0 %"
+expect = "nonpen"
+note = "S3b Tune: impact 22.3 deg, 86.4 mm; 0 %"
 
 [[row]] # 19
 ammo = "ww2:75mm_m61"
@@ -178,8 +180,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 300
 angle = 20
-pen_pct = [18, 23]
-note = "20.2 %"
+expect = "nonpen"
+note = "S3b Tune: 0 %"
 
 [[row]] # 20
 ammo = "ww2:75mm_m61"
@@ -258,8 +260,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 600
 angle = 0
-pen_pct = [17, 23]
-note = "20.2 %"
+expect = "nonpen"
+note = "S3b Tune: 0 %"
 
 [[row]] # 29
 ammo = "ww2:75mm_m61"
@@ -267,8 +269,8 @@ target = "ww2:ger_pz4_h"
 zone = "hull_front"
 range = 100
 angle = 20
-pen_pct = [66, 72]
-note = "69.1 %"
+pen_pct = [0, 1]
+note = "S3b Tune: 0.0 % (borderline at the band edge)"
 
 [[row]] # 30
 ammo = "ww2:75mm_m61"
@@ -294,8 +296,8 @@ target = "ww2:ger_pz4_h"
 zone = "turret_side"
 range = 1500
 angle = 60
-pen_pct = [38, 46]
-note = "42.0 %"
+pen_pct = [5, 11]
+note = "S3b Tune: 7.8 %"
 
 [[row]] # 33
 ammo = "ww2:75mm_m61"

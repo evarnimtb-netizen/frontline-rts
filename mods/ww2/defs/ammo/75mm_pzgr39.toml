@@ -35,9 +35,15 @@ cone_deg = 25
 # (it used to deal 80 to every box within 1.2 m, through other boxes, so
 # one turret penetration took out the gun, the ring and three crew).
 # PzGr 39: about 17 g of filler; rays and damage are starting values for the Tune stage.
+# S3b Tune: reach_cm 150 -> 300, as the spall reach (vehicles.gunnery
+# spall_reach_m 3). At 150 the rays from a burst 1 m behind the front
+# plate ended in the empty middle of the hull between the driver, the bow
+# gunner and the turret basket, so a tank survived 5-12 frontal
+# penetrations (case 3a). Shell-body fragments cross a fighting
+# compartment (2-3 m) with lethal energy.
 [filler]
 offset_cm = 100
 rays = 10
 cone_deg = 60
 damage = 60
-reach_cm = 150
+reach_cm = 300

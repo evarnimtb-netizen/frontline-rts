@@ -347,8 +347,14 @@ near_spot_m = 25
 # the same target 20 % tighter down to 50 %; HE at infantry uses a wider
 # area spread and is never fired within 30 m of own men. S3b: the gunner
 # aims at the centre of the target's visible mass (aim_hull_margin_pct,
-# "the weakest plate", is gone).
-moving_target_spread_pct = 300
+# "the weakest plate", is gone). S3b Tune (owner question S3b-21 (A)):
+# moving_target_spread_pct 300 -> 600. The lead estimation error alone
+# barely misses a 5.8 m long crossing hull at 300 m (case 3d 86-91 % of
+# stationary); 500 gave 65 %, 550 60 %, 600 55 % (target <= 60 %). It
+# stands for the tracking and range-estimation errors against a mover
+# that the model does not simulate; wartime first-round hit rates on
+# moving tanks were roughly half of those on still ones.
+moving_target_spread_pct = 600
 ranging_step_pct = 20
 ranging_floor_pct = 50
 he_area_spread_mrad = 6
@@ -635,8 +641,11 @@ trench_line_m = 24
 # or its point, unless a known enemy soldier is within at_hunt_clear_m of
 # the middle of its route; it stops at_hunt_inset_m inside its launcher's
 # engage_still, on the vehicle's side or rear (m). 250 m: a tank this
-# close can reach the point in under a minute.
-at_hunt_m = 250
+# close can reach the point in under a minute. S3b Tune: 250 -> 400
+# (T7): at 250 rockets were fired in 6-7 of 10 matches (normal bases);
+# at 400 in 8 of 10, with the AI still holding AT teams back from tanks
+# beyond a point's reach (A/B, seeds 1-10 both bases).
+at_hunt_m = 400
 at_hunt_clear_m = 40
 at_hunt_inset_m = 10
 # Engineers with a satchel go for a known enemy vehicle within
@@ -645,7 +654,10 @@ at_hunt_inset_m = 10
 # within the satchel's range (m, s). They walk to a spot satchel_stand_m
 # outside the hull side nearer them (5 m: the satchel lands ~0.8 m off the
 # hull, so the thrower stands ~4 m from it, inside the 3-8 m throw range).
-satchel_hunt_m = 60
+# S3b Tune: satchel_hunt_m 60 -> 150 (T7): AI tanks halt 40-160 m from
+# enemy points, so at 60 m a hunt rarely started; at 150 engineers in the
+# trench go for a tank halted in front of it.
+satchel_hunt_m = 150
 satchel_slow_s = 3
 satchel_stand_m = 5
 

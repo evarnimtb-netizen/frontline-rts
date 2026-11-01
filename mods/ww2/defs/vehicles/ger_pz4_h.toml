@@ -78,12 +78,20 @@ seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
 # forward (x 150 -> 190; box fronts 0.65 m behind the nose) so a frontal
 # HEAT jet (1.0 m) reaches them. Source: Jentz & Doyle, Panzer Tracts 4-3
 # (layout drawings); positions approximate within the box model.
+# S3b Tune (turret basket): the turret crew boxes reach down into the hull
+# (turret frame z below 0 = below the turret ring, 176 cm above the ground)
+# instead of sitting wholly above the ring. The gunner sits left of the gun
+# with his legs below the ring (z -70..70); the loader stands on the
+# turret platform, about 0.4 m above the ground (z -120..70); the
+# commander sits high under his cupola (z -40..85). Before, a hull hit at
+# the height of the visible-mass centre passed under all three. Source:
+# Jentz & Doyle, Panzer Tracts 4-3 (turret layout); approximate.
 [crew.boxes]
 driver    = { frame = "hull",   center = [190, 60, 115], half = [35, 30, 40] }
 radio_mg  = { frame = "hull",   center = [190, -60, 115], half = [35, 30, 40] }
-gunner    = { frame = "turret", center = [10, 45, 35],   half = [30, 25, 35] }
-loader    = { frame = "turret", center = [10, -45, 35],  half = [30, 25, 35] }
-commander = { frame = "turret", center = [-70, 0, 45],   half = [30, 30, 40] }
+gunner    = { frame = "turret", center = [10, 45, 0],    half = [30, 25, 70] }
+loader    = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
+commander = { frame = "turret", center = [-70, 0, 22],   half = [30, 30, 63] }
 
 [[weapons]]
 def = "ww2:kwk40_l48"

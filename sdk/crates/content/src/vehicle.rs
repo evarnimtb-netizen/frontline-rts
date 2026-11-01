@@ -980,8 +980,14 @@ impl VehicleDef {
             100,
         );
         range(&mut out, "hull.track_mm", self.hull.track_mm as i64, 0, 500);
-        let turret = &self.turret.bounds;
-        check_box(&mut out, "turret.box", turret);
+        let turret_box = &self.turret.bounds;
+        check_box(&mut out, "turret.box", turret_box);
+        // S3b Tune: a turret-frame part (a turret crewman, the breech) may
+        // reach below the turret box down to the hull floor: the turret
+        // basket, where the gunner's and loader's legs and the loader's
+        // standing place are, turning with the turret.
+        let basket = basket_def(turret_box, self.turret.pivot[2], hull);
+        let turret = &basket;
         for (a, p) in self.turret.pivot.iter().enumerate() {
             range(
                 &mut out,
@@ -1980,6 +1986,33 @@ fn box_ok(b: &BoxSetup) -> bool {
     h.iter().all(|&v| v > Fixed::ZERO && fx_in(v, 0, 20)) && c.iter().all(|&v| fx_in(v, -20, 20))
 }
 
+/// The turret box extended down to the hull floor (turret frame): where
+/// a turret-frame part may lie (S3b Tune, the turret basket).
+fn basket_def(turret: &BoxDef, pivot_z: i32, hull: &BoxDef) -> BoxDef {
+    let lo = (hull.lo(2) - pivot_z as i64).min(turret.lo(2));
+    let hi = turret.hi(2);
+    BoxDef {
+        center: [
+            turret.center[0],
+            turret.center[1],
+            ((lo + hi).div_euclid(2)) as i32,
+        ],
+        half: [turret.half[0], turret.half[1], ((hi - lo + 1) / 2) as u32],
+    }
+}
+
+/// [`basket_def`] for a resolved vehicle (fixed point).
+fn basket(v: &VehicleSetup) -> BoxSetup {
+    let t = &v.turret;
+    let hull_lo = v.hull.center.z.0 as i64 - v.hull.half.z.0 as i64;
+    let lo = (hull_lo - v.turret_pivot.z.0 as i64).min(t.center.z.0 as i64 - t.half.z.0 as i64);
+    let hi = t.center.z.0 as i64 + t.half.z.0 as i64;
+    let mut b = *t;
+    b.center.z = Fixed(((lo + hi).div_euclid(2)) as i32);
+    b.half.z = Fixed(((hi - lo + 1) / 2) as i32);
+    b
+}
+
 fn inside(outer: &BoxSetup, inner: &BoxSetup) -> bool {
     let o = [
         (outer.center.x, outer.half.x),
@@ -2110,9 +2143,10 @@ pub(crate) fn check_vehicle(
             return Some("vehicles.armour: plate out of range");
         }
     }
+    let basket = basket(v);
     let frame = |f: Frame| match f {
         Frame::Hull => &v.hull,
-        Frame::Turret => &v.turret,
+        Frame::Turret => &basket,
     };
     if v.seats.is_empty()
         || v.seats.len() > SEAT_ROLES
