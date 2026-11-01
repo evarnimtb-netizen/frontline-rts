@@ -765,6 +765,16 @@ the HQ or the base. That is why tanks went back to the trains to rearm.
 | Supply vehicle (truck, half-track, M20) | 1 round per 3 s to vehicles within 15 m | everything except base-only | its own kg stock; refills at the base or the HQ |
 | Placed crate | infantry items only by default | small arms, grenades, rockets, mortar bombs | 40 kg (man-carried) |
 
+> **Owner decision 2026-11-01 (supersedes this table where they differ;
+> see `artillery-on-map.md` §4.2 "No back doors"):** base refill stays free
+> only for small arms, tank racks and AT guns firing direct. Any round a
+> weapon with indirect fire uses is crate-only (`crate_only_if_indirect`).
+> Every `shells` cargo load a truck, half-track or tow takes at base is
+> priced (`shell_mp_per_kg`) and shares the base crate queue
+> (`base_crate_issue_s`). Rounds rearmed free stay in that weapon's own
+> racks (`rack_rounds_transferable = false`), so they can't be unloaded
+> into a dump.
+
 - **Supply vehicles can also drop crates** at a point (a `DropCrates
   { vehicle, point, count }` command), for infantry to use. That is the
   "delivered by a truck or half-track" path the owner asked for.
