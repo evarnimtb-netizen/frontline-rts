@@ -10,6 +10,14 @@ extends SceneTree
 ## roster and detail panel clicks, the call-in column, pause and
 ## surrender → end screen.
 ##
+## S3 (vehicles on the mock): state flags per staged state, the MultiMesh
+## buffers per (type, part), vehicle picking (footprint and 14 px),
+## rings, right-click mapping (attack_unit, follow_units, Alt reverse),
+## O / N / J, the roster card and detail panel, the ammo toggle, the
+## call-in lock countdown and the vehicle limit, hit markers and feed
+## lines, the 16-vehicle CPU cost (< 0.2 ms) and the 1280x800 roster fit
+## with 4 vehicles and 8 squads.
+##
 ##   Godot --headless --path godot -s res://tools/test_match_view.gd
 ##
 ## Exits 0 when every check passes. Events are fed straight to the
@@ -64,6 +72,7 @@ func _run() -> void:
 	await _test_tools(eng, mortar)
 	await _test_minimap()
 	await _test_hud(eng, eng_men, rifle)
+	await _test_vehicles()
 	_test_cost()
 	await _test_end()
 
@@ -479,10 +488,316 @@ func _check_layout(hud: Control, sz: Vector2, label: String) -> void:
 	_check(absf(ro.end.y - (sz.y - 10.0)) < 0.5 and absf(de.end.y - (sz.y - 10.0)) < 0.5 and absf(orr.end.y - (sz.y - 10.0)) < 0.5, "%s: console shares one baseline" % label)
 	_check(ro.end.x <= de.position.x and de.end.x <= orr.position.x and absf(orr.end.x - (sz.x - 12.0)) < 0.5, "%s: roster | detail | orders, right-aligned" % label)
 	var ci: Rect2 = hud.rect_of(_view.call_in)
-	_check(absf(ci.size.x - 120.0) < 0.5 and absf(ci.end.x - (sz.x - 12.0)) < 0.5 and ci.end.y <= top - 8.0 + 0.5, "%s: call-in column 120 px, right, above the orders" % label)
+	# One column of 120 px tiles, or two (S3: 6+ tiles would rise too high).
+	var cols: int = _view.call_in.columns
+	_check(absf(ci.size.x - (120.0 * cols + 4.0 * (cols - 1))) < 0.5 and absf(ci.end.x - (sz.x - 12.0)) < 0.5 and ci.end.y <= top - 8.0 + 0.5, "%s: call-in %d column(s) of 120 px tiles, right, above the orders" % [label, cols])
+	_check(ci.position.y >= sz.y * 0.575 - 0.5, "%s: call-in top at or below 57.5 %% of the height (%.0f)" % [label, ci.position.y])
 	var fe: Rect2 = hud.rect_of(_view.event_feed)
 	_check(absf(fe.end.x - (sz.x - 12.0)) < 0.5 and fe.position.y == tb.size.y + 8.0 and not fe.intersects(mm), "%s: feed top-right" % label)
 	_check(ci.position.y > fe.end.y and not ci.intersects(orr), "%s: no overlaps on the right" % label)
+
+
+# --- vehicles (S3) -------------------------------------------------------------
+
+func _vehicle_tile() -> int:
+	var cat: Array = _view.state.get("callin", {}).get("catalog", [])
+	for i in cat.size():
+		if cat[i].get("type", "") == "vehicle":
+			return i
+	return -1
+
+
+func _vstate(id: int) -> Dictionary:
+	return _view.vehicles_by_id.get(id, {})
+
+
+func _test_vehicles() -> void:
+	var ci: Control = _view.call_in
+	await _frames(1)
+	# Before the unlock: the vehicle tile is locked with a countdown.
+	var vi := _vehicle_tile()
+	var tile: Dictionary = _view.state.callin.catalog[vi] if vi >= 0 else {}
+	_check(vi >= 0 and float(tile.get("locked_s", 0.0)) > 200.0, "vehicle tile locked before 4:00 (%.0f s left)" % float(tile.get("locked_s", 0.0)))
+	_check(ci.blocked_reason(tile) == "locked" and tile.has("id") and int(tile.get("pop", 0)) == 12, "locked tile: reason, id and pop")
+	_intents.clear()
+	_check(not ci.call_in_index(vi) and _last(&"call_in") == null, "a locked tile sends no call-in")
+
+	# Stage four own tanks, two seen enemies and two wrecks near the rifles.
+	var rifles: PackedInt32Array = _source.squad_ids(0, "rifle")
+	var escort_sq: int = rifles[1]
+	var anchor: Vector3 = _source.squad_pos(escort_sq)
+	var tanks: PackedInt32Array = _source.stage_vehicles(Vector2(anchor.x + 20.0, anchor.z + 10.0), Vector2(1, -1), escort_sq)
+	var at_sq: int = _source._spawn(0, "at", Vector2(anchor.x + 8.0, anchor.z + 24.0))
+	_source.prewarm(0.5)
+	_sel.select_only(PackedInt32Array())
+	# Clear the ground around the tanks of other men (picking tests).
+	_source.place_squad(rifles[0], Vector2(anchor.x - 60.0, anchor.z + 40.0))
+	_source.place_squad(at_sq, Vector2(anchor.x - 20.0, anchor.z + 50.0))
+	_cam.yaw_deg = -45.0
+	_cam.height = 75.0
+	var c := Vector3.ZERO
+	for id in tanks:
+		c += _source.veh.vehicles[id].pos.x * Vector3.RIGHT + _source.veh.vehicles[id].pos.y * Vector3.BACK
+	_cam.jump_to(c / tanks.size() + Vector3(1, 0, -1).normalized() * 25.0)
+	await _frames(3)
+	_check(tanks.size() == 4 and _view.vehicles_by_id.size() >= 8, "state has vehicles (%d)" % _view.vehicles_by_id.size())
+	var bog := _vstate(tanks[1])
+	_check(Vehicles.has(bog, Vehicles.BOGGED) and Vehicles.has(bog, Vehicles.CROSSING) and bog.state == "bogged", "bogged tank: BOGGED | CROSSING, badge Bogged")
+	_check(Vehicles.has(_vstate(tanks[2]), Vehicles.BURNING) and _vstate(tanks[2]).state == "burning", "burning tank flagged")
+	var rep := _vstate(tanks[3])
+	_check(Vehicles.has(rep, Vehicles.REPAIRING) and rep.state == "repairing" and rep.repairing == "track_l" and rep.crew[1] == "swapping", "repairing tank: REPAIRING, track_l, gunner swapping")
+	var enemy := -1
+	var fresh := -1
+	var old := -1
+	for id in _view.vehicles_by_id:
+		var v: Dictionary = _view.vehicles_by_id[id]
+		if Vehicles.is_wreck(v):
+			if Vehicles.has(v, Vehicles.KNOCKED_OUT):
+				fresh = id
+			else:
+				old = id
+		elif int(v.owner) == 1 and enemy == -1:
+			enemy = id
+	_check(fresh != -1 and old != -1 and int(_vstate(fresh).owner) == -1 and int(_vstate(fresh).squad) == -1, "wrecks: owner -1, a fresh one KNOCKED_OUT, an old one not")
+	var ev := _vstate(enemy)
+	_check(enemy != -1 and not ev.has("crew") and not ev.has("ammo") and (int(ev.flags) & ~(Vehicles.BURNING | Vehicles.WRECK | Vehicles.KNOCKED_OUT)) == 0, "enemy vehicle: no own-only keys, flags masked")
+
+	# Renderer: one MultiMesh per (type, part), one instance per vehicle.
+	var vv: VehicleView = _match.vehicle_view
+	var mine := String(_vstate(tanks[0]).type)
+	var n_mine := 0
+	for id in _view.vehicles_by_id:
+		if String(_view.vehicles_by_id[id].type) == mine:
+			n_mine += 1
+	var hull: MultiMesh = vv.batch(mine, 0)
+	_check(hull != null and int(vv.counts.get(mine, -1)) == n_mine and hull.visible_instance_count == n_mine and vv.batch(mine, 2).visible_instance_count == n_mine, "one hull/turret/gun instance per %s (%d)" % [mine, n_mine])
+	_check(hull != null and hull.buffer.size() == VehicleView.CAP * 16 and hull.use_custom_data, "buffer: CAP x 16 floats with custom data")
+	var first: Dictionary = {}
+	for v in _view.state.vehicles:
+		if String(v.type) == mine:
+			first = v
+			break
+	var b := hull.buffer
+	var p0: Vector3 = first.pos
+	_check(absf(b[3] - p0.x) < 0.01 and absf(b[7] - p0.y) < 0.01 and absf(b[11] - p0.z) < 0.01, "hull instance 0 sits at the first vehicle's pos")
+	var tint := VehicleView.tint(String(MockVehicles.TYPES[mine].faction), 0, 0)
+	_check(Vehicles.is_wreck(first) or (absf(b[12] - tint.r) < 0.01 and absf(b[15] - 1.0) < 0.01), "custom data: team tint and full brightness")
+	_check(_match.vehicle_fx.counts.fires >= 1 and _match.vehicle_fx.counts.smokes >= 1, "fire on the burning tank, smoke over the fresh wreck")
+
+	# Picking: centre, inside the footprint, outside. The escort file
+	# behind the first tank overlaps it on screen, so test on a tank with
+	# nobody in front of it (soldiers under the cursor win by design).
+	var tp := -1
+	for t in tanks:
+		var k: int = _view.veh_pick_ids.find(t)
+		if k >= 0 and _sel.pick_soldier(_view.veh_pick_screen[k], -1) == -1:
+			tp = t
+			break
+	_check(tp != -1, "a tank with no soldier over it on screen (test setup)")
+	var centre: Vector2 = _view.veh_pick_screen[_view.veh_pick_ids.find(tp)]
+	_click(centre)
+	_check(_sel.selected == PackedInt32Array([tp]) and _last(&"select").units == PackedInt32Array([tp]), "click on a tank selects it (units carry the vehicle id)")
+	_check(_view.detail.mode() == "vehicle", "detail panel shows the vehicle")
+	var v0 := _vstate(tp)
+	var vt0: Dictionary = _view.vehicle_type(tp)
+	var fwd := Vector3(-sin(v0.yaw), 0, -cos(v0.yaw))
+	var nose := _cam.unproject_position(v0.pos + fwd * float(vt0.hull_length) * 0.42 + Vector3(0, 0.4, 0))
+	_click(Vector2(5, 450))
+	_check(nose.distance_to(centre) > 14.0 and _sel.pick_vehicle(nose, 1) == tp, "inside the footprint, %.0f px from the centre, picks the tank" % nose.distance_to(centre))
+	var off := _cam.unproject_position(v0.pos + fwd * (float(vt0.hull_length) * 0.5 + 4.0))
+	_check(_sel.pick_vehicle(off, 1) == -1, "4 m off the nose picks nothing")
+	_sel.select_only(PackedInt32Array([tanks[0]]))
+	_sel.hover_id = -1
+	await _frames(1)
+	var rings: MultiMesh = _match.get_node("GroundOverlay/VehicleRings").multimesh
+	_check(rings.visible_instance_count == 1, "one vehicle ring for one selected tank")
+	_check(_view.orders.grid_mode == "vehicle", "orders grid switches to the vehicle layout")
+
+	# Orders.
+	var g := _ground_screen(_view.unit_pos(tanks[0]) + Vector3(-30, 0, 30))
+	_intents.clear()
+	_rclick(g)
+	_check(_last(&"move_units") != null and _last(&"move_units").units == PackedInt32Array([tanks[0]]) and _last(&"move") == null, "right-click: move_units with the tank")
+	_intents.clear()
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_RIGHT
+	e.pressed = true
+	e.alt_pressed = true
+	e.position = g
+	_sel._unhandled_input(e)
+	_check(_last(&"reverse_units") != null and _last(&"reverse_units").units == PackedInt32Array([tanks[0]]), "Alt+right-click: reverse_units")
+	# Tank + AT team on an enemy tank: attack_unit for both, nobody moves.
+	await _frames(1)
+	var ie: int = _view.veh_pick_ids.find(enemy)
+	var at_men: PackedInt32Array = _source.unit_ids(at_sq)
+	var focus := at_men.duplicate()
+	focus.append(tanks[0])
+	focus.sort()
+	var with_rifles := focus.duplicate()
+	with_rifles.append_array(_source.unit_ids(rifles[0]))
+	_sel.select_only(with_rifles)
+	_intents.clear()
+	if ie >= 0:
+		_rclick(_view.veh_pick_screen[ie])
+	var au: Variant = _last(&"attack_unit")
+	_check(ie >= 0 and au != null and au.units == focus and int(au.target) == enemy, "right-click an enemy tank: attack_unit (tank + AT men)")
+	_check(_last(&"attack_move") != null and _last(&"attack_move").squads == PackedInt32Array([rifles[0]]), "the rifles attack-move to it")
+	# Infantry on an own tank: escort.
+	await _frames(1)
+	_sel.select_squads(PackedInt32Array([rifles[0]]))
+	_intents.clear()
+	var i1: int = _view.veh_pick_ids.find(tanks[1])
+	_rclick(_view.veh_pick_screen[i1])
+	var fu: Variant = _last(&"follow_units")
+	_check(fu != null and int(fu.vehicle) == tanks[1] and fu.units == _source.unit_ids(rifles[0]) and _last(&"move") == null, "infantry right-click an own tank: follow_units")
+	await _frames(2)
+	_check(int(_vstate(tanks[1]).get("followers", 0)) > 0 and int(_view.squads_by_id[rifles[0]].get("follow", -1)) == tanks[1], "mock: escort counted, the squad reports `follow`")
+	# Keys: O face tool, N cycles ammo, J repair.
+	_sel.select_only(PackedInt32Array([tanks[0]]))
+	_key(KEY_O)
+	_check(_sel.tool == &"face", "O arms the face tool")
+	_intents.clear()
+	_click(g)
+	_check(_last(&"face_units") != null and _last(&"face_units").units == PackedInt32Array([tanks[0]]) and _sel.tool == &"", "click: face_units")
+	await _frames(1)
+	var before: String = _vstate(tanks[0]).ammo_choice
+	_key(KEY_N)
+	var a1: String = _last(&"set_ammo").ammo
+	_key(KEY_N)
+	var a2: String = _last(&"set_ammo").ammo
+	_check(a1 == Vehicles.next_ammo(before) and a2 == Vehicles.next_ammo(a1), "N twice in one frame: %s -> %s -> %s" % [before, a1, a2])
+	_key(KEY_J)
+	_check(_last(&"repair_units") != null and _last(&"repair_units").units == PackedInt32Array([tanks[0]]), "J: repair_units")
+	# Ammo toggle on the grid; the state follows.
+	_view.orders.press(&"ammo_he")
+	_check(_last(&"set_ammo").ammo == "he", "ammo strip HE sends set_ammo he")
+	await _frames(2)
+	_check(_vstate(tanks[0]).ammo_choice == "he" and _view.orders.active(&"ammo_he") and not _view.orders.active(&"ammo_ap"), "the strip shows HE once the state has it")
+	# Roster card: shown, wide enough, a click selects the tank.
+	var roster: Control = _view.roster
+	var r: Rect2 = roster.vehicle_card_rect(tanks[0])
+	_check(r.size.x > 0.0 and r.size.x + 0.5 >= roster.vehicle_card_width(tanks[0], roster.get_theme_default_font(), HudStyle.bold()), "the selected tank has a card wide enough for its text (%.0f px)" % r.size.x)
+	_sel.select_only(PackedInt32Array())
+	_gui_click(roster, r.get_center())
+	_check(_sel.selected == PackedInt32Array([tanks[0]]) and _sel.focused_vehicle() == tanks[0], "card click selects the tank and focuses it")
+	# Vehicle limit: 4 alive.
+	await _frames(1)
+	tile = _view.state.callin.catalog[_vehicle_tile()]
+	_check(ci.blocked_reason(tile) == "limit" and int(_view.state.callin.vehicles) == 4, "4 tanks: the tile says limit (4/4)")
+	# Feed and hit markers.
+	_view.event_feed.push({"kind": "vehicle_knocked_out", "text": "Enemy Sherman knocked out.", "player": 1})
+	_check(_view.event_feed.lines[0].get("good", false), "enemy knock-out: own-colour stripe")
+	var evs: Array = []
+	for k in 8:
+		evs.append({"kind": "pen" if k % 2 == 0 else "no_pen", "pos": _view.unit_pos(enemy), "owner": 1})
+	_view._note_hits(evs)
+	_check(_view.hit_markers.size() == _view.HIT_MAX and _view.hit_markers[-1].word == "No pen", "hit markers: at most 6, newest kept")
+	# Shells: a volley shows tracers.
+	_source.veh.volley(0)
+	await _frames(1)
+	_check(_match.vehicle_fx.counts.streaks >= 1, "shells in flight draw tracers (%d)" % _match.vehicle_fx.counts.streaks)
+	await _test_vehicle_cost()
+	await _test_fit_1280(tanks)
+	_sel.select_only(PackedInt32Array())
+	_sel.cancel_tool()
+
+
+## Done-when 9: CPU time to build the vehicle buffers, the picking index,
+## one pick and the vehicle rings for 16 vehicles, under 0.2 ms.
+func _test_vehicle_cost() -> void:
+	var s: Dictionary = _view.state.duplicate()
+	var list: Array = []
+	var f: Vector3 = _cam.focus
+	var keys := ["ger_pz4_h", "usa_m4a3_75"]
+	for i in 16:
+		list.append({
+			"id": 9000 + i, "squad": 900 + i, "owner": i % 2, "type": keys[i % 2], "name": "T",
+			"pos": f + Vector3((i % 4) * 12.0 - 18.0, 0, floorf(i / 4.0) * 12.0 - 18.0),
+			"yaw": i * 0.4, "pitch": 0.02, "roll": -0.01, "turret_yaw": i * 0.3, "gun_pitch": 0.05,
+			"speed": 3.0, "flags": 1, "state": "moving",
+		})
+	s.vehicles = list
+	var vv: VehicleView = _match.vehicle_view
+	var rings: SelectionRings = _match.get_node("GroundOverlay/VehicleRings")
+	var pts := PackedVector3Array()
+	var yaws := PackedFloat32Array()
+	var half := PackedVector2Array()
+	var cols := PackedColorArray()
+	var rect: Rect2 = _view.get_viewport().get_visible_rect()
+	var n := 100
+	var t_buf := 0
+	var t_pick := 0
+	var t_ring := 0
+	for k in n:
+		var t0 := Time.get_ticks_usec()
+		vv.update_state(s)
+		var t1 := Time.get_ticks_usec()
+		_view._index_vehicles(s, rect)
+		_sel.pick_vehicle(Vector2(800, 450), -1)
+		var t2 := Time.get_ticks_usec()
+		pts.clear()
+		yaws.clear()
+		half.clear()
+		cols.clear()
+		for v in list:
+			pts.append(v.pos)
+			yaws.append(v.yaw)
+			half.append(Vector2(2.3, 3.8))
+			cols.append(Color.WHITE)
+		rings.set_oriented(pts, yaws, half, cols)
+		var t3 := Time.get_ticks_usec()
+		t_buf += t1 - t0
+		t_pick += t2 - t1
+		t_ring += t3 - t2
+	var per := (t_buf + t_pick + t_ring) / float(n) / 1000.0
+	print("cost: 16 vehicles: buffers %.3f + picking %.3f + rings %.3f = %.3f ms/frame" % [t_buf / float(n) / 1000.0, t_pick / float(n) / 1000.0, t_ring / float(n) / 1000.0, per])
+	_check(vv.counts.get("ger_pz4_h", 0) == 8 and _view.veh_pick_ids.size() > 8, "16-vehicle state drawn and indexed")
+	_check(per < 0.2, "16 vehicles: buffers + picking + rings under 0.2 ms (%.3f ms, headless debug)" % per)
+	_view.update_state(_source.get_state())
+	await _frames(1)
+
+
+## Done-when 10: at 1280x800 with 4 vehicles and 8 squads no roster cards
+## overlap; prints the visible card count.
+func _test_fit_1280(tanks: PackedInt32Array) -> void:
+	var hud: Control = _view.hud
+	var own: PackedInt32Array = _source.squad_ids(0)
+	var k := 0
+	while own.size() < 8:
+		_source._spawn(0, "rifle", Vector2(-300 + k * 12.0, 300))
+		own = _source.squad_ids(0)
+		k += 1
+	while own.size() > 8:
+		for man in _source.unit_ids(own[own.size() - 1]):
+			_source.kill_soldier(man)
+		own = _source.squad_ids(0)
+	hud.force_size = Vector2(1280, 800)
+	_sel.select_only(PackedInt32Array())
+	await _frames(3)
+	var roster: Control = _view.roster
+	var ok := true
+	for i in roster.cards.size():
+		var a: Rect2 = roster.cards[i].rect
+		ok = ok and a.position.x >= -0.5 and a.end.x <= roster.size.x + 0.5 and a.end.y <= roster.size.y + 0.5
+		for j in range(i + 1, roster.cards.size()):
+			ok = ok and not a.intersects(roster.cards[j].rect)
+	var vehicles_shown := 0
+	for c in roster.cards:
+		if c.vehicle != -1:
+			vehicles_shown += 1
+	print("fit 1280x800: %d of %d cards shown (%d vehicle cards), +%d tile" % [roster.cards.size(), roster.cards.size() + roster.hidden_count, vehicles_shown, roster.hidden_count])
+	_check(own.size() == 8 and tanks.size() == 4 and roster.cards.size() + roster.hidden_count == 12, "1280x800: 8 squads + 4 vehicles in the roster")
+	_check(ok, "1280x800: no roster cards overlap or leave the console (%d shown)" % roster.cards.size())
+	# Selected tanks keep their cards.
+	_sel.select_only(tanks)
+	await _frames(1)
+	var all_shown := true
+	for t in tanks:
+		all_shown = all_shown and roster.vehicle_card_rect(t).size.x > 0.0
+	_check(all_shown, "1280x800: all four selected tanks keep their cards")
+	hud.force_size = Vector2.ZERO
+	hud.relayout()
+	await _frames(1)
 
 
 ## S1b budget: picking 240 soldiers and their rings under 0.3 ms per frame

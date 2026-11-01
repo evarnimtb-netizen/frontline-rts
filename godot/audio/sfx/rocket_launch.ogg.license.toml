@@ -1,0 +1,18 @@
+# Licence manifest for rocket_launch.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "generated: godot/tools/gen_s3_sfx.py (rocket_launch())"
+file_url = ""
+platform_id = "generated"
+uploader = "Frontline RTS (S3 presenter build)"
+author = "Frontline RTS project (procedural synthesis, no samples)"
+spdx = "CC0-1.0"
+downloaded = 2026-11-01
+sha256 = "74d6c5ad52be539597a7740af0ef3560152425116e9d510e4bd109bd70869455"
+sha256_original = "8b65fef8705e54ed319a14cd6b7f2b2fd6190f40b9111d7faf04bd7d7c155353"
+sha256_derived = ["74d6c5ad52be539597a7740af0ef3560152425116e9d510e4bd109bd70869455"]
+parents = []
+derivation = "AT rocket: low pop and a falling band of noise, 1.5 s; Python stdlib synthesis at 22.05 kHz mono (fixed seeds), ffmpeg native Vorbis q4"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

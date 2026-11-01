@@ -1,0 +1,18 @@
+# Licence manifest for cannon.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "generated: godot/tools/gen_s3_sfx.py (cannon())"
+file_url = ""
+platform_id = "generated"
+uploader = "Frontline RTS (S3 presenter build)"
+author = "Frontline RTS project (procedural synthesis, no samples)"
+spdx = "CC0-1.0"
+downloaded = 2026-11-01
+sha256 = "4637c312e44bf5c53a739235bc7ea5fe22e2ccac1fa6e6e4ef7eb4757379bd48"
+sha256_original = "5d6387b76814a753afe190e6f77649b6b37a7b32908feb1a59f7dda2909287cf"
+sha256_derived = ["4637c312e44bf5c53a739235bc7ea5fe22e2ccac1fa6e6e4ef7eb4757379bd48"]
+parents = []
+derivation = "tank gun: noise crack, 90->38 Hz boom, low rumble tail, 1.9 s; Python stdlib synthesis at 22.05 kHz mono (fixed seeds), ffmpeg native Vorbis q4"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

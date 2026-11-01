@@ -10,6 +10,12 @@ extends Control
 ## The armed tool and the selection's shared stance are outlined in the
 ## accent colour. Move and Attack arm a click-to-place tool (the mouse
 ## shortcut needs no button). Every button has a tooltip.
+##
+## S3, vehicles only selected (a mixed selection keeps the soldier grid;
+## the vehicle keys still reach the vehicles):
+##   row 1: Reverse (Alt+RMB, arms a reverse tool), Face O (tool), Repair J;
+##   row 2: Move, Attack, Stop H, Retreat R;
+##   row 3: the ammo toggle, a segmented strip Auto | AP | HE (N cycles).
 
 const ROW_ABILITY := [
 	[&"frag", "Frag", &"ability_frag", "Throw a frag grenade (5–30 m). The nearest eligible man throws; Shift+click: every eligible man throws one."],
@@ -31,13 +37,32 @@ const ROW_STANCE := [
 	[&"auto", "Auto", &"", "Stance chosen by the situation (the default)."],
 ]
 const REGROUP := [&"regroup", "Regroup", &"order_regroup", "Detached men of the selected squads rejoin their squad's formation."]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage"]
+const ROW_VEHICLE := [
+	[&"reverse", "Reverse", &"order_reverse", "Back up to a point, front kept toward the enemy (Alt+right-click). The button arms a click-to-place tool."],
+	[&"face", "Face", &"order_face", "Turn the hull front toward a point and hold (click the point)."],
+	[&"repair", "Repair", &"order_repair", "The crew repairs the worst repairable part in place: tracks to full, engine and turret ring to half. No moving or main gun meanwhile; a hit stops it."],
+]
+const ROW_VEHICLE_ORDERS := [
+	[&"move", "Move", &"order_move", "Move to a point. Right-click on the ground does the same; a point behind and within 40 m reverses."],
+	[&"attack_move", "Attack", &"order_attack_move", "Advance; halt to fire the main gun at spotted enemies (Ctrl+right-click). Right-click a seen enemy vehicle to focus it."],
+	[&"stop", "Stop", &"order_stop", "Halt and hold the current position."],
+	[&"retreat", "Retreat", &"order_retreat", "Drive back to base."],
+]
+const ROW_AMMO := [
+	[&"ammo_auto", "Auto", &"ammo_next", "Main gun ammo: AP at vehicles, HE at infantry, swapped as targets change (one reload). N cycles Auto, AP, HE."],
+	[&"ammo_ap", "AP", &"", "Fire AP only. N cycles Auto, AP, HE."],
+	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, HE."],
+]
+const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse"]
+const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 const STANCE_IDS := [&"stand", &"crouch", &"prone"]
 
 var view: MatchView
 ## Laid-out buttons: {id, rect, label, key, tip, kind: "ability"|"order"|"stance"}.
 var buttons: Array = []
+## "soldier" (S1b grid) or "vehicle" (vehicles only selected).
+var grid_mode := "soldier"
 var _hover: StringName = &""
 var _size := Vector2.ZERO
 
@@ -49,8 +74,11 @@ func bind(v: MatchView) -> void:
 
 
 func update_state(_s: Dictionary) -> void:
-	if size != _size or buttons.is_empty():
+	var sel: Node = view.selection
+	var want := "vehicle" if not sel.selected_vehicles().is_empty() and sel.selected_soldiers().is_empty() else "soldier"
+	if size != _size or buttons.is_empty() or want != grid_mode:
 		_size = size
+		grid_mode = want
 		_layout()
 	queue_redraw()
 
@@ -63,6 +91,15 @@ func _layout() -> void:
 	var ow := 5.0 * bw + 4.0 * g
 	var bh := (size.y - 2.0 * g) / 3.0
 	var abw := (ow - 3.0 * g) / 4.0
+	if grid_mode == "vehicle":
+		for i in ROW_VEHICLE.size():
+			_add(ROW_VEHICLE[i], Rect2(i * (abw + g), 0, abw, bh), "order")
+		for i in ROW_VEHICLE_ORDERS.size():
+			_add(ROW_VEHICLE_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
+		var aw := 4.0 * bw + 3.0 * g
+		for i in ROW_AMMO.size():
+			_add(ROW_AMMO[i], Rect2(i * aw / 3.0, 2.0 * (bh + g), aw / 3.0, bh), "stance")
+		return
 	for i in ROW_ABILITY.size():
 		_add(ROW_ABILITY[i], Rect2(i * (abw + g), 0, abw, bh), "ability")
 	for i in ROW_ORDERS.size():
@@ -92,7 +129,7 @@ func enabled(id: StringName) -> bool:
 		return false
 	var sel: Node = view.selection
 	if id in STANCE_IDS or id == &"auto":
-		return not sel.selected.is_empty() and not view.proxy_soldiers
+		return not sel.selected_soldiers().is_empty() and not view.proxy_soldiers
 	return sel.can(id)
 
 
@@ -105,6 +142,8 @@ func active(id: StringName) -> bool:
 		return sel.tool == &"throw" and StringName(sel.throw_item) == id
 	if id in STANCE_IDS or id == &"auto":
 		return enabled(id) and StringName(sel.active_stance()) == id
+	if id in AMMO_IDS:
+		return enabled(id) and "ammo_" + sel.ammo_choice() == String(id)
 	return false
 
 
@@ -147,7 +186,7 @@ func _draw() -> void:
 		var on := enabled(id)
 		var lit := active(id)
 		if b.kind == "stance":
-			if id != &"stand":
+			if id != &"stand" and id != &"ammo_auto":
 				draw_rect(Rect2(r.position.x - 0.5, r.position.y + 7.0, 1.0, r.size.y - 14.0), Color(HudStyle.TEXT, 0.2))
 		else:
 			HudStyle.box(self, r, HudStyle.BG_ABILITY if b.kind == "ability" else HudStyle.BG_BUTTON, 4)
@@ -175,6 +214,9 @@ func _draw_key(b: Dictionary, bold: Font, col: Color) -> void:
 		&"attack_move":
 			HudStyle.text(self, bold, at, "Ctrl", HudStyle.FONT_SMALL, col)
 			HudStyle.mouse_rmb(self, r.position + Vector2(8.0 + HudStyle.text_w(bold, "Ctrl", HudStyle.FONT_SMALL), 5.0), col)
+		&"reverse":
+			HudStyle.text(self, bold, at, "Alt", HudStyle.FONT_SMALL, col)
+			HudStyle.mouse_rmb(self, r.position + Vector2(8.0 + HudStyle.text_w(bold, "Alt", HudStyle.FONT_SMALL), 5.0), col)
 		_:
 			if b.key != "":
 				HudStyle.text(self, bold, at, b.key, HudStyle.FONT_SMALL, col)

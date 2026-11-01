@@ -14,6 +14,11 @@ extends Node
 ##   AudioManager.play_3d(&"rifle", world_pos)
 ##   AudioManager.play_ui(&"click")
 ##   AudioManager.start_ambient(&"wind")
+##   AudioManager.set_engine_loops(points, speeds)   # S3, every frame
+##
+## S3 engines: a pool of ENGINE_VOICES looping AudioStreamPlayer3Ds (never
+## one per vehicle); each frame the presenter passes the nearest moving
+## vehicles and the voices follow them, pitched by speed.
 ##
 ## Buttons anywhere in the tree click automatically (node_added hook); set
 ## the meta "no_click_sound" on a button to opt out.
@@ -34,7 +39,13 @@ const SOUNDS := {
 	&"confirm": ["res://audio/sfx/ui_confirm.ogg", &"UI", 2, 0.0, 0.0, -8.0],
 	&"error": ["res://audio/sfx/ui_error.ogg", &"UI", 2, 0.0, 0.0, -8.0],
 	&"wind": ["res://audio/sfx/wind_loop.ogg", &"Ambient", 1, 0.0, 0.0, -10.0],
+	&"cannon": ["res://audio/sfx/cannon.ogg", &"SFX", 4, 40.0, 1500.0, 0.0],
+	&"ap_impact": ["res://audio/sfx/ap_impact.ogg", &"SFX", 4, 20.0, 800.0, -3.0],
+	&"rocket_launch": ["res://audio/sfx/rocket_launch.ogg", &"SFX", 3, 15.0, 600.0, -3.0],
+	&"engine": ["res://audio/sfx/engine_loop.ogg", &"SFX", 4, 12.0, 300.0, -6.0],
 }
+## Looping engine voices (S3: the 4 nearest moving vehicles).
+const ENGINE_VOICES := 4
 
 var _streams := {}
 var _pool: Array[AudioStreamPlayer3D] = []
@@ -44,6 +55,7 @@ var _ui: Array[AudioStreamPlayer] = []
 var _ui_next := 0
 var _ambient: AudioStreamPlayer
 var _ambient_name: StringName = &""
+var _engines: Array[AudioStreamPlayer3D] = []
 ## Headless runs use the dummy audio driver, which never mixes, so started
 ## playbacks are never released (leaks at exit). Nothing plays there.
 var _silent := false
@@ -77,6 +89,14 @@ func _ready() -> void:
 	_ambient.name = "Ambient"
 	_ambient.bus = &"Ambient"
 	add_child(_ambient)
+	for i in ENGINE_VOICES:
+		var e := AudioStreamPlayer3D.new()
+		e.name = "Engine_%d" % i
+		e.bus = &"SFX"
+		e.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		e.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
+		add_child(e)
+		_engines.append(e)
 	get_tree().node_added.connect(_on_node_added)
 
 
@@ -196,6 +216,47 @@ func start_ambient(sound: StringName) -> void:
 	_ambient_name = sound
 
 
+## Engine loops for up to ENGINE_VOICES vehicles, one per voice slot:
+## `points` (world) and speeds in m/s (pitch); a negative speed or a slot
+## past the list stops that voice. Call every frame; the caller keeps a
+## vehicle in the same slot so its voice only moves.
+func set_engine_loops(points: PackedVector3Array, speeds: PackedFloat32Array) -> void:
+	if _silent:
+		return
+	var def: Array = SOUNDS[&"engine"]
+	for i in _engines.size():
+		var e := _engines[i]
+		if i >= points.size() or (i < speeds.size() and speeds[i] < 0.0):
+			if e.playing:
+				e.stop()
+			continue
+		if e.stream == null:
+			var st := _stream(&"engine")
+			if st == null:
+				return
+			if st is AudioStreamOggVorbis:
+				(st as AudioStreamOggVorbis).loop = true
+			e.stream = st
+			e.unit_size = def[3]
+			e.max_distance = def[4]
+			e.volume_db = def[5]
+		e.global_position = points[i]
+		var sp := absf(speeds[i]) if i < speeds.size() else 0.0
+		e.pitch_scale = 0.85 + 0.09 * minf(sp, 7.0)
+		if not e.playing:
+			# Start voices at different points of the loop.
+			e.play(randf() * 1.8)
+
+
+## Engine voices playing (tests).
+func engine_voices() -> int:
+	var n := 0
+	for e in _engines:
+		if e.playing:
+			n += 1
+	return n
+
+
 func stop_ambient() -> void:
 	_ambient.stop()
 	_ambient_name = &""
@@ -229,6 +290,9 @@ func stop_all() -> void:
 	for u in _ui:
 		u.stop()
 		u.stream = null
+	for e in _engines:
+		e.stop()
+		e.stream = null
 	_streams.clear()
 
 

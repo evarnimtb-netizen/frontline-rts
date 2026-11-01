@@ -1,0 +1,18 @@
+# Licence manifest for ap_impact.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "generated: godot/tools/gen_s3_sfx.py (ap_impact())"
+file_url = ""
+platform_id = "generated"
+uploader = "Frontline RTS (S3 presenter build)"
+author = "Frontline RTS project (procedural synthesis, no samples)"
+spdx = "CC0-1.0"
+downloaded = 2026-11-01
+sha256 = "ae74ceff4395688b3a58b0aed61fcbd283311ca27fa19c57656f29f566303f59"
+sha256_original = "2007b16b52e4ea2e85883d431017f320208329059523e8ec06ed2a1be8257644"
+sha256_derived = ["ae74ceff4395688b3a58b0aed61fcbd283311ca27fa19c57656f29f566303f59"]
+parents = []
+derivation = "AP on steel: click, thud and five inharmonic decaying partials, 1.2 s; Python stdlib synthesis at 22.05 kHz mono (fixed seeds), ffmpeg native Vorbis q4"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

@@ -10,6 +10,8 @@ extends RefCounted
 ## C crouch, Z prone (the direct-control keys; pressing the active stance
 ## again returns to Auto). WASD, arrows and Q/E stay on the camera
 ## (rts_camera.gd). M arms the move tool (no default button needs it).
+## S3 vehicles: O face tool, N next ammo (Auto → AP → HE), J repair;
+## Alt+right-click reverses (a mouse chord, no action).
 
 const ACTIONS := {
 	&"order_move": KEY_M,
@@ -24,6 +26,9 @@ const ACTIONS := {
 	&"stance_stand": KEY_X,
 	&"stance_crouch": KEY_C,
 	&"stance_prone": KEY_Z,
+	&"order_face": KEY_O,
+	&"ammo_next": KEY_N,
+	&"order_repair": KEY_J,
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
@@ -47,6 +52,10 @@ const LABELS := {
 	&"stance_stand": "X",
 	&"stance_crouch": "C",
 	&"stance_prone": "Z",
+	&"order_reverse": "Alt+RMB",
+	&"order_face": "O",
+	&"ammo_next": "N",
+	&"order_repair": "J",
 	&"focus_call_in": "Tab",
 }
 

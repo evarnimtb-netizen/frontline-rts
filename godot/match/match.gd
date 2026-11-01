@@ -3,6 +3,11 @@ extends Node3D
 ## and hands it to MatchView (HUD, overlays, audio, input) and the world
 ## effects; forwards the view's intents back to the source.
 ##
+## S3: both scenes get a VehicleView (vehicle MultiMesh batches) and a
+## VehicleFx (muzzle flashes, tracers, sparks, fires, wreck smoke, dust,
+## engine loops), made here so neither scene file needs them; both draw
+## from the state's `vehicles`, `shells` and `effects`.
+##
 ## Two sources share the interface (get_state, handle_intent, height_at):
 ## - match.tscn: FrontlineMatch, the Rust bridge running the real sim
 ##   (started here from Session.match_setup()), with WorldFx for woods,
@@ -33,9 +38,19 @@ const AUTOPLAY := preload("res://match/autoplay.gd")
 @onready var world_fx: Node3D = get_node_or_null(^"WorldFx")
 var autoplay: Node
 var started := false
+var vehicle_view: VehicleView
+var vehicle_fx: VehicleFx
+## Screenshot staging: [seconds before the capture, Callable] still to run.
+var _capture_hooks: Array = []
 
 
 func _ready() -> void:
+	vehicle_view = VehicleView.new()
+	vehicle_view.name = "Vehicles"
+	add_child(vehicle_view)
+	vehicle_fx = VehicleFx.new()
+	vehicle_fx.name = "VehicleFx"
+	add_child(vehicle_fx)
 	var h: Callable = source.height_at
 	camera.height_fn = h
 	view.height_fn = h
@@ -92,12 +107,18 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if not started:
 		return
+	for hk in _capture_hooks.duplicate():
+		if Session.capture_left_s() <= float(hk[0]):
+			_capture_hooks.erase(hk)
+			hk[1].call()
 	var s: Dictionary = source.get_state()
 	if s.is_empty():
 		return
 	if _mock_net():
 		_merge_mock_net(s)
 	view.update_state(s)
+	vehicle_view.update_state(s)
+	vehicle_fx.update_state(s)
 	if mock_world != null:
 		mock_world.update_state(s)
 	if world_fx != null:
@@ -218,6 +239,64 @@ func _stage(what: String) -> void:
 		"end":
 			source.prewarm(150.0)
 			source.force_end(0, "tickets")
+		"s3_vehicles", "s3_card", "s3_fit", "s3_locked", "s3_escort":
+			_stage_s3(what)
+
+
+## S3 screenshot staging on the mock: the "hud" firefight plus four own
+## tanks in different states (moving with an escort, bogged, burning,
+## repairing), two seen enemy tanks and two wrecks. "s3_card": the first
+## tank selected (its card and detail, ammo choice HE). "s3_fit": 4 tanks
+## and 8 squads for the 1280x800 roster. "s3_locked": no tanks yet, the
+## call-in tile locked with its countdown. "s3_escort": the escort file
+## seen close up.
+func _stage_s3(what: String) -> void:
+	_stage("hud")
+	if what == "s3_locked":
+		view.selection.select_only(PackedInt32Array())
+		return
+	var ids := _own_ids()
+	if what == "s3_fit":
+		source._spawn(source.local_player, "at", Vector2(70, 330))
+		source._spawn(source.local_player, "rifle", Vector2(40, 350))
+	elif what == "s3_vehicles":
+		# An AT team within launcher range of the nearer enemy tank.
+		source._spawn(source.local_player, "at", Vector2(176, 268))
+		# Time shots into the picture: own tanks fire 0.3 s before it (the
+		# hits land: sparks, markers), the enemy and the AT team just before
+		# (muzzle flashes, tracers, the rocket trail).
+		_capture_hooks = [
+			[0.3, func() -> void: source.veh.volley(source.local_player)],
+			[0.05, func() -> void:
+				source.veh.volley(1 - source.local_player)
+				source.at_volley()],
+		]
+	var tanks: PackedInt32Array = source.stage_vehicles(Vector2(150, 318), Vector2(1, -1), ids[0] if not ids.is_empty() else -1)
+	source.prewarm(4.0)
+	var s: Dictionary = source.get_state()
+	view.update_state(s)
+	match what:
+		"s3_card", "s3_fit":
+			view.selection.select_only(tanks.slice(0, 1))
+			view.selection.focus_squad = int(view.vehicles_by_id[tanks[0]].squad)
+			view.selection.groups[4] = tanks.duplicate()
+		"s3_escort":
+			view.selection.select_squads(ids.slice(0, 1))
+			var v: Vector3 = source.squad_pos(ids[0])
+			camera.height = 38.0
+			camera.jump_to(v)
+			return
+		_:
+			view.selection.select_only(tanks.slice(0, 2))
+	# Look at the tanks from behind them (south-west), the enemy beyond:
+	# the screen centre a little ahead of their centroid.
+	var c := Vector3.ZERO
+	for id in tanks:
+		c += view.unit_pos(id)
+	c /= maxi(tanks.size(), 1)
+	camera.height = 55.0
+	camera.yaw_deg = -45.0
+	camera.jump_to(c + Vector3(1, 0, -1).normalized() * 6.0)
 
 
 ## Net screenshot staging (S2) on a MockNet: the "hud" firefight, then the

@@ -8,7 +8,9 @@ extends Node
 ## distance, an enemy that walks to points and buys squads, and (S1b)
 ## individual soldiers: detached men with their own orders, stance
 ## overrides, grenades, smoke and satchel charges with item counts and
-## resupply at base.
+## resupply at base, and (S3) tanks, wrecks, shells, AT rockets and armour
+## events through MockVehicles (mock_vehicles.gd), AT teams, escorts and
+## vehicle call-ins with the unlock countdown and the vehicle limit.
 ##
 ## Presenter-only and non-deterministic on purpose: none of this is the
 ## sim, and nothing here may be copied into crates/sim.
@@ -23,6 +25,7 @@ const CATALOG := [
 	{"type": "mg", "name": "MG team", "cost": 150, "delay_s": 25, "men": 3},
 	{"type": "engineer", "name": "Engineer squad", "cost": 140, "delay_s": 20, "men": 5},
 	{"type": "mortar", "name": "Mortar team", "cost": 200, "delay_s": 30, "men": 3},
+	{"type": "at", "name": "AT team", "cost": 200, "delay_s": 20, "men": 2},
 ]
 const RULES := {
 	"pop_cap": 120,
@@ -33,10 +36,15 @@ const RULES := {
 	"capture_radius_m": 15.0,
 	"throw_range_m": {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)},
 }
-const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6}
-const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0}
-const FIRE_GAP := {"rifle": 0.7, "mg": 0.12, "engineer": 0.25}
-const WEAPON := {"rifle": "rifle", "mg": "mg", "engineer": "smg"}
+const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6, "at": 3.2}
+const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0, "at": 120.0}
+const FIRE_GAP := {"rifle": 0.7, "mg": 0.12, "engineer": 0.25, "at": 1.4}
+const WEAPON := {"rifle": "rifle", "mg": "mg", "engineer": "smg", "at": "rifle"}
+## AT launcher reload (S3: 8 s with the loader).
+const ROCKET_RELOAD_S := 8.0
+## Escort file: slots 1.5 m apart, 4 m behind the vehicle (S3 "Escort").
+const ESCORT_BACK_M := 4.0
+const ESCORT_GAP_M := 1.5
 const SIGHT_M := 160.0
 const CAPTURE_S := 20.0
 const QUEUE_MAX := 5
@@ -51,7 +59,7 @@ const SUPPRESSED := 0.35
 const WIND_UP_S := 1.0
 const THROW_SPEED := 30.0
 const FUSE_S := {"frag": 4.0, "satchel": 5.0}
-const BLAST := {"frag": Vector3(2, 6, 10), "satchel": Vector3(4, 10, 18), "mortar": Vector3(3, 8, 15)}
+const BLAST := {"frag": Vector3(2, 6, 10), "satchel": Vector3(4, 10, 18), "mortar": Vector3(3, 8, 15), "tank_he": Vector3(2, 6, 12), "rocket": Vector3(1, 3, 6)}
 const SMOKE_GROW_S := 3.0
 const SMOKE_HOLD_S := 25.0
 const SMOKE_THIN_S := 5.0
@@ -89,6 +97,8 @@ var _smokes: Array[Dictionary] = []
 var _ai_t := 0.0
 var _tick := 0
 var _minimap: Texture2D
+## S3: tanks, wrecks, shells and armour events.
+var veh := MockVehicles.new(self)
 
 
 func _ready() -> void:
@@ -136,6 +146,7 @@ func start(s: Dictionary) -> void:
 	_thrown.clear()
 	_smokes.clear()
 	recall_cooldown.clear()
+	veh.reset()
 	_push_event(0, "info", "Skirmish on Kessel Ridge. Hold the points.", null)
 
 
@@ -165,6 +176,9 @@ func _spawn(owner: int, type: String, at: Vector2) -> int:
 	for c in CATALOG:
 		if c.type == type:
 			def = c
+	if type == "at":
+		def = def.duplicate()
+		def.name = MockVehicles.AT_TEAM.get(String(players[owner].faction), MockVehicles.AT_TEAM.germany).name
 	var id := _next_id
 	_next_id += 1
 	var face := (Vector2.ZERO - at).normalized()
@@ -173,6 +187,7 @@ func _spawn(owner: int, type: String, at: Vector2) -> int:
 		"men": [], "men_max": int(def.men),
 		"order": "idle", "pos": at, "target": at, "facing": face,
 		"fire_t": rng.randf() * 2.0, "setup_t": 0.0, "dig": {}, "barrage": {}, "unit_dig": {},
+		"follow": -1, "rocket_t": 0.0, "rockets": 6,
 	}
 	squads[id] = sq
 	for slot in int(def.men):
@@ -193,6 +208,8 @@ func _spawn(owner: int, type: String, at: Vector2) -> int:
 func handle_intent(kind: StringName, data: Dictionary) -> void:
 	var ids: PackedInt32Array = data.get("squads", PackedInt32Array())
 	var uids: PackedInt32Array = data.get("units", PackedInt32Array())
+	# Vehicle ids in `units` (S3); soldier ids below drop unknown ids.
+	veh.handle_intent(kind, data)
 	match kind:
 		&"move", &"attack_move":
 			_squads_move(ids, String(kind), data.target)
@@ -219,6 +236,17 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 					_rejoin(man)
 		&"move_units", &"attack_move_units", &"stop_units", &"retreat_units", &"dig_units":
 			_unit_order(String(kind).trim_suffix("_units"), uids, data)
+		&"reverse_units":
+			_unit_order("move", uids, data)
+		&"attack_unit":
+			# Launcher gunners focus the vehicle; other men attack-move to it.
+			var t: Dictionary = veh.vehicles.get(int(data.get("target", -1)), {})
+			if not t.is_empty():
+				for man in _own_men(uids):
+					squads[man_squad[man.id]].attack = int(t.id)
+				_unit_order("attack_move", uids, {"target": _v3(t.pos)})
+		&"follow_units":
+			_follow(uids, int(data.get("vehicle", -1)))
 		&"set_stance":
 			var st: String = data.get("stance", "auto")
 			if st in ["auto", "stand", "crouch", "prone"]:
@@ -227,7 +255,10 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 		&"throw", &"throw_each":
 			_throw(uids, String(data.item), data.target, kind == &"throw_each")
 		&"call_in":
-			_call_in(local_player, data.type)
+			var entry := catalog_entry(local_player, String(data.get("id", "")))
+			if entry.is_empty():
+				entry = catalog_entry(local_player, String(data.get("type", "")))
+			_call_in_entry(local_player, entry)
 		&"surrender":
 			_end(1 - local_player, "surrender")
 		&"pause":
@@ -319,6 +350,63 @@ func kill_soldier(id: int) -> void:
 	var man := _man(id)
 	if not man.is_empty():
 		_hurt(squads[man_squad[id]], man, 1000.0, 1 - squads[man_squad[id]].owner)
+
+
+## Staging (S3): lifts the unlock (the test override, unlock_s = 0) and
+## places four own tanks in different states around `at` (facing
+## `facing`): one moving with an escort target, one bogged in a trench
+## crossing, one burning, one repairing a track; two enemy tanks the
+## player sees; a fresh wreck (smoking) and an old one. Returns the own
+## tank ids in that order. `escort` (a squad id) follows the first tank.
+func stage_vehicles(at: Vector2, facing: Vector2, escort := -1) -> PackedInt32Array:
+	veh.unlock_s = 0.0
+	var f := facing.normalized()
+	var side := Vector2(-f.y, f.x)
+	var yaw := Vehicles.yaw_toward(f.x, f.y)
+	var mine := veh.faction_tank(local_player)
+	var theirs := veh.faction_tank(1 - local_player)
+	var own := PackedInt32Array()
+	var spots := [side * -24.0, side * -6.0 + f * 6.0, side * 12.0, side * 30.0 - f * 4.0]
+	for i in 4:
+		own.append(veh.spawn(local_player, mine, at + spots[i], yaw + (i - 1.5) * 0.12))
+	veh.stage(own[1], "bogged")
+	veh.stage(own[1], "wounded_crew")
+	veh.stage(own[2], "burning")
+	veh.stage(own[3], "repairing")
+	veh.stage(own[3], "swapping")
+	var v0: Dictionary = veh.vehicles[own[0]]
+	v0.ammo_choice = "he"
+	v0.loaded = "he"
+	v0.ammo.ap = 24
+	v0.ammo.he = 18
+	v0.reload = 0.3
+	v0.turret_yaw = 0.35
+	var e1 := veh.spawn(1 - local_player, theirs, at + f * 62.0 + side * 22.0, yaw + PI + 0.3)
+	var e2 := veh.spawn(1 - local_player, theirs, at + f * 78.0 - side * 30.0, yaw + PI - 0.5)
+	veh.vehicles[e2].order = "move"
+	veh.vehicles[e2].target = at + f * 70.0 - side * 90.0
+	var w1 := veh.spawn(1 - local_player, theirs, at + f * 40.0 + side * 52.0, yaw + 2.2)
+	veh.stage(w1, "wreck")
+	var w2 := veh.spawn(local_player, mine, at - f * 30.0 - side * 50.0, yaw - 1.1)
+	veh.stage(w2, "old_wreck")
+	veh.vehicles[e1].turret_yaw = -0.2
+	# Nobody is loaded yet, so a short prewarm shows no duel (screenshots
+	# time their shots with MockVehicles.volley).
+	for id in [own[1], own[2], own[3], e1, e2]:
+		veh.vehicles[id].reload = 0.0
+	if squads.has(escort):
+		_order(squads[escort], "follow", squads[escort].pos)
+		squads[escort].follow = own[0]
+	_step_followers()
+	return own
+
+
+## Staging: moves a tank (own or enemy) at once.
+func place_vehicle(id: int, at: Vector2, yaw: float) -> void:
+	if veh.vehicles.has(id):
+		veh.vehicles[id].pos = at
+		veh.vehicles[id].yaw = yaw
+		veh.vehicles[id].target = at
 
 
 func set_minimap_texture(tex: Texture2D) -> void:
@@ -470,6 +558,7 @@ func _order(sq: Dictionary, order: String, target: Vector2) -> void:
 		sq.dig = {}
 	sq.setup_t = 0.0
 	sq.unit_dig = {}
+	sq.follow = -1
 	for man in sq.men:
 		_rejoin(man)
 
@@ -497,6 +586,114 @@ func _throw(uids: PackedInt32Array, item: String, target: Vector3, each: bool) -
 		man.throw = {"item": item, "target": t, "t": WIND_UP_S}
 
 
+## FollowUnits (S3 escort): whole squads get a squad-level follow, the
+## other men follow one by one and stay detached. Vehicle ids are dropped.
+func _follow(uids: PackedInt32Array, vid: int) -> void:
+	var v: Dictionary = veh.vehicles.get(vid, {})
+	if v.is_empty() or int(v.owner) != local_player:
+		return
+	var men := _own_men(uids)
+	var per_squad := {}
+	for man in men:
+		var sid: int = man_squad[man.id]
+		per_squad[sid] = int(per_squad.get(sid, 0)) + 1
+	for man in men:
+		var sq: Dictionary = squads[man_squad[man.id]]
+		if per_squad[sq.id] == sq.men.size():
+			if sq.order != "follow" or sq.follow != vid:
+				_order(sq, "follow", sq.pos)
+				sq.follow = vid
+		else:
+			_detach(man, "follow", man.pos)
+			man.follow = vid
+
+
+## Ends every escort of a vehicle (knocked out): the followers stop.
+func _stop_followers(vid: int) -> void:
+	for id in squads:
+		var sq: Dictionary = squads[id]
+		if sq.order == "follow" and sq.follow == vid:
+			_order(sq, "idle", sq.pos)
+		for man in sq.men:
+			if man.detached and man.order == "follow" and man.get("follow", -1) == vid:
+				man.order = "hold"
+
+
+## Escort slots: single file 1.5 m apart, starting 4 m behind the vehicle,
+## on the line from the nearest seen enemy through it (else straight
+## behind). Also counts each vehicle's followers.
+func _step_followers() -> void:
+	veh.followers.clear()
+	var files := {}
+	var ids := squads.keys()
+	ids.sort()
+	for id in ids:
+		var sq: Dictionary = squads[id]
+		var men: Array = []
+		if sq.order == "follow":
+			var v: Dictionary = veh.vehicles.get(sq.follow, {})
+			if v.is_empty() or int(v.owner) != sq.owner:
+				_order(sq, "idle", sq.pos)
+				continue
+			men = sq.men.duplicate()
+		else:
+			for man in sq.men:
+				if man.detached and man.order == "follow":
+					men.append(man)
+		var anchored := false
+		for man in men:
+			var vid: int = man.get("follow", -1) if man.detached else sq.follow
+			var v: Dictionary = veh.vehicles.get(vid, {})
+			if v.is_empty():
+				continue
+			var k: int = files.get(vid, 0)
+			files[vid] = k + 1
+			veh.followers[vid] = k + 1
+			var back := Vector2(sin(v.yaw), cos(v.yaw))
+			var foe := _nearest_enemy_at(v.pos, sq.owner, 250.0)
+			if foe != -1:
+				back = (v.pos - squads[foe].pos).normalized()
+			var side := Vector2(-back.y, back.x)
+			# Half a hull length, then 4 m, then the file; a ninth man starts
+			# a second file beside the first.
+			var behind := 2.9 + ESCORT_BACK_M + ESCORT_GAP_M * (k % 8)
+			var slot: Vector2 = v.pos + back * behind + side * (1.5 * floorf(k / 8.0))
+			if man.detached:
+				man.target = slot
+			elif not anchored:
+				anchored = true
+				sq.target = slot
+
+
+func _at_fire(sq: Dictionary, dt: float) -> void:
+	sq.rocket_t -= dt
+	if sq.rocket_t > 0.0 or sq.rockets <= 0 or sq.men.is_empty():
+		return
+	var at: Dictionary = MockVehicles.AT_TEAM.get(String(players[sq.owner].faction), MockVehicles.AT_TEAM.germany)
+	var eyes := _eyes(sq.owner)
+	var best := -1
+	var best_d: float = at.range
+	for id in veh.vehicles:
+		var v: Dictionary = veh.vehicles[id]
+		if int(v.owner) < 0 or int(v.owner) == sq.owner:
+			continue
+		var d: float = v.pos.distance_to(sq.pos)
+		# Still / moving engagement distances (S3 weapon defs).
+		var lim: float = at.range if absf(v.speed) <= 1.0 else at.range * 0.6
+		if d < minf(best_d, lim) and _sees(eyes, v.pos):
+			best = id
+			best_d = d
+	if sq.get("attack", -1) in veh.vehicles and int(veh.vehicles[sq.attack].owner) >= 0:
+		var tv: Dictionary = veh.vehicles[sq.attack]
+		if tv.pos.distance_to(sq.pos) <= at.range:
+			best = sq.attack
+	if best == -1:
+		return
+	sq.rocket_t = ROCKET_RELOAD_S * (1.0 if sq.men.size() >= 2 else 2.0)
+	sq.rockets -= 1
+	veh.fire_rocket(sq, best)
+
+
 # --- simulation stand-in -----------------------------------------------------
 
 func _step(dt: float) -> void:
@@ -522,11 +719,13 @@ func _step(dt: float) -> void:
 	if _ai_t <= 0.0:
 		_ai_t = 2.0
 		_ai_plan(1 - local_player)
+	_step_followers()
 	var ids := squads.keys()
 	ids.sort()
 	for id in ids:
 		if squads.has(id):
 			_step_squad(squads[id], dt)
+	veh.step(dt)
 	_step_shells(dt)
 	_step_thrown(dt)
 	_step_smoke(dt)
@@ -546,36 +745,81 @@ func _step_queues(dt: float) -> void:
 			q.pop_front()
 			var base: Vector2 = MockMap.BASES[i]
 			var at := base + Vector2(rng.randf_range(-25, 25), rng.randf_range(-25, 25))
+			if head.has("vehicle"):
+				veh.spawn(i, head.vehicle, at, Vehicles.yaw_toward(-at.x, -at.y))
+				if i == local_player:
+					_push_event(i, "vehicle_arrived", "%s arrived." % MockVehicles.TYPES[head.vehicle].short, _v3(at))
+				continue
 			var id := _spawn(i, head.type, at)
 			if i == local_player:
 				_push_event(i, "squad_arrived", "%s arrived at base." % squads[id].name, _v3(at))
 
 
-func _call_in(owner: int, type: String) -> bool:
-	var def: Dictionary = {}
+## The call-in catalog of a player: the S1 squads, the faction's AT team
+## and its tank (S3), each with a squad type id (`id`).
+func catalog(owner: int) -> Array:
+	var faction: String = players[owner].faction
+	var short := "ger" if faction == "germany" else "usa"
+	var out: Array = []
 	for c in CATALOG:
-		if c.type == type:
-			def = c
+		var e: Dictionary = c.duplicate()
+		e.id = "ww2:%s_%s" % [short, c.type]
+		e.pop = int(c.men)
+		if c.type == "at":
+			var at: Dictionary = MockVehicles.AT_TEAM.get(faction, MockVehicles.AT_TEAM.germany)
+			e.name = at.name
+			e.short = at.short
+			e.cost = int(at.cost)
+		out.append(e)
+	var vkey := veh.faction_tank(owner)
+	var vt: Dictionary = MockVehicles.TYPES[vkey]
+	out.append({
+		"id": vt.id + "_squad", "type": "vehicle", "vehicle": vkey, "name": vt.name, "short": vt.short,
+		"cost": int(vt.cost), "delay_s": float(vt.call_in_s), "men": 0, "pop": int(vt.pop),
+	})
+	return out
+
+
+## Catalog entry by squad type id or by type ("" or unknown: {}).
+func catalog_entry(owner: int, key: String) -> Dictionary:
+	for e in catalog(owner):
+		if e.id == key or e.type == key:
+			return e
+	return {}
+
+
+func _call_in(owner: int, type: String) -> bool:
+	return _call_in_entry(owner, catalog_entry(owner, type))
+
+
+func _call_in_entry(owner: int, def: Dictionary) -> bool:
 	if def.is_empty():
 		return false
+	var type: String = def.type
 	var pl := players[owner]
 	var queued := 0
 	for q in _queues[owner]:
-		queued += int(q.men)
-	if pl.manpower < def.cost or _queues[owner].size() >= QUEUE_MAX or _pop(owner) + queued + def.men > RULES.pop_cap:
+		queued += int(q.get("pop", q.men))
+	if pl.manpower < def.cost or _queues[owner].size() >= QUEUE_MAX or _pop(owner) + queued + int(def.pop) > RULES.pop_cap:
 		return false
 	if owner == local_player and recall_cooldown.has(type):
 		return false
+	if type == "vehicle" and veh.call_in_block(owner) != "":
+		return false
 	pl.manpower -= def.cost
-	_queues[owner].append({"type": type, "remaining_s": float(def.delay_s), "total_s": float(def.delay_s), "men": def.men})
+	var entry := {"type": type, "id": def.id, "remaining_s": float(def.delay_s), "total_s": float(def.delay_s), "men": int(def.men), "pop": int(def.pop)}
+	if def.has("vehicle"):
+		entry.vehicle = def.vehicle
+	_queues[owner].append(entry)
 	stats[owner].squads_called += 1
 	if owner == local_player and type == "mg":
 		recall_cooldown[type] = [12.0, 12.0]
 	return true
 
 
+## Population: living soldiers plus each living vehicle's pop (S3).
 func _pop(owner: int) -> int:
-	var n := 0
+	var n := veh.pop(owner)
 	for id in squads:
 		if squads[id].owner == owner:
 			n += squads[id].men.size()
@@ -584,8 +828,9 @@ func _pop(owner: int) -> int:
 
 func _ai_plan(ai: int) -> void:
 	# Buy: keep a mix, cheapest first when poor.
-	var want := ["rifle", "rifle", "mg", "engineer", "mortar"]
+	var want := ["rifle", "rifle", "mg", "engineer", "mortar", "at"]
 	_call_in(ai, want[rng.randi() % want.size()])
+	veh.ai_plan(ai)
 	for id in squads:
 		var sq: Dictionary = squads[id]
 		if sq.owner != ai:
@@ -639,6 +884,11 @@ func _eyes(viewer: int) -> PackedVector2Array:
 		for man in o.men:
 			if man.detached:
 				out.append(man.pos)
+	# Vehicles look out too (S3: vehicles as observers).
+	for id in veh.vehicles:
+		var v: Dictionary = veh.vehicles[id]
+		if int(v.owner) == viewer:
+			out.append(v.pos)
 	return out
 
 
@@ -648,6 +898,22 @@ func _sees(eyes: PackedVector2Array, p: Vector2) -> bool:
 		if e.distance_to(p) <= sight and not _smoked(e, p):
 			return true
 	return false
+
+
+## Nearest squad of the other side that `owner` sees within `max_d` of `at`.
+func _nearest_enemy_at(at: Vector2, owner: int, max_d: float) -> int:
+	var best := -1
+	var best_d := max_d
+	var eyes := _eyes(owner)
+	for id in squads:
+		var o: Dictionary = squads[id]
+		if o.owner == owner:
+			continue
+		var d: float = o.pos.distance_to(at)
+		if d < best_d and _sees(eyes, o.pos):
+			best_d = d
+			best = id
+	return best
 
 
 func _nearest_enemy(sq: Dictionary, max_d: float) -> int:
@@ -721,8 +987,11 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 	var enemy := -1
 	if sq.type != "mortar" and sq.order != "retreat":
 		enemy = _nearest_enemy(sq, RANGE[sq.type])
+	# AT team: the gunner fires at a seen enemy vehicle in range.
+	if sq.type == "at" and status != "pinned":
+		_at_fire(sq, dt)
 	# Squad anchor movement.
-	var moving: bool = sq.order in ["move", "attack_move", "retreat", "dig"]
+	var moving: bool = sq.order in ["move", "attack_move", "retreat", "dig", "follow"]
 	if sq.order == "attack_move" and enemy != -1:
 		moving = false
 	if sq.order == "dig" and sq.pos.distance_to(sq.target) < 2.0:
@@ -733,7 +1002,7 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 		var step := speed * dt
 		if to.length() <= step:
 			sq.pos = sq.target
-			if sq.order != "dig":
+			if sq.order != "dig" and sq.order != "follow":
 				sq.order = "setup" if sq.type == "mg" else "idle"
 				sq.setup_t = 3.0
 		else:
@@ -820,7 +1089,7 @@ func _step_men(sq: Dictionary, dt: float, speed: float, engaged: bool) -> void:
 		var goal: Vector2
 		var pace := speed
 		if man.detached:
-			if not man.order in ["move", "attack_move", "retreat", "dig"]:
+			if not man.order in ["move", "attack_move", "retreat", "dig", "follow"]:
 				continue
 			if man.order == "attack_move" and engaged:
 				continue
@@ -1102,12 +1371,19 @@ func _build_state() -> Dictionary:
 	for e in _queues[local_player]:
 		q.append(e.duplicate())
 	var catalog: Array = []
-	for c in CATALOG:
-		var entry: Dictionary = c.duplicate()
-		if recall_cooldown.has(c.type):
-			entry.cooldown_s = recall_cooldown[c.type][0]
-			entry.cooldown_total_s = recall_cooldown[c.type][1]
+	for entry in catalog(local_player):
+		if recall_cooldown.has(entry.type):
+			entry.cooldown_s = recall_cooldown[entry.type][0]
+			entry.cooldown_total_s = recall_cooldown[entry.type][1]
+		if entry.type == "vehicle" and veh.locked_s() > 0.0:
+			entry.locked_s = veh.locked_s()
 		catalog.append(entry)
+	for i in 2:
+		out_players[i].vehicles = veh.count(i)
+		out_players[i].vehicle_limit = veh.limit
+	var rules: Dictionary = RULES.duplicate()
+	rules.merge(veh.rules())
+	var vs := veh.export_state(eyes)
 	var smokes: Array = []
 	for c in _smokes:
 		smokes.append({"pos": _v3(c.pos), "radius": _smoke_radius(c), "density": _smoke_density(c)})
@@ -1120,14 +1396,17 @@ func _build_state() -> Dictionary:
 		"paused": paused,
 		"local_player": local_player,
 		"map": {"id": setup.get("map", "kessel_ridge"), "name": "Kessel Ridge", "size_m": MockMap.SIZE_M, "minimap": _minimap},
-		"rules": RULES,
+		"rules": rules,
 		"players": out_players,
 		"points": out_points,
 		"squads": out_squads,
 		"soldiers": out_soldiers,
 		"smokes": smokes,
 		"thrown": thrown,
-		"callin": {"catalog": catalog, "queue": q, "queue_max": QUEUE_MAX},
+		"callin": {"catalog": catalog, "queue": q, "queue_max": QUEUE_MAX, "vehicles": veh.count(local_player), "vehicle_limit": veh.limit},
+		"vehicles": vs.vehicles,
+		"shells": vs.shells,
+		"armour_events": vs.armour_events,
 		"events": _events,
 		"effects": _effects,
 		"result": result.duplicate(),
@@ -1176,6 +1455,9 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 		out.target = _v3(sq.barrage.target)
 	elif sq.order in ["move", "attack_move", "retreat"]:
 		out.target = _v3(sq.target)
+	# Escort (S3, opt; a proposed contract key): the vehicle followed.
+	if sq.order == "follow" and sq.owner == local_player:
+		out.follow = sq.follow
 	return out
 
 
@@ -1200,6 +1482,17 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 			out.order = man.order
 			if man.order in ["move", "attack_move", "retreat", "dig"]:
 				out.target = _v3(man.target)
+			elif man.order == "follow":
+				out.follow = man.get("follow", -1)
 			elif man.order == "throw" and not man.throw.is_empty():
 				out.target = _v3(man.throw.target)
 	return out
+
+
+## Staging: every AT team with a vehicle in range fires now.
+func at_volley() -> void:
+	for id in squads:
+		var sq: Dictionary = squads[id]
+		if sq.type == "at":
+			sq.rocket_t = 0.0
+			_at_fire(sq, 0.0)

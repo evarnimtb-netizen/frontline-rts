@@ -18,7 +18,7 @@ const POOL := 14
 const FLAG_POLE_M := 8.0
 const TREES_PER_M2 := 1.0 / 45.0
 ## Blast scale by explosion size (the mortar rig is 1).
-const BLAST_SCALE := {"mortar": 1.0, "frag": 0.45, "satchel": 1.6}
+const BLAST_SCALE := {"mortar": 1.0, "frag": 0.45, "satchel": 1.6, "tank_he": 1.1, "rocket": 0.55}
 ## Smoke: puffs per cloud, clouds drawn at most (the sim caps them at 64).
 const PUFFS := 28
 const MAX_CLOUDS := 64

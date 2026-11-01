@@ -5,9 +5,17 @@ extends Control
 ## order (row-first, two columns), the selected ones highlighted. Click a
 ## row to select that man (Shift toggles), double-click to look at him.
 ## Nothing selected: a short how-to.
+##
+## S3: a focused own vehicle (the only selection, or the vehicle whose card
+## was clicked) shows its card's data at full size: name and state badge,
+## the crew seats with their letters, the six components as labelled bars
+## (the one being repaired outlined), the ammo with the loaded round, the
+## ammo choice (N cycles it) and the reload. No penetration hints about
+## enemies (show_pen_hint off, §5.12.4).
 
 const PAD := 10.0
 const HEAD := 27.0
+const ROSTER := preload("res://match/hud/roster.gd")
 
 var view: MatchView
 ## Laid-out man rows of the focused squad: {id (-1 dead), slot, rect}.
@@ -25,9 +33,11 @@ func update_state(_s: Dictionary) -> void:
 	queue_redraw()
 
 
-## What the panel shows: "soldier", "squad" or "none".
+## What the panel shows: "vehicle", "soldier", "squad" or "none".
 func mode() -> String:
 	var sel: Node = view.selection
+	if sel.focused_vehicle() != -1:
+		return "vehicle"
 	if sel.selected.size() == 1 and not view.proxy_soldiers:
 		return "soldier"
 	return "squad" if sel.focused_squad() != -1 else "none"
@@ -59,6 +69,8 @@ func _draw() -> void:
 		return
 	HudStyle.box(self, Rect2(Vector2.ZERO, size), HudStyle.BG_PANEL, 6)
 	match mode():
+		"vehicle":
+			_draw_vehicle(view.selection.focused_vehicle())
 		"soldier":
 			_draw_soldier(view.soldiers_by_id[view.selection.selected[0]])
 		"squad":
@@ -125,6 +137,69 @@ func _draw_soldier(so: Dictionary) -> void:
 		x += HudStyle.text_w(font, label, HudStyle.FONT) + 5.0
 		HudStyle.text(self, bold, Vector2(x, y + base), str(n), HudStyle.FONT, HudStyle.ACCENT if n > 0 else HudStyle.OFF_ACCENT)
 		x += HudStyle.text_w(bold, str(n), HudStyle.FONT) + 16.0
+
+
+func _draw_vehicle(vid: int) -> void:
+	var font := get_theme_default_font()
+	var bold := HudStyle.bold()
+	var v: Dictionary = view.vehicles_by_id[vid]
+	var b: Array = Vehicles.badge(v)
+	var right: String = b[0]
+	var fol := int(v.get("followers", 0))
+	if fol > 0:
+		right += " · escort %d" % fol
+	_header(view.vehicle_label(vid), right, HudStyle.ACCENT if b[1] else HudStyle.DIM)
+	var rh := (size.y - HEAD - 6.0) / 4.0
+	var y := HEAD
+	var base := rh * 0.5 + 5.0
+	var ps: float = view.hud.m.pip
+	# Crew: pip and seat letter per seat, D G C L R.
+	HudStyle.text(self, font, Vector2(PAD, y + base), "Crew", HudStyle.FONT, HudStyle.DIM)
+	var crew: PackedStringArray = v.get("crew", PackedStringArray())
+	var x := PAD + 50.0
+	var step := minf((size.x - x - PAD) / 5.0, 36.0)
+	for i in Vehicles.SEATS.size():
+		var st := crew[i] if i < crew.size() else "ok"
+		if st != "none":
+			ROSTER.crew_pip(self, Rect2(x, y + (rh - ps) * 0.5, ps, ps), st, true)
+			HudStyle.text(self, bold, Vector2(x + ps + 3.0, y + base), Vehicles.SEAT_LETTERS[i], HudStyle.FONT_SMALL, HudStyle.TEXT if st in ["ok", "wounded"] else HudStyle.OFF_TEXT)
+		x += step
+	y += rh
+	# Components: three columns, two rows; label and a bar.
+	var colw := (size.x - 2.0 * PAD) / 3.0
+	var rep_c := String(v.get("repairing", ""))
+	for i in Vehicles.COMPONENTS.size():
+		var c: String = Vehicles.COMPONENTS[i]
+		var cx := PAD + (i % 3) * colw
+		var cy := y + int(i / 3.0) * rh
+		var label: String = Vehicles.COMPONENT_SHORT[c]
+		var lw := HudStyle.text_w(font, label, HudStyle.FONT)
+		HudStyle.text(self, font, Vector2(cx, cy + base), label, HudStyle.FONT, HudStyle.DIM)
+		var f := Vehicles.component(v, c)
+		var bar := Rect2(cx + lw + 5.0, cy + rh * 0.5 - 3.0, colw - lw - 13.0, 7.0)
+		HudStyle.box(self, bar, Color(0, 0, 0, 0.35), 2)
+		var col := HudStyle.PIP_BRIGHT if f >= Vehicles.DAMAGED else (HudStyle.ACCENT if f > 0.0 else HudStyle.DANGER)
+		if f <= 0.0:
+			HudStyle.box(self, bar, Color(HudStyle.DANGER, 0.35), 2)
+		else:
+			HudStyle.box(self, Rect2(bar.position, Vector2(bar.size.x * clampf(f, 0.0, 1.0), bar.size.y)), col, 2)
+		if rep_c == c:
+			HudStyle.box(self, bar.grow(2.0), Color(0, 0, 0, 0), 3, HudStyle.ACCENT, 1)
+	y += 2.0 * rh
+	# Ammo: counts with the loaded round, the choice (N), the reload.
+	var w := ROSTER.draw_ammo(self, font, bold, Vector2(PAD - 2.0, y + base), v, -1)
+	var choice: String = view.selection.ammo_choice() if view.selection.is_selected(vid) else String(v.get("ammo_choice", "auto"))
+	var chip := "%s N" % Vehicles.AMMO_TEXT.get(choice, "Auto")
+	var cw := HudStyle.text_w(bold, chip, HudStyle.FONT_SMALL) + 10.0
+	var chip_r := Rect2(PAD + w + 8.0, y + rh * 0.5 - 9.0, cw, 18.0)
+	HudStyle.box(self, chip_r, HudStyle.BG_TAB_ON, 3, Color(HudStyle.ACCENT, 0.7), 1)
+	HudStyle.text(self, bold, Vector2(chip_r.position.x + 5.0, y + base - 1.0), chip, HudStyle.FONT_SMALL, HudStyle.TEXT)
+	var reload := clampf(float(v.get("reload", 1.0)), 0.0, 1.0)
+	var rx := chip_r.end.x + 8.0
+	var rbar := Rect2(rx, y + rh * 0.5 - 3.0, size.x - PAD - rx, 7.0)
+	if rbar.size.x >= 24.0:
+		HudStyle.box(self, rbar, Color(0, 0, 0, 0.35), 2)
+		HudStyle.box(self, Rect2(rbar.position, Vector2(rbar.size.x * reload, rbar.size.y)), HudStyle.TEXT if reload >= 1.0 else HudStyle.ACCENT, 2)
 
 
 func _pair(font: Font, bold: Font, x: float, by: float, label: String, value: String) -> void:
@@ -218,6 +293,8 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _get_tooltip(at: Vector2) -> String:
+	if mode() == "vehicle":
+		return ROSTER.vehicle_tooltip(view, view.selection.focused_vehicle())
 	var id := row_at(at)
 	if id == -1:
 		return ""

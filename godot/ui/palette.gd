@@ -33,6 +33,7 @@ const SQUAD_NAMES := {
 	"mg": "MG team",
 	"engineer": "Engineer squad",
 	"mortar": "Mortar team",
+	"at": "AT team",
 }
 
 
@@ -81,5 +82,22 @@ static func draw_glyph(ci: CanvasItem, type: String, rect: Rect2, color: Color, 
 			ci.draw_line(base - Vector2(0, rad), Vector2(c.x, r.position.y + r.size.y * 0.15), color, width)
 			ci.draw_line(Vector2(c.x, r.position.y + r.size.y * 0.15), Vector2(c.x - rad, r.position.y + r.size.y * 0.15 + rad), color, width)
 			ci.draw_line(Vector2(c.x, r.position.y + r.size.y * 0.15), Vector2(c.x + rad, r.position.y + r.size.y * 0.15 + rad), color, width)
+		"tank":
+			# Armour: a track-shaped oval inside the frame.
+			var hh := r.size.y * 0.22
+			var hw := r.size.x * 0.3
+			var rad := hh
+			var pts := PackedVector2Array()
+			for i in 9:
+				var a := PI * 0.5 + PI * i / 8.0
+				pts.append(Vector2(c.x - hw + rad, c.y) + Vector2(cos(a), sin(a)) * rad)
+			for i in 9:
+				var a := -PI * 0.5 + PI * i / 8.0
+				pts.append(Vector2(c.x + hw - rad, c.y) + Vector2(cos(a), sin(a)) * rad)
+			pts.append(pts[0])
+			ci.draw_polyline(pts, color, width)
+		"at":
+			# Anti-armour: a chevron from the bottom corners to the top.
+			ci.draw_polyline(PackedVector2Array([Vector2(r.position.x, r.end.y), Vector2(c.x, r.position.y + r.size.y * 0.12), Vector2(r.end.x, r.end.y)]), color, width)
 		_:
 			ci.draw_circle(c, minf(r.size.x, r.size.y) * 0.15, color)

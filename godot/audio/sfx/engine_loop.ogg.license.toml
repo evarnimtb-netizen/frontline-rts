@@ -1,0 +1,18 @@
+# Licence manifest for engine_loop.ogg (SYSTEM_DESIGN.md §12.1 step 3).
+source_url = "generated: godot/tools/gen_s3_sfx.py (engine_loop())"
+file_url = ""
+platform_id = "generated"
+uploader = "Frontline RTS (S3 presenter build)"
+author = "Frontline RTS project (procedural synthesis, no samples)"
+spdx = "CC0-1.0"
+downloaded = 2026-11-01
+sha256 = "a33747c30407baf357e4a0126ef71bf66fa2006115a7861456cc489501e0496b"
+sha256_original = "eb860716ef768bd86f04f5457681c4216841f7ba21e4a07a6554fdbc4c1fe8c9"
+sha256_derived = ["a33747c30407baf357e4a0126ef71bf66fa2006115a7861456cc489501e0496b"]
+parents = []
+derivation = "engine: 31 Hz firing harmonics with roughness and filtered noise, seamless 2 s loop; Python stdlib synthesis at 22.05 kHz mono (fixed seeds), ffmpeg native Vorbis q4"
+noai = false
+mod_redistributable = "yes"
+reviewer = ""
+s86a_check = "n/a (audio)"
+period_check = "n/a"

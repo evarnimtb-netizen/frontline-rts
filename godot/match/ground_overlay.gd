@@ -10,6 +10,10 @@ extends MeshInstance3D
 ## through MatchView.ground_y and sit slightly above it. The rings under
 ## selected and hovered soldiers are a separate MultiMesh batch
 ## (SelectionRings, a child), one buffer upload per frame.
+##
+## S3: rings under selected and hovered vehicles, stretched to the hull
+## (a second SelectionRings batch); escort links (a dashed line from each
+## own escorting squad or man to its vehicle); the face tool's arrows.
 
 const LIFT := 0.35
 const TRENCH_HALF_W := 1.2
@@ -22,12 +26,18 @@ var _flash: PackedVector3Array = PackedVector3Array()
 var _flash_t := 0.0
 var _t := 0.0
 var _rings: SelectionRings
+var _veh_rings: SelectionRings
 
 
 func _ready() -> void:
 	_rings = SelectionRings.new()
 	_rings.name = "SelectionRings"
 	add_child(_rings)
+	_veh_rings = SelectionRings.new()
+	_veh_rings.name = "VehicleRings"
+	_veh_rings.inner = 0.9
+	_veh_rings.outer = 1.0
+	add_child(_veh_rings)
 	mesh = _im
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var mat := StandardMaterial3D.new()
@@ -83,7 +93,11 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 			_edges(_polyline_head(line, float(sq.get("dig_progress", 0.0))), Color(UiPalette.ACCENT, 0.85), 0.1)
 	var sel: Node = view.selection
 	_update_rings(view, sel)
+	_update_vehicle_rings(view, sel)
 	_draw_detached(view, sel)
+	_draw_escorts(view, state)
+	if sel.tool == &"face":
+		_draw_face_tool(view, sel)
 	if sel.tool == &"barrage":
 		var hi := float(view.rules().get("mortar_max_m", 600.0))
 		var lo := float(view.rules().get("mortar_min_m", 60.0))
@@ -158,6 +172,64 @@ func _update_rings(view: MatchView, sel: Node) -> void:
 		pts.append(hs.pos)
 		cols.append(Color(UiPalette.owner_color(int(hs.owner), view.local_player), 0.8))
 	_rings.set_rings(pts, cols)
+
+
+## Rings under selected own vehicles (white) and the hovered vehicle (side
+## colour), stretched to the hull plus a margin and turned with it.
+func _update_vehicle_rings(view: MatchView, sel: Node) -> void:
+	var pts := PackedVector3Array()
+	var yaws := PackedFloat32Array()
+	var half := PackedVector2Array()
+	var cols := PackedColorArray()
+	var ids: PackedInt32Array = sel.selected_vehicles()
+	var h: int = sel.hover_id
+	if h != -1 and view.is_vehicle(h) and not sel.is_selected(h) and not Vehicles.is_wreck(view.vehicles_by_id[h]):
+		ids.append(h)
+	for id in ids:
+		var v: Dictionary = view.vehicles_by_id[id]
+		var vt := view.vehicle_type(id)
+		pts.append(v.pos)
+		yaws.append(float(v.yaw))
+		half.append(Vector2(float(vt.get("hull_width", 2.8)) * 0.5 + 0.9, float(vt.get("hull_length", 5.8)) * 0.5 + 0.9))
+		var own := int(v.owner) == view.local_player
+		cols.append(Color(UiPalette.TEXT, 0.9) if sel.is_selected(id) else Color(UiPalette.owner_color(int(v.owner), view.local_player), 0.8 if own else 0.9))
+	_veh_rings.set_oriented(pts, yaws, half, cols)
+
+
+## Escort links: a dashed line from each own escorting squad (its anchor)
+## or detached man to the vehicle he follows (`follow`, opt), and the
+## vehicle's escort count is on its world marker.
+func _draw_escorts(view: MatchView, state: Dictionary) -> void:
+	var col := Color(HudStyle.OWN, 0.75)
+	for sq in state.get("squads", []):
+		var vid := int(sq.get("follow", -1))
+		if vid != -1 and int(sq.owner) == view.local_player and view.vehicles_by_id.has(vid):
+			_dashed(sq.pos, view.vehicles_by_id[vid].pos, 0.09, col, 1.6, 1.0)
+	for id in view.soldiers_by_id:
+		var so: Dictionary = view.soldiers_by_id[id]
+		var vid := int(so.get("follow", -1))
+		if vid != -1 and int(so.owner) == view.local_player and view.vehicles_by_id.has(vid):
+			_dashed(so.pos, view.vehicles_by_id[vid].pos, 0.05, Color(col, 0.5), 1.0, 1.0)
+
+
+## Face tool (O): from each selected vehicle an arrow toward the cursor.
+func _draw_face_tool(view: MatchView, sel: Node) -> void:
+	var g: Variant = view.ground_pick(sel.cursor())
+	if g == null:
+		return
+	var col := Color(HudStyle.ACCENT, 0.85)
+	for id in sel.selected_vehicles():
+		var p: Vector3 = view.vehicles_by_id[id].pos
+		var d := Vector3(g.x - p.x, 0.0, g.z - p.z)
+		if d.length() < 1.0:
+			continue
+		d = d.normalized()
+		var tip := p + d * 9.0
+		_line(p + d * 3.5, tip, 0.18, col)
+		var side := Vector3(-d.z, 0.0, d.x)
+		_line(tip, tip - d * 2.0 + side * 1.4, 0.18, col)
+		_line(tip, tip - d * 2.0 - side * 1.4, 0.18, col)
+	_ring(g, 1.0, 0.25, col, 16)
 
 
 ## Own detached men with an order target: a small ring at the target; a
@@ -240,6 +312,10 @@ func _draw_marker(m: Dictionary) -> void:
 			_ring(m.pos, 2.0 + 4.0 * k, 0.5, Color(UiPalette.DANGER, a))
 		&"throw":
 			_ring(m.pos, 1.0 + 2.0 * k, 0.4, Color(HudStyle.ACCENT, a), 24)
+		&"follow":
+			_ring(m.pos, 5.0 + 2.0 * k, 0.4, Color(HudStyle.OWN, a), 40)
+		&"reverse":
+			_ring(m.pos, 1.5 + 3.0 * k, 0.4, Color(UiPalette.TEXT, a))
 		&"barrage":
 			var c := Color(UiPalette.WARN, a)
 			_ring(m.pos, 8.0, 0.6, c, 40)
