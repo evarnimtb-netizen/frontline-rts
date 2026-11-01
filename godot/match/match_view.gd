@@ -87,6 +87,7 @@ const MAN_NAMES := {
 	"engineer": ["Sgt (lead)", "Sapper 2", "Sapper 3", "Sapper 4", "Sapper 5"],
 	"mortar": ["Gunner", "Loader", "Carrier"],
 	"at": ["Gunner", "Loader"],
+	"crew": ["Crewman 1", "Crewman 2", "Crewman 3", "Crewman 4", "Crewman 5"],
 }
 ## Weapon by faction and squad type when the state gives none.
 const WEAPONS := {
@@ -97,6 +98,7 @@ const ORDER_TEXT := {
 	"idle": "Holding", "move": "Moving", "attack_move": "Attacking", "retreat": "Retreating",
 	"dig": "Digging", "barrage": "Firing", "setup": "Setting up", "hold": "Holding",
 	"throw": "Throwing", "follow": "Escorting", "suppress": "Suppressing",
+	"recrew": "Re-crewing",
 }
 ## Intents that get a pending-order marker in net mode, by marker kind.
 const PENDING_KINDS := {
@@ -112,7 +114,7 @@ const LOCAL_PENDING_S := 0.5
 ## kind confirms it.
 const PENDING_MATCH_M := 3.0
 ## Short squad names for cards and tiles.
-const SHORT_NAMES := {"rifle": "Rifle", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar", "at": "AT team"}
+const SHORT_NAMES := {"rifle": "Rifle", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar", "at": "AT team", "crew": "Crew"}
 ## Hit markers (S3): at most this many at once, each for HIT_TIME s.
 const HIT_MAX := 6
 const HIT_TIME := 1.5

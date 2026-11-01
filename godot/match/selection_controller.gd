@@ -42,6 +42,13 @@ extends Node
 ## at a point, a left drag draws a line (capped at rules.suppress_line_max_m,
 ## 40 m); the selection (mortar men are dropped by the sim) gets
 ## suppress_units. Shift keeps the tool armed.
+##
+## S3c: K arms the Crew tool (infantry selected): a left click on an
+## abandoned vehicle sends `recrew` for the selected squads (the sim
+## refuses AT teams and, per the rules, non-crews; the feed says why).
+## Right-click on an abandoned vehicle with a tank crew squad selected
+## does the same. Bail out (vehicles, no key) asks for a second press
+## within BAIL_CONFIRM_MS, then sends `abandon` for the selected vehicles.
 
 signal tool_changed(tool: StringName)
 
@@ -60,7 +67,9 @@ const ABILITY_KEYS := {&"ability_frag": "frag", &"ability_smoke": "smoke", &"abi
 ## Orders that carry vehicle ids too (in the *_units intent).
 const VEHICLE_ORDERS := [&"move", &"attack_move", &"stop", &"retreat"]
 ## Orders for vehicles only.
-const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"ammo_ap", &"ammo_he", &"ammo_apcr"]
+const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"ammo_ap", &"ammo_he", &"ammo_apcr", &"bail"]
+## S3c: Bail out needs a second press within this long.
+const BAIL_CONFIRM_MS := 2000
 
 var view: MatchView
 ## Selected own soldier ids, ascending.
@@ -99,6 +108,8 @@ var _last_recall_ms := 0
 var _pending_stance := {}
 ## vehicle id -> [ammo choice, msec sent] (N twice before the state shows it)
 var _pending_ammo := {}
+## S3c: when Bail out was pressed once (msec), 0 = not armed.
+var bail_armed_ms := 0
 
 
 func bind(v: MatchView) -> void:
@@ -119,6 +130,8 @@ func prune() -> void:
 	if hover_id != -1 and not view.soldiers_by_id.has(hover_id) and not view.vehicles_by_id.has(hover_id):
 		hover_id = -1
 	if tool in [&"face", &"reverse"] and selected_vehicles().is_empty():
+		cancel_tool()
+	elif tool == &"crew" and not can(&"crew"):
 		cancel_tool()
 	elif tool == &"dig" and not _has_type(MatchView.DIGGERS):
 		cancel_tool()
@@ -400,6 +413,12 @@ func can(order: StringName) -> bool:
 			return item_count(String(order)) > 0
 		&"regroup":
 			return not selected_soldiers().is_empty()
+		&"crew":
+			# S3c: infantry (not AT teams) can man an abandoned vehicle.
+			for sid in selected_squads():
+				if not view.squad_type(sid) in ["at", "vehicle"]:
+					return true
+			return false
 		&"ammo_apcr":
 			return selection_has_apcr()
 		&"suppress":
@@ -470,6 +489,15 @@ func activate(order: StringName) -> void:
 		&"repair":
 			view.emit_intent(&"repair_units", {"units": selected_vehicles()})
 			cancel_tool()
+		&"bail":
+			# S3c: a second press within BAIL_CONFIRM_MS bails out.
+			var now := Time.get_ticks_msec()
+			if bail_armed_ms > 0 and now - bail_armed_ms <= BAIL_CONFIRM_MS:
+				bail_armed_ms = 0
+				view.emit_intent(&"abandon", {"units": selected_vehicles()})
+			else:
+				bail_armed_ms = maxi(now, 1)
+			cancel_tool()
 		&"ammo":
 			next_ammo()
 		&"ammo_auto", &"ammo_ap", &"ammo_he", &"ammo_apcr":
@@ -486,6 +514,31 @@ func activate(order: StringName) -> void:
 			_set_tool(&"throw")
 		_:
 			_set_tool(order)
+
+
+## S3c: whether Bail out is waiting for its second press.
+func bail_armed() -> bool:
+	return bail_armed_ms > 0 and Time.get_ticks_msec() - bail_armed_ms <= BAIL_CONFIRM_MS
+
+
+## S3c: the selected infantry squads (not AT teams) re-crew abandoned
+## vehicle `vehicle`; only tank crews with `crews_only`.
+func recrew(vehicle: int, crews_only := false) -> bool:
+	var v: Dictionary = view.vehicles_by_id.get(vehicle, {})
+	if not Vehicles.is_abandoned(v):
+		return false
+	var squads := PackedInt32Array()
+	for sid in selected_squads():
+		var t := view.squad_type(sid)
+		if t == "crew" or (not crews_only and not t in ["at", "vehicle"]):
+			squads.append(sid)
+	if squads.is_empty():
+		return false
+	view.emit_intent(&"recrew", {"squads": squads, "vehicle": vehicle})
+	if view.overlay != null:
+		view.overlay.marker(v.pos, &"follow")
+	AudioManager.play_ui(&"confirm")
+	return true
 
 
 func cancel_tool() -> void:
@@ -674,6 +727,16 @@ func _select_same_type(id: int, add: bool) -> void:
 func _order_at(screen: Vector2, attack: bool, reverse := false) -> void:
 	if selected.is_empty():
 		return
+	# S3c: right-click on an abandoned vehicle with a tank crew selected
+	# re-crews it; anything else treats it as the ground there.
+	var any_v := pick_vehicle(screen, -1) if pick_soldier(screen, -1) == -1 else -1
+	if any_v != -1 and Vehicles.is_abandoned(view.vehicles_by_id.get(any_v, {})):
+		if recrew(any_v, true):
+			return
+		var gv: Variant = view.ground_pick(screen)
+		if gv != null:
+			order_to_ground(gv, attack, reverse)
+		return
 	var enemy_v := pick_vehicle(screen, 0) if pick_soldier(screen, 0) == -1 else -1
 	if enemy_v != -1:
 		attack_vehicle(enemy_v)
@@ -772,6 +835,15 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 		AudioManager.play_ui(&"error")
 		return
 	match tool:
+		&"crew":
+			# S3c: the abandoned vehicle under the click.
+			var v := pick_vehicle(screen, -1)
+			if v == -1 or not recrew(v):
+				AudioManager.play_ui(&"error")
+				return
+			if not shift:
+				_set_tool(&"")
+			return
 		&"move", &"attack_move":
 			send_order(tool, {"target": g})
 		&"face":
@@ -973,7 +1045,7 @@ func _key(e: InputEventKey) -> void:
 			activate(StringName(ABILITY_KEYS[action]))
 			get_viewport().set_input_as_handled()
 			return
-	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair", &"suppress"]:
+	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair", &"suppress", &"crew"]:
 		if e.is_action_pressed(StringName("order_" + order)):
 			activate(order)
 			get_viewport().set_input_as_handled()

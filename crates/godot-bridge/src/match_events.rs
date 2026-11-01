@@ -37,8 +37,9 @@ pub struct UiEvent {
     /// `point_captured`, `point_lost`, `squad_lost`, `squad_arrived`,
     /// `under_attack`, `tickets_low` or `info`; S3 `vehicle_arrived`,
     /// `vehicle_knocked_out`, `vehicle_damaged`, `vehicle_bogged`; S3b
-    /// `call_in_refused`. Since S3b `squad_arrived` and `vehicle_arrived`
-    /// come from a call-in ("... deployed at base.").
+    /// `call_in_refused`; S3c `vehicle_abandoned`, `vehicle_recrewed`,
+    /// `vehicle_captured`, `recrew_refused`. Since S3b `squad_arrived` and
+    /// `vehicle_arrived` come from a call-in ("... deployed at base.").
     pub kind: &'static str,
     pub text: String,
     pub pos: Option<[f32; 2]>,
@@ -93,6 +94,40 @@ pub fn vehicle_short(setup: &MatchSetup, type_idx: u16) -> &str {
         .vehicles
         .get(type_idx as usize)
         .map_or("Vehicle", |v| v.short_name.as_str())
+}
+
+/// S3c feed words for an abandonment's trigger (`bail::AB_*`).
+pub fn abandon_words(cause: u8) -> &'static str {
+    match cause {
+        1 => "ammo fire",
+        2 => "engine fire",
+        3 => "crew losses",
+        4 => "gun and tracks out",
+        5 => "disabled under fire",
+        6 => "ordered",
+        _ => "abandoned",
+    }
+}
+
+/// S3c feed words for a refused re-crew.
+pub fn recrew_words(why: frontline_sim::RecrewRefusal, setup: &MatchSetup) -> String {
+    use frontline_sim::RecrewRefusal as R;
+    match why {
+        R::NotAbandoned => "not an abandoned vehicle".to_owned(),
+        R::NotCrew => "this squad cannot man a vehicle".to_owned(),
+        R::NoCapture => "capturing enemy vehicles is off".to_owned(),
+        R::TooFewMen => format!(
+            "too few men (need {})",
+            setup
+                .rules
+                .vehicles
+                .recrew
+                .min_men
+                .max(setup.rules.vehicles.bail.crew_below)
+        ),
+        R::VehicleLimit => format!("vehicle limit reached ({})", setup.rules.vehicles.limit),
+        R::PopCap => format!("pop cap reached ({})", setup.rules.pop_cap),
+    }
 }
 
 /// Feed words for a destroyed component (`ComponentKind::index`).
@@ -277,6 +312,16 @@ impl EventTracker {
                 tick: ev.tick,
             });
         }
+        // S3c: refused re-crews.
+        for r in &ev.recrew_refusals {
+            out.push(UiEvent {
+                kind: "recrew_refused",
+                text: format!("Not re-crewed: {}.", recrew_words(r.why, setup)),
+                pos: None,
+                player: local as i32,
+                tick: ev.tick,
+            });
+        }
     }
 
     /// Feed lines for one tick's visible armour events (S3): any vehicle
@@ -302,6 +347,43 @@ impl EventTracker {
                 ),
                 k if k == ArmourEventKind::Bogged as u8 && own => {
                     ("vehicle_bogged", format!("{name} bogged in trench."))
+                }
+                // S3c.
+                k if k == ArmourEventKind::Abandoned as u8 => {
+                    let seats = setup
+                        .vehicles
+                        .get(a.type_idx as usize)
+                        .map_or(5, |v| v.seats.len());
+                    (
+                        "vehicle_abandoned",
+                        if own {
+                            format!(
+                                "{name} abandoned ({}). Crew bailing out: {} of {seats}.",
+                                abandon_words(e.component),
+                                a.inside
+                            )
+                        } else {
+                            format!("Enemy {name} abandoned.")
+                        },
+                    )
+                }
+                k if k == ArmourEventKind::Recrewed as u8 => {
+                    let captured = e.component == frontline_sim::bail::RECREW_CAPTURED;
+                    let last_own = e.attacker == local;
+                    match (captured, own, last_own) {
+                        (false, true, _) => ("vehicle_recrewed", format!("{name} re-crewed.")),
+                        (true, true, _) => {
+                            ("vehicle_captured", format!("Captured an enemy {name}."))
+                        }
+                        (true, false, true) => (
+                            "vehicle_captured",
+                            format!("Our {name} was captured by the enemy."),
+                        ),
+                        (false, false, _) => {
+                            ("vehicle_recrewed", format!("Enemy {name} re-crewed."))
+                        }
+                        _ => continue,
+                    }
                 }
                 _ => continue,
             };
@@ -612,6 +694,7 @@ mod tests {
                 ..ArmourEvent::default()
             },
             type_idx: 0,
+            inside: 3,
         };
         let batch = vec![TickEvents {
             tick: 9,
@@ -694,5 +777,47 @@ mod tests {
             ]
         );
         assert_eq!(feed[2].player, 1);
+        // S3c: our tank abandoned, an enemy one, a re-crew, a capture each
+        // way, a refused re-crew.
+        let mut captured_ours = ev(K::Recrewed, 72, 1, 2);
+        captured_ours.ev.attacker = 0;
+        let mut captured_theirs = ev(K::Recrewed, 81, 0, 2);
+        captured_theirs.ev.attacker = 1;
+        let s3c = TickEvents {
+            tick: 10,
+            armour: vec![
+                ev(K::Abandoned, 70, 0, 1),
+                ev(K::Abandoned, 80, 1, 3),
+                ev(K::CrewOut, 70, 0, 0),
+                ev(K::Recrewed, 70, 0, 1),
+                captured_ours,
+                captured_theirs,
+            ],
+            recrew_refusals: vec![frontline_sim::RecrewEvent {
+                player: frontline_sim::PlayerId(0),
+                vehicle: frontline_sim::SimId(70),
+                why: frontline_sim::RecrewRefusal::VehicleLimit,
+            }],
+            ..TickEvents::default()
+        };
+        let mut feed = Vec::new();
+        tr.armour(&s3c, &setup, &mut feed);
+        tr.call_ins(&s3c, &setup, &mut feed);
+        let lines: Vec<String> = feed.iter().map(|e| e.text.clone()).collect();
+        let seats = setup.vehicles[0].seats.len();
+        assert_eq!(
+            lines,
+            vec![
+                format!("{short} abandoned (ammo fire). Crew bailing out: 3 of {seats}."),
+                format!("Enemy {short} abandoned."),
+                format!("{short} re-crewed."),
+                format!("Our {short} was captured by the enemy."),
+                format!("Captured an enemy {short}."),
+                format!(
+                    "Not re-crewed: vehicle limit reached ({}).",
+                    setup.rules.vehicles.limit
+                ),
+            ]
+        );
     }
 }

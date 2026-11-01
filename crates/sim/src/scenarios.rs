@@ -782,7 +782,7 @@ pub fn stress(mut setup: MatchSetup, threads: usize) -> Result<Staged, SimError>
 // ------------------------------------------------------- Godot scenes --
 
 /// The staged autoplay scenes (`--autoplay_scene armour_<name>`).
-pub const SCENES: [&str; 9] = [
+pub const SCENES: [&str; 10] = [
     "callin_locked",
     "vehicle_card",
     "tank_firing",
@@ -792,6 +792,8 @@ pub const SCENES: [&str; 9] = [
     "at_team_firing",
     "burning",
     "escort",
+    // S3c: a tank abandoned (gun and a track out) with its crew beside it.
+    "bailout",
 ];
 
 /// A staged scene: the world, the commands to send on the first step, the
@@ -891,6 +893,18 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
             w.edit_vehicle(t.1, |vs| vs.burn = 1);
             max_ticks = 30;
         }
+        "bailout" => {
+            // The gun and the left track out: the crew bail out (S3c
+            // trigger 4) and stand beside the hull, away from the last hit
+            // (none: the left side).
+            let t = need(tank(&mut w, 0, at(TRENCH_X, LANE_Y), EAST), "tank")?;
+            w.edit_vehicle(t.1, |vs| {
+                vs.components[ComponentKind::Gun.index()] = 0;
+                vs.components[ComponentKind::TrackLeft.index()] = 0;
+                vs.seats[4].hp = 0;
+            });
+            max_ticks = 30 * 10;
+        }
         "escort" => {
             let t = need(tank(&mut w, 0, at(TRENCH_X, LANE_Y), WEST), "tank")?;
             let r = need(
@@ -959,6 +973,13 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
             .iter()
             .any(|s| s.player == 0 && s.kind == crate::snapshot::ShellKind::Heat as u8),
         "burning" => own(vehicle_flags::BURNING),
+        // S3c: abandoned, every living man out.
+        "bailout" => snap.vehicles.iter().any(|v| {
+            v.last_owner == 0
+                && v.flags & vehicle_flags::ABANDONED != 0
+                && v.inside == 0
+                && v.crew_squad != crate::snapshot::NO_SQUAD
+        }),
         "escort" => snap
             .vehicles
             .iter()

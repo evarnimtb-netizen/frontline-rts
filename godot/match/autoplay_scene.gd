@@ -29,6 +29,9 @@ const SCENES := {
 	"at_team_firing": {"height": 34.0, "pitch": -38.0, "yaw": 0.0, "settle": 0.15},
 	"burning": {"height": 22.0, "pitch": -34.0, "yaw": -40.0, "settle": 2.5},
 	"escort": {"height": 34.0, "pitch": -42.0, "yaw": 60.0, "settle": 9.0},
+	# S3c: the abandoned tank and its crew squad (selected: the card reads
+	# "Crew — Panzer IV").
+	"bailout": {"height": 16.0, "pitch": -32.0, "yaw": -150.0, "settle": 1.5},
 }
 
 var m: Node3D
@@ -138,6 +141,16 @@ func _stage(s: Dictionary) -> bool:
 			return false
 		"callin_locked":
 			view.selection.select_only(PackedInt32Array())
+		"bailout":
+			# Wait for the crew squad; select it and frame the tank.
+			for sq in _own_squads(s, "crew"):
+				if sq.has("crew_of"):
+					view.selection.select_squads(PackedInt32Array([int(sq.id)]))
+					var v: Dictionary = view.vehicles_by_id.get(int(sq.crew_of), {})
+					if not v.is_empty():
+						_frame(v.pos)
+					return true
+			return false
 	return true
 
 
@@ -189,6 +202,14 @@ func _check(s: Dictionary) -> String:
 			return _flag(own, Vehicles.BOGGED, "BOGGED")
 		"burning":
 			return _flag(own, Vehicles.BURNING, "BURNING")
+		"bailout":
+			for v in s.get("vehicles", []):
+				if Vehicles.is_abandoned(v) and int(v.get("inside", 1)) == 0 and int(v.get("crew_squad", -1)) >= 0:
+					for sq in _own_squads(s, "crew"):
+						if int(sq.get("crew_of", -1)) == int(v.id) and int(sq.get("men", 0)) >= 3:
+							return ""
+					return "abandoned tank but no crew squad card link"
+			return "no abandoned tank with all men out"
 		"at_ditch":
 			var d := 0.0
 			if source.has_method("dug_depth_at"):

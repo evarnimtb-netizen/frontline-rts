@@ -54,7 +54,7 @@ pub struct ArmourArgs {
     /// Mod directory (default: `mods/ww2` here or in the source tree).
     #[arg(long, value_name = "DIR")]
     pub mods: Option<PathBuf>,
-    /// Only these cases (1–14), e.g. `--case 1 --case 7`.
+    /// Only these cases (1–15), e.g. `--case 1 --case 7`.
     #[arg(long = "case", value_name = "N")]
     pub cases: Vec<u32>,
     /// Also run case 14, the stress case (lifts the vehicle limit and the
@@ -446,6 +446,8 @@ struct DuelStat {
     /// and ticks to each side's first main-gun shot (S3b baseline).
     ko_cause: [u32; 4],
     first_shot: [Vec<u64>; 2],
+    /// S3c: abandonments by trigger (`bail::AB_*`, index 0 unused).
+    abandoned: [u32; 7],
 }
 
 /// S3b 3b check: how far (m, at the target's range) the Sherman's laid
@@ -516,6 +518,10 @@ fn case3(env: &Env) -> Result<CaseReport> {
                         if let Some(c) = st.ko_cause.get_mut(e.component as usize) {
                             *c += 1;
                         }
+                    } else if e.kind == ArmourEventKind::Abandoned as u8 {
+                        if let Some(c) = st.abandoned.get_mut(e.component as usize) {
+                            *c += 1;
+                        }
                     } else if e.kind == ArmourEventKind::Fired as u8 {
                         let side = (e.vehicle == sh.0) as usize;
                         if shot[side].is_none() {
@@ -536,6 +542,7 @@ fn case3(env: &Env) -> Result<CaseReport> {
                 let dis = w.snapshot().armour_events.iter().any(|e| {
                     e.kind == ArmourEventKind::Disabled as u8
                         || e.kind == ArmourEventKind::KnockedOut as u8
+                        || e.kind == ArmourEventKind::Abandoned as u8
                 });
                 if dis && first.is_none() {
                     first = Some(w.tick() - start);
@@ -587,12 +594,18 @@ fn case3(env: &Env) -> Result<CaseReport> {
         r.row(
             format!("3{name}: knock-outs by cause, first shot"),
             format!(
-                "crew {}, ammo rack {}, fire {}, ammo fire {}; first main-gun shot (median) \
-                 Panzer IV {}, Sherman {}",
+                "destroyed: crew {}, ammo rack {}, fire {}, ammo fire {}; S3c abandoned: \
+                 ammo fire {}, engine fire {}, crew {}, gun and mobility {}, under fire {}; \
+                 first main-gun shot (median) Panzer IV {}, Sherman {}",
                 st.ko_cause[0],
                 st.ko_cause[1],
                 st.ko_cause[2],
                 st.ko_cause[3],
+                st.abandoned[1],
+                st.abandoned[2],
+                st.abandoned[3],
+                st.abandoned[4],
+                st.abandoned[5],
                 med(&st.first_shot[0]),
                 med(&st.first_shot[1])
             ),
@@ -821,6 +834,7 @@ fn case4(env: &Env) -> Result<CaseReport> {
                     rocket_hits += hits.len() as u64;
                     if events(w, ArmourEventKind::Disabled, tank) > 0
                         || events(w, ArmourEventKind::KnockedOut, tank) > 0
+                        || events(w, ArmourEventKind::Abandoned, tank) > 0
                     {
                         disabling += 1;
                     }
@@ -2142,6 +2156,236 @@ fn case13(env: &Env) -> Result<CaseReport> {
 
 const WEST_DIR: FxVec2 = scenarios::WEST;
 
+// ----------------------------------------------------------- case 15 --
+
+/// A flat staging world for case 15 at `seed`, with `edit` on the setup.
+fn stage15(env: &Env, seed: u64, edit: impl FnOnce(&mut MatchSetup)) -> Result<World> {
+    let mut s = env.setup(seed)?;
+    scenarios::staging(&mut s, true);
+    edit(&mut s);
+    World::new_match(s, env.threads).map_err(|e| anyhow!("{e:?}"))
+}
+
+/// Steps until `f` holds or `secs` pass; the ticks taken, if it held.
+fn until(w: &mut World, secs: u64, mut f: impl FnMut(&World) -> bool) -> Option<u64> {
+    let start = w.tick();
+    let end = start + secs * hz(w);
+    while w.tick() < end {
+        if f(w) {
+            return Some(w.tick() - start);
+        }
+        w.step(&[]);
+    }
+    f(w).then(|| w.tick() - start)
+}
+
+/// The abandon event's cause for vehicle `v` this tick, if any.
+fn abandon_cause(w: &World, v: SimId) -> Option<u8> {
+    w.snapshot()
+        .armour_events
+        .iter()
+        .find(|e| e.kind == ArmourEventKind::Abandoned as u8 && e.vehicle == v.0)
+        .map(|e| e.component)
+}
+
+/// S3c case 15 "bail-out" (`docs/slices/S3c-armour.md` Part A step 9):
+/// (a) an ammo fire: every man out before the burn-out, one by hatch;
+/// (b) crew losses to two and (c) gun and track out: the crew bail out;
+/// (d) the crew squad re-crews its tank; (e) riflemen re-crew it,
+/// untrained (reload measured); (f) an enemy squad captures it with
+/// `capture` on and is refused with it off. Hard checks for the
+/// mechanics, report rows for the timings.
+fn case15(env: &Env) -> Result<CaseReport> {
+    use frontline_content::SquadRole;
+    let mut r = CaseReport::new(15, "bail-out, abandoned tanks, re-crew and capture");
+    let (mut a_ok, mut b_ok, mut c_ok, mut d_ok, mut e_ok, mut f_ok, mut f_off) =
+        (0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+    let (mut first_out, mut last_out, mut recrew_t) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut reload_trained, mut reload_untrained) = (0u64, 0u64);
+    let tank = |w: &mut World, p: u8, x: i32, f: FxVec2| -> Result<(SquadId, SimId)> {
+        scenarios::tank(w, p, at(x, LANE_Y), f).ok_or_else(|| anyhow!("no tank"))
+    };
+    let kind = |w: &World, v: SimId| w.entities().kind()[v.index()];
+    for (seed, p) in env.runs() {
+        r.runs += 1;
+        let face = if p == 0 { scenarios::EAST } else { WEST_DIR };
+        // (a) Ammo fire: the men leave by their hatches before it burns out.
+        let mut w = stage15(env, seed, |_| {})?;
+        let (_, v) = tank(&mut w, p, 500, face)?;
+        w.edit_vehicle(v, |vs| vs.ammo_fire = 1);
+        let start = w.tick();
+        let mut outs: Vec<u64> = Vec::new();
+        while w.tick() < start + 20 * hz(&w) && kind(&w, v) != EntityKind::Wreck {
+            w.step(&[]);
+            for e in &w.snapshot().armour_events {
+                if e.kind == ArmourEventKind::CrewOut as u8 && e.vehicle == v.0 {
+                    outs.push(w.tick() - start);
+                }
+            }
+        }
+        let g = w.game().expect("match");
+        if outs.len() == 5
+            && kind(&w, v) == EntityKind::Wreck
+            && g.players()[p as usize].crew.out == 5
+        {
+            a_ok += 1;
+        }
+        if let (Some(&f), Some(&l)) = (outs.iter().min(), outs.iter().max()) {
+            first_out.push(f);
+            last_out.push(l);
+        }
+        // (b) Crew losses to two.
+        let mut w = stage15(env, seed, |_| {})?;
+        let (_, v) = tank(&mut w, p, 500, face)?;
+        w.edit_vehicle(v, |vs| {
+            vs.seats[2].hp = 0;
+            vs.seats[3].hp = 0;
+            vs.seats[4].hp = 0;
+        });
+        w.step(&[]);
+        b_ok += (abandon_cause(&w, v) == Some(frontline_sim::bail::AB_CREW)) as u32;
+        // (c) Gun and a track out.
+        let mut w = stage15(env, seed, |_| {})?;
+        let (_, v) = tank(&mut w, p, 500, face)?;
+        w.edit_vehicle(v, |vs| {
+            vs.components[ComponentKind::Gun.index()] = 0;
+            vs.components[ComponentKind::TrackRight.index()] = 0;
+        });
+        w.step(&[]);
+        c_ok += (abandon_cause(&w, v) == Some(frontline_sim::bail::AB_USELESS)) as u32;
+        // (d) The crew squad re-crews its tank.
+        let mut w = stage15(env, seed, |_| {})?;
+        let (sq, v) = tank(&mut w, p, 500, face)?;
+        let def = w.game().expect("match").vehicle(v).expect("tank").type_idx as usize;
+        let reload0 = {
+            let s = w.match_setup().expect("match");
+            gunnery::reload_of(&vstate(&w, v).expect("tank"), &s.vehicles[def], s)
+        };
+        order(&mut w, p, vec![CommandKind::Abandon { squad: sq }]);
+        let crew = until(&mut w, 10, |w| {
+            vstate(w, v)
+                .and_then(|vs| vs.crew_squad)
+                .and_then(|c| w.game().and_then(|g| g.squad(c)))
+                .is_some_and(|c| c.members.len() == 5)
+        })
+        .and_then(|_| vstate(&w, v).and_then(|vs| vs.crew_squad));
+        if let Some(c) = crew {
+            order(
+                &mut w,
+                p,
+                vec![CommandKind::Recrew {
+                    squad: c,
+                    vehicle: v,
+                }],
+            );
+            if let Some(t) = until(&mut w, 60, |w| kind(w, v) == EntityKind::Vehicle) {
+                recrew_t.push(t);
+                let vs = vstate(&w, v).expect("tank");
+                d_ok += (w.entities().owner()[v.index()].0 == p
+                    && vs.seats.iter().all(|s| s.hp > 0 && !s.untrained))
+                    as u32;
+            }
+        }
+        // (e) Riflemen re-crew the abandoned tank, untrained.
+        let mut w = stage15(env, seed, |_| {})?;
+        let (sq, v) = tank(&mut w, p, 500, face)?;
+        order(&mut w, p, vec![CommandKind::Abandon { squad: sq }]);
+        until(&mut w, 10, |w| {
+            vstate(w, v).is_some_and(|vs| vs.exit.iter().all(|&e| e == 0))
+        });
+        if let Some(c) = vstate(&w, v).and_then(|vs| vs.crew_squad) {
+            order(&mut w, p, vec![CommandKind::Retreat { squad: c }]);
+        }
+        let rif = scenarios::spawn(&mut w, p, SquadRole::Rifle, at(500, LANE_Y + 25), face)
+            .ok_or_else(|| anyhow!("no riflemen"))?;
+        order(
+            &mut w,
+            p,
+            vec![CommandKind::Recrew {
+                squad: rif,
+                vehicle: v,
+            }],
+        );
+        if until(&mut w, 60, |w| kind(w, v) == EntityKind::Vehicle).is_some() {
+            let vs = vstate(&w, v).expect("tank");
+            let s = w.match_setup().expect("match");
+            let rl = gunnery::reload_of(&vs, &s.vehicles[def], s);
+            reload_trained += reload0 as u64;
+            reload_untrained += rl as u64;
+            e_ok += (vs.seats.iter().all(|s| s.hp > 0 && s.untrained) && rl > reload0) as u32;
+        }
+        // (f) An enemy squad captures it (capture on), or is refused (off).
+        for capture in [1u32, 0] {
+            let mut w = stage15(env, seed, |s| s.rules.vehicles.recrew.capture = capture)?;
+            let (sq, v) = tank(&mut w, p, 500, face)?;
+            order(&mut w, p, vec![CommandKind::Abandon { squad: sq }]);
+            until(&mut w, 10, |w| {
+                vstate(w, v).is_some_and(|vs| vs.exit.iter().all(|&e| e == 0))
+            });
+            if let Some(c) = vstate(&w, v).and_then(|vs| vs.crew_squad) {
+                order(&mut w, p, vec![CommandKind::Retreat { squad: c }]);
+            }
+            let q = 1 - p;
+            let enemy = scenarios::spawn(&mut w, q, SquadRole::Rifle, at(500, LANE_Y - 25), face)
+                .ok_or_else(|| anyhow!("no enemy riflemen"))?;
+            order(
+                &mut w,
+                q,
+                vec![CommandKind::Recrew {
+                    squad: enemy,
+                    vehicle: v,
+                }],
+            );
+            if capture == 0 {
+                f_off += w
+                    .snapshot()
+                    .recrew_refusals
+                    .iter()
+                    .any(|x| x.why == frontline_sim::RecrewRefusal::NoCapture)
+                    as u32;
+                continue;
+            }
+            if until(&mut w, 60, |w| kind(w, v) == EntityKind::Vehicle).is_some() {
+                f_ok += (w.entities().owner()[v.index()].0 == q
+                    && w.game().expect("match").players()[q as usize].crew.captured == 1)
+                    as u32;
+            }
+        }
+    }
+    let n = r.runs;
+    let all = |k: u32| (k == n, format!("{k} of {n}"));
+    for (name, k) in [
+        (
+            "a ammo fire: all five out by hatch before the burn-out",
+            a_ok,
+        ),
+        ("b crew losses to two: abandoned (crew)", b_ok),
+        ("c gun and a track out: abandoned (gun and mobility)", c_ok),
+        ("d the crew squad re-crews its tank (trained)", d_ok),
+        ("e riflemen re-crew it, untrained, slower reload", e_ok),
+        ("f an enemy squad captures it with capture on", f_ok),
+        ("f with capture off the enemy is refused", f_off),
+    ] {
+        let (pass, detail) = all(k);
+        r.check(name, pass, detail);
+    }
+    let med = |v: &mut Vec<u64>| {
+        v.sort_unstable();
+        v.get(v.len() / 2)
+            .map_or("none".into(), |&x| format!("{:.1} s", x as f64 / 30.0))
+    };
+    r.row(
+        "a first / last man out (median)",
+        format!("{} / {}", med(&mut first_out), med(&mut last_out)),
+    );
+    r.row("d order to re-crewed (median)", med(&mut recrew_t));
+    r.row(
+        "e reload trained → untrained (sum over runs, ticks)",
+        format!("{reload_trained} → {reload_untrained}"),
+    );
+    Ok(r)
+}
+
 // ----------------------------------------------------------- case 14 --
 
 // Wall-clock time here only measures; it never feeds the sim.
@@ -2287,7 +2531,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 14] = [
+    let all: [(u32, CaseFn); 15] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -2302,6 +2546,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (12, case12),
         (13, case13),
         (14, case14),
+        (15, case15),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

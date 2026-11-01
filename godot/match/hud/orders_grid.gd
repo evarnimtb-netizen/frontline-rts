@@ -7,7 +7,8 @@ extends Control
 ##          Dig in Y;
 ##   row 3, a segmented stance strip: Stand X, Crouch C, Prone Z, Auto
 ##          (no key: pressing the active stance again returns to Auto),
-##          then Regroup L.
+##          then (S3c) Crew K (the re-crew tool: click an abandoned
+##          vehicle) and Regroup L.
 ## The armed tool and the selection's shared stance are outlined in the
 ## accent colour. Move and Attack arm a click-to-place tool (the mouse
 ## shortcut needs no button). Every button has a tooltip.
@@ -16,7 +17,8 @@ extends Control
 ## the vehicle keys still reach the vehicles):
 ##   row 1: Reverse (Alt+RMB, arms a reverse tool), Face O (tool), Repair J,
 ##   S3b Suppress P (tool);
-##   row 2: Move, Attack, Stop H, Retreat R;
+##   row 2: Move, Attack, Stop H, Retreat R, S3c Bail out (no key: a
+##   second press within 2 s; the label says "Again?" meanwhile);
 ##   row 3: the ammo toggle, a segmented strip Auto | AP | APCR | HE (N
 ##   cycles; APCR only lights on a gun that carries it, S3b).
 
@@ -43,6 +45,9 @@ const ROW_STANCE := [
 	[&"auto", "Auto", &"", "Stance chosen by the situation (the default)."],
 ]
 const REGROUP := [&"regroup", "Regroup", &"order_regroup", "Detached men of the selected squads rejoin their squad's formation."]
+## S3c.
+const CREW := [&"crew", "Crew", &"order_crew", "Click an abandoned vehicle: the selected squads walk to it and man it. Tank crews man it fully; other infantry (not AT teams) man it untrained (slower reload and traverse, wider spread). An enemy's abandoned vehicle is captured. Needs a free vehicle slot and pop. Right-click on it with a tank crew selected does the same."]
+const BAIL := [&"bail", "Bail out", &"", "The crew leave the vehicle by its hatches and become a crew squad; the vehicle stays, abandoned, and can be re-crewed (by anyone, enemies included). Press twice within 2 s."]
 const ROW_VEHICLE := [
 	[&"reverse", "Reverse", &"order_reverse", "Back up to a point, front kept toward the enemy (Alt+right-click). The button arms a click-to-place tool."],
 	[&"face", "Face", &"order_face", "Turn the hull front toward a point and hold (click the point)."],
@@ -61,7 +66,7 @@ const ROW_AMMO := [
 	[&"ammo_apcr", "APCR", &"", "Fire the special APCR rounds (a handful, Panzer IV only). N cycles Auto, AP, APCR, HE."],
 	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, APCR, HE."],
 ]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress"]
+const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 const STANCE_IDS := [&"stand", &"crouch", &"prone"]
@@ -105,6 +110,8 @@ func _layout() -> void:
 			_add(ROW_VEHICLE[i], Rect2(i * (abw + g), 0, abw, bh), "order")
 		for i in ROW_VEHICLE_ORDERS.size():
 			_add(ROW_VEHICLE_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
+		# S3c: Bail out in the fifth slot of the orders row.
+		_add(BAIL, Rect2(4.0 * (bw + g), bh + g, bw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
 		for i in ROW_AMMO.size():
 			_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
@@ -113,10 +120,12 @@ func _layout() -> void:
 		_add(ROW_ABILITY[i], Rect2(i * (abw + g), 0, abw, bh), "ability")
 	for i in ROW_ORDERS.size():
 		_add(ROW_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
-	var sw := 4.0 * bw + 3.0 * g
+	# S3c: the stance strip spans three columns; Crew takes the fourth.
+	var sw := 3.0 * bw + 2.0 * g
 	var seg := sw / 4.0
 	for i in ROW_STANCE.size():
 		_add(ROW_STANCE[i], Rect2(i * seg, 2.0 * (bh + g), seg, bh), "stance")
+	_add(CREW, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 	_add(REGROUP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 
 
@@ -153,6 +162,8 @@ func active(id: StringName) -> bool:
 		return enabled(id) and StringName(sel.active_stance()) == id
 	if id in AMMO_IDS:
 		return enabled(id) and "ammo_" + sel.ammo_choice() == String(id)
+	if id == &"bail":
+		return sel.bail_armed()
 	return false
 
 
@@ -210,7 +221,9 @@ func _draw() -> void:
 		if id in ITEMS:
 			var n: int = sel.item_count(String(id))
 			HudStyle.text(self, bold, Vector2(r.end.x - 6.0, r.position.y + 16.0), "×%d" % n, HudStyle.FONT_SMALL, txt_col, 1)
-		var label := HudStyle.fit(font, b.label, r.size.x - 6.0, HudStyle.FONT)
+		# S3c: Bail out waits for its second press.
+		var text: String = "Again?" if id == &"bail" and lit else b.label
+		var label := HudStyle.fit(font, text, r.size.x - 6.0, HudStyle.FONT)
 		HudStyle.text(self, font, Vector2(r.get_center().x, r.end.y - 8.0), label, HudStyle.FONT, txt_col, 0)
 
 

@@ -345,7 +345,7 @@ pub struct Scripter {
 }
 
 /// The S3 commands a vehicle script issues ([`Scripter::vehicles`]).
-pub const VEHICLE_COMMANDS: [&str; 8] = [
+pub const VEHICLE_COMMANDS: [&str; 10] = [
     "ReverseUnits",
     "FaceUnits",
     "AttackUnit",
@@ -354,6 +354,9 @@ pub const VEHICLE_COMMANDS: [&str; 8] = [
     "FollowUnits",
     "SuppressUnits",
     "DigAtDitch",
+    // S3c: a crew bails out; a squad re-crews an abandoned vehicle.
+    "Abandon",
+    "Recrew",
 ];
 
 impl Scripter {
@@ -558,6 +561,41 @@ impl Scripter {
                 CommandKind::SuppressUnits {
                     units,
                     line: vec![a, b],
+                }
+            }
+            8 => CommandKind::Abandon {
+                squad: ents.squad()[v.index()].unwrap_or_default(),
+            },
+            9 => {
+                // S3c: a crew squad (else any infantry squad but an AT
+                // team) of this slot, to the nearest abandoned vehicle
+                // (else its own live one: refused, still on the wire).
+                let pick = |crew: bool| {
+                    game.squads()
+                        .iter()
+                        .find(|(_, q)| {
+                            let role = setup.squad_types[q.type_idx as usize].role;
+                            q.owner.0 == self.slot
+                                && if crew {
+                                    role == SquadRole::Crew
+                                } else {
+                                    !matches!(role, SquadRole::AntiTank | SquadRole::Vehicle)
+                                }
+                        })
+                        .map(|(&id, _)| id)
+                };
+                let squad = pick(true).or_else(|| pick(false)).unwrap_or_default();
+                let target = ents
+                    .kind()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, k)| **k == frontline_sim::EntityKind::Abandoned)
+                    .map(|(i, _)| frontline_sim::SimId(i as u32))
+                    .min_by_key(|a| (ents.transform()[a.index()].pos.xy() - vpos).length_sq_raw())
+                    .unwrap_or(v);
+                CommandKind::Recrew {
+                    squad,
+                    vehicle: target,
                 }
             }
             _ => {

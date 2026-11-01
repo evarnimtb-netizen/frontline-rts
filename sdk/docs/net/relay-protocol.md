@@ -80,6 +80,12 @@ kind the relay may not send. Clients cannot send relay messages.
   slice bumps once, so version 4 also adds `SuppressUnits` at the end of
   `CommandKind` (area fire at a point or a two-point line) and the
   `AmmoChoice` value `Apcr` (3) that `SetAmmo` may carry.
+- Version 5 (S3c, 2026-11-01) adds two commands at the end of
+  `CommandKind`: `Recrew { squad, vehicle }` (an infantry squad walks to
+  an abandoned vehicle and mans it) and `Abandon { squad }` (the crew of a
+  vehicle squad bail out). Neither has a list; both are bounded like every
+  other command by the 1,024 B single-command limit. The one bump for the
+  S3c slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -351,7 +357,9 @@ fields). Variants, in index order: `MoveSoldier`, `Spawn`, `Despawn`
 `AttackMoveUnits`, `StopUnits`, `RetreatUnits`, `DigUnits`, `SetStance`,
 `Regroup`, `Throw`, `ThrowEach`, from version 3 `ReverseUnits`,
 `FaceUnits`, `AttackUnit`, `SetAmmo`, `RepairUnits`, `FollowUnits`, and
-from version 4 `SuppressUnits { units, line }`. `Dig` and `DigUnits` end
+from version 4 `SuppressUnits { units, line }`, and from version 5
+`Recrew { squad, vehicle }` (a `u32` squad id and a `u32` entity id) and
+`Abandon { squad }`. `Dig` and `DigUnits` end
 with `profile` (`DigProfile`: 0 trench, 1 AT ditch). `SetAmmo` carries an
 `AmmoChoice` as its variant index: 0 `Auto`, 1 `Ap`, 2 `He`, and from
 version 4 3 `Apcr` (the special penetrator; the standard one on a gun

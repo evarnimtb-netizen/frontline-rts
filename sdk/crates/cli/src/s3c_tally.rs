@@ -24,6 +24,10 @@
 //!   for knock-outs by an enemy main gun the nearest enemy tank of the
 //!   killer that fired in the last [`SHOOTER_WINDOW_S`] seconds (its
 //!   muzzle when it fired), in metres.
+//! * **Bailed crews** (S3c T6): abandonments with living crew inside,
+//!   those where at least one man got out, and the men who got out (each
+//!   a new member of a crew squad) still alive [`CREW_ALIVE_S`] seconds
+//!   later.
 //! * **Capture timeline by base side** (S3b-40): per point, when each
 //!   player first owned it, how long it held it, and the points owned at
 //!   5, 10, 15 and 20 minutes.
@@ -42,6 +46,9 @@ pub const HUNT_TARGET_M: i32 = 20;
 pub const SHOOTER_WINDOW_S: u64 = 3;
 /// Minutes at which the points each player owns are recorded.
 pub const POINT_MARKS_MIN: [u32; 4] = [5, 10, 15, 20];
+/// A bailed-out crewman counts as surviving if alive this long after he
+/// got out (S3c T6).
+pub const CREW_ALIVE_S: u64 = 60;
 
 /// One player's S3c baseline numbers.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -80,6 +87,13 @@ pub struct S3cPlayer {
     pub point_hold_s: Vec<u32>,
     /// Points owned at [`POINT_MARKS_MIN`] (`None`: the match ended first).
     pub points_at: Vec<Option<u8>>,
+    /// S3c: own abandonments with living crew inside, those where at least
+    /// one man got out; crewmen out (tracked to the end or 60 s) and alive
+    /// 60 s after getting out.
+    pub bail_with_crew: u32,
+    pub bail_some_out: u32,
+    pub crew_out_tracked: u32,
+    pub crew_alive_60s: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -105,6 +119,10 @@ pub struct S3cTally {
     owners: Vec<Option<u8>>,
     /// Last main-gun shot per vehicle: (tick, owner, muzzle).
     fired: BTreeMap<u32, (u64, u8, [f32; 3])>,
+    /// S3c: abandoned vehicles: (last owner, men got out so far).
+    bails: BTreeMap<u32, (u8, u32)>,
+    /// S3c: crewmen out: (owner, tick out, checked).
+    crewmen: BTreeMap<SimId, (u8, u64, bool)>,
 }
 
 impl S3cTally {
@@ -127,11 +145,91 @@ impl S3cTally {
             satchels: BTreeMap::new(),
             owners: vec![None; np],
             fired: BTreeMap::new(),
+            bails: BTreeMap::new(),
+            crewmen: BTreeMap::new(),
+        }
+    }
+
+    /// S3c: the bail-out events and crew squads of this tick.
+    fn observe_crews(&mut self, w: &World) {
+        let g = w.game().expect("match world");
+        let s = g.setup();
+        let ents = w.entities();
+        let tick = w.tick();
+        for e in &w.snapshot().armour_events {
+            if e.kind == ArmourEventKind::Abandoned as u8 {
+                let inside = w
+                    .snapshot()
+                    .vehicles
+                    .iter()
+                    .find(|v| v.id == e.vehicle)
+                    .map_or(0, |v| v.inside);
+                if inside > 0 {
+                    if let Some(p) = self.players.get_mut(e.owner as usize) {
+                        p.bail_with_crew += 1;
+                    }
+                    self.bails.insert(e.vehicle, (e.owner, 0));
+                }
+            } else if e.kind == ArmourEventKind::CrewOut as u8
+                && let Some((owner, n)) = self.bails.get_mut(&e.vehicle)
+            {
+                *n += 1;
+                if *n == 1
+                    && let Some(p) = self.players.get_mut(*owner as usize)
+                {
+                    p.bail_some_out += 1;
+                }
+            }
+        }
+        let is_crew = |m: SimId| {
+            ents.kind().get(m.index()) == Some(&frontline_sim::EntityKind::Soldier)
+                && ents.squad()[m.index()]
+                    .and_then(|q| g.squad(q))
+                    .is_some_and(|q| s.squad_types[q.type_idx as usize].role == SquadRole::Crew)
+        };
+        for sq in g.squads().values() {
+            if s.squad_types[sq.type_idx as usize].role != SquadRole::Crew {
+                continue;
+            }
+            for &m in &sq.members {
+                self.crewmen.entry(m).or_insert((sq.owner.0, tick, false));
+            }
+        }
+        // A man is decided once: alive after the minute in his crew squad,
+        // dead if he is a corpse first, alive if he left the squad another
+        // way first (dismissed in base, or boarded a vehicle). Entries of
+        // men no longer in a crew squad are dropped once decided, so a
+        // reused id counts afresh.
+        let due = CREW_ALIVE_S * self.hz;
+        let mut gone: Vec<SimId> = Vec::new();
+        for (&m, (owner, t, checked)) in self.crewmen.iter_mut() {
+            let crew = is_crew(m);
+            if !*checked {
+                let verdict = if crew {
+                    (tick >= *t + due).then_some(true)
+                } else {
+                    Some(ents.kind().get(m.index()) != Some(&frontline_sim::EntityKind::Corpse))
+                };
+                if let Some(alive) = verdict {
+                    *checked = true;
+                    if let Some(p) = self.players.get_mut(*owner as usize) {
+                        p.crew_out_tracked += 1;
+                        p.crew_alive_60s += alive as u32;
+                    }
+                }
+            }
+            if *checked && !crew {
+                gone.push(m);
+            }
+        }
+        for m in gone {
+            self.crewmen.remove(&m);
         }
     }
 
     /// Reads the world after a tick.
     pub fn observe(&mut self, w: &World) {
+        self.observe_crews(w);
         let g = w.game().expect("match world");
         let s = g.setup();
         let ents = w.entities();
@@ -423,6 +521,11 @@ pub struct S3cFaction {
     pub satchel_hunt_start_mean_m: f64,
     pub knockouts: u32,
     pub ko_with_survivors: u32,
+    /// S3c T6 (see [`S3cPlayer`]).
+    pub bail_with_crew: u32,
+    pub bail_some_out: u32,
+    pub crew_out_tracked: u32,
+    pub crew_alive_60s: u32,
     /// Mean living crew at a knock-out, by cause.
     pub ko_crew_alive_mean: BTreeMap<String, f64>,
 }
@@ -477,6 +580,10 @@ pub fn summarise(matches: &[MatchView], point_names: Vec<String>) -> S3cSummary 
             }
             f.knockouts += s.ko_by_cause.values().sum::<u32>();
             f.ko_with_survivors += s.ko_with_survivors;
+            f.bail_with_crew += s.bail_with_crew;
+            f.bail_some_out += s.bail_some_out;
+            f.crew_out_tracked += s.crew_out_tracked;
+            f.crew_alive_60s += s.crew_alive_60s;
             for (k, v) in &s.ko_by_cause {
                 *f.ko_crew_alive_mean.entry(k.clone()).or_default() += *v as f64;
             }
@@ -576,6 +683,27 @@ pub fn text(s: &S3cSummary) -> String {
             f.knockouts,
             f.ko_with_survivors,
             crew,
+        );
+    }
+    let pct = |a: u32, b: u32| {
+        if b == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.0} %", a as f64 * 100.0 / b as f64)
+        }
+    };
+    for f in &s.factions {
+        out += &format!(
+            "S3c crews {}: abandonments with crew inside {}, some man out {} ({}); men out {} \
+             (checked), alive {} s later {} ({})\n",
+            f.faction,
+            f.bail_with_crew,
+            f.bail_some_out,
+            pct(f.bail_some_out, f.bail_with_crew),
+            f.crew_out_tracked,
+            CREW_ALIVE_S,
+            f.crew_alive_60s,
+            pct(f.crew_alive_60s, f.crew_out_tracked),
         );
     }
     out += "base side  matches wins  per point (first owner / mean first capture s / hold %):";

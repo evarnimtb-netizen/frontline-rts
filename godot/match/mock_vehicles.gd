@@ -203,6 +203,10 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 		&"repair_units":
 			for v in own:
 				_start_repair(v)
+		&"abandon":
+			# S3c (mock): the crew bail out at once (no hatch times).
+			for v in own:
+				abandon(v, "order")
 
 
 func _order(v: Dictionary, order: String, target: Vector2) -> void:
@@ -239,7 +243,65 @@ func step(dt: float) -> void:
 
 
 func _alive(v: Dictionary) -> bool:
-	return int(v.owner) >= 0
+	return int(v.owner) >= 0 and not v.get("abandoned", false)
+
+
+## S3c (mock): the crew of `v` bail out: it stays, abandoned (nobody's),
+## and `crew` men (the living seats) become a crew squad beside it. The
+## crew squad's id, or -1 with nobody left.
+func abandon(v: Dictionary, cause := "order") -> int:
+	if not _alive(v):
+		return -1
+	var men := 0
+	for s in v.crew:
+		if v.crew[s] in ["ok", "wounded", "swapping"]:
+			men += 1
+		v.crew[s] = "dead"
+	v.abandoned = true
+	v.abandon_cause = cause
+	v.last_owner = int(v.owner)
+	v.speed = 0.0
+	v.order = "idle"
+	v.repairing = ""
+	v.recrew = {}
+	src._stop_followers(v.id)
+	var pos: Vector3 = src._v3(v.pos)
+	_event("abandoned", v, -1, cause, "", "", pos)
+	if int(v.owner) == src.local_player and not _quiet:
+		src._push_event(v.owner, "vehicle_abandoned", "%s abandoned. Crew bailing out: %d of 5." % [_short(v), men], pos)
+	if men == 0:
+		v.crew_squad = -1
+		return -1
+	var side := Vector2(cos(v.yaw), -sin(v.yaw)) * 3.5
+	v.crew_squad = src._spawn(int(v.owner), "crew", v.pos + side, men)
+	return v.crew_squad
+
+
+## S3c (mock): squad `sid` of `owner` re-crews abandoned `v` after 3 s.
+func recrew(v: Dictionary, sid: int, owner: int) -> void:
+	if v.get("abandoned", false):
+		v.recrew = {"squad": sid, "owner": owner, "t": 3.0}
+
+
+func _step_recrew(v: Dictionary, dt: float) -> void:
+	var r: Dictionary = v.get("recrew", {})
+	if r.is_empty():
+		return
+	r.t -= dt
+	if r.t > 0.0:
+		return
+	v.abandoned = false
+	v.recrew = {}
+	var own: bool = int(r.owner) == int(v.last_owner)
+	v.owner = int(r.owner)
+	for s in v.crew:
+		v.crew[s] = "ok"
+	src.squads.erase(int(r.squad))
+	v.crew_squad = -1
+	var pos: Vector3 = src._v3(v.pos)
+	_event("recrewed", v, int(v.last_owner), "own" if own else "captured", "", "", pos)
+	if int(v.owner) == src.local_player:
+		src._push_event(v.owner, "vehicle_recrewed" if own else "vehicle_captured", ("%s re-crewed." if own else "Captured an enemy %s.") % _short(v), pos)
 
 
 func _immobile(v: Dictionary) -> bool:
@@ -249,6 +311,7 @@ func _immobile(v: Dictionary) -> bool:
 func _step_vehicle(v: Dictionary, dt: float) -> void:
 	if not _alive(v):
 		v.speed = 0.0
+		_step_recrew(v, dt)
 		return
 	var h: Dictionary = HANDLING[v.type]
 	var vt: Dictionary = TYPES[v.type]
@@ -557,7 +620,7 @@ func _knock_out(v: Dictionary, cause: String, by: int) -> void:
 func _cap_wrecks() -> void:
 	var wrecks: Array = []
 	for id in vehicles:
-		if not _alive(vehicles[id]):
+		if int(vehicles[id].owner) < 0:
 			wrecks.append(vehicles[id])
 	if wrecks.size() <= WRECK_CAP:
 		return
@@ -650,11 +713,22 @@ func stage(id: int, what: String) -> void:
 			_knock_out(v, "crew", -1)
 			_quiet = false
 			v.wreck_t = src.time_s - KO_SMOKE_S - 5.0
+		"abandoned":
+			# S3c: gun and a track out, the crew bailed out (three alive).
+			v.comp.gun = 0.0
+			v.comp.track_l = 0.0
+			v.crew.loader = "dead"
+			v.crew.radio_mg = "dead"
+			_quiet = true
+			abandon(v, "useless")
+			_quiet = false
 
 
 # --- export ------------------------------------------------------------------
 
 func flags(v: Dictionary) -> int:
+	if v.get("abandoned", false):
+		return Vehicles.ABANDONED | (Vehicles.BOARDING if not v.get("recrew", {}).is_empty() else 0)
 	if not _alive(v):
 		return Vehicles.WRECK | (Vehicles.KNOCKED_OUT if src.time_s - float(v.wreck_t) < KO_SMOKE_S else 0)
 	var f := 0
@@ -678,6 +752,8 @@ func flags(v: Dictionary) -> int:
 static func state_of(f: int, speed: float, own: bool) -> String:
 	if f & Vehicles.WRECK:
 		return "wreck"
+	if f & Vehicles.ABANDONED:
+		return "abandoned"
 	if f & Vehicles.BURNING:
 		return "burning"
 	if own:
@@ -752,9 +828,24 @@ func _vehicle_state(v: Dictionary, own: bool) -> Dictionary:
 		"turret_yaw": v.turret_yaw,
 		"gun_pitch": v.gun_pitch,
 		"speed": v.speed,
-		"flags": f if own else f & (Vehicles.BURNING | Vehicles.WRECK | Vehicles.KNOCKED_OUT),
+		"flags": f if own else f & (Vehicles.BURNING | Vehicles.WRECK | Vehicles.KNOCKED_OUT | Vehicles.ABANDONED | Vehicles.BOARDING),
 		"state": state_of(f, v.speed, own),
+		"abandoned": v.get("abandoned", false),
 	}
+	if v.get("abandoned", false):
+		# S3c: nobody's; public last owner, cause, crew squad, parts out.
+		out.owner = -1
+		out.squad = -1
+		out.last_owner = int(v.last_owner)
+		out.abandon_cause = String(v.get("abandon_cause", ""))
+		out.crew_squad = int(v.get("crew_squad", -1))
+		out.inside = 0
+		out.boarding = not v.get("recrew", {}).is_empty()
+		var parts := PackedStringArray()
+		for c in Vehicles.COMPONENTS:
+			if float(v.comp.get(c, 1.0)) <= 0.0:
+				parts.append(c)
+		out.parts_out = parts
 	if own:
 		var crew := PackedStringArray()
 		for seat in Vehicles.SEATS:

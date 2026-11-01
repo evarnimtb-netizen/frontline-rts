@@ -508,7 +508,10 @@ impl MatchFrame {
         self.vehicles.clear();
         for v in vehicles {
             let wreck = v.flags & vehicle_flags::WRECK != 0;
-            if wreck || v.owner == local {
+            // S3c: an abandoned vehicle is an object anyone may inspect
+            // (its damage, crew still inside), like a wreck.
+            let abandoned = v.flags & vehicle_flags::ABANDONED != 0;
+            if wreck || abandoned || v.owner == local {
                 ctx.seen_vehicles.insert(v.id);
                 self.vehicles.push(v.clone());
             } else if v.seen_by & bit != 0 {
@@ -726,6 +729,9 @@ pub struct ShotView {
 pub struct ArmourView {
     pub ev: ArmourEvent,
     pub type_idx: u16,
+    /// S3c: crewmen still inside the vehicle when it happened (an
+    /// abandonment's "n of m bailing out").
+    pub inside: u8,
 }
 
 /// A terrain detail tile that changed: its 64 × 64 heights (row-major,
@@ -750,6 +756,8 @@ pub struct TickEvents {
     /// S3b: the local player's call-in results this tick (spawned or
     /// refused, with the reason), in command order.
     pub call_ins: Vec<frontline_sim::CallInEvent>,
+    /// S3c: the local player's refused re-crews this tick.
+    pub recrew_refusals: Vec<frontline_sim::RecrewEvent>,
 }
 
 impl TickEvents {
@@ -759,6 +767,7 @@ impl TickEvents {
             && self.tiles.is_empty()
             && self.armour.is_empty()
             && self.call_ins.is_empty()
+            && self.recrew_refusals.is_empty()
     }
 
     /// This tick's events of `world` as seen by `ctx.local`. Call after
@@ -822,12 +831,17 @@ impl TickEvents {
                                 dx * dx + dy * dy <= r2
                             })
                     })
-                    .map(|e| ArmourView {
-                        ev: e.clone(),
-                        type_idx: snap
+                    .map(|e| {
+                        let v = snap
                             .vehicles
                             .binary_search_by_key(&e.vehicle, |v| v.id)
-                            .map_or(0, |k| snap.vehicles[k].type_idx),
+                            .ok()
+                            .map(|k| &snap.vehicles[k]);
+                        ArmourView {
+                            ev: e.clone(),
+                            type_idx: v.map_or(0, |v| v.type_idx),
+                            inside: v.map_or(0, |v| v.inside),
+                        }
                     }),
             );
         }
@@ -838,6 +852,12 @@ impl TickEvents {
         }
         ev.call_ins.extend(
             snap.call_ins
+                .iter()
+                .filter(|c| c.player.0 == local)
+                .copied(),
+        );
+        ev.recrew_refusals.extend(
+            snap.recrew_refusals
                 .iter()
                 .filter(|c| c.player.0 == local)
                 .copied(),

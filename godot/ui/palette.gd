@@ -34,6 +34,7 @@ const SQUAD_NAMES := {
 	"engineer": "Engineer squad",
 	"mortar": "Mortar team",
 	"at": "AT team",
+	"crew": "Tank crew",
 }
 
 

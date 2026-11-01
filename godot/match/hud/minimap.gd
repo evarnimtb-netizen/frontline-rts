@@ -189,6 +189,14 @@ func _draw() -> void:
 		f = f.normalized() if f.length() > 0.001 else Vector2.UP
 		var s := Vector2(-f.y, f.x)
 		var pts := PackedVector2Array([at + f * 5.5 + s * 3.5, at + f * 5.5 - s * 3.5, at - f * 5.5 - s * 3.5, at - f * 5.5 + s * 3.5])
+		# S3c: an abandoned vehicle is a hollow tank in its last owner's
+		# colour at 60 % with a slash.
+		if Vehicles.is_abandoned(v):
+			var ac := Color(HudStyle.side_color(int(v.get("last_owner", -1)), local), 0.6)
+			pts.append(pts[0])
+			draw_polyline(pts, ac, 1.5)
+			draw_line(at - f * 5.0 - s * 3.0, at + f * 5.0 + s * 3.0, ac, 1.5)
+			continue
 		if own and view.selection.is_selected(int(v.id)):
 			var frame := PackedVector2Array([at + f * 7.0 + s * 5.0, at + f * 7.0 - s * 5.0, at - f * 7.0 - s * 5.0, at - f * 7.0 + s * 5.0])
 			draw_colored_polygon(frame, HudStyle.TEXT)

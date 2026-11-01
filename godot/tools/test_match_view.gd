@@ -18,6 +18,12 @@ extends SceneTree
 ## lines, the 16-vehicle CPU cost (< 0.2 ms) and the 1280x800 roster fit
 ## with 4 vehicles and 8 squads.
 ##
+## S3c (bail-out on the mock): an abandoned tank's state (owner -1, last
+## owner, flag, badge, parts out, crew squad link), its hollow minimap and
+## overlay markers and hover text, picking it, the crew card ("Crew —
+## Panzer IV", To tank), K + click and the right-click context re-crew,
+## Bail out asking for a second press, and the feed lines.
+##
 ##   Godot --headless --path godot -s res://tools/test_match_view.gd
 ##
 ## Exits 0 when every check passes. Events are fed straight to the
@@ -73,6 +79,7 @@ func _run() -> void:
 	await _test_minimap()
 	await _test_hud(eng, eng_men, rifle)
 	await _test_vehicles()
+	await _test_bail()
 	_test_cost()
 	await _test_callin_need()
 	await _test_end()
@@ -618,6 +625,76 @@ func _vehicle_tile() -> int:
 
 func _vstate(id: int) -> Dictionary:
 	return _view.vehicles_by_id.get(id, {})
+
+
+## S3c: abandoned tank, crew squad, re-crew and bail-out on the mock.
+func _test_bail() -> void:
+	_sel.select_only(PackedInt32Array())
+	var at := Vector2(-260.0, -240.0)
+	var staged: Array = _source.stage_abandoned(at, Vector2(1, 0))
+	var vid: int = staged[0]
+	var crew: int = staged[1]
+	_cam.yaw_deg = 0.0
+	_cam.height = 60.0
+	_cam.jump_to(Vector3(at.x, 0.0, at.y))
+	await _frames(3)
+	var v := _vstate(vid)
+	_check(Vehicles.is_abandoned(v) and not Vehicles.is_wreck(v) and int(v.owner) == -1 and int(v.get("last_owner", -1)) == 0 and v.state == "abandoned", "abandoned tank: owner -1, last owner 0, badge Abandoned")
+	_check(Array(v.get("parts_out", PackedStringArray())).has("gun") and int(v.get("crew_squad", -1)) == crew and crew >= 0, "abandoned tank: parts out and its crew squad")
+	var vt: Dictionary = _view.vehicle_type(vid)
+	var hover := Vehicles.abandoned_text(v, vt)
+	_check(hover.begins_with("Abandoned: ") and hover.contains("main gun out"), "hover text: %s" % hover)
+	var sq: Dictionary = _view.squads_by_id.get(crew, {})
+	_check(String(sq.get("type", "")) == "crew" and int(sq.get("crew_of", -1)) == vid and int(sq.get("men", 0)) == 3, "crew squad of three linked to its tank")
+	var sp: Vector2 = _cam.unproject_position(v.pos + Vector3(0, 1.0, 0))
+	_check(_sel.pick_vehicle(sp, -1) == vid and _sel.pick_vehicle(sp, 1) == -1, "the abandoned tank is pickable but not ours")
+	# The crew card and its jump button.
+	_sel.select_squads(PackedInt32Array([crew]))
+	_sel.focus_squad = crew
+	await _frames(2)
+	var dp: Control = _view.detail
+	_check(dp.mode() == "squad" and dp.crew_jump_rect().size.x > 0.0, "crew card shows a To tank button")
+	_cam.jump_to(Vector3(at.x + 200.0, 0.0, at.y))
+	_check(dp.jump_to_crew_tank() and Vector2(_cam.focus.x, _cam.focus.z).distance_to(at) < 2.0, "To tank jumps the camera to it")
+	await _frames(2)
+	sp = _cam.unproject_position(_vstate(vid).pos + Vector3(0, 1.0, 0))
+	# K arms the Crew tool; a click on the tank sends recrew.
+	_check(_view.orders.enabled(&"crew"), "Crew button enabled for a crew squad")
+	_intents.clear()
+	_key(KEY_K)
+	_check(_sel.tool == &"crew" and _view.orders.active(&"crew"), "K arms the Crew tool")
+	_click(sp)
+	var rc: Variant = _last(&"recrew")
+	_check(rc != null and int(rc.vehicle) == vid and rc.squads == PackedInt32Array([crew]) and _sel.tool == &"", "click on the abandoned tank sends recrew and clears the tool")
+	# Right-click with the crew selected does the same.
+	_intents.clear()
+	_rclick(sp)
+	_check(_last(&"recrew") != null and _last(&"move") == null, "right-click on it with a crew selected re-crews")
+	# The mock mans it after 3 s.
+	_source.time_scale = 1.0
+	_source.prewarm(3.5)
+	_source.time_scale = 0.0
+	await _frames(2)
+	v = _vstate(vid)
+	_check(int(v.owner) == 0 and not Vehicles.is_abandoned(v), "re-crewed: our tank again")
+	# Bail out: the first press only arms it.
+	_sel.select_only(PackedInt32Array([vid]))
+	await _frames(1)
+	_intents.clear()
+	_check(_view.orders.enabled(&"bail"), "Bail out enabled for our tank")
+	_view.orders.press(&"bail")
+	_check(_last(&"abandon") == null and _view.orders.active(&"bail"), "first press arms Bail out (Again?)")
+	_view.orders.press(&"bail")
+	var ab: Variant = _last(&"abandon")
+	_check(ab != null and ab.units == PackedInt32Array([vid]), "second press within 2 s abandons")
+	await _frames(2)
+	v = _vstate(vid)
+	_check(Vehicles.is_abandoned(v) and int(v.get("crew_squad", -1)) >= 0, "abandoned again with a new crew squad")
+	var feed_ok := false
+	for l in _view.event_feed.lines:
+		feed_ok = feed_ok or (l.kind == "vehicle_abandoned" and String(l.text).contains("abandoned"))
+	_check(feed_ok, "feed: our tank abandoned")
+	_sel.select_only(PackedInt32Array())
 
 
 func _test_vehicles() -> void:

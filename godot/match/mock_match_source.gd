@@ -42,10 +42,10 @@ const RULES := {
 	"capture_radius_m": 15.0,
 	"throw_range_m": {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)},
 }
-const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6, "at": 3.2}
-const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0, "at": 120.0}
-const FIRE_GAP := {"rifle": 0.7, "mg": 0.12, "engineer": 0.25, "at": 1.4}
-const WEAPON := {"rifle": "rifle", "mg": "mg", "engineer": "smg", "at": "rifle"}
+const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6, "at": 3.2, "crew": 3.4}
+const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0, "at": 120.0, "crew": 30.0}
+const FIRE_GAP := {"rifle": 0.7, "mg": 0.12, "engineer": 0.25, "at": 1.4, "crew": 1.0}
+const WEAPON := {"rifle": "rifle", "mg": "mg", "engineer": "smg", "at": "rifle", "crew": "smg"}
 ## AT launcher reload (S3: 8 s with the loader).
 const ROCKET_RELOAD_S := 8.0
 ## Escort file: slots 1.5 m apart, 4 m behind the vehicle (S3 "Escort").
@@ -177,11 +177,14 @@ static func loadout(type: String, slot: int) -> Dictionary:
 	return out
 
 
-func _spawn(owner: int, type: String, at: Vector2) -> int:
+func _spawn(owner: int, type: String, at: Vector2, men := -1) -> int:
 	var def: Dictionary = {}
 	for c in CATALOG:
 		if c.type == type:
 			def = c
+	# S3c: a bailed-out tank crew (never bought), `men` of five.
+	if type == "crew":
+		def = {"type": "crew", "name": "Tank crew", "men": men if men > 0 else 5}
 	if type == "at":
 		def = def.duplicate()
 		def.name = MockVehicles.AT_TEAM.get(String(players[owner].faction), MockVehicles.AT_TEAM.germany).name
@@ -253,6 +256,13 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 				_unit_order("attack_move", uids, {"target": _v3(t.pos)})
 		&"follow_units":
 			_follow(uids, int(data.get("vehicle", -1)))
+		&"recrew":
+			# S3c (mock): the first own squad mans the abandoned vehicle.
+			var v: Dictionary = veh.vehicles.get(int(data.get("vehicle", -1)), {})
+			var mine := _own_squads(ids)
+			if not v.is_empty() and not mine.is_empty() and not mine[0].type in ["at"]:
+				_order(mine[0], "recrew", v.pos)
+				veh.recrew(v, int(mine[0].id), int(mine[0].owner))
 		&"suppress_units":
 			# S3b (mock): whole own squads hold with the line; no area fire.
 			var line: PackedVector3Array = data.get("polyline", PackedVector3Array())
@@ -421,6 +431,16 @@ func stage_vehicles(at: Vector2, facing: Vector2, escort := -1) -> PackedInt32Ar
 		squads[escort].follow = own[0]
 	_step_followers()
 	return own
+
+
+## S3c staging: an own tank at `at` abandoned (gun and a track out) with
+## its three-man crew squad beside it: [vehicle id, crew squad id].
+func stage_abandoned(at: Vector2, facing: Vector2) -> Array:
+	veh.unlock_s = 0.0
+	var f := facing.normalized()
+	var vid := veh.spawn(local_player, veh.faction_tank(local_player), at, Vehicles.yaw_toward(f.x, f.y))
+	veh.stage(vid, "abandoned")
+	return [vid, int(veh.vehicles[vid].get("crew_squad", -1))]
 
 
 ## Staging: moves a tank (own or enemy) at once.
@@ -1500,6 +1520,13 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 	# Escort (S3, opt; a proposed contract key): the vehicle followed.
 	if sq.order == "follow" and sq.owner == local_player:
 		out.follow = sq.follow
+	# S3c: a crew squad's abandoned vehicle.
+	if sq.type == "crew":
+		for vid in veh.vehicles:
+			var v: Dictionary = veh.vehicles[vid]
+			if v.get("abandoned", false) and int(v.get("crew_squad", -1)) == int(sq.id):
+				out.crew_of = int(vid)
+				out.crew_of_name = String(MockVehicles.TYPES[v.type].short)
 	# S3b: the Suppress order's line (own squads).
 	if sq.order == "suppress" and sq.owner == local_player and sq.has("suppress_line"):
 		out.suppress_line = sq.suppress_line

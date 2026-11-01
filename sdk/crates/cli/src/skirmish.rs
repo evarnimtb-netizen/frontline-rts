@@ -219,8 +219,9 @@ pub struct ArmourTotals {
     pub ricochets: u64,
     pub knockouts: u64,
     pub rockets_fired: u64,
-    /// Knock-outs of both players by cause (`ko_crew`, `ko_ammo_rack`,
-    /// `ko_fire` (engine), S3b `ko_ammo_fire`).
+    /// Tank losses of both players by cause: knock-outs (`ko_crew`,
+    /// `ko_ammo_rack`, `ko_fire` (engine), S3b `ko_ammo_fire`) and S3c
+    /// abandonments (`abandoned_<trigger>`).
     pub ko_causes: BTreeMap<String, u32>,
     /// Kills of both players by `kill_class` name.
     pub kills_by: BTreeMap<String, u32>,
@@ -281,6 +282,23 @@ pub struct PlayerArmour {
     pub rocket_pens: u32,
     pub rocket_disabled_parts: u32,
     pub hits_by_zone: BTreeMap<String, u32>,
+    /// S3c: own vehicles put out of action split into destroyed (a wreck
+    /// straight away) and abandoned (the crew bailed out), the
+    /// abandonments by trigger (`ammo_fire`, `engine_fire`, `crew`,
+    /// `useless`, `under_fire`, `order`), and what became of the
+    /// abandoned: `recrewed`, `captured` (by the enemy), `destroyed_later`,
+    /// `scrapped`, `standing` at the end. `vehicles_lost` counts both,
+    /// once per loss.
+    pub vehicles_destroyed: u32,
+    pub vehicles_abandoned: u32,
+    pub abandon_causes: BTreeMap<String, u32>,
+    pub abandoned_fates: BTreeMap<String, u32>,
+    /// S3c, as the capturing player: enemy vehicles captured; and own
+    /// crewmen alive at bail-outs, out alive, dismissed in base.
+    pub captures: u32,
+    pub crew_bailed: u32,
+    pub crew_out: u32,
+    pub crew_home: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -379,7 +397,20 @@ struct ArmourTally {
     /// value.
     vehicle_cost: Vec<u32>,
     man_value: Vec<u32>,
+    /// S3c: abandoned vehicles still standing, by id: their last owner.
+    abandoned: BTreeMap<u32, u8>,
 }
+
+/// S3c abandonment trigger names, by `bail::AB_*` (index 0 unused).
+pub const ABANDON_CAUSES: [&str; 7] = [
+    "none",
+    "ammo_fire",
+    "engine_fire",
+    "crew",
+    "useless",
+    "under_fire",
+    "order",
+];
 
 impl ArmourTally {
     fn new(setup: &MatchSetup) -> ArmourTally {
@@ -463,6 +494,67 @@ impl ArmourTally {
                 if let Some(p) = self.players.get_mut(owner) {
                     *p.disabled_by.entry(name(e.component).into()).or_default() += 1;
                 }
+            } else if k == ArmourEventKind::Abandoned as u8 {
+                // S3c: a loss like a knock-out, credited the same way.
+                let ty = snap
+                    .vehicles
+                    .iter()
+                    .find(|v| v.id == e.vehicle)
+                    .map(|v| v.type_idx as usize);
+                let cost = ty
+                    .and_then(|t| self.vehicle_cost.get(t))
+                    .copied()
+                    .unwrap_or(0);
+                self.abandoned.insert(e.vehicle, e.owner);
+                if let Some(p) = self.players.get_mut(owner) {
+                    p.vehicles_lost += 1;
+                    p.vehicles_abandoned += 1;
+                    p.tank_mp_lost += cost;
+                    let c = ABANDON_CAUSES
+                        .get(e.component as usize)
+                        .copied()
+                        .unwrap_or("none");
+                    *p.abandon_causes.entry(c.into()).or_default() += 1;
+                    *p.disabled_by.entry(format!("abandoned_{c}")).or_default() += 1;
+                }
+                let rocket = self
+                    .last_ammo
+                    .get(&e.vehicle)
+                    .and_then(|&a| s.ammo.get(a as usize))
+                    .is_some_and(|a| a.mechanism == AmmoMechanism::Heat);
+                if let Some(p) = self.players.get_mut(e.attacker as usize) {
+                    if rocket {
+                        p.ko_by_rocket += 1;
+                        p.at_mp_killed += cost;
+                    } else {
+                        p.ko_by_gun += 1;
+                        p.tank_mp_killed += cost;
+                    }
+                }
+                self.last_ammo.remove(&e.vehicle);
+            } else if k == ArmourEventKind::Recrewed as u8 {
+                if let Some(last) = self.abandoned.remove(&e.vehicle)
+                    && let Some(p) = self.players.get_mut(last as usize)
+                {
+                    let fate = if e.component == frontline_sim::bail::RECREW_CAPTURED {
+                        "captured"
+                    } else {
+                        "recrewed"
+                    };
+                    *p.abandoned_fates.entry(fate.into()).or_default() += 1;
+                }
+                self.last_ammo.remove(&e.vehicle);
+            } else if k == ArmourEventKind::KnockedOut as u8
+                && let Some(last) = self.abandoned.remove(&e.vehicle)
+            {
+                // S3c: an abandoned vehicle burnt out or blown up later: no
+                // second loss.
+                if let Some(p) = self.players.get_mut(last as usize) {
+                    *p.abandoned_fates
+                        .entry("destroyed_later".into())
+                        .or_default() += 1;
+                }
+                self.last_ammo.remove(&e.vehicle);
             } else if k == ArmourEventKind::KnockedOut as u8 {
                 let ty = snap
                     .vehicles
@@ -481,6 +573,7 @@ impl ArmourTally {
                 };
                 if let Some(p) = self.players.get_mut(owner) {
                     p.vehicles_lost += 1;
+                    p.vehicles_destroyed += 1;
                     p.tank_mp_lost += cost;
                     *p.disabled_by.entry(cause.into()).or_default() += 1;
                 }
@@ -772,6 +865,27 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 .map_or(0, |t| t.cost / t.men.max(1) as u32);
             armour.at_mp_lost = tally.at_men_lost[p] * at_cost;
             armour.at_shots = pl.rockets;
+            // S3c: crew counters, and the abandoned still standing or
+            // scrapped by the cap.
+            armour.captures = pl.crew.captured;
+            armour.crew_bailed = pl.crew.bailed;
+            armour.crew_out = pl.crew.out;
+            armour.crew_home = pl.crew.home;
+            if pl.crew.scrapped > 0 {
+                armour
+                    .abandoned_fates
+                    .insert("scrapped".into(), pl.crew.scrapped);
+            }
+            let standing = g
+                .vehicles()
+                .iter()
+                .filter(|(id, vs)| {
+                    vs.abandoned.is_some() && world.entities().owner()[id.index()].0 as usize == p
+                })
+                .count() as u32;
+            if standing > 0 {
+                armour.abandoned_fates.insert("standing".into(), standing);
+            }
             if let Some(a) = ai {
                 let c = &a.counters;
                 armour.escorts_started = c.escorts_started;
@@ -830,7 +944,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut ko_causes: BTreeMap<String, u32> = BTreeMap::new();
     for p in &players {
         for (k, v) in &p.armour.disabled_by {
-            if k.starts_with("ko_") {
+            // S3c: abandonments are tank losses too (`abandoned_<trigger>`).
+            if k.starts_with("ko_") || k.starts_with("abandoned_") {
                 *ko_causes.entry(k.clone()).or_default() += v;
             }
         }
@@ -1170,6 +1285,17 @@ pub struct FactionSummary {
     pub matches_with_satchels: u32,
     pub kills: u32,
     pub losses: u32,
+    /// S3c: own tanks lost destroyed and abandoned (they add up to
+    /// `tanks_lost`), abandonments by trigger, what became of them, enemy
+    /// tanks captured, and own crewmen at bail-outs (alive, out, home).
+    pub tanks_destroyed: u32,
+    pub tanks_abandoned: u32,
+    pub abandon_causes: BTreeMap<String, u32>,
+    pub abandoned_fates: BTreeMap<String, u32>,
+    pub captures: u32,
+    pub crew_bailed: u32,
+    pub crew_out: u32,
+    pub crew_home: u32,
 }
 
 /// The compact table of a `--seeds` run (`--summary`).
@@ -1342,6 +1468,18 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.matches_with_satchels += u32::from(a.satchels_at_vehicles > 0);
             f.kills += p.kills;
             f.losses += p.losses;
+            f.tanks_destroyed += a.vehicles_destroyed;
+            f.tanks_abandoned += a.vehicles_abandoned;
+            for (k, v) in &a.abandon_causes {
+                *f.abandon_causes.entry(k.clone()).or_default() += v;
+            }
+            for (k, v) in &a.abandoned_fates {
+                *f.abandoned_fates.entry(k.clone()).or_default() += v;
+            }
+            f.captures += a.captures;
+            f.crew_bailed += a.crew_bailed;
+            f.crew_out += a.crew_out;
+            f.crew_home += a.crew_home;
         }
     }
     let n = matches.len().max(1) as f64;
@@ -1420,7 +1558,7 @@ pub fn many_text(r: &ManyReport) -> String {
     out += &format!(
         "wins by base: base 0 {}, base 1 {}; no winner {}\n\
          length min: mean {:.1}, {:.1}-{:.1}, {} over 25\n\
-         knock-outs: {} ({}; rack {:.0} %)\n\
+         tank losses: {} ({}; rack {:.0} %)\n\
          HE share of kills: mean {:.1} %, max {:.1} %\n\
          tick p99 ms (max over matches, parallel runs): peak {:.3}, all {:.3}\n",
         s.wins_by_base[0],
@@ -1446,6 +1584,33 @@ pub fn many_text(r: &ManyReport) -> String {
         s.peak_p99_max_ms,
         s.all_p99_max_ms,
     );
+    // S3c: tank losses split, abandonments and what became of them.
+    let join = |m: &BTreeMap<String, u32>| {
+        if m.is_empty() {
+            "none".to_string()
+        } else {
+            m.iter()
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    };
+    for f in &s.factions {
+        out += &format!(
+            "S3c {}: tanks lost {} = destroyed {} + abandoned {} ({}); abandoned then: {}; \
+             captured {} enemy; crew alive at bail-out {}, out {}, home {}\n",
+            f.faction,
+            f.tanks_lost,
+            f.tanks_destroyed,
+            f.tanks_abandoned,
+            join(&f.abandon_causes),
+            join(&f.abandoned_fates),
+            f.captures,
+            f.crew_bailed,
+            f.crew_out,
+            f.crew_home,
+        );
+    }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
     for m in &r.matches {
         let rp = &m.report;

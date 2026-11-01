@@ -12,7 +12,10 @@ extends RefCounted
 ## (rts_camera.gd). M arms the move tool (no default button needs it).
 ## S3 vehicles: O face tool, N next ammo (Auto → AP → HE), J repair;
 ## Alt+right-click reverses (a mouse chord, no action). F5 (debug builds
-## only) reloads the mod data and restarts the match (S3b).
+## only) reloads the mod data and restarts the match (S3b). S3c: K arms the
+## Crew tool (click an abandoned vehicle: the selected infantry re-crew it;
+## owner question S3c-6 (A)); Bail out has no key (a button that asks for
+## a second click).
 
 const ACTIONS := {
 	&"order_move": KEY_M,
@@ -32,6 +35,8 @@ const ACTIONS := {
 	&"order_repair": KEY_J,
 	# S3b Suppress (area fire), owner question S3b-1 (A).
 	&"order_suppress": KEY_P,
+	# S3c re-crew tool, owner question S3c-6 (A).
+	&"order_crew": KEY_K,
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
@@ -62,6 +67,7 @@ const LABELS := {
 	&"ammo_next": "N",
 	&"order_repair": "J",
 	&"order_suppress": "P",
+	&"order_crew": "K",
 	&"focus_call_in": "Tab",
 }
 

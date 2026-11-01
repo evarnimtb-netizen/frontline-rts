@@ -42,7 +42,7 @@ extends Node
 ## starts the match scene straight on a staged world of the sim's
 ## `scenarios` (<name>: callin_locked, vehicle_card, tank_firing,
 ## penetration_marker, bogged_in_trench, at_ditch, at_team_firing,
-## burning, escort), lets match/autoplay_scene.gd wait for its condition,
+## burning, escort; S3c bailout), lets match/autoplay_scene.gd wait for its condition,
 ## saves s3_<name>.png and quits (1 if the condition never held).
 ## --test_unlock plays the test rules override (vehicles unlocked at once)
 ## in a skirmish or, set on both instances, a net match; --start_manpower N

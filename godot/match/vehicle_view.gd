@@ -94,6 +94,9 @@ func update_state(s: Dictionary) -> void:
 			var d: Array = _drawn[int(v.id)]
 			var wreck := Vehicles.is_wreck(v)
 			var col: Color = WRECK_TINT if wreck else tint(tp.faction, int(v.owner), _local)
+			# S3c: an abandoned tank keeps its paint, greyed (nobody's).
+			if Vehicles.is_abandoned(v):
+				col = tint(tp.faction, int(v.get("last_owner", -1)), _local).lerp(WRECK_TINT, 0.45)
 			var p: Vector3 = v.pos
 			var o := i * POSE_STRIDE
 			poses[o] = p.x

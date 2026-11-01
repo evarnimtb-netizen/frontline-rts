@@ -112,6 +112,17 @@ func _draw_vehicle_markers(font: Font, sel: Node) -> void:
 		var col := UiPalette.OWN if own else UiPalette.ENEMY
 		var picked: bool = sel.is_selected(int(id))
 		var r := Rect2(sp - MARKER * 0.5 - Vector2(0, 14), MARKER)
+		# S3c: an abandoned vehicle gets a hollow marker in its last owner's
+		# colour (dimmed), with a slash; the flame pip when it burns.
+		if Vehicles.is_abandoned(v):
+			var ac := Color(UiPalette.OWN if int(v.get("last_owner", -1)) == local else UiPalette.ENEMY, 0.6)
+			if int(id) == sel.hover_id:
+				draw_rect(r.grow(3), Color(ac, 0.9), false, 1.5)
+			draw_rect(r, ac, false, 1.5)
+			draw_line(r.position + Vector2(2, r.size.y - 2), r.end - Vector2(2, r.size.y - 2), ac, 1.5)
+			if Vehicles.has(v, Vehicles.BURNING):
+				_flame_pip(Vector2(r.end.x + 9.0, r.get_center().y))
+			continue
 		if picked:
 			draw_rect(r.grow(3), Color(UiPalette.TEXT, 0.9), false, 2.0)
 		elif int(id) == sel.hover_id:
@@ -220,7 +231,12 @@ func _vehicle_tooltip(font: Font, sel: Node) -> bool:
 	var own := int(v.owner) == view.local_player
 	var line1: String
 	var line2: String
-	if own:
+	if Vehicles.is_abandoned(v):
+		# S3c: what is out, who may re-crew it.
+		line1 = Vehicles.abandoned_text(v, view.vehicle_type(int(v.id)))
+		line2 = "Crew (K) or right-click with a tank crew: re-crew it"
+		own = int(v.get("last_owner", -1)) == view.local_player
+	elif own:
 		var ammo: Dictionary = v.get("ammo", {})
 		var crew: PackedStringArray = v.get("crew", PackedStringArray())
 		var alive := 0

@@ -12,6 +12,9 @@ extends Control
 ## (the one being repaired outlined), the ammo with the loaded round, the
 ## ammo choice (N cycles it) and the reload. No penetration hints about
 ## enemies (show_pen_hint off, §5.12.4).
+##
+## S3c: a crew squad whose tank stands abandoned is headed "Crew — Panzer
+## IV" with a "To tank" button that jumps the camera to the vehicle.
 
 const PAD := 10.0
 const HEAD := 27.0
@@ -221,7 +224,14 @@ func _draw_squad(sid: int) -> void:
 	var common := _common_stance(units)
 	if common != "":
 		right += " · " + common
-	_header(view.squad_label(sid, true), right, HudStyle.ACCENT if st[1] else HudStyle.DIM)
+	var title := view.squad_label(sid, true)
+	if sq.has("crew_of"):
+		title = "Crew — %s" % String(sq.get("crew_of_name", "tank"))
+	_header(title, right, HudStyle.ACCENT if st[1] else HudStyle.DIM)
+	var jr := crew_jump_rect()
+	if jr.size != Vector2.ZERO:
+		HudStyle.box(self, jr, HudStyle.BG_BUTTON, 3)
+		HudStyle.text(self, font, Vector2(jr.get_center().x, jr.end.y - 5.0), "To tank", HudStyle.FONT_SMALL, HudStyle.TEXT, 0)
 	if view.proxy_soldiers:
 		var line := "Men %d/%d · health %d %%" % [int(sq.get("men", 0)), int(sq.get("men_max", 0)), roundi(float(sq.get("health", 1.0)) * 100.0)]
 		HudStyle.text(self, font, Vector2(PAD, HEAD + 18.0), line, HudStyle.FONT, HudStyle.TEXT)
@@ -269,6 +279,26 @@ func _common_stance(units: PackedInt32Array) -> String:
 	return "" if out == "auto" else out
 
 
+## S3c: the "To tank" button of a crew squad card (zero rect: none).
+func crew_jump_rect() -> Rect2:
+	if mode() != "squad":
+		return Rect2()
+	var sq: Dictionary = view.squads_by_id.get(view.selection.focused_squad(), {})
+	if not sq.has("crew_of"):
+		return Rect2()
+	return Rect2(size.x * 0.5 - 8.0, 4.0, 64.0, 18.0)
+
+
+## S3c: jumps the camera to the focused crew squad's abandoned tank.
+func jump_to_crew_tank() -> bool:
+	var sq: Dictionary = view.squads_by_id.get(view.selection.focused_squad(), {})
+	var v: Dictionary = view.vehicles_by_id.get(int(sq.get("crew_of", -1)), {})
+	if v.is_empty():
+		return false
+	view.jump_camera(v.pos)
+	return true
+
+
 func row_at(p: Vector2) -> int:
 	for r in rows:
 		if r.rect.has_point(p):
@@ -282,6 +312,9 @@ func _gui_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		return
 	accept_event()
+	if crew_jump_rect().has_point(event.position):
+		jump_to_crew_tank()
+		return
 	var id := row_at(event.position)
 	if id == -1:
 		return

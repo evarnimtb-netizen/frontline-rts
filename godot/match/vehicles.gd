@@ -15,6 +15,10 @@ const REPAIRING := 32
 const CROSSING := 64
 const WRECK := 128
 const KNOCKED_OUT := 256
+## S3c: the crew bailed out (owner -1, `last_owner` set); someone is
+## climbing in (re-crew).
+const ABANDONED := 512
+const BOARDING := 1024
 
 ## Crew seats in pip order (D G C L R).
 const SEATS := ["driver", "gunner", "commander", "loader", "radio_mg"]
@@ -29,12 +33,17 @@ const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R
 ## 100; the gun and ring have 80, so this is a presenter threshold).
 const DAMAGED := 0.5
 const STATE_TEXT := {
-	"wreck": "Wreck", "burning": "Burning", "bogged": "Bogged", "immobilised": "Immobilised",
+	"wreck": "Wreck", "abandoned": "Abandoned", "burning": "Burning", "bogged": "Bogged", "immobilised": "Immobilised",
 	"repairing": "Repairing", "crossing": "Crossing", "reversing": "Reversing", "moving": "Moving",
 	"idle": "Holding",
 }
 ## Badge states drawn in the alarm (accent) colour.
-const ALARM_STATES := ["burning", "bogged", "immobilised"]
+const ALARM_STATES := ["burning", "bogged", "immobilised", "abandoned"]
+## S3c: why a crew bailed out (vehicles[].abandon_cause), for hover texts.
+const ABANDON_TEXT := {
+	"ammo_fire": "ammo fire", "engine_fire": "engine fire", "crew": "crew losses",
+	"useless": "gun and tracks out", "under_fire": "disabled under fire", "order": "ordered out",
+}
 ## S3b: "apcr" (the special round) only on guns that carry it.
 const AMMO_CHOICES := ["auto", "ap", "apcr", "he"]
 const AMMO_TEXT := {"auto": "Auto", "ap": "AP", "apcr": "APCR", "he": "HE"}
@@ -70,7 +79,32 @@ static func has(v: Dictionary, bit: int) -> bool:
 
 
 static func is_wreck(v: Dictionary) -> bool:
-	return int(v.get("owner", -1)) < 0 or has(v, WRECK)
+	if has(v, WRECK):
+		return true
+	return int(v.get("owner", -1)) < 0 and not is_abandoned(v)
+
+
+## S3c: abandoned by its crew (nobody's, can be re-crewed).
+static func is_abandoned(v: Dictionary) -> bool:
+	return bool(v.get("abandoned", false)) or has(v, ABANDONED)
+
+
+## S3c hover text: "Abandoned: Panzer IV (gun out, left track out)".
+static func abandoned_text(v: Dictionary, vt: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for c in v.get("parts_out", PackedStringArray()):
+		parts.append("%s out" % String(COMPONENT_NAMES.get(String(c), String(c))).to_lower())
+	var why := String(ABANDON_TEXT.get(String(v.get("abandon_cause", "")), ""))
+	var inside := int(v.get("inside", 0))
+	var tail := ", ".join(parts) if not parts.is_empty() else why
+	var text := "Abandoned: %s" % short_name(vt, String(v.get("name", "vehicle")))
+	if tail != "":
+		text += " (%s)" % tail
+	if inside > 0:
+		text += ", %d still inside" % inside
+	if has(v, BOARDING):
+		text += ", crew boarding"
+	return text
 
 
 ## Badge [text, alarm] for a vehicle's `state`.

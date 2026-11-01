@@ -71,7 +71,9 @@ use crate::intents::{
     dig_profile, item_name, role_name, sim_to_fx, split_polyline, spread_targets,
     stance_order_name, unit_command, unit_set, vehicle_command,
 };
-use crate::match_events::{EffectCue, EventTracker, UiEvent, ammo_word, effect_cues};
+use crate::match_events::{
+    EffectCue, EventTracker, UiEvent, ammo_word, effect_cues, vehicle_short,
+};
 use crate::match_frame::{ArmourView, MatchFrame, SquadView, TickEvents};
 use crate::match_net::{NetLink, NetMatchInfo, NetState};
 use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve, short_id};
@@ -125,7 +127,7 @@ const ZONE_KEYS: [&str; 8] = [
     "turret_rear",
     "turret_top",
 ];
-const ARMOUR_KINDS: [&str; 9] = [
+const ARMOUR_KINDS: [&str; 12] = [
     "fired",
     "ricochet",
     "no_pen",
@@ -135,6 +137,21 @@ const ARMOUR_KINDS: [&str; 9] = [
     "disabled",
     "knocked_out",
     "bogged",
+    // S3c.
+    "abandoned",
+    "crew_out",
+    "recrewed",
+];
+
+/// S3c `abandon_cause` names (`bail::AB_*`, index 0: not abandoned).
+const ABANDON_KEYS: [&str; 7] = [
+    "",
+    "ammo_fire",
+    "engine_fire",
+    "crew",
+    "useless",
+    "under_fire",
+    "order",
 ];
 
 /// A vehicle's state badge (`match_state.md`): the first that applies.
@@ -143,6 +160,11 @@ fn vehicle_badge(flags: u16, speed: f32, own: bool) -> &'static str {
     use vehicle_flags::*;
     if flags & WRECK != 0 {
         return "wreck";
+    }
+    // S3c: before burning (an abandoned tank may still burn: the flag says
+    // so, the badge says nobody is in it).
+    if flags & ABANDONED != 0 {
+        return "abandoned";
     }
     if flags & BURNING != 0 {
         return "burning";
@@ -2072,6 +2094,7 @@ impl MatchRuntime {
                     }
                 });
             let wreck = v.owner == WRECK_OWNER;
+            let abandoned = v.flags & vehicle_flags::ABANDONED != 0;
             let own = !wreck && v.owner == self.local;
             let mut d = vdict! {
                 "id" => v.id as i64,
@@ -2088,7 +2111,38 @@ impl MatchRuntime {
                 "speed" => v.speed,
                 "flags" => v.flags as i64,
                 "state" => vehicle_badge(v.flags, v.speed, own),
+                // S3c: public on every vehicle.
+                "abandoned" => abandoned,
             };
+            if abandoned {
+                // Its last owner, why, its crew squad, men still inside, and
+                // the parts that are out (anyone can see an empty tank's
+                // damage up close; the hover text names them).
+                d.set("last_owner", v.last_owner as i64);
+                d.set(
+                    "abandon_cause",
+                    ABANDON_KEYS
+                        .get(v.abandon_cause as usize)
+                        .copied()
+                        .unwrap_or(""),
+                );
+                d.set(
+                    "crew_squad",
+                    if v.crew_squad == frontline_sim::NO_SQUAD {
+                        -1
+                    } else {
+                        v.crew_squad as i64
+                    },
+                );
+                d.set("inside", v.inside as i64);
+                d.set("boarding", v.flags & vehicle_flags::BOARDING != 0);
+                let out: PackedStringArray = self
+                    .vehicle_parts_out(v.id)
+                    .iter()
+                    .map(|s| GString::from(*s))
+                    .collect();
+                d.set("parts_out", &out);
+            }
             if own {
                 let crew: PackedStringArray = (0..5)
                     .map(|k| {
@@ -2159,6 +2213,22 @@ impl MatchRuntime {
         out
     }
 
+    /// S3c: the destroyed components of vehicle `id` in the newest frame
+    /// (`parts_out` of an abandoned vehicle).
+    fn vehicle_parts_out(&self, id: u32) -> Vec<&'static str> {
+        let f = self.newest();
+        let Ok(k) = f.vehicles.binary_search_by_key(&id, |v| v.id) else {
+            return Vec::new();
+        };
+        let v = &f.vehicles[k];
+        COMPONENT_KEYS
+            .iter()
+            .enumerate()
+            .filter(|(c, _)| v.components.get(*c).is_some_and(|&hp| hp == 0))
+            .map(|(_, n)| *n)
+            .collect()
+    }
+
     /// One `armour_events` entry (`godot/docs/match_state.md`).
     fn armour_dict(&self, tick: u64, a: &ArmourView) -> VarDictionary {
         let e = &a.ev;
@@ -2186,6 +2256,21 @@ impl MatchRuntime {
                 3 => "ammo_fire",
                 _ => "crew",
             },
+            // S3c.
+            k if k == ArmourEventKind::Abandoned as u8 => ABANDON_KEYS
+                .get(e.component as usize)
+                .copied()
+                .unwrap_or(""),
+            k if k == ArmourEventKind::CrewOut as u8 => SeatRole::ALL
+                .get(e.component as usize)
+                .map_or("", |r| SEAT_KEYS[r.index()]),
+            k if k == ArmourEventKind::Recrewed as u8 => {
+                if e.component == frontline_sim::bail::RECREW_CAPTURED {
+                    "captured"
+                } else {
+                    "own"
+                }
+            }
             _ => "",
         };
         let zone = if e.zone == NONE_U8 {
@@ -2336,11 +2421,31 @@ impl MatchRuntime {
             d.set("rounds", s.rounds as i64);
         }
         if let Some(v) = s.follow {
-            d.set("follow", v as i64);
+            // S3c: a `Recrew` order shares the field (the vehicle it walks
+            // to); `recrew` says which.
+            d.set(
+                if s.order == OrderKind::Recrew {
+                    "recrew"
+                } else {
+                    "follow"
+                },
+                v as i64,
+            );
         }
         if let Some(l) = s.suppress_line {
             let line: PackedVector3Array = l.iter().map(|p| self.ground(*p)).collect();
             d.set("suppress_line", &line);
+        }
+        // S3c: a crew squad's abandoned vehicle (the card's "Crew —
+        // Panzer IV" and its jump button).
+        if let Some(v) = self
+            .newest()
+            .vehicles
+            .iter()
+            .find(|v| v.crew_squad == s.id && v.flags & vehicle_flags::ABANDONED != 0)
+        {
+            d.set("crew_of", v.id as i64);
+            d.set("crew_of_name", vehicle_short(&self.setup, v.type_idx));
         }
         d
     }
@@ -2508,6 +2613,47 @@ impl MatchRuntime {
             "regroup" => out.extend(own.iter().map(|s| CommandKind::Regroup {
                 squad: SquadId(s.id),
             })),
+            // S3c: the selected infantry squads re-crew abandoned vehicle
+            // `vehicle` (the sim refuses squads that cannot; the feed says
+            // why).
+            "recrew" => {
+                let Some(v) = data
+                    .get("vehicle")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .filter(|&i| i >= 0)
+                else {
+                    return;
+                };
+                out.extend(
+                    own.iter()
+                        .filter(|s| {
+                            self.setup.squad_types[s.type_idx as usize]
+                                .vehicle
+                                .is_none()
+                        })
+                        .map(|s| CommandKind::Recrew {
+                            squad: SquadId(s.id),
+                            vehicle: frontline_sim::SimId(v as u32),
+                        }),
+                );
+            }
+            // S3c: the crews of the selected own vehicles (`units`) bail out.
+            "abandon" => {
+                let raw = data
+                    .get("units")
+                    .and_then(|v| v.try_to::<PackedInt32Array>().ok())
+                    .unwrap_or_default();
+                let f = self.newest();
+                for &id in raw.as_slice() {
+                    if let Ok(k) = f.vehicles.binary_search_by_key(&(id as u32), |v| v.id)
+                        && f.vehicles[k].owner == self.local
+                    {
+                        out.push(CommandKind::Abandon {
+                            squad: SquadId(f.vehicles[k].squad),
+                        });
+                    }
+                }
+            }
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
             | "set_stance" | "throw" | "throw_each" | "reverse_units" | "face_units"
             | "attack_unit" | "set_ammo" | "repair_units" | "follow_units" | "suppress_units" => {

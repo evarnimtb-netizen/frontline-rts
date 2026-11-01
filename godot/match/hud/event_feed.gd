@@ -24,6 +24,11 @@ const KINDS := {
 	"vehicle_bogged": [HudStyle.ACCENT, &""],
 	# S3b: a call-in the sim or the panel refused, with the reason.
 	"call_in_refused": [HudStyle.DANGER, &"error"],
+	# S3c: bail-out, re-crew and capture.
+	"vehicle_abandoned": [HudStyle.DANGER, &""],
+	"vehicle_recrewed": [HudStyle.OWN, &"confirm"],
+	"vehicle_captured": [HudStyle.ACCENT, &""],
+	"recrew_refused": [HudStyle.DANGER, &"error"],
 }
 
 var view: MatchView
@@ -47,7 +52,7 @@ func push(e: Dictionary) -> void:
 		"time": UiPalette.mmss(e.get("time_s", view.state.get("time_s", 0.0))),
 		"kind": kind,
 		# An enemy vehicle knocked out is good news: own colour stripe.
-		"good": kind == "vehicle_knocked_out" and int(e.get("player", view.local_player)) != view.local_player,
+		"good": kind in ["vehicle_knocked_out", "vehicle_abandoned"] and int(e.get("player", view.local_player)) != view.local_player,
 		"born_ms": Time.get_ticks_msec(),
 	})
 	if lines.size() > MAX_LINES:
