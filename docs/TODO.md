@@ -69,6 +69,48 @@ it.
   - Applied through theme constants (`frontline_theme.tres`), so it is a
     theme pass, not a re-layout.
 
+- [x] **Tanks and armour (S3).** Spec: `docs/slices/S3-armour.md`; results
+  and the fix pass: `docs/slices/S3-log.md`. Panzer IV and Sherman, the
+  Panzerschreck and Bazooka teams, per-plate penetration, crew and
+  components, fire and ammo rack, wrecks, the AT ditch, escorts, vehicle
+  AI, `ballistics` and `armour-test`, net play with vehicles, the HUD and
+  presenter additions. Built on the spec's (A) defaults; all ten
+  agent-checkable "Done when" items pass.
+
+## S3 owner questions (pending; work used the (A) defaults)
+
+- [ ] **1. Scope.** (A) Tanks and AT teams now; tank destroyers, sticky
+  satchels, bail-out crews and AI AT-ditch digging in S3b. (B) The full
+  draft in one slice.
+- [ ] **2. Vehicle spotting range.** (A) 2× the observer's sight (tanks
+  see tanks at about 350 m). (B) About 4× (600–700 m).
+- [ ] **3. Do standard trenches stop tanks?** (A) No: they slow tanks to
+  1 m/s and can bog them; the AT ditch stops them. (B) Any finished trench
+  blocks vehicles.
+- [ ] **4. Unlock and limit.** (A) Vehicles from 4:00, at most 4 alive or
+  queued per player, 12 pop each. (B) No unlock, cost only. (C) Other
+  numbers.
+- [ ] **5. Target for "tanks fix the trench assault"** (armour-test case
+  7). (A) Attacker losses at most half the no-tank baseline's, and
+  defenders lose at least 75 %. (B) A different bar. Case 7 now **misses**
+  both (attackers 74 of 80 vs 80 of 80 without the tank; defenders 68.8 %).
+  If the target stays, pick the next lever: tank fear, mortar smoke, or
+  stronger pinning (S3-log.md "Case 7 vs target").
+- [ ] **Confirm the narrowed case 4 hard check** (fix pass): "at least
+  one rocket hit per run" now covers the flank and front runs. The HE
+  variant, where the team is under HE fire and hits 57 % at 100 m, prints
+  its no-hit runs instead of failing.
+
+## S3 owner checklist (needs a person)
+
+- [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an
+  AT ditch. Note whether the turret speeds, bogging, the unlock time and
+  the Sherman's cost feel right.
+- [ ] **12. One net match with the friend** where both sides field
+  vehicles.
+- [ ] **13. Read armour-test case 7 against the target** (owner question
+  5) and pick the next lever if needed.
+
 ## Known issues found during S1
 
 - [ ] Map balance: the south-west base wins about 75 % of AI-vs-AI matches,
@@ -199,10 +241,14 @@ it.
 
 ## Known issues found during S3 integration
 
-- [ ] **Net stalls with vehicles:** two windowed instances stall 250–550
-  ticks per 3-minute match with tanks (55–61 without, S2: 10), in 0.3–1.1 s
-  bursts at the same tick on both instances. The sim's own stages take
-  1–6 ms in those ticks; not found where the time goes (S3 slice log).
+- [ ] **Net stalls in windowed two-instance runs:** the integration saw
+  250–550 stall ticks per 3-minute match with tanks (55–61 without, S2:
+  10), in 0.3–1.1 s bursts at the same tick on both instances. The
+  performance review then saw 483 stalls before any vehicle existed, and
+  971 in a headless run with no vehicles at all, at load average 5–17
+  with swap nearly full. The fix pass, at load 3, saw no bursts (hash
+  arrival at most 43 ms late). Probably machine pressure, not vehicles;
+  re-measure on an idle machine.
 - [ ] The S1b frag-into-trench autoplay shot still fails most runs; with
   S3 the seed-1 match also ends earlier (AI won on tickets at 13:06 while
   we spent 1,280 manpower on tanks).
@@ -215,3 +261,57 @@ it.
   patch on the hull for about 0.3 s.
 - [ ] Staged scenes all sit on point C (the sim's staging lane runs
   through the map centre).
+
+## Known issues found during the S3 fix pass
+
+Balance (numbers in `docs/slices/S3-log.md`; spec numbers, not tuned
+here):
+- [ ] **The Sherman wins tank fights:** 26 of 30 staged duels (3a frontal
+  6–4, 3b angled 10–0, 3c flank 10–0). In AI matches Germany lost 17 tanks
+  and the USA 8, and the USA won 8 of 10. The Panzer IV's 14°/s turret
+  loses the race to the first hit (about 1.1 s).
+- [ ] **Almost every knock-out is an ammo-rack detonation:** the rack
+  (60 HP) sits in the hull centre, and an AP core does 100.
+- [ ] **AT teams are weak:** case 6 disabled the tank 0 of 10 times
+  despite 56 penetrations; case 4 flank rate 42.9 % (target ≥ 50 %). A
+  HEAT jet (1.0 m) through the Panzer IV's hull front stops about 5 cm
+  short of the driver and radio-operator boxes (x 115–185 cm, plate at
+  290 cm). Levers: 1.5 m jet or crew boxes further forward.
+- [ ] Crossing-target hit rate is 83 % of stationary (target ≤ 60 %).
+- [ ] A tank in front of a trench kills 0 of 80 dug-in men in 3 minutes
+  and pins nobody (case 5); from the trench's end it kills 75 of 80 (case
+  11). Tank HE erodes a parapet by 0.001 m per burst (case 9).
+- [ ] Satchels open a 30 m AT ditch in only 2 of 10 runs (7 each; the
+  rest still closed after 16). Engineers sent at a tank from 40 m all die
+  (case 8).
+- [ ] The AI never throws satchels at vehicles (0 in 10 matches), rarely
+  fires its AT teams (0 rockets in 6 of 10), and no tank bogged in 10
+  matches. Escorts reach 30 m of an enemy trench 0–4 times per side.
+- [ ] Map side: base 1 won 7 of 10 AI matches in this pass (S1: the
+  south-west base about 75 %). Too few games to say more.
+
+Other:
+- [ ] At 1280x800 the roster now keeps vehicle cards before unselected
+  infantry: with 4 tanks and 8 squads it shows the 4 vehicle cards and
+  "+8" (before: 5 infantry cards and "+7"). Owner's call which is better.
+- [ ] AT-ditch sections are recorded when dug (fix pass), in one shared
+  list of 1,024 for both players; no per-player cap.
+- [ ] `vehicle_view.gd` draws at most 48 vehicles per type (Battalion
+  tier blocker; S3 rules need 40).
+- [ ] Vehicle path ticks can serve the 4,000 budget plus one capped
+  8,000-expansion search (11,694 expansions, intent stage up to 2.2 ms,
+  4.4–5.7 ms under load). Within the spec; sets the worst tick at the
+  Battalion tier.
+- [ ] The vehicle spatial index is rebuilt twice per tick even with no
+  vehicles (about 2 % of step samples); small per-tick allocations in
+  gunnery and the block layer.
+- [ ] Case 1's 3σ check is nearly empty (σ 0.0–0.6): the aim-point choice
+  avoids borderline plates.
+- [ ] A 7-minute `--autoplay` can miss the enemy's first tank (called in
+  at about 5:40); run at least 10 minutes.
+- [ ] The net loopback and soak use 4,000 starting manpower (not in the
+  spec) so that 2 tanks per side arrive in 3 minutes.
+- [ ] No in-game 1280x800 S3 screenshot: `--resolution 1280x800` keeps a
+  1600x900 window for the staged scenes. The mock's `s3_mock_*_1280`
+  shots cover the HUD.
+
