@@ -11,6 +11,7 @@
 //!   in-memory network for tests.
 //! * [`server`], [`client_io`]: the relay thread and the client net
 //!   thread around the state machines, on real sockets.
+//! * [`dump`]: confirmed checkpoints and desync dumps.
 //! * [`harness`]: steps `World`s from a client's bundles (pacing, hashes,
 //!   the desync injection hook) and runs whole two-client matches on a
 //!   virtual clock, for tests and `frontline-net-test`.
@@ -22,6 +23,7 @@ pub mod client;
 pub mod client_io;
 pub mod clock;
 pub mod ctl;
+pub mod dump;
 pub mod harness;
 pub mod protocol;
 pub mod relay;

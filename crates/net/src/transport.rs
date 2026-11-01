@@ -24,6 +24,17 @@ pub trait Transport {
     fn send_to(&mut self, bytes: &[u8], to: SocketAddr) -> io::Result<()>;
     /// Next waiting datagram, or `None` when there is none. Never blocks.
     fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, SocketAddr)>>;
+    /// Like [`Transport::recv_from`], but may wait up to `timeout` for a
+    /// datagram (the relay and the net thread sleep here between turns).
+    /// The default does not wait.
+    fn recv_wait(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> io::Result<Option<(usize, SocketAddr)>> {
+        let _ = timeout;
+        self.recv_from(buf)
+    }
     fn local_addr(&self) -> io::Result<SocketAddr>;
 }
 
@@ -71,28 +82,6 @@ impl UdpTransport {
             v6: addr.is_ipv6(),
             wait: None,
         })
-    }
-
-    /// Like [`Transport::recv_from`], but waits up to `timeout` for a
-    /// datagram (the relay and the net thread sleep here between turns).
-    pub fn recv_wait(
-        &mut self,
-        buf: &mut [u8],
-        timeout: Duration,
-    ) -> io::Result<Option<(usize, SocketAddr)>> {
-        // A zero read timeout means "forever" on some platforms.
-        let want = (timeout >= Duration::from_micros(200)).then_some(timeout);
-        if want != self.wait {
-            match want {
-                Some(t) => {
-                    self.sock.set_nonblocking(false)?;
-                    self.sock.set_read_timeout(Some(t))?;
-                }
-                None => self.sock.set_nonblocking(true)?,
-            }
-            self.wait = want;
-        }
-        self.recv_inner(buf)
     }
 
     fn recv_inner(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, SocketAddr)>> {
@@ -158,11 +147,151 @@ impl Transport for UdpTransport {
     fn local_addr(&self) -> io::Result<SocketAddr> {
         self.sock.local_addr()
     }
+
+    fn recv_wait(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> io::Result<Option<(usize, SocketAddr)>> {
+        // A zero read timeout means "forever" on some platforms.
+        let want = (timeout >= Duration::from_micros(200)).then_some(timeout);
+        if want != self.wait {
+            match want {
+                Some(t) => {
+                    self.sock.set_nonblocking(false)?;
+                    self.sock.set_read_timeout(Some(t))?;
+                }
+                None => self.sock.set_nonblocking(true)?,
+            }
+            self.wait = want;
+        }
+        self.recv_inner(buf)
+    }
 }
 
 /// The address to bind for hosting on `port`: dual-stack `[::]`.
 pub fn any_addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)
+}
+
+// ------------------------------------------------------ impaired socket --
+
+/// A real transport with a seeded bad link in front of it, both ways:
+/// datagrams it sends and receives are delayed, jittered, dropped and
+/// duplicated per [`LinkParams`], on the wall clock. For
+/// `frontline-net-test --net udp`; apply it on the client side only.
+pub struct Impaired<T> {
+    inner: T,
+    params: LinkParams,
+    rng: SplitMix,
+    origin: std::time::Instant,
+    order: u64,
+    /// `(due µs, order)` → `(peer, bytes, outgoing)`.
+    queue: BTreeMap<(u64, u64), (SocketAddr, Vec<u8>, bool)>,
+    buf: Vec<u8>,
+}
+
+impl<T: Transport> Impaired<T> {
+    pub fn new(inner: T, params: LinkParams, seed: u64) -> Impaired<T> {
+        Impaired {
+            inner,
+            params,
+            rng: SplitMix::new(seed),
+            origin: std::time::Instant::now(),
+            order: 0,
+            queue: BTreeMap::new(),
+            buf: vec![0; RECV_BUF],
+        }
+    }
+
+    fn now(&self) -> u64 {
+        self.origin.elapsed().as_micros() as u64
+    }
+
+    fn enqueue(&mut self, peer: SocketAddr, bytes: &[u8], outgoing: bool) {
+        let p = &self.params;
+        if p.drop > 0.0 && self.rng.chance(p.drop) {
+            return;
+        }
+        let copies = if p.dup > 0.0 && self.rng.chance(p.dup) {
+            2
+        } else {
+            1
+        };
+        for _ in 0..copies {
+            let p = &self.params;
+            let mut at = self.now() + p.delay_us;
+            if p.jitter_us > 0 {
+                at += self.rng.below(p.jitter_us + 1);
+            }
+            if p.reorder > 0.0 && self.rng.chance(p.reorder) {
+                at += p.reorder_us;
+            }
+            self.order += 1;
+            self.queue
+                .insert((at, self.order), (peer, bytes.to_vec(), outgoing));
+        }
+    }
+
+    /// Sends due outgoing datagrams; returns the first due incoming one.
+    fn pump(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, SocketAddr)>> {
+        // Everything the socket holds enters the link now.
+        while let Some((n, from)) = self.inner.recv_from(&mut self.buf)? {
+            let b = self.buf[..n].to_vec();
+            self.enqueue(from, &b, false);
+        }
+        let now = self.now();
+        while let Some((&key, _)) = self.queue.first_key_value() {
+            if key.0 > now {
+                break;
+            }
+            let (peer, bytes, outgoing) = self.queue.remove(&key).expect("first key exists");
+            if outgoing {
+                self.inner.send_to(&bytes, peer)?;
+            } else {
+                let n = bytes.len().min(buf.len());
+                buf[..n].copy_from_slice(&bytes[..n]);
+                return Ok(Some((n, peer)));
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl<T: Transport> Transport for Impaired<T> {
+    fn send_to(&mut self, bytes: &[u8], to: SocketAddr) -> io::Result<()> {
+        self.enqueue(to, bytes, true);
+        self.pump(&mut []).map(|_| ())
+    }
+
+    fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, SocketAddr)>> {
+        self.pump(buf)
+    }
+
+    fn recv_wait(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> io::Result<Option<(usize, SocketAddr)>> {
+        if let Some(got) = self.pump(buf)? {
+            return Ok(Some(got));
+        }
+        // Wait for the socket, but not past the next delayed datagram.
+        let next = self
+            .queue
+            .first_key_value()
+            .map(|(k, _)| Duration::from_micros(k.0.saturating_sub(self.now())));
+        let wait = next.map_or(timeout, |n| n.min(timeout));
+        if let Some((n, from)) = self.inner.recv_wait(&mut self.buf, wait)? {
+            let b = self.buf[..n].to_vec();
+            self.enqueue(from, &b, false);
+        }
+        self.pump(buf)
+    }
+
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.local_addr()
+    }
 }
 
 // -------------------------------------------------------- simulated net --

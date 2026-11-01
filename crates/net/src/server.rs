@@ -34,7 +34,7 @@ pub type LogSink = Box<dyn Write + Send>;
 /// `clock` is the relay clock (µs since some origin).
 pub fn run_relay(
     relay: &mut Relay,
-    sock: &mut UdpTransport,
+    sock: &mut impl Transport,
     stop: &AtomicBool,
     clock: impl Fn() -> u64,
     mut log: Option<&mut LogSink>,
@@ -111,6 +111,17 @@ impl RelayServer {
         bind: SocketAddr,
         log: Option<LogSink>,
     ) -> io::Result<RelayServer> {
+        RelayServer::spawn_with(cfg, bind, log, true)
+    }
+
+    /// Like [`RelayServer::spawn`]; `log_turns` puts every non-empty closed
+    /// turn in the log (the bulk of it).
+    pub fn spawn_with(
+        cfg: RelayConfig,
+        bind: SocketAddr,
+        log: Option<LogSink>,
+        log_turns: bool,
+    ) -> io::Result<RelayServer> {
         let mut sock = UdpTransport::bind(bind)?;
         let addr = sock.local_addr()?;
         let stop = Arc::new(AtomicBool::new(false));
@@ -122,6 +133,7 @@ impl RelayServer {
                 .name("frontline-relay".into())
                 .spawn(move || {
                     let mut relay = Relay::new(cfg, TokenSource::os());
+                    relay.set_log_turns(log_turns);
                     let origin = Instant::now();
                     let clock = move || origin.elapsed().as_micros() as u64;
                     let mut log = log;

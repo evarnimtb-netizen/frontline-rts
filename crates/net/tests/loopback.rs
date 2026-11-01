@@ -30,10 +30,9 @@ fn rough() -> LinkParams {
     }
 }
 
-/// Game seconds for the default runs: 3 minutes in release (the spec), 1
-/// in debug builds, where the sim is ~20× slower.
+/// Game seconds for the default runs (S2: 3 game minutes per seed).
 fn minutes3() -> u64 {
-    if cfg!(debug_assertions) { 60 } else { 180 }
+    180
 }
 
 fn summary(r: &VirtualReport) -> String {
@@ -253,11 +252,14 @@ fn address_change_keeps_the_connection() {
 /// turn, and `desync-diff` of their saves names fields.
 #[test]
 fn injected_desync_is_detected_and_diffed() {
+    let dump = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("desync-dump");
+    let _ = std::fs::remove_dir_all(&dump);
     let spec = VirtualSpec {
         seed: 9,
         seconds: 60,
         link: rough(),
         inject_desync: Some((1, 1000)),
+        dump_dir: Some(dump.clone()),
         ..VirtualSpec::default()
     };
     let r = harness::run_virtual(&setup(9, None), &spec);
@@ -267,8 +269,36 @@ fn injected_desync_is_detected_and_diffed() {
     assert_eq!(r.relay_desync, Some(tick));
     assert!(tick > 1000 && tick <= 1030, "detected at {tick}");
     assert_eq!(r.ticks, [at, at], "both stopped at the pause turn");
-    // Both saves at the pause tick, as a dump writes them.
-    let (a, b) = (r.worlds[0].save(), r.worlds[1].save());
+    // The dumps: both clients' files and the relay log.
+    for f in [
+        "manifest.json",
+        "paused.sav",
+        "checkpoint.sav",
+        "bundles.jsonl",
+    ] {
+        for s in ["slot0", "slot1"] {
+            assert!(dump.join(s).join(f).is_file(), "missing {s}/{f}");
+        }
+    }
+    assert!(dump.join("relay.jsonl").is_file());
+    let manifest = std::fs::read_to_string(dump.join("slot1/manifest.json")).unwrap();
+    assert!(
+        manifest.contains(&format!("\"desync_tick\": {tick}")),
+        "{manifest}"
+    );
+    // The confirmed checkpoint is from before the divergence (tick 900).
+    assert!(manifest.contains("\"checkpoint_tick\": 900"), "{manifest}");
+    let bundles = std::fs::read_to_string(dump.join("slot1/bundles.jsonl")).unwrap();
+    assert!(
+        bundles
+            .lines()
+            .next()
+            .unwrap()
+            .starts_with("{\"tick\":900,"),
+        "{bundles}"
+    );
+    let read = |s: &str| std::fs::read(dump.join(s).join("paused.sav")).unwrap();
+    let (a, b) = (read("slot0"), read("slot1"));
     let d = frontline_cli::desync_diff::diff_saves(&a, &b, 50).unwrap();
     let text = frontline_cli::desync_diff::render(&d);
     eprintln!("{text}");

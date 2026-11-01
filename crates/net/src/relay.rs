@@ -536,12 +536,16 @@ impl Relay {
     }
 
     fn on_hello(&mut self, from: SocketAddr, hello: Hello, now: u64) {
-        // A resent Hello (lost Welcome): same answer.
-        if let Some(i) = self.slots.iter().position(|s| {
-            s.as_ref()
-                .is_some_and(|s| s.nonce == hello.nonce && s.addr == from)
-        }) {
-            let s = self.slots[i].as_ref().expect("found");
+        // A resent Hello (lost Welcome): same answer, at the address it
+        // came from now (the NAT mapping may have changed meanwhile).
+        if let Some(i) = self
+            .slots
+            .iter()
+            .position(|s| s.as_ref().is_some_and(|s| s.nonce == hello.nonce))
+        {
+            let s = self.slots[i].as_mut().expect("found");
+            s.addr = from;
+            s.last_heard = now;
             let w = Packet::Welcome(Welcome {
                 nonce: hello.nonce,
                 token: s.token,

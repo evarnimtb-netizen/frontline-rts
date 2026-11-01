@@ -48,6 +48,8 @@ pub fn client_bind_for(relay: SocketAddr) -> SocketAddr {
 pub struct NetHandle {
     tx: Sender<ToNet>,
     events: Receiver<NetEvent>,
+    match_events: Option<Receiver<NetEvent>>,
+    split: Arc<AtomicBool>,
     status: Arc<Mutex<ClientStatus>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<io::Result<()>>>,
@@ -59,16 +61,28 @@ impl NetHandle {
     /// Binds a socket for `cfg.relay` and starts the net thread, which
     /// connects (sends `Hello`) at once.
     pub fn spawn(cfg: ClientConfig) -> io::Result<NetHandle> {
-        let mut sock = UdpTransport::bind(client_bind_for(cfg.relay))?;
+        let sock = UdpTransport::bind(client_bind_for(cfg.relay))?;
+        NetHandle::spawn_with(cfg, Box::new(sock))
+    }
+
+    /// Like [`NetHandle::spawn`] on a given transport (tests wrap the
+    /// socket in an [`Impaired`](crate::transport::Impaired) link).
+    pub fn spawn_with(
+        cfg: ClientConfig,
+        mut sock: Box<dyn Transport + Send>,
+    ) -> io::Result<NetHandle> {
         let local_addr = sock.local_addr()?;
         let (tx, rx) = channel::<ToNet>();
         let (ev_tx, ev_rx) = channel::<NetEvent>();
+        let (match_tx, match_rx) = channel::<NetEvent>();
+        let split = Arc::new(AtomicBool::new(false));
         let status = Arc::new(Mutex::new(ClientStatus::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let origin = Instant::now();
         let thread = {
             let status = Arc::clone(&status);
             let stop = Arc::clone(&stop);
+            let split = Arc::clone(&split);
             std::thread::Builder::new()
                 .name("frontline-net".into())
                 .spawn(move || {
@@ -114,10 +128,30 @@ impl NetHandle {
                         for (to, bytes) in client.drain_out() {
                             let _ = sock.send_to(&bytes, to);
                         }
+                        // The owners may have gone; keep serving the relay
+                        // until told to stop.
+                        let split = split.load(Ordering::Acquire);
                         for ev in client.drain_events() {
-                            // The owner may have gone; keep serving the
-                            // relay until told to stop.
-                            let _ = ev_tx.send(ev);
+                            if !split {
+                                let _ = ev_tx.send(ev);
+                                continue;
+                            }
+                            match ev {
+                                NetEvent::Bundle { .. } => {
+                                    let _ = match_tx.send(ev);
+                                }
+                                NetEvent::Start(_)
+                                | NetEvent::Paused { .. }
+                                | NetEvent::Resume { .. }
+                                | NetEvent::Desync { .. }
+                                | NetEvent::Bye(_) => {
+                                    let _ = match_tx.send(ev.clone());
+                                    let _ = ev_tx.send(ev);
+                                }
+                                _ => {
+                                    let _ = ev_tx.send(ev);
+                                }
+                            }
                         }
                         if let Ok(mut s) = status.lock() {
                             *s = client.status();
@@ -128,6 +162,8 @@ impl NetHandle {
         Ok(NetHandle {
             tx,
             events: ev_rx,
+            match_events: Some(match_rx),
+            split,
             status,
             stop,
             thread: Some(thread),
@@ -138,6 +174,28 @@ impl NetHandle {
 
     pub fn send(&self, m: ToNet) {
         let _ = self.tx.send(m);
+    }
+
+    /// A sender for another thread (the sim thread sends hashes, the
+    /// presenter commands).
+    pub fn sender(&self) -> Sender<ToNet> {
+        self.tx.clone()
+    }
+
+    /// Splits the events for the sim thread off (once): from now on,
+    /// bundles go only to the returned receiver, and `Start`, `Paused`,
+    /// `Resume`, `Desync` and `Bye` go to both it and
+    /// [`NetHandle::drain_events`]. Take it before `Start`.
+    pub fn take_match_events(&mut self) -> Option<Receiver<NetEvent>> {
+        let rx = self.match_events.take()?;
+        self.split.store(true, Ordering::Release);
+        Some(rx)
+    }
+
+    /// The instant local time 0 stands for: a step slot `s` (µs) is
+    /// `origin() + s`.
+    pub fn origin(&self) -> Instant {
+        self.origin
     }
 
     /// Every event since the last call, oldest first.

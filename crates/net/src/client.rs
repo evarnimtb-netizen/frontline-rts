@@ -241,6 +241,11 @@ impl NetClient {
         self.schedule
     }
 
+    /// Highest tick whose hashes the relay confirmed equal.
+    pub fn confirmed(&self) -> u64 {
+        self.status.confirmed
+    }
+
     pub fn status(&self) -> ClientStatus {
         let mut s = self.status.clone();
         s.slot = self.slot;

@@ -87,6 +87,8 @@ pub struct SimDriver {
     /// Wall-clock µs of each `World::step` (when `record`).
     pub step_us: Vec<u32>,
     pub desync: Option<(u64, u64)>,
+    /// Checkpoints and bundles for a desync dump, when enabled.
+    pub recorder: Option<crate::dump::DesyncRecorder>,
 }
 
 impl SimDriver {
@@ -107,6 +109,13 @@ impl SimDriver {
                 self.desync = Some((*tick, *at));
             }
             _ => {}
+        }
+    }
+
+    /// The relay confirmed hashes up to `tick` (`NetClient::confirmed`).
+    pub fn confirm(&mut self, tick: u64) {
+        if let Some(r) = self.recorder.as_mut() {
+            r.confirm(tick);
         }
     }
 
@@ -165,6 +174,9 @@ impl SimDriver {
             {
                 cmds.push(c);
                 self.injected = true;
+            }
+            if let Some(r) = self.recorder.as_mut() {
+                r.before_step(world, &cmds);
             }
             let t0 = Instant::now();
             let published = world.step(&cmds);
@@ -388,6 +400,9 @@ pub struct VirtualSpec {
     /// Stop early once a desync was detected and both worlds reached the
     /// pause tick.
     pub stop_on_desync: bool,
+    /// Keep checkpoints, and on a desync write each client's dump to
+    /// `<dir>/slot<N>/` and the relay log to `<dir>/relay.jsonl`.
+    pub dump_dir: Option<PathBuf>,
 }
 
 impl Default for VirtualSpec {
@@ -410,6 +425,7 @@ impl Default for VirtualSpec {
             threads: 1,
             bye_on_end: true,
             stop_on_desync: true,
+            dump_dir: None,
         }
     }
 }
@@ -522,7 +538,10 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
             let addr: SocketAddr = format!("10.0.0.{}:40000", i + 2).parse().expect("addr");
             let world = World::new_match(setup.clone(), spec.threads.max(1))
                 .expect("the setup builds a world");
-            let driver = SimDriver::new(true);
+            let mut driver = SimDriver::new(true);
+            if spec.dump_dir.is_some() {
+                driver.recorder = Some(crate::dump::DesyncRecorder::new());
+            }
             Peer {
                 sock: net.socket(addr),
                 client: NetClient::new(ClientConfig {
@@ -629,6 +648,7 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 }
             }
             let period = p.client.schedule().map_or(33_333, |s| s.period());
+            p.driver.confirm(p.client.confirmed());
             let (client, world, driver) = (&mut p.client, &mut p.world, &mut p.driver);
             let mut hashes = Vec::new();
             driver.advance(
@@ -707,7 +727,57 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
         }
     }
     relay_log.extend(relay.drain_log());
+    if let Some(dir) = &spec.dump_dir {
+        write_dumps(dir, setup, &relay, &peers, &relay_log);
+    }
     report(setup, spec, &relay, &net, peers, start_at, relay_log)
+}
+
+/// Each client's desync dump and the relay log, if a desync happened.
+fn write_dumps(dir: &Path, setup: &MatchSetup, relay: &Relay, peers: &[Peer], log: &[LogRecord]) {
+    if relay.desync_tick().is_none() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(dir);
+    if let Ok(mut f) = std::fs::File::create(dir.join("relay.jsonl")) {
+        use std::io::Write as _;
+        for rec in log {
+            if let Ok(line) = serde_json::to_string(rec) {
+                let _ = writeln!(f, "{line}");
+            }
+        }
+    }
+    for p in peers {
+        let (Some(slot), Some(rec), Some((tick, _))) =
+            (p.client.slot(), p.driver.recorder.as_ref(), p.driver.desync)
+        else {
+            continue;
+        };
+        let hashes = log
+            .iter()
+            .find_map(|l| match l {
+                LogRecord::Desync { hashes, .. } => Some(hashes.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let manifest = crate::dump::DumpManifest {
+            build_id: crate::build_id(),
+            content_hash: "0000000000000000".into(),
+            setup_hash: format!("{:016x}", crate::setup_hash(setup)),
+            seed: setup.seed,
+            d: relay.d(),
+            slot,
+            desync_tick: tick,
+            hashes,
+            ..Default::default()
+        };
+        let _ = rec.write_dump(
+            &dir.join(format!("slot{slot}")),
+            &p.world,
+            manifest,
+            &p.driver.ring,
+        );
+    }
 }
 
 fn report(
@@ -845,4 +915,233 @@ fn report(
         worlds,
         rings,
     }
+}
+
+// --------------------------------------------------------------- UDP run --
+
+/// Plays one match in real time over UDP loopback: a [`RelayServer`]
+/// thread on `127.0.0.1`, two client net threads whose sockets sit behind
+/// an [`Impaired`] link with `spec.link`, and both worlds stepped on the
+/// calling thread. Blackouts, rebinding, garbage and desync injection are
+/// virtual-run features and are ignored here.
+///
+/// [`RelayServer`]: crate::server::RelayServer
+/// [`Impaired`]: crate::transport::Impaired
+pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<VirtualReport> {
+    use crate::client_io::{NetHandle, ToNet, client_bind_for};
+    use crate::server::RelayServer;
+    use crate::transport::{Impaired, UdpTransport};
+
+    let mut server = RelayServer::spawn(spec.relay.clone(), "127.0.0.1:0".parse()?, None)?;
+    let relay_addr = server.local_addr();
+    let hash = crate::setup_hash(setup);
+    let mut rng = SplitMix::new(spec.seed ^ 0x0d0);
+    let mut handles = Vec::new();
+    let mut worlds = Vec::new();
+    let mut drivers = Vec::new();
+    let mut scripts = Vec::new();
+    for i in 0..2 {
+        let sock = UdpTransport::bind(client_bind_for(relay_addr))?;
+        let link = Impaired::new(sock, spec.link.clone(), spec.seed.wrapping_add(i));
+        handles.push(NetHandle::spawn_with(
+            ClientConfig {
+                relay: relay_addr,
+                name: format!("p{i}"),
+                build_id: crate::build_id(),
+                content_hash: 0,
+                nonce: rng.next_u64(),
+            },
+            Box::new(link),
+        )?);
+        worlds.push(World::new_match(setup.clone(), spec.threads.max(1))?);
+        drivers.push(SimDriver::new(true));
+        scripts.push(Scripter::new(spec.seed, i as u8));
+    }
+    let mut slots: [Option<u8>; 2] = [None, None];
+    let mut readied = false;
+    let mut joined_at: Option<Instant> = None;
+    let mut started: Option<Instant> = None;
+    let mut byes = [None, None];
+    let mut pauses = 0;
+    let mut resumes = 0;
+    let mut queued = [0u64; 2];
+    let mut events = Vec::new();
+    let mut scripted = Vec::new();
+    let t0 = Instant::now();
+    let countdown = std::time::Duration::from_micros(spec.relay.countdown_us);
+    let length = std::time::Duration::from_secs(spec.seconds);
+    let tail = std::time::Duration::from_micros(spec.quiet_tail_us);
+    loop {
+        if started.is_none() && t0.elapsed().as_secs() > 60 {
+            anyhow::bail!("the lobby did not start within 60 s");
+        }
+        if started.is_some_and(|s| s.elapsed() >= countdown + length) {
+            break;
+        }
+        for i in 0..2 {
+            let h = &handles[i];
+            events.clear();
+            h.drain_events(&mut events);
+            for ev in &events {
+                drivers[i].on_event(ev);
+                match ev {
+                    NetEvent::Welcome { slot } => {
+                        slots[i] = Some(*slot);
+                        let s = *slot as usize;
+                        h.send(ToNet::Lobby(LobbySet {
+                            faction: faction_of(setup, s),
+                            seed: (s == 0).then_some(setup.seed),
+                            map: None,
+                            d: if s == 0 { spec.d_override } else { None },
+                        }));
+                    }
+                    NetEvent::Start(_) => {
+                        started.get_or_insert_with(Instant::now);
+                    }
+                    NetEvent::Paused { .. } if i == 0 => pauses += 1,
+                    NetEvent::Resume { .. } if i == 0 => resumes += 1,
+                    NetEvent::Bye(r) => byes[i] = Some(*r),
+                    NetEvent::Rejected(r) => anyhow::bail!("relay rejected client {i}: {r:?}"),
+                    _ => {}
+                }
+            }
+            let status = h.status();
+            let period = status.schedule.map_or(33_333, |s| s.period());
+            drivers[i].advance(
+                &mut worlds[i],
+                h.now_us(),
+                period,
+                |t| status.step_slot(t),
+                |tick, hash| h.send(ToNet::Hash { tick, hash }),
+            );
+            if spec.script
+                && let Some(s) = started
+                && s.elapsed() + tail < countdown + length
+                && worlds[i]
+                    .game()
+                    .is_some_and(|g| g.outcome() == Outcome::Running)
+            {
+                scripted.clear();
+                scripts[i].tick(h.now_us(), &worlds[i], &mut scripted);
+                for k in scripted.drain(..) {
+                    h.send(ToNet::Command(k));
+                    queued[i] += 1;
+                }
+            }
+        }
+        if joined_at.is_none() && slots.iter().all(|s| s.is_some()) {
+            joined_at = Some(Instant::now());
+        }
+        if !readied && joined_at.is_some_and(|j| j.elapsed().as_millis() >= 1500) {
+            readied = true;
+            for h in &handles {
+                h.send(ToNet::Ready(hash));
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let relay = server.status();
+    let statuses: Vec<_> = handles.iter().map(|h| h.status()).collect();
+    for h in &mut handles {
+        h.stop();
+    }
+    server.stop();
+    // Index by slot.
+    let mut order = [0usize, 1];
+    if slots[0] == Some(1) {
+        order = [1, 0];
+    }
+    let h0: BTreeMap<u64, u64> = drivers[order[0]].published.iter().copied().collect();
+    let (mut checks, mut mismatches, mut first) = (0, 0, None);
+    for (t, h) in &drivers[order[1]].published {
+        if let Some(a) = h0.get(t) {
+            checks += 1;
+            if a != h {
+                mismatches += 1;
+                first.get_or_insert(*t);
+            }
+        }
+    }
+    let far = if worlds[order[0]].tick() >= worlds[order[1]].tick() {
+        order[0]
+    } else {
+        order[1]
+    };
+    let mut lost = [0; 2];
+    let mut order_errors = 0;
+    let mut executed: [Vec<Executed>; 2] = [Vec::new(), Vec::new()];
+    for pl in 0..2 {
+        let stamped = statuses[order[pl]].stamped;
+        let mine: Vec<Executed> = drivers[far]
+            .executed
+            .iter()
+            .copied()
+            .filter(|e| e.player == pl as u8)
+            .collect();
+        let mut expect = 0;
+        for e in &mine {
+            if e.seq != expect {
+                order_errors += 1;
+            }
+            expect = e.seq.wrapping_add(1);
+        }
+        lost[pl] = stamped.saturating_sub(mine.len() as u64);
+        executed[pl] = mine;
+    }
+    let mut steps: Vec<u32> = drivers
+        .iter()
+        .flat_map(|d| d.step_us.iter().copied())
+        .collect();
+    steps.sort_unstable();
+    let pick = |q: usize| {
+        steps
+            .get((steps.len() * q / 100).min(steps.len().saturating_sub(1)))
+            .copied()
+            .unwrap_or(0)
+    };
+    let outcome = |w: &World| w.game().map_or(Outcome::Running, |g| g.outcome());
+    Ok(VirtualReport {
+        d: relay.d,
+        start_at: 0,
+        ticks: [worlds[order[0]].tick(), worlds[order[1]].tick()],
+        hash_checks: checks,
+        hash_mismatches: mismatches,
+        first_mismatch: first,
+        stamped: [statuses[order[0]].stamped, statuses[order[1]].stamped],
+        queued: [queued[order[0]], queued[order[1]]],
+        executed,
+        lost,
+        order_errors,
+        streams_differ: false,
+        relay_restamps: relay.restamps,
+        relay_commands: relay.commands,
+        own_restamps: [
+            statuses[order[0]].own_restamps,
+            statuses[order[1]].own_restamps,
+        ],
+        stall_ticks: [drivers[order[0]].stall_ticks, drivers[order[1]].stall_ticks],
+        desync: [drivers[order[0]].desync, drivers[order[1]].desync],
+        relay_desync: relay.desync_tick,
+        byes: [byes[order[0]], byes[order[1]]],
+        outcomes: [outcome(&worlds[order[0]]), outcome(&worlds[order[1]])],
+        injected_surrenders: Vec::new(),
+        pauses,
+        resumes,
+        rtt_p99_ms: [statuses[order[0]].rtt_p99_ms, statuses[order[1]].rtt_p99_ms],
+        net: SimNetStats::default(),
+        step_p99_us: pick(99),
+        step_max_us: steps.last().copied().unwrap_or(0),
+        relay_log: Vec::new(),
+        rings: [
+            std::mem::take(&mut drivers[order[0]].ring),
+            std::mem::take(&mut drivers[order[1]].ring),
+        ],
+        worlds: {
+            let mut w = worlds;
+            if order[0] == 1 {
+                w.swap(0, 1);
+            }
+            w
+        },
+    })
 }
