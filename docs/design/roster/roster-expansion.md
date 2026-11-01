@@ -63,7 +63,7 @@ Historical figures are starting values from memory. Each needs a
 | HQ as a forward spawn | It undoes "spawn at base and walk", the main balance lever. Every match would become a hunt for the HQ. | Units and replacements always spawn at base. The only forward reinforcement that fits the rule is a truck or half-track that **carries** men from base. |
 | HQ "spawns ammo crates" | Crates made from nothing at the front are a forward spawn for ammunition. An abstract "trickle" into the HQ is the same thing, only slower. | The HQ **issues** crates from a stock that runs out and starts empty. Trucks, half-tracks or carried crates refill it. Before trucks exist, a free two-man **carrying party** walks from base to the HQ every few minutes (owner question Q2): it obeys "spawn at base and walk" and can be shot. |
 | HQ "helps units reload" | Reload speed is a man's hands and the weapon's mechanism. An aura is abstract. | Read it as **refill**: men inside the radius get back the rounds they fired. No reload-speed bonus. |
-| On-map divisional howitzers | Authentic ranges (leIG 18 ≈3.5 km, 105 mm 7.6–11 km) exceed every map, so range cannot be the brake. Placed naively, a gun in base reaches everything with free shells. | **Changed 2026-11-01 at the owner's request: artillery is on-map, crewed and buyable** (`artillery-on-map.md`). One gun per card, two per player. The brakes are the historical ones: a linked observer's line of sight, a per-player shell ration at base (Q4 B), counter-battery by sound and flash, set-up and tow times, masks and minimum range from the real charge tables, crews in the open, cost and caps. Off-map batteries are dropped from skirmish. |
+| On-map divisional howitzers | Authentic ranges (leIG 18 ≈3.5 km, 105 mm 7.6–11 km) exceed every map, so range cannot be the brake. Placed naively, a gun in base reaches everything with free shells. | **Changed 2026-11-01 at the owner's request: artillery is on-map, crewed and buyable** (`artillery-on-map.md`). One gun per card, two per player. The brakes are the historical ones: a linked observer's line of sight, finite shells (each gun has a ready inventory that refills only from crates, an HQ or a dump; shells crates cost manpower at base; owner decision Q4), counter-battery by sound and flash, set-up and tow times, masks and minimum range from the real charge tables, crews in the open, cost and caps. Off-map batteries are dropped from skirmish. |
 | Light vehicles soon | Today rifle and MG rounds do nothing to any vehicle. An M8 or armoured car would be an unkillable infantry hunter. | Small arms against thin armour and open-top exposure ship **with or before** the first light vehicle. |
 | Tiger first | 1,347 built, production ended Aug 1944; the hardest vehicle to balance. | The StuG III G first: the most common German AFV of the period. Its casemate system also gives the Jagdpanzer IV and 38(t). Heavies come last, after their counters. |
 | 5 cm leGrW 36 as the German light mortar | Withdrawn from front-line companies around 1943. | The **8 cm kurzer GrW 42**. The US 60 mm M2 is genuinely current. |
@@ -77,7 +77,7 @@ Historical figures are starting values from memory. Each needs a
 | Fragment rays | The guns design asked for a fragment-ray slice (F0). | Already in S3b-balance (part A1). Dropped from this plan. S3b must land first. |
 | APCR rounds | Both gun and vehicle designs need the `apcr` mechanism. | Already in S3b-balance (A6, PzGr 40). Reused. |
 | Smoke rounds | Two designs proposed mortar and tank smoke as the trench-assault fix. | The owner ruled out mortar smoke for the S3b fix. **No smoke rounds in this plan** unless the owner says so (Q5). Smoke grenades stay. |
-| Who pays for ammunition | Infantry and vehicles: cargo from base is free; transport is the cost. Guns: one per-player supply rate (kg per minute) for every restock. | Staged. S5 keeps the base free and today's compressed mortar range (600 m). We measure. With on-map artillery (Q13 A) a per-player shell ration at base is needed before S11a in any case, whatever the mortar range (Q4; `artillery-on-map.md` §4.2). |
+| Who pays for ammunition | Infantry and vehicles: cargo from base is free; transport is the cost. Guns: one per-player supply rate (kg per minute) for every restock. | Staged. S5 keeps the base free and today's compressed mortar range (600 m). We measure. **Owner decision Q4 (2026-11-01): no ration.** From S6 the base refills no shells or mortar bombs; they leave the base only in crates that cost manpower (`shell_mp_per_kg`). Small-arms crates stay free. Infantry, tanks and AT guns keep free base refill (`artillery-on-map.md` §4.2). |
 | Crates | By supply kind (any calibre) or by ammo class. | By **faction and kind**, counted in kg. A crate feeds only its own faction's calibres, so captured guns need captured crates. |
 | Mortar crew | 3 men plus an optional bearer, or 5 men. | **5 men.** The two bearers carry the bombs; when they die, the mortar runs dry sooner. |
 | Tank rearm at the HQ | Same rate as base, or half. | **Half the base rate** (1 round per 4 s), and the same at a supply vehicle (the vehicle design had 1 per 3 s; one forward rate is easier to read). Rare rounds (APCR, HVAP), repair and new crew stay base-only. |
@@ -356,7 +356,7 @@ assumes it has landed.
 | S8 | Half-tracks, trucks and recon | ~1.1× (largest) | S6, S7 | High: transport, supply vehicles, light armour |
 | S9 | AT guns | ~0.9× | S8 (tows) | High: the cheap, concealed tank counter |
 | S10 | Fortifications and breaching | ~1.5× (split S10a wire, sandbags, MG nest, dugout and their breaching; S10b mines, AT obstacles, bunker) | S6 | High: the trench pillar and the engineer split |
-| S11 | Artillery on the map | ~1.3× (S11a ~0.9× rules, observers, infantry guns; S11b ~0.4× field howitzers, light mortars) | S5, S6, S8, S9, **Q4** | High: the owner's on-map artillery; the trench counter |
+| S11 | Artillery on the map | ~1.3× (S11a ~0.9× rules, observers, infantry guns; S11b ~0.4× field howitzers, light mortars) | S5, S6, S8, S9 (Q4 answered) | High: the owner's on-map artillery; the trench counter |
 | S12 | Wounds and medics | ~0.7× | S6 (aid tent); S10 only for the aid dugout | Medium–high: the owner's medical request |
 | S13 | Heavy wave | ~0.5× sim (mostly data), but seven new models | S7, S9, S11 | Medium–high: Panther, Tiger, 76 mm Sherman, M36, Jumbo, heavy mortars |
 | S14 | Assault kit | ~0.8× | S5, S10, S12 | Medium–high: flamethrowers, then melee |
@@ -440,7 +440,7 @@ gate.
   inside a squad; the `SupplySource` rule with the base as its unlimited
   case; mortar `FireMission` replacing `Barrage`; the observer rule;
   ranging-in; map fire only on known points at 3× scatter; true flight
-  time from charges; AI ammo reserve and rationing; vehicle MG belts
+  time from charges; AI ammo reserve and fire discipline; vehicle MG belts
   counted; tank stowage restored to historical counts; Panzerfaust as a
   single-use launcher item.
 - **Content:** ammo defs for small arms and mortar bombs with `supply`
@@ -448,7 +448,9 @@ gate.
   VG-Sturmgruppe (moved here from S4). HUD: rounds left per man and per
   crew weapon, and a "low" and "dry" marker on the squad card.
 - **Risks:** AI-vs-AI matches stall when everyone runs dry (stall
-  guard test). Mortar range stays at today's 600 m in this slice (Q4).
+  guard test). Mortar range stays at today's 600 m in this slice. In S5
+  the base still refills mortar bombs for free: there are no crates yet.
+  That ends in S6 (owner decision Q4).
   The scope is large; if it runs long, split it into S5a (counts, base
   supply, HUD) and S5b (fire missions, observer, ranging).
 - **Done when:**
@@ -475,6 +477,12 @@ gate.
   by S11); the automatic carrying party (Q2); caps (one HQ, three dumps,
   a live-crate cap per player); AI HQ siting on a reverse slope, crate
   runs to mortars and trenches. HUD: stock bars per kind, radius ring.
+  **Shells cost manpower (owner decision Q4):** a shells crate taken at
+  base costs `shell_mp_per_kg` (start 1.0) per kg; small-arms and
+  explosives crates are free. The base stops refilling mortar bombs. A
+  mortar's ready inventory (the bombs its crew carries) refills only from
+  a crate within 5 m or inside an HQ or dump radius. The HQ and dumps
+  fill only by carried crates (Q2 C). The S11 guns reuse all of this.
 - **Content:** HQ and dump defs per faction; crates per faction and kind;
   Munitionsträger / Ammunition Bearers; Zugtrupp / Platoon HQ; mortar pit.
 - **Risks:** forward supply raises sustained fire near the front. The
@@ -482,7 +490,9 @@ gate.
   and the HQ is a target. Without trucks (S8) the HQ refills only by
   the carrying party or carried crates, so the Q2 default matters.
   Crates are new static boxes in every fragment-ray test: the live-crate
-  cap keeps the box count bounded at Battalion scale.
+  cap keeps the box count bounded at Battalion scale. Priced bomb crates
+  change how much mortars fire: the HE share must be re-measured, and
+  this is where the shell price is set.
 - **Done when:**
   - a squad inside the HQ radius refills its rounds, most depleted first;
     a squad outside does not;
@@ -494,7 +504,15 @@ gate.
     it; one that breaks in kills the radio;
   - the AI builds one HQ behind a held point and keeps its mortars fed;
   - a second HQ order is refused while one stands; a carrying party
-    killed on the way delivers nothing.
+    killed on the way delivers nothing;
+  - a shells crate taken at base costs its kg × `shell_mp_per_kg` in
+    manpower; a small-arms crate costs nothing; with too little manpower
+    no shells crate is issued;
+  - a mortar team standing in base with no crate does not refill its
+    bombs; next to a crate or inside an HQ radius it does;
+  - AI-vs-AI seeds 1–10 with priced bomb crates: the HE share is not
+    above S5's, and matches still end with a winner inside 25 min. Set
+    `shell_mp_per_kg` from this run.
 
 #### S7: Assault guns and tank destroyers (~0.9× S3)
 
@@ -615,13 +633,15 @@ Rewritten 2026-11-01 after the owner's request for artillery as units.
 Design: `artillery-on-map.md`.
 
 - **Scope:** artillery as on-map, crewed, buyable units. One card is one
-  gun and its crew. Authentic ranges stay; observation, the shell ration,
-  counter-battery, set-up times, masks, crews in the open and caps are
+  gun and its crew. Authentic ranges stay; observation, finite shells
+  that cost manpower, counter-battery, set-up times, masks, crews in the open and caps are
   the brakes. Off-map batteries are dropped from skirmish (Q13 A).
   S11a: the rules, observers and infantry guns. S11b: field howitzers on
   the map, light mortars and rifle grenades.
-- **New systems (S11a):** the per-player shell ration at base (Q4 B),
-  drawn by every shell and bomb restock; observer links by radio (FO
+- **New systems (S11a):** ready inventories for guns (owner decision
+  Q4: no ration): a gun refills only from a crate within 5 m, inside an
+  HQ or dump radius, or from its tow; the base zone does not refill it;
+  shells crates cost manpower at base (from S6); observer links by radio (FO
   teams, gun sections, the HQ radio box) or voice (150 m); fire modes
   direct, observed, map fire and counter-battery; registration per gun
   and target, lost when the gun moves; S5's charge solver extended to
@@ -633,13 +653,17 @@ Design: `artillery-on-map.md`.
   on the first round, through the normal spotting scheduler);
   a two-term error for guns (an aim error the observer removes, plus the
   authentic precision spread), registration that expires; starting
-  loads drawn from the ration; the artillery cap counting captured and
+  loads in the card's price, with a content check that a card is worth
+  at least its load at crate price, and tows arriving half full; the
+  artillery cap counting captured and
   neutral guns; a targeting overlay and one refusal reason per order;
   displacement; `howitzer_pit`; HE craters scaled by filler; gun direct
   fire with HE and HEAT; no free crew for guns in base; AI artillery
   planner (buy with an observer, site on reverse slopes, observe from
-  crests, prepare, defend, counter-fire, relocate); friendly fire for
-  indirect HE if Q22 (A). The AI uses observation posts and gun areas
+  crests, prepare, defend, counter-fire, relocate, buy and carry shells
+  crates within a budget); friendly fire from mortars, guns and
+  launchers (owner decision Q22); the own-count hint "N rounds from this
+  spot: likely located", never the enemy's marker (Q24). The AI uses observation posts and gun areas
   precomputed at map load. **S11b:** little new code (a launcher mode
   for HE rifle grenades); otherwise data and tuning for the 2 t field
   howitzers.
@@ -649,36 +673,48 @@ Design: `artillery-on-map.md`.
   75 mm pack howitzer as data; kz. GrW 42, 60 mm M2; M7 rifle grenade and
   *Schießbecher*. Later: sIG 33; Nebelwerfer 41 only if Q23 allows.
 - **Size:** S11a ~0.9×, S11b ~0.4× (data, models and tuning). S11a is
-  likely optimistic. Split point if it runs long: S11a1 (ration, links,
+  likely optimistic. Split point if it runs long: S11a1 (ready inventories, links,
   fire modes, masks, leIG 18 and M3, basic AI) and S11a2 (registration,
   counter-battery, displacement, defensive-fire AI).
 - **Depends on:** S3b (fragment rays, parapet erosion, duck state); S5
   (counted ammo, `FireMission`, observer rule, charge solver); S6 (HQ
   radio box, crates, pit kind); S8 (trucks as tows and ammo carriers); S9
-  (gun entity, service slots, towing, capture). **Q4 must be answered
-  (B, or C)** before S11a. S11b waits for S11a's measurements.
-- **Risks:** more HE. S11a ships only if S5 met its HE-share target; the
-  ration is the hard ceiling (a second gun shares the pot; it adds no HE).
-  Counter-battery duels could crowd out play: report the share of shells
-  fired at guns. Base artillery will be common on 1 km maps; it is
-  accepted only because the ration caps it (`artillery-on-map.md` §4.9).
+  (gun entity, service slots, towing, capture). Q4 is answered (no
+  ration; priced crates). S11b waits for S11a's measurements.
+- **Risks:** more HE. S11a ships only if S5 met its HE-share target and
+  S6 kept it with priced bomb crates. Without the ration there is no hard
+  HE ceiling: a gun adds HE if its owner pays, and a richer player can
+  buy more. `artillery-on-map.md` §4.10 re-checks every exploit the
+  ration closed; three are weaker (base battery, overall HE, forward
+  stockpile), and each has a TOML lever (`shell_mp_per_kg`,
+  `base_crate_issue_s`, `shell_crate_cap`, dump caps). Counter-battery
+  duels could crowd out play: report the share of shells fired at guns.
+  Base artillery will be common on 1 km maps; in base the walk is short,
+  so the crate price is the main brake there (§4.9).
   With 600 m mortars, only guns or a raid reach a rear gun.
   `indirect_from_base = false` exists but helps little on small maps.
   Ranged-in guns are accurate at these ranges, so trench safety rests on
-  S3b's trench model. The ration value must start at S5's measured
-  mortar use, not at the 60 kg placeholder. Placement is compressed: on 1 km maps
+  S3b's trench model. The shell price must come from S6's measurement,
+  not from the 1.0 placeholder. Placement is compressed: on 1 km maps
   the leFH 18, M3 and M2A1 fire almost flat (weak against trenches, good
-  against structures and in direct fire); Q25. Without friendly fire,
-  shelling a trench while your men enter it is an exploit (Q22).
+  against structures and in direct fire). A range cut would not change
+  that, since targets are in range anyway (Q25 decided: all maps, cap 1,
+  8:00 unlock as defaults to measure). Friendly fire (Q22) makes the
+  lift a skill; in team games a player can shell allies, so the
+  danger-close warning covers them and the match report lists
+  friendly-fire kills per player.
 - **Done when:**
   - with no linked observer, an observed mission is refused; map fire
     lands only on knowledge points, with a gun's mean miss about 2× an
     observed first round; a registration expires after 600 s;
-  - control run with the ration on and no guns: the HE share is not
-    above S5's;
-  - a gun called with an empty shell stock arrives with no shells; a
-    player cannot serve more guns than the cap, own, neutral or
-    captured;
+  - control run with priced crates and no guns: the HE share is not
+    above S6's;
+  - a called gun arrives with its full starting load; a card worth less
+    than its load at crate price fails the content check; a player
+    cannot serve more guns than the cap, own, neutral or captured;
+  - a gun parked in base does not refill from the base; it refills from
+    a crate within 5 m or inside an HQ or dump radius, and that stock
+    goes down by the same kg;
   - a leFH 18 or M3 told to hit a trench behind a crest from 600 m
     reports "masked"; a leIG 18 at high angle hits it;
   - a gun firing from one spot gets an enemy marker after 3 rounds, with
@@ -686,10 +722,14 @@ Design: `artillery-on-map.md`.
     round; a gun that displaces after 4 rounds survives counter-battery
     more often than one that stays (10 runs each); a gun firing one
     round a minute is marked by its 4th round; an enemy with line of
-    sight spots the gun by flash on its first round;
-  - a gun in base with a forward observer fires no more than the ration
-    allows and stops when it is empty; AI matches still end with a winner
-    inside 25 min;
+    sight spots the gun by flash on its first round; the firing player
+    sees only his own-count hint, never the enemy's marker;
+  - a gun in base with a forward observer stops when its ready inventory
+    is empty and no crate is near; report the manpower each side spent
+    on shells; AI matches still end with a winner inside 25 min;
+  - own men inside a mortar, gun or launcher burst take fragments and
+    blast; own direct fire still passes through them; the AI lifts fire
+    in time in at least 9 of 10 staged assaults;
   - a leIG 18 at 400 m silences an MG nest over open sights; a 105 mm
     burst breaks a dugout roof that survives an 81 mm hit; M67 HEAT
     penetrates a Panzer IV side; 105 mm HE on a Sherman damages only
@@ -699,12 +739,14 @@ Design: `artillery-on-map.md`.
     preparation barrage cuts attacker losses to at most half the
     no-support baseline (owner sets the bar);
   - 20 AI matches: HE share of kills at most 30 % on average and 45 % in
-    any match (Q16); infantry guns and howitzers at most 10 % of kills;
+    any match (Q16), and at most 45 % for the richer side of every match;
+    infantry guns and howitzers at most 10 % of kills; manpower spent on
+    shells reported per player (AI 10–30 % of income);
   - the AI buys a gun and an observer in at least 6 of 10 matches, fires
     observed or counter-battery missions, never fires indirect without
     an observer except on knowledge points, and displaces after
     counter-fire;
-  - stress scene with 20 guns and 30 mortars at the ration ceiling on
+  - stress scene with 20 guns and 30 mortars firing at full rate on
     Battalion: no capped fragment rays in AI matches, stress p99 inside
     S3b T13; hashes equal at 1, 2, 3 and 8 threads and through save and
     load with shells in flight.
@@ -793,15 +835,23 @@ Design: `artillery-on-map.md`.
 
 ## Owner decisions (2026-11-01)
 
+Q4, Q22, Q24 and Q25 were answered later the same day; §5 marks them
+answered.
+
 | Q | Decision | Note |
 |---|---|---|
 | 2. HQ fill before trucks | **(C) Nothing**: only crates carried by the player's own men, later trucks and half-tracks. | The owner was unsure; a carrying party could be abused (free scouts or decoys) and often dies on the way. Revisit after S8 if the HQ is empty too often in play. |
+| 4. Base and mortar range; who pays for shells | **No ration.** Owner: "Perhaps, the ration shouldn't exist, but the artillery will have an inventory with shells at immediate disposal. But they can be refilled by bringing ammo crates nearby or placing the artillery near a structure that can refill them." Follow-up: shells crates **cost manpower** when taken at base; small-arms crates free or cheap; all values in TOML. | Each gun and mortar has a ready inventory. It refills from crates placed or carried within 5 m, or inside an HQ or dump radius; their stock fills only by crates (later trucks). The base does not refill shells. **Mortars follow the same rule from S6** (S5 has no crates yet, so its base still refills bombs). Starting loads come with the card's price. Start values: `shell_mp_per_kg` 1.0, small arms 0. Weaker than the ration: HE now scales with income. Each exploit is re-checked in `artillery-on-map.md` §4.10, with a lever for each weaker one. |
 | 6. Squad sizes | **(A)** Historical sizes (German about 10, US 12), cheaper understrength cards, pop cap 150. | |
 | 11 / 20. Order | **(A)** Vehicles first: S7 assault guns and TDs, S8 half-tracks and trucks, S9 AT guns; fortifications S10. | |
 | 13. Artillery | **Owner prefers artillery as on-map units** (request of 2026-11-01). Default changed to on-map (A). | Design in `artillery-on-map.md`. Off-map batteries dropped from skirmish. S11 rewritten and split. |
 | 21. Variant cooldowns | **(B)** Every card has its own cooldown. | Risk: alternating full and understrength cards doubles the call rate; manpower cost and `max_alive` are the brakes. `cooldown_group` stays in the schema (unset by default), so it can be switched per card in TOML. |
+| 22. Friendly fire from indirect HE | **(A) Yes.** Fragments and blast from mortars, guns and launchers hurt own men; direct fire stays as today. | Ships in S11a. Allies can be hit too: the danger-close warning covers them, and the match report lists friendly-fire kills per player. |
+| 24. Show the enemy's marker on a gun? | **(A) Hint only:** "N rounds from this spot: likely located", from the player's own count. Never the enemy's marker. | `cb_hint_rounds` in TOML. |
+| 25. Field howitzers on small maps | **Allowed on all maps.** The owner is unsure about the limit and suggested a small range tweak. | Cap 1 per player and 8:00 unlock stay as TOML defaults to measure in S11b. A range cut does not fix flat fire on small maps: targets are in range anyway. A per-map max range has no real use (it only moves a base gun forward), so none is offered. Levers if they dominate: cost, cap, unlock, cooldown, then the `allow_field_howitzers` map flag. |
 
-All other questions run on their (A) defaults until answered.
+All other questions run on their (A) defaults until answered. Q23
+(rocket launchers) is still open.
 
 ## 5. Owner questions
 
@@ -827,7 +877,10 @@ answer. The slice in brackets is the first one blocked by the answer.
 3. **Supply unit** [S5]. (A) Kilograms in four kinds (small arms,
    explosives, shells, construction); a faction's crate feeds its own
    calibres. (B) Strict per-calibre crates. (C) Abstract supply points.
-4. **Base and mortar range** [S5; must be settled before S11]. (A) Base
+4. **Base and mortar range** [S5; must be settled before S11].
+   **Answered 2026-11-01: no ration; priced shells crates** (see "Owner
+   decisions" above; `artillery-on-map.md` §4.2, §4.10). The options as
+   they were asked: (A) Base
    resupply stays free and mortar range stays at today's 600 m through
    S5; measure; decide B or C before S11, because the on-map leIG 18 and
    105 mm M3 out-range the map and would fire from base for free.
@@ -835,12 +888,11 @@ answer. The slice in brackets is the first one blocked by the answer.
    for every shell restock, base included. (C) Authentic ranges, plus a
    manpower cost per restocked shell.
    With on-map artillery (Q13 A) this must be answered before S11a.
-   `artillery-on-map.md` §4.2 recommends (B), as a shell ration at base
-   (start 60 kg per minute as a placeholder, to be set from S5's
-   measured use; cap 360 kg) drawn by every shell and bomb restock and
-   by the starting loads of new guns and mortars: it caps HE tonnage
-   whatever the income. The HQ still fills
-   only by carried crates and trucks (Q2 C).
+   The design had recommended (B) as a shell ration at base. The owner
+   chose a form of (C) instead: manpower is paid per shells crate taken
+   at base, and each gun or mortar refills from crates and refill
+   structures, never from the base itself. The HQ still fills only by
+   carried crates and trucks (Q2 C).
 5. **Smoke rounds** [S5]. You ruled out mortar smoke as the S3b
    trench-assault fix. (A) No smoke rounds in this plan; smoke grenades
    stay. Revisit only if S3b's pinning misses its trench-assault target.
@@ -881,7 +933,7 @@ answer. The slice in brackets is the first one blocked by the answer.
     ("having howitzers or some artillery is better as a unit"). (A)
     On-map, crewed, buyable units: infantry guns (S11a) and single-gun
     field howitzer sections (S11b), two per player, with authentic
-    ranges. Observation, the shell ration (Q4 B), counter-battery by
+    ranges. Observation, finite shells in priced crates (Q4), counter-battery by
     sound and flash, set-up times, masks from the real charge tables and
     caps hold them back. Off-map batteries are dropped from skirmish.
     Reasons: an on-map gun can be found, shelled and overrun, so every
@@ -925,7 +977,8 @@ answer. The slice in brackets is the first one blocked by the answer.
 
 **Artillery** (added 2026-11-01; detail in `artillery-on-map.md` §11)
 
-22. **Friendly fire from indirect HE** [S11a]. Today no own round hurts
+22. **Friendly fire from indirect HE** [S11a]. **Answered 2026-11-01:
+    yes (A).** Today no own round hurts
     own men, so a player could shell a trench while his men walk into it.
     (A) Fragments and blast from mortars, guns and launchers hurt own men;
     direct fire stays as today. (B) Keep no friendly fire; the AI keeps
@@ -934,14 +987,19 @@ answer. The slice in brackets is the first one blocked by the answer.
     salvo is about 200 kg of ammunition but only about 12–15 kg of
     explosive (verify), about six 105 mm shells, all landing within ten
     seconds. (A) Later, as a lobby option, cap 1,
-    12:00 unlock, after the ration is measured with tube artillery.
+    12:00 unlock, after the shell price is measured with tube artillery.
     (B) Missions only. (C) In S11b.
-24. **Show the player the enemy's marker on his gun?** [S11a]. (A) No:
+24. **Show the player the enemy's marker on his gun?** [S11a].
+    **Answered 2026-11-01: hint only (A).** (A) No:
     only his own count ("6 rounds from this spot: likely located").
     (B) Show it (leaks enemy knowledge).
-25. **Field howitzers on small maps** [S11b]. On 1 km maps the leFH 18,
-    M3 and M2A1 fire almost flat. (A) Allowed on every map, 1 per player,
-    8:00 unlock. (B) Only on maps of 2 × 2 km and larger (a map flag).
+25. **Field howitzers on small maps** [S11b]. **Answered 2026-11-01:
+    allowed on all maps; cap 1 and 8:00 unlock as TOML defaults to
+    measure.** On 1 km maps the leFH 18, M3 and M2A1 fire almost flat. A
+    range tweak would not change that, and a per-map max range has no
+    real use (`artillery-on-map.md` §4.5). The options were: (A) Allowed
+    on every map, 1 per player, 8:00 unlock. (B) Only on maps of 2 × 2 km
+    and larger (a map flag).
 
 ---
 
@@ -966,7 +1024,8 @@ squad that builds it.
 | MG team (MG 42, M1919, BAR) | 250–1,500 rounds, shared in the team | 1–2 min continuous, 5–8 min in bursts. **The first thing to go quiet.** |
 | Every man | grenades, smoke, satchels, Panzerfaust (today's counts) | single use |
 | Launcher team | 5–6 rockets | — |
-| Mortar squad (5 men) | 18–30 bombs, mostly with the bearers | 2–3 fire missions |
+| Mortar squad (5 men) | 18–30 bombs, mostly with the bearers (its ready inventory) | 2–3 fire missions |
+| Infantry gun or howitzer | ready inventory at the gun (leIG 18: 12 HE, 2 HEAT; 105 mm: 12–15 rounds), the tow half full on arrival | one or two fire missions |
 | AT gun | ready rack and reserve at the gun (Pak 40: 10 AP, 6 HE, 2 APCR), more in the tow | one engagement |
 | Tank | historical stowage (Pz IV H 87, *verify*), MG belts counted, rare rounds 0–5 | rarely in 30 min, but rare rounds go fast |
 
@@ -975,21 +1034,23 @@ squad that builds it.
 ```
 Base (unlimited) ──truck / half-track──▶ HQ or dump (finite stock)
       │                                      │
-      │                                      ├─ resupply radius (25 m): men refill
-      │                                      ├─ issue crate ──carried──▶ trench / mortar pit
+      │                                      ├─ resupply radius (25 m): men, mortars and guns refill
+      │                                      ├─ issue crate ──carried──▶ trench / mortar pit / gun
       │                                      └─ vehicles rearm at half the base rate
-      ├─ carrying party (before trucks, Q2) ──walks──▶ HQ
-      └─ men, guns and vehicles refill in base (today's rates)
+      ├─ crates carried by the player's men ──walk──▶ HQ, dump, gun or mortar
+      ├─ men and vehicles refill in base (today's rates)
+      └─ shells and mortar bombs leave the base only in crates or vehicle loads,
+         at a manpower price (owner decision Q4); the base refills no gun or mortar
 ```
 
 | Source | Stock | Radius | Serves |
 |---|---|---|---|
-| Own base | unlimited | base zone | everything: rare rounds, repair, new crew (today's rules, unchanged) |
+| Own base | unlimited | base zone | men, tanks, AT guns: rare rounds, repair, new crew (today's rules). **Not** guns' shells or mortar bombs: those leave only in crates, at `shell_mp_per_kg` (start 1.0) per kg; small-arms crates free |
 | HQ | finite, **starts empty** (caps about 300 kg small arms, 200 kg explosives, 600 kg shells). Costs 100 manpower plus 120 kg of construction material; one per player; rebuild after 120 s if destroyed | 25 m | men; vehicles at half rate; issues crates |
 | Ammo dump | finite, smaller; up to 3 per player | 15 m | men; issues crates; no radio |
 | Supply truck | about 2.5–3 t (Opel Blitz 3 t, CCKW 2½ t off-road), soft-skinned | 8–15 m | men, vehicles; unloads into the HQ; drops crates |
 | Half-track | 300–500 kg, armoured | 8 m | men, vehicles; works under fire |
-| Crate | 20–40 kg; a live-crate cap per player (data, e.g. 12) | 5 m | men of any squad of that faction |
+| Crate | 20–40 kg; a live-crate cap per player (data, e.g. 12), of which at most 8 shells crates | 5 m | men of any squad of that faction; a gun or mortar within 5 m |
 | Squadmate | his own surplus | 3 m | same squad, same calibre |
 
 Rules inside the radius:
@@ -998,13 +1059,16 @@ Rules inside the radius:
 - He takes the most depleted thing first.
 - Each source serves a few men at a time, in a fixed order, so the sim
   stays deterministic.
-- A mortar is fed when its crew stands in the radius, or a crate lies
-  within 5 m of the tube.
+- A mortar or gun is fed when it (or its crew) stands in the radius, or
+  a crate lies within 5 m of it. In the base zone it is **not** fed: a
+  crew in base takes a priced crate and sets it down by the gun.
 - Tank shells are too heavy for carried crates: a 75 mm complete round
   weighs 9–11 kg, so 30 rounds are about 300 kg and a full Panzer IV
   load (87) is close to a tonne. Tanks rearm only at the base, the HQ
   or a supply vehicle, and a full HQ shell stock (600 kg) refills about
-  two-thirds of one tank, so tanks compete with mortars for it.
+  two-thirds of one tank, so tanks compete with mortars for it. Those
+  HQ shells were paid for at base; a tank that rearms at the HQ spends
+  them, while it rearms free in base.
 
 ### A.3 What keeps it honest
 
@@ -1015,6 +1079,10 @@ Rules inside the radius:
   supply before trucks is carried by men who walk from base (Q2 A).
 - **No spam.** One HQ, three dumps, two aid posts and a live-crate cap
   per player, all in rules data.
+- **Shells cost manpower** (owner decision Q4). There is no shell
+  ration. Every shell and mortar bomb fired was paid for at base, as a
+  card's starting load or as a crate. The price is the main HE lever
+  (`artillery-on-map.md` §4.10).
 - **The HQ shortens the loop; it does not remove it.** Rare rounds,
   repair and new crew stay base-only.
 - **No reload aura.** Reload speed stays a man's hands and his weapon.
@@ -1024,20 +1092,26 @@ Rules inside the radius:
 | Today | After |
 |---|---|
 | Items and rockets: 1 per 20 s in base | The base is a supply source with unlimited stock and those same rates. HQ, dump, crates and vehicles run the same code with finite stock. |
-| Small arms, MG belts, mortar bombs unlimited | Counted per man; the base refills them like items. |
+| Small arms, MG belts unlimited | Counted per man; the base refills them like items. |
+| Mortar bombs unlimited | Counted per man. S5: the base refills them like items. From S6: the base refills none; bombs come in priced crates or from the HQ and dumps. |
+| (no guns yet) | Infantry guns and howitzers (S11): ready inventory at the gun; refilled only by crates, HQ, dumps or the tow; never by the base. |
 | Tanks rearm 1 round per 2 s in base | Same in base; half rate (1 per 4 s) at the HQ and at a supply vehicle. |
 | Repair and crew refill in base | Unchanged. |
 
 A match where nobody builds an HQ plays like today, except that rounds
-and bombs now run out. Existing base-resupply tests stay meaningful.
+and bombs now run out, and from S6 mortar bombs come in crates that
+cost manpower. Existing base-resupply tests stay meaningful.
 
 ### A.5 The AI
 
-- **Rationing:** each mortar and gun keeps a 30 % reserve for defence.
+- **Reserve:** each mortar and gun keeps a 30 % reserve for defence.
   Barrages only on targets above a score threshold. This alone should cut
   the mortar kill share.
 - **Resupply trips:** a squad under 30 % with no enemy near goes to the
-  nearest source; mortar bearers fetch bombs.
+  nearest source; mortar bearers and gun crews fetch shells crates (HQ
+  or dump first; the base only if none, and it costs manpower).
+- **Shell budget:** the AI spends at most `ai.shell_mp_max_pct` (25 %)
+  of its income on shells crates.
 - **HQ:** built about 120 m behind the most valuable held point, on a
   reverse slope (a few ray probes for "no line of sight from the enemy").
 - **Logistics:** a truck runs base → HQ → base when stock falls under
@@ -1105,7 +1179,9 @@ only) and the three area designs.
   howitzers because they reach the whole map from base, but then put the
   leIG 18 (≈3.5 km) and 105 mm M3 (≈7.6 km) on the map with free base
   resupply: the same trap. S11 is now blocked by Q4 (a per-player shell
-  supply rate, B, or a manpower cost per shell, C). Range compression
+  supply rate, B, or a manpower cost per shell, C). *Answered
+  2026-11-01: no ration; the base refills no shells, and shells crates
+  cost manpower at base.* Range compression
   is no longer an option: `artillery-on-map.md` §3.2 shows it does not
   stop fire from base.
 - **Variant cooldowns.** With per-card cooldowns, the full and

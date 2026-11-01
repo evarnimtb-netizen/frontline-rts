@@ -483,16 +483,30 @@ evac_refund_pct = 40
 
 ### 6.1 Principles
 
+> **Owner decision Q4 (2026-11-01).** No per-player shell ration. Each
+> gun and mortar has a ready inventory that refills only from crates
+> nearby or from an HQ or dump radius. The base zone does not refill
+> shells or mortar bombs (mortars from S6, when crates exist). Shells
+> crates **cost manpower** when taken at base (`shell_mp_per_kg`, start
+> 1.0); small-arms and explosives crates stay free. Full rule in
+> `artillery-on-map.md` §4.2; roadmap "Owner decisions". The text below
+> is updated to match.
+
 - **Everything a man, gun or vehicle fires is carried, counted and runs
   out.** Rounds by ammo id, items by count.
 - **Supply moves physically.** Base → truck or half-track → HQ / dump →
   crates or the supply radius → men. Each link is a real entity that can
   be shot.
-- **No currency for ammunition.** Supply costs **time and transport**, not
-  manpower, so "the walk is the balance" now also holds for ammunition.
-  The vehicles and HQ cost manpower; the cargo from base is free.
-- **The base is just an infinite source.** Today's base resupply becomes
-  the first instance of the general mechanism.
+- **Small arms and explosives cost no currency.** They cost **time and
+  transport**, not manpower, so "the walk is the balance" also holds for
+  them. The vehicles and HQ cost manpower; that cargo from base is free.
+- **Shells are the exception.** Mortar bombs, gun and howitzer shells,
+  artillery rockets and HE rifle grenades (`crate_only_classes`) leave
+  the base only in crates or vehicle loads, at `shell_mp_per_kg` per kg.
+  They are the HE that dominates kills today, so they compete with men
+  for manpower.
+- **The base is just an infinite source** for everything else. Today's
+  base resupply becomes the first instance of the general mechanism.
 
 ### 6.2 What runs out (starting values, all verify)
 
@@ -576,7 +590,7 @@ issue_crates = ["ww2:crate_small_arms", "ww2:crate_shells", "ww2:crate_explosive
 
 | Source | Stock | Radius | Serves | Notes |
 |---|---|---|---|---|
-| **Own base zone** | infinite | base radius | everything + vehicle rearm, repair, crew | Today's behaviour, now one instance of the rule |
+| **Own base zone** | infinite | base radius | men, vehicle rearm, repair, crew; **not** guns or mortars (Q4) | Today's behaviour, now one instance of the rule. Shells crates issued here cost manpower |
 | **HQ / command post** | finite, cap from def | 25 m | men + crate issue | §7.2 |
 | **Ammo dump** | finite | 15 m | men + crate issue | Cheaper, no radio; any number (limit in data) |
 | **Supply truck** (Opel Blitz, GMC CCKW, Studebaker US6) | finite, large (1–2 t, verify) | 8 m | men, vehicles, unloads to HQ/dump | Soft-skinned: rifle rounds that touch the cargo bed can set off `shells` stock (physical) |
@@ -608,9 +622,10 @@ Status stage, serial, **ascending source id, then ascending man id**
   source.
 - At most `max_clients` men per source per service tick, round-robin by
   a saved cursor so a big crowd is served fairly.
-- **Crew weapons:** a mortar is fed if its crew is in the radius **or** a
-  crate lies within 5 m of the tube (an ammo bearer drops it at the pit).
-  This is how mortars were really fed.
+- **Crew weapons:** a mortar or gun refills its ready inventory if it
+  (or its crew) is in an HQ or dump radius, **or** a crate lies within
+  5 m of it (an ammo bearer drops it at the pit). This is how mortars
+  were really fed. The base zone does not feed them (Q4).
 - **Vehicles:** a vehicle within `vehicle_radius_m` of a truck,
   half-track, dump, HQ or the base gets 1 main-gun round per 2 s
   (today's `base_rearm_s`) and MG belts at 50 rounds per second, from
@@ -630,8 +645,11 @@ tests stay meaningful.
 
 - **Made at** an HQ or dump: `IssueCrate { source, crate_def }`. The crate
   appears next to the source after `issue_s` (10 s) and its kg leave the
-  source's stock. Crates can also be issued at base for free (infinite
-  stock), or unloaded from a truck.
+  source's stock. Crates can also be issued at base (infinite stock), or
+  unloaded from a truck. At base, small-arms and explosives crates are
+  free; a shells crate costs `shell_mp_per_kg` × its kg in manpower (a
+  32 kg crate: 32 at the start value). Loading shells onto a vehicle at
+  base costs the same per kg.
 - **Carried by men:** `CarryCrate` / `PlaceCrate`. One man carries a light
   crate (≤ 25 kg) at 80 % speed; a shells crate (30–35 kg) at 60 %, or two
   men at 85 % (data). A carrier cannot fire his main weapon; he can drop
@@ -646,7 +664,8 @@ tests stay meaningful.
   to its remaining kg). A `small_arms` crate is just lost. No damage
   without contact.
 - **Fog of war:** enemy crates are seen like any object (spotting rays).
-- **Cap:** at most `crate_cap` per player (32), oldest empty first.
+- **Cap:** at most `crate_cap` per player (32), oldest empty first; of
+  these at most `shell_crate_cap` (8) shells crates.
 
 ```toml
 # defs/supply/crate_shells.toml
@@ -657,6 +676,7 @@ carry_men = 1
 carry_speed_pct = 60
 hp = 60
 cook_off = { damage = 150, lethal_radius_cm = 250, damage_radius_cm = 700, suppression_radius_m = 15 }
+# Price at base: kg x [supply] shell_mp_per_kg in rules (Q4); 0 for small-arms crates
 ```
 
 ### 6.7 How this fits today's base resupply
@@ -664,7 +684,8 @@ cook_off = { damage = 150, lethal_radius_cm = 250, damage_radius_cm = 700, suppr
 | Today | After |
 |---|---|
 | Items and rockets refill 1 per 20 s in base | Base is a `SupplySource` with infinite stock and those rates; HQ, dump, crates and vehicles use the same code with finite stock |
-| Small arms, belts, mortar bombs unlimited | Finite per man (§6.2); base refills them like items |
+| Small arms, belts unlimited | Finite per man (§6.2); base refills them like items |
+| Mortar bombs unlimited | Finite per man. S5: base refills them like items. From S6: the base refills none; priced crates, HQ and dumps only (Q4) |
 | Tanks rearm in base, 1 round per 2 s | Same rate at any source with `shells` stock in vehicle range |
 | Repair and crew refill in base only | Unchanged (repair truck later) |
 | `Kit.items[ITEM_KINDS]` per soldier | `Kit` gains `rounds: SmallVec<[(AmmoId, u16); 2]>`; saved and hashed |
@@ -681,7 +702,7 @@ match may stall. Gate it with a test (§9).
   dump, crate, truck), base only if nothing nearer. It returns to its task
   afterwards. Mortar teams below one barrage move to the HQ or ask for a
   crate.
-- **Rationing:** mortar barrages only on targets scoring above
+- **Fire discipline:** mortar barrages only on targets scoring above
   `ai.barrage_min_score`, and `barrage_rounds` scales with stock. This
   alone should cut the mortar kill share the TODO complains about.
 - **Logistics:** keep an HQ stocked: when stock < 40 % and the AI has a
@@ -689,7 +710,9 @@ match may stall. Gate it with a test (§9).
   is an HQ and none alive. With trickle (B), skip trucks on Easy.
 - **Crates:** an engineer or a cheap carrier pair takes a shells crate to
   each mortar position; riflemen carry a small-arms crate to a trench
-  under sustained fire.
+  under sustained fire. Shells crates come from the HQ or a dump first;
+  from base only if none, since they cost manpower there
+  (`ai.shell_mp_max_pct`, 25 % of income at most).
 - Budget: all of this is serial planning every 2 s per AI player, a few
   hundred operations; no new rays except the HQ siting probe (§7.2).
 
@@ -803,7 +826,9 @@ does not shorten this. Cost S–M (spawn path exists; join-squad on arrival).
 
 *Munitionslager* / ammunition point / *sklad boepripasov*. A sandbagged
 pit (1 min, 40 kg) holding a finite stock: a supply source without radio,
-limit 3. Cheap way to put shells near the mortars and keep the HQ's stock
+limit 3. Shell cap 300 kg (`cap_kg.shells`), filled only by carried
+crates or trucks. Guns and mortars inside its 15 m radius refill from it
+(Q4). Cheap way to put shells near the mortars and keep the HQ's stock
 small. Cooks off when HE breaks it. AI: one per mortar group. Cost **S**
 once the HQ exists.
 
@@ -854,8 +879,8 @@ it fair for the owner.
 | 1 | `extends` + `members` + tags/capabilities (no new mechanics) | **High**: unlocks most variants as files | M | — | content crate, `weapon_of`, order gating, AI buy mix, snapshot card data |
 | 2 | Training profiles | Medium | S–M | 1 | Weapons (aim), Status (suppression), Perception, World (build rate) |
 | 3 | Historical squad sizes, organic LMGs, new small arms | High (authenticity, fixes MG split) | S (data) + weapon defs | 1 | data only; balance pass |
-| 4 | Finite small arms and mortar ammo, base as `SupplySource`, squad sharing, fire discipline | **High** (fixes mortar dominance, creates logistics) | M–L | 1 | `Kit`, Weapons (consume), Status (serve), AI (rationing), snapshot, HUD |
-| 5 | Crates (issue at base, carry, place, cook-off) | High | M | 4 | entities, Intent (carry orders), Damage (crate hits), presenter |
+| 4 | Finite small arms and mortar ammo, base as `SupplySource`, squad sharing, fire discipline | **High** (fixes mortar dominance, creates logistics) | M–L | 1 | `Kit`, Weapons (consume), Status (serve), AI (fire discipline), snapshot, HUD |
+| 5 | Crates (issue at base, shells crates priced in manpower, carry, place, cook-off) | High | M | 4 | entities, Intent (carry orders), Damage (crate hits), presenter |
 | 6 | **Structure framework** (pieces with armour faces + HP, blueprints) | **High**: core pillar, everything below needs it | L | — (the §5.10.3 design) | World, Ballistics (piece hits), nav, cover, snapshot, presenter |
 | 7 | HQ (supply, radio, retreat), dump | High | M | 4, 5, 6 | Status, Intent, AI siting |
 | 8 | MG nest, sandbags, wire, mortar pit, dugout | High | M | 6 | World, nav (wire), AI dig planner |
@@ -886,6 +911,9 @@ Suggested slices:
    time; a crate within 5 m refills it; a mortar with no crate stops
    after its carried bombs. Same hashes at 1/2/3/8 threads and through
    save → load.
+1b. `supply-test` price: a shells crate issued at base costs its kg ×
+   `shell_mp_per_kg` in manpower, a small-arms crate costs nothing; a
+   mortar team standing in base with no crate does not refill its bombs.
 2. `supply-test` contact rule: an HE burst whose rays do not reach a
    crate leaves it intact; one that does cooks off a shells crate.
 3. AI-vs-AI skirmish seeds 1–5 still end with a winner inside 30 min with
