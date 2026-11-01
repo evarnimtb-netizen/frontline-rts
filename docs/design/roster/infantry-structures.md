@@ -23,7 +23,7 @@ values and must get a `sources = [...]` citation before they ship (§2.3).
 | Engineers vs heavy engineers who build bigger forts | **Half right.** The historical jump in building capacity came from **materials and machines** (timber, sandbags, wire, bulldozers), not from a heavier kind of man. | Split engineers by **job**, not size: **assault engineers** (breaching: Bangalore, satchels, flamethrower, mine clearing; weak builders) and **construction engineers** (bunkers, obstacles, mines; weak fighters). Big builds also need **materials delivered** (§6) and, for earthmoving, the **dozer** (§5.10.9 vehicle tier). |
 | HQs and medical points that heal units | **HQ yes, as supply and command. Healing aura no.** HP regeneration is unhistorical and fights the physical-damage rule. | A **wound model** (fit / wounded / down / dead, bleed-out). **Medics stabilise** men. An **aid station staffed by real medics** treats the wounded and evacuates the downed for a manpower refund (§5). |
 | HQ as a forward spawn | **No.** It undoes "spawn at base and walk", which is the stated balance lever. A forward spawn also turns every match into HQ sniping. | The HQ is a **supply dump + radio + retreat point**. Units still spawn at base. Replacements for a squad also spawn at base and walk (§7.4). |
-| HQ "spawns ammo crates" | **Only from a finite stock.** Crates made from nothing at the front are a forward spawn for ammunition. | The HQ **issues** crates from its stock. Stock arrives by **truck or half-track from base**, or by men carrying crates. An optional slow **trickle** (off-map battalion supply) is a rules value, 0 in realism lobbies (§6.4). |
+| HQ "spawns ammo crates" | **Only from a finite stock.** Crates made from nothing at the front are a forward spawn for ammunition. | The HQ **issues** crates from its stock. Stock arrives by **truck or half-track from base**, or by men carrying crates. No trickle (owner decision Q2 C; §6.4). |
 | HQ "helps units nearby reload" | **No reload-speed aura.** Reloading is a man's hands and the weapon's mechanism. | Read it as **refill**: men inside the supply radius restock what they have used (§6.5). |
 
 Problems I found in today's data that this proposal fixes with historical
@@ -584,13 +584,13 @@ cap_kg   = { small_arms = 300, explosives = 200, shells = 600, construction = 60
 radius_m = 25
 serves   = ["small_arms", "explosives", "shells"]
 max_clients = 6           # men served at once
-trickle_kg_per_min = { small_arms = 0 }   # rules may override (see below)
+trickle_kg_per_min = { small_arms = 0, shells = 0 }   # Q2 C: none; shells > 0 refused in any rules file
 issue_crates = ["ww2:crate_small_arms", "ww2:crate_shells", "ww2:crate_explosives"]
 ```
 
 | Source | Stock | Radius | Serves | Notes |
 |---|---|---|---|---|
-| **Own base zone** | infinite | base radius | men, vehicle rearm, repair, crew; **not** guns or mortars (Q4) | Today's behaviour, now one instance of the rule. Shells crates issued here cost manpower |
+| **Own base zone** | infinite | base radius | men, vehicle rearm, repair, crew; **not** guns or mortars (Q4) | Today's behaviour, now one instance of the rule. Shells crates and every `shells` cargo load cost manpower, at 32 kg per `base_crate_issue_s`. Free rearm goes only into a tank's or AT gun's own racks and never moves out (`rack_rounds_transferable = false`) |
 | **HQ / command post** | finite, cap from def | 25 m | men + crate issue | §7.2 |
 | **Ammo dump** | finite | 15 m | men + crate issue | Cheaper, no radio; any number (limit in data) |
 | **Supply truck** (Opel Blitz, GMC CCKW, Studebaker US6) | finite, large (1–2 t, verify) | 8 m | men, vehicles, unloads to HQ/dump | Soft-skinned: rifle rounds that touch the cargo bed can set off `shells` stock (physical) |
@@ -598,15 +598,15 @@ issue_crates = ["ww2:crate_small_arms", "ww2:crate_shells", "ww2:crate_explosive
 | **Crate** | finite, small (20–35 kg) | 5 m | men of any squad | Carried or placed (§6.6) |
 | **Squadmate** | his own surplus | 3 m | same squad, same calibre | Automatic sharing (§6.5) |
 
-**Trickle (owner choice):**
-- (A) **No trickle.** HQ stock comes only from trucks, half-tracks and
-  carried crates. Purest; the AI must run trucks.
-- (B) **Small trickle** (e.g. 10 kg/min small arms, 15 kg/min shells,
-  data) standing for off-map battalion supply runs. Keeps the HQ useful
-  before trucks exist and makes the AI simpler.
-- **Recommendation:** ship (B) first, because trucks belong to the
-  vehicle area and come later. Keep `trickle = 0` in a "realism" rules
-  file, and move the default to (A) once trucks and AI logistics work.
+**Trickle: decided, none** (owner decision Q2 C, 2026-11-01). HQ and
+dump stock comes only from crates carried by the player's men, and later
+from trucks and half-tracks. There is no trickle and no automatic
+carrying party. The `trickle_kg_per_min` key stays in the schema at 0.
+**A shells trickle is refused in every rules file** (content check):
+with Q4's priced shells, a trickle into an HQ beside the base would be
+free HE for ever (`artillery-on-map.md` §4.10, critic C18). The options
+as they were asked: (A) no trickle; (B) a small trickle (10 kg/min small
+arms, 15 kg/min shells).
 
 ### 6.5 The resupply radius
 
@@ -629,7 +629,10 @@ Status stage, serial, **ascending source id, then ascending man id**
 - **Vehicles:** a vehicle within `vehicle_radius_m` of a truck,
   half-track, dump, HQ or the base gets 1 main-gun round per 2 s
   (today's `base_rearm_s`) and MG belts at 50 rounds per second, from
-  `shells` / `small_arms` stock. Repair and crew refill stay **base-only**
+  `shells` / `small_arms` stock. At the base this is free, but only into
+  the vehicle's own racks; rounds in `crate_only_classes` (a mortar
+  carrier's bombs, an SPG's indirect HE) are not refilled there. A truck's
+  or half-track's `shells` cargo is loaded at base only as a paid load. Repair and crew refill stay **base-only**
   until a repair vehicle exists (vehicle area).
 - **Squad sharing:** every 5 s, inside one squad, within 3 m, same
   calibre: the man with the most rounds (above 50 % of his loadout)
@@ -649,7 +652,8 @@ tests stay meaningful.
   unloaded from a truck. At base, small-arms and explosives crates are
   free; a shells crate costs `shell_mp_per_kg` × its kg in manpower (a
   32 kg crate: 32 at the start value). Loading shells onto a vehicle at
-  base costs the same per kg.
+  base costs the same per kg, whatever calibre, and takes 32 kg per
+  `base_crate_issue_s` in the same queue as crates.
 - **Carried by men:** `CarryCrate` / `PlaceCrate`. One man carries a light
   crate (≤ 25 kg) at 80 % speed; a shells crate (30–35 kg) at 60 %, or two
   men at 85 % (data). A carrier cannot fire his main weapon; he can drop
@@ -707,7 +711,8 @@ match may stall. Gate it with a test (§9).
   alone should cut the mortar kill share the TODO complains about.
 - **Logistics:** keep an HQ stocked: when stock < 40 % and the AI has a
   truck or half-track, send it base → HQ → base. Buy a truck when there
-  is an HQ and none alive. With trickle (B), skip trucks on Easy.
+  is an HQ and none alive. Before trucks (S8), the AI carries crates to
+  its HQ with its own men (Q2 C: no trickle).
 - **Crates:** an engineer or a cheap carrier pair takes a shells crate to
   each mortar position; riflemen carry a small-arms crate to a trench
   under sustained fire. Shells crates come from the HQ or a dump first;
@@ -914,6 +919,10 @@ Suggested slices:
 1b. `supply-test` price: a shells crate issued at base costs its kg ×
    `shell_mp_per_kg` in manpower, a small-arms crate costs nothing; a
    mortar team standing in base with no crate does not refill its bombs.
+   A truck loading shells at base pays the same per kg and loads 32 kg
+   per `base_crate_issue_s`, sharing the queue with crates. A tank
+   rearmed in base cannot unload its rack rounds into a dump. A rules
+   file with a shells trickle above 0 fails to load.
 2. `supply-test` contact rule: an HE burst whose rays do not reach a
    crate leaves it intact; one that does cooks off a shells crate.
 3. AI-vs-AI skirmish seeds 1–5 still end with a winner inside 30 min with
@@ -933,7 +942,8 @@ Suggested slices:
 ## 10. Owner questions
 
 1. **Trickle at the HQ**: (A) none, trucks only; (B) small trickle by
-   default, 0 in realism rules. Recommended (B) now, (A) later.
+   default, 0 in realism rules. **Answered 2026-11-01 (roadmap Q2 C):
+   none.** A shells trickle is refused in every rules file (§6.4).
 2. **Squad sizes**: authentic establishment (German 9–10, US 12, Soviet 9)
    with understrength variants, or keep 8? Recommended authentic; it
    changes pop and cost per squad, not stats.

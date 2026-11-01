@@ -151,7 +151,7 @@ of scope; the Calliope could come later as a vehicle.
 | Card | Gun | Mass | Range | Elevation | Notes |
 |---|---|---|---|---|---|
 | 76-mm regimental gun | 76 mm M1943 (OB-25) | ≈600 kg | ≈4,200 m | up to ≈+25° | Pushable; HE and BP-350M HEAT. Flat-fire infantry gun. |
-| ZiS-3 crew | 76 mm ZiS-3 | ≈1,116 kg | ≈13,000 m | up to ≈+37° | Already in the AT list (dual role). Its indirect fire uses these rules. |
+| ZiS-3 crew | 76 mm ZiS-3 | ≈1,116 kg | ≈13,000 m | up to ≈+37° | Already in the AT list (dual role). Its indirect fire uses these rules. Its OF-350 HE is crate-only; its AP rearms free in base (§4.2). It counts toward the artillery cap while it fires indirect (§4.7). |
 | Howitzer section | 122 mm M-30 | ≈2,450 kg | ≈11,800 m | up to ≈+63.5° | 21.8 kg OF-462 HE. Tow: Studebaker US6. The Soviet field howitzer card. |
 | 120-mm mortar crew | 120 mm PM-38 | ≈280 kg firing (≈480 kg on its wheeled carriage) | ≈5,700 m | mortar | Heavy mortar (already planned for S15). |
 | BM-13 (Q23) | 16 × 132 mm M-13 rockets on a truck | — | ≈8,500 m | — | Same verdict as the Nebelwerfer: late, capped, lobby option. |
@@ -379,6 +379,13 @@ about 510 kg of shells, worth about 510 manpower at 1 per kg; the card
 costs 480 plus the tow. Without the check, buying a new gun could be a
 cheaper way to buy shells than buying crates.
 
+The check **raises** a card that is too cheap to its load's price and
+logs a warning; it does not refuse the content. `shell_mp_per_kg` is the
+main lever and S6 will move it. If it doubles, every gun card would
+otherwise fail the check, or, with the check off, become the cheapest
+way to buy shells. Mortar cards follow the same rule for the bombs their
+men carry.
+
 **How a gun or mortar refills.** Only from shells someone brought:
 
 | Source | How | Rate (start values) |
@@ -401,8 +408,10 @@ loop that caused the HE problem.
 **Which ammunition this covers** is a TOML list, `crate_only_classes`:
 mortar bombs, gun and howitzer shells, artillery rockets and HE rifle
 grenades. Small arms, hand grenades, AT rockets, and tank and AT-gun
-rounds keep today's base refill. Tanks and AT guns fire direct; they
-are not the HE problem.
+rounds keep today's base refill, into their own racks only. Tanks and
+AT guns fire direct; they are not the HE problem. A gun that can also
+fire indirect (the ZiS-3) is the exception: its HE is crate-only (rule 4
+below).
 
 **What a shells crate costs.** Taking a shells crate at base costs
 `shell_mp_per_kg` (start 1.0) manpower per kg. A 32 kg crate costs 32.
@@ -436,6 +445,35 @@ takes `base_crate_issue_s` (10 s). A crate cooks off when HE breaks it
 **Weight decides the carrier.** A 105 mm complete round is about 18–20
 kg (verify). A man carries about two. Heavy guns depend on their tow and
 on trucks. That is historical and gives trucks a second job.
+
+**No back doors for shells (critic pass 2).** The price only works if
+every kg of shells that reaches a gun or mortar passed the price at
+base. Four rules make sure of that:
+
+1. **One price for every shells load.** Any `shells` kg loaded at base
+   as cargo (a crate, a truck, a half-track, or a gun's or mortar's tow)
+   costs `shell_mp_per_kg`, whatever calibre it is meant for. Supply kinds are pooled by kg
+   (`infantry-structures.md` §6.3), so "tank rounds" loaded as cargo
+   would otherwise unload into a dump as free howitzer shells.
+2. **Free rearm stays in the rack.** Tanks and AT guns still rearm free
+   in base, but only into their own racks and an AT gun's own tow. Those
+   rounds feed only that weapon: never a crate, a dump, an HQ, another
+   vehicle or another weapon (`rack_rounds_transferable = false`).
+3. **Vehicle loads wait in the same queue as crates.** Loading shells
+   into a vehicle at base takes one crate's weight (32 kg) per
+   `base_crate_issue_s`, shared with crate issue. Without it a player
+   could save 2,000 manpower and fill a truck at once, which skips the
+   issue limit.
+4. **Anything that can fire indirect pays for its HE.** An ammo id fired
+   by any weapon with an `[indirect]` table is crate-only for every
+   weapon that fires it (`crate_only_if_indirect = true`, a content
+   check). This covers the ZiS-3 (AT list, indirect to about 13 km) and
+   any later SPG or 105 mm tank (M4 105, StuH 42) that shares a
+   howitzer's round. Their AP still rearms free.
+
+There is also no free source of shells at the front. The HQ has no
+trickle and there is no automatic carrying party (Q2 C). The content
+check refuses a `trickle_kg_per_min.shells` above 0, in any rules file.
 
 **The HUD** shows, with a gun or mortar selected, "Rounds 14 / 15" and
 what is in reach: "Crate 5 m: 6 rounds", "In HQ radius". On the call-in
@@ -668,7 +706,8 @@ tow, income 240 per minute plus 60 per held point):
 
 - Pop: the crew plus 2 for the gun.
 - Each card's cost includes its starting load of shells (§4.2). The
-  content check refuses a card worth less than its load at crate price.
+  content check raises a card worth less than its load at crate price
+  to that price, with a warning.
 - leFH 18 and M2A1: cap 1 and 8:00 unlock are TOML defaults to measure,
   on all maps (owner decision Q25).
 - **`limit_group = "artillery"`: 2 per player** on Battalion, 3 on
@@ -680,6 +719,11 @@ tow, income 240 per minute plus 60 per held point):
   destroyed or the enemy serves it. Otherwise he could let a gun go
   neutral, buy a new one, and re-crew the old one with riflemen: three
   or four guns under a cap of two.
+- **Dual-role guns** (ZiS-3, critic pass 2). They are AT cards, outside
+  the artillery cap. They may fire indirect only while the player's guns
+  firing indirect, this one included, stay within `limits.artillery`.
+  Otherwise a Soviet player could field many ZiS-3s as an uncapped
+  battery.
 - Per-card cooldowns (owner decision Q21 B).
 - US Forward Observer Party: a shorter fire-direction delay (§4.8) as a
   doctrine trait, not a stat buff.
@@ -771,12 +815,24 @@ a TOML lever with a starting value.
 | **Forward stockpile spike.** Fill the HQ and three dumps, then fire a "delete this trench" barrage. | The base stock cap (360 kg) bounded one dump of fire. | Every kg paid for at base and carried forward; HQ cap 600 kg, dump cap 300 kg; stocks cook off when HE breaks them; the gun fires no faster than its rate. | **Weaker.** A full HQ and three dumps hold about 1.5 t, about 1,500 manpower. It takes many minutes of carrying and is a big target. | Dump shell cap `cap_kg.shells` (300); HQ (600). Report the largest single barrage per match. |
 | **Counter-battery duels crowd out the fight.** | A round at a gun was a round not fired at men, from one pot. | The same, by price. | **Same.** | Reported (share of shells fired at guns). |
 | **Direct fire at infantry; HE rifle grenades.** New HE paths. | Both drew from the ration. | Both pay: gun rounds come in priced crates; HE rifle grenades are in `crate_only_classes` and come in shells crates. | **Same.** | `crate_only_classes`. |
+| **Dual-role gun in base (critic pass 2).** A ZiS-3 is an AT gun, so it rearmed free in base, and it fires indirect to about 13 km. Free, unlimited HE from base. | The ration covered every restock. | Its HE is crate-only (§4.2 rule 4). It may fire indirect only inside the artillery cap (§4.7). | **Closed.** | `crate_only_if_indirect` (true). |
+| **Laundering through cargo (critic pass 2).** Load "tank rounds" free on a truck or tow in base, unload them into a dump next to base; the pooled `shells` kg feed a howitzer. Or move rack rounds out of a tank or AT gun. | The ration covered every restock. | Every `shells` kg loaded as cargo pays; rack rounds never leave the rack (§4.2 rules 1, 2). | **Closed.** | `rack_rounds_transferable` (false). |
+| **Saved-up truck load (critic pass 2).** Save 2,000 manpower, fill a truck with 2 t of shells at once, drive it to a dump. | The ration capped tonnage per minute. | Vehicle loads share the crate issue queue: 32 kg per `base_crate_issue_s` (§4.2 rule 3). 2 t takes about 10 minutes. | **Same as the crate limit.** | `base_crate_issue_s` (10). |
+| **Free stock at the front (critic pass 2).** An HQ trickle (an old §6.4 option in `infantry-structures.md`: 15 kg of shells a minute) or a free carrying party fills an HQ beside the base forever. | Not covered: the ration capped issue at base only. | Q2 C: no trickle, no carrying party. The content check refuses any shells trickle. | **Closed.** | `trickle_kg_per_min.shells` must be 0. |
 
 **The bottom line.** Three exploits are as closed as before. Three are
 weaker: the base battery, overall HE, and the stockpile spike. All three
 come down to one fact: the price limits HE by manpower, not by time. The
 main lever is `shell_mp_per_kg`. Tests 7 and 11 measure it, and the
 HE-share targets in §6.2 now include the rich side of each match.
+
+**Can a player get unlimited HE from base, or from a dump next to it?**
+Through the intended paths, no. Every kg costs manpower, and base issue
+stops at about 190 kg a minute per player, whatever the carrier. A dump
+beside the base saves the walk, not the price or the queue. Critic pass
+2 found four back doors that did give free or unbounded HE: the ZiS-3,
+cargo laundering, saved-up truck loads and a shells trickle. Each is
+closed by one data rule above.
 
 ---
 
@@ -1159,11 +1215,15 @@ shell_crate_cap = 8                 # live shells crates per player, inside the 
 crate_feed_m = 5                    # a crate this close feeds a gun or mortar
 structure_refill_s = 4              # one round per 4 s to a gun inside an HQ or dump radius
 tow_starting_load_pct = 50          # the tow arrives half full; the gun arrives full
-load_price_check = true             # card cost >= starting load x shell_mp_per_kg
+load_price_check = true             # card cost raised to >= starting load x shell_mp_per_kg (warning, not refusal)
+rack_rounds_transferable = false    # free-rearmed rack rounds never leave the weapon (critic pass 2)
+crate_only_if_indirect = true       # an ammo id any [indirect] weapon fires is crate-only for all (ZiS-3; critic pass 2)
+# base_crate_issue_s also paces vehicle shell loads: 32 kg per tick, one queue per player
+# trickle_kg_per_min.shells must be 0 in every rules file (Q2 C; content check)
 shell_price_rise_pct = 0            # fallback soft ration, off; per 100 kg bought in the last 5 min
 
 [limits]
-artillery = 2                       # Regiment: 3, in battle_tiers.toml; own + captured served guns
+artillery = 2                       # Regiment: 3, in battle_tiers.toml; own + captured served guns; dual-role guns (ZiS-3) while firing indirect
 allow_field_howitzers = true        # Q25: all maps; a map may set false only if tests demand it
 
 [ai]
@@ -1249,11 +1309,19 @@ Full card in `roster-expansion.md` §4.2 (S11). In short:
    issued; a small-arms crate costs nothing. A gun inside an HQ or dump
    radius refills from its stock, and the stock goes down by the same kg.
    A called gun arrives with its full starting load; a card worth less
-   than its load at crate price fails the content check. AI matches
+   than its load at crate price is raised to it, with a warning. AI matches
    still end with a winner inside 25 min (stall guard). Report the share
    of gun shells fired from inside the base zone, the manpower each side
    spent on shells, and the win rate of a side with base guns against a
    side with none (raids only).
+7b. **No back doors** (critic pass 2). A truck loaded with shells at
+   base costs its kg × `shell_mp_per_kg` and loads no faster than 32 kg
+   per `base_crate_issue_s`, shared with crates. A tank or AT gun
+   rearmed free in base cannot pass rack rounds to a crate, dump, tow or
+   gun. A ZiS-3 in base gets no free OF-350, and a third gun firing
+   indirect past the cap is refused. A rules file with a shells trickle
+   above 0 fails to load. Over 10 AI matches, no gun or mortar fires a
+   round whose kg was not paid for at base or captured (a debug count).
 8. **Direct fire.** A leIG 18 at 400 m silences an MG nest; a 105 mm burst
    breaks a dugout roof that survives an 81 mm hit; M67 HEAT penetrates a
    Panzer IV side; 105 mm HE on a Sherman damages only external parts and
@@ -1409,3 +1477,21 @@ and the main lever is the shell price.
 - **S11b is not "no new code".** HE rifle grenades need a launcher mode
   on the rifleman (switch, fire, switch back). It is small and reuses
   S5's launcher items, but it is code.
+
+**Critic pass 2 (2026-11-01, after the Q4 revision).** The question was
+whether a player can now get unlimited or near-unlimited HE from base,
+or from a dump next to base. Through the intended paths he cannot:
+every kg pays at base, and base issue stops at about 190 kg a minute.
+But four back doors gave free or unbounded HE (C15–C18), and the price
+check fought the main lever (C19). Each is now closed by one data rule (§4.2 "No back doors", §4.10, test 7b):
+
+| # | Hole | Fix (lever) |
+|---|---|---|
+| C15 | **ZiS-3 in base.** An AT card, so it rearmed free, and it fires indirect to about 13 km: unlimited free HE from base. It was also outside the artillery cap. | Its HE is crate-only (`crate_only_if_indirect`, also covers later SPGs and 105 mm tanks); it fires indirect only inside `limits.artillery`. |
+| C16 | **Cargo laundering.** `shells` kg are pooled. Free "tank rounds" loaded on a truck or tow in base unload into a dump and feed a howitzer. Rack rounds could be moved out of a tank. | Every `shells` kg loaded as cargo pays; rack rounds never leave the rack (`rack_rounds_transferable = false`). |
+| C17 | **Saved-up truck load.** Only crates were throttled. A truck could take 2 t at once. | Vehicle loads share the crate queue: 32 kg per `base_crate_issue_s`. |
+| C18 | **Free stock at the front.** `infantry-structures.md` §6.4 still recommended a 15 kg/min shells trickle, and S6 and S8 still listed a free carrying party, against Q2 C. An HQ beside the base would fill for free forever. | Removed in both docs. The content check refuses a shells trickle above 0. |
+| C19 | **The price check fought the main lever.** Raising `shell_mp_per_kg` in S6 would make every gun card fail the check, or, with it off, the cheapest way to buy shells. | The check raises a card's cost to its load's price, with a warning. |
+
+Still weaker than the ration, and accepted by the owner: a player who
+earns more can buy more HE. The lever is the price.

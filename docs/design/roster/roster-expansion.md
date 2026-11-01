@@ -61,7 +61,7 @@ Historical figures are starting values from memory. Each needs a
 | "Heavy engineers" who build bigger forts | Building power came from materials and machines, not heavier men. | Split engineers by **job**: field engineers (dig and build), **assault engineers** (breach wire, mines, bunkers), **construction engineers** (bunkers, obstacles, minefields). Big builds also need materials brought up and, later, a bulldozer. |
 | HQ and medical points that heal | Healing does not break the "physical contact" rule (that rule is about damage). The problems are that an aura that tops men up is unhistorical and is an endless manpower loop: a man can be wounded, healed and sent back forever. | **Wound states** (fit, wounded, down, dead). Medics bandage and carry. An aid post works only while real medics staff it. A lightly wounded man returns once at 75 % health; a second wound means evacuation. The badly wounded are evacuated for a partial manpower refund. |
 | HQ as a forward spawn | It undoes "spawn at base and walk", the main balance lever. Every match would become a hunt for the HQ. | Units and replacements always spawn at base. The only forward reinforcement that fits the rule is a truck or half-track that **carries** men from base. |
-| HQ "spawns ammo crates" | Crates made from nothing at the front are a forward spawn for ammunition. An abstract "trickle" into the HQ is the same thing, only slower. | The HQ **issues** crates from a stock that runs out and starts empty. Trucks, half-tracks or carried crates refill it. Before trucks exist, a free two-man **carrying party** walks from base to the HQ every few minutes (owner question Q2): it obeys "spawn at base and walk" and can be shot. |
+| HQ "spawns ammo crates" | Crates made from nothing at the front are a forward spawn for ammunition. An abstract "trickle" into the HQ is the same thing, only slower. | The HQ **issues** crates from a stock that runs out and starts empty. Trucks, half-tracks or crates carried by the player's men refill it. No trickle and no automatic carrying party (owner decision Q2 C). |
 | HQ "helps units reload" | Reload speed is a man's hands and the weapon's mechanism. An aura is abstract. | Read it as **refill**: men inside the radius get back the rounds they fired. No reload-speed bonus. |
 | On-map divisional howitzers | Authentic ranges (leIG 18 ≈3.5 km, 105 mm 7.6–11 km) exceed every map, so range cannot be the brake. Placed naively, a gun in base reaches everything with free shells. | **Changed 2026-11-01 at the owner's request: artillery is on-map, crewed and buyable** (`artillery-on-map.md`). One gun per card, two per player. The brakes are the historical ones: a linked observer's line of sight, finite shells (each gun has a ready inventory that refills only from crates, an HQ or a dump; shells crates cost manpower at base; owner decision Q4), counter-battery by sound and flash, set-up and tow times, masks and minimum range from the real charge tables, crews in the open, cost and caps. Off-map batteries are dropped from skirmish. |
 | Light vehicles soon | Today rifle and MG rounds do nothing to any vehicle. An M8 or armoured car would be an unkillable infantry hunter. | Small arms against thin armour and open-top exposure ship **with or before** the first light vehicle. |
@@ -77,7 +77,7 @@ Historical figures are starting values from memory. Each needs a
 | Fragment rays | The guns design asked for a fragment-ray slice (F0). | Already in S3b-balance (part A1). Dropped from this plan. S3b must land first. |
 | APCR rounds | Both gun and vehicle designs need the `apcr` mechanism. | Already in S3b-balance (A6, PzGr 40). Reused. |
 | Smoke rounds | Two designs proposed mortar and tank smoke as the trench-assault fix. | The owner ruled out mortar smoke for the S3b fix. **No smoke rounds in this plan** unless the owner says so (Q5). Smoke grenades stay. |
-| Who pays for ammunition | Infantry and vehicles: cargo from base is free; transport is the cost. Guns: one per-player supply rate (kg per minute) for every restock. | Staged. S5 keeps the base free and today's compressed mortar range (600 m). We measure. **Owner decision Q4 (2026-11-01): no ration.** From S6 the base refills no shells or mortar bombs; they leave the base only in crates that cost manpower (`shell_mp_per_kg`). Small-arms crates stay free. Infantry, tanks and AT guns keep free base refill (`artillery-on-map.md` §4.2). |
+| Who pays for ammunition | Infantry and vehicles: cargo from base is free; transport is the cost. Guns: one per-player supply rate (kg per minute) for every restock. | Staged. S5 keeps the base free and today's compressed mortar range (600 m). We measure. **Owner decision Q4 (2026-11-01): no ration.** From S6 the base refills no shells or mortar bombs; they leave the base only in crates that cost manpower (`shell_mp_per_kg`). Small-arms crates stay free. Infantry, tanks and AT guns keep free base refill, into their own racks only; those rounds never move to a crate, dump or other weapon. The ZiS-3's HE is crate-only because it can fire indirect (`artillery-on-map.md` §4.2). |
 | Crates | By supply kind (any calibre) or by ammo class. | By **faction and kind**, counted in kg. A crate feeds only its own faction's calibres, so captured guns need captured crates. |
 | Mortar crew | 3 men plus an optional bearer, or 5 men. | **5 men.** The two bearers carry the bombs; when they die, the mortar runs dry sooner. |
 | Tank rearm at the HQ | Same rate as base, or half. | **Half the base rate** (1 round per 4 s), and the same at a supply vehicle (the vehicle design had 1 per 3 s; one forward rate is easier to read). Rare rounds (APCR, HVAP), repair and new crew stay base-only. |
@@ -474,7 +474,7 @@ gate.
   the wreck-box path that already stops fragments); the HQ (pit, stock
   box, radio box); the ammo dump; crates (issue, carry, place, draw,
   cook-off); the resupply radius; retreat to the HQ; the radio link (used
-  by S11); the automatic carrying party (Q2); caps (one HQ, three dumps,
+  by S11); caps (one HQ, three dumps,
   a live-crate cap per player); AI HQ siting on a reverse slope, crate
   runs to mortars and trenches. HUD: stock bars per kind, radius ring.
   **Shells cost manpower (owner decision Q4):** a shells crate taken at
@@ -488,7 +488,7 @@ gate.
 - **Risks:** forward supply raises sustained fire near the front. The
   counters are physical: crates and stock cook off when HE breaks them,
   and the HQ is a target. Without trucks (S8) the HQ refills only by
-  the carrying party or carried crates, so the Q2 default matters.
+  crates carried by the player's men (Q2 C).
   Crates are new static boxes in every fragment-ray test: the live-crate
   cap keeps the box count bounded at Battalion scale. Priced bomb crates
   change how much mortars fire: the HE share must be re-measured, and
@@ -503,7 +503,7 @@ gate.
   - a mortar barrage that never touches the HQ boxes does no damage to
     it; one that breaks in kills the radio;
   - the AI builds one HQ behind a held point and keeps its mortars fed;
-  - a second HQ order is refused while one stands; a carrying party
+  - a second HQ order is refused while one stands; a crate carrier
     killed on the way delivers nothing;
   - a shells crate taken at base costs its kg × `shell_mp_per_kg` in
     manpower; a small-arms crate costs nothing; with too little manpower
@@ -563,8 +563,9 @@ gate.
   - an armoured car stops at a trench line or finds a gap;
   - a tank at 10 % ammo rearms from a truck within 15 m; a penetrated
     truck's cargo explodes;
-  - the AI keeps its HQ stocked with a truck; the carrying party can be
-    switched off in a "realism" rules file and AI matches still finish;
+  - the AI keeps its HQ stocked with a truck, and AI matches still
+    finish; a truck loading shells at base pays per kg and loads 32 kg
+    per `base_crate_issue_s`, in the same queue as crates;
   - the AI uses transport in at least 6 of 10 matches and unloads short
     of the enemy line, not on it;
   - riding, stocks and hatches survive save, load and net loopback.
@@ -687,7 +688,9 @@ Design: `artillery-on-map.md`.
   buy more. `artillery-on-map.md` §4.10 re-checks every exploit the
   ration closed; three are weaker (base battery, overall HE, forward
   stockpile), and each has a TOML lever (`shell_mp_per_kg`,
-  `base_crate_issue_s`, `shell_crate_cap`, dump caps). Counter-battery
+  `base_crate_issue_s`, `shell_crate_cap`, dump caps). A second critic
+  pass closed four back doors to free HE (ZiS-3 HE, cargo laundering,
+  unthrottled truck loads, a shells trickle). Counter-battery
   duels could crowd out play: report the share of shells fired at guns.
   Base artillery will be common on 1 km maps; in base the walk is short,
   so the crate price is the main brake there (§4.9).
@@ -710,8 +713,12 @@ Design: `artillery-on-map.md`.
   - control run with priced crates and no guns: the HE share is not
     above S6's;
   - a called gun arrives with its full starting load; a card worth less
-    than its load at crate price fails the content check; a player
-    cannot serve more guns than the cap, own, neutral or captured;
+    than its load at crate price is raised to that price, with a
+    warning; a player cannot serve more guns than the cap, own, neutral
+    or captured, and a ZiS-3 cannot fire indirect past the cap;
+  - no back doors (`artillery-on-map.md` test 7b): rack rounds of a tank
+    or AT gun rearmed in base never reach a crate, dump or gun; a ZiS-3
+    gets no free HE in base; a shells trickle above 0 fails to load;
   - a gun parked in base does not refill from the base; it refills from
     a crate within 5 m or inside an HQ or dump radius, and that stock
     goes down by the same kg;
@@ -841,7 +848,7 @@ answered.
 | Q | Decision | Note |
 |---|---|---|
 | 2. HQ fill before trucks | **(C) Nothing**: only crates carried by the player's own men, later trucks and half-tracks. | The owner was unsure; a carrying party could be abused (free scouts or decoys) and often dies on the way. Revisit after S8 if the HQ is empty too often in play. |
-| 4. Base and mortar range; who pays for shells | **No ration.** Owner: "Perhaps, the ration shouldn't exist, but the artillery will have an inventory with shells at immediate disposal. But they can be refilled by bringing ammo crates nearby or placing the artillery near a structure that can refill them." Follow-up: shells crates **cost manpower** when taken at base; small-arms crates free or cheap; all values in TOML. | Each gun and mortar has a ready inventory. It refills from crates placed or carried within 5 m, or inside an HQ or dump radius; their stock fills only by crates (later trucks). The base does not refill shells. **Mortars follow the same rule from S6** (S5 has no crates yet, so its base still refills bombs). Starting loads come with the card's price. Start values: `shell_mp_per_kg` 1.0, small arms 0. Weaker than the ration: HE now scales with income. Each exploit is re-checked in `artillery-on-map.md` §4.10, with a lever for each weaker one. |
+| 4. Base and mortar range; who pays for shells | **No ration.** Owner: "Perhaps, the ration shouldn't exist, but the artillery will have an inventory with shells at immediate disposal. But they can be refilled by bringing ammo crates nearby or placing the artillery near a structure that can refill them." Follow-up: shells crates **cost manpower** when taken at base; small-arms crates free or cheap; all values in TOML. | Each gun and mortar has a ready inventory. It refills from crates placed or carried within 5 m, or inside an HQ or dump radius; their stock fills only by crates (later trucks). The base does not refill shells. **Mortars follow the same rule from S6** (S5 has no crates yet, so its base still refills bombs). Starting loads come with the card's price. Start values: `shell_mp_per_kg` 1.0, small arms 0. Weaker than the ration: HE now scales with income. Each exploit is re-checked in `artillery-on-map.md` §4.10, with a lever for each weaker one. A second critic pass closed four back doors to free HE: ZiS-3 HE, cargo laundering, unthrottled truck loads, a shells trickle (critic C15–C18). |
 | 6. Squad sizes | **(A)** Historical sizes (German about 10, US 12), cheaper understrength cards, pop cap 150. | |
 | 11 / 20. Order | **(A)** Vehicles first: S7 assault guns and TDs, S8 half-tracks and trucks, S9 AT guns; fortifications S10. | |
 | 13. Artillery | **Owner prefers artillery as on-map units** (request of 2026-11-01). Default changed to on-map (A). | Design in `artillery-on-map.md`. Off-map batteries dropped from skirmish. S11 rewritten and split. |
@@ -864,7 +871,9 @@ answer. The slice in brackets is the first one blocked by the answer.
    No spawn, no reload aura, no unlocks. (B) As A, plus slow field
    repair of vehicles later. (C) A forward reinforcement point (not
    recommended: it breaks "spawn at base and walk").
-2. **How the HQ fills before trucks** [S6]. (A) A free, automatic
+2. **How the HQ fills before trucks** [S6]. **Answered 2026-11-01: (C)
+   nothing** (see "Owner decisions"). The options as they were asked:
+   (A) A free, automatic
    two-man **carrying party** spawns at base every few minutes (data;
    about 40 kg per trip), walks to the HQ and unloads. It takes no pop,
    cannot be ordered and does not capture points; if it is shot, the load
@@ -1045,7 +1054,7 @@ Base (unlimited) ──truck / half-track──▶ HQ or dump (finite stock)
 
 | Source | Stock | Radius | Serves |
 |---|---|---|---|
-| Own base | unlimited | base zone | men, tanks, AT guns: rare rounds, repair, new crew (today's rules). **Not** guns' shells or mortar bombs: those leave only in crates, at `shell_mp_per_kg` (start 1.0) per kg; small-arms crates free |
+| Own base | unlimited | base zone | men, tanks, AT guns: rare rounds, repair, new crew (today's rules), into their own racks only. **Not** guns' shells, mortar bombs or ZiS-3 HE: those leave only in crates or vehicle loads, at `shell_mp_per_kg` (start 1.0) per kg, 32 kg per `base_crate_issue_s`; any `shells` cargo pays, whatever calibre; small-arms crates free |
 | HQ | finite, **starts empty** (caps about 300 kg small arms, 200 kg explosives, 600 kg shells). Costs 100 manpower plus 120 kg of construction material; one per player; rebuild after 120 s if destroyed | 25 m | men; vehicles at half rate; issues crates |
 | Ammo dump | finite, smaller; up to 3 per player | 15 m | men; issues crates; no radio |
 | Supply truck | about 2.5–3 t (Opel Blitz 3 t, CCKW 2½ t off-road), soft-skinned | 8–15 m | men, vehicles; unloads into the HQ; drops crates |
@@ -1115,8 +1124,8 @@ cost manpower. Existing base-resupply tests stay meaningful.
 - **HQ:** built about 120 m behind the most valuable held point, on a
   reverse slope (a few ray probes for "no line of sight from the enemy").
 - **Logistics:** a truck runs base → HQ → base when stock falls under
-  40 % (S8). Before trucks, the automatic carrying party keeps the AI's
-  HQ useful with no AI code at all.
+  40 % (S8). Before trucks, the AI sends its own men with crates (Q2 C:
+  no automatic carrying party).
 - **Without an HQ:** men walk back to base to refill. The AI must
   learn to send dry squads back in turns, not all at once, or a front
   empties; the S5 stall-guard test covers this.
@@ -1175,6 +1184,9 @@ only) and the three area designs.
   HQ is ammunition appearing at the front. Q2 (A) is now an automatic
   two-man carrying party that spawns at base and walks to the HQ. Same
   effect, but physical and killable. The abstract trickle is (B).
+  *Superseded: the owner chose Q2 (C), nothing. With priced shells (Q4)
+  a free carrying party or trickle would be free HE, so neither may
+  carry shells (`artillery-on-map.md` critic C18).*
 - **On-map infantry guns.** The plan pushed back on on-map divisional
   howitzers because they reach the whole map from base, but then put the
   leIG 18 (≈3.5 km) and 105 mm M3 (≈7.6 km) on the map with free base
@@ -1251,7 +1263,7 @@ only) and the three area designs.
 - **Carrying party.** It costs a little more code than a trickle (an
   automatic order and a no-capture rule). If the owner prefers
   simplicity, (B) is acceptable as long as it is switched off once trucks
-  work.
+  work. *Superseded by Q2 (C): no carrying party, no trickle.*
 - **Squad numbers** (German 9 or 10 in 1944, the US M7 count, the sMG
   and mortar crews), the M4A3 (76) W arrival month, the 57 mm HE date and
   the 234/1 service date still need sources.

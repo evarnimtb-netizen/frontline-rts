@@ -608,9 +608,13 @@ ammunition dumped. The point is that **a gun runs out within one engagement unle
 ### 4.3 How resupply flows
 
 1. **Base zone.** Men in base regain carried small-arms rounds at `base_resupply_round_s` per
-   man. AT guns and their tows regain stowage like vehicles today (1 round per 2–3 s). **Mortars,
-   infantry guns and howitzers do not** (owner decision, 2026-11-01): their shells and bombs
-   leave the base only in crates or vehicle loads, at `shell_mp_per_kg` manpower per kg.
+   man. AT guns and their tows regain stowage like vehicles today (1 round per 2–3 s). Those
+   rounds feed only that gun; they never pass to a crate, dump, HQ or another weapon
+   (`rack_rounds_transferable = false`). **Mortars, infantry guns and howitzers do not**
+   (owner decision, 2026-11-01): their shells and bombs leave the base only in crates or vehicle
+   loads, at `shell_mp_per_kg` manpower per kg. Vehicle loads take 32 kg per
+   `base_crate_issue_s`, in the same queue as crates. **The ZiS-3's HE is crate-only too**,
+   because it can fire indirect (`crate_only_if_indirect`); its AP rearms free.
 2. **HQ.** The HQ (other area) produces **ammo crates by class**: "8 cm Wgr. case ×6",
    "7.5 cm Pak ×12", "105 mm ×8". Each crate draws on the HQ's stock, which was carried in.
    - Men carry crates forward: 1 man, about 25 kg, speed ×0.7; 2 men, about 50 kg.
@@ -618,7 +622,7 @@ ammunition dumped. The point is that **a gun runs out within one engagement unle
    - Crates are physical entities: a mortar bomb hitting a pile of crates can set them off.
      This is physical, authentic and gives a reason to spread supply out.
 3. **Truck or halftrack.** A tow or ammo carrier (for example Sd.Kfz. 11 or Opel Blitz; US M3
-   halftrack, Dodge WC, CCKW; the exact list belongs to the vehicle area) holds stowage per class, refills at base or the HQ, and drops
+   halftrack, Dodge WC, CCKW; the exact list belongs to the vehicle area) holds stowage per class, refills at the HQ, or at base as a paid load (`artillery-on-map.md` §4.2), and drops
    crates or transfers to men within 3 m. The tow that brought a gun is its natural ammo carrier.
 4. **Ammo bearers walk.** A mortar bearer who runs dry can be ordered "fetch ammo" (the AI does
    it on its own): he walks to the nearest own crate, truck, HQ or base, loads up, and returns.
@@ -1001,6 +1005,8 @@ base_resupply_round_s = 3
 [supply]                           # owner decision 2026-11-01: no throughput; see artillery-on-map.md §8
 crate_only_classes = ["mortar_bomb", "gun_shell", "rocket_artillery", "rifle_grenade_he"]
 shell_mp_per_kg = 1.0              # manpower per kg of shells taken at base
+rack_rounds_transferable = false   # free-rearmed AT and tank rounds feed only their own weapon
+crate_only_if_indirect = true      # ZiS-3 HE (and any ammo an [indirect] weapon fires) is crate-only
 small_arms_mp_per_kg = 0
 ```
 
