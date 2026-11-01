@@ -19,9 +19,15 @@ extends Node
 ## It plays through the same intents a human sends (MatchView.emit_intent),
 ## so it exercises the whole presenter → command path. Decisions use only
 ## what the state shows the local player (own squads, spotted enemies).
+##
+## In a net match (Session.net_mode, `--autoplay_net`) match/autoplay_net.gd
+## adds the S2 shots and the hash record, and only its shots (plus the end
+## screen) are required: the S1 and S1b shots are still taken when they come
+## up, but a short net run need not reach them all.
 
 const SHOT_PREFIX := "s1_autoplay_"
 const S1B := preload("res://match/autoplay_s1b.gd")
+const NET := preload("res://match/autoplay_net.gd")
 ## Wall-clock seconds to wait after the time limit before giving up.
 const GRACE_S := 90.0
 
@@ -50,6 +56,8 @@ var _orders := {}
 var _order_from := {}
 var _size := Vector2i(1600, 900)
 var s1b: RefCounted
+## The S2 part (net matches only), else null.
+var net: RefCounted
 
 
 func begin(match_root: Node3D) -> void:
@@ -65,6 +73,8 @@ func begin(match_root: Node3D) -> void:
 	camera.input_enabled = false
 	_size = get_window().size
 	s1b = S1B.new(self)
+	if Session.net_mode:
+		net = NET.new(self)
 	print("autoplay: %.1f game minutes at %.1fx, screenshots in %s" % [minutes, Session.autoplay_speed, dir])
 
 
@@ -77,6 +87,8 @@ func on_state(s: Dictionary) -> void:
 	var result: Dictionary = s.get("result", {})
 	if result.get("status", "running") != "running":
 		_finish(s)
+		return
+	if net != null and net.step(s, t):
 		return
 	if _busy:
 		return
@@ -284,12 +296,16 @@ func _finish(s: Dictionary) -> void:
 		return
 	_busy = true
 	shots.end = true
-	await Session.save_screenshot(dir.path_join(SHOT_PREFIX + "end.png"))
+	await Session.save_screenshot(dir.path_join(net.shot_name("end") if net != null else SHOT_PREFIX + "end.png"))
 	var missing := []
-	for k in ["overview", "trench", "explosion", "battle", "end"]:
-		if not shots.has(k):
-			missing.append(k)
-	missing.append_array(s1b.missing())
+	if net != null:
+		net.finish(s)
+		missing.append_array(net.missing())
+	else:
+		for k in ["overview", "trench", "explosion", "battle"]:
+			if not shots.has(k):
+				missing.append(k)
+		missing.append_array(s1b.missing())
 	print("autoplay: done; screenshots %s%s" % [shots.keys(), "" if missing.is_empty() else ", missing %s" % [missing]])
 	Session.quit_game(0 if missing.is_empty() else 3)
 

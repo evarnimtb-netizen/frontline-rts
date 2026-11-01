@@ -31,9 +31,11 @@ const REASONS := {
 	"opponent_left": "Your opponent left.",
 	"left": "You left the match.",
 	"flood": "The relay dropped the connection: too many orders at once.",
-	"relay_closed": "The relay shut down.",
+	"relay_closed": "The relay shut down (the host left, or the relay stopped).",
 	"bind_failed": "Could not open that port. Another program (or another Frontline) may be using it.",
 	"bad_address": "That address could not be resolved.",
+	"content_missing": "Could not load the game content (mods/ww2). Reinstall the game.",
+	"bad_name": "The relay refused that player name. Pick another one.",
 }
 
 const STATE_TEXT := {
@@ -42,6 +44,7 @@ const STATE_TEXT := {
 	"waiting": "Waiting for a player to reconnect",
 	"paused": "Match paused",
 	"desync": "Desync: the two games disagree",
+	"disconnected": "Disconnected from the relay",
 }
 
 
@@ -144,14 +147,17 @@ static func state_color(state: String) -> Color:
 			return UiPalette.OK
 		"unstable", "waiting", "paused":
 			return UiPalette.WARN
-		"desync":
+		"desync", "disconnected":
 			return UiPalette.DANGER
 	return UiPalette.TEXT_DIM
 
 
 ## "ping 42 ms" style text, or "–" when unknown (negative).
+## The bridge reports whole milliseconds, so 0 is "under 1 ms" (loopback, LAN).
 static func ping_text(ms: float) -> String:
-	return "–" if ms < 0.0 else "%d ms" % roundi(ms)
+	if ms < 0.0:
+		return "–"
+	return "<1 ms" if ms < 1.0 else "%d ms" % roundi(ms)
 
 
 static func _bad(msg: String) -> Dictionary:

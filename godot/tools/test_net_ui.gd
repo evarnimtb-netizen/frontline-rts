@@ -69,6 +69,9 @@ func _test_parse() -> void:
 	_check(NetUi.delay_ms(3) == 100, "D 3 = 100 ms")
 	_check(NetUi.reason_text("build_mismatch").contains("same"), "reason codes become text")
 	_check(NetUi.reason_text("weird_new_code") == "weird_new_code", "unknown codes show as given")
+	_check(NetUi.ping_text(0.0) == "<1 ms" and NetUi.ping_text(-1.0) == "–" and NetUi.ping_text(38.0) == "38 ms", "ping text: under 1 ms, unknown, whole ms")
+	_check(NetUi.reason_text("content_missing") != "content_missing" and NetUi.reason_text("bad_name") != "bad_name", "the bridge's extra reason codes have text")
+	_check(NetUi.state_color("disconnected") == UiPalette.DANGER, "a lost link shows a red dot")
 
 
 func _test_session_flags(session: Node) -> void:

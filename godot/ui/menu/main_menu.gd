@@ -46,6 +46,13 @@ func _ready() -> void:
 	_content.add_child(_settings)
 	_mp = MultiplayerPanel.new()
 	_content.add_child(_mp)
+	# Both players need the same build (the relay checks it): show its id.
+	var version := get_node_or_null(^"Margin/Columns/Left/Version") as Label
+	if version != null and ClassDB.class_exists(&"FrontlineNet"):
+		var probe: Object = ClassDB.instantiate(&"FrontlineNet")
+		if probe.has_method("build_id"):
+			var gv := Engine.get_version_info()
+			version.text = "Build %s  ·  Godot %d.%d.%d" % [probe.build_id(), gv.major, gv.minor, gv.patch]
 	_skirmish_btn.pressed.connect(_show.bind("skirmish"))
 	_mp_btn.pressed.connect(_show.bind("multiplayer"))
 	_settings_btn.pressed.connect(_show.bind("settings"))

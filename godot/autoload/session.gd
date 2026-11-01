@@ -27,11 +27,14 @@ extends Node
 ## only: net mode forces the speed and ignores --autoplay_speed.
 ##   -- --autoplay_net host:PORT | join:IP:PORT   (IPv6: join:[::1]:PORT)
 ##      --autoplay N  [--net_name NAME] [--debug_inject_desync TICK]
+##      [--net_delay D] [--net_bind_all]
 ## hosts or joins, picks a faction (host Germany, guest USA), readies, and
 ## plays the match with match/autoplay.gd like --autoplay. Two instances on
-## one machine: one host, one join 127.0.0.1. --debug_inject_desync makes
-## this client step TICK with one extra local-only Stop (dev builds; the
-## bridge reads it from match_setup()).
+## one machine: one host, one join 127.0.0.1. The autoplay host's relay
+## binds 127.0.0.1 only (FrontlineNet.host_loopback: no macOS firewall
+## prompt); add --net_bind_all to bind every interface like the menu's Host
+## does. --debug_inject_desync makes this client step TICK with one extra
+## local-only Stop (the bridge reads it from match_setup()).
 
 const MENU_SCENE := "res://ui/menu/main_menu.tscn"
 const MATCH_SCENE := "res://match/match.tscn"
@@ -80,6 +83,11 @@ var autoplay_net_role := ""
 var autoplay_net_target := ""
 ## --debug_inject_desync tick (-1 = off).
 var debug_inject_desync := -1
+## --net_bind_all: the autoplay host binds every interface, not loopback.
+var net_bind_all := false
+## --net_delay D: the autoplay host sets input delay D (2-6) in the lobby
+## instead of keeping the suggestion (0 = keep).
+var net_delay := 0
 
 var _capture_path := ""
 var _capture_after := 2.5
@@ -144,6 +152,11 @@ func _ready() -> void:
 				if not v.strip_edges().is_empty():
 					player_name = v.strip_edges().left(24)
 				i += 1
+			"--net_delay":
+				net_delay = clampi(v.to_int(), 2, 6) if v.is_valid_int() else 0
+				i += 1
+			"--net_bind_all":
+				net_bind_all = true
 			"--debug_inject_desync":
 				debug_inject_desync = v.to_int() if v.is_valid_int() and v.to_int() > 0 else -1
 				i += 1
@@ -235,8 +248,9 @@ func is_mock_net() -> bool:
 ## Lobby → match, once the status says in_match: takes the own slot's
 ## faction, the seed and the map from the lobby and loads the match scene
 ## (the mock scene when the net is the mock: no sim behind it).
+## Once per match: the lobby page and --autoplay_net both see in_match.
 func start_net_match() -> void:
-	if net == null:
+	if net == null or net_mode:
 		return
 	var st: Dictionary = net.status()
 	var slot := int(st.get("slot", 0))
@@ -339,7 +353,13 @@ func _run_autoplay_net() -> void:
 	var n := ensure_net()
 	if n.has_method("set_name"):
 		n.set_name(player_name if player_name != "Player" else autoplay_net_role.capitalize())
-	var ok: bool = n.host(autoplay_net_target.to_int()) if autoplay_net_role == "host" else n.join(autoplay_net_target)
+	var ok: bool
+	if autoplay_net_role == "join":
+		ok = n.join(autoplay_net_target)
+	elif not net_bind_all and n.has_method("host_loopback"):
+		ok = n.host_loopback(autoplay_net_target.to_int())
+	else:
+		ok = n.host(autoplay_net_target.to_int())
 	print("autoplay_net: %s %s -> %s" % [autoplay_net_role, autoplay_net_target, "ok" if ok else "failed"])
 	if not ok:
 		push_error("autoplay_net: %s" % n.status().get("error", "?"))
@@ -366,6 +386,8 @@ func _run_autoplay_net() -> void:
 					n.set_choice({"faction": want})
 				elif slot == 0 and int(st.get("seed", 0)) != int(setup.seed):
 					n.set_choice({"seed": int(setup.seed)})
+				elif slot == 0 and net_delay > 0 and int(st.get("input_delay", 0)) != net_delay:
+					n.set_choice({"input_delay": net_delay})
 				elif full and not readied:
 					if not shot:
 						shot = true
@@ -382,7 +404,7 @@ func _run_autoplay_net() -> void:
 					push_error("autoplay_net: FrontlineNet is not registered (bridge without S2 networking); the lobby ran on MockNet only")
 					quit_game(5)
 					return
-				print("autoplay_net: lobby done, starting the match as slot %d" % int(st.get("slot", 0)))
+				print("autoplay_net: lobby done, match as slot %d%s" % [int(st.get("slot", 0)), " (the lobby page started it)" if net_mode else ""])
 				start_net_match()
 				return
 			"disconnected":

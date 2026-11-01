@@ -130,6 +130,13 @@ impl FrontlineNet {
         self.session.inject_desync = (tick > 0).then_some(tick as u64);
     }
 
+    /// The build id `Hello` carries (`<commit>[-dirty]-p<protocol>-s<save>`).
+    /// Both players need the same one; the menu shows it.
+    #[func]
+    fn build_id(&self) -> GString {
+        frontline_net::build_id().as_str().into()
+    }
+
     /// Lobby snapshot (`godot/docs/net_api.md`): state, slot, slots (name,
     /// faction, ping_ms, ready), seed, map, input_delay, suggested_delay,
     /// mismatch, countdown_s, error, host_port.

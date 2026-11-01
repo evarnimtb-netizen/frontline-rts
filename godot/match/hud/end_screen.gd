@@ -78,7 +78,14 @@ func show_result(s: Dictionary) -> void:
 	_title.text = "VICTORY" if won else "DEFEAT"
 	_title.add_theme_color_override("font_color", UiPalette.ACCENT if won else UiPalette.DANGER)
 	var reasons: Array = REASONS.get(result.get("reason", ""), ["", ""])
-	_reason.text = "%s   Match time %s" % [reasons[0] if won else reasons[1], UiPalette.mmss(s.get("time_s", 0.0))]
+	var why: String = reasons[0] if won else reasons[1]
+	# Net mode: a surrender the relay made for a player who stayed silent
+	# for the whole 60 s wait.
+	var loser := view.local_player if not won else 1 - view.local_player
+	if view.net_mode and result.get("reason", "") == "surrender" and view.net_timed_out_slot == loser:
+		var who := String(view.player(loser).get("name", ""))
+		why = "%s lost the connection and timed out." % (who if who != "" and won else ("The enemy" if won else "You"))
+	_reason.text = "%s   Match time %s" % [why, UiPalette.mmss(s.get("time_s", 0.0))]
 	for c in _grid.get_children():
 		c.queue_free()
 	var me := view.player(view.local_player)

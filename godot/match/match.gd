@@ -14,11 +14,13 @@ extends Node3D
 ## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
 ##
 ## Net mode (S2, Session.net_mode): the bridge source gets the lobby's link
-## through attach_net(Session.net) before start_match (assumed API, see
-## docs/net_api.md) and runs at 1x. With the mock net (no bridge
-## networking yet) this script merges MockNet.match_state() into the mock
-## source's state and reports orders and pauses to it, so the whole net
-## presenter runs on match_mock.tscn. Net screenshot stages: "net_ok",
+## through attach_net(Session.net) (the bridge's FrontlineNet) before
+## start_match, runs at 1x, and puts `net`, `pending_orders` and the
+## players' names in its own state (docs/net_api.md,
+## crates/godot-bridge/README.md). With the mock net (the screenshot
+## stages and the UI tests) this script merges MockNet.match_state() into
+## the mock source's state and reports orders and pauses to it, so the whole
+## net presenter also runs on match_mock.tscn. Net screenshot stages: "net_ok",
 ## "net_unstable", "net_pending", "net_desync", "net_waiting",
 ## "net_reconnecting", "net_paused", "net_paused_by_them", "net_disconnect".
 
@@ -113,7 +115,7 @@ func _on_intent(kind: StringName, data: Dictionary) -> void:
 	source.handle_intent(kind, data)
 
 
-# --- mock net glue (no bridge networking yet) -------------------------------
+# --- mock net glue (match_mock.tscn with MockNet) -----------------------------
 
 func _mock_net() -> bool:
 	return Session.net_mode and Session.is_mock_net()

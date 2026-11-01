@@ -69,8 +69,9 @@ pub fn find_mods_dir(candidates: &[PathBuf]) -> Option<PathBuf> {
 
 /// Where `mods/ww2` may be, most specific first: an explicit directory,
 /// next to the Godot project (`<project>/../mods/ww2`, the source tree), next
-/// to the executable (exports), and the source tree this crate was built
-/// from.
+/// to the executable (exports), in a macOS app's `Contents/Resources`
+/// (`tools/export_macos.sh` puts it there, so the bundle stays signed), and
+/// the source tree this crate was built from.
 pub fn mods_candidates(explicit: Option<&Path>, project_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Some(p) = explicit {
@@ -84,6 +85,7 @@ pub fn mods_candidates(explicit: Option<&Path>, project_dir: Option<&Path>) -> V
         && let Some(dir) = exe.parent()
     {
         out.push(dir.join("mods").join(MOD_ID));
+        out.push(dir.join("../Resources/mods").join(MOD_ID));
     }
     out.push(
         Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -508,7 +508,7 @@ func _refresh_lobby() -> void:
 		r.faction.text = UiPalette.FACTION_NAMES.get(f, f)
 		r.faction.add_theme_color_override("font_color", UiPalette.faction_color(f).lightened(0.35))
 		var ping := float(s.get("ping_ms", -1.0))
-		r.ping.text = "" if i == slot and ping <= 0.0 else NetUi.ping_text(ping)
+		r.ping.text = "" if i == slot and ping < 0.0 else NetUi.ping_text(ping)
 		var rd: bool = s.get("ready", false)
 		r.ready.text = "READY" if rd else "not ready"
 		r.ready.add_theme_color_override("font_color", UiPalette.OK if rd else UiPalette.TEXT_DIM)

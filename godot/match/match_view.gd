@@ -138,6 +138,9 @@ var net_mode := false
 ## Pending-order markers to draw this frame: [{pos, kind, age}], from the
 ## state's pending_orders plus click-time markers not yet confirmed.
 var pending_draw: Array = []
+## Net mode: the slot whose 60 s "waiting for" timer ran down (the relay
+## then surrenders for it), -1 none. The end screen says "timed out".
+var net_timed_out_slot := -1
 var _pending_local: Array = []
 var _clock := 0.0
 ## Stable per-type squad numbers for labels: id -> n, "owner:type" -> count.
@@ -189,8 +192,13 @@ func update_state(s: Dictionary) -> void:
 	state = s
 	local_player = s.get("local_player", 0)
 	_clock += get_process_delta_time()
-	net = s.get("net", {})
+	# Once the match is over the readout keeps its last values: the other
+	# side stops talking after its goodbye, which would read "unstable".
+	if not ended or not net_mode:
+		net = s.get("net", {})
 	net_mode = s.has("net")
+	if net_mode and String(net.get("state", "")) == "waiting" and float(net.get("waiting_s_left", 99.0)) < 3.0:
+		net_timed_out_slot = int(net.get("waiting_slot", -1))
 	_update_pending(s)
 	map_half = float(s.get("map", {}).get("size_m", 1024.0)) * 0.5
 	squads_by_id.clear()

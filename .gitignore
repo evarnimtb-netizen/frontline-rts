@@ -9,3 +9,4 @@ target/
 /godot/bin/
 /bench/results/m0-det/
 /bench/results/s1/
+/build/

@@ -399,6 +399,22 @@ impl FrontlineMatch {
             "speed" => rt.sim.speed(),
         }
     }
+
+    /// Net mode: the hashes this client published, oldest first, as
+    /// `[tick, hash as 16 hex digits]` pairs (the last
+    /// `match_net::HASH_KEEP`). Two-instance runs write them out and
+    /// compare. Empty in a skirmish.
+    #[func]
+    fn get_net_hashes(&self) -> VarArray {
+        let mut out = VarArray::new();
+        if let Some(rt) = &self.rt {
+            for (tick, hash) in crate::match_net::hashes(&rt.sim.counters) {
+                let pair = varray![tick as i64, format!("{hash:016x}").as_str()];
+                out.push(&pair.to_variant());
+            }
+        }
+        out
+    }
 }
 
 impl FrontlineMatch {

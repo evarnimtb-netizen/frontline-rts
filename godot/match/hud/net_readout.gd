@@ -88,6 +88,10 @@ func _draw() -> void:
 	# Right-aligned in its span, so it sits next to the clock.
 	var x := size.x - width_of(level)
 	var st := String(view.net.get("state", "ok"))
+	# The bridge's state is about the last link it had; once the link is
+	# gone for good the dot says so.
+	if String(view.net.get("disconnect_reason", "")) != "":
+		st = "disconnected"
 	var col := NetUi.state_color(st)
 	var blink := st in ["unstable", "desync"] and fmod(_blink, 1.0) > 0.6
 	var c := Vector2(x + DOT_R, size.y * 0.5)
