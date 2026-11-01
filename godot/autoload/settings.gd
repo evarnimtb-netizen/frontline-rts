@@ -5,7 +5,7 @@ extends Node
 ##
 ## Values: resolution (windowed size), fullscreen, render_scale (3D scaling,
 ## FSR 1 below 1.0), master_volume and sfx_volume (linear 0..1),
-## minimap_rotate (turn the minimap with the camera; default north-up) and
+## minimap_rotate (turn the minimap with the camera; default on) and
 ## minimap_dock ("top_left" or "bottom_left"). Change one with set_value();
 ## it applies at once and saves.
 
@@ -26,7 +26,7 @@ const DEFAULTS := {
 	"render_scale": 1.0,
 	"master_volume": 0.8,
 	"sfx_volume": 0.8,
-	"minimap_rotate": false,
+	"minimap_rotate": true,
 	"minimap_dock": "top_left",
 }
 const MINIMAP_DOCKS: Array[String] = ["top_left", "bottom_left"]
