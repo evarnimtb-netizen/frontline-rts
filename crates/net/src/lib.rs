@@ -56,7 +56,7 @@ const fn parse_u32(s: &str) -> u32 {
 
 /// What two players must share to play (S2 "Session setup"): the git
 /// commit (with `-dirty` for uncommitted changes), [`PROTOCOL_VERSION`]
-/// and the sim's save version, e.g. `3f2a9c1d0b7e-p1-s8`.
+/// and the sim's save version, e.g. `3f2a9c1d0b7e-p2-s8`.
 pub fn build_id() -> String {
     format!(
         "{}-p{}-s{}",

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// Wire version. Bump on any change to a body, a kind or a limit that a
 /// peer could observe.
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -58,6 +58,10 @@ pub const MAX_TURN_CMDS: usize = SLOTS * (MAX_CMDS_PER_TURN + 1);
 /// Input delay limits: the lobby suggestion stays in `MIN_D..=SUGGEST_MAX_D`,
 /// slot 0 may override within `MIN_D..=MAX_D`.
 pub const MIN_D: u8 = 2;
+/// `Start` limits a client accepts: the match is 30 Hz at 100 %, and relay
+/// tests run faster, but never past these.
+pub const MAX_TICK_HZ: u32 = 120;
+pub const MAX_SPEED_PCT: u16 = 1000;
 pub const SUGGEST_MAX_D: u8 = 4;
 pub const MAX_D: u8 = 6;
 
@@ -501,8 +505,12 @@ impl Packet {
                             .all(|s| s.name.len() <= MAX_NAME && s.faction.len() <= MAX_ID)
                 }
                 Down::Start(s) => {
-                    s.tick_hz > 0
-                        && s.speed_pct > 0
+                    // A sane clock (a hostile relay could otherwise make
+                    // the period 0 and every schedule lookup spin), and a
+                    // D the lobby could have picked.
+                    (1..=MAX_TICK_HZ).contains(&s.tick_hz)
+                        && (1..=MAX_SPEED_PCT).contains(&s.speed_pct)
+                        && (MIN_D..=MAX_D).contains(&s.d)
                         && s.map.len() <= MAX_ID
                         && s.factions.iter().all(|f| f.len() <= MAX_ID)
                         && s.names.iter().all(|n| n.len() <= MAX_NAME)

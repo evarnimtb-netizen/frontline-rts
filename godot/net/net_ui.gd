@@ -24,6 +24,7 @@ const REASONS := {
 	"protocol": "The other side speaks a different network protocol version. Update both games to the same build.",
 	"setup_mismatch": "The two games resolved different match setups. Both players need the same build and mods.",
 	"full": "The lobby is full (two players already).",
+	"started": "That match has already started. Joining a match in progress is not supported.",
 	"timed_out": "The connection timed out.",
 	"no_answer": "Nobody answered at that address. Check the address and port, and that the host's firewall or router lets UDP through.",
 	"connection_lost": "The connection to the relay was lost.",
@@ -123,14 +124,23 @@ static func parse_port(text: String, hosting := false) -> Dictionary:
 	return {"ok": true, "port": p, "error": ""}
 
 
-## The lobby's suggested D (S2 "Turns"): clamp(ceil((p99 RTT + jitter) /
-## tick) + 1, 2, 4); the +1 is a one-tick playout buffer.
+## The lobby's suggested D (S2 "Turns", revised in the fix pass):
+## clamp(ceil((p99 RTT / 2 + jitter) / tick), 2, 4). D covers the trip to
+## the relay; the trip back is the client's playout delay (same formula,
+## 1–6 ticks). Mirrors `frontline_net::suggest_d`.
 static func suggested_delay(p99_rtt_ms: float, jitter_ms: float) -> int:
-	return clampi(ceili((p99_rtt_ms + jitter_ms) / TICK_MS) + 1, DELAY_MIN, DELAY_AUTO_MAX)
+	return clampi(ceili((p99_rtt_ms / 2.0 + jitter_ms) / TICK_MS), DELAY_MIN, DELAY_AUTO_MAX)
 
 
 static func delay_ms(ticks: int) -> int:
 	return roundi(ticks * TICK_MS)
+
+
+## Reason codes that mean the relay refused to let this player in.
+const REJECT_CODES := ["build_mismatch", "content_mismatch", "protocol", "full", "started", "bad_name"]
+## Where a player finds the online-play guide: next to the app in the
+## zip, or in the source tree.
+const GUIDE := "the Playing Online guide (\"Playing online.txt\" in the zip)"
 
 
 ## Player-facing text for a reason code ("" for none).

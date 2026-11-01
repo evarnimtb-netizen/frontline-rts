@@ -107,7 +107,7 @@ func refresh() -> void:
 				Session.start_net_match()
 		"disconnected":
 			_show_page("disconnected")
-			disconnect_panel.set_reason(String(status.get("error", "")))
+			disconnect_panel.set_reason(String(status.get("error", "")), false, String(status.get("error_detail", "")))
 		_:
 			_show_page("connect")
 
@@ -194,7 +194,7 @@ func _build_connect() -> Control:
 	join_button.pressed.connect(on_join)
 	joinc.add_child(join_button)
 
-	box.add_child(_dim("Over the internet: Tailscale (recommended) or a relay on a small server; see docs/net/playing-online.md."))
+	box.add_child(_dim("Over the internet: Tailscale (recommended) or a relay on a small server; see %s." % NetUi.GUIDE))
 	update_host_hint()
 	return box
 
@@ -483,7 +483,15 @@ func _refresh_lobby() -> void:
 	var slot := int(status.get("slot", -1))
 	var slots: Array = status.get("slots", [])
 	var host := slot == 0
-	lobby_where.text = ("Hosting on %s" if host else "Joined %s") % where if where != "" else ""
+	var hosting := int(status.get("host_port", 0)) > 0
+	lobby_where.text = ("Hosting on %s" if hosting else "Joined %s") % where if where != "" else ""
+	if hosting:
+		# The host needs this line while the friend types it in.
+		var p := int(status.get("host_port", NetUi.DEFAULT_PORT))
+		var shown := PackedStringArray()
+		for a in lan_addresses().slice(0, 2):
+			shown.append("%s:%d" % [a, p])
+		lobby_where.text += ("   ·   Friends join: " + "  or  ".join(shown)) if not shown.is_empty() else ("   ·   Same Mac: 127.0.0.1:%d" % p)
 	var mine: Dictionary = slots[slot] if slot >= 0 and slot < slots.size() else {}
 	var theirs: Dictionary = {}
 	for i in 2:
@@ -492,7 +500,9 @@ func _refresh_lobby() -> void:
 		var present := not String(s.get("name", "")).is_empty()
 		if i != slot and present:
 			theirs = s
-		r.tag.text = "HOST" if i == 0 else "GUEST"
+		# Slot 0 sets up the match. It is the host only with the in-game
+		# relay; on a standalone relay nobody hosts.
+		r.tag.text = "HOST" if i == 0 and hosting else "PLAYER %d" % (i + 1)
 		if not present:
 			r.stripe.color = Color(UiPalette.BORDER, 0.6)
 			r.name.text = "Open: waiting for a player …"

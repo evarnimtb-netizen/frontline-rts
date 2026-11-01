@@ -35,13 +35,41 @@ pub const MAX_BUFFERED: u64 = 4096;
 /// gets near it.
 pub const MAX_QUEUED: usize = 1024;
 
-/// Input delay suggestion (S2 "D"): `clamp(ceil((p99_rtt + jitter) /
-/// period) + 1, 2, 4)`. The `+1` is the one-tick playout buffer. On a LAN
-/// this is 2; on a 60 ms internet path with some jitter, 4.
+/// Most playout ticks (see [`playout_ticks`]): 200 ms.
+pub const MAX_PLAYOUT: u64 = 6;
+/// Relay silence after which the client stops stamping: it cannot see
+/// whether the relay paused, so later stamps could land far ahead of the
+/// turns that actually close next. Queued commands wait for the relay.
+pub const STAMP_SILENCE_US: u64 = 2_000_000;
+
+/// Input delay suggestion (S2 "D", revised in the S2 fix pass):
+/// `clamp(ceil((p99_rtt/2 + jitter) / period), 2, 4)`.
+///
+/// D only has to cover the trip to the relay: a command stamped for
+/// `open + D` must arrive before that turn closes, between D and D+1
+/// periods later. Asymmetric paths do not matter, because the synced
+/// clock is off by half the asymmetry in the direction that compensates.
+/// The trip back is covered by the playout delay ([`playout_ticks`]),
+/// which the spec's first formula left at one tick: the old D was about
+/// twice what a link needs, and a jittery downlink stalled anyway. On a
+/// LAN this is 2; on a 60 ms path with 10 ms jitter, 2; on 120 ms with
+/// 20 ms jitter, 3.
 pub fn suggest_d(p99_rtt_us: u64, jitter_us: u64, period_us: u64) -> u8 {
     let period = period_us.max(1);
-    let ticks = (p99_rtt_us + jitter_us).div_ceil(period) + 1;
+    let ticks = (p99_rtt_us / 2 + jitter_us).div_ceil(period);
     ticks.clamp(MIN_D as u64, SUGGEST_MAX_D as u64) as u8
+}
+
+/// Playout delay in ticks: the client steps tick `T` this many periods
+/// after turn `T` closes, so a bundle that takes `p99_rtt/2 + jitter` to
+/// come back is in time: `clamp(ceil((p99_rtt/2 + jitter) / period), 1,
+/// 6)`. Local only (when this client shows each tick), so it changes no
+/// result; it is fixed at `Start` from the lobby's pings.
+pub fn playout_ticks(p99_rtt_us: u64, jitter_us: u64, period_us: u64) -> u64 {
+    let period = period_us.max(1);
+    (p99_rtt_us / 2 + jitter_us)
+        .div_ceil(period)
+        .clamp(1, MAX_PLAYOUT)
 }
 
 #[derive(Clone, Debug)]
@@ -125,19 +153,23 @@ pub struct ClientStatus {
     /// Local µs since the relay was last heard from.
     pub silent_us: u64,
     pub schedule: Option<Schedule>,
+    /// Playout delay in ticks ([`playout_ticks`]; 0 reads as 1).
+    pub playout: u64,
 }
 
 impl ClientStatus {
     /// See [`NetClient::step_slot`].
     pub fn step_slot(&self, tick: u64) -> Option<u64> {
-        step_slot(self.schedule.as_ref()?, self.offset_us?, tick)
+        step_slot(self.schedule.as_ref()?, self.offset_us?, tick, self.playout)
     }
 }
 
-/// Local time at which tick `tick` should be stepped: one period after its
-/// turn closes (the playout tick), mapped through the clock offset.
-fn step_slot(s: &Schedule, offset: i64, tick: u64) -> Option<u64> {
-    let relay = s.close_at(tick).saturating_add(s.period());
+/// Local time at which tick `tick` should be stepped: `playout` periods
+/// after its turn closes, mapped through the clock offset.
+fn step_slot(s: &Schedule, offset: i64, tick: u64, playout: u64) -> Option<u64> {
+    let relay = s
+        .close_at(tick)
+        .saturating_add(s.period().saturating_mul(playout.max(1)));
     Some((relay as i128 - offset as i128).clamp(0, u64::MAX as i128) as u64)
 }
 
@@ -163,6 +195,7 @@ pub struct NetClient {
     start: Option<Start>,
     schedule: Option<Schedule>,
     d: u8,
+    playout: u64,
     paused_at: Option<u64>,
     ended: bool,
     // Own input.
@@ -198,6 +231,7 @@ impl NetClient {
             start: None,
             schedule: None,
             d: MIN_D,
+            playout: 1,
             paused_at: None,
             ended: false,
             queue: VecDeque::new(),
@@ -234,7 +268,17 @@ impl NetClient {
     /// Local µs at which tick `tick` should be stepped, once the match
     /// started and the clock is synced.
     pub fn step_slot(&self, tick: u64) -> Option<u64> {
-        step_slot(self.schedule.as_ref()?, self.clock.offset()?, tick)
+        step_slot(
+            self.schedule.as_ref()?,
+            self.clock.offset()?,
+            tick,
+            self.playout,
+        )
+    }
+
+    /// Playout delay in ticks, fixed at `Start`.
+    pub fn playout(&self) -> u64 {
+        self.playout
     }
 
     pub fn schedule(&self) -> Option<Schedule> {
@@ -258,6 +302,7 @@ impl NetClient {
         s.held = self.held;
         s.paused_at = self.paused_at;
         s.schedule = self.schedule;
+        s.playout = self.playout;
         s
     }
 
@@ -398,7 +443,13 @@ impl NetClient {
         match msg {
             Down::Lobby(l) => self.events.push_back(NetEvent::Lobby(l)),
             Down::Start(s) if self.phase == ClientPhase::Lobby => {
-                self.schedule = Some(Schedule::new(s.start_at, s.tick_hz, s.speed_pct));
+                let schedule = Schedule::new(s.start_at, s.tick_hz, s.speed_pct);
+                self.playout = playout_ticks(
+                    self.clock.rtt_p99().unwrap_or(0),
+                    self.clock.jitter(),
+                    schedule.period(),
+                );
+                self.schedule = Some(schedule);
                 self.d = s.d;
                 self.phase = ClientPhase::Running;
                 self.next_input = now;
@@ -413,6 +464,9 @@ impl NetClient {
                 if let Some(s) = self.schedule.as_mut() {
                     s.rebase(at, close_at);
                 }
+                // Stamps made while the pause was unseen (a blackout) may
+                // be far ahead of `at`; the next one starts from `at + D`.
+                self.last_target = self.last_target.min((at + self.d as u64).saturating_sub(1));
                 self.paused_at = None;
                 self.events.push_back(NetEvent::Resume { at, close_at });
             }
@@ -548,7 +602,11 @@ impl NetClient {
 
     /// Stamps up to one turn of queued commands for `open turn + D`.
     fn stamp(&mut self, now: u64) {
-        if self.queue.is_empty() || self.paused_at.is_some() || self.ended {
+        if self.queue.is_empty()
+            || self.paused_at.is_some()
+            || self.ended
+            || now.saturating_sub(self.last_heard) >= STAMP_SILENCE_US
+        {
             return;
         }
         let (Some(s), Some(relay_now)) = (self.schedule, self.clock.to_relay(now)) else {
@@ -651,11 +709,14 @@ mod tests {
         let p = 33_333;
         // LAN: sub-ms RTT.
         assert_eq!(suggest_d(400, 50, p), 2);
-        // 60 ms path with 10 ms jitter: ceil(70/33.3) + 1 = 4.
-        assert_eq!(suggest_d(60_000, 10_000, p), 4);
-        // 40 ms: ceil(45/33.3) + 1 = 3.
-        assert_eq!(suggest_d(40_000, 5_000, p), 3);
-        // Terrible paths stay capped at 4.
+        assert_eq!(playout_ticks(400, 50, p), 1);
+        // 60 ms path with 10 ms jitter: ceil(40/33.3) = 2, and 2 of playout.
+        assert_eq!(suggest_d(60_000, 10_000, p), 2);
+        assert_eq!(playout_ticks(60_000, 10_000, p), 2);
+        // 120 ms with 20 ms jitter: ceil(80/33.3) = 3.
+        assert_eq!(suggest_d(120_000, 20_000, p), 3);
+        // Terrible paths stay capped at 4 (D) and 6 (playout).
         assert_eq!(suggest_d(500_000, 100_000, p), 4);
+        assert_eq!(playout_ticks(500_000, 100_000, p), 6);
     }
 }

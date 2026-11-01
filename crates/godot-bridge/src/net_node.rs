@@ -139,7 +139,7 @@ impl FrontlineNet {
 
     /// Lobby snapshot (`godot/docs/net_api.md`): state, slot, slots (name,
     /// faction, ping_ms, ready), seed, map, input_delay, suggested_delay,
-    /// mismatch, countdown_s, error, host_port.
+    /// mismatch, countdown_s, error, error_detail, host_port.
     #[func]
     fn status(&mut self) -> VarDictionary {
         let v = self.session.view();
@@ -166,6 +166,7 @@ impl FrontlineNet {
             "mismatch" => v.mismatch.as_str(),
             "countdown_s" => v.countdown_s,
             "error" => v.error.as_str(),
+            "error_detail" => v.error_detail.as_str(),
             "host_port" => v.host_port as i64,
         }
     }

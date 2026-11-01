@@ -27,9 +27,12 @@ use crate::protocol::*;
 use crate::rng::TokenSource;
 use crate::schedule::Schedule;
 
-/// Turns may be stamped at most this far past `open + D` (a client that
-/// missed a pause, or a clock gone wrong); later targets are pulled in.
-pub const LEAD_SLACK: u64 = 30;
+/// Turns may be stamped at most this far past `open + D`; later targets
+/// are pulled in. It covers a client's clock running a little ahead and
+/// the stamps of the 300 ms lead-in after a `Resume` (about 9 turns), and
+/// caps the extra input lag of a client that stamped against a clock it
+/// could not see stop.
+pub const LEAD_SLACK: u64 = 10;
 /// Encoded bytes of one closed turn, so any turn fits a datagram next to
 /// the bundle header. Commands past it roll to the next turn.
 pub const MAX_CLOSED_TURN_BYTES: usize = 1100;
@@ -40,6 +43,16 @@ pub const HELLO_BURST: u32 = 8;
 pub const HELLO_PER_S: u32 = 4;
 /// Source IPs tracked by the pre-auth limiter.
 pub const MAX_RATE_ENTRIES: usize = 4096;
+/// Shortest gap between two lobby broadcasts: a burst of `LobbySet`s
+/// sends only the latest state.
+pub const LOBBY_MIN_GAP_US: u64 = 50_000;
+/// Shortest gap between two pause requests (`PauseReq` or `ResumeReq`)
+/// of one slot; faster ones are ignored, so a player cannot flood the
+/// other's control stream with `Paused`/`Resume`.
+pub const PAUSE_REQ_GAP_US: u64 = 250_000;
+/// After a stop mid-match, how long the relay keeps sending the last
+/// turns (a quitter's `Surrender`) before it says `Bye(Shutdown)`.
+pub const SHUTDOWN_DRAIN_US: u64 = 250_000;
 
 #[derive(Clone, Debug)]
 pub struct RelayConfig {
@@ -135,6 +148,8 @@ struct Slot {
     burst_start: u64,
     burst_count: u32,
     restamps: u64,
+    /// Relay time of this slot's last accepted pause request.
+    pause_req_at: Option<u64>,
 }
 
 impl Slot {
@@ -168,10 +183,13 @@ pub enum LogRecord {
         addr: String,
         build: String,
     },
+    /// The first `Reject` of a second; `more` counts the rejects since
+    /// the previous record that were not logged.
     Rejected {
         t: u64,
         addr: String,
         reason: String,
+        more: u64,
     },
     Moved {
         t: u64,
@@ -227,6 +245,12 @@ pub enum LogRecord {
         t: u64,
         slot: u8,
     },
+    /// The slot's control stream backed up past `ctl::MAX_QUEUED` (it
+    /// stopped acking); it is dropped like a flood.
+    CtlOverflow {
+        t: u64,
+        slot: u8,
+    },
     Ended {
         t: u64,
     },
@@ -275,6 +299,8 @@ pub struct Relay {
     /// Lobby state last broadcast (to resend only on change).
     lobby_sent: Option<LobbyState>,
     lobby_sent_at: u64,
+    /// The lobby changed since the last broadcast.
+    lobby_dirty: bool,
     // Running.
     d: u8,
     schedule: Schedule,
@@ -290,6 +316,13 @@ pub struct Relay {
     commands: u64,
     ended_at: Option<u64>,
     rate: BTreeMap<IpAddr, Bucket>,
+    /// Relay time the full rate table was last swept.
+    rate_swept_at: Option<u64>,
+    /// Rejects not logged since the last `Rejected` record, and its time.
+    rejects_unlogged: u64,
+    reject_logged_at: Option<u64>,
+    /// Stopping mid-match: since when the last turns are being drained.
+    closing: Option<u64>,
     out: Vec<(SocketAddr, Vec<u8>)>,
     log: Vec<LogRecord>,
     log_turns: bool,
@@ -310,6 +343,7 @@ impl Relay {
             note: String::new(),
             lobby_sent: None,
             lobby_sent_at: 0,
+            lobby_dirty: false,
             d: MIN_D,
             schedule,
             next_turn: 0,
@@ -323,6 +357,10 @@ impl Relay {
             commands: 0,
             ended_at: None,
             rate: BTreeMap::new(),
+            rate_swept_at: None,
+            rejects_unlogged: 0,
+            reject_logged_at: None,
+            closing: None,
             out: Vec::new(),
             log: Vec::new(),
             log_turns: true,
@@ -389,7 +427,7 @@ impl Relay {
     /// close), if the match runs and is not paused. Control resends and
     /// timeouts want a poll at least every few ms anyway.
     pub fn next_deadline(&self) -> Option<u64> {
-        (self.phase == Phase::Running && self.pause.is_none())
+        (self.phase == Phase::Running && self.pause.is_none() && self.closing.is_none())
             .then(|| self.schedule.close_at(self.next_turn))
     }
 
@@ -509,7 +547,16 @@ impl Relay {
     fn rate_ok(&mut self, ip: IpAddr, now: u64) -> bool {
         if !self.rate.contains_key(&ip) && self.rate.len() >= MAX_RATE_ENTRIES {
             // Forget addresses whose buckets have refilled; if all are
-            // busy, refuse newcomers rather than grow without bound.
+            // busy, refuse newcomers rather than grow without bound. The
+            // sweep runs at most once a second, so a spoofed-source flood
+            // costs one map lookup per datagram, not a scan.
+            if self
+                .rate_swept_at
+                .is_some_and(|t| now.saturating_sub(t) < 1_000_000)
+            {
+                return false;
+            }
+            self.rate_swept_at = Some(now);
             let full = |b: &Bucket| {
                 b.tokens as u64 + now.saturating_sub(b.last) * HELLO_PER_S as u64 / 1_000_000
                     >= HELLO_BURST as u64
@@ -577,10 +624,21 @@ impl Relay {
             (None, None) => RejectReason::Full,
             (None, Some(i)) => {
                 let token = self.tokens.next_token();
+                // Two players with one name would make "waiting for
+                // Player" ambiguous: the second gets a suffix.
+                let mut name = hello.name;
+                if self.slots.iter().flatten().any(|s| s.name == name) {
+                    let mut cut = name.len().min(MAX_NAME - 4);
+                    while !name.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    name.truncate(cut);
+                    name.push_str(" (2)");
+                }
                 self.log.push(LogRecord::Joined {
                     t: now,
                     slot: i as u8,
-                    name: hello.name.clone(),
+                    name: name.clone(),
                     addr: from.to_string(),
                     build: hello.build_id.clone(),
                 });
@@ -588,7 +646,7 @@ impl Relay {
                     token,
                     nonce: hello.nonce,
                     addr: from,
-                    name: hello.name,
+                    name,
                     build_id: hello.build_id,
                     content_hash: hello.content_hash,
                     faction: String::new(),
@@ -607,6 +665,7 @@ impl Relay {
                     burst_start: 0,
                     burst_count: 0,
                     restamps: 0,
+                    pause_req_at: None,
                 });
                 self.send(
                     from,
@@ -625,11 +684,22 @@ impl Relay {
     }
 
     fn reply_reject(&mut self, to: SocketAddr, nonce: u64, reason: RejectReason, now: u64) {
-        self.log.push(LogRecord::Rejected {
-            t: now,
-            addr: to.to_string(),
-            reason: format!("{reason:?}"),
-        });
+        // At most one record a second: a flood of bad `Hello`s must not
+        // turn into a flood of log lines.
+        if self
+            .reject_logged_at
+            .is_some_and(|t| now.saturating_sub(t) < 1_000_000)
+        {
+            self.rejects_unlogged += 1;
+        } else {
+            self.reject_logged_at = Some(now);
+            self.log.push(LogRecord::Rejected {
+                t: now,
+                addr: to.to_string(),
+                reason: format!("{reason:?}"),
+                more: std::mem::take(&mut self.rejects_unlogged),
+            });
+        }
         self.send(
             to,
             0,
@@ -684,12 +754,17 @@ impl Relay {
             Up::Hash { tick, hash } if self.phase == Phase::Running => {
                 self.on_hash(i, tick, hash, now)
             }
-            Up::PauseReq if self.phase == Phase::Running && self.pause.is_none() => {
+            Up::PauseReq
+                if self.phase == Phase::Running
+                    && self.pause.is_none()
+                    && self.pause_req_ok(i, now) =>
+            {
                 self.pause_for(PauseKind::Player(i as u8), now);
             }
             Up::ResumeReq => {
                 if let Some(p) = self.pause
                     && matches!(p.kind, PauseKind::Player(_))
+                    && self.pause_req_ok(i, now)
                 {
                     self.resume(now);
                 }
@@ -697,6 +772,19 @@ impl Relay {
             Up::Bye(reason) => self.on_bye(i, reason, now),
             _ => {}
         }
+    }
+
+    /// At most one accepted pause or resume request per slot per
+    /// [`PAUSE_REQ_GAP_US`].
+    fn pause_req_ok(&mut self, i: usize, now: u64) -> bool {
+        let s = self.slots[i].as_mut().expect("slot exists");
+        if s.pause_req_at
+            .is_some_and(|t| now.saturating_sub(t) < PAUSE_REQ_GAP_US)
+        {
+            return false;
+        }
+        s.pause_req_at = Some(now);
+        true
     }
 
     fn on_bye(&mut self, i: usize, reason: ByeReason, now: u64) {
@@ -739,10 +827,37 @@ impl Relay {
     /// connected player gets `Bye(Shutdown)` and the match ends. Keep
     /// polling until [`Relay::is_finished`] (the byes were acked) or a
     /// short timeout, so the goodbyes go out.
+    ///
+    /// Mid-match, queued commands go out first: the host quitting queued
+    /// its own `Surrender`, and the guest should see it win, not a closed
+    /// relay. The relay closes turns until every queue is empty (early;
+    /// clients still step them at their slots), resumes a player or
+    /// waiting pause so they run, and keeps sending bundles for up to
+    /// [`SHUTDOWN_DRAIN_US`] or until each player holds them. Only then
+    /// does `Bye(Shutdown)` go out: a client stops reading bundles once it
+    /// has it.
     pub fn shutdown(&mut self, now: u64) {
-        if self.phase == Phase::Ended && self.ended_at.is_some() {
+        if (self.phase == Phase::Ended && self.ended_at.is_some()) || self.closing.is_some() {
             return;
         }
+        if self.phase == Phase::Running && self.pause.is_none_or(|p| p.kind != PauseKind::Desync) {
+            self.resume(now);
+            let mut n = 0;
+            while n < 64 && self.slots.iter().flatten().any(|s| !s.pending.is_empty()) {
+                self.close_turn(now);
+                n += 1;
+            }
+            self.closing = Some(now);
+            for s in self.slots.iter_mut().flatten() {
+                s.burst_count = 0;
+            }
+            return;
+        }
+        self.finish_shutdown(now);
+    }
+
+    fn finish_shutdown(&mut self, now: u64) {
+        self.closing = None;
         let running = self.phase == Phase::Running;
         for s in self.slots.iter_mut().flatten() {
             if !running || s.active() {
@@ -852,12 +967,9 @@ impl Relay {
         }
     }
 
+    /// The lobby changed; the next poll broadcasts it (see `poll_lobby`).
     fn lobby_changed(&mut self) {
-        let l = self.lobby_state();
-        if self.lobby_sent.as_ref() != Some(&l) {
-            self.lobby_sent = Some(l.clone());
-            self.broadcast(Down::Lobby(l));
-        }
+        self.lobby_dirty = true;
     }
 
     fn on_input(&mut self, i: usize, input: Input, now: u64) {
@@ -1032,10 +1144,29 @@ impl Relay {
     pub fn poll(&mut self, now: u64) {
         match self.phase {
             Phase::Lobby => self.poll_lobby(now),
+            Phase::Running if self.closing.is_some() => self.poll_closing(now),
             Phase::Running => self.poll_running(now),
             Phase::Ended => {}
         }
         self.flush_ctl(now);
+    }
+
+    /// [`Relay::shutdown`] mid-match: send the last turns, then the byes.
+    fn poll_closing(&mut self, now: u64) {
+        let since = self.closing.unwrap_or(now);
+        for i in 0..SLOTS {
+            self.send_bundles(i, now);
+        }
+        let next = self.next_turn;
+        let delivered = self
+            .slots
+            .iter()
+            .flatten()
+            .filter(|s| s.active())
+            .all(|s| s.ack.held >= next);
+        if delivered || now.saturating_sub(since) >= SHUTDOWN_DRAIN_US {
+            self.finish_shutdown(now);
+        }
     }
 
     fn poll_lobby(&mut self, now: u64) {
@@ -1055,10 +1186,17 @@ impl Relay {
             }
         }
         // Pings move the RTT readout and the D suggestion; refresh at most
-        // once a second.
-        if changed || now.saturating_sub(self.lobby_sent_at) >= 1_000_000 {
+        // once a second. Changes go out at most every 50 ms, as the latest
+        // state.
+        let gap = now.saturating_sub(self.lobby_sent_at);
+        if (changed || self.lobby_dirty) && gap >= LOBBY_MIN_GAP_US || gap >= 1_000_000 {
             self.lobby_sent_at = now;
-            self.lobby_changed();
+            self.lobby_dirty = false;
+            let l = self.lobby_state();
+            if self.lobby_sent.as_ref() != Some(&l) {
+                self.lobby_sent = Some(l.clone());
+                self.broadcast(Down::Lobby(l));
+            }
         }
     }
 
@@ -1094,9 +1232,10 @@ impl Relay {
                     } else if silence[w].is_some_and(|q| q < 1_000_000) && s.ack.held >= p.at {
                         // Back, and holds every bundle before the pause.
                         self.resume(now);
-                    } else if now.saturating_sub(p.since) >= timeout_us
-                        && silence[w].is_some_and(|q| q >= pause_us)
-                    {
+                    } else if now.saturating_sub(p.since) >= timeout_us {
+                        // Still silent, or heard but never caught up to
+                        // the pause turn (a one-way link, or a client that
+                        // will not ack): the wait ends either way.
                         self.time_out(w, now);
                         self.resume(now);
                     }
@@ -1263,6 +1402,21 @@ impl Relay {
             s.burst_count = 0;
         }
         let first = s.ack.held.max(self.turns_base);
+        let due = |s: &Slot, t: u64| {
+            !s.ack.holds(t)
+                && s.sent
+                    .get(&t)
+                    .is_none_or(|&at| now.saturating_sub(at) >= resend_after)
+        };
+        // Send only when some turn is new or due for a resend. The first
+        // datagram then also repeats every unacked turn still in flight,
+        // oldest first, so one lost datagram costs the client a period,
+        // not a resend timeout. Later datagrams of a catch-up burst carry
+        // only due turns, so the burst still moves forward.
+        if !(first..self.next_turn).any(|t| due(s, t)) {
+            return;
+        }
+        let mut redundant = true;
         let mut t = first;
         while s.burst_count < MAX_BURST && t < self.next_turn {
             // One datagram: header, confirmed, peers, turn count, turns.
@@ -1272,11 +1426,12 @@ impl Relay {
             let mut body: Vec<u8> = Vec::new();
             let mut n = 0u64;
             while t < self.next_turn && n < MAX_BUNDLE_TURNS as u64 {
-                let due = !s.ack.holds(t)
-                    && s.sent
-                        .get(&t)
-                        .is_none_or(|&at| now.saturating_sub(at) >= resend_after);
-                if due {
+                let send = if redundant {
+                    !s.ack.holds(t)
+                } else {
+                    due(s, t)
+                };
+                if send {
                     let tb = &self.turns[(t - self.turns_base) as usize];
                     // Room for the header, head, and a 2-byte count.
                     if HEADER_LEN + head.len() + 3 + body.len() + tb.len() > MAX_DATAGRAM {
@@ -1288,6 +1443,7 @@ impl Relay {
                 }
                 t += 1;
             }
+            redundant = false;
             if n == 0 {
                 break;
             }
@@ -1333,6 +1489,12 @@ impl Relay {
 
     fn flush_ctl(&mut self, now: u64) {
         for i in 0..SLOTS {
+            if self.slots[i]
+                .as_ref()
+                .is_some_and(|s| s.ctl_out.overflowed())
+            {
+                self.drop_overflowed(i, now);
+            }
             let Some(s) = self.slots[i].as_mut() else {
                 continue;
             };
@@ -1340,6 +1502,40 @@ impl Relay {
             let (addr, token) = (s.addr, s.token);
             for (cseq, msg) in due {
                 self.send(addr, token, &Packet::CtlDown(CtlDown { cseq, msg }));
+            }
+        }
+    }
+
+    /// A slot that stopped acking its control stream for over
+    /// `ctl::MAX_QUEUED` messages: the stream cannot be repaired (the
+    /// receiver takes `cseq`s strictly in order), so the slot goes. In
+    /// the lobby it is freed; in a match it surrenders, like a flood.
+    fn drop_overflowed(&mut self, i: usize, now: u64) {
+        self.log.push(LogRecord::CtlOverflow {
+            t: now,
+            slot: i as u8,
+        });
+        match self.phase {
+            Phase::Lobby => {
+                self.slots[i] = None;
+                for s in self.slots.iter_mut().flatten() {
+                    s.ready = None;
+                }
+                self.lobby_changed();
+            }
+            Phase::Running => {
+                let s = self.slots[i].as_mut().expect("slot exists");
+                s.ctl_out.clear();
+                if s.active() {
+                    s.state = SlotState::Left;
+                    self.inject_surrender(i);
+                    self.check_ended(now);
+                }
+            }
+            Phase::Ended => {
+                if let Some(s) = self.slots[i].as_mut() {
+                    s.ctl_out.clear();
+                }
             }
         }
     }

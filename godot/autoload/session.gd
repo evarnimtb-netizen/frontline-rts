@@ -158,7 +158,11 @@ func _ready() -> void:
 			"--net_bind_all":
 				net_bind_all = true
 			"--debug_inject_desync":
-				debug_inject_desync = v.to_int() if v.is_valid_int() and v.to_int() > 0 else -1
+				# Dev builds only: a release export ignores it.
+				if OS.is_debug_build():
+					debug_inject_desync = v.to_int() if v.is_valid_int() and v.to_int() > 0 else -1
+				else:
+					push_warning("--debug_inject_desync is ignored in a release build")
 				i += 1
 		i += 1
 	if autoplay_net_role != "":

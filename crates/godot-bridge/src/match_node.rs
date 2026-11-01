@@ -1668,6 +1668,7 @@ impl MatchRuntime {
             "ping_ms" => if rtt < 0 { -1.0 } else { rtt as f32 },
             "input_delay" => d as i64,
             "delay_ms" => (d as f32 * 1000.0 / self.hz).round() as i64,
+            "playout" => c.playout.load(Ordering::Relaxed) as i64,
             "restamps" => c.restamps.load(Ordering::Relaxed) as i64,
             "stalls" => c.stall_ticks.load(Ordering::Relaxed) as i64,
             "state" => state.name(),

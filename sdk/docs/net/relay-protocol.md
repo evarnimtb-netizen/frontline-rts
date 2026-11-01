@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **1** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **2** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -65,6 +65,11 @@ kind the relay may not send. Clients cannot send relay messages.
   explain the mismatch:
   - the header layout;
   - kind 3 (`Reject`) with a `u16` relay version as its first body field.
+- Version 2 (S2 fix pass) changed timing rules only, no layout: bundle
+  delivery repeats unacked turns, the D formula and playout delay, the
+  lead clamp (`+10`), lobby coalescing, pause-request rate limit, the
+  `Start` sanity check, the waiting-pause timeout, and the shutdown
+  drain.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -108,7 +113,7 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
 - `nonce`: random per connection attempt. Resent every 250 ms until a
   `Welcome` or `Reject` with the same nonce arrives.
 - `build_id`: `<git commit, 12 hex>[-dirty]-p<protocol>-s<save version>`,
-  for example `3f2a9c1d0b7e-p1-s8`.
+  for example `3f2a9c1d0b7e-p2-s8`.
 - `content_hash`: xxh3-64 of postcard(`ModDefs`), from
   `ModDefs::content_hash()`.
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
@@ -161,6 +166,11 @@ direction.
 - The sender resends unacked messages every 100 ms, at most the 4 oldest
   per round, and sends new ones at once.
 - An `Ack` for a message never sent is ignored.
+- At most 1,024 messages wait unacked. A sender never drops one (that
+  would leave a `cseq` gap the receiver never gets past): the relay
+  instead drops a slot whose stream backs up that far (freed in the
+  lobby, a `Surrender` in a match). No honest peer gets near it: lobby
+  updates are coalesced (below) and pause requests rate-limited.
 
 **`Up`** (client → relay, inside `CtlUp`)
 
@@ -170,19 +180,19 @@ direction.
 | `Ready { setup_hash: u64 }` | xxh3-64 of postcard(`MatchSetup`) from the client's own resolve. |
 | `Hash { tick, hash }` | A published sim hash: the state hash after `tick` ticks (every `hash_interval` = 30 ticks). |
 | `PauseReq` | Pause the match. |
-| `ResumeReq` | Resume a player pause. |
+| `ResumeReq` | Resume a player pause. A slot's pause and resume requests closer than 250 ms to its previous accepted one are ignored. |
 | `Bye(reason)` | Leaving. In the lobby the slot is freed. In a match, any reason except `MatchOver` makes the relay close a `Surrender` for the slot. |
 
 **`Down`** (relay → client, inside `CtlDown`)
 
 | Message | Meaning |
 |---|---|
-| `Lobby(LobbyState)` | Sent on every change, and at most once a second as pings move the RTT readout and the D suggestion. |
+| `Lobby(LobbyState)` | Sent after a change (at most every 50 ms, carrying the latest state), and at most once a second as pings move the RTT readout and the D suggestion. |
 | `Start(Start)` | The match starts. |
 | `Paused { at, cause }` | The relay stopped closing turns; turn `at` is the first not closed. `cause`: `Player(slot)` or `Waiting(slot)` (silent for 10 s). |
 | `Resume { at, close_at }` | Turn `at` closes at relay time `close_at` (µs), turn `at + k` one period per `k` later. |
 | `Desync { tick, hashes: [u64; 2], at }` | The hashes for `tick` differed (slot order). Turn `at` is not closed. The match does not resume. |
-| `Bye(reason)` | `TimedOut`, `Flood` or `Shutdown`. |
+| `Bye(reason)` | `TimedOut`, `Flood` or `Shutdown`. `Shutdown`: the relay is stopping (the host left, or the binary stops). Mid-match it first closes the turns holding every queued command (a quitting host's `Surrender`), resumes a player or waiting pause, and sends those bundles for up to 250 ms or until each player holds them; only then `Bye(Shutdown)`, since a client stops reading bundles once it has it. |
 
 ```
 LobbyState { slots: [Option<SlotInfo>; 2], seed: u64, map: String,
@@ -193,6 +203,12 @@ Start      { start_at: u64, tick_hz: u32, speed_pct: u16, d: u8, seed: u64,
 ByeReason  = Quit | MatchOver | TimedOut | Flood | Shutdown
 PauseCause = Player(u8) | Waiting(u8)
 ```
+
+A client refuses a `Start` with `tick_hz` outside 1–120, `speed_pct`
+outside 1–1,000 or `d` outside 2–6 (the datagram is dropped as invalid).
+
+**Names.** A player whose `Hello` name equals the other slot's gets
+` (2)` appended, so overlays can tell them apart.
 
 **Start rule.** When both slots are Ready, the relay starts only if:
 
@@ -217,8 +233,16 @@ once.
 - `rtt_p99_us` (the highest of the last 32 RTTs) and `jitter_us` (the mean
   absolute difference of consecutive RTTs) feed the relay's D suggestion:
 
-  `D = clamp(ceil((rtt_p99 + jitter) / period) + 1, 2, 4)`, the larger of
-  the two slots, capped by `--max-delay`. The `+1` is one tick of playout.
+  `D = clamp(ceil((rtt_p99 / 2 + jitter) / period), 2, 4)`, the larger of
+  the two slots, capped by `--max-delay`.
+
+  D covers only the trip to the relay: a command stamped `open + D` must
+  arrive before that turn closes, D to D+1 periods later. The trip back
+  is the client's **playout delay** (below). An asymmetric path does not
+  matter: the synced clock is off by half the asymmetry, in the direction
+  that compensates. (Revision 1 used `ceil((rtt_p99 + jitter) / period)
+  + 1` with one tick of playout: about twice the D a link needs, and a
+  downlink slower than one period stalled anyway.)
 
 ### Turns
 
@@ -252,9 +276,13 @@ InputTurn { target: u64, seq0: u32, cmds: Vec<CommandKind> }
 - The relay accepts only the next `seq` of each player. Lower seqs are
   duplicates and are ignored. A gap stops reading that `Input`, and the
   client's resend fills the gap.
-- `target` is clamped to at most `open + D + 30` (input stamped
-  implausibly far ahead, for example by a client that missed a pause), and
-  never earlier than the previous accepted `seq`'s turn.
+- `target` is clamped to at most `open + D + 10` (input stamped
+  implausibly far ahead: a clock a little fast, or the stamps of the
+  lead-in after a `Resume`), and never earlier than the previous accepted
+  `seq`'s turn.
+- A client does not stamp while it has not heard the relay for 2 s (it
+  cannot see a pause from there); queued commands wait. On `Resume { at }`
+  its next stamp starts again from `at + D`.
 
 **Closing a turn.** At `close(T)` the relay closes turn `T` whatever has
 arrived:
@@ -284,16 +312,24 @@ BundledCmd { cmd: Command { player: u8, seq: u32, kind: CommandKind }, target: u
   bundles (§10 "Re-stamp transparency").
 - `confirmed`: the highest tick where both clients' hashes agreed.
   Checkpoints at or below it are safe.
-- **Delivery.** The relay sends unacked turns **oldest first**. A turn is
-  resent when it is still unacked `max(period, rtt_p99 + period/2)` after
-  its last send (200 ms while the RTT is unknown). At most **8 bundle
-  datagrams per client per period**, so a 10 s gap (≈ 300 turns) refills
-  in order in a few periods.
+- **Delivery.** The relay sends unacked turns **oldest first**, whenever
+  a turn is new (just closed) or due for a resend: still unacked
+  `max(period, rtt_p99 + period/2)` after its last send (200 ms while the
+  RTT is unknown). The first datagram of each such send repeats **every
+  unacked turn** from the oldest, as many as fit, so a lost datagram
+  costs one period, not a resend timeout. Further datagrams in the same
+  period carry only due turns. At most **8 bundle datagrams per client
+  per period**, so a 10 s gap (≈ 300 turns) refills in order in a few
+  periods.
 - The client buffers out-of-order turns (up to 4,096 ahead) and hands them
   to the sim strictly in tick order, each exactly once.
-- **Client pacing.** The client steps turn `T` at `close(T) + period` (one
-  tick of playout), mapped to local time. It never steps past the newest
-  contiguous bundle, and catches up at most 3 ticks per period.
+- **Client pacing.** The client steps turn `T` at `close(T) + P·period`,
+  mapped to local time, where the playout delay `P = clamp(ceil((rtt_p99
+  / 2 + jitter) / period), 1, 6)` is fixed at `Start` from the lobby's
+  pings. It is local (when this client shows a tick) and changes no
+  result. It never steps past the newest contiguous bundle, and catches
+  up at most 3 ticks per period. Click to reaction on screen is about
+  `(D + P)` periods.
 
 ### `CommandKind`
 
@@ -313,7 +349,7 @@ identically on both clients, so the relay does not.
 | 2 s | `PeerStat.unstable`. Turns keep closing without that player's orders. |
 | 10 s | `Paused { at, cause: Waiting(slot) }`. Turns stop closing. |
 | back, and its ack `held ≥ at` | `Resume { at, close_at = now + 300 ms }`. |
-| 60 s after the pause | The relay closes a `Surrender` for the slot with its next `seq`, queues `Bye(TimedOut)` to it, and resumes. |
+| 60 s after the pause, if it has not caught up | The relay closes a `Surrender` for the slot with its next `seq`, queues `Bye(TimedOut)` to it, and resumes. This applies whether the slot is still silent or is heard again but never holds the bundles up to `at` (a one-way link, or a client that will not ack). |
 
 - A player pause (`PauseReq`) turns into a `Waiting` pause if a slot then
   goes silent for 10 s, so the timeout still runs.
@@ -348,3 +384,8 @@ identically on both clients, so the relay does not.
   and the sim rejects orders for units a player does not own.
 - The only way the relay refuses input is the 256-command flood cap.
   An honest client never reaches it.
+- Pre-auth: a token bucket per source IP (8 `Hello`s, 4 a second), at
+  most 4,096 addresses tracked. When the table is full it is swept at
+  most once a second, so a spoofed-source flood costs one lookup per
+  datagram. Rejects are logged at most once a second (`more` counts the
+  rest).

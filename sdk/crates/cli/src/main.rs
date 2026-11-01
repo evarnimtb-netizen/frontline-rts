@@ -38,8 +38,11 @@ enum Command {
     /// `paused.sav` files, or `checkpoint.sav` from both clients).
     ///
     /// Prints the first differences by entity, squad, player and point id.
-    /// Exits 1 when the saves differ in any field or hash, 0 when they are
-    /// identical.
+    /// When each save sits next to a dump's `manifest.json`, it also reads
+    /// the desync tick and, for `paused.sav`, the running worlds' state
+    /// hashes, which catch a divergence only in derived data. Exits 1 when
+    /// the saves differ in any field or hash (or those manifest hashes
+    /// differ), 0 when they are identical.
     DesyncDiff {
         #[arg(value_name = "A.sav")]
         a: PathBuf,
@@ -114,7 +117,8 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             let read = |p: &PathBuf| {
                 std::fs::read(p).map_err(|e| anyhow::anyhow!("reading {}: {e}", p.display()))
             };
-            let report = desync_diff::diff_saves(&read(&a)?, &read(&b)?, max)?;
+            let mut report = desync_diff::diff_saves(&read(&a)?, &read(&b)?, max)?;
+            report.add_manifests(&a, &b);
             print!("{}", desync_diff::render(&report));
             Ok(if report.differs() {
                 ExitCode::FAILURE

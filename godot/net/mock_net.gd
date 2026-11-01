@@ -52,6 +52,7 @@ var _delay := 3
 var _suggested := 3
 var _mismatch := ""
 var _error := ""
+var _host_port := 0
 var _countdown_end := 0.0
 var _name := DEFAULT_NAME
 ## Scheduled script steps: [time_s, Callable].
@@ -86,6 +87,7 @@ func host(port: int) -> bool:
 		return false
 	_state = "lobby"
 	_slot = 0
+	_host_port = port
 	_slots = [_slot_dict(_name, "germany", 0.0), _empty_slot()]
 	if auto:
 		_after(OPPONENT_JOIN_S, func() -> void:
@@ -192,6 +194,8 @@ func status() -> Dictionary:
 		"mismatch": _mismatch,
 		"countdown_s": cd,
 		"error": _error,
+		"error_detail": "",
+		"host_port": _host_port,
 	}
 
 
@@ -379,6 +383,7 @@ func _reset_lobby() -> void:
 	_slots = []
 	_mismatch = ""
 	_error = ""
+	_host_port = 0
 	_todo.clear()
 
 

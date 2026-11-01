@@ -46,7 +46,8 @@ Settings → Network → Firewall → Options. Joining a match never needs this.
 ## LAN
 
 1. The host picks **Multiplayer → Host** (port 47015 by default). The lobby
-   shows the host's address, for example `192.168.1.20:47015`.
+   shows the address to give the friend, for example "Friends join:
+   192.168.1.20:47015" (LAN and Tailscale addresses; not the public one).
 2. The other player picks **Multiplayer → Join** and enters that address.
 
 On a LAN the lobby suggests an input delay of D = 2 (about 67 ms).
@@ -65,9 +66,10 @@ not).
 3. The host picks **Host**. The joiner picks **Join** and enters
    `100.101.102.103:47015`.
 
-Expect D = 3 or 4 between cities. Tailscale sometimes relays traffic
+Expect D = 2 or 3 between cities. Tailscale sometimes relays traffic
 through its own servers (DERP) when it cannot connect directly; that works
-but adds latency, and the lobby's suggested D goes up.
+but adds latency, and the lobby's suggested D goes up. The lobby's
+"Friends join" line lists the host's 100.x address too.
 
 ## Direct IP (port forwarding)
 
@@ -127,13 +129,21 @@ log), `--allow-build-mismatch` (development only).
 
 - **Ping**: round-trip time to the relay. With the in-game relay, the
   host's ping is near 0.
-- **Input delay D**: how many 33 ms ticks after a click your units react.
-  The lobby suggests one from both players' pings; slot 0 can override it
-  (2–6) before Ready. A higher D means fewer late orders on a bad
-  connection, but slower reactions. D never changes during a match.
-- **Restamps**: orders that reached the relay after their tick had closed
-  and ran one or more ticks later. A few on Wi-Fi are normal; many mean D
-  is too low.
+- **Input delay D**: how many 33 ms ticks it takes an order to reach the
+  relay's match clock. The lobby suggests one from both players' pings
+  (about half a round trip plus jitter); slot 0 can override it (2–6)
+  before Ready. A higher D means fewer late orders on a bad connection,
+  but slower reactions. D never changes during a match.
+- **Playout**: each game also shows every tick a little after the relay
+  closes it, so the trip back does not make the picture stutter. It is
+  sized the same way (1–6 ticks) and only affects that one screen. On
+  screen, units react about (D + playout) × 33 ms after a click: about
+  100 ms on a LAN, 130–170 ms between cities.
+- **Late** (in the match readout): orders that reached the relay after
+  their tick had closed and ran one or more ticks later. A few on Wi-Fi
+  or a lossy link are normal; many mean D is too low.
+- **Stalls**: ticks this game showed later than planned because a bundle
+  from the relay was late. A few at the start are normal.
 
 ## When things go wrong
 

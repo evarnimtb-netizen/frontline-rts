@@ -108,7 +108,7 @@ func _ask(what: StringName) -> void:
 		_confirm_text.text = "Surrender this match? %s wins and the match ends." % foe
 		_confirm_ok.text = "SURRENDER"
 	elif view.net_mode:
-		_confirm_text.text = "Leave the match and return to the main menu? You disconnect; %s wins once the relay's 60 s timeout runs out. Surrender first to end it at once." % foe
+		_confirm_text.text = "Leave the match and return to the main menu? Leaving surrenders: %s wins." % foe
 		_confirm_ok.text = "LEAVE MATCH"
 	else:
 		_confirm_text.text = "Leave the match and return to the main menu? The match counts as a loss."

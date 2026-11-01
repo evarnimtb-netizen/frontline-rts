@@ -9,12 +9,13 @@ extends Control
 ## Dot: green ok, amber unstable / waiting / paused (blinks while
 ## unstable), red desync (blinks).
 
-## Wordings, widest first: [ping caption, delay caption, restamp caption,
-## stall caption, delay value format ("%d" ticks, "%d" ms)].
+## Wordings, widest first: [ping caption, delay caption, late-order
+## caption, stall caption, delay value format ("%d" ticks, "%d" ms)]. The
+## narrowest leaves the stall count out (the tooltip still has it).
 const LEVELS := [
-	["PING", "DELAY", "RESTAMPS", "STALLS", "%d t · %d ms"],
-	["PING", "D", "RST", "STL", "%d · %d ms"],
-	["", "D", "R", "S", "%d·%dms"],
+	["PING", "DELAY", "LATE", "STALLS", "%d t · %d ms"],
+	["PING", "DELAY", "LATE", "STALL", "%d·%dms"],
+	["", "D", "late", "", "%d·%dms"],
 ]
 const DOT_R := 4.5
 const GAP := 10.0
@@ -45,12 +46,14 @@ func parts(lv: int) -> Array:
 	var w: Array = LEVELS[lv]
 	var d := int(n.get("input_delay", 0))
 	var dms := int(n.get("delay_ms", NetUi.delay_ms(d)))
-	return [
+	var out := [
 		[w[0], NetUi.ping_text(float(n.get("ping_ms", -1.0)))],
 		[w[1], w[4] % [d, dms]],
 		[w[2], "%d" % int(n.get("restamps", 0))],
-		[w[3], "%d" % int(n.get("stalls", 0))],
 	]
+	if w[3] != "":
+		out.append([w[3], "%d" % int(n.get("stalls", 0))])
+	return out
 
 
 ## Width a wording needs in HUD pixels.
@@ -123,7 +126,8 @@ func _get_tooltip(_at: Vector2) -> String:
 		NetUi.STATE_TEXT.get(String(n.get("state", "ok")), String(n.get("state", ""))),
 		"Ping %s: round trip to the relay." % NetUi.ping_text(float(n.get("ping_ms", -1.0))),
 		"Input delay D = %d ticks = %d ms: your orders take effect this long after you give them (fixed for the match)." % [d, int(n.get("delay_ms", NetUi.delay_ms(d)))],
-		"Restamps %d: orders that reached the relay too late for their turn and went into the next one." % int(n.get("restamps", 0)),
+		"On screen, add %d tick%s of playout (the trip back from the relay): about %d ms from click to reaction." % [maxi(int(n.get("playout", 1)), 1), "" if int(n.get("playout", 1)) <= 1 else "s", NetUi.delay_ms(d + maxi(int(n.get("playout", 1)), 1))],
+		"Late %d: orders that reached the relay too late for their turn and ran one or more ticks later." % int(n.get("restamps", 0)),
 		"Stalls %d: ticks this game waited for a late turn from the relay." % int(n.get("stalls", 0)),
 	])
 	return "\n".join(lines)

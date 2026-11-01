@@ -65,6 +65,9 @@ pub struct MatchCounters {
     pub rtt_ms: AtomicI32,
     /// D in ticks.
     pub input_delay: AtomicU32,
+    /// Playout delay in ticks (this client steps a tick this long after
+    /// its turn closes).
+    pub playout: AtomicU32,
     /// Own commands the relay moved to a later turn.
     pub restamps: AtomicU64,
     /// Ticks stepped more than a period after their slot.

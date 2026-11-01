@@ -13,8 +13,11 @@ pub const RESEND_US: u64 = 100_000;
 /// Unacked messages resent per interval; the receiver takes them in order,
 /// so resending the whole backlog after a long gap would only add load.
 pub const RESEND_WINDOW: usize = 4;
-/// Messages kept unacked before the oldest are dropped. Never reached by an
-/// honest peer in S2 (lobby edits, 1 hash per second, pause, bye).
+/// Messages kept unacked at most. Past it the stream is broken for good
+/// (dropping any message would leave a `cseq` gap the receiver never gets
+/// past), so [`CtlOut::push`] refuses the message and flags the queue;
+/// the owner drops the peer. Never reached by an honest peer in S2 (lobby
+/// broadcasts are coalesced, 1 hash per second, rate-limited pauses, bye).
 pub const MAX_QUEUED: usize = 1024;
 
 #[derive(Debug)]
@@ -23,6 +26,7 @@ pub struct CtlOut<T> {
     /// `(cseq, message, last sent)`; `last sent` is `None` until the first
     /// send.
     queue: VecDeque<(u32, T, Option<u64>)>,
+    overflowed: bool,
 }
 
 impl<T: Clone> CtlOut<T> {
@@ -30,18 +34,32 @@ impl<T: Clone> CtlOut<T> {
         CtlOut {
             next: 0,
             queue: VecDeque::new(),
+            overflowed: false,
         }
     }
 
-    /// Queues `msg`; it goes out on the next [`CtlOut::due`].
-    pub fn push(&mut self, msg: T) -> u32 {
+    /// Queues `msg`; it goes out on the next [`CtlOut::due`]. With
+    /// [`MAX_QUEUED`] messages unacked, `msg` is refused (`None`) and the
+    /// queue is flagged [`CtlOut::overflowed`].
+    pub fn push(&mut self, msg: T) -> Option<u32> {
+        if self.queue.len() >= MAX_QUEUED {
+            self.overflowed = true;
+            return None;
+        }
         let c = self.next;
         self.next = self.next.wrapping_add(1);
-        if self.queue.len() >= MAX_QUEUED {
-            self.queue.pop_front();
-        }
         self.queue.push_back((c, msg, None));
-        c
+        Some(c)
+    }
+
+    /// A message was refused: the peer stopped acking.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    /// Forgets every queued message (the peer is gone).
+    pub fn clear(&mut self) {
+        self.queue.clear();
     }
 
     /// The peer processed every `cseq < next`.
@@ -110,5 +128,19 @@ mod tests {
         assert_eq!(q.len(), 1);
         q.ack(2);
         assert!(q.is_empty());
+    }
+
+    #[test]
+    fn overflow_refuses_and_flags() {
+        let mut q = CtlOut::new();
+        for i in 0..MAX_QUEUED {
+            assert_eq!(q.push(i), Some(i as u32));
+        }
+        assert!(!q.overflowed());
+        assert_eq!(q.push(9999), None);
+        assert!(q.overflowed());
+        // Nothing was dropped from the front: the stream stays gap-free.
+        assert_eq!(q.due(0)[0], (0, 0));
+        assert_eq!(q.len(), MAX_QUEUED);
     }
 }

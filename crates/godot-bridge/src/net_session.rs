@@ -113,6 +113,9 @@ pub struct SessionView {
     pub countdown_s: f32,
     /// Reason code once disconnected.
     pub error: String,
+    /// More about `error`, when there is more (a build mismatch names
+    /// both builds); empty otherwise.
+    pub error_detail: String,
     /// Where the relay listens when hosting (for the "join me at" line).
     pub host_port: u16,
 }
@@ -145,6 +148,7 @@ pub struct NetSession {
     choice: Choice,
     start: Option<Start>,
     error: String,
+    error_detail: String,
     mismatch: String,
     ready_hash: Option<u64>,
     relay_log: Option<PathBuf>,
@@ -181,6 +185,7 @@ impl NetSession {
             choice: Choice::default(),
             start: None,
             error: String::new(),
+            error_detail: String::new(),
             mismatch: String::new(),
             ready_hash: None,
             relay_log: None,
@@ -368,6 +373,7 @@ impl NetSession {
         self.choice = Choice::default();
         self.start = None;
         self.error.clear();
+        self.error_detail.clear();
         self.mismatch.clear();
         self.ready_hash = None;
         self.host_port = 0;
@@ -424,6 +430,12 @@ impl NetSession {
             }
             NetEvent::Rejected(r) => {
                 self.fail(reject_code(&r));
+                if let RejectReason::Build { lobby } = &r {
+                    self.error_detail = format!(
+                        "Their build: {lobby}. Yours: {}.",
+                        frontline_net::build_id()
+                    );
+                }
             }
             NetEvent::WrongVersion { .. } => {
                 self.fail("protocol");
@@ -507,6 +519,7 @@ impl NetSession {
                 0.0
             },
             error: self.error.clone(),
+            error_detail: self.error_detail.clone(),
             host_port: self.host_port,
         }
     }
@@ -724,7 +737,8 @@ fn reject_code(r: &RejectReason) -> &'static str {
         RejectReason::Version => "protocol",
         RejectReason::Build { .. } => "build_mismatch",
         RejectReason::Content => "content_mismatch",
-        RejectReason::Full | RejectReason::Started => "full",
+        RejectReason::Full => "full",
+        RejectReason::Started => "started",
         RejectReason::BadName => "bad_name",
     }
 }

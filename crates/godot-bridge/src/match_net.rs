@@ -358,6 +358,13 @@ impl NetStepper {
             NetState::Ended
         } else if self.desync.is_some() {
             NetState::Desync
+        } else if world
+            .game()
+            .is_some_and(|g| g.outcome() != Outcome::Running)
+        {
+            // Over: the other side says goodbye and goes quiet, which is
+            // not an unstable link.
+            NetState::Ended
         } else if let Some((cause, since)) = self.pause {
             match cause {
                 PauseCause::Player(p) => {
@@ -393,6 +400,9 @@ impl NetStepper {
             if s.d > 0 { s.d } else { self.info.d } as u32,
             Ordering::Relaxed,
         );
+        counters
+            .playout
+            .store(s.playout.max(1) as u32, Ordering::Relaxed);
         counters.restamps.store(s.own_restamps, Ordering::Relaxed);
         counters
             .stall_ticks

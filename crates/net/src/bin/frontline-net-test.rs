@@ -143,9 +143,11 @@ fn run(a: Args) -> anyhow::Result<bool> {
 fn print_report(r: &VirtualReport) {
     let ms = |v: Option<u16>| v.map_or("?".to_owned(), |v| v.to_string());
     println!(
-        "input delay: D = {} ({} ms); client RTT p99 {} / {} ms",
+        "input delay: D = {} ({} ms); playout {} / {} ticks; client RTT p99 {} / {} ms",
         r.d,
         r.d as u64 * 1000 / 30,
+        r.playout[0],
+        r.playout[1],
         ms(r.rtt_p99_ms[0]),
         ms(r.rtt_p99_ms[1])
     );

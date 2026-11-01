@@ -70,7 +70,12 @@ impl DesyncRecorder {
     /// checkpoint ticks and records the bundle.
     pub fn before_step(&mut self, world: &World, cmds: &[Command]) {
         let t = world.tick();
-        if t.is_multiple_of(CHECKPOINT_TICKS) && t > 0 {
+        if t == 0 && self.confirmed.is_none() {
+            // Tick 0 is the setup both clients hashed equal before `Ready`
+            // let the match start: confirmed from the outset, so a desync
+            // in the first 10 s still dumps a checkpoint to replay from.
+            self.confirmed = Some((0, world.save()));
+        } else if t.is_multiple_of(CHECKPOINT_TICKS) && t > 0 {
             if self.unconfirmed.len() == MAX_UNCONFIRMED {
                 self.unconfirmed.pop_front();
             }

@@ -109,14 +109,18 @@ fn loopback_rough_path_seeds_1_to_3() {
     }
 }
 
-/// D forced to 2 on the same path: most commands miss their turn and are
-/// restamped, and still none is lost or reordered.
+/// D forced to 2 on the rough path with 0–120 ms jitter: many commands
+/// miss their turn and are restamped, and still none is lost or
+/// reordered.
 #[test]
 fn restamps_keep_every_command() {
     let spec = VirtualSpec {
         seed: 4,
         seconds: 60,
-        link: rough(),
+        link: LinkParams {
+            jitter_us: 120_000,
+            ..rough()
+        },
         d_override: Some(2),
         ..VirtualSpec::default()
     };

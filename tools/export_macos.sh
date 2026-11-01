@@ -117,6 +117,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 ditto "$APP" "$STAGE/Frontline.app"
 cp THIRD_PARTY_NOTICES "$STAGE/THIRD_PARTY_NOTICES.txt"
+cp docs/net/playing-online.md "$STAGE/Playing online.txt"
 cat > "$STAGE/README.txt" <<EOF
 Frontline (build $COMMIT, for: $ARCHS)
 
@@ -129,10 +130,11 @@ Frontline (build $COMMIT, for: $ARCHS)
 
 Multiplayer: both players need this same zip (the game checks the build).
 One player hosts (Multiplayer > Host, UDP port 47015 by default; macOS
-asks once whether to accept incoming connections: allow it), the other
-joins with the host's address and port. Over the internet use Tailscale
-(join the host's 100.x address) or a frontline-relay on a server; see
-docs/net/playing-online.md in the source.
+asks once whether to accept incoming connections: allow it). The lobby
+shows "Friends join: <address>:47015"; the other player picks
+Multiplayer > Join and types that. Over the internet use Tailscale (both
+install it; join the host's 100.x address) or a frontline-relay on a
+server. "Playing online.txt" in this zip explains every option.
 
 Desync reports are written to
 ~/Library/Application Support/Godot/app_userdata/Frontline/desync/

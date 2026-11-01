@@ -64,7 +64,8 @@ func _test_parse() -> void:
 		_check(not NetUi.parse_port(t, true).ok, "host port \"%s\" rejected" % t)
 	_check(NetUi.parse_port("80").ok, "port 80 is fine to join")
 	_check(NetUi.suggested_delay(2.0, 1.0) == 2, "LAN ping suggests D = 2")
-	_check(NetUi.suggested_delay(60.0, 10.0) == 4, "60 ms + 10 ms jitter suggests D = 4")
+	_check(NetUi.suggested_delay(60.0, 10.0) == 2, "60 ms + 10 ms jitter suggests D = 2 (D covers the trip to the relay)")
+	_check(NetUi.suggested_delay(120.0, 20.0) == 3, "120 ms + 20 ms jitter suggests D = 3")
 	_check(NetUi.suggested_delay(400.0, 50.0) == 4, "the suggestion caps at 4")
 	_check(NetUi.delay_ms(3) == 100, "D 3 = 100 ms")
 	_check(NetUi.reason_text("build_mismatch").contains("same"), "reason codes become text")
@@ -93,7 +94,7 @@ func _test_session_flags(session: Node) -> void:
 	session.net_mode = true
 	session.debug_inject_desync = 1000
 	var ms: Dictionary = session.match_setup()
-	_check(ms.get("net", false) and ms.local_player == 1 and ms.input_delay == 3 and ms.speed == 1.0 and ms.debug_inject_desync == 1000, "net match_setup carries slot, D, 1x and the desync hook")
+	_check(ms.get("net", false) and ms.local_player == 1 and ms.input_delay == int(mock.status().input_delay) and ms.input_delay >= 2 and ms.speed == 1.0 and ms.debug_inject_desync == 1000, "net match_setup carries slot, D, 1x and the desync hook")
 	session.net_mode = false
 	session.debug_inject_desync = -1
 	_check(not session.match_setup().has("net"), "skirmish match_setup has no net keys")

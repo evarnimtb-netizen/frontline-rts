@@ -43,14 +43,18 @@ func _init() -> void:
 
 ## Shows `code` (a reason code or free text). `in_match`: the match is
 ## over for this player; the hint says what happens to it.
-func set_reason(code: String, in_match := false) -> void:
+## `detail`: more about the reason (a build mismatch names both builds).
+func set_reason(code: String, in_match := false, detail := "") -> void:
 	var text := NetUi.reason_text(code)
 	reason.text = text if not text.is_empty() else "The connection ended."
+	if detail != "":
+		reason.text += " " + detail
+	title.text = "CAN'T JOIN" if code in NetUi.REJECT_CODES else "DISCONNECTED"
 	back_button.text = "BACK TO MENU" if in_match else "BACK"
 	if in_match:
-		hint.text = "The match cannot continue on this machine. If your opponent is still connected, the relay ends the match for them after its 60 s timeout."
+		hint.text = "The match cannot continue on this machine. If only your link failed and your opponent is still connected, they win after the relay's 60 s timeout. If the host's game closed, the match is over for both."
 	elif code in ADDRESS_CODES:
-		hint.text = "Check the address and port, then try again. Over the internet, see docs/net/playing-online.md."
+		hint.text = "Check the address and port, then try again. Over the internet, see %s." % NetUi.GUIDE
 	else:
 		hint.text = ""
 	hint.visible = hint.text != ""

@@ -10,12 +10,16 @@
 //! squads, points, entities) and then by id, and capped.
 //!
 //! `World::load` rebuilds derived data and the hash cache, so a desync only
-//! in derived data cannot show in a save diff. When the saves match but
-//! the hashes the clients reported differ, the report says so; the
-//! per-tick hash ring in the dump narrows the tick, and the planned
-//! `--replay` finds the field.
+//! in derived data cannot show in a save diff, and two identical saves
+//! always reload to identical hashes. The hashes that matter are the ones
+//! the running worlds had: each dump's `manifest.json` (next to the save)
+//! records `state_hash` at the pause turn. When both saves are a dump's
+//! `paused.sav` and the saves match but those hashes differ, the report
+//! says so; the per-tick hash ring in the manifest narrows the tick, and
+//! the planned `--replay` finds the field.
 
 use std::fmt::Write as _;
+use std::path::Path;
 
 use anyhow::{Result, anyhow};
 use frontline_sim::World;
@@ -49,12 +53,49 @@ pub struct DiffReport {
     /// load) and `full_state_hash`.
     pub hashes: (u64, u64),
     pub full_hashes: (u64, u64),
+    /// From the dumps' manifests, when both saves are a dump's
+    /// `paused.sav`: the running worlds' `state_hash` at the pause turn.
+    pub live_hashes: Option<(String, String)>,
+    /// From the manifests: the tick whose reported hashes differed, and
+    /// those hashes (slot order).
+    pub desync: Option<(u64, [String; 2])>,
 }
 
 impl DiffReport {
-    /// True when the saves differ in any field or hash.
+    /// True when the saves differ in any field or hash, or the dumps'
+    /// manifests say the running worlds' hashes differed.
     pub fn differs(&self) -> bool {
-        self.total > 0 || self.hashes.0 != self.hashes.1 || self.full_hashes.0 != self.full_hashes.1
+        self.total > 0
+            || self.hashes.0 != self.hashes.1
+            || self.full_hashes.0 != self.full_hashes.1
+            || self.live_hashes.as_ref().is_some_and(|(a, b)| a != b)
+    }
+
+    /// Reads the `manifest.json` next to each save (a desync dump's
+    /// `slot<N>/`), if both have one, and fills [`DiffReport::live_hashes`]
+    /// (only for saves at the manifests' pause tick) and
+    /// [`DiffReport::desync`].
+    pub fn add_manifests(&mut self, a: &Path, b: &Path) {
+        let read = |p: &Path| -> Option<Value> {
+            let text = std::fs::read_to_string(p.parent()?.join("manifest.json")).ok()?;
+            serde_json::from_str(&text).ok()
+        };
+        let (Some(ma), Some(mb)) = (read(a), read(b)) else {
+            return;
+        };
+        let paused = |m: &Value, tick: u64| -> Option<String> {
+            (m.get("paused_tick")?.as_u64()? == tick)
+                .then(|| m.get("state_hash")?.as_str().map(str::to_owned))?
+        };
+        if let (Some(x), Some(y)) = (paused(&ma, self.ticks.0), paused(&mb, self.ticks.1)) {
+            self.live_hashes = Some((x, y));
+        }
+        let desync = |m: &Value| -> Option<(u64, [String; 2])> {
+            let h = m.get("hashes")?.as_array()?;
+            let s = |i: usize| h.get(i)?.as_str().map(str::to_owned);
+            Some((m.get("desync_tick")?.as_u64()?, [s(0)?, s(1)?]))
+        };
+        self.desync = desync(&ma).or_else(|| desync(&mb));
     }
 }
 
@@ -80,6 +121,8 @@ pub fn diff_worlds(a: &World, b: &World, limit: usize) -> Result<DiffReport> {
         ticks: (a.tick(), b.tick()),
         hashes: (a.state_hash(), b.state_hash()),
         full_hashes: (a.full_state_hash(), b.full_state_hash()),
+        live_hashes: None,
+        desync: None,
     })
 }
 
@@ -233,8 +276,26 @@ pub fn render(r: &DiffReport) -> String {
             r.ticks.0, r.ticks.1
         );
     }
+    if let Some((tick, [h0, h1])) = &r.desync {
+        let _ = writeln!(
+            s,
+            "dump: hashes first differed at tick {tick} ({h0} vs {h1})"
+        );
+    }
+    let live_differ = r.live_hashes.as_ref().filter(|(a, b)| a != b);
     if r.total == 0 {
-        if r.hashes.0 == r.hashes.1 && r.full_hashes.0 == r.full_hashes.1 {
+        if let Some((a, b)) = live_differ {
+            let _ = writeln!(
+                s,
+                "the saves match field for field, but the running worlds' state hashes \
+                 at tick {} differed ({a} vs {b}, from manifest.json). World::load \
+                 rebuilds derived data and the hash cache, so the divergence is in \
+                 derived data or the hash cache, which a save diff cannot show. Use the \
+                 per-tick hash ring in manifest.json to find the first bad tick \
+                 (desync-diff --replay is a planned follow-up).",
+                r.ticks.0
+            );
+        } else if r.hashes.0 == r.hashes.1 && r.full_hashes.0 == r.full_hashes.1 {
             let _ = writeln!(
                 s,
                 "saves are identical (tick {}, hash {:016x})",
@@ -280,6 +341,41 @@ pub fn render(r: &DiffReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identical_saves_with_differing_manifests_are_flagged() {
+        let dir = std::env::temp_dir().join(format!("desync-diff-test-{}", std::process::id()));
+        let w = World::new(
+            frontline_sim::SimConfig {
+                soldiers: 8,
+                ..frontline_sim::SimConfig::default()
+            },
+            1,
+        )
+        .unwrap();
+        let save = w.save();
+        let mut paths = Vec::new();
+        for (slot, hash) in [(0, "00000000000000aa"), (1, "00000000000000bb")] {
+            let d = dir.join(format!("slot{slot}"));
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("paused.sav"), &save).unwrap();
+            let manifest = format!(
+                "{{\"paused_tick\": {}, \"state_hash\": \"{hash}\", \"desync_tick\": 0, \
+                 \"hashes\": [\"1\", \"2\"]}}",
+                w.tick()
+            );
+            std::fs::write(d.join("manifest.json"), manifest).unwrap();
+            paths.push(d.join("paused.sav"));
+        }
+        let mut r = diff_saves(&save, &save, 10).unwrap();
+        assert!(!r.differs());
+        r.add_manifests(&paths[0], &paths[1]);
+        assert!(r.differs());
+        let text = render(&r);
+        assert!(text.contains("state hashes"), "{text}");
+        assert!(text.contains("hashes first differed at tick 0"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn names_are_categorised() {

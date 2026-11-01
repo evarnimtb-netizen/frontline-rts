@@ -140,7 +140,7 @@ func _draw_waiting() -> void:
 	var body: String
 	if self_drop:
 		head = "RECONNECTING (%d s)" % ceili(left)
-		body = "Your connection to the relay dropped. The match is paused while this game catches up."
+		body = "No word from the relay (the host's game, or the relay server). If it comes back in time the match goes on; if the host's game closed, it is over."
 	else:
 		var n := who if who != "" else "your opponent"
 		head = "WAITING FOR %s (%d s)" % [n.to_upper(), ceili(left)]
