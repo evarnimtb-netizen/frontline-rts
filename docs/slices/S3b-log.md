@@ -169,7 +169,7 @@ the 3 ignored ones pass with `--ignored` (`soak_20_minutes_seeds_1_to_3`,
 ballistics 46 of 46; `validate mods/ww2` ok; armour-test hard checks pass
 on seeds 1–10 (case 4's moving check now 0); fortify-test PASS on 5 and
 10 seeds. Godot headless (bridge rebuilt): `check_project` OK,
-`test_match_view` 193/193, `test_net_ui` 143/143, `test_data_reload`
+`test_match_view` 193/193 (196/196 at the pushed head, which includes two HUD commits made alongside this stage), `test_net_ui` 143/143, `test_data_reload`
 8/8. A plain `--autoplay 10` at 4× against the AI ran to the time limit:
 2 Panzer IVs bought, an enemy Sherman burning in the tank screenshot, the
 roster showing "Heads down" on an MG team; 3 S1b shots it needs a longer
