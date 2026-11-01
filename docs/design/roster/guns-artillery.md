@@ -17,12 +17,20 @@ a gun. Another area covers the HQ structure itself.
 > per-player throughput or ration. Each gun and mortar has a ready
 > inventory that refills only from crates nearby, an HQ or dump radius,
 > or its tow. The base zone does not refill shells or mortar bombs.
-> Shells crates cost manpower when taken at base (`shell_mp_per_kg`);
-> small-arms crates are free. Question 4: hint only, never the enemy's
-> marker. Friendly fire from indirect HE is on. Details:
-> `artillery-on-map.md` §4.2, §4.10; roadmap "Owner decisions". The gun entity, crews,
-> mobility, AT guns, mortars and ammunition parts of this file still
-> stand.
+> Shells crates cost manpower when taken at base (`shell_mp_per_kg`).
+> Question 4: hint only, never the enemy's marker. Friendly fire from
+> indirect HE is on. Details: `artillery-on-map.md` §4.2, §4.10; roadmap
+> "Owner decisions". The gun entity, crews, mobility, AT guns, mortars
+> and ammunition parts of this file still stand.
+>
+> **Owner decisions D1–D3 (2026-11-01, later).** D1: no free ammo
+> anywhere, the base included; small arms 0.2, explosives 0.5, shells
+> 1.0 manpower per kg, paid once when the kg leaves the base. AT guns
+> and their tows now pay per round in base like tanks. D2: distance
+> costs delivery, not a surcharge (`artillery-on-map.md` §4.11). D3:
+> rare rounds (APCR, HVAP, HEAT) refill at any source, slowly (1 per
+> 10 s in base, 1 per 30 s forward), up to a per-weapon cap of at most
+> 10.
 
 Read against: `SYSTEM_DESIGN.md` §2.3, §2.4, §5.7, §5.9, §5.10, §5.12; `docs/slices/S1-skirmish.md`,
 `S1b-abilities.md`, `S3-armour.md`, `S3-log.md`; `docs/TODO.md`; `sdk/crates/content/src/defs.rs`;
@@ -78,7 +86,7 @@ less sure of are marked *(verify)*.
 | P1 | "5 cm leGrW 36 as the German light mortar" | Largely withdrawn in 1943 as ineffective. The Soviet 50 mm company mortars went the same way. | Germany: **8 cm kz. GrW 42** (short 81 mm). USSR: no light mortar in 1944 line infantry. The US **60 mm M2** is genuinely current. |
 | P2 | Divisional howitzers (leFH 18, M2A1, M-30) bought and placed on the map | They fired from 3–10 km behind the line. On a 1–3 km map they either sit in base and reach everything (mortar dominance again) or stand in rifle range (unhistorical). | Off-map battery `SupportCall` with an observer and a shell allocation. On-map regimental guns fill the howitzer slot. On-map divisional guns only in missions or as a mode option. |
 | P3 | "The gun is a light vehicle with crew seats" | Seats are boxes inside a hull that small arms never damage (S3 rule). An open gun crew would become immune to bullets. | Gun = vehicle-style entity; crew = soldier entities in service slots. |
-| P4 | Authentic mortar ranges (2.4–6 km) on a 1 km map | Every mortar in base reaches the whole map, and today's base resupply is unlimited. | Authentic ranges are fine **only with** the observer rule, finite bombs, and bombs that leave the base only in priced crates (§4.3, owner decision). Otherwise keep today's compressed 600 m. |
+| P4 | Authentic mortar ranges (2.4–6 km) on a 1 km map | Every mortar in base reaches the whole map, and today's base resupply is unlimited. | Authentic ranges are fine **only with** the observer rule, finite bombs, and bombs that leave the base only in priced crates (§4.3, owner decisions Q4 and D1). Otherwise keep today's compressed 600 m. |
 | P5 | 4.2 inch mortar as a US infantry heavy mortar | It belonged to separate Chemical Mortar Battalions, attached to divisions. Its main job was white phosphorus (WP) smoke and HE. | Offer it as an attached support unit (expensive, limited) or as an off-map smoke and HE fire mission. The US had no 120 mm. |
 | P6 | 3 inch M5 as a mobile AT gun | It weighed 2.2–2.6 t and fared badly in the Ardennes; towed TD battalions were converted to self-propelled guns from late 1944. | Keep it, priced as an emplaced defensive gun that cannot be pushed, only re-laid. Mobile US AT belongs to the M10, M18 and M36 (vehicle area). |
 | P7 | 57 mm M1 with HE from June 1944 | US 57 mm crews had little or no HE in Normandy; HE came late in 1944 *(verify date)*. | Use the existing date filter: give the HE ammo def an `available_from`. An authentic early-war weakness costs nothing to model. |
@@ -593,13 +601,20 @@ Starting data:
 These are gameplay starting values, not tables of organisation. Real gun positions had far more
 ammunition dumped. The point is that **a gun runs out within one engagement unless supplied**.
 
+**Rare rounds (owner decision D3).** APCR, HVAP and HEAT are rare rounds. Each gun has a rare
+cap (`rare_cap` on the gun def; ceiling and default `rare_cap_max`, 10). Starting values: Pak 40
+2 APCR, 57 mm M1 none, 3-inch M5 3 HVAP *(from its date)*, 45 mm M-42 10 APCR, ZiS-3 5 APCR,
+leIG 18 and 105 mm M3 2 HEAT *(all verify)*. A rare round refills at any source that serves the
+gun, at 1 per 10 s in base and 1 per 30 s forward, never above the cap.
+
 ### 4.2 What runs out, and what it means
 
 - **Mortars run out first.** About 20 bombs is 80 s of fire at 15 rpm. Each fire mission is a
   decision: use them now, or keep a reserve for the defence.
 - **AT guns run out of AP last.** They fire seldom, but **APCR / HVAP** (PzGr 40, T4 HVAP,
-  BR-240P) are counted separately and scarce (0–2 per gun, `available_from` dated). That is
-  historically right: tungsten was rationed from 1943.
+  BR-240P) are counted separately and scarce (a per-gun `rare_cap`, `available_from` dated). That
+  is historically right: tungsten was rationed from 1943. They refill forward too, but slowly
+  (D3).
 - **Infantry guns and howitzers run out of HE** in a sustained barrage. Their HEAT rounds
   (Igr 38 HL, M66 for the pack howitzer, BP-350M) are a few per gun.
 - **Small arms** belong to the infantry areas. For gun crews only: their personal weapons
@@ -608,17 +623,21 @@ ammunition dumped. The point is that **a gun runs out within one engagement unle
 ### 4.3 How resupply flows
 
 1. **Base zone.** Men in base regain carried small-arms rounds at `base_resupply_round_s` per
-   man. AT guns and their tows regain stowage like vehicles today (1 round per 2–3 s). Those
-   rounds feed only that gun; they never pass to a crate, dump, HQ or another weapon
-   (`rack_rounds_transferable = false`). **Mortars, infantry guns and howitzers do not**
-   (owner decision, 2026-11-01): their shells and bombs leave the base only in crates or vehicle
-   loads, at `shell_mp_per_kg` manpower per kg. Vehicle loads take 32 kg per
+   man, each kg charged at `small_arms_mp_per_kg` (D1). AT guns and their tows regain stowage
+   like vehicles (1 round per 2 s; rare rounds 1 per 10 s up to `rare_cap`), each round charged
+   at `shell_mp_per_kg`. Those rounds feed only that gun; they never pass to a crate, dump, HQ or
+   another weapon (`rack_rounds_transferable = false`). **Mortars, infantry guns and howitzers do
+   not refill in base** (owner decision Q4): their shells and bombs leave the base only in crates
+   or vehicle loads, at `shell_mp_per_kg` manpower per kg. Vehicle loads take 32 kg per
    `base_crate_issue_s`, in the same queue as crates. **The ZiS-3's HE is crate-only too**,
-   because it can fire indirect (`crate_only_if_indirect`); its AP rearms free.
+   because it can fire indirect (`crate_only_if_indirect`); its AP rearms in base at the shells
+   price.
 2. **HQ.** The HQ (other area) produces **ammo crates by class**: "8 cm Wgr. case ×6",
    "7.5 cm Pak ×12", "105 mm ×8". Each crate draws on the HQ's stock, which was carried in.
    - Men carry crates forward: 1 man, about 25 kg, speed ×0.7; 2 men, about 50 kg.
-   - Or the HQ resupplies everyone within its radius at a slow rate, without crates.
+   - Or the HQ resupplies everyone within its radius at a slow rate, without crates. AT guns
+     inside it rearm like vehicles at the forward rate (1 round per 4 s; rare rounds 1 per 30 s).
+   - Nothing drawn from the HQ is charged again: its kg were paid when they left the base.
    - Crates are physical entities: a mortar bomb hitting a pile of crates can set them off.
      This is physical, authentic and gives a reason to spread supply out.
 3. **Truck or halftrack.** A tow or ammo carrier (for example Sd.Kfz. 11 or Opel Blitz; US M3
@@ -626,7 +645,9 @@ ammunition dumped. The point is that **a gun runs out within one engagement unle
    crates or transfers to men within 3 m. The tow that brought a gun is its natural ammo carrier.
 4. **Ammo bearers walk.** A mortar bearer who runs dry can be ordered "fetch ammo" (the AI does
    it on its own): he walks to the nearest own crate, truck, HQ or base, loads up, and returns.
-   Losing bearers on that walk *is* the supply interdiction.
+   Losing bearers on that walk *is* the supply interdiction. It is also the whole cost of
+   distance (D2): a gun pushed forward needs longer walks and longer drives, and there is no
+   price surcharge on top.
 
 **The base-camping problem: owner decision (2026-11-01).** With authentic ranges and free base
 resupply, a mortar or gun parked in base fires forever. This file recommended a per-player supply
@@ -636,8 +657,11 @@ throughput. The owner chose instead:
   carries), refilled only from a crate within 5 m, an HQ or dump radius, or its tow;
 - the base zone does not refill them;
 - shells crates cost manpower at base: `shell_mp_per_kg` (start 1.0, so about 3.5 per 81 mm
-  bomb and 15–19 per 105 mm round); small-arms crates are free;
+  bomb, about 10 per 75 mm AT round and 15–19 per 105 mm round);
 - starting loads come with the card's price.
+
+Owner decision D1 (later the same day) priced the rest too: small arms 0.2 and explosives 0.5
+per kg, AT-gun and tank rounds at the shells price, in base as well. No refill is free.
 
 It competes with buying men, which is the point. It is weaker than a throughput cap: a richer
 player can buy more HE. `artillery-on-map.md` §4.10 re-checks each exploit and lists the levers.
@@ -655,14 +679,17 @@ player can buy more HE. `artillery-on-map.md` §4.10 re-checks each exploit and 
 
 ### 4.5 Fit with today's base-zone resupply
 
-Keep today's resupply for items, rockets, vehicle base repair and rearm, and AT-gun stowage.
-Change two things:
+Keep today's resupply timings for items, rockets, vehicle base repair and rearm, and AT-gun
+stowage. Change three things:
 1. extend it to the new small-arms classes;
-2. remove mortar bombs and infantry-gun and howitzer shells from it (owner decision): those come
-   only in priced crates (from S6 for mortars).
+2. remove mortar bombs and infantry-gun and howitzer shells from it (owner decision Q4): those
+   come only in priced crates (from S6 for mortars);
+3. charge every refill at its kind's price (owner decision D1); it pauses when the player cannot
+   pay.
 
 The new forward flows (HQ, crates, trucks, bearers) are **additions**. A match with no HQ plays
-like today, except that mortars carry finite bombs and refill only from crates.
+like today, except that mortars carry finite bombs and refill only from crates, and every refill
+costs manpower.
 
 ### 4.6 AI
 
@@ -672,7 +699,8 @@ The AI needs these capabilities:
   defence of its point. Below the reserve it fires only at attackers within 200 m of an own held
   point.
 - **Resupply task.** Below 50 %, send the bearer or the tow to the nearest own crate, HQ or dump;
-  the base (a priced crate) only if none.
+  the base (a priced crate) only if none. AT guns do not wait for rare rounds while a tank is
+  seen.
   Below 20 %, the whole team displaces toward supply. The AI's HQ planner places crates near
   mortar and gun positions.
 - **Observer pairing.** A mortar picks targets the AI's linked observers actually see. If none,
@@ -859,6 +887,7 @@ elevation_deg = [-5, 22]
 ready = [{ id = "ww2:75mm_pzgr39", count = 10 }, { id = "ww2:75mm_sprgr34", count = 6 },
          { id = "ww2:75mm_pzgr40", count = 2 }]
 reserve = [{ id = "ww2:75mm_pzgr39", count = 10 }, { id = "ww2:75mm_sprgr34", count = 10 }]
+rare_cap = 2                        # D3: PzGr 40 was scarce; refills at rare_rearm_s, never above 2
 fetch_s = 4
 
 [[components]]
@@ -1002,12 +1031,16 @@ untrained_reload_pct = 150
 untrained_spread_pct = 150
 base_resupply_round_s = 3
 
-[supply]                           # owner decision 2026-11-01: no throughput; see artillery-on-map.md §8
+[supply]                           # owner decisions Q4, D1-D3; full block in artillery-on-map.md §8
 crate_only_classes = ["mortar_bomb", "gun_shell", "rocket_artillery", "rifle_grenade_he"]
-shell_mp_per_kg = 1.0              # manpower per kg of shells taken at base
-rack_rounds_transferable = false   # free-rearmed AT and tank rounds feed only their own weapon
+small_arms_mp_per_kg = 0.2         # D1: cheap
+explosives_mp_per_kg = 0.5         # D1: moderate
+shell_mp_per_kg = 1.0              # manpower per kg of shells (mortar, gun, AT and tank rounds) leaving the base
+rack_rounds_transferable = false   # AT and tank rack rounds feed only their own weapon
 crate_only_if_indirect = true      # ZiS-3 HE (and any ammo an [indirect] weapon fires) is crate-only
-small_arms_mp_per_kg = 0
+rearm_s = { base = 2, forward = 4 }
+rare_rearm_s = { base = 10, forward = 30 }   # D3
+rare_cap_max = 10                  # D3: default and ceiling for a gun's or vehicle's rare_cap
 ```
 
 ### 7.6 Dig profiles (pit kind)
@@ -1099,7 +1132,7 @@ capability = "dig_basic"
 | **G4** Infantry guns | leIG 18, 105 mm M3, 75 mm M1A1: direct and indirect fire from one entity, HEAT rounds. | **M** | G0, G1 | ★★ |
 | **G5** Off-map artillery | `SupportCall`, FO teams, edge-spawned shells, adjust and fire for effect, allocation, AI preparation fire, smoke missions. | **M** | G0 (observer rule), F0 recommended | ★★★: answers the trench-assault problem |
 | **G6** Heavy mortars | 12 cm GrW 42, 4.2 inch M2 (and 120 mm PM-38 with the USSR) as gun entities. | **S–M** | G1, G1b, G0 | ★★ |
-| **G7** Supply hookup | Ammo crates by class, HQ production, trucks carrying stowage, bearers fetching, manpower price for shells crates. | **M** | G0, the HQ area, the truck slice | ★★★ |
+| **G7** Supply hookup | Ammo crates by class, HQ production, trucks carrying stowage, bearers fetching, manpower price for every crate and refill by kind, rare-round caps. | **M** | G0, the HQ area, the truck slice | ★★★ |
 | **G8** Wave 2 | sIG 33, Pak 38, 3 inch M5, 8.8 cm, tree bursts, spiking, spaced shields. | **S each** | earlier slices | ★–★★ |
 | **USSR** | 45 mm, ZiS-2, ZiS-3, 82 mm, 120 mm, 76 mm regimental, M-30 battery. | **S each** (data) | the USSR faction slice | ★★★ |
 
@@ -1146,7 +1179,9 @@ four, every requested gun type is mostly data.
    infantry guns? Or on-map divisional howitzers in skirmish too (`artillery_mode`)?
 2. **Supply lever:** one per-player `supply_kg_per_min` throughput (recommended), or a manpower
    cost per restocked round? **Answered 2026-11-01:** no throughput; shells crates cost manpower
-   at base, and the base refills no gun or mortar (`artillery-on-map.md` §4.2).
+   at base, and the base refills no gun or mortar (`artillery-on-map.md` §4.2). Later the same
+   day (D1): no ammunition is free, small arms and AT rounds included; (D2) no distance
+   surcharge.
 3. **Mortar ranges:** authentic ranges after G0 (recommended), or keep today's compressed
    600 m?
 4. **Show the player when their position is sound-ranged?** **Answered 2026-11-01: hint only**

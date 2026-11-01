@@ -12,6 +12,12 @@ public figure or a starting value for tuning.** Armour, gun and production
 figures must get real `sources` before they go into TOML (the same rule
 S3 used). Entries marked *(verify)* are the ones I am least sure of.
 
+**Owner decisions D1–D3 (2026-11-01)** bind the ammo parts below: no
+free ammo, the base included (D1); distance costs delivery, not a
+surcharge (D2); tanks rearm at base, HQ, dump or supply truck, with rare
+rounds refilled forward too, slowly, up to a per-vehicle cap of at most
+10 (D3). See §6.11, §7.3 and §7.6, and the roadmap's "Owner decisions".
+
 ---
 
 ## 1. Summary
@@ -32,13 +38,19 @@ S3 used). Entries marked *(verify)* are the ones I am least sure of.
   other side really had (M36, HVAP, M18 flanking, air power later).
 - **No fuel resource.** Keep a fuel tank as a damageable component (fire
   risk) only.
-- **APCR/HVAP:** a third ammo entry with a count of 0–5, refilled only in
-  the base. Its rarity is the balance.
+- **APCR/HVAP (owner decision D3):** a rare ammo entry, capped per
+  vehicle (`rare_cap`, at most 10; lower where history says so, e.g. 2
+  HVAP on the M4A3 (76) W). It refills at the base and at forward
+  points, but slowly. The cap and the slow refill are the balance.
 - **Ammo model for vehicles:** main-gun rounds per type (already counted),
-  MG belts counted, all in TOML. Resupply flows from the base (free, fast,
-  everything), the HQ radius (slower, no rare ammo) and supply vehicles
-  carrying a stock in kg (trucks, half-tracks). Tank shells are too heavy
-  for man-carried crates: tanks rearm from a vehicle, the HQ or the base.
+  MG belts counted, all in TOML. **No round is free (D1):** each costs
+  its kg at `shell_mp_per_kg` (MG belts at `small_arms_mp_per_kg`),
+  paid once when the kg leaves the base. Resupply flows from the base
+  (fast, everything), an HQ or dump radius (half rate, rare rounds
+  slowly) and supply vehicles carrying a stock in kg (trucks,
+  half-tracks). Tank shells are too heavy for man-carried crates: tanks
+  rearm from a vehicle, an HQ, a dump or the base. The rack is the limit
+  on how far a tank can push (§7.6).
 - **USSR transport:** mostly tank riders (*tankodesantniki*) and
   Studebaker trucks, not half-tracks. Lend-lease half-tracks were few and
   went to recon, command and AA roles.
@@ -71,8 +83,9 @@ S3 used). Entries marked *(verify)* are the ones I am least sure of.
    make every squad faster for free.
 4. **A forward HQ must not rearm everything instantly.** It would remove
    the trip back to base, which is the logistics game. The HQ resupplies
-   at about half the base's rate, never refills rare ammo, and draws on a
-   stock that trucks refill (§7). Vehicles still spawn only at the base.
+   at half the base's rate, refills rare ammo only slowly and up to a
+   small cap (D3), and draws on a paid stock that men and trucks brought
+   forward (§7). Vehicles still spawn only at the base.
 5. **Fuel adds micro without history.** Battles here last 15–25 minutes
    over 1 km. A Panzer IV's road range was about 200 km. Nothing ran dry
    in a battle of this size; the German fuel crisis was strategic. It
@@ -282,7 +295,7 @@ stat.
 | Shared heavy group | `limit_group = "heavy"` + rules `[vehicles.groups] heavy = 1` | Panther **or** Tiger on the field, not both |
 | Unlock by match time | `unlock_s` (per type, overrides the rules default) | Heavies from 10–12 min, light vehicles from 1–2 min |
 | Date filter | `available_from` / `available_to` | Missions and "period" lobbies get the right mix (no Tiger I in Jan 1945 West, no M36 in Jun 1944) |
-| Ammo scarcity | ammo `count` | HVAP 2 per M4A3 (76) W, PzGr 40/42 0–3 per Panther |
+| Ammo scarcity | `rare_cap` and ammo `count` | HVAP 2 per M4A3 (76) W, PzGr 40/42 3 per Panther; forward refill 1 per 30 s (D3, §6.11) |
 | Bog risk | `bog_pct` | Heavier tanks bog more in trenches and soft ground (authentic and a real cost) |
 | AI | buy rules | The AI fields heavies only when it has seen enemy armour, and keeps them back as overwatch |
 
@@ -676,12 +689,48 @@ max_kg = 3500
   authentic. Ammo choice gains "use rare rounds only against a target the
   common round cannot beat" (the gunnery aim-choice code already computes
   pen chance).
-- **Rarity is the balance:** counts of 0–5 per vehicle, refilled only in
-  the base (`resupply = "base"` on the ammo def). Historical basis: US
-  76 mm HVAP arrived from about Sep 1944 in very small allocations (TD
-  units first); 90 mm HVAP from early 1945; German tungsten APCR was
-  scarce from 1943 on (later PzGr 40 rounds used substitute cores);
-  Soviet APCR came a few rounds per tank. *(verify allocations)*
+- **Rarity is the balance (owner decision D3).** Owner: "add rare round
+  to be available for recharge at other point. Maybe they could recharge
+  slower and only to a certain cap, like one vehicle can only have 10 of
+  these. Not more." So:
+  - **Rare rounds** are APCR, HVAP and HEAT where a vehicle or gun
+    carries it (`rare = true` on the ammo def).
+  - **A cap per vehicle.** `rare_cap` on the vehicle def is the most
+    rare rounds it can hold, all rare types together. The rules key
+    `rare_cap_max` (10) is the owner's ceiling and the default when a
+    def sets none. A def above it fails to load. A vehicle starts with
+    its rare `count`s, which sum to at most its cap.
+  - **Refill anywhere, slowly.** Rare rounds refill at every source that
+    rearms the vehicle: 1 per 10 s in base, 1 per 30 s at an HQ, dump or
+    supply vehicle (`rare_rearm_s`), against 1 per 2 s and 1 per 4 s
+    for standard rounds. They come from the same paid `shells` kg.
+  - **Same price per kg** as other shells. A premium could not be charged
+    forward, since forward stock is pooled kg that was paid at the
+    normal price.
+
+  Historical basis: US 76 mm HVAP arrived from about Sep 1944 in very
+  small allocations (TD units first); 90 mm HVAP from early 1945; German
+  tungsten APCR was scarce from 1943 on (later PzGr 40 rounds used
+  substitute cores); Soviet APCR came a few rounds per tank. *(verify
+  allocations)*
+
+  | Vehicle | Rare round | `rare_cap` (start, verify) | Why |
+  |---|---|---|---|
+  | M4A3 (75) W, M4A3E2 | none | 0 | The 75 mm M3 had no HVAP |
+  | M4A3 (76) W | M93 HVAP | 2 | Very scarce from about Sep 1944 |
+  | M10, M18 | T4 / M93 HVAP | 3 | TD units got HVAP first |
+  | M36 | T30E16 HVAP | 2, from 1945-01 | From early 1945, small numbers |
+  | M8 | none | 0 | |
+  | Panzer IV H/J, StuG III G, Jagdpanzer IV, 38(t) | PzGr 40 | 3 | Tungsten rationed from 1943 |
+  | Panther G | PzGr 40/42 | 3 | As above |
+  | Tiger I | PzGr 40 (8.8 cm) | 5 | A few per tank |
+  | SdKfz 234/1 | 2 cm PzGr 40 | 10 (default) | Small rounds, one magazine |
+  | T-34-85, SU-85 | BR-365P | 5 | A few per tank |
+  | IS-2, SU-100 | none | 0 | No APCR for these guns in the war |
+  | Sherman (105) or StuH 42, later | HEAT | 5 | If added; HEAT counts as rare |
+
+  The cap matters most far from base: it is what a tank has left once
+  it is away from every stock (§7.6).
 - **Smoke shells:** US 75 mm M64 white phosphorus and M89 smoke, German
   7.5 cm Nebelgranate. A smoke shell bursts into the S1b smoke cloud.
   **This is the cheapest historical answer to the open trench-assault
@@ -693,17 +742,18 @@ max_kg = 3500
   (choice), `combat.rs` (smoke burst), `SetAmmo` gains `Apcr` and `Smoke`.
 
 ```toml
+rare_cap = 2                   # D3: on the vehicle; rules ceiling rare_cap_max = 10
 ammo = [
   { id = "ww2:76mm_m62_apc", count = 35 },
-  { id = "ww2:76mm_m93_hvap", count = 2 },
+  { id = "ww2:76mm_m93_hvap", count = 2 },   # rare; counts against rare_cap
   { id = "ww2:76mm_m42_he", count = 30 },
   { id = "ww2:76mm_m88_smoke", count = 4 },
 ]
 
 # defs/ammo/76mm_m93_hvap.toml (excerpt)
 mechanism = "apcr"
-resupply = "base"              # base | hq | any
-supply_kg = 8
+rare = true                    # D3: refills at rare_rearm_s at any source, up to rare_cap
+supply_kg = 8                  # kind "shells": priced at shell_mp_per_kg (D1)
 ```
 
 ### 6.12 Fuel (recommend no)
@@ -728,7 +778,7 @@ interface here is meant to match them.
 | Store | Today | Proposed |
 |---|---|---|
 | Main gun rounds per type | counted (`ammo` list) | unchanged, up to 4 types (§6.11) |
-| Rare rounds (APCR/HVAP) | none | counted; base-only refill |
+| Rare rounds (APCR/HVAP/HEAT) | none | counted; at most `rare_cap` per vehicle (≤ 10); refilled at every source, slowly (D3) |
 | Vehicle MG rounds | unlimited | counted per mount (`rounds` on the mount). Starting values from period stowage, e.g. Panzer IV about 3,000 MG rounds, M4A3 about 4,000–5,000 .30 plus a few hundred .50 *(verify)* |
 | Passengers' small arms, grenades, rockets | infantry rules | infantry rules (infantry write-up); a transport may carry spare crates in its stock |
 | Crew | seats; base refill 1 per 20 s | unchanged |
@@ -754,26 +804,35 @@ authentic, easy to explain, and makes the logistics physical:
 
 Consequence: one man carrying a 40 kg crate can rearm a rifle squad, but
 **rearming a tank with 30 rounds needs about 300 kg**: a supply vehicle,
-the HQ or the base. That is why tanks went back to the trains to rearm.
+an HQ, a dump or the base. That is why tanks went back to the trains to
+rearm. At the start price it also costs about 300 manpower, half a
+Sherman (D1): a tank that fires all match costs about as much as a
+second tank.
 
 ### 7.3 Where supply comes from
 
-| Source | Rate (starting values) | What it refills | Stock |
-|---|---|---|---|
-| Base zone | 1 main-gun round per 2 s, MG 250 rounds per 2 s (today's rate) | everything, including rare rounds and crew | unlimited, free |
-| HQ radius (25–30 m) | about half the base rate | everything except `resupply = "base"` | the HQ's kg stock, refilled by trucks or slowly over time (structures write-up) |
-| Supply vehicle (truck, half-track, M20) | 1 round per 3 s to vehicles within 15 m | everything except base-only | its own kg stock; refills at the base or the HQ |
-| Placed crate | infantry items only by default | small arms, grenades, rockets, mortar bombs | 40 kg (man-carried) |
+Revised for owner decisions D1 and D3 (2026-11-01). Rates are starting
+values in `[supply]`:
 
-> **Owner decision 2026-11-01 (supersedes this table where they differ;
-> see `artillery-on-map.md` §4.2 "No back doors"):** base refill stays free
-> only for small arms, tank racks and AT guns firing direct. Any round a
-> weapon with indirect fire uses is crate-only (`crate_only_if_indirect`).
-> Every `shells` cargo load a truck, half-track or tow takes at base is
-> priced (`shell_mp_per_kg`) and shares the base crate queue
-> (`base_crate_issue_s`). Rounds rearmed free stay in that weapon's own
-> racks (`rack_rounds_transferable = false`), so they can't be unloaded
-> into a dump.
+| Source | Standard main-gun round | Rare round (APCR, HVAP, HEAT) | MG belts | Also | Stock and price |
+|---|---|---|---|---|---|
+| Base zone | 1 per 2 s (`rearm_s.base`, today's rate) | 1 per 10 s (`rare_rearm_s.base`), up to `rare_cap` | 250 rounds per 2 s | repair, new crew | unlimited; each round charged as it goes into the rack (D1) |
+| HQ radius (25 m) or dump radius (15 m) | 1 per 4 s (`rearm_s.forward`) | 1 per 30 s (`rare_rearm_s.forward`), up to `rare_cap` | 50 rounds per s | — | the structure's kg stock, paid at base and carried in; nothing charged again |
+| Supply vehicle (truck, half-track, M20), within 15 m | 1 per 4 s | 1 per 30 s, up to `rare_cap` | 50 rounds per s | drops crates | its own kg stock, paid when loaded at base or drawn from an HQ |
+| Placed crate | none: too heavy for tank rounds | none | infantry only | small arms, grenades, rockets, mortar bombs | 20–40 kg (man-carried), paid at issue |
+
+> **Owner decisions (2026-11-01; `artillery-on-map.md` §4.2 "No back
+> doors"):** no refill is free, in base or anywhere (D1). Main-gun rounds
+> cost their kg at `shell_mp_per_kg` (start 1.0, so a 75 mm round about
+> 10), MG belts at `small_arms_mp_per_kg` (0.2). Any round a weapon with
+> indirect fire uses is crate-only (`crate_only_if_indirect`). Every
+> cargo load a truck, half-track or tow takes at base pays its kind's
+> price, and shells share the base crate queue (`base_crate_issue_s`).
+> Rack rounds stay in that weapon's own racks
+> (`rack_rounds_transferable = false`), so they can't be unloaded into a
+> dump; that keeps the unqueued base rearm and the rare-round cap whole.
+> There is no distance surcharge (D2): a tank far forward pays the same
+> per round, but only gets rounds that someone carried or drove there.
 
 - **Supply vehicles can also drop crates** at a point (a `DropCrates
   { vehicle, point, count }` command), for infantry to use. That is the
@@ -782,9 +841,11 @@ the HQ or the base. That is why tanks went back to the trains to rearm.
   box; a penetrating hit or a fire can detonate it, like an ammo rack. A
   truck has no armour, so MG fire kills its crew and engine. This is the
   counter to forward supply, and it needs no special rule.
-- **Who refills what:** the base remains the only source of rare rounds
-  and of new crew. So a forward HQ shortens the logistics loop but does
-  not remove it (§2 point 4).
+- **Who refills what:** the base remains the only source of new crew
+  and repair. Rare rounds refill forward too, but at a third of the
+  forward rate for standard rounds and only up to the vehicle's cap
+  (D3). So a forward HQ shortens the logistics loop but does not remove
+  it (§2 point 4).
 
 ```toml
 # defs/vehicles/usa_cckw.toml (excerpt)
@@ -792,8 +853,9 @@ role = "truck"
 [supply]
 stock_kg = 2500
 radius_m = 15
-round_interval_s = 3
+round_interval_s = 4            # = rules rearm_s.forward; rare rounds at rare_rearm_s.forward (30)
 crates = { item = "ww2:usa_ammo_crate", kg_each = 40 }
+# cargo loaded at base pays its kind's price per kg (D1); shells at 32 kg per base_crate_issue_s
 
 [[components]]
 type = "cargo"
@@ -804,8 +866,11 @@ box = { frame = "hull", center = [-150, 0, 120], half = [180, 110, 60] }
 ### 7.4 Fit with today's base-zone resupply
 
 - Today's base rules (`base_rearm_s`, `base_repair_pct_s`, `base_crew_s`,
-  `[items] resupply_s`) stay as they are and become the "Base zone" row
-  above. Nothing existing breaks.
+  `[items] resupply_s`) keep their timings and become the "Base zone" row
+  above. What changes is the price: each round or belt is charged as it
+  goes in (D1), and the refill pauses when the player cannot pay. Repair
+  and crew stay free. Existing rearm tests keep their timings and gain a
+  manpower check.
 - The HQ and supply vehicles reuse the same per-tick rearm code with a
   different rate, radius and stock. One function, three sources: small
   (S) on top of the HQ structure and §6.2's `cargo` component.
@@ -817,14 +882,68 @@ box = { frame = "hull", center = [-150, 0, 120], half = [180, 110, 60] }
 
 The S3 AI already retreats vehicles and repairs when clear. Add:
 - A vehicle below `ai.rearm_pct` (main-gun rounds, e.g. 25 %) goes to the
-  nearest stock it can reach (supply vehicle, HQ, base) when no seen enemy
-  is within `threat_radius_m`.
+  nearest stock it can reach (supply vehicle, HQ, dump, base) when no
+  seen enemy is within `threat_radius_m`.
+- **It leaves when its standard rounds are full.** It waits for rare
+  rounds (1 per 30 s forward) only while no enemy is seen and no own
+  point is under attack. A tank does not sit at an HQ for five minutes
+  topping up HVAP while the front needs it.
+- **Price:** tank rearm counts toward `ai.shell_mp_max_pct` (25 % of
+  income, shared with shells crates). Over budget, a tank still rearms
+  to `ai.tank_rearm_floor_pct` (50 %), so armour never sits empty.
+- **Push limit:** an AI tank pushing more than `ai.push_without_supply_m`
+  (300 m, start value) beyond its nearest stock keeps a reserve of
+  `ai.tank_reserve_rounds` (10) standard rounds for defence (§7.6).
 - With 2 or more vehicles alive, the AI buys one supply vehicle and keeps
   it `supply_follow_m` (about 150 m) behind its armour, out of sight of
   known enemies.
 - The AI uses rare rounds only by the gunnery choice rule (§6.11).
 - The AI fires smoke shells ahead of an escorted assault (§6.11), which
   is also the test of whether smoke fixes case 7.
+
+```toml
+# defs/rules/skirmish.toml (excerpt; the full [supply] block is in artillery-on-map.md §8)
+[supply]
+shell_mp_per_kg = 1.0                      # D1: tank main-gun rounds are shells
+small_arms_mp_per_kg = 0.2                 # D1: vehicle MG belts
+rearm_s = { base = 2, forward = 4 }        # standard round
+rare_rearm_s = { base = 10, forward = 30 } # D3: rare round
+rare_cap_max = 10                          # D3: ceiling and default for a vehicle's rare_cap
+
+[ai]
+rearm_pct = 25
+tank_rearm_floor_pct = 50                  # over the shells budget, still rearm to this
+push_without_supply_m = 300
+tank_reserve_rounds = 10
+```
+
+### 7.6 How far a tank can push (owner decision D3)
+
+The owner's aim: "the ability of the tanks to push infinitely is limited
+by the ammo storage inside them." The rules above give that without a
+new mechanic:
+
+- **The rack is the hard limit.** A tank carries its historical stowage
+  (Panzer IV H 87, M4A3 (75) W 104, Jagdpanzer 38(t) 41, IS-2 28;
+  *verify*). Away from every stock it gets nothing more. When the rack
+  is empty, the main gun is silent.
+- **Forward rearm needs a stock someone brought.** An HQ or dump holds
+  at most 600 or 300 kg of shells, about 60 or 30 tank rounds, and only
+  what men or trucks carried in. A truck holds 2.5–3 t, but it is
+  soft-skinned and must drive back to base to reload. Pushing farther
+  means longer walks and drives, more exposed carriers, and more losses
+  (D2). That is the cost of distance.
+- **Rare rounds go first and come back slowly.** A tank's best rounds
+  against heavy armour are capped (`rare_cap`, at most 10) and refill at
+  1 per 30 s forward. A Panther that spends its 3 PzGr 40/42 at the front
+  waits 90 s at an HQ to get them back, if the HQ has the stock.
+- **Every round costs manpower** (D1), wherever the tank rearms.
+- **Repair and new crew stay base-only.** A damaged tank still has to go
+  home.
+
+So a tank can push as far as its rack and the supply behind it allow.
+The player decides how far the trucks and dumps follow, and pays for it
+in men, vehicles and time.
 
 ---
 
@@ -949,8 +1068,21 @@ two of data and testing, plus art.
   350 m; HVAP use count per match.
 - Smoke: S3 case 7 again with tank smoke shells (does it meet the owner's
   target?).
-- Supply: a tank at 10 % ammo rearms from a truck at 15 m; cargo
-  detonation when the truck is penetrated.
+- Supply: a tank at 10 % ammo rearms from a truck at 15 m at 1 round
+  per 4 s, and the truck's stock falls by the same kg; cargo detonation
+  when the truck is penetrated.
+- Price (D1): a tank rearming in base pays each round's kg ×
+  `shell_mp_per_kg`; with no manpower it pauses; MG belts pay
+  `small_arms_mp_per_kg`. Rearming from an HQ, dump or truck charges
+  nothing more.
+- Rare rounds (D3): a tank with `rare_cap = 2` never holds a third rare
+  round from any source; rare rounds refill at 1 per 10 s in base and
+  1 per 30 s forward; a vehicle def with a `rare_cap` above
+  `rare_cap_max` fails to load; a tank cannot pass rack rounds to
+  another vehicle, a crate or a dump.
+- Push limit (D3): a tank driven 600 m past its last stock with no
+  truck behind it fires its rack dry and then cannot fire its main gun;
+  report how often AI tanks run dry and where.
 - Determinism: every new state (riding, cooldowns, stocks, hatches)
   saved, loaded and hashed; loopback and soak with half-tracks embarking.
 
