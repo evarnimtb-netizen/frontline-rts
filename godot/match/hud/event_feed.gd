@@ -7,7 +7,7 @@ const LIFETIME := 8.0
 const FADE := 1.0
 const MAX_LINES := 3
 ## Older lines are a little dimmer (newest first).
-const LINE_ALPHA := [1.0, 0.8, 0.65]
+const LINE_ALPHA := [1.0, 0.9, 0.8]
 ## kind -> [stripe colour, ui sound or &""]
 const KINDS := {
 	"point_captured": [HudStyle.OWN, &"confirm"],

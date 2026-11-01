@@ -58,14 +58,16 @@ const THROW_EFFECT_M := {"frag": 6.0, "smoke": 8.0, "satchel": 10.0}
 const STANCES := ["auto", "stand", "crouch", "prone"]
 ## Body-centre height above the feet per stance, for picking (m).
 const PICK_LIFT := {"stand": 1.0, "crouch": 0.7, "prone": 0.25}
+## Half a standing man's height above his pick point (m): the pick reach.
+const BODY_HALF_M := 0.85
 ## Below this HP (of 100) a man shows as wounded.
 const WOUNDED_HP := 60.0
 ## Names by squad type and slot when the state gives none.
 const MAN_NAMES := {
 	"rifle": ["Sgt (lead)", "Rifle 2", "Rifle 3", "Rifle 4", "Rifle 5", "Rifle 6", "Rifle 7", "Rifle 8"],
-	"mg": ["Gunner", "Asst gunner", "Ammo bearer"],
+	"mg": ["Gunner", "Loader", "Carrier"],
 	"engineer": ["Sgt (lead)", "Sapper 2", "Sapper 3", "Sapper 4", "Sapper 5"],
-	"mortar": ["Gunner", "Loader", "Ammo bearer"],
+	"mortar": ["Gunner", "Loader", "Carrier"],
 }
 ## Weapon by faction and squad type when the state gives none.
 const WEAPONS := {
@@ -102,11 +104,14 @@ var squad_units: Dictionary = {}
 ## True when the state had no `soldiers` (one stand-in per squad).
 var proxy_soldiers := false
 ## Picking arrays, parallel: soldiers in front of the camera, their body
-## centre on screen, camera distance and side (1 own, 0 enemy).
+## centre on screen, camera distance, side (1 own, 0 enemy) and the
+## screen length of half his body (px; head and feet are that far from the
+## centre, so close up a click anywhere on him picks him).
 var pick_ids := PackedInt32Array()
 var pick_screen := PackedVector2Array()
 var pick_depth := PackedFloat32Array()
 var pick_own := PackedByteArray()
+var pick_reach := PackedFloat32Array()
 var paused := false
 var ended := false
 ## Stable per-type squad numbers for labels: id -> n, "owner:type" -> count.
@@ -189,6 +194,7 @@ func _index_soldiers(s: Dictionary, vp: Rect2) -> void:
 	pick_screen.clear()
 	pick_depth.clear()
 	pick_own.clear()
+	pick_reach.clear()
 	var cam_pos := camera.global_position if camera != null else Vector3.ZERO
 	var area := vp.grow(20.0)
 	for so in list:
@@ -212,6 +218,8 @@ func _index_soldiers(s: Dictionary, vp: Rect2) -> void:
 		pick_screen.append(sp)
 		pick_depth.append(cam_pos.distance_to(p))
 		pick_own.append(1 if int(so.owner) == local_player else 0)
+		var top := p + Vector3(0, BODY_HALF_M, 0)
+		pick_reach.append(0.0 if camera.is_position_behind(top) else sp.distance_to(camera.unproject_position(top)))
 	# Lists arrive ascending; keep squad_units ascending even if not.
 	for sid in squad_units:
 		squad_units[sid].sort()
@@ -276,9 +284,13 @@ func squad_label(squad_id: int, long := false) -> String:
 	var sq: Dictionary = squads_by_id.get(squad_id, {})
 	if sq.is_empty():
 		return ""
-	var base: String = sq.get("name", UiPalette.SQUAD_NAMES.get(sq.type, sq.type)) if long else SHORT_NAMES.get(sq.type, sq.get("name", sq.type))
+	var base: String = SHORT_NAMES.get(sq.type, sq.get("name", sq.type))
 	var key := "%d:%s" % [int(sq.owner), sq.type]
-	return "%s %d" % [base, _squad_no.get(squad_id, 1)] if int(_type_count.get(key, 0)) > 1 else base
+	var label := "%s %d" % [base, _squad_no.get(squad_id, 1)] if int(_type_count.get(key, 0)) > 1 else base
+	# Long form: the card's label first, so card and detail panel name the
+	# squad the same way, then the unit's own name ("Rifle 1 · Schützengruppe").
+	var full: String = sq.get("name", UiPalette.SQUAD_NAMES.get(sq.type, sq.type))
+	return "%s · %s" % [label, full] if long and full != base else label
 
 
 ## Card status: [text, alarm]; alarm (accent) for under fire and pinned.

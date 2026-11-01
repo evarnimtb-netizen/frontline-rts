@@ -131,7 +131,9 @@ fn fortify_test_passes() {
     assert!(r.rifles.pass, "{r:#?}");
     assert!(r.mortar.pass, "{r:#?}");
     assert!(r.smoke.pass, "{:#?}", r.smoke);
-    assert_eq!(r.grenade.runs.len(), 40);
+    // From 60 m, from 25 m, and from 60 m behind smoke; each with and
+    // without frags.
+    assert_eq!(r.grenade.runs.len(), 60);
     assert_eq!(r.smoke.runs.len(), 20);
     // Frags thrown from 25 m cost the defenders clearly more than rifles.
     let close = &r.grenade.variants[1];
@@ -141,6 +143,10 @@ fn fortify_test_passes() {
         close.grenades.defender_losses >= 2 * close.rifle_only.defender_losses.max(1),
         "{close:?}"
     );
+    // Behind their own smoke the attackers get close enough to throw.
+    let screened = &r.grenade.variants[2];
+    assert!(screened.smoke && screened.start_m == 60, "{screened:?}");
+    assert!(screened.grenades.frags_thrown >= 20, "{screened:?}");
     assert!(r.pass);
 }
 
@@ -154,8 +160,8 @@ fn fortify_test_reports_each_run() {
     .unwrap();
     assert_eq!(r.rifles.runs.len(), 2);
     assert_eq!(r.mortar.runs.len(), 4);
-    assert_eq!(r.grenade.runs.len(), 8);
-    assert_eq!(r.grenade.variants.len(), 2);
+    assert_eq!(r.grenade.runs.len(), 12);
+    assert_eq!(r.grenade.variants.len(), 3);
     assert_eq!(r.smoke.runs.len(), 4);
     // Behind smoke: never seen or fired on; the control is.
     for run in &r.smoke.runs {

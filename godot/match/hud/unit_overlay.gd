@@ -91,7 +91,7 @@ func _draw_tooltip(font: Font, sel: Node) -> void:
 		return
 	var own := int(so.owner) == view.local_player
 	var sid := int(so.squad)
-	var line1 := "%s · %s" % [view.soldier_name(so), view.squad_label(sid, true)] if own else "Enemy %s" % String(UiPalette.SQUAD_NAMES.get(view.squad_type(sid), "soldier")).to_lower()
+	var line1 := "%s · %s" % [view.soldier_name(so), view.squad_label(sid)] if own else "Enemy %s" % String(UiPalette.SQUAD_NAMES.get(view.squad_type(sid), "soldier")).to_lower()
 	var cond := "pinned" if view.soldier_pinned(so) else String(so.get("stance", "stand"))
 	if so.get("detached", false) and own:
 		cond += ", detached"

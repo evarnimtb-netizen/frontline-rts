@@ -90,7 +90,8 @@ func _test_picking(eng: int, eng_men: PackedInt32Array, rifle: int, rifle_men: P
 
 	# Tie rule: two candidates at the same screen distance → closer to the
 	# camera wins (checked on injected pick arrays).
-	var saved := [_view.pick_ids, _view.pick_screen, _view.pick_depth, _view.pick_own]
+	var saved := [_view.pick_ids, _view.pick_screen, _view.pick_depth, _view.pick_own, _view.pick_reach]
+	_view.pick_reach = PackedFloat32Array([0.0, 0.0])
 	_view.pick_ids = PackedInt32Array([eng_men[0], eng_men[1]])
 	_view.pick_screen = PackedVector2Array([Vector2(500, 500), Vector2(500.4, 500)])
 	_view.pick_depth = PackedFloat32Array([90.0, 60.0])
@@ -99,6 +100,11 @@ func _test_picking(eng: int, eng_men: PackedInt32Array, rifle: int, rifle_men: P
 	_view.pick_screen = PackedVector2Array([Vector2(500, 500), Vector2(508, 500)])
 	_check(_sel.pick(Vector2(500, 500)) == eng_men[0], "clearly nearer on screen wins over depth")
 	_check(_sel.pick(Vector2(530, 500)) == -1, "nothing beyond 14 px")
+	# Close up a man is tall on screen: a click on his head (40 px above
+	# the pick point) still picks him.
+	_view.pick_reach = PackedFloat32Array([50.0, 0.0])
+	_check(_sel.pick(Vector2(500, 460)) == eng_men[0], "close up, a click on his head picks him")
+	_view.pick_reach = saved[4]
 	_view.pick_ids = saved[0]
 	_view.pick_screen = saved[1]
 	_view.pick_depth = saved[2]
@@ -150,6 +156,8 @@ func _test_picking(eng: int, eng_men: PackedInt32Array, rifle: int, rifle_men: P
 	var b2 := Rect2(_screen(rifle_men[2]), Vector2.ZERO).grow(5.0)
 	_drag(b2.position, b2.end, true)
 	_check(_sel.is_selected(eng_men[0]) and _sel.is_selected(rifle_men[2]), "Shift-box adds to the selection")
+	_drag(b2.position, b2.end, true)
+	_check(_sel.is_selected(eng_men[0]) and not _sel.is_selected(rifle_men[2]), "Shift-box over selected men only takes them out")
 
 
 func _test_groups(eng_men: PackedInt32Array, rifle_men: PackedInt32Array) -> void:

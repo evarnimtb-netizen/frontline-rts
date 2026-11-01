@@ -86,7 +86,7 @@ func _draw_help() -> void:
 func _draw_soldier(so: Dictionary) -> void:
 	var font := get_theme_default_font()
 	var bold := HudStyle.bold()
-	_header(view.soldier_name(so), view.squad_label(int(so.squad), true))
+	_header(view.soldier_name(so), view.squad_label(int(so.squad)))
 	var rh := (size.y - HEAD - 6.0) / 4.0
 	var x0 := PAD
 	var y := HEAD

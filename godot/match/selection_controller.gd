@@ -431,7 +431,8 @@ func throw_at(g: Vector3, each: bool) -> bool:
 
 # --- picking ---------------------------------------------------------------
 
-## Soldier under a screen point: nearest within PICK_RADIUS_PX; near-ties
+## Soldier under a screen point: nearest within PICK_RADIUS_PX, or within
+## his body's half length on screen when that is more (close up); near-ties
 ## go to the one closer to the camera, then the lower id.
 ## `own` = 1 own only, 0 enemies only, -1 any.
 func pick(screen: Vector2, own := 1) -> int:
@@ -442,7 +443,8 @@ func pick(screen: Vector2, own := 1) -> int:
 		if own != -1 and view.pick_own[i] != own:
 			continue
 		var d := screen.distance_to(view.pick_screen[i])
-		if d > PICK_RADIUS_PX:
+		var reach := view.pick_reach[i] if i < view.pick_reach.size() else 0.0
+		if d > maxf(PICK_RADIUS_PX, reach):
 			continue
 		var z := view.pick_depth[i]
 		var id := view.pick_ids[i]
@@ -456,12 +458,24 @@ func pick(screen: Vector2, own := 1) -> int:
 	return best
 
 
+## Box-select own men. With Shift the box adds its men to the selection,
+## or, when every man in it is already selected, takes them out.
 func _box_select(a: Vector2, b: Vector2, add: bool) -> void:
 	var r := Rect2(a, Vector2.ZERO).expand(b)
-	var ids := selected.duplicate() if add else PackedInt32Array()
+	var boxed := PackedInt32Array()
 	for i in view.pick_ids.size():
 		if view.pick_own[i] == 1 and r.has_point(view.pick_screen[i]):
-			ids.append(view.pick_ids[i])
+			boxed.append(view.pick_ids[i])
+	if not add:
+		_set_selection(boxed)
+		return
+	var ids := selected.duplicate()
+	var remove := not boxed.is_empty() and Array(boxed).all(func(id: int) -> bool: return ids.has(id))
+	for id in boxed:
+		if remove:
+			ids.remove_at(ids.find(id))
+		else:
+			ids.append(id)
 	_set_selection(ids)
 
 

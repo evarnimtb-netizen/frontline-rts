@@ -57,8 +57,9 @@ use crate::unit::{UnitDig, UnitOrder};
 pub const MAX_DIG_POINTS: usize = 16;
 /// Most rounds in one Barrage order.
 pub const MAX_BARRAGE_ROUNDS: u16 = 50;
-/// Most queued call-ins per player.
-pub const MAX_CALL_IN_QUEUE: usize = 10;
+/// Most queued call-ins per player (the HUD's "n/5" queue bar,
+/// `docs/slices/S1b-hud.md`).
+pub const MAX_CALL_IN_QUEUE: usize = 5;
 /// Longest stored path (waypoints); a smoothed path is far shorter.
 pub const MAX_PATH_POINTS: usize = 8192;
 
