@@ -124,3 +124,42 @@ it.
   height; they need a stronger edge or darker floor shading.
 - [ ] The fix pass cut the call-in queue from 10 to 5 to match the HUD
   spec. That is a game rule; confirm with the owner.
+
+## Known issues found during S2
+
+- [ ] **No exported zip yet.** `tools/export_macos.sh` builds the universal
+  bridge (arm64 + x86_64 with lipo, checked) and stops before the export:
+  the Godot 4.7.2 export templates are not installed, and the official
+  `.tpz` is 1.28 GB, over the ~1 GB the integration stage was allowed to
+  download. Install them (Editor > Manage Export Templates), then run
+  `tools/export_macos.sh --verify`. The export itself, the ad hoc
+  re-signing after adding `mods/ww2` to `Contents/Resources`, and the
+  second-account run are untested.
+- [ ] **Playout buffer too small on jittery links.** `frontline-net-test
+  --seconds 1200 --jitter 40 --drop 0.05`: 0 restamps, hashes agree, but
+  about 16 % of ticks step more than one period late (3,918 and 3,566
+  stalls out of 24,142 ticks). The view lags in bursts; the match stays
+  correct. A client-only adaptive playout delay would fix it without
+  touching determinism. Owner call.
+- [ ] Two windowed instances on one Mac: 10–14 stalls per 3-minute match,
+  almost all in the first minute (match start, the S1b selection tour's
+  screenshots). Headless runs show none. Same family as the S1b windowed
+  step spikes.
+- [ ] App Nap: not hit with both windows visible side by side; the
+  `defaults write ... NSAppSleepDisabled` step from the spec was not run
+  (no persistent defaults). A hidden or minimised instance is untested.
+- [ ] After a host crash the guest waits about 75 s before the disconnect
+  screen (silent relay for 10 s, then the "Reconnecting" countdown; the
+  bridge gives up at 75 s). Correct per the design, but long when the
+  relay died with the host's game.
+- [ ] The match readout's raw `net.state` turns "unstable" 2 s after the
+  match ends (the other side stops sending after its goodbye). The HUD
+  freezes the readout at the end; the bridge value is still misleading for
+  other readers.
+- [ ] `build_id` is stamped when `crates/net` is rebuilt (HEAD or index
+  changes); edits to tracked files without staging do not set `-dirty`
+  until something rebuilds it. `tools/export_macos.sh` refuses a dirty tree
+  unless `--allow-dirty`.
+- [ ] `THIRD_PARTY_NOTICES` not regenerated for `socket2` (from net stage 1).
+- [ ] `relay-protocol.md` does not mention the `Bye(Shutdown)` the relay sends
+  when it stops (net stage 2).

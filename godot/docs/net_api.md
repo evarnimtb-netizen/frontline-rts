@@ -1,4 +1,12 @@
-# FrontlineNet: the API the S2 presenter assumes
+# FrontlineNet: the API the S2 presenter uses
+
+**Status (integration):** the bridge's `FrontlineNet` (a `RefCounted`,
+`crates/godot-bridge/README.md`) meets this contract with the same method
+names, so the presenter needed no renames: `Session.ensure_net()` picks it
+whenever the GDExtension is loaded. `MockNet` stays for the screenshot
+stages and `tools/test_net_ui.gd`. The bridge also has `host_loopback(port)`
+(used by `--autoplay_net host:`), `set_ready()`, `build_id()` (shown in the
+main menu), and `FrontlineMatch.get_net_hashes()`.
 
 The S2 presenter (menu → Multiplayer, lobby, match HUD in net mode) was
 built against `godot/net/mock_net.gd` (`MockNet`), a GDScript stand-in with
@@ -89,9 +97,35 @@ players (the pause menu no longer pauses on open); `surrender` as before;
 -- --autoplay_net host:47015 --autoplay 3
 -- --autoplay_net join:127.0.0.1:47015 --autoplay 3   (IPv6: join:[::1]:47015)
    [--net_name NAME] [--debug_inject_desync TICK] [--seed N]
+   [--net_delay D] [--net_bind_all] [--autoplay_shots DIR]
 ```
 
-The host picks Germany (and `--seed`), the guest USA; both ready, save
-`s2_autoplay_lobby_<role>.png`, then play with `match/autoplay.gd` at 1x
-(`--autoplay_speed` is ignored in net mode). The run exits with code 4 if
-the lobby does not start within 90 s.
+The host picks Germany (and `--seed`, and D with `--net_delay`), the guest
+USA; both ready, save `s2_autoplay_lobby_<role>.png`, then play with
+`match/autoplay.gd` at 1x (`--autoplay_speed` is ignored in net mode). The
+autoplay host's relay binds 127.0.0.1 only (`host_loopback`, no macOS
+firewall prompt) unless `--net_bind_all`. `match/autoplay_net.gd` adds the
+net shots (`s2_<role>_readout|pending|waiting|desync|disconnect|end.png`)
+and writes `s2_hashes_<role>.json` (every published hash), which
+`tools/compare_hashes.py` compares.
+
+Exit codes: 0 match over, 3 a required shot missing, 4 the lobby did not
+start within 90 s (or host/join failed), 6 desync (after the banner shot,
+once the dump is written), 7 disconnected (after the disconnect shot).
+
+Two instances side by side on one Mac (what the integration ran; the
+screen is 3420 px wide, so two 1600x900 windows fit):
+
+```
+G=~/Applications/Godot.app/Contents/MacOS/Godot
+$G --path godot --resolution 1600x900 --position 0,40 -- \
+   --autoplay_net host:47015 --autoplay 3 --net_name Erik --autoplay_shots /tmp/s2 &
+sleep 4
+$G --path godot --resolution 1600x900 --position 1700,40 -- \
+   --autoplay_net join:127.0.0.1:47015 --autoplay 3 --net_name Sam --autoplay_shots /tmp/s2
+python3 -I tools/compare_hashes.py /tmp/s2/s2_hashes_host.json /tmp/s2/s2_hashes_join.json
+```
+
+Add `--debug_inject_desync 1000` to the joiner for the desync banner and
+dump; `kill -9` either instance mid-match for the waiting overlay and the
+timeout or disconnect result on the other.

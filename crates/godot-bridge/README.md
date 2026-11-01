@@ -34,6 +34,7 @@ menu → match scene change.
 | `set_choice(d: Dictionary)` | A partial update of any of `faction` (`germany`/`usa`), `seed`, `map` (short id) and `input_delay` (clamped to 2–6). The full choice is resent every time, because the relay overwrites the faction and clears both Ready flags on any change. Slot 1's seed, map and D are ignored by the relay. |
 | `ready()` / `set_ready()` | Resolves the setup this client would play (both slots human, the lobby's factions, seed and map) and sends `Ready(xxh3(postcard(setup)))`. If the second slot is empty or the factions are equal, nothing is sent and `mismatch` says why. |
 | `leave()` | Sends `Bye` and goes back to `idle`; safe in any state. Threads stop in the background: the client's `Bye(Quit)` goes first (a player who quits mid-match surrenders), then a hosted relay sends `Bye(Shutdown)` to whoever is left. A later `host()` waits for that to finish, so the port is free again. |
+| `build_id() -> String` | The build id `Hello` carries, `<commit>[-dirty]-p<protocol>-s<save>`. The main menu shows it, so two players can compare builds. |
 | `set_debug_inject_desync(tick: int)` | Dev hook for the next match. The same effect as `debug_inject_desync` in the `start_match` dictionary. |
 | `status() -> Dictionary` | Snapshot (below). Calling it also processes the net thread's events, so call it every frame while in the lobby. |
 
@@ -83,6 +84,10 @@ to reach the `lobby` state first.
    `pause` intent with `{paused}` sends `PauseReq` or `ResumeReq` for both
    players. The pause shows once the relay confirms it (`net.state ==
    "paused"`, `paused == true`).
+
+`get_net_hashes()` returns the hashes this client published, oldest first,
+as `[tick, "16 hex digits"]` pairs (empty in a skirmish). The net autoplay
+writes them out so two instances can be compared.
 
 `get_state()` adds:
 
