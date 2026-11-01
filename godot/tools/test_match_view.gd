@@ -459,6 +459,22 @@ func _test_minimap() -> void:
 	var l0: Vector2 = mm.lock_centre()
 	_cam.yaw_deg = 45.0
 	_check(l0.distance_to(mm.lock_centre()) > 10.0, "rotated: lock follows the map as it turns")
+	# Clicking the lock closes it (north-up) and clicking again opens it
+	# (rotating); the camera stays put. Settings is detached so the test
+	# never writes the player's settings file.
+	var st: Node = get_root().get_node_or_null(^"Settings")
+	if st != null:
+		get_root().remove_child(st)
+	var focus0: Vector3 = _cam.focus
+	_mm_click(mm, mm.lock_centre())
+	await _frames(1)
+	_check(not mm.rotate_with_camera and mm._get_tooltip(mm.lock_centre()) == "Rotate with the camera", "lock click: closed, north-up")
+	_mm_click(mm, mm.lock_centre())
+	await _frames(1)
+	_check(mm.rotate_with_camera and mm._get_tooltip(mm.lock_centre()) == "Lock north-up", "lock click again: open, rotating")
+	_check(Vector3(_cam.focus).distance_to(focus0) < 0.01, "lock clicks leave the camera where it was")
+	if st != null:
+		get_root().add_child(st)
 	mm.rotate_with_camera = false
 	_cam.yaw_deg = 0.0
 	_cam.jump_to(_source.squad_pos(_source.squad_ids(0, "engineer")[0]))

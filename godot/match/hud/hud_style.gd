@@ -246,14 +246,20 @@ static func mouse_rmb(ci: CanvasItem, at: Vector2, col: Color) -> float:
 	return r.size.x
 
 
-## A padlock, closed or open (minimap north-up lock).
+## A padlock centred on `c`, closed or open (minimap north-up lock,
+## locked call-in tiles): a solid body under a round shackle. Closed, both
+## legs go into the body; open, the shackle is lifted and its right leg
+## stands free above the body.
 static func lock(ci: CanvasItem, c: Vector2, col: Color, closed: bool) -> void:
-	var shackle_c := c + Vector2(0 if closed else 2.5, -1.0)
-	ci.draw_arc(shackle_c, 3.5, PI, TAU if closed else TAU - 0.6, 10, col, 1.6, true)
-	ci.draw_line(shackle_c + Vector2(-3.5, 0), shackle_c + Vector2(-3.5, 2.5), col, 1.6)
-	if closed:
-		ci.draw_line(shackle_c + Vector2(3.5, 0), shackle_c + Vector2(3.5, 2.5), col, 1.6)
-	box(ci, Rect2(c + Vector2(-5.5, 1.0), Vector2(11, 7)), col, 2)
+	var w := 1.8
+	var r := 3.0
+	var body := Rect2(c + Vector2(-5.0, -0.5), Vector2(10.0, 7.0))
+	var lift := 0.0 if closed else 2.5
+	var top := c + Vector2(0.0, -3.0 - lift)
+	ci.draw_arc(top, r, PI, TAU, 12, col, w, true)
+	ci.draw_line(top + Vector2(-r, 0.0), Vector2(c.x - r, body.position.y + 1.0), col, w, true)
+	ci.draw_line(top + Vector2(r, 0.0), Vector2(c.x + r, body.position.y + 1.0) if closed else top + Vector2(r, 1.0), col, w, true)
+	box(ci, body, col, 2)
 
 
 ## Colour of a side as seen by `local`; -1 is neutral.
