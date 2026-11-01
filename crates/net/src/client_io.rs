@@ -45,6 +45,16 @@ pub fn client_bind_for(relay: SocketAddr) -> SocketAddr {
     SocketAddr::new(ip, 0)
 }
 
+/// Reads the net thread's [`ClientStatus`] snapshot from any thread.
+#[derive(Clone)]
+pub struct StatusReader(Arc<Mutex<ClientStatus>>);
+
+impl StatusReader {
+    pub fn get(&self) -> ClientStatus {
+        self.0.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+}
+
 pub struct NetHandle {
     tx: Sender<ToNet>,
     events: Receiver<NetEvent>,
@@ -205,6 +215,12 @@ impl NetHandle {
 
     pub fn status(&self) -> ClientStatus {
         self.status.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// A handle to the same status snapshot for another thread (the sim
+    /// thread maps ticks to step slots with it).
+    pub fn status_reader(&self) -> StatusReader {
+        StatusReader(Arc::clone(&self.status))
     }
 
     /// The net thread's local clock (µs), for comparing with step slots.

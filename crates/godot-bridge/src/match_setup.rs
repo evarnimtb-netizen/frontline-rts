@@ -3,8 +3,10 @@
 //! open content crate and resolves a fixed-point setup, which the sim then
 //! saves and hashes like any other state (S1 "Hard rules").
 //!
-//! The human always takes player slot 0 (base 0, south-west) with the
-//! chosen faction; the AI takes slot 1 with the other faction.
+//! In a skirmish the human takes player slot 0 (base 0, south-west) with
+//! the chosen faction and the AI takes slot 1 with the other faction. A
+//! net match (S2) names both slots' factions with [`MenuChoice::slots`],
+//! and both slots are human.
 
 use std::path::{Path, PathBuf};
 
@@ -25,6 +27,18 @@ pub struct MenuChoice {
     /// Optional overrides for short or scripted matches.
     pub tickets: Option<u32>,
     pub start_manpower: Option<u32>,
+    /// Net match (S2): each slot's faction and whether a human plays it.
+    /// Overrides `faction` and `ai_vs_ai`. Both clients resolve the same
+    /// choice into the same setup (its hash is the `Ready` check).
+    pub slots: Option<[SlotChoice; 2]>,
+}
+
+/// One player slot of a net match.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotChoice {
+    /// Short faction id: `germany` or `usa`.
+    pub faction: String,
+    pub human: bool,
 }
 
 impl Default for MenuChoice {
@@ -37,6 +51,7 @@ impl Default for MenuChoice {
             ai_vs_ai: false,
             tickets: None,
             start_manpower: None,
+            slots: None,
         }
     }
 }
@@ -94,31 +109,47 @@ pub fn resolve(mods: &Path, choice: &MenuChoice) -> Result<MatchSetup, String> {
 }
 
 pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, String> {
-    if !FACTIONS.contains(&choice.faction.as_str()) {
-        return Err(format!("unknown faction {:?}", choice.faction));
-    }
-    let other = if choice.faction == FACTIONS[0] {
-        FACTIONS[1]
-    } else {
-        FACTIONS[0]
-    };
     let d = difficulty(&choice.difficulty)?;
+    let slots = match &choice.slots {
+        Some(s) => s.clone(),
+        None => {
+            let other = if choice.faction == FACTIONS[0] {
+                FACTIONS[1]
+            } else {
+                FACTIONS[0]
+            };
+            [
+                SlotChoice {
+                    faction: choice.faction.clone(),
+                    human: !choice.ai_vs_ai,
+                },
+                SlotChoice {
+                    faction: other.into(),
+                    human: false,
+                },
+            ]
+        }
+    };
+    for s in &slots {
+        if !FACTIONS.contains(&s.faction.as_str()) {
+            return Err(format!("unknown faction {:?}", s.faction));
+        }
+    }
+    if slots[0].faction == slots[1].faction {
+        return Err(format!("both slots are {:?}", slots[0].faction));
+    }
     let req = MatchRequest {
         rules: format!("{MOD_ID}:skirmish"),
         map: format!("{MOD_ID}:{}", choice.map),
         seed: choice.seed,
-        players: vec![
-            PlayerRequest {
-                faction: format!("{MOD_ID}:{}", choice.faction),
-                ai: choice.ai_vs_ai,
+        players: slots
+            .iter()
+            .map(|s| PlayerRequest {
+                faction: format!("{MOD_ID}:{}", s.faction),
+                ai: !s.human,
                 difficulty: d,
-            },
-            PlayerRequest {
-                faction: format!("{MOD_ID}:{other}"),
-                ai: true,
-                difficulty: d,
-            },
-        ],
+            })
+            .collect(),
     };
     let mut setup = defs.resolve(&req).map_err(|e| e.to_string())?;
     if let Some(t) = choice.tickets {
@@ -187,6 +218,34 @@ mod tests {
             ..MenuChoice::default()
         };
         assert!(resolve(&m, &bad).is_err());
+    }
+
+    #[test]
+    fn net_slots_are_both_human() {
+        let choice = MenuChoice {
+            faction: "usa".into(),
+            seed: 9,
+            slots: Some([
+                SlotChoice {
+                    faction: "usa".into(),
+                    human: true,
+                },
+                SlotChoice {
+                    faction: "germany".into(),
+                    human: true,
+                },
+            ]),
+            ..MenuChoice::default()
+        };
+        let s = resolve(&mods(), &choice).unwrap();
+        assert!(s.players.iter().all(|p| !p.is_ai));
+        assert_eq!(
+            short_id(&s.factions[s.players[0].faction as usize].id),
+            "usa"
+        );
+        let mut same = choice.clone();
+        same.slots.as_mut().unwrap()[1].faction = "usa".into();
+        assert!(resolve(&mods(), &same).is_err());
     }
 
     #[test]

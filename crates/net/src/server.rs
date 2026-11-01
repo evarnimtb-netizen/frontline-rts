@@ -25,11 +25,14 @@ use crate::transport::{RECV_BUF, Transport, UdpTransport};
 const SPIN_MARGIN_US: u64 = if cfg!(windows) { 16_000 } else { 1_000 };
 /// Longest sleep, so control resends and timeouts run on time.
 const MAX_SLEEP_US: u64 = 5_000;
+/// How long a stopping relay waits for its `Bye(Shutdown)` acks.
+const SHUTDOWN_US: u64 = 500_000;
 
 /// Where the loop writes its JSON-lines log.
 pub type LogSink = Box<dyn Write + Send>;
 
-/// Runs `relay` on `sock` until `stop` is set, or (with
+/// Runs `relay` on `sock` until `stop` is set (then it sends every player
+/// `Bye(Shutdown)` and waits briefly for the acks), or (with
 /// `exit_when_finished`) until the match ended and the goodbyes went out.
 /// `clock` is the relay clock (µs since some origin).
 pub fn run_relay(
@@ -43,7 +46,21 @@ pub fn run_relay(
 ) -> io::Result<()> {
     let mut buf = vec![0u8; RECV_BUF];
     let mut status_at = 0u64;
-    while !stop.load(Ordering::Relaxed) {
+    let mut stop_at: Option<u64> = None;
+    loop {
+        // On stop, say `Bye(Shutdown)` to everyone still here and give
+        // the acks up to half a second.
+        if stop.load(Ordering::Relaxed) && stop_at.is_none() {
+            let now = clock();
+            relay.shutdown(now);
+            stop_at = Some(now);
+        }
+        if let Some(t) = stop_at {
+            let now = clock();
+            if relay.is_finished(now) || now.saturating_sub(t) > SHUTDOWN_US {
+                break;
+            }
+        }
         let now = clock();
         let until = relay
             .next_deadline()

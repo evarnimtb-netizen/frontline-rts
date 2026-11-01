@@ -27,9 +27,16 @@
 //! GDScript from the state's `effects` and `get_map_info()`. Vehicles are
 //! out of S1: this node draws none (the bench node keeps its placeholders).
 //!
+//! **Net mode** (S2). `attach_net(net)` hands the node a [`FrontlineNet`]
+//! whose lobby started a match; `start_match({net: true, ...})` then takes
+//! the setup and the link from it and runs the sim thread in net mode
+//! ([`MatchHandle::spawn_net`]). `get_state()` adds `net` (link readout),
+//! `pending_orders` (own orders sent but not run yet) and the lobby names.
+//!
 //! The node must sit at the world origin with an identity transform.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use frontline_content::{ItemKind, MatchSetup, SquadRole, WeaponClass};
@@ -40,7 +47,7 @@ use godot::classes::image::Format as ImageFormat;
 use godot::classes::light_3d::Param as LightParam;
 use godot::classes::rendering_server::ShadowCastingSetting;
 use godot::classes::{
-    ArrayMesh, DirectionalLight3D, Engine, INode3D, Image, ImageTexture, Material, Node3D,
+    ArrayMesh, DirectionalLight3D, Engine, INode3D, Image, ImageTexture, Material, Node3D, Os,
     ProjectSettings, RenderingServer, Shader, ShaderMaterial, StandardMaterial3D,
 };
 use godot::prelude::*;
@@ -52,9 +59,11 @@ use crate::intents::{
 };
 use crate::match_events::{EffectCue, EventTracker, UiEvent, effect_cues};
 use crate::match_frame::{MatchFrame, SquadView, TickEvents};
+use crate::match_net::{NetLink, NetMatchInfo, NetState};
 use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve, short_id};
 use crate::match_thread::MatchHandle;
 use crate::meshgen;
+use crate::net_node::FrontlineNet;
 use crate::present::{
     CasterCull, Frustum, carry_over, hash01, interp_pair, lerp, lerp_angle, model_yaw,
     sim_to_godot, write_streak_instance, write_yaw_instance,
@@ -76,6 +85,8 @@ const DIG_CUE_S: f32 = 1.1;
 /// Presenter frames the sim waits before its first tick, so start-up work
 /// (shader compiles, the first terrain upload) does not make it late.
 const WARMUP_FRAMES: u32 = 8;
+/// Pending-order markers kept at most (the oldest go first).
+const MAX_PENDING_MARKERS: usize = 64;
 
 #[derive(GodotClass)]
 #[class(base = Node3D)]
@@ -115,6 +126,8 @@ pub struct FrontlineMatch {
     local_player: i32,
     rt: Option<MatchRuntime>,
     last_error: GString,
+    /// The lobby object of a net match (`attach_net`).
+    net: Option<Gd<FrontlineNet>>,
 }
 
 #[godot_api]
@@ -137,6 +150,7 @@ impl INode3D for FrontlineMatch {
             local_player: 0,
             rt: None,
             last_error: GString::new(),
+            net: None,
         }
     }
 
@@ -231,6 +245,14 @@ impl FrontlineMatch {
                 false
             }
         }
+    }
+
+    /// Net mode: the `FrontlineNet` whose lobby started the match (call
+    /// before `start_match({net: true, ...})`). Anything else (a mock, null)
+    /// detaches.
+    #[func]
+    fn attach_net(&mut self, net: Variant) {
+        self.net = net.try_to::<Gd<FrontlineNet>>().ok();
     }
 
     /// Stops the sim thread and frees render resources.
@@ -399,7 +421,15 @@ impl FrontlineMatch {
                 .unwrap_or(false),
             tickets: n("tickets").filter(|&t| t > 0).map(|t| t as u32),
             start_manpower: n("start_manpower").filter(|&t| t >= 0).map(|t| t as u32),
+            slots: None,
         };
+        let is_net = d
+            .get("net")
+            .and_then(|v| v.try_to::<bool>().ok())
+            .unwrap_or(false);
+        if is_net {
+            return self.try_start_net(d);
+        }
         let explicit = self.mods_dir.to_string();
         let project = ProjectSettings::singleton()
             .globalize_path("res://")
@@ -413,6 +443,53 @@ impl FrontlineMatch {
         let setup = resolve(&mods, &choice).map_err(|e| format!("{}: {e}", mods.display()))?;
         let world = World::new_match(setup, self.sim_threads.max(1) as usize)
             .map_err(|e| format!("invalid match setup: {e}"))?;
+        self.start_runtime(world, 0, None)
+    }
+
+    /// Net mode: the setup and the link come from the attached
+    /// `FrontlineNet`; the dictionary adds only `debug_inject_desync`.
+    fn try_start_net(&mut self, d: &VarDictionary) -> Result<(), String> {
+        let mut net = self
+            .net
+            .clone()
+            .ok_or("net match without attach_net(FrontlineNet)")?;
+        let names = net.bind().session.names();
+        let nm = {
+            let mut b = net.bind_mut();
+            if let Some(t) = d
+                .get("debug_inject_desync")
+                .and_then(|v| v.try_to::<i64>().ok())
+                .filter(|&t| t > 0)
+            {
+                b.session.inject_desync = Some(t as u64);
+            }
+            b.session.take_match()?
+        };
+        if let Some(want) = d.get("local_player").and_then(|v| v.try_to::<i64>().ok())
+            && want != nm.slot as i64
+        {
+            godot_warn!(
+                "FrontlineMatch: local_player {want} but the relay gave slot {}",
+                nm.slot
+            );
+        }
+        let mut info = nm.info;
+        let user = Os::singleton().get_user_data_dir().to_string();
+        if !user.is_empty() {
+            info.user_dir = Some(std::path::PathBuf::from(user));
+        }
+        let world = World::new_match(nm.setup, self.sim_threads.max(1) as usize)
+            .map_err(|e| format!("invalid match setup: {e}"))?;
+        let slot = nm.slot;
+        self.start_runtime(world, slot, Some((nm.link, info, names)))
+    }
+
+    fn start_runtime(
+        &mut self,
+        world: World,
+        local: u8,
+        net: Option<(NetLink, NetMatchInfo, [String; 2])>,
+    ) -> Result<(), String> {
         let world3d = self
             .base()
             .get_world_3d()
@@ -422,10 +499,10 @@ impl FrontlineMatch {
         let tracer_sh =
             shader_or_load(&self.tracer_shader, TRACER_SHADER).ok_or("missing tracer shader")?;
         let terrain_sh = shader_or_load(&self.terrain_shader, TERRAIN_SHADER);
-        let local = 0u8;
         let rt = MatchRuntime::new(
             world,
             local,
+            net,
             world3d.get_scenario(),
             [soldier_sh, tracer_sh],
             terrain_sh,
@@ -505,13 +582,37 @@ struct MatchRuntime {
     sim_dead_reported: bool,
     warmup: u32,
     user_paused: bool,
+    /// Net mode: the players' names and the pending-order markers.
+    net: Option<NetView>,
     _resources: Vec<Gd<Resource>>,
+}
+
+/// The presenter's side of a net match.
+struct NetView {
+    names: [String; 2],
+    /// `(send ordinal of the intent's last command, kind, Godot position)`,
+    /// oldest first: drawn until that command ran.
+    pending: VecDeque<(u64, &'static str, Vector3)>,
+}
+
+/// The pending-marker kind of a positional intent
+/// (`godot/match/match_view.gd` `PENDING_KINDS`).
+fn pending_kind(intent: &str) -> Option<&'static str> {
+    Some(match intent {
+        "move" | "move_units" => "move",
+        "attack_move" | "attack_move_units" => "attack_move",
+        "barrage" => "barrage",
+        "throw" | "throw_each" => "throw",
+        "dig" | "dig_units" => "dig",
+        _ => return None,
+    })
 }
 
 impl MatchRuntime {
     fn new(
         world: World,
         local: u8,
+        net: Option<(NetLink, NetMatchInfo, [String; 2])>,
         scenario: Rid,
         [soldier_sh, tracer_sh]: [Gd<Shader>; 2],
         terrain_sh: Option<Gd<Shader>>,
@@ -638,8 +739,23 @@ impl MatchRuntime {
         }
         let minimap = minimap_texture(&terrain, &setup, 256);
         let hz = setup.tick_hz.max(1) as f32;
-        let mut sim = MatchHandle::spawn(world, local)?;
-        sim.set_paused(true);
+        // A skirmish waits a few frames before its first tick; a net match
+        // runs on the relay's clock and catches up instead.
+        let (mut sim, net, warmup) = match net {
+            Some((link, info, names)) => (
+                MatchHandle::spawn_net(world, local, link, info)?,
+                Some(NetView {
+                    names,
+                    pending: VecDeque::new(),
+                }),
+                0,
+            ),
+            None => {
+                let sim = MatchHandle::spawn(world, local)?;
+                sim.set_paused(true);
+                (sim, None, WARMUP_FRAMES)
+            }
+        };
         let mut hist = [
             MatchFrame::empty(),
             MatchFrame::empty(),
@@ -686,8 +802,9 @@ impl MatchRuntime {
             minimap,
             present_us: 0.0,
             sim_dead_reported: false,
-            warmup: WARMUP_FRAMES,
+            warmup,
             user_paused: false,
+            net,
             _resources: resources,
             setup,
         };
@@ -1244,10 +1361,11 @@ impl MatchRuntime {
                 .map(|c| setup.squad_types[c.0 as usize].men as u32)
                 .sum();
             let fac = short_id(&setup.factions[ps_setup.faction as usize].id);
-            let name = if p == local {
-                "You".to_owned()
-            } else {
-                format!("AI ({:?})", ps_setup.difficulty).to_lowercase()
+            let name = match &self.net {
+                Some(n) if !n.names[p % 2].is_empty() => n.names[p % 2].clone(),
+                _ if p == local => "You".to_owned(),
+                _ if !ps_setup.is_ai => "Player".to_owned(),
+                _ => format!("AI ({:?})", ps_setup.difficulty).to_lowercase(),
             };
             players.push(
                 &vdict! {
@@ -1482,10 +1600,11 @@ impl MatchRuntime {
             );
         }
 
-        vdict! {
+        let paused = f.paused;
+        let mut out = vdict! {
             "tick" => f.tick as i64,
             "time_s" => f.tick as f32 / hz,
-            "paused" => f.paused,
+            "paused" => paused,
             "local_player" => local as i64,
             "map" => &map,
             "rules" => &rules_d,
@@ -1508,7 +1627,70 @@ impl MatchRuntime {
                 "reason" => reason,
             },
             "stats" => &stats,
+        };
+        if self.net.is_some() {
+            out.set("net", &self.net_dict());
+            out.set("pending_orders", &self.pending_orders());
         }
+        out
+    }
+
+    /// `net` in `get_state()` (`godot/docs/match_state.md`, "Net mode").
+    fn net_dict(&self) -> VarDictionary {
+        let c = &self.sim.counters;
+        let names = self
+            .net
+            .as_ref()
+            .map(|n| n.names.clone())
+            .unwrap_or_default();
+        let name = |s: u8| names.get(s as usize).cloned().unwrap_or_default();
+        let state = NetState::from_u8(c.net_state.load(Ordering::Relaxed));
+        let detail = c.net.lock().map(|d| d.clone()).unwrap_or_default();
+        let d = c.input_delay.load(Ordering::Relaxed);
+        let rtt = c.rtt_ms.load(Ordering::Relaxed);
+        let mut out = vdict! {
+            "ping_ms" => if rtt < 0 { -1.0 } else { rtt as f32 },
+            "input_delay" => d as i64,
+            "delay_ms" => (d as f32 * 1000.0 / self.hz).round() as i64,
+            "restamps" => c.restamps.load(Ordering::Relaxed) as i64,
+            "stalls" => c.stall_ticks.load(Ordering::Relaxed) as i64,
+            "state" => state.name(),
+            "paused_by" => detail.paused_by.map(name).unwrap_or_default().as_str(),
+            "waiting_for" => detail.waiting_for.map(name).unwrap_or_default().as_str(),
+            "waiting_s_left" => detail.waiting_s_left,
+            "desync_tick" => c.desync_tick.load(Ordering::Relaxed),
+            "desync_dump" => detail.desync_dump.clone().unwrap_or_default().as_str(),
+            "disconnect_reason" => detail.disconnect.unwrap_or(""),
+        };
+        if let Some(p) = detail.paused_by {
+            out.set("paused_slot", p as i64);
+        }
+        if let Some(w) = detail.waiting_for {
+            out.set("waiting_slot", w as i64);
+        }
+        if let Some(e) = &detail.dump_error {
+            out.set("desync_dump_error", e.as_str());
+        }
+        out
+    }
+
+    /// Own positional orders sent but not run yet (oldest first).
+    fn pending_orders(&mut self) -> VarArray {
+        let done = self.sim.counters.own_executed.load(Ordering::Relaxed);
+        let mut out = VarArray::new();
+        if let Some(n) = self.net.as_mut() {
+            n.pending.retain(|p| p.0 >= done);
+            for (_, kind, pos) in &n.pending {
+                out.push(
+                    &vdict! {
+                        "pos" => *pos,
+                        "kind" => *kind,
+                    }
+                    .to_variant(),
+                );
+            }
+        }
+        out
     }
 
     fn squad_dict(&self, s: &SquadView) -> VarDictionary {
@@ -1760,14 +1942,31 @@ impl MatchRuntime {
                     .and_then(|v| v.try_to::<bool>().ok())
                     .unwrap_or(false);
                 self.user_paused = p;
+                // Net: asks the relay to pause or resume both players.
                 if self.warmup == 0 {
                     self.sim.set_paused(p);
                 }
             }
             _ => {}
         }
+        let mut last = None;
         for c in out {
-            self.sim.send(c);
+            last = self.sim.send(c).or(last);
+        }
+        // Net: a marker at the clicked spot until the intent's last
+        // command ran.
+        if let (Some(n), Some(ord), Some(pk)) = (self.net.as_mut(), last, pending_kind(kind)) {
+            let pos = target.or_else(|| {
+                data.get("polyline")
+                    .and_then(|v| v.try_to::<PackedVector3Array>().ok())
+                    .and_then(|l| l.as_slice().get(l.len() / 2).copied())
+            });
+            if let Some(pos) = pos {
+                if n.pending.len() == MAX_PENDING_MARKERS {
+                    n.pending.pop_front();
+                }
+                n.pending.push_back((ord, pk, pos));
+            }
         }
     }
 }

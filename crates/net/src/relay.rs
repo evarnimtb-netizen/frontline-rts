@@ -735,6 +735,28 @@ impl Relay {
         }
     }
 
+    /// The relay is going away (the host left, or the binary stops): every
+    /// connected player gets `Bye(Shutdown)` and the match ends. Keep
+    /// polling until [`Relay::is_finished`] (the byes were acked) or a
+    /// short timeout, so the goodbyes go out.
+    pub fn shutdown(&mut self, now: u64) {
+        if self.phase == Phase::Ended && self.ended_at.is_some() {
+            return;
+        }
+        let running = self.phase == Phase::Running;
+        for s in self.slots.iter_mut().flatten() {
+            if !running || s.active() {
+                s.ctl_out.push(Down::Bye(ByeReason::Shutdown));
+            }
+            if running && s.active() {
+                s.state = SlotState::Left;
+            }
+        }
+        self.phase = Phase::Ended;
+        self.ended_at = Some(now);
+        self.log.push(LogRecord::Ended { t: now });
+    }
+
     fn check_ended(&mut self, now: u64) {
         if self.phase == Phase::Running && self.slots.iter().flatten().all(|s| !s.active()) {
             self.phase = Phase::Ended;

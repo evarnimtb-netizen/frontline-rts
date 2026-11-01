@@ -269,8 +269,10 @@ name = "godot-bridge"
 version = "0.0.1"
 dependencies = [
  "frontline-content",
+ "frontline-net",
  "frontline-sim",
  "godot",
+ "serde_json",
  "triple_buffer",
 ]
 

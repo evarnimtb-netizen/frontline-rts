@@ -12,17 +12,30 @@
 //! Pause (single player vs AI only) stops stepping; `speed` runs the sim
 //! faster than real time (scripted runs, `--autoplay`). Neither changes
 //! results: they only change when ticks run.
+//!
+//! **Net mode** (S2, [`MatchHandle::spawn_net`]): the loop pulls ticks from
+//! a [`TickSource`]. `Local` is the path above; `Net` takes them from the
+//! relay through the `frontline-net` thread ([`crate::match_net`]): each
+//! tick runs at its scheduled slot once its bundle is in, frames carry that
+//! slot as their timestamp, `send()` feeds the net thread, `set_paused()`
+//! asks the relay to pause or resume both players, and speed stays 1x.
 
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicI64, AtomicU8, AtomicU32, AtomicU64, Ordering,
+};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use std::collections::VecDeque;
+
+use frontline_net::client_io::ToNet;
 use frontline_sim::{Command, CommandKind, PlayerId, World};
 
 use crate::match_frame::{FrameCtx, MatchFrame, TickEvents};
+use crate::match_net::{LinkIo, NetDetail, NetLink, NetMatchInfo, NetStepper};
 
 /// Most commands applied in one tick (the rest wait for the next).
 pub const MAX_COMMANDS_PER_TICK: usize = 64;
@@ -42,14 +55,50 @@ pub struct MatchCounters {
     pub speed_pct: AtomicU32,
     pub alive: AtomicBool,
     pub panic: Mutex<Option<String>>,
-    /// The local player's command log: `(tick applied, command)`.
+    /// Every command the sim ran from outside (the local player's in a
+    /// skirmish, every player's in a net match), keyed by the world's tick
+    /// before the step: `(tick, command)`. AI commands are made inside the
+    /// sim and are not here.
     pub log: Mutex<Vec<(u64, Command)>>,
+    // ---- Net mode (S2); zero / -1 in a skirmish.
+    /// Round trip to the relay (ms), -1 unknown.
+    pub rtt_ms: AtomicI32,
+    /// D in ticks.
+    pub input_delay: AtomicU32,
+    /// Own commands the relay moved to a later turn.
+    pub restamps: AtomicU64,
+    /// Ticks stepped more than a period after their slot.
+    pub stall_ticks: AtomicU64,
+    /// [`crate::match_net::NetState`] as `u8`.
+    pub net_state: AtomicU8,
+    /// Tick whose hashes differed, -1 none.
+    pub desync_tick: AtomicI64,
+    /// Own commands run so far (the next own `seq`): commands with a
+    /// smaller send ordinal ([`MatchHandle::send`]) have executed.
+    pub own_executed: AtomicU64,
+    /// Published `(tick, hash)`s, oldest first (at most
+    /// [`crate::match_net::HASH_KEEP`]).
+    pub hashes: Mutex<VecDeque<(u64, u64)>>,
+    pub net: Mutex<NetDetail>,
+}
+
+/// Where the sim thread gets its ticks (S2 "Code changes").
+pub enum TickSource {
+    /// Skirmish: the local player's commands, applied in the next tick.
+    Local(Receiver<CommandKind>),
+    /// Net match: bundles from the relay.
+    Net(Box<(NetLink, NetStepper)>),
+}
+
+enum Input {
+    Local(Sender<CommandKind>),
+    Net(Sender<ToNet>),
 }
 
 pub struct MatchHandle {
     output: triple_buffer::Output<MatchFrame>,
     events: Receiver<TickEvents>,
-    commands: Sender<CommandKind>,
+    input: Input,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     pub counters: Arc<MatchCounters>,
@@ -61,6 +110,40 @@ impl MatchHandle {
     /// commands this handle sends and whose fog of war frames carry. Tiles
     /// the world already has (a loaded match) arrive as the first events.
     pub fn spawn(world: World, local: u8) -> std::io::Result<MatchHandle> {
+        let (cmd_tx, cmd_rx) = channel::<CommandKind>();
+        MatchHandle::spawn_source(
+            world,
+            local,
+            TickSource::Local(cmd_rx),
+            Input::Local(cmd_tx),
+        )
+    }
+
+    /// Moves a net match `world` onto a new thread (S2). `slot` is this
+    /// client's player; the ticks come from the relay over `link`, the
+    /// commands from [`MatchHandle::send`] go to the net thread.
+    pub fn spawn_net(
+        world: World,
+        slot: u8,
+        link: NetLink,
+        info: NetMatchInfo,
+    ) -> std::io::Result<MatchHandle> {
+        let to_net = link.to_net.clone();
+        let stepper = NetStepper::new(slot, info);
+        MatchHandle::spawn_source(
+            world,
+            slot,
+            TickSource::Net(Box::new((link, stepper))),
+            Input::Net(to_net),
+        )
+    }
+
+    fn spawn_source(
+        world: World,
+        local: u8,
+        source: TickSource,
+        input_tx: Input,
+    ) -> std::io::Result<MatchHandle> {
         let setup = world
             .match_setup()
             .cloned()
@@ -72,7 +155,6 @@ impl MatchHandle {
         first.fill(&world, &mut ctx, 0.0, anchor);
         let (mut input, output) = triple_buffer::triple_buffer(&first);
         let (ev_tx, ev_rx) = channel::<TickEvents>();
-        let (cmd_tx, cmd_rx) = channel::<CommandKind>();
         // Tiles that exist before the first tick (none in a new match).
         let tiles = TickEvents::all_tiles(&world);
         if !tiles.is_empty() {
@@ -86,6 +168,8 @@ impl MatchHandle {
         let counters = Arc::new(MatchCounters::default());
         counters.alive.store(true, Ordering::Relaxed);
         counters.speed_pct.store(100, Ordering::Relaxed);
+        counters.rtt_ms.store(-1, Ordering::Relaxed);
+        counters.desync_tick.store(-1, Ordering::Relaxed);
         let thread = {
             let stop = Arc::clone(&stop);
             let counters = Arc::clone(&counters);
@@ -93,11 +177,23 @@ impl MatchHandle {
                 .name("frontline-match".into())
                 .spawn(move || {
                     let mut world = world;
+                    let mut source = source;
                     let run = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        run_loop(
-                            &mut world, &mut ctx, &mut input, &ev_tx, &cmd_rx, &stop, &counters,
-                            tick_hz, local, anchor,
-                        );
+                        let mut out = Out {
+                            ctx: &mut ctx,
+                            input: &mut input,
+                            ev_tx: &ev_tx,
+                            local,
+                        };
+                        match &mut source {
+                            TickSource::Local(cmd_rx) => run_loop(
+                                &mut world, &mut out, cmd_rx, &stop, &counters, tick_hz, anchor,
+                            ),
+                            TickSource::Net(net) => {
+                                let (link, stepper) = &mut **net;
+                                run_net_loop(&mut world, &mut out, link, stepper, &stop, &counters)
+                            }
+                        }
                     }));
                     if let Err(e) = run {
                         let msg = e
@@ -115,7 +211,7 @@ impl MatchHandle {
         Ok(MatchHandle {
             output,
             events: ev_rx,
-            commands: cmd_tx,
+            input: input_tx,
             stop,
             thread: Some(thread),
             counters,
@@ -123,23 +219,47 @@ impl MatchHandle {
         })
     }
 
-    /// Queues a command of the local player for the next tick.
-    pub fn send(&self, kind: CommandKind) {
-        if self.commands.send(kind).is_ok() {
-            self.counters.commands_sent.fetch_add(1, Ordering::Relaxed);
+    /// Queues a command of the local player: for the next tick, or in a
+    /// net match for the net thread to stamp. Returns its send ordinal (in
+    /// a net match, its `seq`: it has executed once
+    /// `counters.own_executed` is past it), or `None` if it was dropped.
+    pub fn send(&self, kind: CommandKind) -> Option<u64> {
+        let ok = match &self.input {
+            Input::Local(tx) => tx.send(kind).is_ok(),
+            // The net client refuses commands over the wire limits; drop
+            // them here so the ordinal stays the `seq`.
+            Input::Net(tx) => {
+                frontline_net::protocol::command_in_limits(&kind)
+                    && tx.send(ToNet::Command(kind)).is_ok()
+            }
+        };
+        ok.then(|| self.counters.commands_sent.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Skirmish: stops or resumes stepping. Net match: asks the relay to
+    /// pause or resume both players (the pause shows once it comes back).
+    pub fn set_paused(&self, paused: bool) {
+        match &self.input {
+            Input::Local(_) => self.counters.paused.store(paused, Ordering::Relaxed),
+            Input::Net(tx) => {
+                let _ = tx.send(if paused { ToNet::Pause } else { ToNet::Resume });
+            }
         }
     }
 
-    pub fn set_paused(&self, paused: bool) {
-        self.counters.paused.store(paused, Ordering::Relaxed);
+    pub fn is_net(&self) -> bool {
+        matches!(self.input, Input::Net(_))
     }
 
     pub fn is_paused(&self) -> bool {
         self.counters.paused.load(Ordering::Relaxed)
     }
 
-    /// Sim speed relative to real time (0.25–8).
+    /// Sim speed relative to real time (0.25–8). A net match stays at 1x.
     pub fn set_speed(&self, speed: f32) {
+        if self.is_net() {
+            return;
+        }
         let pct = (speed.clamp(0.25, 8.0) * 100.0).round() as u32;
         self.counters.speed_pct.store(pct, Ordering::Relaxed);
     }
@@ -193,19 +313,54 @@ impl Drop for MatchHandle {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Where the sim thread publishes.
+struct Out<'a> {
+    ctx: &'a mut FrameCtx,
+    input: &'a mut triple_buffer::Input<MatchFrame>,
+    ev_tx: &'a Sender<TickEvents>,
+    local: u8,
+}
+
+impl Out<'_> {
+    /// Publishes a frame stamped `sched`, and after a step the tick's
+    /// events.
+    fn publish(&mut self, world: &World, step_ms: f32, sched: Instant, paused: bool, step: bool) {
+        let f = self.input.input_buffer_mut();
+        f.fill(world, self.ctx, step_ms, sched);
+        f.paused = paused;
+        f.published = Instant::now();
+        self.input.publish();
+        if step {
+            let ev = TickEvents::collect(world, self.local);
+            if !ev.is_empty() {
+                // The receiver only goes away when the presenter is gone.
+                let _ = self.ev_tx.send(ev);
+            }
+        }
+    }
+}
+
+fn record_step(counters: &MatchCounters, world: &World, step: Duration) {
+    let us = step.as_micros().min(u32::MAX as u128) as u32;
+    counters.ticks.fetch_add(1, Ordering::Relaxed);
+    counters.last_step_us.store(us, Ordering::Relaxed);
+    if counters.max_step_us.fetch_max(us, Ordering::Relaxed) < us {
+        counters
+            .max_step_tick
+            .store(world.tick(), Ordering::Relaxed);
+    }
+}
+
 fn run_loop(
     world: &mut World,
-    ctx: &mut FrameCtx,
-    input: &mut triple_buffer::Input<MatchFrame>,
-    ev_tx: &Sender<TickEvents>,
+    out: &mut Out,
     cmd_rx: &Receiver<CommandKind>,
     stop: &AtomicBool,
     counters: &MatchCounters,
     tick_hz: u32,
-    local: u8,
     anchor: Instant,
 ) {
+    let local = out.local;
     let base_period = Duration::from_secs_f64(1.0 / tick_hz as f64);
     let mut next = anchor + base_period;
     let mut seq: u32 = 0;
@@ -216,11 +371,7 @@ fn run_loop(
         if paused {
             if !was_paused {
                 // Republish so the presenter sees the pause flag.
-                let f = input.input_buffer_mut();
-                f.fill(world, ctx, 0.0, next - base_period);
-                f.paused = true;
-                f.published = Instant::now();
-                input.publish();
+                out.publish(world, 0.0, next - base_period, true, false);
             }
             was_paused = true;
             std::thread::sleep(Duration::from_millis(5));
@@ -254,7 +405,7 @@ fn run_loop(
             });
             seq += 1;
         }
-        let tick = world.tick() + 1;
+        let tick = world.tick();
         if !cmds.is_empty()
             && let Ok(mut log) = counters.log.lock()
         {
@@ -266,24 +417,8 @@ fn run_loop(
         let ms = step.as_secs_f32() * 1000.0;
         // The scheduled stamp runs at real-time spacing scaled by speed, so
         // interpolation stays smooth at any speed.
-        let f = input.input_buffer_mut();
-        f.fill(world, ctx, ms, next);
-        f.paused = false;
-        f.published = Instant::now();
-        input.publish();
-        let ev = TickEvents::collect(world, local);
-        if !ev.is_empty() {
-            // The receiver only goes away when the presenter is gone.
-            let _ = ev_tx.send(ev);
-        }
-        let us = step.as_micros().min(u32::MAX as u128) as u32;
-        counters.ticks.fetch_add(1, Ordering::Relaxed);
-        counters.last_step_us.store(us, Ordering::Relaxed);
-        if counters.max_step_us.fetch_max(us, Ordering::Relaxed) < us {
-            counters
-                .max_step_tick
-                .store(world.tick(), Ordering::Relaxed);
-        }
+        out.publish(world, ms, next, false, true);
+        record_step(counters, world, step);
         let done = Instant::now();
         next += period;
         if done > next {
@@ -292,6 +427,55 @@ fn run_loop(
                 next = done + period;
             }
         }
+    }
+}
+
+/// Net mode: steps whatever the relay's schedule makes due (see
+/// [`NetStepper`]), stamps each frame with the tick's slot, and sleeps
+/// until the next slot (at most 2 ms, so events are read promptly).
+fn run_net_loop(
+    world: &mut World,
+    out: &mut Out,
+    link: &mut NetLink,
+    stepper: &mut NetStepper,
+    stop: &AtomicBool,
+    counters: &MatchCounters,
+) {
+    let origin = link.origin;
+    let mut was_halted = false;
+    while !stop.load(Ordering::Relaxed) {
+        let stepped = stepper.poll(world, link, counters);
+        let halted = stepper.halted(world);
+        if let Some(s) = &stepped {
+            if !s.cmds.is_empty()
+                && let Ok(mut log) = counters.log.lock()
+            {
+                log.extend(s.cmds.iter().map(|c| (s.tick, c.clone())));
+            }
+            let sched = origin + Duration::from_micros(s.slot_us);
+            out.publish(world, s.step_us as f32 / 1000.0, sched, halted, true);
+            record_step(counters, world, Duration::from_micros(s.step_us as u64));
+            let period = stepper.status().schedule.map_or(33_333, |p| p.period());
+            if link.now_us() > s.slot_us + period {
+                counters.late_ticks.fetch_add(1, Ordering::Relaxed);
+            }
+        } else if halted != was_halted {
+            // Republish so the presenter sees the pause flag change.
+            let sched = stepper
+                .slot_of(world.tick().saturating_sub(1))
+                .map_or_else(Instant::now, |s| origin + Duration::from_micros(s));
+            out.publish(world, 0.0, sched, halted, false);
+        }
+        was_halted = halted;
+        if stepped.is_some() {
+            continue;
+        }
+        let now = link.now_us();
+        let wait = stepper
+            .slot_of(world.tick())
+            .map_or(2_000, |due| due.saturating_sub(now))
+            .clamp(500, 2_000);
+        std::thread::sleep(Duration::from_micros(wait));
     }
 }
 

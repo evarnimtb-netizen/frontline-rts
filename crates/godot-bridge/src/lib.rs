@@ -11,14 +11,18 @@ pub mod handoff;
 pub mod intents;
 pub mod match_events;
 pub mod match_frame;
+pub mod match_net;
 mod match_node;
 pub mod match_setup;
 pub mod match_thread;
 pub mod meshgen;
+mod net_node;
+pub mod net_session;
 mod node;
 pub mod present;
 pub mod rig;
 pub mod terrain_view;
 
 pub use match_node::FrontlineMatch;
+pub use net_node::FrontlineNet;
 pub use node::FrontlineSim;

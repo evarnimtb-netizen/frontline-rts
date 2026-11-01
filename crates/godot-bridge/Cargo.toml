@@ -14,8 +14,15 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 frontline-sim.workspace = true
 frontline-content.workspace = true
+# S2 multiplayer: the client net thread, the in-game relay, checkpoints and
+# desync dumps. The bridge never touches a socket on the sim or main thread.
+frontline-net.workspace = true
 godot = { version = "=0.5.5", features = ["api-4-7"] }
 triple_buffer = "9.0"
+
+[dev-dependencies]
+# Tests read the desync dump's manifest.
+serde_json.workspace = true
 
 # Not `workspace = true`: the GDExtension entry point needs `unsafe` (the
 # workspace forbids it). Everything else in this crate stays safe; the one

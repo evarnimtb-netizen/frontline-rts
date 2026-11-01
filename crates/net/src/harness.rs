@@ -124,6 +124,17 @@ impl SimDriver {
         self.queue.len()
     }
 
+    /// The oldest bundle not stepped yet: what the next step runs (plus
+    /// the desync command, if one is due).
+    pub fn next_bundle(&self) -> Option<(u64, &[Command])> {
+        self.queue.front().map(|(t, c)| (*t, c.as_slice()))
+    }
+
+    /// The tick the driver does not step past (a pause or a desync).
+    pub fn halted_at(&self) -> Option<u64> {
+        self.stop_at
+    }
+
     /// Steps every tick that is due at local time `now`. `slot(t)` is the
     /// local time tick `t` is due ([`NetClient::step_slot`]); `on_hash`
     /// gets each published hash for the relay. Returns the ticks stepped.
