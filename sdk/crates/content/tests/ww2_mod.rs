@@ -75,7 +75,8 @@ fn ww2_mod_loads_clean() {
     assert_eq!(map.size_m, 1024);
     assert_eq!(map.capture_points.len(), 5);
     assert_eq!(map.bases.len(), 2);
-    // Every faction fields one squad of each role.
+    // Every faction fields one squad of each role (S3: and its tank; the
+    // AT teams join with the AT-team stage, spec step 5).
     for f in d.factions.values() {
         let mut roles: Vec<SquadRole> = f.roster.iter().map(|s| d.squads[s].role).collect();
         roles.sort();
@@ -85,7 +86,8 @@ fn ww2_mod_loads_clean() {
                 SquadRole::Rifle,
                 SquadRole::Mg,
                 SquadRole::Engineer,
-                SquadRole::Mortar
+                SquadRole::Mortar,
+                SquadRole::Vehicle
             ]
         );
     }

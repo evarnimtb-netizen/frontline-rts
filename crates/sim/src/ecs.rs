@@ -135,6 +135,15 @@ pub enum EntityKind {
     /// A dead soldier, kept for the presenter until `Combat::corpse` runs
     /// out (match mode). Not in squads, the spatial hash or `soldiers()`.
     Corpse = 2,
+    /// A vehicle (S3, `crate::vehicle`): a squad of one with a
+    /// `MatchState::vehicles` entry. Uses the `transform`, `velocity`,
+    /// `owner`, `squad` and `combat.seen_by` columns; the others stay at
+    /// their defaults. Not in the soldier spatial hash (the vehicle index
+    /// holds it).
+    Vehicle = 3,
+    /// A knocked-out vehicle: keeps its id and `MatchState::vehicles`
+    /// entry (`wreck_tick` set), no squad. Belongs to no player in play.
+    Wreck = 4,
 }
 
 /// Position (z is terrain height for ground units) and heading.

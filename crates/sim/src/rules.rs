@@ -3,7 +3,8 @@
 //! deaths and corpse removal, so it sees the tick's final positions.
 //!
 //! * **Capture.** A point counts the living soldiers of each player within
-//!   `capture_radius` (soldiers of retreating squads do not count). With
+//!   `capture_radius` (soldiers of retreating squads do not count; vehicles
+//!   neither capture nor contest, S3). With
 //!   two or more players present it is contested and frozen. With one
 //!   player `p` present who does not own it, progress toward `p` grows by
 //!   [`capture_rate`] per tick; at [`capture_full`] the point flips to `p`.
@@ -20,7 +21,7 @@
 //!   standing player by `d` loses `d · ticket_drain_per_min_per_point`
 //!   tickets per minute (fractions carried in `drain_acc`).
 //! * **Victory.** A player is out when his tickets reach 0, when he has no
-//!   soldiers, no call-ins on the way and too little manpower for his
+//!   soldiers and no vehicles, no call-ins on the way and too little manpower for his
 //!   cheapest squad, or when he surrenders. The last player standing wins;
 //!   if the rest are knocked out in the same tick it is a draw.
 //!
@@ -29,7 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ecs::{Entities, PlayerId};
+use crate::ecs::{Entities, EntityKind, PlayerId};
 use crate::fx::{Fx, FxVec2};
 use crate::game::{MatchState, Order, Outcome};
 
@@ -198,6 +199,12 @@ impl MatchState {
         let mut alive = vec![0u32; np];
         for id in ents.soldiers() {
             alive[ents.owner[id.index()].0 as usize] += 1;
+        }
+        // A player with a live vehicle is not wiped out (S3).
+        for id in self.vehicles.keys() {
+            if ents.kind[id.index()] == EntityKind::Vehicle {
+                alive[ents.owner[id.index()].0 as usize] += 1;
+            }
         }
         for (p, a) in alive.iter().enumerate() {
             let f = &self.setup.factions[self.setup.players[p].faction as usize];

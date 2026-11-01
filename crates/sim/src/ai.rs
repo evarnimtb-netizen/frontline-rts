@@ -363,6 +363,11 @@ impl Planner<'_> {
                 continue;
             }
             let ty = &g.setup.squad_types[sq.type_idx as usize];
+            // The S1 planner commands soldier squads only; vehicle
+            // behaviour comes with the S3 AI stage.
+            if ty.vehicle.is_some() {
+                continue;
+            }
             mine.push(Mine {
                 id,
                 role: ty.role,

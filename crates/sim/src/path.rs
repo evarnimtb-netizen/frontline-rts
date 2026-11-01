@@ -27,6 +27,17 @@
 //!   overruns the budget leaves a debt that delays the next ones, so the
 //!   amortised cost per tick stays at the budget.
 //!
+//! * Vehicles (S3, [`find_vehicle_path`]) search the same grid with their own
+//!   costs: slope as infantry but impassable above the vehicle's
+//!   `max_slope_pct`; woods ×2; ground dug 0.4–1.0 m ×1.5 and 1.0 m or more
+//!   ×4 (crossing rules apply when driving); vehicle-blocked nodes
+//!   impassable (the dilated block layer, one bit per neighbour check); no
+//!   trench discount; the block layer's clearance band ×4. A stuck re-path
+//!   makes one `avoid` node 8× dearer.
+//!   Blocked nodes next to the start are passable, so a vehicle standing at
+//!   the edge of a blocked area can drive out. Smoothing never keeps a
+//!   segment that enters the clearance band.
+//!
 //! The scratch arrays here are reset per search and never carry state across
 //! ticks, so they are neither saved nor hashed.
 
@@ -34,7 +45,8 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 use crate::fx::{Fx, FxVec2};
-use crate::terrain::{Heightfield, SPACING_M};
+use crate::terrain::{FLAG_WOODS, Heightfield, SPACING_M};
+use crate::vehicle::{AVOID_COST_PCT, BlockLayer, MARGIN_COST_PCT};
 
 const STRAIGHT: u32 = 1000;
 const DIAGONAL: u32 = 1414;
@@ -59,6 +71,23 @@ pub struct PathCost {
     /// Step cost between two trench nodes, in percent.
     pub trench_cost_pct: u32,
 }
+
+/// Vehicle costs on top of [`PathCost`] (S3).
+#[derive(Copy, Clone, Debug)]
+pub struct VehiclePathCost<'a> {
+    pub block: &'a BlockLayer,
+    /// Node index made [`AVOID_COST_PCT`] dearer.
+    pub avoid: Option<u32>,
+}
+
+/// Woods step cost for vehicles, percent.
+const VEHICLE_WOODS_PCT: u64 = 200;
+/// Ground dug at least 0.4 m (craters), percent.
+const VEHICLE_DUG_PCT: u64 = 150;
+const VEHICLE_DUG_DM: u8 = 4;
+/// Ground dug at least 1.0 m (trenches, big craters), percent.
+const VEHICLE_DEEP_PCT: u64 = 400;
+const VEHICLE_DEEP_DM: u8 = 10;
 
 /// Result of [`find_path`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -151,6 +180,67 @@ pub fn find_path(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
+    search(terrain, from, to, cost, None, max_expansions, s)
+}
+
+/// Finds a vehicle path (module docs): `cost.max_slope_pct` is the
+/// vehicle's, `cost.trench_cost_pct` is ignored.
+pub fn find_vehicle_path(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    vehicle: &VehiclePathCost,
+    max_expansions: u32,
+    s: &mut PathScratch,
+) -> PathResult {
+    search(terrain, from, to, cost, Some(vehicle), max_expansions, s)
+}
+
+/// Vehicle step-cost multiplier (percent) into node `(mx, my)`, or `None`
+/// if it is blocked.
+#[inline]
+fn vehicle_pct(
+    terrain: &Heightfield,
+    v: &VehiclePathCost,
+    mx: u32,
+    my: u32,
+    near_start: bool,
+) -> Option<u64> {
+    let dim = terrain.dim();
+    let m = my * dim + mx;
+    if v.block.is_blocked(m) && !near_start {
+        return None;
+    }
+    let mut pct = 100u64;
+    let flags = terrain.flags();
+    if !flags.is_empty() && flags[m as usize] & FLAG_WOODS != 0 {
+        pct = pct * VEHICLE_WOODS_PCT / 100;
+    }
+    let dug = terrain.dug_dm(mx, my);
+    if dug >= VEHICLE_DEEP_DM {
+        pct = pct * VEHICLE_DEEP_PCT / 100;
+    } else if dug >= VEHICLE_DUG_DM {
+        pct = pct * VEHICLE_DUG_PCT / 100;
+    }
+    if v.avoid == Some(m) {
+        pct = pct * AVOID_COST_PCT as u64 / 100;
+    }
+    if v.block.is_margin(m) {
+        pct = pct * MARGIN_COST_PCT as u64 / 100;
+    }
+    Some(pct)
+}
+
+fn search(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    vehicle: Option<&VehiclePathCost>,
+    max_expansions: u32,
+    s: &mut PathScratch,
+) -> PathResult {
     let dim = terrain.dim();
     let to = terrain.clamp(to);
     let (sx, sy) = terrain.nearest_grid(from);
@@ -164,7 +254,7 @@ pub fn find_path(
     s.parent[start as usize] = start;
     s.seen[start as usize] = stamp;
     let near = sx.abs_diff(tx).max(sy.abs_diff(ty)) <= TRENCH_SEARCH_NODES;
-    let weight = if near && terrain.is_trench(sx, sy) {
+    let weight = if vehicle.is_none() && near && terrain.is_trench(sx, sy) {
         H_WEIGHT_PCT * cost.trench_cost_pct / 100
     } else {
         H_WEIGHT_PCT
@@ -223,11 +313,24 @@ pub fn find_path(
                 continue;
             }
             let diagonal = dx != 0 && dy != 0;
+            // Vehicles: blocked nodes are walls, except right at the start.
+            let near_start = |x: u32, y: u32| x.abs_diff(sx) <= 1 && y.abs_diff(sy) <= 1;
+            let vpct = match vehicle {
+                None => None,
+                Some(v) => match vehicle_pct(terrain, v, mx, my, near_start(mx, my)) {
+                    None => continue,
+                    some => some,
+                },
+            };
             // No corner cutting: a diagonal step needs both straight steps
             // around it passable (a wall's corner is not a gap).
             if diagonal
                 && (step_cost(hn, terrain.grid_height(mx, ny), STRAIGHT, cost).is_none()
-                    || step_cost(hn, terrain.grid_height(nx, my), STRAIGHT, cost).is_none())
+                    || step_cost(hn, terrain.grid_height(nx, my), STRAIGHT, cost).is_none()
+                    || vehicle.is_some_and(|v| {
+                        (v.block.is_blocked(ny * dim + mx) && !near_start(mx, ny))
+                            || (v.block.is_blocked(my * dim + nx) && !near_start(nx, my))
+                    }))
             {
                 continue;
             }
@@ -235,7 +338,9 @@ pub fn find_path(
             let Some(mut c) = step_cost(hn, terrain.grid_height(mx, my), base, cost) else {
                 continue;
             };
-            if n_trench && terrain.is_trench(mx, my) {
+            if let Some(pct) = vpct {
+                c = (c as u64 * pct / 100).min(u32::MAX as u64 / 4) as u32;
+            } else if n_trench && terrain.is_trench(mx, my) {
                 c = (c as u64 * cost.trench_cost_pct as u64 / 100) as u32;
             }
             // Saturating: extreme slope rules on a large map could exceed
@@ -270,7 +375,7 @@ pub fn find_path(
     } else if grid.is_empty() {
         grid.push(terrain.clamp(from));
     }
-    let points = smooth(terrain, terrain.clamp(from), &grid, cost);
+    let points = smooth(terrain, terrain.clamp(from), &grid, cost, vehicle);
     PathResult {
         points,
         expansions,
@@ -314,7 +419,27 @@ fn segment_in_trench(terrain: &Heightfield, a: FxVec2, b: FxVec2) -> bool {
 /// next [`SMOOTH_LOOKAHEAD`] nodes whose straight segment is no steeper than
 /// the grid path it replaces (or gentle anyway), and stays in the trench
 /// network if the grid path it replaces does.
-fn smooth(terrain: &Heightfield, from: FxVec2, grid: &[FxVec2], cost: &PathCost) -> Vec<FxVec2> {
+fn smooth(
+    terrain: &Heightfield,
+    from: FxVec2,
+    grid: &[FxVec2],
+    cost: &PathCost,
+    vehicle: Option<&VehiclePathCost>,
+) -> Vec<FxVec2> {
+    // Vehicles: the dearest node a segment touches (2 m samples), `None`
+    // for a blocked one. A shortcut may not touch dearer ground than the
+    // grid nodes it replaces, nor the clearance band.
+    let dear = |v: &VehiclePathCost, a: FxVec2, b: FxVec2| -> Option<u64> {
+        let d = b - a;
+        let steps = (d.length().raw() >> (Fx::FRAC_BITS + 1)).max(1);
+        let mut worst = 0u64;
+        for k in 0..=steps {
+            let p = a + FxVec2::new(d.x.mul_int(k).div_int(steps), d.y.mul_int(k).div_int(steps));
+            let (gx, gy) = terrain.nearest_grid(p);
+            worst = worst.max(vehicle_pct(terrain, v, gx, gy, false)?);
+        }
+        Some(worst)
+    };
     let mut out = Vec::new();
     let mut anchor = from;
     let mut i = 0usize; // next grid node not yet passed
@@ -326,11 +451,16 @@ fn smooth(terrain: &Heightfield, from: FxVec2, grid: &[FxVec2], cost: &PathCost)
             let (gx, gy) = terrain.nearest_grid(p);
             terrain.is_trench(gx, gy)
         };
-        let mut all_trench = at(anchor);
+        let mut all_trench = vehicle.is_none() && at(anchor);
+        let mut path_dear = 0u64;
         let hi = (i + SMOOTH_LOOKAHEAD).min(grid.len() - 1);
         for (j, &node) in grid.iter().enumerate().take(hi + 1).skip(i) {
             path_worst = path_worst.max(segment_grade(terrain, prev, node));
             all_trench &= at(node);
+            if let Some(v) = vehicle {
+                let (gx, gy) = terrain.nearest_grid(node);
+                path_dear = path_dear.max(vehicle_pct(terrain, v, gx, gy, true).unwrap_or(0));
+            }
             prev = node;
             if j == i {
                 continue;
@@ -338,6 +468,10 @@ fn smooth(terrain: &Heightfield, from: FxVec2, grid: &[FxVec2], cost: &PathCost)
             let allowed = path_worst.max(SMOOTH_GENTLE_PCT).min(cost.max_slope_pct);
             if segment_grade(terrain, anchor, node) <= allowed
                 && (!all_trench || segment_in_trench(terrain, anchor, node))
+                && vehicle.is_none_or(|v| {
+                    !v.block.segment_in_margin(terrain, anchor, node)
+                        && dear(v, anchor, node).is_some_and(|d| d <= path_dear.max(100))
+                })
             {
                 best = j;
             }
@@ -515,5 +649,115 @@ mod tests {
         assert!(a.reached);
         assert_eq!(a, b);
         assert_eq!(a, c);
+    }
+
+    // ---------------------------------------------------------- vehicles --
+
+    fn layer(t: &Heightfield, walls: &[crate::vehicle::Footprint]) -> BlockLayer {
+        let mut b = BlockLayer::new(t.dim(), 19);
+        b.mark_all();
+        b.update(t, &[], walls);
+        b
+    }
+
+    fn passes_near(points: &[FxVec2], p: FxVec2, m: i32) -> bool {
+        let mut prev = points[0];
+        for &q in points {
+            // Distance from p to the segment prev → q (coarse: 1 m steps).
+            let d = q - prev;
+            let n = (d.length().raw() >> Fx::FRAC_BITS).max(1);
+            for k in 0..=n {
+                let s = prev + FxVec2::new(d.x.mul_int(k).div_int(n), d.y.mul_int(k).div_int(n));
+                if (s - p).length() < Fx::from_int(m) {
+                    return true;
+                }
+            }
+            prev = q;
+        }
+        false
+    }
+
+    #[test]
+    fn vehicle_paths_go_round_blocked_nodes_with_clearance() {
+        let t = flat(256);
+        // A wall across x = 128 from y = 0 to 180 (a long wreck row).
+        let wall = crate::vehicle::Footprint {
+            center: FxVec2::from_int(128, 90),
+            fwd: FxVec2::new(Fx::ZERO, Fx::ONE),
+            half_x: Fx::from_int(88),
+            half_y: Fx::ONE,
+        };
+        let b = layer(&t, &[wall]);
+        let v = VehiclePathCost {
+            block: &b,
+            avoid: None,
+        };
+        let mut s = PathScratch::default();
+        let (from, to) = (FxVec2::from_int(60, 60), FxVec2::from_int(200, 60));
+        let r = find_vehicle_path(&t, from, to, &COST, &v, 100_000, &mut s);
+        assert!(r.reached);
+        let mut prev = from;
+        for p in &r.points {
+            assert!(!b.segment_blocked(&t, prev, *p), "{prev:?} → {p:?}");
+            prev = *p;
+        }
+        // Round the wall's end (y ≈ 182 + padding), not through it.
+        assert!(
+            r.points.iter().any(|p| p.y > Fx::from_int(186)),
+            "{:?}",
+            r.points
+        );
+        // Infantry walk straight through (they climb over wrecks... and
+        // know nothing of the layer).
+        let r = find_path(&t, from, to, &COST, 100_000, &mut s);
+        assert!(r.points.iter().all(|p| p.y < Fx::from_int(100)));
+    }
+
+    #[test]
+    fn vehicle_paths_avoid_dug_ground_and_the_avoided_node() {
+        // A 1.5 m deep cut across the straight line, 24 m long.
+        let mut t = flat(256);
+        t.edit((100 * 4, 60 * 4), (104 * 4, 84 * 4), 1, |_, _, b, _| {
+            b - Fx::from_milli(1500)
+        });
+        let b = layer(&t, &[]);
+        let v = VehiclePathCost {
+            block: &b,
+            avoid: None,
+        };
+        let mut s = PathScratch::default();
+        let (from, to) = (FxVec2::from_int(60, 72), FxVec2::from_int(150, 72));
+        let r = find_vehicle_path(&t, from, to, &COST, &v, 100_000, &mut s);
+        assert!(r.reached);
+        assert!(
+            !passes_near(
+                &[&[from][..], &r.points].concat(),
+                FxVec2::from_int(102, 72),
+                6
+            ),
+            "round the ×4 ground: {:?}",
+            r.points
+        );
+        // Infantry cross it.
+        let r = find_path(&t, from, to, &COST, 100_000, &mut s);
+        assert!(passes_near(
+            &[&[from][..], &r.points].concat(),
+            FxVec2::from_int(102, 72),
+            3
+        ));
+        // Flat: the straight line, unless its middle node is avoided.
+        let t = flat(256);
+        let b = layer(&t, &[]);
+        let mid = FxVec2::from_int(100, 72);
+        let (gx, gy) = t.nearest_grid(mid);
+        let avoided = VehiclePathCost {
+            block: &b,
+            avoid: Some(gy * t.dim() + gx),
+        };
+        let r = find_vehicle_path(&t, from, to, &COST, &avoided, 100_000, &mut s);
+        let path = [&[from][..], &r.points].concat();
+        assert!(!passes_near(&path, mid, 1), "{:?}", r.points);
+        let r = find_vehicle_path(&t, from, to, &COST, &v, 100_000, &mut s);
+        assert!(passes_near(&[&[from][..], &r.points].concat(), mid, 1));
     }
 }

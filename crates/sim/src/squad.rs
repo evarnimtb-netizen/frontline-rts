@@ -328,6 +328,13 @@ impl MatchState {
         let prone_pct = mv.prone_speed_pct;
         let mut form: Vec<SimId> = Vec::new();
         for (&id, sq) in self.squads.iter_mut() {
+            // Vehicle squads drive in the Movement stage (`crate::vehicle`).
+            if self.setup.squad_types[sq.type_idx as usize]
+                .vehicle
+                .is_some()
+            {
+                continue;
+            }
             form.clear();
             form.extend(
                 sq.members

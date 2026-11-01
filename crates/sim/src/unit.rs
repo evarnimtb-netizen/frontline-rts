@@ -173,6 +173,29 @@ impl MatchState {
         (!men.is_empty()).then_some(men)
     }
 
+    /// The vehicle squads `ids` names (S3: a vehicle is a squad of one, so
+    /// its id stands for its squad), ascending. Empty for more than
+    /// [`MAX_UNITS`] ids.
+    pub(crate) fn vehicle_squads(&self, ctx: &Ctx, p: PlayerId, ids: &[SimId]) -> Vec<SquadId> {
+        if ids.len() > MAX_UNITS {
+            return Vec::new();
+        }
+        let ents = &*ctx.ents;
+        let mut out: Vec<SquadId> = ids
+            .iter()
+            .filter_map(|&v| {
+                let i = v.index();
+                (i < ents.len() && ents.kind[i] == EntityKind::Vehicle && ents.owner[i] == p)
+                    .then(|| ents.squad[i])
+                    .flatten()
+            })
+            .filter(|s| self.squads.contains_key(s))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// Splits sorted `men` into squads named whole (every living man) and
     /// the other men, both ascending.
     fn split_whole(&self, ctx: &Ctx, men: &[SimId]) -> (Vec<SquadId>, Vec<SimId>) {
@@ -207,17 +230,22 @@ impl MatchState {
         ids: &[SimId],
         order: UnitOrder,
     ) -> bool {
+        let squad_order = match order {
+            UnitOrder::Move { target } => Order::Move { target },
+            UnitOrder::AttackMove { target } => Order::AttackMove { target },
+            _ => Order::Retreat,
+        };
+        // Vehicles in the set get the squad order (S3).
+        let vehicles = self.vehicle_squads(ctx, p, ids);
+        for &id in &vehicles {
+            self.order_move(ctx, p, id, squad_order.clone());
+        }
         let Some(men) = self.unit_set(ctx, p, ids) else {
-            return false;
+            return !vehicles.is_empty();
         };
         let (whole, rest) = self.split_whole(ctx, &men);
         for id in whole {
-            let squad_order = match order {
-                UnitOrder::Move { target } => Order::Move { target },
-                UnitOrder::AttackMove { target } => Order::AttackMove { target },
-                _ => Order::Retreat,
-            };
-            self.order_move(ctx, p, id, squad_order);
+            self.order_move(ctx, p, id, squad_order.clone());
         }
         if rest.is_empty() {
             return true;
@@ -262,8 +290,12 @@ impl MatchState {
 
     /// `StopUnits`.
     pub(crate) fn units_stop(&mut self, ctx: &mut Ctx, p: PlayerId, ids: &[SimId]) -> bool {
+        let vehicles = self.vehicle_squads(ctx, p, ids);
+        for &id in &vehicles {
+            self.order_stop(ctx, p, id);
+        }
         let Some(men) = self.unit_set(ctx, p, ids) else {
-            return false;
+            return !vehicles.is_empty();
         };
         let (whole, rest) = self.split_whole(ctx, &men);
         for id in whole {

@@ -11,8 +11,9 @@
 //! * A "globals" hash over everything that is not per-chunk: config, tick,
 //!   id allocator (high-water mark and free list), projectile free list,
 //!   stats counters, the terrain hash and, in match mode, the match setup
-//!   bytes and the whole [`MatchState`] (players, squads, queues: small, so
-//!   it is simply re-hashed at every publish).
+//!   bytes and the whole [`MatchState`] (players, squads, queues, S3
+//!   vehicle states and AT-ditch lines: small, so it is simply re-hashed
+//!   at every publish).
 //! * In match mode each entity also hashes its `squad` link, its combat
 //!   state, its soldier-level order state (`unit`) and its items (`kit`),
 //!   and match projectiles
@@ -376,6 +377,11 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
                     1u8.put(out);
                     m.0.put(out);
                 }
+                PathReq::Vehicle { squad, avoid } => {
+                    2u8.put(out);
+                    squad.0.put(out);
+                    avoid.unwrap_or(u32::MAX).put(out);
+                }
             }
         }
     }
@@ -418,6 +424,15 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         c.item.put(out);
         c.pos.put(out);
         c.age.put(out);
+    }
+    // S3 vehicles (`VehicleState` through postcard, as the AI state) and
+    // the AT-ditch lines.
+    let bytes = postcard::to_allocvec(&g.vehicles).expect("serialising vehicles cannot fail");
+    (bytes.len() as u32).put(out);
+    out.extend_from_slice(&bytes);
+    (g.at_ditches.len() as u32).put(out);
+    for l in &g.at_ditches {
+        l.put(out);
     }
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).

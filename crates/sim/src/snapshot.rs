@@ -21,8 +21,10 @@
 //! rockets in flight ([`ShellSnapshot`]), the tick's armour events
 //! ([`ArmourEvent`]), and per player the vehicle count, limit and unlock
 //! tick. The contract is frozen in `godot/docs/match_state.md` "Vehicles
-//! (S3)"; the sim fills these lists from S3 sim stage 3 on (empty until
-//! then).
+//! (S3)"; the sim fills `vehicles` and the per-player fields from S3 sim
+//! stage 2 on (shells and armour events with gunnery). Vehicle squads are
+//! not in `squads` (a vehicle's squad is a squad of one; the vehicle is in
+//! `vehicles`). `players[].pop` counts each live or queued vehicle's pop.
 //!
 //! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
 //! soldier (own soldiers always). A presenter for local player `p` draws an
@@ -555,15 +557,17 @@ impl RenderSnapshot {
                     ticks_left: c.corpse,
                     seen_by: c.seen_by,
                 }),
-                EntityKind::Vacant => {}
+                EntityKind::Vacant | EntityKind::Vehicle | EntityKind::Wreck => {}
             }
         }
         self.projectiles.clear();
         self.projectiles
             .extend(pool.slots().iter().flatten().map(|p| p.pos.to_f32()));
-        // S3: filled once vehicles exist (sim stage 3 on).
         self.vehicles.clear();
         self.shells.clear();
+        if let Some(g) = game {
+            self.fill_vehicles(tick, ents, g);
+        }
 
         self.squads.clear();
         self.players.clear();
@@ -576,7 +580,7 @@ impl RenderSnapshot {
             return;
         };
         for (id, sq) in g.squads() {
-            if sq.members.is_empty() {
+            if sq.members.is_empty() || g.is_vehicle_squad(*id) {
                 continue;
             }
             let lead = sq.lead(ents);
@@ -633,16 +637,6 @@ impl RenderSnapshot {
             });
         }
         for (p, pl) in g.players().iter().enumerate() {
-            let types = &g.setup().squad_types;
-            let alive = ents
-                .soldiers()
-                .filter(|id| ents.owner()[id.index()].0 as usize == p)
-                .count() as u32;
-            let queued: u32 = pl
-                .call_ins
-                .iter()
-                .map(|c| types[c.squad_type as usize].men as u32)
-                .sum();
             let id = PlayerId(p as u8);
             self.players.push(PlayerSnapshot {
                 manpower: pl.manpower,
@@ -651,7 +645,7 @@ impl RenderSnapshot {
                 drain_per_min: g.drain_per_min(id),
                 surrendered: pl.surrendered,
                 defeat: pl.defeat,
-                pop: alive + queued,
+                pop: g.population(ents, id),
                 pop_cap: g.setup().rules.pop_cap,
                 kills: pl.kills,
                 losses: pl.losses,
@@ -662,7 +656,7 @@ impl RenderSnapshot {
                     .iter()
                     .map(|c| (c.squad_type, c.ready_tick.saturating_sub(tick) as u32))
                     .collect(),
-                vehicles_counted: 0,
+                vehicles_counted: g.vehicles_counted(ents, id).min(u8::MAX as u32) as u8,
                 vehicle_limit: g.setup().rules.vehicles.limit.min(u8::MAX as u32) as u8,
                 unlock_tick: g.setup().rules.vehicles.unlock_ticks as u64,
             });
@@ -683,6 +677,107 @@ impl RenderSnapshot {
         self.outcome = g.outcome();
         if let Outcome::Won { winner } = g.outcome() {
             self.winner = Some(winner.0);
+        }
+    }
+
+    /// Fills `vehicles`: every vehicle and wreck, ascending id, all fields
+    /// (the bridge zeroes the own-only ones for enemies).
+    fn fill_vehicles(&mut self, tick: u64, ents: &Entities, g: &MatchState) {
+        use crate::vehicle::AmmoChoice;
+        use frontline_content::{COMPONENTS, SEAT_ROLES, SeatRole};
+        let setup = g.setup();
+        let vr = &setup.rules.vehicles;
+        let all = ((1u32 << g.players().len()) - 1) as u16;
+        let moving = crate::fx::Fx::from(vr.moving_speed);
+        let smoke_ticks = WRECK_SMOKE_S as u64 * setup.tick_hz as u64;
+        for (&id, vs) in g.vehicles() {
+            let i = id.index();
+            let v = &setup.vehicles[vs.type_idx as usize];
+            let t = &ents.transform()[i];
+            let wreck = vs.wreck_tick.is_some();
+            let owner = ents.owner()[i].0;
+            let mut flags = 0u16;
+            {
+                use vehicle_flags::*;
+                let mut set = |f: u16, on: bool| {
+                    if on {
+                        flags |= f;
+                    }
+                };
+                set(MOVING, vs.speed.abs() > moving);
+                set(REVERSING, vs.speed < crate::fx::Fx::ZERO);
+                set(BOGGED, vs.bog > 0 || vs.on_blocked);
+                set(IMMOBILISED, !wreck && vs.immobilised(v));
+                set(BURNING, vs.burn > 0);
+                set(REPAIRING, vs.repairing.is_some());
+                set(CROSSING, vs.crossing);
+                set(WRECK, wreck);
+                set(
+                    KNOCKED_OUT,
+                    vs.wreck_tick
+                        .is_some_and(|w| tick.saturating_sub(w) < smoke_ticks),
+                );
+            }
+            let mut seats = [SeatSnap::Absent as u8; SEAT_ROLES];
+            for role in SeatRole::ALL {
+                let Some(st) = vs.seat(v, role) else { continue };
+                let snap = if st.swap > 0 {
+                    SeatSnap::Swapping
+                } else if st.hp == 0 {
+                    SeatSnap::Empty
+                } else if (st.hp as u32) < vr.wounded_hp {
+                    SeatSnap::Wounded
+                } else {
+                    SeatSnap::Ok
+                };
+                seats[role.index()] = snap as u8;
+            }
+            let mut components = [0u8; COMPONENTS];
+            for c in &v.components {
+                let hp = vs.component(c.kind) as u32;
+                components[c.kind.index()] = (hp * 100 / c.hp.max(1)).min(100) as u8;
+            }
+            let gun = &setup.weapons[v.main_gun().weapon as usize];
+            let reload_total = gun.reload_ticks.max(1);
+            self.vehicles.push(VehicleSnapshot {
+                id: id.0,
+                squad: ents.squad()[i].map_or(NO_SQUAD, |s| s.0),
+                type_idx: vs.type_idx,
+                owner: if wreck { WRECK_OWNER } else { owner },
+                pos: t.pos.to_f32(),
+                yaw: t.yaw.to_f32(),
+                pitch: vs.pitch.to_f32(),
+                roll: vs.roll.to_f32(),
+                turret_yaw: vs.turret_yaw.to_f32(),
+                gun_pitch: vs.gun_pitch.to_f32(),
+                speed: vs.speed.to_f32(),
+                flags,
+                seen_by: if wreck {
+                    all
+                } else {
+                    ents.combat()[i].seen_by | (1 << owner)
+                },
+                seats,
+                components,
+                repairing: vs.repairing.unwrap_or(NONE_U8),
+                ammo: [
+                    vs.ammo.first().copied().unwrap_or(0),
+                    vs.ammo.get(1).copied().unwrap_or(0),
+                ],
+                loaded: match vs.loaded {
+                    None => LoadedSnap::None,
+                    Some(0) => LoadedSnap::Ap,
+                    Some(_) => LoadedSnap::He,
+                } as u8,
+                ammo_choice: match vs.ammo_choice {
+                    AmmoChoice::Auto => 0,
+                    AmmoChoice::Ap => 1,
+                    AmmoChoice::He => 2,
+                },
+                reload_pct: (100 - (vs.reload as u32 * 100 / reload_total).min(100)) as u8,
+                target: vs.target.map_or(u32::MAX, |t| t.0),
+                followers: vs.followers.len().min(u8::MAX as usize) as u8,
+            });
         }
     }
 

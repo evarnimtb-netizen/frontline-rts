@@ -44,6 +44,7 @@ use crate::spatial::SpatialHash;
 use crate::spotting::{self, SpotPass};
 use crate::systems::{self, FireRequest};
 use crate::terrain::{Heightfield, TerrainKind};
+use crate::vehicle::{Obstacles, VehicleState};
 
 /// Sim tick rate, a match constant (§2.2). 30 Hz is the default; 20 Hz is
 /// allowed only as a wholesale replacement.
@@ -575,6 +576,9 @@ impl World {
             fused: Vec::new(),
             state,
         };
+        if let Some(g) = world.state.game.as_mut() {
+            g.rebuild_vehicle_derived(&world.state.entities, &world.state.terrain);
+        }
         world.refresh_hashes();
         world.fill_snapshot();
         Ok(world)
@@ -730,7 +734,12 @@ impl World {
                 .kind
                 .iter()
                 .zip(&st.entities.combat)
-                .any(|(k, c)| *k == EntityKind::Corpse || *c != Default::default())
+                .any(|(k, c)| {
+                    matches!(
+                        k,
+                        EntityKind::Corpse | EntityKind::Vehicle | EntityKind::Wreck
+                    ) || *c != Default::default()
+                })
                 || st.entities.unit.iter().any(|u| *u != Default::default())
                 || st.entities.kit.iter().any(|k| *k != Default::default())
                 || st
@@ -914,8 +923,10 @@ impl World {
         }
         let t2 = Instant::now();
 
-        // 3. Movement: rebuild the spatial hash, plan (reads only the
-        //    previous state), then integrate (writes own entity only).
+        // 3. Movement: rebuild the spatial hash (and, S3, the vehicle index
+        //    and frames), plan (reads only the previous state), then
+        //    integrate (writes own entity only); then vehicles drive
+        //    serially in ascending id and the vehicle index is rebuilt.
         {
             let World {
                 state,
@@ -930,19 +941,31 @@ impl World {
                 entities,
                 terrain,
                 config,
+                game,
                 ..
             } = state;
             spatial.rebuild(entities);
+            if let Some(g) = game.as_mut() {
+                g.rebuild_vehicle_index(entities);
+            }
             planned.clear();
             planned.resize(entities.len(), FxVec2::ZERO);
             {
                 let (ents, spatial, params) = (&*entities, &*spatial, &config.soldier);
+                let obstacles =
+                    game.as_ref()
+                        .filter(|g| !g.vehicles.is_empty())
+                        .map(|g| Obstacles {
+                            derived: &g.vderived,
+                            velocity: &ents.velocity,
+                        });
+                let obstacles = obstacles.as_ref();
                 threads.install(|| {
                     planned
                         .par_chunks_mut(CHUNK_SIZE)
                         .enumerate()
                         .for_each(|(c, out)| {
-                            systems::plan_velocities(c, out, ents, spatial, params, hz)
+                            systems::plan_velocities(c, out, ents, spatial, obstacles, params, hz)
                         })
                 });
             }
@@ -966,8 +989,19 @@ impl World {
                     .collect_into_vec(flags)
             });
             hash.merge_entity_flags(flags);
-            // Ballistics and blasts test soldiers where they now stand.
-            if state.game.is_some() {
+            let soldier_r = state.config.soldier.radius;
+            if let Some(g) = state.game.as_mut() {
+                g.move_vehicles(
+                    &mut state.entities,
+                    &state.terrain,
+                    spatial,
+                    soldier_r,
+                    hash,
+                    seed,
+                    tick,
+                );
+                g.rebuild_vehicle_index(&state.entities);
+                // Ballistics and blasts test soldiers where they now stand.
                 spatial.rebuild(&state.entities);
             }
         }
@@ -1336,7 +1370,15 @@ impl World {
 
     /// Puts squad `id`'s men on a line through `center` across `facing` (a
     /// unit vector), holding and idle. Returns false for an unknown squad.
+    /// A vehicle squad's vehicle is placed at `center` facing `facing`
+    /// ([`World::place_vehicle`]).
     pub fn place_squad(&mut self, id: SquadId, center: FxVec2, facing: FxVec2) -> bool {
+        if let Some(g) = self.state.game.as_ref()
+            && g.is_vehicle_squad(id)
+        {
+            let v = g.squads[&id].members[0];
+            return self.place_vehicle(v, center, Fx::atan2(facing.y, facing.x));
+        }
         let Some(game) = self.state.game.as_mut() else {
             return false;
         };
@@ -1379,6 +1421,7 @@ impl World {
             q.retain(|r| match r {
                 crate::game::PathReq::Squad(s) => *s != id,
                 crate::game::PathReq::Unit(m) => !members.contains(m),
+                crate::game::PathReq::Vehicle { squad, .. } => *squad != id,
             });
         }
         self.refresh_hashes();
@@ -1410,6 +1453,149 @@ impl World {
             dig,
             self.state.tick,
         );
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Spawns a squad of `squad_type` for `player` at once (as a call-in
+    /// would, without cost, limits or delay) and places it at `center`
+    /// facing `facing` (a unit vector). Match worlds only.
+    pub fn spawn_squad_at(
+        &mut self,
+        player: PlayerId,
+        squad_type: u16,
+        center: FxVec2,
+        facing: FxVec2,
+    ) -> Option<SquadId> {
+        let game = self.state.game.as_mut()?;
+        if player.0 as usize >= game.players.len()
+            || squad_type as usize >= game.setup.squad_types.len()
+        {
+            return None;
+        }
+        let mut ctx = Ctx {
+            ents: &mut self.state.entities,
+            terrain: &self.state.terrain,
+            hash: &mut self.hash,
+            tick: self.state.tick,
+        };
+        let id = game.spawn_squad(&mut ctx, player, squad_type);
+        self.place_squad(id, center, facing);
+        Some(id)
+    }
+
+    /// Puts vehicle `id` at `pos` heading `yaw`, stopped, settled on the
+    /// ground, its squad idle and holding there (S3).
+    pub fn place_vehicle(&mut self, id: SimId, pos: FxVec2, yaw: Fx) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let i = id.index();
+        let ents = &mut self.state.entities;
+        if ents.kind.get(i) != Some(&EntityKind::Vehicle) {
+            return false;
+        }
+        let Some(vs) = game.vehicles.get_mut(&id) else {
+            return false;
+        };
+        let t = &self.state.terrain;
+        let xy = t.clamp(pos);
+        ents.transform[i].pos = xy.extend(t.height_at(xy));
+        ents.transform[i].yaw = yaw.wrap_angle();
+        ents.velocity[i] = Default::default();
+        vs.speed = Fx::ZERO;
+        vs.avg_vel = FxVec2::ZERO;
+        vs.reverse = false;
+        vs.progress_at = xy;
+        vs.progress_ticks = 0;
+        let geo = game.vderived.geo[vs.type_idx as usize];
+        crate::vehicle::settle(t, &game.vderived.block, &geo, vs, &mut ents.transform[i]);
+        if let Some(sid) = ents.squad[i]
+            && let Some(sq) = game.squads.get_mut(&sid)
+        {
+            sq.order = Order::Idle;
+            crate::vehicle::hold_vehicle(&mut sq.nav, xy);
+            sq.nav.goal = xy;
+            let f = crate::vehicle::yaw_dir(yaw);
+            sq.nav.heading = f;
+            sq.nav.facing = f;
+            for q in &mut game.path_queue.queues {
+                q.retain(
+                    |r| !matches!(r, crate::game::PathReq::Vehicle { squad, .. } if *squad == sid),
+                );
+            }
+        }
+        self.hash.mark_entity_chunk(id.chunk());
+        game.rebuild_vehicle_index(&self.state.entities);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Edits vehicle `id`'s state directly (staged tests: bogged, burning,
+    /// component or seat HP). The caller keeps it within its def's ranges.
+    pub fn edit_vehicle(&mut self, id: SimId, f: impl FnOnce(&mut VehicleState)) -> bool {
+        let Some(vs) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.vehicles.get_mut(&id))
+        else {
+            return false;
+        };
+        f(vs);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Knocks vehicle `id` out at once and turns it into a wreck (staged
+    /// tests; the Damage stage's knock-out uses the same conversion).
+    pub fn wreck_vehicle(&mut self, id: SimId) -> bool {
+        let tick = self.state.tick;
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Vehicle) {
+            return false;
+        }
+        game.make_wreck(&mut self.state.entities, &mut self.hash, id, tick);
+        game.rebuild_vehicle_index(&self.state.entities);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Digs a finished AT ditch along `line` at once (the rules' `at_ditch`
+    /// profile, berm on the left of the line direction for `front = 1`)
+    /// and records the line, so it blocks vehicles (S3). Match worlds only.
+    pub fn dig_at_ditch_now(&mut self, line: &[FxVec2], front: i8) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if !(2..=crate::game::MAX_DIG_POINTS).contains(&line.len())
+            || !line.iter().all(|q| self.state.terrain.contains(*q))
+            || game.at_ditches.len() >= crate::game::MAX_AT_DITCHES
+        {
+            return false;
+        }
+        let dig = &game.setup.rules.at_ditch;
+        let n = dig.passes as i32;
+        let len = crate::squad::polyline_length(line);
+        crate::dig::stamp(
+            &mut self.state.terrain,
+            line,
+            front,
+            Fx::ZERO,
+            len,
+            n,
+            n,
+            dig,
+            self.state.tick,
+        );
+        game.at_ditches.push(line.to_vec());
+        game.mark_ditch_block(line);
         self.refresh_hashes();
         self.fill_snapshot();
         true
@@ -1536,6 +1722,11 @@ impl World {
         hash.resize_entities(state.entities.chunk_count());
         state.terrain.take_dirty(dirty_tiles);
         hash.update_tiles(&state.terrain, dirty_tiles);
+        // The vehicle block layer follows terrain edits, ditch lines and
+        // wrecks once per tick (S3, `crate::vehicle`).
+        if let Some(g) = state.game.as_mut() {
+            g.update_block(&state.entities, &state.terrain, dirty_tiles);
+        }
         let ents = &state.entities;
         let pool = &state.projectiles;
         let squads = state.game.is_some();
@@ -2292,5 +2483,335 @@ mod tests {
             (t.yaw.raw() as i64 - expect).abs() <= 2
         });
         assert!(!linear);
+    }
+
+    // ------------------------------------------------------- S3 vehicles --
+
+    /// Kessel Ridge with the test unlock override and `wreck_cap` 1: a
+    /// German tank driving, a US tank holding, a wreck, a queued vehicle
+    /// path request and an AT-ditch line.
+    fn vehicle_world() -> (World, SimId, SimId) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let mut defs = frontline_content::ModDefs::load(&root).unwrap();
+        let rules = defs
+            .add_rules_override(&root.join("tests/rules_test_unlock.toml"))
+            .unwrap();
+        let mut req = frontline_content::MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Normal,
+        );
+        req.rules = rules;
+        let mut setup = defs.resolve(&req).unwrap();
+        setup.players.iter_mut().for_each(|p| p.is_ai = false);
+        setup.rules.vehicles.wreck_cap = 1;
+        let mut w = World::new_match(setup, 1).unwrap();
+        let ty = |w: &World, id: &str| w.match_setup().unwrap().squad_type_index(id).unwrap();
+        let (ger, usa) = (
+            ty(&w, "ww2:ger_pz4_h_squad"),
+            ty(&w, "ww2:usa_m4a3_75_squad"),
+        );
+        let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+        let a = w
+            .spawn_squad_at(PlayerId(0), ger, FxVec2::from_int(450, 500), east)
+            .unwrap();
+        let b = w
+            .spawn_squad_at(PlayerId(1), usa, FxVec2::from_int(600, 520), east)
+            .unwrap();
+        let c = w
+            .spawn_squad_at(PlayerId(1), usa, FxVec2::from_int(620, 560), east)
+            .unwrap();
+        let g = w.game().unwrap();
+        let (va, vc) = (g.squads[&a].members[0], g.squads[&c].members[0]);
+        let vb = g.squads[&b].members[0];
+        w.wreck_vehicle(vc);
+        w.dig_at_ditch_now(&[FxVec2::from_int(520, 430), FxVec2::from_int(520, 460)], 1);
+        let cmd = |seq, kind| Command {
+            player: PlayerId(0),
+            seq,
+            kind,
+        };
+        w.step(&[cmd(
+            0,
+            CommandKind::Move {
+                squad: a,
+                target: FxVec2::from_int(500, 470),
+            },
+        )]);
+        for _ in 0..40 {
+            w.step(&[]);
+        }
+        // Queue a request without serving it (setup-tool edit).
+        let g = w.state.game.as_mut().unwrap();
+        g.squads.get_mut(&a).unwrap().nav.phase = NavPhase::PathPending;
+        g.squads.get_mut(&a).unwrap().nav.path.clear();
+        g.squads.get_mut(&a).unwrap().nav.next = 0;
+        g.path_queue.queues[0].push(crate::game::PathReq::Vehicle {
+            squad: a,
+            avoid: Some(7),
+        });
+        w.refresh_hashes();
+        (w, va, vb)
+    }
+
+    #[test]
+    fn vehicle_state_is_saved_hashed_and_checked_on_load() {
+        let (w, va, vb) = vehicle_world();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.state_hash(), w.state_hash());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        let vs = &w.game().unwrap().vehicles[&va];
+        assert!(vs.speed != Fx::ZERO, "driving");
+        // Every field of `VehicleState` changes the hash. The destructure
+        // fails to compile when a field is added and not listed here.
+        let VehicleState {
+            type_idx: _,
+            pitch: _,
+            roll: _,
+            turret_yaw: _,
+            gun_pitch: _,
+            speed: _,
+            avg_vel: _,
+            reverse: _,
+            seats: _,
+            components: _,
+            ammo: _,
+            loaded: _,
+            ammo_choice: _,
+            reload: _,
+            target: _,
+            ranging: _,
+            since_fire: _,
+            burn: _,
+            repairing: _,
+            bog: _,
+            on_blocked: _,
+            crossing: _,
+            crossings: _,
+            clear_ticks: _,
+            progress_at: _,
+            progress_ticks: _,
+            repath_tick: _,
+            followers: _,
+            wreck_tick: _,
+        } = vs.clone();
+        type Edit = Box<dyn Fn(&mut VehicleState)>;
+        let edits: Vec<(&str, Edit)> = vec![
+            ("type_idx", Box::new(|v| v.type_idx ^= 1)),
+            ("pitch", Box::new(|v| v.pitch += Fx::EPSILON)),
+            ("roll", Box::new(|v| v.roll += Fx::EPSILON)),
+            ("turret_yaw", Box::new(|v| v.turret_yaw += Fx::EPSILON)),
+            ("gun_pitch", Box::new(|v| v.gun_pitch += Fx::EPSILON)),
+            ("speed", Box::new(|v| v.speed += Fx::EPSILON)),
+            ("avg_vel", Box::new(|v| v.avg_vel.y += Fx::EPSILON)),
+            ("reverse", Box::new(|v| v.reverse ^= true)),
+            ("seats.hp", Box::new(|v| v.seats[2].hp -= 1)),
+            ("seats.swap", Box::new(|v| v.seats[1].swap = 3)),
+            ("seats.swap_from", Box::new(|v| v.seats[1].swap_from = 4)),
+            ("components", Box::new(|v| v.components[3] -= 1)),
+            ("ammo", Box::new(|v| v.ammo[1] -= 1)),
+            ("loaded", Box::new(|v| v.loaded = Some(1))),
+            (
+                "ammo_choice",
+                Box::new(|v| v.ammo_choice = crate::vehicle::AmmoChoice::He),
+            ),
+            ("reload", Box::new(|v| v.reload = 9)),
+            ("target", Box::new(move |v| v.target = Some(vb))),
+            ("ranging", Box::new(|v| v.ranging = 2)),
+            ("since_fire", Box::new(|v| v.since_fire = 5)),
+            ("burn", Box::new(|v| v.burn = 1)),
+            ("repairing", Box::new(|v| v.repairing = Some(1))),
+            ("bog", Box::new(|v| v.bog = 1)),
+            ("on_blocked", Box::new(|v| v.on_blocked ^= true)),
+            ("crossing", Box::new(|v| v.crossing ^= true)),
+            ("crossings", Box::new(|v| v.crossings += 1)),
+            ("clear_ticks", Box::new(|v| v.clear_ticks = 7)),
+            ("progress_at", Box::new(|v| v.progress_at.x += Fx::EPSILON)),
+            ("progress_ticks", Box::new(|v| v.progress_ticks += 1)),
+            ("repath_tick", Box::new(|v| v.repath_tick = Some(1))),
+            ("followers", Box::new(|v| v.followers.push(SimId(1)))),
+            ("wreck_tick", Box::new(|v| v.wreck_tick = Some(1))),
+        ];
+        let base = w.full_state_hash();
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(st.game.as_mut().unwrap().vehicles.get_mut(&va).unwrap());
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(w2.full_state_hash(), w2.state_hash());
+        }
+        // The other S3 match state is hashed too.
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        let more: Vec<StateEdit> = vec![
+            Box::new(|s| s.game.as_mut().unwrap().at_ditches[0][1].y += Fx::ONE),
+            Box::new(|s| {
+                s.game.as_mut().unwrap().path_queue.queues[0][0] = crate::game::PathReq::Vehicle {
+                    squad: SquadId(3),
+                    avoid: Some(8),
+                }
+            }),
+        ];
+        for edit in more {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            assert_ne!(World::from_state(st, 1).unwrap().full_state_hash(), base);
+        }
+
+        // Loads reject broken vehicle state.
+        fn vehicle(s: &mut SimState, id: SimId) -> &mut VehicleState {
+            s.game.as_mut().unwrap().vehicles.get_mut(&id).unwrap()
+        }
+        let bad: Vec<(StateEdit, &str)> = vec![
+            (Box::new(move |s| vehicle(s, va).type_idx = 9), "vehicle"),
+            (
+                Box::new(move |s| vehicle(s, va).seats.pop().map(|_| ()).unwrap()),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).components[0] = 999),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).ammo[0] = 999),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).pitch = Fx::ONE),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).loaded = Some(5)),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).wreck_tick = Some(9_999_999)),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| {
+                    let man = s.entities.soldiers().next().unwrap();
+                    vehicle(s, va).target = Some(man)
+                }),
+                "wrong entity",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).followers = vec![vb]),
+                "wrong entity",
+            ),
+            (
+                Box::new(move |s| {
+                    s.game.as_mut().unwrap().vehicles.remove(&va);
+                }),
+                "vehicle",
+            ),
+            (
+                Box::new(move |s| s.entities.combat[va.index()].hp = 5),
+                "combat",
+            ),
+            (
+                Box::new(|s| s.game.as_mut().unwrap().at_ditches[0].truncate(1)),
+                "AT-ditch",
+            ),
+            (
+                Box::new(|s| {
+                    s.game.as_mut().unwrap().path_queue.queues[0][0] =
+                        crate::game::PathReq::Vehicle {
+                            squad: SquadId(0),
+                            avoid: None,
+                        }
+                }),
+                "path request",
+            ),
+            (
+                Box::new(|s| {
+                    s.game.as_mut().unwrap().path_queue.queues[0][0] =
+                        crate::game::PathReq::Vehicle {
+                            squad: SquadId(3),
+                            avoid: Some(u32::MAX),
+                        }
+                }),
+                "path request",
+            ),
+            // A second wreck over the cap of 1: turn the US tank into one.
+            (
+                Box::new(move |s| {
+                    let sq = s.entities.squad[vb.index()].take().unwrap();
+                    s.entities.kind[vb.index()] = EntityKind::Wreck;
+                    let g = s.game.as_mut().unwrap();
+                    g.squads.remove(&sq);
+                    g.vehicles.get_mut(&vb).unwrap().wreck_tick = Some(1);
+                }),
+                "cap",
+            ),
+        ];
+        for (edit, want) in bad {
+            let bytes = save_edited(&w, edit);
+            assert!(World::load(&bytes, 1).is_err(), "accepted: {want}");
+            let e = load_err(&bytes);
+            assert!(e.contains(want), "{want}: {e}");
+        }
+    }
+
+    #[test]
+    fn the_wreck_cap_removes_the_oldest_and_frees_its_id() {
+        let (mut w, va, vb) = vehicle_world();
+        // `vehicle_world` already made one wreck; a second goes over the
+        // cap of 1, so the first is removed and its id freed.
+        let first = *w
+            .game()
+            .unwrap()
+            .vehicles
+            .iter()
+            .find(|(_, vs)| vs.wreck_tick.is_some())
+            .unwrap()
+            .0;
+        let near = w.entities().transform[first.index()].pos.xy();
+        assert!(
+            w.game()
+                .unwrap()
+                .vderived
+                .block
+                .blocked_at(&w.state.terrain, near)
+        );
+        assert!(w.wreck_vehicle(vb));
+        let g = w.game().unwrap();
+        assert!(!g.vehicles.contains_key(&first));
+        assert!(g.vehicles[&vb].wreck_tick.is_some());
+        assert_eq!(w.entities().kind[first.index()], EntityKind::Vacant);
+        assert_eq!(w.entities().allocator().free_list().last(), Some(&first.0));
+        assert!(
+            !g.vderived.block.blocked_at(&w.state.terrain, near),
+            "reopened"
+        );
+        assert!(g.vderived.frame(first).is_none());
+        // Its id is reused for the next spawn; nothing still names it as
+        // a vehicle.
+        let rifle = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_rifle_squad")
+            .unwrap();
+        let sq = w
+            .spawn_squad_at(
+                PlayerId(0),
+                rifle,
+                FxVec2::from_int(300, 300),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        let g = w.game().unwrap();
+        assert!(g.squads[&sq].members.contains(&first));
+        assert!(!g.vehicles.contains_key(&first));
+        assert!(
+            g.vehicles
+                .values()
+                .all(|vs| vs.target != Some(first) && !vs.followers.contains(&first))
+        );
+        assert!(g.vderived.frame(first).is_none());
+        let _ = va;
+        let loaded = World::load(&w.save(), 1).unwrap();
+        assert_eq!(loaded.state_hash(), w.state_hash());
     }
 }

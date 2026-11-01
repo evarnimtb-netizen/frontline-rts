@@ -14,6 +14,7 @@ use crate::projectile::{NO_WEAPON, Projectile, ProjectileEnd, substep};
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
 use crate::terrain::{DETAIL_PER_M, Heightfield};
+use crate::vehicle::{MAX_VEHICLE_CIRCLES, Obstacles};
 use crate::world::{SoldierParams, WeaponParams};
 
 /// Hard cap on ORCA neighbours (§5.5).
@@ -87,11 +88,90 @@ struct OrcaLine {
     dir: FxVec2,
 }
 
+/// One ORCA half-plane against an obstacle at `rel_pos` (from the agent)
+/// moving with relative velocity `rel_vel`, `combined_r` apart at contact.
+/// The agent takes `share` of the avoidance (½ between soldiers, all of it
+/// against a vehicle). `tie` picks the push direction for a coincident
+/// obstacle at rest. `None`: the obstacle needs no line.
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn orca_line(
+    rel_pos: FxVec2,
+    rel_vel: FxVec2,
+    vel: FxVec2,
+    combined_r: Fx,
+    combined_r_sq: Fx,
+    inv_tau: Fx,
+    inv_dt: Fx,
+    share: Fx,
+    tie: bool,
+) -> Option<OrcaLine> {
+    let dist_sq = rel_pos.length_sq();
+    let (dir, u);
+    if dist_sq > combined_r_sq {
+        // No collision yet: project onto the truncated velocity obstacle.
+        let w = rel_vel - rel_pos * inv_tau;
+        let w_len_sq = w.length_sq();
+        let dot1 = w.dot(rel_pos);
+        if dot1.is_negative() && dot1.mul(dot1) > combined_r_sq.mul(w_len_sq) {
+            // Cut-off circle.
+            let w_len = w.length();
+            if w_len.is_zero() {
+                return None;
+            }
+            let unit_w = w / w_len;
+            dir = FxVec2::new(unit_w.y, -unit_w.x);
+            u = unit_w * (combined_r.mul(inv_tau) - w_len);
+        } else {
+            // Legs.
+            let leg = (dist_sq - combined_r_sq).sqrt();
+            let (px, py) = (rel_pos.x, rel_pos.y);
+            if rel_pos.det(w).raw() > 0 {
+                dir = FxVec2::new(
+                    px.mul(leg) - py.mul(combined_r),
+                    px.mul(combined_r) + py.mul(leg),
+                ) / dist_sq;
+            } else {
+                dir = -(FxVec2::new(
+                    px.mul(leg) + py.mul(combined_r),
+                    -px.mul(combined_r) + py.mul(leg),
+                ) / dist_sq);
+            }
+            u = dir * rel_vel.dot(dir) - rel_vel;
+        }
+    } else {
+        // Already overlapping: resolve within one tick.
+        let w = rel_vel - rel_pos * inv_dt;
+        let w_len = w.length();
+        let unit_w = if w_len.is_zero() {
+            // Coincident and at rest: split by id, deterministically.
+            if tie {
+                FxVec2::new(Fx::ONE, Fx::ZERO)
+            } else {
+                FxVec2::new(Fx::NEG_ONE, Fx::ZERO)
+            }
+        } else {
+            w / w_len
+        };
+        dir = FxVec2::new(unit_w.y, -unit_w.x);
+        u = unit_w * (combined_r.mul(inv_dt) - w_len);
+    }
+    Some(OrcaLine {
+        point: vel + u * share,
+        dir,
+    })
+}
+
 /// Simplified fixed-point ORCA (after RVO2): builds one half-plane per
 /// neighbour (up to [`MAX_NEIGHBOURS`] nearest, ties by id), then projects the
 /// preferred velocity onto each violated half-plane in order and clamps to
 /// max speed. This replaces RVO2's incremental 2D linear program with
 /// sequential projection: cheaper, slightly less optimal, fully deterministic.
+///
+/// S3: in match worlds with vehicles, `obstacles` adds up to
+/// [`MAX_VEHICLE_CIRCLES`] vehicle and wreck circles (two per hull, along
+/// its axis) after the soldier neighbours. The soldier takes all of the
+/// avoidance against them; vehicles never avoid soldiers.
 ///
 /// Writes the new velocity of every id in the chunk into `out` (zero for
 /// non-soldiers). Reads previous-tick positions and velocities only, and
@@ -101,6 +181,7 @@ pub(crate) fn plan_velocities(
     out: &mut [FxVec2],
     ents: &Entities,
     spatial: &SpatialHash,
+    obstacles: Option<&Obstacles>,
     p: &SoldierParams,
     tick_hz: i32,
 ) {
@@ -165,66 +246,47 @@ pub(crate) fn plan_velocities(
         let mut lines = [OrcaLine {
             point: FxVec2::ZERO,
             dir: FxVec2::ZERO,
-        }; MAX_NEIGHBOURS];
+        }; MAX_NEIGHBOURS + MAX_VEHICLE_CIRCLES];
         let mut nl = 0usize;
         for &(_, other) in &near[..n] {
             let rel_pos = ents.transform[other.index()].pos.xy() - pos;
             let rel_vel = vel - ents.velocity[other.index()].lin;
-            let dist_sq = rel_pos.length_sq();
-            let (dir, u);
-            if dist_sq > combined_r_sq {
-                // No collision yet: project onto the truncated velocity obstacle.
-                let w = rel_vel - rel_pos * inv_tau;
-                let w_len_sq = w.length_sq();
-                let dot1 = w.dot(rel_pos);
-                if dot1.is_negative() && dot1.mul(dot1) > combined_r_sq.mul(w_len_sq) {
-                    // Cut-off circle.
-                    let w_len = w.length();
-                    if w_len.is_zero() {
-                        continue;
-                    }
-                    let unit_w = w / w_len;
-                    dir = FxVec2::new(unit_w.y, -unit_w.x);
-                    u = unit_w * (combined_r.mul(inv_tau) - w_len);
-                } else {
-                    // Legs.
-                    let leg = (dist_sq - combined_r_sq).sqrt();
-                    let (px, py) = (rel_pos.x, rel_pos.y);
-                    if rel_pos.det(w).raw() > 0 {
-                        dir = FxVec2::new(
-                            px.mul(leg) - py.mul(combined_r),
-                            px.mul(combined_r) + py.mul(leg),
-                        ) / dist_sq;
-                    } else {
-                        dir = -(FxVec2::new(
-                            px.mul(leg) + py.mul(combined_r),
-                            -px.mul(combined_r) + py.mul(leg),
-                        ) / dist_sq);
-                    }
-                    u = dir * rel_vel.dot(dir) - rel_vel;
-                }
-            } else {
-                // Already overlapping: resolve within one tick.
-                let w = rel_vel - rel_pos * inv_dt;
-                let w_len = w.length();
-                let unit_w = if w_len.is_zero() {
-                    // Coincident and at rest: split by id, deterministically.
-                    if id < other {
-                        FxVec2::new(Fx::ONE, Fx::ZERO)
-                    } else {
-                        FxVec2::new(Fx::NEG_ONE, Fx::ZERO)
-                    }
-                } else {
-                    w / w_len
-                };
-                dir = FxVec2::new(unit_w.y, -unit_w.x);
-                u = unit_w * (combined_r.mul(inv_dt) - w_len);
+            if let Some(line) = orca_line(
+                rel_pos,
+                rel_vel,
+                vel,
+                combined_r,
+                combined_r_sq,
+                inv_tau,
+                inv_dt,
+                Fx::HALF,
+                id < other,
+            ) {
+                lines[nl] = line;
+                nl += 1;
             }
-            lines[nl] = OrcaLine {
-                point: vel + u * Fx::HALF,
-                dir,
-            };
-            nl += 1;
+        }
+        // A man in a trench stays put while a hull crosses over him (S3).
+        if let Some(ob) = obstacles.filter(|_| !ents.combat[i].in_trench) {
+            let mut circles = [(FxVec2::ZERO, Fx::ZERO, FxVec2::ZERO); MAX_VEHICLE_CIRCLES];
+            let k = ob.near(pos, p.neighbour_dist, &mut circles);
+            for &(c, r, v) in &circles[..k] {
+                let cr = p.radius + r;
+                if let Some(line) = orca_line(
+                    c - pos,
+                    vel - v,
+                    vel,
+                    cr,
+                    cr.mul(cr),
+                    inv_tau,
+                    inv_dt,
+                    Fx::ONE,
+                    true,
+                ) {
+                    lines[nl] = line;
+                    nl += 1;
+                }
+            }
         }
 
         let mut v = pref;

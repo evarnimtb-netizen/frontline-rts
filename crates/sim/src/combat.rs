@@ -235,7 +235,12 @@ impl MatchState {
         for sq in self.squads.values_mut() {
             let ty = &setup.squad_types[sq.type_idx as usize];
             let w = &setup.weapons[ty.weapon as usize];
-            if sq.members.is_empty() || w.he.is_some() || engage(&sq.order) == Engage::Never {
+            // Vehicles aim through their own gunnery (S3).
+            if sq.members.is_empty()
+                || ty.vehicle.is_some()
+                || w.he.is_some()
+                || engage(&sq.order) == Engage::Never
+            {
                 sq.focus = None;
                 continue;
             }
@@ -1219,7 +1224,7 @@ pub(crate) fn status(
                 continue;
             }
             EntityKind::Soldier => {}
-            EntityKind::Vacant => continue,
+            EntityKind::Vacant | EntityKind::Vehicle | EntityKind::Wreck => continue,
         }
         changed = true;
         let sq = ctx.squad[i].and_then(|s| ctx.game.squad(s));

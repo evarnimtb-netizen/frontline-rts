@@ -48,11 +48,12 @@ use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::hash::HashCache;
 use crate::items::{Kit, SmokeCloud, Thrown};
-use crate::path::{PathCost, PathScratch, find_path};
+use crate::path::{PathCost, PathScratch, VehiclePathCost, find_path, find_vehicle_path};
 use crate::rules::{Defeat, capture_full};
 use crate::squad;
 use crate::terrain::Heightfield;
 use crate::unit::{UnitDig, UnitOrder};
+use crate::vehicle::{self, VehicleDerived, VehicleState};
 
 /// Most points in a Dig polyline.
 pub const MAX_DIG_POINTS: usize = 16;
@@ -63,6 +64,8 @@ pub const MAX_BARRAGE_ROUNDS: u16 = 50;
 pub const MAX_CALL_IN_QUEUE: usize = 5;
 /// Longest stored path (waypoints); a smoothed path is far shorter.
 pub const MAX_PATH_POINTS: usize = 8192;
+/// Most AT-ditch lines in a match (S3; each job adds one).
+pub const MAX_AT_DITCHES: usize = 1024;
 
 /// Stable squad id. Never reused within a match.
 #[derive(
@@ -248,6 +251,10 @@ pub enum PathReq {
     Squad(SquadId),
     /// A detached soldier walks it to his own spot (`crate::unit`).
     Unit(SimId),
+    /// A vehicle squad's vehicle drives it (S3, `crate::vehicle`), on the
+    /// vehicle costs; `avoid` is a grid node the search makes 8× dearer
+    /// (the stuck re-path).
+    Vehicle { squad: SquadId, avoid: Option<u32> },
 }
 
 /// Path requests: one FIFO per player served round-robin, and the expansion
@@ -283,11 +290,20 @@ pub struct MatchState {
     /// Smoke clouds, ascending id.
     pub(crate) smoke: Vec<SmokeCloud>,
     pub(crate) next_smoke: u32,
+    /// Vehicles and wrecks (S3), by entity id (`crate::vehicle`).
+    pub(crate) vehicles: BTreeMap<SimId, VehicleState>,
+    /// AT-ditch lines (S3): every AT-ditch job's line, added when it
+    /// starts. The vehicle block layer reads them.
+    pub(crate) at_ditches: Vec<Vec<FxVec2>>,
     /// Derived from the setup (S3): plate normals and ammo cosines. Not
     /// saved and not hashed (the setup is); rebuilt by
     /// [`MatchState::rebuild_derived`] after load.
     #[serde(skip)]
     pub(crate) armour: ArmourTables,
+    /// Derived vehicle index, frames and block layer (S3); rebuilt by
+    /// `World` on load and new match (`rebuild_vehicle_derived`).
+    #[serde(skip)]
+    pub(crate) vderived: VehicleDerived,
 }
 
 /// Mutable world parts a match operation needs.
@@ -350,14 +366,20 @@ impl MatchState {
             next_thrown: 0,
             smoke: Vec::new(),
             next_smoke: 0,
+            vehicles: BTreeMap::new(),
+            at_ditches: Vec::new(),
             armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
+            vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             setup,
         }
     }
 
-    /// Rebuilds the derived caches from the setup (after load).
+    /// Rebuilds the derived caches from the setup (after load). The vehicle
+    /// structures that also need the entities and terrain are rebuilt by
+    /// `rebuild_vehicle_derived`.
     pub(crate) fn rebuild_derived(&mut self) {
         self.armour = ArmourTables::new(&self.setup.ammo, &self.setup.vehicles);
+        self.vderived = VehicleDerived::new(&self.setup, grid_dim(&self.setup));
     }
 
     // ------------------------------------------------------------ queries --
@@ -411,6 +433,26 @@ impl MatchState {
     pub fn unit_digs(&self) -> &BTreeMap<u32, UnitDig> {
         &self.unit_digs
     }
+    /// Vehicles and wrecks by entity id (S3).
+    #[inline]
+    pub fn vehicles(&self) -> &BTreeMap<SimId, VehicleState> {
+        &self.vehicles
+    }
+    #[inline]
+    pub fn vehicle(&self, id: SimId) -> Option<&VehicleState> {
+        self.vehicles.get(&id)
+    }
+    /// AT-ditch lines (S3).
+    #[inline]
+    pub fn at_ditches(&self) -> &[Vec<FxVec2>] {
+        &self.at_ditches
+    }
+    /// Derived vehicle data (S3): index, frames, block layer. Valid after
+    /// the Movement stage of the last tick.
+    #[inline]
+    pub fn vehicle_derived(&self) -> &VehicleDerived {
+        &self.vderived
+    }
 
     /// Base centre of `player`.
     pub fn base_of(&self, player: PlayerId) -> FxVec2 {
@@ -418,18 +460,28 @@ impl MatchState {
         self.setup.map.bases[base].center.into()
     }
 
-    /// Soldiers `player` has alive plus soldiers on order (pop-cap count).
+    /// Pop-cap count of `player`: soldiers alive, each live vehicle's
+    /// `pop`, and every queued call-in's squad-type pop (its men, or its
+    /// vehicle's pop, S3).
     pub fn population(&self, ents: &Entities, player: PlayerId) -> u32 {
         let alive = ents
             .soldiers()
             .filter(|id| ents.owner[id.index()] == player)
             .count() as u32;
+        let vehicles: u32 = self
+            .vehicles
+            .iter()
+            .filter(|(id, _)| {
+                ents.kind[id.index()] == EntityKind::Vehicle && ents.owner[id.index()] == player
+            })
+            .map(|(_, vs)| self.setup.vehicles[vs.type_idx as usize].pop)
+            .sum();
         let queued: u32 = self.players[player.0 as usize]
             .call_ins
             .iter()
-            .map(|c| self.setup.squad_types[c.squad_type as usize].men as u32)
+            .map(|c| self.setup.squad_types[c.squad_type as usize].pop(&self.setup.vehicles))
             .sum();
-        alive + queued
+        alive + vehicles + queued
     }
 
     // ---------------------------------------------------------- commands --
@@ -482,7 +534,9 @@ impl MatchState {
             CommandKind::StopUnits { units } => self.units_stop(ctx, p, units),
             CommandKind::DigUnits { units, line } => self.units_dig(ctx, p, units, line),
             CommandKind::SetStance { units, stance } => self.set_stance(ctx, p, units, *stance),
-            &CommandKind::Regroup { squad } => self.regroup(ctx, p, squad),
+            &CommandKind::Regroup { squad } => {
+                !self.is_vehicle_squad(squad) && self.regroup(ctx, p, squad)
+            }
             CommandKind::Throw {
                 units,
                 item,
@@ -520,6 +574,15 @@ impl MatchState {
             Order::Move { target } | Order::AttackMove { target } => ctx.terrain.clamp(*target),
             _ => self.base_of(p),
         };
+        if self.is_vehicle_squad(id) {
+            // A short Move to a point behind the hull backs up to it.
+            let v = self.squads[&id].members[0];
+            let back = matches!(order, Order::Move { .. })
+                && vehicle::reverses_to(&ctx.ents.transform[v.index()], goal);
+            if let Some(vs) = self.vehicles.get_mut(&v) {
+                vs.reverse = back;
+            }
+        }
         let order = match order {
             Order::Move { .. } => Order::Move { target: goal },
             Order::AttackMove { .. } => Order::AttackMove { target: goal },
@@ -534,6 +597,16 @@ impl MatchState {
     pub(crate) fn order_stop(&mut self, ctx: &mut Ctx, p: PlayerId, id: SquadId) -> bool {
         if !self.owned(p, id) {
             return false;
+        }
+        if self.is_vehicle_squad(id) {
+            let sq = self.squads.get_mut(&id).expect("owned");
+            sq.order = Order::Idle;
+            let v = sq.members[0];
+            vehicle::hold_vehicle(&mut sq.nav, ctx.ents.transform[v.index()].pos.xy());
+            if let Some(vs) = self.vehicles.get_mut(&v) {
+                vs.reverse = false;
+            }
+            return true;
         }
         let regroup = self.clear_detached(ctx, id);
         let sq = self.squads.get_mut(&id).expect("owned");
@@ -637,7 +710,15 @@ impl MatchState {
             return false;
         }
         let ty = &self.setup.squad_types[squad_type as usize];
-        let (cost, men, delay) = (ty.cost, ty.men as u32, ty.call_in_ticks);
+        let (cost, men, delay) = (ty.cost, ty.pop(&self.setup.vehicles), ty.call_in_ticks);
+        // Vehicles (S3): only after the unlock time and under the limit
+        // (alive or queued).
+        let vr = &self.setup.rules.vehicles;
+        if ty.vehicle.is_some()
+            && (ctx.tick < vr.unlock_ticks as u64 || self.vehicles_counted(ctx.ents, p) >= vr.limit)
+        {
+            return false;
+        }
         let pop = self.population(ctx.ents, p);
         let pl = &mut self.players[p.0 as usize];
         if pl.manpower < cost
@@ -655,7 +736,13 @@ impl MatchState {
     }
 
     /// Asks for a path to `goal`; the squad waits in place until it is served.
+    /// Vehicle squads queue a vehicle request.
     pub(crate) fn request_path(&mut self, id: SquadId, goal: FxVec2) {
+        if self.is_vehicle_squad(id) {
+            let sq = self.squads.get_mut(&id).expect("live squad");
+            vehicle::request_vehicle_path(sq, id, &mut self.path_queue, goal, None);
+            return;
+        }
         let sq = self.squads.get_mut(&id).expect("live squad");
         sq.nav.phase = NavPhase::PathPending;
         sq.nav.goal = goal;
@@ -709,6 +796,7 @@ impl MatchState {
         let id = SquadId(self.next_squad);
         self.next_squad += 1;
         let ty = &self.setup.squad_types[squad_type as usize];
+        let vehicle_type = ty.vehicle;
         let base = &self.setup.map.bases[self.setup.players[owner.0 as usize].base as usize];
         let center: FxVec2 = base.center.into();
         // Six spots on a ring at half the base radius, then the centre.
@@ -724,6 +812,10 @@ impl MatchState {
         let mut facing = (mid - spot).normalize_or_zero();
         if facing == FxVec2::ZERO {
             facing = FxVec2::new(Fx::ONE, Fx::ZERO);
+        }
+        if let Some(vt) = vehicle_type {
+            self.spawn_vehicle(ctx, owner, id, squad_type, vt, spot, facing);
+            return id;
         }
         let slots: Vec<FxVec2> =
             squad::line_slots(spot, facing, ty.men as usize, ty.spacing.into())
@@ -771,6 +863,57 @@ impl MatchState {
             },
         );
         id
+    }
+
+    /// Spawns vehicle squad `id` (a squad of one) at `spot` facing
+    /// `facing`, settled on the ground.
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_vehicle(
+        &mut self,
+        ctx: &mut Ctx,
+        owner: PlayerId,
+        id: SquadId,
+        squad_type: u16,
+        vt: u16,
+        spot: FxVec2,
+        facing: FxVec2,
+    ) {
+        let v = &self.setup.vehicles[vt as usize];
+        let geo = self.vderived.geo[vt as usize];
+        let vid = ctx.ents.spawn(EntityKind::Vehicle, owner);
+        let i = vid.index();
+        ctx.ents.transform[i].pos = spot.extend(ctx.terrain.height_at(spot));
+        ctx.ents.transform[i].yaw = Fx::atan2(facing.y, facing.x);
+        ctx.ents.squad[i] = Some(id);
+        let mut vs = VehicleState::new(vt, v, &self.setup.rules.vehicles);
+        vehicle::settle(
+            ctx.terrain,
+            &self.vderived.block,
+            &geo,
+            &mut vs,
+            &mut ctx.ents.transform[i],
+        );
+        vs.progress_at = spot;
+        self.vehicles.insert(vid, vs);
+        ctx.hash.mark_entity_chunk(vid.chunk());
+        self.squads.insert(
+            id,
+            Squad {
+                type_idx: squad_type,
+                owner,
+                members: vec![vid],
+                order: Order::Idle,
+                nav: Nav {
+                    phase: NavPhase::Holding,
+                    goal: spot,
+                    heading: facing,
+                    facing,
+                    slots: vec![spot],
+                    ..Nav::default()
+                },
+                focus: None,
+            },
+        );
     }
 
     // ------------------------------------------------------------- paths --
@@ -835,6 +978,48 @@ impl MatchState {
                     nav.phase = NavPhase::Moving;
                     nav.phase_ticks = 0;
                     ctx.hash.mark_entity_chunk(m.chunk());
+                }
+                PathReq::Vehicle { squad, avoid } => {
+                    let Some(sq) = self.squads.get_mut(&squad) else {
+                        continue;
+                    };
+                    let v = sq.members[0];
+                    let Some(vs) = self.vehicles.get(&v) else {
+                        continue;
+                    };
+                    if sq.nav.phase != NavPhase::PathPending
+                        || ctx.ents.kind[v.index()] != EntityKind::Vehicle
+                    {
+                        continue;
+                    }
+                    let vcost = PathCost {
+                        max_slope_pct: self.setup.vehicles[vs.type_idx as usize]
+                            .mobility
+                            .max_slope_pct,
+                        trench_cost_pct: 100,
+                        ..cost
+                    };
+                    let veh = VehiclePathCost {
+                        block: &self.vderived.block,
+                        avoid,
+                    };
+                    let from = ctx.ents.transform[v.index()].pos.xy();
+                    let r = find_vehicle_path(
+                        terrain,
+                        from,
+                        sq.nav.goal,
+                        &vcost,
+                        &veh,
+                        max_exp,
+                        scratch,
+                    );
+                    avail -= r.expansions as i64;
+                    let nav = &mut sq.nav;
+                    nav.path = r.points;
+                    nav.next = 0;
+                    nav.partial = !r.reached && !r.exhausted;
+                    nav.phase = NavPhase::Moving;
+                    nav.phase_ticks = 0;
                 }
             }
         }
@@ -934,7 +1119,33 @@ impl MatchState {
             {
                 return Err("squad out of range");
             }
+            if let Some(vt) = s.squad_types[sq.type_idx as usize].vehicle {
+                // A vehicle squad: exactly its vehicle, of the squad type's
+                // vehicle type, holding or on a path like any squad.
+                let ok = sq.members.len() == 1 && {
+                    let v = sq.members[0];
+                    ents.kind.get(v.index()) == Some(&EntityKind::Vehicle)
+                        && ents.squad[v.index()] == Some(id)
+                        && ents.owner[v.index()] == sq.owner
+                        && self.vehicles.get(&v).is_some_and(|vs| vs.type_idx == vt)
+                };
+                if !ok
+                    || sq.focus.is_some()
+                    || matches!(sq.order, Order::Dig { .. } | Order::Barrage { .. })
+                {
+                    return Err("vehicle squad is inconsistent");
+                }
+            } else if sq
+                .members
+                .iter()
+                .any(|m| ents.kind.get(m.index()) == Some(&EntityKind::Vehicle))
+            {
+                return Err("a soldier squad lists a vehicle");
+            }
             for &m in &sq.members {
+                if ents.kind.get(m.index()) == Some(&EntityKind::Vehicle) {
+                    continue;
+                }
                 if !ents.is_alive(m)
                     || ents.kind[m.index()] != EntityKind::Soldier
                     || ents.squad[m.index()] != Some(id)
@@ -999,11 +1210,18 @@ impl MatchState {
         }
         for (i, c) in ents.combat.iter().enumerate() {
             let kind = ents.kind[i];
+            let vehicle = matches!(kind, EntityKind::Vehicle | EntityKind::Wreck);
             let bad = c.seen_by >> np != 0
                 || c.target.is_some_and(|t| t.index() >= ents.len())
                 || c.suppression > 100_000
                 || (kind == EntityKind::Soldier && (c.hp == 0 || c.corpse != 0))
-                || (kind == EntityKind::Corpse && (c.corpse == 0 || ents.squad[i].is_some()));
+                || (kind == EntityKind::Corpse && (c.corpse == 0 || ents.squad[i].is_some()))
+                || (vehicle
+                    && *c
+                        != crate::ecs::Combat {
+                            seen_by: c.seen_by,
+                            ..Default::default()
+                        });
             if bad {
                 return Err("soldier combat state is inconsistent");
             }
@@ -1013,14 +1231,30 @@ impl MatchState {
             return Err("soldier squad links disagree with squad member lists");
         }
         self.validate_items(ents)?;
+        self.validate_vehicles(ents, tick)?;
         let mut queued: Vec<PathReq> = self.path_queue.queues.iter().flatten().copied().collect();
-        if queued
-            .iter()
-            .any(|r| matches!(r, PathReq::Unit(m) if m.index() >= ents.len()))
-        {
-            return Err("a path request names an unknown soldier");
+        let nodes = grid_dim(s) * grid_dim(s);
+        if queued.iter().any(|r| match *r {
+            PathReq::Unit(m) => m.index() >= ents.len(),
+            // Requests of squads that are gone are skipped when served.
+            PathReq::Squad(q) => self.is_vehicle_squad(q),
+            PathReq::Vehicle { squad, avoid } => {
+                avoid.is_some_and(|n| n >= nodes)
+                    || (self.squads.contains_key(&squad) && !self.is_vehicle_squad(squad))
+            }
+        }) {
+            return Err("a path request names an unknown soldier or the wrong squad kind");
         }
         let n = queued.len();
+        // One request per squad, whatever its `avoid`.
+        for r in &mut queued {
+            if let PathReq::Vehicle { squad, .. } = r {
+                *r = PathReq::Vehicle {
+                    squad: *squad,
+                    avoid: None,
+                };
+            }
+        }
         queued.sort_unstable();
         queued.dedup();
         if queued.len() != n {
@@ -1028,6 +1262,71 @@ impl MatchState {
         }
         Ok(())
     }
+
+    /// Checks the S3 vehicle state of a loaded save: every vehicle and
+    /// wreck entity has a state and the other way round, states in range,
+    /// references to live entities of the right kind, the wreck cap, the
+    /// AT-ditch lines.
+    fn validate_vehicles(&self, ents: &Entities, tick: u64) -> Result<(), &'static str> {
+        let s = &self.setup;
+        let size = Fx::from_int(s.map.size_m);
+        let kind = |id: SimId| ents.kind.get(id.index()).copied();
+        let vehicle_entities = ents
+            .kind
+            .iter()
+            .filter(|k| matches!(k, EntityKind::Vehicle | EntityKind::Wreck))
+            .count();
+        if vehicle_entities != self.vehicles.len() {
+            return Err("vehicle entities and vehicle states disagree");
+        }
+        let mut wrecks = 0u32;
+        for (&id, vs) in &self.vehicles {
+            vs.validate(s, size, tick)?;
+            let wreck = match kind(id) {
+                Some(EntityKind::Vehicle) => false,
+                Some(EntityKind::Wreck) => true,
+                _ => return Err("a vehicle state names no vehicle"),
+            };
+            let i = id.index();
+            if wreck != vs.wreck_tick.is_some()
+                || (wreck && ents.squad[i].is_some())
+                || (!wreck && ents.squad[i].is_none_or(|q| !self.squads.contains_key(&q)))
+            {
+                return Err("a vehicle's squad or wreck state is inconsistent");
+            }
+            wrecks += wreck as u32;
+            let target_ok = vs.target.is_none_or(|t| {
+                kind(t) == Some(EntityKind::Vehicle) && ents.owner[t.index()] != ents.owner[i]
+            });
+            let followers_ok = vs.followers.iter().all(|&f| {
+                kind(f) == Some(EntityKind::Soldier) && ents.owner[f.index()] == ents.owner[i]
+            });
+            if !target_ok
+                || !followers_ok
+                || (wreck && (vs.target.is_some() || !vs.followers.is_empty()))
+            {
+                return Err("a vehicle refers to a missing or wrong entity");
+            }
+        }
+        if wrecks > s.rules.vehicles.wreck_cap {
+            return Err("more wrecks than the cap");
+        }
+        let on_map = |q: &FxVec2| q.x >= Fx::ZERO && q.y >= Fx::ZERO && q.x <= size && q.y <= size;
+        if self.at_ditches.len() > MAX_AT_DITCHES
+            || self
+                .at_ditches
+                .iter()
+                .any(|l| !(2..=MAX_DIG_POINTS).contains(&l.len()) || !l.iter().all(on_map))
+        {
+            return Err("bad AT-ditch line");
+        }
+        Ok(())
+    }
+}
+
+/// Grid points per side of the setup's map (the path grid).
+pub(crate) fn grid_dim(s: &MatchSetup) -> u32 {
+    (s.map.size_m / crate::terrain::SPACING_M + 1) as u32
 }
 
 /// Whether a dig order's `line` and `job` are in range (loaded saves):

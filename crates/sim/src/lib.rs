@@ -22,7 +22,8 @@
 //! capture, income, tickets and victory; [`ai`]: the AI commander; [`unit`]:
 //! soldier-level orders, stance orders and detached men; [`items`]: thrown
 //! frag, smoke and satchel items and smoke clouds; [`armour`]: plates,
-//! penetration and the derived armour tables, S3). Terrain
+//! penetration and the derived armour tables, S3; [`vehicle`]: vehicle
+//! state, pose, driving, the vehicle index and block layer, S3). Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
 //!
@@ -51,6 +52,7 @@ mod squad;
 mod systems;
 pub mod terrain;
 pub mod unit;
+pub mod vehicle;
 pub mod world;
 
 pub use ai::{AiCommand, AiState, AiTrench, Task, TaskKind};
@@ -76,6 +78,7 @@ pub use snapshot::{
 };
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};
+pub use vehicle::{AmmoChoice, BlockLayer, Seat, VehicleFrame, VehicleState};
 pub use world::{
     SimConfig, SimError, SimState, SoldierParams, StageTimes, Stats, TickRate, WeaponParams, World,
     match_config,

@@ -44,6 +44,24 @@ impl Purpose {
     pub const SMOKE: Purpose = Purpose(13);
     /// Crater depth of a thrown item's burst (keyed by the item id).
     pub const ITEM_CRATER: Purpose = Purpose(14);
+    // ---- S3 armour (`docs/slices/S3-armour.md` "RNG keys"). Projectiles
+    // have no id and their slots are reused, so the shell purposes are
+    // keyed by (tick, slot as the id).
+    /// The ±7 % penetration variation of a plate hit (tick, slot).
+    pub const PENETRATION: Purpose = Purpose(15);
+    /// Spall ray directions (tick, slot); rays by index within the stream.
+    pub const SPALL: Purpose = Purpose(16);
+    /// APHE filler burst (tick, slot).
+    pub const HE_FILLER: Purpose = Purpose(17);
+    /// Main-gun spread (tick, vehicle id).
+    pub const GUN_SPREAD: Purpose = Purpose(18);
+    /// Bog roll and unbog time of a trench crossing (crossing count as the
+    /// tick, vehicle id).
+    pub const BOG: Purpose = Purpose(19);
+    /// Fire start and each put-out roll (tick, vehicle id).
+    pub const FIRE: Purpose = Purpose(20);
+    /// Ammo-rack detonation (tick, slot).
+    pub const AMMO_RACK: Purpose = Purpose(21);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.
