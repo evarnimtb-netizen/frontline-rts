@@ -117,9 +117,16 @@ datagram is at most 1,200 bytes.
   `CommandKind`s, with `target_tick = current relay-clock tick + D` (from
   the synced clock, not from the newest bundle) and the next per-player
   `seq`.
-- **D *(proposed)***: the lobby computes `clamp(ceil((p99_rtt + jitter) /
-  period) + 1, 2, 4)` from lobby pings; the `+1` is a one-tick playout
-  buffer. Slot 0 may override it (2–6) before Ready. D is fixed for the
+- **D *(proposed; revised in the fix pass, owner call)***: the lobby
+  computes `clamp(ceil((p99_rtt/2 + jitter) / period), 2, 4)` from lobby
+  pings, and each client steps a tick `P = clamp(ceil((p99_rtt/2 +
+  jitter) / period), 1, 6)` periods after its turn closes (playout). D
+  only has to cover the trip to the relay; the trip back is the playout.
+  The first formula (`ceil((p99_rtt + jitter) / period) + 1` with a
+  fixed one-tick playout) put both trips into D and still stalled
+  whenever the trip back took over a period. Click to reaction stays
+  about the same (D + P ≈ the old D + 1); stalls on jittery links went
+  from 16–67 % of ticks to under 0.2 %. See the slice log. Slot 0 may override it (2–6) before Ready. D is fixed for the
   match. On a LAN, D = 2; on a 60 ms internet path, D = 4.
 - **Relay-closed turns:** the relay closes turn T at `start + (T+1)·period`
   regardless of what arrived. Input whose `target_tick` is already closed
@@ -351,10 +358,11 @@ agent):
 
 ## Design-doc changes to propose (not applied here)
 
-- §2.2 and §10: size D from **P99 RTT plus jitter, plus one playout
-  tick**, not P99 one-way latency. With relay-closed turns the command
-  must reach the relay and the bundle must come back, so RTT is the right
-  measure.
+- §2.2 and §10: size the **total** click-to-step delay from P99 RTT plus
+  jitter, split in two: D (stamp to turn close) covers half the P99 RTT
+  plus jitter, and a client-side playout delay of the same size covers
+  the trip back. (Revision 2 put the whole RTT into D with a one-tick
+  playout; the fix pass measured that it stalls on jittery links.)
 - §10: each bundled command carries its original `target_tick`.
 - §4: transport row reads "UDP (plain in S2; QUIC datagrams from M7)" if
   the owner picks question 1(A).
@@ -406,3 +414,58 @@ Work proceeds on the recommended defaults (marked **A**) until you answer.
 4. **Player timeout.** **(A) Relay-injected `Surrender` after 60 s**
    (recommended) / (B) AI takeover, which needs `SetController` and sim
    state.
+
+## Slice log
+
+**Fix pass (2026-11-01)**, after the netcode-security and
+spec-playability reviews. All runs on the M3 MacBook Air.
+
+- `cargo test --workspace --release`: pass. Clippy `-D warnings` and
+  `cargo fmt --check`: clean. New `crates/net/tests/relay_rules.rs` (6
+  tests, one per review finding; all fail on the pre-fix relay/client).
+- **Soak** (`cargo test -p frontline-net --release -- --ignored`, rough
+  path 15 ms + 0–80 ms jitter, 5 % loss): seeds 1–3, about 36,000 ticks
+  each, 1,199 hash checks per seed, 0 mismatches, 0 lost orders,
+  restamps 0.029 %, 0 %, 0 %; stalls 63/1, 6/2, 0/1 ticks (before the fix
+  pass: about 24,000 of 36,000 on every seed). Passed in 35 s.
+- `frontline-net-test`:
+
+  | Run | D / playout | Restamps | Stalls (ticks late) |
+  |---|---|---|---|
+  | `--jitter 2` | 2 / 1 | 0 of 556 | 0 / 0 |
+  | `--jitter 40` | 2 / 2 | 0 of 556 | 0 / 0 |
+  | `--seconds 1200 --jitter 40 --drop 0.05` (match won at about tick 31,500) | 2 / 2 | 10 of 2,994 (0.33 %) | 27 / 35 (was 3,918 / 3,566 of 24,142 at D = 4) |
+  | same, `--tickets 100000` (full 36,000 ticks) | 2 / 2 | 15 of 3,408 (0.44 %) | 36 / 41 |
+  | 300 s, 30 ms + 0–120 ms, 15 % drop | 4 / 6 and 4 | 44 of 878 (5.0 %) | 4 / 151 of 9,000 (was 99.6 %) |
+  | 300 s, 0–40 ms, 30 % drop | 2 / 2 | 86 of 878 (9.8 %) | 484 / 484 (was 81 %) |
+  | 60 s real UDP, 20 ms + 0–60 ms, 10 % drop (two runs) | 2 / 2 | 4 and 28 of 273 (1.5 %, 10 %) | 52–70 of 1,800 (was 62–67 %) |
+  | 300 s, 30 ms + 0–10 ms | 2 / 2 | 0 of 878 | 0 / 0 |
+
+  Every run: all hashes agree, every order ran exactly once, in order.
+  The lower D trades restamps on lossy links (an order one or more ticks
+  late; 5–10 % of orders at 10–30 % loss) for almost no stalls and 67 ms
+  less lag on every other order; slot 0 can still raise D in the lobby.
+- **Two Godot instances**, 3 minutes, 127.0.0.1: 181 of 181 hashes agree
+  (ticks 30–5,430), both exit 0, D = 2, playout 1, 0 late, 10 stalls each
+  (windowed start-up, as before).
+- **Desync** (`--debug_inject_desync 1000` on the joiner): both stop at
+  tick 1,021 after the mismatch at 1,020, exit 6, dumps complete;
+  `desync-diff` names `stats.commands_applied 22 vs 23` and entity 21's
+  waypoint and nav fields, and prints the dump's desync tick.
+- **Joiner killed**: host waits 60 s, then wins ("Sam lost the connection
+  and timed out."), exit 0. **Host killed**: guest shows "Reconnecting",
+  then the disconnect screen, exit 7.
+- **Export**: no Godot export templates on this Mac, so
+  `tools/export_macos.sh --verify` built the editor-runtime fallback:
+  `build/Frontline-312b20f0cd06-macos.zip`, 176 MB, universal bridge.
+  The verify run shows the menu with the build id; two copies of the
+  unzipped app (quarantine cleared) played a 90 s net match, hashes
+  agree. Not done: a second macOS account (agents may not create
+  accounts), an Intel Mac, a release-template export.
+- `frontline-relay` type-checks for `aarch64-linux-android` (Linux
+  kernel) and Windows (msvc, gnu); a glibc Linux build was not possible
+  (no `x86_64-unknown-linux-gnu` std installed).
+- Sim untouched (`git diff s1b-soldier-control -- crates/sim` is empty).
+  Skirmish seed 1, AI vs AI, 3 threads, 3 runs: final hash
+  `0x86f6991286fe64ed`, P99 0.274–0.276 ms, peak P99 0.329–0.335 ms
+  (S1b: 0.275–0.276 and 0.335–0.337).

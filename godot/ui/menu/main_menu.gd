@@ -45,6 +45,10 @@ func _ready() -> void:
 	_settings.closed.connect(_show.bind("skirmish"))
 	_content.add_child(_settings)
 	_mp = MultiplayerPanel.new()
+	# Autoplay takes screenshots that get committed: example addresses,
+	# not this machine's.
+	if Session.autoplay_net_role != "":
+		_mp.addresses_override = MultiplayerPanel.CAPTURE_ADDRESSES
 	_content.add_child(_mp)
 	# Both players need the same build (the relay checks it): show its id.
 	var version := get_node_or_null(^"Margin/Columns/Left/Version") as Label

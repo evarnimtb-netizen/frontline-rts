@@ -52,10 +52,12 @@ snapshots from it: it never waits on the network.
   ],
   seed: int, map: String,    # slot 0's choice
   input_delay: int,          # D in ticks (2-6)
-  suggested_delay: int,      # clamp(ceil((p99 RTT + jitter) / tick) + 1, 2, 4)
+  suggested_delay: int,      # clamp(ceil((p99 RTT / 2 + jitter) / tick), 2, 4)
   mismatch: String,          # why Ready was refused (text or reason code), "" if none
   countdown_s: float,        # seconds left while state == "countdown"
   error: String,             # reason code once "disconnected" (see below)
+  error_detail: String,      # more about it ("Their build: … Yours: …"), "" none
+  host_port: int,            # in-game relay port when hosting, 0 when joined
 }
 ```
 
@@ -65,9 +67,10 @@ seed and the map from `status()` and loads `match/match.tscn`.
 
 Reason codes the presenter turns into text (`NetUi.REASONS`; an unknown
 code is shown as given): `build_mismatch`, `content_mismatch`, `protocol`,
-`setup_mismatch`, `full`, `timed_out`, `no_answer`, `connection_lost`,
+`setup_mismatch`, `full`, `started`, `timed_out`, `no_answer`, `connection_lost`,
 `host_left`, `opponent_left`, `left`, `flood`, `relay_closed`,
-`bind_failed`, `bad_address`.
+`bind_failed`, `bad_address`, `content_missing`, `bad_name`. The
+reject codes (`NetUi.REJECT_CODES`) title the page "CAN'T JOIN".
 
 ## Match calls
 
@@ -113,8 +116,11 @@ Exit codes: 0 match over, 3 a required shot missing, 4 the lobby did not
 start within 90 s (or host/join failed), 6 desync (after the banner shot,
 once the dump is written), 7 disconnected (after the disconnect shot).
 
-Two instances side by side on one Mac (what the integration ran; the
-screen is 3420 px wide, so two 1600x900 windows fit):
+Two instances on one Mac. The integration ran two 1600x900 windows side
+by side on a 3420 px screen; the S2 fix pass used 1280x720 windows at
+`--position 0,40` and `--position 1180,500` (partly overlapping, both
+visible, so App Nap does not throttle either) on a 2560 px screen. The
+shots come out 1600x900 either way:
 
 ```
 G=~/Applications/Godot.app/Contents/MacOS/Godot

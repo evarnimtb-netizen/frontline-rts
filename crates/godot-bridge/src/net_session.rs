@@ -1042,6 +1042,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(&user);
     }
 
+    /// The host leaves mid-match (Leave in the Esc menu): its client says
+    /// `Bye(Quit)` and its relay stops right after. The guest still runs
+    /// the host's `Surrender` and wins, instead of seeing a closed relay.
+    #[test]
+    fn host_leaving_mid_match_surrenders_to_the_guest() {
+        let user = temp_dir("hostquit");
+        let defs = defs();
+        let mut host = session(&defs, "Host", &user);
+        let mut guest = session(&defs, "Guest", &user);
+        lobby(&mut host, &mut guest, 5);
+        let hs = [spawn(&mut host), spawn(&mut guest)];
+        let t0 = Instant::now();
+        while hs[1].counters.ticks.load(Ordering::Relaxed) < 60 {
+            assert!(t0.elapsed() < Duration::from_secs(15), "the match runs");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        host.leave();
+        let host_slot = 0u8;
+        let surrendered = |h: &MatchHandle| {
+            h.counters.log.lock().unwrap().iter().any(|(_, c)| {
+                c.player.0 == host_slot && c.kind == frontline_sim::CommandKind::Surrender
+            })
+        };
+        let t0 = Instant::now();
+        while !surrendered(&hs[1]) {
+            assert!(
+                t0.elapsed() < Duration::from_secs(5),
+                "the guest never ran the host's surrender"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        let detail = hs[1].counters.net.lock().unwrap().clone();
+        assert_eq!(detail.disconnect, None, "a win, not a closed relay");
+        guest.leave();
+        drop(hs);
+        let _ = std::fs::remove_dir_all(&user);
+    }
+
     #[test]
     fn lobby_failures_have_reason_codes() {
         let user = temp_dir("lobby");

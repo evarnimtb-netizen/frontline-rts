@@ -373,9 +373,11 @@ net: {
   ping_ms: float,          # round trip to the relay, -1 unknown
   input_delay: int,        # D in ticks
   delay_ms: int,           # D in ms
-  restamps: int,           # own commands moved to a later turn
+  playout: int,            # ticks this client shows a tick after its turn closes
+  restamps: int,           # own commands moved to a later turn ("late")
   stalls: int,             # ticks this client waited for a bundle
   state: String,           # "ok" | "unstable" | "waiting" | "paused" | "desync"
+                           # (reads "ok" once the match is over)
   paused_by: String,       # player name while "paused"
   paused_slot: int,        # opt; slot that paused (else matched by name)
   waiting_for: String,     # player name while "waiting"

@@ -48,6 +48,14 @@ it.
   cooldown or count shown on the button. Write this up as a spec next to
   S1b; the AI should use grenades as well.
 
+- [x] **Two-player multiplayer (S2).** Spec and slice log:
+  `docs/slices/S2-multiplayer.md`. Host or join by IP:port, an in-game
+  relay or `frontline-relay` on a server, lobby, relay-closed lockstep,
+  pause, hash checks, desync dumps and `desync-diff`, 60 s timeout
+  surrender, and a macOS zip (`tools/export_macos.sh`). Built on the
+  spec's (A) defaults; the input delay and playout formula was revised
+  in the fix pass (owner call, see below). Guide:
+  `docs/net/playing-online.md`.
 - [ ] **A more military UI look (owner, 2026-10-31).** "This one looks like
   something from GMod or 'the office'. Way too corporate. The look itself is
   good, just not the right mood." Keep the HUD v2 layout and its
@@ -125,41 +133,66 @@ it.
 - [ ] The fix pass cut the call-in queue from 10 to 5 to match the HUD
   spec. That is a game rule; confirm with the owner.
 
+## S2 owner checklist (needs people or a second network)
+
+- [ ] **One manual match**, two humans with mouse and keyboard, played to
+  victory (spec item 7).
+- [ ] **One match over Tailscale or the VPS relay**, with ping, D, playout
+  and the "late" count from the readout's tooltip written down (item 8).
+  Wired if possible.
+- [ ] **The friend runs the zip on their own Mac** (item 9). Also not done
+  by an agent: a second macOS account on the same Mac (agents may not
+  create accounts) and an Intel Mac.
+- [ ] **Decide the D / playout revision** (`S2-multiplayer.md` "Turns"):
+  D now covers half the round trip and a client playout delay covers the
+  other half. Same click-to-reaction time, almost no stalls, but on very
+  lossy links 5–10 % of orders run a tick or more late. Reverting is one
+  function (`frontline_net::suggest_d`).
+
 ## Known issues found during S2
 
-- [ ] **No exported zip yet.** `tools/export_macos.sh` builds the universal
-  bridge (arm64 + x86_64 with lipo, checked) and stops before the export:
-  the Godot 4.7.2 export templates are not installed, and the official
-  `.tpz` is 1.28 GB, over the ~1 GB the integration stage was allowed to
-  download. Install them (Editor > Manage Export Templates), then run
-  `tools/export_macos.sh --verify`. The export itself, the ad hoc
-  re-signing after adding `mods/ww2` to `Contents/Resources`, and the
-  second-account run are untested.
-- [ ] **Playout buffer too small on jittery links.** `frontline-net-test
-  --seconds 1200 --jitter 40 --drop 0.05`: 0 restamps, hashes agree, but
-  about 16 % of ticks step more than one period late (3,918 and 3,566
-  stalls out of 24,142 ticks). The view lags in bursts; the match stays
-  correct. A client-only adaptive playout delay would fix it without
-  touching determinism. Owner call.
-- [ ] Two windowed instances on one Mac: 10–14 stalls per 3-minute match,
-  almost all in the first minute (match start, the S1b selection tour's
-  screenshots). Headless runs show none. Same family as the S1b windowed
-  step spikes.
-- [ ] App Nap: not hit with both windows visible side by side; the
-  `defaults write ... NSAppSleepDisabled` step from the spec was not run
-  (no persistent defaults). A hidden or minimised instance is untested.
-- [ ] After a host crash the guest waits about 75 s before the disconnect
-  screen (silent relay for 10 s, then the "Reconnecting" countdown; the
-  bridge gives up at 75 s). Correct per the design, but long when the
-  relay died with the host's game.
-- [ ] The match readout's raw `net.state` turns "unstable" 2 s after the
-  match ends (the other side stops sending after its goodbye). The HUD
-  freezes the readout at the end; the bridge value is still misleading for
-  other readers.
+- [ ] **The zip is an "editor runtime" build**, not a template export:
+  the Godot 4.7.2 export templates are not installed (the official
+  `.tpz` is 1.28 GB). `tools/export_macos.sh` falls back to a copy of the
+  Godot editor app with the game packed in (176 MB zip, debug-capable).
+  It runs and plays a net match from the unzipped zip. Install the
+  templates (Editor > Manage Export Templates) and rerun the script for
+  a proper release export; `--templates-only` refuses the fallback.
+- [ ] `frontline-relay` is only type-checked for Linux (as
+  `aarch64-linux-android`) and Windows; no glibc Linux build or run yet
+  (needs `rustup target add x86_64-unknown-linux-gnu` and a linker, or
+  building on the VPS as `playing-online.md` says).
+- [ ] Lossy links now cost restamps instead of stalls: at 10–30 % loss,
+  5–10 % of orders run a tick or more late. At 0–5 % loss: 0–0.4 %.
+- [ ] Two windowed instances on one Mac: about 10 stalls per 3-minute
+  match, all in the first seconds (start-up and the S1b tour's
+  screenshots). Headless runs show none.
+- [ ] App Nap: not hit with both windows visible (partly overlapping);
+  the spec's `defaults write ... NSAppSleepDisabled` was not run (no
+  persistent defaults). A hidden or minimised instance is untested.
+- [ ] After a host **crash** the guest waits about 75 s before the
+  disconnect screen (10 s of silence, then the "Reconnecting" countdown).
+  The texts now say the match is over if the host's game closed, but the
+  wait is still long. A clean host quit is fast: the relay delivers the
+  host's surrender before it shuts down (tested on the relay and in the
+  bridge over real UDP, `host_leaving_mid_match_surrenders_to_the_guest`;
+  not yet seen with a human clicking Leave in Godot).
+- [ ] Hosting again right after leaving joins the old net threads on the
+  main thread: up to about 1.5 s of frozen menu if the guest vanished
+  (it frees the port first). Not measured.
+- [ ] Possible IPv6 issue (unverified, no global IPv6 here): a relay bound
+  to `[::]` may answer from a temporary address, which the client would
+  drop (it only accepts its configured relay address).
+- [ ] The waiting overlay has no "leave now / claim the win" button: the
+  remaining player waits out the 60 s or leaves through the Esc menu.
+- [ ] The pending-order marker is a bare dashed ring; nothing links it to
+  the ordered unit. At D = 2 it lives one or two frames.
+- [ ] `desync-diff --replay` is not built (spec: out of S2). Dumps now
+  always have a checkpoint (tick 0 counts as confirmed).
+- [ ] In two-instance autoplay the S1/S1b shots share file names, so the
+  two instances overwrite each other's shots (test only).
 - [ ] `build_id` is stamped when `crates/net` is rebuilt (HEAD or index
   changes); edits to tracked files without staging do not set `-dirty`
-  until something rebuilds it. `tools/export_macos.sh` refuses a dirty tree
-  unless `--allow-dirty`.
-- [ ] `THIRD_PARTY_NOTICES` not regenerated for `socket2` (from net stage 1).
-- [ ] `relay-protocol.md` does not mention the `Bye(Shutdown)` the relay sends
-  when it stops (net stage 2).
+  until something rebuilds it. `tools/export_macos.sh` refuses a dirty
+  tree unless `--allow-dirty`.
+- [ ] `THIRD_PARTY_NOTICES` not regenerated for `socket2`.
