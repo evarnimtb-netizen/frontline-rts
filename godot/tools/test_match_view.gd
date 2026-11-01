@@ -421,7 +421,9 @@ func _test_minimap() -> void:
 	_cam.yaw_deg = 45.0
 	await _frames(1)
 	_check(mm._inside(mm.centre() + Vector2(mm.size.x * 0.5 - 3.0, 0)), "rotated 45: diamond corner reaches the box edge")
-	_check(not mm._has_point(mm.centre() + Vector2(mm.size.x * 0.35, mm.size.y * 0.35)) and not mm._inside(mm.lock_centre()), "rotated 45: empty corner passes through, lock off the map")
+	# Probe the corner beyond the lock button (it sits at the north
+	# marker's offset, about 0.32 of the box along the diagonal).
+	_check(not mm._has_point(mm.centre() + Vector2(mm.size.x * 0.45, mm.size.y * 0.45)) and not mm._inside(mm.lock_centre()), "rotated 45: empty corner passes through, lock off the map")
 	# The lock button follows the turned map: whole button inside the box
 	# and off the map (its rim and click radius too) at each yaw, at this
 	# box size and the 1280 one (200 px).

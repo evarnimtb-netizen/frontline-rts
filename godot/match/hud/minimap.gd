@@ -22,8 +22,9 @@ extends Control
 
 const CORNER := 8.0
 const LOCK_R := 11.0
-## Gap between the lock button and the turned map (px).
-const LOCK_GAP := 4.0
+## North marker's distance from the centre, as a share of half the box.
+## The lock button keeps the same offset past the map's edge.
+const NORTH_OUT := 0.9
 ## Map corners in map units, clockwise from north-west.
 const MAP_CORNERS: Array[Vector2] = [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
 
@@ -114,9 +115,9 @@ func _map_units(m: Vector2) -> Vector2:
 
 
 ## Centre of the lock button. North-up: the box's bottom-right corner.
-## Rotating: on the box's diagonal towards bottom-right, just past the
-## map's reach along it (its furthest corner projected on the diagonal),
-## so it sits against the map's bottom-right corner or edge. The reach is
+## Rotating: on the box's diagonal towards bottom-right, past the map's
+## reach along it (its furthest corner projected on the diagonal) by as
+## much as the north marker sits past the map's north edge. The reach is
 ## a max over the corners, so it slides smoothly as the camera turns and
 ## never jumps between corners. The map reaches at most half the box side,
 ## so the button fits inside the box at any yaw (box side >= 155 px); the
@@ -128,7 +129,8 @@ func lock_centre() -> Vector2:
 	var reach := 0.0
 	for u in MAP_CORNERS:
 		reach = maxf(reach, u.rotated(yaw_rad()).dot(d) * map_half_px())
-	var at := centre() + d * (reach + LOCK_GAP + LOCK_R)
+	var half := minf(size.x, size.y) * 0.5
+	var at := centre() + d * (reach + half * NORTH_OUT - map_half_px())
 	var m := Vector2(LOCK_R + 1.0, LOCK_R + 1.0)
 	return at.clamp(m, size - m)
 
@@ -215,7 +217,7 @@ func _draw() -> void:
 			draw_polyline(poly, Color(0.95, 0.95, 0.92), 1.5, true)
 	# North marker and yaw readout.
 	if rotate_with_camera:
-		var n := c + Vector2(0, -1).rotated(yaw) * (half * 0.9)
+		var n := c + Vector2(0, -1).rotated(yaw) * (half * NORTH_OUT)
 		draw_circle(n, 10.0, Color(0.055, 0.07, 0.08, 0.85))
 		draw_arc(n, 10.0, 0.0, TAU, 20, HudStyle.ACCENT, 1.5, true)
 		HudStyle.text(self, bold, n + Vector2(0, 5), "N", HudStyle.FONT_SMALL, HudStyle.ACCENT, 0)
