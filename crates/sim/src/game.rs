@@ -47,7 +47,7 @@
 
 use std::collections::BTreeMap;
 
-use frontline_content::{MatchSetup, SquadRole};
+use frontline_content::{DigProfile, MatchSetup, SquadRole, WeaponClass};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::AiState;
@@ -59,7 +59,9 @@ use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::hash::HashCache;
 use crate::items::{Kit, SmokeCloud, Thrown};
-use crate::path::{PathCost, PathScratch, VehiclePathCost, find_path, find_vehicle_path};
+use crate::path::{
+    PathCost, PathScratch, VehiclePathCost, find_infantry_path, find_path, find_vehicle_path,
+};
 use crate::rules::{Defeat, capture_full};
 use crate::squad;
 use crate::terrain::Heightfield;
@@ -111,6 +113,12 @@ pub enum Order {
         target: FxVec2,
         rounds: u16,
     },
+    /// Escort friendly vehicle `vehicle` (S3 `FollowUnits`): the men walk
+    /// in single file behind it (`crate::unit` escort steering). Becomes
+    /// `Idle` when the vehicle is gone.
+    Follow {
+        vehicle: SimId,
+    },
 }
 
 /// [`Order`] without its payload, for the snapshot.
@@ -124,6 +132,8 @@ pub enum OrderKind {
     Retreat = 3,
     Dig = 4,
     Barrage = 5,
+    /// S3: escorting a vehicle.
+    Follow = 6,
 }
 
 impl Order {
@@ -135,6 +145,7 @@ impl Order {
             Order::Retreat => OrderKind::Retreat,
             Order::Dig { .. } => OrderKind::Dig,
             Order::Barrage { .. } => OrderKind::Barrage,
+            Order::Follow { .. } => OrderKind::Follow,
         }
     }
 }
@@ -188,6 +199,27 @@ pub struct Squad {
     pub nav: Nav,
     /// Enemy the squad concentrates fire on (`crate::combat`).
     pub focus: Option<SimId>,
+    /// AT teams (S3): the team's launcher; `None` for other squads.
+    pub launcher: Option<Launcher>,
+}
+
+/// An AT team's launcher (S3, `crate::combat` "Launchers"): who carries
+/// it, the hand-over after its gunner falls, the rockets left and the
+/// `AttackUnit` vehicle.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Launcher {
+    /// The man carrying it; `None` while it waits to be picked up.
+    pub carrier: Option<SimId>,
+    /// Ticks until the next man takes it up (after the carrier fell).
+    pub handover: u16,
+    /// Rockets left.
+    pub rounds: u16,
+    /// Ticks in a row in the own base toward the next rocket.
+    pub resupply: u16,
+    /// `AttackUnit`: the enemy vehicle the gunner focuses while it is seen.
+    pub attack: Option<SimId>,
+    /// Against the current target: aim at its turret, not its hull.
+    pub aim_turret: bool,
 }
 
 impl Squad {
@@ -522,7 +554,11 @@ impl MatchState {
             }
             &CommandKind::Retreat { squad } => self.order_move(ctx, p, squad, Order::Retreat),
             &CommandKind::Stop { squad } => self.order_stop(ctx, p, squad),
-            CommandKind::Dig { squad, line } => self.order_dig(ctx, p, *squad, line),
+            CommandKind::Dig {
+                squad,
+                line,
+                profile,
+            } => self.order_dig(ctx, p, *squad, line, *profile),
             &CommandKind::Barrage {
                 squad,
                 target,
@@ -546,7 +582,11 @@ impl MatchState {
                 self.units_move(ctx, p, units, UnitOrder::Retreat)
             }
             CommandKind::StopUnits { units } => self.units_stop(ctx, p, units),
-            CommandKind::DigUnits { units, line } => self.units_dig(ctx, p, units, line),
+            CommandKind::DigUnits {
+                units,
+                line,
+                profile,
+            } => self.units_dig(ctx, p, units, line, *profile),
             CommandKind::SetStance { units, stance } => self.set_stance(ctx, p, units, *stance),
             &CommandKind::Regroup { squad } => {
                 !self.is_vehicle_squad(squad) && self.regroup(ctx, p, squad)
@@ -561,7 +601,46 @@ impl MatchState {
                 item,
                 target,
             } => self.throw(ctx, p, units, *item, *target, true),
+            CommandKind::ReverseUnits { units, target } => {
+                self.units_reverse(ctx, p, units, ctx.terrain.clamp(*target))
+            }
+            CommandKind::FaceUnits { units, toward } => self.units_face(ctx, p, units, *toward),
+            CommandKind::AttackUnit { units, target } => self.units_attack(ctx, p, units, *target),
+            CommandKind::SetAmmo { units, ammo } => self.units_set_ammo(ctx, p, units, *ammo),
+            CommandKind::RepairUnits { units } => self.units_repair(ctx, p, units),
+            CommandKind::FollowUnits { units, vehicle } => {
+                self.units_follow(ctx, p, units, *vehicle)
+            }
         }
+    }
+
+    /// Whether `vehicle` is a live vehicle of `player` (an escort's).
+    pub(crate) fn escorts(&self, ents: &Entities, player: PlayerId, vehicle: SimId) -> bool {
+        ents.kind.get(vehicle.index()) == Some(&EntityKind::Vehicle)
+            && ents.owner[vehicle.index()] == player
+    }
+
+    /// Whether a squad type of `role` digging at `rate` may dig `profile`
+    /// (S3: the AT ditch is the engineers').
+    pub(crate) fn digs_profile(&self, role: SquadRole, rate: u32, profile: DigProfile) -> bool {
+        rate > 0
+            && (!self.setup.rules.dig_profile(profile).engineers_only
+                || role == SquadRole::Engineer)
+    }
+
+    /// An AT-ditch job records its line when it starts (S3), so the ditch
+    /// blocks vehicles section by section as it gets deep enough. A line
+    /// already recorded is not added twice. False when the list is full.
+    pub(crate) fn add_at_ditch(&mut self, line: &[FxVec2], profile: DigProfile) -> bool {
+        if profile != DigProfile::AtDitch || self.at_ditches.iter().any(|l| l[..] == line[..]) {
+            return true;
+        }
+        if self.at_ditches.len() >= MAX_AT_DITCHES {
+            return false;
+        }
+        self.at_ditches.push(line.to_vec());
+        self.mark_ditch_block(line);
+        true
     }
 
     /// A live squad owned by `player`.
@@ -595,6 +674,7 @@ impl MatchState {
                 && vehicle::reverses_to(&ctx.ents.transform[v.index()], goal);
             if let Some(vs) = self.vehicles.get_mut(&v) {
                 vs.reverse = back;
+                vs.clear_orders();
             }
         }
         let order = match order {
@@ -619,6 +699,7 @@ impl MatchState {
             vehicle::hold_vehicle(&mut sq.nav, ctx.ents.transform[v.index()].pos.xy());
             if let Some(vs) = self.vehicles.get_mut(&v) {
                 vs.reverse = false;
+                vs.clear_orders();
             }
             return true;
         }
@@ -634,18 +715,23 @@ impl MatchState {
         true
     }
 
+    /// `Dig`: squads that can dig; the AT-ditch profile engineers only (S3).
     pub(crate) fn order_dig(
         &mut self,
         ctx: &mut Ctx,
         p: PlayerId,
         id: SquadId,
         line: &[FxVec2],
+        profile: DigProfile,
     ) -> bool {
         if !self.owned(p, id) {
             return false;
         }
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
-        if ty.dig_rate_pct == 0 || !self.dig_line_ok(ctx, line) {
+        if !self.digs_profile(ty.role, ty.dig_rate_pct, profile)
+            || !self.dig_line_ok(ctx, line, profile)
+            || !self.add_at_ditch(line, profile)
+        {
             return false;
         }
         self.clear_detached(ctx, id);
@@ -660,7 +746,8 @@ impl MatchState {
             base,
             ctx.ents,
             ctx.terrain,
-            &self.setup.rules.dig,
+            &self.setup.rules,
+            profile,
             self.setup.tick_hz,
         );
         sq.order = Order::Dig {
@@ -838,7 +925,6 @@ impl MatchState {
                 .collect();
         let yaw = Fx::atan2(facing.y, facing.x);
         let speed: Fx = ty.speed.into();
-        let combat = combat::spawn_combat(ty.hp, &self.setup.weapons[ty.weapon as usize]);
         let mut members = Vec::with_capacity(slots.len());
         for (k, &q) in slots.iter().enumerate() {
             let sid = ctx.ents.spawn(EntityKind::Soldier, owner);
@@ -848,7 +934,13 @@ impl MatchState {
             ctx.ents.mover[i].waypoint = q;
             ctx.ents.mover[i].speed = speed;
             ctx.ents.squad[i] = Some(id);
-            ctx.ents.combat[i] = combat;
+            // The first `weapon_men` men carry the squad weapon, the rest
+            // the sidearm (S3).
+            let wk = match ty.sidearm {
+                Some(side) if k >= ty.weapon_men as usize => side,
+                _ => ty.weapon,
+            };
+            ctx.ents.combat[i] = combat::spawn_combat(ty.hp, &self.setup.weapons[wk as usize]);
             // The first man leads the squad and carries the leader's kit.
             ctx.ents.kit[i] = Kit {
                 items: ty.full_kit(&self.setup.items, k == 0),
@@ -858,6 +950,13 @@ impl MatchState {
             ctx.hash.mark_entity_chunk(sid.chunk());
             members.push(sid);
         }
+        // AT teams: the first man carries the launcher (S3).
+        let w = &self.setup.weapons[ty.weapon as usize];
+        let launcher = (w.class == WeaponClass::Launcher).then(|| Launcher {
+            carrier: members.first().copied(),
+            rounds: w.rounds_carried.min(u16::MAX as u32) as u16,
+            ..Launcher::default()
+        });
         self.squads.insert(
             id,
             Squad {
@@ -874,6 +973,7 @@ impl MatchState {
                     ..Nav::default()
                 },
                 focus: None,
+                launcher,
             },
         );
         id
@@ -926,6 +1026,7 @@ impl MatchState {
                     ..Nav::default()
                 },
                 focus: None,
+                launcher: None,
             },
         );
     }
@@ -943,6 +1044,12 @@ impl MatchState {
             trench_cost_pct: mv.trench_cost_pct,
         };
         let max_exp = mv.path_max_expansions;
+        // Infantry: AT-ditch costs once a match has ditches (S3).
+        let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
+        let foot_path = |from: FxVec2, to: FxVec2, scratch: &mut PathScratch| match ditches {
+            Some(d) => find_infantry_path(terrain, from, to, &cost, d, max_exp, scratch),
+            None => find_path(terrain, from, to, &cost, max_exp, scratch),
+        };
         let pq = &mut self.path_queue;
         let n = pq.queues.len();
         let mut avail = mv.path_budget_per_tick as i64 - pq.debt as i64;
@@ -964,7 +1071,7 @@ impl MatchState {
                         continue;
                     }
                     let from = ctx.ents.transform[sq.lead(ctx.ents).index()].pos.xy();
-                    let r = find_path(terrain, from, sq.nav.goal, &cost, max_exp, scratch);
+                    let r = foot_path(from, sq.nav.goal, scratch);
                     avail -= r.expansions as i64;
                     let nav = &mut sq.nav;
                     nav.path = r.points;
@@ -983,7 +1090,7 @@ impl MatchState {
                     }
                     let from = ctx.ents.transform[i].pos.xy();
                     let goal = ctx.ents.unit[i].nav.goal;
-                    let r = find_path(terrain, from, goal, &cost, max_exp, scratch);
+                    let r = foot_path(from, goal, scratch);
                     avail -= r.expansions as i64;
                     let nav = &mut ctx.ents.unit[i].nav;
                     nav.path = r.points;
@@ -1187,6 +1294,30 @@ impl MatchState {
             {
                 return Err("dig order is inconsistent");
             }
+            if let Order::Follow { vehicle } = sq.order
+                && !self.escorts(ents, sq.owner, vehicle)
+            {
+                return Err("follow order names no own vehicle");
+            }
+            let ty = &s.squad_types[sq.type_idx as usize];
+            let w = &s.weapons[ty.weapon as usize];
+            let launcher_ok = match &sq.launcher {
+                None => w.class != WeaponClass::Launcher,
+                Some(l) => {
+                    w.class == WeaponClass::Launcher
+                        && l.carrier.is_none_or(|c| sq.members.contains(&c))
+                        && l.handover as u32 <= w.handover_ticks
+                        && l.rounds as u32 <= w.rounds_carried
+                        && (l.resupply as u32) < s.rules.items.resupply_ticks.max(1)
+                        && l.attack.is_none_or(|t| {
+                            ents.kind.get(t.index()) == Some(&EntityKind::Vehicle)
+                                && ents.owner[t.index()] != sq.owner
+                        })
+                }
+            };
+            if !launcher_ok {
+                return Err("launcher state is inconsistent");
+            }
         }
         for (&id, d) in &self.unit_digs {
             if id >= self.next_unit_dig
@@ -1214,6 +1345,8 @@ impl MatchState {
                         .unit_digs
                         .get(&job)
                         .is_none_or(|d| d.owner != ents.owner[i]))
+                    || matches!(u.order, UnitOrder::Follow { vehicle }
+                        if !self.escorts(ents, ents.owner[i], vehicle))
             };
             if bad {
                 return Err("soldier unit order state is inconsistent");
@@ -1366,17 +1499,18 @@ fn dig_consistent(
     let len = squad::polyline_length(line);
     let size = Fx::from_int(s.map.size_m);
     let on_map = |q: &FxVec2| q.x >= Fx::ZERO && q.y >= Fx::ZERO && q.x <= size && q.y <= size;
+    let dig = job.rules(&s.rules);
     (2..=MAX_DIG_POINTS).contains(&line.len())
         && line.iter().all(on_map)
-        && len <= Fx::from(s.rules.dig.max_length)
+        && len <= Fx::from(dig.max_length)
         && (1..=max_segments).contains(&job.segments.len())
         && job.front.abs() == 1
         && job.segments.iter().all(|g| {
             g.from >= Fx::ZERO
                 && g.from <= g.to
                 && g.to <= len
-                && g.passes as u32 <= s.rules.dig.passes
-                && g.work <= DigJob::required(g, &s.rules.dig, s.tick_hz)
+                && g.passes as u32 <= dig.passes
+                && g.work <= DigJob::required(g, dig, s.tick_hz)
                 && g.digger.is_none_or(|d| d.index() < ents.len())
         })
 }

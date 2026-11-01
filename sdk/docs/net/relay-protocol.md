@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **2** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **3** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -70,6 +70,9 @@ kind the relay may not send. Clients cannot send relay messages.
   lead clamp (`+10`), lobby coalescing, pause-request rate limit, the
   `Start` sanity check, the waiting-pause timeout, and the shutdown
   drain.
+- Version 3 (S3) changed the `CommandKind` layout: `Dig` and `DigUnits`
+  gained `profile`, and six vehicle commands were added at the end (see
+  below).
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -338,7 +341,12 @@ fields). Variants, in index order: `MoveSoldier`, `Spawn`, `Despawn`
 (bench only; the match sim rejects them), `Move`, `AttackMove`, `Stop`,
 `Retreat`, `Dig`, `Barrage`, `CallIn`, `Surrender`, `MoveUnits`,
 `AttackMoveUnits`, `StopUnits`, `RetreatUnits`, `DigUnits`, `SetStance`,
-`Regroup`, `Throw`, `ThrowEach`. Positions are Q16.16 `i32` pairs. The sim
+`Regroup`, `Throw`, `ThrowEach`, and from version 3 `ReverseUnits`,
+`FaceUnits`, `AttackUnit`, `SetAmmo`, `RepairUnits`, `FollowUnits`. `Dig`
+and `DigUnits` end with `profile` (`DigProfile`: 0 trench, 1 AT ditch).
+Every variant with a `units` list is held to 120 ids and every line to 16
+points (`command_in_limits`, an exhaustive match). Positions are Q16.16
+`i32` pairs. The sim
 validates every command (dead units, foreign units, out-of-range values)
 identically on both clients, so the relay does not.
 

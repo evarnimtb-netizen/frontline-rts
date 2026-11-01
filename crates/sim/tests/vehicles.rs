@@ -518,6 +518,7 @@ fn vehicle_ids_take_unit_orders_and_soldier_only_orders_reject_them() {
             CommandKind::DigUnits {
                 units: vec![v],
                 line: line.clone(),
+                profile: Default::default(),
             },
         ),
         cmd(
@@ -537,7 +538,15 @@ fn vehicle_ids_take_unit_orders_and_soldier_only_orders_reject_them() {
                 target: xy(510, 510),
             },
         ),
-        cmd(0, 6, CommandKind::Dig { squad: sq, line }),
+        cmd(
+            0,
+            6,
+            CommandKind::Dig {
+                squad: sq,
+                line,
+                profile: Default::default(),
+            },
+        ),
         cmd(
             0,
             7,

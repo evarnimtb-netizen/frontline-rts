@@ -47,6 +47,7 @@
 
 use frontline_content::SeatRole;
 
+use crate::combat::weapon_of;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId, Stance};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::MatchState;
@@ -179,8 +180,18 @@ pub(crate) fn spot(
         }
         let c = &ents.combat[i];
         let pos = ents.transform[i].pos;
-        let pct = if !corpse && (c.since_shot as u32) < rules.reveal_ticks {
-            rules.firing_spot_pct
+        // Firing reveals a man by his weapon's figures (S3: a launcher's
+        // backblast more than a rifle).
+        let w = (!corpse)
+            .then(|| ents.squad[i].and_then(|s| game.squad(s)))
+            .flatten()
+            .map(|sq| &game.setup().weapons[weapon_of(game.setup(), sq, SimId(i as u32)) as usize]);
+        let (reveal_ticks, reveal_pct) = w
+            .map_or((rules.reveal_ticks, rules.firing_spot_pct), |w| {
+                (w.fire_reveal_ticks, w.fire_reveal_pct)
+            });
+        let pct = if !corpse && (c.since_shot as u32) < reveal_ticks {
+            reveal_pct
         } else {
             let mut pct = 100;
             if c.stance == Stance::Prone {

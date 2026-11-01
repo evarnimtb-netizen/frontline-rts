@@ -1734,6 +1734,7 @@ impl MatchRuntime {
                 OrderKind::Retreat => "retreat",
                 OrderKind::Dig => "dig",
                 OrderKind::Barrage => "barrage",
+                OrderKind::Follow => "follow",
             }
         };
         let pos = match self.anchors.get(&s.id) {

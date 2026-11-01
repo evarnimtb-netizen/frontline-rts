@@ -41,6 +41,7 @@
 //! (Intent stage). Path requests share the per-player queues with squads
 //! ([`PathReq`]).
 
+use frontline_content::DigProfile;
 use serde::{Deserialize, Serialize};
 
 use crate::dig::DigJob;
@@ -89,6 +90,10 @@ pub enum UnitOrder {
     Dig {
         job: u32,
     },
+    /// Escorting own vehicle `vehicle` (S3 `FollowUnits`, `crate::orders`).
+    Follow {
+        vehicle: SimId,
+    },
 }
 
 impl UnitOrder {
@@ -99,6 +104,7 @@ impl UnitOrder {
             UnitOrder::AttackMove { .. } => OrderKind::AttackMove,
             UnitOrder::Retreat => OrderKind::Retreat,
             UnitOrder::Dig { .. } => OrderKind::Dig,
+            UnitOrder::Follow { .. } => OrderKind::Follow,
         }
     }
 }
@@ -203,7 +209,7 @@ impl MatchState {
 
     /// Splits sorted `men` into squads named whole (every living man) and
     /// the other men, both ascending.
-    fn split_whole(&self, ctx: &Ctx, men: &[SimId]) -> (Vec<SquadId>, Vec<SimId>) {
+    pub(crate) fn split_whole(&self, ctx: &Ctx, men: &[SimId]) -> (Vec<SquadId>, Vec<SimId>) {
         let mut touched: Vec<SquadId> = men
             .iter()
             .filter_map(|m| ctx.ents.squad[m.index()])
@@ -324,15 +330,17 @@ impl MatchState {
         p: PlayerId,
         ids: &[SimId],
         line: &[FxVec2],
+        profile: DigProfile,
     ) -> bool {
         let Some(mut men) = self.unit_set(ctx, p, ids) else {
             return false;
         };
         men.retain(|m| {
             let sq = &self.squads[&ctx.ents.squad[m.index()].expect("squad man")];
-            self.setup.squad_types[sq.type_idx as usize].dig_rate_pct > 0
+            let ty = &self.setup.squad_types[sq.type_idx as usize];
+            self.digs_profile(ty.role, ty.dig_rate_pct, profile)
         });
-        if men.is_empty() || !self.dig_line_ok(ctx, line) {
+        if men.is_empty() || !self.dig_line_ok(ctx, line, profile) {
             return false;
         }
         // Exactly one whole squad: its own Dig order.
@@ -340,7 +348,10 @@ impl MatchState {
         if self.squads[&first].members.len() == men.len()
             && men.iter().all(|m| ctx.ents.squad[m.index()] == Some(first))
         {
-            return self.order_dig(ctx, p, first, line);
+            return self.order_dig(ctx, p, first, line, profile);
+        }
+        if !self.add_at_ditch(line, profile) {
+            return false;
         }
         let mut job = DigJob::new(
             line,
@@ -349,7 +360,8 @@ impl MatchState {
             self.base_of(p),
             ctx.ents,
             ctx.terrain,
-            &self.setup.rules.dig,
+            &self.setup.rules,
+            profile,
             self.setup.tick_hz,
         );
         // Segments in order along the line, men by where they stand along it.
@@ -505,15 +517,15 @@ impl MatchState {
         nav.phase_ticks = 0;
     }
 
-    /// Whether `line` is a valid trench line (as for `Dig`).
-    pub(crate) fn dig_line_ok(&self, ctx: &Ctx, line: &[FxVec2]) -> bool {
+    /// Whether `line` is a valid line for a `profile` dig (as for `Dig`).
+    pub(crate) fn dig_line_ok(&self, ctx: &Ctx, line: &[FxVec2], profile: DigProfile) -> bool {
         if !(2..=crate::game::MAX_DIG_POINTS).contains(&line.len())
             || !line.iter().all(|q| ctx.terrain.contains(*q))
         {
             return false;
         }
         let len = polyline_length(line);
-        !len.is_zero() && len <= Fx::from(self.setup.rules.dig.max_length)
+        !len.is_zero() && len <= Fx::from(self.setup.rules.dig_profile(profile).max_length)
     }
 
     // ---------------------------------------------------------- steering --
@@ -578,6 +590,7 @@ impl MatchState {
                                     &[m],
                                     ctx.ents,
                                     ctx.terrain,
+                                    (!self.at_ditches.is_empty()).then_some(&self.vderived.block),
                                     &mut slot,
                                 );
                                 slot[0]

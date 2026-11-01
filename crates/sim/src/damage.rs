@@ -53,11 +53,12 @@
 //! a vehicle regains `base_repair_pct_s` of every component's HP per second,
 //! one round per `base_rearm` and one dead seat per `base_crew`.
 
+use frontline_content::setup::HeSetup;
 use frontline_content::vehicle::{Frame, PartBoxSetup, VehicleSetup};
 use frontline_content::{AmmoMechanism, ComponentKind, SeatRole};
 
 use crate::armour::{self, PenResult};
-use crate::combat::{BallisticEvent, Blow, DamageCtx, tri};
+use crate::combat::{BLAST_LIFT_MM, BallisticEvent, Blow, DamageCtx, tri};
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, PathReq};
@@ -525,6 +526,81 @@ impl MatchState {
         }
     }
 
+    /// A blast near vehicles (S3 "Blasts near a vehicle"): every enemy
+    /// vehicle of `player` (not `skip`, the one a bursting round struck)
+    /// with an anchor of a track within the blast's lethal radius and in
+    /// clear line from just above the blast point takes `damage ×
+    /// vs_vehicle_pct` on that track, once per track. Nothing else of a
+    /// closed vehicle is touched. Vehicles in ascending id.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn blast_tracks(
+        &mut self,
+        ctx: &mut DamageCtx,
+        pos: FxVec3,
+        he: &HeSetup,
+        damage: u32,
+        player: u8,
+        skip: Option<SimId>,
+        ammo: u16,
+        fires: &mut FireRolls,
+        events: &mut Vec<ArmourEv>,
+    ) {
+        let dmg = (damage as u64 * he.vs_vehicle_pct as u64 / 100) as u32;
+        if dmg == 0 || self.vehicles.is_empty() {
+            return;
+        }
+        let lethal: Fx = he.lethal_radius.into();
+        let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(BLAST_LIFT_MM));
+        let mut ids: Vec<SimId> = Vec::new();
+        self.vderived
+            .index
+            .for_each_near(pos.xy(), lethal + self.vderived.max_reach, |id| {
+                ids.push(id)
+            });
+        ids.sort_unstable();
+        ids.dedup();
+        let reach = lethal.raw().max(0) as u64;
+        for id in ids {
+            if Some(id) == skip
+                || ctx.ents.kind.get(id.index()) != Some(&EntityKind::Vehicle)
+                || ctx.ents.owner[id.index()].0 == player
+            {
+                continue;
+            }
+            let (Some(f), Some(vs)) = (self.vderived.frame(id).copied(), self.vehicles.get(&id))
+            else {
+                continue;
+            };
+            let v = &self.setup.vehicles[vs.type_idx as usize];
+            let dealt: Vec<Dealt> = v
+                .components
+                .iter()
+                .filter(|c| {
+                    matches!(c.kind, ComponentKind::TrackLeft | ComponentKind::TrackRight)
+                        && c.anchors.iter().any(|an| {
+                            let p = anchor_at(&f, an.frame, crate::vehicle::v3(an.pos));
+                            (p - pos).length_sq_raw() <= reach * reach
+                                && ctx.terrain.line_of_sight(lift, p)
+                        })
+                })
+                .map(|c| Dealt {
+                    inner: Inner::Part(c.kind),
+                    dmg,
+                })
+                .collect();
+            if dealt.is_empty() {
+                continue;
+            }
+            let vs = self.vehicles.get_mut(&id).expect("vehicle state");
+            vs.repairing = None;
+            vs.repair_progress = 0;
+            vs.last_attacker = Some(player);
+            ctx.stats.blast_track_hits += dealt.len() as u64;
+            // Tracks never start a fire or set off the rack: no knock-out.
+            self.deal(ctx, id, &dealt, player, id, fires, events, pos, ammo);
+        }
+    }
+
     /// Counts `n` crewmen of `owner` lost, killed by `by`.
     fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, n: u32) {
         if let Some(p) = self.players.get_mut(owner.0 as usize) {
@@ -632,6 +708,11 @@ impl MatchState {
         for sq in self.squads.values_mut() {
             if sq.focus == Some(id) {
                 sq.focus = None;
+            }
+            if let Some(l) = &mut sq.launcher
+                && l.attack == Some(id)
+            {
+                l.attack = None;
             }
         }
         for (i, c) in ents.combat.iter_mut().enumerate() {

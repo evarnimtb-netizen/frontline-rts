@@ -69,9 +69,9 @@
 //! No friendly fire in S1: rounds and blasts ignore the firing player's own
 //! soldiers. Rounds have no drag, so the drop compensation is exact.
 
-use frontline_content::WeaponClass;
 use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
 use frontline_content::vehicle::AmmoSetup;
+use frontline_content::{MatchSetup, WeaponClass};
 
 use crate::armour::{self, ArmourHit, ArmourTables};
 use crate::damage::{ArmourEv, FireRolls};
@@ -79,7 +79,7 @@ use crate::ecs::{
     Combat, Entities, EntityKind, PlayerId, SimId, Stance, Transform, Velocity, Weapon,
 };
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::game::{MatchState, NavPhase, Order, PathReq, SquadId};
+use crate::game::{MatchState, NavPhase, Order, PathReq, Squad, SquadId};
 use crate::hash::HashCache;
 use crate::items::{BlastKind, Kit, Thrown};
 use crate::projectile::{NO_AMMO, Projectile, ProjectileEnd, SUBSTEP_HZ, advance, finish};
@@ -109,7 +109,7 @@ pub const TRENCH_MM: i32 = 1000;
 /// Below this speed a soldier counts as standing still (mm/s).
 const STILL_MM_S: i32 = 300;
 /// A burst's damage rays start this far above the blast point (mm).
-const BLAST_LIFT_MM: i32 = 300;
+pub(crate) const BLAST_LIFT_MM: i32 = 300;
 /// Mortar muzzle height above the crew's feet (mm).
 const SHELL_MUZZLE_MM: i32 = 800;
 /// Most LOS rays per target search.
@@ -145,7 +145,7 @@ pub(crate) fn engage(order: &Order) -> Engage {
     match order {
         Order::Retreat | Order::Barrage { .. } => Engage::Never,
         Order::Move { .. } | Order::Dig { .. } => Engage::Still,
-        Order::Idle | Order::AttackMove { .. } => Engage::Always,
+        Order::Idle | Order::AttackMove { .. } | Order::Follow { .. } => Engage::Always,
     }
 }
 
@@ -157,7 +157,36 @@ pub(crate) fn engage_of(squad: &Order, u: &Unit) -> Engage {
     match u.order {
         UnitOrder::Retreat => Engage::Never,
         UnitOrder::Move { .. } | UnitOrder::Dig { .. } => Engage::Still,
-        UnitOrder::Idle | UnitOrder::AttackMove { .. } => Engage::Always,
+        UnitOrder::Idle | UnitOrder::AttackMove { .. } | UnitOrder::Follow { .. } => Engage::Always,
+    }
+}
+
+/// The weapon (index into `MatchSetup::weapons`) soldier `id` of squad
+/// `sq` uses (S3): an AT team's launcher for its carrier and the sidearm
+/// for the other men; in other squads the first `weapon_men` men in member
+/// order carry the squad weapon and the rest the sidearm.
+pub(crate) fn weapon_of(setup: &MatchSetup, sq: &Squad, id: SimId) -> u16 {
+    let ty = &setup.squad_types[sq.type_idx as usize];
+    let Some(side) = ty.sidearm else {
+        return ty.weapon;
+    };
+    match &sq.launcher {
+        Some(l) if l.carrier == Some(id) => ty.weapon,
+        Some(_) => side,
+        None => match sq.members.iter().position(|m| *m == id) {
+            Some(k) if k < ty.weapon_men as usize => ty.weapon,
+            _ => side,
+        },
+    }
+}
+
+/// The squad's small-arms weapon (focus range): the sidearm of an AT
+/// team, else the squad weapon.
+pub(crate) fn small_arms_of(setup: &MatchSetup, sq: &Squad) -> u16 {
+    let ty = &setup.squad_types[sq.type_idx as usize];
+    match (&sq.launcher, ty.sidearm) {
+        (Some(_), Some(side)) => side,
+        _ => ty.weapon,
     }
 }
 
@@ -240,7 +269,7 @@ impl MatchState {
         let setup = &self.setup;
         for sq in self.squads.values_mut() {
             let ty = &setup.squad_types[sq.type_idx as usize];
-            let w = &setup.weapons[ty.weapon as usize];
+            let w = &setup.weapons[small_arms_of(setup, sq) as usize];
             // Vehicles aim through their own gunnery (S3).
             if sq.members.is_empty()
                 || ty.vehicle.is_some()
@@ -456,8 +485,12 @@ pub(crate) fn aim_and_fire(
         changed = true;
         ws.cooldown = ws.cooldown.saturating_sub(1);
         c.retarget = c.retarget.saturating_sub(1);
-        let ty = &setup.squad_types[sq.type_idx as usize];
-        let w = &setup.weapons[ty.weapon as usize];
+        let wi = weapon_of(setup, sq, SimId(i as u32));
+        let w = &setup.weapons[wi as usize];
+        // A launcher carrier fires in `fire_launchers` (S3).
+        if w.class == WeaponClass::Launcher {
+            continue;
+        }
         let still = is_still(&ctx.velocity[i]);
         let u = &ctx.unit[i];
         // A man winding up a throw does not fire.
@@ -516,7 +549,7 @@ pub(crate) fn aim_and_fire(
             seq: 0,
             pos: from,
             vel,
-            weapon: ty.weapon,
+            weapon: wi,
             player: owner,
             ttl: round_ttl(w),
             he: false,
@@ -636,6 +669,230 @@ impl MatchState {
         for (id, spot) in repath {
             self.request_path(id, spot);
         }
+    }
+}
+
+// ------------------------------------------------------------- launchers --
+
+impl MatchState {
+    /// Fires the AT teams' launchers (S3; see the module docs), serially in
+    /// ascending squad id after [`aim_and_fire`] counted the carriers'
+    /// cooldowns down. Reads the vehicle frames of this tick's Movement.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn fire_launchers(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &Heightfield,
+        hash: &mut HashCache,
+        seed: u64,
+        tick: u64,
+        out: &mut Vec<FireRequest>,
+        rockets: &mut u64,
+    ) {
+        let ids: Vec<SquadId> = self
+            .squads
+            .iter()
+            .filter(|(_, sq)| sq.launcher.is_some())
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.fire_launcher(ents, terrain, hash, seed, tick, id, out, rockets);
+        }
+    }
+
+    /// Whether vehicle `t` is a launcher target for a man of `owner` at
+    /// `from` with weapon `w`: a live enemy vehicle he sees within the
+    /// engagement distance for its motion (`engage_still`, or
+    /// `engage_moving` above the rules' moving speed).
+    fn launcher_target_ok(
+        &self,
+        ents: &Entities,
+        owner: PlayerId,
+        from: FxVec2,
+        w: &WeaponSetup,
+        t: SimId,
+    ) -> bool {
+        let ti = t.index();
+        if ents.kind.get(ti) != Some(&EntityKind::Vehicle)
+            || ents.owner[ti] == owner
+            || ents.combat[ti].seen_by & (1 << owner.0) == 0
+        {
+            return false;
+        }
+        let Some(vs) = self.vehicles.get(&t) else {
+            return false;
+        };
+        let moving = vs.avg_vel.length() > Fx::from(self.setup.rules.vehicles.moving_speed);
+        let reach: Fx = if moving {
+            w.engage_moving.into()
+        } else {
+            w.engage_still.into()
+        };
+        let reach = reach.min(w.range_max.into());
+        (ents.transform[ti].pos.xy() - from).length_sq_raw() <= range_sq(reach)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fire_launcher(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &Heightfield,
+        hash: &mut HashCache,
+        seed: u64,
+        tick: u64,
+        id: SquadId,
+        out: &mut Vec<FireRequest>,
+        rockets: &mut u64,
+    ) {
+        let setup = &self.setup;
+        let hz = setup.tick_hz.max(1);
+        let sq = &self.squads[&id];
+        let ty = &setup.squad_types[sq.type_idx as usize];
+        let w = &setup.weapons[ty.weapon as usize];
+        let mut l = sq.launcher.clone().expect("launcher squad");
+        // Hand-over: the carrier fell; the next living man takes it up.
+        if l.carrier.is_some_and(|c| !sq.members.contains(&c)) {
+            l.carrier = None;
+            l.handover = w.handover_ticks.min(u16::MAX as u32) as u16;
+        }
+        if l.carrier.is_none() {
+            l.handover = l.handover.saturating_sub(1);
+            if l.handover == 0
+                && let Some(&next) = sq.members.first()
+            {
+                l.carrier = Some(next);
+                // He drops his rifle target and takes aim afresh.
+                ents.combat[next.index()].target = None;
+                ents.combat[next.index()].retarget = 0;
+                hash.mark_entity_chunk(next.chunk());
+            }
+        }
+        let Some(c) = l.carrier else {
+            self.squads.get_mut(&id).expect("live").launcher = Some(l);
+            return;
+        };
+        let i = c.index();
+        let owner = ents.owner[i];
+        let pos = ents.transform[i].pos;
+        let still = is_still(&ents.velocity[i]);
+        let may = ents.kit[i].windup.is_none()
+            && l.rounds > 0
+            && match engage_of(&sq.order, &ents.unit[i]) {
+                Engage::Never => false,
+                Engage::Still => still,
+                Engage::Always => true,
+            };
+        let loader = sq.members.len() >= 2;
+        hash.mark_entity_chunk(c.chunk());
+        if !may {
+            ents.combat[i].target = None;
+            self.squads.get_mut(&id).expect("live").launcher = Some(l);
+            return;
+        }
+        let from = muzzle(pos, &ents.combat[i]);
+        let ok = |t: SimId| self.launcher_target_ok(ents, owner, pos.xy(), w, t);
+        let before = ents.combat[i].target;
+        let mut target = before.filter(|&t| ok(t));
+        if target.is_none() || ents.combat[i].retarget == 0 {
+            // The ordered vehicle first, then the nearest; at most
+            // `LOS_TRIES` candidates get a line-of-fire check.
+            let mut cands: Vec<(u64, SimId)> = Vec::new();
+            for (&t, ts) in &self.vehicles {
+                if ts.wreck_tick.is_some() || !ok(t) {
+                    continue;
+                }
+                let d = (ents.transform[t.index()].pos.xy() - pos.xy()).length_sq_raw();
+                cands.push((if l.attack == Some(t) { 0 } else { d.max(1) }, t));
+            }
+            cands.sort_unstable();
+            let round = w.ammo.and_then(|a| self.armour.ammo.get(a as usize));
+            let margin = setup.rules.vehicles.aim_hull_margin_pct;
+            target = None;
+            for &(_, t) in cands.iter().take(LOS_TRIES) {
+                let (Some(tf), Some(round)) = (self.vderived.frame(t), round) else {
+                    continue;
+                };
+                let plates = &self.armour.vehicles[tf.type_idx as usize];
+                let Some(part) =
+                    crate::gunnery::aim_choice(from, tf, plates, round, terrain, margin)
+                else {
+                    continue;
+                };
+                let at = if part == armour::BoxPart::Turret {
+                    tf.turret.center
+                } else {
+                    tf.hull.center
+                };
+                if self.smoke_blocks(from, at, tick, (t, c)) {
+                    continue;
+                }
+                target = Some(t);
+                l.aim_turret = part == armour::BoxPart::Turret;
+                break;
+            }
+            ents.combat[i].retarget = if target.is_some() { hz } else { hz / 3 }.max(1) as u16;
+            if target.is_some() && before.is_none() {
+                // Aim (and rise to the fire step) before the first rocket.
+                let ws = &mut ents.weapon[i];
+                ws.cooldown = ws.cooldown.max((hz / 2) as u16);
+            }
+        }
+        ents.combat[i].target = target;
+        let fire = target.filter(|_| {
+            ents.weapon[i].cooldown == 0 && (ents.combat[i].still as u32) >= w.setup_ticks
+        });
+        if let (Some(t), Some(ammo)) = (fire, w.ammo)
+            && let Some(tf) = self.vderived.frame(t)
+        {
+            let at = if l.aim_turret {
+                tf.turret.center
+            } else {
+                tf.hull.center
+            };
+            let speed: Fx = setup
+                .ammo
+                .get(ammo as usize)
+                .map_or(w.muzzle_speed, |a| a.speed)
+                .into();
+            let vel = self.vehicles.get(&t).map_or(FxVec2::ZERO, |v| v.avg_vel);
+            let (dir, _) = crate::gunnery::solution(from, at, vel, speed);
+            let dist = (at - from).length();
+            let pct = spread_pct(
+                &setup.rules.combat,
+                &ents.combat[i],
+                !still,
+                dist,
+                w.range_max.into(),
+            );
+            let spread = Fx::from_raw(
+                (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32,
+            );
+            let mut rng = RngStream::new(seed, tick, c, Purpose::AIM);
+            let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
+            let up = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
+            let shot = (dir + right * tri(&mut rng, spread) + up * tri(&mut rng, spread))
+                .normalize_or_zero();
+            out.push(FireRequest {
+                shooter: c,
+                seq: 0,
+                pos: from,
+                vel: shot * speed,
+                weapon: ty.weapon,
+                player: owner.0,
+                ttl: round_ttl(w),
+                he: true,
+                ammo,
+            });
+            l.rounds -= 1;
+            *rockets += 1;
+            let ws = &mut ents.weapon[i];
+            ws.shots = ws.shots.wrapping_add(1);
+            // 16 s without the loader (the gunner loads himself).
+            let reload = w.reload_ticks * if loader { 1 } else { 2 };
+            ws.cooldown = reload.min(u16::MAX as u32) as u16;
+            ents.combat[i].since_shot = 0;
+        }
+        self.squads.get_mut(&id).expect("live").launcher = Some(l);
     }
 }
 
@@ -1221,6 +1478,10 @@ impl MatchState {
                 Blow::Burst(pos) => Some(pos),
                 Blow::Armour { .. } => self.armour_blow(ctx, e, &mut fires, armour_events),
             };
+            let struck = match e.blow {
+                Blow::Armour { vehicle, .. } => Some(vehicle),
+                _ => None,
+            };
             let Some(pos) = burst_at else { continue };
             // Mortar shells burst by their weapon's HE, main-gun HE and
             // rockets by their round's blast.
@@ -1253,11 +1514,22 @@ impl MatchState {
                 key: (SimId(k as u32), Purpose::CRATER),
             };
             burst(ctx, &b, &mut dead);
+            self.blast_tracks(
+                ctx,
+                pos,
+                &he,
+                damage,
+                e.player,
+                struck,
+                e.ammo,
+                &mut fires,
+                armour_events,
+            );
         }
         self.take_fused(fused);
         for t in fused.iter() {
             let it = &self.setup.items[t.item as usize];
-            if let Some(h) = &it.he {
+            if let Some(h) = it.he.clone() {
                 ctx.stats.explosions += 1;
                 let kind = if h.cuts_trenches {
                     BlastKind::Satchel
@@ -1279,6 +1551,17 @@ impl MatchState {
                     key: (SimId(t.id), Purpose::ITEM_CRATER),
                 };
                 burst(ctx, &b, &mut dead);
+                self.blast_tracks(
+                    ctx,
+                    t.pos,
+                    &h.blast,
+                    h.damage,
+                    t.owner.0,
+                    None,
+                    NO_AMMO,
+                    &mut fires,
+                    armour_events,
+                );
             }
         }
         for t in fused.iter() {
@@ -1403,8 +1686,7 @@ pub(crate) fn status(
         } else {
             sq.is_some_and(|s| s.order == Order::Retreat)
         };
-        let weapon =
-            sq.map(|s| &setup.weapons[setup.squad_types[s.type_idx as usize].weapon as usize]);
+        let weapon = sq.map(|s| &setup.weapons[weapon_of(setup, s, SimId(i as u32)) as usize]);
         c.suppression = c.suppression.saturating_sub(rules.suppression_decay_milli);
         let points = c.suppression / 1000;
         c.pinned = points >= rules.pin_suppression && !retreating;

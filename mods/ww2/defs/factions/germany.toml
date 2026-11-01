@@ -6,7 +6,9 @@ roster = [
     "ww2:ger_mg_team",
     "ww2:ger_engineer_squad",
     "ww2:ger_mortar_team",
-    # S3: vehicles unlock at the rules' `vehicles.unlock_s`.
+    # S3: the AT team (available from the start) and the tank (unlocks at
+    # the rules' `vehicles.unlock_s`).
+    "ww2:ger_panzerschreck_team",
     "ww2:ger_pz4_h_squad",
 ]
 # Squads on the field at tick 0, at the player's base.

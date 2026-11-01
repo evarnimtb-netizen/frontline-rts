@@ -39,6 +39,7 @@ use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, NavPhase, Order, Squad};
 use crate::terrain::Heightfield;
 use crate::unit::StanceOrder;
+use crate::vehicle::BlockLayer;
 
 /// The leader moves on to the next waypoint within this distance (m).
 const WAYPOINT_REACH_M: i32 = 2;
@@ -145,6 +146,7 @@ fn arrival(
     form: &[SimId],
     ents: &Entities,
     terrain: &Heightfield,
+    ditches: Option<&BlockLayer>,
     spacing: Fx,
 ) -> (Vec<FxVec2>, FxVec2) {
     let n = form.len();
@@ -167,7 +169,15 @@ fn arrival(
     let slots: Vec<FxVec2> = slots.into_iter().map(|p| terrain.clamp(p)).collect();
     let mut slots = assign_by_axis(form, ents, &slots, axis);
     if !matches!(sq.order, Order::Dig { .. } | Order::Retreat) {
-        seek_cover(sq.owner, sq.nav.goal, form, ents, terrain, &mut slots);
+        seek_cover(
+            sq.owner,
+            sq.nav.goal,
+            form,
+            ents,
+            terrain,
+            ditches,
+            &mut slots,
+        );
     }
     // Back to member order.
     let mut out = Vec::with_capacity(sq.members.len());
@@ -215,7 +225,11 @@ fn trench_near(terrain: &Heightfield, p: FxVec2) -> bool {
 /// are all `combat::TRENCH_MM` below the base surface, so `p` is near the
 /// middle of the floor and a man who stops within the arrive radius of it
 /// still stands in the trench.
-fn trench_spot(terrain: &Heightfield, p: FxVec2) -> bool {
+fn trench_spot(terrain: &Heightfield, ditches: Option<&BlockLayer>, p: FxVec2) -> bool {
+    // S3: no fire step in an AT ditch.
+    if ditches.is_some_and(|d| d.is_ditch(crate::vehicle::node_at(terrain, p))) {
+        return false;
+    }
     let deep = Fx::from_milli(TRENCH_MM);
     let m = Fx::from_milli(TRENCH_MARGIN_MM);
     let dug = |q: FxVec2| {
@@ -235,6 +249,7 @@ pub(crate) fn seek_cover(
     own: &[SimId],
     ents: &Entities,
     terrain: &Heightfield,
+    ditches: Option<&BlockLayer>,
     slots: &mut [FxVec2],
 ) {
     let gap = (Fx::from_milli(COVER_GAP_MM).raw() as u64).pow(2);
@@ -272,9 +287,9 @@ pub(crate) fn seek_cover(
     for slot in slots.iter_mut() {
         let in_trench = trenches
             .then(|| {
-                fine.iter()
-                    .map(|&o| *slot + o)
-                    .find(|&p| terrain.contains(p) && trench_spot(terrain, p) && free(&taken, p))
+                fine.iter().map(|&o| *slot + o).find(|&p| {
+                    terrain.contains(p) && trench_spot(terrain, ditches, p) && free(&taken, p)
+                })
             })
             .flatten();
         let pick = in_trench.or_else(|| {
@@ -327,6 +342,7 @@ impl MatchState {
         let mut repath = Vec::new();
         let prone_pct = mv.prone_speed_pct;
         let mut form: Vec<SimId> = Vec::new();
+        let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
         for (&id, sq) in self.squads.iter_mut() {
             // Vehicle squads drive in the Movement stage (`crate::vehicle`).
             if self.setup.squad_types[sq.type_idx as usize]
@@ -398,7 +414,7 @@ impl MatchState {
                             repath.push((id, nav.goal));
                         } else {
                             let (slots, facing) =
-                                arrival(sq, &form, ctx.ents, ctx.terrain, spacing);
+                                arrival(sq, &form, ctx.ents, ctx.terrain, ditches, spacing);
                             let nav = &mut sq.nav;
                             nav.slots = slots;
                             nav.facing = facing;

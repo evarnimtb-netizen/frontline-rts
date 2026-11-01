@@ -78,7 +78,15 @@ fn started(w: &World, sq: SquadId) -> bool {
 
 /// Orders a dig and returns the seconds from the first spadeful to done.
 fn dig_seconds(w: &mut World, sq: SquadId, line: Vec<FxVec2>) -> u64 {
-    w.step(&[cmd(0, 0, CommandKind::Dig { squad: sq, line })]);
+    w.step(&[cmd(
+        0,
+        0,
+        CommandKind::Dig {
+            squad: sq,
+            line,
+            profile: Default::default(),
+        },
+    )]);
     assert!(digging(w, sq), "dig order rejected");
     for _ in 0..30 * 120 {
         if started(w, sq) {
@@ -154,7 +162,15 @@ fn mg_and_mortar_teams_cannot_dig() {
         .enumerate()
         .map(|(k, &sq)| {
             let line = line_near(&w, sq, 10);
-            cmd(0, 10 + k as u32, CommandKind::Dig { squad: sq, line })
+            cmd(
+                0,
+                10 + k as u32,
+                CommandKind::Dig {
+                    squad: sq,
+                    line,
+                    profile: Default::default(),
+                },
+            )
         })
         .collect();
     w.step(&orders);
@@ -172,6 +188,7 @@ fn trench_deepens_in_passes_and_diggers_stand_on_the_floor() {
         CommandKind::Dig {
             squad: sq,
             line: line.clone(),
+            profile: Default::default(),
         },
     )]);
     // Depth at the first man's spot, sampled each second.
@@ -327,7 +344,15 @@ fn dig_script(w: &World, tick: u64) -> Vec<Command> {
             .enumerate()
         {
             let line = line_near(w, sq, 8 + 4 * k as i32);
-            out.push(cmd(p, k as u32, CommandKind::Dig { squad: sq, line }));
+            out.push(cmd(
+                p,
+                k as u32,
+                CommandKind::Dig {
+                    squad: sq,
+                    line,
+                    profile: Default::default(),
+                },
+            ));
         }
     }
     out

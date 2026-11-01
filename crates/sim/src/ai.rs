@@ -64,7 +64,7 @@
 
 use std::collections::BTreeMap;
 
-use frontline_content::SquadRole;
+use frontline_content::{DigProfile, SquadRole};
 use serde::{Deserialize, Serialize};
 
 use crate::command::CommandKind;
@@ -676,6 +676,7 @@ impl Planner<'_> {
                         CommandKind::Dig {
                             squad: m.id,
                             line: line.to_vec(),
+                            profile: DigProfile::Trench,
                         },
                     );
                 }

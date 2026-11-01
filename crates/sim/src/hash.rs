@@ -136,6 +136,7 @@ impl StableHash for Unit {
             UnitOrder::Idle | UnitOrder::Retreat => {}
             UnitOrder::Move { target } | UnitOrder::AttackMove { target } => target.put(out),
             UnitOrder::Dig { job } => job.put(out),
+            UnitOrder::Follow { vehicle } => vehicle.0.put(out),
         }
         let n = &self.nav;
         (n.phase as u8).put(out);
@@ -168,6 +169,7 @@ impl StableHash for Kit {
 fn put_dig(line: &[FxVec2], job: &DigJob, out: &mut Vec<u8>) {
     line.put(out);
     (job.front as u8).put(out);
+    (job.profile as u8).put(out);
     (job.segments.len() as u32).put(out);
     for g in &job.segments {
         g.from.put(out);
@@ -345,6 +347,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
                 target.put(out);
                 rounds.put(out);
             }
+            Order::Follow { vehicle } => vehicle.0.put(out),
         }
         let n = &sq.nav;
         (n.phase as u8).put(out);
@@ -357,6 +360,18 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         n.slots.put(out);
         n.phase_ticks.put(out);
         sq.focus.put(out);
+        match &sq.launcher {
+            None => 0u8.put(out),
+            Some(l) => {
+                1u8.put(out);
+                l.carrier.put(out);
+                l.handover.put(out);
+                l.rounds.put(out);
+                l.resupply.put(out);
+                l.attack.put(out);
+                l.aim_turret.put(out);
+            }
+        }
     }
     (g.points.len() as u32).put(out);
     for c in &g.points {
@@ -501,6 +516,8 @@ pub(crate) fn globals(
                 st.non_penetrations,
                 st.penetrations,
                 st.knockouts,
+                st.blast_track_hits,
+                st.rockets_fired,
             ] {
                 v.put(out);
             }

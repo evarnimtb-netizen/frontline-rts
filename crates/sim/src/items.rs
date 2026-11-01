@@ -441,6 +441,28 @@ impl MatchState {
             c.age < life
         });
         let every = setup.rules.items.resupply_ticks;
+        // AT teams (S3): one rocket per `every` while the carrier stands in
+        // the own base.
+        for sq in self.squads.values_mut() {
+            let Some(l) = &mut sq.launcher else { continue };
+            let ty = &setup.squad_types[sq.type_idx as usize];
+            let full = setup.weapons[ty.weapon as usize].rounds_carried;
+            let base = &setup.map.bases[setup.players[sq.owner.0 as usize].base as usize];
+            let r: Fx = base.radius.into();
+            let in_base = l.carrier.is_some_and(|c| {
+                (ents.transform[c.index()].pos.xy() - FxVec2::from(base.center)).length_sq_raw()
+                    <= FxVec2::new(r, Fx::ZERO).length_sq_raw()
+            });
+            if in_base && (l.rounds as u32) < full {
+                l.resupply += 1;
+                if l.resupply as u32 >= every {
+                    l.resupply = 0;
+                    l.rounds += 1;
+                }
+            } else {
+                l.resupply = 0;
+            }
+        }
         for i in 0..ents.len() {
             if ents.kind[i] != EntityKind::Soldier {
                 continue;

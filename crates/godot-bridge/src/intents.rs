@@ -144,6 +144,7 @@ pub fn dig_command(squad: u32, line: &[[f32; 2]]) -> CommandKind {
     CommandKind::Dig {
         squad: SquadId(squad),
         line: cap_points(line).into_iter().map(sim_to_fx).collect(),
+        profile: Default::default(),
     }
 }
 
@@ -227,6 +228,7 @@ pub fn unit_command(
         "dig_units" if line.len() >= 2 => CommandKind::DigUnits {
             units,
             line: cap_points(line).into_iter().map(sim_to_fx).collect(),
+            profile: Default::default(),
         },
         "set_stance" => CommandKind::SetStance {
             units,

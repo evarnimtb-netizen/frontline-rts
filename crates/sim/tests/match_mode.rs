@@ -196,6 +196,7 @@ fn bad_orders_are_rejected() {
             CommandKind::Dig {
                 squad: mine[0],
                 line: too_long,
+                profile: Default::default(),
             },
         ),
         cmd(
@@ -204,6 +205,7 @@ fn bad_orders_are_rejected() {
             CommandKind::Dig {
                 squad: mine[0],
                 line: vec![line[0]],
+                profile: Default::default(),
             },
         ),
         // Another faction's squad type.
@@ -223,6 +225,7 @@ fn bad_orders_are_rejected() {
             CommandKind::Dig {
                 squad: mine[0],
                 line,
+                profile: Default::default(),
             },
         ),
         cmd(0, 9, CommandKind::CallIn { squad_type: ger_mg }),
@@ -323,6 +326,7 @@ fn dig_and_barrage_orders_are_stored() {
         CommandKind::Dig {
             squad: eng,
             line: line.clone(),
+            profile: Default::default(),
         },
     )]);
     let arrived = run_until(&mut w, 30 * 120, |w| {
@@ -482,7 +486,15 @@ fn orders_for(w: &World, tick: u64) -> Vec<Command> {
     if tick == 260 {
         let eng = squads_of(w, 1)[2];
         let line = vec![FxVec2::from_int(700, 700), FxVec2::from_int(730, 690)];
-        out.push(cmd(1, 2, CommandKind::Dig { squad: eng, line }));
+        out.push(cmd(
+            1,
+            2,
+            CommandKind::Dig {
+                squad: eng,
+                line,
+                profile: Default::default(),
+            },
+        ));
     }
     out.reverse();
     out

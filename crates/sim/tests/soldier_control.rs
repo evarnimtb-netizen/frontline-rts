@@ -203,7 +203,11 @@ fn unit_commands_drop_bad_men_and_reject_empty_sets() {
     // DigUnits with only men who cannot dig: ignored.
     let mg = call_in(&mut w, 0, "ww2:ger_mg_team");
     let line = vec![FxVec2::from_int(300, 300), FxVec2::from_int(306, 300)];
-    let digs = |units: Vec<SimId>, line: Vec<FxVec2>| CommandKind::DigUnits { units, line };
+    let digs = |units: Vec<SimId>, line: Vec<FxVec2>| CommandKind::DigUnits {
+        units,
+        line,
+        profile: Default::default(),
+    };
     let mg_men = members(&w, mg);
     assert!(!order(&mut w, 0, digs(mg_men, line.clone())));
     // A bad line is refused like a squad Dig.
@@ -608,6 +612,7 @@ fn dig_units_split_the_line_among_only_those_men() {
         CommandKind::DigUnits {
             units,
             line: line.clone(),
+            profile: Default::default(),
         }
     ));
     let g = w.game().unwrap();
@@ -677,7 +682,11 @@ fn dig_units_split_the_line_among_only_those_men() {
     assert!(order(
         &mut w,
         0,
-        CommandKind::DigUnits { units, line: line2 }
+        CommandKind::DigUnits {
+            units,
+            line: line2,
+            profile: Default::default()
+        }
     ));
     assert!(matches!(
         w.game().unwrap().squad(sq).unwrap().order,
@@ -733,6 +742,7 @@ fn script(w: &World) -> Vec<Command> {
         4 => CommandKind::DigUnits {
             units: pick(3),
             line: vec![target, w.terrain().clamp(target + FxVec2::from_int(8, 3))],
+            profile: Default::default(),
         },
         5 => CommandKind::RetreatUnits { units: pick(1) },
         _ => {

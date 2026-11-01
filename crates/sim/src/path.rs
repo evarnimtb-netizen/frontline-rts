@@ -38,6 +38,10 @@
 //!   the edge of a blocked area can drive out. Smoothing never keeps a
 //!   segment that enters the clearance band.
 //!
+//! * Infantry in a match with AT ditches (S3, [`find_infantry_path`]): a
+//!   step into an AT-ditch node costs ×3 and gets no trench discount, so
+//!   men cross a ditch but never use it as a covered road.
+//!
 //! The scratch arrays here are reset per search and never carry state across
 //! ticks, so they are neither saved nor hashed.
 
@@ -88,6 +92,9 @@ const VEHICLE_DUG_DM: u8 = 4;
 /// Ground dug at least 1.0 m (trenches, big craters), percent.
 const VEHICLE_DEEP_PCT: u64 = 400;
 const VEHICLE_DEEP_DM: u8 = 10;
+
+/// Infantry step cost into an AT-ditch node, percent (S3).
+pub const DITCH_COST_PCT: u64 = 300;
 
 /// Result of [`find_path`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -180,7 +187,31 @@ pub fn find_path(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
-    search(terrain, from, to, cost, None, max_expansions, s)
+    search(terrain, from, to, cost, None, None, max_expansions, s)
+}
+
+/// [`find_path`] for infantry in a match with AT ditches (S3): a step into
+/// an AT-ditch node ([`BlockLayer::is_ditch`]) costs [`DITCH_COST_PCT`]
+/// and never gets the trench discount.
+pub fn find_infantry_path(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    ditches: &BlockLayer,
+    max_expansions: u32,
+    s: &mut PathScratch,
+) -> PathResult {
+    search(
+        terrain,
+        from,
+        to,
+        cost,
+        None,
+        Some(ditches),
+        max_expansions,
+        s,
+    )
 }
 
 /// Finds a vehicle path (module docs): `cost.max_slope_pct` is the
@@ -194,7 +225,16 @@ pub fn find_vehicle_path(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
-    search(terrain, from, to, cost, Some(vehicle), max_expansions, s)
+    search(
+        terrain,
+        from,
+        to,
+        cost,
+        Some(vehicle),
+        None,
+        max_expansions,
+        s,
+    )
 }
 
 /// Vehicle step-cost multiplier (percent) into node `(mx, my)`, or `None`
@@ -232,15 +272,18 @@ fn vehicle_pct(
     Some(pct)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn search(
     terrain: &Heightfield,
     from: FxVec2,
     to: FxVec2,
     cost: &PathCost,
     vehicle: Option<&VehiclePathCost>,
+    ditches: Option<&BlockLayer>,
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
+    let ditch = |n: u32| ditches.is_some_and(|d| d.is_ditch(n));
     let dim = terrain.dim();
     let to = terrain.clamp(to);
     let (sx, sy) = terrain.nearest_grid(from);
@@ -254,7 +297,7 @@ fn search(
     s.parent[start as usize] = start;
     s.seen[start as usize] = stamp;
     let near = sx.abs_diff(tx).max(sy.abs_diff(ty)) <= TRENCH_SEARCH_NODES;
-    let weight = if vehicle.is_none() && near && terrain.is_trench(sx, sy) {
+    let weight = if vehicle.is_none() && near && terrain.is_trench(sx, sy) && !ditch(start) {
         H_WEIGHT_PCT * cost.trench_cost_pct / 100
     } else {
         H_WEIGHT_PCT
@@ -340,7 +383,10 @@ fn search(
             };
             if let Some(pct) = vpct {
                 c = (c as u64 * pct / 100).min(u32::MAX as u64 / 4) as u32;
-            } else if n_trench && terrain.is_trench(mx, my) {
+            } else if ditch(m) {
+                // An AT ditch: crossable, dear, never a covered road.
+                c = (c as u64 * DITCH_COST_PCT / 100).min(u32::MAX as u64 / 4) as u32;
+            } else if n_trench && terrain.is_trench(mx, my) && !ditch(n) {
                 c = (c as u64 * cost.trench_cost_pct as u64 / 100) as u32;
             }
             // Saturating: extreme slope rules on a large map could exceed

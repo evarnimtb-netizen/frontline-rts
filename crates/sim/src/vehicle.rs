@@ -76,7 +76,7 @@ use crate::hash::HashCache;
 use crate::rng::{Purpose, RngStream};
 use crate::snapshot::{ArmourEventKind, NONE_U8};
 use crate::spatial::SpatialHash;
-use crate::terrain::{Heightfield, SPACING_M};
+use crate::terrain::{Heightfield, SPACING_M, TRENCH_NAV_DM};
 
 /// Height samples per track, rear (0) to front (4).
 pub const TRACK_SAMPLES: usize = 5;
@@ -248,10 +248,13 @@ pub struct VehicleState {
     pub progress_ticks: u16,
     /// Tick of the last follower re-path (stuck or newly blocked).
     pub repath_tick: Option<u64>,
-    /// Soldiers escorting it (`FollowUnits`), ascending.
+    /// Soldiers escorting it (`FollowUnits`), ascending; listed afresh
+    /// every Intent stage (`crate::orders`).
     pub followers: Vec<SimId>,
     /// Set when knocked out (the entity is then a `Wreck`).
     pub wreck_tick: Option<u64>,
+    /// `FaceUnits`: the point the hull front turns to while holding.
+    pub face: Option<FxVec2>,
 }
 
 impl VehicleState {
@@ -306,7 +309,17 @@ impl VehicleState {
             repath_tick: None,
             followers: Vec::new(),
             wreck_tick: None,
+            face: None,
         }
+    }
+
+    /// A new move, stop or retreat order ends an `AttackUnit` focus, a
+    /// `FaceUnits` turn and a field repair (`crate::orders`).
+    pub fn clear_orders(&mut self) {
+        self.attack = None;
+        self.face = None;
+        self.repairing = None;
+        self.repair_progress = 0;
     }
 
     /// The seat of `role`, if the vehicle has one.
@@ -417,7 +430,11 @@ impl VehicleState {
             || self.repath_tick.is_some_and(|t| t > tick)
             || self.wreck_tick.is_some_and(|t| t > tick)
             || self.followers.len() > crate::unit::MAX_UNITS
-            || !self.followers.windows(2).all(|w| w[0] < w[1]);
+            || !self.followers.windows(2).all(|w| w[0] < w[1])
+            || self.face.is_some_and(|f| {
+                !(Fx::ZERO..=map).contains(&f.x) || !(Fx::ZERO..=map).contains(&f.y)
+            })
+            || (self.wreck_tick.is_some() && self.face.is_some());
         if bad {
             return Err("vehicle state is out of range");
         }
@@ -731,6 +748,9 @@ pub struct BlockLayer {
     /// of the match's vehicle types (`u16::MAX`: none).
     ditch_dm: u16,
     raw: Vec<bool>,
+    /// Nodes of an AT ditch dug trench-deep (within 2 m of a line, `dug`
+    /// at least `TRENCH_NAV_DM`): infantry path costs and cover (S3).
+    ditch: Vec<bool>,
     blocked: Vec<bool>,
     /// Blocked dilated once more: the clearance band a hull turning on a
     /// node there could clip (paths avoid it, smoothing never enters it).
@@ -755,6 +775,7 @@ impl BlockLayer {
             dim,
             ditch_dm,
             raw: vec![false; n],
+            ditch: vec![false; n],
             blocked: vec![false; n],
             margin: vec![false; n],
             pending: Vec::new(),
@@ -777,6 +798,13 @@ impl BlockLayer {
     #[inline]
     pub fn is_blocked(&self, node: u32) -> bool {
         self.blocked.get(node as usize).copied().unwrap_or(false)
+    }
+
+    /// Whether `node` lies in an AT ditch (infantry: dear, no trench
+    /// discount, no cover spot).
+    #[inline]
+    pub fn is_ditch(&self, node: u32) -> bool {
+        self.ditch.get(node as usize).copied().unwrap_or(false)
     }
 
     /// Whether `node` is blocked or next to a blocked node.
@@ -869,8 +897,11 @@ impl BlockLayer {
             for gy in r[1]..=r[3] {
                 for gx in r[0]..=r[2] {
                     let p = FxVec2::from_int(gx as i32 * SPACING_M, gy as i32 * SPACING_M);
-                    let ditch = terrain.dug_dm(gx, gy) as u16 >= self.ditch_dm
+                    let dug = terrain.dug_dm(gx, gy);
+                    let near = (dug >= TRENCH_NAV_DM || dug as u16 >= self.ditch_dm)
                         && ditches.iter().any(|l| near_line(l, p, reach_sq));
+                    self.ditch[(gy * dim + gx) as usize] = near && dug >= TRENCH_NAV_DM;
+                    let ditch = near && dug as u16 >= self.ditch_dm;
                     let wreck = !ditch
                         && wrecks.iter().any(|w| {
                             let d = p - w.center;
@@ -1440,6 +1471,7 @@ impl MatchState {
             vs.burn = 0;
             vs.base_ticks = 0;
             vs.followers.clear();
+            vs.face = None;
             vs.reload = 0;
             vs.loaded = None;
             vs.bog = 0;
@@ -1487,6 +1519,11 @@ impl MatchState {
         let hz = self.setup.tick_hz;
         let mut repath: Vec<Repath> = Vec::new();
         let mut bogged: Vec<(SimId, u8, FxVec3)> = Vec::new();
+        let escorts: Vec<(SimId, Option<Fx>)> = self
+            .vehicles
+            .keys()
+            .map(|&id| (id, self.escort_speed(ents, id)))
+            .collect();
         let MatchState {
             setup,
             vehicles,
@@ -1507,6 +1544,10 @@ impl MatchState {
                         &Follow {
                             id,
                             sid,
+                            escort: escorts
+                                .binary_search_by_key(&id, |e| e.0)
+                                .ok()
+                                .and_then(|k| escorts[k].1),
                             ents,
                             terrain,
                             soldiers,
@@ -1567,6 +1608,8 @@ impl MatchState {
 struct Follow<'a> {
     id: SimId,
     sid: SquadId,
+    /// The escort speed cap (`crate::orders`).
+    escort: Option<Fx>,
     ents: &'a Entities,
     terrain: &'a Heightfield,
     soldiers: &'a SpatialHash,
@@ -1589,7 +1632,17 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     if nav.phase != NavPhase::Moving {
         vs.progress_at = pos;
         vs.progress_ticks = 0;
-        return (0, 0);
+        // `FaceUnits`: pivot until the front points at the spot.
+        let Some(f) = vs.face else { return (0, 0) };
+        let to = f - pos;
+        let err = (Fx::atan2(to.y, to.x) - t.yaw).wrap_angle();
+        if to.length_sq_raw() == 0 || err.abs() <= deg(crate::orders::FACE_DONE_DEG) {
+            vs.face = None;
+            return (0, 0);
+        }
+        let full = deg(FULL_STEER_DEG);
+        let steer = (err.raw() as i64 * 127 / full.raw() as i64).clamp(-127, 127);
+        return (0, steer as i8);
     }
     if nav.phase_ticks <= 1 {
         vs.progress_at = pos;
@@ -1702,6 +1755,10 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     }
     if let Some(cap) = cap {
         throttle = throttle.min(throttle_for(cap, top));
+    }
+    // Escorted: no faster than the followers walk.
+    if let Some(cap) = c.escort {
+        throttle = throttle.min(throttle_for(cap, top).max(8));
     }
     if ae >= hi && vs.speed.abs() < Fx::from_milli(PIVOT_SPEED_MM_S) {
         // Pivot on the spot.

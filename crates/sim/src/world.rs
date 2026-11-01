@@ -315,7 +315,8 @@ pub struct Stats {
     pub throws: u64,
     /// S3 (match mode, hashed): armour slab tests in all ticks and the most
     /// in one tick; small-arms rounds stopped by vehicles and wrecks;
-    /// main-gun and rocket hits on plates by result; vehicles knocked out.
+    /// main-gun and rocket hits on plates by result; vehicles knocked out;
+    /// tracks hit by blasts beside a vehicle; launcher rockets fired.
     pub armour_box_tests: u64,
     pub armour_box_peak: u64,
     pub rounds_stopped: u64,
@@ -323,6 +324,8 @@ pub struct Stats {
     pub non_penetrations: u64,
     pub penetrations: u64,
     pub knockouts: u64,
+    pub blast_track_hits: u64,
+    pub rockets_fired: u64,
 }
 
 /// Everything that is saved. All of it is covered by the state hash, except
@@ -859,6 +862,7 @@ impl World {
             };
             game.spawn_call_ins(&mut ctx);
             game.run_ai(ctx.ents, ctx.terrain, *tick);
+            game.approach_attacks(&mut ctx);
             game.serve_paths(&mut ctx, path_scratch);
             game.dig_work(entities, terrain, hash, *tick);
             let mut ctx = Ctx {
@@ -867,6 +871,7 @@ impl World {
                 hash,
                 tick: *tick,
             };
+            game.steer_escorts(&mut ctx);
             game.steer_squads(&mut ctx);
             game.steer_units(&mut ctx);
         } else {
@@ -1161,6 +1166,15 @@ impl World {
             for b in fire_bufs.iter() {
                 fire_merged.extend_from_slice(b);
             }
+            game.fire_launchers(
+                entities,
+                terrain,
+                hash,
+                seed,
+                tick,
+                fire_merged,
+                &mut stats.rockets_fired,
+            );
             game.fire_mortars(entities, terrain, hash, seed, tick, fire_merged);
             let gun_ctx = GunCtx {
                 terrain,
@@ -2696,6 +2710,7 @@ mod tests {
             repath_tick: _,
             followers: _,
             wreck_tick: _,
+            face: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -2742,6 +2757,7 @@ mod tests {
             ("repath_tick", Box::new(|v| v.repath_tick = Some(1))),
             ("followers", Box::new(|v| v.followers.push(SimId(1)))),
             ("wreck_tick", Box::new(|v| v.wreck_tick = Some(1))),
+            ("face", Box::new(|v| v.face = Some(FxVec2::from_int(5, 6)))),
         ];
         let base = w.full_state_hash();
         for (name, edit) in &edits {
@@ -2763,6 +2779,8 @@ mod tests {
             Box::new(|s| s.stats.non_penetrations += 1),
             Box::new(|s| s.stats.penetrations += 1),
             Box::new(|s| s.stats.knockouts += 1),
+            Box::new(|s| s.stats.blast_track_hits += 1),
+            Box::new(|s| s.stats.rockets_fired += 1),
             Box::new(|s| {
                 s.game.as_mut().unwrap().path_queue.queues[0][0] = crate::game::PathReq::Vehicle {
                     squad: SquadId(3),
@@ -2868,6 +2886,10 @@ mod tests {
             (
                 Box::new(move |s| vehicle(s, va).followers = vec![vb]),
                 "wrong entity",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).face = Some(FxVec2::from_int(-5, 6))),
+                "out of range",
             ),
             (
                 Box::new(move |s| {

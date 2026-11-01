@@ -531,6 +531,7 @@ impl RenderSnapshot {
                                     *target
                                 }
                                 UnitOrder::Retreat => g.base_of(PlayerId(owner)),
+                                UnitOrder::Follow { .. } => u.nav.goal,
                                 UnitOrder::Dig { job } => {
                                     g.unit_digs().get(job).map_or(u.nav.goal, |d| {
                                         let line = &d.line;
@@ -606,7 +607,7 @@ impl RenderSnapshot {
                 goal: sq.nav.goal.to_f32(),
                 dig_pct: match &sq.order {
                     Order::Dig { job, .. } => {
-                        job.progress_pct(&g.setup().rules.dig, g.setup().tick_hz)
+                        job.progress_pct(job.rules(&g.setup().rules), g.setup().tick_hz)
                     }
                     _ => 0,
                 },

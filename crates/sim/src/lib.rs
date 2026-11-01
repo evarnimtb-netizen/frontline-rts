@@ -25,8 +25,9 @@
 //! penetration, the box narrowphase and the derived armour tables, S3;
 //! [`vehicle`]: vehicle state, pose, driving, the vehicle index and block
 //! layer, S3; [`gunnery`]: main guns and vehicle MGs, S3; [`damage`]: shells
-//! on plates, penetration, components, crew, fire, repair and knock-out,
-//! S3). Terrain
+//! on plates, penetration, components, crew, fire, repair, blasts on
+//! tracks and knock-out, S3; [`orders`]: vehicle orders and escorts, S3).
+//! Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
 //!
@@ -46,6 +47,7 @@ pub mod game;
 pub mod gunnery;
 mod hash;
 pub mod items;
+pub mod orders;
 pub mod path;
 pub mod projectile;
 pub mod rng;
@@ -68,8 +70,8 @@ pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, S
 pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{
-    CallIn, CapturePoint, MatchState, NavPhase, Order, OrderKind, Outcome, PathReq, PlayerState,
-    Squad, SquadId,
+    CallIn, CapturePoint, Launcher, MatchState, NavPhase, Order, OrderKind, Outcome, PathReq,
+    PlayerState, Squad, SquadId,
 };
 pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, Windup};
 pub use projectile::{Projectile, ProjectilePool};

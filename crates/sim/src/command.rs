@@ -5,13 +5,14 @@
 //! payload breaks any remaining ties, so the order is total). Invalid commands
 //! (dead unit, wrong owner) are ignored, identically on every client.
 
-use frontline_content::ItemKind;
+use frontline_content::{DigProfile, ItemKind};
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::{PlayerId, SimId};
 use crate::fx::FxVec2;
 use crate::game::SquadId;
 use crate::unit::StanceOrder;
+use crate::vehicle::AmmoChoice;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct Command {
@@ -38,10 +39,15 @@ pub enum CommandKind {
     Stop { squad: SquadId },
     /// Back to the own base, faster.
     Retreat { squad: SquadId },
-    /// Dig a trench along `line` (2..=16 points, at most the rules'
-    /// `dig.max_length`; squads that can dig only). Stage 1 walks the squad
-    /// there and spreads it along the line; digging comes later.
-    Dig { squad: SquadId, line: Vec<FxVec2> },
+    /// Dig a trench along `line` (2..=16 points, at most the profile's
+    /// `max_length`; squads that can dig only). The squad walks there,
+    /// spreads along the line and digs it in passes. S3: `profile` picks
+    /// the cross-section; the AT ditch is for engineers only.
+    Dig {
+        squad: SquadId,
+        line: Vec<FxVec2>,
+        profile: DigProfile,
+    },
     /// Mortar squads: fire `rounds` (1..=50) at `target`. Stage 1 stores the
     /// order and turns the squad to face the target; firing comes later.
     Barrage {
@@ -71,11 +77,12 @@ pub enum CommandKind {
     /// Only these men fall back to the own base.
     RetreatUnits { units: Vec<SimId> },
     /// These men dig a trench along `line` (as `Dig`), split among them.
-    /// Men of squads that cannot dig are dropped. Naming exactly one whole
-    /// squad gives that squad a `Dig` order.
+    /// Men of squads that cannot dig (that profile) are dropped. Naming
+    /// exactly one whole squad gives that squad a `Dig` order.
     DigUnits {
         units: Vec<SimId>,
         line: Vec<FxVec2>,
+        profile: DigProfile,
     },
     /// Stance order for the men. Not an order to go anywhere: it neither
     /// detaches nor regroups anyone.
@@ -103,4 +110,26 @@ pub enum CommandKind {
         item: ItemKind,
         target: FxVec2,
     },
+    // ---- Vehicle orders (S3). `units` as above; own vehicle ids are
+    // accepted (each stands for its squad of one), soldiers are handled as
+    // each command says.
+    /// Vehicles back up to `target` (clamped), the front kept toward the
+    /// enemy; soldiers in the set get a `MoveUnits`.
+    ReverseUnits { units: Vec<SimId>, target: FxVec2 },
+    /// Vehicles stop and turn the hull front toward `toward`, then hold.
+    /// Soldiers are dropped.
+    FaceUnits { units: Vec<SimId>, toward: FxVec2 },
+    /// `target` must be a live enemy vehicle the player sees. Vehicles and
+    /// launcher gunners in the set focus it while it is seen; vehicles
+    /// without range or a line of fire move toward it until they have
+    /// both. Other men ignore it.
+    AttackUnit { units: Vec<SimId>, target: SimId },
+    /// The main-gun round the vehicles load: `Auto`, `Ap` or `He`.
+    SetAmmo { units: Vec<SimId>, ammo: AmmoChoice },
+    /// The vehicles' crews repair the worst repairable component in place.
+    RepairUnits { units: Vec<SimId> },
+    /// The soldiers escort own vehicle `vehicle` in single file behind it
+    /// (a whole squad as a squad order, other men one by one, detached).
+    /// Vehicle ids in `units` are dropped.
+    FollowUnits { units: Vec<SimId>, vehicle: SimId },
 }

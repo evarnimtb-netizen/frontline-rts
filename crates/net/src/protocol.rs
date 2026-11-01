@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// Wire version. Bump on any change to a body, a kind or a limit that a
 /// peer could observe.
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -546,7 +546,7 @@ impl Packet {
 pub fn command_in_limits(k: &CommandKind) -> bool {
     let lists = match k {
         CommandKind::Dig { line, .. } => line.len() <= MAX_DIG_POINTS,
-        CommandKind::DigUnits { units, line } => {
+        CommandKind::DigUnits { units, line, .. } => {
             units.len() <= MAX_UNITS && line.len() <= MAX_DIG_POINTS
         }
         CommandKind::MoveUnits { units, .. }
@@ -555,7 +555,13 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::RetreatUnits { units }
         | CommandKind::SetStance { units, .. }
         | CommandKind::Throw { units, .. }
-        | CommandKind::ThrowEach { units, .. } => units.len() <= MAX_UNITS,
+        | CommandKind::ThrowEach { units, .. }
+        | CommandKind::ReverseUnits { units, .. }
+        | CommandKind::FaceUnits { units, .. }
+        | CommandKind::AttackUnit { units, .. }
+        | CommandKind::SetAmmo { units, .. }
+        | CommandKind::RepairUnits { units }
+        | CommandKind::FollowUnits { units, .. } => units.len() <= MAX_UNITS,
         CommandKind::MoveSoldier { .. }
         | CommandKind::Spawn { .. }
         | CommandKind::Despawn { .. }

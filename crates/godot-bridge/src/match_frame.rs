@@ -402,14 +402,14 @@ impl MatchFrame {
                     v.target = Some(target.to_f32());
                 }
                 Order::Dig { line, job } => {
-                    v.dig_pct = job.progress_pct(&setup.rules.dig, setup.tick_hz);
+                    v.dig_pct = job.progress_pct(job.rules(&setup.rules), setup.tick_hz);
                     v.dig_line.extend(line.iter().map(|p| p.to_f32()));
                 }
                 Order::Barrage { target, rounds } => {
                     v.target = Some(target.to_f32());
                     v.rounds = *rounds;
                 }
-                Order::Idle | Order::Retreat => {}
+                Order::Idle | Order::Retreat | Order::Follow { .. } => {}
             }
             self.squads.push(v);
         }
@@ -763,6 +763,7 @@ mod tests {
             kind: CommandKind::Dig {
                 squad: own,
                 line: vec![a, b],
+                profile: Default::default(),
             },
         }]);
         let mut tiles = 0;

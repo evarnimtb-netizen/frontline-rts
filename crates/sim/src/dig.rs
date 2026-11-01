@@ -33,7 +33,8 @@
 //! (arriving or holding), and his spot becomes his goal. A job with no
 //! diggers left is dropped; a finished one sets its diggers `Idle`.
 
-use frontline_content::setup::DigSetup;
+use frontline_content::DigProfile;
+use frontline_content::setup::{DigSetup, RulesSetup};
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
@@ -77,9 +78,16 @@ pub struct DigJob {
     /// `-1` on the right.
     pub front: i8,
     pub segments: Vec<DigSegment>,
+    /// The cross-section dug (S3: a trench or an AT ditch).
+    pub profile: DigProfile,
 }
 
 impl DigJob {
+    /// This job's profile rules.
+    pub fn rules<'a>(&self, r: &'a RulesSetup) -> &'a DigSetup {
+        r.dig_profile(self.profile)
+    }
+
     /// Work points × tick rate needed for `seg`.
     pub fn required(seg: &DigSegment, dig: &DigSetup, hz: u32) -> u64 {
         let len = (seg.to - seg.from).raw().max(0) as u64;
@@ -120,9 +128,11 @@ impl DigJob {
         base: FxVec2,
         ents: &Entities,
         terrain: &Heightfield,
-        dig: &DigSetup,
+        rules: &RulesSetup,
+        profile: DigProfile,
         hz: u32,
     ) -> DigJob {
+        let dig = rules.dig_profile(profile);
         let len = polyline_length(line);
         let mid = point_along(line, len.div_int(2));
         let enemy = ents
@@ -171,7 +181,11 @@ impl DigJob {
                 seg
             })
             .collect();
-        DigJob { front, segments }
+        DigJob {
+            front,
+            segments,
+            profile,
+        }
     }
 }
 
@@ -316,8 +330,6 @@ impl MatchState {
 
     fn squad_dig_work(&mut self, ents: &Entities, terrain: &mut Heightfield, tick: u64) {
         let hz = self.setup.tick_hz;
-        let dig = &self.setup.rules.dig;
-        let n = dig.passes as i32;
         let reach_sq = Fx::from_milli(DIG_REACH_MM).raw() as u64;
         let reach_sq = reach_sq * reach_sq;
         for sq in self.squads.values_mut() {
@@ -331,6 +343,8 @@ impl MatchState {
             let Order::Dig { line, job } = &mut sq.order else {
                 continue;
             };
+            let dig = job.rules(&self.setup.rules);
+            let n = dig.passes as i32;
             let detached = |m: SimId| ents.unit[m.index()].detached;
             // 1. Let go of men who left, detached or finished.
             for seg in job.segments.iter_mut() {
@@ -401,8 +415,6 @@ impl MatchState {
             return;
         }
         let hz = self.setup.tick_hz;
-        let dig = &self.setup.rules.dig;
-        let n = dig.passes as i32;
         let reach_sq = Fx::from_milli(DIG_REACH_MM).raw() as u64;
         let reach_sq = reach_sq * reach_sq;
         // `(job, man, dig rate)`, ascending.
@@ -431,6 +443,8 @@ impl MatchState {
                 continue;
             }
             let (line, job) = (&ud.line, &mut ud.job);
+            let dig = job.rules(&self.setup.rules);
+            let n = dig.passes as i32;
             let standing = |m: SimId| {
                 matches!(
                     ents.unit[m.index()].nav.phase,

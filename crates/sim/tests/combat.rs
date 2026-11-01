@@ -523,7 +523,15 @@ fn battle_orders(w: &World, t0: u64) -> Vec<Command> {
         ));
         let eng = squad(w, 0, "ww2:ger_engineer_squad");
         let line = vec![FxVec2::from_int(405, 440), FxVec2::from_int(405, 460)];
-        out.push(cmd(0, 1000, CommandKind::Dig { squad: eng, line }));
+        out.push(cmd(
+            0,
+            1000,
+            CommandKind::Dig {
+                squad: eng,
+                line,
+                profile: Default::default(),
+            },
+        ));
     }
     if dt == 150
         && let Some((&id, _)) = w
