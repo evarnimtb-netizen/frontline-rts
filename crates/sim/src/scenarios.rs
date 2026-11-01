@@ -139,6 +139,16 @@ pub fn members(w: &World, sq: SquadId) -> Vec<SimId> {
         .map_or_else(Vec::new, |s| s.members.clone())
 }
 
+/// S3c: no bail-out trigger fires (the Abandon order still works).
+pub fn no_bail(setup: &mut MatchSetup) {
+    let b = &mut setup.rules.vehicles.bail;
+    b.ammo_fire_bail = 0;
+    b.engine_fire_bail_s = 0;
+    b.crew_below = 0;
+    b.useless_bail = 0;
+    b.under_fire_s = 0;
+}
+
 /// Gives vehicle `v` [`TOUGH_HP`] in every seat and component (gun
 /// optionally destroyed) and puts out a fire: case 1 targets take every
 /// hit without being knocked out. Re-apply after each tick.
@@ -232,6 +242,9 @@ pub fn pen_stats(
     setup.rules.vehicles.rack_detonate_pct = 0;
     setup.rules.vehicles.fire_start_pct = 0;
     setup.rules.vehicles.damage.rack_fire_pct = 0;
+    // S3c: a toughened target (gun out) must never bail out, or the shooter
+    // loses it after two penetrations ("disabled under fire").
+    no_bail(&mut setup);
     for v in &mut setup.vehicles {
         if let Some(m) = v.mounts.first_mut() {
             m.ammo.iter_mut().for_each(|a| a.count = 500);
@@ -381,6 +394,9 @@ pub fn crossing_target(
     setup.rules.vehicles.rack_detonate_pct = 0;
     setup.rules.vehicles.fire_start_pct = 0;
     setup.rules.vehicles.damage.rack_fire_pct = 0;
+    // S3c: a toughened target (gun out) must never bail out, or the shooter
+    // loses it after two penetrations ("disabled under fire").
+    no_bail(&mut setup);
     for v in &mut setup.vehicles {
         v.mobility.speed = Fixed::from_cm(CROSSING_CM_S as u32);
         v.mobility.reverse = v.mobility.reverse.min(v.mobility.speed);

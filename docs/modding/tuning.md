@@ -20,7 +20,10 @@ needed.
 | Cover on arrival | same | `[cover]` |
 | Thrown items | same | `[items]`, `[items.throw]` |
 | Vehicle rules: unlock, fire, rack, repair | same | `[vehicles]` |
-| Ammo fire, rack outcome, crew knock-out (S3b) | same | `[vehicles.damage]` |
+| Ammo fire, rack outcome (S3b) | same | `[vehicles.damage]` |
+| S3c bail-out: triggers (`ammo_fire_bail`, `engine_fire_bail_s`, `crew_below` (replaces S3b's `crew_ko_below`), `useless_bail`, `under_fire_s`), exits (`wounded_hp`, `wounded_exit_pct`, `exit_clear_cm`, `dismount_ms`, `bail_suppression`), `abandoned_cap`, `crew_dismiss_s` | same | `[vehicles.bail]` |
+| S3c re-crewing an abandoned vehicle: `reach_m`, `board_s`, `min_men`, `any_infantry`, `capture`, untrained penalties (`untrained_reload_pct`, `untrained_traverse_pct`, `untrained_spread_pct`) | same | `[vehicles.recrew]` |
+| S3c a vehicle's crew squad and hatches (`crew_squad`; `[[hatches]]` `seats`, `frame`, `pos` cm, `exit_ms`); the crew squad defs (role `crew`, never in a roster) and their pistols (`class = "pistol"`) | `defs/vehicles/`, `defs/units/*_tank_crew.toml`, `defs/weapons/p38.toml`, `m1911a1.toml` | the def's own file |
 | Driving, yielding, ground pose | same | `[vehicles.driving]` |
 | Vehicle path costs | same | `[vehicles.path]` |
 | Escort file behind a vehicle | same | `[vehicles.escort]` |
@@ -89,7 +92,15 @@ frontline-cli skirmish --ai-vs-ai --seeds 10 --both-bases --ab --rules-override 
   long MGs were dry or HE at the reserve, satchel hunts and how they
   ended, crew alive at each knock-out, and per base side when each point
   was first taken and how long it was held. `--report json` also has
-  each knock-out's position and its shooter's (`s3c.ko_spots`).
+  each knock-out's position and its shooter's (`s3c.ko_spots`). S3c
+  Part A: the "tank losses" line counts knock-outs (`ko_*`) and
+  abandonments (`abandoned_<trigger>`); an `S3c <faction>` line splits
+  tanks lost into destroyed and abandoned, says what became of the
+  abandoned (re-crewed, captured, destroyed later, scrapped, standing) and
+  counts crewmen alive at bail-outs, out and dismissed in base; an `S3c
+  crews` line gives the abandonments with crew inside where at least one
+  man got out, and the men out still alive 60 s later. Rockets are
+  credited for an abandonment by the last hit, as for a knock-out.
 - `--ab` plays the same matches without the overrides too. It prints both
   tables and the change in each headline number.
 

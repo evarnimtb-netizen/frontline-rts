@@ -391,6 +391,32 @@ follow-up. Work proceeds on (A) of each question below.
   Destroyed as today.
 - [ ] **S3c-13. Match-length runs.** (A) Tune measures with `--minutes 45`
   (the CLI stops at 30 and calls it a draw). (B) Keep 30.
+- [ ] **S3c-14. Fewest men to re-crew** (Part A). `min_men` 2 (driver and
+  gunner) with `crew_below` 3 would make a two-man crew bail out again the
+  tick it boards. (A) Re-crewing needs max(`min_men`, `crew_below`) men
+  (3 today); a two-man crew cannot man its tank. (B) `crew_below` only
+  counts men lost since the last boarding.
+- [ ] **S3c-15. Boarding all at once** (Part A). The spec had men board one
+  by one, the vehicle becoming the player's at `min_men`. (A) The squad
+  gathers on the hull side (1 m out) and the men at the hull (one per
+  empty seat) climb in together, `board_s` × ⌈men / hatches⌉; they stand
+  exposed meanwhile; leaving restarts it. No half-crewed abandoned
+  vehicles to save, validate or bail out again. (B) One by one as specced.
+- [ ] **S3c-16. Abandoned entity kind** (Part A). (A) A new entity kind
+  `Abandoned` keeps the last owner in the owner column (the snapshot
+  sends owner 255 like a wreck plus `last_owner`), so every live-vehicle
+  system skips it without a check; the spec's `NEUTRAL` owner value is not
+  used. (B) A `NEUTRAL` owner on a live `Vehicle`.
+- [ ] **S3c-17. Bail out button** (Part A). (A) In the vehicle orders grid
+  (fifth slot of the orders row, "Again?" for 2 s), next to the card,
+  with the other vehicle orders. (B) On the vehicle card itself.
+- [ ] **S3c-18. Dismount** (Part A). (A) A man out of the hatch cannot fire
+  for `dismount_ms` (his weapon cooldown); he may move at once. (B) Also
+  hold him in place.
+- [ ] **S3c-19. AttackUnit on abandoned tanks** (Part A). (A) Tanks may be
+  ordered to shoot any abandoned vehicle (denial); AT teams keep their
+  rockets for live vehicles (`AttackUnit` on an abandoned one gives the
+  launcher no target). (B) Rockets too.
 
 ## S3 owner checklist (needs a person)
 

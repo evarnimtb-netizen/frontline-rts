@@ -531,12 +531,28 @@ vehicles: [                        # own + seen enemy + every wreck, ascending i
     gun_pitch: float,              # + = muzzle up
     speed: float,                  # m/s along the hull, negative reversing
     flags: int,                    # bitmask, see below; enemies get only
-                                   # BURNING, WRECK, KNOCKED_OUT
+                                   # BURNING, WRECK, KNOCKED_OUT (S3c: and
+                                   # ABANDONED, BOARDING)
     state: String,                 # the badge: first that applies of "wreck",
+                                   # S3c "abandoned",
                                    # "burning", "bogged", "immobilised",
                                    # "repairing", "crossing", "reversing",
                                    # "moving", "idle". Enemies: "wreck",
-                                   # "burning", "moving" (|speed| > 1) or "idle"
+                                   # "abandoned", "burning", "moving"
+                                   # (|speed| > 1) or "idle"
+    abandoned: bool,               # S3c, every vehicle: the crew bailed out.
+                                   # An abandoned vehicle has owner -1 and
+                                   # squad -1 (nobody's unit, anyone may
+                                   # inspect it, like a wreck) and also:
+    last_owner: int,               #   S3c, abandoned only: its last owner
+    abandon_cause: String,         #   why: "ammo_fire" | "engine_fire" |
+                                   #   "crew" | "useless" (gun and mobility
+                                   #   out) | "under_fire" | "order"
+    crew_squad: int,               #   its crew squad's id, -1 none (gone)
+    inside: int,                   #   crewmen still climbing out
+    boarding: bool,                #   a squad is climbing in (re-crew)
+    parts_out: PackedStringArray,  #   components at 0 HP ("gun", "track_l"
+                                   #   ...): the hover text names them
     # Own vehicles only (absent for enemies and wrecks):
     crew: PackedStringArray,       # 5 entries, D G C L R: "ok" | "wounded"
                                    # | "dead" (or left the seat) | "swapping"
@@ -580,7 +596,8 @@ armour_events: [                   # new since last frame, in sim order. Own
   {
     kind: String,                  # "fired" | "ricochet" | "no_pen" | "pen"
                                    # | "component_hit" | "crew_hit" | "disabled"
-                                   # | "knocked_out" | "bogged"
+                                   # | "knocked_out" | "bogged"; S3c
+                                   # "abandoned" | "crew_out" | "recrewed"
     vehicle: int,                  # the vehicle it happened to (or that fired)
     type: String,                  # its vehicle type key
     owner: int,                    # its owner at the time (a knocked-out
@@ -595,8 +612,16 @@ armour_events: [                   # new since last frame, in sim order. Own
                                    #   crew_hit: the seat role, "driver" ...
                                    #   knocked_out: the cause, "crew" |
                                    #   "ammo_rack" | "fire" | "ammo_fire" (S3b:
-                                   #   a rack fire burned out; "crew": fewer
-                                   #   than the rules' crew_ko_below alive)
+                                   #   a rack fire burned out; "crew": every
+                                   #   seat empty in a vehicle that cannot bail
+                                   #   out; S3c: an abandoned vehicle that
+                                   #   burns out or blows up is knocked out too)
+                                   #   abandoned (S3c): the trigger, as
+                                   #   vehicles[].abandon_cause
+                                   #   crew_out (S3c): the seat of the man who
+                                   #   got out ("driver" ...); pos: where he stands
+                                   #   recrewed (S3c): "own" | "captured";
+                                   #   owner: the new owner, attacker: the last
                                    #   others: ""
     zone: String,                  # ricochet / no_pen / pen: the plate's zone
                                    # ("hull_front" ... "turret_top"), else ""
@@ -624,7 +649,11 @@ callin: {
 ```
 
 `squads[].type` can now be `"at"` (an AT team: a launcher gunner and a
-rifleman). Squads never have type `"vehicle"`.
+rifleman). Squads never have type `"vehicle"`. S3c: `"crew"` is a tank
+crew that bailed out (pistols and SMGs; never bought). A crew squad whose
+tank still stands abandoned has `crew_of: int` (the vehicle id) and
+`crew_of_name: String` ("Panzer IV"); a squad walking to re-crew a vehicle
+has `order` `"recrew"` and `recrew: int` (the vehicle).
 
 **Flag bits** (`vehicles[].flags`; same values as `vehicle_flags` in
 `snapshot.rs`):
@@ -640,6 +669,8 @@ rifleman). Squads never have type `"vehicle"`.
 | 64 | CROSSING | a track over a trench (speed capped at 1 m/s) |
 | 128 | WRECK | knocked out: owner −1, blocks rounds and vehicles |
 | 256 | KNOCKED_OUT | a wreck less than 60 s old: smoke it (nearest 16) |
+| 512 | ABANDONED | S3c: the crew bailed out; owner −1, `last_owner` set; can be re-crewed |
+| 1024 | BOARDING | S3c: a squad is climbing into it |
 
 **Feed** (`events`), new kinds the bridge derives (the feed shows only
 main-gun and rocket matters):
@@ -650,6 +681,10 @@ main-gun and rocket matters):
 | `vehicle_knocked_out` | any seen vehicle knocked out (`player` = its owner) | "Panzer IV knocked out." / "Enemy Sherman knocked out." |
 | `vehicle_damaged` | an own component reaches 0 HP | "Panzer IV: track destroyed." |
 | `vehicle_bogged` | an own vehicle bogs | "Sherman bogged in trench." |
+| `vehicle_abandoned` | S3c: any seen vehicle abandoned (`player` = its owner) | "Panzer IV abandoned (ammo fire). Crew bailing out: 4 of 5." / "Enemy Sherman abandoned." |
+| `vehicle_recrewed` | S3c: an abandoned vehicle manned by its own side | "Panzer IV re-crewed." / "Enemy Sherman re-crewed." |
+| `vehicle_captured` | S3c: a capture involving the local player | "Captured an enemy Sherman." / "Our Panzer IV was captured by the enemy." |
+| `recrew_refused` | S3c: the sim refused a `recrew` | "Not re-crewed: vehicle limit reached (4)." |
 
 **Effects** (`effects`), new kinds:
 
@@ -686,6 +721,8 @@ soldiers). Squad-level intents (`move {squads}` ...) never carry vehicles.
 | `follow_units` | `{units, vehicle: int}` | FollowUnits `{units, vehicle}` | soldiers escort a friendly vehicle (single file behind it); vehicle ids in `units` are dropped |
 | `suppress_units` | `{units, polyline: PackedVector3Array}` or `{units, target: Vector3}` | SuppressUnits `{units, line}` (S3b) | soldiers and vehicles hold and fire at the point or line (its first and last points; the sim pulls a line longer than `rules.suppress_line_max_m` in) without a spotted target; mortar men are dropped |
 | `dig`, `dig_units` | as S1b, plus `profile: String` *opt* | Dig `{squad, line, profile}`, DigUnits `{units, line, profile}` | `"trench"` (default) or `"at_ditch"` (engineers only, at most `rules.dig_profiles.at_ditch.max_m`) |
+| `recrew` | `{squads, vehicle: int}` | Recrew `{squad, vehicle}` per squad (S3c) | the squads walk to the abandoned vehicle and man it; refused (feed `recrew_refused`) for AT teams, too few men, at the vehicle limit or pop cap, or an enemy's vehicle with capture off |
+| `abandon` | `{units}` | Abandon `{squad}` per own vehicle (S3c) | the crews bail out (vehicles with a crew squad) |
 | `call_in` | `{type, id}` | CallIn `{squad_type}` | `id` (catalog `id`) wins over `type`. S3b: bought and spawned at once, or refused (before the unlock, at the vehicle limit, on the type's cooldown, short of manpower, over the pop cap); the result comes back as a feed event (below) |
 
 Sim `CommandKind` shapes (added by the S3 sim stages; `PROTOCOL_VERSION`
@@ -712,6 +749,9 @@ orders, vehicles theirs; vehicle-only keys affect only vehicles.
 | P | S3b suppress tool (soldiers and vehicles): click a point or drag a line, `suppress_units`; Shift keeps the tool |
 | N | next ammo for the selected vehicles: Auto → AP → (APCR, S3b, on a gun that carries it) → HE (`set_ammo`, from the first selected vehicle's `ammo_choice`) |
 | J | `repair_units` |
+| K | S3c Crew tool (infantry selected): click an abandoned vehicle, `recrew` |
+| Right-click on an abandoned vehicle with a tank crew selected | S3c `recrew`; other selections treat it as the ground |
+| Bail out button (vehicle grid, no key) | S3c: arms for 2 s ("Again?"); the second press sends `abandon` |
 
 Picking: a vehicle is hit inside its projected footprint (`hull_length` ×
 `hull_width` at `pos` and `yaw`) or within 14 px of its centre; selection
