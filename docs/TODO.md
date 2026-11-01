@@ -196,3 +196,22 @@ it.
   until something rebuilds it. `tools/export_macos.sh` refuses a dirty
   tree unless `--allow-dirty`.
 - [ ] `THIRD_PARTY_NOTICES` not regenerated for `socket2`.
+
+## Known issues found during S3 integration
+
+- [ ] **Net stalls with vehicles:** two windowed instances stall 250–550
+  ticks per 3-minute match with tanks (55–61 without, S2: 10), in 0.3–1.1 s
+  bursts at the same tick on both instances. The sim's own stages take
+  1–6 ms in those ticks; not found where the time goes (S3 slice log).
+- [ ] The S1b frag-into-trench autoplay shot still fails most runs; with
+  S3 the seed-1 match also ends earlier (AI won on tickets at 13:06 while
+  we spent 1,280 manpower on tanks).
+- [ ] Call-in tiles hide the "need N" reason when it is wider than the
+  room next to the cost: a vehicle tile with "need 509" shows only
+  "640 MP" (greyed).
+- [ ] The rocket trail is a straight pale box (9 m, no taper); it reads
+  as a white stick from 30 m up.
+- [ ] A knocked-out tank lit by its cook-off light shows a flat orange
+  patch on the hull for about 0.3 s.
+- [ ] Staged scenes all sit on point C (the sim's staging lane runs
+  through the map centre).

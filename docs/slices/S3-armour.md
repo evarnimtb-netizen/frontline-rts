@@ -1424,3 +1424,39 @@ Work proceeds on the (A) defaults until the owner answers.
    draft's bar; printed next to the numbers so you can judge) / (B) a
    different bar. If the target is missed, you pick the next lever: tank
    fear, mortar smoke, or stronger pinning.
+
+## Slice log
+
+**Integration (step 8), 2026-11-01.** Presenter branch
+`worktree-wf_c52c05c2-393-3` merged (no conflicts). The bridge fills the
+S3 contract (`crates/godot-bridge/README.md` "S3: vehicles in the
+bridge"); the presenter's four contract notes are settled in
+`godot/docs/match_state.md` (escort `follow` links and queue `pop` sent,
+`glacis_deg` from the defs, badge order unchanged).
+
+- Staged scenes: all nine `--autoplay_scene armour_<name>` runs exit 0
+  with the sim's condition and the presenter-state check both holding;
+  screenshots `docs/slices/screens/s3_<name>.png`. The scenes stage at the
+  map centre, so point C's ring is in most of them.
+- `--autoplay` vs AI (seed 1, normal rules, unlock 4:00, 4x): 13:06 game
+  minutes until the AI won on tickets, no errors; we bought 2 Panzer IVs
+  (4:17, 6:17) and an AT team, drew 2 own vehicles and 1 enemy Sherman
+  (first seen about 8:16), 28 armour events fired, 6 penetrations, 2
+  knock-outs. The run exits 3 because the S1b frag-into-trench shot did
+  not happen (known flaky before S3: 1 in 3 runs, `docs/TODO.md`); every
+  other S1, S1b and S3 shot was taken. An 8-minute run met the own-vehicle
+  check but saw no enemy vehicle (the AI's first tank is called in at
+  about 5:40, AI-vs-AI seed 1).
+- Two Godot instances, 3 minutes, 127.0.0.1, `--test_unlock
+  --start_manpower 4000` on both (as the net loopback test, 2 tanks per
+  side need more than the 600 starting manpower in 3 minutes): four runs,
+  181 of 181 hashes agree every time, both exit 0, 3 tanks per side
+  spawned and drawn, every S3 intent sent. **Stalls are much worse than
+  S2's 10:** 250–550 stall ticks per instance, in bursts of 0.3–1.1 s at
+  the same tick on both instances around 1:15–1:45. The same session
+  without vehicles (no unlock in 3 minutes): 55–61. A temporary
+  diagnostic showed the sim's stages taking 1–6 ms in those ticks, and a
+  headless replay of the same orders tops out at 0.2 ms per tick, so the
+  time is lost outside the sim's work (the sim thread not running).
+  Pre-warming the vehicle meshes and effects at match start did not
+  change it and was taken out. Cause not found.

@@ -101,7 +101,15 @@ players (the pause menu no longer pauses on open); `surrender` as before;
 -- --autoplay_net join:127.0.0.1:47015 --autoplay 3   (IPv6: join:[::1]:47015)
    [--net_name NAME] [--debug_inject_desync TICK] [--seed N]
    [--net_delay D] [--net_bind_all] [--autoplay_shots DIR]
+   [--test_unlock] [--start_manpower N]
 ```
+
+S3: `--test_unlock` (vehicles unlocked at once) and `--start_manpower N`
+must be given to both instances (the setups are hashed at Ready). The S3
+net check uses `--test_unlock --start_manpower 4000`: each instance buys
+three tanks and writes `vehicles_own` (and `vehicles_enemy_seen`) into
+`s2_hashes_<role>.json`; autoplay exits 3 if fewer than 2 own vehicles
+were drawn.
 
 The host picks Germany (and `--seed`, and D with `--net_delay`), the guest
 USA; both ready, save `s2_autoplay_lobby_<role>.png`, then play with
