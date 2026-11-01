@@ -44,8 +44,10 @@ rounds refilled forward too, slowly, up to a per-vehicle cap of at most
   points, but slowly. The cap and the slow refill are the balance.
 - **Ammo model for vehicles:** main-gun rounds per type (already counted),
   MG belts counted, all in TOML. **No round is free (D1):** each costs
-  its kg at `shell_mp_per_kg` (MG belts at `small_arms_mp_per_kg`),
-  paid once when the kg leaves the base. Resupply flows from the base
+  its kg at `shell_mp_per_kg` times the vehicle's rack price factor (MG
+  belts at `small_arms_mp_per_kg`). A full rack refill costs at most
+  75 % of the card (critic pass 3).
+  Kg are paid once, when they leave the base. Resupply flows from the base
   (fast, everything), an HQ or dump radius (half rate, rare rounds
   slowly) and supply vehicles carrying a stock in kg (trucks,
   half-tracks). Tank shells are too heavy for man-carried crates: tanks
@@ -697,9 +699,12 @@ max_kg = 3500
     carries it (`rare = true` on the ammo def).
   - **A cap per vehicle.** `rare_cap` on the vehicle def is the most
     rare rounds it can hold, all rare types together. The rules key
-    `rare_cap_max` (10) is the owner's ceiling and the default when a
-    def sets none. A def above it fails to load. A vehicle starts with
-    its rare `count`s, which sum to at most its cap.
+    `rare_cap_max` (10) is the owner's ceiling. It is also the default
+    for a def that lists a rare round but sets no cap. A def that lists
+    no rare round holds none, so a truck or tow never stores rare
+    rounds. A gun and its own tow share the gun's cap (critic pass 3).
+    A def above the ceiling fails to load. A vehicle starts with its
+    rare `count`s, which sum to at most its cap.
   - **Refill anywhere, slowly.** Rare rounds refill at every source that
     rearms the vehicle: 1 per 10 s in base, 1 per 30 s at an HQ, dump or
     supply vehicle (`rare_rearm_s`), against 1 per 2 s and 1 per 4 s
@@ -805,9 +810,10 @@ authentic, easy to explain, and makes the logistics physical:
 Consequence: one man carrying a 40 kg crate can rearm a rifle squad, but
 **rearming a tank with 30 rounds needs about 300 kg**: a supply vehicle,
 an HQ, a dump or the base. That is why tanks went back to the trains to
-rearm. At the start price it also costs about 300 manpower, half a
-Sherman (D1): a tank that fires all match costs about as much as a
-second tank.
+rearm. At the start prices it also costs about 130–170 manpower (D1,
+with the rack price factor of `artillery-on-map.md` §4.2). A full rack
+refill never costs more than 75 % of the tank, so refilling an empty
+tank always beats buying a new one (critic pass 3).
 
 ### 7.3 Where supply comes from
 
@@ -816,15 +822,20 @@ values in `[supply]`:
 
 | Source | Standard main-gun round | Rare round (APCR, HVAP, HEAT) | MG belts | Also | Stock and price |
 |---|---|---|---|---|---|
-| Base zone | 1 per 2 s (`rearm_s.base`, today's rate) | 1 per 10 s (`rare_rearm_s.base`), up to `rare_cap` | 250 rounds per 2 s | repair, new crew | unlimited; each round charged as it goes into the rack (D1) |
-| HQ radius (25 m) or dump radius (15 m) | 1 per 4 s (`rearm_s.forward`) | 1 per 30 s (`rare_rearm_s.forward`), up to `rare_cap` | 50 rounds per s | — | the structure's kg stock, paid at base and carried in; nothing charged again |
-| Supply vehicle (truck, half-track, M20), within 15 m | 1 per 4 s | 1 per 30 s, up to `rare_cap` | 50 rounds per s | drops crates | its own kg stock, paid when loaded at base or drawn from an HQ |
+| Base zone | 1 per 2 s (`rearm_s.base`, today's rate) | 1 per 10 s (`rare_rearm_s.base`), up to `rare_cap` | 250 rounds per 2 s | repair, new crew | unlimited; each round charged at the rack price as it goes into the rack (D1) |
+| HQ radius (25 m) or dump radius (15 m) | 1 per 4 s (`rearm_s.forward`) | 1 per 30 s (`rare_rearm_s.forward`), up to `rare_cap` | 50 rounds per s | — | the structure's kg stock, paid at base and carried in; the rack price difference is credited back |
+| Supply vehicle (truck, half-track, M20), within `vehicle_radius_m` (15 m; men at 8 m) | 1 per 4 s | 1 per 30 s, up to `rare_cap` | 50 rounds per s | drops crates | its own kg stock, paid when loaded at base or drawn from an HQ; credited the same way |
 | Placed crate | none: too heavy for tank rounds | none | infantry only | small arms, grenades, rockets, mortar bombs | 20–40 kg (man-carried), paid at issue |
 
 > **Owner decisions (2026-11-01; `artillery-on-map.md` §4.2 "No back
 > doors"):** no refill is free, in base or anywhere (D1). Main-gun rounds
-> cost their kg at `shell_mp_per_kg` (start 1.0, so a 75 mm round about
-> 10), MG belts at `small_arms_mp_per_kg` (0.2). Any round a weapon with
+> cost their kg at `shell_mp_per_kg` (start 1.0) times the vehicle's rack
+> price factor, which keeps a full refill at or under 75 % of the card
+> (`rack_refill_max_card_pct`; a 75 mm tank round about 4–6). MG belts
+> cost `small_arms_mp_per_kg` (0.2). The factor applies wherever the rack
+> fills: charged in base, credited forward, so no price depends on
+> position. A vehicle takes from one source at a time, the fastest in
+> reach; rates never stack (critic pass 3). Any round a weapon with
 > indirect fire uses is crate-only (`crate_only_if_indirect`). Every
 > cargo load a truck, half-track or tow takes at base pays its kind's
 > price, and shells share the base crate queue (`base_crate_issue_s`).
@@ -851,8 +862,9 @@ values in `[supply]`:
 # defs/vehicles/usa_cckw.toml (excerpt)
 role = "truck"
 [supply]
-stock_kg = 2500
-radius_m = 15
+cap_kg_total = 2500             # kg per kind, like every SupplySource (infantry-structures.md §6.3)
+radius_m = 8                    # men
+vehicle_radius_m = 15           # vehicles
 round_interval_s = 4            # = rules rearm_s.forward; rare rounds at rare_rearm_s.forward (30)
 crates = { item = "ww2:usa_ammo_crate", kg_each = 40 }
 # cargo loaded at base pays its kind's price per kg (D1); shells at 32 kg per base_crate_issue_s
@@ -891,6 +903,11 @@ The S3 AI already retreats vehicles and repairs when clear. Add:
 - **Price:** tank rearm counts toward `ai.shell_mp_max_pct` (25 % of
   income, shared with shells crates). Over budget, a tank still rearms
   to `ai.tank_rearm_floor_pct` (50 %), so armour never sits empty.
+- **No stall (critic pass 3):** the AI keeps `ai.ammo_float_mp` (100)
+  back from unit buys while any own unit waits to rearm. A tank leaves
+  a source that has served it nothing for `ai.rearm_stall_s` (15 s),
+  for lack of manpower or stock. It does not go back until it has the
+  float or the source has stock.
 - **Push limit:** an AI tank pushing more than `ai.push_without_supply_m`
   (300 m, start value) beyond its nearest stock keeps a reserve of
   `ai.tank_reserve_rounds` (10) standard rounds for defence (§7.6).
@@ -908,11 +925,14 @@ shell_mp_per_kg = 1.0                      # D1: tank main-gun rounds are shells
 small_arms_mp_per_kg = 0.2                 # D1: vehicle MG belts
 rearm_s = { base = 2, forward = 4 }        # standard round
 rare_rearm_s = { base = 10, forward = 30 } # D3: rare round
-rare_cap_max = 10                          # D3: ceiling and default for a vehicle's rare_cap
+rare_cap_max = 10                          # D3: ceiling; default only for a def that lists a rare round
+rack_refill_max_card_pct = 75              # critic pass 3: full rack refill at most this share of the card
 
 [ai]
 rearm_pct = 25
 tank_rearm_floor_pct = 50                  # over the shells budget, still rearm to this
+rearm_stall_s = 15                         # critic pass 3: leave a source that served nothing this long
+ammo_float_mp = 100                        # critic pass 3: kept back from unit buys while a unit waits to rearm
 push_without_supply_m = 300
 tank_reserve_rounds = 10
 ```
@@ -1078,8 +1098,14 @@ two of data and testing, plus art.
 - Rare rounds (D3): a tank with `rare_cap = 2` never holds a third rare
   round from any source; rare rounds refill at 1 per 10 s in base and
   1 per 30 s forward; a vehicle def with a `rare_cap` above
-  `rare_cap_max` fails to load; a tank cannot pass rack rounds to
+  `rare_cap_max` fails to load; a truck or tow def with no rare round
+  holds none; a tank cannot pass rack rounds to
   another vehicle, a crate or a dump.
+- Critic pass 3: no vehicle's full rack refill costs more than 75 % of
+  its card; a tank rearming from an HQ pays the same per round as in
+  base, after the credit; a tank between an HQ and two trucks rearms no
+  faster than at one; an AI tank in base with no manpower leaves within
+  `ai.rearm_stall_s`.
 - Push limit (D3): a tank driven 600 m past its last stock with no
   truck behind it fires its rack dry and then cannot fire its main gun;
   report how often AI tanks run dry and where.

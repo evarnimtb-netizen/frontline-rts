@@ -605,7 +605,8 @@ ammunition dumped. The point is that **a gun runs out within one engagement unle
 cap (`rare_cap` on the gun def; ceiling and default `rare_cap_max`, 10). Starting values: Pak 40
 2 APCR, 57 mm M1 none, 3-inch M5 3 HVAP *(from its date)*, 45 mm M-42 10 APCR, ZiS-3 5 APCR,
 leIG 18 and 105 mm M3 2 HEAT *(all verify)*. A rare round refills at any source that serves the
-gun, at 1 per 10 s in base and 1 per 30 s forward, never above the cap.
+gun, at 1 per 10 s in base and 1 per 30 s forward, never above the cap. The gun and its own tow
+share one cap; the tow holds no rare rounds of its own (critic pass 3).
 
 ### 4.2 What runs out, and what it means
 
@@ -625,7 +626,8 @@ gun, at 1 per 10 s in base and 1 per 30 s forward, never above the cap.
 1. **Base zone.** Men in base regain carried small-arms rounds at `base_resupply_round_s` per
    man, each kg charged at `small_arms_mp_per_kg` (D1). AT guns and their tows regain stowage
    like vehicles (1 round per 2 s; rare rounds 1 per 10 s up to `rare_cap`), each round charged
-   at `shell_mp_per_kg`. Those rounds feed only that gun; they never pass to a crate, dump, HQ or
+   at `shell_mp_per_kg` times the gun's rack price factor (a full refill at most 75 % of the card;
+   the same price forward, by credit; `artillery-on-map.md` §4.2). Those rounds feed only that gun; they never pass to a crate, dump, HQ or
    another weapon (`rack_rounds_transferable = false`). **Mortars, infantry guns and howitzers do
    not refill in base** (owner decision Q4): their shells and bombs leave the base only in crates
    or vehicle loads, at `shell_mp_per_kg` manpower per kg. Vehicle loads take 32 kg per

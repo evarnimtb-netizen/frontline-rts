@@ -463,7 +463,9 @@ gate.
   the base still refills mortar bombs directly, at the shells price:
   there are no crates yet. That ends in S6 (owner decision Q4). Priced
   tank rounds may make players hold fire: measure rounds fired per tank
-  against S3b (fallback lever `rack_rearm_price_pct`).
+  against S3b. A full rack refill costs at most 75 % of the card
+  (`rack_refill_max_card_pct`), the same in base and forward; fallback
+  lever `rack_rearm_price_pct`.
   The scope is large; if it runs long, split it into S5a (counts, base
   supply, HUD) and S5b (fire missions, observer, ranging).
 - **Done when:**
@@ -594,7 +596,8 @@ gate.
     stopped one costs most of them;
   - an armoured car stops at a trench line or finds a gap;
   - a tank at 10 % ammo rearms from a truck within 15 m at 1 round per
-    4 s, rare rounds at 1 per 30 s, never above its `rare_cap`; the
+    4 s, rare rounds at 1 per 30 s, never above its `rare_cap`, and no
+    faster beside two trucks than beside one; the
     truck's stock falls by the same kg; a penetrated truck's cargo
     explodes;
   - the AI keeps its HQ stocked with a truck, and AI matches still
@@ -898,7 +901,7 @@ they differ.
 | 22. Friendly fire from indirect HE | **(A) Yes.** Fragments and blast from mortars, guns and launchers hurt own men; direct fire stays as today. | Ships in S11a. Allies can be hit too: the danger-close warning covers them, and the match report lists friendly-fire kills per player. |
 | 24. Show the enemy's marker on a gun? | **(A) Hint only:** "N rounds from this spot: likely located", from the player's own count. Never the enemy's marker. | `cb_hint_rounds` in TOML. |
 | 25. Field howitzers on small maps | **Allowed on all maps.** The owner is unsure about the limit and suggested a small range tweak. | Cap 1 per player and 8:00 unlock stay as TOML defaults to measure in S11b. A range cut does not fix flat fire on small maps: targets are in range anyway. A per-map max range has no real use (it only moves a base gun forward), so none is offered. Levers if they dominate: cost, cap, unlock, cooldown, then the `allow_field_howitzers` map flag. |
-| D1. Who pays for ammunition | **No free ammo anywhere, the base included.** Owner: "Let's not make shells and other ammo free. Make small arms ammo cheap, but the artillery and tank ammo, shouldn't be too cheap." | One price per supply kind, in manpower per kg, paid once when the kg leaves the base (base-zone refill, crate issue, vehicle load): `small_arms_mp_per_kg` 0.2 (a rifle squad's refill about 5), `explosives_mp_per_kg` 0.5 (a Panzerschreck rocket about 1.7), `shell_mp_per_kg` 1.0 (mortar, gun and tank rounds; a 75 mm round about 10). HQ, dump, crate and truck stock was paid at base. Replaces every free base refill (items, rockets, small arms, tank racks, AT guns). Back-door rules re-checked in `artillery-on-map.md` §4.2: the cargo, rack, queue and crate-only rules stay; the free-refill exemptions and zero prices are dropped; a trickle of any kind is refused. |
+| D1. Who pays for ammunition | **No free ammo anywhere, the base included.** Owner: "Let's not make shells and other ammo free. Make small arms ammo cheap, but the artillery and tank ammo, shouldn't be too cheap." | One price per supply kind, in manpower per kg, paid once when the kg leaves the base (base-zone refill, crate issue, vehicle load): `small_arms_mp_per_kg` 0.2 (a rifle squad's refill about 5), `explosives_mp_per_kg` 0.5 (a Panzerschreck rocket about 1.7), `shell_mp_per_kg` 1.0 (mortar, gun and tank rounds; a 75 mm round about 10). Critic pass 3: a tank's or AT gun's full rack refill costs at most 75 % of its card (`rack_refill_max_card_pct`), the same in base and forward, so a tank's 75 mm round costs about 4–6 and an empty tank is always worth refilling. HQ, dump, crate and truck stock was paid at base. Replaces every free base refill (items, rockets, small arms, tank racks, AT guns). Back-door rules re-checked in `artillery-on-map.md` §4.2: the cargo, rack, queue and crate-only rules stay; the free-refill exemptions and zero prices are dropped; a trickle of any kind is refused. |
 | D2. Distance from base | **Physical delivery only, no distance surcharge.** Owner: "maybe a distance of the artillery from the base. If they are pushing too much, it will take longer for the ammo to arrive, and thus taking more resources from the overall army." | Pushing forward costs more because men must carry crates and trucks must drive them from base or the HQ; that time, exposure and those losses are the cost. A surcharge by distance would make the base, already the best gun position, also the cheapest, so none is built (`artillery-on-map.md` §4.11). |
 | D3. Tank ammunition | **Rearm at base, near an HQ or dump, or from a supply truck; every round costs manpower.** Owner on rare rounds: "add rare round to be available for recharge at other point. Maybe they could recharge slower and only to a certain cap, like one vehicle can only have 10 of these. Not more. So that way the ability of the tanks to push infinitely is limited by the ammo storage inside them." | Standard rounds: 1 per 2 s in base, 1 per 4 s forward. Rare rounds (APCR, HVAP, HEAT): 1 per 10 s in base, 1 per 30 s forward (`rare_rearm_s`). Per-vehicle `rare_cap`, default and ceiling `rare_cap_max` 10, lower where history says so (M4A3 (76) W: 2 HVAP). The rack is the hard limit on a push (`vehicles.md` §6.11, §7.3, §7.6). |
 
@@ -1186,6 +1189,9 @@ they gain a manpower check.
   Over budget, guns and mortars wait; a tank still rearms to
   `ai.tank_rearm_floor_pct` (50 %). Small arms and explosives are cheap
   and have no budget; they pause only when manpower runs out.
+- **No stall:** the AI keeps `ai.ammo_float_mp` (100) back from unit
+  buys while a unit waits to rearm, and any unit leaves a source that
+  has served it nothing for `ai.rearm_stall_s` (15 s).
 - **Tanks:** below `ai.rearm_pct` (25 %) a tank goes to the nearest
   stock it can reach (supply truck, HQ, dump, base). It waits for rare
   rounds only when no enemy is seen; it does not sit at an HQ for 5

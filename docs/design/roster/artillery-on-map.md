@@ -381,7 +381,8 @@ included. Prices per kind are below ("What ammunition costs").
   carries.
 - Its size is the starting load at the gun (table below). It cannot hold
   more (`ready_cap`, per ammo id). HEAT is a rare round: at most 2 at
-  the gun (§5.2, D3).
+  the gun (§5.2, D3). The gun and its own tow share that one rare cap;
+  the tow holds no rare rounds of its own (critic pass 3).
 - The crew fires from it at once, with no supply step.
 
 **Starting loads come with the card's price.** A gun or mortar arrives
@@ -413,7 +414,25 @@ Tank, tank destroyer and AT-gun cards are exempt. Their starting rounds
 stay in the weapon's own rack and never feed another weapon or a stock
 (rule 2 below), so a new tank is never a cheap way to buy shells. Without
 the exemption the check would push a Panzer IV (87 rounds, about 850 kg)
-above 850 manpower, far over its 640.
+above 850 manpower, far over its 640. The exemption does not cover
+rounds in a crate-only class (rule 4): an SPG's or 105 mm tank's
+indirect HE counts in the check like a howitzer's (critic pass 3).
+
+**Rack refill ceiling (critic pass 3).** The exemption has a cost: at
+1.0 per kg, refilling an empty Panzer IV (about 850) or Sherman (104
+rounds, about 990) costs more than a new one (640, 560). An empty tank
+would be worth less than its refill. So a full rack refill may cost at
+most `rack_refill_max_card_pct` (75 %) of the card. Content load gives
+each tank, TD and AT gun a rack price factor: the lower of
+`rack_rearm_price_pct` and that ceiling. At the start values a Panzer IV
+round costs about 5.6, a Sherman round about 4 *(weights verify)*. Rare
+rounds use the same factor. Crate-only rounds always pay the full
+shells price. The factor applies wherever the rack fills, so no price
+depends on position (D2): in base the round is charged at the factor;
+forward, the kg drawn into a rack was paid at full price, so the
+difference is credited back to the player who paid for that stock.
+Rack rounds never leave the rack (rule 2), so the credit cannot be
+laundered.
 
 **How a gun or mortar refills.** Only from shells someone brought:
 
@@ -456,6 +475,11 @@ supply kind, in manpower per kg, in `[supply]`:
 | Explosives | `explosives_mp_per_kg` | 0.5 | hand grenades, satchels, AT rockets, Panzerfausts, mines, flame fuel |
 | Shells | `shell_mp_per_kg` | 1.0 | mortar bombs, gun and howitzer shells, tank and AT-gun main-gun rounds, artillery rockets, HE rifle grenades |
 
+The kind belongs to the ammo def. A content check refuses any round fired
+by a vehicle main gun or a gun entity that is not of kind `shells`, so an
+autocannon or tank round can never be filed as cheap small arms (critic
+pass 3).
+
 Why these values:
 
 - **Small arms, 0.2.** A rifle squad that empties its pouches uses about
@@ -470,9 +494,9 @@ Why these values:
   satchels and rockets freely, not when he throws one grenade.
 - **Shells, 1.0.** Unchanged, and still set from S6's measurement. It is
   the price where heavy use competes with buying units: a 24-round 105 mm
-  preparation costs about 450, more than a rifle squad; a Panzer IV that
-  fired 40 rounds pays about 400 to fill up again, two-thirds of a new
-  tank.
+  preparation costs about 450, more than a rifle squad. Tank racks pay
+  the rack price factor (above): a Panzer IV that fired 40 rounds pays
+  about 225 to fill up again, a third of a new tank.
 
 | Round | Complete round, about (verify) | Manpower each |
 |---|---|---|
@@ -498,17 +522,24 @@ only unlimited stock, so it is the one place where kg enter play:
 So every refill costs manpower wherever it happens, and no kg is paid
 twice. Captured stock was paid for by the enemy.
 
+**One source at a time (critic pass 3).** A man, gun or vehicle is
+served by one source per service tick: the fastest one in reach for
+what it needs, ties to the lower source id. Rates never stack, so a
+tank parked between an HQ, a dump and two trucks still gets one
+standard round per 4 s and one rare round per 30 s.
+
 **Short of manpower.** A base refill pauses when the player cannot pay
 for the next round, and the HUD says "No manpower for ammo". Crates and
 loads are refused, as before. Nothing goes into debt.
 
 One price per kind, never per calibre. Kinds are pooled by kg
 (`infantry-structures.md` §6.3), so a cheaper calibre inside a kind would
-be a laundering route (rule 1 below). The one exception is a fallback
-lever for rack rounds, which never leave the rack: `rack_rearm_price_pct`
-(100). If tank rearm turns out too dear while the HE share is right, it
-lowers the price of rounds that go straight into a tank's or AT gun's
-rack in base. It stays at 100 unless tests ask for it.
+be a laundering route (rule 1 below). The one exception is the rack
+price factor for rounds that never leave the rack (above): the ceiling
+`rack_refill_max_card_pct` (75) and the fallback lever
+`rack_rearm_price_pct` (100). If tank rearm still turns out too dear
+while the HE share is right, the lever lowers it further. Both apply in
+base and forward alike (critic pass 3).
 
 Rare rounds (APCR, HVAP, HEAT) cost the same per kg as other shells.
 A premium could not be charged forward: an HQ's stock is pooled kg that
@@ -550,8 +581,8 @@ in base. D1 removed that free refill, so each rule is re-checked here:
    longer free, but rack rearm in base does not wait in the crate queue
    (rule 3), and rare rounds have a per-weapon cap (D3). Moving rounds
    out of a rack would bypass both. The rule is also what makes
-   `rack_rearm_price_pct` and the tank exemption from the price check
-   safe.
+   the rack price factor, its forward credit and the tank exemption
+   from the price check safe.
 3. **Vehicle loads wait in the same queue as crates. Kept.** Loading
    shells into a vehicle at base takes one crate's weight (32 kg) per
    `base_crate_issue_s`, shared with crate issue. Without it a player
@@ -925,6 +956,9 @@ a TOML lever with a starting value.
 | **Laundering through cargo (critic pass 2).** Load "tank rounds" free on a truck or tow in base, unload them into a dump next to base; the pooled `shells` kg feed a howitzer. Or move rack rounds out of a tank or AT gun. | The ration covered every restock. | Every kg loaded as cargo pays its kind's price; since D1 no kind is free, and one price per kind leaves no cheap calibre to launder. Rack rounds never leave the rack, so the unqueued rack rearm and the rare-round cap cannot be bypassed (§4.2 rules 1, 2). | **Closed.** | `rack_rounds_transferable` (false). |
 | **Free small arms and tank rounds (D1).** Rifles, MGs, rockets, tank and AT-gun racks refilled free in base, so a tank could fire all match at no cost. | — | Every kind has a price; a base refill is charged round by round and pauses with no manpower. | **Closed.** | `small_arms_mp_per_kg` (0.2), `explosives_mp_per_kg` (0.5), `shell_mp_per_kg` (1.0). |
 | **Endless tank push (D3).** A tank rearms near a forward HQ or truck and never goes back. | Rare rounds were base-only. | It still needs a stock that was carried forward and paid for. Its rack is the hard limit; rare rounds refill forward only at 1 per 30 s and only to the vehicle's cap (≤ 10). Repair and new crew stay base-only. | **Bounded.** | `rare_rearm_s` (base 10, forward 30); `rare_cap_max` (10); per-vehicle `rare_cap`. |
+| **New tank cheaper than a refill (critic pass 3).** Tank cards are exempt from the price check, and a full rack at 1.0 per kg cost more than the tank (Panzer IV about 850 against 640). Running a tank dry and buying another beat refilling it. | — | A full rack refill costs at most 75 % of the card; the factor applies in base and, as a credit, forward (§4.2). | **Closed.** | `rack_refill_max_card_pct` (75). |
+| **Stacked sources (critic pass 3).** A tank between an HQ, a dump and two trucks took rounds from each at once, so rare rounds came four times as fast. | — | One source per client per tick, the fastest in reach (§4.2). | **Closed.** | — |
+| **Rare rounds in the tow (critic pass 3).** A tow or truck def with no `rare_cap` took the default 10, so a Pak 40's tow could hold 10 PzGr 40 beside the gun's 2. | — | A gun and its own tow share the gun's cap; `rare_cap_max` is the default only for a def that lists a rare round, every other def holds 0 (`vehicles.md` §6.11). | **Closed.** | — |
 | **Distance surcharge (rejected, D2).** A price that rises with distance from base. | — | Not built. It would make the base, already the best gun position, the cheapest too (§4.11). | **Not a hole: a rejected lever.** | None. There is no distance key. |
 | **Saved-up truck load (critic pass 2).** Save 2,000 manpower, fill a truck with 2 t of shells at once, drive it to a dump. | The ration capped tonnage per minute. | Vehicle loads share the crate issue queue: 32 kg per `base_crate_issue_s` (§4.2 rule 3). 2 t takes about 10 minutes. | **Same as the crate limit.** | `base_crate_issue_s` (10). |
 | **Free stock at the front (critic pass 2).** An HQ trickle (an old §6.4 option in `infantry-structures.md`: 15 kg of shells a minute) or a free carrying party fills an HQ beside the base forever. | Not covered: the ration capped issue at base only. | Q2 C: no trickle, no carrying party. The content check refuses any shells trickle. | **Closed.** | `trickle_kg_per_min.shells` must be 0. |
@@ -1154,7 +1188,7 @@ these rules (weights in data):
 
 | Behaviour | Rule |
 |---|---|
-| **Buy** | Tag `artillery`. Buy a gun only with a living observer (or buy an FO team first). Buy when enemy trench length or structures seen pass a threshold, or an enemy gun has been marked. Spend at most `ai.shell_mp_max_pct` (25 %) of income on shells: crates, vehicle loads and tank rearm in base (D1). Over budget, guns and mortars wait for crates; tanks still rearm to `ai.tank_rearm_floor_pct` (50 %), so armour never sits empty (`vehicles.md` §7.5). |
+| **Buy** | Tag `artillery`. Buy a gun only with a living observer (or buy an FO team first). Buy when enemy trench length or structures seen pass a threshold, or an enemy gun has been marked. Spend at most `ai.shell_mp_max_pct` (25 %) of income on shells: crates, vehicle loads and tank rearm in base (D1). Over budget, guns and mortars wait for crates; tanks still rearm to `ai.tank_rearm_floor_pct` (50 %), so armour never sits empty (`vehicles.md` §7.5). It keeps `ai.ammo_float_mp` (100) back from unit buys while any own unit waits to rearm. Any AI unit leaves a source that has served it nothing for `ai.rearm_stall_s` (15 s) for lack of manpower or stock, and does not go back until it has the float or the source has stock (critic pass 3). |
 | **Site** | Score spots 300–700 m behind the own front (or in base on small maps): no enemy line of sight (the S6 reverse-slope probe), flat firm ground, reachable by the tow, the mask check clears to the three most likely targets, at least 50 m from other own guns. Ask idle engineers for a `howitzer_pit`. |
 | **Observe** | The FO walks to a crest point with line of sight onto the enemy trench or approach (a few sampled points, ray-tested), goes prone, stays out of the open. |
 | **Fire** | (a) Preparation fire on a trench timed with an assault: starts about 60 s before, lifts when the assault is 100 m out (friendly fire is on, Q22). (b) Defensive fire on registered approaches when attackers enter them. (c) Counter-battery on a marker when its error is under about 60 m and the gun holds more than `ai.ammo_reserve_pct` (30 %) of its ready inventory. (d) Direct fire (infantry guns) at spotted MG nests, bunkers and vehicles within 800 m, only with an escort near. |
@@ -1371,18 +1405,21 @@ crate_only_classes = ["mortar_bomb", "gun_shell", "rocket_artillery", "rifle_gre
 small_arms_mp_per_kg = 0.2          # cheap: a rifle squad's full refill is about 5 MP
 explosives_mp_per_kg = 0.5          # moderate: a Panzerschreck rocket about 1.7 MP
 shell_mp_per_kg = 1.0               # dear: mortar, gun, howitzer and tank main-gun rounds; set from S6
-rack_rearm_price_pct = 100          # fallback lever: price of rounds put straight into a tank or AT-gun rack in base
+rack_rearm_price_pct = 100          # fallback lever: price share for rounds that go into a tank or AT-gun rack, base or forward
+rack_refill_max_card_pct = 75       # critic pass 3: a full rack refill costs at most this share of the card; forward draws credited
+# critic pass 3: one source per client per service tick (the fastest in reach); rates never stack
+# critic pass 3: a main-gun or gun-entity round must be kind "shells" (content check)
 base_crate_issue_s = 10             # one crate at a time per player at base
 shell_crate_cap = 8                 # live shells crates per player, inside the general crate cap
 crate_feed_m = 5                    # a crate this close feeds a gun or mortar
 structure_refill_s = 4              # one round per 4 s to a gun inside an HQ or dump radius
 tow_starting_load_pct = 50          # the tow arrives half full; the gun arrives full
-load_price_check = true             # card cost raised to >= starting load x price (warning, not refusal); guns and mortars only, not tanks or AT guns
+load_price_check = true             # card cost raised to >= starting load x price (warning, not refusal); guns and mortars; tanks and AT guns only for crate-only rounds
 rack_rounds_transferable = false    # rack rounds never leave the weapon: unqueued rack rearm and rare caps stay whole
 crate_only_if_indirect = true       # an ammo id any [indirect] weapon fires is crate-only for all (ZiS-3; Q4 rule)
 rearm_s = { base = 2, forward = 4 }        # one standard main-gun round; forward = HQ, dump, supply vehicle
 rare_rearm_s = { base = 10, forward = 30 } # D3: one rare round (APCR, HVAP, HEAT), at any source with shells stock
-rare_cap_max = 10                   # D3: most rare rounds one vehicle or gun may hold; default when a def sets none
+rare_cap_max = 10                   # D3: most rare rounds one vehicle or gun may hold; default only for a def that lists a rare round (others 0); a gun and its tow share one cap
 # base_crate_issue_s also paces vehicle shell loads: 32 kg per tick, one queue per player
 # trickle_kg_per_min must be 0 for every kind in every rules file (Q2 C, D1; content check)
 shell_price_rise_pct = 0            # fallback soft ration, off; per 100 kg bought in the last 5 min
@@ -1394,6 +1431,8 @@ allow_field_howitzers = true        # Q25: all maps; a map may set false only if
 [ai]
 shell_mp_max_pct = 25               # most of its income the AI spends on shells (crates, loads, tank rearm)
 tank_rearm_floor_pct = 50           # over budget, a tank still rearms to this share of its rack
+rearm_stall_s = 15                  # critic pass 3: leave a source that served nothing this long (no manpower or stock)
+ammo_float_mp = 100                 # critic pass 3: kept back from unit buys while an own unit waits to rearm
 ammo_reserve_pct = 30               # rounds kept for defence and counter-battery
 displace_after_rounds = 6
 displace_near_m = 30
@@ -1493,11 +1532,18 @@ Full card in `roster-expansion.md` §4.2 (S11). In short:
    now covering rifles, rockets and tanks too).
 7c. **Prices (D1, D2).** A rifle squad refilling in base pays its kg ×
    `small_arms_mp_per_kg`; a tank rearming in base pays each round's kg
-   × `shell_mp_per_kg` (× `rack_rearm_price_pct`); with no manpower the
+   × `shell_mp_per_kg` × its rack price factor; with no manpower the
    refill pauses and resumes when income arrives. A shells crate costs
    the same whether it is set down in base or carried 800 m forward;
-   no price depends on position. Report manpower spent per kind, per
-   player, per match.
+   no price depends on position: a tank rearming from an HQ ends up
+   paying the same per round as in base (the credit). No vehicle's full
+   rack refill costs more than 75 % of its card. A tank between an HQ
+   and two trucks rearms no faster than at one of them. A Pak 40 and
+   its tow together never hold more than 2 PzGr 40. Report manpower
+   spent per kind, per player, per match.
+7d. **AI under priced ammo** (critic pass 3). With the AI's manpower held
+   at 0 for 2 minutes, no AI tank, gun or squad waits at a source longer
+   than `ai.rearm_stall_s`; matches still end with a winner.
 8. **Direct fire.** A leIG 18 at 400 m silences an MG nest; a 105 mm burst
    breaks a dugout roof that survives an 81 mm hit; M67 HEAT penetrates a
    Panzer IV side; 105 mm HE on a Sherman damages only external parts and
@@ -1677,3 +1723,46 @@ check fought the main lever (C19). Each is now closed by one data rule (§4.2 "N
 
 Still weaker than the ration, and accepted by the owner: a player who
 earns more can buy more HE. The lever is the price.
+
+**Critic pass 3 (2026-11-01, after D1–D3).** The questions: is any
+"free" refill text left; is there a free or near-free route to shells
+or rare rounds; can cheap small arms be abused; does the rare-round cap
+hold for capture, recrewing and transfer; can the AI handle priced ammo
+without stalling. The leftover "free" text is all history ("before D1
+this was free") or owner quotes; no rule still says a refill is free.
+Each hole below is closed by one data rule (§4.2, §4.10, tests 7c, 7d):
+
+| # | Hole | Fix (lever) |
+|---|---|---|
+| C20 | **A new tank was cheaper than a refill.** Tank cards are exempt from the price check, so a full rack (Panzer IV about 850, Sherman about 990) cost more than the tank (640, 560). Running a tank dry and buying another beat refilling it. | A full rack refill costs at most `rack_refill_max_card_pct` (75 %) of the card, through a per-vehicle rack price factor. |
+| C21 | **`rack_rearm_price_pct` broke D2.** Below 100 it priced only base rearm, so base was the cheapest place to rearm, the asymmetry D2 rejected (test 7c). | The rack price factor applies everywhere a rack fills: charged in base, credited forward to the player who paid for that stock. |
+| C22 | **SPG HE escaped the price check.** The tank exemption also covered an SPG's or 105 mm tank's crate-only HE, so the card brought unpriced indirect HE (C5 again). | Crate-only rounds count in the price check and always pay the full shells price. |
+| C23 | **Stacked sources.** Each source served every client in its radius, so a tank between an HQ, a dump and two trucks got four times the rate, rare rounds included. | One source per client per service tick, the fastest in reach. |
+| C24 | **Rare rounds in the tow.** A tow or truck def with no `rare_cap` took the default 10; a Pak 40's tow could hold 10 PzGr 40 beside the gun's 2. | A gun and its own tow share the gun's cap. `rare_cap_max` is the default only for a def that lists a rare round; every other def holds 0. |
+| C25 | **Main-gun rounds as small arms.** Kind is per ammo def. An autocannon or tank round filed as `small_arms` would cost a fifth. | Content check: a round fired by a vehicle main gun or a gun entity must be kind `shells`. |
+| C26 | **AI stall.** The AI buys units whenever it can. With no manpower a base refill pauses, and an AI tank that "leaves when full" waited in base for ever. | `ai.ammo_float_mp` (100) kept back from unit buys while a unit waits to rearm; any AI unit leaves a source that served it nothing for `ai.rearm_stall_s` (15 s). |
+| C27 | **Truck radius and stock disagreed.** `vehicles.md` gave trucks a 15 m radius and one `stock_kg`; `infantry-structures.md` gave 8 m and stock per kind. | Trucks serve men at 8 m and vehicles at 15 m (`vehicle_radius_m`); stock is kg per kind, like every source. |
+
+**Checked and sound:**
+
+- **Cheap small arms cannot buy shells.** Sources hold kg per kind
+  (`infantry-structures.md` §6.3), so small-arms kg never feed a gun,
+  mortar or tank. Small-arms crates are unqueued and cheap on purpose.
+  The worst a player can do is fire more rifle and MG rounds, which is
+  the intended result.
+- **Capture.** Captured stock feeds only its own faction's calibres, and
+  the enemy paid for it. A captured gun keeps its def's rare cap.
+- **Recrewing.** A recrewed gun keeps its rounds and its cap. Nothing
+  new is made.
+- **Transfer.** Rack rounds never leave the rack, so rare rounds cannot
+  be passed on to beat a cap. Squad sharing moves small arms only,
+  within one squad.
+- **Rare rounds are cheaper per round** than standard AP when they are
+  lighter (HVAP about 8 kg). Accepted: the cap and the 30 s forward
+  rate keep them rare, not the price.
+
+**Owner-visible choice.** The 75 % ceiling makes a tank round cost about
+4–6 manpower instead of about 10. The owner asked that tank ammo not be
+"too cheap". A full refill of 420–480 still costs most of a tank. If it
+feels too cheap, raise the ceiling toward 100 % or raise tank card
+costs; do not lift it past 100 %, or empty tanks become disposable.

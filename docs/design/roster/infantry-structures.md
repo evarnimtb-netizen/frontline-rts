@@ -511,7 +511,9 @@ evac_refund_pct = 40
   HQ, dump, crate and vehicle stock was paid at base, so drawing from it
   costs nothing more. Small arms are cheap (a rifle squad's full refill
   is about 5 manpower), explosives moderate (a Panzerschreck rocket about
-  1.7), shells dear (a 75 mm round about 10, a 105 mm round 15–19).
+  1.7), shells dear (a 75 mm round about 10 and a 105 mm round 15–19
+  by crate; a tank's 75 mm round about 4–6 after its rack price factor,
+  `artillery-on-map.md` §4.2).
 - **Small arms still cost mostly time and transport.** Their price is
   small; "the walk is the balance" holds for them. Pushing forward costs
   delivery, not a surcharge (D2).
@@ -609,8 +611,8 @@ issue_crates = ["ww2:crate_small_arms", "ww2:crate_shells", "ww2:crate_explosive
 | **Own base zone** | infinite; every kg priced (D1) | base radius | men, vehicle rearm, repair, crew; **not** guns or mortars (Q4) | Today's behaviour, now one instance of the rule, with a price. Every refill, crate and cargo load costs its kind's price per kg; shells crates and loads at 32 kg per `base_crate_issue_s`. Rack rearm goes only into a tank's or AT gun's own racks and never moves out (`rack_rounds_transferable = false`) |
 | **HQ / command post** | finite, cap from def | 25 m | men + crate issue | §7.2 |
 | **Ammo dump** | finite | 15 m | men + crate issue | Cheaper, no radio; any number (limit in data) |
-| **Supply truck** (Opel Blitz, GMC CCKW, Studebaker US6) | finite, large (2.5–3 t, verify) | 8 m | men, vehicles, unloads to HQ/dump | Soft-skinned: rifle rounds that touch the cargo bed can set off `shells` stock (physical) |
-| **Half-track** (Sd.Kfz. 251, M3) | finite, small (300–500 kg) | 8 m | men, vehicles | Armoured: can resupply under fire |
+| **Supply truck** (Opel Blitz, GMC CCKW, Studebaker US6) | finite, large (2.5–3 t, verify) | 8 m (vehicles 15 m) | men, vehicles, unloads to HQ/dump | Soft-skinned: rifle rounds that touch the cargo bed can set off `shells` stock (physical) |
+| **Half-track** (Sd.Kfz. 251, M3) | finite, small (300–500 kg) | 8 m (vehicles 15 m) | men, vehicles | Armoured: can resupply under fire |
 | **Crate** | finite, small (20–35 kg) | 5 m | men of any squad | Carried or placed (§6.6) |
 | **Squadmate** | his own surplus | 3 m | same squad, same calibre | Automatic sharing (§6.5) |
 
@@ -629,6 +631,9 @@ arms, 15 kg/min shells).
 
 Status stage, serial, **ascending source id, then ascending man id**
 (deterministic). Every `service_tick_ms` (500 ms):
+- **One source at a time (critic pass 3).** A man, gun or vehicle is
+  served by one source per tick: the fastest in reach for what it
+  needs, ties to the lower source id. Rates never stack.
 - A man is served if he is inside the radius, alive, Fit or Wounded,
   not pinned, has **not fired in the last 3 s** (data), and is below his
   loadout in something the source has in stock.
@@ -650,7 +655,11 @@ Status stage, serial, **ascending source id, then ascending man id**
   per 10 s in base and 1 per 30 s forward, never above the vehicle's
   `rare_cap` (D3). Forward rounds come from `shells` / `small_arms`
   stock that was paid at base. In base each round is charged at its
-  kind's price as it goes in (D1), only into the vehicle's own racks;
+  kind's price as it goes in (D1), only into the vehicle's own racks.
+  Main-gun rounds pay the vehicle's rack price factor, which keeps a
+  full refill at or under 75 % of the card; forward, the difference is
+  credited back, so no price depends on position
+  (`artillery-on-map.md` §4.2, critic pass 3);
   rounds in `crate_only_classes` (a mortar carrier's bombs, an SPG's
   indirect HE) are not refilled there. A truck's or half-track's cargo
   is loaded at base only as a paid load. Repair and crew refill stay
@@ -743,6 +752,11 @@ match may stall. Gate it with a test (§9).
   from base only if none (`ai.shell_mp_max_pct`, 25 % of income at most,
   covers crates, loads and tank rearm). Small-arms and explosives
   crates are cheap and have no budget.
+- **No stall (critic pass 3):** the AI keeps `ai.ammo_float_mp` (100)
+  back from unit buys while any own unit waits to rearm. A squad, gun
+  or vehicle leaves a source that has served it nothing for
+  `ai.rearm_stall_s` (15 s), for lack of manpower or stock, and goes
+  back to its task.
 - Budget: all of this is serial planning every 2 s per AI player, a few
   hundred operations; no new rays except the HQ siting probe (§7.2).
 
