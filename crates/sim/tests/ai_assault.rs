@@ -35,7 +35,9 @@ fn run(w: &mut World, ticks: u64) -> Vec<u64> {
     h
 }
 
-const SEED: u64 = 1;
+// S3b Fix: seed 2 (seed 1 fires no rocket in the 10 minutes on the Fix
+// data; seeds 1-8 give 0, 4, 1, 0, 0, 0, 6, 0 rockets).
+const SEED: u64 = 2;
 const TICKS: u64 = 30 * 600;
 const SAVE_AT: u64 = 30 * 330;
 

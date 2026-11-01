@@ -234,10 +234,11 @@ spread_per_point_pct = 100
 # no throw, the crouched capsule. He comes back up only below
 # duck_release_points. Both (and pin_suppression) are scaled by the squad
 # type's steadiness_pct (all 100 now). Only real rounds, fragments and
-# bursts fill the meter (physical-contact rule). 35 / 20 (points): an MG
-# 42 on a 25 m line (about 3 near misses a second per man, 15 points x 50 %
-# covered = ~24 points/s against a decay of 8) keeps a line ducked; a
-# rifle squad alone (1-2 points/s per man) does not. Open ground is
+# bursts fill the meter (physical-contact rule). The spec's 35 / 20
+# (points) assumed an MG 42 on a 25 m line gave about 3 near misses a
+# second per man (15 points x 50 % covered = ~24 points/s against a decay
+# of 8); covered_near_miss_pct is now 100 (S3b-25), see below; a rifle
+# squad alone (1-2 points/s per man) does not keep a line ducked. Open ground is
 # unchanged (owner question S3b-3 (A)). Measured (Part B): an MG 34/42 at
 # 150 m on a 30 m line gives each man only ~0.5 near misses a second (wide
 # MG spread, grazing fire into the ground in front), so 35 / 20 ducked a
@@ -353,7 +354,10 @@ near_spot_m = 25
 # stationary); 500 gave 65 %, 550 60 %, 600 55 % (target <= 60 %). It
 # stands for the tracking and range-estimation errors against a mover
 # that the model does not simulate; wartime first-round hit rates on
-# moving tanks were roughly half of those on still ones.
+# moving tanks were roughly half of those on still ones. S3b Fix (review
+# M2): the extra (600 - 100 %) scales with the share of the target's
+# speed across the line of fire (|sin| of the angle), so a tank driving
+# straight at the gunner gets none and a crossing one all of it.
 moving_target_spread_pct = 600
 ranging_step_pct = 20
 ranging_floor_pct = 50

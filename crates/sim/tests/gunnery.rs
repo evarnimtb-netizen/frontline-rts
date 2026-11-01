@@ -536,6 +536,77 @@ fn a_tank_fires_he_and_its_mgs_at_men_and_never_near_its_own() {
     assert_eq!(he, 0);
 }
 
+/// S3b Fix (review M4): a vehicle MG spends its stowed rounds, falls
+/// silent when they are gone, and base rearm refills a belt per step.
+#[test]
+fn vehicle_mgs_spend_stowed_rounds_and_rearm_in_the_base() {
+    let mut w = World::new_match(setup(2), 1).unwrap();
+    let (_, v) = tank(&mut w, 0, xy(350, 500), EAST);
+    rifles(&mut w, 1, xy(480, 500), WEST);
+    let stowed: Vec<u32> = {
+        let s = w.match_setup().unwrap();
+        let vt = &s.vehicles[w.game().unwrap().vehicle(v).unwrap().type_idx as usize];
+        vt.mounts
+            .iter()
+            .skip(1)
+            .map(|m| m.rounds.unwrap())
+            .collect()
+    };
+    assert_eq!(stowed, vec![1575, 1575], "Panzer IV H: 3,150 rounds");
+    // Both MGs dry: no MG round in a minute.
+    w.edit_vehicle(v, |vs| {
+        for (m, n) in vs.mgs.iter_mut().zip(&stowed) {
+            m.spent = *n;
+        }
+    });
+    let mg34 = w
+        .match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.id == "ww2:mg34")
+        .unwrap() as u16;
+    let mut mg = 0;
+    for _ in 0..30 * 30 {
+        w.step(&[]);
+        mg += w
+            .snapshot()
+            .shots
+            .iter()
+            .filter(|s| s.shooter == v && s.weapon == mg34)
+            .count();
+    }
+    assert_eq!(mg, 0, "dry MGs fire nothing");
+    // One round short: exactly one more MG round.
+    let mut w = World::new_match(setup(2), 1).unwrap();
+    let (_, v) = tank(&mut w, 0, xy(350, 500), EAST);
+    rifles(&mut w, 1, xy(480, 500), WEST);
+    w.edit_vehicle(v, |vs| {
+        vs.mgs[0].spent = 1574;
+        vs.mgs[1].spent = 1575;
+    });
+    for _ in 0..30 * 30 {
+        w.step(&[]);
+    }
+    let vs = w.game().unwrap().vehicle(v).unwrap();
+    assert_eq!(vs.mgs[0].spent, 1575, "fired its last round");
+    assert_eq!(vs.mgs[0].shots, 1);
+    // In the base: a 150-round belt per MG per rearm step (2 s).
+    let mut w = World::new_match(setup(1), 1).unwrap();
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    let (_, v) = tank(&mut w, 0, base, EAST);
+    w.edit_vehicle(v, |vs| {
+        vs.mgs[0].spent = 1575;
+        vs.mgs[1].spent = 200;
+    });
+    for _ in 0..30 * 4 {
+        w.step(&[]);
+    }
+    let vs = w.game().unwrap().vehicle(v).unwrap();
+    assert_eq!(vs.mgs[0].spent, 1575 - 2 * 150);
+    assert_eq!(vs.mgs[1].spent, 0);
+}
+
 #[test]
 fn an_attack_moving_tank_halts_to_fire() {
     let mut w = World::new_match(setup(1), 1).unwrap();

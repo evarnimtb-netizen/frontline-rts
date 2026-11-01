@@ -3084,6 +3084,7 @@ mod tests {
             ("mgs.cooldown", Box::new(|v| v.mgs[1].cooldown = 4)),
             ("mgs.shots", Box::new(|v| v.mgs[0].shots += 1)),
             ("mgs.belt", Box::new(|v| v.mgs[1].belt += 1)),
+            ("mgs.spent", Box::new(|v| v.mgs[0].spent += 1)),
             ("repair_progress", Box::new(|v| v.repair_progress += 1)),
             ("base_ticks", Box::new(|v| v.base_ticks += 1)),
             ("last_attacker", Box::new(|v| v.last_attacker = Some(1))),
@@ -3213,6 +3214,44 @@ mod tests {
             ),
             (
                 Box::new(move |s| vehicle(s, va).mgs[0].belt = 60_000),
+                "out of range",
+            ),
+            // S3b Fix: more MG rounds spent than the mount stows.
+            (
+                Box::new(move |s| vehicle(s, va).mgs[0].spent = 60_000),
+                "out of range",
+            ),
+            // S3b Fix: a suppress line longer than the order allows.
+            (
+                Box::new(move |s| {
+                    vehicle(s, va).suppress =
+                        Some([FxVec2::from_int(100, 100), FxVec2::from_int(300, 100)])
+                }),
+                "suppress line",
+            ),
+            // S3b Fix: a wreck still burning (knock-out puts fires out).
+            (
+                Box::new(move |s| {
+                    let g = s.game.as_mut().unwrap();
+                    let wreck = g
+                        .vehicles
+                        .values_mut()
+                        .find(|v| v.wreck_tick.is_some())
+                        .unwrap();
+                    wreck.ammo_fire = 1;
+                }),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| {
+                    let g = s.game.as_mut().unwrap();
+                    let wreck = g
+                        .vehicles
+                        .values_mut()
+                        .find(|v| v.wreck_tick.is_some())
+                        .unwrap();
+                    wreck.burn = 1;
+                }),
                 "out of range",
             ),
             (

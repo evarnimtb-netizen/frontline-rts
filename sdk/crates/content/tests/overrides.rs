@@ -80,7 +80,7 @@ fn rules_and_def_edits_reach_the_setup_and_are_listed() {
     assert_eq!(
         shown,
         [
-            "defs.vehicles.\"ww2:ger_pz4_h\": cost: 600 -> 640",
+            "defs.vehicles.\"ww2:ger_pz4_h\": cost: 620 -> 640",
             "rules \"ww2:skirmish\": ai.armour.backup_m: 30 -> 45",
             "rules \"ww2:skirmish\": combat.near_miss_cm: 200 -> 250",
         ]

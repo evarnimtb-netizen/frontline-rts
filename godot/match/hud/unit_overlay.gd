@@ -68,6 +68,9 @@ func _draw() -> void:
 		var status: String = sq.get("status", "ok")
 		if status == "pinned" or status == "suppressed":
 			draw_string(font, r.position + Vector2(r.size.x + 3, 11), "!" if status == "suppressed" else "!!", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiPalette.WARN if status == "suppressed" else UiPalette.DANGER)
+		elif status == "heads_down":
+			# S3b Fix: ducked below the trench lip, not returning fire.
+			draw_string(font, r.position + Vector2(r.size.x + 3, 11), "v", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiPalette.WARN)
 		elif status == "retreating":
 			draw_string(font, r.position + Vector2(r.size.x + 3, 11), "«", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UiPalette.TEXT_DIM)
 		if own and sq.get("order", "") == "dig":

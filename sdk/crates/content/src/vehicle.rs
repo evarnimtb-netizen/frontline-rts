@@ -323,6 +323,12 @@ pub const MAX_ANCHORS: usize = 4;
 pub const MAX_STATIONS: usize = 4;
 /// Most boxes one component may have (S3b: stowage bins).
 pub const MAX_COMPONENT_BOXES: usize = 4;
+/// Most inner boxes per vehicle: every crew seat box plus every component
+/// box (the sim's damage pass keeps this many; S3b Fix, a performance cap).
+pub const MAX_INNER_BOXES: usize = 14;
+/// Most spall rays of a penetration: the sim traces the core plus at most
+/// this many (S3b Fix: was 8 in validation while the sim kept 7).
+pub const MAX_SPALL_RAYS: u32 = 7;
 /// Most filler fragment rays of an APHE round (S3b).
 pub const MAX_FILLER_RAYS: u32 = 16;
 /// Most rounds a main gun carries: a penetrator, HE and a second
@@ -624,6 +630,11 @@ pub struct MountDef {
     /// Who fires it (default: the gunner; `hull` needs one).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat: Option<SeatRole>,
+    /// `coax`, `hull` (S3b Fix): rounds stowed for this MG, 1..=20000; it
+    /// stops firing when they are spent and refills a belt per rearm step
+    /// in the own base. Omitted: no limit (it pays only in belt reloads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rounds: Option<u32>,
 }
 
 /// The main gun's exposed barrel (S3b).
@@ -1188,8 +1199,17 @@ impl VehicleDef {
                             "only a hull mount has an arc",
                         ));
                     }
+                    if w.rounds.is_some() {
+                        out.push(
+                            Issue::new(format!("{p}.rounds"), "only an MG mount has `rounds`")
+                                .with_hint("the main gun's rounds are its `ammo` counts"),
+                        );
+                    }
                 }
                 MountKind::Coax | MountKind::Hull => {
+                    if let Some(n) = w.rounds {
+                        range(&mut out, &format!("{p}.rounds"), n as i64, 1, 20_000);
+                    }
                     if !w.ammo.is_empty() || w.elevation_deg.is_some() || w.barrel.is_some() {
                         out.push(Issue::new(
                             p.clone(),
@@ -1239,6 +1259,27 @@ impl VehicleDef {
                     .with_hint(format!("[[components]] type = \"{}\" ...", kind.name())),
                 );
             }
+        }
+        // S3b Fix: the damage pass tests at most MAX_INNER_BOXES inner boxes
+        // (seats first, then components); a box past the cap could never
+        // be damaged.
+        let inner = self.crew.seats.len()
+            + self
+                .components
+                .iter()
+                .filter(|c| c.kind.has_box())
+                .map(|c| c.bounds.is_some() as usize + c.boxes.len())
+                .sum::<usize>();
+        if inner > MAX_INNER_BOXES {
+            out.push(
+                Issue::new(
+                    "components",
+                    format!(
+                        "at most {MAX_INNER_BOXES} inner boxes (crew seats plus component boxes), got {inner}"
+                    ),
+                )
+                .with_hint("merge stowage bins or drop a seat"),
+            );
         }
         for (i, c) in self.components.iter().enumerate() {
             let p = format!("components[{i}]");
@@ -1482,7 +1523,13 @@ impl AmmoDef {
             range(&mut out, "core.max_boxes", c.max_boxes as i64, 1, 3);
         }
         if let Some(s) = &self.spall {
-            range(&mut out, "spall.rays", s.rays as i64, 0, 8);
+            range(
+                &mut out,
+                "spall.rays",
+                s.rays as i64,
+                0,
+                MAX_SPALL_RAYS as i64,
+            );
             range(&mut out, "spall.damage", s.damage as i64, 0, 1000);
             range(&mut out, "spall.cone_deg", s.cone_deg as i64, 1, 60);
         }
@@ -1656,6 +1703,8 @@ pub struct MountSetup {
     /// `Hull`: traverse either side, integer degrees; 0 others.
     pub arc_deg: i32,
     pub seat: SeatRole,
+    /// `Coax`, `Hull` (S3b Fix): rounds stowed; `None` unlimited.
+    pub rounds: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1872,6 +1921,7 @@ pub(crate) fn lower_vehicle(
                 .collect(),
             arc_deg: w.arc_deg.unwrap_or(0) as i32,
             seat: w.seat.unwrap_or(SeatRole::Gunner),
+            rounds: w.rounds,
             barrel_length: w
                 .barrel
                 .map_or(Fixed::ZERO, |b| Fixed::from_cm(b.length_cm)),
@@ -2063,7 +2113,7 @@ pub(crate) fn check_ammo(a: &AmmoSetup) -> Option<&'static str> {
         return Some("ammo.core: out of range");
     }
     if let Some(s) = &a.spall
-        && (s.rays > 8 || s.damage > 1000 || !(1..=60).contains(&s.cone_deg))
+        && (s.rays as u32 > MAX_SPALL_RAYS || s.damage > 1000 || !(1..=60).contains(&s.cone_deg))
     {
         return Some("ammo.spall: out of range");
     }
@@ -2210,7 +2260,11 @@ pub(crate) fn check_vehicle(
             || (mech(1) == Some(AmmoMechanism::He)
                 && mech(0).is_some_and(|m| m.penetrator())
                 && mech(2).is_some_and(|m| m.penetrator()));
-        if !(elev_ok && ammo_ok && arc_ok && muzzle_ok && order_ok) {
+        let rounds_ok = match w.rounds {
+            Some(n) => !main && (1..=20_000).contains(&n),
+            None => true,
+        };
+        if !(elev_ok && ammo_ok && arc_ok && muzzle_ok && order_ok && rounds_ok) {
             return Some("vehicles.mounts: limits, ammo or arc out of range");
         }
     }
@@ -2248,6 +2302,9 @@ pub(crate) fn check_vehicle(
         {
             return Some("vehicles.components: kind, hp, box, anchors or repair out of range");
         }
+    }
+    if v.seats.len() + v.components.iter().map(|c| c.parts.len()).sum::<usize>() > MAX_INNER_BOXES {
+        return Some("vehicles: more inner boxes than MAX_INNER_BOXES");
     }
     if v.stations.len() > MAX_STATIONS
         || v.stations

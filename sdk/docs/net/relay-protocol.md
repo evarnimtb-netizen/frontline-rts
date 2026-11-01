@@ -77,7 +77,9 @@ kind the relay may not send. Clients cannot send relay messages.
   layout: the squad is bought and spawned at once in the base, or refused
   (manpower, the type's re-call cooldown, pop cap, vehicle unlock or
   limit); there is no call-in queue and no command for one. The S3b
-  slice bumps once: the planned `Suppress` command joins version 4.
+  slice bumps once, so version 4 also adds `SuppressUnits` at the end of
+  `CommandKind` (area fire at a point or a two-point line) and the
+  `AmmoChoice` value `Apcr` (3) that `SetAmmo` may carry.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -101,6 +103,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Encoded own commands per turn | 1,024 B (and any single command ≤ 1,024 B) |
 | Unit ids per command | 120 (`MAX_UNITS`) |
 | Points per dig line | 16 (`MAX_DIG_POINTS`) |
+| Points per `SuppressUnits` line (version 4) | 1–2 (`MAX_SUPPRESS_POINTS`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
 | Commands per bundled turn | 34 (2 × (16 + 1 relay-injected `Surrender`)) |
@@ -346,11 +349,15 @@ fields). Variants, in index order: `MoveSoldier`, `Spawn`, `Despawn`
 (bench only; the match sim rejects them), `Move`, `AttackMove`, `Stop`,
 `Retreat`, `Dig`, `Barrage`, `CallIn`, `Surrender`, `MoveUnits`,
 `AttackMoveUnits`, `StopUnits`, `RetreatUnits`, `DigUnits`, `SetStance`,
-`Regroup`, `Throw`, `ThrowEach`, and from version 3 `ReverseUnits`,
-`FaceUnits`, `AttackUnit`, `SetAmmo`, `RepairUnits`, `FollowUnits`. `Dig`
-and `DigUnits` end with `profile` (`DigProfile`: 0 trench, 1 AT ditch).
-Every variant with a `units` list is held to 120 ids and every line to 16
-points (`command_in_limits`, an exhaustive match). Positions are Q16.16
+`Regroup`, `Throw`, `ThrowEach`, from version 3 `ReverseUnits`,
+`FaceUnits`, `AttackUnit`, `SetAmmo`, `RepairUnits`, `FollowUnits`, and
+from version 4 `SuppressUnits { units, line }`. `Dig` and `DigUnits` end
+with `profile` (`DigProfile`: 0 trench, 1 AT ditch). `SetAmmo` carries an
+`AmmoChoice` as its variant index: 0 `Auto`, 1 `Ap`, 2 `He`, and from
+version 4 3 `Apcr` (the special penetrator; the standard one on a gun
+without it). Every variant with a `units` list is held to 120 ids, every
+dig line to 16 points and a `SuppressUnits` line to 1–2 points
+(`command_in_limits`, an exhaustive match). Positions are Q16.16
 `i32` pairs. The sim
 validates every command (dead units, foreign units, out-of-range values)
 identically on both clients, so the relay does not.

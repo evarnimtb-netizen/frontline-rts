@@ -18,8 +18,15 @@ damage = 120
 length_cm = 100
 max_boxes = 3
 
+# S3b Fix (review M1): spall rays 3 -> 7 (the most the sim traces). A
+# shaped charge that perforates a plate throws a cone of plate and jet
+# debris behind it (behind-armour debris); reasoning, no measured
+# source: it is at least as dense as an AP shot's spall (6 rays here).
+# With 3 rays a penetration usually crossed nobody and the AT team needed
+# about 9 penetrations per disabled tank (case 6, seeds 1-10). Damage
+# per ray stays 25 (smaller fragments than an AP shot's 35).
 [spall]
-rays = 3
+rays = 7
 damage = 25
 cone_deg = 25
 

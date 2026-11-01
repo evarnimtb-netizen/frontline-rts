@@ -69,7 +69,7 @@
 //! a vehicle regains `base_repair_pct_s` of every component's HP per second,
 //! one round per `base_rearm` and one dead seat per `base_crew`.
 
-use frontline_content::setup::HeSetup;
+use frontline_content::setup::{HeSetup, WeaponSetup};
 use frontline_content::vehicle::{Frame, PartBoxSetup, VehicleSetup};
 use frontline_content::{AmmoMechanism, ComponentKind, SeatRole};
 
@@ -88,9 +88,9 @@ use crate::world::Stats;
 // S3b: the external-part reach and the spall reach are rules data
 // (`[vehicles.gunnery]`, `frontline_content::tuning`).
 /// Most rays per penetration (core plus spall).
-pub const MAX_RAYS: usize = 8;
-/// Most internal boxes per vehicle.
-pub const MAX_BOXES: usize = 14;
+pub const MAX_RAYS: usize = 1 + frontline_content::vehicle::MAX_SPALL_RAYS as usize;
+/// Most internal boxes per vehicle (content validation enforces it).
+pub const MAX_BOXES: usize = frontline_content::vehicle::MAX_INNER_BOXES;
 /// The inner rays of HE that beat a plate leave within this of the inward
 /// normal, per axis: the hemisphere behind the plate as the spall rule's
 /// cone (geometry, not a tuning value).
@@ -196,7 +196,10 @@ pub fn inner_boxes(f: &VehicleFrame, v: &VehicleSetup) -> Vec<(BoxFrame, Inner)>
             out.push((part_box(f, p), Inner::Part(c.kind)));
         }
     }
-    out.truncate(MAX_BOXES);
+    debug_assert!(
+        out.len() <= MAX_BOXES,
+        "validated by the content setup check"
+    );
     out
 }
 
@@ -497,6 +500,7 @@ impl MatchState {
                     let cone = armour::deg(sp.cone_deg);
                     let reach =
                         Fx::from_int(self.setup.rules.vehicles.gunnery.spall_reach_m as i32);
+                    debug_assert!((sp.rays as usize) < MAX_RAYS, "validated");
                     for _ in 0..(sp.rays as usize).min(MAX_RAYS - 1) {
                         let d = spall_dir(dir, cone, &mut r);
                         if let Some(&k) = ray_boxes(&boxes, hit.point, d * reach, 1).first() {
@@ -996,7 +1000,7 @@ impl MatchState {
                     *hp = (*hp as u64 + add).min(max) as u16;
                 }
                 if n.is_multiple_of(r.base_rearm_ticks.max(1) as u64) {
-                    rearm_one(vs, v);
+                    rearm_one(vs, v, &self.setup.weapons);
                 }
                 if n.is_multiple_of(r.base_crew_ticks.max(1) as u64)
                     && let Some(s) = vs.seats.iter_mut().find(|s| s.hp == 0 && s.swap == 0)
@@ -1113,8 +1117,12 @@ fn repair_step(vs: &mut VehicleState, v: &VehicleSetup, k: u8) {
 }
 
 /// Base rearm: one round of the entry furthest below its load (ties: the
-/// first).
-fn rearm_one(vs: &mut VehicleState, v: &VehicleSetup) {
+/// first), and (S3b Fix) one belt into each MG with spent stowage.
+fn rearm_one(vs: &mut VehicleState, v: &VehicleSetup, weapons: &[WeaponSetup]) {
+    for (st, m) in vs.mgs.iter_mut().zip(v.mounts.iter().skip(1)) {
+        let belt = weapons[m.weapon as usize].magazine.max(1);
+        st.spent = st.spent.saturating_sub(belt);
+    }
     let best = v
         .main_gun()
         .ammo

@@ -517,6 +517,9 @@ static func vehicle_tooltip(mv: MatchView, vid: int) -> String:
 	var rounds := "AP %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("he", 0))]
 	if ammo.has("apcr"):
 		rounds = "AP %d · APCR %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("apcr", 0)), int(ammo.get("he", 0))]
+	if ammo.has("mg"):
+		# S3b Fix: MG belts left in stowage.
+		rounds += " · MG %d" % int(ammo.get("mg", 0))
 	return "%s · %s\nCrew: %s\n%s\n%s · loaded %s · ammo %s [N]" % [
 		mv.vehicle_label(vid, true), Vehicles.badge(v)[0], ", ".join(seats), ", ".join(parts),
 		rounds, String(v.get("loaded", "")).to_upper(),

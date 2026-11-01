@@ -7,16 +7,20 @@ mechanism = "aphe"
 caliber_mm = 75
 muzzle_velocity_m_s = 618
 drag_coeff = 0
-# [range_m, mm] against a plate at 30°. S3b Tune: corrected to the US
-# published table for APC M61 (MV 2030 ft/s, homogeneous plate at 30°):
-# 2.6 in at 500 yd, 2.4 in at 1000 yd, 2.2 in at 1500 yd, 2.0 in at
-# 2000 yd (Hunnicutt, Sherman, appendix; FM 17-12 tables), converted to
-# metres (457 m 66 mm, 914 m 61 mm, 1371 m 56 mm, 1829 m 51 mm) and
-# interpolated, 100 m extrapolated. The old row (76/70/63/57/51) was
-# about 6 % above it at 100-500 m; with it the M61 beat the Panzer IV H's
-# 80 mm front at 300 m 88 % of the time instead of ~13 %.
-penetration = [[100, 70], [500, 66], [1000, 60], [1500, 55], [2000, 49]]
-pen_reference_angle_deg = 30
+# [range_m, mm] against rolled homogeneous plate at 0° (normal), 50 %
+# success. S3b Fix (review H2): Bird & Livingston, WWII Ballistics: Armor
+# and Gunnery (Overmatch Press, 2001), pp. 62-63, APC M61 from the M3 gun
+# (618 m/s) vs RHA: 88 mm at 100 m, 81 at 500, 73 at 1000, 65 at 1500, 59
+# at 2000. The same book gives the PzGr 39 and PzGr 40 rows (p. 61) on the
+# same criterion, so both sides now come from one source. The Tune
+# stage's row was the US wartime table at 30° (Hunnicutt, Sherman, p.
+# 562: 66 mm at 500 yd) divided by cos 30° (76 mm); the US tables used a
+# stricter acceptance criterion than the German ones the PzGr 39 row came
+# from, so mixing them under-rated the M61 by ~7 mm against the German
+# round (it beat the Panzer IV H's 80 mm / 10° front at 300 m 13 % of the
+# time; with this row 90 %, as the S3 row's 88 %).
+penetration = [[100, 88], [500, 81], [1000, 73], [1500, 65], [2000, 59]]
+pen_reference_angle_deg = 0
 ricochet_angle_deg = 70
 # Damage to the gun when it strikes the barrel box (S3b, physical contact).
 nonpen_damage = 40
@@ -45,9 +49,11 @@ cone_deg = 25
 # gunner and the turret basket, so a tank survived 5-12 frontal
 # penetrations (case 3a). Shell-body fragments cross a fighting
 # compartment (2-3 m) with lethal energy.
+# S3b Fix (review L4): rays 10 -> 12 and the PzGr 39 10 -> 8, for the
+# larger burster (see 75mm_pzgr39.toml).
 [filler]
 offset_cm = 100
-rays = 10
+rays = 12
 cone_deg = 60
 damage = 60
 reach_cm = 300

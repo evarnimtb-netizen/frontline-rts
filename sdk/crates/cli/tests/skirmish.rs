@@ -171,8 +171,19 @@ fn fortify_test_reports_each_run() {
     assert_eq!(r.rifles.runs[1].entrenched, "ww2:usa");
     // The open squad is the one that suffers.
     assert!(r.rifles.open_losses > r.rifles.trench_losses);
+    // S3b Fix (review M5): supported, unsupported, and supported against a
+    // trench with its own MG team, per side.
+    assert_eq!(r.suppress.runs.len(), 6);
+    let defended: Vec<_> = r.suppress.runs.iter().filter(|r| r.def_mg).collect();
+    assert_eq!(defended.len(), 2);
+    for run in defended {
+        assert!(run.mg, "{run:?}");
+        assert!(run.defender_men > 8, "the MG team counts: {run:?}");
+    }
+    assert!(r.suppress.defended.defender_men > r.suppress.supported.defender_men);
     let text = frontline_cli::fortify::summary_text(&r);
     assert!(text.contains("fortify-test: "), "{text}");
+    assert!(text.contains("T10, ww2:germany entrenched"), "{text}");
 }
 
 fn ww2_override(name: &str) -> std::path::PathBuf {

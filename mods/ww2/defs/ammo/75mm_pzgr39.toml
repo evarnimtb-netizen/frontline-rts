@@ -8,9 +8,15 @@ caliber_mm = 75
 muzzle_velocity_m_s = 790
 # No drag in S3 (must be 0).
 drag_coeff = 0
-# [range_m, mm] against a plate at 30°; the sim normalises to 0°.
-penetration = [[100, 106], [500, 96], [1000, 85], [1500, 74], [2000, 64]]
-pen_reference_angle_deg = 30
+# [range_m, mm] against rolled homogeneous plate at 0° (normal), 50 %
+# success. S3b Fix (review H2): Bird & Livingston, WWII Ballistics: Armor
+# and Gunnery (Overmatch Press, 2001), p. 61, APCBC from the 7.5 cm KwK 40
+# L/48 (750 m/s): 135 mm at 100 m, 123 at 500, 109 at 1000, 97 at 1500, 86
+# at 2000; the same source and criterion as the M61 row. It replaces the
+# German wartime 30° table (106/96/85/74/64; Doyle & Jentz, Panzer Tracts
+# 4-3, p. 18) normalised by cos 30° (122/111/98/85/74).
+penetration = [[100, 135], [500, 123], [1000, 109], [1500, 97], [2000, 86]]
+pen_reference_angle_deg = 0
 ricochet_angle_deg = 70
 # Damage to the gun when it strikes the barrel box (S3b: no more "within
 # 1 m"), and to a track from a hit in the running-gear band.
@@ -41,9 +47,14 @@ cone_deg = 25
 # gunner and the turret basket, so a tank survived 5-12 frontal
 # penetrations (case 3a). Shell-body fragments cross a fighting
 # compartment (2-3 m) with lethal energy.
+# S3b Fix (review L4): rays 10 -> 8 and the M61 10 -> 12. The two
+# fillers were equal although the M61 carries about 4x the explosive
+# (~17 g of PETN-wax here vs ~70 g of Explosive D, about 2x in TNT
+# equivalent); fragment count grows slower than charge mass, so 8 vs 12
+# (x1.5). Reasoning, not a measured fragment count.
 [filler]
 offset_cm = 100
-rays = 10
+rays = 8
 cone_deg = 60
 damage = 60
 reach_cm = 300

@@ -128,6 +128,9 @@ pub struct MgState {
     pub shots: u32,
     /// Rounds fired from the current belt.
     pub belt: u16,
+    /// S3b Fix: rounds spent from the mount's stowage (`MountSetup::rounds`;
+    /// stays 0 on an unlimited mount). Refilled a belt per base rearm step.
+    pub spent: u32,
 }
 
 /// Per-vehicle state (`MatchState::vehicles`), saved and hashed through
@@ -367,6 +370,7 @@ impl VehicleState {
             || self.mgs.iter().zip(v.mounts.iter().skip(1)).any(|(m, mt)| {
                 let w = &s.weapons[mt.weapon as usize];
                 m.belt as u32 >= w.magazine.max(1)
+                    || m.spent > mt.rounds.unwrap_or(0)
                     || m.cooldown as u32
                         > w.reload_ticks.max(w.interval_milli.div_ceil(1000)).max(1)
             })
@@ -406,7 +410,9 @@ impl VehicleState {
                 l.iter()
                     .any(|p| !(Fx::ZERO..=map).contains(&p.x) || !(Fx::ZERO..=map).contains(&p.y))
             })
-            || (self.wreck_tick.is_some() && self.suppress.is_some());
+            || (self.wreck_tick.is_some() && self.suppress.is_some())
+            // S3b Fix: a knock-out puts both fires out (`knock_out`).
+            || (self.wreck_tick.is_some() && (self.ammo_fire != 0 || self.burn != 0));
         if bad {
             return Err("vehicle state is out of range");
         }

@@ -37,7 +37,11 @@
 //!   [`SUPPRESS_LEAD_S`] before the squad moves off. The fight lasts
 //!   [`SUPPRESS_S`]. Reported against the targets (defenders lose at least
 //!   75 % and attackers at most 50 % with the MG; the attackers lose at least
-//!   75 % without it), not a pass condition.
+//!   75 % without it), not a pass condition. S3b Fix (review M5): a third,
+//!   report-only variant gives the trench an MG team of its own
+//!   ([`DEF_MG_DY`] beside the rifle squad) against the supported assault,
+//!   so equal forces can be compared; the report also splits T10 by the
+//!   entrenched faction.
 //!
 //! Squads are staged with the sim's setup tools (`World::place_squad`,
 //! `World::dig_trench_now`), not commands, and the AI is off for both
@@ -72,6 +76,9 @@ pub const SUPPRESS_S: u64 = 150;
 /// grenade wave at the latest (s); the MG lifts at the rules'
 /// `ai.assault.lift_fire_m`.
 pub const CLOSE_IN_S: u64 = 10;
+/// S3b Fix (review M5): the defenders' own MG team stands in the trench
+/// this far (m, +y) from the rifle squad's centre.
+const DEF_MG_DY: i32 = 12;
 
 /// Time given to a barrage (fire, flight and the last burst), game seconds.
 const BARRAGE_S: u64 = 90;
@@ -210,6 +217,9 @@ pub struct SuppressExperiment {
     pub runs: Vec<SuppressRun>,
     pub supported: SuppressTotals,
     pub unsupported: SuppressTotals,
+    /// S3b Fix (review M5, report only): the supported assault against a
+    /// trench that has an MG team of its own (equal forces).
+    pub defended: SuppressTotals,
     /// T10: with the MG, defenders lose ≥ 75 % and attackers ≤ 50 %.
     pub supported_met: bool,
     /// T11: without it, the attackers lose ≥ 75 %.
@@ -235,6 +245,8 @@ pub struct SuppressRun {
     pub entrenched: String,
     /// An MG team suppressed the trench.
     pub mg: bool,
+    /// S3b Fix (review M5): the trench had its own MG team as well.
+    pub def_mg: bool,
     pub defender_losses: u32,
     pub attacker_losses: u32,
     pub attacker_men: u32,
@@ -587,8 +599,15 @@ fn assault_run(
 }
 
 /// One suppressed assault on `dug`'s entrenched rifle squad (see the
-/// module docs), with or without the MG.
-fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<SuppressRun> {
+/// module docs), with or without the MG; with `def_mg` (S3b Fix, review
+/// M5) the trench also holds an MG team of its own.
+fn suppress_run(
+    args: &FortifyArgs,
+    seed: u64,
+    dug: u8,
+    mg: bool,
+    def_mg: bool,
+) -> Result<SuppressRun> {
     let mut w = world(args, seed)?;
     let att = 1 - dug;
     let a = squad(&w, dug, "rifle_squad")?;
@@ -596,8 +615,16 @@ fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<Supp
     dig(&mut w);
     w.place_squad(a, at(TRENCH_X, LINE_Y), EAST);
     w.place_squad(b, at(TRENCH_X + SUPPRESS_START_M, LINE_Y), WEST);
+    let mut defenders = vec![a];
+    if def_mg {
+        let d = call_in(&mut w, dug, "mg_team")?;
+        w.place_squad(d, at(TRENCH_X, LINE_Y + DEF_MG_DY), EAST);
+        defenders.push(d);
+    }
+    let def_members =
+        |w: &World| -> Vec<SimId> { defenders.iter().flat_map(|&d| members(w, d)).collect() };
     let hz = w.match_setup().unwrap().tick_hz as u64;
-    let (def_men, att_men) = (members(&w, a).len() as u32, members(&w, b).len() as u32);
+    let (def_men, att_men) = (def_members(&w).len() as u32, members(&w, b).len() as u32);
     let mut mg_squad = None;
     if mg {
         let m = call_in(&mut w, att, "mg_team")?;
@@ -680,7 +707,7 @@ fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<Supp
         } else {
             w.step(&[]);
         }
-        for m in members(&w, a) {
+        for m in def_members(&w) {
             let c = &w.entities().combat()[m.index()];
             ticks.0 += 1;
             ticks.1 += c.ducked as u64;
@@ -692,6 +719,7 @@ fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<Supp
         seed,
         entrenched: faction(w.match_setup().unwrap(), dug),
         mg,
+        def_mg,
         defender_losses: losses(&w, dug) - lost_d,
         attacker_losses: losses(&w, att) - lost_a,
         attacker_men: att_men,
@@ -812,8 +840,8 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     for seed in seeds {
         for side in [0u8, 1] {
             rifles.push(rifle_run(args, seed, side)?);
-            for mg in [true, false] {
-                suppress.push(suppress_run(args, seed, side, mg)?);
+            for (mg, def_mg) in [(true, false), (false, false), (true, true)] {
+                suppress.push(suppress_run(args, seed, side, mg, def_mg)?);
             }
             for start in [ASSAULT_START_M, ASSAULT_GAP_M] {
                 for grenades in [true, false] {
@@ -914,9 +942,9 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         pass: hidden_ok && control_ok,
         runs: smoke,
     };
-    let sum = |mg: bool| {
+    let sum = |mg: bool, def_mg: bool| {
         let mut t = SuppressTotals::default();
-        for r in suppress.iter().filter(|r| r.mg == mg) {
+        for r in suppress.iter().filter(|r| r.mg == mg && r.def_mg == def_mg) {
             t.defender_losses += r.defender_losses;
             t.defender_men += r.defender_men;
             t.attacker_losses += r.attacker_losses;
@@ -927,7 +955,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         }
         t
     };
-    let (supported, unsupported) = (sum(true), sum(false));
+    let (supported, unsupported, defended) = (sum(true, false), sum(false, false), sum(true, true));
     let suppress = SuppressExperiment {
         name: "rifle squad advancing from 150 m on a dug-in rifle squad, with and without an MG suppressing the trench",
         supported_met: supported.defender_losses * 4 >= supported.defender_men * 3
@@ -935,6 +963,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         unsupported_met: unsupported.attacker_losses * 4 >= unsupported.attacker_men * 3,
         supported,
         unsupported,
+        defended,
         runs: suppress,
     };
     Ok(FortifyReport {
@@ -1028,13 +1057,14 @@ pub fn summary_text(r: &FortifyReport) -> String {
     );
     let x = &r.suppress;
     out += &format!("{}\n", x.name);
-    out += "  seed  entrenched    mg   defender_losses  attacker_losses  frags  ducked  pinned\n";
+    out += "  seed  entrenched    mg   def_mg  defender_losses  attacker_losses  frags  ducked  pinned\n";
     for run in &x.runs {
         out += &format!(
-            "  {:<5} {:<13} {:<4} {:>9} of {:<4} {:>9} of {:<4} {:>5}  {:>5.1} %  {:>5.1} %\n",
+            "  {:<5} {:<13} {:<4} {:<7} {:>9} of {:<4} {:>9} of {:<4} {:>5}  {:>5.1} %  {:>5.1} %\n",
             run.seed,
             run.entrenched,
             if run.mg { "yes" } else { "no" },
+            if run.def_mg { "yes" } else { "no" },
             run.defender_losses,
             run.defender_men,
             run.attacker_losses,
@@ -1059,6 +1089,12 @@ pub fn summary_text(r: &FortifyReport) -> String {
             x.unsupported_met,
             "T11: attackers lose >= 75 %",
         ),
+        (
+            "with the MG, against a trench with its own MG",
+            &x.defended,
+            true,
+            "report only (review M5)",
+        ),
     ] {
         out += &format!(
             "  {name}: defenders lost {} of {} ({:.1} %), attackers {} of {} ({:.1} %); defenders ducked {:.1} %, pinned {:.1} % of man-time; {target}: {}\n",
@@ -1070,7 +1106,36 @@ pub fn summary_text(r: &FortifyReport) -> String {
             pct(t.attacker_losses, t.attacker_men),
             tick_pct(t.defender_ducked, t.defender_ticks),
             tick_pct(t.defender_pinned, t.defender_ticks),
-            if met { "met" } else { "missed" }
+            if target.starts_with("report") {
+                "-"
+            } else if met {
+                "met"
+            } else {
+                "missed"
+            }
+        );
+    }
+    // S3b Fix (review H1): T10 per faction (the entrenched side's faction;
+    // the other attacks with its own MG).
+    let mut factions: Vec<&str> = x.runs.iter().map(|r| r.entrenched.as_str()).collect();
+    factions.sort_unstable();
+    factions.dedup();
+    for f in factions {
+        let (mut dl, mut dm, mut al, mut am) = (0, 0, 0, 0);
+        for r in x
+            .runs
+            .iter()
+            .filter(|r| r.mg && !r.def_mg && r.entrenched == f)
+        {
+            dl += r.defender_losses;
+            dm += r.defender_men;
+            al += r.attacker_losses;
+            am += r.attacker_men;
+        }
+        out += &format!(
+            "  T10, {f} entrenched: defenders lost {dl} of {dm} ({:.1} %), attackers {al} of {am} ({:.1} %)\n",
+            pct(dl, dm),
+            pct(al, am)
         );
     }
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });

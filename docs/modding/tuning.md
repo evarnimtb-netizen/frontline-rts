@@ -58,7 +58,7 @@ Write an override file with only the keys you change. It has no `id`,
 near_miss_cm = 250            # top-level tables patch the rules, key by key
 
 [defs.vehicles."ww2:ger_pz4_h"]
-cost = 600                    # [defs.<kind>."<id>"] patches one def
+cost = 620                    # [defs.<kind>."<id>"] patches one def
 ```
 
 The def kinds are `units`, `weapons`, `items`, `factions`, `maps`,

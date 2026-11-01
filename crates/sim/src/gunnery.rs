@@ -390,9 +390,10 @@ impl MatchState {
         let area = area_probe.map(|(a, _)| a);
 
         let moving: Fx = setup.rules.vehicles.moving_speed.into();
-        let target_moving = target
+        let target_vel = target
             .and_then(|t| self.vehicles.get(&t))
-            .is_some_and(|t| t.avg_vel.length() > moving);
+            .map(|t| t.avg_vel);
+        let target_moving = target_vel.is_some_and(|v| v.length() > moving);
         let clear = aim
             .or(area)
             .is_none_or(|a| a.vehicle || !self.own_men_near(ents, ctx, owner, a.point));
@@ -518,7 +519,14 @@ impl MatchState {
             && !(a.vehicle && k == HE && vs.ammo_choice == AmmoChoice::Auto)
             && (aim.is_some() || k == HE)
         {
-            let spread = main_spread(vs, v, setup, &a, k, target_moving);
+            // Review fix (S3b Fix): only the part of the target's motion
+            // across the line of fire widens the spread; a tank driving
+            // straight at the gunner is not harder to hit than a still one.
+            let cross = match target_vel {
+                Some(tv) if a.vehicle && target_moving => cross_pct(tv, muzzle, a.point),
+                _ => 0,
+            };
+            let spread = main_spread(vs, v, setup, &a, k, cross);
             let [lo, hi] = main.elevation_deg;
             let laid_yaw = (want_yaw - vs.turret_yaw).wrap_angle().abs() <= spread;
             let want_pitch = want_pitch.clamp(deg(lo), deg(hi));
@@ -590,7 +598,9 @@ impl MatchState {
                 MountKind::TurretMain => continue,
             };
             let seat_ok = vs.manned(v, crew);
-            if !seat_ok {
+            // S3b Fix: an MG with its stowage spent is silent until rearmed.
+            let dry = m.rounds.is_some_and(|n| st.spent >= n);
+            if !seat_ok || dry {
                 st.target = None;
                 continue;
             }
@@ -1014,6 +1024,9 @@ fn mg_fire(
         ammo: NO_AMMO,
     });
     st.shots = st.shots.wrapping_add(1);
+    if m.rounds.is_some() {
+        st.spent = st.spent.saturating_add(1);
+    }
     st.belt = st.belt.saturating_add(1);
     if st.belt as u32 >= w.magazine.max(1) {
         st.belt = 0;
@@ -1045,14 +1058,28 @@ pub fn reload_of(vs: &VehicleState, v: &VehicleSetup, s: &MatchSetup) -> u16 {
     (base * pct / 100).clamp(1, u16::MAX as u32) as u16
 }
 
+/// The share (0–100 %) of a target's planar velocity `vel` that crosses
+/// the line of fire from `from` to `to` (|sin| of the angle between them).
+fn cross_pct(vel: FxVec2, from: FxVec3, to: FxVec3) -> i64 {
+    let los = FxVec2::new(to.x - from.x, to.y - from.y).normalize_or_zero();
+    let speed = vel.length().raw() as i64;
+    if speed == 0 || los == FxVec2::ZERO {
+        return 0;
+    }
+    (vel.det(los).raw().unsigned_abs() as i64 * 100 / speed).clamp(0, 100)
+}
+
 /// The main gun's spread (radians) for this shot (see the module docs).
+/// `cross` is the share (0–100 %) of a moving target's speed across the
+/// line of fire (0 for a still target): the extra moving-target spread
+/// scales with it.
 fn main_spread(
     vs: &VehicleState,
     v: &VehicleSetup,
     s: &MatchSetup,
     a: &Aim,
     round: u8,
-    target_moving: bool,
+    cross: i64,
 ) -> Fx {
     let r = &s.rules.vehicles;
     let w = &s.weapons[v.main_gun().weapon as usize];
@@ -1068,8 +1095,9 @@ fn main_spread(
     if vs.speed.abs() > moving {
         pct = pct * v.mobility.moving_spread_pct as i64 / 100;
     }
-    if a.vehicle && target_moving {
-        pct = pct * r.moving_target_spread_pct as i64 / 100;
+    if a.vehicle && cross > 0 {
+        let extra = (r.moving_target_spread_pct as i64 - 100) * cross / 100;
+        pct = pct * (100 + extra) / 100;
     }
     if vs
         .seat(v, SeatRole::Gunner)
@@ -1153,7 +1181,7 @@ mod tests {
         };
         let vs = VehicleState::new(0, v, &s.rules.vehicles);
         let sp = |vs: &VehicleState, a: &Aim, k: u8, moving: bool| {
-            main_spread(vs, v, &s, a, k, moving).raw()
+            main_spread(vs, v, &s, a, k, if moving { 100 } else { 0 }).raw()
         };
         let gun = Fx::from(s.weapons[v.main_gun().weapon as usize].spread).raw();
         assert_eq!(sp(&vs, &at_tank, AP, false), gun, "2.5 mrad");
@@ -1166,6 +1194,20 @@ mod tests {
         // ranging in 20 % per shot down to 50 %.
         let mts = s.rules.vehicles.moving_target_spread_pct as i32;
         assert_eq!(sp(&vs, &at_tank, AP, true), gun * mts / 100);
+        // Review fix: only the crossing share counts; half crossing gets
+        // half the extra, a head-on mover none.
+        assert_eq!(
+            main_spread(&vs, v, &s, &at_tank, AP, 50).raw(),
+            gun * (100 + (mts - 100) / 2) / 100
+        );
+        assert_eq!(main_spread(&vs, v, &s, &at_tank, AP, 0).raw(), gun);
+        let o = FxVec3::ZERO;
+        let east = FxVec3::new(Fx::from_int(300), Fx::ZERO, Fx::ZERO);
+        let six = |x: i32, y: i32| FxVec2::new(Fx::from_int(x), Fx::from_int(y));
+        assert_eq!(cross_pct(six(-6, 0), o, east), 0, "head-on");
+        assert_eq!(cross_pct(six(0, 6), o, east), 100, "crossing");
+        assert!((70..=71).contains(&cross_pct(six(4, 4), o, east)), "45°");
+        assert_eq!(cross_pct(FxVec2::ZERO, o, east), 0);
         let mut r = vs.clone();
         r.ranging = 1;
         assert_eq!(sp(&r, &at_tank, AP, false), gun * 80 / 100);

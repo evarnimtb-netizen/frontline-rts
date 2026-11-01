@@ -70,14 +70,15 @@ impl Purpose {
     pub const ITEM_FRAGMENT: Purpose = Purpose(23);
     /// Inner fragment rays of HE that beat a plate (tick, slot).
     pub const HE_INSIDE: Purpose = Purpose(24);
-    /// Lead estimation error against a moving target (the ranging count as
-    /// the tick, the shooter id; the target id is mixed into the seed).
+    /// Lead estimation error against a moving target (the tick slot holds
+    /// the target id shifted left 8 bits OR the ranging count; the shooter
+    /// id as the id).
     pub const LEAD: Purpose = Purpose(25);
     /// Ammo-fire roll of a rack hit that did not detonate (tick, slot).
     pub const AMMO_FIRE: Purpose = Purpose(26);
     /// S3b Suppress order: where on the line a shot aims (tick, shooter;
-    /// a vehicle's MGs skip two draws per mount; the main gun keys by its
-    /// HE rounds left instead of the tick).
+    /// a vehicle's MGs skip two draws per mount). The main gun draws
+    /// nothing: its HE aims at the line's middle.
     pub const SUPPRESS: Purpose = Purpose(27);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);

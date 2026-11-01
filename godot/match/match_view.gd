@@ -569,6 +569,8 @@ func squad_status(sq: Dictionary) -> Array:
 			return ["Pinned", true]
 		"suppressed":
 			return ["Under fire", true]
+		"heads_down":
+			return ["Heads down", true]
 		"retreating":
 			return ["Retreating", false]
 	var o: String = sq.get("order", "idle")

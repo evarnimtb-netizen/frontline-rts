@@ -11,12 +11,15 @@ name = "Panzer IV Ausf. H"
 short_name = "Panzer IV"
 faction = "ww2:germany"
 role = "tank"
-# S3b Tune (step (b) cost balance, owner question S3b-10 (A): within
-# +-15 %): Panzer IV 640 -> 600 (-6 %), Sherman 560 -> 620 (+11 %).
-# Measured over 40 AI matches (seeds 1-20, both base orders) after the
-# round-1 realism fixes: Germany won 15, the USA 23 (2 draws); with these
-# costs Germany 23, the USA 17. A gameplay balance value, not a price.
-cost = 600
+# S3b (step (b) cost balance, owner question S3b-10 (A): within +-15 %).
+# Tune: Panzer IV 640 -> 600, Sherman 560 -> 620. S3b Fix: Panzer IV 620
+# (-3 % from S3), Sherman 590 (+5 %), measured over 40 AI matches (seeds
+# 1-20, both base orders) on the Fix data (Bird & Livingston AP rows,
+# HEAT spall 7, MG stowage): 640/560 Germany 12, USA 27, 1 draw, base 1
+# won 20 of 39; 600/620 Germany 18, USA 22, base 1 won 28 of 40 (70 %);
+# 620/590 Germany 17, USA 21, 2 draws, base 1 won 21 of 38 (55 %). The
+# smallest move that balances both. A gameplay balance value, not a price.
+cost = 620
 pop = 12
 # Call-in (S3b): a call-in spawns the tank at once at the base (no
 # queue, no delivery time; it walks to the front itself). Then this
@@ -118,10 +121,16 @@ ammo = [
 # barrel with its sleeve, a little thicker than the 75 mm bore.
 barrel = { length_cm = 335, radius_cm = 8 }
 
+# S3b Fix (review M4): MG rounds stowed per mount. The Ausf. H carried
+# 3,150 rounds of 7.92 mm in belt bags for its two MG 34 (Jentz & Doyle,
+# Panzer Tracts 4-3, specification table); split evenly between the
+# mounts. Spent rounds refill one 150-round belt per base rearm step
+# (vehicles.base_rearm_s). Suppressive fire now spends real ammunition.
 [[weapons]]
 def = "ww2:mg34"
 mount = "coax"
 muzzle = [120, 25, 45]
+rounds = 1575
 
 [[weapons]]
 def = "ww2:mg34"
@@ -130,6 +139,7 @@ mount = "hull"
 muzzle = [295, -60, 140]
 arc_deg = 15
 seat = "radio_mg"
+rounds = 1575
 
 [[components]]
 type = "engine"

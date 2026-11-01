@@ -113,8 +113,10 @@ fn one_shot_matches_the_spec_numbers() {
         Descent::Deg(0),
         false,
     );
-    assert_eq!(r.result, "borderline");
-    assert!(ballistics::shot_text(&r).contains("borderline: 92.3 % penetrate"));
+    // S3b Fix: the PzGr 39 on Bird & Livingston's 0° row beats the
+    // Sherman's glacis at 450 m every time (was 92.3 %).
+    assert_eq!(r.result, "penetrates");
+    assert!(ballistics::shot_text(&r).contains("penetrates (100 %)"));
     let r = ballistics::shot(
         &a,
         pz,
@@ -172,9 +174,9 @@ fn table_json_and_golden_through_run() {
     assert!(ok);
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(v["result"], "borderline");
-    // S3b Tune: the M61's table corrected to the US published figures
-    // (golden row 14): 88.4 % -> 12.8 %.
-    assert!((v["pen_pct"].as_f64().unwrap() - 12.8).abs() < 0.1);
+    // S3b Fix: the M61 on Bird & Livingston's 0° row (golden row 14):
+    // 90.0 % (the Tune stage's US 30° row gave 12.8 %).
+    assert!((v["pen_pct"].as_f64().unwrap() - 90.0).abs() < 0.1);
     let (_, ok) = ballistics::run(&BallisticsArgs {
         golden: Some(ww2().join("tests/ballistics.toml")),
         ammo: None,

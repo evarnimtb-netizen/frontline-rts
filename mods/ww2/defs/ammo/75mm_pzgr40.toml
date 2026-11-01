@@ -13,11 +13,14 @@ caliber_mm = 75
 # owner / M2 task).
 muzzle_velocity_m_s = 990
 drag_coeff = 0
-# [range_m, mm] against a plate at 30°: 100 m 120, 500 m 97, 1000 m 77
-# (approximate published L/48 table; placeholder until the owner / M2
-# citation). Clamped beyond 1000 m (our engagements are under 600 m).
-penetration = [[100, 120], [500, 97], [1000, 77]]
-pen_reference_angle_deg = 30
+# [range_m, mm] against rolled homogeneous plate at 0° (normal), 50 %
+# success. S3b Fix (review H2): Bird & Livingston, WWII Ballistics: Armor
+# and Gunnery (Overmatch Press, 2001), p. 61, APCR from the 7.5 cm KwK 40
+# L/48 (930 m/s): 176 mm at 100 m, 154 at 500, 130 at 1000, 109 at 1500,
+# 92 at 2000; one source and criterion with the PzGr 39 and M61 rows. The
+# old row (120/97/77 at 30°) was the German table shifted one range step.
+penetration = [[100, 176], [500, 154], [1000, 130], [1500, 109], [2000, 92]]
+pen_reference_angle_deg = 0
 ricochet_angle_deg = 70
 # Damage to the gun when it strikes the barrel box, and to a track from a
 # hit in the running-gear band (as the PzGr 39).

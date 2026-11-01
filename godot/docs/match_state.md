@@ -110,7 +110,7 @@ state = {
       men_max: int,
       health: float,             # 0..1, summed member HP / (100 * men_max)
       suppression: float,        # 0..1, squad average
-      status: String,            # "ok" | "suppressed" | "pinned" | "retreating"
+      status: String,            # "ok" | "suppressed" | "heads_down" (S3b: half ducked below a trench lip) | "pinned" | "retreating"
       order: String,             # "idle" | "move" | "attack_move" | "retreat"
                                  # | "dig" | "barrage" | "setup" (MG setting up)
                                  # | "follow" (S3 escort; `follow`: the vehicle)
@@ -141,6 +141,7 @@ state = {
       hp: float,                 # 0..100; under 60 shows as wounded
       stance: String,            # "stand" | "crouch" | "prone" (effective)
       pinned: bool,              # suppressed past the pinned threshold
+      ducked: bool,              # S3b: ducked below a trench lip (not firing)
       suppression: float,        # opt, 0..1
       in_trench: bool,           # opt; standing in a dug trench (bridge)
       # Own soldiers only (leave these out for enemies):
@@ -549,7 +550,8 @@ vehicles: [                        # own + seen enemy + every wreck, ascending i
     repairing: String,             # "" | "engine" | "track_l" | "track_r" | "ring"
                                    # | "transmission"
     ammo: { ap: int, he: int,      # main-gun rounds left; S3b: apcr only on a
-            apcr: int },           # gun that carries a special round (Panzer IV)
+            apcr: int,             # gun that carries a special round (Panzer IV);
+            mg: int },             # S3b Fix: MG rounds left in stowage (if limited)
     loaded: String,                # round in the breech: "ap" | "he" | "apcr" | ""
     ammo_choice: String,           # "auto" | "ap" | "he" | "apcr" (SetAmmo)
     reload: float,                 # 0..1, 1 = ready to fire

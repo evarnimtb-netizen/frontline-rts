@@ -70,6 +70,8 @@ pub struct SquadView {
     pub hp_sum: u32,
     pub suppression_sum: u32,
     pub pinned: u8,
+    /// S3b Fix: members ducked below a trench lip (not firing).
+    pub ducked: u8,
     /// MG team still setting up its guns after a move.
     pub setup: bool,
     /// Some member is seen by the local player (own squads: always).
@@ -171,6 +173,8 @@ pub struct MatchFrame {
     pub hp: Vec<u16>,
     pub suppression: Vec<u8>,
     pub pinned: Vec<bool>,
+    /// S3b Fix: ducked below a trench lip (not firing).
+    pub ducked: Vec<bool>,
     /// Standing in a dug trench (feet at least the sim's trench depth below
     /// the undug surface).
     pub in_trench: Vec<bool>,
@@ -230,6 +234,7 @@ impl MatchFrame {
             hp: Vec::new(),
             suppression: Vec::new(),
             pinned: Vec::new(),
+            ducked: Vec::new(),
             in_trench: Vec::new(),
             stance_order: Vec::new(),
             detached: Vec::new(),
@@ -276,6 +281,7 @@ impl MatchFrame {
         self.hp.clone_from(&snap.soldier_hp);
         self.suppression.clone_from(&snap.soldier_suppression);
         self.pinned.clone_from(&snap.soldier_pinned);
+        self.ducked.clone_from(&snap.soldier_ducked);
         self.stance_order.clear();
         self.stance_order
             .extend(snap.soldier_stance_order.iter().map(|s| *s as u8));
@@ -445,6 +451,7 @@ impl MatchFrame {
                 v.hp_sum += c.hp as u32;
                 v.suppression_sum += (c.suppression / 1000).min(100);
                 v.pinned += c.pinned as u8;
+                v.ducked += c.ducked as u8;
                 v.visible |= c.seen_by & bit != 0;
             }
             let w = &setup.weapons[ty.weapon as usize];
@@ -995,6 +1002,7 @@ mod tests {
             f.hp.len(),
             f.suppression.len(),
             f.pinned.len(),
+            f.ducked.len(),
             f.in_trench.len(),
             f.stance_order.len(),
             f.detached.len(),

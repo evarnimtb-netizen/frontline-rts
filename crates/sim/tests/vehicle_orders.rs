@@ -614,9 +614,10 @@ fn apcr_goes_only_where_ap_would_likely_fail() {
     // keeps AP (event kind 1).
     let f = loads(64, None);
     assert!(!f.is_empty() && f.iter().all(|&k| k == 1), "{f:?}");
-    // An 82 mm glacis (about 120 mm effective): the PzGr 39 at 300 m has a
-    // poor chance, the PzGr 40 a better one: Auto swaps to it (kind 3).
-    let f = loads(82, None);
+    // A 95 mm glacis (about 139 mm effective; S3b Fix: 82 mm before the
+    // Bird & Livingston rows): the PzGr 39 at 300 m (129 mm) has a poor
+    // chance, the PzGr 40 (165 mm) a better one: Auto swaps to it (kind 3).
+    let f = loads(95, None);
     assert!(f.contains(&3), "{f:?}");
     // So thick that neither gets through: Auto stays with AP.
     let f = loads(150, None);

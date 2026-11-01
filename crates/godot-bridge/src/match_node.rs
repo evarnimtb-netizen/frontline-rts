@@ -1770,6 +1770,7 @@ impl MatchRuntime {
                     _ => "prone",
                 },
                 "pinned" => f.pinned[i],
+                "ducked" => f.ducked[i],
                 "suppression" => f.suppression[i] as f32 / 100.0,
                 "in_trench" => f.in_trench[i],
             };
@@ -2123,6 +2124,10 @@ impl MatchRuntime {
                 if special {
                     ammo.set("apcr", v.ammo[2] as i64);
                 }
+                // S3b Fix: MG rounds left in stowage (mounts with a limit).
+                if v.mg_rounds != u32::MAX {
+                    ammo.set("mg", v.mg_rounds as i64);
+                }
                 d.set("ammo", &ammo);
                 d.set(
                     "loaded",
@@ -2277,6 +2282,10 @@ impl MatchRuntime {
             "retreating"
         } else if s.pinned as u32 * 2 >= men {
             "pinned"
+        } else if s.ducked as u32 * 2 >= men {
+            // S3b Fix: half the squad ducked below the lip is not
+            // returning fire.
+            "heads_down"
         } else if supp * 100.0 >= setup.rules.combat.crouch_suppression as f32 {
             "suppressed"
         } else {

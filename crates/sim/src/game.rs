@@ -1657,6 +1657,10 @@ impl MatchState {
         let mut wrecks = 0u32;
         for (&id, vs) in &self.vehicles {
             vs.validate(s, size, tick)?;
+            // S3b Fix: a vehicle's suppress line obeys the order's limits.
+            if vs.suppress.is_some_and(|l| !self.suppress_ok(&l)) {
+                return Err("a vehicle's suppress line is out of range");
+            }
             let wreck = match kind(id) {
                 Some(EntityKind::Vehicle) => false,
                 Some(EntityKind::Wreck) => true,

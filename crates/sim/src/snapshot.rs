@@ -308,6 +308,9 @@ pub struct VehicleSnapshot {
     pub followers: u8,
     /// Own only (S3b): the `SuppressUnits` line it fires at, if any.
     pub suppress: Option<[[f32; 2]; 2]>,
+    /// Own only (S3b Fix): MG rounds left in stowage, summed over the
+    /// mounts that have a limit; `u32::MAX` when none has one.
+    pub mg_rounds: u32,
 }
 
 /// `ShellSnapshot::kind`.
@@ -424,6 +427,8 @@ pub struct RenderSnapshot {
     pub soldier_hp: Vec<u16>,
     pub soldier_suppression: Vec<u8>,
     pub soldier_pinned: Vec<bool>,
+    /// S3b Fix: ducked below a trench lip (not firing), per entry.
+    pub soldier_ducked: Vec<bool>,
     pub soldier_visible: Vec<u16>,
     /// Per entry of `soldiers` (match mode only, S1b): the stance order
     /// (`SetStance`) and whether he is detached from his squad's formation.
@@ -506,6 +511,7 @@ impl RenderSnapshot {
         self.soldier_hp.clear();
         self.soldier_suppression.clear();
         self.soldier_pinned.clear();
+        self.soldier_ducked.clear();
         self.soldier_visible.clear();
         self.soldier_stance_order.clear();
         self.soldier_detached.clear();
@@ -531,6 +537,7 @@ impl RenderSnapshot {
                         self.soldier_suppression
                             .push((c.suppression / 1000).min(100) as u8);
                         self.soldier_pinned.push(c.pinned);
+                        self.soldier_ducked.push(c.ducked);
                         self.soldier_visible.push(c.seen_by | (1 << owner));
                         let u = &ents.unit()[i];
                         self.soldier_stance_order.push(u.stance);
@@ -798,6 +805,14 @@ impl RenderSnapshot {
                     .map_or(u32::MAX, |t| t.0),
                 followers: vs.followers.len().min(u8::MAX as usize) as u8,
                 suppress: vs.suppress.map(|l| [l[0].to_f32(), l[1].to_f32()]),
+                mg_rounds: v
+                    .mounts
+                    .iter()
+                    .skip(1)
+                    .zip(&vs.mgs)
+                    .filter_map(|(m, st)| m.rounds.map(|n| n.saturating_sub(st.spent)))
+                    .reduce(|a, b| a.saturating_add(b))
+                    .unwrap_or(u32::MAX),
             });
         }
     }

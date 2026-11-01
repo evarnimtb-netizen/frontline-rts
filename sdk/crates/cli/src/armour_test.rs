@@ -785,7 +785,14 @@ fn case4(env: &Env) -> Result<CaseReport> {
                     .and_then(|g| g.squad(team))
                     .and_then(|q| q.launcher.as_ref())
                     .and_then(|l| l.carrier);
-                let (tpos, tspeed) = (pos(w, tank), vstate(w, tank).map_or(Fx::ZERO, |v| v.speed));
+                // S3b Fix (review L2): "moving" as the sim's launcher rule
+                // judges it, the ~1 s average velocity (`launcher_target_ok`),
+                // not the instantaneous speed: a tank pulling away from a
+                // stop is still "still" to the gunner for a moment.
+                let (tpos, tspeed) = (
+                    pos(w, tank),
+                    vstate(w, tank).map_or(Fx::ZERO, |v| v.avg_vel.length()),
+                );
                 let cpos = carrier.map(|c| pos(w, c));
                 if run == AtRun::Flank
                     && w.game()

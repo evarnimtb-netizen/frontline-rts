@@ -92,9 +92,9 @@ fn vehicles_and_ammo_lower_into_the_setup() {
             pz.recall_cooldown_ticks,
             pz.initial_cooldown_ticks
         ),
-        (600, 12, 120 * 30, 0) // S3b Tune: cost 640 -> 600
+        (620, 12, 120 * 30, 0) // S3b Fix: cost 640 -> 620
     );
-    assert_eq!((sh.cost, sh.pop), (620, 12)); // S3b Tune: 560 -> 620
+    assert_eq!((sh.cost, sh.pop), (590, 12)); // S3b Fix: 560 -> 590
     assert_eq!(pz.mobility.speed, Fixed::from_cm(600));
     assert_eq!(sh.mobility.reverse, Fixed::from_cm(250));
     assert_eq!(pz.mobility.ditch_block, Fixed::from_ratio(19, 10));
@@ -159,14 +159,15 @@ fn vehicles_and_ammo_lower_into_the_setup() {
         Fixed::from_ratio(25, 10_000)
     );
 
-    // Ammo: the AP table at 30°, HE flat, HEAT flat at 0°.
+    // Ammo: the AP table at 0° (S3b Fix: Bird & Livingston, was 30°), HE
+    // flat, HEAT flat at 0°.
     let ammo = |id: &str| s.ammo.iter().find(|a| a.id == id).unwrap();
     let pzgr = ammo("ww2:75mm_pzgr39");
     assert_eq!(pzgr.mechanism, AmmoMechanism::Aphe);
-    assert_eq!((pzgr.pen_ref_deg, pzgr.ricochet_deg), (30, 70));
+    assert_eq!((pzgr.pen_ref_deg, pzgr.ricochet_deg), (0, 70));
     assert_eq!(pzgr.penetration.len(), 5);
     assert_eq!(pzgr.penetration[1].range, Fixed::from_int(500));
-    assert_eq!(pzgr.penetration[1].mm, 96);
+    assert_eq!(pzgr.penetration[1].mm, 123);
     assert!(pzgr.filler.is_some() && pzgr.blast.is_none());
     assert_eq!(pzgr.spall.unwrap().rays, 6);
     let he = ammo("ww2:75mm_m48");
@@ -175,7 +176,7 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     let heat = ammo("ww2:rpzb54_heat");
     assert_eq!((heat.penetration[0].mm, heat.pen_ref_deg), (160, 0));
     assert_eq!(heat.blast.as_ref().unwrap().blast.pen_mm, 0);
-    assert_eq!(heat.spall.unwrap().rays, 3);
+    assert_eq!(heat.spall.unwrap().rays, 7); // S3b Fix (review M1): 3 -> 7
 
     // Vehicle squads take their numbers from the vehicle; AT teams carry
     // one launcher and a rifle.
@@ -183,7 +184,7 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     let tank = ty("ww2:ger_pz4_h_squad");
     assert_eq!(tank.role, SquadRole::Vehicle);
     assert_eq!(tank.vehicle, Some(0));
-    assert_eq!((tank.men, tank.cost, tank.pop(&s.vehicles)), (0, 600, 12)); // S3b Tune: 640 -> 600
+    assert_eq!((tank.men, tank.cost, tank.pop(&s.vehicles)), (0, 620, 12)); // S3b Fix: 640 -> 620
     let at = ty("ww2:usa_bazooka_team");
     assert_eq!(
         (at.role, at.men, at.weapon_men),
@@ -511,7 +512,7 @@ fn vehicle_structure_errors_are_reported() {
 fn ammo_and_at_team_errors_are_reported() {
     let i = issues_of("ammo", |r| {
         let a = r.join("defs/ammo/75mm_m61.toml");
-        replace_in(&a, "[[100, 70], [500, 66]", "[[500, 70], [100, 66]");
+        replace_in(&a, "[[100, 88], [500, 81]", "[[500, 88], [100, 81]"); // S3b Fix: B&L row
         replace_in(&a, "ricochet_angle_deg = 70", "ricochet_angle_deg = 85");
         replace_in(&a, "[filler]", "[fillr]");
         let h = r.join("defs/ammo/75mm_sprgr34.toml");
@@ -540,7 +541,7 @@ fn ammo_and_at_team_errors_are_reported() {
     );
     let i = issues_of("ammo2", |r| {
         let a = r.join("defs/ammo/75mm_m61.toml");
-        replace_in(&a, "[[100, 70], [500, 66]", "[[500, 70], [100, 66]");
+        replace_in(&a, "[[100, 88], [500, 81]", "[[500, 88], [100, 81]"); // S3b Fix: B&L row
         replace_in(&a, "ricochet_angle_deg = 70", "ricochet_angle_deg = 85");
     });
     has(
@@ -578,9 +579,22 @@ fn s3b_damage_geometry_errors_are_reported() {
         // A filler with too many rays.
         replace_in(
             &r.join("defs/ammo/75mm_pzgr39.toml"),
-            "rays = 10",
+            "rays = 8",
             "rays = 40",
         );
+        // S3b Fix: more spall rays than the sim traces (7).
+        replace_in(
+            &r.join("defs/ammo/75mm_pzgr40.toml"),
+            "rays = 6",
+            "rays = 8",
+        );
+        // S3b Fix: MG stowage on the main gun, and an empty MG stowage.
+        replace_in(
+            &f,
+            "muzzle = [450, 0, 45]",
+            "muzzle = [450, 0, 45]\nrounds = 100",
+        );
+        replace_in(&f, "rounds = 1575", "rounds = 0");
         // A fragment band upside down.
         replace_in(
             &r.join("defs/weapons/grw34.toml"),
@@ -601,10 +615,35 @@ fn s3b_damage_geometry_errors_are_reported() {
         &["needs a barrel box"],
     );
     has(&i, "defs/ammo/75mm_pzgr39.toml: filler.rays", &["0..=16"]);
+    has(&i, "defs/ammo/75mm_pzgr40.toml: spall.rays", &["0..=7"]);
+    has(
+        &i,
+        &format!("{f}: weapons[0].rounds"),
+        &["only an MG mount"],
+    );
+    has(&i, &format!("{f}: weapons[1].rounds"), &["1..=20000"]);
     has(
         &i,
         "defs/weapons/grw34.toml: he.frag_elev_deg",
         &["not [min, max]"],
+    );
+}
+
+/// S3b Fix: the sim tests at most MAX_INNER_BOXES (14) seat and component
+/// boxes; more is a load error, not a silent cut.
+#[test]
+fn too_many_inner_boxes_are_reported() {
+    let i = issues_of("inner-boxes", |r| {
+        replace_in(
+            &r.join("defs/vehicles/ger_pz4_h.toml"),
+            "box = { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }",
+            "boxes = [{ frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }, { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }, { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }, { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }]",
+        );
+    });
+    has(
+        &i,
+        "defs/vehicles/ger_pz4_h.toml: components",
+        &["at most 14 inner boxes", "got 15"],
     );
 }
 
@@ -670,6 +709,23 @@ fn setup_validate_rejects_broken_vehicles_and_ammo() {
             t.vehicles[0].components[5].parts.extend([p; 4]);
         },
         "vehicles.components",
+    );
+    // S3b Fix: 15 inner boxes, each component within its own cap.
+    bad(
+        &|t| {
+            let p = t.vehicles[0].components[0].parts[0];
+            t.vehicles[0].components[0].parts.extend([p; 3]);
+        },
+        "MAX_INNER_BOXES",
+    );
+    // S3b Fix: MG stowage only on an MG mount, and not 0.
+    bad(
+        &|t| t.vehicles[0].mounts[0].rounds = Some(100),
+        "vehicles.mounts",
+    );
+    bad(
+        &|t| t.vehicles[0].mounts[1].rounds = Some(0),
+        "vehicles.mounts",
     );
     bad(
         &|t| {

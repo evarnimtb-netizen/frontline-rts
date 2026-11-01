@@ -252,6 +252,8 @@ func _test_order_mapping(eng: int, _eng_men: PackedInt32Array, rifle: int, rifle
 
 
 func _test_stance(rifle_men: PackedInt32Array) -> void:
+	# S3b Fix: a squad half ducked below a trench lip reads "Heads down".
+	_check(_view.squad_status({"status": "heads_down"}) == ["Heads down", true], "heads_down status reads Heads down")
 	var two := PackedInt32Array([rifle_men[1], rifle_men[2]])
 	_sel.select_only(two)
 	_intents.clear()
