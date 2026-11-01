@@ -2,6 +2,7 @@
 # Builds the macOS zip a friend can run (S2 "Export"):
 #
 #   tools/export_macos.sh [path/to/Godot] [--allow-dirty] [--arm64-only] [--verify]
+#                         [--templates-only]
 #
 # 1. Builds the bridge in release for arm64 and x86_64 and merges them with
 #    lipo (arm64 only if the x86_64 build fails or --arm64-only is given;
@@ -9,8 +10,16 @@
 #    protocol and save version; crates/net/build.rs) is stamped through
 #    FRONTLINE_BUILD_COMMIT.
 # 2. Exports godot/ with the "macOS" preset (godot/export_presets.cfg) to
-#    build/export/Frontline.app. Needs the Godot 4.7.2 export templates
-#    (Editor > Manage Export Templates); without them it stops here.
+#    build/export/Frontline.app. With the Godot 4.7.2 export templates
+#    (Editor > Manage Export Templates) this is a normal release export.
+#    Without them (the official .tpz is 1.28 GB) it builds an
+#    "editor runtime" app instead: a copy of the Godot editor app (the
+#    same engine, universal) renamed Frontline, with the project packed
+#    into Contents/Resources/Godot.pck (export-pack needs no templates)
+#    and the bridge in Contents/Frameworks. Godot runs a .pck named
+#    after its executable as the game. It is larger (about 340 MB, 130 MB
+#    zipped) and a debug-capable build, but plays the same.
+#    --templates-only refuses this fallback.
 # 3. Copies mods/ww2 into Frontline.app/Contents/Resources/mods/ww2 (the
 #    bridge looks there), signs the app ad hoc again (no Apple identity),
 #    and zips build/Frontline-<commit>-macos.zip with README.txt.
@@ -27,12 +36,14 @@ GODOT_BIN="${GODOT:-}"
 ALLOW_DIRTY=0
 ARM64_ONLY=0
 VERIFY=0
+TEMPLATES_ONLY=0
 for a in "$@"; do
     case "$a" in
         --allow-dirty) ALLOW_DIRTY=1 ;;
         --arm64-only) ARM64_ONLY=1 ;;
         --verify) VERIFY=1 ;;
-        -h | --help) sed -n '2,24p' "$0"; exit 0 ;;
+        --templates-only) TEMPLATES_ONLY=1 ;;
+        -h | --help) sed -n '2,33p' "$0"; exit 0 ;;
         -*) echo "export_macos: unknown flag $a" >&2; exit 64 ;;
         *) GODOT_BIN="$a" ;;
     esac
@@ -89,18 +100,40 @@ echo "export_macos: bridge for $ARCHS: $(lipo -archs "godot/bin/$LIB")"
 GV="$("$GODOT_BIN" --version 2>/dev/null | head -1)"   # e.g. 4.7.2.stable.official.ed1daf0bf
 TPL_VER="$(echo "$GV" | cut -d. -f1-4)"                 # 4.7.2.stable
 TPL_DIR="$HOME/Library/Application Support/Godot/export_templates/$TPL_VER"
+MODE=templates
 if [[ ! -f "$TPL_DIR/macos.zip" ]]; then
     echo "export_macos: no export templates for Godot $TPL_VER in $TPL_DIR" >&2
     echo "  Install them from the editor (Editor > Manage Export Templates) or" >&2
-    echo "  unpack Godot_v${TPL_VER%.stable}-stable_export_templates.tpz there. The bridge is built;" >&2
-    echo "  rerun this script afterwards." >&2
-    exit 2
+    echo "  unpack Godot_v${TPL_VER%.stable}-stable_export_templates.tpz there." >&2
+    if [[ $TEMPLATES_ONLY -eq 1 ]]; then
+        echo "  The bridge is built; rerun this script afterwards." >&2
+        exit 2
+    fi
+    echo "export_macos: WARNING: building an editor-runtime app instead (see the header)" >&2
+    MODE=editor
 fi
 APP="$ROOT/build/export/Frontline.app"
 rm -rf "$APP"
 # The first headless run imports the project if it never was.
 "$GODOT_BIN" --headless --path godot --import >/dev/null 2>&1 || true
-"$GODOT_BIN" --headless --path godot --export-release "macOS" "$APP"
+if [[ $MODE == templates ]]; then
+    "$GODOT_BIN" --headless --path godot --export-release "macOS" "$APP"
+else
+    GAPP="$(cd "$(dirname "$GODOT_BIN")/../.." && pwd)"
+    [[ -f "$GAPP/Contents/Info.plist" ]] || { echo "export_macos: $GODOT_BIN is not inside a .app" >&2; exit 1; }
+    ditto "$GAPP" "$APP"
+    EXE="$(plutil -extract CFBundleExecutable raw "$APP/Contents/Info.plist")"
+    "$GODOT_BIN" --headless --path godot --export-pack "macOS" "$APP/Contents/Resources/$EXE.pck" >/dev/null
+    [[ -f "$APP/Contents/Resources/$EXE.pck" ]] || { echo "export_macos: export-pack failed" >&2; exit 1; }
+    mkdir -p "$APP/Contents/Frameworks"
+    cp "godot/bin/$LIB" "$APP/Contents/Frameworks/$LIB"
+    plutil -replace CFBundleName -string Frontline "$APP/Contents/Info.plist"
+    plutil -replace CFBundleDisplayName -string Frontline "$APP/Contents/Info.plist"
+    plutil -replace CFBundleIdentifier -string local.frontline.game "$APP/Contents/Info.plist"
+    # The editor's file associations would make Finder offer Frontline
+    # for .tscn and .gd files.
+    plutil -remove CFBundleDocumentTypes "$APP/Contents/Info.plist" 2>/dev/null || true
+fi
 [[ -d "$APP" ]] || { echo "export_macos: Godot did not write $APP" >&2; exit 1; }
 
 # ---- content, signature -------------------------------------------------------
@@ -119,7 +152,7 @@ ditto "$APP" "$STAGE/Frontline.app"
 cp THIRD_PARTY_NOTICES "$STAGE/THIRD_PARTY_NOTICES.txt"
 cp docs/net/playing-online.md "$STAGE/Playing online.txt"
 cat > "$STAGE/README.txt" <<EOF
-Frontline (build $COMMIT, for: $ARCHS)
+Frontline (build $COMMIT, for: $ARCHS; $MODE export)
 
 1. Unzip this file (double-click it).
 2. In Terminal, in the folder with Frontline.app, run:
@@ -151,7 +184,8 @@ if [[ $VERIFY -eq 1 ]]; then
     xattr -dr com.apple.quarantine "$V/Frontline.app" 2>/dev/null || true
     SHOT="$ROOT/build/export/verify_menu.png"
     rm -f "$SHOT"
-    "$V/Frontline.app/Contents/MacOS/Frontline" --resolution 1280x720 -- \
+    VEXE="$(plutil -extract CFBundleExecutable raw "$V/Frontline.app/Contents/Info.plist")"
+    "$V/Frontline.app/Contents/MacOS/$VEXE" --resolution 1280x720 -- \
         --capture "$SHOT" --capture_after 3 || true
     if [[ -f "$SHOT" ]]; then
         echo "export_macos: verify OK, menu screenshot $SHOT (app in $V)"

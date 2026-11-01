@@ -491,7 +491,8 @@ func _refresh_lobby() -> void:
 		var shown := PackedStringArray()
 		for a in lan_addresses().slice(0, 2):
 			shown.append("%s:%d" % [a, p])
-		lobby_where.text += ("   ·   Friends join: " + "  or  ".join(shown)) if not shown.is_empty() else ("   ·   Same Mac: 127.0.0.1:%d" % p)
+		var join_at := ("Friends join: " + "  or  ".join(shown)) if not shown.is_empty() else ("Same Mac: 127.0.0.1:%d" % p)
+		lobby_where.text = join_at if lobby_where.text == "" else lobby_where.text + "   ·   " + join_at
 	var mine: Dictionary = slots[slot] if slot >= 0 and slot < slots.size() else {}
 	var theirs: Dictionary = {}
 	for i in 2:
@@ -549,7 +550,7 @@ func _refresh_lobby() -> void:
 	var ping_s := ""
 	if not theirs.is_empty():
 		ping_s = " from a %s ping" % NetUi.ping_text(float(theirs.get("ping_ms", -1.0)))
-	delay_note.text = "D %d = %d ms between an order and the units reacting. Suggested: %d%s. Fixed for the match." % [d, NetUi.delay_ms(d), sug, ping_s]
+	delay_note.text = "D %d = %d ms for an order to reach the match clock; units react on screen a little after that (the trip back). Suggested: %d%s. Fixed for the match." % [d, NetUi.delay_ms(d), sug, ping_s]
 	delay_suggest.disabled = d == sug
 
 	# Ready, and why not.
