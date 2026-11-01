@@ -1,0 +1,34 @@
+# M6A3 rocket (Bazooka), shaped charge (S3). Flies as a ballistic round at
+# constant speed (no motor burn in S3).
+id = "ww2:m6a3_heat"
+name = "M6A3 rocket"
+mechanism = "heat"
+caliber_mm = 60
+muzzle_velocity_m_s = 85
+drag_coeff = 0
+penetration = [[0, 100]]
+ricochet_angle_deg = 80
+nonpen_damage = 30
+track_damage = 50
+sources = ["placeholder: citations are an owner / M2 task"]
+
+[core]
+damage = 120
+length_cm = 100
+max_boxes = 3
+
+[spall]
+rays = 3
+damage = 25
+cone_deg = 25
+
+[he]
+damage = 100
+suppression = 20
+lethal_radius_cm = 100
+damage_radius_cm = 300
+suppression_radius_m = 6
+crater_radius_cm = 40
+crater_depth_cm = 20
+pen_mm = 0
+vs_vehicle_pct = 40

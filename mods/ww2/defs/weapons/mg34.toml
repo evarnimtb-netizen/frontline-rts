@@ -1,0 +1,12 @@
+# MG 34 in a vehicle mount (coaxial and hull) on the Panzer IV H (S3).
+id = "ww2:mg34"
+name = "MG 34"
+class = "mg"
+range_m = 450
+damage = 45
+rounds_per_min = 850
+magazine = 150
+reload_ms = 6000
+spread_mrad = 15
+muzzle_velocity_m_s = 755
+suppression = 14

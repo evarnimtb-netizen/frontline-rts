@@ -42,16 +42,32 @@ path_max_expansions = 8000
 # already in a trench line prefer to follow it.
 trench_cost_pct = 60
 
-[dig]
+# Dig profiles: a flat floor, walls sloping out over wall_cm to the lip,
+# and a spoil bank (parapet or berm) on the enemy side. One man at
+# dig_rate_pct = 100 does 100 work points per second.
+[dig.profiles.trench]
 depth_cm = 160
 floor_cm = 80
+wall_cm = 40
 parapet_cm = 30
 max_length_m = 60
-# Work points per metre of trench. One man at dig_rate_pct = 100 does 100
-# work points per second: a rifle squad digs 20 m in about 3.5 min.
+# A rifle squad digs 20 m in about 3.5 min.
 work_per_m = 8400
-# The trench deepens in this many equal passes (each pass is visible).
+# It deepens in this many equal passes (each pass is visible).
 passes = 8
+
+# The anti-tank ditch (S3): about 3.4 m wide at the top and 2.3 m deep, so
+# vehicles cannot cross it (their ditch_block_dm is 19). Engineers only;
+# one 5-man engineer squad digs 10 m in about 3.7 min.
+[dig.profiles.at_ditch]
+depth_cm = 230
+floor_cm = 100
+wall_cm = 120
+parapet_cm = 60
+max_length_m = 30
+work_per_m = 22000
+passes = 8
+engineers_only = true
 
 [combat]
 # Spotting: LOS rays per player per tick, and how often each enemy soldier
@@ -90,6 +106,61 @@ corpse_s = 30
 # A soldier in his own base gets one item back this often, up to his
 # loadout.
 resupply_s = 20
+
+[vehicles]
+# S3 (docs/slices/S3-armour.md). Vehicles can be called in from 4:00 of
+# match time, at most 4 per player alive or queued. Tests use the override
+# in mods/ww2/tests/rules_test_unlock.toml (unlock_s = 0).
+unlock_s = 240
+limit = 4
+# Most wrecks on the map; beyond it the oldest is removed.
+wreck_cap = 32
+# A crewman moving into an empty driver or gunner seat.
+seat_swap_s = 4
+crew_hp = 100
+# A crewman below this is wounded (role penalties, see the slice).
+wounded_hp = 50
+# Faster than 1 m/s counts as moving (spotting, spread, launcher fire
+# discipline).
+moving_cm_s = 100
+# Sight range against a moving vehicle (the size factor is the vehicle's
+# spot_size_pct, 300 % after firing is the gun's; the highest applies).
+moving_spot_pct = 250
+# Enemy soldiers this close spot a vehicle without a sight line (engine
+# noise and size).
+near_spot_m = 25
+# Gunnery: spread against a target faster than 1 m/s; each further shot at
+# the same target 20 % tighter down to 50 %; HE at infantry uses a wider
+# area spread and is never fired within 30 m of own men; the gunner aims at
+# the hull unless the turret's pen chance is better by more than 10 points.
+moving_target_spread_pct = 300
+ranging_step_pct = 20
+ranging_floor_pct = 50
+he_area_spread_mrad = 6
+he_clear_m = 30
+aim_hull_margin_pct = 10
+# Trench crossing: a track sample over ground dug 1.0 m or more caps speed
+# at 1 m/s; a new crossing (one bog roll) starts after 2 s with none.
+crossing_dug_cm = 100
+crossing_speed_cm_s = 100
+crossing_gap_s = 2
+# Fire: an engine hit for 40+ starts one with 30 %. It burns the engine at
+# 5 HP/s; every 4 s a living crew puts it out with 25 %; after 20 s it
+# knocks the vehicle out.
+fire_min_damage = 40
+fire_start_pct = 30
+fire_burn_hp_s = 5
+fire_check_s = 4
+fire_out_pct = 25
+fire_burnout_s = 20
+# Ammo rack: each hit for 30+ detonates it with 35 %.
+rack_min_damage = 30
+rack_detonate_pct = 35
+# Inside the own base: 2 % of every component's HP per second, one AP or
+# HE round per 2 s, one dead crew seat per 20 s. Free.
+base_repair_pct_s = 2
+base_rearm_s = 2
+base_crew_s = 20
 
 [difficulty.easy]
 income_pct = 80
@@ -131,3 +202,15 @@ throw_cooldown_s = 10
 # Frags go at spotted enemies in a trench, or at a group of at least this
 # many men within 5 m of each other.
 frag_group_men = 3
+# S3: vehicles join the mix after unlock (under the vehicle limit), AT
+# teams after unlock once an enemy vehicle has been seen.
+mix_vehicle_pct = 20
+mix_at_pct = 10
+# Tanks hold 160 m (outside launcher range) from a point where enemy AT
+# was seen in the last 30 s; else they advance with their escort to 40 m
+# from the enemy trench. An immobilised vehicle repairs when no seen enemy
+# is within 150 m.
+tank_standoff_m = 160
+assault_close_m = 40
+at_clear_s = 30
+repair_clear_m = 150

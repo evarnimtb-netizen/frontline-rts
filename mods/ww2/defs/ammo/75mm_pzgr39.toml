@@ -1,0 +1,35 @@
+# 7.5 cm PzGr 39: APCBC with HE filler for the KwK 40 L/48 (S3,
+# docs/slices/S3-armour.md "Ammo"). Approximate public figures; every
+# number is a starting value for tuning.
+id = "ww2:75mm_pzgr39"
+name = "7.5 cm PzGr 39"
+mechanism = "aphe"
+caliber_mm = 75
+muzzle_velocity_m_s = 790
+# No drag in S3 (must be 0).
+drag_coeff = 0
+# [range_m, mm] against a plate at 30°; the sim normalises to 0°.
+penetration = [[100, 106], [500, 96], [1000, 85], [1500, 74], [2000, 64]]
+pen_reference_angle_deg = 30
+ricochet_angle_deg = 70
+# Damage to external parts within 1 m of a non-penetrating hit, and to a
+# track from a hit in the running-gear band.
+nonpen_damage = 40
+track_damage = 60
+sources = ["placeholder: citations are an owner / M2 task"]
+
+# After penetration: the core goes on 1.5 m, then spall and the filler.
+[core]
+damage = 100
+length_cm = 150
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+[filler]
+offset_cm = 100
+radius_cm = 120
+damage = 80

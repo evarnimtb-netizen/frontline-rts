@@ -9,10 +9,14 @@
 //! * [`skirmish`] runs a whole AI-vs-AI match and reports winner and stats.
 //! * [`fortify`] stages trench-versus-open fights (the S1 cover check).
 //! * [`schema`] exports JSON Schemas for every def type.
-//! * [`validate`] checks scenario files and reports every problem at once.
+//! * [`validate`] checks scenario files and mod folders and reports every
+//!   problem at once.
+//! * [`ballistics`] (S3) prints penetration for one shot, a table or a
+//!   golden file, through the sim's own armour functions.
 //! * [`desync_diff`] compares two sim saves field by field (multiplayer
 //!   desync dumps, S2).
 
+pub mod ballistics;
 pub mod desync_diff;
 pub mod fortify;
 pub mod lower;
@@ -22,6 +26,7 @@ pub mod simulate;
 pub mod skirmish;
 pub mod validate;
 
+pub use ballistics::BallisticsArgs;
 pub use fortify::{FortifyArgs, fortify_test};
 pub use simulate::{SimulateArgs, simulate};
 pub use skirmish::{SkirmishArgs, skirmish};

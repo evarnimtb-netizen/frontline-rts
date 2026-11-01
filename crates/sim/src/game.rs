@@ -40,6 +40,7 @@ use frontline_content::{MatchSetup, SquadRole};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::AiState;
+use crate::armour::ArmourTables;
 use crate::combat;
 use crate::command::{Command, CommandKind};
 use crate::dig::DigJob;
@@ -282,6 +283,11 @@ pub struct MatchState {
     /// Smoke clouds, ascending id.
     pub(crate) smoke: Vec<SmokeCloud>,
     pub(crate) next_smoke: u32,
+    /// Derived from the setup (S3): plate normals and ammo cosines. Not
+    /// saved and not hashed (the setup is); rebuilt by
+    /// [`MatchState::rebuild_derived`] after load.
+    #[serde(skip)]
+    pub(crate) armour: ArmourTables,
 }
 
 /// Mutable world parts a match operation needs.
@@ -344,8 +350,14 @@ impl MatchState {
             next_thrown: 0,
             smoke: Vec::new(),
             next_smoke: 0,
+            armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
             setup,
         }
+    }
+
+    /// Rebuilds the derived caches from the setup (after load).
+    pub(crate) fn rebuild_derived(&mut self) {
+        self.armour = ArmourTables::new(&self.setup.ammo, &self.setup.vehicles);
     }
 
     // ------------------------------------------------------------ queries --
@@ -353,6 +365,11 @@ impl MatchState {
     #[inline]
     pub fn setup(&self) -> &MatchSetup {
         &self.setup
+    }
+    /// Armour tables derived from the setup (S3).
+    #[inline]
+    pub fn armour(&self) -> &ArmourTables {
+        &self.armour
     }
     #[inline]
     pub fn players(&self) -> &[PlayerState] {

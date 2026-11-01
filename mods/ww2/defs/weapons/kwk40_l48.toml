@@ -1,0 +1,21 @@
+# 7.5 cm KwK 40 L/48: the Panzer IV H's main gun (S3). Its rounds are on
+# the vehicle mount (defs/vehicles/ger_pz4_h.toml); muzzle velocity here is
+# nominal, each round flies at its own.
+id = "ww2:kwk40_l48"
+name = "7.5 cm KwK 40 L/48"
+class = "cannon"
+# Engagement range (tanks see tanks at about 350 m, 525 m after firing).
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 10
+magazine = 1
+# With a loader; the crew rules scale it.
+reload_ms = 6500
+# 2.5 mrad stationary; ranging in, movement and damage scale it.
+spread_urad = 2500
+muzzle_velocity_m_s = 790
+suppression = 30
+# The muzzle blast gives the tank away: 300 % sight range for 3 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000

@@ -1,0 +1,15 @@
+# 75 mm M3: the M4A3 (75) Sherman's main gun (S3). Its rounds are on the
+# vehicle mount (defs/vehicles/usa_m4a3_75.toml).
+id = "ww2:m3_75mm"
+name = "75 mm M3"
+class = "cannon"
+range_m = 600
+damage = 300
+rounds_per_min = 10
+magazine = 1
+reload_ms = 6000
+spread_urad = 2500
+muzzle_velocity_m_s = 618
+suppression = 30
+fire_reveal_pct = 300
+fire_reveal_ms = 3000

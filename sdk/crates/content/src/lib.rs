@@ -12,6 +12,7 @@
 //!   items, factions, maps, rules), loaded with [`ModDefs::load`].
 //! * [`setup`]: [`ModDefs::resolve`] turns defs plus a [`MatchRequest`] into a
 //!   fixed-point [`MatchSetup`] for `frontline_sim::World::new_match`.
+//! * [`vehicle`]: vehicle and ammo defs (S3) and their setups.
 //!
 //! Content values are integers only (metres, milliseconds, hertz), so lowering
 //! them into the fixed-point sim never depends on float rounding.
@@ -21,6 +22,7 @@ mod issue;
 pub mod modset;
 pub mod scenario;
 pub mod setup;
+pub mod vehicle;
 
 pub use defs::{
     FactionDef, ITEM_KINDS, ItemDef, ItemKind, MapFileDef, RulesDef, SquadDef, SquadRole,
@@ -32,7 +34,11 @@ pub use scenario::{
     ForcesDef, HeightfieldDef, IntervalMs, MapDef, ProjectilesDef, Scenario, TICK_HZ_ALLOWED,
 };
 pub use setup::{
-    Difficulty, Fixed, FixedVec2, MatchRequest, MatchSetup, PlayerRequest, PlayerSetup,
+    Difficulty, DigProfile, Fixed, FixedVec2, MatchRequest, MatchSetup, PlayerRequest, PlayerSetup,
+};
+pub use vehicle::{
+    ARMOUR_ZONES, AmmoDef, AmmoMechanism, ArmourZone, COMPONENTS, ComponentKind, Frame, MountKind,
+    SEAT_ROLES, SeatRole, VehicleDef,
 };
 
 /// Most capture points on a map (the sim's AI keeps point indices in a
@@ -68,6 +74,14 @@ pub fn schemas() -> Vec<SchemaDoc> {
         SchemaDoc {
             name: "item",
             schema: schemars::schema_for!(ItemDef),
+        },
+        SchemaDoc {
+            name: "vehicle",
+            schema: schemars::schema_for!(VehicleDef),
+        },
+        SchemaDoc {
+            name: "ammo",
+            schema: schemars::schema_for!(AmmoDef),
         },
         SchemaDoc {
             name: "faction",

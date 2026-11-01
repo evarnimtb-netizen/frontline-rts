@@ -540,6 +540,9 @@ impl Packet {
 /// The per-command limits the sim applies anyway (it ignores longer
 /// lists), checked on the wire so an oversized command never reaches it,
 /// and the turn byte limit, so any one command fits a bundle datagram.
+///
+/// The match is exhaustive (no `_` arm, S3): a new command variant does not
+/// compile until its lists are bounded here.
 pub fn command_in_limits(k: &CommandKind) -> bool {
     let lists = match k {
         CommandKind::Dig { line, .. } => line.len() <= MAX_DIG_POINTS,
@@ -553,7 +556,17 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::SetStance { units, .. }
         | CommandKind::Throw { units, .. }
         | CommandKind::ThrowEach { units, .. } => units.len() <= MAX_UNITS,
-        _ => true,
+        CommandKind::MoveSoldier { .. }
+        | CommandKind::Spawn { .. }
+        | CommandKind::Despawn { .. }
+        | CommandKind::Move { .. }
+        | CommandKind::AttackMove { .. }
+        | CommandKind::Stop { .. }
+        | CommandKind::Retreat { .. }
+        | CommandKind::Barrage { .. }
+        | CommandKind::CallIn { .. }
+        | CommandKind::Surrender
+        | CommandKind::Regroup { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }

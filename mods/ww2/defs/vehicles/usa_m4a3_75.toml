@@ -1,0 +1,122 @@
+# M4A3 (75) Sherman (S3, docs/slices/S3-armour.md "Units"). Cheaper than
+# the Panzer IV because of the frontal asymmetry; if it plays badly, tune
+# cost first. Approximate public figures; every number is a starting value
+# for tuning. Frames as in ger_pz4_h.toml.
+id = "ww2:usa_m4a3_75"
+name = "M4A3 (75) Sherman"
+short_name = "Sherman"
+faction = "ww2:usa"
+role = "tank"
+cost = 560
+pop = 12
+call_in_s = 45
+sight_m = 175
+spot_size_pct = 200
+eye_height_cm = 250
+sources = ["placeholder: citations are an owner / M2 task"]
+
+[mobility]
+type = "tracked"
+speed_cm_s = 650
+reverse_cm_s = 250
+turn_deg_s = 32
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 6
+unbog_s = [20, 40]
+# The gyrostabiliser: ×3 on the move instead of ×4.
+moving_spread_pct = 300
+
+[hull]
+box = { center = [0, 0, 115], half = [295, 131, 75] }
+track_band_pct = 45
+track_mm = 20
+
+[turret]
+pivot = [-10, 0, 190]
+box = { center = [0, 0, 45], half = [110, 95, 45] }
+traverse_deg_s = 24
+
+[armor]
+hull_front   = { thickness_mm = 63.5, slope_deg = 47, material = "rha" }
+hull_side    = { thickness_mm = 38, slope_deg = 0,  material = "rha" }
+hull_rear    = { thickness_mm = 38, slope_deg = 10, material = "rha" }
+hull_top     = { thickness_mm = 19, material = "rha" }
+turret_front = { thickness_mm = 76, slope_deg = 30, material = "rha" }
+turret_side  = { thickness_mm = 51, slope_deg = 5,  material = "rha" }
+turret_rear  = { thickness_mm = 51, slope_deg = 0,  material = "rha" }
+turret_top   = { thickness_mm = 25, material = "rha" }
+
+[crew]
+seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
+
+[crew.boxes]
+driver    = { frame = "hull",   center = [170, 60, 115],  half = [35, 30, 40] }
+radio_mg  = { frame = "hull",   center = [170, -60, 115], half = [35, 30, 40] }
+gunner    = { frame = "turret", center = [20, -45, 35],   half = [30, 25, 35] }
+loader    = { frame = "turret", center = [10, 45, 35],    half = [30, 25, 35] }
+commander = { frame = "turret", center = [-60, -40, 45],  half = [30, 30, 40] }
+
+[[weapons]]
+def = "ww2:m3_75mm"
+mount = "turret_main"
+muzzle = [340, 0, 45]
+elevation_deg = [-10, 25]
+ammo = [{ id = "ww2:75mm_m61", count = 30 }, { id = "ww2:75mm_m48", count = 40 }]
+
+[[weapons]]
+def = "ww2:m1919"
+mount = "coax"
+muzzle = [110, 25, 45]
+
+[[weapons]]
+def = "ww2:m1919"
+mount = "hull"
+muzzle = [300, -60, 150]
+arc_deg = 15
+seat = "radio_mg"
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-210, 0, 110], half = [70, 100, 50] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 118, 45] }, { pos = [0, 118, 45] }, { pos = [-250, 118, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -118, 45] }, { pos = [0, -118, 45] }, { pos = [-250, -118, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+anchors = [{ frame = "turret", pos = [120, 0, 45] }]
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [-10, 0, 180], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+[[components]]
+type = "ammo_rack"
+hp = 60
+box = { frame = "hull", center = [-20, 0, 75], half = [50, 110, 25] }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]

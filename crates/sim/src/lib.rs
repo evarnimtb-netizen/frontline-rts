@@ -21,7 +21,8 @@
 //! projectiles, suppression, stance, mortars and deaths; [`rules`]:
 //! capture, income, tickets and victory; [`ai`]: the AI commander; [`unit`]:
 //! soldier-level orders, stance orders and detached men; [`items`]: thrown
-//! frag, smoke and satchel items and smoke clouds). Terrain
+//! frag, smoke and satchel items and smoke clouds; [`armour`]: plates,
+//! penetration and the derived armour tables, S3). Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
 //!
@@ -30,6 +31,7 @@
 #![deny(clippy::float_arithmetic)]
 
 pub mod ai;
+pub mod armour;
 pub mod combat;
 pub mod command;
 pub mod dig;
@@ -52,6 +54,7 @@ pub mod unit;
 pub mod world;
 
 pub use ai::{AiCommand, AiState, AiTrench, Task, TaskKind};
+pub use armour::{ArmourTables, PenResult};
 pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
 pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, SimId, Stance};
@@ -66,8 +69,10 @@ pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;
 pub use snapshot::{
-    CorpseSnapshot, ExplosionSnapshot, NO_SQUAD, PlayerSnapshot, PointSnapshot, RenderSnapshot,
-    ShotSnapshot, SmokeSnapshot, SquadSnapshot, ThrownSnapshot, UnitSnapshot, tile_heights_f32,
+    ArmourEvent, ArmourEventKind, CorpseSnapshot, ExplosionSnapshot, LoadedSnap, NO_SQUAD,
+    PlayerSnapshot, PointSnapshot, RenderSnapshot, SeatSnap, ShellKind, ShellSnapshot,
+    ShotSnapshot, SmokeSnapshot, SquadSnapshot, ThrownSnapshot, UnitSnapshot, VehicleSnapshot,
+    tile_heights_f32, vehicle_flags,
 };
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};

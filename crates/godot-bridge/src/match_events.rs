@@ -210,6 +210,10 @@ pub fn weapon_cue(class: WeaponClass) -> &'static str {
         WeaponClass::Smg => "smg",
         WeaponClass::Mg => "mg",
         WeaponClass::Mortar => "mortar",
+        // S3: no vehicles or AT teams in play before the presenter
+        // integration; the names are the contract's (`cannon`, `rocket`).
+        WeaponClass::Cannon => "cannon",
+        WeaponClass::Launcher => "rocket",
     }
 }
 

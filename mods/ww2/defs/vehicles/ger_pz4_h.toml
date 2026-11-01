@@ -1,0 +1,135 @@
+# Panzer IV Ausf. H (S3, docs/slices/S3-armour.md "Units"). Hull and
+# turret are oriented boxes; each box face is an armour plate whose
+# ballistic normal is tilted by `slope_deg`. Approximate public figures;
+# every number is a starting value for tuning.
+#
+# Frames, in cm: hull frame x forward, y left, z up from the ground under
+# the hull's centre; turret frame from the turret pivot, turning with the
+# turret.
+id = "ww2:ger_pz4_h"
+name = "Panzer IV Ausf. H"
+short_name = "Panzer IV"
+faction = "ww2:germany"
+role = "tank"
+cost = 640
+pop = 12
+call_in_s = 45
+sight_m = 175
+# Seen at 200 % of an observer's sight (size); 250 % moving and 300 %
+# after firing come from the rules and the gun.
+spot_size_pct = 200
+eye_height_cm = 250
+sources = ["placeholder: citations are an owner / M2 task"]
+
+[mobility]
+type = "tracked"
+speed_cm_s = 600
+reverse_cm_s = 200
+turn_deg_s = 30
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+# 27°: under the 30° pitch clamp.
+max_slope_pct = 50
+# AT-ditch ground at least 1.9 m deep blocks it.
+ditch_block_dm = 19
+bog_pct = 6
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+box = { center = [0, 0, 108], half = [290, 140, 68] }
+# The lower 45 % of each side is running gear (track hits, +20 mm).
+track_band_pct = 45
+track_mm = 20
+
+[turret]
+pivot = [20, 0, 176]
+box = { center = [0, 0, 45], half = [115, 95, 45] }
+traverse_deg_s = 14
+
+[armor]
+hull_front   = { thickness_mm = 80, slope_deg = 10, material = "rha" }
+hull_side    = { thickness_mm = 30, slope_deg = 0,  material = "rha" }
+hull_rear    = { thickness_mm = 20, slope_deg = 10, material = "rha" }
+hull_top     = { thickness_mm = 12, material = "rha" }
+turret_front = { thickness_mm = 50, slope_deg = 10, material = "rha" }
+turret_side  = { thickness_mm = 30, slope_deg = 25, material = "rha" }
+turret_rear  = { thickness_mm = 30, slope_deg = 15, material = "rha" }
+turret_top   = { thickness_mm = 16, material = "rha" }
+
+[crew]
+seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
+
+[crew.boxes]
+driver    = { frame = "hull",   center = [150, 60, 110], half = [35, 30, 40] }
+radio_mg  = { frame = "hull",   center = [150, -60, 110], half = [35, 30, 40] }
+gunner    = { frame = "turret", center = [10, 45, 35],   half = [30, 25, 35] }
+loader    = { frame = "turret", center = [10, -45, 35],  half = [30, 25, 35] }
+commander = { frame = "turret", center = [-70, 0, 45],   half = [30, 30, 40] }
+
+[[weapons]]
+def = "ww2:kwk40_l48"
+mount = "turret_main"
+# From the turret pivot.
+muzzle = [450, 0, 45]
+elevation_deg = [-8, 20]
+ammo = [{ id = "ww2:75mm_pzgr39", count = 30 }, { id = "ww2:75mm_sprgr34", count = 30 }]
+
+[[weapons]]
+def = "ww2:mg34"
+mount = "coax"
+muzzle = [120, 25, 45]
+
+[[weapons]]
+def = "ww2:mg34"
+mount = "hull"
+# Hull frame.
+muzzle = [295, -60, 140]
+arc_deg = 15
+seat = "radio_mg"
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-200, 0, 100], half = [70, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 125, 45] }, { pos = [0, 125, 45] }, { pos = [-250, 125, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -125, 45] }, { pos = [0, -125, 45] }, { pos = [-250, -125, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+# The breech inside the turret; the barrel is damaged only by direct
+# impacts within 1 m of the mantlet anchor. No field repair.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+anchors = [{ frame = "turret", pos = [125, 0, 45] }]
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [20, 0, 166], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+[[components]]
+type = "ammo_rack"
+hp = 60
+box = { frame = "hull", center = [-30, 0, 70], half = [50, 110, 25] }
+
+# Direct control (§5.12), unused until M5.
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]

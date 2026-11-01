@@ -17,8 +17,8 @@
 //!    trench profile is stamped over that segment at the matching fraction
 //!    of full depth, so the trench visibly deepens pass by pass.
 //!
-//! The profile (rules: depth, floor width, parapet height): a flat floor,
-//! walls sloping out over [`WALL_RUN_MM`] to the lip, and a spoil parapet
+//! The profile (rules: depth, floor width, wall run, parapet height): a flat
+//! floor, walls sloping out over the wall run to the lip, and a spoil parapet
 //! just beyond the lip on the front side only (toward the nearest spotted
 //! enemy when the order was given). The ends are rounded. Cutting takes the minimum of
 //! the current surface and the base minus the profile depth, so crossing
@@ -44,8 +44,6 @@ use crate::squad::{point_along, polyline_length};
 use crate::terrain::{DETAIL_SHIFT, Heightfield};
 use crate::unit::UnitOrder;
 
-/// Horizontal run of a trench wall, floor edge to lip (mm).
-pub const WALL_RUN_MM: i32 = 400;
 /// Parapet: rises over this run from the lip (mm) ...
 const PARAPET_RISE_MM: i32 = 300;
 /// ... stays at full height over this run (mm) ...
@@ -208,7 +206,7 @@ fn nearest(line: &[FxVec2], p: FxVec2) -> (u64, Fx, bool) {
 fn cut_depth(r: Fx, prof: &DigSetup, k: i32, n: i32) -> Fx {
     let depth = Fx::from(prof.depth);
     let half_floor = Fx::from(prof.floor_width).div_int(2);
-    let wall = Fx::from_milli(WALL_RUN_MM);
+    let wall = Fx::from(prof.wall_run);
     let full = if r <= half_floor {
         depth
     } else if r < half_floor + wall {
@@ -254,7 +252,7 @@ pub(crate) fn stamp(
     let len = polyline_length(line);
     let closed_end = to >= len;
     let half_floor = Fx::from(prof.floor_width).div_int(2);
-    let lip = half_floor + Fx::from_milli(WALL_RUN_MM);
+    let lip = half_floor + Fx::from(prof.wall_run);
     let reach = lip + Fx::from_milli(PARAPET_RISE_MM + PARAPET_TOP_MM + PARAPET_FALL_MM + 250);
     // Box around the sub-line: its end points and the vertices inside it.
     let mut lo = point_along(line, from);
@@ -524,10 +522,12 @@ mod tests {
         DigSetup {
             depth: Fixed::from_cm(160),
             floor_width: Fixed::from_cm(80),
+            wall_run: Fixed::from_cm(40),
             parapet_height: Fixed::from_cm(30),
             max_length: Fixed::from_int(60),
             work_per_m: 8400,
             passes: 8,
+            engineers_only: false,
         }
     }
 

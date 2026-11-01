@@ -1,0 +1,15 @@
+# Bazooka team (S3): a launcher gunner and a loader with a rifle.
+id = "ww2:usa_bazooka_team"
+name = "Bazooka Team"
+faction = "ww2:usa"
+role = "anti_tank"
+men = 2
+weapon = "ww2:m9_bazooka"
+weapon_men = 1
+sidearm = "ww2:m1_garand"
+cost = 180
+call_in_s = 20
+speed_cm_s = 280
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100

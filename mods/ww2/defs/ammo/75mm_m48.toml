@@ -1,0 +1,24 @@
+# 75 mm M48: high explosive for the M3 gun (S3). Bursts on contact.
+id = "ww2:75mm_m48"
+name = "75 mm M48 HE"
+mechanism = "he"
+caliber_mm = 75
+muzzle_velocity_m_s = 463
+drag_coeff = 0
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = ["placeholder: citations are an owner / M2 task"]
+
+[he]
+damage = 150
+suppression = 40
+lethal_radius_cm = 200
+damage_radius_cm = 600
+suppression_radius_m = 12
+crater_radius_cm = 60
+crater_depth_cm = 30
+pen_mm = 10
+inside_damage = 150
+inside_radius_cm = 150
+vs_vehicle_pct = 40

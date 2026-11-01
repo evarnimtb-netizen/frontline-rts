@@ -221,12 +221,15 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
     }
 }
 
-fn role_index(r: SquadRole) -> usize {
+/// Position of an S1 role in `AiSetup::mix_pct`. The S3 roles (AT teams,
+/// vehicles) are not part of that mix; they have their own rules.
+fn role_index(r: SquadRole) -> Option<usize> {
     match r {
-        SquadRole::Rifle => 0,
-        SquadRole::Mg => 1,
-        SquadRole::Engineer => 2,
-        SquadRole::Mortar => 3,
+        SquadRole::Rifle => Some(0),
+        SquadRole::Mg => Some(1),
+        SquadRole::Engineer => Some(2),
+        SquadRole::Mortar => Some(3),
+        SquadRole::AntiTank | SquadRole::Vehicle => None,
     }
 }
 
@@ -467,24 +470,30 @@ impl Planner<'_> {
         let faction = &s.factions[s.players[p].faction as usize];
         let mut by_role: [Option<u16>; 4] = [None; 4];
         for &t in &faction.roster {
-            let r = role_index(s.squad_types[t as usize].role);
-            by_role[r].get_or_insert(t);
+            if let Some(r) = role_index(s.squad_types[t as usize].role) {
+                by_role[r].get_or_insert(t);
+            }
         }
         let mut counts = [0i64; 4];
+        let mut count = |t: u16| {
+            if let Some(r) = role_index(s.squad_types[t as usize].role) {
+                counts[r] += 1;
+            }
+        };
         for sq in g.squads.values().filter(|sq| sq.owner == self.me) {
-            counts[role_index(s.squad_types[sq.type_idx as usize].role)] += 1;
+            count(sq.type_idx);
         }
         let pl = &g.players[p];
         let mut queue = pl.call_ins.len();
         for c in &pl.call_ins {
-            counts[role_index(s.squad_types[c.squad_type as usize].role)] += 1;
+            count(c.squad_type);
         }
         let mut budget = pl.manpower as i64;
         let mut pop = g.population(self.ents, self.me) as i64;
         for c in &self.ai.pending {
             if let CommandKind::CallIn { squad_type } = c.kind {
                 let ty = &s.squad_types[squad_type as usize];
-                counts[role_index(ty.role)] += 1;
+                count(squad_type);
                 budget -= ty.cost as i64;
                 pop += ty.men as i64;
                 queue += 1;
@@ -519,7 +528,9 @@ impl Planner<'_> {
             budget -= ty.cost as i64;
             pop += ty.men as i64;
             queue += 1;
-            counts[role_index(ty.role)] += 1;
+            if let Some(r) = role_index(ty.role) {
+                counts[r] += 1;
+            }
         }
     }
 

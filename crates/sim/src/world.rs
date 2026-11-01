@@ -258,7 +258,12 @@ impl SimConfig {
 /// The [`SimConfig`] a match world runs with, derived from its setup (and
 /// checked against it on load).
 pub fn match_config(setup: &MatchSetup) -> SimConfig {
-    let speeds = setup.squad_types.iter().map(|t| Fx::from(t.speed));
+    // Soldier speeds only: vehicles (S3) do not walk.
+    let speeds = setup
+        .squad_types
+        .iter()
+        .filter(|t| t.vehicle.is_none())
+        .map(|t| Fx::from(t.speed));
     let speed_min = speeds.clone().min().unwrap_or(Fx::ONE);
     let speed_max = speeds.max().unwrap_or(Fx::ONE);
     SimConfig {
@@ -373,7 +378,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `prone_speed_pct` movement rule). 8: thrown items (entity `kit` column,
 /// items in flight, smoke clouds, item defs and loadouts in the setup, the
 /// item and AI throw rules, AI throw cooldowns, the `throws` counter).
-const SAVE_VERSION: u32 = 8;
+/// 9: S3 vehicles and armour (ammo and vehicle defs, AT teams, dig
+/// profiles, vehicle and AI rules in the setup; vehicle state as the S3
+/// sim stages add it). One bump for the whole slice.
+const SAVE_VERSION: u32 = 9;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -757,6 +765,9 @@ impl World {
             }
         }
         s.state.terrain.rebuild_derived();
+        if let Some(g) = &mut s.state.game {
+            g.rebuild_derived();
+        }
         World::from_state(s.state, threads)
     }
 

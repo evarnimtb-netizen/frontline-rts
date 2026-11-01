@@ -9,8 +9,10 @@
 //!   as `Fx::from_raw`), via integer `num / den` truncated toward zero;
 //! * durations become whole ticks at the rules' tick rate, rounding half up;
 //! * def ids become indices into the sorted `weapons`, `items`,
-//!   `squad_types` and `factions` lists (sorted by id, so indices are stable
-//!   for a def set).
+//!   `squad_types`, `factions`, `ammo` and `vehicles` lists (sorted by id,
+//!   so indices are stable for a def set);
+//! * angles stay integer degrees (the content crate has no trigonometry;
+//!   the sim builds its armour tables from them, S3).
 //!
 //! [`MatchSetup::validate`] re-checks the structure without the defs, since a
 //! setup also arrives inside untrusted save files.
@@ -18,10 +20,16 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::defs::{ITEM_KINDS, ItemKind, MAX_ITEM_COUNT, SquadRole, WeaponClass, parse_color};
+use crate::defs::{
+    DigProfileDef, ITEM_KINDS, ItemHeDef, ItemKind, MAX_ITEM_COUNT, SquadRole, WeaponClass,
+    parse_color,
+};
 use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
+use crate::vehicle::{
+    AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
+};
 
 /// Q16.16 fixed-point value as its raw `i32` (1.0 = 65536).
 #[derive(
@@ -170,6 +178,10 @@ pub struct MatchSetup {
     pub factions: Vec<FactionSetup>,
     /// In player-slot order (player id = index).
     pub players: Vec<PlayerSetup>,
+    /// Rounds for cannons and launchers (S3), sorted by id.
+    pub ammo: Vec<AmmoSetup>,
+    /// Vehicle types (S3), sorted by id.
+    pub vehicles: Vec<VehicleSetup>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,11 +197,87 @@ pub struct RulesSetup {
     pub capture_ticks: u32,
     pub capture_max_men: u8,
     pub movement: MovementSetup,
+    /// The standard trench profile (`DigProfile::Trench`).
     pub dig: DigSetup,
+    /// The anti-tank ditch profile (`DigProfile::AtDitch`, S3).
+    pub at_ditch: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
+    /// Vehicle rules (S3).
+    pub vehicles: VehicleRulesSetup,
     pub difficulty: DifficultyTable,
     pub ai: AiSetup,
+}
+
+impl RulesSetup {
+    /// The profile a dig order names.
+    pub fn dig_profile(&self, p: DigProfile) -> &DigSetup {
+        match p {
+            DigProfile::Trench => &self.dig,
+            DigProfile::AtDitch => &self.at_ditch,
+        }
+    }
+}
+
+/// Which dug cross-section a dig order makes (S3).
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum DigProfile {
+    #[default]
+    Trench = 0,
+    AtDitch = 1,
+}
+
+/// Vehicle rules (see `VehicleRulesDef`): durations in ticks, distances
+/// and speeds in metres.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VehicleRulesSetup {
+    pub unlock_ticks: u32,
+    pub limit: u32,
+    pub wreck_cap: u32,
+    pub seat_swap_ticks: u32,
+    pub crew_hp: u32,
+    pub wounded_hp: u32,
+    /// m/s.
+    pub moving_speed: Fixed,
+    pub moving_spot_pct: u32,
+    pub near_spot: Fixed,
+    pub moving_target_spread_pct: u32,
+    pub ranging_step_pct: u32,
+    pub ranging_floor_pct: u32,
+    /// Radians.
+    pub he_area_spread: Fixed,
+    pub he_clear: Fixed,
+    pub aim_hull_margin_pct: u32,
+    pub crossing_dug: Fixed,
+    /// m/s.
+    pub crossing_speed: Fixed,
+    pub crossing_gap_ticks: u32,
+    pub fire_min_damage: u32,
+    pub fire_start_pct: u32,
+    pub fire_burn_hp_s: u32,
+    pub fire_check_ticks: u32,
+    pub fire_out_pct: u32,
+    pub fire_burnout_ticks: u32,
+    pub rack_min_damage: u32,
+    pub rack_detonate_pct: u32,
+    pub base_repair_pct_s: u32,
+    pub base_rearm_ticks: u32,
+    pub base_crew_ticks: u32,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -213,6 +301,13 @@ pub struct AiSetup {
     /// A squad throws at most one item this often.
     pub throw_cooldown_ticks: u32,
     pub frag_group_men: u32,
+    /// S3: vehicle and AT-team shares of the mix, percent.
+    pub mix_vehicle_pct: u32,
+    pub mix_at_pct: u32,
+    pub tank_standoff: Fixed,
+    pub assault_close: Fixed,
+    pub at_clear_ticks: u32,
+    pub repair_clear: Fixed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,17 +326,37 @@ pub struct MovementSetup {
     pub trench_cost_pct: u32,
 }
 
-/// Trench profile and digging pace. One man at `dig_rate_pct = 100` does
-/// 100 work points per second.
+/// A dig profile and its pace. One man at `dig_rate_pct = 100` does 100
+/// work points per second.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DigSetup {
     pub depth: Fixed,
     pub floor_width: Fixed,
+    /// Horizontal run of each wall, floor edge to lip (S3; the S1 trench
+    /// used a fixed 0.4 m).
+    pub wall_run: Fixed,
     pub parapet_height: Fixed,
     pub max_length: Fixed,
     pub work_per_m: u32,
     /// The trench deepens in this many equal passes.
     pub passes: u32,
+    /// Only engineer squads dig it (S3: the AT ditch).
+    pub engineers_only: bool,
+}
+
+impl DigSetup {
+    fn lower(d: &DigProfileDef) -> DigSetup {
+        DigSetup {
+            depth: Fixed::from_cm(d.depth_cm),
+            floor_width: Fixed::from_cm(d.floor_cm),
+            wall_run: Fixed::from_cm(d.wall_cm),
+            parapet_height: Fixed::from_cm(d.parapet_cm),
+            max_length: Fixed::from_int(d.max_length_m as i32),
+            work_per_m: d.work_per_m,
+            passes: d.passes,
+            engineers_only: d.engineers_only,
+        }
+    }
 }
 
 /// Spotting, accuracy, suppression and corpse rules (see `CombatDef`).
@@ -363,6 +478,19 @@ pub struct WeaponSetup {
     pub setup_ticks: u32,
     pub suppression: u32,
     pub he: Option<HeSetup>,
+    /// Firing reveals the shooter: sight range against him in percent, for
+    /// this many ticks (S3; the rules' values unless the def sets them).
+    pub fire_reveal_pct: u32,
+    pub fire_reveal_ticks: u32,
+    /// Launchers (S3): the round (index into `MatchSetup::ammo`), rounds
+    /// per team, fire discipline against still and moving vehicles, and
+    /// the hand-over time when the gunner dies. `range_max` and 0
+    /// otherwise.
+    pub ammo: Option<u16>,
+    pub rounds_carried: u32,
+    pub engage_still: Fixed,
+    pub engage_moving: Fixed,
+    pub handover_ticks: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -372,6 +500,12 @@ pub struct HeSetup {
     pub suppression_radius: Fixed,
     pub crater_radius: Fixed,
     pub crater_depth: Fixed,
+    /// S3: armour it defeats on contact (mm), the inner burst when it does,
+    /// and its damage to track anchors in percent.
+    pub pen_mm: u32,
+    pub inside_damage: u32,
+    pub inside_radius: Fixed,
+    pub vs_vehicle_pct: u32,
 }
 
 /// A thrown item (see `ItemDef`).
@@ -446,9 +580,27 @@ pub struct SquadTypeSetup {
     pub dig_rate_pct: u32,
     /// What the men carry, at most one entry per item kind.
     pub loadout: Vec<KitSetup>,
+    /// S3: the vehicle (index into `MatchSetup::vehicles`) for `Vehicle`
+    /// squads. Those have `men = 0`, the main gun as `weapon`, and the
+    /// vehicle's cost, call-in time, speed and sight; [`Self::pop`] is
+    /// the vehicle's.
+    pub vehicle: Option<u16>,
+    /// The first `weapon_men` men carry `weapon` (all of them when it is at
+    /// least `men`), the rest `sidearm`.
+    pub weapon_men: u8,
+    /// Index into `MatchSetup::weapons`.
+    pub sidearm: Option<u16>,
 }
 
 impl SquadTypeSetup {
+    /// Population it uses: its men, or its vehicle's `pop` (S3).
+    pub fn pop(&self, vehicles: &[VehicleSetup]) -> u32 {
+        match self.vehicle {
+            Some(v) => vehicles.get(v as usize).map_or(0, |v| v.pop),
+            None => self.men as u32,
+        }
+    }
+
     /// The loadout entry for items of `kind`, with the item's setup.
     pub fn kit<'a>(
         &'a self,
@@ -561,7 +713,10 @@ impl ModDefs {
                     .max(1000) as u32,
                 magazine: w.magazine,
                 reload_ticks: ms_to_ticks(w.reload_ms, hz),
-                spread: Fixed::from_ratio(w.spread_mrad as i64, 1000),
+                spread: Fixed::from_ratio(
+                    w.spread_mrad as i64 * 1000 + w.spread_urad as i64,
+                    1_000_000,
+                ),
                 muzzle_speed: Fixed::from_int(w.muzzle_velocity_m_s as i32),
                 setup_ticks: ms_to_ticks(w.setup_ms, hz),
                 suppression: w.suppression,
@@ -571,7 +726,21 @@ impl ModDefs {
                     suppression_radius: Fixed::from_int(h.suppression_radius_m as i32),
                     crater_radius: Fixed::from_cm(h.crater_radius_cm),
                     crater_depth: Fixed::from_cm(h.crater_depth_cm),
+                    pen_mm: h.pen_mm,
+                    inside_damage: h.inside_damage,
+                    inside_radius: Fixed::from_cm(h.inside_radius_cm),
+                    vs_vehicle_pct: h.vs_vehicle_pct,
                 }),
+                fire_reveal_pct: w.fire_reveal_pct.unwrap_or(rules.combat.firing_spot_pct),
+                fire_reveal_ticks: ms_to_ticks(
+                    w.fire_reveal_ms.unwrap_or(rules.combat.reveal_ms),
+                    hz,
+                ),
+                ammo: w.ammo.as_ref().and_then(|a| index_of(self.ammo.keys(), a)),
+                rounds_carried: w.rounds_carried,
+                engage_still: Fixed::from_int(w.engage_still_m.unwrap_or(w.range_m) as i32),
+                engage_moving: Fixed::from_int(w.engage_moving_m.unwrap_or(w.range_m) as i32),
+                handover_ticks: ms_to_ticks(w.handover_ms, hz),
             })
             .collect();
         let items: Vec<ItemSetup> = self
@@ -586,18 +755,7 @@ impl ModDefs {
                 windup_ticks: ms_to_ticks(it.windup_ms, hz),
                 fuse_ticks: ms_to_ticks(it.fuse_ms, hz),
                 scatter_pct: it.scatter_pct,
-                he: it.he.as_ref().map(|h| ItemHeSetup {
-                    damage: h.damage,
-                    suppression: h.suppression,
-                    blast: HeSetup {
-                        lethal_radius: Fixed::from_cm(h.lethal_radius_cm),
-                        damage_radius: Fixed::from_cm(h.damage_radius_cm),
-                        suppression_radius: Fixed::from_int(h.suppression_radius_m as i32),
-                        crater_radius: Fixed::from_cm(h.crater_radius_cm),
-                        crater_depth: Fixed::from_cm(h.crater_depth_cm),
-                    },
-                    cuts_trenches: h.cuts_trenches,
-                }),
+                he: it.he.as_ref().map(lower_item_he),
                 smoke: it.smoke.as_ref().map(|m| SmokeSetup {
                     radius: Fixed::from_int(m.radius_m as i32),
                     grow_ticks: ms_to_ticks(m.grow_ms, hz),
@@ -606,32 +764,67 @@ impl ModDefs {
                 }),
             })
             .collect();
+        let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
+        let vehicles = self.lower_vehicles(hz);
+        let weapon_idx = |id: &str| index_of(self.weapons.keys(), id).unwrap_or(0);
         let squad_types: Vec<SquadTypeSetup> = self
             .squads
             .values()
-            .map(|s| SquadTypeSetup {
-                id: s.id.clone(),
-                name: s.name.clone(),
-                faction: index_of(self.factions.keys(), &s.faction).unwrap_or(0),
-                role: s.role,
-                men: s.men,
-                weapon: index_of(self.weapons.keys(), &s.weapon).unwrap_or(0),
-                cost: s.cost,
-                call_in_ticks: s.call_in_s * hz,
-                hp: s.hp,
-                speed: Fixed::from_cm(s.speed_cm_s),
-                sight: Fixed::from_int(s.sight_m as i32),
-                spacing: Fixed::from_ratio(s.spacing_dm as i64, 10),
-                dig_rate_pct: s.dig_rate_pct,
-                loadout: s
-                    .loadout
-                    .iter()
-                    .map(|l| KitSetup {
-                        item: index_of(self.items.keys(), &l.item).unwrap_or(0),
-                        count: l.count,
-                        leader_count: l.leader_count,
-                    })
-                    .collect(),
+            .map(|s| {
+                let faction = index_of(self.factions.keys(), &s.faction).unwrap_or(0);
+                let vehicle = s
+                    .vehicle
+                    .as_ref()
+                    .and_then(|v| index_of(self.vehicles.keys(), v));
+                if let Some(v) = vehicle {
+                    let vs = &vehicles[v as usize];
+                    return SquadTypeSetup {
+                        id: s.id.clone(),
+                        name: s.name.clone(),
+                        faction,
+                        role: s.role,
+                        men: 0,
+                        weapon: vs.main_gun().weapon,
+                        cost: vs.cost,
+                        call_in_ticks: vs.call_in_ticks,
+                        hp: s.hp,
+                        speed: vs.mobility.speed,
+                        sight: vs.sight,
+                        spacing: Fixed::ONE,
+                        dig_rate_pct: 0,
+                        loadout: Vec::new(),
+                        vehicle: Some(v),
+                        weapon_men: 0,
+                        sidearm: None,
+                    };
+                }
+                SquadTypeSetup {
+                    id: s.id.clone(),
+                    name: s.name.clone(),
+                    faction,
+                    role: s.role,
+                    men: s.men,
+                    weapon: weapon_idx(&s.weapon),
+                    cost: s.cost,
+                    call_in_ticks: s.call_in_s * hz,
+                    hp: s.hp,
+                    speed: Fixed::from_cm(s.speed_cm_s),
+                    sight: Fixed::from_int(s.sight_m as i32),
+                    spacing: Fixed::from_ratio(s.spacing_dm as i64, 10),
+                    dig_rate_pct: s.dig_rate_pct,
+                    loadout: s
+                        .loadout
+                        .iter()
+                        .map(|l| KitSetup {
+                            item: index_of(self.items.keys(), &l.item).unwrap_or(0),
+                            count: l.count,
+                            leader_count: l.leader_count,
+                        })
+                        .collect(),
+                    vehicle: None,
+                    weapon_men: s.weapon_men.unwrap_or(s.men),
+                    sidearm: s.sidearm.as_deref().map(weapon_idx),
+                }
             })
             .collect();
         let squad_idx = |id: &String| index_of(self.squads.keys(), id).unwrap_or(0);
@@ -714,14 +907,8 @@ impl ModDefs {
                     path_max_expansions: m.path_max_expansions,
                     trench_cost_pct: m.trench_cost_pct,
                 },
-                dig: DigSetup {
-                    depth: Fixed::from_cm(rules.dig.depth_cm),
-                    floor_width: Fixed::from_cm(rules.dig.floor_cm),
-                    parapet_height: Fixed::from_cm(rules.dig.parapet_cm),
-                    max_length: Fixed::from_int(rules.dig.max_length_m as i32),
-                    work_per_m: rules.dig.work_per_m,
-                    passes: rules.dig.passes,
-                },
+                dig: DigSetup::lower(&rules.dig.profiles.trench),
+                at_ditch: DigSetup::lower(&rules.dig.profiles.at_ditch),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -748,6 +935,40 @@ impl ModDefs {
                 items: ItemRulesSetup {
                     resupply_ticks: rules.items.resupply_s * hz,
                 },
+                vehicles: {
+                    let v = &rules.vehicles;
+                    VehicleRulesSetup {
+                        unlock_ticks: v.unlock_s * hz,
+                        limit: v.limit,
+                        wreck_cap: v.wreck_cap,
+                        seat_swap_ticks: v.seat_swap_s * hz,
+                        crew_hp: v.crew_hp,
+                        wounded_hp: v.wounded_hp,
+                        moving_speed: Fixed::from_cm(v.moving_cm_s),
+                        moving_spot_pct: v.moving_spot_pct,
+                        near_spot: Fixed::from_int(v.near_spot_m as i32),
+                        moving_target_spread_pct: v.moving_target_spread_pct,
+                        ranging_step_pct: v.ranging_step_pct,
+                        ranging_floor_pct: v.ranging_floor_pct,
+                        he_area_spread: Fixed::from_ratio(v.he_area_spread_mrad as i64, 1000),
+                        he_clear: Fixed::from_int(v.he_clear_m as i32),
+                        aim_hull_margin_pct: v.aim_hull_margin_pct,
+                        crossing_dug: Fixed::from_cm(v.crossing_dug_cm),
+                        crossing_speed: Fixed::from_cm(v.crossing_speed_cm_s),
+                        crossing_gap_ticks: v.crossing_gap_s * hz,
+                        fire_min_damage: v.fire_min_damage,
+                        fire_start_pct: v.fire_start_pct,
+                        fire_burn_hp_s: v.fire_burn_hp_s,
+                        fire_check_ticks: v.fire_check_s * hz,
+                        fire_out_pct: v.fire_out_pct,
+                        fire_burnout_ticks: v.fire_burnout_s * hz,
+                        rack_min_damage: v.rack_min_damage,
+                        rack_detonate_pct: v.rack_detonate_pct,
+                        base_repair_pct_s: v.base_repair_pct_s,
+                        base_rearm_ticks: v.base_rearm_s * hz,
+                        base_crew_ticks: v.base_crew_s * hz,
+                    }
+                },
                 difficulty: DifficultyTable {
                     easy: diff(&rules.difficulty.easy),
                     normal: diff(&rules.difficulty.normal),
@@ -769,6 +990,12 @@ impl ModDefs {
                         dig_offset: Fixed::from_int(a.dig_offset_m as i32),
                         throw_cooldown_ticks: a.throw_cooldown_s * hz,
                         frag_group_men: a.frag_group_men,
+                        mix_vehicle_pct: a.mix_vehicle_pct,
+                        mix_at_pct: a.mix_at_pct,
+                        tank_standoff: Fixed::from_int(a.tank_standoff_m as i32),
+                        assault_close: Fixed::from_int(a.assault_close_m as i32),
+                        at_clear_ticks: a.at_clear_s * hz,
+                        repair_clear: Fixed::from_int(a.repair_clear_m as i32),
                     }
                 },
             },
@@ -820,6 +1047,8 @@ impl ModDefs {
             squad_types,
             factions,
             players,
+            ammo,
+            vehicles,
         };
         let issues = setup.validate();
         if issues.is_empty() {
@@ -828,6 +1057,74 @@ impl ModDefs {
             Err(invalid(issues))
         }
     }
+}
+
+impl ModDefs {
+    /// Every vehicle def lowered at `hz`, sorted by id (also what
+    /// `frontline-cli ballistics` builds its armour tables from, without a
+    /// whole match).
+    pub fn lower_vehicles(&self, hz: u32) -> Vec<VehicleSetup> {
+        self.vehicles
+            .values()
+            .map(|v| {
+                lower_vehicle(
+                    v,
+                    hz,
+                    index_of(self.factions.keys(), &v.faction).unwrap_or(0),
+                    |w| index_of(self.weapons.keys(), w).unwrap_or(0),
+                    |a| index_of(self.ammo.keys(), a).unwrap_or(0),
+                    |a| self.ammo.get(a).map(|d| d.mechanism),
+                )
+            })
+            .collect()
+    }
+
+    /// Every ammo def lowered, sorted by id.
+    pub fn lower_ammo(&self) -> Vec<AmmoSetup> {
+        self.ammo.values().map(lower_ammo).collect()
+    }
+}
+
+/// Lowers an item's (or a round's) blast.
+pub(crate) fn lower_item_he(h: &ItemHeDef) -> ItemHeSetup {
+    ItemHeSetup {
+        damage: h.damage,
+        suppression: h.suppression,
+        blast: HeSetup {
+            lethal_radius: Fixed::from_cm(h.lethal_radius_cm),
+            damage_radius: Fixed::from_cm(h.damage_radius_cm),
+            suppression_radius: Fixed::from_int(h.suppression_radius_m as i32),
+            crater_radius: Fixed::from_cm(h.crater_radius_cm),
+            crater_depth: Fixed::from_cm(h.crater_depth_cm),
+            pen_mm: h.pen_mm,
+            inside_damage: h.inside_damage,
+            inside_radius: Fixed::from_cm(h.inside_radius_cm),
+            vs_vehicle_pct: h.vs_vehicle_pct,
+        },
+        cuts_trenches: h.cuts_trenches,
+    }
+}
+
+fn fx_in(v: Fixed, lo: i32, hi: i32) -> bool {
+    v >= Fixed::from_int(lo) && v <= Fixed::from_int(hi)
+}
+
+/// Range checks of one blast (weapon, item or round).
+pub(crate) fn he_ok(b: &HeSetup) -> bool {
+    b.lethal_radius > Fixed::ZERO
+        && b.lethal_radius <= b.damage_radius
+        && fx_in(b.damage_radius, 0, 100)
+        && fx_in(b.suppression_radius, 0, 200)
+        && fx_in(b.crater_radius, 0, 20)
+        && fx_in(b.crater_depth, 0, 5)
+        && b.pen_mm <= 2000
+        && b.inside_damage <= 10_000
+        && fx_in(b.inside_radius, 0, 10)
+        && b.vs_vehicle_pct <= 100
+}
+
+pub(crate) fn item_he_ok(h: &ItemHeSetup) -> bool {
+    h.damage <= 10_000 && h.suppression <= 100 && he_ok(&h.blast)
 }
 
 /// Position of `id` among sorted map keys.
@@ -986,25 +1283,70 @@ impl MatchSetup {
             "rules.movement.trench_cost_pct",
             "out of range",
         );
+        for d in [&r.dig, &r.at_ditch] {
+            check(
+                fx_in(d.max_length, 1, 1000),
+                "rules.dig.max_length",
+                "out of range",
+            );
+            check(
+                d.depth >= Fixed::from_cm(10)
+                    && fx_in(d.depth, 0, 10)
+                    && d.floor_width >= Fixed::from_cm(10)
+                    && fx_in(d.floor_width, 0, 10)
+                    && d.wall_run >= Fixed::from_cm(10)
+                    && fx_in(d.wall_run, 0, 5)
+                    && d.parapet_height >= Fixed::ZERO
+                    && fx_in(d.parapet_height, 0, 3),
+                "rules.dig.profile",
+                "out of range",
+            );
+            check(
+                (1..=10_000_000).contains(&d.work_per_m) && (1..=32).contains(&d.passes),
+                "rules.dig.work",
+                "out of range",
+            );
+        }
         let d = &r.dig;
+        let v = &r.vehicles;
         check(
-            fx_in(d.max_length, 1, 1000),
-            "rules.dig.max_length",
+            v.unlock_ticks <= 3600 * 30
+                && v.limit <= 50
+                && (1..=256).contains(&v.wreck_cap)
+                && v.seat_swap_ticks <= 60 * 30
+                && (1..=1000).contains(&v.crew_hp)
+                && v.wounded_hp <= v.crew_hp
+                && v.moving_speed > Fixed::ZERO
+                && fx_in(v.moving_speed, 0, 10)
+                && (1..=1000).contains(&v.moving_spot_pct)
+                && fx_in(v.near_spot, 0, 200)
+                && (100..=1000).contains(&v.moving_target_spread_pct)
+                && v.ranging_step_pct <= 100
+                && (1..=100).contains(&v.ranging_floor_pct)
+                && fx_in(v.he_area_spread, 0, 1)
+                && fx_in(v.he_clear, 0, 500)
+                && v.aim_hull_margin_pct <= 100,
+            "rules.vehicles",
             "out of range",
         );
         check(
-            d.depth >= Fixed::from_cm(10)
-                && fx_in(d.depth, 0, 10)
-                && d.floor_width >= Fixed::from_cm(10)
-                && fx_in(d.floor_width, 0, 10)
-                && d.parapet_height >= Fixed::ZERO
-                && fx_in(d.parapet_height, 0, 3),
-            "rules.dig.profile",
-            "out of range",
-        );
-        check(
-            (1..=10_000_000).contains(&d.work_per_m) && (1..=32).contains(&d.passes),
-            "rules.dig.work",
+            v.crossing_dug >= Fixed::from_cm(10)
+                && fx_in(v.crossing_dug, 0, 10)
+                && v.crossing_speed >= Fixed::from_cm(10)
+                && fx_in(v.crossing_speed, 0, 30)
+                && v.crossing_gap_ticks <= 60 * 30
+                && v.fire_min_damage <= 1000
+                && v.fire_start_pct <= 100
+                && v.fire_burn_hp_s <= 100
+                && (1..=60 * 30).contains(&v.fire_check_ticks)
+                && v.fire_out_pct <= 100
+                && (1..=600 * 30).contains(&v.fire_burnout_ticks)
+                && v.rack_min_damage <= 1000
+                && v.rack_detonate_pct <= 100
+                && v.base_repair_pct_s <= 100
+                && (1..=600 * 30).contains(&v.base_rearm_ticks)
+                && (1..=600 * 30).contains(&v.base_crew_ticks),
+            "rules.vehicles",
             "out of range",
         );
         let c = &r.combat;
@@ -1082,7 +1424,13 @@ impl MatchSetup {
                 && a.dig_length <= d.max_length
                 && fx_in(a.dig_offset, 0, 100)
                 && (1..=600 * 30).contains(&a.throw_cooldown_ticks)
-                && (1..=16).contains(&a.frag_group_men),
+                && (1..=16).contains(&a.frag_group_men)
+                && a.mix_vehicle_pct <= 100
+                && a.mix_at_pct <= 100
+                && fx_in(a.tank_standoff, 1, 2000)
+                && fx_in(a.assault_close, 1, 500)
+                && (1..=600 * 30).contains(&a.at_clear_ticks)
+                && fx_in(a.repair_clear, 1, 2000),
             "rules.ai",
             "out of range",
         );
@@ -1111,19 +1459,7 @@ impl MatchSetup {
                 "frag and satchel items need a blast, smoke items a cloud",
             );
             if let Some(h) = &it.he {
-                let b = &h.blast;
-                check(
-                    h.damage <= 10_000
-                        && h.suppression <= 100
-                        && b.lethal_radius > Fixed::ZERO
-                        && b.lethal_radius <= b.damage_radius
-                        && fx_in(b.damage_radius, 0, 100)
-                        && fx_in(b.suppression_radius, 0, 200)
-                        && fx_in(b.crater_radius, 0, 20)
-                        && fx_in(b.crater_depth, 0, 5),
-                    "items.he",
-                    "out of range",
-                );
+                check(item_he_ok(h), "items.he", "out of range");
             }
             if let Some(m) = &it.smoke {
                 check(
@@ -1172,16 +1508,34 @@ impl MatchSetup {
                 "out of range",
             );
             if let Some(he) = &w.he {
-                check(
-                    he.lethal_radius > Fixed::ZERO
-                        && he.lethal_radius <= he.damage_radius
-                        && fx_in(he.damage_radius, 0, 100)
-                        && fx_in(he.suppression_radius, 0, 200)
-                        && fx_in(he.crater_radius, 0, 20)
-                        && fx_in(he.crater_depth, 0, 5),
-                    "weapons.he",
-                    "out of range",
-                );
+                check(he_ok(he), "weapons.he", "out of range");
+            }
+            let launcher = w.class == WeaponClass::Launcher;
+            check(
+                (100..=1000).contains(&w.fire_reveal_pct)
+                    && w.fire_reveal_ticks <= 60 * 30
+                    && w.handover_ticks <= 60 * 30
+                    && w.engage_still >= Fixed::ZERO
+                    && w.engage_still <= w.range_max
+                    && w.engage_moving >= Fixed::ZERO
+                    && w.engage_moving <= w.range_max,
+                "weapons.reveal_engage",
+                "out of range",
+            );
+            check(
+                if launcher {
+                    w.ammo.is_some_and(|a| (a as usize) < self.ammo.len())
+                        && (1..=50).contains(&w.rounds_carried)
+                } else {
+                    w.ammo.is_none() && w.rounds_carried == 0
+                },
+                "weapons.ammo",
+                "launchers need a known round, other weapons none",
+            );
+        }
+        for a in &self.ammo {
+            if let Some(m) = check_ammo(a) {
+                check(false, "ammo", m);
             }
         }
         let (nw, nf, nt) = (
@@ -1189,6 +1543,11 @@ impl MatchSetup {
             self.factions.len(),
             self.squad_types.len(),
         );
+        for v in &self.vehicles {
+            if let Some(m) = check_vehicle(v, &self.weapons, &self.ammo, nf) {
+                check(false, "vehicles", m);
+            }
+        }
         for s in &self.squad_types {
             check(
                 (s.weapon as usize) < nw,
@@ -1200,11 +1559,38 @@ impl MatchSetup {
                 "squad_types.faction",
                 "index out of range",
             );
-            check(
-                (1..=16).contains(&s.men),
-                "squad_types.men",
-                "must be in 1..=16",
-            );
+            let is_vehicle = s.role == SquadRole::Vehicle;
+            if is_vehicle {
+                let vehicle = s.vehicle.and_then(|v| self.vehicles.get(v as usize));
+                check(
+                    vehicle.is_some_and(|v| {
+                        v.faction == s.faction
+                            && v.cost == s.cost
+                            && v.call_in_ticks == s.call_in_ticks
+                            && v.main_gun().weapon == s.weapon
+                    }) && s.men == 0
+                        && s.weapon_men == 0
+                        && s.sidearm.is_none()
+                        && s.loadout.is_empty()
+                        && s.dig_rate_pct == 0,
+                    "squad_types.vehicle",
+                    "a vehicle squad must match its vehicle and have no men",
+                );
+            } else {
+                check(
+                    s.vehicle.is_none()
+                        && (1..=16).contains(&s.weapon_men)
+                        && (s.weapon_men >= s.men || s.sidearm.is_some())
+                        && s.sidearm.is_none_or(|w| (w as usize) < nw),
+                    "squad_types.weapon_men",
+                    "weapon_men out of range, or men without a weapon and no sidearm",
+                );
+                check(
+                    (1..=16).contains(&s.men),
+                    "squad_types.men",
+                    "must be in 1..=16",
+                );
+            }
             check(
                 s.speed > Fixed::ZERO && fx_in(s.speed, 0, 20),
                 "squad_types.speed",

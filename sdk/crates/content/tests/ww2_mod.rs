@@ -55,9 +55,16 @@ fn issue_paths(e: ContentError) -> Vec<String> {
 fn ww2_mod_loads_clean() {
     let d = load();
     assert_eq!(d.manifest.as_ref().unwrap().id, "ww2");
-    assert_eq!(d.squads.len(), 8);
-    assert_eq!(d.weapons.len(), 8);
+    // S1 squads, plus (S3) two AT teams and two vehicle squads.
+    assert_eq!(d.squads.len(), 12);
+    // S1 weapons, plus (S3) two cannons, the MG 34 and two launchers.
+    assert_eq!(d.weapons.len(), 13);
     assert_eq!(d.items.len(), 6);
+    assert_eq!(
+        d.vehicles.keys().collect::<Vec<_>>(),
+        ["ww2:ger_pz4_h", "ww2:usa_m4a3_75"]
+    );
+    assert_eq!(d.ammo.len(), 6);
     assert_eq!(
         d.factions.keys().collect::<Vec<_>>(),
         ["ww2:germany", "ww2:usa"]

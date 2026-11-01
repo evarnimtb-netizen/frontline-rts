@@ -190,6 +190,8 @@ fn schema_export_writes_valid_json() {
         "squad",
         "weapon",
         "item",
+        "vehicle",
+        "ammo",
         "faction",
         "map",
         "rules",

@@ -1,0 +1,390 @@
+# Golden ballistics rows (S3, docs/slices/S3-armour.md "`frontline-cli
+# ballistics`"). `frontline-cli ballistics --golden` runs them, and
+# `cargo test` runs the same file through the sim's own armour functions
+# (sdk/crates/cli/tests/ballistics.rs).
+#
+# Each row: ammo, target, zone, range (m), angle (horizontal degrees from
+# the plate normal), optional descent (degrees or "auto") and track_band,
+# and either expect = "pen" | "nonpen" | "ricochet" (every roll of the
+# +-7 % band) or pen_pct = [lo, hi] (closed-form chance, inclusive). Rows
+# 1-27 are the spec's table in order; the rest come from the --table grid
+# and the edges. If the data changes, this file changes in the same
+# commit, on purpose.
+
+
+[[row]] # 1
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 150
+angle = 0
+expect = "pen"
+note = "63.5 @ 47 -> 93.1 mm"
+
+[[row]] # 2
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 300
+angle = 0
+expect = "pen"
+
+[[row]] # 3
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 300
+angle = 30
+expect = "pen"
+note = "impact 53.8 deg, 107.5 mm"
+
+[[row]] # 4
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 450
+angle = 30
+pen_pct = [90, 95]
+note = "92.3 %"
+
+[[row]] # 5
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 1000
+angle = 0
+pen_pct = [95, 98]
+note = "96.5 %"
+
+[[row]] # 6
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 1000
+angle = 0
+descent = "auto"
+pen_pct = [98, 100]
+note = "98.8 %: the aimed-shot descent at 1000 m is 0.45 deg (the spec's [99, 100] assumed about 0.9 deg)"
+
+[[row]] # 7
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 1500
+angle = 0
+expect = "nonpen"
+
+[[row]] # 8
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 300
+angle = 65
+expect = "ricochet"
+note = "impact 73.2 deg"
+
+[[row]] # 9
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "turret_front"
+range = 300
+angle = 0
+expect = "pen"
+note = "76 @ 30 -> 87.8 mm"
+
+[[row]] # 10
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "turret_front"
+range = 1500
+angle = 0
+pen_pct = [15, 23]
+note = "18.8 %"
+
+[[row]] # 11
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_side"
+range = 300
+angle = 0
+expect = "pen"
+note = "38 mm"
+
+[[row]] # 12
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 100
+angle = 0
+pen_pct = [99, 100]
+note = "80 @ 10 -> 81.2 mm; clears the -7 % edge by 0.4 mm"
+
+[[row]] # 13
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 150
+angle = 0
+pen_pct = [99, 100]
+note = "99.8 %"
+
+[[row]] # 14
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 300
+angle = 0
+pen_pct = [86, 91]
+note = "88.4 %"
+
+[[row]] # 15
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 450
+angle = 0
+pen_pct = [55, 60]
+note = "57.7 %"
+
+[[row]] # 16
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 500
+angle = 0
+pen_pct = [40, 46]
+note = "43.1 %"
+
+[[row]] # 17
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 1000
+angle = 0
+expect = "nonpen"
+
+[[row]] # 18
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 150
+angle = 20
+pen_pct = [54, 60]
+note = "impact 22.3 deg, 86.4 mm; 57.0 %"
+
+[[row]] # 19
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 300
+angle = 20
+pen_pct = [18, 23]
+note = "20.2 %"
+
+[[row]] # 20
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 150
+angle = 30
+expect = "nonpen"
+note = "93.8 mm"
+
+[[row]] # 21
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "turret_front"
+range = 300
+angle = 0
+expect = "pen"
+note = "50 @ 10"
+
+[[row]] # 22
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_side"
+range = 150
+angle = 0
+track_band = true
+expect = "pen"
+note = "track band: 30 + 20 mm"
+
+[[row]] # 23
+ammo = "ww2:m6a3_heat"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 100
+angle = 0
+expect = "pen"
+
+[[row]] # 24
+ammo = "ww2:m6a3_heat"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 100
+angle = 40
+pen_pct = [0, 2]
+note = "106 mm; 0.9 %"
+
+[[row]] # 25
+ammo = "ww2:rpzb54_heat"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 100
+angle = 0
+expect = "pen"
+
+[[row]] # 26
+ammo = "ww2:rpzb54_heat"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 100
+angle = 40
+expect = "pen"
+note = "impact 58.5 deg, 121.5 mm"
+
+[[row]] # 27
+ammo = "ww2:75mm_sprgr34"
+target = "ww2:usa_m4a3_75"
+zone = "hull_side"
+range = 300
+angle = 0
+expect = "nonpen"
+note = "HE: 10 mm flat"
+
+[[row]] # 28
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 600
+angle = 0
+pen_pct = [17, 23]
+note = "20.2 %"
+
+[[row]] # 29
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 100
+angle = 20
+pen_pct = [66, 72]
+note = "69.1 %"
+
+[[row]] # 30
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "turret_front"
+range = 1500
+angle = 0
+expect = "pen"
+note = "weak at every range"
+
+[[row]] # 31
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "turret_front"
+range = 300
+angle = 60
+expect = "nonpen"
+note = "101.5 mm"
+
+[[row]] # 32
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "turret_side"
+range = 1500
+angle = 60
+pen_pct = [38, 46]
+note = "42.0 %"
+
+[[row]] # 33
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_side"
+range = 1500
+angle = 0
+expect = "pen"
+
+[[row]] # 34
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_top"
+range = 300
+angle = 0
+expect = "ricochet"
+note = "a flat shot skims a flat top"
+
+[[row]] # 35
+ammo = "ww2:75mm_m61"
+target = "ww2:ger_pz4_h"
+zone = "hull_side"
+range = 300
+angle = 71
+expect = "ricochet"
+note = "past the 70 deg ricochet angle"
+
+[[row]] # 36
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:ger_pz4_h"
+zone = "turret_top"
+range = 1000
+angle = 0
+descent = "auto"
+expect = "ricochet"
+note = "0.45 deg descent onto a flat top"
+
+[[row]] # 37
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "hull_side"
+range = 300
+angle = 0
+track_band = true
+expect = "pen"
+note = "38 + 20 mm"
+
+[[row]] # 38
+ammo = "ww2:75mm_pzgr39"
+target = "ww2:usa_m4a3_75"
+zone = "turret_side"
+range = 1500
+angle = 60
+expect = "nonpen"
+note = "51 @ 5 at 60 deg: 102.4 mm against 85.4 mm"
+
+[[row]] # 39
+ammo = "ww2:m6a3_heat"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 100
+angle = 0
+pen_pct = [99, 100]
+note = "93.1 mm vs 100 mm flat"
+
+[[row]] # 40
+ammo = "ww2:m6a3_heat"
+target = "ww2:usa_m4a3_75"
+zone = "turret_front"
+range = 100
+angle = 0
+expect = "pen"
+note = "87.8 mm"
+
+[[row]] # 41
+ammo = "ww2:75mm_sprgr34"
+target = "ww2:ger_pz4_h"
+zone = "hull_top"
+range = 300
+angle = 0
+descent = 90
+expect = "nonpen"
+note = "straight down: 10 mm vs the 12 mm deck"
+
+[[row]] # 42
+ammo = "ww2:rpzb54_heat"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 100
+angle = 60
+pen_pct = [27, 34]
+note = "162.5 mm vs 160 flat: 30.4 %"

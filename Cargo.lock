@@ -178,6 +178,7 @@ dependencies = [
  "frontline-sim",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

@@ -19,3 +19,10 @@ damage_radius_cm = 600
 suppression_radius_m = 10
 crater_radius_cm = 50
 crater_depth_cm = 20
+# Against vehicles (S3): armour it defeats on contact (mm), the inner burst
+# if it does, and damage to track anchors in its lethal radius (10 % of
+# its damage). Blasts never reach a closed vehicle's insides.
+pen_mm = 2
+inside_damage = 100
+inside_radius_cm = 100
+vs_vehicle_pct = 10

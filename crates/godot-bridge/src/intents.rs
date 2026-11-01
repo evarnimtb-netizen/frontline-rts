@@ -29,13 +29,16 @@ pub fn sim_to_fx(p: [f32; 2]) -> FxVec2 {
     FxVec2::new(q(p[0]), q(p[1]))
 }
 
-/// Role name used by the presenter (`rifle`, `mg`, `engineer`, `mortar`).
+/// Role name used by the presenter (`rifle`, `mg`, `engineer`, `mortar`;
+/// S3: `at`, `vehicle`).
 pub fn role_name(r: SquadRole) -> &'static str {
     match r {
         SquadRole::Rifle => "rifle",
         SquadRole::Mg => "mg",
         SquadRole::Engineer => "engineer",
         SquadRole::Mortar => "mortar",
+        SquadRole::AntiTank => "at",
+        SquadRole::Vehicle => "vehicle",
     }
 }
 

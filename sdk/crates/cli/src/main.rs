@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use frontline_cli::skirmish::ReportFormat;
 use frontline_cli::{
-    FortifyArgs, SimulateArgs, SkirmishArgs, desync_diff, fortify, schema, simulate, skirmish,
-    validate,
+    BallisticsArgs, FortifyArgs, SimulateArgs, SkirmishArgs, ballistics, desync_diff, fortify,
+    schema, simulate, skirmish, validate,
 };
 
 #[derive(Parser)]
@@ -52,15 +52,24 @@ enum Command {
         #[arg(long, value_name = "N", default_value_t = desync_diff::DEFAULT_LIMIT)]
         max: usize,
     },
+    /// Penetration of one round against one armour plate (S3).
+    ///
+    /// One shot: --ammo, --target, --zone, --range, --angle, --descent,
+    /// --track-band. --table: one ammo against every zone of a target.
+    /// --golden FILE: run golden rows (exits 1 if any fails). The math is
+    /// the sim's own (`frontline_sim::armour`).
+    Ballistics(BallisticsArgs),
     /// Export JSON Schemas for every def type.
     Schema {
         /// Output directory (created if missing).
         #[arg(long, value_name = "DIR")]
         out: PathBuf,
     },
-    /// Check scenario files and list every problem with a suggested fix.
+    /// Check scenario files or mod folders (a folder with `mod.toml`: every
+    /// def, the rules overrides in its `tests/`, and every rules × map
+    /// resolve) and list every problem with a suggested fix.
     Validate {
-        #[arg(required = true, value_name = "TOML")]
+        #[arg(required = true, value_name = "TOML|MOD_DIR")]
         files: Vec<PathBuf>,
         /// Print machine-readable JSON instead of text.
         #[arg(long)]
@@ -126,6 +135,15 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 ExitCode::SUCCESS
             })
         }
+        Command::Ballistics(args) => {
+            let (out, ok) = ballistics::run(&args)?;
+            println!("{}", out.trim_end());
+            Ok(if ok {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            })
+        }
         Command::Schema { out } => {
             for path in schema::export(&out)? {
                 println!("{}", path.display());
@@ -133,7 +151,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Validate { files, json } => {
-            let results: Vec<_> = files.iter().map(|f| validate::scenario_file(f)).collect();
+            let results: Vec<_> = files.iter().map(|f| validate::path(f)).collect();
             if json {
                 println!("{}", serde_json::to_string_pretty(&results)?);
             } else {

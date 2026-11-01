@@ -33,6 +33,7 @@ A source has three methods:
 - **Players.** `0` and `1`. `-1` means nobody (neutral point, no winner).
   Colours in the HUD are relative to `local_player` (own blue, enemy red).
 - **Ids.** Squad and soldier ids are `int`, stable for the entity's life.
+  Vehicle ids (S3) share the soldier id space; see "Vehicles (S3)".
   Send `squads` and `soldiers` sorted by ascending id (sim iteration order).
   Every id list the view emits is a sorted, deduplicated `PackedInt32Array`.
   Soldier and squad ids are separate id spaces.
@@ -417,6 +418,290 @@ What the view does with it:
 
 The FrontlineNet lobby API and the command-line flags are in
 `godot/docs/net_api.md`.
+
+## Vehicles (S3)
+
+Frozen contract for the S3 presenter (`docs/slices/S3-armour.md`
+"Snapshot contract", "Presenter", "Commands"). Build on
+`mock_match_source.gd` against this; `FrontlineMatch` fills the same keys
+at integration (S3 step 8). The Rust side is frozen too:
+`VehicleSnapshot`, `ShellSnapshot`, `ArmourEvent` and the `PlayerSnapshot`
+fields `vehicles_counted`, `vehicle_limit`, `unlock_tick` in
+`crates/sim/src/snapshot.rs` (empty lists until the sim spawns vehicles).
+Everything in the conventions above applies: Godot space, metres,
+radians, sorted id lists, unknown keys ignored, *opt* keys may be absent.
+
+**Model.** A vehicle is an entity, like a soldier, and a squad of one.
+Vehicle ids share the soldier id space (a vehicle id is never a soldier
+id). Vehicles are sent only in `vehicles`, never in `squads` or
+`soldiers`; a vehicle's squad id is only for the call-in queue and the
+roster order. A knocked-out vehicle keeps its id as a wreck (`owner` −1).
+Enemy vehicles are sent only while the local player sees them; wrecks
+always. Own vehicles always.
+
+### State keys
+
+```text
+rules: {
+  ...                              # S1/S1b keys unchanged
+  vehicles: {
+    unlock_s: float,               # match time vehicles can be called in from
+                                   # (240.0; 0.0 with the test override)
+    limit: int,                    # most vehicles per player, alive or queued (4)
+  },
+  dig_profiles: {                  # replaces nothing: dig_max_m stays the trench's
+    trench:   { max_m: float, depth_m: float, width_m: float },   # 60, 1.6, 1.6
+    at_ditch: { max_m: float, depth_m: float, width_m: float,     # 30, 2.3, 3.4
+                engineers_only: bool },                           # true
+  },
+  vehicle_types: {                 # every vehicle type of the match, by type key
+    "<type>": {                    # type key = def id without the mod prefix,
+                                   # e.g. "ger_pz4_h", "usa_m4a3_75"
+      id: String,                  # "ww2:ger_pz4_h"
+      name: String,                # "Panzer IV Ausf. H"
+      short: String,               # "Panzer IV" (cards, feed, markers)
+      faction: String,             # "germany" | "usa"
+      role: String,                # "tank"
+      cost: int, pop: int, call_in_s: float,   # 640, 12, 45.0
+      speed: float,                # top speed, m/s (6.0)
+      sight_m: float,              # 175.0
+      # Box sizes for meshes, footprints, picking, rings and the card's
+      # silhouette (metres; the hull origin is on the ground under the
+      # hull's centre; "forward" is the hull's front):
+      hull_length: float, hull_width: float, hull_height: float,   # 5.8 2.8 1.36
+      hull_ground: float,          # belly height above the ground (0.40)
+      turret_x: float,             # pivot forward of the hull centre (0.20)
+      turret_base: float,          # pivot height above the ground (1.76)
+      turret_length: float, turret_width: float, turret_height: float, # 2.3 1.9 0.9
+      turret_offset_x: float,      # turret box centre forward of the pivot (0.0)
+      gun_length: float,           # muzzle forward of the pivot (4.5)
+      gun_height: float,           # muzzle height above the pivot (0.45)
+      seats: PackedStringArray,    # roles it has, pip order D G C L R:
+                                   # "driver" "gunner" "commander" "loader" "radio_mg"
+      ammo: [                      # main-gun rounds, penetrator first
+        { kind: String,            # "ap" (AP/APHE) | "he"
+          name: String,            # "7.5 cm PzGr 39"
+          max: int },              # 30
+      ],
+    },
+  },
+},
+players: [
+  {
+    ...                            # S1 keys unchanged; `pop` now counts living
+                                   # soldiers plus each living vehicle's `pop`
+    vehicles: int,                 # alive + queued (the call-in "2/4" badge)
+    vehicle_limit: int,            # 4
+  }, ...
+],
+vehicles: [                        # own + seen enemy + every wreck, ascending id
+  {
+    id: int,                       # entity id
+    squad: int,                    # its squad id; -1 for a wreck
+    owner: int,                    # player; -1 = wreck
+    type: String,                  # key into rules.vehicle_types
+    name: String,                  # display name ("Panzer IV Ausf. H")
+    pos: Vector3,                  # hull origin on the ground, interpolated as
+                                   # drawn (picking and markers project it)
+    yaw: float,                    # hull: rotation about +Y of a model facing −Z
+                                   # (the soldiers' convention, present.rs
+                                   # model_yaw)
+    pitch: float,                  # hull, + = nose up
+    roll: float,                   # hull, + = left side up
+    turret_yaw: float,             # relative to the hull, + = counter-clockwise
+                                   # seen from above
+    gun_pitch: float,              # + = muzzle up
+    speed: float,                  # m/s along the hull, negative reversing
+    flags: int,                    # bitmask, see below; enemies get only
+                                   # BURNING, WRECK, KNOCKED_OUT
+    state: String,                 # the badge: first that applies of "wreck",
+                                   # "burning", "bogged", "immobilised",
+                                   # "repairing", "crossing", "reversing",
+                                   # "moving", "idle". Enemies: "wreck",
+                                   # "burning", "moving" (|speed| > 1) or "idle"
+    # Own vehicles only (absent for enemies and wrecks):
+    crew: PackedStringArray,       # 5 entries, D G C L R: "ok" | "wounded"
+                                   # | "dead" (or left the seat) | "swapping"
+                                   # (a crewman moving in, 4 s) | "none" (the
+                                   # vehicle has no such seat)
+    components: {                  # fraction of full HP, 0..1
+      engine: float, track_l: float, track_r: float,
+      gun: float, ring: float, ammo_rack: float,
+    },
+    repairing: String,             # "" | "engine" | "track_l" | "track_r" | "ring"
+    ammo: { ap: int, he: int },    # main-gun rounds left
+    loaded: String,                # round in the breech: "ap" | "he" | ""
+    ammo_choice: String,           # "auto" | "ap" | "he" (SetAmmo)
+    reload: float,                 # 0..1, 1 = ready to fire
+    target: int,                   # enemy vehicle the gun is on, -1 none
+    followers: int,                # soldiers escorting it (FollowUnits)
+  }, ...
+],
+shells: [                          # main-gun shells and AT rockets in flight that
+                                   # the local player may see: fired by his units,
+                                   # by a unit he sees, or within 40 m of his men
+  {
+    id: int,                       # projectile slot; stable while it flies
+    kind: String,                  # "ap" | "he" | "heat" (S3 rockets are heat)
+    owner: int,                    # firing player
+    shooter: int,                  # vehicle or soldier id that fired it
+    pos: Vector3,
+    vel: Vector3,                  # m/s, Godot axes
+  }, ...
+],
+armour_events: [                   # new since last frame, in sim order. Own
+                                   # vehicles' events, and impacts the local
+                                   # player could see (the target vehicle is seen,
+                                   # or within 40 m of his men)
+  {
+    kind: String,                  # "fired" | "ricochet" | "no_pen" | "pen"
+                                   # | "component_hit" | "crew_hit" | "disabled"
+                                   # | "knocked_out" | "bogged"
+    vehicle: int,                  # the vehicle it happened to (or that fired)
+    type: String,                  # its vehicle type key
+    owner: int,                    # its owner at the time (a knocked-out
+                                   # vehicle's last owner, not -1)
+    attacker: int,                 # firing player, -1 none (fire, bogging)
+    component: String,             # per kind:
+                                   #   fired: the round, "ap" | "he"
+                                   #   component_hit (damaged, still works) and
+                                   #   disabled (reached 0 HP): "engine" |
+                                   #   "track_l" | "track_r" | "gun" | "ring" |
+                                   #   "ammo_rack"
+                                   #   crew_hit: the seat role, "driver" ...
+                                   #   knocked_out: the cause, "crew" |
+                                   #   "ammo_rack" | "fire"
+                                   #   others: ""
+    zone: String,                  # ricochet / no_pen / pen: the plate's zone
+                                   # ("hull_front" ... "turret_top"), else ""
+    ammo: String,                  # the round's kind: "ap" | "he" | "heat", ""
+    pos: Vector3,                  # impact point; muzzle for "fired"
+    seq: int,                      # running count of armour events in the
+                                   # match (later direct-control prediction)
+    time_s: float,
+  }, ...
+],
+callin: {
+  catalog: [ {                     # S1 keys, plus:
+    id: String,                    # squad type id ("ww2:ger_pz4_h_squad");
+                                   # send it back in call_in
+    type: String,                  # S1 roles, plus "at" (AT team) and "vehicle"
+    pop: int,                      # men, or the vehicle's pop (12)
+    vehicle: String,               # opt; vehicles: the vehicle type key
+    locked_s: float,               # opt; vehicles: seconds until unlock (the
+                                   # tile's lock and countdown); 0 or absent =
+                                   # unlocked
+  }, ... ],
+  queue: [ { ..., id: String }, ... ],   # S1 keys plus the squad type id
+  vehicles: int,                   # local player's vehicles alive + queued
+  vehicle_limit: int,              # tiles of vehicles at the limit grey out
+},
+```
+
+`squads[].type` can now be `"at"` (an AT team: a launcher gunner and a
+rifleman). Squads never have type `"vehicle"`.
+
+**Flag bits** (`vehicles[].flags`; same values as `vehicle_flags` in
+`snapshot.rs`):
+
+| Bit | Name | Meaning |
+|---|---|---|
+| 1 | MOVING | faster than 1 m/s either way |
+| 2 | REVERSING | driving backwards |
+| 4 | BOGGED | stuck after a trench crossing (20–40 s) or on blocked ground |
+| 8 | IMMOBILISED | engine or a track destroyed, or no driver |
+| 16 | BURNING | engine fire (presenter: flames, at most 8 drawn) |
+| 32 | REPAIRING | crew repairing in the field |
+| 64 | CROSSING | a track over a trench (speed capped at 1 m/s) |
+| 128 | WRECK | knocked out: owner −1, blocks rounds and vehicles |
+| 256 | KNOCKED_OUT | a wreck less than 60 s old: smoke it (nearest 16) |
+
+**Feed** (`events`), new kinds the bridge derives (the feed shows only
+main-gun and rocket matters):
+
+| `kind` | When | Example `text` |
+|---|---|---|
+| `vehicle_arrived` | an own vehicle call-in arrives | "Panzer IV arrived." |
+| `vehicle_knocked_out` | any seen vehicle knocked out (`player` = its owner) | "Panzer IV knocked out." / "Enemy Sherman knocked out." |
+| `vehicle_damaged` | an own component reaches 0 HP | "Panzer IV: track destroyed." |
+| `vehicle_bogged` | an own vehicle bogs | "Sherman bogged in trench." |
+
+**Effects** (`effects`), new kinds:
+
+```text
+{ kind: "cannon", pos: Vector3, dir: Vector3, round: "ap" | "he", type: String },
+                                   # main gun fired: muzzle flash, dust, sound
+{ kind: "rocket_launch", pos: Vector3, dir: Vector3 },  # AT launcher fired
+{ kind: "armour_hit", result: "ricochet" | "no_pen" | "pen", pos: Vector3 },
+                                   # sparks (ricochet, no_pen) or flash (pen)
+{ kind: "cook_off", pos: Vector3 }, # ammo rack detonation
+{ kind: "explosion", pos: Vector3, size: "tank_he" | "rocket" },
+                                   # new sizes for tank HE and HEAT bursts
+```
+
+Engine sounds come from `vehicles` (the 4 nearest moving ones), not from
+effects.
+
+### Intents (S3)
+
+Own vehicle ids go in `units`, next to soldier ids, for the S1b `*_units`
+intents and the new ones below. The sim sorts, deduplicates, drops ids
+that are not the sender's living units, and caps the list at 120 (as for
+soldiers). Squad-level intents (`move {squads}` ...) never carry vehicles.
+
+| `kind` | `data` | Sim command | Notes |
+|---|---|---|---|
+| `select` | `{squads, units}` | none | `units` may hold own vehicle ids |
+| `move_units`, `attack_move_units`, `stop_units`, `retreat_units` | as S1b | MoveUnits, AttackMoveUnits, StopUnits, RetreatUnits | accept vehicle ids; attack-moving vehicles halt to fire the main gun. A Move whose target is behind a vehicle and within 40 m reverses |
+| `reverse_units` | `{units, target: Vector3}` | ReverseUnits `{units, target}` | vehicles back up to `target`, front kept toward the enemy; soldiers in the set get a MoveUnits |
+| `face_units` | `{units, target: Vector3}` | FaceUnits `{units, toward}` | vehicles turn the hull front to the point and hold; soldiers dropped |
+| `attack_unit` | `{units, target: int}` | AttackUnit `{units, target}` | `target`: a seen enemy vehicle's id. Own vehicles and launcher gunners in `units` focus it while it is seen; vehicles without range or line of fire close in. Other men ignore it |
+| `set_ammo` | `{units, ammo: String}` | SetAmmo `{units, ammo}` | `"auto"`, `"ap"` or `"he"`; vehicles only |
+| `repair_units` | `{units}` | RepairUnits `{units}` | crews repair the worst repairable component in place (no move or main gun meanwhile) |
+| `follow_units` | `{units, vehicle: int}` | FollowUnits `{units, vehicle}` | soldiers escort a friendly vehicle (single file behind it); vehicle ids in `units` are dropped |
+| `dig`, `dig_units` | as S1b, plus `profile: String` *opt* | Dig `{squad, line, profile}`, DigUnits `{units, line, profile}` | `"trench"` (default) or `"at_ditch"` (engineers only, at most `rules.dig_profiles.at_ditch.max_m`) |
+| `call_in` | `{type, id}` | CallIn `{squad_type}` | `id` (catalog `id`) wins over `type`; rejected before unlock, at the vehicle limit or over pop |
+
+Sim `CommandKind` shapes (added by the S3 sim stages; `PROTOCOL_VERSION`
+becomes 3 with them): `ReverseUnits { units: Vec<SimId>, target: FxVec2 }`,
+`FaceUnits { units: Vec<SimId>, toward: FxVec2 }`, `AttackUnit { units:
+Vec<SimId>, target: SimId }`, `SetAmmo { units: Vec<SimId>, ammo:
+AmmoChoice }` (`Auto`, `Ap`, `He`), `RepairUnits { units: Vec<SimId> }`,
+`FollowUnits { units: Vec<SimId>, vehicle: SimId }`; `Dig` and `DigUnits`
+gain `profile: DigProfile` (`Trench`, `AtDitch`;
+`frontline_content::DigProfile`). `Dig`, `Barrage`, `Regroup` and
+`SetStance` are rejected for vehicle squads.
+
+### Input (S3 additions)
+
+S1b keys unchanged. Mixed selections split: soldiers get their `*_units`
+orders, vehicles theirs; vehicle-only keys affect only vehicles.
+
+| Input | Action |
+|---|---|
+| Right-click on a seen enemy vehicle | `attack_unit` (vehicles and AT gunners); other men attack-move to it |
+| Right-click on an own vehicle with infantry selected | `follow_units` (the soldiers) |
+| Alt+right-click | `reverse_units` |
+| O | face tool: click a point, `face_units` |
+| N | next ammo for the selected vehicles: Auto → AP → HE (`set_ammo`, from the first selected vehicle's `ammo_choice`) |
+| J | `repair_units` |
+
+Picking: a vehicle is hit inside its projected footprint (`hull_length` ×
+`hull_width` at `pos` and `yaw`) or within 14 px of its centre; selection
+rings are sized to the footprint. `1`–`4` stay control groups.
+
+### Presenter pieces (for orientation; the spec has the details)
+
+World marker per vehicle (type glyph, burning or bogged pip); a vehicle
+card in the roster (name, silhouette from `vehicle_types` box sizes, crew
+pips from `crew`, component strip, `AP 24 · HE 18` with `loaded` and
+`ammo_choice` marked, state badge); detail panel for a focused vehicle (no
+penetration hints about enemies); orders grid for vehicles (Move,
+Attack-move, Stop, Retreat, Reverse, Face, Repair, ammo toggle); call-in
+tiles with cost, pop, a lock and countdown (`locked_s`) and the `2/4`
+badge; feed lines; hit markers ("Ricochet", "No pen", "Penetrated", "Crew
+hit") above observed `armour_events` for 1.5 s, at most 6; minimap
+rectangles for vehicles and dim crosses for wrecks.
 
 ## Autoplay
 

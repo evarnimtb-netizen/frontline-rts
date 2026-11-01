@@ -1,5 +1,7 @@
 //! Loading one content mod from disk (§7.1): `mod.toml` plus every def file
-//! under `defs/`, with per-file and cross-file validation.
+//! under `defs/`, with per-file and cross-file validation. Test overrides
+//! of a rules def (`tests/rules_*.toml`) load on request
+//! ([`ModDefs::add_rules_override`]).
 //!
 //! Files are read in sorted path order and defs are kept in `BTreeMap`s keyed
 //! by id, so everything derived from a [`ModDefs`] (including the sim's
@@ -20,6 +22,7 @@ use crate::defs::{
     WeaponDef, check_id,
 };
 use crate::issue::{ContentError, Issue};
+use crate::vehicle::{AmmoDef, AmmoMechanism, MountKind, VehicleDef};
 
 /// A mod's manifest (`mod.toml`, §7.2).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -57,6 +60,10 @@ pub struct ModDefs {
     pub factions: BTreeMap<String, FactionDef>,
     pub maps: BTreeMap<String, MapFileDef>,
     pub rules: BTreeMap<String, RulesDef>,
+    /// Vehicles (S3, `defs/vehicles/`).
+    pub vehicles: BTreeMap<String, VehicleDef>,
+    /// Rounds for cannons and launchers (S3, `defs/ammo/`).
+    pub ammo: BTreeMap<String, AmmoDef>,
 }
 
 /// Collects issues for one mod directory.
@@ -192,6 +199,13 @@ impl ModDefs {
             ),
             maps: l.load_kind("maps", &ns, |d: &MapFileDef| &d.id, MapFileDef::validate),
             rules: l.load_kind("rules", &ns, |d: &RulesDef| &d.id, RulesDef::validate),
+            vehicles: l.load_kind(
+                "vehicles",
+                &ns,
+                |d: &VehicleDef| &d.id,
+                VehicleDef::validate,
+            ),
+            ammo: l.load_kind("ammo", &ns, |d: &AmmoDef| &d.id, AmmoDef::validate),
             manifest,
         };
         l.issues.extend(defs.cross_check());
@@ -206,9 +220,91 @@ impl ModDefs {
         }
     }
 
-    /// References between defs: squads → factions, weapons and items,
-    /// faction rosters → squads, role/weapon agreement, and at most one item
-    /// of each kind per loadout.
+    /// Loads a test override of a rules def: a partial rules file whose
+    /// `base` key names the rules def it starts from and whose `id` and
+    /// `name` name the result. Every other key replaces the base's value;
+    /// tables merge key by key, so `[vehicles] unlock_s = 0` changes one
+    /// value. The result is validated like any rules def and added to
+    /// [`ModDefs::rules`] (and so to the content hash). Returns its id.
+    pub fn add_rules_override(&mut self, path: &Path) -> Result<String, ContentError> {
+        let origin = path.display().to_string();
+        let invalid = |issues: Vec<Issue>| ContentError::Invalid {
+            origin: origin.clone(),
+            issues,
+        };
+        let src = std::fs::read_to_string(path).map_err(|e| ContentError::Io {
+            path: path.to_owned(),
+            source: e,
+        })?;
+        let mut table: toml::Table = toml::from_str(&src).map_err(|e| ContentError::Parse {
+            origin: origin.clone(),
+            message: e.to_string().trim_end().to_owned(),
+        })?;
+        let base_id = match table.remove("base") {
+            Some(toml::Value::String(b)) => b,
+            _ => {
+                return Err(invalid(vec![
+                    Issue::new("base", "required: the rules id this file overrides")
+                        .with_hint("base = \"ww2:skirmish\""),
+                ]));
+            }
+        };
+        let Some(base) = self.rules.get(&base_id) else {
+            return Err(invalid(vec![Issue::new(
+                "base",
+                format!(
+                    "unknown rules `{base_id}`{}",
+                    did_you_mean(&base_id, self.rules.keys())
+                ),
+            )]));
+        };
+        for key in ["id", "name"] {
+            if !table.contains_key(key) {
+                return Err(invalid(vec![
+                    Issue::new(key, "required: the override is a rules def of its own")
+                        .with_hint(format!("{key} = \"...\"")),
+                ]));
+            }
+        }
+        let mut merged = match toml::Value::try_from(base) {
+            Ok(toml::Value::Table(t)) => t,
+            _ => unreachable!("a rules def serialises to a table"),
+        };
+        merge_tables(&mut merged, table);
+        let def: RulesDef =
+            toml::Value::Table(merged)
+                .try_into()
+                .map_err(|e: toml::de::Error| ContentError::Parse {
+                    origin: origin.clone(),
+                    message: e.to_string().trim_end().to_owned(),
+                })?;
+        let mut issues = def.validate();
+        if let Some(m) = &self.manifest
+            && !def.id.starts_with(&format!("{}:", m.id))
+        {
+            issues.push(Issue::new(
+                "id",
+                format!("`{}` is not in this mod's namespace `{}`", def.id, m.id),
+            ));
+        }
+        if self.rules.contains_key(&def.id) {
+            issues.push(Issue::new(
+                "id",
+                format!("`{}` is already a rules id", def.id),
+            ));
+        }
+        if !issues.is_empty() {
+            return Err(invalid(issues));
+        }
+        let id = def.id.clone();
+        self.rules.insert(id.clone(), def);
+        Ok(id)
+    }
+
+    /// References between defs: squads → factions, weapons, items and
+    /// vehicles, faction rosters → squads, role/weapon agreement, at most
+    /// one item of each kind per loadout, and vehicle mounts → weapons and
+    /// ammo.
     pub fn cross_check(&self) -> Vec<Issue> {
         let mut out = Vec::new();
         let squad_file = |id: &str| format!("squad `{id}`");
@@ -219,10 +315,33 @@ impl ModDefs {
                     format!("unknown faction `{}`", s.faction),
                 ));
             }
+            if s.role == SquadRole::Vehicle {
+                if let Some(v) = &s.vehicle {
+                    match self.vehicles.get(v) {
+                        None => out.push(Issue::new(
+                            format!("{}: vehicle", squad_file(id)),
+                            format!(
+                                "unknown vehicle `{v}`{}",
+                                did_you_mean(v, self.vehicles.keys())
+                            ),
+                        )),
+                        Some(vd) if vd.faction != s.faction => out.push(Issue::new(
+                            format!("{}: faction", squad_file(id)),
+                            format!("vehicle `{v}` belongs to faction `{}`", vd.faction),
+                        )),
+                        Some(_) => {}
+                    }
+                }
+                continue;
+            }
             match self.weapons.get(&s.weapon) {
                 None => out.push(Issue::new(
                     format!("{}: weapon", squad_file(id)),
-                    format!("unknown weapon `{}`", s.weapon),
+                    format!(
+                        "unknown weapon `{}`{}",
+                        s.weapon,
+                        did_you_mean(&s.weapon, self.weapons.keys())
+                    ),
                 )),
                 Some(w) => {
                     let mortar_role = s.role == SquadRole::Mortar;
@@ -233,6 +352,43 @@ impl ModDefs {
                             "mortar squads carry a mortar weapon, other squads must not",
                         ));
                     }
+                    let at_role = s.role == SquadRole::AntiTank;
+                    let launcher = w.class == WeaponClass::Launcher;
+                    if at_role != launcher {
+                        out.push(Issue::new(
+                            format!("{}: weapon", squad_file(id)),
+                            "anti_tank squads carry a launcher, other squads must not",
+                        ));
+                    }
+                    if w.class == WeaponClass::Cannon {
+                        out.push(Issue::new(
+                            format!("{}: weapon", squad_file(id)),
+                            "a cannon is a vehicle weapon",
+                        ));
+                    }
+                }
+            }
+            if let Some(side) = &s.sidearm {
+                match self.weapons.get(side) {
+                    None => out.push(Issue::new(
+                        format!("{}: sidearm", squad_file(id)),
+                        format!(
+                            "unknown weapon `{side}`{}",
+                            did_you_mean(side, self.weapons.keys())
+                        ),
+                    )),
+                    Some(w)
+                        if !matches!(
+                            w.class,
+                            WeaponClass::Rifle | WeaponClass::Smg | WeaponClass::Mg
+                        ) =>
+                    {
+                        out.push(Issue::new(
+                            format!("{}: sidearm", squad_file(id)),
+                            "a sidearm is a rifle, SMG or MG",
+                        ))
+                    }
+                    Some(_) => {}
                 }
             }
             let mut kinds = [false; ITEM_KINDS];
@@ -247,6 +403,87 @@ impl ModDefs {
                         format!("a second {:?} item; carry one of each kind", it.kind),
                     )),
                     Some(it) => kinds[it.kind.index()] = true,
+                }
+            }
+        }
+        for (id, w) in &self.weapons {
+            let Some(a) = &w.ammo else { continue };
+            match self.ammo.get(a) {
+                None => out.push(Issue::new(
+                    format!("weapon `{id}`: ammo"),
+                    format!("unknown ammo `{a}`{}", did_you_mean(a, self.ammo.keys())),
+                )),
+                Some(ad) if ad.muzzle_velocity_m_s != w.muzzle_velocity_m_s => out.push(
+                    Issue::new(
+                        format!("weapon `{id}`: muzzle_velocity_m_s"),
+                        format!(
+                            "{} m/s, but its ammo `{a}` flies at {} m/s",
+                            w.muzzle_velocity_m_s, ad.muzzle_velocity_m_s
+                        ),
+                    )
+                    .with_hint(format!("muzzle_velocity_m_s = {}", ad.muzzle_velocity_m_s)),
+                ),
+                Some(_) => {}
+            }
+        }
+        for (id, v) in &self.vehicles {
+            let file = format!("vehicle `{id}`");
+            if !self.factions.contains_key(&v.faction) {
+                out.push(Issue::new(
+                    format!("{file}: faction"),
+                    format!("unknown faction `{}`", v.faction),
+                ));
+            }
+            for (i, m) in v.weapons.iter().enumerate() {
+                let p = format!("{file}: weapons[{i}]");
+                match self.weapons.get(&m.def) {
+                    None => out.push(Issue::new(
+                        format!("{p}.def"),
+                        format!(
+                            "unknown weapon `{}`{}",
+                            m.def,
+                            did_you_mean(&m.def, self.weapons.keys())
+                        ),
+                    )),
+                    Some(w) => {
+                        let want = if m.mount == MountKind::TurretMain {
+                            WeaponClass::Cannon
+                        } else {
+                            WeaponClass::Mg
+                        };
+                        if w.class != want {
+                            out.push(Issue::new(
+                                format!("{p}.def"),
+                                format!(
+                                    "a `{:?}` mount takes a {want:?} weapon, `{}` is {:?}",
+                                    m.mount, m.def, w.class
+                                ),
+                            ));
+                        }
+                    }
+                }
+                let mut kinds = [0u8; 2];
+                for (k, a) in m.ammo.iter().enumerate() {
+                    match self.ammo.get(&a.id) {
+                        None => out.push(
+                            Issue::new(
+                                format!("{p}.ammo[{k}].id"),
+                                format!(
+                                    "unknown ammo `{}`{}",
+                                    a.id,
+                                    did_you_mean(&a.id, self.ammo.keys())
+                                ),
+                            )
+                            .with_hint("add defs/ammo/<name>.toml or fix the id"),
+                        ),
+                        Some(ad) => kinds[(ad.mechanism == AmmoMechanism::He) as usize] += 1,
+                    }
+                }
+                if kinds.iter().any(|&n| n > 1) {
+                    out.push(Issue::new(
+                        format!("{p}.ammo"),
+                        "at most one armour-piercing (ap, aphe, heat) and one he round",
+                    ));
                 }
             }
         }
@@ -267,4 +504,45 @@ impl ModDefs {
         }
         out
     }
+}
+
+/// Merges `over` into `base`: tables merge key by key, anything else
+/// replaces.
+fn merge_tables(base: &mut toml::Table, over: toml::Table) {
+    for (k, v) in over {
+        match (base.get_mut(&k), v) {
+            (Some(toml::Value::Table(b)), toml::Value::Table(o)) => merge_tables(b, o),
+            (_, v) => {
+                base.insert(k, v);
+            }
+        }
+    }
+}
+
+/// `" (did you mean `x`?)"` for the closest known id, or `""` when nothing
+/// is close (§8.2: actionable errors).
+pub(crate) fn did_you_mean<'a>(id: &str, known: impl Iterator<Item = &'a String>) -> String {
+    let best = known
+        .map(|k| (edit_distance(id, k), k))
+        .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
+    match best {
+        Some((d, k)) if d <= (id.len() / 3).max(2) => format!(" (did you mean `{k}`?)"),
+        _ => String::new(),
+    }
+}
+
+/// Levenshtein distance over bytes (ids are ASCII).
+fn edit_distance(a: &str, b: &str) -> usize {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, &ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1; b.len() + 1];
+        for (j, &cb) in b.iter().enumerate() {
+            cur[j + 1] = (prev[j] + usize::from(ca != cb))
+                .min(prev[j + 1] + 1)
+                .min(cur[j] + 1);
+        }
+        prev = cur;
+    }
+    prev[b.len()]
 }

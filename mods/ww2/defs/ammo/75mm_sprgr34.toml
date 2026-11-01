@@ -1,0 +1,28 @@
+# 7.5 cm Sprgr 34: high explosive for the KwK 40 L/48 (S3). Bursts on
+# contact; against infantry it uses the S1 burst code.
+id = "ww2:75mm_sprgr34"
+name = "7.5 cm Sprgr 34"
+mechanism = "he"
+caliber_mm = 75
+muzzle_velocity_m_s = 550
+drag_coeff = 0
+# Flat: beats no plate of either S3 tank (12 mm and up).
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = ["placeholder: citations are an owner / M2 task"]
+
+[he]
+damage = 150
+suppression = 40
+lethal_radius_cm = 200
+damage_radius_cm = 600
+suppression_radius_m = 12
+# Smaller than a mortar's, so one hit does not remove 2 m of parapet.
+crater_radius_cm = 60
+crater_depth_cm = 30
+# Same as the flat penetration above.
+pen_mm = 10
+inside_damage = 150
+inside_radius_cm = 150
+vs_vehicle_pct = 40

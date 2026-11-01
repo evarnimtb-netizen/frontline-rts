@@ -21,6 +21,8 @@ pub const MAX_SQUAD_MEN: u8 = 16;
 
 /// What a squad does on the field. Drives AI choices and which orders apply
 /// (only squads that can dig take `Dig`, only mortars take `Barrage`).
+/// A vehicle is a squad of one (`Vehicle`, S3): its squad def names the
+/// vehicle def, which holds cost, pop, call-in time and sight.
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -30,6 +32,10 @@ pub enum SquadRole {
     Mg,
     Engineer,
     Mortar,
+    /// Infantry anti-tank team: a launcher gunner and a loader (S3).
+    AntiTank,
+    /// A vehicle (S3): one per squad, see `SquadDef::vehicle`.
+    Vehicle,
 }
 
 /// A buyable squad (`defs/units/*.toml`).
@@ -43,23 +49,43 @@ pub struct SquadDef {
     /// Faction id that fields this squad.
     pub faction: String,
     pub role: SquadRole,
-    /// Soldiers in the squad, 1..=16.
+    /// `vehicle` squads: the vehicle def id. Its def holds cost, pop,
+    /// call-in time, speed and sight, so the soldier fields below stay out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vehicle: Option<String>,
+    /// Soldiers in the squad, 1..=16 (soldier squads; required).
+    #[serde(default)]
     pub men: u8,
-    /// Weapon id every member carries.
+    /// Weapon id the first `weapon_men` men carry (soldier squads;
+    /// required).
+    #[serde(default)]
     pub weapon: String,
-    /// Manpower cost of a call-in.
+    /// How many men carry `weapon` (default: all). The rest carry
+    /// `sidearm`; an AT team has one launcher gunner and a rifleman.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon_men: Option<u8>,
+    /// Weapon id of the men without `weapon` (a rifle, SMG or MG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidearm: Option<String>,
+    /// Manpower cost of a call-in (soldier squads).
+    #[serde(default)]
     pub cost: u32,
-    /// Seconds from call-in to arrival at the base.
+    /// Seconds from call-in to arrival at the base (soldier squads).
+    #[serde(default)]
     pub call_in_s: u32,
     /// Hit points per soldier.
     #[serde(default = "default_hp")]
     pub hp: u32,
-    /// Walking speed in cm/s.
+    /// Walking speed in cm/s (soldier squads; required).
+    #[serde(default)]
     #[schemars(range(min = 10, max = 1000))]
     pub speed_cm_s: u32,
-    /// Sight range in metres.
+    /// Sight range in metres (soldier squads; required).
+    #[serde(default)]
     pub sight_m: u32,
-    /// Formation spacing between men in decimetres.
+    /// Formation spacing between men in decimetres (soldier squads;
+    /// required).
+    #[serde(default)]
     #[schemars(range(min = 5, max = 200))]
     pub spacing_dm: u32,
     /// Digging speed per man in percent of the base rate; 0 = cannot dig.
@@ -179,6 +205,44 @@ pub struct ItemHeDef {
     /// inside it fills in and a parapet is blown away (satchel charges).
     #[serde(default)]
     pub cuts_trenches: bool,
+    /// Armour it defeats on contact, in mm, by the plate rule (S3).
+    pub pen_mm: u32,
+    /// When it defeats a plate: damage to boxes within `inside_radius_cm`
+    /// of the contact point.
+    #[serde(default)]
+    pub inside_damage: u32,
+    #[serde(default)]
+    pub inside_radius_cm: u32,
+    /// Damage to track anchors within the lethal radius, in percent of the
+    /// blast's damage. Blasts never reach a closed vehicle's insides.
+    pub vs_vehicle_pct: u32,
+}
+
+/// Checks the S3 vehicle fields every HE block has.
+fn check_he_armour(out: &mut Vec<Issue>, prefix: &str, v: [u32; 4]) {
+    let [pen_mm, inside_damage, inside_radius_cm, vs_vehicle_pct] = v;
+    range(out, &format!("{prefix}pen_mm"), pen_mm, 0, 2000);
+    range(
+        out,
+        &format!("{prefix}inside_damage"),
+        inside_damage,
+        0,
+        10_000,
+    );
+    range(
+        out,
+        &format!("{prefix}inside_radius_cm"),
+        inside_radius_cm,
+        0,
+        1000,
+    );
+    range(
+        out,
+        &format!("{prefix}vs_vehicle_pct"),
+        vs_vehicle_pct,
+        0,
+        100,
+    );
 }
 
 /// A smoke cloud: a cylinder that grows, holds, then thins out.
@@ -206,6 +270,11 @@ pub enum WeaponClass {
     Mg,
     /// Indirect fire at a ground position; needs `[he]`.
     Mortar,
+    /// A vehicle's main gun (S3); it fires the rounds its mount carries.
+    Cannon,
+    /// An infantry anti-tank launcher (S3); it fires `ammo` and targets
+    /// only vehicles.
+    Launcher,
 }
 
 /// A weapon (`defs/weapons/*.toml`).
@@ -227,14 +296,44 @@ pub struct WeaponDef {
     /// Rounds between reloads.
     pub magazine: u32,
     pub reload_ms: u32,
-    /// Dispersion half-angle in milliradians.
+    /// Dispersion half-angle in milliradians ...
+    #[serde(default)]
     pub spread_mrad: u32,
+    /// ... or in microradians, for guns finer than 1 mrad (cannons). Set
+    /// one of the two.
+    #[serde(default)]
+    pub spread_urad: u32,
+    /// Cannons and launchers: nominal; their rounds fly at the ammo's
+    /// `muzzle_velocity_m_s` (a launcher's must match its ammo's).
     pub muzzle_velocity_m_s: u32,
     /// Time after moving before it can fire (MG, mortar).
     #[serde(default)]
     pub setup_ms: u32,
     /// Suppression added to a soldier by one near miss (out of 100).
     pub suppression: u32,
+    /// Firing reveals the shooter: sight range against him in percent, for
+    /// how long (default: the rules' `firing_spot_pct` and `reveal_ms`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire_reveal_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire_reveal_ms: Option<u32>,
+    /// Launchers: opens fire on a vehicle standing still within this range,
+    /// on a moving one (over 1 m/s) within `engage_moving_m` (default
+    /// `range_m`). Applies to every player, human or AI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engage_still_m: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engage_moving_m: Option<u32>,
+    /// Launchers: the round it fires (`defs/ammo/`) ...
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ammo: Option<String>,
+    /// ... and how many the team carries (resupplied in base like items).
+    #[serde(default)]
+    pub rounds_carried: u32,
+    /// Launchers: when the gunner dies, the next living man takes the
+    /// weapon after this long.
+    #[serde(default)]
+    pub handover_ms: u32,
     /// High-explosive effect of each round.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub he: Option<HeDef>,
@@ -251,6 +350,17 @@ pub struct HeDef {
     pub suppression_radius_m: u32,
     pub crater_radius_cm: u32,
     pub crater_depth_cm: u32,
+    /// Armour it defeats on contact, in mm, by the plate rule (S3).
+    pub pen_mm: u32,
+    /// When it defeats a plate: damage to boxes within `inside_radius_cm`
+    /// of the contact point.
+    #[serde(default)]
+    pub inside_damage: u32,
+    #[serde(default)]
+    pub inside_radius_cm: u32,
+    /// Damage to track anchors within the lethal radius, in percent of the
+    /// blast's damage. Blasts never reach a closed vehicle's insides.
+    pub vs_vehicle_pct: u32,
 }
 
 /// A playable side (`defs/factions/*.toml`).
@@ -383,8 +493,81 @@ pub struct RulesDef {
     pub dig: DigDef,
     pub combat: CombatDef,
     pub items: ItemRulesDef,
+    /// Vehicles (S3).
+    pub vehicles: VehicleRulesDef,
     pub difficulty: DifficultyTableDef,
     pub ai: AiDef,
+}
+
+/// Vehicle rules (S3, `docs/slices/S3-armour.md`). Per-vehicle numbers
+/// (speeds, armour, bog chance) are in the vehicle defs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VehicleRulesDef {
+    /// Vehicles can be called in from this much match time on (0 = from
+    /// the start; the test override).
+    pub unlock_s: u32,
+    /// Most vehicles per player, alive or queued.
+    pub limit: u32,
+    /// Most wrecks on the map; beyond it the oldest is removed.
+    pub wreck_cap: u32,
+    /// A crewman moving into an empty driver or gunner seat takes this
+    /// long; both seats count as empty meanwhile.
+    pub seat_swap_s: u32,
+    /// Crew hit points per seat, and below which a crewman is wounded.
+    pub crew_hp: u32,
+    pub wounded_hp: u32,
+    /// A vehicle faster than this counts as moving (spotting, spread,
+    /// launcher fire discipline).
+    pub moving_cm_s: u32,
+    /// Sight range against a moving vehicle, in percent (the size factor
+    /// is the vehicle def's `spot_size_pct`; the highest applies).
+    pub moving_spot_pct: u32,
+    /// Enemy soldiers this close spot a vehicle without a sight line.
+    pub near_spot_m: u32,
+    /// Main-gun spread against a moving target, in percent.
+    pub moving_target_spread_pct: u32,
+    /// Each further shot at the same target is this much tighter ...
+    pub ranging_step_pct: u32,
+    /// ... down to this much of the first shot's spread.
+    pub ranging_floor_pct: u32,
+    /// Spread of HE fired at infantry (replaces the gun's AP spread).
+    pub he_area_spread_mrad: u32,
+    /// Tank HE is never fired within this distance of own men.
+    pub he_clear_m: u32,
+    /// The gunner aims at the hull unless the turret's penetration chance
+    /// is better by more than this many points.
+    pub aim_hull_margin_pct: u32,
+    /// Track samples over ground dug at least this deep count as crossing a
+    /// trench ...
+    pub crossing_dug_cm: u32,
+    /// ... which caps speed at this ...
+    pub crossing_speed_cm_s: u32,
+    /// ... and a new crossing (one bog roll) starts after this long with no
+    /// sample over dug ground.
+    pub crossing_gap_s: u32,
+    /// An engine hit for at least this much damage may start a fire ...
+    pub fire_min_damage: u32,
+    /// ... with this chance. A fire burns the engine ...
+    pub fire_start_pct: u32,
+    pub fire_burn_hp_s: u32,
+    /// ... and every `fire_check_s` a living crew puts it out with
+    /// `fire_out_pct`. A fire still burning after `fire_burnout_s` knocks
+    /// the vehicle out.
+    pub fire_check_s: u32,
+    pub fire_out_pct: u32,
+    pub fire_burnout_s: u32,
+    /// Each hit on the ammo rack for at least this much damage detonates
+    /// it with `rack_detonate_pct` (a rack destroyed by damage always
+    /// does).
+    pub rack_min_damage: u32,
+    pub rack_detonate_pct: u32,
+    /// Inside the own base: percent of every component's HP back per
+    /// second, one main-gun round back every `base_rearm_s`, and one dead
+    /// crew seat back every `base_crew_s`.
+    pub base_repair_pct_s: u32,
+    pub base_rearm_s: u32,
+    pub base_crew_s: u32,
 }
 
 /// Thrown items (S1b abilities).
@@ -441,16 +624,41 @@ pub struct MovementDef {
     pub trench_cost_pct: u32,
 }
 
+/// Dig profiles (S3 generalised the S1 trench to named profiles).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DigDef {
+    pub profiles: DigProfilesDef,
+}
+
+/// Every profile a `Dig` command can name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DigProfilesDef {
+    /// The standard trench (S1).
+    pub trench: DigProfileDef,
+    /// The anti-tank ditch (S3): deep and wide enough to block vehicles.
+    pub at_ditch: DigProfileDef,
+}
+
+/// A dug cross-section: a flat floor, walls sloping out to the lip, and a
+/// spoil bank (parapet or berm) on the enemy side.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DigProfileDef {
     pub depth_cm: u32,
     pub floor_cm: u32,
+    /// Horizontal run of each wall, floor edge to lip.
+    pub wall_cm: u32,
+    /// Height of the spoil bank.
     pub parapet_cm: u32,
     pub max_length_m: u32,
     pub work_per_m: u32,
-    /// The trench deepens in this many equal passes.
+    /// It deepens in this many equal passes.
     pub passes: u32,
+    /// Only engineer squads dig it.
+    #[serde(default)]
+    pub engineers_only: bool,
 }
 
 /// Spotting, accuracy, suppression and corpse rules. Suppression is in
@@ -521,6 +729,20 @@ pub struct AiDef {
     /// Frags go at enemies in a trench, or at a group of at least this many
     /// spotted men within 5 m of each other.
     pub frag_group_men: u32,
+    /// S3 mix: vehicles after unlock (under the vehicle limit), and AT
+    /// teams after unlock once an enemy vehicle has been seen, in percent
+    /// of squads.
+    pub mix_vehicle_pct: u32,
+    pub mix_at_pct: u32,
+    /// Tanks hold this far from a point where enemy AT was seen ...
+    pub tank_standoff_m: u32,
+    /// ... else advance with their escort to this far from the enemy
+    /// trench, where the escort attacks.
+    pub assault_close_m: u32,
+    /// Enemy AT counts as gone from a point after this long unseen.
+    pub at_clear_s: u32,
+    /// An immobilised vehicle repairs when no seen enemy is this close.
+    pub repair_clear_m: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -579,7 +801,76 @@ impl SquadDef {
         let mut out = Vec::new();
         check_id(&mut out, "id", &self.id);
         check_name(&mut out, "name", &self.name);
-        range(&mut out, "men", self.men as u32, 1, MAX_SQUAD_MEN as u32);
+        if self.role == SquadRole::Vehicle {
+            // The vehicle def holds everything else.
+            if self.vehicle.is_none() {
+                out.push(
+                    Issue::new("vehicle", "a `vehicle` squad names its vehicle def")
+                        .with_hint("vehicle = \"mymod:my_tank\""),
+                );
+            }
+            let soldier_fields = [
+                ("men", self.men != 0),
+                ("weapon", !self.weapon.is_empty()),
+                ("weapon_men", self.weapon_men.is_some()),
+                ("sidearm", self.sidearm.is_some()),
+                ("cost", self.cost != 0),
+                ("call_in_s", self.call_in_s != 0),
+                ("hp", self.hp != default_hp()),
+                ("speed_cm_s", self.speed_cm_s != 0),
+                ("sight_m", self.sight_m != 0),
+                ("spacing_dm", self.spacing_dm != 0),
+                ("dig_rate_pct", self.dig_rate_pct != 0),
+                ("loadout", !self.loadout.is_empty()),
+            ];
+            for (key, set) in soldier_fields {
+                if set {
+                    out.push(
+                        Issue::new(key, "not allowed on a vehicle squad")
+                            .with_hint("set it in the vehicle def, or remove it"),
+                    );
+                }
+            }
+            return out;
+        }
+        if self.vehicle.is_some() {
+            out.push(Issue::new(
+                "vehicle",
+                "only squads with role = \"vehicle\" name a vehicle",
+            ));
+        }
+        if self.men == 0 {
+            out.push(Issue::new("men", "required: soldiers in the squad, 1..=16"));
+        } else {
+            range(&mut out, "men", self.men as u32, 1, MAX_SQUAD_MEN as u32);
+        }
+        if self.weapon.is_empty() {
+            out.push(Issue::new(
+                "weapon",
+                "required: the weapon id the men carry",
+            ));
+        }
+        if let Some(n) = self.weapon_men {
+            range(&mut out, "weapon_men", n as u32, 1, self.men.max(1) as u32);
+            if n < self.men && self.sidearm.is_none() {
+                out.push(
+                    Issue::new(
+                        "sidearm",
+                        format!(
+                            "{} men carry no `weapon`; they need a sidearm",
+                            self.men - n
+                        ),
+                    )
+                    .with_hint("sidearm = \"ww2:kar98k\""),
+                );
+            }
+        }
+        if self.sidearm.is_some() && self.weapon_men.is_none_or(|n| n >= self.men) {
+            out.push(Issue::new(
+                "sidearm",
+                "every man carries `weapon`; set weapon_men below men or remove it",
+            ));
+        }
         range(&mut out, "call_in_s", self.call_in_s, 0, 600);
         range(&mut out, "hp", self.hp, 1, 10_000);
         range(&mut out, "speed_cm_s", self.speed_cm_s, 10, 1000);
@@ -649,31 +940,12 @@ impl ItemDef {
             );
         }
         if let Some(h) = &self.he {
-            range(&mut out, "he.damage", h.damage, 0, 10_000);
-            range(&mut out, "he.suppression", h.suppression, 0, 100);
-            range(&mut out, "he.lethal_radius_cm", h.lethal_radius_cm, 1, 5000);
-            range(
-                &mut out,
-                "he.damage_radius_cm",
-                h.damage_radius_cm,
-                1,
-                10_000,
-            );
-            if h.damage_radius_cm < h.lethal_radius_cm {
-                out.push(Issue::new(
-                    "he.damage_radius_cm",
-                    "must be at least lethal_radius_cm",
-                ));
+            for i in h.validate() {
+                out.push(Issue {
+                    path: format!("he.{}", i.path),
+                    ..i
+                });
             }
-            range(
-                &mut out,
-                "he.suppression_radius_m",
-                h.suppression_radius_m,
-                1,
-                200,
-            );
-            range(&mut out, "he.crater_radius_cm", h.crater_radius_cm, 0, 2000);
-            range(&mut out, "he.crater_depth_cm", h.crater_depth_cm, 0, 500);
         }
         if let Some(s) = &self.smoke {
             range(&mut out, "smoke.radius_m", s.radius_m, 1, 50);
@@ -681,6 +953,49 @@ impl ItemDef {
             range(&mut out, "smoke.hold_ms", s.hold_ms, 0, 300_000);
             range(&mut out, "smoke.fade_ms", s.fade_ms, 0, 60_000);
         }
+        out
+    }
+}
+
+impl ItemHeDef {
+    /// Checks one blast; paths are relative to the `[he]` table.
+    pub fn validate(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        range(&mut out, "damage", self.damage, 0, 10_000);
+        range(&mut out, "suppression", self.suppression, 0, 100);
+        range(&mut out, "lethal_radius_cm", self.lethal_radius_cm, 1, 5000);
+        range(
+            &mut out,
+            "damage_radius_cm",
+            self.damage_radius_cm,
+            1,
+            10_000,
+        );
+        if self.damage_radius_cm < self.lethal_radius_cm {
+            out.push(Issue::new(
+                "damage_radius_cm",
+                "must be at least lethal_radius_cm",
+            ));
+        }
+        range(
+            &mut out,
+            "suppression_radius_m",
+            self.suppression_radius_m,
+            1,
+            200,
+        );
+        range(&mut out, "crater_radius_cm", self.crater_radius_cm, 0, 2000);
+        range(&mut out, "crater_depth_cm", self.crater_depth_cm, 0, 500);
+        check_he_armour(
+            &mut out,
+            "",
+            [
+                self.pen_mm,
+                self.inside_damage,
+                self.inside_radius_cm,
+                self.vs_vehicle_pct,
+            ],
+        );
         out
     }
 }
@@ -705,6 +1020,56 @@ impl WeaponDef {
         range(&mut out, "magazine", self.magazine, 1, 1000);
         range(&mut out, "reload_ms", self.reload_ms, 0, 60_000);
         range(&mut out, "spread_mrad", self.spread_mrad, 0, 500);
+        range(&mut out, "spread_urad", self.spread_urad, 0, 500_000);
+        if self.spread_mrad != 0 && self.spread_urad != 0 {
+            out.push(
+                Issue::new("spread_urad", "set spread_mrad or spread_urad, not both")
+                    .with_hint("spread_urad = 2500 for 2.5 mrad"),
+            );
+        }
+        if let Some(v) = self.fire_reveal_pct {
+            range(&mut out, "fire_reveal_pct", v, 100, 1000);
+        }
+        if let Some(v) = self.fire_reveal_ms {
+            range(&mut out, "fire_reveal_ms", v, 0, 60_000);
+        }
+        let launcher = self.class == WeaponClass::Launcher;
+        for (key, v) in [
+            ("engage_still_m", self.engage_still_m),
+            ("engage_moving_m", self.engage_moving_m),
+        ] {
+            match v {
+                Some(_) if !launcher => out.push(Issue::new(key, "only launchers have it")),
+                Some(m) => range(&mut out, key, m, 1, self.range_m),
+                None => {}
+            }
+        }
+        match (&self.ammo, launcher) {
+            (None, true) => out.push(
+                Issue::new("ammo", "a launcher names the round it fires")
+                    .with_hint("ammo = \"ww2:my_rocket\""),
+            ),
+            (Some(_), false) => out.push(Issue::new(
+                "ammo",
+                "only launchers name a round; a cannon's rounds are on its vehicle mount",
+            )),
+            _ => {}
+        }
+        if launcher {
+            range(&mut out, "rounds_carried", self.rounds_carried, 1, 50);
+            range(&mut out, "handover_ms", self.handover_ms, 0, 60_000);
+        } else if self.rounds_carried != 0 || self.handover_ms != 0 {
+            out.push(Issue::new(
+                "rounds_carried",
+                "only launchers have rounds_carried and handover_ms",
+            ));
+        }
+        if self.class == WeaponClass::Cannon && self.he.is_some() {
+            out.push(Issue::new(
+                "he",
+                "a cannon's HE is a round on its vehicle mount (defs/ammo), not [he]",
+            ));
+        }
         range(
             &mut out,
             "muzzle_velocity_m_s",
@@ -720,6 +1085,16 @@ impl WeaponDef {
                     .with_hint("[he] lethal_radius_cm = 300 ..."),
             ),
             (Some(he), _) => {
+                check_he_armour(
+                    &mut out,
+                    "he.",
+                    [
+                        he.pen_mm,
+                        he.inside_damage,
+                        he.inside_radius_cm,
+                        he.vs_vehicle_pct,
+                    ],
+                );
                 range(
                     &mut out,
                     "he.lethal_radius_cm",
@@ -1005,13 +1380,70 @@ impl RulesDef {
             10,
             100,
         );
-        let d = &self.dig;
-        range(&mut out, "dig.depth_cm", d.depth_cm, 10, 1000);
-        range(&mut out, "dig.floor_cm", d.floor_cm, 10, 1000);
-        range(&mut out, "dig.parapet_cm", d.parapet_cm, 0, 300);
-        range(&mut out, "dig.max_length_m", d.max_length_m, 1, 1000);
-        range(&mut out, "dig.work_per_m", d.work_per_m, 1, 10_000_000);
-        range(&mut out, "dig.passes", d.passes, 1, 32);
+        for (name, d) in [
+            ("trench", &self.dig.profiles.trench),
+            ("at_ditch", &self.dig.profiles.at_ditch),
+        ] {
+            let p = format!("dig.profiles.{name}");
+            range(&mut out, &format!("{p}.depth_cm"), d.depth_cm, 10, 1000);
+            range(&mut out, &format!("{p}.floor_cm"), d.floor_cm, 10, 1000);
+            range(&mut out, &format!("{p}.wall_cm"), d.wall_cm, 10, 500);
+            range(&mut out, &format!("{p}.parapet_cm"), d.parapet_cm, 0, 300);
+            range(
+                &mut out,
+                &format!("{p}.max_length_m"),
+                d.max_length_m,
+                1,
+                1000,
+            );
+            range(
+                &mut out,
+                &format!("{p}.work_per_m"),
+                d.work_per_m,
+                1,
+                10_000_000,
+            );
+            range(&mut out, &format!("{p}.passes"), d.passes, 1, 32);
+        }
+        let v = &self.vehicles;
+        for (name, val, lo, hi) in [
+            ("unlock_s", v.unlock_s, 0, 3600),
+            ("limit", v.limit, 0, 50),
+            ("wreck_cap", v.wreck_cap, 1, 256),
+            ("seat_swap_s", v.seat_swap_s, 0, 60),
+            ("crew_hp", v.crew_hp, 1, 1000),
+            ("wounded_hp", v.wounded_hp, 0, v.crew_hp),
+            ("moving_cm_s", v.moving_cm_s, 1, 1000),
+            ("moving_spot_pct", v.moving_spot_pct, 1, 1000),
+            ("near_spot_m", v.near_spot_m, 0, 200),
+            (
+                "moving_target_spread_pct",
+                v.moving_target_spread_pct,
+                100,
+                1000,
+            ),
+            ("ranging_step_pct", v.ranging_step_pct, 0, 100),
+            ("ranging_floor_pct", v.ranging_floor_pct, 1, 100),
+            ("he_area_spread_mrad", v.he_area_spread_mrad, 0, 100),
+            ("he_clear_m", v.he_clear_m, 0, 500),
+            ("aim_hull_margin_pct", v.aim_hull_margin_pct, 0, 100),
+            ("crossing_dug_cm", v.crossing_dug_cm, 10, 1000),
+            ("crossing_speed_cm_s", v.crossing_speed_cm_s, 10, 3000),
+            ("crossing_gap_s", v.crossing_gap_s, 0, 60),
+            ("fire_min_damage", v.fire_min_damage, 0, 1000),
+            ("fire_start_pct", v.fire_start_pct, 0, 100),
+            ("fire_burn_hp_s", v.fire_burn_hp_s, 0, 100),
+            ("fire_check_s", v.fire_check_s, 1, 60),
+            ("fire_out_pct", v.fire_out_pct, 0, 100),
+            ("fire_burnout_s", v.fire_burnout_s, 1, 600),
+            ("rack_min_damage", v.rack_min_damage, 0, 1000),
+            ("rack_detonate_pct", v.rack_detonate_pct, 0, 100),
+            ("base_repair_pct_s", v.base_repair_pct_s, 0, 100),
+            ("base_rearm_s", v.base_rearm_s, 1, 600),
+            ("base_crew_s", v.base_crew_s, 1, 600),
+        ] {
+            range(&mut out, &format!("vehicles.{name}"), val, lo, hi);
+        }
         let c = &self.combat;
         for (name, v, lo, hi) in [
             ("spot_rays_per_tick", c.spot_rays_per_tick, 1, 100_000),
@@ -1090,6 +1522,12 @@ impl RulesDef {
             ("dig_offset_m", a.dig_offset_m, 0, 100),
             ("throw_cooldown_s", a.throw_cooldown_s, 1, 600),
             ("frag_group_men", a.frag_group_men, 1, 16),
+            ("mix_vehicle_pct", a.mix_vehicle_pct, 0, 100),
+            ("mix_at_pct", a.mix_at_pct, 0, 100),
+            ("tank_standoff_m", a.tank_standoff_m, 1, 2000),
+            ("assault_close_m", a.assault_close_m, 1, 500),
+            ("at_clear_s", a.at_clear_s, 1, 600),
+            ("repair_clear_m", a.repair_clear_m, 1, 2000),
         ] {
             range(&mut out, &format!("ai.{name}"), v, lo, hi);
         }
@@ -1099,10 +1537,10 @@ impl RulesDef {
                 "the mix must not be all zero",
             ));
         }
-        if a.dig_length_m > self.dig.max_length_m {
+        if a.dig_length_m > self.dig.profiles.trench.max_length_m {
             out.push(Issue::new(
                 "ai.dig_length_m",
-                "must be at most dig.max_length_m",
+                "must be at most dig.profiles.trench.max_length_m",
             ));
         }
         out

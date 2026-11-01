@@ -1,0 +1,37 @@
+# RPzB 54 rocket (Panzerschreck), shaped charge (S3). Flies as a ballistic
+# round at constant speed (no motor burn in S3).
+id = "ww2:rpzb54_heat"
+name = "RPzB Gr 4322"
+mechanism = "heat"
+caliber_mm = 88
+muzzle_velocity_m_s = 110
+drag_coeff = 0
+# Flat at 0°: a shaped charge does not lose penetration with range.
+penetration = [[0, 160]]
+ricochet_angle_deg = 80
+nonpen_damage = 30
+track_damage = 50
+sources = ["placeholder: citations are an owner / M2 task"]
+
+# The jet: 1.0 m behind the plate, fewer spall rays than AP.
+[core]
+damage = 120
+length_cm = 100
+max_boxes = 3
+
+[spall]
+rays = 3
+damage = 25
+cone_deg = 25
+
+[he]
+damage = 100
+suppression = 20
+lethal_radius_cm = 100
+damage_radius_cm = 300
+suppression_radius_m = 6
+crater_radius_cm = 40
+crater_depth_cm = 20
+# The jet is the penetration; the blast defeats no plate.
+pen_mm = 0
+vs_vehicle_pct = 40

@@ -1,0 +1,18 @@
+# Panzerschreck team (S3): a launcher gunner and a loader with a rifle.
+# Available from the start; the AI buys it after vehicles unlock and an
+# enemy vehicle has been seen.
+id = "ww2:ger_panzerschreck_team"
+name = "Panzerschrecktrupp"
+faction = "ww2:germany"
+role = "anti_tank"
+men = 2
+weapon = "ww2:rpzb54"
+# One man carries the launcher, the other a rifle.
+weapon_men = 1
+sidearm = "ww2:kar98k"
+cost = 200
+call_in_s = 20
+speed_cm_s = 280
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100

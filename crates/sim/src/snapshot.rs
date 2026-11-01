@@ -17,6 +17,13 @@
 //! ([`ThrownSnapshot`]), the smoke clouds ([`SmokeSnapshot`]) and a
 //! [`BlastKind`] per explosion.
 //!
+//! S3 adds vehicles and wrecks ([`VehicleSnapshot`]), main-gun shells and
+//! rockets in flight ([`ShellSnapshot`]), the tick's armour events
+//! ([`ArmourEvent`]), and per player the vehicle count, limit and unlock
+//! tick. The contract is frozen in `godot/docs/match_state.md` "Vehicles
+//! (S3)"; the sim fills these lists from S3 sim stage 3 on (empty until
+//! then).
+//!
 //! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
 //! soldier (own soldiers always). A presenter for local player `p` draws an
 //! enemy only when his bit is set.
@@ -163,6 +170,210 @@ pub struct PlayerSnapshot {
     pub hold_s: u32,
     /// Queued call-ins: `(squad type, ticks until arrival)`.
     pub call_ins: Vec<(u16, u32)>,
+    /// S3: vehicles alive or queued, the rules' limit, and the tick from
+    /// which vehicles can be called in.
+    pub vehicles_counted: u8,
+    pub vehicle_limit: u8,
+    pub unlock_tick: u64,
+}
+
+// ---------------------------------------------------------------- S3 --
+
+/// `VehicleSnapshot::flags` bits.
+pub mod vehicle_flags {
+    /// Moving faster than the rules' `moving_cm_s` (either direction).
+    pub const MOVING: u16 = 1 << 0;
+    /// Driving backwards.
+    pub const REVERSING: u16 = 1 << 1;
+    /// Stuck in a trench crossing or on blocked ground until freed.
+    pub const BOGGED: u16 = 1 << 2;
+    /// Cannot move: engine or a track destroyed, or no driver.
+    pub const IMMOBILISED: u16 = 1 << 3;
+    pub const BURNING: u16 = 1 << 4;
+    /// The crew is repairing a component (`repairing` names it).
+    pub const REPAIRING: u16 = 1 << 5;
+    /// A track sample is over ground dug 1 m or more (speed capped).
+    pub const CROSSING: u16 = 1 << 6;
+    /// A wreck: owner 255, no crew, blocks rounds and vehicles.
+    pub const WRECK: u16 = 1 << 7;
+    /// A wreck knocked out less than [`super::WRECK_SMOKE_S`] ago (the
+    /// presenter smokes it). Always with `WRECK`.
+    pub const KNOCKED_OUT: u16 = 1 << 8;
+    /// The flags an enemy (or anyone, for a wreck) is sent.
+    pub const PUBLIC: u16 = BURNING | WRECK | KNOCKED_OUT;
+}
+
+/// A fresh wreck smokes this long (`vehicle_flags::KNOCKED_OUT`).
+pub const WRECK_SMOKE_S: u32 = 60;
+/// `VehicleSnapshot::owner` of a wreck.
+pub const WRECK_OWNER: u8 = 255;
+/// `VehicleSnapshot::repairing` and `ArmourEvent` "none" values.
+pub const NONE_U8: u8 = 255;
+
+/// One crew seat in `VehicleSnapshot::seats`, indexed by
+/// `SeatRole::index` (D G C L R).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SeatSnap {
+    /// The vehicle has no such seat (or an enemy's: zeroed).
+    #[default]
+    Absent = 0,
+    Ok = 1,
+    /// HP below the rules' `wounded_hp`.
+    Wounded = 2,
+    /// Nobody in it: the crewman died or moved to another seat.
+    Empty = 3,
+    /// A crewman is moving in (`seat_swap_s`); counts as empty meanwhile.
+    Swapping = 4,
+}
+
+/// `VehicleSnapshot::loaded`: the round in the breech.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LoadedSnap {
+    /// Unloaded (reloading, out of ammo) or an enemy's (zeroed).
+    #[default]
+    None = 0,
+    /// The penetrator (AP, APHE or HEAT; the mount's first round).
+    Ap = 1,
+    He = 2,
+}
+
+/// One vehicle or wreck, ascending id. Sim axes; angles in radians.
+///
+/// The hull rotation is `Rz(yaw) · Ry(−pitch) · Rx(roll)`: `yaw` is the
+/// heading counter-clockwise from east (as a soldier's), positive `pitch`
+/// raises the nose, positive `roll` raises the left side. The turret turns
+/// by `turret_yaw` about the hull's up axis (counter-clockwise seen from
+/// above), the gun by `gun_pitch` about the turret's left axis (positive:
+/// elevation). Own vehicles carry every field; for enemy vehicles the
+/// fields marked "own only" are zeroed and `flags` keeps only
+/// [`vehicle_flags::PUBLIC`]. Wrecks are visible to everyone.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VehicleSnapshot {
+    pub id: u32,
+    /// Its squad (a vehicle is a squad of one); [`NO_SQUAD`] for wrecks.
+    pub squad: u32,
+    /// Index into `MatchSetup::vehicles`.
+    pub type_idx: u16,
+    /// Player slot; [`WRECK_OWNER`] for wrecks.
+    pub owner: u8,
+    /// Hull origin: on the ground under the hull's centre.
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    pub pitch: f32,
+    pub roll: f32,
+    /// Hull-relative.
+    pub turret_yaw: f32,
+    pub gun_pitch: f32,
+    /// Signed m/s along the hull's forward axis (negative: reversing).
+    pub speed: f32,
+    /// [`vehicle_flags`] bits.
+    pub flags: u16,
+    /// Players that see it (bit per slot; own slot always; every bit for
+    /// wrecks). The bridge filters enemy vehicles by it.
+    pub seen_by: u16,
+    /// Own only: [`SeatSnap`] per `SeatRole::index`.
+    pub seats: [u8; 5],
+    /// Own only: HP % (0..=100) per `ComponentKind::index` (engine, track
+    /// L, track R, gun, turret ring, ammo rack).
+    pub components: [u8; 6],
+    /// Own only: the `ComponentKind::index` being repaired, [`NONE_U8`]
+    /// for none.
+    pub repairing: u8,
+    /// Own only: main-gun rounds left, penetrator then HE.
+    pub ammo: [u16; 2],
+    /// Own only: [`LoadedSnap`].
+    pub loaded: u8,
+    /// Own only: the ammo choice (`SetAmmo`: 0 auto, 1 AP, 2 HE).
+    pub ammo_choice: u8,
+    /// Own only: main-gun reload progress, 0..=100 (100: ready).
+    pub reload_pct: u8,
+    /// Own only: the main gun's target vehicle id, `u32::MAX` none.
+    pub target: u32,
+    /// Own only: soldiers escorting it (`FollowUnits`).
+    pub followers: u8,
+}
+
+/// `ShellSnapshot::kind`.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ShellKind {
+    /// AP and APHE.
+    #[default]
+    Ap = 0,
+    He = 1,
+    /// HEAT (the S3 rockets).
+    Heat = 2,
+}
+
+/// A main-gun shell or AT rocket in flight (small arms and mortar shells
+/// stay in `projectiles`), in slot order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShellSnapshot {
+    /// Projectile pool slot: stable while the shell flies (for
+    /// interpolation); reused after it ends.
+    pub slot: u32,
+    /// The vehicle or soldier that fired it.
+    pub shooter: u32,
+    /// The firing player.
+    pub player: u8,
+    /// Index into `MatchSetup::ammo`.
+    pub ammo: u16,
+    /// [`ShellKind`].
+    pub kind: u8,
+    pub pos: [f32; 3],
+    pub vel: [f32; 3],
+}
+
+/// `ArmourEvent::kind`.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ArmourEventKind {
+    /// A vehicle fired its main gun (`component`: [`LoadedSnap`] of the
+    /// round; `pos`: the muzzle).
+    #[default]
+    Fired = 0,
+    /// A round glanced off a plate (`zone`, `ammo` set).
+    Ricochet = 1,
+    NonPenetration = 2,
+    Penetration = 3,
+    /// A component lost HP but still works (`component`:
+    /// `ComponentKind::index`).
+    ComponentHit = 4,
+    /// A crewman was hurt or killed (`component`: `SeatRole::index`).
+    CrewHit = 5,
+    /// A component reached 0 HP (`component`: `ComponentKind::index`).
+    Disabled = 6,
+    /// The vehicle became a wreck (`component`: 0 crew lost, 1 ammo rack
+    /// detonation, 2 fire burned out).
+    KnockedOut = 7,
+    /// The vehicle bogged in a trench crossing.
+    Bogged = 8,
+}
+
+/// One armour event of this tick, in event order (main-gun and rocket
+/// impacts, damage, knock-outs; small arms never make one).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ArmourEvent {
+    /// [`ArmourEventKind`].
+    pub kind: u8,
+    pub vehicle: u32,
+    /// The vehicle's owner when it happened (a knocked-out vehicle's last
+    /// owner, not 255).
+    pub owner: u8,
+    /// The firing player, [`NONE_U8`] for none (fire, bogging).
+    pub attacker: u8,
+    /// Per kind, see [`ArmourEventKind`]; [`NONE_U8`] when unused.
+    pub component: u8,
+    /// `ArmourZone::index` of the plate hit, [`NONE_U8`] for none.
+    pub zone: u8,
+    /// Index into `MatchSetup::ammo` of the round, `u16::MAX` for none.
+    pub ammo: u16,
+    pub pos: [f32; 3],
+    /// Running count of armour events in the match (saved and hashed), for
+    /// direct-control prediction later.
+    pub seq: u32,
 }
 
 /// One capture point, in map order.
@@ -220,6 +431,12 @@ pub struct RenderSnapshot {
     pub smoke: Vec<SmokeSnapshot>,
     /// Per live projectile, in slot order: `[x, y, z]`.
     pub projectiles: Vec<[f32; 3]>,
+    /// Vehicles and wrecks, ascending id (match mode only, S3).
+    pub vehicles: Vec<VehicleSnapshot>,
+    /// Main-gun shells and rockets in flight, slot order (S3).
+    pub shells: Vec<ShellSnapshot>,
+    /// Armour events this tick, in order (S3).
+    pub armour_events: Vec<ArmourEvent>,
     /// Squads in ascending id order (match mode only).
     pub squads: Vec<SquadSnapshot>,
     /// Per player slot (match mode only).
@@ -344,6 +561,9 @@ impl RenderSnapshot {
         self.projectiles.clear();
         self.projectiles
             .extend(pool.slots().iter().flatten().map(|p| p.pos.to_f32()));
+        // S3: filled once vehicles exist (sim stage 3 on).
+        self.vehicles.clear();
+        self.shells.clear();
 
         self.squads.clear();
         self.players.clear();
@@ -442,6 +662,9 @@ impl RenderSnapshot {
                     .iter()
                     .map(|c| (c.squad_type, c.ready_tick.saturating_sub(tick) as u32))
                     .collect(),
+                vehicles_counted: 0,
+                vehicle_limit: g.setup().rules.vehicles.limit.min(u8::MAX as u32) as u8,
+                unlock_tick: g.setup().rules.vehicles.unlock_ticks as u64,
             });
         }
         let r = &g.setup().rules;
@@ -472,6 +695,7 @@ impl RenderSnapshot {
             from: r.pos.to_f32(),
             vel: r.vel.to_f32(),
         }));
+        self.armour_events.clear();
         self.explosions.clear();
         self.explosions
             .extend(explosions.iter().map(|e| ExplosionSnapshot {

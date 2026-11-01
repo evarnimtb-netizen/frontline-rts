@@ -1,0 +1,11 @@
+# Test override of ww2:skirmish (S3): vehicles unlock at once. Used by the
+# net, determinism and autoplay runs; load it with
+# `ModDefs::add_rules_override` and request rules
+# "ww2:skirmish_test_unlock". Every key but `base` replaces the base's;
+# tables merge key by key.
+base = "ww2:skirmish"
+id = "ww2:skirmish_test_unlock"
+name = "Skirmish (test: vehicles unlocked)"
+
+[vehicles]
+unlock_s = 0

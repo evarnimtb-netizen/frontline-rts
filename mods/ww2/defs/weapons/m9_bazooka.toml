@@ -1,0 +1,20 @@
+# 2.36 in M9 "Bazooka" (S3): the US AT team's launcher. It only targets
+# vehicles; the loader's rifle engages infantry.
+id = "ww2:m9_bazooka"
+name = "M9 Bazooka"
+class = "launcher"
+range_m = 120
+damage = 300
+rounds_per_min = 6
+magazine = 1
+reload_ms = 8000
+spread_mrad = 15
+muzzle_velocity_m_s = 85
+suppression = 20
+engage_still_m = 100
+engage_moving_m = 60
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+ammo = "ww2:m6a3_heat"
+rounds_carried = 6
+handover_ms = 3000
