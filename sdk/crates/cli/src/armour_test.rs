@@ -431,6 +431,10 @@ struct DuelStat {
     hits: BTreeMap<(u8, BoxPart), u64>,
     aim_turret: u64,
     aim_hull: u64,
+    /// Knock-outs by cause (`ArmourEvent::component`: crew, rack, fire),
+    /// and ticks to each side's first main-gun shot (S3b baseline).
+    ko_cause: [u32; 3],
+    first_shot: [Vec<u64>; 2],
 }
 
 fn case3(env: &Env) -> Result<CaseReport> {
@@ -454,8 +458,21 @@ fn case3(env: &Env) -> Result<CaseReport> {
             let st = stats.entry(name).or_default();
             st.runs += 1;
             let mut first = None;
+            let mut shot: [Option<u64>; 2] = [None, None];
             while w.tick() < limit && alive(w, pz) && alive(w, sh) {
                 w.step(&[]);
+                for e in &w.snapshot().armour_events {
+                    if e.kind == ArmourEventKind::KnockedOut as u8 {
+                        if let Some(c) = st.ko_cause.get_mut(e.component as usize) {
+                            *c += 1;
+                        }
+                    } else if e.kind == ArmourEventKind::Fired as u8 {
+                        let side = (e.vehicle == sh.0) as usize;
+                        if shot[side].is_none() {
+                            shot[side] = Some(w.tick() - start);
+                        }
+                    }
+                }
                 for h in w.take_hit_log() {
                     *st.hits.entry((h.player, h.part)).or_default() += 1;
                 }
@@ -480,6 +497,11 @@ fn case3(env: &Env) -> Result<CaseReport> {
             if let Some(t) = first {
                 st.first_disable_ticks.push(t);
             }
+            for (k, t) in shot.iter().enumerate() {
+                if let Some(t) = t {
+                    st.first_shot[k].push(*t);
+                }
+            }
             match (alive(w, pz), alive(w, sh)) {
                 (true, false) => st.pz_wins += 1,
                 (false, true) => st.sh_wins += 1,
@@ -498,6 +520,25 @@ fn case3(env: &Env) -> Result<CaseReport> {
             let tu = st.hits.get(&(p, BoxPart::Turret)).copied().unwrap_or(0);
             format!("{h} hull / {tu} turret")
         };
+        let med = |v: &Vec<u64>| {
+            let mut v = v.clone();
+            v.sort_unstable();
+            v.get(v.len() / 2).map_or("none".into(), |&x| {
+                format!("{:.1} s", x as f64 / tick_hz as f64)
+            })
+        };
+        r.row(
+            format!("3{name}: knock-outs by cause, first shot"),
+            format!(
+                "crew {}, ammo rack {}, fire {}; first main-gun shot (median) Panzer IV {}, \
+                 Sherman {}",
+                st.ko_cause[0],
+                st.ko_cause[1],
+                st.ko_cause[2],
+                med(&st.first_shot[0]),
+                med(&st.first_shot[1])
+            ),
+        );
         r.row(
             format!("3{name}"),
             format!(
@@ -745,6 +786,9 @@ fn case5(env: &Env) -> Result<CaseReport> {
     let mut r = CaseReport::new(5, "lone tank vs dug-in rifles, no AT");
     let (mut hurt, mut died) = (Vec::new(), 0u32);
     let (mut lost, mut men, mut pinned, mut living) = (0u32, 0u32, 0u64, 0u64);
+    // S3b baseline: the tank's rounds (main gun and MGs) and the
+    // defenders' time up on the fire step.
+    let (mut tank_rounds, mut up) = (0u64, 0u64);
     for (seed, p) in env.runs() {
         let mut s = scenarios::lone_tank(env.setup(seed)?, env.threads, p, false, false)?;
         r.runs += 1;
@@ -757,9 +801,17 @@ fn case5(env: &Env) -> Result<CaseReport> {
         let limit = w.tick() + 180 * hz(w);
         while w.tick() < limit {
             w.step(&[]);
+            tank_rounds += w
+                .snapshot()
+                .shots
+                .iter()
+                .filter(|sh| sh.shooter == tank)
+                .count() as u64;
             for m in members(w, rifles) {
+                let c = &w.entities().combat()[m.index()];
                 living += 1;
-                pinned += w.entities().combat()[m.index()].pinned as u64;
+                pinned += c.pinned as u64;
+                up += (c.in_trench && c.height == c.fire_height) as u64;
             }
         }
         match vstate(w, tank) {
@@ -800,6 +852,10 @@ fn case5(env: &Env) -> Result<CaseReport> {
     r.row(
         "share of defender time pinned",
         pct(pinned as f64, living as f64),
+    );
+    r.row(
+        "tank rounds fired (gun and MGs), defender time up on the fire step",
+        format!("{tank_rounds}, {}", pct(up as f64, living as f64)),
     );
     Ok(r)
 }
@@ -896,6 +952,12 @@ struct AssaultStat {
     def_men: u32,
     def_shots: u64,
     stopped: u64,
+    /// Defender man-ticks alive, pinned, up on the fire step, and the sum
+    /// of their suppression points (S3b baseline).
+    def_ticks: u64,
+    def_pinned: u64,
+    def_up: u64,
+    def_supp: u64,
 }
 
 fn case7(env: &Env) -> Result<CaseReport> {
@@ -974,6 +1036,13 @@ fn case7(env: &Env) -> Result<CaseReport> {
                     w.step(&[]);
                 }
                 let owner = w.entities().owner();
+                for m in members(w, def) {
+                    let c = &w.entities().combat()[m.index()];
+                    st[k].def_ticks += 1;
+                    st[k].def_pinned += c.pinned as u64;
+                    st[k].def_up += (c.in_trench && c.height == c.fire_height) as u64;
+                    st[k].def_supp += (c.suppression / 1000) as u64;
+                }
                 st[k].def_shots += w
                     .snapshot()
                     .shots
@@ -1017,6 +1086,17 @@ fn case7(env: &Env) -> Result<CaseReport> {
             pct(t.stopped as f64, t.def_shots as f64)
         ),
     );
+    for (name, a) in [("7", t), ("7b", b)] {
+        r.row(
+            format!("{name}: defender posture (share of man-time)"),
+            format!(
+                "pinned {}, up on the fire step {}, mean suppression {:.1} points",
+                pct(a.def_pinned as f64, a.def_ticks as f64),
+                pct(a.def_up as f64, a.def_ticks as f64),
+                a.def_supp as f64 / a.def_ticks.max(1) as f64
+            ),
+        );
+    }
     let met_att = 2 * t.att_lost <= b.att_lost;
     let met_def = 4 * t.def_lost >= 3 * t.def_men;
     r.target(

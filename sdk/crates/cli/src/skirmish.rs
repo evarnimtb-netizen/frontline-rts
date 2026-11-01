@@ -185,6 +185,9 @@ pub struct ArmourTotals {
     pub ricochets: u64,
     pub knockouts: u64,
     pub rockets_fired: u64,
+    /// Knock-outs of both players by cause (`ko_crew`, `ko_ammo_rack`,
+    /// `ko_fire`; S3b baseline).
+    pub ko_causes: BTreeMap<String, u32>,
     /// Kills of both players by `kill_class` name.
     pub kills_by: BTreeMap<String, u32>,
     /// (mortar + tank HE kills) / all kills, percent; `he_flag` above 60.
@@ -226,6 +229,18 @@ pub struct PlayerArmour {
     pub repairs: u32,
     pub retreats: u32,
     pub faces: u32,
+    /// S3b baseline, as the firing player: main-gun penetrator hits on
+    /// enemy vehicles (any result) and how many penetrated; HE shells on a
+    /// plate; rocket hits and penetrations; components rockets destroyed
+    /// (`Disabled` events of a rocket); and every main-gun or rocket hit
+    /// by the plate it struck (`hull_front`, `turret_front`, ...).
+    pub gun_hits: u32,
+    pub gun_pens: u32,
+    pub he_on_plate: u32,
+    pub rocket_hits: u32,
+    pub rocket_pens: u32,
+    pub rocket_disabled_parts: u32,
+    pub hits_by_zone: BTreeMap<String, u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -293,6 +308,18 @@ pub struct SkirmishTiming {
     pub overruns: u64,
 }
 
+/// `ArmourZone` names by index (the snapshot's `zone`).
+const ZONE_NAMES: [&str; 8] = [
+    "hull_front",
+    "hull_side",
+    "hull_rear",
+    "hull_top",
+    "turret_front",
+    "turret_side",
+    "turret_rear",
+    "turret_top",
+];
+
 /// Per-tick S3 bookkeeping from the snapshot (armour events, repair
 /// flags, AT team strength); none of it feeds back into the sim.
 #[derive(Default)]
@@ -352,6 +379,31 @@ impl ArmourTally {
                 self.last_ammo.insert(e.vehicle, e.ammo);
             }
             let k = e.kind;
+            let ammo = s.ammo.get(e.ammo as usize);
+            let heat = ammo.is_some_and(|a| a.mechanism == AmmoMechanism::Heat);
+            let impact = k == ArmourEventKind::Ricochet as u8
+                || k == ArmourEventKind::NonPenetration as u8
+                || k == ArmourEventKind::Penetration as u8;
+            if let Some(a) = ammo
+                && let Some(p) = self.players.get_mut(e.attacker as usize)
+            {
+                let pen = k == ArmourEventKind::Penetration as u8;
+                if impact {
+                    let zone = ZONE_NAMES.get(e.zone as usize).copied().unwrap_or("none");
+                    *p.hits_by_zone.entry(zone.into()).or_default() += 1;
+                    if heat {
+                        p.rocket_hits += 1;
+                        p.rocket_pens += pen as u32;
+                    } else if a.mechanism.penetrator() {
+                        p.gun_hits += 1;
+                        p.gun_pens += pen as u32;
+                    } else {
+                        p.he_on_plate += 1;
+                    }
+                } else if heat && k == ArmourEventKind::Disabled as u8 {
+                    p.rocket_disabled_parts += 1;
+                }
+            }
             let name = |c: u8| match c {
                 0 => "engine",
                 1 | 2 => "track",
@@ -721,7 +773,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     } else {
         round3(he as f64 * 100.0 / all as f64)
     };
+    let mut ko_causes: BTreeMap<String, u32> = BTreeMap::new();
+    for p in &players {
+        for (k, v) in &p.armour.disabled_by {
+            if k.starts_with("ko_") {
+                *ko_causes.entry(k.clone()).or_default() += v;
+            }
+        }
+    }
     let armour = ArmourTotals {
+        ko_causes,
         winner_base: winner.map(|w| s.players[w as usize].base),
         penetrations: st.penetrations - stats_at_start.penetrations,
         non_penetrations: st.non_penetrations - stats_at_start.non_penetrations,
@@ -923,6 +984,7 @@ pub fn summary_text(r: &SkirmishReport) -> String {
     out += &format!(
         "armour: penetrations {}, non-penetrations {}, ricochets {}, knocked out {}, \
          rockets {}; winner base {}\n\
+         knock-outs by cause: {}\n\
          kills by weapon: {}\n",
         am.penetrations,
         am.non_penetrations,
@@ -930,6 +992,7 @@ pub fn summary_text(r: &SkirmishReport) -> String {
         am.knockouts,
         am.rockets_fired,
         am.winner_base.map_or("-".into(), |b| b.to_string()),
+        kills(&am.ko_causes),
         kills(&am.kills_by),
     );
     for p in &r.players {
@@ -947,6 +1010,8 @@ pub fn summary_text(r: &SkirmishReport) -> String {
              \x20     mp lost/killed: tanks {} ({}/{}), AT {} ({}/{}); escorts {} (reached \
              {}, released {}), AT shots {}, satchels at vehicles {}, repairs {}, \
              retreats {}, faces {}\n\
+             \x20     fired: gun hits {} (pen {}), HE on plates {}, rocket hits {} (pen {}, \
+             parts destroyed {}); hits by plate: {}\n\
              \x20     kills: {}\n",
             p.player,
             a.vehicles_bought,
@@ -971,6 +1036,13 @@ pub fn summary_text(r: &SkirmishReport) -> String {
             a.repairs,
             a.retreats,
             a.faces,
+            a.gun_hits,
+            a.gun_pens,
+            a.he_on_plate,
+            a.rocket_hits,
+            a.rocket_pens,
+            a.rocket_disabled_parts,
+            kills(&a.hits_by_zone),
             kills(&a.kills_by),
         );
     }
