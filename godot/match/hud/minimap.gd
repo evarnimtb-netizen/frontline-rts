@@ -13,14 +13,19 @@ extends Control
 ##
 ## Input in both modes goes through the inverse of the drawing transform:
 ## left click / drag moves the camera there, right-click (Ctrl: attack)
-## orders the selection there. The lock button in the box's bottom-right
-## corner (outside the map at any yaw) toggles the rotation setting.
+## orders the selection there. The lock button toggles the rotation
+## setting: north-up it sits in the box's bottom-right corner; rotating it
+## follows the turned map, hugging its bottom-right outline.
 ##
 ## The map image comes from state.map.minimap (a Texture2D, sent whenever
 ## it changes) or set_map_texture().
 
 const CORNER := 8.0
 const LOCK_R := 11.0
+## Gap between the lock button and the turned map (px).
+const LOCK_GAP := 4.0
+## Map corners in map units, clockwise from north-west.
+const MAP_CORNERS: Array[Vector2] = [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
 
 var view: MatchView
 ## Rotate with the camera (else north-up).
@@ -108,11 +113,24 @@ func _map_units(m: Vector2) -> Vector2:
 	return ((m - centre()) / map_half_px()).rotated(-yaw_rad())
 
 
-## Centre of the lock button: the box's bottom-right corner in both modes.
-## Rotating, the map reaches at most half the box side from the centre, so
-## the corner stays clear of it at any yaw.
+## Centre of the lock button. North-up: the box's bottom-right corner.
+## Rotating: on the box's diagonal towards bottom-right, just past the
+## map's reach along it (its furthest corner projected on the diagonal),
+## so it sits against the map's bottom-right corner or edge. The reach is
+## a max over the corners, so it slides smoothly as the camera turns and
+## never jumps between corners. The map reaches at most half the box side,
+## so the button fits inside the box at any yaw (box side >= 155 px); the
+## clamp is only a guard.
 func lock_centre() -> Vector2:
-	return size - Vector2(LOCK_R + 5.0, LOCK_R + 5.0)
+	if not rotate_with_camera:
+		return size - Vector2(LOCK_R + 5.0, LOCK_R + 5.0)
+	var d := Vector2(1, 1).normalized()
+	var reach := 0.0
+	for u in MAP_CORNERS:
+		reach = maxf(reach, u.rotated(yaw_rad()).dot(d) * map_half_px())
+	var at := centre() + d * (reach + LOCK_GAP + LOCK_R)
+	var m := Vector2(LOCK_R + 1.0, LOCK_R + 1.0)
+	return at.clamp(m, size - m)
 
 
 func _draw() -> void:
@@ -127,7 +145,7 @@ func _draw() -> void:
 	var corners := PackedVector2Array()
 	var uvs := PackedVector2Array()
 	if rotate_with_camera:
-		for u in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		for u in MAP_CORNERS:
 			corners.append(c + u.rotated(yaw) * hs)
 			uvs.append((u + Vector2.ONE) * 0.5)
 	else:

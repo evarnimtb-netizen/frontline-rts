@@ -419,6 +419,41 @@ func _test_minimap() -> void:
 	await _frames(1)
 	_check(mm._inside(mm.centre() + Vector2(mm.size.x * 0.5 - 3.0, 0)), "rotated 45: diamond corner reaches the box edge")
 	_check(not mm._has_point(mm.centre() + Vector2(mm.size.x * 0.35, mm.size.y * 0.35)) and not mm._inside(mm.lock_centre()), "rotated 45: empty corner passes through, lock off the map")
+	# The lock button follows the turned map: whole button inside the box
+	# and off the map (its rim and click radius too) at each yaw, at this
+	# box size and the 1280 one (200 px).
+	var box_size: Vector2 = mm.size
+	for side in [box_size.x, 200.0]:
+		mm.size = Vector2(side, side)
+		var lock_ok := true
+		for yaw in [0.0, 30.0, 45.0, 60.0, 90.0, 135.0, 200.0, 315.0]:
+			_cam.yaw_deg = yaw
+			var lc: Vector2 = mm.lock_centre()
+			var r: float = mm.LOCK_R
+			lock_ok = lock_ok and Rect2(Vector2(r, r), mm.size - Vector2(2 * r, 2 * r)).has_point(lc)
+			for k in 16:
+				lock_ok = lock_ok and not mm._inside(lc + Vector2.RIGHT.rotated(TAU * k / 16.0) * (r + 2.0))
+		_check(lock_ok, "rotated %d px: lock inside the box and off the map at 0..315°" % side)
+	mm.size = box_size
+	# No jumps: it slides smoothly through 45° and over a full turn.
+	_cam.yaw_deg = 44.5
+	var l_a: Vector2 = mm.lock_centre()
+	_cam.yaw_deg = 45.5
+	_check(l_a.distance_to(mm.lock_centre()) < 2.0, "rotated: lock steady through 45°")
+	var worst := 0.0
+	_cam.yaw_deg = 0.0
+	var prev: Vector2 = mm.lock_centre()
+	for i in range(1, 361):
+		_cam.yaw_deg = float(i)
+		var cur: Vector2 = mm.lock_centre()
+		worst = maxf(worst, cur.distance_to(prev))
+		prev = cur
+	_check(worst < 2.0, "rotated: lock moves under 2 px per degree (%.2f)" % worst)
+	# It follows the map: not fixed in the box corner.
+	_cam.yaw_deg = 0.0
+	var l0: Vector2 = mm.lock_centre()
+	_cam.yaw_deg = 45.0
+	_check(l0.distance_to(mm.lock_centre()) > 10.0, "rotated: lock follows the map as it turns")
 	mm.rotate_with_camera = false
 	_cam.yaw_deg = 0.0
 	_cam.jump_to(_source.squad_pos(_source.squad_ids(0, "engineer")[0]))
