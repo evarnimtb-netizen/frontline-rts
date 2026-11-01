@@ -63,7 +63,7 @@ Historical figures are starting values from memory. Each needs a
 | HQ as a forward spawn | It undoes "spawn at base and walk", the main balance lever. Every match would become a hunt for the HQ. | Units and replacements always spawn at base. The only forward reinforcement that fits the rule is a truck or half-track that **carries** men from base. |
 | HQ "spawns ammo crates" | Crates made from nothing at the front are a forward spawn for ammunition. An abstract "trickle" into the HQ is the same thing, only slower. | The HQ **issues** crates from a stock that runs out and starts empty. Trucks, half-tracks or carried crates refill it. Before trucks exist, a free two-man **carrying party** walks from base to the HQ every few minutes (owner question Q2): it obeys "spawn at base and walk" and can be shot. |
 | HQ "helps units reload" | Reload speed is a man's hands and the weapon's mechanism. An aura is abstract. | Read it as **refill**: men inside the radius get back the rounds they fired. No reload-speed bonus. |
-| On-map divisional howitzers | A 105 mm fired from 3–10 km behind the line. On a 1 km map it either sits in base and reaches everything, or stands in rifle range. | Divisional batteries (leFH 18, 105 mm M2A1) are **off-map**, called by a forward observer. Their shells are still real projectiles. On-map "howitzers" are the regimental guns that really stood near the front (leIG 18, 105 mm M3). **Caveat:** the leIG 18 (≈3.5 km) and M3 (≈7.6 km) also reach the whole map from base, where shells are free today. They need the same brake as authentic mortar ranges (Q4: a per-player shell supply rate) before they ship. |
+| On-map divisional howitzers | Authentic ranges (leIG 18 ≈3.5 km, 105 mm 7.6–11 km) exceed every map, so range cannot be the brake. Placed naively, a gun in base reaches everything with free shells. | **Changed 2026-11-01 at the owner's request: artillery is on-map, crewed and buyable** (`artillery-on-map.md`). One gun per card, two per player. The brakes are the historical ones: a linked observer's line of sight, a per-player shell ration at base (Q4 B), counter-battery by sound and flash, set-up and tow times, masks and minimum range from the real charge tables, crews in the open, cost and caps. Off-map batteries are dropped from skirmish. |
 | Light vehicles soon | Today rifle and MG rounds do nothing to any vehicle. An M8 or armoured car would be an unkillable infantry hunter. | Small arms against thin armour and open-top exposure ship **with or before** the first light vehicle. |
 | Tiger first | 1,347 built, production ended Aug 1944; the hardest vehicle to balance. | The StuG III G first: the most common German AFV of the period. Its casemate system also gives the Jagdpanzer IV and 38(t). Heavies come last, after their counters. |
 | 5 cm leGrW 36 as the German light mortar | Withdrawn from front-line companies around 1943. | The **8 cm kurzer GrW 42**. The US 60 mm M2 is genuinely current. |
@@ -253,10 +253,10 @@ pop is therefore the lower of the rules `pop_cap` and the tier share.
 | Pak-Bedienung (5 cm Pak 38) | 5 | Pak 38, pushable | Cheaper, second-line AT gun | 260 | 60 s | 1944-06 | S9 (data) |
 | Sturmpioniergruppe | 8 | MP 40 / StG 44, *gestreckte Ladung* (Bangalore-type pipe charge), satchels (flamethrower added in S14) | Breach wire, mines, bunkers | 320 | 60 s | 1944-06 | S10 |
 | Baupioniergruppe | 8 | Kar98k | Builds bunkers, obstacles, minefields fast. Weak in combat. | 200 | 60 s | 1944-06 | S10 |
-| VB-Trupp | 2 | binoculars, radio | Forward observer for artillery | 100 | 60 s | 1944-06 | S11 |
-| Granatwerfergruppe (kz. GrW 42) | 4 | 8 cm kurzer GrW 42 | Light, short-range mortar | 220 | 45 s | 1944-06 | S11 |
-| Infanteriegeschützgruppe (leIG 18) | 5 | 7.5 cm leIG 18, pushable | Direct and high-angle HE near the front | 300 | 90 s | 1944-06 | S11 |
-| leFH 18 battery (off-map call) | — | 4 tubes × 2 rounds per call, 48 rounds per match | Observed fire only | 300 per call | 240 s | 1944-06 | S11 |
+| VB-Trupp | 2 | binoculars, radio | Forward observer for artillery | 100 | 60 s | 1944-06 | S11a |
+| Granatwerfergruppe (kz. GrW 42) | 4 | 8 cm kurzer GrW 42 | Light, short-range mortar | 220 | 45 s | 1944-06 | S11b |
+| Infanteriegeschützgruppe (leIG 18) | 5 | 7.5 cm leIG 18, pushed; a variant brings an Sd.Kfz. 11 | Direct and high-angle HE near the front; the only gun that drops shells behind a nearby crest | 320 | 90 s | 1944-06 | S11a |
+| leFH 18 section (on-map) | 6 + Sd.Kfz. 11 | 10.5 cm leFH 18, one gun | Field howitzer; flat and direct fire on small maps; HEAT for emergencies | 480 + tow | 180 s | 1944-06 | S11b |
 | Sanitätstrupp | 2 | pistol or none, stretcher | Medics, staff the aid post | 80 | 30 s | 1944-06 | S12 |
 
 **Vehicles**
@@ -276,7 +276,7 @@ pop is therefore the lower of the rules `pop_cap` and the tier share.
 | 12 cm GrW 42 | heavy mortar (gun entity, towed) | 340 | crew (6, *verify*) | 120 s | 1 | 8:00 | S13 |
 
 Later or missions only: SdKfz 251/9 "Stummel", 251/7 engineers, 251/8
-ambulance, 15 cm sIG 33, 8.8 cm Pak 43, Puma, Panzer IV/70, Tiger II,
+ambulance, 15 cm sIG 33, 15 cm Nebelwerfer 41 (Q23), 8.8 cm Pak 43, Puma, Panzer IV/70, Tiger II,
 Panzer IV J (a strictly worse H in our balance: missions only).
 
 ### 3.2 USA (US Army, 1944)
@@ -285,7 +285,7 @@ Panzer IV J (a strictly worse H in our balance: missions only).
 
 | Card | Men | Weapons | Job | Cost | Cooldown | From | Slice |
 |---|---|---|---|---|---|---|---|
-| Rifle Squad | 12 | M1 Garand; BAR team (BAR, assistant); M7 rifle grenade launcher added in S11 (a new HE weapon, so it waits with the other HE) | Line squad (T/O&E 7-17). Replaces today's 8 × M1. | 340 | 20 s | 1944-06 | S4 |
+| Rifle Squad | 12 | M1 Garand; BAR team (BAR, assistant); M7 rifle grenade launcher added in S11b (a new HE weapon, so it waits with the other HE) | Line squad (T/O&E 7-17). Replaces today's 8 × M1. | 340 | 20 s | 1944-06 | S4 |
 | Rifle Squad (understrength) | 9 | as above | Cheap; typical by autumn 1944 | 260 | 20 s | 1944-06 | S4 |
 | Rifle Squad, two BARs | 12 | as above + second BAR | More automatic fire, common field practice *(verify date)* | 360 | 30 s | 1944-08 | S4 |
 | Light MG Section | 4 | M1919A4 on tripod | Company MG. Today's MG team. | 200 | 30 s | 1944-06 | S4 |
@@ -297,10 +297,10 @@ Panzer IV J (a strictly worse H in our balance: missions only).
 | Armored Infantry Squad | 12 + M3A1 | M1, BAR, bazooka in the vehicle | Mechanised squad | 340 + vehicle | 60 s | 1944-06 | S8 |
 | 57mm Antitank Squad | 6 + M3A1 or 1½-ton truck | 57 mm M1 (HE only from late 1944, *verify*) | AT gun | 340 + tow | 90 s | 1944-06 | S9 |
 | Assault Section | 12 | M1, BAR, bazooka, Bangalore, pole charges (M2-2 flamethrower added in S14) | Breaching fortified lines | 380 | 60 s | 1944-06, West | S10 |
-| Forward Observer Party | 3 | carbines, radio | Calls artillery. Shorter fire-direction time (a doctrine trait). | 120 | 60 s | 1944-06 | S11 |
-| 60mm Mortar Squad | 5 | 60 mm M2 | Company mortar, many light bombs | 240 | 45 s | 1944-06 | S11 |
-| Cannon Company Howitzer Section | 6 + tow *(verify: 1½-ton or 2½-ton truck)* | 105 mm M3 | Regimental howitzer, direct and indirect | 380 + tow | 120 s | 1944-06 | S11 |
-| 105 mm M2A1 battery (off-map call) | — | 4 tubes × 2 per call, 48 per match | Observed fire only | 300 per call | 240 s | 1944-06 | S11 |
+| Forward Observer Party | 3 | carbines, radio | Calls artillery. Shorter fire-direction time (a doctrine trait). | 120 | 60 s | 1944-06 | S11a |
+| 60mm Mortar Squad | 5 | 60 mm M2 | Company mortar, many light bombs | 240 | 45 s | 1944-06 | S11b |
+| Cannon Company Howitzer Section | 6 + tow *(verify: 1½-ton or 2½-ton truck)* | 105 mm M3 | Regimental howitzer; low-angle only (max +30°, verify), so direct and flat indirect fire | 380 + tow | 120 s | 1944-06 | S11a |
+| Field Artillery Section (on-map) | 8 + CCKW | 105 mm M2A1, one gun | Field howitzer; low-angle on Battalion maps; HEAT for emergencies | 500 + tow | 180 s | 1944-06 | S11b |
 | Aid Men | 2 | unarmed (US practice) | Medics | 80 | 30 s | 1944-06 | S12 |
 
 **Vehicles**
@@ -334,7 +334,7 @@ tank is hit or fires). The faction is mostly data, plus art.
 | Group | Cards |
 |---|---|
 | Infantry | Strelkovoe otdelenie (9, DP-27 team) and a field-strength version; Gvardeyskoe otdelenie (a training variant); Otdelenie avtomatchikov (PPSh); Shturmovaya gruppa (ShISBr assault sappers with SN-42 breastplates and ROKS-3); Sapyornoe otdelenie; Maxim or SG-43 crew; PTRD or PTRS team; sniper pair; medics |
-| Mortars and guns | 82 mm (can fire captured German 8 cm bombs); 120 mm PM-38; 45 mm M-42; 57 mm ZiS-2 (not requested, but the best Soviet AT gun of 1944); 76 mm ZiS-3; 76 mm regimental gun M1943; 122 mm M-30 battery (off-map) |
+| Mortars and guns | 82 mm (can fire captured German 8 cm bombs); 120 mm PM-38; 45 mm M-42; 57 mm ZiS-2 (not requested, but the best Soviet AT gun of 1944); 76 mm ZiS-3; 76 mm regimental gun M1943; 122 mm M-30 section (on-map); BM-13 only if Q23 allows |
 | Vehicles | T-34-85 **with tank riders** (the authentic Soviet transport, not half-tracks); SU-85 / SU-100 by date; SU-76M; BA-64B; IS-2; Studebaker US6; M3A1 scout car |
 
 ---
@@ -356,7 +356,7 @@ assumes it has landed.
 | S8 | Half-tracks, trucks and recon | ~1.1× (largest) | S6, S7 | High: transport, supply vehicles, light armour |
 | S9 | AT guns | ~0.9× | S8 (tows) | High: the cheap, concealed tank counter |
 | S10 | Fortifications and breaching | ~1.5× (split S10a wire, sandbags, MG nest, dugout and their breaching; S10b mines, AT obstacles, bunker) | S6 | High: the trench pillar and the engineer split |
-| S11 | Artillery | ~0.7× | S5, S6, S9, **Q4** | High: observed fire, infantry guns, off-map batteries |
+| S11 | Artillery on the map | ~1.3× (S11a ~0.9× rules, observers, infantry guns; S11b ~0.4× field howitzers, light mortars) | S5, S6, S8, S9, **Q4** | High: the owner's on-map artillery; the trench counter |
 | S12 | Wounds and medics | ~0.7× | S6 (aid tent); S10 only for the aid dugout | Medium–high: the owner's medical request |
 | S13 | Heavy wave | ~0.5× sim (mostly data), but seven new models | S7, S9, S11 | Medium–high: Panther, Tiger, 76 mm Sherman, M36, Jumbo, heavy mortars |
 | S14 | Assault kit | ~0.8× | S5, S10, S12 | Medium–high: flamethrowers, then melee |
@@ -609,38 +609,82 @@ gate.
   - fortify-test: a trench with wire and an MG nest against assault
     engineers plus a supporting MG, numbers reported against the S3b bar.
 
-#### S11: Artillery (~0.7× S3)
+#### S11: Artillery on the map (~1.3× S3; split into S11a and S11b)
 
-- **Scope:** observed fire, counter-battery, infantry guns, off-map
-  batteries, light mortar variants.
-- **New systems:** forward observers and radio links through the HQ;
-  `CallSupport` with adjusting rounds and fire for effect; shells that
-  enter at the map edge on their true arc; per-match allocation and
-  cooldown; sound ranging and displacement; infantry guns firing both
-  direct and indirect from one entity.
-- **Content:** VB-Trupp, FO Party; leFH 18 and 105 mm M2A1 batteries;
-  leIG 18, 105 mm M3; kz. GrW 42, 60 mm M2; M7 rifle grenade and the
-  German *Schießbecher*.
-- **Risks:** more HE. Ship only if S5 met its HE-share target. Off-map
-  batteries cannot be hit by counter-battery (that would be abstract);
-  their brakes are the observer, the allocation and the cooldown.
-  **On-map guns in base:** the leIG 18 and 105 mm M3 out-range the map
-  and the base refills shells for free, so a gun parked in base with an
-  observer forward would fire all match. This slice is blocked by Q4:
-  either every shell restock draws from a per-player supply rate
-  (recommended), or their indirect range is compressed like the mortars'
-  as a documented deviation.
+Rewritten 2026-11-01 after the owner's request for artillery as units.
+Design: `artillery-on-map.md`.
+
+- **Scope:** artillery as on-map, crewed, buyable units. One card is one
+  gun and its crew. Authentic ranges stay; observation, the shell ration,
+  counter-battery, set-up times, masks, crews in the open and caps are
+  the brakes. Off-map batteries are dropped from skirmish (Q13 A).
+  S11a: the rules, observers and infantry guns. S11b: field howitzers on
+  the map, light mortars and rifle grenades.
+- **New systems (S11a):** the per-player shell ration at base (Q4 B),
+  drawn by every shell and bomb restock; observer links by radio (FO
+  teams, gun sections, the HQ radio box) or voice (150 m); fire modes
+  direct, observed, map fire and counter-battery; registration per gun
+  and target, lost when the gun moves; S5's charge solver extended to
+  guns, with elevation bands and a mask check (no solution that clears
+  the ground: "masked"); fire-direction delay per faction; sound ranging
+  (marker after 3 rounds, error 15 % of the listener distance, sharpening
+  each round) and flash (line of sight spots the gun on the first round);
+  displacement; `howitzer_pit`; HE craters scaled by filler; gun direct
+  fire with HE and HEAT; no free crew for guns in base; AI artillery
+  planner (buy with an observer, site on reverse slopes, observe from
+  crests, prepare, defend, counter-fire, relocate); friendly fire for
+  indirect HE if Q22 (A). **S11b:** no new code; low-angle physics and
+  tuning for the 2 t field howitzers.
+- **Content:** S11a: VB-Trupp, FO Party; leIG 18 section (pushed, and a
+  variant with an Sd.Kfz. 11), 105 mm M3 section; Igr 18, Igr 38 HL, M1
+  HE, M67 HEAT. S11b: leFH 18 and 105 mm M2A1 sections (one gun each);
+  75 mm pack howitzer as data; kz. GrW 42, 60 mm M2; M7 rifle grenade and
+  *Schießbecher*. Later: sIG 33; Nebelwerfer 41 only if Q23 allows.
+- **Size:** S11a ~0.9×, S11b ~0.4× (data, models and tuning).
+- **Depends on:** S3b (fragment rays, parapet erosion, duck state); S5
+  (counted ammo, `FireMission`, observer rule, charge solver); S6 (HQ
+  radio box, crates, pit kind); S8 (trucks as tows and ammo carriers); S9
+  (gun entity, service slots, towing, capture). **Q4 must be answered
+  (B, or C)** before S11a. S11b waits for S11a's measurements.
+- **Risks:** more HE. S11a ships only if S5 met its HE-share target; the
+  ration is the hard ceiling (a second gun shares the pot; it adds no HE).
+  Counter-battery duels could crowd out play: report the share of shells
+  fired at guns. Base camping: if the walk-through test fails, switch
+  `indirect_from_base = false`. Placement is compressed: on 1 km maps
+  the leFH 18, M3 and M2A1 fire almost flat (weak against trenches, good
+  against structures and in direct fire); Q25. Without friendly fire,
+  shelling a trench while your men enter it is an exploit (Q22).
 - **Done when:**
-  - with no observer line of sight, an off-map call is refused;
-  - a mortar firing 10 rounds from one spot is located within about 10 %
-    of the listener's distance; a team that displaces survives more often;
-  - trench assault with a preparation barrage: attacker losses at most
-    half the no-support baseline (owner sets the bar);
-  - HE share of kills stays inside the owner's target (Q16);
-  - an infantry gun in its own base zone gets no free indirect shells
-    beyond the Q4 rule;
-  - the AI calls observed fire in at least 6 of 10 matches and never
-    without an observer.
+  - with no linked observer, an observed mission is refused; map fire
+    lands only on knowledge points, with a mean miss about 3× observed;
+  - a leFH 18 or M3 told to hit a trench behind a crest from 600 m
+    reports "masked"; a leIG 18 at high angle hits it;
+  - a gun firing from one spot gets an enemy marker after 3 rounds, with
+    an error of at most 15 % of the listener distance that shrinks each
+    round; a gun that displaces after 4 rounds survives counter-battery
+    more often than one that stays (10 runs each); an enemy with line of
+    sight spots the gun by flash on its first round;
+  - a gun in base with a forward observer fires no more than the ration
+    allows and stops when it is empty; AI matches still end with a winner
+    inside 25 min;
+  - a leIG 18 at 400 m silences an MG nest over open sights; a 105 mm
+    burst breaks a dugout roof that survives an 81 mm hit; M67 HEAT
+    penetrates a Panzer IV side; 105 mm HE on a Sherman damages only
+    external parts and tracks;
+  - fortify-test "105 mm barrage" row: trench losses at most 40 % of
+    open; lip lost per 105 mm burst within 2 m at least 0.15 m; a
+    preparation barrage cuts attacker losses to at most half the
+    no-support baseline (owner sets the bar);
+  - 20 AI matches: HE share of kills at most 30 % on average and 45 % in
+    any match (Q16); infantry guns and howitzers at most 10 % of kills;
+  - the AI buys a gun and an observer in at least 6 of 10 matches, fires
+    observed or counter-battery missions, never fires indirect without
+    an observer except on knowledge points, and displaces after
+    counter-fire;
+  - stress scene with 20 guns and 30 mortars at the ration ceiling on
+    Battalion: no capped fragment rays in AI matches, stress p99 inside
+    S3b T13; hashes equal at 1, 2, 3 and 8 threads and through save and
+    load with shells in flight.
 
 #### S12: Wounds and medics (~0.7× S3)
 
@@ -731,6 +775,7 @@ gate.
 | 2. HQ fill before trucks | **(C) Nothing**: only crates carried by the player's own men, later trucks and half-tracks. | The owner was unsure; a carrying party could be abused (free scouts or decoys) and often dies on the way. Revisit after S8 if the HQ is empty too often in play. |
 | 6. Squad sizes | **(A)** Historical sizes (German about 10, US 12), cheaper understrength cards, pop cap 150. | |
 | 11 / 20. Order | **(A)** Vehicles first: S7 assault guns and TDs, S8 half-tracks and trucks, S9 AT guns; fortifications S10. | |
+| 13. Artillery | **Owner prefers artillery as on-map units** (request of 2026-11-01). Default changed to on-map (A). | Design in `artillery-on-map.md`. Off-map batteries dropped from skirmish. S11 rewritten and split. |
 | 21. Variant cooldowns | **(B)** Every card has its own cooldown. | Risk: alternating full and understrength cards doubles the call rate; manpower cost and `max_alive` are the brakes. `cooldown_group` stays in the schema (unset by default), so it can be switched per card in TOML. |
 
 All other questions run on their (A) defaults until answered.
@@ -766,6 +811,11 @@ answer. The slice in brackets is the first one blocked by the answer.
    (B) Authentic ranges, plus one per-player supply rate (kg per minute)
    for every shell restock, base included. (C) Authentic ranges, plus a
    manpower cost per restocked shell.
+   With on-map artillery (Q13 A) this must be answered before S11a.
+   `artillery-on-map.md` §4.2 recommends (B), as a shell ration at base
+   (start 60 kg per minute, cap 600 kg) drawn by every shell and bomb
+   restock: it caps HE tonnage whatever the income. The HQ still fills
+   only by carried crates and trucks (Q2 C).
 5. **Smoke rounds** [S5]. You ruled out mortar smoke as the S3b
    trench-assault fix. (A) No smoke rounds in this plan; smoke grenades
    stay. Revisit only if S3b's pinning misses its trench-assault target.
@@ -802,9 +852,19 @@ answer. The slice in brackets is the first one blocked by the answer.
     2× (tanks see tanks at about 350 m); AT guns get a 250 % optic bonus
     inside their arc. (B) 4× for all vehicles (600–700 m). Decide both
     together; it matters more for Panthers and Tigers than any stat.
-13. **Divisional artillery** [S11]. (A) Off-map, called by an observer;
-    regimental guns on the map. (B) On-map divisional howitzers in a rear
-    battery zone as a lobby option.
+13. **Artillery** [S11]. Changed 2026-11-01 after the owner's request
+    ("having howitzers or some artillery is better as a unit"). (A)
+    On-map, crewed, buyable units: infantry guns (S11a) and single-gun
+    field howitzer sections (S11b), two per player, with authentic
+    ranges. Observation, the shell ration (Q4 B), counter-battery by
+    sound and flash, set-up times, masks from the real charge tables and
+    caps hold them back. Off-map batteries are dropped from skirmish.
+    Reasons: an on-map gun can be found, shelled and overrun, so every
+    brake is physical; an off-map battery can never be hit back, and it
+    would make the on-map cards pointless. Range compression does not
+    help: any range long enough to be a howitzer still covers the front
+    from base. (B) The old default: off-map batteries called by an
+    observer, regimental guns on the map.
 14. **Red cross** [S12]. (A) A plain armband and stretcher, no emblem,
     unless a legal check clears it. (B) Use the emblem.
 15. **Waffen-SS and penal units** [S4]. (A) Both stay out. (B) Revisit
@@ -837,6 +897,24 @@ answer. The slice in brackets is the first one blocked by the answer.
     cooldown (`cooldown_group`), so cheap and full versions cannot be
     alternated. (B) Every card has its own cooldown, as "per-unit-type"
     reads literally.
+
+**Artillery** (added 2026-11-01; detail in `artillery-on-map.md` §11)
+
+22. **Friendly fire from indirect HE** [S11a]. Today no own round hurts
+    own men, so a player could shell a trench while his men walk into it.
+    (A) Fragments and blast from mortars, guns and launchers hurt own men;
+    direct fire stays as today. (B) Keep no friendly fire; the AI keeps
+    its danger-close and lift-fire rules.
+23. **Rocket launchers** (Nebelwerfer 41, later BM-13) [after S11b]. One
+    salvo is about 200 kg of HE. (A) Later, as a lobby option, cap 1,
+    12:00 unlock, after the ration is measured with tube artillery.
+    (B) Missions only. (C) In S11b.
+24. **Show the player the enemy's marker on his gun?** [S11a]. (A) No:
+    only his own count ("6 rounds from this spot: likely located").
+    (B) Show it (leaks enemy knowledge).
+25. **Field howitzers on small maps** [S11b]. On 1 km maps the leFH 18,
+    M3 and M2A1 fire almost flat. (A) Allowed on every map, 1 per player,
+    8:00 unlock. (B) Only on maps of 2 × 2 km and larger (a map flag).
 
 ---
 

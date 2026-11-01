@@ -5,6 +5,17 @@ infantry guns, howitzers, the gun crew model, indirect fire and the ammunition t
 need. The HQ and supply follow-up is covered from the guns' side: how shells and bombs reach
 a gun. Another area covers the HQ structure itself.
 
+> **Note (2026-11-01): artillery is now on the map.** The owner prefers
+> howitzers and other artillery as on-map units. `artillery-on-map.md`
+> (same folder) holds that design and replaces this file's off-map
+> default: §0 point 3, P2, §3.9, the off-map battery def in §7.4, slice
+> G5 and question 1. Divisional howitzers (leFH 18, M2A1, M-30) become
+> single-gun on-map sections; off-map batteries are dropped from
+> skirmish. It also answers question 2 (the shell ration at base) and
+> extends §3.8's counter-battery to every gun. The gun entity, crews,
+> mobility, AT guns, mortars and ammunition parts of this file still
+> stand.
+
 Read against: `SYSTEM_DESIGN.md` §2.3, §2.4, §5.7, §5.9, §5.10, §5.12; `docs/slices/S1-skirmish.md`,
 `S1b-abilities.md`, `S3-armour.md`, `S3-log.md`; `docs/TODO.md`; `sdk/crates/content/src/defs.rs`;
 `mods/ww2/defs/*`; `crates/sim/src/{combat,gunnery,vehicle,armour,damage,items,ai}.rs`.
