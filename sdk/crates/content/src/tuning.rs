@@ -258,10 +258,34 @@ tuning_table! {
         retreat_engine_pct: 0..=100,
         /// A vehicle backing up an own point stands this far behind it (m).
         backup_m: 0..=1000,
+        /// After the vehicle unlock, while under the vehicle limit, infantry
+        /// call-ins leave at least this much manpower unspent toward the
+        /// next vehicle (S3b) (MP).
+        tank_reserve_mp: 0..=100000,
     }
 }
 
 impl AiArmourTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[call_in]`: where a bought squad spawns in its base (S3b: a
+    /// call-in spawns at once, no queue and no delivery time).
+    pub struct CallInTuning {
+        /// Six spawn spots sit on a ring at this share of the base radius
+        /// (the seventh is the centre) (%).
+        spawn_ring_pct: 0..=100,
+        /// A spot with a man or vehicle this close is passed over for the
+        /// least crowded one, so squads bought in quick succession do not
+        /// land on each other (m).
+        spawn_clear_m: 0..=100,
+        /// A vehicle counts as this many men when spots are compared.
+        spawn_vehicle_weight: 1..=100,
+    }
+}
+
+impl CallInTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
@@ -526,6 +550,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
     ("dig.common", DigCommonTuning::KEYS),
+    ("call_in", CallInTuning::KEYS),
 ];
 
 /// Every tuning table of a rules def or setup, for [`check_tuning`].
@@ -544,6 +569,7 @@ pub(crate) struct TuningRefs<'a> {
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
     pub dig_common: &'a DigCommonTuning,
+    pub call_in: &'a CallInTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -564,6 +590,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);
     t.dig_common.check(&p("dig.common"), out);
+    t.call_in.check(&p("call_in"), out);
 }
 
 #[cfg(test)]

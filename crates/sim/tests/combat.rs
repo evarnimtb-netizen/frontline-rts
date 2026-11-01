@@ -25,8 +25,13 @@ fn setup(seed: u64) -> MatchSetup {
         Difficulty::Normal,
     ))
     .map(|mut s| {
-        // These tests drive both sides by hand.
+        // These tests drive both sides by hand, and call in several squads
+        // of one type at once (S3b re-call cooldowns off).
         s.players.iter_mut().for_each(|p| p.is_ai = false);
+        s.squad_types
+            .iter_mut()
+            .filter(|t| t.vehicle.is_none())
+            .for_each(|t| t.recall_cooldown_ticks = 0);
         s
     })
     .unwrap_or_else(|e| panic!("{e}"))
@@ -225,7 +230,13 @@ fn spotting_follows_range_cover_and_woods() {
             .filter(|(id, v)| m.contains(id) && *v & 2 != 0)
             .count()
     };
-    assert_eq!(seen(&w, near), 3, "open ground at 100 m");
+    // The rifle squad opens fire at once and may already have killed one
+    // (S3b: staged within the first second of the match, so a different
+    // tick's rolls than when four call-ins took two minutes): every man
+    // still alive is seen.
+    let alive = w.game().unwrap().squad(near).unwrap().members.len();
+    assert!(alive >= 2, "{alive}");
+    assert_eq!(seen(&w, near), alive, "open ground at 100 m");
     assert_eq!(seen(&w, dug), 0, "crouched in a trench");
     assert_eq!(seen(&w, far), 0, "beyond sight range");
     assert_eq!(seen(&w, wood), 0, "concealed by woods");

@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **3** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **4** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -73,6 +73,11 @@ kind the relay may not send. Clients cannot send relay messages.
 - Version 3 (S3) changed the `CommandKind` layout: `Dig` and `DigUnits`
   gained `profile`, and six vehicle commands were added at the end (see
   below).
+- Version 4 (S3b, 2026-11-01) changes what `CallIn` means, not its
+  layout: the squad is bought and spawned at once in the base, or refused
+  (manpower, the type's re-call cooldown, pop cap, vehicle unlock or
+  limit); there is no call-in queue and no command for one. The S3b
+  slice bumps once: the planned `Suppress` command joins version 4.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells

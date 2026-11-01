@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
 use crate::tuning::{
-    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CoverTuning, DigCommonTuning,
-    DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning, SuppressionTuning,
-    ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
+    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
+    DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -55,7 +55,8 @@ pub struct SquadDef {
     pub faction: String,
     pub role: SquadRole,
     /// `vehicle` squads: the vehicle def id. Its def holds cost, pop,
-    /// call-in time, speed and sight, so the soldier fields below stay out.
+    /// re-call cooldowns, speed and sight, so the soldier fields below
+    /// stay out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vehicle: Option<String>,
     /// Soldiers in the squad, 1..=16 (soldier squads; required).
@@ -72,12 +73,25 @@ pub struct SquadDef {
     /// Weapon id of the men without `weapon` (a rifle, SMG or MG).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidearm: Option<String>,
-    /// Manpower cost of a call-in (soldier squads).
+    /// Manpower cost of a call-in (soldier squads). A call-in spawns the
+    /// squad at once at the base (S3b, owner 2026-11-01: no queue, no
+    /// delivery time).
     #[serde(default)]
     pub cost: u32,
-    /// Seconds from call-in to arrival at the base (soldier squads).
+    /// Seconds after a call-in before this squad type can be called in
+    /// again (soldier squads; S3b). 0 = no cooldown.
     #[serde(default)]
-    pub call_in_s: u32,
+    pub recall_cooldown_s: u32,
+    /// Seconds from the match start before the first call-in of this type
+    /// (soldier squads; S3b). 0 = available at once.
+    #[serde(default)]
+    pub initial_cooldown_s: u32,
+    /// Squad types naming the same group (a namespaced id, e.g.
+    /// `ww2:support`) share one re-call timer: a call-in of any of them
+    /// starts its own cooldown on all of them (S3b, optional; vehicle
+    /// squads too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_group: Option<String>,
     /// Hit points per soldier.
     #[serde(default = "default_hp")]
     pub hp: u32,
@@ -118,6 +132,10 @@ pub struct LoadoutDef {
 
 /// Most of one item a man carries.
 pub const MAX_ITEM_COUNT: u8 = 10;
+/// Longest re-call cooldown of a squad or vehicle type (s; S3b).
+pub const MAX_COOLDOWN_S: u32 = 600;
+/// Longest cooldown from the match start (s; S3b).
+pub const MAX_INITIAL_COOLDOWN_S: u32 = 1800;
 
 fn default_hp() -> u32 {
     100
@@ -504,6 +522,8 @@ pub struct RulesDef {
     pub ai: AiDef,
     /// Where arriving men look for cover (S3b tuning table).
     pub cover: CoverTuning,
+    /// Where bought squads spawn in the base (S3b tuning table).
+    pub call_in: CallInTuning,
 }
 
 /// Vehicle rules (S3, `docs/slices/S3-armour.md`). Per-vehicle numbers
@@ -840,6 +860,9 @@ impl SquadDef {
         let mut out = Vec::new();
         check_id(&mut out, "id", &self.id);
         check_name(&mut out, "name", &self.name);
+        if let Some(g) = &self.cooldown_group {
+            check_id(&mut out, "cooldown_group", g);
+        }
         if self.role == SquadRole::Vehicle {
             // The vehicle def holds everything else.
             if self.vehicle.is_none() {
@@ -854,7 +877,8 @@ impl SquadDef {
                 ("weapon_men", self.weapon_men.is_some()),
                 ("sidearm", self.sidearm.is_some()),
                 ("cost", self.cost != 0),
-                ("call_in_s", self.call_in_s != 0),
+                ("recall_cooldown_s", self.recall_cooldown_s != 0),
+                ("initial_cooldown_s", self.initial_cooldown_s != 0),
                 ("hp", self.hp != default_hp()),
                 ("speed_cm_s", self.speed_cm_s != 0),
                 ("sight_m", self.sight_m != 0),
@@ -910,7 +934,20 @@ impl SquadDef {
                 "every man carries `weapon`; set weapon_men below men or remove it",
             ));
         }
-        range(&mut out, "call_in_s", self.call_in_s, 0, 600);
+        range(
+            &mut out,
+            "recall_cooldown_s",
+            self.recall_cooldown_s,
+            0,
+            MAX_COOLDOWN_S,
+        );
+        range(
+            &mut out,
+            "initial_cooldown_s",
+            self.initial_cooldown_s,
+            0,
+            MAX_INITIAL_COOLDOWN_S,
+        );
         range(&mut out, "hp", self.hp, 1, 10_000);
         range(&mut out, "speed_cm_s", self.speed_cm_s, 10, 1000);
         range(&mut out, "sight_m", self.sight_m, 1, 2000);
@@ -1614,6 +1651,7 @@ impl RulesDef {
                 cover: &self.cover,
                 throw: &self.items.throw,
                 dig_common: &self.dig.common,
+                call_in: &self.call_in,
             },
         );
         out

@@ -28,8 +28,8 @@ pub mod tuning;
 pub mod vehicle;
 
 pub use defs::{
-    FactionDef, ITEM_KINDS, ItemDef, ItemKind, MapFileDef, RulesDef, SquadDef, SquadRole,
-    WeaponClass, WeaponDef,
+    FactionDef, ITEM_KINDS, ItemDef, ItemKind, MAX_COOLDOWN_S, MAX_INITIAL_COOLDOWN_S, MapFileDef,
+    RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef,
 };
 pub use issue::{ContentError, Issue};
 pub use modset::{ModDefs, ModManifest, OverrideChange};

@@ -517,16 +517,50 @@ func _test_hud(eng: int, eng_men: PackedInt32Array, rifle: int) -> void:
 	for i in 5:
 		_view.event_feed.push({"kind": "info", "text": "Test %d" % i})
 	_check(_view.event_feed.lines.size() == 3 and _view.event_feed.mouse_filter == Control.MOUSE_FILTER_IGNORE, "feed keeps 3 lines and ignores the mouse")
-	# Call-in: tile click → intent; Tab focuses the column.
+	# Call-in (S3b, owner 2026-11-01): no queue, no delivery time. A click
+	# buys at once, the squad stands in the base, the tile's cooldown runs.
+	var ci: Control = _view.call_in
+	var ri: int = ci.index_of("rifle")
+	_source.players[0].manpower = 1000.0
+	await _frames(1)
+	_check(ci.is_ready(ri) and ci.blocked_reason(_view.state.callin.catalog[ri]) == "", "rifle tile ready (lit)")
+	_check(not _view.state.callin.has("queue") and not _view.state.callin.has("queue_max"), "no call-in queue in the state")
+	var rifles_before: int = _source.squad_ids(0, "rifle").size()
 	_intents.clear()
-	_view.call_in.call_in_index(_view.call_in.index_of("rifle"))
+	ci.call_in_index(ri)
 	await _frames(2)
 	_check(_last(&"call_in") != null and _last(&"call_in").type == "rifle", "call-in intent")
-	_check(_view.state.callin.queue.size() >= 1, "mock queued the call-in")
+	_check(_source.squad_ids(0, "rifle").size() == rifles_before + 1, "the mock deployed the squad at once")
+	var fed := false
+	for l in _view.event_feed.lines:
+		fed = fed or (l.kind == "squad_arrived" and String(l.text).ends_with("deployed at base."))
+	_check(fed, "feed: <squad> deployed at base.")
+	var rtile: Dictionary = _view.state.callin.catalog[ri]
+	_check(float(rtile.get("cooldown_s", 0.0)) > 20.0 and float(rtile.get("cooldown_total_s", 0.0)) == 24.0 and ci.blocked_reason(rtile) == "cooldown" and not ci.is_ready(ri), "the buy starts the rifle cooldown (24 s)")
+	# Clicked again on cooldown: no intent, the feed says why.
+	_intents.clear()
+	_check(not ci.call_in_index(ri) and _last(&"call_in") == null, "on cooldown: no call-in sent")
+	_check(_view.event_feed.lines[0].kind == "call_in_refused" and String(_view.event_feed.lines[0].text).contains("not called in: ready again in"), "feed: refused, ready again in N s (%s)" % _view.event_feed.lines[0].text)
+	# Short of manpower: the reason names the shortfall.
+	_source.players[0].manpower = 10.0
+	await _frames(1)
+	var mgi: int = ci.index_of("mg")
+	var mg_cost := int(_view.state.callin.catalog[mgi].cost)
+	var short_why: String = ci.refusal_text(_view.state.callin.catalog[mgi])
+	var short_n := int(short_why.trim_prefix("need ").get_slice(" ", 0))
+	_check(short_why.ends_with("more manpower") and short_n > 0 and short_n <= mg_cost - 10, "short: need N more manpower (%s)" % short_why)
+	# Tab focuses the column; then a number key buys that tile at once.
+	_source.players[0].manpower = 1000.0
+	await _frames(1)
 	_key(KEY_TAB)
-	_check(_view.call_in.focused, "Tab focuses the call-in column")
-	_view.call_in.toggle_focus()
-	_check(not _view.call_in.focused, "focus leaves the column again")
+	_check(ci.focused, "Tab focuses the call-in column")
+	_intents.clear()
+	_panel_key(KEY_1 + mgi)
+	await _frames(2)
+	_check(_last(&"call_in") != null and _last(&"call_in").type == "mg", "Tab, then %d buys the MG team" % (mgi + 1))
+	_check(float(_view.state.callin.catalog[mgi].get("cooldown_s", 0.0)) > 0.0, "the MG cooldown starts")
+	ci.toggle_focus()
+	_check(not ci.focused, "focus leaves the column again")
 	_check(eng_men.size() > 0, "engineer roster sane")
 
 
@@ -917,12 +951,11 @@ func _test_callin_need() -> void:
 	# The owner's frame: the S2/S3 costs at 58 MP, fed 120 times.
 	var s: Dictionary = _view.state.duplicate(true)
 	s.callin.catalog = [
-		{"type": "rifle", "id": "ww2:usa_rifle", "name": "Rifle squad", "cost": 250, "delay_s": 20, "men": 8, "pop": 8},
-		{"type": "mg", "id": "ww2:usa_mg", "name": "MG team", "cost": 190, "delay_s": 25, "men": 3, "pop": 3},
-		{"type": "engineer", "id": "ww2:usa_engineer", "name": "Engineer squad", "cost": 220, "delay_s": 20, "men": 5, "pop": 5},
-		{"type": "mortar", "id": "ww2:usa_mortar", "name": "Mortar team", "cost": 280, "delay_s": 30, "men": 3, "pop": 3},
+		{"type": "rifle", "id": "ww2:usa_rifle", "name": "Rifle squad", "cost": 250, "recall_s": 24.0, "men": 8, "pop": 8},
+		{"type": "mg", "id": "ww2:usa_mg", "name": "MG team", "cost": 190, "recall_s": 36.0, "men": 3, "pop": 3},
+		{"type": "engineer", "id": "ww2:usa_engineer", "name": "Engineer squad", "cost": 220, "recall_s": 36.0, "men": 5, "pop": 5},
+		{"type": "mortar", "id": "ww2:usa_mortar", "name": "Mortar team", "cost": 280, "recall_s": 60.0, "men": 3, "pop": 3},
 	]
-	s.callin.queue = []
 	s.players[_view.local_player].pop = 0
 	s.players[_view.local_player].manpower = 58.0
 	var want := ["need 192", "need 132", "need 162", "need 222"]
@@ -1072,6 +1105,15 @@ func _mm_click(mm: Control, local: Vector2) -> void:
 	up.pressed = false
 	up.position = local
 	mm._gui_input(up)
+
+
+## A key press straight to the focused call-in column (its own input).
+func _panel_key(code: int) -> void:
+	var e := InputEventKey.new()
+	e.physical_keycode = code as Key
+	e.keycode = code as Key
+	e.pressed = true
+	_view.call_in._gui_input(e)
 
 
 func _key(code: Key, ctrl := false, shift := false) -> void:

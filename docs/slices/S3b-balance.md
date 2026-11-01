@@ -818,6 +818,94 @@ The Part A and B stages that touch those rules move them as they go.
 - Godot debug builds: F5 or the pause menu's "Reload data & restart". Data
   errors show as a banner, and the menu shows why a match could not start.
 
+## Call-in without a queue (stage done, 2026-11-01)
+
+Owner, 2026-11-01: "Remove the queue, but keep the timer of the specific
+unit after it was called. Like in GOH. So the user can't spam units and
+there is some heft and waiting time for spawning many units at once." And:
+"instead of a delivery time, it would spawn immediately, but it will be
+balanced out by the need of the unit to move to the frontline itself".
+
+- **Sim** (`game.rs`): `CallIn` buys at once when the player has the
+  manpower, the type's re-call cooldown is over, the pop cap allows it and,
+  for a vehicle, the unlock time has passed and fewer than the limit are
+  alive. Manpower is spent and the squad spawns in the same tick. Otherwise
+  the command is refused with a `CallInRefusal` (roster, locked, vehicle
+  limit, cooldown, manpower with the shortfall, pop cap: the check order).
+  Every call-in's result goes to the snapshot (`RenderSnapshot::call_ins`,
+  per tick, never saved). `MAX_CALL_IN_QUEUE`, `PlayerState::call_ins`,
+  `spawn_call_ins`, `call_in_s` / `call_in_ticks` and the delivery time are
+  gone from sim, content, snapshot, HUD and AI.
+- **State**: `PlayerState::ready_at` (per squad type, the first tick it can
+  be bought again), saved, hashed (per-field hash test) and validated on
+  load (one per squad type, never further ahead than the longest
+  cooldown). `SAVE_VERSION` stays 10 (the slice's one bump, Tooling).
+  `PROTOCOL_VERSION` 3 → 4 here (`CallIn` changed meaning; no queue
+  command ever existed, so the relay limits only lost nothing). **This is
+  the slice's one protocol bump: the Suppress command (B2) joins version
+  4.**
+- **Data** (every key with a comment): `recall_cooldown_s` and
+  `initial_cooldown_s` per unit def (soldier squads) and vehicle def
+  (tanks); optional `cooldown_group` (a namespaced id) on a unit def, so
+  types of one group share a timer (built, tested, unused in `ww2`).
+  Defaults set by the owner on 2026-11-01 (20 % under the first
+  proposal): rifle 24 s, engineers and MG 36 s, AT team 48 s, mortar 60 s,
+  tank 120 s. Start cooldowns 0 everywhere (vehicles keep the 4:00
+  unlock). New table `[call_in]`: `spawn_ring_pct = 50`,
+  `spawn_clear_m = 10`, `spawn_vehicle_weight = 8`. New key
+  `[ai.armour] tank_reserve_mp = 200`.
+- **Spawn spots**: seven per base (six on a ring at half the 40 m base
+  radius, and the centre, all inside the base). A squad tries spot
+  `id mod 7` first, then the next, and takes the first with the fewest men
+  within 10 m (a vehicle counts 8). Squads bought in quick succession, or
+  onto a spot where a squad still stands, land apart (test: seven rifle
+  squads in seven ticks take seven spots more than 10 m apart; four tanks
+  bought in one tick stand more than 10 m apart).
+- **Walk times** from the base (Kessel Ridge, both bases 288 m straight
+  from their nearest point and 588 m from C; seconds from the buy until
+  the squad leader or tank is inside the 15 m capture radius, Move order,
+  `walk_times_from_each_base_to_the_front`):
+
+  | Base | Unit | Nearest point | Centre C |
+  |---|---|---|---|
+  | 0 (SW) | rifle squad (3 m/s) | B 92.5 s | 192.5 s |
+  | 0 (SW) | tank (Panzer IV) | B 49.3 s | 103.5 s |
+  | 1 (NE) | rifle squad | D 92.5 s | 192.4 s |
+  | 1 (NE) | tank (Sherman) | D 46.1 s | 94.8 s |
+
+  The old delivery times were 20–30 s (infantry) and 45 s (tanks), so the
+  walk is the larger delay; the cooldowns (24–120 s) limit how many of a
+  type arrive at once.
+- **AI**: buys by its mix priorities as before; a role whose type is on
+  cooldown when the command applies is passed over for the next role that
+  is ready. After the unlock, under the vehicle limit, non-vehicle buys
+  leave `tank_reserve_mp` unspent (an urgent AT team, more enemy vehicles
+  in sight than own AT teams and vehicles, ignores the reserve).
+- **HUD**: no queue bar; tile states ready (lit), cooldown (fill, clock,
+  seconds), need N, locked, limit, pop cap. Click, or Tab then 1–9, buys.
+  Feed: "Rifle Squad deployed at base." / "... not called in: <reason>."
+  (`docs/slices/S1b-hud.md` owner note, `godot/docs/match_state.md`).
+
+Measured after the change (before → after; "before" is the Tooling
+stage's numbers on the same seeds):
+
+| Run | Before | After |
+|---|---|---|
+| AI vs AI seeds 1–5 | USA 5 of 5; 14.2–22.6 min | Germany 3, USA 2; 12.9–16.8 min |
+| 20 matches (seeds 1–10, both bases) | Germany 4, USA 16; base 0 6, base 1 14; 13.6–26.2 min, 1 over 25 | Germany 12, USA 8; base 0 8, base 1 12; 11.7–26.7 min, 1 over 25 |
+| Tanks lost / bought (20 matches) | Germany 32/56, USA 20/63 | Germany 19/54, USA 26/56 |
+| Knock-outs (20 matches) | rack 47, crew 5 | 45 (rack 44, fire 1) |
+| HE share of kills | mean 39.5 %, max 45.5 % | mean 44.2 %, max 56.5 % |
+| fortify-test | pass | pass; totals identical (rifles 0 vs 80, mortar 28 vs 74 = 37.8 %); 20 per-seed values moved (mortar rows and the smoke control) |
+| armour-test | all hard checks pass | all hard checks pass |
+| golden ballistics | 42/42 | 42/42 |
+
+The faction swing is not a balance fix: no unit stat changed. The USA
+used to win by fielding more (63 tanks bought vs 56); with re-call
+cooldowns both sides buy about the same number of tanks (54 / 56), and
+the Sherman's duel edge (P1) is untouched. The Tune stage should
+measure again after Part A.
+
 ## Implementation order
 
 ### PART A: physical damage, armour, gunnery and content
@@ -852,7 +940,8 @@ The Part A and B stages that touch those rules move them as they go.
 ### PART B: AI and trench pinning
 
 1. **B1 Duck state** (`Combat::ducked`, keys, `steadiness_pct`).
-2. **B2 Suppress order**: command, protocol bump, relay limits, squad,
+2. **B2 Suppress order**: command, relay limits (the protocol is
+   already 4 since the call-in stage: no second bump), squad,
    unit and vehicle state, fire rules, snapshot, bridge, HUD button and
    P hotkey, presenter line; save version bump (once, with A3's new
    state).

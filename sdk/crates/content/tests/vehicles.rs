@@ -83,7 +83,17 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     let pz = &s.vehicles[0];
     let sh = &s.vehicles[1];
     assert_eq!(s.factions[pz.faction as usize].id, "ww2:germany");
-    assert_eq!((pz.cost, pz.pop, pz.call_in_ticks), (640, 12, 45 * 30));
+    // S3b: the owner's 120 s re-call cooldown (2026-11-01), no start
+    // cooldown (the 4:00 vehicle unlock applies).
+    assert_eq!(
+        (
+            pz.cost,
+            pz.pop,
+            pz.recall_cooldown_ticks,
+            pz.initial_cooldown_ticks
+        ),
+        (640, 12, 120 * 30, 0)
+    );
     assert_eq!((sh.cost, sh.pop), (560, 12));
     assert_eq!(pz.mobility.speed, Fixed::from_cm(600));
     assert_eq!(sh.mobility.reverse, Fixed::from_cm(250));

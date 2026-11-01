@@ -28,9 +28,9 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CoverTuning, DigCommonTuning,
-    DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning, SuppressionTuning,
-    ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
+    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
+    DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -216,6 +216,8 @@ pub struct RulesSetup {
     pub ai: AiSetup,
     /// Cover on arrival (S3b).
     pub cover: CoverTuning,
+    /// Spawn spots of bought squads (S3b).
+    pub call_in: CallInTuning,
 }
 
 impl RulesSetup {
@@ -602,7 +604,13 @@ pub struct SquadTypeSetup {
     /// Index into [`MatchSetup::weapons`].
     pub weapon: u16,
     pub cost: u32,
-    pub call_in_ticks: u32,
+    /// Ticks after a call-in before this type can be called in again, and
+    /// before its first call-in (S3b; a call-in spawns the squad at once).
+    pub recall_cooldown_ticks: u32,
+    pub initial_cooldown_ticks: u32,
+    /// Types with the same group share one re-call timer (S3b): a dense
+    /// index over the mod's group ids in sorted order.
+    pub cooldown_group: Option<u16>,
     pub hp: u32,
     /// Walking speed (m/s).
     pub speed: Fixed,
@@ -614,8 +622,8 @@ pub struct SquadTypeSetup {
     pub loadout: Vec<KitSetup>,
     /// S3: the vehicle (index into `MatchSetup::vehicles`) for `Vehicle`
     /// squads. Those have `men = 0`, the main gun as `weapon`, and the
-    /// vehicle's cost, call-in time, speed and sight; [`Self::pop`] is
-    /// the vehicle's.
+    /// vehicle's cost, cooldowns, speed and sight; [`Self::pop`] is the
+    /// vehicle's.
     pub vehicle: Option<u16>,
     /// The first `weapon_men` men carry `weapon` (all of them when it is at
     /// least `men`), the rest `sidearm`.
@@ -799,11 +807,24 @@ impl ModDefs {
         let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
         let vehicles = self.lower_vehicles(hz);
         let weapon_idx = |id: &str| index_of(self.weapons.keys(), id).unwrap_or(0);
+        // Cooldown groups (S3b): a dense index in sorted id order.
+        let groups: std::collections::BTreeSet<&str> = self
+            .squads
+            .values()
+            .filter_map(|s| s.cooldown_group.as_deref())
+            .collect();
+        let group_of = |s: &crate::SquadDef| {
+            s.cooldown_group
+                .as_deref()
+                .and_then(|g| groups.iter().position(|x| *x == g))
+                .map(|k| k as u16)
+        };
         let squad_types: Vec<SquadTypeSetup> = self
             .squads
             .values()
             .map(|s| {
                 let faction = index_of(self.factions.keys(), &s.faction).unwrap_or(0);
+                let cooldown_group = group_of(s);
                 let vehicle = s
                     .vehicle
                     .as_ref()
@@ -818,7 +839,9 @@ impl ModDefs {
                         men: 0,
                         weapon: vs.main_gun().weapon,
                         cost: vs.cost,
-                        call_in_ticks: vs.call_in_ticks,
+                        recall_cooldown_ticks: vs.recall_cooldown_ticks,
+                        initial_cooldown_ticks: vs.initial_cooldown_ticks,
+                        cooldown_group,
                         hp: s.hp,
                         speed: vs.mobility.speed,
                         sight: vs.sight,
@@ -838,7 +861,9 @@ impl ModDefs {
                     men: s.men,
                     weapon: weapon_idx(&s.weapon),
                     cost: s.cost,
-                    call_in_ticks: s.call_in_s * hz,
+                    recall_cooldown_ticks: s.recall_cooldown_s * hz,
+                    initial_cooldown_ticks: s.initial_cooldown_s * hz,
+                    cooldown_group,
                     hp: s.hp,
                     speed: Fixed::from_cm(s.speed_cm_s),
                     sight: Fixed::from_int(s.sight_m as i32),
@@ -1045,6 +1070,7 @@ impl ModDefs {
                     }
                 },
                 cover: rules.cover.clone(),
+                call_in: rules.call_in.clone(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -1516,6 +1542,7 @@ impl MatchSetup {
                 cover: &r.cover,
                 throw: &r.items.throw,
                 dig_common: &r.dig.common,
+                call_in: &r.call_in,
             },
         );
         r.at_ditch
@@ -1651,7 +1678,8 @@ impl MatchSetup {
                     vehicle.is_some_and(|v| {
                         v.faction == s.faction
                             && v.cost == s.cost
-                            && v.call_in_ticks == s.call_in_ticks
+                            && v.recall_cooldown_ticks == s.recall_cooldown_ticks
+                            && v.initial_cooldown_ticks == s.initial_cooldown_ticks
                             && v.main_gun().weapon == s.weapon
                     }) && s.men == 0
                         && s.weapon_men == 0
@@ -1680,6 +1708,15 @@ impl MatchSetup {
                 s.speed > Fixed::ZERO && fx_in(s.speed, 0, 20),
                 "squad_types.speed",
                 "must be in (0, 20] m/s",
+            );
+            check(
+                s.recall_cooldown_ticks <= crate::MAX_COOLDOWN_S.saturating_mul(self.tick_hz)
+                    && s.initial_cooldown_ticks
+                        <= crate::MAX_INITIAL_COOLDOWN_S.saturating_mul(self.tick_hz)
+                    && s.cooldown_group
+                        .is_none_or(|g| (g as usize) < self.squad_types.len()),
+                "squad_types.cooldown",
+                "re-call cooldown, start cooldown or cooldown group out of range",
             );
             check(
                 (1..=10_000).contains(&s.hp) && fx_in(s.sight, 1, 2000),

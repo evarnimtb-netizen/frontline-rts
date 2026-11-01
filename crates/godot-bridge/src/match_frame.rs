@@ -734,6 +734,9 @@ pub struct TickEvents {
     /// S3: the armour events the local player may know of (module docs),
     /// in sim order.
     pub armour: Vec<ArmourView>,
+    /// S3b: the local player's call-in results this tick (spawned or
+    /// refused, with the reason), in command order.
+    pub call_ins: Vec<frontline_sim::CallInEvent>,
 }
 
 impl TickEvents {
@@ -742,6 +745,7 @@ impl TickEvents {
             && self.explosions.is_empty()
             && self.tiles.is_empty()
             && self.armour.is_empty()
+            && self.call_ins.is_empty()
     }
 
     /// This tick's events of `world` as seen by `ctx.local`. Call after
@@ -819,6 +823,12 @@ impl TickEvents {
             let heights = tile_heights_f32(world.terrain(), x, y, &mut h).then_some(h);
             ev.tiles.push(TileUpdate { x, y, heights });
         }
+        ev.call_ins.extend(
+            snap.call_ins
+                .iter()
+                .filter(|c| c.player.0 == local)
+                .copied(),
+        );
         ev
     }
 
@@ -912,12 +922,13 @@ mod tests {
         let s = f.squads.iter().find(|s| s.id == own).unwrap();
         assert_eq!(s.order, OrderKind::Move);
         assert_eq!(s.target, Some([300.0, 300.0]));
-        assert_eq!(f.players[0].call_ins.len(), 1);
-        let ticks = f.players[0].call_ins[0].1;
-        for _ in 0..ticks + 2 {
-            w.step(&[]);
-            f.fill(&w, &mut ctx, 0.0, Instant::now());
-        }
+        // S3b: the squad spawned at once and its type's cooldown runs.
+        let t = setup.factions[setup.players[0].faction as usize].roster[0];
+        let left = f.players[0].cooldowns[t as usize];
+        assert!(
+            left > 0 && left <= setup.squad_types[t as usize].recall_cooldown_ticks,
+            "{left}"
+        );
         assert_eq!(f.extra[0].squads_called, 1);
         assert_eq!(f.extra[1].squads_called, f.extra[1].squads_called);
     }

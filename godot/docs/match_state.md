@@ -160,19 +160,26 @@ state = {
     { kind: String, pos: Vector3, landed: bool,        # "frag" | "smoke" | "satchel"
       id: int, owner: int },     # opt
   ],
-  callin: {                      # local player only
-    catalog: [ { type: String, name: String, cost: int, delay_s: float, men: int,
+  callin: {                      # local player only. S3b (owner 2026-11-01):
+                                 # no queue, no delivery time; a buy spawns
+                                 # the squad in the base at once
+    catalog: [ { type: String, name: String, cost: int, men: int,
                  short: String,           # opt; tile name ("Engineers")
-                 cooldown_s: float,       # opt; re-call cooldown left (not an
-                 cooldown_total_s: float, #   S1 rule; drawn when sent)
+                 recall_s: float,         # S3b; the type's re-call cooldown
+                                          # after a buy (rifle 24.0)
+                 cooldown_s: float,       # opt (S3b: sent while > 0); re-call
+                                          # cooldown left
+                 cooldown_total_s: float, # opt, with cooldown_s; its full
+                                          # length (the tile's fill)
                }, ... ],
-    queue: [ { type: String, remaining_s: float, total_s: float, men: int }, ... ],
-    queue_max: int,              # opt, default 5
+                                 # S3b: `delay_s`, `queue` and `queue_max`
+                                 # are gone
   },
   events: [                      # new since last frame; the feed shows them
     {
       kind: String,              # "point_captured" | "point_lost" | "squad_lost"
                                  # | "squad_arrived" | "under_attack"
+                                 # | "call_in_refused" (S3b)
                                  # | "tickets_low" | "info"
       text: String,              # "Point B lost."
       time_s: float,             # opt; match time of the event
@@ -214,7 +221,7 @@ What it fills, beyond the schema above:
   frame, so the projection matches the picture).
 - `squads[].rounds` (barrage rounds left), `points[].value`.
 - `players[].pop` counts living soldiers and (S3) each living vehicle's
-  `pop`, not the queue (the call-in panel adds the queue); `income` and
+  `pop` (S3b: there is no queue to add); `income` and
   `ticket_drain` are per second.
 - `stats[].squads_called` and `trench_m` are counted presenter-side (squads
   that arrived after the start; dig orders' line length × progress).
@@ -438,8 +445,8 @@ radians, sorted id lists, unknown keys ignored, *opt* keys may be absent.
 **Model.** A vehicle is an entity, like a soldier, and a squad of one.
 Vehicle ids share the soldier id space (a vehicle id is never a soldier
 id). Vehicles are sent only in `vehicles`, never in `squads` or
-`soldiers`; a vehicle's squad id is only for the call-in queue and the
-roster order. A knocked-out vehicle keeps its id as a wreck (`owner` −1).
+`soldiers`; a vehicle's squad id is only for the roster
+order. A knocked-out vehicle keeps its id as a wreck (`owner` −1).
 Enemy vehicles are sent only while the local player sees them; wrecks
 always. Own vehicles always.
 
@@ -451,7 +458,7 @@ rules: {
   vehicles: {
     unlock_s: float,               # match time vehicles can be called in from
                                    # (240.0; 0.0 with the test override)
-    limit: int,                    # most vehicles per player, alive or queued (4)
+    limit: int,                    # most vehicles alive per player (4)
   },
   dig_profiles: {                  # replaces nothing: dig_max_m stays the trench's
     trench:   { max_m: float, depth_m: float, width_m: float },   # 60, 1.6, 1.6
@@ -466,7 +473,8 @@ rules: {
       short: String,               # "Panzer IV" (cards, feed, markers)
       faction: String,             # "germany" | "usa"
       role: String,                # "tank"
-      cost: int, pop: int, call_in_s: float,   # 640, 12, 45.0
+      cost: int, pop: int, recall_s: float,    # 640, 12, 120.0 (S3b: the
+                                               # re-call cooldown; was call_in_s)
       speed: float,                # top speed, m/s (6.0)
       sight_m: float,              # 175.0
       # Box sizes for meshes, footprints, picking, rings and the card's
@@ -494,7 +502,7 @@ players: [
   {
     ...                            # S1 keys unchanged; `pop` now counts living
                                    # soldiers plus each living vehicle's `pop`
-    vehicles: int,                 # alive + queued (the call-in "2/4" badge)
+    vehicles: int,                 # alive (the call-in "2/4" badge; S3b: no queue)
     vehicle_limit: int,            # 4
   }, ...
 ],
@@ -596,8 +604,7 @@ callin: {
                                    # tile's lock and countdown); 0 or absent =
                                    # unlocked
   }, ... ],
-  queue: [ { ..., id: String }, ... ],   # S1 keys plus the squad type id
-  vehicles: int,                   # local player's vehicles alive + queued
+  vehicles: int,                   # local player's vehicles alive (S3b: no queue)
   vehicle_limit: int,              # tiles of vehicles at the limit grey out
 },
 ```
@@ -625,7 +632,7 @@ main-gun and rocket matters):
 
 | `kind` | When | Example `text` |
 |---|---|---|
-| `vehicle_arrived` | an own vehicle call-in arrives | "Panzer IV arrived." |
+| `vehicle_arrived` | an own vehicle call-in (S3b: spawns at once) | "Panzer IV deployed at base." |
 | `vehicle_knocked_out` | any seen vehicle knocked out (`player` = its owner) | "Panzer IV knocked out." / "Enemy Sherman knocked out." |
 | `vehicle_damaged` | an own component reaches 0 HP | "Panzer IV: track destroyed." |
 | `vehicle_bogged` | an own vehicle bogs | "Sherman bogged in trench." |
@@ -664,7 +671,7 @@ soldiers). Squad-level intents (`move {squads}` ...) never carry vehicles.
 | `repair_units` | `{units}` | RepairUnits `{units}` | crews repair the worst repairable component in place (no move or main gun meanwhile) |
 | `follow_units` | `{units, vehicle: int}` | FollowUnits `{units, vehicle}` | soldiers escort a friendly vehicle (single file behind it); vehicle ids in `units` are dropped |
 | `dig`, `dig_units` | as S1b, plus `profile: String` *opt* | Dig `{squad, line, profile}`, DigUnits `{units, line, profile}` | `"trench"` (default) or `"at_ditch"` (engineers only, at most `rules.dig_profiles.at_ditch.max_m`) |
-| `call_in` | `{type, id}` | CallIn `{squad_type}` | `id` (catalog `id`) wins over `type`; rejected before unlock, at the vehicle limit or over pop |
+| `call_in` | `{type, id}` | CallIn `{squad_type}` | `id` (catalog `id`) wins over `type`. S3b: bought and spawned at once, or refused (before the unlock, at the vehicle limit, on the type's cooldown, short of manpower, over the pop cap); the result comes back as a feed event (below) |
 
 Sim `CommandKind` shapes (added by the S3 sim stages; `PROTOCOL_VERSION`
 becomes 3 with them): `ReverseUnits { units: Vec<SimId>, target: FxVec2 }`,
@@ -793,8 +800,9 @@ bridge, `crates/godot-bridge/README.md` "S3: vehicles in the bridge"):
 - (1) The bridge sends `squads[].follow` (squad-level escorts, `order`
   `"follow"`) and `soldiers[].follow` with `order` `"follow"` (detached
   men), so escort links are drawn in the real game too.
-- (2) Catalog and queue entries carry `pop` (a vehicle's pop for vehicle
-  entries) and `id`; vehicle catalog entries also `vehicle` and `short`.
+- (2) Catalog entries carry `pop` (a vehicle's pop for vehicle entries)
+  and `id`; vehicle catalog entries also `vehicle` and `short`. (S3b: the
+  queue is gone.)
 - (3) Unchanged: `immobilised` still outranks `repairing` in `state`.
 - (4) `vehicle_types` carries `glacis_deg` (the hull front plate's slope
   from the def: Panzer IV 10, Sherman 47).
@@ -814,7 +822,7 @@ The notes as written while building on the mock:
    follow, `order` "follow") and `soldiers[].follow` (detached men,
    `order` "follow"); the presenter draws links only when present.
    Proposed for the bridge.
-2. Call-in queue entries: the panel counts a queued entry's pop as
+2. (Obsolete since S3b: there is no queue.) Call-in queue entries: the panel counts a queued entry's pop as
    `pop` if present, else `men`. The bridge should send `pop` for vehicle
    entries (the mock does), or a queued tank counts 0 toward the pop cap
    check in the HUD (the sim still rejects it).
@@ -866,3 +874,34 @@ man forward, Z prone, recall group 1, T smoke, the HUD at 1600x900 and
   `godot/tools/capture_net_screens.sh <Godot>` saves `s2_mock_*.png`.
 - `Godot --headless --path godot -s res://tools/check_project.gd` loads every
   script and scene and runs the menu and the match for a few frames.
+
+## Call-in without a queue (S3b, owner 2026-11-01)
+
+"Remove the queue, but keep the timer of the specific unit after it was
+called. Like in GOH." A call-in now buys at once: the sim spends the
+manpower and spawns the squad in the base in the same tick (spread over
+seven base spots, the least crowded first), and that squad type's re-call
+cooldown starts (`recall_cooldown_s` in its unit or vehicle def). There is
+no queue and no delivery time anywhere in the state.
+
+- `callin.catalog[]` drops `delay_s` and gains `recall_s`; `cooldown_s` and
+  `cooldown_total_s` are sent while the cooldown runs. `callin.queue` and
+  `callin.queue_max` are gone.
+- `players[].pop` is the sim's pop (soldiers alive and each vehicle's
+  pop); nothing is queued to add.
+- `vehicle_types[].call_in_s` is now `recall_s`.
+- Feed (`events`), from the sim's per-tick call-in results (bridge
+  `EventTracker::call_ins`, local player only):
+
+  | `kind` | When | Example `text` |
+  |---|---|---|
+  | `squad_arrived` | own squad bought | "Rifle Squad deployed at base." (the def's name) |
+  | `vehicle_arrived` | own vehicle bought | "Panzer IV deployed at base." |
+  | `call_in_refused` | own call-in refused by the sim | "Rifle Squad not called in: ready again in 12 s." |
+
+  Refusal reasons, in the sim's check order: "not in your roster",
+  "vehicles unlock in m:ss", "vehicle limit reached (4)", "ready again in
+  N s", "need N more manpower", "pop cap reached (120)". The call-in panel
+  says the same for a tile it will not send (`refusal_text`), so a click
+  on a blocked tile also gets a feed line.
+- Keys: Tab focuses the call-in column, then 1–9 buy that tile.

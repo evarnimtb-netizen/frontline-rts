@@ -126,7 +126,7 @@ fn skirmish_resolves_to_fixed_point() {
     assert_eq!(rifle.men, 8);
     assert_eq!(rifle.speed, Fixed(3 << 16));
     assert_eq!(rifle.spacing, Fixed(3 << 16));
-    assert_eq!(rifle.call_in_ticks, 600);
+    assert_eq!(rifle.recall_cooldown_ticks, 24 * 30);
     assert_eq!(s.weapons[rifle.weapon as usize].id, "ww2:kar98k");
     // 15 rpm at 30 Hz: 120 ticks between rounds.
     assert_eq!(s.weapons[rifle.weapon as usize].interval_milli, 120_000);
@@ -346,4 +346,94 @@ fn content_hash_is_stable_and_sees_def_changes() {
     });
     let b = ModDefs::load(&dir).expect("edited copy still loads");
     assert_ne!(a.content_hash(), b.content_hash());
+}
+
+#[test]
+fn call_in_cooldowns_are_the_owner_defaults() {
+    // S3b, owner 2026-11-01: no queue, no delivery time; re-call cooldowns
+    // 20 % under the first proposal. No start cooldowns, no groups.
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let s = load().resolve(&req).unwrap();
+    let want = [
+        ("ww2:ger_rifle_squad", 24),
+        ("ww2:usa_rifle_squad", 24),
+        ("ww2:ger_engineer_squad", 36),
+        ("ww2:usa_engineer_squad", 36),
+        ("ww2:ger_mg_team", 36),
+        ("ww2:usa_mg_team", 36),
+        ("ww2:ger_panzerschreck_team", 48),
+        ("ww2:usa_bazooka_team", 48),
+        ("ww2:ger_mortar_team", 60),
+        ("ww2:usa_mortar_team", 60),
+        ("ww2:ger_pz4_h_squad", 120),
+        ("ww2:usa_m4a3_75_squad", 120),
+    ];
+    assert_eq!(s.squad_types.len(), want.len());
+    for (id, secs) in want {
+        let t = &s.squad_types[s.squad_type_index(id).unwrap() as usize];
+        assert_eq!(t.recall_cooldown_ticks, secs * 30, "{id}");
+        assert_eq!(t.initial_cooldown_ticks, 0, "{id}");
+        assert_eq!(t.cooldown_group, None, "{id}");
+    }
+    let c = &s.rules.call_in;
+    assert_eq!((c.spawn_ring_pct, c.spawn_clear_m), (50, 10));
+    assert_eq!(s.rules.ai.armour.tank_reserve_mp, 200);
+}
+
+#[test]
+fn cooldown_groups_share_an_index_and_bad_values_are_refused() {
+    let root = ww2_root();
+    let mut defs = load();
+    let path =
+        std::env::temp_dir().join(format!("frontline-s3b-group-{}.toml", std::process::id()));
+    std::fs::write(
+        &path,
+        "[defs.units.\"ww2:ger_mg_team\"]\ncooldown_group = \"ww2:support\"\n\
+         [defs.units.\"ww2:ger_mortar_team\"]\ncooldown_group = \"ww2:support\"\n\
+         initial_cooldown_s = 90\n",
+    )
+    .unwrap();
+    defs.apply_override(&path, "ww2:skirmish").unwrap();
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let s = defs.resolve(&req).unwrap();
+    let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
+    assert_eq!(ty("ww2:ger_mg_team").cooldown_group, Some(0));
+    assert_eq!(ty("ww2:ger_mortar_team").cooldown_group, Some(0));
+    assert_eq!(ty("ww2:ger_mortar_team").initial_cooldown_ticks, 90 * 30);
+    assert_eq!(ty("ww2:ger_rifle_squad").cooldown_group, None);
+    assert!(s.validate().is_empty());
+    // Out of range and a group that is not a namespaced id.
+    for (text, key) in [
+        ("recall_cooldown_s = 601", "recall_cooldown_s"),
+        ("initial_cooldown_s = 1801", "initial_cooldown_s"),
+        ("cooldown_group = \"Support\"", "cooldown_group"),
+    ] {
+        std::fs::write(&path, format!("[defs.units.\"ww2:ger_mg_team\"]\n{text}\n")).unwrap();
+        let e = ModDefs::load(&root)
+            .unwrap()
+            .apply_override(&path, "ww2:skirmish")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(key), "{key}: {e}");
+    }
+    // A vehicle squad takes its cooldowns from the vehicle def only.
+    std::fs::write(
+        &path,
+        "[defs.units.\"ww2:ger_pz4_h_squad\"]\nrecall_cooldown_s = 10\n",
+    )
+    .unwrap();
+    let e = ModDefs::load(&root)
+        .unwrap()
+        .apply_override(&path, "ww2:skirmish")
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("recall_cooldown_s"), "{e}");
+    // The setup re-checks (saves are untrusted).
+    let mut bad = s.clone();
+    bad.squad_types[0].recall_cooldown_ticks = 601 * 30;
+    assert!(bad.validate().iter().any(|i| i.path.contains("cooldown")));
+    let mut bad = s.clone();
+    bad.squad_types[0].cooldown_group = Some(500);
+    assert!(bad.validate().iter().any(|i| i.path.contains("cooldown")));
+    let _ = std::fs::remove_file(&path);
 }

@@ -256,7 +256,8 @@ smoke_below_mm = 2000
 
 [vehicles]
 # S3 (docs/slices/S3-armour.md). Vehicles can be called in from 4:00 of
-# match time, at most 4 per player alive or queued. Tests use the override
+# match time, at most 4 alive per player (S3b: no call-in queue any
+# more; each vehicle def adds its own re-call cooldown). Tests use the override
 # in mods/ww2/tests/rules_test_unlock.toml (unlock_s = 0).
 unlock_s = 240
 limit = 4
@@ -502,3 +503,26 @@ threat_m = 300
 retreat_engine_pct = 30
 # A vehicle backing up an own point stands this far behind it (m).
 backup_m = 30
+# S3b call-in without a queue: after the vehicle unlock, while under the
+# vehicle limit, the AI's infantry call-ins leave at least this much
+# manpower unspent (MP), so a tank can be bought soon after its 120 s
+# re-call cooldown ends. 200 MP is under a third of a tank (Panzer IV 640,
+# Sherman 560) and about 50 s of base income: a small reserve, not a freeze
+# of infantry buying (owner, 2026-11-01: "keep a small reserve for a tank").
+tank_reserve_mp = 200
+
+# Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
+# once in the base, no queue and no delivery time).
+[call_in]
+# Six spots on a ring at this share of the base radius (%), the seventh
+# the base centre. 50: the S1 spawn ring (base radius 40 m -> 20 m), so an
+# 8-man line (21 m wide) stays inside the base.
+spawn_ring_pct = 50
+# Each squad tries its own spot first (squad id mod 7); a spot with men or
+# vehicles within this distance (m) is passed over for the least crowded
+# one. 10 m: about half an 8-man line, so a squad still standing on its
+# spot is seen, while the 20 m between ring spots stays clear.
+spawn_clear_m = 10
+# A vehicle counts as this many men when comparing spots (a 6 x 3 m hull
+# covers the ground of about a whole squad).
+spawn_vehicle_weight = 8

@@ -56,7 +56,11 @@ pub enum CommandKind {
         rounds: u16,
     },
     /// Buy a squad (index into `MatchSetup::squad_types`, from the player's
-    /// faction roster). It arrives at the base after its call-in delay.
+    /// faction roster). S3b: it spawns at the base in the same tick and its
+    /// type's re-call cooldown starts; refused (with a
+    /// `game::CallInRefusal` in the snapshot) without the manpower, during
+    /// the cooldown, over the pop cap, or for a vehicle before the unlock
+    /// or at the limit. There is no queue.
     CallIn { squad_type: u16 },
     /// Give up; the last player standing wins.
     Surrender,

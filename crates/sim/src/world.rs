@@ -4,7 +4,7 @@
 //!
 //! | # | Stage | Work | Parallel? |
 //! |---|-------|---------|-----------|
-//! | 1 | Intent | sorted command apply (match: human and due AI commands together); bench: waypoint re-pick; match: call-ins, AI plans ([`crate::ai`]), path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
+//! | 1 | Intent | sorted command apply (match: human and due AI commands together; S3b: an accepted call-in spawns its squad here); bench: waypoint re-pick; match: AI plans ([`crate::ai`]), path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
 //! | 2 | Perception | match: spotting per player ([`crate::spotting`]) | per player, serial apply |
 //! | 3 | Movement | spatial hash and (S3) vehicle index/frames rebuild; ORCA plan (soldiers also avoid vehicle circles); integrate (pinned men stay); S3: vehicles follow their paths, `drive` and push soldiers out, then the vehicle index/frames are rebuilt ([`crate::vehicle`]) | serial rebuilds, per-chunk plan + integrate, serial vehicles |
 //! | 4 | Weapons | bench: cooldowns, random fire; match: marks, squad focus, targeting and fire, mortars ([`crate::combat`]), throw wind-ups and releases ([`crate::items`]); sorted spawn into the pool | per-chunk, serial focus/mortars/throws/spawn |
@@ -462,6 +462,8 @@ pub struct World {
     fused: Vec<crate::items::Thrown>,
     /// Armour events of the last tick (S3), for the snapshot.
     armour_events: Vec<ArmourEv>,
+    /// Call-in results of the last tick (S3b), for the snapshot.
+    call_in_events: Vec<crate::game::CallInEvent>,
 }
 
 impl World {
@@ -600,6 +602,7 @@ impl World {
             explosions: Vec::new(),
             fused: Vec::new(),
             armour_events: Vec::new(),
+            call_in_events: Vec::new(),
             state,
         };
         if let Some(g) = world.state.game.as_mut() {
@@ -866,7 +869,6 @@ impl World {
                 hash: &mut *hash,
                 tick: *tick,
             };
-            game.spawn_call_ins(&mut ctx);
             game.run_ai(ctx.ents, ctx.terrain, *tick);
             game.approach_attacks(&mut ctx);
             path_expansions = game.serve_paths(&mut ctx, path_scratch);
@@ -1787,6 +1789,7 @@ impl World {
         // `cmds.len()` refer to `ai`.
         let mut ai = std::mem::take(&mut self.ai_cmds);
         ai.clear();
+        self.call_in_events.clear();
         if let Some(game) = &mut self.state.game {
             game.take_ai_commands(self.state.tick, &mut ai);
         }
@@ -1815,6 +1818,9 @@ impl World {
                         game.ai_rejected(c.player);
                     }
                 }
+                // Call-in results go to the snapshot; the match state
+                // never holds them between ticks.
+                self.call_in_events.append(&mut game.call_in_events);
                 continue;
             }
             let ok = match c.kind {
@@ -1961,6 +1967,7 @@ impl World {
         );
         self.snapshot
             .fill_events(&self.shots, &self.explosions, &self.armour_events);
+        self.snapshot.call_ins.clone_from(&self.call_in_events);
         self.snapshot
             .fill_shells(&self.state.projectiles, self.state.game.as_ref());
     }
@@ -2211,6 +2218,33 @@ mod tests {
             });
         });
         assert!(load_err(&bytes).contains("AI"));
+        // S3b re-call cooldowns: one per squad type, never further ahead
+        // than the longest cooldown.
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().players[0].ready_at.pop();
+        });
+        assert!(load_err(&bytes).contains("cooldown"));
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().players[0].ready_at[0] = u64::MAX;
+        });
+        assert!(load_err(&bytes).contains("cooldown"));
+        let longest = w
+            .match_setup()
+            .unwrap()
+            .squad_types
+            .iter()
+            .map(|t| t.recall_cooldown_ticks.max(t.initial_cooldown_ticks) as u64)
+            .max()
+            .unwrap();
+        let tick = w.tick();
+        let ok = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().players[0].ready_at[0] = tick + longest;
+        });
+        assert!(World::load(&ok, 1).is_ok());
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().players[0].ready_at[0] = tick + longest + 1;
+        });
+        assert!(load_err(&bytes).contains("cooldown"));
         // Economy values past the content ranges never reach the sim.
         let bytes = save_edited(&w, |s| {
             s.game.as_mut().unwrap().setup.rules.point_income_per_min = u32::MAX;
@@ -2258,8 +2292,10 @@ mod tests {
         fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
             s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
         }
-        let edits: [fn(&mut SimState); 14] = [
+        let edits: [fn(&mut SimState); 15] = [
             |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
+            // S3b: a re-call cooldown.
+            |s| s.game.as_mut().unwrap().players[1].ready_at[2] += 1,
             |s| s.game.as_mut().unwrap().points[2].contested = true,
             |s| ai(s).next_seq += 1,
             |s| s.game.as_mut().unwrap().players[1].drain_acc += 1,

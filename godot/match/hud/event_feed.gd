@@ -22,6 +22,8 @@ const KINDS := {
 	"vehicle_knocked_out": [HudStyle.DANGER, &""],
 	"vehicle_damaged": [HudStyle.ACCENT, &""],
 	"vehicle_bogged": [HudStyle.ACCENT, &""],
+	# S3b: a call-in the sim or the panel refused, with the reason.
+	"call_in_refused": [HudStyle.DANGER, &"error"],
 }
 
 var view: MatchView

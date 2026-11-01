@@ -1,24 +1,31 @@
 extends Control
 ## Call-in column (HUD v2), bottom right above the orders, callin_w wide:
-## one shared strip with a tile per squad type from state.callin.catalog,
-## then one queue bar. Every tile always shows its name and cost; a tile
-## the player cannot buy now is dimmed and says why ("need 25" when short
-## of manpower, steady while the shortfall ticks down: see reason_text).
-## An optional re-call cooldown (catalog `cooldown_s` /
-## `cooldown_total_s`) fills the tile from the bottom with a clock and the
-## seconds left. The queue bar shows "Next: <unit> <s>", "n/5" and the
-## head's progress.
+## one strip with a tile per squad type from state.callin.catalog.
 ##
-## Click a tile to call it in. Tab focuses the column: Up/Down pick a tile,
-## Enter or Space calls it in, Tab or Esc leaves (the camera's keys pause
-## meanwhile).
+## S3b (owner, 2026-11-01): no queue and no delivery time. A call-in buys
+## at once and the squad spawns in the base; then that type waits out its
+## re-call cooldown (catalog `cooldown_s` left of `cooldown_total_s`). Every
+## tile always shows its name and cost, and one state:
+## * ready: affordable and off cooldown, drawn lit (accent fill and rim) so
+##   the player notices;
+## * cooldown: a fill from the bottom, a clock and the seconds left (the
+##   cost greys when it is also unaffordable);
+## * locked (vehicles before the unlock): a lock and the countdown;
+## * limit (vehicles at the limit): the red "n/4" badge and "limit";
+## * otherwise dimmed with the reason: "need 25" when short of manpower
+##   (steady while the shortfall ticks down: see reason_text), "pop cap".
 ##
-## S3: vehicle tiles show cost and pop, a lock with a countdown until the
-## unlock (catalog `locked_s`), and an `n/4` badge for the vehicle limit
-## (greyed at the limit). The call-in intent carries the catalog `id`.
-## When one column of tiles would rise above CLEAR_TOP of the HUD height
-## (the S1b 1280 bar: no higher than y460 of 800), the tiles go two per
-## row in a column two tiles wide.
+## Click a tile to call it in. Tab focuses the column: 1–9 buy that tile at
+## once, Up/Down pick a tile, Enter or Space calls it in, Tab or Esc
+## leaves (the camera's keys pause meanwhile). A tile that cannot be
+## bought says why in the feed ("Rifle squad not called in: ready again in
+## 12 s."); the sim's own refusals arrive the same way (bridge events).
+##
+## S3: vehicle tiles show cost and pop and an `n/4` badge for the vehicle
+## limit. The call-in intent carries the catalog `id`. When one column of
+## tiles would rise above CLEAR_TOP of the HUD height (the S1b 1280 bar: no
+## higher than y460 of 800), the tiles go two per row in a column two
+## tiles wide.
 
 const TILE_NAMES := {"rifle": "Rifle squad", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar", "at": "AT team"}
 ## The column's top stays at or below this fraction of the HUD height.
@@ -27,6 +34,9 @@ const COL_GAP := 4.0
 ## Least gap between a tile's cost and its reason: 3 px lets "need 222"
 ## (56 px, tabular) sit next to a 3-digit cost in a 120 px tile.
 const REASON_GAP := 3.0
+## A ready tile: accent wash and rim.
+const READY_FILL := Color(0.878, 0.678, 0.290, 0.16)
+const READY_RIM := Color(0.878, 0.678, 0.290, 0.75)
 
 var view: MatchView
 var focused := false
@@ -34,8 +44,6 @@ var cursor := 0
 ## Tile columns: 1, or 2 when one column would be too tall.
 var columns := 1
 var _catalog: Array = []
-var _queue: Array = []
-var _queue_max := 5
 var _hover := -1
 var _vehicles := 0
 var _vehicle_limit := 4
@@ -52,7 +60,7 @@ func bind(v: MatchView) -> void:
 ## Column height for a metrics set in one column (S1b).
 func column_height(m: Dictionary) -> float:
 	var n := maxi(view.state.get("callin", {}).get("catalog", []).size(), 1)
-	return _strip_h(m, n, 1) + 4.0 + float(m.ci_q)
+	return _strip_h(m, n, 1)
 
 
 ## Column size for a metrics set when its bottom is at `bottom` on a HUD
@@ -61,10 +69,10 @@ func column_height(m: Dictionary) -> float:
 func column_size(m: Dictionary, bottom: float, hud_h: float) -> Vector2:
 	var n := maxi(view.state.get("callin", {}).get("catalog", []).size(), 1)
 	columns = 1
-	var h := _strip_h(m, n, 1) + 4.0 + float(m.ci_q)
+	var h := _strip_h(m, n, 1)
 	if bottom - h < hud_h * CLEAR_TOP and n > 1:
 		columns = 2
-		h = _strip_h(m, n, 2) + 4.0 + float(m.ci_q)
+		h = _strip_h(m, n, 2)
 	return Vector2(float(m.callin_w) * columns + COL_GAP * (columns - 1), h)
 
 
@@ -77,8 +85,6 @@ func update_state(s: Dictionary) -> void:
 	var ci: Dictionary = s.get("callin", {})
 	var before := _catalog.size()
 	_catalog = ci.get("catalog", [])
-	_queue = ci.get("queue", [])
-	_queue_max = int(ci.get("queue_max", 5))
 	_vehicles = int(ci.get("vehicles", 0))
 	_vehicle_limit = int(ci.get("vehicle_limit", s.get("rules", {}).get("vehicles", {}).get("limit", 4)))
 	if _catalog.size() != before:
@@ -99,8 +105,9 @@ static func is_vehicle(c: Dictionary) -> bool:
 	return String(c.get("type", "")) == "vehicle" or c.has("vehicle")
 
 
-## Why a catalog entry cannot be called in now ("" = it can). Vehicles:
-## "locked" before the unlock, "limit" at the vehicle limit.
+## Why a catalog entry cannot be called in now ("" = it can), in the sim's
+## order: "paused", vehicles "locked" before the unlock and "limit" at the
+## vehicle limit, "cooldown", "need N" short of manpower, "pop cap".
 func blocked_reason(c: Dictionary) -> String:
 	if view.input_blocked():
 		return "paused"
@@ -109,29 +116,61 @@ func blocked_reason(c: Dictionary) -> String:
 			return "locked"
 		if _vehicles >= _vehicle_limit:
 			return "limit"
-	var me := view.player(view.local_player)
-	var short := int(c.cost) - int(me.get("manpower", 0.0))
-	if short > 0:
-		return "need %d" % short
-	if _queue.size() >= _queue_max:
-		return "queue full"
-	var queued := 0
-	for q in _queue:
-		queued += int(q.get("pop", q.get("men", 0)))
-	if int(me.get("pop", 0)) + queued + int(c.get("pop", c.get("men", 0))) > int(view.rules().get("pop_cap", 120)):
-		return "pop cap"
 	if float(c.get("cooldown_s", 0.0)) > 0.0:
 		return "cooldown"
+	var short := _short_mp(c)
+	if short > 0:
+		return "need %d" % short
+	var me := view.player(view.local_player)
+	if int(me.get("pop", 0)) + int(c.get("pop", c.get("men", 0))) > int(view.rules().get("pop_cap", 120)):
+		return "pop cap"
 	return ""
 
 
-## Calls in catalog entry `i` (tile click, Enter); false when blocked.
+## Manpower short of entry `c`'s cost (0 when affordable).
+func _short_mp(c: Dictionary) -> int:
+	var me := view.player(view.local_player)
+	return maxi(int(c.cost) - int(me.get("manpower", 0.0)), 0)
+
+
+## Whether tile `i` can be bought right now (drawn lit).
+func is_ready(i: int) -> bool:
+	return i >= 0 and i < _catalog.size() and blocked_reason(_catalog[i]) == ""
+
+
+## The feed words for why entry `c` cannot be called in (the bridge's
+## `refusal_words` for the same reasons).
+func refusal_text(c: Dictionary) -> String:
+	var why := blocked_reason(c)
+	match why:
+		"":
+			return ""
+		"paused":
+			return "the match is paused"
+		"locked":
+			return "vehicles unlock in %s" % UiPalette.mmss(ceilf(float(c.get("locked_s", 0.0))))
+		"limit":
+			return "vehicle limit reached (%d)" % _vehicle_limit
+		"cooldown":
+			return "ready again in %d s" % ceili(float(c.get("cooldown_s", 0.0)))
+		"pop cap":
+			return "pop cap reached (%d)" % int(view.rules().get("pop_cap", 120))
+	return "need %d more manpower" % _short_mp(c)
+
+
+## Calls in catalog entry `i` (tile click, Enter, 1–9); false when
+## blocked, and the feed says why.
 func call_in_index(i: int) -> bool:
 	if i < 0 or i >= _catalog.size():
 		return false
 	var c: Dictionary = _catalog[i]
-	if blocked_reason(c) != "":
-		AudioManager.play_ui(&"error")
+	var why := refusal_text(c)
+	if why != "":
+		# The feed line plays the error sound.
+		if view.event_feed != null:
+			view.event_feed.push({"kind": "call_in_refused", "text": "%s not called in: %s." % [_short(c.type, c.get("short", "")), why]})
+		else:
+			AudioManager.play_ui(&"error")
 		return false
 	var data := {"type": c.type}
 	if c.has("id"):
@@ -178,48 +217,10 @@ func _draw() -> void:
 	if focused:
 		HudStyle.box(self, strip.grow(1.0), Color(0, 0, 0, 0), 5, HudStyle.ACCENT, 2)
 	HudStyle.text(self, bold, Vector2(8, float(m.ci_head) - 4.0), "CALL-IN", HudStyle.FONT, HudStyle.DIM)
-	HudStyle.text(self, font, Vector2(w - 8, float(m.ci_head) - 4.0), "Tab", HudStyle.FONT_SMALL, HudStyle.ACCENT if focused else HudStyle.DIM, 1)
+	var hint := "1–%d" % mini(_catalog.size(), 9) if focused else "Tab"
+	HudStyle.text(self, font, Vector2(w - 8, float(m.ci_head) - 4.0), hint, HudStyle.FONT_SMALL, HudStyle.ACCENT if focused else HudStyle.DIM, 1)
 	for i in _catalog.size():
 		_draw_tile(i, font, bold)
-	# Queue bar.
-	var qy := strip.size.y + 4.0
-	var qh: float = m.ci_q
-	var qr := Rect2(0, qy, w, qh)
-	HudStyle.box(self, qr, HudStyle.BG_CALLIN, 5)
-	var count := "%d/%d" % [_queue.size(), _queue_max]
-	HudStyle.text(self, bold, Vector2(w - 6, qy + 15.0), count, HudStyle.FONT_SMALL, HudStyle.TEXT, 1)
-	var avail := w - 18.0 - HudStyle.text_w(bold, count, HudStyle.FONT_SMALL)
-	if _queue.is_empty():
-		HudStyle.text(self, font, Vector2(6, qy + 15.0), "Queue empty", HudStyle.FONT, HudStyle.OFF_TEXT)
-		return
-	var head: Dictionary = _queue[0]
-	# "Next: Rifle" (14) then the time (13, a time). Drop "Next:" when the
-	# column is too narrow for both.
-	var unit := _queue_name(head)
-	var secs := "%ds" % ceili(float(head.get("remaining_s", 0.0)))
-	var label := "Next: " + unit
-	var secs_w := HudStyle.text_w(bold, secs, HudStyle.FONT_SMALL) + 4.0
-	if HudStyle.text_w(font, label, HudStyle.FONT) + secs_w > avail:
-		label = unit
-	label = HudStyle.fit(font, label, avail - secs_w, HudStyle.FONT)
-	HudStyle.text(self, font, Vector2(6, qy + 15.0), label, HudStyle.FONT, HudStyle.TEXT)
-	HudStyle.text(self, bold, Vector2(10.0 + HudStyle.text_w(font, label, HudStyle.FONT), qy + 15.0), secs, HudStyle.FONT_SMALL, HudStyle.TEXT)
-	var total := maxf(float(head.get("total_s", 1.0)), 0.01)
-	var frac := clampf(1.0 - float(head.get("remaining_s", 0.0)) / total, 0.0, 1.0)
-	var bar := Rect2(6, qy + qh - 6.0, w - 12.0, 3.0)
-	draw_rect(bar, Color(1, 1, 1, 0.18))
-	draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), HudStyle.ACCENT)
-
-
-## Card name of a queue entry: the squad card name, or the catalog tile's
-## short name for vehicles and other entries found by id.
-func _queue_name(q: Dictionary) -> String:
-	if MatchView.SHORT_NAMES.has(q.type):
-		return MatchView.SHORT_NAMES[q.type]
-	for c in _catalog:
-		if String(c.get("id", "")) == String(q.get("id", "")) and q.has("id"):
-			return _short(c.type, c.get("short", ""))
-	return String(q.type)
 
 
 func _draw_tile(i: int, font: Font, bold: Font) -> void:
@@ -227,7 +228,12 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 	var r := tile_rect(i)
 	var why := blocked_reason(c)
 	var off := why != ""
-	draw_rect(Rect2(r.position.x + 8, r.position.y, r.size.x - 16, 1), Color(HudStyle.TEXT, 0.14))
+	var ready := not off
+	if ready:
+		draw_rect(r.grow_individual(-1, -1, -1, -1), READY_FILL)
+		draw_rect(r.grow_individual(-1.5, -1.5, -1.5, -1.5), READY_RIM, false, 1.0)
+	else:
+		draw_rect(Rect2(r.position.x + 8, r.position.y, r.size.x - 16, 1), Color(HudStyle.TEXT, 0.14))
 	var cd := float(c.get("cooldown_s", 0.0))
 	if cd > 0.0:
 		var frac := clampf(cd / maxf(float(c.get("cooldown_total_s", cd)), 0.01), 0.0, 1.0)
@@ -239,6 +245,11 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 	var x0 := r.position.x + 8.0
 	var x1 := r.end.x - 8.0
 	var vehicle := is_vehicle(c)
+	# Focused: the tile's buy key (1–9) before its name.
+	if focused and i < 9:
+		var key := "%d" % (i + 1)
+		HudStyle.text(self, bold, Vector2(x0, r.position.y + 16.0), key, HudStyle.FONT_SMALL, HudStyle.ACCENT)
+		x0 += HudStyle.text_w(bold, key, HudStyle.FONT_SMALL) + 5.0
 	# Vehicle limit badge ("2/4") on the title line.
 	var badge_w := 0.0
 	if vehicle:
@@ -251,16 +262,18 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 		badge_w += 4.0
 	var title := HudStyle.fit(bold, _short(c.type, c.get("short", "")), x1 - x0 - badge_w, HudStyle.FONT)
 	HudStyle.text(self, bold, Vector2(x0, r.position.y + 16.0), title, HudStyle.FONT, HudStyle.OFF_TEXT if off else HudStyle.TEXT)
+	x0 = r.position.x + 8.0
 	var cost := "%d MP" % int(c.cost)
 	var cost_w := HudStyle.text_w(bold, cost, HudStyle.FONT)
-	HudStyle.text(self, bold, Vector2(x0, r.end.y - 5.0), cost, HudStyle.FONT, HudStyle.OFF_ACCENT if off else HudStyle.ACCENT)
+	var afford := _short_mp(c) == 0
+	HudStyle.text(self, bold, Vector2(x0, r.end.y - 5.0), cost, HudStyle.FONT, HudStyle.ACCENT if afford and why in ["", "cooldown"] else HudStyle.OFF_ACCENT)
 	var locked := float(c.get("locked_s", 0.0))
 	if vehicle and locked > 0.0:
 		# Lock and the countdown to the unlock.
 		var t := UiPalette.mmss(ceilf(locked))
 		HudStyle.text(self, bold, Vector2(x1, r.end.y - 5.0), t, HudStyle.FONT_SMALL, HudStyle.TEXT, 1)
 		HudStyle.lock(self, Vector2(x1 - HudStyle.text_w(bold, t, HudStyle.FONT_SMALL) - 9.0, r.end.y - 11.0), HudStyle.TEXT, true)
-	elif cd > 0.0:
+	elif cd > 0.0 and why == "cooldown":
 		var secs := "%ds" % ceili(cd)
 		HudStyle.text(self, bold, Vector2(x1, r.end.y - 5.0), secs, HudStyle.FONT_SMALL, HudStyle.TEXT, 1)
 		HudStyle.clock(self, Vector2(x1 - 6.0 - HudStyle.text_w(bold, secs, HudStyle.FONT_SMALL) - 6.0, r.end.y - 10.0), 5.5, HudStyle.TEXT)
@@ -286,7 +299,7 @@ func reason_text(i: int) -> String:
 		return ""
 	var c: Dictionary = _catalog[i]
 	var why := blocked_reason(c)
-	if why == "" or float(c.get("cooldown_s", 0.0)) > 0.0 or (is_vehicle(c) and float(c.get("locked_s", 0.0)) > 0.0):
+	if why == "" or why == "cooldown" or why == "locked":
 		return ""
 	var room := tile_rect(i).size.x - 16.0 - REASON_GAP - HudStyle.text_w(HudStyle.bold(), "%d MP" % int(c.cost), HudStyle.FONT)
 	var nums := HudStyle.tabular(get_theme_default_font())
@@ -301,8 +314,7 @@ static func _zero_digits(s: String) -> String:
 	return out
 
 
-## Tile name (catalog `short`, else TILE_NAMES); the queue bar uses the
-## card names ("Next: Rifle 7s").
+## Tile name (catalog `short`, else TILE_NAMES).
 func _short(type: String, given := "") -> String:
 	if given != "":
 		return given
@@ -331,7 +343,17 @@ func _gui_input(event: InputEvent) -> void:
 			call_in_index(i)
 		accept_event()
 	elif event is InputEventKey and event.pressed and focused:
-		match event.physical_keycode:
+		var k: int = event.physical_keycode
+		if k >= KEY_1 and k <= KEY_9:
+			# The tile's number buys it at once.
+			var i := k - KEY_1
+			if i < _catalog.size():
+				cursor = i
+				call_in_index(i)
+			queue_redraw()
+			accept_event()
+			return
+		match k:
 			KEY_UP:
 				cursor = posmod(cursor - 1, maxi(_catalog.size(), 1))
 			KEY_DOWN:
@@ -355,12 +377,12 @@ func _notification(what: int) -> void:
 func _get_tooltip(at: Vector2) -> String:
 	var i := _tile_at(at)
 	if i < 0:
-		return "Call-in  [Tab]: Up/Down pick, Enter calls in."
+		return "Call-in  [Tab]: 1–9 buy a tile, Up/Down pick, Enter calls in."
 	var c: Dictionary = _catalog[i]
-	var why := blocked_reason(c)
 	var what := "%d men" % int(c.get("men", 0))
 	if is_vehicle(c):
 		what = "%d pop, vehicle %d/%d" % [int(c.get("pop", 0)), _vehicles, _vehicle_limit]
-		if float(c.get("locked_s", 0.0)) > 0.0:
-			why = "vehicles unlock in %s" % UiPalette.mmss(ceilf(float(c.locked_s)))
-	return "%s: %s, %d manpower, arrives at base after %d s.%s" % [c.name, what, int(c.cost), int(c.delay_s), "" if why == "" else "\nNot now: " + why]
+	var recall := float(c.get("recall_s", c.get("cooldown_total_s", 0.0)))
+	var after := "" if recall <= 0.0 else " Then %d s before the next." % int(recall)
+	var why := refusal_text(c)
+	return "%s: %s, %d manpower. Deploys at the base at once.%s%s" % [c.name, what, int(c.cost), after, "" if why == "" else "\nNot now: " + why]

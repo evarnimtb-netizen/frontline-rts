@@ -178,15 +178,18 @@ contract in `godot/docs/match_state.md` "Vehicles (S3)"):
   `players[].vehicles` and `vehicle_limit`, `vehicles` (interpolated like
   soldiers), `shells` (drawn as far back along their flight as the render
   time lags), `armour_events`, the call-in `id`, `pop`, `vehicle`, `short`
-  and `locked_s`, queue `id` and `pop`, `callin.vehicles` and
-  `vehicle_limit`, `squads[].follow` and detached men's `follow`.
-  `players[].pop` subtracts the queue's pop (a vehicle's pop for a
-  vehicle), as the HUD adds the queue itself.
+  and `locked_s`, `callin.vehicles` and `vehicle_limit`, `squads[].follow`
+  and detached men's `follow`. S3b (no call-in queue): catalog entries
+  carry `recall_s` and, while it runs, `cooldown_s` / `cooldown_total_s`
+  from `PlayerSnapshot::cooldowns`; `players[].pop` is the sim's pop as is.
 - **Effects and feed** (`src/match_events.rs`): `cannon` (the round from the
   tick's `Fired` event, the direction, the vehicle type), `rocket_launch`,
   `armour_hit`, `cook_off`, explosion sizes `tank_he` and `rocket`; feed
   lines `vehicle_arrived`, `vehicle_knocked_out`, `vehicle_damaged`,
-  `vehicle_bogged`.
+  `vehicle_bogged`. S3b: `TickEvents.call_ins` (the local player's call-in
+  results) make `squad_arrived` / `vehicle_arrived` ("... deployed at
+  base.") and `call_in_refused` lines with the reason
+  (`EventTracker::call_ins`, `refusal_words`).
 - **Intents** (`src/intents.rs`): own vehicle ids pass `unit_set` next to
   soldier ids; `reverse_units`, `face_units`, `attack_unit`, `set_ammo`,
   `repair_units`, `follow_units` become their commands (`vehicle_command`);

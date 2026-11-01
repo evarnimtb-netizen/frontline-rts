@@ -1278,26 +1278,15 @@ fn throttle_for(cap: Fx, top: Fx) -> i32 {
 type Repath = (SquadId, FxVec2, Option<u32>);
 
 impl MatchState {
-    /// Vehicles of `player` alive plus vehicle call-ins queued (the limit's
-    /// count).
+    /// Vehicles of `player` alive (the limit's count; S3b: a bought
+    /// vehicle is alive at once, nothing waits in a queue).
     pub fn vehicles_counted(&self, ents: &Entities, player: PlayerId) -> u32 {
-        let alive = self
-            .vehicles
+        self.vehicles
             .keys()
             .filter(|id| {
                 ents.kind[id.index()] == EntityKind::Vehicle && ents.owner[id.index()] == player
             })
-            .count() as u32;
-        let queued = self.players[player.0 as usize]
-            .call_ins
-            .iter()
-            .filter(|c| {
-                self.setup.squad_types[c.squad_type as usize]
-                    .vehicle
-                    .is_some()
-            })
-            .count() as u32;
-        alive + queued
+            .count() as u32
     }
 
     /// Whether `id` is a vehicle squad.

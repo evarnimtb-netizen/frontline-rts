@@ -8,7 +8,11 @@
 //! folding a squad's shots into one cue per batch so a firefight does not
 //! flood the audio pool. Positions are sim axes; the node converts.
 //!
-//! S3: own vehicles arriving and the visible armour events (knock-outs,
+//! S3b: every own call-in makes a feed line from the sim's call-in result
+//! ([`EventTracker::call_ins`]): "Rifle Squad deployed at base." (squads
+//! and vehicles spawn at once, no queue) or the refusal with its reason.
+//!
+//! S3: the visible armour events (knock-outs,
 //! own components destroyed, own vehicles bogged) make feed lines; main
 //! guns and launchers firing, armour impacts and ammo-rack detonations
 //! make the `cannon`, `rocket_launch`, `armour_hit` and `cook_off` cues,
@@ -17,7 +21,7 @@
 use std::collections::BTreeMap;
 
 use frontline_content::{AmmoMechanism, MatchSetup, WeaponClass};
-use frontline_sim::{ArmourEventKind, BlastKind, LoadedSnap, OrderKind, Outcome, vehicle_flags};
+use frontline_sim::{ArmourEventKind, BlastKind, CallInRefusal, LoadedSnap, OrderKind, Outcome};
 
 use crate::match_frame::{MatchFrame, TickEvents};
 
@@ -32,7 +36,9 @@ pub const TICKETS_LOW: u32 = 100;
 pub struct UiEvent {
     /// `point_captured`, `point_lost`, `squad_lost`, `squad_arrived`,
     /// `under_attack`, `tickets_low` or `info`; S3 `vehicle_arrived`,
-    /// `vehicle_knocked_out`, `vehicle_damaged`, `vehicle_bogged`.
+    /// `vehicle_knocked_out`, `vehicle_damaged`, `vehicle_bogged`; S3b
+    /// `call_in_refused`. Since S3b `squad_arrived` and `vehicle_arrived`
+    /// come from a call-in ("... deployed at base.").
     pub kind: &'static str,
     pub text: String,
     pub pos: Option<[f32; 2]>,
@@ -61,8 +67,24 @@ pub struct EventTracker {
     last_alert: Option<u64>,
     tickets_low: bool,
     ended: bool,
-    /// Own live vehicles of the last frame.
-    vehicles: Vec<u32>,
+}
+
+/// Why a call-in was refused, in feed words ("need 25 more manpower").
+pub fn refusal_words(why: CallInRefusal, setup: &MatchSetup, hz: u32) -> String {
+    let secs = |ticks: u32| ticks.div_ceil(hz.max(1));
+    match why {
+        CallInRefusal::NotInRoster => "not in your roster".to_owned(),
+        CallInRefusal::Locked { ticks } => {
+            let s = secs(ticks);
+            format!("vehicles unlock in {}:{:02}", s / 60, s % 60)
+        }
+        CallInRefusal::VehicleLimit => {
+            format!("vehicle limit reached ({})", setup.rules.vehicles.limit)
+        }
+        CallInRefusal::Cooldown { ticks } => format!("ready again in {} s", secs(ticks)),
+        CallInRefusal::Manpower { short } => format!("need {short} more manpower"),
+        CallInRefusal::PopCap => format!("pop cap reached ({})", setup.rules.pop_cap),
+    }
 }
 
 /// A vehicle type's short name ("Panzer IV").
@@ -155,37 +177,26 @@ impl EventTracker {
                 order: s.order,
                 dig_pct: s.dig_pct,
             };
-            match self.squads.get(&s.id) {
-                None if self.started => {
-                    push(
-                        "squad_arrived",
-                        format!("{name} arrived at base."),
-                        Some(pos),
-                    );
+            // New squads are announced by their call-in (`call_ins`).
+            if let Some(prev) = self.squads.get(&s.id) {
+                let hit = s.men < prev.men || (memo.suppression >= 30 && prev.suppression < 30);
+                let quiet_squad = self
+                    .alert_tick
+                    .get(&s.id)
+                    .is_none_or(|&t| f.tick >= t + ALERT_SQUAD_S * hz);
+                let quiet_feed = self
+                    .last_alert
+                    .is_none_or(|t| f.tick >= t + ALERT_ANY_S * hz);
+                if hit && quiet_squad && quiet_feed {
+                    self.alert_tick.insert(s.id, f.tick);
+                    self.last_alert = Some(f.tick);
+                    push("under_attack", format!("{name} under fire."), Some(pos));
                 }
-                Some(prev) => {
-                    let hit = s.men < prev.men || (memo.suppression >= 30 && prev.suppression < 30);
-                    let quiet_squad = self
-                        .alert_tick
-                        .get(&s.id)
-                        .is_none_or(|&t| f.tick >= t + ALERT_SQUAD_S * hz);
-                    let quiet_feed = self
-                        .last_alert
-                        .is_none_or(|t| f.tick >= t + ALERT_ANY_S * hz);
-                    if hit && quiet_squad && quiet_feed {
-                        self.alert_tick.insert(s.id, f.tick);
-                        self.last_alert = Some(f.tick);
-                        push("under_attack", format!("{name} under fire."), Some(pos));
-                    }
-                    if prev.order == OrderKind::Dig
-                        && s.order == OrderKind::Idle
-                        && prev.dig_pct >= 90
-                    {
-                        // A finished trench turns the order to Idle.
-                        push("info", format!("{name} finished digging."), Some(pos));
-                    }
+                if prev.order == OrderKind::Dig && s.order == OrderKind::Idle && prev.dig_pct >= 90
+                {
+                    // A finished trench turns the order to Idle.
+                    push("info", format!("{name} finished digging."), Some(pos));
                 }
-                None => {}
             }
             seen.insert(s.id, memo);
         }
@@ -200,25 +211,6 @@ impl EventTracker {
             }
         }
         self.squads = seen;
-        // Own vehicles arriving (S3); losses come from armour events.
-        let own_v: Vec<u32> = f
-            .vehicles
-            .iter()
-            .filter(|v| v.owner == local && v.flags & vehicle_flags::WRECK == 0)
-            .map(|v| v.id)
-            .collect();
-        if self.started {
-            for v in f.vehicles.iter().filter(|v| own_v.contains(&v.id)) {
-                if !self.vehicles.contains(&v.id) {
-                    push(
-                        "vehicle_arrived",
-                        format!("{} arrived.", vehicle_short(setup, v.type_idx)),
-                        Some([v.pos[0], v.pos[1]]),
-                    );
-                }
-            }
-        }
-        self.vehicles = own_v;
         // Tickets.
         if let Some(me) = f.players.get(local as usize)
             && !self.tickets_low
@@ -237,6 +229,53 @@ impl EventTracker {
             push("info", text.to_owned(), None);
         }
         self.started = true;
+    }
+
+    /// Feed lines for one tick's own call-ins (S3b): the squad or vehicle
+    /// deployed at the base, or why the call-in was refused.
+    pub fn call_ins(&mut self, ev: &TickEvents, setup: &MatchSetup, out: &mut Vec<UiEvent>) {
+        let local = self.local;
+        let hz = setup.tick_hz.max(1);
+        let base = setup
+            .players
+            .get(local as usize)
+            .and_then(|p| setup.map.bases.get(p.base as usize))
+            .map(|b| {
+                let c: frontline_sim::FxVec2 = b.center.into();
+                [c.x.to_f32(), c.y.to_f32()]
+            });
+        for c in ev.call_ins.iter().filter(|c| c.player.0 == local) {
+            let Some(ty) = setup.squad_types.get(c.squad_type as usize) else {
+                continue;
+            };
+            let name = match ty.vehicle {
+                Some(v) => vehicle_short(setup, v),
+                None => ty.name.as_str(),
+            };
+            let (kind, text, pos) = match c.result {
+                Ok(_) => (
+                    if ty.vehicle.is_some() {
+                        "vehicle_arrived"
+                    } else {
+                        "squad_arrived"
+                    },
+                    format!("{name} deployed at base."),
+                    base,
+                ),
+                Err(why) => (
+                    "call_in_refused",
+                    format!("{name} not called in: {}.", refusal_words(why, setup, hz)),
+                    None,
+                ),
+            };
+            out.push(UiEvent {
+                kind,
+                text,
+                pos,
+                player: local as i32,
+                tick: ev.tick,
+            });
+        }
     }
 
     /// Feed lines for one tick's visible armour events (S3): any vehicle
@@ -430,18 +469,50 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].kind, "info");
         out.clear();
+        // S3b: a call-in spawns at once and says so; a second one at once
+        // is refused with its cooldown, an unaffordable one with the
+        // shortfall.
         let rifle = crate::intents::call_in_type(&setup, 0, "rifle").unwrap();
-        w.step(&[Command {
+        let call = |seq| Command {
             player: PlayerId(0),
-            seq: 0,
+            seq,
             kind: CommandKind::CallIn { squad_type: rifle },
-        }]);
-        for _ in 0..setup.squad_types[rifle as usize].call_in_ticks + 2 {
-            w.step(&[]);
-        }
+        };
+        w.step(&[call(0)]);
         f.fill(&w, &mut ctx, 0.0, Instant::now());
         tr.update(&f, &setup, &mut out);
-        assert!(out.iter().any(|e| e.kind == "squad_arrived"), "{out:?}");
+        tr.call_ins(&TickEvents::collect(&w, &ctx), &setup, &mut out);
+        let arrived: Vec<_> = out.iter().filter(|e| e.kind == "squad_arrived").collect();
+        assert_eq!(arrived.len(), 1, "{out:?}");
+        let name = &setup.squad_types[rifle as usize].name;
+        assert_eq!(arrived[0].text, format!("{name} deployed at base."));
+        assert!(arrived[0].pos.is_some());
+        out.clear();
+        w.step(&[call(1)]);
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        tr.update(&f, &setup, &mut out);
+        tr.call_ins(&TickEvents::collect(&w, &ctx), &setup, &mut out);
+        let secs = setup.squad_types[rifle as usize].recall_cooldown_ticks / setup.tick_hz;
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].kind, "call_in_refused");
+        assert_eq!(
+            out[0].text,
+            format!("{name} not called in: ready again in {secs} s.")
+        );
+        out.clear();
+        // The enemy's call-ins are not ours to hear about.
+        let mut ev = TickEvents::collect(&w, &ctx);
+        ev.call_ins[0].player = PlayerId(1);
+        tr.call_ins(&ev, &setup, &mut out);
+        assert!(out.is_empty());
+        assert_eq!(
+            refusal_words(CallInRefusal::Manpower { short: 25 }, &setup, 30),
+            "need 25 more manpower"
+        );
+        assert_eq!(
+            refusal_words(CallInRefusal::Locked { ticks: 61 * 30 }, &setup, 30),
+            "vehicles unlock in 1:01"
+        );
         // A squad that vanishes from the frame is reported lost.
         out.clear();
         let gone = f.squads.iter().position(|s| s.owner == 0).unwrap();

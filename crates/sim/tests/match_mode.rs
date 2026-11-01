@@ -6,8 +6,8 @@ use std::path::Path;
 
 use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs};
 use frontline_sim::{
-    Command, CommandKind, Fx, FxVec2, NavPhase, Order, OrderKind, Outcome, PlayerId, SimId,
-    SquadId, World,
+    CallInEvent, CallInRefusal, Command, CommandKind, Fx, FxVec2, NavPhase, Order, OrderKind,
+    Outcome, PlayerId, SimId, SquadId, World,
 };
 
 fn setup(seed: u64) -> MatchSetup {
@@ -234,36 +234,178 @@ fn bad_orders_are_rejected() {
 }
 
 #[test]
-fn call_in_costs_manpower_and_arrives_after_its_delay() {
+fn call_in_spawns_at_once_and_starts_its_cooldown() {
+    // S3b (owner 2026-11-01): no queue, no delivery time. Manpower is spent
+    // and the squad stands in the base in the same tick.
     let mut w = world(4, 2);
     let s = w.match_setup().unwrap().clone();
     let rifle = type_index(&w, "ww2:ger_rifle_squad");
     let ty = &s.squad_types[rifle as usize];
     w.step(&[cmd(0, 0, CommandKind::CallIn { squad_type: rifle })]);
-    let called_at = w.tick() - 1;
     let g = w.game().unwrap();
     assert_eq!(g.players()[0].manpower, s.rules.start_manpower - ty.cost);
-    assert_eq!(g.players()[0].call_ins.len(), 1);
+    assert_eq!(g.squads().len(), 7);
+    assert_eq!(w.entities().soldier_count(), 42 + 8);
+    let (&new, sq) = g.squads().last_key_value().unwrap();
+    assert_eq!((sq.owner, sq.type_idx), (PlayerId(0), rifle));
     assert_eq!(w.snapshot().players[0].pop, 21 + 8);
-    // Not enough manpower for a second and third (600 - 240 - 240 < 240).
+    assert_eq!(
+        w.snapshot().call_ins,
+        [CallInEvent {
+            player: PlayerId(0),
+            squad_type: rifle,
+            result: Ok(new),
+        }]
+    );
+    // Its cooldown runs from the call-in tick; other types are ready.
+    assert_eq!(
+        g.players()[0].ready_at[rifle as usize],
+        ty.recall_cooldown_ticks as u64
+    );
+    assert_eq!(
+        w.snapshot().players[0].cooldowns[rifle as usize],
+        ty.recall_cooldown_ticks - 1
+    );
+    let eng = type_index(&w, "ww2:ger_engineer_squad");
+    assert_eq!(w.snapshot().players[0].cooldowns[eng as usize], 0);
+    // The members stand inside the base (radius 40 m).
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    for &m in &w.game().unwrap().squad(new).unwrap().members {
+        assert!((pos(&w, m) - base).length() < Fx::from_int(40));
+    }
+}
+
+#[test]
+fn call_ins_are_refused_with_a_reason() {
+    let mut w = world(4, 1);
+    let s = w.match_setup().unwrap().clone();
+    let rifle = type_index(&w, "ww2:ger_rifle_squad");
+    let eng = type_index(&w, "ww2:ger_engineer_squad");
+    let mg = type_index(&w, "ww2:ger_mg_team");
+    let usa_mg = type_index(&w, "ww2:usa_mg_team");
+    let result = |w: &World| {
+        let c = w.snapshot().call_ins.last().copied().unwrap();
+        assert_eq!(c.player, PlayerId(0));
+        c.result
+    };
+    // 600 MP: a rifle squad (240) and engineers (220) leave 140.
+    w.step(&[
+        cmd(0, 0, CommandKind::CallIn { squad_type: rifle }),
+        cmd(0, 1, CommandKind::CallIn { squad_type: eng }),
+    ]);
+    assert_eq!(w.snapshot().call_ins.len(), 2);
+    assert!(w.snapshot().call_ins.iter().all(|c| c.result.is_ok()));
+    // Same type again: its cooldown, to the tick.
+    w.step(&[cmd(0, 2, CommandKind::CallIn { squad_type: rifle })]);
+    let cd = s.squad_types[rifle as usize].recall_cooldown_ticks;
+    assert_eq!(result(&w), Err(CallInRefusal::Cooldown { ticks: cd - 1 }));
+    // Short of manpower: the shortfall.
+    w.step(&[cmd(0, 3, CommandKind::CallIn { squad_type: mg })]);
+    let short = s.squad_types[mg as usize].cost - w.game().unwrap().players()[0].manpower;
+    assert_eq!(result(&w), Err(CallInRefusal::Manpower { short }));
+    // Another faction's type.
+    w.step(&[cmd(0, 4, CommandKind::CallIn { squad_type: usa_mg })]);
+    assert_eq!(result(&w), Err(CallInRefusal::NotInRoster));
+    // Refusals spend nothing and spawn nothing.
+    assert_eq!(w.game().unwrap().squads().len(), 8);
+    assert_eq!(w.stats().commands_rejected, 3);
+
+    // Pop cap: 21 men alive + 8 + 5, so a 3-man MG team does not fit 36.
+    let mut s2 = setup(4);
+    s2.rules.pop_cap = 36;
+    s2.rules.start_manpower = 10_000;
+    let mut w = World::new_match(s2, 1).unwrap();
+    w.step(&[
+        cmd(0, 0, CommandKind::CallIn { squad_type: rifle }),
+        cmd(0, 1, CommandKind::CallIn { squad_type: eng }),
+        cmd(0, 2, CommandKind::CallIn { squad_type: mg }),
+    ]);
+    assert_eq!(result(&w), Err(CallInRefusal::PopCap));
+}
+
+#[test]
+fn cooldowns_end_on_their_tick_and_groups_and_start_cooldowns_apply() {
+    let mut s = setup(4);
+    s.rules.start_manpower = 100_000;
+    let rifle = s.squad_type_index("ww2:ger_rifle_squad").unwrap();
+    let mg = s.squad_type_index("ww2:ger_mg_team").unwrap();
+    let mortar = s.squad_type_index("ww2:ger_mortar_team").unwrap();
+    // MG and mortar share a timer; the mortar also waits 90 ticks at the
+    // start.
+    s.squad_types[mg as usize].cooldown_group = Some(0);
+    s.squad_types[mortar as usize].cooldown_group = Some(0);
+    s.squad_types[mortar as usize].initial_cooldown_ticks = 90;
+    let cd = s.squad_types[rifle as usize].recall_cooldown_ticks as u64;
+    let mg_cd = s.squad_types[mg as usize].recall_cooldown_ticks as u64;
+    let mut w = World::new_match(s, 1).unwrap();
+    w.step(&[cmd(0, 0, CommandKind::CallIn { squad_type: mortar })]);
+    assert_eq!(
+        w.snapshot().call_ins[0].result,
+        Err(CallInRefusal::Cooldown { ticks: 90 })
+    );
     w.step(&[
         cmd(0, 1, CommandKind::CallIn { squad_type: rifle }),
-        cmd(0, 2, CommandKind::CallIn { squad_type: rifle }),
+        cmd(0, 2, CommandKind::CallIn { squad_type: mg }),
     ]);
-    assert_eq!(w.game().unwrap().players()[0].call_ins.len(), 2);
-    assert_eq!(w.stats().commands_rejected, 1);
-
-    let ready = called_at + ty.call_in_ticks as u64;
-    while w.tick() < ready {
+    let ready = &w.game().unwrap().players()[0].ready_at;
+    assert_eq!(ready[rifle as usize], 1 + cd);
+    assert_eq!(ready[mg as usize], 1 + mg_cd);
+    assert_eq!(
+        ready[mortar as usize],
+        1 + mg_cd,
+        "the group shares the timer"
+    );
+    // One tick early: refused; on the tick: bought.
+    while w.tick() < cd {
         w.step(&[]);
     }
-    assert_eq!(w.game().unwrap().squads().len(), 6);
-    w.step(&[]);
-    assert_eq!(w.game().unwrap().squads().len(), 7);
-    assert_eq!(w.entities().soldier_count(), 42 + 8);
-    let new = w.game().unwrap().squads().last_key_value().unwrap();
-    assert_eq!(new.1.owner, PlayerId(0));
-    assert_eq!(new.1.type_idx, rifle);
+    w.step(&[cmd(0, 3, CommandKind::CallIn { squad_type: rifle })]);
+    assert_eq!(
+        w.snapshot().call_ins[0].result,
+        Err(CallInRefusal::Cooldown { ticks: 1 })
+    );
+    w.step(&[cmd(0, 4, CommandKind::CallIn { squad_type: rifle })]);
+    assert!(w.snapshot().call_ins[0].result.is_ok());
+}
+
+#[test]
+fn squads_bought_in_quick_succession_spread_over_the_base() {
+    let mut s = setup(4);
+    s.rules.start_manpower = 100_000;
+    for t in s.squad_types.iter_mut().filter(|t| t.vehicle.is_none()) {
+        t.recall_cooldown_ticks = 0;
+    }
+    let rifle = s.squad_type_index("ww2:ger_rifle_squad").unwrap();
+    let clear = Fx::from_int(s.rules.call_in.spawn_clear_m as i32);
+    let mut w = World::new_match(s, 1).unwrap();
+    // The start squads leave the base.
+    for (k, id) in squads_of(&w, 0).into_iter().enumerate() {
+        w.place_squad(
+            id,
+            FxVec2::from_int(300 + 30 * k as i32, 300),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        );
+    }
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    let centre = |w: &World, id: SquadId| w.game().unwrap().squad(id).unwrap().nav.goal;
+    // Seven rifle squads, one per tick: seven different spots, each clear
+    // of the others, all inside the base.
+    let mut spots: Vec<FxVec2> = Vec::new();
+    for k in 0..7 {
+        w.step(&[cmd(0, k, CommandKind::CallIn { squad_type: rifle })]);
+        let id = *w.game().unwrap().squads().last_key_value().unwrap().0;
+        let at = centre(&w, id);
+        // The ring is at half the 40 m base radius (fixed-point sin/cos).
+        assert!((at - base).length() <= Fx::from_ratio(201, 10), "{at:?}");
+        for &o in &spots {
+            assert!((at - o).length() > clear, "squad {k} at {at:?} on {o:?}");
+        }
+        spots.push(at);
+    }
+    // An eighth: every spot has men, so it takes one with the fewest.
+    w.step(&[cmd(0, 7, CommandKind::CallIn { squad_type: rifle })]);
+    let id = *w.game().unwrap().squads().last_key_value().unwrap().0;
+    assert!(spots.contains(&centre(&w, id)));
 }
 
 #[test]
@@ -344,11 +486,7 @@ fn dig_and_barrage_orders_are_stored() {
 
     // Call in a mortar team and give it a barrage.
     let mortar = type_index(&w, "ww2:ger_mortar_team");
-    let t = w.match_setup().unwrap().squad_types[mortar as usize].call_in_ticks as u64;
     w.step(&[cmd(0, 1, CommandKind::CallIn { squad_type: mortar })]);
-    for _ in 0..t {
-        w.step(&[]);
-    }
     let m = *w.game().unwrap().squads().last_key_value().unwrap().0;
     let target = FxVec2::from_int(400, 400);
     w.step(&[cmd(
@@ -611,4 +749,50 @@ fn tuning_tables_drive_the_sim() {
     };
     assert_eq!(walk(1500), walk(1500));
     assert_ne!(walk(1500), walk(500));
+}
+
+#[test]
+fn ai_vs_ai_continues_identically_after_a_save_mid_cooldown() {
+    // S3b: re-call cooldowns are match state. An AI-vs-AI match saved while
+    // both players wait on a cooldown continues with the same hashes at
+    // another thread count, and the same as an unbroken run at 1 and 8.
+    let mut s = setup(8);
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    let mut w = World::new_match(s.clone(), 2).unwrap();
+    let waiting = |w: &World| {
+        let t = w.tick();
+        w.game()
+            .unwrap()
+            .players()
+            .iter()
+            .all(|p| p.ready_at.iter().any(|&r| r > t + 30))
+    };
+    assert!(run_until(&mut w, 30 * 120, waiting));
+    let at = w.tick();
+    let mut loaded = World::load(&w.save(), 3).unwrap();
+    assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+    let mut bought = 0;
+    for _ in 0..30 * 90 {
+        assert_eq!(w.step(&[]), loaded.step(&[]), "tick {}", w.tick());
+        bought += w
+            .snapshot()
+            .call_ins
+            .iter()
+            .filter(|c| c.result.is_ok())
+            .count();
+        assert_eq!(w.snapshot().call_ins, loaded.snapshot().call_ins);
+    }
+    assert_eq!(w.full_state_hash(), loaded.full_state_hash());
+    assert!(bought > 0, "the AI bought again after its cooldowns");
+    for threads in [1, 8] {
+        let mut other = World::new_match(s.clone(), threads).unwrap();
+        while other.tick() < at + 30 * 90 {
+            other.step(&[]);
+        }
+        assert_eq!(
+            other.full_state_hash(),
+            w.full_state_hash(),
+            "{threads} threads"
+        );
+    }
 }

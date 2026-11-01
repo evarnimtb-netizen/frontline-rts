@@ -10,7 +10,10 @@ extends Node
 ## overrides, grenades, smoke and satchel charges with item counts and
 ## resupply at base, and (S3) tanks, wrecks, shells, AT rockets and armour
 ## events through MockVehicles (mock_vehicles.gd), AT teams, escorts and
-## vehicle call-ins with the unlock countdown and the vehicle limit.
+## vehicle call-ins with the unlock countdown and the vehicle limit. S3b:
+## call-ins buy at once and spawn in the base (no queue, no delivery
+## time), then the type waits out its re-call cooldown; a refused local
+## call-in says why in the feed, as the bridge does.
 ##
 ## Presenter-only and non-deterministic on purpose: none of this is the
 ## sim, and nothing here may be copied into crates/sim.
@@ -20,12 +23,14 @@ extends Node
 ##   handle_intent(kind: StringName, data: Dictionary) -> void
 ##   height_at(x: float, z: float) -> float
 
+## `recall_s`: the re-call cooldown after a buy (S3b, the mod's values set
+## by the owner on 2026-11-01).
 const CATALOG := [
-	{"type": "rifle", "name": "Rifle squad", "cost": 120, "delay_s": 20, "men": 8},
-	{"type": "mg", "name": "MG team", "cost": 150, "delay_s": 25, "men": 3},
-	{"type": "engineer", "name": "Engineer squad", "cost": 140, "delay_s": 20, "men": 5},
-	{"type": "mortar", "name": "Mortar team", "cost": 200, "delay_s": 30, "men": 3},
-	{"type": "at", "name": "AT team", "cost": 200, "delay_s": 20, "men": 2},
+	{"type": "rifle", "name": "Rifle squad", "cost": 120, "recall_s": 24.0, "men": 8},
+	{"type": "mg", "name": "MG team", "cost": 150, "recall_s": 36.0, "men": 3},
+	{"type": "engineer", "name": "Engineer squad", "cost": 140, "recall_s": 36.0, "men": 5},
+	{"type": "mortar", "name": "Mortar team", "cost": 200, "recall_s": 60.0, "men": 3},
+	{"type": "at", "name": "AT team", "cost": 200, "recall_s": 48.0, "men": 2},
 ]
 const RULES := {
 	"pop_cap": 120,
@@ -47,7 +52,10 @@ const ESCORT_BACK_M := 4.0
 const ESCORT_GAP_M := 1.5
 const SIGHT_M := 160.0
 const CAPTURE_S := 20.0
-const QUEUE_MAX := 5
+## Spawn spots (S3b): six on a ring at this radius around the base, and
+## the centre; the least crowded within SPAWN_CLEAR_M is taken.
+const SPAWN_RING_M := 20.0
+const SPAWN_CLEAR_M := 10.0
 ## Mock digging runs this much faster than §5.10.9 pacing so it shows.
 const DIG_SPEEDUP := 6.0
 const DIFFICULTY_INCOME := {"easy": 0.8, "normal": 1.0, "hard": 1.25}
@@ -82,13 +90,11 @@ var squads := {}
 var man_squad := {}
 var stats: Array[Dictionary] = []
 var result := {"status": "running", "winner": -1, "reason": ""}
-## Re-call cooldowns shown on the call-in tiles (type -> [left, total]);
-## not an S1 rule, only here so the HUD's optional field is exercised.
-var recall_cooldown := {}
+## Re-call cooldowns per player (S3b): [{type -> [left, total]}, ...].
+var recall_cooldown: Array = [{}, {}]
 
 var _next_id := 1
 var _next_man := 1001
-var _queues: Array = [[], []]
 var _events: Array[Dictionary] = []
 var _effects: Array[Dictionary] = []
 var _shells: Array[Dictionary] = []
@@ -139,13 +145,12 @@ func start(s: Dictionary) -> void:
 		_spawn(1, e[0], e[1])
 	time_s = 0.0
 	result = {"status": "running", "winner": -1, "reason": ""}
-	_queues = [[], []]
 	_events.clear()
 	_effects.clear()
 	_shells.clear()
 	_thrown.clear()
 	_smokes.clear()
-	recall_cooldown.clear()
+	recall_cooldown = [{}, {}]
 	veh.reset()
 	_push_event(0, "info", "Skirmish on Kessel Ridge. Hold the points.", null)
 
@@ -710,11 +715,12 @@ func _step(dt: float) -> void:
 		pl.manpower += pl.income * dt
 		pl.points_held = held[i]
 		stats[i].points_held_s += held[i] * dt
-	for type in recall_cooldown.keys():
-		recall_cooldown[type][0] -= dt
-		if recall_cooldown[type][0] <= 0.0:
-			recall_cooldown.erase(type)
-	_step_queues(dt)
+	for i in 2:
+		var cds: Dictionary = recall_cooldown[i]
+		for type in cds.keys():
+			cds[type][0] -= dt
+			if cds[type][0] <= 0.0:
+				cds.erase(type)
 	_ai_t -= dt
 	if _ai_t <= 0.0:
 		_ai_t = 2.0
@@ -732,27 +738,6 @@ func _step(dt: float) -> void:
 	_step_capture(dt)
 	_step_tickets(dt, held)
 	_check_end()
-
-
-func _step_queues(dt: float) -> void:
-	for i in 2:
-		var q: Array = _queues[i]
-		if q.is_empty():
-			continue
-		var head: Dictionary = q[0]
-		head.remaining_s -= dt
-		if head.remaining_s <= 0.0:
-			q.pop_front()
-			var base: Vector2 = MockMap.BASES[i]
-			var at := base + Vector2(rng.randf_range(-25, 25), rng.randf_range(-25, 25))
-			if head.has("vehicle"):
-				veh.spawn(i, head.vehicle, at, Vehicles.yaw_toward(-at.x, -at.y))
-				if i == local_player:
-					_push_event(i, "vehicle_arrived", "%s arrived." % MockVehicles.TYPES[head.vehicle].short, _v3(at))
-				continue
-			var id := _spawn(i, head.type, at)
-			if i == local_player:
-				_push_event(i, "squad_arrived", "%s arrived at base." % squads[id].name, _v3(at))
 
 
 ## The call-in catalog of a player: the S1 squads, the faction's AT team
@@ -775,7 +760,7 @@ func catalog(owner: int) -> Array:
 	var vt: Dictionary = MockVehicles.TYPES[vkey]
 	out.append({
 		"id": vt.id + "_squad", "type": "vehicle", "vehicle": vkey, "name": vt.name, "short": vt.short,
-		"cost": int(vt.cost), "delay_s": float(vt.call_in_s), "men": 0, "pop": int(vt.pop),
+		"cost": int(vt.cost), "recall_s": float(vt.recall_s), "men": 0, "pop": int(vt.pop),
 	})
 	return out
 
@@ -795,26 +780,67 @@ func _call_in(owner: int, type: String) -> bool:
 func _call_in_entry(owner: int, def: Dictionary) -> bool:
 	if def.is_empty():
 		return false
+	var why := call_in_block(owner, def)
+	if why != "":
+		if owner == local_player:
+			_push_event(owner, "call_in_refused", "%s not called in: %s." % [def.get("short", def.name), why], null)
+		return false
 	var type: String = def.type
-	var pl := players[owner]
-	var queued := 0
-	for q in _queues[owner]:
-		queued += int(q.get("pop", q.men))
-	if pl.manpower < def.cost or _queues[owner].size() >= QUEUE_MAX or _pop(owner) + queued + int(def.pop) > RULES.pop_cap:
-		return false
-	if owner == local_player and recall_cooldown.has(type):
-		return false
-	if type == "vehicle" and veh.call_in_block(owner) != "":
-		return false
-	pl.manpower -= def.cost
-	var entry := {"type": type, "id": def.id, "remaining_s": float(def.delay_s), "total_s": float(def.delay_s), "men": int(def.men), "pop": int(def.pop)}
-	if def.has("vehicle"):
-		entry.vehicle = def.vehicle
-	_queues[owner].append(entry)
+	players[owner].manpower -= def.cost
+	recall_cooldown[owner][type] = [float(def.recall_s), float(def.recall_s)]
 	stats[owner].squads_called += 1
-	if owner == local_player and type == "mg":
-		recall_cooldown[type] = [12.0, 12.0]
+	var at := _spawn_spot(owner)
+	if def.has("vehicle"):
+		veh.spawn(owner, def.vehicle, at, Vehicles.yaw_toward(-at.x, -at.y))
+		if owner == local_player:
+			_push_event(owner, "vehicle_arrived", "%s deployed at base." % MockVehicles.TYPES[def.vehicle].short, _v3(at))
+		return true
+	var id := _spawn(owner, type, at)
+	if owner == local_player:
+		_push_event(owner, "squad_arrived", "%s deployed at base." % squads[id].name, _v3(at))
 	return true
+
+
+## Why `owner` may not call in `def` now, in feed words ("" = may), in
+## the sim's order: vehicle unlock and limit, cooldown, manpower, pop cap.
+func call_in_block(owner: int, def: Dictionary) -> String:
+	if def.get("type", "") == "vehicle":
+		match veh.call_in_block(owner):
+			"locked":
+				return "vehicles unlock in %s" % UiPalette.mmss(ceilf(veh.locked_s()))
+			"limit":
+				return "vehicle limit reached (%d)" % veh.limit
+	var cd: Array = recall_cooldown[owner].get(def.type, [])
+	if not cd.is_empty():
+		return "ready again in %d s" % ceili(float(cd[0]))
+	var short := int(def.cost) - int(players[owner].manpower)
+	if short > 0:
+		return "need %d more manpower" % short
+	if _pop(owner) + int(def.pop) > RULES.pop_cap:
+		return "pop cap reached (%d)" % RULES.pop_cap
+	return ""
+
+
+## The least crowded of seven base spots (S3b): six on a ring and the
+## centre, so squads bought in quick succession stand apart.
+func _spawn_spot(owner: int) -> Vector2:
+	var base: Vector2 = MockMap.BASES[owner]
+	var best := base
+	var best_n := 1 << 30
+	for k in 7:
+		var at := base if k == 6 else base + Vector2.from_angle(k * PI / 3.0) * SPAWN_RING_M
+		var n := 0
+		for id in squads:
+			for man in squads[id].men:
+				if man.pos.distance_to(at) <= SPAWN_CLEAR_M:
+					n += 1
+		for vid in veh.vehicles:
+			if Vector2(veh.vehicles[vid].pos.x, veh.vehicles[vid].pos.y).distance_to(at) <= SPAWN_CLEAR_M:
+				n += 8
+		if n < best_n:
+			best_n = n
+			best = at
+	return best
 
 
 ## Population: living soldiers plus each living vehicle's pop (S3).
@@ -1303,7 +1329,7 @@ func _check_end() -> void:
 		if players[i].tickets <= 0.0:
 			_end(1 - i, "tickets")
 			return
-		if _pop(i) == 0 and _queues[i].is_empty() and players[i].manpower < 120.0:
+		if _pop(i) == 0 and players[i].manpower < 120.0:
 			_end(1 - i, "annihilation")
 			return
 
@@ -1367,14 +1393,12 @@ func _build_state() -> Dictionary:
 		for man in seen:
 			out_soldiers.append(_soldier_state(sq, man, own))
 	out_soldiers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.id < b.id)
-	var q: Array = []
-	for e in _queues[local_player]:
-		q.append(e.duplicate())
 	var catalog: Array = []
 	for entry in catalog(local_player):
-		if recall_cooldown.has(entry.type):
-			entry.cooldown_s = recall_cooldown[entry.type][0]
-			entry.cooldown_total_s = recall_cooldown[entry.type][1]
+		var cds: Dictionary = recall_cooldown[local_player]
+		if cds.has(entry.type):
+			entry.cooldown_s = cds[entry.type][0]
+			entry.cooldown_total_s = cds[entry.type][1]
 		if entry.type == "vehicle" and veh.locked_s() > 0.0:
 			entry.locked_s = veh.locked_s()
 		catalog.append(entry)
@@ -1403,7 +1427,7 @@ func _build_state() -> Dictionary:
 		"soldiers": out_soldiers,
 		"smokes": smokes,
 		"thrown": thrown,
-		"callin": {"catalog": catalog, "queue": q, "queue_max": QUEUE_MAX, "vehicles": veh.count(local_player), "vehicle_limit": veh.limit},
+		"callin": {"catalog": catalog, "vehicles": veh.count(local_player), "vehicle_limit": veh.limit},
 		"vehicles": vs.vehicles,
 		"shells": vs.shells,
 		"armour_events": vs.armour_events,

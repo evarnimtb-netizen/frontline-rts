@@ -220,7 +220,7 @@ impl MatchState {
             }
             if pl.tickets == 0 {
                 pl.defeat = Some(Defeat::Tickets);
-            } else if *a == 0 && pl.call_ins.is_empty() && pl.manpower < cheapest {
+            } else if *a == 0 && pl.manpower < cheapest {
                 pl.defeat = Some(Defeat::Wiped);
             }
         }

@@ -72,8 +72,8 @@ pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, S
 pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{
-    CallIn, CapturePoint, Launcher, MatchState, NavPhase, Order, OrderKind, Outcome, PathReq,
-    PlayerState, Squad, SquadId, kill_class,
+    CallInEvent, CallInRefusal, CapturePoint, Launcher, MatchState, NavPhase, Order, OrderKind,
+    Outcome, PathReq, PlayerState, Squad, SquadId, kill_class,
 };
 pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, Windup};
 pub use projectile::{Projectile, ProjectilePool};

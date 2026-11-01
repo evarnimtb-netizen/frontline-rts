@@ -10,12 +10,21 @@
 //! Order handling, all serial in the Intent stage:
 //!
 //! 1. commands are validated and turned into an [`Order`] plus a navigation
-//!    request ([`Nav`]);
-//! 2. ready call-ins spawn at their owner's base;
-//! 3. the [`PathQueue`] serves path requests round-robin by player within a
+//!    request ([`Nav`]); an accepted call-in spawns its squad at once
+//!    (S3b);
+//! 2. the [`PathQueue`] serves path requests round-robin by player within a
 //!    node-expansion budget (`crate::path`);
-//! 4. digging squads work on their trench (`crate::dig`);
-//! 5. squads steer their members (`crate::squad`).
+//! 3. digging squads work on their trench (`crate::dig`);
+//! 4. squads steer their members (`crate::squad`).
+//!
+//! Call-ins (S3b, owner 2026-11-01: no queue, no delivery time): a
+//! `CallIn` buys at once when the player has the manpower, the type's
+//! re-call cooldown is over, the pop cap allows it and, for a vehicle, the
+//! rules' unlock time has passed and the player is under the vehicle limit.
+//! The squad spawns at its base in the same tick and its type's cooldown
+//! starts ([`PlayerState::ready_at`], shared within a cooldown group).
+//! Otherwise the command is refused with a [`CallInRefusal`]; every
+//! call-in's result goes to the tick's [`CallInEvent`]s for the HUD feed.
 //!
 //! Implemented: Move, AttackMove (halts to fight while the squad has a focus
 //! target and a man with a clear shot), Stop, Retreat, CallIn, Surrender,
@@ -41,8 +50,8 @@
 //! `Regroup` and stance orders are rejected. Its path is a
 //! [`PathReq::Vehicle`] on the vehicle costs; it drives in the Movement
 //! stage, not in squad steering. Vehicle call-ins wait for the rules'
-//! unlock time and count against the per-player vehicle limit (alive or
-//! queued), and every squad type counts its own pop (men, or its vehicle's
+//! unlock time and count against the per-player vehicle limit (vehicles
+//! alive), and every squad type counts its own pop (men, or its vehicle's
 //! `pop`).
 
 use std::collections::BTreeMap;
@@ -72,9 +81,8 @@ use crate::vehicle::{self, VehicleDerived, VehicleState};
 pub const MAX_DIG_POINTS: usize = 16;
 /// Most rounds in one Barrage order.
 pub const MAX_BARRAGE_ROUNDS: u16 = 50;
-/// Most queued call-ins per player (the HUD's "n/5" queue bar,
-/// `docs/slices/S1b-hud.md`).
-pub const MAX_CALL_IN_QUEUE: usize = 5;
+/// Spawn spots per base: six on a ring and the centre.
+const SPAWN_SPOTS: u32 = 7;
 /// Longest stored path (waypoints); a smoothed path is far shorter.
 pub const MAX_PATH_POINTS: usize = 8192;
 /// Most AT-ditch lines in a match (S3; each job adds one).
@@ -234,12 +242,31 @@ impl Squad {
     }
 }
 
-/// A bought squad on its way.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct CallIn {
+/// Why a call-in was refused (S3b). The HUD and the feed show it.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum CallInRefusal {
+    /// No such squad type, or not in the player's faction roster.
+    NotInRoster,
+    /// Vehicles are not unlocked yet: ticks until the unlock.
+    Locked { ticks: u32 },
+    /// The player has as many vehicles alive as the rules allow.
+    VehicleLimit,
+    /// The type's re-call cooldown: ticks until it is ready.
+    Cooldown { ticks: u32 },
+    /// Short of manpower by this much.
+    Manpower { short: u32 },
+    /// The squad would take the player over the pop cap.
+    PopCap,
+}
+
+/// One call-in command's result in a tick (S3b). Presentation only: kept
+/// for the snapshot of the tick it happened in, never saved or hashed.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct CallInEvent {
+    pub player: PlayerId,
     pub squad_type: u16,
-    /// Spawns at the start of this tick.
-    pub ready_tick: u64,
+    /// The squad that spawned, or why the call-in was refused.
+    pub result: Result<SquadId, CallInRefusal>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -247,8 +274,11 @@ pub struct PlayerState {
     pub manpower: u32,
     pub tickets: u32,
     pub surrendered: bool,
-    /// In purchase order.
-    pub call_ins: Vec<CallIn>,
+    /// S3b: per squad type (index into `MatchSetup::squad_types`), the
+    /// first tick at which it can be called in again: the start cooldown,
+    /// then the call-in tick plus the type's re-call cooldown (pushed to
+    /// every type of its cooldown group).
+    pub ready_at: Vec<u64>,
     /// Enemy soldiers this player killed.
     pub kills: u32,
     /// Own soldiers lost.
@@ -392,6 +422,11 @@ pub struct MatchState {
     /// saved, not hashed, never read by the sim.
     #[serde(skip)]
     pub(crate) hit_log: Option<Vec<crate::damage::HitRecord>>,
+    /// Call-in results of the command being applied (S3b): `World` moves
+    /// them to the snapshot right away, so this is empty between commands
+    /// (never saved, hashed or read by the sim).
+    #[serde(skip)]
+    pub(crate) call_in_events: Vec<CallInEvent>,
 }
 
 /// Mutable world parts a match operation needs.
@@ -406,6 +441,11 @@ impl MatchState {
     /// Fresh state for a validated setup (no squads yet).
     pub(crate) fn new(setup: MatchSetup) -> MatchState {
         let r = &setup.rules;
+        let start_ready: Vec<u64> = setup
+            .squad_types
+            .iter()
+            .map(|t| t.initial_cooldown_ticks as u64)
+            .collect();
         let players = setup
             .players
             .iter()
@@ -413,7 +453,7 @@ impl MatchState {
                 manpower: r.start_manpower,
                 tickets: r.tickets,
                 surrendered: false,
-                call_ins: Vec::new(),
+                ready_at: start_ready.clone(),
                 kills: 0,
                 losses: 0,
                 defeat: None,
@@ -462,6 +502,7 @@ impl MatchState {
             armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             hit_log: None,
+            call_in_events: Vec::new(),
             setup,
         }
     }
@@ -552,9 +593,9 @@ impl MatchState {
         self.setup.map.bases[base].center.into()
     }
 
-    /// Pop-cap count of `player`: soldiers alive, each live vehicle's
-    /// `pop`, and every queued call-in's squad-type pop (its men, or its
-    /// vehicle's pop, S3).
+    /// Pop-cap count of `player`: soldiers alive and each live vehicle's
+    /// `pop` (S3). S3b: no call-in waits anywhere, a bought squad is alive
+    /// at once.
     pub fn population(&self, ents: &Entities, player: PlayerId) -> u32 {
         let alive = ents
             .soldiers()
@@ -568,12 +609,60 @@ impl MatchState {
             })
             .map(|(_, vs)| self.setup.vehicles[vs.type_idx as usize].pop)
             .sum();
-        let queued: u32 = self.players[player.0 as usize]
-            .call_ins
-            .iter()
-            .map(|c| self.setup.squad_types[c.squad_type as usize].pop(&self.setup.vehicles))
-            .sum();
-        alive + vehicles + queued
+        alive + vehicles
+    }
+
+    /// Ticks until `player` can call in `squad_type` again (0: ready).
+    pub fn cooldown_left(&self, player: PlayerId, squad_type: u16, tick: u64) -> u32 {
+        self.players
+            .get(player.0 as usize)
+            .and_then(|p| p.ready_at.get(squad_type as usize))
+            .map_or(0, |&t| t.saturating_sub(tick).min(u32::MAX as u64) as u32)
+    }
+
+    /// Whether `player` could call in `squad_type` at `tick` (S3b), checked
+    /// in this order: roster, vehicle unlock, vehicle limit, cooldown,
+    /// manpower, pop cap. The AI and the command use the same rule.
+    pub fn call_in_check(
+        &self,
+        ents: &Entities,
+        player: PlayerId,
+        squad_type: u16,
+        tick: u64,
+    ) -> Result<(), CallInRefusal> {
+        let s = &self.setup;
+        let Some(ps) = s.players.get(player.0 as usize) else {
+            return Err(CallInRefusal::NotInRoster);
+        };
+        if !s.factions[ps.faction as usize].roster.contains(&squad_type) {
+            return Err(CallInRefusal::NotInRoster);
+        }
+        let ty = &s.squad_types[squad_type as usize];
+        let vr = &s.rules.vehicles;
+        if ty.vehicle.is_some() {
+            if tick < vr.unlock_ticks as u64 {
+                return Err(CallInRefusal::Locked {
+                    ticks: (vr.unlock_ticks as u64 - tick) as u32,
+                });
+            }
+            if self.vehicles_counted(ents, player) >= vr.limit {
+                return Err(CallInRefusal::VehicleLimit);
+            }
+        }
+        let wait = self.cooldown_left(player, squad_type, tick);
+        if wait > 0 {
+            return Err(CallInRefusal::Cooldown { ticks: wait });
+        }
+        let manpower = self.players[player.0 as usize].manpower;
+        if manpower < ty.cost {
+            return Err(CallInRefusal::Manpower {
+                short: ty.cost - manpower,
+            });
+        }
+        if self.population(ents, player) + ty.pop(&s.vehicles) > s.rules.pop_cap {
+            return Err(CallInRefusal::PopCap);
+        }
+        Ok(())
     }
 
     // ---------------------------------------------------------- commands --
@@ -860,35 +949,38 @@ impl MatchState {
         true
     }
 
+    /// A call-in (S3b): buys and spawns the squad at once, or refuses it
+    /// (see [`Self::call_in_check`]). Either way the result is logged for
+    /// the snapshot.
     fn call_in(&mut self, ctx: &mut Ctx, p: PlayerId, squad_type: u16) -> bool {
-        let faction = &self.setup.factions[self.setup.players[p.0 as usize].faction as usize];
-        if !faction.roster.contains(&squad_type) {
-            return false;
+        let result = match self.call_in_check(ctx.ents, p, squad_type, ctx.tick) {
+            Err(why) => Err(why),
+            Ok(()) => {
+                let ty = &self.setup.squad_types[squad_type as usize];
+                let ready = ctx.tick + ty.recall_cooldown_ticks as u64;
+                let group = ty.cooldown_group;
+                let cost = ty.cost;
+                let pl = &mut self.players[p.0 as usize];
+                pl.manpower -= cost;
+                for (t, other) in self.setup.squad_types.iter().enumerate() {
+                    if t == squad_type as usize
+                        || (group.is_some() && other.cooldown_group == group)
+                    {
+                        pl.ready_at[t] = pl.ready_at[t].max(ready);
+                    }
+                }
+                Ok(self.spawn_squad(ctx, p, squad_type))
+            }
+        };
+        // Unknown types are not logged: the presenter could not name them.
+        if (squad_type as usize) < self.setup.squad_types.len() {
+            self.call_in_events.push(CallInEvent {
+                player: p,
+                squad_type,
+                result,
+            });
         }
-        let ty = &self.setup.squad_types[squad_type as usize];
-        let (cost, men, delay) = (ty.cost, ty.pop(&self.setup.vehicles), ty.call_in_ticks);
-        // Vehicles (S3): only after the unlock time and under the limit
-        // (alive or queued).
-        let vr = &self.setup.rules.vehicles;
-        if ty.vehicle.is_some()
-            && (ctx.tick < vr.unlock_ticks as u64 || self.vehicles_counted(ctx.ents, p) >= vr.limit)
-        {
-            return false;
-        }
-        let pop = self.population(ctx.ents, p);
-        let pl = &mut self.players[p.0 as usize];
-        if pl.manpower < cost
-            || pop + men > self.setup.rules.pop_cap
-            || pl.call_ins.len() >= MAX_CALL_IN_QUEUE
-        {
-            return false;
-        }
-        pl.manpower -= cost;
-        pl.call_ins.push(CallIn {
-            squad_type,
-            ready_tick: ctx.tick + delay as u64,
-        });
-        true
+        result.is_ok()
     }
 
     /// Asks for a path to `goal`; the squad waits in place until it is served.
@@ -926,23 +1018,67 @@ impl MatchState {
         }
     }
 
-    /// Spawns call-ins whose time has come, players in order, each queue in
-    /// purchase order.
-    pub(crate) fn spawn_call_ins(&mut self, ctx: &mut Ctx) {
-        for p in 0..self.players.len() {
-            while let Some(c) = self.players[p].call_ins.first().copied() {
-                if c.ready_tick > ctx.tick {
+    /// Where squad `id` of `owner` spawns (S3b): one of seven spots, six on
+    /// a ring at `call_in.spawn_ring_pct` of the base radius and the
+    /// centre. The squad tries spot `id mod 7` first, then the next ones in
+    /// turn, and takes the first with the fewest men (a vehicle counting
+    /// `spawn_vehicle_weight`) within `call_in.spawn_clear_m`, so squads
+    /// bought in quick succession, or onto a spot a squad still stands
+    /// on, spread out. Every spot is inside the base.
+    fn spawn_spot(
+        &self,
+        ents: &Entities,
+        terrain: &Heightfield,
+        owner: PlayerId,
+        id: SquadId,
+    ) -> FxVec2 {
+        let base = &self.setup.map.bases[self.setup.players[owner.0 as usize].base as usize];
+        let center: FxVec2 = base.center.into();
+        let ci = &self.setup.rules.call_in;
+        let ring = Fx::from(base.radius)
+            .mul_int(ci.spawn_ring_pct as i32)
+            .div_int(100);
+        let spot = |k: u32| {
+            let p = if k == SPAWN_SPOTS - 1 {
+                center
+            } else {
+                let (s, c) = Fx::from_ratio(k as i64 * 1047, 1000).sin_cos(); // k · 60°
+                center + FxVec2::new(c, s) * ring
+            };
+            terrain.clamp(p)
+        };
+        let clear = Fx::from_int(ci.spawn_clear_m as i32).raw().max(0) as u64;
+        let clear2 = clear * clear;
+        let crowd = |at: FxVec2| -> u32 {
+            let near = |q: FxVec2| (q - at).length_sq_raw() <= clear2;
+            let men = ents
+                .soldiers()
+                .filter(|m| near(ents.transform[m.index()].pos.xy()))
+                .count() as u32;
+            let vehicles = self
+                .vehicles
+                .keys()
+                .filter(|v| near(ents.transform[v.index()].pos.xy()))
+                .count() as u32;
+            men + vehicles * ci.spawn_vehicle_weight
+        };
+        let first = id.0 % SPAWN_SPOTS;
+        let mut best = (u32::MAX, spot(first));
+        for j in 0..SPAWN_SPOTS {
+            let at = spot((first + j) % SPAWN_SPOTS);
+            let n = crowd(at);
+            if n < best.0 {
+                best = (n, at);
+                if n == 0 {
                     break;
                 }
-                self.players[p].call_ins.remove(0);
-                self.spawn_squad(ctx, PlayerId(p as u8), c.squad_type);
             }
         }
+        best.1
     }
 
     /// Spawns a full squad of `squad_type` at `owner`'s base, in a line facing
-    /// the map centre. Squads spread around the base by id so they do not
-    /// land on top of each other.
+    /// the map centre, on the spot [`Self::spawn_spot`] picks.
     pub(crate) fn spawn_squad(
         &mut self,
         ctx: &mut Ctx,
@@ -951,19 +1087,9 @@ impl MatchState {
     ) -> SquadId {
         let id = SquadId(self.next_squad);
         self.next_squad += 1;
+        let spot = self.spawn_spot(ctx.ents, ctx.terrain, owner, id);
         let ty = &self.setup.squad_types[squad_type as usize];
         let vehicle_type = ty.vehicle;
-        let base = &self.setup.map.bases[self.setup.players[owner.0 as usize].base as usize];
-        let center: FxVec2 = base.center.into();
-        // Six spots on a ring at half the base radius, then the centre.
-        let k = id.0 % 7;
-        let spot = if k == 6 {
-            center
-        } else {
-            let (s, c) = Fx::from_ratio(k as i64 * 1047, 1000).sin_cos(); // k · 60°
-            center + FxVec2::new(c, s) * Fx::from(base.radius).div_int(2)
-        };
-        let spot = ctx.terrain.clamp(spot);
         let mid = FxVec2::from_int(self.setup.map.size_m / 2, self.setup.map.size_m / 2);
         let mut facing = (mid - spot).normalize_or_zero();
         if facing == FxVec2::ZERO {
@@ -1285,14 +1411,22 @@ impl MatchState {
                 ai.validate(self, PlayerId(p as u8), tick)?;
             }
         }
+        // Re-call cooldowns (S3b): one per squad type, never further ahead
+        // than the longest cooldown a type can have.
+        let longest = s
+            .squad_types
+            .iter()
+            .map(|t| t.recall_cooldown_ticks.max(t.initial_cooldown_ticks) as u64)
+            .max()
+            .unwrap_or(0);
         for pl in &self.players {
-            if pl.call_ins.len() > MAX_CALL_IN_QUEUE
+            if pl.ready_at.len() != s.squad_types.len()
                 || pl
-                    .call_ins
+                    .ready_at
                     .iter()
-                    .any(|c| c.squad_type as usize >= s.squad_types.len())
+                    .any(|&t| t > tick.saturating_add(longest))
             {
-                return Err("bad call-in queue");
+                return Err("bad call-in cooldowns");
             }
         }
         let mut members = 0usize;

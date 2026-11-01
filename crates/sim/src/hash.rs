@@ -316,10 +316,9 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         p.manpower.put(out);
         p.tickets.put(out);
         p.surrendered.put(out);
-        (p.call_ins.len() as u32).put(out);
-        for c in &p.call_ins {
-            c.squad_type.put(out);
-            c.ready_tick.put(out);
+        (p.ready_at.len() as u32).put(out);
+        for t in &p.ready_at {
+            t.put(out);
         }
         p.kills.put(out);
         p.losses.put(out);

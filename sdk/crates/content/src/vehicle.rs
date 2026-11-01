@@ -335,7 +335,13 @@ pub struct VehicleDef {
     pub cost: u32,
     /// Population it uses (soldier squads use their men).
     pub pop: u32,
-    pub call_in_s: u32,
+    /// Seconds after a call-in before this vehicle can be called in again
+    /// (S3b; the call-in spawns it at once at the base).
+    pub recall_cooldown_s: u32,
+    /// Seconds from the match start before its first call-in (S3b; the
+    /// rules' vehicle unlock applies as well).
+    #[serde(default)]
+    pub initial_cooldown_s: u32,
     /// Sight range of its crew, in metres.
     pub sight_m: u32,
     /// How far it can be seen, in percent of the observer's sight (size).
@@ -823,7 +829,20 @@ impl VehicleDef {
         }
         range(&mut out, "cost", self.cost as i64, 0, 100_000);
         range(&mut out, "pop", self.pop as i64, 1, 120);
-        range(&mut out, "call_in_s", self.call_in_s as i64, 0, 600);
+        range(
+            &mut out,
+            "recall_cooldown_s",
+            self.recall_cooldown_s as i64,
+            0,
+            crate::MAX_COOLDOWN_S as i64,
+        );
+        range(
+            &mut out,
+            "initial_cooldown_s",
+            self.initial_cooldown_s as i64,
+            0,
+            crate::MAX_INITIAL_COOLDOWN_S as i64,
+        );
         range(&mut out, "sight_m", self.sight_m as i64, 1, 2000);
         range(
             &mut out,
@@ -1567,7 +1586,9 @@ pub struct VehicleSetup {
     pub role: VehicleRole,
     pub cost: u32,
     pub pop: u32,
-    pub call_in_ticks: u32,
+    /// Re-call cooldown and the cooldown from the match start (ticks).
+    pub recall_cooldown_ticks: u32,
+    pub initial_cooldown_ticks: u32,
     pub sight: Fixed,
     pub spot_size_pct: u32,
     pub eye_height: Fixed,
@@ -1763,7 +1784,8 @@ pub(crate) fn lower_vehicle(
         role: v.role,
         cost: v.cost,
         pop: v.pop,
-        call_in_ticks: v.call_in_s * hz,
+        recall_cooldown_ticks: v.recall_cooldown_s * hz,
+        initial_cooldown_ticks: v.initial_cooldown_s * hz,
         sight: Fixed::from_int(v.sight_m as i32),
         spot_size_pct: v.spot_size_pct,
         eye_height: Fixed::from_cm(v.eye_height_cm),
@@ -1930,7 +1952,8 @@ pub(crate) fn check_vehicle(
         || m.unbog_ticks[0] > m.unbog_ticks[1]
         || m.unbog_ticks[1] > 600 * 30
         || !(100..=1000).contains(&m.moving_spread_pct)
-        || v.call_in_ticks > 600 * 30
+        || v.recall_cooldown_ticks > crate::MAX_COOLDOWN_S * 30
+        || v.initial_cooldown_ticks > crate::MAX_INITIAL_COOLDOWN_S * 30
     {
         return Some("vehicles.values: out of range");
     }

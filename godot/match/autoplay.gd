@@ -179,11 +179,16 @@ func _play(s: Dictionary, t: float) -> void:
 			print("autoplay: no explosion seen near the barrage target")
 	# Reinforce: buy rifles (and an MG) when there is manpower.
 	var me: Dictionary = view.player(local)
-	if t >= _next_buy and float(me.get("manpower", 0)) >= 250.0 and s.callin.queue.size() < 2 \
-			and not s3.saving(s):
-		_next_buy = t + 20.0
+	if t >= _next_buy and float(me.get("manpower", 0)) >= 250.0 and not s3.saving(s):
 		var kind := "mg" if int(t / 20.0) % 3 == 1 else "rifle"
-		_intent(&"call_in", {"type": kind})
+		# S3b: no queue; wait out the type's re-call cooldown.
+		var ready := true
+		for c in s.callin.catalog:
+			if c.type == kind and float(c.get("cooldown_s", 0.0)) > 0.0:
+				ready = false
+		if ready:
+			_next_buy = t + 20.0
+			_intent(&"call_in", {"type": kind})
 	# Idle riflemen and MGs push to the nearest point we do not hold; so do
 	# attackers that have not got anywhere for two minutes (re-path).
 	for sq in own:

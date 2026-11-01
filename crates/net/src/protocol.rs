@@ -17,8 +17,10 @@ use frontline_sim::{Command, CommandKind, MAX_UNITS, game::MAX_DIG_POINTS};
 use serde::{Deserialize, Serialize};
 
 /// Wire version. Bump on any change to a body, a kind or a limit that a
-/// peer could observe.
-pub const PROTOCOL_VERSION: u16 = 3;
+/// peer could observe. 4 (S3b): `CallIn` buys and spawns at once under a
+/// per-type re-call cooldown instead of joining a queue (the one bump for
+/// the S3b slice; the Suppress command lands under the same version).
+pub const PROTOCOL_VERSION: u16 = 4;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;

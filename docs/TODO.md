@@ -27,7 +27,8 @@ it.
     progress drawn inside each button (owner request).
   - **Call-in:** a column at the bottom right, just above or beside the
     orders. The tiles always show the name and cost, and the queue is a
-    compact bar with a count.
+    compact bar with a count. (Since 2026-11-01 there is no queue: see
+    "Call-in without a queue" below.)
 
   Spec: `docs/slices/S1b-hud.md`. Mocks: `docs/slices/mocks/`. Built in S1b.
 - [x] **Squad card sized to its content.** Built in S1b
@@ -91,7 +92,8 @@ it.
   blocks vehicles.
 - [ ] **4. Unlock and limit.** (A) Vehicles from 4:00, at most 4 alive or
   queued per player, 12 pop each. (B) No unlock, cost only. (C) Other
-  numbers.
+  numbers. (S3b: no queue any more, so "at most 4 alive"; a tank also has
+  a 120 s re-call cooldown.)
 - [ ] **5. Target for "tanks fix the trench assault"** (armour-test case
   7). (A) Attacker losses at most half the no-tank baseline's, and
   defenders lose at least 75 %. (B) A different bar. Case 7 now **misses**
@@ -149,6 +151,31 @@ TOML. Work proceeds on the (A) defaults below.
   (A) Leave it in code until a tuning need appears. (B) Move it to
   `[vehicles.gunnery]` and thread it through the armour API and the
   golden runner.
+
+- [x] **Call-in without a queue (owner, 2026-11-01).** "Remove the queue,
+  but keep the timer of the specific unit after it was called. Like in
+  GOH." and "instead of a delivery time, it would spawn immediately, but
+  it will be balanced out by the need of the unit to move to the
+  frontline itself". Built in the S3b call-in stage
+  (`docs/slices/S3b-balance.md` "Call-in without a queue"): a buy spawns
+  the squad in the base at once, then that type waits out its re-call
+  cooldown (rifle 24 s, engineers and MG 36 s, AT team 48 s, mortar 60 s,
+  tank 120 s, set by the owner, in each unit or vehicle def); refusals
+  say why in the feed; Tab then 1–9 buys a tile. `PROTOCOL_VERSION` 4.
+- [ ] **S3b-15. Call-in hotkeys.** (A) Tab focuses the column, then 1–9
+  buy that tile (outside the column the number keys stay control
+  groups). (B) Direct keys without focus (e.g. F1–F7, or Shift+1–9).
+- [ ] **S3b-16. Cooldown groups.** Built (`cooldown_group` in a unit def:
+  types of one group share a timer, as in the reference game) but unused.
+  (A) Each type keeps its own timer. (B) Group related types (e.g. MG and
+  mortar as support weapons).
+- [ ] **S3b-17. AI tank reserve.** (A) After the vehicle unlock, under
+  the limit, the AI's infantry buys leave 200 MP unspent
+  (`[ai.armour] tank_reserve_mp`). (B) No reserve, or a larger one.
+- [ ] **S3b-18. Spawning with enemies in the base.** (A) As now: squads
+  spawn at the base's seven spots whatever is near (the base has no
+  protection rule). (B) Refuse or move a spawn when enemies are within
+  some distance of the base.
 
 ## S3 owner checklist (needs a person)
 
@@ -221,8 +248,9 @@ TOML. Work proceeds on the (A) defaults below.
   1280 is hard to read). Draw the fill under the letter or as a bar.
 - [ ] Trench lines are hard to see among mortar craters at RTS camera
   height; they need a stronger edge or darker floor shading.
-- [ ] The fix pass cut the call-in queue from 10 to 5 to match the HUD
-  spec. That is a game rule; confirm with the owner.
+- [x] The fix pass cut the call-in queue from 10 to 5 to match the HUD
+  spec. That is a game rule; confirm with the owner. **Closed
+  2026-11-01:** the owner removed the queue (S3b call-in stage, below).
 
 ## S2 owner checklist (needs people or a second network)
 

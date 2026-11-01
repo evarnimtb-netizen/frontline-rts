@@ -17,11 +17,19 @@ fn setup(seed: u64, tickets: Option<u32>) -> MatchSetup {
 }
 
 /// S3: the test unlock rules (vehicles at once) with 4000 starting
-/// manpower, so both AIs field tanks early.
+/// manpower, so both AIs field tanks early. S3b: the vehicles' 120 s
+/// re-call cooldown is off, so a 3-minute run fields two per side (other
+/// call-ins keep their cooldowns, and the scripted ones meet them).
 fn vehicle_setup(seed: u64, tickets: Option<u32>) -> MatchSetup {
     let (defs, rules) = harness::load_defs_test_unlock(&harness::mods_dir(None).unwrap()).unwrap();
     let mut s = harness::net_setup_rules(&defs, &rules, seed, true, tickets).unwrap();
     s.rules.start_manpower = 4000;
+    for t in s.squad_types.iter_mut().filter(|t| t.vehicle.is_some()) {
+        t.recall_cooldown_ticks = 0;
+    }
+    for v in &mut s.vehicles {
+        v.recall_cooldown_ticks = 0;
+    }
     s
 }
 

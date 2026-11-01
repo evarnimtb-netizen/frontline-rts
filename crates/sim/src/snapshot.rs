@@ -24,7 +24,11 @@
 //! (S3)"; the sim fills `vehicles` and the per-player fields from S3 sim
 //! stage 2 on (shells and armour events with gunnery). Vehicle squads are
 //! not in `squads` (a vehicle's squad is a squad of one; the vehicle is in
-//! `vehicles`). `players[].pop` counts each live or queued vehicle's pop.
+//! `vehicles`). `players[].pop` counts each live vehicle's pop.
+//!
+//! S3b: per player the re-call cooldown left per squad type
+//! (`PlayerSnapshot::cooldowns`; no call-in queue any more), and the
+//! tick's call-in results (`call_ins`: spawned squad or refusal).
 //!
 //! Fog of war: bit `p` of `soldier_visible` says player `p` sees that
 //! soldier (own soldiers always). A presenter for local player `p` draws an
@@ -170,10 +174,11 @@ pub struct PlayerSnapshot {
     /// Points held now, and point-seconds held so far (end screen).
     pub points_held: u8,
     pub hold_s: u32,
-    /// Queued call-ins: `(squad type, ticks until arrival)`.
-    pub call_ins: Vec<(u16, u32)>,
-    /// S3: vehicles alive or queued, the rules' limit, and the tick from
-    /// which vehicles can be called in.
+    /// S3b: ticks until each squad type (index into
+    /// `MatchSetup::squad_types`) can be called in again; 0 = ready.
+    pub cooldowns: Vec<u32>,
+    /// S3: vehicles alive, the rules' limit, and the tick from which
+    /// vehicles can be called in.
     pub vehicles_counted: u8,
     pub vehicle_limit: u8,
     pub unlock_tick: u64,
@@ -440,6 +445,9 @@ pub struct RenderSnapshot {
     pub shells: Vec<ShellSnapshot>,
     /// Armour events this tick, in order (S3).
     pub armour_events: Vec<ArmourEvent>,
+    /// Call-in results this tick, in command order (match mode only,
+    /// S3b): the squad that spawned or why the call-in was refused.
+    pub call_ins: Vec<crate::game::CallInEvent>,
     /// Squads in ascending id order (match mode only).
     pub squads: Vec<SquadSnapshot>,
     /// Per player slot (match mode only).
@@ -652,10 +660,8 @@ impl RenderSnapshot {
                 losses: pl.losses,
                 points_held: g.points().iter().filter(|c| c.owner == Some(id)).count() as u8,
                 hold_s: (pl.point_ticks / g.setup().tick_hz as u64) as u32,
-                call_ins: pl
-                    .call_ins
-                    .iter()
-                    .map(|c| (c.squad_type, c.ready_tick.saturating_sub(tick) as u32))
+                cooldowns: (0..pl.ready_at.len())
+                    .map(|t| g.cooldown_left(id, t as u16, tick))
                     .collect(),
                 vehicles_counted: g.vehicles_counted(ents, id).min(u8::MAX as u32) as u8,
                 vehicle_limit: g.setup().rules.vehicles.limit.min(u8::MAX as u32) as u8,

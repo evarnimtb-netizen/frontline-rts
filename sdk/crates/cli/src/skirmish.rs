@@ -893,12 +893,12 @@ fn trace_vehicles(w: &World) {
             .filter(|q| q.owner.0 as usize == p)
             .count();
         eprintln!(
-            "{} p{p} manpower {} pop {}/{} squads {squads} call-ins {:?} vehicles {}/{}",
+            "{} p{p} manpower {} pop {}/{} squads {squads} cooldowns {:?} vehicles {}/{}",
             mmss(w.tick() as f64 / hz),
             ps.manpower,
             ps.pop,
             ps.pop_cap,
-            ps.call_ins,
+            ps.cooldowns,
             ps.vehicles_counted,
             ps.vehicle_limit
         );

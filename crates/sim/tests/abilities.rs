@@ -230,6 +230,11 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
     assert!(winding(&w, leader) || first == leader || second == leader);
     // MG teams carry nothing.
     let mg_sq = call_in(&mut w, 0, "ww2:ger_mg_team");
+    // The throws above land first (S3b: the call-in no longer takes the
+    // MG team's old 25 s delivery).
+    for _ in 0..25 * 30 {
+        w.step(&[]);
+    }
     w.place_squad(mg_sq, at(430, 440), EAST);
     let mg = members(&w, mg_sq);
     assert!(!order(&mut w, 0, throw(mg, ItemKind::Frag, at(450, 440))));
@@ -776,7 +781,9 @@ fn throws_in_an_ai_match_are_identical_across_thread_counts() {
 #[test]
 fn throws_survive_save_load_continue() {
     let end = 5 * 60 * 30;
-    let mut straight = ai_match(22, 2);
+    // Seed 23: the S3b call-ins (no queue) moved seed 22's busy moment
+    // out of the window.
+    let mut straight = ai_match(23, 2);
     let mut reference = Vec::new();
     let (mut seen_flight, mut seen_smoke) = (false, false);
     while straight.tick() < end {
@@ -791,7 +798,7 @@ fn throws_survive_save_load_continue() {
     assert!(seen_flight && seen_smoke);
 
     // Save with an item in the air, one winding up and smoke standing.
-    let mut first = ai_match(22, 2);
+    let mut first = ai_match(23, 2);
     let mut mid = 2 * 60 * 30;
     run(&mut first, mid, 0);
     let busy = |w: &World| {

@@ -13,7 +13,14 @@ faction = "ww2:germany"
 role = "tank"
 cost = 640
 pop = 12
-call_in_s = 45
+# Call-in (S3b): a call-in spawns the tank at once at the base (no
+# queue, no delivery time; it walks to the front itself). Then this
+# type cannot be called in again for recall_cooldown_s seconds. 120 s set
+# by the owner on 2026-11-01 (20 % under the first proposal of 150 s).
+recall_cooldown_s = 120
+# Seconds from the match start before the first call-in; 0 = at once.
+# Rules' vehicle unlock (vehicles.unlock_s) applies as well.
+initial_cooldown_s = 0
 sight_m = 175
 # Seen at 200 % of an observer's sight (size); 250 % moving and 300 %
 # after firing come from the rules and the gun.

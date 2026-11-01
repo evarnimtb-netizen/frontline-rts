@@ -50,7 +50,6 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use frontline_content::{ArmourZone, ItemKind, MatchSetup, SeatRole, SquadRole, WeaponClass};
-use frontline_sim::game::MAX_CALL_IN_QUEUE;
 use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
     ArmourEventKind, CommandKind, Fx, NavPhase, OrderKind, Outcome, SeatSnap, SquadId, World,
@@ -199,7 +198,7 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "role" => "tank",
             "cost" => v.cost as i64,
             "pop" => v.pop as i64,
-            "call_in_s" => v.call_in_ticks as f32 / setup.tick_hz.max(1) as f32,
+            "recall_s" => v.recall_cooldown_ticks as f32 / setup.tick_hz.max(1) as f32,
             "speed" => fx(v.mobility.speed),
             "sight_m" => fx(v.sight),
             "hull_length" => 2.0 * fx(hull.half.x),
@@ -1133,6 +1132,7 @@ impl MatchRuntime {
         self.dirty_chunks = dirty;
         effect_cues(&self.events_in, &self.setup, &mut self.cues);
         for ev in &self.events_in {
+            self.tracker.call_ins(ev, &self.setup, &mut self.ui_events);
             self.tracker.armour(ev, &self.setup, &mut self.ui_events);
             self.armour_out
                 .extend(ev.armour.iter().map(|a| (ev.tick, a.clone())));
@@ -1685,13 +1685,6 @@ impl MatchRuntime {
         let mut players = VarArray::new();
         for (p, ps) in f.players.iter().enumerate() {
             let ps_setup = &setup.players[p];
-            // The sim's pop counts queued call-ins (a vehicle's pop for a
-            // vehicle); the HUD adds the queue itself.
-            let queued: u32 = ps
-                .call_ins
-                .iter()
-                .map(|c| setup.squad_types[c.0 as usize].pop(&setup.vehicles))
-                .sum();
             let fac = short_id(&setup.factions[ps_setup.faction as usize].id);
             let name = match &self.net {
                 Some(n) if !n.names[p % 2].is_empty() => n.names[p % 2].clone(),
@@ -1708,7 +1701,7 @@ impl MatchRuntime {
                     "tickets" => ps.tickets as f32,
                     "manpower" => ps.manpower as f32,
                     "income" => ps.income_per_min as f32 / 60.0,
-                    "pop" => ps.pop.saturating_sub(queued) as i64,
+                    "pop" => ps.pop as i64,
                     "points_held" => ps.points_held as i64,
                     "ticket_drain" => ps.drain_per_min as f32 / 60.0,
                     "vehicles" => ps.vehicles_counted as i64,
@@ -1862,21 +1855,26 @@ impl MatchRuntime {
             let ty = &setup.squad_types[t as usize];
             let mut d = entry(t);
             d.set("cost", ty.cost as i64);
-            d.set("delay_s", ty.call_in_ticks as f32 / hz);
+            // S3b: no queue and no delivery time; the re-call cooldown
+            // left and its full length (the tile's fill).
+            let left = me
+                .and_then(|p| p.cooldowns.get(t as usize).copied())
+                .unwrap_or(0);
+            if left > 0 {
+                d.set("cooldown_s", left as f32 / hz);
+                d.set(
+                    "cooldown_total_s",
+                    (ty.recall_cooldown_ticks
+                        .max(ty.initial_cooldown_ticks)
+                        .max(left)) as f32
+                        / hz,
+                );
+            }
+            d.set("recall_s", ty.recall_cooldown_ticks as f32 / hz);
             if ty.vehicle.is_some() && locked_s > 0.0 {
                 d.set("locked_s", locked_s);
             }
             catalog.push(&d.to_variant());
-        }
-        let mut queue = VarArray::new();
-        if let Some(me) = me {
-            for &(t, left) in &me.call_ins {
-                let ty = &setup.squad_types[t as usize];
-                let mut d = entry(t);
-                d.set("remaining_s", left as f32 / hz);
-                d.set("total_s", ty.call_in_ticks as f32 / hz);
-                queue.push(&d.to_variant());
-            }
         }
 
         let mut events = VarArray::new();
@@ -2002,8 +2000,6 @@ impl MatchRuntime {
             "thrown" => &thrown,
             "callin" => &vdict! {
                 "catalog" => &catalog,
-                "queue" => &queue,
-                "queue_max" => MAX_CALL_IN_QUEUE as i64,
                 "vehicles" => me.map_or(0, |p| p.vehicles_counted as i64),
                 "vehicle_limit" => me.map_or(0, |p| p.vehicle_limit as i64),
             },

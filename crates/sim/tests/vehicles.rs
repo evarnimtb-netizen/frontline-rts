@@ -6,11 +6,11 @@
 
 use std::path::Path;
 
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs};
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, SquadRole};
 use frontline_sim::vehicle::{node_at, sample_ground};
 use frontline_sim::{
-    Command, CommandKind, EntityKind, Fx, FxVec2, ItemKind, NavPhase, Order, PlayerId, SimId,
-    SquadId, StanceOrder, World,
+    CallInRefusal, Command, CommandKind, EntityKind, Fx, FxVec2, ItemKind, NavPhase, Order,
+    PlayerId, SimId, SquadId, StanceOrder, World,
 };
 
 fn defs_and_rules(unlock: bool) -> (ModDefs, String) {
@@ -117,14 +117,43 @@ fn call_in_needs_the_unlock_time_respects_the_limit_and_counts_pop() {
     assert_eq!(rejected(&w), 1, "a tank before the unlock time");
     let unlock = w.match_setup().unwrap().rules.vehicles.unlock_ticks as u64;
     assert_eq!(unlock, 240 * 30);
+    assert_eq!(
+        w.snapshot().call_ins[0].result,
+        Err(CallInRefusal::Locked {
+            ticks: unlock as u32
+        })
+    );
     while w.tick() < unlock {
         w.step(&[]);
     }
+    // S3b: it stands in the base at once; a second waits out the 120 s
+    // re-call cooldown.
     w.step(&[cmd(0, 1, CommandKind::CallIn { squad_type: t })]);
     assert_eq!(rejected(&w), 1, "accepted once unlocked");
+    assert_eq!(w.snapshot().vehicles.len(), 1);
+    let cd = w.match_setup().unwrap().squad_types[t as usize].recall_cooldown_ticks;
+    assert_eq!(cd, 120 * 30);
+    w.step(&[cmd(0, 2, CommandKind::CallIn { squad_type: t })]);
+    assert_eq!(
+        w.snapshot().call_ins[0].result,
+        Err(CallInRefusal::Cooldown { ticks: cd - 1 })
+    );
+    for _ in 0..cd - 1 {
+        w.step(&[]);
+    }
+    w.step(&[cmd(0, 3, CommandKind::CallIn { squad_type: t })]);
+    assert!(w.snapshot().call_ins[0].result.is_ok());
+    assert_eq!(w.snapshot().vehicles.len(), 2);
 
-    // Test override: unlocked at once; at most 4 alive or queued.
-    let mut w = World::new_match(setup(1, true), 1).unwrap();
+    // Test override, cooldowns off: unlocked at once; at most 4 alive.
+    let mut s = setup(1, true);
+    for ty in &mut s.squad_types {
+        ty.recall_cooldown_ticks = 0;
+    }
+    for v in &mut s.vehicles {
+        v.recall_cooldown_ticks = 0;
+    }
+    let mut w = World::new_match(s, 1).unwrap();
     let g = |w: &World| w.game().unwrap().population(w.entities(), PlayerId(0));
     let pop0 = g(&w);
     let cmds: Vec<Command> = (0..5)
@@ -132,25 +161,30 @@ fn call_in_needs_the_unlock_time_respects_the_limit_and_counts_pop() {
         .collect();
     w.step(&cmds);
     assert_eq!(rejected(&w), 1, "the fifth is over the limit");
-    let game = w.game().unwrap();
-    assert_eq!(game.vehicles_counted(w.entities(), PlayerId(0)), 4);
-    assert_eq!(g(&w), pop0 + 4 * 12, "queued vehicles count their pop");
-    assert_eq!(w.snapshot().players[0].vehicles_counted, 4);
-    assert_eq!(w.snapshot().players[0].pop, pop0 + 48);
-    // They arrive after the 45 s call-in and still count.
-    for _ in 0..45 * 30 + 1 {
-        w.step(&[]);
-    }
+    assert_eq!(
+        w.snapshot().call_ins[4].result,
+        Err(CallInRefusal::VehicleLimit)
+    );
     let game = w.game().unwrap();
     let alive = game
         .vehicles()
         .keys()
         .filter(|v| w.entities().kind()[v.index()] == EntityKind::Vehicle)
         .count();
-    assert_eq!(alive, 4);
+    assert_eq!(alive, 4, "they stand in the base at once");
     assert_eq!(game.vehicles_counted(w.entities(), PlayerId(0)), 4);
-    assert_eq!(g(&w), pop0 + 48);
+    assert_eq!(g(&w), pop0 + 4 * 12, "vehicles count their pop");
+    assert_eq!(w.snapshot().players[0].vehicles_counted, 4);
+    assert_eq!(w.snapshot().players[0].pop, pop0 + 48);
     assert_eq!(w.snapshot().vehicles.len(), 4);
+    // Four tanks bought in one tick stand apart.
+    let at: Vec<_> = w.snapshot().vehicles.iter().map(|v| v.pos).collect();
+    for (i, a) in at.iter().enumerate() {
+        for b in &at[i + 1..] {
+            let d = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+            assert!(d > 10.0, "{a:?} {b:?}");
+        }
+    }
     let v = *game.vehicles().keys().next().unwrap();
     w.step(&[cmd(0, 9, CommandKind::CallIn { squad_type: t })]);
     assert_eq!(rejected(&w), 2, "four alive: still at the limit");
@@ -169,6 +203,7 @@ fn call_in_needs_the_unlock_time_respects_the_limit_and_counts_pop() {
     let mut w = World::new_match(s, 1).unwrap();
     w.step(&[cmd(0, 0, CommandKind::CallIn { squad_type: t })]);
     assert_eq!(rejected(&w), 1, "over the pop cap");
+    assert_eq!(w.snapshot().call_ins[0].result, Err(CallInRefusal::PopCap));
 }
 
 #[test]
@@ -796,6 +831,14 @@ fn a_tank_drives_from_its_base_to_a_point_on_kessel_ridge() {
 fn vehicle_match(seed: u64, threads: usize) -> World {
     let mut s = setup(seed, true);
     s.players.iter_mut().for_each(|p| p.is_ai = true);
+    // The script buys two tanks per player at once (S3b cooldowns off for
+    // vehicles only).
+    for ty in s.squad_types.iter_mut().filter(|t| t.vehicle.is_some()) {
+        ty.recall_cooldown_ticks = 0;
+    }
+    for v in &mut s.vehicles {
+        v.recall_cooldown_ticks = 0;
+    }
     World::new_match(s, threads).unwrap()
 }
 
@@ -1040,4 +1083,73 @@ fn vehicle_stress_report() {
         st.rounds_stopped
     );
     println!("vehicles moving at the end: {moving}");
+}
+
+/// S3b: no delivery time, so a bought squad's time to the front is its
+/// walk (owner 2026-11-01: "balanced out by the need of the unit to move
+/// to the frontline itself"). Buys a rifle squad and a tank in each base,
+/// moves them to the nearest capture point and to the centre point C, and
+/// prints the times (seconds from the buy until within the capture
+/// radius). Run with `--nocapture` for the table.
+#[test]
+fn walk_times_from_each_base_to_the_front() {
+    let mut out = Vec::new();
+    for player in 0..2u8 {
+        for (what, ty) in [("rifle squad", "rifle"), ("tank", "tank")] {
+            for goal in ["nearest", "C"] {
+                let mut w = World::new_match(setup(1, true), 1).unwrap();
+                let s = w.match_setup().unwrap().clone();
+                let t = if ty == "tank" {
+                    tank_type(&w, player)
+                } else {
+                    let f = &s.factions[s.players[player as usize].faction as usize];
+                    *f.roster
+                        .iter()
+                        .find(|&&t| s.squad_types[t as usize].role == SquadRole::Rifle)
+                        .unwrap()
+                };
+                let base = w.game().unwrap().base_of(PlayerId(player));
+                let points: Vec<(String, FxVec2)> = s
+                    .map
+                    .points
+                    .iter()
+                    .map(|p| (p.name.clone(), FxVec2::from(p.pos)))
+                    .collect();
+                let (name, target) = if goal == "C" {
+                    points.iter().find(|p| p.0 == "C").cloned().unwrap()
+                } else {
+                    points
+                        .iter()
+                        .min_by_key(|p| (p.1 - base).length_sq_raw())
+                        .cloned()
+                        .unwrap()
+                };
+                w.step(&[cmd(player, 0, CommandKind::CallIn { squad_type: t })]);
+                let sq = w.snapshot().call_ins[0].result.unwrap();
+                w.step(&[cmd(player, 1, CommandKind::Move { squad: sq, target })]);
+                let radius = Fx::from(s.rules.capture_radius);
+                let lead = |w: &World| {
+                    let q = w.game().unwrap().squad(sq).unwrap();
+                    pos(w, q.lead(w.entities()))
+                };
+                let mut ticks = 0u64;
+                while dist(lead(&w), target) > radius {
+                    w.step(&[]);
+                    ticks += 1;
+                    assert!(ticks < 30 * 600, "{what} never reached {name}");
+                }
+                let secs = (ticks + 2) as f64 / s.tick_hz as f64;
+                let metres = dist(base, target).to_f32();
+                out.push(format!(
+                    "base {player} {what:<11} -> {name} ({goal:<7}) {metres:>4.0} m straight: {secs:>5.1} s"
+                ));
+                // Sanity: faster than a crawl, slower than a teleport.
+                let speed = metres as f64 / secs;
+                assert!((0.5..12.0).contains(&speed), "{what} {speed} m/s");
+            }
+        }
+    }
+    for l in &out {
+        println!("{l}");
+    }
 }

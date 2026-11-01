@@ -68,7 +68,6 @@ const NORMAL := {
 	"tile_h": 40.0,
 	"ci_gap": 10.0,
 	"ci_head": 20.0,
-	"ci_q": 26.0,
 	"fade": 170.0,
 }
 const COMPACT := {
@@ -94,7 +93,6 @@ const COMPACT := {
 	"tile_h": 38.0,
 	"ci_gap": 8.0,
 	"ci_head": 18.0,
-	"ci_q": 24.0,
 	"fade": 160.0,
 }
 

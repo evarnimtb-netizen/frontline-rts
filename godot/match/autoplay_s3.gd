@@ -135,12 +135,11 @@ func _buy(s: Dictionary, t: float) -> void:
 		return
 	_next_buy = t + 3.0
 	var ci: Dictionary = s.get("callin", {})
-	if ci.get("queue", []).size() >= int(ci.get("queue_max", 5)):
-		return
 	var me: Dictionary = view.player(local)
 	var mp := float(me.get("manpower", 0))
 	var e := _vehicle_entry(s)
 	if bought < want and not e.is_empty() and float(e.get("locked_s", 0.0)) <= 0.0 \
+			and float(e.get("cooldown_s", 0.0)) <= 0.0 \
 			and int(ci.get("vehicles", 0)) < int(ci.get("vehicle_limit", 4)) and mp >= float(e.get("cost", 1e9)):
 		ap._intent(&"call_in", {"type": "vehicle", "id": String(e.id)})
 		bought += 1
@@ -151,7 +150,7 @@ func _buy(s: Dictionary, t: float) -> void:
 	# One AT team after the first tank.
 	if bought >= 1 and not at_team:
 		for c in ci.get("catalog", []):
-			if String(c.get("type", "")) == "at" and mp >= float(c.get("cost", 1e9)):
+			if String(c.get("type", "")) == "at" and mp >= float(c.get("cost", 1e9)) and float(c.get("cooldown_s", 0.0)) <= 0.0:
 				ap._intent(&"call_in", {"type": "at", "id": String(c.get("id", ""))})
 				at_team = true
 				print("autoplay: s3 AT team call-in at %s" % UiPalette.mmss(t))

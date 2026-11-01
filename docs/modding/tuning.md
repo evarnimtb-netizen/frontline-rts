@@ -24,8 +24,10 @@ needed.
 | Escort file behind a vehicle | same | `[vehicles.escort]` |
 | Coax cone, spall reach | same | `[vehicles.gunnery]` |
 | AI difficulty | same | `[difficulty.*]` |
-| AI commander | same | `[ai]`, `[ai.infantry]`, `[ai.armour]` |
+| AI commander (S3b: `tank_reserve_mp` in `[ai.armour]`) | same | `[ai]`, `[ai.infantry]`, `[ai.armour]` |
+| Where bought squads spawn in the base (S3b) | same | `[call_in]` |
 | One unit, weapon, item, vehicle, round | `defs/units/`, `defs/weapons/`, `defs/items/`, `defs/vehicles/`, `defs/ammo/` | the def's own file |
+| Call-in cost and re-call cooldown (S3b) | `defs/units/*.toml` (squads), `defs/vehicles/*.toml` (tanks) | `cost`, `recall_cooldown_s`, `initial_cooldown_s`; optional `cooldown_group` in a unit def (types in one group share a timer) |
 
 Each key has a comment with its unit and meaning. Units are in the key's
 name: `_mm`, `_cm`, `_m`, `_s`, `_ms`, `_pct`, `_deg`, `_mm_s`. Values are

@@ -159,9 +159,11 @@ fn ai_vs_ai_with_vehicles_survives_save_load_at_the_staged_moments() {
     save_load_continue(&mut w, 2, 200, "crew swap");
 
     // A pending vehicle path request: the AI re-paths its tanks every few
-    // seconds; run until one waits in the queue at the end of a tick.
+    // seconds; run until one waits in the queue at the end of a tick (S3b:
+    // with re-call cooldowns the AI fields fewer squads, so path load is
+    // lighter and the search window is 10 minutes).
     let mut pending = false;
-    for _ in 0..30 * 120 {
+    for _ in 0..30 * 600 {
         w.step(&[]);
         pending = w
             .game()
@@ -176,29 +178,6 @@ fn ai_vs_ai_with_vehicles_survives_save_load_at_the_staged_moments() {
         }
     }
     println!("pending vehicle path found by itself: {pending}");
-    if !pending {
-        // A tight budget the next tick leaves one waiting.
-        let v = live_vehicles(&w);
-        let sq = w.entities().squad()[v[0].index()].unwrap();
-        let p = w.entities().owner()[v[0].index()];
-        let goal = w.game().unwrap().base_of(PlayerId(1 - p.0));
-        w.step(&[frontline_sim::Command {
-            player: p,
-            seq: u32::MAX - 1,
-            kind: frontline_sim::CommandKind::Move {
-                squad: sq,
-                target: goal,
-            },
-        }]);
-        pending = w
-            .game()
-            .unwrap()
-            .path_queue()
-            .queues
-            .iter()
-            .flatten()
-            .any(|r| matches!(r, PathReq::Vehicle { .. }));
-    }
     assert!(pending, "a pending vehicle path request");
     save_load_continue(&mut w, 3, 300, "pending vehicle path");
 }

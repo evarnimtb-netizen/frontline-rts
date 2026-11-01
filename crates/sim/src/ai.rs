@@ -14,9 +14,14 @@
 //! 1. **Retreat.** Squads below `retreat_strength_pct` with a spotted enemy
 //!    within `threat_radius` fall back to base.
 //! 2. **Buy.** The role furthest below the target mix (`mix_pct`, counting
-//!    squads alive, called in and about to be bought) is bought when the
-//!    manpower left after pending buys and the pop cap allow; at most
-//!    `ai.infantry.buys_per_plan` per plan.
+//!    squads alive and about to be bought) is bought when the manpower
+//!    left after pending buys and the pop cap allow; at most
+//!    `ai.infantry.buys_per_plan` per plan. S3b (no call-in queue): a
+//!    role whose type is still on its re-call cooldown when the command
+//!    would apply is passed over for the next role in mix order that is
+//!    ready; after the vehicle unlock, under the vehicle limit, non-vehicle
+//!    buys leave `ai.armour.tank_reserve_mp` unspent (not an urgent AT
+//!    team, below).
 //! 3. **Points.** Each point gets a priority from its value, owner, distance
 //!    from base and threat (spotted enemies near it), and a demand (squads
 //!    wanted). Infantry squads are assigned greedily by priority minus
@@ -103,7 +108,7 @@ use serde::{Deserialize, Serialize};
 use crate::command::CommandKind;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
-use crate::game::{MAX_CALL_IN_QUEUE, MAX_DIG_POINTS, MatchState, NavPhase, Order, SquadId};
+use crate::game::{MAX_DIG_POINTS, MatchState, NavPhase, Order, SquadId};
 use crate::rng::{Purpose, RngStream};
 use crate::terrain::Heightfield;
 use frontline_content::ItemKind;
@@ -657,23 +662,33 @@ impl Planner<'_> {
             count(sq.type_idx);
         }
         let pl = &g.players[p];
-        let mut queue = pl.call_ins.len();
-        for c in &pl.call_ins {
-            count(c.squad_type);
-        }
         let mut budget = pl.manpower as i64;
         let mut pop = g.population(self.ents, self.me) as i64;
         let mut vehicles = g.vehicles_counted(self.ents, self.me);
+        // S3b: types bought by call-ins still pending are on cooldown from
+        // their buy (with their cooldown group).
+        let mut bought: Vec<u16> = Vec::new();
         for c in &self.ai.pending {
             if let CommandKind::CallIn { squad_type } = c.kind {
                 let ty = &s.squad_types[squad_type as usize];
                 count(squad_type);
                 budget -= ty.cost as i64;
                 pop += ty.pop(&s.vehicles) as i64;
-                queue += 1;
                 vehicles += ty.vehicle.is_some() as u32;
+                bought.push(squad_type);
             }
         }
+        // A type can be bought when its cooldown is over by the time the
+        // command is applied and no pending buy restarts it.
+        let due = self.due;
+        let me = self.me;
+        let ready = |t: u16, bought: &[u16]| {
+            let group = s.squad_types[t as usize].cooldown_group;
+            g.cooldown_left(me, t, due) == 0
+                && !bought.iter().any(|&b| {
+                    b == t || (group.is_some() && s.squad_types[b as usize].cooldown_group == group)
+                })
+        };
         // S3: vehicles after the unlock and under the limit; AT teams after
         // the unlock once an enemy vehicle has been seen. Before the unlock
         // the mix is the S1 one.
@@ -695,19 +710,23 @@ impl Planner<'_> {
                 .filter(|&r| active(r))
                 .map(|r| mix[r] as i64)
                 .sum();
-            let mut role = (0..MIX_ROLES)
+            // Roles by how far they are below the mix, furthest first.
+            let mut ranked: Vec<usize> = (0..MIX_ROLES)
                 .filter(|&r| active(r) && mix[r] > 0)
-                .max_by_key(|&r| {
-                    (
-                        mix[r] as i64 * (total + 1) - weight * counts[r],
-                        -(r as i64),
-                    )
-                });
+                .collect();
+            ranked.sort_by_key(|&r| {
+                (
+                    -(mix[r] as i64 * (total + 1) - weight * counts[r]),
+                    r as i64,
+                )
+            });
+            let mut role = ranked.first().copied();
             let roll = self.below(200);
             // Saving up for a vehicle: no stray buy spends the savings.
             let saving = role == Some(MIX_VEHICLE)
-                && by_role[MIX_VEHICLE]
-                    .is_some_and(|t| budget < s.squad_types[t as usize].cost as i64);
+                && by_role[MIX_VEHICLE].is_some_and(|t| {
+                    budget < s.squad_types[t as usize].cost as i64 && ready(t, &bought)
+                });
             if roll < 100 - self.quality && !saving {
                 let options: Vec<usize> = (0..MIX_ROLES).filter(|&r| active(r)).collect();
                 if !options.is_empty() {
@@ -715,30 +734,53 @@ impl Planner<'_> {
                 }
             }
             // More enemy vehicles in sight than own AT teams and vehicles:
-            // an AT team first.
+            // an AT team first, reserve or not.
+            let mut urgent_at = false;
             if mix[MIX_AT] > 0
                 && by_role[MIX_AT].is_some()
                 && kv.len() as i64 > counts[MIX_AT] + counts[MIX_VEHICLE]
             {
                 role = Some(MIX_AT);
+                urgent_at = true;
             }
-            let Some(t) = role.and_then(|r| by_role[r]) else {
+            // S3b: the chosen role if its type is off cooldown, else the
+            // next in mix order that is.
+            let Some(first) = role else {
+                return;
+            };
+            let Some(r) = std::iter::once(first)
+                .chain(ranked.iter().copied().filter(|&r| r != first))
+                .find(|&r| by_role[r].is_some_and(|t| ready(t, &bought)))
+            else {
+                return;
+            };
+            let Some(t) = by_role[r] else {
                 return;
             };
             let ty = &s.squad_types[t as usize];
             let men = ty.pop(&s.vehicles) as i64;
-            if budget < ty.cost as i64
-                || pop + men > s.rules.pop_cap as i64
-                || queue >= MAX_CALL_IN_QUEUE
-            {
+            if budget < ty.cost as i64 || pop + men > s.rules.pop_cap as i64 {
                 // Save up for it rather than buying something else.
+                return;
+            }
+            // After the unlock, under the vehicle limit: infantry leaves a
+            // small reserve toward the next vehicle.
+            let reserve = if mix[MIX_VEHICLE] > 0 && by_role[MIX_VEHICLE].is_some() {
+                ai.armour.tank_reserve_mp as i64
+            } else {
+                0
+            };
+            if r != MIX_VEHICLE
+                && !(urgent_at && r == MIX_AT)
+                && budget - (ty.cost as i64) < reserve
+            {
                 return;
             }
             self.ai
                 .emit(self.due, CommandKind::CallIn { squad_type: t });
             budget -= ty.cost as i64;
             pop += men;
-            queue += 1;
+            bought.push(t);
             let r = role_index(ty.role);
             counts[r] += 1;
             match r {

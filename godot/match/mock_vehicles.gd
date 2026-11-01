@@ -16,7 +16,7 @@ extends RefCounted
 const TYPES := {
 	"ger_pz4_h": {
 		"id": "ww2:ger_pz4_h", "name": "Panzer IV Ausf. H", "short": "Panzer IV", "faction": "germany",
-		"role": "tank", "cost": 640, "pop": 12, "call_in_s": 45.0, "speed": 6.0, "sight_m": 175.0,
+		"role": "tank", "cost": 640, "pop": 12, "recall_s": 120.0, "speed": 6.0, "sight_m": 175.0,
 		"hull_length": 5.8, "hull_width": 2.8, "hull_height": 1.36, "hull_ground": 0.40,
 		"turret_x": 0.20, "turret_base": 1.76, "turret_length": 2.3, "turret_width": 1.9,
 		"turret_height": 0.9, "turret_offset_x": 0.0, "gun_length": 4.5, "gun_height": 0.45,
@@ -25,7 +25,7 @@ const TYPES := {
 	},
 	"usa_m4a3_75": {
 		"id": "ww2:usa_m4a3_75", "name": "M4A3 (75) Sherman", "short": "Sherman", "faction": "usa",
-		"role": "tank", "cost": 560, "pop": 12, "call_in_s": 45.0, "speed": 6.5, "sight_m": 175.0,
+		"role": "tank", "cost": 560, "pop": 12, "recall_s": 120.0, "speed": 6.5, "sight_m": 175.0,
 		"hull_length": 5.9, "hull_width": 2.62, "hull_height": 1.5, "hull_ground": 0.43,
 		"turret_x": 0.10, "turret_base": 1.93, "turret_length": 2.2, "turret_width": 1.8,
 		"turret_height": 0.85, "turret_offset_x": -0.1, "gun_length": 3.9, "gun_height": 0.38,
@@ -109,14 +109,12 @@ func spawn(owner: int, type_key: String, at: Vector2, yaw := 0.0) -> int:
 	return id
 
 
-## Alive + queued vehicles of a player (the "2/4" badge and the limit).
+## Live vehicles of a player (the "2/4" badge and the limit; S3b: a
+## bought vehicle is alive at once, nothing is queued).
 func count(owner: int) -> int:
 	var n := 0
 	for id in vehicles:
 		if int(vehicles[id].owner) == owner:
-			n += 1
-	for q in src._queues[owner]:
-		if q.has("vehicle"):
 			n += 1
 	return n
 

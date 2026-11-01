@@ -5,7 +5,13 @@ role = "mg"
 men = 3
 weapon = "ww2:mg42"
 cost = 200
-call_in_s = 25
+# Call-in (S3b): a call-in spawns the MG team at once at the base (no
+# queue, no delivery time; it walks to the front itself). Then this
+# type cannot be called in again for recall_cooldown_s seconds. 36 s set
+# by the owner on 2026-11-01 (20 % under the first proposal of 45 s).
+recall_cooldown_s = 36
+# Seconds from the match start before the first call-in; 0 = at once.
+initial_cooldown_s = 0
 speed_cm_s = 260
 sight_m = 150
 spacing_dm = 25
