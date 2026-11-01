@@ -133,6 +133,11 @@ pub enum Order {
     Suppress {
         line: [FxVec2; 2],
     },
+    /// S3c `Recrew`: walk to abandoned vehicle `vehicle` and board it
+    /// (`crate::bail`). Becomes `Idle` when it is no longer abandoned.
+    Recrew {
+        vehicle: SimId,
+    },
 }
 
 /// [`Order`] without its payload, for the snapshot.
@@ -150,6 +155,8 @@ pub enum OrderKind {
     Follow = 6,
     /// S3b: area fire at a point or line.
     Suppress = 7,
+    /// S3c: re-crewing an abandoned vehicle.
+    Recrew = 8,
 }
 
 impl Order {
@@ -163,6 +170,7 @@ impl Order {
             Order::Barrage { .. } => OrderKind::Barrage,
             Order::Follow { .. } => OrderKind::Follow,
             Order::Suppress { .. } => OrderKind::Suppress,
+            Order::Recrew { .. } => OrderKind::Recrew,
         }
     }
 }
@@ -304,6 +312,28 @@ pub struct PlayerState {
     /// [`kill_class`] (they add up to `kills`), and AT rockets fired.
     pub kills_by: [u32; kill_class::COUNT],
     pub rockets: u32,
+    /// S3c bail-out and re-crew counters (report).
+    pub crew: CrewCounters,
+}
+
+/// S3c per-player counters (`crate::bail`; saved and hashed, read only by
+/// reports and the HUD).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct CrewCounters {
+    /// Own vehicles abandoned.
+    pub abandoned: u32,
+    /// Own abandoned vehicles manned again by own men.
+    pub recrewed: u32,
+    /// Enemy abandoned vehicles this player captured.
+    pub captured: u32,
+    /// Own crewmen alive when their vehicle was abandoned ...
+    pub bailed: u32,
+    /// ... and those who got out.
+    pub out: u32,
+    /// Crewmen dismissed in the own base (no refund).
+    pub home: u32,
+    /// Own abandoned vehicles scrapped by the abandoned cap.
+    pub scrapped: u32,
 }
 
 /// What killed a soldier or crewman (`PlayerState::kills_by`, S3 report).
@@ -436,6 +466,10 @@ pub struct MatchState {
     /// (never saved, hashed or read by the sim).
     #[serde(skip)]
     pub(crate) call_in_events: Vec<CallInEvent>,
+    /// S3c: refused `Recrew` commands, moved to the snapshot like
+    /// `call_in_events` (never saved, hashed or read by the sim).
+    #[serde(skip)]
+    pub(crate) recrew_events: Vec<crate::bail::RecrewEvent>,
 }
 
 /// Mutable world parts a match operation needs.
@@ -471,6 +505,7 @@ impl MatchState {
                 drain_acc: 0,
                 kills_by: [0; kill_class::COUNT],
                 rockets: 0,
+                crew: CrewCounters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -512,6 +547,7 @@ impl MatchState {
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             hit_log: None,
             call_in_events: Vec::new(),
+            recrew_events: Vec::new(),
             setup,
         }
     }
@@ -756,6 +792,8 @@ impl MatchState {
                 self.units_follow(ctx, p, units, *vehicle)
             }
             CommandKind::SuppressUnits { units, line } => self.units_suppress(ctx, p, units, line),
+            &CommandKind::Recrew { squad, vehicle } => self.order_recrew(ctx, p, squad, vehicle),
+            &CommandKind::Abandon { squad } => self.order_abandon(ctx.ents, p, squad),
         }
     }
 
@@ -1574,7 +1612,10 @@ impl MatchState {
         }
         for (i, c) in ents.combat.iter().enumerate() {
             let kind = ents.kind[i];
-            let vehicle = matches!(kind, EntityKind::Vehicle | EntityKind::Wreck);
+            let vehicle = matches!(
+                kind,
+                EntityKind::Vehicle | EntityKind::Wreck | EntityKind::Abandoned
+            );
             let bad = c.seen_by >> np != 0
                 || c.target.is_some_and(|t| t.index() >= ents.len())
                 || c.suppression > 100_000
@@ -1649,7 +1690,12 @@ impl MatchState {
         let vehicle_entities = ents
             .kind
             .iter()
-            .filter(|k| matches!(k, EntityKind::Vehicle | EntityKind::Wreck))
+            .filter(|k| {
+                matches!(
+                    k,
+                    EntityKind::Vehicle | EntityKind::Wreck | EntityKind::Abandoned
+                )
+            })
             .count();
         if vehicle_entities != self.vehicles.len() {
             return Err("vehicle entities and vehicle states disagree");
@@ -1661,29 +1707,50 @@ impl MatchState {
             if vs.suppress.is_some_and(|l| !self.suppress_ok(&l)) {
                 return Err("a vehicle's suppress line is out of range");
             }
-            let wreck = match kind(id) {
-                Some(EntityKind::Vehicle) => false,
-                Some(EntityKind::Wreck) => true,
+            let (wreck, abandoned) = match kind(id) {
+                Some(EntityKind::Vehicle) => (false, false),
+                Some(EntityKind::Wreck) => (true, false),
+                Some(EntityKind::Abandoned) => (false, true),
                 _ => return Err("a vehicle state names no vehicle"),
             };
             let i = id.index();
+            let squadless = wreck || abandoned;
             if wreck != vs.wreck_tick.is_some()
-                || (wreck && ents.squad[i].is_some())
-                || (!wreck && ents.squad[i].is_none_or(|q| !self.squads.contains_key(&q)))
+                || abandoned != vs.abandoned.is_some()
+                || (squadless && ents.squad[i].is_some())
+                || (!squadless && ents.squad[i].is_none_or(|q| !self.squads.contains_key(&q)))
             {
                 return Err("a vehicle's squad or wreck state is inconsistent");
             }
+            // S3c: the crew squad link names a crew squad; a boarding squad
+            // is re-crewing this vehicle.
+            let crew_ok = vs.crew_squad.is_none_or(|q| {
+                self.squads
+                    .get(&q)
+                    .is_some_and(|sq| s.squad_types[sq.type_idx as usize].role == SquadRole::Crew)
+            }) && vs.board.is_none_or(|(q, _)| {
+                self.squads
+                    .get(&q)
+                    .is_some_and(|sq| sq.order == Order::Recrew { vehicle: id })
+            });
+            if !crew_ok {
+                return Err("a vehicle's crew squad or boarding squad is inconsistent");
+            }
             wrecks += wreck as u32;
             let enemy = |t: SimId| ents.owner[t.index()] != ents.owner[i];
+            // S3c: an abandoned vehicle (any side's) only by order.
+            let ordered_abandoned =
+                |t: SimId| kind(t) == Some(EntityKind::Abandoned) && vs.attack == Some(t);
             let target_ok = vs.target.is_none_or(|t| {
-                matches!(kind(t), Some(EntityKind::Vehicle | EntityKind::Soldier)) && enemy(t)
-            }) && vs
-                .attack
-                .is_none_or(|t| kind(t) == Some(EntityKind::Vehicle) && enemy(t))
-                && vs.mgs.iter().all(|m| {
-                    m.target
-                        .is_none_or(|t| kind(t) == Some(EntityKind::Soldier) && enemy(t))
-                });
+                (matches!(kind(t), Some(EntityKind::Vehicle | EntityKind::Soldier)) && enemy(t))
+                    || ordered_abandoned(t)
+            }) && vs.attack.is_none_or(|t| {
+                (kind(t) == Some(EntityKind::Vehicle) && enemy(t))
+                    || kind(t) == Some(EntityKind::Abandoned)
+            }) && vs.mgs.iter().all(|m| {
+                m.target
+                    .is_none_or(|t| kind(t) == Some(EntityKind::Soldier) && enemy(t))
+            });
             let followers_ok = vs.followers.iter().all(|&f| {
                 kind(f) == Some(EntityKind::Soldier) && ents.owner[f.index()] == ents.owner[i]
             });

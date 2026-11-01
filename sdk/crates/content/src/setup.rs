@@ -28,10 +28,10 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning,
-    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning,
-    MortarTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning, BodyTuning,
+    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning,
+    GunneryTuning, MortarTuning, RecrewTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
+    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -295,6 +295,9 @@ pub struct VehicleRulesSetup {
     pub escort: EscortTuning,
     pub gunnery: GunneryTuning,
     pub damage: VehicleDamageTuning,
+    /// S3c tuning tables.
+    pub bail: BailTuning,
+    pub recrew: RecrewTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -1062,6 +1065,8 @@ impl ModDefs {
                         escort: v.escort.clone(),
                         gunnery: v.gunnery.clone(),
                         damage: v.damage.clone(),
+                        bail: v.bail.clone(),
+                        recrew: v.recrew.clone(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -1167,14 +1172,21 @@ impl ModDefs {
         self.vehicles
             .values()
             .map(|v| {
-                lower_vehicle(
+                let mut out = lower_vehicle(
                     v,
                     hz,
                     index_of(self.factions.keys(), &v.faction).unwrap_or(0),
                     |w| index_of(self.weapons.keys(), w).unwrap_or(0),
                     |a| index_of(self.ammo.keys(), a).unwrap_or(0),
                     |a| self.ammo.get(a).map(|d| d.mechanism),
-                )
+                );
+                // S3c: the crew squad type, by its index in the sorted
+                // squad list (`squad_types` has the same order).
+                out.crew_squad = v
+                    .crew_squad
+                    .as_ref()
+                    .and_then(|c| index_of(self.squads.keys(), c));
+                out
             })
             .collect()
     }
@@ -1578,6 +1590,8 @@ impl MatchSetup {
                 vehicle_path: &v.path,
                 escort: &v.escort,
                 gunnery: &v.gunnery,
+                bail: &v.bail,
+                recrew: &v.recrew,
                 vehicle_damage: &v.damage,
                 formation: &m.formation,
                 cover: &r.cover,
@@ -1796,6 +1810,27 @@ impl MatchSetup {
                     .all(|&i| (i as usize) < nt),
                 "factions.roster",
                 "index out of range",
+            );
+            // S3c: crews are never bought or fielded at the start.
+            check(
+                f.roster.iter().chain(&f.start_squads).all(|&i| {
+                    self.squad_types
+                        .get(i as usize)
+                        .is_none_or(|t| t.role != SquadRole::Crew)
+                }),
+                "factions.roster",
+                "a crew squad cannot be bought or start on the field",
+            );
+        }
+        for v in &self.vehicles {
+            check(
+                v.crew_squad.is_none_or(|c| {
+                    self.squad_types
+                        .get(c as usize)
+                        .is_some_and(|t| t.role == SquadRole::Crew && t.faction == v.faction)
+                }),
+                "vehicles.crew_squad",
+                "not a crew squad of the vehicle's faction",
             );
         }
         check(

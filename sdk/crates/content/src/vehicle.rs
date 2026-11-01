@@ -383,7 +383,33 @@ pub struct VehicleDef {
     /// Direct-control stations (§5.12), unused until M5.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stations: Vec<StationDef>,
+    /// S3c: the squad def (role `crew`, the vehicle's faction) its crew
+    /// becomes when it bails out. None: the crew cannot bail out (they stay
+    /// and die with the vehicle, as before S3c).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crew_squad: Option<String>,
+    /// S3c: the hatches the crew leave by (needed with `crew_squad`; every
+    /// seat in exactly one hatch's `seats`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hatches: Vec<HatchDef>,
 }
+
+/// S3c: a crew hatch. The men of `seats` leave by it one after another, in
+/// the listed order, `exit_s` each.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HatchDef {
+    pub seats: Vec<SeatRole>,
+    #[serde(default)]
+    pub frame: Frame,
+    /// The opening, cm in its frame (on or inside the frame's box).
+    pub pos: [i32; 3],
+    /// Time for one man to get out, in milliseconds (100..=30000).
+    pub exit_ms: u32,
+}
+
+/// Most hatches per vehicle.
+pub const MAX_HATCHES: usize = 8;
 
 fn default_spot_size_pct() -> u32 {
     200
@@ -1364,6 +1390,79 @@ impl VehicleDef {
             }
         }
 
+        // S3c: hatches cover every seat once; each opening is on or inside
+        // its frame's box (the turret frame from the pivot).
+        if self.hatches.len() > MAX_HATCHES {
+            out.push(Issue::new("hatches", format!("at most {MAX_HATCHES}")));
+        }
+        if self.crew_squad.is_some() && self.hatches.is_empty() {
+            out.push(
+                Issue::new("hatches", "a vehicle with a crew_squad needs hatches").with_hint(
+                    "[[hatches]] seats = [\"driver\"], pos = [200, 60, 176], exit_ms = 4000",
+                ),
+            );
+        }
+        if let Some(c) = &self.crew_squad {
+            check_id(&mut out, "crew_squad", c);
+        }
+        if !self.hatches.is_empty() {
+            for r in seats {
+                let n = self
+                    .hatches
+                    .iter()
+                    .filter(|h| h.seats.contains(r))
+                    .map(|h| h.seats.iter().filter(|x| *x == r).count())
+                    .sum::<usize>();
+                if n != 1 {
+                    out.push(Issue::new(
+                        "hatches",
+                        format!(
+                            "seat `{}` must be in exactly one hatch (found {n})",
+                            r.name()
+                        ),
+                    ));
+                }
+            }
+        }
+        for (i, h) in self.hatches.iter().enumerate() {
+            for (k, r) in h.seats.iter().enumerate() {
+                if !seats.contains(r) {
+                    out.push(Issue::new(
+                        format!("hatches[{i}].seats[{k}]"),
+                        format!("`{}` is not in crew.seats", r.name()),
+                    ));
+                }
+            }
+            if h.seats.is_empty() {
+                out.push(Issue::new(
+                    format!("hatches[{i}].seats"),
+                    "must not be empty",
+                ));
+            }
+            range(
+                &mut out,
+                &format!("hatches[{i}].exit_ms"),
+                h.exit_ms as i64,
+                100,
+                30_000,
+            );
+            let b = match h.frame {
+                Frame::Hull => self.hull.bounds,
+                Frame::Turret => self.turret.bounds,
+            };
+            let on = (0..3).all(|a| {
+                let lo = b.center[a] as i64 - b.half[a] as i64;
+                let hi = b.center[a] as i64 + b.half[a] as i64;
+                (lo..=hi).contains(&(h.pos[a] as i64))
+            });
+            if !on {
+                out.push(Issue::new(
+                    format!("hatches[{i}].pos"),
+                    "must be on or inside its frame's box",
+                ));
+            }
+        }
+
         if self.stations.len() > MAX_STATIONS {
             out.push(Issue::new("stations", format!("at most {MAX_STATIONS}")));
         }
@@ -1724,6 +1823,17 @@ pub struct ComponentSetup {
     pub repair: Option<RepairSetup>,
 }
 
+/// S3c: a resolved hatch (see [`HatchDef`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HatchSetup {
+    /// Seat indices (the def's seat order) in exit order.
+    pub seats: Vec<u8>,
+    pub frame: Frame,
+    /// The opening in its frame (m; turret frame from the pivot).
+    pub pos: FixedVec3,
+    pub exit_ticks: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StationSetup {
     pub id: String,
@@ -1768,6 +1878,11 @@ pub struct VehicleSetup {
     /// By [`ComponentKind::index`].
     pub components: Vec<ComponentSetup>,
     pub stations: Vec<StationSetup>,
+    /// S3c: the crew squad type (index into `MatchSetup::squad_types`);
+    /// filled in by the setup after the squad list is built.
+    pub crew_squad: Option<u16>,
+    /// S3c: hatches (every seat in one).
+    pub hatches: Vec<HatchSetup>,
 }
 
 impl VehicleSetup {
@@ -2019,6 +2134,22 @@ pub(crate) fn lower_vehicle(
             .map(|s| StationSetup {
                 id: s.id.clone(),
                 seats: s.seats.clone(),
+            })
+            .collect(),
+        crew_squad: None,
+        hatches: v
+            .hatches
+            .iter()
+            .map(|h| HatchSetup {
+                seats: h
+                    .seats
+                    .iter()
+                    .filter_map(|r| v.crew.seats.iter().position(|x| x == r))
+                    .map(|k| k as u8)
+                    .collect(),
+                frame: h.frame,
+                pos: FixedVec3::from_cm(h.pos),
+                exit_ticks: (h.exit_ms as u64 * hz as u64).div_ceil(1000) as u32,
             })
             .collect(),
     }
@@ -2312,6 +2443,30 @@ pub(crate) fn check_vehicle(
             .any(|s| s.seats.iter().any(|&r| v.seat(r).is_none()))
     {
         return Some("vehicles.stations: unknown seat");
+    }
+    // S3c: hatches cover every seat exactly once (a crew can bail out only
+    // with them), openings within 20 m of the frame origin.
+    let mut seen = vec![0u8; v.seats.len()];
+    for h in &v.hatches {
+        for &k in &h.seats {
+            match seen.get_mut(k as usize) {
+                Some(n) => *n += 1,
+                None => return Some("vehicles.hatches: unknown seat"),
+            }
+        }
+    }
+    if v.hatches.len() > MAX_HATCHES
+        || v.hatches.iter().any(|h| {
+            h.seats.is_empty()
+                || !(1..=30 * 30).contains(&h.exit_ticks)
+                || !fx_in(h.pos.x, -20, 20)
+                || !fx_in(h.pos.y, -20, 20)
+                || !fx_in(h.pos.z, -20, 20)
+        })
+        || (!v.hatches.is_empty() && seen.iter().any(|&n| n != 1))
+        || (v.crew_squad.is_some() && v.hatches.is_empty())
+    {
+        return Some("vehicles.hatches: out of range or a seat not in exactly one hatch");
     }
     None
 }

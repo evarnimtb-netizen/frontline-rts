@@ -143,6 +143,8 @@ pub(crate) fn engage(order: &Order) -> Engage {
         Order::Retreat | Order::Barrage { .. } => Engage::Never,
         Order::Move { .. } | Order::Dig { .. } => Engage::Still,
         Order::Idle | Order::AttackMove { .. } | Order::Follow { .. } => Engage::Always,
+        // S3c: walking to an abandoned vehicle and climbing in.
+        Order::Recrew { .. } => Engage::Still,
         // Holding; area fire replaces target search (`aim_and_fire`).
         Order::Suppress { .. } => Engage::Still,
     }
@@ -1852,11 +1854,12 @@ impl MatchState {
         }
         match class {
             Some(WeaponClass::Rifle) => kill_class::RIFLE,
-            Some(WeaponClass::Smg) => kill_class::SMG,
+            // S3c: a crew's pistol counts with the SMGs (close range).
+            Some(WeaponClass::Smg | WeaponClass::Pistol) => kill_class::SMG,
             Some(WeaponClass::Mg) => {
                 if matches!(
                     ents.kind.get(shooter.index()),
-                    Some(EntityKind::Vehicle | EntityKind::Wreck)
+                    Some(EntityKind::Vehicle | EntityKind::Wreck | EntityKind::Abandoned)
                 ) {
                     kill_class::VEHICLE_MG
                 } else {
@@ -2188,7 +2191,10 @@ pub(crate) fn status(
                 continue;
             }
             EntityKind::Soldier => {}
-            EntityKind::Vacant | EntityKind::Vehicle | EntityKind::Wreck => continue,
+            EntityKind::Vacant
+            | EntityKind::Vehicle
+            | EntityKind::Wreck
+            | EntityKind::Abandoned => continue,
         }
         changed = true;
         let sq = ctx.squad[i].and_then(|s| ctx.game.squad(s));

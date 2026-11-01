@@ -34,7 +34,9 @@ fn setup() -> MatchSetup {
     s.map.woods.clear();
     // S3b: `disarm` keeps only a driver; the old crew rule (knocked out
     // only when empty) keeps such a target alive under fire.
-    s.rules.vehicles.damage.crew_ko_below = 0;
+    // S3c: `crew_below` replaced `crew_ko_below`; 0 keeps such targets
+    // manned (no bail-out for crew losses).
+    s.rules.vehicles.bail.crew_below = 0;
     s
 }
 

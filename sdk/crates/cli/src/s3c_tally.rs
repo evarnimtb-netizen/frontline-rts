@@ -177,8 +177,9 @@ impl S3cTally {
             };
             let mut alive = self.crew.remove(&SimId(e.vehicle)).unwrap_or(0);
             if e.component == 0 {
-                // Too few crew: by the rule fewer than `crew_ko_below`.
-                alive = alive.min(s.rules.vehicles.damage.crew_ko_below.saturating_sub(1));
+                // S3c: a crew knock-out is every seat empty (vehicles that
+                // cannot bail out).
+                alive = 0;
             }
             self.fired.remove(&e.vehicle);
             if let Some(p) = self.players.get_mut(e.owner as usize) {

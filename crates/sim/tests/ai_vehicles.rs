@@ -143,9 +143,20 @@ fn ai_vs_ai_with_vehicles_survives_save_load_at_the_staged_moments() {
         .values()
         .any(|s| s.seats.iter().any(|x| x.swap > 0))
     {
-        // A dead gunner: the next Status stage starts the swap.
+        // A dead gunner: the next Status stage starts the swap. S3c: on
+        // the best-manned tank, so the loss does not make its crew bail out.
         println!("crew swap: staged at tick {}", w.tick());
-        w.edit_vehicle(v[0], |s| s.seats[1].hp = 0);
+        let best = *v
+            .iter()
+            .max_by_key(|id| {
+                let s = &w.game().unwrap().vehicles()[id];
+                (
+                    s.seats.iter().filter(|x| x.hp > 0).count(),
+                    std::cmp::Reverse(**id),
+                )
+            })
+            .unwrap();
+        w.edit_vehicle(best, |s| s.seats[1].hp = 0);
         w.step(&[]);
     }
     assert!(
@@ -184,9 +195,15 @@ fn ai_vs_ai_with_vehicles_survives_save_load_at_the_staged_moments() {
 
 /// Flat staging ground with player 1 as the AI (`scenarios::staging`).
 fn staged_ai(seed: u64) -> World {
+    staged_ai_with(seed, |_| {})
+}
+
+/// [`staged_ai`] with `edit` applied to the setup first.
+fn staged_ai_with(seed: u64, edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> World {
     let mut s = setup(seed);
     frontline_sim::scenarios::staging(&mut s, true);
     s.players[1].is_ai = true;
+    edit(&mut s);
     World::new_match(s, 1).unwrap()
 }
 
@@ -218,7 +235,9 @@ fn ai_repairs_an_immobilised_tank_and_retreats_a_beaten_one() {
 fn ai_engineers_satchel_a_stopped_tank_beside_its_track() {
     use frontline_content::{ComponentKind, SquadRole};
     use frontline_sim::scenarios::{NORTH, WEST, at, spawn, tank};
-    let mut w = staged_ai(2);
+    // S3c: no bail-out for crew losses, so the driver-only target stays a
+    // live (stopped) tank.
+    let mut w = staged_ai_with(2, |s| s.rules.vehicles.bail.crew_below = 0);
     // A stopped human tank facing north; AI engineers 6 m east of its
     // right side, leader first.
     let (_, t) = tank(&mut w, 0, at(500, 500), NORTH).unwrap();

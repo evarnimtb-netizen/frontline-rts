@@ -419,6 +419,9 @@ fn role_index(r: SquadRole) -> usize {
         SquadRole::Mortar => 3,
         SquadRole::AntiTank => MIX_AT,
         SquadRole::Vehicle => MIX_VEHICLE,
+        // S3c: crews are never bought (`buy` skips them); a slot for the
+        // type only.
+        SquadRole::Crew => 0,
     }
 }
 
@@ -582,6 +585,14 @@ impl Planner<'_> {
                 continue;
             }
             let ty = &g.setup.squad_types[sq.type_idx as usize];
+            // S3c (Part A): the AI's crews walk back to base, where they are
+            // dismissed.
+            if ty.role == SquadRole::Crew {
+                if sq.order != Order::Retreat && !self.in_own_base(sq) {
+                    self.ai.emit(self.due, CommandKind::Retreat { squad: id });
+                }
+                continue;
+            }
             if ty.vehicle.is_some() {
                 let v = sq.members[0];
                 let t = &self.ents.transform[v.index()];
@@ -617,6 +628,15 @@ impl Planner<'_> {
         self.order_infantry(&mine, &assigned, &mut points, &known, &escorting, &claimed);
         self.mortars(&mine, &points, &known);
         self.throws(&mine, &known, &kv);
+    }
+
+    /// S3c: whether the squad's leader stands in the own base.
+    fn in_own_base(&self, sq: &crate::game::Squad) -> bool {
+        let s = &self.g.setup;
+        let base = &s.map.bases[s.players[self.me.0 as usize].base as usize];
+        let r = sq_m(base.radius.into());
+        let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
+        (lead - FxVec2::from(base.center)).length_sq_raw() <= r
     }
 
     /// Uniform integer in `[0, n)`.
@@ -717,7 +737,9 @@ impl Planner<'_> {
         }
         let mut counts = [0i64; MIX_ROLES];
         let mut count = |t: u16| counts[role_index(s.squad_types[t as usize].role)] += 1;
-        for sq in g.squads.values().filter(|sq| sq.owner == self.me) {
+        for sq in g.squads.values().filter(|sq| {
+            sq.owner == self.me && s.squad_types[sq.type_idx as usize].role != SquadRole::Crew
+        }) {
             count(sq.type_idx);
         }
         let pl = &g.players[p];

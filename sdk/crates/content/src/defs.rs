@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
 use crate::tuning::{
-    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning,
-    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning,
-    MortarTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning, BodyTuning,
+    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning,
+    GunneryTuning, MortarTuning, RecrewTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
+    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -42,6 +42,9 @@ pub enum SquadRole {
     AntiTank,
     /// A vehicle (S3): one per squad, see `SquadDef::vehicle`.
     Vehicle,
+    /// S3c: a tank crew that bailed out (`VehicleDef::crew_squad`). Never
+    /// bought: validation refuses it in a faction roster or start squads.
+    Crew,
 }
 
 /// A buyable squad (`defs/units/*.toml`).
@@ -379,6 +382,8 @@ pub enum WeaponClass {
     /// An infantry anti-tank launcher (S3); it fires `ammo` and targets
     /// only vehicles.
     Launcher,
+    /// S3c: a handgun (tank crews' sidearm); fires like a rifle.
+    Pistol,
 }
 
 /// A weapon (`defs/weapons/*.toml`).
@@ -699,8 +704,12 @@ pub struct VehicleRulesDef {
     pub escort: EscortTuning,
     /// Vehicle weapons and hits on vehicles (S3b tuning table).
     pub gunnery: GunneryTuning,
-    /// Ammo fires, rack outcomes and crew knock-out (S3b tuning table).
+    /// Ammo fires and rack outcomes (S3b tuning table).
     pub damage: VehicleDamageTuning,
+    /// Bail-out (S3c tuning table).
+    pub bail: BailTuning,
+    /// Re-crewing abandoned vehicles (S3c tuning table).
+    pub recrew: RecrewTuning,
 }
 
 /// Thrown items (S1b abilities).
@@ -1749,6 +1758,8 @@ impl RulesDef {
                 vehicle_path: &v.path,
                 escort: &v.escort,
                 gunnery: &v.gunnery,
+                bail: &v.bail,
+                recrew: &v.recrew,
                 vehicle_damage: &v.damage,
                 formation: &self.movement.formation,
                 cover: &self.cover,

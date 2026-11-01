@@ -406,8 +406,12 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// sim stages add it). One bump for the whole slice. 10: S3b (the tuning
 /// tables in the setup's rules, each vehicle's `elevate_deg_s`, the dig
 /// profiles' `common`; the slice's damage, armour and pinning state as the
-/// S3b stages add it). One bump for the whole slice.
-const SAVE_VERSION: u32 = 10;
+/// S3b stages add it). One bump for the whole slice. 11: S3c (bail-out:
+/// the abandoned entity kind, seat `untrained`, the vehicle's bail and
+/// boarding state, the `Recrew` order, per-player crew counters, the
+/// vehicles' crew squad and hatches and the bail and re-crew tuning tables
+/// in the setup). One bump for the whole slice.
+const SAVE_VERSION: u32 = 11;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -469,6 +473,8 @@ pub struct World {
     armour_events: Vec<ArmourEv>,
     /// Call-in results of the last tick (S3b), for the snapshot.
     call_in_events: Vec<crate::game::CallInEvent>,
+    /// S3c: refused re-crews of the last tick, for the snapshot.
+    recrew_events: Vec<crate::bail::RecrewEvent>,
 }
 
 impl World {
@@ -608,6 +614,7 @@ impl World {
             fused: Vec::new(),
             armour_events: Vec::new(),
             call_in_events: Vec::new(),
+            recrew_events: Vec::new(),
             state,
         };
         if let Some(g) = world.state.game.as_mut() {
@@ -771,7 +778,10 @@ impl World {
                 .any(|(k, c)| {
                     matches!(
                         k,
-                        EntityKind::Corpse | EntityKind::Vehicle | EntityKind::Wreck
+                        EntityKind::Corpse
+                            | EntityKind::Vehicle
+                            | EntityKind::Wreck
+                            | EntityKind::Abandoned
                     ) || *c != Default::default()
                 })
                 || st.entities.unit.iter().any(|u| *u != Default::default())
@@ -1795,6 +1805,7 @@ impl World {
         let mut ai = std::mem::take(&mut self.ai_cmds);
         ai.clear();
         self.call_in_events.clear();
+        self.recrew_events.clear();
         if let Some(game) = &mut self.state.game {
             game.take_ai_commands(self.state.tick, &mut ai);
         }
@@ -1826,6 +1837,7 @@ impl World {
                 // Call-in results go to the snapshot; the match state
                 // never holds them between ticks.
                 self.call_in_events.append(&mut game.call_in_events);
+                self.recrew_events.append(&mut game.recrew_events);
                 continue;
             }
             let ok = match c.kind {
@@ -1973,6 +1985,9 @@ impl World {
         self.snapshot
             .fill_events(&self.shots, &self.explosions, &self.armour_events);
         self.snapshot.call_ins.clone_from(&self.call_in_events);
+        self.snapshot
+            .recrew_refusals
+            .clone_from(&self.recrew_events);
         self.snapshot
             .fill_shells(&self.state.projectiles, self.state.game.as_ref());
     }
@@ -3055,6 +3070,15 @@ mod tests {
             wreck_tick: _,
             face: _,
             suppress: _,
+            abandoned: _,
+            abandon_cause: _,
+            exit: _,
+            crew_squad: _,
+            last_hit_dir: _,
+            last_pen: _,
+            prev_pen: _,
+            board: _,
+            bail_order: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -3069,6 +3093,23 @@ mod tests {
             ("seats.hp", Box::new(|v| v.seats[2].hp -= 1)),
             ("seats.swap", Box::new(|v| v.seats[1].swap = 3)),
             ("seats.swap_from", Box::new(|v| v.seats[1].swap_from = 4)),
+            // S3c.
+            (
+                "seats.untrained",
+                Box::new(|v| v.seats[1].untrained ^= true),
+            ),
+            ("abandoned", Box::new(|v| v.abandoned = Some(1))),
+            ("abandon_cause", Box::new(|v| v.abandon_cause = 3)),
+            ("exit", Box::new(|v| v.exit[0] = 5)),
+            ("crew_squad", Box::new(|v| v.crew_squad = Some(SquadId(2)))),
+            (
+                "last_hit_dir",
+                Box::new(|v| v.last_hit_dir.x += Fx::EPSILON),
+            ),
+            ("last_pen", Box::new(|v| v.last_pen = Some(1))),
+            ("prev_pen", Box::new(|v| v.prev_pen = Some(1))),
+            ("board", Box::new(|v| v.board = Some((SquadId(2), 1)))),
+            ("bail_order", Box::new(|v| v.bail_order ^= true)),
             ("components", Box::new(|v| v.components[3] -= 1)),
             ("ammo", Box::new(|v| v.ammo[1] -= 1)),
             ("loaded", Box::new(|v| v.loaded = Some(1))),
@@ -3146,12 +3187,77 @@ mod tests {
             edit(&mut st);
             assert_ne!(World::from_state(st, 1).unwrap().full_state_hash(), base);
         }
+        // S3c: every per-player crew counter is hashed.
+        type CrewEdit = fn(&mut crate::game::CrewCounters);
+        let crew: [CrewEdit; 7] = [
+            |c| c.abandoned += 1,
+            |c| c.recrewed += 1,
+            |c| c.captured += 1,
+            |c| c.bailed += 1,
+            |c| c.out += 1,
+            |c| c.home += 1,
+            |c| c.scrapped += 1,
+        ];
+        for edit in crew {
+            let mut st = w.state.clone();
+            edit(&mut st.game.as_mut().unwrap().players[1].crew);
+            assert_ne!(World::from_state(st, 1).unwrap().full_state_hash(), base);
+        }
 
         // Loads reject broken vehicle state.
         fn vehicle(s: &mut SimState, id: SimId) -> &mut VehicleState {
             s.game.as_mut().unwrap().vehicles.get_mut(&id).unwrap()
         }
         let bad: Vec<(StateEdit, &str)> = vec![
+            // S3c: bail state on a live vehicle, or out of range.
+            (
+                Box::new(move |s| vehicle(s, va).abandoned = Some(1)),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).exit[0] = 3),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).crew_squad = Some(SquadId(0))),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).board = Some((SquadId(0), 1))),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).abandon_cause = 9),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).prev_pen = Some(5)),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| {
+                    let v = vehicle(s, va);
+                    v.last_hit_dir = FxVec2::from_int(9, 0);
+                }),
+                "out of range",
+            ),
+            // An abandoned vehicle state on a live vehicle entity (it keeps
+            // its squad).
+            (
+                Box::new(move |s| {
+                    let v = vehicle(s, va);
+                    v.abandoned = Some(0);
+                    v.abandon_cause = 6;
+                    v.target = None;
+                    v.attack = None;
+                    v.followers.clear();
+                    v.face = None;
+                    v.suppress = None;
+                    v.repairing = None;
+                    v.repair_progress = 0;
+                }),
+                "squad",
+            ),
             (Box::new(move |s| vehicle(s, va).type_idx = 9), "vehicle"),
             (
                 Box::new(move |s| vehicle(s, va).seats.pop().map(|_| ()).unwrap()),
@@ -3786,7 +3892,7 @@ mod tests {
 
     #[test]
     fn fire_and_ammo_rack_rolls_match_their_odds() {
-        use crate::damage::{Dealt, FireRolls, Inner, KO_CREW, KO_RACK};
+        use crate::damage::{Dealt, FireRolls, Inner, KO_RACK};
         let (mut w, v) = flat_tank_world();
         let fresh = w.game().unwrap().vehicles[&v].clone();
         let reset = |w: &mut World| {
@@ -3863,8 +3969,9 @@ mod tests {
         reset(&mut w);
         let losses = w.game().unwrap().players[0].losses;
         let kills = w.game().unwrap().players[1].kills;
-        // S3b: four of five dead is already a knock-out (`crew_ko_below`
-        // 2); the fifth dies with the vehicle.
+        // S3c: four of five dead: no knock-out here any more; the Status
+        // stage abandons the vehicle (`crew_below`), and the fifth man
+        // bails out.
         let seats: Vec<Dealt> = (0..4).map(|k| hit(Inner::Seat(k), 100)).collect();
         let mut evs = Vec::new();
         {
@@ -3895,7 +4002,7 @@ mod tests {
                 FxVec3::ZERO,
                 0,
             );
-            assert_eq!(ko, Some(KO_CREW));
+            assert_eq!(ko, None);
         }
         assert_eq!(evs.len(), 4);
         assert_eq!(w.game().unwrap().players[0].losses, losses + 4);
@@ -4300,7 +4407,16 @@ mod tests {
     /// Panzerschreck team attacking a US tank at (600, 500), and an
     /// engineer squad digging an AT ditch.
     fn order_world() -> (World, SimId, SimId, SquadId, SquadId) {
-        let (mut w, va) = flat_tank_world();
+        // S3c: no bail-out, so the two tanks' brief fight leaves both
+        // manned whatever it hits (the test is about order state).
+        let (mut w, va) = flat_tank_world_with(|s| {
+            let b = &mut s.rules.vehicles.bail;
+            b.ammo_fire_bail = 0;
+            b.engine_fire_bail_s = 0;
+            b.crew_below = 0;
+            b.useless_bail = 0;
+            b.under_fire_s = 0;
+        });
         let ty = |w: &World, id: &str| w.match_setup().unwrap().squad_type_index(id).unwrap();
         let east = FxVec2::new(Fx::ONE, Fx::ZERO);
         let north = FxVec2::new(Fx::ZERO, Fx::ONE);

@@ -332,7 +332,10 @@ fn shells_burning_vehicles_and_crew_swaps_survive_save_load_continue() {
 
 #[test]
 fn an_empty_gunner_seat_is_refilled_by_the_radio_operator() {
-    let mut w = World::new_match(setup(1), 1).unwrap();
+    // S3c: no bail-out for crew losses (the last step leaves two men).
+    let mut s = setup(1);
+    s.rules.vehicles.bail.crew_below = 0;
+    let mut w = World::new_match(s, 1).unwrap();
     let (_, v) = tank(&mut w, 0, xy(500, 500), EAST);
     w.edit_vehicle(v, |vs| vs.seats[1].hp = 0);
     w.step(&[]);
@@ -374,7 +377,11 @@ fn an_empty_gunner_seat_is_refilled_by_the_radio_operator() {
 fn a_fire_burns_the_engine_and_ends_out_or_in_a_knock_out() {
     let (mut out, mut ko) = (0, 0);
     for seed in 1..=40 {
-        let mut w = World::new_match(setup(seed), 1).unwrap();
+        // S3c: the crew stays and fights the fire (no engine-fire
+        // bail-out), the S3 fire rule alone.
+        let mut s = setup(seed);
+        s.rules.vehicles.bail.engine_fire_bail_s = 0;
+        let mut w = World::new_match(s, 1).unwrap();
         let (_, v) = tank(&mut w, 0, xy(500, 500), EAST);
         w.edit_vehicle(v, |vs| vs.burn = 1);
         for _ in 0..30 {

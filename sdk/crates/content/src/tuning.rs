@@ -541,13 +541,82 @@ tuning_table! {
         /// ... which knocks the vehicle out after this long; the crew cannot
         /// put it out (s).
         ammo_fire_s: 1..=600,
-        /// A vehicle with fewer living crew than this is knocked out (0:
-        /// only when every seat is empty).
-        crew_ko_below: 0..=5,
     }
 }
 
 impl VehicleDamageTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[vehicles.bail]` (S3c): when the surviving crew of a vehicle with a
+    /// `crew_squad` bail out, and how they get out (S3c-1 (A)).
+    pub struct BailTuning {
+        /// 1: the crew bail out as soon as an ammo fire starts.
+        ammo_fire_bail: 0..=1,
+        /// The crew bail out of an engine fire still burning after this
+        /// long (s; 0: never for engine fires).
+        engine_fire_bail_s: 0..=600,
+        /// The crew bail out when fewer than this many are alive (0: never;
+        /// replaces S3b's `crew_ko_below`).
+        crew_below: 0..=5,
+        /// 1: the crew bail out of a vehicle whose main gun is destroyed and
+        /// that cannot move (track, engine or transmission out).
+        useless_bail: 0..=1,
+        /// A vehicle with its gun destroyed or immobilised that is
+        /// penetrated again within this long of the previous penetration is
+        /// abandoned (s; 0: never).
+        under_fire_s: 0..=120,
+        /// A crewman below this many HP is wounded ...
+        wounded_hp: 0..=1000,
+        /// ... and takes this share of his hatch's exit time (%).
+        wounded_exit_pct: 100..=400,
+        /// A man out of the hatch stands this far outside the hull box (cm).
+        exit_clear_cm: 10..=300,
+        /// He cannot fire for this long after getting out (ms; climbing
+        /// down).
+        dismount_ms: 0..=10000,
+        /// He arrives with this much suppression (points).
+        bail_suppression: 0..=200,
+        /// Most abandoned vehicles on the map; beyond it the oldest becomes
+        /// a wreck (scrapped).
+        abandoned_cap: 1..=64,
+        /// A crew squad in its own base with no order is dismissed after
+        /// this long (s; no refund).
+        crew_dismiss_s: 1..=600,
+    }
+}
+
+impl BailTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[vehicles.recrew]` (S3c): who can man an abandoned vehicle again,
+    /// and how (S3c-2, S3c-3 (A)).
+    pub struct RecrewTuning {
+        /// The squad boards within this of the hull (m).
+        reach_m: 1..=20,
+        /// Time for the men at one hatch to get in, per man (s); the hatches
+        /// work at once.
+        board_s: 1..=60,
+        /// Fewest men a squad needs to re-crew (driver and gunner).
+        min_men: 1..=5,
+        /// 1: any infantry squad but AT teams may board, untrained.
+        any_infantry: 0..=1,
+        /// 1: an enemy squad may capture an abandoned vehicle.
+        capture: 0..=1,
+        /// An untrained loader (or gunner without a loader) reloads this
+        /// slowly (% of the reload time).
+        untrained_reload_pct: 100..=400,
+        /// An untrained gunner traverses the turret at this share (%).
+        untrained_traverse_pct: 10..=100,
+        /// An untrained gunner's spread (% of the trained spread).
+        untrained_spread_pct: 100..=400,
+    }
+}
+
+impl RecrewTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
@@ -671,6 +740,8 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("vehicles.escort", EscortTuning::KEYS),
     ("vehicles.gunnery", GunneryTuning::KEYS),
     ("vehicles.damage", VehicleDamageTuning::KEYS),
+    ("vehicles.bail", BailTuning::KEYS),
+    ("vehicles.recrew", RecrewTuning::KEYS),
     ("movement.formation", FormationTuning::KEYS),
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
@@ -693,6 +764,8 @@ pub(crate) struct TuningRefs<'a> {
     pub escort: &'a EscortTuning,
     pub gunnery: &'a GunneryTuning,
     pub vehicle_damage: &'a VehicleDamageTuning,
+    pub bail: &'a BailTuning,
+    pub recrew: &'a RecrewTuning,
     pub formation: &'a FormationTuning,
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
@@ -732,6 +805,8 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.escort.check(&p("vehicles.escort"), out);
     t.gunnery.check(&p("vehicles.gunnery"), out);
     t.vehicle_damage.check(&p("vehicles.damage"), out);
+    t.bail.check(&p("vehicles.bail"), out);
+    t.recrew.check(&p("vehicles.recrew"), out);
     t.formation.check(&p("movement.formation"), out);
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);

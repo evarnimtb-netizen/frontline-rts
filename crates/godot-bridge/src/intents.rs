@@ -47,6 +47,8 @@ pub fn role_name(r: SquadRole) -> &'static str {
         SquadRole::Mortar => "mortar",
         SquadRole::AntiTank => "at",
         SquadRole::Vehicle => "vehicle",
+        // S3c: a bailed-out tank crew.
+        SquadRole::Crew => "crew",
     }
 }
 

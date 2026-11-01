@@ -336,7 +336,11 @@ impl MatchState {
         else {
             return None;
         };
-        let alive = ctx.ents.kind.get(id.index()) == Some(&EntityKind::Vehicle);
+        // S3c: an abandoned vehicle takes hits like a live one.
+        let alive = matches!(
+            ctx.ents.kind.get(id.index()),
+            Some(EntityKind::Vehicle | EntityKind::Abandoned)
+        );
         let r = self.resolve(ctx.seed, ctx.tick, e, alive)?;
         if !alive {
             // A wreck (or one knocked out earlier this tick) only stops it.
@@ -351,6 +355,19 @@ impl MatchState {
         vs.repairing = None;
         vs.repair_progress = 0;
         vs.last_attacker = Some(attacker);
+        // S3c: where the round went (bailing men get out on that side) and
+        // the penetrations' times (disabled under fire).
+        let Blow::Armour { vel, .. } = e.blow else {
+            unreachable!("matched above")
+        };
+        let dir = FxVec2::new(vel.x, vel.y).normalize_or_zero();
+        if dir != FxVec2::ZERO {
+            vs.last_hit_dir = dir;
+        }
+        if r.result == PenResult::Penetration && vs.last_pen != Some(ctx.tick) {
+            vs.prev_pen = vs.last_pen;
+            vs.last_pen = Some(ctx.tick);
+        }
         if e.ammo != NO_AMMO {
             let (kind, stat) = match r.result {
                 PenResult::Ricochet => (ArmourEventKind::Ricochet, &mut ctx.stats.ricochets),
@@ -583,7 +600,6 @@ impl MatchState {
         let r = &self.setup.rules.vehicles;
         let mut rack_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_RACK);
         let mut fire_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_FIRE);
-        let crew_ko_below = r.damage.crew_ko_below;
         let mut detonated = false;
         let mut dead = 0u32;
         let mut evs: Vec<ArmourEv> = Vec::new();
@@ -647,10 +663,11 @@ impl MatchState {
                 }
             }
         }
-        // S3b: too few crew to fight the vehicle (`crew_ko_below`; 0: only
-        // when every seat is empty).
+        // S3c: a vehicle whose crew can bail out is abandoned by the Status
+        // stage (`crate::bail`, also with every man dead); one that cannot
+        // is knocked out when every seat is empty.
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
-        let crew_gone = living == 0 || living < crew_ko_below;
+        let crew_gone = living == 0 && !crate::bail::can_bail(v);
         for e in evs {
             self.push_event(events, e);
         }
@@ -798,7 +815,11 @@ impl MatchState {
         events: &mut Vec<ArmourEv>,
     ) {
         let i = id.index();
-        if ctx.ents.kind.get(i) != Some(&EntityKind::Vehicle) {
+        // S3c: an abandoned vehicle burns out or blows up as well.
+        if !matches!(
+            ctx.ents.kind.get(i),
+            Some(EntityKind::Vehicle | EntityKind::Abandoned)
+        ) {
             return;
         }
         let owner = ctx.ents.owner[i];
@@ -848,7 +869,7 @@ impl MatchState {
 
     /// Clears every reference to `id` as a target (vehicle targets,
     /// `AttackUnit`, MG targets, soldier targets, squad focus).
-    fn forget(&mut self, ents: &mut Entities, hash: &mut HashCache, id: SimId) {
+    pub(crate) fn forget(&mut self, ents: &mut Entities, hash: &mut HashCache, id: SimId) {
         for vs in self.vehicles.values_mut() {
             if vs.target == Some(id) {
                 vs.target = None;
@@ -888,15 +909,17 @@ impl MatchState {
         let kind = |id: SimId| ents.kind.get(id.index()).copied();
         for vs in self.vehicles.values_mut() {
             if vs.target.is_some_and(|t| {
-                !matches!(kind(t), Some(EntityKind::Vehicle | EntityKind::Soldier))
+                !matches!(
+                    kind(t),
+                    Some(EntityKind::Vehicle | EntityKind::Soldier | EntityKind::Abandoned)
+                )
             }) {
                 vs.target = None;
                 vs.ranging = 0;
             }
-            if vs
-                .attack
-                .is_some_and(|t| kind(t) != Some(EntityKind::Vehicle))
-            {
+            if vs.attack.is_some_and(|t| {
+                !matches!(kind(t), Some(EntityKind::Vehicle | EntityKind::Abandoned))
+            }) {
                 vs.attack = None;
             }
             for m in &mut vs.mgs {
@@ -1017,6 +1040,8 @@ impl MatchState {
         for (id, cause) in ko {
             self.knock_out_with(ctx, stats, id, cause, kill_class::OTHER, events);
         }
+        // S3c: bail-out, abandoned vehicles, re-crewing, crew squads.
+        self.crew_status(ctx, stats, events);
     }
 
     /// Starts a field repair of vehicle `id`'s worst repairable component
@@ -1066,6 +1091,7 @@ pub fn swap_seats(vs: &mut VehicleState, v: &VehicleSetup, swap_ticks: u32) {
         let Some(d) = donor else { continue };
         vs.seats[n] = Seat {
             hp: vs.seats[d].hp,
+            untrained: vs.seats[d].untrained,
             swap: swap_ticks.clamp(1, u16::MAX as u32) as u16,
             swap_from: d as u8,
         };

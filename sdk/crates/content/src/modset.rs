@@ -513,12 +513,15 @@ impl ModDefs {
                     Some(w)
                         if !matches!(
                             w.class,
-                            WeaponClass::Rifle | WeaponClass::Smg | WeaponClass::Mg
+                            WeaponClass::Rifle
+                                | WeaponClass::Smg
+                                | WeaponClass::Mg
+                                | WeaponClass::Pistol
                         ) =>
                     {
                         out.push(Issue::new(
                             format!("{}: sidearm", squad_file(id)),
-                            "a sidearm is a rifle, SMG or MG",
+                            "a sidearm is a rifle, SMG, MG or pistol",
                         ))
                     }
                     Some(_) => {}
@@ -635,6 +638,40 @@ impl ModDefs {
                         format!("faction `{id}`: roster[{i}]"),
                         format!("squad `{s}` belongs to faction `{}`", sq.faction),
                     )),
+                    Some(sq) if sq.role == SquadRole::Crew => out.push(Issue::new(
+                        format!("faction `{id}`: roster[{i}]"),
+                        format!("squad `{s}` is a crew (crews are not bought)"),
+                    )),
+                    Some(_) => {}
+                }
+            }
+            for (i, s) in f.start_squads.iter().enumerate() {
+                if self
+                    .squads
+                    .get(s)
+                    .is_some_and(|sq| sq.role == SquadRole::Crew)
+                {
+                    out.push(Issue::new(
+                        format!("faction `{id}`: start_squads[{i}]"),
+                        format!("squad `{s}` is a crew (crews do not start on the field)"),
+                    ));
+                }
+            }
+        }
+        // S3c: a vehicle's crew squad is a crew of its faction.
+        for (id, v) in &self.vehicles {
+            if let Some(c) = &v.crew_squad {
+                match self.squads.get(c) {
+                    None => out.push(Issue::new(
+                        format!("vehicle `{id}`: crew_squad"),
+                        format!("unknown squad `{c}`{}", did_you_mean(c, self.squads.keys())),
+                    )),
+                    Some(sq) if sq.role != SquadRole::Crew || sq.faction != v.faction => {
+                        out.push(Issue::new(
+                            format!("vehicle `{id}`: crew_squad"),
+                            format!("squad `{c}` is not a crew of faction `{}`", v.faction),
+                        ))
+                    }
                     Some(_) => {}
                 }
             }

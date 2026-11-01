@@ -208,8 +208,13 @@ pub mod vehicle_flags {
     /// A wreck knocked out less than [`super::WRECK_SMOKE_S`] ago (the
     /// presenter smokes it). Always with `WRECK`.
     pub const KNOCKED_OUT: u16 = 1 << 8;
+    /// S3c: abandoned by its crew (owner 255 like a wreck, the last owner
+    /// in `last_owner`; seen by everyone; can be re-crewed).
+    pub const ABANDONED: u16 = 1 << 9;
+    /// S3c: someone is climbing in (`Recrew` boarding).
+    pub const BOARDING: u16 = 1 << 10;
     /// The flags an enemy (or anyone, for a wreck) is sent.
-    pub const PUBLIC: u16 = BURNING | WRECK | KNOCKED_OUT;
+    pub const PUBLIC: u16 = BURNING | WRECK | KNOCKED_OUT | ABANDONED | BOARDING;
 }
 
 /// A fresh wreck smokes this long (`vehicle_flags::KNOCKED_OUT`).
@@ -311,6 +316,15 @@ pub struct VehicleSnapshot {
     /// Own only (S3b Fix): MG rounds left in stowage, summed over the
     /// mounts that have a limit; `u32::MAX` when none has one.
     pub mg_rounds: u32,
+    /// S3c: an abandoned vehicle's last owner (its `owner` is 255); the
+    /// owner otherwise. Public.
+    pub last_owner: u8,
+    /// S3c: why it was abandoned (`bail::AB_*`), 0 when not. Public.
+    pub abandon_cause: u8,
+    /// S3c: its crew squad while abandoned ([`NO_SQUAD`]: none). Public.
+    pub crew_squad: u32,
+    /// S3c: crewmen still inside an abandoned vehicle. Public.
+    pub inside: u8,
 }
 
 /// `ShellSnapshot::kind`.
@@ -369,6 +383,16 @@ pub enum ArmourEventKind {
     KnockedOut = 7,
     /// The vehicle bogged in a trench crossing.
     Bogged = 8,
+    /// S3c: the crew bailed out (`component`: `bail::AB_*`, 1 ammo fire,
+    /// 2 engine fire, 3 crew losses, 4 gun and mobility out, 5 disabled
+    /// under fire, 6 ordered). `attacker`: the last player to hit it.
+    Abandoned = 9,
+    /// S3c: one crewman got out (`component`: `SeatRole::index`; `pos`:
+    /// where he stands).
+    CrewOut = 10,
+    /// S3c: an abandoned vehicle was manned again (`owner`: the new owner;
+    /// `attacker`: the last owner; `component`: 1 own side, 2 captured).
+    Recrewed = 11,
 }
 
 /// One armour event of this tick, in event order (main-gun and rocket
@@ -461,6 +485,8 @@ pub struct RenderSnapshot {
     /// Call-in results this tick, in command order (match mode only,
     /// S3b): the squad that spawned or why the call-in was refused.
     pub call_ins: Vec<crate::game::CallInEvent>,
+    /// S3c: this tick's refused `Recrew` commands (the feed says why).
+    pub recrew_refusals: Vec<crate::bail::RecrewEvent>,
     /// Squads in ascending id order (match mode only).
     pub squads: Vec<SquadSnapshot>,
     /// Per player slot (match mode only).
@@ -583,7 +609,10 @@ impl RenderSnapshot {
                     ticks_left: c.corpse,
                     seen_by: c.seen_by,
                 }),
-                EntityKind::Vacant | EntityKind::Vehicle | EntityKind::Wreck => {}
+                EntityKind::Vacant
+                | EntityKind::Vehicle
+                | EntityKind::Wreck
+                | EntityKind::Abandoned => {}
             }
         }
         self.projectiles.clear();
@@ -718,6 +747,7 @@ impl RenderSnapshot {
             let v = &setup.vehicles[vs.type_idx as usize];
             let t = &ents.transform()[i];
             let wreck = vs.wreck_tick.is_some();
+            let abandoned = vs.abandoned.is_some();
             let owner = ents.owner()[i].0;
             let mut flags = 0u16;
             {
@@ -730,7 +760,9 @@ impl RenderSnapshot {
                 set(MOVING, vs.speed.abs() > moving);
                 set(REVERSING, vs.speed < crate::fx::Fx::ZERO);
                 set(BOGGED, vs.bog > 0 || vs.on_blocked);
-                set(IMMOBILISED, !wreck && vs.immobilised(v));
+                set(IMMOBILISED, !wreck && !abandoned && vs.immobilised(v));
+                set(ABANDONED, abandoned);
+                set(BOARDING, vs.board.is_some());
                 set(BURNING, vs.burn > 0 || vs.ammo_fire > 0);
                 set(REPAIRING, vs.repairing.is_some());
                 set(CROSSING, vs.crossing);
@@ -766,7 +798,11 @@ impl RenderSnapshot {
                 id: id.0,
                 squad: ents.squad()[i].map_or(NO_SQUAD, |s| s.0),
                 type_idx: vs.type_idx,
-                owner: if wreck { WRECK_OWNER } else { owner },
+                owner: if wreck || abandoned {
+                    WRECK_OWNER
+                } else {
+                    owner
+                },
                 pos: t.pos.to_f32(),
                 yaw: t.yaw.to_f32(),
                 pitch: vs.pitch.to_f32(),
@@ -775,7 +811,7 @@ impl RenderSnapshot {
                 gun_pitch: vs.gun_pitch.to_f32(),
                 speed: vs.speed.to_f32(),
                 flags,
-                seen_by: if wreck {
+                seen_by: if wreck || abandoned {
                     all
                 } else {
                     ents.combat()[i].seen_by | (1 << owner)
@@ -813,6 +849,14 @@ impl RenderSnapshot {
                     .filter_map(|(m, st)| m.rounds.map(|n| n.saturating_sub(st.spent)))
                     .reduce(|a, b| a.saturating_add(b))
                     .unwrap_or(u32::MAX),
+                last_owner: owner,
+                abandon_cause: vs.abandon_cause,
+                crew_squad: vs.crew_squad.map_or(NO_SQUAD, |q| q.0),
+                inside: if abandoned {
+                    vs.seats.iter().filter(|s| s.hp > 0).count() as u8
+                } else {
+                    0
+                },
             });
         }
     }

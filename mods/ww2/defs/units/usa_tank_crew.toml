@@ -1,0 +1,18 @@
+# S3c: a US tank crew that bailed out (role "crew"; never bought, the
+# Sherman's crew_squad). Up to five men; two M3 submachine guns stowed in
+# the tank (later vehicles; owner question S3c-7 (A), citation task), the
+# rest their M1911A1 pistols. No grenades. Walks like riflemen.
+id = "ww2:usa_tank_crew"
+name = "Tank crew"
+faction = "ww2:usa"
+role = "crew"
+men = 5
+weapon = "ww2:m3_smg"
+# Two M3 SMGs (the first two men out); the others carry the sidearm.
+weapon_men = 2
+sidearm = "ww2:m1911a1"
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 0

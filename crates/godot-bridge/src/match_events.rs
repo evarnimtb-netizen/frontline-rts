@@ -362,6 +362,8 @@ pub fn weapon_cue(class: WeaponClass) -> &'static str {
         // `rocket_launch`); these names are only the fallback.
         WeaponClass::Cannon => "cannon",
         WeaponClass::Launcher => "rocket",
+        // S3c: crew pistols sound like the rifle cue until they get one.
+        WeaponClass::Pistol => "rifle",
     }
 }
 

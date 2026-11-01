@@ -139,9 +139,25 @@ pub fn mg_muzzle(f: &VehicleFrame, m: &MountSetup) -> FxVec3 {
 /// `pitch` is clamped to the elevation limits. Returns whether it is laid
 /// (both reached).
 pub fn lay_gun(vs: &mut VehicleState, v: &VehicleSetup, yaw: Fx, pitch: Fx, hz: u32) -> bool {
+    lay_gun_pct(vs, v, yaw, pitch, hz, 100)
+}
+
+/// [`lay_gun`] with the turret traverse at `traverse_pct` % (S3c: an
+/// untrained gunner).
+pub fn lay_gun_pct(
+    vs: &mut VehicleState,
+    v: &VehicleSetup,
+    yaw: Fx,
+    pitch: Fx,
+    hz: u32,
+    traverse_pct: u32,
+) -> bool {
     let hz = hz.max(1) as i32;
     let ring = vs.component(ComponentKind::TurretRing);
-    let mut traverse = deg(v.traverse_deg_s).div_int(hz);
+    let mut traverse = deg(v.traverse_deg_s)
+        .mul_int(traverse_pct.min(100) as i32)
+        .div_int(100)
+        .div_int(hz);
     if ring == 0 {
         traverse = Fx::ZERO;
     } else if ring < 50 {
@@ -510,7 +526,13 @@ impl MatchState {
                     && a.point != muzzle
             });
         if gunner {
-            lay_gun(vs, v, want_yaw, want_pitch, hz);
+            // S3c: an untrained gunner traverses slower.
+            let pct = if vs.seat(v, SeatRole::Gunner).is_some_and(|st| st.untrained) {
+                setup.rules.vehicles.recrew.untrained_traverse_pct
+            } else {
+                100
+            };
+            lay_gun_pct(vs, v, want_yaw, want_pitch, hz, pct);
         }
 
         // Fire the main gun when laid within the spread.
@@ -743,7 +765,17 @@ impl MatchState {
         aim_turret: bool,
     ) -> Option<Aim> {
         let k = *ents.kind.get(t.index())?;
-        if ents.owner[t.index()] == owner {
+        // S3c: an abandoned vehicle only on an `AttackUnit` order (any
+        // side's: to deny a re-crew or a capture).
+        let ordered = k == EntityKind::Abandoned
+            && self
+                .vehicles
+                .get(&f.id)
+                .is_some_and(|x| x.attack == Some(t));
+        if k == EntityKind::Abandoned && !ordered {
+            return None;
+        }
+        if !ordered && ents.owner[t.index()] == owner {
             return None;
         }
         let r = range_sq(self.setup.weapons[main.weapon as usize].range_max.into());
@@ -752,7 +784,7 @@ impl MatchState {
             return None;
         }
         match k {
-            EntityKind::Vehicle => {
+            EntityKind::Vehicle | EntityKind::Abandoned => {
                 let tf = self.vderived.frame(t)?;
                 if (tf.origin.xy() - f.origin.xy()).length_sq_raw() > r {
                     return None;
@@ -817,10 +849,12 @@ impl MatchState {
             let mut cands: Vec<(u64, SimId)> = Vec::new();
             for (&t, ts) in &self.vehicles {
                 let ti = t.index();
-                if ts.wreck_tick.is_some()
-                    || ents.kind[ti] != EntityKind::Vehicle
-                    || ents.owner[ti] == owner
-                    || ents.combat[ti].seen_by & (1 << owner.0) == 0
+                let ordered = vs.attack == Some(t) && ents.kind[ti] == EntityKind::Abandoned;
+                if !ordered
+                    && (ts.wreck_tick.is_some()
+                        || ents.kind[ti] != EntityKind::Vehicle
+                        || ents.owner[ti] == owner
+                        || ents.combat[ti].seen_by & (1 << owner.0) == 0)
                 {
                     continue;
                 }
@@ -1046,16 +1080,27 @@ fn in_cone(axis_yaw: Fx, d: FxVec2, cone: Fx) -> bool {
 }
 
 /// The main gun's reload in ticks with this crew: ×1.5 with the loader
-/// wounded, ×2 with his seat empty (the gunner loads).
+/// wounded, ×2 with his seat empty (the gunner loads); S3c: × the rules'
+/// `untrained_reload_pct` when the man loading is untrained.
 pub fn reload_of(vs: &VehicleState, v: &VehicleSetup, s: &MatchSetup) -> u16 {
     let base = s.weapons[v.main_gun().weapon as usize].reload_ticks;
-    let pct = match vs.seat(v, SeatRole::Loader) {
+    let loader = vs.seat(v, SeatRole::Loader);
+    let pct = match loader {
         None => 100,
         Some(st) if st.hp == 0 || st.swap > 0 => 200,
         Some(st) if (st.hp as u32) < s.rules.vehicles.wounded_hp => 150,
         Some(_) => 100,
     };
-    (base * pct / 100).clamp(1, u16::MAX as u32) as u16
+    let loads = match loader {
+        Some(st) if st.hp > 0 && st.swap == 0 => Some(st),
+        _ => vs.seat(v, SeatRole::Gunner),
+    };
+    let untrained = if loads.is_some_and(|st| st.untrained) {
+        s.rules.vehicles.recrew.untrained_reload_pct
+    } else {
+        100
+    };
+    (base as u64 * pct as u64 * untrained as u64 / 10_000).clamp(1, u16::MAX as u64) as u16
 }
 
 /// The share (0–100 %) of a target's planar velocity `vel` that crosses
@@ -1104,6 +1149,10 @@ fn main_spread(
         .is_some_and(|st| (st.hp as u32) < r.wounded_hp)
     {
         pct = pct * 3 / 2;
+    }
+    // S3c: an untrained gunner.
+    if vs.seat(v, SeatRole::Gunner).is_some_and(|st| st.untrained) {
+        pct = pct * r.recrew.untrained_spread_pct as i64 / 100;
     }
     if vs.component(ComponentKind::Gun) < 50 {
         pct *= 2;

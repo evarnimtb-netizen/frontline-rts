@@ -332,6 +332,19 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             k.put(out);
         }
         p.rockets.put(out);
+        // S3c.
+        let c = &p.crew;
+        for n in [
+            c.abandoned,
+            c.recrewed,
+            c.captured,
+            c.bailed,
+            c.out,
+            c.home,
+            c.scrapped,
+        ] {
+            n.put(out);
+        }
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -354,6 +367,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             }
             Order::Follow { vehicle } => vehicle.0.put(out),
             Order::Suppress { line } => line.put(out),
+            Order::Recrew { vehicle } => vehicle.0.put(out),
         }
         let n = &sq.nav;
         (n.phase as u8).put(out);

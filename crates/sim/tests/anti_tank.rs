@@ -28,7 +28,9 @@ fn setup() -> MatchSetup {
     // S3b: a vehicle with fewer than 2 crew is knocked out at its next
     // hit; these tests' "harmless" targets keep only a driver, so the old
     // rule (only an empty vehicle) applies here.
-    s.rules.vehicles.damage.crew_ko_below = 0;
+    // S3c: `crew_below` replaced `crew_ko_below`; 0 keeps such targets
+    // manned (no bail-out for crew losses).
+    s.rules.vehicles.bail.crew_below = 0;
     s
 }
 

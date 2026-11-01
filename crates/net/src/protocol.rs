@@ -20,8 +20,9 @@ use serde::{Deserialize, Serialize};
 /// peer could observe. 4 (S3b): `CallIn` buys and spawns at once under a
 /// per-type re-call cooldown instead of joining a queue (the one bump for
 /// the S3b slice; the Suppress command, `SuppressUnits`, lands under the same
-/// version).
-pub const PROTOCOL_VERSION: u16 = 4;
+/// version). 5 (S3c): the `Recrew` and `Abandon` commands (the one bump for
+/// the S3c slice).
+pub const PROTOCOL_VERSION: u16 = 5;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -582,7 +583,10 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::Barrage { .. }
         | CommandKind::CallIn { .. }
         | CommandKind::Surrender
-        | CommandKind::Regroup { .. } => true,
+        | CommandKind::Regroup { .. }
+        // S3c: a squad and a vehicle id, no lists.
+        | CommandKind::Recrew { .. }
+        | CommandKind::Abandon { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }

@@ -144,6 +144,11 @@ pub enum EntityKind {
     /// A knocked-out vehicle: keeps its id and `MatchState::vehicles`
     /// entry (`wreck_tick` set), no squad. Belongs to no player in play.
     Wreck = 4,
+    /// S3c: a vehicle its crew bailed out of (`crate::bail`): keeps its id,
+    /// state (`abandoned` set) and its last owner in `owner`, no squad,
+    /// counts toward nobody's pop or vehicle limit, seen by everyone, struck
+    /// like any vehicle, and can be re-crewed.
+    Abandoned = 5,
 }
 
 /// Position (z is terrain height for ground units) and heading.

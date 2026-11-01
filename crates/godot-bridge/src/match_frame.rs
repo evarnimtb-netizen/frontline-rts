@@ -474,6 +474,7 @@ impl MatchFrame {
                 Order::Suppress { line } => {
                     v.suppress_line = Some([line[0].to_f32(), line[1].to_f32()]);
                 }
+                Order::Recrew { vehicle } => v.follow = Some(vehicle.0),
                 Order::Idle | Order::Retreat => {}
             }
             self.squads.push(v);

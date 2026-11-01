@@ -115,6 +115,9 @@ pub struct Seat {
     pub swap: u16,
     /// The seat index he comes from while `swap > 0`.
     pub swap_from: u8,
+    /// S3c: an infantryman who re-crewed the vehicle, not a trained crewman
+    /// (`[vehicles.recrew]` untrained penalties).
+    pub untrained: bool,
 }
 
 /// One vehicle MG (coax or hull), in mount order after the main gun.
@@ -222,6 +225,25 @@ pub struct VehicleState {
     /// and, every `combat.suppress.tank_he_s`, the main gun's HE fire at
     /// while holding (`crate::gunnery`).
     pub suppress: Option<[FxVec2; 2]>,
+    /// S3c (`crate::bail`): abandoned since this tick (the entity is then
+    /// `EntityKind::Abandoned`), and why (`bail::AB_*`; 0 while not).
+    pub abandoned: Option<u64>,
+    pub abandon_cause: u8,
+    /// S3c: per seat, ticks left of its man getting out (0: not leaving).
+    pub exit: Vec<u16>,
+    /// S3c: the crew squad its crew became (while abandoned).
+    pub crew_squad: Option<SquadId>,
+    /// S3c: planar direction of travel of the last round that struck it
+    /// (zero: none); bailing men get out on the side it goes to.
+    pub last_hit_dir: FxVec2,
+    /// S3c: ticks of the last and the previous penetration.
+    pub last_pen: Option<u64>,
+    pub prev_pen: Option<u64>,
+    /// S3c: the squad boarding it (`Recrew`) and its boarding ticks so far.
+    pub board: Option<(SquadId, u16)>,
+    /// S3c: the owner ordered the crew out (`Abandon`); acted on in the
+    /// Status stage.
+    pub bail_order: bool,
 }
 
 impl VehicleState {
@@ -279,6 +301,15 @@ impl VehicleState {
             wreck_tick: None,
             face: None,
             suppress: None,
+            abandoned: None,
+            abandon_cause: 0,
+            exit: vec![0; v.seats.len()],
+            crew_squad: None,
+            last_hit_dir: FxVec2::ZERO,
+            last_pen: None,
+            prev_pen: None,
+            board: None,
+            bail_order: false,
         }
     }
 
@@ -315,6 +346,7 @@ impl VehicleState {
     /// on blocked ground, under repair, or a wreck.
     pub fn immobile(&self, v: &VehicleSetup) -> bool {
         self.wreck_tick.is_some()
+            || self.abandoned.is_some()
             || self.bog > 0
             || self.on_blocked
             || self.repairing.is_some()
@@ -412,7 +444,33 @@ impl VehicleState {
             })
             || (self.wreck_tick.is_some() && self.suppress.is_some())
             // S3b Fix: a knock-out puts both fires out (`knock_out`).
-            || (self.wreck_tick.is_some() && (self.ammo_fire != 0 || self.burn != 0));
+            || (self.wreck_tick.is_some() && (self.ammo_fire != 0 || self.burn != 0))
+            // S3c: exits only out of an abandoned vehicle, each within its
+            // hatch queue's time; nothing else of a live crew while abandoned.
+            || self.exit.len() != self.seats.len()
+            || self.abandoned.is_some_and(|t| t > tick)
+            || (self.abandoned.is_some() != (self.abandon_cause != 0))
+            || self.abandon_cause > crate::bail::AB_ORDER
+            || (self.abandoned.is_some() && self.wreck_tick.is_some())
+            || self.exit.iter().zip(&self.seats).any(|(&e, st)| {
+                e != 0 && (self.abandoned.is_none() || st.hp == 0)
+            })
+            || self.exit.iter().any(|&e| e as u32 > crate::bail::exit_max(v, s))
+            || (self.abandoned.is_none() && (self.crew_squad.is_some() || self.board.is_some()))
+            || (self.abandoned.is_some()
+                && (self.target.is_some()
+                    || self.attack.is_some()
+                    || !self.followers.is_empty()
+                    || self.face.is_some()
+                    || self.suppress.is_some()
+                    || self.repairing.is_some()
+                    || self.bail_order))
+            || self.board.is_some_and(|(_, t)| t as u32 > crate::bail::board_max(v, s))
+            || self.last_pen.is_some_and(|t| t > tick)
+            || self.prev_pen.is_some_and(|t| self.last_pen.is_none_or(|l| t > l))
+            || self.last_hit_dir.x.abs() > Fx::from_int(2)
+            || self.last_hit_dir.y.abs() > Fx::from_int(2)
+            || (self.wreck_tick.is_some() && self.bail_order);
         if bad {
             return Err("vehicle state is out of range");
         }
@@ -637,7 +695,8 @@ pub fn frame_of(
     VehicleFrame {
         id,
         owner,
-        wreck: vs.wreck_tick.is_some(),
+        // S3c: an abandoned vehicle is an obstacle for everyone, as a wreck.
+        wreck: vs.wreck_tick.is_some() || vs.abandoned.is_some(),
         type_idx: vs.type_idx,
         origin,
         yaw: t.yaw,
@@ -1367,7 +1426,10 @@ impl MatchState {
     pub(crate) fn rebuild_vehicle_index(&mut self, ents: &Entities) {
         let d = &mut self.vderived;
         d.index.rebuild_kinds(ents, |k| {
-            matches!(k, EntityKind::Vehicle | EntityKind::Wreck)
+            matches!(
+                k,
+                EntityKind::Vehicle | EntityKind::Wreck | EntityKind::Abandoned
+            )
         });
         d.frames.clear();
         for (&id, vs) in &self.vehicles {
@@ -1384,7 +1446,7 @@ impl MatchState {
     fn wreck_footprints(&self, ents: &Entities) -> Vec<Footprint> {
         self.vehicles
             .iter()
-            .filter(|(_, vs)| vs.wreck_tick.is_some())
+            .filter(|(_, vs)| vs.wreck_tick.is_some() || vs.abandoned.is_some())
             .filter_map(|(id, vs)| {
                 let geo = self.vderived.geo.get(vs.type_idx as usize)?;
                 let t = &ents.transform[id.index()];
@@ -1469,7 +1531,10 @@ impl MatchState {
         tick: u64,
     ) -> Option<SimId> {
         let i = id.index();
-        if ents.kind.get(i) != Some(&EntityKind::Vehicle) {
+        if !matches!(
+            ents.kind.get(i),
+            Some(EntityKind::Vehicle | EntityKind::Abandoned)
+        ) {
             return None;
         }
         if let Some(sid) = ents.squad[i].take() {
@@ -1504,6 +1569,13 @@ impl MatchState {
             for s in &mut vs.seats {
                 *s = Seat::default();
             }
+            // S3c: an abandoned vehicle burnt out or blown up.
+            vs.abandoned = None;
+            vs.abandon_cause = 0;
+            vs.exit.iter_mut().for_each(|e| *e = 0);
+            vs.crew_squad = None;
+            vs.board = None;
+            vs.bail_order = false;
         }
         self.mark_wreck_block(ents, id);
         let cap = self.setup.rules.vehicles.wreck_cap as usize;

@@ -1,0 +1,19 @@
+# M1911A1 (S3c): the US tank crewman's pistol (.45 ACP, 7-round magazine,
+# about 250 m/s at the muzzle). Issued to every US tanker
+# (theshermantank.com, "The small arms of the US Army tanker"; exact counts
+# are citation task S3c-7). Practical combat range, not the sight setting.
+# Damage as the M3 SMG (same cartridge).
+id = "ww2:m1911a1"
+name = "M1911A1"
+class = "pistol"
+# Effective combat range of a service pistol (m).
+range_m = 30
+damage = 38
+# Aimed fire, about one round a second (rounds/min).
+rounds_per_min = 60
+magazine = 7
+reload_ms = 2500
+spread_mrad = 30
+muzzle_velocity_m_s = 250
+# Little suppression: a pistol is no base of fire (points per near miss).
+suppression = 2

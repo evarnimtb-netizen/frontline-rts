@@ -38,6 +38,7 @@
 
 pub mod ai;
 pub mod armour;
+pub mod bail;
 pub mod combat;
 pub mod command;
 pub mod damage;
@@ -66,14 +67,15 @@ pub mod world;
 
 pub use ai::{AiCommand, AiCounters, AiEscort, AiState, AiTrench, Task, TaskKind};
 pub use armour::{ArmourTables, PenResult};
+pub use bail::{RecrewEvent, RecrewRefusal};
 pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
 pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, SimId, Stance};
 pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{
-    CallInEvent, CallInRefusal, CapturePoint, Launcher, MatchState, NavPhase, Order, OrderKind,
-    Outcome, PathReq, PlayerState, Squad, SquadId, kill_class,
+    CallInEvent, CallInRefusal, CapturePoint, CrewCounters, Launcher, MatchState, NavPhase, Order,
+    OrderKind, Outcome, PathReq, PlayerState, Squad, SquadId, kill_class,
 };
 pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, Windup};
 pub use projectile::{Projectile, ProjectilePool};

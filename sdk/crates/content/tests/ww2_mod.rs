@@ -55,10 +55,12 @@ fn issue_paths(e: ContentError) -> Vec<String> {
 fn ww2_mod_loads_clean() {
     let d = load();
     assert_eq!(d.manifest.as_ref().unwrap().id, "ww2");
-    // S1 squads, plus (S3) two AT teams and two vehicle squads.
-    assert_eq!(d.squads.len(), 12);
-    // S1 weapons, plus (S3) two cannons, the MG 34 and two launchers.
-    assert_eq!(d.weapons.len(), 13);
+    // S1 squads, plus (S3) two AT teams and two vehicle squads, plus (S3c)
+    // two tank crews.
+    assert_eq!(d.squads.len(), 14);
+    // S1 weapons, plus (S3) two cannons, the MG 34 and two launchers, plus
+    // (S3c) two pistols.
+    assert_eq!(d.weapons.len(), 15);
     assert_eq!(d.items.len(), 6);
     assert_eq!(
         d.vehicles.keys().collect::<Vec<_>>(),
@@ -372,6 +374,9 @@ fn call_in_cooldowns_are_the_owner_defaults() {
         ("ww2:usa_mortar_team", 60),
         ("ww2:ger_pz4_h_squad", 120),
         ("ww2:usa_m4a3_75_squad", 120),
+        // S3c: crews are never bought.
+        ("ww2:ger_tank_crew", 0),
+        ("ww2:usa_tank_crew", 0),
     ];
     assert_eq!(s.squad_types.len(), want.len());
     for (id, secs) in want {
@@ -441,4 +446,66 @@ fn cooldown_groups_share_an_index_and_bad_values_are_refused() {
     bad.squad_types[0].cooldown_group = Some(500);
     assert!(bad.validate().iter().any(|i| i.path.contains("cooldown")));
     let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn s3c_crews_and_hatches_resolve() {
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let s = load().resolve(&req).unwrap();
+    for (v, crew) in [
+        ("ww2:ger_pz4_h", "ww2:ger_tank_crew"),
+        ("ww2:usa_m4a3_75", "ww2:usa_tank_crew"),
+    ] {
+        let vs = s.vehicles.iter().find(|x| x.id == v).unwrap();
+        let c = vs.crew_squad.unwrap();
+        assert_eq!(s.squad_types[c as usize].id, crew);
+        assert_eq!(
+            s.squad_types[c as usize].role,
+            frontline_content::SquadRole::Crew
+        );
+        // Every seat leaves by exactly one hatch.
+        let mut seen = vec![0; vs.seats.len()];
+        for h in &vs.hatches {
+            for &k in &h.seats {
+                seen[k as usize] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&n| n == 1), "{v}");
+    }
+    let b = &s.rules.vehicles.bail;
+    assert_eq!(
+        (b.crew_below, b.ammo_fire_bail, b.abandoned_cap),
+        (3, 1, 16)
+    );
+    assert_eq!(s.rules.vehicles.recrew.capture, 1);
+}
+
+#[test]
+fn s3c_crews_cannot_be_in_a_roster() {
+    let mut d = load();
+    d.factions
+        .get_mut("ww2:germany")
+        .unwrap()
+        .roster
+        .push("ww2:ger_tank_crew".into());
+    let issues = d.cross_check();
+    assert!(
+        issues.iter().any(|i| i.message.contains("crew")),
+        "{issues:?}"
+    );
+    let mut d = load();
+    d.vehicles.get_mut("ww2:ger_pz4_h").unwrap().crew_squad = Some("ww2:usa_tank_crew".into());
+    assert!(
+        d.cross_check()
+            .iter()
+            .any(|i| i.path.contains("crew_squad"))
+    );
+    let mut d = load();
+    d.vehicles.get_mut("ww2:ger_pz4_h").unwrap().hatches.pop();
+    assert!(
+        d.vehicles["ww2:ger_pz4_h"]
+            .validate()
+            .iter()
+            .any(|i| i.path == "hatches")
+    );
 }

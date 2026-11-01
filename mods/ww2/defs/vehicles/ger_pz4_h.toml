@@ -35,6 +35,8 @@ sight_m = 175
 spot_size_pct = 200
 eye_height_cm = 250
 sources = ["placeholder: citations are an owner / M2 task"]
+# S3c: the squad the surviving crew become when they bail out.
+crew_squad = "ww2:ger_tank_crew"
 
 [mobility]
 type = "tracked"
@@ -204,3 +206,40 @@ seats = ["driver", "gunner"]
 [[stations]]
 id = "commander"
 seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's cupola
+# (a single hatch on the H), a two-piece side door each side of the turret
+# (gunner left, loader right), and the driver's and radio operator's hatches
+# in the superstructure roof (Jentz & Doyle, Panzer Tracts 4-3; Lone Sentry).
+# Positions in cm (hull frame, or turret frame from the pivot); exit times
+# are starting values: about 3 s out of a turret hatch, 4 s out of a hull
+# hatch past the gun and the hull MG.
+[[hatches]]
+seats = ["commander"]
+frame = "turret"
+pos = [-70, 0, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["gunner"]
+frame = "turret"
+pos = [10, 95, 45]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [10, -95, 45]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [190, 60, 176]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [190, -60, 176]
+exit_ms = 4000

@@ -147,4 +147,14 @@ pub enum CommandKind {
         units: Vec<SimId>,
         line: Vec<FxVec2>,
     },
+    // ---- S3c bail-out (`crate::bail`).
+    /// Infantry squad `squad` walks to abandoned vehicle `vehicle` and
+    /// boards it (a crew squad, or with the rules' `any_infantry` any
+    /// infantry but an AT team; an enemy's with `capture`). Refused (a
+    /// `RecrewRefusal` in the snapshot) without enough men, a free vehicle
+    /// slot or pop.
+    Recrew { squad: SquadId, vehicle: SimId },
+    /// The crew of the player's vehicle squad `squad` bail out (vehicles
+    /// with a crew squad only).
+    Abandon { squad: SquadId },
 }

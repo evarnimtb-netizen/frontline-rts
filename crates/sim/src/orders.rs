@@ -118,10 +118,13 @@ impl MatchState {
         target: SimId,
     ) -> bool {
         let ti = target.index();
+        // S3c: any abandoned vehicle may be ordered shot at (denial).
+        let abandoned = ctx.ents.kind.get(ti) == Some(&EntityKind::Abandoned);
         if ids.len() > crate::unit::MAX_UNITS
-            || ctx.ents.kind.get(ti) != Some(&EntityKind::Vehicle)
-            || ctx.ents.owner[ti] == p
-            || ctx.ents.combat[ti].seen_by & (1 << p.0) == 0
+            || (!abandoned
+                && (ctx.ents.kind.get(ti) != Some(&EntityKind::Vehicle)
+                    || ctx.ents.owner[ti] == p
+                    || ctx.ents.combat[ti].seen_by & (1 << p.0) == 0))
         {
             return false;
         }
@@ -134,6 +137,10 @@ impl MatchState {
             }
         }
         let mut teams = 0usize;
+        // S3c: launcher teams keep their rockets for live vehicles.
+        if abandoned {
+            return !vehicles.is_empty();
+        }
         if let Some(men) = self.unit_set(ctx, p, ids) {
             let mut squads: Vec<SquadId> = men
                 .iter()
@@ -319,7 +326,11 @@ impl MatchState {
             let vs = self.vehicles.get_mut(&id).expect("listed");
             let t = vs.attack.expect("listed");
             let ti = t.index();
-            if ctx.ents.kind.get(ti) != Some(&EntityKind::Vehicle) || ctx.ents.owner[ti] == owner {
+            let abandoned = ctx.ents.kind.get(ti) == Some(&EntityKind::Abandoned);
+            if !abandoned
+                && (ctx.ents.kind.get(ti) != Some(&EntityKind::Vehicle)
+                    || ctx.ents.owner[ti] == owner)
+            {
                 vs.attack = None;
                 continue;
             }

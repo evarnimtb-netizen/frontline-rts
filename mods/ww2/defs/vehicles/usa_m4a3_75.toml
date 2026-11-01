@@ -24,6 +24,8 @@ sight_m = 175
 spot_size_pct = 200
 eye_height_cm = 250
 sources = ["placeholder: citations are an owner / M2 task"]
+# S3c: the squad the surviving crew become when they bail out.
+crew_squad = "ww2:usa_tank_crew"
 
 [mobility]
 type = "tracked"
@@ -179,3 +181,33 @@ seats = ["driver", "gunner"]
 [[stations]]
 id = "commander"
 seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's hatch
+# over the turret's right (the gunner follows him out), the oval loader's
+# hatch on the left (production from late 1943; owner question S3c-7 (A)
+# models the late hull), and the driver's and assistant driver's hatches in
+# the hull roof (TM 9-759; theshermantank.com). The floor escape hatch is
+# not modelled (A). Exit times are starting values as for the Panzer IV.
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [-40, -40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [-30, 40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [200, 60, 190]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [200, -60, 190]
+exit_ms = 4000
