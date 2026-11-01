@@ -2,8 +2,8 @@
 //! Weapons stage's vehicle part, serial in ascending vehicle id after the
 //! soldiers' parallel aim and fire.
 //!
-//! **Targets.** Once a second (staggered by id), or when the target is
-//! gone, the gunner picks: the `AttackUnit` vehicle while it is seen and in
+//! **Targets.** Once a second (staggered by id), or the tick its target is
+//! lost, the gunner picks: the `AttackUnit` vehicle while it is seen and in
 //! range; else the nearest seen enemy vehicle within the main gun's
 //! `range_max` that has a visible part; else the best seen infantry group
 //! in range (more men within the HE damage radius first, then closer), never
@@ -302,7 +302,8 @@ impl MatchState {
             .target
             .and_then(|t| self.gun_target(ents, ctx, owner, &f, t, main, vs.aim_turret));
         let due = (ctx.tick + id.0 as u64).is_multiple_of(hz as u64);
-        let (target, aim_turret) = if valid.is_none() || due {
+        let lost = vs.target.is_some() && valid.is_none();
+        let (target, aim_turret) = if lost || due {
             self.pick_target(ents, ctx, id, &f, gunner, gun_ok && ap_left)
         } else {
             (vs.target, vs.aim_turret)
@@ -463,15 +464,17 @@ impl MatchState {
             let w = &setup.weapons[m.weapon as usize];
             let from = mg_muzzle(&f, m);
             let r = range_sq(w.range_max.into());
-            let ok = |t: SimId| self.mg_target_ok(ctx, owner, from, axis, cone, r, t);
-            if st.target.is_some_and(|t| !ok(t)) {
+            let axis_yaw = Fx::atan2(axis.y, axis.x);
+            let ok = |t: SimId| self.mg_target_ok(ctx, owner, from, axis_yaw, cone, r, t);
+            let lost = st.target.is_some_and(|t| !ok(t));
+            if lost {
                 st.target = None;
             }
             if m.kind == MountKind::Coax && main_man.is_some_and(ok) {
                 st.target = main_man;
-            } else if st.target.is_none() || due {
+            } else if lost || due {
                 let roll = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SWEEP).next_u64();
-                st.target = self.mg_search(ctx, owner, from, axis, cone, r, roll);
+                st.target = self.mg_search(ctx, owner, from, axis_yaw, cone, r, roll);
             }
             let Some(t) = st.target else { continue };
             if st.cooldown > 0 {
@@ -721,7 +724,7 @@ impl MatchState {
         ctx: &GunCtx,
         owner: PlayerId,
         from: FxVec3,
-        axis: FxVec3,
+        axis_yaw: Fx,
         cone: Fx,
         r: u64,
         t: SimId,
@@ -735,7 +738,7 @@ impl MatchState {
         m.owner != owner.0
             && m.seen_by & (1 << owner.0) != 0
             && (m.pos.xy() - from.xy()).length_sq_raw() <= r
-            && in_cone(axis, m.pos.xy() - from.xy(), cone)
+            && in_cone(axis_yaw, m.pos.xy() - from.xy(), cone)
     }
 
     /// An MG's target search: among the [`SWEEP_POOL`] nearest valid
@@ -747,7 +750,7 @@ impl MatchState {
         ctx: &GunCtx,
         owner: PlayerId,
         from: FxVec3,
-        axis: FxVec3,
+        axis_yaw: Fx,
         cone: Fx,
         r: u64,
         roll: u64,
@@ -755,7 +758,7 @@ impl MatchState {
         let mut cands: Vec<(u64, SimId)> = ctx
             .marks
             .iter()
-            .filter(|m| self.mg_target_ok(ctx, owner, from, axis, cone, r, m.id))
+            .filter(|m| self.mg_target_ok(ctx, owner, from, axis_yaw, cone, r, m.id))
             .map(|m| ((m.pos.xy() - from.xy()).length_sq_raw(), m.id))
             .collect();
         cands.sort_unstable();
@@ -773,12 +776,10 @@ impl MatchState {
     }
 }
 
-/// Whether the horizontal direction `d` lies within `cone` of `axis`'s
-/// heading.
-fn in_cone(axis: FxVec3, d: FxVec2, cone: Fx) -> bool {
-    let a = Fx::atan2(axis.y, axis.x);
-    let b = Fx::atan2(d.y, d.x);
-    (b - a).wrap_angle().abs() <= cone
+/// Whether the horizontal direction `d` lies within `cone` of heading
+/// `axis_yaw`.
+fn in_cone(axis_yaw: Fx, d: FxVec2, cone: Fx) -> bool {
+    (Fx::atan2(d.y, d.x) - axis_yaw).wrap_angle().abs() <= cone
 }
 
 /// The main gun's reload in ticks with this crew: ×1.5 with the loader
@@ -830,4 +831,94 @@ fn main_spread(
         pct *= 2;
     }
     Fx::from_raw((base.raw() as i64 * pct / 100).clamp(0, i32::MAX as i64) as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup() -> MatchSetup {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let defs = frontline_content::ModDefs::load(&root).unwrap();
+        let req = frontline_content::MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Normal,
+        );
+        defs.resolve(&req).unwrap()
+    }
+
+    #[test]
+    fn crew_and_gun_damage_scale_reload_and_spread() {
+        let s = setup();
+        let v = &s.vehicles[0];
+        let mut vs = VehicleState::new(0, v, &s.rules.vehicles);
+        let base = s.weapons[v.main_gun().weapon as usize].reload_ticks;
+        assert_eq!(base, 195, "6.5 s at 30 Hz");
+        let loader = v
+            .seats
+            .iter()
+            .position(|x| x.role == SeatRole::Loader)
+            .unwrap();
+        let gunner = v
+            .seats
+            .iter()
+            .position(|x| x.role == SeatRole::Gunner)
+            .unwrap();
+        assert_eq!(reload_of(&vs, v, &s) as u32, base);
+        vs.seats[loader].hp = 40;
+        assert_eq!(reload_of(&vs, v, &s) as u32, base * 3 / 2);
+        vs.seats[loader].hp = 0;
+        assert_eq!(reload_of(&vs, v, &s) as u32, base * 2);
+
+        let at_tank = Aim {
+            point: FxVec3::ZERO,
+            vel: FxVec2::ZERO,
+            vehicle: true,
+        };
+        let at_men = Aim {
+            vehicle: false,
+            ..at_tank
+        };
+        let vs = VehicleState::new(0, v, &s.rules.vehicles);
+        let sp = |vs: &VehicleState, a: &Aim, k: u8, moving: bool| {
+            main_spread(vs, v, &s, a, k, moving).raw()
+        };
+        let gun = Fx::from(s.weapons[v.main_gun().weapon as usize].spread).raw();
+        assert_eq!(sp(&vs, &at_tank, AP, false), gun, "2.5 mrad");
+        // HE at men: the area spread (6 mrad).
+        assert_eq!(
+            sp(&vs, &at_men, HE, false),
+            Fx::from(s.rules.vehicles.he_area_spread).raw()
+        );
+        // A moving target ×3; ranging in 20 % per shot down to 50 %.
+        assert_eq!(sp(&vs, &at_tank, AP, true), gun * 3);
+        let mut r = vs.clone();
+        r.ranging = 1;
+        assert_eq!(sp(&r, &at_tank, AP, false), gun * 80 / 100);
+        r.ranging = 9;
+        assert_eq!(sp(&r, &at_tank, AP, false), gun / 2);
+        // Own movement ×4 (Panzer IV), gunner wounded ×1.5, gun damaged ×2.
+        let mut m = vs.clone();
+        m.speed = Fx::from_int(3);
+        assert_eq!(sp(&m, &at_tank, AP, false), gun * 4);
+        let mut g = vs.clone();
+        g.seats[gunner].hp = 30;
+        assert_eq!(sp(&g, &at_tank, AP, false), gun * 3 / 2);
+        g.seats[gunner].hp = 100;
+        g.components[ComponentKind::Gun.index()] = 40;
+        assert_eq!(sp(&g, &at_tank, AP, false), gun * 2);
+    }
+
+    #[test]
+    fn to_lay_inverts_gun_local() {
+        let hull = Basis::hull(deg(30), deg(5), deg(-3));
+        for (y, p) in [(0, 0), (45, 10), (-120, -5), (170, 15)] {
+            let d = hull.apply(gun_local(deg(y), deg(p)));
+            let (ly, lp) = to_lay(&hull, d);
+            assert!((ly - deg(y)).wrap_angle().abs() < Fx::from_milli(2), "{y}");
+            assert!((lp - deg(p)).abs() < Fx::from_milli(2), "{p}");
+        }
+    }
 }

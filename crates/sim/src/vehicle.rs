@@ -68,11 +68,13 @@ use frontline_content::{COMPONENTS, ComponentKind, MatchSetup, SeatRole};
 use serde::{Deserialize, Serialize};
 
 use crate::armour::deg;
+use crate::damage::ArmourEv;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId, Transform, Velocity};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{MatchState, Nav, NavPhase, Order, PathQueue, PathReq, Squad, SquadId};
 use crate::hash::HashCache;
 use crate::rng::{Purpose, RngStream};
+use crate::snapshot::{ArmourEventKind, NONE_U8};
 use crate::spatial::SpatialHash;
 use crate::terrain::{Heightfield, SPACING_M};
 
@@ -1477,12 +1479,14 @@ impl MatchState {
         hash: &mut HashCache,
         seed: u64,
         tick: u64,
+        events: &mut Vec<ArmourEv>,
     ) {
         if self.vehicles.is_empty() {
             return;
         }
         let hz = self.setup.tick_hz;
         let mut repath: Vec<Repath> = Vec::new();
+        let mut bogged: Vec<(SimId, u8, FxVec3)> = Vec::new();
         let MatchState {
             setup,
             vehicles,
@@ -1529,7 +1533,11 @@ impl MatchState {
             };
             let mut t = ents.transform[i];
             let mut vel = ents.velocity[i];
+            let was_bogged = vs.bog > 0;
             let moved = drive(&ctx, id, vs, &mut t, &mut vel, throttle, steer);
+            if vs.bog > 0 && !was_bogged {
+                bogged.push((id, ents.owner[i].0, t.pos));
+            }
             ents.transform[i] = t;
             ents.velocity[i] = vel;
             hash.mark_entity_chunk(id.chunk());
@@ -1537,6 +1545,10 @@ impl MatchState {
                 let f = frame_of(id, ents.owner[i], &t, vs, geo);
                 push_out(ents, terrain, soldiers, hash, &f, geo, soldier_r);
             }
+        }
+        for (id, owner, pos) in bogged {
+            let ev = ArmourEv::new(ArmourEventKind::Bogged, id, owner, NONE_U8).at(pos);
+            self.push_event(events, ev);
         }
         for (sid, goal, avoid) in repath {
             if let Some(sq) = self.squads.get_mut(&sid) {

@@ -970,6 +970,7 @@ fn vehicle_stress_report() {
     let mut ticks = Vec::new();
     let mut moves = Vec::new();
     let mut spot = Vec::new();
+    let (mut weapons, mut ballistics, mut damage) = (Vec::new(), Vec::new(), Vec::new());
     let mut seq = 0u32;
     for t in 0..30 * 120u64 {
         let mut cmds = Vec::new();
@@ -996,6 +997,9 @@ fn vehicle_stress_report() {
             println!("slow movement at tick {t}: {:.2} ms", moves.last().unwrap());
         }
         spot.push(w.stage_times().perception.as_secs_f64() * 1000.0);
+        weapons.push(w.stage_times().weapons.as_secs_f64() * 1000.0);
+        ballistics.push(w.stage_times().ballistics.as_secs_f64() * 1000.0);
+        damage.push(w.stage_times().damage.as_secs_f64() * 1000.0);
     }
     let p99 = |v: &mut Vec<f64>| {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -1011,5 +1015,19 @@ fn vehicle_stress_report() {
     println!("tick ms p50/p99/max {:?}", p99(&mut ticks));
     println!("movement ms p50/p99/max {:?}", p99(&mut moves));
     println!("perception ms p50/p99/max {:?}", p99(&mut spot));
+    println!("weapons ms p50/p99/max {:?}", p99(&mut weapons));
+    println!("ballistics ms p50/p99/max {:?}", p99(&mut ballistics));
+    println!("damage ms p50/p99/max {:?}", p99(&mut damage));
+    let st = w.stats();
+    println!(
+        "box tests {} (peak {} per tick), plate hits: {} ricochet, {} non-pen, {} pen; knocked out {}; small-arms rounds stopped {}",
+        st.armour_box_tests,
+        st.armour_box_peak,
+        st.ricochets,
+        st.non_penetrations,
+        st.penetrations,
+        st.knockouts,
+        st.rounds_stopped
+    );
     println!("vehicles moving at the end: {moving}");
 }

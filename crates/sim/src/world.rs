@@ -834,6 +834,7 @@ impl World {
         // 1. Intent: serial command apply, then per-chunk waypoint re-pick
         //    (bench) or call-ins, paths and squad steering (match).
         let t0 = Instant::now();
+        self.armour_events.clear();
         self.apply_commands(cmds);
         if self.state.game.is_some() {
             let World {
@@ -957,6 +958,7 @@ impl World {
                 flags,
                 spatial,
                 planned,
+                armour_events,
                 ..
             } = self;
             let SimState {
@@ -1021,6 +1023,7 @@ impl World {
                     hash,
                     seed,
                     tick,
+                    armour_events,
                 );
                 g.rebuild_vehicle_index(&state.entities);
                 // Ballistics and blasts test soldiers where they now stand.
@@ -1159,7 +1162,6 @@ impl World {
                 fire_merged.extend_from_slice(b);
             }
             game.fire_mortars(entities, terrain, hash, seed, tick, fire_merged);
-            armour_events.clear();
             let gun_ctx = GunCtx {
                 terrain,
                 marks,
@@ -1611,8 +1613,22 @@ impl World {
         true
     }
 
+    /// Starts a field repair of vehicle `id` (staged tests; `RepairUnits`
+    /// and the AI call `MatchState::start_repair` the same way). False if
+    /// nothing is repairable.
+    pub fn start_repair(&mut self, id: SimId) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let ok = game.start_repair(&self.state.entities, id);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        ok
+    }
+
     /// Knocks vehicle `id` out at once and turns it into a wreck (staged
-    /// tests; the Damage stage's knock-out uses the same conversion).
+    /// tests): the Damage stage's knock-out (crew lost, followers stopped,
+    /// targets cleared, wreck cap).
     pub fn wreck_vehicle(&mut self, id: SimId) -> bool {
         let tick = self.state.tick;
         let Some(game) = self.state.game.as_mut() else {
@@ -1621,7 +1637,19 @@ impl World {
         if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Vehicle) {
             return false;
         }
-        game.make_wreck(&mut self.state.entities, &mut self.hash, id, tick);
+        let mut ctx = Ctx {
+            ents: &mut self.state.entities,
+            terrain: &self.state.terrain,
+            hash: &mut self.hash,
+            tick,
+        };
+        game.knock_out_with(
+            &mut ctx,
+            &mut self.state.stats,
+            id,
+            crate::damage::KO_CREW,
+            &mut self.armour_events,
+        );
         game.rebuild_vehicle_index(&self.state.entities);
         self.refresh_hashes();
         self.fill_snapshot();
@@ -2954,5 +2982,540 @@ mod tests {
         let _ = va;
         let loaded = World::load(&w.save(), 1).unwrap();
         assert_eq!(loaded.state_hash(), w.state_hash());
+    }
+
+    // ------------------------------------------------- S3 gunnery, damage --
+
+    use crate::fx::FxVec3;
+    use frontline_content::ComponentKind;
+
+    /// Flat open ground, test unlock, both sides human: a German tank at
+    /// (500, 500) facing east and nothing else.
+    fn flat_tank_world() -> (World, SimId) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let mut defs = frontline_content::ModDefs::load(&root).unwrap();
+        let rules = defs
+            .add_rules_override(&root.join("tests/rules_test_unlock.toml"))
+            .unwrap();
+        let mut req = frontline_content::MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Normal,
+        );
+        req.rules = rules;
+        let mut setup = defs.resolve(&req).unwrap();
+        setup.players.iter_mut().for_each(|p| p.is_ai = false);
+        setup.map.terrain.octaves.clear();
+        setup.map.terrain.bands.clear();
+        setup.map.woods.clear();
+        let mut w = World::new_match(setup, 1).unwrap();
+        let ger = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_pz4_h_squad")
+            .unwrap();
+        let sq = w
+            .spawn_squad_at(
+                PlayerId(0),
+                ger,
+                FxVec2::from_int(500, 500),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        let v = w.game().unwrap().squads[&sq].members[0];
+        (w, v)
+    }
+
+    /// Puts a US round of `ammo` (an ammo id, or small arms for `None`) in
+    /// flight at `from` with velocity `vel`.
+    fn shoot(w: &mut World, ammo: Option<&str>, from: FxVec3, vel: FxVec3) {
+        let s = w.match_setup().unwrap();
+        let (weapon, ammo) = match ammo {
+            Some(a) => {
+                let k = s.ammo.iter().position(|x| x.id == a).unwrap();
+                let wk = s
+                    .weapons
+                    .iter()
+                    .position(|x| x.id == "ww2:m3_75mm")
+                    .unwrap();
+                (wk as u16, k as u16)
+            }
+            None => {
+                let wk = s
+                    .weapons
+                    .iter()
+                    .position(|x| x.id == "ww2:m1_garand")
+                    .unwrap();
+                (wk as u16, crate::projectile::NO_AMMO)
+            }
+        };
+        // `from.z` is above the ground there.
+        let from = FxVec3::new(
+            from.x,
+            from.y,
+            from.z + w.state.terrain.height_at(from.xy()),
+        );
+        let slot = w
+            .state
+            .projectiles
+            .spawn(crate::projectile::Projectile {
+                pos: from,
+                vel,
+                owner: SimId(9999),
+                drag: Fx::ZERO,
+                ttl: 120,
+                weapon,
+                player: 1,
+                ammo,
+                origin: from,
+            })
+            .unwrap();
+        w.hash.mark_pool_slot(slot);
+    }
+
+    fn fx3(x: i32, y: i32, z_milli: i32) -> FxVec3 {
+        FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_milli(z_milli))
+    }
+
+    /// Steps until no round flies (at most 2 s); returns the armour events
+    /// seen.
+    fn fly_out(w: &mut World) -> Vec<crate::snapshot::ArmourEvent> {
+        let mut evs = Vec::new();
+        for _ in 0..60 {
+            w.step(&[]);
+            evs.extend(w.snapshot().armour_events.iter().cloned());
+            if w.projectiles().live() == 0 {
+                break;
+            }
+        }
+        evs
+    }
+
+    #[test]
+    fn rounds_hit_the_earliest_of_ground_box_and_capsule() {
+        use crate::snapshot::ArmourEventKind as K;
+        // A Sherman AP round from 100 m east at hull height meets the hull
+        // front of a tank facing east.
+        let (mut w, v) = flat_tank_world();
+        let ap = Some("ww2:75mm_m61");
+        shoot(&mut w, ap, fx3(600, 500, 1100), fx3(-618, 0, 0));
+        let evs = fly_out(&mut w);
+        let plate: Vec<_> = evs.iter().filter(|e| matches!(e.kind, 1..=3)).collect();
+        assert_eq!(plate.len(), 1, "{evs:?}");
+        assert_eq!(plate[0].vehicle, v.0);
+        assert_eq!(
+            plate[0].zone,
+            frontline_content::ArmourZone::HullFront as u8
+        );
+        // Small arms stop on it, silently.
+        let stopped = w.stats().rounds_stopped;
+        shoot(&mut w, None, fx3(530, 500, 1100), fx3(-800, 0, 0));
+        assert!(fly_out(&mut w).is_empty());
+        assert_eq!(w.stats().rounds_stopped, stopped + 1);
+
+        // A German soldier in front of it: his capsule comes first.
+        let (mut w, _) = flat_tank_world();
+        let ger = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_rifle_squad")
+            .unwrap();
+        let sq = w
+            .spawn_squad_at(
+                PlayerId(0),
+                ger,
+                FxVec2::from_int(520, 500),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        let man = w.game().unwrap().squads[&sq].members[0];
+        let mp = w.entities().transform[man.index()].pos;
+        let hits = w.stats().soldier_hits;
+        shoot(
+            &mut w,
+            ap,
+            FxVec3::new(mp.x + Fx::from_int(200), mp.y, Fx::ONE),
+            fx3(-618, 0, 0),
+        );
+        let evs = fly_out(&mut w);
+        assert_eq!(w.stats().soldier_hits, hits + 1);
+        assert!(evs.iter().all(|e| e.kind == K::Fired as u8), "{evs:?}");
+
+        // A parapet in front of the hull blocks a round grazing it.
+        let (mut w, _) = flat_tank_world();
+        assert!(w.dig_trench_now(&[FxVec2::from_int(506, 490), FxVec2::from_int(506, 510)], 1));
+        let p = FxVec2::from_int(505, 500);
+        let top = w.terrain().height_at(p) - w.terrain().base_height_at(p);
+        let z = top.raw() * 1000 / 65_536 - 50;
+        let ground = w.stats().ground_hits;
+        shoot(&mut w, ap, fx3(530, 500, z), fx3(-618, 0, 0));
+        let evs = fly_out(&mut w);
+        assert!(evs.iter().all(|e| !matches!(e.kind, 1..=3)), "{evs:?}");
+        assert_eq!(w.stats().ground_hits, ground + 1);
+    }
+
+    #[test]
+    fn the_fine_terrain_retest_finds_crests_the_coarse_test_steps_over() {
+        let w = World::new(SimConfig::default(), 1).unwrap();
+        let t = &w.state.terrain;
+        let (mut fine_only, mut coarse_hits) = (0, 0);
+        for k in 0..2000 {
+            let mut r = RngStream::new(5, k, SimId(0), Purpose(9000));
+            let x = r.range_i32(50, 450);
+            let y = r.range_i32(50, 450);
+            let a = FxVec2::from_int(x, y);
+            let b = a + FxVec2::from_int(r.range_i32(-12, 12), r.range_i32(-12, 12));
+            let lift = Fx::from_milli(r.range_i32(-200, 300));
+            let a3 = a.extend(t.height_at(a) + Fx::ONE);
+            let b3 = b.extend(t.height_at(b) + lift);
+            let coarse = t.segment_hit(a3, b3);
+            let fine = t.segment_hit_fine(a3, b3);
+            if coarse.is_some() {
+                coarse_hits += 1;
+                assert!(
+                    fine.is_some(),
+                    "the fine test never misses what the coarse finds"
+                );
+            } else if fine.is_some() {
+                fine_only += 1;
+            }
+        }
+        assert!(coarse_hits > 100, "{coarse_hits}");
+        assert!(fine_only > 0, "no case where 0.25 m steps mattered");
+    }
+
+    #[test]
+    fn shells_burst_with_their_round_and_bursts_on_vehicles_carve_no_crater() {
+        let (mut w, v) = flat_tank_world();
+        // HE on the turret front: no penetration (10 mm), a burst, no crater.
+        let tiles = w.terrain().detail().tiles().len();
+        let ex = w.stats().explosions;
+        shoot(
+            &mut w,
+            Some("ww2:75mm_m48"),
+            fx3(560, 500, 2200),
+            fx3(-463, 0, 0),
+        );
+        let evs = fly_out(&mut w);
+        let hit = evs.iter().find(|e| matches!(e.kind, 1..=3)).unwrap();
+        assert_eq!(
+            hit.kind,
+            crate::snapshot::ArmourEventKind::NonPenetration as u8
+        );
+        assert_eq!(hit.vehicle, v.0);
+        assert_eq!(w.stats().explosions, ex + 1);
+        assert_eq!(
+            w.terrain().detail().tiles().len(),
+            tiles,
+            "no crater on the tank"
+        );
+        // HE on open ground carves one.
+        shoot(
+            &mut w,
+            Some("ww2:75mm_m48"),
+            fx3(560, 520, 1500),
+            fx3(-463, 0, -40),
+        );
+        fly_out(&mut w);
+        assert_eq!(w.stats().explosions, ex + 2);
+        assert!(w.terrain().detail().tiles().len() > tiles);
+    }
+
+    #[test]
+    fn knock_out_clears_targets_and_followers_and_counts_the_crew() {
+        let (mut w, v) = flat_tank_world();
+        let s = w.match_setup().unwrap();
+        let usa = s.squad_type_index("ww2:usa_m4a3_75_squad").unwrap();
+        let rifle = s.squad_type_index("ww2:ger_rifle_squad").unwrap();
+        let us_rifle = s.squad_type_index("ww2:usa_rifle_squad").unwrap();
+        let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+        let e = w
+            .spawn_squad_at(PlayerId(1), usa, FxVec2::from_int(700, 500), -east)
+            .unwrap();
+        let enemy = w.game().unwrap().squads[&e].members[0];
+        let f = w
+            .spawn_squad_at(PlayerId(0), rifle, FxVec2::from_int(480, 500), east)
+            .unwrap();
+        let men = w.game().unwrap().squads[&f].members.clone();
+        let foe = w
+            .spawn_squad_at(PlayerId(1), us_rifle, FxVec2::from_int(300, 300), east)
+            .unwrap();
+        let foe_man = w.game().unwrap().squads[&foe].members[0];
+        // Everyone points at the German tank: the Sherman's gun and order,
+        // a US soldier, the US squad's focus; German men follow it.
+        w.edit_vehicle(enemy, |vs| {
+            vs.target = Some(v);
+            vs.attack = Some(v);
+        });
+        w.edit_vehicle(v, |vs| vs.followers = men.clone());
+        let g = w.state.game.as_mut().unwrap();
+        g.squads.get_mut(&foe).unwrap().focus = Some(v);
+        w.state.entities.combat[foe_man.index()].target = Some(v);
+        let losses = w.game().unwrap().players[0].losses;
+        assert!(w.wreck_vehicle(v));
+        let g = w.game().unwrap();
+        assert_eq!(g.vehicles[&enemy].target, None);
+        assert_eq!(g.vehicles[&enemy].attack, None);
+        assert_eq!(g.squads[&foe].focus, None);
+        assert_eq!(w.entities().combat[foe_man.index()].target, None);
+        assert_eq!(g.players[0].losses, losses + 5, "the crew count as losses");
+        assert!(g.vehicles[&v].followers.is_empty());
+        assert_eq!(g.squads[&f].order, Order::Idle);
+        assert_eq!(w.stats().knockouts, 1);
+        let ko = w
+            .snapshot()
+            .armour_events
+            .iter()
+            .find(|e| e.kind == crate::snapshot::ArmourEventKind::KnockedOut as u8)
+            .unwrap();
+        assert_eq!(ko.vehicle, v.0);
+        let loaded = World::load(&w.save(), 1).unwrap();
+        assert_eq!(loaded.state_hash(), w.state_hash());
+    }
+
+    #[test]
+    fn a_crest_in_front_of_a_hull_makes_it_hull_down() {
+        let (mut w, v) = flat_tank_world();
+        // A 1.5 m crest 8 m east of the tank (grid x 127 = 508 m).
+        w.state.terrain.edit_heights_for_test(|gx, _, h| {
+            if gx == 127 {
+                *h += Fx::from_milli(1500);
+            }
+        });
+        w.state.terrain.rebuild_derived();
+        let g = w.game().unwrap();
+        let f = *g.vderived.frame(v).unwrap();
+        let s = g.setup();
+        let m61 = s.ammo.iter().position(|a| a.id == "ww2:75mm_m61").unwrap();
+        let from = FxVec3::new(
+            Fx::from_int(800),
+            Fx::from_int(500),
+            w.terrain().height_at(FxVec2::from_int(800, 500)) + Fx::from_milli(2300),
+        );
+        assert!(
+            !w.terrain().line_of_sight(from, f.hull.center),
+            "hull hidden"
+        );
+        let part = crate::gunnery::aim_choice(
+            from,
+            &f,
+            &g.armour().vehicles[f.type_idx as usize],
+            &g.armour().ammo[m61],
+            w.terrain(),
+            s.rules.vehicles.aim_hull_margin_pct,
+        );
+        assert_eq!(part, Some(crate::armour::BoxPart::Turret));
+        // A round aimed level at the hull's upper edge over the crest top
+        // (the coarse 1 m test can step over it; the re-test cannot).
+        let top = w.terrain().height_at(FxVec2::from_int(508, 500))
+            - w.terrain().height_at(FxVec2::from_int(500, 500));
+        for dz in [-60, -20] {
+            let ground = w.stats().ground_hits;
+            let z = (top.raw() as i64 * 1000 / 65_536) as i32 + dz;
+            shoot(
+                &mut w,
+                Some("ww2:75mm_m61"),
+                fx3(530, 500, z),
+                fx3(-618, 0, 0),
+            );
+            let evs = fly_out(&mut w);
+            assert!(
+                evs.iter().all(|e| !matches!(e.kind, 1..=3)),
+                "{dz}: {evs:?}"
+            );
+            assert_eq!(w.stats().ground_hits, ground + 1);
+        }
+    }
+
+    /// Applies `dealt` to vehicle `v` as the Damage stage would, at `tick`
+    /// with the ammo-rack key `slot`. Returns the knock-out cause.
+    fn deal_now(
+        w: &mut World,
+        v: SimId,
+        dealt: &[crate::damage::Dealt],
+        tick: u64,
+        slot: u32,
+        fires: &mut crate::damage::FireRolls,
+    ) -> Option<u8> {
+        let World {
+            state,
+            hash,
+            spatial,
+            ..
+        } = w;
+        let SimState {
+            entities,
+            terrain,
+            stats,
+            game,
+            ..
+        } = state;
+        let mut ctx = combat::DamageCtx {
+            ents: entities,
+            terrain,
+            spatial,
+            hash,
+            stats,
+            seed: 1,
+            tick,
+        };
+        let g = game.as_mut().unwrap();
+        g.deal(
+            &mut ctx,
+            v,
+            dealt,
+            0,
+            SimId(slot),
+            fires,
+            &mut Vec::new(),
+            FxVec3::ZERO,
+            0,
+        )
+    }
+
+    #[test]
+    fn fire_and_ammo_rack_rolls_match_their_odds() {
+        use crate::damage::{Dealt, FireRolls, Inner, KO_CREW, KO_RACK};
+        let (mut w, v) = flat_tank_world();
+        let fresh = w.game().unwrap().vehicles[&v].clone();
+        let reset = |w: &mut World| {
+            *w.state.game.as_mut().unwrap().vehicles.get_mut(&v).unwrap() = fresh.clone();
+        };
+        let hit = |inner, dmg| Dealt { inner, dmg };
+        let rack = Inner::Part(ComponentKind::AmmoRack);
+        let engine = Inner::Part(ComponentKind::Engine);
+        let n = 600u32;
+        let (mut det, mut fires) = (0u32, 0u32);
+        for k in 0..n {
+            reset(&mut w);
+            let mut f = FireRolls::default();
+            if deal_now(&mut w, v, &[hit(rack, 30)], 7, k, &mut f) == Some(KO_RACK) {
+                det += 1;
+            }
+            reset(&mut w);
+            deal_now(&mut w, v, &[hit(engine, 40)], k as u64, 0, &mut f);
+            if w.game().unwrap().vehicles[&v].burn > 0 {
+                fires += 1;
+            }
+            // Below the thresholds: never.
+            reset(&mut w);
+            assert_eq!(deal_now(&mut w, v, &[hit(rack, 29)], 7, k, &mut f), None);
+            reset(&mut w);
+            deal_now(&mut w, v, &[hit(engine, 39)], k as u64, 0, &mut f);
+            assert_eq!(w.game().unwrap().vehicles[&v].burn, 0);
+        }
+        let within = |count: u32, p: f64| {
+            #[allow(clippy::float_arithmetic)]
+            let ok = {
+                let sigma = (n as f64 * p * (1.0 - p)).sqrt();
+                (count as f64 - n as f64 * p).abs() <= 3.0 * sigma + 1.0
+            };
+            ok
+        };
+        assert!(within(det, 0.35), "rack detonations {det} of {n}");
+        assert!(within(fires, 0.30), "fires {fires} of {n}");
+        // A rack destroyed by damage always detonates; the same key always
+        // gives the same roll.
+        reset(&mut w);
+        let mut f = FireRolls::default();
+        assert_eq!(
+            deal_now(&mut w, v, &[hit(rack, 60)], 7, 0, &mut f),
+            Some(KO_RACK)
+        );
+        let first: Vec<_> = (0..20)
+            .map(|k| {
+                reset(&mut w);
+                deal_now(&mut w, v, &[hit(rack, 30)], 7, k, &mut FireRolls::default())
+            })
+            .collect();
+        let again: Vec<_> = (0..20)
+            .map(|k| {
+                reset(&mut w);
+                deal_now(&mut w, v, &[hit(rack, 30)], 7, k, &mut FireRolls::default())
+            })
+            .collect();
+        assert_eq!(first, again);
+        // Every seat emptied: knocked out (crew); a crewman's death is a
+        // loss and a kill.
+        reset(&mut w);
+        let losses = w.game().unwrap().players[0].losses;
+        let kills = w.game().unwrap().players[1].kills;
+        let seats: Vec<Dealt> = (0..5).map(|k| hit(Inner::Seat(k), 100)).collect();
+        let mut evs = Vec::new();
+        {
+            let World {
+                state,
+                hash,
+                spatial,
+                ..
+            } = &mut w;
+            let mut ctx = combat::DamageCtx {
+                ents: &mut state.entities,
+                terrain: &mut state.terrain,
+                spatial,
+                hash,
+                stats: &mut state.stats,
+                seed: 1,
+                tick: 9,
+            };
+            let g = state.game.as_mut().unwrap();
+            let ko = g.deal(
+                &mut ctx,
+                v,
+                &seats,
+                1,
+                SimId(0),
+                &mut FireRolls::default(),
+                &mut evs,
+                FxVec3::ZERO,
+                0,
+            );
+            assert_eq!(ko, Some(KO_CREW));
+        }
+        assert_eq!(evs.len(), 5);
+        assert_eq!(w.game().unwrap().players[0].losses, losses + 5);
+        assert_eq!(w.game().unwrap().players[1].kills, kills + 5);
+    }
+
+    #[test]
+    fn penetrations_are_keyed_by_tick_and_slot() {
+        // M61 into the Panzer IV's side by the driver from 100 m north:
+        // 30 mm, it goes through; core, spall and filler hit the crew.
+        // (Through the middle of the side the core always crosses the ammo
+        // rack, which then detonates: no variation to see there.)
+        let run = |delay: u64, threads: usize| {
+            let (w, v) = flat_tank_world();
+            let st = w.state.clone();
+            let mut w = World::from_state(st, threads).unwrap();
+            for _ in 0..delay {
+                w.step(&[]);
+            }
+            shoot(
+                &mut w,
+                Some("ww2:75mm_m61"),
+                fx3(502, 600, 1300),
+                fx3(0, -618, 0),
+            );
+            let evs = fly_out(&mut w);
+            assert!(
+                evs.iter()
+                    .any(|e| e.kind == crate::snapshot::ArmourEventKind::Penetration as u8),
+                "{evs:?}"
+            );
+            let vs = w.game().unwrap().vehicles[&v].clone();
+            (w.state_hash(), vs.seats.clone(), vs.components)
+        };
+        let a = run(0, 1);
+        assert_eq!(
+            run(0, 3),
+            a,
+            "the same shot at the same tick: identical damage"
+        );
+        // Other ticks roll other spall: not every outcome is the same.
+        let outcomes: Vec<_> = (1..8).map(|d| run(d, 1)).map(|r| (r.1, r.2)).collect();
+        assert!(outcomes.iter().any(|o| *o != (a.1.clone(), a.2)));
+        // Something inside was hurt.
+        assert!(a.1.iter().any(|s| s.hp < 100) || a.2 != [100, 100, 100, 80, 80, 60]);
     }
 }

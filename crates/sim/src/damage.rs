@@ -201,9 +201,9 @@ pub fn spall_dir(dir: FxVec3, cone: Fx, r: &mut RngStream) -> FxVec3 {
 
 /// One hit's damage to one inner box or external part.
 #[derive(Copy, Clone, Debug)]
-struct Dealt {
-    inner: Inner,
-    dmg: u32,
+pub(crate) struct Dealt {
+    pub inner: Inner,
+    pub dmg: u32,
 }
 
 /// What a plate hit does: the rule's result, the damage in order, and
@@ -440,7 +440,7 @@ impl MatchState {
     /// Applies `dealt` to vehicle `id` in order (see the module docs).
     /// Returns a knock-out cause if it ends the vehicle.
     #[allow(clippy::too_many_arguments)]
-    fn deal(
+    pub(crate) fn deal(
         &mut self,
         ctx: &mut DamageCtx,
         id: SimId,

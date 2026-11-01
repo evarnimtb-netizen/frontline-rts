@@ -777,6 +777,125 @@ mod tests {
         );
     }
 
+    fn v(x: i32, y: i32, z: i32) -> FxVec3 {
+        FxVec3::new(Fx::from_milli(x), Fx::from_milli(y), Fx::from_milli(z))
+    }
+
+    #[test]
+    fn slab_names_each_face_and_breaks_edge_ties_by_axis() {
+        let half = v(2000, 1000, 500);
+        // From outside along each axis, toward the centre.
+        let cases = [
+            (v(5000, 0, 0), v(-6000, 0, 0), Face::Front),
+            (v(-5000, 0, 0), v(6000, 0, 0), Face::Rear),
+            (v(0, 4000, 0), v(0, -6000, 0), Face::Left),
+            (v(0, -4000, 0), v(0, 6000, 0), Face::Right),
+            (v(0, 0, 3000), v(0, 0, -6000), Face::Top),
+            (v(0, 0, -3000), v(0, 0, 6000), Face::Bottom),
+        ];
+        for (p, q, want) in cases {
+            let (t, face, at) = slab(p, q, half).expect("hit");
+            assert_eq!(face, want, "{p:?}");
+            // Enters on the face's plane.
+            let on = match want {
+                Face::Front | Face::Rear => at.x.abs(),
+                Face::Left | Face::Right => at.y.abs(),
+                Face::Top | Face::Bottom => at.z.abs(),
+            };
+            let h = match want {
+                Face::Front | Face::Rear => half.x,
+                Face::Left | Face::Right => half.y,
+                Face::Top | Face::Bottom => half.z,
+            };
+            assert!((on - h).abs() <= Fx::from_raw(4), "{want:?}: {at:?}");
+            assert!(t > Fx::ZERO && t < Fx::ONE);
+        }
+        // Oblique: through the left face of the front half.
+        let (_, face, _) = slab(v(1000, 3000, 0), v(0, -4000, 100), half).unwrap();
+        assert_eq!(face, Face::Left);
+        // An edge (front and left at once): x wins; a corner: x wins too.
+        let (_, face, _) = slab(v(3000, 2000, 0), v(-2000, -2000, 0), half).unwrap();
+        assert_eq!(face, Face::Front);
+        let (_, face, _) = slab(v(3000, 2000, 1500), v(-2000, -2000, -2000), half).unwrap();
+        assert_eq!(face, Face::Front);
+        // Left and top together: y before z.
+        let (_, face, _) = slab(v(0, 2000, 1500), v(0, -2000, -2000), half).unwrap();
+        assert_eq!(face, Face::Left);
+        // Misses: parallel outside a slab, passing beside, stopping short,
+        // pointing away.
+        assert!(slab(v(5000, 1500, 0), v(-9000, 0, 0), half).is_none());
+        assert!(slab(v(5000, 3000, 0), v(-9000, -1000, 0), half).is_none());
+        assert!(slab(v(5000, 0, 0), v(-2000, 0, 0), half).is_none());
+        assert!(slab(v(5000, 0, 0), v(2000, 0, 0), half).is_none());
+        // Starting inside: t = 0.
+        let (t, _, _) = slab(v(0, 0, 0), v(5000, 0, 0), half).unwrap();
+        assert_eq!(t, Fx::ZERO);
+    }
+
+    #[test]
+    fn track_band_is_the_lower_part_of_a_hull_side() {
+        let hit = |part, face, z| ArmourHit {
+            t: Fx::ZERO,
+            part,
+            face,
+            zone: face.zone(part),
+            normal: FxVec3::ZERO,
+            point: FxVec3::ZERO,
+            local: v(0, 1400, z),
+        };
+        let hz = Fx::from_milli(680);
+        // 45 % of 1.36 m = 0.612 m from the bottom (z = −0.068).
+        assert!(in_track_band(&hit(BoxPart::Hull, Face::Left, -100), hz, 45));
+        assert!(!in_track_band(&hit(BoxPart::Hull, Face::Left, -50), hz, 45));
+        assert!(in_track_band(
+            &hit(BoxPart::Hull, Face::Right, -600),
+            hz,
+            45
+        ));
+        assert!(!in_track_band(
+            &hit(BoxPart::Hull, Face::Front, -600),
+            hz,
+            45
+        ));
+        assert!(!in_track_band(
+            &hit(BoxPart::Turret, Face::Left, -600),
+            hz,
+            45
+        ));
+    }
+
+    #[test]
+    fn segment_near_and_box_distance() {
+        let c = v(0, 0, 0);
+        assert!(segment_near(
+            v(-5000, 1000, 0),
+            v(10_000, 0, 0),
+            c,
+            Fx::from_milli(1001)
+        ));
+        assert!(!segment_near(
+            v(-5000, 1000, 0),
+            v(10_000, 0, 0),
+            c,
+            Fx::from_milli(999)
+        ));
+        // Beyond the end: distance to the end point.
+        assert!(!segment_near(
+            v(2000, 0, 0),
+            v(3000, 0, 0),
+            c,
+            Fx::from_milli(1900)
+        ));
+        let b = BoxFrame {
+            center: c,
+            axes: crate::vehicle::Basis::hull(Fx::ZERO, Fx::ZERO, Fx::ZERO),
+            half: v(1000, 1000, 1000),
+        };
+        assert_eq!(box_dist_sq_raw(&b, v(500, 0, 0)), 0);
+        let d = Fx::sqrt_q32(box_dist_sq_raw(&b, v(3000, 0, 0)));
+        assert!((d - Fx::from_int(2)).abs() <= Fx::from_raw(8), "{d:?}");
+    }
+
     #[test]
     fn aimed_descent_is_the_drop_compensation_angle() {
         // 790 m/s at 1000 m: atan(9.81 · 1.266 / 1580) = 0.45°.

@@ -844,6 +844,15 @@ fn first_box(
     best
 }
 
+/// The tie rule between a box hit and a capsule hit at segment fractions
+/// `box_t` and `capsule_t`: the earlier wins, the box on a tie. (The
+/// terrain test that follows includes its end point, so terrain wins a tie
+/// with either; ties within boxes or capsules go to the lower id.)
+#[inline]
+fn box_before(box_t: Option<Fx>, capsule_t: Option<Fx>) -> bool {
+    box_t.is_some_and(|b| capsule_t.is_none_or(|c| b <= c))
+}
+
 /// Integrates one chunk of match projectile slots for `substeps` substeps
 /// (see the module docs). Finished projectiles are cleared and reported in
 /// `ended`; their effects go to `events`, both in slot order. `box_tests`
@@ -936,7 +945,7 @@ pub(crate) fn fly(
             // Earliest hit wins; at equal t: terrain, then box, then
             // capsule. A box hit re-tests the terrain in front of it at
             // 0.25 m steps (a crest just in front of a hull blocks).
-            let box_first = boxed.is_some_and(|(bt, _, _)| hit.is_none_or(|(hs, _)| bt <= hs));
+            let box_first = box_before(boxed.map(|b| b.0), hit.map(|h| h.0));
             let mut end_s = Fx::ONE;
             let ground = if box_first {
                 let (bt, _, _) = boxed.expect("box first");
@@ -1517,6 +1526,23 @@ mod tests {
         let total: u32 = (1..=1000).map(|n| interval_after(&w, n)).sum();
         assert_eq!(total, 3600);
         assert_eq!(interval_ceil(&w), 4);
+    }
+
+    #[test]
+    fn earliest_hit_tie_rule() {
+        let h = Fx::HALF;
+        assert!(box_before(Some(h), Some(h)), "box before capsule on a tie");
+        assert!(box_before(Some(h), Some(h + Fx::EPSILON)));
+        assert!(!box_before(Some(h + Fx::EPSILON), Some(h)));
+        assert!(box_before(Some(Fx::ONE), None));
+        assert!(!box_before(None, Some(h)));
+        // Terrain wins a tie: the re-test includes the segment's end, so a
+        // box face lying exactly on the ground surface is reached as ground.
+        let t = Heightfield::generate(TerrainKind::Flat, 256, 1);
+        let z = t.height_at(FxVec2::from_int(100, 100));
+        let a = FxVec3::new(Fx::from_int(90), Fx::from_int(100), z + Fx::ONE);
+        let b = FxVec3::new(Fx::from_int(100), Fx::from_int(100), z);
+        assert_eq!(t.segment_hit_fine(a, b), Some(b));
     }
 
     #[test]
