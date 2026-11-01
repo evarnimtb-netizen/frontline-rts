@@ -48,6 +48,19 @@ it.
   cooldown or count shown on the button. Write this up as a spec next to
   S1b; the AI should use grenades as well.
 
+- [ ] **A more military UI look (owner, 2026-10-31).** "This one looks like
+  something from GMod or 'the office'. Way too corporate. The look itself is
+  good, just not the right mood." Keep the HUD v2 layout and its
+  readability; change the mood.
+  - Three moods were mocked (field manual, olive steel, map table) and a
+    blend of the best parts was revised as HUD v2.3 "Map table": felt
+    panels, paper minimap, grease-pencil objectives. Mocks:
+    `docs/slices/mocks/mood/`; theme spec: `docs/slices/S1b-ui-theme.md`.
+  - Open owner question: the blend's panels are 0.92–0.95 opaque, while
+    the owner asked for a lighter, see-through console (0.38–0.55).
+  - Applied through theme constants (`frontline_theme.tres`), so it is a
+    theme pass, not a re-layout.
+
 ## Known issues found during S1
 
 - [ ] Map balance: the south-west base wins about 75 % of AI-vs-AI matches,
@@ -105,3 +118,9 @@ it.
   0.27–0.32 ms against the 0.3 ms budget (the view test's own limit is a
   loose 2 ms).
 - [ ] `bench/results` S1 hashes are stale since S1b.
+- [ ] Capture chips: the progress fill covers the letter (the "C" chip at
+  1280 is hard to read). Draw the fill under the letter or as a bar.
+- [ ] Trench lines are hard to see among mortar craters at RTS camera
+  height; they need a stronger edge or darker floor shading.
+- [ ] The fix pass cut the call-in queue from 10 to 5 to match the HUD
+  spec. That is a game rule; confirm with the owner.
