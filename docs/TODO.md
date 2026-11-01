@@ -305,6 +305,7 @@ questions, work proceeds on (A).
   help. (A) Next slice: a sticky hunt (keep the last seen vehicle for a
   few seconds) and engineers that move with an escort or under smoke.
   (B) Accept satchels as a player tool only.
+  S3c: sticky hunts are Part B2 (`docs/slices/S3c-armour.md`); baseline 96 hunts, 1 throw.
 - [ ] **S3b-37. Match length.** Met under the owner's loosened T12 (no
   match under 10 or over 40 min, median 15-30): final 11.2-26.2, median
   18.1. Against the old 12-25 band 5 of 20 fall outside. (A) Nothing to
@@ -324,6 +325,7 @@ questions, work proceeds on (A).
 - [ ] **S3b-40. Base-side bias.** Base 1 wins 58 % of 78 decided matches
   (67 % on seeds 1-10; 70 % in the plan baseline before S3b). (A) Study
   the map and AI routes next slice. (B) Accept.
+  S3c: cause found in the map (S3c-8).
 - [x] **S3b-41. T10 by faction.** Owner 2026-11-01: (A) AI brings a second base of fire (S3c). US attackers (M1919) lose 74 %, German
   attackers (MG 42) 41 % on 10 seeds; T10 pooled misses (57.5 %). (A)
   Accept the historical rate-of-fire gap, keep T10 pooled with a
@@ -332,11 +334,63 @@ questions, work proceeds on (A).
 - [ ] **S3b-42. AI rearm.** The AI never sends a tank to its base to rearm,
   so dry MGs stay dry. (A) Next slice: rearm when both MGs are dry or HE
   is at the reserve. (B) Leave it.
+  S3c: Part B1 (S3c-10).
 - [ ] **Follow-ups (next slice).** Bail-out (S3b-5 (B)) to raise rocket
   knock-outs (16 of 221 KOs over 80 matches); sticky satchel hunts
   (S3b-36); towed AT guns (S3b-8); MG stowage on the vehicle card, not only
   the tooltip; ammo causes 64 % of knock-outs (an ammo fire always ends
   the tank).
+
+## S3c-armour (in progress, branch `s3c-armour`)
+
+Spec: `docs/slices/S3c-armour.md` (baseline, base-bias diagnosis, history,
+bail-out design, Part A / Part B order, targets). Handles S3b-5 (B),
+S3b-36, S3b-38 (A), S3b-40, S3b-41 (A), S3b-42 and the MG-on-card
+follow-up. Work proceeds on (A) of each question below.
+
+- [ ] **S3c-1. Bail triggers.** (A) Ammo fire at once, engine fire after
+  8 s, fewer than 3 crew, gun and mobility both out, disabled and
+  penetrated again within 10 s, manual Abandon. (B) Only fires and crew
+  losses.
+- [ ] **S3c-2. Capture.** (A) On (`vehicles.recrew.capture`): enemy crews
+  or infantry may re-crew an abandoned tank; the AI does not capture in
+  S3c. (B) Off. (C) On, and the AI captures too.
+- [ ] **S3c-3. Who can re-crew.** (A) Crew squads, and any infantry but AT
+  teams as untrained crew (reload 150 %, traverse 75 %, spread 150 %).
+  (B) Crew squads only.
+- [ ] **S3c-4. Crews in base.** (A) Dismissed after 30 s in base, no
+  refund (the base refills crew seats free). (B) Kept until the player
+  dismisses them. (C) Refund their men's value.
+- [ ] **S3c-5. Pop and vehicle limit.** (A) An abandoned tank counts
+  toward nobody; re-crewing needs a free slot and pop. (B) It counts
+  toward its last owner until destroyed or captured.
+- [ ] **S3c-6. Keys.** (A) K = Crew tool / re-crew (right-click context
+  with a crew squad); Bail out only as a card button with a confirm click.
+  (B) Other keys.
+- [ ] **S3c-7. Crew loadouts and hatches.** (A) Germany MP 40 + P 38s,
+  USA two M3 + M1911A1s, no grenades; the M4A3 (75) with the late-1943
+  loader's hatch. Exact counts are a citation task. (B) Pistols only.
+- [ ] **S3c-8. Base bias** (S3b-40). Cause found: the map's one valley
+  band runs only across the south and puts base 0's near point B in a
+  hollow 15.6 m below C; base 0 lost 134 tanks to base 1's 87 over 80
+  matches, mostly at B, shot from ~10 m higher. A mirrored valley probe:
+  110 vs 102, base 1 wins 52.5 %. (A) Mirror the valley (data) and make
+  the spawn ring symmetric (code). (B) A point-symmetric terrain flag.
+  (C) Leave it.
+- [ ] **S3c-9. Shooting abandoned tanks.** (A) Not auto-targeted;
+  `AttackUnit` can; the AI denies enemy abandoned tanks when idle. (B)
+  Auto-targeted.
+- [ ] **S3c-10. AI rearm** (S3b-42). Measured: AI tanks spend 0.2 % of
+  their time with both MGs dry and 1.6 % with HE at the reserve, so this is
+  not a balance lever. (A) Rearm at both MGs dry, HE <= reserve or AP <= 3
+  with no enemy vehicle near; back at 90 % or after 120 s. (B) Dry MGs only.
+- [ ] **S3c-11. Second base of fire** (S3b-41). (A) When the base's fire
+  weight (rpm x suppression) is below the enemy MG team's and >= 3 squads
+  are assigned. (B) Always two bases with >= 3 squads.
+- [ ] **S3c-12. Crew all dead.** (A) Abandoned (intact, re-crewable). (B)
+  Destroyed as today.
+- [ ] **S3c-13. Match-length runs.** (A) Tune measures with `--minutes 45`
+  (the CLI stops at 30 and calls it a draw). (B) Keep 30.
 
 ## S3 owner checklist (needs a person)
 
