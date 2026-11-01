@@ -19,8 +19,10 @@ it.
     a heavy solid slab.
   - **Minimap:** free-standing, larger than today's 220 px, and lightly
     framed. The owner suggested the top-left corner; that is being weighed
-    against bottom-left. It is **north-up by default**, with an optional
-    toggle to rotate with the camera (decided 2026-10-31).
+    against bottom-left. It was **north-up by default**, with an optional
+    toggle to rotate with the camera (decided 2026-10-31). Since 2026-11-01
+    rotating with the camera is the default, drawn as the turned map alone
+    with no disc or hatch behind it (owner request).
   - **Capture points:** the A–E buttons move into the top bar, with capture
     progress drawn inside each button (owner request).
   - **Call-in:** a column at the bottom right, just above or beside the

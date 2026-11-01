@@ -354,9 +354,10 @@ Built by `match/hud/` on `MatchView`; layout, colours and fonts follow
 normal and compact metric sets). `hud_layout.gd` places the pieces and keeps
 at least one window pixel per HUD pixel, so 1280x800 lays out natively with
 the compact metrics instead of shrinking 14 px text to 11 px. Pieces:
-`top_bar.gd` (with the A–E chips), `minimap.gd` (north-up rounded square;
-setting `minimap_rotate` turns it with the camera as a disc with an off-map
-hatch; `minimap_dock` puts it bottom-left), `event_feed.gd` (3 lines,
+`top_bar.gd` (with the A–E chips), `minimap.gd` (setting `minimap_rotate`,
+on by default, turns it with the camera: only the turned map square is
+drawn, with no backdrop, and clicks in the box's empty corners reach the
+world; off, a north-up rounded square; `minimap_dock` puts it bottom-left), `event_feed.gd` (3 lines,
 click-through), `roster.gd` (group tabs, squad cards with per-man pips),
 `detail_panel.gd`, `orders_grid.gd` (abilities, orders, stance strip) and
 `call_in_panel.gd`. Rings under selected and hovered soldiers are one

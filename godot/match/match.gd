@@ -15,7 +15,8 @@ extends Node3D
 ## - match_mock.tscn: MockMatchSource and MockWorld (HUD work and tests).
 ##
 ## --capture_setup (see Session) stages a screenshot on the mock: "hud",
-## "throw", "rotated" (minimap turning with the camera), "docked" (minimap
+## "throw", "rotated" (minimap turning with the camera), "north_up"
+## (minimap locked north-up), "docked" (minimap
 ## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
 ##
 ## Net mode (S2, Session.net_mode): the bridge source gets the lobby's link
@@ -184,7 +185,7 @@ func _line(pts: Array) -> PackedVector3Array:
 ## Screenshot staging (Session --capture_setup).
 func _stage(what: String) -> void:
 	match what:
-		"hud", "pause", "throw", "rotated", "docked":
+		"hud", "pause", "throw", "rotated", "north_up", "docked":
 			# A firefight in the open south-west of D: four of ours facing
 			# three of theirs about 110 m away.
 			source.prewarm(60.0)
@@ -214,6 +215,11 @@ func _stage(what: String) -> void:
 			elif what == "rotated":
 				# Minimap turning with the camera (not saved as a setting).
 				view.minimap.rotate_with_camera = true
+				camera.yaw_deg = 30.0
+				camera.jump_to(Vector3(176, 0, 276))
+			elif what == "north_up":
+				# Minimap locked north-up (not saved as a setting).
+				view.minimap.rotate_with_camera = false
 				camera.yaw_deg = 30.0
 				camera.jump_to(Vector3(176, 0, 276))
 			elif what == "docked":

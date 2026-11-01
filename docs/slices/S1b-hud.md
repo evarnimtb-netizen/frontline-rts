@@ -4,6 +4,7 @@ Mocks: hud-mock-v2.png, hud-mock-v2-1280.png (generator gen_hud_v2.py).
 
 **Owner corrections that override the text below:**
 - The minimap shows the **whole map, north-up**, as a rounded square, by default. A setting rotates it with the camera; only then is it drawn as a disc with an off-map hatch. Drop the radar mode that centres on the camera.
+- **Minimap (owner, 2026-11-01):** rotating with the camera is now the default. Drop the disc and its hatch: only the turned map square is drawn, floating over the world, and clicks in the empty corners reach the world. The lock button sits in the box's bottom-right corner, outside the map at any yaw.
 - The A–E capture chips go in the top bar (done in the mock).
 - **Hotkeys (owner, 2026-10-31):**
   - Stance uses the direct-control keys: X stand, C crouch, Z prone. Pressing the active stance again returns to Auto. There is no V key, so V stays melee in direct control.

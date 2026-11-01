@@ -1,19 +1,20 @@
 extends Control
-## Minimap (HUD v2): the whole map, north-up by default, as a rounded
-## square, lightly framed. Shows the map image, capture points, own squads
-## and spotted enemies (the state already hides unspotted ones), selected
-## squads and the camera footprint.
+## Minimap (HUD v2): the whole map, lightly framed. Shows the map image,
+## capture points, own squads and spotted enemies (the state already hides
+## unspotted ones), selected squads and the camera footprint.
 ##
-## Setting "minimap_rotate": the map turns with the camera (camera forward
-## up), drawn as a disc whose diameter is the map's diagonal, so the whole
-## map always fits; the rest of the disc is hatched off-map ground. A north
-## marker sits on the rim and the yaw shows while the camera turns.
+## Setting "minimap_rotate" (default on): the map turns with the camera
+## (camera forward up), sized so its diagonal is the box side and the whole
+## map fits at any yaw. Only the turned square is drawn, floating over the
+## world; the box's empty corners draw nothing and pass clicks through. A
+## north marker sits just off the map's north edge and the yaw shows while
+## the camera turns. Off: north-up, a rounded square filling the box.
 ## Setting "minimap_dock": "top_left" (default) or "bottom_left".
 ##
 ## Input in both modes goes through the inverse of the drawing transform:
 ## left click / drag moves the camera there, right-click (Ctrl: attack)
-## orders the selection there. The lock button on the rim toggles the
-## rotation setting.
+## orders the selection there. The lock button in the box's bottom-right
+## corner (outside the map at any yaw) toggles the rotation setting.
 ##
 ## The map image comes from state.map.minimap (a Texture2D, sent whenever
 ## it changes) or set_map_texture().
@@ -23,7 +24,7 @@ const LOCK_R := 11.0
 
 var view: MatchView
 ## Rotate with the camera (else north-up).
-var rotate_with_camera := false
+var rotate_with_camera := true
 ## "top_left" or "bottom_left" (read by the HUD layout).
 var dock := "top_left"
 var _tex: Texture2D
@@ -74,8 +75,8 @@ func yaw_rad() -> float:
 	return deg_to_rad(float(view.camera.get("yaw_deg")))
 
 
-## Half the drawn map side in px: the full box north-up; the disc's
-## inscribed square (side = diameter / sqrt 2) when rotating.
+## Half the drawn map side in px: the full box north-up; when rotating,
+## side = box side / sqrt 2, so the turned square stays in the box.
 func map_half_px() -> float:
 	var half := minf(size.x, size.y) * 0.5
 	return half / sqrt(2.0) if rotate_with_camera else half
@@ -96,18 +97,21 @@ func world_to_map(p: Vector3) -> Vector2:
 ## of world_to_map: un-rotate by the yaw, then scale.
 func map_to_world(m: Vector2) -> Vector3:
 	var half := view.map_half
-	var u := ((m - centre()) / map_half_px()).rotated(-yaw_rad())
-	u = u.clamp(Vector2(-1, -1), Vector2(1, 1))
+	var u := _map_units(m).clamp(Vector2(-1, -1), Vector2(1, 1))
 	var x := u.x * half
 	var z := u.y * half
 	return Vector3(x, view.ground_y(x, z), z)
 
 
-## Centre of the lock button: bottom-right corner, or the rim at 4:30.
+## Map px → map units (-1..1 on both axes inside the map), un-rotated.
+func _map_units(m: Vector2) -> Vector2:
+	return ((m - centre()) / map_half_px()).rotated(-yaw_rad())
+
+
+## Centre of the lock button: the box's bottom-right corner in both modes.
+## Rotating, the map reaches at most half the box side from the centre, so
+## the corner stays clear of it at any yaw.
 func lock_centre() -> Vector2:
-	var half := minf(size.x, size.y) * 0.5
-	if rotate_with_camera:
-		return centre() + Vector2(1, 1).normalized() * (half - LOCK_R - 1.0)
 	return size - Vector2(LOCK_R + 5.0, LOCK_R + 5.0)
 
 
@@ -119,9 +123,6 @@ func _draw() -> void:
 	var half := minf(size.x, size.y) * 0.5
 	var c := centre()
 	var yaw := yaw_rad()
-	if rotate_with_camera:
-		draw_circle(c, half, HudStyle.OFF_MAP)
-		_hatch_disc(c, half)
 	var hs := map_half_px()
 	var corners := PackedVector2Array()
 	var uvs := PackedVector2Array()
@@ -138,13 +139,13 @@ func _draw() -> void:
 	var edge := corners.duplicate()
 	edge.append(corners[0])
 	draw_polyline(edge, Color(HudStyle.TEXT, 0.55 if rotate_with_camera else 0.35), 1.5, true)
-	if rotate_with_camera:
-		draw_arc(c, half - 0.5, 0.0, TAU, 64, Color(HudStyle.TEXT, 0.25), 1.0, true)
 	var local := view.local_player
 	# Squads: own and spotted enemy; selected ones get a white frame.
 	var sel: Node = view.selection
 	var marked: PackedInt32Array = sel.selected_squads()
 	for sq in view.state.get("squads", []):
+		if _off_map(sq.pos):
+			continue
 		var own := int(sq.owner) == local
 		var at := world_to_map(sq.pos)
 		if own and marked.has(int(sq.id)):
@@ -153,6 +154,8 @@ func _draw() -> void:
 		draw_rect(Rect2(at - Vector2(3, 3), Vector2(6, 6)), Color(0.08, 0.1, 0.12), false, 1.0)
 	# Vehicles (S3): rectangles along the hull; wrecks as dim crosses.
 	for v in view.state.get("vehicles", []):
+		if _off_map(v.pos):
+			continue
 		var at := world_to_map(v.pos)
 		if Vehicles.is_wreck(v):
 			var wc := Color(HudStyle.TEXT, 0.35)
@@ -174,6 +177,8 @@ func _draw() -> void:
 		draw_polyline(pts, Color(0.08, 0.1, 0.12), 1.0)
 	# Capture points.
 	for p in view.state.get("points", []):
+		if _off_map(p.pos):
+			continue
 		var at := world_to_map(p.pos)
 		var owner_i := int(p.get("owner", -1))
 		var ring := HudStyle.ACCENT if p.get("contested", false) else HudStyle.side_color(owner_i, local)
@@ -182,9 +187,7 @@ func _draw() -> void:
 		HudStyle.text(self, bold, Vector2(at.x, at.y + 5.0), str(p.id), HudStyle.FONT_SMALL, HudStyle.TEXT, 0)
 	# Camera footprint.
 	if view.camera != null and view.camera.has_method("ground_corners"):
-		var poly := PackedVector2Array()
-		for w in view.camera.ground_corners():
-			poly.append(_clamp_in(world_to_map(w)))
+		var poly := _footprint(view.camera.ground_corners())
 		if poly.size() >= 3:
 			var fill := PackedColorArray()
 			fill.resize(poly.size())
@@ -223,35 +226,44 @@ func _rounded_square(c: Vector2, hs: float, pts: PackedVector2Array, uvs: Packed
 			uvs.append((p - (c - Vector2(hs, hs))) / (2.0 * hs))
 
 
-## Off-map hatching inside the disc (lines clipped to the circle).
-func _hatch_disc(c: Vector2, rad: float) -> void:
-	var col := HudStyle.OFF_MAP_LINE
-	var d := -rad * 1.5
-	while d < rad * 1.5:
-		# Lines x - y = d (falling to the right), clipped to the circle.
-		var dist := absf(d) / sqrt(2.0)
-		if dist < rad:
-			var hl := sqrt(rad * rad - dist * dist)
-			var foot := c + Vector2(d * 0.5, -d * 0.5)
-			var dir := Vector2(1, 1).normalized()
-			draw_line(foot - dir * hl, foot + dir * hl, col, 1.5)
-		d += 7.0
-
-
-func _clamp_in(p: Vector2) -> Vector2:
+## True when a world point is off the map while rotating: nothing is drawn
+## in the box's empty corners. North-up the box is the map.
+func _off_map(p: Vector3) -> bool:
 	if not rotate_with_camera:
-		return p.clamp(Vector2.ZERO, size)
-	var c := centre()
-	var half := minf(size.x, size.y) * 0.5
-	var v := p - c
-	return c + v.limit_length(half)
+		return false
+	var half := view.map_half
+	return absf(p.x) > half + 0.5 or absf(p.z) > half + 0.5
+
+
+## Camera footprint in map px. North-up its corners are clamped to the box;
+## rotating, the polygon is clipped to the map square (in map units, before
+## the turn) so it never spills into the empty corners.
+func _footprint(ground: Array) -> PackedVector2Array:
+	var poly := PackedVector2Array()
+	if not rotate_with_camera:
+		for w in ground:
+			poly.append(world_to_map(w).clamp(Vector2.ZERO, size))
+		return poly
+	var half := view.map_half
+	for w in ground:
+		poly.append(Vector2(w.x / half, w.z / half))
+	if poly.size() < 3:
+		return PackedVector2Array()
+	var square := PackedVector2Array([Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)])
+	var parts := Geometry2D.intersect_polygons(poly, square)
+	poly = PackedVector2Array()
+	if parts.is_empty():
+		return poly
+	for u in parts[0]:
+		poly.append(centre() + u.rotated(yaw_rad()) * map_half_px())
+	return poly
 
 
 func _gui_input(event: InputEvent) -> void:
 	if view == null or view.input_blocked():
 		return
 	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT and event.position.distance_to(lock_centre()) <= LOCK_R + 2.0:
+		if event.button_index == MOUSE_BUTTON_LEFT and _on_lock(event.position):
 			toggle_rotation()
 		elif not _inside(event.position):
 			return
@@ -269,15 +281,21 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 
 
-## Clicks outside the disc (rotating) pass through to the world.
+## On the map: the box north-up, the turned square when rotating. Clicks
+## elsewhere in the box (rotating) pass through to the world.
 func _inside(p: Vector2) -> bool:
 	if not rotate_with_camera:
 		return Rect2(Vector2.ZERO, size).has_point(p)
-	return p.distance_to(centre()) <= minf(size.x, size.y) * 0.5
+	var u := _map_units(p)
+	return absf(u.x) <= 1.0 and absf(u.y) <= 1.0
+
+
+func _on_lock(p: Vector2) -> bool:
+	return p.distance_to(lock_centre()) <= LOCK_R + 2.0
 
 
 func _has_point(p: Vector2) -> bool:
-	return _inside(p)
+	return _inside(p) or _on_lock(p)
 
 
 ## Flips north-up / rotate and saves it as the setting.
@@ -290,6 +308,6 @@ func toggle_rotation() -> void:
 
 
 func _get_tooltip(at: Vector2) -> String:
-	if at.distance_to(lock_centre()) <= LOCK_R + 2.0:
+	if _on_lock(at):
 		return "Rotate with the camera" if not rotate_with_camera else "Lock north-up"
 	return "Click: look here · Right-click: move here (Ctrl: attack)"
