@@ -28,6 +28,12 @@ extends CanvasLayer
 ## waiting / paused-by panels, NetDisconnectScreen the reason the link
 ## ended. Positional orders get a pending marker from click time until
 ## the order executes (state `pending_orders`; docs/match_state.md).
+##
+## Vehicles (S3) arrive in state.vehicles. Own vehicle ids share the
+## soldier id space and sit in the same selection; picking hits a vehicle
+## inside its projected footprint or within 14 px of its centre. Observed
+## main-gun and rocket impacts (state.armour_events) become short hit
+## markers for 1.5 s, at most 6.
 
 signal intent(kind: StringName, data: Dictionary)
 signal selection_changed(squad_ids: PackedInt32Array)
@@ -46,6 +52,12 @@ signal retreat_units_ordered(unit_ids: PackedInt32Array)
 signal dig_units_ordered(unit_ids: PackedInt32Array, polyline: PackedVector3Array)
 signal stance_ordered(unit_ids: PackedInt32Array, stance: String)
 signal throw_ordered(unit_ids: PackedInt32Array, item: String, target: Vector3, each: bool)
+signal reverse_units_ordered(unit_ids: PackedInt32Array, target: Vector3)
+signal face_units_ordered(unit_ids: PackedInt32Array, target: Vector3)
+signal attack_unit_ordered(unit_ids: PackedInt32Array, target: int)
+signal set_ammo_ordered(unit_ids: PackedInt32Array, ammo: String)
+signal repair_units_ordered(unit_ids: PackedInt32Array)
+signal follow_units_ordered(unit_ids: PackedInt32Array, vehicle: int)
 signal call_in_requested(squad_type: String)
 signal surrender_requested
 signal pause_requested(paused: bool)
@@ -74,22 +86,24 @@ const MAN_NAMES := {
 	"mg": ["Gunner", "Loader", "Carrier"],
 	"engineer": ["Sgt (lead)", "Sapper 2", "Sapper 3", "Sapper 4", "Sapper 5"],
 	"mortar": ["Gunner", "Loader", "Carrier"],
+	"at": ["Gunner", "Loader"],
 }
 ## Weapon by faction and squad type when the state gives none.
 const WEAPONS := {
-	"germany": {"rifle": "Kar98k", "mg": "MG42", "engineer": "MP40", "mortar": "GrW 34"},
-	"usa": {"rifle": "M1 Garand", "mg": "M1919", "engineer": "M3", "mortar": "M1 mortar"},
+	"germany": {"rifle": "Kar98k", "mg": "MG42", "engineer": "MP40", "mortar": "GrW 34", "at": "Panzerschreck"},
+	"usa": {"rifle": "M1 Garand", "mg": "M1919", "engineer": "M3", "mortar": "M1 mortar", "at": "Bazooka"},
 }
 const ORDER_TEXT := {
 	"idle": "Holding", "move": "Moving", "attack_move": "Attacking", "retreat": "Retreating",
 	"dig": "Digging", "barrage": "Firing", "setup": "Setting up", "hold": "Holding",
-	"throw": "Throwing",
+	"throw": "Throwing", "follow": "Escorting",
 }
 ## Intents that get a pending-order marker in net mode, by marker kind.
 const PENDING_KINDS := {
 	&"move": "move", &"move_units": "move", &"attack_move": "attack_move",
 	&"attack_move_units": "attack_move", &"barrage": "barrage", &"throw": "throw",
 	&"throw_each": "throw", &"dig": "dig", &"dig_units": "dig",
+	&"reverse_units": "move", &"face_units": "move",
 }
 ## A click-time marker lives this long (s) unless the state's
 ## pending_orders confirms it; once confirmed the state's entry is drawn.
@@ -98,7 +112,12 @@ const LOCAL_PENDING_S := 0.5
 ## kind confirms it.
 const PENDING_MATCH_M := 3.0
 ## Short squad names for cards and tiles.
-const SHORT_NAMES := {"rifle": "Rifle", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar"}
+const SHORT_NAMES := {"rifle": "Rifle", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar", "at": "AT team"}
+## Hit markers (S3): at most this many at once, each for HIT_TIME s.
+const HIT_MAX := 6
+const HIT_TIME := 1.5
+## Vehicle centre for picking and markers: this far above the hull origin.
+const VEHICLE_PICK_LIFT := 1.2
 
 @export var camera_path: NodePath
 @export var overlay_path: NodePath
@@ -141,8 +160,23 @@ var pending_draw: Array = []
 ## Net mode: the slot whose 60 s "waiting for" timer ran down (the relay
 ## then surrenders for it), -1 none. The end screen says "timed out".
 var net_timed_out_slot := -1
+## S3 vehicles: id -> vehicle Dictionary (own, seen enemy and wrecks), and
+## the match's vehicle types (rules.vehicle_types).
+var vehicles_by_id: Dictionary = {}
+var vehicle_types: Dictionary = {}
+## Vehicle picking arrays, parallel (live vehicles in front of the camera):
+## id, centre on screen, camera distance, side (1 own, 0 enemy).
+var veh_pick_ids := PackedInt32Array()
+var veh_pick_screen := PackedVector2Array()
+var veh_pick_depth := PackedFloat32Array()
+var veh_pick_own := PackedByteArray()
+## Hit markers to draw: {word, pos, t (age s)}, oldest first.
+var hit_markers: Array = []
+## CPU time of the last vehicle index in microseconds (tests).
+var vehicle_index_us := 0
 var _pending_local: Array = []
 var _clock := 0.0
+var _veh_no := {}
 ## Stable per-type squad numbers for labels: id -> n, "owner:type" -> count.
 var _squad_no := {}
 var _type_count := {}
@@ -219,6 +253,8 @@ func update_state(s: Dictionary) -> void:
 		if sp != null and vp.grow(40.0).has_point(sp):
 			squad_screen[id] = sp
 	_index_soldiers(s, vp)
+	_index_vehicles(s, vp)
+	_note_hits(s.get("armour_events", []))
 	selection.prune()
 	hud.update_state(s)
 	for c in [top_bar, minimap, call_in, roster, detail, orders, units]:
@@ -306,6 +342,14 @@ func _play_effects(effects: Array) -> void:
 				AudioManager.play_3d(&"explosion", fx.pos)
 			"dig":
 				AudioManager.play_3d(&"dig", fx.pos)
+			"cannon":
+				AudioManager.play_3d(&"cannon", fx.pos)
+			"rocket_launch":
+				AudioManager.play_3d(&"rocket_launch", fx.pos)
+			"armour_hit":
+				AudioManager.play_3d(&"ap_impact", fx.pos, -4.0 if fx.get("result", "") == "ricochet" else 0.0)
+			"cook_off":
+				AudioManager.play_3d(&"explosion", fx.pos, 3.0, 0.02)
 
 
 ## True while a modal (pause menu, end screen, net disconnect) owns input,
@@ -359,6 +403,113 @@ func _update_pending(s: Dictionary) -> void:
 	_pending_local = _pending_local.filter(func(l: Dictionary) -> bool: return not l.confirmed and _clock - float(l.t) < LOCAL_PENDING_S)
 	for l in _pending_local:
 		pending_draw.append({"pos": l.pos, "kind": l.kind, "age": _clock - float(l.t)})
+
+
+## Indexes state.vehicles and projects the live ones for picking.
+func _index_vehicles(s: Dictionary, vp: Rect2) -> void:
+	var t0 := Time.get_ticks_usec()
+	vehicles_by_id.clear()
+	vehicle_types = s.get("rules", {}).get("vehicle_types", vehicle_types)
+	veh_pick_ids.clear()
+	veh_pick_screen.clear()
+	veh_pick_depth.clear()
+	veh_pick_own.clear()
+	var cam_pos := camera.global_position if camera != null else Vector3.ZERO
+	var area := vp.grow(60.0)
+	for v in s.get("vehicles", []):
+		var id: int = v.id
+		vehicles_by_id[id] = v
+		if not _veh_no.has(id) and int(v.owner) >= 0:
+			var key := "%d:v:%s" % [int(v.owner), v.type]
+			_type_count[key] = int(_type_count.get(key, 0)) + 1
+			_veh_no[id] = _type_count[key]
+		if camera == null or Vehicles.is_wreck(v):
+			continue
+		var p: Vector3 = v.pos + Vector3(0, VEHICLE_PICK_LIFT, 0)
+		if camera.is_position_behind(p):
+			continue
+		var sp := camera.unproject_position(p)
+		if not area.has_point(sp):
+			continue
+		veh_pick_ids.append(id)
+		veh_pick_screen.append(sp)
+		veh_pick_depth.append(cam_pos.distance_to(p))
+		veh_pick_own.append(1 if int(v.owner) == local_player else 0)
+	vehicle_index_us = Time.get_ticks_usec() - t0
+
+
+## Turns observed main-gun and rocket impacts into hit markers.
+func _note_hits(events: Array) -> void:
+	var dt := get_process_delta_time()
+	for h in hit_markers:
+		h.t += dt
+	hit_markers = hit_markers.filter(func(h: Dictionary) -> bool: return h.t < HIT_TIME)
+	for e in events:
+		var word: String = Vehicles.HIT_WORDS.get(String(e.get("kind", "")), "")
+		if word == "" or not e.get("pos") is Vector3:
+			continue
+		hit_markers.append({"word": word, "pos": e.pos, "t": 0.0, "kind": String(e.kind), "own": int(e.get("owner", -1)) == local_player})
+	while hit_markers.size() > HIT_MAX:
+		hit_markers.pop_front()
+
+
+func is_vehicle(id: int) -> bool:
+	return vehicles_by_id.has(id)
+
+
+## An own vehicle that is not a wreck.
+func own_vehicle(id: int) -> bool:
+	var v: Dictionary = vehicles_by_id.get(id, {})
+	return not v.is_empty() and int(v.owner) == local_player and not Vehicles.is_wreck(v)
+
+
+## An own living soldier or vehicle (what the selection may hold).
+func own_unit(id: int) -> bool:
+	return own_soldier(id) or own_vehicle(id)
+
+
+## Where a selected unit stands (soldier feet or hull origin).
+func unit_pos(id: int) -> Vector3:
+	if soldiers_by_id.has(id):
+		return soldiers_by_id[id].pos
+	if vehicles_by_id.has(id):
+		return vehicles_by_id[id].pos
+	return Vector3.ZERO
+
+
+func vehicle_type(id: int) -> Dictionary:
+	var v: Dictionary = vehicles_by_id.get(id, {})
+	return vehicle_types.get(String(v.get("type", "")), {})
+
+
+## Card label of a vehicle: its short type name, numbered when the side
+## has had several of that type ("Panzer IV 2"); long form adds the full
+## name.
+func vehicle_label(id: int, long := false) -> String:
+	var v: Dictionary = vehicles_by_id.get(id, {})
+	if v.is_empty():
+		return ""
+	var vt := vehicle_type(id)
+	var base := Vehicles.short_name(vt, String(v.get("name", "Vehicle")))
+	var key := "%d:v:%s" % [int(v.owner), v.type]
+	var label := "%s %d" % [base, _veh_no.get(id, 1)] if int(_type_count.get(key, 0)) > 1 else base
+	var full := String(v.get("name", vt.get("name", base)))
+	return "%s · %s" % [label, full] if long and full != base else label
+
+
+## Projected footprint of a vehicle (4 screen points), empty when any
+## corner is behind the camera.
+func vehicle_screen_footprint(id: int) -> PackedVector2Array:
+	var v: Dictionary = vehicles_by_id.get(id, {})
+	var out := PackedVector2Array()
+	if v.is_empty() or camera == null:
+		return out
+	for c in Vehicles.footprint(v.pos, float(v.yaw), vehicle_type(id)):
+		var p: Vector3 = c + Vector3(0, 0.4, 0)
+		if camera.is_position_behind(p):
+			return PackedVector2Array()
+		out.append(camera.unproject_position(p))
+	return out
 
 
 func own_squad(id: int) -> bool:
@@ -536,6 +687,18 @@ func emit_intent(kind: StringName, data: Dictionary) -> void:
 			stance_ordered.emit(uids, data.stance)
 		&"throw", &"throw_each":
 			throw_ordered.emit(uids, data.item, data.target, kind == &"throw_each")
+		&"reverse_units":
+			reverse_units_ordered.emit(uids, data.target)
+		&"face_units":
+			face_units_ordered.emit(uids, data.target)
+		&"attack_unit":
+			attack_unit_ordered.emit(uids, int(data.target))
+		&"set_ammo":
+			set_ammo_ordered.emit(uids, data.ammo)
+		&"repair_units":
+			repair_units_ordered.emit(uids)
+		&"follow_units":
+			follow_units_ordered.emit(uids, int(data.vehicle))
 		&"call_in":
 			call_in_requested.emit(data.type)
 		&"surrender":

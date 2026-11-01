@@ -17,7 +17,8 @@ extends Control
 ##   feed      top-right (-gutter, tb + 8)
 ##   console   one top (H - base_gap - hc) and one baseline (H - base_gap):
 ##             roster | detail (detail_w) | orders (5 x btn_w), right-aligned
-##   call-in   right-aligned, ci_gap above the orders
+##   call-in   right-aligned, ci_gap above the orders; two tiles per row
+##             when one column would rise above 57.5 % of the height (S3)
 
 var view: MatchView
 ## Metrics in use (HudStyle.NORMAL or COMPACT).
@@ -103,8 +104,10 @@ func relayout() -> void:
 	_place(view.detail, Rect2(dx, console_top, dw, float(m.hc)))
 	var rx := g + (mm + 12.0 if docked_low else 0.0)
 	_place(view.roster, Rect2(rx, console_top, maxf(dx - 12.0 - rx, 120.0), float(m.hc)))
-	var col_h: float = view.call_in.column_height(m)
-	_place(view.call_in, Rect2(w - g - float(m.callin_w), console_top - float(m.ci_gap) - col_h, float(m.callin_w), col_h))
+	# S3: two tiles per row when one column would rise too high.
+	var bottom := console_top - float(m.ci_gap)
+	var col: Vector2 = view.call_in.column_size(m, bottom, h)
+	_place(view.call_in, Rect2(w - g - col.x, bottom - col.y, col.x, col.y))
 	# Net mode (S2): the readout in the top bar's free span right of the
 	# enemy tickets; the net panels over the whole HUD.
 	var span: Vector2 = view.top_bar.free_span()

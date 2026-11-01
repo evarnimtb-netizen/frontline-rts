@@ -27,6 +27,16 @@ extends Node
 ## Ctrl+1–9 store a group, 1–9 recall it (twice quickly: centre on it);
 ## Tab focuses the call-in column; Space jumps to the latest event; Esc
 ## cancels the tool, else opens the match menu.
+##
+## Vehicles (S3): own vehicle ids sit in the same selection as soldiers.
+## A vehicle is picked inside its projected footprint or within 14 px of
+## its centre (soldiers under the cursor win). Move, attack-move, stop and
+## retreat send vehicle ids in the *_units intent next to the soldiers'
+## orders; vehicle-only orders touch only vehicles. Right-click on a seen
+## enemy vehicle: own vehicles and AT gunners get attack_unit, other men
+## attack-move to it. Right-click on an own vehicle with infantry selected:
+## the soldiers escort it (follow_units). Alt+right-click: vehicles reverse
+## (reverse_units), soldiers move. O face tool, N next ammo, J repair.
 
 signal tool_changed(tool: StringName)
 
@@ -42,12 +52,17 @@ const RECALL_DOUBLE_MS := 350
 const STANCE_PENDING_MS := 1500
 const STANCE_KEYS := {&"stance_stand": "stand", &"stance_crouch": "crouch", &"stance_prone": "prone"}
 const ABILITY_KEYS := {&"ability_frag": "frag", &"ability_smoke": "smoke", &"ability_satchel": "satchel"}
+## Orders that carry vehicle ids too (in the *_units intent).
+const VEHICLE_ORDERS := [&"move", &"attack_move", &"stop", &"retreat"]
+## Orders for vehicles only.
+const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"ammo_ap", &"ammo_he"]
 
 var view: MatchView
 ## Selected own soldier ids, ascending.
 var selected := PackedInt32Array()
 var groups: Array[PackedInt32Array] = []
-## &"", &"move", &"attack_move", &"barrage", &"dig" or &"throw".
+## &"", &"move", &"attack_move", &"barrage", &"dig", &"throw" or (S3)
+## &"face", &"reverse".
 var tool: StringName = &""
 ## Armed item while tool == &"throw": "frag", "smoke" or "satchel".
 var throw_item := ""
@@ -58,8 +73,11 @@ var drag_from := Vector2.ZERO
 var drag_to := Vector2.ZERO
 ## Soldier under the cursor (either side), or -1.
 var hover_id := -1
-## Squad the detail panel lists (last card clicked); -1 = first selected.
+## Squad the detail panel lists (last card clicked; a vehicle card sets its
+## vehicle's squad id); -1 = first selected.
 var focus_squad := -1
+## CPU time of the last vehicle pick in microseconds (tests).
+var pick_vehicle_us := 0
 ## Screen point used instead of the mouse by tool previews (screenshots,
 ## autoplay); null = the real mouse.
 var cursor_override: Variant = null
@@ -71,6 +89,8 @@ var _last_recall_group := 0
 var _last_recall_ms := 0
 ## soldier id -> [stance, msec sent]
 var _pending_stance := {}
+## vehicle id -> [ammo choice, msec sent] (N twice before the state shows it)
+var _pending_ammo := {}
 
 
 func bind(v: MatchView) -> void:
@@ -84,13 +104,15 @@ func bind(v: MatchView) -> void:
 func prune() -> void:
 	var kept := PackedInt32Array()
 	for id in selected:
-		if view.own_soldier(id):
+		if view.own_unit(id):
 			kept.append(id)
 	if kept.size() != selected.size():
 		_set_selection(kept)
-	if hover_id != -1 and not view.soldiers_by_id.has(hover_id):
+	if hover_id != -1 and not view.soldiers_by_id.has(hover_id) and not view.vehicles_by_id.has(hover_id):
 		hover_id = -1
-	if tool == &"dig" and not _has_type(MatchView.DIGGERS):
+	if tool in [&"face", &"reverse"] and selected_vehicles().is_empty():
+		cancel_tool()
+	elif tool == &"dig" and not _has_type(MatchView.DIGGERS):
 		cancel_tool()
 	elif tool == &"barrage" and not _has_type(MatchView.MORTARS):
 		cancel_tool()
@@ -193,6 +215,37 @@ func squad_fully_selected(squad_id: int) -> bool:
 	return not all.is_empty() and selected_in(squad_id).size() == all.size()
 
 
+## Selected own vehicles, ascending.
+func selected_vehicles() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in selected:
+		if view.is_vehicle(id):
+			out.append(id)
+	return out
+
+
+## Selected soldiers (no vehicles), ascending.
+func selected_soldiers() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in selected:
+		if not view.is_vehicle(id):
+			out.append(id)
+	return out
+
+
+## The vehicle the detail panel shows: the one whose card was clicked last
+## while it is selected, else the first selected vehicle when no soldier is
+## selected, else -1.
+func focused_vehicle() -> int:
+	var vs := selected_vehicles()
+	if vs.is_empty():
+		return -1
+	for id in vs:
+		if int(view.vehicles_by_id[id].get("squad", -2)) == focus_squad:
+			return id
+	return vs[0] if selected_soldiers().is_empty() else -1
+
+
 ## The squad the detail panel shows: the focused one while it has a
 ## selected man, else the first selected squad, else -1.
 func focused_squad() -> int:
@@ -219,8 +272,8 @@ func _squads_of_type(types: Array) -> PackedInt32Array:
 
 ## Splits the selection for a squad-or-units order: [squads, units].
 ## `types` keeps only squads of those types (empty = all); `exclude` drops
-## these squads.
-func split(types: Array = [], exclude := PackedInt32Array()) -> Array:
+## these squads; `vehicles` adds the selected vehicles to `units`.
+func split(types: Array = [], exclude := PackedInt32Array(), vehicles := false) -> Array:
 	var squads := PackedInt32Array()
 	var units := PackedInt32Array()
 	for sid in selected_squads():
@@ -230,14 +283,18 @@ func split(types: Array = [], exclude := PackedInt32Array()) -> Array:
 			squads.append(sid)
 		else:
 			units.append_array(selected_in(sid))
+	if vehicles:
+		units.append_array(selected_vehicles())
 	units.sort()
 	return [squads, units]
 
 
 ## Emits `kind` for whole squads and `kind`_units for the rest of the
-## selection (see split). Returns false when nobody got the order.
-func send_order(kind: StringName, data := {}, types: Array = [], exclude := PackedInt32Array()) -> bool:
-	var parts := split(types, exclude)
+## selection (see split); move, attack-move, stop and retreat also carry
+## the selected vehicles in `units` unless `types` filters squad types.
+## Returns false when nobody got the order.
+func send_order(kind: StringName, data := {}, types: Array = [], exclude := PackedInt32Array(), vehicles := true) -> bool:
+	var parts := split(types, exclude, vehicles and types.is_empty() and kind in VEHICLE_ORDERS)
 	if not parts[0].is_empty():
 		var d := data.duplicate()
 		d.squads = parts[0]
@@ -334,8 +391,41 @@ func can(order: StringName) -> bool:
 		&"frag", &"smoke", &"satchel":
 			return item_count(String(order)) > 0
 		&"regroup":
-			return true
+			return not selected_soldiers().is_empty()
+	if order in VEHICLE_ONLY:
+		return not selected_vehicles().is_empty()
 	return true
+
+
+## Sets the ammo choice of the selected vehicles ("auto", "ap", "he").
+func set_ammo(choice: String) -> void:
+	var vs := selected_vehicles()
+	if vs.is_empty() or not choice in Vehicles.AMMO_CHOICES:
+		return
+	var now := Time.get_ticks_msec()
+	for id in vs:
+		_pending_ammo[id] = [choice, now]
+	view.emit_intent(&"set_ammo", {"units": vs, "ammo": choice})
+
+
+## The ammo choice shown for the selection: the first selected vehicle's
+## (as the state reports it, or as just sent), "" without vehicles.
+func ammo_choice() -> String:
+	var vs := selected_vehicles()
+	if vs.is_empty():
+		return ""
+	var p: Array = _pending_ammo.get(vs[0], [])
+	var have := String(view.vehicles_by_id[vs[0]].get("ammo_choice", "auto"))
+	if not p.is_empty() and p[0] != have and Time.get_ticks_msec() - int(p[1]) < STANCE_PENDING_MS:
+		return p[0]
+	return have
+
+
+## N: the next ammo choice after the first selected vehicle's.
+func next_ammo() -> void:
+	var cur := ammo_choice()
+	if cur != "":
+		set_ammo(Vehicles.next_ammo(cur))
 
 
 # --- tools -----------------------------------------------------------------
@@ -351,6 +441,13 @@ func activate(order: StringName) -> void:
 		&"stop", &"retreat":
 			send_order(order)
 			cancel_tool()
+		&"repair":
+			view.emit_intent(&"repair_units", {"units": selected_vehicles()})
+			cancel_tool()
+		&"ammo":
+			next_ammo()
+		&"ammo_auto", &"ammo_ap", &"ammo_he":
+			set_ammo(String(order).trim_prefix("ammo_"))
 		&"regroup":
 			view.emit_intent(&"regroup", {"squads": selected_squads()})
 			cancel_tool()
@@ -431,11 +528,44 @@ func throw_at(g: Vector3, each: bool) -> bool:
 
 # --- picking ---------------------------------------------------------------
 
+## Unit under a screen point: a soldier (see pick_soldier), else a live
+## vehicle (see pick_vehicle). `own` = 1 own only, 0 enemies only, -1 any.
+func pick(screen: Vector2, own := 1) -> int:
+	var id := pick_soldier(screen, own)
+	return id if id != -1 else pick_vehicle(screen, own)
+
+
+## Vehicle under a screen point: inside its projected footprint or within
+## PICK_RADIUS_PX of its centre; the nearest centre wins, then the one
+## closer to the camera. `own` as in pick().
+func pick_vehicle(screen: Vector2, own := 1) -> int:
+	var t0 := Time.get_ticks_usec()
+	var best := -1
+	var best_d := INF
+	var best_z := INF
+	for i in view.veh_pick_ids.size():
+		if own != -1 and view.veh_pick_own[i] != own:
+			continue
+		var id := view.veh_pick_ids[i]
+		var d := screen.distance_to(view.veh_pick_screen[i])
+		if d > PICK_RADIUS_PX:
+			var fp: PackedVector2Array = view.vehicle_screen_footprint(id)
+			if fp.size() < 3 or not Geometry2D.is_point_in_polygon(screen, fp):
+				continue
+		var z := view.veh_pick_depth[i]
+		if best == -1 or d < best_d - PICK_TIE_PX or (absf(d - best_d) <= PICK_TIE_PX and z < best_z):
+			best = id
+			best_d = d
+			best_z = z
+	pick_vehicle_us = Time.get_ticks_usec() - t0
+	return best
+
+
 ## Soldier under a screen point: nearest within PICK_RADIUS_PX, or within
 ## his body's half length on screen when that is more (close up); near-ties
 ## go to the one closer to the camera, then the lower id.
 ## `own` = 1 own only, 0 enemies only, -1 any.
-func pick(screen: Vector2, own := 1) -> int:
+func pick_soldier(screen: Vector2, own := 1) -> int:
 	var best := -1
 	var best_d := INF
 	var best_z := INF
@@ -466,6 +596,9 @@ func _box_select(a: Vector2, b: Vector2, add: bool) -> void:
 	for i in view.pick_ids.size():
 		if view.pick_own[i] == 1 and r.has_point(view.pick_screen[i]):
 			boxed.append(view.pick_ids[i])
+	for i in view.veh_pick_ids.size():
+		if view.veh_pick_own[i] == 1 and r.has_point(view.veh_pick_screen[i]):
+			boxed.append(view.veh_pick_ids[i])
 	if not add:
 		_set_selection(boxed)
 		return
@@ -476,6 +609,19 @@ func _box_select(a: Vector2, b: Vector2, add: bool) -> void:
 			ids.remove_at(ids.find(id))
 		else:
 			ids.append(id)
+	_set_selection(ids)
+
+
+## Ctrl+double-click on a vehicle: every own vehicle of that type on
+## screen.
+func _select_same_vehicles(id: int, add: bool) -> void:
+	var t := String(view.vehicles_by_id[id].type)
+	var ids := selected.duplicate() if add else PackedInt32Array()
+	var vp := view.get_viewport().get_visible_rect()
+	for i in view.veh_pick_ids.size():
+		var vid := view.veh_pick_ids[i]
+		if view.veh_pick_own[i] == 1 and vp.has_point(view.veh_pick_screen[i]) and String(view.vehicles_by_id[vid].type) == t:
+			ids.append(vid)
 	_set_selection(ids)
 
 
@@ -495,10 +641,18 @@ func _select_same_type(id: int, add: bool) -> void:
 
 # --- orders ----------------------------------------------------------------
 
-func _order_at(screen: Vector2, attack: bool) -> void:
+func _order_at(screen: Vector2, attack: bool, reverse := false) -> void:
 	if selected.is_empty():
 		return
-	var enemy := pick(screen, 0)
+	var enemy_v := pick_vehicle(screen, 0) if pick_soldier(screen, 0) == -1 else -1
+	if enemy_v != -1:
+		attack_vehicle(enemy_v)
+		return
+	var own_v := pick_vehicle(screen, 1) if pick_soldier(screen, 1) == -1 else -1
+	if own_v != -1 and not selected_soldiers().is_empty() and not selected.has(own_v):
+		escort(own_v)
+		return
+	var enemy := pick_soldier(screen, 0)
 	if enemy != -1:
 		var p: Vector3 = view.soldiers_by_id[enemy].pos
 		send_order(&"attack_move", {"target": p})
@@ -508,14 +662,53 @@ func _order_at(screen: Vector2, attack: bool) -> void:
 	var g: Variant = view.ground_pick(screen)
 	if g == null:
 		return
-	order_to_ground(g, attack)
+	order_to_ground(g, attack, reverse)
+
+
+## Right-click on a seen enemy vehicle: own vehicles and the men of AT
+## teams focus it (attack_unit); the other men attack-move to it.
+func attack_vehicle(target: int) -> void:
+	var v: Dictionary = view.vehicles_by_id.get(target, {})
+	if v.is_empty():
+		return
+	var focus := selected_vehicles()
+	var at_squads := PackedInt32Array()
+	for sid in selected_squads():
+		if view.squad_type(sid) == "at":
+			at_squads.append(sid)
+			focus.append_array(selected_in(sid))
+	focus.sort()
+	if not focus.is_empty():
+		view.emit_intent(&"attack_unit", {"units": focus, "target": target})
+	send_order(&"attack_move", {"target": v.pos}, [], at_squads, false)
+	if view.overlay != null:
+		view.overlay.marker(v.pos, &"attack_move")
+
+
+## Right-click on an own vehicle with infantry selected: the selected men
+## escort it (follow_units; vehicle ids are not sent).
+func escort(vehicle: int) -> void:
+	var men := selected_soldiers()
+	if men.is_empty():
+		return
+	view.emit_intent(&"follow_units", {"units": men, "vehicle": vehicle})
+	if view.overlay != null:
+		view.overlay.marker(view.vehicles_by_id[vehicle].pos, &"follow")
+	AudioManager.play_ui(&"confirm")
 
 
 ## Right-click semantics on a ground point (also used by the minimap).
 ## Plain: mortar squads with the point in range barrage it, the rest move.
-## attack: everyone attack-moves.
-func order_to_ground(g: Vector3, attack := false) -> void:
+## attack: everyone attack-moves. reverse (Alt): vehicles back up to the
+## point (reverse_units), soldiers move.
+func order_to_ground(g: Vector3, attack := false, reverse := false) -> void:
 	if selected.is_empty():
+		return
+	if reverse and not selected_vehicles().is_empty():
+		view.emit_intent(&"reverse_units", {"units": selected_vehicles(), "target": g})
+		send_order(&"move", {"target": g}, [], PackedInt32Array(), false)
+		if view.overlay != null:
+			view.overlay.marker(g, &"reverse")
 		return
 	if attack:
 		send_order(&"attack_move", {"target": g})
@@ -551,6 +744,13 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 	match tool:
 		&"move", &"attack_move":
 			send_order(tool, {"target": g})
+		&"face":
+			view.emit_intent(&"face_units", {"units": selected_vehicles(), "target": g})
+		&"reverse":
+			order_to_ground(g, false, true)
+			if not shift:
+				_set_tool(&"")
+			return
 		&"barrage":
 			var ids := _mortars_in_range(g)
 			if ids.is_empty():
@@ -620,6 +820,14 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 				return
 			if e.double_click:
 				var id := pick(e.position, 1)
+				if id != -1 and view.is_vehicle(id):
+					# A vehicle is a squad of one: double-click keeps it,
+					# Ctrl+double-click takes its type on screen.
+					if ctrl:
+						_select_same_vehicles(id, e.shift_pressed)
+					focus_squad = int(view.vehicles_by_id[id].get("squad", -1))
+					_skip_release = true
+					return
 				if id != -1:
 					if ctrl:
 						_select_same_type(id, e.shift_pressed)
@@ -647,6 +855,8 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 				dragging = false
 				return
 			var id := pick(e.position, 1)
+			if id != -1 and view.is_vehicle(id):
+				focus_squad = int(view.vehicles_by_id[id].get("squad", -1))
 			if id == -1:
 				if not e.shift_pressed:
 					_set_selection(PackedInt32Array())
@@ -660,7 +870,7 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 		elif tool != &"":
 			cancel_tool()
 		else:
-			_order_at(e.position, ctrl)
+			_order_at(e.position, ctrl, e.alt_pressed)
 		get_viewport().set_input_as_handled()
 
 
@@ -684,11 +894,15 @@ func _key(e: InputEventKey) -> void:
 			activate(StringName(ABILITY_KEYS[action]))
 			get_viewport().set_input_as_handled()
 			return
-	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup"]:
+	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair"]:
 		if e.is_action_pressed(StringName("order_" + order)):
 			activate(order)
 			get_viewport().set_input_as_handled()
 			return
+	if e.is_action_pressed(&"ammo_next"):
+		activate(&"ammo")
+		get_viewport().set_input_as_handled()
+		return
 	if e.is_action_pressed(&"dig_undo_point") and tool == &"dig" and not dig_points.is_empty():
 		dig_points.remove_at(dig_points.size() - 1)
 		get_viewport().set_input_as_handled()
@@ -707,7 +921,7 @@ func _key(e: InputEventKey) -> void:
 func recall(g: int) -> void:
 	var ids := PackedInt32Array()
 	for id in groups[g]:
-		if view.own_soldier(id):
+		if view.own_unit(id):
 			ids.append(id)
 	groups[g] = ids
 	if ids.is_empty():
@@ -716,7 +930,7 @@ func recall(g: int) -> void:
 	if g == _last_recall_group and now - _last_recall_ms < RECALL_DOUBLE_MS:
 		var c := Vector3.ZERO
 		for id in ids:
-			c += view.soldiers_by_id[id].pos
+			c += view.unit_pos(id)
 		view.jump_camera(c / ids.size())
 	_last_recall_group = g
 	_last_recall_ms = now

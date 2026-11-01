@@ -17,6 +17,11 @@ const KINDS := {
 	"under_attack": [HudStyle.ACCENT, &""],
 	"tickets_low": [HudStyle.DANGER, &"error"],
 	"info": [HudStyle.DIM, &""],
+	# S3: main-gun and rocket matters only (the bridge derives these).
+	"vehicle_arrived": [HudStyle.TEXT, &""],
+	"vehicle_knocked_out": [HudStyle.DANGER, &""],
+	"vehicle_damaged": [HudStyle.ACCENT, &""],
+	"vehicle_bogged": [HudStyle.ACCENT, &""],
 }
 
 var view: MatchView
@@ -39,6 +44,8 @@ func push(e: Dictionary) -> void:
 		"text": String(e.get("text", kind)),
 		"time": UiPalette.mmss(e.get("time_s", view.state.get("time_s", 0.0))),
 		"kind": kind,
+		# An enemy vehicle knocked out is good news: own colour stripe.
+		"good": kind == "vehicle_knocked_out" and int(e.get("player", view.local_player)) != view.local_player,
 		"born_ms": Time.get_ticks_msec(),
 	})
 	if lines.size() > MAX_LINES:
@@ -82,7 +89,7 @@ func _draw() -> void:
 		var w := tw + tm + 30.0
 		var r := Rect2(size.x - w, y, w, lh - 3.0)
 		HudStyle.box(self, r, Color(HudStyle.BG_CALLIN, HudStyle.BG_CALLIN.a * a), 3)
-		var stripe: Color = KINDS.get(l.kind, KINDS.info)[0]
+		var stripe: Color = HudStyle.OWN if l.get("good", false) else KINDS.get(l.kind, KINDS.info)[0]
 		draw_rect(Rect2(r.position + Vector2(0, 3), Vector2(2, r.size.y - 6)), Color(stripe, a))
 		var by := y + 16.0
 		HudStyle.text(self, font, Vector2(size.x - 10.0, by), text, HudStyle.FONT, Color(HudStyle.TEXT, a), 1)

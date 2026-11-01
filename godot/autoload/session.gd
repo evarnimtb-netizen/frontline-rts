@@ -91,6 +91,7 @@ var net_delay := 0
 
 var _capture_path := ""
 var _capture_after := 2.5
+var _capture_timer: SceneTreeTimer
 var _capture_setup := ""
 ## Window size in pixels to force before a capture (macOS sometimes opens
 ## the window zoomed to the whole screen); zero = keep.
@@ -200,6 +201,12 @@ func _parse_autoplay_net(v: String) -> void:
 
 func capture_setup() -> String:
 	return _capture_setup
+
+
+## Seconds until the --capture screenshot is taken (INF when no capture is
+## running). Staging uses it to time short effects into the shot (S3).
+func capture_left_s() -> float:
+	return _capture_timer.time_left if _capture_timer != null else INF
 
 
 func autoplay_enabled() -> bool:
@@ -338,7 +345,8 @@ func _run_capture() -> void:
 		var win := get_window()
 		win.mode = Window.MODE_WINDOWED
 		win.size = _capture_size
-	await get_tree().create_timer(_capture_after, true, false, true).timeout
+	_capture_timer = get_tree().create_timer(_capture_after, true, false, true)
+	await _capture_timer.timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	var err := img.save_png(_capture_path)

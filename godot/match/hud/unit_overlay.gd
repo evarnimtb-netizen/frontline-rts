@@ -4,7 +4,9 @@ extends Control
 ## "class marker readable at 800p"), capture point labels, the selection
 ## box, the hovered soldier's tooltip, and the armed tool's cursor hint
 ## (the throw tool's reticle turns red out of range). Draw-only: it never
-## takes mouse input.
+## takes mouse input. S3 adds a marker per vehicle (tank glyph with
+## burning, bogged, immobilised and repairing pips and the escort count),
+## the hit markers and vehicle tooltips.
 
 const MARKER := Vector2(26, 18)
 
@@ -71,6 +73,8 @@ func _draw() -> void:
 		if own and sq.get("order", "") == "dig":
 			var dp: float = sq.get("dig_progress", 0.0)
 			draw_rect(Rect2(bar.position + Vector2(0, 5), Vector2(bar.size.x * dp, 2)), UiPalette.ACCENT)
+	_draw_vehicle_markers(font, sel)
+	_draw_hit_markers()
 	# Selection box.
 	if sel.dragging:
 		var box := Rect2(sel.drag_from, Vector2.ZERO).expand(sel.drag_to)
@@ -82,9 +86,169 @@ func _draw() -> void:
 		_draw_tool_hint(font, sel)
 
 
+## Vehicle markers (S3), above every live vehicle in the state: the tank
+## glyph in the side colour, a strength bar for the crew, and pips on the
+## right: burning (flame), bogged (mud), repairing (spanner), immobilised
+## (a bar); own escorted vehicles show their escort count. Wrecks get no
+## marker (the minimap crosses them out).
+func _draw_vehicle_markers(font: Font, sel: Node) -> void:
+	var local := view.local_player
+	var bold := HudStyle.bold()
+	for id in view.vehicles_by_id:
+		var v: Dictionary = view.vehicles_by_id[id]
+		if Vehicles.is_wreck(v):
+			continue
+		var vt := view.vehicle_type(id)
+		var wp: Vector3 = v.pos + Vector3(0, float(vt.get("turret_base", 1.8)) + float(vt.get("turret_height", 0.9)) + 1.8, 0)
+		if view.camera == null or view.camera.is_position_behind(wp):
+			continue
+		var sp := view.camera.unproject_position(wp)
+		if not Rect2(Vector2.ZERO, size).grow(40.0).has_point(sp):
+			continue
+		var own := int(v.owner) == local
+		var col := UiPalette.OWN if own else UiPalette.ENEMY
+		var picked: bool = sel.is_selected(int(id))
+		var r := Rect2(sp - MARKER * 0.5 - Vector2(0, 14), MARKER)
+		if picked:
+			draw_rect(r.grow(3), Color(UiPalette.TEXT, 0.9), false, 2.0)
+		elif int(id) == sel.hover_id:
+			draw_rect(r.grow(3), Color(col, 0.7), false, 1.5)
+		draw_rect(r, Color(UiPalette.BG, 0.75), true)
+		UiPalette.draw_glyph(self, "tank", r, col.lightened(0.15 if picked else 0.0), 2.0)
+		if own:
+			# Crew strength under the marker.
+			var crew: PackedStringArray = v.get("crew", PackedStringArray())
+			var alive := 0
+			var seats := 0
+			for st in crew:
+				if st != "none":
+					seats += 1
+					if st != "dead":
+						alive += 1
+			var frac := float(alive) / maxf(seats, 1.0)
+			var bar := Rect2(r.position + Vector2(0, r.size.y + 2), Vector2(r.size.x, 3))
+			draw_rect(bar, Color(0, 0, 0, 0.7))
+			draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), UiPalette.OK if frac > 0.5 else (UiPalette.WARN if frac > 0.25 else UiPalette.DANGER))
+		var x := r.end.x + 4.0
+		var cy := r.get_center().y
+		if Vehicles.has(v, Vehicles.BURNING):
+			_flame_pip(Vector2(x + 5.0, cy))
+			x += 13.0
+		if Vehicles.has(v, Vehicles.BOGGED):
+			_bog_pip(Vector2(x + 5.0, cy))
+			x += 13.0
+		elif Vehicles.has(v, Vehicles.IMMOBILISED):
+			draw_rect(Rect2(x, cy - 5.0, 10.0, 10.0), Color(UiPalette.BG, 0.8))
+			draw_line(Vector2(x + 1.0, cy), Vector2(x + 9.0, cy), UiPalette.DANGER, 3.0)
+			x += 13.0
+		if Vehicles.has(v, Vehicles.REPAIRING):
+			_spanner_pip(Vector2(x + 5.0, cy))
+			x += 13.0
+		var fol := int(v.get("followers", 0))
+		if own and fol > 0:
+			HudStyle.text(self, bold, Vector2(r.get_center().x, r.position.y - 4.0), "+%d" % fol, HudStyle.FONT_SMALL, HudStyle.OWN, 0)
+
+
+func _flame_pip(c: Vector2) -> void:
+	var flick := 0.8 + 0.2 * sin(Time.get_ticks_msec() * 0.02)
+	draw_circle(c, 6.0, Color(UiPalette.BG, 0.8))
+	draw_colored_polygon(PackedVector2Array([c + Vector2(-4, 4), c + Vector2(0, -6 * flick), c + Vector2(4, 4)]), Color(1.0, 0.45, 0.12))
+	draw_colored_polygon(PackedVector2Array([c + Vector2(-2, 4), c + Vector2(0, -1), c + Vector2(2, 4)]), Color(1.0, 0.85, 0.3))
+
+
+func _bog_pip(c: Vector2) -> void:
+	draw_circle(c, 6.0, Color(UiPalette.BG, 0.8))
+	draw_rect(Rect2(c + Vector2(-5, 0), Vector2(10, 5)), Color(0.55, 0.40, 0.22))
+	draw_line(c + Vector2(-4, -3), c + Vector2(4, -3), UiPalette.WARN, 2.0)
+
+
+func _spanner_pip(c: Vector2) -> void:
+	draw_circle(c, 6.0, Color(UiPalette.BG, 0.8))
+	draw_line(c + Vector2(-4, 4), c + Vector2(2, -2), HudStyle.ACCENT, 2.0)
+	draw_arc(c + Vector2(2.5, -2.5), 2.5, 0.0, TAU, 8, HudStyle.ACCENT, 1.5)
+
+
+## Hit markers (S3): a short word above an observed main-gun or rocket
+## impact, rising and fading over 1.5 s; at most 6 (MatchView keeps them).
+func _draw_hit_markers() -> void:
+	if view.camera == null:
+		return
+	var bold := HudStyle.bold()
+	var placed: Array[Rect2] = []
+	# Newest first, so the latest word sits lowest and older ones stack up.
+	for i in range(view.hit_markers.size() - 1, -1, -1):
+		var h: Dictionary = view.hit_markers[i]
+		var k: float = h.t / MatchView.HIT_TIME
+		var wp: Vector3 = h.pos + Vector3(0, 2.5 + 2.0 * k, 0)
+		if view.camera.is_position_behind(wp):
+			continue
+		var sp := view.camera.unproject_position(wp)
+		var box := Rect2(sp - Vector2(50, 14), Vector2(100, 19))
+		# Stack up from an overlapping word; under the top bar, stack down.
+		var down := false
+		for r in placed:
+			if r.intersects(box):
+				sp.y = r.end.y + 16.0 if down else r.position.y - 8.0
+				if sp.y < 52.0 and not down:
+					down = true
+					sp.y = r.end.y + 16.0
+				box.position.y = sp.y - 14.0
+		sp.y = maxf(sp.y, 52.0)
+		box.position.y = sp.y - 14.0
+		placed.append(box)
+		var a := clampf((1.0 - k) * 2.0, 0.0, 1.0)
+		var col: Color
+		match String(h.kind):
+			"pen", "crew_hit":
+				col = HudStyle.DANGER if h.own else HudStyle.ACCENT
+			_:
+				col = HudStyle.TEXT
+		var w := HudStyle.text_w(bold, h.word, HudStyle.FONT)
+		HudStyle.box(self, Rect2(sp - Vector2(w * 0.5 + 5.0, 14.0), Vector2(w + 10.0, 19.0)), Color(0.055, 0.07, 0.08, 0.7 * a), 3)
+		HudStyle.text(self, bold, sp, h.word, HudStyle.FONT, Color(col, a), 0)
+
+
+## Hover tooltip for a vehicle: own ones get their state, crew and ammo;
+## enemies only what is seen (type and whether it moves or burns).
+func _vehicle_tooltip(font: Font, sel: Node) -> bool:
+	var v: Dictionary = view.vehicles_by_id.get(sel.hover_id, {})
+	if v.is_empty() or Vehicles.is_wreck(v):
+		return not v.is_empty()
+	var own := int(v.owner) == view.local_player
+	var line1: String
+	var line2: String
+	if own:
+		var ammo: Dictionary = v.get("ammo", {})
+		var crew: PackedStringArray = v.get("crew", PackedStringArray())
+		var alive := 0
+		var seats := 0
+		for st in crew:
+			if st != "none":
+				seats += 1
+				alive += 1 if st != "dead" else 0
+		line1 = "%s · %s" % [view.vehicle_label(int(v.id)), Vehicles.badge(v)[0]]
+		line2 = "Crew %d/%d · AP %d · HE %d · %s" % [alive, seats, int(ammo.get("ap", 0)), int(ammo.get("he", 0)), Vehicles.AMMO_TEXT.get(String(v.get("ammo_choice", "auto")), "Auto")]
+	else:
+		line1 = "Enemy %s" % Vehicles.short_name(view.vehicle_type(int(v.id)), String(v.get("name", "vehicle")))
+		line2 = Vehicles.badge(v)[0] + " · right-click: attack"
+	var bold := HudStyle.bold()
+	var w := maxf(HudStyle.text_w(bold, line1, HudStyle.FONT), HudStyle.text_w(font, line2, HudStyle.FONT)) + 16.0
+	var at: Vector2 = sel.cursor() + Vector2(16, 18)
+	at.x = minf(at.x, size.x - w - 8.0)
+	at.y = minf(at.y, size.y - 52.0)
+	HudStyle.box(self, Rect2(at, Vector2(w, 44)), Color(0.055, 0.07, 0.08, 0.85), 4)
+	draw_rect(Rect2(at + Vector2(0, 4), Vector2(2, 36)), HudStyle.OWN if own else HudStyle.ENEMY)
+	HudStyle.text(self, bold, at + Vector2(8, 18), line1, HudStyle.FONT, HudStyle.TEXT)
+	HudStyle.text(self, font, at + Vector2(8, 37), line2, HudStyle.FONT, HudStyle.DIM)
+	return true
+
+
 ## Hover tooltip: name and squad, weapon, health, state.
 func _draw_tooltip(font: Font, sel: Node) -> void:
 	if sel.hover_id == -1 or sel.dragging or view.proxy_soldiers:
+		return
+	if view.is_vehicle(sel.hover_id):
+		_vehicle_tooltip(font, sel)
 		return
 	var so: Dictionary = view.soldiers_by_id.get(sel.hover_id, {})
 	if so.is_empty():
@@ -118,6 +282,10 @@ func _draw_tool_hint(font: Font, sel: Node) -> void:
 			text = "ATTACK-MOVE  ·  click target  ·  right-click cancels"
 		&"barrage":
 			text = "BARRAGE  ·  click target in range  ·  right-click cancels"
+		&"face":
+			text = "FACE  ·  click where the hull front should point  ·  right-click cancels"
+		&"reverse":
+			text = "REVERSE  ·  click a point to back up to  ·  right-click cancels"
 		&"dig":
 			text = "DIG  %d / %d m  ·  click adds point  ·  right-click digs  ·  Backspace undo" % [roundi(sel.dig_length() + _pending_dig(sel)), roundi(sel.dig_max())]
 		&"throw":

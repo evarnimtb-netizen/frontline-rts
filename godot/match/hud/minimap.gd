@@ -151,6 +151,27 @@ func _draw() -> void:
 			draw_rect(Rect2(at - Vector2(4.5, 4.5), Vector2(9, 9)), HudStyle.TEXT)
 		draw_rect(Rect2(at - Vector2(3, 3), Vector2(6, 6)), HudStyle.OWN if own else HudStyle.ENEMY)
 		draw_rect(Rect2(at - Vector2(3, 3), Vector2(6, 6)), Color(0.08, 0.1, 0.12), false, 1.0)
+	# Vehicles (S3): rectangles along the hull; wrecks as dim crosses.
+	for v in view.state.get("vehicles", []):
+		var at := world_to_map(v.pos)
+		if Vehicles.is_wreck(v):
+			var wc := Color(HudStyle.TEXT, 0.35)
+			draw_line(at - Vector2(3, 3), at + Vector2(3, 3), wc, 1.5)
+			draw_line(at + Vector2(-3, 3), at + Vector2(3, -3), wc, 1.5)
+			continue
+		var own := int(v.owner) == local
+		# Hull forward on the map: world −Z turned by yaw, then the map's
+		# own rotation.
+		var f := world_to_map(v.pos + Vector3(-sin(v.yaw), 0.0, -cos(v.yaw))) - at
+		f = f.normalized() if f.length() > 0.001 else Vector2.UP
+		var s := Vector2(-f.y, f.x)
+		var pts := PackedVector2Array([at + f * 5.5 + s * 3.5, at + f * 5.5 - s * 3.5, at - f * 5.5 - s * 3.5, at - f * 5.5 + s * 3.5])
+		if own and view.selection.is_selected(int(v.id)):
+			var frame := PackedVector2Array([at + f * 7.0 + s * 5.0, at + f * 7.0 - s * 5.0, at - f * 7.0 - s * 5.0, at - f * 7.0 + s * 5.0])
+			draw_colored_polygon(frame, HudStyle.TEXT)
+		draw_colored_polygon(pts, HudStyle.OWN if own else HudStyle.ENEMY)
+		pts.append(pts[0])
+		draw_polyline(pts, Color(0.08, 0.1, 0.12), 1.0)
 	# Capture points.
 	for p in view.state.get("points", []):
 		var at := world_to_map(p.pos)
