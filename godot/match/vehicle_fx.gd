@@ -28,8 +28,8 @@ const ENGINE_VOICES := 4
 ## Tracer instances: one per shell, two per rocket (trail and head).
 const MAX_STREAKS := 96
 const STREAK_STRIDE := 16
-## Tracer length per m/s of shell speed (a 0.04 s streak) and width.
-const STREAK_S := 0.04
+## Tracer length per m/s of shell speed (a 0.022 s streak) and width.
+const STREAK_S := 0.022
 const STREAK_W := 0.22
 const ROCKET_TRAIL_M := 14.0
 
@@ -206,7 +206,7 @@ func _update_streaks(shells: Array) -> void:
 			continue
 		var d := vel / speed
 		if String(sh.get("kind", "ap")) == "heat":
-			_streak(n, pos, d, minf(ROCKET_TRAIL_M, speed * 0.15), STREAK_W * 2.2, Color(0.55, 0.53, 0.5, 0.55))
+			_streak(n, pos, d, minf(ROCKET_TRAIL_M, speed * 0.15), STREAK_W * 2.2, Color(0.32, 0.3, 0.27, 0.5))
 			n += 1
 			_streak(n, pos, d, 1.2, STREAK_W * 1.6, Color(1.0, 0.75, 0.35, 1.0))
 			n += 1
@@ -366,7 +366,7 @@ func _make_flash() -> Dictionary:
 	root.add_child(light)
 	var ball := _additive_ball(Color(1.0, 0.8, 0.45))
 	add_child(ball)
-	var dust := _one_shot(18, 1.6, _ring_dust_material(), _puff_mesh(Color(0.55, 0.48, 0.36, 0.7)))
+	var dust := _one_shot(18, 1.6, _ring_dust_material(), _puff_mesh(Color(0.66, 0.6, 0.48, 0.85)))
 	add_child(dust)
 	return {"root": root, "light": light, "ball": ball, "dust": dust, "t": -1.0, "scale": 1.0}
 
@@ -556,8 +556,8 @@ func _ring_dust_material() -> ParticleProcessMaterial:
 	m.damping_min = 3.0
 	m.damping_max = 5.0
 	m.gravity = Vector3(0, 0.2, 0)
-	m.scale_min = 1.5
-	m.scale_max = 2.8
+	m.scale_min = 2.8
+	m.scale_max = 4.6
 	m.scale_curve = _curve(0.6, 1.6)
 	m.color_ramp = _ramp(Color(1, 1, 1, 1))
 	return m

@@ -703,6 +703,104 @@ badge; feed lines; hit markers ("Ricochet", "No pen", "Penetrated", "Crew
 hit") above observed `armour_events` for 1.5 s, at most 6; minimap
 rectangles for vehicles and dim crosses for wrecks.
 
+### S3 presenter as built (on the mock)
+
+Built against `mock_match_source.gd` + `mock_vehicles.gd` (MockVehicles:
+tanks in every state, shells, armour events, AT teams, escorts, vehicle
+call-ins with the unlock and the limit). The bridge only has to fill the
+keys above; nothing below reads the sim.
+
+- **Meshes** (`crates/godot-bridge/src/meshgen.rs`): `vehicle_hull_mesh`
+  (tracks with sloped runs, lower hull, fenders, superstructure with a
+  glacis, engine deck, exhausts: 184 triangles), `vehicle_turret_mesh`
+  (sloped-sided turret, mantlet, cupola: 72), `vehicle_gun_mesh` (barrel
+  and muzzle brake: 64), all built from the `vehicle_types` box sizes.
+  `compose_vehicle` composes hull (yaw, then pitch, then roll) × turret
+  yaw × gun pitch; `vehicle_buffers` packs MultiMesh buffers. GDScript
+  reaches them through the static class **`FrontlineMeshes`**:
+  `vehicle_part(dims: Dictionary, part: "hull"|"turret"|"gun") -> ArrayMesh`
+  and `vehicle_buffers(dims, poses: PackedFloat32Array, cap) -> [hull,
+  turret, gun]` (12 floats per pose: x y z, yaw, pitch, roll, turret yaw,
+  gun pitch, custom r g b a; 16 floats per instance out, padded to `cap`).
+  The trunnion (gun pitch axis) sits 0.42 × turret_length ahead of the
+  pivot at `gun_height`. `dims` may carry an optional `glacis_deg`; the
+  presenter uses 10° for Germany and 47° for the USA when absent.
+- **`match/vehicle_view.gd` (VehicleView)**, made by `match.gd` in both
+  scenes: one MultiMesh per (type, part), CAP 48 instances each, one
+  buffer upload per batch per frame. Turret yaw follows the state by the
+  shortest arc (`lerp_angle`), pitch, roll and gun pitch are smoothed.
+  Custom data: the faction paint mixed 42 % toward the side colour; wrecks
+  charred at 55 % brightness (`shaders/vehicle_parts.gdshader`). Without
+  the GDExtension it falls back to boxes.
+- **`match/vehicle_fx.gd` (VehicleFx)**: fixed pools, nothing created
+  during play. Muzzle flash + light + ground dust ring (`cannon`; 8 rigs),
+  backblast (`rocket_launch`), sparks + puff (`armour_hit` ricochet,
+  no_pen; 8), flash (`pen`; 6), cook-off fireball, flame jet, debris and a
+  smoke column (3), tracers (AP pale, HE orange) and rocket trails (a pale
+  trail and a bright head) in ONE MultiMesh, fires on the nearest 8
+  BURNING vehicles, smoke over the nearest 16 KNOCKED_OUT wrecks, dust
+  behind the nearest 8 vehicles faster than 2 m/s. Engine loops: the 4
+  nearest moving vehicles keep a voice slot in
+  `AudioManager.set_engine_loops` (pitch by speed).
+- **Sounds** (`audio/sfx/`, synthesised by `tools/gen_s3_sfx.py`, CC0,
+  each with a `.license.toml`): `cannon` (10 KB), `engine_loop` (15 KB,
+  seamless 2 s), `ap_impact` (9 KB), `rocket_launch` (24 KB). MatchView
+  plays them for `cannon`, `rocket_launch`, `armour_hit` (ricochets 4 dB
+  quieter) and `cook_off` (the explosion, louder). All audio: 328 KB.
+- **Selection** holds own vehicle ids next to soldier ids (`select` sends
+  them in `units`). `MatchView.veh_pick_*` index the live vehicles each
+  frame; `selection.pick()` takes a soldier under the cursor first, else a
+  vehicle inside its projected footprint (`vehicle_screen_footprint`) or
+  within 14 px of its centre. Box-select takes own vehicles by centre;
+  double-click keeps a vehicle, Ctrl+double-click takes that type on
+  screen. Rings: `GroundOverlay/VehicleRings`, a second SelectionRings
+  batch of thin ellipses stretched to the hull + 0.9 m and turned with it.
+- **Orders**: move / attack-move / stop / retreat add the selected
+  vehicles to the `*_units` intent; a squad-level intent never carries
+  vehicles. RMB on a seen enemy vehicle: `attack_unit` for own vehicles
+  and the men of selected AT squads, `attack_move` to it for the rest.
+  RMB on an own vehicle with soldiers selected: `follow_units` (soldier
+  ids only). Alt+RMB: `reverse_units` for the vehicles, a move for the
+  soldiers. O arms the face tool (`face_units`), N cycles the first
+  selected vehicle's choice (Auto → AP → HE; pressing twice before the
+  state catches up still advances), J sends `repair_units`.
+- **HUD**: the roster gets a vehicle card per own vehicle in squad-id
+  order (silhouette from the box sizes, name, badge; crew pips, the
+  5-part component strip, `AP n · HE n` with the loaded round in the
+  accent and a forced choice boxed; about 250 px wide). The detail panel's
+  `vehicle` mode shows crew letters, six component bars (the one being
+  repaired outlined), ammo, the choice chip and the reload. With only
+  vehicles selected the orders grid switches to Reverse / Face / Repair,
+  Move / Attack / Stop / Retreat and an Auto | AP | HE strip. Call-in
+  vehicle tiles: cost and pop, a lock and m:ss countdown from `locked_s`,
+  an `n/limit` badge (red at the limit), reasons `locked` and `limit`; the
+  intent carries the catalog `id`. **Layout change:** when one column of
+  tiles would rise above 57.5 % of the HUD height (the S1b 1280 rule, "no
+  higher than y460"), the tiles go two per row (a 244 px column); with six
+  catalog entries that is always the case. World markers (tank glyph,
+  flame / mud / spanner / immobilised pips, `+n` escorts), hit markers
+  (stacked, at most 6, 1.5 s), feed stripes for the four new kinds (an
+  enemy knocked out is own-coloured), minimap rectangles and wreck
+  crosses, escort links (dashed, own colour) and the face tool's arrows.
+
+**Contract notes found while building** (to settle at integration):
+
+1. Escort links need to know which vehicle a squad or man follows; the
+   contract only has `vehicles[].followers` (a count). The mock sends an
+   *opt* `squads[].follow` (vehicle id, own squads with a squad-level
+   follow, `order` "follow") and `soldiers[].follow` (detached men,
+   `order` "follow"); the presenter draws links only when present.
+   Proposed for the bridge.
+2. Call-in queue entries: the panel counts a queued entry's pop as
+   `pop` if present, else `men`. The bridge should send `pop` for vehicle
+   entries (the mock does), or a queued tank counts 0 toward the pop cap
+   check in the HUD (the sim still rejects it).
+3. Badge precedence puts `immobilised` before `repairing`, so a tank
+   fixing a broken track reads "Immobilised"; the spanner pip, the
+   outlined strip segment and the detail bar show the repair.
+4. `vehicle_types` has no armour slope for the look; the presenter takes
+   `glacis_deg` from the dims when present, else by faction.
+
 ## Autoplay
 
 `godot/tools/autoplay.sh <Godot> [minutes] [speed]` boots to the menu,
@@ -723,7 +821,15 @@ man forward, Z prone, recall group 1, T smoke, the HUD at 1600x900 and
   to `docs/slices/screens/` (S1b: `s1b_hud_mock_1600.png`,
   `s1b_hud_mock_1280.png`, `s1b_throw_tool_mock.png`).
 - `Godot --headless --path godot -s res://tools/test_match_view.gd` runs the
-  presenter input and layout tests on the mock.
+  presenter input and layout tests on the mock (S3: vehicle flags,
+  buffers, picking, rings, orders, keys, card, ammo strip, lock and limit,
+  hit markers, the 16-vehicle CPU cost and the 1280x800 roster fit).
+- `godot/tools/capture_s3_screens.sh <Godot>` saves `s3_mock_*.png`
+  (vehicles, card, fit, locked call-in, escort; 1600x900 and 1280x800).
+  The staging (`match.gd` `_stage_s3`, `--capture_setup s3_vehicles` ...)
+  fires the tanks shortly before the shot (`Session.capture_left_s()`).
+- `python3 -I godot/tools/gen_s3_sfx.py` regenerates the four S3 sounds
+  and their licence manifests (needs ffmpeg).
 - `Godot --headless --path godot -s res://tools/test_net_ui.gd` runs the S2
   presenter tests on MockNet (menu, lobby, net HUD); and
   `godot/tools/capture_net_screens.sh <Godot>` saves `s2_mock_*.png`.

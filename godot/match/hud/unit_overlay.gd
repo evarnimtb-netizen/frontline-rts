@@ -184,10 +184,17 @@ func _draw_hit_markers() -> void:
 			continue
 		var sp := view.camera.unproject_position(wp)
 		var box := Rect2(sp - Vector2(50, 14), Vector2(100, 19))
+		# Stack up from an overlapping word; under the top bar, stack down.
+		var down := false
 		for r in placed:
 			if r.intersects(box):
-				sp.y = r.position.y - 8.0
+				sp.y = r.end.y + 16.0 if down else r.position.y - 8.0
+				if sp.y < 52.0 and not down:
+					down = true
+					sp.y = r.end.y + 16.0
 				box.position.y = sp.y - 14.0
+		sp.y = maxf(sp.y, 52.0)
+		box.position.y = sp.y - 14.0
 		placed.append(box)
 		var a := clampf((1.0 - k) * 2.0, 0.0, 1.0)
 		var col: Color
