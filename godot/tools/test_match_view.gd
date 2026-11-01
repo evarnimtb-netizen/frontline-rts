@@ -958,6 +958,18 @@ func _reasons(ci: Control) -> Array:
 
 
 func _test_end() -> void:
+	# S3b debug data reload: F5 asks for it (debug builds only), the pause
+	# menu offers it, and a refused reload shows a readable banner.
+	var debug := OS.is_debug_build()
+	_key(KEY_F5)
+	_check((_last(&"reload_data") != null) == debug, "F5 asks to reload the data in debug builds only")
+	_view.pause_menu.open()
+	_check(_view.pause_menu.reload_button.visible == debug, "the pause menu offers Reload data & restart in debug builds")
+	_view.pause_menu.close()
+	_view.data_error.show_error("defs/rules/skirmish.toml: combat.near_miss_cm: must be in 0..=2000, got 9000")
+	_check(_view.data_error.visible and _view.data_error._text.text.contains("near_miss_cm"), "a refused reload shows the loader's message")
+	_view.data_error.hide_error()
+	_check(not _view.data_error.visible, "the banner dismisses")
 	# Pause via Esc, resume via Esc.
 	_key(KEY_ESCAPE)
 	_check(_view.pause_menu.visible and _last(&"pause") != null and _last(&"pause").paused, "Esc opens the menu and pauses")

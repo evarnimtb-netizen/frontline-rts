@@ -44,6 +44,7 @@
 //! never reused); all of it is saved, hashed and checked on load.
 
 use frontline_content::setup::{ItemSetup, SmokeSetup};
+use frontline_content::tuning::ThrowTuning;
 use frontline_content::{ITEM_KINDS, ItemKind};
 use serde::{Deserialize, Serialize};
 
@@ -62,19 +63,13 @@ use crate::unit::UnitOrder;
 pub const MAX_THROWN: usize = 256;
 /// Most smoke clouds at once.
 pub const MAX_SMOKE: usize = 64;
-/// The item leaves the hand this far below the top of the firing capsule.
-const RELEASE_DROP_MM: i32 = 150;
-/// Shortest flight (a satchel dropped at the feet still arcs).
-const MIN_FLIGHT_MS: i32 = 300;
-/// An item still in the air after this long lands where it is.
+/// An item still in the air after this long lands where it is (a safety
+/// bound on a flight's substeps, not tuning).
 const MAX_FLIGHT_S: i32 = 20;
-/// A cloud reaches this far below its centre (a sight line along a slope).
-const SMOKE_BELOW_MM: i32 = 2000;
 /// 9.81 m/s².
 const GRAVITY: Fx = Fx::from_ratio(981, 100);
-/// Lob steepness: tangent of the launch angle over flat ground, in
-/// thousandths (1000 = 45°).
-const LOB_TAN_MILLI: i32 = 1000;
+// S3b: the release height, lob, shortest flight and smoke reach are the
+// rules' `[items.throw]` (`frontline_content::tuning`).
 
 /// A throw being wound up.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -310,6 +305,8 @@ impl MatchState {
         seed: u64,
     ) -> u64 {
         let mut released = 0;
+        let throw = self.setup.rules.items.throw.clone();
+        let throw = &throw;
         for i in 0..ents.len() {
             let Some(mut w) = ents.kit[i].windup else {
                 continue;
@@ -347,12 +344,12 @@ impl MatchState {
             let mut rng = RngStream::new(seed, k.throws as u64, m, Purpose::THROW);
             k.throws = k.throws.wrapping_add(1);
             let pos = ents.transform[i].pos;
-            let lift = ents.combat[i].fire_height - Fx::from_milli(RELEASE_DROP_MM);
+            let lift = ents.combat[i].fire_height - Fx::from_milli(throw.release_drop_mm as i32);
             let from = FxVec3::new(pos.x, pos.y, pos.z + lift.max(Fx::from_milli(200)));
             let d = (w.target - from.xy()).length();
             let s = d.mul_int(scatter_pct as i32).div_int(100);
             let aim = terrain.clamp(w.target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
-            let (from, vel) = lob(from, aim.extend(lob_height(terrain, aim)));
+            let (from, vel) = lob(from, aim.extend(lob_height(terrain, aim)), throw);
             let fuse = fuse_ticks.saturating_sub(windup_ticks) + 1;
             self.thrown.push(Thrown {
                 id: self.next_thrown,
@@ -522,7 +519,8 @@ impl MatchState {
             };
             let p = a + d * Fx::from_raw(t as i32);
             if (p.xy() - c.pos.xy()).length_sq_raw() > FxVec2::new(r, Fx::ZERO).length_sq_raw()
-                || p.z < c.pos.z - Fx::from_milli(SMOKE_BELOW_MM)
+                || p.z
+                    < c.pos.z - Fx::from_milli(self.setup.rules.items.throw.smoke_below_mm as i32)
                 || p.z > c.pos.z + r.mul_int(2)
             {
                 continue;
@@ -638,17 +636,18 @@ fn lob_height(terrain: &Heightfield, aim: FxVec2) -> Fx {
     }
 }
 
-/// Release point and velocity of a 45° lob from `from` to `to` (flight time
-/// `sqrt(2 d / g)` over the flat distance, at least [`MIN_FLIGHT_MS`]).
-fn lob(from: FxVec3, to: FxVec3) -> (FxVec3, FxVec3) {
+/// Release point and velocity of a lob from `from` to `to` (45° at the
+/// default `lob_tan_milli`; flight time `sqrt(2 d · tan / g)` over the flat
+/// distance, at least `min_flight_ms`).
+fn lob(from: FxVec3, to: FxVec3, throw: &ThrowTuning) -> (FxVec3, FxVec3) {
     let dxy = to.xy() - from.xy();
     let flight = dxy
         .length()
         .mul_int(2)
-        .mul(Fx::from_milli(LOB_TAN_MILLI))
+        .mul(Fx::from_milli(throw.lob_tan_milli as i32))
         .div(GRAVITY)
         .sqrt()
-        .max(Fx::from_milli(MIN_FLIGHT_MS));
+        .max(Fx::from_milli(throw.min_flight_ms as i32));
     let vz = (to.z - from.z + GRAVITY.mul(flight).mul(flight).div_int(2)).div(flight);
     (from, FxVec3::new(dxy.x.div(flight), dxy.y.div(flight), vz))
 }
@@ -681,7 +680,13 @@ mod tests {
     fn lob_lands_on_the_target() {
         let from = FxVec3::new(Fx::from_int(100), Fx::from_int(100), Fx::from_milli(1600));
         let to = FxVec3::new(Fx::from_int(125), Fx::from_int(100), Fx::from_milli(-1600));
-        let (_, v) = lob(from, to);
+        let throw = ThrowTuning {
+            release_drop_mm: 150,
+            min_flight_ms: 300,
+            lob_tan_milli: 1000,
+            smoke_below_mm: 2000,
+        };
+        let (_, v) = lob(from, to, &throw);
         // About 45° up and 2.3 s in the air at 25 m.
         assert!((v.x - v.z).abs() < Fx::from_int(3), "{v:?}");
         let mut step = 0i64;

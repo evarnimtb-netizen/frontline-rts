@@ -16,7 +16,7 @@
 //! 2. **Buy.** The role furthest below the target mix (`mix_pct`, counting
 //!    squads alive, called in and about to be bought) is bought when the
 //!    manpower left after pending buys and the pop cap allow; at most
-//!    [`MAX_BUYS_PER_PLAN`] per plan.
+//!    `ai.infantry.buys_per_plan` per plan.
 //! 3. **Points.** Each point gets a priority from its value, owner, distance
 //!    from base and threat (spotted enemies near it), and a demand (squads
 //!    wanted). Infantry squads are assigned greedily by priority minus
@@ -30,15 +30,15 @@
 //!    stand in it.
 //! 5. **Mortars.** A mortar team fires `barrage_rounds` at the best spotted
 //!    enemy group in range (bigger groups and men in trenches score
-//!    higher; never within [`DANGER_CLOSE_M`] of own men); otherwise it
-//!    moves to a support spot [`SUPPORT_BACK_M`] behind the most important
+//!    higher; never within `ai.infantry.danger_close_m` of own men); otherwise it
+//!    moves to a support spot `ai.infantry.support_back_m` behind the most important
 //!    point.
 //! 6. **Throws** (S1b, `crate::items`), at most one per squad per
 //!    `throw_cooldown`, for squads not retreating, first that applies:
 //!    * *satchel:* engineers throw at a spotted enemy in a trench within
 //!      satchel range of a carrier;
 //!    * *frag:* at a spotted enemy in a trench, or with at least
-//!      `frag_group_men` spotted men within [`FRAG_GROUP_M`] of him
+//!      `frag_group_men` spotted men within `ai.infantry.frag_group_m` of him
 //!      (bigger groups, then trenches, then the nearest first), within
 //!      frag range of a man;
 //!    * *smoke:* a moving or attack-moving squad with a third of its men
@@ -57,7 +57,7 @@
 //!      in sight than the AI has AT teams and vehicles, an AT team is
 //!      bought first;
 //!    * *upkeep:* a vehicle with its gun destroyed, two crew dead or its
-//!      engine under [`RETREAT_ENGINE_PCT`] % retreats to base when it can
+//!      engine under `ai.armour.retreat_engine_pct` % retreats to base when it can
 //!      move (and waits there for the base repair); an immobilised vehicle
 //!      with no seen enemy within `repair_clear` repairs;
 //!    * *assault:* each other vehicle takes the non-own point with the most
@@ -66,19 +66,19 @@
 //!      AT was seen within `threat_radius` of the point in the last
 //!      `at_clear` seconds, `tank_standoff` short of the point; else
 //!      `assault_close` short of the enemy trench in front of it (probed
-//!      along the approach) or of the point. Up to [`ESCORT_SQUADS`] rifle
-//!      or engineer squads assigned to that point within [`ESCORT_JOIN_M`]
+//!      along the approach) or of the point. Up to `ai.armour.escort_squads` rifle
+//!      or engineer squads assigned to that point within `ai.armour.escort_join_m`
 //!      escort it (`FollowUnits`); once the vehicle halts for any reason
-//!      (after [`ESCORT_GRACE_S`]), the escorts still attached detach and
+//!      (after `ai.armour.escort_grace_s`), the escorts still attached detach and
 //!      attack-move the point;
 //!    * *facing:* an idle vehicle turns its hull (`FaceUnits`) toward the
-//!      nearest seen enemy vehicle or AT soldier within [`FACE_RANGE_M`];
+//!      nearest seen enemy vehicle or AT soldier within `ai.armour.face_range_m`;
 //!    * *AT teams* defend own points, preferring points with enemy vehicles
-//!      within [`ARMOUR_THREAT_M`], in the trench if there is one; they fire
+//!      within `ai.armour.threat_m`, in the trench if there is one; they fire
 //!      by their weapon's own rules;
 //!    * *satchels:* engineers throw at a seen enemy vehicle no faster than
-//!      [`SATCHEL_SLOW_MM_S`] (stopped, bogged, crossing) within satchel range, at its position when the fuse runs out,
-//!      [`SATCHEL_SIDE_MM`] outside the hull side nearer the thrower.
+//!      `ai.infantry.satchel_slow_mm_s` (stopped, bogged, crossing) within satchel range, at its position when the fuse runs out,
+//!      `ai.infantry.satchel_side_mm` outside the hull side nearer the thrower.
 //!
 //!    [`AiCounters`] count what the AI did for the skirmish report.
 //!
@@ -110,53 +110,14 @@ use frontline_content::ItemKind;
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
-/// Most squads bought per plan.
-pub const MAX_BUYS_PER_PLAN: usize = 2;
 /// Most trenches the AI remembers (one per point is planned).
 pub const MAX_TRENCHES: usize = 64;
-/// Mortars never fire this close to own men (m).
-pub const DANGER_CLOSE_M: i32 = 35;
-/// Mortar support spot: this far behind the point it supports (m).
-pub const SUPPORT_BACK_M: i32 = 200;
 /// No point index (support and retreat tasks).
 pub const NO_POINT: u8 = u8::MAX;
-/// Frag targets: spotted men within this distance count as one group (m).
-pub const FRAG_GROUP_M: i32 = 5;
 /// Most escorted assaults the AI tracks at once (one per own vehicle).
 pub const MAX_ESCORTS: usize = 64;
-/// Most squads escorting one vehicle.
-pub const ESCORT_SQUADS: usize = 2;
-/// Squads this close to a vehicle may join its escort (m).
-pub const ESCORT_JOIN_M: i32 = 150;
-/// Escorts are released when their vehicle halts, but not in its first
-/// seconds (it waits for its path and its file) (s).
-pub const ESCORT_GRACE_S: u32 = 8;
-/// An escorted assault counts as having reached the enemy once an escort
-/// squad's leader is this close to the enemy trench (or the point) (m).
-pub const ESCORT_REACHED_M: i32 = 30;
-/// Below this speed a vehicle counts as halted (mm/s).
-pub const HALTED_MM_S: i32 = 300;
-/// Idle vehicles turn toward a threat further off their heading (deg) ...
-pub const FACE_SLACK_DEG: i32 = 20;
-/// ... within this distance (m).
-pub const FACE_RANGE_M: i32 = 600;
-/// Enemy vehicles this close to a point are an armour threat to it (m).
-pub const ARMOUR_THREAT_M: i32 = 300;
-/// A vehicle retreats with its engine under this share of its HP (%).
-pub const RETREAT_ENGINE_PCT: u32 = 30;
-/// Satchels go at vehicles no faster than this (mm/s): stopped, bogged,
-/// immobilised or crossing a trench (1 m/s, with a margin) ...
-pub const SATCHEL_SLOW_MM_S: i32 = 1100;
-/// ... landing this far outside the hull side (mm).
-pub const SATCHEL_SIDE_MM: i32 = 800;
-/// A vehicle backing up an own point stands this far behind it (m).
-pub const BACKUP_M: i32 = 30;
-/// Enemy trench probe: ground dug this deep (dm) on the approach.
-pub const TRENCH_PROBE_DM: u8 = 8;
-/// The probe looks this far in front of the point (m) ...
-pub const TRENCH_PROBE_M: i32 = 60;
-/// ... in steps of this many metres.
-pub const TRENCH_PROBE_STEP_M: i32 = 4;
+// S3b: the AI's gameplay distances, speeds and timings are rules data
+// (`[ai.infantry]` and `[ai.armour]`, `frontline_content::tuning`).
 
 /// A command waiting for the AI's reaction delay.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -237,7 +198,7 @@ pub struct AiEscort {
     pub started: Vec<SquadId>,
     /// Tick the escort started.
     pub since: u64,
-    /// An escort squad's leader came within [`ESCORT_REACHED_M`] of the
+    /// An escort squad's leader came within `ai.armour.escort_reached_m` of the
     /// enemy trench (counted once).
     pub reached: bool,
 }
@@ -248,7 +209,7 @@ pub struct AiCounters {
     pub vehicles_bought: u32,
     pub at_bought: u32,
     pub escorts_started: u32,
-    /// Escorted assaults that reached [`ESCORT_REACHED_M`] of the enemy
+    /// Escorted assaults that reached `ai.armour.escort_reached_m` of the enemy
     /// trench.
     pub escorts_reached: u32,
     pub escorts_released: u32,
@@ -332,8 +293,8 @@ impl AiState {
                 bad_escort(id)
                     || e.point as usize >= np
                     || e.since > tick
-                    || e.squads.len() > ESCORT_SQUADS
-                    || e.started.len() > ESCORT_SQUADS
+                    || e.squads.len() > g.setup.rules.ai.armour.escort_squads as usize
+                    || e.started.len() > g.setup.rules.ai.armour.escort_squads as usize
                     || e.squads.iter().chain(&e.started).any(bad_squad)
                     || e.squads.windows(2).any(|w| w[0] >= w[1])
                     || e.started.windows(2).any(|w| w[0] >= w[1])
@@ -461,7 +422,7 @@ struct PointEval {
     pos: FxVec2,
     rel: Rel,
     threat: u32,
-    /// Seen enemy vehicles within [`ARMOUR_THREAT_M`] (S3).
+    /// Seen enemy vehicles within `ai.armour.threat_m` (S3).
     armour: u32,
     priority: i64,
     demand: u32,
@@ -727,7 +688,7 @@ impl Planner<'_> {
         if unlocked && vehicles < vr.limit {
             mix[MIX_VEHICLE] = ai.mix_vehicle_pct;
         }
-        for _ in 0..MAX_BUYS_PER_PLAN {
+        for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
             let total: i64 = counts.iter().sum();
             let active = |r: usize| by_role[r].is_some() && (r < MIX_AT || mix[r] > 0);
             let weight: i64 = (0..MIX_ROLES)
@@ -809,7 +770,7 @@ impl Planner<'_> {
                 Some(_) => Rel::Enemy,
             };
             let threat = self.threat_at(known, pos);
-            let armour_r = sq_m(Fx::from_int(ARMOUR_THREAT_M));
+            let armour_r = sq_m(Fx::from_int(self.g.setup.rules.ai.armour.threat_m as i32));
             let armour = kv
                 .iter()
                 .filter(|v| (v.pos - pos).length_sq_raw() <= armour_r)
@@ -1063,7 +1024,9 @@ impl Planner<'_> {
             .filter(|id| self.ents.owner[id.index()] == self.me)
             .map(|id| self.ents.transform[id.index()].pos.xy())
             .collect();
-        let danger = sq_m(Fx::from_int(DANGER_CLOSE_M));
+        let danger = sq_m(Fx::from_int(
+            self.g.setup.rules.ai.infantry.danger_close_m as i32,
+        ));
         let front = points
             .iter()
             .filter(|p| p.rel != Rel::Own || p.threat > 0)
@@ -1104,9 +1067,9 @@ impl Planner<'_> {
             }
             let Some(front) = front else { continue };
             let back = (g.base_of(self.me) - front).normalize_or_zero();
-            let spot = self
-                .terrain
-                .clamp(front + back * Fx::from_int(SUPPORT_BACK_M));
+            let spot = self.terrain.clamp(
+                front + back * Fx::from_int(self.g.setup.rules.ai.infantry.support_back_m as i32),
+            );
             let near = |a: FxVec2, r: i32| (a - spot).length_sq_raw() <= sq_m(Fx::from_int(r));
             let on_track = match &sq.order {
                 Order::Idle => near(m.lead, 40),
@@ -1236,7 +1199,7 @@ impl Planner<'_> {
             let beaten = vs.component(ComponentKind::Gun) == 0
                 || dead >= 2
                 || (vs.component(ComponentKind::Engine) as u32) * 100
-                    < engine_max * RETREAT_ENGINE_PCT;
+                    < engine_max * self.g.setup.rules.ai.armour.retreat_engine_pct;
             if beaten && !vs.immobile(v) {
                 if let Some(e) = self.ai.escorts.remove(&t.squad) {
                     self.release(&e, t.id, &[]);
@@ -1278,21 +1241,22 @@ impl Planner<'_> {
             })
     }
 
-    /// The first ground dug at least [`TRENCH_PROBE_DM`] on the approach
-    /// from `from` to point `at`, up to [`TRENCH_PROBE_M`] in front of it.
+    /// The first ground dug at least `ai.infantry.trench_probe_dm` on the approach
+    /// from `from` to point `at`, up to `ai.infantry.trench_probe_m` in front of it.
     fn enemy_trench(&self, from: FxVec2, at: FxVec2) -> Option<FxVec2> {
         let dir = (at - from).normalize_or_zero();
         if dir == FxVec2::ZERO {
             return None;
         }
-        let mut d = TRENCH_PROBE_M;
-        while d >= -TRENCH_PROBE_STEP_M {
+        let probe = &self.g.setup.rules.ai.infantry;
+        let mut d = probe.trench_probe_m as i32;
+        while d >= -(probe.trench_probe_step_m as i32) {
             let p = self.terrain.clamp(at - dir * Fx::from_int(d));
             let (gx, gy) = self.terrain.nearest_grid(p);
-            if self.terrain.dug_dm(gx, gy) >= TRENCH_PROBE_DM {
+            if self.terrain.dug_dm(gx, gy) as u32 >= probe.trench_probe_dm {
                 return Some(p);
             }
-            d -= TRENCH_PROBE_STEP_M;
+            d -= probe.trench_probe_step_m as i32;
         }
         None
     }
@@ -1359,9 +1323,13 @@ impl Planner<'_> {
             let vdef = &g.setup.vehicles[vs.type_idx as usize];
             let halted = tsq.order == Order::Idle
                 || vs.immobile(vdef)
-                || (vs.speed.abs() < Fx::from_milli(HALTED_MM_S)
+                || (vs.speed.abs()
+                    < Fx::from_milli(self.g.setup.rules.ai.armour.halted_mm_s as i32)
                     && tsq.nav.phase != NavPhase::PathPending);
-            if !e.squads.is_empty() && halted && self.tick >= e.since + ESCORT_GRACE_S as u64 * hz {
+            if !e.squads.is_empty()
+                && halted
+                && self.tick >= e.since + self.g.setup.rules.ai.armour.escort_grace_s as u64 * hz
+            {
                 self.release(&e, v, busy);
                 e.squads.clear();
                 self.ai.counters.escorts_released += 1;
@@ -1371,7 +1339,9 @@ impl Planner<'_> {
                 let front = self
                     .enemy_trench(vpos, points[point].pos)
                     .unwrap_or(points[point].pos);
-                let r = sq_m(Fx::from_int(ESCORT_REACHED_M));
+                let r = sq_m(Fx::from_int(
+                    self.g.setup.rules.ai.armour.escort_reached_m as i32,
+                ));
                 let close = e.started.iter().any(|q| {
                     g.squads.get(q).is_some_and(|sq| {
                         !sq.members.is_empty()
@@ -1426,7 +1396,9 @@ impl Planner<'_> {
                         };
                         let at = points[i].pos;
                         let back = (g.base_of(self.me) - at).normalize_or_zero();
-                        let goal = self.terrain.clamp(at + back * Fx::from_int(BACKUP_M));
+                        let goal = self.terrain.clamp(
+                            at + back * Fx::from_int(self.g.setup.rules.ai.armour.backup_m as i32),
+                        );
                         (TaskKind::Defend, goal, i as u8)
                     }
                 };
@@ -1452,7 +1424,9 @@ impl Planner<'_> {
                     && !self.ai.escorts.contains_key(&t.squad)
                     && self.ai.escorts.len() < MAX_ESCORTS
                 {
-                    let join = sq_m(Fx::from_int(ESCORT_JOIN_M));
+                    let join = sq_m(Fx::from_int(
+                        self.g.setup.rules.ai.armour.escort_join_m as i32,
+                    ));
                     let mut cands: Vec<(u64, SquadId)> = assigned
                         .iter()
                         .filter(|a| a.1 == pi as usize)
@@ -1466,7 +1440,7 @@ impl Planner<'_> {
                         .map(|m| ((m.lead - t.pos).length_sq_raw(), m.id))
                         .collect();
                     cands.sort_unstable();
-                    cands.truncate(ESCORT_SQUADS);
+                    cands.truncate(self.g.setup.rules.ai.armour.escort_squads as usize);
                     if !cands.is_empty() {
                         let mut squads: Vec<SquadId> = cands.iter().map(|c| c.1).collect();
                         squads.sort_unstable();
@@ -1500,7 +1474,9 @@ impl Planner<'_> {
             if ordered || t.immobile || sq.order != Order::Idle {
                 continue;
             }
-            let range = sq_m(Fx::from_int(FACE_RANGE_M));
+            let range = sq_m(Fx::from_int(
+                self.g.setup.rules.ai.armour.face_range_m as i32,
+            ));
             let threat = kv
                 .iter()
                 .map(|k| (k.pos, k.id))
@@ -1510,7 +1486,9 @@ impl Planner<'_> {
             let Some((at, _)) = threat else { continue };
             let d = at - t.pos;
             let off = (Fx::atan2(d.y, d.x) - t.yaw).wrap_angle().abs();
-            let slack = Fx::from_int(FACE_SLACK_DEG).mul(Fx::PI).div_int(180);
+            let slack = Fx::from_int(self.g.setup.rules.ai.armour.face_slack_deg as i32)
+                .mul(Fx::PI)
+                .div_int(180);
             let same = vs
                 .face
                 .is_some_and(|f| (f - at).length_sq_raw() <= sq_m(Fx::from_int(20)));
@@ -1542,7 +1520,8 @@ impl Planner<'_> {
         let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
         let reach = sq_m(Fx::from(it.range_max) + Fx::from_int(10));
         kv.iter().find_map(|v| {
-            if v.speed.abs() > Fx::from_milli(SATCHEL_SLOW_MM_S)
+            if v.speed.abs()
+                > Fx::from_milli(self.g.setup.rules.ai.infantry.satchel_slow_mm_s as i32)
                 || (v.pos - lead).length_sq_raw() > reach
             {
                 return None;
@@ -1555,7 +1534,8 @@ impl Planner<'_> {
             } else {
                 -Fx::ONE
             };
-            let off = geo.hull_half.y + Fx::from_milli(SATCHEL_SIDE_MM);
+            let off = geo.hull_half.y
+                + Fx::from_milli(self.g.setup.rules.ai.infantry.satchel_side_mm as i32);
             let target = self.terrain.clamp(at + left * (side * off));
             let men = self.throwers(sq, ItemKind::Satchel, target);
             (!men.is_empty()).then_some((ItemKind::Satchel, men, target))
@@ -1661,7 +1641,9 @@ impl Planner<'_> {
             .iter()
             .filter(|k| (k.pos - lead).length_sq_raw() <= reach)
             .collect();
-        let group = sq_m(Fx::from_int(FRAG_GROUP_M));
+        let group = sq_m(Fx::from_int(
+            self.g.setup.rules.ai.infantry.frag_group_m as i32,
+        ));
         let need = g.setup.rules.ai.frag_group_men as i64;
         // Bigger groups, then trenches, then the nearest, then by id.
         let mut best: Option<((i64, bool, i64, SimId), ThrowPick)> = None;

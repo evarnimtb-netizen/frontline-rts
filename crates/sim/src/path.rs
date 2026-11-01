@@ -50,7 +50,8 @@ use std::collections::BinaryHeap;
 
 use crate::fx::{Fx, FxVec2};
 use crate::terrain::{FLAG_WOODS, Heightfield, SPACING_M};
-use crate::vehicle::{AVOID_COST_PCT, BlockLayer, MARGIN_COST_PCT};
+use crate::vehicle::BlockLayer;
+use frontline_content::tuning::VehiclePathTuning;
 
 const STRAIGHT: u32 = 1000;
 const DIAGONAL: u32 = 1414;
@@ -74,27 +75,19 @@ pub struct PathCost {
     pub max_slope_pct: u32,
     /// Step cost between two trench nodes, in percent.
     pub trench_cost_pct: u32,
+    /// Infantry step cost into an AT-ditch node, in percent (S3).
+    pub ditch_cost_pct: u32,
 }
 
 /// Vehicle costs on top of [`PathCost`] (S3).
 #[derive(Copy, Clone, Debug)]
 pub struct VehiclePathCost<'a> {
     pub block: &'a BlockLayer,
-    /// Node index made [`AVOID_COST_PCT`] dearer.
+    /// Node index made `avoid_pct` dearer.
     pub avoid: Option<u32>,
+    /// Woods, dug-ground, avoid and margin costs (`[vehicles.path]`).
+    pub costs: &'a VehiclePathTuning,
 }
-
-/// Woods step cost for vehicles, percent.
-const VEHICLE_WOODS_PCT: u64 = 200;
-/// Ground dug at least 0.4 m (craters), percent.
-const VEHICLE_DUG_PCT: u64 = 150;
-const VEHICLE_DUG_DM: u8 = 4;
-/// Ground dug at least 1.0 m (trenches, big craters), percent.
-const VEHICLE_DEEP_PCT: u64 = 400;
-const VEHICLE_DEEP_DM: u8 = 10;
-
-/// Infantry step cost into an AT-ditch node, percent (S3).
-pub const DITCH_COST_PCT: u64 = 300;
 
 /// Result of [`find_path`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -191,7 +184,7 @@ pub fn find_path(
 }
 
 /// [`find_path`] for infantry in a match with AT ditches (S3): a step into
-/// an AT-ditch node ([`BlockLayer::is_ditch`]) costs [`DITCH_COST_PCT`]
+/// an AT-ditch node ([`BlockLayer::is_ditch`]) costs `cost.ditch_cost_pct`
 /// and never gets the trench discount.
 pub fn find_infantry_path(
     terrain: &Heightfield,
@@ -252,22 +245,23 @@ fn vehicle_pct(
     if v.block.is_blocked(m) && !near_start {
         return None;
     }
+    let k = v.costs;
     let mut pct = 100u64;
     let flags = terrain.flags();
     if !flags.is_empty() && flags[m as usize] & FLAG_WOODS != 0 {
-        pct = pct * VEHICLE_WOODS_PCT / 100;
+        pct = pct * k.woods_pct as u64 / 100;
     }
-    let dug = terrain.dug_dm(mx, my);
-    if dug >= VEHICLE_DEEP_DM {
-        pct = pct * VEHICLE_DEEP_PCT / 100;
-    } else if dug >= VEHICLE_DUG_DM {
-        pct = pct * VEHICLE_DUG_PCT / 100;
+    let dug = terrain.dug_dm(mx, my) as u32;
+    if dug >= k.deep_dm {
+        pct = pct * k.deep_pct as u64 / 100;
+    } else if dug >= k.dug_dm {
+        pct = pct * k.dug_pct as u64 / 100;
     }
     if v.avoid == Some(m) {
-        pct = pct * AVOID_COST_PCT as u64 / 100;
+        pct = pct * k.avoid_pct as u64 / 100;
     }
     if v.block.is_margin(m) {
-        pct = pct * MARGIN_COST_PCT as u64 / 100;
+        pct = pct * k.margin_pct as u64 / 100;
     }
     Some(pct)
 }
@@ -385,7 +379,7 @@ fn search(
                 c = (c as u64 * pct / 100).min(u32::MAX as u64 / 4) as u32;
             } else if ditch(m) {
                 // An AT ditch: crossable, dear, never a covered road.
-                c = (c as u64 * DITCH_COST_PCT / 100).min(u32::MAX as u64 / 4) as u32;
+                c = (c as u64 * cost.ditch_cost_pct as u64 / 100).min(u32::MAX as u64 / 4) as u32;
             } else if n_trench && terrain.is_trench(mx, my) && !ditch(n) {
                 c = (c as u64 * cost.trench_cost_pct as u64 / 100) as u32;
             }
@@ -538,6 +532,20 @@ mod tests {
         slope_cost_pct: 300,
         max_slope_pct: 80,
         trench_cost_pct: 60,
+        ditch_cost_pct: 300,
+    };
+
+    /// The `[vehicles.path]` values of mods/ww2.
+    const VCOSTS: VehiclePathTuning = VehiclePathTuning {
+        woods_pct: 200,
+        dug_pct: 150,
+        dug_dm: 4,
+        deep_pct: 400,
+        deep_dm: 10,
+        avoid_pct: 800,
+        margin_pct: 400,
+        ditch_reach_m: 2,
+        wreck_pad_m: 2,
     };
 
     fn flat(size: i32) -> Heightfield {
@@ -702,7 +710,7 @@ mod tests {
     fn layer(t: &Heightfield, walls: &[crate::vehicle::Footprint]) -> BlockLayer {
         let mut b = BlockLayer::new(t.dim(), 19);
         b.mark_all();
-        b.update(t, &[], walls);
+        b.update(t, &[], walls, &VCOSTS);
         b
     }
 
@@ -737,6 +745,7 @@ mod tests {
         let v = VehiclePathCost {
             block: &b,
             avoid: None,
+            costs: &VCOSTS,
         };
         let mut s = PathScratch::default();
         let (from, to) = (FxVec2::from_int(60, 60), FxVec2::from_int(200, 60));
@@ -770,6 +779,7 @@ mod tests {
         let v = VehiclePathCost {
             block: &b,
             avoid: None,
+            costs: &VCOSTS,
         };
         let mut s = PathScratch::default();
         let (from, to) = (FxVec2::from_int(60, 72), FxVec2::from_int(150, 72));
@@ -799,6 +809,7 @@ mod tests {
         let avoided = VehiclePathCost {
             block: &b,
             avoid: Some(gy * t.dim() + gx),
+            costs: &VCOSTS,
         };
         let r = find_vehicle_path(&t, from, to, &COST, &avoided, 100_000, &mut s);
         let path = [&[from][..], &r.points].concat();
@@ -820,6 +831,13 @@ mod tests {
             work_per_m: 22_000,
             passes: 10,
             engineers_only: true,
+            common: frontline_content::tuning::DigCommonTuning {
+                parapet_rise_mm: 300,
+                parapet_top_mm: 400,
+                parapet_fall_mm: 600,
+                parapet_undug_mm: 50,
+                reach_mm: 1500,
+            },
         };
         // The same 60 m line along y = 128, as a ditch and as a trench.
         let line = [FxVec2::from_int(100, 128), FxVec2::from_int(160, 128)];
@@ -837,7 +855,7 @@ mod tests {
         );
         let mut b = BlockLayer::new(t.dim(), 19);
         b.mark_all();
-        b.update(&t, &[line.to_vec()], &[]);
+        b.update(&t, &[line.to_vec()], &[], &VCOSTS);
         let mid = crate::vehicle::node_at(&t, FxVec2::from_int(130, 128));
         assert!(b.is_ditch(mid) && b.is_blocked(mid));
         let mut s = PathScratch::default();

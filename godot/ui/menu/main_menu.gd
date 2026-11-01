@@ -73,6 +73,23 @@ func _ready() -> void:
 		_show("skirmish")
 	_skirmish_btn.grab_focus()
 	AudioManager.start_ambient(&"wind")
+	if Session.start_error != "":
+		_show_start_error(Session.start_error)
+		Session.start_error = ""
+
+
+## A match that could not start (broken mod data, S3b): the loader's
+## message, under the Start button, until the next start.
+func _show_start_error(text: String) -> void:
+	var l := Label.new()
+	l.name = "StartError"
+	l.text = "The match could not start:\n%s" % text
+	l.add_theme_color_override("font_color", UiPalette.DANGER)
+	l.add_theme_font_size_override("font_size", 14)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 520
+	_skirmish.add_child(l)
+	AudioManager.play_ui(&"error")
 
 
 func _show(which: String) -> void:

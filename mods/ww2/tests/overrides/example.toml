@@ -1,0 +1,35 @@
+# Example tuning override (S3b quick iteration; docs/modding/tuning.md).
+#
+#   frontline-cli skirmish --ai-vs-ai --seeds 5 --both-bases --summary \
+#       --rules-override mods/ww2/tests/overrides/example.toml
+#
+# An override is a partial file: every key here replaces the same key of the
+# rules the run uses (ww2:skirmish; armour-test derives its test rules from
+# it), tables merging key by key. It has no `base`, `id` or `name`. Several
+# --rules-override files apply in order. The run prints each changed value.
+# Every value below is the mod's own, so this file changes nothing; edit one
+# to try it.
+
+[combat]
+# Near misses suppress within this (cm).
+near_miss_cm = 200
+
+[combat.suppression]
+covered_near_miss_pct = 50
+
+[ai.armour]
+# Tanks hold this far behind an own point they back up (m).
+backup_m = 30
+
+# Any def can be patched too: [defs.<kind>."<id>"] with kind one of units,
+# weapons, items, factions, maps, vehicles, ammo. Arrays (a vehicle's
+# [[weapons]]) replace the whole array.
+[defs.vehicles."ww2:ger_pz4_h"]
+# Manpower (a vehicle's cost, pop and call-in time are in its def).
+cost = 640
+
+[defs.vehicles."ww2:usa_m4a3_75".turret]
+traverse_deg_s = 24
+
+[defs.units."ww2:usa_rifle_squad"]
+cost = 250

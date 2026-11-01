@@ -794,6 +794,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			view.pause_menu.toggle()
 		get_viewport().set_input_as_handled()
 		return
+	if event.is_action_pressed(&"debug_reload_data") and OS.is_debug_build() and not view.net_mode:
+		view.emit_intent(&"reload_data", {})
+		get_viewport().set_input_as_handled()
+		return
 	if view.input_blocked():
 		return
 	if event is InputEventMouseButton:

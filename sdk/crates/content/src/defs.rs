@@ -12,6 +12,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
+use crate::tuning::{
+    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CoverTuning, DigCommonTuning,
+    DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning, SuppressionTuning,
+    ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
+};
 
 /// Map side limits (the sim's 64 m tiling).
 pub const MAP_SIZE_STEP_M: u32 = 64;
@@ -497,6 +502,8 @@ pub struct RulesDef {
     pub vehicles: VehicleRulesDef,
     pub difficulty: DifficultyTableDef,
     pub ai: AiDef,
+    /// Where arriving men look for cover (S3b tuning table).
+    pub cover: CoverTuning,
 }
 
 /// Vehicle rules (S3, `docs/slices/S3-armour.md`). Per-vehicle numbers
@@ -568,6 +575,14 @@ pub struct VehicleRulesDef {
     pub base_repair_pct_s: u32,
     pub base_rearm_s: u32,
     pub base_crew_s: u32,
+    /// Path following, yielding and ground pose (S3b tuning table).
+    pub driving: DrivingTuning,
+    /// Vehicle path costs and blocked ground (S3b tuning table).
+    pub path: VehiclePathTuning,
+    /// The infantry file behind a vehicle (S3b tuning table).
+    pub escort: EscortTuning,
+    /// Vehicle weapons and hits on vehicles (S3b tuning table).
+    pub gunnery: GunneryTuning,
 }
 
 /// Thrown items (S1b abilities).
@@ -577,6 +592,8 @@ pub struct ItemRulesDef {
     /// A soldier in his own base gets one item back this often, up to his
     /// loadout.
     pub resupply_s: u32,
+    /// Throw flight and smoke reach (S3b tuning table).
+    pub throw: ThrowTuning,
 }
 
 fn default_tick_hz() -> u32 {
@@ -606,6 +623,9 @@ pub struct CaptureDef {
     pub radius_m: u32,
     pub time_s: u32,
     pub max_men: u8,
+    /// Each man beyond the first, up to `max_men`, adds this much capture
+    /// speed (percent of one man's).
+    pub extra_man_pct: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -622,6 +642,11 @@ pub struct MovementDef {
     pub path_max_expansions: u32,
     /// Path step cost between two trench cells, in percent of normal.
     pub trench_cost_pct: u32,
+    /// Infantry path step cost into an AT-ditch cell, in percent of normal.
+    pub ditch_cost_pct: u32,
+    /// Squad walking, arrival and soldier movement details (S3b tuning
+    /// table).
+    pub formation: FormationTuning,
 }
 
 /// Dig profiles (S3 generalised the S1 trench to named profiles).
@@ -629,6 +654,8 @@ pub struct MovementDef {
 #[serde(deny_unknown_fields)]
 pub struct DigDef {
     pub profiles: DigProfilesDef,
+    /// Spoil bank shape and digger reach (S3b tuning table).
+    pub common: DigCommonTuning,
 }
 
 /// Every profile a `Dig` command can name.
@@ -702,6 +729,14 @@ pub struct CombatDef {
     pub fire_exposure_cm: u32,
     /// Corpses stay this long (for the presenter).
     pub corpse_s: u32,
+    /// Hit capsule and posture points (S3b tuning table).
+    pub body: BodyTuning,
+    /// Mortar laying and flight (S3b tuning table).
+    pub mortar: MortarTuning,
+    /// HE bursts (S3b tuning table).
+    pub blast: BlastTuning,
+    /// Suppression details (S3b tuning table).
+    pub suppression: SuppressionTuning,
 }
 
 /// AI commander tuning (weights in data, §9). Difficulty is separate.
@@ -743,6 +778,10 @@ pub struct AiDef {
     pub at_clear_s: u32,
     /// An immobilised vehicle repairs when no seen enemy is this close.
     pub repair_clear_m: u32,
+    /// Infantry, mortar and satchel rules (S3b tuning table).
+    pub infantry: AiInfantryTuning,
+    /// Vehicles and escorts (S3b tuning table).
+    pub armour: AiArmourTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1543,6 +1582,40 @@ impl RulesDef {
                 "must be at most dig.profiles.trench.max_length_m",
             ));
         }
+        range(
+            &mut out,
+            "capture.extra_man_pct",
+            self.capture.extra_man_pct,
+            0,
+            1000,
+        );
+        range(
+            &mut out,
+            "movement.ditch_cost_pct",
+            self.movement.ditch_cost_pct,
+            1,
+            10_000,
+        );
+        check_tuning(
+            &mut out,
+            "",
+            TuningRefs {
+                body: &c.body,
+                mortar: &c.mortar,
+                blast: &c.blast,
+                suppression: &c.suppression,
+                ai_infantry: &a.infantry,
+                ai_armour: &a.armour,
+                driving: &v.driving,
+                vehicle_path: &v.path,
+                escort: &v.escort,
+                gunnery: &v.gunnery,
+                formation: &self.movement.formation,
+                cover: &self.cover,
+                throw: &self.items.throw,
+                dig_common: &self.dig.common,
+            },
+        );
         out
     }
 }

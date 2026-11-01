@@ -172,7 +172,8 @@ fn orca_line(
 /// [`MAX_VEHICLE_CIRCLES`] vehicle and wreck circles (two per hull, along
 /// its axis) after the soldier neighbours. The soldier takes all of the
 /// avoidance against them; vehicles never avoid soldiers. Within
-/// [`SLIDE_GAP_MM`] of the nearest circle and heading into it (within 60°),
+/// `Obstacles::slide_gap` (the rules' `movement.formation.slide_gap_mm`) of
+/// the nearest circle and heading into it (within 60°),
 /// his preferred velocity turns to the tangent that keeps the hull on his
 /// left, so men walk round a parked tank or a wreck instead of stopping
 /// dead in front of it.
@@ -283,7 +284,7 @@ pub(crate) fn plan_velocities(
                 let (c, r, _) = circles[0];
                 let to = c - pos;
                 let dir = to.normalize_or_zero();
-                if to.length() - r - p.radius < Fx::from_milli(SLIDE_GAP_MM)
+                if to.length() - r - p.radius < ob.slide_gap
                     && pref.normalize_or_zero().dot(dir) > Fx::HALF
                 {
                     pref = FxVec2::new(dir.y, -dir.x) * mover.speed;
@@ -318,28 +319,36 @@ pub(crate) fn plan_velocities(
     }
 }
 
-/// A man this close to a vehicle circle's rim, heading into it, slides
-/// round it (S3, mm).
-const SLIDE_GAP_MM: i32 = 1500;
+/// Steep detail ground (S3b: the rules' `movement.formation.steep_free_pct`
+/// and `steep_min_pct` in match worlds).
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Steep {
+    /// Grades up to this (percent) on detail ground do not slow a soldier.
+    pub free_pct: i64,
+    /// Slowest pace on steep detail ground (percent of the planned speed).
+    pub min_pct: i64,
+}
 
-/// Grades up to this (percent) on detail ground do not slow a soldier.
-const STEEP_FREE_PCT: i64 = 60;
-/// Slowest pace on steep detail ground (percent of the planned speed).
-const STEEP_MIN_PCT: i64 = 15;
+/// Bench worlds have no rules: the S1 values (bench terrain has no detail
+/// ground, so they never apply there today).
+pub(crate) const BENCH_STEEP: Steep = Steep {
+    free_pct: 60,
+    min_pct: 15,
+};
 
 /// Speed factor (percent) for a soldier at `xy` moving along `v` on detail
-/// ground: 100 up to [`STEEP_FREE_PCT`] grade over the next 0.25 m, then
-/// falling as `100 · 100 / (100 + 2 · (grade − 60))`, at least
-/// [`STEEP_MIN_PCT`]. A 1.6 m trench wall (~400 %) is climbed at ~15 %.
-fn steep_pct(terrain: &Heightfield, xy: FxVec2, v: FxVec2) -> i64 {
+/// ground: 100 up to `free_pct` grade over the next 0.25 m, then falling as
+/// `100 · 100 / (100 + 2 · (grade − free_pct))`, at least `min_pct`. With
+/// the defaults (60, 15) a 1.6 m trench wall (~400 %) is climbed at ~15 %.
+fn steep_pct(terrain: &Heightfield, xy: FxVec2, v: FxVec2, st: Steep) -> i64 {
     let ahead = terrain.clamp(xy + v.normalize_or_zero().div_int(DETAIL_PER_M));
     let dh = (terrain.height_at(ahead).raw() as i64 - terrain.height_at(xy).raw() as i64).abs();
     // dh / 0.25 m in percent.
     let grade = (dh * 100 * DETAIL_PER_M as i64) >> Fx::FRAC_BITS;
-    if grade <= STEEP_FREE_PCT {
+    if grade <= st.free_pct {
         100
     } else {
-        (100 * 100 / (100 + 2 * (grade - STEEP_FREE_PCT))).max(STEEP_MIN_PCT)
+        (100 * 100 / (100 + 2 * (grade - st.free_pct))).max(st.min_pct)
     }
 }
 
@@ -347,6 +356,7 @@ fn steep_pct(terrain: &Heightfield, xy: FxVec2, v: FxVec2) -> i64 {
 /// detail ground (dug or cratered) steep slopes slow the soldier down
 /// ([`steep_pct`]); his stored velocity is the slowed one. Elsewhere the
 /// planned velocity is used as is. Pinned soldiers (match mode) stay put.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn integrate_soldiers(
     kind: &[EntityKind],
     transform: &mut [Transform],
@@ -355,6 +365,7 @@ pub(crate) fn integrate_soldiers(
     planned: &[FxVec2],
     terrain: &Heightfield,
     tick_hz: i32,
+    steep: Steep,
 ) -> bool {
     let mut changed = false;
     let min_turn_speed_sq = Fx::from_milli(50).mul(Fx::from_milli(50));
@@ -371,7 +382,7 @@ pub(crate) fn integrate_soldiers(
         let t = &mut transform[j];
         let from = t.pos.xy();
         if v != FxVec2::ZERO && terrain.has_detail_at(from) {
-            let pct = steep_pct(terrain, from, v);
+            let pct = steep_pct(terrain, from, v, steep);
             if pct < 100 {
                 v = v.mul_int(pct as i32).div_int(100);
             }

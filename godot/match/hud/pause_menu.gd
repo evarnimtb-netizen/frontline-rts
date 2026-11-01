@@ -7,6 +7,10 @@ extends Control
 ## Net mode (S2): opening the menu does not pause the match; "Pause match"
 ## / "Resume match" does, for both players (either may resume). Surrender
 ## and Leave name the other player instead of the AI.
+##
+## Debug builds (S3b): "Reload data & restart" (also F5) re-reads mods/ and
+## restarts the match with the same settings; broken data shows a banner
+## and the match goes on. Not in net matches.
 
 var view: MatchView
 var _main: VBoxContainer
@@ -18,6 +22,8 @@ var _head: Label
 var _resume_btn: Button
 ## Net mode only: pauses or resumes the match for both players.
 var net_pause_button: Button
+## Debug builds only, not in net matches (S3b).
+var reload_button: Button
 var _pending: StringName = &""
 
 
@@ -50,6 +56,8 @@ func bind(v: MatchView) -> void:
 	_resume_btn = _button(_main, "Resume", func() -> void: close())
 	net_pause_button = _button(_main, "Pause match", _toggle_net_pause)
 	net_pause_button.visible = false
+	reload_button = _button(_main, "Reload data & restart  (F5)", _reload_data)
+	reload_button.visible = OS.is_debug_build()
 	_button(_main, "Settings", func() -> void: _page("settings"))
 	_button(_main, "Surrender", func() -> void: _ask(&"surrender"))
 	_button(_main, "Quit to menu", func() -> void: _ask(&"quit_to_menu"))
@@ -167,10 +175,17 @@ func _refresh_net() -> void:
 	_head.text = "MATCH MENU" if net else "PAUSED"
 	_resume_btn.text = "Back to the match" if net else "Resume"
 	net_pause_button.visible = net
+	reload_button.visible = OS.is_debug_build() and not net
 	if net:
 		var st := String(view.net.get("state", "ok"))
 		net_pause_button.text = "Resume match" if st == "paused" else "Pause match (both players)"
 		net_pause_button.disabled = st in ["waiting", "desync"]
+
+
+func _reload_data() -> void:
+	# Stay paused: the match restarts (or the error banner shows) next.
+	close(false)
+	view.emit_intent(&"reload_data", {})
 
 
 func _toggle_net_pause() -> void:

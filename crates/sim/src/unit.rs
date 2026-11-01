@@ -55,10 +55,8 @@ use crate::squad::{self, assign_by_axis, line_slots, point_along, polyline_lengt
 
 /// Most ids in one soldier-level command.
 pub const MAX_UNITS: usize = 120;
-/// A detached man moves on to his next waypoint within this distance (m).
-const WAYPOINT_REACH_M: i32 = 2;
-/// Arriving gives up after this long (s).
-const ARRIVE_TIMEOUT_S: u32 = 20;
+// S3b: a detached man's waypoint reach and arrival timeout are the rules'
+// `[movement.formation]` values (shared with squads).
 
 /// Stance a soldier was ordered to keep (`SetStance`).
 #[derive(
@@ -539,7 +537,8 @@ impl MatchState {
         let mv = &self.setup.rules.movement;
         let arrive = Fx::from(mv.arrive_radius);
         let arrive_sq = arrive.mul_int(2).mul(arrive.mul_int(2));
-        let reach_sq = Fx::from_int(WAYPOINT_REACH_M * WAYPOINT_REACH_M);
+        let reach_m = mv.formation.waypoint_reach_m as i32;
+        let reach_sq = Fx::from_int(reach_m * reach_m);
         let mut repath = Vec::new();
         for i in 0..ctx.ents.len() {
             if ctx.ents.kind[i] != EntityKind::Soldier || !ctx.ents.unit[i].detached {
@@ -594,6 +593,7 @@ impl MatchState {
                                     ctx.ents,
                                     ctx.terrain,
                                     (!self.at_ditches.is_empty()).then_some(&self.vderived.block),
+                                    &self.setup.rules,
                                     &mut slot,
                                 );
                                 slot[0]
@@ -613,7 +613,7 @@ impl MatchState {
                     let (goal, facing) = (u.nav.goal, u.nav.facing);
                     let there = (goal - pos).length_sq() <= arrive_sq;
                     if u.nav.phase == NavPhase::Arriving
-                        && (there || u.nav.phase_ticks >= ARRIVE_TIMEOUT_S * hz)
+                        && (there || u.nav.phase_ticks >= mv.formation.arrive_timeout_s * hz)
                     {
                         u.nav.phase = NavPhase::Holding;
                         u.nav.phase_ticks = 0;

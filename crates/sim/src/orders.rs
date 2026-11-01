@@ -11,7 +11,7 @@
 //!   drive backwards, the front kept toward the enemy; soldiers a
 //!   `MoveUnits`.
 //! * **`FaceUnits`**: vehicles stop and pivot until the hull front points
-//!   at the point (within [`FACE_DONE_DEG`]), then hold. Any later move or
+//!   at the point (within `vehicles.driving.face_done_deg`), then hold. Any later move or
 //!   stop order ends the turn.
 //! * **`AttackUnit`**: the target must be a live enemy vehicle the player
 //!   sees. Vehicles keep it as `VehicleState::attack` (their gunner takes
@@ -21,7 +21,7 @@
 //!   ([`MatchState::approach_attacks`]) a vehicle whose gunner does not
 //!   have it (out of range, or no part in a line of fire) drives toward it
 //!   while it is seen, re-aimed once a second when it has moved more than
-//!   [`APPROACH_SLACK_M`]; once the gunner has it, the approach stops and
+//!   `vehicles.driving.approach_slack_m`; once the gunner has it, the approach stops and
 //!   the vehicle holds. A move, stop or retreat order clears the attack.
 //! * **`SetAmmo`**: the vehicles' `ammo_choice`.
 //! * **`RepairUnits`**: each vehicle's crew starts the field repair of its
@@ -35,11 +35,12 @@
 //! squad steering): every tick the followers of each vehicle are listed
 //! afresh from the orders (ascending soldier id, the saved
 //! `VehicleState::followers`); orders naming a vehicle that is gone become
-//! a Stop. Follower `k` stands in file `k / 8`, row `k % 8`: rows
-//! [`ESCORT_GAP_MM`] apart starting [`ESCORT_BEHIND_M`] behind the hull,
+//! a Stop. Follower `k` stands in file `k / n`, row `k % n` (`n` the rules'
+//! `vehicles.escort.file_men`): rows `gap_mm` apart starting `behind_m`
+//! behind the hull,
 //! on the line from the nearest enemy the owner sees (soldier or vehicle)
 //! through the vehicle, else from the vehicle's move goal, else straight
-//! behind the hull; further files stand [`ESCORT_GAP_MM`] to alternate
+//! behind the hull; further files stand `gap_mm` to alternate
 //! sides. Squads hold their slots (squad steering walks the men there, at
 //! catch-up pace when far) and men face the enemy; detached followers walk
 //! to theirs. A vehicle with followers drives no faster than the slowest
@@ -51,16 +52,8 @@ use crate::game::{Ctx, MatchState, NavPhase, Order, SquadId};
 use crate::unit::UnitOrder;
 use crate::vehicle::{self, AmmoChoice};
 
-/// `FaceUnits` is done within this heading error (degrees).
-pub const FACE_DONE_DEG: i32 = 2;
-/// An approaching vehicle re-aims when its target moved this far (m).
-pub const APPROACH_SLACK_M: i32 = 15;
-/// Escort rows start this far behind the hull (m) ...
-pub const ESCORT_BEHIND_M: i32 = 4;
-/// ... and are this far apart, as are the files (mm).
-pub const ESCORT_GAP_MM: i32 = 1500;
-/// Men per escort file.
-pub const ESCORT_FILE: usize = 8;
+// S3b: the face tolerance, approach slack and escort file layout are rules
+// data (`[vehicles.driving]`, `[vehicles.escort]`).
 
 impl MatchState {
     /// `ReverseUnits` (see the module docs).
@@ -219,7 +212,8 @@ impl MatchState {
     /// the module docs).
     pub(crate) fn approach_attacks(&mut self, ctx: &mut Ctx) {
         let hz = self.setup.tick_hz.max(1) as u64;
-        let slack = FxVec2::from_int(APPROACH_SLACK_M, 0).length_sq_raw();
+        let slack = FxVec2::from_int(self.setup.rules.vehicles.driving.approach_slack_m as i32, 0)
+            .length_sq_raw();
         let ids: Vec<SimId> = self
             .vehicles
             .iter()
@@ -327,8 +321,10 @@ impl MatchState {
         for vs in self.vehicles.values_mut() {
             vs.followers.clear();
         }
-        let behind = Fx::from_int(ESCORT_BEHIND_M);
-        let gap = Fx::from_milli(ESCORT_GAP_MM);
+        let esc = &self.setup.rules.vehicles.escort;
+        let behind = Fx::from_int(esc.behind_m as i32);
+        let gap = Fx::from_milli(esc.gap_mm as i32);
+        let file_men = esc.file_men as usize;
         let mut k0 = 0usize;
         while k0 < follows.len() {
             let v = follows[k0].0;
@@ -371,8 +367,8 @@ impl MatchState {
             let side = dir.perp();
             let start = geo.hull_half.x + behind;
             let slot = |k: usize| {
-                let row = (k % ESCORT_FILE) as i32;
-                let file = (k / ESCORT_FILE) as i32;
+                let row = (k % file_men) as i32;
+                let file = (k / file_men) as i32;
                 // Files 1, 2, 3 ... alternate left and right of the first.
                 let lateral = gap.mul_int((file + 1) / 2);
                 let lateral = if file % 2 == 1 { lateral } else { -lateral };

@@ -398,8 +398,11 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// item and AI throw rules, AI throw cooldowns, the `throws` counter).
 /// 9: S3 vehicles and armour (ammo and vehicle defs, AT teams, dig
 /// profiles, vehicle and AI rules in the setup; vehicle state as the S3
-/// sim stages add it). One bump for the whole slice.
-const SAVE_VERSION: u32 = 9;
+/// sim stages add it). One bump for the whole slice. 10: S3b (the tuning
+/// tables in the setup's rules, each vehicle's `elevate_deg_s`, the dig
+/// profiles' `common`; the slice's damage, armour and pinning state as the
+/// S3b stages add it). One bump for the whole slice.
+const SAVE_VERSION: u32 = 10;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -990,6 +993,9 @@ impl World {
                         .map(|g| Obstacles {
                             derived: &g.vderived,
                             velocity: &ents.velocity,
+                            slide_gap: Fx::from_milli(
+                                g.setup().rules.movement.formation.slide_gap_mm as i32,
+                            ),
                         });
                 let obstacles = obstacles.as_ref();
                 threads.install(|| {
@@ -1009,6 +1015,13 @@ impl World {
                 ..
             } = entities;
             let (terrain, planned, combat) = (&*terrain, &*planned, &*combat);
+            let steep = game.as_ref().map_or(systems::BENCH_STEEP, |g| {
+                let f = &g.setup().rules.movement.formation;
+                systems::Steep {
+                    free_pct: f.steep_free_pct as i64,
+                    min_pct: f.steep_min_pct as i64,
+                }
+            });
             threads.install(|| {
                 kind.par_chunks(CHUNK_SIZE)
                     .zip(transform.par_chunks_mut(CHUNK_SIZE))
@@ -1016,7 +1029,7 @@ impl World {
                     .zip(combat.par_chunks(CHUNK_SIZE))
                     .zip(planned.par_chunks(CHUNK_SIZE))
                     .map(|((((k, t), v), c), p)| {
-                        systems::integrate_soldiers(k, t, v, c, p, terrain, hz)
+                        systems::integrate_soldiers(k, t, v, c, p, terrain, hz, steep)
                     })
                     .collect_into_vec(flags)
             });
@@ -1120,7 +1133,7 @@ impl World {
                 ..
             } = state;
             let game = game.as_mut().expect("match world");
-            combat::build_marks(entities, marks, mark_of);
+            combat::build_marks(entities, marks, mark_of, &game.setup().rules.combat.body);
             game.update_focus(entities, marks, mark_of);
             fire_bufs.resize_with(entities.chunk_count(), Vec::new);
             {
@@ -1244,6 +1257,7 @@ impl World {
                         terrain,
                         weapons: &g.setup().weapons,
                         near_miss: g.setup().rules.combat.near_miss.into(),
+                        body: &g.setup().rules.combat.body,
                         vehicles: (!g.vehicles.is_empty()).then_some(&g.vderived),
                         armour: g.armour(),
                         ammo: &g.setup().ammo,

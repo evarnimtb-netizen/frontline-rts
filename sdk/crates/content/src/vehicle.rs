@@ -452,6 +452,8 @@ pub struct TurretDef {
     #[serde(rename = "box")]
     pub bounds: BoxDef,
     pub traverse_deg_s: u32,
+    /// Main gun elevation rate (deg/s).
+    pub elevate_deg_s: u32,
 }
 
 /// A length in millimetres with at most one decimal (`63.5`), kept as
@@ -945,6 +947,13 @@ impl VehicleDef {
             self.turret.traverse_deg_s as i64,
             1,
             360,
+        );
+        range(
+            &mut out,
+            "turret.elevate_deg_s",
+            self.turret.elevate_deg_s as i64,
+            1,
+            90,
         );
 
         for z in ArmourZone::ALL {
@@ -1571,6 +1580,8 @@ pub struct VehicleSetup {
     /// Turret box in the turret frame.
     pub turret: BoxSetup,
     pub traverse_deg_s: i32,
+    /// Main gun elevation rate (deg/s).
+    pub elevate_deg_s: i32,
     /// By [`ArmourZone::index`].
     pub armour: [PlateSetup; ARMOUR_ZONES],
     /// In the def's seat order.
@@ -1775,6 +1786,7 @@ pub(crate) fn lower_vehicle(
         turret_pivot: FixedVec3::from_cm(v.turret.pivot),
         turret: (&v.turret.bounds).into(),
         traverse_deg_s: v.turret.traverse_deg_s as i32,
+        elevate_deg_s: v.turret.elevate_deg_s as i32,
         armour: ArmourZone::ALL.map(|z| {
             let p = v.armor.get(z);
             PlateSetup {
@@ -1927,6 +1939,7 @@ pub(crate) fn check_vehicle(
         || v.track_band_pct > 100
         || v.track_mm > 500
         || !(1..=360).contains(&v.traverse_deg_s)
+        || !(1..=90).contains(&v.elevate_deg_s)
         || !fx_in(v.turret_pivot.z, 0, 20)
         || v.hull.center.z.0 < v.hull.half.z.0
     {

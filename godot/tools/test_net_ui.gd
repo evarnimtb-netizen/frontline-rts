@@ -286,6 +286,7 @@ func _test_match(session: Node) -> void:
 	_intents.clear()
 	view.pause_menu.open()
 	_check(_last(&"pause") == null and view.pause_menu.net_pause_button.visible, "net: the menu opens without pausing, offers Pause match")
+	_check(not view.pause_menu.reload_button.visible, "net: no debug data reload")
 	view.pause_menu.net_pause_button.pressed.emit()
 	await _frames(2)
 	_check(_last(&"pause") != null and _last(&"pause").paused and not view.pause_menu.visible, "Pause match sends pause and closes the menu")

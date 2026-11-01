@@ -12,13 +12,13 @@
 //!
 //! * **Ricochet:** the round is spent (an event only).
 //! * **Non-penetration:** `nonpen_damage` to each external part (track,
-//!   barrel) with an anchor within [`EXTERNAL_REACH_MM`] of the impact.
+//!   barrel) with an anchor within `vehicles.gunnery.external_reach_mm` of the impact.
 //! * **Penetration** (penetrators): the core goes on along the shell path
 //!   for its `length`, dealing its damage to every seat and component box it
 //!   crosses (at most `max_boxes`, nearest first); `rays` spall rays in a
 //!   cone of `cone_deg` around the path (RNG `SPALL`, rays by index), each
 //!   dealing its damage to the first box it meets within
-//!   [`SPALL_REACH_M`]; an APHE filler bursts `offset` past the entry,
+//!   `vehicles.gunnery.spall_reach_m`; an APHE filler bursts `offset` past the entry,
 //!   dealing its damage to every box within `radius` (RNG-free). At most
 //!   8 rays × 14 boxes.
 //! * **HE on a plate:** if its `pen_mm` beats the plate, an inner burst at
@@ -65,7 +65,7 @@ use frontline_content::vehicle::{Frame, PartBoxSetup, VehicleSetup};
 use frontline_content::{AmmoMechanism, ComponentKind, SeatRole};
 
 use crate::armour::{self, PenResult};
-use crate::combat::{BLAST_LIFT_MM, BallisticEvent, Blow, DamageCtx, tri};
+use crate::combat::{BallisticEvent, Blow, DamageCtx, tri};
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, PathReq, kill_class};
@@ -76,11 +76,8 @@ use crate::snapshot::{ArmourEventKind, NONE_U8};
 use crate::vehicle::{BoxFrame, Seat, VehicleFrame, VehicleState};
 use crate::world::Stats;
 
-/// External parts (tracks, barrel) within this of a non-penetrating
-/// impact take the round's `nonpen_damage` (mm).
-pub const EXTERNAL_REACH_MM: i32 = 1000;
-/// A spall ray ends after this (m).
-pub const SPALL_REACH_M: i32 = 3;
+// S3b: the external-part reach and the spall reach are rules data
+// (`[vehicles.gunnery]`, `frontline_content::tuning`).
 /// Most rays per penetration (core plus spall).
 pub const MAX_RAYS: usize = 8;
 /// Most internal boxes per vehicle.
@@ -435,7 +432,8 @@ impl MatchState {
                 if let Some(sp) = &a.spall {
                     let mut r = RngStream::new(seed, tick, SimId(e.slot), Purpose::SPALL);
                     let cone = armour::deg(sp.cone_deg);
-                    let reach = Fx::from_int(SPALL_REACH_M);
+                    let reach =
+                        Fx::from_int(self.setup.rules.vehicles.gunnery.spall_reach_m as i32);
                     for _ in 0..(sp.rays as usize).min(MAX_RAYS - 1) {
                         let d = spall_dir(dir, cone, &mut r);
                         if let Some(&k) = ray_boxes(&boxes, hit.point, d * reach, 1).first() {
@@ -473,7 +471,9 @@ impl MatchState {
                 // Non-penetration: external parts near the impact.
                 let nonpen = ammo.map_or(0, |a| a.nonpen_damage);
                 if nonpen > 0 {
-                    let reach = Fx::from_milli(EXTERNAL_REACH_MM).raw() as u64;
+                    let reach =
+                        Fx::from_milli(self.setup.rules.vehicles.gunnery.external_reach_mm as i32)
+                            .raw() as u64;
                     for comp in &v.components {
                         let near = comp.anchors.iter().any(|an| {
                             let p = anchor_at(&f, an.frame, crate::vehicle::v3(an.pos));
@@ -606,7 +606,11 @@ impl MatchState {
             return;
         }
         let lethal: Fx = he.lethal_radius.into();
-        let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(BLAST_LIFT_MM));
+        let lift = FxVec3::new(
+            pos.x,
+            pos.y,
+            pos.z + Fx::from_milli(self.setup.rules.combat.blast.lift_mm as i32),
+        );
         let mut ids: Vec<SimId> = Vec::new();
         self.vderived
             .index

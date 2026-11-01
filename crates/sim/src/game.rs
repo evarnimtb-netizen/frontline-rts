@@ -722,7 +722,11 @@ impl MatchState {
             // A short Move to a point behind the hull backs up to it.
             let v = self.squads[&id].members[0];
             let back = matches!(order, Order::Move { .. })
-                && vehicle::reverses_to(&ctx.ents.transform[v.index()], goal);
+                && vehicle::reverses_to(
+                    &ctx.ents.transform[v.index()],
+                    goal,
+                    self.setup.rules.vehicles.driving.reverse_order_m,
+                );
             if let Some(vs) = self.vehicles.get_mut(&v) {
                 vs.reverse = back;
                 vs.clear_orders();
@@ -991,7 +995,11 @@ impl MatchState {
                 Some(side) if k >= ty.weapon_men as usize => side,
                 _ => ty.weapon,
             };
-            ctx.ents.combat[i] = combat::spawn_combat(ty.hp, &self.setup.weapons[wk as usize]);
+            ctx.ents.combat[i] = combat::spawn_combat(
+                ty.hp,
+                &self.setup.weapons[wk as usize],
+                &self.setup.rules.combat.body,
+            );
             // The first man leads the squad and carries the leader's kit.
             ctx.ents.kit[i] = Kit {
                 items: ty.full_kit(&self.setup.items, k == 0),
@@ -1094,6 +1102,7 @@ impl MatchState {
             slope_cost_pct: mv.slope_cost_pct,
             max_slope_pct: mv.max_slope_pct,
             trench_cost_pct: mv.trench_cost_pct,
+            ditch_cost_pct: mv.ditch_cost_pct,
         };
         let max_exp = mv.path_max_expansions;
         // Infantry: AT-ditch costs once a match has ditches (S3).
@@ -1176,6 +1185,7 @@ impl MatchState {
                     let veh = VehiclePathCost {
                         block: &self.vderived.block,
                         avoid,
+                        costs: &self.setup.rules.vehicles.path,
                     };
                     let from = ctx.ents.transform[v.index()].pos.xy();
                     let r = find_vehicle_path(

@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use frontline_cli::skirmish::ReportFormat;
 use frontline_cli::{
     ArmourArgs, BallisticsArgs, FortifyArgs, SimulateArgs, SkirmishArgs, armour_test, ballistics,
-    desync_diff, fortify, schema, simulate, skirmish, validate,
+    desync_diff, fortify, overrides, schema, simulate, skirmish, validate,
 };
 
 #[derive(Parser)]
@@ -30,6 +30,11 @@ enum Command {
     /// Exits 0 when the match has a winner, 3 when it ended in a draw or hit
     /// the --minutes limit, 4 when it has a winner but an S3 check failed
     /// (each AI fields a vehicle and an AT team, at least one penetration).
+    ///
+    /// A/B testing (S3b): `--seeds N [--both-bases] --summary` plays N seeds
+    /// (both base orders) in parallel and prints one table; add
+    /// `--rules-override FILE` to try a tuning change. Exits 0 when every
+    /// match ran.
     Skirmish(SkirmishArgs),
     /// Stage trench-vs-open fights and check the S1 cover thresholds.
     ///
@@ -105,7 +110,24 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             eprintln!("{}", simulate::summary_line(&report));
             Ok(ExitCode::SUCCESS)
         }
+        Command::Skirmish(args) if args.seeds.is_some() => {
+            let report = skirmish::skirmish_many(&args)?;
+            match (args.report, args.summary) {
+                (ReportFormat::Json, _) => println!("{}", serde_json::to_string_pretty(&report)?),
+                (ReportFormat::Text, true) => print!("{}", skirmish::many_text(&report)),
+                (ReportFormat::Text, false) => {
+                    for l in &report.overrides {
+                        eprintln!("{l}");
+                    }
+                    for m in &report.matches {
+                        println!("{}\n", skirmish::summary_text(&m.report));
+                    }
+                }
+            }
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Skirmish(args) => {
+            overrides::announce(args.mods.as_deref(), &args.rules_override)?;
             let report = skirmish::skirmish(&args)?;
             match args.report {
                 ReportFormat::Text => println!("{}", skirmish::summary_text(&report)),
@@ -120,6 +142,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             })
         }
         Command::FortifyTest(args) => {
+            overrides::announce(args.mods.as_deref(), &args.rules_override)?;
             let report = fortify::fortify_test(&args)?;
             if args.json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
@@ -133,6 +156,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             })
         }
         Command::ArmourTest(args) => {
+            overrides::announce(args.mods.as_deref(), &args.rules_override)?;
             let report = armour_test::armour_test(&args)?;
             if args.json {
                 println!("{}", serde_json::to_string_pretty(&report)?);

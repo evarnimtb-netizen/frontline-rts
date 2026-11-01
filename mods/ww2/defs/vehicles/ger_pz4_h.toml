@@ -46,6 +46,10 @@ track_mm = 20
 pivot = [20, 0, 176]
 box = { center = [0, 0, 45], half = [115, 95, 45] }
 traverse_deg_s = 14
+# Main gun elevation (deg/s). 6: the S3 code value (gunnery.rs
+# ELEVATE_DEG_S, moved to data in S3b); no sourced figure yet, a starting
+# value for tuning.
+elevate_deg_s = 6
 
 [armor]
 hull_front   = { thickness_mm = 80, slope_deg = 10, material = "rha" }

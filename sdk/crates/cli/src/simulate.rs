@@ -51,11 +51,22 @@ pub struct SimulateArgs {
     /// Run at the real tick rate (sleep to each tick's deadline).
     #[arg(long)]
     pub paced: bool,
+    /// Accepted for symmetry with skirmish, armour-test and fortify-test,
+    /// but refused: bench scenarios run without match rules or defs, so a
+    /// tuning override cannot apply (S3b).
+    #[arg(long = "rules-override", value_name = "FILE")]
+    pub rules_override: Vec<PathBuf>,
 }
 
 /// Runs the simulation described by `args` and returns its report. Does not
 /// write `args.report`; see [`write_report`].
 pub fn simulate(args: &SimulateArgs) -> Result<Report> {
+    if !args.rules_override.is_empty() {
+        bail!(
+            "--rules-override: `simulate` runs bench scenarios, which have no match rules or \
+             defs to override; use `skirmish`, `armour-test` or `fortify-test`"
+        );
+    }
     let threads = match args.threads {
         Some(0) => bail!("--threads must be at least 1"),
         Some(t) => t,

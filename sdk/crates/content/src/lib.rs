@@ -13,6 +13,8 @@
 //! * [`setup`]: [`ModDefs::resolve`] turns defs plus a [`MatchRequest`] into a
 //!   fixed-point [`MatchSetup`] for `frontline_sim::World::new_match`.
 //! * [`vehicle`]: vehicle and ammo defs (S3) and their setups.
+//! * [`tuning`]: gameplay tuning tables of the rules (S3b), shared by the
+//!   def and the setup.
 //!
 //! Content values are integers only (metres, milliseconds, hertz), so lowering
 //! them into the fixed-point sim never depends on float rounding.
@@ -22,6 +24,7 @@ mod issue;
 pub mod modset;
 pub mod scenario;
 pub mod setup;
+pub mod tuning;
 pub mod vehicle;
 
 pub use defs::{
@@ -29,7 +32,7 @@ pub use defs::{
     WeaponClass, WeaponDef,
 };
 pub use issue::{ContentError, Issue};
-pub use modset::{ModDefs, ModManifest};
+pub use modset::{ModDefs, ModManifest, OverrideChange};
 pub use scenario::{
     ForcesDef, HeightfieldDef, IntervalMs, MapDef, ProjectilesDef, Scenario, TICK_HZ_ALLOWED,
 };

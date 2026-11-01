@@ -875,6 +875,47 @@ mod tests {
         assert_eq!(guest.view().slot, 1);
     }
 
+    /// S3b quick iteration: a player who edited the mod's TOML (here
+    /// through a tuning override of one rules value) gets a different
+    /// content hash, and the relay refuses him in the lobby with
+    /// `content_mismatch` (net_ui.gd: "The two games have different mod
+    /// content. Both players need the same mods."). The unedited player
+    /// joins as before.
+    #[test]
+    fn edited_mod_data_is_refused_in_the_lobby() {
+        let base = defs();
+        let dir = find_mods_dir(&mods_candidates(None, None)).unwrap();
+        let user = temp_dir("content");
+        let patch = user.join("edit.toml");
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::write(&patch, "[combat]\nnear_miss_cm = 250\n").unwrap();
+        let mut edited = ModDefs::load(&dir).unwrap();
+        edited.apply_override(&patch, "ww2:skirmish").unwrap();
+        assert_ne!(edited.content_hash(), base.content_hash());
+        let edited = Arc::new(edited);
+
+        let mut host = session(&base, "Host", &user);
+        let port = host_lobby(&mut host);
+        let mut guest = session(&edited, "Edited", &user);
+        guest.join(&format!("127.0.0.1:{port}")).unwrap();
+        let t0 = Instant::now();
+        while guest.view().state != "disconnected" {
+            assert!(t0.elapsed() < Duration::from_secs(10), "{:?}", guest.view());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(guest.view().error, "content_mismatch");
+        assert_eq!(host.view().state, "lobby");
+        // The same data joins.
+        let mut same = session(&defs(), "Same", &user);
+        same.join(&format!("127.0.0.1:{port}")).unwrap();
+        let t0 = Instant::now();
+        while same.view().state != "lobby" {
+            assert!(t0.elapsed() < Duration::from_secs(10), "{:?}", same.view());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let _ = std::fs::remove_dir_all(&user);
+    }
+
     fn spawn(s: &mut NetSession) -> MatchHandle {
         let m = s.take_match().unwrap();
         assert!(s.take_match().is_err(), "a match is taken once");

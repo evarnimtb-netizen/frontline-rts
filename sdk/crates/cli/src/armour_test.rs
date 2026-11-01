@@ -69,6 +69,11 @@ pub struct ArmourArgs {
     /// Print one line per run to stderr (diagnostics).
     #[arg(long)]
     pub verbose: bool,
+    /// Tuning override (S3b): a partial TOML file merged onto the rules
+    /// (`ww2:skirmish`, before the test unlock is derived from it) and defs.
+    /// Repeatable; `docs/modding/tuning.md`.
+    #[arg(long = "rules-override", value_name = "FILE")]
+    pub rules_override: Vec<PathBuf>,
 }
 
 impl Default for ArmourArgs {
@@ -83,6 +88,7 @@ impl Default for ArmourArgs {
             crossings: CROSSINGS,
             json: false,
             verbose: false,
+            rules_override: Vec::new(),
         }
     }
 }
@@ -1177,7 +1183,8 @@ fn case8(env: &Env) -> Result<CaseReport> {
                 if !thrown && alive(w, tank) && now {
                     let vs = vstate(w, tank).unwrap();
                     let t = w.entities().transform()[tank.index()];
-                    if vs.speed.abs() <= Fx::from_milli(frontline_sim::ai::SATCHEL_SLOW_MM_S) {
+                    let slow = w.match_setup().unwrap().rules.ai.infantry.satchel_slow_mm_s;
+                    if vs.speed.abs() <= Fx::from_milli(slow as i32) {
                         let at_ = t.pos.xy() + vs.avg_vel * fuse;
                         let left = frontline_sim::vehicle::yaw_dir(t.yaw).perp();
                         let men = members(w, eng);
@@ -1972,7 +1979,7 @@ type CaseFn = fn(&Env) -> Result<CaseReport>;
 #[allow(clippy::disallowed_methods)]
 pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
     let dir = mods_dir(args.mods.as_deref())?;
-    let mut defs = ModDefs::load(&dir).map_err(|e| anyhow!("{e}"))?;
+    let (mut defs, _) = crate::overrides::load_defs(Some(&dir), &args.rules_override)?;
     let rules = defs
         .add_rules_override(&dir.join("tests/rules_test_unlock.toml"))
         .map_err(|e| anyhow!("{e}"))?;

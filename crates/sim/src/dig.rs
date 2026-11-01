@@ -9,7 +9,7 @@
 //!    slot; ties by segment index), so survivors and early finishers pick
 //!    up the rest of the line;
 //! 3. each digger's slot is his segment's midpoint; once he stands within
-//!    [`DIG_REACH_MM`] of it (and is not busy firing at a target) he adds
+//!    `dig.common.reach_mm` of it (and is not busy firing at a target) he adds
 //!    his squad type's `dig_rate_pct` work
 //!    points per tick (one man at 100 % does 100 work points per second;
 //!    work is counted in points × tick rate so it stays integral);
@@ -56,17 +56,8 @@ use crate::squad::{point_along, polyline_length};
 use crate::terrain::{DETAIL_SHIFT, Heightfield};
 use crate::unit::UnitOrder;
 
-/// Parapet: rises over this run from the lip (mm) ...
-const PARAPET_RISE_MM: i32 = 300;
-/// ... stays at full height over this run (mm) ...
-const PARAPET_TOP_MM: i32 = 400;
-/// ... and falls back to the ground over this run (mm).
-const PARAPET_FALL_MM: i32 = 600;
-/// The parapet only raises ground at most this far below the base (mm), so
-/// it never fills another trench or a crater.
-const PARAPET_UNDUG_MM: i32 = 50;
-/// A digger works when this close to his spot (mm).
-pub const DIG_REACH_MM: i32 = 1500;
+// S3b: the parapet shape and the digger reach are the rules' `[dig.common]`
+// (`DigSetup::common`).
 
 /// One man's share of a trench line.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -260,9 +251,10 @@ fn cut_depth(r: Fx, prof: &DigSetup, k: i32, n: i32) -> Fx {
 /// Parapet height (m) at distance `u` beyond the lip, at pass `k / n`.
 fn parapet_height(u: Fx, prof: &DigSetup, k: i32, n: i32) -> Fx {
     let top = Fx::from(prof.parapet_height).mul_int(k).div_int(n);
-    let rise = Fx::from_milli(PARAPET_RISE_MM);
-    let flat = rise + Fx::from_milli(PARAPET_TOP_MM);
-    let fall = Fx::from_milli(PARAPET_FALL_MM);
+    let sp = &prof.common;
+    let rise = Fx::from_milli(sp.parapet_rise_mm as i32);
+    let flat = rise + Fx::from_milli(sp.parapet_top_mm as i32);
+    let fall = Fx::from_milli(sp.parapet_fall_mm as i32);
     if u <= Fx::ZERO || u >= flat + fall {
         Fx::ZERO
     } else if u < rise {
@@ -293,7 +285,11 @@ pub(crate) fn stamp(
     let closed_end = to >= len;
     let half_floor = Fx::from(prof.floor_width).div_int(2);
     let lip = half_floor + Fx::from(prof.wall_run);
-    let reach = lip + Fx::from_milli(PARAPET_RISE_MM + PARAPET_TOP_MM + PARAPET_FALL_MM + 250);
+    let sp = &prof.common;
+    let reach = lip
+        + Fx::from_milli(
+            (sp.parapet_rise_mm + sp.parapet_top_mm + sp.parapet_fall_mm) as i32 + 250,
+        );
     // Box around the sub-line: its end points and the vertices inside it.
     let mut lo = point_along(line, from);
     let mut hi = lo;
@@ -310,7 +306,7 @@ pub(crate) fn stamp(
         }
     }
     let idx = |v: Fx| v.raw() >> DETAIL_SHIFT;
-    let undug = Fx::from_milli(PARAPET_UNDUG_MM);
+    let undug = Fx::from_milli(sp.parapet_undug_mm as i32);
     terrain.edit(
         (idx(lo.x - reach), idx(lo.y - reach)),
         (idx(hi.x + reach) + 1, idx(hi.y + reach) + 1),
@@ -366,7 +362,7 @@ impl MatchState {
         ditches: &mut Vec<Vec<FxVec2>>,
     ) {
         let hz = self.setup.tick_hz;
-        let reach_sq = Fx::from_milli(DIG_REACH_MM).raw() as u64;
+        let reach_sq = Fx::from_milli(self.setup.rules.dig.common.reach_mm as i32).raw() as u64;
         let reach_sq = reach_sq * reach_sq;
         for sq in self.squads.values_mut() {
             if sq.members.is_empty()
@@ -455,7 +451,7 @@ impl MatchState {
             return;
         }
         let hz = self.setup.tick_hz;
-        let reach_sq = Fx::from_milli(DIG_REACH_MM).raw() as u64;
+        let reach_sq = Fx::from_milli(self.setup.rules.dig.common.reach_mm as i32).raw() as u64;
         let reach_sq = reach_sq * reach_sq;
         // `(job, man, dig rate)`, ascending.
         let mut diggers: Vec<(u32, SimId, u64)> = Vec::new();
@@ -585,6 +581,13 @@ mod tests {
             work_per_m: 8400,
             passes: 8,
             engineers_only: false,
+            common: frontline_content::tuning::DigCommonTuning {
+                parapet_rise_mm: 300,
+                parapet_top_mm: 400,
+                parapet_fall_mm: 600,
+                parapet_undug_mm: 50,
+                reach_mm: 1500,
+            },
         }
     }
 

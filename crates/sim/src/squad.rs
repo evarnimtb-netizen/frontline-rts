@@ -24,16 +24,18 @@
 //! members still in it, led by the first of them ([`Squad::lead`]). A man
 //! ordered prone walks at the rules' `prone_speed_pct`.
 //!
-//! **Cover on arrival** (all orders but Dig and Retreat): each man, in
-//! member order, moves his line slot to the nearest free trench spot within
-//! [`COVER_RADIUS_M`] (on the floor: dug `combat::TRENCH_MM` below the base
-//! surface there and [`TRENCH_MARGIN_MM`] around; sampled every 0.25 m);
-//! failing that, if his owner sees an enemy within [`COVER_ENEMY_M`], to the
-//! nearest spot on a 2.5 m grid with terrain between it and that enemy's
-//! eyes (at most [`COVER_RAYS`] sight rays per man). Spots keep
-//! [`COVER_GAP_MM`] apart, also from where other friendly squads stand.
+//! **Cover on arrival** (all orders but Dig and Retreat; the distances are
+//! the rules' `[cover]` table): each man, in member order, moves his line
+//! slot to the nearest free trench spot within `radius_m` (on the floor:
+//! dug `combat.body.trench_depth_mm` below the base surface there and
+//! `trench_margin_mm` around; sampled every 0.25 m); failing that, if his
+//! owner sees an enemy within `enemy_m`, to the nearest spot on a 2.5 m
+//! grid with terrain between it and that enemy's eyes (at most
+//! [`COVER_RAYS`] sight rays per man). Spots keep `gap_mm` apart, also from
+//! where other friendly squads stand.
 
-use crate::combat::TRENCH_MM;
+use frontline_content::setup::RulesSetup;
+
 use crate::ecs::{Entities, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, NavPhase, Order, Squad};
@@ -41,36 +43,20 @@ use crate::terrain::Heightfield;
 use crate::unit::StanceOrder;
 use crate::vehicle::BlockLayer;
 
-/// The leader moves on to the next waypoint within this distance (m).
-const WAYPOINT_REACH_M: i32 = 2;
-/// A member this far from his slot is behind: he speeds up (m).
-const CATCH_UP_M: i32 = 2;
-/// A member this far from his slot makes the leader slow down (m).
-const STRETCHED_M: i32 = 10;
-/// Leader speed while the squad is strung out (percent).
-const STRETCHED_SPEED_PCT: i32 = 70;
-/// Members on the move aim this far past their (moving) slot, so they keep
-/// walking with the leader instead of stopping at it every tick (mm).
-const SLOT_LEAD_MM: i32 = 1500;
-/// Arriving gives up waiting for stragglers after this long (s).
-const ARRIVE_TIMEOUT_S: u32 = 20;
-/// Men look for cover this far from their line slot (m).
-const COVER_RADIUS_M: i32 = 10;
-/// Only enemies this close to the goal count for terrain cover (m).
-const COVER_ENEMY_M: i32 = 400;
-/// Most sight rays one man spends looking for terrain cover.
+// S3b: formation (`[movement.formation]`) and cover (`[cover]`) distances
+// are rules data (`frontline_content::tuning`). The search resolution and
+// ray budget below are structural.
+
+/// Most sight rays one man spends looking for terrain cover (a per-man
+/// cost cap).
 const COVER_RAYS: usize = 12;
-/// Cover spots of two men keep at least this far apart (mm).
-const COVER_GAP_MM: i32 = 1200;
-/// Trench spots are sampled on this grid (one detail cell, mm) ...
+/// Trench spots are sampled on this grid (one detail cell, mm).
 const TRENCH_STEP_MM: i32 = 250;
-/// ... and need dug ground this far around them too (mm).
-const TRENCH_MARGIN_MM: i32 = 400;
 /// Terrain cover spots are sampled on this grid (mm).
 const COVER_STEP_MM: i32 = 2500;
-/// Enemy eye height and the covered man's chest height for cover rays (mm).
-const COVER_EYE_MM: i32 = 1500;
-const COVER_CHEST_MM: i32 = 1000;
+/// The cover offset tables cover this radius, the largest `cover.radius_m`
+/// the rules allow (m); a search uses the prefix within its radius.
+const COVER_TABLE_M: i32 = 30;
 
 /// Total length of a polyline.
 pub(crate) fn polyline_length(line: &[FxVec2]) -> Fx {
@@ -147,6 +133,7 @@ fn arrival(
     ents: &Entities,
     terrain: &Heightfield,
     ditches: Option<&BlockLayer>,
+    rules: &RulesSetup,
     spacing: Fx,
 ) -> (Vec<FxVec2>, FxVec2) {
     let n = form.len();
@@ -176,6 +163,7 @@ fn arrival(
             ents,
             terrain,
             ditches,
+            rules,
             &mut slots,
         );
     }
@@ -193,45 +181,65 @@ fn arrival(
     (out, facing)
 }
 
-/// Offsets within [`COVER_RADIUS_M`] on a grid of `step_mm`, nearest first
-/// (ties by `(y, x)`), the zero offset included.
-fn cover_offsets(step_mm: i32) -> Vec<FxVec2> {
-    let r = COVER_RADIUS_M * 1000 / step_mm;
+/// Offsets within [`COVER_TABLE_M`] on a grid of `step_mm`, nearest first
+/// (ties by `(y, x)`), the zero offset included, each with its squared
+/// distance in grid steps.
+fn cover_offsets(step_mm: i32) -> Vec<(i32, FxVec2)> {
+    let r = COVER_TABLE_M * 1000 / step_mm;
     let mut v: Vec<(i32, i32, i32)> = (-r..=r)
         .flat_map(|y| (-r..=r).map(move |x| (x * x + y * y, y, x)))
         .filter(|&(d, _, _)| d <= r * r)
         .collect();
     v.sort_unstable();
     v.into_iter()
-        .map(|(_, y, x)| FxVec2::new(Fx::from_milli(x * step_mm), Fx::from_milli(y * step_mm)))
+        .map(|(d, y, x)| {
+            (
+                d,
+                FxVec2::new(Fx::from_milli(x * step_mm), Fx::from_milli(y * step_mm)),
+            )
+        })
         .collect()
 }
 
+/// The offsets of `table` within `radius_m` on its grid of `step_mm`: the
+/// same list, in the same order, as a table built for that radius.
+fn within(table: &[(i32, FxVec2)], radius_m: i32, step_mm: i32) -> &[(i32, FxVec2)] {
+    let r = radius_m * 1000 / step_mm;
+    &table[..table.partition_point(|&(d, _)| d <= r * r)]
+}
+
 /// Trench and terrain cover search offsets (built once; pure data).
-fn offsets() -> &'static (Vec<FxVec2>, Vec<FxVec2>) {
-    static OFFSETS: std::sync::OnceLock<(Vec<FxVec2>, Vec<FxVec2>)> = std::sync::OnceLock::new();
+#[allow(clippy::type_complexity)]
+fn offsets() -> &'static (Vec<(i32, FxVec2)>, Vec<(i32, FxVec2)>) {
+    static OFFSETS: std::sync::OnceLock<(Vec<(i32, FxVec2)>, Vec<(i32, FxVec2)>)> =
+        std::sync::OnceLock::new();
     OFFSETS.get_or_init(|| (cover_offsets(TRENCH_STEP_MM), cover_offsets(COVER_STEP_MM)))
 }
 
-/// Whether a trench cell lies within reach of `p` (grid pre-check).
-fn trench_near(terrain: &Heightfield, p: FxVec2) -> bool {
-    let reach = Fx::from_int(COVER_RADIUS_M + crate::terrain::SPACING_M);
+/// Whether a trench cell lies within `radius_m` of `p` (grid pre-check).
+fn trench_near(terrain: &Heightfield, p: FxVec2, radius_m: i32) -> bool {
+    let reach = Fx::from_int(radius_m + crate::terrain::SPACING_M);
     let (x0, y0) = terrain.nearest_grid(p - FxVec2::new(reach, reach));
     let (x1, y1) = terrain.nearest_grid(p + FxVec2::new(reach, reach));
     (y0..=y1).any(|gy| (x0..=x1).any(|gx| terrain.is_trench(gx, gy)))
 }
 
-/// A trench spot: `p` and the four points [`TRENCH_MARGIN_MM`] around it
-/// are all `combat::TRENCH_MM` below the base surface, so `p` is near the
-/// middle of the floor and a man who stops within the arrive radius of it
-/// still stands in the trench.
-fn trench_spot(terrain: &Heightfield, ditches: Option<&BlockLayer>, p: FxVec2) -> bool {
+/// A trench spot: `p` and the four points `cover.trench_margin_mm` around
+/// it are all `combat.body.trench_depth_mm` below the base surface, so `p`
+/// is near the middle of the floor and a man who stops within the arrive
+/// radius of it still stands in the trench.
+fn trench_spot(
+    terrain: &Heightfield,
+    ditches: Option<&BlockLayer>,
+    p: FxVec2,
+    rules: &RulesSetup,
+) -> bool {
     // S3: no fire step in an AT ditch.
     if ditches.is_some_and(|d| d.is_ditch(crate::vehicle::node_at(terrain, p))) {
         return false;
     }
-    let deep = Fx::from_milli(TRENCH_MM);
-    let m = Fx::from_milli(TRENCH_MARGIN_MM);
+    let deep = Fx::from_milli(rules.combat.body.trench_depth_mm as i32);
+    let m = Fx::from_milli(rules.cover.trench_margin_mm as i32);
     let dug = |q: FxVec2| {
         terrain.has_detail_at(q) && terrain.base_height_at(q) - terrain.height_at(q) >= deep
     };
@@ -243,6 +251,7 @@ fn trench_spot(terrain: &Heightfield, ditches: Option<&BlockLayer>, p: FxVec2) -
 
 /// Moves arrival `slots` of men `own` (of `owner`, arriving near `goal`)
 /// into cover (see the module docs).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn seek_cover(
     owner: PlayerId,
     goal: FxVec2,
@@ -250,13 +259,16 @@ pub(crate) fn seek_cover(
     ents: &Entities,
     terrain: &Heightfield,
     ditches: Option<&BlockLayer>,
+    rules: &RulesSetup,
     slots: &mut [FxVec2],
 ) {
-    let gap = (Fx::from_milli(COVER_GAP_MM).raw() as u64).pow(2);
+    let cv = &rules.cover;
+    let radius_m = cv.radius_m as i32;
+    let gap = (Fx::from_milli(cv.gap_mm as i32).raw() as u64).pow(2);
     let free = |taken: &[FxVec2], p: FxVec2| taken.iter().all(|t| (*t - p).length_sq_raw() >= gap);
     let owner = owner.0;
     // Spots other friends stand on or walk to.
-    let near_goal = (Fx::from_int(3 * COVER_RADIUS_M).raw() as u64).pow(2);
+    let near_goal = (Fx::from_int(3 * radius_m).raw() as u64).pow(2);
     let mut taken: Vec<FxVec2> = ents
         .soldiers()
         .filter(|id| {
@@ -268,7 +280,7 @@ pub(crate) fn seek_cover(
         .map(|id| ents.mover[id.index()].waypoint)
         .collect();
     // Nearest enemy the owner sees, by distance to the goal (ties by id).
-    let reach = (Fx::from_int(COVER_ENEMY_M).raw() as u64).pow(2);
+    let reach = (Fx::from_int(cv.enemy_m as i32).raw() as u64).pow(2);
     let enemy = ents
         .soldiers()
         .filter(|id| {
@@ -281,14 +293,18 @@ pub(crate) fn seek_cover(
         })
         .filter(|(d, _, _)| *d <= reach)
         .min_by_key(|(d, id, _)| (*d, *id))
-        .map(|(_, _, pos)| FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(COVER_EYE_MM)));
+        .map(|(_, _, pos)| FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(cv.eye_mm as i32)));
     let (fine, coarse) = offsets();
-    let trenches = slots.iter().any(|&p| trench_near(terrain, p));
+    let fine = within(fine, radius_m, TRENCH_STEP_MM);
+    let coarse = within(coarse, radius_m, COVER_STEP_MM);
+    let trenches = slots.iter().any(|&p| trench_near(terrain, p, radius_m));
     for slot in slots.iter_mut() {
         let in_trench = trenches
             .then(|| {
-                fine.iter().map(|&o| *slot + o).find(|&p| {
-                    terrain.contains(p) && trench_spot(terrain, ditches, p) && free(&taken, p)
+                fine.iter().map(|&(_, o)| *slot + o).find(|&p| {
+                    terrain.contains(p)
+                        && trench_spot(terrain, ditches, p, rules)
+                        && free(&taken, p)
                 })
             })
             .flatten();
@@ -296,11 +312,11 @@ pub(crate) fn seek_cover(
             let eye = enemy?;
             coarse
                 .iter()
-                .map(|&o| *slot + o)
+                .map(|&(_, o)| *slot + o)
                 .filter(|&p| terrain.contains(p) && free(&taken, p))
                 .take(COVER_RAYS)
                 .find(|&p| {
-                    let chest = p.extend(terrain.height_at(p) + Fx::from_milli(COVER_CHEST_MM));
+                    let chest = p.extend(terrain.height_at(p) + Fx::from_milli(cv.chest_mm as i32));
                     !terrain.line_of_sight(eye, chest)
                 })
         });
@@ -336,9 +352,16 @@ impl MatchState {
         let mv = &self.setup.rules.movement;
         let arrive = Fx::from(mv.arrive_radius);
         let arrive_sq = arrive.mul_int(2).mul(arrive.mul_int(2));
-        let reach_sq = Fx::from_int(WAYPOINT_REACH_M * WAYPOINT_REACH_M);
-        let catch_sq = Fx::from_int(CATCH_UP_M * CATCH_UP_M);
-        let stretched_sq = Fx::from_int(STRETCHED_M * STRETCHED_M);
+        let rules = &self.setup.rules;
+        let fm = &mv.formation;
+        let (reach_m, catch_m, stretched_m) = (
+            fm.waypoint_reach_m as i32,
+            fm.catch_up_m as i32,
+            fm.stretched_m as i32,
+        );
+        let reach_sq = Fx::from_int(reach_m * reach_m);
+        let catch_sq = Fx::from_int(catch_m * catch_m);
+        let stretched_sq = Fx::from_int(stretched_m * stretched_m);
         let mut repath = Vec::new();
         let prone_pct = mv.prone_speed_pct;
         let mut form: Vec<SimId> = Vec::new();
@@ -414,7 +437,7 @@ impl MatchState {
                             repath.push((id, nav.goal));
                         } else {
                             let (slots, facing) =
-                                arrival(sq, &form, ctx.ents, ctx.terrain, ditches, spacing);
+                                arrival(sq, &form, ctx.ents, ctx.terrain, ditches, rules, spacing);
                             let nav = &mut sq.nav;
                             nav.slots = slots;
                             nav.facing = facing;
@@ -424,7 +447,7 @@ impl MatchState {
                         continue;
                     }
                     let f = nav.heading;
-                    let lead_by = f * Fx::from_milli(SLOT_LEAD_MM);
+                    let lead_by = f * Fx::from_milli(fm.slot_lead_mm as i32);
                     let mut strung_out = false;
                     for (k, &m) in form.iter().enumerate().skip(1) {
                         let slot = column_slot(lpos, f, k, spacing);
@@ -442,7 +465,7 @@ impl MatchState {
                         set_target(ctx, m, target, v);
                     }
                     let lead_speed = if strung_out {
-                        speed.mul_int(STRETCHED_SPEED_PCT).div_int(100)
+                        speed.mul_int(fm.stretched_speed_pct as i32).div_int(100)
                     } else {
                         speed
                     };
@@ -471,7 +494,7 @@ impl MatchState {
                     }
                     let nav = &mut sq.nav;
                     if nav.phase == NavPhase::Arriving
-                        && (all_there || nav.phase_ticks >= ARRIVE_TIMEOUT_S * hz)
+                        && (all_there || nav.phase_ticks >= fm.arrive_timeout_s * hz)
                     {
                         nav.phase = NavPhase::Holding;
                         nav.phase_ticks = 0;

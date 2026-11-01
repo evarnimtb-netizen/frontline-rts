@@ -301,6 +301,139 @@ impl ModDefs {
         Ok(id)
     }
 
+    /// Applies a tuning override file (S3b quick iteration; `frontline-cli
+    /// --rules-override`). It is a partial TOML file:
+    ///
+    /// * top-level keys and tables merge onto the rules def `rules_id`, key
+    ///   by key (`[combat] near_miss_cm = 250` changes one value);
+    /// * `[defs.<kind>."<id>"]` tables merge onto one def of `kind` (`units`,
+    ///   `weapons`, `items`, `factions`, `maps`, `vehicles`, `ammo`), e.g.
+    ///   `[defs.units."ww2:ger_pz4_h_squad"] cost = 600`. Arrays (such as a
+    ///   vehicle's `[[weapons]]`) replace the whole array.
+    ///
+    /// Every patched def is validated as on load, then the cross-file
+    /// checks run again. Returns each changed value (dotted path, before,
+    /// after) for the run's log. The defs (and so the content hash and
+    /// match hashes) change; ids do not. On an error nothing changes.
+    pub fn apply_override(
+        &mut self,
+        path: &Path,
+        rules_id: &str,
+    ) -> Result<Vec<OverrideChange>, ContentError> {
+        let mut work = self.clone();
+        let changes = work.apply_override_in_place(path, rules_id)?;
+        *self = work;
+        Ok(changes)
+    }
+
+    fn apply_override_in_place(
+        &mut self,
+        path: &Path,
+        rules_id: &str,
+    ) -> Result<Vec<OverrideChange>, ContentError> {
+        let origin = path.display().to_string();
+        let invalid = |issues: Vec<Issue>| ContentError::Invalid {
+            origin: origin.clone(),
+            issues,
+        };
+        let src = std::fs::read_to_string(path).map_err(|e| ContentError::Io {
+            path: path.to_owned(),
+            source: e,
+        })?;
+        let mut table: toml::Table = toml::from_str(&src).map_err(|e| ContentError::Parse {
+            origin: origin.clone(),
+            message: e.to_string().trim_end().to_owned(),
+        })?;
+        for key in ["base", "id", "name"] {
+            if table.contains_key(key) {
+                return Err(invalid(vec![
+                    Issue::new(
+                        key,
+                        "an override patches the run's rules and keeps their id",
+                    )
+                    .with_hint(format!(
+                        "remove `{key}` (files with `base`/`id` are rules defs of their own: \
+                     tests/rules_*.toml)"
+                    )),
+                ]));
+            }
+        }
+        let mut changes = Vec::new();
+        if let Some(defs) = table.remove("defs") {
+            let toml::Value::Table(defs) = defs else {
+                return Err(invalid(vec![
+                    Issue::new("defs", "must be a table of def kinds")
+                        .with_hint("[defs.units.\"ww2:usa_rifle_squad\"]"),
+                ]));
+            };
+            for (kind, ids) in defs {
+                let toml::Value::Table(ids) = ids else {
+                    return Err(invalid(vec![Issue::new(
+                        format!("defs.{kind}"),
+                        "must be a table of def ids",
+                    )]));
+                };
+                for (id, patch) in ids {
+                    let at = format!("defs.{kind}.\"{id}\"");
+                    let toml::Value::Table(patch) = patch else {
+                        return Err(invalid(vec![Issue::new(at, "must be a table of keys")]));
+                    };
+                    match kind.as_str() {
+                        "units" => patch_in(&mut self.squads, &id, patch, &at, SquadDef::validate),
+                        "weapons" => {
+                            patch_in(&mut self.weapons, &id, patch, &at, WeaponDef::validate)
+                        }
+                        "items" => patch_in(&mut self.items, &id, patch, &at, ItemDef::validate),
+                        "factions" => {
+                            patch_in(&mut self.factions, &id, patch, &at, FactionDef::validate)
+                        }
+                        "maps" => patch_in(&mut self.maps, &id, patch, &at, MapFileDef::validate),
+                        "vehicles" => {
+                            patch_in(&mut self.vehicles, &id, patch, &at, VehicleDef::validate)
+                        }
+                        "ammo" => patch_in(&mut self.ammo, &id, patch, &at, AmmoDef::validate),
+                        _ => Err(vec![
+                            Issue::new(
+                                format!("defs.{kind}"),
+                                format!("unknown def kind `{kind}`"),
+                            )
+                            .with_hint(
+                                "one of units, weapons, items, factions, maps, vehicles, ammo",
+                            ),
+                        ]),
+                    }
+                    .map(|c| changes.extend(c))
+                    .map_err(invalid)?;
+                }
+            }
+        }
+        if !table.is_empty() {
+            if !self.rules.contains_key(rules_id) {
+                return Err(invalid(vec![Issue::new(
+                    "",
+                    format!(
+                        "unknown rules `{rules_id}`{}",
+                        did_you_mean(rules_id, self.rules.keys())
+                    ),
+                )]));
+            }
+            let c = patch_in(
+                &mut self.rules,
+                rules_id,
+                table,
+                &format!("rules \"{rules_id}\""),
+                RulesDef::validate,
+            )
+            .map_err(invalid)?;
+            changes.extend(c);
+        }
+        let issues = self.cross_check();
+        if !issues.is_empty() {
+            return Err(invalid(issues));
+        }
+        Ok(changes)
+    }
+
     /// References between defs: squads → factions, weapons, items and
     /// vehicles, faction rosters → squads, role/weapon agreement, at most
     /// one item of each kind per loadout, and vehicle mounts → weapons and
@@ -503,6 +636,98 @@ impl ModDefs {
             }
         }
         out
+    }
+}
+
+/// One value an override changed (`ModDefs::apply_override`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OverrideChange {
+    /// `rules "ww2:skirmish": combat.near_miss_cm`, or
+    /// `defs.units."ww2:usa_rifle_squad": cost`.
+    pub path: String,
+    /// TOML text of the value before and after (`None`: absent).
+    pub old: Option<String>,
+    pub new: Option<String>,
+}
+
+impl std::fmt::Display for OverrideChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let show = |v: &Option<String>| v.clone().unwrap_or_else(|| "(none)".into());
+        write!(
+            f,
+            "{}: {} -> {}",
+            self.path,
+            show(&self.old),
+            show(&self.new)
+        )
+    }
+}
+
+/// Merges `patch` onto def `id` of `defs` (TOML round trip), validates it
+/// and stores it; returns the changed values. `at` names the def in issues.
+fn patch_in<T: Serialize + DeserializeOwned>(
+    defs: &mut BTreeMap<String, T>,
+    id: &str,
+    patch: toml::Table,
+    at: &str,
+    validate: impl Fn(&T) -> Vec<Issue>,
+) -> Result<Vec<OverrideChange>, Vec<Issue>> {
+    let Some(def) = defs.get(id) else {
+        return Err(vec![Issue::new(
+            at,
+            format!("unknown id `{id}`{}", did_you_mean(id, defs.keys())),
+        )]);
+    };
+    let before = match toml::Value::try_from(def) {
+        Ok(toml::Value::Table(t)) => t,
+        _ => return Err(vec![Issue::new(at, "this def cannot be patched as TOML")]),
+    };
+    let mut merged = before.clone();
+    merge_tables(&mut merged, patch);
+    let new: T = toml::Value::Table(merged.clone())
+        .try_into()
+        .map_err(|e: toml::de::Error| vec![Issue::new(at, e.to_string().trim_end().to_owned())])?;
+    let issues: Vec<Issue> = validate(&new)
+        .into_iter()
+        .map(|i| Issue {
+            path: format!("{at}: {}", i.path),
+            ..i
+        })
+        .collect();
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+    let (mut a, mut b) = (BTreeMap::new(), BTreeMap::new());
+    flatten("", &before, &mut a);
+    flatten("", &merged, &mut b);
+    let keys: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+    let changes = keys
+        .into_iter()
+        .filter(|k| a.get(*k) != b.get(*k))
+        .map(|k| OverrideChange {
+            path: format!("{at}: {k}"),
+            old: a.get(k).cloned(),
+            new: b.get(k).cloned(),
+        })
+        .collect();
+    defs.insert(id.to_owned(), new);
+    Ok(changes)
+}
+
+/// Dotted path → TOML text of every non-table value under `t`.
+fn flatten(prefix: &str, t: &toml::Table, out: &mut BTreeMap<String, String>) {
+    for (k, v) in t {
+        let p = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}.{k}")
+        };
+        match v {
+            toml::Value::Table(sub) => flatten(&p, sub, out),
+            v => {
+                out.insert(p, v.to_string());
+            }
+        }
     }
 }
 

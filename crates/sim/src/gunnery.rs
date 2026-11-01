@@ -24,7 +24,7 @@
 //! ~1 s average, a soldier's current) times the flight time and
 //! compensates drop as `combat::shot_velocity` does, two fixed iterations.
 //! [`lay_gun`] turns the turret at the def's traverse (×0.5 with the ring
-//! damaged, fixed with it destroyed) and the gun at [`ELEVATE_DEG_S`]
+//! damaged, fixed with it destroyed) and the gun at the def's `elevate_deg_s`
 //! within its elevation limits. The gun fires only when laid within its
 //! current spread of the solution, along its actual laid direction plus
 //! spread (RNG `GUN_SPREAD`).
@@ -36,7 +36,7 @@
 //! damaged.
 //!
 //! **MGs.** The coax engages the main gun's soldier target, else the
-//! nearest seen enemy soldier within [`COAX_CONE_DEG`] of the turret; the
+//! nearest seen enemy soldier within `vehicles.gunnery.coax_cone_deg` of the turret; the
 //! hull MG the nearest seen enemy soldiers within its `arc_deg` (sweeping
 //! among the four nearest, as S1 MGs). Both need their crewman (gunner,
 //! radio operator), fire at the MG's interval with belts and reloads, and
@@ -63,10 +63,8 @@ use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
 use crate::vehicle::{AmmoChoice, Basis, VehicleFrame, VehicleState};
 
-/// Gun elevation rate (°/s); the defs have no figure for it.
-pub const ELEVATE_DEG_S: i32 = 6;
-/// The coax engages men this close to the turret's line (°).
-pub const COAX_CONE_DEG: i32 = 5;
+// S3b: the gun elevation rate is each vehicle def's `turret.elevate_deg_s`;
+// the coax cone is the rules' `vehicles.gunnery.coax_cone_deg`.
 /// Most candidates a target search scores (nearest first).
 const GROUP_CANDIDATES: usize = 16;
 /// Most line-of-fire rays per target search.
@@ -139,7 +137,7 @@ pub fn lay_gun(vs: &mut VehicleState, v: &VehicleSetup, yaw: Fx, pitch: Fx, hz: 
     let err = (yaw.wrap_angle() - vs.turret_yaw).wrap_angle();
     let step = err.clamp(-traverse, traverse);
     vs.turret_yaw = (vs.turret_yaw + step).wrap_angle();
-    let elev = deg(ELEVATE_DEG_S).div_int(hz);
+    let elev = deg(v.elevate_deg_s).div_int(hz);
     let perr = pitch - vs.gun_pitch;
     vs.gun_pitch += perr.clamp(-elev, elev);
     step == err && perr.abs() <= elev
@@ -455,7 +453,11 @@ impl MatchState {
         for (k, (m, st)) in v.mounts.iter().skip(1).zip(mgs.iter_mut()).enumerate() {
             st.cooldown = st.cooldown.saturating_sub(1);
             let (crew, cone, axis) = match m.kind {
-                MountKind::Coax => (SeatRole::Gunner, deg(COAX_CONE_DEG), turret_dir),
+                MountKind::Coax => (
+                    SeatRole::Gunner,
+                    deg(self.setup.rules.vehicles.gunnery.coax_cone_deg as i32),
+                    turret_dir,
+                ),
                 MountKind::Hull => (m.seat, deg(m.arc_deg), f.hull.axes.x),
                 MountKind::TurretMain => continue,
             };

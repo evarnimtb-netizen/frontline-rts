@@ -204,6 +204,8 @@ var _type_count := {}
 var net_readout: Control
 var net_overlay: Control
 var net_disconnect: Control
+## Debug data-reload errors (S3b, DataErrorBanner).
+var data_error: DataErrorBanner
 
 
 func _ready() -> void:
@@ -217,12 +219,15 @@ func _ready() -> void:
 	net_overlay = NetOverlay.new()
 	net_overlay.name = "NetOverlay"
 	hud.add_child(net_overlay)
+	data_error = DataErrorBanner.new()
+	data_error.name = "DataError"
+	hud.add_child(data_error)
 	net_disconnect = NetDisconnectScreen.new()
 	net_disconnect.name = "NetDisconnect"
 	add_child(net_disconnect)
 	# Above the HUD, below the pause menu and the end screen.
 	move_child(net_disconnect, pause_menu.get_index())
-	for c in [hud, top_bar, minimap, event_feed, roster, detail, orders, call_in, units, pause_menu, end_screen, selection, net_readout, net_overlay, net_disconnect]:
+	for c in [hud, top_bar, minimap, event_feed, roster, detail, orders, call_in, units, pause_menu, end_screen, selection, net_readout, net_overlay, net_disconnect, data_error]:
 		if c.has_method("bind"):
 			c.bind(self)
 	MatchInput.ensure_actions()

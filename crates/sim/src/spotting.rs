@@ -54,9 +54,6 @@ use crate::game::MatchState;
 use crate::terrain::Heightfield;
 use crate::vehicle::frame_of;
 
-/// Eye (and head check point) below the top of the hit capsule (mm).
-pub(crate) const EYE_DROP_MM: i32 = 100;
-
 /// One player's spotting result for a tick.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SpotPass {
@@ -69,10 +66,11 @@ pub(crate) struct SpotPass {
     observers: Vec<(SimId, FxVec2, FxVec3, Fx, bool)>,
 }
 
-/// Head point of a soldier: the top of his capsule less the eye drop.
+/// Head point of a soldier: the top of his capsule less the eye drop
+/// (the rules' `combat.body.eye_drop_mm`, as `Fx`).
 #[inline]
-pub(crate) fn head(pos: FxVec3, height: Fx) -> FxVec3 {
-    FxVec3::new(pos.x, pos.y, pos.z + height - Fx::from_milli(EYE_DROP_MM))
+pub(crate) fn head(pos: FxVec3, height: Fx, eye_drop: Fx) -> FxVec3 {
+    FxVec3::new(pos.x, pos.y, pos.z + height - eye_drop)
 }
 
 /// Runs player `p`'s spotting pass for this tick into `out`.
@@ -86,6 +84,7 @@ pub(crate) fn spot(
 ) {
     let setup = game.setup();
     let rules = &setup.rules.combat;
+    let eye_drop = Fx::from_milli(rules.body.eye_drop_mm as i32);
     let n = ents.len();
     let cursor = game.spot_cursor[p.0 as usize] as usize;
     out.changes.clear();
@@ -136,7 +135,7 @@ pub(crate) fn spot(
         // In a trench he looks over the parapet from the fire step.
         let eye_h = if c.in_trench { c.fire_height } else { c.height };
         out.observers
-            .push((id, pos.xy(), head(pos, eye_h), sight, true));
+            .push((id, pos.xy(), head(pos, eye_h, eye_drop), sight, true));
     }
     if enemies == 0 || n == 0 {
         return;
@@ -223,7 +222,7 @@ pub(crate) fn spot(
             let at = near.partition_point(|e| (e.0, e.1) < (key.0, key.1));
             near.insert(at, key);
         }
-        let target = head(pos, c.height);
+        let target = head(pos, c.height, eye_drop);
         let mut seen = false;
         for &(_, oid, eye) in &near {
             out.rays += 1;
@@ -306,7 +305,8 @@ fn spot_vehicle(
         return false;
     }
     let geo = &game.vehicle_derived().geo[vs.type_idx as usize];
-    let points = frame_of(id, ents.owner[i], t, vs, geo).spot_points();
+    let drop = game.setup().rules.vehicles.driving.spot_drop_mm;
+    let points = frame_of(id, ents.owner[i], t, vs, geo).spot_points(drop);
     for &(_, oid, eye) in near.iter() {
         for target in points {
             out.rays += 1;

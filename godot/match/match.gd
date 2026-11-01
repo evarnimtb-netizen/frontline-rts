@@ -67,7 +67,10 @@ func _ready() -> void:
 		if Session.net_mode and source.has_method("attach_net"):
 			source.attach_net(Session.net)
 		if not source.start_match(Session.match_setup()):
-			push_error("Match: could not start the skirmish: %s" % source.get_last_error())
+			var err: String = source.get_last_error()
+			push_error("Match: could not start the skirmish: %s" % err)
+			# Back to the menu, which shows why (S3b: broken mod data).
+			Session.start_error = err
 			Session.goto_menu.call_deferred()
 			return
 		var info: Dictionary = source.get_map_info()
@@ -112,6 +115,22 @@ func _ready() -> void:
 		camera.jump_to(Vector3.ZERO)
 
 
+## Debug builds (S3b): re-reads mods/ TOML and restarts this match with the
+## same settings. The bridge checks the data first, so a broken file shows
+## a banner and the running match goes on (paused, if the menu paused it).
+func _reload_data() -> void:
+	# The mock source (match_mock.tscn) has no data to reload.
+	if not OS.is_debug_build() or Session.net_mode or not source.has_method("check_mods"):
+		return
+	var err: String = source.check_mods(Session.match_setup())
+	if err != "":
+		push_warning("Match: data reload refused: %s" % err)
+		view.data_error.show_error(err)
+		return
+	print("Match: reloading mod data and restarting %s" % [Session.match_setup()])
+	Session.restart_match()
+
+
 func _process(_delta: float) -> void:
 	if not started:
 		return
@@ -136,6 +155,9 @@ func _process(_delta: float) -> void:
 
 
 func _on_intent(kind: StringName, data: Dictionary) -> void:
+	if kind == &"reload_data":
+		_reload_data()
+		return
 	if kind == &"quit_to_menu":
 		Session.goto_menu()
 		return

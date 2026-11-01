@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use frontline_content::vehicle::AmmoMechanism;
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest, SquadRole};
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, PlayerRequest, SquadRole};
 use frontline_sim::{
     ArmourEventKind, BlastKind, Outcome, PlayerId, SquadId, World, kill_class, vehicle_flags,
 };
@@ -119,6 +119,26 @@ pub struct SkirmishArgs {
     /// diagnostics: position, order, speed, flags, components, target).
     #[arg(long)]
     pub trace_vehicles: bool,
+    /// Tuning override (S3b): a partial TOML file merged onto the rules
+    /// and defs (`docs/modding/tuning.md`). Repeatable; applied in order.
+    /// Changes the match, so hashes differ.
+    #[arg(long = "rules-override", value_name = "FILE")]
+    pub rules_override: Vec<PathBuf>,
+    /// Run this many matches, seeds `--seed .. --seed + N` (S3b A/B
+    /// testing), in parallel; prints each match's report unless --summary.
+    #[arg(long, value_name = "N", conflicts_with_all = ["load", "save", "trace_vehicles", "paced"])]
+    pub seeds: Option<u64>,
+    /// With --seeds: play every seed twice, normal and swapped bases.
+    #[arg(long, requires = "seeds", conflicts_with = "swap_bases")]
+    pub both_bases: bool,
+    /// With --seeds: print one compact table over all the matches (wins per
+    /// faction and base, length, tanks lost, knock-out causes, HE share,
+    /// rockets, satchels, tick p99) instead of each report.
+    #[arg(long, requires = "seeds")]
+    pub summary: bool,
+    /// With --seeds: matches run at once (default: cores / --threads).
+    #[arg(long, value_name = "J", requires = "seeds")]
+    pub jobs: Option<usize>,
 }
 
 impl Default for SkirmishArgs {
@@ -141,6 +161,11 @@ impl Default for SkirmishArgs {
             paced: false,
             report: ReportFormat::Text,
             trace_vehicles: false,
+            rules_override: Vec::new(),
+            seeds: None,
+            both_bases: false,
+            summary: false,
+            jobs: None,
         }
     }
 }
@@ -510,10 +535,10 @@ pub fn mods_dir(arg: Option<&Path>) -> Result<PathBuf> {
     bail!("cannot find mods/ww2; pass --mods <DIR>")
 }
 
-/// Loads the mod and resolves an AI-vs-AI match from `args`.
+/// Loads the mod (with `--rules-override`) and resolves an AI-vs-AI match
+/// from `args`.
 pub fn match_setup(args: &SkirmishArgs) -> Result<MatchSetup> {
-    let dir = mods_dir(args.mods.as_deref())?;
-    let defs = ModDefs::load(&dir).map_err(|e| anyhow!("{e}"))?;
+    let (defs, _) = crate::overrides::load_defs(args.mods.as_deref(), &args.rules_override)?;
     let d0: Difficulty = args.difficulty.into();
     let d1: Difficulty = args.difficulty1.unwrap_or(args.difficulty).into();
     let req = MatchRequest {
@@ -1075,5 +1100,317 @@ pub fn summary_text(r: &SkirmishReport) -> String {
         r.wall_ms / 1e3,
         if r.paced { " (paced)" } else { "" }
     );
+    out
+}
+
+// ------------------------------------------------- many seeds (S3b A/B) --
+
+/// One match of a `--seeds` run.
+#[derive(Clone, Debug, Serialize)]
+pub struct ManyMatch {
+    pub seed: u64,
+    /// Played with `--swap-bases` (player 0 at base 1).
+    pub swapped: bool,
+    pub report: SkirmishReport,
+}
+
+/// One faction's numbers over a `--seeds` run.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct FactionSummary {
+    pub faction: String,
+    pub wins: u32,
+    /// Wins from base 0 and from base 1.
+    pub wins_by_base: [u32; 2],
+    pub tanks_bought: u32,
+    pub tanks_lost: u32,
+    /// Enemy tanks knocked out by this faction's guns and rockets.
+    pub ko_by_gun: u32,
+    pub ko_by_rocket: u32,
+    pub rockets_fired: u32,
+    pub rocket_hits: u32,
+    pub rocket_pens: u32,
+    /// Matches in which this faction fired at least one rocket.
+    pub matches_with_rockets: u32,
+    pub satchels_at_vehicles: u32,
+    pub matches_with_satchels: u32,
+    pub kills: u32,
+    pub losses: u32,
+}
+
+/// The compact table of a `--seeds` run (`--summary`).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ManySummary {
+    pub matches: u32,
+    /// Matches without a winner (draw or time limit).
+    pub no_winner: u32,
+    /// Wins from base 0 and from base 1, any faction.
+    pub wins_by_base: [u32; 2],
+    pub factions: Vec<FactionSummary>,
+    pub minutes_mean: f64,
+    pub minutes_min: f64,
+    pub minutes_max: f64,
+    pub over_25_min: u32,
+    /// Tank knock-outs by cause, both sides.
+    pub ko_causes: BTreeMap<String, u32>,
+    pub he_share_mean_pct: f64,
+    pub he_share_max_pct: f64,
+    /// Highest per-match tick p99 over the peak ticks and over all ticks
+    /// (ms; matches run in parallel, so they read high).
+    pub peak_p99_max_ms: f64,
+    pub all_p99_max_ms: f64,
+    /// Matches run at once.
+    pub jobs: usize,
+}
+
+/// The result of `skirmish --seeds`.
+#[derive(Clone, Debug, Serialize)]
+pub struct ManyReport {
+    pub matches: Vec<ManyMatch>,
+    pub summary: ManySummary,
+    /// `--rules-override` log lines (what each file changed).
+    pub overrides: Vec<String>,
+}
+
+/// Runs `--seeds` matches (both base orders with `--both-bases`) on a pool
+/// of `--jobs` threads. Every match is the same as a single `skirmish` run
+/// with its seed (and `--swap-bases`), so its hash is too.
+pub fn skirmish_many(args: &SkirmishArgs) -> Result<ManyReport> {
+    let n = args.seeds.unwrap_or(1);
+    if n == 0 {
+        bail!("--seeds must be at least 1");
+    }
+    let threads = match args.threads {
+        Some(0) => bail!("--threads must be at least 1"),
+        Some(t) => t,
+        None => 1,
+    };
+    let cores = std::thread::available_parallelism().map_or(1, |c| c.get());
+    let jobs = match args.jobs {
+        Some(0) => bail!("--jobs must be at least 1"),
+        Some(j) => j,
+        None => (cores / threads).max(1),
+    };
+    // Checks the overrides once (and gives the log) before any thread runs.
+    let (_, overrides) = crate::overrides::load_defs(args.mods.as_deref(), &args.rules_override)?;
+    let mut runs: Vec<(u64, bool)> = Vec::new();
+    for seed in args.seed..args.seed + n {
+        runs.push((seed, args.swap_bases));
+        if args.both_bases {
+            runs.push((seed, true));
+        }
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let results: std::sync::Mutex<Vec<(usize, Result<SkirmishReport>)>> =
+        std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..jobs.min(runs.len()) {
+            scope.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(&(seed, swap)) = runs.get(k) else {
+                        break;
+                    };
+                    let one = SkirmishArgs {
+                        seed,
+                        swap_bases: swap,
+                        threads: Some(threads),
+                        seeds: None,
+                        both_bases: false,
+                        summary: false,
+                        jobs: None,
+                        ..args.clone()
+                    };
+                    let r = skirmish(&one);
+                    results.lock().expect("no panics").push((k, r));
+                }
+            });
+        }
+    });
+    let mut results = results.into_inner().expect("no panics");
+    results.sort_by_key(|r| r.0);
+    let mut matches = Vec::with_capacity(results.len());
+    for (k, r) in results {
+        let (seed, swapped) = runs[k];
+        let report =
+            r.with_context(|| format!("seed {seed}{}", if swapped { " swapped" } else { "" }))?;
+        matches.push(ManyMatch {
+            seed,
+            swapped,
+            report,
+        });
+    }
+    let summary = summarise(&matches, jobs);
+    Ok(ManyReport {
+        matches,
+        summary,
+        overrides,
+    })
+}
+
+fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
+    let mut s = ManySummary {
+        matches: matches.len() as u32,
+        minutes_min: f64::MAX,
+        jobs,
+        ..ManySummary::default()
+    };
+    let mut factions: BTreeMap<String, FactionSummary> = BTreeMap::new();
+    let mut minutes = 0.0;
+    let mut he = 0.0;
+    for m in matches {
+        let r = &m.report;
+        let min = r.game_seconds / 60.0;
+        minutes += min;
+        s.minutes_min = s.minutes_min.min(min);
+        s.minutes_max = s.minutes_max.max(min);
+        if min > 25.0 {
+            s.over_25_min += 1;
+        }
+        he += r.armour.he_share_pct;
+        s.he_share_max_pct = s.he_share_max_pct.max(r.armour.he_share_pct);
+        s.peak_p99_max_ms = s.peak_p99_max_ms.max(r.timing.peak.p99_ms);
+        s.all_p99_max_ms = s.all_p99_max_ms.max(r.timing.all.p99_ms);
+        for (k, v) in &r.armour.ko_causes {
+            *s.ko_causes.entry(k.clone()).or_default() += v;
+        }
+        match (r.winner, r.armour.winner_base) {
+            (Some(_), Some(b)) => s.wins_by_base[(b as usize).min(1)] += 1,
+            (Some(_), None) => {}
+            (None, _) => s.no_winner += 1,
+        }
+        for p in &r.players {
+            let f = factions
+                .entry(p.faction.clone())
+                .or_insert_with(|| FactionSummary {
+                    faction: p.faction.clone(),
+                    ..FactionSummary::default()
+                });
+            if r.winner == Some(p.player) {
+                f.wins += 1;
+                if let Some(b) = r.armour.winner_base {
+                    f.wins_by_base[(b as usize).min(1)] += 1;
+                }
+            }
+            let a = &p.armour;
+            f.tanks_bought += a.vehicles_bought;
+            f.tanks_lost += a.vehicles_lost;
+            f.ko_by_gun += a.ko_by_gun;
+            f.ko_by_rocket += a.ko_by_rocket;
+            f.rockets_fired += a.at_shots;
+            f.rocket_hits += a.rocket_hits;
+            f.rocket_pens += a.rocket_pens;
+            f.matches_with_rockets += u32::from(a.at_shots > 0);
+            f.satchels_at_vehicles += a.satchels_at_vehicles;
+            f.matches_with_satchels += u32::from(a.satchels_at_vehicles > 0);
+            f.kills += p.kills;
+            f.losses += p.losses;
+        }
+    }
+    let n = matches.len().max(1) as f64;
+    s.minutes_mean = round3(minutes / n);
+    s.minutes_min = if matches.is_empty() {
+        0.0
+    } else {
+        round3(s.minutes_min)
+    };
+    s.minutes_max = round3(s.minutes_max);
+    s.he_share_mean_pct = round3(he / n);
+    s.factions = factions.into_values().collect();
+    s
+}
+
+/// The `--summary` table (and a line per match).
+pub fn many_text(r: &ManyReport) -> String {
+    let s = &r.summary;
+    let swapped = r.matches.iter().filter(|m| m.swapped).count();
+    let mut out = format!(
+        "skirmish summary: {} matches ({} with swapped bases), {} at once\n",
+        s.matches, swapped, s.jobs
+    );
+    for l in &r.overrides {
+        out += &format!("{l}\n");
+    }
+    out += "faction        wins  base0/1  tanks lost/bought  ko gun/rocket  \
+            rockets fired/hit/pen (matches)  satchels@veh (matches)  kills/losses\n";
+    for f in &s.factions {
+        out += &format!(
+            "{:<14} {:>4}  {:>3}/{:<3}  {:>8}/{:<8}  {:>6}/{:<6}  {:>7}/{}/{} ({}/{})  {:>12} ({}/{})  {}/{}\n",
+            f.faction,
+            f.wins,
+            f.wins_by_base[0],
+            f.wins_by_base[1],
+            f.tanks_lost,
+            f.tanks_bought,
+            f.ko_by_gun,
+            f.ko_by_rocket,
+            f.rockets_fired,
+            f.rocket_hits,
+            f.rocket_pens,
+            f.matches_with_rockets,
+            s.matches,
+            f.satchels_at_vehicles,
+            f.matches_with_satchels,
+            s.matches,
+            f.kills,
+            f.losses,
+        );
+    }
+    let ko_total: u32 = s.ko_causes.values().sum();
+    let rack = s.ko_causes.get("ko_ammo_rack").copied().unwrap_or(0);
+    let causes: Vec<String> = s
+        .ko_causes
+        .iter()
+        .map(|(k, v)| format!("{k} {v}"))
+        .collect();
+    out += &format!(
+        "wins by base: base 0 {}, base 1 {}; no winner {}\n\
+         length min: mean {:.1}, {:.1}-{:.1}, {} over 25\n\
+         knock-outs: {} ({}; rack {:.0} %)\n\
+         HE share of kills: mean {:.1} %, max {:.1} %\n\
+         tick p99 ms (max over matches, parallel runs): peak {:.3}, all {:.3}\n",
+        s.wins_by_base[0],
+        s.wins_by_base[1],
+        s.no_winner,
+        s.minutes_mean,
+        s.minutes_min,
+        s.minutes_max,
+        s.over_25_min,
+        ko_total,
+        if causes.is_empty() {
+            "none".into()
+        } else {
+            causes.join(", ")
+        },
+        if ko_total == 0 {
+            0.0
+        } else {
+            rack as f64 * 100.0 / ko_total as f64
+        },
+        s.he_share_mean_pct,
+        s.he_share_max_pct,
+        s.peak_p99_max_ms,
+        s.all_p99_max_ms,
+    );
+    out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
+    for m in &r.matches {
+        let rp = &m.report;
+        let p = |k: usize| &rp.players[k].armour;
+        out += &format!(
+            "{:<5} {:<8} {:<14} {:>4}  {:>6}  {:>8}/{:<8}  {:>6}/{:<6}  {:>7}/{:<6}  {:>5.1}  {}\n",
+            m.seed,
+            if m.swapped { "swapped" } else { "normal" },
+            rp.winner_faction.as_deref().unwrap_or(rp.result),
+            rp.armour.winner_base.map_or("-".into(), |b| b.to_string()),
+            mmss(rp.game_seconds),
+            p(0).vehicles_lost,
+            p(1).vehicles_lost,
+            p(0).at_shots,
+            p(1).at_shots,
+            p(0).satchels_at_vehicles,
+            p(1).satchels_at_vehicles,
+            rp.armour.he_share_pct,
+            rp.final_hash,
+        );
+    }
     out
 }

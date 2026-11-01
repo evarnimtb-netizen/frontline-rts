@@ -27,6 +27,11 @@ use crate::defs::{
 use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
+use crate::tuning::{
+    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CoverTuning, DigCommonTuning,
+    DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning, SuppressionTuning,
+    ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
+};
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
 };
@@ -196,6 +201,8 @@ pub struct RulesSetup {
     pub capture_radius: Fixed,
     pub capture_ticks: u32,
     pub capture_max_men: u8,
+    /// Capture speed per man beyond the first, percent of one man's.
+    pub capture_extra_man_pct: u32,
     pub movement: MovementSetup,
     /// The standard trench profile (`DigProfile::Trench`).
     pub dig: DigSetup,
@@ -207,6 +214,8 @@ pub struct RulesSetup {
     pub vehicles: VehicleRulesSetup,
     pub difficulty: DifficultyTable,
     pub ai: AiSetup,
+    /// Cover on arrival (S3b).
+    pub cover: CoverTuning,
 }
 
 impl RulesSetup {
@@ -278,6 +287,11 @@ pub struct VehicleRulesSetup {
     pub base_repair_pct_s: u32,
     pub base_rearm_ticks: u32,
     pub base_crew_ticks: u32,
+    /// S3b tuning tables (TOML units; see `crate::tuning`).
+    pub driving: DrivingTuning,
+    pub path: VehiclePathTuning,
+    pub escort: EscortTuning,
+    pub gunnery: GunneryTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -285,6 +299,8 @@ pub struct VehicleRulesSetup {
 pub struct ItemRulesSetup {
     /// A man in his own base gets one item back every this many ticks.
     pub resupply_ticks: u32,
+    /// S3b tuning table (TOML units).
+    pub throw: ThrowTuning,
 }
 
 /// AI commander tuning (see `AiDef`).
@@ -308,6 +324,9 @@ pub struct AiSetup {
     pub assault_close: Fixed,
     pub at_clear_ticks: u32,
     pub repair_clear: Fixed,
+    /// S3b tuning tables (TOML units).
+    pub infantry: AiInfantryTuning,
+    pub armour: AiArmourTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -324,6 +343,10 @@ pub struct MovementSetup {
     pub path_max_expansions: u32,
     /// Path step cost between two trench cells, in percent of normal.
     pub trench_cost_pct: u32,
+    /// Infantry path step cost into an AT-ditch cell, in percent.
+    pub ditch_cost_pct: u32,
+    /// S3b tuning table (TOML units).
+    pub formation: FormationTuning,
 }
 
 /// A dig profile and its pace. One man at `dig_rate_pct = 100` does 100
@@ -342,10 +365,13 @@ pub struct DigSetup {
     pub passes: u32,
     /// Only engineer squads dig it (S3: the AT ditch).
     pub engineers_only: bool,
+    /// The spoil bank shape and digger reach (the rules' `[dig.common]`,
+    /// the same for every profile; S3b).
+    pub common: DigCommonTuning,
 }
 
 impl DigSetup {
-    fn lower(d: &DigProfileDef) -> DigSetup {
+    fn lower(d: &DigProfileDef, common: &DigCommonTuning) -> DigSetup {
         DigSetup {
             depth: Fixed::from_cm(d.depth_cm),
             floor_width: Fixed::from_cm(d.floor_cm),
@@ -355,6 +381,7 @@ impl DigSetup {
             work_per_m: d.work_per_m,
             passes: d.passes,
             engineers_only: d.engineers_only,
+            common: common.clone(),
         }
     }
 }
@@ -382,6 +409,11 @@ pub struct CombatSetup {
     pub range_spread_pct: u32,
     pub fire_exposure: Fixed,
     pub corpse_ticks: u32,
+    /// S3b tuning tables (TOML units).
+    pub body: BodyTuning,
+    pub mortar: MortarTuning,
+    pub blast: BlastTuning,
+    pub suppression: SuppressionTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -896,6 +928,7 @@ impl ModDefs {
                 capture_radius: Fixed::from_int(rules.capture.radius_m as i32),
                 capture_ticks: rules.capture.time_s * hz,
                 capture_max_men: rules.capture.max_men,
+                capture_extra_man_pct: rules.capture.extra_man_pct,
                 movement: MovementSetup {
                     slope_cost_pct: m.slope_cost_pct,
                     max_slope_pct: m.max_slope_pct,
@@ -906,9 +939,11 @@ impl ModDefs {
                     path_budget_per_tick: m.path_budget_per_tick,
                     path_max_expansions: m.path_max_expansions,
                     trench_cost_pct: m.trench_cost_pct,
+                    ditch_cost_pct: m.ditch_cost_pct,
+                    formation: m.formation.clone(),
                 },
-                dig: DigSetup::lower(&rules.dig.profiles.trench),
-                at_ditch: DigSetup::lower(&rules.dig.profiles.at_ditch),
+                dig: DigSetup::lower(&rules.dig.profiles.trench, &rules.dig.common),
+                at_ditch: DigSetup::lower(&rules.dig.profiles.at_ditch, &rules.dig.common),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -930,10 +965,15 @@ impl ModDefs {
                         range_spread_pct: c.range_spread_pct,
                         fire_exposure: Fixed::from_cm(c.fire_exposure_cm),
                         corpse_ticks: c.corpse_s * hz,
+                        body: c.body.clone(),
+                        mortar: c.mortar.clone(),
+                        blast: c.blast.clone(),
+                        suppression: c.suppression.clone(),
                     }
                 },
                 items: ItemRulesSetup {
                     resupply_ticks: rules.items.resupply_s * hz,
+                    throw: rules.items.throw.clone(),
                 },
                 vehicles: {
                     let v = &rules.vehicles;
@@ -967,6 +1007,10 @@ impl ModDefs {
                         base_repair_pct_s: v.base_repair_pct_s,
                         base_rearm_ticks: v.base_rearm_s * hz,
                         base_crew_ticks: v.base_crew_s * hz,
+                        driving: v.driving.clone(),
+                        path: v.path.clone(),
+                        escort: v.escort.clone(),
+                        gunnery: v.gunnery.clone(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -996,8 +1040,11 @@ impl ModDefs {
                         assault_close: Fixed::from_int(a.assault_close_m as i32),
                         at_clear_ticks: a.at_clear_s * hz,
                         repair_clear: Fixed::from_int(a.repair_clear_m as i32),
+                        infantry: a.infantry.clone(),
+                        armour: a.armour.clone(),
                     }
                 },
+                cover: rules.cover.clone(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -1439,6 +1486,44 @@ impl MatchSetup {
             "rules.items.resupply_ticks",
             "out of range",
         );
+        check(
+            r.capture_extra_man_pct <= 1000,
+            "rules.capture_extra_man_pct",
+            "out of range",
+        );
+        check(
+            (1..=10_000).contains(&m.ditch_cost_pct),
+            "rules.movement.ditch_cost_pct",
+            "out of range",
+        );
+        // S3b tuning tables: the same ranges as the defs.
+        let mut tuning = Vec::new();
+        check_tuning(
+            &mut tuning,
+            "rules.",
+            TuningRefs {
+                body: &c.body,
+                mortar: &c.mortar,
+                blast: &c.blast,
+                suppression: &c.suppression,
+                ai_infantry: &a.infantry,
+                ai_armour: &a.armour,
+                driving: &v.driving,
+                vehicle_path: &v.path,
+                escort: &v.escort,
+                gunnery: &v.gunnery,
+                formation: &m.formation,
+                cover: &r.cover,
+                throw: &r.items.throw,
+                dig_common: &r.dig.common,
+            },
+        );
+        r.at_ditch
+            .common
+            .check("rules.at_ditch.common", &mut tuning);
+        for i in &tuning {
+            check(false, &i.path, &i.message);
+        }
         for it in &self.items {
             check(
                 it.range_min >= Fixed::ZERO

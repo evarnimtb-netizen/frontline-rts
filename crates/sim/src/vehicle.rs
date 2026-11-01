@@ -67,6 +67,7 @@
 //! a tick see the layer as of the end of the previous tick.
 
 use frontline_content::setup::VehicleRulesSetup;
+use frontline_content::tuning::{DrivingTuning, VehiclePathTuning};
 use frontline_content::vehicle::{FixedVec3, VehicleSetup};
 use frontline_content::{COMPONENTS, ComponentKind, MatchSetup, SeatRole};
 use serde::{Deserialize, Serialize};
@@ -84,61 +85,10 @@ use crate::terrain::{Heightfield, SPACING_M, TRENCH_NAV_DM};
 
 /// Height samples per track, rear (0) to front (4).
 pub const TRACK_SAMPLES: usize = 5;
-/// Hull pitch and roll limit (degrees).
-pub const MAX_TILT_DEG: i32 = 30;
-/// Fastest change of pitch and roll (degrees per second).
-const TILT_RATE_DEG_S: i32 = 20;
-/// A vehicle circle's radius is half the hull width plus this (mm).
-const CIRCLE_PAD_MM: i32 = 250;
 /// Vehicle circles a soldier avoids at most, on top of his neighbours.
 pub const MAX_VEHICLE_CIRCLES: usize = 4;
-/// The follower moves on to the next waypoint within this distance (m).
-const WAYPOINT_REACH_M: i32 = 3;
-/// The last waypoint counts as reached within this distance (mm).
-const ARRIVE_MM: i32 = 2500;
-/// Over this heading error the follower stops pushing and turns (pivots
-/// on the spot below [`PIVOT_SPEED_MM_S`]).
-const PIVOT_ERR_DEG: i32 = 60;
-const PIVOT_SPEED_MM_S: i32 = 1000;
-/// Full steer at this heading error and beyond.
-const FULL_STEER_DEG: i32 = 10;
-/// Full throttle up to this heading error, falling to none at
-/// [`PIVOT_ERR_DEG`].
-const FULL_THROTTLE_DEG: i32 = 20;
-/// A `Move` to a target behind the hull and this close reverses (m).
-const REVERSE_ORDER_M: i32 = 40;
-/// Yield box length in percent of the hull length.
-const YIELD_LEN_PCT: i32 = 150;
-/// A vehicle slower than this counts as standing (yield rule, mm/s).
-const YIELD_STILL_MM_S: i32 = 500;
-/// A friendly soldier this far ahead slows a vehicle to walking pace (m).
-const FRIENDLY_AHEAD_M: i32 = 4;
-/// Walking pace (mm/s).
-const WALK_MM_S: i32 = 1500;
-/// Stuck check: less than this progress (m) in [`STUCK_S`] re-paths.
-const STUCK_PROGRESS_M: i32 = 1;
-const STUCK_S: u32 = 5;
-/// Heading offset to the right while a vehicle comes head-on (degrees).
-const KEEP_RIGHT_DEG: i32 = 35;
-/// A vehicle making no progress backs off for 1 s after this long.
-const BACK_OFF_S: u32 = 2;
-/// At most one re-path per vehicle per this many seconds.
-const REPATH_GAP_S: u32 = 2;
-/// Cost of the avoided node in a stuck re-path, percent.
-pub const AVOID_COST_PCT: u32 = 800;
-/// Cost of a node next to a blocked one (the clearance band), percent.
-pub const MARGIN_COST_PCT: u32 = 400;
-/// AT-ditch lines block nodes within this distance (m).
-const DITCH_REACH_M: i32 = 2;
-/// A wreck's footprint is padded by this much for the block layer (m).
-const WRECK_PAD_M: i32 = 2;
-/// A soldier pushed out of a footprint lands this far past its side (mm),
-/// beyond his own radius.
-const PUSH_GAP_MM: i32 = 100;
-/// Push-out never moves a man to ground dug this much deeper (mm).
-const PUSH_DEEPER_MM: i32 = 100;
-/// Spotting check points sit this far below the box tops (mm).
-const SPOT_DROP_MM: i32 = 100;
+// S3b: the driving, yielding, path-cost and pose values are rules data
+// (`[vehicles.driving]` and `[vehicles.path]`, `frontline_content::tuning`).
 
 /// Main-gun ammo choice (`SetAmmo`; S3 stage 4 acts on it).
 #[derive(
@@ -185,7 +135,7 @@ pub struct VehicleState {
     /// Index into `MatchSetup::vehicles`.
     pub type_idx: u16,
     /// Hull pitch (positive: nose up) and roll (positive: left side up),
-    /// radians, within ±[`MAX_TILT_DEG`].
+    /// radians, within ±`vehicles.driving.max_tilt_deg`.
     pub pitch: Fx,
     pub roll: Fx,
     /// Hull-relative turret yaw and gun pitch (radians).
@@ -373,7 +323,7 @@ impl VehicleState {
             return Err("vehicle type out of range");
         };
         let r = &s.rules.vehicles;
-        let tilt = deg(MAX_TILT_DEG) + Fx::from_milli(1);
+        let tilt = deg(r.driving.max_tilt_deg as i32) + Fx::from_milli(1);
         let top = Fx::from(v.mobility.speed).max(Fx::from(v.mobility.reverse));
         let swap_max = r.seat_swap_ticks.min(u16::MAX as u32) as u16;
         let bad = self.seats.len() != v.seats.len()
@@ -472,8 +422,11 @@ pub struct Geo {
     pub turret_half: FxVec3,
     /// Track centrelines at ±`track_y`.
     pub track_y: Fx,
-    /// Avoidance circle radius (half the hull width plus 0.25 m).
+    /// Avoidance circle radius (half the hull width plus the rules'
+    /// `circle_pad_mm`).
     pub circle_r: Fx,
+    /// Hull pitch and roll limit (the rules' `max_tilt_deg`).
+    pub max_tilt: Fx,
     /// Horizontal radius around the hull origin covering hull, turret and
     /// gun in any pose.
     pub reach: Fx,
@@ -482,7 +435,7 @@ pub struct Geo {
 }
 
 impl Geo {
-    pub fn of(v: &VehicleSetup) -> Geo {
+    pub fn of(v: &VehicleSetup, drv: &DrivingTuning) -> Geo {
         let hull_center = v3(v.hull.center);
         let hull_half = v3(v.hull.half);
         let pivot = v3(v.turret_pivot);
@@ -507,7 +460,8 @@ impl Geo {
             turret_center,
             turret_half,
             track_y,
-            circle_r: hull_half.y + Fx::from_milli(CIRCLE_PAD_MM),
+            circle_r: hull_half.y + Fx::from_milli(drv.circle_pad_mm as i32),
+            max_tilt: deg(drv.max_tilt_deg as i32),
             reach: hull_r.max(turret_r).max(gun_r),
             eye: v.eye_height.into(),
         }
@@ -603,9 +557,10 @@ impl VehicleFrame {
         ([c + a, c - a], geo.circle_r)
     }
 
-    /// Spotting check points: the turret top, then the hull top centre.
-    pub fn spot_points(&self) -> [FxVec3; 2] {
-        let drop = Fx::from_milli(SPOT_DROP_MM);
+    /// Spotting check points: the turret top, then the hull top centre,
+    /// each `drop_mm` below the box top (the rules' `spot_drop_mm`).
+    pub fn spot_points(&self, drop_mm: u32) -> [FxVec3; 2] {
+        let drop = Fx::from_milli(drop_mm as i32);
         let t = &self.turret;
         let h = &self.hull;
         [
@@ -679,7 +634,7 @@ pub fn sample_ground(terrain: &Heightfield, xy: FxVec2, yaw: Fx, geo: &Geo) -> G
 }
 
 /// The hull pose the ground gives: origin height, pitch and roll (clamped
-/// to ±[`MAX_TILT_DEG`]).
+/// to ±`vehicles.driving.max_tilt_deg`).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct GroundPose {
     pub z: Fx,
@@ -707,7 +662,7 @@ pub fn ground_pose(g: &Ground, geo: &Geo) -> GroundPose {
         slope[t] = (hf - hr) / (xf - xr);
         mid[t] = hr - slope[t] * xr;
     }
-    let tilt = deg(MAX_TILT_DEG);
+    let tilt = geo.max_tilt;
     let s = (slope[0] + slope[1]).div_int(2);
     GroundPose {
         z: (mid[0] + mid[1]).div_int(2),
@@ -884,19 +839,21 @@ impl BlockLayer {
 
     /// Recomputes the marked rectangles from the terrain, the AT-ditch
     /// lines and the wreck footprints.
+    /// `path` gives the ditch reach and wreck pad (`[vehicles.path]`).
     pub(crate) fn update(
         &mut self,
         terrain: &Heightfield,
         ditches: &[Vec<FxVec2>],
         wrecks: &[Footprint],
+        path: &VehiclePathTuning,
     ) {
         if self.pending.is_empty() {
             return;
         }
         let pending = std::mem::take(&mut self.pending);
         let dim = self.dim;
-        let reach_sq = FxVec2::from_int(DITCH_REACH_M, 0).length_sq_raw();
-        let pad = Fx::from_int(WRECK_PAD_M);
+        let reach_sq = FxVec2::from_int(path.ditch_reach_m as i32, 0).length_sq_raw();
+        let pad = Fx::from_int(path.wreck_pad_m as i32);
         for r in &pending {
             for gy in r[1]..=r[3] {
                 for gx in r[0]..=r[2] {
@@ -1003,7 +960,8 @@ impl Eq for VehicleDerived {}
 impl VehicleDerived {
     /// Empty derived data sized for `setup` (call `rebuild` before use).
     pub fn new(setup: &MatchSetup, grid_dim: u32) -> VehicleDerived {
-        let geo: Vec<Geo> = setup.vehicles.iter().map(Geo::of).collect();
+        let drv = &setup.rules.vehicles.driving;
+        let geo: Vec<Geo> = setup.vehicles.iter().map(|v| Geo::of(v, drv)).collect();
         let max_reach = geo.iter().map(|g| g.reach).max().unwrap_or(Fx::ZERO);
         VehicleDerived {
             index: SpatialHash::new(setup.map.size_m),
@@ -1028,6 +986,9 @@ impl VehicleDerived {
 pub(crate) struct Obstacles<'a> {
     pub derived: &'a VehicleDerived,
     pub velocity: &'a [Velocity],
+    /// A man this close to a circle's rim, heading into it, slides round
+    /// it (the rules' `movement.formation.slide_gap_mm`).
+    pub slide_gap: Fx,
 }
 
 impl Obstacles<'_> {
@@ -1212,7 +1173,7 @@ pub fn drive(
 
     // Pose: pitch and roll follow the ground at a limited rate.
     let gp = ground_pose(&g, ctx.geo);
-    let rate = deg(TILT_RATE_DEG_S).div_int(hz);
+    let rate = deg(r.driving.tilt_rate_deg_s as i32).div_int(hz);
     vs.pitch = approach(vs.pitch, gp.pitch, rate);
     vs.roll = approach(vs.roll, gp.roll, rate);
     let changed = xy1 != xy || yaw != yaw0;
@@ -1287,11 +1248,12 @@ pub(crate) fn hold_vehicle(nav: &mut Nav, pos: FxVec2) {
     nav.slots = vec![pos];
 }
 
-/// Whether a `Move` from a hull at `t` to `target` reverses.
-pub(crate) fn reverses_to(t: &Transform, target: FxVec2) -> bool {
+/// Whether a `Move` from a hull at `t` to `target` reverses: the target is
+/// behind the hull and within `reverse_m` (the rules' `reverse_order_m`).
+pub(crate) fn reverses_to(t: &Transform, target: FxVec2, reverse_m: u32) -> bool {
     let d = target - t.pos.xy();
     d.dot_raw(yaw_dir(t.yaw)) < 0
-        && d.length_sq_raw() <= FxVec2::from_int(REVERSE_ORDER_M, 0).length_sq_raw()
+        && d.length_sq_raw() <= FxVec2::from_int(reverse_m as i32, 0).length_sq_raw()
 }
 
 /// Whether an attack-moving vehicle halts: its main gun has a target and
@@ -1392,7 +1354,7 @@ impl MatchState {
             return;
         };
         let c = ents.transform[id.index()].pos.xy();
-        let r = geo.reach + Fx::from_int(WRECK_PAD_M);
+        let r = geo.reach + Fx::from_int(self.setup.rules.vehicles.path.wreck_pad_m as i32);
         let rv = FxVec2::new(r, r);
         self.vderived.block.mark_rect(c - rv, c + rv);
     }
@@ -1405,7 +1367,8 @@ impl MatchState {
             lo = FxVec2::new(lo.x.min(q.x), lo.y.min(q.y));
             hi = FxVec2::new(hi.x.max(q.x), hi.y.max(q.y));
         }
-        let pad = FxVec2::from_int(DITCH_REACH_M, DITCH_REACH_M);
+        let reach = self.setup.rules.vehicles.path.ditch_reach_m as i32;
+        let pad = FxVec2::from_int(reach, reach);
         self.vderived.block.mark_rect(lo - pad, hi + pad);
     }
 
@@ -1420,11 +1383,14 @@ impl MatchState {
         self.vderived.block.mark_tiles(tiles);
         let wrecks = self.wreck_footprints(ents);
         let MatchState {
+            setup,
             vderived,
             at_ditches,
             ..
         } = self;
-        vderived.block.update(terrain, at_ditches, &wrecks);
+        vderived
+            .block
+            .update(terrain, at_ditches, &wrecks, &setup.rules.vehicles.path);
     }
 
     /// Rebuilds every derived vehicle structure from the state (load, new
@@ -1558,6 +1524,7 @@ impl MatchState {
                             derived: vderived,
                             v,
                             geo,
+                            drv: &setup.rules.vehicles.driving,
                             hz,
                             tick,
                         },
@@ -1588,7 +1555,16 @@ impl MatchState {
             hash.mark_entity_chunk(id.chunk());
             if moved {
                 let f = frame_of(id, ents.owner[i], &t, vs, geo);
-                push_out(ents, terrain, soldiers, hash, &f, geo, soldier_r);
+                push_out(
+                    ents,
+                    terrain,
+                    soldiers,
+                    hash,
+                    &f,
+                    geo,
+                    soldier_r,
+                    &setup.rules.vehicles.driving,
+                );
             }
         }
         for (id, owner, pos) in bogged {
@@ -1620,6 +1596,7 @@ struct Follow<'a> {
     derived: &'a VehicleDerived,
     v: &'a VehicleSetup,
     geo: &'a Geo,
+    drv: &'a DrivingTuning,
     hz: u32,
     tick: u64,
 }
@@ -1640,11 +1617,11 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         let Some(f) = vs.face else { return (0, 0) };
         let to = f - pos;
         let err = (Fx::atan2(to.y, to.x) - t.yaw).wrap_angle();
-        if to.length_sq_raw() == 0 || err.abs() <= deg(crate::orders::FACE_DONE_DEG) {
+        if to.length_sq_raw() == 0 || err.abs() <= deg(c.drv.face_done_deg as i32) {
             vs.face = None;
             return (0, 0);
         }
-        let full = deg(FULL_STEER_DEG);
+        let full = deg(c.drv.full_steer_deg as i32);
         let steer = (err.raw() as i64 * 127 / full.raw() as i64).clamp(-127, 127);
         return (0, steer as i8);
     }
@@ -1658,7 +1635,8 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         vs.progress_ticks = 0;
         return (0, 0);
     }
-    let reach_sq = FxVec2::from_int(WAYPOINT_REACH_M, 0).length_sq_raw();
+    let d = c.drv;
+    let reach_sq = FxVec2::from_int(d.waypoint_reach_m as i32, 0).length_sq_raw();
     let last = nav.path.len() as u32 - 1;
     while nav.next < last && (nav.path[nav.next as usize] - pos).length_sq_raw() <= reach_sq {
         nav.next += 1;
@@ -1666,7 +1644,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     let wp = nav.path[nav.next as usize];
     let to = wp - pos;
     let dist = to.length();
-    if nav.next == last && dist <= Fx::from_milli(ARRIVE_MM) {
+    if nav.next == last && dist <= Fx::from_milli(d.arrive_mm as i32) {
         if nav.partial {
             repath.push((c.sid, nav.goal, None));
         } else {
@@ -1686,31 +1664,31 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     }
     let gap_ok = vs
         .repath_tick
-        .is_none_or(|r| c.tick >= r + (REPATH_GAP_S * c.hz) as u64);
+        .is_none_or(|r| c.tick >= r + (d.repath_gap_s * c.hz) as u64);
 
     // Stuck: under 1 m of progress in 5 s re-paths around the node ahead.
     let fwd = yaw_dir(t.yaw);
     let dir = if vs.reverse { -fwd } else { fwd };
     // Backing off (below) is not progress.
     let backing =
-        (BACK_OFF_S * c.hz..(BACK_OFF_S + 1) * c.hz).contains(&(vs.progress_ticks as u32));
+        (d.back_off_s * c.hz..(d.back_off_s + 1) * c.hz).contains(&(vs.progress_ticks as u32));
     if !backing
         && (pos - vs.progress_at).length_sq_raw()
-            >= FxVec2::from_int(STUCK_PROGRESS_M, 0).length_sq_raw()
+            >= FxVec2::from_int(d.stuck_progress_m as i32, 0).length_sq_raw()
     {
         vs.progress_at = pos;
         vs.progress_ticks = 0;
     } else {
         vs.progress_ticks = vs.progress_ticks.saturating_add(1);
     }
-    if vs.progress_ticks as u32 >= STUCK_S * c.hz && gap_ok {
+    if vs.progress_ticks as u32 >= d.stuck_s * c.hz && gap_ok {
         let ahead = pos + dir * (c.geo.hull_half.x + Fx::from_int(SPACING_M));
         repath.push((c.sid, nav.goal, Some(node_at(c.terrain, ahead))));
         return (0, 0);
     }
     // Pressed against something for 2 s: back off for 1 s (a hull nose to
     // nose with blocked ground cannot pivot).
-    if (BACK_OFF_S * c.hz..(BACK_OFF_S + 1) * c.hz).contains(&(vs.progress_ticks as u32)) {
+    if (d.back_off_s * c.hz..(d.back_off_s + 1) * c.hz).contains(&(vs.progress_ticks as u32)) {
         return (if vs.reverse { 80 } else { -80 }, 0);
     }
     // Every 0.5 s: has the way ahead become blocked?
@@ -1733,13 +1711,13 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         desired = (desired + Fx::PI).wrap_angle();
     }
     if head_on {
-        desired = (desired - deg(KEEP_RIGHT_DEG)).wrap_angle();
+        desired = (desired - deg(d.keep_right_deg as i32)).wrap_angle();
     }
     let err = (desired - t.yaw).wrap_angle();
-    let full = deg(FULL_STEER_DEG);
+    let full = deg(d.full_steer_deg as i32);
     let steer = (err.raw() as i64 * 127 / full.raw() as i64).clamp(-127, 127) as i32;
     let ae = err.abs();
-    let (lo, hi) = (deg(FULL_THROTTLE_DEG), deg(PIVOT_ERR_DEG));
+    let (lo, hi) = (deg(d.full_throttle_deg as i32), deg(d.pivot_err_deg as i32));
     let mut throttle: i32 = if ae >= hi {
         0
     } else if ae <= lo {
@@ -1764,7 +1742,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     if let Some(cap) = c.escort {
         throttle = throttle.min(throttle_for(cap, top).max(8));
     }
-    if ae >= hi && vs.speed.abs() < Fx::from_milli(PIVOT_SPEED_MM_S) {
+    if ae >= hi && vs.speed.abs() < Fx::from_milli(d.pivot_speed_mm_s as i32) {
         // Pivot on the spot.
         throttle = 0;
     }
@@ -1795,14 +1773,14 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
     // head-on at top speed to stop (each in half the gap, plus 2 m).
     let len = hx
         .mul_int(2)
-        .mul_int(YIELD_LEN_PCT)
+        .mul_int(c.drv.yield_len_pct as i32)
         .div_int(100)
         .max((top * top / brake2).mul_int(2) + Fx::from_int(2));
     let mut cap: Option<Fx> = None;
     let mut head_on = false;
     let mut lower = |v: Fx| cap = Some(cap.map_or(v, |c| c.min(v)));
     let stop_at = |along: Fx| (brake2 * (along - Fx::ONE).max(Fx::ZERO)).sqrt();
-    let still = Fx::from_milli(YIELD_STILL_MM_S);
+    let still = Fx::from_milli(c.drv.yield_still_mm_s as i32);
     c.derived
         .index
         .for_each_near(front, len + c.derived.max_reach, |other| {
@@ -1821,7 +1799,9 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
                 let rel = cc - front;
                 let along = rel.dot(dir);
                 let lat = dir.det(rel).abs();
-                if along >= -r && along <= len + r && lat <= hy + r + Fx::from_milli(CIRCLE_PAD_MM)
+                if along >= -r
+                    && along <= len + r
+                    && lat <= hy + r + Fx::from_milli(c.drv.circle_pad_mm as i32)
                 {
                     along_min = Some(along_min.map_or(along, |a: Fx| a.min(along)));
                 }
@@ -1847,8 +1827,8 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
                 lower(stop_at(along));
             }
         });
-    let ahead = Fx::from_int(FRIENDLY_AHEAD_M);
-    let walk = Fx::from_milli(WALK_MM_S);
+    let ahead = Fx::from_int(c.drv.friendly_ahead_m as i32);
+    let walk = Fx::from_milli(c.drv.walk_mm_s as i32);
     c.soldiers.for_each_near(front, ahead + hy + Fx::ONE, |s| {
         let si = s.index();
         if c.ents.owner[si] != owner || c.ents.kind[si] != EntityKind::Soldier {
@@ -1865,6 +1845,7 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
 
 /// Pushes soldiers out of a moving vehicle's footprint, sideways (see the
 /// module docs).
+#[allow(clippy::too_many_arguments)]
 fn push_out(
     ents: &mut Entities,
     terrain: &Heightfield,
@@ -1873,6 +1854,7 @@ fn push_out(
     f: &VehicleFrame,
     geo: &Geo,
     soldier_r: Fx,
+    drv: &DrivingTuning,
 ) {
     let c = f.hull.center.xy();
     let fwd = yaw_dir(f.yaw);
@@ -1905,9 +1887,9 @@ fn push_out(
             continue;
         }
         let here = depth(pos.xy());
-        let out = hy + soldier_r + Fx::from_milli(PUSH_GAP_MM);
+        let out = hy + soldier_r + Fx::from_milli(drv.push_gap_mm as i32);
         let first = if ly >= Fx::ZERO { Fx::ONE } else { Fx::NEG_ONE };
-        let deeper = Fx::from_milli(PUSH_DEEPER_MM);
+        let deeper = Fx::from_milli(drv.push_deeper_mm as i32);
         let dest = [first, -first].into_iter().find_map(|side| {
             let p = terrain.clamp(c + fwd * lx + left * (out * side));
             (depth(p) <= here + deeper).then_some(p)
@@ -1952,7 +1934,7 @@ mod tests {
             let s = setup();
             let terrain = Heightfield::generate(TerrainKind::Flat, 256, 1);
             let block = BlockLayer::new(terrain.dim(), BlockLayer::ditch_dm_of(&s));
-            let geo = Geo::of(&s.vehicles[0]);
+            let geo = Geo::of(&s.vehicles[0], &s.rules.vehicles.driving);
             let vs = VehicleState::new(0, &s.vehicles[0], &s.rules.vehicles);
             let mut r = Rig {
                 s,
@@ -2093,7 +2075,8 @@ mod tests {
             half_y: Fx::from_int(1),
         };
         r.block.mark_all();
-        r.block.update(&r.terrain, &[], &[wreck]);
+        r.block
+            .update(&r.terrain, &[], &[wreck], &r.s.rules.vehicles.path);
         assert!(r.block.blocked_at(&r.terrain, FxVec2::from_int(130, 100)));
         // Full throttle into it for 10 s: stops short (`drive` asserts no
         // sample is ever on a blocked node).
@@ -2112,7 +2095,8 @@ mod tests {
             ..wreck
         };
         r.block.mark_all();
-        r.block.update(&r.terrain, &[], &[under]);
+        r.block
+            .update(&r.terrain, &[], &[under], &r.s.rules.vehicles.path);
         let at = r.xy();
         let ctx_drive = |r: &mut Rig| {
             let ctx = DriveCtx {
@@ -2132,7 +2116,8 @@ mod tests {
         assert!(r.vs.on_blocked);
         assert_eq!(r.xy(), at);
         r.block.mark_all();
-        r.block.update(&r.terrain, &[], &[]);
+        r.block
+            .update(&r.terrain, &[], &[], &r.s.rules.vehicles.path);
         for _ in 0..30 {
             ctx_drive(&mut r);
         }
@@ -2170,7 +2155,7 @@ mod tests {
             slowest < Fx::from_int(3) && slowest > Fx::from_int(2),
             "{slowest:?}"
         );
-        assert!(r.vs.pitch.abs() <= deg(MAX_TILT_DEG));
+        assert!(r.vs.pitch.abs() <= deg(r.s.rules.vehicles.driving.max_tilt_deg as i32));
         assert!(
             r.xy().x > Fx::from_int(160),
             "climbed the ramp: {:?}",
@@ -2280,6 +2265,7 @@ mod tests {
             &f,
             &r.geo,
             Fx::from_milli(300),
+            &r.s.rules.vehicles.driving,
         );
         assert_eq!(
             ents.transform[deep.index()].pos,
@@ -2327,21 +2313,26 @@ mod tests {
         }
         assert!(terrain.dug_dm(terrain.nearest_grid(FxVec2::from_int(72, 100)).0, 25) > 25);
         b.mark_all();
-        b.update(&terrain, &[], &[]);
+        b.update(&terrain, &[], &[], &s.rules.vehicles.path);
         assert_eq!(b.blocked_count(), 0);
         // As a ditch line it blocks, dilated by a node, with a clearance band.
         b.mark_all();
-        b.update(&terrain, std::slice::from_ref(&line), &[]);
+        b.update(
+            &terrain,
+            std::slice::from_ref(&line),
+            &[],
+            &s.rules.vehicles.path,
+        );
         let at = |x: i32, y: i32| node_at(&terrain, FxVec2::from_int(x, y));
         assert!(b.is_blocked(at(76, 100)) && b.is_blocked(at(76, 104)));
         assert!(!b.is_blocked(at(76, 108)) && b.is_margin(at(76, 108)));
         assert!(!b.is_margin(at(76, 112)));
         // A rect update outside leaves it; one over it recomputes it.
         b.mark_rect(FxVec2::from_int(200, 200), FxVec2::from_int(210, 210));
-        b.update(&terrain, &[], &[]);
+        b.update(&terrain, &[], &[], &s.rules.vehicles.path);
         assert!(b.is_blocked(at(76, 100)));
         b.mark_rect(FxVec2::from_int(70, 96), FxVec2::from_int(80, 104));
-        b.update(&terrain, &[], &[]);
+        b.update(&terrain, &[], &[], &s.rules.vehicles.path);
         assert!(!b.is_blocked(at(76, 100)));
     }
 

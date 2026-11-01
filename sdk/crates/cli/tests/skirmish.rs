@@ -174,3 +174,66 @@ fn fortify_test_reports_each_run() {
     let text = frontline_cli::fortify::summary_text(&r);
     assert!(text.contains("fortify-test: "), "{text}");
 }
+
+fn ww2_override(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../mods/ww2/tests/overrides")
+        .join(name)
+}
+
+#[test]
+fn rules_overrides_reach_the_match_and_restating_the_mod_changes_nothing() {
+    // S3b: the example override restates the mod's values: same match.
+    let base = run(short(2, 2, 2));
+    let same = run(SkirmishArgs {
+        rules_override: vec![ww2_override("example.toml")],
+        ..short(2, 2, 2)
+    });
+    assert_eq!(same.final_hash, base.final_hash);
+    // A real change (members walk closer behind their slots) gives another
+    // match.
+    let path = tmp("slot_lead.toml");
+    std::fs::write(&path, "[movement.formation]\nslot_lead_mm = 1000\n").unwrap();
+    let changed = run(SkirmishArgs {
+        rules_override: vec![path.clone()],
+        ..short(2, 2, 2)
+    });
+    assert_ne!(changed.final_hash, base.final_hash);
+    // Overrides apply in order: the second restores the value.
+    let back = tmp("slot_lead_back.toml");
+    std::fs::write(&back, "[movement.formation]\nslot_lead_mm = 1500\n").unwrap();
+    let restored = run(SkirmishArgs {
+        rules_override: vec![path, back],
+        ..short(2, 2, 2)
+    });
+    assert_eq!(restored.final_hash, base.final_hash);
+}
+
+#[test]
+fn many_seeds_run_in_parallel_give_the_single_runs_hashes() {
+    let many = frontline_cli::skirmish::skirmish_many(&SkirmishArgs {
+        seeds: Some(2),
+        both_bases: true,
+        summary: true,
+        jobs: Some(3),
+        threads: Some(1),
+        ..short(7, 1, 1)
+    })
+    .unwrap();
+    assert_eq!(many.matches.len(), 4);
+    assert_eq!(many.summary.matches, 4);
+    let order: Vec<(u64, bool)> = many.matches.iter().map(|m| (m.seed, m.swapped)).collect();
+    assert_eq!(order, [(7, false), (7, true), (8, false), (8, true)]);
+    for m in &many.matches {
+        let single = run(SkirmishArgs {
+            swap_bases: m.swapped,
+            ..short(m.seed, 1, 2)
+        });
+        assert_eq!(m.report.final_hash, single.final_hash, "seed {}", m.seed);
+    }
+    let text = frontline_cli::skirmish::many_text(&many);
+    assert!(
+        text.contains("ww2:germany") && text.contains("wins by base"),
+        "{text}"
+    );
+}

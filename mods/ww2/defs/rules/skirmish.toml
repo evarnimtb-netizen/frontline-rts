@@ -23,6 +23,9 @@ radius_m = 15
 time_s = 20
 # Capture speeds up with each man up to this many.
 max_men = 4
+# Each man beyond the first adds this much speed (percent of one man's).
+# S3b: was rules.rs CAPTURE_EXTRA_MAN_PCT (S1 value).
+extra_man_pct = 50
 
 [movement]
 # Path cost multiplier per 100 % grade: cost = base * (100 + grade_pct * slope_cost_pct / 100) / 100.
@@ -41,6 +44,35 @@ path_max_expansions = 8000
 # Steps between two trench cells cost this much of a normal step, so squads
 # already in a trench line prefer to follow it.
 trench_cost_pct = 60
+# Infantry step cost into an AT-ditch cell (percent): men go round a ditch
+# when a short detour exists (S3). S3b: was path.rs DITCH_COST_PCT.
+ditch_cost_pct = 300
+
+# Squad walking and soldier movement details. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[movement.formation]
+# A leader (or a detached man) moves on to his next waypoint within this (m).
+waypoint_reach_m = 2
+# A member this far from his slot is behind and speeds up (m).
+catch_up_m = 2
+# A member this far from his slot makes the leader slow down (m) ...
+stretched_m = 10
+# ... to this share of his speed (percent).
+stretched_speed_pct = 70
+# Members on the move aim this far past their moving slot, so they keep
+# walking with the leader instead of stopping at it every tick (mm).
+slot_lead_mm = 1500
+# Arriving gives up waiting for stragglers after this long (s).
+arrive_timeout_s = 20
+# A man this close to a vehicle's avoidance circle, heading into it, slides
+# round it instead of stopping in front of the hull (mm, S3).
+slide_gap_mm = 1500
+# Steep dug ground (trench walls, craters): grades up to this do not slow a
+# man (percent grade over the next 0.25 m) ...
+steep_free_pct = 60
+# ... and his slowest pace is this much of his speed (percent). A 1.6 m
+# trench wall (about 400 % grade) is climbed at about 15 %.
+steep_min_pct = 15
 
 # Dig profiles: a flat floor, walls sloping out over wall_cm to the lip,
 # and a spoil bank (parapet or berm) on the enemy side. One man at
@@ -68,6 +100,22 @@ max_length_m = 30
 work_per_m = 22000
 passes = 8
 engineers_only = true
+
+# Every dig profile: the spoil bank shape and how close a digger works.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[dig.common]
+# The parapet rises over this run beyond the lip (mm) ...
+parapet_rise_mm = 300
+# ... stays at full height over this run (mm) ...
+parapet_top_mm = 400
+# ... and falls back to the ground over this run (mm).
+parapet_fall_mm = 600
+# The parapet only raises ground at most this far below the base surface,
+# so it never fills another trench or a crater (mm).
+parapet_undug_mm = 50
+# A digger works when this close to his spot (mm).
+reach_mm = 1500
 
 [combat]
 # Spotting: LOS rays per player per tick, and how often each enemy soldier
@@ -102,10 +150,109 @@ range_spread_pct = 50
 fire_exposure_cm = 30
 corpse_s = 30
 
+# A soldier's hit capsule and posture points, heights from the feet.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.body]
+# Capsule heights by stance (mm): a standing man about 1.75 m.
+stand_mm = 1750
+crouch_mm = 1200
+prone_mm = 400
+# Capsule radius standing or crouched (mm).
+radius_mm = 250
+# Prone: a horizontal capsule along the heading, radius and half length (mm).
+prone_radius_mm = 200
+prone_half_mm = 700
+# The muzzle sits this far below the top of the firing capsule (mm).
+muzzle_drop_mm = 150
+# Shooters aim at a man on a fire step this far below his top: head and
+# shoulders (mm).
+head_aim_mm = 150
+# Eyes (and the head spotting point) this far below the top (mm).
+eye_drop_mm = 100
+# A man this far below the base surface stands in a trench (mm).
+trench_depth_mm = 1000
+# Slower than this counts as standing still: MG and mortar set-up, moving
+# spread (mm/s).
+still_mm_s = 300
+
+# Mortar laying and flight. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.mortar]
+# Muzzle height above the crew's feet (mm).
+muzzle_mm = 800
+# Flight time is sqrt(range in m * flight_milli / 1000) s, at least
+# min_flight_s: about a 60 degree arc at every range.
+flight_milli = 350
+min_flight_s = 4
+# A team holding out of range walks to 90 % of its range again unless that
+# spot is within this of its last walk; then the barrage ends (m).
+barrage_retry_m = 20
+
+# HE bursts of shells, rockets and thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.blast]
+# Damage and sight rays from a burst start this far above it (mm).
+lift_mm = 300
+# Crater depth roll, percent of the weapon's crater_depth, inclusive.
+crater_depth_min_pct = 75
+crater_depth_max_pct = 140
+# A burst more than this above the ground under it (on a vehicle) carves no
+# crater (mm).
+crater_lift_mm = 500
+
+# Suppression details (the thresholds and decay are the [combat] keys
+# above). S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.suppression]
+# A near miss on a man crouched below cover (in a trench, off the fire
+# step) adds this share of the weapon's suppression (percent).
+covered_near_miss_pct = 50
+# A burst with earth between it and a man suppresses him this much
+# (percent).
+blast_behind_cover_pct = 50
+# Each point of suppression widens a shooter's spread by this many
+# hundredths of a percent (100: 1 % per point; pinned men use
+# pinned_spread_pct instead).
+spread_per_point_pct = 100
+
+# Cover on arrival: each man moves his slot to the nearest free trench spot,
+# else (an enemy seen) to a spot with terrain between him and that enemy.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[cover]
+# Men look for cover this far from their line slot (m).
+radius_m = 10
+# Only enemies this close to the goal count for terrain cover (m).
+enemy_m = 400
+# Two men's cover spots keep at least this far apart (mm).
+gap_mm = 1200
+# A trench spot needs dug ground this far around it too, so a man who stops
+# near it still stands in the trench (mm).
+trench_margin_mm = 400
+# Enemy eye height and the covered man's chest height for cover rays (mm).
+eye_mm = 1500
+chest_mm = 1000
+
 [items]
 # A soldier in his own base gets one item back this often, up to his
 # loadout.
 resupply_s = 20
+
+# Thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[items.throw]
+# The item leaves the hand this far below the top of the firing capsule
+# (mm).
+release_drop_mm = 150
+# Shortest flight: a satchel dropped at the feet still arcs (ms).
+min_flight_ms = 300
+# Lob steepness: tangent of the launch angle over flat ground, in
+# thousandths (1000 = 45 degrees).
+lob_tan_milli = 1000
+# A smoke cloud reaches this far below its centre (a sight line along a
+# slope) (mm).
+smoke_below_mm = 2000
 
 [vehicles]
 # S3 (docs/slices/S3-armour.md). Vehicles can be called in from 4:00 of
@@ -162,6 +309,98 @@ base_repair_pct_s = 2
 base_rearm_s = 2
 base_crew_s = 20
 
+# How a vehicle follows its path, yields and sits on the ground.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.driving]
+# Hull pitch and roll limit (deg) and their fastest change (deg/s).
+max_tilt_deg = 30
+tilt_rate_deg_s = 20
+# Avoidance circle radius: half the hull width plus this (mm).
+circle_pad_mm = 250
+# The driver moves on to the next waypoint within this (m); the last one
+# counts as reached within arrive_mm (mm).
+waypoint_reach_m = 3
+arrive_mm = 2500
+# Over pivot_err_deg of heading error the driver stops pushing and turns,
+# on the spot below pivot_speed_mm_s (mm/s).
+pivot_err_deg = 60
+pivot_speed_mm_s = 1000
+# Full steer at this heading error and beyond (deg).
+full_steer_deg = 10
+# Full throttle up to this heading error, none at pivot_err_deg (deg).
+full_throttle_deg = 20
+# A move to a target behind the hull and this close reverses (m).
+reverse_order_m = 40
+# Yield box length, percent of the hull length.
+yield_len_pct = 150
+# A vehicle slower than this counts as standing for the yield rule (mm/s).
+yield_still_mm_s = 500
+# A friendly soldier this far ahead (m) slows a vehicle to walk_mm_s (mm/s).
+friendly_ahead_m = 4
+walk_mm_s = 1500
+# Less progress than stuck_progress_m (m) in stuck_s (s) re-paths.
+stuck_progress_m = 1
+stuck_s = 5
+# Heading offset to the right while two vehicles meet head-on (deg).
+keep_right_deg = 35
+# A vehicle making no progress backs off for 1 s after this long (s).
+back_off_s = 2
+# At most one re-path per vehicle per this long (s).
+repath_gap_s = 2
+# A face order is done within this heading error (deg).
+face_done_deg = 2
+# An approaching vehicle re-aims when its target moved this far (m).
+approach_slack_m = 15
+# A soldier pushed out of a hull footprint lands this far past its side,
+# beyond his own radius (mm), never onto ground dug push_deeper_mm deeper.
+push_gap_mm = 100
+push_deeper_mm = 100
+# Spotting check points sit this far below the hull and turret tops (mm).
+spot_drop_mm = 100
+
+# Vehicle path costs, percent of a normal step, and blocked ground.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.path]
+woods_pct = 200
+# Ground dug at least dug_dm (craters) and deep_dm (trenches) (dm).
+dug_pct = 150
+dug_dm = 4
+deep_pct = 400
+deep_dm = 10
+# The avoided node of a stuck re-path, and the clearance band next to a
+# blocked node.
+avoid_pct = 800
+margin_pct = 400
+# AT-ditch lines block nodes within this (m); a wreck's footprint is padded
+# by wreck_pad_m (m).
+ditch_reach_m = 2
+wreck_pad_m = 2
+
+# The infantry file behind a vehicle (Escort orders). S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.escort]
+# Rows start this far behind the hull (m) ...
+behind_m = 4
+# ... and are this far apart, as are the files (mm).
+gap_mm = 1500
+# Men per file.
+file_men = 8
+
+# Vehicle weapons and hits on vehicles (gun and turret rates are in each
+# vehicle def). S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.gunnery]
+# The coax engages men this close to the turret's line (deg).
+coax_cone_deg = 5
+# External parts (tracks, barrel) within this of a non-penetrating impact
+# take the round's nonpen_damage (mm). The slice spec replaces it with a
+# barrel box the round must strike (Part A2).
+external_reach_mm = 1000
+# A spall ray ends after this (m).
+spall_reach_m = 3
+
 [difficulty.easy]
 income_pct = 80
 reaction_ms = 4000
@@ -214,3 +453,52 @@ tank_standoff_m = 160
 assault_close_m = 40
 at_clear_s = 30
 repair_clear_m = 150
+
+# The AI's infantry, mortar and satchel rules. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[ai.infantry]
+# Most squads bought per plan.
+buys_per_plan = 2
+# Mortars never fire this close to own men (m).
+danger_close_m = 35
+# A mortar's support spot is this far behind the point it supports (m).
+support_back_m = 200
+# Frag targets: spotted men within this of each other count as one group
+# (frag_group_men sets the size) (m).
+frag_group_m = 5
+# Satchels go at vehicles no faster than this: stopped, bogged, immobilised
+# or crossing a trench at 1 m/s, with a margin (mm/s) ...
+satchel_slow_mm_s = 1100
+# ... landing this far outside the hull side (mm).
+satchel_side_mm = 800
+# Enemy trench probe: the first ground dug at least trench_probe_dm (dm) on
+# the approach, up to trench_probe_m (m) in front of the point, in steps of
+# trench_probe_step_m (m).
+trench_probe_dm = 8
+trench_probe_m = 60
+trench_probe_step_m = 4
+
+# The AI's vehicles and their escorts. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[ai.armour]
+# Most squads escorting one vehicle, joining from within escort_join_m (m).
+escort_squads = 2
+escort_join_m = 150
+# Escorts are released when their vehicle halts, but not in its first
+# seconds while it waits for its path and its file (s).
+escort_grace_s = 8
+# An escorted assault has reached the enemy once an escort squad's leader is
+# this close to the enemy trench or point (m).
+escort_reached_m = 30
+# Below this speed a vehicle counts as halted (mm/s).
+halted_mm_s = 300
+# Idle vehicles turn toward a threat more than face_slack_deg (deg) off
+# their heading within face_range_m (m).
+face_slack_deg = 20
+face_range_m = 600
+# Enemy vehicles this close to a point are an armour threat to it (m).
+threat_m = 300
+# A vehicle retreats with its engine under this share of its HP (percent).
+retreat_engine_pct = 30
+# A vehicle backing up an own point stands this far behind it (m).
+backup_m = 30

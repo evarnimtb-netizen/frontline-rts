@@ -107,6 +107,8 @@ var net_delay := 0
 var autoplay_scene := ""
 ## --test_unlock: the S3 test rules override (vehicles unlocked at once).
 var test_unlock := false
+## Why the last match could not start (the menu shows it once; S3b).
+var start_error := ""
 
 var _capture_path := ""
 var _capture_after := 2.5
@@ -345,6 +347,13 @@ func start_skirmish(new_setup: Dictionary) -> void:
 	setup.merge(new_setup, true)
 	get_tree().paused = false
 	get_tree().change_scene_to_file(MATCH_SCENE)
+
+
+## Debug data reload (S3b): the match scene again with the same setup; its
+## start reads mods/ from disk afresh.
+func restart_match() -> void:
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 
 func goto_menu() -> void:

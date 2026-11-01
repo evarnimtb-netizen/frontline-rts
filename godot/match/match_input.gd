@@ -11,7 +11,8 @@ extends RefCounted
 ## again returns to Auto). WASD, arrows and Q/E stay on the camera
 ## (rts_camera.gd). M arms the move tool (no default button needs it).
 ## S3 vehicles: O face tool, N next ammo (Auto → AP → HE), J repair;
-## Alt+right-click reverses (a mouse chord, no action).
+## Alt+right-click reverses (a mouse chord, no action). F5 (debug builds
+## only) reloads the mod data and restarts the match (S3b).
 
 const ACTIONS := {
 	&"order_move": KEY_M,
@@ -34,6 +35,8 @@ const ACTIONS := {
 	&"jump_to_event": KEY_SPACE,
 	&"match_menu": KEY_ESCAPE,
 	&"match_menu_alt": KEY_F10,
+	# Debug builds only (S3b): reload mods/ TOML and restart the match.
+	&"debug_reload_data": KEY_F5,
 }
 
 ## Hotkey labels for buttons and tooltips. Attack-move has no action: it

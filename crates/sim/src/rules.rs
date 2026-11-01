@@ -12,7 +12,7 @@
 //!   The owner alone on his point wears an enemy's progress down; an empty
 //!   point loses progress at the one-man rate. Progress is in percent-ticks
 //!   of one man's work: one man takes `capture_ticks`, each extra man up to
-//!   `capture_max_men` adds [`CAPTURE_EXTRA_MAN_PCT`] speed.
+//!   `capture_max_men` adds `capture_extra_man_pct` speed.
 //! * **Income.** Each player earns `income_per_min` plus
 //!   `point_income_per_min` per point value held, scaled by the AI
 //!   difficulty's `income_pct` for AI players. Fractions carry over in
@@ -34,9 +34,6 @@ use crate::ecs::{Entities, EntityKind, PlayerId};
 use crate::fx::{Fx, FxVec2};
 use crate::game::{MatchState, Order, Outcome};
 
-/// Extra capture speed per man beyond the first, in percent.
-pub const CAPTURE_EXTRA_MAN_PCT: u32 = 50;
-
 /// Why a player is out of the match.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[repr(u8)]
@@ -53,11 +50,12 @@ pub fn capture_full(capture_ticks: u32) -> u32 {
     capture_ticks.saturating_mul(100)
 }
 
-/// Progress per tick for `men` capturers (0 for none).
-pub fn capture_rate(men: u32, max_men: u8) -> u32 {
+/// Progress per tick for `men` capturers (0 for none); each man beyond the
+/// first adds `extra_pct` (the rules' `capture.extra_man_pct`).
+pub fn capture_rate(men: u32, max_men: u8, extra_pct: u32) -> u32 {
     match men.min(max_men as u32) {
         0 => 0,
-        n => 100 + CAPTURE_EXTRA_MAN_PCT * (n - 1),
+        n => 100 + extra_pct * (n - 1),
     }
 }
 
@@ -165,16 +163,18 @@ impl MatchState {
             }
             let Some((p, &n)) = first else {
                 // Empty: progress fades at the one-man rate.
-                c.progress = c
-                    .progress
-                    .saturating_sub(capture_rate(1, r.capture_max_men));
+                c.progress = c.progress.saturating_sub(capture_rate(
+                    1,
+                    r.capture_max_men,
+                    r.capture_extra_man_pct,
+                ));
                 if c.progress == 0 {
                     c.capturer = None;
                 }
                 continue;
             };
             let p = PlayerId(p as u8);
-            let rate = capture_rate(n, r.capture_max_men);
+            let rate = capture_rate(n, r.capture_max_men, r.capture_extra_man_pct);
             if c.capturer.is_some_and(|q| q != p) {
                 // Someone else's progress is worn down first.
                 c.progress = c.progress.saturating_sub(rate);
@@ -255,13 +255,13 @@ mod tests {
 
     #[test]
     fn capture_rate_grows_with_men_up_to_the_cap() {
-        assert_eq!(capture_rate(0, 4), 0);
-        assert_eq!(capture_rate(1, 4), 100);
-        assert_eq!(capture_rate(2, 4), 150);
-        assert_eq!(capture_rate(4, 4), 250);
-        assert_eq!(capture_rate(9, 4), 250);
+        assert_eq!(capture_rate(0, 4, 50), 0);
+        assert_eq!(capture_rate(1, 4, 50), 100);
+        assert_eq!(capture_rate(2, 4, 50), 150);
+        assert_eq!(capture_rate(4, 4, 50), 250);
+        assert_eq!(capture_rate(9, 4, 50), 250);
         // 20 s at 30 Hz: one man 600 ticks, four men 240 ticks.
-        assert_eq!(capture_full(600).div_ceil(capture_rate(1, 4)), 600);
-        assert_eq!(capture_full(600).div_ceil(capture_rate(4, 4)), 240);
+        assert_eq!(capture_full(600).div_ceil(capture_rate(1, 4, 50)), 600);
+        assert_eq!(capture_full(600).div_ceil(capture_rate(4, 4, 50)), 240);
     }
 }

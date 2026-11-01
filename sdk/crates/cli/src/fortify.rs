@@ -104,6 +104,10 @@ pub struct FortifyArgs {
     /// Print the report as JSON instead of text.
     #[arg(long)]
     pub json: bool,
+    /// Tuning override (S3b): a partial TOML file merged onto the rules and
+    /// defs. Repeatable; `docs/modding/tuning.md`.
+    #[arg(long = "rules-override", value_name = "FILE")]
+    pub rules_override: Vec<PathBuf>,
 }
 
 impl Default for FortifyArgs {
@@ -114,6 +118,7 @@ impl Default for FortifyArgs {
             threads: 2,
             mods: None,
             json: false,
+            rules_override: Vec::new(),
         }
     }
 }
@@ -312,6 +317,7 @@ fn world(args: &FortifyArgs, seed: u64) -> Result<World> {
     let mut setup = match_setup(&SkirmishArgs {
         seed,
         mods: args.mods.clone(),
+        rules_override: args.rules_override.clone(),
         ..SkirmishArgs::default()
     })?;
     setup.players.iter_mut().for_each(|p| p.is_ai = false);
@@ -641,6 +647,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
             let setup = match_setup(&SkirmishArgs {
                 seed,
                 mods: args.mods.clone(),
+                rules_override: args.rules_override.clone(),
                 ..SkirmishArgs::default()
             })?;
             let (dug, t_dug) = mortar_run(args, seed, side, true)?;

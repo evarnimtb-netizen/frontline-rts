@@ -382,6 +382,32 @@ impl FrontlineMatch {
         }
     }
 
+    /// S3b quick iteration: re-reads `mods/` from disk and resolves `setup`
+    /// as `start_match` would, without starting anything. Returns "" when
+    /// the data is good, else the readable error (file, key, fix) for a
+    /// banner. The debug "Reload data & restart" (F5) calls it before it
+    /// restarts the match, so broken TOML never ends the running match.
+    #[func]
+    fn check_mods(&self, setup: VarDictionary) -> GString {
+        let r = (|| -> Result<(), String> {
+            if setup
+                .get("net")
+                .and_then(|v| v.try_to::<bool>().ok())
+                .unwrap_or(false)
+            {
+                return Err("a net match cannot reload its data".into());
+            }
+            let mods = self.find_mods()?;
+            resolve(&mods, &menu_choice(&setup))
+                .map(|_| ())
+                .map_err(|e| format!("{}: {e}", mods.display()))
+        })();
+        match r {
+            Ok(()) => GString::new(),
+            Err(e) => GString::from(e.as_str()),
+        }
+    }
+
     /// Net mode: the `FrontlineNet` whose lobby started the match (call
     /// before `start_match({net: true, ...})`). Anything else (a mock, null)
     /// detaches.
@@ -560,39 +586,38 @@ impl FrontlineMatch {
     }
 }
 
-impl FrontlineMatch {
-    fn try_start(&mut self, d: &VarDictionary) -> Result<(), String> {
-        let s = |k: &str, def: &str| {
-            d.get(k)
-                .map(|v| v.to_string())
-                .filter(|v| !v.is_empty())
-                .unwrap_or_else(|| def.to_owned())
-        };
-        let n = |k: &str| d.get(k).and_then(|v| v.try_to::<i64>().ok());
-        let choice = MenuChoice {
-            faction: s("faction", "germany"),
-            difficulty: s("difficulty", "normal"),
-            map: s("map", "kessel_ridge"),
-            seed: n("seed").unwrap_or(1).max(0) as u64,
-            ai_vs_ai: d
-                .get("ai_vs_ai")
-                .and_then(|v| v.try_to::<bool>().ok())
-                .unwrap_or(false),
-            tickets: n("tickets").filter(|&t| t > 0).map(|t| t as u32),
-            start_manpower: n("start_manpower").filter(|&t| t >= 0).map(|t| t as u32),
-            slots: None,
-            test_unlock: d
-                .get("test_unlock")
-                .and_then(|v| v.try_to::<bool>().ok())
-                .unwrap_or(false),
-        };
-        let is_net = d
-            .get("net")
+/// The menu choice in a `Session.match_setup()` dictionary.
+fn menu_choice(d: &VarDictionary) -> MenuChoice {
+    let s = |k: &str, def: &str| {
+        d.get(k)
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| def.to_owned())
+    };
+    let n = |k: &str| d.get(k).and_then(|v| v.try_to::<i64>().ok());
+    MenuChoice {
+        faction: s("faction", "germany"),
+        difficulty: s("difficulty", "normal"),
+        map: s("map", "kessel_ridge"),
+        seed: n("seed").unwrap_or(1).max(0) as u64,
+        ai_vs_ai: d
+            .get("ai_vs_ai")
             .and_then(|v| v.try_to::<bool>().ok())
-            .unwrap_or(false);
-        if is_net {
-            return self.try_start_net(d);
-        }
+            .unwrap_or(false),
+        tickets: n("tickets").filter(|&t| t > 0).map(|t| t as u32),
+        start_manpower: n("start_manpower").filter(|&t| t >= 0).map(|t| t as u32),
+        slots: None,
+        test_unlock: d
+            .get("test_unlock")
+            .and_then(|v| v.try_to::<bool>().ok())
+            .unwrap_or(false),
+    }
+}
+
+impl FrontlineMatch {
+    /// The `mods/ww2` directory: `mods_dir`, else next to the project, the
+    /// executable or the source tree (`mods_candidates`).
+    fn find_mods(&self) -> Result<std::path::PathBuf, String> {
         let explicit = self.mods_dir.to_string();
         let project = ProjectSettings::singleton()
             .globalize_path("res://")
@@ -601,8 +626,22 @@ impl FrontlineMatch {
             (!explicit.is_empty()).then(|| std::path::Path::new(&explicit)),
             Some(std::path::Path::new(&project)),
         );
-        let mods = find_mods_dir(&candidates)
-            .ok_or_else(|| format!("cannot find mods/ww2 (looked in {candidates:?})"))?;
+        find_mods_dir(&candidates)
+            .ok_or_else(|| format!("cannot find mods/ww2 (looked in {candidates:?})"))
+    }
+
+    fn try_start(&mut self, d: &VarDictionary) -> Result<(), String> {
+        let choice = menu_choice(d);
+        let is_net = d
+            .get("net")
+            .and_then(|v| v.try_to::<bool>().ok())
+            .unwrap_or(false);
+        if is_net {
+            return self.try_start_net(d);
+        }
+        // Every new match reads the mod from disk afresh (no cache), so an
+        // edited TOML takes effect at the next start (S3b).
+        let mods = self.find_mods()?;
         let setup = resolve(&mods, &choice).map_err(|e| format!("{}: {e}", mods.display()))?;
         let threads = self.sim_threads.max(1) as usize;
         let scene = d

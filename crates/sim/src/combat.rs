@@ -43,10 +43,12 @@
 //!   near-missed. Shells only test terrain and burst where they land.
 //! * **Damage** (stage 6, serial, in projectile slot order): hits take hit
 //!   points and add suppression; near misses add the weapon's suppression
-//!   (halved for a man crouched below cover). A burst damages soldiers whose
-//!   body point is in clear line from the blast point (+0.3 m): full damage
+//!   (`combat.suppression.covered_near_miss_pct` of it for a man crouched
+//!   below cover). A burst damages soldiers whose body point is in clear
+//!   line from the blast point (+`combat.blast.lift_mm`): full damage
 //!   inside the lethal radius, falling linearly to zero at the damage radius;
-//!   it suppresses to the suppression radius (halved behind earth) and
+//!   it suppresses to the suppression radius (scaled by
+//!   `combat.suppression.blast_behind_cover_pct` behind earth) and
 //!   carves a crater. Thrown frags and satchels that go off this tick burst
 //!   the same way with their own damage, suppression and crater (a satchel's
 //!   levels trenches), after the projectile events, in item id order; smoke
@@ -90,6 +92,7 @@
 //! soldiers. Rounds have no drag, so the drop compensation is exact.
 
 use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
+use frontline_content::tuning::BodyTuning;
 use frontline_content::vehicle::{AmmoMechanism, AmmoSetup};
 use frontline_content::{MatchSetup, WeaponClass};
 
@@ -111,44 +114,15 @@ use crate::unit::{StanceOrder, Unit, UnitOrder};
 use crate::vehicle::VehicleDerived;
 use crate::world::Stats;
 
-/// Hit capsule heights by stance (mm).
-pub const STAND_MM: i32 = 1750;
-pub const CROUCH_MM: i32 = 1200;
-pub const PRONE_MM: i32 = 400;
-/// Capsule radius standing or crouched (mm).
-const CAPSULE_R_MM: i32 = 250;
-/// Prone: a horizontal capsule along the heading (radius, half length; mm).
-const PRONE_R_MM: i32 = 200;
-const PRONE_HALF_MM: i32 = 700;
-/// The muzzle sits this far below the top of the firing capsule (mm).
-const MUZZLE_DROP_MM: i32 = 150;
-/// Aim point of a man on a fire step: this far below his top (mm).
-const HEAD_AIM_MM: i32 = 150;
-/// A soldier this far below the base surface is in a trench (mm).
-pub const TRENCH_MM: i32 = 1000;
-/// Below this speed a soldier counts as standing still (mm/s).
-const STILL_MM_S: i32 = 300;
-/// A burst's damage rays start this far above the blast point (mm).
-pub(crate) const BLAST_LIFT_MM: i32 = 300;
-/// Mortar muzzle height above the crew's feet (mm).
-const SHELL_MUZZLE_MM: i32 = 800;
+// S3b: body geometry (`[combat.body]`), mortar laying (`[combat.mortar]`),
+// bursts (`[combat.blast]`) and suppression details
+// (`[combat.suppression]`) are rules data (`frontline_content::tuning`).
+
 /// Most LOS rays per target search.
 pub const LOS_TRIES: usize = 2;
 /// MGs sweep: each search picks among this many nearest enemies (seeded),
 /// ignoring the squad focus, so their fire suppresses a whole squad.
 const SWEEP_POOL: usize = 4;
-/// Mortar flight time: `sqrt(range · this)` seconds, at least
-/// [`SHELL_MIN_FLIGHT_S`] (about a 60° arc at every range).
-const SHELL_FLIGHT_MILLI: i32 = 350;
-const SHELL_MIN_FLIGHT_S: i32 = 4;
-/// A mortar team holding out of range walks to 90 % of its range again
-/// unless that spot is within this distance of where it last walked (m).
-const BARRAGE_RETRY_M: i32 = 20;
-/// Crater depth roll, percent of the weapon's crater depth.
-const CRATER_DEPTH_PCT: (i32, i32) = (75, 140);
-/// A burst more than this above the ground under it carves no crater (mm).
-const CRATER_LIFT_MM: i32 = 500;
-
 /// 9.81 m/s².
 const GRAVITY: Fx = Fx::from_ratio(981, 100);
 
@@ -222,10 +196,10 @@ pub(crate) struct Mark {
 
 /// Where shooters aim: the middle of the upper body, the head and
 /// shoulders of a man on a fire step, the middle of a prone man.
-pub(crate) fn aim_point(pos: FxVec3, c: &Combat) -> FxVec3 {
+pub(crate) fn aim_point(pos: FxVec3, c: &Combat, body: &BodyTuning) -> FxVec3 {
     let dz = match c.stance {
         Stance::Prone => c.height.div_int(2),
-        _ if c.in_trench => c.height - Fx::from_milli(HEAD_AIM_MM),
+        _ if c.in_trench => c.height - Fx::from_milli(body.head_aim_mm as i32),
         _ => c.height.mul_int(3).div_int(5),
     };
     FxVec3::new(pos.x, pos.y, pos.z + dz)
@@ -238,7 +212,12 @@ fn body_point(pos: FxVec3, c: &Combat) -> FxVec3 {
 
 /// Lists live soldiers (`marks`, ascending id) and indexes them by id
 /// (`mark_of`, `u32::MAX` for others).
-pub(crate) fn build_marks(ents: &Entities, marks: &mut Vec<Mark>, mark_of: &mut Vec<u32>) {
+pub(crate) fn build_marks(
+    ents: &Entities,
+    marks: &mut Vec<Mark>,
+    mark_of: &mut Vec<u32>,
+    body: &BodyTuning,
+) {
     marks.clear();
     mark_of.clear();
     mark_of.resize(ents.len(), u32::MAX);
@@ -251,7 +230,7 @@ pub(crate) fn build_marks(ents: &Entities, marks: &mut Vec<Mark>, mark_of: &mut 
             id,
             owner: ents.owner[i].0,
             pos,
-            aim: aim_point(pos, c),
+            aim: aim_point(pos, c, body),
             seen_by: c.seen_by,
         });
     }
@@ -339,17 +318,17 @@ pub(crate) struct FireCtx<'a> {
 }
 
 #[inline]
-fn is_still(v: &Velocity) -> bool {
-    v.lin.length_sq_raw() <= range_sq(Fx::from_milli(STILL_MM_S))
+fn is_still(v: &Velocity, body: &BodyTuning) -> bool {
+    v.lin.length_sq_raw() <= range_sq(Fx::from_milli(body.still_mm_s as i32))
 }
 
 /// Muzzle of a soldier in his firing posture.
 #[inline]
-fn muzzle(pos: FxVec3, c: &Combat) -> FxVec3 {
+fn muzzle(pos: FxVec3, c: &Combat, body: &BodyTuning) -> FxVec3 {
     FxVec3::new(
         pos.x,
         pos.y,
-        pos.z + c.fire_height - Fx::from_milli(MUZZLE_DROP_MM),
+        pos.z + c.fire_height - Fx::from_milli(body.muzzle_drop_mm as i32),
     )
 }
 
@@ -430,7 +409,8 @@ fn spread_pct(rules: &CombatSetup, c: &Combat, moving: bool, dist: Fx, range: Fx
     if c.pinned {
         pct = pct * rules.pinned_spread_pct as i64 / 100;
     } else {
-        pct = pct * (100 + (c.suppression / 1000) as i64) / 100;
+        let per = rules.suppression.spread_per_point_pct as i64;
+        pct = pct * (100 + (c.suppression / 1000) as i64 * per / 100) / 100;
     }
     let extra =
         rules.range_spread_pct as i64 * dist.raw().max(0) as i64 / range.raw().max(1) as i64;
@@ -511,7 +491,7 @@ pub(crate) fn aim_and_fire(
         if w.class == WeaponClass::Launcher {
             continue;
         }
-        let still = is_still(&ctx.velocity[i]);
+        let still = is_still(&ctx.velocity[i], &rules.body);
         let u = &ctx.unit[i];
         // A man winding up a throw does not fire.
         let may = w.he.is_none()
@@ -533,7 +513,7 @@ pub(crate) fn aim_and_fire(
         {
             c.target = None;
         }
-        let from = muzzle(pos, c);
+        let from = muzzle(pos, c, &rules.body);
         if c.target.is_none() || c.retarget == 0 {
             let before = c.target;
             c.target = if w.class == WeaponClass::Mg {
@@ -603,6 +583,8 @@ impl MatchState {
         out: &mut Vec<FireRequest>,
     ) {
         let setup = &self.setup;
+        let mortar = &setup.rules.combat.mortar;
+        let per_point = setup.rules.combat.suppression.spread_per_point_pct as i64;
         let mut repath = Vec::new();
         for (&id, sq) in self.squads.iter_mut() {
             if sq.members.is_empty() {
@@ -635,8 +617,8 @@ impl MatchState {
                 // that spot; then it cannot be reached and the order ends.
                 let facing = (*target - pos.xy()).normalize_or_zero();
                 let spot = terrain.clamp(*target - facing * max.mul_int(9).div_int(10));
-                let tried =
-                    (spot - sq.nav.goal).length_sq_raw() <= range_sq(Fx::from_int(BARRAGE_RETRY_M));
+                let tried = (spot - sq.nav.goal).length_sq_raw()
+                    <= range_sq(Fx::from_int(mortar.barrage_retry_m as i32));
                 if d < min || tried {
                     sq.order = Order::Idle;
                 } else {
@@ -650,17 +632,21 @@ impl MatchState {
             }
             // Scatter the aim point by the spread over the range.
             let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
-            let pct = 100 + (c.suppression / 1000) as i64;
+            let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
             let s = d.mul(w.spread.into()).raw() as i64 * pct / 100;
             let s = Fx::from_raw(s.min(i32::MAX as i64) as i32);
             let aim_xy = terrain.clamp(*target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
-            let from = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(SHELL_MUZZLE_MM));
+            let from = FxVec3::new(
+                pos.x,
+                pos.y,
+                pos.z + Fx::from_milli(mortar.muzzle_mm as i32),
+            );
             let dxy = aim_xy - from.xy();
             let flight = dxy
                 .length()
-                .mul(Fx::from_milli(SHELL_FLIGHT_MILLI))
+                .mul(Fx::from_milli(mortar.flight_milli as i32))
                 .sqrt()
-                .max(Fx::from_int(SHELL_MIN_FLIGHT_S));
+                .max(Fx::from_int(mortar.min_flight_s as i32));
             let rise = terrain.height_at(aim_xy) - from.z;
             let vz = (rise + GRAVITY.mul(flight).mul(flight).div_int(2)).div(flight);
             let vel = FxVec3::new(dxy.x.div(flight), dxy.y.div(flight), vz);
@@ -791,7 +777,8 @@ impl MatchState {
         let i = c.index();
         let owner = ents.owner[i];
         let pos = ents.transform[i].pos;
-        let still = is_still(&ents.velocity[i]);
+        let body = &self.setup.rules.combat.body;
+        let still = is_still(&ents.velocity[i], body);
         let may = ents.kit[i].windup.is_none()
             && l.rounds > 0
             && match engage_of(&sq.order, &ents.unit[i]) {
@@ -806,7 +793,7 @@ impl MatchState {
             self.squads.get_mut(&id).expect("live").launcher = Some(l);
             return;
         }
-        let from = muzzle(pos, &ents.combat[i]);
+        let from = muzzle(pos, &ents.combat[i], &self.setup.rules.combat.body);
         let ok = |t: SimId| self.launcher_target_ok(ents, owner, pos.xy(), w, t);
         let before = ents.combat[i].target;
         let mut target = before.filter(|&t| ok(t));
@@ -991,17 +978,17 @@ pub(crate) struct BallisticEvent {
 
 /// Hit capsule `(a, b, radius)` of a soldier: a vertical segment standing or
 /// crouched, a horizontal one along the heading when prone.
-fn capsule(t: &Transform, c: &Combat) -> (FxVec3, FxVec3, Fx) {
+fn capsule(t: &Transform, c: &Combat, body: &BodyTuning) -> (FxVec3, FxVec3, Fx) {
     let pos = t.pos;
     if c.stance == Stance::Prone {
         let (s, co) = t.yaw.sin_cos();
-        let half = Fx::from_milli(PRONE_HALF_MM);
+        let half = Fx::from_milli(body.prone_half_mm as i32);
         let f = FxVec3::new(co.mul(half), s.mul(half), Fx::ZERO);
-        let r = Fx::from_milli(PRONE_R_MM);
+        let r = Fx::from_milli(body.prone_radius_mm as i32);
         let mid = FxVec3::new(pos.x, pos.y, pos.z + r);
         return (mid - f, mid + f, r);
     }
-    let r = Fx::from_milli(CAPSULE_R_MM);
+    let r = Fx::from_milli(body.radius_mm as i32);
     let top = (c.height - r).max(r);
     (
         FxVec3::new(pos.x, pos.y, pos.z + r),
@@ -1062,6 +1049,8 @@ pub(crate) struct FlightCtx<'a> {
     pub terrain: &'a Heightfield,
     pub weapons: &'a [WeaponSetup],
     pub near_miss: Fx,
+    /// Hit capsules (`[combat.body]`).
+    pub body: &'a BodyTuning,
     /// S3: vehicles and wrecks (`None` when there are none), their plates,
     /// and the rounds.
     pub vehicles: Option<&'a VehicleDerived>,
@@ -1196,7 +1185,7 @@ pub(crate) fn fly(
                     let c = &ents.combat[i];
                     // Local coordinates around the soldier keep products small.
                     let o = t.pos;
-                    let (a, b, r) = capsule(t, c);
+                    let (a, b, r) = capsule(t, c, ctx.body);
                     let (s, dsq) = seg_seg(from - o, d, a - o, b - a);
                     if dsq <= r.mul(r) && hit.is_none_or(|(hs, hid)| (s, id) < (hs, hid)) {
                         hit = Some((s, id));
@@ -1378,9 +1367,10 @@ fn hurt(
 
 /// Damages and suppresses the enemies of `b.player` around a burst and
 /// carves its crater (see the module docs).
-fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<Fallen>) {
+fn burst(ctx: &mut DamageCtx, b: &Burst, rules: &CombatSetup, dead: &mut Vec<Fallen>) {
     let pos = b.pos;
-    let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(BLAST_LIFT_MM));
+    let blast = &rules.blast;
+    let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(blast.lift_mm as i32));
     let he = b.he;
     let (lethal, reach): (Fx, Fx) = (he.lethal_radius.into(), he.damage_radius.into());
     let supp_r: Fx = he.suppression_radius.into();
@@ -1405,7 +1395,7 @@ fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<Fallen>) {
         let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
             / supp_r.raw().max(1) as i64) as u32;
         if !clear {
-            add /= 2;
+            add = (add as u64 * rules.suppression.blast_behind_cover_pct as u64 / 100) as u32;
         }
         add_suppression(&mut ctx.ents.combat[i], add);
         ctx.hash.mark_entity_chunk(id.chunk());
@@ -1421,11 +1411,14 @@ fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<Fallen>) {
     }
     // A burst on a vehicle (or a man) well above the ground leaves it as
     // it is (S3).
-    if pos.z > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(CRATER_LIFT_MM) {
+    if pos.z > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(blast.crater_lift_mm as i32) {
         return;
     }
     let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, b.key.1);
-    let pct = rng.range_i32(CRATER_DEPTH_PCT.0, CRATER_DEPTH_PCT.1);
+    let pct = rng.range_i32(
+        blast.crater_depth_min_pct as i32,
+        blast.crater_depth_max_pct as i32,
+    );
     let depth = Fx::from(he.crater_depth).mul_int(pct).div_int(100);
     if b.cut {
         ctx.terrain
@@ -1535,7 +1528,8 @@ impl MatchState {
                     ctx.stats.near_misses += 1;
                     let mut add = w.suppression * 1000;
                     if covered(c) {
-                        add /= 2;
+                        add = (add as u64 * rules.suppression.covered_near_miss_pct as u64 / 100)
+                            as u32;
                     }
                     add_suppression(c, add);
                     ctx.hash.mark_entity_chunk(id.chunk());
@@ -1584,7 +1578,7 @@ impl MatchState {
                 key: (SimId(k as u32), Purpose::CRATER),
                 class: self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter),
             };
-            burst(ctx, &b, &mut dead);
+            burst(ctx, &b, &rules, &mut dead);
             self.blast_tracks(
                 ctx,
                 pos,
@@ -1626,7 +1620,7 @@ impl MatchState {
                         kill_class::FRAG
                     },
                 };
-                burst(ctx, &b, &mut dead);
+                burst(ctx, &b, &rules, &mut dead);
                 self.blast_tracks(
                     ctx,
                     t.pos,
@@ -1669,11 +1663,12 @@ impl MatchState {
         let owner = ents.owner[i].0 as usize;
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();
+        let prone = Fx::from_milli(self.setup.rules.combat.body.prone_mm as i32);
         let c = &mut ents.combat[i];
         *c = Combat {
             stance: Stance::Prone,
-            height: Fx::from_milli(PRONE_MM),
-            fire_height: Fx::from_milli(PRONE_MM),
+            height: prone,
+            fire_height: prone,
             corpse: corpse_ticks.clamp(1, u16::MAX as u32) as u16,
             seen_by: c.seen_by,
             ..Combat::default()
@@ -1747,6 +1742,7 @@ pub(crate) fn status(
     let base = chunk * crate::ecs::CHUNK_SIZE;
     let setup = ctx.game.setup();
     let rules = &setup.rules.combat;
+    let body = &rules.body;
     let aim_ticks = (setup.tick_hz / 2) as u16;
     let parapet: Fx = setup.rules.dig.parapet_height.into();
     let exposure: Fx = rules.fire_exposure.into();
@@ -1783,8 +1779,8 @@ pub(crate) fn status(
         } else {
             pos.z
         };
-        c.in_trench = base_z - pos.z >= Fx::from_milli(TRENCH_MM);
-        if is_still(&ctx.velocity[i]) {
+        c.in_trench = base_z - pos.z >= Fx::from_milli(body.trench_depth_mm as i32);
+        if is_still(&ctx.velocity[i], body) {
             c.still = c.still.saturating_add(1);
         } else {
             c.still = 0;
@@ -1796,9 +1792,9 @@ pub(crate) fn status(
             || ctx.kit[i].windup.is_some();
         let crouched = points >= rules.crouch_suppression;
         let (stand, crouch, prone) = (
-            Fx::from_milli(STAND_MM),
-            Fx::from_milli(CROUCH_MM),
-            Fx::from_milli(PRONE_MM),
+            Fx::from_milli(body.stand_mm as i32),
+            Fx::from_milli(body.crouch_mm as i32),
+            Fx::from_milli(body.prone_mm as i32),
         );
         let step = (base_z + parapet + exposure - pos.z).max(stand);
         // Suppression only ever lowers the ordered stance.
@@ -1836,11 +1832,12 @@ pub(crate) fn status(
 }
 
 /// Fresh combat state for a soldier of squad type `ty` (match spawns).
-pub(crate) fn spawn_combat(hp: u32, w: &WeaponSetup) -> Combat {
+pub(crate) fn spawn_combat(hp: u32, w: &WeaponSetup, body: &BodyTuning) -> Combat {
+    let stand = Fx::from_milli(body.stand_mm as i32);
     Combat {
         hp: hp.clamp(1, u16::MAX as u32) as u16,
-        height: Fx::from_milli(STAND_MM),
-        fire_height: Fx::from_milli(STAND_MM),
+        height: stand,
+        fire_height: stand,
         mag: w.magazine.clamp(1, u16::MAX as u32) as u16,
         since_shot: u16::MAX,
         ..Combat::default()
@@ -2051,6 +2048,7 @@ mod tests {
                 terrain: &self.terrain,
                 weapons: &setup.weapons,
                 near_miss: setup.rules.combat.near_miss.into(),
+                body: &setup.rules.combat.body,
                 vehicles: None,
                 armour: self.game.armour(),
                 ammo: &setup.ammo,
@@ -2118,7 +2116,10 @@ mod tests {
         // A rifleman 100 m east (the parapet side), lying on the ground.
         let muzzle = v((TRENCH_X + 100) * 1000, 500_000, 250);
         // Crouched: head 0.4 m below ground. The lip takes the round.
-        let (end, ev) = r.shoot(muzzle, aim_point(pos, &c));
+        let (end, ev) = r.shoot(
+            muzzle,
+            aim_point(pos, &c, &r.game.setup().rules.combat.body.clone()),
+        );
         assert_eq!(end, ProjectileEnd::GroundHit, "{ev:?}");
         assert!(!ev.iter().any(|e| matches!(e.blow, Blow::Hit(_))));
         // He rises to fire: 0.3 m above the parapet, and only that shows.
@@ -2132,7 +2133,10 @@ mod tests {
             (top - Fx::from_milli(600)).abs() <= Fx::from_milli(1),
             "{top:?}"
         );
-        let (end, ev) = r.shoot(muzzle, aim_point(pos, &c));
+        let (end, ev) = r.shoot(
+            muzzle,
+            aim_point(pos, &c, &r.game.setup().rules.combat.body.clone()),
+        );
         assert_eq!(end, ProjectileEnd::SoldierHit);
         assert_eq!(ev.last().unwrap().blow, Blow::Hit(man));
         // His chest is still behind the parapet.
@@ -2184,6 +2188,7 @@ mod tests {
             terrain: &r.terrain,
             weapons: &r.game.setup().weapons,
             near_miss: Fx::from_int(2),
+            body: &r.game.setup().rules.combat.body,
             vehicles: None,
             armour: r.game.armour(),
             ammo: &r.game.setup().ammo,
@@ -2211,7 +2216,7 @@ mod tests {
         check(&mut r, rules.pin_suppression - 1, Stance::Crouch, false);
         check(&mut r, rules.pin_suppression, Stance::Prone, true);
         let c = r.ents.combat[man.index()];
-        assert_eq!(c.height, Fx::from_milli(PRONE_MM));
+        assert_eq!(c.height, Fx::from_milli(rules.body.prone_mm as i32));
         // A retreating squad runs even under fire.
         r.game.squads.get_mut(&r.squad).unwrap().order = Order::Retreat;
         check(&mut r, rules.pin_suppression, Stance::Crouch, false);
@@ -2228,6 +2233,7 @@ mod tests {
             &planned,
             &r.terrain,
             30,
+            crate::systems::BENCH_STEEP,
         );
         assert_eq!(r.ents.transform[man.index()].pos, before);
         // Near misses add the weapon's suppression; full decay takes
@@ -2282,11 +2288,12 @@ mod tests {
             r.status();
             let c = r.ents.combat[man.index()];
             assert_eq!(c.stance, want, "{order:?} at {points}");
+            let b = &rules.body;
             let h = match want {
-                Stance::Stand => STAND_MM,
-                Stance::Crouch => CROUCH_MM,
-                Stance::Prone => PRONE_MM,
-            };
+                Stance::Stand => b.stand_mm,
+                Stance::Crouch => b.crouch_mm,
+                Stance::Prone => b.prone_mm,
+            } as i32;
             assert_eq!(
                 (c.height, c.fire_height),
                 (Fx::from_milli(h), Fx::from_milli(h))

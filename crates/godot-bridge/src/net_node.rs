@@ -188,11 +188,11 @@ impl FrontlineNet {
 }
 
 impl FrontlineNet {
-    /// Loads `mods/ww2` once (its content hash goes in `Hello`).
+    /// Loads `mods/ww2` afresh at every host and join (its content hash
+    /// goes in `Hello`), so a lobby always plays the data on disk now (S3b:
+    /// edited TOML is never stale; a player whose data differs is refused
+    /// with `content_mismatch`).
     fn load_defs(&mut self) -> bool {
-        if self.session.has_defs() {
-            return true;
-        }
         let explicit = self.mods_dir.to_string();
         let project = ProjectSettings::singleton()
             .globalize_path("res://")
