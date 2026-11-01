@@ -1163,8 +1163,8 @@ mod tests {
         assert_eq!(e.owner, 1);
         assert_eq!(e.flags & !vehicle_flags::PUBLIC, 0);
         assert_eq!(e.seats, [0; 5]);
-        assert_eq!(e.components, [0; 6]);
-        assert_eq!(e.ammo, [0, 0]);
+        assert_eq!(e.components, [0; frontline_content::COMPONENTS]);
+        assert_eq!(e.ammo, [0, 0, 0]);
         assert_eq!(
             (e.loaded, e.ammo_choice, e.reload_pct, e.followers),
             (0, 0, 0, 0)

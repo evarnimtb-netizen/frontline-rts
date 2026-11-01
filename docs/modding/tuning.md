@@ -10,7 +10,7 @@ needed.
 |---|---|---|
 | Economy, tickets, capture | `defs/rules/skirmish.toml` | `[economy]`, `[tickets_drain]`, `[capture]` |
 | Walking, paths, formations, slopes | same | `[movement]`, `[movement.formation]` |
-| Trench and AT-ditch shapes, digging | same | `[dig.profiles.*]`, `[dig.common]` |
+| Trench and AT-ditch shapes, digging; HE blowing parapet spoil away (S3b `spoil_crater_pct`) | same | `[dig.profiles.*]`, `[dig.common]` |
 | Spotting, accuracy, suppression thresholds | same | `[combat]` |
 | Hit capsules, posture points | same | `[combat.body]` |
 | Mortar laying and flight | same | `[combat.mortar]` |
@@ -19,14 +19,17 @@ needed.
 | Cover on arrival | same | `[cover]` |
 | Thrown items | same | `[items]`, `[items.throw]` |
 | Vehicle rules: unlock, fire, rack, repair | same | `[vehicles]` |
+| Ammo fire, rack outcome, crew knock-out (S3b) | same | `[vehicles.damage]` |
 | Driving, yielding, ground pose | same | `[vehicles.driving]` |
 | Vehicle path costs | same | `[vehicles.path]` |
 | Escort file behind a vehicle | same | `[vehicles.escort]` |
-| Coax cone, spall reach | same | `[vehicles.gunnery]` |
+| Coax cone, spall reach; S3b: HE group radius, lead estimation error, when Auto loads APCR | same | `[vehicles.gunnery]` |
 | AI difficulty | same | `[difficulty.*]` |
 | AI commander (S3b: `tank_reserve_mp` in `[ai.armour]`) | same | `[ai]`, `[ai.infantry]`, `[ai.armour]` |
 | Where bought squads spawn in the base (S3b) | same | `[call_in]` |
 | One unit, weapon, item, vehicle, round | `defs/units/`, `defs/weapons/`, `defs/items/`, `defs/vehicles/`, `defs/ammo/` | the def's own file |
+| HE fragments and overpressure (S3b) | `defs/weapons/` (mortars), `defs/ammo/` (tank HE, rockets), `defs/items/` (grenades, satchels) | `[he]`: `blast_radius_cm`, `frag_count`, `frag_reach_cm`, `frag_damage`, `frag_far_pct`, `frag_elev_deg`, `frag_track_damage`; plates beaten: `inside_rays`, `inside_damage`, `inside_reach_cm` |
+| APHE filler, barrel, crew and component boxes (S3b) | `defs/ammo/` `[filler]` (`rays`, `cone_deg`, `damage`, `reach_cm`); `defs/vehicles/` `barrel` on the main gun, `[crew.boxes]`, `[[components]]` `box` or `boxes` | the def's own file |
 | Call-in cost and re-call cooldown (S3b) | `defs/units/*.toml` (squads), `defs/vehicles/*.toml` (tanks) | `cost`, `recall_cooldown_s`, `initial_cooldown_s`; optional `cooldown_group` in a unit def (types in one group share a timer) |
 
 Each key has a comment with its unit and meaning. Units are in the key's

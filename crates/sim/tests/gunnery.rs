@@ -8,7 +8,7 @@ use std::path::Path;
 
 use frontline_content::{ComponentKind, Difficulty, MatchRequest, MatchSetup, ModDefs};
 use frontline_sim::armour::{BoxPart, deg};
-use frontline_sim::gunnery::{aim_choice, lay_gun, solution};
+use frontline_sim::gunnery::{aim_choice, lay_gun, lead_estimate, mass_centre, solution};
 use frontline_sim::{
     ArmourEventKind, Command, CommandKind, EntityKind, Fx, FxVec2, FxVec3, PlayerId, SimId,
     SquadId, World,
@@ -143,42 +143,46 @@ fn the_solution_leads_a_crossing_target_and_compensates_drop() {
 }
 
 #[test]
-fn the_gunner_aims_at_the_part_with_the_better_chance() {
+fn the_gunner_aims_at_the_centre_of_visible_mass() {
     let mut w = World::new_match(setup(1), 1).unwrap();
     // Sherman 300 m east of a Panzer IV; the Panzer IV faces it squarely,
     // then angled 30°.
     let (_, pz) = tank(&mut w, 0, xy(400, 500), EAST);
     let (_, sh) = tank(&mut w, 1, xy(700, 500), WEST);
-    let choose = |w: &World, from: SimId, at: SimId, ammo: &str| {
+    let look = |w: &World, from: SimId, at: SimId| {
         let g = w.game().unwrap();
         let d = g.vehicle_derived();
         let (fa, ft) = (d.frame(from).unwrap(), d.frame(at).unwrap());
-        let s = g.setup();
-        let k = s.ammo.iter().position(|a| a.id == ammo).unwrap();
         let muzzle = fa.turret.center + FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::HALF);
-        aim_choice(
-            muzzle,
-            ft,
-            &g.armour().vehicles[ft.type_idx as usize],
-            &g.armour().ammo[k],
-            w.terrain(),
-            s.rules.vehicles.aim_hull_margin_pct,
+        (
+            aim_choice(muzzle, ft, w.terrain()),
+            mass_centre(muzzle, ft),
+            *ft,
         )
     };
-    // M61 vs the Panzer IV at 300 m: hull 88 %, turret 100 % → turret
-    // (better by more than 10 points).
-    assert_eq!(choose(&w, sh, pz, "ww2:75mm_m61"), Some(BoxPart::Turret));
-    // PzGr 39 goes through the Sherman anywhere: centre of mass.
-    assert_eq!(choose(&w, pz, sh, "ww2:75mm_pzgr39"), Some(BoxPart::Hull));
-    // Angled 30°: the hull front is out of reach, the turret is not.
+    // Squarely: both parts in view, so the centre of mass, whatever the
+    // round (S3b: no more "the weakest plate"). The Panzer IV's frontal
+    // hull (2.8 × 1.36 m) outweighs its turret (1.9 × 0.9 m): the point
+    // sits about 1.4 m up, between the hull centre (1.08 m) and the
+    // turret centre (2.21 m), so most shots strike the upper hull front.
+    let (part, c, f) = look(&w, sh, pz);
+    assert_eq!(part, Some(BoxPart::Hull));
+    let h = c.z - f.origin.z;
+    assert!(
+        h > Fx::from_milli(1350) && h < Fx::from_milli(1500),
+        "aim height {h:?}"
+    );
+    assert!((c.xy() - f.hull.center.xy()).length() < Fx::from_milli(300));
+    let (part, _, _) = look(&w, pz, sh);
+    assert_eq!(part, Some(BoxPart::Hull));
+    // Angled 30°: still the centre of mass (the angle changes the weights
+    // a little, not the rule).
     w.place_vehicle(pz, xy(400, 500), deg(30));
-    assert_eq!(choose(&w, sh, pz, "ww2:75mm_m61"), Some(BoxPart::Turret));
-    // At 150 m squarely: hull 99.8 % vs turret 100 % → hull (near-tie).
-    w.place_vehicle(pz, xy(550, 500), Fx::ZERO);
-    assert_eq!(choose(&w, sh, pz, "ww2:75mm_m61"), Some(BoxPart::Hull));
-    // The gunnery pass itself: the Sherman's gunner aims at the turret
-    // (the Panzer IV's gun broken, so it does not shoot first).
-    w.place_vehicle(pz, xy(400, 500), deg(30));
+    let (part, c, f) = look(&w, sh, pz);
+    assert_eq!(part, Some(BoxPart::Hull));
+    assert!(c.z - f.origin.z > Fx::from_milli(1300));
+    // The gunnery pass itself: the Sherman's gunner aims at the centre of
+    // mass (the Panzer IV's gun broken, so it does not shoot first).
     w.edit_vehicle(pz, |vs| vs.components[ComponentKind::Gun as usize] = 0);
     let mut first = None;
     for _ in 0..40 {
@@ -188,8 +192,42 @@ fn the_gunner_aims_at_the_part_with_the_better_chance() {
             first = Some((vs.target, vs.aim_turret));
         }
     }
-    assert_eq!(first, Some((Some(pz), true)));
+    assert_eq!(first, Some((Some(pz), false)));
     let _ = yaw;
+}
+
+#[test]
+fn moving_target_lead_estimate_errs_and_shrinks_with_ranging() {
+    let vel = FxVec2::new(Fx::ZERO, Fx::from_int(6));
+    let est = |ranging: u8, target: u32| {
+        lead_estimate(vel, 7, SimId(3), SimId(target), ranging, 40, 20, 50)
+    };
+    // The same target and ranging step: the same estimate (no state).
+    assert_eq!(est(0, 9), est(0, 9));
+    // Within ±40 % at the first shot, and never a different direction.
+    let mut errs = Vec::new();
+    for t in 0..200 {
+        let e = est(0, t);
+        assert!(e.x.is_zero() && e.y > Fx::ZERO);
+        let err = (e.y - vel.y).abs();
+        assert!(err <= Fx::from_int(6).mul_int(40).div_int(100) + Fx::EPSILON);
+        errs.push(err);
+    }
+    // Errors spread out (not all zero) ...
+    assert!(errs.iter().filter(|e| **e > Fx::from_milli(300)).count() > 50);
+    // ... and shrink as the gunner ranges in, to half at the floor.
+    for t in 0..200 {
+        let first = (est(0, t).y - vel.y).abs();
+        let fourth = (est(3, t).y - vel.y).abs();
+        assert!(fourth <= Fx::from_int(6).mul_int(20).div_int(100) + Fx::EPSILON);
+        let _ = first;
+    }
+    // No error with the key at 0, or on a still target.
+    assert_eq!(lead_estimate(vel, 7, SimId(3), SimId(9), 0, 0, 20, 50), vel);
+    assert_eq!(
+        lead_estimate(FxVec2::ZERO, 7, SimId(3), SimId(9), 0, 40, 20, 50),
+        FxVec2::ZERO
+    );
 }
 
 /// Runs a Panzer IV vs Sherman duel at 300 m until one is knocked out;
@@ -217,9 +255,22 @@ fn duel(seed: u64, threads: usize) -> (u64, Option<SimId>, Vec<u64>, World) {
 #[test]
 fn a_tank_duel_ends_in_a_knock_out_and_is_deterministic() {
     let mut wins = [0u32; 2];
+    let mut draws = 0;
     for seed in 1..=6 {
         let (ticks, winner, hashes, w) = duel(seed, 1);
-        let winner = winner.unwrap_or_else(|| panic!("seed {seed}: no knock-out in 2 min"));
+        if seed <= 2 {
+            let (t3, w3, h3, _) = duel(seed, 3);
+            assert_eq!((t3, w3), (ticks, winner));
+            assert_eq!(h3, hashes, "seed {seed}: 1 vs 3 threads");
+        }
+        // S3b: hits no longer wipe a turret out at once; a duel can end with
+        // both tanks immobilised and blind (commander lost, the other out of
+        // the reduced sight), which is a result too.
+        let Some(winner) = winner else {
+            draws += 1;
+            assert!(w.stats().penetrations >= 1);
+            continue;
+        };
         wins[(winner.0 % 2) as usize] += 1;
         assert!(w.stats().penetrations >= 1);
         assert_eq!(w.stats().knockouts, 1);
@@ -236,13 +287,9 @@ fn a_tank_duel_ends_in_a_knock_out_and_is_deterministic() {
         // The survivor stops aiming at the wreck.
         let alive = g.vehicles().get(&winner).unwrap();
         assert_ne!(alive.target, Some(wid));
-        if seed <= 2 {
-            let (t3, w3, h3, _) = duel(seed, 3);
-            assert_eq!((t3, w3), (ticks, Some(winner)));
-            assert_eq!(h3, hashes, "seed {seed}: 1 vs 3 threads");
-        }
     }
-    println!("duel wins (by id parity): {wins:?}");
+    assert!(draws <= 2, "{draws} of 6 duels without a knock-out");
+    println!("duel wins (by id parity): {wins:?}, draws {draws}");
 }
 
 #[test]
@@ -419,8 +466,8 @@ fn base_repair_restores_parts_rounds_and_crew() {
     let base = w.game().unwrap().base_of(PlayerId(0));
     let (_, v) = tank(&mut w, 0, base, EAST);
     w.edit_vehicle(v, |vs| {
-        vs.components = [10, 50, 100, 0, 80, 60];
-        vs.ammo = vec![20, 25];
+        vs.components = [10, 50, 100, 0, 80, 60, 100];
+        vs.ammo = vec![20, 25, 2];
         vs.seats[3].hp = 0;
     });
     for _ in 0..30 * 20 {
@@ -432,7 +479,7 @@ fn base_repair_restores_parts_rounds_and_crew() {
     assert_eq!(vs.components[1], 90);
     assert_eq!(vs.components[3], 32, "the gun too: 40 % of 80");
     let rounds = vs.ammo.iter().sum::<u16>() + vs.loaded.is_some() as u16;
-    assert_eq!(rounds, 45 + 10, "one round per 2 s");
+    assert_eq!(rounds, 47 + 10, "one round per 2 s");
     assert_eq!(vs.seats[3].hp, 100, "one dead seat per 20 s");
 }
 

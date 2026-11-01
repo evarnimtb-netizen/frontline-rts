@@ -388,3 +388,42 @@ range = 100
 angle = 60
 pen_pct = [27, 34]
 note = "162.5 mm vs 160 flat: 30.4 %"
+
+# S3b: the PzGr 40 APCR (new rows; rows 1-42 unchanged). Approximate L/48
+# table, 120 / 97 / 77 mm at 30° for 100 / 500 / 1000 m, clamped beyond.
+
+[[row]] # 43
+ammo = "ww2:75mm_pzgr40"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 300
+angle = 0
+expect = "pen"
+note = "108.5 mm at 30° -> 125.3 mm vs 93.1 effective"
+
+[[row]] # 44
+ammo = "ww2:75mm_pzgr40"
+target = "ww2:usa_m4a3_75"
+zone = "turret_front"
+range = 1000
+angle = 30
+expect = "nonpen"
+note = "88.9 mm vs 101.3 effective: falls off faster than the PzGr 39"
+
+[[row]] # 45
+ammo = "ww2:75mm_pzgr40"
+target = "ww2:ger_pz4_h"
+zone = "hull_front"
+range = 1000
+angle = 20
+pen_pct = [78, 86]
+note = "88.9 mm vs 86.4 effective: 81.8 %"
+
+[[row]] # 46
+ammo = "ww2:75mm_pzgr40"
+target = "ww2:usa_m4a3_75"
+zone = "hull_front"
+range = 100
+angle = 70
+expect = "ricochet"
+note = "impact 76.5° > 70°"

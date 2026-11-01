@@ -15,7 +15,8 @@ extends Control
 ## the vehicle keys still reach the vehicles):
 ##   row 1: Reverse (Alt+RMB, arms a reverse tool), Face O (tool), Repair J;
 ##   row 2: Move, Attack, Stop H, Retreat R;
-##   row 3: the ammo toggle, a segmented strip Auto | AP | HE (N cycles).
+##   row 3: the ammo toggle, a segmented strip Auto | AP | APCR | HE (N
+##   cycles; APCR only lights on a gun that carries it, S3b).
 
 const ROW_ABILITY := [
 	[&"frag", "Frag", &"ability_frag", "Throw a frag grenade (5–30 m). The nearest eligible man throws; Shift+click: every eligible man throws one."],
@@ -49,12 +50,13 @@ const ROW_VEHICLE_ORDERS := [
 	[&"retreat", "Retreat", &"order_retreat", "Drive back to base."],
 ]
 const ROW_AMMO := [
-	[&"ammo_auto", "Auto", &"ammo_next", "Main gun ammo: AP at vehicles, HE at infantry, swapped as targets change (one reload). N cycles Auto, AP, HE."],
-	[&"ammo_ap", "AP", &"", "Fire AP only. N cycles Auto, AP, HE."],
-	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, HE."],
+	[&"ammo_auto", "Auto", &"ammo_next", "Main gun ammo: AP at vehicles (APCR, where carried, only when AP would likely fail), HE at infantry, swapped as targets change (one reload). N cycles Auto, AP, APCR, HE."],
+	[&"ammo_ap", "AP", &"", "Fire AP only. N cycles Auto, AP, APCR, HE."],
+	[&"ammo_apcr", "APCR", &"", "Fire the special APCR rounds (a handful, Panzer IV only). N cycles Auto, AP, APCR, HE."],
+	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, APCR, HE."],
 ]
 const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse"]
-const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_he"]
+const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 const STANCE_IDS := [&"stand", &"crouch", &"prone"]
 
@@ -98,7 +100,7 @@ func _layout() -> void:
 			_add(ROW_VEHICLE_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
 		for i in ROW_AMMO.size():
-			_add(ROW_AMMO[i], Rect2(i * aw / 3.0, 2.0 * (bh + g), aw / 3.0, bh), "stance")
+			_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
 		return
 	for i in ROW_ABILITY.size():
 		_add(ROW_ABILITY[i], Rect2(i * (abw + g), 0, abw, bh), "ability")

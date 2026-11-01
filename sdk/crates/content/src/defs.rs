@@ -15,7 +15,8 @@ use crate::issue::Issue;
 use crate::tuning::{
     AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
     DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
+    check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -214,13 +215,30 @@ pub struct ItemDef {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ItemHeDef {
-    /// Damage inside the lethal radius.
+    /// Damage of the overpressure inside `blast_radius_cm`.
     pub damage: u32,
     /// Suppression at the blast point (out of 100), falling to zero at the
     /// suppression radius.
     pub suppression: u32,
-    pub lethal_radius_cm: u32,
-    pub damage_radius_cm: u32,
+    /// Overpressure (S3b, physical-contact rule): a man within this
+    /// radius whose body point has a clear line from the burst takes full
+    /// `damage`; track anchors within it take `vs_vehicle_pct` of it.
+    pub blast_radius_cm: u32,
+    /// Fragment rays per burst (at most 256): each stops at the first man,
+    /// vehicle, wreck or earth it meets.
+    pub frag_count: u32,
+    /// Fragment ray length.
+    pub frag_reach_cm: u32,
+    /// Damage of one fragment striking a man at the burst ...
+    pub frag_damage: u32,
+    /// ... falling linearly to this percent of it at full reach.
+    pub frag_far_pct: u32,
+    /// Ground bursts throw fragments between these elevations above the
+    /// ground plane, `[min, max]` degrees (a burst on a vehicle or a man,
+    /// well above the ground, throws them within `[-max, max]`).
+    pub frag_elev_deg: [u32; 2],
+    /// A fragment striking a hull side's track band deals this to the track.
+    pub frag_track_damage: u32,
     pub suppression_radius_m: u32,
     pub crater_radius_cm: u32,
     pub crater_depth_cm: u32,
@@ -230,20 +248,62 @@ pub struct ItemHeDef {
     pub cuts_trenches: bool,
     /// Armour it defeats on contact, in mm, by the plate rule (S3).
     pub pen_mm: u32,
-    /// When it defeats a plate: damage to boxes within `inside_radius_cm`
-    /// of the contact point.
+    /// When it defeats a plate (S3b): `inside_rays` fragment rays from the
+    /// contact point into the hull, `inside_damage` each to the first box
+    /// they cross within `inside_reach_cm`.
     #[serde(default)]
     pub inside_damage: u32,
     #[serde(default)]
-    pub inside_radius_cm: u32,
-    /// Damage to track anchors within the lethal radius, in percent of the
+    pub inside_rays: u32,
+    #[serde(default)]
+    pub inside_reach_cm: u32,
+    /// Damage to track anchors within `blast_radius_cm`, in percent of the
     /// blast's damage. Blasts never reach a closed vehicle's insides.
     pub vs_vehicle_pct: u32,
 }
 
+/// Most fragment rays one burst may throw (S3b; the per-tick budget is the
+/// sim's).
+pub const MAX_FRAG_RAYS: u32 = 256;
+/// Most inner fragment rays when HE beats a plate (S3b).
+pub const MAX_INSIDE_RAYS: u32 = 32;
+
+/// Checks the fragment and overpressure keys every HE block has (S3b).
+/// `v`: blast_radius_cm, frag_count, frag_reach_cm, frag_damage,
+/// frag_far_pct, frag_track_damage; `elev` the band.
+fn check_frag(out: &mut Vec<Issue>, prefix: &str, v: [u32; 6], elev: [u32; 2]) {
+    let [blast, count, reach, damage, far, track] = v;
+    range(out, &format!("{prefix}blast_radius_cm"), blast, 0, 2000);
+    range(out, &format!("{prefix}frag_count"), count, 0, MAX_FRAG_RAYS);
+    range(out, &format!("{prefix}frag_reach_cm"), reach, 0, 5000);
+    range(out, &format!("{prefix}frag_damage"), damage, 0, 10_000);
+    range(out, &format!("{prefix}frag_far_pct"), far, 0, 100);
+    range(out, &format!("{prefix}frag_track_damage"), track, 0, 1000);
+    range(out, &format!("{prefix}frag_elev_deg[0]"), elev[0], 0, 89);
+    range(out, &format!("{prefix}frag_elev_deg[1]"), elev[1], 0, 89);
+    if elev[0] > elev[1] {
+        out.push(
+            Issue::new(
+                format!("{prefix}frag_elev_deg"),
+                format!("[{}, {}] is not [min, max]", elev[0], elev[1]),
+            )
+            .with_hint(format!(
+                "{prefix}frag_elev_deg = [{}, {}]",
+                elev[1], elev[0]
+            )),
+        );
+    }
+}
+
 /// Checks the S3 vehicle fields every HE block has.
-fn check_he_armour(out: &mut Vec<Issue>, prefix: &str, v: [u32; 4]) {
-    let [pen_mm, inside_damage, inside_radius_cm, vs_vehicle_pct] = v;
+fn check_he_armour(out: &mut Vec<Issue>, prefix: &str, v: [u32; 5]) {
+    let [
+        pen_mm,
+        inside_damage,
+        inside_rays,
+        inside_reach_cm,
+        vs_vehicle_pct,
+    ] = v;
     range(out, &format!("{prefix}pen_mm"), pen_mm, 0, 2000);
     range(
         out,
@@ -254,8 +314,15 @@ fn check_he_armour(out: &mut Vec<Issue>, prefix: &str, v: [u32; 4]) {
     );
     range(
         out,
-        &format!("{prefix}inside_radius_cm"),
-        inside_radius_cm,
+        &format!("{prefix}inside_rays"),
+        inside_rays,
+        0,
+        MAX_INSIDE_RAYS,
+    );
+    range(
+        out,
+        &format!("{prefix}inside_reach_cm"),
+        inside_reach_cm,
         0,
         1000,
     );
@@ -366,22 +433,40 @@ pub struct WeaponDef {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HeDef {
-    /// Full damage inside this radius.
-    pub lethal_radius_cm: u32,
-    /// Damage falls to zero at this radius.
-    pub damage_radius_cm: u32,
+    /// Overpressure (S3b, physical-contact rule): a man within this
+    /// radius whose body point has a clear line from the burst takes full
+    /// `damage`; track anchors within it take `vs_vehicle_pct` of it.
+    pub blast_radius_cm: u32,
+    /// Fragment rays per burst (at most 256): each stops at the first man,
+    /// vehicle, wreck or earth it meets.
+    pub frag_count: u32,
+    /// Fragment ray length.
+    pub frag_reach_cm: u32,
+    /// Damage of one fragment striking a man at the burst ...
+    pub frag_damage: u32,
+    /// ... falling linearly to this percent of it at full reach.
+    pub frag_far_pct: u32,
+    /// Ground bursts throw fragments between these elevations above the
+    /// ground plane, `[min, max]` degrees (a burst on a vehicle or a man,
+    /// well above the ground, throws them within `[-max, max]`).
+    pub frag_elev_deg: [u32; 2],
+    /// A fragment striking a hull side's track band deals this to the track.
+    pub frag_track_damage: u32,
     pub suppression_radius_m: u32,
     pub crater_radius_cm: u32,
     pub crater_depth_cm: u32,
     /// Armour it defeats on contact, in mm, by the plate rule (S3).
     pub pen_mm: u32,
-    /// When it defeats a plate: damage to boxes within `inside_radius_cm`
-    /// of the contact point.
+    /// When it defeats a plate (S3b): `inside_rays` fragment rays from the
+    /// contact point into the hull, `inside_damage` each to the first box
+    /// they cross within `inside_reach_cm`.
     #[serde(default)]
     pub inside_damage: u32,
     #[serde(default)]
-    pub inside_radius_cm: u32,
-    /// Damage to track anchors within the lethal radius, in percent of the
+    pub inside_rays: u32,
+    #[serde(default)]
+    pub inside_reach_cm: u32,
+    /// Damage to track anchors within `blast_radius_cm`, in percent of the
     /// blast's damage. Blasts never reach a closed vehicle's insides.
     pub vs_vehicle_pct: u32,
 }
@@ -562,9 +647,6 @@ pub struct VehicleRulesDef {
     pub he_area_spread_mrad: u32,
     /// Tank HE is never fired within this distance of own men.
     pub he_clear_m: u32,
-    /// The gunner aims at the hull unless the turret's penetration chance
-    /// is better by more than this many points.
-    pub aim_hull_margin_pct: u32,
     /// Track samples over ground dug at least this deep count as crossing a
     /// trench ...
     pub crossing_dug_cm: u32,
@@ -603,6 +685,8 @@ pub struct VehicleRulesDef {
     pub escort: EscortTuning,
     /// Vehicle weapons and hits on vehicles (S3b tuning table).
     pub gunnery: GunneryTuning,
+    /// Ammo fires, rack outcomes and crew knock-out (S3b tuning table).
+    pub damage: VehicleDamageTuning,
 }
 
 /// Thrown items (S1b abilities).
@@ -1039,20 +1123,19 @@ impl ItemHeDef {
         let mut out = Vec::new();
         range(&mut out, "damage", self.damage, 0, 10_000);
         range(&mut out, "suppression", self.suppression, 0, 100);
-        range(&mut out, "lethal_radius_cm", self.lethal_radius_cm, 1, 5000);
-        range(
+        check_frag(
             &mut out,
-            "damage_radius_cm",
-            self.damage_radius_cm,
-            1,
-            10_000,
+            "",
+            [
+                self.blast_radius_cm,
+                self.frag_count,
+                self.frag_reach_cm,
+                self.frag_damage,
+                self.frag_far_pct,
+                self.frag_track_damage,
+            ],
+            self.frag_elev_deg,
         );
-        if self.damage_radius_cm < self.lethal_radius_cm {
-            out.push(Issue::new(
-                "damage_radius_cm",
-                "must be at least lethal_radius_cm",
-            ));
-        }
         range(
             &mut out,
             "suppression_radius_m",
@@ -1068,7 +1151,8 @@ impl ItemHeDef {
             [
                 self.pen_mm,
                 self.inside_damage,
-                self.inside_radius_cm,
+                self.inside_rays,
+                self.inside_reach_cm,
                 self.vs_vehicle_pct,
             ],
         );
@@ -1158,7 +1242,7 @@ impl WeaponDef {
         match (&self.he, self.class) {
             (None, WeaponClass::Mortar) => out.push(
                 Issue::new("he", "a mortar needs an [he] table")
-                    .with_hint("[he] lethal_radius_cm = 300 ..."),
+                    .with_hint("[he] blast_radius_cm = 150 ..."),
             ),
             (Some(he), _) => {
                 check_he_armour(
@@ -1167,29 +1251,23 @@ impl WeaponDef {
                     [
                         he.pen_mm,
                         he.inside_damage,
-                        he.inside_radius_cm,
+                        he.inside_rays,
+                        he.inside_reach_cm,
                         he.vs_vehicle_pct,
                     ],
                 );
-                range(
+                check_frag(
                     &mut out,
-                    "he.lethal_radius_cm",
-                    he.lethal_radius_cm,
-                    1,
-                    5000,
-                );
-                if he.damage_radius_cm < he.lethal_radius_cm {
-                    out.push(Issue::new(
-                        "he.damage_radius_cm",
-                        "must be at least lethal_radius_cm",
-                    ));
-                }
-                range(
-                    &mut out,
-                    "he.damage_radius_cm",
-                    he.damage_radius_cm,
-                    1,
-                    10_000,
+                    "he.",
+                    [
+                        he.blast_radius_cm,
+                        he.frag_count,
+                        he.frag_reach_cm,
+                        he.frag_damage,
+                        he.frag_far_pct,
+                        he.frag_track_damage,
+                    ],
+                    he.frag_elev_deg,
                 );
                 range(
                     &mut out,
@@ -1502,7 +1580,6 @@ impl RulesDef {
             ("ranging_floor_pct", v.ranging_floor_pct, 1, 100),
             ("he_area_spread_mrad", v.he_area_spread_mrad, 0, 100),
             ("he_clear_m", v.he_clear_m, 0, 500),
-            ("aim_hull_margin_pct", v.aim_hull_margin_pct, 0, 100),
             ("crossing_dug_cm", v.crossing_dug_cm, 10, 1000),
             ("crossing_speed_cm_s", v.crossing_speed_cm_s, 10, 3000),
             ("crossing_gap_s", v.crossing_gap_s, 0, 60),
@@ -1647,6 +1724,7 @@ impl RulesDef {
                 vehicle_path: &v.path,
                 escort: &v.escort,
                 gunnery: &v.gunnery,
+                vehicle_damage: &v.damage,
                 formation: &self.movement.formation,
                 cover: &self.cover,
                 throw: &self.items.throw,

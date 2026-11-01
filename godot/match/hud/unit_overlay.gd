@@ -227,7 +227,10 @@ func _vehicle_tooltip(font: Font, sel: Node) -> bool:
 				seats += 1
 				alive += 1 if st != "dead" else 0
 		line1 = "%s · %s" % [view.vehicle_label(int(v.id)), Vehicles.badge(v)[0]]
-		line2 = "Crew %d/%d · AP %d · HE %d · %s" % [alive, seats, int(ammo.get("ap", 0)), int(ammo.get("he", 0)), Vehicles.AMMO_TEXT.get(String(v.get("ammo_choice", "auto")), "Auto")]
+		var rounds := "AP %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("he", 0))]
+		if ammo.has("apcr"):
+			rounds = "AP %d · APCR %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("apcr", 0)), int(ammo.get("he", 0))]
+		line2 = "Crew %d/%d · %s · %s" % [alive, seats, rounds, Vehicles.AMMO_TEXT.get(String(v.get("ammo_choice", "auto")), "Auto")]
 	else:
 		line1 = "Enemy %s" % Vehicles.short_name(view.vehicle_type(int(v.id)), String(v.get("name", "vehicle")))
 		line2 = Vehicles.badge(v)[0] + " · right-click: attack"

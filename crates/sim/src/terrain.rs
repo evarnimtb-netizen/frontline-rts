@@ -826,7 +826,27 @@ impl Heightfield {
     /// 0.5 R and 1.5 R. Additive, so craters on craters (or in a trench)
     /// deepen what is there.
     pub fn crater(&mut self, center: FxVec2, radius: Fx, depth: Fx, tick: u64) {
-        self.crater_with(center, radius, depth, tick, false);
+        self.crater_with(center, radius, depth, tick, false, None);
+    }
+
+    /// [`Self::crater`], except when `center` is on raised spoil (the
+    /// surface above the base surface: a parapet or berm; S3b): loose
+    /// spoil flies, so inside `radius` every point still above the base
+    /// surface is lowered by `spoil_pct` % of `depth` times the bowl shape,
+    /// never below the base surface, and no rim rises on it; points at or
+    /// below the base surface (dug walls, undug ground) get the usual bowl,
+    /// and their rim never rises above the base surface.
+    pub fn crater_spoil(
+        &mut self,
+        center: FxVec2,
+        radius: Fx,
+        depth: Fx,
+        spoil_pct: u32,
+        tick: u64,
+    ) {
+        let on_spoil = self.height_at(center) > self.base_height_at(center);
+        let spoil = on_spoil.then(|| depth.mul_int(spoil_pct as i32).div_int(100));
+        self.crater_with(center, radius, depth, tick, false, spoil);
     }
 
     /// A crater that levels what it hits instead of deepening it (satchel
@@ -836,10 +856,18 @@ impl Heightfield {
     /// rim, so a parapet is blown down, while deeper ground (the trench
     /// beyond the crater) is kept.
     pub fn crater_cut(&mut self, center: FxVec2, radius: Fx, depth: Fx, tick: u64) {
-        self.crater_with(center, radius, depth, tick, true);
+        self.crater_with(center, radius, depth, tick, true, None);
     }
 
-    fn crater_with(&mut self, center: FxVec2, radius: Fx, depth: Fx, tick: u64, cut: bool) {
+    fn crater_with(
+        &mut self,
+        center: FxVec2,
+        radius: Fx,
+        depth: Fx,
+        tick: u64,
+        cut: bool,
+        spoil: Option<Fx>,
+    ) {
         if radius <= Fx::ZERO || depth <= Fx::ZERO {
             return;
         }
@@ -864,15 +892,30 @@ impl Heightfield {
                 }
                 let t = dist.div(radius); // r / R
                 let mut delta = Fx::ZERO;
-                if dist < radius {
-                    // 1 − (r/R)², from the exact squares.
+                // 1 − (r/R)², from the exact squares.
+                let bowl = if dist < radius {
                     let frac = Fx::from_raw((((d_sq as u128) << Fx::FRAC_BITS) / r_sq) as i32);
-                    delta -= depth.mul(Fx::ONE - frac);
-                }
+                    Fx::ONE - frac
+                } else {
+                    Fx::ZERO
+                };
+                delta -= depth.mul(bowl);
                 let off = (t - Fx::ONE).abs();
-                if off < Fx::HALF {
-                    delta += rim.mul(Fx::ONE - off.mul_int(2));
+                let rise = if off < Fx::HALF {
+                    rim.mul(Fx::ONE - off.mul_int(2))
+                } else {
+                    Fx::ZERO
+                };
+                if let Some(sp) = spoil {
+                    // S3b: a burst on loose spoil.
+                    return if cur > base {
+                        (cur - sp.mul(bowl)).max(base)
+                    } else {
+                        let low = cur + delta;
+                        (low + rise).min(low.max(base))
+                    };
                 }
+                delta += rise;
                 match (cut, dist < radius) {
                     (false, _) => cur + delta,
                     (true, true) => base + delta,
@@ -1028,6 +1071,50 @@ mod tests {
         t.crater(c, r, depth, 6);
         assert_eq!(t.height_at(c), -depth.mul_int(2));
         assert!(t.dug_dm(16, 16) >= 15);
+    }
+
+    #[test]
+    fn a_crater_on_a_parapet_blows_the_spoil_away() {
+        // A 0.45 m spoil bank 4 m wide across x = 60..64 m (a parapet), on
+        // flat ground at 0 (the base surface).
+        let mut t = Heightfield::generate(TerrainKind::Flat, 128, 1);
+        let (x0, x1) = (60 * DETAIL_PER_M, 64 * DETAIL_PER_M);
+        t.edit((x0, 0), (x1, 511), 1, |_, _, _, _| Fx::from_milli(450));
+        let c = FxVec2::from_int(62, 64);
+        let (r, depth) = (Fx::from_milli(600), Fx::from_milli(300));
+        let before = t.height_at(c);
+        // 150 %: the centre loses 0.45 m of spoil, down to the base.
+        t.crater_spoil(c, r, depth, 150, 2);
+        assert!(
+            t.height_at(c) <= Fx::from_milli(1),
+            "all the spoil there is gone"
+        );
+        let lost = before - t.height_at(c);
+        assert!(lost >= Fx::from_milli(400));
+        // No rim rises on the spoil, and none above the base anywhere.
+        let rim = t.height_at(c + v(600, 0));
+        assert!(rim <= Fx::from_milli(450), "{rim:?}");
+        // Half way out: the bowl shape, 0.45 × 0.75.
+        let half = t.height_at(c + v(300, 0));
+        assert!(
+            (half - Fx::from_milli(450 - 338)).abs() <= Fx::from_milli(20),
+            "{half:?}"
+        );
+        // Never below the base surface on spoil.
+        let mut deep = Heightfield::generate(TerrainKind::Flat, 128, 1);
+        deep.edit((x0, 0), (x1, 511), 1, |_, _, _, _| Fx::from_milli(100));
+        deep.crater_spoil(c, r, depth, 150, 2);
+        assert!(deep.height_at(c) >= Fx::ZERO && deep.height_at(c) <= Fx::from_milli(1));
+        // Centred on undug ground: today's crater, rim and all.
+        let mut flat = Heightfield::generate(TerrainKind::Flat, 128, 1);
+        let mut usual = flat.clone();
+        let g = FxVec2::from_int(30, 30);
+        flat.crater_spoil(g, r, depth, 150, 2);
+        usual.crater(g, r, depth, 2);
+        for k in -20..=20 {
+            let p = g + v(k * 100, 0);
+            assert_eq!(flat.height_at(p), usual.height_at(p));
+        }
     }
 
     #[test]

@@ -71,9 +71,16 @@ turret_top   = { thickness_mm = 16, material = "rha" }
 [crew]
 seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
 
+# S3b (crew layout): in our box model the hull's front face is the nose;
+# the real driver's front plate (Fahrerfrontplatte) sits about 0.6 m
+# behind it, and the driver (left) and radio operator (right) sit right
+# behind that plate with the gearbox between them. Their boxes moved 0.4 m
+# forward (x 150 -> 190; box fronts 0.65 m behind the nose) so a frontal
+# HEAT jet (1.0 m) reaches them. Source: Jentz & Doyle, Panzer Tracts 4-3
+# (layout drawings); positions approximate within the box model.
 [crew.boxes]
-driver    = { frame = "hull",   center = [150, 60, 110], half = [35, 30, 40] }
-radio_mg  = { frame = "hull",   center = [150, -60, 110], half = [35, 30, 40] }
+driver    = { frame = "hull",   center = [190, 60, 115], half = [35, 30, 40] }
+radio_mg  = { frame = "hull",   center = [190, -60, 115], half = [35, 30, 40] }
 gunner    = { frame = "turret", center = [10, 45, 35],   half = [30, 25, 35] }
 loader    = { frame = "turret", center = [10, -45, 35],  half = [30, 25, 35] }
 commander = { frame = "turret", center = [-70, 0, 45],   half = [30, 30, 40] }
@@ -84,7 +91,19 @@ mount = "turret_main"
 # From the turret pivot.
 muzzle = [450, 0, 45]
 elevation_deg = [-8, 20]
-ammo = [{ id = "ww2:75mm_pzgr39", count = 30 }, { id = "ww2:75mm_sprgr34", count = 30 }]
+# S3b: 6 PzGr 40 APCR as a special third round (owner question S3b-7 (A);
+# tungsten was scarce, a handful per tank). Auto loads it only against a
+# target the PzGr 39 likely fails on ([vehicles.gunnery]
+# special_below_pct).
+ammo = [
+  { id = "ww2:75mm_pzgr39", count = 30 },
+  { id = "ww2:75mm_sprgr34", count = 30 },
+  { id = "ww2:75mm_pzgr40", count = 6 },
+]
+# S3b: the exposed barrel, from the muzzle back to the turret front (450 -
+# 115 cm); a round or rocket must strike it to damage the gun. 8 cm: the
+# barrel with its sleeve, a little thicker than the 75 mm bore.
+barrel = { length_cm = 335, radius_cm = 8 }
 
 [[weapons]]
 def = "ww2:mg34"
@@ -117,13 +136,12 @@ hp = 100
 anchors = [{ pos = [250, -125, 45] }, { pos = [0, -125, 45] }, { pos = [-250, -125, 45] }]
 repair = { to_hp = 100, time_s = 30 }
 
-# The breech inside the turret; the barrel is damaged only by direct
-# impacts within 1 m of the mantlet anchor. No field repair.
+# The breech inside the turret; S3b: the barrel is the main-gun mount's
+# barrel box, damaged only by rounds that strike it. No field repair.
 [[components]]
 type = "gun"
 hp = 80
 box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
-anchors = [{ frame = "turret", pos = [125, 0, 45] }]
 
 [[components]]
 type = "turret_ring"
@@ -131,10 +149,29 @@ hp = 80
 box = { frame = "hull", center = [20, 0, 166], half = [80, 80, 10] }
 repair = { to_hp = 50, time_s = 40 }
 
+# S3b (rack geometry): the Ausf. H stowed its 87 rounds in bins low along
+# both hull sides of the fighting compartment and beside the radio operator,
+# none in the turret (Jentz & Doyle, Panzer Tracts 4-3). Three bins, one HP
+# pool, instead of one slab 2.2 m wide across the whole hull that every
+# core and spall ray crossed. Positions approximate within the box model.
 [[components]]
 type = "ammo_rack"
 hp = 60
-box = { frame = "hull", center = [-30, 0, 70], half = [50, 110, 25] }
+boxes = [
+  { frame = "hull", center = [-20, 95, 70], half = [55, 30, 25] },
+  { frame = "hull", center = [-20, -95, 70], half = [55, 30, 25] },
+  { frame = "hull", center = [110, -95, 80], half = [25, 25, 30] },
+]
+
+# S3b: the gearbox and final-drive train in the nose between the driver and
+# the radio operator (front sprockets; Panzer Tracts 4-3). Damaged: half
+# speed; destroyed: immobilised. Values as the engine's (100 HP, field
+# repair to 50 in 60 s); no fire. A starting value for tuning.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [200, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
 
 # Direct control (§5.12), unused until M5.
 [[stations]]

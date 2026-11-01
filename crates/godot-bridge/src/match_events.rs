@@ -103,6 +103,7 @@ fn component_words(c: u8) -> &'static str {
         3 => "main gun",
         4 => "turret ring",
         5 => "ammo rack",
+        6 => "transmission",
         _ => "component",
     }
 }

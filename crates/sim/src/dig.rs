@@ -587,6 +587,7 @@ mod tests {
                 parapet_fall_mm: 600,
                 parapet_undug_mm: 50,
                 reach_mm: 1500,
+                spoil_crater_pct: 150,
             },
         }
     }

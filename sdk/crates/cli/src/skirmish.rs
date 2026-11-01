@@ -217,7 +217,7 @@ pub struct ArmourTotals {
     pub knockouts: u64,
     pub rockets_fired: u64,
     /// Knock-outs of both players by cause (`ko_crew`, `ko_ammo_rack`,
-    /// `ko_fire`; S3b baseline).
+    /// `ko_fire` (engine), S3b `ko_ammo_fire`).
     pub ko_causes: BTreeMap<String, u32>,
     /// Kills of both players by `kill_class` name.
     pub kills_by: BTreeMap<String, u32>,
@@ -463,6 +463,7 @@ impl ArmourTally {
                 let cause = match e.component {
                     0 => "ko_crew",
                     1 => "ko_ammo_rack",
+                    3 => "ko_ammo_fire",
                     _ => "ko_fire",
                 };
                 if let Some(p) = self.players.get_mut(owner) {

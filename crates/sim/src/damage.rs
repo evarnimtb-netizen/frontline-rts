@@ -11,19 +11,24 @@
 //! hit there deals the round's `track_damage` to that side's track.
 //!
 //! * **Ricochet:** the round is spent (an event only).
-//! * **Non-penetration:** `nonpen_damage` to each external part (track,
-//!   barrel) with an anchor within `vehicles.gunnery.external_reach_mm` of the impact.
+//! * **Non-penetration:** nothing beyond the track band (S3b: no proximity
+//!   damage; the physical-contact rule).
+//! * **Barrel** (S3b): a main-gun round or rocket striking the main gun's
+//!   barrel box deals its `nonpen_damage` to the gun and stops (no plate
+//!   rule, no event); a mortar shell only bursts there.
 //! * **Penetration** (penetrators): the core goes on along the shell path
 //!   for its `length`, dealing its damage to every seat and component box it
 //!   crosses (at most `max_boxes`, nearest first); `rays` spall rays in a
 //!   cone of `cone_deg` around the path (RNG `SPALL`, rays by index), each
 //!   dealing its damage to the first box it meets within
-//!   `vehicles.gunnery.spall_reach_m`; an APHE filler bursts `offset` past the entry,
-//!   dealing its damage to every box within `radius` (RNG-free). At most
-//!   8 rays × 14 boxes.
-//! * **HE on a plate:** if its `pen_mm` beats the plate, an inner burst at
-//!   the contact point deals `inside_damage` to boxes within
-//!   `inside_radius` (none of the S3 rounds does).
+//!   `vehicles.gunnery.spall_reach_m`; S3b: an APHE filler bursts `offset`
+//!   past the entry into `rays` rays within `cone_deg` of the path (RNG
+//!   `HE_FILLER`), each dealing `damage` to the first box within `reach`.
+//! * **HE on a plate:** if its `pen_mm` beats the plate, S3b: `inside_rays`
+//!   rays from the contact point into the hull (RNG `HE_INSIDE`), each
+//!   dealing `inside_damage` to the first box within `inside_reach` (none of
+//!   the S3 rounds beats a plate). Filler and inner rays skip a box that
+//!   holds their start.
 //!
 //! HE and HEAT burst on contact as well (infantry, `combat`); a burst more
 //! than 0.5 m above the ground carves no crater.
@@ -31,20 +36,24 @@
 //! **Components and crew.** HP never go below 0. An engine hit for at least
 //! `fire_min_damage` starts a fire with `fire_start_pct` (RNG `FIRE`, keyed
 //! by tick and vehicle, draws in hit order); each ammo-rack hit for at least
-//! `rack_min_damage` detonates it with `rack_detonate_pct` (RNG `AMMO_RACK`,
-//! tick and slot), and a rack destroyed by damage detonates. A crewman at 0
-//! HP is dead: a loss for the owner and a kill for the attacker. A hit
-//! stops a field repair.
+//! `rack_min_damage` (or one that destroys it) detonates it with
+//! `rack_detonate_pct` (RNG `AMMO_RACK`, tick and slot), else (S3b) starts
+//! an ammo fire with `vehicles.damage.rack_fire_pct` (RNG `AMMO_FIRE`; a
+//! destroyed rack always burns). A crewman at 0 HP is dead: a loss for the
+//! owner and a kill for the attacker. A hit stops a field repair.
 //!
 //! **Blasts near a vehicle** ([`MatchState::blast_tracks`], after each
 //! burst of a shell, rocket or thrown item): every enemy vehicle with a
-//! track anchor within the blast's lethal radius and in clear line from
+//! track anchor within the blast's `blast_radius` (overpressure) and in
+//! clear line from
 //! 0.3 m above the blast point takes `damage × vs_vehicle_pct` on that
 //! track (once per track). Nothing else of a closed vehicle is touched; the
 //! vehicle a bursting round struck is left to its plate hit.
 //!
-//! **Knock-out** ([`MatchState::knock_out`]): when every seat is empty, the
-//! ammo rack detonates or a fire has burned `fire_burnout`. The remaining
+//! **Knock-out** ([`MatchState::knock_out`]): when fewer crew than
+//! `vehicles.damage.crew_ko_below` live (S3b; 0: every seat empty), the ammo
+//! rack detonates, a fire has burned `fire_burnout`, or (S3b) an ammo fire
+//! has burned `vehicles.damage.ammo_fire_s` (the crew cannot put it out). The remaining
 //! crew die (losses; kills for the last attacker), followers get Stop,
 //! every vehicle target, `AttackUnit` target, MG target, soldier target and
 //! squad focus naming it is cleared, and it becomes a wreck
@@ -82,11 +91,18 @@ use crate::world::Stats;
 pub const MAX_RAYS: usize = 8;
 /// Most internal boxes per vehicle.
 pub const MAX_BOXES: usize = 14;
+/// The inner rays of HE that beat a plate leave within this of the inward
+/// normal, per axis: the hemisphere behind the plate as the spall rule's
+/// cone (geometry, not a tuning value).
+const INSIDE_CONE_DEG: i32 = 45;
 
-/// `ArmourEventKind::KnockedOut` causes (`ArmourEvent::component`).
+/// `ArmourEventKind::KnockedOut` causes (`ArmourEvent::component`): too few
+/// crew, a rack detonation, an engine fire burned out, and (S3b) an ammo
+/// fire burned out.
 pub const KO_CREW: u8 = 0;
 pub const KO_RACK: u8 = 1;
 pub const KO_FIRE: u8 = 2;
+pub const KO_AMMO_FIRE: u8 = 3;
 
 /// An armour event in sim units (the snapshot converts it).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -176,7 +192,7 @@ pub fn inner_boxes(f: &VehicleFrame, v: &VehicleSetup) -> Vec<(BoxFrame, Inner)>
         out.push((part_box(f, &s.part), Inner::Seat(k as u8)));
     }
     for c in &v.components {
-        if let Some(p) = &c.part {
+        for p in &c.parts {
             out.push((part_box(f, p), Inner::Part(c.kind)));
         }
     }
@@ -202,6 +218,39 @@ pub fn spall_dir(dir: FxVec3, cone: Fx, r: &mut RngStream) -> FxVec3 {
     let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
     let up = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
     (dir + right * tri(r, cone) + up * tri(r, cone)).normalize_or_zero()
+}
+
+/// `n` rays from `from` within `cone` of `dir` (the spall rule's
+/// directions), each dealing `dmg` to the first box it crosses within
+/// `reach` (S3b: the APHE filler and the inner burst of HE that beat a
+/// plate; physical-contact rule). A box holding `from` (the burst is in
+/// it; the core already went through it) is not in the rays' way.
+#[allow(clippy::too_many_arguments)]
+fn ray_burst(
+    boxes: &[(BoxFrame, Inner)],
+    from: FxVec3,
+    dir: FxVec3,
+    cone: Fx,
+    reach: Fx,
+    n: usize,
+    dmg: u32,
+    r: &mut RngStream,
+    out: &mut Vec<Dealt>,
+) {
+    let open: Vec<(BoxFrame, Inner)> = boxes
+        .iter()
+        .filter(|(b, _)| armour::box_dist_sq_raw(b, from) > 0)
+        .copied()
+        .collect();
+    for _ in 0..n {
+        let d = spall_dir(dir, cone, r);
+        if let Some(&k) = ray_boxes(&open, from, d * reach, 1).first() {
+            out.push(Dealt {
+                inner: open[k].1,
+                dmg,
+            });
+        }
+    }
 }
 
 /// One hit's damage to one inner box or external part.
@@ -365,8 +414,22 @@ impl MatchState {
         let vt = vs.type_idx as usize;
         let v = &setup.vehicles[vt];
         let plates = &self.armour.vehicles[vt];
-        let plate = plates.face(hit.part, hit.face);
         let dir = vel.normalize_or_zero();
+        if hit.part == armour::BoxPart::Barrel {
+            // S3b: the barrel has no plate. A main-gun round or rocket
+            // striking it damages the gun; a mortar shell only bursts.
+            out.result = PenResult::NonPenetration;
+            if let Some(a) = ammo
+                && a.nonpen_damage > 0
+            {
+                out.dealt.push(Dealt {
+                    inner: Inner::Part(ComponentKind::Gun),
+                    dmg: a.nonpen_damage,
+                });
+            }
+            return Some(out);
+        }
+        let plate = plates.face(hit.part, hit.face);
         let c = armour::impact_cos(dir, hit.normal);
         let band = armour::in_track_band(&hit, f.hull.half.z, plates.track_band_pct);
         let extra = if band { plates.track_mm } else { Fx::ZERO };
@@ -447,47 +510,50 @@ impl MatchState {
                 if m == AmmoMechanism::Aphe
                     && let Some(fl) = &a.filler
                 {
+                    // S3b: the filler bursts into rays (first box each).
                     let at = hit.point + dir * Fx::from(fl.offset);
-                    within(&boxes, at, fl.radius.into(), fl.damage, dealt);
+                    let mut r = RngStream::new(seed, tick, SimId(e.slot), Purpose::HE_FILLER);
+                    ray_burst(
+                        &boxes,
+                        at,
+                        dir,
+                        armour::deg(fl.cone_deg),
+                        fl.reach.into(),
+                        fl.rays as usize,
+                        fl.damage,
+                        &mut r,
+                        dealt,
+                    );
                 }
             }
             (PenResult::Penetration, _) => {
-                // HE beat the plate: the inner burst at the contact point.
+                // HE beat the plate (S3b): inner rays from the contact
+                // point into the hull, within 45° per axis of the inward
+                // normal.
                 let inside = ammo
                     .and_then(|a| a.blast.as_ref())
                     .map(|b| &b.blast)
                     .or(weapon.he.as_ref());
                 if let Some(h) = inside {
-                    within(
+                    let inward = (-hit.normal).normalize_or_zero();
+                    let mut r = RngStream::new(seed, tick, SimId(e.slot), Purpose::HE_INSIDE);
+                    ray_burst(
                         &boxes,
                         hit.point,
-                        h.inside_radius.into(),
+                        inward,
+                        armour::deg(INSIDE_CONE_DEG),
+                        h.inside_reach.into(),
+                        h.inside_rays as usize,
                         h.inside_damage,
+                        &mut r,
                         dealt,
                     );
                 }
             }
-            (_, _) => {
-                // Non-penetration: external parts near the impact.
-                let nonpen = ammo.map_or(0, |a| a.nonpen_damage);
-                if nonpen > 0 {
-                    let reach =
-                        Fx::from_milli(self.setup.rules.vehicles.gunnery.external_reach_mm as i32)
-                            .raw() as u64;
-                    for comp in &v.components {
-                        let near = comp.anchors.iter().any(|an| {
-                            let p = anchor_at(&f, an.frame, crate::vehicle::v3(an.pos));
-                            (p - hit.point).length_sq_raw() <= reach * reach
-                        });
-                        if near {
-                            dealt.push(Dealt {
-                                inner: Inner::Part(comp.kind),
-                                dmg: nonpen,
-                            });
-                        }
-                    }
-                }
-            }
+            // Non-penetration: nothing inside, nothing outside but the
+            // running gear above (S3b: no proximity damage; the barrel is
+            // a box of its own).
+            (_, _) => {}
         }
         Some(out)
     }
@@ -512,6 +578,8 @@ impl MatchState {
         let (attacker, class) = by;
         let r = &self.setup.rules.vehicles;
         let mut rack_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_RACK);
+        let mut fire_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_FIRE);
+        let crew_ko_below = r.damage.crew_ko_below;
         let mut detonated = false;
         let mut dead = 0u32;
         let mut evs: Vec<ArmourEv> = Vec::new();
@@ -550,12 +618,21 @@ impl MatchState {
                     {
                         vs.burn = 1;
                     }
+                    // S3b: a rack hit for at least `rack_min_damage` (or one
+                    // that destroys it) detonates with `rack_detonate_pct`;
+                    // else it starts an ammo fire with `rack_fire_pct`, and
+                    // a destroyed rack always burns.
                     if kind == ComponentKind::AmmoRack
-                        && (gone
-                            || (d.dmg >= r.rack_min_damage
-                                && rack_rng.range_i32(0, 99) < r.rack_detonate_pct as i32))
+                        && (gone || d.dmg >= r.rack_min_damage)
+                        && !detonated
                     {
-                        detonated = true;
+                        if rack_rng.range_i32(0, 99) < r.rack_detonate_pct as i32 {
+                            detonated = true;
+                        } else if vs.ammo_fire == 0
+                            && (gone || fire_rng.range_i32(0, 99) < r.damage.rack_fire_pct as i32)
+                        {
+                            vs.ammo_fire = 1;
+                        }
                     }
                     let k = if gone {
                         ArmourEventKind::Disabled
@@ -566,7 +643,10 @@ impl MatchState {
                 }
             }
         }
-        let crew_gone = vs.seats.iter().all(|s| s.hp == 0);
+        // S3b: too few crew to fight the vehicle (`crew_ko_below`; 0: only
+        // when every seat is empty).
+        let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
+        let crew_gone = living == 0 || living < crew_ko_below;
         for e in evs {
             self.push_event(events, e);
         }
@@ -605,7 +685,7 @@ impl MatchState {
         if dmg == 0 || self.vehicles.is_empty() {
             return;
         }
-        let lethal: Fx = he.lethal_radius.into();
+        let lethal: Fx = he.blast_radius.into();
         let lift = FxVec3::new(
             pos.x,
             pos.y,
@@ -863,6 +943,13 @@ impl MatchState {
             // Fire.
             let crew = vs.seats.iter().any(|s| s.hp > 0);
             let mut fire_events: Vec<ArmourEv> = Vec::new();
+            // S3b: an ammo fire burns out the vehicle; nobody puts it out.
+            if vs.ammo_fire > 0 {
+                vs.ammo_fire = vs.ammo_fire.saturating_add(1);
+                if vs.ammo_fire as u32 >= r.damage.ammo_fire_s * hz {
+                    ko.push((id, KO_AMMO_FIRE));
+                }
+            }
             if vs.burn > 0 {
                 vs.burn = vs.burn.saturating_add(1);
                 let n = vs.burn as u64;
@@ -955,16 +1042,6 @@ impl MatchState {
     }
 }
 
-/// HP of `dealt` boxes within `radius` of `at` (filler, HE inner burst).
-fn within(boxes: &[(BoxFrame, Inner)], at: FxVec3, radius: Fx, dmg: u32, out: &mut Vec<Dealt>) {
-    let r = radius.raw().max(0) as u64;
-    for (b, inner) in boxes {
-        if armour::box_dist_sq_raw(b, at) <= r * r {
-            out.push(Dealt { inner: *inner, dmg });
-        }
-    }
-}
-
 /// Refills an empty driver or gunner seat (gunner first) from the living
 /// crewman of lowest priority (radio, loader, commander), and counts
 /// running swaps down.
@@ -1052,5 +1129,98 @@ fn rearm_one(vs: &mut VehicleState, v: &VehicleSetup) {
         .max_by_key(|&(k, short)| (short, std::cmp::Reverse(k)));
     if let Some((k, _)) = best {
         vs.ammo[k] += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vehicle::Basis;
+
+    fn unit_box(x: i32) -> BoxFrame {
+        BoxFrame {
+            center: FxVec3::new(Fx::from_int(x), Fx::ZERO, Fx::ZERO),
+            axes: Basis {
+                x: FxVec3::new(Fx::ONE, Fx::ZERO, Fx::ZERO),
+                y: FxVec3::new(Fx::ZERO, Fx::ONE, Fx::ZERO),
+                z: FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE),
+            },
+            half: FxVec3::new(Fx::HALF, Fx::HALF, Fx::HALF),
+        }
+    }
+
+    /// S3b: filler and inner rays deal their damage to the first box each
+    /// ray crosses within reach, never through it, and a box holding the
+    /// burst point is not in their way.
+    #[test]
+    fn burst_rays_strike_the_first_box_only() {
+        let boxes = [
+            (unit_box(0), Inner::Seat(0)),
+            (unit_box(2), Inner::Seat(1)),
+            (unit_box(4), Inner::Part(ComponentKind::Engine)),
+        ];
+        let dir = FxVec3::new(Fx::ONE, Fx::ZERO, Fx::ZERO);
+        let mut r = RngStream::new(1, 2, SimId(3), Purpose::HE_FILLER);
+        let mut out = Vec::new();
+        // From inside box 0 along +x, a narrow cone: box 1 takes every ray
+        // that hits, box 2 (behind it) none; box 0 holds the start.
+        ray_burst(
+            &boxes,
+            FxVec3::ZERO,
+            dir,
+            armour::deg(5),
+            Fx::from_int(10),
+            8,
+            60,
+            &mut r,
+            &mut out,
+        );
+        assert_eq!(out.len(), 8);
+        assert!(out.iter().all(|d| d.inner == Inner::Seat(1) && d.dmg == 60));
+        // Out of reach: nothing.
+        let mut out = Vec::new();
+        ray_burst(
+            &boxes,
+            FxVec3::ZERO,
+            dir,
+            armour::deg(5),
+            Fx::ONE,
+            8,
+            60,
+            &mut r,
+            &mut out,
+        );
+        assert!(out.is_empty());
+    }
+
+    /// S3b: a component may have several boxes, one HP pool (the Panzer IV
+    /// rack's three bins), and the inner box list fits `MAX_BOXES`.
+    #[test]
+    fn multi_box_components_list_every_box() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let defs = frontline_content::ModDefs::load(&root).unwrap();
+        let req = frontline_content::MatchRequest::skirmish(
+            1,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Normal,
+        );
+        let s = defs.resolve(&req).unwrap();
+        for v in &s.vehicles {
+            let f = VehicleFrame::default();
+            let boxes = inner_boxes(&f, v);
+            let racks = boxes
+                .iter()
+                .filter(|(_, i)| *i == Inner::Part(ComponentKind::AmmoRack))
+                .count();
+            assert_eq!(racks, 3, "{}", v.id);
+            assert_eq!(boxes.len(), 5 + 3 + 4, "{}: seats, rack bins, others", v.id);
+            assert!(boxes.len() <= MAX_BOXES);
+            assert!(
+                boxes
+                    .iter()
+                    .any(|(_, i)| *i == Inner::Part(ComponentKind::Transmission))
+            );
+        }
     }
 }

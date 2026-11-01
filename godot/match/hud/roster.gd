@@ -121,12 +121,16 @@ func vehicle_card_width(vid: int, font: Font, bold: Font) -> float:
 	var head := SIL_W + 6.0 + HudStyle.text_w(bold, view.vehicle_label(vid), HudStyle.FONT) + 14.0 + HudStyle.text_w(font, Vehicles.badge(v)[0], HudStyle.FONT)
 	var pips := Vehicles.SEATS.size() * (float(m.pip) + float(m.pip_gap)) - float(m.pip_gap)
 	var strip := Vehicles.STRIP.size() * (SEG_W + SEG_GAP) - SEG_GAP
-	var row2 := pips + PART_GAP + strip + PART_GAP + ammo_width(font, bold, 88, 88)
+	var row2 := pips + PART_GAP + strip + PART_GAP + ammo_width(font, bold, 88, 88, Vehicles.has_apcr(v))
 	return maxf(head, row2) + PAD + 8.0
 
 
-static func ammo_width(font: Font, bold: Font, ap: int, he: int) -> float:
-	return HudStyle.text_w(bold, "AP %d" % ap, HudStyle.FONT) + HudStyle.text_w(font, " · ", HudStyle.FONT) + HudStyle.text_w(bold, "HE %d" % he, HudStyle.FONT) + 4.0
+## S3b: with `apcr`, the special round's count too ("AP 88 · APCR 8 · HE 88").
+static func ammo_width(font: Font, bold: Font, ap: int, he: int, apcr := false) -> float:
+	var w := HudStyle.text_w(bold, "AP %d" % ap, HudStyle.FONT) + HudStyle.text_w(font, " · ", HudStyle.FONT) + HudStyle.text_w(bold, "HE %d" % he, HudStyle.FONT) + 4.0
+	if apcr:
+		w += HudStyle.text_w(bold, "APCR 8", HudStyle.FONT) + HudStyle.text_w(font, " · ", HudStyle.FONT)
+	return w
 
 
 func _layout() -> void:
@@ -365,13 +369,18 @@ static func draw_ammo(ci: CanvasItem, font: Font, bold: Font, at: Vector2, v: Di
 	var parts := ["AP %d" % int(ammo.get("ap", 0)), " · ", "HE %d" % int(ammo.get("he", 0))]
 	var keys := ["ap", "", "he"]
 	var fonts := [bold, font, bold]
+	if ammo.has("apcr"):
+		# S3b: the special round between AP and HE.
+		parts = ["AP %d" % int(ammo.get("ap", 0)), " · ", "APCR %d" % int(ammo.get("apcr", 0)), " · ", "HE %d" % int(ammo.get("he", 0))]
+		keys = ["ap", "", "apcr", "", "he"]
+		fonts = [bold, font, bold, font, bold]
 	var w := 0.0
-	for i in 3:
+	for i in parts.size():
 		w += HudStyle.text_w(fonts[i], parts[i], HudStyle.FONT)
 	var x := at.x - w - 2.0 if align == 1 else at.x + 2.0
 	var loaded := String(v.get("loaded", ""))
 	var choice := String(v.get("ammo_choice", "auto"))
-	for i in 3:
+	for i in parts.size():
 		var pw := HudStyle.text_w(fonts[i], parts[i], HudStyle.FONT)
 		var col := HudStyle.DIM
 		if keys[i] != "":
@@ -505,7 +514,10 @@ static func vehicle_tooltip(mv: MatchView, vid: int) -> String:
 	for c in Vehicles.COMPONENTS:
 		parts.append("%s %d%%" % [Vehicles.COMPONENT_SHORT[c], roundi(Vehicles.component(v, c) * 100.0)])
 	var ammo: Dictionary = v.get("ammo", {})
-	return "%s · %s\nCrew: %s\n%s\nAP %d · HE %d · loaded %s · ammo %s [N]" % [
+	var rounds := "AP %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("he", 0))]
+	if ammo.has("apcr"):
+		rounds = "AP %d · APCR %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("apcr", 0)), int(ammo.get("he", 0))]
+	return "%s · %s\nCrew: %s\n%s\n%s · loaded %s · ammo %s [N]" % [
 		mv.vehicle_label(vid, true), Vehicles.badge(v)[0], ", ".join(seats), ", ".join(parts),
-		int(ammo.get("ap", 0)), int(ammo.get("he", 0)), String(v.get("loaded", "")).to_upper(),
+		rounds, String(v.get("loaded", "")).to_upper(),
 		Vehicles.AMMO_TEXT.get(String(v.get("ammo_choice", "auto")), "Auto")]

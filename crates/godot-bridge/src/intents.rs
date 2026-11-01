@@ -79,12 +79,13 @@ pub fn dig_profile(name: &str) -> DigProfile {
     }
 }
 
-/// `set_ammo` names (`"auto"`, `"ap"`, `"he"`).
+/// `set_ammo` names (`"auto"`, `"ap"`, `"he"`; S3b `"apcr"`).
 pub fn ammo_choice(name: &str) -> Option<AmmoChoice> {
     Some(match name {
         "auto" => AmmoChoice::Auto,
         "ap" => AmmoChoice::Ap,
         "he" => AmmoChoice::He,
+        "apcr" => AmmoChoice::Apcr,
         _ => return None,
     })
 }
@@ -93,6 +94,7 @@ pub fn ammo_choice_name(c: u8) -> &'static str {
     match c {
         1 => "ap",
         2 => "he",
+        3 => "apcr",
         _ => "auto",
     }
 }
@@ -480,6 +482,7 @@ mod tests {
             ("auto", AmmoChoice::Auto),
             ("ap", AmmoChoice::Ap),
             ("he", AmmoChoice::He),
+            ("apcr", AmmoChoice::Apcr),
         ] {
             match vehicle_command("set_ammo", u(), None, None, w) {
                 Some(CommandKind::SetAmmo { ammo, .. }) => assert_eq!(ammo, c),

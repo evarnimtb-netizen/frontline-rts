@@ -99,7 +99,7 @@ func spawn(owner: int, type_key: String, at: Vector2, yaw := 0.0) -> int:
 		"order": "idle", "target": at, "face_yaw": yaw,
 		"crew": {"driver": "ok", "gunner": "ok", "commander": "ok", "loader": "ok", "radio_mg": "ok"},
 		"swap": {},
-		"comp": {"engine": 1.0, "track_l": 1.0, "track_r": 1.0, "gun": 1.0, "ring": 1.0, "ammo_rack": 1.0},
+		"comp": {"engine": 1.0, "track_l": 1.0, "track_r": 1.0, "gun": 1.0, "ring": 1.0, "ammo_rack": 1.0, "transmission": 1.0},
 		"repairing": "", "ammo": {"ap": int(vt.ammo[0].max), "he": int(vt.ammo[1].max)},
 		"loaded": "ap", "ammo_choice": "auto", "reload": 1.0,
 		"aim": -1, "aim_squad": -1, "attack": -1, "focus_shots": 0,
@@ -215,7 +215,7 @@ func _order(v: Dictionary, order: String, target: Vector2) -> void:
 func _start_repair(v: Dictionary) -> void:
 	var worst := ""
 	var worst_f := 2.0
-	for c in ["engine", "track_l", "track_r", "ring"]:
+	for c in ["engine", "track_l", "track_r", "ring", "transmission"]:
 		var cap := 1.0 if c.begins_with("track") else 0.5
 		var f: float = v.comp[c]
 		if f < cap and f < worst_f:
@@ -243,7 +243,7 @@ func _alive(v: Dictionary) -> bool:
 
 
 func _immobile(v: Dictionary) -> bool:
-	return v.comp.engine <= 0.0 or v.comp.track_l <= 0.0 or v.comp.track_r <= 0.0 or v.crew.driver != "ok" and v.crew.driver != "wounded"
+	return v.comp.engine <= 0.0 or v.comp.track_l <= 0.0 or v.comp.track_r <= 0.0 or v.comp.transmission <= 0.0 or v.crew.driver != "ok" and v.crew.driver != "wounded"
 
 
 func _step_vehicle(v: Dictionary, dt: float) -> void:
@@ -276,7 +276,7 @@ func _step_vehicle(v: Dictionary, dt: float) -> void:
 			return
 	if v.repairing != "":
 		var c: String = v.repairing
-		var rate := 1.0 / 30.0 if c.begins_with("track") else (0.5 / 60.0 if c == "engine" else 0.5 / 40.0)
+		var rate := 1.0 / 30.0 if c.begins_with("track") else (0.5 / 60.0 if c == "engine" or c == "transmission" else 0.5 / 40.0)
 		var cap := 1.0 if c.begins_with("track") else 0.5
 		v.comp[c] = minf(v.comp[c] + rate * dt, cap)
 		if v.comp[c] >= cap:

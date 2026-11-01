@@ -9,6 +9,7 @@ drag_coeff = 0
 # Flat at 0°: a shaped charge does not lose penetration with range.
 penetration = [[0, 160]]
 ricochet_angle_deg = 80
+# Damage to the gun when it strikes the barrel box (S3b, physical contact).
 nonpen_damage = 30
 track_damage = 50
 sources = ["placeholder: citations are an owner / M2 task"]
@@ -27,8 +28,30 @@ cone_deg = 25
 [he]
 damage = 100
 suppression = 20
-lethal_radius_cm = 100
-damage_radius_cm = 300
+# S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and
+# blasts"): no radial damage. A shaped-charge rocket (its body and fin
+# assembly: few fragments, short reach).
+# Overpressure: full `damage` to a man within blast_radius_cm with a clear
+# line from the burst (about the old lethal radius or less), and the
+# vs_vehicle_pct share to track anchors within it (cm).
+blast_radius_cm = 60
+# Fragments: frag_count rays per burst (azimuth stratified, elevation in
+# frag_elev_deg [min, max] above the ground plane, degrees), each stopping
+# at the first man, vehicle, wreck or earth within frag_reach_cm (cm). One
+# fragment deals frag_damage to a man near the burst, falling linearly to
+# frag_far_pct % of it at full reach, and frag_track_damage to a track whose
+# band it strikes. Starting values from the spec, set to keep the old
+# lethality in the open within about 20 % (the Tune stage measures it).
+frag_count = 24
+frag_reach_cm = 600
+frag_damage = 50
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+# frag_track_damage: 1, not the spec's starting 5 (2 for grenades): a burst
+# 1 m beside a hull sends about 20 fragments into that side's track band,
+# and 5 each broke the track on top of the overpressure (old behaviour:
+# only the overpressure broke tracks). Track links shrug off fragments.
+frag_track_damage = 1
 suppression_radius_m = 6
 crater_radius_cm = 40
 crater_depth_cm = 20

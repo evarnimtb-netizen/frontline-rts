@@ -762,6 +762,9 @@ func _test_vehicles() -> void:
 	_check(_last(&"set_ammo").ammo == "he", "ammo strip HE sends set_ammo he")
 	await _frames(2)
 	_check(_vstate(tanks[0]).ammo_choice == "he" and _view.orders.active(&"ammo_he") and not _view.orders.active(&"ammo_ap"), "the strip shows HE once the state has it")
+	# S3b: APCR (the special round) only on a gun that carries it.
+	_check(Vehicles.next_ammo("ap", true) == "apcr" and Vehicles.next_ammo("apcr", true) == "he" and Vehicles.next_ammo("ap") == "he", "N cycles Auto, AP, APCR (where carried), HE")
+	_check(_view.orders.enabled(&"ammo_apcr") == Vehicles.has_apcr(_vstate(tanks[0])), "the APCR button lights only for a gun that carries it")
 	# Roster card: shown, wide enough, a click selects the tank.
 	var roster: Control = _view.roster
 	var r: Rect2 = roster.vehicle_card_rect(tanks[0])

@@ -288,6 +288,16 @@ New paths this slice adds, all physical: fragment rays (#5, #7, #8),
 filler and inner rays (#12, #13), barrel strikes (#14), suppressive area
 fire (real rounds, feeding #4 and #6).
 
+**Status after Part A (2026-11-01):** #5, #7 → overpressure within
+`blast_radius_cm` with a clear line plus fragment rays (`combat.rs`
+`MatchState::burst`, `fragments`); #8 → overpressure on track anchors
+within `blast_radius_cm` plus fragment strikes on a track band; #12 →
+filler rays, #13 → inner rays (`damage.rs` `ray_burst`); #14 → the barrel
+box (`armour::BoxPart::Barrel`), no proximity damage; #16–#18 → rack
+detonation or ammo fire (`VehicleState::ammo_fire`, knock-out cause 3), and
+#19 with `crew_ko_below`. Every path that changes HP is now a contact or
+the close-in overpressure with a line of sight.
+
 ## Fixes and measurable targets, per problem
 
 ### P1. Tank duels and the AI-match imbalance (D1)
@@ -905,6 +915,149 @@ used to win by fielding more (63 tanks bought vs 56); with re-call
 cooldowns both sides buy about the same number of tanks (54 / 56), and
 the Sherman's duel edge (P1) is untouched. The Tune stage should
 measure again after Part A.
+
+## Part A: physical damage, armour, gunnery and content (stage done, 2026-11-01)
+
+Built as specified above, with the deviations listed below. Every new
+gameplay value is a commented key in `mods/ww2`; engine caps stay in code.
+
+**A1 Fragments and overpressure** (`combat.rs` `MatchState::burst`,
+`fragments`): every HE burst (mortar, tank HE, rocket, grenade, satchel)
+does suppression (unchanged), **overpressure** (full `damage` within
+`blast_radius_cm` with a clear terrain line to the body point; track
+anchors within it take `vs_vehicle_pct`), then `frag_count` **fragment
+rays** from 0.3 m above the burst (azimuth stratified with a triangular
+jitter, elevation uniform in `frag_elev_deg`; RNG `FRAGMENT` /
+`ITEM_FRAGMENT` keyed by the burst key). A ray stops at the first enemy
+capsule, vehicle, wreck or barrel box within `frag_reach_cm`, unless
+`segment_hit` finds earth first (trench walls, parapets). Men take
+`frag_damage` falling linearly to `frag_far_pct` at full reach, plus the
+hit suppression; an enemy hull side's track band takes
+`frag_track_damage`. `lethal_radius_cm` and `damage_radius_cm` are gone
+(an old mod fails to load naming them). Budget: `MAX_FRAG_RAYS_PER_TICK` =
+4 096 (code); a crowded tick scales each burst's rays proportionally
+(`Stats::frag_rays_capped`). New hashed, saved `Stats`: `frag_rays`,
+`frag_hits`, `frag_rays_capped`.
+
+Details the spec left open, decided here:
+- A burst well above the ground (on a vehicle or a man, over
+  `crater_lift_mm`) throws within `[-max, max]` of the band, not only
+  upward.
+- A man whose capsule holds the ray origin (a shell burst on him) is left
+  to the overpressure, so his body does not shield everyone else.
+- The vehicle a bursting round struck stops rays that go into it (a probe
+  0.1 m along the ray inside its hull or turret box) and lets the others
+  go; it takes no fragment damage (its plate hit is its damage).
+- Friendly men are not in the way (no friendly fire); any vehicle is.
+- Tank HE target choice keeps its old group radius as a key:
+  `[vehicles.gunnery] he_group_m = 6` (it read `damage_radius`).
+
+**A2 Inside a vehicle** (`damage.rs`): APHE filler = `rays` (10) within
+`cone_deg` (60) of the shell path from `offset_cm` past the entry, each
+`damage` (60) to the first box within `reach_cm` (150); HE that beats a
+plate = `inside_rays` (16) within 45° per axis of the inward normal
+(`INSIDE_CONE_DEG`, geometry), `inside_damage` each within
+`inside_reach_cm` (150). A box that holds the burst point is not in the
+rays' way (the core already went through it). **Barrel:** the main-gun
+mount's `barrel = { length_cm, radius_cm }` is a box from the muzzle back,
+turning and elevating with the gun (`VehicleFrame::barrel`,
+`armour::BoxPart::Barrel`); a main-gun round or rocket striking it deals
+`nonpen_damage` to the gun; small arms stop on it; mortar shells burst on
+it. `external_reach_mm` and the gun's anchor are gone; non-penetrating
+hits touch nothing outside the track band.
+
+**A3 Geometry and outcomes** (data with sources in the TOML comments):
+multi-box components (`boxes = [...]`, one HP pool, at most 4, each
+checked inside its frame); racks moved to the real stowage (Panzer IV:
+two hull-side bins and one by the radio operator; Sherman, dry stowage:
+two sponson racks and the basket floor); front crew boxes moved forward
+(Panzer IV x 150 → 190, Sherman 170 → 200); a `transmission` component
+(seventh `ComponentKind`, 100 HP, below half its HP halves speed, 0
+immobilises, field repair to 50 in 60 s) between the front seats. Rack
+hits: detonation with `rack_detonate_pct` (35 → 20), else an **ammo
+fire** with `[vehicles.damage] rack_fire_pct` (60), which knocks out after
+`ammo_fire_s` (8; nobody puts it out); a destroyed rack always detonates
+or burns. **`crew_ko_below`** (2): fewer living crew knock the vehicle
+out. Knock-out cause 3 = ammo fire (`ArmourEvent::component`; bridge
+`"ammo_fire"`). New saved, hashed, validated state:
+`VehicleState::ammo_fire`.
+
+**A4 HEAT reach: not applied.** Case 6 reached its target (6 of 10
+disabled) after the geometry fix, so the RPzB 54 jet stays at 1.0 m.
+
+**A5 Gunnery:** the gunner aims at the **centre of visible mass** (hull
+and turret centres weighted by projected area toward the shooter,
+`gunnery::mass_centre`), or the turret centre when that point is hidden;
+launchers too. `aim_hull_margin_pct` is gone. **Lead estimation error**
+(`gunnery::lead_estimate`, RNG `LEAD` keyed by shooter, target and ranging
+count, no state): ±`lead_error_pct` (40), shrinking with ranging; rockets
+get it per shot without shrinking. Case 3b starts the angled Panzer IV
+with its turret laid on the Sherman; new case 3e (Panzer IV on the
+Sherman's flank, 150 m). The 3b hard check is now "aims within 0.3 m of
+the visible-mass centroid".
+
+**A6 PzGr 40** (`defs/ammo/75mm_pzgr40.toml`, 6 per Panzer IV): a mount
+may carry a third round, a special penetrator, only with its HE round
+(indices: standard 0, HE 1, special 2; `gunnery::SPECIAL`).
+`AmmoChoice::Apcr` (a gun without it fires its standard round); Auto loads
+it only when the standard round's chance is under
+`[vehicles.gunnery] special_below_pct` (50) and the special one's is
+higher. Snapshot `ammo` is `[u16; 3]`, `LoadedSnap::Apcr`, `ammo_choice` 3;
+bridge `"apcr"`; HUD: an APCR segment in the ammo strip (lit only for a gun
+that has it), N cycles Auto → AP → APCR → HE, counts in the card, tooltip
+and detail panel (`godot/docs/match_state.md`). Golden ballistics: four new
+rows (43–46), rows 1–42 unchanged, 46 of 46 pass. In the 20 matches it
+changed nothing (the PzGr 39 already beats a Sherman everywhere).
+
+**A7 HE vs parapet** (`Heightfield::crater_spoil`): a crater centred on
+raised spoil removes it within its radius by `spoil_crater_pct` (150) % of
+the crater depth (never below the base surface) and raises no rim above
+the base; otherwise today's crater.
+
+**Data deviations from the spec's starting values** (each commented in
+its TOML; owner questions S3b-19, S3b-20):
+- Grenades: `blast_radius_cm` 100 → 200 (the old lethal radius), 
+  `frag_count` 48 → 96, `frag_track_damage` 2 → 0. With the spec's values
+  a grenade thrown into a trench did a third to a half of its old harm
+  (the abilities test "frags lobbed into a trench" failed: 100 HP lost,
+  needs 200; fortify grenade row from 25 m: defenders 70, attackers 73
+  instead of 80 / 24).
+- `frag_track_damage` 5 → 1 for mortars, tank HE, rockets and satchels: a
+  mortar bomb 1 m from a hull sends about 20 fragments into one track
+  band and broke the track on fragments alone.
+
+**Measured after Part A** (same commands as the baseline; "before" is the
+call-in stage):
+
+| # | Target | Before | After Part A | Met? |
+|---|---|---|---|---|
+| T1 | each faction 35–65 % of 20; no base > 70 % | GER 12 / USA 8; base 1 12 | **GER 9 / USA 11; base 0 7 / base 1 13 (65 %)** | yes |
+| T2 | 3a Panzer IV wins 6–8 of 10 | 4 | **4** (hits: Panzer IV 14 hull / 6 turret, Sherman 62 hull / 2 turret) | no |
+| T3 | 3c ≥ 7, 3e ≥ 7 | 10; – | **10; 10** | yes |
+| T4 | rack ≤ 50 % of KOs; crew and fire > 0 | 44 of 45 rack | **20 matches: 52 KOs: ammo fire 31, crew 12, rack 8 (15 %), engine fire 1; case 3: rack 5 of 40** | yes |
+| T5 | case 6 ≥ 60 %; case 4 flank ≥ 50 % | 0 %; 42.9 % | **60 %; 41.2 %** | case 6 yes, case 4 no |
+| T6 | crossing ≤ 60 % of stationary | 83.1 % | **86.2 %** | no (S3b-21) |
+| T12 | 12–25 min all 20; HE share < 60 % | 11.7–26.7 | **11.0–25.8 (one under, one over); HE max 44.6 %, mean 28.3 %** | length no, HE yes |
+| T13 | peak p99 < 1.5 ms; stress p99 < 10 | – | **0.94 ms; 1.21 ms** | yes |
+| T14 | lip ≥ 0.05 m per burst | 0.001 | **0.0024** | no (S3b-22) |
+| T11 | fortify S1 rows pass | pass, mortar 37.8 % | **pass: rifles 0 / 80; mortar 6 / 58 = 10.3 %** | yes |
+
+Other numbers: tanks lost / bought GER 26 / 62, USA 26 / 67 (before 19 /
+54, 26 / 56); AI-vs-AI seeds 1–5 (normal bases): Germany 2, USA 3,
+12.5–18.2 min; case 9 open-ground losses 74 (baseline 80, -7.5 %);
+case 4 front 20.3 %, HE variant 9.1 %; case 2 hull-down won 4, open 2,
+both 1, none 3; case 10 3 tracks over 199 shells (unchanged); case 7 and
+case 5 unchanged in kind (Part B). AI rockets: fired in 4 of 20 matches
+per side; satchels at vehicles 0 (Part B). A duel can now end with both
+tanks immobilised and blind (the commander lost; sight 70 % of 175 m);
+`gunnery.rs` tests allow up to 2 such draws in 6.
+
+**For Part B.** `SAVE_VERSION` stays 10 and `PROTOCOL_VERSION` 4 (the new
+`AmmoChoice::Apcr` rides on the slice's protocol bump). Tests with a
+"disarmed" target (driver only) set `crew_ko_below = 0` in their setup.
+Case 7's defenders still are not pinned (1.8 %); case 5's tank still fires
+nothing: both are Part B (Suppress, duck state). `crossing_target` also
+sets `rack_fire_pct = 0`, and `toughen` clears `ammo_fire`.
 
 ## Implementation order
 

@@ -125,7 +125,7 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     );
     let track = &pz.components[ComponentKind::TrackLeft.index()];
     assert_eq!(track.anchors.len(), 3);
-    assert!(track.part.is_none());
+    assert!(track.parts.is_empty());
     assert_eq!(track.repair.as_ref().unwrap().ticks, 30 * 30);
     assert!(pz.components[ComponentKind::Gun.index()].repair.is_none());
     // Main gun first, penetrator before HE.
@@ -138,7 +138,15 @@ fn vehicles_and_ammo_lower_into_the_setup() {
         .iter()
         .map(|l| (s.ammo[l.ammo as usize].id.as_str(), l.count))
         .collect();
-    assert_eq!(rounds, [("ww2:75mm_pzgr39", 30), ("ww2:75mm_sprgr34", 30)]);
+    assert_eq!(
+        rounds,
+        [
+            ("ww2:75mm_pzgr39", 30),
+            ("ww2:75mm_sprgr34", 30),
+            ("ww2:75mm_pzgr40", 6)
+        ],
+        "standard penetrator, HE, then the special one (S3b)"
+    );
     let hull_mg = pz
         .mounts
         .iter()
@@ -369,7 +377,7 @@ fn missing_ammo_id_is_reported() {
         replace_in(
             &r.join("defs/vehicles/ger_pz4_h.toml"),
             "id = \"ww2:75mm_pzgr39\"",
-            "id = \"ww2:75mm_pzgr40\"",
+            "id = \"ww2:75mm_pzgr49\"",
         );
         replace_in(
             &r.join("defs/weapons/m9_bazooka.toml"),
@@ -381,8 +389,8 @@ fn missing_ammo_id_is_reported() {
         &i,
         "vehicle `ww2:ger_pz4_h`: weapons[0].ammo[0].id",
         &[
-            "unknown ammo `ww2:75mm_pzgr40`",
-            "did you mean `ww2:75mm_pzgr39`",
+            "unknown ammo `ww2:75mm_pzgr49`",
+            "did you mean `ww2:75mm_pzgr",
         ],
     );
     has(
@@ -413,7 +421,7 @@ fn seat_box_outside_its_frame_is_reported() {
     let i = issues_of("seat-box", |r| {
         let f = r.join("defs/vehicles/ger_pz4_h.toml");
         // The driver's box pokes out of the hull's front.
-        replace_in(&f, "center = [150, 60, 110]", "center = [280, 60, 110]");
+        replace_in(&f, "center = [190, 60, 115]", "center = [280, 60, 115]");
         // The gunner sits in the turret frame but below the turret box.
         replace_in(&f, "center = [10, 45, 35]", "center = [10, 45, -30]");
         // An engine box in the turret frame lies outside the turret.
@@ -545,6 +553,70 @@ fn ammo_and_at_team_errors_are_reported() {
     );
 }
 
+/// S3b: multi-box components, the barrel box, the filler rays and the
+/// fragment keys are checked with actionable messages.
+#[test]
+fn s3b_damage_geometry_errors_are_reported() {
+    let i = issues_of("s3b-geometry", |r| {
+        let f = r.join("defs/vehicles/ger_pz4_h.toml");
+        // A rack bin poking out of the hull's side.
+        replace_in(
+            &f,
+            "{ frame = \"hull\", center = [-20, 95, 70], half = [55, 30, 25] }",
+            "{ frame = \"hull\", center = [-20, 125, 70], half = [55, 30, 25] }",
+        );
+        // The transmission with both `box` and `boxes`.
+        replace_in(
+            &f,
+            "box = { frame = \"hull\", center = [200, 0, 85], half = [60, 30, 40] }",
+            "box = { frame = \"hull\", center = [200, 0, 85], half = [60, 30, 40] }\nboxes = [{ frame = \"hull\", center = [200, 0, 85], half = [60, 30, 40] }]",
+        );
+        // No barrel on the main gun.
+        replace_in(&f, "barrel = { length_cm = 335, radius_cm = 8 }", "");
+        // A filler with too many rays.
+        replace_in(
+            &r.join("defs/ammo/75mm_pzgr39.toml"),
+            "rays = 10",
+            "rays = 40",
+        );
+        // A fragment band upside down.
+        replace_in(
+            &r.join("defs/weapons/grw34.toml"),
+            "frag_elev_deg = [2, 50]",
+            "frag_elev_deg = [50, 2]",
+        );
+    });
+    let f = "defs/vehicles/ger_pz4_h.toml";
+    has(
+        &i,
+        &format!("{f}: components[5].boxes[0]"),
+        &["outside its frame", "hull box spans"],
+    );
+    has(&i, &format!("{f}: components[6].boxes"), &["not both"]);
+    has(
+        &i,
+        &format!("{f}: weapons[0].barrel"),
+        &["needs a barrel box"],
+    );
+    has(&i, "defs/ammo/75mm_pzgr39.toml: filler.rays", &["0..=16"]);
+    has(
+        &i,
+        "defs/weapons/grw34.toml: he.frag_elev_deg",
+        &["not [min, max]"],
+    );
+}
+
+/// S3b: a main gun may carry a special second penetrator, only with its
+/// HE round (indices: standard 0, HE 1, special 2).
+#[test]
+fn a_special_round_needs_the_he_round() {
+    let i = issues_of("special-round", |r| {
+        let f = r.join("defs/vehicles/ger_pz4_h.toml");
+        replace_in(&f, "{ id = \"ww2:75mm_sprgr34\", count = 30 },", "");
+    });
+    has(&i, "ammo", &["special armour-piercing"]);
+}
+
 #[test]
 fn setup_validate_rejects_broken_vehicles_and_ammo() {
     let d = load();
@@ -581,6 +653,31 @@ fn setup_validate_rejects_broken_vehicles_and_ammo() {
         "vehicles.armour",
     );
     bad(&|t| t.vehicles[0].faction = 9, "vehicles.faction");
+    // S3b: the barrel box, the component boxes and the special round.
+    bad(
+        &|t| t.vehicles[0].mounts[0].barrel_length = Fixed::ZERO,
+        "vehicles.mounts",
+    );
+    bad(
+        &|t| t.vehicles[0].components[5].parts.clear(),
+        "vehicles.components",
+    );
+    bad(
+        &|t| {
+            let p = t.vehicles[0].components[5].parts[0];
+            t.vehicles[0].components[5].parts.extend([p; 4]);
+        },
+        "vehicles.components",
+    );
+    bad(
+        &|t| {
+            let m = &mut t.vehicles[0].mounts[0];
+            let first = m.ammo[0].clone();
+            m.ammo.swap(0, 1);
+            m.ammo.push(first);
+        },
+        "vehicles.mounts",
+    );
     let ap = s
         .ammo
         .iter()

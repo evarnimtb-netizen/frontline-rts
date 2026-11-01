@@ -539,11 +539,14 @@ vehicles: [                        # own + seen enemy + every wreck, ascending i
     components: {                  # fraction of full HP, 0..1
       engine: float, track_l: float, track_r: float,
       gun: float, ring: float, ammo_rack: float,
+      transmission: float,         # S3b: gearbox and final drives
     },
     repairing: String,             # "" | "engine" | "track_l" | "track_r" | "ring"
-    ammo: { ap: int, he: int },    # main-gun rounds left
-    loaded: String,                # round in the breech: "ap" | "he" | ""
-    ammo_choice: String,           # "auto" | "ap" | "he" (SetAmmo)
+                                   # | "transmission"
+    ammo: { ap: int, he: int,      # main-gun rounds left; S3b: apcr only on a
+            apcr: int },           # gun that carries a special round (Panzer IV)
+    loaded: String,                # round in the breech: "ap" | "he" | "apcr" | ""
+    ammo_choice: String,           # "auto" | "ap" | "he" | "apcr" (SetAmmo)
     reload: float,                 # 0..1, 1 = ready to fire
     target: int,                   # enemy vehicle the gun is on, -1 none
     followers: int,                # soldiers escorting it (FollowUnits)
@@ -575,14 +578,16 @@ armour_events: [                   # new since last frame, in sim order. Own
                                    # vehicle's last owner, not -1)
     attacker: int,                 # firing player, -1 none (fire, bogging)
     component: String,             # per kind:
-                                   #   fired: the round, "ap" | "he"
+                                   #   fired: the round, "ap" | "he" | "apcr"
                                    #   component_hit (damaged, still works) and
                                    #   disabled (reached 0 HP): "engine" |
                                    #   "track_l" | "track_r" | "gun" | "ring" |
-                                   #   "ammo_rack"
+                                   #   "ammo_rack" | "transmission" (S3b)
                                    #   crew_hit: the seat role, "driver" ...
                                    #   knocked_out: the cause, "crew" |
-                                   #   "ammo_rack" | "fire"
+                                   #   "ammo_rack" | "fire" | "ammo_fire" (S3b:
+                                   #   a rack fire burned out; "crew": fewer
+                                   #   than the rules' crew_ko_below alive)
                                    #   others: ""
     zone: String,                  # ricochet / no_pen / pen: the plate's zone
                                    # ("hull_front" ... "turret_top"), else ""
@@ -667,7 +672,7 @@ soldiers). Squad-level intents (`move {squads}` ...) never carry vehicles.
 | `reverse_units` | `{units, target: Vector3}` | ReverseUnits `{units, target}` | vehicles back up to `target`, front kept toward the enemy; soldiers in the set get a MoveUnits |
 | `face_units` | `{units, target: Vector3}` | FaceUnits `{units, toward}` | vehicles turn the hull front to the point and hold; soldiers dropped |
 | `attack_unit` | `{units, target: int}` | AttackUnit `{units, target}` | `target`: a seen enemy vehicle's id. Own vehicles and launcher gunners in `units` focus it while it is seen; vehicles without range or line of fire close in. Other men ignore it |
-| `set_ammo` | `{units, ammo: String}` | SetAmmo `{units, ammo}` | `"auto"`, `"ap"` or `"he"`; vehicles only |
+| `set_ammo` | `{units, ammo: String}` | SetAmmo `{units, ammo}` | `"auto"`, `"ap"`, `"he"` or (S3b) `"apcr"` (a gun without it fires its standard round); vehicles only |
 | `repair_units` | `{units}` | RepairUnits `{units}` | crews repair the worst repairable component in place (no move or main gun meanwhile) |
 | `follow_units` | `{units, vehicle: int}` | FollowUnits `{units, vehicle}` | soldiers escort a friendly vehicle (single file behind it); vehicle ids in `units` are dropped |
 | `dig`, `dig_units` | as S1b, plus `profile: String` *opt* | Dig `{squad, line, profile}`, DigUnits `{units, line, profile}` | `"trench"` (default) or `"at_ditch"` (engineers only, at most `rules.dig_profiles.at_ditch.max_m`) |
@@ -694,7 +699,7 @@ orders, vehicles theirs; vehicle-only keys affect only vehicles.
 | Right-click on an own vehicle with infantry selected | `follow_units` (the soldiers) |
 | Alt+right-click | `reverse_units` |
 | O | face tool: click a point, `face_units` |
-| N | next ammo for the selected vehicles: Auto → AP → HE (`set_ammo`, from the first selected vehicle's `ammo_choice`) |
+| N | next ammo for the selected vehicles: Auto → AP → (APCR, S3b, on a gun that carries it) → HE (`set_ammo`, from the first selected vehicle's `ammo_choice`) |
 | J | `repair_units` |
 
 Picking: a vehicle is hit inside its projected footprint (`hull_length` ×

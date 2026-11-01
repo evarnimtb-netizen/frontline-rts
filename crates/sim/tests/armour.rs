@@ -35,7 +35,7 @@ fn tables_are_built_at_start_and_rebuilt_after_load() {
     }
     let t = w.game().unwrap().armour().clone();
     assert_eq!(t.vehicles.len(), 2);
-    assert_eq!(t.ammo.len(), 6);
+    assert_eq!(t.ammo.len(), 7);
     // The Panzer IV's hull front: 80 mm, normal tilted up 10°.
     let front = t.vehicles[pz].face(BoxPart::Hull, Face::Front);
     assert_eq!(front.zone, Some(ArmourZone::HullFront));

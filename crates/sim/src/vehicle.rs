@@ -100,6 +100,9 @@ pub enum AmmoChoice {
     Auto = 0,
     Ap = 1,
     He = 2,
+    /// S3b: the special penetrator (PzGr 40 APCR); the standard one on a
+    /// gun without it.
+    Apcr = 3,
 }
 
 /// One crew seat, in the def's seat order.
@@ -175,6 +178,9 @@ pub struct VehicleState {
     pub since_fire: u16,
     /// Ticks the engine fire has burned (0: not burning).
     pub burn: u16,
+    /// S3b: ticks the ammo fire has burned (0: none); it knocks the
+    /// vehicle out after the rules' `damage.ammo_fire_s`.
+    pub ammo_fire: u16,
     /// Component index being field-repaired.
     pub repairing: Option<u8>,
     /// Field-repair progress of `repairing`, in HP × ticks (the def's rate
@@ -249,6 +255,7 @@ impl VehicleState {
             ranging: 0,
             since_fire: u16::MAX,
             burn: 0,
+            ammo_fire: 0,
             repairing: None,
             repair_progress: 0,
             base_ticks: 0,
@@ -301,19 +308,17 @@ impl VehicleState {
             || self.bog > 0
             || self.on_blocked
             || self.repairing.is_some()
-            || !self.manned(v, SeatRole::Driver)
-            || self.component(ComponentKind::Engine) == 0
-            || self.component(ComponentKind::TrackLeft) == 0
-            || self.component(ComponentKind::TrackRight) == 0
+            || self.immobilised(v)
     }
 
     /// Mechanically unable to move (`vehicle_flags::IMMOBILISED`): no
-    /// driver, engine or a track destroyed.
+    /// driver, engine, a track or (S3b) the transmission destroyed.
     pub fn immobilised(&self, v: &VehicleSetup) -> bool {
         !self.manned(v, SeatRole::Driver)
             || self.component(ComponentKind::Engine) == 0
             || self.component(ComponentKind::TrackLeft) == 0
             || self.component(ComponentKind::TrackRight) == 0
+            || self.component(ComponentKind::Transmission) == 0
     }
 
     /// Checks a loaded state against its def (untrusted saves): counts
@@ -359,6 +364,7 @@ impl VehicleState {
                         > w.reload_ticks.max(w.interval_milli.div_ceil(1000)).max(1)
             })
             || self.burn as u32 > r.fire_burnout_ticks
+            || self.ammo_fire as u32 > r.damage.ammo_fire_s * s.tick_hz.max(1)
             || self.repairing.is_some_and(|k| {
                 v.components
                     .iter()
@@ -432,6 +438,12 @@ pub struct Geo {
     pub reach: Fx,
     /// Commander's eye above the hull origin.
     pub eye: Fx,
+    /// S3b barrel box: the main gun's trunnion (`(0, muzzle.y, muzzle.z)`
+    /// in the turret frame), the muzzle's distance along the gun, and the
+    /// box's half extents (half the barrel length, its radius twice).
+    pub trunnion: FxVec3,
+    pub muzzle_x: Fx,
+    pub barrel_half: FxVec3,
 }
 
 impl Geo {
@@ -464,6 +476,16 @@ impl Geo {
             max_tilt: deg(drv.max_tilt_deg as i32),
             reach: hull_r.max(turret_r).max(gun_r),
             eye: v.eye_height.into(),
+            trunnion: {
+                let mz = v3(v.main_gun().muzzle);
+                FxVec3::new(Fx::ZERO, mz.y, mz.z)
+            },
+            muzzle_x: v3(v.main_gun().muzzle).x,
+            barrel_half: {
+                let m = v.main_gun();
+                let r: Fx = m.barrel_radius.into();
+                FxVec3::new(Fx::from(m.barrel_length).div_int(2), r, r)
+            },
         }
     }
 
@@ -544,6 +566,9 @@ pub struct VehicleFrame {
     /// Turret pivot in world space.
     pub pivot: FxVec3,
     pub turret: BoxFrame,
+    /// S3b: the main gun's exposed barrel, turning and elevating with the
+    /// gun (zero half extents: none).
+    pub barrel: BoxFrame,
     /// [`Geo::reach`].
     pub reach: Fx,
 }
@@ -582,6 +607,15 @@ pub fn frame_of(
     let origin = t.pos;
     let pivot = origin + hull_axes.apply(geo.pivot);
     let turret_axes = hull_axes.turned(vs.turret_yaw);
+    // The gun's axes: the turret's turned up by the gun's pitch about its
+    // y axis (`gunnery::main_muzzle` points along the same x).
+    let (sp, cp) = vs.gun_pitch.sin_cos();
+    let gun_axes = Basis {
+        x: turret_axes.x * cp + turret_axes.z * sp,
+        y: turret_axes.y,
+        z: turret_axes.z * cp - turret_axes.x * sp,
+    };
+    let trunnion = pivot + turret_axes.apply(geo.trunnion);
     VehicleFrame {
         id,
         owner,
@@ -599,6 +633,11 @@ pub fn frame_of(
             center: pivot + turret_axes.apply(geo.turret_center),
             axes: turret_axes,
             half: geo.turret_half,
+        },
+        barrel: BoxFrame {
+            center: trunnion + gun_axes.x * (geo.muzzle_x - geo.barrel_half.x),
+            axes: gun_axes,
+            half: geo.barrel_half,
         },
         reach: geo.reach,
     }
@@ -1094,6 +1133,14 @@ pub fn drive(
     if (vs.component(ComponentKind::Engine) as u32) < 50 {
         pct = pct * 50 / 100;
     }
+    // S3b: a damaged transmission (below half its HP) halves speed too.
+    let gearbox = v
+        .components
+        .get(ComponentKind::Transmission.index())
+        .map_or(0, |c| c.hp);
+    if (vs.component(ComponentKind::Transmission) as u32) * 2 < gearbox {
+        pct = pct * 50 / 100;
+    }
     let scale = |s: Fx| s.mul_int(pct as i32).div_int(100);
     let mut max_f = scale(m.speed.into());
     let mut max_r = scale(m.reverse.into());
@@ -1428,6 +1475,7 @@ impl MatchState {
             vs.repairing = None;
             vs.repair_progress = 0;
             vs.burn = 0;
+            vs.ammo_fire = 0;
             vs.base_ticks = 0;
             vs.followers.clear();
             vs.face = None;
@@ -2051,6 +2099,45 @@ mod tests {
         r.vs.seats[0].hp = 40;
         r.drive(127, 0, 200);
         assert_eq!(r.vs.speed, Fx::from_int(6).mul_int(50 * 80).div_int(10_000));
+        // S3b: a damaged transmission (under half its HP) halves top speed
+        // too; destroyed, it immobilises.
+        let mut r = Rig::new();
+        r.vs.components[ComponentKind::Transmission.index()] = 49;
+        r.drive(127, 0, 200);
+        assert_eq!(r.vs.speed, Fx::from_int(3));
+        let mut r = Rig::new();
+        let at = r.xy();
+        r.vs.components[ComponentKind::Transmission.index()] = 0;
+        assert!(r.vs.immobilised(&r.s.vehicles[0]));
+        r.drive(127, 0, 30);
+        assert_eq!(r.xy(), at);
+    }
+
+    #[test]
+    fn the_barrel_box_follows_the_gun() {
+        let r = Rig::new();
+        let m = r.s.vehicles[0].main_gun();
+        let mut vs = r.vs.clone();
+        let f = frame_of(SimId(1), PlayerId(0), &r.t, &vs, &r.geo);
+        // Along the hull axis (east), from the turret front to the muzzle.
+        let muzzle = crate::gunnery::main_muzzle(&f, &vs, m);
+        let tip = f.barrel.center + f.barrel.axes.x * f.barrel.half.x;
+        assert!(
+            (tip - muzzle).length() < Fx::from_milli(5),
+            "{tip:?} {muzzle:?}"
+        );
+        assert_eq!(f.barrel.half.x, Fx::from(m.barrel_length).div_int(2));
+        // Turned 90° and elevated 10°: the box turns with the gun.
+        vs.turret_yaw = Fx::FRAC_PI_2;
+        vs.gun_pitch = crate::armour::deg(10);
+        let f = frame_of(SimId(1), PlayerId(0), &r.t, &vs, &r.geo);
+        let muzzle = crate::gunnery::main_muzzle(&f, &vs, m);
+        let tip = f.barrel.center + f.barrel.axes.x * f.barrel.half.x;
+        assert!(
+            (tip - muzzle).length() < Fx::from_milli(5),
+            "{tip:?} {muzzle:?}"
+        );
+        assert!(f.barrel.axes.x.y > Fx::from_milli(950) && f.barrel.axes.x.z > Fx::ZERO);
     }
 
     #[test]

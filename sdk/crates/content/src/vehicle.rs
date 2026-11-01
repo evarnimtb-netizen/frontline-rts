@@ -147,14 +147,19 @@ pub enum ComponentKind {
     Engine = 0,
     TrackLeft = 1,
     TrackRight = 2,
-    /// Main gun: a breech box inside the turret plus a barrel anchor.
+    /// Main gun: a breech box inside the turret; S3b: plus the barrel box
+    /// of the main-gun mount (`MountDef::barrel`), which a round must strike.
     Gun = 3,
     TurretRing = 4,
+    /// S3b: may have several boxes (the stowage bins), one HP pool.
     AmmoRack = 5,
+    /// S3b: the gearbox and final drives (damaged: half speed; destroyed:
+    /// immobilised).
+    Transmission = 6,
 }
 
 /// Number of [`ComponentKind`]s (every vehicle has each exactly once).
-pub const COMPONENTS: usize = 6;
+pub const COMPONENTS: usize = 7;
 
 impl ComponentKind {
     pub const ALL: [ComponentKind; COMPONENTS] = [
@@ -164,6 +169,7 @@ impl ComponentKind {
         ComponentKind::Gun,
         ComponentKind::TurretRing,
         ComponentKind::AmmoRack,
+        ComponentKind::Transmission,
     ];
 
     #[inline]
@@ -179,10 +185,11 @@ impl ComponentKind {
             ComponentKind::Gun => "gun",
             ComponentKind::TurretRing => "turret_ring",
             ComponentKind::AmmoRack => "ammo_rack",
+            ComponentKind::Transmission => "transmission",
         }
     }
 
-    /// Needs a box (internal); tracks are anchors only.
+    /// Needs at least one box (internal); tracks are anchors only.
     pub const fn has_box(self) -> bool {
         !self.is_track()
     }
@@ -314,6 +321,13 @@ pub enum ArmourMaterial {
 pub const MAX_MOUNTS: usize = 4;
 pub const MAX_ANCHORS: usize = 4;
 pub const MAX_STATIONS: usize = 4;
+/// Most boxes one component may have (S3b: stowage bins).
+pub const MAX_COMPONENT_BOXES: usize = 4;
+/// Most filler fragment rays of an APHE round (S3b).
+pub const MAX_FILLER_RAYS: u32 = 16;
+/// Most rounds a main gun carries: a penetrator, HE and a second
+/// (special) penetrator (S3b, e.g. PzGr 40 APCR).
+pub const MAX_MAIN_AMMO: usize = 3;
 /// Steepest climb a vehicle def may allow: the 30° pitch clamp (tan 30° is
 /// 0.577), so a slope it may climb never exceeds the clamp.
 pub const MAX_VEHICLE_SLOPE_PCT: u32 = 57;
@@ -593,16 +607,31 @@ pub struct MountDef {
     /// `turret_main`: gun depression and elevation limits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub elevation_deg: Option<[i32; 2]>,
-    /// `turret_main`: rounds carried, at most one armour-piercing (ap,
-    /// aphe or heat) and one he round.
+    /// `turret_main`: rounds carried: one armour-piercing round (ap, aphe
+    /// or heat), at most one he round and, with the he round, at most one
+    /// second armour-piercing round (S3b: a special round such as APCR; the
+    /// first penetrator listed is the standard one).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ammo: Vec<AmmoLoadDef>,
+    /// `turret_main` (S3b): the exposed barrel, a box from the muzzle back
+    /// `length_cm` along the gun, `radius_cm` half-width. A main-gun round
+    /// or rocket striking it damages the gun; small arms stop on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barrel: Option<BarrelDef>,
     /// `hull`: traverse either side of straight ahead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arc_deg: Option<u32>,
     /// Who fires it (default: the gunner; `hull` needs one).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat: Option<SeatRole>,
+}
+
+/// The main gun's exposed barrel (S3b).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BarrelDef {
+    pub length_cm: u32,
+    pub radius_cm: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -620,11 +649,16 @@ pub struct ComponentDef {
     #[serde(rename = "type")]
     pub kind: ComponentKind,
     pub hp: u32,
-    /// Internal components (and the gun's breech): a box inside its frame.
+    /// Internal components (and the gun's breech): a box inside its frame
+    /// ...
     #[serde(default, rename = "box", skip_serializing_if = "Option::is_none")]
     pub bounds: Option<PartBoxDef>,
-    /// External parts: tracks (front, middle, rear) and the gun barrel
-    /// (the mantlet centre). Non-penetrating hits within 1 m damage them.
+    /// ... or (S3b) several boxes sharing one HP pool, e.g. ammo stowage
+    /// bins. Set `box` or `boxes`, not both.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boxes: Vec<PartBoxDef>,
+    /// Tracks: anchor points (front, middle, rear) for blast overpressure.
+    /// S3b: the gun has none (its barrel is the main-gun mount's box).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub anchors: Vec<AnchorDef>,
     /// Field repair by the crew; none if absent.
@@ -707,7 +741,8 @@ pub struct AmmoDef {
     pub pen_reference_angle_deg: u32,
     /// Impacts more oblique than this (from the plate normal) ricochet.
     pub ricochet_angle_deg: u32,
-    /// Damage to external parts within 1 m of a non-penetrating hit.
+    /// Damage to the gun when this round strikes its barrel (S3b; it was
+    /// "external parts within 1 m of a non-penetrating hit").
     #[serde(default)]
     pub nonpen_damage: u32,
     /// Damage to a track from a hit in the running-gear band.
@@ -752,15 +787,20 @@ pub struct SpallDef {
     pub cone_deg: u32,
 }
 
-/// An AP round's HE filler.
+/// An AP round's HE filler (S3b: fragment rays, physical-contact rule).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FillerDef {
-    /// Bursts this far past the entry point ...
+    /// Bursts this far past the entry point along the shell path ...
     pub offset_cm: u32,
-    /// ... and deals `damage` to boxes within this radius.
-    pub radius_cm: u32,
+    /// ... into this many fragment rays (at most 16) ...
+    pub rays: u32,
+    /// ... in a cone of this half-angle around the path ...
+    pub cone_deg: u32,
+    /// ... each dealing `damage` to the first box it crosses within
+    /// `reach_cm`.
     pub damage: u32,
+    pub reach_cm: u32,
 }
 
 // ----------------------------------------------------- per-file checks --
@@ -1096,11 +1136,36 @@ impl VehicleDef {
                             }
                         }
                     }
-                    if w.ammo.is_empty() || w.ammo.len() > 2 {
+                    if w.ammo.is_empty() || w.ammo.len() > MAX_MAIN_AMMO {
                         out.push(Issue::new(
                             format!("{p}.ammo"),
-                            format!("the main gun carries 1 or 2 rounds, got {}", w.ammo.len()),
+                            format!(
+                                "the main gun carries 1..={MAX_MAIN_AMMO} rounds, got {}",
+                                w.ammo.len()
+                            ),
                         ));
+                    }
+                    match &w.barrel {
+                        None => out.push(
+                            Issue::new(format!("{p}.barrel"), "the main gun needs a barrel box")
+                                .with_hint("barrel = { length_cm = 300, radius_cm = 8 }"),
+                        ),
+                        Some(b) => {
+                            range(
+                                &mut out,
+                                &format!("{p}.barrel.length_cm"),
+                                b.length_cm as i64,
+                                1,
+                                1000,
+                            );
+                            range(
+                                &mut out,
+                                &format!("{p}.barrel.radius_cm"),
+                                b.radius_cm as i64,
+                                1,
+                                50,
+                            );
+                        }
                     }
                     for (k, a) in w.ammo.iter().enumerate() {
                         range(
@@ -1119,10 +1184,10 @@ impl VehicleDef {
                     }
                 }
                 MountKind::Coax | MountKind::Hull => {
-                    if !w.ammo.is_empty() || w.elevation_deg.is_some() {
+                    if !w.ammo.is_empty() || w.elevation_deg.is_some() || w.barrel.is_some() {
                         out.push(Issue::new(
                             p.clone(),
-                            "only the main gun has `ammo` and `elevation_deg`",
+                            "only the main gun has `ammo`, `elevation_deg` and `barrel`",
                         ));
                     }
                     if w.mount == MountKind::Hull {
@@ -1172,20 +1237,42 @@ impl VehicleDef {
         for (i, c) in self.components.iter().enumerate() {
             let p = format!("components[{i}]");
             range(&mut out, &format!("{p}.hp"), c.hp as i64, 1, 1000);
-            match (c.kind.has_box(), &c.bounds) {
-                (true, None) => out.push(Issue::new(
-                    format!("{p}.box"),
-                    format!("`{}` needs a box", c.kind.name()),
-                )),
-                (false, Some(_)) => out.push(Issue::new(
+            let n_boxes = c.bounds.is_some() as usize + c.boxes.len();
+            match (c.kind.has_box(), n_boxes) {
+                (true, 0) => out.push(
+                    Issue::new(
+                        format!("{p}.box"),
+                        format!("`{}` needs a box", c.kind.name()),
+                    )
+                    .with_hint("box = { frame = \"hull\", center = [x, y, z], half = [x, y, z] }"),
+                ),
+                (false, n) if n > 0 => out.push(Issue::new(
                     format!("{p}.box"),
                     "tracks have anchors, not a box",
                 )),
-                (true, Some(b)) => check_part(&mut out, &format!("{p}.box"), b, hull, turret),
-                (false, None) => {}
+                _ => {}
+            }
+            if c.bounds.is_some() && !c.boxes.is_empty() {
+                out.push(
+                    Issue::new(format!("{p}.boxes"), "set `box` or `boxes`, not both")
+                        .with_hint("move the `box` into `boxes`"),
+                );
+            }
+            if c.boxes.len() > MAX_COMPONENT_BOXES {
+                out.push(Issue::new(
+                    format!("{p}.boxes"),
+                    format!("at most {MAX_COMPONENT_BOXES} boxes, got {}", c.boxes.len()),
+                ));
+            }
+            if c.kind.has_box() {
+                if let Some(b) = &c.bounds {
+                    check_part(&mut out, &format!("{p}.box"), b, hull, turret);
+                }
+                for (k, b) in c.boxes.iter().enumerate() {
+                    check_part(&mut out, &format!("{p}.boxes[{k}]"), b, hull, turret);
+                }
             }
             let anchors = match c.kind {
-                ComponentKind::Gun => 1..=1,
                 k if k.is_track() => 1..=MAX_ANCHORS,
                 _ => 0..=0,
             };
@@ -1374,7 +1461,7 @@ impl AmmoDef {
             "filler",
             self.filler.is_some(),
             self.mechanism == AmmoMechanism::Aphe,
-            "offset_cm = 100, radius_cm = 120, damage = 80",
+            "offset_cm = 100, rays = 10, cone_deg = 60, damage = 60, reach_cm = 150",
         );
         need(
             &mut out,
@@ -1395,8 +1482,16 @@ impl AmmoDef {
         }
         if let Some(f) = &self.filler {
             range(&mut out, "filler.offset_cm", f.offset_cm as i64, 0, 500);
-            range(&mut out, "filler.radius_cm", f.radius_cm as i64, 1, 500);
+            range(
+                &mut out,
+                "filler.rays",
+                f.rays as i64,
+                0,
+                MAX_FILLER_RAYS as i64,
+            );
+            range(&mut out, "filler.cone_deg", f.cone_deg as i64, 1, 89);
             range(&mut out, "filler.damage", f.damage as i64, 0, 1000);
+            range(&mut out, "filler.reach_cm", f.reach_cm as i64, 1, 500);
         }
         if let Some(h) = &self.he {
             for i in h.validate() {
@@ -1545,8 +1640,13 @@ pub struct MountSetup {
     pub muzzle: FixedVec3,
     /// `TurretMain`: [depression, elevation] in integer degrees; 0 others.
     pub elevation_deg: [i32; 2],
-    /// `TurretMain`: rounds carried (penetrator first, then HE).
+    /// `TurretMain`: rounds carried (penetrator first, then HE, then the
+    /// special penetrator, S3b).
     pub ammo: Vec<AmmoLoadSetup>,
+    /// `TurretMain` (S3b): the exposed barrel's length and half-width, m
+    /// (0 others).
+    pub barrel_length: Fixed,
+    pub barrel_radius: Fixed,
     /// `Hull`: traverse either side, integer degrees; 0 others.
     pub arc_deg: i32,
     pub seat: SeatRole,
@@ -1563,7 +1663,8 @@ pub struct RepairSetup {
 pub struct ComponentSetup {
     pub kind: ComponentKind,
     pub hp: u32,
-    pub part: Option<PartBoxSetup>,
+    /// Its boxes (S3b: several for stowage bins; none for tracks).
+    pub parts: Vec<PartBoxSetup>,
     pub anchors: Vec<AnchorSetup>,
     pub repair: Option<RepairSetup>,
 }
@@ -1650,8 +1751,10 @@ pub struct SpallSetup {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FillerSetup {
     pub offset: Fixed,
-    pub radius: Fixed,
+    pub rays: u8,
+    pub cone_deg: i32,
     pub damage: u32,
+    pub reach: Fixed,
 }
 
 /// A resolved round (see [`AmmoDef`]).
@@ -1711,8 +1814,10 @@ pub(crate) fn lower_ammo(a: &AmmoDef) -> AmmoSetup {
         }),
         filler: a.filler.map(|f| FillerSetup {
             offset: Fixed::from_cm(f.offset_cm),
-            radius: Fixed::from_cm(f.radius_cm),
+            rays: f.rays.min(MAX_FILLER_RAYS) as u8,
+            cone_deg: f.cone_deg as i32,
             damage: f.damage,
+            reach: Fixed::from_cm(f.reach_cm),
         }),
         blast: a.he.as_ref().map(crate::setup::lower_item_he),
     }
@@ -1733,9 +1838,20 @@ pub(crate) fn lower_vehicle(
     // Main gun first; the rest keep the def's order.
     mounts.sort_by_key(|w| w.mount != MountKind::TurretMain);
     let mount = |w: &MountDef| {
-        let mut loads: Vec<&AmmoLoadDef> = w.ammo.iter().collect();
-        // Penetrator first, then HE.
-        loads.sort_by_key(|a| ammo_def(&a.id) == Some(AmmoMechanism::He));
+        // Penetrators in the def's order, the HE round second (S3b: the
+        // standard penetrator, HE, then a special penetrator).
+        let mut loads: Vec<&AmmoLoadDef> = w
+            .ammo
+            .iter()
+            .filter(|a| ammo_def(&a.id) != Some(AmmoMechanism::He))
+            .collect();
+        if let Some(he) = w
+            .ammo
+            .iter()
+            .find(|a| ammo_def(&a.id) == Some(AmmoMechanism::He))
+        {
+            loads.insert(1.min(loads.len()), he);
+        }
         MountSetup {
             weapon: weapon(&w.def),
             kind: w.mount,
@@ -1750,6 +1866,12 @@ pub(crate) fn lower_vehicle(
                 .collect(),
             arc_deg: w.arc_deg.unwrap_or(0) as i32,
             seat: w.seat.unwrap_or(SeatRole::Gunner),
+            barrel_length: w
+                .barrel
+                .map_or(Fixed::ZERO, |b| Fixed::from_cm(b.length_cm)),
+            barrel_radius: w
+                .barrel
+                .map_or(Fixed::ZERO, |b| Fixed::from_cm(b.radius_cm)),
         }
     };
     let component = |k: ComponentKind| {
@@ -1761,7 +1883,12 @@ pub(crate) fn lower_vehicle(
         ComponentSetup {
             kind: k,
             hp: c.hp,
-            part: c.bounds.as_ref().map(PartBoxSetup::from),
+            parts: c
+                .bounds
+                .iter()
+                .chain(&c.boxes)
+                .map(PartBoxSetup::from)
+                .collect(),
             anchors: c
                 .anchors
                 .iter()
@@ -1908,7 +2035,11 @@ pub(crate) fn check_ammo(a: &AmmoSetup) -> Option<&'static str> {
         return Some("ammo.spall: out of range");
     }
     if let Some(f) = &a.filler
-        && (f.damage > 1000 || !fx_in(f.offset, 0, 5) || !fx_in(f.radius, 0, 5))
+        && (f.damage > 1000
+            || !fx_in(f.offset, 0, 5)
+            || !fx_in(f.reach, 0, 5)
+            || f.rays as u32 > MAX_FILLER_RAYS
+            || !(1..=89).contains(&f.cone_deg))
     {
         return Some("ammo.filler: out of range");
     }
@@ -2015,12 +2146,16 @@ pub(crate) fn check_vehicle(
         let elev_ok = !main
             || ((-30..=0).contains(&w.elevation_deg[0]) && (1..=60).contains(&w.elevation_deg[1]));
         let ammo_ok = if main {
-            (1..=2).contains(&w.ammo.len())
+            (1..=MAX_MAIN_AMMO).contains(&w.ammo.len())
                 && w.ammo
                     .iter()
                     .all(|l| (l.ammo as usize) < ammo.len() && l.count <= 500)
+                && w.barrel_length > Fixed::ZERO
+                && fx_in(w.barrel_length, 0, 10)
+                && w.barrel_radius > Fixed::ZERO
+                && fx_in(w.barrel_radius, 0, 1)
         } else {
-            w.ammo.is_empty()
+            w.ammo.is_empty() && w.barrel_length == Fixed::ZERO && w.barrel_radius == Fixed::ZERO
         };
         let arc_ok = if w.kind == MountKind::Hull {
             (1..=90).contains(&w.arc_deg)
@@ -2030,7 +2165,18 @@ pub(crate) fn check_vehicle(
         let muzzle_ok = [w.muzzle.x, w.muzzle.y, w.muzzle.z]
             .iter()
             .all(|&c| fx_in(c, -20, 20));
-        if !(elev_ok && ammo_ok && arc_ok && muzzle_ok) {
+        // S3b: standard penetrator, HE, special penetrator (`modset`).
+        let mech = |k: usize| {
+            w.ammo
+                .get(k)
+                .and_then(|l| ammo.get(l.ammo as usize))
+                .map(|a| a.mechanism)
+        };
+        let order_ok = w.ammo.len() < 3
+            || (mech(1) == Some(AmmoMechanism::He)
+                && mech(0).is_some_and(|m| m.penetrator())
+                && mech(2).is_some_and(|m| m.penetrator()));
+        if !(elev_ok && ammo_ok && arc_ok && muzzle_ok && order_ok) {
             return Some("vehicles.mounts: limits, ammo or arc out of range");
         }
     }
@@ -2039,14 +2185,16 @@ pub(crate) fn check_vehicle(
     }
     for (k, c) in ComponentKind::ALL.iter().zip(&v.components) {
         let anchors_ok = match k {
-            ComponentKind::Gun => c.anchors.len() == 1,
             k if k.is_track() => (1..=MAX_ANCHORS).contains(&c.anchors.len()),
             _ => c.anchors.is_empty(),
         };
-        let part_ok = match (&c.part, k.has_box()) {
-            (Some(p), true) => box_ok(&p.bounds) && inside(frame(p.frame), &p.bounds),
-            (None, false) => true,
-            _ => false,
+        let part_ok = if k.has_box() {
+            (1..=MAX_COMPONENT_BOXES).contains(&c.parts.len())
+                && c.parts
+                    .iter()
+                    .all(|p| box_ok(&p.bounds) && inside(frame(p.frame), &p.bounds))
+        } else {
+            c.parts.is_empty()
         };
         let repair_ok = c
             .repair

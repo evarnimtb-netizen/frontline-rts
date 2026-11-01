@@ -55,7 +55,7 @@ const ABILITY_KEYS := {&"ability_frag": "frag", &"ability_smoke": "smoke", &"abi
 ## Orders that carry vehicle ids too (in the *_units intent).
 const VEHICLE_ORDERS := [&"move", &"attack_move", &"stop", &"retreat"]
 ## Orders for vehicles only.
-const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"ammo_ap", &"ammo_he"]
+const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"ammo_ap", &"ammo_he", &"ammo_apcr"]
 
 var view: MatchView
 ## Selected own soldier ids, ascending.
@@ -392,12 +392,22 @@ func can(order: StringName) -> bool:
 			return item_count(String(order)) > 0
 		&"regroup":
 			return not selected_soldiers().is_empty()
+		&"ammo_apcr":
+			return selection_has_apcr()
 	if order in VEHICLE_ONLY:
 		return not selected_vehicles().is_empty()
 	return true
 
 
-## Sets the ammo choice of the selected vehicles ("auto", "ap", "he").
+## Whether the first selected vehicle's gun carries the special round
+## (S3b APCR).
+func selection_has_apcr() -> bool:
+	var vs := selected_vehicles()
+	return not vs.is_empty() and Vehicles.has_apcr(view.vehicles_by_id.get(vs[0], {}))
+
+
+## Sets the ammo choice of the selected vehicles ("auto", "ap", "he"; S3b
+## "apcr": a gun without it fires its standard round).
 func set_ammo(choice: String) -> void:
 	var vs := selected_vehicles()
 	if vs.is_empty() or not choice in Vehicles.AMMO_CHOICES:
@@ -425,7 +435,7 @@ func ammo_choice() -> String:
 func next_ammo() -> void:
 	var cur := ammo_choice()
 	if cur != "":
-		set_ammo(Vehicles.next_ammo(cur))
+		set_ammo(Vehicles.next_ammo(cur, selection_has_apcr()))
 
 
 # --- tools -----------------------------------------------------------------
@@ -446,7 +456,7 @@ func activate(order: StringName) -> void:
 			cancel_tool()
 		&"ammo":
 			next_ammo()
-		&"ammo_auto", &"ammo_ap", &"ammo_he":
+		&"ammo_auto", &"ammo_ap", &"ammo_he", &"ammo_apcr":
 			set_ammo(String(order).trim_prefix("ammo_"))
 		&"regroup":
 			view.emit_intent(&"regroup", {"squads": selected_squads()})

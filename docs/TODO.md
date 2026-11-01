@@ -177,6 +177,40 @@ TOML. Work proceeds on the (A) defaults below.
   protection rule). (B) Refuse or move a spawn when enemies are within
   some distance of the base.
 
+Part A stage (2026-11-01, `docs/slices/S3b-balance.md` "Part A: physical
+damage, armour, gunnery and content (stage done)"): new questions, work
+proceeds on (A).
+
+- [ ] **S3b-19. Grenade fragments and blast.** The spec's starting values
+  (blast 1 m, 48 fragments, 2 per fragment on tracks) left grenades thrown
+  into a trench with a third to a half of their old effect. (A) Blast 2 m
+  (the old lethal radius, the owner's "about lethal radius"), 96
+  fragments, 0 on tracks; Tune measures. (B) The spec's values.
+- [ ] **S3b-20. Fragments on tracks.** At 5 per fragment a mortar bomb
+  1 m from a hull broke the track by fragments alone (about 20 strike the
+  band). (A) 1 per fragment (0 for grenades); the overpressure still
+  breaks tracks as before. (B) 5, and tracks break more often.
+- [ ] **S3b-21. Moving-target misses.** The lead estimation error (S3b-6
+  (A)) is in, but at 300 m a crossing tank's lead (2.9 m at 6 m/s) is
+  less than half its 5.8 m length, so even a wrong lead hits: case 3d is
+  still 86 % of stationary (40 % error and 0 % give the same, 200 % gives
+  82 %). (A) The Tune stage raises `moving_target_spread_pct` (the
+  spec's second lever). (B) Add a range-estimation error (the main WW2
+  miss on movers) per engagement, in a later slice.
+- [ ] **S3b-22. HE against a parapet, the metric.** The spoil rule (A7)
+  works when a burst is centred on the parapet (unit-tested: up to
+  0.45 m off), but case 9's lip metric averages the lip over 41 m, so one
+  0.6 m crater barely moves it (0.0024 m per burst vs the 0.05 target).
+  (A) The Tune stage adds a local report row (lip lost within 1 m of each
+  burst) before judging T14. (B) Widen the rule (spoil flies from a
+  larger radius).
+- [ ] **S3b-23. Mortar lethality.** With fragments, a 10-round barrage
+  kills 58 in the open (was 74, -22 %, just outside the spec's ±20 %) and
+  6 in a trench (was 28). (A) The Tune stage moves the mortar's
+  `frag_count`/`frag_damage` to bring the open number within ±20 %;
+  trenches protecting this much against mortars is realistic and kept.
+  (B) Keep as is.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an

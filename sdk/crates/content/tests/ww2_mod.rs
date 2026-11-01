@@ -64,7 +64,8 @@ fn ww2_mod_loads_clean() {
         d.vehicles.keys().collect::<Vec<_>>(),
         ["ww2:ger_pz4_h", "ww2:usa_m4a3_75"]
     );
-    assert_eq!(d.ammo.len(), 6);
+    // S3: six rounds; S3b: the PzGr 40 APCR.
+    assert_eq!(d.ammo.len(), 7);
     assert_eq!(
         d.factions.keys().collect::<Vec<_>>(),
         ["ww2:germany", "ww2:usa"]
@@ -136,7 +137,9 @@ fn skirmish_resolves_to_fixed_point() {
     assert_eq!(mg42.setup_ticks, 90);
     let mortar = s.weapons.iter().find(|w| w.id == "ww2:grw34").unwrap();
     assert_eq!(mortar.class, WeaponClass::Mortar);
-    assert_eq!(mortar.he.as_ref().unwrap().lethal_radius, Fixed(3 << 16));
+    let mhe = mortar.he.as_ref().unwrap();
+    assert_eq!(mhe.blast_radius, Fixed::from_ratio(3, 2));
+    assert_eq!((mhe.frag_count, mhe.frag_reach), (96, Fixed::from_int(15)));
     // Ridge plus valley.
     assert_eq!(s.map.terrain.bands.len(), 2);
     assert!(s.map.terrain.bands[1].height < Fixed::ZERO);
@@ -252,7 +255,8 @@ fn items_and_loadouts_resolve() {
     assert_eq!(frag.range_max, Fixed::from_int(30));
     assert_eq!((frag.windup_ticks, frag.fuse_ticks), (30, 120));
     let he = frag.he.as_ref().unwrap();
-    assert_eq!(he.blast.lethal_radius, Fixed::from_int(2));
+    assert_eq!(he.blast.blast_radius, Fixed::from_int(2));
+    assert_eq!(he.blast.frag_count, 96);
     assert!(!he.cuts_trenches && frag.smoke.is_none());
     let satchel = s
         .items

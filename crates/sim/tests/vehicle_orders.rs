@@ -13,7 +13,8 @@ use frontline_content::{
 };
 use frontline_sim::vehicle::{AmmoChoice, node_at, sample_ground};
 use frontline_sim::{
-    Command, CommandKind, EntityKind, Fx, FxVec2, Order, PlayerId, SimId, SquadId, World,
+    ArmourEventKind, Command, CommandKind, EntityKind, Fx, FxVec2, Order, PlayerId, SimId, SquadId,
+    World,
 };
 
 /// Flat open ground with the test unlock, both sides human.
@@ -31,6 +32,9 @@ fn setup() -> MatchSetup {
     s.map.terrain.octaves.clear();
     s.map.terrain.bands.clear();
     s.map.woods.clear();
+    // S3b: `disarm` keeps only a driver; the old crew rule (knocked out
+    // only when empty) keeps such a target alive under fire.
+    s.rules.vehicles.damage.crew_ko_below = 0;
     s
 }
 
@@ -525,6 +529,7 @@ fn attack_unit_closes_in_until_the_gun_has_the_target() {
         "{:?}",
         order(&w, sq)
     );
+    let fired = w.stats().shots_fired;
     let got = run_until(&mut w, 30 * 120, |w| {
         w.game().unwrap().vehicle(v).unwrap().target == Some(enemy) && order(w, sq) == Order::Idle
     });
@@ -533,7 +538,8 @@ fn attack_unit_closes_in_until_the_gun_has_the_target() {
     assert!(d <= Fx::from_int(121), "{d:?}");
     assert!(d >= Fx::from_int(60), "drove too close: {d:?}");
     // It fires at it.
-    let fired = w.stats().shots_fired;
+    // It fires at it (S3b: the first round may already have knocked the
+    // disarmed tank out, in the tick it came into range).
     for _ in 0..30 * 10 {
         w.step(&[]);
     }
@@ -558,6 +564,86 @@ fn set_ammo_he_loads_he_even_at_a_tank() {
     assert!(run_until(&mut w, 30 * 30, |w| {
         w.game().unwrap().vehicle(v).unwrap().loaded == Some(he)
     }));
+}
+
+/// S3b: the Panzer IV's PzGr 40 APCR (the special third round). `Apcr`
+/// loads it; `Auto` loads it only against a target the PzGr 39 likely
+/// fails on, where the APCR does better; a Sherman (no special round)
+/// loads its AP for `Apcr`.
+#[test]
+fn apcr_goes_only_where_ap_would_likely_fail() {
+    use frontline_sim::gunnery::{AP, SPECIAL};
+    let loads = |thick_mm: i32, choice: Option<AmmoChoice>| {
+        let mut s = setup();
+        let sh = s
+            .vehicles
+            .iter()
+            .position(|v| v.id == "ww2:usa_m4a3_75")
+            .unwrap();
+        s.vehicles[sh].armour[frontline_content::ArmourZone::HullFront.index()].thickness =
+            frontline_content::Fixed::from_int(thick_mm);
+        let mut w = World::new_match(s, 1).unwrap();
+        let (_, v) = tank(&mut w, 0, xy(350, 500), EAST);
+        let (_, enemy) = tank(&mut w, 1, xy(650, 500), WEST);
+        disarm(&mut w, enemy);
+        if let Some(c) = choice {
+            w.step(&[cmd(
+                0,
+                0,
+                CommandKind::SetAmmo {
+                    units: vec![v],
+                    ammo: c,
+                },
+            )]);
+        }
+        let mut fired = Vec::new();
+        for _ in 0..30 * 20 {
+            w.step(&[]);
+            for e in &w.snapshot().armour_events {
+                if e.kind == ArmourEventKind::Fired as u8 && e.vehicle == v.0 {
+                    fired.push(e.component);
+                }
+            }
+            if fired.len() >= 2 {
+                break;
+            }
+        }
+        fired
+    };
+    // The real Sherman (63.5 mm at 47°): the PzGr 39 goes through; Auto
+    // keeps AP (event kind 1).
+    let f = loads(64, None);
+    assert!(!f.is_empty() && f.iter().all(|&k| k == 1), "{f:?}");
+    // An 82 mm glacis (about 120 mm effective): the PzGr 39 at 300 m has a
+    // poor chance, the PzGr 40 a better one: Auto swaps to it (kind 3).
+    let f = loads(82, None);
+    assert!(f.contains(&3), "{f:?}");
+    // So thick that neither gets through: Auto stays with AP.
+    let f = loads(150, None);
+    assert!(!f.is_empty() && f.iter().all(|&k| k == 1), "{f:?}");
+    // Ordered: APCR at the real Sherman too.
+    let f = loads(64, Some(AmmoChoice::Apcr));
+    assert!(f.contains(&3), "{f:?}");
+    let _ = (AP, SPECIAL);
+}
+
+/// S3b: `Apcr` on a gun without a special round loads its standard one.
+#[test]
+fn apcr_on_a_gun_without_it_loads_ap() {
+    let mut w = World::new_match(setup(), 1).unwrap();
+    let (_, v) = tank(&mut w, 1, xy(600, 500), WEST);
+    w.step(&[cmd(
+        1,
+        0,
+        CommandKind::SetAmmo {
+            units: vec![v],
+            ammo: AmmoChoice::Apcr,
+        },
+    )]);
+    assert!(run_until(&mut w, 30 * 10, |w| {
+        w.game().unwrap().vehicle(v).unwrap().loaded == Some(frontline_sim::gunnery::AP)
+    }));
+    assert_eq!(w.game().unwrap().vehicle(v).unwrap().ammo.len(), 2);
 }
 
 #[test]

@@ -44,9 +44,11 @@
 //! * **Damage** (stage 6, serial, in projectile slot order): hits take hit
 //!   points and add suppression; near misses add the weapon's suppression
 //!   (`combat.suppression.covered_near_miss_pct` of it for a man crouched
-//!   below cover). A burst damages soldiers whose body point is in clear
-//!   line from the blast point (+`combat.blast.lift_mm`): full damage
-//!   inside the lethal radius, falling linearly to zero at the damage radius;
+//!   below cover). A burst (S3b, physical-contact rule) deals its full
+//!   damage as overpressure to soldiers within `blast_radius` whose body
+//!   point is in clear line from the blast point (+`combat.blast.lift_mm`),
+//!   then throws `frag_count` fragment rays that strike the first man,
+//!   vehicle, wreck or earth in their way (`MatchState::fragments`);
 //!   it suppresses to the suppression radius (scaled by
 //!   `combat.suppression.blast_behind_cover_pct` behind earth) and
 //!   carves a crater. Thrown frags and satchels that go off this tick burst
@@ -76,11 +78,12 @@
 //! ([`MatchState::fire_launchers`]) engages only enemy vehicles he sees,
 //! within the weapon's `engage_still` (or `engage_moving` for a vehicle
 //! faster than the rules' moving speed): the `AttackUnit` vehicle first,
-//! then the nearest, at most [`LOS_TRIES`] tried for a part in a clear line
-//! of fire (the hull, or the turret if its chance is better by the rules'
-//! margin, `crate::gunnery::aim_choice`). Opening fire costs half a second
+//! then the nearest, at most [`LOS_TRIES`] tried for a clear line of fire to
+//! the centre of its visible mass, else its turret (S3b,
+//! `crate::gunnery::aim_choice`). Opening fire costs half a second
 //! of aiming (up on the fire step in a trench, as for any aiming man); the
-//! rocket leads the target by its averaged velocity, gets the weapon's
+//! rocket leads the target by his estimate of its averaged velocity
+//! (`crate::gunnery::lead_estimate`), gets the weapon's
 //! spread scaled as for small arms, and takes a shell slot. The next one
 //! comes after the weapon's reload, twice that with no second man left.
 //! When the carrier falls, the launcher waits `handover` and the first
@@ -94,10 +97,10 @@
 use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
 use frontline_content::tuning::BodyTuning;
 use frontline_content::vehicle::{AmmoMechanism, AmmoSetup};
-use frontline_content::{MatchSetup, WeaponClass};
+use frontline_content::{ComponentKind, MatchSetup, WeaponClass};
 
 use crate::armour::{self, ArmourHit, ArmourTables};
-use crate::damage::{ArmourEv, FireRolls};
+use crate::damage::{ArmourEv, Dealt, FireRolls, Inner};
 use crate::ecs::{
     Combat, Entities, EntityKind, PlayerId, SimId, Stance, Transform, Velocity, Weapon,
 };
@@ -111,7 +114,7 @@ use crate::spatial::SpatialHash;
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
 use crate::unit::{StanceOrder, Unit, UnitOrder};
-use crate::vehicle::VehicleDerived;
+use crate::vehicle::{VehicleDerived, VehicleFrame};
 use crate::world::Stats;
 
 // S3b: body geometry (`[combat.body]`), mortar laying (`[combat.mortar]`),
@@ -809,24 +812,15 @@ impl MatchState {
                 cands.push((if l.attack == Some(t) { 0 } else { d.max(1) }, t));
             }
             cands.sort_unstable();
-            let round = w.ammo.and_then(|a| self.armour.ammo.get(a as usize));
-            let margin = setup.rules.vehicles.aim_hull_margin_pct;
             target = None;
             for &(_, t) in cands.iter().take(LOS_TRIES) {
-                let (Some(tf), Some(round)) = (self.vderived.frame(t), round) else {
+                let Some(tf) = self.vderived.frame(t) else {
                     continue;
                 };
-                let plates = &self.armour.vehicles[tf.type_idx as usize];
-                let Some(part) =
-                    crate::gunnery::aim_choice(from, tf, plates, round, terrain, margin)
-                else {
+                let Some(part) = crate::gunnery::aim_choice(from, tf, terrain) else {
                     continue;
                 };
-                let at = if part == armour::BoxPart::Turret {
-                    tf.turret.center
-                } else {
-                    tf.hull.center
-                };
+                let at = crate::gunnery::aim_at(from, tf, part == armour::BoxPart::Turret);
                 if self.smoke_blocks(from, at, tick, (t, c)) {
                     continue;
                 }
@@ -848,17 +842,31 @@ impl MatchState {
         if let (Some(t), Some(ammo)) = (fire, w.ammo)
             && let Some(tf) = self.vderived.frame(t)
         {
-            let at = if l.aim_turret {
-                tf.turret.center
-            } else {
-                tf.hull.center
-            };
+            let at = crate::gunnery::aim_at(from, tf, l.aim_turret);
             let speed: Fx = setup
                 .ammo
                 .get(ammo as usize)
                 .map_or(w.muzzle_speed, |a| a.speed)
                 .into();
-            let vel = self.vehicles.get(&t).map_or(FxVec2::ZERO, |v| v.avg_vel);
+            // S3b: the gunner's estimate of a moving vehicle's velocity
+            // (no ranging in: each rocket, by the carrier's shot count).
+            let vr = &setup.rules.vehicles;
+            let vel = self.vehicles.get(&t).map_or(FxVec2::ZERO, |v| {
+                if v.avg_vel.length() > Fx::from(vr.moving_speed) {
+                    crate::gunnery::lead_estimate(
+                        v.avg_vel,
+                        seed,
+                        c,
+                        t,
+                        ents.weapon[i].shots as u8,
+                        vr.gunnery.lead_error_pct,
+                        0,
+                        100,
+                    )
+                } else {
+                    v.avg_vel
+                }
+            });
             let (dir, _) = crate::gunnery::solution(from, at, vel, speed);
             let dist = (at - from).length();
             let pct = spread_pct(
@@ -1365,67 +1373,333 @@ fn hurt(
     hash.mark_entity_chunk(id.chunk());
 }
 
-/// Damages and suppresses the enemies of `b.player` around a burst and
-/// carves its crater (see the module docs).
-fn burst(ctx: &mut DamageCtx, b: &Burst, rules: &CombatSetup, dead: &mut Vec<Fallen>) {
-    let pos = b.pos;
-    let blast = &rules.blast;
-    let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(blast.lift_mm as i32));
-    let he = b.he;
-    let (lethal, reach): (Fx, Fx) = (he.lethal_radius.into(), he.damage_radius.into());
-    let supp_r: Fx = he.suppression_radius.into();
-    let mut ids = Vec::new();
-    ctx.spatial
-        .for_each_near(pos.xy(), supp_r, |id| ids.push(id));
-    for id in ids {
-        let i = id.index();
-        if ctx.ents.kind[i] != EntityKind::Soldier || ctx.ents.owner[i].0 == b.player {
-            continue;
-        }
-        let c = ctx.ents.combat[i];
-        if c.hp == 0 {
-            continue;
-        }
-        let body = body_point(ctx.ents.transform[i].pos, &c);
-        let dist = (body - pos).length();
-        if dist > supp_r {
-            continue;
-        }
-        let clear = ctx.terrain.line_of_sight(lift, body);
-        let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
-            / supp_r.raw().max(1) as i64) as u32;
-        if !clear {
-            add = (add as u64 * rules.suppression.blast_behind_cover_pct as u64 / 100) as u32;
-        }
-        add_suppression(&mut ctx.ents.combat[i], add);
-        ctx.hash.mark_entity_chunk(id.chunk());
-        if clear && dist < reach {
-            let dmg = if dist <= lethal {
-                b.damage
-            } else {
-                (b.damage as i64 * (reach - dist).raw() as i64
-                    / (reach - lethal).raw().max(1) as i64) as u32
-            };
-            hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
-        }
-    }
-    // A burst on a vehicle (or a man) well above the ground leaves it as
-    // it is (S3).
-    if pos.z > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(blast.crater_lift_mm as i32) {
-        return;
-    }
-    let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, b.key.1);
-    let pct = rng.range_i32(
-        blast.crater_depth_min_pct as i32,
-        blast.crater_depth_max_pct as i32,
-    );
-    let depth = Fx::from(he.crater_depth).mul_int(pct).div_int(100);
-    if b.cut {
-        ctx.terrain
-            .crater_cut(pos.xy(), he.crater_radius.into(), depth, ctx.tick);
+/// Most fragment rays thrown in one tick (S3b engine budget): when this
+/// tick's bursts ask for more, each throws its share, scaled down
+/// proportionally (`Stats::frag_rays_capped`).
+pub const MAX_FRAG_RAYS_PER_TICK: u32 = 4096;
+
+/// A ray that starts this close to a struck vehicle's box and goes into it
+/// is stopped by that vehicle (a burst on a plate) (m).
+const STRUCK_PROBE: Fx = Fx::from_ratio(1, 10);
+
+/// [`frag_share`] for the world tests.
+#[cfg(test)]
+pub(crate) fn frag_share_for_test(count: u32, requested: u64) -> u32 {
+    frag_share(count, requested)
+}
+
+/// Fragment rays of burst `b` this tick: its `frag_count`, scaled down
+/// when the tick's bursts together ask for more than the budget.
+fn frag_share(count: u32, requested: u64) -> u32 {
+    let cap = MAX_FRAG_RAYS_PER_TICK as u64;
+    if requested <= cap {
+        count
     } else {
-        ctx.terrain
-            .crater(pos.xy(), he.crater_radius.into(), depth, ctx.tick);
+        (count as u64 * cap / requested) as u32
+    }
+}
+
+impl MatchState {
+    /// One HE burst (see the module docs): suppression within the
+    /// suppression radius, overpressure within `blast_radius` with a clear
+    /// line, `rays` fragment rays, the crater. `struck` is the vehicle or
+    /// wreck a bursting round struck (it stops rays that go into it, and
+    /// its plate hit is its damage).
+    #[allow(clippy::too_many_arguments)]
+    fn burst(
+        &mut self,
+        ctx: &mut DamageCtx,
+        b: &Burst,
+        rays: u32,
+        struck: Option<SimId>,
+        rules: &CombatSetup,
+        dead: &mut Vec<Fallen>,
+        fires: &mut FireRolls,
+        events: &mut Vec<ArmourEv>,
+    ) {
+        let pos = b.pos;
+        let blast = &rules.blast;
+        let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(blast.lift_mm as i32));
+        let he = b.he;
+        let blast_r: Fx = he.blast_radius.into();
+        let supp_r: Fx = he.suppression_radius.into();
+        let mut ids = Vec::new();
+        ctx.spatial
+            .for_each_near(pos.xy(), supp_r.max(blast_r), |id| ids.push(id));
+        ids.sort_unstable();
+        ids.dedup();
+        for id in ids {
+            let i = id.index();
+            if ctx.ents.kind[i] != EntityKind::Soldier || ctx.ents.owner[i].0 == b.player {
+                continue;
+            }
+            let c = ctx.ents.combat[i];
+            if c.hp == 0 {
+                continue;
+            }
+            let body = body_point(ctx.ents.transform[i].pos, &c);
+            let dist = (body - pos).length();
+            if dist > supp_r && dist > blast_r {
+                continue;
+            }
+            let clear = ctx.terrain.line_of_sight(lift, body);
+            if dist <= supp_r {
+                let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
+                    / supp_r.raw().max(1) as i64) as u32;
+                if !clear {
+                    add =
+                        (add as u64 * rules.suppression.blast_behind_cover_pct as u64 / 100) as u32;
+                }
+                add_suppression(&mut ctx.ents.combat[i], add);
+                ctx.hash.mark_entity_chunk(id.chunk());
+            }
+            // Overpressure: close in, with a clear line.
+            if clear && dist <= blast_r {
+                hurt(ctx.ents, ctx.hash, dead, id, b.damage, (b.player, b.class));
+            }
+        }
+        self.fragments(ctx, b, rays, struck, rules, dead, fires, events);
+        // A burst on a vehicle (or a man) well above the ground leaves it as
+        // it is (S3).
+        if pos.z > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(blast.crater_lift_mm as i32) {
+            return;
+        }
+        let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, b.key.1);
+        let pct = rng.range_i32(
+            blast.crater_depth_min_pct as i32,
+            blast.crater_depth_max_pct as i32,
+        );
+        let depth = Fx::from(he.crater_depth).mul_int(pct).div_int(100);
+        if b.cut {
+            ctx.terrain
+                .crater_cut(pos.xy(), he.crater_radius.into(), depth, ctx.tick);
+        } else {
+            // S3b: loose spoil (a parapet) under the burst flies.
+            ctx.terrain.crater_spoil(
+                pos.xy(),
+                he.crater_radius.into(),
+                depth,
+                self.setup.rules.dig.common.spoil_crater_pct,
+                ctx.tick,
+            );
+        }
+    }
+
+    /// `n` fragment rays of burst `b` (S3b, the physical-contact rule): from
+    /// `combat.blast.lift_mm` above the burst, azimuth stratified (ray `k`
+    /// at `k · 360° / n` plus a triangular jitter of half a stratum),
+    /// elevation uniform in the HE def's band above the ground plane
+    /// (`[-max, max]` for a burst well above the ground: on a vehicle or a
+    /// man). Each ray stops at the first enemy soldier capsule, vehicle,
+    /// wreck or barrel box it meets within `frag_reach`, unless the earth
+    /// stops it first (`Heightfield::segment_hit`, so trench walls and
+    /// parapets block). A man struck takes `frag_damage` falling linearly
+    /// to `frag_far_pct` at full reach, and the rules' hit suppression; an
+    /// enemy vehicle struck in a hull side's track band takes
+    /// `frag_track_damage` on that track. Friendly men are not in the way
+    /// (no friendly fire); a man whose capsule holds the ray origin (the
+    /// burst is on him) is left to the overpressure. RNG `FRAGMENT` /
+    /// `ITEM_FRAGMENT` keyed by the burst's key, rays in order.
+    #[allow(clippy::too_many_arguments)]
+    fn fragments(
+        &mut self,
+        ctx: &mut DamageCtx,
+        b: &Burst,
+        n: u32,
+        struck: Option<SimId>,
+        rules: &CombatSetup,
+        dead: &mut Vec<Fallen>,
+        fires: &mut FireRolls,
+        events: &mut Vec<ArmourEv>,
+    ) {
+        let he = b.he;
+        let reach: Fx = he.frag_reach.into();
+        if n == 0 || reach <= Fx::ZERO {
+            return;
+        }
+        ctx.stats.frag_rays += n as u64;
+        let pos = b.pos;
+        let o = FxVec3::new(
+            pos.x,
+            pos.y,
+            pos.z + Fx::from_milli(rules.blast.lift_mm as i32),
+        );
+        let air = pos.z
+            > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(rules.blast.crater_lift_mm as i32);
+        let [e0, e1] = he.frag_elev_deg;
+        let (elo, ehi) = if air {
+            (armour::deg(-e1), armour::deg(e1))
+        } else {
+            (armour::deg(e0), armour::deg(e1))
+        };
+        // Enemy men within reach, ascending id: (id, feet, capsule).
+        let mut ids = Vec::new();
+        ctx.spatial
+            .for_each_near(pos.xy(), reach + Fx::ONE, |id| ids.push(id));
+        ids.sort_unstable();
+        ids.dedup();
+        let mut men: Vec<(SimId, FxVec3, FxVec3, FxVec3, Fx)> = Vec::new();
+        for id in ids {
+            let i = id.index();
+            let c = &ctx.ents.combat[i];
+            if ctx.ents.kind[i] != EntityKind::Soldier
+                || ctx.ents.owner[i].0 == b.player
+                || c.hp == 0
+            {
+                continue;
+            }
+            let t = &ctx.ents.transform[i];
+            let (a, e, r) = capsule(t, c, &rules.body);
+            // The burst is on him: the overpressure's.
+            let (_, inside) = seg_seg(o - t.pos, FxVec3::ZERO, a - t.pos, e - a);
+            if inside <= r.mul(r) {
+                continue;
+            }
+            men.push((id, t.pos, a, e, r));
+        }
+        // Vehicles and wrecks within reach, ascending id.
+        let mut vids = Vec::new();
+        if !self.vderived.frames.is_empty() {
+            self.vderived
+                .index
+                .for_each_near(pos.xy(), reach + self.vderived.max_reach, |id| {
+                    vids.push(id)
+                });
+            vids.sort_unstable();
+            vids.dedup();
+        }
+        let frames: Vec<VehicleFrame> = vids
+            .iter()
+            .filter_map(|&id| self.vderived.frame(id).copied())
+            .collect();
+        let purpose = if b.key.1 == Purpose::ITEM_CRATER {
+            Purpose::ITEM_FRAGMENT
+        } else {
+            Purpose::FRAGMENT
+        };
+        let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, purpose);
+        let stratum = Fx::TAU.div_int(n as i32);
+        let half = stratum.div_int(2);
+        let pad = Fx::from_int(VEHICLE_SPHERE_PAD_M);
+        let mut tracks: Vec<(SimId, ComponentKind, u32)> = Vec::new();
+        for k in 0..n {
+            let az = stratum.mul_int(k as i32) + half + tri(&mut rng, half);
+            let el = rng.range_fx(elo, ehi);
+            let (sa, ca) = az.sin_cos();
+            let (se, ce) = el.sin_cos();
+            let dir = FxVec3::new(ca.mul(ce), sa.mul(ce), se);
+            let d = dir * reach;
+            let mut man: Option<(Fx, usize)> = None;
+            for (j, &(_, feet, a, e, r)) in men.iter().enumerate() {
+                let (s, dsq) = seg_seg(o - feet, d, a - feet, e - a);
+                if dsq <= r.mul(r) && man.is_none_or(|(ms, _)| s < ms) {
+                    man = Some((s, j));
+                }
+            }
+            let mut boxed: Option<(Fx, usize, ArmourHit)> = None;
+            let mut blocked = false;
+            for (j, f) in frames.iter().enumerate() {
+                if Some(f.id) == struck {
+                    // A burst on its plate: rays into it stop there.
+                    let probe = o + dir * STRUCK_PROBE;
+                    if armour::box_dist_sq_raw(&f.hull, probe) == 0
+                        || armour::box_dist_sq_raw(&f.turret, probe) == 0
+                    {
+                        blocked = true;
+                    }
+                    continue;
+                }
+                if !armour::segment_near(o, d, f.origin, f.reach + pad) {
+                    continue;
+                }
+                let plates = &self.armour.vehicles[f.type_idx as usize];
+                if let Some(h) = armour::hit_armour(o, d, f, plates)
+                    && boxed.is_none_or(|(bt, _, _)| h.t < bt)
+                {
+                    boxed = Some((h.t, j, h));
+                }
+            }
+            if blocked {
+                continue;
+            }
+            let box_first = box_before(boxed.map(|x| x.0), man.map(|m| m.0));
+            let end = match (box_first, boxed, man) {
+                (true, Some((t, _, _)), _) => t,
+                (false, _, Some((s, _))) => s,
+                _ => continue,
+            };
+            if ctx.terrain.segment_hit(o, o + d * end).is_some() {
+                continue;
+            }
+            if box_first {
+                let (_, j, h) = boxed.expect("box first");
+                let f = &frames[j];
+                if f.wreck || f.owner.0 == b.player || he.frag_track_damage == 0 {
+                    continue;
+                }
+                let plates = &self.armour.vehicles[f.type_idx as usize];
+                if armour::in_track_band(&h, f.hull.half.z, plates.track_band_pct) {
+                    let side = if h.face == armour::Face::Left {
+                        ComponentKind::TrackLeft
+                    } else {
+                        ComponentKind::TrackRight
+                    };
+                    match tracks.iter_mut().find(|(v, c, _)| *v == f.id && *c == side) {
+                        Some(t) => t.2 += he.frag_track_damage,
+                        None => tracks.push((f.id, side, he.frag_track_damage)),
+                    }
+                    ctx.stats.frag_hits += 1;
+                }
+            } else {
+                let (s, j) = man.expect("man first");
+                let id = men[j].0;
+                // 100 % at the burst, `frag_far_pct` at full reach.
+                let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(s);
+                let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
+                let dmg =
+                    (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS)) as u32;
+                add_suppression(
+                    &mut ctx.ents.combat[id.index()],
+                    rules.hit_suppression * 1000,
+                );
+                hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
+                ctx.stats.frag_hits += 1;
+            }
+        }
+        // Tracks struck, ascending vehicle id (no fire, no rack: no
+        // knock-out).
+        tracks.sort_unstable_by_key(|&(v, c, _)| (v, c));
+        let mut k = 0;
+        while k < tracks.len() {
+            let id = tracks[k].0;
+            let dealt: Vec<Dealt> = tracks[k..]
+                .iter()
+                .take_while(|t| t.0 == id)
+                .map(|&(_, c, dmg)| Dealt {
+                    inner: Inner::Part(c),
+                    dmg,
+                })
+                .collect();
+            k += dealt.len();
+            if ctx.ents.kind.get(id.index()) != Some(&EntityKind::Vehicle) {
+                continue;
+            }
+            let vs = self.vehicles.get_mut(&id).expect("vehicle state");
+            vs.repairing = None;
+            vs.repair_progress = 0;
+            vs.last_attacker = Some(b.player);
+            self.deal(
+                ctx,
+                id,
+                &dealt,
+                (b.player, kill_class::OTHER),
+                id,
+                fires,
+                events,
+                pos,
+                NO_AMMO,
+            );
+        }
     }
 }
 
@@ -1480,6 +1754,22 @@ impl MatchState {
         }
     }
 
+    /// The blast a bursting event sets off, if any: mortar shells burst by
+    /// their weapon's HE, main-gun HE and rockets by their round's blast
+    /// (`(he, damage, suppression)`).
+    fn event_blast(&self, e: &BallisticEvent) -> Option<(HeSetup, u32, u32)> {
+        match self.setup.ammo.get(e.ammo as usize) {
+            Some(a) => a
+                .blast
+                .as_ref()
+                .map(|b| (b.blast.clone(), b.damage, b.suppression)),
+            None => {
+                let w = self.setup.weapons.get(e.weapon as usize)?;
+                w.he.clone().map(|h| (h, w.damage, w.suppression))
+            }
+        }
+    }
+
     /// Applies this tick's ballistic events in order, then the thrown items
     /// that go off now (`crate::items`, in id order: blasts, smoke), then
     /// kills soldiers left at 0 HP (see the module docs). Bursts are
@@ -1496,6 +1786,21 @@ impl MatchState {
         // (victim, killer, class) in the order they fell.
         let mut dead: Vec<Fallen> = Vec::new();
         let mut fires = FireRolls::default();
+        self.take_fused(fused);
+        // S3b: the fragment budget, shared by this tick's bursts in
+        // proportion to what each asks for.
+        let requested: u64 = events
+            .iter()
+            .filter(|e| matches!(e.blow, Blow::Burst(_) | Blow::Armour { .. }))
+            .filter_map(|e| self.event_blast(e))
+            .map(|(h, _, _)| h.frag_count as u64)
+            .chain(fused.iter().filter_map(|t| {
+                self.setup.items[t.item as usize]
+                    .he
+                    .as_ref()
+                    .map(|h| h.blast.frag_count as u64)
+            }))
+            .sum();
         for (k, e) in events.iter().enumerate() {
             let burst_at = match e.blow {
                 Blow::Hit(id) => {
@@ -1547,19 +1852,7 @@ impl MatchState {
                 _ => None,
             };
             let Some(pos) = burst_at else { continue };
-            // Mortar shells burst by their weapon's HE, main-gun HE and
-            // rockets by their round's blast.
-            let blast = match self.setup.ammo.get(e.ammo as usize) {
-                Some(a) => a
-                    .blast
-                    .as_ref()
-                    .map(|b| (b.blast.clone(), b.damage, b.suppression)),
-                None => {
-                    let w = &self.setup.weapons[e.weapon as usize];
-                    w.he.clone().map(|h| (h, w.damage, w.suppression))
-                }
-            };
-            let Some((he, damage, suppression)) = blast else {
+            let Some((he, damage, suppression)) = self.event_blast(e) else {
                 continue;
             };
             ctx.stats.explosions += 1;
@@ -1578,7 +1871,18 @@ impl MatchState {
                 key: (SimId(k as u32), Purpose::CRATER),
                 class: self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter),
             };
-            burst(ctx, &b, &rules, &mut dead);
+            let rays = frag_share(he.frag_count, requested);
+            ctx.stats.frag_rays_capped += (he.frag_count - rays) as u64;
+            self.burst(
+                ctx,
+                &b,
+                rays,
+                struck,
+                &rules,
+                &mut dead,
+                &mut fires,
+                armour_events,
+            );
             self.blast_tracks(
                 ctx,
                 pos,
@@ -1591,7 +1895,6 @@ impl MatchState {
                 armour_events,
             );
         }
-        self.take_fused(fused);
         for t in fused.iter() {
             let it = &self.setup.items[t.item as usize];
             if let Some(h) = it.he.clone() {
@@ -1620,7 +1923,18 @@ impl MatchState {
                         kill_class::FRAG
                     },
                 };
-                burst(ctx, &b, &rules, &mut dead);
+                let rays = frag_share(h.blast.frag_count, requested);
+                ctx.stats.frag_rays_capped += (h.blast.frag_count - rays) as u64;
+                self.burst(
+                    ctx,
+                    &b,
+                    rays,
+                    None,
+                    &rules,
+                    &mut dead,
+                    &mut fires,
+                    armour_events,
+                );
                 self.blast_tracks(
                     ctx,
                     t.pos,
@@ -2396,8 +2710,14 @@ mod tests {
             r.put(k, 500 + k as i32, 500);
         }
         r.status();
-        r.burst(FxVec2::from_int(503, 500));
-        r.burst(FxVec2::from_int(503, 500));
+        // S3b: fragments, not a radius: men in a line shield each other,
+        // so it takes a few bursts at points along the line.
+        for k in 0..40 {
+            if r.game.squad(r.squad).is_none() {
+                break;
+            }
+            r.burst(FxVec2::from_int(500 + (k % n as i32), 501));
+        }
         assert!(r.game.squad(r.squad).is_none());
         assert_eq!(r.game.players[1].losses, n as u32);
         assert!(r.ents.soldiers().next().is_none());

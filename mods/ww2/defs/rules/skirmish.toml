@@ -116,6 +116,12 @@ parapet_fall_mm = 600
 parapet_undug_mm = 50
 # A digger works when this close to his spot (mm).
 reach_mm = 1500
+# S3b: an HE crater centred on raised spoil (a parapet) blows the loose
+# spoil away within its radius down to this share of the crater depth below
+# the spoil's top (never below the base surface) and raises no rim there
+# (%). 150: loose earth flies further than dug ground; tank HE (0.3 m deep)
+# then takes up to 0.45 m off a parapet (docs/slices/S3b-balance.md P5).
+spoil_crater_pct = 150
 
 [combat]
 # Spotting: LOS rays per player per tick, and how often each enemy soldier
@@ -279,14 +285,14 @@ moving_spot_pct = 250
 near_spot_m = 25
 # Gunnery: spread against a target faster than 1 m/s; each further shot at
 # the same target 20 % tighter down to 50 %; HE at infantry uses a wider
-# area spread and is never fired within 30 m of own men; the gunner aims at
-# the hull unless the turret's pen chance is better by more than 10 points.
+# area spread and is never fired within 30 m of own men. S3b: the gunner
+# aims at the centre of the target's visible mass (aim_hull_margin_pct,
+# "the weakest plate", is gone).
 moving_target_spread_pct = 300
 ranging_step_pct = 20
 ranging_floor_pct = 50
 he_area_spread_mrad = 6
 he_clear_m = 30
-aim_hull_margin_pct = 10
 # Trench crossing: a track sample over ground dug 1.0 m or more caps speed
 # at 1 m/s; a new crossing (one bog roll) starts after 2 s with none.
 crossing_dug_cm = 100
@@ -301,9 +307,13 @@ fire_burn_hp_s = 5
 fire_check_s = 4
 fire_out_pct = 25
 fire_burnout_s = 20
-# Ammo rack: each hit for 30+ detonates it with 35 %.
+# Ammo rack: each hit for 30+ detonates it with rack_detonate_pct, else
+# starts an ammo fire with [vehicles.damage] rack_fire_pct. S3b: 35 -> 20.
+# Reasoning: wartime loss surveys (US and British) recorded most burned-out
+# tanks as propellant fires and a minority as prompt explosions; exact
+# shares are an owner / M2 citation task (docs/slices/S3b-balance.md P2).
 rack_min_damage = 30
-rack_detonate_pct = 35
+rack_detonate_pct = 20
 # Inside the own base: 2 % of every component's HP per second, one AP or
 # HE round per 2 s, one dead crew seat per 20 s. Free.
 base_repair_pct_s = 2
@@ -395,12 +405,42 @@ file_men = 8
 [vehicles.gunnery]
 # The coax engages men this close to the turret's line (deg).
 coax_cone_deg = 5
-# External parts (tracks, barrel) within this of a non-penetrating impact
-# take the round's nonpen_damage (mm). The slice spec replaces it with a
-# barrel box the round must strike (Part A2).
-external_reach_mm = 1000
-# A spall ray ends after this (m).
+# A spall ray ends after this (m). (S3b: external_reach_mm is gone; a round
+# must strike the barrel box to damage the gun.)
 spall_reach_m = 3
+# Tank HE at infantry: enemy men within this of a man count as his group
+# when the gunner picks the best group (m). 6: the old HE damage radius it
+# used to read, so target choice is unchanged.
+he_group_m = 6
+# S3b lead estimation error (owner question S3b-6 (A)): against a moving
+# target the gunner leads by his estimate of its velocity, the ~1 s average
+# times (1 + e), e triangular within +-lead_error_pct; each further shot at
+# the same target shrinks e like the spread (ranging_step_pct down to
+# ranging_floor_pct). 40: a starting value; wartime first-round hit rates
+# on moving targets were far below stationary ones, and the error was
+# mostly in the speed and angle estimate (docs/slices/S3b-balance.md P4).
+lead_error_pct = 40
+# S3b: Auto loads a gun's special penetrator (PzGr 40 APCR) only against a
+# target the standard round penetrates with less than this chance, and only
+# when the special round's chance is higher (%). 50: the spec's rule
+# (docs/slices/S3b-balance.md P1 (c)).
+special_below_pct = 50
+
+# S3b: what a hit on the ammo stowage does, and when too few crew knock a
+# vehicle out (docs/slices/S3b-balance.md P2).
+[vehicles.damage]
+# A rack hit that does not detonate starts an ammo fire with this chance
+# (%); a rack destroyed by damage burns unless the detonation roll succeeds.
+# 60: most penetrations that reached stowed rounds started a propellant
+# fire (loss surveys; citation is an owner / M2 task).
+rack_fire_pct = 60
+# An ammo fire knocks the vehicle out after this long; the crew cannot put
+# it out (s). 8: propellant fires took hold within seconds.
+ammo_fire_s = 8
+# A vehicle with fewer living crew than this is knocked out (owner question
+# S3b-5 (A)): one man cannot drive, load and fire; real crews abandoned such
+# tanks. Survivors count as lost until bail-out exists.
+crew_ko_below = 2
 
 [difficulty.easy]
 income_pct = 80

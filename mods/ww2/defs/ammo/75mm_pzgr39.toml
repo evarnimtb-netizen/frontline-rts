@@ -12,8 +12,8 @@ drag_coeff = 0
 penetration = [[100, 106], [500, 96], [1000, 85], [1500, 74], [2000, 64]]
 pen_reference_angle_deg = 30
 ricochet_angle_deg = 70
-# Damage to external parts within 1 m of a non-penetrating hit, and to a
-# track from a hit in the running-gear band.
+# Damage to the gun when it strikes the barrel box (S3b: no more "within
+# 1 m"), and to a track from a hit in the running-gear band.
 nonpen_damage = 40
 track_damage = 60
 sources = ["placeholder: citations are an owner / M2 task"]
@@ -29,7 +29,15 @@ rays = 6
 damage = 35
 cone_deg = 25
 
+# S3b physical-contact rule: the filler bursts offset_cm past the entry
+# into `rays` fragment rays within cone_deg of the shell path, each dealing
+# `damage` to the first seat or component box it crosses within reach_cm
+# (it used to deal 80 to every box within 1.2 m, through other boxes, so
+# one turret penetration took out the gun, the ring and three crew).
+# PzGr 39: about 17 g of filler; rays and damage are starting values for the Tune stage.
 [filler]
 offset_cm = 100
-radius_cm = 120
-damage = 80
+rays = 10
+cone_deg = 60
+damage = 60
+reach_cm = 150

@@ -63,9 +63,13 @@ turret_top   = { thickness_mm = 25, material = "rha" }
 [crew]
 seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
 
+# S3b (crew layout): driver (left) and assistant driver (right) sit in the
+# nose either side of the transmission, just behind the glacis; boxes moved
+# 0.3 m forward (x 170 -> 200; box fronts 0.6 m behind the nose face).
+# Source: Hunnicutt, Sherman; TM 9-759 (layout); approximate.
 [crew.boxes]
-driver    = { frame = "hull",   center = [170, 60, 115],  half = [35, 30, 40] }
-radio_mg  = { frame = "hull",   center = [170, -60, 115], half = [35, 30, 40] }
+driver    = { frame = "hull",   center = [200, 60, 120],  half = [35, 30, 40] }
+radio_mg  = { frame = "hull",   center = [200, -60, 120], half = [35, 30, 40] }
 gunner    = { frame = "turret", center = [20, -45, 35],   half = [30, 25, 35] }
 loader    = { frame = "turret", center = [10, 45, 35],    half = [30, 25, 35] }
 commander = { frame = "turret", center = [-60, -40, 45],  half = [30, 30, 40] }
@@ -76,6 +80,9 @@ mount = "turret_main"
 muzzle = [340, 0, 45]
 elevation_deg = [-10, 25]
 ammo = [{ id = "ww2:75mm_m61", count = 30 }, { id = "ww2:75mm_m48", count = 40 }]
+# S3b: the exposed barrel, from the muzzle back to the turret front (340 -
+# 110 cm); see ger_pz4_h.toml.
+barrel = { length_cm = 230, radius_cm = 8 }
 
 [[weapons]]
 def = "ww2:m1919"
@@ -107,11 +114,11 @@ hp = 100
 anchors = [{ pos = [250, -118, 45] }, { pos = [0, -118, 45] }, { pos = [-250, -118, 45] }]
 repair = { to_hp = 100, time_s = 30 }
 
+# The breech; S3b: the barrel is the main-gun mount's barrel box.
 [[components]]
 type = "gun"
 hp = 80
 box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
-anchors = [{ frame = "turret", pos = [120, 0, 45] }]
 
 [[components]]
 type = "turret_ring"
@@ -119,10 +126,28 @@ hp = 80
 box = { frame = "hull", center = [-10, 0, 180], half = [80, 80, 10] }
 repair = { to_hp = 50, time_s = 40 }
 
+# S3b (rack geometry, owner question S3b-4 (A): dry stowage): the M4A3 (75)
+# carried most rounds in sponson racks above the tracks on both sides of the
+# hull under the turret, plus ready rounds on the turret basket floor
+# (Hunnicutt, Sherman; TM 9-759). Flank hits above the running gear reach
+# them, as wartime loss reports describe. Three boxes, one HP pool;
+# approximate within the box model.
 [[components]]
 type = "ammo_rack"
 hp = 60
-box = { frame = "hull", center = [-20, 0, 75], half = [50, 110, 25] }
+boxes = [
+  { frame = "hull", center = [-30, 105, 150], half = [60, 22, 25] },
+  { frame = "hull", center = [-30, -105, 150], half = [60, 22, 25] },
+  { frame = "hull", center = [-10, -40, 60], half = [30, 30, 15] },
+]
+
+# S3b: the front transmission and differential in the nose between the
+# driver and the assistant driver (Hunnicutt). As the Panzer IV's.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [220, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
 
 [[stations]]
 id = "driver_gunner"

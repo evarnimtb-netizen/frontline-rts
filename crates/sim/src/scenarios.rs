@@ -157,6 +157,7 @@ pub fn toughen(w: &mut World, v: SimId, gun: bool) -> bool {
             };
         }
         vs.burn = 0;
+        vs.ammo_fire = 0;
         vs.repairing = None;
         vs.repair_progress = 0;
     })
@@ -230,6 +231,7 @@ pub fn pen_stats(
     staging(&mut setup, true);
     setup.rules.vehicles.rack_detonate_pct = 0;
     setup.rules.vehicles.fire_start_pct = 0;
+    setup.rules.vehicles.damage.rack_fire_pct = 0;
     for v in &mut setup.vehicles {
         if let Some(m) = v.mounts.first_mut() {
             m.ammo.iter_mut().for_each(|a| a.count = 500);
@@ -328,10 +330,14 @@ pub enum Duel {
     Angled300,
     /// 150 m, the Sherman on the Panzer IV's flank.
     Flank150,
+    /// S3b: 150 m, the Panzer IV on the Sherman's flank (3c mirrored).
+    PzFlank150,
 }
 
-/// Case 3a–c: a duel; `flip` mirrors it east–west. Tanks: `[Panzer IV,
-/// Sherman]`.
+/// Case 3a–c, 3e: a duel; `flip` mirrors it east–west. Tanks: `[Panzer IV,
+/// Sherman]`. S3b: in 3b the angled Panzer IV starts with its turret laid
+/// on the Sherman (angling doctrine: hull angled, turret on the threat);
+/// before, its turret sat on its hull line, 30° off, a staging artefact.
 pub fn duel(
     mut setup: MatchSetup,
     threads: usize,
@@ -347,9 +353,16 @@ pub fn duel(
         Duel::Frontal300 => (350, EAST, 650, WEST),
         Duel::Angled300 => (350, dir_deg(30), 650, WEST),
         Duel::Flank150 => (500, NORTH, 350, EAST),
+        Duel::PzFlank150 => (350, EAST, 500, NORTH),
     };
     let pz = need(tank(w, 0, at(mx(pz_at), LANE_Y), md(pz_f)), "Panzer IV")?;
     let sh = need(tank(w, 1, at(mx(sh_at), LANE_Y), md(sh_f)), "Sherman")?;
+    if kind == Duel::Angled300 {
+        // Lay the turret on the Sherman: the bearing less the hull yaw.
+        let d = at(mx(sh_at), LANE_Y) - at(mx(pz_at), LANE_Y);
+        let rel = (Fx::atan2(d.y, d.x) - yaw_of(md(pz_f))).wrap_angle();
+        w.edit_vehicle(pz.1, |vs| vs.turret_yaw = rel);
+    }
     s.tanks = vec![pz, sh];
     Ok(s)
 }
@@ -367,6 +380,7 @@ pub fn crossing_target(
     staging(&mut setup, true);
     setup.rules.vehicles.rack_detonate_pct = 0;
     setup.rules.vehicles.fire_start_pct = 0;
+    setup.rules.vehicles.damage.rack_fire_pct = 0;
     for v in &mut setup.vehicles {
         v.mobility.speed = Fixed::from_cm(CROSSING_CM_S as u32);
         v.mobility.reverse = v.mobility.reverse.min(v.mobility.speed);

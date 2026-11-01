@@ -6,12 +6,12 @@
 //! lost, the gunner picks: the `AttackUnit` vehicle while it is seen and in
 //! range; else the nearest seen enemy vehicle within the main gun's
 //! `range_max` that has a visible part; else the best seen infantry group
-//! in range (more men within the HE damage radius first, then closer), never
-//! within `he_clear` of the own men. A vehicle target gets the aim part
-//! from [`aim_choice`]: the visible part (hull or turret) with the better
-//! penetration chance for the vehicle's penetrator against the zone that
-//! faces the shooter, the hull unless the turret is better by more than
-//! `aim_hull_margin_pct` points. Retreating vehicles do not use the main
+//! in range (more men within `vehicles.gunnery.he_group_m` first, then
+//! closer), never within `he_clear` of the own men. A vehicle target gets
+//! its aim point from [`aim_choice`] (S3b): the centre of its visible mass
+//! (hull and turret centres weighted by their projected areas toward the
+//! shooter) when that point is in a clear line of fire, else the turret's
+//! centre (partial hull-down). Retreating vehicles do not use the main
 //! gun.
 //!
 //! **Ammo.** `Auto` wants the penetrator against vehicles and HE against
@@ -21,7 +21,8 @@
 //! gun's, ×1.5 with the loader wounded and ×2 with him gone.
 //!
 //! **Laying.** The solution leads the target by its velocity (a vehicle's
-//! ~1 s average, a soldier's current) times the flight time and
+//! ~1 s average, a soldier's current; S3b: against a moving vehicle the
+//! gunner's estimate, [`lead_estimate`]) times the flight time and
 //! compensates drop as `combat::shot_velocity` does, two fixed iterations.
 //! [`lay_gun`] turns the turret at the def's traverse (×0.5 with the ring
 //! damaged, fixed with it destroyed) and the gun at the def's `elevate_deg_s`
@@ -48,7 +49,7 @@
 use frontline_content::vehicle::{MountKind, MountSetup, VehicleSetup};
 use frontline_content::{ComponentKind, MatchSetup, SeatRole};
 
-use crate::armour::{self, AmmoTable, BoxPart, Face, VehicleArmour, deg};
+use crate::armour::{BoxPart, Face, deg};
 use crate::combat::{Mark, interval_after, tri};
 use crate::damage::ArmourEv;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
@@ -61,7 +62,7 @@ use crate::snapshot::ArmourEventKind;
 use crate::spatial::SpatialHash;
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
-use crate::vehicle::{AmmoChoice, Basis, VehicleFrame, VehicleState};
+use crate::vehicle::{AmmoChoice, Basis, BoxFrame, VehicleFrame, VehicleState};
 
 // S3b: the gun elevation rate is each vehicle def's `turret.elevate_deg_s`;
 // the coax cone is the rules' `vehicles.gunnery.coax_cone_deg`.
@@ -80,9 +81,11 @@ const SHELL_TTL_PCT: i32 = 125;
 /// 9.81 m/s².
 const GRAVITY: Fx = Fx::from_ratio(981, 100);
 
-/// The penetrator (first ammo entry) and HE (second) of a main gun.
+/// The penetrator (first ammo entry) and HE (second) of a main gun; S3b:
+/// a special penetrator (third, e.g. PzGr 40 APCR) on guns that carry one.
 pub const AP: u8 = 0;
 pub const HE: u8 = 1;
+pub const SPECIAL: u8 = 2;
 
 /// Direction of a gun laid at hull-relative `yaw` and `pitch`, in the hull
 /// frame.
@@ -143,64 +146,84 @@ pub fn lay_gun(vs: &mut VehicleState, v: &VehicleSetup, yaw: Fx, pitch: Fx, hz: 
     step == err && perr.abs() <= elev
 }
 
-/// Which part of `target` to aim at from `from` (see the module docs):
-/// `None` when neither part's centre is in a clear line of fire.
-pub fn aim_choice(
-    from: FxVec3,
-    target: &VehicleFrame,
-    plates: &VehicleArmour,
-    ap: &AmmoTable,
-    terrain: &Heightfield,
-    margin_pct: u32,
-) -> Option<BoxPart> {
-    let chance = |part: BoxPart| {
-        let b = if part == BoxPart::Hull {
-            &target.hull
-        } else {
-            &target.turret
-        };
-        if !terrain.line_of_sight(from, b.center) {
-            return None;
-        }
-        let rel = b.center - from;
-        let range = rel.length();
-        let dir = rel.normalize_or_zero();
-        // The face toward the shooter: the side axis the line meets most.
-        let l = armour::to_local(b, -dir);
-        let face = if l.x.abs() >= l.y.abs() {
-            if l.x >= Fx::ZERO {
-                Face::Front
-            } else {
-                Face::Rear
-            }
-        } else if l.y >= Fx::ZERO {
-            Face::Left
-        } else {
-            Face::Right
-        };
-        let plate = plates.face(part, face);
-        let c = armour::impact_cos(dir, b.axes.apply(plate.normal));
-        Some(armour::pen_chance_ppm(
-            ap.pen0(range),
-            c,
-            plate.thickness,
-            Fx::ZERO,
-            ap.cos_ricochet,
-        ))
-    };
-    match (chance(BoxPart::Hull), chance(BoxPart::Turret)) {
-        (None, None) => None,
-        (Some(_), None) => Some(BoxPart::Hull),
-        (None, Some(_)) => Some(BoxPart::Turret),
-        (Some(h), Some(t)) => {
-            let margin = margin_pct * (armour::PPM / 100);
-            Some(if t > h.saturating_add(margin) {
-                BoxPart::Turret
-            } else {
-                BoxPart::Hull
-            })
-        }
+/// Projected area of box `b` seen along unit `u` (a quarter of it:
+/// `hy·hz·|u·x| + hx·hz·|u·y| + hx·hy·|u·z|`, dot products only).
+fn projected_area(b: &BoxFrame, u: FxVec3) -> Fx {
+    let h = b.half;
+    h.y.mul(h.z).mul(b.axes.x.dot(u).abs())
+        + h.x.mul(h.z).mul(b.axes.y.dot(u).abs())
+        + h.x.mul(h.y).mul(b.axes.z.dot(u).abs())
+}
+
+/// The centre of `target`'s visible mass seen from `from` (S3b): the hull
+/// and turret centres weighted by their projected areas toward the shooter.
+/// Real gunners were taught to aim at the centre of the visible target.
+pub fn mass_centre(from: FxVec3, target: &VehicleFrame) -> FxVec3 {
+    let u = (target.hull.center - from).normalize_or_zero();
+    let (h, t) = (&target.hull, &target.turret);
+    let (ah, at) = (projected_area(h, u), projected_area(t, u));
+    let sum = ah + at;
+    if sum <= Fx::ZERO {
+        return h.center;
     }
+    // Relative to the hull centre, so the products stay small.
+    h.center + (t.center - h.center) * at.div(sum)
+}
+
+/// Where to aim at `target` from `from` (S3b, see the module docs):
+/// `Hull` = the centre of its visible mass ([`mass_centre`]) when that
+/// point is in a clear line of fire; else `Turret` = the turret's centre
+/// when that is (partial hull-down); else `None`. Launcher gunners use the
+/// same rule.
+pub fn aim_choice(from: FxVec3, target: &VehicleFrame, terrain: &Heightfield) -> Option<BoxPart> {
+    if terrain.line_of_sight(from, mass_centre(from, target)) {
+        Some(BoxPart::Hull)
+    } else if terrain.line_of_sight(from, target.turret.center) {
+        Some(BoxPart::Turret)
+    } else {
+        None
+    }
+}
+
+/// The point a gunner at `from` aims at on `target` for an
+/// [`aim_choice`] result (`turret`: the turret's centre; else the centre of
+/// visible mass).
+pub fn aim_at(from: FxVec3, target: &VehicleFrame, turret: bool) -> FxVec3 {
+    if turret {
+        target.turret.center
+    } else {
+        mass_centre(from, target)
+    }
+}
+
+/// The gunner's estimate of a moving target's velocity (S3b lead
+/// estimation error): `vel × (1 + e)`, `e` triangular within
+/// ±`lead_error_pct`, shrunk like the spread by each ranging shot
+/// (`ranging_step_pct` down to `ranging_floor_pct`). RNG `LEAD`, keyed by
+/// the shooter, the target and the ranging count: the same target and
+/// ranging step give the same estimate (no state).
+#[allow(clippy::too_many_arguments)]
+pub fn lead_estimate(
+    vel: FxVec2,
+    seed: u64,
+    shooter: SimId,
+    target: SimId,
+    ranging: u8,
+    error_pct: u32,
+    step_pct: u32,
+    floor_pct: u32,
+) -> FxVec2 {
+    if error_pct == 0 || vel == FxVec2::ZERO {
+        return vel;
+    }
+    let shrink = (100 - step_pct as i64 * ranging as i64).max(floor_pct as i64);
+    let span = Fx::from_int(error_pct as i32)
+        .mul_int(shrink as i32)
+        .div_int(10_000);
+    let key = ((target.0 as u64) << 8) | ranging as u64;
+    let mut r = RngStream::new(seed, key, shooter, Purpose::LEAD);
+    let e = tri(&mut r, span);
+    vel + vel * e
 }
 
 /// Drop-compensated, lead-corrected aim from `from` at a target at `at`
@@ -296,7 +319,10 @@ impl MatchState {
             && vs.component(ComponentKind::Gun) > 0
             && vs.repairing.is_none()
             && !order_retreat;
-        let ap_left = vs.loaded == Some(AP) || vs.ammo.first().is_some_and(|n| *n > 0);
+        let ap_left = vs.loaded.is_some_and(|k| k != HE)
+            || [AP, SPECIAL]
+                .iter()
+                .any(|&k| vs.ammo.get(k as usize).is_some_and(|n| *n > 0));
 
         // Re-target once a second (staggered), or when the target is gone.
         let valid = vs
@@ -317,6 +343,12 @@ impl MatchState {
             .and_then(|t| self.vehicles.get(&t))
             .is_some_and(|t| t.avg_vel.length() > moving);
         let clear = aim.is_none_or(|a| a.vehicle || !self.own_men_near(ents, ctx, owner, a.point));
+        let special_better = match (aim, target) {
+            (Some(a), Some(t)) if a.vehicle && main.ammo.len() > SPECIAL as usize => {
+                self.special_better(&f, t, main, aim_turret)
+            }
+            _ => false,
+        };
         let mut fired: Option<ArmourEv> = None;
         let vs = self.vehicles.get_mut(&id).expect("listed");
         if vs.target != target {
@@ -328,19 +360,31 @@ impl MatchState {
         vs.reload = vs.reload.saturating_sub(1);
 
         // Ammo: the wanted round, swapping a wrong one for one reload.
+        let has_special = vs.ammo.len() > SPECIAL as usize;
         let wanted = match vs.ammo_choice {
             AmmoChoice::Ap => AP,
             AmmoChoice::He => HE,
+            AmmoChoice::Apcr if has_special => SPECIAL,
+            AmmoChoice::Apcr => AP,
             AmmoChoice::Auto => match aim {
                 Some(a) if !a.vehicle => HE,
+                _ if special_better => SPECIAL,
                 _ => AP,
             },
         };
-        let wanted = if vs.ammo_choice == AmmoChoice::Auto
-            && vs.ammo.get(wanted as usize).is_none_or(|n| *n == 0)
-            && vs.loaded != Some(wanted)
-        {
-            1 - wanted
+        // Auto: the first round in its preference order that is loaded or
+        // left (a special round never goes at infantry).
+        let wanted = if vs.ammo_choice == AmmoChoice::Auto {
+            let order: &[u8] = match wanted {
+                HE => &[HE, AP],
+                SPECIAL => &[SPECIAL, AP, HE],
+                _ => &[AP, SPECIAL, HE],
+            };
+            order
+                .iter()
+                .copied()
+                .find(|&k| vs.loaded == Some(k) || vs.ammo.get(k as usize).is_some_and(|n| *n > 0))
+                .unwrap_or(wanted)
         } else {
             wanted
         };
@@ -381,8 +425,22 @@ impl MatchState {
             })
             .into();
         let muzzle = main_muzzle(&f, vs, main);
+        let gr = &setup.rules.vehicles;
+        let lead = |a: &Aim| match target {
+            Some(t) if a.vehicle && target_moving => lead_estimate(
+                a.vel,
+                ctx.seed,
+                id,
+                t,
+                vs.ranging,
+                gr.gunnery.lead_error_pct,
+                gr.ranging_step_pct,
+                gr.ranging_floor_pct,
+            ),
+            _ => a.vel,
+        };
         let (want_yaw, want_pitch) = match aim {
-            Some(a) => to_lay(&f.hull.axes, solution(muzzle, a.point, a.vel, speed).0),
+            Some(a) => to_lay(&f.hull.axes, solution(muzzle, a.point, lead(&a), speed).0),
             None => (Fx::ZERO, Fx::ZERO),
         };
         if gunner {
@@ -431,7 +489,11 @@ impl MatchState {
                 vs.reload = reload_ticks;
                 vs.since_fire = 0;
                 vs.ranging = vs.ranging.saturating_add(1);
-                let kind = if k == AP { 1 } else { 2 };
+                let kind = match k {
+                    AP => 1,
+                    HE => 2,
+                    _ => 3,
+                };
                 fired = Some(
                     ArmourEv::new(ArmourEventKind::Fired, id, owner.0, owner.0)
                         .component(kind)
@@ -543,6 +605,64 @@ impl MatchState {
         }
     }
 
+    /// S3b, `Auto`: whether the special penetrator should go at vehicle `t`
+    /// (aimed at its turret or visible-mass centre from frame `f`): the
+    /// standard round's penetration chance against the plate facing the
+    /// shooter is under the rules' `special_below_pct` and the special
+    /// round's is higher.
+    fn special_better(&self, f: &VehicleFrame, t: SimId, main: &MountSetup, turret: bool) -> bool {
+        let (Some(tf), Some(ap), Some(sp)) = (
+            self.vderived.frame(t),
+            main.ammo.get(AP as usize),
+            main.ammo.get(SPECIAL as usize),
+        ) else {
+            return false;
+        };
+        let (Some(ap), Some(sp)) = (
+            self.armour.ammo.get(ap.ammo as usize),
+            self.armour.ammo.get(sp.ammo as usize),
+        ) else {
+            return false;
+        };
+        let part = if turret {
+            BoxPart::Turret
+        } else {
+            BoxPart::Hull
+        };
+        let b = if turret { &tf.turret } else { &tf.hull };
+        let from = f.turret.center;
+        let rel = b.center - from;
+        let range = rel.length();
+        let dir = rel.normalize_or_zero();
+        let l = crate::armour::to_local(b, -dir);
+        let face = if l.x.abs() >= l.y.abs() {
+            if l.x >= Fx::ZERO {
+                Face::Front
+            } else {
+                Face::Rear
+            }
+        } else if l.y >= Fx::ZERO {
+            Face::Left
+        } else {
+            Face::Right
+        };
+        let plates = &self.armour.vehicles[tf.type_idx as usize];
+        let plate = plates.face(part, face);
+        let c = crate::armour::impact_cos(dir, b.axes.apply(plate.normal));
+        let chance = |a: &crate::armour::AmmoTable| {
+            crate::armour::pen_chance_ppm(
+                a.pen0(range),
+                c,
+                plate.thickness,
+                Fx::ZERO,
+                a.cos_ricochet,
+            )
+        };
+        let (pa, ps) = (chance(ap), chance(sp));
+        let below = self.setup.rules.vehicles.gunnery.special_below_pct;
+        (pa as u64) * 100 < below as u64 * crate::armour::PPM as u64 && ps > pa
+    }
+
     /// Whether `t` is still a valid main-gun target of a vehicle of `owner`
     /// at frame `f`: a live, seen enemy vehicle or soldier in range. Its
     /// aim point (a vehicle's turret or hull centre) and velocity.
@@ -572,11 +692,7 @@ impl MatchState {
                 if (tf.origin.xy() - f.origin.xy()).length_sq_raw() > r {
                     return None;
                 }
-                let point = if aim_turret {
-                    tf.turret.center
-                } else {
-                    tf.hull.center
-                };
+                let point = aim_at(f.turret.center, tf, aim_turret);
                 Some(Aim {
                     point,
                     vel: self.vehicles.get(&t)?.avg_vel,
@@ -629,13 +745,8 @@ impl MatchState {
         let w = &setup.weapons[main.weapon as usize];
         let r = range_sq(w.range_max.into());
         let from = main_muzzle(f, vs, main);
-        let ap = main
-            .ammo
-            .first()
-            .and_then(|a| self.armour.ammo.get(a.ammo as usize));
-        let margin = setup.rules.vehicles.aim_hull_margin_pct;
         // Vehicles: the ordered one first, then the nearest.
-        if armour_ok && let Some(ap) = ap {
+        if armour_ok {
             let mut cands: Vec<(u64, SimId)> = Vec::new();
             for (&t, ts) in &self.vehicles {
                 let ti = t.index();
@@ -658,19 +769,13 @@ impl MatchState {
                 let Some(tf) = self.vderived.frame(t) else {
                     continue;
                 };
-                let plates = &self.armour.vehicles[tf.type_idx as usize];
-                if let Some(part) = aim_choice(from, tf, plates, ap, ctx.terrain, margin) {
+                if let Some(part) = aim_choice(from, tf, ctx.terrain) {
                     return (Some(t), part == BoxPart::Turret);
                 }
             }
         }
         // Infantry: the best group (more men near, then closer).
-        let he = main
-            .ammo
-            .get(HE as usize)
-            .and_then(|a| setup.ammo.get(a.ammo as usize))
-            .and_then(|a| a.blast.as_ref());
-        let blast_r: Fx = he.map_or(Fx::from_int(6), |b| b.blast.damage_radius.into());
+        let blast_r = Fx::from_int(setup.rules.vehicles.gunnery.he_group_m as i32);
         let mut near: Vec<(u64, u32)> = Vec::new();
         for (k, m) in ctx.marks.iter().enumerate() {
             if m.owner == owner.0 || m.seen_by & (1 << owner.0) == 0 {

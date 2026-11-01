@@ -612,10 +612,14 @@ impl ModDefs {
                         Some(ad) => kinds[(ad.mechanism == AmmoMechanism::He) as usize] += 1,
                     }
                 }
-                if kinds.iter().any(|&n| n > 1) {
+                // S3b: a second penetrator (a special round, e.g. APCR) only
+                // with the HE round, so the indices stay standard 0, HE 1,
+                // special 2.
+                if kinds[1] > 1 || kinds[0] > 2 || (kinds[0] == 2 && kinds[1] == 0) {
                     out.push(Issue::new(
                         format!("{p}.ammo"),
-                        "at most one armour-piercing (ap, aphe, heat) and one he round",
+                        "one armour-piercing round (ap, aphe, heat), at most one he round and, \
+                         with it, at most one special armour-piercing round",
                     ));
                 }
             }

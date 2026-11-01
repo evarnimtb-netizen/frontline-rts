@@ -521,6 +521,9 @@ pub(crate) fn globals(
                 st.knockouts,
                 st.blast_track_hits,
                 st.rockets_fired,
+                st.frag_rays,
+                st.frag_hits,
+                st.frag_rays_capped,
             ] {
                 v.put(out);
             }

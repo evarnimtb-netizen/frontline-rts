@@ -61,6 +61,9 @@ pub fn deg(d: i32) -> Fx {
 pub enum BoxPart {
     Hull = 0,
     Turret = 1,
+    /// S3b: the main gun's exposed barrel (no plate; a strike damages the
+    /// gun, `crate::damage`).
+    Barrel = 2,
 }
 
 /// A face of a box, by its outward axis in the box frame.
@@ -107,6 +110,8 @@ impl Face {
             (BoxPart::Turret, Face::Rear) => ArmourZone::TurretRear,
             (BoxPart::Turret, Face::Left | Face::Right) => ArmourZone::TurretSide,
             (BoxPart::Turret, Face::Top | Face::Bottom) => ArmourZone::TurretTop,
+            // Nominal: a barrel strike never runs the plate rule.
+            (BoxPart::Barrel, _) => ArmourZone::TurretFront,
         }
     }
 
@@ -349,9 +354,11 @@ impl VehicleArmour {
         }
     }
 
+    /// The plate of `part`'s face `f` (the barrel, which has none, reads
+    /// the turret's; callers never run the plate rule on it).
     #[inline]
     pub fn face(&self, part: BoxPart, f: Face) -> &PlateFace {
-        &self.faces[part as usize][f.index()]
+        &self.faces[(part as usize).min(1)][f.index()]
     }
 }
 
@@ -471,10 +478,10 @@ pub fn segment_near(from: FxVec3, d: FxVec3, c: FxVec3, r: Fx) -> bool {
 }
 
 /// The narrowphase (`docs/slices/S3-armour.md` "Geometry and pose"): the
-/// first plate of `f`'s hull or turret box that the segment `from → from +
-/// d` enters, with its ballistic normal in world space. At equal `t` the
-/// hull wins. M2 replaces the body with the mesh BVH; callers do not
-/// change.
+/// first plate of `f`'s hull or turret box, or (S3b) its barrel box, that
+/// the segment `from → from + d` enters, with its ballistic normal in world
+/// space. At equal `t` the hull wins, then the turret. M2 replaces the body
+/// with the mesh BVH; callers do not change.
 pub fn hit_armour(
     from: FxVec3,
     d: FxVec3,
@@ -482,7 +489,15 @@ pub fn hit_armour(
     a: &VehicleArmour,
 ) -> Option<ArmourHit> {
     let mut best: Option<ArmourHit> = None;
-    for (part, b) in [(BoxPart::Hull, &f.hull), (BoxPart::Turret, &f.turret)] {
+    let parts = [
+        (BoxPart::Hull, &f.hull),
+        (BoxPart::Turret, &f.turret),
+        (BoxPart::Barrel, &f.barrel),
+    ];
+    for (part, b) in parts {
+        if b.half.x <= Fx::ZERO {
+            continue;
+        }
         let Some((t, face, local)) = segment_box(b, from, d) else {
             continue;
         };

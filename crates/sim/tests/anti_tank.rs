@@ -25,6 +25,10 @@ fn setup() -> MatchSetup {
     s.map.terrain.octaves.clear();
     s.map.terrain.bands.clear();
     s.map.woods.clear();
+    // S3b: a vehicle with fewer than 2 crew is knocked out at its next
+    // hit; these tests' "harmless" targets keep only a driver, so the old
+    // rule (only an empty vehicle) applies here.
+    s.rules.vehicles.damage.crew_ko_below = 0;
     s
 }
 

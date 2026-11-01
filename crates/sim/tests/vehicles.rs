@@ -241,7 +241,7 @@ fn a_tank_drives_to_its_target_and_stops() {
     let snap = &w.snapshot().vehicles[0];
     assert_eq!(snap.id, v.0);
     assert_eq!(snap.owner, 0);
-    assert_eq!(snap.ammo, [30, 30]);
+    assert_eq!(snap.ammo, [30, 30, 6], "PzGr 39, Sprgr 34, PzGr 40");
     assert!(snap.squad == sq.0);
     assert!(w.snapshot().squads.iter().all(|s| s.id != sq.0));
 }

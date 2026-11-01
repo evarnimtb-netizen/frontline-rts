@@ -515,10 +515,11 @@ impl Scripter {
             },
             3 => CommandKind::SetAmmo {
                 units: vec![v],
-                ammo: match self.rng.below(3) {
+                ammo: match self.rng.below(4) {
                     0 => AmmoChoice::Auto,
                     1 => AmmoChoice::Ap,
-                    _ => AmmoChoice::He,
+                    2 => AmmoChoice::He,
+                    _ => AmmoChoice::Apcr,
                 },
             },
             4 => CommandKind::RepairUnits { units: vec![v] },

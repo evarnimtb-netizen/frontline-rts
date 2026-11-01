@@ -62,6 +62,19 @@ impl Purpose {
     pub const FIRE: Purpose = Purpose(20);
     /// Ammo-rack detonation (tick, slot).
     pub const AMMO_RACK: Purpose = Purpose(21);
+    // ---- S3b (`docs/slices/S3b-balance.md` "Fragments and blasts").
+    /// Fragment ray directions of a shell, rocket or tank-HE burst (tick,
+    /// the burst's event index as the id); rays by index within the stream.
+    pub const FRAGMENT: Purpose = Purpose(22);
+    /// Fragment ray directions of a thrown item's burst (tick, item id).
+    pub const ITEM_FRAGMENT: Purpose = Purpose(23);
+    /// Inner fragment rays of HE that beat a plate (tick, slot).
+    pub const HE_INSIDE: Purpose = Purpose(24);
+    /// Lead estimation error against a moving target (the ranging count as
+    /// the tick, the shooter id; the target id is mixed into the seed).
+    pub const LEAD: Purpose = Purpose(25);
+    /// Ammo-fire roll of a rack hit that did not detonate (tick, slot).
+    pub const AMMO_FIRE: Purpose = Purpose(26);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

@@ -19,6 +19,7 @@ use anyhow::{Result, anyhow};
 use frontline_content::vehicle::AmmoMechanism;
 use frontline_content::{ComponentKind, Difficulty, MatchRequest, MatchSetup, ModDefs};
 use frontline_sim::armour::{self, BoxPart, PPM, PenResult};
+use frontline_sim::gunnery;
 use frontline_sim::scenarios::{
     self, AtRun, Duel, LANE_Y, SatchelRun, TRENCH_X, at, cmd, dir_deg, members, toughen,
 };
@@ -400,7 +401,7 @@ fn case2(env: &Env) -> Result<CaseReport> {
                 if h.vehicle == hd {
                     match h.part {
                         BoxPart::Hull => hull += 1,
-                        BoxPart::Turret => turret += 1,
+                        BoxPart::Turret | BoxPart::Barrel => turret += 1,
                     }
                 }
             }
@@ -437,10 +438,52 @@ struct DuelStat {
     hits: BTreeMap<(u8, BoxPart), u64>,
     aim_turret: u64,
     aim_hull: u64,
+    /// S3b, 3b: the Sherman's main-gun shots and the worst miss of its laid
+    /// line from the Panzer IV's visible-mass centroid at the target (m).
+    aim_shots: u64,
+    aim_worst_m: f64,
     /// Knock-outs by cause (`ArmourEvent::component`: crew, rack, fire),
     /// and ticks to each side's first main-gun shot (S3b baseline).
-    ko_cause: [u32; 3],
+    ko_cause: [u32; 4],
     first_shot: [Vec<u64>; 2],
+}
+
+/// S3b 3b check: how far (m, at the target's range) the Sherman's laid
+/// gun line passes from the drop-compensated solution to the Panzer IV's
+/// visible-mass centroid (a still target, so no lead).
+fn aim_miss_m(w: &World, sh: SimId, pz: SimId) -> Option<f64> {
+    let g = w.game()?;
+    let d = g.vehicle_derived();
+    let (fs, fp) = (d.frame(sh)?, d.frame(pz)?);
+    let vs = g.vehicle(sh)?;
+    let s = w.match_setup()?;
+    let v = &s.vehicles[vs.type_idx as usize];
+    let main = v.main_gun();
+    let muzzle = gunnery::main_muzzle(fs, vs, main);
+    let centre = gunnery::mass_centre(muzzle, fp);
+    let speed = main
+        .ammo
+        .first()
+        .and_then(|a| s.ammo.get(a.ammo as usize))
+        .map(|a| a.speed)?;
+    let (want, _) = gunnery::solution(muzzle, centre, FxVec2::ZERO, speed.into());
+    let have = fs
+        .hull
+        .axes
+        .apply(gunnery::gun_local(vs.turret_yaw, vs.gun_pitch));
+    let f = |v: FxVec3| v.to_f32().map(f64::from);
+    let (a, b) = (f(want), f(have));
+    // The small angle between them: |a × b| / (|a| |b|) (acos near 1 is
+    // ill-conditioned for unit vectors rounded to Q16.16).
+    let cross = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let len = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    let sin = len(cross) / (len(a) * len(b)).max(1e-9);
+    let range = f64::from((centre - muzzle).length().to_f32());
+    Some(sin.clamp(0.0, 1.0).asin() * range)
 }
 
 fn case3(env: &Env) -> Result<CaseReport> {
@@ -452,6 +495,7 @@ fn case3(env: &Env) -> Result<CaseReport> {
             ("a 300 m frontal", Duel::Frontal300),
             ("b 300 m, Panzer IV angled 30°", Duel::Angled300),
             ("c 150 m, Sherman on the flank", Duel::Flank150),
+            ("e 150 m, Panzer IV on the flank", Duel::PzFlank150),
         ] {
             let mut s = scenarios::duel(env.setup(seed)?, env.threads, kind, flip == 1)?;
             r.runs += 1;
@@ -476,6 +520,13 @@ fn case3(env: &Env) -> Result<CaseReport> {
                         let side = (e.vehicle == sh.0) as usize;
                         if shot[side].is_none() {
                             shot[side] = Some(w.tick() - start);
+                        }
+                        if kind == Duel::Angled300
+                            && e.vehicle == sh.0
+                            && let Some(m) = aim_miss_m(w, sh, pz)
+                        {
+                            st.aim_shots += 1;
+                            st.aim_worst_m = st.aim_worst_m.max(m);
                         }
                     }
                 }
@@ -536,11 +587,12 @@ fn case3(env: &Env) -> Result<CaseReport> {
         r.row(
             format!("3{name}: knock-outs by cause, first shot"),
             format!(
-                "crew {}, ammo rack {}, fire {}; first main-gun shot (median) Panzer IV {}, \
-                 Sherman {}",
+                "crew {}, ammo rack {}, fire {}, ammo fire {}; first main-gun shot (median) \
+                 Panzer IV {}, Sherman {}",
                 st.ko_cause[0],
                 st.ko_cause[1],
                 st.ko_cause[2],
+                st.ko_cause[3],
                 med(&st.first_shot[0]),
                 med(&st.first_shot[1])
             ),
@@ -569,15 +621,58 @@ fn case3(env: &Env) -> Result<CaseReport> {
         );
     }
     if let Some(st) = stats.get("b 300 m, Panzer IV angled 30°") {
+        // S3b: the centre of visible mass, not the weakest plate.
         r.check(
-            "3b: the Sherman's gunner aims at the angled Panzer IV's turret",
-            st.aim_turret > 0 && st.aim_hull == 0,
+            "3b: the Sherman's gunner aims within 0.3 m of the angled Panzer IV's visible-mass \
+             centroid",
+            st.aim_hull > 0 && st.aim_turret == 0 && st.aim_shots > 0 && st.aim_worst_m <= 0.3,
             format!(
-                "ticks aiming turret {}, hull {}",
-                st.aim_turret, st.aim_hull
+                "ticks aiming at the centroid {}, at the turret {}; {} shots, worst laid miss \
+                 {:.2} m",
+                st.aim_hull, st.aim_turret, st.aim_shots, st.aim_worst_m
             ),
         );
     }
+    // S3b targets (report): the flanker wins.
+    for (name, flanker) in [
+        ("c 150 m, Sherman on the flank", 1usize),
+        ("e 150 m, Panzer IV on the flank", 0),
+    ] {
+        if let Some(st) = stats.get(name) {
+            let won = if flanker == 1 { st.sh_wins } else { st.pz_wins };
+            r.target(
+                format!("3{name}: the flanker's wins"),
+                format!("{won} of {}", st.runs),
+                "≥ 7 of 10",
+            );
+        }
+    }
+    if let Some(st) = stats.get("a 300 m frontal") {
+        r.target(
+            "3a 300 m frontal: Panzer IV wins",
+            format!("{} of {}", st.pz_wins, st.runs),
+            "6–8 of 10",
+        );
+    }
+    let ko: [u32; 4] = stats.values().fold([0; 4], |mut a, st| {
+        for (k, n) in st.ko_cause.iter().enumerate() {
+            a[k] += n;
+        }
+        a
+    });
+    let all: u32 = ko.iter().sum();
+    r.target(
+        "case 3 pooled knock-outs: rack detonations",
+        format!(
+            "{} of {all} ({}); crew {}, engine fire {}, ammo fire {}",
+            ko[1],
+            pct(f64::from(ko[1]), f64::from(all)),
+            ko[0],
+            ko[2],
+            ko[3]
+        ),
+        "≤ 50 %",
+    );
     // 3d: crossing vs stationary hit rate.
     let (mut shots, mut hits) = ([0u64; 2], [0u64; 2]);
     for (seed, p) in env.runs() {
@@ -1147,7 +1242,7 @@ fn case8(env: &Env) -> Result<CaseReport> {
             let lethal: Fx = it
                 .he
                 .as_ref()
-                .map_or(Fx::ZERO, |h| h.blast.lethal_radius.into());
+                .map_or(Fx::ZERO, |h| h.blast.blast_radius.into());
             let fuse = Fx::from_int(it.fuse_ticks as i32).div_int(setup.tick_hz as i32);
             let men0 = members(w, eng).len() as u32;
             let throws0 = w.stats().throws;
@@ -1244,7 +1339,7 @@ fn case8(env: &Env) -> Result<CaseReport> {
         }
     }
     r.check(
-        "a satchel burst with a track anchor inside its lethal radius destroys that track",
+        "a satchel burst with a track anchor inside its blast radius destroys that track",
         failures.is_empty(),
         if failures.is_empty() {
             format!("{bursts_checked} tracks in reach, all destroyed")

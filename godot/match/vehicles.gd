@@ -21,10 +21,10 @@ const SEATS := ["driver", "gunner", "commander", "loader", "radio_mg"]
 const SEAT_LETTERS := ["D", "G", "C", "L", "R"]
 const SEAT_NAMES := {"driver": "Driver", "gunner": "Gunner", "commander": "Commander", "loader": "Loader", "radio_mg": "Radio operator"}
 ## Components in snapshot order; STRIP is the card's component strip.
-const COMPONENTS := ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack"]
+const COMPONENTS := ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack", "transmission"]
 const STRIP := ["engine", "track_l", "track_r", "gun", "ring"]
-const COMPONENT_NAMES := {"engine": "Engine", "track_l": "Left track", "track_r": "Right track", "gun": "Main gun", "ring": "Turret ring", "ammo_rack": "Ammo rack"}
-const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R", "gun": "Gun", "ring": "Ring", "ammo_rack": "Rack"}
+const COMPONENT_NAMES := {"engine": "Engine", "track_l": "Left track", "track_r": "Right track", "gun": "Main gun", "ring": "Turret ring", "ammo_rack": "Ammo rack", "transmission": "Transmission"}
+const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R", "gun": "Gun", "ring": "Ring", "ammo_rack": "Rack", "transmission": "Trans"}
 ## Below this fraction a component reads as damaged (S3 spec: < 50 HP of
 ## 100; the gun and ring have 80, so this is a presenter threshold).
 const DAMAGED := 0.5
@@ -35,8 +35,9 @@ const STATE_TEXT := {
 }
 ## Badge states drawn in the alarm (accent) colour.
 const ALARM_STATES := ["burning", "bogged", "immobilised"]
-const AMMO_CHOICES := ["auto", "ap", "he"]
-const AMMO_TEXT := {"auto": "Auto", "ap": "AP", "he": "HE"}
+## S3b: "apcr" (the special round) only on guns that carry it.
+const AMMO_CHOICES := ["auto", "ap", "apcr", "he"]
+const AMMO_TEXT := {"auto": "Auto", "ap": "AP", "apcr": "APCR", "he": "HE"}
 ## Hit marker words by armour event kind (spec "Hit markers").
 const HIT_WORDS := {"ricochet": "Ricochet", "no_pen": "No pen", "pen": "Penetrated", "crew_hit": "Crew hit"}
 ## Placeholder paint by faction, mixed toward the side colour for the team
@@ -50,10 +51,18 @@ const GLACIS_DEG := {"germany": 10.0, "usa": 47.0}
 const TEAM_MIX := 0.42
 
 
-## Next ammo choice for the N key: Auto → AP → HE → Auto.
-static func next_ammo(choice: String) -> String:
-	var i := AMMO_CHOICES.find(choice)
-	return AMMO_CHOICES[(i + 1) % AMMO_CHOICES.size()]
+## Next ammo choice for the N key: Auto → AP → (APCR, on a gun that has
+## it) → HE → Auto.
+static func next_ammo(choice: String, has_apcr := false) -> String:
+	var order: Array = AMMO_CHOICES if has_apcr else AMMO_CHOICES.filter(func(c): return c != "apcr")
+	var i := order.find(choice)
+	return order[(i + 1) % order.size()]
+
+
+## Whether a vehicle's state lists the special round (S3b: "apcr" in its
+## ammo counts).
+static func has_apcr(v: Dictionary) -> bool:
+	return (v.get("ammo", {}) as Dictionary).has("apcr")
 
 
 static func has(v: Dictionary, bit: int) -> bool:

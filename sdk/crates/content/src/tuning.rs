@@ -422,15 +422,45 @@ tuning_table! {
     pub struct GunneryTuning {
         /// The coax engages men this close to the turret's line (deg).
         coax_cone_deg: 0..=90,
-        /// External parts (tracks, barrel) within this of a
-        /// non-penetrating impact take the round's `nonpen_damage` (mm).
-        external_reach_mm: 0..=10000,
         /// A spall ray ends after this (m).
         spall_reach_m: 1..=30,
+        /// Tank HE at infantry: enemy men within this of a man count as
+        /// his group when the gunner picks the best group (m).
+        he_group_m: 1..=50,
+        /// Lead estimation error against a moving target: the gunner's
+        /// estimate of its velocity is off by up to this much, triangular
+        /// (%); it shrinks with ranging like the spread.
+        lead_error_pct: 0..=200,
+        /// `Auto` loads a gun's special penetrator (APCR) only against a
+        /// target the standard round penetrates with less than this
+        /// chance, and only when the special round's chance is higher (%).
+        special_below_pct: 0..=100,
     }
 }
 
 impl GunneryTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[vehicles.damage]` (S3b): what a hit on the ammo stowage does and
+    /// when too few crew knock a vehicle out. The rack's damage threshold
+    /// and detonation chance are the `[vehicles]` keys `rack_min_damage`
+    /// and `rack_detonate_pct`.
+    pub struct VehicleDamageTuning {
+        /// A rack hit for at least `rack_min_damage` that does not
+        /// detonate starts an ammo fire with this chance (%) ...
+        rack_fire_pct: 0..=100,
+        /// ... which knocks the vehicle out after this long; the crew cannot
+        /// put it out (s).
+        ammo_fire_s: 1..=600,
+        /// A vehicle with fewer living crew than this is knocked out (0:
+        /// only when every seat is empty).
+        crew_ko_below: 0..=5,
+    }
+}
+
+impl VehicleDamageTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
@@ -526,6 +556,11 @@ tuning_table! {
         parapet_undug_mm: 0..=1000,
         /// A digger works when this close to his spot (mm).
         reach_mm: 100..=10000,
+        /// S3b: an HE crater centred on raised spoil (a parapet) blows the
+        /// spoil away within its radius down to this share of the crater
+        /// depth below the spoil's top, never below the base surface, and
+        /// raises no rim there (%).
+        spoil_crater_pct: 0..=1000,
     }
 }
 
@@ -546,6 +581,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("vehicles.path", VehiclePathTuning::KEYS),
     ("vehicles.escort", EscortTuning::KEYS),
     ("vehicles.gunnery", GunneryTuning::KEYS),
+    ("vehicles.damage", VehicleDamageTuning::KEYS),
     ("movement.formation", FormationTuning::KEYS),
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
@@ -565,6 +601,7 @@ pub(crate) struct TuningRefs<'a> {
     pub vehicle_path: &'a VehiclePathTuning,
     pub escort: &'a EscortTuning,
     pub gunnery: &'a GunneryTuning,
+    pub vehicle_damage: &'a VehicleDamageTuning,
     pub formation: &'a FormationTuning,
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
@@ -586,6 +623,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.vehicle_path.check(&p("vehicles.path"), out);
     t.escort.check(&p("vehicles.escort"), out);
     t.gunnery.check(&p("vehicles.gunnery"), out);
+    t.vehicle_damage.check(&p("vehicles.damage"), out);
     t.formation.check(&p("movement.formation"), out);
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);

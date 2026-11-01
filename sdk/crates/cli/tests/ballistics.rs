@@ -267,8 +267,8 @@ fn validate_checks_the_mod_folder() {
     );
     edit(
         "defs/vehicles/ger_pz4_h.toml",
-        "center = [150, 60, 110]",
-        "center = [150, 160, 110]",
+        "center = [190, 60, 115]",
+        "center = [190, 160, 115]",
     );
     let r = validate::path(&dst);
     assert!(!r.ok);

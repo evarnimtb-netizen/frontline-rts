@@ -244,6 +244,8 @@ pub enum LoadedSnap {
     /// The penetrator (AP, APHE or HEAT; the mount's first round).
     Ap = 1,
     He = 2,
+    /// S3b: the special penetrator (the mount's third round, APCR).
+    Apcr = 3,
 }
 
 /// One vehicle or wreck, ascending id. Sim axes; angles in radians.
@@ -283,17 +285,18 @@ pub struct VehicleSnapshot {
     /// Own only: [`SeatSnap`] per `SeatRole::index`.
     pub seats: [u8; 5],
     /// Own only: HP % (0..=100) per `ComponentKind::index` (engine, track
-    /// L, track R, gun, turret ring, ammo rack).
-    pub components: [u8; 6],
+    /// L, track R, gun, turret ring, ammo rack; S3b: transmission).
+    pub components: [u8; frontline_content::COMPONENTS],
     /// Own only: the `ComponentKind::index` being repaired, [`NONE_U8`]
     /// for none.
     pub repairing: u8,
-    /// Own only: main-gun rounds left, penetrator then HE (the one in the
-    /// breech included).
-    pub ammo: [u16; 2],
+    /// Own only: main-gun rounds left, penetrator, HE, then (S3b) the
+    /// special penetrator (0 on guns without one); the one in the breech
+    /// included.
+    pub ammo: [u16; 3],
     /// Own only: [`LoadedSnap`].
     pub loaded: u8,
-    /// Own only: the ammo choice (`SetAmmo`: 0 auto, 1 AP, 2 HE).
+    /// Own only: the ammo choice (`SetAmmo`: 0 auto, 1 AP, 2 HE, 3 APCR).
     pub ammo_choice: u8,
     /// Own only: main-gun reload progress, 0..=100 (100: ready).
     pub reload_pct: u8,
@@ -353,8 +356,9 @@ pub enum ArmourEventKind {
     CrewHit = 5,
     /// A component reached 0 HP (`component`: `ComponentKind::index`).
     Disabled = 6,
-    /// The vehicle became a wreck (`component`: 0 crew lost, 1 ammo rack
-    /// detonation, 2 fire burned out).
+    /// The vehicle became a wreck (`component`: 0 too few crew, 1 ammo
+    /// rack detonation, 2 engine fire burned out, 3 ammo fire burned out,
+    /// S3b).
     KnockedOut = 7,
     /// The vehicle bogged in a trench crossing.
     Bogged = 8,
@@ -715,7 +719,7 @@ impl RenderSnapshot {
                 set(REVERSING, vs.speed < crate::fx::Fx::ZERO);
                 set(BOGGED, vs.bog > 0 || vs.on_blocked);
                 set(IMMOBILISED, !wreck && vs.immobilised(v));
-                set(BURNING, vs.burn > 0);
+                set(BURNING, vs.burn > 0 || vs.ammo_fire > 0);
                 set(REPAIRING, vs.repairing.is_some());
                 set(CROSSING, vs.crossing);
                 set(WRECK, wreck);
@@ -767,18 +771,20 @@ impl RenderSnapshot {
                 seats,
                 components,
                 repairing: vs.repairing.unwrap_or(NONE_U8),
-                ammo: [0usize, 1].map(|k| {
+                ammo: [0usize, 1, 2].map(|k| {
                     vs.ammo.get(k).copied().unwrap_or(0) + (vs.loaded == Some(k as u8)) as u16
                 }),
                 loaded: match vs.loaded {
                     None => LoadedSnap::None,
-                    Some(0) => LoadedSnap::Ap,
-                    Some(_) => LoadedSnap::He,
+                    Some(1) => LoadedSnap::He,
+                    Some(2) => LoadedSnap::Apcr,
+                    Some(_) => LoadedSnap::Ap,
                 } as u8,
                 ammo_choice: match vs.ammo_choice {
                     AmmoChoice::Auto => 0,
                     AmmoChoice::Ap => 1,
                     AmmoChoice::He => 2,
+                    AmmoChoice::Apcr => 3,
                 },
                 reload_pct: (100 - (vs.reload as u32 * 100 / reload_total).min(100)) as u8,
                 target: vs

@@ -165,13 +165,15 @@ func _draw_vehicle(vid: int) -> void:
 			HudStyle.text(self, bold, Vector2(x + ps + 3.0, y + base), Vehicles.SEAT_LETTERS[i], HudStyle.FONT_SMALL, HudStyle.TEXT if st in ["ok", "wounded"] else HudStyle.OFF_TEXT)
 		x += step
 	y += rh
-	# Components: three columns, two rows; label and a bar.
-	var colw := (size.x - 2.0 * PAD) / 3.0
+	# Components: four columns, two rows (S3b: seven parts with the
+	# transmission); label and a bar.
+	var cols := 4
+	var colw := (size.x - 2.0 * PAD) / float(cols)
 	var rep_c := String(v.get("repairing", ""))
 	for i in Vehicles.COMPONENTS.size():
 		var c: String = Vehicles.COMPONENTS[i]
-		var cx := PAD + (i % 3) * colw
-		var cy := y + int(i / 3.0) * rh
+		var cx := PAD + (i % cols) * colw
+		var cy := y + int(i / float(cols)) * rh
 		var label: String = Vehicles.COMPONENT_SHORT[c]
 		var lw := HudStyle.text_w(font, label, HudStyle.FONT)
 		HudStyle.text(self, font, Vector2(cx, cy + base), label, HudStyle.FONT, HudStyle.DIM)

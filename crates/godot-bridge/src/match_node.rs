@@ -105,7 +105,15 @@ const MAX_PENDING_MARKERS: usize = 64;
 const MAX_ARMOUR_BACKLOG: usize = 256;
 /// State names of `ComponentKind::index`, `SeatRole::index`,
 /// `ArmourZone::index` and `ArmourEventKind` (`match_state.md`).
-const COMPONENT_KEYS: [&str; 6] = ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack"];
+const COMPONENT_KEYS: [&str; 7] = [
+    "engine",
+    "track_l",
+    "track_r",
+    "gun",
+    "ring",
+    "ammo_rack",
+    "transmission",
+];
 const SEAT_KEYS: [&str; 5] = ["driver", "gunner", "commander", "loader", "radio_mg"];
 const ZONE_KEYS: [&str; 8] = [
     "hull_front",
@@ -2103,15 +2111,23 @@ impl MatchRuntime {
                         .copied()
                         .unwrap_or(""),
                 );
-                d.set(
-                    "ammo",
-                    &vdict! {"ap" => v.ammo[0] as i64, "he" => v.ammo[1] as i64},
-                );
+                // S3b: "apcr" only for a gun that carries a special round.
+                let mut ammo = vdict! {"ap" => v.ammo[0] as i64, "he" => v.ammo[1] as i64};
+                let special = self
+                    .setup
+                    .vehicles
+                    .get(v.type_idx as usize)
+                    .is_some_and(|t| t.main_gun().ammo.len() > 2);
+                if special {
+                    ammo.set("apcr", v.ammo[2] as i64);
+                }
+                d.set("ammo", &ammo);
                 d.set(
                     "loaded",
                     match v.loaded {
                         1 => "ap",
                         2 => "he",
+                        3 => "apcr",
                         _ => "",
                     },
                 );
@@ -2139,6 +2155,7 @@ impl MatchRuntime {
         let component = match e.kind {
             k if k == ArmourEventKind::Fired as u8 => match e.component {
                 2 => "he",
+                3 => "apcr",
                 _ => "ap",
             },
             k if k == ArmourEventKind::ComponentHit as u8
@@ -2155,6 +2172,7 @@ impl MatchRuntime {
             k if k == ArmourEventKind::KnockedOut as u8 => match e.component {
                 1 => "ammo_rack",
                 2 => "fire",
+                3 => "ammo_fire",
                 _ => "crew",
             },
             _ => "",

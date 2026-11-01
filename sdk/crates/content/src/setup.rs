@@ -30,7 +30,8 @@ use crate::scenario::ms_to_ticks;
 use crate::tuning::{
     AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
     DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehiclePathTuning, check_tuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
+    check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -273,7 +274,6 @@ pub struct VehicleRulesSetup {
     /// Radians.
     pub he_area_spread: Fixed,
     pub he_clear: Fixed,
-    pub aim_hull_margin_pct: u32,
     pub crossing_dug: Fixed,
     /// m/s.
     pub crossing_speed: Fixed,
@@ -294,6 +294,7 @@ pub struct VehicleRulesSetup {
     pub path: VehiclePathTuning,
     pub escort: EscortTuning,
     pub gunnery: GunneryTuning,
+    pub damage: VehicleDamageTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -529,16 +530,27 @@ pub struct WeaponSetup {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeSetup {
-    pub lethal_radius: Fixed,
-    pub damage_radius: Fixed,
+    /// S3b: overpressure radius (full damage with a clear line).
+    pub blast_radius: Fixed,
+    /// S3b fragments: rays per burst, ray length, damage at the burst and
+    /// at full reach (percent), the elevation band (integer degrees), and
+    /// damage to a track whose band a fragment strikes.
+    pub frag_count: u32,
+    pub frag_reach: Fixed,
+    pub frag_damage: u32,
+    pub frag_far_pct: u32,
+    pub frag_elev_deg: [i32; 2],
+    pub frag_track_damage: u32,
     pub suppression_radius: Fixed,
     pub crater_radius: Fixed,
     pub crater_depth: Fixed,
-    /// S3: armour it defeats on contact (mm), the inner burst when it does,
-    /// and its damage to track anchors in percent.
+    /// S3: armour it defeats on contact (mm); S3b: the inner fragment rays
+    /// when it does (count, damage each, reach); its damage to track
+    /// anchors in percent.
     pub pen_mm: u32,
     pub inside_damage: u32,
-    pub inside_radius: Fixed,
+    pub inside_rays: u32,
+    pub inside_reach: Fixed,
     pub vs_vehicle_pct: u32,
 }
 
@@ -761,14 +773,20 @@ impl ModDefs {
                 setup_ticks: ms_to_ticks(w.setup_ms, hz),
                 suppression: w.suppression,
                 he: w.he.as_ref().map(|h| HeSetup {
-                    lethal_radius: Fixed::from_cm(h.lethal_radius_cm),
-                    damage_radius: Fixed::from_cm(h.damage_radius_cm),
+                    blast_radius: Fixed::from_cm(h.blast_radius_cm),
+                    frag_count: h.frag_count,
+                    frag_reach: Fixed::from_cm(h.frag_reach_cm),
+                    frag_damage: h.frag_damage,
+                    frag_far_pct: h.frag_far_pct,
+                    frag_elev_deg: h.frag_elev_deg.map(|d| d as i32),
+                    frag_track_damage: h.frag_track_damage,
                     suppression_radius: Fixed::from_int(h.suppression_radius_m as i32),
                     crater_radius: Fixed::from_cm(h.crater_radius_cm),
                     crater_depth: Fixed::from_cm(h.crater_depth_cm),
                     pen_mm: h.pen_mm,
                     inside_damage: h.inside_damage,
-                    inside_radius: Fixed::from_cm(h.inside_radius_cm),
+                    inside_rays: h.inside_rays,
+                    inside_reach: Fixed::from_cm(h.inside_reach_cm),
                     vs_vehicle_pct: h.vs_vehicle_pct,
                 }),
                 fire_reveal_pct: w.fire_reveal_pct.unwrap_or(rules.combat.firing_spot_pct),
@@ -1017,7 +1035,6 @@ impl ModDefs {
                         ranging_floor_pct: v.ranging_floor_pct,
                         he_area_spread: Fixed::from_ratio(v.he_area_spread_mrad as i64, 1000),
                         he_clear: Fixed::from_int(v.he_clear_m as i32),
-                        aim_hull_margin_pct: v.aim_hull_margin_pct,
                         crossing_dug: Fixed::from_cm(v.crossing_dug_cm),
                         crossing_speed: Fixed::from_cm(v.crossing_speed_cm_s),
                         crossing_gap_ticks: v.crossing_gap_s * hz,
@@ -1036,6 +1053,7 @@ impl ModDefs {
                         path: v.path.clone(),
                         escort: v.escort.clone(),
                         gunnery: v.gunnery.clone(),
+                        damage: v.damage.clone(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -1164,14 +1182,20 @@ pub(crate) fn lower_item_he(h: &ItemHeDef) -> ItemHeSetup {
         damage: h.damage,
         suppression: h.suppression,
         blast: HeSetup {
-            lethal_radius: Fixed::from_cm(h.lethal_radius_cm),
-            damage_radius: Fixed::from_cm(h.damage_radius_cm),
+            blast_radius: Fixed::from_cm(h.blast_radius_cm),
+            frag_count: h.frag_count,
+            frag_reach: Fixed::from_cm(h.frag_reach_cm),
+            frag_damage: h.frag_damage,
+            frag_far_pct: h.frag_far_pct,
+            frag_elev_deg: h.frag_elev_deg.map(|d| d as i32),
+            frag_track_damage: h.frag_track_damage,
             suppression_radius: Fixed::from_int(h.suppression_radius_m as i32),
             crater_radius: Fixed::from_cm(h.crater_radius_cm),
             crater_depth: Fixed::from_cm(h.crater_depth_cm),
             pen_mm: h.pen_mm,
             inside_damage: h.inside_damage,
-            inside_radius: Fixed::from_cm(h.inside_radius_cm),
+            inside_rays: h.inside_rays,
+            inside_reach: Fixed::from_cm(h.inside_reach_cm),
             vs_vehicle_pct: h.vs_vehicle_pct,
         },
         cuts_trenches: h.cuts_trenches,
@@ -1184,15 +1208,21 @@ fn fx_in(v: Fixed, lo: i32, hi: i32) -> bool {
 
 /// Range checks of one blast (weapon, item or round).
 pub(crate) fn he_ok(b: &HeSetup) -> bool {
-    b.lethal_radius > Fixed::ZERO
-        && b.lethal_radius <= b.damage_radius
-        && fx_in(b.damage_radius, 0, 100)
+    fx_in(b.blast_radius, 0, 20)
+        && b.frag_count <= crate::defs::MAX_FRAG_RAYS
+        && fx_in(b.frag_reach, 0, 50)
+        && b.frag_damage <= 10_000
+        && b.frag_far_pct <= 100
+        && (0..=89).contains(&b.frag_elev_deg[0])
+        && (b.frag_elev_deg[0]..=89).contains(&b.frag_elev_deg[1])
+        && b.frag_track_damage <= 1000
         && fx_in(b.suppression_radius, 0, 200)
         && fx_in(b.crater_radius, 0, 20)
         && fx_in(b.crater_depth, 0, 5)
         && b.pen_mm <= 2000
         && b.inside_damage <= 10_000
-        && fx_in(b.inside_radius, 0, 10)
+        && b.inside_rays <= crate::defs::MAX_INSIDE_RAYS
+        && fx_in(b.inside_reach, 0, 10)
         && b.vs_vehicle_pct <= 100
 }
 
@@ -1397,8 +1427,7 @@ impl MatchSetup {
                 && v.ranging_step_pct <= 100
                 && (1..=100).contains(&v.ranging_floor_pct)
                 && fx_in(v.he_area_spread, 0, 1)
-                && fx_in(v.he_clear, 0, 500)
-                && v.aim_hull_margin_pct <= 100,
+                && fx_in(v.he_clear, 0, 500),
             "rules.vehicles",
             "out of range",
         );
@@ -1538,6 +1567,7 @@ impl MatchSetup {
                 vehicle_path: &v.path,
                 escort: &v.escort,
                 gunnery: &v.gunnery,
+                vehicle_damage: &v.damage,
                 formation: &m.formation,
                 cover: &r.cover,
                 throw: &r.items.throw,
