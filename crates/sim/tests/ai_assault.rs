@@ -41,8 +41,10 @@ fn run(w: &mut World, ticks: u64) -> Vec<u64> {
 // data; seeds 1-8 give 0, 4, 1, 0, 0, 0, 6, 0 rockets). S3c Part B (map,
 // AI, shells flying their full range): seed 18, the first of seeds 1-24
 // with rockets, a satchel hunt ended, second bases, re-crews, crews
-// walking back and denial fire all in the ten minutes.
-const SEED: u64 = 18;
+// walking back and denial fire all in the ten minutes. S3c Tune (AT mix 20,
+// at_hunt_clear_m 20, satchel_hunt_m 250): seed 50, the only one of seeds
+// 1-60 with all of that in the ten minutes.
+const SEED: u64 = 50;
 const TICKS: u64 = 30 * 600;
 const SAVE_AT: u64 = 30 * 330;
 

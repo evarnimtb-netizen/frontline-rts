@@ -631,6 +631,73 @@ fortify-test seeds 1–10. Decisions on noisy numbers use 80 matches (seeds
     so T9 can see matches over 30 min (the CLI default stops at 30 and
     counts a draw). (B) Keep 30 and count limit draws as "over".
 
+## Tune results (Tune stage, 2026-11-02)
+
+Three data changes in `mods/ww2/defs/rules/skirmish.toml`, each with its
+measurement in the TOML comment:
+
+| Key | Was | Now | Why |
+|---|---|---|---|
+| `ai.mix_at_pct` | 10 | 20 | AT teams (180-200 MP) reached a tank in only 11 of 20 normal-base matches once tanks fought at 300-600 m (S3c-26) |
+| `ai.assault.at_hunt_clear_m` | 40 | 20 | an AT team would not leave while any enemy soldier stood near its route, so tanks shelled the point from 160 m |
+| `ai.assault.satchel_hunt_m` | 150 | 250 | tanks halt at `tank_standoff_m` 160 m from a point, engineers dig in 10 m in front of it: a halted tank stood just outside 150 m |
+
+No sim code changed; the armour-test and fortify-test results are identical
+to Part B (the AI values do not enter the staged cases). Measured with
+`--minutes 45`: the standard set (seeds 1-20 x both bases = 40 matches) and
+the 160-match set (seeds 1-80 x both bases), which is the one decisions
+use; the standard set alone is too noisy for faction wins (11 G / 29 U there,
+72 / 88 in 160).
+
+What was tried and dropped (160 matches unless noted; base 0 / base 1
+wins, tank losses by base side):
+
+| Variant | Result |
+|---|---|
+| `mix_at_pct` 20 only | rockets fired 396, matches with a rocket 70 %, rocket KOs 6.9 %; base wins 82/78, losses 358/382 |
+| `mix_at_pct` 20 + `at_hunt_m` 600 | rocket KOs 10 %, matches with a rocket 75-80 %, but base 0 won 90 of 160 (56 %) and base 1 lost 19 % more tanks (328 / 392); `at_hunt_m` 600 alone 93/67 |
+| `mix_at_pct` 25 + `at_hunt_m` 500 | rocket KOs 8.8 %, no more matches with a rocket (66 %), base 89/71, losses 347/392 |
+| `mix_at_pct` 30 (40 matches) | no more rocket kills than 20 |
+| `tank_standoff_m` 120 | inside the Panzerschreck's 120 m engage range, contradicts the rule's own reasoning; rocket KOs 11.6 % vs 10.2 % in 80 matches, within noise |
+| a satchel for every engineer (80 matches) | 5 throws in 5 matches, base 0 won 60 % |
+| `rearm_ap_below` 8 (80 matches) | results identical to 3: no tank is down to 8 AP rounds alive |
+| `symmetry = "point"` terrain (80 matches, with `mix_at_pct` 20 + `at_hunt_m` 600) | base wins 37/43, but Germany won 25 of 80 (31 %), outside T1 |
+| `satchel_hunt_m` 350 | 6 throws, no more than 250 |
+
+### Final numbers
+
+| # | Target | Baseline (Part B) | Final | Status |
+|---|---|---|---|---|
+| T1 | each faction 35-65 %; no base side > 62 % | 80: G 35 / U 45, base 1 41 of 80 | 160: G 72 (45 %) / U 88, base 0 88 / base 1 72 (55 %); standard 40: G 11 / U 29, base 0 21 / base 1 19 | met on 160; standard set misses on faction wins (noise: 2.6 sigma from the 160-match rate) |
+| T2 | rockets + satchels >= 20 % of tank losses | 21 of 397 (5.3 %) | 160: 70 of 725 (9.7 %); standard 40: 18 of 187 (9.6 %) | **missed** (S3c-28) |
+| T3 | satchel thrown at a vehicle in >= 6 of 20 normal-base matches | 1 of 40 | 5 of 80 normal-base matches (1.25 per 20); standard 40: 2 of 20 | **missed** (S3c-30) |
+| T4 | rockets fired in >= 8 of 10 normal-base matches | 22 of 40 (55 %) | 60 of 80 (75 %); standard 40: 14 of 20 | **missed**, narrowly (16 of 20 wanted) |
+| T5 | rearm trips occur (>= 1 low-ammo return per 10 matches), low-ammo time does not rise | 2 trips in 80 | 5 rearm trips, 1 low-ammo base return in 160; MG dry 0.0 %, HE at the reserve 0.1-0.2 % (did not rise) | **missed** (S3c-30): tanks are lost before they run low |
+| T6 | bailed crews survive | 80-85 % alive after 60 s | 99-100 % of abandonments with a man out; 80 % (G) / 82 % (U) alive after 60 s | met |
+| T7 | AI re-crews | 15 in 40 matches | 160: 222 re-crew orders, 56 tanks re-crewed (G 19, U 37) | met |
+| T8 | US attackers <= 60 %; defenders >= 75 % | two bases 37.5 % | unchanged: two bases 37.5 %, one base 66.2 %; Germany attacking 36.2 %; defenders 86-100 % | met (two-bases) |
+| T9 | no match < 10 or > 40 min, median 15-30 | 10.2-32.8 | 10.5-31.7 min, mean 17.8 | met |
+| T10 | tick p99 at peak < 1.5 ms; stress p99 < 10 ms | 0.79 / 1.72 | 0.945 ms (160 matches, parallel) / stress p99 1.565 ms (armour-test case 14) | met |
+| T11 | tanks lost by base side within +-15 % | 190 vs 207 | 160: 345 vs 380 (+10 %) | met |
+| T12 | 600 m duel reported | Panzer IV 14 of 20 | unchanged | met |
+| T13 | T9 kills > 0, T14 >= 0.05 m | 4 of 160; 0.035 m | unchanged (S3c-22, S3c-23) | documented |
+| T14 | all hard checks pass; HE share < 60 % per match | HE max 61.1 % | hard checks pass; HE mean 43.8 %, over 60 % in 1 of 160 matches (65.5 %, an 11.5-min match with 2 tank losses) | hard checks met; HE share missed by 1 match (S3c-31) |
+| T15 | determinism | pass | `cargo test --workspace --release -- --include-ignored`: 456 passed, 0 failed (soaks included); `ai_assault` moved to seed 50 | met |
+
+### Why T2 stays near 10 %
+
+Rockets and satchels hit and penetrate (304 penetrations in 160 matches),
+but a penetration makes the crew leave in about one case in 4.3: the
+others disable a gun or a track and the tank stays in the fight. More AT
+teams, longer hunts and a looser clearance each moved the rocket share by
+about three points, and the cheaper variants moved it by nothing. The
+20 % target came from a measurement before the shell-lifetime fix
+(19.8 %); with shells now flying their full range, tanks kill tanks from
+300-600 m, and the model has no AT guns, mines or air, which caused most
+real tank losses. Options and the proposed revision are in TODO S3c-28
+(target 10 %), the Panzerfaust in S3c-29 (S4 variants), and the other
+misses in S3c-30 and S3c-31.
+
 ## Slice log
 
 Stage results go in `docs/slices/S3c-log.md` (created by the next stage).

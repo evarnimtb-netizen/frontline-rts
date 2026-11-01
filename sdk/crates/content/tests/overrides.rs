@@ -214,10 +214,16 @@ fn part_b_keys_load_reach_the_setup_and_are_checked() {
     );
     let a = &s.rules.ai.assault;
     assert_eq!((a.support_mg_m, a.bound_m, a.lift_fire_m), (250, 40, 15));
-    // S3b Tune: at_hunt_m 250 -> 400, satchel_hunt_m 60 -> 150 (T7).
+    // S3b Tune: at_hunt_m 250 -> 400, satchel_hunt_m 60 -> 150 (T7);
+    // S3c Tune: satchel_hunt_m 150 -> 250, at_hunt_clear_m 40 -> 20.
     assert_eq!(
-        (a.at_hunt_m, a.satchel_hunt_m, a.satchel_slow_s),
-        (400, 150, 3)
+        (
+            a.at_hunt_m,
+            a.satchel_hunt_m,
+            a.satchel_slow_s,
+            a.at_hunt_clear_m
+        ),
+        (400, 250, 3, 20)
     );
     assert!(s.squad_types.iter().all(|t| t.steadiness_pct == 100));
     // Edits reach the setup.

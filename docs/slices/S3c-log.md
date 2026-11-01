@@ -335,3 +335,30 @@ Skirmish, seeds 1–20 × both bases, `--minutes 45` (40) and seeds 1–40
   side), so second bases churn between squads as assignments change.
 - 3f stages the tanks spotted; in a match a 600 m duel needs an observer.
 - New owner questions S3c-20…26 in `docs/TODO.md`, all on (A).
+
+## Tune (2026-11-02): AT mix, AT-hunt clearance, satchel hunt range
+
+Spec section "Tune results" in `docs/slices/S3c-armour.md` has the table of
+every target, the variants tried and the reasons. Three data values changed
+(`ai.mix_at_pct` 10 -> 20, `ai.assault.at_hunt_clear_m` 40 -> 20,
+`ai.assault.satchel_hunt_m` 150 -> 250), each with its measurement in the
+TOML comment. About 20 skirmish runs of 40-160 matches (40 s per 40
+matches); armour-test and fortify-test twice (both identical to Part B,
+since AI values do not enter the staged cases).
+
+- Hit: T1 (160 matches: G 45 % / U 55 %, base 0 55 %), T6, T7, T8, T9,
+  T10, T11 (+10 %), T12, T13 (documented).
+- Missed: T2 (9.7 % vs 20 %; was 5.3 %), T3 (5 of 80 normal-base matches;
+  was 1 of 40), T4 (75 % vs 80 %; was 55 %), T5 (1 low-ammo return in 160;
+  tanks are lost before they run low), T14's HE-share limit (1 match of
+  160 at 65.5 %; mean 43.8 %). Reasons and proposed target changes:
+  TODO S3c-28 to S3c-31.
+- `rearm_ap_below` 8 gave results identical to 3, so it stays 3.
+- Tests: `ai_assault` moved from seed 18 to seed 50 (the only seed of 1-60
+  that has rockets, a satchel hunt, second bases, re-crews, crew retreats
+  and denial in ten minutes under the new data); the content override test
+  expects the new `satchel_hunt_m` and `at_hunt_clear_m`.
+  `cargo test --workspace --release -- --include-ignored`: 456 passed, 0
+  failed. clippy -D warnings, fmt, validate ok.
+- Standard set (40 matches) alone gave G 11 / U 29; the 160-match set gave
+  72 / 88. Use 160 for decisions on faction wins.

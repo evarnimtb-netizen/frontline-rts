@@ -479,6 +479,39 @@ follow-up. Work proceeds on (A) of each question below.
   sight 175 m x 200 %). (A) Target "Panzer IV >= 6 of 10 at 600 m"
   written. (B) Report only.
 
+- [ ] **S3c-28. Tune results: T2 (rocket share) stays about 10 %**
+  (Tune stage). With AT teams doubled in the mix, a looser AT-hunt clearance
+  and a longer satchel hunt, rockets and satchels cause 9.7 % of tank
+  losses (70 of 725, 160 matches), target 20 %. Cause: after the S3c-26 fix
+  tanks kill tanks from 300-600 m, and the model has no AT guns, mines or
+  air, which were most of the real tank losses; rockets give about one
+  loss per 4.3 penetrations (304 in 160 matches; hits that disable but do not make the crew leave are
+  not losses). (A) Keep T2 as a report, with the target moved to 10 % (the
+  infantry-AT share in open country was roughly 5-15 % of losses; citation
+  task). (B) Keep 20 % and add AT guns or mines (S4+). (C) Make a rocket
+  hit more lethal by data (jet `core.damage`); not done, no source.
+- [ ] **S3c-29. Panzerfaust** (historical option, Tune stage). A one-shot
+  60-100 m launcher in German rifle squads (1944-45) would raise the
+  infantry-AT share more than any AI change, without new AI rules. Needs a
+  weapon, ammo and loadout def and an AT-hunt use for rifle squads, so it
+  belongs with the S4 unit variants. (A) Not now; list it in S4. (B) Add
+  it to S3c.
+- [ ] **S3c-30. Rearm and satchel targets** (Tune stage). T5 (low-ammo
+  returns): 1 in 160 matches, 5 rearm trips; tanks are lost, not empty:
+  MG dry time is 0.0 %, HE at the reserve 0.1-0.2 %, and `rearm_ap_below`
+  8 gave identical hashes to 3 (no tank reaches 8 AP left). T3: satchels
+  thrown at a vehicle in 5 of 80 normal-base matches (1 of 80 before), the
+  approach under live MGs kills the carrier (case 8). (A) Move T5 to "trips
+  work in tests (rearm trip, 1/2/3/8 threads, save/load) and low-ammo time
+  does not rise" and T3 to "at least 1 of 20 normal-base matches", both
+  met. (B) Keep T5 and T3 as written and add a satchel pick-up from a fallen
+  carrier (sim change; probe with a satchel per man gave only 5 throws in 80
+  matches).
+- [ ] **S3c-31. HE share of kills (T14)** (Tune stage). Mean 43.8 %, over
+  60 % in 1 of 160 matches (seed 35 swapped: 11.5 min, 2 tank losses, 65.5
+  %). (A) Read T14 as "mean under 50 % and under 60 % in 99 % of matches".
+  (B) Keep "under 60 % per match" (missed by 1 match in 160).
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an

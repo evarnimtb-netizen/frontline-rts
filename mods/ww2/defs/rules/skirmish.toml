@@ -630,8 +630,17 @@ throw_cooldown_s = 10
 frag_group_men = 3
 # S3: vehicles join the mix after unlock (under the vehicle limit), AT
 # teams after unlock once an enemy vehicle has been seen.
+# S3c Tune: mix_at_pct 10 -> 20. Since the shell-lifetime fix (S3c-26) tanks
+# fight at 300-600 m and the AT teams (180-200 MP, under a third of a
+# 600 MP tank) were reaching an enemy tank in only 11 of 20 normal-base
+# matches. Measured (160 matches, seeds 1-80 x both bases): rockets fired
+# 123 -> 198 per 80 matches, matches with a rocket 55 -> 70 %, rocket
+# knock-outs 5.3 -> 6.9 % of tank losses, wins by base 82/78, tank losses
+# by base 358/382. 25 (with at_hunt_m 500) fired more rockets but gave
+# no more matches with one, and 30 only noise. AT teams go from 7.7 % to
+# 14.3 % of bought squads (the other roles keep their ratios).
 mix_vehicle_pct = 20
-mix_at_pct = 10
+mix_at_pct = 20
 # Tanks hold 160 m (outside launcher range) from a point where enemy AT
 # was seen in the last 30 s; else they advance with their escort to 40 m
 # from the enemy trench. An immobilised vehicle repairs when no seen enemy
@@ -746,7 +755,15 @@ trench_line_m = 24
 # at 400 in 8 of 10, with the AI still holding AT teams back from tanks
 # beyond a point's reach (A/B, seeds 1-10 both bases).
 at_hunt_m = 400
-at_hunt_clear_m = 40
+# S3c Tune: at_hunt_clear_m 40 -> 20. With 40 m an AT team would not leave
+# for a tank while any enemy soldier stood near its route (rifle squads
+# at every point), so after the shell-lifetime fix (S3c-26) it often sat
+# while tanks shelled the point from 160 m. 20 m (grenade range: a
+# stalking team goes round the men, not through them) over 160 matches
+# (seeds 1-80 x both bases): rocket knock-outs 6.9 -> 9.7 % of tank
+# losses (51 -> 71), rockets fired 396 -> 445, matches with a rocket 70 -> 75
+# %, wins by faction 66/94 -> 76/84, base 0/1 wins 84/76.
+at_hunt_clear_m = 20
 at_hunt_inset_m = 10
 # Engineers with a satchel go for a known enemy vehicle within
 # satchel_hunt_m that has been slower than ai.infantry.satchel_slow_mm_s
@@ -757,7 +774,15 @@ at_hunt_inset_m = 10
 # S3b Tune: satchel_hunt_m 60 -> 150 (T7): AI tanks halt 40-160 m from
 # enemy points, so at 60 m a hunt rarely started; at 150 engineers in the
 # trench go for a tank halted in front of it.
-satchel_hunt_m = 150
+# S3c Tune: 150 -> 250. Since the shell-lifetime fix tanks halt at the
+# 160 m tank_standoff_m from a point with AT seen, and the engineers dig in
+# 10 m in front of it, so a halted tank stood just outside 150 m. Satchels
+# thrown at vehicles in 160 matches (seeds 1-80 x both bases): 1 at 150 m;
+# 10 at 250 m (7 normal-base matches); 5 at 250 m together with the
+# at_hunt_clear_m of 20 below (5 normal-base matches); 6 at 350 m, so 250.
+# Most hunts still end with the carrier shot on the approach (case 8:
+# engineers lose 100 of 100 against live MGs).
+satchel_hunt_m = 250
 satchel_slow_s = 3
 satchel_stand_m = 5
 # S3c sticky hunts (S3b-36 (A), docs/slices/S3c-armour.md B2): a hunt keeps
