@@ -49,6 +49,39 @@
 //!    thrower. Throwers end up detached: a squad that is walking again
 //!    while all its detached men are done throwing is regrouped.
 //!
+//! 7. **Vehicles** (S3, `docs/slices/S3-armour.md` "AI"):
+//!    * *buy:* the mix gains the vehicle share (`mix_vehicle_pct`) after
+//!      the unlock time and under the vehicle limit, and the AT-team share
+//!      (`mix_at_pct`) after the unlock once an enemy vehicle has been seen
+//!      (the saved `enemy_vehicle_seen`); when the enemy has more vehicles
+//!      in sight than the AI has AT teams and vehicles, an AT team is
+//!      bought first;
+//!    * *upkeep:* a vehicle with its gun destroyed, two crew dead or its
+//!      engine under [`RETREAT_ENGINE_PCT`] % retreats to base when it can
+//!      move (and waits there for the base repair); an immobilised vehicle
+//!      with no seen enemy within `repair_clear` repairs;
+//!    * *assault:* each other vehicle takes the non-own point with the most
+//!      infantry assigned to it (else it backs up the most threatened own
+//!      point). It attack-moves to [`AiState::at_seen`]'s answer: if enemy
+//!      AT was seen within `threat_radius` of the point in the last
+//!      `at_clear` seconds, `tank_standoff` short of the point; else
+//!      `assault_close` short of the enemy trench in front of it (probed
+//!      along the approach) or of the point. Up to [`ESCORT_SQUADS`] rifle
+//!      or engineer squads assigned to that point within [`ESCORT_JOIN_M`]
+//!      escort it (`FollowUnits`); once the vehicle halts for any reason
+//!      (after [`ESCORT_GRACE_S`]), the escorts still attached detach and
+//!      attack-move the point;
+//!    * *facing:* an idle vehicle turns its hull (`FaceUnits`) toward the
+//!      nearest seen enemy vehicle or AT soldier within [`FACE_RANGE_M`];
+//!    * *AT teams* defend own points, preferring points with enemy vehicles
+//!      within [`ARMOUR_THREAT_M`], in the trench if there is one; they fire
+//!      by their weapon's own rules;
+//!    * *satchels:* engineers throw at a seen enemy vehicle slower than
+//!      1 m/s within satchel range, at its position when the fuse runs out,
+//!      [`SATCHEL_SIDE_MM`] outside the hull side nearer the thrower.
+//!
+//!    [`AiCounters`] count what the AI did for the skirmish report.
+//!
 //! An order is only sent when the squad's task changed or its order no
 //! longer matches the task, and never while a command for that squad is
 //! still pending, so squads are not re-pathed every plan.
@@ -64,11 +97,11 @@
 
 use std::collections::BTreeMap;
 
-use frontline_content::{DigProfile, SquadRole};
+use frontline_content::{ComponentKind, DigProfile, SquadRole};
 use serde::{Deserialize, Serialize};
 
 use crate::command::CommandKind;
-use crate::ecs::{Entities, PlayerId, SimId};
+use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::game::{MAX_CALL_IN_QUEUE, MAX_DIG_POINTS, MatchState, NavPhase, Order, SquadId};
 use crate::rng::{Purpose, RngStream};
@@ -89,6 +122,40 @@ pub const SUPPORT_BACK_M: i32 = 200;
 pub const NO_POINT: u8 = u8::MAX;
 /// Frag targets: spotted men within this distance count as one group (m).
 pub const FRAG_GROUP_M: i32 = 5;
+/// Most escorted assaults the AI tracks at once (one per own vehicle).
+pub const MAX_ESCORTS: usize = 64;
+/// Most squads escorting one vehicle.
+pub const ESCORT_SQUADS: usize = 2;
+/// Squads this close to a vehicle may join its escort (m).
+pub const ESCORT_JOIN_M: i32 = 150;
+/// Escorts are released when their vehicle halts, but not in its first
+/// seconds (it waits for its path and its file) (s).
+pub const ESCORT_GRACE_S: u32 = 8;
+/// An escorted assault counts as having reached the enemy once an escort
+/// squad's leader is this close to the enemy trench (or the point) (m).
+pub const ESCORT_REACHED_M: i32 = 30;
+/// Below this speed a vehicle counts as halted (mm/s).
+pub const HALTED_MM_S: i32 = 300;
+/// Idle vehicles turn toward a threat further off their heading (deg) ...
+pub const FACE_SLACK_DEG: i32 = 20;
+/// ... within this distance (m).
+pub const FACE_RANGE_M: i32 = 600;
+/// Enemy vehicles this close to a point are an armour threat to it (m).
+pub const ARMOUR_THREAT_M: i32 = 300;
+/// A vehicle retreats with its engine under this share of its HP (%).
+pub const RETREAT_ENGINE_PCT: u32 = 30;
+/// Satchels go at vehicles slower than this (mm/s) ...
+pub const SATCHEL_SLOW_MM_S: i32 = 1000;
+/// ... landing this far outside the hull side (mm).
+pub const SATCHEL_SIDE_MM: i32 = 800;
+/// A vehicle backing up an own point stands this far behind it (m).
+pub const BACKUP_M: i32 = 30;
+/// Enemy trench probe: ground dug this deep (dm) on the approach.
+pub const TRENCH_PROBE_DM: u8 = 8;
+/// The probe looks this far in front of the point (m) ...
+pub const TRENCH_PROBE_M: i32 = 60;
+/// ... in steps of this many metres.
+pub const TRENCH_PROBE_STEP_M: i32 = 4;
 
 /// A command waiting for the AI's reaction delay.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -110,6 +177,11 @@ pub enum TaskKind {
     Barrage = 4,
     Support = 5,
     Retreat = 6,
+    /// S3 vehicles: hold `tank_standoff` short of an enemy point (AT seen)
+    /// ...
+    Standoff = 7,
+    /// ... or advance to `assault_close` short of its trench.
+    Assault = 8,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -142,6 +214,47 @@ pub struct AiState {
     pub rejected: u32,
     /// Tick of each squad's last throw order, while it cools down.
     pub last_throw: BTreeMap<SquadId, u64>,
+    /// S3: an enemy vehicle has been seen (AT teams join the mix).
+    pub enemy_vehicle_seen: bool,
+    /// S3: tick of the last sighting of an enemy AT soldier within
+    /// `threat_radius` of each point (by point index; entries older than
+    /// `at_clear` are dropped).
+    pub at_seen: BTreeMap<u8, u64>,
+    /// S3: escorted assaults, by the vehicle's squad.
+    pub escorts: BTreeMap<SquadId, AiEscort>,
+    /// S3: what the AI did (skirmish report).
+    pub counters: AiCounters,
+}
+
+/// A vehicle's escorted assault on a point (S3).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct AiEscort {
+    pub point: u8,
+    /// Squads still following the vehicle, ascending.
+    pub squads: Vec<SquadId>,
+    /// Every squad that started in the escort, ascending.
+    pub started: Vec<SquadId>,
+    /// Tick the escort started.
+    pub since: u64,
+    /// An escort squad's leader came within [`ESCORT_REACHED_M`] of the
+    /// enemy trench (counted once).
+    pub reached: bool,
+}
+
+/// S3 AI counters (skirmish report), since the match started.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct AiCounters {
+    pub vehicles_bought: u32,
+    pub at_bought: u32,
+    pub escorts_started: u32,
+    /// Escorted assaults that reached [`ESCORT_REACHED_M`] of the enemy
+    /// trench.
+    pub escorts_reached: u32,
+    pub escorts_released: u32,
+    pub satchels_at_vehicles: u32,
+    pub repairs: u32,
+    pub retreats: u32,
+    pub faces: u32,
 }
 
 impl AiState {
@@ -155,6 +268,10 @@ impl AiState {
             issued: 0,
             rejected: 0,
             last_throw: BTreeMap::new(),
+            enemy_vehicle_seen: false,
+            at_seen: BTreeMap::new(),
+            escorts: BTreeMap::new(),
+            counters: AiCounters::default(),
         }
     }
 
@@ -186,6 +303,22 @@ impl AiState {
                 .values()
                 .any(|t| t.point != NO_POINT && t.point as usize >= np)
             || self.trenches.iter().any(|t| t.point as usize >= np)
+            || self.at_seen.len() > np
+            || self
+                .at_seen
+                .iter()
+                .any(|(&p, &t)| p as usize >= np || t > tick)
+            || self.escorts.len() > MAX_ESCORTS
+            || self.escorts.iter().any(|(id, e)| {
+                bad_squad(id)
+                    || e.point as usize >= np
+                    || e.since > tick
+                    || e.squads.len() > ESCORT_SQUADS
+                    || e.started.len() > ESCORT_SQUADS
+                    || e.squads.iter().chain(&e.started).any(bad_squad)
+                    || e.squads.windows(2).any(|w| w[0] >= w[1])
+                    || e.started.windows(2).any(|w| w[0] >= w[1])
+            })
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -193,9 +326,11 @@ impl AiState {
                 CommandKind::CallIn { squad_type } => {
                     *squad_type as usize >= g.setup.squad_types.len()
                 }
-                CommandKind::Throw { units, .. } | CommandKind::ThrowEach { units, .. } => {
-                    units.len() > crate::unit::MAX_UNITS
-                }
+                CommandKind::Throw { units, .. }
+                | CommandKind::ThrowEach { units, .. }
+                | CommandKind::FaceUnits { units, .. }
+                | CommandKind::RepairUnits { units }
+                | CommandKind::FollowUnits { units, .. } => units.len() > crate::unit::MAX_UNITS,
                 CommandKind::MoveSoldier { .. }
                 | CommandKind::Spawn { .. }
                 | CommandKind::Despawn { .. } => true,
@@ -221,15 +356,31 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
     }
 }
 
-/// Position of an S1 role in `AiSetup::mix_pct`. The S3 roles (AT teams,
-/// vehicles) are not part of that mix; they have their own rules.
-fn role_index(r: SquadRole) -> Option<usize> {
+/// The S3 vehicle orders whose `units` name the squads they address (an
+/// escort's men, a vehicle).
+fn units_of(kind: &CommandKind) -> Option<&[SimId]> {
+    match kind {
+        CommandKind::FollowUnits { units, .. }
+        | CommandKind::FaceUnits { units, .. }
+        | CommandKind::RepairUnits { units } => Some(units),
+        _ => None,
+    }
+}
+
+/// Roles in the buy mix: the S1 roles in `AiSetup::mix_pct` order, then
+/// the S3 AT team and vehicle.
+const MIX_ROLES: usize = 6;
+const MIX_AT: usize = 4;
+const MIX_VEHICLE: usize = 5;
+
+fn role_index(r: SquadRole) -> usize {
     match r {
-        SquadRole::Rifle => Some(0),
-        SquadRole::Mg => Some(1),
-        SquadRole::Engineer => Some(2),
-        SquadRole::Mortar => Some(3),
-        SquadRole::AntiTank | SquadRole::Vehicle => None,
+        SquadRole::Rifle => 0,
+        SquadRole::Mg => 1,
+        SquadRole::Engineer => 2,
+        SquadRole::Mortar => 3,
+        SquadRole::AntiTank => MIX_AT,
+        SquadRole::Vehicle => MIX_VEHICLE,
     }
 }
 
@@ -248,6 +399,28 @@ struct Known {
     pos: FxVec2,
     squad: u32,
     in_trench: bool,
+    /// Of an AT team (S3).
+    at: bool,
+}
+
+/// A spotted enemy vehicle (S3).
+struct KnownVehicle {
+    id: SimId,
+    pos: FxVec2,
+    yaw: Fx,
+    speed: Fx,
+    vel: FxVec2,
+    type_idx: u16,
+}
+
+/// One of the AI's own vehicles free for a task at plan time (S3).
+struct MyTank {
+    squad: SquadId,
+    id: SimId,
+    pos: FxVec2,
+    yaw: Fx,
+    /// Cannot drive now (bogged, immobilised, under repair, ...).
+    immobile: bool,
 }
 
 /// One of the AI's own squads at plan time.
@@ -269,6 +442,8 @@ struct PointEval {
     pos: FxVec2,
     rel: Rel,
     threat: u32,
+    /// Seen enemy vehicles within [`ARMOUR_THREAT_M`] (S3).
+    armour: u32,
     priority: i64,
     demand: u32,
     assigned: u32,
@@ -349,23 +524,36 @@ impl Planner<'_> {
         self.ai
             .tasks
             .retain(|id, _| g.squads.get(id).is_some_and(|s| s.owner == me));
-        let busy: Vec<SquadId> = self
-            .ai
-            .pending
-            .iter()
-            .filter_map(|c| squad_of(&c.kind))
-            .collect();
+        let mut busy: Vec<SquadId> = Vec::new();
+        for c in &self.ai.pending {
+            if let Some(s) = squad_of(&c.kind) {
+                busy.push(s);
+            } else if let Some(units) = units_of(&c.kind) {
+                busy.extend(units.iter().filter_map(|u| self.ents.squad[u.index()]));
+            }
+        }
 
         let known = self.known_enemies();
+        let kv = self.known_vehicles();
+        self.note_sightings(&known, &kv);
         let mut mine = Vec::new();
+        let mut tanks = Vec::new();
         for (&id, sq) in &g.squads {
             if sq.owner != me || busy.contains(&id) {
                 continue;
             }
             let ty = &g.setup.squad_types[sq.type_idx as usize];
-            // The S1 planner commands soldier squads only; vehicle
-            // behaviour comes with the S3 AI stage.
             if ty.vehicle.is_some() {
+                let v = sq.members[0];
+                let t = &self.ents.transform[v.index()];
+                let vs = &g.vehicles[&v];
+                tanks.push(MyTank {
+                    squad: id,
+                    id: v,
+                    pos: t.pos.xy(),
+                    yaw: t.yaw,
+                    immobile: vs.immobile(&g.setup.vehicles[vs.type_idx as usize]),
+                });
                 continue;
             }
             mine.push(Mine {
@@ -377,12 +565,14 @@ impl Planner<'_> {
         }
 
         self.retreats(&mut mine, &known);
-        self.buy();
-        let mut points = self.evaluate_points(&known);
+        self.vehicle_upkeep(&mut tanks, &known, &kv);
+        self.buy(&kv);
+        let mut points = self.evaluate_points(&known, &kv);
         let assigned = self.assign(&mine, &mut points);
-        self.order_infantry(&mine, &assigned, &mut points, &known);
+        let escorting = self.vehicle_tasks(&tanks, &mine, &assigned, &points, &known, &kv, &busy);
+        self.order_infantry(&mine, &assigned, &mut points, &known, &escorting);
         self.mortars(&mine, &points, &known);
-        self.throws(&mine, &known);
+        self.throws(&mine, &known, &kv);
     }
 
     /// Uniform integer in `[0, n)`.
@@ -409,11 +599,15 @@ impl Planner<'_> {
             })
             .map(|id| {
                 let i = id.index();
+                let squad = self.ents.squad[i];
                 Known {
                     id,
                     pos: self.ents.transform[i].pos.xy(),
-                    squad: self.ents.squad[i].map_or(u32::MAX, |s| s.0),
+                    squad: squad.map_or(u32::MAX, |s| s.0),
                     in_trench: self.ents.combat[i].in_trench,
+                    at: squad
+                        .and_then(|s| self.g.squads.get(&s))
+                        .is_some_and(|s| s.launcher.is_some()),
                 }
             })
             .collect()
@@ -468,23 +662,17 @@ impl Planner<'_> {
 
     // -------------------------------------------------------------- buy --
 
-    fn buy(&mut self) {
+    fn buy(&mut self, kv: &[KnownVehicle]) {
         let g = self.g;
         let s = &g.setup;
         let p = self.me.0 as usize;
         let faction = &s.factions[s.players[p].faction as usize];
-        let mut by_role: [Option<u16>; 4] = [None; 4];
+        let mut by_role: [Option<u16>; MIX_ROLES] = [None; MIX_ROLES];
         for &t in &faction.roster {
-            if let Some(r) = role_index(s.squad_types[t as usize].role) {
-                by_role[r].get_or_insert(t);
-            }
+            by_role[role_index(s.squad_types[t as usize].role)].get_or_insert(t);
         }
-        let mut counts = [0i64; 4];
-        let mut count = |t: u16| {
-            if let Some(r) = role_index(s.squad_types[t as usize].role) {
-                counts[r] += 1;
-            }
-        };
+        let mut counts = [0i64; MIX_ROLES];
+        let mut count = |t: u16| counts[role_index(s.squad_types[t as usize].role)] += 1;
         for sq in g.squads.values().filter(|sq| sq.owner == self.me) {
             count(sq.type_idx);
         }
@@ -495,34 +683,72 @@ impl Planner<'_> {
         }
         let mut budget = pl.manpower as i64;
         let mut pop = g.population(self.ents, self.me) as i64;
+        let mut vehicles = g.vehicles_counted(self.ents, self.me);
         for c in &self.ai.pending {
             if let CommandKind::CallIn { squad_type } = c.kind {
                 let ty = &s.squad_types[squad_type as usize];
                 count(squad_type);
                 budget -= ty.cost as i64;
-                pop += ty.men as i64;
+                pop += ty.pop(&s.vehicles) as i64;
                 queue += 1;
+                vehicles += ty.vehicle.is_some() as u32;
             }
         }
-        let mix = s.rules.ai.mix_pct;
+        // S3: vehicles after the unlock and under the limit; AT teams after
+        // the unlock once an enemy vehicle has been seen. Before the unlock
+        // the mix is the S1 one.
+        let vr = &s.rules.vehicles;
+        let unlocked = self.tick >= vr.unlock_ticks as u64;
+        let ai = &s.rules.ai;
+        let mut mix = [0u32; MIX_ROLES];
+        mix[..4].copy_from_slice(&ai.mix_pct);
+        if unlocked && self.ai.enemy_vehicle_seen {
+            mix[MIX_AT] = ai.mix_at_pct;
+        }
+        if unlocked && vehicles < vr.limit {
+            mix[MIX_VEHICLE] = ai.mix_vehicle_pct;
+        }
         for _ in 0..MAX_BUYS_PER_PLAN {
             let total: i64 = counts.iter().sum();
-            let mut role = (0..4)
-                .filter(|&r| by_role[r].is_some() && mix[r] > 0)
-                .max_by_key(|&r| (mix[r] as i64 * (total + 1) - 100 * counts[r], -(r as i64)));
+            let active = |r: usize| by_role[r].is_some() && (r < MIX_AT || mix[r] > 0);
+            let weight: i64 = (0..MIX_ROLES)
+                .filter(|&r| active(r))
+                .map(|r| mix[r] as i64)
+                .sum();
+            let mut role = (0..MIX_ROLES)
+                .filter(|&r| active(r) && mix[r] > 0)
+                .max_by_key(|&r| {
+                    (
+                        mix[r] as i64 * (total + 1) - weight * counts[r],
+                        -(r as i64),
+                    )
+                });
             let roll = self.below(200);
-            if roll < 100 - self.quality {
-                let options: Vec<usize> = (0..4).filter(|&r| by_role[r].is_some()).collect();
+            // Saving up for a vehicle: no stray buy spends the savings.
+            let saving = role == Some(MIX_VEHICLE)
+                && by_role[MIX_VEHICLE]
+                    .is_some_and(|t| budget < s.squad_types[t as usize].cost as i64);
+            if roll < 100 - self.quality && !saving {
+                let options: Vec<usize> = (0..MIX_ROLES).filter(|&r| active(r)).collect();
                 if !options.is_empty() {
                     role = Some(options[self.below(options.len() as u32) as usize]);
                 }
+            }
+            // More enemy vehicles in sight than own AT teams and vehicles:
+            // an AT team first.
+            if mix[MIX_AT] > 0
+                && by_role[MIX_AT].is_some()
+                && kv.len() as i64 > counts[MIX_AT] + counts[MIX_VEHICLE]
+            {
+                role = Some(MIX_AT);
             }
             let Some(t) = role.and_then(|r| by_role[r]) else {
                 return;
             };
             let ty = &s.squad_types[t as usize];
+            let men = ty.pop(&s.vehicles) as i64;
             if budget < ty.cost as i64
-                || pop + ty.men as i64 > s.rules.pop_cap as i64
+                || pop + men > s.rules.pop_cap as i64
                 || queue >= MAX_CALL_IN_QUEUE
             {
                 // Save up for it rather than buying something else.
@@ -531,17 +757,27 @@ impl Planner<'_> {
             self.ai
                 .emit(self.due, CommandKind::CallIn { squad_type: t });
             budget -= ty.cost as i64;
-            pop += ty.men as i64;
+            pop += men;
             queue += 1;
-            if let Some(r) = role_index(ty.role) {
-                counts[r] += 1;
+            let r = role_index(ty.role);
+            counts[r] += 1;
+            match r {
+                MIX_VEHICLE => {
+                    self.ai.counters.vehicles_bought += 1;
+                    vehicles += 1;
+                    if vehicles >= vr.limit {
+                        mix[MIX_VEHICLE] = 0;
+                    }
+                }
+                MIX_AT => self.ai.counters.at_bought += 1,
+                _ => {}
             }
         }
     }
 
     // ----------------------------------------------------------- points --
 
-    fn evaluate_points(&mut self, known: &[Known]) -> Vec<PointEval> {
+    fn evaluate_points(&mut self, known: &[Known], kv: &[KnownVehicle]) -> Vec<PointEval> {
         let g = self.g;
         let base = g.base_of(self.me);
         let depth_dm = Fx::from(g.setup.rules.dig.depth).mul_int(10).floor_int();
@@ -554,6 +790,11 @@ impl Planner<'_> {
                 Some(_) => Rel::Enemy,
             };
             let threat = self.threat_at(known, pos);
+            let armour_r = sq_m(Fx::from_int(ARMOUR_THREAT_M));
+            let armour = kv
+                .iter()
+                .filter(|v| (v.pos - pos).length_sq_raw() <= armour_r)
+                .count() as u32;
             let under_capture = c.capturer.is_some_and(|q| q != self.me);
             let mut priority = ps.value as i64 * 100 - dist_m(pos, base) / 8;
             priority += match rel {
@@ -578,6 +819,7 @@ impl Planner<'_> {
                 pos,
                 rel,
                 threat,
+                armour,
                 priority,
                 demand,
                 assigned: 0,
@@ -604,6 +846,9 @@ impl Planner<'_> {
                 }
                 let weak = m.strength_pct < 60;
                 score += match (m.role, pt.rel) {
+                    (SquadRole::AntiTank, Rel::Own) if pt.armour > 0 => 150,
+                    (SquadRole::AntiTank, Rel::Own) => 40,
+                    (SquadRole::AntiTank, _) => -60,
                     (SquadRole::Engineer, Rel::Own) if !pt.trench_done => 80,
                     (SquadRole::Mg, Rel::Own) => 30,
                     (SquadRole::Mg, Rel::Enemy) => -20,
@@ -642,11 +887,18 @@ impl Planner<'_> {
         assigned: &[(usize, usize)],
         points: &mut [PointEval],
         known: &[Known],
+        escorting: &[SquadId],
     ) {
         let g = self.g;
         let mut slot = vec![0u32; points.len()];
         for &(j, i) in assigned {
             let m = &mine[j];
+            if escorting.contains(&m.id) {
+                // Walking with a vehicle (S3); it is released later.
+                let pos = points[i].pos;
+                self.task(m.id, TaskKind::Attack, i as u8, pos);
+                continue;
+            }
             let pt = &points[i];
             let k = slot[i];
             slot[i] += 1;
@@ -856,6 +1108,434 @@ impl Planner<'_> {
     }
 }
 
+impl Planner<'_> {
+    // --------------------------------------------------------- vehicles --
+
+    fn known_vehicles(&self) -> Vec<KnownVehicle> {
+        let bit = 1u16 << self.me.0;
+        self.g
+            .vehicles
+            .iter()
+            .filter(|(id, _)| {
+                let i = id.index();
+                self.ents.kind[i] == EntityKind::Vehicle
+                    && self.ents.owner[i] != self.me
+                    && self.ents.combat[i].seen_by & bit != 0
+            })
+            .map(|(&id, vs)| {
+                let t = &self.ents.transform[id.index()];
+                KnownVehicle {
+                    id,
+                    pos: t.pos.xy(),
+                    yaw: t.yaw,
+                    speed: vs.speed,
+                    vel: vs.avg_vel,
+                    type_idx: vs.type_idx,
+                }
+            })
+            .collect()
+    }
+
+    /// Remembers enemy vehicles and AT teams seen (module docs).
+    fn note_sightings(&mut self, known: &[Known], kv: &[KnownVehicle]) {
+        if !kv.is_empty() {
+            self.ai.enemy_vehicle_seen = true;
+        }
+        let ai = &self.g.setup.rules.ai;
+        let clear = ai.at_clear_ticks as u64;
+        let tick = self.tick;
+        self.ai
+            .at_seen
+            .retain(|_, t| tick < t.saturating_add(clear));
+        let r = sq_m(ai.threat_radius.into());
+        for (i, ps) in self.g.setup.map.points.iter().enumerate() {
+            let pos: FxVec2 = ps.pos.into();
+            if known
+                .iter()
+                .any(|k| k.at && (k.pos - pos).length_sq_raw() <= r)
+            {
+                self.ai.at_seen.insert(i as u8, tick);
+            }
+        }
+    }
+
+    /// Whether a seen enemy (soldier or vehicle) is within `r` of `at`.
+    fn enemy_near(&self, known: &[Known], kv: &[KnownVehicle], at: FxVec2, r: Fx) -> bool {
+        let r = sq_m(r);
+        known.iter().any(|k| (k.pos - at).length_sq_raw() <= r)
+            || kv.iter().any(|v| (v.pos - at).length_sq_raw() <= r)
+    }
+
+    /// Sends the squads of escort `e` still following vehicle `v` at its
+    /// point (attack-move), as on a halt.
+    fn release(&mut self, e: &AiEscort, v: SimId, busy: &[SquadId]) {
+        let g = self.g;
+        let Some(ps) = g.setup.map.points.get(e.point as usize) else {
+            return;
+        };
+        let goal: FxVec2 = ps.pos.into();
+        for (k, &q) in e.squads.iter().enumerate() {
+            let follows = g
+                .squads
+                .get(&q)
+                .is_some_and(|sq| sq.order == (Order::Follow { vehicle: v }));
+            if !follows || busy.contains(&q) {
+                continue;
+            }
+            let target = self.terrain.clamp(ring_slot(goal, k as u32));
+            self.ai
+                .emit(self.due, CommandKind::AttackMove { squad: q, target });
+            self.task(q, TaskKind::Attack, e.point, target);
+        }
+    }
+
+    /// Retreat and field repair (module docs). Vehicles given an order
+    /// here, retreating or repairing leave `tanks`.
+    fn vehicle_upkeep(&mut self, tanks: &mut Vec<MyTank>, known: &[Known], kv: &[KnownVehicle]) {
+        let g = self.g;
+        let s = &g.setup;
+        let base = &s.map.bases[s.players[self.me.0 as usize].base as usize];
+        let base_at: FxVec2 = base.center.into();
+        let base_r = sq_m(base.radius.into());
+        let mut keep = Vec::with_capacity(tanks.len());
+        for t in tanks.drain(..) {
+            let sq = &g.squads[&t.squad];
+            let vs = &g.vehicles[&t.id];
+            let v = &s.vehicles[vs.type_idx as usize];
+            if sq.order == Order::Retreat {
+                if let Some(e) = self.ai.escorts.remove(&t.squad) {
+                    self.release(&e, t.id, &[]);
+                }
+                continue;
+            }
+            let engine_max = v
+                .components
+                .iter()
+                .find(|c| c.kind == ComponentKind::Engine)
+                .map_or(0, |c| c.hp);
+            let dead = vs.seats.iter().filter(|st| st.hp == 0).count();
+            let beaten = vs.component(ComponentKind::Gun) == 0
+                || dead >= 2
+                || (vs.component(ComponentKind::Engine) as u32) * 100
+                    < engine_max * RETREAT_ENGINE_PCT;
+            if beaten && !vs.immobile(v) {
+                if let Some(e) = self.ai.escorts.remove(&t.squad) {
+                    self.release(&e, t.id, &[]);
+                }
+                if (t.pos - base_at).length_sq_raw() > base_r {
+                    self.ai
+                        .emit(self.due, CommandKind::Retreat { squad: t.squad });
+                    self.ai.counters.retreats += 1;
+                }
+                // Out, or waiting in base for the base repair.
+                self.task(t.squad, TaskKind::Retreat, NO_POINT, base_at);
+                continue;
+            }
+            if vs.repairing.is_some() {
+                continue;
+            }
+            if vs.immobilised(v)
+                && crate::damage::can_field_repair(vs, v)
+                && !self.enemy_near(known, kv, t.pos, s.rules.ai.repair_clear.into())
+            {
+                self.ai
+                    .emit(self.due, CommandKind::RepairUnits { units: vec![t.id] });
+                self.ai.counters.repairs += 1;
+                continue;
+            }
+            keep.push(t);
+        }
+        *tanks = keep;
+    }
+
+    /// The point a vehicle goes for: the non-own point with the most
+    /// infantry assigned to it (then priority), else `None`.
+    fn vehicle_point(&self, points: &[PointEval], assigned: &[(usize, usize)]) -> Option<usize> {
+        (0..points.len())
+            .filter(|&i| points[i].rel != Rel::Own)
+            .max_by_key(|&i| {
+                let n = assigned.iter().filter(|a| a.1 == i).count();
+                (n, points[i].priority, -(i as i64))
+            })
+    }
+
+    /// The first ground dug at least [`TRENCH_PROBE_DM`] on the approach
+    /// from `from` to point `at`, up to [`TRENCH_PROBE_M`] in front of it.
+    fn enemy_trench(&self, from: FxVec2, at: FxVec2) -> Option<FxVec2> {
+        let dir = (at - from).normalize_or_zero();
+        if dir == FxVec2::ZERO {
+            return None;
+        }
+        let mut d = TRENCH_PROBE_M;
+        while d >= -TRENCH_PROBE_STEP_M {
+            let p = self.terrain.clamp(at - dir * Fx::from_int(d));
+            let (gx, gy) = self.terrain.nearest_grid(p);
+            if self.terrain.dug_dm(gx, gy) >= TRENCH_PROBE_DM {
+                return Some(p);
+            }
+            d -= TRENCH_PROBE_STEP_M;
+        }
+        None
+    }
+
+    /// Where a vehicle at `from` goes against point `i`, and how.
+    fn assault_goal(&self, from: FxVec2, i: usize, points: &[PointEval]) -> (TaskKind, FxVec2) {
+        let ai = &self.g.setup.rules.ai;
+        let at = points[i].pos;
+        let dir = (at - from).normalize_or_zero();
+        if self.ai.at_seen.contains_key(&(i as u8)) {
+            let goal = at - dir * Fx::from(ai.tank_standoff);
+            return (TaskKind::Standoff, self.terrain.clamp(goal));
+        }
+        let front = self.enemy_trench(from, at).unwrap_or(at);
+        let goal = front - dir * Fx::from(ai.assault_close);
+        (TaskKind::Assault, self.terrain.clamp(goal))
+    }
+
+    /// Escorts, assaults, back-up and facing for the free vehicles
+    /// (module docs). Returns the squads escorting a vehicle now.
+    #[allow(clippy::too_many_arguments)]
+    fn vehicle_tasks(
+        &mut self,
+        tanks: &[MyTank],
+        mine: &[Mine],
+        assigned: &[(usize, usize)],
+        points: &[PointEval],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        busy: &[SquadId],
+    ) -> Vec<SquadId> {
+        let g = self.g;
+        let hz = g.setup.tick_hz.max(1) as u64;
+        // Escort upkeep: drop gone vehicles and squads, release on a halt,
+        // count arrivals.
+        let ids: Vec<SquadId> = self.ai.escorts.keys().copied().collect();
+        for tid in ids {
+            let mut e = self.ai.escorts.remove(&tid).expect("listed");
+            let Some(tsq) = g.squads.get(&tid) else {
+                continue;
+            };
+            let v = tsq.members[0];
+            let point = e.point as usize;
+            if point >= points.len() || points[point].rel == Rel::Own {
+                self.release(&e, v, busy);
+                continue;
+            }
+            let follows = |id: &SquadId| {
+                g.squads
+                    .get(id)
+                    .is_some_and(|q| q.order == (Order::Follow { vehicle: v }))
+            };
+            e.squads.retain(follows);
+            let vs = &g.vehicles[&v];
+            let vdef = &g.setup.vehicles[vs.type_idx as usize];
+            let halted = tsq.order == Order::Idle
+                || vs.immobile(vdef)
+                || (vs.speed.abs() < Fx::from_milli(HALTED_MM_S)
+                    && tsq.nav.phase != NavPhase::PathPending);
+            if !e.squads.is_empty() && halted && self.tick >= e.since + ESCORT_GRACE_S as u64 * hz {
+                self.release(&e, v, busy);
+                e.squads.clear();
+                self.ai.counters.escorts_released += 1;
+            }
+            if !e.reached {
+                let vpos = self.ents.transform[v.index()].pos.xy();
+                let front = self
+                    .enemy_trench(vpos, points[point].pos)
+                    .unwrap_or(points[point].pos);
+                let r = sq_m(Fx::from_int(ESCORT_REACHED_M));
+                let close = e.started.iter().any(|q| {
+                    g.squads.get(q).is_some_and(|sq| {
+                        !sq.members.is_empty()
+                            && (self.ents.transform[sq.lead(self.ents).index()].pos.xy() - front)
+                                .length_sq_raw()
+                                <= r
+                    })
+                });
+                if close {
+                    e.reached = true;
+                    self.ai.counters.escorts_reached += 1;
+                }
+            }
+            self.ai.escorts.insert(tid, e);
+        }
+
+        let mut taken: Vec<SquadId> = self
+            .ai
+            .escorts
+            .values()
+            .flat_map(|e| e.squads.iter().copied())
+            .collect();
+        let target_point = self.vehicle_point(points, assigned);
+        for t in tanks {
+            let sq = &g.squads[&t.squad];
+            let vs = &g.vehicles[&t.id];
+            let mut ordered = false;
+            let point = match self.ai.escorts.get(&t.squad) {
+                Some(e) => Some(e.point as usize),
+                None => target_point,
+            };
+            if !t.immobile {
+                let (kind, goal, pi) = match point {
+                    Some(i) => {
+                        let (kind, fresh) = self.assault_goal(t.pos, i, points);
+                        // Keep the goal while the plan for the point holds,
+                        // so the vehicle is not re-pathed every plan.
+                        let goal = match self.ai.tasks.get(&t.squad) {
+                            Some(old) if old.kind == kind && old.point == i as u8 => old.target,
+                            _ => fresh,
+                        };
+                        (kind, goal, i as u8)
+                    }
+                    None => {
+                        // Back up the most threatened own point.
+                        let Some(i) = (0..points.len())
+                            .filter(|&i| points[i].rel == Rel::Own)
+                            .max_by_key(|&i| {
+                                (points[i].armour, points[i].threat, points[i].priority)
+                            })
+                        else {
+                            continue;
+                        };
+                        let at = points[i].pos;
+                        let back = (g.base_of(self.me) - at).normalize_or_zero();
+                        let goal = self.terrain.clamp(at + back * Fx::from_int(BACKUP_M));
+                        (TaskKind::Defend, goal, i as u8)
+                    }
+                };
+                let near = |a: FxVec2, r: i32| (a - goal).length_sq_raw() <= sq_m(Fx::from_int(r));
+                let on_track = match &sq.order {
+                    Order::Idle => near(t.pos, 20),
+                    Order::Move { target } | Order::AttackMove { target } => near(*target, 15),
+                    _ => false,
+                };
+                if !on_track {
+                    self.ai.emit(
+                        self.due,
+                        CommandKind::AttackMove {
+                            squad: t.squad,
+                            target: goal,
+                        },
+                    );
+                    ordered = true;
+                }
+                self.task(t.squad, kind, pi, goal);
+                // A new escort from the infantry sent to that point.
+                if kind != TaskKind::Defend
+                    && !self.ai.escorts.contains_key(&t.squad)
+                    && self.ai.escorts.len() < MAX_ESCORTS
+                {
+                    let join = sq_m(Fx::from_int(ESCORT_JOIN_M));
+                    let mut cands: Vec<(u64, SquadId)> = assigned
+                        .iter()
+                        .filter(|a| a.1 == pi as usize)
+                        .map(|a| &mine[a.0])
+                        .filter(|m| {
+                            matches!(m.role, SquadRole::Rifle | SquadRole::Engineer)
+                                && m.strength_pct >= 60
+                                && !taken.contains(&m.id)
+                                && (m.lead - t.pos).length_sq_raw() <= join
+                        })
+                        .map(|m| ((m.lead - t.pos).length_sq_raw(), m.id))
+                        .collect();
+                    cands.sort_unstable();
+                    cands.truncate(ESCORT_SQUADS);
+                    if !cands.is_empty() {
+                        let mut squads: Vec<SquadId> = cands.iter().map(|c| c.1).collect();
+                        squads.sort_unstable();
+                        for &q in &squads {
+                            let mut units = g.squads[&q].members.clone();
+                            units.truncate(crate::unit::MAX_UNITS);
+                            self.ai.emit(
+                                self.due,
+                                CommandKind::FollowUnits {
+                                    units,
+                                    vehicle: t.id,
+                                },
+                            );
+                            taken.push(q);
+                        }
+                        self.ai.escorts.insert(
+                            t.squad,
+                            AiEscort {
+                                point: pi,
+                                squads: squads.clone(),
+                                started: squads,
+                                since: self.tick,
+                                reached: false,
+                            },
+                        );
+                        self.ai.counters.escorts_started += 1;
+                    }
+                }
+            }
+            // An idle vehicle turns to the nearest threat it knows of.
+            if ordered || t.immobile || sq.order != Order::Idle {
+                continue;
+            }
+            let range = sq_m(Fx::from_int(FACE_RANGE_M));
+            let threat = kv
+                .iter()
+                .map(|k| (k.pos, k.id))
+                .chain(known.iter().filter(|k| k.at).map(|k| (k.pos, k.id)))
+                .filter(|(p, _)| (*p - t.pos).length_sq_raw() <= range)
+                .min_by_key(|(p, id)| ((*p - t.pos).length_sq_raw(), *id));
+            let Some((at, _)) = threat else { continue };
+            let d = at - t.pos;
+            let off = (Fx::atan2(d.y, d.x) - t.yaw).wrap_angle().abs();
+            let slack = Fx::from_int(FACE_SLACK_DEG).mul(Fx::PI).div_int(180);
+            let same = vs
+                .face
+                .is_some_and(|f| (f - at).length_sq_raw() <= sq_m(Fx::from_int(20)));
+            if off > slack && !same {
+                self.ai.emit(
+                    self.due,
+                    CommandKind::FaceUnits {
+                        units: vec![t.id],
+                        toward: at,
+                    },
+                );
+                self.ai.counters.faces += 1;
+            }
+        }
+        taken.sort_unstable();
+        taken.dedup();
+        taken
+    }
+
+    /// Engineers: a satchel beside a slow enemy vehicle (module docs).
+    fn satchel_vehicle(&self, sq: &crate::game::Squad, kv: &[KnownVehicle]) -> Option<ThrowPick> {
+        let g = self.g;
+        let ty = &g.setup.squad_types[sq.type_idx as usize];
+        if ty.role != SquadRole::Engineer || kv.is_empty() {
+            return None;
+        }
+        let (_, it) = ty.kit(&g.setup.items, ItemKind::Satchel)?;
+        let fuse = Fx::from_int(it.fuse_ticks as i32).div_int(g.setup.tick_hz.max(1) as i32);
+        let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
+        let reach = sq_m(Fx::from(it.range_max) + Fx::from_int(10));
+        kv.iter().find_map(|v| {
+            if v.speed.abs() >= Fx::from_milli(SATCHEL_SLOW_MM_S)
+                || (v.pos - lead).length_sq_raw() > reach
+            {
+                return None;
+            }
+            let geo = &g.vderived.geo[v.type_idx as usize];
+            let at = v.pos + v.vel * fuse;
+            let left = crate::vehicle::yaw_dir(v.yaw).perp();
+            let side = if (lead - at).dot(left) >= Fx::ZERO {
+                Fx::ONE
+            } else {
+                -Fx::ONE
+            };
+            let off = geo.hull_half.y + Fx::from_milli(SATCHEL_SIDE_MM);
+            let target = self.terrain.clamp(at + left * (side * off));
+            let men = self.throwers(sq, ItemKind::Satchel, target);
+            (!men.is_empty()).then_some((ItemKind::Satchel, men, target))
+        })
+    }
+}
+
 /// A throw the planner wants: item, the men who could throw it, target.
 type ThrowPick = (ItemKind, Vec<SimId>, FxVec2);
 
@@ -863,7 +1543,7 @@ impl Planner<'_> {
     // ----------------------------------------------------------- throws --
 
     /// Satchel, frag and smoke throws, then regrouping (module docs).
-    fn throws(&mut self, mine: &[Mine], known: &[Known]) {
+    fn throws(&mut self, mine: &[Mine], known: &[Known], kv: &[KnownVehicle]) {
         let g = self.g;
         let cool = g.setup.rules.ai.throw_cooldown_ticks as u64;
         let tick = self.tick;
@@ -875,8 +1555,12 @@ impl Planner<'_> {
             if sq.order == Order::Retreat || self.ai.last_throw.contains_key(&m.id) {
                 continue;
             }
-            let pick = self
-                .satchel(sq, known)
+            let at_vehicle = self.satchel_vehicle(sq, kv);
+            if at_vehicle.is_some() {
+                self.ai.counters.satchels_at_vehicles += 1;
+            }
+            let pick = at_vehicle
+                .or_else(|| self.satchel(sq, known))
                 .or_else(|| self.frag(sq, known))
                 .or_else(|| self.smoke(sq, known));
             let Some((item, units, target)) = pick else {

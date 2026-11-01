@@ -327,6 +327,10 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         p.point_ticks.put(out);
         p.income_acc.put(out);
         p.drain_acc.put(out);
+        for k in p.kills_by {
+            k.put(out);
+        }
+        p.rockets.put(out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);

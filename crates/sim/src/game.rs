@@ -261,6 +261,45 @@ pub struct PlayerState {
     pub income_acc: u32,
     /// Ticket-drain fraction carried to the next tick.
     pub drain_acc: u32,
+    /// S3 report counters: enemy soldiers and crewmen killed, by
+    /// [`kill_class`] (they add up to `kills`), and AT rockets fired.
+    pub kills_by: [u32; kill_class::COUNT],
+    pub rockets: u32,
+}
+
+/// What killed a soldier or crewman (`PlayerState::kills_by`, S3 report).
+pub mod kill_class {
+    pub const RIFLE: u8 = 0;
+    pub const SMG: u8 = 1;
+    pub const MG: u8 = 2;
+    pub const MORTAR: u8 = 3;
+    /// A main-gun penetrator (AP, APHE).
+    pub const TANK_AP: u8 = 4;
+    /// A main-gun HE round.
+    pub const TANK_HE: u8 = 5;
+    /// A coax or hull MG.
+    pub const VEHICLE_MG: u8 = 6;
+    /// An AT team's rocket.
+    pub const ROCKET: u8 = 7;
+    pub const SATCHEL: u8 = 8;
+    pub const FRAG: u8 = 9;
+    /// Crew lost with a vehicle burnt out or knocked out by a setup tool.
+    pub const OTHER: u8 = 10;
+    pub const COUNT: usize = 11;
+    /// Report names, by class.
+    pub const NAMES: [&str; COUNT] = [
+        "rifle",
+        "smg",
+        "mg",
+        "mortar",
+        "tank_ap",
+        "tank_he",
+        "vehicle_mg",
+        "rocket",
+        "satchel",
+        "frag",
+        "other",
+    ];
 }
 
 /// Capture point state (`crate::rules`).
@@ -377,6 +416,8 @@ impl MatchState {
                 point_ticks: 0,
                 income_acc: 0,
                 drain_acc: 0,
+                kills_by: [0; kill_class::COUNT],
+                rockets: 0,
             })
             .collect();
         let np = setup.players.len();

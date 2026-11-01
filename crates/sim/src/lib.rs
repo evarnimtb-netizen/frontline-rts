@@ -62,7 +62,7 @@ pub mod unit;
 pub mod vehicle;
 pub mod world;
 
-pub use ai::{AiCommand, AiState, AiTrench, Task, TaskKind};
+pub use ai::{AiCommand, AiCounters, AiEscort, AiState, AiTrench, Task, TaskKind};
 pub use armour::{ArmourTables, PenResult};
 pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
@@ -71,7 +71,7 @@ pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};
 pub use game::{
     CallIn, CapturePoint, Launcher, MatchState, NavPhase, Order, OrderKind, Outcome, PathReq,
-    PlayerState, Squad, SquadId,
+    PlayerState, Squad, SquadId, kill_class,
 };
 pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, Windup};
 pub use projectile::{Projectile, ProjectilePool};

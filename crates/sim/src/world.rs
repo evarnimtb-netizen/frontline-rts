@@ -1700,6 +1700,7 @@ impl World {
             &mut self.state.stats,
             id,
             crate::damage::KO_CREW,
+            crate::game::kill_class::OTHER,
             &mut self.armour_events,
         );
         game.rebuild_vehicle_index(&self.state.entities);
@@ -2217,15 +2218,79 @@ mod tests {
     fn match_rules_and_ai_state_are_hashed() {
         let w = match_world();
         let base = w.full_state_hash();
-        let edits: [fn(&mut SimState); 4] = [
+        fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
+            s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
+        }
+        let edits: [fn(&mut SimState); 15] = [
             |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
             |s| s.game.as_mut().unwrap().points[2].contested = true,
-            |s| s.game.as_mut().unwrap().ai[1].as_mut().unwrap().next_seq += 1,
+            |s| ai(s).next_seq += 1,
             |s| s.game.as_mut().unwrap().players[1].drain_acc += 1,
+            // S3.
+            |s| s.game.as_mut().unwrap().players[1].kills_by[4] += 1,
+            |s| s.game.as_mut().unwrap().players[0].rockets += 1,
+            |s| ai(s).enemy_vehicle_seen = true,
+            |s| {
+                ai(s).at_seen.insert(1, 0);
+            },
+            |s| {
+                ai(s).escorts.insert(
+                    SquadId(0),
+                    crate::ai::AiEscort {
+                        point: 1,
+                        squads: vec![SquadId(1)],
+                        started: vec![SquadId(1)],
+                        since: 0,
+                        reached: false,
+                    },
+                );
+            },
+            |s| ai(s).counters.escorts_started += 1,
+            |s| ai(s).counters.escorts_reached += 1,
+            |s| ai(s).counters.satchels_at_vehicles += 1,
+            |s| ai(s).counters.repairs += 1,
+            |s| ai(s).counters.retreats += 1,
+            |s| ai(s).counters.faces += 1,
         ];
         for edit in edits {
             let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
             assert_ne!(w2.full_state_hash(), base);
+        }
+        // Loads reject broken S3 AI state.
+        let bad: [fn(&mut SimState); 4] = [
+            |s| {
+                ai(s).at_seen.insert(99, 0);
+            },
+            |s| {
+                ai(s).at_seen.insert(0, u64::MAX);
+            },
+            |s| {
+                ai(s).escorts.insert(
+                    SquadId(9999),
+                    crate::ai::AiEscort {
+                        point: 0,
+                        squads: Vec::new(),
+                        started: Vec::new(),
+                        since: 0,
+                        reached: false,
+                    },
+                );
+            },
+            |s| {
+                ai(s).escorts.insert(
+                    SquadId(0),
+                    crate::ai::AiEscort {
+                        point: 0,
+                        squads: vec![SquadId(2), SquadId(1)],
+                        started: Vec::new(),
+                        since: 0,
+                        reached: false,
+                    },
+                );
+            },
+        ];
+        for edit in bad {
+            assert!(World::load(&save_edited(&w, edit), 1).is_err());
         }
     }
 
@@ -3425,7 +3490,7 @@ mod tests {
             &mut ctx,
             v,
             dealt,
-            0,
+            (0, crate::game::kill_class::TANK_AP),
             SimId(slot),
             fires,
             &mut Vec::new(),
@@ -3524,7 +3589,7 @@ mod tests {
                 &mut ctx,
                 v,
                 &seats,
-                1,
+                (1, crate::game::kill_class::TANK_AP),
                 SimId(0),
                 &mut FireRolls::default(),
                 &mut evs,
@@ -3536,6 +3601,10 @@ mod tests {
         assert_eq!(evs.len(), 5);
         assert_eq!(w.game().unwrap().players[0].losses, losses + 5);
         assert_eq!(w.game().unwrap().players[1].kills, kills + 5);
+        assert_eq!(
+            w.game().unwrap().players[1].kills_by[crate::game::kill_class::TANK_AP as usize],
+            5
+        );
     }
 
     #[test]

@@ -28,7 +28,8 @@ enum Command {
     /// Play a whole skirmish headlessly (AI vs AI) and print winner and stats.
     ///
     /// Exits 0 when the match has a winner, 3 when it ended in a draw or hit
-    /// the --minutes limit.
+    /// the --minutes limit, 4 when it has a winner but an S3 check failed
+    /// (each AI fields a vehicle and an AT team, at least one penetration).
     Skirmish(SkirmishArgs),
     /// Stage trench-vs-open fights and check the S1 cover thresholds.
     ///
@@ -103,10 +104,12 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 ReportFormat::Text => println!("{}", skirmish::summary_text(&report)),
                 ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
             }
-            Ok(if report.winner.is_some() {
-                ExitCode::SUCCESS
-            } else {
+            Ok(if report.winner.is_none() {
                 ExitCode::from(3)
+            } else if !report.s3_failures.is_empty() {
+                ExitCode::from(4)
+            } else {
+                ExitCode::SUCCESS
             })
         }
         Command::FortifyTest(args) => {

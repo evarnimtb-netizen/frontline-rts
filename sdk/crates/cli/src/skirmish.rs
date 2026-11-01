@@ -13,8 +13,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest};
-use frontline_sim::{BlastKind, Outcome, PlayerId, SquadId, World};
+use frontline_content::vehicle::AmmoMechanism;
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest, SquadRole};
+use frontline_sim::{
+    ArmourEventKind, BlastKind, Outcome, PlayerId, SquadId, World, kill_class, vehicle_flags,
+};
 use serde::Serialize;
 
 use crate::report::{Summary, hex, ns, round3};
@@ -112,6 +115,10 @@ pub struct SkirmishArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = ReportFormat::Text)]
     pub report: ReportFormat,
+    /// Print every vehicle's state to stderr every 10 game seconds (S3
+    /// diagnostics: position, order, speed, flags, components, target).
+    #[arg(long)]
+    pub trace_vehicles: bool,
 }
 
 impl Default for SkirmishArgs {
@@ -133,6 +140,7 @@ impl Default for SkirmishArgs {
             load: None,
             paced: false,
             report: ReportFormat::Text,
+            trace_vehicles: false,
         }
     }
 }
@@ -157,8 +165,67 @@ pub struct SkirmishReport {
     pub final_hash: String,
     pub players: Vec<PlayerReport>,
     pub totals: Totals,
+    /// S3: vehicles, AT teams and kills by weapon class.
+    pub armour: ArmourTotals,
+    /// S3 "Done when" 5 hard checks (when the rules have vehicles): a
+    /// winner, at least one vehicle and one AT team per AI, at least one
+    /// penetration. Empty when they all hold.
+    pub s3_failures: Vec<String>,
     pub timing: SkirmishTiming,
     pub wall_ms: f64,
+}
+
+/// S3 match totals for the skirmish report.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ArmourTotals {
+    /// The winner's base index (the map-side split across seeds).
+    pub winner_base: Option<u8>,
+    pub penetrations: u64,
+    pub non_penetrations: u64,
+    pub ricochets: u64,
+    pub knockouts: u64,
+    pub rockets_fired: u64,
+    /// Kills of both players by `kill_class` name.
+    pub kills_by: BTreeMap<String, u32>,
+    /// (mortar + tank HE kills) / all kills, percent; `he_flag` above 60.
+    pub he_share_pct: f64,
+    pub he_flag: bool,
+}
+
+/// One player's S3 numbers.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct PlayerArmour {
+    pub vehicles_bought: u32,
+    pub vehicles_lost: u32,
+    pub bogged: u32,
+    pub repaired: u32,
+    pub at_teams_bought: u32,
+    /// Enemy vehicles this player knocked out, by main gun and by rocket
+    /// (credited by the last round that hit them).
+    pub ko_by_gun: u32,
+    pub ko_by_rocket: u32,
+    /// Own vehicles put out of action, by cause: knocked out by crew
+    /// losses (`ko_crew`, from penetrations), an ammo-rack detonation or
+    /// fire; components destroyed (`track`, `engine`, `gun`,
+    /// `turret_ring`, `rack_destroyed`).
+    pub disabled_by: BTreeMap<String, u32>,
+    pub kills_by: BTreeMap<String, u32>,
+    /// Manpower lost per manpower killed for tanks and for AT teams. A
+    /// soldier or crewman killed is valued at the enemy rifle squad's
+    /// cost per man; a vehicle knocked out at its cost.
+    pub tank_mp_lost: u32,
+    pub tank_mp_killed: u32,
+    pub at_mp_lost: u32,
+    pub at_mp_killed: u32,
+    /// AI counters (`AiCounters`) and AT rockets fired.
+    pub escorts_started: u32,
+    pub escorts_reached: u32,
+    pub escorts_released: u32,
+    pub at_shots: u32,
+    pub satchels_at_vehicles: u32,
+    pub repairs: u32,
+    pub retreats: u32,
+    pub faces: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -191,6 +258,7 @@ pub struct PlayerReport {
     pub ai_commands: u32,
     pub ai_rejected: u32,
     pub trenches_planned: u32,
+    pub armour: PlayerArmour,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -223,6 +291,154 @@ pub struct SkirmishTiming {
     pub peak_share_pct: usize,
     /// Ticks over the tick period (33.3 ms at 30 Hz).
     pub overruns: u64,
+}
+
+/// Per-tick S3 bookkeeping from the snapshot (armour events, repair
+/// flags, AT team strength); none of it feeds back into the sim.
+#[derive(Default)]
+struct ArmourTally {
+    players: Vec<PlayerArmour>,
+    /// Last round (ammo index) that hit each vehicle.
+    last_ammo: BTreeMap<u32, u16>,
+    repairing: BTreeMap<u32, bool>,
+    /// AT team squads: (owner, men last seen).
+    at_men: BTreeMap<SquadId, (u8, usize)>,
+    at_men_lost: Vec<u32>,
+    /// Vehicle costs by vehicle type, and per player the enemy rifleman's
+    /// value.
+    vehicle_cost: Vec<u32>,
+    man_value: Vec<u32>,
+}
+
+impl ArmourTally {
+    fn new(setup: &MatchSetup) -> ArmourTally {
+        let n = setup.players.len();
+        let vehicle_cost = (0..setup.vehicles.len())
+            .map(|v| {
+                setup
+                    .squad_types
+                    .iter()
+                    .find(|t| t.vehicle == Some(v as u16))
+                    .map_or(0, |t| t.cost)
+            })
+            .collect();
+        // What a soldier of player p is worth to his killer.
+        let man_value = (0..n)
+            .map(|p| {
+                let f = &setup.factions[setup.players[p].faction as usize];
+                f.roster
+                    .iter()
+                    .map(|&t| &setup.squad_types[t as usize])
+                    .find(|t| t.role == SquadRole::Rifle)
+                    .map_or(0, |t| t.cost / t.men.max(1) as u32)
+            })
+            .collect();
+        ArmourTally {
+            players: vec![PlayerArmour::default(); n],
+            at_men_lost: vec![0; n],
+            vehicle_cost,
+            man_value,
+            ..ArmourTally::default()
+        }
+    }
+
+    fn observe(&mut self, w: &World) {
+        let g = w.game().expect("match world");
+        let s = g.setup();
+        let snap = w.snapshot();
+        for e in &snap.armour_events {
+            let owner = e.owner as usize;
+            if e.ammo != u16::MAX {
+                self.last_ammo.insert(e.vehicle, e.ammo);
+            }
+            let k = e.kind;
+            let name = |c: u8| match c {
+                0 => "engine",
+                1 | 2 => "track",
+                3 => "gun",
+                4 => "turret_ring",
+                _ => "rack_destroyed",
+            };
+            if k == ArmourEventKind::Bogged as u8 {
+                if let Some(p) = self.players.get_mut(owner) {
+                    p.bogged += 1;
+                }
+            } else if k == ArmourEventKind::Disabled as u8 {
+                if let Some(p) = self.players.get_mut(owner) {
+                    *p.disabled_by.entry(name(e.component).into()).or_default() += 1;
+                }
+            } else if k == ArmourEventKind::KnockedOut as u8 {
+                let ty = snap
+                    .vehicles
+                    .iter()
+                    .find(|v| v.id == e.vehicle)
+                    .map(|v| v.type_idx as usize);
+                let cost = ty
+                    .and_then(|t| self.vehicle_cost.get(t))
+                    .copied()
+                    .unwrap_or(0);
+                let cause = match e.component {
+                    0 => "ko_crew",
+                    1 => "ko_ammo_rack",
+                    _ => "ko_fire",
+                };
+                if let Some(p) = self.players.get_mut(owner) {
+                    p.vehicles_lost += 1;
+                    p.tank_mp_lost += cost;
+                    *p.disabled_by.entry(cause.into()).or_default() += 1;
+                }
+                let rocket = self
+                    .last_ammo
+                    .get(&e.vehicle)
+                    .and_then(|&a| s.ammo.get(a as usize))
+                    .is_some_and(|a| a.mechanism == AmmoMechanism::Heat);
+                if let Some(p) = self.players.get_mut(e.attacker as usize) {
+                    if rocket {
+                        p.ko_by_rocket += 1;
+                        p.at_mp_killed += cost;
+                    } else {
+                        p.ko_by_gun += 1;
+                        p.tank_mp_killed += cost;
+                    }
+                }
+                self.last_ammo.remove(&e.vehicle);
+            }
+        }
+        for v in &snap.vehicles {
+            let on = v.flags & vehicle_flags::REPAIRING != 0;
+            let was = self.repairing.insert(v.id, on).unwrap_or(false);
+            if on
+                && !was
+                && let Some(p) = self.players.get_mut(v.owner as usize)
+            {
+                p.repaired += 1;
+            }
+        }
+        // AT team losses: men gone since the last look.
+        let mut seen: Vec<SquadId> = Vec::new();
+        for (&id, sq) in g.squads() {
+            if sq.launcher.is_none() {
+                continue;
+            }
+            seen.push(id);
+            let now = sq.members.len();
+            let e = self.at_men.entry(id).or_insert((sq.owner.0, now));
+            if now < e.1 {
+                self.at_men_lost[e.0 as usize] += (e.1 - now) as u32;
+            }
+            e.1 = now;
+        }
+        let gone: Vec<SquadId> = self
+            .at_men
+            .keys()
+            .filter(|id| !seen.contains(id))
+            .copied()
+            .collect();
+        for id in gone {
+            let (o, n) = self.at_men.remove(&id).expect("listed");
+            self.at_men_lost[o as usize] += n as u32;
+        }
+    }
 }
 
 /// The `mods/ww2` directory: `--mods`, else `./mods/ww2`, else the copy in
@@ -331,14 +547,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let period = Duration::from_nanos(1_000_000_000 / hz);
     let mut tick_ns: Vec<u64> = Vec::with_capacity(limit as usize);
     let mut soldiers: Vec<usize> = Vec::with_capacity(limit as usize);
-    let mut fielded: BTreeMap<SquadId, PlayerId> = BTreeMap::new();
+    let mut fielded: BTreeMap<SquadId, (PlayerId, u16)> = BTreeMap::new();
     let (mut overruns, mut peak_proj) = (0u64, 0usize);
     let (mut peak, mut peak_tick) = (0usize, 0u64);
-    let note_squads = |w: &World, fielded: &mut BTreeMap<SquadId, PlayerId>| {
+    let note_squads = |w: &World, fielded: &mut BTreeMap<SquadId, (PlayerId, u16)>| {
         for (&id, sq) in w.game().expect("match world").squads() {
-            fielded.entry(id).or_insert(sq.owner);
+            fielded.entry(id).or_insert((sq.owner, sq.type_idx));
         }
     };
+    let mut tally = ArmourTally::new(world.match_setup().expect("match world"));
+    let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded);
 
     let start = Instant::now();
@@ -379,6 +597,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             smoke_seen = smoke_seen.max(c.id as u64 + 1);
         }
         note_squads(&world, &mut fielded);
+        tally.observe(&world);
+        if args.trace_vehicles && world.tick().is_multiple_of(10 * hz) {
+            trace_vehicles(&world);
+        }
         maybe_save(&world, false)?;
     }
     let wall = start.elapsed();
@@ -408,12 +630,58 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         Outcome::Running => ("time_limit", None),
     };
     let faction = |p: usize| s.factions[s.players[p].faction as usize].id.clone();
+    let names = |k: &[u32]| -> BTreeMap<String, u32> {
+        kill_class::NAMES
+            .iter()
+            .zip(k)
+            .map(|(n, v)| (n.to_string(), *v))
+            .collect()
+    };
     let players = (0..s.players.len())
         .map(|p| {
             let pl = &g.players()[p];
             let ps = &snap.players[p];
             let ai = g.ai(PlayerId(p as u8));
             let owned = |o: &PlayerId| o.0 as usize == p;
+            let mut armour = std::mem::take(&mut tally.players[p]);
+            let role_bought = |r: SquadRole| {
+                fielded
+                    .values()
+                    .filter(|(o, t)| owned(o) && s.squad_types[*t as usize].role == r)
+                    .count() as u32
+            };
+            armour.vehicles_bought = role_bought(SquadRole::Vehicle);
+            armour.at_teams_bought = role_bought(SquadRole::AntiTank);
+            armour.kills_by = names(&pl.kills_by);
+            // Kills by own tank weapons and rockets, valued at the enemy
+            // rifleman's share (the knock-outs were counted as they came).
+            let man = (0..s.players.len())
+                .filter(|&q| q != p)
+                .map(|q| tally.man_value[q])
+                .max()
+                .unwrap_or(0);
+            let k = |c: u8| pl.kills_by[c as usize];
+            armour.tank_mp_killed +=
+                man * (k(kill_class::TANK_AP) + k(kill_class::TANK_HE) + k(kill_class::VEHICLE_MG));
+            armour.at_mp_killed += man * k(kill_class::ROCKET);
+            let at_cost = s.factions[s.players[p].faction as usize]
+                .roster
+                .iter()
+                .map(|&t| &s.squad_types[t as usize])
+                .find(|t| t.role == SquadRole::AntiTank)
+                .map_or(0, |t| t.cost / t.men.max(1) as u32);
+            armour.at_mp_lost = tally.at_men_lost[p] * at_cost;
+            armour.at_shots = pl.rockets;
+            if let Some(a) = ai {
+                let c = &a.counters;
+                armour.escorts_started = c.escorts_started;
+                armour.escorts_reached = c.escorts_reached;
+                armour.escorts_released = c.escorts_released;
+                armour.satchels_at_vehicles = c.satchels_at_vehicles;
+                armour.repairs = c.repairs;
+                armour.retreats = c.retreats;
+                armour.faces = c.faces;
+            }
             PlayerReport {
                 player: p as u8,
                 faction: faction(p),
@@ -423,7 +691,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 manpower: pl.manpower,
                 kills: pl.kills,
                 losses: pl.losses,
-                squads_fielded: fielded.values().filter(|o| owned(o)).count() as u32,
+                squads_fielded: fielded.values().filter(|(o, _)| owned(o)).count() as u32,
                 squads_alive: g.squads().values().filter(|q| owned(&q.owner)).count() as u32,
                 soldiers_alive: snap
                     .soldier_owner
@@ -435,10 +703,54 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 ai_commands: ai.map_or(0, |a| a.issued),
                 ai_rejected: ai.map_or(0, |a| a.rejected),
                 trenches_planned: ai.map_or(0, |a| a.trenches.len() as u32),
+                armour,
             }
         })
-        .collect();
+        .collect::<Vec<PlayerReport>>();
     let st = world.stats();
+    let mut kills = [0u32; kill_class::COUNT];
+    for pl in g.players() {
+        for (k, v) in kills.iter_mut().zip(&pl.kills_by) {
+            *k += v;
+        }
+    }
+    let all: u32 = kills.iter().sum();
+    let he = kills[kill_class::MORTAR as usize] + kills[kill_class::TANK_HE as usize];
+    let he_share_pct = if all == 0 {
+        0.0
+    } else {
+        round3(he as f64 * 100.0 / all as f64)
+    };
+    let armour = ArmourTotals {
+        winner_base: winner.map(|w| s.players[w as usize].base),
+        penetrations: st.penetrations - stats_at_start.penetrations,
+        non_penetrations: st.non_penetrations - stats_at_start.non_penetrations,
+        ricochets: st.ricochets - stats_at_start.ricochets,
+        knockouts: st.knockouts - stats_at_start.knockouts,
+        rockets_fired: st.rockets_fired - stats_at_start.rockets_fired,
+        kills_by: names(&kills),
+        he_share_pct,
+        he_flag: he_share_pct > 60.0,
+    };
+    let mut s3_failures = Vec::new();
+    if !s.vehicles.is_empty() && s.squad_types.iter().any(|t| t.vehicle.is_some()) {
+        if winner.is_none() {
+            s3_failures.push("no winner".to_string());
+        }
+        for p in &players {
+            if s.players[p.player as usize].is_ai {
+                if p.armour.vehicles_bought == 0 {
+                    s3_failures.push(format!("player {} fielded no vehicle", p.player));
+                }
+                if p.armour.at_teams_bought == 0 {
+                    s3_failures.push(format!("player {} fielded no AT team", p.player));
+                }
+            }
+        }
+        if armour.penetrations == 0 {
+            s3_failures.push("no penetration".to_string());
+        }
+    }
     Ok(SkirmishReport {
         seed: s.seed,
         start_tick,
@@ -471,9 +783,62 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             peak_tick,
             peak_projectiles: peak_proj,
         },
+        armour,
+        s3_failures,
         timing,
         wall_ms: round3(wall.as_secs_f64() * 1e3),
     })
+}
+
+/// One stderr line per live vehicle (`--trace-vehicles`).
+fn trace_vehicles(w: &World) {
+    let g = w.game().expect("match world");
+    let hz = g.setup().tick_hz as f64;
+    for (p, ps) in w.snapshot().players.iter().enumerate() {
+        let squads = g
+            .squads()
+            .values()
+            .filter(|q| q.owner.0 as usize == p)
+            .count();
+        eprintln!(
+            "{} p{p} manpower {} pop {}/{} squads {squads} call-ins {:?} vehicles {}/{}",
+            mmss(w.tick() as f64 / hz),
+            ps.manpower,
+            ps.pop,
+            ps.pop_cap,
+            ps.call_ins,
+            ps.vehicles_counted,
+            ps.vehicle_limit
+        );
+    }
+    for v in &w.snapshot().vehicles {
+        if v.flags & vehicle_flags::WRECK != 0 {
+            continue;
+        }
+        let order = g
+            .squad(SquadId(v.squad))
+            .map_or("-".to_string(), |q| format!("{:?}", q.order));
+        let task = g
+            .ai(PlayerId(v.owner))
+            .and_then(|a| a.tasks.get(&SquadId(v.squad)))
+            .map_or("-".to_string(), |t| format!("{:?}@{}", t.kind, t.point));
+        eprintln!(
+            "{} p{} v{} at ({:.0}, {:.0}) speed {:.1} flags {:#x} hp {:?} seats {:?} ammo {:?} \
+             target {} followers {} task {task} order {order}",
+            mmss(w.tick() as f64 / hz),
+            v.owner,
+            v.id,
+            v.pos[0],
+            v.pos[1],
+            v.speed,
+            v.flags,
+            v.components,
+            v.seats,
+            v.ammo,
+            v.target as i64,
+            v.followers,
+        );
+    }
 }
 
 fn mmss(seconds: f64) -> String {
@@ -547,6 +912,79 @@ pub fn summary_text(r: &SkirmishReport) -> String {
         t.satchel_bursts,
         t.smoke_clouds
     );
+    let am = &r.armour;
+    let kills = |m: &BTreeMap<String, u32>| {
+        m.iter()
+            .filter(|(_, v)| **v > 0)
+            .map(|(k, v)| format!("{k} {v}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    out += &format!(
+        "armour: penetrations {}, non-penetrations {}, ricochets {}, knocked out {}, \
+         rockets {}; winner base {}\n\
+         kills by weapon: {}\n",
+        am.penetrations,
+        am.non_penetrations,
+        am.ricochets,
+        am.knockouts,
+        am.rockets_fired,
+        am.winner_base.map_or("-".into(), |b| b.to_string()),
+        kills(&am.kills_by),
+    );
+    for p in &r.players {
+        let a = &p.armour;
+        let ratio = |lost: u32, killed: u32| {
+            if killed == 0 {
+                format!("{lost}/0")
+            } else {
+                format!("{:.2}", lost as f64 / killed as f64)
+            }
+        };
+        out += &format!(
+            "  p{}: vehicles bought {}, lost {}, bogged {}, repaired {}; AT teams {}; \
+             KO by gun {}, by rocket {}; disabled: {}\n\
+             \x20     mp lost/killed: tanks {} ({}/{}), AT {} ({}/{}); escorts {} (reached \
+             {}, released {}), AT shots {}, satchels at vehicles {}, repairs {}, \
+             retreats {}, faces {}\n\
+             \x20     kills: {}\n",
+            p.player,
+            a.vehicles_bought,
+            a.vehicles_lost,
+            a.bogged,
+            a.repaired,
+            a.at_teams_bought,
+            a.ko_by_gun,
+            a.ko_by_rocket,
+            kills(&a.disabled_by),
+            ratio(a.tank_mp_lost, a.tank_mp_killed),
+            a.tank_mp_lost,
+            a.tank_mp_killed,
+            ratio(a.at_mp_lost, a.at_mp_killed),
+            a.at_mp_lost,
+            a.at_mp_killed,
+            a.escorts_started,
+            a.escorts_reached,
+            a.escorts_released,
+            a.at_shots,
+            a.satchels_at_vehicles,
+            a.repairs,
+            a.retreats,
+            a.faces,
+            kills(&a.kills_by),
+        );
+    }
+    if am.he_flag {
+        out += &format!(
+            "FLAG: HE share {:.1} % of kills (mortar + tank HE above 60 %)\n",
+            am.he_share_pct
+        );
+    } else {
+        out += &format!("HE share {:.1} % of kills\n", am.he_share_pct);
+    }
+    if !r.s3_failures.is_empty() {
+        out += &format!("S3 checks FAILED: {}\n", r.s3_failures.join("; "));
+    }
     let (a, k) = (&r.timing.all, &r.timing.peak);
     out += &format!(
         "tick ms: mean {:.3}, p95 {:.3}, p99 {:.3}, max {:.3}; peak {} soldiers at {} \

@@ -868,7 +868,8 @@ fn vehicle_matches_are_identical_across_thread_counts() {
         .keys()
         .filter(|v| base.entities().kind()[v.index()] == EntityKind::Vehicle)
         .count();
-    assert_eq!(alive, 4, "four tanks spawned");
+    // The two scripted per side, and the AI's own (S3 AI) up to the limit.
+    assert!(alive >= 4, "{alive} tanks alive");
     assert!(
         g.vehicles().iter().any(|(v, vs)| vs.speed != Fx::ZERO
             || dist(

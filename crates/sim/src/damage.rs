@@ -68,7 +68,7 @@ use crate::armour::{self, PenResult};
 use crate::combat::{BLAST_LIFT_MM, BallisticEvent, Blow, DamageCtx, tri};
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::game::{Ctx, MatchState, PathReq};
+use crate::game::{Ctx, MatchState, PathReq, kill_class};
 use crate::hash::HashCache;
 use crate::projectile::NO_AMMO;
 use crate::rng::{Purpose, RngStream};
@@ -293,11 +293,12 @@ impl MatchState {
                 .at(hit.point);
             self.push_event(events, ev);
         }
+        let class = self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter);
         let ko = self.deal(
             ctx,
             id,
             &r.dealt,
-            attacker,
+            (attacker, class),
             SimId(e.slot),
             fires,
             events,
@@ -305,7 +306,7 @@ impl MatchState {
             e.ammo,
         );
         if let Some(cause) = ko {
-            self.knock_out(ctx, id, cause, events);
+            self.knock_out(ctx, id, cause, class, events);
         }
         r.burst
     }
@@ -445,7 +446,8 @@ impl MatchState {
         Some(out)
     }
 
-    /// Applies `dealt` to vehicle `id` in order (see the module docs).
+    /// Applies `dealt` to vehicle `id` in order (see the module docs);
+    /// `by` is the attacking player and the round's `game::kill_class`.
     /// Returns a knock-out cause if it ends the vehicle.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn deal(
@@ -453,7 +455,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         dealt: &[Dealt],
-        attacker: u8,
+        by: (u8, u8),
         rack_key: SimId,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -461,6 +463,7 @@ impl MatchState {
         ammo: u16,
     ) -> Option<u8> {
         let owner = ctx.ents.owner[id.index()].0;
+        let (attacker, class) = by;
         let r = &self.setup.rules.vehicles;
         let mut rack_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_RACK);
         let mut detonated = false;
@@ -522,7 +525,7 @@ impl MatchState {
             self.push_event(events, e);
         }
         if dead > 0 {
-            self.crew_lost(PlayerId(owner), Some(attacker), dead);
+            self.crew_lost(PlayerId(owner), Some(attacker), class, dead);
         }
         if detonated {
             Some(KO_RACK)
@@ -604,12 +607,23 @@ impl MatchState {
             vs.last_attacker = Some(player);
             ctx.stats.blast_track_hits += dealt.len() as u64;
             // Tracks never start a fire or set off the rack: no knock-out.
-            self.deal(ctx, id, &dealt, player, id, fires, events, pos, ammo);
+            self.deal(
+                ctx,
+                id,
+                &dealt,
+                (player, kill_class::OTHER),
+                id,
+                fires,
+                events,
+                pos,
+                ammo,
+            );
         }
     }
 
-    /// Counts `n` crewmen of `owner` lost, killed by `by`.
-    fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, n: u32) {
+    /// Counts `n` crewmen of `owner` lost, killed by `by` with a round of
+    /// `game::kill_class` `class`.
+    fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, class: u8, n: u32) {
         if let Some(p) = self.players.get_mut(owner.0 as usize) {
             p.losses += n;
         }
@@ -617,6 +631,7 @@ impl MatchState {
             && by != Some(owner.0)
         {
             p.kills += n;
+            p.kills_by[class as usize] += n;
         }
     }
 
@@ -626,6 +641,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         cause: u8,
+        class: u8,
         events: &mut Vec<ArmourEv>,
     ) {
         let mut c = Ctx {
@@ -634,7 +650,7 @@ impl MatchState {
             hash: &mut *ctx.hash,
             tick: ctx.tick,
         };
-        self.knock_out_with(&mut c, ctx.stats, id, cause, events);
+        self.knock_out_with(&mut c, ctx.stats, id, cause, class, events);
     }
 
     /// [`Self::knock_out`] with a plain match context (Status stage).
@@ -644,6 +660,7 @@ impl MatchState {
         stats: &mut Stats,
         id: SimId,
         cause: u8,
+        class: u8,
         events: &mut Vec<ArmourEv>,
     ) {
         let i = id.index();
@@ -659,7 +676,7 @@ impl MatchState {
         let followers = vs.followers.clone();
         let squad = ctx.ents.squad[i];
         let pos = ctx.ents.transform[i].pos;
-        self.crew_lost(owner, by, alive);
+        self.crew_lost(owner, by, class, alive);
         stats.knockouts += 1;
         // Followers stop where they are.
         for m in followers {
@@ -857,7 +874,7 @@ impl MatchState {
             }
         }
         for (id, cause) in ko {
-            self.knock_out_with(ctx, stats, id, cause, events);
+            self.knock_out_with(ctx, stats, id, cause, kill_class::OTHER, events);
         }
     }
 
@@ -923,6 +940,12 @@ pub fn swap_seats(vs: &mut VehicleState, v: &VehicleSetup, swap_ticks: u32) {
         };
         vs.seats[d] = Seat::default();
     }
+}
+
+/// Whether a field repair would find work: a crewman alive and a
+/// repairable component below its repair target (the AI's check).
+pub fn can_field_repair(vs: &VehicleState, v: &VehicleSetup) -> bool {
+    vs.seats.iter().any(|s| s.hp > 0) && worst_repairable(vs, v).is_some()
 }
 
 /// The repairable component in the worst shape (lowest share of its HP,

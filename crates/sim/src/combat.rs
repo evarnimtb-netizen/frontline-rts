@@ -90,7 +90,7 @@
 //! soldiers. Rounds have no drag, so the drop compensation is exact.
 
 use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
-use frontline_content::vehicle::AmmoSetup;
+use frontline_content::vehicle::{AmmoMechanism, AmmoSetup};
 use frontline_content::{MatchSetup, WeaponClass};
 
 use crate::armour::{self, ArmourHit, ArmourTables};
@@ -99,7 +99,7 @@ use crate::ecs::{
     Combat, Entities, EntityKind, PlayerId, SimId, Stance, Transform, Velocity, Weapon,
 };
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::game::{MatchState, NavPhase, Order, PathReq, Squad, SquadId};
+use crate::game::{MatchState, NavPhase, Order, PathReq, Squad, SquadId, kill_class};
 use crate::hash::HashCache;
 use crate::items::{BlastKind, Kit, Thrown};
 use crate::projectile::{NO_AMMO, Projectile, ProjectileEnd, SUBSTEP_HZ, advance, finish};
@@ -902,6 +902,7 @@ impl MatchState {
             });
             l.rounds -= 1;
             *rockets += 1;
+            self.players[owner.0 as usize].rockets += 1;
             let ws = &mut ents.weapon[i];
             ws.shots = ws.shots.wrapping_add(1);
             // 16 s without the loader (the gunner loads himself).
@@ -1336,6 +1337,8 @@ pub(crate) struct Burst<'a> {
     pub cut: bool,
     /// Crater depth roll.
     pub key: (SimId, Purpose),
+    /// `game::kill_class` of the men it kills (S3 report).
+    pub class: u8,
 }
 
 /// Mutable world parts the damage stage needs.
@@ -1349,15 +1352,18 @@ pub(crate) struct DamageCtx<'a> {
     pub tick: u64,
 }
 
+/// A soldier at 0 HP this tick: `(victim, killer's player, kill class)`.
+type Fallen = (SimId, u8, u8);
+
 /// Takes `dmg` hit points from soldier `id`; one who drops to 0 joins
-/// `dead` with the player who killed him.
+/// `dead` with the player who killed him and the `game::kill_class`.
 fn hurt(
     ents: &mut Entities,
     hash: &mut HashCache,
-    dead: &mut Vec<(SimId, u8)>,
+    dead: &mut Vec<Fallen>,
     id: SimId,
     dmg: u32,
-    by: u8,
+    by: (u8, u8),
 ) {
     let c = &mut ents.combat[id.index()];
     if c.hp == 0 {
@@ -1365,14 +1371,14 @@ fn hurt(
     }
     c.hp = c.hp.saturating_sub(dmg.min(u16::MAX as u32) as u16);
     if c.hp == 0 {
-        dead.push((id, by));
+        dead.push((id, by.0, by.1));
     }
     hash.mark_entity_chunk(id.chunk());
 }
 
 /// Damages and suppresses the enemies of `b.player` around a burst and
 /// carves its crater (see the module docs).
-fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<(SimId, u8)>) {
+fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<Fallen>) {
     let pos = b.pos;
     let lift = FxVec3::new(pos.x, pos.y, pos.z + Fx::from_milli(BLAST_LIFT_MM));
     let he = b.he;
@@ -1410,7 +1416,7 @@ fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<(SimId, u8)>) {
                 (b.damage as i64 * (reach - dist).raw() as i64
                     / (reach - lethal).raw().max(1) as i64) as u32
             };
-            hurt(ctx.ents, ctx.hash, dead, id, dmg, b.player);
+            hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
         }
     }
     // A burst on a vehicle (or a man) well above the ground leaves it as
@@ -1442,6 +1448,45 @@ fn covered(c: &Combat) -> bool {
 }
 
 impl MatchState {
+    /// The `game::kill_class` of a round (S3 report): its ammo for main-gun
+    /// shells and rockets, else its weapon class; an MG fired by a vehicle
+    /// is a vehicle MG.
+    pub(crate) fn round_class(
+        &self,
+        ents: &Entities,
+        weapon: u16,
+        ammo: u16,
+        shooter: SimId,
+    ) -> u8 {
+        let class = self.setup.weapons.get(weapon as usize).map(|w| w.class);
+        if class == Some(WeaponClass::Launcher) {
+            return kill_class::ROCKET;
+        }
+        if let Some(a) = self.setup.ammo.get(ammo as usize) {
+            return match a.mechanism {
+                AmmoMechanism::He => kill_class::TANK_HE,
+                _ => kill_class::TANK_AP,
+            };
+        }
+        match class {
+            Some(WeaponClass::Rifle) => kill_class::RIFLE,
+            Some(WeaponClass::Smg) => kill_class::SMG,
+            Some(WeaponClass::Mg) => {
+                if matches!(
+                    ents.kind.get(shooter.index()),
+                    Some(EntityKind::Vehicle | EntityKind::Wreck)
+                ) {
+                    kill_class::VEHICLE_MG
+                } else {
+                    kill_class::MG
+                }
+            }
+            Some(WeaponClass::Mortar) => kill_class::MORTAR,
+            Some(WeaponClass::Cannon) => kill_class::TANK_AP,
+            _ => kill_class::OTHER,
+        }
+    }
+
     /// Applies this tick's ballistic events in order, then the thrown items
     /// that go off now (`crate::items`, in id order: blasts, smoke), then
     /// kills soldiers left at 0 HP (see the module docs). Bursts are
@@ -1455,8 +1500,8 @@ impl MatchState {
         armour_events: &mut Vec<ArmourEv>,
     ) {
         let rules = self.setup.rules.combat.clone();
-        // (victim, killer) in the order they fell.
-        let mut dead: Vec<(SimId, u8)> = Vec::new();
+        // (victim, killer, class) in the order they fell.
+        let mut dead: Vec<Fallen> = Vec::new();
         let mut fires = FireRolls::default();
         for (k, e) in events.iter().enumerate() {
             let burst_at = match e.blow {
@@ -1470,7 +1515,15 @@ impl MatchState {
                         &mut ctx.ents.combat[id.index()],
                         rules.hit_suppression * 1000,
                     );
-                    hurt(ctx.ents, ctx.hash, &mut dead, id, w.damage, e.player);
+                    let class = self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter);
+                    hurt(
+                        ctx.ents,
+                        ctx.hash,
+                        &mut dead,
+                        id,
+                        w.damage,
+                        (e.player, class),
+                    );
                     None
                 }
                 Blow::NearMiss(id) => {
@@ -1529,6 +1582,7 @@ impl MatchState {
                 suppression,
                 cut: false,
                 key: (SimId(k as u32), Purpose::CRATER),
+                class: self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter),
             };
             burst(ctx, &b, &mut dead);
             self.blast_tracks(
@@ -1566,6 +1620,11 @@ impl MatchState {
                     suppression: h.suppression,
                     cut: h.cuts_trenches,
                     key: (SimId(t.id), Purpose::ITEM_CRATER),
+                    class: if h.cuts_trenches {
+                        kill_class::SATCHEL
+                    } else {
+                        kill_class::FRAG
+                    },
                 };
                 burst(ctx, &b, &mut dead);
                 self.blast_tracks(
@@ -1587,11 +1646,12 @@ impl MatchState {
             }
         }
         dead.sort_unstable();
-        for (id, by) in dead {
+        for (id, by, class) in dead {
             self.kill(ctx.ents, ctx.hash, id, rules.corpse_ticks);
             ctx.stats.deaths += 1;
             if let Some(p) = self.players.get_mut(by as usize) {
                 p.kills += 1;
+                p.kills_by[class as usize] += 1;
             }
         }
         self.sweep_vehicle_refs(ctx.ents);
