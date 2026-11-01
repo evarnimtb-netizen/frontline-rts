@@ -363,6 +363,59 @@ MultiMesh batch (`match/selection_rings.gd`, one buffer upload per frame);
 detached men's targets, throw range rings and the throw target are drawn by
 `ground_overlay.gd`; the hover tooltip and tool hints by `unit_overlay.gd`.
 
+## Net mode (S2)
+
+A state with a `net` key puts the view in net mode (no key: the skirmish
+presenter, unchanged). The source keeps sending everything above, plus:
+
+```text
+net: {
+  ping_ms: float,          # round trip to the relay, -1 unknown
+  input_delay: int,        # D in ticks
+  delay_ms: int,           # D in ms
+  restamps: int,           # own commands moved to a later turn
+  stalls: int,             # ticks this client waited for a bundle
+  state: String,           # "ok" | "unstable" | "waiting" | "paused" | "desync"
+  paused_by: String,       # player name while "paused"
+  paused_slot: int,        # opt; slot that paused (else matched by name)
+  waiting_for: String,     # player name while "waiting"
+  waiting_slot: int,       # opt; slot waited for (own slot = "Reconnecting")
+  waiting_s_left: float,   # seconds until the relay's Surrender
+  desync_tick: int,        # -1 none
+  desync_dump: String,     # absolute folder of the dump, "" none
+  disconnect_reason: String, # reason code; non-empty = link gone for good
+},
+pending_orders: [          # own orders sent but not executed yet
+  { pos: Vector3, kind: String },  # kind: move | attack_move | barrage |
+],                         # throw | dig (or the intent name; *_units and
+                           # throw_each map onto these)
+players[i].name            # lobby names
+```
+
+What the view does with it:
+
+- **Readout** (`hud/net_readout.gd`): status dot (green ok, amber
+  unstable / waiting / paused, red desync), ping, D in ticks and ms,
+  restamps, stalls, in the top bar between the enemy tickets and the clock
+  (`top_bar.free_span()`); words at 1600, letters at 1280. Tooltip explains.
+- **Pending orders**: a turning dashed ring at the target from click time
+  (positional intents) until the order leaves `pending_orders`; a click
+  marker the state never confirms lasts 0.5 s.
+- **Panels** (`hud/net_overlay.gd`): red desync banner (tick, dump path,
+  Copy path, Leave); "Waiting for <name> (Ns)" with a draining bar, or
+  "Reconnecting" for the own slot; "Paused by <name>" with Resume.
+- **Disconnect screen** (`hud/net_disconnect_screen.gd`): the reason, Back
+  to menu.
+- While `paused`, `waiting` or `desync`, and under the disconnect screen,
+  `input_blocked()` is true: no selection or orders (the camera still
+  moves). `unstable` blocks nothing.
+- The pause menu does not pause on open; it offers "Pause match (both
+  players)" / "Resume match". There are no sim speed controls in the HUD;
+  net mode runs at 1x.
+
+The FrontlineNet lobby API and the command-line flags are in
+`godot/docs/net_api.md`.
+
 ## Autoplay
 
 `godot/tools/autoplay.sh <Godot> [minutes] [speed]` boots to the menu,
@@ -384,5 +437,8 @@ man forward, Z prone, recall group 1, T smoke, the HUD at 1600x900 and
   `s1b_hud_mock_1280.png`, `s1b_throw_tool_mock.png`).
 - `Godot --headless --path godot -s res://tools/test_match_view.gd` runs the
   presenter input and layout tests on the mock.
+- `Godot --headless --path godot -s res://tools/test_net_ui.gd` runs the S2
+  presenter tests on MockNet (menu, lobby, net HUD); and
+  `godot/tools/capture_net_screens.sh <Godot>` saves `s2_mock_*.png`.
 - `Godot --headless --path godot -s res://tools/check_project.gd` loads every
   script and scene and runs the menu and the match for a few frames.

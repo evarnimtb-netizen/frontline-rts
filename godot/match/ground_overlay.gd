@@ -103,7 +103,36 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 		m.t += dt
 		_draw_marker(m)
 	_markers = _markers.filter(func(m: Dictionary) -> bool: return m.t < MARKER_TIME)
+	for p in view.pending_draw:
+		_draw_pending(p)
 	_im.surface_end()
+
+
+## Net mode (S2): an order sent but not executed yet. A ring of dashes
+## turning around the target, in the order's colour, until the sim runs
+## the order (MatchView.pending_draw); it pops in a little at click time.
+func _draw_pending(p: Dictionary) -> void:
+	var col: Color
+	var r := 3.2
+	match p.kind:
+		"attack_move":
+			col = UiPalette.DANGER
+		"barrage":
+			col = UiPalette.WARN
+			r = 8.0
+		"throw":
+			col = HudStyle.ACCENT
+			r = 2.0
+		_:
+			col = UiPalette.TEXT
+	var grow := clampf(float(p.get("age", 1.0)) / 0.12, 0.0, 1.0)
+	r *= 0.6 + 0.4 * grow
+	var n := 8
+	var spin := _t * 2.4
+	for i in n:
+		var a0 := spin + TAU * i / n
+		_arc(p.pos, r, 0.45, a0, a0 + TAU / n * 0.55, Color(col, 0.95), 6)
+	_ring(p.pos, 0.45, 0.5, Color(col, 0.9), 10)
 
 
 ## One ring per selected soldier (white), the hovered one (side colour),

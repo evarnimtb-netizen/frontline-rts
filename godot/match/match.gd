@@ -12,6 +12,15 @@ extends Node3D
 ## --capture_setup (see Session) stages a screenshot on the mock: "hud",
 ## "throw", "rotated" (minimap turning with the camera), "docked" (minimap
 ## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
+##
+## Net mode (S2, Session.net_mode): the bridge source gets the lobby's link
+## through attach_net(Session.net) before start_match (assumed API, see
+## docs/net_api.md) and runs at 1x. With the mock net (no bridge
+## networking yet) this script merges MockNet.match_state() into the mock
+## source's state and reports orders and pauses to it, so the whole net
+## presenter runs on match_mock.tscn. Net screenshot stages: "net_ok",
+## "net_unstable", "net_pending", "net_desync", "net_waiting",
+## "net_reconnecting", "net_paused", "net_paused_by_them", "net_disconnect".
 
 const AUTOPLAY := preload("res://match/autoplay.gd")
 
@@ -35,6 +44,8 @@ func _ready() -> void:
 	camera.process_priority = -20
 	view.intent.connect(_on_intent)
 	if source.has_method("start_match"):
+		if Session.net_mode and source.has_method("attach_net"):
+			source.attach_net(Session.net)
 		if not source.start_match(Session.match_setup()):
 			push_error("Match: could not start the skirmish: %s" % source.get_last_error())
 			Session.goto_menu.call_deferred()
@@ -50,6 +61,8 @@ func _ready() -> void:
 			camera.jump_to(b.lerp(Vector3.ZERO, 0.05))
 		if world_fx != null:
 			world_fx.setup(info, h)
+		if Session.net_mode and source.has_method("set_speed"):
+			source.set_speed(1.0)
 	else:
 		if source.has_method("set_minimap_texture"):
 			source.set_minimap_texture(ImageTexture.create_from_image(MockMap.make_image(256)))
@@ -63,7 +76,9 @@ func _ready() -> void:
 		add_child(autoplay)
 		autoplay.begin(self)
 	var setup := Session.capture_setup()
-	if setup != "" and source is MockMatchSource:
+	if setup.begins_with("net_") and source is MockMatchSource:
+		_stage_net(setup)
+	elif setup != "" and source is MockMatchSource:
 		_stage(setup)
 	elif setup == "top":
 		# Straight down on point C (checks terrain, woods, flags, rings).
@@ -78,6 +93,8 @@ func _process(_delta: float) -> void:
 	var s: Dictionary = source.get_state()
 	if s.is_empty():
 		return
+	if _mock_net():
+		_merge_mock_net(s)
 	view.update_state(s)
 	if mock_world != null:
 		mock_world.update_state(s)
@@ -91,7 +108,43 @@ func _on_intent(kind: StringName, data: Dictionary) -> void:
 	if kind == &"quit_to_menu":
 		Session.goto_menu()
 		return
+	if _mock_net():
+		_mock_net_intent(kind, data)
 	source.handle_intent(kind, data)
+
+
+# --- mock net glue (no bridge networking yet) -------------------------------
+
+func _mock_net() -> bool:
+	return Session.net_mode and Session.is_mock_net()
+
+
+## What the bridge will put in its own state in net mode: `net`,
+## `pending_orders` and the players' names.
+func _merge_mock_net(s: Dictionary) -> void:
+	var extra: Dictionary = Session.net.match_state()
+	s.net = extra.net
+	s.pending_orders = extra.pending_orders
+	var names: Array = extra.get("player_names", [])
+	var players: Array = s.get("players", [])
+	for i in mini(names.size(), players.size()):
+		if String(names[i]) != "":
+			players[i].name = names[i]
+			players[i].is_ai = false
+
+
+func _mock_net_intent(kind: StringName, data: Dictionary) -> void:
+	var mock: MockNet = Session.net
+	if kind == &"pause":
+		mock.mock_pause(data.paused)
+		return
+	if not MatchView.PENDING_KINDS.has(kind):
+		return
+	var pos: Variant = data.get("target")
+	if pos == null and data.has("polyline") and not data.polyline.is_empty():
+		pos = data.polyline[data.polyline.size() / 2]
+	if pos is Vector3:
+		mock.mock_order(MatchView.PENDING_KINDS[kind], pos)
 
 
 func _own_ids(type := "") -> PackedInt32Array:
@@ -163,6 +216,34 @@ func _stage(what: String) -> void:
 		"end":
 			source.prewarm(150.0)
 			source.force_end(0, "tickets")
+
+
+## Net screenshot staging (S2) on a MockNet: the "hud" firefight, then the
+## net state; "net_pending" adds a move order still in flight.
+func _stage_net(what: String) -> void:
+	var mock := MockNet.new()
+	mock.auto = false
+	mock.set_name("Erik")
+	Session.net = mock
+	Session.net_mode = true
+	_stage("hud")
+	mock.stage("net_ok" if what == "net_pending" else what)
+	if what == "net_pending":
+		var ids := _own_ids()
+		view.selection.select_squads(ids.slice(0, 1))
+		var s0: Dictionary = source.get_state()
+		_merge_mock_net(s0)
+		view.update_state(s0)
+		var c := _centroid(ids.slice(0, 1))
+		var g := c + Vector3(-18, 0, -26)
+		g.y = source.height_at(g.x, g.z)
+		view.selection.order_to_ground(g)
+		# Keep the order in flight for the screenshot.
+		for p in mock.pending:
+			p.exec_at = INF
+	var s: Dictionary = source.get_state()
+	_merge_mock_net(s)
+	view.update_state(s)
 
 
 ## HUD staging for S1b: wounded and pinned men, one man detached and

@@ -22,6 +22,12 @@ extends CanvasLayer
 ##   view.height_fn = sim.get_height_at   # (x, z) -> ground y; optional
 ##   view.intent.connect(source.handle_intent)
 ##   func _process(_d): view.update_state(source.get_state())
+##
+## Net mode (S2) is on while the state carries a `net` Dictionary: the
+## top bar shows the net readout, NetOverlay the desync banner and the
+## waiting / paused-by panels, NetDisconnectScreen the reason the link
+## ended. Positional orders get a pending marker from click time until
+## the order executes (state `pending_orders`; docs/match_state.md).
 
 signal intent(kind: StringName, data: Dictionary)
 signal selection_changed(squad_ids: PackedInt32Array)
@@ -79,6 +85,18 @@ const ORDER_TEXT := {
 	"dig": "Digging", "barrage": "Firing", "setup": "Setting up", "hold": "Holding",
 	"throw": "Throwing",
 }
+## Intents that get a pending-order marker in net mode, by marker kind.
+const PENDING_KINDS := {
+	&"move": "move", &"move_units": "move", &"attack_move": "attack_move",
+	&"attack_move_units": "attack_move", &"barrage": "barrage", &"throw": "throw",
+	&"throw_each": "throw", &"dig": "dig", &"dig_units": "dig",
+}
+## A click-time marker lives this long (s) unless the state's
+## pending_orders confirms it; once confirmed the state's entry is drawn.
+const LOCAL_PENDING_S := 0.5
+## A state entry within this distance (m) of a click marker of the same
+## kind confirms it.
+const PENDING_MATCH_M := 3.0
 ## Short squad names for cards and tiles.
 const SHORT_NAMES := {"rifle": "Rifle", "mg": "MG team", "engineer": "Engineers", "mortar": "Mortar"}
 
@@ -114,6 +132,14 @@ var pick_own := PackedByteArray()
 var pick_reach := PackedFloat32Array()
 var paused := false
 var ended := false
+## Net mode (S2): the state's `net` Dictionary ({} when not networked).
+var net: Dictionary = {}
+var net_mode := false
+## Pending-order markers to draw this frame: [{pos, kind, age}], from the
+## state's pending_orders plus click-time markers not yet confirmed.
+var pending_draw: Array = []
+var _pending_local: Array = []
+var _clock := 0.0
 ## Stable per-type squad numbers for labels: id -> n, "owner:type" -> count.
 var _squad_no := {}
 var _type_count := {}
@@ -130,6 +156,10 @@ var _type_count := {}
 @onready var pause_menu: Control = $PauseMenu
 @onready var end_screen: Control = $EndScreen
 @onready var selection: Node = $Selection
+## Built in _ready (both match scenes get them without scene edits).
+var net_readout: Control
+var net_overlay: Control
+var net_disconnect: Control
 
 
 func _ready() -> void:
@@ -137,7 +167,18 @@ func _ready() -> void:
 		camera = get_node_or_null(camera_path)
 	if overlay == null and not overlay_path.is_empty():
 		overlay = get_node_or_null(overlay_path)
-	for c in [hud, top_bar, minimap, event_feed, roster, detail, orders, call_in, units, pause_menu, end_screen, selection]:
+	net_readout = NetReadout.new()
+	net_readout.name = "NetReadout"
+	hud.add_child(net_readout)
+	net_overlay = NetOverlay.new()
+	net_overlay.name = "NetOverlay"
+	hud.add_child(net_overlay)
+	net_disconnect = NetDisconnectScreen.new()
+	net_disconnect.name = "NetDisconnect"
+	add_child(net_disconnect)
+	# Above the HUD, below the pause menu and the end screen.
+	move_child(net_disconnect, pause_menu.get_index())
+	for c in [hud, top_bar, minimap, event_feed, roster, detail, orders, call_in, units, pause_menu, end_screen, selection, net_readout, net_overlay, net_disconnect]:
 		if c.has_method("bind"):
 			c.bind(self)
 	MatchInput.ensure_actions()
@@ -147,6 +188,10 @@ func _ready() -> void:
 func update_state(s: Dictionary) -> void:
 	state = s
 	local_player = s.get("local_player", 0)
+	_clock += get_process_delta_time()
+	net = s.get("net", {})
+	net_mode = s.has("net")
+	_update_pending(s)
 	map_half = float(s.get("map", {}).get("size_m", 1024.0)) * 0.5
 	squads_by_id.clear()
 	squad_screen.clear()
@@ -175,6 +220,8 @@ func update_state(s: Dictionary) -> void:
 	for e in s.get("events", []):
 		event_feed.push(e)
 	event_feed.update_state(s)
+	for c in [net_readout, net_overlay, net_disconnect]:
+		c.update_state(s)
 	_play_effects(s.get("effects", []))
 	var result: Dictionary = s.get("result", {})
 	if not ended and result.get("status", "running") != "running":
@@ -253,9 +300,57 @@ func _play_effects(effects: Array) -> void:
 				AudioManager.play_3d(&"dig", fx.pos)
 
 
-## True while a modal (pause menu, end screen) owns input.
+## True while a modal (pause menu, end screen, net disconnect) owns input,
+## and in net mode while the match is halted (paused, waiting, desync):
+## orders given then would only queue up behind the pause.
 func input_blocked() -> bool:
-	return pause_menu.visible or ended
+	return pause_menu.visible or ended or net_halted() or net_disconnect.visible
+
+
+## Net mode: the relay is not closing turns (paused, waiting for a
+## player, or stopped on a desync).
+func net_halted() -> bool:
+	return net_mode and String(net.get("state", "ok")) in ["paused", "waiting", "desync"]
+
+
+# --- pending orders (net mode) -----------------------------------------------
+
+func _note_pending(kind: StringName, data: Dictionary) -> void:
+	if not net_mode or not PENDING_KINDS.has(kind):
+		return
+	var pos: Variant = data.get("target")
+	if pos == null and data.has("polyline"):
+		var pl: PackedVector3Array = data.polyline
+		if not pl.is_empty():
+			pos = pl[pl.size() / 2]
+	if pos is Vector3:
+		_pending_local.append({"pos": pos, "kind": PENDING_KINDS[kind], "t": _clock, "confirmed": false})
+
+
+## pending_draw = the state's pending_orders (what the source says is sent
+## but not executed) plus click-time markers it has not confirmed yet.
+## A confirmed click marker is dropped for good, so it does not come back
+## when the order executes and leaves the state's list.
+func _update_pending(s: Dictionary) -> void:
+	pending_draw.clear()
+	if not net_mode:
+		_pending_local.clear()
+		return
+	for p in s.get("pending_orders", []):
+		var pos: Variant = p.get("pos") if p is Dictionary else null
+		if not pos is Vector3:
+			continue
+		var kind := String(p.get("kind", "move"))
+		kind = String(PENDING_KINDS.get(StringName(kind), kind))
+		var age := 0.0
+		for l in _pending_local:
+			if l.kind == kind and Vector2(l.pos.x, l.pos.z).distance_to(Vector2(pos.x, pos.z)) <= PENDING_MATCH_M:
+				l.confirmed = true
+				age = maxf(age, _clock - float(l.t))
+		pending_draw.append({"pos": pos, "kind": kind, "age": age})
+	_pending_local = _pending_local.filter(func(l: Dictionary) -> bool: return not l.confirmed and _clock - float(l.t) < LOCAL_PENDING_S)
+	for l in _pending_local:
+		pending_draw.append({"pos": l.pos, "kind": l.kind, "age": _clock - float(l.t)})
 
 
 func own_squad(id: int) -> bool:
@@ -397,6 +492,7 @@ func jump_camera(pos: Vector3) -> void:
 # --- intents ---------------------------------------------------------------
 
 func emit_intent(kind: StringName, data: Dictionary) -> void:
+	_note_pending(kind, data)
 	intent.emit(kind, data)
 	var ids: PackedInt32Array = data.get("squads", PackedInt32Array())
 	var uids: PackedInt32Array = data.get("units", PackedInt32Array())
