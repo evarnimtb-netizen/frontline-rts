@@ -85,7 +85,7 @@ or the engineers die.
 |---|---|
 | T1 | GER 11 / USA 9; base 1 11 (55 %) |
 | T7 | rockets 8 of 10; satchels 0 of 10 |
-| T12 | 11.2–26.2 min (3 over 25, 2 under 12); HE max 44.2 % |
+| T12 | 11.2–26.2 min, median 18.1 (3 over 25, 2 under 12: met under the owner's loosened target of `031791e`, 10–40 min, median 15–30); HE max 44.2 % |
 | T13 | 1.57 ms (cargo tests running alongside; re-measured in round 3) |
 
 Staged cases unchanged from round 1.

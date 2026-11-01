@@ -295,10 +295,10 @@ questions, work proceeds on (A).
   help. (A) Next slice: a sticky hunt (keep the last seen vehicle for a
   few seconds) and engineers that move with an escort or under smoke.
   (B) Accept satchels as a player tool only.
-- [ ] **S3b-37. Match length (T12, missed).** 20 matches run 11.2-26.2 min
-  (3 over 25, 1 under 12); the spread comes from routs and stalemates,
-  not from any one value. (A) Leave; revisit with a ticket rule (e.g. a
-  floor drain) in a later slice. (B) Widen the target to 11-27 min.
+- [ ] **S3b-37. Match length.** Met under the owner's loosened T12 (no
+  match under 10 or over 40 min, median 15-30): final 11.2-26.2, median
+  18.1. Against the old 12-25 band 5 of 20 fall outside. (A) Nothing to
+  do. (B) Revisit with a ticket rule if stalemates appear in play.
 
 ## S3 owner checklist (needs a person)
 

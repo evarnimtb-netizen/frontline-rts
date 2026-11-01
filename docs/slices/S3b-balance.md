@@ -1193,7 +1193,7 @@ Tried and dropped: HEAT `core.length_cm` 150 (no effect on case 4 or 6),
 | T9 | case 5b pins (> 0 %) and kills > 0 | 0 % / 0 | pinned 54.2 % + ducked 42.7 %; kills 0 | pins met; kills **missed**, accepted as "pins" per S3b-27 (A) |
 | T10 | fortify MG + rifles from 150 m: defenders ≥ 75 %, attackers ≤ 50 % | new | 97.5 %; 48.8 % | **met** (harness S3b-33; attackers near the limit) |
 | T11 | fortify S1 rows pass (rifles ≤ 50 %, mortar ≤ 40 %); unsupported rush ≥ 75 % | pass, 37.8 % | rifles 0 %, mortar 10.0 %, smoke pass; unsupported 100 % | **met** |
-| T12 | all 20 matches 12–25 min; HE share < 60 % | 13.6–26.2; 45.5 % | 11.2–26.2 (3 over 25, 2 under 12); HE max 44.2 % | length **missed**, HE met |
+| T12 | (owner, 2026-11-01, `031791e`) no match under 10 or over 40 min, median 15–30 min; HE share < 60 % | 13.6–26.2; 45.5 % | 11.2–26.2 min, median 18.1; HE max 44.2 % | **met** (the old 12–25 band would miss: 3 over 25, 2 under 12) |
 | T13 | peak p99 < 1.5 ms; stress p99 < 10 ms | 0.28–0.50; 2.34 | 0.94 ms (6 parallel); stress 1.14 ms | **met** |
 | T14 | HE lip loss ≥ 0.05 m per burst within 3 m | 0.001 m | 0.027 m (local row); 0.0013 m (41 m mean) | **missed** |
 | T15 | determinism, save/load, net loopback/soak | pass | 430 tests + release-only (soaks, stress, fortify, AI) pass | **met** |
@@ -1210,8 +1210,10 @@ Tried and dropped: HEAT `core.length_cm` 150 (no effect on case 4 or 6),
   could not fix it. S3b-36 (next slice: sticky hunts).
 - **T9 kills.** A flat-trajectory shell cannot reach men below the lip
   (S3b-27 (A)).
-- **T12 length.** Routs (11 min) and stalemates (25–26 min) spread the
-  lengths; no single value narrows both. S3b-37.
+- **T12 length** is met under the owner's loosened target (`031791e`,
+  committed during this stage); against the old 12–25 band 5 of 20 fall
+  outside (routs at 11 min, long games at 25–26 min). Round 1 had one
+  30-minute time-limit draw (seed 8), which the cost change removed.
 - **T14.** Most bursts near the trench miss the spoil; one 0.6 m crater
   lowers the local lip ~3 cm on average. Larger spoil removal barely moves
   it (0.034 m at 400 %). Option (B) of S3b-22 (spoil from a wider radius)
