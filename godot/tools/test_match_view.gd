@@ -74,6 +74,7 @@ func _run() -> void:
 	await _test_hud(eng, eng_men, rifle)
 	await _test_vehicles()
 	_test_cost()
+	await _test_callin_need()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -831,6 +832,74 @@ func _test_cost() -> void:
 	print("cost: pick index + rings for 240 soldiers: %.3f ms/frame" % per)
 	_check(_view.pick_ids.size() > 200 and per < 2.0, "240-soldier picking + rings stay cheap (%.3f ms, headless)" % per)
 	_view.update_state(_source.get_state())
+
+
+## The call-in "need N" reasons: steady over many frames at a constant
+## manpower, N always the shortfall, on every tile including the dearest,
+## and following manpower as it rises (the owner saw "need N" blink, and
+## none on the Mortar tile: the fit was judged on proportional digits).
+func _test_callin_need() -> void:
+	var ci: Control = _view.call_in
+	# Live mock frames at a constant manpower.
+	var me: Dictionary = _source.players[_view.local_player]
+	var saved_mp: float = me.manpower
+	me.manpower = 58.0
+	await _frames(2)
+	var first: Array = _reasons(ci)
+	var steady := true
+	for f in 60:
+		await _frames(1)
+		steady = steady and _reasons(ci) == first
+	var cat: Array = _view.state.callin.catalog
+	var right := true
+	for i in cat.size():
+		if not ci.is_vehicle(cat[i]) and float(cat[i].get("cooldown_s", 0.0)) <= 0.0 and int(cat[i].cost) > 58:
+			right = right and first[i] == "need %d" % (int(cat[i].cost) - 58)
+	_check(steady, "call-in reasons steady over 60 frames at 58 MP %s" % str(first))
+	_check(right, "every squad tile says need <cost - 58> at 58 MP")
+	me.manpower = saved_mp
+
+	# The owner's frame: the S2/S3 costs at 58 MP, fed 120 times.
+	var s: Dictionary = _view.state.duplicate(true)
+	s.callin.catalog = [
+		{"type": "rifle", "id": "ww2:usa_rifle", "name": "Rifle squad", "cost": 250, "delay_s": 20, "men": 8, "pop": 8},
+		{"type": "mg", "id": "ww2:usa_mg", "name": "MG team", "cost": 190, "delay_s": 25, "men": 3, "pop": 3},
+		{"type": "engineer", "id": "ww2:usa_engineer", "name": "Engineer squad", "cost": 220, "delay_s": 20, "men": 5, "pop": 5},
+		{"type": "mortar", "id": "ww2:usa_mortar", "name": "Mortar team", "cost": 280, "delay_s": 30, "men": 3, "pop": 3},
+	]
+	s.callin.queue = []
+	s.players[_view.local_player].pop = 0
+	s.players[_view.local_player].manpower = 58.0
+	var want := ["need 192", "need 132", "need 162", "need 222"]
+	steady = true
+	for f in 120:
+		_view.update_state(s)
+		steady = steady and _reasons(ci) == want
+	_check(steady, "owner's frame: need 192 / 132 / 162 / 222 on all four tiles, 120 updates (%s)" % str(_reasons(ci)))
+	# Rising manpower: every update shows exactly the shortfall until the
+	# tile is affordable, then nothing.
+	var bad := ""
+	var mp := 0.0
+	while mp <= 300.0 and bad == "":
+		s.players[_view.local_player].manpower = mp
+		_view.update_state(s)
+		var got: Array = _reasons(ci)
+		for i in s.callin.catalog.size():
+			var short: int = int(s.callin.catalog[i].cost) - int(mp)
+			var expect := "need %d" % short if short > 0 else ""
+			if got[i] != expect:
+				bad = "(%.2f MP tile %d: %s, want %s)" % [mp, i, got[i], expect]
+		mp += 0.25
+	_check(bad == "", "rising 0 → 300 MP: need N tracks the shortfall on every tile %s" % bad)
+	_view.update_state(_source.get_state())
+	await _frames(2)
+
+
+func _reasons(ci: Control) -> Array:
+	var out: Array = []
+	for i in _view.state.callin.catalog.size():
+		out.append(ci.reason_text(i))
+	return out
 
 
 func _test_end() -> void:

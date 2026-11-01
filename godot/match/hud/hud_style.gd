@@ -102,6 +102,7 @@ const _BOLD_PATH := "res://ui/fonts/Barlow-SemiBold.ttf"
 
 static var _bold: Font
 static var _boxes := {}
+static var _tabular := {}
 
 
 ## The semibold HUD font (titles, numbers, hotkeys).
@@ -109,6 +110,20 @@ static func bold() -> Font:
 	if _bold == null:
 		_bold = load(_BOLD_PATH)
 	return _bold
+
+
+## `font` with tabular figures (OpenType tnum): every digit as wide as "0",
+## so a number that changes in place keeps its width. Barlow's proportional
+## "1" is 3 px narrower than the other digits at FONT.
+static func tabular(font: Font) -> Font:
+	var f: Font = _tabular.get(font)
+	if f == null:
+		var fv := FontVariation.new()
+		fv.base_font = font
+		fv.opentype_features = {TextServerManager.get_primary_interface().name_to_tag("tnum"): 1}
+		f = fv
+		_tabular[font] = f
+	return f
 
 
 static func text_w(font: Font, text: String, font_size: int) -> float:
