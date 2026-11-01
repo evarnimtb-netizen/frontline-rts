@@ -3,7 +3,8 @@ extends Control
 ## one shared strip with a tile per squad type from state.callin.catalog,
 ## then one queue bar. Every tile always shows its name and cost; a tile
 ## the player cannot buy now is dimmed and says why ("need 25" when short
-## of manpower). An optional re-call cooldown (catalog `cooldown_s` /
+## of manpower, steady while the shortfall ticks down: see reason_text).
+## An optional re-call cooldown (catalog `cooldown_s` /
 ## `cooldown_total_s`) fills the tile from the bottom with a clock and the
 ## seconds left. The queue bar shows "Next: <unit> <s>", "n/5" and the
 ## head's progress.
@@ -23,6 +24,9 @@ const TILE_NAMES := {"rifle": "Rifle squad", "mg": "MG team", "engineer": "Engin
 ## The column's top stays at or below this fraction of the HUD height.
 const CLEAR_TOP := 0.575
 const COL_GAP := 4.0
+## Least gap between a tile's cost and its reason: 3 px lets "need 222"
+## (56 px, tabular) sit next to a 3-digit cost in a 120 px tile.
+const REASON_GAP := 3.0
 
 var view: MatchView
 var focused := false
@@ -261,14 +265,40 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 		HudStyle.text(self, bold, Vector2(x1, r.end.y - 5.0), secs, HudStyle.FONT_SMALL, HudStyle.TEXT, 1)
 		HudStyle.clock(self, Vector2(x1 - 6.0 - HudStyle.text_w(bold, secs, HudStyle.FONT_SMALL) - 6.0, r.end.y - 10.0), 5.5, HudStyle.TEXT)
 	elif off:
-		# The reason, if it fits next to the cost (always at 120 px).
-		var room := x1 - x0 - 4.0 - cost_w
-		if HudStyle.text_w(font, why, HudStyle.FONT) <= room:
-			HudStyle.text(self, font, Vector2(x1, r.end.y - 5.0), why, HudStyle.FONT, Color(HudStyle.TEXT, 0.75), 1)
+		var shown := reason_text(i)
+		if shown != "":
+			HudStyle.text(self, HudStyle.tabular(font), Vector2(x1, r.end.y - 5.0), shown, HudStyle.FONT, Color(HudStyle.TEXT, 0.75), 1)
 	elif vehicle:
 		var pop := "%d pop" % int(c.get("pop", 0))
 		if HudStyle.text_w(font, pop, HudStyle.FONT_SMALL) <= x1 - x0 - 6.0 - cost_w:
 			HudStyle.text(self, font, Vector2(x1, r.end.y - 5.0), pop, HudStyle.FONT_SMALL, HudStyle.DIM, 1)
+
+
+## The reason tile `i` writes right of its cost ("need 192"), or "" when it
+## writes none: it can be called in, it shows a lock or cooldown instead,
+## or the reason does not fit. Numbers use tabular figures and the fit is
+## judged with every digit as "0", so whether "need N" shows depends only
+## on how many digits N has, never on which: a shortfall that ticks down
+## with income does not blink the label (proportional "need 222" is 56 px,
+## "need 221" 53 px, against 55 px of room next to "250 MP").
+func reason_text(i: int) -> String:
+	if i < 0 or i >= _catalog.size():
+		return ""
+	var c: Dictionary = _catalog[i]
+	var why := blocked_reason(c)
+	if why == "" or float(c.get("cooldown_s", 0.0)) > 0.0 or (is_vehicle(c) and float(c.get("locked_s", 0.0)) > 0.0):
+		return ""
+	var room := tile_rect(i).size.x - 16.0 - REASON_GAP - HudStyle.text_w(HudStyle.bold(), "%d MP" % int(c.cost), HudStyle.FONT)
+	var nums := HudStyle.tabular(get_theme_default_font())
+	return why if HudStyle.text_w(nums, _zero_digits(why), HudStyle.FONT) <= room else ""
+
+
+## `s` with every digit replaced by "0" (a width template for numbers).
+static func _zero_digits(s: String) -> String:
+	var out := ""
+	for ch in s:
+		out += "0" if ch >= "0" and ch <= "9" else ch
+	return out
 
 
 ## Tile name (catalog `short`, else TILE_NAMES); the queue bar uses the
