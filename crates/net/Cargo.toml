@@ -1,0 +1,39 @@
+[package]
+name = "frontline-net"
+description = "Frontline multiplayer: the relay, the client state machine and the wire protocol (S2, §10)."
+license = "LicenseRef-Proprietary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "frontline-relay"
+path = "src/bin/frontline-relay.rs"
+
+[[bin]]
+name = "frontline-net-test"
+path = "src/bin/frontline-net-test.rs"
+
+[dependencies]
+# The relay itself never runs the sim; it only carries `CommandKind`s. The
+# client harness (`harness`) steps `World`s for tests and the headless run.
+frontline-sim.workspace = true
+frontline-content.workspace = true
+serde.workspace = true
+postcard.workspace = true
+xxhash-rust.workspace = true
+socket2.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+# The relay's JSON-lines log.
+serde_json.workspace = true
+
+[dev-dependencies]
+# desync-diff lives in the open CLI (it needs only the sim); the tests call
+# it to check that a dump names the diverged field.
+frontline-cli.workspace = true
+
+[lints]
+workspace = true

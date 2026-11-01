@@ -4,6 +4,7 @@ members = [
     "crates/sim",
     "crates/simbench",
     "crates/godot-bridge",
+    "crates/net",
     "sdk/crates/content",
     "sdk/crates/cli",
 ]
@@ -18,6 +19,8 @@ publish = false
 # Internal crates.
 frontline-sim = { path = "crates/sim" }
 frontline-content = { path = "sdk/crates/content" }
+frontline-net = { path = "crates/net" }
+frontline-cli = { path = "sdk/crates/cli" }
 
 # Determinism-relevant: the state hash and the save format depend on these
 # exact versions, so they are pinned. Bump only as a "sim-changing" change.
@@ -34,6 +37,9 @@ schemars = "1.2"
 clap = { version = "4.6", features = ["derive"] }
 thiserror = "2.0"
 anyhow = "1.0"
+# Networking (S2): one small crate for dual-stack UDP sockets. No async
+# runtime: the relay and the client are sans-IO state machines.
+socket2 = "0.6"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

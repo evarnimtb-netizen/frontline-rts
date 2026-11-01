@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use frontline_cli::skirmish::ReportFormat;
 use frontline_cli::{
-    FortifyArgs, SimulateArgs, SkirmishArgs, fortify, schema, simulate, skirmish, validate,
+    FortifyArgs, SimulateArgs, SkirmishArgs, desync_diff, fortify, schema, simulate, skirmish,
+    validate,
 };
 
 #[derive(Parser)]
@@ -33,6 +34,21 @@ enum Command {
     ///
     /// Exits 0 when both experiments pass, 1 otherwise.
     FortifyTest(FortifyArgs),
+    /// Compare two sim saves field by field (a multiplayer desync dump's
+    /// `paused.sav` files, or `checkpoint.sav` from both clients).
+    ///
+    /// Prints the first differences by entity, squad, player and point id.
+    /// Exits 1 when the saves differ in any field or hash, 0 when they are
+    /// identical.
+    DesyncDiff {
+        #[arg(value_name = "A.sav")]
+        a: PathBuf,
+        #[arg(value_name = "B.sav")]
+        b: PathBuf,
+        /// Differences to print.
+        #[arg(long, value_name = "N", default_value_t = desync_diff::DEFAULT_LIMIT)]
+        max: usize,
+    },
     /// Export JSON Schemas for every def type.
     Schema {
         /// Output directory (created if missing).
@@ -92,6 +108,18 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE
+            })
+        }
+        Command::DesyncDiff { a, b, max } => {
+            let read = |p: &PathBuf| {
+                std::fs::read(p).map_err(|e| anyhow::anyhow!("reading {}: {e}", p.display()))
+            };
+            let report = desync_diff::diff_saves(&read(&a)?, &read(&b)?, max)?;
+            print!("{}", desync_diff::render(&report));
+            Ok(if report.differs() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
             })
         }
         Command::Schema { out } => {

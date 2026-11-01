@@ -1,0 +1,777 @@
+//! The wire protocol (S2 "Protocol"; the reference is
+//! `sdk/docs/net/relay-protocol.md`, which must change with this file).
+//!
+//! Every datagram is a fixed 15-byte [`Header`] (`b"FLNT"`, protocol
+//! version, kind, token) and a postcard body, at most [`MAX_DATAGRAM`]
+//! bytes in all. Decoding is bounded: the length is checked before postcard
+//! runs, every list and string is checked against its limit afterwards
+//! ([`Packet::validate`]), and no input can panic. A datagram that fails any
+//! check is dropped whole.
+//!
+//! Every change to the header, a kind number or a body layout bumps
+//! [`PROTOCOL_VERSION`]. Only the header and the [`Reject`] body's first
+//! field are frozen across versions, so a client can always say "the relay
+//! speaks protocol N".
+
+use frontline_sim::{Command, CommandKind, MAX_UNITS, game::MAX_DIG_POINTS};
+use serde::{Deserialize, Serialize};
+
+/// Wire version. Bump on any change to a body, a kind or a limit that a
+/// peer could observe.
+pub const PROTOCOL_VERSION: u16 = 1;
+pub const MAGIC: [u8; 4] = *b"FLNT";
+/// Magic, version (u16 LE), kind (u8), token (u64 LE).
+pub const HEADER_LEN: usize = 15;
+/// Largest datagram either side sends or accepts. Below the 1,280-byte
+/// IPv6 minimum MTU with room for IP/UDP headers and tunnels (Tailscale).
+pub const MAX_DATAGRAM: usize = 1200;
+/// `Hello` datagrams are padded to at least this size, and the relay drops
+/// shorter ones: no pre-auth reply is larger than its request, so the relay
+/// cannot amplify a spoofed-source flood.
+pub const HELLO_MIN_LEN: usize = 512;
+/// Default UDP port (S2 "Transport"). 27015 is avoided: Source servers.
+pub const DEFAULT_PORT: u16 = 47015;
+/// Player slots in S2 (1v1).
+pub const SLOTS: usize = 2;
+
+/// Longest player name, in bytes of UTF-8.
+pub const MAX_NAME: usize = 24;
+/// Longest def id (faction, map), build id or free-text note.
+pub const MAX_ID: usize = 64;
+/// Longest note in a lobby state or a reject.
+pub const MAX_NOTE: usize = 160;
+/// Own commands per turn; the client rolls the rest into the next turn.
+pub const MAX_CMDS_PER_TURN: usize = 16;
+/// Encoded bytes of own commands per turn (the client rolls excess over).
+pub const MAX_TURN_BYTES: usize = 1024;
+/// Commands the relay holds for one player before refusing more with
+/// `Bye(Flood)`. An honest client never gets near it: it would take
+/// 16 turns of full input arriving while 0 turns close.
+pub const MAX_PENDING: usize = 256;
+/// Most turns of own input in one `Input`.
+pub const MAX_INPUT_TURNS: usize = 64;
+/// Most turns in one `Bundle` datagram (an empty turn is about 4 bytes).
+pub const MAX_BUNDLE_TURNS: usize = 300;
+/// Most commands in one bundled turn: both players' turn quota plus one
+/// relay-injected `Surrender` each.
+pub const MAX_TURN_CMDS: usize = SLOTS * (MAX_CMDS_PER_TURN + 1);
+/// Input delay limits: the lobby suggestion stays in `MIN_D..=SUGGEST_MAX_D`,
+/// slot 0 may override within `MIN_D..=MAX_D`.
+pub const MIN_D: u8 = 2;
+pub const SUGGEST_MAX_D: u8 = 4;
+pub const MAX_D: u8 = 6;
+
+/// Datagram kinds (the header's `kind` byte). Numbers are part of the
+/// protocol version.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum Kind {
+    Hello = 1,
+    Welcome = 2,
+    /// Frozen: kind 3 with a `u16` relay version first, in every version.
+    Reject = 3,
+    CtlUp = 4,
+    CtlDown = 5,
+    Ack = 6,
+    Ping = 7,
+    Pong = 8,
+    Input = 9,
+    Bundle = 10,
+}
+
+impl Kind {
+    fn from_u8(b: u8) -> Option<Kind> {
+        Some(match b {
+            1 => Kind::Hello,
+            2 => Kind::Welcome,
+            3 => Kind::Reject,
+            4 => Kind::CtlUp,
+            5 => Kind::CtlDown,
+            6 => Kind::Ack,
+            7 => Kind::Ping,
+            8 => Kind::Pong,
+            9 => Kind::Input,
+            10 => Kind::Bundle,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Header {
+    pub version: u16,
+    pub kind: u8,
+    /// 0 before the relay assigned one (`Hello`, `Welcome`, `Reject`).
+    pub token: u64,
+}
+
+impl Header {
+    /// Reads the header without judging the version or the kind.
+    pub fn read(bytes: &[u8]) -> Option<Header> {
+        if bytes.len() < HEADER_LEN || bytes[..4] != MAGIC {
+            return None;
+        }
+        Some(Header {
+            version: u16::from_le_bytes([bytes[4], bytes[5]]),
+            kind: bytes[6],
+            token: u64::from_le_bytes(bytes[7..15].try_into().ok()?),
+        })
+    }
+
+    pub(crate) fn write_to(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&MAGIC);
+        out.extend_from_slice(&self.version.to_le_bytes());
+        out.push(self.kind);
+        out.extend_from_slice(&self.token.to_le_bytes());
+    }
+}
+
+// ------------------------------------------------------------- messages --
+
+/// Client → relay, unauthenticated. Padded to [`HELLO_MIN_LEN`].
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Hello {
+    /// Random per connection attempt; a resent `Hello` with the same nonce
+    /// gets the same `Welcome`.
+    pub nonce: u64,
+    /// [`crate::build_id`]: commit, dirty flag, protocol and save versions.
+    pub build_id: String,
+    /// `ModDefs::content_hash` of the client's loaded mod.
+    pub content_hash: u64,
+    pub name: String,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Welcome {
+    pub nonce: u64,
+    pub token: u64,
+    pub slot: u8,
+}
+
+/// Frozen layout start: `relay_version` stays the first field forever.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Reject {
+    pub relay_version: u16,
+    pub nonce: u64,
+    pub reason: RejectReason,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum RejectReason {
+    /// The client speaks another protocol version (header version).
+    Version,
+    /// The other player runs another build (`lobby` is theirs).
+    Build { lobby: String },
+    /// The other player loaded different defs.
+    Content,
+    /// Both slots are taken.
+    Full,
+    /// The match already started (no join-in-progress in S2).
+    Started,
+    /// The name is empty or too long.
+    BadName,
+}
+
+/// A reliable, ordered control message, client → relay. Resent every
+/// 100 ms until an [`Ack`] covers `cseq`.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct CtlUp {
+    pub cseq: u32,
+    pub msg: Up,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Up {
+    /// Lobby choice. Slot 0 alone may set `seed`, `map` and `d`; the relay
+    /// ignores them from slot 1. Any change clears both `Ready` flags.
+    LobbySet(LobbySet),
+    /// `xxh3(postcard(MatchSetup))` of the client's own resolve.
+    Ready {
+        setup_hash: u64,
+    },
+    /// A published sim hash: the world's hash after `tick` ticks.
+    Hash {
+        tick: u64,
+        hash: u64,
+    },
+    PauseReq,
+    ResumeReq,
+    Bye(ByeReason),
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct LobbySet {
+    pub faction: String,
+    pub seed: Option<u64>,
+    pub map: Option<String>,
+    /// `None`: use the relay's suggestion.
+    pub d: Option<u8>,
+}
+
+/// A reliable, ordered control message, relay → client.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct CtlDown {
+    pub cseq: u32,
+    pub msg: Down,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Down {
+    Lobby(LobbyState),
+    Start(Start),
+    /// The relay stopped closing turns: turn `at` is the first one not
+    /// closed. Clients step up to `at - 1` and wait.
+    Paused {
+        at: u64,
+        cause: PauseCause,
+    },
+    /// Turn `at` closes at relay time `close_at` (µs), turn `at + k` one
+    /// period per `k` later.
+    Resume {
+        at: u64,
+        close_at: u64,
+    },
+    /// Hashes for `tick` differed. Turn `at` is not closed (as `Paused`);
+    /// the match does not resume.
+    Desync {
+        tick: u64,
+        hashes: [u64; 2],
+        at: u64,
+    },
+    Bye(ByeReason),
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum PauseCause {
+    /// That slot asked (`PauseReq`).
+    Player(u8),
+    /// That slot went silent for 10 s; the 60 s timeout runs.
+    Waiting(u8),
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum ByeReason {
+    /// The client quit (mid-match: the relay closes a `Surrender` for it).
+    Quit,
+    /// The client saw the match end.
+    MatchOver,
+    /// Silent past the timeout; the relay closed a `Surrender` for it.
+    TimedOut,
+    /// Over [`MAX_PENDING`] commands waiting at the relay.
+    Flood,
+    /// The relay shut down.
+    Shutdown,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct LobbyState {
+    pub slots: [Option<SlotInfo>; 2],
+    pub seed: u64,
+    pub map: String,
+    /// Slot 0's override, if any.
+    pub d: Option<u8>,
+    /// The relay's suggestion from both slots' pings (`client::suggest_d`).
+    pub suggested_d: u8,
+    /// Why the last Ready round failed (empty: none).
+    pub note: String,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct SlotInfo {
+    pub name: String,
+    pub faction: String,
+    pub ready: bool,
+    pub rtt_ms: u16,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Start {
+    /// Relay time (µs) at which turn 0 opens; it closes one period later.
+    pub start_at: u64,
+    pub tick_hz: u32,
+    /// Turn pacing in percent of real time; 100 except in relay tests.
+    pub speed_pct: u16,
+    pub d: u8,
+    pub seed: u64,
+    pub map: String,
+    pub factions: [String; 2],
+    pub names: [String; 2],
+}
+
+/// Cumulative ack of the peer's control stream: every `cseq < next` was
+/// processed.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Ack {
+    pub next: u32,
+}
+
+/// Clock and RTT probe (every 1 s in a match, 4 Hz in the lobby).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Ping {
+    /// Client clock (µs), echoed in the `Pong`.
+    pub t_client: u64,
+    /// The client's measured RTT P99 and jitter (µs), for the lobby's D
+    /// suggestion and the peers readout. 0 while unknown.
+    pub rtt_p99_us: u32,
+    pub jitter_us: u32,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Pong {
+    pub t_client: u64,
+    /// Relay clock (µs) when the `Ping` was handled.
+    pub t_relay: u64,
+}
+
+/// Own input plus the bundle ack, every period.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Input {
+    pub ack: BundleAck,
+    /// Every unacked turn of own input, oldest first, as many as fit.
+    pub turns: Vec<InputTurn>,
+}
+
+/// Which bundles a client holds: every turn below `held`, and turn
+/// `held + 1 + i` when bit `i` of `mask` is set (turn `held` itself is
+/// missing by definition).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct BundleAck {
+    pub held: u64,
+    pub mask: u64,
+}
+
+impl BundleAck {
+    pub fn holds(&self, tick: u64) -> bool {
+        if tick < self.held {
+            return true;
+        }
+        let i = tick - self.held;
+        (1..=64).contains(&i) && self.mask & (1 << (i - 1)) != 0
+    }
+}
+
+/// One stamped turn of own commands: seqs `seq0..seq0 + cmds.len()`.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct InputTurn {
+    pub target: u64,
+    pub seq0: u32,
+    pub cmds: Vec<CommandKind>,
+}
+
+/// Closed turns, oldest first.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Bundle {
+    /// Highest tick whose hashes both clients sent and the relay found
+    /// equal (0: none yet). Checkpoints at or below it are safe.
+    pub confirmed: u64,
+    pub peers: [PeerStat; 2],
+    pub turns: Vec<Turn>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct PeerStat {
+    pub rtt_ms: u16,
+    /// Silent for 2 s or more.
+    pub unstable: bool,
+    /// The slot has left or timed out.
+    pub gone: bool,
+}
+
+/// One closed turn: the commands for `World::step` while `tick() == tick`.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Turn {
+    pub tick: u64,
+    /// Always 0 in S2 (§5.11; the RNG does not read it yet).
+    pub salt: u64,
+    /// Sorted by `(player, seq)`.
+    pub cmds: Vec<BundledCmd>,
+}
+
+/// A command with the turn its sender stamped it for; `target < tick`
+/// means the relay restamped it (§10 "Re-stamp transparency").
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct BundledCmd {
+    pub cmd: Command,
+    pub target: u64,
+}
+
+// ------------------------------------------------------------ the packet --
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Packet {
+    Hello(Hello),
+    Welcome(Welcome),
+    Reject(Reject),
+    CtlUp(CtlUp),
+    CtlDown(CtlDown),
+    Ack(Ack),
+    Ping(Ping),
+    Pong(Pong),
+    Input(Input),
+    Bundle(Bundle),
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum DecodeError {
+    TooShort,
+    TooLong,
+    BadMagic,
+    /// Another protocol version (the header is still returned by
+    /// [`Header::read`]).
+    Version(u16),
+    UnknownKind(u8),
+    Body,
+    /// Decoded, but a list or string is over its limit.
+    Limit,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum EncodeError {
+    /// Over [`MAX_DATAGRAM`] bytes.
+    TooLarge,
+}
+
+impl Packet {
+    pub fn kind(&self) -> Kind {
+        match self {
+            Packet::Hello(_) => Kind::Hello,
+            Packet::Welcome(_) => Kind::Welcome,
+            Packet::Reject(_) => Kind::Reject,
+            Packet::CtlUp(_) => Kind::CtlUp,
+            Packet::CtlDown(_) => Kind::CtlDown,
+            Packet::Ack(_) => Kind::Ack,
+            Packet::Ping(_) => Kind::Ping,
+            Packet::Pong(_) => Kind::Pong,
+            Packet::Input(_) => Kind::Input,
+            Packet::Bundle(_) => Kind::Bundle,
+        }
+    }
+
+    /// Kinds a client may send. The relay drops every other kind, so a
+    /// client cannot forge relay messages to it.
+    pub fn is_up(&self) -> bool {
+        matches!(
+            self,
+            Packet::Hello(_)
+                | Packet::CtlUp(_)
+                | Packet::Ack(_)
+                | Packet::Ping(_)
+                | Packet::Input(_)
+        )
+    }
+
+    /// Kinds the relay may send.
+    pub fn is_down(&self) -> bool {
+        matches!(
+            self,
+            Packet::Welcome(_)
+                | Packet::Reject(_)
+                | Packet::CtlDown(_)
+                | Packet::Ack(_)
+                | Packet::Pong(_)
+                | Packet::Bundle(_)
+        )
+    }
+
+    /// Checks every list and string against its limit (after postcard,
+    /// which has already bounded everything by the datagram length).
+    pub fn validate(&self) -> bool {
+        match self {
+            Packet::Hello(h) => {
+                h.build_id.len() <= MAX_ID && h.name.len() <= MAX_NAME && !h.name.is_empty()
+            }
+            Packet::Welcome(w) => (w.slot as usize) < SLOTS,
+            Packet::Reject(r) => match &r.reason {
+                RejectReason::Build { lobby } => lobby.len() <= MAX_ID,
+                _ => true,
+            },
+            Packet::CtlUp(c) => match &c.msg {
+                Up::LobbySet(l) => {
+                    l.faction.len() <= MAX_ID && l.map.as_ref().is_none_or(|m| m.len() <= MAX_ID)
+                }
+                _ => true,
+            },
+            Packet::CtlDown(c) => match &c.msg {
+                Down::Lobby(l) => {
+                    l.map.len() <= MAX_ID
+                        && l.note.len() <= MAX_NOTE
+                        && l.slots
+                            .iter()
+                            .flatten()
+                            .all(|s| s.name.len() <= MAX_NAME && s.faction.len() <= MAX_ID)
+                }
+                Down::Start(s) => {
+                    s.tick_hz > 0
+                        && s.speed_pct > 0
+                        && s.map.len() <= MAX_ID
+                        && s.factions.iter().all(|f| f.len() <= MAX_ID)
+                        && s.names.iter().all(|n| n.len() <= MAX_NAME)
+                }
+                _ => true,
+            },
+            Packet::Ack(_) | Packet::Ping(_) | Packet::Pong(_) => true,
+            Packet::Input(i) => {
+                i.turns.len() <= MAX_INPUT_TURNS
+                    && i.turns.iter().all(|t| {
+                        t.cmds.len() <= MAX_CMDS_PER_TURN && t.cmds.iter().all(command_in_limits)
+                    })
+            }
+            Packet::Bundle(b) => {
+                b.turns.len() <= MAX_BUNDLE_TURNS
+                    && b.turns.iter().all(|t| {
+                        t.cmds.len() <= MAX_TURN_CMDS
+                            && t.cmds.iter().all(|c| {
+                                (c.cmd.player.0 as usize) < SLOTS && command_in_limits(&c.cmd.kind)
+                            })
+                    })
+            }
+        }
+    }
+}
+
+/// The per-command limits the sim applies anyway (it ignores longer
+/// lists), checked on the wire so an oversized command never reaches it,
+/// and the turn byte limit, so any one command fits a bundle datagram.
+pub fn command_in_limits(k: &CommandKind) -> bool {
+    let lists = match k {
+        CommandKind::Dig { line, .. } => line.len() <= MAX_DIG_POINTS,
+        CommandKind::DigUnits { units, line } => {
+            units.len() <= MAX_UNITS && line.len() <= MAX_DIG_POINTS
+        }
+        CommandKind::MoveUnits { units, .. }
+        | CommandKind::AttackMoveUnits { units, .. }
+        | CommandKind::StopUnits { units }
+        | CommandKind::RetreatUnits { units }
+        | CommandKind::SetStance { units, .. }
+        | CommandKind::Throw { units, .. }
+        | CommandKind::ThrowEach { units, .. } => units.len() <= MAX_UNITS,
+        _ => true,
+    };
+    lists && encoded_len(k) <= MAX_TURN_BYTES
+}
+
+/// Encodes `packet` behind a header carrying `token`. Clears `out` first.
+pub fn encode(token: u64, packet: &Packet, out: &mut Vec<u8>) -> Result<(), EncodeError> {
+    out.clear();
+    Header {
+        version: PROTOCOL_VERSION,
+        kind: packet.kind() as u8,
+        token,
+    }
+    .write_to(out);
+    let r = match packet {
+        Packet::Hello(m) => append(m, out),
+        Packet::Welcome(m) => append(m, out),
+        Packet::Reject(m) => append(m, out),
+        Packet::CtlUp(m) => append(m, out),
+        Packet::CtlDown(m) => append(m, out),
+        Packet::Ack(m) => append(m, out),
+        Packet::Ping(m) => append(m, out),
+        Packet::Pong(m) => append(m, out),
+        Packet::Input(m) => append(m, out),
+        Packet::Bundle(m) => append(m, out),
+    };
+    if r.is_err() || out.len() > MAX_DATAGRAM {
+        return Err(EncodeError::TooLarge);
+    }
+    if let Packet::Hello(_) = packet
+        && out.len() < HELLO_MIN_LEN
+    {
+        out.resize(HELLO_MIN_LEN, 0);
+    }
+    Ok(())
+}
+
+fn append<T: Serialize>(m: &T, out: &mut Vec<u8>) -> Result<(), ()> {
+    // `extend_from_slice` would need a second buffer; postcard's `to_extend`
+    // writes straight into the Vec.
+    postcard::to_extend(m, std::mem::take(out))
+        .map(|v| *out = v)
+        .map_err(|_| ())
+}
+
+/// Encoded size of one value (for packing turns into a datagram).
+pub fn encoded_len<T: Serialize>(m: &T) -> usize {
+    postcard::experimental::serialized_size(m).unwrap_or(usize::MAX)
+}
+
+/// Decodes one datagram. Never panics; trailing bytes after the body
+/// (the `Hello` padding) are ignored.
+pub fn decode(bytes: &[u8]) -> Result<(Header, Packet), DecodeError> {
+    if bytes.len() > MAX_DATAGRAM {
+        return Err(DecodeError::TooLong);
+    }
+    if bytes.len() < HEADER_LEN {
+        return Err(DecodeError::TooShort);
+    }
+    let h = Header::read(bytes).ok_or(DecodeError::BadMagic)?;
+    if h.version != PROTOCOL_VERSION {
+        return Err(DecodeError::Version(h.version));
+    }
+    let kind = Kind::from_u8(h.kind).ok_or(DecodeError::UnknownKind(h.kind))?;
+    let body = &bytes[HEADER_LEN..];
+    fn de<'a, T: Deserialize<'a>>(b: &'a [u8]) -> Result<T, DecodeError> {
+        postcard::from_bytes(b).map_err(|_| DecodeError::Body)
+    }
+    let p = match kind {
+        Kind::Hello => Packet::Hello(de(body)?),
+        Kind::Welcome => Packet::Welcome(de(body)?),
+        Kind::Reject => Packet::Reject(de(body)?),
+        Kind::CtlUp => Packet::CtlUp(de(body)?),
+        Kind::CtlDown => Packet::CtlDown(de(body)?),
+        Kind::Ack => Packet::Ack(de(body)?),
+        Kind::Ping => Packet::Ping(de(body)?),
+        Kind::Pong => Packet::Pong(de(body)?),
+        Kind::Input => Packet::Input(de(body)?),
+        Kind::Bundle => Packet::Bundle(de(body)?),
+    };
+    if !p.validate() {
+        return Err(DecodeError::Limit);
+    }
+    Ok((h, p))
+}
+
+/// Reads the relay version from a `Reject` of any protocol version (the
+/// frozen part), so a client on another version can still explain itself.
+pub fn reject_version(bytes: &[u8]) -> Option<u16> {
+    let h = Header::read(bytes)?;
+    if h.kind != Kind::Reject as u8 {
+        return None;
+    }
+    postcard::take_from_bytes::<u16>(&bytes[HEADER_LEN..])
+        .ok()
+        .map(|(v, _)| v)
+}
+
+/// Appends a postcard varint (the length prefix of a sequence).
+pub(crate) fn push_varint(out: &mut Vec<u8>, mut v: u64) {
+    loop {
+        let b = (v & 0x7f) as u8;
+        v >>= 7;
+        if v == 0 {
+            out.push(b);
+            return;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use frontline_sim::{FxVec2, PlayerId, SimId, game::SquadId};
+
+    fn roundtrip(p: Packet) {
+        let mut buf = Vec::new();
+        encode(77, &p, &mut buf).unwrap();
+        let (h, q) = decode(&buf).unwrap();
+        assert_eq!(h.token, 77);
+        assert_eq!(p, q);
+    }
+
+    #[test]
+    fn packets_roundtrip() {
+        roundtrip(Packet::Hello(Hello {
+            nonce: 5,
+            build_id: "abc".into(),
+            content_hash: 9,
+            name: "Ann".into(),
+        }));
+        roundtrip(Packet::CtlUp(CtlUp {
+            cseq: 3,
+            msg: Up::LobbySet(LobbySet {
+                faction: "ww2:usa".into(),
+                seed: Some(4),
+                map: None,
+                d: Some(3),
+            }),
+        }));
+        roundtrip(Packet::Input(Input {
+            ack: BundleAck { held: 10, mask: 5 },
+            turns: vec![InputTurn {
+                target: 12,
+                seq0: 7,
+                cmds: vec![CommandKind::Stop { squad: SquadId(2) }],
+            }],
+        }));
+        roundtrip(Packet::Bundle(Bundle {
+            confirmed: 30,
+            peers: Default::default(),
+            turns: vec![Turn {
+                tick: 4,
+                salt: 0,
+                cmds: vec![BundledCmd {
+                    cmd: Command {
+                        player: PlayerId(1),
+                        seq: 0,
+                        kind: CommandKind::MoveUnits {
+                            units: vec![SimId(3)],
+                            target: FxVec2::from_int(1, 2),
+                        },
+                    },
+                    target: 3,
+                }],
+            }],
+        }));
+    }
+
+    #[test]
+    fn hello_is_padded_and_limits_hold() {
+        let mut buf = Vec::new();
+        let hello = Packet::Hello(Hello {
+            nonce: 1,
+            build_id: "x".into(),
+            content_hash: 0,
+            name: "n".into(),
+        });
+        encode(0, &hello, &mut buf).unwrap();
+        assert_eq!(buf.len(), HELLO_MIN_LEN);
+        // A long name is refused on decode.
+        let long = Packet::Hello(Hello {
+            nonce: 1,
+            build_id: "x".into(),
+            content_hash: 0,
+            name: "n".repeat(MAX_NAME + 1),
+        });
+        encode(0, &long, &mut buf).unwrap();
+        assert_eq!(decode(&buf), Err(DecodeError::Limit));
+        // Over the datagram limit: refused on encode.
+        let big = Packet::Input(Input {
+            ack: BundleAck::default(),
+            turns: vec![InputTurn {
+                target: 0,
+                seq0: 0,
+                cmds: vec![
+                    CommandKind::StopUnits {
+                        units: (0..MAX_UNITS as u32).map(|i| SimId(i + 100_000)).collect()
+                    };
+                    4
+                ],
+            }],
+        });
+        assert_eq!(encode(1, &big, &mut buf), Err(EncodeError::TooLarge));
+    }
+
+    #[test]
+    fn bundle_ack_bits() {
+        let a = BundleAck {
+            held: 10,
+            mask: 0b101,
+        };
+        assert!(a.holds(9));
+        assert!(!a.holds(10));
+        assert!(a.holds(11));
+        assert!(!a.holds(12));
+        assert!(a.holds(13));
+        assert!(!a.holds(75));
+    }
+
+    #[test]
+    fn varint_matches_postcard() {
+        for v in [0u64, 1, 127, 128, 300, 1 << 40] {
+            let mut a = Vec::new();
+            push_varint(&mut a, v);
+            assert_eq!(a, postcard::to_allocvec(&v).unwrap());
+        }
+    }
+}

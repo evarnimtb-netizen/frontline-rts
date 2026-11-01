@@ -319,3 +319,22 @@ fn broken_items_and_loadouts_are_reported() {
     }
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn content_hash_is_stable_and_sees_def_changes() {
+    let a = load();
+    // Loading twice gives the same hash (no listing-order or address
+    // dependence), and a clone hashes the same.
+    assert_eq!(a.content_hash(), load().content_hash());
+    assert_eq!(a.content_hash(), a.clone().content_hash());
+    // One changed def value changes it.
+    let dir = broken_copy("content_hash", |root| {
+        replace_in(
+            &root.join("defs/rules/skirmish.toml"),
+            "tickets = 500",
+            "tickets = 501",
+        );
+    });
+    let b = ModDefs::load(&dir).expect("edited copy still loads");
+    assert_ne!(a.content_hash(), b.content_hash());
+}

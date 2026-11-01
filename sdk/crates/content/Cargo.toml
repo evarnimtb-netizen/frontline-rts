@@ -12,6 +12,9 @@ serde.workspace = true
 toml.workspace = true
 schemars.workspace = true
 thiserror.workspace = true
+# `ModDefs::content_hash` (S2): the same pinned versions the sim hashes with.
+postcard.workspace = true
+xxhash-rust.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

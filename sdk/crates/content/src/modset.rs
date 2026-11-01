@@ -45,7 +45,10 @@ fn default_true() -> bool {
 }
 
 /// Every def of one mod, validated, keyed by id.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// `Serialize` exists for [`ModDefs::content_hash`] only; nothing reads the
+/// encoding back.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ModDefs {
     pub manifest: Option<ModManifest>,
     pub squads: BTreeMap<String, SquadDef>,
@@ -150,6 +153,16 @@ impl Loader {
 }
 
 impl ModDefs {
+    /// xxh3 of the postcard encoding of every def (S2 "Session setup"): two
+    /// game builds that load different defs get different hashes, so the
+    /// relay can refuse the second player before the lobby. The maps are
+    /// `BTreeMap`s keyed by id, so the hash never depends on file listing
+    /// order. It is a guard against honest mistakes, not a signature.
+    pub fn content_hash(&self) -> u64 {
+        let bytes = postcard::to_allocvec(self).expect("encoding defs cannot fail");
+        xxhash_rust::xxh3::xxh3_64(&bytes)
+    }
+
     /// Reads and validates the mod at `root` (the folder holding `mod.toml`
     /// and `defs/`).
     pub fn load(root: &Path) -> Result<ModDefs, ContentError> {
