@@ -1214,7 +1214,7 @@ T6 (86.2 %), T14 (0.0013 m per burst).
 | T9 | Case 5b: tank on Suppress pins men in a trench (> 0 % of man-time pinned or ducked) and kills > 0 | 0 % / 0 (no order: tank fired 0 rounds) | case 5b |
 | T10 | New fortify row, MG suppressing + rifle squad from 150 m: defenders lose ≥ 75 %, attackers ≤ 50 % | new | fortify-test |
 | T11 | Trenches stay strong: fortify S1 rows pass (rifles ≤ 50 %, mortar ≤ 40 %); unsupported rifle squad from 150 m loses ≥ 75 % | pass; mortar 37.8 %; new | fortify-test |
-| T12 | Skirmish length 12–25 min in all 20 matches; HE share < 60 % in every match | 13.6–26.2 (one over); max 45.5 % (63.7 % once in the slot-swap set) | 20 AI matches |
+| T12 | Skirmish length: no match under 10 min or over 40 min (no blowouts, no stalemates), median 15–30 min (owner 2026-11-01: "That isn't necessarily bad, some matches could be longer"; was 12–25 min in all 20); HE share < 60 % in every match | 13.6–26.2 (one over); max 45.5 % (63.7 % once in the slot-swap set) | 20 AI matches |
 | T13 | Sim tick p99 at peak < 1.5 ms (skirmish); stress p99 < 10 ms | 0.28–0.50; 2.34 | skirmish timing; case 14 |
 | T14 | HE lip loss ≥ 0.05 m per burst within 3 m (report) | 0.001 m | case 9 |
 | T15 | Determinism: all hashes equal across thread counts; save/load round trip; net loopback and soak 0 mismatches | pass | tests |
