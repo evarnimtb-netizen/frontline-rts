@@ -33,8 +33,9 @@ enum Command {
     ///
     /// A/B testing (S3b): `--seeds N [--both-bases] --summary` plays N seeds
     /// (both base orders) in parallel and prints one table; add
-    /// `--rules-override FILE` to try a tuning change. Exits 0 when every
-    /// match ran.
+    /// `--rules-override FILE` to try a tuning change, and `--ab` to play
+    /// the same matches without it too and print the change of each
+    /// headline number. Exits 0 when every match ran.
     Skirmish(SkirmishArgs),
     /// Stage trench-vs-open fights and check the S1 cover thresholds.
     ///
@@ -108,6 +109,14 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 simulate::write_report(&report, path)?;
             }
             eprintln!("{}", simulate::summary_line(&report));
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Skirmish(args) if args.ab => {
+            let report = skirmish::skirmish_ab(&args)?;
+            match args.report {
+                ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+                ReportFormat::Text => print!("{}", skirmish::ab_text(&report)),
+            }
             Ok(ExitCode::SUCCESS)
         }
         Command::Skirmish(args) if args.seeds.is_some() => {

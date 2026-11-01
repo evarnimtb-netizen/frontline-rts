@@ -581,3 +581,34 @@ fn match_runs_are_seed_sensitive() {
     assert_eq!(a, b);
     assert!(a.iter().zip(&c).all(|(x, y)| x.1 != y.1));
 }
+
+/// S3b: the moved constants are read from the setup's tuning tables (a
+/// changed value changes the match, not just the setup hash).
+#[test]
+fn tuning_tables_drive_the_sim() {
+    // [combat.body] stand_mm: the capsule a soldier spawns with.
+    let mut s = setup(4);
+    s.rules.combat.body.stand_mm = 1600;
+    let w = World::new_match(s, 1).unwrap();
+    let id = w.entities().soldiers().next().unwrap();
+    assert_eq!(
+        w.entities().combat()[id.index()].height,
+        Fx::from_milli(1600)
+    );
+    // [movement.formation] slot_lead_mm: where members walk on a move.
+    let walk = |lead_mm: u32| {
+        let mut s = setup(4);
+        s.rules.movement.formation.slot_lead_mm = lead_mm;
+        let mut w = World::new_match(s, 1).unwrap();
+        let sq = squads_of(&w, 0)[0];
+        let target = FxVec2::from_int(500, 300);
+        w.step(&[cmd(0, 0, CommandKind::Move { squad: sq, target })]);
+        for _ in 0..300 {
+            w.step(&[]);
+        }
+        let members = w.game().unwrap().squad(sq).unwrap().members.clone();
+        members.iter().map(|m| pos(&w, *m)).collect::<Vec<_>>()
+    };
+    assert_eq!(walk(1500), walk(1500));
+    assert_ne!(walk(1500), walk(500));
+}

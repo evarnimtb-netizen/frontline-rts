@@ -190,18 +190,24 @@ fn rules_overrides_reach_the_match_and_restating_the_mod_changes_nothing() {
         ..short(2, 2, 2)
     });
     assert_eq!(same.final_hash, base.final_hash);
-    // A real change (members walk closer behind their slots) gives another
-    // match.
-    let path = tmp("slot_lead.toml");
-    std::fs::write(&path, "[movement.formation]\nslot_lead_mm = 1000\n").unwrap();
+    // A real change gives another match: more starting manpower, more
+    // men in the field by minute 2 (not just another setup hash).
+    let path = tmp("manpower.toml");
+    std::fs::write(&path, "[economy]\nstart_manpower = 1200\n").unwrap();
     let changed = run(SkirmishArgs {
         rules_override: vec![path.clone()],
         ..short(2, 2, 2)
     });
     assert_ne!(changed.final_hash, base.final_hash);
+    assert!(
+        changed.totals.peak_soldiers > base.totals.peak_soldiers,
+        "{} vs {}",
+        changed.totals.peak_soldiers,
+        base.totals.peak_soldiers
+    );
     // Overrides apply in order: the second restores the value.
-    let back = tmp("slot_lead_back.toml");
-    std::fs::write(&back, "[movement.formation]\nslot_lead_mm = 1500\n").unwrap();
+    let back = tmp("manpower_back.toml");
+    std::fs::write(&back, "[economy]\nstart_manpower = 600\n").unwrap();
     let restored = run(SkirmishArgs {
         rules_override: vec![path, back],
         ..short(2, 2, 2)

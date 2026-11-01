@@ -119,6 +119,16 @@ and exits 0 only when both pass:
 $F fortify-test                  # --seeds N --first-seed S --json
 ```
 
+Tuning (S3b): every gameplay value is in `mods/ww2` TOML. One command
+A/B-tests a change over 10 seeds × both base orders. `skirmish`,
+`armour-test` and `fortify-test` take `--rules-override` (see
+[`docs/modding/tuning.md`](docs/modding/tuning.md)):
+
+```sh
+$F skirmish --ai-vs-ai --seeds 10 --both-bases --summary --ab \
+    --rules-override mods/ww2/tests/overrides/example.toml
+```
+
 ## Run the benchmarks
 
 ```sh

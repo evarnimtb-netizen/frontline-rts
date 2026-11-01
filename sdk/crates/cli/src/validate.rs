@@ -3,8 +3,9 @@
 //!
 //! A mod folder (one holding `mod.toml`) is loaded with every def checked
 //! on its own and against the others; then each rules override in its
-//! `tests/rules_*.toml` is applied, and every rules def is resolved with
-//! every map for the first two factions. Asset checks arrive with the mod
+//! `tests/rules_*.toml` is applied, each tuning override in
+//! `tests/overrides/*.toml` is applied to a copy (S3b), and every rules def
+//! is resolved with every map for the first two factions. Asset checks arrive with the mod
 //! loader (M3).
 
 use std::path::Path;
@@ -65,6 +66,24 @@ pub fn mod_dir(root: &Path) -> FileResult {
                     .to_string_lossy()
                     .replace('\\', "/");
                 if let Err(e) = defs.add_rules_override(o) {
+                    problems.extend(content_problems(e, &name));
+                }
+            }
+            // S3b tuning overrides (tests/overrides/*.toml) must apply too.
+            let mut patches: Vec<_> = std::fs::read_dir(root.join("tests/overrides"))
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+                .collect();
+            patches.sort();
+            for o in &patches {
+                let name = o
+                    .strip_prefix(root)
+                    .unwrap_or(o)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if let Err(e) = defs.clone().apply_override(o, crate::overrides::BASE_RULES) {
                     problems.extend(content_problems(e, &name));
                 }
             }

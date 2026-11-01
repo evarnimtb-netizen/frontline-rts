@@ -139,6 +139,11 @@ pub struct SkirmishArgs {
     /// With --seeds: matches run at once (default: cores / --threads).
     #[arg(long, value_name = "J", requires = "seeds")]
     pub jobs: Option<usize>,
+    /// With --seeds and --rules-override: also play the same matches
+    /// without the overrides (A) and print both summaries and the change
+    /// A -> B of each headline number (one-command A/B test).
+    #[arg(long, requires_all = ["seeds", "rules_override"])]
+    pub ab: bool,
 }
 
 impl Default for SkirmishArgs {
@@ -166,6 +171,7 @@ impl Default for SkirmishArgs {
             both_bases: false,
             summary: false,
             jobs: None,
+            ab: false,
         }
     }
 }
@@ -1218,6 +1224,7 @@ pub fn skirmish_many(args: &SkirmishArgs) -> Result<ManyReport> {
                         both_bases: false,
                         summary: false,
                         jobs: None,
+                        ab: false,
                         ..args.clone()
                     };
                     let r = skirmish(&one);
@@ -1412,5 +1419,92 @@ pub fn many_text(r: &ManyReport) -> String {
             rp.final_hash,
         );
     }
+    out
+}
+
+/// `--ab`: the same matches without (A) and with (B) the overrides.
+#[derive(Clone, Debug, Serialize)]
+pub struct AbReport {
+    pub a: ManyReport,
+    pub b: ManyReport,
+}
+
+/// Runs `--ab` (see [`SkirmishArgs::ab`]).
+pub fn skirmish_ab(args: &SkirmishArgs) -> Result<AbReport> {
+    let a = skirmish_many(&SkirmishArgs {
+        rules_override: Vec::new(),
+        ab: false,
+        ..args.clone()
+    })?;
+    let b = skirmish_many(&SkirmishArgs {
+        ab: false,
+        ..args.clone()
+    })?;
+    Ok(AbReport { a, b })
+}
+
+/// Both summaries and the headline numbers side by side.
+pub fn ab_text(r: &AbReport) -> String {
+    let (a, b) = (&r.a.summary, &r.b.summary);
+    let mut out = format!(
+        "=== A: no override\n{}\n=== B: with the overrides\n{}\n",
+        many_text(&r.a),
+        many_text(&r.b)
+    );
+    out += "=== A -> B\n";
+    let row =
+        |name: &str, x: f64, y: f64| format!("{name:<34} {x:>9.1} -> {y:<9.1} ({:+.1})\n", y - x);
+    let rack = |s: &ManySummary| {
+        let t: u32 = s.ko_causes.values().sum();
+        if t == 0 {
+            0.0
+        } else {
+            s.ko_causes.get("ko_ammo_rack").copied().unwrap_or(0) as f64 * 100.0 / t as f64
+        }
+    };
+    for fa in &a.factions {
+        let fb = b
+            .factions
+            .iter()
+            .find(|f| f.faction == fa.faction)
+            .cloned()
+            .unwrap_or_default();
+        let f = &fa.faction;
+        out += &row(&format!("{f} wins"), fa.wins as f64, fb.wins as f64);
+        out += &row(
+            &format!("{f} tanks lost"),
+            fa.tanks_lost as f64,
+            fb.tanks_lost as f64,
+        );
+        out += &row(
+            &format!("{f} rockets fired"),
+            fa.rockets_fired as f64,
+            fb.rockets_fired as f64,
+        );
+        out += &row(
+            &format!("{f} satchels at vehicles"),
+            fa.satchels_at_vehicles as f64,
+            fb.satchels_at_vehicles as f64,
+        );
+    }
+    out += &row(
+        "base 0 wins",
+        a.wins_by_base[0] as f64,
+        b.wins_by_base[0] as f64,
+    );
+    out += &row(
+        "base 1 wins",
+        a.wins_by_base[1] as f64,
+        b.wins_by_base[1] as f64,
+    );
+    out += &row("no winner", a.no_winner as f64, b.no_winner as f64);
+    out += &row("length mean (min)", a.minutes_mean, b.minutes_mean);
+    out += &row("rack share of knock-outs (%)", rack(a), rack(b));
+    out += &row(
+        "HE share mean (%)",
+        a.he_share_mean_pct,
+        b.he_share_mean_pct,
+    );
+    out += &row("HE share max (%)", a.he_share_max_pct, b.he_share_max_pct);
     out
 }

@@ -139,6 +139,16 @@ TOML. Work proceeds on the (A) defaults below.
   harness.
 - [ ] **S3b-12. Transmission component.** (A) Add it. (B) Fold it into
   the engine.
+- [ ] **S3b-13. Data reload in net matches** (Tooling stage). (A) Not
+  offered: F5 / "Reload data & restart" is debug-only and single-player;
+  in a lobby, data that differs is refused (`content_mismatch`). (B) A
+  synced reload for both players.
+- [ ] **S3b-14. Penetration variation as data** (Tooling stage). The ±7 %
+  band (`armour.rs` `PEN_BAND`) stays in code: it is part of the
+  closed-form penetration maths pinned by the golden ballistics file.
+  (A) Leave it in code until a tuning need appears. (B) Move it to
+  `[vehicles.gunnery]` and thread it through the armour API and the
+  golden runner.
 
 ## S3 owner checklist (needs a person)
 

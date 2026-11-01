@@ -46,6 +46,9 @@ fn check_order(out: &mut Vec<Issue>, table: &str, a: (&str, u32), b: (&str, u32)
     }
 }
 
+/// A tuning key: its name and allowed range (inclusive).
+pub type TuningKey = (&'static str, u32, u32);
+
 /// One tuning table: a struct of `u32` keys, each with its allowed range.
 macro_rules! tuning_table {
     (
@@ -73,7 +76,7 @@ macro_rules! tuning_table {
             }
 
             /// Every key with its allowed range (docs and tests).
-            pub const KEYS: &'static [(&'static str, u32, u32)] =
+            pub const KEYS: &'static [TuningKey] =
                 &[$( (stringify!($field), $lo, $hi), )*];
         }
     };
@@ -508,7 +511,7 @@ impl DigCommonTuning {
 
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
-pub const TABLES: &[(&str, &[(&str, u32, u32)])] = &[
+pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),

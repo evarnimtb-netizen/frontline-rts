@@ -723,6 +723,101 @@ Per the quick-iteration rule:
 3. `skirmish` gains `--seeds 1-10 --both-bases` summarising the 20
    matches (the Targets table rows) in one call.
 
+## Tuning surface (Tooling stage, done)
+
+The Tooling stage moved 107 gameplay constants out of `crates/sim/src`
+into `mods/ww2` TOML, with the same values. Each new table is one struct in
+`sdk/crates/content/src/tuning.rs`. The def parses it, the setup copies it
+unchanged, and both range-check it. Values stay whole numbers in the unit
+the key names. The sim converts them where the old constant was converted,
+so no result changes (evidence in the Tooling report: AI-vs-AI seeds 1–5,
+armour-test and fortify-test give identical reports). `docs/modding/tuning.md`
+is the user guide.
+
+Differences from the plan above:
+- the flag is `--rules-override` (the task's name), not `--rules`;
+- the A/B runner is `skirmish --seeds N --both-bases --summary` plus `--ab`,
+  not a separate `ab` subcommand;
+- `ELEVATE_DEG_S` became each vehicle def's `turret.elevate_deg_s`;
+- `SPALL_REACH_M` is `[vehicles.gunnery] spall_reach_m`, not a per-round
+  `reach_cm`. A2 may move it into the ammo `spall` table when it
+  rewrites spall;
+- `SAVE_VERSION` went 9 → 10 here, because the setup is part of the save
+  and its layout changed. **It is the one bump for S3b; later stages add
+  state without bumping again.** `PROTOCOL_VERSION` is unchanged: the wire
+  carries only setup and content hashes. The Suppress command still bumps
+  it once.
+
+### Moved (constant → key, value unchanged)
+
+| Was (file) | Now | Value |
+|---|---|---|
+| `rules.rs` `CAPTURE_EXTRA_MAN_PCT` | `[capture] extra_man_pct` | 50 |
+| `path.rs` `DITCH_COST_PCT` | `[movement] ditch_cost_pct` | 300 |
+| `gunnery.rs` `ELEVATE_DEG_S` | vehicle def `[turret] elevate_deg_s` | 6 |
+| `combat.rs` `STAND_MM`, `CROUCH_MM`, `PRONE_MM` | `[combat.body] stand_mm`, `crouch_mm`, `prone_mm` | 1750, 1200, 400 |
+| `combat.rs` `CAPSULE_R_MM`, `PRONE_R_MM`, `PRONE_HALF_MM` | `[combat.body] radius_mm`, `prone_radius_mm`, `prone_half_mm` | 250, 200, 700 |
+| `combat.rs` `MUZZLE_DROP_MM`, `HEAD_AIM_MM`; `spotting.rs` `EYE_DROP_MM` | `[combat.body] muzzle_drop_mm`, `head_aim_mm`, `eye_drop_mm` | 150, 150, 100 |
+| `combat.rs` `TRENCH_MM`, `STILL_MM_S` | `[combat.body] trench_depth_mm`, `still_mm_s` | 1000, 300 |
+| `combat.rs` `SHELL_MUZZLE_MM`, `SHELL_FLIGHT_MILLI`, `SHELL_MIN_FLIGHT_S`, `BARRAGE_RETRY_M` | `[combat.mortar] muzzle_mm`, `flight_milli`, `min_flight_s`, `barrage_retry_m` | 800, 350, 4, 20 |
+| `combat.rs` `BLAST_LIFT_MM`, `CRATER_DEPTH_PCT`, `CRATER_LIFT_MM` | `[combat.blast] lift_mm`, `crater_depth_min_pct`, `crater_depth_max_pct`, `crater_lift_mm` | 300, 75, 140, 500 |
+| `combat.rs` near miss on a covered man `/ 2`; burst behind earth `/ 2`; spread `+1 %` per point | `[combat.suppression] covered_near_miss_pct`, `blast_behind_cover_pct`, `spread_per_point_pct` | 50, 50, 100 |
+| `ai.rs` `MAX_BUYS_PER_PLAN`, `DANGER_CLOSE_M`, `SUPPORT_BACK_M`, `FRAG_GROUP_M` | `[ai.infantry] buys_per_plan`, `danger_close_m`, `support_back_m`, `frag_group_m` | 2, 35, 200, 5 |
+| `ai.rs` `SATCHEL_SLOW_MM_S`, `SATCHEL_SIDE_MM` | `[ai.infantry] satchel_slow_mm_s`, `satchel_side_mm` | 1100, 800 |
+| `ai.rs` `TRENCH_PROBE_DM`, `TRENCH_PROBE_M`, `TRENCH_PROBE_STEP_M` | `[ai.infantry] trench_probe_dm`, `trench_probe_m`, `trench_probe_step_m` | 8, 60, 4 |
+| `ai.rs` `ESCORT_SQUADS`, `ESCORT_JOIN_M`, `ESCORT_GRACE_S`, `ESCORT_REACHED_M` | `[ai.armour] escort_squads`, `escort_join_m`, `escort_grace_s`, `escort_reached_m` | 2, 150, 8, 30 |
+| `ai.rs` `HALTED_MM_S`, `FACE_SLACK_DEG`, `FACE_RANGE_M`, `ARMOUR_THREAT_M`, `RETREAT_ENGINE_PCT`, `BACKUP_M` | `[ai.armour] halted_mm_s`, `face_slack_deg`, `face_range_m`, `threat_m`, `retreat_engine_pct`, `backup_m` | 300, 20, 600, 300, 30, 30 |
+| `vehicle.rs` `MAX_TILT_DEG`, `TILT_RATE_DEG_S`, `CIRCLE_PAD_MM` | `[vehicles.driving] max_tilt_deg`, `tilt_rate_deg_s`, `circle_pad_mm` | 30, 20, 250 |
+| `vehicle.rs` `WAYPOINT_REACH_M`, `ARRIVE_MM`, `PIVOT_ERR_DEG`, `PIVOT_SPEED_MM_S`, `FULL_STEER_DEG`, `FULL_THROTTLE_DEG` | `[vehicles.driving] waypoint_reach_m`, `arrive_mm`, `pivot_err_deg`, `pivot_speed_mm_s`, `full_steer_deg`, `full_throttle_deg` | 3, 2500, 60, 1000, 10, 20 |
+| `vehicle.rs` `REVERSE_ORDER_M`, `YIELD_LEN_PCT`, `YIELD_STILL_MM_S`, `FRIENDLY_AHEAD_M`, `WALK_MM_S` | `[vehicles.driving] reverse_order_m`, `yield_len_pct`, `yield_still_mm_s`, `friendly_ahead_m`, `walk_mm_s` | 40, 150, 500, 4, 1500 |
+| `vehicle.rs` `STUCK_PROGRESS_M`, `STUCK_S`, `KEEP_RIGHT_DEG`, `BACK_OFF_S`, `REPATH_GAP_S` | `[vehicles.driving] stuck_progress_m`, `stuck_s`, `keep_right_deg`, `back_off_s`, `repath_gap_s` | 1, 5, 35, 2, 2 |
+| `orders.rs` `FACE_DONE_DEG`, `APPROACH_SLACK_M` | `[vehicles.driving] face_done_deg`, `approach_slack_m` | 2, 15 |
+| `vehicle.rs` `PUSH_GAP_MM`, `PUSH_DEEPER_MM`, `SPOT_DROP_MM` | `[vehicles.driving] push_gap_mm`, `push_deeper_mm`, `spot_drop_mm` | 100, 100, 100 |
+| `path.rs` `VEHICLE_WOODS_PCT`, `VEHICLE_DUG_PCT`, `VEHICLE_DUG_DM`, `VEHICLE_DEEP_PCT`, `VEHICLE_DEEP_DM` | `[vehicles.path] woods_pct`, `dug_pct`, `dug_dm`, `deep_pct`, `deep_dm` | 200, 150, 4, 400, 10 |
+| `vehicle.rs` `AVOID_COST_PCT`, `MARGIN_COST_PCT`, `DITCH_REACH_M`, `WRECK_PAD_M` | `[vehicles.path] avoid_pct`, `margin_pct`, `ditch_reach_m`, `wreck_pad_m` | 800, 400, 2, 2 |
+| `orders.rs` `ESCORT_BEHIND_M`, `ESCORT_GAP_MM`, `ESCORT_FILE` | `[vehicles.escort] behind_m`, `gap_mm`, `file_men` | 4, 1500, 8 |
+| `gunnery.rs` `COAX_CONE_DEG`; `damage.rs` `EXTERNAL_REACH_MM`, `SPALL_REACH_M` | `[vehicles.gunnery] coax_cone_deg`, `external_reach_mm`, `spall_reach_m` | 5, 1000, 3 |
+| `squad.rs` and `unit.rs` `WAYPOINT_REACH_M`, `ARRIVE_TIMEOUT_S`; `squad.rs` `CATCH_UP_M`, `STRETCHED_M`, `STRETCHED_SPEED_PCT`, `SLOT_LEAD_MM` | `[movement.formation] waypoint_reach_m`, `arrive_timeout_s`, `catch_up_m`, `stretched_m`, `stretched_speed_pct`, `slot_lead_mm` | 2, 20, 2, 10, 70, 1500 |
+| `systems.rs` `SLIDE_GAP_MM`, `STEEP_FREE_PCT`, `STEEP_MIN_PCT` | `[movement.formation] slide_gap_mm`, `steep_free_pct`, `steep_min_pct` | 1500, 60, 15 |
+| `squad.rs` `COVER_RADIUS_M`, `COVER_ENEMY_M`, `COVER_GAP_MM`, `TRENCH_MARGIN_MM`, `COVER_EYE_MM`, `COVER_CHEST_MM` | `[cover] radius_m`, `enemy_m`, `gap_mm`, `trench_margin_mm`, `eye_mm`, `chest_mm` | 10, 400, 1200, 400, 1500, 1000 |
+| `items.rs` `RELEASE_DROP_MM`, `MIN_FLIGHT_MS`, `LOB_TAN_MILLI`, `SMOKE_BELOW_MM` | `[items.throw] release_drop_mm`, `min_flight_ms`, `lob_tan_milli`, `smoke_below_mm` | 150, 300, 1000, 2000 |
+| `dig.rs` `PARAPET_RISE_MM`, `PARAPET_TOP_MM`, `PARAPET_FALL_MM`, `PARAPET_UNDUG_MM`, `DIG_REACH_MM` | `[dig.common] parapet_rise_mm`, `parapet_top_mm`, `parapet_fall_mm`, `parapet_undug_mm`, `reach_mm` | 300, 400, 600, 50, 1500 |
+
+### Kept in code (engine and structural)
+
+| Constant (file) | Why it stays |
+|---|---|
+| `MAX_PENDING`, `MAX_TRENCHES`, `MAX_ESCORTS`, `NO_POINT`, `MIX_*` (`ai.rs`); `MAX_THROWN`, `MAX_SMOKE` (`items.rs`); `MAX_UNITS` (`unit.rs`); `MAX_BARRAGE_ROUNDS`, `MAX_PATH_POINTS`, `MAX_DIG_POINTS`, `MAX_CALL_IN_QUEUE` (`game.rs`); `MAX_RAYS`, `MAX_BOXES` (`damage.rs`); `MAX_NEIGHBOURS` (`systems.rs`); `MAX_VEHICLE_CIRCLES`, `TRACK_SAMPLES` (`vehicle.rs`) | Pool, list and state-layout caps. Saves are validated against them. |
+| `LOS_TRIES`, `SWEEP_POOL` (`combat.rs`); `GROUP_CANDIDATES`, `SEARCH_RAYS`, `SWEEP_POOL`, `MG_AIM_DRAWS` (`gunnery.rs`); `COVER_RAYS`, `TRENCH_STEP_MM`, `COVER_STEP_MM` (`squad.rs`) | Search sizes, ray budgets, sampling grids and RNG draw counts. They are performance and determinism structure. A tuning change goes into the distances these searches use, which are data now. |
+| `STRAIGHT`, `DIAGONAL`, `SMOOTH_LOOKAHEAD`, `H_WEIGHT_PCT`, `TRENCH_SEARCH_NODES`, `SMOOTH_GENTLE_PCT` (`path.rs`) | Path search parameters that exist for performance. |
+| `VEHICLE_SPHERE_PAD_M` (`combat.rs`) | Broad-phase padding (it only finds candidates). |
+| `SHELL_TTL_PCT` (`gunnery.rs`); `MAX_FLIGHT_S` (`items.rs`) | Lifetime safety bounds on projectiles and thrown items. |
+| `GRAVITY` (`armour.rs`, `combat.rs`, `gunnery.rs`, `items.rs`, `projectile.rs`); `SUBSTEP_HZ` (`projectile.rs`); `DETAIL_SHIFT`, `TILE_M` and the grid sizes (`terrain.rs`); `PPM` (`armour.rs`); `AP`, `HE`, `KO_*` | Physics, engine units and codes. |
+| `HALF_BAND_RAW` / `PEN_BAND` (`armour.rs`) | The ±7 % penetration variation. **Gameplay, kept for now.** It is part of the closed-form penetration maths that the golden ballistics file pins (`ballistics.rs`, `aim_choice`). Moving it means threading a band parameter through the armour API and the golden runner. That is follow-up work (TODO S3b-14), and nothing in the slice tunes it. |
+| `TRENCH_X`, `CROSSING_CM_S`, `AT_HE_M`, `WEST`, `SOUTH` (`scenarios.rs`) | Staging coordinates of the test harness. |
+| `systems::BENCH_STEEP` | Steep-ground values for bench worlds, which have no rules. They equal the mod's, and bench terrain has no dug ground today. |
+
+Inline numbers were not swept exhaustively. The ones the spec named (the
+two halvings and the spread per point) are data now. Others remain in
+code, for example the satchel reach margin (+10 m), "two crew dead"
+(`dead >= 2`) in the AI retreat rule, and the 0.25 m nav heading update.
+The Part A and B stages that touch those rules move them as they go.
+
+### Fast iteration
+
+- `frontline-cli skirmish --ai-vs-ai --seeds 10 --both-bases --summary
+  [--ab] --rules-override FILE`: 20 matches in about 20 s on 8 cores
+  (`--ab`: 40 matches in 38 s). It prints one table: wins per faction and per base,
+  length, tanks lost and bought, knock-outs by gun and rocket and by cause,
+  HE share, rockets fired, hit and penetrated, satchels at vehicles, kills
+  and losses, tick p99, and one line per match.
+- `armour-test` and `fortify-test` take `--rules-override` too. `simulate`
+  refuses it, because bench scenarios have no rules.
+- `frontline-cli validate mods/ww2` also applies every
+  `tests/overrides/*.toml`.
+- Godot debug builds: F5 or the pause menu's "Reload data & restart". Data
+  errors show as a banner, and the menu shows why a match could not start.
+
 ## Implementation order
 
 ### PART A: physical damage, armour, gunnery and content
