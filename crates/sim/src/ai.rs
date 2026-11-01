@@ -48,7 +48,8 @@
 //!      frag range of a man;
 //!    * *smoke:* a moving or attack-moving squad with a third of its men
 //!      pinned throws smoke halfway toward the nearest spotted enemy (at
-//!      most to the smoke's range).
+//!      most to the smoke's range); S3c: a squad on a satchel hunt, halfway
+//!      toward its vehicle.
 //!
 //!    `Throw` names every man who could throw it; the sim picks the
 //!    thrower. Throwers end up detached: a squad that is walking again
@@ -118,6 +119,39 @@
 //!    Squads on a hunt, a base of fire and halted bounders get no other
 //!    infantry order that plan; hunting squads do not join escorts.
 //!
+//! 9. **Armour habits** (S3c, `docs/slices/S3c-armour.md` Part B;
+//!    `ai::armour`, `ai::assault`; `[ai.armour]`, `[ai.assault]`):
+//!    * *rearm:* a vehicle with every limited MG dry, HE at or below
+//!      `combat.suppress.tank_he_reserve` or its penetrator at or below
+//!      `rearm_ap_below`, and no known enemy vehicle within `threat_m`,
+//!      retreats to base (task `Rearm`) and waits there until
+//!      `rearm_full_pct` full or `rearm_max_s` in base;
+//!    * *sticky satchel hunts:* a hunt (saved in [`AiState::hunts`]) also
+//!      starts on a stuck vehicle and keeps its vehicle while it was seen
+//!      within `satchel_stick_s` (going to its last seen place), was not
+//!      fast for more than `satchel_chase_s`, is within `satchel_hunt_m` +
+//!      `satchel_leash_m`, for at most `satchel_hunt_max_s`, while the
+//!      squad has a satchel and is not retreating. Hunters crouch, crawl
+//!      within `satchel_crawl_m` in the hull MG's arc, and do not throw
+//!      their satchel at infantry;
+//!    * *rockets:* AT teams also hunt stuck vehicles within
+//!      `at_hunt_stuck_m`, and without a hunt follow an own vehicle's
+//!      assault within `at_follow_m`, `at_follow_back_m` behind it;
+//!    * *second base of fire:* an assault with at least three squads whose
+//!      base's fire weight (rounds/min × suppression over its men) is under
+//!      `second_base_below_pct` % of the enemy's strongest MG team weapon
+//!      gets a second base (an MG team, else a rifle squad) at least
+//!      `second_base_gap_m` from the first;
+//!    * *crews:* a crew squad re-crews its abandoned vehicle (else the
+//!      nearest abandoned own one within `recrew_reach_m`) when it is not
+//!      burning or useless, no known enemy soldier is within
+//!      `recrew_clear_m` and no enemy vehicle within `threat_m`, and the
+//!      re-crew check passes; it waits while men are still getting out;
+//!      otherwise it walks back to base. The AI does not capture;
+//!    * *denial:* a holding vehicle with no live target and no live enemy
+//!      vehicle within `face_range_m` fires at an enemy abandoned vehicle
+//!      within `deny_m` in its line of sight (with `capture` on).
+//!
 //! An order is only sent when the squad's task changed or its order no
 //! longer matches the task, and never while a command for that squad is
 //! still pending, so squads are not re-pathed every plan.
@@ -144,7 +178,12 @@ use crate::rng::{Purpose, RngStream};
 use crate::terrain::Heightfield;
 use frontline_content::ItemKind;
 
+mod armour;
 mod assault;
+pub use assault::{
+    END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
+    HUNT_ENDS, MAX_HUNTS,
+};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -186,6 +225,12 @@ pub enum TaskKind {
     Suppress = 9,
     /// S3b: an AT team or engineers going for an enemy vehicle.
     Hunt = 10,
+    /// S3c: a vehicle driving back to base to rearm, then waiting there.
+    Rearm = 11,
+    /// S3c: a crew squad re-crewing an abandoned own vehicle.
+    Recrew = 12,
+    /// S3c: an AT team following an own vehicle's assault.
+    Follow = 13,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -231,6 +276,25 @@ pub struct AiState {
     /// S3b: since when each seen enemy vehicle has been slow (satchel
     /// hunts; at most `assault::MAX_SLOW`).
     pub slow_since: BTreeMap<SimId, u64>,
+    /// S3c sticky satchel hunts, by the hunting engineer squad (at most
+    /// `assault::MAX_HUNTS`).
+    pub hunts: BTreeMap<SquadId, AiHunt>,
+}
+
+/// An engineer squad's satchel hunt on one enemy vehicle (S3c B2).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct AiHunt {
+    pub vehicle: SimId,
+    /// Tick the hunt started.
+    pub since: u64,
+    /// Tick and place it was last seen.
+    pub last_seen: u64,
+    pub last_pos: FxVec2,
+    /// Since when it has been faster than `ai.infantry.satchel_slow_mm_s`
+    /// (`None`: slow now).
+    pub fast_since: Option<u64>,
+    /// Out of sight at the last plan.
+    pub unseen: bool,
 }
 
 /// A vehicle's escorted assault on a point (S3).
@@ -269,6 +333,25 @@ pub struct AiCounters {
     /// S3b: AT-team and satchel hunts started.
     pub at_hunts: u32,
     pub satchel_hunts: u32,
+    /// S3c: rearm trips started (B1).
+    pub rearms: u32,
+    /// S3c sticky hunts (B2): hunts kept through a loss of sight, satchels
+    /// thrown by hunting squads, and hunts ended by each reason (index:
+    /// `assault::END_*`).
+    pub hunts_kept_unseen: u32,
+    pub hunt_throws: u32,
+    pub hunt_ends: [u32; assault::HUNT_ENDS],
+    /// S3c: assaults given a second base of fire (B4).
+    pub second_bases: u32,
+    /// S3c (B3): AT hunts on stuck vehicles beyond `at_hunt_m`, and AT
+    /// teams sent after an own vehicle's assault.
+    pub at_stuck_hunts: u32,
+    pub at_follows: u32,
+    /// S3c (B5): `Recrew` orders, crews sent back to base, `AttackUnit`
+    /// orders at enemy abandoned vehicles.
+    pub recrews: u32,
+    pub crew_retreats: u32,
+    pub denials: u32,
 }
 
 impl AiState {
@@ -287,6 +370,7 @@ impl AiState {
             escorts: BTreeMap::new(),
             counters: AiCounters::default(),
             slow_since: BTreeMap::new(),
+            hunts: BTreeMap::new(),
         }
     }
 
@@ -353,6 +437,7 @@ impl AiState {
                     || e.started.windows(2).any(|w| w[0] >= w[1])
             })
             || !self.validate_assault(tick)
+            || self.hunts.keys().any(bad_squad)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -580,17 +665,15 @@ impl Planner<'_> {
         self.note_slow(&kv);
         let mut mine = Vec::new();
         let mut tanks = Vec::new();
+        let mut crews = Vec::new();
         for (&id, sq) in &g.squads {
             if sq.owner != me || busy.contains(&id) {
                 continue;
             }
             let ty = &g.setup.squad_types[sq.type_idx as usize];
-            // S3c (Part A): the AI's crews walk back to base, where they are
-            // dismissed.
+            // S3c: crews re-crew or walk back to base (step 9).
             if ty.role == SquadRole::Crew {
-                if sq.order != Order::Retreat && !self.in_own_base(sq) {
-                    self.ai.emit(self.due, CommandKind::Retreat { squad: id });
-                }
+                crews.push(id);
                 continue;
             }
             if ty.vehicle.is_some() {
@@ -616,6 +699,7 @@ impl Planner<'_> {
 
         self.retreats(&mut mine, &known);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
+        self.crews(&crews, &known, &kv);
         self.buy(&kv);
         let mut points = self.evaluate_points(&known, &kv);
         let assigned = self.assign(&mine, &mut points);
@@ -1344,6 +1428,10 @@ impl Planner<'_> {
             if vs.repairing.is_some() {
                 continue;
             }
+            // S3c (B1): rearm trips.
+            if self.rearm(&t, kv) {
+                continue;
+            }
             if vs.immobilised(v)
                 && crate::damage::can_field_repair(vs, v)
                 && !self.enemy_near(known, kv, t.pos, s.rules.ai.repair_clear.into())
@@ -1613,6 +1701,10 @@ impl Planner<'_> {
             {
                 continue;
             }
+            // S3c (B5): denial fire at an enemy abandoned vehicle.
+            if !ordered && self.deny(t, kv) {
+                continue;
+            }
             // An idle vehicle turns to the nearest threat it knows of.
             if ordered || t.immobile || sq.order != Order::Idle || vs.suppress.is_some() {
                 continue;
@@ -1706,13 +1798,16 @@ impl Planner<'_> {
                 continue;
             }
             let at_vehicle = self.satchel_vehicle(sq, kv);
+            let hunting = self.ai.hunts.contains_key(&m.id);
             if at_vehicle.is_some() {
                 self.ai.counters.satchels_at_vehicles += 1;
+                self.ai.counters.hunt_throws += u32::from(hunting);
             }
+            // S3c (B2): a hunting squad keeps its satchel for the vehicle.
             let pick = at_vehicle
-                .or_else(|| self.satchel(sq, known))
+                .or_else(|| (!hunting).then(|| self.satchel(sq, known)).flatten())
                 .or_else(|| self.frag(sq, known))
-                .or_else(|| self.smoke(sq, known));
+                .or_else(|| self.smoke(m.id, sq, known));
             let Some((item, units, target)) = pick else {
                 continue;
             };
@@ -1815,8 +1910,9 @@ impl Planner<'_> {
         best.map(|(_, pick)| pick)
     }
 
-    /// Smoke for a squad pinned on the move (module docs).
-    fn smoke(&self, sq: &crate::game::Squad, known: &[Known]) -> Option<ThrowPick> {
+    /// Smoke for a squad pinned on the move (module docs); a hunting squad
+    /// (S3c) throws it halfway toward its vehicle.
+    fn smoke(&self, sq_id: SquadId, sq: &crate::game::Squad, known: &[Known]) -> Option<ThrowPick> {
         if !matches!(sq.order, Order::Move { .. } | Order::AttackMove { .. }) {
             return None;
         }
@@ -1839,11 +1935,18 @@ impl Planner<'_> {
                 return None;
             }
             let from = self.ents.transform[id.index()].pos.xy();
-            let enemy = known
-                .iter()
-                .min_by_key(|k| ((k.pos - from).length_sq_raw(), k.id))?;
-            let d = (enemy.pos - from).length();
-            let dir = (enemy.pos - from).normalize_or_zero();
+            // S3c (B2): a hunting squad screens itself from its vehicle.
+            let toward = match self.ai.hunts.get(&sq_id) {
+                Some(h) => h.last_pos,
+                None => {
+                    known
+                        .iter()
+                        .min_by_key(|k| ((k.pos - from).length_sq_raw(), k.id))?
+                        .pos
+                }
+            };
+            let d = (toward - from).length();
+            let dir = (toward - from).normalize_or_zero();
             let at = self.terrain.clamp(from + dir * d.div_int(2).min(max));
             let men = self.throwers(sq, ItemKind::Smoke, at);
             (!men.is_empty()).then_some((ItemKind::Smoke, men, at))

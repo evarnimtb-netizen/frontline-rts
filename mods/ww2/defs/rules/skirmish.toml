@@ -206,6 +206,17 @@ crater_depth_max_pct = 140
 # A burst more than this above the ground under it (on a vehicle) carves no
 # crater (mm).
 crater_lift_mm = 500
+# S3c (B8, T9; physical-contact rule): a burst on the ground throws its
+# fragments in the HE def's frag_elev_deg band above the horizontal. Where
+# the ground falls away beside the burst (a shell bursting on a parapet
+# crest above the trench behind it), fragments also go down over the fall:
+# the ground is sampled this far around the burst (8 directions), and the
+# steepest drop lowers the band's minimum by its angle, with extra rays at
+# the band's density (so flat ground is unchanged). Without it a tank HE
+# shell on the crest could never reach men below the lip (S3b T9: 0 kills
+# in 5b). 150 cm: about the parapet's back slope into a 1.5 m trench
+# (cm; 0 turns it off).
+frag_fall_probe_cm = 150
 
 # Suppression details (the thresholds and decay are the [combat] keys
 # above). S3b: moved from the sim's Rust constants unchanged (same values);
@@ -685,6 +696,26 @@ backup_m = 30
 # Sherman 620) and about 50 s of base income: a small reserve, not a freeze
 # of infantry buying (owner, 2026-11-01: "keep a small reserve for a tank").
 tank_reserve_mp = 200
+# S3c rearm (S3b-42, S3c-10 (A)): a tank with every limited MG dry, HE at or
+# below combat.suppress.tank_he_reserve, or its penetrator at or below
+# rearm_ap_below (rounds), and no known enemy vehicle within threat_m,
+# drives back to base and stays until its gun rounds and MG stowage are
+# rearm_full_pct (%) full or rearm_max_s (s) have passed. A tank with no AP
+# left cannot fight tanks; 3 rounds is one engagement's worth.
+rearm_ap_below = 3
+rearm_full_pct = 90
+rearm_max_s = 120
+# S3c re-crew (B5): an AI crew squad re-crews its abandoned tank (not
+# burning, not useless) when no known enemy soldier is within
+# recrew_clear_m (m; 80: past grenade and most SMG fire) and no known enemy
+# vehicle within threat_m; an idle crew takes another abandoned own tank
+# within recrew_reach_m (m). Otherwise crews walk back to base.
+recrew_clear_m = 80
+recrew_reach_m = 300
+# S3c denial (S3c-9 (A)): a tank with no live target fires at an enemy
+# abandoned tank within deny_m (m) in view, while capture is on (so the
+# enemy cannot take it back). 0 turns it off.
+deny_m = 300
 
 # The AI's fire-and-move, AT-team hunts and satchel hunts (S3b,
 # docs/slices/S3b-balance.md B3-B5). Starting values for the Tune stage.
@@ -729,6 +760,45 @@ at_hunt_inset_m = 10
 satchel_hunt_m = 150
 satchel_slow_s = 3
 satchel_stand_m = 5
+# S3c sticky hunts (S3b-36 (A), docs/slices/S3c-armour.md B2): a hunt keeps
+# its vehicle while it was seen within satchel_stick_s (s; the squad goes to
+# its last seen position), has not been faster than satchel_slow_mm_s for
+# more than satchel_chase_s (s; a tank stopping and starting stays hunted),
+# is within satchel_hunt_m + satchel_leash_m (m) of the squad, and for at
+# most satchel_hunt_max_s (s). Hunters crouch on the approach and crawl
+# within satchel_crawl_m (m) while the tank's hull MG arc covers them
+# (tank-hunting drill: close in the MG's dead ground, crawl the last
+# stretch; 0 turns crawling off). Baseline: 96 hunts gave 1 throw, 45 were
+# dropped with the target still there.
+satchel_stick_s = 20
+satchel_chase_s = 6
+satchel_leash_m = 50
+satchel_crawl_m = 25
+satchel_hunt_max_s = 120
+# S3c second base of fire (S3b-41 (A), S3c-11 (A)): an assault with at least
+# three squads gets a second base (an MG team, else a rifle squad) when the
+# first base's fire weight (rounds/min x suppression over its men) is under
+# second_base_below_pct (%) of the enemy's strongest MG team weapon, from a
+# spot at least second_base_gap_m (m) from the first. M1919A4 500 x 14 =
+# 7,000 vs MG 42 1,200 x 15 = 18,000: US assaults get two bases, German one.
+second_base_below_pct = 100
+second_base_gap_m = 30
+# S3c rockets (B3, only because T2 stayed under 20 % after Part A): AT teams
+# also hunt an immobile or bogged enemy tank within at_hunt_stuck_m (m; a
+# stuck tank cannot turn away, so a longer stalk pays), and an AT team with
+# no hunt follows an own tank on an assault within at_follow_m (m),
+# at_follow_back_m (m) behind it (tank-infantry teams: the bazooka and
+# Panzerschreck teams went with the armour to meet counter-attacking tanks).
+# 0 turns either off. Measured one at a time (80 matches, seeds 1-40 x both
+# bases, Part B code): with following on (150 m), rockets knocked out 33 of
+# 233 tanks (14.2 %); with it off 48 of 243 (19.8 %) and 260 rockets fired
+# instead of 216: AT teams trailing their own tanks are not at the points
+# the enemy tanks come to. So following is off. The stuck-tank stalk made 3
+# hunts in 80 matches and no measurable difference (36 vs 33 rocket
+# knock-outs off/on); kept, as a stuck tank is the realistic target.
+at_hunt_stuck_m = 500
+at_follow_m = 0
+at_follow_back_m = 30
 
 # Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
 # once in the base, no queue and no delivery time).

@@ -90,6 +90,17 @@ const MG_AIM_DRAWS: usize = 4;
 /// Shells live 1.25 × the gun's range in flight, plus two substeps.
 const SHELL_TTL_PCT: i32 = 125;
 
+/// Substeps a main-gun shell of a gun with `range` (m) fired at `speed`
+/// (m/s) lives: [`SHELL_TTL_PCT`] of the range in flight, plus two. S3c
+/// fix: in 64-bit integers; the old Q16.16 chain (`range × 125` first)
+/// saturated at 32 767, so a 600 m gun's shells vanished after ~330 m of
+/// flight (found by armour-test 3f: no hit at 500 or 600 m).
+fn shell_ttl(range: Fx, speed: Fx) -> i32 {
+    let num = range.raw().max(0) as i64 * SHELL_TTL_PCT as i64 * SUBSTEP_HZ as i64;
+    let den = 100 * speed.raw().max(1) as i64;
+    (num / den).min(i32::MAX as i64 - 2) as i32 + 2
+}
+
 /// 9.81 m/s².
 const GRAVITY: Fx = Fx::from_ratio(981, 100);
 
@@ -563,13 +574,7 @@ impl MatchState {
                     .normalize_or_zero();
                 let ammo = main.ammo[k as usize].ammo;
                 let w = &setup.weapons[main.weapon as usize];
-                let ttl = Fx::from(w.range_max)
-                    .mul_int(SHELL_TTL_PCT)
-                    .div_int(100)
-                    .div(speed)
-                    .mul_int(SUBSTEP_HZ)
-                    .floor_int()
-                    + 2;
+                let ttl = shell_ttl(w.range_max.into(), speed);
                 out.push(FireRequest {
                     shooter: id,
                     seq: 0,
@@ -1162,6 +1167,14 @@ fn main_spread(
 
 #[cfg(test)]
 mod tests {
+    /// S3c: a 600 m gun's shell flies 750 m (it used to stop near 330 m).
+    #[test]
+    fn shells_live_past_the_guns_range() {
+        let t = super::shell_ttl(Fx::from_int(600), Fx::from_int(790));
+        let metres = t as i64 * 790 / SUBSTEP_HZ as i64;
+        assert!((750..=780).contains(&metres), "{t} substeps, {metres} m");
+    }
+
     use super::*;
 
     /// Review fix: the MG skip count matches what one shot draws, so two

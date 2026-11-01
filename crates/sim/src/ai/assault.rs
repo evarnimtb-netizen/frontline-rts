@@ -5,13 +5,41 @@
 
 use frontline_content::{ItemKind, SquadRole};
 
-use super::{AiState, Known, KnownVehicle, Mine, MyTank, Planner, PointEval, Rel, TaskKind, sq_m};
+use super::{
+    AiHunt, AiState, Known, KnownVehicle, Mine, MyTank, NO_POINT, Planner, PointEval, Rel,
+    TaskKind, sq_m,
+};
 use crate::command::CommandKind;
+use crate::ecs::EntityKind;
+use crate::ecs::SimId;
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Order, SquadId};
+use crate::unit::StanceOrder;
 
 /// Most enemy vehicles the AI times as slow (satchel hunts).
 pub const MAX_SLOW: usize = 256;
+/// Most sticky satchel hunts the AI keeps (S3c B2).
+pub const MAX_HUNTS: usize = 64;
+/// Why a sticky satchel hunt ended (`AiCounters::hunt_ends` index): the
+/// vehicle became a wreck or was abandoned ...
+pub const END_GONE: usize = 0;
+/// ... it was unseen longer than `satchel_stick_s` ...
+pub const END_UNSEEN: usize = 1;
+/// ... it drove faster than slow longer than `satchel_chase_s` ...
+pub const END_FAST: usize = 2;
+/// ... it got beyond the leash ...
+pub const END_LEASH: usize = 3;
+/// ... `satchel_hunt_max_s` passed ...
+pub const END_TIMEOUT: usize = 4;
+/// ... the squad has no satchel left (thrown, or its carrier fell) ...
+pub const END_SPENT: usize = 5;
+/// ... the squad retreats or is gone.
+pub const END_RETREAT: usize = 6;
+pub const HUNT_ENDS: usize = 7;
+/// Report names of the `END_*` reasons.
+pub const HUNT_END_NAMES: [&str; HUNT_ENDS] = [
+    "gone", "unseen", "fast", "leash", "timeout", "spent", "retreat",
+];
 /// Base-of-fire spots tried per plan and squad (one terrain ray each).
 const SPOT_TRIES: usize = 8;
 
@@ -37,7 +65,15 @@ impl AiState {
     /// Checks the S3b AI state of a loaded save (part of
     /// [`AiState::validate`]).
     pub(crate) fn validate_assault(&self, tick: u64) -> bool {
-        self.slow_since.len() <= MAX_SLOW && self.slow_since.values().all(|&t| t <= tick)
+        self.slow_since.len() <= MAX_SLOW
+            && self.slow_since.values().all(|&t| t <= tick)
+            && self.hunts.len() <= MAX_HUNTS
+            && self.hunts.values().all(|h| {
+                h.since <= tick
+                    && h.last_seen <= tick
+                    && h.since <= h.last_seen
+                    && h.fast_since.is_none_or(|f| f <= tick)
+            })
     }
 }
 
@@ -128,6 +164,7 @@ impl Planner<'_> {
         line: &[FxVec2; 2],
         support: u32,
         height_mm: u32,
+        avoid: Option<(FxVec2, u64)>,
     ) -> FxVec2 {
         let mid = (line[0] + line[1]).div_int(2);
         let back = {
@@ -151,6 +188,10 @@ impl Planner<'_> {
                 let (s, c) = turn.sin_cos();
                 let dir = FxVec2::new(back.x * c - back.y * s, back.x * s + back.y * c);
                 let spot = self.terrain.clamp(mid + dir * dist);
+                // S3c: a second base keeps its distance from the first.
+                if avoid.is_some_and(|(a, r)| (spot - a).length_sq_raw() < r) {
+                    continue;
+                }
                 first.get_or_insert(spot);
                 if self.fire_line(spot, height_mm, line) {
                     return spot;
@@ -174,7 +215,6 @@ impl Planner<'_> {
     ) -> Vec<SquadId> {
         let g = self.g;
         let cfg = &g.setup.rules.ai.assault;
-        let body = &g.setup.rules.combat.body;
         let mut claimed = Vec::new();
         for (i, pt) in points.iter().enumerate() {
             if pt.rel == Rel::Own {
@@ -225,7 +265,39 @@ impl Planner<'_> {
             let Some(line) = self.assault_line(base.lead, i, points, known) else {
                 continue;
             };
-            let movers: Vec<&Mine> = here.iter().copied().filter(|m| m.id != base.id).collect();
+            // S3c (B4): a second base when the first one's fire weight is
+            // under the enemy's strongest MG team weapon's.
+            let second = if here.len() >= 3
+                && cfg.second_base_below_pct > 0
+                && self.fire_weight(base) * 100
+                    < self.enemy_mg_weight() * cfg.second_base_below_pct as u64
+            {
+                let rank2 = |m: &Mine| {
+                    let cont = self
+                        .ai
+                        .tasks
+                        .get(&m.id)
+                        .is_some_and(|t| t.kind == TaskKind::Suppress && t.point == i as u8);
+                    let role = match m.role {
+                        SquadRole::Mg => 0,
+                        _ => 1,
+                    };
+                    (!cont, role, m.id)
+                };
+                free.iter()
+                    .copied()
+                    .filter(|m| {
+                        m.id != base.id && matches!(m.role, SquadRole::Mg | SquadRole::Rifle)
+                    })
+                    .min_by_key(|m| rank2(m))
+            } else {
+                None
+            };
+            let movers: Vec<&Mine> = here
+                .iter()
+                .copied()
+                .filter(|m| m.id != base.id && second.is_none_or(|b2| b2.id != m.id))
+                .collect();
             // Lift: a manoeuvre squad is at the line.
             let lift = sq_m(Fx::from_int(cfg.lift_fire_m as i32));
             if movers
@@ -234,48 +306,21 @@ impl Planner<'_> {
             {
                 continue;
             }
-            let (support, height) = match base.role {
-                SquadRole::Mg => (cfg.support_mg_m, body.prone_mm),
-                _ => (cfg.support_rifle_m, body.stand_mm - body.muzzle_drop_mm),
-            };
-            let sq = &g.squads[&base.id];
-            let mid = (line[0] + line[1]).div_int(2);
-            let within = (mid - base.lead).length_sq_raw() <= sq_m(Fx::from_int(support as i32));
-            if within && self.fire_line(base.lead, height, &line) {
-                let on = matches!(&sq.order, Order::Suppress { line: l } if same_line(l, &line, 4));
-                if !on {
-                    let mut units = sq.members.clone();
-                    units.truncate(crate::unit::MAX_UNITS);
-                    self.ai.emit(
-                        self.due,
-                        CommandKind::SuppressUnits {
-                            units,
-                            line: line.to_vec(),
-                        },
-                    );
-                    self.ai.counters.suppress_orders += 1;
-                }
-                self.task(base.id, TaskKind::Suppress, i as u8, mid);
-            } else {
-                let spot = self.support_spot(base.lead, &line, support, height);
-                let near = |a: FxVec2, r: i32| (a - spot).length_sq_raw() <= sq_m(Fx::from_int(r));
-                let on_track = match &sq.order {
-                    Order::Idle => near(base.lead, 15),
-                    Order::Move { target } => near(*target, 10),
-                    _ => false,
-                };
-                if !on_track {
-                    self.ai.emit(
-                        self.due,
-                        CommandKind::Move {
-                            squad: base.id,
-                            target: spot,
-                        },
-                    );
-                }
-                self.task(base.id, TaskKind::Suppress, i as u8, spot);
-            }
+            let first_at = self.base_of_fire(base, i, &line, None);
             claimed.push(base.id);
+            if let Some(b2) = second {
+                let was = self
+                    .ai
+                    .tasks
+                    .get(&b2.id)
+                    .is_some_and(|t| t.kind == TaskKind::Suppress && t.point == i as u8);
+                if !was {
+                    self.ai.counters.second_bases += 1;
+                }
+                self.base_of_fire(b2, i, &line, Some(first_at));
+                claimed.push(b2.id);
+            }
+            let mid = (line[0] + line[1]).div_int(2);
             // Bounds: a manoeuvre squad well ahead of the rearmost halts and
             // fires until the others close up.
             let free_movers: Vec<&Mine> = movers
@@ -309,6 +354,107 @@ impl Planner<'_> {
         claimed.sort_unstable();
         claimed.dedup();
         claimed
+    }
+
+    /// Squad `base` as a base of fire on `line` for point `i`: in reach
+    /// and with a line of fire it suppresses the line, else it walks to a
+    /// support spot (at least `ai.assault.second_base_gap_m` from `avoid`,
+    /// the first base, for a second base). Returns where it fires from.
+    fn base_of_fire(
+        &mut self,
+        base: &Mine,
+        i: usize,
+        line: &[FxVec2; 2],
+        avoid: Option<FxVec2>,
+    ) -> FxVec2 {
+        let g = self.g;
+        let cfg = &g.setup.rules.ai.assault;
+        let body = &g.setup.rules.combat.body;
+        let (support, height) = match base.role {
+            SquadRole::Mg => (cfg.support_mg_m, body.prone_mm),
+            _ => (cfg.support_rifle_m, body.stand_mm - body.muzzle_drop_mm),
+        };
+        let gap = avoid.map(|a| (a, sq_m(Fx::from_int(cfg.second_base_gap_m as i32))));
+        let apart = |p: FxVec2| gap.is_none_or(|(a, r)| (p - a).length_sq_raw() >= r);
+        let sq = &g.squads[&base.id];
+        let mid = (line[0] + line[1]).div_int(2);
+        let within = (mid - base.lead).length_sq_raw() <= sq_m(Fx::from_int(support as i32));
+        if within && apart(base.lead) && self.fire_line(base.lead, height, line) {
+            let on = matches!(&sq.order, Order::Suppress { line: l } if same_line(l, line, 4));
+            if !on {
+                let mut units = sq.members.clone();
+                units.truncate(crate::unit::MAX_UNITS);
+                self.ai.emit(
+                    self.due,
+                    CommandKind::SuppressUnits {
+                        units,
+                        line: line.to_vec(),
+                    },
+                );
+                self.ai.counters.suppress_orders += 1;
+            }
+            self.task(base.id, TaskKind::Suppress, i as u8, mid);
+            return base.lead;
+        }
+        let spot = self.support_spot(base.lead, line, support, height, gap);
+        let near = |a: FxVec2, r: i32| (a - spot).length_sq_raw() <= sq_m(Fx::from_int(r));
+        let on_track = match &sq.order {
+            Order::Idle => near(base.lead, 15),
+            Order::Move { target } => near(*target, 10),
+            _ => false,
+        };
+        if !on_track {
+            self.ai.emit(
+                self.due,
+                CommandKind::Move {
+                    squad: base.id,
+                    target: spot,
+                },
+            );
+        }
+        self.task(base.id, TaskKind::Suppress, i as u8, spot);
+        spot
+    }
+
+    /// A squad's fire weight (S3c B4): rounds per minute × suppression per
+    /// round, summed over its men (the first `weapon_men` carry the squad
+    /// weapon, the rest the sidearm).
+    fn fire_weight(&self, m: &Mine) -> u64 {
+        let g = self.g;
+        let sq = &g.squads[&m.id];
+        let ty = &g.setup.squad_types[sq.type_idx as usize];
+        let men = sq.members.len() as u64;
+        let main = men.min(ty.weapon_men as u64);
+        let w = |k: Option<u16>| k.map_or(0, |k| self.weapon_weight(k));
+        main * w(Some(ty.weapon)) + (men - main) * w(ty.sidearm)
+    }
+
+    /// One weapon's rounds per minute × suppression per round.
+    fn weapon_weight(&self, k: u16) -> u64 {
+        let g = self.g;
+        let Some(w) = g.setup.weapons.get(k as usize) else {
+            return 0;
+        };
+        let rpm = 60 * g.setup.tick_hz as u64 * 1000 / w.interval_milli.max(1) as u64;
+        rpm * w.suppression as u64
+    }
+
+    /// The strongest MG team weapon in the enemy factions' rosters (S3c
+    /// B4; doctrine knowledge, not sight).
+    fn enemy_mg_weight(&self) -> u64 {
+        let g = self.g;
+        let mine = g.setup.players[self.me.0 as usize].faction;
+        g.setup
+            .squad_types
+            .iter()
+            .filter(|t| {
+                t.role == SquadRole::Mg
+                    && t.faction != mine
+                    && g.setup.players.iter().any(|p| p.faction == t.faction)
+            })
+            .map(|t| self.weapon_weight(t.weapon))
+            .max()
+            .unwrap_or(0)
     }
 
     /// A vehicle halted at its assault or standoff goal suppresses the
@@ -356,8 +502,9 @@ impl Planner<'_> {
         true
     }
 
-    /// AT-team and satchel hunts (module docs of [`crate::ai`], step 8).
-    /// Returns the squads on a hunt (the infantry orders and escorts skip
+    /// AT-team and satchel hunts (module docs of [`crate::ai`], step 8),
+    /// and (S3c) AT teams following an own vehicle's assault. Returns the
+    /// squads on a hunt or a follow (the infantry orders and escorts skip
     /// them).
     pub(super) fn hunts(
         &mut self,
@@ -368,9 +515,7 @@ impl Planner<'_> {
         kv: &[KnownVehicle],
     ) -> Vec<SquadId> {
         let mut out = Vec::new();
-        if kv.is_empty() {
-            return out;
-        }
+        self.prune_hunts();
         for (j, m) in mine.iter().enumerate() {
             // The point the plan assigned it (a hunt keeps no point of its
             // own, so this does not flip between plans).
@@ -378,16 +523,30 @@ impl Planner<'_> {
                 .iter()
                 .find(|a| a.0 == j)
                 .map_or(m.lead, |a| points[a.1].pos);
-            let spot = match m.role {
-                SquadRole::AntiTank => self.at_hunt(m, home, known, kv),
-                SquadRole::Engineer => self.satchel_hunt(m, kv),
+            let pick = match m.role {
+                SquadRole::AntiTank => self
+                    .at_hunt(m, home, known, kv)
+                    .map(|(s, h, stuck)| (s, h, TaskKind::Hunt, stuck))
+                    .or_else(|| {
+                        self.at_follow(m)
+                            .map(|s| (s, false, TaskKind::Follow, false))
+                    }),
+                SquadRole::Engineer => self
+                    .satchel_hunt(m, kv)
+                    .map(|(s, h)| (s, h, TaskKind::Hunt, false)),
                 _ => None,
             };
-            let Some((spot, hold)) = spot else { continue };
-            let was = self.ai.tasks.get(&m.id).map(|t| t.kind) == Some(TaskKind::Hunt);
+            let Some((spot, hold, kind, stuck)) = pick else {
+                continue;
+            };
+            let was = self.ai.tasks.get(&m.id).map(|t| t.kind) == Some(kind);
             if !was {
-                match m.role {
-                    SquadRole::AntiTank => self.ai.counters.at_hunts += 1,
+                match (m.role, kind) {
+                    (_, TaskKind::Follow) => self.ai.counters.at_follows += 1,
+                    (SquadRole::AntiTank, _) => {
+                        self.ai.counters.at_hunts += 1;
+                        self.ai.counters.at_stuck_hunts += u32::from(stuck);
+                    }
                     _ => self.ai.counters.satchel_hunts += 1,
                 }
             }
@@ -409,10 +568,144 @@ impl Planner<'_> {
             if let Some(c) = cmd {
                 self.ai.emit(self.due, c);
             }
-            self.task(m.id, TaskKind::Hunt, super::NO_POINT, spot);
+            self.task(m.id, kind, NO_POINT, spot);
+            if m.role == SquadRole::Engineer {
+                self.hunt_stance(m);
+            }
             out.push(m.id);
         }
         out
+    }
+
+    /// Ends the hunts of squads that are gone, no longer the AI's or
+    /// retreating (S3c B2); squads with a command still pending keep theirs.
+    fn prune_hunts(&mut self) {
+        let g = self.g;
+        let ids: Vec<SquadId> = self.ai.hunts.keys().copied().collect();
+        for id in ids {
+            let over = g
+                .squads
+                .get(&id)
+                .is_none_or(|sq| sq.owner != self.me || sq.order == Order::Retreat);
+            if over {
+                self.end_hunt(id, END_RETREAT);
+            }
+        }
+    }
+
+    /// Ends squad `id`'s sticky hunt for `why` (an `END_*`): counted, and
+    /// its men's stance back to automatic.
+    fn end_hunt(&mut self, id: SquadId, why: usize) {
+        if self.ai.hunts.remove(&id).is_none() {
+            return;
+        }
+        self.ai.counters.hunt_ends[why] += 1;
+        let Some(sq) = self.g.squads.get(&id) else {
+            return;
+        };
+        let units: Vec<SimId> = sq
+            .members
+            .iter()
+            .copied()
+            .filter(|u| self.ents.unit[u.index()].stance != StanceOrder::Auto)
+            .take(crate::unit::MAX_UNITS)
+            .collect();
+        if !units.is_empty() {
+            self.ai.emit(
+                self.due,
+                CommandKind::SetStance {
+                    units,
+                    stance: StanceOrder::Auto,
+                },
+            );
+        }
+    }
+
+    /// Hunters crouch on the approach and crawl within
+    /// `ai.assault.satchel_crawl_m` of the vehicle while its hull MG's arc
+    /// covers them (S3c B2).
+    fn hunt_stance(&mut self, m: &Mine) {
+        let g = self.g;
+        let Some(h) = self.ai.hunts.get(&m.id) else {
+            return;
+        };
+        let cfg = &g.setup.rules.ai.assault;
+        let crawl = sq_m(Fx::from_int(cfg.satchel_crawl_m as i32));
+        let to = m.lead - h.last_pos;
+        let covered = cfg.satchel_crawl_m > 0
+            && to.length_sq_raw() <= crawl
+            && g.vehicles.get(&h.vehicle).is_some_and(|vs| {
+                let v = &g.setup.vehicles[vs.type_idx as usize];
+                let yaw = self.ents.transform[h.vehicle.index()].yaw;
+                let fwd = crate::vehicle::yaw_dir(yaw);
+                v.mounts.iter().any(|mt| {
+                    mt.kind == frontline_content::vehicle::MountKind::Hull && {
+                        let arc = Fx::from_int(mt.arc_deg).mul(Fx::PI).div_int(180);
+                        let off = (Fx::atan2(to.y, to.x) - Fx::atan2(fwd.y, fwd.x))
+                            .wrap_angle()
+                            .abs();
+                        off <= arc
+                    }
+                })
+            });
+        let want = if covered {
+            StanceOrder::Prone
+        } else {
+            StanceOrder::Crouch
+        };
+        let units: Vec<SimId> = g.squads[&m.id]
+            .members
+            .iter()
+            .copied()
+            .filter(|u| self.ents.unit[u.index()].stance != want)
+            .take(crate::unit::MAX_UNITS)
+            .collect();
+        if !units.is_empty() {
+            self.ai.emit(
+                self.due,
+                CommandKind::SetStance {
+                    units,
+                    stance: want,
+                },
+            );
+        }
+    }
+
+    /// S3c (B3): an AT team with rockets and no hunt follows the nearest
+    /// own vehicle on an assault within `ai.assault.at_follow_m`,
+    /// `at_follow_back_m` behind it.
+    fn at_follow(&self, m: &Mine) -> Option<FxVec2> {
+        let g = self.g;
+        let cfg = &g.setup.rules.ai.assault;
+        if cfg.at_follow_m == 0 {
+            return None;
+        }
+        let sq = &g.squads[&m.id];
+        if sq.launcher.as_ref().is_none_or(|l| l.rounds == 0) {
+            return None;
+        }
+        let r = sq_m(Fx::from_int(cfg.at_follow_m as i32));
+        let (pos, goal) = self
+            .ai
+            .tasks
+            .iter()
+            .filter(|(_, t)| matches!(t.kind, TaskKind::Assault | TaskKind::Standoff))
+            .filter_map(|(id, t)| {
+                let q = g.squads.get(id)?;
+                let &v = q.members.first()?;
+                (self.ents.kind[v.index()] == EntityKind::Vehicle)
+                    .then(|| (self.ents.transform[v.index()].pos.xy(), t.target))
+            })
+            .filter(|(p, _)| (*p - m.lead).length_sq_raw() <= r)
+            .min_by_key(|(p, _)| ((*p - m.lead).length_sq_raw(), p.x, p.y))?;
+        let mut dir = (goal - pos).normalize_or_zero();
+        if dir == FxVec2::ZERO {
+            dir = (pos - g.base_of(self.me)).normalize_or_zero();
+        }
+        Some(
+            self.terrain
+                .clamp(pos - dir * Fx::from_int(cfg.at_follow_back_m as i32)),
+        )
     }
 
     /// An AT team's firing spot against the nearest known enemy vehicle in
@@ -424,7 +717,7 @@ impl Planner<'_> {
         home: FxVec2,
         known: &[Known],
         kv: &[KnownVehicle],
-    ) -> Option<(FxVec2, bool)> {
+    ) -> Option<(FxVec2, bool, bool)> {
         let g = self.g;
         let cfg = &g.setup.rules.ai.assault;
         let sq = &g.squads[&m.id];
@@ -446,14 +739,25 @@ impl Planner<'_> {
             .get(&m.id)
             .filter(|t| t.kind == TaskKind::Hunt)
             .map(|t| t.target);
+        let in_reach = |v: &KnownVehicle| {
+            (v.pos - m.lead).length_sq_raw() <= r
+                || (v.pos - home).length_sq_raw() <= r
+                || last.is_some_and(|s| (v.pos - s).length_sq_raw() <= r)
+        };
+        // S3c (B3): a stuck vehicle (bogged, immobilised) is stalked from
+        // further out: it cannot turn away or leave.
+        let stuck_r = sq_m(Fx::from_int(cfg.at_hunt_stuck_m as i32));
+        let stuck = |v: &KnownVehicle| {
+            (v.pos - m.lead).length_sq_raw() <= stuck_r
+                && g.vehicles
+                    .get(&v.id)
+                    .is_some_and(|vs| vs.immobile(&g.setup.vehicles[vs.type_idx as usize]))
+        };
         let v = kv
             .iter()
-            .filter(|v| {
-                (v.pos - m.lead).length_sq_raw() <= r
-                    || (v.pos - home).length_sq_raw() <= r
-                    || last.is_some_and(|s| (v.pos - s).length_sq_raw() <= r)
-            })
+            .filter(|v| in_reach(v) || stuck(v))
             .min_by_key(|v| ((v.pos - m.lead).length_sq_raw(), v.id))?;
+        let far = !in_reach(v);
         let clear = sq_m(Fx::from_int(cfg.at_hunt_clear_m as i32));
         let mid = (m.lead + v.pos).div_int(2);
         if known.iter().any(|k| (k.pos - mid).length_sq_raw() <= clear) {
@@ -468,7 +772,7 @@ impl Planner<'_> {
             reach
         };
         if (m.lead - v.pos).length_sq_raw() <= sq_m(now) {
-            return Some((m.lead, true));
+            return Some((m.lead, true, far));
         }
         let fwd = crate::vehicle::yaw_dir(v.yaw);
         let turret = g
@@ -489,42 +793,124 @@ impl Planner<'_> {
             .filter(|&d| off_front(d))
             .map(|d| self.terrain.clamp(v.pos + d * reach))
             .min_by_key(|s| ((*s - m.lead).length_sq_raw(), s.x, s.y))
-            .map(|s| (s, false))
+            .map(|s| (s, false, far))
     }
 
-    /// An engineer squad's spot beside the nearest enemy vehicle that has
-    /// been slow long enough, within `ai.assault.satchel_hunt_m`; `(spot,
-    /// false)`.
-    fn satchel_hunt(&self, m: &Mine, kv: &[KnownVehicle]) -> Option<(FxVec2, bool)> {
+    /// An engineer squad's sticky satchel hunt (S3c B2, module docs of
+    /// [`crate::ai`] step 8): keeps its hunt while the rules allow, else
+    /// starts one on the nearest enemy vehicle within
+    /// `ai.assault.satchel_hunt_m` that has been slow for `satchel_slow_s`
+    /// or is stuck. Returns the spot `satchel_stand_m` outside the hull
+    /// side nearer the squad (`(spot, false)`).
+    fn satchel_hunt(&mut self, m: &Mine, kv: &[KnownVehicle]) -> Option<(FxVec2, bool)> {
         let g = self.g;
         let cfg = &g.setup.rules.ai.assault;
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let tick = self.tick;
         let sq = &g.squads[&m.id];
         let carries = sq
             .members
             .iter()
             .any(|id| self.ents.kit[id.index()].items[ItemKind::Satchel.index()] > 0);
-        if !carries {
+        if let Some(mut h) = self.ai.hunts.get(&m.id).cloned() {
+            let live = self.ents.kind.get(h.vehicle.index()) == Some(&EntityKind::Vehicle)
+                && g.vehicles.contains_key(&h.vehicle);
+            let slow = Fx::from_milli(g.setup.rules.ai.infantry.satchel_slow_mm_s as i32);
+            let mut why = None;
+            if !carries {
+                why = Some(END_SPENT);
+            } else if !live {
+                why = Some(END_GONE);
+            } else if let Some(v) = kv.iter().find(|v| v.id == h.vehicle) {
+                if h.unseen {
+                    // Seen again after losing sight of it.
+                    self.ai.counters.hunts_kept_unseen += 1;
+                    h.unseen = false;
+                }
+                h.last_seen = tick;
+                h.last_pos = v.pos;
+                if v.speed.abs() > slow || v.vel.length() > slow {
+                    let f = *h.fast_since.get_or_insert(tick);
+                    if tick - f > cfg.satchel_chase_s as u64 * hz {
+                        why = Some(END_FAST);
+                    }
+                } else {
+                    h.fast_since = None;
+                }
+            } else if tick - h.last_seen > cfg.satchel_stick_s as u64 * hz {
+                why = Some(END_UNSEEN);
+            } else {
+                h.unseen = true;
+            }
+            let leash = sq_m(Fx::from_int(
+                (cfg.satchel_hunt_m + cfg.satchel_leash_m) as i32,
+            ));
+            if why.is_none() && (h.last_pos - m.lead).length_sq_raw() > leash {
+                why = Some(END_LEASH);
+            }
+            if why.is_none() && tick - h.since > cfg.satchel_hunt_max_s as u64 * hz {
+                why = Some(END_TIMEOUT);
+            }
+            if let Some(w) = why {
+                self.end_hunt(m.id, w);
+                return None;
+            }
+            let spot = self.hunt_spot(m, &h, kv);
+            self.ai.hunts.insert(m.id, h);
+            return Some((spot, false));
+        }
+        if !carries || self.ai.hunts.len() >= MAX_HUNTS {
             return None;
         }
-        let hz = g.setup.tick_hz.max(1) as u64;
-        let since = self.tick.saturating_sub(cfg.satchel_slow_s as u64 * hz);
+        let since = tick.saturating_sub(cfg.satchel_slow_s as u64 * hz);
         let r = sq_m(Fx::from_int(cfg.satchel_hunt_m as i32));
         let v = kv
             .iter()
             .filter(|v| {
-                self.ai.slow_since.get(&v.id).is_some_and(|&t| t <= since)
+                let stuck = g
+                    .vehicles
+                    .get(&v.id)
+                    .is_some_and(|vs| vs.immobile(&g.setup.vehicles[vs.type_idx as usize]));
+                (stuck || self.ai.slow_since.get(&v.id).is_some_and(|&t| t <= since))
                     && (v.pos - m.lead).length_sq_raw() <= r
             })
             .min_by_key(|v| ((v.pos - m.lead).length_sq_raw(), v.id))?;
-        let geo = &g.vderived.geo[v.type_idx as usize];
-        let left = crate::vehicle::yaw_dir(v.yaw).perp();
-        let side = if (m.lead - v.pos).dot(left) >= Fx::ZERO {
-            Fx::ONE
-        } else {
-            -Fx::ONE
+        let h = AiHunt {
+            vehicle: v.id,
+            since: tick,
+            last_seen: tick,
+            last_pos: v.pos,
+            fast_since: None,
+            unseen: false,
         };
-        let off = geo.hull_half.y + Fx::from_int(cfg.satchel_stand_m as i32);
-        Some((self.terrain.clamp(v.pos + left * (side * off)), false))
+        let spot = self.hunt_spot(m, &h, kv);
+        self.ai.hunts.insert(m.id, h);
+        Some((spot, false))
+    }
+
+    /// Where a hunt's squad goes: `satchel_stand_m` outside the hull side
+    /// nearer it while the vehicle is seen, else beside where it was last
+    /// seen, on the squad's side.
+    fn hunt_spot(&self, m: &Mine, h: &AiHunt, kv: &[KnownVehicle]) -> FxVec2 {
+        let g = self.g;
+        let stand = Fx::from_int(g.setup.rules.ai.assault.satchel_stand_m as i32);
+        let half = g.vehicles.get(&h.vehicle).map_or(Fx::from_int(2), |vs| {
+            g.vderived.geo[vs.type_idx as usize].hull_half.y
+        });
+        if let Some(v) = kv.iter().find(|v| v.id == h.vehicle) {
+            let left = crate::vehicle::yaw_dir(v.yaw).perp();
+            let side = if (m.lead - v.pos).dot(left) >= Fx::ZERO {
+                Fx::ONE
+            } else {
+                -Fx::ONE
+            };
+            return self.terrain.clamp(v.pos + left * (side * (half + stand)));
+        }
+        let mut dir = (m.lead - h.last_pos).normalize_or_zero();
+        if dir == FxVec2::ZERO {
+            dir = FxVec2::new(Fx::ONE, Fx::ZERO);
+        }
+        self.terrain.clamp(h.last_pos + dir * (half + stand))
     }
 }
 

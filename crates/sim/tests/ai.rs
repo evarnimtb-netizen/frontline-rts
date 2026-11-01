@@ -143,7 +143,12 @@ fn ai_vs_ai_plays_by_the_rules() {
             match &sq.order {
                 // Only weak squads fall back (strength only drops later).
                 // S3 vehicles fall back on damage instead (`ai_vehicles.rs`).
-                Order::Retreat if ty.vehicle.is_none() && seen.retreats.insert(id) => {
+                // S3c: crews walk back to base at any strength.
+                Order::Retreat
+                    if ty.vehicle.is_none()
+                        && ty.role != SquadRole::Crew
+                        && seen.retreats.insert(id) =>
+                {
                     assert!(
                         sq.members.len() * 100 < ty.men as usize * pct + 100,
                         "squad {id:?} retreated with {}/{} men",

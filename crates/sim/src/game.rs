@@ -1067,7 +1067,8 @@ impl MatchState {
     }
 
     /// Where squad `id` of `owner` spawns (S3b): one of seven spots, six on
-    /// a ring at `call_in.spawn_ring_pct` of the base radius and the
+    /// a ring at `call_in.spawn_ring_pct` of the base radius (spot k at
+    /// k·60° from the base's facing to the map centre, S3c) and the
     /// centre. The squad tries spot `id mod 7` first, then the next ones in
     /// turn, and takes the first with the fewest men (a vehicle counting
     /// `spawn_vehicle_weight`) within `call_in.spawn_clear_m`, so squads
@@ -1086,12 +1087,23 @@ impl MatchState {
         let ring = Fx::from(base.radius)
             .mul_int(ci.spawn_ring_pct as i32)
             .div_int(100);
+        // S3c (S3c-8 (A)): the ring turns with the base's facing to the map
+        // centre, so the two bases' spots are point-mirrors (they were at
+        // fixed compass angles, up to 20 m apart in effect).
+        let half = Fx::from_int(self.setup.map.size_m).div_int(2);
+        let face = (FxVec2::new(half, half) - center).normalize_or_zero();
+        let face = if face == FxVec2::ZERO {
+            FxVec2::new(Fx::ONE, Fx::ZERO)
+        } else {
+            face
+        };
         let spot = |k: u32| {
             let p = if k == SPAWN_SPOTS - 1 {
                 center
             } else {
                 let (s, c) = Fx::from_ratio(k as i64 * 1047, 1000).sin_cos(); // k · 60°
-                center + FxVec2::new(c, s) * ring
+                let d = FxVec2::new(face.x.mul(c) - face.y.mul(s), face.x.mul(s) + face.y.mul(c));
+                center + d * ring
             };
             terrain.clamp(p)
         };

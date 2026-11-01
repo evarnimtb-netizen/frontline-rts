@@ -162,6 +162,12 @@ tuning_table! {
         /// A burst more than this above the ground under it carves no
         /// crater (on a vehicle) (mm).
         crater_lift_mm: 0..=5000,
+        /// S3c (B8, T9): a ground burst where the ground falls away (a
+        /// parapet crest, a trench lip) also throws fragments downward over
+        /// the fall: the ground is sampled this far around the burst, and
+        /// the steepest drop extends the HE def's elevation band below its
+        /// minimum, with extra rays at the band's density (cm; 0: off).
+        frag_fall_probe_cm: 0..=1000,
     }
 }
 
@@ -276,6 +282,39 @@ tuning_table! {
         /// spot this far outside the hull side nearer it (m).
         satchel_slow_s: 0..=120,
         satchel_stand_m: 1..=50,
+        /// S3c sticky hunts: a hunt goes on while its vehicle was seen
+        /// within this (s; meanwhile the squad goes to where it was last
+        /// seen) ...
+        satchel_stick_s: 0..=600,
+        /// ... while it has not been faster than
+        /// `ai.infantry.satchel_slow_mm_s` for longer than this (s) ...
+        satchel_chase_s: 0..=600,
+        /// ... and while it is within `satchel_hunt_m` plus this of the
+        /// squad (m).
+        satchel_leash_m: 0..=1000,
+        /// Hunters crouch on the approach and crawl (prone) within this of
+        /// the vehicle while its hull MG's arc covers them (m; 0: never
+        /// crawl).
+        satchel_crawl_m: 0..=200,
+        /// A hunt ends after this long (s).
+        satchel_hunt_max_s: 1..=1800,
+        /// S3c second base of fire: an assault on a point with at least
+        /// three squads gets a second base when its first base's fire
+        /// weight (rounds per minute x suppression, summed over its men)
+        /// is below this share of the enemy faction's strongest MG team
+        /// weapon (%; 0: never) ...
+        second_base_below_pct: 0..=1000,
+        /// ... from a spot at least this far from the first base (m).
+        second_base_gap_m: 0..=500,
+        /// S3c rockets (B3): AT teams also hunt an immobile or bogged known
+        /// enemy vehicle this close to the team (m; at most 2000; 0: only
+        /// `at_hunt_m`).
+        at_hunt_stuck_m: 0..=2000,
+        /// S3c rockets (B3): an AT team without a hunt follows an own
+        /// vehicle on an assault this close to it, staying this far behind
+        /// it (m; 0: off).
+        at_follow_m: 0..=1000,
+        at_follow_back_m: 0..=500,
     }
 }
 
@@ -349,6 +388,27 @@ tuning_table! {
         /// call-ins leave at least this much manpower unspent toward the
         /// next vehicle (S3b) (MP).
         tank_reserve_mp: 0..=100000,
+        /// S3c rearm (S3b-42): a vehicle with every limited MG dry, HE at
+        /// or below `combat.suppress.tank_he_reserve` or its penetrator at
+        /// or below this (rounds), and no known enemy vehicle within
+        /// `threat_m`, drives back to base ...
+        rearm_ap_below: 0..=200,
+        /// ... and stays until its main-gun rounds and MG stowage are this
+        /// full (%) ...
+        rearm_full_pct: 0..=100,
+        /// ... or this long in base has passed (s).
+        rearm_max_s: 0..=1800,
+        /// S3c re-crew: a crew squad re-crews an abandoned own vehicle (not
+        /// burning, not useless) with no known enemy soldier this close to
+        /// it (m) and no known enemy vehicle within `threat_m` ...
+        recrew_clear_m: 0..=2000,
+        /// ... its own vehicle, or the nearest of the others this close to
+        /// the crew (m).
+        recrew_reach_m: 0..=2000,
+        /// S3c denial: a vehicle with no live target fires at an enemy
+        /// abandoned vehicle this close (m; only with
+        /// `vehicles.recrew.capture` on; 0: off).
+        deny_m: 0..=2000,
     }
 }
 
@@ -844,6 +904,7 @@ mod tests {
             crater_depth_min_pct: 150,
             crater_depth_max_pct: 140,
             crater_lift_mm: 500,
+            frag_fall_probe_cm: 150,
         };
         t.check("combat.blast", &mut out);
         assert_eq!(out.len(), 1);

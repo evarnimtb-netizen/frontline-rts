@@ -1,6 +1,8 @@
-//! S3b AI (docs/slices/S3b-balance.md B3–B5): AI-vs-AI skirmishes under the
-//! test unlock rules use the new rules (bases of fire on `SuppressUnits`,
-//! AT-team hunts and rockets, satchel hunts) and stay deterministic: the
+//! S3b AI (docs/slices/S3b-balance.md B3–B5) and S3c Part B: AI-vs-AI
+//! skirmishes under the test unlock rules use the new rules (bases of fire
+//! on `SuppressUnits`, AT-team hunts and rockets, satchel hunts; S3c second
+//! bases, sticky hunts, re-crews, crews walking back, denial) and stay
+//! deterministic: the
 //! same hashes at 1, 2, 3 and 8 threads, and save → load → continue in the
 //! middle of the fighting gives the same history.
 
@@ -36,8 +38,11 @@ fn run(w: &mut World, ticks: u64) -> Vec<u64> {
 }
 
 // S3b Fix: seed 2 (seed 1 fires no rocket in the 10 minutes on the Fix
-// data; seeds 1-8 give 0, 4, 1, 0, 0, 0, 6, 0 rockets).
-const SEED: u64 = 2;
+// data; seeds 1-8 give 0, 4, 1, 0, 0, 0, 6, 0 rockets). S3c Part B (map,
+// AI, shells flying their full range): seed 18, the first of seeds 1-24
+// with rockets, a satchel hunt ended, second bases, re-crews, crews
+// walking back and denial fire all in the ten minutes.
+const SEED: u64 = 18;
 const TICKS: u64 = 30 * 600;
 const SAVE_AT: u64 = 30 * 330;
 
@@ -56,6 +61,21 @@ fn ai_assault_rules_fire_and_stay_deterministic() {
     );
     assert!(sum(|c| c.at_hunts) >= 1, "an AT team hunted");
     assert!(rockets >= 1, "an AT rocket was fired");
+    // S3c Part B (docs/slices/S3c-armour.md B2, B4, B5) in the same match,
+    // so the determinism runs below cover them: second bases of fire, a
+    // satchel hunt (ended and counted), AI re-crews, crews walking back
+    // and denial fire. (Rearm is staged in `ai_armour.rs`: tanks rarely run
+    // low in ten minutes.)
+    assert!(sum(|c| c.second_bases) >= 1, "a second base of fire");
+    assert!(sum(|c| c.satchel_hunts) >= 1, "a satchel hunt");
+    let ends: u32 = c(0).hunt_ends.iter().chain(&c(1).hunt_ends).sum();
+    assert!(ends >= 1, "a sticky hunt ended and was counted");
+    assert!(sum(|c| c.recrews) >= 1, "an AI crew re-crewed");
+    assert!(sum(|c| c.crew_retreats) >= 1, "an AI crew walked back");
+    assert!(
+        sum(|c| c.denials) >= 1,
+        "an AI tank fired at an enemy abandoned tank"
+    );
     for threads in [2, 3, 8] {
         let mut w = World::new_match(setup(SEED), threads).unwrap();
         assert_eq!(run(&mut w, TICKS), want, "{threads} threads");

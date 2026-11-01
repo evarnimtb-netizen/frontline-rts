@@ -467,6 +467,10 @@ pub struct TerrainSetup {
     pub octaves: Vec<OctaveSetup>,
     /// Ridges (positive height) and valleys (negative height).
     pub bands: Vec<BandSetup>,
+    /// S3c: the base-0 half is mirrored through the map centre onto the
+    /// other half (`TerrainDef::symmetry = "point"`).
+    #[serde(default)]
+    pub point_symmetric: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1120,6 +1124,7 @@ impl ModDefs {
                         })
                         .collect(),
                     bands,
+                    point_symmetric: t.symmetry == crate::defs::TerrainSymmetry::Point,
                 },
                 woods: map
                     .woods

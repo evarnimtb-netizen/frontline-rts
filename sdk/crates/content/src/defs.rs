@@ -536,6 +536,22 @@ pub struct TerrainDef {
     pub ridges: Vec<RidgeDef>,
     #[serde(default)]
     pub valleys: Vec<ValleyDef>,
+    /// S3c (S3c-8 (B)): `"point"` makes the terrain point-symmetric about
+    /// the map centre: the half on base 0's side (x + y below the map
+    /// size) is generated and mirrored onto the other half, so neither
+    /// base side gets better ground. Woods, points and bases are placed by
+    /// hand and are not mirrored. Default `"none"`.
+    #[serde(default)]
+    pub symmetry: TerrainSymmetry,
+}
+
+/// How a map's terrain is mirrored (S3c).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TerrainSymmetry {
+    #[default]
+    None,
+    Point,
 }
 
 /// One octave of smooth value noise.

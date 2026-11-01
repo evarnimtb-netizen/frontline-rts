@@ -242,6 +242,21 @@ impl Heightfield {
                 }
             }
         }
+        // S3c: a point-symmetric map takes the far half (x + y beyond the
+        // size; on the anti-diagonal, the east end) from its mirror cell.
+        if t.point_symmetric {
+            let last = dim - 1;
+            for gy in 0..dim {
+                for gx in 0..dim {
+                    let far = gx + gy > last || (gx + gy == last && gx > gy);
+                    if far {
+                        let i = (gy * dim + gx) as usize;
+                        let j = ((last - gy) * dim + (last - gx)) as usize;
+                        heights[i] = heights[j];
+                    }
+                }
+            }
+        }
         Heightfield {
             size_m,
             dim,

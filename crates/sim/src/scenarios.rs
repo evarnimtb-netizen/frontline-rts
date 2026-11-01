@@ -334,6 +334,10 @@ fn type_of_setup(s: &MatchSetup, p: u8, role: SquadRole) -> Option<u16> {
         .and_then(|&t| s.squad_types[t as usize].vehicle)
 }
 
+/// Case 3f: the tanks' sight (m), so that they see each other at 600 m
+/// as if an observer had spotted them (× the 200 % size factor: 700 m).
+pub const DUEL_600_SIGHT_M: i32 = 350;
+
 /// Case 3's duels (Panzer IV is player 0's, the Sherman player 1's).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Duel {
@@ -345,6 +349,11 @@ pub enum Duel {
     Flank150,
     /// S3b: 150 m, the Panzer IV on the Sherman's flank (3c mirrored).
     PzFlank150,
+    /// S3c (S3b-38 (A)): 600 m, both frontal (3f). Two still tanks 600 m
+    /// apart never spot each other (sight 175 m × `spot_size_pct` 200 %),
+    /// so the case stages them as spotted (by an observer): each tank
+    /// type's sight is raised to [`DUEL_600_SIGHT_M`].
+    Frontal600,
 }
 
 /// Case 3a–c, 3e: a duel; `flip` mirrors it east–west. Tanks: `[Panzer IV,
@@ -358,6 +367,11 @@ pub fn duel(
     flip: bool,
 ) -> Result<Staged, SimError> {
     staging(&mut setup, true);
+    if kind == Duel::Frontal600 {
+        for v in &mut setup.vehicles {
+            v.sight = frontline_content::Fixed::from_int(DUEL_600_SIGHT_M);
+        }
+    }
     let mut s = Staged::new(new_world(setup, threads)?);
     let w = &mut s.world;
     let mx = |x: i32| if flip { 1000 - x } else { x };
@@ -367,6 +381,7 @@ pub fn duel(
         Duel::Angled300 => (350, dir_deg(30), 650, WEST),
         Duel::Flank150 => (500, NORTH, 350, EAST),
         Duel::PzFlank150 => (350, EAST, 500, NORTH),
+        Duel::Frontal600 => (200, EAST, 800, WEST),
     };
     let pz = need(tank(w, 0, at(mx(pz_at), LANE_Y), md(pz_f)), "Panzer IV")?;
     let sh = need(tank(w, 1, at(mx(sh_at), LANE_Y), md(sh_f)), "Sherman")?;

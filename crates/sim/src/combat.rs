@@ -1607,7 +1607,10 @@ impl MatchState {
     /// at `k · 360° / n` plus a triangular jitter of half a stratum),
     /// elevation uniform in the HE def's band above the ground plane
     /// (`[-max, max]` for a burst well above the ground: on a vehicle or a
-    /// man). Each ray stops at the first enemy soldier capsule, vehicle,
+    /// man). S3c: a ground burst where the ground falls away within
+    /// `combat.blast.frag_fall_probe_cm` (8 samples) adds rays below the
+    /// band, down to the steepest fall's angle, at the band's density
+    /// (at most `n` more; flat ground adds none). Each ray stops at the first enemy soldier capsule, vehicle,
     /// wreck or barrel box it meets within `frag_reach`, unless the earth
     /// stops it first (`Heightfield::segment_hit`, so trench walls and
     /// parapets block). A man struck takes `frag_damage` falling linearly
@@ -1648,6 +1651,28 @@ impl MatchState {
             (armour::deg(-e1), armour::deg(e1))
         } else {
             (armour::deg(e0), armour::deg(e1))
+        };
+        // S3c (B8): where the ground falls away beside a ground burst,
+        // extra rays go down over the fall at the band's density.
+        let (fall_lo, extra) = if air || rules.blast.frag_fall_probe_cm == 0 || ehi <= elo {
+            (elo, 0)
+        } else {
+            let r = Fx::from_ratio(rules.blast.frag_fall_probe_cm as i64, 100);
+            let h0 = ctx.terrain.height_at(pos.xy());
+            let mut drop = Fx::ZERO;
+            for k in 0..8 {
+                let (s, c) = Fx::from_ratio(k as i64 * 785, 1000).sin_cos(); // k · 45°
+                let at = ctx.terrain.clamp(pos.xy() + FxVec2::new(c, s) * r);
+                drop = drop.max(h0 - ctx.terrain.height_at(at));
+            }
+            if drop <= Fx::ZERO {
+                (elo, 0)
+            } else {
+                let lo = elo - Fx::atan2(drop, r);
+                let extra = ((n as i64 * (elo - lo).raw() as i64) / (ehi - elo).raw() as i64)
+                    .clamp(0, n as i64) as u32;
+                (lo, extra)
+            }
         };
         // Enemy men within reach, ascending id: (id, feet, capsule).
         let mut ids = Vec::new();
@@ -1698,10 +1723,22 @@ impl MatchState {
         let stratum = Fx::TAU.div_int(n as i32);
         let half = stratum.div_int(2);
         let pad = Fx::from_int(VEHICLE_SPHERE_PAD_M);
+        ctx.stats.frag_rays += extra as u64;
         let mut tracks: Vec<(SimId, ComponentKind, u32)> = Vec::new();
-        for k in 0..n {
-            let az = stratum.mul_int(k as i32) + half + tri(&mut rng, half);
-            let el = rng.range_fx(elo, ehi);
+        let x_stratum = Fx::TAU.div_int(extra.max(1) as i32);
+        let x_half = x_stratum.div_int(2);
+        for k in 0..n + extra {
+            // The band's rays first (as without the fall), then the extra
+            // ones below it.
+            let el = if k < n {
+                let az = stratum.mul_int(k as i32) + half + tri(&mut rng, half);
+                (az, rng.range_fx(elo, ehi))
+            } else {
+                let j = (k - n) as i32;
+                let az = x_stratum.mul_int(j) + x_half + tri(&mut rng, x_half);
+                (az, rng.range_fx(fall_lo, elo))
+            };
+            let (az, el) = el;
             let (sa, ca) = az.sin_cos();
             let (se, ce) = el.sin_cos();
             let dir = FxVec3::new(ca.mul(ce), sa.mul(ce), se);

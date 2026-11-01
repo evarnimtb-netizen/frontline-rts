@@ -2312,7 +2312,7 @@ mod tests {
         fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
             s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
         }
-        let edits: [fn(&mut SimState); 20] = [
+        let edits: [fn(&mut SimState); 35] = [
             |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
             // S3b: a re-call cooldown.
             |s| s.game.as_mut().unwrap().players[1].ready_at[2] += 1,
@@ -2340,7 +2340,65 @@ mod tests {
             |s| {
                 ai(s).slow_since.insert(SimId(3), 0);
             },
+            // S3c Part B: every counter and each sticky-hunt field.
+            |s| ai(s).counters.rearms += 1,
+            |s| ai(s).counters.hunts_kept_unseen += 1,
+            |s| ai(s).counters.hunt_throws += 1,
+            |s| ai(s).counters.hunt_ends[3] += 1,
+            |s| ai(s).counters.second_bases += 1,
+            |s| ai(s).counters.at_stuck_hunts += 1,
+            |s| ai(s).counters.at_follows += 1,
+            |s| ai(s).counters.recrews += 1,
+            |s| ai(s).counters.crew_retreats += 1,
+            |s| ai(s).counters.denials += 1,
+            |s| {
+                ai(s).hunts.insert(SquadId(1), hunt());
+            },
+            |s| {
+                let mut h = hunt();
+                h.vehicle = SimId(4);
+                ai(s).hunts.insert(SquadId(1), h);
+            },
+            |s| {
+                let mut h = hunt();
+                h.last_pos = FxVec2::new(Fx::ONE, Fx::ZERO);
+                ai(s).hunts.insert(SquadId(1), h);
+            },
+            |s| {
+                let mut h = hunt();
+                h.fast_since = Some(0);
+                ai(s).hunts.insert(SquadId(1), h);
+            },
+            |s| {
+                let mut h = hunt();
+                h.unseen = true;
+                ai(s).hunts.insert(SquadId(1), h);
+            },
         ];
+        // A fresh hunt at tick 0 (S3c); the edits above change one field.
+        fn hunt() -> crate::ai::AiHunt {
+            crate::ai::AiHunt {
+                vehicle: SimId(3),
+                since: 0,
+                last_seen: 0,
+                last_pos: FxVec2::ZERO,
+                fast_since: None,
+                unseen: false,
+            }
+        }
+        // Each hunt edit differs from the plain hunt too.
+        let with_hunt = World::load(
+            &save_edited(&w, |s| {
+                ai(s).hunts.insert(SquadId(1), hunt());
+            }),
+            1,
+        )
+        .unwrap()
+        .full_state_hash();
+        for edit in &edits[31..] {
+            let w2 = World::load(&save_edited(&w, *edit), 1).unwrap();
+            assert_ne!(w2.full_state_hash(), with_hunt);
+        }
         for edit in edits {
             let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
             assert_ne!(w2.full_state_hash(), base);
@@ -2399,7 +2457,28 @@ mod tests {
                 .unwrap()
                 .0
         }
-        let bad: [fn(&mut SimState); 7] = [
+        let bad: [fn(&mut SimState); 11] = [
+            // S3c: sticky hunts with ticks in the future, out of order, or
+            // keyed by a squad id never used.
+            |s| {
+                let mut h = hunt();
+                h.since = u64::MAX;
+                h.last_seen = u64::MAX;
+                ai(s).hunts.insert(SquadId(1), h);
+            },
+            |s| {
+                let mut h = hunt();
+                h.since = 1;
+                ai(s).hunts.insert(SquadId(1), h);
+            },
+            |s| {
+                let mut h = hunt();
+                h.fast_since = Some(u64::MAX);
+                ai(s).hunts.insert(SquadId(1), h);
+            },
+            |s| {
+                ai(s).hunts.insert(SquadId(9999), hunt());
+            },
             // S3b: a slow-since tick in the future.
             |s| {
                 ai(s).slow_since.insert(SimId(3), u64::MAX);
@@ -4202,7 +4281,9 @@ mod tests {
             .and_then(|x| x.he.as_ref())
             .unwrap()
             .frag_count as u64;
-        assert_eq!(rays, 12 * n);
+        // S3c: bursts on an earlier crater's rim add rays down over the
+        // fall (`frag_fall_probe_cm`), at most `n` per burst.
+        assert!((12 * n..=24 * n).contains(&rays), "{rays} rays");
         assert_eq!(run(true, 3, 500).3, h1, "1 vs 3 threads");
         let (lost, hits) = [494, 500, 506].iter().fold((0, 0), |(l, h), &x| {
             let r = run(false, 1, x);
