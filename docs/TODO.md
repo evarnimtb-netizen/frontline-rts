@@ -103,6 +103,43 @@ it.
   variant, where the team is under HE fire and hits 57 % at 100 m, prints
   its no-hit runs instead of failing.
 
+## S3b-balance (in progress, branch `s3b-balance`)
+
+Spec: `docs/slices/S3b-balance.md` (baseline, diagnosis, damage audit,
+targets). Owner decisions of 2026-11-01 in force: pinning fire as rules
+data (no mortar smoke, no tank fear), physical contact only, realism
+first then costs then historical options then stats, tuning values in
+TOML. Work proceeds on the (A) defaults below.
+
+- [ ] **S3b-1. Suppress hotkey.** (A) P. (B) Another free key.
+- [ ] **S3b-2. Ammo for suppressive fire.** (A) Infantry pay in rate
+  only (no infantry ammo pool exists); tanks spend real HE with a
+  reserve. (B) Add an infantry ammo pool (own slice).
+- [ ] **S3b-3. Ducking in the open.** (A) Duck state only for men in
+  trenches; open-ground suppression unchanged. (B) Men in the open duck
+  too.
+- [ ] **S3b-4. Sherman stowage.** (A) M4A3 (75) dry stowage (sponson
+  racks). (B) M4A3 (75)W wet stowage (fewer rack fires, stronger
+  Sherman).
+- [ ] **S3b-5. Bail-out.** (A) Still out; fewer than 2 crew alive
+  knocks the tank out, survivors lost. (B) Build bail-out now.
+- [ ] **S3b-6. Moving-target misses.** (A) Lead estimation error per
+  engagement. (B) Only a larger moving-target spread.
+- [ ] **S3b-7. PzGr 40 APCR.** (A) Build it (6 rounds, small effect).
+  (B) Skip.
+- [ ] **S3b-8. Towed AT guns** (Pak 40, 57 mm M1). (A) Next slice
+  (S3c). (B) Not planned.
+- [ ] **S3b-9. Veterancy hook.** (A) `steadiness_pct` per squad type,
+  all 100. (B) No hook yet.
+- [ ] **S3b-10. Cost changes.** (A) Tune may move tank costs within
+  ±15 % and HE loads to reach the win-rate target, logged. (B) Ask
+  first.
+- [ ] **S3b-11. Harness orders.** (A) Cases 5b and 7 order the tank to
+  Suppress the trench; old runs stay as report rows. (B) Keep the old
+  harness.
+- [ ] **S3b-12. Transmission component.** (A) Add it. (B) Fold it into
+  the engine.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an
