@@ -724,6 +724,17 @@ gate.
 
 ---
 
+## Owner decisions (2026-11-01)
+
+| Q | Decision | Note |
+|---|---|---|
+| 2. HQ fill before trucks | **(C) Nothing**: only crates carried by the player's own men, later trucks and half-tracks. | The owner was unsure; a carrying party could be abused (free scouts or decoys) and often dies on the way. Revisit after S8 if the HQ is empty too often in play. |
+| 6. Squad sizes | **(A)** Historical sizes (German about 10, US 12), cheaper understrength cards, pop cap 150. | |
+| 11 / 20. Order | **(A)** Vehicles first: S7 assault guns and TDs, S8 half-tracks and trucks, S9 AT guns; fortifications S10. | |
+| 21. Variant cooldowns | **(B)** Every card has its own cooldown. | Risk: alternating full and understrength cards doubles the call rate; manpower cost and `max_alive` are the brakes. `cooldown_group` stays in the schema (unset by default), so it can be switched per card in TOML. |
+
+All other questions run on their (A) defaults until answered.
+
 ## 5. Owner questions
 
 Each has a recommended **(A)**. Work can go on with (A) until you
