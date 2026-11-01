@@ -172,7 +172,9 @@ fn table_json_and_golden_through_run() {
     assert!(ok);
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(v["result"], "borderline");
-    assert!((v["pen_pct"].as_f64().unwrap() - 88.4).abs() < 0.1);
+    // S3b Tune: the M61's table corrected to the US published figures
+    // (golden row 14): 88.4 % -> 12.8 %.
+    assert!((v["pen_pct"].as_f64().unwrap() - 12.8).abs() < 0.1);
     let (_, ok) = ballistics::run(&BallisticsArgs {
         golden: Some(ww2().join("tests/ballistics.toml")),
         ammo: None,

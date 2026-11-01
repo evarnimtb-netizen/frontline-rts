@@ -41,14 +41,26 @@ fn tables_are_built_at_start_and_rebuilt_after_load() {
     assert_eq!(front.zone, Some(ArmourZone::HullFront));
     assert_eq!(front.thickness, Fx::from_int(80));
     assert_eq!(front.normal.z, deg(10).sin());
-    // M61 at 100 m head-on: 87.8 mm normalised against 81.2 mm effective,
-    // so even the low end of the band penetrates.
+    // M61 at 100 m head-on (S3b Tune: the US published table): 80.8 mm
+    // normalised against 81.2 mm effective, so the high end of the band
+    // penetrates and the low end does not (golden row 12: 43 %).
     let a = &t.ammo[m61];
     let c = impact_cos(shot_dir(Face::Front, Fx::ZERO, Fx::ZERO), front.normal);
     let pen0 = a.pen0(Fx::from_int(100));
     let low = -frontline_sim::armour::PEN_BAND;
     assert_eq!(
         penetrates(pen0, c, front.thickness, Fx::ZERO, a.cos_ricochet, low),
+        PenResult::NonPenetration
+    );
+    assert_eq!(
+        penetrates(
+            pen0,
+            c,
+            front.thickness,
+            Fx::ZERO,
+            a.cos_ricochet,
+            frontline_sim::armour::PEN_BAND
+        ),
         PenResult::Penetration
     );
 

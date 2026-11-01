@@ -1151,6 +1151,72 @@ the spec's values the line ducked 12–17 % of the time.
 Unchanged from Part A: T2 (3a 4 of 10), T5 (case 4 41.2 %, case 6 60 %),
 T6 (86.2 %), T14 (0.0013 m per burst).
 
+## Tune results (stage done, 2026-11-01)
+
+Three rounds on `s3b-balance` (round 1 `1bd66bd`, round 2 `38f09b5`, round
+3 the final measurement and the test fixes). Measured on the final data:
+skirmish seeds 1–10 × both base orders (20 matches, 6 at once,
+`--threads 1`), armour-test seeds 1–5 × both factions with `--stress`,
+fortify-test 5 seeds. Round-by-round numbers: `docs/slices/S3b-log.md`.
+
+### What changed (each value explained in its TOML comment)
+
+| Step | Change | Why (measured) |
+|---|---|---|
+| (a) geometry | Turret crew boxes reach down into the turret basket (gunner and commander seated, loader on the basket floor), both tanks; content validation lets a turret-frame part reach down to the hull floor (`vehicle.rs` `basket_def` / `basket`, code) | a hull hit at visible-mass height passed under all three turret crew |
+| (a) data | APHE filler `reach_cm` 150 → 300 (PzGr 39, M61), as the 3 m spall reach | rays from a burst 1 m behind the front plate ended in the empty hull middle; tanks survived 5–12 frontal penetrations |
+| (a) data | 75 mm M61 penetration row to the US published table (Hunnicutt: 66 mm at 500 yd at 30°) | the old row was ~6 % high; the M61 beat the Panzer IV H front at 300 m 88 % of the time (now 13 %); golden rows 12–16, 18, 19, 28, 29, 32 moved with it |
+| (a) data | `moving_target_spread_pct` 300 → 600 (S3b-21 (A)) | 3d: 500 → 64.6 %, 550 → 60.0 %, 600 → 55.4 % |
+| (a) data | mortar `frag_count` 96 → 120 (S3b-23 (A)) | barrage open losses 58 → 60 (−19 % of the S1 74; trench 10 %) |
+| (b) AI | `ai.assault` `at_hunt_m` 250 → 400, `satchel_hunt_m` 60 → 150 | rockets in 8 of 10 matches (normal bases) |
+| (b) cost | Panzer IV 640 → 600, Sherman 560 → 620 (S3b-10 (A), within 15 %) | 40 matches: Germany 15 / USA 23 → 23 / 17 |
+| harness | case 9: T14's local row (lip lost within 1 m of each burst, S3b-22 (A)); case 7/7b and fortify's suppressed assault close into the trench after the grenades, the MG / tank lifting at `ai.assault.lift_fire_m` (S3b-33) | the squad used to stop at 25 m, where ducked defenders cannot be hit |
+
+Not changed: (c) PzGr 40 stays as Part A built it; no (d) stat changes.
+Tried and dropped: HEAT `core.length_cm` 150 (no effect on case 4 or 6),
+`spoil_crater_pct` 250/400 (T14 0.033/0.034 m), two frags per rifleman
+(T10 66 % without the close-in), satchel slow speed 2 m/s / 2 s / hunt
+250 m (no satchel throws), `mix_at_pct` 15 (a draw, longer matches).
+
+### Final targets
+
+| # | Target | Baseline (plan) | Final | Met? |
+|---|---|---|---|---|
+| T1 | each faction 35–65 % of 20; no base side > 70 % | GER 4 / USA 16; base 1 14 | GER 11 / USA 9; base 1 11 (55 %) | **met** |
+| T2 | 3a frontal: Panzer IV wins 6–8 of 10 | 4 | 6 of 10 (32 of 40 over seeds 1–20) | **met** (lower edge) |
+| T3 | 3c ≥ 7, 3e ≥ 7 | 10 / – | 10 / 10 | **met** |
+| T4 | rack ≤ 50 % of KOs; crew and fire > 0 | 90 %; crew 5, fire 0 | 9 of 57 (16 %); crew 13, ammo fire 35 (engine fire 0 in these 20; 1 in rounds 1–2) | **met** |
+| T5 | case 6 ≥ 60 %; case 4 flank ≥ 50 % | 0 %; 42.9 % | 60 %; 34.3 % | case 6 met, flank **missed** |
+| T6 | crossing ≤ 60 % of stationary | 83.1 % | 55.4 % | **met** |
+| T7 | rockets in ≥ 8 of 10; a satchel at a vehicle in ≥ 3 of 10 (normal bases) | 4 of 10; 0 | rockets 8 of 10 (12/10 of 20 per side); satchels 0 of 10 (0 of 20) | rockets met, satchels **missed** |
+| T8 | case 7: attackers ≤ 50 % of 7b's, defenders ≥ 75 % | 74 vs 80; 68.8 % | 21 vs 80 (26 %); 80 of 80 (100 %) | **met** (harness S3b-33) |
+| T9 | case 5b pins (> 0 %) and kills > 0 | 0 % / 0 | pinned 54.2 % + ducked 42.7 %; kills 0 | pins met; kills **missed**, accepted as "pins" per S3b-27 (A) |
+| T10 | fortify MG + rifles from 150 m: defenders ≥ 75 %, attackers ≤ 50 % | new | 97.5 %; 48.8 % | **met** (harness S3b-33; attackers near the limit) |
+| T11 | fortify S1 rows pass (rifles ≤ 50 %, mortar ≤ 40 %); unsupported rush ≥ 75 % | pass, 37.8 % | rifles 0 %, mortar 10.0 %, smoke pass; unsupported 100 % | **met** |
+| T12 | all 20 matches 12–25 min; HE share < 60 % | 13.6–26.2; 45.5 % | 11.2–26.2 (3 over 25, 2 under 12); HE max 44.2 % | length **missed**, HE met |
+| T13 | peak p99 < 1.5 ms; stress p99 < 10 ms | 0.28–0.50; 2.34 | 0.94 ms (6 parallel); stress 1.14 ms | **met** |
+| T14 | HE lip loss ≥ 0.05 m per burst within 3 m | 0.001 m | 0.027 m (local row); 0.0013 m (41 m mean) | **missed** |
+| T15 | determinism, save/load, net loopback/soak | pass | 430 tests + release-only (soaks, stress, fortify, AI) pass | **met** |
+
+### Why the misses
+
+- **T5 flank (34 %).** A flank rocket aimed at the visible-mass centre
+  crosses the hull at about 1.3 m, where the turret-basket crew now are;
+  the Panzer IV's rack bins (low) and turret ring (high) lie off that line,
+  and crew kills are not "disabling". The basket fix lowered it from
+  41 % (realism over the metric). S3b-35.
+- **T7 satchels (0 of 10).** Hunts start but end before a throw (the tank
+  moves, drops out of sight, or the engineers die on a 100 m+ walk); data
+  could not fix it. S3b-36 (next slice: sticky hunts).
+- **T9 kills.** A flat-trajectory shell cannot reach men below the lip
+  (S3b-27 (A)).
+- **T12 length.** Routs (11 min) and stalemates (25–26 min) spread the
+  lengths; no single value narrows both. S3b-37.
+- **T14.** Most bursts near the trench miss the spoil; one 0.6 m crater
+  lowers the local lip ~3 cm on average. Larger spoil removal barely moves
+  it (0.034 m at 400 %). Option (B) of S3b-22 (spoil from a wider radius)
+  is the remaining lever.
+
 ## Implementation order
 
 ### PART A: physical damage, armour, gunnery and content
@@ -1256,4 +1322,5 @@ T6 (86.2 %), T14 (0.0013 m per burst).
 
 ## Slice log
 
-Results go in `docs/slices/S3b-log.md` (created by the Tune stage).
+Results go in `docs/slices/S3b-log.md` (created by the Tune stage); the
+final targets table is in "Tune results" above.

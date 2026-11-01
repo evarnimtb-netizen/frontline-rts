@@ -249,6 +249,57 @@ trench pinning (stage done)"): new questions, work proceeds on (A).
   still missed; it is a data key plus a turn in the AI's facing. (B)
   Drop it.
 
+Tune stage (2026-11-01, `docs/slices/S3b-balance.md` "Tune results"): new
+questions, work proceeds on (A).
+
+- [ ] **S3b-30. 75 mm M61 penetration table.** The def's row (76/70/63/57/51
+  mm at 30°) sat about 6 % above the US published table (Hunnicutt: 2.6 in
+  at 500 yd, 2.4 at 1000, 2.2 at 1500, 2.0 at 2000). Corrected to it: the
+  M61 beats the Panzer IV H's 80 mm front at 300 m 13 % of the time (was
+  88 %); golden rows 12-16, 18, 19, 28, 29, 32 moved. With it (and the
+  filler reach below) the Panzer IV wins case 3a 6 of 10 (32 of 40 over
+  seeds 1-20). (A) Keep the published table. (B) Restore the S3 row and
+  find the Panzer IV's frontal edge elsewhere (S3b-29 angling, optics).
+- [ ] **S3b-31. APHE filler reach 150 -> 300 cm** (PzGr 39, M61; as the
+  3 m spall reach). At 150 the rays from a burst 1 m behind the front
+  plate ended in the empty middle of the hull and tanks survived 5-12
+  frontal penetrations. (A) 300. (B) 150 and more crew/part boxes.
+- [ ] **S3b-32. Turret basket.** Turret crew boxes now reach down into the
+  hull (gunner and commander seated, loader standing on the basket
+  floor), and validation lets a turret-frame part reach down to the hull
+  floor. A hull hit at visible-mass height used to pass under all three.
+  Side effect: case 4's flank disabling-hit rate fell 41 -> 34 % (the jet
+  now kills the gunner or loader instead of reaching a part). (A) Keep.
+  (B) Turret crew inside the turret box again.
+- [ ] **S3b-33. Assault harness: close into the trench.** fortify-test's
+  suppressed assault and case 7 (and 7b) now close into the trench after
+  the grenade wave (all frags out or 10 s), and the MG / tank lifts its
+  Suppress when the squad's lead is within `ai.assault.lift_fire_m`
+  (15 m); 7c keeps the S3 run. Before, the squad stayed at 25 m, where
+  ducked defenders cannot be hit, so T8/T10 could not be met by any
+  value. (A) Keep (fire and move, grenades, then in). (B) The old rows.
+- [ ] **S3b-34. Tank costs.** Panzer IV 640 -> 600, Sherman 560 -> 620
+  (S3b-10 (A), within 15 %): over 40 matches Germany won 15 / USA 23
+  before, 23 / 17 after. (A) Keep. (B) Revert and accept the faction gap.
+- [ ] **S3b-35. Case 4 flank target (T5, missed: 34 %).** A flank rocket
+  at visible-mass height crosses the turret-basket crew; the Panzer IV's
+  rack bins (low, per Panzer Tracts) and its turret ring lie below and
+  above that line, and crew kills do not count as "disabling". (A) Keep
+  the metric and the miss; check the Panzer IV H side stowage height
+  against a source (owner / M2 citation task) before moving any box.
+  (B) Count a kill of the gunner or driver as disabling.
+- [ ] **S3b-36. AI satchels at vehicles (T7, missed: 0-1 of 10).** Satchel
+  hunts start (up to 5 a match at `satchel_hunt_m` 150) but end before a
+  throw: the vehicle moves off, drops out of sight, or the engineers die
+  on the 100+ m walk. Data (slow speed 2 m/s, 2 s, hunt 250 m) did not
+  help. (A) Next slice: a sticky hunt (keep the last seen vehicle for a
+  few seconds) and engineers that move with an escort or under smoke.
+  (B) Accept satchels as a player tool only.
+- [ ] **S3b-37. Match length (T12, missed).** 20 matches run 11.2-26.2 min
+  (3 over 25, 1 under 12); the spread comes from routs and stalemates,
+  not from any one value. (A) Leave; revisit with a ticket rule (e.g. a
+  floor drain) in a later slice. (B) Widen the target to 11-27 min.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an

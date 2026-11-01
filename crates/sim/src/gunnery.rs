@@ -1162,8 +1162,10 @@ mod tests {
             sp(&vs, &at_men, HE, false),
             Fx::from(s.rules.vehicles.he_area_spread).raw()
         );
-        // A moving target ×3; ranging in 20 % per shot down to 50 %.
-        assert_eq!(sp(&vs, &at_tank, AP, true), gun * 3);
+        // A moving target × moving_target_spread_pct (S3b Tune: 600 %);
+        // ranging in 20 % per shot down to 50 %.
+        let mts = s.rules.vehicles.moving_target_spread_pct as i32;
+        assert_eq!(sp(&vs, &at_tank, AP, true), gun * mts / 100);
         let mut r = vs.clone();
         r.ranging = 1;
         assert_eq!(sp(&r, &at_tank, AP, false), gun * 80 / 100);

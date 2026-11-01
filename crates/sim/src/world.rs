@@ -3998,7 +3998,13 @@ mod tests {
         // line; a German rifleman stands 2.5 m north of it. With the tank between, every
         // fragment that could reach him strikes the hull; with the tank
         // gone, some reach him (S3b physical-contact rule).
-        let run = |with_tank: bool, threads: usize| {
+        // S3b Tune: in the open, three fresh men at x 494, 500 and 506
+        // (one per run) and the shells 4 m apart: after the first burst a
+        // man goes prone, the later bombs burst in earlier craters, and the
+        // earth stops low fragments, so one man under 12 bombs could, with
+        // 120 rays a bomb, by chance take none (the earth blocks, as it
+        // should). The test means: some fragments reach men in the open.
+        let run = |with_tank: bool, threads: usize, man_x: i32| {
             let (w, v) = flat_tank_world();
             let mut w = World::from_state(w.state.clone(), threads).unwrap();
             if !with_tank {
@@ -4006,7 +4012,7 @@ mod tests {
             }
             let man = lone_rifleman(
                 &mut w,
-                FxVec2::new(Fx::from_int(500), Fx::from_milli(502_500)),
+                FxVec2::new(Fx::from_int(man_x), Fx::from_milli(502_500)),
             );
             w.step(&[]);
             let hp = |w: &World| w.entities().combat()[man.index()].hp as u32;
@@ -4015,10 +4021,15 @@ mod tests {
                 if w.entities().kind()[man.index()] != EntityKind::Soldier {
                     break;
                 }
-                drop_mortar(
-                    &mut w,
-                    FxVec2::new(Fx::from_int(499 + k % 3), Fx::from_int(497)),
-                );
+                let at = if with_tank {
+                    FxVec2::new(Fx::from_int(499 + k % 3), Fx::from_int(497))
+                } else {
+                    FxVec2::new(
+                        Fx::from_int(490 + 4 * (k % 6)),
+                        Fx::from_int(497 - 4 * (k / 6)),
+                    )
+                };
+                drop_mortar(&mut w, at);
                 fly_out(&mut w);
             }
             let lost = if w.entities().kind()[man.index()] == EntityKind::Soldier {
@@ -4033,11 +4044,24 @@ mod tests {
                 w.state_hash(),
             )
         };
-        let (lost, rays, _, h1) = run(true, 1);
+        let (lost, rays, _, h1) = run(true, 1, 500);
         assert_eq!(lost, 0, "the hull stops every fragment");
-        assert_eq!(rays, 12 * 96);
-        assert_eq!(run(true, 3).3, h1, "1 vs 3 threads");
-        let (lost, _, hits, _) = run(false, 1);
+        let (w, _) = flat_tank_world();
+        let n = w
+            .match_setup()
+            .unwrap()
+            .weapons
+            .iter()
+            .find(|x| x.id == "ww2:m1_mortar")
+            .and_then(|x| x.he.as_ref())
+            .unwrap()
+            .frag_count as u64;
+        assert_eq!(rays, 12 * n);
+        assert_eq!(run(true, 3, 500).3, h1, "1 vs 3 threads");
+        let (lost, hits) = [494, 500, 506].iter().fold((0, 0), |(l, h), &x| {
+            let r = run(false, 1, x);
+            (l + r.0, h + r.2)
+        });
         assert!(lost > 0 && hits > 0, "in the open: {lost} hp, {hits} hits");
     }
 
@@ -4045,8 +4069,10 @@ mod tests {
     fn the_fragment_budget_scales_a_crowded_tick_down() {
         assert_eq!(combat::frag_share_for_test(96, 4096), 96);
         assert_eq!(combat::frag_share_for_test(96, 4800), 81);
-        // 50 shells bursting in one tick ask for 4 800 rays: each throws
-        // its share of the 4 096 budget.
+        // 50 shells bursting in one tick ask for 6 000 rays (S3b Tune: 120
+        // per bomb): each throws its share of the 4 096 budget.
+        let share = combat::frag_share_for_test(120, 50 * 120);
+        assert!(share < 120);
         let (mut w, _) = flat_tank_world();
         for k in 0..50 {
             drop_mortar(&mut w, FxVec2::from_int(300 + 4 * k, 300));
@@ -4055,8 +4081,8 @@ mod tests {
         let st = w.stats();
         assert_eq!(st.explosions, 50);
         assert!(st.frag_rays <= combat::MAX_FRAG_RAYS_PER_TICK as u64);
-        assert_eq!(st.frag_rays + st.frag_rays_capped, 50 * 96);
-        assert_eq!(st.frag_rays, 50 * 81);
+        assert_eq!(st.frag_rays + st.frag_rays_capped, 50 * 120);
+        assert_eq!(st.frag_rays, 50 * share as u64);
     }
 
     #[test]
