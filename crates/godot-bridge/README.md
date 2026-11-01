@@ -1,6 +1,7 @@
-# godot-bridge: S2 net API
+# godot-bridge: S2 net API (and S3 vehicles)
 
-The GDExtension's multiplayer side (S2, `docs/slices/S2-multiplayer.md`).
+The GDExtension's multiplayer side (S2, `docs/slices/S2-multiplayer.md`),
+and at the end what S3 added (vehicles, fog, staged scenes).
 The presenter contract it meets is `godot/docs/net_api.md` and
 `godot/docs/match_state.md` "Net mode (S2)" (written against `MockNet`);
 this page lists what the real classes do, including the differences.
@@ -155,9 +156,64 @@ players[i].name   # lobby names; is_ai is false for both
 - `match_setup::MenuChoice.slots: Option<[SlotChoice; 2]>` names both
   slots' factions and whether each is human.
 
+## S3: vehicles in the bridge
+
+What `FrontlineMatch` adds for S3 (`docs/slices/S3-armour.md`, the
+contract in `godot/docs/match_state.md` "Vehicles (S3)"):
+
+- **Fog of war** (`src/match_frame.rs`): `MatchFrame.vehicles` holds own
+  vehicles, enemy vehicles only while the local player sees them (their
+  own-only fields zeroed by `enemy_view`: seats, components, ammo,
+  loaded, choice, reload, followers 0; `repairing` and `target` their
+  "none" values; flags cut to `vehicle_flags::PUBLIC`), and every wreck.
+  `MatchFrame.shells`: shells and rockets fired by the player's units, by
+  a unit he sees, or within 40 m of his men. `TickEvents.armour`
+  (`ArmourView`: the event plus the vehicle's type): his vehicles' events,
+  those of vehicles he sees or saw the tick before (a knock-out makes a
+  wreck everyone sees), and impacts within 40 m of his men. Small-arms
+  `rounds` no longer include shells. Vehicle squads are left out of
+  `squads`.
+- **State**: `rules.vehicles`, `rules.dig_profiles`, `rules.vehicle_types`
+  (built once from the defs, with `glacis_deg` from the hull front plate),
+  `players[].vehicles` and `vehicle_limit`, `vehicles` (interpolated like
+  soldiers), `shells` (drawn as far back along their flight as the render
+  time lags), `armour_events`, the call-in `id`, `pop`, `vehicle`, `short`
+  and `locked_s`, queue `id` and `pop`, `callin.vehicles` and
+  `vehicle_limit`, `squads[].follow` and detached men's `follow`.
+  `players[].pop` subtracts the queue's pop (a vehicle's pop for a
+  vehicle), as the HUD adds the queue itself.
+- **Effects and feed** (`src/match_events.rs`): `cannon` (the round from the
+  tick's `Fired` event, the direction, the vehicle type), `rocket_launch`,
+  `armour_hit`, `cook_off`, explosion sizes `tank_he` and `rocket`; feed
+  lines `vehicle_arrived`, `vehicle_knocked_out`, `vehicle_damaged`,
+  `vehicle_bogged`.
+- **Intents** (`src/intents.rs`): own vehicle ids pass `unit_set` next to
+  soldier ids; `reverse_units`, `face_units`, `attack_unit`, `set_ammo`,
+  `repair_units`, `follow_units` become their commands (`vehicle_command`);
+  `dig` and `dig_units` take `profile`; `call_in` takes the catalog `id`.
+- **Staged scenes**: `start_match({scene: NAME})` builds
+  `frontline_sim::scenarios::scene(NAME, setup)` from the menu choice's
+  setup, sends its commands, and runs it like a skirmish
+  (`MatchHandle::spawn_scene`). Frames latch the first tick
+  `scenarios::scene_ready` held (`MatchFrame::scene_ready_at`); the state
+  has `scene {name, ready, ready_tick, max_ticks}` and `get_map_info()`
+  `scene_focus`.
+- **Scripted runs**: `start_match({test_unlock: true})` plays the test
+  rules override (`mods/ww2/tests/rules_test_unlock.toml`, vehicles
+  unlocked at once; `match_setup::load_defs`); in a net match both
+  instances call `FrontlineNet.set_test_unlock(true)` before `host` or
+  `join` (and `set_start_manpower(n)` for the same starting manpower), as
+  the setups must hash the same at `Ready`.
+- `get_stats()` adds `vehicles_own`, `vehicles_enemy`, `wrecks`, `shells`.
+- `FrontlineMeshes` (static, `src/meshgen.rs`): `vehicle_part(dims, part)`
+  and `vehicle_buffers(dims, poses, cap)` for `match/vehicle_view.gd`.
+
 ## Tests
 
-- `cargo test -p godot-bridge` runs:
+- `cargo test -p godot-bridge` runs (S3: `match_frame` vehicle and
+  shell/armour-event fog, every staged scene reaching its condition,
+  `match_events` vehicle cues and feed, `intents` vehicle intents and dig
+  profiles, `match_setup` test unlock rules; and):
   - `match_net`: pacing, catch-up and the never-past-newest rule on a fake
     link; pause, waiting and resume; the readout; the confirmed checkpoint
     and the dump files; the desync hook; `Bye(MatchOver)`.

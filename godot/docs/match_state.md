@@ -112,6 +112,7 @@ state = {
       status: String,            # "ok" | "suppressed" | "pinned" | "retreating"
       order: String,             # "idle" | "move" | "attack_move" | "retreat"
                                  # | "dig" | "barrage" | "setup" (MG setting up)
+                                 # | "follow" (S3 escort; `follow`: the vehicle)
       pos: Vector3,              # selection anchor (leader point)
       screen: Vector2,           # opt; anchor in viewport pixels. If absent the
                                  # view projects pos + 1.8 m with the camera
@@ -143,6 +144,7 @@ state = {
       detached: bool,            # follows his own unit order
       order: String,             # opt, detached men: "move" | "attack_move"
                                  # | "retreat" | "dig" | "hold" | "throw"
+                                 # | "follow" (S3; `follow`: the vehicle)
       target: Vector3,           # opt, detached men with a target: drawn as
                                  # an order marker
       items: { frag: int, smoke: int, satchel: int },
@@ -211,8 +213,9 @@ What it fills, beyond the schema above:
   `screen` is not sent, the view projects `pos` (the camera runs first in the
   frame, so the projection matches the picture).
 - `squads[].rounds` (barrage rounds left), `points[].value`.
-- `players[].pop` counts living soldiers only (the call-in panel adds the
-  queue); `income` and `ticket_drain` are per second.
+- `players[].pop` counts living soldiers and (S3) each living vehicle's
+  `pop`, not the queue (the call-in panel adds the queue); `income` and
+  `ticket_drain` are per second.
 - `stats[].squads_called` and `trench_m` are counted presenter-side (squads
   that arrived after the start; dig orders' line length × progress).
 - `effects`: one `shot` per firing squad per frame (fog-filtered),
@@ -783,7 +786,26 @@ keys above; nothing below reads the sim.
   enemy knocked out is own-coloured), minimap rectangles and wreck
   crosses, escort links (dashed, own colour) and the face tool's arrows.
 
-**Contract notes found while building** (to settle at integration):
+**Contract notes found while building**, as settled at integration (the
+bridge, `crates/godot-bridge/README.md` "S3: vehicles in the bridge"):
+
+- (1) The bridge sends `squads[].follow` (squad-level escorts, `order`
+  `"follow"`) and `soldiers[].follow` with `order` `"follow"` (detached
+  men), so escort links are drawn in the real game too.
+- (2) Catalog and queue entries carry `pop` (a vehicle's pop for vehicle
+  entries) and `id`; vehicle catalog entries also `vehicle` and `short`.
+- (3) Unchanged: `immobilised` still outranks `repairing` in `state`.
+- (4) `vehicle_types` carries `glacis_deg` (the hull front plate's slope
+  from the def: Panzer IV 10, Sherman 47).
+- Enemy vehicles' own-only keys are absent, as above; in the Rust frame
+  they are zeroed, with `repairing` and `target` at their "none" values.
+- `cannon` effects carry `round` and `type`, `rocket_launch` `dir`,
+  `armour_hit` `result`.
+- Staged scenes (S3 "Done when" 7): with `start_match({scene: NAME})` the
+  state adds `scene: {name, ready, ready_tick, max_ticks}` and
+  `get_map_info()` adds `scene` and `scene_focus` (match/autoplay_scene.gd).
+
+The notes as written while building on the mock:
 
 1. Escort links need to know which vehicle a squad or man follows; the
    contract only has `vehicles[].followers` (a count). The mock sends an
@@ -802,6 +824,14 @@ keys above; nothing below reads the sim.
    `glacis_deg` from the dims when present, else by faction.
 
 ## Autoplay
+
+S3: `--autoplay` also buys tanks once they unlock (and an AT team) and
+drives them with every vehicle intent (`match/autoplay_s3.gd`), and fails
+(exit 3) unless one of our vehicles and one enemy vehicle were drawn.
+`--autoplay_scene armour_<name>` runs a staged S3 scene and saves
+`s3_<name>.png` (`match/autoplay_scene.gd`; exit 1 if its condition never
+held). `--test_unlock` and `--start_manpower N` are for scripted runs (in
+a net match on both instances).
 
 `godot/tools/autoplay.sh <Godot> [minutes] [speed]` boots to the menu,
 starts a skirmish and lets `match/autoplay.gd` play the local side through

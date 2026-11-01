@@ -24,8 +24,18 @@
 //!   here, before drawing, the HUD and audio (§5.12.3).
 //!
 //! Explosions (light, dust, smoke), flags, trees and sounds are drawn by
-//! GDScript from the state's `effects` and `get_map_info()`. Vehicles are
-//! out of S1: this node draws none (the bench node keeps its placeholders).
+//! GDScript from the state's `effects` and `get_map_info()`.
+//!
+//! **Vehicles** (S3). The state carries `vehicles` (fog-filtered in
+//! [`crate::match_frame`], interpolated here like soldiers), `shells`,
+//! `armour_events`, the vehicle rules and types, and the S3 call-in, feed
+//! and effect keys (`godot/docs/match_state.md` "Vehicles (S3)").
+//! GDScript draws them (`match/vehicle_view.gd`, `match/vehicle_fx.gd`)
+//! with the meshes of [`crate::meshgen`]. `start_match({scene: NAME})`
+//! starts a staged scene of `frontline_sim::scenarios` instead of a
+//! skirmish (`--autoplay_scene armour_<name>`); the state then has
+//! `scene` (`ready`, `ready_tick`, `max_ticks`), and `get_map_info()` the
+//! scene's `focus`.
 //!
 //! **Net mode** (S2). `attach_net(net)` hands the node a [`FrontlineNet`]
 //! whose lobby started a match; `start_match({net: true, ...})` then takes
@@ -39,9 +49,13 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use frontline_content::{ItemKind, MatchSetup, SquadRole, WeaponClass};
+use frontline_content::{ArmourZone, ItemKind, MatchSetup, SeatRole, SquadRole, WeaponClass};
 use frontline_sim::game::MAX_CALL_IN_QUEUE;
-use frontline_sim::{CommandKind, Fx, NavPhase, OrderKind, Outcome, SquadId, World};
+use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
+use frontline_sim::{
+    ArmourEventKind, CommandKind, Fx, NavPhase, OrderKind, Outcome, SeatSnap, SquadId, World,
+    vehicle_flags,
+};
 use godot::classes::base_material_3d::{Flags as MatFlags, ShadingMode};
 use godot::classes::image::Format as ImageFormat;
 use godot::classes::light_3d::Param as LightParam;
@@ -54,11 +68,12 @@ use godot::prelude::*;
 
 use crate::gfx::{Layer, build_mesh, soldier_material};
 use crate::intents::{
-    GROUP_SPACING_M, MIN_DIG_PIECE_M, call_in_type, dig_command, item_name, role_name, sim_to_fx,
-    split_polyline, spread_targets, stance_order_name, unit_command, unit_set,
+    GROUP_SPACING_M, MIN_DIG_PIECE_M, ammo_choice_name, call_in_by_id, call_in_type, dig_command,
+    dig_profile, item_name, role_name, sim_to_fx, split_polyline, spread_targets,
+    stance_order_name, unit_command, unit_set, vehicle_command,
 };
-use crate::match_events::{EffectCue, EventTracker, UiEvent, effect_cues};
-use crate::match_frame::{MatchFrame, SquadView, TickEvents};
+use crate::match_events::{EffectCue, EventTracker, UiEvent, ammo_word, effect_cues};
+use crate::match_frame::{ArmourView, MatchFrame, SquadView, TickEvents};
 use crate::match_net::{NetLink, NetMatchInfo, NetState};
 use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve, short_id};
 use crate::match_thread::MatchHandle;
@@ -87,6 +102,126 @@ const DIG_CUE_S: f32 = 1.1;
 const WARMUP_FRAMES: u32 = 8;
 /// Pending-order markers kept at most (the oldest go first).
 const MAX_PENDING_MARKERS: usize = 64;
+/// Armour events kept for the next `get_state()` at most.
+const MAX_ARMOUR_BACKLOG: usize = 256;
+/// State names of `ComponentKind::index`, `SeatRole::index`,
+/// `ArmourZone::index` and `ArmourEventKind` (`match_state.md`).
+const COMPONENT_KEYS: [&str; 6] = ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack"];
+const SEAT_KEYS: [&str; 5] = ["driver", "gunner", "commander", "loader", "radio_mg"];
+const ZONE_KEYS: [&str; 8] = [
+    "hull_front",
+    "hull_side",
+    "hull_rear",
+    "hull_top",
+    "turret_front",
+    "turret_side",
+    "turret_rear",
+    "turret_top",
+];
+const ARMOUR_KINDS: [&str; 9] = [
+    "fired",
+    "ricochet",
+    "no_pen",
+    "pen",
+    "component_hit",
+    "crew_hit",
+    "disabled",
+    "knocked_out",
+    "bogged",
+];
+
+/// A vehicle's state badge (`match_state.md`): the first that applies.
+/// Enemies get only wreck, burning, moving or idle.
+fn vehicle_badge(flags: u16, speed: f32, own: bool) -> &'static str {
+    use vehicle_flags::*;
+    if flags & WRECK != 0 {
+        return "wreck";
+    }
+    if flags & BURNING != 0 {
+        return "burning";
+    }
+    if !own {
+        return if speed.abs() > 1.0 { "moving" } else { "idle" };
+    }
+    for (bit, name) in [
+        (BOGGED, "bogged"),
+        (IMMOBILISED, "immobilised"),
+        (REPAIRING, "repairing"),
+        (CROSSING, "crossing"),
+        (REVERSING, "reversing"),
+        (MOVING, "moving"),
+    ] {
+        if flags & bit != 0 {
+            return name;
+        }
+    }
+    "idle"
+}
+
+/// `rules.vehicle_types` (`match_state.md`): every vehicle type by its
+/// key (the def id without the mod prefix), with the box sizes the meshes,
+/// footprints, picking and card silhouettes are built from.
+fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
+    let fx = |v: frontline_content::Fixed| Fx::from(v).to_f32();
+    let mut out = VarDictionary::new();
+    for v in &setup.vehicles {
+        let hull = &v.hull;
+        let tur = &v.turret;
+        let gun = v.main_gun();
+        let seats: PackedStringArray = SeatRole::ALL
+            .iter()
+            .filter(|r| v.seat(**r).is_some())
+            .map(|r| GString::from(SEAT_KEYS[r.index()]))
+            .collect();
+        let mut ammo = VarArray::new();
+        for load in &gun.ammo {
+            let Some(a) = setup.ammo.get(load.ammo as usize) else {
+                continue;
+            };
+            ammo.push(
+                &vdict! {
+                    "kind" => match ammo_word(setup, load.ammo) { "he" => "he", _ => "ap" },
+                    "name" => a.name.as_str(),
+                    "max" => load.count as i64,
+                }
+                .to_variant(),
+            );
+        }
+        let faction = setup
+            .factions
+            .get(v.faction as usize)
+            .map_or("", |f| short_id(&f.id));
+        let d = vdict! {
+            "id" => v.id.as_str(),
+            "name" => v.name.as_str(),
+            "short" => v.short_name.as_str(),
+            "faction" => faction,
+            "role" => "tank",
+            "cost" => v.cost as i64,
+            "pop" => v.pop as i64,
+            "call_in_s" => v.call_in_ticks as f32 / setup.tick_hz.max(1) as f32,
+            "speed" => fx(v.mobility.speed),
+            "sight_m" => fx(v.sight),
+            "hull_length" => 2.0 * fx(hull.half.x),
+            "hull_width" => 2.0 * fx(hull.half.y),
+            "hull_height" => 2.0 * fx(hull.half.z),
+            "hull_ground" => fx(hull.center.z) - fx(hull.half.z),
+            "turret_x" => fx(v.turret_pivot.x),
+            "turret_base" => fx(v.turret_pivot.z),
+            "turret_length" => 2.0 * fx(tur.half.x),
+            "turret_width" => 2.0 * fx(tur.half.y),
+            "turret_height" => 2.0 * fx(tur.half.z),
+            "turret_offset_x" => fx(tur.center.x),
+            "gun_length" => fx(gun.muzzle.x),
+            "gun_height" => fx(gun.muzzle.z),
+            "glacis_deg" => v.armour[ArmourZone::HullFront.index()].slope_deg as f32,
+            "seats" => &seats,
+            "ammo" => &ammo,
+        };
+        out.set(short_id(&v.id), &d);
+    }
+    out
+}
 
 #[derive(GodotClass)]
 #[class(base = Node3D)]
@@ -397,6 +532,14 @@ impl FrontlineMatch {
             "chunk_rebuilds" => rt.chunk_rebuilds as i64,
             "presenter_us" => rt.present_us,
             "speed" => rt.sim.speed(),
+            "vehicles_own" => f.vehicles.iter().filter(|v| v.owner == rt.local).count() as i64,
+            "vehicles_enemy" => f
+                .vehicles
+                .iter()
+                .filter(|v| v.owner != rt.local && v.owner != WRECK_OWNER)
+                .count() as i64,
+            "wrecks" => f.vehicles.iter().filter(|v| v.owner == WRECK_OWNER).count() as i64,
+            "shells" => f.shells.len() as i64,
         }
     }
 
@@ -438,6 +581,10 @@ impl FrontlineMatch {
             tickets: n("tickets").filter(|&t| t > 0).map(|t| t as u32),
             start_manpower: n("start_manpower").filter(|&t| t >= 0).map(|t| t as u32),
             slots: None,
+            test_unlock: d
+                .get("test_unlock")
+                .and_then(|v| v.try_to::<bool>().ok())
+                .unwrap_or(false),
         };
         let is_net = d
             .get("net")
@@ -457,9 +604,33 @@ impl FrontlineMatch {
         let mods = find_mods_dir(&candidates)
             .ok_or_else(|| format!("cannot find mods/ww2 (looked in {candidates:?})"))?;
         let setup = resolve(&mods, &choice).map_err(|e| format!("{}: {e}", mods.display()))?;
-        let world = World::new_match(setup, self.sim_threads.max(1) as usize)
-            .map_err(|e| format!("invalid match setup: {e}"))?;
-        self.start_runtime(world, 0, None)
+        let threads = self.sim_threads.max(1) as usize;
+        let scene = d
+            .get("scene")
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty());
+        if let Some(name) = scene {
+            // A staged scene (S3 "Done when" 7): built from the resolved
+            // setup by the sim's own staging code; player 0 watches.
+            let sc = frontline_sim::scenarios::scene(&name, setup, threads)
+                .map_err(|e| format!("scene {name:?}: {e}"))?;
+            let info = SceneInfo {
+                name: name.clone(),
+                focus: sc.focus.to_f32(),
+                max_ticks: sc.max_ticks,
+            };
+            self.start_runtime(sc.world, 0, None, Some(name))?;
+            if let Some(rt) = self.rt.as_mut() {
+                for c in sc.commands {
+                    rt.sim.send(c.kind);
+                }
+                rt.scene = Some(info);
+            }
+            return Ok(());
+        }
+        let world =
+            World::new_match(setup, threads).map_err(|e| format!("invalid match setup: {e}"))?;
+        self.start_runtime(world, 0, None, None)
     }
 
     /// Net mode: the setup and the link come from the attached
@@ -497,7 +668,7 @@ impl FrontlineMatch {
         let world = World::new_match(nm.setup, self.sim_threads.max(1) as usize)
             .map_err(|e| format!("invalid match setup: {e}"))?;
         let slot = nm.slot;
-        self.start_runtime(world, slot, Some((nm.link, info, names)))
+        self.start_runtime(world, slot, Some((nm.link, info, names)), None)
     }
 
     fn start_runtime(
@@ -505,6 +676,7 @@ impl FrontlineMatch {
         world: World,
         local: u8,
         net: Option<(NetLink, NetMatchInfo, [String; 2])>,
+        scene_name: Option<String>,
     ) -> Result<(), String> {
         let world3d = self
             .base()
@@ -515,9 +687,11 @@ impl FrontlineMatch {
         let tracer_sh =
             shader_or_load(&self.tracer_shader, TRACER_SHADER).ok_or("missing tracer shader")?;
         let terrain_sh = shader_or_load(&self.terrain_shader, TERRAIN_SHADER);
+        let scene = scene_name.clone();
         let rt = MatchRuntime::new(
             world,
             local,
+            scene,
             net,
             world3d.get_scenario(),
             [soldier_sh, tracer_sh],
@@ -600,7 +774,39 @@ struct MatchRuntime {
     user_paused: bool,
     /// Net mode: the players' names and the pending-order markers.
     net: Option<NetView>,
+    /// S3: vehicles of the drawn frame, interpolated like the soldiers.
+    drawn_vehicles: Vec<DrawnVehicle>,
+    /// Seconds the render time lies before the newest frame's tick (shells
+    /// are drawn this far back along their flight).
+    back_s: f32,
+    /// Visible armour events not yet handed out by `get_state()`.
+    armour_out: Vec<(u64, ArmourView)>,
+    /// A staged scene (`start_match({scene})`).
+    scene: Option<SceneInfo>,
+    /// `rules.vehicle_types`, built once.
+    vehicle_types: VarDictionary,
     _resources: Vec<Gd<Resource>>,
+}
+
+/// A vehicle as drawn this frame (Godot space).
+#[derive(Copy, Clone, Debug)]
+struct DrawnVehicle {
+    id: u32,
+    pos: [f32; 3],
+    /// Model yaw ([`model_yaw`] of the interpolated heading).
+    yaw: f32,
+    pitch: f32,
+    roll: f32,
+    turret_yaw: f32,
+    gun_pitch: f32,
+}
+
+/// The staged scene a runtime plays.
+struct SceneInfo {
+    name: String,
+    /// Sim xy the camera looks at.
+    focus: [f32; 2],
+    max_ticks: u64,
 }
 
 /// The presenter's side of a net match.
@@ -615,7 +821,7 @@ struct NetView {
 /// (`godot/match/match_view.gd` `PENDING_KINDS`).
 fn pending_kind(intent: &str) -> Option<&'static str> {
     Some(match intent {
-        "move" | "move_units" => "move",
+        "move" | "move_units" | "reverse_units" => "move",
         "attack_move" | "attack_move_units" => "attack_move",
         "barrage" => "barrage",
         "throw" | "throw_each" => "throw",
@@ -628,6 +834,7 @@ impl MatchRuntime {
     fn new(
         world: World,
         local: u8,
+        scene: Option<String>,
         net: Option<(NetLink, NetMatchInfo, [String; 2])>,
         scenario: Rid,
         [soldier_sh, tracer_sh]: [Gd<Shader>; 2],
@@ -767,7 +974,7 @@ impl MatchRuntime {
                 0,
             ),
             None => {
-                let sim = MatchHandle::spawn(world, local)?;
+                let sim = MatchHandle::spawn_scene(world, local, scene)?;
                 sim.set_paused(true);
                 (sim, None, WARMUP_FRAMES)
             }
@@ -821,6 +1028,11 @@ impl MatchRuntime {
             warmup,
             user_paused: false,
             net,
+            drawn_vehicles: Vec::new(),
+            back_s: 0.0,
+            armour_out: Vec::new(),
+            scene: None,
+            vehicle_types: vehicle_types(&setup),
             _resources: resources,
             setup,
         };
@@ -881,6 +1093,16 @@ impl MatchRuntime {
         }
         self.dirty_chunks = dirty;
         effect_cues(&self.events_in, &self.setup, &mut self.cues);
+        for ev in &self.events_in {
+            self.tracker.armour(ev, &self.setup, &mut self.ui_events);
+            self.armour_out
+                .extend(ev.armour.iter().map(|a| (ev.tick, a.clone())));
+        }
+        if self.armour_out.len() > MAX_ARMOUR_BACKLOG {
+            let drop = self.armour_out.len() - MAX_ARMOUR_BACKLOG;
+            self.armour_out.drain(..drop);
+        }
+
         // Bound the cue backlog if nobody reads the state.
         if self.cues.len() > 512 {
             let drop = self.cues.len() - 512;
@@ -996,6 +1218,8 @@ impl MatchRuntime {
             period,
             hz,
             clock,
+            drawn_vehicles,
+            back_s,
             ..
         } = self;
         let (half, period, hz) = (*half, *period, *hz);
@@ -1114,6 +1338,37 @@ impl MatchRuntime {
             );
         }
 
+        // Vehicles (S3), at the same render time: GDScript draws them from
+        // the state, so only the pose is interpolated here (the turret and
+        // the hull's tilt are smoothed there).
+        drawn_vehicles.clear();
+        for v in &b.vehicles {
+            let prev = a
+                .vehicles
+                .binary_search_by_key(&v.id, |p| p.id)
+                .ok()
+                .map(|k| &a.vehicles[k])
+                .filter(|p| {
+                    let (dx, dy) = (p.pos[0] - v.pos[0], p.pos[1] - v.pos[1]);
+                    dx * dx + dy * dy < MAX_JUMP_M * MAX_JUMP_M
+                })
+                .unwrap_or(v);
+            let pos = [
+                lerp(prev.pos[0], v.pos[0], alpha),
+                lerp(prev.pos[1], v.pos[1], alpha),
+                lerp(prev.pos[2], v.pos[2], alpha),
+            ];
+            drawn_vehicles.push(DrawnVehicle {
+                id: v.id,
+                pos: sim_to_godot(pos, half),
+                yaw: model_yaw(lerp_angle(prev.yaw, v.yaw, alpha)),
+                pitch: lerp(prev.pitch, v.pitch, alpha),
+                roll: lerp(prev.roll, v.roll, alpha),
+                turret_yaw: lerp_angle(prev.turret_yaw, v.turret_yaw, alpha),
+                gun_pitch: lerp(prev.gun_pitch, v.gun_pitch, alpha),
+            });
+        }
+
         // Rounds in flight, at the same render time as the soldiers.
         tracer_layer.begin();
         shell_layer.begin();
@@ -1122,6 +1377,7 @@ impl MatchRuntime {
         } else {
             ((stamp_b - r) as f32).max(-period)
         };
+        *back_s = back;
         for p in &b.rounds {
             if !p.visible {
                 continue;
@@ -1217,10 +1473,12 @@ impl MatchRuntime {
         let now = *clock;
         for ev in events_in.iter() {
             for s in ev.shots.iter().filter(|s| s.visible) {
-                let he = setup
-                    .weapons
-                    .get(s.weapon as usize)
-                    .is_some_and(|w| w.class == WeaponClass::Mortar);
+                let class = setup.weapons.get(s.weapon as usize).map(|w| w.class);
+                // Main guns and launchers flash in match/vehicle_fx.gd.
+                if matches!(class, Some(WeaponClass::Cannon | WeaponClass::Launcher)) {
+                    continue;
+                }
+                let he = class == Some(WeaponClass::Mortar);
                 let v = s.vel;
                 let sp = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
                 let dir = [v[0] / sp, v[2] / sp, -v[1] / sp];
@@ -1291,11 +1549,7 @@ impl MatchRuntime {
             *t -= dt_anim;
             if *t <= 0.0 {
                 *t += DIG_CUE_S;
-                self.cues.push(EffectCue {
-                    kind: "dig",
-                    weapon: "",
-                    pos,
-                });
+                self.cues.push(EffectCue::new("dig", "", pos));
             }
         }
     }
@@ -1320,6 +1574,7 @@ impl MatchRuntime {
     // ------------------------------------------------------------ state --
 
     fn state_dict(&mut self) -> VarDictionary {
+        let armour_out = std::mem::take(&mut self.armour_out);
         let f = &self.hist[HIST - 1];
         let setup = &self.setup;
         let local = self.local as usize;
@@ -1358,6 +1613,17 @@ impl MatchRuntime {
                 );
             }
         }
+        let profile = |d: &frontline_content::setup::DigSetup| {
+            let mut out = vdict! {
+                "max_m" => fx(d.max_length),
+                "depth_m" => fx(d.depth),
+                "width_m" => fx(d.floor_width) + 2.0 * fx(d.wall_run),
+            };
+            if d.engineers_only {
+                out.set("engineers_only", true);
+            }
+            out
+        };
         let rules_d = vdict! {
             "pop_cap" => rules.pop_cap as i64,
             "tickets_max" => rules.tickets as i64,
@@ -1366,15 +1632,26 @@ impl MatchRuntime {
             "mortar_max_m" => mortar.map_or(600.0, |w| fx(w.range_max)),
             "capture_radius_m" => fx(rules.capture_radius),
             "throw_range_m" => &throw_range,
+            "vehicles" => &vdict! {
+                "unlock_s" => rules.vehicles.unlock_ticks as f32 / hz,
+                "limit" => rules.vehicles.limit as i64,
+            },
+            "dig_profiles" => &vdict! {
+                "trench" => &profile(&rules.dig),
+                "at_ditch" => &profile(&rules.at_ditch),
+            },
+            "vehicle_types" => &self.vehicle_types,
         };
 
         let mut players = VarArray::new();
         for (p, ps) in f.players.iter().enumerate() {
             let ps_setup = &setup.players[p];
+            // The sim's pop counts queued call-ins (a vehicle's pop for a
+            // vehicle); the HUD adds the queue itself.
             let queued: u32 = ps
                 .call_ins
                 .iter()
-                .map(|c| setup.squad_types[c.0 as usize].men as u32)
+                .map(|c| setup.squad_types[c.0 as usize].pop(&setup.vehicles))
                 .sum();
             let fac = short_id(&setup.factions[ps_setup.faction as usize].id);
             let name = match &self.net {
@@ -1395,6 +1672,8 @@ impl MatchRuntime {
                     "pop" => ps.pop.saturating_sub(queued) as i64,
                     "points_held" => ps.points_held as i64,
                     "ticket_drain" => ps.drain_per_min as f32 / 60.0,
+                    "vehicles" => ps.vehicles_counted as i64,
+                    "vehicle_limit" => ps.vehicle_limit as i64,
                 }
                 .to_variant(),
             );
@@ -1467,6 +1746,7 @@ impl MatchRuntime {
                         OrderKind::AttackMove => ("attack_move", true),
                         OrderKind::Retreat => ("retreat", true),
                         OrderKind::Dig => ("dig", true),
+                        OrderKind::Follow => ("follow", false),
                         _ => ("hold", false),
                     };
                     if !f.throwing[i] {
@@ -1474,6 +1754,9 @@ impl MatchRuntime {
                     }
                     if target {
                         d.set("target", self.ground(u.target));
+                    }
+                    if let Some(v) = u.follow {
+                        d.set("follow", v as i64);
                     }
                 }
             }
@@ -1517,33 +1800,43 @@ impl MatchRuntime {
         }
 
         let fac = &setup.factions[local_faction];
+        let me = f.players.get(local);
+        // Vehicle tiles: locked until the unlock tick (S3).
+        let locked_s = me.map_or(0.0, |p| p.unlock_tick.saturating_sub(f.tick) as f32 / hz);
+        let entry = |t: u16| {
+            let ty = &setup.squad_types[t as usize];
+            let mut d = vdict! {
+                "id" => ty.id.as_str(),
+                "type" => role_name(ty.role),
+                "name" => ty.name.as_str(),
+                "men" => ty.men as i64,
+                "pop" => ty.pop(&setup.vehicles) as i64,
+            };
+            if let Some(v) = ty.vehicle.and_then(|v| setup.vehicles.get(v as usize)) {
+                d.set("vehicle", short_id(&v.id));
+                d.set("short", v.short_name.as_str());
+            }
+            d
+        };
         let mut catalog = VarArray::new();
         for &t in &fac.roster {
             let ty = &setup.squad_types[t as usize];
-            catalog.push(
-                &vdict! {
-                    "type" => role_name(ty.role),
-                    "name" => ty.name.as_str(),
-                    "cost" => ty.cost as i64,
-                    "delay_s" => ty.call_in_ticks as f32 / hz,
-                    "men" => ty.men as i64,
-                }
-                .to_variant(),
-            );
+            let mut d = entry(t);
+            d.set("cost", ty.cost as i64);
+            d.set("delay_s", ty.call_in_ticks as f32 / hz);
+            if ty.vehicle.is_some() && locked_s > 0.0 {
+                d.set("locked_s", locked_s);
+            }
+            catalog.push(&d.to_variant());
         }
         let mut queue = VarArray::new();
-        if let Some(me) = f.players.get(local) {
+        if let Some(me) = me {
             for &(t, left) in &me.call_ins {
                 let ty = &setup.squad_types[t as usize];
-                queue.push(
-                    &vdict! {
-                        "type" => role_name(ty.role),
-                        "remaining_s" => left as f32 / hz,
-                        "total_s" => ty.call_in_ticks as f32 / hz,
-                        "men" => ty.men as i64,
-                    }
-                    .to_variant(),
-                );
+                let mut d = entry(t);
+                d.set("remaining_s", left as f32 / hz);
+                d.set("total_s", ty.call_in_ticks as f32 / hz);
+                queue.push(&d.to_variant());
             }
         }
 
@@ -1569,12 +1862,50 @@ impl MatchRuntime {
                 "kind" => c.kind,
                 "pos" => Vector3::new(g[0], g[1], g[2]),
             };
-            if c.kind == "explosion" {
-                d.set("size", c.weapon);
-            } else if !c.weapon.is_empty() {
-                d.set("weapon", c.weapon);
+            match c.kind {
+                "explosion" => d.set("size", c.weapon),
+                "cannon" => d.set("round", c.weapon),
+                "armour_hit" => d.set("result", c.weapon),
+                _ if !c.weapon.is_empty() && c.kind == "shot" => d.set("weapon", c.weapon),
+                _ => {}
+            }
+            if let Some(dir) = c.dir {
+                let g = sim_to_godot(dir, 0.0);
+                d.set("dir", Vector3::new(g[0], g[1], g[2]));
+            }
+            if let Some(v) = c.vehicle_type.and_then(|t| setup.vehicles.get(t as usize)) {
+                d.set("type", short_id(&v.id));
             }
             effects.push(&d.to_variant());
+        }
+        let mut shells = VarArray::new();
+        let back = self.back_s;
+        for sh in &f.shells {
+            let p = [
+                sh.pos[0] - sh.vel[0] * back,
+                sh.pos[1] - sh.vel[1] * back,
+                sh.pos[2] - sh.vel[2] * back,
+            ];
+            let v = sim_to_godot(sh.vel, 0.0);
+            shells.push(
+                &vdict! {
+                    "id" => sh.slot as i64,
+                    "kind" => match sh.kind {
+                        1 => "he",
+                        2 => "heat",
+                        _ => "ap",
+                    },
+                    "owner" => sh.player as i64,
+                    "shooter" => sh.shooter as i64,
+                    "pos" => self.godot(p),
+                    "vel" => Vector3::new(v[0], v[1], v[2]),
+                }
+                .to_variant(),
+            );
+        }
+        let mut armour_events = VarArray::new();
+        for (tick, a) in &armour_out {
+            armour_events.push(&self.armour_dict(*tick, a).to_variant());
         }
 
         let (status, winner, reason) = match f.outcome {
@@ -1634,7 +1965,12 @@ impl MatchRuntime {
                 "catalog" => &catalog,
                 "queue" => &queue,
                 "queue_max" => MAX_CALL_IN_QUEUE as i64,
+                "vehicles" => me.map_or(0, |p| p.vehicles_counted as i64),
+                "vehicle_limit" => me.map_or(0, |p| p.vehicle_limit as i64),
             },
+            "vehicles" => &self.vehicles_state(),
+            "shells" => &shells,
+            "armour_events" => &armour_events,
             "events" => &events,
             "effects" => &effects,
             "result" => &vdict! {
@@ -1644,11 +1980,174 @@ impl MatchRuntime {
             },
             "stats" => &stats,
         };
+        if let Some(sc) = &self.scene {
+            out.set(
+                "scene",
+                &vdict! {
+                    "name" => sc.name.as_str(),
+                    "ready" => f.scene_ready,
+                    "ready_tick" => f.scene_ready_at.map_or(-1, |t| t as i64),
+                    "max_ticks" => sc.max_ticks as i64,
+                },
+            );
+        }
         if self.net.is_some() {
             out.set("net", &self.net_dict());
             out.set("pending_orders", &self.pending_orders());
         }
         out
+    }
+
+    /// `vehicles` in `get_state()`: the newest frame's vehicles (already
+    /// fog-filtered) at their drawn, interpolated poses.
+    fn vehicles_state(&self) -> VarArray {
+        let f = self.newest();
+        let setup = &self.setup;
+        let mut out = VarArray::new();
+        for v in &f.vehicles {
+            let Some(vt) = setup.vehicles.get(v.type_idx as usize) else {
+                continue;
+            };
+            let drawn = self
+                .drawn_vehicles
+                .binary_search_by_key(&v.id, |d| d.id)
+                .ok()
+                .map(|k| self.drawn_vehicles[k])
+                .unwrap_or_else(|| {
+                    let p = sim_to_godot(v.pos, self.half);
+                    DrawnVehicle {
+                        id: v.id,
+                        pos: p,
+                        yaw: model_yaw(v.yaw),
+                        pitch: v.pitch,
+                        roll: v.roll,
+                        turret_yaw: v.turret_yaw,
+                        gun_pitch: v.gun_pitch,
+                    }
+                });
+            let wreck = v.owner == WRECK_OWNER;
+            let own = !wreck && v.owner == self.local;
+            let mut d = vdict! {
+                "id" => v.id as i64,
+                "squad" => if wreck { -1 } else { v.squad as i64 },
+                "owner" => if wreck { -1 } else { v.owner as i64 },
+                "type" => short_id(&vt.id),
+                "name" => vt.name.as_str(),
+                "pos" => Vector3::new(drawn.pos[0], drawn.pos[1], drawn.pos[2]),
+                "yaw" => drawn.yaw,
+                "pitch" => drawn.pitch,
+                "roll" => drawn.roll,
+                "turret_yaw" => drawn.turret_yaw,
+                "gun_pitch" => drawn.gun_pitch,
+                "speed" => v.speed,
+                "flags" => v.flags as i64,
+                "state" => vehicle_badge(v.flags, v.speed, own),
+            };
+            if own {
+                let crew: PackedStringArray = (0..5)
+                    .map(|k| {
+                        GString::from(match v.seats[k] {
+                            x if x == SeatSnap::Ok as u8 => "ok",
+                            x if x == SeatSnap::Wounded as u8 => "wounded",
+                            x if x == SeatSnap::Empty as u8 => "dead",
+                            x if x == SeatSnap::Swapping as u8 => "swapping",
+                            _ => "none",
+                        })
+                    })
+                    .collect();
+                let mut comps = VarDictionary::new();
+                for (k, name) in COMPONENT_KEYS.iter().enumerate() {
+                    comps.set(*name, v.components[k] as f32 / 100.0);
+                }
+                d.set("crew", &crew);
+                d.set("components", &comps);
+                d.set(
+                    "repairing",
+                    COMPONENT_KEYS
+                        .get(v.repairing as usize)
+                        .copied()
+                        .unwrap_or(""),
+                );
+                d.set(
+                    "ammo",
+                    &vdict! {"ap" => v.ammo[0] as i64, "he" => v.ammo[1] as i64},
+                );
+                d.set(
+                    "loaded",
+                    match v.loaded {
+                        1 => "ap",
+                        2 => "he",
+                        _ => "",
+                    },
+                );
+                d.set("ammo_choice", ammo_choice_name(v.ammo_choice));
+                d.set("reload", v.reload_pct as f32 / 100.0);
+                d.set(
+                    "target",
+                    if v.target == u32::MAX {
+                        -1
+                    } else {
+                        v.target as i64
+                    },
+                );
+                d.set("followers", v.followers as i64);
+            }
+            out.push(&d.to_variant());
+        }
+        out
+    }
+
+    /// One `armour_events` entry (`godot/docs/match_state.md`).
+    fn armour_dict(&self, tick: u64, a: &ArmourView) -> VarDictionary {
+        let e = &a.ev;
+        let kind = ARMOUR_KINDS.get(e.kind as usize).copied().unwrap_or("");
+        let component = match e.kind {
+            k if k == ArmourEventKind::Fired as u8 => match e.component {
+                2 => "he",
+                _ => "ap",
+            },
+            k if k == ArmourEventKind::ComponentHit as u8
+                || k == ArmourEventKind::Disabled as u8 =>
+            {
+                COMPONENT_KEYS
+                    .get(e.component as usize)
+                    .copied()
+                    .unwrap_or("")
+            }
+            k if k == ArmourEventKind::CrewHit as u8 => SeatRole::ALL
+                .get(e.component as usize)
+                .map_or("", |r| SEAT_KEYS[r.index()]),
+            k if k == ArmourEventKind::KnockedOut as u8 => match e.component {
+                1 => "ammo_rack",
+                2 => "fire",
+                _ => "crew",
+            },
+            _ => "",
+        };
+        let zone = if e.zone == NONE_U8 {
+            ""
+        } else {
+            ArmourZone::ALL
+                .get(e.zone as usize)
+                .map_or("", |z| ZONE_KEYS[z.index()])
+        };
+        vdict! {
+            "kind" => kind,
+            "vehicle" => e.vehicle as i64,
+            "type" => self
+                .setup
+                .vehicles
+                .get(a.type_idx as usize)
+                .map_or("", |v| short_id(&v.id)),
+            "owner" => e.owner as i64,
+            "attacker" => if e.attacker == NONE_U8 { -1 } else { e.attacker as i64 },
+            "component" => component,
+            "zone" => zone,
+            "ammo" => if e.ammo == u16::MAX { "" } else { ammo_word(&self.setup, e.ammo) },
+            "pos" => self.godot(e.pos),
+            "seq" => e.seq as i64,
+            "time_s" => tick as f32 / self.hz,
+        }
     }
 
     /// `net` in `get_state()` (`godot/docs/match_state.md`, "Net mode").
@@ -1766,6 +2265,9 @@ impl MatchRuntime {
         if s.order == OrderKind::Barrage {
             d.set("rounds", s.rounds as i64);
         }
+        if let Some(v) = s.follow {
+            d.set("follow", v as i64);
+        }
         d
     }
 
@@ -1811,7 +2313,7 @@ impl MatchRuntime {
                 .to_variant(),
             );
         }
-        vdict! {
+        let mut out = vdict! {
             "id" => short_id(&m.id),
             "name" => m.name.as_str(),
             "size_m" => m.size_m as f32,
@@ -1823,7 +2325,13 @@ impl MatchRuntime {
             "factions" => &factions,
             "local_player" => self.local as i64,
             "tick_hz" => self.hz,
+        };
+        if let Some(sc) = &self.scene {
+            // A staged scene: what the camera should look at.
+            out.set("scene", sc.name.as_str());
+            out.set("scene_focus", self.ground(sc.focus));
         }
+        out
     }
 
     // ---------------------------------------------------------- intents --
@@ -1886,11 +2394,17 @@ impl MatchRuntime {
                     .iter()
                     .filter(|s| self.setup.squad_types[s.type_idx as usize].dig_rate_pct > 0)
                     .collect();
+                let profile = dig_profile(
+                    &data
+                        .get("profile")
+                        .map(|v| v.to_string())
+                        .unwrap_or_default(),
+                );
                 let pieces = split_polyline(&line, diggers.len(), MIN_DIG_PIECE_M);
                 for (k, s) in diggers.iter().enumerate() {
                     // More squads than pieces: the extras share the last.
                     let piece = &pieces[k.min(pieces.len() - 1)];
-                    out.push(dig_command(s.id, piece));
+                    out.push(dig_command(s.id, piece, profile));
                 }
             }
             "barrage" => {
@@ -1905,8 +2419,12 @@ impl MatchRuntime {
                 }
             }
             "call_in" => {
+                // The catalog `id` (S3) wins over the role.
+                let id = data.get("id").map(|v| v.to_string()).unwrap_or_default();
                 let ty = data.get("type").map(|v| v.to_string()).unwrap_or_default();
-                match call_in_type(&self.setup, self.local, &ty) {
+                let found = call_in_by_id(&self.setup, self.local, &id)
+                    .or_else(|| call_in_type(&self.setup, self.local, &ty));
+                match found {
                     Some(t) => out.push(CommandKind::CallIn { squad_type: t }),
                     None => {
                         godot_warn!("FrontlineMatch: no {ty:?} squad in the roster");
@@ -1917,19 +2435,59 @@ impl MatchRuntime {
                 squad: SquadId(s.id),
             })),
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
-            | "set_stance" | "throw" | "throw_each" => {
+            | "set_stance" | "throw" | "throw_each" | "reverse_units" | "face_units"
+            | "attack_unit" | "set_ammo" | "repair_units" | "follow_units" => {
                 let raw = data
                     .get("units")
                     .and_then(|v| v.try_to::<PackedInt32Array>().ok())
                     .unwrap_or_default();
-                // The local player's living men, as the newest frame knows them.
+                // The local player's living men and vehicles, as the newest
+                // frame knows them.
                 let f = self.newest();
                 let units = unit_set(raw.as_slice(), |id| {
                     f.ids
                         .binary_search(&id)
                         .is_ok_and(|i| f.owner[i] == self.local)
+                        || f.vehicles
+                            .binary_search_by_key(&id, |v| v.id)
+                            .is_ok_and(|k| f.vehicles[k].owner == self.local)
                 });
                 if units.is_empty() {
+                    return;
+                }
+                let t = target.map(|t| to_sim(t, self.half));
+                if matches!(
+                    kind,
+                    "reverse_units"
+                        | "face_units"
+                        | "attack_unit"
+                        | "set_ammo"
+                        | "repair_units"
+                        | "follow_units"
+                ) {
+                    // `attack_unit` names its target vehicle in `target`,
+                    // `follow_units` in `vehicle`.
+                    let id = data
+                        .get(if kind == "follow_units" {
+                            "vehicle"
+                        } else {
+                            "target"
+                        })
+                        .and_then(|v| v.try_to::<i64>().ok())
+                        .filter(|&i| i >= 0)
+                        .map(|i| i as u32);
+                    let word = data.get("ammo").map(|v| v.to_string()).unwrap_or_default();
+                    match vehicle_command(kind, units, t, id, &word) {
+                        Some(c) => out.push(c),
+                        None => {
+                            godot_warn!("FrontlineMatch: incomplete {kind} intent");
+                        }
+                    }
+                    let mut last = None;
+                    for c in out {
+                        last = self.sim.send(c).or(last);
+                    }
+                    self.mark_pending(kind, last, target, data);
                     return;
                 }
                 let line: Vec<[f32; 2]> = data
@@ -1938,14 +2496,13 @@ impl MatchRuntime {
                     .map(|l| l.as_slice().iter().map(|v| to_sim(*v, self.half)).collect())
                     .unwrap_or_default();
                 let word = data
-                    .get(if kind == "set_stance" {
-                        "stance"
-                    } else {
-                        "item"
+                    .get(match kind {
+                        "set_stance" => "stance",
+                        "dig_units" => "profile",
+                        _ => "item",
                     })
                     .map(|v| v.to_string())
                     .unwrap_or_default();
-                let t = target.map(|t| to_sim(t, self.half));
                 match unit_command(kind, units, t, &line, &word) {
                     Some(c) => out.push(c),
                     None => {
@@ -1971,8 +2528,18 @@ impl MatchRuntime {
         for c in out {
             last = self.sim.send(c).or(last);
         }
-        // Net: a marker at the clicked spot until the intent's last
-        // command ran.
+        self.mark_pending(kind, last, target, data);
+    }
+
+    /// Net: a marker at the clicked spot until the intent's last command
+    /// (send ordinal `last`) ran.
+    fn mark_pending(
+        &mut self,
+        kind: &str,
+        last: Option<u64>,
+        target: Option<Vector3>,
+        data: &VarDictionary,
+    ) {
         if let (Some(n), Some(ord), Some(pk)) = (self.net.as_mut(), last, pending_kind(kind)) {
             let pos = target.or_else(|| {
                 data.get("polyline")

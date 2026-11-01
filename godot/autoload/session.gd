@@ -35,6 +35,18 @@ extends Node
 ## prompt); add --net_bind_all to bind every interface like the menu's Host
 ## does. --debug_inject_desync makes this client step TICK with one extra
 ## local-only Stop (the bridge reads it from match_setup()).
+##
+## S3 staged scenes (windowed; S3 "Done when" 7):
+##   Godot --path godot --resolution 1600x900 -- \
+##       --autoplay_scene armour_<name> [--autoplay_shots /abs/dir]
+## starts the match scene straight on a staged world of the sim's
+## `scenarios` (<name>: callin_locked, vehicle_card, tank_firing,
+## penetration_marker, bogged_in_trench, at_ditch, at_team_firing,
+## burning, escort), lets match/autoplay_scene.gd wait for its condition,
+## saves s3_<name>.png and quits (1 if the condition never held).
+## --test_unlock plays the test rules override (vehicles unlocked at once)
+## in a skirmish or, set on both instances, a net match; --start_manpower N
+## likewise sets both players' starting manpower.
 
 const MENU_SCENE := "res://ui/menu/main_menu.tscn"
 const MATCH_SCENE := "res://match/match.tscn"
@@ -68,6 +80,9 @@ var autoplay_speed := 3.0
 var autoplay_shots := ""
 ## Match overrides for scripted runs (0 = rules default).
 var tickets_override := 0
+## --start_manpower N (0 = rules default); in a net match both instances
+## must pass the same N.
+var start_manpower_override := 0
 
 ## Multiplayer: the FrontlineNet (or MockNet) object, null until first
 ## used; net_mode while a net match is being played.
@@ -88,6 +103,10 @@ var net_bind_all := false
 ## --net_delay D: the autoplay host sets input delay D (2-6) in the lobby
 ## instead of keeping the suggestion (0 = keep).
 var net_delay := 0
+## --autoplay_scene armour_<name>: the staged scene's <name> ("" = off).
+var autoplay_scene := ""
+## --test_unlock: the S3 test rules override (vehicles unlocked at once).
+var test_unlock := false
 
 var _capture_path := ""
 var _capture_after := 2.5
@@ -146,6 +165,9 @@ func _ready() -> void:
 			"--tickets":
 				tickets_override = maxi(v.to_int(), 0)
 				i += 1
+			"--start_manpower":
+				start_manpower_override = maxi(v.to_int(), 0)
+				i += 1
 			"--autoplay_net":
 				_parse_autoplay_net(v)
 				i += 1
@@ -158,6 +180,11 @@ func _ready() -> void:
 				i += 1
 			"--net_bind_all":
 				net_bind_all = true
+			"--autoplay_scene":
+				autoplay_scene = v.trim_prefix("armour_")
+				i += 1
+			"--test_unlock":
+				test_unlock = true
 			"--debug_inject_desync":
 				# Dev builds only: a release export ignores it.
 				if OS.is_debug_build():
@@ -173,6 +200,8 @@ func _ready() -> void:
 			autoplay_minutes = 3.0
 	if _capture_path != "":
 		_run_capture.call_deferred()
+	elif autoplay_scene != "":
+		_run_autoplay_scene.call_deferred()
 	elif autoplay_net_role != "":
 		_run_autoplay_net.call_deferred()
 	elif autoplay_enabled():
@@ -210,7 +239,7 @@ func capture_left_s() -> float:
 
 
 func autoplay_enabled() -> bool:
-	return autoplay_minutes > 0.0
+	return autoplay_minutes > 0.0 and autoplay_scene == ""
 
 
 ## Folder for autoplay screenshots (absolute): --autoplay_shots, else the
@@ -226,6 +255,12 @@ func match_setup() -> Dictionary:
 	var out := setup.duplicate()
 	if tickets_override > 0:
 		out.tickets = tickets_override
+	if start_manpower_override > 0:
+		out.start_manpower = start_manpower_override
+	if autoplay_scene != "":
+		out.scene = autoplay_scene
+	if test_unlock:
+		out.test_unlock = true
 	# Net mode: the bridge takes the link itself from Session.net; these
 	# tell it the local slot, D and the debug hook.
 	if net_mode and net != null:
@@ -247,6 +282,10 @@ func ensure_net() -> Object:
 			net = ClassDB.instantiate(&"FrontlineNet")
 			if net is Node:
 				add_child(net)
+			if test_unlock and net.has_method("set_test_unlock"):
+				net.set_test_unlock(true)
+			if start_manpower_override > 0 and net.has_method("set_start_manpower"):
+				net.set_start_manpower(start_manpower_override)
 		else:
 			net = MockNet.new()
 	return net
@@ -337,6 +376,14 @@ func _run_autoplay_menu() -> void:
 	await get_tree().create_timer(1.5, true, false, true).timeout
 	await save_screenshot(autoplay_dir().path_join("s1_autoplay_menu.png"))
 	print("autoplay: starting skirmish %s" % [match_setup()])
+	start_skirmish({})
+
+
+## --autoplay_scene: straight into the match scene (no menu); match.gd
+## adds match/autoplay_scene.gd.
+func _run_autoplay_scene() -> void:
+	await get_tree().create_timer(0.3, true, false, true).timeout
+	print("autoplay_scene: starting %s" % autoplay_scene)
 	start_skirmish({})
 
 

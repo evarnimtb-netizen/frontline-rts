@@ -22,15 +22,26 @@
 //! and clouds have no spotting of their own: the local player sees his own,
 //! items whose thrower he sees or that land near his men, and clouds
 //! within sight of one of his men.
+//!
+//! S3 adds vehicles, shells and armour events, with the fog of war of the
+//! snapshot contract (`docs/slices/S3-armour.md`): own vehicles always,
+//! enemy vehicles only while the local player sees them (their own-only
+//! fields zeroed, flags cut to [`vehicle_flags::PUBLIC`]), wrecks always;
+//! shells fired by his units, by a unit he sees, or within
+//! [`THROWN_NEAR_M`] of his men; armour events for his vehicles, for
+//! vehicles he sees (or saw the tick before: a knock-out turns a vehicle
+//! into a wreck everyone sees), or within that distance of his men.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup, SquadRole, WeaponClass};
-use frontline_sim::projectile::SUBSTEP_HZ;
+use frontline_sim::projectile::{NO_AMMO, SUBSTEP_HZ};
+use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
-    CorpseSnapshot, EntityKind, ExplosionSnapshot, NavPhase, Order, OrderKind, Outcome,
-    PlayerSnapshot, PointSnapshot, World, tile_heights_f32,
+    ArmourEvent, CorpseSnapshot, EntityKind, ExplosionSnapshot, NavPhase, Order, OrderKind,
+    Outcome, PlayerSnapshot, PointSnapshot, ShellSnapshot, UnitOrder, VehicleSnapshot, World,
+    tile_heights_f32, vehicle_flags,
 };
 
 /// Enemy thrown items landing or flying this close (m) to one of the local
@@ -72,6 +83,8 @@ pub struct SquadView {
     pub rounds: u16,
     /// Items the men carry, by [`ItemKind::index`].
     pub items: [u16; ITEM_KINDS],
+    /// S3: the vehicle a squad-level `FollowUnits` escorts.
+    pub follow: Option<u32>,
 }
 
 /// A detached own soldier's order (S1b), for markers and the HUD.
@@ -82,6 +95,8 @@ pub struct UnitView {
     /// Move target, own base (retreat), middle of the trench line (dig),
     /// his spot (idle). Sim xy.
     pub target: [f32; 2],
+    /// S3: the vehicle he escorts (`order` is `Follow`).
+    pub follow: Option<u32>,
 }
 
 /// A thrown item in the air or lying fused.
@@ -173,12 +188,25 @@ pub struct MatchFrame {
     pub corpses: Vec<CorpseSnapshot>,
     /// Per corpse: the local player sees the body (own: always).
     pub corpse_visible: Vec<bool>,
+    /// Small-arms rounds and mortar shells (main-gun shells and rockets
+    /// are in `shells`).
     pub rounds: Vec<RoundView>,
+    /// S3: vehicles and wrecks the local player may know of, ascending id
+    /// (module docs): enemies' own-only fields are zeroed.
+    pub vehicles: Vec<VehicleSnapshot>,
+    /// S3: main-gun shells and rockets he may see, slot order.
+    pub shells: Vec<ShellSnapshot>,
     pub squads: Vec<SquadView>,
     pub players: Vec<PlayerSnapshot>,
     pub points: Vec<PointSnapshot>,
     pub outcome: Outcome,
     pub extra: Vec<PlayerExtra>,
+    /// A staged scene (`--autoplay_scene`): its snapshot condition holds
+    /// this tick (`frontline_sim::scenarios::scene_ready`), and the first
+    /// tick it held (kept, so a one-tick condition is not lost when the
+    /// presenter skips frames).
+    pub scene_ready: bool,
+    pub scene_ready_at: Option<u64>,
 }
 
 impl MatchFrame {
@@ -212,11 +240,15 @@ impl MatchFrame {
             corpses: Vec::new(),
             corpse_visible: Vec::new(),
             rounds: Vec::new(),
+            vehicles: Vec::new(),
+            shells: Vec::new(),
             squads: Vec::new(),
             players: Vec::new(),
             points: Vec::new(),
             outcome: Outcome::Running,
             extra: Vec::new(),
+            scene_ready: false,
+            scene_ready_at: None,
         }
     }
 
@@ -257,9 +289,15 @@ impl MatchFrame {
                     id: u.id.0,
                     order: u.order,
                     target: u.target,
+                    follow: None,
                 }),
         );
         let ents = world.entities();
+        for u in &mut self.units {
+            if let UnitOrder::Follow { vehicle } = ents.unit()[u.id as usize].order {
+                u.follow = Some(vehicle.0);
+            }
+        }
         self.in_trench.clear();
         self.in_trench.extend(
             self.ids
@@ -288,6 +326,9 @@ impl MatchFrame {
         };
         self.rounds.clear();
         for p in world.projectiles().slots().iter().flatten() {
+            if p.ammo != NO_AMMO {
+                continue;
+            }
             let w = ctx.weapons.get(p.weapon as usize);
             let he = w.is_some_and(|w| w.he);
             let ttl0 = w.map_or(180.0, |w| w.ttl0);
@@ -350,6 +391,16 @@ impl MatchFrame {
             });
         }
 
+        self.fill_vehicles(&snap.vehicles, &snap.shells, ctx, &near, &seen_by);
+        self.scene_ready = ctx
+            .scene
+            .as_deref()
+            .is_some_and(|name| frontline_sim::scenarios::scene_ready(name, world));
+        if self.scene_ready && ctx.scene_ready_at.is_none() {
+            ctx.scene_ready_at = Some(snap.tick);
+        }
+        self.scene_ready_at = ctx.scene_ready_at;
+
         self.squads.clear();
         self.players.clone_from(&snap.players);
         self.points.clone_from(&snap.points);
@@ -363,7 +414,8 @@ impl MatchFrame {
         ctx.slots_prev.clear();
         std::mem::swap(&mut ctx.slots, &mut ctx.slots_prev);
         for (sid, sq) in game.squads() {
-            if sq.members.is_empty() {
+            // A vehicle's squad of one is in `vehicles`, not here.
+            if sq.members.is_empty() || game.is_vehicle_squad(*sid) {
                 continue;
             }
             let lead = sq.lead(ents);
@@ -409,7 +461,8 @@ impl MatchFrame {
                     v.target = Some(target.to_f32());
                     v.rounds = *rounds;
                 }
-                Order::Idle | Order::Retreat | Order::Follow { .. } => {}
+                Order::Follow { vehicle } => v.follow = Some(vehicle.0),
+                Order::Idle | Order::Retreat => {}
             }
             self.squads.push(v);
         }
@@ -420,6 +473,67 @@ impl MatchFrame {
         );
         ctx.track(&self.squads, setup.players.len());
         self.extra.clone_from(&ctx.extra);
+    }
+
+    /// The fog-filtered `vehicles` and `shells` (module docs). `near` says
+    /// whether a point is within a distance of the local player's men,
+    /// `seen_by` whether he sees an entity.
+    fn fill_vehicles(
+        &mut self,
+        vehicles: &[VehicleSnapshot],
+        shells: &[ShellSnapshot],
+        ctx: &mut FrameCtx,
+        near: &dyn Fn([f32; 3], f32) -> bool,
+        seen_by: &dyn Fn(u32) -> bool,
+    ) {
+        let local = ctx.local;
+        let bit = 1u16 << local;
+        // Who the local player saw the tick before (armour events of a
+        // vehicle knocked out this tick: it is a wreck now).
+        std::mem::swap(&mut ctx.seen_vehicles, &mut ctx.seen_vehicles_prev);
+        ctx.seen_vehicles.clear();
+        self.vehicles.clear();
+        for v in vehicles {
+            let wreck = v.flags & vehicle_flags::WRECK != 0;
+            if wreck || v.owner == local {
+                ctx.seen_vehicles.insert(v.id);
+                self.vehicles.push(v.clone());
+            } else if v.seen_by & bit != 0 {
+                ctx.seen_vehicles.insert(v.id);
+                self.vehicles.push(enemy_view(v, local));
+            }
+        }
+        self.shells.clear();
+        self.shells.extend(
+            shells
+                .iter()
+                .filter(|s| s.player == local || seen_by(s.shooter) || near(s.pos, THROWN_NEAR_M))
+                .cloned(),
+        );
+    }
+}
+
+/// An enemy vehicle as the local player may know it: pose, speed and the
+/// public flags; the own-only fields zeroed (`repairing` and `target` take
+/// their "none" values, since 0 is a real component and id).
+pub fn enemy_view(v: &VehicleSnapshot, local: u8) -> VehicleSnapshot {
+    VehicleSnapshot {
+        id: v.id,
+        squad: v.squad,
+        type_idx: v.type_idx,
+        owner: v.owner,
+        pos: v.pos,
+        yaw: v.yaw,
+        pitch: v.pitch,
+        roll: v.roll,
+        turret_yaw: v.turret_yaw,
+        gun_pitch: v.gun_pitch,
+        speed: v.speed,
+        flags: v.flags & vehicle_flags::PUBLIC,
+        seen_by: 1 << local,
+        repairing: NONE_U8,
+        target: u32::MAX,
+        ..VehicleSnapshot::default()
     }
 }
 
@@ -470,6 +584,14 @@ pub struct FrameCtx {
     slots_prev: BTreeMap<u32, u8>,
     /// Squads seen so far: owner, dig line length (m) and progress.
     squads: BTreeMap<u32, (u8, f32, u8)>,
+    /// Vehicles in the local player's view this tick and the last
+    /// (armour-event fog).
+    seen_vehicles: BTreeSet<u32>,
+    seen_vehicles_prev: BTreeSet<u32>,
+    /// A staged scene's name (`frontline_sim::scenarios::SCENES`): frames
+    /// carry whether its condition holds.
+    pub scene: Option<String>,
+    scene_ready_at: Option<u64>,
     started: bool,
     pub extra: Vec<PlayerExtra>,
 }
@@ -577,8 +699,20 @@ pub struct ShotView {
     pub weapon: u16,
     pub player: u8,
     pub squad: u32,
+    /// The soldier or vehicle that fired.
+    pub shooter: u32,
+    /// S3: the shooter's vehicle type when a vehicle fired.
+    pub vehicle_type: Option<u16>,
     /// The local player sees the shooter (own: always).
     pub visible: bool,
+}
+
+/// An armour event the local player may know of, with the vehicle's type
+/// (the event itself has only the id).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ArmourView {
+    pub ev: ArmourEvent,
+    pub type_idx: u16,
 }
 
 /// A terrain detail tile that changed: its 64 × 64 heights (row-major,
@@ -597,15 +731,24 @@ pub struct TickEvents {
     pub shots: Vec<ShotView>,
     pub explosions: Vec<ExplosionSnapshot>,
     pub tiles: Vec<TileUpdate>,
+    /// S3: the armour events the local player may know of (module docs),
+    /// in sim order.
+    pub armour: Vec<ArmourView>,
 }
 
 impl TickEvents {
     pub fn is_empty(&self) -> bool {
-        self.shots.is_empty() && self.explosions.is_empty() && self.tiles.is_empty()
+        self.shots.is_empty()
+            && self.explosions.is_empty()
+            && self.tiles.is_empty()
+            && self.armour.is_empty()
     }
 
-    /// This tick's events of `world` as seen by `local`.
-    pub fn collect(world: &World, local: u8) -> TickEvents {
+    /// This tick's events of `world` as seen by `ctx.local`. Call after
+    /// [`MatchFrame::fill`] for the same tick (it updates the vehicles the
+    /// player sees).
+    pub fn collect(world: &World, ctx: &FrameCtx) -> TickEvents {
+        let local = ctx.local;
         let snap = world.snapshot();
         let ents = world.entities();
         let bit = 1u16 << local;
@@ -628,10 +771,49 @@ impl TickEvents {
                     .copied()
                     .flatten()
                     .map_or(u32::MAX, |q| q.0),
+                shooter: s.shooter.0,
+                vehicle_type: world
+                    .game()
+                    .and_then(|g| g.vehicle(s.shooter))
+                    .map(|v| v.type_idx),
                 visible: player == local || seen,
             });
         }
         ev.explosions.clone_from(&snap.explosions);
+        if !snap.armour_events.is_empty() {
+            let own: Vec<[f32; 2]> = snap
+                .soldiers
+                .iter()
+                .zip(&snap.soldier_owner)
+                .filter(|(_, o)| **o == local)
+                .map(|(p, _)| [p[0], p[1]])
+                .collect();
+            let r2 = THROWN_NEAR_M * THROWN_NEAR_M;
+            ev.armour.extend(
+                snap.armour_events
+                    .iter()
+                    .filter(|e| {
+                        let wreck_now = snap
+                            .vehicles
+                            .binary_search_by_key(&e.vehicle, |v| v.id)
+                            .is_ok_and(|k| snap.vehicles[k].owner == WRECK_OWNER);
+                        e.owner == local
+                            || (ctx.seen_vehicles.contains(&e.vehicle) && !wreck_now)
+                            || ctx.seen_vehicles_prev.contains(&e.vehicle)
+                            || own.iter().any(|o| {
+                                let (dx, dy) = (o[0] - e.pos[0], o[1] - e.pos[1]);
+                                dx * dx + dy * dy <= r2
+                            })
+                    })
+                    .map(|e| ArmourView {
+                        ev: e.clone(),
+                        type_idx: snap
+                            .vehicles
+                            .binary_search_by_key(&e.vehicle, |v| v.id)
+                            .map_or(0, |k| snap.vehicles[k].type_idx),
+                    }),
+            );
+        }
         for &(x, y) in &snap.dirty_tiles {
             let mut h = Vec::new();
             let heights = tile_heights_f32(world.terrain(), x, y, &mut h).then_some(h);
@@ -680,7 +862,7 @@ pub(crate) mod tests_support {
 mod tests {
     use super::tests_support::test_world;
     use super::*;
-    use frontline_sim::{Command, CommandKind, FxVec2, PlayerId};
+    use frontline_sim::{Command, CommandKind, Fx, FxVec2, PlayerId};
 
     #[test]
     fn frame_matches_the_world() {
@@ -769,7 +951,7 @@ mod tests {
         let mut tiles = 0;
         for _ in 0..30 * 120 {
             w.step(&[]);
-            let ev = TickEvents::collect(&w, 0);
+            let ev = TickEvents::collect(&w, &FrameCtx::new(&setup, 0));
             for t in &ev.tiles {
                 tiles += 1;
                 assert_eq!(t.heights.as_ref().map(|h| h.len()), Some(64 * 64));
@@ -917,6 +1099,177 @@ mod tests {
         assert_eq!(out[&12], 2);
         assert_eq!(out[&13], 3);
         assert_eq!(out[&20], 1);
+    }
+
+    /// A flat staging world (`frontline_sim::scenarios`) from the source
+    /// tree's defs.
+    fn staged() -> World {
+        use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve};
+        let mods = find_mods_dir(&mods_candidates(None, None)).unwrap();
+        let mut setup = resolve(&mods, &MenuChoice::default()).unwrap();
+        frontline_sim::scenarios::staging(&mut setup, true);
+        World::new_match(setup, 2).unwrap()
+    }
+
+    #[test]
+    fn vehicles_follow_the_fog_of_war() {
+        use frontline_sim::scenarios::{EAST, WEST, at, tank};
+        let mut w = staged();
+        let setup = w.match_setup().unwrap().clone();
+        let (own_sq, own) = tank(&mut w, 0, at(400, 512), EAST).unwrap();
+        // 500 m off: beyond twice the tank's sight.
+        let (_, far) = tank(&mut w, 1, at(900, 512), WEST).unwrap();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        for _ in 0..10 {
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+        }
+        assert_eq!(f.vehicles.len(), 1, "{:?}", f.vehicles);
+        let v = &f.vehicles[0];
+        assert_eq!(v.id, own.0);
+        assert_eq!(v.squad, own_sq.0);
+        assert!(v.seats.iter().any(|&s| s != 0) && v.components.iter().all(|&c| c == 100));
+        assert!(v.ammo[0] > 0);
+        // A vehicle's squad is not a squad of men.
+        assert!(f.squads.iter().all(|s| s.id != own_sq.0));
+        assert!(!f.ids.contains(&own.0));
+
+        // Driven to 200 m it is spotted: pose and public flags only.
+        w.place_vehicle(far, at(600, 512), Fx::from_int(3));
+        w.edit_vehicle(far, |vs| vs.burn = 1);
+        let mut seen = false;
+        for _ in 0..60 {
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+            if f.vehicles.iter().any(|v| v.id == far.0) {
+                seen = true;
+                break;
+            }
+        }
+        assert!(seen, "the enemy tank 200 m off was never seen");
+        let e = f.vehicles.iter().find(|v| v.id == far.0).unwrap();
+        assert_eq!(e.owner, 1);
+        assert_eq!(e.flags & !vehicle_flags::PUBLIC, 0);
+        assert_eq!(e.seats, [0; 5]);
+        assert_eq!(e.components, [0; 6]);
+        assert_eq!(e.ammo, [0, 0]);
+        assert_eq!(
+            (e.loaded, e.ammo_choice, e.reload_pct, e.followers),
+            (0, 0, 0, 0)
+        );
+        assert_eq!((e.repairing, e.target), (NONE_U8, u32::MAX));
+        assert_eq!(e.seen_by, 1);
+        // The enemy sees ours too, but player 1's frame keeps our tank's
+        // private fields out.
+        let mut ctx1 = FrameCtx::new(&setup, 1);
+        let mut f1 = MatchFrame::empty();
+        f1.fill(&w, &mut ctx1, 0.0, Instant::now());
+        if let Some(o) = f1.vehicles.iter().find(|v| v.id == own.0) {
+            assert_eq!(o.seats, [0; 5]);
+        }
+
+        // Back out of sight it is dropped again; as a wreck it is always
+        // there (for both players).
+        w.place_vehicle(far, at(950, 512), Fx::from_int(3));
+        for _ in 0..60 {
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+        }
+        assert!(f.vehicles.iter().all(|v| v.id != far.0), "{:?}", f.vehicles);
+        assert!(w.wreck_vehicle(far));
+        w.step(&[]);
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        let wr = f.vehicles.iter().find(|v| v.id == far.0).unwrap();
+        assert_eq!(wr.owner, WRECK_OWNER);
+        assert_ne!(wr.flags & vehicle_flags::WRECK, 0);
+    }
+
+    #[test]
+    fn shells_and_armour_events_follow_the_fog_of_war() {
+        use frontline_sim::ArmourEventKind;
+        use frontline_sim::scenarios::{NORTH, WEST, at, tank};
+        // Our tank 150 m off an enemy's flank: it fires, hits, and we see
+        // all of it. Player 1's view of the same ticks: he sees our tank
+        // (it fires at him) and the hits on his own tank.
+        let mut w = staged();
+        let setup = w.match_setup().unwrap().clone();
+        let (_, own) = tank(&mut w, 0, at(350, 512), frontline_sim::scenarios::EAST).unwrap();
+        let (_, foe) = tank(&mut w, 1, at(500, 512), NORTH).unwrap();
+        // A third tank far away that nobody sees.
+        let (_, hidden) = tank(&mut w, 1, at(950, 900), WEST).unwrap();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut ctx1 = FrameCtx::new(&setup, 1);
+        let mut f = MatchFrame::empty();
+        let mut f1 = MatchFrame::empty();
+        let (mut shells, mut fired, mut impacts, mut theirs) = (0, 0, 0, 0);
+        for _ in 0..30 * 20 {
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+            let ev = TickEvents::collect(&w, &ctx);
+            f1.fill(&w, &mut ctx1, 0.0, Instant::now());
+            let ev1 = TickEvents::collect(&w, &ctx1);
+            shells += f.shells.len();
+            for a in &ev.armour {
+                assert_ne!(a.ev.vehicle, hidden.0);
+                if a.ev.kind == ArmourEventKind::Fired as u8 && a.ev.vehicle == own.0 {
+                    fired += 1;
+                }
+                if a.ev.vehicle == foe.0 && a.ev.kind != ArmourEventKind::Fired as u8 {
+                    impacts += 1;
+                    assert_eq!(
+                        a.type_idx,
+                        w.game().unwrap().vehicle(foe).map_or(0, |v| v.type_idx)
+                    );
+                }
+            }
+            theirs += ev1.armour.iter().filter(|a| a.ev.owner == 1).count();
+            for s in &ev.shots {
+                if s.shooter == own.0 && s.vehicle_type.is_some() {
+                    assert!(s.visible);
+                }
+            }
+            if fired > 0 && impacts > 0 && shells > 0 && theirs > 0 {
+                break;
+            }
+        }
+        assert!(
+            fired > 0 && impacts > 0 && shells > 0,
+            "fired {fired} impacts {impacts} shells {shells}"
+        );
+        assert!(theirs > 0, "player 1 saw no events of his own tank");
+        // Small-arms rounds and mortar shells only in `rounds`; main-gun
+        // shells only in `shells`.
+        assert!(f.rounds.len() <= w.projectiles().slots().iter().flatten().count());
+    }
+
+    #[test]
+    fn every_scene_meets_its_condition() {
+        use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve};
+        let mods = find_mods_dir(&mods_candidates(None, None)).unwrap();
+        let setup = resolve(&mods, &MenuChoice::default()).unwrap();
+        for name in frontline_sim::scenarios::SCENES {
+            let sc = frontline_sim::scenarios::scene(name, setup.clone(), 2).unwrap();
+            let mut w = sc.world;
+            let mut ctx = FrameCtx::new(&setup, 0);
+            ctx.scene = Some(name.to_owned());
+            let mut f = MatchFrame::empty();
+            w.step(&sc.commands);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+            let mut t = 1;
+            while f.scene_ready_at.is_none() && t < sc.max_ticks {
+                w.step(&[]);
+                f.fill(&w, &mut ctx, 0.0, Instant::now());
+                t += 1;
+            }
+            let at = f.scene_ready_at;
+            assert!(at.is_some(), "scene {name}: not ready after {t} ticks");
+            // The latch keeps the first tick.
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+            assert_eq!(f.scene_ready_at, at, "{name}");
+            eprintln!("scene {name}: ready at tick {}", at.unwrap());
+        }
     }
 
     #[test]

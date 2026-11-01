@@ -130,6 +130,12 @@ pub struct NetMatch {
 
 pub struct NetSession {
     defs: Option<Arc<ModDefs>>,
+    /// S3 scripted runs: resolve the match with the test rules override
+    /// (both players must set it: the setup hash is the `Ready` check).
+    test_unlock: bool,
+    /// Scripted runs: both players' starting manpower (both must set the
+    /// same; the setup hash is checked at `Ready`).
+    pub start_manpower: Option<u32>,
     content_hash: u64,
     name: String,
     /// Godot's `user://` (relay log, desync dumps).
@@ -170,6 +176,8 @@ impl NetSession {
     pub fn new() -> NetSession {
         NetSession {
             defs: None,
+            test_unlock: false,
+            start_manpower: None,
             content_hash: 0,
             name: DEFAULT_NAME.into(),
             user_dir: None,
@@ -206,6 +214,20 @@ impl NetSession {
     /// when the mod content cannot be loaded).
     pub fn report(&mut self, code: &'static str) {
         self.fail(code);
+    }
+
+    /// S3 scripted runs: play the test rules override. The defs must then
+    /// hold it, so changing this drops loaded defs (the next host or join
+    /// loads them again).
+    pub fn set_test_unlock(&mut self, on: bool) {
+        if on != self.test_unlock {
+            self.test_unlock = on;
+            self.defs = None;
+        }
+    }
+
+    pub fn test_unlock(&self) -> bool {
+        self.test_unlock
     }
 
     pub fn has_defs(&self) -> bool {
@@ -612,11 +634,12 @@ impl NetSession {
             seed,
             ai_vs_ai: false,
             tickets: None,
-            start_manpower: None,
+            start_manpower: self.start_manpower,
             slots: Some(factions.clone().map(|faction| SlotChoice {
                 faction,
                 human: true,
             })),
+            test_unlock: self.test_unlock,
         };
         resolve_with(defs, &choice)
     }

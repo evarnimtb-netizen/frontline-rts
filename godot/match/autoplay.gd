@@ -14,7 +14,10 @@ extends Node
 ##
 ## and the S1b steps of match/autoplay_s1b.gd (soldier selection, unit
 ## orders, stance, groups, smoke and a frag into an enemy trench, as
-## s1b_*.png). The run exits with code 3 if any screenshot is missing.
+## s1b_*.png), and the S3 steps of match/autoplay_s3.gd (tanks bought at
+## the unlock and driven with every vehicle intent; s3_autoplay_*.png).
+## The run exits with code 3 if any screenshot is missing, or if no
+## vehicle of ours or (skirmish) of the enemy was drawn.
 ##
 ## It plays through the same intents a human sends (MatchView.emit_intent),
 ## so it exercises the whole presenter → command path. Decisions use only
@@ -28,6 +31,7 @@ extends Node
 const SHOT_PREFIX := "s1_autoplay_"
 const S1B := preload("res://match/autoplay_s1b.gd")
 const NET := preload("res://match/autoplay_net.gd")
+const S3 := preload("res://match/autoplay_s3.gd")
 ## Wall-clock seconds to wait after the time limit before giving up.
 const GRACE_S := 90.0
 
@@ -56,6 +60,7 @@ var _orders := {}
 var _order_from := {}
 var _size := Vector2i(1600, 900)
 var s1b: RefCounted
+var s3: RefCounted
 ## The S2 part (net matches only), else null.
 var net: RefCounted
 
@@ -73,6 +78,7 @@ func begin(match_root: Node3D) -> void:
 	camera.input_enabled = false
 	_size = get_window().size
 	s1b = S1B.new(self)
+	s3 = S3.new(self)
 	if Session.net_mode:
 		net = NET.new(self)
 	print("autoplay: %.1f game minutes at %.1fx, screenshots in %s" % [minutes, Session.autoplay_speed, dir])
@@ -91,6 +97,7 @@ func on_state(s: Dictionary) -> void:
 	if net != null and net.step(s, t):
 		return
 	if _busy:
+		s3._record(s)
 		return
 	_play(s, t)
 	if t >= minutes * 60.0 or wall > minutes * 60.0 / maxf(Session.autoplay_speed, 0.25) + GRACE_S:
@@ -118,6 +125,9 @@ func _play(s: Dictionary, t: float) -> void:
 			c += sq.pos / maxf(own_now.size(), 1)
 		var ahead: Vector3 = (_point(s, "B").pos - c).normalized()
 		_snap_at(c + ahead * 35.0, 60.0, -42.0, "overview")
+		return
+	# S3 first: it records every state (vehicles drawn, events).
+	if s3.step(s, t):
 		return
 	if s1b.step(s, t):
 		return
@@ -169,7 +179,8 @@ func _play(s: Dictionary, t: float) -> void:
 			print("autoplay: no explosion seen near the barrage target")
 	# Reinforce: buy rifles (and an MG) when there is manpower.
 	var me: Dictionary = view.player(local)
-	if t >= _next_buy and float(me.get("manpower", 0)) >= 250.0 and s.callin.queue.size() < 2:
+	if t >= _next_buy and float(me.get("manpower", 0)) >= 250.0 and s.callin.queue.size() < 2 \
+			and not s3.saving(s):
 		_next_buy = t + 20.0
 		var kind := "mg" if int(t / 20.0) % 3 == 1 else "rifle"
 		_intent(&"call_in", {"type": kind})
@@ -298,6 +309,8 @@ func _finish(s: Dictionary) -> void:
 	shots.end = true
 	await Session.save_screenshot(dir.path_join(net.shot_name("end") if net != null else SHOT_PREFIX + "end.png"))
 	var missing := []
+	print("autoplay: %s" % s3.report())
+	missing.append_array(s3.missing())
 	if net != null:
 		net.finish(s)
 		missing.append_array(net.missing())

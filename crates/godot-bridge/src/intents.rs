@@ -9,10 +9,16 @@
 //! S1b soldier-level intents carry `units` (soldier ids). They are filtered
 //! to the local player's living men, sorted, deduplicated and capped at
 //! [`MAX_UNITS`] here ([`unit_set`]); the sim validates them again.
+//!
+//! S3: own vehicle ids go in `units` next to soldier ids; the vehicle
+//! intents (`reverse_units`, `face_units`, `attack_unit`, `set_ammo`,
+//! `repair_units`, `follow_units`) become their commands in
+//! [`vehicle_command`], dig intents carry a [`DigProfile`], and a call-in
+//! may name its squad type id ([`call_in_by_id`]).
 
-use frontline_content::{ItemKind, MatchSetup, SquadRole};
+use frontline_content::{DigProfile, ItemKind, MatchSetup, SquadRole};
 use frontline_sim::game::MAX_DIG_POINTS;
-use frontline_sim::{CommandKind, Fx, FxVec2, MAX_UNITS, SimId, SquadId, StanceOrder};
+use frontline_sim::{AmmoChoice, CommandKind, Fx, FxVec2, MAX_UNITS, SimId, SquadId, StanceOrder};
 
 /// Lateral spacing (m) between squads sent to one point together.
 pub const GROUP_SPACING_M: f32 = 18.0;
@@ -51,6 +57,44 @@ pub fn call_in_type(setup: &MatchSetup, player: u8, role: &str) -> Option<u16> {
             .get(t as usize)
             .is_some_and(|ty| role_name(ty.role) == role)
     })
+}
+
+/// The squad type with id `id` (`ww2:ger_pz4_h_squad`) in player
+/// `player`'s faction roster.
+pub fn call_in_by_id(setup: &MatchSetup, player: u8, id: &str) -> Option<u16> {
+    let f = setup.players.get(player as usize)?.faction as usize;
+    setup.factions.get(f)?.roster.iter().copied().find(|&t| {
+        setup
+            .squad_types
+            .get(t as usize)
+            .is_some_and(|ty| ty.id == id)
+    })
+}
+
+/// Dig intent `profile` names: `"at_ditch"`, else the trench.
+pub fn dig_profile(name: &str) -> DigProfile {
+    match name {
+        "at_ditch" => DigProfile::AtDitch,
+        _ => DigProfile::Trench,
+    }
+}
+
+/// `set_ammo` names (`"auto"`, `"ap"`, `"he"`).
+pub fn ammo_choice(name: &str) -> Option<AmmoChoice> {
+    Some(match name {
+        "auto" => AmmoChoice::Auto,
+        "ap" => AmmoChoice::Ap,
+        "he" => AmmoChoice::He,
+        _ => return None,
+    })
+}
+
+pub fn ammo_choice_name(c: u8) -> &'static str {
+    match c {
+        1 => "ap",
+        2 => "he",
+        _ => "auto",
+    }
 }
 
 /// Destinations for `n` squads at `anchors` (sim xy) ordered to `target`:
@@ -140,11 +184,11 @@ pub fn cap_points(line: &[[f32; 2]]) -> Vec<[f32; 2]> {
 }
 
 /// A Dig command for `squad` along `line` (sim xy).
-pub fn dig_command(squad: u32, line: &[[f32; 2]]) -> CommandKind {
+pub fn dig_command(squad: u32, line: &[[f32; 2]], profile: DigProfile) -> CommandKind {
     CommandKind::Dig {
         squad: SquadId(squad),
         line: cap_points(line).into_iter().map(sim_to_fx).collect(),
-        profile: Default::default(),
+        profile,
     }
 }
 
@@ -204,8 +248,9 @@ pub fn item_name(k: ItemKind) -> &'static str {
 
 /// The Command for a soldier-level intent `kind` on `units` (already
 /// filtered by [`unit_set`], non-empty). `target` and `line` are sim xy;
-/// they are quantised here, once. `None` when the intent lacks what it
-/// needs (a target, a line of two points, a known stance or item).
+/// they are quantised here, once. `word` is the stance, the item or (dig)
+/// the profile. `None` when the intent lacks what it needs (a target, a
+/// line of two points, a known stance or item).
 pub fn unit_command(
     kind: &str,
     units: Vec<SimId>,
@@ -228,7 +273,7 @@ pub fn unit_command(
         "dig_units" if line.len() >= 2 => CommandKind::DigUnits {
             units,
             line: cap_points(line).into_iter().map(sim_to_fx).collect(),
-            profile: Default::default(),
+            profile: dig_profile(word),
         },
         "set_stance" => CommandKind::SetStance {
             units,
@@ -243,6 +288,44 @@ pub fn unit_command(
             units,
             item: item_kind(word)?,
             target: t()?,
+        },
+        _ => return None,
+    })
+}
+
+/// The Command for an S3 vehicle intent `kind` on `units` (filtered by
+/// [`unit_set`], non-empty): `target` is sim xy (reverse, face), `id` the
+/// vehicle named (`attack_unit`'s target, `follow_units`' vehicle), `word`
+/// the ammo choice. `None` when the intent lacks what it needs.
+pub fn vehicle_command(
+    kind: &str,
+    units: Vec<SimId>,
+    target: Option<[f32; 2]>,
+    id: Option<u32>,
+    word: &str,
+) -> Option<CommandKind> {
+    let t = || target.map(sim_to_fx);
+    Some(match kind {
+        "reverse_units" => CommandKind::ReverseUnits {
+            units,
+            target: t()?,
+        },
+        "face_units" => CommandKind::FaceUnits {
+            units,
+            toward: t()?,
+        },
+        "attack_unit" => CommandKind::AttackUnit {
+            units,
+            target: SimId(id?),
+        },
+        "set_ammo" => CommandKind::SetAmmo {
+            units,
+            ammo: ammo_choice(word)?,
+        },
+        "repair_units" => CommandKind::RepairUnits { units },
+        "follow_units" => CommandKind::FollowUnits {
+            units,
+            vehicle: SimId(id?),
         },
         _ => return None,
     })
@@ -366,6 +449,72 @@ mod tests {
         }
         for k in ItemKind::ALL {
             assert_eq!(item_kind(item_name(k)), Some(k));
+        }
+    }
+
+    #[test]
+    fn vehicle_intents_become_commands() {
+        let u = || vec![SimId(70), SimId(71)];
+        let t = Some([300.0004, 512.0]);
+        match vehicle_command("reverse_units", u(), t, None, "") {
+            Some(CommandKind::ReverseUnits { units, target }) => {
+                assert_eq!(units, u());
+                assert_eq!(target, sim_to_fx([300.0004, 512.0]));
+            }
+            c => panic!("{c:?}"),
+        }
+        assert!(matches!(
+            vehicle_command("face_units", u(), t, None, ""),
+            Some(CommandKind::FaceUnits { .. })
+        ));
+        assert!(vehicle_command("face_units", u(), None, None, "").is_none());
+        assert!(matches!(
+            vehicle_command("attack_unit", u(), None, Some(90), ""),
+            Some(CommandKind::AttackUnit {
+                target: SimId(90),
+                ..
+            })
+        ));
+        assert!(vehicle_command("attack_unit", u(), None, None, "").is_none());
+        for (w, c) in [
+            ("auto", AmmoChoice::Auto),
+            ("ap", AmmoChoice::Ap),
+            ("he", AmmoChoice::He),
+        ] {
+            match vehicle_command("set_ammo", u(), None, None, w) {
+                Some(CommandKind::SetAmmo { ammo, .. }) => assert_eq!(ammo, c),
+                c => panic!("{c:?}"),
+            }
+            assert_eq!(ammo_choice_name(c as u8), w);
+        }
+        assert!(vehicle_command("set_ammo", u(), None, None, "heat").is_none());
+        assert!(matches!(
+            vehicle_command("repair_units", u(), None, None, ""),
+            Some(CommandKind::RepairUnits { .. })
+        ));
+        assert!(matches!(
+            vehicle_command("follow_units", u(), None, Some(70), ""),
+            Some(CommandKind::FollowUnits {
+                vehicle: SimId(70),
+                ..
+            })
+        ));
+        assert!(vehicle_command("move_units", u(), t, None, "").is_none());
+        // Dig profiles: AT ditch by name, the trench otherwise.
+        let line = [[0.0, 0.0], [10.0, 0.0]];
+        for (w, p) in [
+            ("at_ditch", DigProfile::AtDitch),
+            ("trench", DigProfile::Trench),
+            ("", DigProfile::Trench),
+        ] {
+            match unit_command("dig_units", u(), None, &line, w) {
+                Some(CommandKind::DigUnits { profile, .. }) => assert_eq!(profile, p),
+                c => panic!("{c:?}"),
+            }
+            match dig_command(3, &line, dig_profile(w)) {
+                CommandKind::Dig { profile, .. } => assert_eq!(profile, p),
+                c => panic!("{c:?}"),
+            }
         }
     }
 

@@ -31,6 +31,10 @@ pub struct MenuChoice {
     /// Overrides `faction` and `ai_vs_ai`. Both clients resolve the same
     /// choice into the same setup (its hash is the `Ready` check).
     pub slots: Option<[SlotChoice; 2]>,
+    /// S3: play the test rules override (`mods/ww2/tests/
+    /// rules_test_unlock.toml`: vehicles unlocked at once), for scripted
+    /// runs. The defs must hold it ([`load_defs`] with `test_unlock`).
+    pub test_unlock: bool,
 }
 
 /// One player slot of a net match.
@@ -52,11 +56,16 @@ impl Default for MenuChoice {
             tickets: None,
             start_manpower: None,
             slots: None,
+            test_unlock: false,
         }
     }
 }
 
 pub const MOD_ID: &str = "ww2";
+/// Rules id of the S3 test override (vehicles unlocked at once).
+pub const TEST_UNLOCK_RULES: &str = "ww2:skirmish_test_unlock";
+/// Its file, relative to the mod directory.
+pub const TEST_UNLOCK_FILE: &str = "tests/rules_test_unlock.toml";
 pub const FACTIONS: [&str; 2] = ["germany", "usa"];
 
 /// The first candidate that holds a `mod.toml`.
@@ -104,9 +113,20 @@ fn difficulty(s: &str) -> Result<Difficulty, String> {
     }
 }
 
+/// Loads the mod at `mods`, with the S3 test rules override when
+/// `test_unlock` is set.
+pub fn load_defs(mods: &Path, test_unlock: bool) -> Result<ModDefs, String> {
+    let mut defs = ModDefs::load(mods).map_err(|e| e.to_string())?;
+    if test_unlock {
+        defs.add_rules_override(&mods.join(TEST_UNLOCK_FILE))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(defs)
+}
+
 /// Loads the mod at `mods` and resolves `choice` into a setup.
 pub fn resolve(mods: &Path, choice: &MenuChoice) -> Result<MatchSetup, String> {
-    let defs = ModDefs::load(mods).map_err(|e| e.to_string())?;
+    let defs = load_defs(mods, choice.test_unlock)?;
     resolve_with(&defs, choice)
 }
 
@@ -141,7 +161,11 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
         return Err(format!("both slots are {:?}", slots[0].faction));
     }
     let req = MatchRequest {
-        rules: format!("{MOD_ID}:skirmish"),
+        rules: if choice.test_unlock {
+            TEST_UNLOCK_RULES.to_owned()
+        } else {
+            format!("{MOD_ID}:skirmish")
+        },
         map: format!("{MOD_ID}:{}", choice.map),
         seed: choice.seed,
         players: slots
@@ -248,6 +272,23 @@ mod tests {
         let mut same = choice.clone();
         same.slots.as_mut().unwrap()[1].faction = "usa".into();
         assert!(resolve(&mods(), &same).is_err());
+    }
+
+    #[test]
+    fn test_unlock_rules_unlock_vehicles_at_once() {
+        let normal = resolve(&mods(), &MenuChoice::default()).unwrap();
+        assert!(normal.rules.vehicles.unlock_ticks > 0);
+        let choice = MenuChoice {
+            test_unlock: true,
+            ..MenuChoice::default()
+        };
+        let s = resolve(&mods(), &choice).unwrap();
+        assert_eq!(s.rules.vehicles.unlock_ticks, 0);
+        // Everything else is the base rules.
+        assert_eq!(s.rules.tickets, normal.rules.tickets);
+        // Without the override loaded the rules id is unknown.
+        let defs = ModDefs::load(&mods()).unwrap();
+        assert!(resolve_with(&defs, &choice).is_err());
     }
 
     #[test]

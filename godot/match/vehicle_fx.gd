@@ -31,7 +31,7 @@ const STREAK_STRIDE := 16
 ## Tracer length per m/s of shell speed (a 0.022 s streak) and width.
 const STREAK_S := 0.022
 const STREAK_W := 0.22
-const ROCKET_TRAIL_M := 14.0
+const ROCKET_TRAIL_M := 9.0
 
 var _flashes: Array[Dictionary] = []
 var _sparks: Array[Dictionary] = []
@@ -206,7 +206,7 @@ func _update_streaks(shells: Array) -> void:
 			continue
 		var d := vel / speed
 		if String(sh.get("kind", "ap")) == "heat":
-			_streak(n, pos, d, minf(ROCKET_TRAIL_M, speed * 0.15), STREAK_W * 2.2, Color(0.32, 0.3, 0.27, 0.5))
+			_streak(n, pos, d, minf(ROCKET_TRAIL_M, speed * 0.09), STREAK_W * 1.1, Color(0.3, 0.29, 0.26, 0.35))
 			n += 1
 			_streak(n, pos, d, 1.2, STREAK_W * 1.6, Color(1.0, 0.75, 0.35, 1.0))
 			n += 1

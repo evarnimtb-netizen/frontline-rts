@@ -11,7 +11,7 @@ use std::sync::Arc;
 use godot::classes::{IRefCounted, Os, ProjectSettings, RefCounted};
 use godot::prelude::*;
 
-use crate::match_setup::{find_mods_dir, mods_candidates};
+use crate::match_setup::{find_mods_dir, load_defs, mods_candidates};
 use crate::net_session::{ChoiceUpdate, NetSession};
 
 #[derive(GodotClass)]
@@ -123,6 +123,21 @@ impl FrontlineNet {
         self.session.leave();
     }
 
+    /// Scripted runs (S3 `--test_unlock`): the next match plays the test
+    /// rules override (vehicles unlocked at once). Call before `host` /
+    /// `join`; both players need it (the setups must agree).
+    #[func]
+    fn set_test_unlock(&mut self, on: bool) {
+        self.session.set_test_unlock(on);
+    }
+
+    /// Scripted runs (`--start_manpower N`): both players start with N
+    /// manpower (both instances need the same N). 0 or less: the rules'.
+    #[func]
+    fn set_start_manpower(&mut self, manpower: i64) {
+        self.session.start_manpower = (manpower > 0).then(|| manpower.min(u32::MAX as i64) as u32);
+    }
+
     /// Dev hook (`--debug_inject_desync TICK`): the next match steps TICK
     /// with one extra local-only `Stop`. 0 or less turns it off.
     #[func]
@@ -189,7 +204,7 @@ impl FrontlineNet {
         let loaded = find_mods_dir(&candidates)
             .ok_or_else(|| format!("cannot find mods/ww2 (looked in {candidates:?})"))
             .and_then(|dir| {
-                frontline_content::ModDefs::load(&dir)
+                load_defs(&dir, self.session.test_unlock())
                     .map_err(|e| format!("{}: {e}", dir.display()))
             });
         match loaded {

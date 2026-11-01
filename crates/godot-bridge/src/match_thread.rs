@@ -113,10 +113,22 @@ impl MatchHandle {
     /// commands this handle sends and whose fog of war frames carry. Tiles
     /// the world already has (a loaded match) arrive as the first events.
     pub fn spawn(world: World, local: u8) -> std::io::Result<MatchHandle> {
+        MatchHandle::spawn_scene(world, local, None)
+    }
+
+    /// [`MatchHandle::spawn`] for a staged scene (S3 `--autoplay_scene`,
+    /// `frontline_sim::scenarios`): frames carry whether its condition
+    /// holds ([`MatchFrame::scene_ready`]).
+    pub fn spawn_scene(
+        world: World,
+        local: u8,
+        scene: Option<String>,
+    ) -> std::io::Result<MatchHandle> {
         let (cmd_tx, cmd_rx) = channel::<CommandKind>();
         MatchHandle::spawn_source(
             world,
             local,
+            scene,
             TickSource::Local(cmd_rx),
             Input::Local(cmd_tx),
         )
@@ -136,6 +148,7 @@ impl MatchHandle {
         MatchHandle::spawn_source(
             world,
             slot,
+            None,
             TickSource::Net(Box::new((link, stepper))),
             Input::Net(to_net),
         )
@@ -144,6 +157,7 @@ impl MatchHandle {
     fn spawn_source(
         world: World,
         local: u8,
+        scene: Option<String>,
         source: TickSource,
         input_tx: Input,
     ) -> std::io::Result<MatchHandle> {
@@ -153,6 +167,7 @@ impl MatchHandle {
             .ok_or_else(|| std::io::Error::other("not a match world"))?;
         let tick_hz = setup.tick_hz.max(1);
         let mut ctx = FrameCtx::new(&setup, local);
+        ctx.scene = scene;
         let anchor = Instant::now();
         let mut first = MatchFrame::empty();
         first.fill(&world, &mut ctx, 0.0, anchor);
@@ -334,7 +349,7 @@ impl Out<'_> {
         f.published = Instant::now();
         self.input.publish();
         if step {
-            let ev = TickEvents::collect(world, self.local);
+            let ev = TickEvents::collect(world, self.ctx);
             if !ev.is_empty() {
                 // The receiver only goes away when the presenter is gone.
                 let _ = self.ev_tx.send(ev);

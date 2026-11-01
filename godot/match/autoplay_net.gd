@@ -183,6 +183,10 @@ func write_hashes(s: Dictionary) -> void:
 		"final_tick": hashes[hashes.size() - 1].tick if not hashes.is_empty() else -1,
 		"result": s.get("result", {}),
 		"net": s.get("net", {}),
+		# S3: own vehicles this client drew (spawned: own ones are always
+		# sent), and the enemy ones it saw.
+		"vehicles_own": ap.s3.own_ids.size() if ap.s3 != null else -1,
+		"vehicles_enemy_seen": ap.s3.enemy_ids.size() if ap.s3 != null else -1,
 		"hashes": hashes,
 	}
 	var path: String = ap.dir.path_join("s2_hashes_%s.json" % role)

@@ -16,7 +16,8 @@ extends Node3D
 ##
 ## --capture_setup (see Session) stages a screenshot on the mock: "hud",
 ## "throw", "rotated" (minimap turning with the camera), "docked" (minimap
-## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd.
+## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd,
+## --autoplay_scene match/autoplay_scene.gd (S3 staged scenes).
 ##
 ## Net mode (S2, Session.net_mode): the bridge source gets the lobby's link
 ## through attach_net(Session.net) (the bridge's FrontlineNet) before
@@ -30,6 +31,7 @@ extends Node3D
 ## "net_reconnecting", "net_paused", "net_paused_by_them", "net_disconnect".
 
 const AUTOPLAY := preload("res://match/autoplay.gd")
+const AUTOPLAY_SCENE := preload("res://match/autoplay_scene.gd")
 
 @onready var view: MatchView = $View
 @onready var camera: Camera3D = $Camera
@@ -87,7 +89,12 @@ func _ready() -> void:
 		camera.jump_to(Vector3(-200, 0, 120))
 	started = true
 	AudioManager.start_ambient(&"wind")
-	if Session.autoplay_enabled() and source.has_method("start_match"):
+	if Session.autoplay_scene != "" and source.has_method("start_match"):
+		autoplay = AUTOPLAY_SCENE.new()
+		autoplay.name = "AutoplayScene"
+		add_child(autoplay)
+		autoplay.begin(self)
+	elif Session.autoplay_enabled() and source.has_method("start_match"):
 		autoplay = AUTOPLAY.new()
 		autoplay.name = "Autoplay"
 		add_child(autoplay)

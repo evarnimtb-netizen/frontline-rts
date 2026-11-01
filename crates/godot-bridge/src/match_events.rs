@@ -7,11 +7,17 @@
 //! [`TickEvents`] into the sound and VFX cues `match_state.md` lists,
 //! folding a squad's shots into one cue per batch so a firefight does not
 //! flood the audio pool. Positions are sim axes; the node converts.
+//!
+//! S3: own vehicles arriving and the visible armour events (knock-outs,
+//! own components destroyed, own vehicles bogged) make feed lines; main
+//! guns and launchers firing, armour impacts and ammo-rack detonations
+//! make the `cannon`, `rocket_launch`, `armour_hit` and `cook_off` cues,
+//! and tank-HE and rocket bursts get their own explosion sizes.
 
 use std::collections::BTreeMap;
 
-use frontline_content::{MatchSetup, WeaponClass};
-use frontline_sim::{BlastKind, OrderKind, Outcome};
+use frontline_content::{AmmoMechanism, MatchSetup, WeaponClass};
+use frontline_sim::{ArmourEventKind, BlastKind, LoadedSnap, OrderKind, Outcome, vehicle_flags};
 
 use crate::match_frame::{MatchFrame, TickEvents};
 
@@ -25,7 +31,8 @@ pub const TICKETS_LOW: u32 = 100;
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiEvent {
     /// `point_captured`, `point_lost`, `squad_lost`, `squad_arrived`,
-    /// `under_attack`, `tickets_low` or `info`.
+    /// `under_attack`, `tickets_low` or `info`; S3 `vehicle_arrived`,
+    /// `vehicle_knocked_out`, `vehicle_damaged`, `vehicle_bogged`.
     pub kind: &'static str,
     pub text: String,
     pub pos: Option<[f32; 2]>,
@@ -54,6 +61,28 @@ pub struct EventTracker {
     last_alert: Option<u64>,
     tickets_low: bool,
     ended: bool,
+    /// Own live vehicles of the last frame.
+    vehicles: Vec<u32>,
+}
+
+/// A vehicle type's short name ("Panzer IV").
+pub fn vehicle_short(setup: &MatchSetup, type_idx: u16) -> &str {
+    setup
+        .vehicles
+        .get(type_idx as usize)
+        .map_or("Vehicle", |v| v.short_name.as_str())
+}
+
+/// Feed words for a destroyed component (`ComponentKind::index`).
+fn component_words(c: u8) -> &'static str {
+    match c {
+        0 => "engine",
+        1 | 2 => "track",
+        3 => "main gun",
+        4 => "turret ring",
+        5 => "ammo rack",
+        _ => "component",
+    }
 }
 
 impl EventTracker {
@@ -171,6 +200,25 @@ impl EventTracker {
             }
         }
         self.squads = seen;
+        // Own vehicles arriving (S3); losses come from armour events.
+        let own_v: Vec<u32> = f
+            .vehicles
+            .iter()
+            .filter(|v| v.owner == local && v.flags & vehicle_flags::WRECK == 0)
+            .map(|v| v.id)
+            .collect();
+        if self.started {
+            for v in f.vehicles.iter().filter(|v| own_v.contains(&v.id)) {
+                if !self.vehicles.contains(&v.id) {
+                    push(
+                        "vehicle_arrived",
+                        format!("{} arrived.", vehicle_short(setup, v.type_idx)),
+                        Some([v.pos[0], v.pos[1]]),
+                    );
+                }
+            }
+        }
+        self.vehicles = own_v;
         // Tickets.
         if let Some(me) = f.players.get(local as usize)
             && !self.tickets_low
@@ -190,18 +238,78 @@ impl EventTracker {
         }
         self.started = true;
     }
+
+    /// Feed lines for one tick's visible armour events (S3): any vehicle
+    /// knocked out, own components destroyed, own vehicles bogged.
+    pub fn armour(&mut self, ev: &TickEvents, setup: &MatchSetup, out: &mut Vec<UiEvent>) {
+        let local = self.local;
+        for a in &ev.armour {
+            let e = &a.ev;
+            let name = vehicle_short(setup, a.type_idx);
+            let own = e.owner == local;
+            let (kind, text) = match e.kind {
+                k if k == ArmourEventKind::KnockedOut as u8 => (
+                    "vehicle_knocked_out",
+                    if own {
+                        format!("{name} knocked out.")
+                    } else {
+                        format!("Enemy {name} knocked out.")
+                    },
+                ),
+                k if k == ArmourEventKind::Disabled as u8 && own => (
+                    "vehicle_damaged",
+                    format!("{name}: {} destroyed.", component_words(e.component)),
+                ),
+                k if k == ArmourEventKind::Bogged as u8 && own => {
+                    ("vehicle_bogged", format!("{name} bogged in trench."))
+                }
+                _ => continue,
+            };
+            out.push(UiEvent {
+                kind,
+                text,
+                pos: Some([e.pos[0], e.pos[1]]),
+                player: e.owner as i32,
+                tick: ev.tick,
+            });
+        }
+    }
 }
 
 /// A sound / VFX cue (`match_state.md` "effects").
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectCue {
-    /// `shot`, `mortar_launch`, `explosion` or `dig`.
+    /// `shot`, `mortar_launch`, `explosion` or `dig`; S3 `cannon`,
+    /// `rocket_launch`, `armour_hit`, `cook_off`.
     pub kind: &'static str,
     /// Shots: `rifle`, `mg` or `smg`. Explosions: the blast size
-    /// (`mortar`, `frag` or `satchel`; the state's `size`).
+    /// (`mortar`, `frag`, `satchel`, `tank_he` or `rocket`; the state's
+    /// `size`). `cannon`: the round (`ap`, `he`). `armour_hit`: the result
+    /// (`ricochet`, `no_pen`, `pen`).
     pub weapon: &'static str,
     /// Sim axes.
     pub pos: [f32; 3],
+    /// `cannon`, `rocket_launch`: the firing direction (sim axes, unit).
+    pub dir: Option<[f32; 3]>,
+    /// `cannon`: the vehicle type.
+    pub vehicle_type: Option<u16>,
+}
+
+impl EffectCue {
+    pub fn new(kind: &'static str, weapon: &'static str, pos: [f32; 3]) -> EffectCue {
+        EffectCue {
+            kind,
+            weapon,
+            pos,
+            dir: None,
+            vehicle_type: None,
+        }
+    }
+}
+
+fn unit(v: [f32; 3]) -> [f32; 3] {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
+    [v[0] / l, v[1] / l, v[2] / l]
 }
 
 pub fn weapon_cue(class: WeaponClass) -> &'static str {
@@ -210,8 +318,8 @@ pub fn weapon_cue(class: WeaponClass) -> &'static str {
         WeaponClass::Smg => "smg",
         WeaponClass::Mg => "mg",
         WeaponClass::Mortar => "mortar",
-        // S3: no vehicles or AT teams in play before the presenter
-        // integration; the names are the contract's (`cannon`, `rocket`).
+        // S3: main guns and launchers make their own cues (`cannon`,
+        // `rocket_launch`); these names are only the fallback.
         WeaponClass::Cannon => "cannon",
         WeaponClass::Launcher => "rocket",
     }
@@ -220,6 +328,10 @@ pub fn weapon_cue(class: WeaponClass) -> &'static str {
 /// Cues for a batch of ticks: one `shot` per firing squad (and weapon),
 /// one `mortar_launch` per mortar round, one `explosion` per burst. Shots
 /// by shooters the local player does not see are left out (fog of war).
+/// S3: one `cannon` per main-gun shot (the round from the tick's `Fired`
+/// event), one `rocket_launch` per rocket, one `armour_hit` per visible
+/// ricochet, non-penetration or penetration, one `cook_off` per ammo-rack
+/// knock-out.
 pub fn effect_cues(batch: &[TickEvents], setup: &MatchSetup, out: &mut Vec<EffectCue>) {
     let mut by_squad: BTreeMap<(u32, u16), [f32; 3]> = BTreeMap::new();
     for ev in batch {
@@ -228,26 +340,54 @@ pub fn effect_cues(batch: &[TickEvents], setup: &MatchSetup, out: &mut Vec<Effec
                 .weapons
                 .get(s.weapon as usize)
                 .map_or(WeaponClass::Rifle, |w| w.class);
-            if class == WeaponClass::Mortar {
-                out.push(EffectCue {
-                    kind: "mortar_launch",
-                    weapon: "mortar",
-                    pos: s.from,
-                });
-            } else {
-                by_squad.insert((s.squad, s.weapon), s.from);
+            match class {
+                WeaponClass::Mortar => out.push(EffectCue::new("mortar_launch", "mortar", s.from)),
+                WeaponClass::Cannon => {
+                    let he = ev.armour.iter().any(|a| {
+                        a.ev.kind == ArmourEventKind::Fired as u8
+                            && a.ev.vehicle == s.shooter
+                            && a.ev.component == LoadedSnap::He as u8
+                    });
+                    out.push(EffectCue {
+                        dir: Some(unit(s.vel)),
+                        vehicle_type: s.vehicle_type,
+                        ..EffectCue::new("cannon", if he { "he" } else { "ap" }, s.from)
+                    });
+                }
+                WeaponClass::Launcher => out.push(EffectCue {
+                    dir: Some(unit(s.vel)),
+                    ..EffectCue::new("rocket_launch", "rocket", s.from)
+                }),
+                _ => {
+                    by_squad.insert((s.squad, s.weapon), s.from);
+                }
             }
         }
         for e in &ev.explosions {
-            out.push(EffectCue {
-                kind: "explosion",
-                weapon: match e.kind {
-                    BlastKind::Shell => "mortar",
-                    BlastKind::Frag => "frag",
-                    BlastKind::Satchel => "satchel",
+            let size = match e.kind {
+                BlastKind::Shell => match setup.weapons.get(e.weapon as usize).map(|w| w.class) {
+                    Some(WeaponClass::Cannon) => "tank_he",
+                    Some(WeaponClass::Launcher) => "rocket",
+                    _ => "mortar",
                 },
-                pos: e.pos,
-            });
+                BlastKind::Frag => "frag",
+                BlastKind::Satchel => "satchel",
+            };
+            out.push(EffectCue::new("explosion", size, e.pos));
+        }
+        for a in &ev.armour {
+            let e = &a.ev;
+            let result = match e.kind {
+                k if k == ArmourEventKind::Ricochet as u8 => "ricochet",
+                k if k == ArmourEventKind::NonPenetration as u8 => "no_pen",
+                k if k == ArmourEventKind::Penetration as u8 => "pen",
+                k if k == ArmourEventKind::KnockedOut as u8 && e.component == 1 => {
+                    out.push(EffectCue::new("cook_off", "", e.pos));
+                    continue;
+                }
+                _ => continue,
+            };
+            out.push(EffectCue::new("armour_hit", result, e.pos));
         }
     }
     for ((_, weapon), pos) in by_squad {
@@ -255,11 +395,17 @@ pub fn effect_cues(batch: &[TickEvents], setup: &MatchSetup, out: &mut Vec<Effec
             .weapons
             .get(weapon as usize)
             .map_or(WeaponClass::Rifle, |w| w.class);
-        out.push(EffectCue {
-            kind: "shot",
-            weapon: weapon_cue(class),
-            pos,
-        });
+        out.push(EffectCue::new("shot", weapon_cue(class), pos));
+    }
+}
+
+/// `armour_events[].ammo` and `shells[].kind` words for a round.
+pub fn ammo_word(setup: &MatchSetup, ammo: u16) -> &'static str {
+    match setup.ammo.get(ammo as usize).map(|a| a.mechanism) {
+        Some(AmmoMechanism::Ap | AmmoMechanism::Aphe) => "ap",
+        Some(AmmoMechanism::He) => "he",
+        Some(AmmoMechanism::Heat) => "heat",
+        None => "",
     }
 }
 
@@ -364,7 +510,7 @@ mod tests {
                 tick: 2,
                 shots: vec![shot(1, rifle, true), shot(3, mortar, true)],
                 explosions: vec![ExplosionSnapshot::default()],
-                tiles: vec![],
+                ..TickEvents::default()
             },
         ];
         let mut out = Vec::new();
@@ -372,5 +518,107 @@ mod tests {
         let kinds: Vec<&str> = out.iter().map(|c| c.kind).collect();
         assert_eq!(kinds, vec!["mortar_launch", "explosion", "shot"]);
         assert_eq!(out[2].weapon, "rifle");
+    }
+
+    #[test]
+    fn vehicle_cues_and_feed_lines() {
+        use crate::match_frame::ArmourView;
+        use frontline_sim::{ArmourEvent, ArmourEventKind as K};
+        let w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let class =
+            |c: WeaponClass| setup.weapons.iter().position(|w| w.class == c).unwrap() as u16;
+        let (cannon, launcher) = (class(WeaponClass::Cannon), class(WeaponClass::Launcher));
+        let ev = |kind: K, vehicle, owner, component| ArmourView {
+            ev: ArmourEvent {
+                kind: kind as u8,
+                vehicle,
+                owner,
+                component,
+                ..ArmourEvent::default()
+            },
+            type_idx: 0,
+        };
+        let batch = vec![TickEvents {
+            tick: 9,
+            shots: vec![
+                ShotView {
+                    weapon: cannon,
+                    shooter: 70,
+                    vel: [0.0, 700.0, 0.0],
+                    vehicle_type: Some(0),
+                    visible: true,
+                    ..ShotView::default()
+                },
+                ShotView {
+                    weapon: launcher,
+                    shooter: 12,
+                    vel: [100.0, 0.0, 0.0],
+                    visible: true,
+                    ..ShotView::default()
+                },
+                // Unseen: no cue.
+                ShotView {
+                    weapon: cannon,
+                    shooter: 71,
+                    visible: false,
+                    ..ShotView::default()
+                },
+            ],
+            explosions: vec![ExplosionSnapshot {
+                weapon: cannon,
+                ..ExplosionSnapshot::default()
+            }],
+            armour: vec![
+                ev(K::Fired, 70, 0, LoadedSnap::He as u8),
+                ev(K::Ricochet, 80, 1, 255),
+                ev(K::Penetration, 80, 1, 255),
+                ev(K::Disabled, 70, 0, 1),
+                ev(K::Bogged, 70, 0, 255),
+                ev(K::KnockedOut, 80, 1, 1),
+            ],
+            ..TickEvents::default()
+        }];
+        let mut out = Vec::new();
+        effect_cues(&batch, &setup, &mut out);
+        let got: Vec<(&str, &str)> = out.iter().map(|c| (c.kind, c.weapon)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("cannon", "he"),
+                ("rocket_launch", "rocket"),
+                ("explosion", "tank_he"),
+                ("armour_hit", "ricochet"),
+                ("armour_hit", "pen"),
+                ("cook_off", ""),
+            ]
+        );
+        assert_eq!(out[0].dir, Some([0.0, 1.0, 0.0]));
+        assert_eq!(out[0].vehicle_type, Some(0));
+        // Feed: the enemy knock-out, our destroyed track and the bogging;
+        // not the hits.
+        let mut tr = EventTracker::new(0);
+        let mut feed = Vec::new();
+        tr.armour(&batch[0], &setup, &mut feed);
+        let lines: Vec<(&str, &str)> = feed.iter().map(|e| (e.kind, e.text.as_str())).collect();
+        let short = vehicle_short(&setup, 0);
+        assert_eq!(
+            lines,
+            vec![
+                (
+                    "vehicle_damaged",
+                    format!("{short}: track destroyed.").as_str()
+                ),
+                (
+                    "vehicle_bogged",
+                    format!("{short} bogged in trench.").as_str()
+                ),
+                (
+                    "vehicle_knocked_out",
+                    format!("Enemy {short} knocked out.").as_str()
+                ),
+            ]
+        );
+        assert_eq!(feed[2].player, 1);
     }
 }
