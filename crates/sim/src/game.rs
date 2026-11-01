@@ -306,6 +306,8 @@ pub struct MatchState {
     /// AT-ditch lines (S3): every AT-ditch job's line, added when it
     /// starts. The vehicle block layer reads them.
     pub(crate) at_ditches: Vec<Vec<FxVec2>>,
+    /// Armour events so far (S3): the next `ArmourEvent::seq`.
+    pub(crate) armour_seq: u32,
     /// Derived from the setup (S3): plate normals and ammo cosines. Not
     /// saved and not hashed (the setup is); rebuilt by
     /// [`MatchState::rebuild_derived`] after load.
@@ -379,6 +381,7 @@ impl MatchState {
             next_smoke: 0,
             vehicles: BTreeMap::new(),
             at_ditches: Vec::new(),
+            armour_seq: 0,
             armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             setup,
@@ -1306,15 +1309,26 @@ impl MatchState {
                 return Err("a vehicle's squad or wreck state is inconsistent");
             }
             wrecks += wreck as u32;
+            let enemy = |t: SimId| ents.owner[t.index()] != ents.owner[i];
             let target_ok = vs.target.is_none_or(|t| {
-                kind(t) == Some(EntityKind::Vehicle) && ents.owner[t.index()] != ents.owner[i]
-            });
+                matches!(kind(t), Some(EntityKind::Vehicle | EntityKind::Soldier)) && enemy(t)
+            }) && vs
+                .attack
+                .is_none_or(|t| kind(t) == Some(EntityKind::Vehicle) && enemy(t))
+                && vs.mgs.iter().all(|m| {
+                    m.target
+                        .is_none_or(|t| kind(t) == Some(EntityKind::Soldier) && enemy(t))
+                });
             let followers_ok = vs.followers.iter().all(|&f| {
                 kind(f) == Some(EntityKind::Soldier) && ents.owner[f.index()] == ents.owner[i]
             });
             if !target_ok
                 || !followers_ok
-                || (wreck && (vs.target.is_some() || !vs.followers.is_empty()))
+                || (wreck
+                    && (vs.target.is_some()
+                        || vs.attack.is_some()
+                        || vs.mgs.iter().any(|m| m.target.is_some())
+                        || !vs.followers.is_empty()))
             {
                 return Err("a vehicle refers to a missing or wrong entity");
             }

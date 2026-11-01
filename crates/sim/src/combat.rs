@@ -33,7 +33,7 @@
 //!      walks to 90 % of its range again, or drops the order when it already
 //!      tried that spot (unreachable) or the target is inside the minimum.
 //!   5. Requests are spawned in sorted order, HE shells first; small arms
-//!      may not take the pool's last `HE_RESERVE` slots. Dropped rounds are
+//!      may not take the pool's last `SHELL_RESERVE` slots. Dropped rounds are
 //!      counted (`Stats::shots_dropped`).
 //! * **Ballistics** (stage 5, per projectile chunk): each 1/60 s substep of
 //!   a small-arms round tests the swept segment against the hit capsules of
@@ -71,7 +71,10 @@
 
 use frontline_content::WeaponClass;
 use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
+use frontline_content::vehicle::AmmoSetup;
 
+use crate::armour::{self, ArmourHit, ArmourTables};
+use crate::damage::{ArmourEv, FireRolls};
 use crate::ecs::{
     Combat, Entities, EntityKind, PlayerId, SimId, Stance, Transform, Velocity, Weapon,
 };
@@ -79,12 +82,13 @@ use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{MatchState, NavPhase, Order, PathReq, SquadId};
 use crate::hash::HashCache;
 use crate::items::{BlastKind, Kit, Thrown};
-use crate::projectile::{Projectile, ProjectileEnd, SUBSTEP_HZ, advance, finish};
+use crate::projectile::{NO_AMMO, Projectile, ProjectileEnd, SUBSTEP_HZ, advance, finish};
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
 use crate::unit::{StanceOrder, Unit, UnitOrder};
+use crate::vehicle::VehicleDerived;
 use crate::world::Stats;
 
 /// Hit capsule heights by stance (mm).
@@ -122,6 +126,8 @@ const SHELL_MIN_FLIGHT_S: i32 = 4;
 const BARRAGE_RETRY_M: i32 = 20;
 /// Crater depth roll, percent of the weapon's crater depth.
 const CRATER_DEPTH_PCT: (i32, i32) = (75, 140);
+/// A burst more than this above the ground under it carves no crater (mm).
+const CRATER_LIFT_MM: i32 = 500;
 
 /// 9.81 m/s².
 const GRAVITY: Fx = Fx::from_ratio(981, 100);
@@ -384,7 +390,13 @@ fn spread_pct(rules: &CombatSetup, c: &Combat, moving: bool, dist: Fx, range: Fx
 
 /// Velocity of a round fired from `from` at `aim` (drop-compensated, then
 /// turned by triangular yaw and pitch errors of up to `spread` radians).
-fn shot_velocity(from: FxVec3, aim: FxVec3, speed: Fx, spread: Fx, r: &mut RngStream) -> FxVec3 {
+pub(crate) fn shot_velocity(
+    from: FxVec3,
+    aim: FxVec3,
+    speed: Fx,
+    spread: Fx,
+    r: &mut RngStream,
+) -> FxVec3 {
     let mut d = aim - from;
     let t = d.length().div(speed);
     d.z += GRAVITY.mul(t).mul(t).div_int(2);
@@ -410,7 +422,7 @@ fn interval_ceil(w: &WeaponSetup) -> u32 {
 }
 
 /// Substeps a round of `w` lives: 1.25 × its range in flight, plus two.
-fn round_ttl(w: &WeaponSetup) -> u16 {
+pub(crate) fn round_ttl(w: &WeaponSetup) -> u16 {
     let t = Fx::from(w.range_max)
         .mul_int(5)
         .div_int(4)
@@ -508,6 +520,7 @@ pub(crate) fn aim_and_fire(
             player: owner,
             ttl: round_ttl(w),
             he: false,
+            ammo: crate::projectile::NO_AMMO,
         });
         ws.shots = ws.shots.wrapping_add(1);
         c.since_shot = 0;
@@ -608,6 +621,7 @@ impl MatchState {
                 player: sq.owner.0,
                 ttl: ttl.clamp(2, u16::MAX as i32) as u16,
                 he: true,
+                ammo: crate::projectile::NO_AMMO,
             });
             let ws = &mut ents.weapon[i];
             ws.shots = ws.shots.wrapping_add(1);
@@ -626,7 +640,7 @@ impl MatchState {
 }
 
 /// Spawns this tick's sorted fire requests into the pool: HE shells first,
-/// then small arms while more than [`crate::projectile::HE_RESERVE`] slots
+/// then small arms while more than [`crate::projectile::SHELL_RESERVE`] slots
 /// are free. Returns `(fired, dropped)`.
 pub(crate) fn spawn_rounds(
     reqs: &[FireRequest],
@@ -637,7 +651,7 @@ pub(crate) fn spawn_rounds(
     for he in [true, false] {
         for r in reqs.iter().filter(|r| r.he == he) {
             fired += 1;
-            if !he && pool.free_count() <= crate::projectile::HE_RESERVE {
+            if !he && pool.free_count() <= crate::projectile::SHELL_RESERVE {
                 dropped += 1;
                 continue;
             }
@@ -649,6 +663,8 @@ pub(crate) fn spawn_rounds(
                 ttl: r.ttl.max(1),
                 weapon: r.weapon,
                 player: r.player,
+                ammo: r.ammo,
+                origin: r.pos,
             };
             match pool.spawn(p) {
                 Some(slot) => hash.mark_pool_slot(slot),
@@ -661,19 +677,40 @@ pub(crate) fn spawn_rounds(
 
 // ------------------------------------------------------------ ballistics --
 
-/// What a projectile did to soldiers or the ground (merged in slot order).
+/// What a projectile did to soldiers, vehicles or the ground (merged in
+/// slot order).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Blow {
     Hit(SimId),
     NearMiss(SimId),
-    /// An HE shell burst at this point (on the surface).
+    /// A shell burst at this point (on the surface for a ground hit; at the
+    /// hit point on a soldier).
     Burst(FxVec3),
+    /// A shell met a vehicle's or wreck's plate (S3). The Damage stage
+    /// rolls everything (`crate::damage`); a bursting round bursts there
+    /// too.
+    Armour {
+        vehicle: SimId,
+        hit: ArmourHit,
+        /// The round's velocity at impact.
+        vel: FxVec3,
+        /// Its muzzle point (penetration range).
+        origin: FxVec3,
+    },
+    /// A small-arms round stopped on a vehicle or wreck: no damage, no
+    /// event (counted only).
+    Stopped(SimId),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct BallisticEvent {
     pub weapon: u16,
     pub player: u8,
+    /// The round's ammo (`NO_AMMO` for small arms and mortars), its pool
+    /// slot (RNG keys) and shooter.
+    pub ammo: u16,
+    pub slot: u32,
+    pub shooter: SimId,
     pub blow: Blow,
 }
 
@@ -750,6 +787,11 @@ pub(crate) struct FlightCtx<'a> {
     pub terrain: &'a Heightfield,
     pub weapons: &'a [WeaponSetup],
     pub near_miss: Fx,
+    /// S3: vehicles and wrecks (`None` when there are none), their plates,
+    /// and the rounds.
+    pub vehicles: Option<&'a VehicleDerived>,
+    pub armour: &'a ArmourTables,
+    pub ammo: &'a [AmmoSetup],
 }
 
 /// A soldier near a round's segment this substep.
@@ -761,9 +803,52 @@ struct Near {
     dist_sq: Fx,
 }
 
+/// The broadphase pad around a vehicle's hull origin: its horizontal reach
+/// plus the height of hull and turret (m).
+const VEHICLE_SPHERE_PAD_M: i32 = 3;
+
+/// The first vehicle or wreck box the segment `from → from + d` enters,
+/// among those not owned by `player` (wrecks belong to nobody): `(t, id,
+/// hit)`, earliest first, ties by id. One bounding-sphere test per nearby
+/// vehicle, then at most two box slab tests (counted in `tests`).
+fn first_box(
+    ctx: &FlightCtx,
+    vd: &VehicleDerived,
+    from: FxVec3,
+    d: FxVec3,
+    player: u8,
+    tests: &mut u64,
+) -> Option<(Fx, SimId, ArmourHit)> {
+    let mid = from + d.div_int(2);
+    let pad = Fx::from_int(VEHICLE_SPHERE_PAD_M);
+    let reach = d.length().div_int(2) + vd.max_reach + pad;
+    let mut best: Option<(Fx, SimId, ArmourHit)> = None;
+    vd.index.for_each_near(mid.xy(), reach, |id| {
+        let Some(f) = vd.frame(id) else { return };
+        if !f.wreck && f.owner.0 == player {
+            return;
+        }
+        let Some(a) = ctx.armour.vehicles.get(f.type_idx as usize) else {
+            return;
+        };
+        if !armour::segment_near(from, d, f.origin, f.reach + pad) {
+            return;
+        }
+        *tests += 2;
+        if let Some(h) = armour::hit_armour(from, d, f, a)
+            && best.is_none_or(|(bt, bid, _)| (h.t, id) < (bt, bid))
+        {
+            best = Some((h.t, id, h));
+        }
+    });
+    best
+}
+
 /// Integrates one chunk of match projectile slots for `substeps` substeps
 /// (see the module docs). Finished projectiles are cleared and reported in
-/// `ended`; their effects go to `events`, both in slot order.
+/// `ended`; their effects go to `events`, both in slot order. `box_tests`
+/// counts the armour slab tests.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fly(
     chunk: usize,
     slots: &mut [Option<Projectile>],
@@ -771,6 +856,7 @@ pub(crate) fn fly(
     substeps: u32,
     ended: &mut Vec<(u32, ProjectileEnd)>,
     events: &mut Vec<BallisticEvent>,
+    box_tests: &mut u64,
 ) -> bool {
     let base = chunk * crate::ecs::CHUNK_SIZE;
     let ents = ctx.ents;
@@ -780,91 +866,110 @@ pub(crate) fn fly(
         let Some(p) = slot else { continue };
         changed = true;
         let slot_id = (base + j) as u32;
-        let he = ctx
-            .weapons
-            .get(p.weapon as usize)
-            .is_some_and(|w| w.he.is_some());
-        let (weapon, player, shooter) = (p.weapon, p.player, p.owner);
+        let shell = p.ammo != NO_AMMO;
+        // Mortar shells test only the ground and vehicles (as in S1);
+        // main-gun shells and rockets also soldiers, like small arms.
+        let mortar = !shell
+            && ctx
+                .weapons
+                .get(p.weapon as usize)
+                .is_some_and(|w| w.he.is_some());
+        let bursts = mortar
+            || ctx
+                .ammo
+                .get(p.ammo as usize)
+                .is_some_and(|a| a.mechanism.bursts());
+        let (weapon, player, shooter, ammo) = (p.weapon, p.player, p.owner, p.ammo);
         let ev = |blow| BallisticEvent {
             weapon,
             player,
+            ammo,
+            slot: slot_id,
+            shooter,
             blow,
         };
         for _ in 0..substeps {
             let from = p.pos;
             let next = advance(p);
-            if he {
-                if let Some(g) = ctx.terrain.segment_hit(from, next) {
-                    let surface = FxVec3::new(g.x, g.y, ctx.terrain.height_at(g.xy()));
-                    p.pos = g;
-                    events.push(ev(Blow::Burst(surface)));
-                    ended.push((slot_id, ProjectileEnd::GroundHit));
-                    *slot = None;
-                    break;
-                }
-                if let Some(end) = finish(p, next, ctx.terrain) {
-                    ended.push((slot_id, end));
-                    *slot = None;
-                    break;
-                }
-                continue;
-            }
-            // Soldiers near the segment, nearest capsule hit first.
             let d = next - from;
             let len = d.length();
-            let mid = from + d.div_int(2);
-            let reach = len.div_int(2) + ctx.near_miss + Fx::from_int(2);
-            let len_sq = d.dot(d);
-            near.clear();
+            let boxed = ctx
+                .vehicles
+                .and_then(|vd| first_box(ctx, vd, from, d, player, box_tests));
+            // Soldiers near the segment, nearest capsule hit first.
             let mut hit: Option<(Fx, SimId)> = None;
-            let nm_sq = ctx.near_miss.mul(ctx.near_miss);
-            ctx.spatial.for_each_near(mid.xy(), reach, |id| {
-                let i = id.index();
-                if ents.owner[i].0 == player || id == shooter {
-                    return;
-                }
-                let t = &ents.transform[i];
-                let c = &ents.combat[i];
-                // Local coordinates around the soldier keep products small.
-                let o = t.pos;
-                let (a, b, r) = capsule(t, c);
-                let (s, dsq) = seg_seg(from - o, d, a - o, b - a);
-                if dsq <= r.mul(r) && hit.is_none_or(|(hs, hid)| (s, id) < (hs, hid)) {
-                    hit = Some((s, id));
-                }
-                let centre = body_point(o, c);
-                let rel = centre - from;
-                let su = if len_sq > Fx::ZERO {
-                    rel.dot(d).div(len_sq)
-                } else {
-                    Fx::ZERO
-                };
-                let gap = rel - d * su.clamp(Fx::ZERO, Fx::ONE);
-                near.push(Near {
-                    id,
-                    centre,
-                    s: su,
-                    dist_sq: gap.dot(gap),
+            near.clear();
+            if !mortar {
+                let mid = from + d.div_int(2);
+                let reach = len.div_int(2) + ctx.near_miss + Fx::from_int(2);
+                let len_sq = d.dot(d);
+                ctx.spatial.for_each_near(mid.xy(), reach, |id| {
+                    let i = id.index();
+                    if ents.owner[i].0 == player || id == shooter {
+                        return;
+                    }
+                    let t = &ents.transform[i];
+                    let c = &ents.combat[i];
+                    // Local coordinates around the soldier keep products small.
+                    let o = t.pos;
+                    let (a, b, r) = capsule(t, c);
+                    let (s, dsq) = seg_seg(from - o, d, a - o, b - a);
+                    if dsq <= r.mul(r) && hit.is_none_or(|(hs, hid)| (s, id) < (hs, hid)) {
+                        hit = Some((s, id));
+                    }
+                    let centre = body_point(o, c);
+                    let rel = centre - from;
+                    let su = if len_sq > Fx::ZERO {
+                        rel.dot(d).div(len_sq)
+                    } else {
+                        Fx::ZERO
+                    };
+                    let gap = rel - d * su.clamp(Fx::ZERO, Fx::ONE);
+                    near.push(Near {
+                        id,
+                        centre,
+                        s: su,
+                        dist_sq: gap.dot(gap),
+                    });
                 });
-            });
-            let mut end_s = Fx::ONE;
-            if let Some((s, _)) = hit {
-                end_s = s;
             }
-            let stop = from + d * end_s;
-            let ground = ctx.terrain.segment_hit(from, stop);
+            // Earliest hit wins; at equal t: terrain, then box, then
+            // capsule. A box hit re-tests the terrain in front of it at
+            // 0.25 m steps (a crest just in front of a hull blocks).
+            let box_first = boxed.is_some_and(|(bt, _, _)| hit.is_none_or(|(hs, _)| bt <= hs));
+            let mut end_s = Fx::ONE;
+            let ground = if box_first {
+                let (bt, _, _) = boxed.expect("box first");
+                end_s = bt;
+                ctx.terrain.segment_hit_fine(from, from + d * bt)
+            } else {
+                if let Some((s, _)) = hit {
+                    end_s = s;
+                }
+                ctx.terrain.segment_hit(from, from + d * end_s)
+            };
             if let Some(g) = ground {
                 end_s = if len > Fx::ZERO {
                     (g - from).length().div(len)
                 } else {
                     Fx::ZERO
                 };
-                hit = None;
             }
+            let capsule_hit = if ground.is_none() && !box_first {
+                hit
+            } else {
+                None
+            };
+            let box_hit = if ground.is_none() && box_first {
+                boxed
+            } else {
+                None
+            };
             // Near misses: passed (closest approach inside the segment and
             // before the round stopped), or close to where it struck earth.
+            let nm_sq = ctx.near_miss.mul(ctx.near_miss);
             for n in &near {
-                if Some(n.id) == hit.map(|h| h.1) {
+                if Some(n.id) == capsule_hit.map(|h| h.1) {
                     continue;
                 }
                 let passed = n.s >= Fx::ZERO && n.s < end_s && n.dist_sq <= nm_sq;
@@ -878,13 +983,38 @@ pub(crate) fn fly(
             }
             if let Some(g) = ground {
                 p.pos = g;
+                if bursts {
+                    let surface = FxVec3::new(g.x, g.y, ctx.terrain.height_at(g.xy()));
+                    events.push(ev(Blow::Burst(surface)));
+                }
                 ended.push((slot_id, ProjectileEnd::GroundHit));
                 *slot = None;
                 break;
             }
-            if let Some((s, id)) = hit {
+            if let Some((_, vid, h)) = box_hit {
+                p.pos = h.point;
+                let blow = if shell || mortar {
+                    Blow::Armour {
+                        vehicle: vid,
+                        hit: h,
+                        vel: p.vel,
+                        origin: p.origin,
+                    }
+                } else {
+                    Blow::Stopped(vid)
+                };
+                events.push(ev(blow));
+                ended.push((slot_id, ProjectileEnd::VehicleHit));
+                *slot = None;
+                break;
+            }
+            if let Some((s, id)) = capsule_hit {
                 p.pos = from + d * s;
-                events.push(ev(Blow::Hit(id)));
+                events.push(ev(if bursts {
+                    Blow::Burst(p.pos)
+                } else {
+                    Blow::Hit(id)
+                }));
                 ended.push((slot_id, ProjectileEnd::SoldierHit));
                 *slot = None;
                 break;
@@ -1000,6 +1130,11 @@ fn burst(ctx: &mut DamageCtx, b: &Burst, dead: &mut Vec<(SimId, u8)>) {
             hurt(ctx.ents, ctx.hash, dead, id, dmg, b.player);
         }
     }
+    // A burst on a vehicle (or a man) well above the ground leaves it as
+    // it is (S3).
+    if pos.z > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(CRATER_LIFT_MM) {
+        return;
+    }
     let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, b.key.1);
     let pct = rng.range_i32(CRATER_DEPTH_PCT.0, CRATER_DEPTH_PCT.1);
     let depth = Fx::from(he.crater_depth).mul_int(pct).div_int(100);
@@ -1034,25 +1169,29 @@ impl MatchState {
         events: &[BallisticEvent],
         explosions: &mut Vec<Explosion>,
         fused: &mut Vec<Thrown>,
+        armour_events: &mut Vec<ArmourEv>,
     ) {
         let rules = self.setup.rules.combat.clone();
         // (victim, killer) in the order they fell.
         let mut dead: Vec<(SimId, u8)> = Vec::new();
+        let mut fires = FireRolls::default();
         for (k, e) in events.iter().enumerate() {
-            let w = &self.setup.weapons[e.weapon as usize];
-            match e.blow {
+            let burst_at = match e.blow {
                 Blow::Hit(id) => {
                     if ctx.ents.kind[id.index()] != EntityKind::Soldier {
                         continue;
                     }
+                    let w = &self.setup.weapons[e.weapon as usize];
                     ctx.stats.soldier_hits += 1;
                     add_suppression(
                         &mut ctx.ents.combat[id.index()],
                         rules.hit_suppression * 1000,
                     );
                     hurt(ctx.ents, ctx.hash, &mut dead, id, w.damage, e.player);
+                    None
                 }
                 Blow::NearMiss(id) => {
+                    let w = &self.setup.weapons[e.weapon as usize];
                     let c = &mut ctx.ents.combat[id.index()];
                     if ctx.ents.kind[id.index()] != EntityKind::Soldier || c.hp == 0 {
                         continue;
@@ -1064,27 +1203,47 @@ impl MatchState {
                     }
                     add_suppression(c, add);
                     ctx.hash.mark_entity_chunk(id.chunk());
+                    None
                 }
-                Blow::Burst(pos) => {
-                    let Some(he) = &w.he else { continue };
-                    ctx.stats.explosions += 1;
-                    explosions.push(Explosion {
-                        pos,
-                        weapon: e.weapon,
-                        kind: BlastKind::Shell,
-                    });
-                    let b = Burst {
-                        pos,
-                        player: e.player,
-                        he,
-                        damage: w.damage,
-                        suppression: w.suppression,
-                        cut: false,
-                        key: (SimId(k as u32), Purpose::CRATER),
-                    };
-                    burst(ctx, &b, &mut dead);
+                Blow::Stopped(_) => {
+                    ctx.stats.rounds_stopped += 1;
+                    None
                 }
-            }
+                Blow::Burst(pos) => Some(pos),
+                Blow::Armour { .. } => self.armour_blow(ctx, e, &mut fires, armour_events),
+            };
+            let Some(pos) = burst_at else { continue };
+            // Mortar shells burst by their weapon's HE, main-gun HE and
+            // rockets by their round's blast.
+            let blast = match self.setup.ammo.get(e.ammo as usize) {
+                Some(a) => a
+                    .blast
+                    .as_ref()
+                    .map(|b| (b.blast.clone(), b.damage, b.suppression)),
+                None => {
+                    let w = &self.setup.weapons[e.weapon as usize];
+                    w.he.clone().map(|h| (h, w.damage, w.suppression))
+                }
+            };
+            let Some((he, damage, suppression)) = blast else {
+                continue;
+            };
+            ctx.stats.explosions += 1;
+            explosions.push(Explosion {
+                pos,
+                weapon: e.weapon,
+                kind: BlastKind::Shell,
+            });
+            let b = Burst {
+                pos,
+                player: e.player,
+                he: &he,
+                damage,
+                suppression,
+                cut: false,
+                key: (SimId(k as u32), Purpose::CRATER),
+            };
+            burst(ctx, &b, &mut dead);
         }
         self.take_fused(fused);
         for t in fused.iter() {
@@ -1126,6 +1285,7 @@ impl MatchState {
                 p.kills += 1;
             }
         }
+        self.sweep_vehicle_refs(ctx.ents);
     }
 
     /// Turns soldier `id` into a corpse and takes him out of his squad.
@@ -1487,6 +1647,8 @@ mod tests {
                 ttl: round_ttl(w),
                 weapon: kar as u16,
                 player: 0,
+                ammo: crate::projectile::NO_AMMO,
+                origin: from,
             })];
             let ctx = FlightCtx {
                 ents: &self.ents,
@@ -1494,10 +1656,13 @@ mod tests {
                 terrain: &self.terrain,
                 weapons: &setup.weapons,
                 near_miss: setup.rules.combat.near_miss.into(),
+                vehicles: None,
+                armour: self.game.armour(),
+                ammo: &setup.ammo,
             };
             let (mut ended, mut events) = (Vec::new(), Vec::new());
             for _ in 0..60 {
-                fly(0, &mut slots, &ctx, 2, &mut ended, &mut events);
+                fly(0, &mut slots, &ctx, 2, &mut ended, &mut events, &mut 0);
                 if let Some(&(_, end)) = ended.first() {
                     return (end, events);
                 }
@@ -1527,10 +1692,18 @@ mod tests {
             let ev = [BallisticEvent {
                 weapon: mortar,
                 player: 0,
+                ammo: NO_AMMO,
+                slot: 0,
+                shooter: SimId(0),
                 blow: Blow::Burst(pos),
             }];
-            self.game
-                .apply_blows(&mut ctx, &ev, &mut Vec::new(), &mut Vec::new());
+            self.game.apply_blows(
+                &mut ctx,
+                &ev,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut Vec::new(),
+            );
         }
 
         fn hp(&self, id: SimId) -> u16 {
@@ -1607,6 +1780,8 @@ mod tests {
             ttl: 60,
             weapon: 0,
             player: 1,
+            ammo: crate::projectile::NO_AMMO,
+            origin: FxVec3::ZERO,
         })];
         let ctx = FlightCtx {
             ents: &r.ents,
@@ -1614,9 +1789,12 @@ mod tests {
             terrain: &r.terrain,
             weapons: &r.game.setup().weapons,
             near_miss: Fx::from_int(2),
+            vehicles: None,
+            armour: r.game.armour(),
+            ammo: &r.game.setup().ammo,
         };
         let (mut ended, mut events) = (Vec::new(), Vec::new());
-        fly(0, &mut slots, &ctx, 2, &mut ended, &mut events);
+        fly(0, &mut slots, &ctx, 2, &mut ended, &mut events, &mut 0);
         assert!(events.is_empty() && ended.is_empty());
     }
 
@@ -1680,10 +1858,18 @@ mod tests {
         let ev = BallisticEvent {
             weapon: mg as u16,
             player: 0,
+            ammo: NO_AMMO,
+            slot: 0,
+            shooter: SimId(0),
             blow: Blow::NearMiss(man),
         };
-        r.game
-            .apply_blows(&mut ctx, &[ev; 3], &mut Vec::new(), &mut Vec::new());
+        r.game.apply_blows(
+            &mut ctx,
+            &[ev; 3],
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut Vec::new(),
+        );
         let per = r.game.setup().weapons[mg].suppression;
         assert_eq!(r.ents.combat[man.index()].suppression, 3 * per * 1000);
         assert_eq!(stats.near_misses, 3);

@@ -98,6 +98,8 @@ impl StableHash for Projectile {
         if self.weapon != NO_WEAPON {
             self.weapon.put(out);
             self.player.put(out);
+            self.ammo.put(out);
+            self.origin.put(out);
         }
     }
 }
@@ -434,6 +436,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     for l in &g.at_ditches {
         l.put(out);
     }
+    g.armour_seq.put(out);
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {
@@ -491,6 +494,13 @@ pub(crate) fn globals(
                 st.explosions,
                 st.deaths,
                 st.throws,
+                st.armour_box_tests,
+                st.armour_box_peak,
+                st.rounds_stopped,
+                st.ricochets,
+                st.non_penetrations,
+                st.penetrations,
+                st.knockouts,
             ] {
                 v.put(out);
             }

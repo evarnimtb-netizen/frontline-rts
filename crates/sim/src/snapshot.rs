@@ -283,7 +283,8 @@ pub struct VehicleSnapshot {
     /// Own only: the `ComponentKind::index` being repaired, [`NONE_U8`]
     /// for none.
     pub repairing: u8,
-    /// Own only: main-gun rounds left, penetrator then HE.
+    /// Own only: main-gun rounds left, penetrator then HE (the one in the
+    /// breech included).
     pub ammo: [u16; 2],
     /// Own only: [`LoadedSnap`].
     pub loaded: u8,
@@ -564,7 +565,6 @@ impl RenderSnapshot {
         self.projectiles
             .extend(pool.slots().iter().flatten().map(|p| p.pos.to_f32()));
         self.vehicles.clear();
-        self.shells.clear();
         if let Some(g) = game {
             self.fill_vehicles(tick, ents, g);
         }
@@ -760,10 +760,9 @@ impl RenderSnapshot {
                 seats,
                 components,
                 repairing: vs.repairing.unwrap_or(NONE_U8),
-                ammo: [
-                    vs.ammo.first().copied().unwrap_or(0),
-                    vs.ammo.get(1).copied().unwrap_or(0),
-                ],
+                ammo: [0usize, 1].map(|k| {
+                    vs.ammo.get(k).copied().unwrap_or(0) + (vs.loaded == Some(k as u8)) as u16
+                }),
                 loaded: match vs.loaded {
                     None => LoadedSnap::None,
                     Some(0) => LoadedSnap::Ap,
@@ -775,14 +774,53 @@ impl RenderSnapshot {
                     AmmoChoice::He => 2,
                 },
                 reload_pct: (100 - (vs.reload as u32 * 100 / reload_total).min(100)) as u8,
-                target: vs.target.map_or(u32::MAX, |t| t.0),
+                target: vs
+                    .target
+                    .filter(|t| ents.kind().get(t.index()) == Some(&EntityKind::Vehicle))
+                    .map_or(u32::MAX, |t| t.0),
                 followers: vs.followers.len().min(u8::MAX as usize) as u8,
             });
         }
     }
 
-    /// Refills this tick's shots and bursts.
-    pub(crate) fn fill_events(&mut self, shots: &[FireRequest], explosions: &[Explosion]) {
+    /// Refills `shells`: main-gun shells and rockets in flight, slot order.
+    pub(crate) fn fill_shells(
+        &mut self,
+        pool: &crate::projectile::ProjectilePool,
+        game: Option<&MatchState>,
+    ) {
+        use frontline_content::AmmoMechanism;
+        self.shells.clear();
+        let Some(g) = game else { return };
+        for (slot, p) in pool.slots().iter().enumerate() {
+            let Some(p) = p else { continue };
+            let Some(a) = g.setup().ammo.get(p.ammo as usize) else {
+                continue;
+            };
+            let kind = match a.mechanism {
+                AmmoMechanism::Ap | AmmoMechanism::Aphe => ShellKind::Ap,
+                AmmoMechanism::He => ShellKind::He,
+                AmmoMechanism::Heat => ShellKind::Heat,
+            };
+            self.shells.push(ShellSnapshot {
+                slot: slot as u32,
+                shooter: p.owner.0,
+                player: p.player,
+                ammo: p.ammo,
+                kind: kind as u8,
+                pos: p.pos.to_f32(),
+                vel: p.vel.to_f32(),
+            });
+        }
+    }
+
+    /// Refills this tick's shots, bursts and armour events.
+    pub(crate) fn fill_events(
+        &mut self,
+        shots: &[FireRequest],
+        explosions: &[Explosion],
+        armour: &[crate::damage::ArmourEv],
+    ) {
         self.shots.clear();
         self.shots.extend(shots.iter().map(|r| ShotSnapshot {
             shooter: r.shooter,
@@ -791,6 +829,18 @@ impl RenderSnapshot {
             vel: r.vel.to_f32(),
         }));
         self.armour_events.clear();
+        self.armour_events
+            .extend(armour.iter().map(|e| ArmourEvent {
+                kind: e.kind as u8,
+                vehicle: e.vehicle.0,
+                owner: e.owner,
+                attacker: e.attacker,
+                component: e.component,
+                zone: e.zone,
+                ammo: e.ammo,
+                pos: e.pos.to_f32(),
+                seq: e.seq,
+            }));
         self.explosions.clear();
         self.explosions
             .extend(explosions.iter().map(|e| ExplosionSnapshot {

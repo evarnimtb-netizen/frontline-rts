@@ -4,12 +4,17 @@
 //! a LIFO free list. Slots are hashed in chunks of [`CHUNK_SIZE`] like entities.
 //! Spawn requests that find the pool full are dropped deterministically (in
 //! sorted request order) and counted; burst bundling (§5.7) comes later. In
-//! match mode HE shells are spawned before small-arms rounds and the last
-//! [`HE_RESERVE`] slots are kept for them, so a saturated pool never drops a
-//! shell (§2.2 "AP/HE/AT shells are always fully simulated").
+//! match mode shells (mortar, main-gun and rocket rounds) are spawned before
+//! small-arms rounds and the last [`SHELL_RESERVE`] slots are kept for them,
+//! so a saturated pool never drops a shell (§2.2 "AP/HE/AT shells are always
+//! fully simulated").
 //!
 //! Bench projectiles carry [`NO_WEAPON`]; match rounds carry their weapon
-//! (index into `MatchSetup::weapons`) and the firing player. Match rounds are
+//! (index into `MatchSetup::weapons`) and the firing player. S3 main-gun
+//! shells and rockets also carry their round (`ammo`, index into
+//! `MatchSetup::ammo`; [`NO_AMMO`] for small arms and mortars) and their
+//! muzzle point (`origin`), from which the penetration range is measured.
+//! Match rounds are
 //! integrated by `crate::combat` (soldier hits and near misses); [`substep`]
 //! is the shared flight and ground test.
 
@@ -26,8 +31,13 @@ pub const SUBSTEP_HZ: i32 = 60;
 /// [`Projectile::weapon`] of bench rounds.
 pub const NO_WEAPON: u16 = u16::MAX;
 
-/// Pool slots small-arms rounds may not take (kept for HE shells).
-pub const HE_RESERVE: usize = 32;
+/// [`Projectile::ammo`] of rounds without an ammo def (small arms, mortars,
+/// bench rounds).
+pub const NO_AMMO: u16 = u16::MAX;
+
+/// Pool slots small-arms rounds may not take (kept for shells: mortar,
+/// main-gun and rocket rounds; S3 raised it from 32).
+pub const SHELL_RESERVE: usize = 64;
 
 /// Gravity per substep (9.81 m/s² / 60).
 const GRAVITY_PER_SUBSTEP: Fx = Fx::from_ratio(981, 100 * SUBSTEP_HZ as i64);
@@ -46,6 +56,11 @@ pub struct Projectile {
     pub weapon: u16,
     /// Firing player (match rounds; 0 for bench rounds).
     pub player: u8,
+    /// S3: index into `MatchSetup::ammo` of a main-gun shell or rocket, or
+    /// [`NO_AMMO`].
+    pub ammo: u16,
+    /// S3: the muzzle point (penetration range is measured from it).
+    pub origin: FxVec3,
 }
 
 /// How a projectile left the pool.
@@ -54,6 +69,8 @@ pub enum ProjectileEnd {
     GroundHit,
     /// Hit a soldier's capsule (match mode).
     SoldierHit,
+    /// Hit a vehicle's or wreck's box (match mode, S3).
+    VehicleHit,
     Expired,
     OutOfBounds,
 }
@@ -129,9 +146,9 @@ impl ProjectilePool {
             .slots
             .iter()
             .flatten()
-            .any(|p| p.weapon == NO_WEAPON && p.player != 0)
+            .any(|p| p.weapon == NO_WEAPON && (p.player != 0 || p.ammo != NO_AMMO))
         {
-            return Err("bench projectile with a player");
+            return Err("bench projectile with a player or a round");
         }
         Ok(())
     }

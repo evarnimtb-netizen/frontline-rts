@@ -310,7 +310,8 @@ fn craters_and_trenches_never_block_vehicles() {
 #[test]
 fn soldiers_walk_round_a_parked_tank() {
     let mut w = World::new_match(flat_setup(), 1).unwrap();
-    let (_, v) = tank_at(&mut w, 1, xy(500, 500), EAST);
+    // A friendly tank (an enemy one would shoot them; avoidance is the same).
+    let (_, v) = tank_at(&mut w, 0, xy(500, 500), EAST);
     let rifle = type_index(&w, "ww2:ger_rifle_squad");
     let sq = w
         .spawn_squad_at(
@@ -448,7 +449,11 @@ fn a_standing_man_is_pushed_out_sideways() {
     let mut deepest = Fx::from_int(-100);
     run_until(&mut w, 30 * 60, |w| {
         let t = w.entities().transform()[v.index()];
-        for m in &men {
+        // Men the tank's MGs killed lie where they fell.
+        for m in men
+            .iter()
+            .filter(|m| w.entities().kind()[m.index()] == EntityKind::Soldier)
+        {
             let rel = pos(w, *m) - t.pos.xy();
             let (lx, ly) = (rel.dot(EAST).abs(), rel.det(EAST).abs());
             deepest = deepest.max((geo.hull_half.x - lx).min(geo.hull_half.y - ly));
@@ -653,20 +658,24 @@ fn vehicles_are_spotted_at_twice_sight_and_spot_as_observers() {
             FxVec2::new(Fx::ZERO, Fx::ONE),
         )
         .unwrap();
+    // Once seen, its MGs suppress the near men into cover: count the most
+    // seen at once.
+    let seen_men = |w: &World, q: SquadId| {
+        w.game().unwrap().squad(q).map_or(0, |s| {
+            s.members
+                .iter()
+                .filter(|m| w.entities().combat()[m.index()].seen_by & 1 != 0)
+                .count()
+        })
+    };
+    let (mut most_a, mut most_b) = (0, 0);
     for _ in 0..60 {
         w.step(&[]);
+        most_a = most_a.max(seen_men(&w, a));
+        most_b = most_b.max(seen_men(&w, b));
     }
-    let g = w.game().unwrap();
-    let seen_men = |q: SquadId| {
-        g.squad(q)
-            .unwrap()
-            .members
-            .iter()
-            .filter(|m| w.entities().combat()[m.index()].seen_by & 1 != 0)
-            .count()
-    };
-    assert!(seen_men(a) > 0, "men 165 m away are seen by the tank");
-    assert_eq!(seen_men(b), 0, "men 275 m away are not");
+    assert!(most_a > 0, "men 165 m away are seen by the tank");
+    assert_eq!(most_b, 0, "men 275 m away are not");
 
     // Near spotting: within 25 m an enemy soldier hears and sees it even
     // with no sight at all.

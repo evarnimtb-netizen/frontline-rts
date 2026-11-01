@@ -36,6 +36,7 @@ use frontline_content::{AmmoMechanism, ArmourZone};
 
 use crate::fx::{Fx, FxVec3};
 use crate::rng::RngStream;
+use crate::vehicle::{BoxFrame, VehicleFrame};
 
 /// Half the width of each of the two uniforms whose sum is the ±7 %
 /// penetration variation (raw Q16.16; 2294 / 65536 = 0.035).
@@ -371,8 +372,8 @@ impl ArmourTables {
     }
 }
 
-/// A round meeting a vehicle's plate (stage 4's narrowphase result; M2's
-/// mesh model returns the same).
+/// A round meeting a vehicle's plate (the narrowphase result,
+/// [`hit_armour`]; M2's mesh model returns the same).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ArmourHit {
     /// Fraction of the substep segment at the hit.
@@ -383,6 +384,131 @@ pub struct ArmourHit {
     /// Outward ballistic normal in world space.
     pub normal: FxVec3,
     pub point: FxVec3,
+    /// The hit point in the box's own frame (from the box centre): the
+    /// track band reads its height.
+    pub local: FxVec3,
+}
+
+// ---------------------------------------------------------- narrowphase --
+
+/// Slab test of a segment against an axis-aligned box: `p` is the start
+/// relative to the box centre and `q` the segment, both in the box's
+/// axes; `half` the half extents. Returns `(t, face, entry point)` with
+/// `t` the fraction of the segment at entry (0 when it starts inside). The
+/// face is the last slab entered; on an edge or corner (equal entry `t`)
+/// the lower axis wins: x, then y, then z.
+pub fn slab(p: FxVec3, q: FxVec3, half: FxVec3) -> Option<(Fx, Face, FxVec3)> {
+    let (mut near, mut far) = (Fx::MIN, Fx::MAX);
+    let mut face = Face::Front;
+    let axes = [
+        (p.x, q.x, half.x, Face::Front, Face::Rear),
+        (p.y, q.y, half.y, Face::Left, Face::Right),
+        (p.z, q.z, half.z, Face::Top, Face::Bottom),
+    ];
+    for (pk, qk, hk, pos_face, neg_face) in axes {
+        if qk.is_zero() {
+            if pk.abs() > hk {
+                return None;
+            }
+            continue;
+        }
+        let t1 = (-hk - pk).div(qk);
+        let t2 = (hk - pk).div(qk);
+        // Moving toward +k enters through the −k face.
+        let (tn, tf, f) = if qk > Fx::ZERO {
+            (t1, t2, neg_face)
+        } else {
+            (t2, t1, pos_face)
+        };
+        if tn > near {
+            near = tn;
+            face = f;
+        }
+        far = far.min(tf);
+    }
+    if near > far || far < Fx::ZERO || near > Fx::ONE {
+        return None;
+    }
+    let t = near.max(Fx::ZERO);
+    Some((t, face, p + q * t))
+}
+
+/// A world-space box's local frame: `v` (relative to the box centre, so
+/// products stay small) in its axes.
+#[inline]
+pub fn to_local(b: &BoxFrame, v: FxVec3) -> FxVec3 {
+    FxVec3::new(b.axes.x.dot(v), b.axes.y.dot(v), b.axes.z.dot(v))
+}
+
+/// Segment `from → from + d` against the oriented box `b`: `(t, face,
+/// local entry point)`.
+pub fn segment_box(b: &BoxFrame, from: FxVec3, d: FxVec3) -> Option<(Fx, Face, FxVec3)> {
+    slab(to_local(b, from - b.center), to_local(b, d), b.half)
+}
+
+/// Squared distance (raw Q32.32) from `p` to the oriented box `b` (0
+/// inside).
+pub fn box_dist_sq_raw(b: &BoxFrame, p: FxVec3) -> u64 {
+    let l = to_local(b, p - b.center);
+    let ex = |v: Fx, h: Fx| (v.abs() - h).max(Fx::ZERO);
+    FxVec3::new(ex(l.x, b.half.x), ex(l.y, b.half.y), ex(l.z, b.half.z)).length_sq_raw()
+}
+
+/// Whether the segment `from → from + d` passes within `r` of `c` (the
+/// broadphase bounding-sphere test). Inputs near each other (a vehicle's
+/// reach), so the products stay small.
+pub fn segment_near(from: FxVec3, d: FxVec3, c: FxVec3, r: Fx) -> bool {
+    let rel = c - from;
+    let len_sq = d.dot_raw(d);
+    let s = if len_sq > 0 {
+        (rel.dot_raw(d).clamp(0, len_sq) as i128 * 65_536 / len_sq as i128) as i32
+    } else {
+        0
+    };
+    let gap = rel - d * Fx::from_raw(s);
+    let rr = r.raw().max(0) as u64;
+    gap.length_sq_raw() <= rr * rr
+}
+
+/// The narrowphase (`docs/slices/S3-armour.md` "Geometry and pose"): the
+/// first plate of `f`'s hull or turret box that the segment `from → from +
+/// d` enters, with its ballistic normal in world space. At equal `t` the
+/// hull wins. M2 replaces the body with the mesh BVH; callers do not
+/// change.
+pub fn hit_armour(
+    from: FxVec3,
+    d: FxVec3,
+    f: &VehicleFrame,
+    a: &VehicleArmour,
+) -> Option<ArmourHit> {
+    let mut best: Option<ArmourHit> = None;
+    for (part, b) in [(BoxPart::Hull, &f.hull), (BoxPart::Turret, &f.turret)] {
+        let Some((t, face, local)) = segment_box(b, from, d) else {
+            continue;
+        };
+        if best.is_some_and(|h| h.t <= t) {
+            continue;
+        }
+        let plate = a.face(part, face);
+        best = Some(ArmourHit {
+            t,
+            part,
+            face,
+            zone: face.zone(part),
+            normal: b.axes.apply(plate.normal),
+            point: from + d * t,
+            local,
+        });
+    }
+    best
+}
+
+/// Whether a hull-side hit at box-frame `local` is in the running-gear
+/// band: the lower `band_pct` of the side.
+pub fn in_track_band(hit: &ArmourHit, half_z: Fx, band_pct: u32) -> bool {
+    hit.part == BoxPart::Hull
+        && matches!(hit.face, Face::Left | Face::Right)
+        && hit.local.z + half_z < half_z.mul_int(2).mul_int(band_pct as i32).div_int(100)
 }
 
 /// Everything about one shot at one plate (the `ballistics` CLI's

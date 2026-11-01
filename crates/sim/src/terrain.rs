@@ -495,6 +495,19 @@ impl Heightfield {
         None
     }
 
+    /// [`Self::segment_hit`] at steps under 0.25 m on all ground (S3: the
+    /// terrain re-test in front of a box hit, so a crest just in front of a
+    /// hull blocks the shot).
+    pub fn segment_hit_fine(&self, a: FxVec3, b: FxVec3) -> Option<FxVec3> {
+        let d = b - a;
+        let steps = ((d.length().raw() >> Fx::FRAC_BITS).clamp(0, 4096) + 1) * DETAIL_PER_M;
+        let part = |v: Fx, k: i32| Fx::from_raw((v.raw() as i64 * k as i64 / steps as i64) as i32);
+        (1..=steps).find_map(|k| {
+            let p = a + FxVec3::new(part(d.x, k), part(d.y, k), part(d.z, k));
+            (p.z <= self.height_at(p.xy())).then_some(p)
+        })
+    }
+
     /// Whether the open segment `a → b` clears the combined surface (for
     /// spotting rays). Samples like [`Self::segment_hit`] over detail tiles
     /// and every metre elsewhere; the end points themselves are not tested.

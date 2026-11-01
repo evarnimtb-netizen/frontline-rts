@@ -22,8 +22,11 @@
 //! capture, income, tickets and victory; [`ai`]: the AI commander; [`unit`]:
 //! soldier-level orders, stance orders and detached men; [`items`]: thrown
 //! frag, smoke and satchel items and smoke clouds; [`armour`]: plates,
-//! penetration and the derived armour tables, S3; [`vehicle`]: vehicle
-//! state, pose, driving, the vehicle index and block layer, S3). Terrain
+//! penetration, the box narrowphase and the derived armour tables, S3;
+//! [`vehicle`]: vehicle state, pose, driving, the vehicle index and block
+//! layer, S3; [`gunnery`]: main guns and vehicle MGs, S3; [`damage`]: shells
+//! on plates, penetration, components, crew, fire, repair and knock-out,
+//! S3). Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
 //!
@@ -35,10 +38,12 @@ pub mod ai;
 pub mod armour;
 pub mod combat;
 pub mod command;
+pub mod damage;
 pub mod dig;
 pub mod ecs;
 pub mod fx;
 pub mod game;
+pub mod gunnery;
 mod hash;
 pub mod items;
 pub mod path;
@@ -78,7 +83,7 @@ pub use snapshot::{
 };
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};
-pub use vehicle::{AmmoChoice, BlockLayer, Seat, VehicleFrame, VehicleState};
+pub use vehicle::{AmmoChoice, BlockLayer, MgState, Seat, VehicleFrame, VehicleState};
 pub use world::{
     SimConfig, SimError, SimState, SoldierParams, StageTimes, Stats, TickRate, WeaponParams, World,
     match_config,

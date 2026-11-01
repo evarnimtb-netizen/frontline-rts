@@ -32,9 +32,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::combat::{self, BallisticEvent, Explosion, FireCtx, FlightCtx, Mark, StatusCtx};
 use crate::command::{Command, CommandKind};
+use crate::damage::ArmourEv;
 use crate::ecs::{CHUNK_SIZE, Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2};
 use crate::game::{Ctx, MatchState, Nav, NavPhase, Order, SquadId};
+use crate::gunnery::GunCtx;
 use crate::hash::{self, HashCache};
 use crate::path::PathScratch;
 use crate::projectile::{NO_WEAPON, ProjectileEnd, ProjectilePool, SUBSTEP_HZ};
@@ -311,6 +313,16 @@ pub struct Stats {
     pub explosions: u64,
     pub deaths: u64,
     pub throws: u64,
+    /// S3 (match mode, hashed): armour slab tests in all ticks and the most
+    /// in one tick; small-arms rounds stopped by vehicles and wrecks;
+    /// main-gun and rocket hits on plates by result; vehicles knocked out.
+    pub armour_box_tests: u64,
+    pub armour_box_peak: u64,
+    pub rounds_stopped: u64,
+    pub ricochets: u64,
+    pub non_penetrations: u64,
+    pub penetrations: u64,
+    pub knockouts: u64,
 }
 
 /// Everything that is saved. All of it is covered by the state hash, except
@@ -431,6 +443,8 @@ pub struct World {
     marks: Vec<Mark>,
     mark_of: Vec<u32>,
     blow_bufs: Vec<Vec<BallisticEvent>>,
+    /// Armour slab tests per projectile chunk (S3).
+    box_test_bufs: Vec<u64>,
     blows: Vec<BallisticEvent>,
     gone_bufs: Vec<Vec<SimId>>,
     /// Rounds fired in the last tick (including dropped ones), sorted.
@@ -438,6 +452,8 @@ pub struct World {
     explosions: Vec<Explosion>,
     /// Damage-stage scratch: thrown items going off this tick.
     fused: Vec<crate::items::Thrown>,
+    /// Armour events of the last tick (S3), for the snapshot.
+    armour_events: Vec<ArmourEv>,
 }
 
 impl World {
@@ -569,11 +585,13 @@ impl World {
             marks: Vec::new(),
             mark_of: Vec::new(),
             blow_bufs: Vec::new(),
+            box_test_bufs: Vec::new(),
             blows: Vec::new(),
             gone_bufs: Vec::new(),
             shots: Vec::new(),
             explosions: Vec::new(),
             fused: Vec::new(),
+            armour_events: Vec::new(),
             state,
         };
         if let Some(g) = world.state.game.as_mut() {
@@ -762,14 +780,18 @@ impl World {
                 }
                 g.validate(&st.entities, st.tick).map_err(err)?;
                 let (nw, np) = (g.setup().weapons.len(), g.setup().players.len());
-                if st
-                    .projectiles
-                    .slots()
-                    .iter()
-                    .flatten()
-                    .any(|p| p.weapon as usize >= nw || p.player as usize >= np)
-                {
-                    return Err(err("projectile with an unknown weapon or player"));
+                let na = g.setup().ammo.len();
+                let size = Fx::from_int(g.setup().map.size_m);
+                let on_map = |q: crate::fx::FxVec3| {
+                    (Fx::ZERO..=size).contains(&q.x) && (Fx::ZERO..=size).contains(&q.y)
+                };
+                if st.projectiles.slots().iter().flatten().any(|p| {
+                    p.weapon as usize >= nw
+                        || p.player as usize >= np
+                        || (p.ammo != crate::projectile::NO_AMMO && p.ammo as usize >= na)
+                        || !on_map(p.origin)
+                }) {
+                    return Err(err("projectile with an unknown weapon, round or player"));
                 }
             }
         }
@@ -1074,6 +1096,8 @@ impl World {
                 marks,
                 mark_of,
                 shots,
+                spatial,
+                armour_events,
                 ..
             } = self;
             let SimState {
@@ -1135,6 +1159,16 @@ impl World {
                 fire_merged.extend_from_slice(b);
             }
             game.fire_mortars(entities, terrain, hash, seed, tick, fire_merged);
+            armour_events.clear();
+            let gun_ctx = GunCtx {
+                terrain,
+                marks,
+                mark_of,
+                soldiers: spatial,
+                seed,
+                tick,
+            };
+            game.vehicle_gunnery(entities, &gun_ctx, hash, fire_merged, armour_events);
             stats.throws += game.release_throws(entities, terrain, hash, seed);
             fire_merged.sort_unstable();
             let (fired, dropped) = combat::spawn_rounds(fire_merged, projectiles, hash);
@@ -1153,6 +1187,7 @@ impl World {
                 flags,
                 ended_bufs,
                 blow_bufs,
+                box_test_bufs,
                 blows,
                 spatial,
                 ..
@@ -1183,12 +1218,16 @@ impl World {
                 }),
                 Some(g) => {
                     blow_bufs.resize_with(ended_bufs.len(), Vec::new);
+                    box_test_bufs.resize(ended_bufs.len(), 0);
                     let ctx = FlightCtx {
                         ents: entities,
                         spatial,
                         terrain,
                         weapons: &g.setup().weapons,
                         near_miss: g.setup().rules.combat.near_miss.into(),
+                        vehicles: (!g.vehicles.is_empty()).then_some(&g.vderived),
+                        armour: g.armour(),
+                        ammo: &g.setup().ammo,
                     };
                     threads.install(|| {
                         projectiles
@@ -1196,11 +1235,13 @@ impl World {
                             .par_chunks_mut(CHUNK_SIZE)
                             .zip(ended_bufs.par_iter_mut())
                             .zip(blow_bufs.par_iter_mut())
+                            .zip(box_test_bufs.par_iter_mut())
                             .enumerate()
-                            .map(|(c, ((s, out), ev))| {
+                            .map(|(c, (((s, out), ev), tests))| {
                                 out.clear();
                                 ev.clear();
-                                combat::fly(c, s, &ctx, substeps, out, ev)
+                                *tests = 0;
+                                combat::fly(c, s, &ctx, substeps, out, ev, tests)
                             })
                             .collect_into_vec(flags)
                     });
@@ -1208,6 +1249,9 @@ impl World {
                     for b in blow_bufs.iter() {
                         blows.extend_from_slice(b);
                     }
+                    let tests: u64 = box_test_bufs.iter().sum();
+                    stats.armour_box_tests += tests;
+                    stats.armour_box_peak = stats.armour_box_peak.max(tests);
                 }
             }
             if let Some(g) = state.game.as_mut() {
@@ -1220,8 +1264,8 @@ impl World {
                     hash.mark_pool_slot(slot);
                     match end {
                         ProjectileEnd::GroundHit => stats.ground_hits += 1,
-                        // Counted as `soldier_hits` by the damage stage.
-                        ProjectileEnd::SoldierHit => {}
+                        // Counted by the damage stage.
+                        ProjectileEnd::SoldierHit | ProjectileEnd::VehicleHit => {}
                         ProjectileEnd::Expired => stats.expired += 1,
                         ProjectileEnd::OutOfBounds => stats.out_of_bounds += 1,
                     }
@@ -1240,6 +1284,7 @@ impl World {
                 blows,
                 explosions,
                 fused,
+                armour_events,
                 ..
             } = self;
             let SimState {
@@ -1258,9 +1303,13 @@ impl World {
                 seed,
                 tick,
             };
-            game.as_mut()
-                .expect("match world")
-                .apply_blows(&mut ctx, blows, explosions, fused);
+            game.as_mut().expect("match world").apply_blows(
+                &mut ctx,
+                blows,
+                explosions,
+                fused,
+                armour_events,
+            );
         }
         let t6 = Instant::now();
 
@@ -1326,6 +1375,18 @@ impl World {
                 }
             }
             if let Some(game) = &mut self.state.game {
+                let mut ctx = Ctx {
+                    ents: &mut self.state.entities,
+                    terrain: &self.state.terrain,
+                    hash: &mut self.hash,
+                    tick,
+                };
+                game.vehicle_status(
+                    &mut ctx,
+                    &mut self.state.stats,
+                    seed,
+                    &mut self.armour_events,
+                );
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 game.update_rules(&self.state.entities);
             }
@@ -1780,7 +1841,10 @@ impl World {
             self.state.game.as_ref(),
             &self.dirty_tiles,
         );
-        self.snapshot.fill_events(&self.shots, &self.explosions);
+        self.snapshot
+            .fill_events(&self.shots, &self.explosions, &self.armour_events);
+        self.snapshot
+            .fill_shells(&self.state.projectiles, self.state.game.as_ref());
     }
 }
 
@@ -1969,6 +2033,8 @@ mod tests {
                 ttl: 5,
                 weapon: 200,
                 player: 0,
+                ammo: crate::projectile::NO_AMMO,
+                origin: Default::default(),
             });
         });
         assert!(load_err(&bytes).contains("weapon"));
@@ -2582,10 +2648,16 @@ mod tests {
             ammo_choice: _,
             reload: _,
             target: _,
+            attack: _,
+            aim_turret: _,
+            mgs: _,
             ranging: _,
             since_fire: _,
             burn: _,
             repairing: _,
+            repair_progress: _,
+            base_ticks: _,
+            last_attacker: _,
             bog: _,
             on_blocked: _,
             crossing: _,
@@ -2619,6 +2691,15 @@ mod tests {
             ),
             ("reload", Box::new(|v| v.reload = 9)),
             ("target", Box::new(move |v| v.target = Some(vb))),
+            ("attack", Box::new(move |v| v.attack = Some(vb))),
+            ("aim_turret", Box::new(|v| v.aim_turret ^= true)),
+            ("mgs.target", Box::new(move |v| v.mgs[0].target = Some(vb))),
+            ("mgs.cooldown", Box::new(|v| v.mgs[1].cooldown = 4)),
+            ("mgs.shots", Box::new(|v| v.mgs[0].shots += 1)),
+            ("mgs.belt", Box::new(|v| v.mgs[1].belt += 1)),
+            ("repair_progress", Box::new(|v| v.repair_progress += 1)),
+            ("base_ticks", Box::new(|v| v.base_ticks += 1)),
+            ("last_attacker", Box::new(|v| v.last_attacker = Some(1))),
             ("ranging", Box::new(|v| v.ranging = 2)),
             ("since_fire", Box::new(|v| v.since_fire = 5)),
             ("burn", Box::new(|v| v.burn = 1)),
@@ -2646,6 +2727,14 @@ mod tests {
         type StateEdit = Box<dyn Fn(&mut SimState)>;
         let more: Vec<StateEdit> = vec![
             Box::new(|s| s.game.as_mut().unwrap().at_ditches[0][1].y += Fx::ONE),
+            Box::new(|s| s.game.as_mut().unwrap().armour_seq += 1),
+            Box::new(|s| s.stats.armour_box_tests += 1),
+            Box::new(|s| s.stats.armour_box_peak += 1),
+            Box::new(|s| s.stats.rounds_stopped += 1),
+            Box::new(|s| s.stats.ricochets += 1),
+            Box::new(|s| s.stats.non_penetrations += 1),
+            Box::new(|s| s.stats.penetrations += 1),
+            Box::new(|s| s.stats.knockouts += 1),
             Box::new(|s| {
                 s.game.as_mut().unwrap().path_queue.queues[0][0] = crate::game::PathReq::Vehicle {
                     squad: SquadId(3),
@@ -2691,10 +2780,62 @@ mod tests {
             ),
             (
                 Box::new(move |s| {
-                    let man = s.entities.soldiers().next().unwrap();
+                    // An own soldier.
+                    let own = s.entities.owner[va.index()];
+                    let man = s
+                        .entities
+                        .soldiers()
+                        .find(|m| s.entities.owner[m.index()] == own)
+                        .unwrap();
                     vehicle(s, va).target = Some(man)
                 }),
                 "wrong entity",
+            ),
+            (
+                Box::new(move |s| {
+                    let enemy = s.entities.owner[vb.index()];
+                    let man = s
+                        .entities
+                        .soldiers()
+                        .find(|m| s.entities.owner[m.index()] == enemy)
+                        .unwrap();
+                    vehicle(s, va).attack = Some(man)
+                }),
+                "wrong entity",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).mgs[0].target = Some(vb)),
+                "wrong entity",
+            ),
+            (
+                Box::new(move |s| {
+                    vehicle(s, va).mgs.pop();
+                }),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).mgs[0].belt = 60_000),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| {
+                    let v = vehicle(s, va);
+                    v.repairing = Some(0);
+                    v.repair_progress = 1_000_000;
+                }),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| vehicle(s, va).last_attacker = Some(7)),
+                "out of range",
+            ),
+            (
+                Box::new(move |s| {
+                    let v = vehicle(s, va);
+                    v.loaded = Some(0);
+                    v.ammo[0] = 30;
+                }),
+                "out of range",
             ),
             (
                 Box::new(move |s| vehicle(s, va).followers = vec![vb]),

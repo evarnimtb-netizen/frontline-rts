@@ -34,7 +34,8 @@
 //!
 //! **Path follower** ([`MatchState::move_vehicles`], Movement stage,
 //! serial in ascending id after the soldiers): turns the squad's path into
-//! throttle and steer, pivots when the heading error is over 60° at low
+//! throttle and steer, halts on an attack-move while its main gun has a
+//! target it can fire at (S3 gunnery), pivots when the heading error is over 60° at low
 //! speed, reverses for a `Move` whose target was behind and within 40 m,
 //! yields to vehicles and wrecks in a box at least 1.5 hull lengths ahead
 //! (between two crossing vehicles the higher id yields; two meeting
@@ -157,6 +158,19 @@ pub struct Seat {
     pub swap_from: u8,
 }
 
+/// One vehicle MG (coax or hull), in mount order after the main gun.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct MgState {
+    /// The soldier it engages.
+    pub target: Option<SimId>,
+    /// Ticks until the next round.
+    pub cooldown: u16,
+    /// Rounds fired (the fire-interval spread, as a soldier's `shots`).
+    pub shots: u32,
+    /// Rounds fired from the current belt.
+    pub belt: u16,
+}
+
 /// Per-vehicle state (`MatchState::vehicles`), saved and hashed through
 /// postcard bytes. Fields the later S3 stages act on (gunnery, damage,
 /// repair, escort) are here from the start so the save shape is stable.
@@ -189,8 +203,16 @@ pub struct VehicleState {
     pub ammo_choice: AmmoChoice,
     /// Main-gun reload ticks left.
     pub reload: u16,
-    /// The main gun's target vehicle (`AttackUnit` or auto).
+    /// The main gun's target: an enemy vehicle (`AttackUnit` or auto, AP)
+    /// or an enemy soldier (HE at the best infantry group).
     pub target: Option<SimId>,
+    /// `AttackUnit`'s vehicle: the main gun focuses it while it is seen.
+    pub attack: Option<SimId>,
+    /// Against a vehicle target: aim at its turret, not its hull (chosen at
+    /// each re-target, `crate::gunnery::aim_choice`).
+    pub aim_turret: bool,
+    /// Coax and hull MGs, in mount order after the main gun.
+    pub mgs: Vec<MgState>,
     /// Shots already fired at `target` (ranging in).
     pub ranging: u8,
     /// Ticks since the main gun fired, saturating (`u16::MAX`: never).
@@ -199,6 +221,14 @@ pub struct VehicleState {
     pub burn: u16,
     /// Component index being field-repaired.
     pub repairing: Option<u8>,
+    /// Field-repair progress of `repairing`, in HP × ticks (the def's rate
+    /// spread over ticks).
+    pub repair_progress: u32,
+    /// Ticks in a row inside the own base (base repair, rearm and crew).
+    pub base_ticks: u32,
+    /// The player whose round last hit it (credited for crew that die in a
+    /// fire or with the vehicle).
+    pub last_attacker: Option<u8>,
     /// Ticks left bogged in a trench crossing.
     pub bog: u32,
     /// A track sample is on a vehicle-blocked node (immobile, shown as
@@ -254,10 +284,16 @@ impl VehicleState {
             ammo_choice: AmmoChoice::Auto,
             reload: 0,
             target: None,
+            attack: None,
+            aim_turret: false,
+            mgs: vec![MgState::default(); v.mounts.len().saturating_sub(1)],
             ranging: 0,
             since_fire: u16::MAX,
             burn: 0,
             repairing: None,
+            repair_progress: 0,
+            base_ticks: 0,
+            last_attacker: None,
             bog: 0,
             on_blocked: false,
             crossing: false,
@@ -337,6 +373,34 @@ impl VehicleState {
                 .zip(&v.main_gun().ammo)
                 .any(|(n, a)| *n > a.count)
             || self.loaded.is_some_and(|l| l as usize >= self.ammo.len())
+            || self
+                .ammo
+                .iter()
+                .zip(&v.main_gun().ammo)
+                .enumerate()
+                .any(|(k, (n, a))| {
+                    *n as u32 + (self.loaded == Some(k as u8)) as u32 > a.count as u32
+                })
+            || self.reload as u32 > s.weapons[v.main_gun().weapon as usize].reload_ticks * 2
+            || self.mgs.len() != v.mounts.len().saturating_sub(1)
+            || self.mgs.iter().zip(v.mounts.iter().skip(1)).any(|(m, mt)| {
+                let w = &s.weapons[mt.weapon as usize];
+                m.belt as u32 >= w.magazine.max(1)
+                    || m.cooldown as u32
+                        > w.reload_ticks.max(w.interval_milli.div_ceil(1000)).max(1)
+            })
+            || self.burn as u32 > r.fire_burnout_ticks
+            || self.repairing.is_some_and(|k| {
+                v.components
+                    .iter()
+                    .find(|c| c.kind.index() == k as usize)
+                    .and_then(|c| c.repair.as_ref())
+                    .is_none_or(|rep| self.repair_progress >= rep.ticks.max(1))
+            })
+            || (self.repairing.is_none() && self.repair_progress != 0)
+            || self
+                .last_attacker
+                .is_some_and(|p| p as usize >= s.players.len())
             || self.pitch.abs() > tilt
             || self.roll.abs() > tilt
             || self.turret_yaw.abs() > Fx::PI
@@ -361,7 +425,7 @@ impl VehicleState {
 
 // ------------------------------------------------------------- geometry --
 
-fn v3(f: FixedVec3) -> FxVec3 {
+pub(crate) fn v3(f: FixedVec3) -> FxVec3 {
     FxVec3::new(f.x.into(), f.y.into(), f.z.into())
 }
 
@@ -1193,6 +1257,15 @@ pub(crate) fn reverses_to(t: &Transform, target: FxVec2) -> bool {
         && d.length_sq_raw() <= FxVec2::from_int(REVERSE_ORDER_M, 0).length_sq_raw()
 }
 
+/// Whether an attack-moving vehicle halts: its main gun has a target and
+/// can fire at it (gunner in his seat, gun whole, a round loaded or left).
+pub(crate) fn halts_to_fire(vs: &VehicleState, v: &VehicleSetup) -> bool {
+    vs.target.is_some()
+        && vs.manned(v, SeatRole::Gunner)
+        && vs.component(ComponentKind::Gun) > 0
+        && (vs.loaded.is_some() || vs.ammo.iter().any(|n| *n > 0))
+}
+
 /// Speed cap as a throttle magnitude against the def's top speed.
 fn throttle_for(cap: Fx, top: Fx) -> i32 {
     if top <= Fx::ZERO {
@@ -1355,7 +1428,15 @@ impl MatchState {
             vs.avg_vel = FxVec2::ZERO;
             vs.reverse = false;
             vs.target = None;
+            vs.attack = None;
+            vs.ranging = 0;
+            for m in &mut vs.mgs {
+                *m = MgState::default();
+            }
             vs.repairing = None;
+            vs.repair_progress = 0;
+            vs.burn = 0;
+            vs.base_ticks = 0;
             vs.followers.clear();
             vs.reload = 0;
             vs.loaded = None;
@@ -1501,6 +1582,12 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     if nav.phase_ticks <= 1 {
         vs.progress_at = pos;
         vs.progress_ticks = 0;
+    }
+    // Attack-move: halt while the main gun has a target to fire at.
+    if matches!(sq.order, Order::AttackMove { .. }) && halts_to_fire(vs, c.v) {
+        vs.progress_at = pos;
+        vs.progress_ticks = 0;
+        return (0, 0);
     }
     let reach_sq = FxVec2::from_int(WAYPOINT_REACH_M, 0).length_sq_raw();
     let last = nav.path.len() as u32 - 1;

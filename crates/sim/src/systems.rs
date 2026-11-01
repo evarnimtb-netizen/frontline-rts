@@ -377,8 +377,12 @@ pub(crate) struct FireRequest {
     pub player: u8,
     /// Lifetime in substeps (match rounds; bench uses its config).
     pub ttl: u16,
-    /// HE shell: spawned first, may use the reserved pool slots.
+    /// A shell (mortar, main gun, rocket): spawned first, may use the
+    /// reserved pool slots.
     pub he: bool,
+    /// S3: the round (index into `MatchSetup::ammo`) of a main-gun shell
+    /// or rocket, `NO_AMMO` otherwise.
+    pub ammo: u16,
 }
 
 /// Counts down weapon cooldowns and fires seeded shots when ready.
@@ -422,6 +426,7 @@ pub(crate) fn fire_weapons(
             vel,
             weapon: NO_WEAPON,
             player: 0,
+            ammo: crate::projectile::NO_AMMO,
             ttl: 0,
             he: false,
         });
@@ -442,6 +447,8 @@ pub(crate) fn projectile_from(req: &FireRequest, p: &WeaponParams) -> Projectile
         ttl: p.ttl_substeps.max(1),
         weapon: NO_WEAPON,
         player: 0,
+        ammo: crate::projectile::NO_AMMO,
+        origin: req.pos,
     }
 }
 
