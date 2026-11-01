@@ -788,6 +788,7 @@ func _test_fit_1280(tanks: PackedInt32Array) -> void:
 	print("fit 1280x800: %d of %d cards shown (%d vehicle cards), +%d tile" % [roster.cards.size(), roster.cards.size() + roster.hidden_count, vehicles_shown, roster.hidden_count])
 	_check(own.size() == 8 and tanks.size() == 4 and roster.cards.size() + roster.hidden_count == 12, "1280x800: 8 squads + 4 vehicles in the roster")
 	_check(ok, "1280x800: no roster cards overlap or leave the console (%d shown)" % roster.cards.size())
+	_check(vehicles_shown == mini(tanks.size(), roster.cards.size()), "1280x800: with nothing selected the vehicle cards are kept first (%d shown)" % vehicles_shown)
 	# Selected tanks keep their cards.
 	_sel.select_only(tanks)
 	await _frames(1)

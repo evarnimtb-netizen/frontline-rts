@@ -118,6 +118,11 @@ const HIT_MAX := 6
 const HIT_TIME := 1.5
 ## Vehicle centre for picking and markers: this far above the hull origin.
 const VEHICLE_PICK_LIFT := 1.2
+## World radius around a vehicle's pick point that holds its whole screen
+## footprint (half diagonal of the largest hull, 3.3 m, plus the lift
+## difference and a perspective margin): picks skip the footprint test
+## outside it.
+const VEHICLE_PICK_REACH_M := 5.5
 
 @export var camera_path: NodePath
 @export var overlay_path: NodePath
@@ -170,6 +175,8 @@ var veh_pick_ids := PackedInt32Array()
 var veh_pick_screen := PackedVector2Array()
 var veh_pick_depth := PackedFloat32Array()
 var veh_pick_own := PackedByteArray()
+## Screen radius (px) of VEHICLE_PICK_REACH_M at each indexed vehicle.
+var veh_pick_reach := PackedFloat32Array()
 ## Hit markers to draw: {word, pos, t (age s)}, oldest first.
 var hit_markers: Array = []
 ## CPU time of the last vehicle index in microseconds (tests).
@@ -414,7 +421,9 @@ func _index_vehicles(s: Dictionary, vp: Rect2) -> void:
 	veh_pick_screen.clear()
 	veh_pick_depth.clear()
 	veh_pick_own.clear()
+	veh_pick_reach.clear()
 	var cam_pos := camera.global_position if camera != null else Vector3.ZERO
+	var cam_right := camera.global_transform.basis.x * VEHICLE_PICK_REACH_M if camera != null else Vector3.ZERO
 	var area := vp.grow(60.0)
 	for v in s.get("vehicles", []):
 		var id: int = v.id
@@ -435,6 +444,7 @@ func _index_vehicles(s: Dictionary, vp: Rect2) -> void:
 		veh_pick_screen.append(sp)
 		veh_pick_depth.append(cam_pos.distance_to(p))
 		veh_pick_own.append(1 if int(v.owner) == local_player else 0)
+		veh_pick_reach.append(sp.distance_to(camera.unproject_position(p + cam_right)))
 	vehicle_index_us = Time.get_ticks_usec() - t0
 
 

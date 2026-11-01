@@ -1183,8 +1183,9 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
         )?);
         worlds.push(World::new_match(setup.clone(), spec.threads.max(1))?);
         drivers.push(SimDriver::new(true));
-        scripts.push(Scripter::new(spec.seed, i as u8));
+        scripts.push(Scripter::new(spec.seed, i as u8).vehicles(spec.vehicle_orders));
     }
+    let mut seen: [BTreeSet<u32>; 2] = [BTreeSet::new(), BTreeSet::new()];
     let mut slots: [Option<u8>; 2] = [None, None];
     let mut readied = false;
     let mut joined_at: Option<Instant> = None;
@@ -1242,6 +1243,15 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
                 |t| status.step_slot(t),
                 |tick, hash| h.send(ToNet::Hash { tick, hash }),
             );
+            if let Some(g) = worlds[i].game() {
+                let ents = worlds[i].entities();
+                for &v in g.vehicles().keys() {
+                    let o = ents.owner()[v.index()].0 as usize;
+                    if ents.kind()[v.index()] == EntityKind::Vehicle && o < 2 {
+                        seen[o].insert(v.0);
+                    }
+                }
+            }
             if spec.script
                 && let Some(s) = started
                 && s.elapsed() + tail < countdown + length
@@ -1373,6 +1383,6 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
             w
         },
         script_kinds: [BTreeMap::new(), BTreeMap::new()],
-        vehicles_spawned: [0, 0],
+        vehicles_spawned: [seen[0].len(), seen[1].len()],
     })
 }

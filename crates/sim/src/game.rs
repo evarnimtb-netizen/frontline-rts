@@ -674,19 +674,24 @@ impl MatchState {
                 || role == SquadRole::Engineer)
     }
 
-    /// An AT-ditch job records its line when it starts (S3), so the ditch
-    /// blocks vehicles section by section as it gets deep enough. A line
-    /// already recorded is not added twice. False when the list is full.
-    pub(crate) fn add_at_ditch(&mut self, line: &[FxVec2], profile: DigProfile) -> bool {
-        if profile != DigProfile::AtDitch || self.at_ditches.iter().any(|l| l[..] == line[..]) {
-            return true;
+    /// Whether a job digging `profile` may start: an AT-ditch job needs
+    /// room in the AT-ditch list for its sections (S3).
+    pub(crate) fn at_ditch_room(&self, profile: DigProfile) -> bool {
+        profile != DigProfile::AtDitch || self.at_ditches.len() < MAX_AT_DITCHES
+    }
+
+    /// Records an AT-ditch section once its first pass is stamped
+    /// (`crate::dig`), so only ground a ditch job has really dug blocks
+    /// vehicles and loses the trench discount; an order cancelled before
+    /// any digging leaves the map as it was. A section already recorded is
+    /// not added twice; when the list is full the section is dug but not
+    /// recorded.
+    pub(crate) fn record_at_ditch(&mut self, line: Vec<FxVec2>) {
+        if self.at_ditches.len() >= MAX_AT_DITCHES || self.at_ditches.contains(&line) {
+            return;
         }
-        if self.at_ditches.len() >= MAX_AT_DITCHES {
-            return false;
-        }
-        self.at_ditches.push(line.to_vec());
-        self.mark_ditch_block(line);
-        true
+        self.mark_ditch_block(&line);
+        self.at_ditches.push(line);
     }
 
     /// A live squad owned by `player`.
@@ -776,7 +781,7 @@ impl MatchState {
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
         if !self.digs_profile(ty.role, ty.dig_rate_pct, profile)
             || !self.dig_line_ok(ctx, line, profile)
-            || !self.add_at_ditch(line, profile)
+            || !self.at_ditch_room(profile)
         {
             return false;
         }
@@ -1267,7 +1272,7 @@ impl MatchState {
                 return Err("AI state disagrees with the setup");
             }
             if let Some(ai) = &self.ai[p] {
-                ai.validate(self, tick)?;
+                ai.validate(self, PlayerId(p as u8), tick)?;
             }
         }
         for pl in &self.players {

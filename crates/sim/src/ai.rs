@@ -289,10 +289,28 @@ impl AiState {
         self.issued += 1;
     }
 
-    /// Checks a loaded AI state (untrusted saves) at `tick`.
-    pub(crate) fn validate(&self, g: &MatchState, tick: u64) -> Result<(), &'static str> {
+    /// Checks a loaded AI state (untrusted saves) of `player` at `tick`.
+    pub(crate) fn validate(
+        &self,
+        g: &MatchState,
+        player: PlayerId,
+        tick: u64,
+    ) -> Result<(), &'static str> {
         let np = g.points.len();
         let bad_squad = |id: &SquadId| id.0 >= g.next_squad;
+        // An escort is keyed by a vehicle squad of this AI; one that no
+        // longer exists is dropped at the next plan.
+        let bad_escort = |id: &SquadId| {
+            bad_squad(id)
+                || g.squads.get(id).is_some_and(|sq| {
+                    sq.owner != player
+                        || sq.members.len() != 1
+                        || g.setup
+                            .squad_types
+                            .get(sq.type_idx as usize)
+                            .is_none_or(|t| t.vehicle.is_none())
+                })
+        };
         if self.pending.len() > MAX_PENDING
             || self.trenches.len() > MAX_TRENCHES
             || self.rejected > self.issued
@@ -311,7 +329,7 @@ impl AiState {
                 .any(|(&p, &t)| p as usize >= np || t > tick)
             || self.escorts.len() > MAX_ESCORTS
             || self.escorts.iter().any(|(id, e)| {
-                bad_squad(id)
+                bad_escort(id)
                     || e.point as usize >= np
                     || e.since > tick
                     || e.squads.len() > ESCORT_SQUADS
@@ -1318,7 +1336,12 @@ impl Planner<'_> {
             let Some(tsq) = g.squads.get(&tid) else {
                 continue;
             };
-            let v = tsq.members[0];
+            let Some(&v) = tsq.members.first() else {
+                continue;
+            };
+            let Some(vs) = g.vehicles.get(&v) else {
+                continue;
+            };
             let point = e.point as usize;
             if point >= points.len() || points[point].rel == Rel::Own {
                 self.release(&e, v, busy);
@@ -1333,7 +1356,6 @@ impl Planner<'_> {
             if e.squads.is_empty() && target_point.is_some_and(|t| t != point) {
                 continue;
             }
-            let vs = &g.vehicles[&v];
             let vdef = &g.setup.vehicles[vs.type_idx as usize];
             let halted = tsq.order == Order::Idle
                 || vs.immobile(vdef)

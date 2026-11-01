@@ -2244,7 +2244,7 @@ mod tests {
         fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
             s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
         }
-        let edits: [fn(&mut SimState); 15] = [
+        let edits: [fn(&mut SimState); 14] = [
             |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
             |s| s.game.as_mut().unwrap().points[2].contested = true,
             |s| ai(s).next_seq += 1,
@@ -2255,18 +2255,6 @@ mod tests {
             |s| ai(s).enemy_vehicle_seen = true,
             |s| {
                 ai(s).at_seen.insert(1, 0);
-            },
-            |s| {
-                ai(s).escorts.insert(
-                    SquadId(0),
-                    crate::ai::AiEscort {
-                        point: 1,
-                        squads: vec![SquadId(1)],
-                        started: vec![SquadId(1)],
-                        since: 0,
-                        reached: false,
-                    },
-                );
             },
             |s| ai(s).counters.escorts_started += 1,
             |s| ai(s).counters.escorts_reached += 1,
@@ -2279,8 +2267,72 @@ mod tests {
             let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
             assert_ne!(w2.full_state_hash(), base);
         }
+        // Escorts: keyed by a vehicle squad id that is used up and gone (an
+        // escort whose vehicle was lost, dropped at the next plan).
+        fn gone(s: &mut SimState) -> SquadId {
+            let g = s.game.as_mut().unwrap();
+            g.next_squad += 1;
+            SquadId(g.next_squad - 1)
+        }
+        let gone_base = World::load(
+            &save_edited(&w, |s| {
+                gone(s);
+            }),
+            1,
+        )
+        .unwrap()
+        .full_state_hash();
+        let w2 = World::load(
+            &save_edited(&w, |s| {
+                let id = gone(s);
+                ai(s).escorts.insert(
+                    id,
+                    crate::ai::AiEscort {
+                        point: 1,
+                        squads: vec![SquadId(1)],
+                        started: vec![SquadId(1)],
+                        since: 0,
+                        reached: false,
+                    },
+                );
+            }),
+            1,
+        )
+        .unwrap();
+        assert_ne!(w2.full_state_hash(), gone_base);
         // Loads reject broken S3 AI state.
-        let bad: [fn(&mut SimState); 4] = [
+        fn escort_at(s: &mut SimState, id: SquadId) {
+            ai(s).escorts.insert(
+                id,
+                crate::ai::AiEscort {
+                    point: 0,
+                    squads: Vec::new(),
+                    started: Vec::new(),
+                    since: 0,
+                    reached: false,
+                },
+            );
+        }
+        fn squad_of(s: &SimState, p: u8) -> SquadId {
+            let g = s.game.as_ref().unwrap();
+            *g.squads
+                .iter()
+                .find(|(_, q)| q.owner == PlayerId(p))
+                .unwrap()
+                .0
+        }
+        let bad: [fn(&mut SimState); 6] = [
+            // Review fix: an escort keyed by an infantry squad (its own or
+            // the enemy's) used to pass the load check and then panic the
+            // first AI plan.
+            |s| {
+                let id = squad_of(s, 1);
+                escort_at(s, id);
+            },
+            |s| {
+                let id = squad_of(s, 0);
+                escort_at(s, id);
+            },
             |s| {
                 ai(s).at_seen.insert(99, 0);
             },
@@ -3843,6 +3895,78 @@ mod tests {
         (w, va, vb, r, t)
     }
 
+    /// Review fix: an AT-ditch order cancelled before any digging leaves
+    /// the map as it was (an order along someone's trench used to turn
+    /// that trench into "ditch" ground for the rest of the match); a dug
+    /// section is recorded once its first pass is stamped.
+    #[test]
+    fn at_ditch_sections_are_recorded_only_once_dug() {
+        let (mut w, _) = flat_tank_world();
+        let eng = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_engineer_squad")
+            .unwrap();
+        let north = FxVec2::new(Fx::ZERO, Fx::ONE);
+        let e = w
+            .spawn_squad_at(PlayerId(0), eng, FxVec2::from_int(400, 400), north)
+            .unwrap();
+        let trench = [FxVec2::from_int(300, 300), FxVec2::from_int(330, 300)];
+        assert!(w.dig_trench_now(&trench, 1));
+        let cmd = |seq, kind| Command {
+            player: PlayerId(0),
+            seq,
+            kind,
+        };
+        let ditch_on = |w: &World, p: FxVec2| {
+            let node = crate::vehicle::node_at(w.terrain(), p);
+            w.game().unwrap().vderived.block.is_ditch(node)
+        };
+        let mid = FxVec2::from_int(315, 300);
+        w.step(&[cmd(
+            0,
+            CommandKind::Dig {
+                squad: e,
+                line: trench.to_vec(),
+                profile: frontline_content::DigProfile::AtDitch,
+            },
+        )]);
+        w.step(&[cmd(1, CommandKind::Stop { squad: e })]);
+        w.step(&[]);
+        assert!(w.game().unwrap().at_ditches.is_empty());
+        assert!(!ditch_on(&w, mid), "a cancelled order changed the trench");
+
+        // A real job near the engineers: sections appear as they are dug,
+        // each a part of the ordered line.
+        let line = [FxVec2::from_int(395, 400), FxVec2::from_int(405, 400)];
+        w.step(&[cmd(
+            2,
+            CommandKind::Dig {
+                squad: e,
+                line: line.to_vec(),
+                profile: frontline_content::DigProfile::AtDitch,
+            },
+        )]);
+        let mut ticks = 0;
+        while w.game().unwrap().at_ditches.is_empty() && ticks < 3 * 60 * 30 {
+            w.step(&[]);
+            ticks += 1;
+        }
+        let g = w.game().unwrap();
+        assert!(!g.at_ditches.is_empty(), "no section recorded in 3 min");
+        for l in &g.at_ditches {
+            assert!(l.len() >= 2 && l.len() < 4);
+            assert!(l.iter().all(|q| q.y == Fx::from_int(400)
+                && q.x >= Fx::from_int(395)
+                && q.x <= Fx::from_int(405)));
+            assert!(l[1].x > l[0].x, "a section shorter than the line, in order");
+        }
+        assert!(g.at_ditches.iter().all(|l| l[..] != line[..]));
+        assert!(!ditch_on(&w, mid));
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+    }
+
     #[test]
     fn launcher_escort_and_dig_profile_state_is_saved_hashed_and_checked() {
         use crate::game::{Launcher, Order};
@@ -3853,7 +3977,9 @@ mod tests {
         assert_eq!(g.vehicles[&va].followers.len(), g.squads[&r].members.len());
         let l = g.squads[&t].launcher.clone().unwrap();
         assert_eq!(l.attack, Some(vb));
-        assert_eq!(g.at_ditches.len(), 1);
+        // The engineers are still walking to the line: an AT-ditch section
+        // is recorded when its first pass is stamped, not on the order.
+        assert!(g.at_ditches.is_empty());
         let digging = g
             .squads
             .values()

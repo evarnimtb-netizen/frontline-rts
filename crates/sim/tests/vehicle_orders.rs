@@ -347,8 +347,8 @@ fn soldier_only_and_engineer_only_orders_reject_the_wrong_squads() {
         },
         true,
     );
-    assert_eq!(w.game().unwrap().at_ditches(), std::slice::from_ref(&line));
-    // The same line again is not recorded twice.
+    // Sections are recorded as they are dug (first pass), not on the order.
+    assert!(w.game().unwrap().at_ditches().is_empty());
     let two = members(&w, eng)[..2].to_vec();
     expect(
         &mut w,
@@ -359,7 +359,7 @@ fn soldier_only_and_engineer_only_orders_reject_the_wrong_squads() {
         },
         true,
     );
-    assert_eq!(w.game().unwrap().at_ditches().len(), 1);
+    assert!(w.game().unwrap().at_ditches().is_empty());
 }
 
 #[test]
@@ -793,13 +793,15 @@ fn orders_escorts_launchers_and_ditches_are_deterministic_and_survive_save_load(
     for r in &runs[1..] {
         assert_eq!(r, &runs[0], "thread counts disagree");
     }
-    // Save at 20 s, load, continue: the same hashes.
+    // Save at 20 s, load, continue for 60 s (past the first AT-ditch
+    // sections being recorded): the same hashes.
     let mut w = order_match(2);
     for _ in 0..30 * 20 {
         w.step(&[]);
     }
+    assert!(w.game().unwrap().at_ditches().is_empty());
     let mut loaded = World::load(&w.save(), 3).unwrap();
-    for _ in 0..30 * 20 {
+    for _ in 0..30 * 60 {
         w.step(&[]);
         loaded.step(&[]);
         assert_eq!(w.state_hash(), loaded.state_hash());
@@ -807,5 +809,7 @@ fn orders_escorts_launchers_and_ditches_are_deterministic_and_survive_save_load(
     }
     assert!(w.stats().shots_fired > 0);
     assert!(w.stats().rockets_fired > 0, "the bazooka team fired");
-    assert_eq!(w.game().unwrap().at_ditches().len(), 1);
+    let ditches = w.game().unwrap().at_ditches();
+    assert!(!ditches.is_empty(), "no AT-ditch section dug in 80 s");
+    assert!(ditches.iter().flatten().all(|q| q.y == Fx::from_int(420)));
 }

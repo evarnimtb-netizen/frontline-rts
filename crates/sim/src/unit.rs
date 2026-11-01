@@ -353,7 +353,7 @@ impl MatchState {
         {
             return self.order_dig(ctx, p, first, line, profile);
         }
-        if !self.add_at_ditch(line, profile) {
+        if !self.at_ditch_room(profile) {
             return false;
         }
         let mut job = DigJob::new(

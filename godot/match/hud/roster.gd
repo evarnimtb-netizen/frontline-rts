@@ -22,8 +22,9 @@ extends Control
 ## Click a card to select the whole squad (Shift adds / removes it), click
 ## a pip to select that man (Shift toggles), double-click a card to look at
 ## the squad. Click a group tab to recall the group. When the squads do not
-## fit, squads with selected men keep their cards and a "+N" tile counts
-## the rest.
+## fit, squads with selected men keep their cards, then vehicles (few and
+## costly, so they stay on the roster with nothing selected), and a "+N"
+## tile counts the rest.
 
 const MORE_W := 44.0
 const PAD := 10.0
@@ -161,14 +162,17 @@ func _layout() -> void:
 	hidden_count = 0
 	if _rows_needed(squads, widths, 0.0) > 2:
 		# Keep squads with selected men (and selected vehicles) first, then
-		# the rest by id.
+		# the other vehicles, then the rest by id.
 		var marked := _marked()
 		var order := PackedInt32Array()
 		for sid in squads:
 			if marked.has(sid):
 				order.append(sid)
 		for sid in squads:
-			if not marked.has(sid):
+			if not marked.has(sid) and vehicle_of(sid) != -1:
+				order.append(sid)
+		for sid in squads:
+			if not marked.has(sid) and vehicle_of(sid) == -1:
 				order.append(sid)
 		shown = PackedInt32Array()
 		for sid in order:

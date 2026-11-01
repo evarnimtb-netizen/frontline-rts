@@ -73,6 +73,9 @@ const GROUP_CANDIDATES: usize = 16;
 const SEARCH_RAYS: usize = 2;
 /// MGs pick among this many nearest soldiers (seeded), as S1 MGs.
 const SWEEP_POOL: usize = 4;
+/// RNG draws one MG shot takes from the `AIM` stream (`shot_velocity`: two
+/// triangular rolls of two draws each).
+const MG_AIM_DRAWS: usize = 4;
 /// Shells live 1.25 × the gun's range in flight, plus two substeps.
 const SHELL_TTL_PCT: i32 = 125;
 
@@ -473,7 +476,12 @@ impl MatchState {
             if m.kind == MountKind::Coax && main_man.is_some_and(ok) {
                 st.target = main_man;
             } else if lost || due {
-                let roll = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SWEEP).next_u64();
+                // Draw k of the stream: each MG its own roll.
+                let mut sweep = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SWEEP);
+                for _ in 0..k {
+                    sweep.next_u64();
+                }
+                let roll = sweep.next_u64();
                 st.target = self.mg_search(ctx, owner, from, axis_yaw, cone, r, roll);
             }
             let Some(t) = st.target else { continue };
@@ -497,8 +505,9 @@ impl MatchState {
                 (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32,
             );
             let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
-            // Each MG its own draws: skip the other mounts'.
-            for _ in 0..k * 2 {
+            // Each MG its own draws: skip the other mounts' (a shot takes
+            // `MG_AIM_DRAWS`).
+            for _ in 0..k * MG_AIM_DRAWS {
                 rng.next_u64();
             }
             let vel =
@@ -844,6 +853,26 @@ fn main_spread(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review fix: the MG skip count matches what one shot draws, so two
+    /// MGs firing on the same tick never share a spread roll.
+    #[test]
+    fn one_mg_shot_takes_mg_aim_draws() {
+        let key = (7, 100, SimId(3), Purpose::AIM);
+        let mut shot = RngStream::new(key.0, key.1, key.2, key.3);
+        crate::combat::shot_velocity(
+            FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE),
+            FxVec3::new(Fx::from_int(100), Fx::from_int(20), Fx::ONE),
+            Fx::from_int(700),
+            Fx::from_milli(5),
+            &mut shot,
+        );
+        let mut skip = RngStream::new(key.0, key.1, key.2, key.3);
+        for _ in 0..MG_AIM_DRAWS {
+            skip.next_u64();
+        }
+        assert_eq!(shot.next_u64(), skip.next_u64());
+    }
 
     fn setup() -> MatchSetup {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");

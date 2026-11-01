@@ -549,6 +549,9 @@ func pick_vehicle(screen: Vector2, own := 1) -> int:
 		var id := view.veh_pick_ids[i]
 		var d := screen.distance_to(view.veh_pick_screen[i])
 		if d > PICK_RADIUS_PX:
+			# Outside the vehicle's screen reach no footprint can hold it.
+			if d > view.veh_pick_reach[i]:
+				continue
 			var fp: PackedVector2Array = view.vehicle_screen_footprint(id)
 			if fp.size() < 3 or not Geometry2D.is_point_in_polygon(screen, fp):
 				continue

@@ -28,10 +28,13 @@
 //! **Profiles (S3).** A job digs one named profile of the rules
 //! (`DigProfile`: the standard trench or the AT ditch, engineers only);
 //! depth, widths, spoil, pace, passes and the longest line come from it.
-//! An AT-ditch job records its line in `MatchState::at_ditches` when it
-//! starts, so the ditch blocks vehicles section by section as it gets deep
-//! enough (`crate::vehicle`), and infantry paths pay for crossing it
-//! (`crate::path`).
+//! An AT-ditch job records each segment's part of the line in
+//! `MatchState::at_ditches` when that segment's first pass is stamped, so
+//! the ditch blocks vehicles section by section as it gets deep enough
+//! (`crate::vehicle`), and infantry paths pay for crossing it
+//! (`crate::path`). Recording on the stamp, not on the order, keeps an
+//! order cancelled before any digging (or a line drawn over someone
+//! else's trench) from changing the map.
 //!
 //! Detached men (S1b) do not dig for their squad: a man who detaches lets
 //! his segment go. `DigUnits` jobs ([`crate::unit::UnitDig`]) are worked
@@ -197,6 +200,21 @@ impl DigJob {
     }
 }
 
+/// The part of `line` between arc lengths `from` and `to`: its end points
+/// and the vertices strictly between them (as [`stamp`] walks the line).
+pub(crate) fn sub_line(line: &[FxVec2], from: Fx, to: Fx) -> Vec<FxVec2> {
+    let mut out = vec![point_along(line, from)];
+    let mut acc = Fx::ZERO;
+    for w in line.windows(2) {
+        acc += (w[1] - w[0]).length();
+        if acc > from && acc < to {
+            out.push(w[1]);
+        }
+    }
+    out.push(point_along(line, to));
+    out
+}
+
 /// Closest point of `line` to `p`: `(distance², arc length there, on the
 /// left side)`; ties go to the earlier segment.
 fn nearest(line: &[FxVec2], p: FxVec2) -> (u64, Fx, bool) {
@@ -332,11 +350,21 @@ impl MatchState {
         hash: &mut HashCache,
         tick: u64,
     ) {
-        self.squad_dig_work(ents, terrain, tick);
-        self.unit_dig_work(ents, terrain, hash, tick);
+        let mut ditches = Vec::new();
+        self.squad_dig_work(ents, terrain, tick, &mut ditches);
+        self.unit_dig_work(ents, terrain, hash, tick, &mut ditches);
+        for l in ditches {
+            self.record_at_ditch(l);
+        }
     }
 
-    fn squad_dig_work(&mut self, ents: &Entities, terrain: &mut Heightfield, tick: u64) {
+    fn squad_dig_work(
+        &mut self,
+        ents: &Entities,
+        terrain: &mut Heightfield,
+        tick: u64,
+        ditches: &mut Vec<Vec<FxVec2>>,
+    ) {
         let hz = self.setup.tick_hz;
         let reach_sq = Fx::from_milli(DIG_REACH_MM).raw() as u64;
         let reach_sq = reach_sq * reach_sq;
@@ -404,6 +432,9 @@ impl MatchState {
                     stamp(
                         terrain, line, job.front, seg.from, seg.to, passes, n, dig, tick,
                     );
+                    if job.profile == DigProfile::AtDitch && seg.to > seg.from {
+                        ditches.push(sub_line(line, seg.from, seg.to));
+                    }
                 }
             }
             if job.finished(dig) {
@@ -418,6 +449,7 @@ impl MatchState {
         terrain: &mut Heightfield,
         hash: &mut HashCache,
         tick: u64,
+        ditches: &mut Vec<Vec<FxVec2>>,
     ) {
         if self.unit_digs.is_empty() {
             return;
@@ -517,6 +549,9 @@ impl MatchState {
                     stamp(
                         terrain, line, job.front, seg.from, seg.to, passes, n, dig, tick,
                     );
+                    if job.profile == DigProfile::AtDitch && seg.to > seg.from {
+                        ditches.push(sub_line(line, seg.from, seg.to));
+                    }
                 }
             }
             if job.finished(dig) {

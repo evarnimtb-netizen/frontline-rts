@@ -1768,6 +1768,7 @@ fn case14(env: &Env) -> Result<CaseReport> {
         Vec::new(),
         Vec::new(),
     );
+    let (mut int, mut sts, mut hsh, mut snap) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let (mut peak_box, mut peak_exp) = (0u64, 0u32);
     let mut seq = 0u32;
     for t in 0..120 * hz(w) {
@@ -1811,6 +1812,10 @@ fn case14(env: &Env) -> Result<CaseReport> {
         w.step(&cmds);
         tick.push(ns(t0.elapsed()));
         let st = w.stage_times();
+        int.push(ns(st.intent));
+        sts.push(ns(st.status));
+        hsh.push(ns(st.world_hash));
+        snap.push(ns(st.snapshot));
         mv.push(ns(st.movement));
         wp.push(ns(st.weapons));
         bal.push(ns(st.ballistics));
@@ -1830,11 +1835,15 @@ fn case14(env: &Env) -> Result<CaseReport> {
         format!("{vehicles} vehicles, {soldiers} soldiers at the start"),
     );
     for (name, v) in [
+        ("intent (paths, AI)", &mut int),
+        ("perception", &mut per),
         ("movement", &mut mv),
         ("weapons", &mut wp),
         ("ballistics", &mut bal),
         ("damage", &mut dmg),
-        ("perception", &mut per),
+        ("status", &mut sts),
+        ("hash", &mut hsh),
+        ("snapshot", &mut snap),
     ] {
         let s = Summary::from_nanos(v);
         r.row(
