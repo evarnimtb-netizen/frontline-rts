@@ -1153,6 +1153,13 @@ T6 (86.2 %), T14 (0.0013 m per burst).
 
 ## Tune results (stage done, 2026-11-01)
 
+> **Superseded by the Fix stage** (`docs/slices/S3b-log.md` "Fix stage"):
+> the reviews found this table judged on too few seeds and the M61 row
+> built on mixed acceptance criteria. On ≥ 10 seeds and 80 matches T2,
+> T5 (flank), T7, T10 and T14 miss; the AP rows now come from one source
+> (Bird & Livingston), costs are Panzer IV 620 / Sherman 590, vehicle MGs
+> carry stowed rounds. The table below is kept as the Tune stage's record.
+
 Three rounds on `s3b-balance` (round 1 `1bd66bd`, round 2 `38f09b5`, round
 3 the final measurement and the test fixes). Measured on the final data:
 skirmish seeds 1–10 × both base orders (20 matches, 6 at once,
@@ -1325,4 +1332,4 @@ Tried and dropped: HEAT `core.length_cm` 150 (no effect on case 4 or 6),
 ## Slice log
 
 Results go in `docs/slices/S3b-log.md` (created by the Tune stage); the
-final targets table is in "Tune results" above.
+final targets table is in its "Fix stage" section.

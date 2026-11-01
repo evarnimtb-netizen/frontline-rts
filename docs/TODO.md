@@ -100,15 +100,19 @@ it.
   both (attackers 74 of 80 vs 80 of 80 without the tank; defenders 68.8 %).
   If the target stays, pick the next lever: tank fear, mortar smoke, or
   stronger pinning (S3-log.md "Case 7 vs target").
+  **S3b (2026-11-01):** met on (A) with the tank on Suppress (pinning
+  fire, owner's choice): attackers 39 of 160 vs 160 without the tank,
+  defenders lose 100 % (seeds 1-10, `docs/slices/S3b-log.md`).
 - [ ] **Confirm the narrowed case 4 hard check** (fix pass): "at least
   one rocket hit per run" now covers the flank and front runs. The HE
   variant, where the team is under HE fire and hits 57 % at 100 m, prints
   its no-hit runs instead of failing.
 
-## S3b-balance (in progress, branch `s3b-balance`)
+## S3b-balance (done 2026-11-01, branch `s3b-balance`, pushed; owner questions open)
 
 Spec: `docs/slices/S3b-balance.md` (baseline, diagnosis, damage audit,
-targets). Owner decisions of 2026-11-01 in force: pinning fire as rules
+targets); results and the final targets table: `docs/slices/S3b-log.md`
+"Fix stage". Owner decisions of 2026-11-01 in force: pinning fire as rules
 data (no mortar smoke, no tank fear), physical contact only, realism
 first then costs then historical options then stats, tuning values in
 TOML. Work proceeds on the (A) defaults below.
@@ -252,7 +256,10 @@ trench pinning (stage done)"): new questions, work proceeds on (A).
 Tune stage (2026-11-01, `docs/slices/S3b-balance.md` "Tune results"): new
 questions, work proceeds on (A).
 
-- [ ] **S3b-30. 75 mm M61 penetration table.** The def's row (76/70/63/57/51
+- [x] **S3b-30. 75 mm M61 penetration table.** Superseded in the Fix stage
+  (review H2): all three AP rounds now use Bird & Livingston's 0° rows (one
+  source and criterion); the M61 beats the Panzer IV H front at 300 m
+  90 % of the time. T2 follows in S3b-38. Tune stage text: the def's row (76/70/63/57/51
   mm at 30°) sat about 6 % above the US published table (Hunnicutt: 2.6 in
   at 500 yd, 2.4 at 1000, 2.2 at 1500, 2.0 at 2000). Corrected to it: the
   M61 beats the Panzer IV H's 80 mm front at 300 m 13 % of the time (was
@@ -278,9 +285,12 @@ questions, work proceeds on (A).
   (15 m); 7c keeps the S3 run. Before, the squad stayed at 25 m, where
   ducked defenders cannot be hit, so T8/T10 could not be met by any
   value. (A) Keep (fire and move, grenades, then in). (B) The old rows.
-- [ ] **S3b-34. Tank costs.** Panzer IV 640 -> 600, Sherman 560 -> 620
-  (S3b-10 (A), within 15 %): over 40 matches Germany won 15 / USA 23
-  before, 23 / 17 after. (A) Keep. (B) Revert and accept the faction gap.
+- [ ] **S3b-34. Tank costs.** Fix stage: Panzer IV 620, Sherman 590 (S3b-10
+  (A), within 15 %; the Tune stage's 600 / 620 gave base 1 70 % of wins).
+  40 matches each on the Fix data: 640/560 Germany 12 / USA 27; 600/620
+  18 / 22 (base 1 70 %); 620/590 17 / 21 (base 1 55 %). Over 80 matches
+  Germany 31, USA 47, 2 draws. (A) Keep 620 / 590. (B) Revert to S3 and
+  accept the faction gap.
 - [ ] **S3b-35. Case 4 flank target (T5, missed: 34 %).** A flank rocket
   at visible-mass height crosses the turret-basket crew; the Panzer IV's
   rack bins (low, per Panzer Tracts) and its turret ring lie below and
@@ -299,6 +309,34 @@ questions, work proceeds on (A).
   match under 10 or over 40 min, median 15-30): final 11.2-26.2, median
   18.1. Against the old 12-25 band 5 of 20 fall outside. (A) Nothing to
   do. (B) Revisit with a ticket rule if stalemates appear in play.
+
+Fix stage (2026-11-01, `docs/slices/S3b-log.md` "Fix stage"): new
+questions, work proceeds on (A).
+
+- [ ] **S3b-38. T2, the 300 m frontal duel.** With consistent penetration
+  data both tanks beat each other's front at 300 m; the Panzer IV wins 44
+  of 80 over seeds 1-40 (4 of 20 on seeds 1-10). (A) Accept a near-even
+  300 m duel as historical; judge the Panzer IV's edge at range in a new
+  600 m case next slice. (B) Keep "6-8 of 10" with a step (d) stat change.
+- [ ] **S3b-39. Vehicle MG stowage.** Built: Panzer IV H 2 x 1575, M4A3 (75)
+  2 x 2375 rounds; a dry MG is silent; base rearm refills a belt per step.
+  (A) Keep. (B) No limit.
+- [ ] **S3b-40. Base-side bias.** Base 1 wins 58 % of 78 decided matches
+  (67 % on seeds 1-10; 70 % in the plan baseline before S3b). (A) Study
+  the map and AI routes next slice. (B) Accept.
+- [ ] **S3b-41. T10 by faction.** US attackers (M1919) lose 74 %, German
+  attackers (MG 42) 41 % on 10 seeds; T10 pooled misses (57.5 %). (A)
+  Accept the historical rate-of-fire gap, keep T10 pooled with a
+  per-faction report; the AI gives a US base of fire a second MG or rifle
+  squad (next slice). (B) Tune the M1919 as a step (d) deviation.
+- [ ] **S3b-42. AI rearm.** The AI never sends a tank to its base to rearm,
+  so dry MGs stay dry. (A) Next slice: rearm when both MGs are dry or HE
+  is at the reserve. (B) Leave it.
+- [ ] **Follow-ups (next slice).** Bail-out (S3b-5 (B)) to raise rocket
+  knock-outs (16 of 221 KOs over 80 matches); sticky satchel hunts
+  (S3b-36); towed AT guns (S3b-8); MG stowage on the vehicle card, not only
+  the tooltip; ammo causes 64 % of knock-outs (an ammo fire always ends
+  the tank).
 
 ## S3 owner checklist (needs a person)
 

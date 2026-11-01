@@ -32,6 +32,7 @@ needed.
 | One unit, weapon, item, vehicle, round | `defs/units/`, `defs/weapons/`, `defs/items/`, `defs/vehicles/`, `defs/ammo/` | the def's own file |
 | HE fragments and overpressure (S3b) | `defs/weapons/` (mortars), `defs/ammo/` (tank HE, rockets), `defs/items/` (grenades, satchels) | `[he]`: `blast_radius_cm`, `frag_count`, `frag_reach_cm`, `frag_damage`, `frag_far_pct`, `frag_elev_deg`, `frag_track_damage`; plates beaten: `inside_rays`, `inside_damage`, `inside_reach_cm` |
 | APHE filler, barrel, crew and component boxes (S3b) | `defs/ammo/` `[filler]` (`rays`, `cone_deg`, `damage`, `reach_cm`); `defs/vehicles/` `barrel` on the main gun, `[crew.boxes]`, `[[components]]` `box` or `boxes`. A hull-frame box must lie inside the hull box; a turret-frame box inside the turret box or below it down to the hull floor (the turret basket, S3b Tune) | the def's own file |
+| Vehicle MG stowage (S3b Fix): rounds per coax / hull MG, refilled a belt per base rearm step | `defs/vehicles/` | `rounds` on a `coax` or `hull` `[[weapons]]` entry (omit: no limit) |
 | Call-in cost and re-call cooldown (S3b) | `defs/units/*.toml` (squads), `defs/vehicles/*.toml` (tanks) | `cost`, `recall_cooldown_s`, `initial_cooldown_s`; optional `cooldown_group` in a unit def (types in one group share a timer) |
 
 Each key has a comment with its unit and meaning. Units are in the key's
