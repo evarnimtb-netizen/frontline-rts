@@ -92,9 +92,9 @@ fn vehicles_and_ammo_lower_into_the_setup() {
             pz.recall_cooldown_ticks,
             pz.initial_cooldown_ticks
         ),
-        (640, 12, 120 * 30, 0)
+        (600, 12, 120 * 30, 0) // S3b Tune: cost 640 -> 600
     );
-    assert_eq!((sh.cost, sh.pop), (560, 12));
+    assert_eq!((sh.cost, sh.pop), (620, 12)); // S3b Tune: 560 -> 620
     assert_eq!(pz.mobility.speed, Fixed::from_cm(600));
     assert_eq!(sh.mobility.reverse, Fixed::from_cm(250));
     assert_eq!(pz.mobility.ditch_block, Fixed::from_ratio(19, 10));
@@ -183,7 +183,7 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     let tank = ty("ww2:ger_pz4_h_squad");
     assert_eq!(tank.role, SquadRole::Vehicle);
     assert_eq!(tank.vehicle, Some(0));
-    assert_eq!((tank.men, tank.cost, tank.pop(&s.vehicles)), (0, 640, 12));
+    assert_eq!((tank.men, tank.cost, tank.pop(&s.vehicles)), (0, 600, 12)); // S3b Tune: 640 -> 600
     let at = ty("ww2:usa_bazooka_team");
     assert_eq!(
         (at.role, at.men, at.weapon_men),

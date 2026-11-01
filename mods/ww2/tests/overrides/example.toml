@@ -26,7 +26,7 @@ backup_m = 30
 # [[weapons]]) replace the whole array.
 [defs.vehicles."ww2:ger_pz4_h"]
 # Manpower (a vehicle's cost, pop and re-call cooldown are in its def).
-cost = 640
+cost = 600
 
 [defs.vehicles."ww2:usa_m4a3_75".turret]
 traverse_deg_s = 24

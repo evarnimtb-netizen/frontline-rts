@@ -73,14 +73,14 @@ fn rules_and_def_edits_reach_the_setup_and_are_listed() {
     let path = write(
         "edit",
         "[combat]\nnear_miss_cm = 250\n[ai.armour]\nbackup_m = 45\n\
-         [defs.vehicles.\"ww2:ger_pz4_h\"]\ncost = 600\n",
+         [defs.vehicles.\"ww2:ger_pz4_h\"]\ncost = 640\n",
     );
     let changes = defs.apply_override(&path, "ww2:skirmish").unwrap();
     let shown: Vec<String> = changes.iter().map(|c| c.to_string()).collect();
     assert_eq!(
         shown,
         [
-            "defs.vehicles.\"ww2:ger_pz4_h\": cost: 640 -> 600",
+            "defs.vehicles.\"ww2:ger_pz4_h\": cost: 600 -> 640",
             "rules \"ww2:skirmish\": ai.armour.backup_m: 30 -> 45",
             "rules \"ww2:skirmish\": combat.near_miss_cm: 200 -> 250",
         ]
@@ -90,7 +90,7 @@ fn rules_and_def_edits_reach_the_setup_and_are_listed() {
     assert_eq!(s.rules.ai.armour.backup_m, 45);
     assert_eq!(s.rules.combat.near_miss.raw(), 5 * 65536 / 2);
     let pz = s.vehicles.iter().find(|v| v.id == "ww2:ger_pz4_h").unwrap();
-    assert_eq!(pz.cost, 600);
+    assert_eq!(pz.cost, 640);
 }
 
 #[test]

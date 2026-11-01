@@ -11,7 +11,12 @@ name = "Panzer IV Ausf. H"
 short_name = "Panzer IV"
 faction = "ww2:germany"
 role = "tank"
-cost = 640
+# S3b Tune (step (b) cost balance, owner question S3b-10 (A): within
+# +-15 %): Panzer IV 640 -> 600 (-6 %), Sherman 560 -> 620 (+11 %).
+# Measured over 40 AI matches (seeds 1-20, both base orders) after the
+# round-1 realism fixes: Germany won 15, the USA 23 (2 draws); with these
+# costs Germany 23, the USA 17. A gameplay balance value, not a price.
+cost = 600
 pop = 12
 # Call-in (S3b): a call-in spawns the tank at once at the base (no
 # queue, no delivery time; it walks to the front itself). Then this

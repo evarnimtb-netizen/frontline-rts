@@ -612,8 +612,8 @@ backup_m = 30
 # S3b call-in without a queue: after the vehicle unlock, while under the
 # vehicle limit, the AI's infantry call-ins leave at least this much
 # manpower unspent (MP), so a tank can be bought soon after its 120 s
-# re-call cooldown ends. 200 MP is under a third of a tank (Panzer IV 640,
-# Sherman 560) and about 50 s of base income: a small reserve, not a freeze
+# re-call cooldown ends. 200 MP is under a third of a tank (Panzer IV 600,
+# Sherman 620) and about 50 s of base income: a small reserve, not a freeze
 # of infantry buying (owner, 2026-11-01: "keep a small reserve for a tank").
 tank_reserve_mp = 200
 
