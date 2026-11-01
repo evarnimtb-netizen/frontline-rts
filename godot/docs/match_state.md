@@ -67,6 +67,7 @@ state = {
     pop_cap: int,                # 120
     tickets_max: int,            # 500
     dig_max_m: float,            # 60.0  (dig tool length cap)
+    suppress_line_max_m: float,  # 40.0  (S3b suppress tool line cap)
     mortar_min_m: float,         # 60.0
     mortar_max_m: float,         # 600.0
     capture_radius_m: float,     # opt, 15.0
@@ -113,6 +114,7 @@ state = {
       order: String,             # "idle" | "move" | "attack_move" | "retreat"
                                  # | "dig" | "barrage" | "setup" (MG setting up)
                                  # | "follow" (S3 escort; `follow`: the vehicle)
+                                 # | "suppress" (S3b area fire; `suppress_line`)
       pos: Vector3,              # selection anchor (leader point)
       screen: Vector2,           # opt; anchor in viewport pixels. If absent the
                                  # view projects pos + 1.8 m with the camera
@@ -123,6 +125,8 @@ state = {
       target: Vector3,           # opt; current order target
       dig_line: PackedVector3Array, # opt; own squads with a Dig order
       dig_progress: float,       # opt; 0..1 of dig_line dug
+      suppress_line: PackedVector3Array, # opt, S3b; the 2 ends of the line a
+                                 # squad on Suppress fires at (equal for a point)
     }, ...
   ],
   soldiers: [                    # S1b; own + spotted enemy, living, ascending id
@@ -145,6 +149,7 @@ state = {
       order: String,             # opt, detached men: "move" | "attack_move"
                                  # | "retreat" | "dig" | "hold" | "throw"
                                  # | "follow" (S3; `follow`: the vehicle)
+                                 # | "suppress" (S3b; target: the line's middle)
       target: Vector3,           # opt, detached men with a target: drawn as
                                  # an order marker
       items: { frag: int, smoke: int, satchel: int },
@@ -550,6 +555,8 @@ vehicles: [                        # own + seen enemy + every wreck, ascending i
     reload: float,                 # 0..1, 1 = ready to fire
     target: int,                   # enemy vehicle the gun is on, -1 none
     followers: int,                # soldiers escorting it (FollowUnits)
+    suppress_line: PackedVector3Array, # opt, own, S3b: the line its MGs (and HE
+                                   # every combat.suppress.tank_he_s) fire at
   }, ...
 ],
 shells: [                          # main-gun shells and AT rockets in flight that
@@ -675,6 +682,7 @@ soldiers). Squad-level intents (`move {squads}` ...) never carry vehicles.
 | `set_ammo` | `{units, ammo: String}` | SetAmmo `{units, ammo}` | `"auto"`, `"ap"`, `"he"` or (S3b) `"apcr"` (a gun without it fires its standard round); vehicles only |
 | `repair_units` | `{units}` | RepairUnits `{units}` | crews repair the worst repairable component in place (no move or main gun meanwhile) |
 | `follow_units` | `{units, vehicle: int}` | FollowUnits `{units, vehicle}` | soldiers escort a friendly vehicle (single file behind it); vehicle ids in `units` are dropped |
+| `suppress_units` | `{units, polyline: PackedVector3Array}` or `{units, target: Vector3}` | SuppressUnits `{units, line}` (S3b) | soldiers and vehicles hold and fire at the point or line (its first and last points; the sim pulls a line longer than `rules.suppress_line_max_m` in) without a spotted target; mortar men are dropped |
 | `dig`, `dig_units` | as S1b, plus `profile: String` *opt* | Dig `{squad, line, profile}`, DigUnits `{units, line, profile}` | `"trench"` (default) or `"at_ditch"` (engineers only, at most `rules.dig_profiles.at_ditch.max_m`) |
 | `call_in` | `{type, id}` | CallIn `{squad_type}` | `id` (catalog `id`) wins over `type`. S3b: bought and spawned at once, or refused (before the unlock, at the vehicle limit, on the type's cooldown, short of manpower, over the pop cap); the result comes back as a feed event (below) |
 
@@ -699,6 +707,7 @@ orders, vehicles theirs; vehicle-only keys affect only vehicles.
 | Right-click on an own vehicle with infantry selected | `follow_units` (the soldiers) |
 | Alt+right-click | `reverse_units` |
 | O | face tool: click a point, `face_units` |
+| P | S3b suppress tool (soldiers and vehicles): click a point or drag a line, `suppress_units`; Shift keeps the tool |
 | N | next ammo for the selected vehicles: Auto → AP → (APCR, S3b, on a gun that carries it) → HE (`set_ammo`, from the first selected vehicle's `ammo_choice`) |
 | J | `repair_units` |
 

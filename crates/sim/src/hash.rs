@@ -114,6 +114,7 @@ impl StableHash for Combat {
         (self.stance as u8).put(out);
         self.in_trench.put(out);
         self.pinned.put(out);
+        self.ducked.put(out);
         self.suppression.put(out);
         self.height.put(out);
         self.fire_height.put(out);
@@ -137,6 +138,7 @@ impl StableHash for Unit {
             UnitOrder::Move { target } | UnitOrder::AttackMove { target } => target.put(out),
             UnitOrder::Dig { job } => job.put(out),
             UnitOrder::Follow { vehicle } => vehicle.0.put(out),
+            UnitOrder::Suppress { line } => line.put(out),
         }
         let n = &self.nav;
         (n.phase as u8).put(out);
@@ -351,6 +353,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
                 rounds.put(out);
             }
             Order::Follow { vehicle } => vehicle.0.put(out),
+            Order::Suppress { line } => line.put(out),
         }
         let n = &sq.nav;
         (n.phase as u8).put(out);

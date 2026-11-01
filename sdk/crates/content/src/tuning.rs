@@ -189,10 +189,97 @@ tuning_table! {
         /// Each point of suppression widens a shooter's spread by this
         /// many hundredths of a percent (100: 1 % per point) (%).
         spread_per_point_pct: 0..=1000,
+        /// S3b duck state: a man in a trench at or above this suppression
+        /// ducks below the lip (no fire, no throw) (points) ...
+        duck_points: 0..=100,
+        /// ... and comes back up only below this (points). Both scale with
+        /// the squad type's `steadiness_pct`, as the pin threshold does.
+        duck_release_points: 0..=100,
+        /// A ducked man's suppression decays at this share of the normal
+        /// rate: he stays down until the fire slackens (%).
+        duck_decay_pct: 0..=100,
     }
 }
 
 impl SuppressionTuning {
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        check_order(
+            out,
+            table,
+            ("duck_release_points", self.duck_release_points),
+            ("duck_points", self.duck_points),
+        );
+    }
+}
+
+tuning_table! {
+    /// `[combat.suppress]` (S3b): the Suppress order, area fire at a point
+    /// or short line without a spotted target.
+    pub struct SuppressTuning {
+        /// Each shot aims this high above the ground on the line (the
+        /// undug surface over a trench) (cm).
+        aim_cm: 0..=500,
+        /// The longest suppress line (m).
+        line_max_m: 1..=200,
+        /// A shot is fired only with a clear line from the muzzle to a
+        /// point this far short of its aim point (so rounds aimed just over
+        /// a parapet still go) (cm).
+        clear_cm: 0..=2000,
+        /// A vehicle on Suppress fires its main gun's HE at the line at
+        /// most this often (s) ...
+        tank_he_s: 1..=600,
+        /// ... while more than this many HE rounds are left ...
+        tank_he_reserve: 0..=200,
+        /// ... aimed this high above the ground at the line's middle (cm;
+        /// low, so the shell bursts on the parapet, not beyond it).
+        tank_he_aim_cm: 0..=500,
+    }
+}
+
+impl SuppressTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[ai.assault]` (S3b): the AI's fire-and-move, AT-team hunts and
+    /// satchel hunts.
+    pub struct AiAssaultTuning {
+        /// A base of fire stands at most this far from the line it
+        /// suppresses: an MG team (m) ...
+        support_mg_m: 10..=1000,
+        /// ... a rifle squad (m) ...
+        support_rifle_m: 10..=1000,
+        /// ... a vehicle (m).
+        support_tank_m: 10..=2000,
+        /// Manoeuvre squads advance in bounds: a squad more than this far
+        /// ahead of the rearmost one halts and fires (m).
+        bound_m: 5..=500,
+        /// The base lifts its fire once a manoeuvre squad's leader is this
+        /// close to the line (m).
+        lift_fire_m: 0..=200,
+        /// The suppress line along an enemy trench is this long (m; at most
+        /// `combat.suppress.line_max_m`).
+        trench_line_m: 1..=200,
+        /// An AT team hunts a known enemy vehicle this close to it or to
+        /// its point (m) ...
+        at_hunt_m: 0..=2000,
+        /// ... unless a known enemy soldier is this close to the middle of
+        /// its route (m) ...
+        at_hunt_clear_m: 0..=500,
+        /// ... and stops this much inside its launcher's `engage_still` (m).
+        at_hunt_inset_m: 0..=200,
+        /// An engineer squad with a satchel goes for a known enemy vehicle
+        /// within this (m) ...
+        satchel_hunt_m: 0..=500,
+        /// ... that has been slower than `ai.infantry.satchel_slow_mm_s`
+        /// (stopped, bogged, immobilised) for this long (s), walking to a
+        /// spot this far outside the hull side nearer it (m).
+        satchel_slow_s: 0..=120,
+        satchel_stand_m: 1..=50,
+    }
+}
+
+impl AiAssaultTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
@@ -575,8 +662,10 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
     ("combat.suppression", SuppressionTuning::KEYS),
+    ("combat.suppress", SuppressTuning::KEYS),
     ("ai.infantry", AiInfantryTuning::KEYS),
     ("ai.armour", AiArmourTuning::KEYS),
+    ("ai.assault", AiAssaultTuning::KEYS),
     ("vehicles.driving", DrivingTuning::KEYS),
     ("vehicles.path", VehiclePathTuning::KEYS),
     ("vehicles.escort", EscortTuning::KEYS),
@@ -595,8 +684,10 @@ pub(crate) struct TuningRefs<'a> {
     pub mortar: &'a MortarTuning,
     pub blast: &'a BlastTuning,
     pub suppression: &'a SuppressionTuning,
+    pub suppress: &'a SuppressTuning,
     pub ai_infantry: &'a AiInfantryTuning,
     pub ai_armour: &'a AiArmourTuning,
+    pub ai_assault: &'a AiAssaultTuning,
     pub driving: &'a DrivingTuning,
     pub vehicle_path: &'a VehiclePathTuning,
     pub escort: &'a EscortTuning,
@@ -617,8 +708,25 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.mortar.check(&p("combat.mortar"), out);
     t.blast.check(&p("combat.blast"), out);
     t.suppression.check(&p("combat.suppression"), out);
+    t.suppress.check(&p("combat.suppress"), out);
     t.ai_infantry.check(&p("ai.infantry"), out);
     t.ai_armour.check(&p("ai.armour"), out);
+    t.ai_assault.check(&p("ai.assault"), out);
+    if t.ai_assault.trench_line_m > t.suppress.line_max_m {
+        out.push(
+            Issue::new(
+                format!("{prefix}ai.assault.trench_line_m"),
+                format!(
+                    "must not exceed combat.suppress.line_max_m ({} > {})",
+                    t.ai_assault.trench_line_m, t.suppress.line_max_m
+                ),
+            )
+            .with_hint(format!(
+                "[ai.assault] trench_line_m = {}",
+                t.suppress.line_max_m
+            )),
+        );
+    }
     t.driving.check(&p("vehicles.driving"), out);
     t.vehicle_path.check(&p("vehicles.path"), out);
     t.escort.check(&p("vehicles.escort"), out);

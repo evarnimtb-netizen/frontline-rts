@@ -143,6 +143,8 @@ pub(crate) fn engage(order: &Order) -> Engage {
         Order::Retreat | Order::Barrage { .. } => Engage::Never,
         Order::Move { .. } | Order::Dig { .. } => Engage::Still,
         Order::Idle | Order::AttackMove { .. } | Order::Follow { .. } => Engage::Always,
+        // Holding; area fire replaces target search (`aim_and_fire`).
+        Order::Suppress { .. } => Engage::Still,
     }
 }
 
@@ -155,7 +157,67 @@ pub(crate) fn engage_of(squad: &Order, u: &Unit) -> Engage {
         UnitOrder::Retreat => Engage::Never,
         UnitOrder::Move { .. } | UnitOrder::Dig { .. } => Engage::Still,
         UnitOrder::Idle | UnitOrder::AttackMove { .. } | UnitOrder::Follow { .. } => Engage::Always,
+        UnitOrder::Suppress { .. } => Engage::Still,
     }
+}
+
+/// S3b: the line a soldier on a Suppress order fires at (his own order if
+/// detached, else his squad's).
+pub(crate) fn suppress_of(squad: &Order, u: &Unit) -> Option<[FxVec2; 2]> {
+    match (u.detached, squad, &u.order) {
+        (false, Order::Suppress { line }, _) | (true, _, UnitOrder::Suppress { line }) => {
+            Some(*line)
+        }
+        _ => None,
+    }
+}
+
+/// S3b: a suppression threshold (points) scaled by the squad type's
+/// `steadiness_pct`.
+#[inline]
+pub(crate) fn steady(points: u32, steadiness_pct: u32) -> u32 {
+    (points as u64 * steadiness_pct as u64 / 100).min(u32::MAX as u64) as u32
+}
+
+/// S3b Suppress: the aim point of a shot at `line` (a point on it at
+/// fraction `t` of its length, `aim_cm` above the higher of the ground
+/// and the undug surface there, so a trench line is aimed at over its
+/// parapet), and the probe point `clear_cm` short of it toward `from`
+/// (lifted as high above the ground there) that the line of fire must
+/// reach. `None` beyond `range`.
+pub(crate) fn suppress_aim(
+    terrain: &Heightfield,
+    rules: &CombatSetup,
+    line: &[FxVec2; 2],
+    t: Fx,
+    from: FxVec3,
+    range: Fx,
+) -> Option<(FxVec3, FxVec3)> {
+    suppress_aim_at(terrain, rules, line, t, from, range, rules.suppress.aim_cm)
+}
+
+/// [`suppress_aim`] with the aim height `aim_cm` given (a vehicle's HE).
+pub(crate) fn suppress_aim_at(
+    terrain: &Heightfield,
+    rules: &CombatSetup,
+    line: &[FxVec2; 2],
+    t: Fx,
+    from: FxVec3,
+    range: Fx,
+    aim_cm: u32,
+) -> Option<(FxVec3, FxVec3)> {
+    let s = &rules.suppress;
+    let p = line[0] + (line[1] - line[0]) * t;
+    let lift = Fx::from_ratio(aim_cm as i64, 100);
+    let ground = |q: FxVec2| terrain.height_at(q).max(terrain.base_height_at(q));
+    let aim = FxVec3::new(p.x, p.y, ground(p) + lift);
+    if (aim.xy() - from.xy()).length_sq_raw() > range_sq(range) {
+        return None;
+    }
+    let back = (from.xy() - p).normalize_or_zero() * Fx::from_ratio(s.clear_cm as i64, 100);
+    let q = terrain.clamp(p + back);
+    let probe = FxVec3::new(q.x, q.y, aim.z.max(ground(q) + lift));
+    Some((aim, probe))
 }
 
 /// The weapon (index into `MatchSetup::weapons`) soldier `id` of squad
@@ -496,6 +558,12 @@ pub(crate) fn aim_and_fire(
         }
         let still = is_still(&ctx.velocity[i], &rules.body);
         let u = &ctx.unit[i];
+        // S3b: a ducked man keeps his target but does not fire; coming up
+        // again costs the half second of aiming.
+        if c.ducked {
+            ws.cooldown = ws.cooldown.max((hz / 2) as u16);
+            continue;
+        }
         // A man winding up a throw does not fire.
         let may = w.he.is_none()
             && ctx.kit[i].windup.is_none()
@@ -510,6 +578,33 @@ pub(crate) fn aim_and_fire(
         }
         let owner = ctx.owner[i].0;
         let pos = ctx.transform[i].pos;
+        // S3b Suppress: area fire at the line, no target search.
+        if let Some(line) = suppress_of(&sq.order, u) {
+            c.target = None;
+            if ws.cooldown > 0 || (c.still as u32) < w.setup_ticks {
+                continue;
+            }
+            let id = SimId(i as u32);
+            let from = muzzle(pos, c, &rules.body);
+            let range: Fx = w.range_max.into();
+            let t = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SUPPRESS)
+                .range_fx(Fx::ZERO, Fx::ONE);
+            let Some((aim, probe)) = suppress_aim(ctx.terrain, rules, &line, t, from, range) else {
+                continue;
+            };
+            if !ctx.terrain.line_of_sight(from, probe) {
+                continue;
+            }
+            let dist = (aim - from).length();
+            let pct = spread_pct(rules, c, !still, dist, range);
+            let spread = Fx::from_raw(
+                (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32,
+            );
+            let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
+            let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
+            fire_round(out, ws, c, w, id, wi, owner, from, vel);
+            continue;
+        }
         let r = range_sq(w.range_max.into());
         if let Some(t) = c.target
             && valid_target(ctx.marks, ctx.mark_of, t, owner, pos.xy(), r).is_none()
@@ -547,28 +642,44 @@ pub(crate) fn aim_and_fire(
             Fx::from_raw((Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32);
         let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
         let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
-        out.push(FireRequest {
-            shooter: id,
-            seq: 0,
-            pos: from,
-            vel,
-            weapon: wi,
-            player: owner,
-            ttl: round_ttl(w),
-            he: false,
-            ammo: crate::projectile::NO_AMMO,
-        });
-        ws.shots = ws.shots.wrapping_add(1);
-        c.since_shot = 0;
-        c.mag = c.mag.saturating_sub(1);
-        if c.mag == 0 {
-            c.mag = w.magazine.min(u16::MAX as u32) as u16;
-            ws.cooldown = w.reload_ticks.max(interval_ceil(w)).min(u16::MAX as u32) as u16;
-        } else {
-            ws.cooldown = interval_after(w, ws.shots).min(u16::MAX as u32) as u16;
-        }
+        fire_round(out, ws, c, w, id, wi, owner, from, vel);
     }
     changed
+}
+
+/// Requests one small-arms round and runs the magazine and cooldown.
+#[allow(clippy::too_many_arguments)]
+fn fire_round(
+    out: &mut Vec<FireRequest>,
+    ws: &mut Weapon,
+    c: &mut Combat,
+    w: &WeaponSetup,
+    id: SimId,
+    wi: u16,
+    owner: u8,
+    from: FxVec3,
+    vel: FxVec3,
+) {
+    out.push(FireRequest {
+        shooter: id,
+        seq: 0,
+        pos: from,
+        vel,
+        weapon: wi,
+        player: owner,
+        ttl: round_ttl(w),
+        he: false,
+        ammo: crate::projectile::NO_AMMO,
+    });
+    ws.shots = ws.shots.wrapping_add(1);
+    c.since_shot = 0;
+    c.mag = c.mag.saturating_sub(1);
+    if c.mag == 0 {
+        c.mag = w.magazine.min(u16::MAX as u32) as u16;
+        ws.cooldown = w.reload_ticks.max(interval_ceil(w)).min(u16::MAX as u32) as u16;
+    } else {
+        ws.cooldown = interval_after(w, ws.shots).min(u16::MAX as u32) as u16;
+    }
 }
 
 // --------------------------------------------------------------- mortars --
@@ -783,6 +894,7 @@ impl MatchState {
         let body = &self.setup.rules.combat.body;
         let still = is_still(&ents.velocity[i], body);
         let may = ents.kit[i].windup.is_none()
+            && !ents.combat[i].ducked
             && l.rounds > 0
             && match engage_of(&sq.order, &ents.unit[i]) {
                 Engage::Never => false,
@@ -1069,9 +1181,13 @@ pub(crate) struct FlightCtx<'a> {
 /// A soldier near a round's segment this substep.
 struct Near {
     id: SimId,
-    centre: FxVec3,
-    /// Unclamped position of his closest approach along the segment.
+    /// His hit capsule's axis (S3b: near misses are measured to the body,
+    /// head to feet, not to its middle).
+    axis: (FxVec3, FxVec3),
+    /// Unclamped position along the segment where it passes his middle
+    /// (picks the one substep that counts the pass).
     s: Fx,
+    /// Squared distance from the segment to his axis.
     dist_sq: Fx,
 }
 
@@ -1205,12 +1321,11 @@ pub(crate) fn fly(
                     } else {
                         Fx::ZERO
                     };
-                    let gap = rel - d * su.clamp(Fx::ZERO, Fx::ONE);
                     near.push(Near {
                         id,
-                        centre,
+                        axis: (a, b),
                         s: su,
-                        dist_sq: gap.dot(gap),
+                        dist_sq: dsq,
                     });
                 });
             }
@@ -1255,8 +1370,8 @@ pub(crate) fn fly(
                 }
                 let passed = n.s >= Fx::ZERO && n.s < end_s && n.dist_sq <= nm_sq;
                 let by_impact = ground.is_some_and(|g| {
-                    let v = n.centre - g;
-                    v.dot(v) <= nm_sq
+                    let (a, b) = n.axis;
+                    seg_seg(g - a, FxVec3::ZERO, FxVec3::ZERO, b - a).1 <= nm_sq
                 });
                 if passed || by_impact {
                     events.push(ev(Blow::NearMiss(n.id)));
@@ -2077,6 +2192,13 @@ pub(crate) fn status(
         }
         changed = true;
         let sq = ctx.squad[i].and_then(|s| ctx.game.squad(s));
+        // S3b: a ducked man's meter decays slower (`duck_decay_pct`).
+        let decay = if c.ducked {
+            (rules.suppression_decay_milli as u64 * rules.suppression.duck_decay_pct as u64 / 100)
+                as u32
+        } else {
+            rules.suppression_decay_milli
+        };
         let u = &ctx.unit[i];
         let retreating = if u.detached {
             u.order == UnitOrder::Retreat
@@ -2084,9 +2206,14 @@ pub(crate) fn status(
             sq.is_some_and(|s| s.order == Order::Retreat)
         };
         let weapon = sq.map(|s| &setup.weapons[weapon_of(setup, s, SimId(i as u32)) as usize]);
-        c.suppression = c.suppression.saturating_sub(rules.suppression_decay_milli);
+        c.suppression = c.suppression.saturating_sub(decay);
         let points = c.suppression / 1000;
-        c.pinned = points >= rules.pin_suppression && !retreating;
+        // S3b: the squad type's steadiness scales the pin and duck
+        // thresholds (the veterancy hook).
+        let steadiness = sq.map_or(100, |s| {
+            setup.squad_types[s.type_idx as usize].steadiness_pct
+        });
+        c.pinned = points >= steady(rules.pin_suppression, steadiness) && !retreating;
         let pos = ctx.transform[i].pos;
         let base_z = if ctx.terrain.has_detail_at(pos.xy()) {
             ctx.terrain.base_height_at(pos.xy())
@@ -2094,6 +2221,16 @@ pub(crate) fn status(
             pos.z
         };
         c.in_trench = base_z - pos.z >= Fx::from_milli(body.trench_depth_mm as i32);
+        // S3b duck state (docs/slices/S3b-balance.md B1): in a trench, at
+        // the duck threshold, until below the release threshold.
+        let sup = &rules.suppression;
+        let duck_at = if c.ducked {
+            sup.duck_release_points
+        } else {
+            sup.duck_points
+        };
+        c.ducked = c.in_trench && !c.pinned && points >= steady(duck_at, steadiness);
+        let suppressing = sq.is_some_and(|s| suppress_of(&s.order, u).is_some());
         if is_still(&ctx.velocity[i], body) {
             c.still = c.still.saturating_add(1);
         } else {
@@ -2101,7 +2238,7 @@ pub(crate) fn status(
         }
         c.since_shot = c.since_shot.saturating_add(1);
         // Winding up a throw counts as aiming: up on the fire step.
-        let aiming = (c.target.is_some()
+        let aiming = ((c.target.is_some() || suppressing)
             && (ctx.weapon[i].cooldown <= aim_ticks || c.since_shot < aim_ticks))
             || ctx.kit[i].windup.is_some();
         let crouched = points >= rules.crouch_suppression;
@@ -2115,7 +2252,7 @@ pub(crate) fn status(
         (c.stance, c.height, c.fire_height) = if c.pinned {
             (Stance::Prone, prone, prone)
         } else if c.in_trench {
-            if aiming {
+            if aiming && !c.ducked {
                 (Stance::Stand, step, step)
             } else if u.stance == StanceOrder::Prone {
                 (Stance::Prone, prone, step)
@@ -2588,6 +2725,154 @@ mod tests {
         let per = r.game.setup().weapons[mg].suppression;
         assert_eq!(r.ents.combat[man.index()].suppression, 3 * per * 1000);
         assert_eq!(stats.near_misses, 3);
+    }
+
+    impl Rig {
+        /// Runs [`aim_and_fire`] once for the whole store; the requests.
+        fn fire(&mut self, tick: u64) -> Vec<FireRequest> {
+            let body = self.game.setup().rules.combat.body.clone();
+            let (mut marks, mut mark_of) = (Vec::new(), Vec::new());
+            build_marks(&self.ents, &mut marks, &mut mark_of, &body);
+            let ctx = FireCtx {
+                kind: &self.ents.kind,
+                owner: &self.ents.owner,
+                transform: &self.ents.transform,
+                velocity: &self.ents.velocity,
+                squad: &self.ents.squad,
+                unit: &self.ents.unit,
+                kit: &self.ents.kit,
+                marks: &marks,
+                mark_of: &mark_of,
+                game: &self.game,
+                terrain: &self.terrain,
+                seed: 1,
+                tick,
+            };
+            let mut out = Vec::new();
+            aim_and_fire(
+                0,
+                &ctx,
+                &mut self.ents.combat,
+                &mut self.ents.weapon,
+                &mut out,
+            );
+            out
+        }
+    }
+
+    /// S3b B1: a man in a trench ducks at the duck threshold (scaled by
+    /// steadiness), stays down (no rising to the step, no fire, no throw)
+    /// until below the release threshold, and never ducks in the open.
+    #[test]
+    fn men_in_a_trench_duck_under_fire_until_it_slackens() {
+        let mut r = rig(true);
+        let man = r.put(0, TRENCH_X, 500);
+        let rules = r.game.setup().rules.combat.clone();
+        let (duck, release) = (
+            rules.suppression.duck_points,
+            rules.suppression.duck_release_points,
+        );
+        assert!(release < duck && duck < rules.pin_suppression);
+        let decay = rules.suppression_decay_milli;
+        let set = |r: &mut Rig, points: u32| {
+            r.ents.combat[man.index()].suppression = points * 1000 + decay;
+            r.status();
+            r.ents.combat[man.index()]
+        };
+        // He has a target: below the threshold he rises to fire.
+        r.ents.combat[man.index()].target = Some(SimId(9999));
+        let c = set(&mut r, duck - 1);
+        assert!(
+            c.in_trench && !c.ducked && c.stance == Stance::Stand,
+            "{c:?}"
+        );
+        let c = set(&mut r, duck);
+        assert!(c.ducked && c.stance == Stance::Crouch, "{c:?}");
+        assert_eq!(c.target, Some(SimId(9999)), "keeps his target");
+        // Hysteresis: still down between the two thresholds.
+        let c = set(&mut r, release);
+        assert!(c.ducked && c.stance == Stance::Crouch);
+        // Ducked: no round, no throw.
+        r.ents.weapon[man.index()].cooldown = 0;
+        assert!(r.fire(5).iter().all(|f| f.shooter != man));
+        assert!(
+            r.ents.weapon[man.index()].cooldown > 0,
+            "coming up costs aim time"
+        );
+        let frag = r.game.can_throw(
+            &r.ents,
+            man,
+            frontline_content::ItemKind::Frag,
+            FxVec2::from_int(TRENCH_X + 20, 500),
+        );
+        assert!(frag.is_none());
+        let c = set(&mut r, release - 1);
+        assert!(!c.ducked && c.stance == Stance::Stand, "{c:?}");
+        // Pinned supersedes ducked.
+        let c = set(&mut r, rules.pin_suppression);
+        assert!(c.pinned && !c.ducked);
+        // Steadier men duck later.
+        let ty = r.game.squad(r.squad).unwrap().type_idx as usize;
+        r.game.setup.squad_types[ty].steadiness_pct = 200;
+        let c = set(&mut r, 0);
+        assert!(!c.ducked);
+        let c = set(&mut r, duck * 2 - 1);
+        assert!(!c.ducked, "steadiness 200 %: ducks at twice the points");
+        let c = set(&mut r, duck * 2);
+        assert!(c.ducked);
+        // In the open nobody ducks.
+        let mut open = rig(false);
+        let man = open.put(0, TRENCH_X, 500);
+        open.ents.combat[man.index()].suppression = 60_000;
+        open.status();
+        let c = open.ents.combat[man.index()];
+        assert!(!c.in_trench && !c.ducked && c.stance == Stance::Crouch);
+    }
+
+    /// S3b B2: men on a Suppress order fire at the line with no spotted
+    /// target (there is no enemy at all here), within range and with a
+    /// clear line, and rise to the fire step in a trench to do it.
+    #[test]
+    fn suppressing_men_fire_at_the_line_without_a_target() {
+        let mut r = rig(false);
+        for k in 0..r.members().len() {
+            r.put(k, 600, 490 + k as i32 * 3);
+        }
+        r.status();
+        let line = [FxVec2::from_int(500, 490), FxVec2::from_int(500, 510)];
+        r.game.squads.get_mut(&r.squad).unwrap().order = Order::Suppress { line };
+        let men = r.members();
+        for m in &men {
+            r.ents.weapon[m.index()].cooldown = 0;
+            r.ents.combat[m.index()].still = 1000;
+        }
+        let shots = r.fire(7);
+        assert_eq!(shots.len(), men.len(), "every man fires");
+        for f in &shots {
+            // Toward the line (west), at about the line's distance.
+            assert!(f.vel.x < Fx::ZERO, "{f:?}");
+            assert_eq!(f.player, 1);
+        }
+        assert!(
+            men.iter()
+                .all(|m| r.ents.combat[m.index()].target.is_none())
+        );
+        // Out of range: nothing.
+        let far = [FxVec2::from_int(100, 490), FxVec2::from_int(100, 510)];
+        r.game.squads.get_mut(&r.squad).unwrap().order = Order::Suppress { line: far };
+        for m in &men {
+            r.ents.weapon[m.index()].cooldown = 0;
+        }
+        assert!(r.fire(8).is_empty());
+        // In a trench a suppressing man stands on the fire step.
+        let mut t = rig(true);
+        let man = t.put(0, TRENCH_X, 500);
+        t.game.squads.get_mut(&t.squad).unwrap().order = Order::Suppress {
+            line: [FxVec2::from_int(600, 500), FxVec2::from_int(600, 500)],
+        };
+        t.ents.weapon[man.index()].cooldown = 0;
+        t.status();
+        assert_eq!(t.ents.combat[man.index()].stance, Stance::Stand);
     }
 
     #[test]

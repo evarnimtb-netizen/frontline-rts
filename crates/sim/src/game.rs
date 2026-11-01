@@ -127,6 +127,12 @@ pub enum Order {
     Follow {
         vehicle: SimId,
     },
+    /// S3b `SuppressUnits`: the men hold and fire at points on `line` (a
+    /// point when both ends are equal) without a spotted target
+    /// (`crate::combat` "Suppress"). Lasts until another order.
+    Suppress {
+        line: [FxVec2; 2],
+    },
 }
 
 /// [`Order`] without its payload, for the snapshot.
@@ -142,6 +148,8 @@ pub enum OrderKind {
     Barrage = 5,
     /// S3: escorting a vehicle.
     Follow = 6,
+    /// S3b: area fire at a point or line.
+    Suppress = 7,
 }
 
 impl Order {
@@ -154,6 +162,7 @@ impl Order {
             Order::Dig { .. } => OrderKind::Dig,
             Order::Barrage { .. } => OrderKind::Barrage,
             Order::Follow { .. } => OrderKind::Follow,
+            Order::Suppress { .. } => OrderKind::Suppress,
         }
     }
 }
@@ -746,6 +755,7 @@ impl MatchState {
             CommandKind::FollowUnits { units, vehicle } => {
                 self.units_follow(ctx, p, units, *vehicle)
             }
+            CommandKind::SuppressUnits { units, line } => self.units_suppress(ctx, p, units, line),
         }
     }
 
@@ -1450,7 +1460,10 @@ impl MatchState {
                 };
                 if !ok
                     || sq.focus.is_some()
-                    || matches!(sq.order, Order::Dig { .. } | Order::Barrage { .. })
+                    || matches!(
+                        sq.order,
+                        Order::Dig { .. } | Order::Barrage { .. } | Order::Suppress { .. }
+                    )
                 {
                     return Err("vehicle squad is inconsistent");
                 }
@@ -1496,6 +1509,11 @@ impl MatchState {
                 && !self.escorts(ents, sq.owner, vehicle)
             {
                 return Err("follow order names no own vehicle");
+            }
+            if let Order::Suppress { line } = &sq.order
+                && !self.suppress_ok(line)
+            {
+                return Err("suppress order is out of range");
             }
             let ty = &s.squad_types[sq.type_idx as usize];
             let w = &s.weapons[ty.weapon as usize];
@@ -1545,6 +1563,7 @@ impl MatchState {
                         .is_none_or(|d| d.owner != ents.owner[i]))
                     || matches!(u.order, UnitOrder::Follow { vehicle }
                         if !self.escorts(ents, ents.owner[i], vehicle))
+                    || matches!(u.order, UnitOrder::Suppress { line } if !self.suppress_ok(&line))
             };
             if bad {
                 return Err("soldier unit order state is inconsistent");
@@ -1559,6 +1578,7 @@ impl MatchState {
             let bad = c.seen_by >> np != 0
                 || c.target.is_some_and(|t| t.index() >= ents.len())
                 || c.suppression > 100_000
+                || (c.ducked && (kind != EntityKind::Soldier || !c.in_trench || c.pinned))
                 || (kind == EntityKind::Soldier && (c.hp == 0 || c.corpse != 0))
                 || (kind == EntityKind::Corpse && (c.corpse == 0 || ents.squad[i].is_some()))
                 || (vehicle
@@ -1606,6 +1626,16 @@ impl MatchState {
             return Err("a squad or soldier is queued for a path twice");
         }
         Ok(())
+    }
+
+    /// S3b: a saved suppress line lies on the map and is no longer than
+    /// the rules allow (a metre of slack for the pull-in's rounding).
+    pub(crate) fn suppress_ok(&self, line: &[FxVec2; 2]) -> bool {
+        let map = Fx::from_int(self.setup.map.size_m);
+        let max = Fx::from_int(self.setup.rules.combat.suppress.line_max_m as i32 + 1);
+        line.iter()
+            .all(|p| (Fx::ZERO..=map).contains(&p.x) && (Fx::ZERO..=map).contains(&p.y))
+            && (line[1] - line[0]).length_sq_raw() <= FxVec2::new(max, Fx::ZERO).length_sq_raw()
     }
 
     /// Checks the S3 vehicle state of a loaded save: every vehicle and

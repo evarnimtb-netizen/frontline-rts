@@ -15,7 +15,8 @@ needed.
 | Hit capsules, posture points | same | `[combat.body]` |
 | Mortar laying and flight | same | `[combat.mortar]` |
 | HE bursts and craters | same | `[combat.blast]` |
-| Suppression details | same | `[combat.suppression]` |
+| Suppression details; S3b duck state of men in trenches (`duck_points`, `duck_release_points`, `duck_decay_pct`) | same | `[combat.suppression]` |
+| S3b Suppress order (area fire): aim height, line length, line-of-fire probe, a tank's HE interval, reserve and aim | same | `[combat.suppress]` |
 | Cover on arrival | same | `[cover]` |
 | Thrown items | same | `[items]`, `[items.throw]` |
 | Vehicle rules: unlock, fire, rack, repair | same | `[vehicles]` |
@@ -25,7 +26,8 @@ needed.
 | Escort file behind a vehicle | same | `[vehicles.escort]` |
 | Coax cone, spall reach; S3b: HE group radius, lead estimation error, when Auto loads APCR | same | `[vehicles.gunnery]` |
 | AI difficulty | same | `[difficulty.*]` |
-| AI commander (S3b: `tank_reserve_mp` in `[ai.armour]`) | same | `[ai]`, `[ai.infantry]`, `[ai.armour]` |
+| AI commander (S3b: `tank_reserve_mp` in `[ai.armour]`; fire-and-move, AT and satchel hunts in `[ai.assault]`) | same | `[ai]`, `[ai.infantry]`, `[ai.armour]`, `[ai.assault]` |
+| How steady a squad type is under fire (S3b `steadiness_pct`, scales the duck and pin thresholds; the veterancy hook) | `defs/units/*.toml` | `steadiness_pct` (default 100) |
 | Where bought squads spawn in the base (S3b) | same | `[call_in]` |
 | One unit, weapon, item, vehicle, round | `defs/units/`, `defs/weapons/`, `defs/items/`, `defs/vehicles/`, `defs/ammo/` | the def's own file |
 | HE fragments and overpressure (S3b) | `defs/weapons/` (mortars), `defs/ammo/` (tank HE, rockets), `defs/items/` (grenades, satchels) | `[he]`: `blast_radius_cm`, `frag_count`, `frag_reach_cm`, `frag_damage`, `frag_far_pct`, `frag_elev_deg`, `frag_track_damage`; plates beaten: `inside_rays`, `inside_damage`, `inside_reach_cm` |

@@ -2297,7 +2297,7 @@ mod tests {
         fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
             s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
         }
-        let edits: [fn(&mut SimState); 15] = [
+        let edits: [fn(&mut SimState); 20] = [
             |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
             // S3b: a re-call cooldown.
             |s| s.game.as_mut().unwrap().players[1].ready_at[2] += 1,
@@ -2317,6 +2317,14 @@ mod tests {
             |s| ai(s).counters.repairs += 1,
             |s| ai(s).counters.retreats += 1,
             |s| ai(s).counters.faces += 1,
+            // S3b.
+            |s| ai(s).counters.suppress_orders += 1,
+            |s| ai(s).counters.bounds += 1,
+            |s| ai(s).counters.at_hunts += 1,
+            |s| ai(s).counters.satchel_hunts += 1,
+            |s| {
+                ai(s).slow_since.insert(SimId(3), 0);
+            },
         ];
         for edit in edits {
             let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
@@ -2376,7 +2384,11 @@ mod tests {
                 .unwrap()
                 .0
         }
-        let bad: [fn(&mut SimState); 6] = [
+        let bad: [fn(&mut SimState); 7] = [
+            // S3b: a slow-since tick in the future.
+            |s| {
+                ai(s).slow_since.insert(SimId(3), u64::MAX);
+            },
             // Review fix: an escort keyed by an infantry squad (its own or
             // the enemy's) used to pass the load check and then panic the
             // first AI plan.
@@ -2520,6 +2532,103 @@ mod tests {
             q.push(PathReq::Unit(SimId(a as u32)));
         });
         assert!(load_err(&bytes).contains("twice"));
+    }
+
+    /// S3b: a squad and a detached man on `SuppressUnits`; the squad
+    /// order, the man's order and the duck flag are saved, hashed and
+    /// checked on load.
+    #[test]
+    fn suppress_orders_and_the_duck_state_are_saved_hashed_and_checked() {
+        use crate::game::Order;
+        use crate::unit::UnitOrder;
+        let mut w = match_world();
+        let (whole, lone) = {
+            let g = w.game().unwrap();
+            let mut own = g.squads().iter().filter(|(_, q)| q.owner == PlayerId(0));
+            let a = own.next().unwrap();
+            let b = own.next().unwrap();
+            (a.1.members.clone(), b.1.members[0])
+        };
+        let line = vec![FxVec2::from_int(500, 520), FxVec2::from_int(500, 560)];
+        let mut units = whole.clone();
+        units.push(lone);
+        w.step(&[Command {
+            player: PlayerId(0),
+            seq: 0,
+            kind: CommandKind::SuppressUnits {
+                units,
+                line: line.clone(),
+            },
+        }]);
+        let g = w.game().unwrap();
+        let sid = w.entities().squad()[whole[0].index()].unwrap();
+        let pulled = FxVec2::from_int(500, 560);
+        assert!(matches!(g.squads[&sid].order, Order::Suppress { line: l } if l[1] == pulled));
+        assert!(matches!(
+            w.entities().unit[lone.index()].order,
+            UnitOrder::Suppress { .. }
+        ));
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        let base = w.full_state_hash();
+        let (m, l) = (whole[0].index(), lone.index());
+        type Edit = Box<dyn Fn(&mut SimState)>;
+        let edits: [Edit; 2] = [
+            Box::new(move |s| {
+                let g = s.game.as_mut().unwrap();
+                if let Order::Suppress { line } = &mut g.squads.get_mut(&sid).unwrap().order {
+                    line[0].y += Fx::ONE;
+                }
+            }),
+            Box::new(move |s| {
+                if let UnitOrder::Suppress { line } = &mut s.entities.unit[l].order {
+                    line[1].x += Fx::ONE;
+                }
+            }),
+        ];
+        for edit in edits {
+            let w2 = World::load(&save_edited(&w, edit), 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base);
+        }
+        // The duck flag: a man in a trench, ducked or not.
+        let trench = World::load(
+            &save_edited(&w, move |s| s.entities.combat[m].in_trench = true),
+            1,
+        )
+        .unwrap();
+        let ducked = World::load(
+            &save_edited(&w, move |s| {
+                s.entities.combat[m].in_trench = true;
+                s.entities.combat[m].ducked = true;
+            }),
+            1,
+        )
+        .unwrap();
+        assert_ne!(trench.full_state_hash(), ducked.full_state_hash());
+        // Broken state is refused: ducked out of a trench, ducked and
+        // pinned, a line off the map or too long.
+        let bad: [Edit; 4] = [
+            Box::new(move |s| s.entities.combat[m].ducked = true),
+            Box::new(move |s| {
+                let c = &mut s.entities.combat[m];
+                (c.in_trench, c.ducked, c.pinned) = (true, true, true);
+            }),
+            Box::new(move |s| {
+                if let UnitOrder::Suppress { line } = &mut s.entities.unit[l].order {
+                    line[1].x = Fx::from_int(-5);
+                }
+            }),
+            Box::new(move |s| {
+                let g = s.game.as_mut().unwrap();
+                if let Order::Suppress { line } = &mut g.squads.get_mut(&sid).unwrap().order {
+                    line[1].y += Fx::from_int(20);
+                }
+            }),
+        ];
+        for edit in bad {
+            assert!(World::load(&save_edited(&w, edit), 1).is_err());
+        }
     }
 
     #[test]
@@ -2945,6 +3054,7 @@ mod tests {
             followers: _,
             wreck_tick: _,
             face: _,
+            suppress: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -2993,6 +3103,10 @@ mod tests {
             ("followers", Box::new(|v| v.followers.push(SimId(1)))),
             ("wreck_tick", Box::new(|v| v.wreck_tick = Some(1))),
             ("face", Box::new(|v| v.face = Some(FxVec2::from_int(5, 6)))),
+            (
+                "suppress",
+                Box::new(|v| v.suppress = Some([FxVec2::from_int(5, 6), FxVec2::from_int(9, 6)])),
+            ),
         ];
         let base = w.full_state_hash();
         for (name, edit) in &edits {

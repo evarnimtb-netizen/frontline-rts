@@ -96,8 +96,11 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 	_update_vehicle_rings(view, sel)
 	_draw_detached(view, sel)
 	_draw_escorts(view, state)
+	_draw_suppress_lines(view, sel, state)
 	if sel.tool == &"face":
 		_draw_face_tool(view, sel)
+	elif sel.tool == &"suppress":
+		_draw_suppress_tool(view, sel)
 	if sel.tool == &"barrage":
 		var hi := float(view.rules().get("mortar_max_m", 600.0))
 		var lo := float(view.rules().get("mortar_min_m", 60.0))
@@ -212,6 +215,42 @@ func _draw_escorts(view: MatchView, state: Dictionary) -> void:
 			_dashed(so.pos, view.vehicles_by_id[vid].pos, 0.05, Color(col, 0.5), 1.0, 1.0)
 
 
+## S3b: the suppress lines of selected own squads and vehicles (dashed
+## accent, with the line's ends ringed).
+func _draw_suppress_lines(view: MatchView, sel: Node, state: Dictionary) -> void:
+	var col := Color(HudStyle.ACCENT, 0.7)
+	var lines: Array = []
+	for sq in state.get("squads", []):
+		if sq.has("suppress_line") and int(sq.owner) == view.local_player and not sel.selected_in(int(sq.id)).is_empty():
+			lines.append(sq.suppress_line)
+	for id in sel.selected_vehicles():
+		var v: Dictionary = view.vehicles_by_id.get(id, {})
+		if v.has("suppress_line"):
+			lines.append(v.suppress_line)
+	for l in lines:
+		var line: PackedVector3Array = l
+		if line.size() >= 2 and line[0].distance_to(line[1]) > 0.5:
+			_dashed(line[0], line[1], 0.12, col, 1.4, 0.9)
+		for p in line:
+			_ring(p, 1.0, 0.18, col, 16)
+
+
+## S3b suppress tool (P): a ring at the cursor; while the button is held,
+## the pending line from where it went down, capped at the longest line.
+func _draw_suppress_tool(view: MatchView, sel: Node) -> void:
+	var col := Color(HudStyle.ACCENT, 0.9)
+	var g: Variant = view.ground_pick(sel.cursor())
+	if sel.suppress_from == null:
+		if g != null:
+			_ring(g, 1.2, 0.22, col, 20)
+		return
+	var line: PackedVector3Array = sel.suppress_line(sel.suppress_from, g)
+	if line.size() >= 2:
+		_dashed(line[0], line[1], 0.16, col, 1.4, 0.9)
+	for p in line:
+		_ring(p, 1.2, 0.22, col, 20)
+
+
 ## Face tool (O): from each selected vehicle an arrow toward the cursor.
 func _draw_face_tool(view: MatchView, sel: Node) -> void:
 	var g: Variant = view.ground_pick(sel.cursor())
@@ -316,6 +355,8 @@ func _draw_marker(m: Dictionary) -> void:
 			_ring(m.pos, 5.0 + 2.0 * k, 0.4, Color(HudStyle.OWN, a), 40)
 		&"reverse":
 			_ring(m.pos, 1.5 + 3.0 * k, 0.4, Color(UiPalette.TEXT, a))
+		&"suppress":
+			_ring(m.pos, 2.0 + 3.0 * k, 0.4, Color(HudStyle.ACCENT, a), 24)
 		&"barrage":
 			var c := Color(UiPalette.WARN, a)
 			_ring(m.pos, 8.0, 0.6, c, 40)

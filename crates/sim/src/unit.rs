@@ -95,6 +95,12 @@ pub enum UnitOrder {
     Follow {
         vehicle: SimId,
     },
+    /// S3b `SuppressUnits`: holds and fires at points on `line` (a point
+    /// when both ends are equal) without a spotted target (`crate::combat`
+    /// "Suppress").
+    Suppress {
+        line: [FxVec2; 2],
+    },
 }
 
 impl UnitOrder {
@@ -106,6 +112,7 @@ impl UnitOrder {
             UnitOrder::Retreat => OrderKind::Retreat,
             UnitOrder::Dig { .. } => OrderKind::Dig,
             UnitOrder::Follow { .. } => OrderKind::Follow,
+            UnitOrder::Suppress { .. } => OrderKind::Suppress,
         }
     }
 }

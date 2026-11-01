@@ -30,6 +30,8 @@ const ACTIONS := {
 	&"order_face": KEY_O,
 	&"ammo_next": KEY_N,
 	&"order_repair": KEY_J,
+	# S3b Suppress (area fire), owner question S3b-1 (A).
+	&"order_suppress": KEY_P,
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
@@ -59,6 +61,7 @@ const LABELS := {
 	&"order_face": "O",
 	&"ammo_next": "N",
 	&"order_repair": "J",
+	&"order_suppress": "P",
 	&"focus_call_in": "Tab",
 }
 

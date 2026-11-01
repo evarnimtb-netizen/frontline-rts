@@ -43,6 +43,18 @@
 //! radio operator), fire at the MG's interval with belts and reloads, and
 //! go through the S1 spread (moving, range). Vehicles are never suppressed.
 //!
+//! **Suppress (S3b, docs/slices/S3b-balance.md B2).** A vehicle holding
+//! with `VehicleState::suppress` picks only vehicle targets for its main
+//! gun (self-defence); without one, the gun lays on the line's middle,
+//! `combat.suppress.aim_cm` above the ground there, and fires HE (on
+//! `Auto` or `He`) at most every `combat.suppress.tank_he_s` while more
+//! than `combat.suppress.tank_he_reserve` HE rounds are in the rack, never
+//! within `he_clear` of own men. The MGs ignore soldiers and fire at
+//! random points on the line (`Purpose::SUPPRESS`), the coax only within
+//! its cone of the turret and the hull MG within its arc, each shot only
+//! with a clear line to `combat.suppress.clear_cm` short of its aim point
+//! (`crate::combat::suppress_aim`).
+//!
 //! Firing the main gun sets `since_fire` (spotting reveal) and an
 //! `ArmourEventKind::Fired` event.
 
@@ -319,6 +331,8 @@ impl MatchState {
             && vs.component(ComponentKind::Gun) > 0
             && vs.repairing.is_none()
             && !order_retreat;
+        // S3b Suppress (module docs).
+        let suppress = vs.suppress.filter(|_| !order_retreat);
         let ap_left = vs.loaded.is_some_and(|k| k != HE)
             || [AP, SPECIAL]
                 .iter()
@@ -331,18 +345,57 @@ impl MatchState {
         let due = (ctx.tick + id.0 as u64).is_multiple_of(hz as u64);
         let lost = vs.target.is_some() && valid.is_none();
         let (target, aim_turret) = if lost || due {
-            self.pick_target(ents, ctx, id, &f, gunner, gun_ok && ap_left)
+            self.pick_target(
+                ents,
+                ctx,
+                id,
+                &f,
+                gunner,
+                gun_ok && ap_left,
+                suppress.is_none(),
+            )
         } else {
             (vs.target, vs.aim_turret)
         };
         let aim = target.and_then(|t| self.gun_target(ents, ctx, owner, &f, t, main, aim_turret));
         let target = aim.and(target);
+        let sup = &setup.rules.combat.suppress;
+        // Suppress: the HE aim point on the line's middle, when the gun has
+        // no vehicle to fight.
+        let area_probe = match (suppress, aim) {
+            (Some(line), None) if matches!(vs.ammo_choice, AmmoChoice::Auto | AmmoChoice::He) => {
+                let range: Fx = setup.weapons[main.weapon as usize].range_max.into();
+                crate::combat::suppress_aim_at(
+                    ctx.terrain,
+                    &setup.rules.combat,
+                    &line,
+                    Fx::HALF,
+                    f.turret.center,
+                    range,
+                    setup.rules.combat.suppress.tank_he_aim_cm,
+                )
+                .map(|(p, probe)| {
+                    (
+                        Aim {
+                            point: p,
+                            vel: FxVec2::ZERO,
+                            vehicle: false,
+                        },
+                        probe,
+                    )
+                })
+            }
+            _ => None,
+        };
+        let area = area_probe.map(|(a, _)| a);
 
         let moving: Fx = setup.rules.vehicles.moving_speed.into();
         let target_moving = target
             .and_then(|t| self.vehicles.get(&t))
             .is_some_and(|t| t.avg_vel.length() > moving);
-        let clear = aim.is_none_or(|a| a.vehicle || !self.own_men_near(ents, ctx, owner, a.point));
+        let clear = aim
+            .or(area)
+            .is_none_or(|a| a.vehicle || !self.own_men_near(ents, ctx, owner, a.point));
         let special_better = match (aim, target) {
             (Some(a), Some(t)) if a.vehicle && main.ammo.len() > SPECIAL as usize => {
                 self.special_better(&f, t, main, aim_turret)
@@ -366,7 +419,7 @@ impl MatchState {
             AmmoChoice::He => HE,
             AmmoChoice::Apcr if has_special => SPECIAL,
             AmmoChoice::Apcr => AP,
-            AmmoChoice::Auto => match aim {
+            AmmoChoice::Auto => match aim.or(area) {
                 Some(a) if !a.vehicle => HE,
                 _ if special_better => SPECIAL,
                 _ => AP,
@@ -393,7 +446,7 @@ impl MatchState {
             match vs.loaded {
                 Some(k)
                     if k != wanted
-                        && target.is_some()
+                        && (target.is_some() || area.is_some())
                         && vs.ammo.get(wanted as usize).is_some_and(|n| *n > 0) =>
                 {
                     vs.ammo[k as usize] = vs.ammo[k as usize].saturating_add(1);
@@ -439,18 +492,31 @@ impl MatchState {
             ),
             _ => a.vel,
         };
-        let (want_yaw, want_pitch) = match aim {
+        let (want_yaw, want_pitch) = match aim.or(area) {
             Some(a) => to_lay(&f.hull.axes, solution(muzzle, a.point, lead(&a), speed).0),
             None => (Fx::ZERO, Fx::ZERO),
         };
+        // Suppress: HE at the line only at its interval, with the reserve
+        // kept, and with the line of fire reaching the line.
+        let area_ok = aim.is_none()
+            && area.is_some_and(|a| {
+                vs.since_fire as u32 >= sup.tank_he_s * hz
+                    && vs
+                        .ammo
+                        .get(HE as usize)
+                        .is_some_and(|&n| n as u32 > sup.tank_he_reserve)
+                    && area_probe.is_some_and(|(_, probe)| ctx.terrain.line_of_sight(muzzle, probe))
+                    && a.point != muzzle
+            });
         if gunner {
             lay_gun(vs, v, want_yaw, want_pitch, hz);
         }
 
         // Fire the main gun when laid within the spread.
-        if let (Some(a), Some(k), true) = (aim, vs.loaded, gun_ok)
+        if let (Some(a), Some(k), true) = (aim.or(area.filter(|_| area_ok)), vs.loaded, gun_ok)
             && vs.reload == 0
             && !(a.vehicle && k == HE && vs.ammo_choice == AmmoChoice::Auto)
+            && (aim.is_some() || k == HE)
         {
             let spread = main_spread(vs, v, setup, &a, k, target_moving);
             let [lo, hi] = main.elevation_deg;
@@ -532,6 +598,37 @@ impl MatchState {
             let from = mg_muzzle(&f, m);
             let r = range_sq(w.range_max.into());
             let axis_yaw = Fx::atan2(axis.y, axis.x);
+            // Suppress: fire at the line instead (module docs).
+            if let Some(line) = suppress {
+                st.target = None;
+                if st.cooldown > 0 {
+                    continue;
+                }
+                let mut pick = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SUPPRESS);
+                for _ in 0..k * 2 {
+                    pick.next_u64();
+                }
+                let t = pick.range_fx(Fx::ZERO, Fx::ONE);
+                let Some((aim, probe)) = crate::combat::suppress_aim(
+                    ctx.terrain,
+                    &setup.rules.combat,
+                    &line,
+                    t,
+                    from,
+                    w.range_max.into(),
+                ) else {
+                    continue;
+                };
+                if !in_cone(axis_yaw, aim.xy() - from.xy(), cone)
+                    || !ctx.terrain.line_of_sight(from, probe)
+                {
+                    continue;
+                }
+                mg_fire(
+                    ctx, vs, v, setup, id, owner, k, m, st, crew, from, aim, moving, out,
+                );
+                continue;
+            }
             let ok = |t: SimId| self.mg_target_ok(ctx, owner, from, axis_yaw, cone, r, t);
             let lost = st.target.is_some_and(|t| !ok(t));
             if lost {
@@ -553,51 +650,9 @@ impl MatchState {
                 continue;
             }
             let aim = ctx.marks[ctx.mark_of[t.index()] as usize].aim;
-            let mut pct: i64 = 100;
-            if moving {
-                pct = pct * setup.rules.combat.moving_spread_pct as i64 / 100;
-            }
-            let hp = vs.seat(v, crew).map_or(0, |s| s.hp as u32);
-            if hp < setup.rules.vehicles.wounded_hp {
-                pct = pct * 3 / 2;
-            }
-            let dist = (aim - from).length();
-            let extra = setup.rules.combat.range_spread_pct as i64 * dist.raw().max(0) as i64
-                / Fx::from(w.range_max).raw().max(1) as i64;
-            pct = pct * (100 + extra) / 100;
-            let spread = Fx::from_raw(
-                (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32,
+            mg_fire(
+                ctx, vs, v, setup, id, owner, k, m, st, crew, from, aim, moving, out,
             );
-            let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
-            // Each MG its own draws: skip the other mounts' (a shot takes
-            // `MG_AIM_DRAWS`).
-            for _ in 0..k * MG_AIM_DRAWS {
-                rng.next_u64();
-            }
-            let vel =
-                crate::combat::shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
-            out.push(FireRequest {
-                shooter: id,
-                seq: 1 + k as u16,
-                pos: from,
-                vel,
-                weapon: m.weapon,
-                player: owner.0,
-                ttl: crate::combat::round_ttl(w),
-                he: false,
-                ammo: NO_AMMO,
-            });
-            st.shots = st.shots.wrapping_add(1);
-            st.belt = st.belt.saturating_add(1);
-            if st.belt as u32 >= w.magazine.max(1) {
-                st.belt = 0;
-                st.cooldown = w
-                    .reload_ticks
-                    .max(w.interval_milli.div_ceil(1000))
-                    .min(u16::MAX as u32) as u16;
-            } else {
-                st.cooldown = interval_after(w, st.shots).min(u16::MAX as u32) as u16;
-            }
         }
         self.vehicles.get_mut(&id).expect("listed").mgs = mgs;
         if let Some(ev) = fired {
@@ -723,7 +778,8 @@ impl MatchState {
     }
 
     /// The main gun's next target (see the module docs): `(target, aim at
-    /// the turret)`.
+    /// the turret)`. `infantry_ok` is false on a Suppress order (S3b).
+    #[allow(clippy::too_many_arguments)]
     fn pick_target(
         &self,
         ents: &Entities,
@@ -732,6 +788,7 @@ impl MatchState {
         f: &VehicleFrame,
         gunner: bool,
         armour_ok: bool,
+        infantry_ok: bool,
     ) -> (Option<SimId>, bool) {
         if !gunner {
             return (None, false);
@@ -773,6 +830,9 @@ impl MatchState {
                     return (Some(t), part == BoxPart::Turret);
                 }
             }
+        }
+        if !infantry_ok {
+            return (None, false);
         }
         // Infantry: the best group (more men near, then closer).
         let blast_r = Fx::from_int(setup.rules.vehicles.gunnery.he_group_m as i32);
@@ -897,6 +957,72 @@ impl MatchState {
             let aim = ctx.marks[ctx.mark_of[t.index()] as usize].aim;
             ctx.terrain.line_of_sight(from, aim).then_some(t)
         })
+    }
+}
+
+/// One MG shot of mount `k` (after the main gun) at `aim`: the S1 spread
+/// (moving, range; ×1.5 with its crewman wounded), its own `AIM` draws,
+/// belts and reloads.
+#[allow(clippy::too_many_arguments)]
+fn mg_fire(
+    ctx: &GunCtx,
+    vs: &VehicleState,
+    v: &VehicleSetup,
+    setup: &MatchSetup,
+    id: SimId,
+    owner: PlayerId,
+    k: usize,
+    m: &MountSetup,
+    st: &mut crate::vehicle::MgState,
+    crew: SeatRole,
+    from: FxVec3,
+    aim: FxVec3,
+    moving: bool,
+    out: &mut Vec<FireRequest>,
+) {
+    let w = &setup.weapons[m.weapon as usize];
+    let mut pct: i64 = 100;
+    if moving {
+        pct = pct * setup.rules.combat.moving_spread_pct as i64 / 100;
+    }
+    let hp = vs.seat(v, crew).map_or(0, |s| s.hp as u32);
+    if hp < setup.rules.vehicles.wounded_hp {
+        pct = pct * 3 / 2;
+    }
+    let dist = (aim - from).length();
+    let extra = setup.rules.combat.range_spread_pct as i64 * dist.raw().max(0) as i64
+        / Fx::from(w.range_max).raw().max(1) as i64;
+    pct = pct * (100 + extra) / 100;
+    let spread =
+        Fx::from_raw((Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32);
+    let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
+    // Each MG its own draws: skip the other mounts' (a shot takes
+    // `MG_AIM_DRAWS`).
+    for _ in 0..k * MG_AIM_DRAWS {
+        rng.next_u64();
+    }
+    let vel = crate::combat::shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
+    out.push(FireRequest {
+        shooter: id,
+        seq: 1 + k as u16,
+        pos: from,
+        vel,
+        weapon: m.weapon,
+        player: owner.0,
+        ttl: crate::combat::round_ttl(w),
+        he: false,
+        ammo: NO_AMMO,
+    });
+    st.shots = st.shots.wrapping_add(1);
+    st.belt = st.belt.saturating_add(1);
+    if st.belt as u32 >= w.magazine.max(1) {
+        st.belt = 0;
+        st.cooldown = w
+            .reload_ticks
+            .max(w.interval_milli.div_ceil(1000))
+            .min(u16::MAX as u32) as u16;
+    } else {
+        st.cooldown = interval_after(w, st.shots).min(u16::MAX as u32) as u16;
     }
 }
 

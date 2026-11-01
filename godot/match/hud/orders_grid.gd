@@ -1,7 +1,8 @@
 extends Control
 ## Orders grid (HUD v2 console, right): 5 columns x 3 rows.
 ##   row 1, warm ability row: Frag G, Smoke T, Satchel F (each with the
-##          selection's count, greyed at 0), Barrage B (mortars);
+##          selection's count, greyed at 0), Barrage B (mortars), S3b
+##          Suppress P (area fire: click a point or drag a line);
 ##   row 2, orders: Move (RMB), Attack (Ctrl+RMB), Stop H, Retreat R,
 ##          Dig in Y;
 ##   row 3, a segmented stance strip: Stand X, Crouch C, Prone Z, Auto
@@ -13,16 +14,20 @@ extends Control
 ##
 ## S3, vehicles only selected (a mixed selection keeps the soldier grid;
 ## the vehicle keys still reach the vehicles):
-##   row 1: Reverse (Alt+RMB, arms a reverse tool), Face O (tool), Repair J;
+##   row 1: Reverse (Alt+RMB, arms a reverse tool), Face O (tool), Repair J,
+##   S3b Suppress P (tool);
 ##   row 2: Move, Attack, Stop H, Retreat R;
 ##   row 3: the ammo toggle, a segmented strip Auto | AP | APCR | HE (N
 ##   cycles; APCR only lights on a gun that carries it, S3b).
 
+## S3b: area fire without a spotted target (both grids).
+const SUPPRESS := [&"suppress", "Suppress", &"order_suppress", "Fire at an area without a spotted target to keep the enemy's heads down: click a point or drag a line (up to 40 m). Rifles and MGs hold and fire; vehicles fire their MGs and now and then HE. Mortars keep Barrage. Lasts until another order."]
 const ROW_ABILITY := [
 	[&"frag", "Frag", &"ability_frag", "Throw a frag grenade (5–30 m). The nearest eligible man throws; Shift+click: every eligible man throws one."],
 	[&"smoke", "Smoke", &"ability_smoke", "Throw a smoke grenade (5–30 m); the cloud blocks spotting for about 30 s."],
 	[&"satchel", "Satchel", &"ability_satchel", "Place or throw a satchel charge (3–8 m); cuts trench lines. Engineers carry one per squad."],
 	[&"barrage", "Barrage", &"order_barrage", "Mortars fire on a position (60–600 m). Right-clicking the ground in range with mortars selected also fires."],
+	SUPPRESS,
 ]
 const ROW_ORDERS := [
 	[&"move", "Move", &"order_move", "Move to a point. Right-click on the ground does the same; this button arms a click-to-place tool."],
@@ -42,6 +47,7 @@ const ROW_VEHICLE := [
 	[&"reverse", "Reverse", &"order_reverse", "Back up to a point, front kept toward the enemy (Alt+right-click). The button arms a click-to-place tool."],
 	[&"face", "Face", &"order_face", "Turn the hull front toward a point and hold (click the point)."],
 	[&"repair", "Repair", &"order_repair", "The crew repairs the worst repairable part in place: tracks to full, engine and turret ring to half. No moving or main gun meanwhile; a hit stops it."],
+	SUPPRESS,
 ]
 const ROW_VEHICLE_ORDERS := [
 	[&"move", "Move", &"order_move", "Move to a point. Right-click on the ground does the same; a point behind and within 40 m reverses."],
@@ -55,7 +61,7 @@ const ROW_AMMO := [
 	[&"ammo_apcr", "APCR", &"", "Fire the special APCR rounds (a handful, Panzer IV only). N cycles Auto, AP, APCR, HE."],
 	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, APCR, HE."],
 ]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse"]
+const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 const STANCE_IDS := [&"stand", &"crouch", &"prone"]
@@ -92,7 +98,8 @@ func _layout() -> void:
 	var g: float = m.btn_gap
 	var ow := 5.0 * bw + 4.0 * g
 	var bh := (size.y - 2.0 * g) / 3.0
-	var abw := (ow - 3.0 * g) / 4.0
+	# S3b: five slots in the top row (the fifth is Suppress).
+	var abw := (ow - 4.0 * g) / 5.0
 	if grid_mode == "vehicle":
 		for i in ROW_VEHICLE.size():
 			_add(ROW_VEHICLE[i], Rect2(i * (abw + g), 0, abw, bh), "order")

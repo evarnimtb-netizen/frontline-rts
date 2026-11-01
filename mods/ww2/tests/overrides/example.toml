@@ -15,7 +15,7 @@
 near_miss_cm = 200
 
 [combat.suppression]
-covered_near_miss_pct = 50
+covered_near_miss_pct = 100
 
 [ai.armour]
 # Tanks hold this far behind an own point they back up (m).

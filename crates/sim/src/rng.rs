@@ -75,6 +75,10 @@ impl Purpose {
     pub const LEAD: Purpose = Purpose(25);
     /// Ammo-fire roll of a rack hit that did not detonate (tick, slot).
     pub const AMMO_FIRE: Purpose = Purpose(26);
+    /// S3b Suppress order: where on the line a shot aims (tick, shooter;
+    /// a vehicle's MGs skip two draws per mount; the main gun keys by its
+    /// HE rounds left instead of the tick).
+    pub const SUPPRESS: Purpose = Purpose(27);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

@@ -87,6 +87,37 @@
 //!
 //!    [`AiCounters`] count what the AI did for the skirmish report.
 //!
+//! 8. **Assault, hunts** (S3b, `docs/slices/S3b-balance.md` B3–B5,
+//!    `ai::assault`; distances and times in `[ai.assault]`):
+//!    * *fire-and-move:* at a non-own point with at least two of the
+//!      squads assigned to it, one (the squad already doing it, else an MG
+//!      team, else a rifle squad) is the base of fire: within
+//!      `support_mg_m` / `support_rifle_m` of the line and with a line of
+//!      fire to its middle it gets `SuppressUnits` on the line (across the
+//!      approach at the probed enemy trench, else at the middle of the
+//!      enemies seen near the point, `trench_line_m` long); otherwise it
+//!      walks to the first of up to 8 spots with a line of fire. The other
+//!      squads attack as usual, except that one more than `bound_m` ahead
+//!      of the rearmost halts (bounds). Once a manoeuvre squad's leader is
+//!      within `lift_fire_m` of the line the base lifts (normal orders).
+//!    * *tanks:* a vehicle halted at its assault or standoff goal
+//!      suppresses that line within `support_tank_m` while its escort goes
+//!      in, and lifts (Stop) once own men are at the line;
+//!    * *AT hunts:* an AT team with rockets goes for the nearest known
+//!      enemy vehicle within `at_hunt_m` of it or its point, unless a known
+//!      enemy soldier is within `at_hunt_clear_m` of its route's middle: to
+//!      the nearest of five spots (sides, rear quarters, rear) off the
+//!      turret's front, `at_hunt_inset_m` inside its launcher's
+//!      `engage_still`; in range off the turret's front it holds;
+//!    * *satchel hunts:* engineers carrying a satchel go for the nearest
+//!      known enemy vehicle within `satchel_hunt_m` that has been slow
+//!      (`ai.infantry.satchel_slow_mm_s`) for `satchel_slow_s` (the saved
+//!      `AiState::slow_since`), to a spot `satchel_stand_m` outside its
+//!      nearer hull side; the satchel throw rule then fires.
+//!
+//!    Squads on a hunt, a base of fire and halted bounders get no other
+//!    infantry order that plan; hunting squads do not join escorts.
+//!
 //! An order is only sent when the squad's task changed or its order no
 //! longer matches the task, and never while a command for that squad is
 //! still pending, so squads are not re-pathed every plan.
@@ -112,6 +143,8 @@ use crate::game::{MAX_DIG_POINTS, MatchState, NavPhase, Order, SquadId};
 use crate::rng::{Purpose, RngStream};
 use crate::terrain::Heightfield;
 use frontline_content::ItemKind;
+
+mod assault;
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -149,6 +182,10 @@ pub enum TaskKind {
     Standoff = 7,
     /// ... or advance to `assault_close` short of its trench.
     Assault = 8,
+    /// S3b: a base of fire suppressing (or walking to its spot).
+    Suppress = 9,
+    /// S3b: an AT team or engineers going for an enemy vehicle.
+    Hunt = 10,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -191,6 +228,9 @@ pub struct AiState {
     pub escorts: BTreeMap<SquadId, AiEscort>,
     /// S3: what the AI did (skirmish report).
     pub counters: AiCounters,
+    /// S3b: since when each seen enemy vehicle has been slow (satchel
+    /// hunts; at most `assault::MAX_SLOW`).
+    pub slow_since: BTreeMap<SimId, u64>,
 }
 
 /// A vehicle's escorted assault on a point (S3).
@@ -222,6 +262,13 @@ pub struct AiCounters {
     pub repairs: u32,
     pub retreats: u32,
     pub faces: u32,
+    /// S3b: `SuppressUnits` orders (bases of fire and vehicles).
+    pub suppress_orders: u32,
+    /// S3b: manoeuvre squads halted for a bound.
+    pub bounds: u32,
+    /// S3b: AT-team and satchel hunts started.
+    pub at_hunts: u32,
+    pub satchel_hunts: u32,
 }
 
 impl AiState {
@@ -239,6 +286,7 @@ impl AiState {
             at_seen: BTreeMap::new(),
             escorts: BTreeMap::new(),
             counters: AiCounters::default(),
+            slow_since: BTreeMap::new(),
         }
     }
 
@@ -304,6 +352,7 @@ impl AiState {
                     || e.squads.windows(2).any(|w| w[0] >= w[1])
                     || e.started.windows(2).any(|w| w[0] >= w[1])
             })
+            || !self.validate_assault(tick)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -316,6 +365,9 @@ impl AiState {
                 | CommandKind::FaceUnits { units, .. }
                 | CommandKind::RepairUnits { units }
                 | CommandKind::FollowUnits { units, .. } => units.len() > crate::unit::MAX_UNITS,
+                CommandKind::SuppressUnits { units, line } => {
+                    units.len() > crate::unit::MAX_UNITS || !(1..=2).contains(&line.len())
+                }
                 CommandKind::MoveSoldier { .. }
                 | CommandKind::Spawn { .. }
                 | CommandKind::Despawn { .. } => true,
@@ -347,7 +399,8 @@ fn units_of(kind: &CommandKind) -> Option<&[SimId]> {
     match kind {
         CommandKind::FollowUnits { units, .. }
         | CommandKind::FaceUnits { units, .. }
-        | CommandKind::RepairUnits { units } => Some(units),
+        | CommandKind::RepairUnits { units }
+        | CommandKind::SuppressUnits { units, .. } => Some(units),
         _ => None,
     }
 }
@@ -521,6 +574,7 @@ impl Planner<'_> {
         let known = self.known_enemies();
         let kv = self.known_vehicles();
         self.note_sightings(&known, &kv);
+        self.note_slow(&kv);
         let mut mine = Vec::new();
         let mut tanks = Vec::new();
         for (&id, sq) in &g.squads {
@@ -554,8 +608,13 @@ impl Planner<'_> {
         self.buy(&kv);
         let mut points = self.evaluate_points(&known, &kv);
         let assigned = self.assign(&mine, &mut points);
-        let escorting = self.vehicle_tasks(&tanks, &mine, &assigned, &points, &known, &kv, &busy);
-        self.order_infantry(&mine, &assigned, &mut points, &known, &escorting);
+        let hunting = self.hunts(&mine, &assigned, &points, &known, &kv);
+        let escorting = self.vehicle_tasks(
+            &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
+        );
+        let mut claimed: Vec<SquadId> = hunting.iter().chain(&escorting).copied().collect();
+        claimed.extend(self.fire_and_move(&mine, &assigned, &points, &known, &claimed));
+        self.order_infantry(&mine, &assigned, &mut points, &known, &escorting, &claimed);
         self.mortars(&mine, &points, &known);
         self.throws(&mine, &known, &kv);
     }
@@ -910,11 +969,16 @@ impl Planner<'_> {
         points: &mut [PointEval],
         known: &[Known],
         escorting: &[SquadId],
+        claimed: &[SquadId],
     ) {
         let g = self.g;
         let mut slot = vec![0u32; points.len()];
         for &(j, i) in assigned {
             let m = &mine[j];
+            if claimed.contains(&m.id) && !escorting.contains(&m.id) {
+                // A hunt, a base of fire or a bound (S3b, `ai::assault`).
+                continue;
+            }
             if escorting.contains(&m.id) {
                 // Walking with a vehicle (S3); it is released later.
                 let pos = points[i].pos;
@@ -1329,6 +1393,7 @@ impl Planner<'_> {
         known: &[Known],
         kv: &[KnownVehicle],
         busy: &[SquadId],
+        hunting: &[SquadId],
     ) -> Vec<SquadId> {
         let g = self.g;
         let hz = g.setup.tick_hz.max(1) as u64;
@@ -1477,6 +1542,7 @@ impl Planner<'_> {
                             matches!(m.role, SquadRole::Rifle | SquadRole::Engineer)
                                 && m.strength_pct >= 60
                                 && !taken.contains(&m.id)
+                                && !hunting.contains(&m.id)
                                 && (m.lead - t.pos).length_sq_raw() <= join
                         })
                         .map(|m| ((m.lead - t.pos).length_sq_raw(), m.id))
@@ -1512,8 +1578,21 @@ impl Planner<'_> {
                     }
                 }
             }
+            // S3b: halted at its goal, it suppresses the line in front of
+            // the point (`ai::assault`), and is then not turned.
+            if !ordered
+                && sq.order == Order::Idle
+                && matches!(
+                    kind_of(&self.ai.tasks, t.squad),
+                    Some(TaskKind::Assault | TaskKind::Standoff)
+                )
+                && let Some(i) = point
+                && self.tank_suppress(t, i, points, known, mine)
+            {
+                continue;
+            }
             // An idle vehicle turns to the nearest threat it knows of.
-            if ordered || t.immobile || sq.order != Order::Idle {
+            if ordered || t.immobile || sq.order != Order::Idle || vs.suppress.is_some() {
                 continue;
             }
             let range = sq_m(Fx::from_int(
@@ -1748,6 +1827,11 @@ impl Planner<'_> {
             (!men.is_empty()).then_some((ItemKind::Smoke, men, at))
         })
     }
+}
+
+/// The kind of squad `id`'s task, if any.
+fn kind_of(tasks: &BTreeMap<SquadId, Task>, id: SquadId) -> Option<TaskKind> {
+    tasks.get(&id).map(|t| t.kind)
 }
 
 /// Spot `k` around a point: the point itself, then a ring of 8 m.

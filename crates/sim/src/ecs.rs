@@ -203,6 +203,10 @@ pub struct Combat {
     pub in_trench: bool,
     /// Prone and unable to move (suppression at the pin threshold).
     pub pinned: bool,
+    /// S3b: ducked below the lip in a trench (suppression at the duck
+    /// threshold, until it falls below the release threshold): no fire, no
+    /// throw (`crate::combat` "Status").
+    pub ducked: bool,
     /// Suppression in thousandths of a point (0..=100_000).
     pub suppression: u32,
     /// Hit capsule height above the feet in the current posture (m).

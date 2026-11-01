@@ -188,3 +188,91 @@ fn every_tuning_key_is_in_the_mod_checked_and_reaches_the_setup() {
     }
     assert!(n >= 100, "{n} keys");
 }
+
+/// S3b Part B keys: the duck thresholds, the Suppress order, the AI's
+/// assault table and the squad types' steadiness load with the mod's
+/// values, reach the setup, and bad values are refused with the key named.
+#[test]
+fn part_b_keys_load_reach_the_setup_and_are_checked() {
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let s = load().resolve(&req).unwrap();
+    let sup = &s.rules.combat.suppression;
+    assert_eq!(
+        (sup.duck_points, sup.duck_release_points, sup.duck_decay_pct),
+        (25, 10, 25)
+    );
+    let x = &s.rules.combat.suppress;
+    assert_eq!(
+        (
+            x.aim_cm,
+            x.line_max_m,
+            x.clear_cm,
+            x.tank_he_s,
+            x.tank_he_reserve
+        ),
+        (80, 40, 300, 12, 6)
+    );
+    let a = &s.rules.ai.assault;
+    assert_eq!((a.support_mg_m, a.bound_m, a.lift_fire_m), (250, 40, 15));
+    assert_eq!(
+        (a.at_hunt_m, a.satchel_hunt_m, a.satchel_slow_s),
+        (250, 60, 3)
+    );
+    assert!(s.squad_types.iter().all(|t| t.steadiness_pct == 100));
+    // Edits reach the setup.
+    let mut defs = load();
+    let path = write(
+        "partb",
+        "[combat.suppression]\nduck_points = 50\n[ai.assault]\nbound_m = 30\n\
+         [defs.units.\"ww2:usa_rifle_squad\"]\nsteadiness_pct = 150\n",
+    );
+    defs.apply_override(&path, "ww2:skirmish").unwrap();
+    let s = defs.resolve(&req).unwrap();
+    assert_eq!(s.rules.combat.suppression.duck_points, 50);
+    assert_eq!(s.rules.ai.assault.bound_m, 30);
+    let ty = s.squad_type_index("ww2:usa_rifle_squad").unwrap();
+    assert_eq!(s.squad_types[ty as usize].steadiness_pct, 150);
+    // Bad values name the key.
+    for (name, text, key) in [
+        (
+            "duck",
+            "[combat.suppression]\nduck_release_points = 40\n",
+            "combat.suppression.duck_release_points",
+        ),
+        (
+            "line",
+            "[combat.suppress]\nline_max_m = 10\n",
+            "ai.assault.trench_line_m",
+        ),
+        (
+            "aim",
+            "[combat.suppress]\naim_cm = 900\n",
+            "combat.suppress.aim_cm",
+        ),
+        (
+            "steady",
+            "[defs.units.\"ww2:usa_rifle_squad\"]\nsteadiness_pct = 5\n",
+            "steadiness_pct",
+        ),
+        (
+            "vehicle_steady",
+            "[defs.units.\"ww2:usa_m4a3_75_squad\"]\nsteadiness_pct = 120\n",
+            "steadiness_pct",
+        ),
+    ] {
+        let mut defs = load();
+        let path = write(name, text);
+        let e = issues(defs.apply_override(&path, "ww2:skirmish").unwrap_err());
+        assert!(e.contains(key), "{name}: {e}");
+    }
+    // The setup re-checks steadiness (saves are untrusted).
+    let mut s = load().resolve(&req).unwrap();
+    s.squad_types[0].steadiness_pct = 0;
+    s.rules.combat.suppression.duck_release_points = 99;
+    let found: Vec<String> = s.validate().iter().map(|i| i.path.clone()).collect();
+    assert!(
+        found.contains(&"squad_types.steadiness_pct".to_owned())
+            && found.contains(&"rules.combat.suppression.duck_release_points".to_owned()),
+        "{found:?}"
+    );
+}

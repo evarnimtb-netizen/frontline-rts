@@ -287,6 +287,8 @@ func _draw_tool_hint(font: Font, sel: Node) -> void:
 			text = "BARRAGE  ·  click target in range  ·  right-click cancels"
 		&"face":
 			text = "FACE  ·  click where the hull front should point  ·  right-click cancels"
+		&"suppress":
+			text = "SUPPRESS  ·  click a point or drag a line (max %d m)  ·  Shift keeps the tool  ·  right-click cancels" % roundi(sel.suppress_max())
 		&"reverse":
 			text = "REVERSE  ·  click a point to back up to  ·  right-click cancels"
 		&"dig":

@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
 use crate::tuning::{
-    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
-    DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
-    check_tuning,
+    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning,
+    MortarTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -111,6 +111,13 @@ pub struct SquadDef {
     /// Digging speed per man in percent of the base rate; 0 = cannot dig.
     #[serde(default)]
     pub dig_rate_pct: u32,
+    /// S3b (soldier squads): how steady the men are under fire, in percent.
+    /// The duck, duck-release and pin suppression thresholds are scaled by
+    /// it (150: they duck and pin at 1.5 times the suppression). The hook
+    /// for veterancy (owner question S3b-9 (A)); every current squad 100.
+    #[serde(default = "default_steadiness")]
+    #[schemars(range(min = 25, max = 400))]
+    pub steadiness_pct: u32,
     /// Items the men carry (S1b abilities); at most one entry per item
     /// kind. Empty: nothing to throw.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -140,6 +147,13 @@ pub const MAX_INITIAL_COOLDOWN_S: u32 = 1800;
 
 fn default_hp() -> u32 {
     100
+}
+
+/// S3b: steadiness of a squad type without `steadiness_pct` (percent).
+pub const DEFAULT_STEADINESS_PCT: u32 = 100;
+
+fn default_steadiness() -> u32 {
+    DEFAULT_STEADINESS_PCT
 }
 
 /// What a thrown item does. The sim keeps per-soldier counts by kind, and
@@ -841,6 +855,8 @@ pub struct CombatDef {
     pub blast: BlastTuning,
     /// Suppression details (S3b tuning table).
     pub suppression: SuppressionTuning,
+    /// The Suppress order's area fire (S3b tuning table).
+    pub suppress: SuppressTuning,
 }
 
 /// AI commander tuning (weights in data, §9). Difficulty is separate.
@@ -886,6 +902,8 @@ pub struct AiDef {
     pub infantry: AiInfantryTuning,
     /// Vehicles and escorts (S3b tuning table).
     pub armour: AiArmourTuning,
+    /// Fire-and-move, AT and satchel hunts (S3b tuning table).
+    pub assault: AiAssaultTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -968,6 +986,10 @@ impl SquadDef {
                 ("sight_m", self.sight_m != 0),
                 ("spacing_dm", self.spacing_dm != 0),
                 ("dig_rate_pct", self.dig_rate_pct != 0),
+                (
+                    "steadiness_pct",
+                    self.steadiness_pct != default_steadiness(),
+                ),
                 ("loadout", !self.loadout.is_empty()),
             ];
             for (key, set) in soldier_fields {
@@ -1037,6 +1059,7 @@ impl SquadDef {
         range(&mut out, "sight_m", self.sight_m, 1, 2000);
         range(&mut out, "spacing_dm", self.spacing_dm, 5, 200);
         range(&mut out, "dig_rate_pct", self.dig_rate_pct, 0, 1000);
+        range(&mut out, "steadiness_pct", self.steadiness_pct, 25, 400);
         range(&mut out, "cost", self.cost, 0, 100_000);
         for (i, l) in self.loadout.iter().enumerate() {
             let max = MAX_ITEM_COUNT as u32;
@@ -1718,8 +1741,10 @@ impl RulesDef {
                 mortar: &c.mortar,
                 blast: &c.blast,
                 suppression: &c.suppression,
+                suppress: &c.suppress,
                 ai_infantry: &a.infantry,
                 ai_armour: &a.armour,
+                ai_assault: &a.assault,
                 driving: &v.driving,
                 vehicle_path: &v.path,
                 escort: &v.escort,

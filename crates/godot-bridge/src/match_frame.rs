@@ -85,6 +85,8 @@ pub struct SquadView {
     pub items: [u16; ITEM_KINDS],
     /// S3: the vehicle a squad-level `FollowUnits` escorts.
     pub follow: Option<u32>,
+    /// S3b: the line a squad-level `SuppressUnits` fires at (sim xy).
+    pub suppress_line: Option<[[f32; 2]; 2]>,
 }
 
 /// A detached own soldier's order (S1b), for markers and the HUD.
@@ -462,6 +464,9 @@ impl MatchFrame {
                     v.rounds = *rounds;
                 }
                 Order::Follow { vehicle } => v.follow = Some(vehicle.0),
+                Order::Suppress { line } => {
+                    v.suppress_line = Some([line[0].to_f32(), line[1].to_f32()]);
+                }
                 Order::Idle | Order::Retreat => {}
             }
             self.squads.push(v);

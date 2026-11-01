@@ -29,6 +29,16 @@
 //!   fired on and loses nobody, while the control squad is spotted and
 //!   fired on.
 //!
+//! * **Suppressed assault** (S3b, docs/slices/S3b-balance.md T10, T11). A
+//!   rifle squad walks from [`SUPPRESS_START_M`] to [`ASSAULT_GAP_M`] in
+//!   front of a dug-in rifle squad and throws frags as in the grenade
+//!   assault; in the supported variant an MG team stands beside its start
+//!   and suppresses the trench (`SuppressUnits` on a 30 m line) from
+//!   [`SUPPRESS_LEAD_S`] before the squad moves off. The fight lasts
+//!   [`SUPPRESS_S`]. Reported against the targets (defenders lose at least
+//!   75 % and attackers at most 50 % with the MG; the attackers lose at least
+//!   75 % without it), not a pass condition.
+//!
 //! Squads are staged with the sim's setup tools (`World::place_squad`,
 //! `World::dig_trench_now`), not commands, and the AI is off for both
 //! players. The barrage, moves and throws are real commands.
@@ -51,6 +61,13 @@ pub const RIFLE_LIMIT_PCT: u32 = 50;
 /// Mortar passes when trench losses ≤ this share of open losses.
 pub const MORTAR_LIMIT_PCT: u32 = 40;
 pub const BARRAGE_ROUNDS: u16 = 10;
+/// Suppressed assault (S3b): the attackers start this far from the trench
+/// ...
+pub const SUPPRESS_START_M: i32 = 150;
+/// ... their MG starts suppressing this long before they move ...
+pub const SUPPRESS_LEAD_S: u64 = 5;
+/// ... and the fight lasts this long from the MG's order, game seconds.
+pub const SUPPRESS_S: u64 = 150;
 /// Time given to a barrage (fire, flight and the last burst), game seconds.
 const BARRAGE_S: u64 = 90;
 /// Grenade assault: the attackers start this far from the trench (the
@@ -129,6 +146,8 @@ pub struct FortifyReport {
     pub mortar: Experiment,
     pub grenade: GrenadeExperiment,
     pub smoke: SmokeExperiment,
+    /// S3b: the MG-supported and the unsupported assault from 150 m.
+    pub suppress: SuppressExperiment,
     /// Rifles, mortar and smoke pass (the grenade assault has no threshold
     /// yet).
     pub pass: bool,
@@ -177,6 +196,50 @@ pub struct AssaultRun {
     pub frags_in_trench: u32,
     pub defender_losses: u32,
     pub attacker_losses: u32,
+}
+
+/// S3b: the assault from 150 m with and without an MG suppressing.
+#[derive(Clone, Debug, Serialize)]
+pub struct SuppressExperiment {
+    pub name: &'static str,
+    pub runs: Vec<SuppressRun>,
+    pub supported: SuppressTotals,
+    pub unsupported: SuppressTotals,
+    /// T10: with the MG, defenders lose ≥ 75 % and attackers ≤ 50 %.
+    pub supported_met: bool,
+    /// T11: without it, the attackers lose ≥ 75 %.
+    pub unsupported_met: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SuppressTotals {
+    pub defender_losses: u32,
+    pub defender_men: u32,
+    pub attacker_losses: u32,
+    pub attacker_men: u32,
+    /// Defender man-ticks alive, ducked and pinned.
+    pub defender_ticks: u64,
+    pub defender_ducked: u64,
+    pub defender_pinned: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SuppressRun {
+    pub seed: u64,
+    /// Faction id of the dug-in squad.
+    pub entrenched: String,
+    /// An MG team suppressed the trench.
+    pub mg: bool,
+    pub defender_losses: u32,
+    pub attacker_losses: u32,
+    pub attacker_men: u32,
+    pub defender_men: u32,
+    /// Share of defender man-time ducked and pinned (%).
+    pub ducked_pct: f64,
+    pub pinned_pct: f64,
+    pub frags_thrown: u32,
+    #[serde(skip)]
+    pub ticks: (u64, u64, u64),
 }
 
 /// The smoke screen against an MG, with the no-smoke control.
@@ -518,6 +581,89 @@ fn assault_run(
     })
 }
 
+/// One suppressed assault on `dug`'s entrenched rifle squad (see the
+/// module docs), with or without the MG.
+fn suppress_run(args: &FortifyArgs, seed: u64, dug: u8, mg: bool) -> Result<SuppressRun> {
+    let mut w = world(args, seed)?;
+    let att = 1 - dug;
+    let a = squad(&w, dug, "rifle_squad")?;
+    let b = squad(&w, att, "rifle_squad")?;
+    dig(&mut w);
+    w.place_squad(a, at(TRENCH_X, LINE_Y), EAST);
+    w.place_squad(b, at(TRENCH_X + SUPPRESS_START_M, LINE_Y), WEST);
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let (def_men, att_men) = (members(&w, a).len() as u32, members(&w, b).len() as u32);
+    if mg {
+        let m = call_in(&mut w, att, "mg_team")?;
+        w.place_squad(m, at(TRENCH_X + SUPPRESS_START_M, LINE_Y - 20), WEST);
+        let units = members(&w, m);
+        step_with(
+            &mut w,
+            att,
+            vec![CommandKind::SuppressUnits {
+                units,
+                line: vec![at(TRENCH_X, LINE_Y - 15), at(TRENCH_X, LINE_Y + 15)],
+            }],
+        );
+    }
+    let start = w.tick();
+    let (lost_d, lost_a) = (losses(&w, dug), losses(&w, att));
+    let throws = w.stats().throws;
+    while w.tick() < start + SUPPRESS_LEAD_S * hz {
+        w.step(&[]);
+    }
+    // The squad advances crouched (a player's choice under fire; both
+    // variants alike).
+    let men = members(&w, b);
+    step_with(
+        &mut w,
+        att,
+        vec![
+            CommandKind::SetStance {
+                units: men,
+                stance: frontline_sim::StanceOrder::Crouch,
+            },
+            CommandKind::Move {
+                squad: b,
+                target: at(TRENCH_X + ASSAULT_GAP_M, LINE_Y),
+            },
+        ],
+    );
+    let throw_x = Fx::from_int(TRENCH_X + ASSAULT_THROW_M);
+    let mut ticks = (0u64, 0u64, 0u64);
+    while w.tick() < start + SUPPRESS_S * hz {
+        let close = w.game().unwrap().squad(b).is_some_and(|s| {
+            let lead = pos(&w, s.lead(w.entities()));
+            s.nav.phase == frontline_sim::NavPhase::Holding || lead.x <= throw_x
+        });
+        if close && (w.tick() - start).is_multiple_of(hz) {
+            throw_wave(&mut w, att, b);
+        } else {
+            w.step(&[]);
+        }
+        for m in members(&w, a) {
+            let c = &w.entities().combat()[m.index()];
+            ticks.0 += 1;
+            ticks.1 += c.ducked as u64;
+            ticks.2 += c.pinned as u64;
+        }
+    }
+    let share = |n: u64| (n as f64 * 1000.0 / ticks.0.max(1) as f64).round() / 10.0;
+    Ok(SuppressRun {
+        seed,
+        entrenched: faction(w.match_setup().unwrap(), dug),
+        mg,
+        defender_losses: losses(&w, dug) - lost_d,
+        attacker_losses: losses(&w, att) - lost_a,
+        attacker_men: att_men,
+        defender_men: def_men,
+        ducked_pct: share(ticks.1),
+        pinned_pct: share(ticks.2),
+        frags_thrown: (w.stats().throws - throws) as u32,
+        ticks,
+    })
+}
+
 /// Frag bursts of the last tick below the base surface `base`.
 fn trench_bursts(w: &World, base: Fx) -> u32 {
     w.snapshot()
@@ -623,9 +769,13 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let mut mortar = Vec::new();
     let mut assault = Vec::new();
     let mut smoke = Vec::new();
+    let mut suppress = Vec::new();
     for seed in seeds {
         for side in [0u8, 1] {
             rifles.push(rifle_run(args, seed, side)?);
+            for mg in [true, false] {
+                suppress.push(suppress_run(args, seed, side, mg)?);
+            }
             for start in [ASSAULT_START_M, ASSAULT_GAP_M] {
                 for grenades in [true, false] {
                     assault.push(assault_run(args, seed, side, start, grenades, false)?);
@@ -725,12 +875,36 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         pass: hidden_ok && control_ok,
         runs: smoke,
     };
+    let sum = |mg: bool| {
+        let mut t = SuppressTotals::default();
+        for r in suppress.iter().filter(|r| r.mg == mg) {
+            t.defender_losses += r.defender_losses;
+            t.defender_men += r.defender_men;
+            t.attacker_losses += r.attacker_losses;
+            t.attacker_men += r.attacker_men;
+            t.defender_ticks += r.ticks.0;
+            t.defender_ducked += r.ticks.1;
+            t.defender_pinned += r.ticks.2;
+        }
+        t
+    };
+    let (supported, unsupported) = (sum(true), sum(false));
+    let suppress = SuppressExperiment {
+        name: "rifle squad advancing from 150 m on a dug-in rifle squad, with and without an MG suppressing the trench",
+        supported_met: supported.defender_losses * 4 >= supported.defender_men * 3
+            && supported.attacker_losses * 2 <= supported.attacker_men,
+        unsupported_met: unsupported.attacker_losses * 4 >= unsupported.attacker_men * 3,
+        supported,
+        unsupported,
+        runs: suppress,
+    };
     Ok(FortifyReport {
         pass: rifles.pass && mortar.pass && smoke.pass,
         rifles,
         mortar,
         grenade,
         smoke,
+        suppress,
     })
 }
 
@@ -813,6 +987,53 @@ pub fn summary_text(r: &FortifyReport) -> String {
         "  behind smoke: never seen, never fired on; control: seen and fired on: {}\n",
         if s.pass { "PASS" } else { "FAIL" }
     );
+    let x = &r.suppress;
+    out += &format!("{}\n", x.name);
+    out += "  seed  entrenched    mg   defender_losses  attacker_losses  frags  ducked  pinned\n";
+    for run in &x.runs {
+        out += &format!(
+            "  {:<5} {:<13} {:<4} {:>9} of {:<4} {:>9} of {:<4} {:>5}  {:>5.1} %  {:>5.1} %\n",
+            run.seed,
+            run.entrenched,
+            if run.mg { "yes" } else { "no" },
+            run.defender_losses,
+            run.defender_men,
+            run.attacker_losses,
+            run.attacker_men,
+            run.frags_thrown,
+            run.ducked_pct,
+            run.pinned_pct
+        );
+    }
+    let pct = |a: u32, b: u32| a as f64 * 100.0 / b.max(1) as f64;
+    let tick_pct = |a: u64, b: u64| a as f64 * 100.0 / b.max(1) as f64;
+    for (name, t, met, target) in [
+        (
+            "with the MG",
+            &x.supported,
+            x.supported_met,
+            "T10: defenders lose >= 75 %, attackers <= 50 %",
+        ),
+        (
+            "without",
+            &x.unsupported,
+            x.unsupported_met,
+            "T11: attackers lose >= 75 %",
+        ),
+    ] {
+        out += &format!(
+            "  {name}: defenders lost {} of {} ({:.1} %), attackers {} of {} ({:.1} %); defenders ducked {:.1} %, pinned {:.1} % of man-time; {target}: {}\n",
+            t.defender_losses,
+            t.defender_men,
+            pct(t.defender_losses, t.defender_men),
+            t.attacker_losses,
+            t.attacker_men,
+            pct(t.attacker_losses, t.attacker_men),
+            tick_pct(t.defender_ducked, t.defender_ticks),
+            tick_pct(t.defender_pinned, t.defender_ticks),
+            if met { "met" } else { "missed" }
+        );
+    }
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });
     out
 }

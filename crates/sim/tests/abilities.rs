@@ -781,9 +781,9 @@ fn throws_in_an_ai_match_are_identical_across_thread_counts() {
 #[test]
 fn throws_survive_save_load_continue() {
     let end = 5 * 60 * 30;
-    // Seed 23: the S3b call-ins (no queue) moved seed 22's busy moment
-    // out of the window.
-    let mut straight = ai_match(23, 2);
+    // Seed 21: the S3b call-ins (no queue) moved seed 22's busy moment
+    // out of the window, and the S3b AI (fire-and-move, hunts) seed 23's.
+    let mut straight = ai_match(21, 2);
     let mut reference = Vec::new();
     let (mut seen_flight, mut seen_smoke) = (false, false);
     while straight.tick() < end {
@@ -798,7 +798,7 @@ fn throws_survive_save_load_continue() {
     assert!(seen_flight && seen_smoke);
 
     // Save with an item in the air, one winding up and smoke standing.
-    let mut first = ai_match(23, 2);
+    let mut first = ai_match(21, 2);
     let mut mid = 2 * 60 * 30;
     run(&mut first, mid, 0);
     let busy = |w: &World| {

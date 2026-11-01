@@ -37,6 +37,11 @@ extends Node
 ## attack-move to it. Right-click on an own vehicle with infantry selected:
 ## the soldiers escort it (follow_units). Alt+right-click: vehicles reverse
 ## (reverse_units), soldiers move. O face tool, N next ammo, J repair.
+##
+## S3b: P arms the suppress tool (soldiers and vehicles): a left click fires
+## at a point, a left drag draws a line (capped at rules.suppress_line_max_m,
+## 40 m); the selection (mortar men are dropped by the sim) gets
+## suppress_units. Shift keeps the tool armed.
 
 signal tool_changed(tool: StringName)
 
@@ -61,9 +66,12 @@ var view: MatchView
 ## Selected own soldier ids, ascending.
 var selected := PackedInt32Array()
 var groups: Array[PackedInt32Array] = []
-## &"", &"move", &"attack_move", &"barrage", &"dig", &"throw" or (S3)
-## &"face", &"reverse".
+## &"", &"move", &"attack_move", &"barrage", &"dig", &"throw", (S3)
+## &"face", &"reverse" or (S3b) &"suppress".
 var tool: StringName = &""
+## Suppress tool (S3b): where the left button went down on the ground
+## (the line's first point) while it is held; null otherwise.
+var suppress_from: Variant = null
 ## Armed item while tool == &"throw": "frag", "smoke" or "satchel".
 var throw_item := ""
 var dig_points := PackedVector3Array()
@@ -394,6 +402,14 @@ func can(order: StringName) -> bool:
 			return not selected_soldiers().is_empty()
 		&"ammo_apcr":
 			return selection_has_apcr()
+		&"suppress":
+			# Anyone but mortar crews (they keep Barrage).
+			if not selected_vehicles().is_empty():
+				return true
+			for sid in selected_squads():
+				if not view.squads_by_id.get(sid, {}).get("type", "") in MatchView.MORTARS:
+					return true
+			return false
 	if order in VEHICLE_ONLY:
 		return not selected_vehicles().is_empty()
 	return true
@@ -475,6 +491,7 @@ func activate(order: StringName) -> void:
 func cancel_tool() -> void:
 	dig_points.clear()
 	throw_item = ""
+	suppress_from = null
 	_set_tool(&"")
 
 
@@ -779,6 +796,37 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 		_set_tool(&"")
 
 
+## Longest suppress line (m; rules.suppress_line_max_m).
+func suppress_max() -> float:
+	return float(view.rules().get("suppress_line_max_m", 40.0))
+
+
+## The suppress line from `a` toward `b` on the ground, capped at
+## suppress_max(): [a] for a click (under 2 m), else [a, b'].
+func suppress_line(a: Vector3, b: Variant) -> PackedVector3Array:
+	if b == null or Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z)) < 2.0:
+		return PackedVector3Array([a])
+	var d := Vector3(b.x - a.x, 0.0, b.z - a.z)
+	var n := minf(d.length(), suppress_max())
+	var e := a + d.normalized() * n
+	e.y = view.ground_y(e.x, e.z)
+	return PackedVector3Array([a, e])
+
+
+## Sends suppress_units for the selection at `line` (one or two points).
+func suppress_at(line: PackedVector3Array) -> void:
+	if line.is_empty():
+		return
+	var data := {"units": selected}
+	if line.size() == 1:
+		data["target"] = line[0]
+	else:
+		data["polyline"] = line
+	view.emit_intent(&"suppress_units", data)
+	if view.overlay != null:
+		view.overlay.marker(line[0], &"suppress")
+
+
 # --- input -----------------------------------------------------------------
 
 func _process(_delta: float) -> void:
@@ -831,6 +879,12 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 					dig_points.append(p)
 				get_viewport().set_input_as_handled()
 				return
+			if tool == &"suppress":
+				suppress_from = view.ground_pick(e.position)
+				if suppress_from == null:
+					AudioManager.play_ui(&"error")
+				get_viewport().set_input_as_handled()
+				return
 			if tool != &"":
 				_use_tool_at(e.position, e.shift_pressed)
 				get_viewport().set_input_as_handled()
@@ -859,6 +913,14 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 			drag_to = e.position
 			dragging = false
 		else:
+			if tool == &"suppress" and suppress_from != null:
+				var line := suppress_line(suppress_from, view.ground_pick(e.position))
+				suppress_from = null
+				suppress_at(line)
+				if not e.shift_pressed:
+					_set_tool(&"")
+				get_viewport().set_input_as_handled()
+				return
 			if not _pressing:
 				_skip_release = false
 				return
@@ -911,7 +973,7 @@ func _key(e: InputEventKey) -> void:
 			activate(StringName(ABILITY_KEYS[action]))
 			get_viewport().set_input_as_handled()
 			return
-	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair"]:
+	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair", &"suppress"]:
 		if e.is_action_pressed(StringName("order_" + order)):
 			activate(order)
 			get_viewport().set_input_as_handled()

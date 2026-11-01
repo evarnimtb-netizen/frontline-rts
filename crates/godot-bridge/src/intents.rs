@@ -14,7 +14,9 @@
 //! intents (`reverse_units`, `face_units`, `attack_unit`, `set_ammo`,
 //! `repair_units`, `follow_units`) become their commands in
 //! [`vehicle_command`], dig intents carry a [`DigProfile`], and a call-in
-//! may name its squad type id ([`call_in_by_id`]).
+//! may name its squad type id ([`call_in_by_id`]). S3b: `suppress_units`
+//! (men and vehicles) carries a `polyline` of one or two points, or a
+//! `target` ([`unit_command`]).
 
 use frontline_content::{DigProfile, ItemKind, MatchSetup, SquadRole};
 use frontline_sim::game::MAX_DIG_POINTS;
@@ -290,6 +292,15 @@ pub fn unit_command(
             units,
             item: item_kind(word)?,
             target: t()?,
+        },
+        // S3b: a line (its first and last points) or a point (`target`).
+        "suppress_units" => CommandKind::SuppressUnits {
+            units,
+            line: match line {
+                [] => vec![t()?],
+                [a] => vec![sim_to_fx(*a)],
+                [a, .., b] => vec![sim_to_fx(*a), sim_to_fx(*b)],
+            },
         },
         _ => return None,
     })

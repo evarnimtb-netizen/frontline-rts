@@ -212,8 +212,14 @@ crater_lift_mm = 500
 # docs/modding/tuning.md lists every table.
 [combat.suppression]
 # A near miss on a man crouched below cover (in a trench, off the fire
-# step) adds this share of the weapon's suppression (percent).
-covered_near_miss_pct = 50
+# step) adds this share of the weapon's suppression (percent). S3b: 50 ->
+# 100. The trench already protects by geometry (only rounds passing over
+# the lip or striking the parapet near him count, and they cannot hit
+# him); halving the suppression too made a trench line unpinnable (Gates
+# of Hell: men in a trench still duck under heavy fire). Measured in
+# fortify-test (MG suppressing, rifles from 150 m): 50 -> defenders ducked
+# 12 %, 100 with the duck keys below -> ducked 61 %, pinned 29 %.
+covered_near_miss_pct = 100
 # A burst with earth between it and a man suppresses him this much
 # (percent).
 blast_behind_cover_pct = 50
@@ -221,6 +227,60 @@ blast_behind_cover_pct = 50
 # hundredths of a percent (100: 1 % per point; pinned men use
 # pinned_spread_pct instead).
 spread_per_point_pct = 100
+# S3b duck state (docs/slices/S3b-balance.md B1; owner 2026-11-01: keep
+# the pinning fire, informed by Gates of Hell, where men in a trench keep
+# their heads down under heavy fire and stop returning it). A man in a
+# trench or crater at or above duck_points ducks below the lip: no fire,
+# no throw, the crouched capsule. He comes back up only below
+# duck_release_points. Both (and pin_suppression) are scaled by the squad
+# type's steadiness_pct (all 100 now). Only real rounds, fragments and
+# bursts fill the meter (physical-contact rule). 35 / 20 (points): an MG
+# 42 on a 25 m line (about 3 near misses a second per man, 15 points x 50 %
+# covered = ~24 points/s against a decay of 8) keeps a line ducked; a
+# rifle squad alone (1-2 points/s per man) does not. Open ground is
+# unchanged (owner question S3b-3 (A)). Measured (Part B): an MG 34/42 at
+# 150 m on a 30 m line gives each man only ~0.5 near misses a second (wide
+# MG spread, grazing fire into the ground in front), so 35 / 20 ducked a
+# line 12-17 % of the time; 25 / 10 with the slow decay below: ~60 %.
+duck_points = 25
+duck_release_points = 10
+# A ducked man's suppression decays at this share of
+# suppression_decay_per_s: he keeps his head down until the fire slackens
+# (Gates of Hell feel), so a steady MG keeps a line down once it is down
+# (%). 25: a ducked man comes up about 6 s after the last near miss from
+# 25 points, instead of 2 s.
+duck_decay_pct = 25
+
+# The Suppress order (S3b, docs/slices/S3b-balance.md B2; owner 2026-11-01,
+# after Gates of Hell's 2025 "suppression fire" order): men and vehicles
+# hold and fire real rounds at a point or short line without a spotted
+# target. Each shot aims at a random point on the line (counter RNG keyed
+# by shooter and shot count), this high above the ground there.
+[combat.suppress]
+# Rounds below the parapet crest (~0.3 m) stop in it short of the men and
+# rounds more than ~1.6 m over a crouched man's head pass without a near
+# miss, so the aim sits in that band. Part B measurement: 30 cm put half
+# of an MG's rounds into the ground in front (grazing fire from a prone
+# gun); 80 cm raised near misses per round by ~60 %, 120 cm by less (cm).
+aim_cm = 80
+# Longest line one order covers: about two squad frontages (m).
+line_max_m = 40
+# A shot needs a clear line from the muzzle to a point this far short of
+# its aim point (one ray per shot); else it is not fired. 300 cm: a round
+# aimed over a parapet whose crest stands ~1-2 m in front of the line
+# still goes (cm).
+clear_cm = 300
+# A vehicle on Suppress fires its main gun's HE at the line at most every
+# tank_he_s seconds while more than tank_he_reserve HE rounds are left
+# (owner question S3b-2 (A): tanks spend real HE, with a reserve). 12 s:
+# a deliberate rate, about a fifth of the gun's; 6 rounds kept for
+# targets the gunner picks himself.
+tank_he_s = 12
+tank_he_reserve = 6
+# The HE is aimed this high above the ground at the line's middle: 0, so
+# the shell bursts on the parapet or in the trench; aimed at aim_cm it
+# flies over a flat trench line and bursts behind it (cm).
+tank_he_aim_cm = 0
 
 # Cover on arrival: each man moves his slot to the nearest free trench spot,
 # else (an enemy seen) to a spot with terrain between him and that enemy.
@@ -550,6 +610,44 @@ backup_m = 30
 # Sherman 560) and about 50 s of base income: a small reserve, not a freeze
 # of infantry buying (owner, 2026-11-01: "keep a small reserve for a tank").
 tank_reserve_mp = 200
+
+# The AI's fire-and-move, AT-team hunts and satchel hunts (S3b,
+# docs/slices/S3b-balance.md B3-B5). Starting values for the Tune stage.
+[ai.assault]
+# A base of fire (one squad suppressing an enemy trench or the enemies seen
+# at a point while the others advance) stands at most this far from the
+# line: MG 250 m (an MG 34/42 on a bipod is effective well past it), rifles
+# 150 m, a tank 200 m (its MGs; HE has the range anyway).
+support_mg_m = 250
+support_rifle_m = 150
+support_tank_m = 200
+# Manoeuvre squads leapfrog: one more than this ahead of the rearmost halts
+# and fires normally until the others catch up (m). 40 m: two to three
+# rushes of a section (fire-and-move doctrine).
+bound_m = 40
+# The base lifts its fire (back to normal fire) once a manoeuvre squad's
+# leader is this close to the line: grenade range closes it (m).
+lift_fire_m = 15
+# The suppress line laid along a probed enemy trench (m; at most
+# combat.suppress.line_max_m): about one squad's trench section.
+trench_line_m = 24
+# An AT team goes after a known enemy vehicle within at_hunt_m of the team
+# or its point, unless a known enemy soldier is within at_hunt_clear_m of
+# the middle of its route; it stops at_hunt_inset_m inside its launcher's
+# engage_still, on the vehicle's side or rear (m). 250 m: a tank this
+# close can reach the point in under a minute.
+at_hunt_m = 250
+at_hunt_clear_m = 40
+at_hunt_inset_m = 10
+# Engineers with a satchel go for a known enemy vehicle within
+# satchel_hunt_m that has been slower than ai.infantry.satchel_slow_mm_s
+# (stopped, bogged, immobilised) for satchel_slow_s; the throw rule fires
+# within the satchel's range (m, s). They walk to a spot satchel_stand_m
+# outside the hull side nearer them (5 m: the satchel lands ~0.8 m off the
+# hull, so the thrower stands ~4 m from it, inside the 3-8 m throw range).
+satchel_hunt_m = 60
+satchel_slow_s = 3
+satchel_stand_m = 5
 
 # Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
 # once in the base, no queue and no delivery time).

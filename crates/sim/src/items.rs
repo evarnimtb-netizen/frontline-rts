@@ -208,6 +208,7 @@ impl MatchState {
             || k.items[kind.index()] == 0
             || k.windup.is_some()
             || ents.combat[i].pinned
+            || ents.combat[i].ducked
         {
             return None;
         }
@@ -320,6 +321,7 @@ impl MatchState {
             let full = self.full_kit(ents, m)[w.kind.index()];
             let keep_on = ents.kind[i] == EntityKind::Soldier
                 && !ents.combat[i].pinned
+                && !ents.combat[i].ducked
                 && u.detached
                 && u.order == UnitOrder::Idle;
             let k = &mut ents.kit[i];

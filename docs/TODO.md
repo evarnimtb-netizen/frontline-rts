@@ -211,6 +211,44 @@ proceeds on (A).
   trenches protecting this much against mortars is realistic and kept.
   (B) Keep as is.
 
+Part B stage (2026-11-01, `docs/slices/S3b-balance.md` "Part B: AI and
+trench pinning (stage done)"): new questions, work proceeds on (A).
+
+- [ ] **S3b-24. Near misses measured to the body.** A near miss used to be
+  a round passing within 2 m of a man's middle; a crouched man in a
+  trench has his middle 1 m below ground, so rounds cracking over his head
+  or striking the parapet in front of his face did not count (an MG at
+  150 m gave each man 0.2 near misses a second). (A) Measure to the hit
+  capsule (head to feet), as built; it also adds some near misses in the
+  open. (B) Back to the middle and tune the duck values only.
+- [ ] **S3b-25. Covered near misses.** `covered_near_miss_pct` 50 -> 100:
+  the trench protects by geometry already (rounds cannot hit a man below
+  the lip), and halving suppression on top made a trench line
+  unpinnable. Rifle fortify rows unchanged (trench 0 vs open 80). (A)
+  100, as built. (B) 50 and lower duck thresholds instead.
+- [ ] **S3b-26. Duck values.** Measured, an MG on a trench line at 150 m
+  gives each man about 0.5 near misses a second (wide MG cone, grazing
+  fire into the ground), far below the spec's estimate of 3; with 35 / 20
+  a line ducked 12-17 % of the time. (A) `duck_points` 25,
+  `duck_release_points` 10, `duck_decay_pct` 25 (a ducked man keeps his
+  head down ~6 s after the last near miss), `aim_cm` 80: ~60 % ducked and
+  ~29 % pinned under an MG. (B) The spec's 35 / 20 / 100 / 30.
+- [ ] **S3b-27. Tank HE at a trench kills nobody** (T9's "kills > 0"
+  missed). A flat-trajectory shell cannot drop into a 1.6 m trench; it
+  bursts on the parapet or behind, and the parapet stops the fragments
+  (the physical-contact rule working). (A) Accept: tanks pin (5b: 97 %
+  of man-time pinned or ducked), grenades and assaults kill; T9 becomes
+  "pins". (B) Make HE bursts over a trench lethal (air-burst or a
+  larger close-in blast; against the owner's physical-contact rule).
+- [ ] **S3b-28. Harness: attackers advance crouched** in the new
+  fortify-test assault rows (both variants alike), as a player would
+  under fire. Standing, the MG-supported squad lost 100 %. (A) Crouched.
+  (B) Standing (the old rows' style).
+- [ ] **S3b-29. B6 angling** (`ai_face_angle_deg` per vehicle def) is not
+  built in Part B. (A) The Tune stage adds it if T2 (frontal duel) is
+  still missed; it is a data key plus a turn in the AI's facing. (B)
+  Drop it.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an

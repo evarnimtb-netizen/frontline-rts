@@ -757,6 +757,32 @@ func _test_vehicles() -> void:
 	_check(a1 == Vehicles.next_ammo(before) and a2 == Vehicles.next_ammo(a1), "N twice in one frame: %s -> %s -> %s" % [before, a1, a2])
 	_key(KEY_J)
 	_check(_last(&"repair_units") != null and _last(&"repair_units").units == PackedInt32Array([tanks[0]]), "J: repair_units")
+	# S3b: P arms the suppress tool; a drag sends a line capped at
+	# rules.suppress_line_max_m, a click a point.
+	_key(KEY_P)
+	_check(_sel.tool == &"suppress", "P arms the suppress tool")
+	_check(_view.orders.button_rect(&"suppress").size.x > 0.0 and _view.orders.enabled(&"suppress"), "the vehicle grid has a Suppress button, enabled")
+	var sp0 := _ground_screen(_view.unit_pos(tanks[0]) + Vector3(-50, 0, -10))
+	var sp1 := _ground_screen(_view.unit_pos(tanks[0]) + Vector3(-50, 0, 70))
+	_intents.clear()
+	_button(sp0, MOUSE_BUTTON_LEFT, true)
+	_check(_sel.suppress_from != null, "press: the line starts on the ground")
+	_button(sp1, MOUSE_BUTTON_LEFT, false)
+	var su: Variant = _last(&"suppress_units")
+	var su_ok: bool = su != null and su.has("polyline") and su.polyline.size() == 2 and su.units == PackedInt32Array([tanks[0]])
+	if su_ok:
+		var pl: PackedVector3Array = su.polyline
+		su_ok = Vector2(pl[0].x, pl[0].z).distance_to(Vector2(pl[1].x, pl[1].z)) <= 40.5
+	_check(su_ok and _sel.tool == &"", "drag: suppress_units with a 2-point line capped at 40 m, the tool disarms")
+	_key(KEY_P)
+	_intents.clear()
+	_click(sp0)
+	su = _last(&"suppress_units")
+	_check(su != null and su.has("target") and not su.has("polyline"), "click: suppress_units at a point")
+	_sel.select_squads(PackedInt32Array([rifles[0]]))
+	await _frames(1)
+	_check(_view.orders.button_rect(&"suppress").size.x > 0.0 and _view.orders.enabled(&"suppress"), "the soldier grid has Suppress too")
+	_sel.select_only(PackedInt32Array([tanks[0]]))
 	# Ammo toggle on the grid; the state follows.
 	_view.orders.press(&"ammo_he")
 	_check(_last(&"set_ammo").ammo == "he", "ammo strip HE sends set_ammo he")

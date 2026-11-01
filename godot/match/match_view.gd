@@ -96,14 +96,14 @@ const WEAPONS := {
 const ORDER_TEXT := {
 	"idle": "Holding", "move": "Moving", "attack_move": "Attacking", "retreat": "Retreating",
 	"dig": "Digging", "barrage": "Firing", "setup": "Setting up", "hold": "Holding",
-	"throw": "Throwing", "follow": "Escorting",
+	"throw": "Throwing", "follow": "Escorting", "suppress": "Suppressing",
 }
 ## Intents that get a pending-order marker in net mode, by marker kind.
 const PENDING_KINDS := {
 	&"move": "move", &"move_units": "move", &"attack_move": "attack_move",
 	&"attack_move_units": "attack_move", &"barrage": "barrage", &"throw": "throw",
 	&"throw_each": "throw", &"dig": "dig", &"dig_units": "dig",
-	&"reverse_units": "move", &"face_units": "move",
+	&"reverse_units": "move", &"face_units": "move", &"suppress_units": "throw",
 }
 ## A click-time marker lives this long (s) unless the state's
 ## pending_orders confirms it; once confirmed the state's entry is drawn.

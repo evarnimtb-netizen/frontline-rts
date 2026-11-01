@@ -260,6 +260,12 @@ pub struct PlayerArmour {
     pub repairs: u32,
     pub retreats: u32,
     pub faces: u32,
+    /// S3b AI counters: `SuppressUnits` orders, bound halts, AT-team and
+    /// satchel hunts started.
+    pub suppress_orders: u32,
+    pub bounds: u32,
+    pub at_hunts: u32,
+    pub satchel_hunts: u32,
     /// S3b baseline, as the firing player: main-gun penetrator hits on
     /// enemy vehicles (any result) and how many penetrated; HE shells on a
     /// plate; rocket hits and penetrations; components rockets destroyed
@@ -765,6 +771,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 armour.repairs = c.repairs;
                 armour.retreats = c.retreats;
                 armour.faces = c.faces;
+                armour.suppress_orders = c.suppress_orders;
+                armour.bounds = c.bounds;
+                armour.at_hunts = c.at_hunts;
+                armour.satchel_hunts = c.satchel_hunts;
             }
             PlayerReport {
                 player: p as u8,
@@ -1042,6 +1052,7 @@ pub fn summary_text(r: &SkirmishReport) -> String {
              \x20     mp lost/killed: tanks {} ({}/{}), AT {} ({}/{}); escorts {} (reached \
              {}, released {}), AT shots {}, satchels at vehicles {}, repairs {}, \
              retreats {}, faces {}\n\
+             \x20     S3b AI: suppress orders {}, bounds {}, AT hunts {}, satchel hunts {}\n\
              \x20     fired: gun hits {} (pen {}), HE on plates {}, rocket hits {} (pen {}, \
              parts destroyed {}); hits by plate: {}\n\
              \x20     kills: {}\n",
@@ -1068,6 +1079,10 @@ pub fn summary_text(r: &SkirmishReport) -> String {
             a.repairs,
             a.retreats,
             a.faces,
+            a.suppress_orders,
+            a.bounds,
+            a.at_hunts,
+            a.satchel_hunts,
             a.gun_hits,
             a.gun_pens,
             a.he_on_plate,

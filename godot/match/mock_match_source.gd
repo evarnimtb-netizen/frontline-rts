@@ -36,6 +36,7 @@ const RULES := {
 	"pop_cap": 120,
 	"tickets_max": 500,
 	"dig_max_m": 60.0,
+	"suppress_line_max_m": 40.0,
 	"mortar_min_m": 60.0,
 	"mortar_max_m": 600.0,
 	"capture_radius_m": 15.0,
@@ -252,6 +253,22 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 				_unit_order("attack_move", uids, {"target": _v3(t.pos)})
 		&"follow_units":
 			_follow(uids, int(data.get("vehicle", -1)))
+		&"suppress_units":
+			# S3b (mock): whole own squads hold with the line; no area fire.
+			var line: PackedVector3Array = data.get("polyline", PackedVector3Array())
+			if line.is_empty() and data.get("target") is Vector3:
+				line = PackedVector3Array([data.target, data.target])
+			elif line.size() == 1:
+				line.append(line[0])
+			var per := {}
+			for man in _own_men(uids):
+				var sid: int = man_squad[man.id]
+				per[sid] = int(per.get(sid, 0)) + 1
+			for sid in per:
+				var sq: Dictionary = squads[sid]
+				if per[sid] == sq.men.size() and sq.type != "mortar" and line.size() >= 2:
+					_order(sq, "suppress", sq.pos)
+					sq.suppress_line = line
 		&"set_stance":
 			var st: String = data.get("stance", "auto")
 			if st in ["auto", "stand", "crouch", "prone"]:
@@ -564,6 +581,7 @@ func _order(sq: Dictionary, order: String, target: Vector2) -> void:
 	sq.setup_t = 0.0
 	sq.unit_dig = {}
 	sq.follow = -1
+	sq.erase("suppress_line")
 	for man in sq.men:
 		_rejoin(man)
 
@@ -1482,6 +1500,9 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 	# Escort (S3, opt; a proposed contract key): the vehicle followed.
 	if sq.order == "follow" and sq.owner == local_player:
 		out.follow = sq.follow
+	# S3b: the Suppress order's line (own squads).
+	if sq.order == "suppress" and sq.owner == local_player and sq.has("suppress_line"):
+		out.suppress_line = sq.suppress_line
 	return out
 
 

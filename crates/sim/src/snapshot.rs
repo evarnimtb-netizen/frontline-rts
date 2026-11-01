@@ -107,11 +107,13 @@ pub struct UnitSnapshot {
     pub id: SimId,
     pub owner: u8,
     pub squad: u32,
-    /// `Idle`, `Move`, `AttackMove`, `Retreat` or `Dig`.
+    /// `Idle`, `Move`, `AttackMove`, `Retreat`, `Dig`, `Follow` or (S3b)
+    /// `Suppress`.
     pub order: OrderKind,
     pub phase: NavPhase,
     /// What the order aims at: the move target, the own base for a
-    /// retreat, the middle of the trench line for a dig, his spot when idle.
+    /// retreat, the middle of the trench line for a dig, his spot when idle,
+    /// the middle of the line on Suppress (S3b).
     pub target: [f32; 2],
     /// His own spot: where he walks to and stands (his slot on the line,
     /// after cover-seeking once there).
@@ -304,6 +306,8 @@ pub struct VehicleSnapshot {
     pub target: u32,
     /// Own only: soldiers escorting it (`FollowUnits`).
     pub followers: u8,
+    /// Own only (S3b): the `SuppressUnits` line it fires at, if any.
+    pub suppress: Option<[[f32; 2]; 2]>,
 }
 
 /// `ShellSnapshot::kind`.
@@ -544,6 +548,7 @@ impl RenderSnapshot {
                                 }
                                 UnitOrder::Retreat => g.base_of(PlayerId(owner)),
                                 UnitOrder::Follow { .. } => u.nav.goal,
+                                UnitOrder::Suppress { line } => (line[0] + line[1]).div_int(2),
                                 UnitOrder::Dig { job } => {
                                     g.unit_digs().get(job).map_or(u.nav.goal, |d| {
                                         let line = &d.line;
@@ -792,6 +797,7 @@ impl RenderSnapshot {
                     .filter(|t| ents.kind().get(t.index()) == Some(&EntityKind::Vehicle))
                     .map_or(u32::MAX, |t| t.0),
                 followers: vs.followers.len().min(u8::MAX as usize) as u8,
+                suppress: vs.suppress.map(|l| [l[0].to_f32(), l[1].to_f32()]),
             });
         }
     }

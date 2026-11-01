@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 /// Wire version. Bump on any change to a body, a kind or a limit that a
 /// peer could observe. 4 (S3b): `CallIn` buys and spawns at once under a
 /// per-type re-call cooldown instead of joining a queue (the one bump for
-/// the S3b slice; the Suppress command lands under the same version).
+/// the S3b slice; the Suppress command, `SuppressUnits`, lands under the same
+/// version).
 pub const PROTOCOL_VERSION: u16 = 4;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
@@ -539,6 +540,9 @@ impl Packet {
     }
 }
 
+/// Most points of a `SuppressUnits` line (S3b).
+pub const MAX_SUPPRESS_POINTS: usize = 2;
+
 /// The per-command limits the sim applies anyway (it ignores longer
 /// lists), checked on the wire so an oversized command never reaches it,
 /// and the turn byte limit, so any one command fits a bundle datagram.
@@ -550,6 +554,10 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         CommandKind::Dig { line, .. } => line.len() <= MAX_DIG_POINTS,
         CommandKind::DigUnits { units, line, .. } => {
             units.len() <= MAX_UNITS && line.len() <= MAX_DIG_POINTS
+        }
+        // S3b: a point or a two-point line.
+        CommandKind::SuppressUnits { units, line } => {
+            units.len() <= MAX_UNITS && (1..=MAX_SUPPRESS_POINTS).contains(&line.len())
         }
         CommandKind::MoveUnits { units, .. }
         | CommandKind::AttackMoveUnits { units, .. }
@@ -843,8 +851,12 @@ mod tests {
                 units: units.clone(),
             },
             CommandKind::FollowUnits {
-                units,
+                units: units.clone(),
                 vehicle: SimId(9),
+            },
+            CommandKind::SuppressUnits {
+                units,
+                line: line.iter().copied().take(MAX_SUPPRESS_POINTS).collect(),
             },
             CommandKind::Dig {
                 squad: SquadId(1),
@@ -888,13 +900,25 @@ mod tests {
                 n += 1;
             }
         }
-        assert_eq!(n, 14, "every command with a unit list");
+        assert_eq!(n, 15, "every command with a unit list");
         // One point over (17): both dig commands are refused.
         for k in listed(MAX_UNITS, MAX_DIG_POINTS + 1) {
             if matches!(k, CommandKind::Dig { .. } | CommandKind::DigUnits { .. }) {
                 refused(&k, &mut buf);
             }
         }
+    }
+
+    #[test]
+    fn suppress_lines_hold_one_or_two_points() {
+        let k = |n: usize| CommandKind::SuppressUnits {
+            units: vec![SimId(1)],
+            line: (0..n as i32).map(|i| FxVec2::from_int(i, 0)).collect(),
+        };
+        assert!(!command_in_limits(&k(0)));
+        assert!(command_in_limits(&k(1)));
+        assert!(command_in_limits(&k(2)));
+        assert!(!command_in_limits(&k(3)));
     }
 
     #[test]

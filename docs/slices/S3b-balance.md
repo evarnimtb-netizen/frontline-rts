@@ -1059,6 +1059,98 @@ Case 7's defenders still are not pinned (1.8 %); case 5's tank still fires
 nothing: both are Part B (Suppress, duck state). `crossing_target` also
 sets `rack_fire_pct = 0`, and `toughen` clears `ammo_fire`.
 
+## Part B: AI and trench pinning (stage done, 2026-11-01)
+
+Built as specified in B1–B5 with the deviations below; B6 (AI angling) is
+not built (owner question S3b-29). Every new gameplay value is a commented
+key in `mods/ww2`; `SAVE_VERSION` stays 10 and `PROTOCOL_VERSION` stays 4
+(the slice's bumps).
+
+**B1 Duck state** (`combat.rs` `status`): `Combat::ducked` (saved, hashed,
+validated: only a living soldier in a trench, never with `pinned`). A man
+in a trench ducks at `[combat.suppression] duck_points` and comes up below
+`duck_release_points`, both (and `pin_suppression`) scaled by the squad
+type's new `steadiness_pct` (unit defs, default 100, range 25–400; the
+veterancy hook). A ducked man stays crouched below the lip, does not aim,
+fire, fire his launcher or start a throw (a wind-up is called off), keeps
+his target and pays the half second of aiming when he comes up. New:
+`duck_decay_pct`, his meter decays at that share of the normal rate (he
+keeps his head down until the fire slackens).
+
+**Physical-contact fix (audit #4, owner question S3b-24):** a near miss is
+now a round passing (or striking earth) within `near_miss_cm` of the man's
+hit-capsule axis, head to feet, not of his middle. A crouched man in a
+trench has his middle 1 m below ground, so rounds cracking over his head
+or into the parapet in front of his face did not count.
+
+**B2 Suppress order:** `CommandKind::SuppressUnits { units, line }` (1–2
+points; a second point beyond `combat.suppress.line_max_m` is pulled in;
+relay limit: ids ≤ `MAX_UNITS`, points 1–2, `MAX_SUPPRESS_POINTS`).
+Squads named whole get `Order::Suppress { line }` and hold; other men a
+detached `UnitOrder::Suppress`; vehicles stop and keep
+`VehicleState::suppress`; mortar men are dropped. All saved, hashed and
+validated (on the map, no longer than the rules allow, never on a vehicle
+squad, cleared on a wreck). Men: engage rule `Still`, no target search;
+each shot aims at a counter-RNG point on the line (`Purpose::SUPPRESS`,
+tick and shooter) at `aim_cm` above the higher of the ground and the
+undug surface, within range, and is fired only with a clear terrain line
+to a probe point `clear_cm` short of it (one ray per shot). In a trench
+they rise to the fire step to fire. Vehicles: the main gun takes only
+vehicle targets (self-defence); with none it lays on the line's middle at
+`tank_he_aim_cm` and fires HE (Auto or He) every `tank_he_s` while more
+than `tank_he_reserve` are left and no own man is within `he_clear`; the
+coax (within its cone) and hull MG (within its arc) fire at random points
+on the line. Snapshot: `UnitSnapshot` target = the line's middle,
+`VehicleSnapshot::suppress`. Bridge: intent `suppress_units` (`polyline`
+or `target`), squad dict `order "suppress"` + `suppress_line`, vehicle
+`suppress_line`, rule `suppress_line_max_m`. HUD: a Suppress button in
+both grids (soldier row 1 now has five slots), hotkey **P**, click a point
+or drag a line (capped, dashed accent preview), "Suppressing" card state,
+lines drawn for selected units, tool hint. Docs: `godot/docs/match_state.md`.
+
+**B3–B5 AI** (`ai/assault.rs`, module docs step 8 in `ai.rs`):
+fire-and-move (base of fire: the squad already suppressing, else an MG
+team, else a rifle squad; up to 8 candidate spots with one terrain ray
+each; leapfrog bounds; lift at `lift_fire_m`), tanks halted at their
+assault or standoff goal suppress the line and lift with a Stop, AT-team
+hunts (hold when in reach for the target's motion, else the nearest of
+five spots off the turret's front; a team already hunting keeps at it
+near its last spot), satchel hunts (`AiState::slow_since`, saved, hashed,
+validated). Counters `suppress_orders`, `bounds`, `at_hunts`,
+`satchel_hunts` in `AiCounters` and the skirmish report.
+
+**Harness:** case 5b (the case 5 tank on Suppress at a 30 m trench line);
+case 7 now: the tank leads its escort to 60 m, then suppresses while the
+rifles go in (7c keeps the S3 run, 7b the run without the tank); "up on
+the fire step" no longer counts pinned men. fortify-test: "rifle squad
+advancing from 150 m, with and without an MG suppressing" (the squad
+advances crouched in both, owner question S3b-28), reported against T10 /
+T11, not a pass condition.
+
+**Data changed from the spec's starting values** (each explained in its
+TOML comment; owner questions S3b-25, S3b-26): `covered_near_miss_pct`
+50 → 100; `duck_points` 35 → 25, `duck_release_points` 20 → 10, new
+`duck_decay_pct` 25; `aim_cm` 30 → 80; new `tank_he_aim_cm` 0. Measured
+reason: an MG at 150 m on a trench line gave each man ~0.5 near misses a
+second (wide MG cone, grazing fire), not the ~3 the spec estimated; with
+the spec's values the line ducked 12–17 % of the time.
+
+**Results (seeds 1–5 × both factions unless noted):**
+
+| # | Target | Now | Met? |
+|---|---|---|---|
+| T7 | rockets in ≥ 8 of 10 matches; satchel at a vehicle in ≥ 3 of 10 (normal bases) | rockets 6 of 10 (10 of 20 per faction, 15 of 20 any); satchels 0 of 10 (0 of 20; satchel hunts start, no throw) | **no** |
+| T8 | case 7: attacker losses ≤ 50 % of 7b's, defenders ≥ 75 % | attackers 11 vs 80 (13.8 %); defenders 31 of 80 (38.8 %); 7c 52 / 74 | attackers yes, defenders **no** |
+| T9 | case 5b pins (> 0 %) and kills (> 0) | pinned 54.2 %, ducked 42.7 % of man-time; kills 0 | pins yes, kills **no** (S3b-27) |
+| T10 | fortify MG + rifles from 150 m: defenders ≥ 75 %, attackers ≤ 50 % | defenders 43 of 80 (53.8 %), attackers 28 of 80 (35.0 %) | attackers yes, defenders **no** |
+| T11 | fortify S1 rows pass; unsupported squad from 150 m loses ≥ 75 % | rifles 0 vs 80, mortar 10.3 %, smoke pass; unsupported 80 of 80 | yes |
+| T1 | each side 35–65 % of 20; no base side > 70 % | GER 7 / USA 13; base 1 wins 15 (75 %) | factions yes, base **no** |
+| T12 | 12–25 min; HE share < 60 % | 12.2–24.6 min; HE max 44.6 % | yes |
+| T13 | peak p99 < 1.5 ms; stress p99 < 10 ms | 0.65 ms (20 parallel runs); stress 1.19 ms | yes |
+
+Unchanged from Part A: T2 (3a 4 of 10), T5 (case 4 41.2 %, case 6 60 %),
+T6 (86.2 %), T14 (0.0013 m per burst).
+
 ## Implementation order
 
 ### PART A: physical damage, armour, gunnery and content

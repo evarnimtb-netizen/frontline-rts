@@ -1675,6 +1675,7 @@ impl MatchRuntime {
             "pop_cap" => rules.pop_cap as i64,
             "tickets_max" => rules.tickets as i64,
             "dig_max_m" => fx(rules.dig.max_length),
+            "suppress_line_max_m" => rules.combat.suppress.line_max_m as f32,
             "mortar_min_m" => mortar.map_or(60.0, |w| fx(w.range_min)),
             "mortar_max_m" => mortar.map_or(600.0, |w| fx(w.range_max)),
             "capture_radius_m" => fx(rules.capture_radius),
@@ -1787,6 +1788,7 @@ impl MatchRuntime {
                         OrderKind::Retreat => ("retreat", true),
                         OrderKind::Dig => ("dig", true),
                         OrderKind::Follow => ("follow", false),
+                        OrderKind::Suppress => ("suppress", true),
                         _ => ("hold", false),
                     };
                     if !f.throwing[i] {
@@ -2142,6 +2144,10 @@ impl MatchRuntime {
                     },
                 );
                 d.set("followers", v.followers as i64);
+                if let Some(l) = v.suppress {
+                    let line: PackedVector3Array = l.iter().map(|p| self.ground(*p)).collect();
+                    d.set("suppress_line", &line);
+                }
             }
             out.push(&d.to_variant());
         }
@@ -2287,6 +2293,7 @@ impl MatchRuntime {
                 OrderKind::Dig => "dig",
                 OrderKind::Barrage => "barrage",
                 OrderKind::Follow => "follow",
+                OrderKind::Suppress => "suppress",
             }
         };
         let pos = match self.anchors.get(&s.id) {
@@ -2320,6 +2327,10 @@ impl MatchRuntime {
         }
         if let Some(v) = s.follow {
             d.set("follow", v as i64);
+        }
+        if let Some(l) = s.suppress_line {
+            let line: PackedVector3Array = l.iter().map(|p| self.ground(*p)).collect();
+            d.set("suppress_line", &line);
         }
         d
     }
@@ -2489,7 +2500,7 @@ impl MatchRuntime {
             })),
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
             | "set_stance" | "throw" | "throw_each" | "reverse_units" | "face_units"
-            | "attack_unit" | "set_ammo" | "repair_units" | "follow_units" => {
+            | "attack_unit" | "set_ammo" | "repair_units" | "follow_units" | "suppress_units" => {
                 let raw = data
                     .get("units")
                     .and_then(|v| v.try_to::<PackedInt32Array>().ok())

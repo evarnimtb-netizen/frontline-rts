@@ -345,13 +345,14 @@ pub struct Scripter {
 }
 
 /// The S3 commands a vehicle script issues ([`Scripter::vehicles`]).
-pub const VEHICLE_COMMANDS: [&str; 7] = [
+pub const VEHICLE_COMMANDS: [&str; 8] = [
     "ReverseUnits",
     "FaceUnits",
     "AttackUnit",
     "SetAmmo",
     "RepairUnits",
     "FollowUnits",
+    "SuppressUnits",
     "DigAtDitch",
 ];
 
@@ -537,6 +538,26 @@ impl Scripter {
                 CommandKind::FollowUnits {
                     units: if men.is_empty() { vec![v] } else { men },
                     vehicle: v,
+                }
+            }
+            6 => {
+                // S3b: the vehicle and a few men fire at a short line.
+                let mut units: Vec<frontline_sim::SimId> = game
+                    .squads()
+                    .values()
+                    .filter(|q| {
+                        q.owner.0 == self.slot
+                            && setup.squad_types[q.type_idx as usize].vehicle.is_none()
+                    })
+                    .flat_map(|q| q.members.iter().copied())
+                    .take(3)
+                    .collect();
+                units.push(v);
+                let a = near(&mut self.rng);
+                let b = world.terrain().clamp(a + FxVec2::from_int(12, 4));
+                CommandKind::SuppressUnits {
+                    units,
+                    line: vec![a, b],
                 }
             }
             _ => {

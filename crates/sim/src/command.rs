@@ -136,4 +136,15 @@ pub enum CommandKind {
     /// (a whole squad as a squad order, other men one by one, detached).
     /// Vehicle ids in `units` are dropped.
     FollowUnits { units: Vec<SimId>, vehicle: SimId },
+    /// S3b area fire (`crate::orders` "Suppress"): the men and vehicles
+    /// hold and fire at points on `line` (1 or 2 points on the map; a
+    /// second point further than the rules' `combat.suppress.line_max_m`
+    /// from the first is pulled in) without a spotted target. Squads named
+    /// whole get the squad order `Order::Suppress`, other men a detached
+    /// `UnitOrder::Suppress`, vehicles `VehicleState::suppress`; mortar
+    /// men are dropped (they keep `Barrage`). Lasts until another order.
+    SuppressUnits {
+        units: Vec<SimId>,
+        line: Vec<FxVec2>,
+    },
 }

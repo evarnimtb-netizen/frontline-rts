@@ -28,10 +28,10 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiArmourTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
-    DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning, MortarTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
-    check_tuning,
+    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning, GunneryTuning,
+    MortarTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -330,6 +330,7 @@ pub struct AiSetup {
     /// S3b tuning tables (TOML units).
     pub infantry: AiInfantryTuning,
     pub armour: AiArmourTuning,
+    pub assault: AiAssaultTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -417,6 +418,7 @@ pub struct CombatSetup {
     pub mortar: MortarTuning,
     pub blast: BlastTuning,
     pub suppression: SuppressionTuning,
+    pub suppress: SuppressTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -630,6 +632,9 @@ pub struct SquadTypeSetup {
     /// Formation spacing (m).
     pub spacing: Fixed,
     pub dig_rate_pct: u32,
+    /// S3b: suppression thresholds (duck, release, pin) are scaled by this
+    /// (percent; 100 for vehicles).
+    pub steadiness_pct: u32,
     /// What the men carry, at most one entry per item kind.
     pub loadout: Vec<KitSetup>,
     /// S3: the vehicle (index into `MatchSetup::vehicles`) for `Vehicle`
@@ -865,6 +870,7 @@ impl ModDefs {
                         sight: vs.sight,
                         spacing: Fixed::ONE,
                         dig_rate_pct: 0,
+                        steadiness_pct: crate::defs::DEFAULT_STEADINESS_PCT,
                         loadout: Vec::new(),
                         vehicle: Some(v),
                         weapon_men: 0,
@@ -887,6 +893,7 @@ impl ModDefs {
                     sight: Fixed::from_int(s.sight_m as i32),
                     spacing: Fixed::from_ratio(s.spacing_dm as i64, 10),
                     dig_rate_pct: s.dig_rate_pct,
+                    steadiness_pct: s.steadiness_pct,
                     loadout: s
                         .loadout
                         .iter()
@@ -1012,6 +1019,7 @@ impl ModDefs {
                         mortar: c.mortar.clone(),
                         blast: c.blast.clone(),
                         suppression: c.suppression.clone(),
+                        suppress: c.suppress.clone(),
                     }
                 },
                 items: ItemRulesSetup {
@@ -1085,6 +1093,7 @@ impl ModDefs {
                         repair_clear: Fixed::from_int(a.repair_clear_m as i32),
                         infantry: a.infantry.clone(),
                         armour: a.armour.clone(),
+                        assault: a.assault.clone(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -1561,8 +1570,10 @@ impl MatchSetup {
                 mortar: &c.mortar,
                 blast: &c.blast,
                 suppression: &c.suppression,
+                suppress: &c.suppress,
                 ai_infantry: &a.infantry,
                 ai_armour: &a.armour,
+                ai_assault: &a.assault,
                 driving: &v.driving,
                 vehicle_path: &v.path,
                 escort: &v.escort,
@@ -1757,6 +1768,11 @@ impl MatchSetup {
                 s.spacing > Fixed::ZERO && fx_in(s.spacing, 0, 20),
                 "squad_types.spacing",
                 "must be in (0, 20] m",
+            );
+            check(
+                (25..=400).contains(&s.steadiness_pct),
+                "squad_types.steadiness_pct",
+                "must be in 25..=400",
             );
             let mut kinds = [false; ITEM_KINDS];
             for k in &s.loadout {

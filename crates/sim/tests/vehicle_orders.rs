@@ -810,7 +810,10 @@ fn order_match(threads: usize) -> World {
     let (bsq, b) = tank(&mut w, 1, xy(650, 520), WEST);
     disarm(&mut w, b);
     let rifles = spawn(&mut w, 0, "ww2:ger_rifle_squad", xy(330, 530), NORTH);
-    let team = spawn(&mut w, 1, "ww2:usa_bazooka_team", xy(450, 465), WEST);
+    // S3b: 20 m further east than in S3. Near misses now count to the
+    // whole body, so the escort's fire suppresses the gunner more and he
+    // fell at 66 m, just outside the moving-target reach (60 m).
+    let team = spawn(&mut w, 1, "ww2:usa_bazooka_team", xy(470, 470), WEST);
     let eng = spawn(&mut w, 1, "ww2:usa_engineer_squad", xy(700, 400), NORTH);
     let men = members(&w, rifles);
     let team_men = members(&w, team);

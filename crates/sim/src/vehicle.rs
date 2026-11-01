@@ -215,6 +215,10 @@ pub struct VehicleState {
     pub wreck_tick: Option<u64>,
     /// `FaceUnits`: the point the hull front turns to while holding.
     pub face: Option<FxVec2>,
+    /// S3b `SuppressUnits`: the line (both ends equal for a point) the MGs
+    /// and, every `combat.suppress.tank_he_s`, the main gun's HE fire at
+    /// while holding (`crate::gunnery`).
+    pub suppress: Option<[FxVec2; 2]>,
 }
 
 impl VehicleState {
@@ -271,14 +275,17 @@ impl VehicleState {
             followers: Vec::new(),
             wreck_tick: None,
             face: None,
+            suppress: None,
         }
     }
 
     /// A new move, stop or retreat order ends an `AttackUnit` focus, a
-    /// `FaceUnits` turn and a field repair (`crate::orders`).
+    /// `FaceUnits` turn, a `SuppressUnits` line and a field repair
+    /// (`crate::orders`).
     pub fn clear_orders(&mut self) {
         self.attack = None;
         self.face = None;
+        self.suppress = None;
         self.repairing = None;
         self.repair_progress = 0;
     }
@@ -394,7 +401,12 @@ impl VehicleState {
             || self.face.is_some_and(|f| {
                 !(Fx::ZERO..=map).contains(&f.x) || !(Fx::ZERO..=map).contains(&f.y)
             })
-            || (self.wreck_tick.is_some() && self.face.is_some());
+            || (self.wreck_tick.is_some() && self.face.is_some())
+            || self.suppress.is_some_and(|l| {
+                l.iter()
+                    .any(|p| !(Fx::ZERO..=map).contains(&p.x) || !(Fx::ZERO..=map).contains(&p.y))
+            })
+            || (self.wreck_tick.is_some() && self.suppress.is_some());
         if bad {
             return Err("vehicle state is out of range");
         }
@@ -1479,6 +1491,7 @@ impl MatchState {
             vs.base_ticks = 0;
             vs.followers.clear();
             vs.face = None;
+            vs.suppress = None;
             vs.reload = 0;
             vs.loaded = None;
             vs.bog = 0;

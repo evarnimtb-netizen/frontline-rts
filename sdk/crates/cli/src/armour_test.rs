@@ -883,55 +883,95 @@ fn case4(env: &Env) -> Result<CaseReport> {
 
 // ------------------------------------------------------- cases 5 and 6 --
 
+/// S3b: the suppress line along the staged north–south trench (30 m
+/// about its middle, inside `combat.suppress.line_max_m`).
+fn trench_suppress_line() -> Vec<FxVec2> {
+    vec![at(TRENCH_X, LANE_Y - 15), at(TRENCH_X, LANE_Y + 15)]
+}
+
+/// Case 7 (S3b): the tank on Suppress stops this far east of the trench
+/// (m), inside `ai.assault.support_tank_m` and short of the 30 m HE
+/// clearance from the escort when it goes in.
+const SUPPRESS_GAP_M: i32 = 60;
+
+/// Case 5 tallies for one variant.
+#[derive(Default)]
+struct HoldStat {
+    hurt: Vec<String>,
+    died: u32,
+    lost: u32,
+    men: u32,
+    pinned: u64,
+    ducked: u64,
+    living: u64,
+    tank_rounds: u64,
+    up: u64,
+}
+
 fn case5(env: &Env) -> Result<CaseReport> {
-    let mut r = CaseReport::new(5, "lone tank vs dug-in rifles, no AT");
-    let (mut hurt, mut died) = (Vec::new(), 0u32);
-    let (mut lost, mut men, mut pinned, mut living) = (0u32, 0u32, 0u64, 0u64);
-    // S3b baseline: the tank's rounds (main gun and MGs) and the
-    // defenders' time up on the fire step.
-    let (mut tank_rounds, mut up) = (0u64, 0u64);
+    let mut r = CaseReport::new(
+        5,
+        "lone tank vs dug-in rifles, no AT (5); 5b: the tank on Suppress at the trench",
+    );
+    let mut st = [HoldStat::default(), HoldStat::default()];
     for (seed, p) in env.runs() {
-        let mut s = scenarios::lone_tank(env.setup(seed)?, env.threads, p, false, false)?;
-        r.runs += 1;
-        let rifles = s.squads[0];
-        let tank = s.tanks[0].1;
-        let w = &mut s.world;
-        let before = vstate(w, tank).expect("tank");
-        let men0 = members(w, rifles).len() as u32;
-        let lost0 = losses(w, 1 - p);
-        let limit = w.tick() + 180 * hz(w);
-        while w.tick() < limit {
-            w.step(&[]);
-            tank_rounds += w
-                .snapshot()
-                .shots
-                .iter()
-                .filter(|sh| sh.shooter == tank)
-                .count() as u64;
-            for m in members(w, rifles) {
-                let c = &w.entities().combat()[m.index()];
-                living += 1;
-                pinned += c.pinned as u64;
-                up += (c.in_trench && c.height == c.fire_height) as u64;
+        for (k, suppress) in [(0usize, false), (1, true)] {
+            let a = &mut st[k];
+            let mut s = scenarios::lone_tank(env.setup(seed)?, env.threads, p, false, false)?;
+            r.runs += 1;
+            let rifles = s.squads[0];
+            let tank = s.tanks[0].1;
+            let w = &mut s.world;
+            let before = vstate(w, tank).expect("tank");
+            let men0 = members(w, rifles).len() as u32;
+            let lost0 = losses(w, 1 - p);
+            if suppress {
+                // S3b (owner question S3b-11 (A)): what a player would do.
+                order(
+                    w,
+                    p,
+                    vec![CommandKind::SuppressUnits {
+                        units: vec![tank],
+                        line: trench_suppress_line(),
+                    }],
+                );
             }
-        }
-        match vstate(w, tank) {
-            Some(after) if alive(w, tank) => {
-                if after
-                    .seats
+            let limit = w.tick() + 180 * hz(w);
+            while w.tick() < limit {
+                w.step(&[]);
+                a.tank_rounds += w
+                    .snapshot()
+                    .shots
                     .iter()
-                    .zip(&before.seats)
-                    .any(|(a, b)| a.hp != b.hp)
-                    || after.components != before.components
-                {
-                    hurt.push(format!("seed {seed} p{p}"));
+                    .filter(|sh| sh.shooter == tank)
+                    .count() as u64;
+                for m in members(w, rifles) {
+                    let c = &w.entities().combat()[m.index()];
+                    a.living += 1;
+                    a.pinned += c.pinned as u64;
+                    a.ducked += c.ducked as u64;
+                    a.up += (c.in_trench && !c.pinned && c.height == c.fire_height) as u64;
                 }
             }
-            _ => died += 1,
+            match vstate(w, tank) {
+                Some(after) if alive(w, tank) => {
+                    if after
+                        .seats
+                        .iter()
+                        .zip(&before.seats)
+                        .any(|(x, y)| x.hp != y.hp)
+                        || after.components != before.components
+                    {
+                        a.hurt.push(format!("seed {seed} p{p}"));
+                    }
+                }
+                _ => a.died += 1,
+            }
+            a.lost += losses(w, 1 - p) - lost0;
+            a.men += men0;
         }
-        lost += losses(w, 1 - p) - lost0;
-        men += men0;
     }
+    let hurt: Vec<String> = st.iter().flat_map(|a| a.hurt.iter().cloned()).collect();
     r.check(
         "no component or seat damage from small arms",
         hurt.is_empty(),
@@ -941,22 +981,46 @@ fn case5(env: &Env) -> Result<CaseReport> {
             hurt.join(", ")
         },
     );
+    let died: u32 = st.iter().map(|a| a.died).sum();
     r.check(
         "the tank survives every run",
         died == 0,
         format!("{died} lost"),
     );
-    r.row(
-        "defender losses",
-        format!("{lost} of {men} men ({})", pct(lost as f64, men as f64)),
-    );
-    r.row(
-        "share of defender time pinned",
-        pct(pinned as f64, living as f64),
-    );
-    r.row(
-        "tank rounds fired (gun and MGs), defender time up on the fire step",
-        format!("{tank_rounds}, {}", pct(up as f64, living as f64)),
+    for (name, a) in [("5", &st[0]), ("5b", &st[1])] {
+        r.row(
+            format!("{name}: defender losses"),
+            format!(
+                "{} of {} men ({})",
+                a.lost,
+                a.men,
+                pct(a.lost as f64, a.men as f64)
+            ),
+        );
+        r.row(
+            format!("{name}: share of defender time pinned, ducked"),
+            format!(
+                "{}, {}",
+                pct(a.pinned as f64, a.living as f64),
+                pct(a.ducked as f64, a.living as f64)
+            ),
+        );
+        r.row(
+            format!("{name}: tank rounds fired (gun and MGs), defender time up on the fire step"),
+            format!("{}, {}", a.tank_rounds, pct(a.up as f64, a.living as f64)),
+        );
+    }
+    let b = &st[1];
+    let met = b.pinned + b.ducked > 0 && b.lost > 0;
+    r.target(
+        "T9: the tank on Suppress pins men in a trench",
+        format!(
+            "pinned or ducked {}, kills {}: {}",
+            pct((b.pinned + b.ducked) as f64, b.living as f64),
+            b.lost,
+            if met { "met" } else { "missed" }
+        ),
+        "> 0 % of man-time pinned or ducked and kills > 0",
     );
     Ok(r)
 }
@@ -1057,6 +1121,8 @@ struct AssaultStat {
     /// of their suppression points (S3b baseline).
     def_ticks: u64,
     def_pinned: u64,
+    /// S3b: man-ticks ducked.
+    def_ducked: u64,
     def_up: u64,
     def_supp: u64,
 }
@@ -1064,11 +1130,18 @@ struct AssaultStat {
 fn case7(env: &Env) -> Result<CaseReport> {
     let mut r = CaseReport::new(
         7,
-        "tank-supported assault (7) and the same without the tank (7b)",
+        "tank-supported assault: the tank leads its escort to 60 m, then suppresses \
+         the trench while the rifles go in (7, S3b), without the tank (7b), the tank \
+         leading its escort to 25 m with no suppress order (7c, the S3 run)",
     );
-    let mut st = [AssaultStat::default(), AssaultStat::default()];
+    let mut st = [
+        AssaultStat::default(),
+        AssaultStat::default(),
+        AssaultStat::default(),
+    ];
     for (seed, p) in env.runs() {
-        for (k, with_tank) in [(0usize, true), (1, false)] {
+        for (k, with_tank, suppress) in [(0usize, true, true), (1, false, false), (2, true, false)]
+        {
             let mut s = scenarios::assault(env.setup(seed)?, env.threads, p, with_tank)?;
             r.runs += 1;
             let (att, def) = (s.squads[0], s.squads[1]);
@@ -1079,6 +1152,14 @@ fn case7(env: &Env) -> Result<CaseReport> {
             let stopped0 = w.stats().rounds_stopped;
             let men0 = members(w, def).len() as u32;
             let goal = at(TRENCH_X + 25, LANE_Y);
+            // S3b (owner question S3b-11 (A)), what a player would do: the
+            // tank leads its escort to SUPPRESS_GAP_M, then suppresses the
+            // trench while the rifles go in with grenades.
+            let goal = if suppress {
+                at(TRENCH_X + SUPPRESS_GAP_M, LANE_Y)
+            } else {
+                goal
+            };
             match tank {
                 Some((tsq, tv)) => order(
                     w,
@@ -1115,14 +1196,17 @@ fn case7(env: &Env) -> Result<CaseReport> {
                         .is_none_or(|q| q.order == Order::Idle);
                     if arrived || w.tick() > start + 90 * hz(w) {
                         released = true;
-                        order(
-                            w,
-                            p,
-                            vec![CommandKind::Move {
-                                squad: att,
-                                target: at(TRENCH_X + 25, LANE_Y + 6),
-                            }],
-                        );
+                        let mut kinds = vec![CommandKind::Move {
+                            squad: att,
+                            target: at(TRENCH_X + 25, LANE_Y + 6),
+                        }];
+                        if suppress && let Some((_, tv)) = tank {
+                            kinds.push(CommandKind::SuppressUnits {
+                                units: vec![tv],
+                                line: trench_suppress_line(),
+                            });
+                        }
+                        order(w, p, kinds);
                         continue;
                     }
                 }
@@ -1141,7 +1225,8 @@ fn case7(env: &Env) -> Result<CaseReport> {
                     let c = &w.entities().combat()[m.index()];
                     st[k].def_ticks += 1;
                     st[k].def_pinned += c.pinned as u64;
-                    st[k].def_up += (c.in_trench && c.height == c.fire_height) as u64;
+                    st[k].def_ducked += c.ducked as u64;
+                    st[k].def_up += (c.in_trench && !c.pinned && c.height == c.fire_height) as u64;
                     st[k].def_supp += (c.suppression / 1000) as u64;
                 }
                 st[k].def_shots += w
@@ -1157,9 +1242,19 @@ fn case7(env: &Env) -> Result<CaseReport> {
             st[k].stopped += w.stats().rounds_stopped - stopped0;
         }
     }
-    let [t, b] = &st;
+    let [t, b, c] = &st;
     r.row(
-        "7 with tank: attacker / defender losses",
+        "7c tank leads, no suppress (S3 run): attacker / defender losses",
+        format!(
+            "{} / {} of {} ({})",
+            c.att_lost,
+            c.def_lost,
+            c.def_men,
+            pct(c.def_lost as f64, c.def_men as f64)
+        ),
+    );
+    r.row(
+        "7 with tank on Suppress: attacker / defender losses",
         format!(
             "{} / {} of {} ({})",
             t.att_lost,
@@ -1187,12 +1282,13 @@ fn case7(env: &Env) -> Result<CaseReport> {
             pct(t.stopped as f64, t.def_shots as f64)
         ),
     );
-    for (name, a) in [("7", t), ("7b", b)] {
+    for (name, a) in [("7", t), ("7b", b), ("7c", c)] {
         r.row(
             format!("{name}: defender posture (share of man-time)"),
             format!(
-                "pinned {}, up on the fire step {}, mean suppression {:.1} points",
+                "pinned {}, ducked {}, up on the fire step {}, mean suppression {:.1} points",
                 pct(a.def_pinned as f64, a.def_ticks as f64),
+                pct(a.def_ducked as f64, a.def_ticks as f64),
                 pct(a.def_up as f64, a.def_ticks as f64),
                 a.def_supp as f64 / a.def_ticks.max(1) as f64
             ),

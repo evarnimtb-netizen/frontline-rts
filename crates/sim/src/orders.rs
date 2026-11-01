@@ -30,6 +30,15 @@
 //! * **`FollowUnits`**: the named vehicle must be an own live vehicle.
 //!   Squads named whole get the squad order `Order::Follow`, other men a
 //!   detached `UnitOrder::Follow`; vehicle ids are dropped.
+//! * **`SuppressUnits`** (S3b, docs/slices/S3b-balance.md B2): 1 or 2
+//!   points on the map (a second one further than
+//!   `combat.suppress.line_max_m` from the first is pulled in along the
+//!   line). Vehicles stop and keep the line as `VehicleState::suppress`
+//!   (`crate::gunnery` fires their MGs at it, and their HE at its middle);
+//!   men whose weapon fires HE (mortars) are dropped; squads named whole
+//!   get `Order::Suppress` and hold where they stand, other men a detached
+//!   `UnitOrder::Suppress`, holding (`crate::combat` "Suppress" fires at
+//!   it). It lasts until another order.
 //!
 //! **Escort steering** ([`MatchState::steer_escorts`], Intent stage, before
 //! squad steering): every tick the followers of each vehicle are listed
@@ -206,6 +215,87 @@ impl MatchState {
             nav.goal = t.pos.xy();
         }
         true
+    }
+
+    /// `SuppressUnits` (see the module docs).
+    pub(crate) fn units_suppress(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        ids: &[SimId],
+        line: &[FxVec2],
+    ) -> bool {
+        let Some(line) = self.suppress_line(ctx, line) else {
+            return false;
+        };
+        let vehicles = self.vehicle_squads(ctx, p, ids);
+        for &id in &vehicles {
+            self.order_stop(ctx, p, id);
+            let v = self.squads[&id].members[0];
+            if let Some(vs) = self.vehicles.get_mut(&v) {
+                vs.suppress = Some(line);
+            }
+        }
+        let men = self.unit_set(ctx, p, ids).map(|mut men| {
+            men.retain(|&m| {
+                let sq = ctx.ents.squad[m.index()].and_then(|s| self.squads.get(&s));
+                sq.is_some_and(|sq| {
+                    let w = crate::combat::weapon_of(&self.setup, sq, m);
+                    self.setup.weapons[w as usize].he.is_none()
+                })
+            });
+            men
+        });
+        let Some(men) = men.filter(|m| !m.is_empty()) else {
+            return !vehicles.is_empty();
+        };
+        let mid = (line[0] + line[1]).div_int(2);
+        let (whole, rest) = self.split_whole(ctx, &men);
+        for id in whole {
+            self.clear_detached(ctx, id);
+            let sq = self.squads.get_mut(&id).expect("live squad");
+            sq.order = Order::Suppress { line };
+            hold_here(sq, ctx);
+            let lead = ctx.ents.transform[sq.lead(ctx.ents).index()].pos.xy();
+            let facing = (mid - lead).normalize_or_zero();
+            if facing != FxVec2::ZERO {
+                sq.nav.facing = facing;
+            }
+        }
+        for m in rest {
+            let t = ctx.ents.transform[m.index()];
+            self.call_off_throw(ctx, m);
+            let mut facing = (mid - t.pos.xy()).normalize_or_zero();
+            if facing == FxVec2::ZERO {
+                facing = vehicle::yaw_dir(t.yaw);
+            }
+            self.detach(ctx, m, UnitOrder::Suppress { line }, facing);
+            let nav = &mut ctx.ents.unit[m.index()].nav;
+            nav.phase = NavPhase::Holding;
+            nav.goal = t.pos.xy();
+        }
+        true
+    }
+
+    /// A `SuppressUnits` line: 1 or 2 points on the map, the second pulled
+    /// to within `combat.suppress.line_max_m` of the first.
+    pub(crate) fn suppress_line(&self, ctx: &Ctx, line: &[FxVec2]) -> Option<[FxVec2; 2]> {
+        let (a, b) = match line {
+            [a] => (*a, *a),
+            [a, b] => (*a, *b),
+            _ => return None,
+        };
+        if !ctx.terrain.contains(a) || !ctx.terrain.contains(b) {
+            return None;
+        }
+        let max = Fx::from_int(self.setup.rules.combat.suppress.line_max_m as i32);
+        let d = b - a;
+        let b = if d.length_sq_raw() > FxVec2::new(max, Fx::ZERO).length_sq_raw() {
+            ctx.terrain.clamp(a + d.normalize_or_zero() * max)
+        } else {
+            b
+        };
+        Some([a, b])
     }
 
     /// The `AttackUnit` approach (Intent stage, ascending vehicle id; see
