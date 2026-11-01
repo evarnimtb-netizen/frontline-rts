@@ -142,7 +142,8 @@ fn ai_vs_ai_plays_by_the_rules() {
             let lead = w.entities().transform()[sq.members[0].index()].pos.xy();
             match &sq.order {
                 // Only weak squads fall back (strength only drops later).
-                Order::Retreat if seen.retreats.insert(id) => {
+                // S3 vehicles fall back on damage instead (`ai_vehicles.rs`).
+                Order::Retreat if ty.vehicle.is_none() && seen.retreats.insert(id) => {
                     assert!(
                         sq.members.len() * 100 < ty.men as usize * pct + 100,
                         "squad {id:?} retreated with {}/{} men",

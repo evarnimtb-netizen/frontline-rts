@@ -388,6 +388,10 @@ pub struct MatchState {
     /// `World` on load and new match (`rebuild_vehicle_derived`).
     #[serde(skip)]
     pub(crate) vderived: VehicleDerived,
+    /// Diagnostic hit log (`World::enable_hit_log`, armour-test): not
+    /// saved, not hashed, never read by the sim.
+    #[serde(skip)]
+    pub(crate) hit_log: Option<Vec<crate::damage::HitRecord>>,
 }
 
 /// Mutable world parts a match operation needs.
@@ -457,6 +461,7 @@ impl MatchState {
             armour_seq: 0,
             armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
+            hit_log: None,
             setup,
         }
     }
@@ -1075,8 +1080,9 @@ impl MatchState {
     // ------------------------------------------------------------- paths --
 
     /// Serves queued path requests round-robin by player until this tick's
-    /// expansion budget (minus last tick's overrun) is spent.
-    pub(crate) fn serve_paths(&mut self, ctx: &mut Ctx, scratch: &mut PathScratch) {
+    /// expansion budget (minus last tick's overrun) is spent. Returns the
+    /// node expansions used (diagnostics).
+    pub(crate) fn serve_paths(&mut self, ctx: &mut Ctx, scratch: &mut PathScratch) -> u32 {
         let terrain = ctx.terrain;
         let mv = &self.setup.rules.movement;
         let cost = PathCost {
@@ -1094,6 +1100,7 @@ impl MatchState {
         let pq = &mut self.path_queue;
         let n = pq.queues.len();
         let mut avail = mv.path_budget_per_tick as i64 - pq.debt as i64;
+        let start = avail;
         while avail > 0 {
             let Some(p) = (0..n)
                 .map(|k| (pq.cursor as usize + k) % n)
@@ -1186,6 +1193,7 @@ impl MatchState {
             }
         }
         pq.debt = if avail < 0 { (-avail) as u32 } else { 0 };
+        (start - avail).clamp(0, u32::MAX as i64) as u32
     }
 
     // -------------------------------------------------------- validation --

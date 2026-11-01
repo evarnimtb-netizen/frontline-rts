@@ -220,6 +220,30 @@ struct Resolved {
     result: PenResult,
     dealt: Vec<Dealt>,
     burst: Option<FxVec3>,
+    /// The rule's inputs, for the diagnostic hit log.
+    record: Option<HitRecord>,
+}
+
+/// One main-gun or rocket hit on a live vehicle's plate with the inputs of
+/// the penetration rule (`armour::penetrates`), for `armour-test` case 1.
+/// Diagnostics only: kept by [`crate::World::enable_hit_log`], never saved
+/// or hashed, never read by the sim.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct HitRecord {
+    pub tick: u64,
+    pub vehicle: SimId,
+    pub player: u8,
+    pub ammo: u16,
+    pub part: armour::BoxPart,
+    pub zone: u8,
+    pub track_band: bool,
+    pub pen0: Fx,
+    pub c: Fx,
+    pub thickness: Fx,
+    pub extra: Fx,
+    pub cos_ricochet: Fx,
+    pub v: Fx,
+    pub result: PenResult,
 }
 
 /// The per-tick fire-roll streams, one per vehicle (draws in hit order).
@@ -271,6 +295,9 @@ impl MatchState {
         }
         let owner = ctx.ents.owner[id.index()].0;
         let attacker = e.player;
+        if let (Some(log), Some(rec)) = (&mut self.hit_log, r.record) {
+            log.push(rec);
+        }
         let vs = self.vehicles.get_mut(&id).expect("vehicle state");
         vs.repairing = None;
         vs.repair_progress = 0;
@@ -331,6 +358,7 @@ impl MatchState {
             result: PenResult::Ricochet,
             dealt: Vec::new(),
             burst,
+            record: None,
         };
         if !alive {
             return Some(out);
@@ -356,6 +384,24 @@ impl MatchState {
         let mut rng = RngStream::new(seed, tick, SimId(e.slot), Purpose::PENETRATION);
         let var = armour::variation(&mut rng);
         out.result = armour::penetrates(pen0, c, plate.thickness, extra, cos_ric, var);
+        if self.hit_log.is_some() && e.ammo != NO_AMMO {
+            out.record = Some(HitRecord {
+                tick,
+                vehicle: id,
+                player: e.player,
+                ammo: e.ammo,
+                part: hit.part,
+                zone: hit.zone.index() as u8,
+                track_band: band,
+                pen0,
+                c,
+                thickness: plate.thickness,
+                extra,
+                cos_ricochet: cos_ric,
+                v: var,
+                result: out.result,
+            });
+        }
         if out.result == PenResult::Ricochet {
             return Some(out);
         }

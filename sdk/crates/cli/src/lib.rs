@@ -13,9 +13,12 @@
 //!   problem at once.
 //! * [`ballistics`] (S3) prints penetration for one shot, a table or a
 //!   golden file, through the sim's own armour functions.
+//! * [`armour_test`] (S3) runs the staged armour cases
+//!   (`frontline_sim::scenarios`) with hard checks and report rows.
 //! * [`desync_diff`] compares two sim saves field by field (multiplayer
 //!   desync dumps, S2).
 
+pub mod armour_test;
 pub mod ballistics;
 pub mod desync_diff;
 pub mod fortify;
@@ -26,6 +29,7 @@ pub mod simulate;
 pub mod skirmish;
 pub mod validate;
 
+pub use armour_test::{ArmourArgs, armour_test};
 pub use ballistics::BallisticsArgs;
 pub use fortify::{FortifyArgs, fortify_test};
 pub use simulate::{SimulateArgs, simulate};

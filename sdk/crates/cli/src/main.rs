@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use frontline_cli::skirmish::ReportFormat;
 use frontline_cli::{
-    BallisticsArgs, FortifyArgs, SimulateArgs, SkirmishArgs, ballistics, desync_diff, fortify,
-    schema, simulate, skirmish, validate,
+    ArmourArgs, BallisticsArgs, FortifyArgs, SimulateArgs, SkirmishArgs, armour_test, ballistics,
+    desync_diff, fortify, schema, simulate, skirmish, validate,
 };
 
 #[derive(Parser)]
@@ -35,6 +35,13 @@ enum Command {
     ///
     /// Exits 0 when both experiments pass, 1 otherwise.
     FortifyTest(FortifyArgs),
+    /// Stage the S3 armour cases (penetration statistics, hull-down, duels,
+    /// AT teams, satchels, HE, mortars, enfilade, trench crossing, AT
+    /// ditch; --stress adds the stress case) and check their mechanics.
+    ///
+    /// Exits 0 when every hard check passes, 1 otherwise. Report rows (with
+    /// the owner's targets) never fail the run.
+    ArmourTest(ArmourArgs),
     /// Compare two sim saves field by field (a multiplayer desync dump's
     /// `paused.sav` files, or `checkpoint.sav` from both clients).
     ///
@@ -118,6 +125,19 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 println!("{}", fortify::summary_text(&report));
+            }
+            Ok(if report.pass {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            })
+        }
+        Command::ArmourTest(args) => {
+            let report = armour_test::armour_test(&args)?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("{}", armour_test::summary_text(&report));
             }
             Ok(if report.pass {
                 ExitCode::SUCCESS

@@ -16,6 +16,34 @@ fn setup(seed: u64, tickets: Option<u32>) -> MatchSetup {
     harness::net_setup(&defs, seed, true, tickets).unwrap()
 }
 
+/// S3: the test unlock rules (vehicles at once) with 4000 starting
+/// manpower, so both AIs field tanks early.
+fn vehicle_setup(seed: u64, tickets: Option<u32>) -> MatchSetup {
+    let (defs, rules) = harness::load_defs_test_unlock(&harness::mods_dir(None).unwrap()).unwrap();
+    let mut s = harness::net_setup_rules(&defs, &rules, seed, true, tickets).unwrap();
+    s.rules.start_manpower = 4000;
+    s
+}
+
+/// The S3 checks on top of [`assert_clean`]: at least two vehicles per
+/// side, and every vehicle order scripted by both slots.
+fn assert_vehicles(r: &VirtualReport) {
+    let s = summary(r);
+    assert!(
+        r.vehicles_spawned.iter().all(|&n| n >= 2),
+        "vehicles spawned {:?}: {s}",
+        r.vehicles_spawned
+    );
+    for (slot, kinds) in r.script_kinds.iter().enumerate() {
+        for k in harness::VEHICLE_COMMANDS {
+            assert!(
+                kinds.get(k).copied().unwrap_or(0) > 0,
+                "slot {slot} never scripted {k}: {kinds:?}"
+            );
+        }
+    }
+}
+
 /// The lossy internet path of the S2 tests: 15 ms one-way plus 0–80 ms
 /// jitter (so datagrams reorder), 5 % loss, 2 % duplicates, and 5 % held
 /// back another 40 ms.
@@ -106,6 +134,34 @@ fn loopback_rough_path_seeds_1_to_3() {
         eprintln!("seed {seed}: {}", summary(&r));
         assert_clean(&r, (minutes3() - 2) * 30);
         assert!(r.relay_commands > 100, "{}", summary(&r));
+    }
+}
+
+/// S3 "Done when" 4: the rough path with vehicles (test unlock rules):
+/// both AIs buy and fight with tanks while the scripts send every vehicle
+/// order. Identical hashes, every `seq` executed once, at least two
+/// vehicles per side.
+#[test]
+fn loopback_vehicles_seeds_1_to_3() {
+    for seed in 1..=3 {
+        let spec = VirtualSpec {
+            seed,
+            seconds: minutes3(),
+            link: rough(),
+            garbage_per_s: 20,
+            vehicle_orders: true,
+            ..VirtualSpec::default()
+        };
+        let r = harness::run_virtual(&vehicle_setup(seed, None), &spec);
+        eprintln!(
+            "vehicles seed {seed}: spawned {:?}, scripted {:?} / {:?}: {}",
+            r.vehicles_spawned,
+            r.script_kinds[0],
+            r.script_kinds[1],
+            summary(&r)
+        );
+        assert_clean(&r, (minutes3() - 2) * 30);
+        assert_vehicles(&r);
     }
 }
 
@@ -325,6 +381,65 @@ fn injected_desync_is_detected_and_diffed() {
     let (r0, r1) = (ring(0), ring(1));
     assert_eq!(r0.get(&1000), r1.get(&1000));
     assert_ne!(r0.get(&1001), r1.get(&1001));
+}
+
+/// The desync hook stops a vehicle (S3): `desync-diff` of the two saves
+/// names vehicle fields.
+#[test]
+fn injected_vehicle_desync_names_vehicle_fields() {
+    let dump = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("desync-dump-vehicle");
+    let _ = std::fs::remove_dir_all(&dump);
+    let spec = VirtualSpec {
+        seed: 9,
+        seconds: 90,
+        link: rough(),
+        vehicle_orders: true,
+        inject_desync: Some((1, 1800)),
+        inject_vehicle: true,
+        dump_dir: Some(dump.clone()),
+        ..VirtualSpec::default()
+    };
+    let r = harness::run_virtual(&vehicle_setup(9, None), &spec);
+    eprintln!("{}", summary(&r));
+    let (tick, _) = r.desync[0].expect("slot 0 heard of the desync");
+    assert!(tick > 1800 && tick <= 1830, "detected at {tick}");
+    let read = |s: &str| std::fs::read(dump.join(s).join("paused.sav")).unwrap();
+    let d = frontline_cli::desync_diff::diff_saves(&read("slot0"), &read("slot1"), 500).unwrap();
+    let text = frontline_cli::desync_diff::render(&d);
+    let named: Vec<&str> = d
+        .diffs
+        .iter()
+        .map(|f| f.name.as_str())
+        .filter(|n| n.starts_with("vehicle "))
+        .collect();
+    eprintln!("{} differences; vehicle fields: {named:?}", d.total);
+    assert!(!named.is_empty(), "names a vehicle field: {text}");
+    let _ = std::fs::remove_dir_all(&dump);
+}
+
+/// The S3 soak: 20 game minutes (36,000 ticks) with vehicles, once.
+/// `cargo test -p frontline-net --release -- --ignored soak_with_vehicles`.
+#[test]
+#[ignore]
+fn soak_with_vehicles_36000_ticks() {
+    let spec = VirtualSpec {
+        seed: 1,
+        seconds: 1200,
+        link: rough(),
+        garbage_per_s: 5,
+        vehicle_orders: true,
+        ..VirtualSpec::default()
+    };
+    let r = harness::run_virtual(&vehicle_setup(1, Some(100_000)), &spec);
+    eprintln!(
+        "vehicle soak: spawned {:?}, scripted {:?} / {:?}: {}",
+        r.vehicles_spawned,
+        r.script_kinds[0],
+        r.script_kinds[1],
+        summary(&r)
+    );
+    assert_clean(&r, 1198 * 30);
+    assert_vehicles(&r);
 }
 
 /// 20 game minutes per seed (S2 "Long soak"), with tickets high enough

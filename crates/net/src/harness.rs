@@ -15,14 +15,16 @@
 //! the two sims diverge without any sim change. A Godot build can use the
 //! same [`desync_command`].
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest};
+use frontline_content::{
+    Difficulty, DigProfile, MatchRequest, MatchSetup, ModDefs, PlayerRequest, SquadRole,
+};
 use frontline_sim::{
-    Command, CommandKind, EntityKind, FxVec2, Outcome, PlayerId, StanceOrder, World,
+    AmmoChoice, Command, CommandKind, EntityKind, FxVec2, Outcome, PlayerId, StanceOrder, World,
 };
 
 use crate::client::{ClientConfig, ClientPhase, NetClient, NetEvent};
@@ -55,6 +57,25 @@ pub fn desync_command(world: &World, slot: u8) -> Option<Command> {
     })
 }
 
+/// The S3 dev desync command: a `StopUnits` for `slot`'s lowest-id live
+/// vehicle (a vehicle order), largest `seq` as [`desync_command`]. `None`
+/// if the player has no vehicle.
+pub fn desync_vehicle_command(world: &World, slot: u8) -> Option<Command> {
+    let ents = world.entities();
+    let v = ents
+        .kind()
+        .iter()
+        .zip(ents.owner())
+        .position(|(k, o)| *k == EntityKind::Vehicle && o.0 == slot)?;
+    Some(Command {
+        player: PlayerId(slot),
+        seq: u32::MAX,
+        kind: CommandKind::StopUnits {
+            units: vec![frontline_sim::SimId(v as u32)],
+        },
+    })
+}
+
 /// One executed command, as the tests check it.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub struct Executed {
@@ -73,6 +94,9 @@ pub struct SimDriver {
     last_step: Option<u64>,
     /// Dev hook: step tick `.0` with [`desync_command`] for slot `.1`.
     pub inject_desync: Option<(u64, u8)>,
+    /// The hook stops a vehicle ([`desync_vehicle_command`]) when the
+    /// player has one.
+    pub inject_vehicle: bool,
     pub injected: bool,
     /// `(tick, state_hash)` after each of the last [`HASH_RING`] steps.
     pub ring: VecDeque<(u64, u64)>,
@@ -181,7 +205,11 @@ impl SimDriver {
             if let Some((at, slot)) = self.inject_desync
                 && at == t
                 && !self.injected
-                && let Some(c) = desync_command(world, slot)
+                && let Some(c) = self
+                    .inject_vehicle
+                    .then(|| desync_vehicle_command(world, slot))
+                    .flatten()
+                    .or_else(|| desync_command(world, slot))
             {
                 cmds.push(c);
                 self.injected = true;
@@ -237,6 +265,16 @@ pub fn load_defs(dir: &Path) -> anyhow::Result<ModDefs> {
     ModDefs::load(dir).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
+/// The defs plus the S3 test rules override (`tests/rules_test_unlock.toml`,
+/// vehicles unlocked at once); returns the defs and the override's rules id.
+pub fn load_defs_test_unlock(dir: &Path) -> anyhow::Result<(ModDefs, String)> {
+    let mut defs = load_defs(dir)?;
+    let id = defs
+        .add_rules_override(&dir.join("tests/rules_test_unlock.toml"))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok((defs, id))
+}
+
 /// A two-player Kessel Ridge setup: slot 0 Germany, slot 1 USA. `ai` puts
 /// the sim's AI commander on both slots as well, so a scripted test gets a
 /// busy, realistic match (the network carries the scripted commands next
@@ -248,8 +286,19 @@ pub fn net_setup(
     ai: bool,
     tickets: Option<u32>,
 ) -> anyhow::Result<MatchSetup> {
+    net_setup_rules(defs, "ww2:skirmish", seed, ai, tickets)
+}
+
+/// [`net_setup`] with the rules `rules` (S3: the test unlock override).
+pub fn net_setup_rules(
+    defs: &ModDefs,
+    rules: &str,
+    seed: u64,
+    ai: bool,
+    tickets: Option<u32>,
+) -> anyhow::Result<MatchSetup> {
     let req = MatchRequest {
-        rules: "ww2:skirmish".into(),
+        rules: rules.into(),
         map: "ww2:kessel_ridge".into(),
         seed,
         players: vec![
@@ -289,7 +338,22 @@ pub struct Scripter {
     slot: u8,
     next_at: u64,
     pub issued: u64,
+    /// S3: also script the vehicle orders (see [`Scripter::vehicles`]).
+    vehicles: bool,
+    /// Orders issued, by command name.
+    pub kinds: BTreeMap<&'static str, u64>,
 }
+
+/// The S3 commands a vehicle script issues ([`Scripter::vehicles`]).
+pub const VEHICLE_COMMANDS: [&str; 7] = [
+    "ReverseUnits",
+    "FaceUnits",
+    "AttackUnit",
+    "SetAmmo",
+    "RepairUnits",
+    "FollowUnits",
+    "DigAtDitch",
+];
 
 impl Scripter {
     pub fn new(seed: u64, slot: u8) -> Scripter {
@@ -298,7 +362,17 @@ impl Scripter {
             slot,
             next_at: 0,
             issued: 0,
+            vehicles: false,
+            kinds: BTreeMap::new(),
         }
+    }
+
+    /// Also scripts the S3 orders: on 40 % of its turns the script sends one
+    /// of [`VEHICLE_COMMANDS`] (in turn order, so every one comes up) for
+    /// its own vehicles (or a vehicle call-in while it has none).
+    pub fn vehicles(mut self, on: bool) -> Scripter {
+        self.vehicles = on;
+        self
     }
 
     /// Appends the orders due at `now` (any clock, µs).
@@ -312,6 +386,12 @@ impl Scripter {
             return;
         }
         let Some(game) = world.game() else { return };
+        let before = out.len();
+        if self.vehicles && self.rng.below(100) < 40 {
+            self.vehicle_order(world, out);
+            self.issued += (out.len() - before) as u64;
+            return;
+        }
         let setup = game.setup();
         let size = setup.map.size_m.max(8);
         let squads: Vec<_> = game
@@ -324,7 +404,6 @@ impl Scripter {
             FxVec2::from_int(r.below(size as u64) as i32, r.below(size as u64) as i32)
         };
         let roll = self.rng.below(100);
-        let before = out.len();
         if roll < 10 || squads.is_empty() {
             let f = setup.players[self.slot as usize].faction as usize;
             let roster = &setup.factions[f].roster;
@@ -377,6 +456,112 @@ impl Scripter {
         }
         self.issued += (out.len() - before) as u64;
     }
+
+    /// One S3 order (see [`Scripter::vehicles`]).
+    fn vehicle_order(&mut self, world: &World, out: &mut Vec<CommandKind>) {
+        let Some(game) = world.game() else { return };
+        let setup = game.setup();
+        let ents = world.entities();
+        let live = |id: &frontline_sim::SimId| ents.kind()[id.index()] == EntityKind::Vehicle;
+        let own: Vec<frontline_sim::SimId> = game
+            .vehicles()
+            .keys()
+            .copied()
+            .filter(|id| live(id) && ents.owner()[id.index()].0 == self.slot)
+            .collect();
+        let enemy: Vec<frontline_sim::SimId> = game
+            .vehicles()
+            .keys()
+            .copied()
+            .filter(|id| live(id) && ents.owner()[id.index()].0 != self.slot)
+            .collect();
+        let f = setup.players[self.slot as usize].faction as usize;
+        if own.is_empty() {
+            if let Some(&t) = setup.factions[f]
+                .roster
+                .iter()
+                .find(|&&t| setup.squad_types[t as usize].vehicle.is_some())
+            {
+                out.push(CommandKind::CallIn { squad_type: t });
+                *self.kinds.entry("CallInVehicle").or_default() += 1;
+            }
+            return;
+        }
+        let v = own[self.rng.below(own.len() as u64) as usize];
+        let vpos = ents.transform()[v.index()].pos.xy();
+        let near = |r: &mut SplitMix| {
+            let dx = r.below(81) as i32 - 40;
+            let dy = r.below(81) as i32 - 40;
+            world.terrain().clamp(vpos + FxVec2::from_int(dx, dy))
+        };
+        // In turn, so every kind comes up.
+        let k = self.kinds.values().sum::<u64>() as usize % VEHICLE_COMMANDS.len();
+        let name = VEHICLE_COMMANDS[k];
+        let kind = match k {
+            0 => CommandKind::ReverseUnits {
+                units: vec![v],
+                target: near(&mut self.rng),
+            },
+            1 => CommandKind::FaceUnits {
+                units: vec![v],
+                toward: near(&mut self.rng),
+            },
+            2 => CommandKind::AttackUnit {
+                units: vec![v],
+                target: enemy
+                    .get(self.rng.below(enemy.len().max(1) as u64) as usize)
+                    .copied()
+                    .unwrap_or(v),
+            },
+            3 => CommandKind::SetAmmo {
+                units: vec![v],
+                ammo: match self.rng.below(3) {
+                    0 => AmmoChoice::Auto,
+                    1 => AmmoChoice::Ap,
+                    _ => AmmoChoice::He,
+                },
+            },
+            4 => CommandKind::RepairUnits { units: vec![v] },
+            5 => {
+                let men: Vec<frontline_sim::SimId> = game
+                    .squads()
+                    .values()
+                    .filter(|q| {
+                        q.owner.0 == self.slot
+                            && setup.squad_types[q.type_idx as usize].vehicle.is_none()
+                    })
+                    .flat_map(|q| q.members.iter().copied())
+                    .take(4)
+                    .collect();
+                CommandKind::FollowUnits {
+                    units: if men.is_empty() { vec![v] } else { men },
+                    vehicle: v,
+                }
+            }
+            _ => {
+                let eng = game.squads().iter().find(|(_, q)| {
+                    q.owner.0 == self.slot
+                        && setup.squad_types[q.type_idx as usize].role == SquadRole::Engineer
+                });
+                let a = near(&mut self.rng);
+                let b = world.terrain().clamp(a + FxVec2::from_int(10, 0));
+                match eng {
+                    Some((&squad, _)) => CommandKind::Dig {
+                        squad,
+                        line: vec![a, b],
+                        profile: DigProfile::AtDitch,
+                    },
+                    None => CommandKind::DigUnits {
+                        units: vec![v],
+                        line: vec![a, b],
+                        profile: DigProfile::AtDitch,
+                    },
+                }
+            }
+        };
+        out.push(kind);
+        *self.kinds.entry(name).or_default() += 1;
+    }
 }
 
 // ----------------------------------------------------------- virtual run --
@@ -396,7 +581,11 @@ pub struct VirtualSpec {
     pub rebind: Option<(usize, u64)>,
     /// `(slot, tick)`: the desync hook on that slot's client.
     pub inject_desync: Option<(usize, u64)>,
+    /// The desync hook stops a vehicle when the player has one (S3).
+    pub inject_vehicle: bool,
     pub script: bool,
+    /// S3: the scripts also send the vehicle orders ([`Scripter::vehicles`]).
+    pub vehicle_orders: bool,
     /// No new scripted orders in the last this-many µs.
     pub quiet_tail_us: u64,
     /// Unauthenticated garbage datagrams per second, to the relay and to
@@ -428,7 +617,9 @@ impl Default for VirtualSpec {
             blackouts: Vec::new(),
             rebind: None,
             inject_desync: None,
+            inject_vehicle: false,
             script: true,
+            vehicle_orders: false,
             quiet_tail_us: 5_000_000,
             garbage_per_s: 0,
             relay: RelayConfig::default(),
@@ -481,6 +672,11 @@ pub struct VirtualReport {
     pub relay_log: Vec<LogRecord>,
     pub worlds: Vec<World>,
     pub rings: [VecDeque<(u64, u64)>; 2],
+    /// S3: orders each slot's script sent, by name ([`Scripter::kinds`]).
+    pub script_kinds: [BTreeMap<&'static str, u64>; 2],
+    /// S3: distinct vehicles each player had alive at some point (slot 0's
+    /// world, sampled once per period).
+    pub vehicles_spawned: [usize; 2],
 }
 
 impl VirtualReport {
@@ -508,6 +704,8 @@ struct Peer {
     said_bye: bool,
     pauses: u32,
     resumes: u32,
+    /// Vehicle ids seen alive, per owner.
+    vehicles: [BTreeSet<u32>; 2],
 }
 
 impl Peer {
@@ -566,7 +764,7 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 }),
                 world,
                 driver,
-                script: Scripter::new(spec.seed, i as u8),
+                script: Scripter::new(spec.seed, i as u8).vehicles(spec.vehicle_orders),
                 skew_us: skews[i].0,
                 ppm: skews[i].1,
                 welcomed: false,
@@ -576,6 +774,7 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 said_bye: false,
                 pauses: 0,
                 resumes: 0,
+                vehicles: [BTreeSet::new(), BTreeSet::new()],
             }
         })
         .collect();
@@ -643,6 +842,7 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                             && c == s
                         {
                             p.driver.inject_desync = Some((t, *slot));
+                            p.driver.inject_vehicle = spec.inject_vehicle;
                         }
                         p.client.set_lobby(LobbySet {
                             faction: faction_of(setup, s),
@@ -673,6 +873,15 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
             );
             for (t, h) in hashes {
                 client.send_hash(t, h);
+            }
+            if let Some(g) = world.game() {
+                let ents = world.entities();
+                for &v in g.vehicles().keys() {
+                    let o = ents.owner()[v.index()].0 as usize;
+                    if ents.kind()[v.index()] == EntityKind::Vehicle && o < 2 {
+                        p.vehicles[o].insert(v.0);
+                    }
+                }
             }
             if let Some(s) = start_at
                 && spec.script
@@ -887,7 +1096,10 @@ fn report(
     let mut queued = [0; 2];
     let outcomes = [outcome(&peers[0]), outcome(&peers[1])];
     let (pauses, resumes) = (peers[0].pauses, peers[0].resumes);
+    let vehicles_spawned = [peers[0].vehicles[0].len(), peers[0].vehicles[1].len()];
+    let mut script_kinds = [BTreeMap::new(), BTreeMap::new()];
     for (i, p) in peers.into_iter().enumerate() {
+        script_kinds[i] = p.script.kinds.clone();
         rings[i] = p.driver.ring;
         byes[i] = p.bye;
         desync[i] = p.driver.desync;
@@ -928,6 +1140,8 @@ fn report(
         relay_log,
         worlds,
         rings,
+        script_kinds,
+        vehicles_spawned,
     }
 }
 
@@ -1158,5 +1372,7 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
             }
             w
         },
+        script_kinds: [BTreeMap::new(), BTreeMap::new()],
+        vehicles_spawned: [0, 0],
     })
 }

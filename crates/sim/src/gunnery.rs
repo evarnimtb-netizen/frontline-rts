@@ -577,8 +577,16 @@ impl MatchState {
                 if (m.pos.xy() - f.origin.xy()).length_sq_raw() > r {
                     return None;
                 }
+                // Half a metre up, or, for a man in a trench, the head and
+                // shoulders the shooters aim at: his feet are below the
+                // ground, and a line to them meets the ground well short.
+                let point = if ents.combat[t.index()].in_trench {
+                    m.aim
+                } else {
+                    m.pos + FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::HALF)
+                };
                 Some(Aim {
-                    point: m.pos + FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::HALF),
+                    point,
                     vel: ents.velocity[t.index()].lin,
                     vehicle: false,
                 })

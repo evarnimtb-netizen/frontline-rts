@@ -367,6 +367,8 @@ pub struct StageTimes {
     pub status: Duration,
     pub world_hash: Duration,
     pub snapshot: Duration,
+    /// Path node expansions served in the tick (match mode).
+    pub path_expansions: u32,
 }
 
 impl StageTimes {
@@ -839,6 +841,7 @@ impl World {
         let t0 = Instant::now();
         self.armour_events.clear();
         self.apply_commands(cmds);
+        let mut path_expansions = 0;
         if self.state.game.is_some() {
             let World {
                 state,
@@ -863,7 +866,7 @@ impl World {
             game.spawn_call_ins(&mut ctx);
             game.run_ai(ctx.ents, ctx.terrain, *tick);
             game.approach_attacks(&mut ctx);
-            game.serve_paths(&mut ctx, path_scratch);
+            path_expansions = game.serve_paths(&mut ctx, path_scratch);
             game.dig_work(entities, terrain, hash, *tick);
             let mut ctx = Ctx {
                 ents: entities,
@@ -1435,8 +1438,28 @@ impl World {
             status: t7 - t6,
             world_hash: t8 - t7,
             snapshot: t9 - t8,
+            path_expansions,
         };
         published
+    }
+
+    /// Starts (or restarts, empty) the diagnostic log of main-gun and rocket
+    /// hits on live vehicles with the inputs of the penetration rule
+    /// (`armour-test`). Never read by the sim; not saved.
+    pub fn enable_hit_log(&mut self) {
+        if let Some(g) = self.state.game.as_mut() {
+            g.hit_log = Some(Vec::new());
+        }
+    }
+
+    /// Takes the hits logged since the last call (empty when off).
+    pub fn take_hit_log(&mut self) -> Vec<crate::damage::HitRecord> {
+        self.state
+            .game
+            .as_mut()
+            .and_then(|g| g.hit_log.as_mut())
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     // -------------------------------------------------------- setup tools --

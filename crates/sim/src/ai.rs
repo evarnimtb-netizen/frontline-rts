@@ -76,8 +76,8 @@
 //!    * *AT teams* defend own points, preferring points with enemy vehicles
 //!      within [`ARMOUR_THREAT_M`], in the trench if there is one; they fire
 //!      by their weapon's own rules;
-//!    * *satchels:* engineers throw at a seen enemy vehicle slower than
-//!      1 m/s within satchel range, at its position when the fuse runs out,
+//!    * *satchels:* engineers throw at a seen enemy vehicle no faster than
+//!      [`SATCHEL_SLOW_MM_S`] (stopped, bogged, crossing) within satchel range, at its position when the fuse runs out,
 //!      [`SATCHEL_SIDE_MM`] outside the hull side nearer the thrower.
 //!
 //!    [`AiCounters`] count what the AI did for the skirmish report.
@@ -144,8 +144,9 @@ pub const FACE_RANGE_M: i32 = 600;
 pub const ARMOUR_THREAT_M: i32 = 300;
 /// A vehicle retreats with its engine under this share of its HP (%).
 pub const RETREAT_ENGINE_PCT: u32 = 30;
-/// Satchels go at vehicles slower than this (mm/s) ...
-pub const SATCHEL_SLOW_MM_S: i32 = 1000;
+/// Satchels go at vehicles no faster than this (mm/s): stopped, bogged,
+/// immobilised or crossing a trench (1 m/s, with a margin) ...
+pub const SATCHEL_SLOW_MM_S: i32 = 1100;
 /// ... landing this far outside the hull side (mm).
 pub const SATCHEL_SIDE_MM: i32 = 800;
 /// A vehicle backing up an own point stands this far behind it (m).
@@ -1307,8 +1308,10 @@ impl Planner<'_> {
     ) -> Vec<SquadId> {
         let g = self.g;
         let hz = g.setup.tick_hz.max(1) as u64;
+        let target_point = self.vehicle_point(points, assigned);
         // Escort upkeep: drop gone vehicles and squads, release on a halt,
-        // count arrivals.
+        // count arrivals; a released escort ends once the infantry goes
+        // for another point.
         let ids: Vec<SquadId> = self.ai.escorts.keys().copied().collect();
         for tid in ids {
             let mut e = self.ai.escorts.remove(&tid).expect("listed");
@@ -1327,6 +1330,9 @@ impl Planner<'_> {
                     .is_some_and(|q| q.order == (Order::Follow { vehicle: v }))
             };
             e.squads.retain(follows);
+            if e.squads.is_empty() && target_point.is_some_and(|t| t != point) {
+                continue;
+            }
             let vs = &g.vehicles[&v];
             let vdef = &g.setup.vehicles[vs.type_idx as usize];
             let halted = tsq.order == Order::Idle
@@ -1366,7 +1372,6 @@ impl Planner<'_> {
             .values()
             .flat_map(|e| e.squads.iter().copied())
             .collect();
-        let target_point = self.vehicle_point(points, assigned);
         for t in tanks {
             let sq = &g.squads[&t.squad];
             let vs = &g.vehicles[&t.id];
@@ -1515,7 +1520,7 @@ impl Planner<'_> {
         let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
         let reach = sq_m(Fx::from(it.range_max) + Fx::from_int(10));
         kv.iter().find_map(|v| {
-            if v.speed.abs() >= Fx::from_milli(SATCHEL_SLOW_MM_S)
+            if v.speed.abs() > Fx::from_milli(SATCHEL_SLOW_MM_S)
                 || (v.pos - lead).length_sq_raw() > reach
             {
                 return None;

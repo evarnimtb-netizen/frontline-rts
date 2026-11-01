@@ -26,7 +26,8 @@
 //! [`vehicle`]: vehicle state, pose, driving, the vehicle index and block
 //! layer, S3; [`gunnery`]: main guns and vehicle MGs, S3; [`damage`]: shells
 //! on plates, penetration, components, crew, fire, repair, blasts on
-//! tracks and knock-out, S3; [`orders`]: vehicle orders and escorts, S3).
+//! tracks and knock-out, S3; [`orders`]: vehicle orders and escorts, S3; [`scenarios`]: staged S3
+//! setups for `armour-test` and the Godot autoplay scenes).
 //! Terrain
 //! is a two-tier heightfield whose sparse detail tiles are edited by digging
 //! and craters ([`terrain`]).
@@ -52,6 +53,7 @@ pub mod path;
 pub mod projectile;
 pub mod rng;
 pub mod rules;
+pub mod scenarios;
 pub mod snapshot;
 pub mod spatial;
 mod spotting;
