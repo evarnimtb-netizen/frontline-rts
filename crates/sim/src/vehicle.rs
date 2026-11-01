@@ -36,8 +36,9 @@
 //! serial in ascending id after the soldiers): turns the squad's path into
 //! throttle and steer, pivots when the heading error is over 60° at low
 //! speed, reverses for a `Move` whose target was behind and within 40 m,
-//! yields to vehicles and wrecks in a box 1.5 hull lengths ahead (between
-//! two moving vehicles the higher id yields), slows to walking pace with a
+//! yields to vehicles and wrecks in a box at least 1.5 hull lengths ahead
+//! (between two crossing vehicles the higher id yields; two meeting
+//! head-on both brake and keep right), slows to walking pace with a
 //! friendly soldier within 4 m ahead, re-checks the segments ahead against
 //! the block layer every 0.5 s, and re-paths with an avoided node after 5
 //! s with under 1 m of progress (at most one re-path per 2 s). After each
@@ -110,6 +111,8 @@ const WALK_MM_S: i32 = 1500;
 /// Stuck check: less than this progress (m) in [`STUCK_S`] re-paths.
 const STUCK_PROGRESS_M: i32 = 1;
 const STUCK_S: u32 = 5;
+/// Heading offset to the right while a vehicle comes head-on (degrees).
+const KEEP_RIGHT_DEG: i32 = 35;
 /// A vehicle making no progress backs off for 1 s after this long.
 const BACK_OFF_S: u32 = 2;
 /// At most one re-path per vehicle per this many seconds.
@@ -1532,8 +1535,12 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     // Stuck: under 1 m of progress in 5 s re-paths around the node ahead.
     let fwd = yaw_dir(t.yaw);
     let dir = if vs.reverse { -fwd } else { fwd };
-    if (pos - vs.progress_at).length_sq_raw()
-        >= FxVec2::from_int(STUCK_PROGRESS_M, 0).length_sq_raw()
+    // Backing off (below) is not progress.
+    let backing =
+        (BACK_OFF_S * c.hz..(BACK_OFF_S + 1) * c.hz).contains(&(vs.progress_ticks as u32));
+    if !backing
+        && (pos - vs.progress_at).length_sq_raw()
+            >= FxVec2::from_int(STUCK_PROGRESS_M, 0).length_sq_raw()
     {
         vs.progress_at = pos;
         vs.progress_ticks = 0;
@@ -1547,8 +1554,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     }
     // Pressed against something for 2 s: back off for 1 s (a hull nose to
     // nose with blocked ground cannot pivot).
-    let stuck = vs.progress_ticks as u32;
-    if (BACK_OFF_S * c.hz..(BACK_OFF_S + 1) * c.hz).contains(&stuck) {
+    if (BACK_OFF_S * c.hz..(BACK_OFF_S + 1) * c.hz).contains(&(vs.progress_ticks as u32)) {
         return (if vs.reverse { 80 } else { -80 }, 0);
     }
     // Every 0.5 s: has the way ahead become blocked?
@@ -1564,10 +1570,14 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         }
     }
 
-    // Heading and throttle.
+    // Heading and throttle; keep right of a vehicle coming head-on.
+    let (cap, head_on) = yield_cap(c, dir);
     let mut desired = Fx::atan2(to.y, to.x);
     if vs.reverse {
         desired = (desired + Fx::PI).wrap_angle();
+    }
+    if head_on {
+        desired = (desired - deg(KEEP_RIGHT_DEG)).wrap_angle();
     }
     let err = (desired - t.yaw).wrap_angle();
     let full = deg(FULL_STEER_DEG);
@@ -1591,7 +1601,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         let cap = (Fx::from(c.v.mobility.brake).mul_int(2) * dist).sqrt();
         throttle = throttle.min(throttle_for(cap, top).max(8));
     }
-    if let Some(cap) = yield_cap(c, dir) {
+    if let Some(cap) = cap {
         throttle = throttle.min(throttle_for(cap, top));
     }
     if ae >= hi && vs.speed.abs() < Fx::from_milli(PIVOT_SPEED_MM_S) {
@@ -1604,12 +1614,14 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     (throttle as i8, steer as i8)
 }
 
-/// Speed cap from what is ahead (`None`: no cap). A wreck, a standing
-/// vehicle or one coming head-on in the yield box is braked for (the
-/// speed from which the hull stops 1 m short of it); one driving the same
+/// Speed cap from what is ahead (`None`: no cap). A wreck or a standing
+/// vehicle in the yield box is braked for (the speed from which the hull
+/// stops 1 m short of it), one coming head-on too, in half the gap (it
+/// brakes as well); the box is at least 1.5 hull lengths and long enough
+/// for that at top speed. One driving the same
 /// way is followed at its speed; one crossing is yielded to by the higher
 /// id only. A friendly soldier within 4 m ahead caps at walking pace.
-fn yield_cap(c: &Follow, dir: FxVec2) -> Option<Fx> {
+fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
     let i = c.id.index();
     let t = &c.ents.transform[i];
     let owner = c.ents.owner[i];
@@ -1617,10 +1629,18 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> Option<Fx> {
     let hx = c.geo.hull_half.x;
     let hy = c.geo.hull_half.y;
     let front = pos + dir * hx;
-    let len = hx.mul_int(2).mul_int(YIELD_LEN_PCT).div_int(100);
-    let mut cap: Option<Fx> = None;
-    let mut lower = |v: Fx| cap = Some(cap.map_or(v, |c| c.min(v)));
     let brake2 = Fx::from(c.v.mobility.brake).mul_int(2);
+    let top = Fx::from(c.v.mobility.speed);
+    // At least 1.5 hull lengths, and long enough for two vehicles closing
+    // head-on at top speed to stop (each in half the gap, plus 2 m).
+    let len = hx
+        .mul_int(2)
+        .mul_int(YIELD_LEN_PCT)
+        .div_int(100)
+        .max((top * top / brake2).mul_int(2) + Fx::from_int(2));
+    let mut cap: Option<Fx> = None;
+    let mut head_on = false;
+    let mut lower = |v: Fx| cap = Some(cap.map_or(v, |c| c.min(v)));
     let stop_at = |along: Fx| (brake2 * (along - Fx::ONE).max(Fx::ZERO)).sqrt();
     let still = Fx::from_milli(YIELD_STILL_MM_S);
     c.derived
@@ -1652,7 +1672,11 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> Option<Fx> {
             };
             let ov = c.ents.velocity[other.index()].lin;
             let toward = ov.dot(dir);
-            if f.wreck || ov.length() <= still || toward < -still {
+            if toward < -still {
+                // Head-on: both brake, each in half the gap, and keep right.
+                lower(stop_at(along.div_int(2)));
+                head_on = true;
+            } else if f.wreck || ov.length() <= still {
                 lower(stop_at(along));
             } else if toward > still {
                 // Same way: no faster than it while close.
@@ -1676,7 +1700,7 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> Option<Fx> {
             lower(walk);
         }
     });
-    cap
+    (cap, head_on)
 }
 
 /// Pushes soldiers out of a moving vehicle's footprint, sideways (see the
@@ -2132,6 +2156,16 @@ mod tests {
             &d,
             0,
         );
+        // Stacked craters on it go deeper still (additive): still open.
+        for k in 0..4 {
+            terrain.crater(
+                FxVec2::from_int(70 + k, 100),
+                Fx::from_milli(600),
+                Fx::ONE,
+                1,
+            );
+        }
+        assert!(terrain.dug_dm(terrain.nearest_grid(FxVec2::from_int(72, 100)).0, 25) > 25);
         b.mark_all();
         b.update(&terrain, &[], &[]);
         assert_eq!(b.blocked_count(), 0);

@@ -58,7 +58,9 @@ pub enum CommandKind {
     // `unit::MAX_UNITS` ids; it is sorted and deduplicated when applied,
     // and dead, foreign and non-soldier ids are dropped (none left: the
     // command is ignored). A squad whose every living man is named gets the
-    // matching squad order instead; the other men are detached.
+    // matching squad order instead; the other men are detached. S3: in
+    // `MoveUnits`, `AttackMoveUnits`, `StopUnits` and `RetreatUnits` an own
+    // vehicle's id gives its squad of one the squad order.
     /// The men walk to `target` (clamped to the map) and spread in a small
     /// line around it.
     MoveUnits { units: Vec<SimId>, target: FxVec2 },

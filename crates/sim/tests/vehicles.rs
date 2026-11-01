@@ -432,7 +432,8 @@ fn a_standing_man_is_pushed_out_sideways() {
             FxVec2::new(Fx::ZERO, Fx::ONE),
         )
         .unwrap();
-    // Pinned men cannot step aside: the tank must push them.
+    // Men in its way step aside (ORCA against the hull circles) or are
+    // pushed out sideways (the push-out unit test covers the push alone).
     let men = w.game().unwrap().squad(sq).unwrap().members.clone();
     let (tsq, v) = tank_at(&mut w, 0, xy(480, 500), EAST);
     w.step(&[cmd(
@@ -690,6 +691,89 @@ fn vehicles_are_spotted_at_twice_sight_and_spot_as_observers() {
     assert!(!seen(&w, away));
 }
 
+#[test]
+fn head_on_tanks_never_overlap_and_get_past() {
+    let mut w = World::new_match(flat_setup(), 1).unwrap();
+    let west = FxVec2::new(Fx::NEG_ONE, Fx::ZERO);
+    let (a, va) = tank_at(&mut w, 0, xy(400, 500), EAST);
+    let (b, vb) = tank_at(&mut w, 0, xy(520, 500), west);
+    w.step(&[
+        cmd(
+            0,
+            0,
+            CommandKind::Move {
+                squad: a,
+                target: xy(560, 500),
+            },
+        ),
+        cmd(
+            0,
+            1,
+            CommandKind::Move {
+                squad: b,
+                target: xy(360, 500),
+            },
+        ),
+    ]);
+    let geo = w.game().unwrap().vehicle_derived().geo[0];
+    let mut closest = Fx::from_int(1000);
+    let done = run_until(&mut w, 30 * 90, |w| {
+        // Hull overlap test on the two circle pairs (radius half width).
+        let f = |v: SimId| {
+            let t = w.entities().transform()[v.index()];
+            let d = frontline_sim::vehicle::yaw_dir(t.yaw) * geo.hull_half.x.div_int(2);
+            [t.pos.xy() + d, t.pos.xy() - d]
+        };
+        for p in f(va) {
+            for q in f(vb) {
+                closest = closest.min(dist(p, q));
+            }
+        }
+        let g = w.game().unwrap();
+        g.squad(a).unwrap().order == Order::Idle && g.squad(b).unwrap().order == Order::Idle
+    });
+    assert!(
+        closest >= geo.hull_half.y.mul_int(2),
+        "hulls overlapped: circles {closest:?} apart"
+    );
+    assert!(done, "both got past: {:?} {:?}", pos(&w, va), pos(&w, vb));
+}
+
+#[test]
+fn a_tank_drives_from_its_base_to_a_point_on_kessel_ridge() {
+    let mut w = World::new_match(setup(1, true), 2).unwrap();
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    let (sq, v) = tank_at(&mut w, 0, base, EAST);
+    let points: Vec<FxVec2> = w
+        .match_setup()
+        .unwrap()
+        .map
+        .points
+        .iter()
+        .map(|p| FxVec2::from(p.pos))
+        .collect();
+    for (k, &target) in points.iter().enumerate() {
+        w.step(&[cmd(0, k as u32, CommandKind::Move { squad: sq, target })]);
+        let from = pos(&w, v);
+        let t0 = w.tick();
+        let arrived = run_until(&mut w, 30 * 240, |w| {
+            w.game().unwrap().squad(sq).unwrap().order == Order::Idle
+        });
+        let d = dist(pos(&w, v), target);
+        println!(
+            "point {k}: {:?} m in {} s, {:?} m short",
+            dist(from, target),
+            (w.tick() - t0) / 30,
+            d
+        );
+        assert!(
+            arrived && d < Fx::from_int(6),
+            "point {k}: stuck at {:?}",
+            pos(&w, v)
+        );
+    }
+}
+
 /// Scripted vehicle orders next to two AI commanders (test unlock rules).
 fn vehicle_match(seed: u64, threads: usize) -> World {
     let mut s = setup(seed, true);
@@ -836,4 +920,87 @@ fn vehicle_state_survives_save_load_continue() {
     let hb = run_script(&mut b, 30 * 40);
     assert_eq!(ha, hb);
     assert_eq!(a.full_state_hash(), b.full_state_hash());
+}
+
+/// Stress measurement (not a gate; `cargo test --release -- --ignored
+/// --nocapture vehicle_stress`): 100 tanks and about 600 soldiers on
+/// Kessel Ridge, the tanks re-ordered across the map every 20 s, two AI
+/// commanders for the soldiers. Prints tick and stage times.
+#[test]
+#[ignore]
+// Wall-clock time here only measures; it never feeds the sim.
+#[allow(clippy::disallowed_methods)]
+fn vehicle_stress_report() {
+    use std::time::Instant;
+    let mut s = setup(4, true);
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    s.rules.vehicles.limit = 50;
+    s.rules.pop_cap = 2000;
+    let mut w = World::new_match(s, 3).unwrap();
+    let rifle = [
+        type_index(&w, "ww2:ger_rifle_squad"),
+        type_index(&w, "ww2:usa_rifle_squad"),
+    ];
+    let mut tanks: Vec<(u8, SquadId)> = Vec::new();
+    for p in 0..2u8 {
+        let x0 = if p == 0 { 250 } else { 650 };
+        for k in 0..50 {
+            let at = xy(x0 + 10 * (k % 10), 300 + 40 * (k / 10));
+            tanks.push((p, tank_at(&mut w, p, at, EAST).0));
+        }
+        for k in 0..42 {
+            let at = xy(x0 + 12 * (k % 7), 520 + 25 * (k / 7));
+            w.spawn_squad_at(PlayerId(p), rifle[p as usize], at, EAST);
+        }
+    }
+    println!(
+        "soldiers {}, vehicles {}",
+        w.entities().soldier_count(),
+        w.game().unwrap().vehicles().len()
+    );
+    let mut ticks = Vec::new();
+    let mut moves = Vec::new();
+    let mut spot = Vec::new();
+    let mut seq = 0u32;
+    for t in 0..30 * 120u64 {
+        let mut cmds = Vec::new();
+        if t % 600 == 0 {
+            for (k, &(p, sq)) in tanks.iter().enumerate() {
+                seq += 1;
+                let tx = 200 + ((k as i32 * 37 + t as i32 / 6) % 600);
+                let ty = 200 + ((k as i32 * 53 + t as i32 / 9) % 600);
+                cmds.push(cmd(
+                    p,
+                    seq,
+                    CommandKind::Move {
+                        squad: sq,
+                        target: xy(tx, ty),
+                    },
+                ));
+            }
+        }
+        let t0 = Instant::now();
+        w.step(&cmds);
+        ticks.push(t0.elapsed().as_secs_f64() * 1000.0);
+        moves.push(w.stage_times().movement.as_secs_f64() * 1000.0);
+        if *moves.last().unwrap() > 2.0 {
+            println!("slow movement at tick {t}: {:.2} ms", moves.last().unwrap());
+        }
+        spot.push(w.stage_times().perception.as_secs_f64() * 1000.0);
+    }
+    let p99 = |v: &mut Vec<f64>| {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        (v[v.len() / 2], v[v.len() * 99 / 100], v[v.len() - 1])
+    };
+    let moving = w
+        .game()
+        .unwrap()
+        .vehicles()
+        .values()
+        .filter(|v| v.speed != Fx::ZERO)
+        .count();
+    println!("tick ms p50/p99/max {:?}", p99(&mut ticks));
+    println!("movement ms p50/p99/max {:?}", p99(&mut moves));
+    println!("perception ms p50/p99/max {:?}", p99(&mut spot));
+    println!("vehicles moving at the end: {moving}");
 }

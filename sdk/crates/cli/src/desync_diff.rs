@@ -197,6 +197,11 @@ const FX_LEAVES: &[&str] = &[
     "x",
     "y",
     "z",
+    // S3 vehicles (radians and m/s).
+    "pitch",
+    "roll",
+    "turret_yaw",
+    "gun_pitch",
 ];
 
 /// Turns a raw path into a categorised, readable name.
@@ -218,6 +223,15 @@ fn name(path: &str, a: String, b: String) -> FieldDiff {
             Some((_, id, rest)) => (3, id, trim_dot(&rest), format!("point {id}")),
             None => (3, 0, r.to_owned(), "points".to_owned()),
         }
+    } else if let Some(r) = path.strip_prefix("game.vehicles.") {
+        // S3: `game.vehicles.<entity id>.<field>`, next to the entities.
+        let (id, rest) = r.split_once('.').unwrap_or((r, ""));
+        (
+            4,
+            id.parse().unwrap_or(0),
+            rest.to_owned(),
+            format!("vehicle {id}"),
+        )
     } else if let Some(r) = path.strip_prefix("game.squads.") {
         let (id, rest) = r.split_once('.').unwrap_or((r, ""));
         (
@@ -389,6 +403,11 @@ mod tests {
         assert_eq!(d.a, "1033.500 (67731456)");
         let d = name("game.squads.7.order", "1".into(), "2".into());
         assert_eq!((d.name.as_str(), d.id), ("squad 7 order", 7));
+        let d = name("game.vehicles.40.pitch", "100".into(), "101".into());
+        assert_eq!((d.name.as_str(), d.id, d.rank), ("vehicle 40 pitch", 40, 4));
+        assert!(d.a.starts_with("0.002"), "{}", d.a);
+        let d = name("game.vehicles.40.seats[2].hp", "100".into(), "40".into());
+        assert_eq!(d.name, "vehicle 40 seats[2].hp");
         let d = name("game.players[1].tickets", "5".into(), "6".into());
         assert_eq!(d.name, "player 1 tickets");
         let d = name("stats.commands_applied", "5".into(), "6".into());

@@ -25,6 +25,11 @@
 //!   instead. `Stop`, an in-range `Barrage` and `Regroup` of a squad that is
 //!   not walking form a line around the leader, so the men walk back.
 //!
+//! **Vehicles (S3).** A vehicle id in `MoveUnits`, `AttackMoveUnits`,
+//! `RetreatUnits` or `StopUnits` stands for its squad of one, which gets the
+//! squad order; soldiers in the same command are handled as above. Every
+//! other soldier-level command drops vehicle ids.
+//!
 //! Several men sent to one point get slots on a line through it across the
 //! direction from their centroid (spacing of the lowest id's squad type),
 //! assigned by where they stand along the line, and each paths to his own

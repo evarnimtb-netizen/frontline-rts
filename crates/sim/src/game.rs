@@ -33,6 +33,17 @@
 //! ([`PathReq::Unit`]) and dig trenches as [`UnitDig`] jobs kept here.
 //! Thrown items (S1b) are in `crate::items`: per-soldier kits in the `kit`
 //! entity column, items in flight and smoke clouds kept here.
+//!
+//! Vehicles (S3) are in `crate::vehicle`: a vehicle is a squad of one
+//! whose only member is the vehicle entity, with its [`VehicleState`] kept
+//! here. Squad orders `Move`, `AttackMove`, `Stop` and `Retreat` (and the
+//! `*Units` versions naming the vehicle id) work on it; `Dig`, `Barrage`,
+//! `Regroup` and stance orders are rejected. Its path is a
+//! [`PathReq::Vehicle`] on the vehicle costs; it drives in the Movement
+//! stage, not in squad steering. Vehicle call-ins wait for the rules'
+//! unlock time and count against the per-player vehicle limit (alive or
+//! queued), and every squad type counts its own pop (men, or its vehicle's
+//! `pop`).
 
 use std::collections::BTreeMap;
 

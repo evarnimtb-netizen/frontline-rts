@@ -6,12 +6,12 @@
 //! |---|-------|---------|-----------|
 //! | 1 | Intent | sorted command apply (match: human and due AI commands together); bench: waypoint re-pick; match: call-ins, AI plans ([`crate::ai`]), path queue, digging (terrain edits), squad steering | serial apply, per-chunk re-pick; match work serial |
 //! | 2 | Perception | match: spotting per player ([`crate::spotting`]) | per player, serial apply |
-//! | 3 | Movement | spatial hash rebuild; ORCA plan; integrate (pinned men stay) | serial rebuild, per-chunk plan + integrate |
+//! | 3 | Movement | spatial hash and (S3) vehicle index/frames rebuild; ORCA plan (soldiers also avoid vehicle circles); integrate (pinned men stay); S3: vehicles follow their paths, `drive` and push soldiers out, then the vehicle index/frames are rebuilt ([`crate::vehicle`]) | serial rebuilds, per-chunk plan + integrate, serial vehicles |
 //! | 4 | Weapons | bench: cooldowns, random fire; match: marks, squad focus, targeting and fire, mortars ([`crate::combat`]), throw wind-ups and releases ([`crate::items`]); sorted spawn into the pool | per-chunk, serial focus/mortars/throws/spawn |
 //! | 5 | Ballistics | 60 Hz substeps, ground test (match: capsule hits, near misses; thrown items), despawn | per-slot-chunk, serial free-list merge and thrown items |
 //! | 6 | Damage | match: hits, suppression, HE bursts and craters, thrown items going off (blasts, smoke), deaths | serial |
 //! | 7 | Status | match: suppression decay, stance, timers, corpse removal; smoke ageing and resupply; capture, income, tickets, victory ([`crate::rules`]) | per-chunk, serial removal, items and rules |
-//! | 8 | World/Hash | tick++, dirty chunk and terrain tile re-hash, publish every K; snapshot | per-chunk hash |
+//! | 8 | World/Hash | tick++, dirty chunk and terrain tile re-hash, vehicle block layer update (S3), publish every K; snapshot | per-chunk hash |
 //!
 //! A world is either a **bench** world ([`World::new`] from a [`SimConfig`]:
 //! M0 soldiers wandering and firing at random) or a **match** world
