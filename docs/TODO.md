@@ -127,7 +127,7 @@ TOML. Work proceeds on the (A) defaults below.
 - [ ] **S3b-4. Sherman stowage.** (A) M4A3 (75) dry stowage (sponson
   racks). (B) M4A3 (75)W wet stowage (fewer rack fires, stronger
   Sherman).
-- [ ] **S3b-5. Bail-out.** (A) Still out; fewer than 2 crew alive
+- [x] **S3b-5. Bail-out.** Owner 2026-11-01: (B) build bail-out (S3c). (A) Still out; fewer than 2 crew alive
   knocks the tank out, survivors lost. (B) Build bail-out now.
 - [ ] **S3b-6. Moving-target misses.** (A) Lead estimation error per
   engagement. (B) Only a larger moving-target spread.
@@ -313,7 +313,7 @@ questions, work proceeds on (A).
 Fix stage (2026-11-01, `docs/slices/S3b-log.md` "Fix stage"): new
 questions, work proceeds on (A).
 
-- [ ] **S3b-38. T2, the 300 m frontal duel.** With consistent penetration
+- [x] **S3b-38. T2, the 300 m frontal duel.** Owner 2026-11-01: (A) accept near-even; 600 m case in S3c. With consistent penetration
   data both tanks beat each other's front at 300 m; the Panzer IV wins 44
   of 80 over seeds 1-40 (4 of 20 on seeds 1-10). (A) Accept a near-even
   300 m duel as historical; judge the Panzer IV's edge at range in a new
@@ -324,7 +324,7 @@ questions, work proceeds on (A).
 - [ ] **S3b-40. Base-side bias.** Base 1 wins 58 % of 78 decided matches
   (67 % on seeds 1-10; 70 % in the plan baseline before S3b). (A) Study
   the map and AI routes next slice. (B) Accept.
-- [ ] **S3b-41. T10 by faction.** US attackers (M1919) lose 74 %, German
+- [x] **S3b-41. T10 by faction.** Owner 2026-11-01: (A) AI brings a second base of fire (S3c). US attackers (M1919) lose 74 %, German
   attackers (MG 42) 41 % on 10 seeds; T10 pooled misses (57.5 %). (A)
   Accept the historical rate-of-fire gap, keep T10 pooled with a
   per-faction report; the AI gives a US base of fire a second MG or rifle
