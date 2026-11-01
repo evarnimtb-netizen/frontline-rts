@@ -1,6 +1,12 @@
 extends Control
-## Main menu (project main scene): title, Skirmish setup, Settings, Quit.
-## Start writes the choice into Session.setup and loads the match scene.
+## Main menu (project main scene): title, Skirmish setup, Multiplayer
+## (MultiplayerPanel: host/join, lobby), Settings, Quit. Start writes the
+## choice into Session.setup and loads the match scene.
+##
+## --capture_setup for the S2 menu shots (all on MockNet, no network):
+## "mp" (host/join), "mp_errors" (rejected inputs), "lobby" (host, two
+## players), "lobby_guest", "lobby_same_faction", "lobby_mismatch",
+## "countdown", "mp_disconnected".
 
 const DIFFICULTY_TEXT := {
 	"easy": "Slower to react, lower income, simple attack plans.",
@@ -8,17 +14,21 @@ const DIFFICULTY_TEXT := {
 	"hard": "Fast reactions, extra income, coordinated mortar fire.",
 }
 
+const MP_CAPTURES := ["mp", "mp_errors", "lobby", "lobby_guest", "lobby_same_faction", "lobby_mismatch", "countdown", "mp_disconnected"]
+
 var _faction := "germany"
 var _difficulty := "normal"
 var _map := "kessel_ridge"
 
 @onready var _content: PanelContainer = %Content
 @onready var _skirmish_btn: Button = %SkirmishButton
+@onready var _mp_btn: Button = %MultiplayerButton
 @onready var _settings_btn: Button = %SettingsButton
 @onready var _quit_btn: Button = %QuitButton
 
 var _skirmish: Control
 var _settings: SettingsPanel
+var _mp: MultiplayerPanel
 var _faction_btns := {}
 var _diff_btns := {}
 var _diff_note: Label
@@ -34,11 +44,20 @@ func _ready() -> void:
 	_settings = SettingsPanel.new()
 	_settings.closed.connect(_show.bind("skirmish"))
 	_content.add_child(_settings)
+	_mp = MultiplayerPanel.new()
+	_content.add_child(_mp)
 	_skirmish_btn.pressed.connect(_show.bind("skirmish"))
+	_mp_btn.pressed.connect(_show.bind("multiplayer"))
 	_settings_btn.pressed.connect(_show.bind("settings"))
 	_quit_btn.pressed.connect(func() -> void: Session.quit_game())
-	if Session.capture_setup() == "settings":
+	var cap := Session.capture_setup()
+	if cap == "settings":
 		_show("settings")
+	elif cap in MP_CAPTURES:
+		_stage_mp(cap)
+	elif Session.menu_page == "multiplayer" or (Session.net != null and Session.net.status().get("state", "idle") != "idle"):
+		Session.menu_page = ""
+		_show("multiplayer")
 	else:
 		_show("skirmish")
 	_skirmish_btn.grab_focus()
@@ -48,10 +67,45 @@ func _ready() -> void:
 func _show(which: String) -> void:
 	_skirmish.visible = which == "skirmish"
 	_settings.visible = which == "settings"
+	_mp.visible = which == "multiplayer"
 	if which == "settings":
 		_settings.refresh()
+	elif which == "multiplayer":
+		_mp.refresh()
 	_skirmish_btn.set_pressed_no_signal(which == "skirmish")
+	_mp_btn.set_pressed_no_signal(which == "multiplayer")
 	_settings_btn.set_pressed_no_signal(which == "settings")
+
+
+## Shows a page: "skirmish", "multiplayer" or "settings" (Session's
+## --autoplay_net shows the lobby with it).
+func show_page(which: String) -> void:
+	_show(which)
+
+
+## Screenshot staging for the multiplayer pages on a MockNet.
+func _stage_mp(what: String) -> void:
+	var mock := MockNet.new()
+	mock.auto = false
+	# Frozen clock: the countdown shot shows "3", not wherever it got to.
+	mock.manual_clock = true
+	mock.set_name("Erik" if what != "lobby_guest" else "Sam")
+	Session.net = mock
+	_mp.addresses_override = MultiplayerPanel.CAPTURE_ADDRESSES
+	_mp.name_edit.text = "Erik"
+	_mp.update_host_hint()
+	match what:
+		"mp_errors":
+			_mp.host_port.text = "80"
+			_mp.on_host()
+			_mp.join_addr.text = "192.168.1.300:47015"
+			_mp.on_join()
+		"mp_disconnected":
+			mock.stage("rejected")
+		"lobby", "lobby_guest", "lobby_same_faction", "lobby_mismatch", "countdown":
+			_mp.where = "port 47015" if what != "lobby_guest" else "192.168.1.20:47015"
+			mock.stage(what)
+	_show("multiplayer")
 
 
 func _build_skirmish() -> Control:

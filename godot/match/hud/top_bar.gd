@@ -43,6 +43,22 @@ func menu_rect() -> Rect2:
 	return Rect2(size.x - 100.0, 3.0, 88.0, size.y - 6.0)
 
 
+## Free x span (start, end) right of the enemy tickets (and their drain
+## mark) and left of the clock with room for "PAUSED": where the net
+## readout goes (S2). Uses the widest ticket count and clock text the
+## rules allow, so the span does not move as numbers change.
+func free_span() -> Vector2:
+	var m := _m()
+	var bold := HudStyle.bold()
+	var n := maxi(_points.size(), 5)
+	var chips_w := n * float(m.chip_w) + (n - 1) * 4.0
+	var tmax := "%d" % int(view.rules().get("tickets_max", 500)) if view != null else "500"
+	var x0 := size.x * 0.5 + chips_w * 0.5 + 10.0 + float(m.ticket_w) + 8.0 + HudStyle.text_w(bold, tmax, HudStyle.FONT) + 18.0
+	var clock_w := HudStyle.text_w(bold, "88:88", HudStyle.FONT_SMALL)
+	var x1 := size.x - 120.0 - clock_w - HudStyle.text_w(bold, "PAUSED", HudStyle.FONT) - 14.0
+	return Vector2(x0, maxf(x1, x0))
+
+
 func _draw() -> void:
 	if view == null:
 		return

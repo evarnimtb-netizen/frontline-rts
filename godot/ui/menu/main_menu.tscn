@@ -82,6 +82,16 @@ button_group = SubResource("ButtonGroup_nav")
 text = "Skirmish"
 alignment = 0
 
+[node name="MultiplayerButton" type="Button" parent="Margin/Columns/Left/Nav"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+theme_type_variation = &"MenuButtonBig"
+toggle_mode = true
+button_group = SubResource("ButtonGroup_nav")
+text = "Multiplayer"
+alignment = 0
+
 [node name="SettingsButton" type="Button" parent="Margin/Columns/Left/Nav"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
@@ -107,7 +117,7 @@ size_flags_vertical = 3
 [node name="Version" type="Label" parent="Margin/Columns/Left"]
 layout_mode = 2
 theme_type_variation = &"DimLabel"
-text = "Slice S1 build  ·  Godot 4.7.2"
+text = "Slice S2 build  ·  Godot 4.7.2"
 
 [node name="Right" type="CenterContainer" parent="Margin/Columns"]
 layout_mode = 2

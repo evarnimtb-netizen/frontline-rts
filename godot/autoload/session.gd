@@ -20,9 +20,24 @@ extends Node
 ##       [--faction usa] [--difficulty hard] [--tickets N]
 ## shows the menu, starts a skirmish, and lets match/autoplay.gd play the
 ## local side for that many game minutes, saving screenshots, then quits.
+##
+## Multiplayer (S2): `net` is the lobby/link object, the bridge's
+## FrontlineNet when it is registered, else MockNet (godot/net/mock_net.gd,
+## no networking; the menu still works against it). A net match runs at 1x
+## only: net mode forces the speed and ignores --autoplay_speed.
+##   -- --autoplay_net host:PORT | join:IP:PORT   (IPv6: join:[::1]:PORT)
+##      --autoplay N  [--net_name NAME] [--debug_inject_desync TICK]
+## hosts or joins, picks a faction (host Germany, guest USA), readies, and
+## plays the match with match/autoplay.gd like --autoplay. Two instances on
+## one machine: one host, one join 127.0.0.1. --debug_inject_desync makes
+## this client step TICK with one extra local-only Stop (dev builds; the
+## bridge reads it from match_setup()).
 
 const MENU_SCENE := "res://ui/menu/main_menu.tscn"
 const MATCH_SCENE := "res://match/match.tscn"
+const MOCK_MATCH_SCENE := "res://match/match_mock.tscn"
+## Wall-clock seconds --autoplay_net waits for the lobby to start.
+const AUTOPLAY_NET_WAIT_S := 90.0
 
 const FACTIONS := ["germany", "usa"]
 const DIFFICULTIES := ["easy", "normal", "hard"]
@@ -50,6 +65,21 @@ var autoplay_speed := 3.0
 var autoplay_shots := ""
 ## Match overrides for scripted runs (0 = rules default).
 var tickets_override := 0
+
+## Multiplayer: the FrontlineNet (or MockNet) object, null until first
+## used; net_mode while a net match is being played.
+var net: Object = null
+var net_mode := false
+var player_name := "Player"
+## Join field text from the last join (restored in the menu).
+var last_join := ""
+## Which menu page to show when the menu loads ("" = skirmish).
+var menu_page := ""
+## --autoplay_net: "host" or "join", and the port or address.
+var autoplay_net_role := ""
+var autoplay_net_target := ""
+## --debug_inject_desync tick (-1 = off).
+var debug_inject_desync := -1
 
 var _capture_path := ""
 var _capture_after := 2.5
@@ -107,11 +137,48 @@ func _ready() -> void:
 			"--tickets":
 				tickets_override = maxi(v.to_int(), 0)
 				i += 1
+			"--autoplay_net":
+				_parse_autoplay_net(v)
+				i += 1
+			"--net_name":
+				if not v.strip_edges().is_empty():
+					player_name = v.strip_edges().left(24)
+				i += 1
+			"--debug_inject_desync":
+				debug_inject_desync = v.to_int() if v.is_valid_int() and v.to_int() > 0 else -1
+				i += 1
 		i += 1
+	if autoplay_net_role != "":
+		# Net mode is 1x only (S2 "Speed").
+		autoplay_speed = 1.0
+		if autoplay_minutes <= 0.0:
+			autoplay_minutes = 3.0
 	if _capture_path != "":
 		_run_capture.call_deferred()
+	elif autoplay_net_role != "":
+		_run_autoplay_net.call_deferred()
 	elif autoplay_enabled():
 		_run_autoplay_menu.call_deferred()
+
+
+## "host:PORT" or "join:ADDR:PORT"; anything else is reported and ignored.
+func _parse_autoplay_net(v: String) -> void:
+	if v.begins_with("host:"):
+		var p := NetUi.parse_port(v.substr(5), true)
+		if p.ok:
+			autoplay_net_role = "host"
+			autoplay_net_target = str(p.port)
+			return
+		push_error("Session: --autoplay_net %s: %s" % [v, p.error])
+	elif v.begins_with("join:"):
+		var a := NetUi.parse_join(v.substr(5))
+		if a.ok:
+			autoplay_net_role = "join"
+			autoplay_net_target = a.addr
+			return
+		push_error("Session: --autoplay_net %s: %s" % [v, a.error])
+	else:
+		push_error("Session: --autoplay_net wants host:PORT or join:ADDR:PORT, got \"%s\"" % v)
 
 
 func capture_setup() -> String:
@@ -135,7 +202,63 @@ func match_setup() -> Dictionary:
 	var out := setup.duplicate()
 	if tickets_override > 0:
 		out.tickets = tickets_override
+	# Net mode: the bridge takes the link itself from Session.net; these
+	# tell it the local slot, D and the debug hook.
+	if net_mode and net != null:
+		var st: Dictionary = net.status()
+		out.net = true
+		out.local_player = int(st.get("slot", 0))
+		out.input_delay = int(st.get("input_delay", 3))
+		out.speed = 1.0
+		if debug_inject_desync > 0:
+			out.debug_inject_desync = debug_inject_desync
 	return out
+
+
+## The net object, made on first use: FrontlineNet when the bridge
+## registers it, else MockNet.
+func ensure_net() -> Object:
+	if net == null:
+		if ClassDB.class_exists(&"FrontlineNet"):
+			net = ClassDB.instantiate(&"FrontlineNet")
+			if net is Node:
+				add_child(net)
+		else:
+			net = MockNet.new()
+	return net
+
+
+func is_mock_net() -> bool:
+	return net is MockNet
+
+
+## Lobby → match, once the status says in_match: takes the own slot's
+## faction, the seed and the map from the lobby and loads the match scene
+## (the mock scene when the net is the mock: no sim behind it).
+func start_net_match() -> void:
+	if net == null:
+		return
+	var st: Dictionary = net.status()
+	var slot := int(st.get("slot", 0))
+	var slots: Array = st.get("slots", [])
+	var me: Dictionary = slots[slot] if slot >= 0 and slot < slots.size() else {}
+	setup.faction = me.get("faction", setup.faction)
+	setup.seed = int(st.get("seed", setup.seed))
+	setup.map = st.get("map", setup.map)
+	net_mode = true
+	autoplay_speed = 1.0
+	get_tree().paused = false
+	get_tree().change_scene_to_file(MOCK_MATCH_SCENE if is_mock_net() else MATCH_SCENE)
+
+
+## Bye and back to idle; after a net match the menu opens on the
+## multiplayer page.
+func leave_net() -> void:
+	if net != null:
+		net.leave()
+	if net_mode:
+		menu_page = "multiplayer"
+	net_mode = false
 
 
 ## Saves the current frame as PNG (after it is drawn). Returns OK or an error.
@@ -161,6 +284,8 @@ func start_skirmish(new_setup: Dictionary) -> void:
 
 
 func goto_menu() -> void:
+	if net_mode:
+		leave_net()
 	get_tree().paused = false
 	get_tree().change_scene_to_file(MENU_SCENE)
 
@@ -204,3 +329,67 @@ func _run_capture() -> void:
 	else:
 		print("Session: captured %s (%dx%d)" % [_capture_path, img.get_width(), img.get_height()])
 	quit_game(0 if err == OK else 1)
+
+
+## --autoplay_net: host or join, pick a faction, ready, then the match
+## (match.gd adds autoplay.gd as for --autoplay). Quits with 4 if the
+## lobby does not start within AUTOPLAY_NET_WAIT_S.
+func _run_autoplay_net() -> void:
+	await get_tree().create_timer(1.0, true, false, true).timeout
+	var n := ensure_net()
+	if n.has_method("set_name"):
+		n.set_name(player_name if player_name != "Player" else autoplay_net_role.capitalize())
+	var ok: bool = n.host(autoplay_net_target.to_int()) if autoplay_net_role == "host" else n.join(autoplay_net_target)
+	print("autoplay_net: %s %s -> %s" % [autoplay_net_role, autoplay_net_target, "ok" if ok else "failed"])
+	if not ok:
+		push_error("autoplay_net: %s" % n.status().get("error", "?"))
+		quit_game(4)
+		return
+	# The menu shows the lobby, so the screenshot below has it.
+	var menu := get_tree().current_scene
+	if menu != null and menu.has_method("show_page"):
+		menu.show_page("multiplayer")
+	var want := "germany" if autoplay_net_role == "host" else "usa"
+	var readied := false
+	var shot := false
+	var waited := 0.0
+	while waited < AUTOPLAY_NET_WAIT_S:
+		var st: Dictionary = n.status()
+		match String(st.get("state", "")):
+			"lobby":
+				var slots: Array = st.get("slots", [])
+				var slot := int(st.get("slot", -1))
+				var full := slots.size() == 2 and not String(slots[0].get("name", "")).is_empty() and not String(slots[1].get("name", "")).is_empty()
+				if slot < 0 or slot >= slots.size():
+					pass
+				elif slots[slot].get("faction", "") != want:
+					n.set_choice({"faction": want})
+				elif slot == 0 and int(st.get("seed", 0)) != int(setup.seed):
+					n.set_choice({"seed": int(setup.seed)})
+				elif full and not readied:
+					if not shot:
+						shot = true
+						await save_screenshot(autoplay_dir().path_join("s2_autoplay_lobby_%s.png" % autoplay_net_role))
+					n.ready()
+					readied = true
+				elif full and readied and not slots[slot].get("ready", false):
+					# A lobby change took us out of Ready: ready again.
+					readied = false
+			"in_match":
+				if is_mock_net():
+					# No FrontlineNet in this build: the lobby ran on the
+					# mock, and the mock match has no autoplay. Say so and stop.
+					push_error("autoplay_net: FrontlineNet is not registered (bridge without S2 networking); the lobby ran on MockNet only")
+					quit_game(5)
+					return
+				print("autoplay_net: lobby done, starting the match as slot %d" % int(st.get("slot", 0)))
+				start_net_match()
+				return
+			"disconnected":
+				push_error("autoplay_net: disconnected: %s" % st.get("error", "?"))
+				quit_game(4)
+				return
+		await get_tree().create_timer(0.1, true, false, true).timeout
+		waited += 0.1
+	push_error("autoplay_net: the lobby did not start within %d s" % int(AUTOPLAY_NET_WAIT_S))
+	quit_game(4)

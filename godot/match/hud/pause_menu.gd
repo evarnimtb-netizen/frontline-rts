@@ -3,6 +3,10 @@ extends Control
 ## quit ask first. Opening it requests a pause through MatchView (the source
 ## decides what pausing means; a vs-AI match stops the sim, §10 lockstep
 ## matches will not).
+##
+## Net mode (S2): opening the menu does not pause the match; "Pause match"
+## / "Resume match" does, for both players (either may resume). Surrender
+## and Leave name the other player instead of the AI.
 
 var view: MatchView
 var _main: VBoxContainer
@@ -10,6 +14,10 @@ var _settings: SettingsPanel
 var _confirm: VBoxContainer
 var _confirm_text: Label
 var _confirm_ok: Button
+var _head: Label
+var _resume_btn: Button
+## Net mode only: pauses or resumes the match for both players.
+var net_pause_button: Button
 var _pending: StringName = &""
 
 
@@ -35,11 +43,13 @@ func bind(v: MatchView) -> void:
 	_main = VBoxContainer.new()
 	_main.add_theme_constant_override("separation", 10)
 	stack.add_child(_main)
-	var head := Label.new()
-	head.text = "PAUSED"
-	head.theme_type_variation = &"HeaderLabel"
-	_main.add_child(head)
-	_button(_main, "Resume", func() -> void: close())
+	_head = Label.new()
+	_head.text = "PAUSED"
+	_head.theme_type_variation = &"HeaderLabel"
+	_main.add_child(_head)
+	_resume_btn = _button(_main, "Resume", func() -> void: close())
+	net_pause_button = _button(_main, "Pause match", _toggle_net_pause)
+	net_pause_button.visible = false
 	_button(_main, "Settings", func() -> void: _page("settings"))
 	_button(_main, "Surrender", func() -> void: _ask(&"surrender"))
 	_button(_main, "Quit to menu", func() -> void: _ask(&"quit_to_menu"))
@@ -90,9 +100,16 @@ func _page(which: String) -> void:
 
 func _ask(what: StringName) -> void:
 	_pending = what
+	var foe := "The AI"
+	if view.net_mode:
+		var n := String(view.player(1 - view.local_player).get("name", ""))
+		foe = n if n != "" else "Your opponent"
 	if what == &"surrender":
-		_confirm_text.text = "Surrender this match? The AI wins and the match ends."
+		_confirm_text.text = "Surrender this match? %s wins and the match ends." % foe
 		_confirm_ok.text = "SURRENDER"
+	elif view.net_mode:
+		_confirm_text.text = "Leave the match and return to the main menu? You disconnect; %s wins once the relay's 60 s timeout runs out. Surrender first to end it at once." % foe
+		_confirm_ok.text = "LEAVE MATCH"
 	else:
 		_confirm_text.text = "Leave the match and return to the main menu? The match counts as a loss."
 		_confirm_ok.text = "QUIT TO MENU"
@@ -116,8 +133,12 @@ func open() -> void:
 	if visible or view.ended:
 		return
 	visible = true
+	_refresh_net()
 	_page("main")
-	view.emit_intent(&"pause", {"paused": true})
+	# A net match runs on while the menu is open (S2): pausing is a
+	# separate, explicit choice for both players.
+	if not view.net_mode:
+		view.emit_intent(&"pause", {"paused": true})
 
 
 ## Hides the menu; `resume` = false leaves the pause state to the caller.
@@ -125,8 +146,37 @@ func close(resume := true) -> void:
 	if not visible:
 		return
 	visible = false
-	if resume:
+	if resume and not view.net_mode:
 		view.emit_intent(&"pause", {"paused": false})
+
+
+## Opens the menu on the Leave confirmation (the desync banner's Leave).
+func ask_leave() -> void:
+	if not visible:
+		if view.ended:
+			return
+		visible = true
+		if not view.net_mode:
+			view.emit_intent(&"pause", {"paused": true})
+	_ask(&"quit_to_menu")
+	_confirm_ok.grab_focus()
+
+
+func _refresh_net() -> void:
+	var net := view.net_mode
+	_head.text = "MATCH MENU" if net else "PAUSED"
+	_resume_btn.text = "Back to the match" if net else "Resume"
+	net_pause_button.visible = net
+	if net:
+		var st := String(view.net.get("state", "ok"))
+		net_pause_button.text = "Resume match" if st == "paused" else "Pause match (both players)"
+		net_pause_button.disabled = st in ["waiting", "desync"]
+
+
+func _toggle_net_pause() -> void:
+	var resume := String(view.net.get("state", "ok")) == "paused"
+	view.emit_intent(&"pause", {"paused": not resume})
+	close(false)
 
 
 func toggle() -> void:
@@ -140,4 +190,5 @@ func toggle() -> void:
 
 
 func update_state(_s: Dictionary) -> void:
-	pass
+	if visible and view.net_mode:
+		_refresh_net()

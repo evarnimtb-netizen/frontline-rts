@@ -105,7 +105,12 @@ func relayout() -> void:
 	_place(view.roster, Rect2(rx, console_top, maxf(dx - 12.0 - rx, 120.0), float(m.hc)))
 	var col_h: float = view.call_in.column_height(m)
 	_place(view.call_in, Rect2(w - g - float(m.callin_w), console_top - float(m.ci_gap) - col_h, float(m.callin_w), col_h))
-	for c in [view.top_bar, view.minimap, view.event_feed, view.orders, view.detail, view.roster, view.call_in]:
+	# Net mode (S2): the readout in the top bar's free span right of the
+	# enemy tickets; the net panels over the whole HUD.
+	var span: Vector2 = view.top_bar.free_span()
+	_place(view.net_readout, Rect2(span.x, 0, span.y - span.x, tb))
+	_place(view.net_overlay, Rect2(0, 0, w, h))
+	for c in [view.top_bar, view.minimap, view.event_feed, view.orders, view.detail, view.roster, view.call_in, view.net_readout, view.net_overlay]:
 		c.queue_redraw()
 	queue_redraw()
 

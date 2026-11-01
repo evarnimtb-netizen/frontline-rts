@@ -85,7 +85,9 @@ func show_result(s: Dictionary) -> void:
 	var them := view.player(1 - view.local_player)
 	_cell("", UiPalette.TEXT_DIM)
 	_cell("%s (you)" % UiPalette.FACTION_NAMES.get(me.get("faction", ""), "You"), UiPalette.faction_color(me.get("faction", "")).lightened(0.3))
-	_cell("%s (AI)" % UiPalette.FACTION_NAMES.get(them.get("faction", ""), "AI"), UiPalette.faction_color(them.get("faction", "")).lightened(0.3))
+	# Net mode: the other player's name instead of "AI".
+	var foe := String(them.get("name", "")) if view.net_mode else ""
+	_cell("%s (%s)" % [UiPalette.FACTION_NAMES.get(them.get("faction", ""), "?"), foe if foe != "" else ("opponent" if view.net_mode else "AI")], UiPalette.faction_color(them.get("faction", "")).lightened(0.3))
 	var stats: Array = s.get("stats", [])
 	for row in ROWS:
 		_cell(row[1], UiPalette.TEXT_DIM)
