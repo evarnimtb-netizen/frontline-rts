@@ -45,7 +45,7 @@ could throw.
    than a mortar. Neither is worth an unhistorical stat.
 3. **Eight brakes do the work**, all physical or historical:
    - observation: indirect fire needs a linked observer's line of sight,
-     or map fire on known points at 3× scatter;
+     or map fire on known points with a large aim error (§4.1);
    - a per-player **shell ration** at base (roadmap Q4 B): every shell and
      bomb restocked anywhere draws from it;
    - **counter-battery**: firing reveals the gun by sound and flash; the
@@ -136,7 +136,7 @@ of scope; the Calliope could come later as a vehicle.
 | 76-mm regimental gun | 76 mm M1943 (OB-25) | ≈600 kg | ≈4,200 m | up to ≈+25° | Pushable; HE and BP-350M HEAT. Flat-fire infantry gun. |
 | ZiS-3 crew | 76 mm ZiS-3 | ≈1,116 kg | ≈13,000 m | up to ≈+37° | Already in the AT list (dual role). Its indirect fire uses these rules. |
 | Howitzer section | 122 mm M-30 | ≈2,450 kg | ≈11,800 m | up to ≈+63.5° | 21.8 kg OF-462 HE. Tow: Studebaker US6. The Soviet field howitzer card. |
-| 120-mm mortar crew | 120 mm PM-38 | ≈280 kg on wheels | ≈5,700 m | mortar | Heavy mortar (already planned for S15). |
+| 120-mm mortar crew | 120 mm PM-38 | ≈280 kg firing (≈480 kg on its wheeled carriage) | ≈5,700 m | mortar | Heavy mortar (already planned for S15). |
 | BM-13 (Q23) | 16 × 132 mm M-13 rockets on a truck | — | ≈8,500 m | — | Same verdict as the Nebelwerfer: late, capped, lobby option. |
 
 ### 2.4 Rocket launchers: does the Nebelwerfer fit?
@@ -151,14 +151,20 @@ trails and dust gave the launcher away at once. Crews fired and moved.
 In our rules every launch is a flash event that anyone with line of
 sight sees at long range (§4.3), on the first salvo.
 
-**The balance problem is real.** One salvo is six 34 kg rockets: about
-204 kg of shells in ten seconds. On a 1 km map that is an area-delete
-button, and it pushes the HE share up.
+**The balance problem is real, but smaller than it looks.** One salvo
+is six 34 kg rockets: about 204 kg of *ammunition* in ten seconds. Most
+of that weight is motor, propellant and casing. The explosive is only
+about 2–2.5 kg per rocket *(verify)*, so 12–15 kg per salvo: roughly
+six 105 mm shells. The real danger is different. All six land within
+about ten seconds, over a wide area, before men can duck. That is
+surprise, not tonnage.
 
-**The ration makes it fair.** At the starting ration (60 kg per minute,
-§4.2) one salvo costs about 3.4 minutes of the player's whole shell
-supply, mortars included. The player chooses one big blow over minutes
-of mortar fire.
+**The ration makes it expensive.** The ration counts supply weight, as
+real logistics did. At the starting ration (60 kg per minute, §4.2) one
+salvo costs about 3.4 minutes of the player's whole shell supply,
+mortars included. For the same weight he could fire about 13 rounds of
+105 mm. So the Nebelwerfer is a poor deal in explosive per kg. It buys
+one sudden blow, not more HE.
 
 **Recommendation:** not in S11. Offer it after S11b as a lobby
 option (Q23 A), capped at one, with a 12:00 unlock, after the ration and
@@ -207,10 +213,10 @@ Reasons:
    never.
 3. **Authentic range makes counter-battery fair.** Every gun can reach
    every other gun. Nobody gets a safe corner by having the longer tube.
-4. **Spread grows with range.** Dispersion is in mrad (and the range
-   probable error grows with range), so a gun far back misses by more.
-   That alone rewards moving forward, where the gun is more exposed. The
-   trade is physical.
+4. **Error grows with range, but only a little on our maps.** The aim
+   error (§4.1) is a share of the range, so a gun far back misses by
+   more before it ranges in. On a 1 km map the difference between 600 m
+   and 1,100 m is small. Do not count on it as a brake (critic note C1).
 
 Mortars: the roadmap keeps today's 600 m mortar range through S5 (Q4 A).
 With the ration in S11 they can go authentic too. Switch them in a
@@ -245,9 +251,33 @@ extends them to guns.
 | Mode | Needs | Accuracy | Notes |
 |---|---|---|---|
 | **Direct** | The gun's own crew sees the target (gunner or section leader) | Gun spread, ranging-in per shot (S3 gunnery) | §5. Exposes the gun. |
-| **Observed** | A soldier with `observe` has line of sight to the target point, and a **link** to the gun | First round at `first_round_spread_pct` (250 %), tighter by `ranging_step_pct` (25 %) per round the observer sees land, down to `ranging_floor_pct` (40 %) | The normal way to use artillery. |
-| **Map fire** | The target is a point in the player's knowledge map (last-seen enemies, seen trench lines and structures, capture points, sound or flash markers) | `map_fire_spread_pct` (300 %), no ranging-in | Harassing fire. No blind fire into unknown ground. |
-| **Counter-battery** | Map fire on a sound or flash marker (§4.3) | Map-fire spread plus the marker's own error | A gun shelling a gun. |
+| **Observed** | A soldier with `observe` has line of sight to the target point, and a **link** to the gun | Aim error starts at `first_round_error_pct` (3 % of range, at least 25 m) and shrinks by `ranging_step_pct` (50 %) per round the observer sees land, to zero. Precision spread always on top. | The normal way to use artillery. |
+| **Registered** | Unobserved fire on a point this gun ranged in on (see Registration) | Aim error `registered_error_pct` (1 % of range, at least 10 m) | Defensive fire plans. Expires. |
+| **Map fire** | The target is a point in the player's knowledge map (last-seen enemies, seen trench lines and structures, capture points, sound or flash markers) | Aim error `map_fire_error_pct` (6 % of range, at least 50 m), no ranging-in | Harassing fire. No blind fire into unknown ground. |
+| **Counter-battery** | Map fire on a sound or flash marker (§4.3) | Map-fire aim error plus the marker's own error | A gun shelling a gun. |
+
+**Two error terms, not one** (critic fix C1). Mortars in S5 use one
+spread: a large game value (`spread_mrad` 50 for the 8 cm GrW 34 today,
+about ±30 m at 600 m), multiplied by 250 %, 300 % and so on. That cannot
+work for guns. An authentic howitzer spread is only a few mrad *(verify
+from firing tables)*. Three times a few metres is still a few metres, so
+map fire would be almost as good as observed fire, and the observer
+brake would vanish. So guns use two terms:
+
+- **Aim error**: where the whole group of shots lands, relative to the
+  target. It comes from map errors, survey and weather. It is a share
+  of the range with a floor in metres. The observer removes it by
+  ranging. This is the brake.
+- **Precision spread**: how shots scatter around their aim point. It is
+  authentic, from the gun's firing table, in `range_pe_pct` and
+  `deflection_pe_mrad`. Nobody removes it.
+
+A gun that has ranged in is therefore very accurate at these short
+ranges. That is historical, and it means the ration and the trench model
+(S3b) must carry the load against HE, not scatter. Mortars keep S5's
+single spread until a separate, measured step moves them to the same
+two terms. Today's 50 mrad mortar spread is a game value and is out of
+line with this, like the mortar crater (§5.3).
 
 **The link** (who can pass a fire order to a gun):
 
@@ -267,18 +297,33 @@ fragments and that relay is gone. All physical.
 | Observer | `observe` range for ground points | Notes |
 |---|---|---|
 | FO team: VB-Trupp (GER, 2 men), FO Party (USA, 3 men), razvedchiki (USSR) | 1,200 m with binoculars | Has a radio. Cheap (100–120 MP), fragile, walks from base. |
-| Gun section leader | 600 m | For his own gun only, by voice. Lets a gun fire at what it can almost see over a crest. |
+| Gun section leader | 400 m | For his own gun only, by voice. Lets a gun fire at what it can almost see over a crest. (Was 600 m. Critic fix C3: from a base on Kessel Ridge, 600 m reaches the centre point, so a base gun would need no observer at all.) |
 | Squad leaders, mortar leaders, officers | 400 m | Voice link only, unless near a radio. |
 
 Observing a ground point is a terrain line-of-sight ray plus the range
 limit. It does not need the enemy men there to be spotted. That matches
 history: observers adjusted on the bursts and on the ground.
+**It reveals nothing.** The `observe` range lets a man aim and adjust
+fire. It does not spot enemy men, trenches or structures beyond his
+normal spotting range. Without this, an FO with 1,200 m binoculars
+would become a free scout (critic fix C4).
 
-**Registration.** Once a gun has ranged in on a point, it keeps that
-ranging (per gun, per target cell) until it moves. A defender can
-register the approaches to his trench before the attack, as real
-defensive fire plans did. Displacing to dodge counter-battery throws the
-registrations away: a real cost of moving.
+**Registration.** Once a gun has ranged in on a point (aim error at
+zero, observed), it keeps that registration for its
+`registration_cell_m` (50 m) cell until it moves or
+`registration_expiry_s` (600 s) pass. Later fire on that cell needs no
+observer and starts at `registered_error_pct` (§4.1 table): good, but
+not the zero error of observed fire. A defender can register the
+approaches to his trench before the attack, as real defensive fire plans
+did. Displacing to dodge counter-battery throws the registrations away:
+a real cost of moving.
+
+Why the expiry and the residual error (critic fix C2): without them a
+gun that never moves (one in base) registers every capture point once,
+early, and then fires accurately on them all match long with no
+observer alive. The observer would be needed only for the first five
+minutes. Real registrations also went stale as weather changed.
+`registration_max_cells` (6) per gun keeps the list short.
 
 ### 4.2 Finite shells: the ration and the supply chain
 
@@ -315,19 +360,45 @@ parked in base would refill forever. So, from S11:
 
 - Each player has a **shell stock at base**, in kg. It grows at
   `shell_ration_kg_per_min` (start 60) up to `shell_stock_cap_kg` (start
-  600). It starts at `shell_stock_start_kg` (start 150).
+  360, six minutes; was 600). It starts at `shell_stock_start_kg`
+  (start 150).
 - **Every shell and mortar bomb taken from the base draws from it**: a
   gun or mortar refilling in the base zone, a crate of shells issued at
-  base, a truck loading shells. Small arms, grenades and AT rockets do
-  not.
+  base, a truck loading shells. Which ammo classes draw is a TOML list,
+  `ration_classes`: mortar bombs, gun and howitzer shells, rockets and
+  HE rifle grenades. Small arms, hand grenades, AT rockets, and tank and
+  AT-gun rounds do not.
+- **Starting loads draw from it too** (critic fix C5). When a gun,
+  mortar or tow is called, its shells are taken from the stock. If the
+  stock is short, the unit arrives with what there is, and the card
+  shows that before the player buys. Without this, each card brings its
+  own HE outside the ration: a leFH 18 with its tow carries 39 rounds,
+  about 580 kg, which is ten minutes of ration for free.
 - The HQ, dumps and crates hold only what was carried out of the base,
   so everything traces back to the ration. One choke point.
-- The HUD shows "Shells 340 / 600 kg".
+- The HUD shows "Shells 340 / 360 kg". With a gun or mortar selected it
+  also shows what that means for it: "≈ 22 rounds for this gun"
+  (players think in rounds, not kg).
+- **Set the value from S5, not from a guess.** S5 measures how many kg
+  of mortar bombs a player fires per minute in matches that meet the HE
+  target. `shell_ration_kg_per_min` starts at that figure, not above it.
+  60 is a placeholder.
 
 What 60 kg per minute buys, for the whole player: about 17 mortar bombs
 (3.5 kg), or 10 leIG shells (6 kg), or 4 rounds of 105 mm (15 kg), or a
 third of a Nebelwerfer salvo. **A second gun does not add HE. It shares
 the same pot.** That is the key property for the HE-share problem (§6.2).
+
+**Why the cap went down.** A full 600 kg stock is 40 rounds of 105 mm or
+170 mortar bombs, fired in one or two minutes. That is a pre-planned
+"delete this trench" button and an HE spike in the kill counts. 360 kg
+still pays for a real preparation (24 rounds of 105 mm) before an
+assault. Crates carried to the HQ and dumps can hold more, but those are
+capped by S6 and cost men's time and risk.
+
+**Team lobbies.** The ration is per player, so HE per km² grows with
+lobby size on a fixed map, as it does with mortars today. The value can
+be set per battle tier and lobby size in `battle_tiers.toml`.
 
 Why a ration and not a manpower price per shell (Q4 C): it caps HE
 tonnage per minute directly, whatever the player's income. History
@@ -347,11 +418,23 @@ be immortal.
 
 **Sound.** Every shot from an indirect-capable gun is an acoustic event.
 
-- The enemy notes shots from the same spot (within `cb_reset_m`, 75 m)
-  inside a window (`cb_window_s`, 120 s).
-- After `cb_rounds_to_mark` shots (3 for guns, 5 for mortars), and after
-  `cb_delay_s` (15 s), the enemy's knowledge map gets a **battery
-  marker**.
+- The enemy keeps an **evidence count** per firing spot. Each shot adds
+  one. The count falls steadily, by 1 per `cb_decay_s` (300 s), shot or
+  no shot.
+  A shot counts for an existing spot if it is within `cb_reset_m`
+  (75 m) of it **or within that spot's current marker error**,
+  whichever is larger.
+- When the count reaches `cb_rounds_to_mark` (3 for guns, 5 for
+  mortars), after `cb_delay_s` (15 s), the enemy's knowledge map gets a
+  **battery marker**.
+- Why not a fixed window (critic fix C6): with "3 shots inside 120 s
+  from within 75 m", a gun that fires one round a minute, or moves 76 m
+  after every two rounds, is never found. A slow harassing gun would be
+  invisible forever. With decay, slow fire is found more slowly, not
+  never. Only a gun slower than one round per five minutes stays
+  hidden, and that is too slow to matter. With the marker error as the
+  reset radius, a short hop does not wipe the marker: only a move
+  longer than the enemy's current error does.
 - The marker sits at the true position plus an error of `cb_error_pct`
   (15 %) of the distance from the gun to the nearest enemy soldier (the
   listener), drawn from the counter RNG.
@@ -369,12 +452,23 @@ is exact and immediate. A gun behind a crest (reverse slope, firing high
 angle or over the crest) is not seen. Rocket launches count as flash for
 everyone with line of sight, on the first salvo.
 
+How it runs (critic fix C8): firing does **not** cast a ray from every
+enemy soldier. It makes the gun conspicuous: for `flash_reveal_ms` its
+spotting signature reaches `flash_m`, and the normal perception
+scheduler (`SYSTEM_DESIGN.md` §5.6: candidate grid, cached pairs, the
+tier's ray budget) finds who sees it. A volley of 20 guns would
+otherwise ask for thousands of rays in one tick. The cost is that a
+flash may be seen up to one perception refresh (≤ 1 s, priority pairs
+0.2 s) late. Same rule as `fire_reveal_pct` today.
+
 **The enemy strikes back** with real shells. Counter-battery fire is map
 fire on the marker. Shells land with real scatter; fragments must reach
 the crew. Infantry can also walk to a marked gun. Nothing silences a gun
 except contact.
 
-**Displacement.** Pack, move more than 75 m, emplace. The marker on the
+**Displacement.** Pack, move more than 75 m **and** more than the
+enemy's current marker error (the player does not see that error, so
+he must judge it; Q24), emplace. The marker on the
 enemy side stays where it was, now pointing at empty ground. The gun
 loses its registrations. With §4.4's times, a move costs 1–4 minutes.
 
@@ -438,7 +532,7 @@ elevation the gun allows. Drag-free estimates (R = v² · sin 2θ / g):
 
 **Low angle** (below 45°) at short range is almost flat. Example: a leFH
 18 on charge 1 (≈200 m/s, verify) at 800 m fires at about 6°, with an
-apex about 20 m up and a flight of about 6 s.
+apex about 20 m up and a flight of about 4 s (drag-free).
 
 **The mask check.** Before a mission starts, the solver marches the
 chosen arc in about 20 segments against the heightfield (the max-mip
@@ -506,6 +600,12 @@ tow, income 240 per minute plus 60 per held point):
 - **`limit_group = "artillery"`: 2 per player** on Battalion, 3 on
   Regiment (in `battle_tiers.toml`). Infantry guns, howitzers and
   launchers count; mortars do not (they have their own caps).
+- **Who counts toward the cap** (critic fix C7). A player may serve at
+  most `limits.artillery` guns at once, his own or captured. His own gun
+  still counts while it sits neutral (crew dead or fled), until it is
+  destroyed or the enemy serves it. Otherwise he could let a gun go
+  neutral, buy a new one, and re-crew the old one with riflemen: three
+  or four guns under a cap of two.
 - Per-card cooldowns (owner decision Q21 B).
 - US Forward Observer Party: a shorter fire-direction delay (§4.8) as a
   doctrine trait, not a stat buff.
@@ -534,26 +634,45 @@ base. The centre point is about 590 m away; the enemy base about 1.2 km.
 Everything is in range. What stops it from ruling the map?
 
 1. **No observer, no aim.** Without a linked observer it can only map-fire
-   at known points, at 3× scatter, with no ranging-in.
+   at known points, with an aim error of 6 % of the range (at least
+   50 m) and no ranging-in.
 2. **The observer must walk.** A VB-Trupp walks to a crest with a view of
    the target. Two men, easy to kill. Kill the radio man and the link is
    gone.
-3. **Distance costs accuracy.** Spread is in mrad: at 1 km it misses by
-   twice as much as at 500 m.
+3. **Distance costs a little accuracy.** The first-round aim error is a
+   share of the range, so 1 km is worse than 500 m. Once ranged in, the
+   difference is small.
 4. **The ration.** 60 kg per minute is 10 leIG shells for the whole
    player, mortars included. A minute of full fire empties a minute of
    supply.
 5. **It is found.** After 3 rounds the enemy has a marker on the base.
-   Every enemy gun and mortar can reach it. The base zone is not a safe
-   zone.
-6. **It cannot hide easily.** A base on open ground is seen by flash on
-   the first round.
+   Enemy guns can reach it. **Enemy mortars cannot** while mortar range
+   stays at today's compressed 600 m: the base is about 1.2 km away.
+   So only enemy artillery or a raid on foot can answer a base gun.
+6. **It may be seen.** A base in view of the enemy's front is spotted by
+   flash on the first round. Many bases will not be.
 
-The base is legal but poor. Forward positions are more accurate and more
-exposed. **If tests still show base camping**, one rule switch exists:
-`indirect_from_base = false` (a gun emplaced in its own base zone fires
-direct only). It is off by default because it is a placement rule, not
-physics.
+**Honest verdict (critic fix C9).** The base is not "legal but poor".
+On a 1 km map it is probably the *best* place for a gun. Every brake
+above works the same wherever the gun stands (observer, ration), or
+favours the base (no carrying, far from enemy mortars and infantry).
+The only brakes that punish the base are counter-battery by enemy guns
+and a raid. This is also historical: guns stood in the rear. It is
+acceptable for one reason only: **the ration**. A base gun fires the
+same capped HE that the player's mortars would otherwise fire. Base
+artillery moves HE between weapons. It does not add HE.
+
+What to watch:
+
+- **"You need artillery to fight artillery."** With 600 m mortars, a
+  player without guns can answer a base gun only with a raid. Test 7
+  reports how often that happens and who wins. If it is a problem, the
+  fix is the separate mortar-range step (§3.2), not a gun change.
+- **The switch.** `indirect_from_base = false` (a gun emplaced in its
+  own base zone fires direct only) exists, off by default. On small maps
+  it helps less than it seems: the gun moves 50 m outside the zone and
+  is in the same place. Use it only if tests show base guns winning
+  matches, and pair it with a raid test.
 
 ---
 
@@ -588,7 +707,11 @@ towed up and fire straight at what its crew sees.
 AP shells: the leFH 18 had a Pzgr rot (verify). Counted as 1 per gun.
 
 HEAT rounds are counted and scarce (2 per gun). They make a howitzer a
-last-ditch tank stopper, not an AT gun.
+last-ditch tank stopper, not an AT gun. **The 2 is a hard cap**
+(`max_ready` per ammo id in the gun def), and HEAT restocks only in base
+(critic fix C10). Otherwise a crate chain could feed a 105 mm a steady
+stream of M67s that beat about 100 mm, enough for a Tiger's front at
+close range.
 
 ### 5.3 Craters and parapet erosion
 
@@ -661,9 +784,20 @@ would make the problem worse.
 | Share of gun shells fired at guns, structures, vehicles | reported |
 | Matches where the ration ran dry for a side | reported |
 
-**If HE is still too high, the levers in order:** the ration size, then
-map-fire spread and the observer ranges, then the fire-direction delay,
-then caps, cost and unlock times. Shell lethality stays authentic.
+**If HE is still too high, the levers in order** (the owner's rule:
+cost, availability, AI and historical options before stat changes;
+critic fix C11 reordered this list): the ration size and stock cap;
+then caps, cost, cooldowns and unlock times; then AI behaviour (when it
+buys and what it fires at); then the game values of the new rules
+(map-fire and registered aim error, observer ranges, fire-direction
+delay). Shell lethality, ranges and precision stay authentic.
+
+**Two HE paths to watch:**
+- **Direct fire at infantry.** A leIG 18 over open sights at 400 m
+  needs no observer and no delay. Humans will use it on men in the open.
+  The ration caps it, and the ≤ 10 % gun-kill target catches it.
+- **HE rifle grenades** (S11b) are new HE carried by riflemen. They
+  draw from the ration (§4.2) and count in the HE share.
 
 ### 6.3 Friendly fire
 
@@ -678,6 +812,11 @@ This is physical and historical, and it makes timing the lift a skill.
 (B) Keep it off; the AI keeps `ai.lift_fire_m` and `danger_close_m`;
 humans may exploit it.
 
+Side effect of (A) in team games: a player can shell his allies, by
+mistake or on purpose. The danger-close HUD warning should also cover
+allied men, and the end-of-match report should list friendly-fire kills
+per player, so hosts can deal with griefers.
+
 ### 6.4 The AI
 
 S3 showed that features the AI ignores never get balanced. The AI needs
@@ -689,12 +828,36 @@ these rules (weights in data):
 | **Site** | Score spots 300–700 m behind the own front (or in base on small maps): no enemy line of sight (the S6 reverse-slope probe), flat firm ground, reachable by the tow, the mask check clears to the three most likely targets, at least 50 m from other own guns. Ask idle engineers for a `howitzer_pit`. |
 | **Observe** | The FO walks to a crest point with line of sight onto the enemy trench or approach (a few sampled points, ray-tested), goes prone, stays out of the open. |
 | **Fire** | (a) Preparation fire on a trench timed with an assault: starts about 60 s before, lifts when the assault is 100 m out (or 50 m with Q22 B). (b) Defensive fire on registered approaches when attackers enter them. (c) Counter-battery on a marker when its error is under about 60 m and the ration is above the reserve. (d) Direct fire (infantry guns) at spotted MG nests, bunkers and vehicles within 800 m, only with an escort near. |
-| **Relocate** | After `ai.displace_after_rounds` (6) from one spot by its own count, or when enemy HE lands within 30 m. It uses only its own knowledge, never the enemy's marker. |
-| **Resupply** | Below 50 % rounds, send the tow or bearers to the HQ or base for crates. |
-| **Recrew / capture** | As S9: idle infantry within 100 m serve a neutral gun with rounds. |
+| **Relocate** | After `ai.displace_after_rounds` (6) from one spot by its own count, or when enemy HE lands within `ai.displace_near_m` (30). It uses only its own knowledge, never the enemy's marker. |
+| **Resupply** | Below `ai.resupply_pct` (50) rounds, send the tow or bearers to the HQ or base for crates. |
+| **Recrew / capture** | As S9: idle infantry within 100 m serve a neutral gun with rounds, inside the artillery cap (§4.7). |
+
+Every number in this table is an `ai.*` key in TOML (critic fix C12).
 
 Cost: a few hundred rays per siting decision, every 10 s at most, inside
 the AI's 20 % ray share; the mask check once per order.
+
+**Feasibility (critic note C13).** This is the largest AI addition in
+the plan, and S3 showed that the AI is where features fail. Make it
+cheaper and safer:
+
+- **Precompute observation posts at map load.** For each capture point
+  and each base approach, sample candidate crest points and keep the
+  few with the best ground view. Deterministic, done once, stored with
+  the map's other baked data. The FO then just walks to the nearest
+  safe post. No live search for crests.
+- **Precompute gun areas the same way** (reverse-slope cells reachable
+  by the tow, mask-clear to the capture points).
+- **Ship in two steps inside S11a.** First: buy with an FO, site, fire
+  observed missions at enemy trench cells near the AI's next objective,
+  lift on the existing `ai.lift_fire_m` rule, resupply. Second:
+  registration-based defensive fire, counter-battery and relocation.
+  The second step only after the first passes test 12.
+- The timed preparation (fire 60 s before, lift at 100 m) hooks into
+  S3b's AI fire-and-move (B3): the attack on a point with a known
+  trench is the trigger. S3b has no assault start time, so the AI
+  fires when two or more squads are assigned to the point, holds their
+  first bound for `ai.prep_fire_s` (60), and lifts on distance.
 
 ### 6.5 Performance
 
@@ -705,7 +868,9 @@ Battalion tier: 700 soldiers, 100 vehicles, 1,800-projectile pool,
 |---|---|---|
 | Guns | 2 per player: 20 guns, plus mortars | Gun entities are vehicle-style; well under 100 vehicles with tanks capped. |
 | Shell rate, steady | The ration caps it: 10 × 60 kg/min = 600 kg/min, about 40 rounds of 105 mm per minute, or ≈170 mortar bombs | ≈0.7–3 bursts per second for the whole match |
-| Shells in flight | Burst rate × flight time (5–30 s): under 100 | ≈5 % of the 1,800 pool. Shells are never bundled (§2.2). Guard: `max_indirect_in_flight_per_player` (24) delays the next shot, deterministically, if ever hit. |
+| Shells in flight | Steady: burst rate × flight time (5–30 s), under 100. Peak: a team dumping full stocks at once, bounded by the guard at 10 × 24 = 240 | Steady ≈5 %, peak ≈13 % of the 1,800 pool. Shells are never bundled (§2.2). Guard: `max_indirect_in_flight_per_player` (24) delays the next shot, deterministically. |
+| Flash checks | Through the normal spotting scheduler (§4.3), no per-shot rays | A 20-gun volley adds 20 conspicuous targets, not thousands of rays. |
+| Targeting overlay (§6.6) | Mask and range grid per gun, computed on the client when the gun emplaces | Presenter only; never touches the sim or its ray budget. |
 | Fragment rays | A synchronised strike by 12 guns in one tick: 12 × 160 = 1,920 | Under 4,096. S3b scales `frag_count` down over the cap; S11 reports `frag_rays_capped` and expects 0 in AI matches. |
 | Craters | One terrain op per burst; bigger craters touch more cells | Terrain ops are budgeted per tick; craters queue in burst order, never drop. Detail-tile inits stay at most 4 per tick. Test: the "200-shell barrage plus 20 squads digging" target (§2.2). |
 | Mask checks | ≈20 segments × a few charge/elevation candidates per order | Per order, not per shell. |
@@ -713,6 +878,30 @@ Battalion tier: 700 soldiers, 100 vehicles, 1,800-projectile pool,
 
 Regiment (2,000 / 300 / 5,000; 7,500 rays per tick) scales the same way
 with three guns per player.
+
+### 6.6 What the player sees (critic fix C14)
+
+There are many rules here: five fire modes, two kinds of link,
+registration, the ration, masks, minimum range, markers. A player who
+clicks and gets nothing will think the gun is broken. So:
+
+- **Targeting overlay.** With a gun selected, the ground is tinted:
+  can hit (observed), can hit (map fire only), masked, too close, out of
+  range. Low-angle guns show the masked shadow behind crests. Computed
+  on the client from the heightfield when the gun emplaces (§6.5).
+- **One reason, always.** A refused order says why, in a few words: "No
+  observer sees this", "No radio link", "Masked by the ridge", "Too
+  close", "Out of shells (base stock 0 kg)", "Packed: emplace first",
+  "Own men within 50 m".
+- **The observer shows his link.** A line from the FO to each gun he can
+  call, cut when the radio man dies.
+- **Registered cells** show as small marks with a timer.
+- **The gun's own exposure:** "6 rounds from this spot: likely located"
+  (Q24 A) and "Seen by flash" when the enemy spotted the muzzle.
+- **Card tooltips say what the gun is for on this map.** On a 1 km map
+  a leFH 18 reads "Flat fire here: good against buildings and vehicles,
+  weak against trenches." Without this, players will buy a howitzer to
+  clear trenches and find it cannot (Q25).
 
 ---
 
@@ -770,11 +959,13 @@ def = "ww2:leig18_l11"
 traverse_deg = [-6, 6]              # (verify)
 elevation_deg = [-10, 73]           # (verify)
 ready = [{ id = "ww2:75mm_igr18", count = 12 }, { id = "ww2:75mm_igr38hl", count = 2 }]
+max_ready = { "ww2:75mm_igr38hl" = 2 }  # HEAT hard cap, base restock only
 fetch_s = 4
 
 [indirect]
-charges_m_s = [92, 110, 135, 165, 210]   # Igr 18, charges 1-5 (verify)
-first_round_spread_pct = 250
+charges_m_s = [92, 110, 135, 165, 221]   # Igr 18, charges 1-5 (verify)
+range_pe_pct = 0.8                  # precision, from the firing table (verify)
+deflection_pe_mrad = 1.5            # (verify)
 flash_m = 2000
 cb_rounds_to_mark = 3
 ```
@@ -809,10 +1000,21 @@ Rules:
 [artillery]
 fire_direction_s = { "ww2:germany" = 25, "ww2:usa" = 15, "ww2:ussr" = 40 }
 adjust_rounds = 1
-map_fire_spread_pct = 300
-observe_m = { fo = 1200, gun_leader = 600, leader = 400 }
+# Aim error (guns): share of range, with a floor in metres (critic C1)
+first_round_error_pct = 3.0
+first_round_error_min_m = 25
+ranging_step_pct = 50               # aim error left after each seen round
+map_fire_error_pct = 6.0
+map_fire_error_min_m = 50
+registered_error_pct = 1.0
+registered_error_min_m = 10
+registration_cell_m = 50
+registration_expiry_s = 600
+registration_max_cells = 6
+observe_m = { fo = 1200, gun_leader = 400, leader = 400 }
+observer_link_m = 150               # voice link to a gun section leader
 cb_rounds_to_mark = { gun = 3, mortar = 5 }
-cb_window_s = 120
+cb_decay_s = 300                    # evidence falls by 1 per 300 s, steadily
 cb_delay_s = 15
 cb_error_pct = 15
 cb_error_step_pct = 80
@@ -825,12 +1027,25 @@ friendly_fire_indirect = true       # Q22 (A)
 max_indirect_in_flight_per_player = 24
 
 [supply]
-shell_ration_kg_per_min = 60        # Q4 (B)
+shell_ration_kg_per_min = 60        # Q4 (B); placeholder, set from S5's measured use
 shell_stock_start_kg = 150
-shell_stock_cap_kg = 600
+shell_stock_cap_kg = 360
+ration_classes = ["mortar_bomb", "gun_shell", "rocket", "rifle_grenade_he"]
+ration_starting_loads = true        # a called unit's shells come from the stock
 
 [limits]
-artillery = 2                       # Regiment: 3, in battle_tiers.toml
+artillery = 2                       # Regiment: 3, in battle_tiers.toml; own + captured served guns
+
+[ai]
+shell_reserve_kg = 60
+displace_after_rounds = 6
+displace_near_m = 30
+resupply_pct = 50
+prep_fire_s = 60
+cb_max_error_m = 60
+direct_fire_max_m = 800
+site_behind_front_m = [300, 700]
+gun_spacing_m = 50
 ```
 
 The 105 mm HE shell:
@@ -872,23 +1087,34 @@ Full card in `roster-expansion.md` §4.2 (S11). In short:
 ## 10. Tests (`frontline-cli gun-test` and AI matches)
 
 1. **Observer rule.** No linked observer: an observed mission is refused.
-   Map fire only on knowledge points; mean miss ≈ 3× observed.
+   Map fire only on knowledge points. Gun mean miss: map fire about 2×
+   an observed first round, and well above a ranged-in round (mortars:
+   S5's 3×).
 2. **Radio link.** Kill the FO's radio man: the link breaks until a man
    picks up the set. Destroy the HQ radio box: observers near it lose
    that relay.
 3. **Masks.** A leFH 18 and an M3 told to hit a trench 80 m behind a
    crest from 600 m report "masked". A leIG 18 at high angle hits it.
-4. **Registration.** Second mission on a registered point starts at the
-   floor spread; after the gun moves 75 m it starts at full spread.
+4. **Registration.** Unobserved fire on a registered cell uses the
+   registered aim error; after the gun moves 75 m, or after 600 s, the
+   cell needs an observer again. A gun in base that registered every
+   capture point at 5:00 cannot fire accurately on them at 16:00 with no
+   observer alive.
 5. **Sound ranging.** A gun firing from one spot gets an enemy marker
    after 3 rounds, error ≤ 15 % of the listener distance, shrinking each
    round. A gun that displaces after 4 rounds survives counter-battery
-   more often than one that stays (10 runs each).
+   more often than one that stays (10 runs each). A gun firing one round
+   a minute from one spot is marked by its 4th round. A gun hopping 76 m
+   after every two rounds keeps its marker if the error is above 76 m.
 6. **Flash.** An enemy with line of sight spots the gun on its first
    round; a reverse-slope gun is not spotted by flash.
 7. **Base camping.** A gun in base with a forward FO fires only what the
    ration allows; with the ration empty it stops. AI matches still end
-   with a winner inside 25 min (stall guard).
+   with a winner inside 25 min (stall guard). Report the share of gun
+   shells fired from inside the base zone, and the win rate of a side
+   with base guns against a side with none (raids only). Starting loads:
+   calling a gun with 0 kg in stock gives a gun with no shells, and the
+   card said so.
 8. **Direct fire.** A leIG 18 at 400 m silences an MG nest; a 105 mm burst
    breaks a dugout roof that survives an 81 mm hit; M67 HEAT penetrates a
    Panzer IV side; 105 mm HE on a Sherman damages only external parts and
@@ -899,7 +1125,11 @@ Full card in `roster-expansion.md` §4.2 (S11). In short:
    (owner sets the bar).
 10. **Friendly fire** (if Q22 A). Own men inside the burst take
     fragments; the AI lifts fire in time in ≥ 9 of 10 staged assaults.
-11. **HE share.** §6.2 targets over 20 AI matches.
+11. **HE share.** First a control run: the ration on, no guns, S5's
+    content. The HE share must not rise above S5's. Then §6.2 targets
+    over 20 AI matches with guns.
+11b. **Cap.** A player with two guns, one of them neutral, cannot call a
+    third gun or re-crew the neutral one past the cap.
 12. **AI use.** The AI buys a gun and an observer in ≥ 6 of 10 matches,
     fires observed or counter-battery missions, never fires indirect
     without an observer except on knowledge points, and displaces after
@@ -936,3 +1166,91 @@ Also listed in `roster-expansion.md` §5. Work goes on with (A).
   map, 1 per player, 8:00 unlock; on 1 km maps they act as flat-fire and
   direct-fire guns. (B) Only on maps of 2 × 2 km and larger (a map flag),
   where they behave closer to history.
+
+---
+
+## Critic notes (2026-11-01)
+
+An adversarial review of this file and of the S11 and Q13 changes in
+`roster-expansion.md`. Fixes were made in place; each is tagged
+"critic fix Cn" in the text. Nothing here is built or tested. Historical
+figures stay *(verify)*.
+
+**Verdict.** The design holds, but it had one hole that would have
+undone it (C1) and several cheap exploits. With the fixes, the honest
+picture is: artillery will mostly fire from the rear, often from the
+base, and that is fine *only* because the ration caps total HE. The
+ration is now the whole defence against HE dominance. If the owner
+rejects Q4 (B), this design needs rethinking.
+
+**Exploits and holes fixed**
+
+| # | Problem | Fix |
+|---|---|---|
+| C1 | **Map fire would be almost as good as observed fire.** Spread was one number multiplied by 300 % for map fire. Mortars use a large game spread (50 mrad). An authentic howitzer spread is a few mrad, so 3× of it is still a few metres. The observer brake would vanish for guns. | Two error terms for guns: an aim error (share of range, with a floor in metres) that the observer removes, plus the authentic precision spread on top (§4.1). |
+| C2 | **Registration made the observer a one-time cost.** A gun that never moves (in base) could register every capture point early and fire accurately all match with no observer. | Registration expires (600 s), has a residual error, and is capped at 6 cells per gun. |
+| C3 | **A base gun needed no observer.** The section leader observed to 600 m; on Kessel Ridge the centre point is about 590 m from a base. | Section leader observe range 400 m, like other leaders. |
+| C4 | **The FO was a free scout.** 1,200 m ground observation could be read as spotting. | `observe` lets a man aim and adjust; it reveals nothing beyond normal spotting. |
+| C5 | **Starting loads bypassed the ration.** A leFH 18 and its tow arrive with about 580 kg of shells, ten minutes of ration, free with each card. "A second gun adds no HE" was false. | Starting loads draw from the base stock; the card shows a short load before purchase. |
+| C6 | **Slow fire and short hops were never found.** With "3 shots in 120 s within 75 m", one round a minute, or a 76 m hop every two rounds, never produced a marker. | Evidence count with steady decay; a shot within the current marker error still counts for that spot. |
+| C7 | **Cap dodge.** Let a gun go neutral, buy another, re-crew the old one with riflemen. | A player serves at most the cap, own or captured; his neutral gun still counts. |
+| C8 | **Flash could cost thousands of rays in one tick** if done as a ray from every enemy per shot. | Firing makes the gun conspicuous; the normal perception scheduler handles it. |
+| C9 | **"The base is legal but poor" was wrong.** Every brake either ignores position or favours the base. Also "every enemy mortar can reach it" was false: mortars stay at 600 m, the enemy base is about 1.2 km away. | Said plainly in §4.9. Base guns are accepted because of the ration. Test 7 now measures base fire and the no-artillery matchup. |
+| C10 | **HEAT stream.** Crates could feed a 105 mm many M67s (≈100 mm). | Hard cap of 2 at the gun; HEAT restocks only in base. |
+| C11 | **Lever order broke the owner rule.** Stat-like values (spread, observer range, delay) came before cost and caps. | Reordered: ration, then cost, caps, cooldowns, unlocks, then AI, then rule values. |
+| C12 | **Values outside TOML.** `observer_link_m`, the AI thresholds and others were only in prose. | Added to the TOML block (§8). |
+| C13 | **AI scope was too big for one step.** Live crest search, timing with an assault start that S3b does not have. | Precomputed observation posts and gun areas at map load; S11a's AI ships in two steps; preparation fire hooks into S3b B3 fire-and-move. |
+| C14 | **Too many silent rules for a player.** | §6.6: targeting overlay, one refusal reason per order, link lines, registered-cell marks, map-aware tooltips. |
+
+**Historical and number errors fixed**
+
+- **Nebelwerfer "200 kg of HE" was wrong.** A salvo is about 204 kg of
+  ammunition, but only about 12–15 kg of explosive *(verify)*: about six
+  105 mm shells. Under a weight-based ration the launcher is a poor deal
+  in explosive per kg. Its real danger is surprise. The Q23 text is
+  corrected here and in `roster-expansion.md`.
+- leFH 18 charge 1 at 800 m: the flight is about 4 s drag-free, not 6 s.
+- leIG 18 top charge: about 221 m/s *(verify)*, not 210, in the TOML
+  sample.
+- PM-38: about 280 kg is the firing weight; on its wheels it is nearer
+  480 kg *(verify)*.
+- Still to verify, not changed: the 105 mm M2A1 burst rate (some
+  sources give far more than 4 rounds a minute for the first minutes);
+  which German tow the leIG 18 really used (the lighter Sd.Kfz. 10 or a
+  light truck is more typical than the Sd.Kfz. 11; one tow model is a
+  fair art saving); which 105 mm guns had shields.
+
+**HE dominance: what is left**
+
+- With authentic precision, a ranged-in gun is very accurate at 1 km.
+  Trench safety now rests on S3b's fragment and parapet model and the
+  "≤ 40 % of open" fortify-test row. If that row fails, the fix is in
+  the trench model, not gun scatter.
+- The ration value is a guess (60 kg/min). It must start at S5's
+  measured mortar use, and the first S11a measurement is a control run
+  with the ration on and no guns (test 11).
+- The stock cap went from 600 to 360 kg: a full 600 kg is a 40-round
+  105 mm dump in a minute or two.
+- Direct fire at infantry and HE rifle grenades are new HE paths. Both
+  draw from the ration; both are counted.
+
+**Not fixed, for the owner**
+
+- **Base artillery will be common on 1 km maps.** It is historical and
+  capped, but players who dislike being shelled by guns they cannot
+  reach will complain, as they do in the genre. The `indirect_from_base`
+  switch exists; it does little on small maps (§4.9).
+- **Artillery mostly answers artillery.** With 600 m mortars, only guns
+  or a raid on foot reach a rear gun. Making mortars authentic fixes
+  that but adds HE reach; do it as its own measured step.
+- **Q22 (A) in team games** lets a player shell his allies. Warnings and
+  a friendly-fire report per player are proposed (§6.3).
+- **S11a is big.** About 0.9× S3 is optimistic for the ration, links,
+  five fire modes, registration, masks, sound and flash, craters, direct
+  fire, friendly fire and an AI planner. If it runs long, split it:
+  S11a1 (ration, links, fire modes, masks, leIG 18 and M3, basic AI);
+  S11a2 (registration, counter-battery, displacement, defensive-fire
+  AI).
+- **S11b is not "no new code".** HE rifle grenades need a launcher mode
+  on the rifleman (switch, fire, switch back). It is small and reuses
+  S5's launcher items, but it is code.

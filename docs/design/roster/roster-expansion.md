@@ -77,7 +77,7 @@ Historical figures are starting values from memory. Each needs a
 | Fragment rays | The guns design asked for a fragment-ray slice (F0). | Already in S3b-balance (part A1). Dropped from this plan. S3b must land first. |
 | APCR rounds | Both gun and vehicle designs need the `apcr` mechanism. | Already in S3b-balance (A6, PzGr 40). Reused. |
 | Smoke rounds | Two designs proposed mortar and tank smoke as the trench-assault fix. | The owner ruled out mortar smoke for the S3b fix. **No smoke rounds in this plan** unless the owner says so (Q5). Smoke grenades stay. |
-| Who pays for ammunition | Infantry and vehicles: cargo from base is free; transport is the cost. Guns: one per-player supply rate (kg per minute) for every restock. | Staged. S5 keeps the base free and today's compressed mortar range (600 m). We measure. A supply rate comes only if authentic mortar ranges are switched on (Q4). |
+| Who pays for ammunition | Infantry and vehicles: cargo from base is free; transport is the cost. Guns: one per-player supply rate (kg per minute) for every restock. | Staged. S5 keeps the base free and today's compressed mortar range (600 m). We measure. With on-map artillery (Q13 A) a per-player shell ration at base is needed before S11a in any case, whatever the mortar range (Q4; `artillery-on-map.md` §4.2). |
 | Crates | By supply kind (any calibre) or by ammo class. | By **faction and kind**, counted in kg. A crate feeds only its own faction's calibres, so captured guns need captured crates. |
 | Mortar crew | 3 men plus an optional bearer, or 5 men. | **5 men.** The two bearers carry the bombs; when they die, the mortar runs dry sooner. |
 | Tank rearm at the HQ | Same rate as base, or half. | **Half the base rate** (1 round per 4 s), and the same at a supply vehicle (the vehicle design had 1 per 3 s; one forward rate is easier to read). Rare rounds (APCR, HVAP), repair and new crew stay base-only. |
@@ -628,19 +628,30 @@ Design: `artillery-on-map.md`.
   guns, with elevation bands and a mask check (no solution that clears
   the ground: "masked"); fire-direction delay per faction; sound ranging
   (marker after 3 rounds, error 15 % of the listener distance, sharpening
-  each round) and flash (line of sight spots the gun on the first round);
+  each round, with an evidence count that decays slowly, so slow fire
+  and short hops are found too) and flash (line of sight spots the gun
+  on the first round, through the normal spotting scheduler);
+  a two-term error for guns (an aim error the observer removes, plus the
+  authentic precision spread), registration that expires; starting
+  loads drawn from the ration; the artillery cap counting captured and
+  neutral guns; a targeting overlay and one refusal reason per order;
   displacement; `howitzer_pit`; HE craters scaled by filler; gun direct
   fire with HE and HEAT; no free crew for guns in base; AI artillery
   planner (buy with an observer, site on reverse slopes, observe from
   crests, prepare, defend, counter-fire, relocate); friendly fire for
-  indirect HE if Q22 (A). **S11b:** no new code; low-angle physics and
-  tuning for the 2 t field howitzers.
+  indirect HE if Q22 (A). The AI uses observation posts and gun areas
+  precomputed at map load. **S11b:** little new code (a launcher mode
+  for HE rifle grenades); otherwise data and tuning for the 2 t field
+  howitzers.
 - **Content:** S11a: VB-Trupp, FO Party; leIG 18 section (pushed, and a
   variant with an Sd.Kfz. 11), 105 mm M3 section; Igr 18, Igr 38 HL, M1
   HE, M67 HEAT. S11b: leFH 18 and 105 mm M2A1 sections (one gun each);
   75 mm pack howitzer as data; kz. GrW 42, 60 mm M2; M7 rifle grenade and
   *Schießbecher*. Later: sIG 33; Nebelwerfer 41 only if Q23 allows.
-- **Size:** S11a ~0.9×, S11b ~0.4× (data, models and tuning).
+- **Size:** S11a ~0.9×, S11b ~0.4× (data, models and tuning). S11a is
+  likely optimistic. Split point if it runs long: S11a1 (ration, links,
+  fire modes, masks, leIG 18 and M3, basic AI) and S11a2 (registration,
+  counter-battery, displacement, defensive-fire AI).
 - **Depends on:** S3b (fragment rays, parapet erosion, duck state); S5
   (counted ammo, `FireMission`, observer rule, charge solver); S6 (HQ
   radio box, crates, pit kind); S8 (trucks as tows and ammo carriers); S9
@@ -649,20 +660,32 @@ Design: `artillery-on-map.md`.
 - **Risks:** more HE. S11a ships only if S5 met its HE-share target; the
   ration is the hard ceiling (a second gun shares the pot; it adds no HE).
   Counter-battery duels could crowd out play: report the share of shells
-  fired at guns. Base camping: if the walk-through test fails, switch
-  `indirect_from_base = false`. Placement is compressed: on 1 km maps
+  fired at guns. Base artillery will be common on 1 km maps; it is
+  accepted only because the ration caps it (`artillery-on-map.md` §4.9).
+  With 600 m mortars, only guns or a raid reach a rear gun.
+  `indirect_from_base = false` exists but helps little on small maps.
+  Ranged-in guns are accurate at these ranges, so trench safety rests on
+  S3b's trench model. The ration value must start at S5's measured
+  mortar use, not at the 60 kg placeholder. Placement is compressed: on 1 km maps
   the leFH 18, M3 and M2A1 fire almost flat (weak against trenches, good
   against structures and in direct fire); Q25. Without friendly fire,
   shelling a trench while your men enter it is an exploit (Q22).
 - **Done when:**
   - with no linked observer, an observed mission is refused; map fire
-    lands only on knowledge points, with a mean miss about 3× observed;
+    lands only on knowledge points, with a gun's mean miss about 2× an
+    observed first round; a registration expires after 600 s;
+  - control run with the ration on and no guns: the HE share is not
+    above S5's;
+  - a gun called with an empty shell stock arrives with no shells; a
+    player cannot serve more guns than the cap, own, neutral or
+    captured;
   - a leFH 18 or M3 told to hit a trench behind a crest from 600 m
     reports "masked"; a leIG 18 at high angle hits it;
   - a gun firing from one spot gets an enemy marker after 3 rounds, with
     an error of at most 15 % of the listener distance that shrinks each
     round; a gun that displaces after 4 rounds survives counter-battery
-    more often than one that stays (10 runs each); an enemy with line of
+    more often than one that stays (10 runs each); a gun firing one
+    round a minute is marked by its 4th round; an enemy with line of
     sight spots the gun by flash on its first round;
   - a gun in base with a forward observer fires no more than the ration
     allows and stops when it is empty; AI matches still end with a winner
@@ -813,8 +836,10 @@ answer. The slice in brackets is the first one blocked by the answer.
    manpower cost per restocked shell.
    With on-map artillery (Q13 A) this must be answered before S11a.
    `artillery-on-map.md` §4.2 recommends (B), as a shell ration at base
-   (start 60 kg per minute, cap 600 kg) drawn by every shell and bomb
-   restock: it caps HE tonnage whatever the income. The HQ still fills
+   (start 60 kg per minute as a placeholder, to be set from S5's
+   measured use; cap 360 kg) drawn by every shell and bomb restock and
+   by the starting loads of new guns and mortars: it caps HE tonnage
+   whatever the income. The HQ still fills
    only by carried crates and trucks (Q2 C).
 5. **Smoke rounds** [S5]. You ruled out mortar smoke as the S3b
    trench-assault fix. (A) No smoke rounds in this plan; smoke grenades
@@ -906,7 +931,9 @@ answer. The slice in brackets is the first one blocked by the answer.
     direct fire stays as today. (B) Keep no friendly fire; the AI keeps
     its danger-close and lift-fire rules.
 23. **Rocket launchers** (Nebelwerfer 41, later BM-13) [after S11b]. One
-    salvo is about 200 kg of HE. (A) Later, as a lobby option, cap 1,
+    salvo is about 200 kg of ammunition but only about 12–15 kg of
+    explosive (verify), about six 105 mm shells, all landing within ten
+    seconds. (A) Later, as a lobby option, cap 1,
     12:00 unlock, after the ration is measured with tube artillery.
     (B) Missions only. (C) In S11b.
 24. **Show the player the enemy's marker on his gun?** [S11a]. (A) No:
@@ -1078,7 +1105,9 @@ only) and the three area designs.
   howitzers because they reach the whole map from base, but then put the
   leIG 18 (≈3.5 km) and 105 mm M3 (≈7.6 km) on the map with free base
   resupply: the same trap. S11 is now blocked by Q4 (a per-player shell
-  supply rate, or a documented range compression).
+  supply rate, B, or a manpower cost per shell, C). Range compression
+  is no longer an option: `artillery-on-map.md` §3.2 shows it does not
+  stop fire from base.
 - **Variant cooldowns.** With per-card cooldowns, the full and
   understrength Grenadiergruppe could be called alternately at twice
   the rate. `cooldown_group` (default: the root of the `extends` chain)
