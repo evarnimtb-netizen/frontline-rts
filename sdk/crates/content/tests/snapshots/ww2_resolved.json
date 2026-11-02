@@ -1,0 +1,2741 @@
+{
+  "ammo": {
+    "ww2:75mm_m48": {
+      "caliber_mm": 75,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 120,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 80,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 1200,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:75mm_m48",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 463,
+      "name": "75 mm M48 HE",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "track_damage": 40
+    },
+    "ww2:75mm_m61": {
+      "caliber_mm": 75,
+      "core": {
+        "damage": 100,
+        "length_cm": 150,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 12,
+        "reach_cm": 300
+      },
+      "id": "ww2:75mm_m61",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 618,
+      "name": "75 mm M61 APC",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          88
+        ],
+        [
+          500,
+          81
+        ],
+        [
+          1000,
+          73
+        ],
+        [
+          1500,
+          65
+        ],
+        [
+          2000,
+          59
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "track_damage": 60
+    },
+    "ww2:75mm_pzgr39": {
+      "caliber_mm": 75,
+      "core": {
+        "damage": 100,
+        "length_cm": 150,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 8,
+        "reach_cm": 300
+      },
+      "id": "ww2:75mm_pzgr39",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 790,
+      "name": "7.5 cm PzGr 39",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          135
+        ],
+        [
+          500,
+          123
+        ],
+        [
+          1000,
+          109
+        ],
+        [
+          1500,
+          97
+        ],
+        [
+          2000,
+          86
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "track_damage": 60
+    },
+    "ww2:75mm_pzgr40": {
+      "caliber_mm": 75,
+      "core": {
+        "damage": 100,
+        "length_cm": 120,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "id": "ww2:75mm_pzgr40",
+      "mechanism": "ap",
+      "muzzle_velocity_m_s": 990,
+      "name": "7.5 cm PzGr 40",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          176
+        ],
+        [
+          500,
+          154
+        ],
+        [
+          1000,
+          130
+        ],
+        [
+          1500,
+          109
+        ],
+        [
+          2000,
+          92
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "track_damage": 60
+    },
+    "ww2:75mm_sprgr34": {
+      "caliber_mm": 75,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 120,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 80,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 1200,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:75mm_sprgr34",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 550,
+      "name": "7.5 cm Sprgr 34",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "track_damage": 40
+    },
+    "ww2:m6a3_heat": {
+      "caliber_mm": 60,
+      "core": {
+        "damage": 120,
+        "length_cm": 100,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 60,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 40,
+        "cuts_trenches": false,
+        "damage": 100,
+        "frag_count": 24,
+        "frag_damage": 50,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 600,
+        "frag_track_damage": 1,
+        "inside_damage": 0,
+        "inside_rays": 0,
+        "inside_reach_cm": 0,
+        "pen_mm": 0,
+        "suppression": 20,
+        "suppression_radius_m": 6,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:m6a3_heat",
+      "mechanism": "heat",
+      "muzzle_velocity_m_s": 85,
+      "name": "M6A3 rocket",
+      "nonpen_damage": 30,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          100
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 25,
+        "rays": 7
+      },
+      "track_damage": 50
+    },
+    "ww2:rpzb54_heat": {
+      "caliber_mm": 88,
+      "core": {
+        "damage": 120,
+        "length_cm": 100,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 60,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 40,
+        "cuts_trenches": false,
+        "damage": 100,
+        "frag_count": 24,
+        "frag_damage": 50,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 600,
+        "frag_track_damage": 1,
+        "inside_damage": 0,
+        "inside_rays": 0,
+        "inside_reach_cm": 0,
+        "pen_mm": 0,
+        "suppression": 20,
+        "suppression_radius_m": 6,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:rpzb54_heat",
+      "mechanism": "heat",
+      "muzzle_velocity_m_s": 110,
+      "name": "RPzB Gr 4322",
+      "nonpen_damage": 30,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          160
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 25,
+        "rays": 7
+      },
+      "track_damage": 50
+    }
+  },
+  "factions": {
+    "ww2:germany": {
+      "color": "#8c96a0",
+      "id": "ww2:germany",
+      "name": "Germany",
+      "roster": [
+        "ww2:ger_rifle_squad",
+        "ww2:ger_mg_team",
+        "ww2:ger_engineer_squad",
+        "ww2:ger_mortar_team",
+        "ww2:ger_panzerschreck_team",
+        "ww2:ger_pz4_h_squad"
+      ],
+      "start_squads": [
+        "ww2:ger_rifle_squad",
+        "ww2:ger_rifle_squad",
+        "ww2:ger_engineer_squad"
+      ]
+    },
+    "ww2:usa": {
+      "color": "#7d8b4a",
+      "id": "ww2:usa",
+      "name": "USA",
+      "roster": [
+        "ww2:usa_rifle_squad",
+        "ww2:usa_mg_team",
+        "ww2:usa_engineer_squad",
+        "ww2:usa_mortar_team",
+        "ww2:usa_bazooka_team",
+        "ww2:usa_m4a3_75_squad"
+      ],
+      "start_squads": [
+        "ww2:usa_rifle_squad",
+        "ww2:usa_rifle_squad",
+        "ww2:usa_engineer_squad"
+      ]
+    }
+  },
+  "items": {
+    "ww2:geballte_ladung": {
+      "fuse_ms": 5000,
+      "he": {
+        "blast_radius_cm": 400,
+        "crater_depth_cm": 90,
+        "crater_radius_cm": 150,
+        "cuts_trenches": true,
+        "damage": 300,
+        "frag_count": 32,
+        "frag_damage": 80,
+        "frag_elev_deg": [
+          2,
+          40
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 800,
+        "frag_track_damage": 1,
+        "inside_damage": 300,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 30,
+        "suppression": 80,
+        "suppression_radius_m": 18,
+        "vs_vehicle_pct": 100
+      },
+      "id": "ww2:geballte_ladung",
+      "kind": "satchel",
+      "min_range_m": 3,
+      "name": "Geballte Ladung",
+      "range_m": 8,
+      "scatter_pct": 6,
+      "windup_ms": 1000
+    },
+    "ww2:m15_smoke": {
+      "fuse_ms": 0,
+      "id": "ww2:m15_smoke",
+      "kind": "smoke",
+      "min_range_m": 5,
+      "name": "M15-style Smoke Grenade",
+      "range_m": 30,
+      "scatter_pct": 6,
+      "smoke": {
+        "fade_ms": 5000,
+        "grow_ms": 3000,
+        "hold_ms": 25000,
+        "radius_m": 8
+      },
+      "windup_ms": 1000
+    },
+    "ww2:m37_satchel": {
+      "fuse_ms": 5000,
+      "he": {
+        "blast_radius_cm": 400,
+        "crater_depth_cm": 90,
+        "crater_radius_cm": 150,
+        "cuts_trenches": true,
+        "damage": 300,
+        "frag_count": 32,
+        "frag_damage": 80,
+        "frag_elev_deg": [
+          2,
+          40
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 800,
+        "frag_track_damage": 1,
+        "inside_damage": 300,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 30,
+        "suppression": 80,
+        "suppression_radius_m": 18,
+        "vs_vehicle_pct": 100
+      },
+      "id": "ww2:m37_satchel",
+      "kind": "satchel",
+      "min_range_m": 3,
+      "name": "M37 Demolition Kit",
+      "range_m": 8,
+      "scatter_pct": 6,
+      "windup_ms": 1000
+    },
+    "ww2:mk2_grenade": {
+      "fuse_ms": 4000,
+      "he": {
+        "blast_radius_cm": 200,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 50,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 96,
+        "frag_damage": 60,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 25,
+        "frag_reach_cm": 1000,
+        "frag_track_damage": 0,
+        "inside_damage": 100,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 2,
+        "suppression": 50,
+        "suppression_radius_m": 10,
+        "vs_vehicle_pct": 10
+      },
+      "id": "ww2:mk2_grenade",
+      "kind": "frag",
+      "min_range_m": 5,
+      "name": "Mk 2 Grenade",
+      "range_m": 30,
+      "scatter_pct": 6,
+      "windup_ms": 1000
+    },
+    "ww2:nbhgr39": {
+      "fuse_ms": 0,
+      "id": "ww2:nbhgr39",
+      "kind": "smoke",
+      "min_range_m": 5,
+      "name": "Nebelhandgranate 39",
+      "range_m": 30,
+      "scatter_pct": 6,
+      "smoke": {
+        "fade_ms": 5000,
+        "grow_ms": 3000,
+        "hold_ms": 25000,
+        "radius_m": 8
+      },
+      "windup_ms": 1000
+    },
+    "ww2:stielhandgranate": {
+      "fuse_ms": 4000,
+      "he": {
+        "blast_radius_cm": 200,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 50,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 96,
+        "frag_damage": 60,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 25,
+        "frag_reach_cm": 1000,
+        "frag_track_damage": 0,
+        "inside_damage": 100,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 2,
+        "suppression": 50,
+        "suppression_radius_m": 10,
+        "vs_vehicle_pct": 10
+      },
+      "id": "ww2:stielhandgranate",
+      "kind": "frag",
+      "min_range_m": 5,
+      "name": "Stielhandgranate 24",
+      "range_m": 30,
+      "scatter_pct": 6,
+      "windup_ms": 1000
+    }
+  },
+  "maps": {
+    "ww2:kessel_ridge": {
+      "bases": [
+        {
+          "pos": [
+            96,
+            96
+          ],
+          "radius_m": 40
+        },
+        {
+          "pos": [
+            928,
+            928
+          ],
+          "radius_m": 40
+        }
+      ],
+      "capture_points": [
+        {
+          "name": "A",
+          "pos": [
+            220,
+            700
+          ],
+          "value": 1
+        },
+        {
+          "name": "B",
+          "pos": [
+            300,
+            300
+          ],
+          "value": 1
+        },
+        {
+          "name": "C",
+          "pos": [
+            512,
+            512
+          ],
+          "value": 2
+        },
+        {
+          "name": "D",
+          "pos": [
+            724,
+            724
+          ],
+          "value": 1
+        },
+        {
+          "name": "E",
+          "pos": [
+            800,
+            320
+          ],
+          "value": 1
+        }
+      ],
+      "id": "ww2:kessel_ridge",
+      "name": "Kessel Ridge",
+      "size_m": 1024,
+      "terrain": {
+        "base_height_m": 20,
+        "octaves": [
+          {
+            "amplitude_cm": 500,
+            "period_m": 128
+          },
+          {
+            "amplitude_cm": 100,
+            "period_m": 32
+          }
+        ],
+        "ridges": [
+          {
+            "from": [
+              160,
+              870
+            ],
+            "height_m": 14,
+            "to": [
+              870,
+              160
+            ],
+            "width_m": 320
+          }
+        ],
+        "seed": 1944,
+        "symmetry": "none",
+        "valleys": [
+          {
+            "depth_m": 5,
+            "from": [
+              0,
+              280
+            ],
+            "to": [
+              1024,
+              340
+            ],
+            "width_m": 200
+          },
+          {
+            "depth_m": 5,
+            "from": [
+              1024,
+              744
+            ],
+            "to": [
+              0,
+              684
+            ],
+            "width_m": 200
+          }
+        ]
+      },
+      "woods": [
+        {
+          "center": [
+            330,
+            560
+          ],
+          "radius_m": 55
+        },
+        {
+          "center": [
+            690,
+            470
+          ],
+          "radius_m": 55
+        },
+        {
+          "center": [
+            180,
+            420
+          ],
+          "radius_m": 40
+        },
+        {
+          "center": [
+            850,
+            610
+          ],
+          "radius_m": 40
+        },
+        {
+          "center": [
+            560,
+            160
+          ],
+          "radius_m": 45
+        },
+        {
+          "center": [
+            460,
+            870
+          ],
+          "radius_m": 45
+        }
+      ]
+    }
+  },
+  "rules": {
+    "ww2:skirmish": {
+      "ai": {
+        "armour": {
+          "backup_m": 30,
+          "deny_m": 300,
+          "escort_grace_s": 8,
+          "escort_join_m": 150,
+          "escort_reached_m": 30,
+          "escort_squads": 2,
+          "face_range_m": 600,
+          "face_slack_deg": 20,
+          "halted_mm_s": 300,
+          "rearm_ap_below": 3,
+          "rearm_full_pct": 90,
+          "rearm_max_s": 120,
+          "recrew_clear_m": 80,
+          "recrew_reach_m": 300,
+          "retreat_engine_pct": 30,
+          "tank_reserve_mp": 200,
+          "threat_m": 300
+        },
+        "assault": {
+          "at_follow_back_m": 30,
+          "at_follow_m": 0,
+          "at_hunt_clear_m": 20,
+          "at_hunt_inset_m": 10,
+          "at_hunt_m": 400,
+          "at_hunt_stuck_m": 500,
+          "bound_m": 40,
+          "lift_fire_m": 15,
+          "satchel_chase_s": 6,
+          "satchel_crawl_m": 25,
+          "satchel_hunt_m": 250,
+          "satchel_hunt_max_s": 120,
+          "satchel_leash_m": 50,
+          "satchel_slow_s": 3,
+          "satchel_stand_m": 5,
+          "satchel_stick_s": 20,
+          "second_base_below_pct": 100,
+          "second_base_gap_m": 30,
+          "support_mg_m": 250,
+          "support_rifle_m": 150,
+          "support_tank_m": 200,
+          "trench_line_m": 24
+        },
+        "assault_close_m": 40,
+        "at_clear_s": 30,
+        "barrage_rounds": 6,
+        "dig_length_m": 20,
+        "dig_offset_m": 10,
+        "frag_group_men": 3,
+        "infantry": {
+          "buys_per_plan": 2,
+          "danger_close_m": 35,
+          "frag_group_m": 5,
+          "satchel_side_mm": 800,
+          "satchel_slow_mm_s": 1100,
+          "support_back_m": 200,
+          "trench_probe_dm": 8,
+          "trench_probe_m": 60,
+          "trench_probe_step_m": 4
+        },
+        "mix_at_pct": 20,
+        "mix_engineer_pct": 15,
+        "mix_mg_pct": 20,
+        "mix_mortar_pct": 15,
+        "mix_rifle_pct": 50,
+        "mix_vehicle_pct": 20,
+        "repair_clear_m": 150,
+        "retreat_strength_pct": 40,
+        "tank_standoff_m": 160,
+        "threat_radius_m": 80,
+        "throw_cooldown_s": 10
+      },
+      "call_in": {
+        "spawn_clear_m": 10,
+        "spawn_ring_pct": 50,
+        "spawn_vehicle_weight": 8
+      },
+      "capture": {
+        "extra_man_pct": 50,
+        "max_men": 4,
+        "radius_m": 15,
+        "time_s": 20
+      },
+      "combat": {
+        "blast": {
+          "crater_depth_max_pct": 140,
+          "crater_depth_min_pct": 75,
+          "crater_lift_mm": 500,
+          "frag_fall_probe_cm": 150,
+          "lift_mm": 300
+        },
+        "body": {
+          "crouch_mm": 1200,
+          "eye_drop_mm": 100,
+          "head_aim_mm": 150,
+          "muzzle_drop_mm": 150,
+          "prone_half_mm": 700,
+          "prone_mm": 400,
+          "prone_radius_mm": 200,
+          "radius_mm": 250,
+          "stand_mm": 1750,
+          "still_mm_s": 300,
+          "trench_depth_mm": 1000
+        },
+        "corpse_s": 30,
+        "crouch_suppression": 30,
+        "fire_exposure_cm": 30,
+        "firing_spot_pct": 150,
+        "hit_suppression": 25,
+        "mortar": {
+          "barrage_retry_m": 20,
+          "flight_milli": 350,
+          "min_flight_s": 4,
+          "muzzle_mm": 800
+        },
+        "moving_spread_pct": 250,
+        "near_miss_cm": 200,
+        "pin_suppression": 70,
+        "pinned_spread_pct": 200,
+        "prone_spot_pct": 50,
+        "range_spread_pct": 50,
+        "reveal_ms": 2000,
+        "spot_observers": 2,
+        "spot_period_ms": 200,
+        "spot_rays_per_tick": 160,
+        "suppress": {
+          "aim_cm": 80,
+          "clear_cm": 300,
+          "line_max_m": 40,
+          "tank_he_aim_cm": 0,
+          "tank_he_reserve": 6,
+          "tank_he_s": 12
+        },
+        "suppression": {
+          "blast_behind_cover_pct": 50,
+          "covered_near_miss_pct": 100,
+          "duck_decay_pct": 25,
+          "duck_points": 25,
+          "duck_release_points": 10,
+          "spread_per_point_pct": 100
+        },
+        "suppression_decay_per_s": 8,
+        "trench_spot_pct": 60,
+        "woods_spot_pct": 50
+      },
+      "cover": {
+        "chest_mm": 1000,
+        "enemy_m": 400,
+        "eye_mm": 1500,
+        "gap_mm": 1200,
+        "radius_m": 10,
+        "trench_margin_mm": 400
+      },
+      "difficulty": {
+        "easy": {
+          "decision_quality_pct": 50,
+          "income_pct": 80,
+          "reaction_ms": 4000,
+          "replan_ms": 3000
+        },
+        "hard": {
+          "decision_quality_pct": 100,
+          "income_pct": 125,
+          "reaction_ms": 1000,
+          "replan_ms": 2000
+        },
+        "normal": {
+          "decision_quality_pct": 80,
+          "income_pct": 100,
+          "reaction_ms": 2000,
+          "replan_ms": 2000
+        }
+      },
+      "dig": {
+        "common": {
+          "parapet_fall_mm": 600,
+          "parapet_rise_mm": 300,
+          "parapet_top_mm": 400,
+          "parapet_undug_mm": 50,
+          "reach_mm": 1500,
+          "spoil_crater_pct": 150
+        },
+        "profiles": {
+          "at_ditch": {
+            "depth_cm": 230,
+            "engineers_only": true,
+            "floor_cm": 100,
+            "max_length_m": 30,
+            "parapet_cm": 60,
+            "passes": 8,
+            "wall_cm": 120,
+            "work_per_m": 22000
+          },
+          "trench": {
+            "depth_cm": 160,
+            "engineers_only": false,
+            "floor_cm": 80,
+            "max_length_m": 60,
+            "parapet_cm": 30,
+            "passes": 8,
+            "wall_cm": 40,
+            "work_per_m": 8400
+          }
+        }
+      },
+      "economy": {
+        "income_per_min": 240,
+        "point_income_per_min": 60,
+        "start_manpower": 600
+      },
+      "hash_interval": 30,
+      "id": "ww2:skirmish",
+      "items": {
+        "resupply_s": 20,
+        "throw": {
+          "lob_tan_milli": 1000,
+          "min_flight_ms": 300,
+          "release_drop_mm": 150,
+          "smoke_below_mm": 2000
+        }
+      },
+      "movement": {
+        "arrive_cm": 40,
+        "catch_up_speed_pct": 125,
+        "ditch_cost_pct": 300,
+        "formation": {
+          "arrive_timeout_s": 20,
+          "catch_up_m": 2,
+          "slide_gap_mm": 1500,
+          "slot_lead_mm": 1500,
+          "steep_free_pct": 60,
+          "steep_min_pct": 15,
+          "stretched_m": 10,
+          "stretched_speed_pct": 70,
+          "waypoint_reach_m": 2
+        },
+        "max_slope_pct": 80,
+        "path_budget_per_tick": 4000,
+        "path_max_expansions": 8000,
+        "prone_speed_pct": 30,
+        "retreat_speed_pct": 140,
+        "slope_cost_pct": 300,
+        "trench_cost_pct": 60
+      },
+      "name": "Skirmish",
+      "pop_cap": 120,
+      "projectile_cap": 2048,
+      "tick_hz": 30,
+      "tickets": 500,
+      "tickets_drain": {
+        "per_min_per_point": 20
+      },
+      "vehicles": {
+        "bail": {
+          "abandoned_cap": 16,
+          "ammo_fire_bail": 1,
+          "bail_suppression": 40,
+          "crew_below": 3,
+          "crew_dismiss_s": 30,
+          "dismount_ms": 1500,
+          "engine_fire_bail_s": 8,
+          "exit_clear_cm": 60,
+          "under_fire_s": 10,
+          "useless_bail": 1,
+          "wounded_exit_pct": 150,
+          "wounded_hp": 50
+        },
+        "base_crew_s": 20,
+        "base_rearm_s": 2,
+        "base_repair_pct_s": 2,
+        "crew_hp": 100,
+        "crossing_dug_cm": 100,
+        "crossing_gap_s": 2,
+        "crossing_speed_cm_s": 100,
+        "damage": {
+          "ammo_fire_s": 8,
+          "rack_fire_pct": 60
+        },
+        "driving": {
+          "approach_slack_m": 15,
+          "arrive_mm": 2500,
+          "back_off_s": 2,
+          "circle_pad_mm": 250,
+          "face_done_deg": 2,
+          "friendly_ahead_m": 4,
+          "full_steer_deg": 10,
+          "full_throttle_deg": 20,
+          "keep_right_deg": 35,
+          "max_tilt_deg": 30,
+          "pivot_err_deg": 60,
+          "pivot_speed_mm_s": 1000,
+          "push_deeper_mm": 100,
+          "push_gap_mm": 100,
+          "repath_gap_s": 2,
+          "reverse_order_m": 40,
+          "spot_drop_mm": 100,
+          "stuck_progress_m": 1,
+          "stuck_s": 5,
+          "tilt_rate_deg_s": 20,
+          "walk_mm_s": 1500,
+          "waypoint_reach_m": 3,
+          "yield_len_pct": 150,
+          "yield_still_mm_s": 500
+        },
+        "escort": {
+          "behind_m": 4,
+          "file_men": 8,
+          "gap_mm": 1500
+        },
+        "fire_burn_hp_s": 5,
+        "fire_burnout_s": 20,
+        "fire_check_s": 4,
+        "fire_min_damage": 40,
+        "fire_out_pct": 25,
+        "fire_start_pct": 30,
+        "gunnery": {
+          "coax_cone_deg": 5,
+          "he_group_m": 6,
+          "lead_error_pct": 40,
+          "spall_reach_m": 3,
+          "special_below_pct": 50
+        },
+        "he_area_spread_mrad": 6,
+        "he_clear_m": 30,
+        "limit": 4,
+        "moving_cm_s": 100,
+        "moving_spot_pct": 250,
+        "moving_target_spread_pct": 600,
+        "near_spot_m": 25,
+        "path": {
+          "avoid_pct": 800,
+          "deep_dm": 10,
+          "deep_pct": 400,
+          "ditch_reach_m": 2,
+          "dug_dm": 4,
+          "dug_pct": 150,
+          "margin_pct": 400,
+          "woods_pct": 200,
+          "wreck_pad_m": 2
+        },
+        "rack_detonate_pct": 20,
+        "rack_min_damage": 30,
+        "ranging_floor_pct": 50,
+        "ranging_step_pct": 20,
+        "recrew": {
+          "any_infantry": 1,
+          "board_s": 3,
+          "capture": 1,
+          "capture_needs_crew": 1,
+          "min_men": 2,
+          "reach_m": 4,
+          "untrained_reload_pct": 150,
+          "untrained_spread_pct": 150,
+          "untrained_traverse_pct": 75
+        },
+        "seat_swap_s": 4,
+        "unlock_s": 240,
+        "wounded_hp": 50,
+        "wreck_cap": 32
+      }
+    }
+  },
+  "units": {
+    "ww2:ger_engineer_squad": {
+      "cost": 220,
+      "dig_rate_pct": 200,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_engineer_squad",
+      "initial_cooldown_s": 0,
+      "loadout": [
+        {
+          "count": 1,
+          "item": "ww2:stielhandgranate",
+          "leader_count": 2
+        },
+        {
+          "count": 0,
+          "item": "ww2:nbhgr39",
+          "leader_count": 1
+        },
+        {
+          "count": 0,
+          "item": "ww2:geballte_ladung",
+          "leader_count": 1
+        }
+      ],
+      "men": 5,
+      "name": "Pioniergruppe",
+      "recall_cooldown_s": 36,
+      "role": "engineer",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "weapon": "ww2:mp40"
+    },
+    "ww2:ger_mg_team": {
+      "cost": 200,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_mg_team",
+      "initial_cooldown_s": 0,
+      "men": 3,
+      "name": "MG-Trupp",
+      "recall_cooldown_s": 36,
+      "role": "mg",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 260,
+      "steadiness_pct": 100,
+      "weapon": "ww2:mg42"
+    },
+    "ww2:ger_mortar_team": {
+      "cost": 280,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_mortar_team",
+      "initial_cooldown_s": 0,
+      "men": 3,
+      "name": "Granatwerfertrupp",
+      "recall_cooldown_s": 60,
+      "role": "mortar",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 240,
+      "steadiness_pct": 100,
+      "weapon": "ww2:grw34"
+    },
+    "ww2:ger_panzerschreck_team": {
+      "cost": 200,
+      "dig_rate_pct": 100,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_panzerschreck_team",
+      "initial_cooldown_s": 0,
+      "men": 2,
+      "name": "Panzerschrecktrupp",
+      "recall_cooldown_s": 48,
+      "role": "anti_tank",
+      "sidearm": "ww2:kar98k",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 280,
+      "steadiness_pct": 100,
+      "weapon": "ww2:rpzb54",
+      "weapon_men": 1
+    },
+    "ww2:ger_pz4_h_squad": {
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_pz4_h_squad",
+      "initial_cooldown_s": 0,
+      "men": 0,
+      "name": "Panzer IV Ausf. H",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "vehicle": "ww2:ger_pz4_h",
+      "weapon": ""
+    },
+    "ww2:ger_rifle_squad": {
+      "cost": 240,
+      "dig_rate_pct": 100,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_rifle_squad",
+      "initial_cooldown_s": 0,
+      "loadout": [
+        {
+          "count": 1,
+          "item": "ww2:stielhandgranate",
+          "leader_count": 2
+        },
+        {
+          "count": 0,
+          "item": "ww2:nbhgr39",
+          "leader_count": 1
+        }
+      ],
+      "men": 8,
+      "name": "Schützengruppe",
+      "recall_cooldown_s": 24,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "weapon": "ww2:kar98k"
+    },
+    "ww2:ger_tank_crew": {
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_tank_crew",
+      "initial_cooldown_s": 0,
+      "men": 5,
+      "name": "Panzerbesatzung",
+      "recall_cooldown_s": 0,
+      "role": "crew",
+      "sidearm": "ww2:p38",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "weapon": "ww2:mp40",
+      "weapon_men": 1
+    },
+    "ww2:usa_bazooka_team": {
+      "cost": 180,
+      "dig_rate_pct": 100,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_bazooka_team",
+      "initial_cooldown_s": 0,
+      "men": 2,
+      "name": "Bazooka Team",
+      "recall_cooldown_s": 48,
+      "role": "anti_tank",
+      "sidearm": "ww2:m1_garand",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 280,
+      "steadiness_pct": 100,
+      "weapon": "ww2:m9_bazooka",
+      "weapon_men": 1
+    },
+    "ww2:usa_engineer_squad": {
+      "cost": 220,
+      "dig_rate_pct": 200,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_engineer_squad",
+      "initial_cooldown_s": 0,
+      "loadout": [
+        {
+          "count": 1,
+          "item": "ww2:mk2_grenade",
+          "leader_count": 2
+        },
+        {
+          "count": 0,
+          "item": "ww2:m15_smoke",
+          "leader_count": 1
+        },
+        {
+          "count": 0,
+          "item": "ww2:m37_satchel",
+          "leader_count": 1
+        }
+      ],
+      "men": 5,
+      "name": "Engineer Squad",
+      "recall_cooldown_s": 36,
+      "role": "engineer",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "weapon": "ww2:m3_smg"
+    },
+    "ww2:usa_m4a3_75_squad": {
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_m4a3_75_squad",
+      "initial_cooldown_s": 0,
+      "men": 0,
+      "name": "M4A3 (75) Sherman",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "vehicle": "ww2:usa_m4a3_75",
+      "weapon": ""
+    },
+    "ww2:usa_mg_team": {
+      "cost": 190,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_mg_team",
+      "initial_cooldown_s": 0,
+      "men": 3,
+      "name": "MG Team",
+      "recall_cooldown_s": 36,
+      "role": "mg",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 260,
+      "steadiness_pct": 100,
+      "weapon": "ww2:m1919"
+    },
+    "ww2:usa_mortar_team": {
+      "cost": 280,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_mortar_team",
+      "initial_cooldown_s": 0,
+      "men": 3,
+      "name": "Mortar Team",
+      "recall_cooldown_s": 60,
+      "role": "mortar",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 240,
+      "steadiness_pct": 100,
+      "weapon": "ww2:m1_mortar"
+    },
+    "ww2:usa_rifle_squad": {
+      "cost": 250,
+      "dig_rate_pct": 100,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_rifle_squad",
+      "initial_cooldown_s": 0,
+      "loadout": [
+        {
+          "count": 1,
+          "item": "ww2:mk2_grenade",
+          "leader_count": 2
+        },
+        {
+          "count": 0,
+          "item": "ww2:m15_smoke",
+          "leader_count": 1
+        }
+      ],
+      "men": 8,
+      "name": "Rifle Squad",
+      "recall_cooldown_s": 24,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "weapon": "ww2:m1_garand"
+    },
+    "ww2:usa_tank_crew": {
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_tank_crew",
+      "initial_cooldown_s": 0,
+      "men": 5,
+      "name": "Tank crew",
+      "recall_cooldown_s": 0,
+      "role": "crew",
+      "sidearm": "ww2:m1911a1",
+      "sight_m": 150,
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "weapon": "ww2:m3_smg",
+      "weapon_men": 2
+    }
+  },
+  "vehicles": {
+    "ww2:ger_pz4_h": {
+      "armor": {
+        "hull_front": {
+          "material": "rha",
+          "slope_deg": 10,
+          "thickness_mm": 80.0
+        },
+        "hull_rear": {
+          "material": "rha",
+          "slope_deg": 10,
+          "thickness_mm": 20.0
+        },
+        "hull_side": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 30.0
+        },
+        "hull_top": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 12.0
+        },
+        "turret_front": {
+          "material": "rha",
+          "slope_deg": 10,
+          "thickness_mm": 50.0
+        },
+        "turret_rear": {
+          "material": "rha",
+          "slope_deg": 15,
+          "thickness_mm": 30.0
+        },
+        "turret_side": {
+          "material": "rha",
+          "slope_deg": 25,
+          "thickness_mm": 30.0
+        },
+        "turret_top": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 16.0
+        }
+      },
+      "components": [
+        {
+          "box": {
+            "center": [
+              -200,
+              0,
+              100
+            ],
+            "frame": "hull",
+            "half": [
+              70,
+              100,
+              45
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "engine"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                250,
+                125,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                125,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -250,
+                125,
+                45
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_left"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                250,
+                -125,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -125,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -250,
+                -125,
+                45
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_right"
+        },
+        {
+          "box": {
+            "center": [
+              50,
+              0,
+              45
+            ],
+            "frame": "turret",
+            "half": [
+              45,
+              20,
+              20
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              20,
+              0,
+              166
+            ],
+            "frame": "hull",
+            "half": [
+              80,
+              80,
+              10
+            ]
+          },
+          "hp": 80,
+          "repair": {
+            "time_s": 40,
+            "to_hp": 50
+          },
+          "type": "turret_ring"
+        },
+        {
+          "boxes": [
+            {
+              "center": [
+                -20,
+                95,
+                70
+              ],
+              "frame": "hull",
+              "half": [
+                55,
+                30,
+                25
+              ]
+            },
+            {
+              "center": [
+                -20,
+                -95,
+                70
+              ],
+              "frame": "hull",
+              "half": [
+                55,
+                30,
+                25
+              ]
+            },
+            {
+              "center": [
+                110,
+                -95,
+                80
+              ],
+              "frame": "hull",
+              "half": [
+                25,
+                25,
+                30
+              ]
+            }
+          ],
+          "hp": 60,
+          "type": "ammo_rack"
+        },
+        {
+          "box": {
+            "center": [
+              200,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              60,
+              30,
+              40
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "transmission"
+        }
+      ],
+      "cost": 620,
+      "crew": {
+        "boxes": {
+          "commander": {
+            "center": [
+              -70,
+              0,
+              22
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              30,
+              63
+            ]
+          },
+          "driver": {
+            "center": [
+              190,
+              60,
+              115
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          },
+          "gunner": {
+            "center": [
+              10,
+              45,
+              0
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              25,
+              70
+            ]
+          },
+          "loader": {
+            "center": [
+              10,
+              -45,
+              -25
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              25,
+              95
+            ]
+          },
+          "radio_mg": {
+            "center": [
+              190,
+              -60,
+              115
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          }
+        },
+        "seats": [
+          "driver",
+          "gunner",
+          "commander",
+          "loader",
+          "radio_mg"
+        ]
+      },
+      "crew_squad": "ww2:ger_tank_crew",
+      "eye_height_cm": 250,
+      "faction": "ww2:germany",
+      "hatches": [
+        {
+          "exit_ms": 3000,
+          "frame": "turret",
+          "pos": [
+            -70,
+            0,
+            90
+          ],
+          "seats": [
+            "commander"
+          ]
+        },
+        {
+          "exit_ms": 3000,
+          "frame": "turret",
+          "pos": [
+            10,
+            95,
+            45
+          ],
+          "seats": [
+            "gunner"
+          ]
+        },
+        {
+          "exit_ms": 3000,
+          "frame": "turret",
+          "pos": [
+            10,
+            -95,
+            45
+          ],
+          "seats": [
+            "loader"
+          ]
+        },
+        {
+          "exit_ms": 4000,
+          "frame": "hull",
+          "pos": [
+            190,
+            60,
+            176
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 4000,
+          "frame": "hull",
+          "pos": [
+            190,
+            -60,
+            176
+          ],
+          "seats": [
+            "radio_mg"
+          ]
+        }
+      ],
+      "hull": {
+        "box": {
+          "center": [
+            0,
+            0,
+            108
+          ],
+          "half": [
+            290,
+            140,
+            68
+          ]
+        },
+        "track_band_pct": 45,
+        "track_mm": 20
+      },
+      "id": "ww2:ger_pz4_h",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 150,
+        "bog_pct": 6,
+        "brake_cm_s2": 400,
+        "ditch_block_dm": 19,
+        "max_slope_pct": 50,
+        "moving_spread_pct": 400,
+        "reverse_cm_s": 200,
+        "speed_cm_s": 600,
+        "turn_deg_s": 30,
+        "type": "tracked",
+        "unbog_s": [
+          20,
+          40
+        ]
+      },
+      "name": "Panzer IV Ausf. H",
+      "pop": 12,
+      "recall_cooldown_s": 120,
+      "role": "tank",
+      "short_name": "Panzer IV",
+      "sight_m": 175,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spot_size_pct": 200,
+      "stations": [
+        {
+          "id": "driver_gunner",
+          "seats": [
+            "driver",
+            "gunner"
+          ]
+        },
+        {
+          "id": "commander",
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "turret": {
+        "box": {
+          "center": [
+            0,
+            0,
+            45
+          ],
+          "half": [
+            115,
+            95,
+            45
+          ]
+        },
+        "elevate_deg_s": 6,
+        "pivot": [
+          20,
+          0,
+          176
+        ],
+        "traverse_deg_s": 14
+      },
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 30,
+              "id": "ww2:75mm_pzgr39"
+            },
+            {
+              "count": 30,
+              "id": "ww2:75mm_sprgr34"
+            },
+            {
+              "count": 6,
+              "id": "ww2:75mm_pzgr40"
+            }
+          ],
+          "barrel": {
+            "length_cm": 335,
+            "radius_cm": 8
+          },
+          "def": "ww2:kwk40_l48",
+          "elevation_deg": [
+            -8,
+            20
+          ],
+          "mount": "turret_main",
+          "muzzle": [
+            450,
+            0,
+            45
+          ]
+        },
+        {
+          "def": "ww2:mg34",
+          "mount": "coax",
+          "muzzle": [
+            120,
+            25,
+            45
+          ],
+          "rounds": 1575
+        },
+        {
+          "arc_deg": 15,
+          "def": "ww2:mg34",
+          "mount": "hull",
+          "muzzle": [
+            295,
+            -60,
+            140
+          ],
+          "rounds": 1575,
+          "seat": "radio_mg"
+        }
+      ]
+    },
+    "ww2:usa_m4a3_75": {
+      "armor": {
+        "hull_front": {
+          "material": "rha",
+          "slope_deg": 47,
+          "thickness_mm": 63.5
+        },
+        "hull_rear": {
+          "material": "rha",
+          "slope_deg": 10,
+          "thickness_mm": 38.0
+        },
+        "hull_side": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 38.0
+        },
+        "hull_top": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 19.0
+        },
+        "turret_front": {
+          "material": "rha",
+          "slope_deg": 30,
+          "thickness_mm": 76.0
+        },
+        "turret_rear": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 51.0
+        },
+        "turret_side": {
+          "material": "rha",
+          "slope_deg": 5,
+          "thickness_mm": 51.0
+        },
+        "turret_top": {
+          "material": "rha",
+          "slope_deg": 0,
+          "thickness_mm": 25.0
+        }
+      },
+      "components": [
+        {
+          "box": {
+            "center": [
+              -210,
+              0,
+              110
+            ],
+            "frame": "hull",
+            "half": [
+              70,
+              100,
+              50
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "engine"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                250,
+                118,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                118,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -250,
+                118,
+                45
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_left"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                250,
+                -118,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -118,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -250,
+                -118,
+                45
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_right"
+        },
+        {
+          "box": {
+            "center": [
+              50,
+              0,
+              45
+            ],
+            "frame": "turret",
+            "half": [
+              45,
+              20,
+              20
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -10,
+              0,
+              180
+            ],
+            "frame": "hull",
+            "half": [
+              80,
+              80,
+              10
+            ]
+          },
+          "hp": 80,
+          "repair": {
+            "time_s": 40,
+            "to_hp": 50
+          },
+          "type": "turret_ring"
+        },
+        {
+          "boxes": [
+            {
+              "center": [
+                -30,
+                105,
+                150
+              ],
+              "frame": "hull",
+              "half": [
+                60,
+                22,
+                25
+              ]
+            },
+            {
+              "center": [
+                -30,
+                -105,
+                150
+              ],
+              "frame": "hull",
+              "half": [
+                60,
+                22,
+                25
+              ]
+            },
+            {
+              "center": [
+                -10,
+                -40,
+                60
+              ],
+              "frame": "hull",
+              "half": [
+                30,
+                30,
+                15
+              ]
+            }
+          ],
+          "hp": 60,
+          "type": "ammo_rack"
+        },
+        {
+          "box": {
+            "center": [
+              220,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              60,
+              30,
+              40
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "transmission"
+        }
+      ],
+      "cost": 590,
+      "crew": {
+        "boxes": {
+          "commander": {
+            "center": [
+              -60,
+              -40,
+              22
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              30,
+              63
+            ]
+          },
+          "driver": {
+            "center": [
+              200,
+              60,
+              120
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          },
+          "gunner": {
+            "center": [
+              20,
+              -45,
+              0
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              25,
+              70
+            ]
+          },
+          "loader": {
+            "center": [
+              10,
+              45,
+              -25
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              25,
+              95
+            ]
+          },
+          "radio_mg": {
+            "center": [
+              200,
+              -60,
+              120
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          }
+        },
+        "seats": [
+          "driver",
+          "gunner",
+          "commander",
+          "loader",
+          "radio_mg"
+        ]
+      },
+      "crew_squad": "ww2:usa_tank_crew",
+      "eye_height_cm": 250,
+      "faction": "ww2:usa",
+      "hatches": [
+        {
+          "exit_ms": 3000,
+          "frame": "turret",
+          "pos": [
+            -40,
+            -40,
+            90
+          ],
+          "seats": [
+            "commander",
+            "gunner"
+          ]
+        },
+        {
+          "exit_ms": 3000,
+          "frame": "turret",
+          "pos": [
+            -30,
+            40,
+            90
+          ],
+          "seats": [
+            "loader"
+          ]
+        },
+        {
+          "exit_ms": 4000,
+          "frame": "hull",
+          "pos": [
+            200,
+            60,
+            190
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 4000,
+          "frame": "hull",
+          "pos": [
+            200,
+            -60,
+            190
+          ],
+          "seats": [
+            "radio_mg"
+          ]
+        }
+      ],
+      "hull": {
+        "box": {
+          "center": [
+            0,
+            0,
+            115
+          ],
+          "half": [
+            295,
+            131,
+            75
+          ]
+        },
+        "track_band_pct": 45,
+        "track_mm": 20
+      },
+      "id": "ww2:usa_m4a3_75",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 150,
+        "bog_pct": 6,
+        "brake_cm_s2": 400,
+        "ditch_block_dm": 19,
+        "max_slope_pct": 50,
+        "moving_spread_pct": 300,
+        "reverse_cm_s": 250,
+        "speed_cm_s": 650,
+        "turn_deg_s": 32,
+        "type": "tracked",
+        "unbog_s": [
+          20,
+          40
+        ]
+      },
+      "name": "M4A3 (75) Sherman",
+      "pop": 12,
+      "recall_cooldown_s": 120,
+      "role": "tank",
+      "short_name": "Sherman",
+      "sight_m": 175,
+      "sources": [
+        "placeholder: citations are an owner / M2 task"
+      ],
+      "spot_size_pct": 200,
+      "stations": [
+        {
+          "id": "driver_gunner",
+          "seats": [
+            "driver",
+            "gunner"
+          ]
+        },
+        {
+          "id": "commander",
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "turret": {
+        "box": {
+          "center": [
+            0,
+            0,
+            45
+          ],
+          "half": [
+            110,
+            95,
+            45
+          ]
+        },
+        "elevate_deg_s": 6,
+        "pivot": [
+          -10,
+          0,
+          190
+        ],
+        "traverse_deg_s": 24
+      },
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 30,
+              "id": "ww2:75mm_m61"
+            },
+            {
+              "count": 40,
+              "id": "ww2:75mm_m48"
+            }
+          ],
+          "barrel": {
+            "length_cm": 230,
+            "radius_cm": 8
+          },
+          "def": "ww2:m3_75mm",
+          "elevation_deg": [
+            -10,
+            25
+          ],
+          "mount": "turret_main",
+          "muzzle": [
+            340,
+            0,
+            45
+          ]
+        },
+        {
+          "def": "ww2:m1919",
+          "mount": "coax",
+          "muzzle": [
+            110,
+            25,
+            45
+          ],
+          "rounds": 2375
+        },
+        {
+          "arc_deg": 15,
+          "def": "ww2:m1919",
+          "mount": "hull",
+          "muzzle": [
+            300,
+            -60,
+            150
+          ],
+          "rounds": 2375,
+          "seat": "radio_mg"
+        }
+      ]
+    }
+  },
+  "weapons": {
+    "ww2:grw34": {
+      "class": "mortar",
+      "damage": 150,
+      "handover_ms": 0,
+      "he": {
+        "blast_radius_cm": 150,
+        "crater_depth_cm": 70,
+        "crater_radius_cm": 200,
+        "frag_count": 120,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 1500,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 8,
+        "suppression_radius_m": 15,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:grw34",
+      "magazine": 1,
+      "min_range_m": 60,
+      "muzzle_velocity_m_s": 174,
+      "name": "8 cm GrW 34",
+      "range_m": 600,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 15,
+      "setup_ms": 3000,
+      "spread_mrad": 50,
+      "spread_urad": 0,
+      "suppression": 30
+    },
+    "ww2:kar98k": {
+      "class": "rifle",
+      "damage": 70,
+      "handover_ms": 0,
+      "id": "ww2:kar98k",
+      "magazine": 5,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 760,
+      "name": "Kar98k",
+      "range_m": 300,
+      "reload_ms": 3500,
+      "rounds_carried": 0,
+      "rounds_per_min": 15,
+      "setup_ms": 0,
+      "spread_mrad": 10,
+      "spread_urad": 0,
+      "suppression": 8
+    },
+    "ww2:kwk40_l48": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:kwk40_l48",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 790,
+      "name": "7.5 cm KwK 40 L/48",
+      "range_m": 600,
+      "reload_ms": 6500,
+      "rounds_carried": 0,
+      "rounds_per_min": 10,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
+    },
+    "ww2:m1911a1": {
+      "class": "pistol",
+      "damage": 38,
+      "handover_ms": 0,
+      "id": "ww2:m1911a1",
+      "magazine": 7,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 250,
+      "name": "M1911A1",
+      "range_m": 30,
+      "reload_ms": 2500,
+      "rounds_carried": 0,
+      "rounds_per_min": 60,
+      "setup_ms": 0,
+      "spread_mrad": 30,
+      "spread_urad": 0,
+      "suppression": 2
+    },
+    "ww2:m1919": {
+      "class": "mg",
+      "damage": 45,
+      "handover_ms": 0,
+      "id": "ww2:m1919",
+      "magazine": 100,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 850,
+      "name": "M1919A4",
+      "range_m": 450,
+      "reload_ms": 6000,
+      "rounds_carried": 0,
+      "rounds_per_min": 500,
+      "setup_ms": 3000,
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 14
+    },
+    "ww2:m1_garand": {
+      "class": "rifle",
+      "damage": 65,
+      "handover_ms": 0,
+      "id": "ww2:m1_garand",
+      "magazine": 8,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 850,
+      "name": "M1 Garand",
+      "range_m": 300,
+      "reload_ms": 3000,
+      "rounds_carried": 0,
+      "rounds_per_min": 24,
+      "setup_ms": 0,
+      "spread_mrad": 11,
+      "spread_urad": 0,
+      "suppression": 8
+    },
+    "ww2:m1_mortar": {
+      "class": "mortar",
+      "damage": 150,
+      "handover_ms": 0,
+      "he": {
+        "blast_radius_cm": 150,
+        "crater_depth_cm": 70,
+        "crater_radius_cm": 200,
+        "frag_count": 120,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 1500,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 8,
+        "suppression_radius_m": 15,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:m1_mortar",
+      "magazine": 1,
+      "min_range_m": 60,
+      "muzzle_velocity_m_s": 180,
+      "name": "81 mm M1",
+      "range_m": 600,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 15,
+      "setup_ms": 3000,
+      "spread_mrad": 50,
+      "spread_urad": 0,
+      "suppression": 30
+    },
+    "ww2:m3_75mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:m3_75mm",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 618,
+      "name": "75 mm M3",
+      "range_m": 600,
+      "reload_ms": 6000,
+      "rounds_carried": 0,
+      "rounds_per_min": 10,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
+    },
+    "ww2:m3_smg": {
+      "class": "smg",
+      "damage": 38,
+      "handover_ms": 0,
+      "id": "ww2:m3_smg",
+      "magazine": 30,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 280,
+      "name": "M3 SMG",
+      "range_m": 100,
+      "reload_ms": 3200,
+      "rounds_carried": 0,
+      "rounds_per_min": 350,
+      "setup_ms": 0,
+      "spread_mrad": 35,
+      "spread_urad": 0,
+      "suppression": 6
+    },
+    "ww2:m9_bazooka": {
+      "ammo": "ww2:m6a3_heat",
+      "class": "launcher",
+      "damage": 300,
+      "engage_moving_m": 60,
+      "engage_still_m": 100,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 3000,
+      "id": "ww2:m9_bazooka",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 85,
+      "name": "M9 Bazooka",
+      "range_m": 120,
+      "reload_ms": 8000,
+      "rounds_carried": 6,
+      "rounds_per_min": 6,
+      "setup_ms": 0,
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 20
+    },
+    "ww2:mg34": {
+      "class": "mg",
+      "damage": 45,
+      "handover_ms": 0,
+      "id": "ww2:mg34",
+      "magazine": 150,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 755,
+      "name": "MG 34",
+      "range_m": 450,
+      "reload_ms": 6000,
+      "rounds_carried": 0,
+      "rounds_per_min": 850,
+      "setup_ms": 0,
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 14
+    },
+    "ww2:mg42": {
+      "class": "mg",
+      "damage": 45,
+      "handover_ms": 0,
+      "id": "ww2:mg42",
+      "magazine": 50,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 740,
+      "name": "MG 42",
+      "range_m": 450,
+      "reload_ms": 5000,
+      "rounds_carried": 0,
+      "rounds_per_min": 1200,
+      "setup_ms": 3000,
+      "spread_mrad": 18,
+      "spread_urad": 0,
+      "suppression": 15
+    },
+    "ww2:mp40": {
+      "class": "smg",
+      "damage": 35,
+      "handover_ms": 0,
+      "id": "ww2:mp40",
+      "magazine": 32,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 400,
+      "name": "MP 40",
+      "range_m": 100,
+      "reload_ms": 3000,
+      "rounds_carried": 0,
+      "rounds_per_min": 400,
+      "setup_ms": 0,
+      "spread_mrad": 35,
+      "spread_urad": 0,
+      "suppression": 6
+    },
+    "ww2:p38": {
+      "class": "pistol",
+      "damage": 35,
+      "handover_ms": 0,
+      "id": "ww2:p38",
+      "magazine": 8,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 350,
+      "name": "P 38",
+      "range_m": 30,
+      "reload_ms": 2500,
+      "rounds_carried": 0,
+      "rounds_per_min": 60,
+      "setup_ms": 0,
+      "spread_mrad": 30,
+      "spread_urad": 0,
+      "suppression": 2
+    },
+    "ww2:rpzb54": {
+      "ammo": "ww2:rpzb54_heat",
+      "class": "launcher",
+      "damage": 300,
+      "engage_moving_m": 70,
+      "engage_still_m": 120,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 3000,
+      "id": "ww2:rpzb54",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 110,
+      "name": "RPzB 54 Panzerschreck",
+      "range_m": 150,
+      "reload_ms": 8000,
+      "rounds_carried": 6,
+      "rounds_per_min": 6,
+      "setup_ms": 0,
+      "spread_mrad": 12,
+      "spread_urad": 0,
+      "suppression": 20
+    }
+  }
+}
