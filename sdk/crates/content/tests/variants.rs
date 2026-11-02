@@ -114,14 +114,14 @@ fn the_s4_content_resolves_with_historical_squads() {
     let s = d.resolve(&skirmish()).unwrap();
     let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
     for (id, men, cost) in [
-        ("ww2:ger_grenadiergruppe", 10, 320),
-        ("ww2:ger_grenadiergruppe_7", 7, 230),
-        ("ww2:ger_smg_gruppe", 6, 220),
-        ("ww2:ger_engineer_squad", 8, 280),
-        ("ww2:usa_rifle_squad", 12, 340),
-        ("ww2:usa_rifle_squad_9", 9, 260),
-        ("ww2:usa_rifle_squad_2bar", 12, 360),
-        ("ww2:usa_lmg_squad", 5, 200),
+        ("ww2:ger_grenadiergruppe", 10, 280),
+        ("ww2:ger_grenadiergruppe_7", 7, 200),
+        ("ww2:ger_smg_gruppe", 6, 195),
+        ("ww2:ger_engineer_squad", 8, 250),
+        ("ww2:usa_rifle_squad", 12, 360),
+        ("ww2:usa_rifle_squad_9", 9, 275),
+        ("ww2:usa_rifle_squad_2bar", 12, 380),
+        ("ww2:usa_lmg_squad", 5, 280),
         ("ww2:usa_engineer_squad", 8, 280),
         ("ww2:ger_mortar_team", 3, 280),
         ("ww2:usa_mortar_team", 3, 280),
@@ -456,13 +456,13 @@ fn an_override_on_a_parent_reaches_its_variants() {
     assert_eq!(
         shown,
         [
-            "defs.units.\"ww2:usa_rifle_squad\": cost: 340 -> 300",
+            "defs.units.\"ww2:usa_rifle_squad\": cost: 360 -> 300",
             "defs.units.\"ww2:usa_rifle_squad\": sight_m: 150 -> 160",
             "defs.units.\"ww2:usa_rifle_squad_2bar\": sight_m: 150 -> 160",
             "defs.units.\"ww2:usa_rifle_squad_9\": sight_m: 150 -> 160",
         ]
     );
-    assert_eq!(d.squads["ww2:usa_rifle_squad_9"].cost, 260);
+    assert_eq!(d.squads["ww2:usa_rifle_squad_9"].cost, 275);
     assert_eq!(d.squads["ww2:usa_rifle_squad_9"].sight_m, 160);
     // A [[members]] patch on a legacy squad (the frozen S3c content)
     // replaces its soldier keys.

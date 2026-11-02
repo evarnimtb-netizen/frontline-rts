@@ -12,8 +12,11 @@ faction = "ww2:usa"
 tags = ["line"]
 capabilities = ["dig_basic", "recrew"]
 sources = ["battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)"]
-# Manpower per call-in (S4 starting value for twelve men).
-cost = 340
+# Manpower per call-in (S4 starting value for twelve men: 340).
+# S4 Tune: 340 -> 360. Eleven semi-automatic Garands and a BAR out-shoot the ten-man German squad;
+# 30 MP a man against Germany's 28. Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 360
 # Call-in (S3b, S4 card block): spawns at once at the base; its own
 # cooldown (Q21 (B)).
 cooldown_s = 20

@@ -8,8 +8,10 @@ extends = "ww2:ger_grenadiergruppe"
 name = "Grenadiergruppe (Feldstärke)"
 short_name = "Grenadiere 7"
 tags = ["line", "understrength"]
-# 220 for the squad, +10 for the Panzerfaust.
-cost = 230
+# 190 for the squad, +10 for the Panzerfaust.
+# S4 Tune: 230 -> 200. Same price per man as the full squad (28.6 MP). Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 200
 # The AI buys it about half as often as the full squad (S4-8 (A)).
 ai_weight = 50
 

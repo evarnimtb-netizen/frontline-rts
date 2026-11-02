@@ -2881,10 +2881,11 @@ mod tests {
         let c = r.ents.combat[man.index()];
         assert!(c.in_trench && c.stance == Stance::Crouch, "{c:?}");
         let pos = r.ents.transform[man.index()].pos;
-        assert_eq!(pos.z, Fx::from_milli(-1600), "on the trench floor");
+        let depth = Fx::from(r.game.setup().rules.dig.depth);
+        assert_eq!(pos.z, -depth, "on the trench floor");
         // A rifleman 100 m east (the parapet side), lying on the ground.
         let muzzle = v((TRENCH_X + 100) * 1000, 500_000, 250);
-        // Crouched: head 0.4 m below ground. The lip takes the round.
+        // Crouched: head below the ground (0.6 m at the 1.8 m depth). The lip takes the round.
         let (end, ev) = r.shoot(
             muzzle,
             aim_point(pos, &c, &r.game.setup().rules.combat.body.clone()),

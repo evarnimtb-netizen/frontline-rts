@@ -11,8 +11,10 @@ faction = "ww2:germany"
 tags = ["mg"]
 capabilities = ["recrew"]
 sources = ["Wikipedia, MG 42 (sustained-fire crew)"]
-# Manpower per call-in (S4 starting value).
-cost = 220
+# Manpower per call-in (S4 starting value 220).
+# S4 Tune: 220 -> 195. Keeps the price ratio to the US Light MG Section's Tune price. Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 195
 # Re-call cooldown (s): its own timer (Q21 (B)).
 cooldown_s = 30
 unlock_s = 0

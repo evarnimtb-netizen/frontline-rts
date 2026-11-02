@@ -7,7 +7,9 @@ extends = "ww2:usa_rifle_squad"
 name = "Rifle Squad (understrength)"
 short_name = "Rifle Squad 9"
 tags = ["line", "understrength"]
-cost = 260
+# S4 Tune: 260 -> 275. Same price per man as the full squad (30.6 MP). Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 275
 # The AI buys it about half as often as the full squad (S4-8 (A)).
 ai_weight = 50
 

@@ -8,8 +8,10 @@ short_name = "Pioniere"
 faction = "ww2:germany"
 tags = ["engineer"]
 capabilities = ["dig_basic", "dig_full", "recrew"]
-# Manpower per call-in (S4 starting value for eight men).
-cost = 280
+# Manpower per call-in (S4 starting value for eight men: 280).
+# S4 Tune: 280 -> 250. Germany's non-line cards cost about 10 % less (its income buys fewer men). Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 250
 # Re-call cooldown (s): its own timer (Q21 (B)).
 cooldown_s = 30
 unlock_s = 0

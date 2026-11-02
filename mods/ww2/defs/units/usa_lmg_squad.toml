@@ -12,7 +12,10 @@ faction = "ww2:usa"
 tags = ["mg"]
 capabilities = ["recrew"]
 sources = ["battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, LMG squad)"]
-cost = 200
+# S4 Tune: 200 -> 280. Five men and an M1919A4 on a tripod were the best-value card of the game
+# (bought 5 times a match at 200); at 280 the AI still buys it in every match. Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 280
 cooldown_s = 30
 unlock_s = 0
 speed_cm_s = 260

@@ -251,3 +251,20 @@ the schema list (`training`), one test expectation for it
 - Duel reports moved by chance (more men spawn before the staged tanks, so
   entity ids and random streams differ): 3a Panzer IV 10 / Sherman 10, 3f
   14 / 6.
+
+## Tune (round 1)
+
+Full account and numbers: `docs/slices/S4-variants.md` "Tune results".
+
+- Data only: nine card prices, `ai.armour.capture_m` 300, trench depth
+  180 cm, Kessel Ridge crest moved 12 m (the base-0 lean). No sim line
+  changed (a Panzerfaust hunt inset was built, measured as no help and
+  reverted).
+- 40 set: Germany 16 / USA 24, base 0 18 / base 1 22, 12.3-27.5 min (median
+  17.3), HE mean 43.7 %, tick p99 peak 1.030 ms (quiet). 160 set: Germany 69
+  (43.1 %), base 0 79 (49.4 %), 10.1-28.8 min, HE mean 46.0 %.
+- fortify-test PASS (barrage 33.8 %), armour-test all hard checks pass
+  (stress p99 1.119 ms), 498 workspace tests, clippy and fmt clean.
+- Still missed: T12 (Panzerfausts in 6 of 80 normal-base matches; rockets
+  9.5 % of tank losses) and T13 (9 captures per 160 matches). TODO S4-36 to
+  S4-40.

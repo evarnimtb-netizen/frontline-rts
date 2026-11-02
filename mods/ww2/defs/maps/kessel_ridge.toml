@@ -17,8 +17,14 @@ octaves = [
 ]
 
 [[terrain.ridges]]
-from = [160, 870]
-to = [870, 160]
+# S4 Tune: the crest ran along x + y = 1030, 4 m on base 1's side of the map's
+# centre line (x + y = 1024), and the contested centre point C sits on it.
+# Mirror matches (Germany vs Germany, 160, seeds 1-160) gave base 0 108 wins
+# with this ridge, 60 without it, 72 on a bare map; crest at x + y = 1024: 96,
+# 1012: 72 (an overshoot). The crest now runs along x + y = 1018 (cross
+# faction, 160 matches with the Tune costs: base 0 wins 79 of 160, was 100).
+from = [157, 861]
+to = [861, 157]
 height_m = 14
 width_m = 320
 

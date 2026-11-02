@@ -71,15 +71,20 @@ slide_gap_mm = 1500
 # Steep dug ground (trench walls, craters): grades up to this do not slow a
 # man (percent grade over the next 0.25 m) ...
 steep_free_pct = 60
-# ... and his slowest pace is this much of his speed (percent). A 1.6 m
-# trench wall (about 400 % grade) is climbed at about 15 %.
+# ... and his slowest pace is this much of his speed (percent). A 1.8 m
+# trench wall (about 450 % grade) is climbed at about 15 %.
 steep_min_pct = 15
 
 # Dig profiles: a flat floor, walls sloping out over wall_cm to the lip,
 # and a spoil bank (parapet or berm) on the enemy side. One man at
 # dig_rate_pct = 100 does 100 work points per second.
 [dig.profiles.trench]
-depth_cm = 160
+# S4 Tune: 160 -> 180 cm (a 6 ft standing fighting trench). With the S4
+# squads (ten and twelve men on a 27-33 m line) the 10-round 81 mm barrage on
+# a squad in the 32 m test trench killed 44.9 % as many men as in the open
+# (limit 40 %, S1 cover threshold); at 180 cm 33.3 %. fortify-test rifle row
+# 0.5 %. Digging work per metre is unchanged.
+depth_cm = 180
 floor_cm = 80
 wall_cm = 40
 parapet_cm = 30
@@ -764,7 +769,12 @@ deny_m = 300
 # captures (vehicles.recrew.capture, capture_needs_crew). Else it walks back
 # as in S3c. 0 turns it off; default on unless the faction wins move by more
 # than 5 points (S4-7 (A)).
-capture_m = 150
+# S4 Tune: 150 -> 300. At 150 m the AI gave 9-23 capture orders in 160
+# matches and 1-3 captures; at 300 m 133 orders and 7 captures (4.4 % of
+# matches, the rest refused by the vehicle limit, a burning hull or a
+# threat near it), with the faction wins unchanged (82 vs 80 Germany of 160
+# at the same costs). T13's one capture in ten matches is still missed.
+capture_m = 300
 
 # The AI's fire-and-move, AT-team hunts and satchel hunts (S3b,
 # docs/slices/S3b-balance.md B3-B5). Starting values for the Tune stage.

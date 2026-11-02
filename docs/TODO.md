@@ -669,6 +669,30 @@ Q21 (B). Work proceeds on (A) of each question below.
   AI captures too (the only S4 change in their results: with
   `capture_m = 0` the 40 set equals the Plan baseline line for line). (B)
   Default 0 when absent.
+- [ ] **S4-36. Prices follow measured value, not only men** (Tune). (A) The
+  S4 Tune prices (docs/slices/S4-variants.md "Tune results": German line
+  280 / 200, sMG 195, engineers 250, Panzerschreck 180; US line 360 / 275 /
+  380, Light MG Section 280) stay; Germany wins 43 % of 160 AI matches. (B)
+  Keep the starting prices and give Germany veteran training on its line
+  cards or a third start squad instead (both measured: 38-56 wins of 160).
+- [ ] **S4-37. Panzerfaust use and AI capture stay below target** (Tune).
+  (A) Ship as measured: Panzerfausts fired in 6 of 80 normal-base matches
+  (target 40), captures 9 per 160 matches (target 16). Both are limited by
+  rules (pinned carriers, a full vehicle limit), not prices. (B) Plan sim
+  work: an ambush hold for Panzerfaust carriers, a free vehicle slot for a
+  capture (the AI holds one back), or the Panzerfaust 100 in S5.
+- [ ] **S4-38. Kessel Ridge ridge moved 12 m** (Tune). (A) The crest runs
+  along x + y = 1018 so the two bases win equally (mirror matches: base 0
+  won 108 of 160 at 1030, 60 without the ridge). This is the real cause of
+  the S1 known issue "one base wins most AI matches". (B) Redraw the map
+  with a terrain-noise field that is point-symmetric.
+- [ ] **S4-39. Trench depth 180 cm** (Tune). (A) A 6 ft standing trench so
+  the 81 mm barrage row passes with the S4 squad sizes (33.8 % of open
+  losses, limit 40 %). A dug-in squad is harder to kill with direct fire;
+  the T10 report rows moved from "missed" to "missed by more". (B) Keep
+  160 cm and scale the fortify-test barrage to the squad size.
+- [ ] **S4-40. AI capture reach 300 m** (Tune). (A) `capture_m` 300 (9
+  captures per 160 matches; wins unchanged). (B) 150, or 500 (not run).
 
 ## S3 owner checklist (needs a person)
 

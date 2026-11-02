@@ -706,13 +706,13 @@
         "ridges": [
           {
             "from": [
-              160,
-              870
+              157,
+              861
             ],
             "height_m": 14,
             "to": [
-              870,
-              160
+              861,
+              157
             ],
             "width_m": 320
           }
@@ -797,7 +797,7 @@
       "ai": {
         "armour": {
           "backup_m": 30,
-          "capture_m": 150,
+          "capture_m": 300,
           "deny_m": 300,
           "escort_grace_s": 8,
           "escort_join_m": 150,
@@ -994,7 +994,7 @@
             "work_per_m": 22000
           },
           "trench": {
-            "depth_cm": 160,
+            "depth_cm": 180,
             "engineers_only": false,
             "floor_cm": 80,
             "max_length_m": 60,
@@ -1224,7 +1224,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 280,
+      "cost": 250,
       "dig_rate_pct": 200,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1283,7 +1283,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 320,
+      "cost": 280,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1372,7 +1372,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 230,
+      "cost": 200,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1507,7 +1507,7 @@
         "at_hunt"
       ],
       "cooldown_s": 48,
-      "cost": 200,
+      "cost": 180,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1574,7 +1574,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 220,
+      "cost": 195,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1783,7 +1783,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 200,
+      "cost": 280,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",
       "hp": 100,
@@ -1917,7 +1917,7 @@
         "recrew"
       ],
       "cooldown_s": 20,
-      "cost": 340,
+      "cost": 360,
       "dig_rate_pct": 100,
       "faction": "ww2:usa",
       "hp": 100,
@@ -2017,7 +2017,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 360,
+      "cost": 380,
       "dig_rate_pct": 100,
       "faction": "ww2:usa",
       "hp": 100,
@@ -2116,7 +2116,7 @@
         "recrew"
       ],
       "cooldown_s": 20,
-      "cost": 260,
+      "cost": 275,
       "dig_rate_pct": 100,
       "faction": "ww2:usa",
       "hp": 100,

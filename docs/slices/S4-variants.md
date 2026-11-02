@@ -438,7 +438,8 @@ queued (pending list empty after every tick).
 
 Costs on today's scale (income 240/min + 60 per point, start 600,
 Panzer IV 620, Sherman 590), **pop cap 150**. Starting values; the Tune
-stage moves them. "Real" columns: sources below.
+stage moved them (shipped prices: "Tune results"). "Real" columns: sources
+below.
 
 ### Germany
 
@@ -811,6 +812,148 @@ counted ammo lands.
 | 19 | swapped | ww2:germany | 16:43 | 0x83ee07aea3972551 |
 | 20 | normal | ww2:usa | 14:27 | 0xcc659c9d5da45ec0 |
 | 20 | swapped | ww2:usa | 15:09 | 0x82ef55069baa36b7 |
+
+## Tune results
+
+Stage TUNE (Part B left T1, T2, the fortify barrage row, T12 and T13 open).
+All numbers: release build, `--jobs 3 --minutes 45`. "40 set" = seeds 1-20 x
+both bases; "160 set" = seeds 1-80 x both bases. A/B runs used
+`--rules-override` files (scratch), then the winning values went into the
+TOML with their reasons in comments. Runs are deterministic: the 160-set
+run of the shipped mod reproduced the A/B run of the same overrides line for
+line.
+
+### What changed (data only, one test-helper fix)
+
+| Where | Was | Now | Why (measured) |
+|---|---|---|---|
+| `ger_grenadiergruppe` cost | 320 | 280 | per-man price parity with the US squad (28 / 30 MP) |
+| `ger_grenadiergruppe_7` | 230 | 200 | same price per man |
+| `ger_smg_gruppe` | 220 | 195 | |
+| `ger_engineer_squad` | 280 | 250 | |
+| `ger_panzerschreck_team` | 200 | 180 | equals the Bazooka team |
+| `usa_rifle_squad` | 340 | 360 | 11 Garands + BAR out-shoot 10 Germans |
+| `usa_rifle_squad_9` / `_2bar` | 260 / 360 | 275 / 380 | same price per man; +20 for the 2nd BAR |
+| `usa_lmg_squad` | 200 | 280 | the best-value card of the game (5 buys a match at 200) |
+| `[ai.armour] capture_m` | 150 | 300 | 133 capture orders and 9 captures in 160 matches, was 9-23 and 1-3 |
+| `[dig.profiles.trench] depth_cm` | 160 | 180 | fortify barrage row (below) |
+| `kessel_ridge` ridge | (160,870)-(870,160) | (157,861)-(861,157) | base lean (below) |
+
+Unchanged on purpose: tag mix, training (all regular), pop cap 150, start
+squads, the mortar cards (280 both), tank costs, Panzerfaust and weapon
+stats, every sim line.
+
+Test-only edits: the content tests' cost expectations and the example
+override (`mods/ww2/tests/overrides/example.toml`, restates the mod), the
+`trench_lip` unit test (reads the floor depth from the rules instead of
+-1.6 m), and `crates/sim/tests/variants.rs` (the staged fight ends once the
+MG changed hands and men fell on both sides; with the ridge moved a lone
+survivor stayed out of the Americans' sight for 15 minutes). The canonical
+snapshot `ww2_canonical.json` was re-blessed (15 changed lines, exactly the
+table above); `ww2_resolved.json` was not touched.
+
+### Targets
+
+| # | Target | Part B | Tune | |
+|---|---|---|---|---|
+| T1 | each faction 35-65 % | 40 set Germany 8 (20 %); 160 set 31 (19.4 %) | 40 set Germany 16 (40 %), USA 24; **160 set Germany 69 (43.1 %)**, USA 91 | pass |
+| T2 | no base side > 62 % | 40 set base 0 26 (65 %); 160 set 95 (59.4 %) | 40 set base 0 18 / base 1 22; 160 set 79 / 81 (49.4 %) | pass |
+| T3 | 10-40 min, median 15-30 | 11.6-30.4, median 15.7 | 40 set 12.3-27.5, median 17.3; 160 set 10.1-28.8, median 17.0, none over 40 | pass |
+| T4 | HE share mean < 50 % | 45.0 %, max 64.0 % | 40 set mean 43.7 %, max 55.2 %; 160 set mean 46.0 %, max 65.5 % | pass |
+| T5 | fortify, armour-test, golden, validate | fortify FAIL (barrage 44.9 %) | fortify PASS (barrage 46 vs 136 open = 33.8 %, limit 40 %; rifles 0 vs 170); armour-test all hard checks pass; golden ballistics in the test suite; `validate mods/ww2` ok; 498 workspace tests, 0 failed; clippy `-D warnings` and fmt clean | pass |
+| T6 | tick p99 peak < 1.5 ms (quiet, `--jobs 3`); stress < 10 ms | 0.516 ms; 1.465 ms | skirmish 40 set peak **1.030 ms** (quiet machine); armour-test case 14 (100 vehicles, 650 soldiers) p99 1.119 ms, max 2.726 ms | pass |
+| T11 | cards bought | pass | every line card in 158-160 of 160 matches, MG cards 160/160 | pass |
+| T12 | Panzerfausts fired in >= 10 of 20 normal-base matches; infantry AT >= 10 % of tank losses | 6 fired in 4 of 40 matches; 7.8 % | 10 fired in 10 of 160 matches (6 of 80 normal-base); rockets knocked out 61 of 644 tank losses (9.5 %); 2 satchels thrown at vehicles | **miss** |
+| T13 | >= 1 capture per 10 matches; T1 within 5 points of `capture_m` 0 | 2 in 40 | 9 captures in 160 (2 Germany, 7 USA), 103 capture orders (28 / 75); wins at 150 m vs 300 m: Germany 80 vs 82 of 160 at the same costs | **miss** (5.6 %) |
+| T16 | pop | G 53/55/69, US 60/74/86 | mean pop at 5/10/20 min: Germany 60/66/82, USA 56/66/72; pop-cap holds 0.0 / match | reported |
+
+T7-T10, T14, T15 are covered by the test suite (all pass). Godot was not
+re-run: no production code changed in this stage (data and tests only).
+
+### How the balance was found
+
+1. **Why the US won 80 %.** Kills were even (17.3k to 18.0k over 160
+   matches) but the US held more points (40 matches: 2.3k s vs 1.8k s held
+   a match) and fielded 20-30 % more men at minute 10 (pop 72 vs 56). The 12-man
+   Garand squad costs 28 MP a man against Germany's 32, and the AI
+   buys by card count (tag mix), so a cheaper man means a bigger army. Pop at
+   minute 10 tracked the win rate in every run.
+2. **What moved it.** Single-change A/B runs on 160 matches (Germany
+   wins, baseline 31): US line squads +50 % 45; US non-line cards +50 % 89
+   (the LMG and mortar did it: LMG 300 + mortar 420 gave 84, mortar 420
+   alone 63); German non-line cards -25 % 79; line-card prices only
+   (German -12 %, US +24 %) 36; veteran training for German cards (a
+   documented option, not used) 38 for the line squads, 50 for all five
+   German cards. Start squads (a third German line squad 53-56; two
+   9-man US squads 53) and a lower line share in the AI mix (54) moved it
+   about as far as prices did; they were not shipped, because they change
+   the opening of every match rather than a price.
+3. **The pick** is the smallest price set that centred the result (A/B on
+   160, Germany wins / base-0 wins): German 280 / 200 / 195 / 250 / 180, US
+   360 / 275 / 380 and LMG 260 gave 74 / 92. Leaving one part out: no US
+   line rise 56, no German engineer and Panzerschreck cut 60, LMG 240
+   instead of 260 63. Then trench 180: 62 / 100; ridge shift: 60 / 78; LMG
+   280: 69 / 79 (shipped). A cheaper German mortar (250) on top gave 73 / 85:
+   inside noise, not shipped (it would price two identical weapons
+   differently).
+4. **Noise.** One 160-match estimate has a standard error of about 4
+   points; the same cost set gave 37-50 % with other secondary changes. Every
+   decision above rests on two or more neighbouring runs.
+
+### The base-0 lean
+
+Base 0 won 57-62 % of cross-faction matches in every Part B variant
+(swapped bases too, so it is the base, not the player index). Mirror
+matches (Germany vs Germany, 160) isolated it: base 0 won 108 on the map as
+shipped, 94 without the noise octaves, 98 without valleys, 101 without
+woods, **60 without the ridge**, 72 on a bare map. With the ridge crest at
+x + y = 1036 / 1030 (shipped) / 1024 / 1012: 105 / 108 / 96 / 72 base-0
+wins; at 1018, cross-faction with the Tune costs, 78 of 160 (49 %), against
+100 at 1030. The crest sat 4 m on base 1's side of the centre line and the
+contested centre point lies on it; a few metres decide who holds the
+slope. It now runs along x + y = 1018 (12 m toward base 0). The lean was
+already 97-98 of 160 before the trench change, so the two are independent.
+
+### fortify-test barrage row
+
+At 160 cm the 10-round 81 mm barrage killed 44.9 % as many men in the 32 m
+test trench as in the open (limit 40 %). The open squad saturates (8 of
+10-12 men die) while the trench losses grow with the men on the line.
+Tried: spacing 2.5 m (43.5 %), parapet 45 cm (42.0 %), trench depth 180 cm
+(33.3 % in A/B, 33.8 % shipped). Depth 180 cm is a 6 ft standing fighting
+trench; digging work per metre is unchanged. Side effect: a dug-in squad
+is harder to kill by direct fire. The T10 report rows (MG + rifles on a
+dug-in squad) show the defenders losing 1.8 % (was 3.6 %) and, with two
+bases of fire, 4 % (was 90 %); the row stays a "missed" report line as in
+S3c (it wants 75 %), so it moves further from its threshold.
+
+### Panzerfaust (T12) and capture (T13): why they stay missed
+
+- 178 Panzerfaust hunts in 160 matches, 10 shots. Debug traces showed
+  three causes: the carriers had already used or lost their tubes; a
+  stationary tank 62 m from a far-end carrier while the leader held at
+  50 m; and men pinned by the tank's MG (pinned and ducked men cannot
+  fire). A separate hunt inset of 25 m (new key, built and measured:
+  14 fired vs 22 in the neighbour run) made no measurable difference and
+  was reverted. Panzerfaust range 70 / 80 / 100 m (40 matches, normal-base
+  matches with a shot 5 / 6 / 14 of 40) and `pzf_hunt_m` 150-200 did little
+  below 100 m, which is not a Panzerfaust 60. `pzf_clear_m` 0 with hunt 150
+  doubled the hunts (459) and the shots (19) and changed no win rate: not
+  shipped, still far from 10 of 20.
+- Captures: 103 orders became 9 captures. The usual refusals are a full
+  vehicle limit (the AI buys tanks up to 4), a burning hull, or an enemy
+  soldier or tank near the hull. More reach (150 -> 300 m) tripled the
+  orders and the captures; `capture_m` 500 was not run.
+- Both need AI or sim work, not numbers: an ambush hold for carriers
+  (hide and fire at 30-40 m), freeing a vehicle slot for a capture, and
+  the Panzerfaust 100 (S5 list). Recorded as S4-36 and S4-37 in
+  `docs/TODO.md`.
+
+### Scratch
+
+Overrides, outputs and digests: `.../scratchpad/s4/tune/` (`go.sh`,
+`go2.sh` mirror runs, `sum.sh`, `sub.py` 40-set subset of a 160 run),
+`tune1_40.txt`, `tune1_fortify.txt`, `tune1_armour.txt`, `tune1_test.txt`.
 
 ## Slice log
 

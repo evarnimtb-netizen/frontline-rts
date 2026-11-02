@@ -10,7 +10,9 @@ extends = "ww2:usa_rifle_squad"
 name = "Rifle Squad (two BARs)"
 short_name = "Rifle Sq 2BAR"
 sources = ["Wikipedia, M1918 Browning Automatic Rifle (two BAR teams per squad, 1944-45)"]
-cost = 360
+# S4 Tune: 360 -> 380. Keeps the +20 over the full squad for the second BAR. Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 380
 cooldown_s = 30
 available_from = "1944-08"
 ai_weight = 50

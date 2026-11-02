@@ -19,8 +19,12 @@ sources = [
     "Wikipedia, MG 42 (squad organisation)",
     "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)",
 ]
-# Manpower per call-in: 300 for the squad, +10 for each Panzerfaust (S4-5 (A)).
-cost = 320
+# Manpower per call-in: 260 for the squad, +10 for each Panzerfaust (S4-5 (A)).
+# S4 Tune: 320 -> 280. Ten men with bolt-action Kar98k (15 rounds/min) and one MG 42 field about half
+# the rifle fire of the twelve semi-automatic Garands of the US squad (24/min), so
+# the same manpower buys more German squads (28 MP a man, the US squad 30). Measured in docs/slices/S4-variants.md
+# "Tune results" (160 matches, seeds 1-80 x both bases).
+cost = 280
 # Call-in (S3b, S4 card block): a call-in spawns the squad at once at the
 # base; then this card cannot be called in again for cooldown_s seconds
 # (its own timer: owner Q21 (B), no cooldown_group). 20 s for a 10-man
