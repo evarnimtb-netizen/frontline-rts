@@ -2,6 +2,8 @@
 id = "ww2:75mm_m48"
 name = "75 mm M48 HE"
 mechanism = "he"
+# S5a: priced refill ([supply] shell_mp_per_t per tonne): complete round 19.56 lb with supercharge (M3 gun data, theshermantank.com).
+supply = { kind = "shells", g = 8870 }
 caliber_mm = 75
 muzzle_velocity_m_s = 463
 drag_coeff = 0

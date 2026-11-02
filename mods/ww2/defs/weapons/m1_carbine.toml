@@ -5,6 +5,10 @@ id = "ww2:m1_carbine"
 name = "M1 carbine"
 short_name = "M1 carbine"
 class = "rifle"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:30_carbine"
+# Five 15-round magazines (battleorder.org).
+load = 75
 sources = ["Wikipedia, M1 carbine (velocity, practical range, magazine)"]
 # Practical range (m).
 range_m = 180

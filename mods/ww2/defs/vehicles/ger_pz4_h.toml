@@ -37,6 +37,9 @@ eye_height_cm = 250
 sources = ["placeholder: citations are an owner / M2 task"]
 # S3c: the squad the surviving crew become when they bail out.
 crew_squad = "ww2:ger_tank_crew"
+# S5a (owner D3, S5a-9 (A)): at most 3 rare rounds (PzGr 40) held; refilled
+# one per [supply] rare_rearm_base_s in base (rules rare_cap_max = 10).
+rare_cap = 3
 
 [mobility]
 type = "tracked"
@@ -109,14 +112,20 @@ mount = "turret_main"
 # From the turret pivot.
 muzzle = [450, 0, 45]
 elevation_deg = [-8, 20]
-# S3b: 6 PzGr 40 APCR as a special third round (owner question S3b-7 (A);
-# tungsten was scarce, a handful per tank). Auto loads it only against a
-# target the PzGr 39 likely fails on ([vehicles.gunnery]
-# special_below_pct).
+# S5a (owner question S5a-10 (A)): stowage restored to the historical 87
+# rounds of the Ausf. H (Jentz & Doyle, Panzer Tracts 4-3; Panzer Tracts 23
+# as quoted by armedconflicts.com, "Pz.Kpfw. IV Ausf. H"; it was 66 in S3).
+# Split half PzGr 39, half Sprgr 34 (starting value: no loading list
+# read, verify), and 3 PzGr 40 APCR (S5a-9 (A): tungsten rationed from
+# 1943, vehicles.md 6.11; it was 6, owner question S3b-7 (A)). Auto loads
+# the APCR only against a target the PzGr 39 likely fails on
+# ([vehicles.gunnery] special_below_pct). Each round is priced in base at
+# its weight x [supply] shell_mp_per_t x the rack factor (53 % here: a full
+# rack 877 kg costs at most 75 % of the 620 card, D4).
 ammo = [
-  { id = "ww2:75mm_pzgr39", count = 30 },
-  { id = "ww2:75mm_sprgr34", count = 30 },
-  { id = "ww2:75mm_pzgr40", count = 6 },
+  { id = "ww2:75mm_pzgr39", count = 42 },
+  { id = "ww2:75mm_sprgr34", count = 42 },
+  { id = "ww2:75mm_pzgr40", count = 3 },
 ]
 # S3b: the exposed barrel, from the muzzle back to the turret front (450 -
 # 115 cm); a round or rocket must strike it to damage the gun. 8 cm: the

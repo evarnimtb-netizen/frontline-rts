@@ -3,6 +3,8 @@
 id = "ww2:stielhandgranate"
 name = "Stielhandgranate 24"
 kind = "frag"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). Stielhandgranate 24: about 595 g (verify).
+supply = { kind = "explosives", g = 595 }
 min_range_m = 5
 range_m = 30
 windup_ms = 1000

@@ -7,6 +7,11 @@ id = "ww2:bar_m1918a2"
 name = "BAR M1918A2"
 short_name = "BAR"
 class = "rifle"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:3006_bar"
+# Rounds the automatic rifleman carries: 11 magazines of 20 (battleorder.org;
+# the squad carried 35 magazines, 700 rounds, with the assistant and bearer).
+load = 220
 crew_weapon = false
 sources = ["Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)"]
 # Effective reach on the compressed scale (m): a little over a rifle's.

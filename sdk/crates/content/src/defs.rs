@@ -17,8 +17,9 @@ use crate::issue::Issue;
 use crate::tuning::{
     AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning, BodyTuning,
     CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning,
-    GunneryTuning, MortarTuning, RecrewTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
-    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
+    check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -363,6 +364,10 @@ pub struct ItemDef {
     /// S4: citations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
+    /// S5a: what one item weighs and which supply kind refills it (priced
+    /// in the base; required in a mod with a rules `[supply]` table).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<SupplyDef>,
 }
 
 /// An item's blast (like a weapon's [`HeDef`], plus damage and suppression).
@@ -595,6 +600,132 @@ pub struct WeaponDef {
     /// S4: citations for the values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
+    /// S5a: what each shot takes from the man's rounds: a cartridge
+    /// (`defs/cartridges/`) or an ammo def with `supply`. Required in a mod
+    /// with a rules `[supply]` table for every weapon a soldier carries or
+    /// a vehicle mounts as an MG (launchers fire their `ammo`, cannons
+    /// their mount's rounds).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed: Option<String>,
+    /// S5a: rounds a man carrying it has when his slot gives no `rounds`
+    /// for its feed (default: one `magazine`), counting the rounds in the
+    /// weapon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<u32>,
+    /// S5a: MG fire discipline: rounds per burst (0: fire the magazine
+    /// through) and the pause after a burst (ms). Parsed in S5a Part A,
+    /// used from Part B.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub burst_rounds: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub burst_pause_ms: u32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+
+/// S5a supply kinds (`supply.kind`): what a round is charged as when the
+/// base (later a crate, dump or HQ) hands it out.
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum SupplyKind {
+    /// Rifle, SMG, pistol and MG rounds, vehicle MG belts.
+    SmallArms = 0,
+    /// Grenades, satchels, AT rockets, Panzerfausts.
+    Explosives = 1,
+    /// Mortar bombs, main-gun rounds.
+    Shells = 2,
+}
+
+impl SupplyKind {
+    /// Every kind, in index order.
+    pub const ALL: [SupplyKind; 3] = [
+        SupplyKind::SmallArms,
+        SupplyKind::Explosives,
+        SupplyKind::Shells,
+    ];
+    /// TOML and report names, by index.
+    pub const NAMES: [&'static str; 3] = ["small_arms", "explosives", "shells"];
+
+    #[inline]
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The kind named `s` (`construction` waits for S6).
+    pub fn from_name(s: &str) -> Option<SupplyKind> {
+        Self::NAMES
+            .iter()
+            .position(|n| *n == s)
+            .map(|i| Self::ALL[i])
+    }
+}
+
+/// S5a: a round's (or an item's) supply table: `supply = { kind =
+/// "small_arms", g = 28 }`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SupplyDef {
+    /// `small_arms`, `explosives` or `shells` (`construction` comes with
+    /// S6).
+    pub kind: String,
+    /// Grams per round, its share of clip, belt, link, box or carton
+    /// included (what a crate or the base hands out); 1..=100000.
+    pub g: u32,
+}
+
+impl SupplyDef {
+    /// Checks one supply table; `path` is its key (`supply`).
+    pub fn check(&self, path: &str, out: &mut Vec<Issue>) {
+        if SupplyKind::from_name(&self.kind).is_none() {
+            let msg = if self.kind == "construction" {
+                "`construction` supplies come with S6 (HQ, dumps, crates); not before S6".to_owned()
+            } else {
+                format!(
+                    "unknown supply kind `{}`; one of small_arms, explosives, shells",
+                    self.kind
+                )
+            };
+            out.push(Issue::new(format!("{path}.kind"), msg).with_hint("kind = \"small_arms\""));
+        }
+        range(out, &format!("{path}.g"), self.g, 1, 100_000);
+    }
+
+    /// The parsed kind (after [`SupplyDef::check`]).
+    pub fn kind(&self) -> SupplyKind {
+        SupplyKind::from_name(&self.kind).unwrap_or(SupplyKind::SmallArms)
+    }
+}
+
+/// S5a: a counted round whose flight lives on the weapon (small-arms
+/// rounds, mortar bombs): `defs/cartridges/*.toml`. It has an id, a supply
+/// kind and a weight, no ballistics.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CartridgeDef {
+    pub id: String,
+    pub name: String,
+    /// Calibre (mm), for the docs and the HUD.
+    pub caliber_mm: u32,
+    pub supply: SupplyDef,
+    /// Citations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+}
+
+impl CartridgeDef {
+    pub fn validate(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        check_id(&mut out, "id", &self.id);
+        check_name(&mut out, "name", &self.name);
+        range(&mut out, "caliber_mm", self.caliber_mm, 1, 300);
+        self.supply.check("supply", &mut out);
+        out
+    }
 }
 
 impl WeaponDef {
@@ -811,6 +942,10 @@ pub struct RulesDef {
     /// `"ww2:heavy_armour" = 2`); a card joins one with `limit_group`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub limit_groups: BTreeMap<String, u32>,
+    /// S5a: ammunition prices and base refill rates. Without it (legacy
+    /// content) rounds are unlimited and refills free (S5a-22).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<SupplyTuning>,
 }
 
 /// `[call_in]` of a rules def: the S3b spawn tuning ([`CallInTuning`],
@@ -1104,6 +1239,10 @@ pub struct CombatDef {
     pub suppression: SuppressionTuning,
     /// The Suppress order's area fire (S3b tuning table).
     pub suppress: SuppressTuning,
+    /// S5a: sharing rounds inside a squad (default: the S5a starting
+    /// values).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share: Option<ShareTuning>,
 }
 
 /// AI commander tuning (weights in data, §9). Difficulty is separate.
@@ -1535,6 +1674,9 @@ impl ItemDef {
                 });
             }
         }
+        if let Some(sp) = &self.supply {
+            sp.check("supply", &mut out);
+        }
         if let Some(s) = &self.smoke {
             range(&mut out, "smoke.radius_m", s.radius_m, 1, 50);
             range(&mut out, "smoke.grow_ms", s.grow_ms, 0, 60_000);
@@ -1675,6 +1817,11 @@ impl WeaponDef {
                 ),
             ));
         }
+        if let Some(l) = self.load {
+            range(&mut out, "load", l, 1, 65_535);
+        }
+        range(&mut out, "burst_rounds", self.burst_rounds, 0, 1000);
+        range(&mut out, "burst_pause_ms", self.burst_pause_ms, 0, 10_000);
         if self.class == WeaponClass::Cannon && self.he.is_some() {
             out.push(Issue::new(
                 "he",
@@ -2200,6 +2347,8 @@ impl RulesDef {
                 throw: &self.items.throw,
                 dig_common: &self.dig.common,
                 call_in: &call_in,
+                supply: self.supply.as_ref(),
+                share: &self.combat.share.clone().unwrap_or_default(),
             },
         );
         out

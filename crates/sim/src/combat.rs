@@ -352,7 +352,6 @@ pub(crate) struct FireCtx<'a> {
     pub velocity: &'a [Velocity],
     pub squad: &'a [Option<SquadId>],
     pub unit: &'a [Unit],
-    pub kit: &'a [Kit],
     pub marks: &'a [Mark],
     pub mark_of: &'a [u32],
     pub game: &'a MatchState,
@@ -511,6 +510,7 @@ pub(crate) fn aim_and_fire(
     ctx: &FireCtx,
     combat: &mut [Combat],
     weapon: &mut [Weapon],
+    kits: &mut [Kit],
     out: &mut Vec<FireRequest>,
 ) -> bool {
     let base = chunk * crate::ecs::CHUNK_SIZE;
@@ -518,7 +518,12 @@ pub(crate) fn aim_and_fire(
     let rules = &setup.rules.combat;
     let hz = setup.tick_hz;
     let mut changed = false;
-    for (j, (c, ws)) in combat.iter_mut().zip(weapon.iter_mut()).enumerate() {
+    for (j, ((c, ws), kit)) in combat
+        .iter_mut()
+        .zip(weapon.iter_mut())
+        .zip(kits.iter_mut())
+        .enumerate()
+    {
         let i = base + j;
         if ctx.kind[i] != EntityKind::Soldier {
             continue;
@@ -529,11 +534,23 @@ pub(crate) fn aim_and_fire(
         changed = true;
         ws.cooldown = ws.cooldown.saturating_sub(1);
         c.retarget = c.retarget.saturating_sub(1);
-        // S4: every man carries his own weapon (`Kit::weapon`).
-        let wi = ctx.kit[i].weapon;
+        // S4: every man carries his own weapon (`Kit::weapon`); S5a: his
+        // slot's sidearm while his main weapon is dry.
+        let ty = &setup.squad_types[sq.type_idx as usize];
+        let wi = crate::supply::active_weapon(ty, kit);
         let w = &setup.weapons[wi as usize];
         // A launcher carrier fires in `fire_launchers` (S3).
         if w.class == WeaponClass::Launcher {
+            continue;
+        }
+        // S5a: counted rounds. A dry weapon reloads from his pouches once
+        // it may, else he draws his sidearm, else he holds fire.
+        let feed = ty.feed_slot(w);
+        if feed.is_some() && w.he.is_none() && c.mag == 0 {
+            if ws.cooldown > 0 || !crate::supply::reload_dry(setup, ty, kit, c, ws) {
+                c.target = None;
+                continue;
+            }
             continue;
         }
         // S4: his training scales his aim time, spread and reload.
@@ -549,7 +566,7 @@ pub(crate) fn aim_and_fire(
         }
         // A man winding up a throw does not fire.
         let may = w.he.is_none()
-            && ctx.kit[i].windup.is_none()
+            && kit.windup.is_none()
             && match engage_of(&sq.order, u) {
                 Engage::Never => false,
                 Engage::Still => still,
@@ -585,7 +602,20 @@ pub(crate) fn aim_and_fire(
             );
             let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
             let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
-            fire_round(out, ws, c, w, id, wi, owner, from, vel, tr.reload_pct);
+            fire_round(
+                out,
+                ws,
+                c,
+                kit,
+                feed,
+                w,
+                id,
+                wi,
+                owner,
+                from,
+                vel,
+                tr.reload_pct,
+            );
             continue;
         }
         let r = range_sq(w.range_max.into());
@@ -625,7 +655,20 @@ pub(crate) fn aim_and_fire(
             Fx::from_raw((Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32);
         let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
         let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
-        fire_round(out, ws, c, w, id, wi, owner, from, vel, tr.reload_pct);
+        fire_round(
+            out,
+            ws,
+            c,
+            kit,
+            feed,
+            w,
+            id,
+            wi,
+            owner,
+            from,
+            vel,
+            tr.reload_pct,
+        );
     }
     changed
 }
@@ -647,11 +690,17 @@ pub(crate) fn pct_of(v: u32, pct: u32) -> u32 {
 }
 
 /// Requests one small-arms round and runs the magazine and cooldown.
+/// S5a: with a feed slot the reload comes from the man's carried rounds
+/// (none: the weapon is dry; on his sidearm the reload waits for
+/// [`crate::supply::reload_dry`], which may switch back to his main
+/// weapon); legacy weapons refill from nothing.
 #[allow(clippy::too_many_arguments)]
 fn fire_round(
     out: &mut Vec<FireRequest>,
     ws: &mut Weapon,
     c: &mut Combat,
+    kit: &mut Kit,
+    feed: Option<usize>,
     w: &WeaponSetup,
     id: SimId,
     wi: u16,
@@ -675,10 +724,23 @@ fn fire_round(
     c.since_shot = 0;
     c.mag = c.mag.saturating_sub(1);
     if c.mag == 0 {
-        c.mag = w.magazine.min(u16::MAX as u32) as u16;
-        ws.cooldown = pct_of(w.reload_ticks, reload_pct)
-            .max(interval_ceil(w))
-            .min(u16::MAX as u32) as u16;
+        match feed {
+            None => c.mag = w.magazine.min(u16::MAX as u32) as u16,
+            Some(_) if kit.on_sidearm => {}
+            Some(k) => {
+                let take = (w.magazine.min(u16::MAX as u32) as u16).min(kit.rounds[k]);
+                kit.rounds[k] -= take;
+                c.mag = take;
+            }
+        }
+        // S5a: an empty weapon with nothing to reload waits one interval
+        // (a squadmate may feed it); `reload_dry` then runs the reload.
+        ws.cooldown = if c.mag == 0 {
+            interval_ceil(w)
+        } else {
+            pct_of(w.reload_ticks, reload_pct).max(interval_ceil(w))
+        }
+        .min(u16::MAX as u32) as u16;
     } else {
         ws.cooldown = interval_after(w, ws.shots).min(u16::MAX as u32) as u16;
     }
@@ -745,10 +807,16 @@ impl MatchState {
                 }
                 continue;
             }
-            let c = &ents.combat[i];
-            if ents.weapon[i].cooldown > 0 || (c.still as u32) < w.setup_ticks {
+            if ents.weapon[i].cooldown > 0 || (ents.combat[i].still as u32) < w.setup_ticks {
                 continue;
             }
+            // S5a: each bomb from the gunner's, then his crew's (within
+            // `crew_feed_m`); none left: the barrage ends.
+            if !crate::supply::take_bomb(setup, ents, &sq.members, sq.type_idx, gunner, wi) {
+                sq.order = Order::Idle;
+                continue;
+            }
+            let c = &ents.combat[i];
             // Scatter the aim point by the spread over the range.
             let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
             let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
@@ -1077,6 +1145,17 @@ impl MatchState {
             };
             let i = p.index();
             let w = &setup.weapons[d.weapon as usize];
+            // S5a: the rounds in his own weapon go back to his pouches.
+            if crate::supply::counted(ty) {
+                let own = &setup.weapons[crate::supply::active_weapon(ty, &ents.kit[i]) as usize];
+                if let Some(k) = ty.feed_slot(own)
+                    && own.he.is_none()
+                {
+                    let back = ents.combat[i].mag;
+                    ents.kit[i].rounds[k] = ents.kit[i].rounds[k].saturating_add(back);
+                }
+                ents.kit[i].on_sidearm = false;
+            }
             ents.kit[i].weapon = d.weapon;
             // He drops his own weapon and target and takes aim afresh.
             ents.combat[i].target = None;
@@ -1084,8 +1163,13 @@ impl MatchState {
             match &mut sq.launcher {
                 Some(l) if d.weapon == ty.weapon && l.carrier.is_none() => l.carrier = Some(p),
                 _ => {
-                    // A gun or tube: a fresh belt, and set up again.
-                    ents.combat[i].mag = w.magazine.min(u16::MAX as u32) as u16;
+                    // A gun or tube: a fresh belt (S5a: the rounds left in
+                    // it), and set up again.
+                    ents.combat[i].mag = if crate::supply::counted(ty) {
+                        d.mag
+                    } else {
+                        w.magazine.min(u16::MAX as u32) as u16
+                    };
                     ents.combat[i].still = 0;
                 }
             }
@@ -2397,8 +2481,14 @@ impl MatchState {
     ) {
         let i = id.index();
         let owner = ents.owner[i].0 as usize;
-        // S4: what he carried (a crew weapon is dropped where he fell).
+        // S4: what he carried (a crew weapon is dropped where he fell);
+        // S5a: with the rounds left in it.
         let carried = ents.kit[i].weapon;
+        let left_in = if ents.kit[i].on_sidearm {
+            0
+        } else {
+            ents.combat[i].mag
+        };
         let fell_at = ents.transform[i].pos.xy();
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();
@@ -2454,6 +2544,7 @@ impl MatchState {
                     weapon: carried,
                     at: fell_at,
                     ticks: w.handover_ticks.min(u16::MAX as u32) as u16,
+                    mag: left_in,
                 });
             }
         }
@@ -3074,7 +3165,6 @@ mod tests {
                 velocity: &self.ents.velocity,
                 squad: &self.ents.squad,
                 unit: &self.ents.unit,
-                kit: &self.ents.kit,
                 marks: &marks,
                 mark_of: &mark_of,
                 game: &self.game,
@@ -3088,6 +3178,7 @@ mod tests {
                 &ctx,
                 &mut self.ents.combat,
                 &mut self.ents.weapon,
+                &mut self.ents.kit,
                 &mut out,
             );
             out

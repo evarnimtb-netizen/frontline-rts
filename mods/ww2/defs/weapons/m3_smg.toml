@@ -1,6 +1,11 @@
 id = "ww2:m3_smg"
 name = "M3 SMG"
 class = "smg"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:45acp"
+# Six 30-round magazines (battleorder.org gives 300 for the Thompson unit
+# of fire; 6 magazines kept, verify).
+load = 180
 range_m = 100
 damage = 38
 rounds_per_min = 350

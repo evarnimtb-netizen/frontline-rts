@@ -3,6 +3,8 @@
 id = "ww2:m6a3_heat"
 name = "M6A3 rocket"
 mechanism = "heat"
+# S5a: priced refill ([supply] explosives_mp_per_t per tonne): M6A3 rocket about 1.59 kg (verify).
+supply = { kind = "explosives", g = 1590 }
 caliber_mm = 60
 muzzle_velocity_m_s = 85
 drag_coeff = 0

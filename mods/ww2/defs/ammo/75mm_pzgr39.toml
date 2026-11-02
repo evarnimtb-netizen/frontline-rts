@@ -4,6 +4,8 @@
 id = "ww2:75mm_pzgr39"
 name = "7.5 cm PzGr 39"
 mechanism = "aphe"
+# S5a: priced refill ([supply] shell_mp_per_t per tonne): complete round 11.52 kg (Wikipedia, 7.5 cm KwK 40).
+supply = { kind = "shells", g = 11520 }
 caliber_mm = 75
 muzzle_velocity_m_s = 790
 # No drag in S3 (must be 0).

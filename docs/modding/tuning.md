@@ -51,6 +51,12 @@ needed.
 | S4 AI capture of enemy abandoned tanks by its crews (`capture_m`, 0 = off; needs `[vehicles.recrew] capture`) | same | `[ai.armour]` (absent in older rules: 150) |
 | S4 weapons: crew weapon flag (`crew_weapon`, default by class), hand-over time of every crew weapon (`handover_ms`), squad-card name (`short_name`), `sources` | `defs/weapons/*.toml` | top-level keys |
 | S4 Panzerfaust: aim time (`windup_ms`), arming distance (`min_range_m`), the launcher def it fires as (`weapon`) | `defs/items/panzerfaust60.toml`; the shot itself `defs/weapons/pzf60.toml`, the round `defs/ammo/pzf60_heat.toml` | top-level keys |
+| S5a ammunition prices per tonne by supply kind (`small_arms_mp_per_t`, `explosives_mp_per_t`, `shell_mp_per_t`), the rack factor (`rack_refill_max_card_pct`, `rack_rearm_price_pct`), rare rounds (`rare_cap_max`, `rare_rearm_base_s`), base refill rates (`base_small_arms_rounds_s`, `base_bomb_s`), the HUD low marker (`low_pct`); see `docs/modding/ammo.md` | `defs/rules/skirmish.toml` | `[supply]` (absent: unlimited rounds, free refill) |
+| S5a sharing inside a squad (`interval_s`, `reach_m`, `below_pct`, `giver_above_pct`, `share_pct`) and the crew feed of a dry MG or mortar (`crew_feed_m`) | same | `[combat.share]` (absent: the S5a defaults) |
+| S5a counted rounds: a cartridge's weight and supply kind | `defs/cartridges/*.toml` | `supply = { kind, g }` |
+| S5a a weapon's feed (`feed`), a man's default load (`load`), MG bursts (`burst_rounds`, `burst_pause_ms`, used from Part B) | `defs/weapons/*.toml` | top-level keys |
+| S5a rounds per man by cartridge id | `defs/units/*.toml` | `rounds = { "<id>" = N }` in `[[members]]` |
+| S5a weights of items and rounds (`supply`), rare rounds (`rare`), a vehicle's rare-round cap (`rare_cap`) and stowage (`ammo` counts) | `defs/items/`, `defs/ammo/`, `defs/vehicles/` | top-level keys |
 
 Each key has a comment with its unit and meaning. Units are in the key's
 name: `_mm`, `_cm`, `_m`, `_s`, `_ms`, `_pct`, `_deg`, `_mm_s`. Values are

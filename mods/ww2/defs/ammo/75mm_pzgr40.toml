@@ -8,6 +8,8 @@
 id = "ww2:75mm_pzgr40"
 name = "7.5 cm PzGr 40"
 mechanism = "ap"
+# S5a: priced refill ([supply] shell_mp_per_t per tonne): complete round about 9 kg (verify).
+supply = { kind = "shells", g = 9000 }
 caliber_mm = 75
 # 990 m/s from the L/48 (approximate published figure; citation is an
 # owner / M2 task).
@@ -27,6 +29,9 @@ ricochet_angle_deg = 70
 nonpen_damage = 40
 track_damage = 60
 sources = ["placeholder: citations are an owner / M2 task"]
+# S5a (D3): APCR is a rare round: refilled one per supply.rare_rearm_base_s up
+# to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
 
 # After penetration: the small core goes on 1.2 m (a lighter projectile
 # than the PzGr 39's 1.5 m) and throws spall; no filler.

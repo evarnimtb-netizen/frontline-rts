@@ -1,0 +1,7 @@
+# .30-06 M2 ball on 8-round en-bloc clips for the M1 Garand (S5a). A
+# 48-round bandolier of six clips weighs 3.4 lb (1.54 kg): 32 g a round.
+id = "ww2:3006_clip"
+name = ".30-06 (clips)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 32 }
+sources = ["battleorder.org, US ammo load WW2 (bandolier of 48 rounds 3.4 lb)"]

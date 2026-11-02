@@ -33,8 +33,9 @@ pub mod variant;
 pub mod vehicle;
 
 pub use defs::{
-    FactionDef, ITEM_KINDS, ItemDef, ItemKind, MAX_COOLDOWN_S, MAX_INITIAL_COOLDOWN_S, MapFileDef,
-    RulesDef, SquadDef, SquadRole, WeaponClass, WeaponDef,
+    CartridgeDef, FactionDef, ITEM_KINDS, ItemDef, ItemKind, MAX_COOLDOWN_S,
+    MAX_INITIAL_COOLDOWN_S, MapFileDef, RulesDef, SquadDef, SquadRole, SupplyDef, SupplyKind,
+    WeaponClass, WeaponDef,
 };
 pub use issue::{ContentError, Issue};
 pub use modset::{ModDefs, ModManifest, OverrideChange};
@@ -110,6 +111,10 @@ pub fn schemas() -> Vec<SchemaDoc> {
             schema: schemars::schema_for!(TrainingDef),
         },
         SchemaDoc {
+            name: "cartridge",
+            schema: schemars::schema_for!(crate::defs::CartridgeDef),
+        },
+        SchemaDoc {
             name: "match_request",
             schema: schemars::schema_for!(MatchRequest),
         },
@@ -125,8 +130,17 @@ pub fn schemas() -> Vec<SchemaDoc> {
 }
 
 /// Schemas of def files, which may name a parent with `extends` (S4).
-const DEF_SCHEMAS: [&str; 9] = [
-    "squad", "weapon", "item", "vehicle", "ammo", "faction", "map", "rules", "training",
+const DEF_SCHEMAS: [&str; 10] = [
+    "squad",
+    "weapon",
+    "item",
+    "vehicle",
+    "ammo",
+    "faction",
+    "map",
+    "rules",
+    "training",
+    "cartridge",
 ];
 
 /// Adds the S4 `extends` key (resolved away by the loader, so not a field

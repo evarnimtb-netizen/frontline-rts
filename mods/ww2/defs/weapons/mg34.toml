@@ -2,6 +2,9 @@
 id = "ww2:mg34"
 name = "MG 34"
 class = "mg"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:792x57_belt"
+# Tank MG: rounds stowed are the mount's `rounds`.
 range_m = 450
 damage = 45
 rounds_per_min = 850

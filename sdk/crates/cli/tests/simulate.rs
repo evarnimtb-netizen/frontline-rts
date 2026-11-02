@@ -197,6 +197,8 @@ fn schema_export_writes_valid_json() {
         "rules",
         // S4: training profiles.
         "training",
+        // S5a: counted rounds without ballistics.
+        "cartridge",
         "match_request",
     ]
     .iter()

@@ -392,6 +392,13 @@ pub struct VehicleDef {
     /// seat in exactly one hatch's `seats`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hatches: Vec<HatchDef>,
+    /// S5a (owner D3): the most rare rounds (ammo defs with `rare = true`:
+    /// APCR, HVAP) the vehicle holds, all rare types together; at most the
+    /// rules' `supply.rare_cap_max`. Default: `rare_cap_max` when the main
+    /// gun lists a rare round, else 0. Set on every vehicle of a mod with a
+    /// `[supply]` table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rare_cap: Option<u32>,
 }
 
 /// S3c: a crew hatch. The men of `seats` leave by it one after another, in
@@ -798,6 +805,16 @@ pub struct AmmoDef {
     pub he: Option<ItemHeDef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
+    /// S5a: what one round weighs and which supply kind refills it
+    /// (main-gun rounds are `shells`; rockets and the Panzerfaust round
+    /// `explosives`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<crate::defs::SupplyDef>,
+    /// S5a (owner D3): a rare round (APCR, HVAP): refilled one per
+    /// `supply.rare_rearm_base_s` up to the vehicle's `rare_cap`; never a
+    /// weapon's only feed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rare: bool,
 }
 
 /// The core (or HEAT jet) after penetration.
@@ -1780,6 +1797,8 @@ pub struct AmmoLoadSetup {
     /// Index into `MatchSetup::ammo`.
     pub ammo: u16,
     pub count: u16,
+    /// S5a: a rare round (its ammo def's `rare`; D3).
+    pub rare: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1883,6 +1902,12 @@ pub struct VehicleSetup {
     pub crew_squad: Option<u16>,
     /// S3c: hatches (every seat in one).
     pub hatches: Vec<HatchSetup>,
+    /// S5a (D3): the most rare rounds it holds (filled in by the setup).
+    pub rare_cap: u32,
+    /// S5a (D4): main-gun rounds cost this share of their shell price (%;
+    /// filled in by the setup: a full rack costs at most the rules'
+    /// `rack_refill_max_card_pct` of the card).
+    pub rack_price_pct: u32,
 }
 
 impl VehicleSetup {
@@ -1949,6 +1974,10 @@ pub struct AmmoSetup {
     /// the round's flat penetration; for `Heat` it is 0 (the jet is the
     /// penetration).
     pub blast: Option<ItemHeSetup>,
+    /// S5a: weight and supply kind (priced refill).
+    pub supply: Option<crate::setup::SupplySetup>,
+    /// S5a: a rare round (D3).
+    pub rare: bool,
 }
 
 // ------------------------------------------------------------- lowering --
@@ -1990,6 +2019,11 @@ pub(crate) fn lower_ammo(a: &AmmoDef) -> AmmoSetup {
             reach: Fixed::from_cm(f.reach_cm),
         }),
         blast: a.he.as_ref().map(crate::setup::lower_item_he),
+        supply: a.supply.as_ref().map(|sp| crate::setup::SupplySetup {
+            kind: sp.kind(),
+            g: sp.g,
+        }),
+        rare: a.rare,
     }
 }
 
@@ -2032,6 +2066,7 @@ pub(crate) fn lower_vehicle(
                 .map(|a| AmmoLoadSetup {
                     ammo: ammo(&a.id),
                     count: a.count.min(u16::MAX as u32) as u16,
+                    rare: false,
                 })
                 .collect(),
             arc_deg: w.arc_deg.unwrap_or(0) as i32,
@@ -2152,6 +2187,8 @@ pub(crate) fn lower_vehicle(
                 exit_ticks: (h.exit_ms as u64 * hz as u64).div_ceil(1000) as u32,
             })
             .collect(),
+        rare_cap: 0,
+        rack_price_pct: 100,
     }
 }
 

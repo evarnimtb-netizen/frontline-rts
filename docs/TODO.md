@@ -801,6 +801,23 @@ Work proceeds on (A) of each question below.
   once it has rounds. (B) Only when ordered.
 - [ ] **S5a-24. SMG bursts.** (A) None in S5a (magazine and reload pace them).
   (B) 4-5-round bursts.
+- [ ] **S5a-25. Base refill streams (Part A).** (A) A man in base refills
+  small-arms rounds (`base_small_arms_rounds_s`, most depleted first) and,
+  alongside, items then mortar bombs one at a time on their timers; the
+  plan's "one supply kind at a time" was simplified to these two streams.
+  Order of payment: per tick crew feed and sharing, then men (ascending
+  id), AT teams, vehicles. (B) Strictly one kind at a time per man.
+- [ ] **S5a-26. The crew gunner keeps his rounds.** (A) The man carrying a
+  crew weapon never gives its feed in the sharing pass (he is fed, he does
+  not feed); found when a gunner on his pistol gave his new belt to the
+  assistant. (B) He shares like anyone.
+- [ ] **S5a-27. Mortar tube starts empty.** (A) A mortar holds no bomb in
+  the tube: every bomb is drawn from the pouches as it fires (15 a team,
+  not 16). (B) One bomb in the tube on top of the carried ones.
+- [ ] **S5a-28. Reload after a dry wait.** (A) An empty weapon with
+  nothing to reload waits one shot interval for a squadmate's feed, then
+  takes the weapon's full reload time (training does not scale this
+  second reload yet). (B) Scale it by training like the normal reload.
 
 ## S3 owner checklist (needs a person)
 

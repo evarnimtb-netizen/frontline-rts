@@ -1,0 +1,7 @@
+# .45 ACP for the M3 SMG and M1911A1 (S5a). About 21 g a round, 25 g with its
+# carton (starting value, verify).
+id = "ww2:45acp"
+name = ".45 ACP"
+caliber_mm = 11
+supply = { kind = "small_arms", g = 25 }
+sources = ["S5a plan: starting value (verify)"]

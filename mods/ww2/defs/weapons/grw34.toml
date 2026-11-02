@@ -1,6 +1,11 @@
 id = "ww2:grw34"
 name = "8 cm GrW 34"
 class = "mortar"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:8cm_wgr34"
+# Bombs the gunner carries; the crew carry the rest (members' `rounds`;
+# 15 a team in S5a, owner question S5a-16 (A)).
+load = 3
 min_range_m = 60
 range_m = 600
 damage = 150

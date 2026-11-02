@@ -673,6 +673,7 @@ impl MatchState {
             weapon: wk,
             ..Kit::default()
         };
+        crate::supply::spawn_load(s, ty, &mut ctx.ents.kit[si], &mut ctx.ents.combat[si]);
         ctx.hash.mark_entity_chunk(sid.chunk());
         let sq = self.squads.get_mut(&squad).expect("crew squad");
         sq.members.push(sid);

@@ -3,6 +3,8 @@
 id = "ww2:m37_satchel"
 name = "M37 Demolition Kit"
 kind = "satchel"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). M37 demolition kit: eight 2.5 lb M3 blocks in the satchel, about 9.1 kg (verify).
+supply = { kind = "explosives", g = 9100 }
 min_range_m = 3
 range_m = 8
 windup_ms = 1000

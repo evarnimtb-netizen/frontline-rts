@@ -486,7 +486,17 @@ fn base_repair_restores_parts_rounds_and_crew() {
     assert_eq!(vs.components[1], 90);
     assert_eq!(vs.components[3], 32, "the gun too: 40 % of 80");
     let rounds = vs.ammo.iter().sum::<u16>() + vs.loaded.is_some() as u16;
-    assert_eq!(rounds, 47 + 10, "one round per 2 s");
+    // S5a: one standard round per 2 s, the rare PzGr 40 on its own timer
+    // (one per 10 s, up to rare_cap 3: one more here), each paid.
+    assert_eq!(
+        rounds,
+        47 + 10 + 1,
+        "one round per 2 s, a rare one per 10 s"
+    );
+    assert!(
+        w.game().unwrap().players()[0].ammo.paid[2] > 0,
+        "paid at the shells price"
+    );
     assert_eq!(vs.seats[3].hp, 100, "one dead seat per 20 s");
 }
 
@@ -523,7 +533,8 @@ fn a_tank_fires_he_and_its_mgs_at_men_and_never_near_its_own() {
     let left = w.game().unwrap().squad(us).map_or(0, |s| s.members.len());
     assert!(left < 8, "the squad took losses: {left} left");
     let vs = w.game().unwrap().vehicle(v).unwrap();
-    assert!(vs.ammo[1] < 30);
+    // S5a: 42 Sprgr 34 stowed.
+    assert!(vs.ammo[1] < 42);
 
     // Own men within 30 m of the enemy: no HE.
     let mut w = World::new_match(setup(2), 1).unwrap();

@@ -1,6 +1,12 @@
 id = "ww2:m1_garand"
 name = "M1 Garand"
 class = "rifle"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:3006_clip"
+# Rounds a rifleman carries, the clip in the rifle included: the M1923
+# belt (80), one bandolier (48) and the clip (8) (battleorder.org, US
+# ammo load WW2: Army squad basis).
+load = 136
 range_m = 300
 damage = 65
 rounds_per_min = 24

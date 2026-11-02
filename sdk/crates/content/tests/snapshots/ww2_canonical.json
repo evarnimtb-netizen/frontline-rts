@@ -42,6 +42,10 @@
       "sources": [
         "placeholder: citations are an owner / M2 task"
       ],
+      "supply": {
+        "g": 8870,
+        "kind": "shells"
+      },
       "track_damage": 40
     },
     "ww2:75mm_m61": {
@@ -95,6 +99,10 @@
         "cone_deg": 25,
         "damage": 35,
         "rays": 6
+      },
+      "supply": {
+        "g": 9040,
+        "kind": "shells"
       },
       "track_damage": 60
     },
@@ -150,6 +158,10 @@
         "damage": 35,
         "rays": 6
       },
+      "supply": {
+        "g": 11520,
+        "kind": "shells"
+      },
       "track_damage": 60
     },
     "ww2:75mm_pzgr40": {
@@ -188,6 +200,7 @@
           92
         ]
       ],
+      "rare": true,
       "ricochet_angle_deg": 70,
       "sources": [
         "placeholder: citations are an owner / M2 task"
@@ -196,6 +209,10 @@
         "cone_deg": 25,
         "damage": 35,
         "rays": 6
+      },
+      "supply": {
+        "g": 9000,
+        "kind": "shells"
       },
       "track_damage": 60
     },
@@ -241,6 +258,10 @@
       "sources": [
         "placeholder: citations are an owner / M2 task"
       ],
+      "supply": {
+        "g": 8710,
+        "kind": "shells"
+      },
       "track_damage": 40
     },
     "ww2:m6a3_heat": {
@@ -294,6 +315,10 @@
         "cone_deg": 25,
         "damage": 25,
         "rays": 7
+      },
+      "supply": {
+        "g": 1590,
+        "kind": "explosives"
       },
       "track_damage": 50
     },
@@ -349,6 +374,10 @@
         "damage": 25,
         "rays": 7
       },
+      "supply": {
+        "g": 6100,
+        "kind": "explosives"
+      },
       "track_damage": 50
     },
     "ww2:rpzb54_heat": {
@@ -402,6 +431,10 @@
         "cone_deg": 25,
         "damage": 25,
         "rays": 7
+      },
+      "supply": {
+        "g": 3250,
+        "kind": "explosives"
       },
       "track_damage": 50
     }
@@ -479,6 +512,10 @@
       "name": "Geballte Ladung",
       "range_m": 8,
       "scatter_pct": 6,
+      "supply": {
+        "g": 3000,
+        "kind": "explosives"
+      },
       "windup_ms": 1000
     },
     "ww2:m15_smoke": {
@@ -494,6 +531,10 @@
         "grow_ms": 3000,
         "hold_ms": 25000,
         "radius_m": 8
+      },
+      "supply": {
+        "g": 880,
+        "kind": "explosives"
       },
       "windup_ms": 1000
     },
@@ -528,6 +569,10 @@
       "name": "M37 Demolition Kit",
       "range_m": 8,
       "scatter_pct": 6,
+      "supply": {
+        "g": 9100,
+        "kind": "explosives"
+      },
       "windup_ms": 1000
     },
     "ww2:mk2_grenade": {
@@ -561,6 +606,10 @@
       "name": "Mk 2 Grenade",
       "range_m": 30,
       "scatter_pct": 6,
+      "supply": {
+        "g": 595,
+        "kind": "explosives"
+      },
       "windup_ms": 1000
     },
     "ww2:nbhgr39": {
@@ -577,6 +626,10 @@
         "hold_ms": 25000,
         "radius_m": 8
       },
+      "supply": {
+        "g": 600,
+        "kind": "explosives"
+      },
       "windup_ms": 1000
     },
     "ww2:panzerfaust60": {
@@ -591,6 +644,10 @@
         "Wikipedia, Panzerfaust (citing Rottman 2014)",
         "Tactical and Technical Trends, Oct 1944 (issue per company; secondary)"
       ],
+      "supply": {
+        "g": 6100,
+        "kind": "explosives"
+      },
       "weapon": "ww2:pzf60",
       "windup_ms": 1500
     },
@@ -625,6 +682,10 @@
       "name": "Stielhandgranate 24",
       "range_m": 30,
       "scatter_pct": 6,
+      "supply": {
+        "g": 595,
+        "kind": "explosives"
+      },
       "windup_ms": 1000
     }
   },
@@ -922,6 +983,14 @@
         "prone_spot_pct": 50,
         "range_spread_pct": 50,
         "reveal_ms": 2000,
+        "share": {
+          "below_pct": 25,
+          "crew_feed_m": 5,
+          "giver_above_pct": 50,
+          "interval_s": 5,
+          "reach_m": 10,
+          "share_pct": 20
+        },
         "spot_observers": 2,
         "spot_period_ms": 200,
         "spot_rays_per_tick": 160,
@@ -1049,6 +1118,18 @@
       "name": "Skirmish",
       "pop_cap": 150,
       "projectile_cap": 2048,
+      "supply": {
+        "base_bomb_s": 4,
+        "base_small_arms_rounds_s": 30,
+        "explosives_mp_per_t": 500,
+        "low_pct": 30,
+        "rack_rearm_price_pct": 100,
+        "rack_refill_max_card_pct": 75,
+        "rare_cap_max": 10,
+        "rare_rearm_base_s": 10,
+        "shell_mp_per_t": 1000,
+        "small_arms_mp_per_t": 200
+      },
       "tick_hz": 30,
       "tickets": 500,
       "tickets_drain": {
@@ -1314,6 +1395,9 @@
         },
         {
           "count": 1,
+          "rounds": {
+            "ww2:792x57_belt": 500
+          },
           "slot": "mg_assistant",
           "traits": [
             "crew_assistant"
@@ -1322,6 +1406,9 @@
         },
         {
           "count": 1,
+          "rounds": {
+            "ww2:792x57_belt": 600
+          },
           "slot": "ammo_bearer",
           "traits": [
             "ammo_bearer"
@@ -1404,6 +1491,9 @@
         },
         {
           "count": 1,
+          "rounds": {
+            "ww2:792x57_belt": 500
+          },
           "slot": "mg_assistant",
           "traits": [
             "crew_assistant"
@@ -1412,6 +1502,9 @@
         },
         {
           "count": 1,
+          "rounds": {
+            "ww2:792x57_belt": 600
+          },
           "slot": "ammo_bearer",
           "traits": [
             "ammo_bearer"
@@ -1482,6 +1575,9 @@
         },
         {
           "count": 2,
+          "rounds": {
+            "ww2:8cm_wgr34": 6
+          },
           "slot": "mortar_crew",
           "traits": [
             "crew_assistant"
@@ -1603,6 +1699,9 @@
         },
         {
           "count": 1,
+          "rounds": {
+            "ww2:792x57_belt": 600
+          },
           "slot": "mg_assistant",
           "traits": [
             "crew_assistant"
@@ -1611,6 +1710,9 @@
         },
         {
           "count": 3,
+          "rounds": {
+            "ww2:792x57_belt": 600
+          },
           "slot": "ammo_bearer",
           "traits": [
             "ammo_bearer"
@@ -1812,6 +1914,9 @@
         },
         {
           "count": 1,
+          "rounds": {
+            "ww2:3006_belt": 500
+          },
           "slot": "mg_assistant",
           "traits": [
             "crew_assistant"
@@ -1820,6 +1925,9 @@
         },
         {
           "count": 2,
+          "rounds": {
+            "ww2:3006_belt": 500
+          },
           "slot": "ammo_bearer",
           "traits": [
             "ammo_bearer"
@@ -1892,6 +2000,9 @@
         },
         {
           "count": 2,
+          "rounds": {
+            "ww2:81mm_m43a1": 6
+          },
           "slot": "mortar_crew",
           "traits": [
             "crew_assistant"
@@ -1960,6 +2071,9 @@
           "items": {
             "ww2:mk2_grenade": 1
           },
+          "rounds": {
+            "ww2:3006_bar": 240
+          },
           "slot": "asst_ar",
           "traits": [
             "crew_assistant"
@@ -1970,6 +2084,9 @@
           "count": 1,
           "items": {
             "ww2:mk2_grenade": 1
+          },
+          "rounds": {
+            "ww2:3006_bar": 240
           },
           "slot": "ammo_bearer",
           "traits": [
@@ -2060,6 +2177,9 @@
           "items": {
             "ww2:mk2_grenade": 1
           },
+          "rounds": {
+            "ww2:3006_bar": 240
+          },
           "slot": "asst_ar",
           "traits": [
             "crew_assistant"
@@ -2070,6 +2190,9 @@
           "count": 1,
           "items": {
             "ww2:mk2_grenade": 1
+          },
+          "rounds": {
+            "ww2:3006_bar": 240
           },
           "slot": "ammo_bearer",
           "traits": [
@@ -2159,6 +2282,9 @@
           "items": {
             "ww2:mk2_grenade": 1
           },
+          "rounds": {
+            "ww2:3006_bar": 240
+          },
           "slot": "asst_ar",
           "traits": [
             "crew_assistant"
@@ -2169,6 +2295,9 @@
           "count": 1,
           "items": {
             "ww2:mk2_grenade": 1
+          },
+          "rounds": {
+            "ww2:3006_bar": 240
           },
           "slot": "ammo_bearer",
           "traits": [
@@ -2667,6 +2796,7 @@
       },
       "name": "Panzer IV Ausf. H",
       "pop": 12,
+      "rare_cap": 3,
       "recall_cooldown_s": 120,
       "role": "tank",
       "short_name": "Panzer IV",
@@ -2715,15 +2845,15 @@
         {
           "ammo": [
             {
-              "count": 30,
+              "count": 42,
               "id": "ww2:75mm_pzgr39"
             },
             {
-              "count": 30,
+              "count": 42,
               "id": "ww2:75mm_sprgr34"
             },
             {
-              "count": 6,
+              "count": 3,
               "id": "ww2:75mm_pzgr40"
             }
           ],
@@ -3172,6 +3302,7 @@
       },
       "name": "M4A3 (75) Sherman",
       "pop": 12,
+      "rare_cap": 0,
       "recall_cooldown_s": 120,
       "role": "tank",
       "short_name": "Sherman",
@@ -3220,11 +3351,11 @@
         {
           "ammo": [
             {
-              "count": 30,
+              "count": 35,
               "id": "ww2:75mm_m61"
             },
             {
-              "count": 40,
+              "count": 62,
               "id": "ww2:75mm_m48"
             }
           ],
@@ -3274,8 +3405,10 @@
       "class": "rifle",
       "crew_weapon": false,
       "damage": 65,
+      "feed": "ww2:3006_bar",
       "handover_ms": 0,
       "id": "ww2:bar_m1918a2",
+      "load": 220,
       "magazine": 20,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 860,
@@ -3296,6 +3429,7 @@
     "ww2:grw34": {
       "class": "mortar",
       "damage": 150,
+      "feed": "ww2:8cm_wgr34",
       "handover_ms": 0,
       "he": {
         "blast_radius_cm": 150,
@@ -3318,6 +3452,7 @@
         "vs_vehicle_pct": 40
       },
       "id": "ww2:grw34",
+      "load": 3,
       "magazine": 1,
       "min_range_m": 60,
       "muzzle_velocity_m_s": 174,
@@ -3334,8 +3469,10 @@
     "ww2:kar98k": {
       "class": "rifle",
       "damage": 70,
+      "feed": "ww2:792x57_clip",
       "handover_ms": 0,
       "id": "ww2:kar98k",
+      "load": 60,
       "magazine": 5,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 760,
@@ -3372,8 +3509,10 @@
     "ww2:m1911a1": {
       "class": "pistol",
       "damage": 38,
+      "feed": "ww2:45acp",
       "handover_ms": 0,
       "id": "ww2:m1911a1",
+      "load": 21,
       "magazine": 7,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 250,
@@ -3390,6 +3529,7 @@
     "ww2:m1919": {
       "class": "mg",
       "damage": 45,
+      "feed": "ww2:3006_belt",
       "handover_ms": 0,
       "id": "ww2:m1919",
       "magazine": 100,
@@ -3408,8 +3548,10 @@
     "ww2:m1919a4_tripod": {
       "class": "mg",
       "damage": 45,
+      "feed": "ww2:3006_belt",
       "handover_ms": 3000,
       "id": "ww2:m1919a4_tripod",
+      "load": 250,
       "magazine": 125,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 853,
@@ -3431,8 +3573,10 @@
     "ww2:m1_carbine": {
       "class": "rifle",
       "damage": 45,
+      "feed": "ww2:30_carbine",
       "handover_ms": 0,
       "id": "ww2:m1_carbine",
+      "load": 75,
       "magazine": 15,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 607,
@@ -3453,8 +3597,10 @@
     "ww2:m1_garand": {
       "class": "rifle",
       "damage": 65,
+      "feed": "ww2:3006_clip",
       "handover_ms": 0,
       "id": "ww2:m1_garand",
+      "load": 136,
       "magazine": 8,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 850,
@@ -3471,6 +3617,7 @@
     "ww2:m1_mortar": {
       "class": "mortar",
       "damage": 150,
+      "feed": "ww2:81mm_m43a1",
       "handover_ms": 0,
       "he": {
         "blast_radius_cm": 150,
@@ -3493,6 +3640,7 @@
         "vs_vehicle_pct": 40
       },
       "id": "ww2:m1_mortar",
+      "load": 3,
       "magazine": 1,
       "min_range_m": 60,
       "muzzle_velocity_m_s": 180,
@@ -3529,8 +3677,10 @@
     "ww2:m3_smg": {
       "class": "smg",
       "damage": 38,
+      "feed": "ww2:45acp",
       "handover_ms": 0,
       "id": "ww2:m3_smg",
+      "load": 180,
       "magazine": 30,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 280,
@@ -3570,6 +3720,7 @@
     "ww2:mg34": {
       "class": "mg",
       "damage": 45,
+      "feed": "ww2:792x57_belt",
       "handover_ms": 0,
       "id": "ww2:mg34",
       "magazine": 150,
@@ -3588,8 +3739,10 @@
     "ww2:mg42": {
       "class": "mg",
       "damage": 45,
+      "feed": "ww2:792x57_belt",
       "handover_ms": 3000,
       "id": "ww2:mg42",
+      "load": 150,
       "magazine": 150,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 740,
@@ -3610,8 +3763,10 @@
     "ww2:mg42_bipod": {
       "class": "mg",
       "damage": 45,
+      "feed": "ww2:792x57_belt",
       "handover_ms": 3000,
       "id": "ww2:mg42_bipod",
+      "load": 50,
       "magazine": 50,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 740,
@@ -3632,8 +3787,10 @@
     "ww2:mp40": {
       "class": "smg",
       "damage": 35,
+      "feed": "ww2:9x19",
       "handover_ms": 0,
       "id": "ww2:mp40",
+      "load": 192,
       "magazine": 32,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 400,
@@ -3650,8 +3807,10 @@
     "ww2:p38": {
       "class": "pistol",
       "damage": 35,
+      "feed": "ww2:9x19",
       "handover_ms": 0,
       "id": "ww2:p38",
+      "load": 16,
       "magazine": 8,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 350,

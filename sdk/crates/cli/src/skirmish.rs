@@ -16,7 +16,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use frontline_content::vehicle::AmmoMechanism;
 use frontline_content::{Difficulty, MatchRequest, MatchSetup, PlayerRequest};
 use frontline_sim::{
-    ArmourEventKind, BlastKind, Outcome, PlayerId, SquadId, World, kill_class, vehicle_flags,
+    ArmourEventKind, BlastKind, Outcome, PlayerId, SquadId, World, fired_class, kill_class,
+    vehicle_flags,
 };
 use serde::Serialize;
 
@@ -347,6 +348,24 @@ pub struct PlayerReport {
     pub s3c: S3cPlayer,
     /// S4 counters.
     pub s4: S4Player,
+    /// S5a ammunition counters.
+    pub s5a: S5aPlayer,
+}
+
+/// S5a per-player report counters (`frontline_sim::AmmoAccount`).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S5aPlayer {
+    /// Rounds fired by class (`fired_class::NAMES`).
+    pub fired: [u32; fired_class::COUNT],
+    /// Manpower paid for ammunition by supply kind (small arms,
+    /// explosives, shells), in µMP.
+    pub paid_micro: [u64; 3],
+    /// Rounds, items and bombs refilled by supply kind.
+    pub refilled: [u32; 3],
+    /// Seconds on which a refill paused for lack of manpower.
+    pub paused_s: u32,
+    /// Enemy men killed by class (the HE share by source).
+    pub kills_by: [u32; kill_class::COUNT],
 }
 
 /// S4 per-player report counters.
@@ -1035,6 +1054,13 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     pzf_hunts: ai.map_or(0, |a| a.counters.pzf_hunts),
                     capture_orders: ai.map_or(0, |a| a.counters.capture_orders),
                 },
+                s5a: S5aPlayer {
+                    fired: pl.ammo.fired,
+                    paid_micro: pl.ammo.paid,
+                    refilled: pl.ammo.refilled,
+                    paused_s: pl.ammo.paused_ticks / s.tick_hz.max(1),
+                    kills_by: pl.kills_by,
+                },
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1411,6 +1437,20 @@ pub struct FactionSummary {
     pub ai_s3c: BTreeMap<String, u32>,
     /// S4 counters over the run.
     pub s4: S4Faction,
+    /// S5a counters over the run.
+    pub s5a: S5aFaction,
+}
+
+/// S5a numbers of one faction over a `--seeds` run.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S5aFaction {
+    pub matches: u32,
+    pub fired: [u64; fired_class::COUNT],
+    pub paid_micro: [u64; 3],
+    pub refilled: [u64; 3],
+    pub paused_s: u64,
+    /// Enemy men killed by class (the HE share by source).
+    pub kills_by: [u64; kill_class::COUNT],
 }
 
 /// S4 numbers of one faction over a `--seeds` run.
@@ -1638,6 +1678,20 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             s4.matches_with_pzf += u32::from(q.panzerfausts > 0);
             s4.matches_with_pzf_normal += u32::from(q.panzerfausts > 0 && !swapped);
             s4.pickups += q.pickups;
+            let q5 = &p.s5a;
+            let s5 = &mut f.s5a;
+            s5.matches += 1;
+            for k in 0..fired_class::COUNT {
+                s5.fired[k] += q5.fired[k] as u64;
+            }
+            for k in 0..3 {
+                s5.paid_micro[k] += q5.paid_micro[k];
+                s5.refilled[k] += q5.refilled[k] as u64;
+            }
+            s5.paused_s += q5.paused_s as u64;
+            for k in 0..kill_class::COUNT {
+                s5.kills_by[k] += q5.kills_by[k] as u64;
+            }
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;
@@ -1824,6 +1878,66 @@ pub fn many_text(r: &ManyReport) -> String {
             f.captures,
             pop.join("/"),
             q.pop_cap_holds as f64 / n,
+        );
+    }
+    // S5a: rounds fired, per tank, manpower on ammunition, HE kills by
+    // source.
+    for f in &s.factions {
+        let q = &f.s5a;
+        let n = q.matches.max(1) as f64;
+        let tanks = f.tanks_bought.max(1) as f64;
+        let fired: Vec<String> = (0..fired_class::COUNT)
+            .map(|k| format!("{} {}", fired_class::NAMES[k], q.fired[k]))
+            .collect();
+        let main = q.fired[fired_class::TANK_AP]
+            + q.fired[fired_class::TANK_HE]
+            + q.fired[fired_class::TANK_RARE];
+        let mp = |k: usize| q.paid_micro[k] as f64 / 1e6;
+        let all_kills: u64 = q.kills_by.iter().sum();
+        let pct = |c: u8| {
+            if all_kills == 0 {
+                0.0
+            } else {
+                q.kills_by[c as usize] as f64 * 100.0 / all_kills as f64
+            }
+        };
+        out += &format!(
+            "S5a {}: rounds fired {}\n\
+             S5a {}: per tank bought: main gun {:.1} (AP {:.1}, HE {:.1}, rare {:.1}), MG {:.0}\n\
+             S5a {}: MP on ammo small arms {:.0}, explosives {:.0}, shells {:.0} (total {:.0}, \
+             {:.1}/match); refilled {}/{}/{}; refill paused {} s\n\
+             S5a {}: kills by source % (of this side's kills): mortar {:.1}, tank HE {:.1}, \
+             frag {:.1}, satchel {:.1}, rocket {:.1}, tank AP {:.1}, MG {:.1}, rifle {:.1}, \
+             smg {:.1}, vehicle MG {:.1}\n",
+            f.faction,
+            fired.join(", "),
+            f.faction,
+            main as f64 / tanks,
+            q.fired[fired_class::TANK_AP] as f64 / tanks,
+            q.fired[fired_class::TANK_HE] as f64 / tanks,
+            q.fired[fired_class::TANK_RARE] as f64 / tanks,
+            q.fired[fired_class::VEHICLE_MG] as f64 / tanks,
+            f.faction,
+            mp(0),
+            mp(1),
+            mp(2),
+            mp(0) + mp(1) + mp(2),
+            (mp(0) + mp(1) + mp(2)) / n,
+            q.refilled[0],
+            q.refilled[1],
+            q.refilled[2],
+            q.paused_s,
+            f.faction,
+            pct(kill_class::MORTAR),
+            pct(kill_class::TANK_HE),
+            pct(kill_class::FRAG),
+            pct(kill_class::SATCHEL),
+            pct(kill_class::ROCKET),
+            pct(kill_class::TANK_AP),
+            pct(kill_class::MG),
+            pct(kill_class::RIFLE),
+            pct(kill_class::SMG),
+            pct(kill_class::VEHICLE_MG),
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

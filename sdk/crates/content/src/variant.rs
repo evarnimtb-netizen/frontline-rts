@@ -42,10 +42,16 @@ pub struct MemberDef {
     /// MG or pistol). S4 Part B (crew-weapon pickup).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidearm: Option<String>,
-    /// Rounds he carries for his weapon. Parsed and stored; rounds stay
-    /// unlimited until S5 (counted ammo), so it has no effect yet.
+    /// S4 form of `rounds`: rounds of his weapon's feed he carries (S5a:
+    /// read as `rounds = { <his weapon's feed> = N }`). Not with `rounds`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ammo: Option<u32>,
+    /// S5a: rounds each man of the slot carries, by cartridge or ammo id,
+    /// counting those in his weapon, e.g. `{ "ww2:792x57_clip" = 60 }`.
+    /// A feed of his weapon (or sidearm) not listed gets that weapon's
+    /// `load`. At most 4 feeds per unit; each 0..=65535.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rounds: BTreeMap<String, u32>,
     /// Items each man of the slot carries, by item id, e.g.
     /// `{ "ww2:stielhandgranate" = 1 }`; at most one item of each kind per
     /// man, at most 10 of one item.
@@ -206,6 +212,7 @@ pub fn expand_legacy(s: &SquadDef, launcher: bool) -> Vec<MemberDef> {
         weapon,
         sidearm: None,
         ammo: None,
+        rounds: BTreeMap::new(),
         items: items(leader),
         traits: Vec::new(),
     };
@@ -368,6 +375,23 @@ pub(crate) fn check_members(out: &mut Vec<Issue>, members: &[MemberDef]) {
                 format!("{p}.ammo"),
                 format!("must be in 0..=10000, got {a}"),
             ));
+        }
+        if m.ammo.is_some() && !m.rounds.is_empty() {
+            out.push(
+                Issue::new(
+                    format!("{p}.ammo"),
+                    "set `rounds` (S5a, by cartridge id) or the S4 `ammo`, not both",
+                )
+                .with_hint("remove `ammo` and list the weapon's feed in `rounds`"),
+            );
+        }
+        for (id, &n) in &m.rounds {
+            if n > u16::MAX as u32 {
+                out.push(Issue::new(
+                    format!("{p}.rounds.\"{id}\""),
+                    format!("must be in 0..=65535, got {n}"),
+                ));
+            }
         }
         for (id, &c) in &m.items {
             if c > MAX_ITEM_COUNT {
@@ -664,6 +688,7 @@ mod tests {
             weapon: w.into(),
             sidearm: None,
             ammo: None,
+            rounds: BTreeMap::new(),
             items: BTreeMap::new(),
             traits: Vec::new(),
         };

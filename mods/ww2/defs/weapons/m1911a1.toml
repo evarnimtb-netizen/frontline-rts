@@ -6,6 +6,10 @@
 id = "ww2:m1911a1"
 name = "M1911A1"
 class = "pistol"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:45acp"
+# Three 7-round magazines, one in the pistol (verify).
+load = 21
 # Effective combat range of a service pistol (m).
 range_m = 30
 damage = 38

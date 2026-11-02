@@ -7,6 +7,10 @@
 id = "ww2:p38"
 name = "P 38"
 class = "pistol"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:9x19"
+# Rounds carried: two 8-round magazines, one in the pistol (verify).
+load = 16
 # Effective combat range of a service pistol (m).
 range_m = 30
 damage = 35

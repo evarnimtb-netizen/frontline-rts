@@ -26,6 +26,8 @@ eye_height_cm = 250
 sources = ["placeholder: citations are an owner / M2 task"]
 # S3c: the squad the surviving crew become when they bail out.
 crew_squad = "ww2:usa_tank_crew"
+# S5a (owner D3): no rare rounds: the 75 mm M3 had no HVAP.
+rare_cap = 0
 
 [mobility]
 type = "tracked"
@@ -97,7 +99,14 @@ def = "ww2:m3_75mm"
 mount = "turret_main"
 muzzle = [340, 0, 45]
 elevation_deg = [-10, 25]
-ammo = [{ id = "ww2:75mm_m61", count = 30 }, { id = "ww2:75mm_m48", count = 40 }]
+# S5a (owner question S5a-10 (A)): stowage restored to the historical 97
+# rounds of the dry-stowage M4A3 (75) (S3b-4 (A); the wet M4A3 (75)W held
+# 104) (strijdbewijs.nl, M4 Sherman data; historyofwar.org, Medium Tank
+# M4A3; it was 70 in S3). Split 35 M61 APC / 62 M48 HE (starting value: no
+# loading list read, verify); no smoke rounds (Q5 (A)). Each round is
+# priced in base at its weight x [supply] shell_mp_per_t x the rack factor
+# (51 % here: a full rack 866 kg costs at most 75 % of the 590 card, D4).
+ammo = [{ id = "ww2:75mm_m61", count = 35 }, { id = "ww2:75mm_m48", count = 62 }]
 # S3b: the exposed barrel, from the muzzle back to the turret front (340 -
 # 110 cm); see ger_pz4_h.toml.
 barrel = { length_cm = 230, radius_cm = 8 }

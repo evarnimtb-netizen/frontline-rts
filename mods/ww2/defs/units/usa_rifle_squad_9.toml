@@ -34,12 +34,16 @@ items = { "ww2:mk2_grenade" = 1 }
 [[members]]
 slot = "asst_ar"
 weapon = "ww2:m1_garand"
+# S5a: 12 BAR magazines (as the Rifle Squad).
+rounds = { "ww2:3006_bar" = 240 }
 traits = ["crew_assistant"]
 items = { "ww2:mk2_grenade" = 1 }
 
 [[members]]
 slot = "ammo_bearer"
 weapon = "ww2:m1_garand"
+# S5a: 12 BAR magazines (as the Rifle Squad).
+rounds = { "ww2:3006_bar" = 240 }
 traits = ["ammo_bearer"]
 items = { "ww2:mk2_grenade" = 1 }
 

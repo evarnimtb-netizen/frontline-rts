@@ -30,8 +30,9 @@ use crate::scenario::ms_to_ticks;
 use crate::tuning::{
     AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning, BodyTuning,
     CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning,
-    GunneryTuning, MortarTuning, RecrewTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
-    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
+    check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -193,6 +194,40 @@ pub struct MatchSetup {
     pub tags: Vec<String>,
     /// S4: training profiles, sorted by id.
     pub training: Vec<TrainingSetup>,
+    /// S5a: counted rounds whose flight lives on the weapon (small arms,
+    /// mortar bombs), sorted by id.
+    pub cartridges: Vec<CartridgeSetup>,
+}
+
+/// S5a: most distinct feeds (cartridge or ammo ids) one squad type uses
+/// (the size of the sim's per-man round counts).
+pub const MAX_FEEDS: usize = 4;
+
+pub use crate::defs::SupplyKind;
+
+/// S5a: a round's supply kind and weight (grams, packaging included).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupplySetup {
+    pub kind: SupplyKind,
+    pub g: u32,
+}
+
+/// S5a: what a weapon's shot takes from a man's rounds: a cartridge
+/// (index into [`MatchSetup::cartridges`]) or an ammo def (index into
+/// [`MatchSetup::ammo`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Feed {
+    Cartridge(u16),
+    Ammo(u16),
+}
+
+/// S5a: a lowered cartridge def.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CartridgeSetup {
+    pub id: String,
+    pub name: String,
+    pub kind: SupplyKind,
+    pub g: u32,
 }
 
 impl MatchSetup {
@@ -267,6 +302,9 @@ pub struct RulesSetup {
     pub call_in: CallInTuning,
     /// S4: `[limit_groups]`, sorted by id.
     pub limit_groups: Vec<LimitGroupSetup>,
+    /// S5a: `[supply]`; `None` (legacy content): unlimited rounds, free
+    /// refills (S5a-22).
+    pub supply: Option<SupplyTuning>,
 }
 
 impl RulesSetup {
@@ -475,6 +513,8 @@ pub struct CombatSetup {
     pub blast: BlastTuning,
     pub suppression: SuppressionTuning,
     pub suppress: SuppressTuning,
+    /// S5a: `[combat.share]`.
+    pub share: ShareTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -592,6 +632,16 @@ pub struct WeaponSetup {
     pub crew: bool,
     /// S4: squad-card name.
     pub short_name: String,
+    /// S5a: what each shot takes from the man's rounds (`None`: launchers,
+    /// cannons and legacy content).
+    pub feed: Option<Feed>,
+    /// S5a: rounds of `feed` a man carrying it has by default (the def's
+    /// `load`, else `magazine`).
+    pub load: u32,
+    /// S5a: MG bursts: rounds per burst (0: none) and the pause after one
+    /// (ticks). Used from Part B.
+    pub burst_rounds: u32,
+    pub burst_pause_ticks: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -637,6 +687,8 @@ pub struct ItemSetup {
     /// S4 single-shot AT items: the launcher weapon it fires as (index
     /// into `MatchSetup::weapons`); `windup_ticks` is the aim time.
     pub weapon: Option<u16>,
+    /// S5a: weight and supply kind (priced refill).
+    pub supply: Option<SupplySetup>,
 }
 
 /// An item's blast: a weapon-style [`HeSetup`] plus its own damage and
@@ -747,8 +799,10 @@ pub struct MemberSetup {
     pub items: [u8; ITEM_KINDS],
     /// [`member_trait`] bits.
     pub traits: u8,
-    /// Rounds he carries (stored; unlimited until S5).
-    pub ammo: u32,
+    /// S5a: rounds each man of the slot carries when full, counting those
+    /// in his weapon, by the squad type's feed slot
+    /// ([`SquadTypeSetup::feeds`]).
+    pub rounds: [u16; MAX_FEEDS],
 }
 
 /// S4: a training profile, percent multipliers (100 = regular; see
@@ -860,9 +914,34 @@ pub struct SquadTypeSetup {
     pub limit_group: Option<u16>,
     /// S4: the AI's weight among ready cards of the same mix tag.
     pub ai_weight: u32,
+    /// S5a: the distinct feeds the men use (at most [`MAX_FEEDS`], in
+    /// first-use order over the members: weapon, sidearm, then the rest of
+    /// the slot's `rounds`).
+    pub feeds: Vec<Feed>,
+    /// S5a: the largest slot load of each feed (load validation).
+    pub feed_cap: [u16; MAX_FEEDS],
+}
+
+impl MatchSetup {
+    /// S5a: whether feed `f` names a cartridge or a round with `supply`.
+    pub fn feed_ok(&self, f: Feed) -> bool {
+        match f {
+            Feed::Cartridge(c) => (c as usize) < self.cartridges.len(),
+            Feed::Ammo(a) => self
+                .ammo
+                .get(a as usize)
+                .is_some_and(|a| a.supply.is_some()),
+        }
+    }
 }
 
 impl SquadTypeSetup {
+    /// S5a: the feed slot (index into [`Self::feeds`]) of weapon `w`.
+    pub fn feed_slot(&self, w: &WeaponSetup) -> Option<usize> {
+        let f = w.feed?;
+        self.feeds.iter().position(|&x| x == f)
+    }
+
     /// Population it uses: its men, or its vehicle's `pop` (S3).
     pub fn pop(&self, vehicles: &[VehicleSetup]) -> u32 {
         match self.vehicle {
@@ -1042,8 +1121,13 @@ impl ModDefs {
                 handover_ticks: ms_to_ticks(w.handover_ms, hz),
                 crew: w.is_crew_weapon(),
                 short_name: w.short_name.clone().unwrap_or_else(|| w.name.clone()),
+                feed: w.feed.as_deref().and_then(|f| self.feed_of(f)),
+                load: w.load.unwrap_or(w.magazine),
+                burst_rounds: w.burst_rounds,
+                burst_pause_ticks: ms_to_ticks(w.burst_pause_ms, hz),
             })
             .collect();
+        let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
         let items: Vec<ItemSetup> = self
             .items
             .values()
@@ -1067,6 +1151,10 @@ impl ModDefs {
                     .weapon
                     .as_ref()
                     .and_then(|w| index_of(self.weapons.keys(), w)),
+                supply: it.supply.as_ref().map(|sp| SupplySetup {
+                    kind: sp.kind(),
+                    g: sp.g,
+                }),
             })
             .collect();
         // S4: what the sim cannot run (unknown limit groups, mixed items
@@ -1076,7 +1164,45 @@ impl ModDefs {
             return Err(invalid(refused));
         }
         let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
-        let vehicles = self.lower_vehicles(hz);
+        let mut vehicles = self.lower_vehicles(hz);
+        // S5a: rare rounds, `rare_cap` and the rack price factor (D3, D4).
+        for v in &mut vehicles {
+            for m in &mut v.mounts {
+                for a in &mut m.ammo {
+                    a.rare = ammo.get(a.ammo as usize).is_some_and(|x| x.rare);
+                }
+            }
+            let def = self.vehicles.get(&v.id);
+            let any_rare = v
+                .mounts
+                .first()
+                .is_some_and(|m| m.ammo.iter().any(|a| a.rare));
+            let cap_max = rules.supply.as_ref().map_or(10, |sp| sp.rare_cap_max);
+            v.rare_cap = def
+                .and_then(|d| d.rare_cap)
+                .unwrap_or(if any_rare { cap_max } else { 0 });
+            v.rack_price_pct = match &rules.supply {
+                None => 100,
+                Some(sp) => {
+                    let full: u64 = v.mounts.first().map_or(0, |m| {
+                        m.ammo
+                            .iter()
+                            .map(|a| {
+                                let g = ammo
+                                    .get(a.ammo as usize)
+                                    .and_then(|x| x.supply)
+                                    .map_or(0, |x| x.g);
+                                a.count as u64 * g as u64 * sp.shell_mp_per_t as u64
+                            })
+                            .sum()
+                    });
+                    let ceiling = (v.cost as u64 * sp.rack_refill_max_card_pct as u64 * 1_000_000)
+                        .checked_div(full)
+                        .unwrap_or(u64::MAX);
+                    (sp.rack_rearm_price_pct as u64).min(ceiling) as u32
+                }
+            };
+        }
         let weapon_idx = |id: &str| index_of(self.weapons.keys(), id).unwrap_or(0);
         // Cooldown groups (S3b): a dense index in sorted id order.
         let groups: std::collections::BTreeSet<&str> = self
@@ -1208,6 +1334,8 @@ impl ModDefs {
                         max_alive: s.max_alive,
                         limit_group: s.limit_group.as_deref().and_then(limit_idx),
                         ai_weight: s.ai_weight.unwrap_or(crate::variant::DEFAULT_AI_WEIGHT),
+                        feeds: Vec::new(),
+                        feed_cap: [0; MAX_FEEDS],
                     };
                 }
                 // S4: the members, lowered (legacy cards were expanded into
@@ -1246,10 +1374,13 @@ impl ModDefs {
                             sidearm: m.sidearm.as_deref().map(weapon_idx),
                             items,
                             traits,
-                            ammo: m.ammo.unwrap_or(0),
+                            rounds: [0; MAX_FEEDS],
                         }
                     })
                     .collect();
+                // S5a: feeds in first-use order and each slot's rounds.
+                let (feeds, members, feed_cap) =
+                    self.lower_member_rounds(s, &weapons, &cartridge_ids, members);
                 let men: u32 = members.iter().map(|m| m.count as u32).sum();
                 let crew_w = |w: u16| weapons.get(w as usize).is_some_and(|w| w.crew);
                 let main = members
@@ -1300,6 +1431,8 @@ impl ModDefs {
                     max_alive: s.max_alive,
                     limit_group: s.limit_group.as_deref().and_then(limit_idx),
                     ai_weight: s.ai_weight.unwrap_or(crate::variant::DEFAULT_AI_WEIGHT),
+                    feeds,
+                    feed_cap,
                 }
             })
             .collect();
@@ -1446,6 +1579,7 @@ impl ModDefs {
                         blast: c.blast.clone(),
                         suppression: c.suppression.clone(),
                         suppress: c.suppress.clone(),
+                        share: c.share.clone().unwrap_or_default(),
                     }
                 },
                 items: ItemRulesSetup {
@@ -1545,6 +1679,7 @@ impl ModDefs {
                         limit,
                     })
                     .collect(),
+                supply: rules.supply.clone(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -1599,6 +1734,16 @@ impl ModDefs {
             vehicles,
             tags,
             training,
+            cartridges: self
+                .cartridges
+                .values()
+                .map(|c| CartridgeSetup {
+                    id: c.id.clone(),
+                    name: c.name.clone(),
+                    kind: c.supply.kind(),
+                    g: c.supply.g,
+                })
+                .collect(),
         };
         let issues = setup.validate();
         if issues.is_empty() {
@@ -1694,6 +1839,76 @@ impl ModDefs {
     /// Every ammo def lowered, sorted by id.
     pub fn lower_ammo(&self) -> Vec<AmmoSetup> {
         self.ammo.values().map(lower_ammo).collect()
+    }
+
+    /// S5a: the feed a `feed = "<id>"` names: a cartridge, else an ammo def
+    /// (the loader's cross-check reports unknown ids).
+    pub fn feed_of(&self, id: &str) -> Option<Feed> {
+        index_of(self.cartridges.keys(), id)
+            .map(Feed::Cartridge)
+            .or_else(|| index_of(self.ammo.keys(), id).map(Feed::Ammo))
+    }
+
+    /// S5a: the feeds of unit `s` in first-use order (weapon, sidearm, then
+    /// the slot's other `rounds` ids, slot by slot), each slot's rounds by
+    /// feed slot, and the largest slot load per feed. Feeds past
+    /// [`MAX_FEEDS`] are dropped (the loader refuses such units).
+    pub(crate) fn lower_member_rounds(
+        &self,
+        s: &SquadDef,
+        weapons: &[WeaponSetup],
+        _cartridges: &[&String],
+        mut members: Vec<MemberSetup>,
+    ) -> (Vec<Feed>, Vec<MemberSetup>, [u16; MAX_FEEDS]) {
+        let mut feeds: Vec<Feed> = Vec::new();
+        let mut cap = [0u16; MAX_FEEDS];
+        for (md, ms) in s.members.iter().zip(members.iter_mut()) {
+            let mut want: Vec<(Feed, u32)> = Vec::new();
+            let add = |f: Feed, n: u32, want: &mut Vec<(Feed, u32)>| {
+                if !want.iter().any(|(x, _)| *x == f) {
+                    want.push((f, n));
+                }
+            };
+            // Explicit `rounds` first (they override `load`), but feeds are
+            // ordered weapon, sidearm, then the rest.
+            let explicit: Vec<(Feed, u32)> = md
+                .rounds
+                .iter()
+                .filter_map(|(id, &n)| self.feed_of(id).map(|f| (f, n)))
+                .collect();
+            let own = |w: u16| weapons.get(w as usize).and_then(|w| w.feed.map(|f| (f, w)));
+            for w in [Some(ms.weapon), ms.sidearm].into_iter().flatten() {
+                if let Some((f, wd)) = own(w) {
+                    let n = explicit
+                        .iter()
+                        .find(|(x, _)| *x == f)
+                        .map(|(_, n)| *n)
+                        .or_else(|| {
+                            // The S4 integer form: rounds of his weapon's feed.
+                            (w == ms.weapon).then_some(md.ammo).flatten()
+                        })
+                        .unwrap_or(wd.load);
+                    add(f, n, &mut want);
+                }
+            }
+            for (f, n) in explicit {
+                add(f, n, &mut want);
+            }
+            for (f, n) in want {
+                let k = match feeds.iter().position(|&x| x == f) {
+                    Some(k) => k,
+                    None if feeds.len() < MAX_FEEDS => {
+                        feeds.push(f);
+                        feeds.len() - 1
+                    }
+                    None => continue,
+                };
+                let n = n.min(u16::MAX as u32) as u16;
+                ms.rounds[k] = n;
+                cap[k] = cap[k].max(n);
+            }
+        }
+        (feeds, members, cap)
     }
 }
 
@@ -2144,6 +2359,8 @@ impl MatchSetup {
                 throw: &r.items.throw,
                 dig_common: &r.dig.common,
                 call_in: &r.call_in,
+                supply: r.supply.as_ref(),
+                share: &c.share,
             },
         );
         r.at_ditch
@@ -2255,6 +2472,48 @@ impl MatchSetup {
                 "weapons.ammo",
                 "launchers need a known round, other weapons none",
             );
+            // S5a.
+            check(
+                w.feed.is_none_or(|f| self.feed_ok(f))
+                    && w.load <= u16::MAX as u32
+                    && w.burst_rounds <= 1000
+                    && w.burst_pause_ticks <= 10 * 30,
+                "weapons.feed",
+                "unknown feed, or load or bursts out of range",
+            );
+        }
+        for c in &self.cartridges {
+            check(
+                (1..=100_000).contains(&c.g) && !c.id.is_empty(),
+                "cartridges",
+                "weight out of range",
+            );
+        }
+        let supply_ok = |sp: &Option<SupplySetup>| sp.is_none_or(|x| (1..=100_000).contains(&x.g));
+        check(
+            self.items.iter().all(|i| supply_ok(&i.supply))
+                && self.ammo.iter().all(|a| supply_ok(&a.supply)),
+            "supply",
+            "an item's or round's supply weight is out of range",
+        );
+        // (The rare rounds stowed may exceed `rare_cap` in a staged setup;
+        // the loader refuses such defs and the base never refills above
+        // the cap.)
+        let cap_max = r.supply.as_ref().map_or(u32::MAX, |sp| sp.rare_cap_max);
+        for v in &self.vehicles {
+            check(
+                v.rare_cap <= cap_max
+                    && v.rack_price_pct <= 1000
+                    && v.mounts.first().is_none_or(|m| {
+                        m.ammo.iter().all(|a| {
+                            self.ammo
+                                .get(a.ammo as usize)
+                                .is_some_and(|d| d.rare == a.rare)
+                        })
+                    }),
+                "vehicles.rare_cap",
+                "rare_cap above rare_cap_max, or a bad rack price or rare flag",
+            );
         }
         for a in &self.ammo {
             if let Some(m) = check_ammo(a) {
@@ -2323,6 +2582,20 @@ impl MatchSetup {
                         "a member's count, weapon, traits or items are out of range",
                     );
                 }
+                let nf = s.feeds.len();
+                check(
+                    nf <= MAX_FEEDS
+                        && s.feeds.iter().all(|&f| self.feed_ok(f))
+                        && s.members.iter().all(|m| {
+                            m.rounds
+                                .iter()
+                                .enumerate()
+                                .all(|(k, &n)| n <= s.feed_cap[k] && (k < nf || n == 0))
+                        })
+                        && s.feed_cap[nf.min(MAX_FEEDS)..].iter().all(|&c| c == 0),
+                    "squad_types.feeds",
+                    "feeds or member rounds out of range",
+                );
                 for (k, it) in s.items.iter().enumerate() {
                     check(
                         it.is_none_or(|i| {

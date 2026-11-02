@@ -45,12 +45,17 @@ items = { "ww2:mk2_grenade" = 1 }
 [[members]]
 slot = "asst_ar"
 weapon = "ww2:m1_garand"
+# S5a: 12 BAR magazines for the automatic rifleman (battleorder.org: the
+# squad's 35 magazines, 700 rounds, with the gunner's 11 and the bearer's 12).
+rounds = { "ww2:3006_bar" = 240 }
 traits = ["crew_assistant"]
 items = { "ww2:mk2_grenade" = 1 }
 
 [[members]]
 slot = "ammo_bearer"
 weapon = "ww2:m1_garand"
+# S5a: 12 BAR magazines (battleorder.org).
+rounds = { "ww2:3006_bar" = 240 }
 traits = ["ammo_bearer"]
 items = { "ww2:mk2_grenade" = 1 }
 

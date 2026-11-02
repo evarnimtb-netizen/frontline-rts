@@ -1,0 +1,7 @@
+# .30 Carbine for the M1 carbine (S5a). About 12 g a round, 15 g with its
+# carton (starting value, verify).
+id = "ww2:30_carbine"
+name = ".30 Carbine"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 15 }
+sources = ["S5a plan: starting value (verify)"]

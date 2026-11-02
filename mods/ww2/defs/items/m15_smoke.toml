@@ -2,6 +2,8 @@
 id = "ww2:m15_smoke"
 name = "M15-style Smoke Grenade"
 kind = "smoke"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). M15 WP smoke grenade: about 880 g (31 oz; verify).
+supply = { kind = "explosives", g = 880 }
 min_range_m = 5
 range_m = 30
 windup_ms = 1000

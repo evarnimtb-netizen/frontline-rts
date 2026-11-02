@@ -27,4 +27,7 @@ traits = ["leader", "crew_gunner"]
 slot = "mortar_crew"
 count = 2
 weapon = "ww2:kar98k"
+# S5a: six bombs each (two cases of three); 15 for the team with the
+# gunner's 3 (owner question S5a-16 (A); S5b moves to 5 men with bearers).
+rounds = { "ww2:8cm_wgr34" = 6 }
 traits = ["crew_assistant"]

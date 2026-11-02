@@ -9,6 +9,11 @@ id = "ww2:mg42"
 name = "MG 42 (Lafette 42)"
 short_name = "MG 42 (s)"
 class = "mg"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:792x57_belt"
+# The gunner's own load: the belt on the gun. The section's boxes are
+# carried by the assistant and the bearers (members' `rounds`).
+load = 150
 sources = [
     "Wikipedia, MG 42 (Lafette 42 weight, tripod ranges, barrel change interval, crew)",
 ]

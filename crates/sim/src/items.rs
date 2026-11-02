@@ -43,7 +43,7 @@
 //! Items in flight and clouds live in the match state in id order (ids are
 //! never reused); all of it is saved, hashed and checked on load.
 
-use frontline_content::setup::{ItemSetup, SmokeSetup};
+use frontline_content::setup::{ItemSetup, MAX_FEEDS, SmokeSetup};
 use frontline_content::tuning::ThrowTuning;
 use frontline_content::{ITEM_KINDS, ItemKind};
 use serde::{Deserialize, Serialize};
@@ -94,9 +94,19 @@ pub struct Kit {
     pub weapon: u16,
     /// Throws released so far (scatter RNG key), wrapping.
     pub throws: u16,
-    /// Ticks spent in base toward the next resupplied item.
+    /// Ticks spent in base toward the next resupplied item (S5a: or mortar
+    /// bomb; it stays due while the owner cannot pay).
     pub resupply: u16,
     pub windup: Option<Windup>,
+    /// S5a: rounds carried outside his weapon, by the squad type's feed
+    /// slot (`SquadTypeSetup::feeds`); the weapon's own rounds are
+    /// `Combat::mag`. All 0 in legacy content (unlimited rounds).
+    pub rounds: [u16; MAX_FEEDS],
+    /// S5a: fighting with his slot's sidearm (his main weapon is dry).
+    pub on_sidearm: bool,
+    /// S5a: small-arms refill in the own base, in rounds × tick rate
+    /// (one round per `tick_hz` gathered; stays due while unpaid).
+    pub refill: u16,
 }
 
 /// An item in flight, or landed and waiting for its fuse.
@@ -455,6 +465,10 @@ impl MatchState {
             c.age < life
         });
         let every = setup.rules.items.resupply_ticks;
+        // S5a: a priced mod refills in `supply_tick` (round by round, paid).
+        if setup.rules.supply.is_some() {
+            return;
+        }
         // AT teams (S3): one rocket per `every` while the carrier stands in
         // the own base.
         for sq in self.squads.values_mut() {
@@ -572,8 +586,23 @@ impl MatchState {
                 continue;
             }
             let full = self.full_kit(ents, m);
+            // S5a: a priced refill may stay due (at its period) while the
+            // owner cannot pay; bombs come every `supply.base_bomb_s`.
+            let period = s.rules.items.resupply_ticks.max(
+                s.rules
+                    .supply
+                    .as_ref()
+                    .map_or(0, |sp| sp.base_bomb_s * s.tick_hz),
+            );
+            let refill_max = s
+                .rules
+                .supply
+                .as_ref()
+                .map_or(0, |sp| s.tick_hz + sp.base_small_arms_rounds_s);
             let bad = (0..ITEM_KINDS).any(|j| k.items[j] > full[j])
-                || k.resupply as u32 >= s.rules.items.resupply_ticks
+                || k.resupply as u32 > period
+                || (k.resupply as u32 == period && s.rules.supply.is_none())
+                || k.refill as u32 > refill_max
                 || k.windup.is_some_and(|w| {
                     // S4 review L3: a single-shot AT item is fired, never
                     // thrown.
@@ -601,6 +630,25 @@ impl MatchState {
                     .members
                     .iter()
                     .any(|ms| ms.weapon == k.weapon || ms.sidearm == Some(k.weapon));
+                // S5a: carried rounds within the largest slot load (and none
+                // past the type's feeds), a sidearm only with one in his
+                // slot, and the magazine within the weapon in hand.
+                let nf = ty.feeds.len();
+                let side = ty.members.get(k.slot as usize).and_then(|ms| ms.sidearm);
+                let active = crate::supply::active_weapon(ty, k);
+                let rounds_ok = k
+                    .rounds
+                    .iter()
+                    .enumerate()
+                    .all(|(f, &n)| if f < nf { n <= ty.feed_cap[f] } else { n == 0 })
+                    && (!k.on_sidearm || side.is_some())
+                    && s.weapons
+                        .get(active as usize)
+                        .is_some_and(|w| ents.combat[m.index()].mag as u32 <= w.magazine.max(1));
+                // (An unknown weapon is the slot check's error below.)
+                if carried && !rounds_ok {
+                    return Err("a soldier's rounds are inconsistent");
+                }
                 match n.get_mut(k.slot as usize) {
                     Some(c) if carried => *c += 1,
                     _ => return Err("a soldier's slot or weapon is not his squad's"),

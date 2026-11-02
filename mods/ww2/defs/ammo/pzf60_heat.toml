@@ -8,6 +8,8 @@
 id = "ww2:pzf60_heat"
 name = "Panzerfaust 60 warhead"
 mechanism = "heat"
+# S5a: priced refill ([supply] explosives_mp_per_t per tonne): the Panzerfaust 60 tube is the round: about 6.1 kg (the item `panzerfaust60` carries the same weight; verify).
+supply = { kind = "explosives", g = 6100 }
 caliber_mm = 149
 muzzle_velocity_m_s = 45
 drag_coeff = 0

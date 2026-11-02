@@ -18,8 +18,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::defs::{
-    FactionDef, ITEM_KINDS, ItemDef, MapFileDef, RulesDef, SquadDef, SquadRole, WeaponClass,
-    WeaponDef, check_id,
+    CartridgeDef, FactionDef, ITEM_KINDS, ItemDef, MapFileDef, RulesDef, SquadDef, SquadRole,
+    WeaponClass, WeaponDef, check_id,
 };
 use crate::issue::{ContentError, Issue};
 use crate::resolve::{DEF_KINDS, RawDef, RawDefs, Resolved, merge_level, merge_tables};
@@ -73,6 +73,8 @@ pub struct ModDefs {
     pub ammo: BTreeMap<String, AmmoDef>,
     /// Training profiles (S4, `defs/training/`).
     pub training: BTreeMap<String, TrainingDef>,
+    /// S5a: counted rounds without ballistics (`defs/cartridges/`).
+    pub cartridges: BTreeMap<String, CartridgeDef>,
     /// S4: every def file as parsed TOML before `extends` (the SDK view).
     /// Tuning overrides patch these and every def resolves again.
     #[serde(skip)]
@@ -91,6 +93,7 @@ impl PartialEq for ModDefs {
             && self.vehicles == o.vehicles
             && self.ammo == o.ammo
             && self.training == o.training
+            && self.cartridges == o.cartridges
     }
 }
 
@@ -509,6 +512,12 @@ impl ModDefs {
             TrainingDef::validate,
             &mut is[k("training")],
         );
+        let cartridges = plain(
+            raw,
+            "cartridges",
+            CartridgeDef::validate,
+            &mut is[k("cartridges")],
+        );
         let factions = plain(
             raw,
             "factions",
@@ -537,6 +546,7 @@ impl ModDefs {
         self.vehicles = vehicles;
         self.ammo = ammo;
         self.training = training;
+        self.cartridges = cartridges;
         out
     }
 
@@ -911,6 +921,13 @@ impl ModDefs {
             &mut out,
         );
         diff(
+            &before.cartridges,
+            &self.cartridges,
+            at("cartridges"),
+            all,
+            &mut out,
+        );
+        diff(
             &before.rules,
             &self.rules,
             |id| format!("rules \"{id}\""),
@@ -1210,6 +1227,242 @@ impl ModDefs {
                         ))
                     }
                     Some(_) => {}
+                }
+            }
+        }
+        out.extend(self.check_supply());
+        out
+    }
+
+    /// S5a content checks (docs/modding/ammo.md): feeds name cartridges or
+    /// ammo defs with `supply`, rare rounds are never a weapon's feed,
+    /// member `rounds` name known feeds (at most 4 per unit), `rare_cap`
+    /// stays within every rules def's `rare_cap_max` and holds the rare
+    /// rounds stowed; in a mod with a `[supply]` table every carried
+    /// weapon has a feed, every carried item and every launcher or main-gun
+    /// round a `supply`, main-gun rounds are `shells`, and every vehicle
+    /// sets `rare_cap`.
+    pub fn check_supply(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        let priced = self.rules.values().any(|r| r.supply.is_some());
+        let cap_max = self
+            .rules
+            .values()
+            .filter_map(|r| r.supply.as_ref().map(|s| (r.id.as_str(), s.rare_cap_max)))
+            .min_by_key(|(_, c)| *c);
+        let feed_ok = |id: &str| -> Result<bool, String> {
+            if let Some(c) = self.cartridges.get(id) {
+                let _ = c;
+                return Ok(false);
+            }
+            match self.ammo.get(id) {
+                Some(a) if a.supply.is_none() => Err(format!(
+                    "ammo `{id}` has no `supply` table; add supply = {{ kind = \"...\", g = ... }}"
+                )),
+                Some(a) => Ok(a.rare),
+                None => Err(format!(
+                    "unknown cartridge or ammo `{id}`{}",
+                    did_you_mean(id, self.cartridges.keys().chain(self.ammo.keys()))
+                )),
+            }
+        };
+        let small_arms: Vec<&String> = self
+            .cartridges
+            .iter()
+            .filter(|(_, c)| c.supply.kind == "small_arms")
+            .map(|(k, _)| k)
+            .collect();
+        for (id, w) in &self.weapons {
+            if let Some(f) = &w.feed {
+                match feed_ok(f) {
+                    Err(e) => out.push(Issue::new(format!("weapon `{id}`: feed"), e)),
+                    Ok(true) => out.push(
+                        Issue::new(
+                            format!("weapon `{id}`: feed"),
+                            format!("`{f}` is a rare round (D3); it is never a weapon's only feed"),
+                        )
+                        .with_hint("feed the standard round; rare rounds go in a vehicle's rack"),
+                    ),
+                    Ok(false) => {}
+                }
+            }
+        }
+        // Weapons soldiers carry and vehicles mount as MGs.
+        let mut carried: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let mut items_carried: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for (uid, s) in &self.squads {
+            if s.is_abstract {
+                continue;
+            }
+            let mut feeds: Vec<String> = Vec::new();
+            for (k, m) in s.members.iter().enumerate() {
+                carried.insert(m.weapon.as_str());
+                if let Some(sa) = &m.sidearm {
+                    carried.insert(sa.as_str());
+                }
+                for (it, &n) in &m.items {
+                    if n > 0 {
+                        items_carried.insert(it.as_str());
+                    }
+                }
+                for w in [Some(&m.weapon), m.sidearm.as_ref()].into_iter().flatten() {
+                    if let Some(f) = self.weapons.get(w).and_then(|w| w.feed.clone())
+                        && !feeds.contains(&f)
+                    {
+                        feeds.push(f);
+                    }
+                }
+                for rid in m.rounds.keys() {
+                    if let Err(e) = feed_ok(rid) {
+                        out.push(Issue::new(
+                            format!("squad `{uid}`: members[{k}].rounds.\"{rid}\""),
+                            e,
+                        ));
+                    } else if !feeds.contains(rid) {
+                        feeds.push(rid.clone());
+                    }
+                }
+            }
+            if feeds.len() > crate::setup::MAX_FEEDS {
+                out.push(
+                    Issue::new(
+                        format!("squad `{uid}`: members"),
+                        format!(
+                            "uses {} different rounds ({}); at most {} per unit",
+                            feeds.len(),
+                            feeds.join(", "),
+                            crate::setup::MAX_FEEDS
+                        ),
+                    )
+                    .with_hint("give the men weapons that share rounds, or split the unit"),
+                );
+            }
+        }
+        for v in self.vehicles.values() {
+            for m in v
+                .weapons
+                .iter()
+                .filter(|m| m.mount != MountKind::TurretMain)
+            {
+                carried.insert(m.def.as_str());
+            }
+        }
+        for (vid, v) in &self.vehicles {
+            let at = |p: &str| format!("vehicle `{vid}`: {p}");
+            let main = v.main_gun();
+            let rare_n: u32 = main.map_or(0, |m| {
+                m.ammo
+                    .iter()
+                    .filter(|a| self.ammo.get(&a.id).is_some_and(|d| d.rare))
+                    .map(|a| a.count)
+                    .sum()
+            });
+            if let (Some(c), Some((rid, mx))) = (v.rare_cap, cap_max)
+                && c > mx
+            {
+                out.push(
+                    Issue::new(
+                        at("rare_cap"),
+                        format!(
+                            "rare_cap {c} is above the rules' supply.rare_cap_max ({mx}, rules                              `{rid}`)"
+                        ),
+                    )
+                    .with_hint(format!(
+                        "lower rare_cap to at most {mx}, or raise [supply] rare_cap_max in                          defs/rules"
+                    )),
+                );
+            }
+            let cap = v.rare_cap.unwrap_or(if rare_n > 0 {
+                cap_max.map_or(10, |x| x.1)
+            } else {
+                0
+            });
+            if rare_n > cap {
+                out.push(
+                    Issue::new(
+                        at("weapons[0].ammo"),
+                        format!("{rare_n} rare rounds stowed, above rare_cap {cap}"),
+                    )
+                    .with_hint(format!("stow at most {cap} rare rounds, or raise rare_cap")),
+                );
+            }
+            if priced {
+                if v.rare_cap.is_none() {
+                    out.push(
+                        Issue::new(
+                            at("rare_cap"),
+                            "required in a mod with a [supply] table (D3: the most rare rounds                              it holds)",
+                        )
+                        .with_hint(format!("rare_cap = {rare_n}")),
+                    );
+                }
+                for (k, a) in main.map_or(&[][..], |m| &m.ammo[..]).iter().enumerate() {
+                    match self.ammo.get(&a.id).and_then(|d| d.supply.as_ref()) {
+                        None => out.push(
+                            Issue::new(
+                                at(&format!("weapons[0].ammo[{k}]")),
+                                format!("ammo `{}` has no `supply` table", a.id),
+                            )
+                            .with_hint("supply = { kind = \"shells\", g = 9000 }"),
+                        ),
+                        Some(sp) if sp.kind != "shells" => out.push(Issue::new(
+                            at(&format!("weapons[0].ammo[{k}]")),
+                            format!(
+                                "ammo `{}`: a vehicle main gun's rounds are `shells` (no cheap                                  tank rounds), got `{}`",
+                                a.id, sp.kind
+                            ),
+                        )),
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+        if priced {
+            for w in &carried {
+                let Some(wd) = self.weapons.get(*w) else {
+                    continue;
+                };
+                match wd.class {
+                    WeaponClass::Launcher => {
+                        if let Some(a) = &wd.ammo
+                            && self.ammo.get(a).is_some_and(|d| d.supply.is_none())
+                        {
+                            out.push(
+                                Issue::new(
+                                    format!("ammo `{a}`: supply"),
+                                    format!("the round of `{w}` needs a `supply` table (priced refill)"),
+                                )
+                                .with_hint("supply = { kind = \"explosives\", g = 3250 }"),
+                            );
+                        }
+                    }
+                    WeaponClass::Cannon => {}
+                    _ if wd.feed.is_none() => out.push(
+                        Issue::new(
+                            format!("weapon `{w}`: feed"),
+                            format!(
+                                "{w} fires counted rounds since S5a: add `feed = \"<cartridge                                  id>\"` (cartridges of kind small_arms: {})",
+                                small_arms
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        )
+                        .with_hint("feed = \"ww2:792x57_clip\""),
+                    ),
+                    _ => {}
+                }
+            }
+            for it in &items_carried {
+                if self.items.get(*it).is_some_and(|d| d.supply.is_none()) {
+                    out.push(
+                        Issue::new(
+                            format!("item `{it}`: supply"),
+                            "carried items need a `supply` table in a mod with [supply] (priced                              refill)",
+                        )
+                        .with_hint("supply = { kind = \"explosives\", g = 600 }"),
+                    );
                 }
             }
         }

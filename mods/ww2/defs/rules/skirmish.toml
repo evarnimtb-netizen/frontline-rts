@@ -304,6 +304,20 @@ tank_he_aim_cm = 0
 # else (an enemy seen) to a spot with terrain between him and that enemy.
 # S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
+[combat.share]
+# S5a: sharing rounds inside a squad (infantry-structures.md 6). One pass per
+# squad this often (s); a man below below_pct of his own load takes
+# share_pct of the giver's load from the squadmate within reach_m above
+# giver_above_pct (ammo bearers, then assistants, then the rest), never
+# above his own load. A dry crew weapon (MG, mortar) takes a magazine from a
+# squadmate within crew_feed_m at once (owner question S5a-6 (A)).
+interval_s = 5               # s
+reach_m = 10                 # m
+below_pct = 25               # % of his own load
+giver_above_pct = 50         # % of the giver's own load
+share_pct = 20               # % of the giver's own load per pass
+crew_feed_m = 5              # m
+
 [cover]
 # Men look for cover this far from their line slot (m).
 radius_m = 10
@@ -915,3 +929,28 @@ default = "ww2:training_regular"
 # unit card joins one with limit_group (all its cards' alive units count).
 # None in ww2 yet: vehicles keep the [vehicles] limit.
 [limit_groups]
+
+[supply]
+# S5a (owner decision D1, 2026-11-01): no free ammunition anywhere, the base
+# included. Prices per supply kind in manpower per tonne (whole numbers,
+# owner question S5a-1 (A): 200 per t = 0.2 per kg), charged round by round
+# as each round goes into a man's pouches, an AT team's launcher or a
+# vehicle's rack in the own base. With no manpower the refill pauses and
+# resumes when income arrives (nothing goes into debt).
+small_arms_mp_per_t = 200    # MP per t: rifle, SMG, pistol, MG rounds, vehicle MG belts
+explosives_mp_per_t = 500    # MP per t: grenades, satchels, AT rockets, Panzerfausts
+shell_mp_per_t = 1000        # MP per t: mortar bombs (S5a base refill only), tank main-gun rounds
+# D4: a full main-gun rack refill costs at most this share of the vehicle's
+# card (%); the rack factor is the lower of rack_rearm_price_pct and that
+# ceiling (Panzer IV 53 %, Sherman 51 % at these prices).
+rack_refill_max_card_pct = 75
+rack_rearm_price_pct = 100   # % of the shell price for main-gun rounds (fallback lever)
+# D3: rare rounds (APCR, HVAP: ammo defs with rare = true).
+rare_cap_max = 10            # rounds: the most any vehicle def may hold (rare_cap)
+rare_rearm_base_s = 10       # s: one rare round per this in base (standard: vehicles.base_rearm_s)
+# Base refill rates per man in his own base (the base is the only supply
+# source in S5a; HQ, dumps and crates come with S6).
+base_small_arms_rounds_s = 30   # rounds per s per man (most depleted small-arms feed first)
+base_bomb_s = 4                 # s per mortar bomb per man (S5a only)
+# Items and AT rockets keep [items] resupply_s, now priced.
+low_pct = 30                 # %: HUD "low" marker below this share of a squad's load (Part B)

@@ -166,6 +166,12 @@ impl StableHash for Kit {
                 w.ticks.put(out);
             }
         }
+        // S5a.
+        for r in self.rounds {
+            r.put(out);
+        }
+        self.on_sidearm.put(out);
+        self.refill.put(out);
     }
 }
 
@@ -349,6 +355,20 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         // S4.
         p.s4.pickups.put(out);
         p.s4.single_shots.put(out);
+        // S5a.
+        let a = &p.ammo;
+        a.credit.put(out);
+        for v in a.paid {
+            v.put(out);
+        }
+        a.paused_ticks.put(out);
+        a.paused_at.put(out);
+        for v in a.fired {
+            v.put(out);
+        }
+        for v in a.refilled {
+            v.put(out);
+        }
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -401,6 +421,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             d.weapon.put(out);
             d.at.put(out);
             d.ticks.put(out);
+            d.mag.put(out);
         }
         match &sq.pzf {
             None => 0u8.put(out),

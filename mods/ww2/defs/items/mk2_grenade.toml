@@ -3,6 +3,8 @@
 id = "ww2:mk2_grenade"
 name = "Mk 2 Grenade"
 kind = "frag"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). Mk 2 fragmentation grenade: about 595 g (21 oz; verify).
+supply = { kind = "explosives", g = 595 }
 min_range_m = 5
 range_m = 30
 windup_ms = 1000

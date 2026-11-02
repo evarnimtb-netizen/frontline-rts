@@ -812,9 +812,89 @@ impl DigCommonTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
+tuning_table! {
+    /// `[supply]` (S5a): ammunition prices and base refill rates. Owner
+    /// decision D1 (2026-11-01): no free ammunition anywhere, the base
+    /// included. A rules def without this table keeps unlimited rounds and
+    /// free refills (legacy content, S5a-22).
+    pub struct SupplyTuning {
+        /// Price of small-arms rounds (rifle, SMG, pistol, MG, vehicle MG
+        /// belts) in manpower per tonne (200 = 0.2 per kg).
+        small_arms_mp_per_t: 0..=100000,
+        /// Price of explosives (grenades, satchels, AT rockets,
+        /// Panzerfausts) (MP per t).
+        explosives_mp_per_t: 0..=100000,
+        /// Price of shells (mortar bombs, main-gun rounds) (MP per t).
+        shell_mp_per_t: 0..=100000,
+        /// D4: a full main-gun rack refill costs at most this share of the
+        /// vehicle's card (%).
+        rack_refill_max_card_pct: 1..=1000,
+        /// Fallback lever: main-gun rounds cost this share of their shell
+        /// price (%; the rack factor is the lower of this and the D4
+        /// ceiling).
+        rack_rearm_price_pct: 0..=1000,
+        /// D3: the most rare rounds any vehicle def may hold (`rare_cap`).
+        rare_cap_max: 0..=100,
+        /// D3: one rare round per this many seconds in the own base.
+        rare_rearm_base_s: 1..=600,
+        /// Small-arms rounds per second per man refilled in the own base.
+        base_small_arms_rounds_s: 1..=1000,
+        /// One mortar bomb per this many seconds per man in the own base
+        /// (S5a only: from S6 bombs come in crates).
+        base_bomb_s: 1..=600,
+        /// HUD "low" marker below this share of a squad's load (%).
+        low_pct: 1..=100,
+    }
+}
+
+impl SupplyTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[combat.share]` (S5a): sharing rounds inside a squad and feeding a
+    /// crew weapon from a squadmate.
+    pub struct ShareTuning {
+        /// One sharing pass per squad this often (s).
+        interval_s: 1..=60,
+        /// Giver and taker this close (m).
+        reach_m: 1..=100,
+        /// A man below this share of his own load takes ... (%)
+        below_pct: 0..=100,
+        /// ... from the squadmate (same round) above this share, ammo
+        /// bearers first (%) ...
+        giver_above_pct: 0..=100,
+        /// ... this share of the giver's load per pass (%).
+        share_pct: 1..=100,
+        /// A dry crew weapon reloads from a squadmate this close (assistant
+        /// and bearers first) (m).
+        crew_feed_m: 1..=50,
+    }
+}
+
+impl ShareTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+impl Default for ShareTuning {
+    /// The S5a starting values (a rules def without `[combat.share]`).
+    fn default() -> ShareTuning {
+        ShareTuning {
+            interval_s: 5,
+            reach_m: 10,
+            below_pct: 25,
+            giver_above_pct: 50,
+            share_pct: 20,
+            crew_feed_m: 5,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
+    ("supply", SupplyTuning::KEYS),
+    ("combat.share", ShareTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -859,6 +939,8 @@ pub(crate) struct TuningRefs<'a> {
     pub throw: &'a ThrowTuning,
     pub dig_common: &'a DigCommonTuning,
     pub call_in: &'a CallInTuning,
+    pub supply: Option<&'a SupplyTuning>,
+    pub share: &'a ShareTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -900,6 +982,10 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.throw.check(&p("items.throw"), out);
     t.dig_common.check(&p("dig.common"), out);
     t.call_in.check(&p("call_in"), out);
+    if let Some(sp) = t.supply {
+        sp.check(&p("supply"), out);
+    }
+    t.share.check(&p("combat.share"), out);
 }
 
 #[cfg(test)]

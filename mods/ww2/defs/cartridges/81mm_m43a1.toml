@@ -1,0 +1,7 @@
+# 81 mm M43A1 light HE bomb for the M1 mortar (S5a): 6.87-7.15 lb, 3.2 kg
+# taken. Kind "shells" (see 8cm_wgr34.toml).
+id = "ww2:81mm_m43a1"
+name = "81 mm M43A1"
+caliber_mm = 81
+supply = { kind = "shells", g = 3200 }
+sources = ["Wikipedia, M1 mortar", "inetres.com, 81 mm mortar data"]

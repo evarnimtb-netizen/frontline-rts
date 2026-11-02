@@ -1,0 +1,10 @@
+# 7.92x57 mm s.S. in 50-round belts (Gurttrommel drums of 50, boxes of 300)
+# for the MG 34 and MG 42 (S5a).
+# Weight with its share of belt and box: a box of 300 weighs 11.53 kg, so
+# about 38 g a round; a drum of 50 weighs 2.45 kg (49 g a round with the
+# drum). 38 g taken (secondary source; verify).
+id = "ww2:792x57_belt"
+name = "7.92 mm (belted)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 38 }
+sources = ["skirmishmagazine.com, German MG team loads (box of 300 11.53 kg, drum 2.45 kg; secondary)"]

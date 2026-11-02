@@ -1,0 +1,12 @@
+# 7.92x57 mm s.S. ball on 5-round stripper clips, in 15-round cartons, for
+# the Kar98k (S5a). A riflemen's clip round cannot feed an MG belt (owner
+# question S5a-2 (A): one id per cartridge and packaging).
+# Weight with its share of clip and carton: a complete round weighs about
+# 24-27 g; with clip and carton about 28 g (starting value, verify against a
+# primary packing list).
+id = "ww2:792x57_clip"
+name = "7.92 mm (clips)"
+caliber_mm = 8
+# small_arms: priced at [supply] small_arms_mp_per_t; g per round packed.
+supply = { kind = "small_arms", g = 28 }
+sources = ["S5a plan: complete round about 24-27 g plus clip and carton (verify)"]

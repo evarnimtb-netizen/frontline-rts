@@ -8,6 +8,12 @@ id = "ww2:m1919a4_tripod"
 name = "M1919A4 (tripod)"
 short_name = "M1919A4"
 class = "mg"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:3006_belt"
+# The gunner's own load (one 250-round belt, battleorder.org); the
+# section's belts are with the assistant and bearers (members' `rounds`).
+# The game belt stays 125 rounds until S5a Part B (S5a-11).
+load = 250
 sources = [
     "Wikipedia, M1919 Browning machine gun (weight, rate, muzzle velocity, belt)",
     "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)",

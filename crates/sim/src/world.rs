@@ -415,8 +415,12 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// limit groups in the setup; each man's weapon and slot in his kit;
 /// crew-weapon drops, the squad's single-shot AT state, per-player S4
 /// counters and the AI's per-type buy counters; the S4 rules keys such as
-/// `items.crew_pickup_reach_m`). One bump for the whole slice.
-const SAVE_VERSION: u32 = 12;
+/// `items.crew_pickup_reach_m`). One bump for the whole slice. 13: S5a
+/// (cartridges, supply weights, feeds, member rounds, `rare_cap`, the
+/// `[supply]` and `[combat.share]` rules in the setup; per-player ammo
+/// accounts; counted rounds per man, sidearm and refill state in the kit;
+/// the rounds left in a dropped crew weapon). One bump for the whole slice.
+const SAVE_VERSION: u32 = 13;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -1178,7 +1182,6 @@ impl World {
                     velocity,
                     squad,
                     unit,
-                    kit,
                     marks,
                     mark_of,
                     game: &*game,
@@ -1190,11 +1193,12 @@ impl World {
                     combat
                         .par_chunks_mut(CHUNK_SIZE)
                         .zip(weapon.par_chunks_mut(CHUNK_SIZE))
+                        .zip(kit.par_chunks_mut(CHUNK_SIZE))
                         .zip(fire_bufs.par_iter_mut())
                         .enumerate()
-                        .map(|(c, ((cb, w), out))| {
+                        .map(|(c, (((cb, w), k), out))| {
                             out.clear();
-                            combat::aim_and_fire(c, &ctx, cb, w, out)
+                            combat::aim_and_fire(c, &ctx, cb, w, k, out)
                         })
                         .collect_into_vec(flags)
                 });
@@ -1225,6 +1229,9 @@ impl World {
             game.vehicle_gunnery(entities, &gun_ctx, hash, fire_merged, armour_events);
             stats.throws += game.release_throws(entities, terrain, hash, seed);
             fire_merged.sort_unstable();
+            // S5a: every requested round is spent and counted (a request
+            // the pool drops below included).
+            game.count_fired(entities, fire_merged);
             let (fired, dropped) = combat::spawn_rounds(fire_merged, projectiles, hash);
             stats.shots_fired += fired;
             stats.shots_dropped += dropped;
@@ -1443,6 +1450,8 @@ impl World {
                     &mut self.armour_events,
                 );
                 game.update_items(&mut self.state.entities, &mut self.hash);
+                // S5a: crew feed, sharing and the priced base refill.
+                game.supply_tick(&mut self.state.entities, &mut self.hash, tick);
                 game.update_rules(&self.state.entities);
             }
         }
@@ -1703,6 +1712,47 @@ impl World {
             return false;
         };
         f(l);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S5a: edits soldier `id`'s kit and combat state directly (staged
+    /// tests: rounds carried, magazine). The caller keeps them within his
+    /// slot's loads.
+    pub fn edit_soldier(
+        &mut self,
+        id: SimId,
+        f: impl FnOnce(&mut crate::items::Kit, &mut crate::ecs::Combat),
+    ) -> bool {
+        if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Soldier) {
+            return false;
+        }
+        let i = id.index();
+        let e = &mut self.state.entities;
+        f(&mut e.kit[i], &mut e.combat[i]);
+        self.hash.mark_entity_chunk(id.chunk());
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S5a: edits player `p`'s state directly (staged tests: manpower,
+    /// ammunition credit).
+    pub fn edit_player(
+        &mut self,
+        p: PlayerId,
+        f: impl FnOnce(&mut crate::game::PlayerState),
+    ) -> bool {
+        let Some(pl) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.players.get_mut(p.0 as usize))
+        else {
+            return false;
+        };
+        f(pl);
         self.refresh_hashes();
         self.fill_snapshot();
         true
@@ -2822,8 +2872,12 @@ mod tests {
                 s.entities.kit[leader].slot = 1;
                 s.entities.kit[leader].items = Default::default();
             }),
-            // S4: the weapon he carries.
-            Box::new(move |s| s.entities.kit[leader].weapon ^= 1),
+            // S4: the weapon he carries (S5a: with no more rounds in it
+            // than its magazine holds).
+            Box::new(move |s| {
+                s.entities.kit[leader].weapon ^= 1;
+                s.entities.combat[leader].mag = 1;
+            }),
             Box::new(move |s| s.entities.kit[winder].resupply = 3),
             Box::new(move |s| s.entities.kit[winder].windup.as_mut().unwrap().ticks -= 1),
             Box::new(move |s| s.entities.kit[winder].throws += 1),
@@ -3186,6 +3240,7 @@ mod tests {
             prev_pen: _,
             board: _,
             bail_order: _,
+            supply_due: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -3235,6 +3290,7 @@ mod tests {
             ("mgs.spent", Box::new(|v| v.mgs[0].spent += 1)),
             ("repair_progress", Box::new(|v| v.repair_progress += 1)),
             ("base_ticks", Box::new(|v| v.base_ticks += 1)),
+            ("supply_due", Box::new(|v| v.supply_due = 1)),
             ("last_attacker", Box::new(|v| v.last_attacker = Some(1))),
             ("ranging", Box::new(|v| v.ranging = 2)),
             ("since_fire", Box::new(|v| v.since_fire = 5)),
@@ -3483,7 +3539,8 @@ mod tests {
                 Box::new(move |s| {
                     let v = vehicle(s, va);
                     v.loaded = Some(0);
-                    v.ammo[0] = 30;
+                    // S5a: 42 PzGr 39 stowed.
+                    v.ammo[0] = 42;
                 }),
                 "out of range",
             ),
@@ -4728,6 +4785,7 @@ mod tests {
                 weapon: mg,
                 at: FxVec2::from_int(300, 500),
                 ticks: 40,
+                mag: 7,
             });
             gm.players[0].s4 = S4Counters {
                 pickups: 2,
@@ -4753,6 +4811,7 @@ mod tests {
             weapon: _,
             at: _,
             ticks: _,
+            mag: _,
         } = WeaponDrop::default();
         let S4Counters {
             pickups: _,
@@ -4789,6 +4848,7 @@ mod tests {
             ("drop.weapon", Box::new(move |s| dr(s, g).weapon += 1)),
             ("drop.at", Box::new(move |s| dr(s, g).at.x += Fx::ONE)),
             ("drop.ticks", Box::new(move |s| dr(s, g).ticks -= 1)),
+            ("drop.mag", Box::new(move |s| dr(s, g).mag += 1)),
             (
                 "s4.pickups",
                 Box::new(|s| s.game.as_mut().unwrap().players[0].s4.pickups += 1),
@@ -4822,6 +4882,163 @@ mod tests {
             let bytes = save_edited(&w, edit);
             let e = load_err(&bytes);
             assert!(e.contains(want), "{e}");
+        }
+    }
+
+    /// S5a: each man's carried rounds, sidearm and refill state, the
+    /// rounds left in a dropped crew weapon, a vehicle's due rearm steps and
+    /// the per-player ammunition account are saved, every field changes the
+    /// hash, and broken values are refused on load.
+    #[test]
+    fn s5a_ammo_state_is_saved_hashed_and_checked() {
+        use crate::supply::AmmoAccount;
+        let (w, va) = flat_tank_world_with(|_| {});
+        let mut w = w;
+        let t = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_grenadiergruppe")
+            .unwrap();
+        let g = w
+            .spawn_squad_at(
+                PlayerId(0),
+                t,
+                FxVec2::from_int(300, 500),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        let men = w.game().unwrap().squads[&g].members.clone();
+        let (lead, gunner) = (men[0], men[1]);
+        // The gunner dry on his pistol, a refill under way, a paid account.
+        assert!(w.edit_soldier(gunner, |k, c| {
+            k.on_sidearm = true;
+            k.refill = 20;
+            c.mag = 5;
+        }));
+        assert!(w.edit_player(PlayerId(0), |p| {
+            p.ammo = AmmoAccount {
+                credit: 250_000,
+                paid: [1, 2, 3],
+                paused_ticks: 4,
+                paused_at: 0,
+                fired: [7; crate::supply::fired_class::COUNT],
+                refilled: [5, 6, 7],
+            };
+        }));
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        let AmmoAccount {
+            credit: _,
+            paid: _,
+            paused_ticks: _,
+            paused_at: _,
+            fired: _,
+            refilled: _,
+        } = AmmoAccount::default();
+        let crate::items::Kit {
+            items: _,
+            slot: _,
+            weapon: _,
+            throws: _,
+            resupply: _,
+            windup: _,
+            rounds: _,
+            on_sidearm: _,
+            refill: _,
+        } = crate::items::Kit::default();
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        fn acct(s: &mut SimState) -> &mut AmmoAccount {
+            &mut s.game.as_mut().unwrap().players[0].ammo
+        }
+        let (li, gi) = (lead.index(), gunner.index());
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            (
+                "kit.rounds",
+                Box::new(move |s| s.entities.kit[li].rounds[0] -= 1),
+            ),
+            (
+                "kit.on_sidearm",
+                Box::new(move |s| s.entities.kit[gi].on_sidearm = false),
+            ),
+            (
+                "kit.refill",
+                Box::new(move |s| s.entities.kit[gi].refill += 1),
+            ),
+            ("ammo.credit", Box::new(|s| acct(s).credit += 1)),
+            ("ammo.paid", Box::new(|s| acct(s).paid[2] += 1)),
+            ("ammo.paused_ticks", Box::new(|s| acct(s).paused_ticks += 1)),
+            ("ammo.paused_at", Box::new(|s| acct(s).paused_at += 1)),
+            ("ammo.fired", Box::new(|s| acct(s).fired[9] += 1)),
+            ("ammo.refilled", Box::new(|s| acct(s).refilled[1] += 1)),
+            (
+                "vehicle.supply_due",
+                Box::new(move |s| {
+                    s.game
+                        .as_mut()
+                        .unwrap()
+                        .vehicles
+                        .get_mut(&va)
+                        .unwrap()
+                        .supply_due ^= 1
+                }),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(w2.full_state_hash(), w2.state_hash());
+        }
+        let bad: Vec<(StateEdit, &str)> = vec![
+            (
+                Box::new(move |s| s.entities.kit[li].rounds[0] = 60_000),
+                "rounds are inconsistent",
+            ),
+            (
+                Box::new(move |s| s.entities.kit[li].rounds[3] = 1),
+                "rounds are inconsistent",
+            ),
+            (
+                Box::new(move |s| s.entities.kit[li].on_sidearm = true),
+                "rounds are inconsistent",
+            ),
+            (
+                Box::new(move |s| s.entities.combat[gi].mag = 9),
+                "rounds are inconsistent",
+            ),
+            (
+                Box::new(move |s| s.entities.kit[gi].refill = 9_999),
+                "kit is inconsistent",
+            ),
+            (
+                Box::new(|s| acct(s).credit = 50_000_000),
+                "ammunition account",
+            ),
+            (
+                Box::new(|s| acct(s).paused_at = 1_000_000),
+                "ammunition account",
+            ),
+            (
+                Box::new(move |s| {
+                    s.game
+                        .as_mut()
+                        .unwrap()
+                        .vehicles
+                        .get_mut(&va)
+                        .unwrap()
+                        .supply_due = 1
+                }),
+                "vehicle",
+            ),
+        ];
+        for (edit, want) in bad {
+            let bytes = save_edited(&w, edit);
+            let e = load_err(&bytes);
+            assert!(e.contains(want), "{want}: {e}");
         }
     }
 
@@ -4931,6 +5148,7 @@ mod tests {
                             weapon: w,
                             at: FxVec2::from_int(300, 300),
                             ticks: 3,
+                            mag: 0,
                         })
                 }),
             ),
@@ -5000,6 +5218,7 @@ mod tests {
                             weapon: w,
                             at: FxVec2::from_int(300, 300),
                             ticks: 9999,
+                            mag: 0,
                         })
                 }),
                 "crew weapon",

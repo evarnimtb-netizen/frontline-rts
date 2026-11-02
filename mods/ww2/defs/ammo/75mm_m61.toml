@@ -4,6 +4,8 @@
 id = "ww2:75mm_m61"
 name = "75 mm M61 APC"
 mechanism = "aphe"
+# S5a: priced refill ([supply] shell_mp_per_t per tonne): complete round 19.92 lb (M3 gun data, theshermantank.com).
+supply = { kind = "shells", g = 9040 }
 caliber_mm = 75
 muzzle_velocity_m_s = 618
 drag_coeff = 0

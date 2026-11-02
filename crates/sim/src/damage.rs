@@ -1031,7 +1031,11 @@ impl MatchState {
                     let hp = &mut vs.components[c.kind.index()];
                     *hp = (*hp as u64 + add).min(max) as u16;
                 }
-                if n.is_multiple_of(r.base_rearm_ticks.max(1) as u64) {
+                // S5a: a priced mod rearms in `supply_tick` (paid, rare
+                // rounds on their own timer).
+                if self.setup.rules.supply.is_none()
+                    && n.is_multiple_of(r.base_rearm_ticks.max(1) as u64)
+                {
                     rearm_one(vs, v, &self.setup.weapons);
                 }
                 if n.is_multiple_of(r.base_crew_ticks.max(1) as u64)

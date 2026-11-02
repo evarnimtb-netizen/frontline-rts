@@ -59,6 +59,7 @@ pub mod snapshot;
 pub mod spatial;
 mod spotting;
 mod squad;
+pub mod supply;
 mod systems;
 pub mod terrain;
 pub mod unit;
@@ -87,6 +88,7 @@ pub use snapshot::{
     ShotSnapshot, SmokeSnapshot, SquadSnapshot, ThrownSnapshot, UnitSnapshot, VehicleSnapshot,
     tile_heights_f32, vehicle_flags,
 };
+pub use supply::{AmmoAccount, fired_class};
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
 pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};
 pub use vehicle::{AmmoChoice, BlockLayer, MgState, Seat, VehicleFrame, VehicleState};

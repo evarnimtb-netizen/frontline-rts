@@ -1,0 +1,7 @@
+# 9x19 mm Parabellum for the MP 40 and P 38 (S5a). About 12 g a round, about
+# 15 g with its carton (starting value, verify).
+id = "ww2:9x19"
+name = "9 mm Parabellum"
+caliber_mm = 9
+supply = { kind = "small_arms", g = 15 }
+sources = ["S5a plan: about 12 g a round plus carton (verify)"]

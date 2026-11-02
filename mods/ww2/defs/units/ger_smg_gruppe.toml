@@ -41,10 +41,16 @@ traits = ["crew_gunner"]
 [[members]]
 slot = "mg_assistant"
 weapon = "ww2:p38"
+# S5a: two 300-round boxes for the heavy MG (starting value: heavy MG
+# section loads not found at the source, verify).
+rounds = { "ww2:792x57_belt" = 600 }
 traits = ["crew_assistant"]
 
 [[members]]
 slot = "ammo_bearer"
 count = 3
 weapon = "ww2:kar98k"
+# S5a: two 300-round boxes each (starting value, verify): with the gun's
+# belt about 2,550 rounds for the section.
+rounds = { "ww2:792x57_belt" = 600 }
 traits = ["ammo_bearer"]

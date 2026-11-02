@@ -32,11 +32,15 @@ traits = ["crew_gunner"]
 [[members]]
 slot = "mg_assistant"
 weapon = "ww2:p38"
+# S5a: as the Grenadiergruppe (four drums and one box).
+rounds = { "ww2:792x57_belt" = 500 }
 traits = ["crew_assistant"]
 
 [[members]]
 slot = "ammo_bearer"
 weapon = "ww2:kar98k"
+# S5a: as the Grenadiergruppe (two boxes).
+rounds = { "ww2:792x57_belt" = 600 }
 traits = ["ammo_bearer"]
 
 [[members]]

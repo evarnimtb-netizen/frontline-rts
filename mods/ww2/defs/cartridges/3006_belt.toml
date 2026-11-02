@@ -1,0 +1,7 @@
+# .30-06 in 250-round fabric belts for the M1919A4 (tripod and tank) (S5a).
+# A 250-round belt in its box weighs 19.3 lb (8.75 kg): 35 g a round.
+id = "ww2:3006_belt"
+name = ".30-06 (belted)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 35 }
+sources = ["battleorder.org, US ammo load WW2 (250-round belt 19.3 lb)"]

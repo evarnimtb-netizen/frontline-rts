@@ -194,6 +194,9 @@ pub struct VehicleState {
     pub repair_progress: u32,
     /// Ticks in a row inside the own base (base repair, rearm and crew).
     pub base_ticks: u32,
+    /// S5a: priced base rearm steps due and not yet paid
+    /// (`crate::supply::DUE_*` bits; 0 outside the base).
+    pub supply_due: u8,
     /// The player whose round last hit it (credited for crew that die in a
     /// fire or with the vehicle).
     pub last_attacker: Option<u8>,
@@ -288,6 +291,7 @@ impl VehicleState {
             repairing: None,
             repair_progress: 0,
             base_ticks: 0,
+            supply_due: 0,
             last_attacker: None,
             bog: 0,
             on_blocked: false,
@@ -419,6 +423,9 @@ impl VehicleState {
             || self
                 .last_attacker
                 .is_some_and(|p| p as usize >= s.players.len())
+            // S5a: due rearm steps only in the base, only when priced.
+            || self.supply_due & !7 != 0
+            || (self.supply_due != 0 && (self.base_ticks == 0 || s.rules.supply.is_none()))
             || self.pitch.abs() > tilt
             || self.roll.abs() > tilt
             || self.turret_yaw.abs() > Fx::PI

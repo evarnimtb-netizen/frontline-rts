@@ -3,6 +3,8 @@
 id = "ww2:geballte_ladung"
 name = "Geballte Ladung"
 kind = "satchel"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). Geballte Ladung (a stick grenade with six heads bound on): about 3 kg (verify).
+supply = { kind = "explosives", g = 3000 }
 min_range_m = 3
 range_m = 8
 windup_ms = 1000

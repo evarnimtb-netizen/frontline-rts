@@ -3,6 +3,8 @@
 id = "ww2:75mm_sprgr34"
 name = "7.5 cm Sprgr 34"
 mechanism = "he"
+# S5a: priced refill ([supply] shell_mp_per_t per tonne): complete round 8.71 kg (Wikipedia, 7.5 cm KwK 40).
+supply = { kind = "shells", g = 8710 }
 caliber_mm = 75
 muzzle_velocity_m_s = 550
 drag_coeff = 0

@@ -62,11 +62,17 @@ traits = ["crew_gunner"]
 [[members]]
 slot = "mg_assistant"
 weapon = "ww2:p38"
+# S5a: four 50-round drums and one 300-round box for the MG (secondary
+# sources: assistant 4 drums and 1 box; with the gunner's drum and the
+# bearer's two boxes about 1,150 rounds, verify; totals vary 1,150-1,800).
+rounds = { "ww2:792x57_belt" = 500 }
 traits = ["crew_assistant"]
 
 [[members]]
 slot = "ammo_bearer"
 weapon = "ww2:kar98k"
+# S5a: two 300-round boxes for the MG (skirmishmagazine.com; secondary).
+rounds = { "ww2:792x57_belt" = 600 }
 traits = ["ammo_bearer"]
 
 [[members]]

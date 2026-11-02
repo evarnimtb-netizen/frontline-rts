@@ -42,10 +42,15 @@ traits = ["crew_gunner"]
 [[members]]
 slot = "mg_assistant"
 weapon = "ww2:m1911a1"
+# S5a: two 250-round belts (battleorder.org: assistant 2 belts).
+rounds = { "ww2:3006_belt" = 500 }
 traits = ["crew_assistant"]
 
 [[members]]
 slot = "ammo_bearer"
 count = 2
 weapon = "ww2:m1_carbine"
+# S5a: two 250-round belts each (battleorder.org: bearer about 2); the
+# section carries 1,750 rounds with the gunner's belt.
+rounds = { "ww2:3006_belt" = 500 }
 traits = ["ammo_bearer"]

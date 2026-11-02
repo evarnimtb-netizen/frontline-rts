@@ -248,6 +248,8 @@ pub struct WeaponDrop {
     pub at: FxVec2,
     /// Ticks until the nearest man has it (the weapon's `handover_ticks`).
     pub ticks: u16,
+    /// S5a: rounds left in it (legacy content: unused, a fresh belt).
+    pub mag: u16,
 }
 
 /// S4: a squad's single-shot AT items (`crate::combat` "Panzerfaust").
@@ -370,6 +372,9 @@ pub struct PlayerState {
     pub crew: CrewCounters,
     /// S4 counters (report).
     pub s4: S4Counters,
+    /// S5a: prepaid ammunition credit, manpower paid by supply kind, refill
+    /// pauses and rounds fired by class (`crate::supply`).
+    pub ammo: crate::supply::AmmoAccount,
 }
 
 /// S4 per-player counters (saved and hashed, read only by reports and
@@ -586,6 +591,7 @@ impl MatchState {
                 rockets: 0,
                 crew: CrewCounters::default(),
                 s4: S4Counters::default(),
+                ammo: crate::supply::AmmoAccount::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -1304,6 +1310,13 @@ impl MatchState {
                 weapon: wk,
                 ..Kit::default()
             };
+            // S5a: his rounds, a magazine of them in the weapon.
+            crate::supply::spawn_load(
+                &self.setup,
+                ty,
+                &mut ctx.ents.kit[i],
+                &mut ctx.ents.combat[i],
+            );
             ctx.hash.mark_entity_chunk(sid.chunk());
             members.push(sid);
         }
@@ -1585,6 +1598,12 @@ impl MatchState {
             {
                 return Err("bad player state");
             }
+            // S5a: the prepaid credit stays below one point plus a round.
+            if pl.ammo.credit as u64 >= crate::supply::MICRO + crate::supply::dearest_round(s)
+                || pl.ammo.paused_at > tick
+            {
+                return Err("bad ammunition account");
+            }
             if self.ai[p].is_some() != s.players[p].is_ai {
                 return Err("AI state disagrees with the setup");
             }
@@ -1696,7 +1715,8 @@ impl MatchState {
                             sq.members.contains(&c) && ents.kit[c.index()].weapon == ty.weapon
                         })
                         && l.rounds as u32 <= w.rounds_carried
-                        && (l.resupply as u32) < s.rules.items.resupply_ticks.max(1)
+                        && (l.resupply as u32)
+                            < s.rules.items.resupply_ticks.max(1) + s.rules.supply.is_some() as u32
                         && l.attack.is_none_or(|t| {
                             ents.kind.get(t.index()) == Some(&EntityKind::Vehicle)
                                 && ents.owner[t.index()] != sq.owner
@@ -1712,7 +1732,11 @@ impl MatchState {
                 && sq.drops.iter().all(|d| {
                     s.weapons
                         .get(d.weapon as usize)
-                        .is_some_and(|w| w.crew && d.ticks as u32 <= w.handover_ticks.max(1))
+                        .is_some_and(|w| {
+                            w.crew
+                                && d.ticks as u32 <= w.handover_ticks.max(1)
+                                && d.mag as u32 <= w.magazine
+                        })
                         // S4 review L3: a weapon the squad's own men carry.
                         && ty.members.iter().any(|m| m.weapon == d.weapon)
                         && d.at.x >= Fx::ZERO

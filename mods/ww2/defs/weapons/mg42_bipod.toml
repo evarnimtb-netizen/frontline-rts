@@ -10,6 +10,11 @@ id = "ww2:mg42_bipod"
 name = "MG 42 (bipod)"
 short_name = "MG 42"
 class = "mg"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:792x57_belt"
+# The gunner's own load: the drum on the gun. The team's belts are carried
+# by the assistant and the ammo bearer (members' `rounds`).
+load = 50
 sources = [
     "Wikipedia, MG 42 (weight, cyclic rate, muzzle velocity, drum, burst length)",
 ]

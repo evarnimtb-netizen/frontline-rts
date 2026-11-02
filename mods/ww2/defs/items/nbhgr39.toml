@@ -2,6 +2,8 @@
 id = "ww2:nbhgr39"
 name = "Nebelhandgranate 39"
 kind = "smoke"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). Nebelhandgranate 39: about 600 g (verify).
+supply = { kind = "explosives", g = 600 }
 min_range_m = 5
 range_m = 30
 windup_ms = 1000

@@ -11,6 +11,8 @@
 id = "ww2:panzerfaust60"
 name = "Panzerfaust 60"
 kind = "single_shot_at"
+# S5a: priced refill in the base ([supply] explosives_mp_per_t per tonne). Panzerfaust 60: about 6.1 kg the whole tube (Wikipedia, Panzerfaust; verify).
+supply = { kind = "explosives", g = 6100 }
 sources = [
     "Wikipedia, Panzerfaust (citing Rottman 2014)",
     "Tactical and Technical Trends, Oct 1944 (issue per company; secondary)",

@@ -3,6 +3,8 @@
 id = "ww2:rpzb54_heat"
 name = "RPzB Gr 4322"
 mechanism = "heat"
+# S5a: priced refill ([supply] explosives_mp_per_t per tonne): RPzBGr 4322 rocket about 3.25 kg (verify).
+supply = { kind = "explosives", g = 3250 }
 caliber_mm = 88
 muzzle_velocity_m_s = 110
 drag_coeff = 0

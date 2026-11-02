@@ -1,6 +1,11 @@
 id = "ww2:kar98k"
 name = "Kar98k"
 class = "rifle"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:792x57_clip"
+# Rounds a rifleman carries, the 5 in the rifle included: two pouches of
+# 30 (German drill as commonly described; verify against K.St.N. 131).
+load = 60
 range_m = 300
 damage = 70
 rounds_per_min = 15

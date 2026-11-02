@@ -1,0 +1,7 @@
+# .30-06 in 20-round BAR magazines (S5a). A full BAR belt of magazines
+# weighs 20.2 lb: about 38 g a round with its magazine share.
+id = "ww2:3006_bar"
+name = ".30-06 (BAR magazines)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 38 }
+sources = ["battleorder.org, US ammo load WW2 (full BAR belt 20.2 lb)"]

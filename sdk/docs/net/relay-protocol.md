@@ -151,6 +151,13 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   the new item kind `single_shot_at`; the sim refuses it, and only builds
   that agree on the content ever meet). The S4 fix stage raised
   `MAX_UNITS` to 150 and bumped `PROTOCOL_VERSION` to 6 (above).
+  S5a Part A changed the content hash on purpose (the new
+  `defs/cartridges` kind, `supply` on rounds and items, weapon `feed` and
+  `load`, member `rounds`, vehicle `rare_cap`, the rules' `[supply]` and
+  `[combat.share]`) and the save version (`-s13`: counted rounds, sidearm
+  and refill state per man, the rounds in a dropped crew weapon, a
+  vehicle's due rearm steps, per-player ammunition accounts). No command
+  changed in Part A; Part B adds `SetFire` with `PROTOCOL_VERSION` 7.
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.
