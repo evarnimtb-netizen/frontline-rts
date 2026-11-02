@@ -303,6 +303,11 @@ func _draw_squad(sid: int) -> void:
 				# weapon is dropped (narrow HUDs).
 				label = both
 				size = HudStyle.FONT_SMALL
+			elif String(so.name).begins_with("Rifleman"):
+				# S4 review: a plain rifleman's role says nothing his weapon
+				# does not ("Kar98k", "M1 Garand"); leaders and crew roles
+				# keep the role word (both are in the tooltip).
+				label = String(so.weapon)
 		var nm := HudStyle.fit(f, label, room, size)
 		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, size, HudStyle.TEXT)
 		HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)

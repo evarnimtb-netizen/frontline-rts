@@ -546,7 +546,7 @@ follow-up. Work proceeds on (A) of each question below.
   contact rule); revisit with the spall model (behind-armour debris cone
   and its fragment count) when S4 adds new tanks. (B) Tune spall now.
 
-## S4-variants (in progress, branch `s4-variants`)
+## S4-variants (done 2026-11-02, branch `s4-variants`, pushed; owner questions open)
 
 Spec: `docs/slices/S4-variants.md` (baseline, code map, data model,
 migration, content with sources, Panzerfaust, AI capture, targets, Part A /
@@ -675,7 +675,8 @@ Q21 (B). Work proceeds on (A) of each question below.
   380, Light MG Section 280) stay; Germany wins 43 % of 160 AI matches. (B)
   Keep the starting prices and give Germany veteran training on its line
   cards or a third start squad instead (both measured: 38-56 wins of 160).
-- [ ] **S4-37. Panzerfaust use and AI capture stay below target** (Tune).
+- [ ] **S4-37. Panzerfaust use and AI capture stay below target** (Tune;
+  Fix: T12 moved to S5, S4-42).
   (A) Ship as measured: Panzerfausts fired in 6 of 80 normal-base matches
   (target 40), captures 9 per 160 matches (target 16). Both are limited by
   rules (pinned carriers, a full vehicle limit), not prices. (B) Plan sim
@@ -693,6 +694,43 @@ Q21 (B). Work proceeds on (A) of each question below.
   160 cm and scale the fortify-test barrage to the squad size.
 - [ ] **S4-40. AI capture reach 300 m** (Tune). (A) `capture_m` 300 (9
   captures per 160 matches; wins unchanged). (B) 150, or 500 (not run).
+- [ ] **S4-41. US Light MG Section price** (Fix, review). (A) Keep 280 as a
+  balance price and say so in the file: on paper the MG 42 tripod outfires
+  the M1919A4 (about 580 vs 340 rpm effective) yet the US card costs more
+  per man (56 vs 32.5 MP). Why the US section outperforms in AI play is not
+  modelled or measured yet. (B) Price by weapon (about 200) and rebalance
+  the US line cards instead.
+- [ ] **S4-42. T12 Panzerfaust use is an S5 item, not an S4 gate** (Fix,
+  review). (A) The AI's Panzerfausts stay near-inert (6 tubes per squad
+  instead of 2 fired 7 vs 4 shots in 40 matches: tube count is not the
+  limit). The fix is AI behaviour: an ambush hold where carriers stay
+  hidden and fire at 30-40 m. Planned for S5 with the Panzerfaust 100;
+  T12 is reported, not gated. (B) Build the ambush hold in S4.
+- [ ] **S4-43. Trenches nearly immune to direct fire** (Fix, review). (A)
+  Accept as a design call for now: with 180 cm trenches a dug-in squad
+  loses about 2 % to MG plus rifles in fortify-test T10 (90 % at the S3c
+  baseline, 160 cm, 8-man squads). Grenades, the assault and mortars stay
+  the answer. (B) Restore some direct-fire lethality (a 45 cm parapet or
+  160 cm with a barrage row scaled to squad size, S4-39 (B)).
+- [ ] **S4-44. Ridge offset is a compensation** (Fix, review). (A) The
+  crest at x + y = 1018 (4 m past the symmetric 1024) is a deliberate
+  compensation for a residual base-0 lean not yet found (point placement,
+  woods or player order). Mirror matches on the shipped map: base 0 won
+  68 of 160 (Germany 33/80, USA 35/80, about 1.9 SE from even). (B) Find
+  the asymmetry and move the crest back to 1024.
+- [ ] **S4-45. Crew-weapon pickup reach** (Fix, review L5). (A)
+  `items.crew_pickup_reach_m` = 30 m: only a man that close takes a fallen
+  gunner's MG or launcher; otherwise it waits where it fell. (B) The picker
+  walks to the weapon (new order state).
+- [ ] **S4-46. Selections above 150 men** (Fix, review M4). (A)
+  `MAX_UNITS` 150 = the pop cap (protocol 6); with a mod pop cap above 150
+  the bridge splits a selection into commands of 150 ids, each with its
+  own formation for a move. (B) Cap mod pop caps at 150.
+- [ ] **S4-47. armour-test case 9 margin** (Fix, review L1). (A) Keep the
+  40 % limit and the standard `--seeds 10` (37.1 %); at the default 5
+  seeds it fails at 40.2 % (S3c baseline 12.6 % with 8-man squads). Look
+  at why bigger squads lose three times as many men per HE round in the
+  trench in S5. (B) Raise the limit or scale it with squad size now.
 
 ## S3 owner checklist (needs a person)
 

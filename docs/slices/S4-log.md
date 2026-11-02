@@ -268,3 +268,119 @@ Full account and numbers: `docs/slices/S4-variants.md` "Tune results".
 - Still missed: T12 (Panzerfausts in 6 of 80 normal-base matches; rockets
   9.5 % of tank losses) and T13 (9 captures per 160 matches). TODO S4-36 to
   S4-40.
+
+## Fix and close (2026-11-02)
+
+Two reviews of `be11eb8` (determinism and correctness; balance, realism
+and play) found no high-severity problem, 7 medium and 15 low findings.
+Every medium is fixed or, for T12, moved to S5 with a reason; the cheap
+lows are fixed. Scratch outputs:
+`/private/tmp/claude-501/-Users-evarnimtb--claude-spares-spare-4LokPM/e922ae85-a8d5-4a23-bcc4-b43ebb0b094a/scratchpad/s4/fix/`.
+
+### Findings and what was done
+
+| # | Finding | Done |
+|---|---|---|
+| D-M1 | A crew card carrying a Panzerfaust (legal content) made saves that could not load: bailed-out crews were created with `pzf: None` | Fixed. `SingleShot::for_type` builds the state from the squad type for the call-in and the bail-out crew alike. Test `a_crew_with_a_panzerfaust_bails_out_and_its_saves_load` (save, load on 2 threads, 300 ticks, same hash). Crews may not carry launchers (content error). |
+| D-M2 | The tag `crew` and the capability `vehicle_crew` were not tied; saves refused late in a match | Fixed. Content error "the tag `crew` and the capability `vehicle_crew` go together", with a hint either way. |
+| D-M3 | A launcher man who is not the squad's main weapon never fired; legacy `weapon_men > 1` launcher cards gained idle men | Fixed. Refused: more than one launcher man, a launcher behind another crew weapon. Legacy launcher squads expand to one launcher man plus sidearms (the S3 rule). No shipped card changes. |
+| D-M4 | Pop cap 150 but 120 ids per command: select-all orders lost men silently | Fixed. `MAX_UNITS` 150, `PROTOCOL_VERSION` 5 -> 6 (the one bump of the slice), relay doc updated; the bridge splits larger selections (mod pop caps) into commands of 150 (`unit_chunks`). Tests use `MAX_UNITS + 1` instead of a literal 121. |
+| B-M1 | T12 missed; Panzerfausts near-inert in AI play (6 tubes per squad: 7 shots vs 4) | Not fixed in S4: the limit is AI behaviour (an ambush hold), not numbers. Moved to S5 with the Panzerfaust 100 (TODO S4-42); T12 is reported, not gated. |
+| B-M2 | fortify-test T10 rows used only the line squad's men as the attacker denominator ("225 of 220") | Fixed: every attacking squad counts (now "225 of 330"). The hard check `attacker_losses * 2 <= attacker_men` uses the same totals. |
+| B-M3 | The two line tiles could not be told apart ("Grenadie… ⌄ 7") | Fixed: short names "Gren. (F)", "Rifle Sq (U)", "Rifle 2BAR" (the men disc shows the count); the tooltip explains the chevron. Checked in the 1280 and 1600 autoplay screenshots. |
+| D-L1 | armour-test case 9 passes only at `--seeds 10` (37.1 %); at the default 5 it fails (40.2 %) | Not fixed; known gap (TODO S4-47). Standard runs use `--seeds 10`. |
+| D-L2 | Barrage and dig intents and the AI's point assignment keyed on tags or `dig_rate_pct` | Fixed: by capability (`barrage`, `dig_basic`); a barrage-capable squad is never also a point holder. |
+| D-L3 | Load-check gaps | Fixed: a drop's weapon must be one of the squad's own members' weapons; `AiCounters::bought` at most one per squad type; no thrown single-shot AT wind-up. |
+| D-L4 | Tests that asserted less than they said | Fixed: `ai_buy_counters_are_hashed_and_checked` (AI world, hash, length refused on load); the Panzerfaust gap checked tick by tick; the variant fight needs a German loss beyond the staged kill. |
+| D-L5 | Crew-weapon pickup had no reach | Fixed: `items.crew_pickup_reach_m` = 30 m (rules, default 30); the weapon waits where it fell until a man is that close. No shipped match changed outcome (below). |
+| D-L6 | Doc drift | Fixed: `SAVE_VERSION` 12 described; `small_arms` documented as the longest-reaching non-crew weapon. |
+| B-L4 | The squad card showed no weapons; strip names were role words | Fixed: squads are named after their card ("Grenadiere 2", "sMG-Gruppe 1"); rows show role and weapon when they fit, in the small size next, and a plain rifleman shows his weapon ("Kar98k"). Leaders and crew roles keep the role word (both are in the tooltip). |
+| B-L5 | Grenadiergruppe citation said MG-Schütze 2 with Kar98k, the file gives a P 38 | Citation fixed, content kept: the classic MG team is gunner and assistant with pistols, third man with a rifle (German drill as summarised in secondary sources; miniatures.de "German Infantry Section 1937"); the K.St.N. 131V Kar98k is the late-war Volksgrenadier table (S5). Roster doc row corrected. TM-E 30-451's squad section was not read. |
+| B-L6 | False price comment on the sMG-Gruppe; the US LMG price looks inverted against its weapon | Comment corrected; the US Light MG Section's 280 is documented as a balance price (TODO S4-41). |
+| B-L7 | armour-test case 16 never exercised the 60 m range | Fixed: distances from the first Panzerfaust carrier, 40 / 55 m still and 35 / 55 m moving. 55 m still now fires (15 fired, 15 hit, 14 penetrated). |
+| B-L8 | Ridge offset past symmetric may overshoot in mirror matches | Recorded as a deliberate compensation (TODO S4-44). |
+| B-L9 | `capture_m` 500 not tried | Not run (a Tune experiment); T13 stays a miss (TODO S4-37, S4-40). |
+| B (note) | Dug-in squads nearly immune to direct fire (1.8 %) | Recorded as an owner design call (TODO S4-43). |
+
+### Hashes
+
+The Fix adds one rules field to the setup, and the setup bytes are part of
+the match hash, so all 40 hashes changed. Every one of the 40 matches has
+the same winner and length as in the Tune table (checked row by row); the
+40-set summary is the same line for line except the tick timing. New
+hashes (seed, n = normal / s = swapped bases):
+
+```
+1 n 0xd0773e02bfe471b1; 1 s 0xfd4d2cb28645202c; 2 n 0x49965d0c17bfe32d;
+2 s 0xab6fb50c2e8e4763; 3 n 0x0aa138427c708ce3; 3 s 0x4809139e567c1703;
+4 n 0xd08ac3e5dc0702e6; 4 s 0x8fd99f1ccd22585b; 5 n 0x3ed42469d989fcca;
+5 s 0x24a9c6cdd4aacadd; 6 n 0x29c5e0bab872114c; 6 s 0x29c7add7936cdc6a;
+7 n 0xdf3a6483b5587da8; 7 s 0x1019a147c86a64a4; 8 n 0xc741617e4283e5ee;
+8 s 0x8b4bc0aa120f389b; 9 n 0xbd468b7d1a812e6b; 9 s 0x9f25a600e8808470;
+10 n 0x9c87f7727cb35115; 10 s 0xe000fa392d58422c; 11 n
+0x0f33e60077fd2c75; 11 s 0x6e867c81fd243dd4; 12 n 0x64ff71a4d80396b7;
+12 s 0x7cd9ce74917e1b0a; 13 n 0xc6559b14d6edeee2; 13 s
+0x001f8f89d7564f97; 14 n 0x0ba341b5ac5bfc2e; 14 s 0x614e65a1b76c50c1;
+15 n 0xbc9e308487ad1639; 15 s 0xf94d0f971fa0cc18; 16 n
+0x6466385f72a9bf16; 16 s 0xdde46f38e3d1a459; 17 n 0x0e8895047f00b396;
+17 s 0x66c5af819b883509; 18 n 0xc8bbd521f2df2154; 18 s
+0xca95c691b3cf1e91; 19 n 0x57a679a2c96b9965; 19 s 0xc96e47e0aff361d7;
+20 n 0x4f67f5a383319cae; 20 s 0xb4a2a5d72f29eb8e
+```
+
+The frozen S3c setup-bytes baseline moved for the same field (old and new
+values in `resolved_defs.rs`); `ww2_canonical.json` re-blessed (three
+short names, two source lists, the new rules key). `ww2_resolved.json`
+is unchanged.
+
+### Final targets (release build; 40 set = seeds 1-20 × both bases, `--jobs 3 --minutes 45`)
+
+| # | Target | Result | |
+|---|---|---|---|
+| T1 | each faction 35-65 % (judged on 160, S4-11) | 40 set: Germany 16 (40 %), USA 24 (60 %). 160 set (Tune build, same outcomes per match on the 40 set): Germany 69 (43.1 %); out-of-sample seeds 101-180: 69 (43.1 %) | pass |
+| T2 | no base side > 62 % | base 0 18, base 1 22 (55 %); 160 set 79 / 81 | pass |
+| T3 | no match < 10 or > 40 min, median 15-30 | 12.3-27.5 min, median 17.2, mean 17.7 | pass |
+| T4 | HE share mean < 50 % | mean 43.7 %, max 55.2 % | pass |
+| T5 | fortify, armour-test, golden, validate, tests | fortify-test `--seeds 10` PASS (barrage 46 vs 136 = 33.8 %, rifles 0 vs 170); armour-test `--stress --seeds 10` all hard checks pass; golden 46 rows, 0 failed; `validate mods/ww2` ok; 498 workspace tests pass, 0 fail, 3 ignored (the 2 net soaks pass when run); clippy `-D warnings` and fmt clean | pass |
+| T6 | tick p99 peak < 1.5 ms (--jobs 3); stress inside budget | 40-set peak 0.987 ms (quiet machine); armour-test case 14 p99 1.102 ms, max 2.754 ms (< 10 ms) | pass |
+| T9 | a variant of extends + members loads and plays | `variants.rs`, `mods/ww2/tests` example | pass |
+| T10 | call-in at once, per-card cooldowns, nothing queued | `s4_members.rs`, `match_mode.rs` | pass |
+| T11 | new cards bought | Grenadiergruppe, Feldstärke, sMG-Gruppe, Rifle Squad, understrength, Light MG in 40/40; two-BAR 37/40 | pass |
+| T12 | Panzerfausts in ≥ 10 of 20 normal-base matches; infantry AT ≥ 10 % of tank losses | Panzerfausts: 4 fired in 4 of 40 matches (3 of 20 normal-base); infantry AT (rocket and Panzerfaust knock-outs): 17 of 157 tank losses (10.8 %, met) | **miss, moved to S5** (S4-42) |
+| T13 | ≥ 1 capture per 10 matches | 3 captures in 40 (all US), 31 capture orders | **miss** (S4-37) |
+| T14-T15 | pickup, determinism | pickups 13.9 / match (Germany), 4.2 (USA); thread, save/load and net soak tests pass | pass |
+| T16 | pop report | mean pop at 5/10/20 min: Germany 60/65/74, USA 54/69/80; pop-cap holds 0.0 | reported |
+
+Godot (bridge rebuilt): `check_project` OK, `test_match_view` 237/237,
+`test_net_ui` 143/143, `test_data_reload` 13/13. `--autoplay 10` vs AI at
+4x (seed default, Germany): no script errors; the run ends with a
+surrender at 10:00 as scripted; `s1b_frag_tool` and `s1b_frag_trench`
+missing as in S3c (they need an enemy trench in throw reach), so the
+script exits 3. Screenshots looked at (HUD 1600 and 1280, battle): the
+Feldstärke tile reads "Gren. (F)" beside "Grenadiere", strip cards read
+"Grenadiere 1", "sMG-Gruppe 1", squad-card rows "Kar98k  Pzf 100",
+feed "MG 42 picked up by Rifleman (Pzf)". `settings.cfg` checksum equal
+to the backup before and after.
+
+### Open owner questions
+
+All on their (A) defaults: S4-1 to S4-46 in `docs/TODO.md` (S4-41 to
+S4-46 new in this stage: US LMG price, T12 to S5, trench direct-fire
+immunity, the ridge offset, pickup reach, selections above 150), plus
+S4-47 (armour-test case 9 margin).
+
+### Known gaps
+
+- T12 (Panzerfaust use) and T13 (AI captures) miss; the fixes are AI work
+  (ambush hold, a free vehicle slot), planned for S5.
+- armour-test case 9 passes at `--seeds 10` (37.1 %) but not at the
+  default 5 seeds (40.2 %, limit 40 %); the S3c baseline was 12.6 % with
+  8-man squads. Not investigated.
+- fortify-test T10 rows still "missed": dug-in squads lose 1.8-5.5 % to MG
+  plus rifles (owner call S4-43).
+- Squad-card rows show the weapon only for riflemen at 1280 and 1600; the
+  MG gunner's and leader's weapon is in the tooltip only.
+- Citations not read at the source: K.St.N. 131 (1944), TM-E 30-451 squad
+  section, T/O&E 7-17 (US squad), BAR / M1919A4 / carbine figures (values
+  match common references).
+- Long selections above 150 men (mod pop caps) move as several formations.
