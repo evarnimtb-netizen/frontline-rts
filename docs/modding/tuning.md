@@ -87,7 +87,9 @@ frontline-cli skirmish --ai-vs-ai --seeds 10 --both-bases --ab --rules-override 
 ```
 
 - `--seeds N` plays seeds `--seed .. --seed+N`. Matches run in parallel; set
-  the number with `--jobs`.
+  the number with `--jobs`. Results and hashes do not depend on it, but the
+  tick-time p99 does (the same 160 matches: 0.71 ms peak at `--jobs 3`,
+  1.55 ms at `--jobs 6` on an 8-core Mac): quote T10 from a `--jobs 3` run.
 - `--both-bases` plays each seed twice, once with the bases swapped.
 - `--summary` prints one table instead of every report: wins per faction and
   per base, match length, tanks lost, knock-out causes, HE share, rockets,

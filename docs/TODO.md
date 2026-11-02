@@ -354,7 +354,8 @@ follow-up. Work proceeds on (A) of each question below.
   losses.
 - [ ] **S3c-2. Capture.** (A) On (`vehicles.recrew.capture`): enemy crews
   or infantry may re-crew an abandoned tank; the AI does not capture in
-  S3c. (B) Off. (C) On, and the AI captures too.
+  S3c. (B) Off. (C) On, and the AI captures too. Fix stage: capture now
+  needs a crew squad by default (`capture_needs_crew`, S3c-32).
 - [ ] **S3c-3. Who can re-crew.** (A) Crew squads, and any infantry but AT
   teams as untrained crew (reload 150 %, traverse 75 %, spread 150 %).
   (B) Crew squads only.
@@ -511,6 +512,39 @@ follow-up. Work proceeds on (A) of each question below.
   60 % in 1 of 160 matches (seed 35 swapped: 11.5 min, 2 tank losses, 65.5
   %). (A) Read T14 as "mean under 50 % and under 60 % in 99 % of matches".
   (B) Keep "under 60 % per match" (missed by 1 match in 160).
+
+- [ ] **S3c-32. Who may capture an enemy tank** (Fix stage, balance
+  review finding 1). With `capture = 1` and `any_infantry = 1` a human
+  could kill a tank's crew and walk three riflemen onto a ~620 MP tank; the
+  AI never captures (S3c-2), and 208 of 629 abandoned tanks (160 matches)
+  still stood at the end. Done on (A): new rule
+  `[vehicles.recrew] capture_needs_crew = 1`, only a tank crew squad may
+  capture an enemy's vehicle (refusal "only a tank crew can capture it");
+  infantry still re-crew their own side's. Reason: unfamiliar controls,
+  sights and ammunition; captured tanks were put into service by trained
+  crews (Beutepanzer units). (B) `capture_needs_crew = 0` (genre reference
+  behaviour). (C) Also scrap abandoned tanks after `abandoned_life_s`
+  (about 180 s); not done, no historical basis, only clutter.
+- [ ] **S3c-33. AI capture** (Fix stage). The AI still never captures, so
+  capture's effect on balance is unmeasured in skirmish. (A) S4: give AI
+  crew squads a capture task behind `ai.armour.capture` (off by default),
+  then measure. (B) Leave capture to humans.
+- [ ] **S3c-34. Abandoned enemy tanks seen through fog** (Fix stage,
+  balance review finding 6). The presenter gets every abandoned vehicle
+  map-wide (like a wreck), so the minimap shows where an enemy tank was
+  abandoned and can be captured. (A) Keep it: a knocked-out or abandoned
+  tank is a large, static, often burning object, and the spec treats it as
+  a wreck; with `capture_needs_crew` the information is worth less. (B)
+  Gate enemy abandoned vehicles on `seen_by` like live ones.
+- [ ] **S3c-35. Crew deaths per tank loss** (Fix stage, balance review
+  finding 3). About 2.8 men die per tank lost (2.0 before the bail-out, by
+  the penetration that causes it; about 19 % of men out die within 60 s;
+  rack detonations kill the whole crew), against the historical ~1 per
+  5-man crew. `crew_below = 4` raised the men alive at bail-out only from
+  3.0 to 3.26 and made 9 % more tank losses. (A) Accept and document: the
+  deaths come from spall and detonations that touch the men (physical-
+  contact rule); revisit with the spall model (behind-armour debris cone
+  and its fragment count) when S4 adds new tanks. (B) Tune spall now.
 
 ## S3 owner checklist (needs a person)
 

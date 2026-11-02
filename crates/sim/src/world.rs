@@ -1975,6 +1975,10 @@ impl World {
     }
 
     fn fill_snapshot(&mut self) {
+        // Refusals from the Status stage (a limit reached while boarding).
+        if let Some(game) = &mut self.state.game {
+            self.recrew_events.append(&mut game.recrew_events);
+        }
         self.snapshot.fill(
             self.state.tick,
             &self.state.entities,

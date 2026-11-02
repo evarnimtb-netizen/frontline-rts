@@ -121,18 +121,33 @@ fn a_tank_with_dry_mgs_drives_back_rearms_and_returns() {
     }
     assert!(left, "the rearm task ended within rearm_max_s");
     let vs = w.game().unwrap().vehicle(v).unwrap();
-    assert!(vs.mgs.iter().any(|m| m.spent > 0) || vs.mgs.is_empty());
     let s = w.match_setup().unwrap();
     let ty = &s.vehicles[vs.type_idx as usize];
-    let left_rounds: u32 = ty
+    // Every MG has rounds again (`dry_mgs` emptied them all).
+    let stowed: Vec<(u32, u32)> = ty
         .mounts
         .iter()
         .skip(1)
         .zip(&vs.mgs)
-        .filter_map(|(m, st)| m.rounds.map(|n| n.saturating_sub(st.spent)))
-        .sum();
-    assert!(left_rounds > 0, "belts were refilled in base");
+        .filter_map(|(m, st)| m.rounds.map(|n| (n, st.spent)))
+        .collect();
+    assert!(!stowed.is_empty());
+    assert!(
+        stowed.iter().all(|&(n, spent)| spent < n),
+        "belts were refilled in base: {stowed:?}"
+    );
     assert_eq!(counters(&w).rearms, 1, "one trip, no new one once rearmed");
+    // And it goes back out: it leaves the base within a minute.
+    let p = w.match_setup().unwrap().players[1].base as usize;
+    let base = w.match_setup().unwrap().map.bases[p].clone();
+    let r: frontline_sim::Fx = base.radius.into();
+    let c = frontline_sim::FxVec2::from(base.center);
+    let out = (0..30 * 60).any(|_| {
+        w.step(&[]);
+        let pos = w.entities().transform()[v.index()].pos.xy();
+        (pos - c).length() > r
+    });
+    assert!(out, "the tank returns to the field after rearming");
 }
 
 #[test]

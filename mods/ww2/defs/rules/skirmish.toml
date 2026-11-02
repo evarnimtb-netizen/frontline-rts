@@ -572,7 +572,10 @@ reach_m = 4
 # Time for the men at one hatch to get in, per man (s); the hatches work at
 # once, so a crew of five through five hatches takes 3 s. A starting value.
 board_s = 3
-# Fewest men a squad needs to re-crew: driver and gunner.
+# Fewest men a squad needs to re-crew: driver and gunner. The effective
+# minimum is max(min_men, [vehicles.bail] crew_below), 3 with the values
+# here, so a re-crewed tank is never at once abandoned again for too few men
+# (S3c-14).
 min_men = 2
 # 1: any infantry squad but AT teams may board, untrained (genre reference:
 # infantry can man an empty tank, poorly).
@@ -580,6 +583,14 @@ any_infantry = 1
 # 1: an enemy squad may capture an abandoned vehicle (genre reference; owner
 # question S3c-2 (A)). The captor needs a free vehicle slot and pop.
 capture = 1
+# 1: only a tank crew squad may capture an enemy's vehicle; infantry may
+# still re-crew their own side's (S3c Fix, owner question S3c-32 (A)).
+# Reasoning: an enemy tank's controls, sights, radio and ammunition are
+# unfamiliar; captured tanks (German "Beutepanzer", US use of captured
+# Panthers) were taken into service by trained tank crews, not by riflemen
+# in the field. It also keeps a human from walking three riflemen onto a
+# 600 MP tank the AI cannot take back (S3c review, balance finding 1).
+capture_needs_crew = 1
 # An untrained loader (or a gunner without a loader) reloads this slowly
 # (% of the reload time). 150: a starting value.
 untrained_reload_pct = 150

@@ -666,6 +666,9 @@ tuning_table! {
         any_infantry: 0..=1,
         /// 1: an enemy squad may capture an abandoned vehicle.
         capture: 0..=1,
+        /// 1: only a tank crew squad may capture an enemy's vehicle
+        /// (infantry may still re-crew their own side's).
+        capture_needs_crew: 0..=1,
         /// An untrained loader (or gunner without a loader) reloads this
         /// slowly (% of the reload time).
         untrained_reload_pct: 100..=400,

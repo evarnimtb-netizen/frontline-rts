@@ -268,7 +268,7 @@ func abandon(v: Dictionary, cause := "order") -> int:
 	var pos: Vector3 = src._v3(v.pos)
 	_event("abandoned", v, -1, cause, "", "", pos)
 	if int(v.owner) == src.local_player and not _quiet:
-		src._push_event(v.owner, "vehicle_abandoned", "%s abandoned. Crew bailing out: %d of 5." % [_short(v), men], pos)
+		src._push_event(v.owner, "vehicle_abandoned", "%s abandoned (ordered): %d of 5 bailing out." % [_short(v), men], pos)
 	if men == 0:
 		v.crew_squad = -1
 		return -1

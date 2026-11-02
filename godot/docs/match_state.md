@@ -684,7 +684,7 @@ main-gun and rocket matters):
 | `vehicle_knocked_out` | any seen vehicle knocked out (`player` = its owner) | "Panzer IV knocked out." / "Enemy Sherman knocked out." |
 | `vehicle_damaged` | an own component reaches 0 HP | "Panzer IV: track destroyed." |
 | `vehicle_bogged` | an own vehicle bogs | "Sherman bogged in trench." |
-| `vehicle_abandoned` | S3c: any seen vehicle abandoned (`player` = its owner) | "Panzer IV abandoned (ammo fire). Crew bailing out: 4 of 5." / "Enemy Sherman abandoned." |
+| `vehicle_abandoned` | S3c: any seen vehicle abandoned (`player` = its owner) | "Panzer IV abandoned (ammo fire): 4 of 5 bailing out." / "Enemy Sherman abandoned." |
 | `vehicle_recrewed` | S3c: an abandoned vehicle manned by its own side | "Panzer IV re-crewed." / "Enemy Sherman re-crewed." |
 | `vehicle_captured` | S3c: a capture involving the local player | "Captured an enemy Sherman." / "Our Panzer IV was captured by the enemy." |
 | `recrew_refused` | S3c: the sim refused a `recrew` | "Not re-crewed: vehicle limit reached (4)." |

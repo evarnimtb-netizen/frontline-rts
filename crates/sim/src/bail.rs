@@ -31,24 +31,33 @@
 //! vehicle's crew squad (created with the first man out; a new one if the
 //! last was wiped out) beside the hull below his hatch, on the side the
 //! last round travelled toward (away from the shooter; the left side when
-//! nothing hit it), `exit_clear_cm` outside the hull box. He keeps his HP,
+//! nothing hit it), `exit_clear_cm` outside the hull box; if that spot is
+//! within `exit_clear_cm` of another hull (live, abandoned or wreck), the
+//! other side, else ahead of or behind the hull, else the spot farthest from
+//! the other hulls (S3c Fix). He keeps his HP,
 //! carries the squad's weapon (the first `weapon_men` men out) or its
 //! sidearm, cannot fire for `dismount_ms` and arrives with
 //! `bail_suppression`.
 //!
 //! **Re-crew** (`Recrew`, `[vehicles.recrew]`): a crew squad, or (with
 //! `any_infantry`) any infantry squad but an AT team, of at least `min_men`
-//! walks to the vehicle (order `Recrew`). Once all exits are done and at
+//! walks to the vehicle (order `Recrew`). Nobody may board a vehicle that
+//! burns, or whose gun and mobility are out under `useless_bail` (refusals
+//! `Burning`, `Useless`): it would be abandoned again at once. Once all
+//! exits are done, nothing blocks boarding and at
 //! least `min_men` of its men stand within `reach_m` of the hull box, the
 //! men there climb in together, `board_s` per man and hatch (the hatches
 //! work at once): `board_s × ⌈men / hatches⌉`. Moving away or losing men
-//! below `min_men` restarts it. When the time is up and the player has a
-//! free vehicle slot and room under the pop cap (counting the men boarding
-//! as gone), those men (at most one per empty seat, the squad's order
+//! below `min_men` restarts it; a squad already boarding keeps its place
+//! while it still can. When the time is up without a free vehicle slot or
+//! room under the pop cap (counting the men boarding as gone), the re-crew
+//! is refused once (snapshot `recrew_refusals`) and the squad goes `Idle`;
+//! with them, those men (at most one per empty seat, the squad's order
 //! first) leave the world as soldiers and fill the empty seats in seat
 //! order with their HP; infantry are marked untrained. The vehicle becomes
 //! a live vehicle of the boarding player with a new vehicle squad. An enemy
-//! may do this (capture) when `capture` is on. Men left over stay a squad
+//! may do this (capture) when `capture` is on; with `capture_needs_crew` only
+//! a crew squad may (refusal `CaptureNeedsCrew`). Men left over stay a squad
 //! (order `Idle`).
 //!
 //! **Crew squads** are ordinary infantry for orders. One in its own base,
@@ -69,7 +78,7 @@ use crate::fx::{Fx, FxVec2};
 use crate::game::{Ctx, MatchState, Nav, NavPhase, Order, PathReq, Squad, SquadId, kill_class};
 use crate::items::Kit;
 use crate::snapshot::{ArmourEventKind, NONE_U8};
-use crate::vehicle::{MgState, Seat, yaw_dir};
+use crate::vehicle::{MgState, Seat, VehicleState, yaw_dir};
 use crate::world::Stats;
 
 /// `VehicleState::abandon_cause` and the `Abandoned` event's component: an
@@ -105,6 +114,15 @@ pub enum RecrewRefusal {
     VehicleLimit = 4,
     /// It would take the player over the pop cap.
     PopCap = 5,
+    /// It is on fire (engine or ammunition): the men would bail out again
+    /// at once (S3c Fix).
+    Burning = 6,
+    /// Its gun and its mobility are out (`useless_bail`): the men would
+    /// bail out again at once (S3c Fix).
+    Useless = 7,
+    /// An enemy's vehicle, `capture_needs_crew` is on and the squad is not
+    /// a tank crew (S3c Fix).
+    CaptureNeedsCrew = 8,
 }
 
 /// One refused `Recrew` (presentation only, like `CallInEvent`).
@@ -140,6 +158,35 @@ pub(crate) fn board_max(v: &VehicleSetup, s: &MatchSetup) -> u32 {
 /// Whether vehicles of this def can bail out at all.
 pub fn can_bail(v: &VehicleSetup) -> bool {
     v.crew_squad.is_some() && !v.hatches.is_empty()
+}
+
+/// Whether any of `vs`'s mobility parts (engine, tracks, transmission) is
+/// out.
+pub(crate) fn immobile(vs: &VehicleState) -> bool {
+    [
+        ComponentKind::Engine,
+        ComponentKind::TrackLeft,
+        ComponentKind::TrackRight,
+        ComponentKind::Transmission,
+    ]
+    .iter()
+    .any(|&k| vs.component(k) == 0)
+}
+
+/// Why nobody may board abandoned vehicle `vs` now, if so: a manned
+/// vehicle in this state would be abandoned again in the next Status stage
+/// (a fire, or gun and mobility out under `useless_bail`).
+pub(crate) fn board_blocked(s: &MatchSetup, vs: &VehicleState) -> Option<RecrewRefusal> {
+    if vs.burn > 0 || vs.ammo_fire > 0 {
+        return Some(RecrewRefusal::Burning);
+    }
+    if s.rules.vehicles.bail.useless_bail != 0
+        && vs.component(ComponentKind::Gun) == 0
+        && immobile(vs)
+    {
+        return Some(RecrewRefusal::Useless);
+    }
+    None
 }
 
 /// Whether a squad of `role` may man a vehicle under these rules.
@@ -181,11 +228,19 @@ impl MatchState {
         else {
             return Err(RecrewRefusal::NotAbandoned);
         };
-        if !can_crew(s, s.squad_types[sq.type_idx as usize].role) {
+        let role = s.squad_types[sq.type_idx as usize].role;
+        if !can_crew(s, role) {
             return Err(RecrewRefusal::NotCrew);
         }
-        if r.capture == 0 && ents.owner[vehicle.index()] != p {
+        let enemy = ents.owner[vehicle.index()] != p;
+        if r.capture == 0 && enemy {
             return Err(RecrewRefusal::NoCapture);
+        }
+        if r.capture_needs_crew != 0 && enemy && role != SquadRole::Crew {
+            return Err(RecrewRefusal::CaptureNeedsCrew);
+        }
+        if let Some(why) = board_blocked(s, vs) {
+            return Err(why);
         }
         if (sq.members.len() as u32) < r.min_men.max(s.rules.vehicles.bail.crew_below) {
             return Err(RecrewRefusal::TooFewMen);
@@ -308,14 +363,7 @@ impl MatchState {
         let b = &self.setup.rules.vehicles.bail;
         let hz = self.setup.tick_hz.max(1);
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
-        let broken = [
-            ComponentKind::Engine,
-            ComponentKind::TrackLeft,
-            ComponentKind::TrackRight,
-            ComponentKind::Transmission,
-        ]
-        .iter()
-        .any(|&k| vs.component(k) == 0);
+        let broken = immobile(vs);
         let gun_out = vs.component(ComponentKind::Gun) == 0;
         let cause = if vs.bail_order {
             AB_ORDER
@@ -535,11 +583,41 @@ impl MatchState {
         } else {
             Fx::ONE
         };
-        let off = geo.hull_half.y + Fx::from_ratio(b.exit_clear_cm as i64, 100);
-        let spot = ctx
-            .terrain
-            .clamp(t.pos.xy() + fwd * along + left * (off * side));
-        let facing = left * side;
+        let clear = Fx::from_ratio(b.exit_clear_cm as i64, 100);
+        let off = geo.hull_half.y + clear;
+        let end = geo.hull_half.x + clear;
+        let c = t.pos.xy() + fwd * geo.hull_center.x;
+        // That side, else the other, else ahead or behind the hull: the
+        // first spot clear of every other hull (live, abandoned or wreck)
+        // by `exit_clear_cm`; if none is, the one farthest from them.
+        let tries = [
+            (t.pos.xy() + fwd * along + left * (off * side), left * side),
+            (t.pos.xy() + fwd * along - left * (off * side), -left * side),
+            (c + fwd * end, fwd),
+            (c - fwd * end, -fwd),
+        ];
+        let clear_sq = FxVec2::new(clear, Fx::ZERO).length_sq_raw();
+        let room = |p: FxVec2| -> u64 {
+            self.vehicles
+                .keys()
+                .filter(|&&o| o != id)
+                .map(|&o| self.hull_dist_sq(ctx, o, p))
+                .min()
+                .unwrap_or(u64::MAX)
+        };
+        let mut best = (0usize, 0u64);
+        for (n, &(p, _)) in tries.iter().enumerate() {
+            let r = room(ctx.terrain.clamp(p));
+            if r >= clear_sq {
+                best = (n, r);
+                break;
+            }
+            if n == 0 || r > best.1 {
+                best = (n, r);
+            }
+        }
+        let (spot, facing) = tries[best.0];
+        let spot = ctx.terrain.clamp(spot);
         // The crew squad: the linked one, else a new one.
         let squad = match vs.crew_squad.filter(|q| self.squads.contains_key(q)) {
             Some(q) => q,
@@ -668,8 +746,10 @@ impl MatchState {
         self.hull_slots(ctx, id);
         let s = &self.setup;
         let vs = &self.vehicles[&id];
-        // Nobody climbs in while the last crew still climbs out.
-        if vs.exit.iter().any(|&e| e > 0) {
+        // Nobody climbs in while the last crew still climbs out, nor into
+        // a vehicle they would have to leave again at once (a fire; gun and
+        // mobility out): they wait at the hull.
+        if vs.exit.iter().any(|&e| e > 0) || board_blocked(s, vs).is_some() {
             if vs.board.is_some() {
                 self.vehicles.get_mut(&id).expect("listed").board = None;
             }
@@ -683,12 +763,14 @@ impl MatchState {
         // Fewest men who board: `min_men`, and never so few that the crew
         // rule would make them bail out again at once.
         let fewest = r.min_men.max(s.rules.vehicles.bail.crew_below).max(1);
-        // The boarding squad: the lowest id with a Recrew of this vehicle
-        // whose boarding men (one per empty seat) all stand at the hull.
-        let mut pick: Option<(SquadId, Vec<SimId>)> = None;
-        for (&q, sq) in &self.squads {
+        // The boarding squad: the one already boarding while it still can
+        // (a squad that arrives later does not reset its progress), else the
+        // lowest id with a Recrew of this vehicle whose boarding men (one
+        // per empty seat) all stand at the hull.
+        let ready = |q: SquadId| -> Option<Vec<SimId>> {
+            let sq = self.squads.get(&q)?;
             if sq.order != (Order::Recrew { vehicle: id }) {
-                continue;
+                return None;
             }
             let want = sq.members.len().min(empty);
             let near: Vec<SimId> = sq
@@ -700,10 +782,15 @@ impl MatchState {
                 })
                 .take(want)
                 .collect();
-            if near.len() == want && want as u32 >= fewest {
-                pick = Some((q, near));
-                break;
-            }
+            (near.len() == want && want as u32 >= fewest).then_some(near)
+        };
+        let mut pick: Option<(SquadId, Vec<SimId>)> =
+            vs.board.and_then(|(bq, _)| ready(bq).map(|men| (bq, men)));
+        if pick.is_none() {
+            pick = self
+                .squads
+                .keys()
+                .find_map(|&q| ready(q).map(|men| (q, men)));
         }
         let Some((q, men)) = pick else {
             if vs.board.is_some() {
@@ -727,9 +814,22 @@ impl MatchState {
             .population(ctx.ents, p)
             .saturating_sub(men.len() as u32)
             + v.pop;
-        if self.vehicles_counted(ctx.ents, p) >= s.rules.vehicles.limit
-            || pop_after > s.rules.pop_cap
-        {
+        let why = if self.vehicles_counted(ctx.ents, p) >= s.rules.vehicles.limit {
+            Some(RecrewRefusal::VehicleLimit)
+        } else if pop_after > s.rules.pop_cap {
+            Some(RecrewRefusal::PopCap)
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            // Refused once, for the feed; the squad stops waiting.
+            self.recrew_events.push(RecrewEvent {
+                player: p,
+                vehicle: id,
+                why,
+            });
+            self.vehicles.get_mut(&id).expect("listed").board = None;
+            self.squads.get_mut(&q).expect("picked").order = Order::Idle;
             return;
         }
         self.man_vehicle(ctx, id, q, &men, events);

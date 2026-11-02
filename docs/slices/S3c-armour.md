@@ -316,6 +316,11 @@ No grenades (owner question S3c-7). Vehicle defs gain `crew_squad`.
   vehicle slot and pop. A captured tank keeps its type, ammo and damage;
   it is the captor's unit with the foreign type's name and a "captured"
   tag. `capture = false` restricts re-crewing to the last owner.
+  Fix stage: `capture_needs_crew = 1` (A, S3c-32) lets only a tank crew
+  squad capture; infantry re-crew only their own side's vehicles. Nobody
+  may board a burning vehicle or one with gun and mobility out (it would be
+  abandoned again at once; refusals "on fire", "gun and tracks or engine
+  out").
 - **Interrupted boarding:** if the squad is ordered away or the vehicle
   is destroyed, men already in stay as seats (below `min_men` the vehicle
   stays abandoned and those men bail out again as the squad).
@@ -523,7 +528,7 @@ fortify-test seeds 1–10. Decisions on noisy numbers use 80 matches (seeds
 | T7 | Abandoned vehicles are used: ≥ 1 re-crew per 10 matches by the AI; abandoned / destroyed split reported | new | summary |
 | T8 | T10 per faction: **US attackers lose ≤ 60 %**, German attackers ≤ 50 %; defenders lose ≥ 75 % pooled | USA attacking 73.8 %, Germany 41.2 %; defenders 85.6 % | fortify-test |
 | T9 | Match length: no match < 10 or > 40 min, median 15–30 | 11.9–30.0 (2 at the 30-min limit), median 16.5 | summary with `--minutes 45` |
-| T10 | Tick p99 at peak < 1.5 ms; stress p99 < 10 ms | 0.79; 1.17 | summary; case 14 |
+| T10 | Tick p99 at peak < 1.5 ms; stress p99 < 10 ms | 0.79; 1.17 | summary with `--jobs 3` (timing depends on parallel load: the same 160 matches gave 0.71 ms at `--jobs 3`, 1.55 ms at `--jobs 6`); case 14 |
 | T11 | Base bias at its cause: tanks lost by base side within ±15 % of each other | 134 vs 87 (+54 %); mirrored-valley probe 110 vs 102 | `s3c` / JSON |
 | T12 | 600 m frontal duel (3f): report the winner share; a target only if supported | new | armour-test |
 | T13 | T9 kills > 0 / T14 ≥ 0.05 m per burst: only with a physical cause (B8); else documented | 0; 0.033 m | armour-test 5b, 9 |

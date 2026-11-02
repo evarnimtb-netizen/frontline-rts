@@ -127,6 +127,9 @@ pub fn recrew_words(why: frontline_sim::RecrewRefusal, setup: &MatchSetup) -> St
         ),
         R::VehicleLimit => format!("vehicle limit reached ({})", setup.rules.vehicles.limit),
         R::PopCap => format!("pop cap reached ({})", setup.rules.pop_cap),
+        R::Burning => "it is on fire".to_owned(),
+        R::Useless => "its gun and its tracks or engine are out".to_owned(),
+        R::CaptureNeedsCrew => "only a tank crew can capture it".to_owned(),
     }
 }
 
@@ -358,7 +361,7 @@ impl EventTracker {
                         "vehicle_abandoned",
                         if own {
                             format!(
-                                "{name} abandoned ({}). Crew bailing out: {} of {seats}.",
+                                "{name} abandoned ({}): {} of {seats} bailing out.",
                                 abandon_words(e.component),
                                 a.inside
                             )
@@ -808,7 +811,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                format!("{short} abandoned (ammo fire). Crew bailing out: 3 of {seats}."),
+                format!("{short} abandoned (ammo fire): 3 of {seats} bailing out."),
                 format!("Enemy {short} abandoned."),
                 format!("{short} re-crewed."),
                 format!("Our {short} was captured by the enemy."),

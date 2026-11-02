@@ -3,7 +3,9 @@
 //! times, the side away from the hit, men still inside die with the
 //! vehicle), the abandoned vehicle (nobody's unit, not auto-targeted,
 //! `AttackUnit` allowed, the cap), re-crew by a crew and by riflemen
-//! (untrained), capture on and off, the limit and pop checks, crews
+//! (untrained), capture on and off and by crews only, the limit and pop
+//! checks (also when the limit fills while boarding), no re-crew of a
+//! burning or useless tank, exits clear of a neighbouring hull, crews
 //! dismissed in base, and determinism across threads and save → load →
 //! continue with an abandoned tank and a crew squad on the map.
 
@@ -335,9 +337,12 @@ fn riflemen_re_crew_untrained_and_reload_slower() {
 
 #[test]
 fn the_enemy_captures_with_capture_on_and_is_refused_with_it_off() {
-    for capture in [1, 0] {
+    // (capture, capture_needs_crew): riflemen capture only when a crew is
+    // not required.
+    for (capture, needs_crew) in [(1, 0), (0, 0), (1, 1)] {
         let mut s = setup(1);
         s.rules.vehicles.recrew.capture = capture;
+        s.rules.vehicles.recrew.capture_needs_crew = needs_crew;
         let (mut w, v, crew) = abandoned_with_crew(s);
         w.step(&[cmd(0, 1, CommandKind::Retreat { squad: crew })]);
         let rif = spawn(&mut w, 1, SquadRole::Rifle, at(500, 470), EAST).unwrap();
@@ -353,6 +358,13 @@ fn the_enemy_captures_with_capture_on_and_is_refused_with_it_off() {
             assert_eq!(
                 w.snapshot().recrew_refusals[0].why,
                 RecrewRefusal::NoCapture
+            );
+            continue;
+        }
+        if needs_crew == 1 {
+            assert_eq!(
+                w.snapshot().recrew_refusals[0].why,
+                RecrewRefusal::CaptureNeedsCrew
             );
             continue;
         }
@@ -406,6 +418,100 @@ fn the_limit_and_pop_cap_refuse_a_re_crew() {
 }
 
 #[test]
+fn a_full_limit_while_boarding_refuses_once_and_frees_the_squad() {
+    let mut s = setup(1);
+    s.rules.vehicles.limit = 1;
+    let (mut w, v, crew) = abandoned_with_crew(s);
+    w.step(&[cmd(
+        0,
+        1,
+        CommandKind::Recrew {
+            squad: crew,
+            vehicle: v,
+        },
+    )]);
+    assert!(w.snapshot().recrew_refusals.is_empty());
+    // A new tank fills the limit while the crew walks back and boards.
+    tank(&mut w, 0, at(300, 300), EAST).unwrap();
+    let mut refused = Vec::new();
+    for _ in 0..30 * 30 {
+        w.step(&[]);
+        refused.extend(w.snapshot().recrew_refusals.iter().map(|r| r.why));
+    }
+    assert_eq!(refused, vec![RecrewRefusal::VehicleLimit]);
+    assert_eq!(kind(&w, v), EntityKind::Abandoned);
+    assert_eq!(w.game().unwrap().squad(crew).unwrap().order, Order::Idle);
+    assert!(w.game().unwrap().vehicle(v).unwrap().board.is_none());
+}
+
+#[test]
+fn a_burning_or_useless_tank_refuses_a_re_crew() {
+    type Edit = fn(&mut frontline_sim::VehicleState);
+    let cases: [(Edit, RecrewRefusal); 2] = [
+        (|v| v.burn = 1, RecrewRefusal::Burning),
+        (
+            |v| {
+                v.components[ComponentKind::Gun.index()] = 0;
+                v.components[ComponentKind::TrackLeft.index()] = 0;
+            },
+            RecrewRefusal::Useless,
+        ),
+    ];
+    for (edit, want) in cases {
+        let mut s = setup(1);
+        s.rules.vehicles.fire_out_pct = 0;
+        let (mut w, v, crew) = abandoned_with_crew(s);
+        w.edit_vehicle(v, edit);
+        w.step(&[cmd(
+            0,
+            1,
+            CommandKind::Recrew {
+                squad: crew,
+                vehicle: v,
+            },
+        )]);
+        assert_eq!(w.snapshot().recrew_refusals[0].why, want);
+        // Never manned again (the burning one burns out to a wreck).
+        for _ in 0..30 * 30 {
+            w.step(&[]);
+            assert_ne!(kind(&w, v), EntityKind::Vehicle);
+        }
+        let g = w.game().unwrap();
+        assert_eq!(g.players()[0].crew.abandoned, 1);
+        assert_eq!(g.players()[0].crew.recrewed, 0);
+        assert_eq!(g.players()[0].crew.bailed, 5);
+    }
+}
+
+#[test]
+fn bailing_men_get_out_clear_of_a_neighbouring_hull() {
+    let mut w = World::new_match(setup(1), 1).unwrap();
+    let (sq, v) = tank(&mut w, 0, at(500, 503), EAST).unwrap();
+    let (_, n) = tank(&mut w, 0, at(500, 500), EAST).unwrap();
+    // The last round travelled south: the far side is the neighbour's.
+    w.edit_vehicle(v, |vs| {
+        vs.last_hit_dir =
+            frontline_sim::FxVec2::new(frontline_sim::Fx::ZERO, -frontline_sim::Fx::ONE)
+    });
+    w.step(&[cmd(0, 0, CommandKind::Abandon { squad: sq })]);
+    assert!(run_until(&mut w, 30 * 6, |w| {
+        crew_of(w, v).is_some_and(|c| w.game().unwrap().squad(c).unwrap().members.len() == 5)
+    }));
+    let g = w.game().unwrap();
+    let s = w.match_setup().unwrap();
+    let def = &s.vehicles[g.vehicle(n).unwrap().type_idx as usize];
+    let _ = def;
+    let np = w.entities().transform()[n.index()].pos.xy();
+    for &m in &g.squad(crew_of(&w, v).unwrap()).unwrap().members {
+        let p = w.entities().transform()[m.index()].pos.xy();
+        // The neighbour's hull is 2.8 m wide: nobody stands within it.
+        let inside = (p.y - np.y).abs() < frontline_sim::Fx::from_ratio(14, 10)
+            && (p.x - np.x).abs() < frontline_sim::Fx::from_int(4);
+        assert!(!inside, "inside the neighbour's hull: {p:?}");
+    }
+}
+
+#[test]
 fn a_crew_in_base_is_dismissed_without_refund() {
     let (mut w, _, crew) = abandoned_with_crew(setup(1));
     let mp = w.game().unwrap().players()[0].manpower;
@@ -436,31 +542,42 @@ fn over_the_cap_the_oldest_abandoned_tank_is_scrapped() {
     assert_eq!(w.game().unwrap().players()[0].crew.scrapped, 1);
 }
 
-/// A scripted match with bail-outs, a re-crew and a capture, at `threads`.
+/// A scripted match with bail-outs, a re-crew (tank C by its crew) and a
+/// capture (tank A by US riflemen once its crew walks off), at `threads`;
+/// the hashes, and the counters checked at the end.
 fn scripted(threads: usize, save_at: Option<u64>) -> Vec<u64> {
     let mut s = setup(4);
     s.rules.vehicles.recrew.capture = 1;
+    s.rules.vehicles.recrew.capture_needs_crew = 0;
     let mut w = World::new_match(s, threads).unwrap();
     let (sa, va) = tank(&mut w, 0, at(450, 500), EAST).unwrap();
+    let (sc, vc) = tank(&mut w, 0, at(450, 300), EAST).unwrap();
     let (_, vb) = tank(&mut w, 1, at(650, 500), WEST).unwrap();
-    let rif = spawn(&mut w, 1, SquadRole::Rifle, at(640, 540), WEST).unwrap();
+    let rif = spawn(&mut w, 1, SquadRole::Rifle, at(450, 470), WEST).unwrap();
     let mut hashes = Vec::new();
     for t in 0..30 * 40u64 {
         let mut cmds = Vec::new();
         if t == 10 {
             cmds.push(cmd(0, 0, CommandKind::Abandon { squad: sa }));
+            cmds.push(cmd(0, 1, CommandKind::Abandon { squad: sc }));
         }
         if t == 30 * 8 {
-            if let Some(c) = w.game().unwrap().vehicle(va).unwrap().crew_squad {
+            let g = w.game().unwrap();
+            if let Some(c) = g.vehicle(va).unwrap().crew_squad {
+                cmds.push(cmd(0, 2, CommandKind::Retreat { squad: c }));
+            }
+            if let Some(c) = g.vehicle(vc).unwrap().crew_squad {
                 cmds.push(cmd(
                     0,
-                    1,
+                    3,
                     CommandKind::Recrew {
                         squad: c,
-                        vehicle: va,
+                        vehicle: vc,
                     },
                 ));
             }
+        }
+        if t == 30 * 10 {
             cmds.push(cmd(
                 1,
                 0,
@@ -479,6 +596,10 @@ fn scripted(threads: usize, save_at: Option<u64>) -> Vec<u64> {
         }
         hashes.push(w.state_hash());
     }
+    let g = w.game().unwrap();
+    assert_eq!(g.players()[1].crew.captured, 1, "A captured");
+    assert_eq!(g.players()[0].crew.recrewed, 1, "C re-crewed");
+    assert_eq!(w.entities().owner()[va.index()], PlayerId(1));
     hashes
 }
 
@@ -491,4 +612,5 @@ fn bail_out_and_re_crew_are_deterministic_across_threads_and_save_load() {
     // Saved with an abandoned tank and a crew squad on the map.
     assert_eq!(scripted(2, Some(30 * 6)), one, "save/load mid-exit");
     assert_eq!(scripted(1, Some(30 * 9)), one, "save/load while walking");
+    assert_eq!(scripted(3, Some(30 * 11)), one, "save/load while boarding");
 }
