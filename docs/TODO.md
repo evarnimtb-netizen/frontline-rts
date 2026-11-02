@@ -732,6 +732,76 @@ Q21 (B). Work proceeds on (A) of each question below.
   at why bigger squads lose three times as many men per HE round in the
   trench in S5. (B) Raise the limit or scale it with squad size now.
 
+## S5a-ammo (in progress, branch `s5a-ammo`; owner questions open)
+
+Spec: `docs/slices/S5a-ammo.md` (baseline, code map, data model, sim rules,
+saves, AI, HUD, content with sources, targets, Part A / Part B). Takes
+S4-42 (Panzerfaust ambush hold, T12) and S4-47 (armour-test case 9 at the
+default 5 seeds, a done-when of S5a) into the slice. S5b (FireMission,
+observer, ranging, map fire, charges, 5-man mortars) is not part of it.
+Work proceeds on (A) of each question below.
+
+- [ ] **S5a-1. Price keys.** (A) Whole-number keys per tonne
+  (`small_arms_mp_per_t` 200, `explosives_mp_per_t` 500, `shell_mp_per_t`
+  1000): D1's 0.2 / 0.5 / 1.0 per kg, as every other rules value is a whole
+  number. (B) Decimal keys per kg as in the design docs.
+- [ ] **S5a-2. Ammo ids by packaging.** (A) One cartridge id per cartridge and
+  packaging (7.92 clip vs belt; .30-06 clip, BAR magazine, belt): rifle clips
+  do not feed an MG; belts reach the gun through the slots that carry them.
+  (B) One id per cartridge.
+- [ ] **S5a-3. Supply weight.** (A) Grams per round including its share of
+  clip, belt and box. (B) Bare round weight.
+- [ ] **S5a-4. "Unless ordered".** (A) Per-man fire mode with a new `SetFire`
+  command (discipline / at will / hold), `PROTOCOL_VERSION` 7; the AI ambush
+  uses `hold`. (B) No command: only Suppress fires beyond 70 %; the ambush
+  uses an AI-only flag.
+- [ ] **S5a-5. Rockets.** (A) AT rockets stay a team count on the launcher,
+  priced per rocket. (B) Per man.
+- [ ] **S5a-6. Crew feed.** (A) A crew weapon reloads directly from a
+  squadmate within 5 m (assistant, bearer first). (B) Only through the 5 s
+  sharing pass.
+- [ ] **S5a-7. Base clients.** (A) The base serves every man in it at per-man
+  rates. (B) A client cap (6 per 500 ms) as the HQ will have.
+- [ ] **S5a-8. Payment granularity.** (A) Whole manpower taken one at a time
+  as prepaid credit; the fraction is kept for the next round, never lost,
+  never debt. (B) Whole-MP batches only.
+- [ ] **S5a-9. Panzer IV APCR.** (A) `rare_cap` 3 and 3 PzGr 40 (vehicles.md
+  §6.11); was 6 (S3b-7 (A)). (B) Keep 6.
+- [ ] **S5a-10. Stowage split.** (A) Panzer IV 42 PzGr 39 / 42 Sprgr 34 / 3
+  PzGr 40 (87); Sherman dry 35 M61 / 62 M48 (97); no smoke (Q5 (A)). (B) A
+  sourced loading list.
+- [ ] **S5a-11. M1919A4 belt.** (A) 250 rounds (the real belt; was 125) with
+  bursts. (B) Keep 125.
+- [ ] **S5a-12. Grenadiergruppe (Panzerfaust) card.** (A) Not added: the S4
+  Grenadiergruppe already carries two tubes and tube count was not the limit.
+  (B) Add it (340 MP, 3 tubes).
+- [ ] **S5a-13. Panzerfaust 100.** (A) Not in S5a. (B) Add it from 1944-11.
+- [ ] **S5a-14. VG-Sturmgruppe in the AI mix.** (A) Tag `line`, `ai_weight`
+  50. (B) A new `assault` tag with its own share.
+- [ ] **S5a-15. Captured vehicles.** (A) Refilled in the capturer's base at
+  his prices. (B) Never refilled.
+- [ ] **S5a-16. Mortar bombs in S5a.** (A) 15 per 3-man team (gunner 3, crew 6
+  each) until S5b's 5-man teams. (B) 18-20 now.
+- [ ] **S5a-17. Tank MG belts.** (A) Small-arms price, no rack factor. (B)
+  Under the rack factor too.
+- [ ] **S5a-18. Hold-fire distance.** (A) 70 % of each weapon's `range_max`.
+  (B) A per-weapon `effective_range_m` key.
+- [ ] **S5a-19. HE-share target.** (A) S5a: must not rise above the A1
+  reference (S4 mean 43.7 %); the one-third cut is judged after S5b. (B) Judge
+  the cut now.
+- [ ] **S5a-20. AI shell budget.** (A) `ai.shell_mp_max_pct` waits for S6; S5a
+  has `float_mp` and `rearm_stall_s` only. (B) Build it now.
+- [ ] **S5a-21. Faction balance levers (Tune).** (A) Data only (loads, bursts,
+  prices, card costs) to reach Germany 45-55 % on 160. (B) Allow an AI rule
+  change.
+- [ ] **S5a-22. Legacy content.** (A) A mod without `[supply]` (the frozen S3c
+  fixture) keeps unlimited rounds and free refill, so old tests stay exact.
+  (B) Refuse such mods.
+- [ ] **S5a-23. Sidearm back.** (A) Back to the main weapon at the next reload
+  once it has rounds. (B) Only when ordered.
+- [ ] **S5a-24. SMG bursts.** (A) None in S5a (magazine and reload pace them).
+  (B) 4-5-round bursts.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an
