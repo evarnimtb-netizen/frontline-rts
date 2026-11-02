@@ -546,6 +546,54 @@ follow-up. Work proceeds on (A) of each question below.
   contact rule); revisit with the spall model (behind-armour debris cone
   and its fragment count) when S4 adds new tanks. (B) Tune spall now.
 
+## S4-variants (in progress, branch `s4-variants`)
+
+Spec: `docs/slices/S4-variants.md` (baseline, code map, data model,
+migration, content with sources, Panzerfaust, AI capture, targets, Part A /
+Part B order). Takes S3c-29 (A) (Panzerfaust 60 in German line squads) and
+S3c-33 (A) (AI capture) into S4, and roadmap Q6 (A), Q7 (A), Q8 (A), Q15 (A),
+Q21 (B). Work proceeds on (A) of each question below.
+
+- [ ] **S4-1. Hash gate across Part B.** (A) Part A: setup bytes and all 40
+  match hashes equal; Part B records a new baseline at its first state change
+  and keeps every summary line except the hash equal until the content
+  switch. (B) Do not hash new fields at default values.
+- [ ] **S4-2. Legacy crew weapons.** Today's MG teams fire three MGs, every
+  mortar man carries the tube, a tank crew's SMG passes by position. (A)
+  Legacy files keep it exactly; the `ww2` content switch gives one gun plus
+  assistants, and SMGs stay with their man. (B) Keep three MGs per MG card.
+- [ ] **S4-3. MG crews.** (A) sMG-Gruppe 6, Light MG Section 5 (historical).
+  (B) The roadmap's 4 and 4.
+- [ ] **S4-4. Engineers at 8.** (A) Mostly rifles (Germany 2 MP 40 + 6
+  Kar98k; USA 1 M1 leader, 1 M3, 6 M1). (B) Keep all-SMG engineers.
+- [ ] **S4-5. Panzerfaust counts and cost.** (A) Pzf 60: 2 per
+  Grenadiergruppe, 1 per Feldstärke, +10 MP each, every lobby. (B) 3 per squad.
+- [ ] **S4-6. Panzerfaust refill.** (A) As items today, free until S5. (B) None
+  until S5.
+- [ ] **S4-7. AI capture default.** (A) On (`ai.armour.capture_m` 150) when the
+  rules allow capture; off if T1 moves > 5 points. (B) Off.
+- [ ] **S4-8. AI choice inside a tag.** (A) `ai_weight` per card. (B) Cheapest
+  ready card.
+- [ ] **S4-9. Pop of soldier cards.** (A) Always the men count. (B) Allow an
+  override.
+- [ ] **S4-10. Training in S4 content.** (A) All cards regular. (B) Feldstärke
+  conscript.
+- [ ] **S4-11. Faction-win gate.** (A) Judge T1 on 160 matches; report 40 (the
+  40 set misses at baseline: Germany 27.5 %). (B) Judge on 40.
+- [ ] **S4-12. Officer rally.** (A) Cut. (B) Keep, small and visible.
+- [ ] **S4-13. Names.** (A) Period names, English gloss in the tooltip. (B)
+  English only.
+- [ ] **S4-14. Start squads.** (A) Two full line squads and engineers. (B) Two
+  understrength line squads.
+- [ ] **S4-15. Vehicle card fields.** (A) Stay in the vehicle def; the card may
+  override. (B) Move to the card now.
+- [ ] **S4-16. Crew-weapon pickup.** (A) The picker drops his own weapon;
+  assistants and ammo bearers first. (B) Nearest man.
+- [ ] **S4-17. Two-BAR date.** (A) 1944-08 as a field-practice date
+  (unverified). (B) From 1944-06.
+- [ ] **S4-18. Tripod vs bipod MG.** (A) Tripod 600 m / 12 mrad / 6 s setup,
+  bipod 450 m / 22 mrad / 1 s. (B) One MG 42 def.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an
