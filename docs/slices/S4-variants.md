@@ -949,11 +949,59 @@ S3c (it wants 75 %), so it moves further from its threshold.
   the Panzerfaust 100 (S5 list). Recorded as S4-36 and S4-37 in
   `docs/TODO.md`.
 
+
+### 40-set hashes after Tune (`5cc1a80`, new baseline for later slices)
+
+The Part B hashes above in this document's appendix are for `63c3e36`; these are the shipped S4 content. Same columns (seed, bases, winner, length, final hash).
+
+| seed | bases | winner | length | final hash |
+|---|---|---|---|---|
+| 1 | normal | ww2:usa | 27:30 | 0x505ade74b85d113a |
+| 1 | swapped | ww2:usa | 24:31 | 0x6f17475350e0761a |
+| 2 | normal | ww2:usa | 12:37 | 0xb31a3d59c6983df9 |
+| 2 | swapped | ww2:usa | 20:15 | 0x79b8987c5d8ceb61 |
+| 3 | normal | ww2:usa | 19:46 | 0xf8a2283f92c6abd0 |
+| 3 | swapped | ww2:usa | 14:06 | 0x69691e68f086a6a7 |
+| 4 | normal | ww2:usa | 15:05 | 0xa0765b12d0923b36 |
+| 4 | swapped | ww2:usa | 17:19 | 0x98ec36eeba0e066c |
+| 5 | normal | ww2:germany | 19:55 | 0x088708bb10071954 |
+| 5 | swapped | ww2:germany | 14:36 | 0xc6791c1f362714cf |
+| 6 | normal | ww2:germany | 17:01 | 0xf5b5e878a7eb44c3 |
+| 6 | swapped | ww2:germany | 17:47 | 0x0d8cea3bdf150b91 |
+| 7 | normal | ww2:usa | 18:35 | 0x36cdf9acb27f7fce |
+| 7 | swapped | ww2:germany | 25:01 | 0xf0ffd0d21c65ffc4 |
+| 8 | normal | ww2:usa | 17:36 | 0xa2022ed063355e83 |
+| 8 | swapped | ww2:usa | 15:02 | 0xa4d86285d5cab5f1 |
+| 9 | normal | ww2:usa | 17:17 | 0x334dd8672d0634bb |
+| 9 | swapped | ww2:germany | 13:28 | 0x48c1add2973ff5fd |
+| 10 | normal | ww2:germany | 14:55 | 0xfa371b7021e6c886 |
+| 10 | swapped | ww2:germany | 15:24 | 0x8d0e8fd9290f385f |
+| 11 | normal | ww2:usa | 22:53 | 0xcd727f097b8f0a5a |
+| 11 | swapped | ww2:germany | 13:38 | 0x753aeef7572fea36 |
+| 12 | normal | ww2:usa | 17:36 | 0x0851ad8051f2db21 |
+| 12 | swapped | ww2:usa | 12:46 | 0x4158c4b929377772 |
+| 13 | normal | ww2:usa | 13:00 | 0x06e5d951b4063d20 |
+| 13 | swapped | ww2:germany | 16:56 | 0xffc612dfddd0063f |
+| 14 | normal | ww2:usa | 25:38 | 0xdffa782a6e4c1fa1 |
+| 14 | swapped | ww2:germany | 14:04 | 0x1befd4fde3103899 |
+| 15 | normal | ww2:germany | 19:19 | 0x14dc993fed5c9db3 |
+| 15 | swapped | ww2:usa | 24:43 | 0xc3198886bc4acbee |
+| 16 | normal | ww2:germany | 18:25 | 0xd303bbe8c8e376b7 |
+| 16 | swapped | ww2:germany | 22:05 | 0x5bc4c6489388f906 |
+| 17 | normal | ww2:germany | 15:02 | 0x4a5c613ad8a9a5ec |
+| 17 | swapped | ww2:usa | 15:34 | 0x2d71dafa009ea2ac |
+| 18 | normal | ww2:germany | 13:48 | 0xdb0ef258c0753039 |
+| 18 | swapped | ww2:usa | 23:08 | 0x7129d214800a4527 |
+| 19 | normal | ww2:usa | 12:20 | 0x7a02337456df681c |
+| 19 | swapped | ww2:usa | 16:29 | 0x32de4649250096b2 |
+| 20 | normal | ww2:usa | 14:35 | 0x8d711e27751a7d78 |
+| 20 | swapped | ww2:usa | 18:43 | 0xbc87519041fc7b10 |
+
 ### Scratch
 
 Overrides, outputs and digests: `.../scratchpad/s4/tune/` (`go.sh`,
 `go2.sh` mirror runs, `sum.sh`, `sub.py` 40-set subset of a 160 run),
-`tune1_40.txt`, `tune1_fortify.txt`, `tune1_armour.txt`, `tune1_test.txt`.
+`tune1_40b.txt` (the 40-set of `5cc1a80`; `tune1_40.txt` is the same run from a build with an unused extra rules field: equal except the hashes), `tune1_fortify.txt`, `tune1_armour.txt`, `tune1_test.txt`.
 
 ## Slice log
 
