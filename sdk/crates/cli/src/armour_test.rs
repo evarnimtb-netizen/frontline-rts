@@ -2232,14 +2232,16 @@ fn abandon_cause(w: &World, v: SimId) -> Option<u8> {
 /// (a) an ammo fire: every man out before the burn-out, one by hatch;
 /// (b) crew losses to two and (c) gun and track out: the crew bail out;
 /// (d) the crew squad re-crews its tank; (e) riflemen re-crew it,
-/// untrained (reload measured); (f) an enemy squad captures it with
-/// `capture` on and is refused with it off. Hard checks for the
+/// untrained (reload measured); (f) enemy riflemen capture it with
+/// `capture` on and `capture_needs_crew` off, and are refused with
+/// `capture` off or `capture_needs_crew` on. Hard checks for the
 /// mechanics, report rows for the timings.
 fn case15(env: &Env) -> Result<CaseReport> {
     use frontline_content::SquadRole;
     let mut r = CaseReport::new(15, "bail-out, abandoned tanks, re-crew and capture");
     let (mut a_ok, mut b_ok, mut c_ok, mut d_ok, mut e_ok, mut f_ok, mut f_off) =
         (0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+    let mut f_crew = 0u32;
     let (mut first_out, mut last_out, mut recrew_t) = (Vec::new(), Vec::new(), Vec::new());
     let (mut reload_trained, mut reload_untrained) = (0u64, 0u64);
     let tank = |w: &mut World, p: u8, x: i32, f: FxVec2| -> Result<(SquadId, SimId)> {
@@ -2354,9 +2356,13 @@ fn case15(env: &Env) -> Result<CaseReport> {
             reload_untrained += rl as u64;
             e_ok += (vs.seats.iter().all(|s| s.hp > 0 && s.untrained) && rl > reload0) as u32;
         }
-        // (f) An enemy squad captures it (capture on), or is refused (off).
-        for capture in [1u32, 0] {
-            let mut w = stage15(env, seed, |s| s.rules.vehicles.recrew.capture = capture)?;
+        // (f) Enemy riflemen capture it (capture on, `capture_needs_crew`
+        // off), or are refused (capture off; or a crew needed).
+        for (capture, needs_crew) in [(1u32, 0u32), (0, 0), (1, 1)] {
+            let mut w = stage15(env, seed, |s| {
+                s.rules.vehicles.recrew.capture = capture;
+                s.rules.vehicles.recrew.capture_needs_crew = needs_crew;
+            })?;
             let (sq, v) = tank(&mut w, p, 500, face)?;
             order(&mut w, p, vec![CommandKind::Abandon { squad: sq }]);
             until(&mut w, 10, |w| {
@@ -2385,6 +2391,15 @@ fn case15(env: &Env) -> Result<CaseReport> {
                     as u32;
                 continue;
             }
+            if needs_crew == 1 {
+                f_crew += w
+                    .snapshot()
+                    .recrew_refusals
+                    .iter()
+                    .any(|x| x.why == frontline_sim::RecrewRefusal::CaptureNeedsCrew)
+                    as u32;
+                continue;
+            }
             if until(&mut w, 60, |w| kind(w, v) == EntityKind::Vehicle).is_some() {
                 f_ok += (w.entities().owner()[v.index()].0 == q
                     && w.game().expect("match").players()[q as usize].crew.captured == 1)
@@ -2405,6 +2420,10 @@ fn case15(env: &Env) -> Result<CaseReport> {
         ("e riflemen re-crew it, untrained, slower reload", e_ok),
         ("f an enemy squad captures it with capture on", f_ok),
         ("f with capture off the enemy is refused", f_off),
+        (
+            "f with capture_needs_crew enemy riflemen are refused",
+            f_crew,
+        ),
     ] {
         let (pass, detail) = all(k);
         r.check(name, pass, detail);
