@@ -102,10 +102,19 @@ with `crew_weapon = true`; by default every `mg`, `mortar` and `launcher`
 class weapon) are picked up: when the carrier falls, after the weapon's
 `handover_ms` the nearest living man of his squad who carries no crew
 weapon takes it (`crew_assistant` and `ammo_bearer` men first, then the
-nearest, ties by id); he drops his own weapon. Other weapons stay with the
+nearest, ties by id); he drops his own weapon. Only men within the rules'
+`items.crew_pickup_reach_m` (30 m) of the weapon take it; otherwise it
+waits where it fell until one comes near. Other weapons stay with the
 man who carried them (a tank crew's SMG is not passed on). The man firing a
 mortar is the first one in formation order who carries it. The squad's
 focus range is its longest-reaching non-crew weapon (S4-23).
+
+**Launchers** (S4 review): a squad has one launcher carrier, and the
+launcher must be its main weapon (the first crew weapon among the members,
+so a launcher slot goes before any MG or mortar slot). Two launcher men,
+or a launcher behind an MG, is an error: the second man would never fire.
+Put a second launcher in its own AT team. Crew squads (tag `crew`) carry
+no launcher; a Panzerfaust (single-shot AT item) is allowed.
 
 **Legacy squads** expand into slots when they load, so every card has
 `members` afterwards:
@@ -116,6 +125,8 @@ focus range is its longest-reaching non-crew weapon (S4-23).
 | `weapon` | `weapon_men` − 1 | `weapon` | each item's `count` |
 | `sidearm` | `men` − `weapon_men` | `sidearm` | each item's `count` |
 
+A legacy launcher squad (`weapon` is a launcher) has one launcher man
+whatever `weapon_men` says; the others carry `sidearm` (the S3 rule).
 Without `sidearm` every man carries `weapon`. That is the S1-S3c
 behaviour: a legacy MG team fields three MGs and every mortar man carries
 the tube (a fallen man's gun is then lost: nobody without a crew weapon is
@@ -176,6 +187,9 @@ mortar `mortar`, anti_tank `at`, vehicle `vehicle`, crew `crew`.
 | `vehicle_crew` | trained crew (capture, dismissal in base) | crew |
 | `at_hunt` | AT hunts | always derived: a member with a launcher |
 
+The tag `crew` and the capability `vehicle_crew` go together: a crew
+squad has both, any other squad neither (the sim keys crew rules on the
+capability, the vehicle's `crew_squad` check on the tag).
 `dig_basic` and `dig_full` need `dig_rate_pct > 0`. Setting `barrage` or
 `at_hunt` without the weapon is an error. Reserved for later slices, and
 refused with a hint: `build_structure`, `build_heavy`, `place_wire`,

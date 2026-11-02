@@ -53,8 +53,10 @@ use crate::fx::{Fx, FxVec2};
 use crate::game::{Ctx, MatchState, NavPhase, Order, OrderKind, PathReq, SquadId};
 use crate::squad::{self, assign_by_axis, line_slots, point_along, polyline_length};
 
-/// Most ids in one soldier-level command.
-pub const MAX_UNITS: usize = 120;
+/// Most ids in one soldier-level command. S4 (review M4): 150, the shipped
+/// pop cap, so a select-all order is one command; the bridge splits larger
+/// selections (mod pop caps) into commands of this size.
+pub const MAX_UNITS: usize = 150;
 // S3b: a detached man's waypoint reach and arrival timeout are the rules'
 // `[movement.formation]` values (shared with squads).
 

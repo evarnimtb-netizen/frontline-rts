@@ -356,6 +356,8 @@ pub struct ItemRulesSetup {
     /// S4: a squad fires at most one single-shot AT item (Panzerfaust)
     /// this often.
     pub single_shot_gap_ticks: u32,
+    /// S4: crew-weapon pickup reach (m; `items.crew_pickup_reach_m`).
+    pub crew_pickup_reach_m: u32,
     /// S3b tuning table (TOML units).
     pub throw: ThrowTuning,
 }
@@ -816,9 +818,9 @@ pub struct SquadTypeSetup {
     /// vehicle's main gun; else the first crew weapon among the members
     /// (launcher, mortar, MG), else the leader's weapon.
     pub weapon: u16,
-    /// S4: the focus weapon (squad focus range): the most numerous
+    /// S4: the focus weapon (squad focus range): the longest-reaching
     /// non-crew weapon among the members (ties: the earlier slot), else
-    /// `weapon`.
+    /// `weapon` (S4-23).
     pub small_arms: u16,
     /// S4: which item of each kind the men carry (index into
     /// [`MatchSetup::items`] by [`ItemKind::index`]).
@@ -1449,6 +1451,7 @@ impl ModDefs {
                 items: ItemRulesSetup {
                     resupply_ticks: rules.items.resupply_s * hz,
                     single_shot_gap_ticks: rules.items.single_shot_gap_s * hz,
+                    crew_pickup_reach_m: rules.items.crew_pickup_reach_m,
                     throw: rules.items.throw.clone(),
                 },
                 vehicles: {
@@ -2064,6 +2067,11 @@ impl MatchSetup {
         check(
             r.items.single_shot_gap_ticks <= 600 * 30,
             "rules.items.single_shot_gap_ticks",
+            "out of range",
+        );
+        check(
+            (1..=1_000).contains(&r.items.crew_pickup_reach_m),
+            "rules.items.crew_pickup_reach_m",
             "out of range",
         );
         check(

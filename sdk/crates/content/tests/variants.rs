@@ -405,6 +405,65 @@ weapon = "ww2:m1_garnd"
     );
 }
 
+/// S4 review M1-M3: cards the sim would run wrongly (idle launcher men,
+/// crews whose saves cannot load) are refused with actionable errors.
+#[test]
+fn launcher_and_crew_cards_the_sim_cannot_run_are_refused() {
+    const HEAD: &str = "id = \"ww2:zz_variant\"\nname = \"X\"\nfaction = \"ww2:germany\"\n\
+                        speed_cm_s = 300\nsight_m = 150\nspacing_dm = 30\n";
+    let card = |tags: &str, caps: &str, members: &str| {
+        format!("{HEAD}tags = [{tags}]\ncapabilities = [{caps}]\n{members}")
+    };
+    let slot = |name: &str, n: u8, w: &str| {
+        format!("[[members]]\nslot = \"{name}\"\ncount = {n}\nweapon = \"{w}\"\n")
+    };
+    let lead = "[[members]]\nslot = \"leader\"\nweapon = \"ww2:kar98k\"\ntraits = [\"leader\"]\n";
+    // A launcher man behind the MG: never the main weapon.
+    let text = card(
+        "\"line\"",
+        "\"recrew\"",
+        &format!(
+            "{lead}{}{}",
+            slot("mg", 1, "ww2:mg42"),
+            slot("at", 1, "ww2:rpzb54")
+        ),
+    );
+    let e = errors(load_with("m3_main", &[(UNIT, &text)]));
+    assert!(
+        e.contains("a launcher must be the squad's main weapon"),
+        "{e}"
+    );
+    // Two launcher men: one carrier only.
+    let text = card(
+        "\"at\"",
+        "",
+        &format!(
+            "{}{}",
+            slot("at", 2, "ww2:rpzb54"),
+            slot("r", 1, "ww2:kar98k")
+        ),
+    );
+    let e = errors(load_with("m3_two", &[(UNIT, &text)]));
+    assert!(e.contains("2 men carry a launcher"), "{e}");
+    // A crew without `vehicle_crew`, and a crew with a launcher.
+    let text = card("\"crew\"", "\"recrew\"", &slot("c", 3, "ww2:p38"));
+    let e = errors(load_with("m2_crew", &[(UNIT, &text)]));
+    assert!(
+        e.contains("the tag `crew` and the capability `vehicle_crew` go together"),
+        "{e}"
+    );
+    let text = card("\"line\"", "\"vehicle_crew\"", &slot("c", 3, "ww2:kar98k"));
+    let e = errors(load_with("m2_cap", &[(UNIT, &text)]));
+    assert!(e.contains("go together"), "{e}");
+    let text = card(
+        "\"crew\"",
+        "\"vehicle_crew\"",
+        &format!("{}{}", slot("c", 1, "ww2:rpzb54"), slot("d", 2, "ww2:p38")),
+    );
+    let e = errors(load_with("m1_crew", &[(UNIT, &text)]));
+    assert!(e.contains("a crew squad cannot carry a launcher"), "{e}");
+}
+
 #[test]
 fn training_profiles_and_rules_keys_are_checked() {
     let e = errors(load_with(

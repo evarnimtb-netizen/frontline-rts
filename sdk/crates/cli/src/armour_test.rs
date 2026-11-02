@@ -2450,8 +2450,11 @@ fn case15(env: &Env) -> Result<CaseReport> {
 // ----------------------------------------------------------- case 16 --
 
 /// S4 (B7): a German Grenadiergruppe (two Panzerfaust 60s) against a
-/// Sherman `d` m east of its line, the tank standing or driving across
-/// (40 m and 60 m, still and moving); per run 60 s. Hard: no Panzerfaust is
+/// Sherman `d` m east of its first Panzerfaust carrier (S4 review: from the
+/// carrier, not the squad anchor, whose men stand off to the side), the
+/// tank standing or driving across (40 and 55 m still, inside the 60 m
+/// still reach; 35 m moving, inside the 40 m moving reach; 55 m moving,
+/// beyond it); per run 60 s. Hard: no Panzerfaust is
 /// fired beyond the weapon's engagement distance for the tank's motion
 /// (`engage_still` 60 m, `engage_moving` 40 m; +2 m for one tick of tank
 /// travel), and every Panzerfaust round that hits the tank is a physical
@@ -2460,11 +2463,11 @@ fn case15(env: &Env) -> Result<CaseReport> {
 fn case16(env: &Env) -> Result<CaseReport> {
     let mut r = CaseReport::new(
         16,
-        "Grenadiergruppe Panzerfausts vs a Sherman, 40 / 60 m, still / moving",
+        "Grenadiergruppe Panzerfausts vs a Sherman, 40 / 55 m still, 35 / 55 m moving",
     );
     let mut far = 0u32;
     let mut stray = 0u32;
-    for (d, moving) in [(40, false), (60, false), (40, true), (60, true)] {
+    for (d, moving) in [(40, false), (55, false), (35, true), (55, true)] {
         let (mut fired, mut hits, mut pens, mut dis, mut runs) = (0u32, 0u64, 0u64, 0u32, 0u32);
         for &seed in &env.seeds {
             let mut setup = env.setup(seed)?;
@@ -2498,8 +2501,16 @@ fn case16(env: &Env) -> Result<CaseReport> {
             let Some(gsq) = w.spawn_squad_at(PlayerId(0), g, at(x, LANE_Y), east) else {
                 return Err(anyhow!("could not place the Grenadiergruppe"));
             };
-            let y0 = if moving { LANE_Y - 70 } else { LANE_Y };
-            let Some(tsq) = w.spawn_squad_at(PlayerId(1), sh, at(x + d, y0), north) else {
+            // The first man with a Panzerfaust: the tank's distance is
+            // from him.
+            let carrier = members(&w, gsq)
+                .into_iter()
+                .find(|m| w.entities().kit()[m.index()].items[ItemKind::SingleShotAt.index()] > 0)
+                .ok_or_else(|| anyhow!("no Panzerfaust carrier"))?;
+            let c_at = pos(&w, carrier);
+            let (cx, cy) = (c_at.x.round_int(), c_at.y.round_int());
+            let y0 = if moving { cy - 70 } else { cy };
+            let Some(tsq) = w.spawn_squad_at(PlayerId(1), sh, at(cx + d, y0), north) else {
                 return Err(anyhow!("could not place the Sherman"));
             };
             let tank = members(&w, tsq)[0];
@@ -2511,7 +2522,7 @@ fn case16(env: &Env) -> Result<CaseReport> {
                     1,
                     vec![CommandKind::Move {
                         squad: tsq,
-                        target: at(x + d, LANE_Y + 90),
+                        target: at(cx + d, cy + 90),
                     }],
                 );
             }

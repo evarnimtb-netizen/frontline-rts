@@ -122,12 +122,16 @@ fn a_variant_of_extends_and_members_is_called_in_fights_and_picks_up_its_mg() {
     }
     w.kill_soldier(gunner);
     let losses = |w: &World, p: usize| w.game().unwrap().players()[p].losses;
+    // S4 review L4: the test's own kill counts as a German loss; the fight
+    // must take more than that.
+    let staged = losses(&w, 0);
     let alive = |w: &World, q: SquadId| w.game().unwrap().squad(q).is_some();
     let mut picked = false;
     // S4 Tune: the fight is over once the MG changed hands and men fell on
     // both sides, or one squad is gone (the ridge moved 12 m in the Tune; a
     // lone survivor out of the other squad's sight can outlast any limit).
-    while alive(&w, id) && alive(&w, us) && !(picked && losses(&w, 0) > 0 && losses(&w, 1) > 0) {
+    while alive(&w, id) && alive(&w, us) && !(picked && losses(&w, 0) > staged && losses(&w, 1) > 0)
+    {
         w.step(&[]);
         picked |= alive(&w, id) && weapon(&w, assistant) == "ww2:mg42_bipod";
         assert!(w.tick() < 30 * 300, "the fight never ended");
@@ -135,5 +139,5 @@ fn a_variant_of_extends_and_members_is_called_in_fights_and_picks_up_its_mg() {
     assert!(picked, "the crew assistant never had the MG");
     assert!(w.game().unwrap().players()[0].s4.pickups >= 1);
     // The fight itself is what T9 asks for: men fell on both sides.
-    assert!(losses(&w, 0) > 0 && losses(&w, 1) > 0);
+    assert!(losses(&w, 0) > staged && losses(&w, 1) > 0);
 }

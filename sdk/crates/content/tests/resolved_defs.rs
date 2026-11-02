@@ -72,17 +72,21 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 /// 0x423d6bd094b287d8, 0x8b78652432150cb0, 0x5871bd969965f5a6,
 /// 0x59a3d2447901500a, 0x35fe520d10f8ce52); Part B (B1) changed the setup
 /// layout on purpose (members, tags, capabilities, training, card limits,
-/// the AI mix by tag, the fourth item kind), and these are its values. The
+/// the AI mix by tag, the fourth item kind). The S4 Fix stage added one
+/// rules field to the setup (`items.crew_pickup_reach_m`, default 30 m,
+/// review L5); the Part B values were 0x61dcc7e06ca47ff6,
+/// 0xe66560dffba1e680, 0xe1faafbe66546d9f, 0x61dcc7e06ca47ff6,
+/// 0x609ba8ba1224583f, 0x672de1cdc6cb85c6, and these are the new ones. The
 /// live `mods/ww2` is guarded by the canonical snapshot instead.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x61dcc7e06ca47ff6),
-    ("skirmish usa-ger seed 7 hard", 0xe66560dffba1e680),
-    ("test_unlock ger-usa seed 1 normal", 0xe1faafbe66546d9f),
-    ("example override ger-usa seed 1 normal", 0x61dcc7e06ca47ff6),
-    ("human ger vs ai usa seed 3 easy", 0x609ba8ba1224583f),
+    ("skirmish ger-usa seed 1 normal", 0x10e500c23953fb93),
+    ("skirmish usa-ger seed 7 hard", 0x3689d883fe85dd98),
+    ("test_unlock ger-usa seed 1 normal", 0xe43938148a1d867e),
+    ("example override ger-usa seed 1 normal", 0x10e500c23953fb93),
+    ("human ger vs ai usa seed 3 easy", 0xdc46d00b47f91e5c),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x672de1cdc6cb85c6,
+        0xb73ebf70d33b818b,
     ),
 ];
 

@@ -1013,6 +1013,7 @@
       "hash_interval": 30,
       "id": "ww2:skirmish",
       "items": {
+        "crew_pickup_reach_m": 30,
         "resupply_s": 20,
         "single_shot_gap_s": 3,
         "throw": {
@@ -1353,7 +1354,8 @@
       "sight_m": 150,
       "sources": [
         "Wikipedia, MG 42 (squad organisation)",
-        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)"
+        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944; VG variant, S5)",
+        "miniatures.de, German Infantry Section 1937 (MG team pistols)"
       ],
       "spacing_dm": 30,
       "speed_cm_s": 300,
@@ -1438,11 +1440,12 @@
       "name": "Grenadiergruppe (Feldstärke)",
       "recall_cooldown_s": 0,
       "role": "rifle",
-      "short_name": "Grenadiere 7",
+      "short_name": "Gren. (F)",
       "sight_m": 150,
       "sources": [
         "Wikipedia, MG 42 (squad organisation)",
-        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)"
+        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944; VG variant, S5)",
+        "miniatures.de, German Infantry Section 1937 (MG team pistols)"
       ],
       "spacing_dm": 30,
       "speed_cm_s": 300,
@@ -2095,7 +2098,7 @@
       "name": "Rifle Squad (two BARs)",
       "recall_cooldown_s": 0,
       "role": "rifle",
-      "short_name": "Rifle Sq 2BAR",
+      "short_name": "Rifle 2BAR",
       "sight_m": 150,
       "sources": [
         "Wikipedia, M1918 Browning Automatic Rifle (two BAR teams per squad, 1944-45)"
@@ -2186,7 +2189,7 @@
       "name": "Rifle Squad (understrength)",
       "recall_cooldown_s": 0,
       "role": "rifle",
-      "short_name": "Rifle Squad 9",
+      "short_name": "Rifle Sq (U)",
       "sight_m": 150,
       "sources": [
         "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)"

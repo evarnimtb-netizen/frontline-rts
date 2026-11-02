@@ -90,7 +90,7 @@ new ones are listed in §2.4.
 
 | Unit (in-game name) | Men | Weapons | Role | From | Notes |
 |---|---|---|---|---|---|
-| **Grenadiergruppe** | 9–10 (verify) | Gruppenführer MP 40; MG 42 on bipod (Schütze 1) + 2 MG assistants (Kar98k, belts); 5–6 Kar98k, maybe one G 43 | Line rifle squad built around its lMG | base | Replaces today's 8 × Kar98k. 1–2 Stielhandgranaten each; Panzerfaust optional per §2.4 |
+| **Grenadiergruppe** | 9–10 (verify) | Gruppenführer MP 40; MG 42 on bipod (Schütze 1) + 2 MG assistants (S4: Schütze 2 P 38, Schütze 3 Kar98k; the VG table's Kar98k for Schütze 2 is the S5 VG squad); 5–6 Kar98k, maybe one G 43 | Line rifle squad built around its lMG | base | Replaces today's 8 × Kar98k. 1–2 Stielhandgranaten each; Panzerfaust optional per §2.4 |
 | **Grenadiergruppe (Feldstärke)** | 6–7 | as above | Cheaper understrength variant | base | Same file via `extends`, fewer members, lower cost |
 | **Volksgrenadier-Sturmgruppe** | 8–9 (verify) | StG 44 for most men; leader StG 44 | Assault section, strong at 50–150 m | 1944-09 | Two of three platoons of a VG rifle company had StG 44 (verify). Conscript training profile (§3.2) |
 | **Panzergrenadiergruppe (gp.)** | 10 + vehicle | 2 MG 42 (one stays on the Sd.Kfz. 251), Kar98k, MP 40 | Mechanised squad that rides its half-track | base | Needs the vehicle area's Sd.Kfz. 251; squad + vehicle as one call-in |

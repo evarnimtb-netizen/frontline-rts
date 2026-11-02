@@ -256,7 +256,7 @@ func update_state(s: Dictionary) -> void:
 		var id: int = sq.id
 		squads_by_id[id] = sq
 		if not _squad_no.has(id):
-			var key := "%d:%s" % [int(sq.owner), sq.type]
+			var key := _squad_key(sq)
 			_type_count[key] = int(_type_count.get(key, 0)) + 1
 			_squad_no[id] = _type_count[key]
 		var sp: Variant = sq.get("screen")
@@ -548,6 +548,12 @@ func squad_type(squad_id: int) -> String:
 	return String(squads_by_id.get(squad_id, {}).get("type", ""))
 
 
+## Numbering key of a squad: its owner and card (short name), else role.
+func _squad_key(sq: Dictionary) -> String:
+	var short := String(sq.get("short", ""))
+	return "%d:%s" % [int(sq.owner), short if short != "" else String(sq.type)]
+
+
 ## Card label: short type name, numbered when the side has had several of
 ## that type ("Rifle 2"). Numbers are given in order of first sighting and
 ## never reused, so a card keeps its name when another squad dies.
@@ -555,8 +561,10 @@ func squad_label(squad_id: int, long := false) -> String:
 	var sq: Dictionary = squads_by_id.get(squad_id, {})
 	if sq.is_empty():
 		return ""
-	var base: String = SHORT_NAMES.get(sq.type, sq.get("name", sq.type))
-	var key := "%d:%s" % [int(sq.owner), sq.type]
+	# S4 review: the card's short name when the bridge sends one
+	# ("Grenadiere 2"), else the role word ("Rifle 2").
+	var base: String = String(sq.get("short", "")) if String(sq.get("short", "")) != "" else SHORT_NAMES.get(sq.type, sq.get("name", sq.type))
+	var key := _squad_key(sq)
 	var label := "%s %d" % [base, _squad_no.get(squad_id, 1)] if int(_type_count.get(key, 0)) > 1 else base
 	# Long form: the card's label first, so card and detail panel name the
 	# squad the same way, then the unit's own name ("Rifle 1 · Schützengruppe").

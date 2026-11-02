@@ -349,7 +349,12 @@ fn finish_unit(
 ) -> Vec<Issue> {
     let mut out = Vec::new();
     if s.role != SquadRole::Vehicle && s.members.is_empty() {
-        s.members = expand_legacy(s);
+        // A legacy launcher squad: one man carries the launcher, the rest
+        // the sidearm, whatever `weapon_men` says (the S3 `weapon_of`).
+        let launcher = weapons
+            .get(&s.weapon)
+            .is_some_and(|w| w.class == WeaponClass::Launcher);
+        s.members = expand_legacy(s, launcher);
     }
     if s.tags.is_empty() {
         s.tags = vec![role_tag(s.role).to_owned()];
@@ -393,6 +398,23 @@ fn finish_unit(
         }
     }
     canonical_capabilities(&mut s.capabilities);
+    // S4 review M2: the sim keys crew rules (crew squad link, dismissal in
+    // base, capture) on `vehicle_crew`, the content checks on the tag.
+    let crew_tag = s.has_tag("crew");
+    if s.role != SquadRole::Vehicle && crew_tag != s.has_capability("vehicle_crew") {
+        out.push(
+            Issue::new(
+                "capabilities",
+                "the tag `crew` and the capability `vehicle_crew` go together (a crew squad has \
+                 both, other squads neither)",
+            )
+            .with_hint(if crew_tag {
+                "add \"vehicle_crew\" to capabilities"
+            } else {
+                "remove \"vehicle_crew\", or add \"crew\" to tags"
+            }),
+        );
+    }
     if s.role != SquadRole::Vehicle {
         s.cooldown_s = Some(s.card_cooldown_s());
         s.unlock_s = Some(s.card_unlock_s());
@@ -1227,8 +1249,16 @@ impl ModDefs {
         }
         let mut mortar = false;
         let mut launcher = false;
+        let mut launcher_men = 0u32;
         for (i, m) in s.members.iter().enumerate() {
             let p = format!("members[{i}]");
+            if self
+                .weapons
+                .get(&m.weapon)
+                .is_some_and(|w| w.class == WeaponClass::Launcher)
+            {
+                launcher_men += m.count as u32;
+            }
             match self.weapons.get(&m.weapon) {
                 None => out.push(Issue::new(
                     at(format!("{p}.weapon")),
@@ -1299,6 +1329,57 @@ impl ModDefs {
                 at("members".into()),
                 "a mortar squad needs a member with a mortar weapon",
             ));
+        }
+        // S4 review M3: the sim fires a squad's launcher through one
+        // carrier, and only when the launcher is the main weapon (the first
+        // crew weapon among the members, else the leader's weapon).
+        if launcher {
+            let crew = |w: &str| self.weapons.get(w).is_some_and(|d| d.is_crew_weapon());
+            let main = s
+                .members
+                .iter()
+                .map(|m| m.weapon.as_str())
+                .find(|w| crew(w))
+                .or_else(|| s.members.first().map(|m| m.weapon.as_str()));
+            let main_launcher = main
+                .and_then(|w| self.weapons.get(w))
+                .is_some_and(|w| w.class == WeaponClass::Launcher);
+            if launcher_men > 1 {
+                out.push(
+                    Issue::new(
+                        at("members".into()),
+                        format!(
+                            "{launcher_men} men carry a launcher; a squad has one launcher \
+                             carrier (the others would never fire)"
+                        ),
+                    )
+                    .with_hint("give one member the launcher and the rest a rifle or pistol"),
+                );
+            }
+            if !main_launcher {
+                out.push(
+                    Issue::new(
+                        at("members".into()),
+                        "a launcher must be the squad's main weapon (the first crew weapon among \
+                         the members); here another crew weapon comes first, so the launcher \
+                         man would never fire",
+                    )
+                    .with_hint(
+                        "move the launcher slot before the MG or mortar slot, or use a separate \
+                         AT team",
+                    ),
+                );
+            }
+            if s.has_tag("crew") {
+                out.push(
+                    Issue::new(
+                        at("members".into()),
+                        "a crew squad cannot carry a launcher (crews that bail out start \
+                         without launcher state)",
+                    )
+                    .with_hint("remove the launcher from the crew card"),
+                );
+            }
         }
         if s.role == SquadRole::AntiTank && !launcher {
             out.push(Issue::new(

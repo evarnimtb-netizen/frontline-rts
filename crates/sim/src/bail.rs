@@ -640,7 +640,7 @@ impl MatchState {
                         focus: None,
                         launcher: None,
                         drops: Vec::new(),
-                        pzf: None,
+                        pzf: crate::game::SingleShot::for_type(&s.squad_types[crew_type as usize]),
                     },
                 );
                 q

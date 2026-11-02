@@ -213,7 +213,11 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
     assert!(!order(
         &mut w,
         0,
-        throw(vec![men[4]; 121], ItemKind::Frag, target)
+        throw(
+            vec![men[4]; frontline_sim::MAX_UNITS + 1],
+            ItemKind::Frag,
+            target
+        )
     ));
     let enemy = members(&w, squads(&w, 1, "ww2:usa_rifle_squad")[0]);
     assert!(!order(&mut w, 0, throw(enemy, ItemKind::Frag, target)));

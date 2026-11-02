@@ -4,11 +4,17 @@
 # MG 42 on its bipod and a P 38, his assistant with a P 38, the third man an
 # ammo bearer with a Kar98k), and six Schützen with Kar98k, two of whom carry
 # a Panzerfaust 60 (S3c-29 (A), S4-5 (A)).
-# Sources: Wikipedia "MG 42" (squad organisation around the MG); battleorder.org
-# "Volksgrenadiers 1944" (K.St.N. 131V, 1 Nov 1944: MG-Schütze 1 with MG 42,
-# MG-Schütze 2 with Kar98k). Some 1944 secondary sources give 9 men; 10 kept
-# (roster, Q6 (A)); the K.St.N. 131 primary table was not read (citation
-# task, S4 log).
+# Sources: Wikipedia "MG 42" (squad organisation around the MG); the Gruppe
+# drill as summarised from German manuals (MG team of three: gunner with the
+# MG and a pistol, assistant with a pistol, spare barrel and drums, third man
+# with a rifle and ammunition; miniatures.de "German Infantry Section 1937"
+# gives the same pistols for gunner and assistant). S4 review: the
+# Volksgrenadier table (battleorder.org "Volksgrenadiers 1944", K.St.N. 131V,
+# 1 Nov 1944) arms MG-Schütze 2 with a Kar98k instead; that is the late-war
+# VG squad (S5), not this Grenadiergruppe, so the assistant keeps the P 38.
+# Some 1944 secondary sources give 9 men; 10 kept (roster, Q6 (A)); the
+# K.St.N. 131 primary table and TM-E 30-451 (1945) squad section were not
+# read (citation task, S4 log).
 id = "ww2:ger_grenadiergruppe"
 name = "Grenadiergruppe"
 short_name = "Grenadiere"
@@ -17,7 +23,8 @@ tags = ["line"]
 capabilities = ["dig_basic", "recrew"]
 sources = [
     "Wikipedia, MG 42 (squad organisation)",
-    "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)",
+    "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944; VG variant, S5)",
+    "miniatures.de, German Infantry Section 1937 (MG team pistols)",
 ]
 # Manpower per call-in: 260 for the squad, +10 for each Panzerfaust (S4-5 (A)).
 # S4 Tune: 320 -> 280. Ten men with bolt-action Kar98k (15 rounds/min) and one MG 42 field about half

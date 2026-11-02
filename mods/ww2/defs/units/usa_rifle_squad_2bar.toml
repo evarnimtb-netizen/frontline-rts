@@ -8,7 +8,8 @@
 id = "ww2:usa_rifle_squad_2bar"
 extends = "ww2:usa_rifle_squad"
 name = "Rifle Squad (two BARs)"
-short_name = "Rifle Sq 2BAR"
+# S4 review: short enough not to clip next to the men disc.
+short_name = "Rifle 2BAR"
 sources = ["Wikipedia, M1918 Browning Automatic Rifle (two BAR teams per squad, 1944-45)"]
 # S4 Tune: 360 -> 380. Keeps the +20 over the full squad for the second BAR. Measured in docs/slices/S4-variants.md
 # "Tune results" (160 matches, seeds 1-80 x both bases).

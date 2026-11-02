@@ -46,6 +46,7 @@ needed.
 | S4 match date for card dates, default training, named unit limits, the AI mix by tag | `defs/rules/skirmish.toml` | `[call_in] date`, `[training] default`, `[limit_groups]`, `[ai.mix]` (or the old `mix_*_pct` keys of `[ai]`) |
 | S4 pop cap 150 (historical squad sizes, owner Q6 (A)) | `defs/rules/skirmish.toml` | top level `pop_cap` |
 | S4 Panzerfaust gap: one single-shot AT item per squad this often (`single_shot_gap_s`) | same | `[items]` |
+| S4 crew-weapon pickup reach: only a man this close (m) takes a fallen gunner's MG or launcher (`crew_pickup_reach_m`) | same | `[items]` (absent in older rules: 30) |
 | S4 AI Panzerfaust hunts (`pzf_hunt_m`, 0 = off; `pzf_clear_m`) | same | `[ai.assault]` (absent in older rules: 100 / 40) |
 | S4 AI capture of enemy abandoned tanks by its crews (`capture_m`, 0 = off; needs `[vehicles.recrew] capture`) | same | `[ai.armour]` (absent in older rules: 150) |
 | S4 weapons: crew weapon flag (`crew_weapon`, default by class), hand-over time of every crew weapon (`handover_ms`), squad-card name (`short_name`), `sources` | `defs/weapons/*.toml` | top-level keys |

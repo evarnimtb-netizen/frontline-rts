@@ -6,7 +6,9 @@
 id = "ww2:ger_grenadiergruppe_7"
 extends = "ww2:ger_grenadiergruppe"
 name = "Grenadiergruppe (Feldstärke)"
-short_name = "Grenadiere 7"
+# S4 review: the men disc shows the count; "(F)" = Feldstärke, so the
+# tile reads apart from the full Grenadiere at HUD width 1280.
+short_name = "Gren. (F)"
 tags = ["line", "understrength"]
 # 190 for the squad, +10 for the Panzerfaust.
 # S4 Tune: 230 -> 200. Same price per man as the full squad (28.6 MP). Measured in docs/slices/S4-variants.md

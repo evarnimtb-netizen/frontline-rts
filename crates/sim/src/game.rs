@@ -269,6 +269,16 @@ pub struct SingleShot {
     pub attack: Option<SimId>,
 }
 
+impl SingleShot {
+    /// The fresh state a new squad of type `ty` starts with: `Some` when
+    /// its members carry a single-shot AT item, else `None`. Every place
+    /// that creates an infantry squad (call-in, bail-out crew) uses this,
+    /// so the load check (`pzf_ok`) holds for any card (S4 review M1).
+    pub fn for_type(ty: &SquadTypeSetup) -> Option<Self> {
+        (ty.vehicle.is_none() && ty.squad_items(ItemKind::SingleShotAt) > 0).then(Self::default)
+    }
+}
+
 /// An AT team's launcher (S3, `crate::combat` "Launchers"): who carries
 /// it, the rockets left and the `AttackUnit` vehicle. S4: when its carrier
 /// falls it is a [`WeaponDrop`] until the next man picks it up.
@@ -1308,7 +1318,7 @@ impl MatchState {
             ..Launcher::default()
         });
         // S4: squads with a single-shot AT item (Panzerfaust).
-        let pzf = (ty.squad_items(ItemKind::SingleShotAt) > 0).then(SingleShot::default);
+        let pzf = SingleShot::for_type(ty);
         self.squads.insert(
             id,
             Squad {
@@ -1703,6 +1713,8 @@ impl MatchState {
                     s.weapons
                         .get(d.weapon as usize)
                         .is_some_and(|w| w.crew && d.ticks as u32 <= w.handover_ticks.max(1))
+                        // S4 review L3: a weapon the squad's own men carry.
+                        && ty.members.iter().any(|m| m.weapon == d.weapon)
                         && d.at.x >= Fx::ZERO
                         && d.at.y >= Fx::ZERO
                         && d.at.x <= Fx::from_int(s.map.size_m)

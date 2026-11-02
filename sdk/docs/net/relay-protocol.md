@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **4** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **6** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -86,6 +86,12 @@ kind the relay may not send. Clients cannot send relay messages.
   vehicle squad bail out). Neither has a list; both are bounded like every
   other command by the 1,024 B single-command limit. The one bump for the
   S3c slice.
+- Version 6 (S4, 2026-11-02) raises the unit ids per command from 120 to
+  150 (`MAX_UNITS`), the S4 pop cap, so a select-all order fits one
+  command. No body changed. A client with a mod pop cap above 150 splits
+  a larger selection into several commands of at most 150 ids. 150 ids
+  still fit the 1,024 B single-command limit. The one bump for the S4
+  slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -107,7 +113,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Lobby note | 160 B |
 | Own commands per turn | 16 |
 | Encoded own commands per turn | 1,024 B (and any single command ≤ 1,024 B) |
-| Unit ids per command | 120 (`MAX_UNITS`) |
+| Unit ids per command | 150 (`MAX_UNITS`; 120 before version 6) |
 | Points per dig line | 16 (`MAX_DIG_POINTS`) |
 | Points per `SuppressUnits` line (version 4) | 1–2 (`MAX_SUPPRESS_POINTS`) |
 | Turns per `Input` | 64 |
@@ -141,10 +147,10 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   S4 Part B changed the content (the S4 cards, weapons, the Panzerfaust)
   and the save version (`-s12`: per-man weapons, crew-weapon drops, the
   Panzerfaust state, S4 counters), so `build_id` and `content_hash` both
-  differ from Part A builds. No command changed: `PROTOCOL_VERSION` stays
-  5 (a `Throw` may name the new item kind `single_shot_at`; the sim refuses
-  it, and only builds that agree on the content ever meet). Relay limits
-  are unchanged.
+  differ from Part A builds. No command body changed (a `Throw` may name
+  the new item kind `single_shot_at`; the sim refuses it, and only builds
+  that agree on the content ever meet). The S4 fix stage raised
+  `MAX_UNITS` to 150 and bumped `PROTOCOL_VERSION` to 6 (above).
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.
@@ -375,7 +381,7 @@ from version 4 `SuppressUnits { units, line }`, and from version 5
 with `profile` (`DigProfile`: 0 trench, 1 AT ditch). `SetAmmo` carries an
 `AmmoChoice` as its variant index: 0 `Auto`, 1 `Ap`, 2 `He`, and from
 version 4 3 `Apcr` (the special penetrator; the standard one on a gun
-without it). Every variant with a `units` list is held to 120 ids, every
+without it). Every variant with a `units` list is held to 150 ids, every
 dig line to 16 points and a `SuppressUnits` line to 1–2 points
 (`command_in_limits`, an exhaustive match). Positions are Q16.16
 `i32` pairs. The sim

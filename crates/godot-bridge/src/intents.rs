@@ -7,8 +7,9 @@
 //! has to be bit-identical across machines.
 //!
 //! S1b soldier-level intents carry `units` (soldier ids). They are filtered
-//! to the local player's living men, sorted, deduplicated and capped at
-//! [`MAX_UNITS`] here ([`unit_set`]); the sim validates them again.
+//! to the local player's living men, sorted and deduplicated here
+//! ([`unit_set`]) and sent in commands of at most [`MAX_UNITS`] ids
+//! ([`unit_chunks`]); the sim validates them again.
 //!
 //! S3: own vehicle ids go in `units` next to soldier ids; the vehicle
 //! intents (`reverse_units`, `face_units`, `attack_unit`, `set_ammo`,
@@ -194,7 +195,9 @@ pub fn dig_command(squad: u32, line: &[[f32; 2]], profile: DigProfile) -> Comman
 
 /// The soldier set of a `*_units`, `set_stance` or `throw` intent: ids that
 /// pass `own` (the local player's living men), ascending, without
-/// duplicates, at most [`MAX_UNITS`]. Empty means the intent is dropped.
+/// duplicates. Empty means the intent is dropped. Larger than
+/// [`MAX_UNITS`] only with a mod pop cap above it: [`unit_chunks`] splits
+/// it into commands (S4 review M4).
 pub fn unit_set(raw: &[i32], own: impl Fn(u32) -> bool) -> Vec<SimId> {
     let mut ids: Vec<u32> = raw
         .iter()
@@ -204,8 +207,14 @@ pub fn unit_set(raw: &[i32], own: impl Fn(u32) -> bool) -> Vec<SimId> {
         .collect();
     ids.sort_unstable();
     ids.dedup();
-    ids.truncate(MAX_UNITS);
     ids.into_iter().map(SimId).collect()
+}
+
+/// A unit set in pieces of at most [`MAX_UNITS`] ids, one command each, in
+/// ascending id order (one piece for any selection inside the shipped pop
+/// cap of 150).
+pub fn unit_chunks(units: &[SimId]) -> impl Iterator<Item = Vec<SimId>> + '_ {
+    units.chunks(MAX_UNITS).map(<[SimId]>::to_vec)
 }
 
 /// `set_stance` names (`match_state.md`).
@@ -390,15 +399,20 @@ mod tests {
     }
 
     #[test]
-    fn unit_sets_are_own_sorted_unique_and_capped() {
+    fn unit_sets_are_own_sorted_unique_and_chunked() {
         let own = |i: u32| i.is_multiple_of(2);
         let ids = unit_set(&[8, 2, -1, 3, 2, 6], own);
         assert_eq!(ids, vec![SimId(2), SimId(6), SimId(8)]);
         assert!(unit_set(&[1, 3], own).is_empty());
+        // S4 review M4: no ids are lost; commands carry MAX_UNITS each.
         let many: Vec<i32> = (0..400).collect();
-        let capped = unit_set(&many, |_| true);
-        assert_eq!(capped.len(), MAX_UNITS);
-        assert_eq!(capped.last(), Some(&SimId(MAX_UNITS as u32 - 1)));
+        let all = unit_set(&many, |_| true);
+        assert_eq!(all.len(), 400);
+        let chunks: Vec<Vec<SimId>> = unit_chunks(&all).collect();
+        assert_eq!(chunks.len(), 400usize.div_ceil(MAX_UNITS));
+        assert!(chunks.iter().all(|c| c.len() <= MAX_UNITS));
+        assert_eq!(chunks.concat(), all);
+        const { assert!(MAX_UNITS >= 150, "the shipped pop cap fits one command") };
     }
 
     #[test]

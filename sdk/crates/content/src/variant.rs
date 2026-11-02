@@ -181,12 +181,14 @@ pub fn canonical_capabilities(caps: &mut Vec<String>) {
 /// `weapon`; each item's `count`) and `sidearm` (`men - weapon_men` men
 /// with `sidearm`; each item's `count`). Empty slots and zero item counts
 /// are left out.
-pub fn expand_legacy(s: &SquadDef) -> Vec<MemberDef> {
+pub fn expand_legacy(s: &SquadDef, launcher: bool) -> Vec<MemberDef> {
     let n = s.men;
     if n == 0 {
         return Vec::new();
     }
     let k = s.weapon_men.unwrap_or(n).min(n);
+    // A launcher squad has one carrier (S3 `weapon_of`; S4 review M3).
+    let k = if launcher { k.min(1) } else { k };
     let side = s.sidearm.clone().unwrap_or_default();
     let items = |leader: bool| -> BTreeMap<String, u8> {
         s.loadout
@@ -587,7 +589,7 @@ mod tests {
     #[test]
     fn legacy_expansion_follows_the_spec_table() {
         // An MG team: no sidearm, every man carries the MG (three guns).
-        let mg = expand_legacy(&legacy(3, None, None, &[]));
+        let mg = expand_legacy(&legacy(3, None, None, &[]), false);
         assert_eq!(mg.len(), 2);
         assert_eq!((mg[0].slot.as_str(), mg[0].count), ("leader", 1));
         assert_eq!(
@@ -595,7 +597,7 @@ mod tests {
             ("weapon", 2, "t:w")
         );
         // An AT team: the leader carries the launcher, one rifleman.
-        let at = expand_legacy(&legacy(2, Some(1), Some("t:r"), &[]));
+        let at = expand_legacy(&legacy(2, Some(1), Some("t:r"), &[]), false);
         assert_eq!(at.len(), 2);
         assert_eq!(at[0].weapon, "t:w");
         assert_eq!(
@@ -603,18 +605,25 @@ mod tests {
             ("sidearm", 1, "t:r")
         );
         // A crew of five: one MP 40, four pistols; items by leader_count.
-        let crew = expand_legacy(&legacy(
-            5,
-            Some(1),
-            Some("t:p"),
-            &[("t:g", 1, 2), ("t:s", 0, 1)],
-        ));
+        let crew = expand_legacy(
+            &legacy(5, Some(1), Some("t:p"), &[("t:g", 1, 2), ("t:s", 0, 1)]),
+            false,
+        );
         assert_eq!(
             crew[0].items,
             BTreeMap::from([("t:g".into(), 2), ("t:s".into(), 1)])
         );
         assert_eq!(crew[1].items, BTreeMap::from([("t:g".into(), 1)]));
         assert_eq!(crew[1].count, 4);
+        // S4 review M3: a legacy launcher squad has one carrier, whatever
+        // `weapon_men` says; the others take the sidearm.
+        let at3 = expand_legacy(&legacy(3, Some(2), Some("t:r"), &[]), true);
+        assert_eq!(at3.len(), 2);
+        assert_eq!((at3[0].count, at3[0].weapon.as_str()), (1, "t:w"));
+        assert_eq!(
+            (at3[1].slot.as_str(), at3[1].count, at3[1].weapon.as_str()),
+            ("sidearm", 2, "t:r")
+        );
     }
 
     #[test]
@@ -628,7 +637,7 @@ mod tests {
             (1, None, None),
         ] {
             let s = legacy(men, k, side, &[("t:g", 1, 2), ("t:s", 0, 1)]);
-            let p = project_members(&expand_legacy(&s)).unwrap();
+            let p = project_members(&expand_legacy(&s, false)).unwrap();
             assert_eq!(p.men, men);
             assert_eq!(p.weapon, "t:w");
             assert_eq!(p.weapon_men, k.unwrap_or(men));

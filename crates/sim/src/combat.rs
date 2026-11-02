@@ -1046,11 +1046,18 @@ impl MatchState {
                 continue;
             }
             let d = sq.drops.remove(k);
+            // S4 review L5: only a man within reach of the weapon takes it.
+            let reach = range_sq(Fx::from_int(
+                setup.rules.items.crew_pickup_reach_m.min(i32::MAX as u32) as i32,
+            ));
+            let mut candidates = 0u32;
             let picker = sq
                 .members
                 .iter()
                 .copied()
                 .filter(|m| !setup.weapons[ents.kit[m.index()].weapon as usize].crew)
+                .inspect(|_| candidates += 1)
+                .filter(|m| (ents.transform[m.index()].pos.xy() - d.at).length_sq_raw() <= reach)
                 .min_by_key(|m| {
                     let kit = &ents.kit[m.index()];
                     let traits = ty.members.get(kit.slot as usize).map_or(0, |s| s.traits);
@@ -1059,7 +1066,15 @@ impl MatchState {
                     let dist = (ents.transform[m.index()].pos.xy() - d.at).length_sq_raw();
                     (helper == 0, dist, m.0)
                 });
-            let Some(p) = picker else { continue };
+            let Some(p) = picker else {
+                if candidates > 0 {
+                    // Men left, none near: it waits (checked every tick).
+                    sq.drops
+                        .insert(k, crate::game::WeaponDrop { ticks: 1, ..d });
+                    k += 1;
+                }
+                continue;
+            };
             let i = p.index();
             let w = &setup.weapons[d.weapon as usize];
             ents.kit[i].weapon = d.weapon;

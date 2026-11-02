@@ -601,12 +601,12 @@ fn vehicle_ids_take_unit_orders_and_soldier_only_orders_reject_them() {
                 target: xy(400, 400),
             },
         ),
-        // 121 ids.
+        // MAX_UNITS + 1 ids.
         cmd(
             0,
             9,
             CommandKind::MoveUnits {
-                units: vec![v; 121],
+                units: vec![v; frontline_sim::MAX_UNITS + 1],
                 target: xy(400, 400),
             },
         ),

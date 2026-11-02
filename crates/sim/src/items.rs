@@ -575,9 +575,13 @@ impl MatchState {
             let bad = (0..ITEM_KINDS).any(|j| k.items[j] > full[j])
                 || k.resupply as u32 >= s.rules.items.resupply_ticks
                 || k.windup.is_some_and(|w| {
-                    self.item_of(ents, m, w.kind).is_none_or(|(_, it)| {
-                        w.ticks == 0 || w.ticks as u32 > it.windup_ticks.max(1)
-                    }) || !on_map(w.target)
+                    // S4 review L3: a single-shot AT item is fired, never
+                    // thrown.
+                    w.kind == ItemKind::SingleShotAt
+                        || self.item_of(ents, m, w.kind).is_none_or(|(_, it)| {
+                            w.ticks == 0 || w.ticks as u32 > it.windup_ticks.max(1)
+                        })
+                        || !on_map(w.target)
                 });
             if bad {
                 return Err("soldier kit is inconsistent");

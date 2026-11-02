@@ -946,12 +946,20 @@ pub struct ItemRulesDef {
     /// this often (s), so it does not empty its kit at one tank.
     #[serde(default = "default_single_shot_gap_s")]
     pub single_shot_gap_s: u32,
+    /// S4 (review L5): a fallen gunner's crew weapon (MG, launcher) is
+    /// picked up only by a man of his squad within this distance (m) of
+    /// it; it waits there until one is.
+    #[serde(default = "default_crew_pickup_reach_m")]
+    pub crew_pickup_reach_m: u32,
     /// Throw flight and smoke reach (S3b tuning table).
     pub throw: ThrowTuning,
 }
 
 fn default_single_shot_gap_s() -> u32 {
     3
+}
+fn default_crew_pickup_reach_m() -> u32 {
+    30
 }
 fn default_tick_hz() -> u32 {
     30
@@ -2070,6 +2078,13 @@ impl RulesDef {
             ));
         }
         range(&mut out, "items.resupply_s", self.items.resupply_s, 1, 600);
+        range(
+            &mut out,
+            "items.crew_pickup_reach_m",
+            self.items.crew_pickup_reach_m,
+            1,
+            1_000,
+        );
         if c.spot_rays_per_tick < c.spot_observers {
             out.push(Issue::new(
                 "combat.spot_rays_per_tick",

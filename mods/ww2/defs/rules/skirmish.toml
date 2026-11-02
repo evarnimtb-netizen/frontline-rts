@@ -325,6 +325,11 @@ resupply_s = 20
 # S4: a squad fires at most one single-shot AT item (Panzerfaust) this
 # often (s), so it does not empty its kit at one tank.
 single_shot_gap_s = 3
+# S4 review L5: a fallen gunner's crew weapon (MG, launcher) goes only to
+# a man of his squad within this distance of it (m); farther men (a
+# detached assistant across the map) do not get it instantly. 30 m is a
+# squad's spread in open order (about 10 men at 3 m).
+crew_pickup_reach_m = 30
 
 # Thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.

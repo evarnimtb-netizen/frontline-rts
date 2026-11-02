@@ -15,6 +15,11 @@ sources = ["battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, LMG squad
 # S4 Tune: 200 -> 280. Five men and an M1919A4 on a tripod were the best-value card of the game
 # (bought 5 times a match at 200); at 280 the AI still buys it in every match. Measured in docs/slices/S4-variants.md
 # "Tune results" (160 matches, seeds 1-80 x both bases).
+# S4 review: this prices the card's measured strength, not its weapon. On
+# paper the MG 42 tripod (sMG-Gruppe, 195) fires faster (about 580 rpm
+# effective vs 340 here), yet the US card costs more per man (56 vs 32.5).
+# Why the US section outperforms is not modelled yet (likely the Garand
+# riflemen around it and the AI buying it as a line card); open as S4-41.
 cost = 280
 cooldown_s = 30
 unlock_s = 0

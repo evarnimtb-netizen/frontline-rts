@@ -633,7 +633,7 @@ fn suppress_run(
     let def_members =
         |w: &World| -> Vec<SimId> { defenders.iter().flat_map(|&d| members(w, d)).collect() };
     let hz = w.match_setup().unwrap().tick_hz as u64;
-    let (def_men, att_men) = (def_members(&w).len() as u32, members(&w, b).len() as u32);
+    let def_men = def_members(&w).len() as u32;
     let mut mg_squad = None;
     let mut second_squad = None;
     if second {
@@ -664,6 +664,13 @@ fn suppress_run(
             }],
         );
     }
+    // S4 review: every attacking squad's men, since `attacker_losses`
+    // counts every dead attacker (the MG and second squads too).
+    let att_men: u32 = [Some(b), mg_squad, second_squad]
+        .into_iter()
+        .flatten()
+        .map(|q| members(&w, q).len() as u32)
+        .sum();
     let start = w.tick();
     let (lost_d, lost_a) = (losses(&w, dug), losses(&w, att));
     let throws = w.stats().throws;

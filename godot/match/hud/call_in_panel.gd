@@ -456,4 +456,7 @@ func _get_tooltip(at: Vector2) -> String:
 	var why := refusal_text(c)
 	# S4: the card's gloss ("Grenadiergruppe — rifle squad, 10 men: ...").
 	var head := String(c.get("gloss", "%s: %s" % [c.name, what]))
+	# S4 review: the chevron's meaning, in words.
+	if bool(c.get("understrength", false)):
+		head += "\nUnderstrength (chevron): fewer men than the full card, cheaper."
 	return "%s\n%d manpower. Deploys at the base at once.%s%s" % [head, int(c.cost), after, "" if why == "" else "\nNot now: " + why]

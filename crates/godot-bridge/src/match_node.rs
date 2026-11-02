@@ -70,7 +70,7 @@ use crate::gfx::{Layer, build_mesh, soldier_material};
 use crate::intents::{
     GROUP_SPACING_M, MIN_DIG_PIECE_M, ammo_choice_name, call_in_by_id, call_in_type, dig_command,
     dig_profile, item_name, role_name, sim_to_fx, split_polyline, spread_targets,
-    stance_order_name, unit_command, unit_set, vehicle_command,
+    stance_order_name, unit_chunks, unit_command, unit_set, vehicle_command,
 };
 use crate::match_events::{
     EffectCue, EventTracker, UiEvent, ammo_word, effect_cues, vehicle_short,
@@ -2415,6 +2415,9 @@ impl MatchRuntime {
                 ),
             );
             d.set("understrength", crate::s4_ui::understrength(setup, ty));
+            // S4 review: the card's own short name for strip and card
+            // labels ("Grenadiere 2", not "Rifle 2").
+            d.set("short", ty.short_name.as_str());
             if s.owner == self.local && ty.vehicle.is_none() {
                 d.set(
                     "slot_names",
@@ -2636,7 +2639,10 @@ impl MatchRuntime {
                     .collect();
                 let diggers: Vec<&&SquadView> = own
                     .iter()
-                    .filter(|s| self.setup.squad_types[s.type_idx as usize].dig_rate_pct > 0)
+                    // S4 review L2: the sim's dig gate (`dig_basic`).
+                    .filter(|s| {
+                        self.setup.squad_types[s.type_idx as usize].has(Capability::DigBasic)
+                    })
                     .collect();
                 let profile = dig_profile(
                     &data
@@ -2654,7 +2660,10 @@ impl MatchRuntime {
             "barrage" => {
                 let Some(t) = target else { return };
                 let rounds = self.setup.rules.ai.barrage_rounds.max(1);
-                for s in own.iter().filter(|s| self.role(s.type_idx) == "mortar") {
+                // S4 review L2: by capability, as the HUD's Barrage button.
+                for s in own.iter().filter(|s| {
+                    self.setup.squad_types[s.type_idx as usize].has(Capability::Barrage)
+                }) {
                     out.push(CommandKind::Barrage {
                         squad: SquadId(s.id),
                         target: sim_to_fx(to_sim(t, self.half)),
@@ -2762,10 +2771,13 @@ impl MatchRuntime {
                         .filter(|&i| i >= 0)
                         .map(|i| i as u32);
                     let word = data.get("ammo").map(|v| v.to_string()).unwrap_or_default();
-                    match vehicle_command(kind, units, t, id, &word) {
-                        Some(c) => out.push(c),
-                        None => {
-                            godot_warn!("FrontlineMatch: incomplete {kind} intent");
+                    for piece in unit_chunks(&units) {
+                        match vehicle_command(kind, piece, t, id, &word) {
+                            Some(c) => out.push(c),
+                            None => {
+                                godot_warn!("FrontlineMatch: incomplete {kind} intent");
+                                break;
+                            }
                         }
                     }
                     let mut last = None;
@@ -2788,10 +2800,13 @@ impl MatchRuntime {
                     })
                     .map(|v| v.to_string())
                     .unwrap_or_default();
-                match unit_command(kind, units, t, &line, &word) {
-                    Some(c) => out.push(c),
-                    None => {
-                        godot_warn!("FrontlineMatch: incomplete {kind} intent");
+                for piece in unit_chunks(&units) {
+                    match unit_command(kind, piece, t, &line, &word) {
+                        Some(c) => out.push(c),
+                        None => {
+                            godot_warn!("FrontlineMatch: incomplete {kind} intent");
+                            break;
+                        }
                     }
                 }
             }

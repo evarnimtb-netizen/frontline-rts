@@ -421,6 +421,8 @@ impl AiState {
         };
         if self.pending.len() > MAX_PENDING
             || self.trenches.len() > MAX_TRENCHES
+            // S4 review L3: one buy counter per squad type at most.
+            || self.counters.bought.len() > g.setup.squad_types.len()
             || self.rejected > self.issued
             || self.tasks.keys().any(bad_squad)
             || self.last_throw.keys().any(bad_squad)
@@ -1162,8 +1164,14 @@ impl Planner<'_> {
     /// point index)` in assignment order.
     fn assign(&mut self, mine: &[Mine], points: &mut [PointEval]) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
+        let g = self.g;
         for (j, m) in mine.iter().enumerate() {
-            if m.role == AiKind::Mortar {
+            // S4 review L2: every barrage-capable squad is a mortar team to
+            // the planner (`mortars`), never also a point holder.
+            let barrage = g.squads.get(&m.id).is_some_and(|sq| {
+                g.setup.squad_types[sq.type_idx as usize].has(Capability::Barrage)
+            });
+            if m.role == AiKind::Mortar || barrage {
                 continue;
             }
             let cur = self.ai.tasks.get(&m.id).map(|t| t.point);

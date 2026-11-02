@@ -410,7 +410,12 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// the abandoned entity kind, seat `untrained`, the vehicle's bail and
 /// boarding state, the `Recrew` order, per-player crew counters, the
 /// vehicles' crew squad and hatches and the bail and re-crew tuning tables
-/// in the setup). One bump for the whole slice.
+/// in the setup). One bump for the whole slice. 12: S4 (squad types by
+/// `[[members]]` slot with tags, capabilities, training, card block and
+/// limit groups in the setup; each man's weapon and slot in his kit;
+/// crew-weapon drops, the squad's single-shot AT state, per-player S4
+/// counters and the AI's per-type buy counters; the S4 rules keys such as
+/// `items.crew_pickup_reach_m`). One bump for the whole slice.
 const SAVE_VERSION: u32 = 12;
 
 #[derive(Serialize)]
@@ -4792,16 +4797,6 @@ mod tests {
                 "s4.single_shots",
                 Box::new(|s| s.game.as_mut().unwrap().players[0].s4.single_shots += 1),
             ),
-            (
-                "ai.bought",
-                Box::new(|s| {
-                    if let Some(Some(ai)) = s.game.as_mut().unwrap().ai.get_mut(0) {
-                        ai.counters.bought.push(1);
-                    } else {
-                        s.game.as_mut().unwrap().players[0].s4.pickups += 7;
-                    }
-                }),
-            ),
         ];
         for (name, edit) in &edits {
             let mut st = w.state.clone();
@@ -4828,6 +4823,44 @@ mod tests {
             let e = load_err(&bytes);
             assert!(e.contains(want), "{e}");
         }
+    }
+
+    /// S4 review L4: the AI's per-type buy counter is hashed, saved, and its
+    /// length checked on load (L3).
+    #[test]
+    fn ai_buy_counters_are_hashed_and_checked() {
+        let (mut w, _) = flat_tank_world_with(|s| s.players[1].is_ai = true);
+        let n = w.match_setup().unwrap().squad_types.len();
+        {
+            let gm = w.state.game.as_mut().unwrap();
+            let ai = gm.ai[1].as_mut().expect("player 1 is an AI");
+            ai.counters.bought = vec![0; n];
+            ai.counters.bought[0] = 2;
+        }
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        let base = w.full_state_hash();
+        let mut st = w.state.clone();
+        st.game.as_mut().unwrap().ai[1]
+            .as_mut()
+            .unwrap()
+            .counters
+            .bought[0] += 1;
+        let w2 = World::from_state(st, 1).unwrap();
+        assert_ne!(w2.full_state_hash(), base, "ai.bought is not hashed");
+        let mut st = w.state.clone();
+        st.game.as_mut().unwrap().ai[1]
+            .as_mut()
+            .unwrap()
+            .counters
+            .bought
+            .push(1);
+        let bad = World::from_state(st, 1).unwrap();
+        assert!(
+            World::load(&bad.save(), 1).is_err(),
+            "a counter per type at most"
+        );
     }
 
     #[test]

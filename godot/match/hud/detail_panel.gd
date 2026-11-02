@@ -293,12 +293,18 @@ func _draw_squad(sid: int) -> void:
 		# His role word, and his weapon when the row has room for both.
 		var room := colw - 32.0 - hp_w - mark_w
 		var label := view.soldier_name(so)
+		var size := HudStyle.FONT
 		if so.has("weapon") and so.has("name"):
 			var both := "%s · %s" % [so.name, so.weapon]
 			if HudStyle.text_w(f, both, HudStyle.FONT) <= room:
 				label = both
-		var nm := HudStyle.fit(f, label, room, HudStyle.FONT)
-		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, HudStyle.FONT, HudStyle.TEXT)
+			elif HudStyle.text_w(f, both, HudStyle.FONT_SMALL) <= room:
+				# S4 review: role and weapon in the small size before the
+				# weapon is dropped (narrow HUDs).
+				label = both
+				size = HudStyle.FONT_SMALL
+		var nm := HudStyle.fit(f, label, room, size)
+		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, size, HudStyle.TEXT)
 		HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)
 
 

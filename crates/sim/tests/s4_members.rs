@@ -210,9 +210,28 @@ fn a_line_squad_fires_its_panzerfausts_at_a_tank_in_reach() {
     assert_eq!(fired + left, 2);
     assert_eq!(rockets, fired as u64);
     // One per squad per `items.single_shot_gap_ticks`: never two in a
-    // gap.
+    // gap (S4 review L4: checked tick by tick).
     let gap = w.match_setup().unwrap().rules.items.single_shot_gap_ticks;
     assert_eq!(gap, 90);
+    let mut w = World::new_match(setup(), 1).unwrap();
+    let _sq = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", xy(300, 500), EAST);
+    let _v = harmless_sherman(&mut w, xy(340, 500), NORTH);
+    let mut shot_ticks = Vec::new();
+    let mut seen = 0;
+    for _ in 0..30 * 30 {
+        w.step(&[]);
+        let n = w.game().unwrap().players()[0].s4.single_shots;
+        if n > seen {
+            assert_eq!(n, seen + 1, "two Panzerfausts in one tick");
+            shot_ticks.push(w.tick());
+            seen = n;
+        }
+    }
+    assert!(!shot_ticks.is_empty());
+    assert!(
+        shot_ticks.windows(2).all(|t| t[1] - t[0] >= gap as u64),
+        "two Panzerfausts inside one gap: {shot_ticks:?}"
+    );
     // At 90 m (beyond engage_still 60 m) nobody fires.
     let (fired, left, _, _) = pzf_duel(90, 30 * 20, 1);
     assert_eq!((fired, left), (0, 2));
@@ -343,4 +362,47 @@ fn a_limit_group_counts_every_card_in_it() {
         call(&mut w, 0, 2, field),
         Err(CallInRefusal::GroupLimit { group: 0 })
     );
+}
+
+/// S4 review M1: a crew card whose men carry a Panzerfaust (legal content)
+/// bails out with its single-shot state, and saves taken with that crew on
+/// the map load and continue on the same hash.
+#[test]
+fn a_crew_with_a_panzerfaust_bails_out_and_its_saves_load() {
+    use frontline_sim::scenarios::{cmd, tank};
+    let mut s = setup();
+    let pzf = s
+        .items
+        .iter()
+        .position(|it| it.kind == ItemKind::SingleShotAt)
+        .unwrap() as u16;
+    let crew = s.squad_type_index("ww2:ger_tank_crew").unwrap() as usize;
+    let k = ItemKind::SingleShotAt.index();
+    s.squad_types[crew].members[0].items[k] = 1;
+    s.squad_types[crew].items[k] = Some(pzf);
+    let mut w = World::new_match(s, 1).unwrap();
+    let (sq, v) = tank(&mut w, 0, xy(500, 500), EAST).unwrap();
+    w.step(&[cmd(0, 0, CommandKind::Abandon { squad: sq })]);
+    for _ in 0..30 * 6 {
+        w.step(&[]);
+    }
+    let cq = w
+        .game()
+        .unwrap()
+        .vehicle(v)
+        .unwrap()
+        .crew_squad
+        .expect("a crew squad");
+    let c = w.game().unwrap().squad(cq).unwrap();
+    assert!(!c.members.is_empty());
+    assert!(c.pzf.is_some(), "the crew squad has single-shot state");
+    let loaded = World::load(&w.save(), 2).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(loaded.state_hash(), w.state_hash());
+    let mut a = w;
+    let mut b = loaded;
+    for _ in 0..300 {
+        a.step(&[]);
+        b.step(&[]);
+    }
+    assert_eq!(a.state_hash(), b.state_hash());
 }

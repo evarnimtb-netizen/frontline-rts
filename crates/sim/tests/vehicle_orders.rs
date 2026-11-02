@@ -158,9 +158,14 @@ fn the_new_unit_commands_validate_their_ids() {
             CommandKind::FollowUnits { units, vehicle: v },
         ]
     };
-    // Empty, 121 ids, the enemy's vehicle, a vacant id: all rejected.
+    // Empty, MAX_UNITS + 1 ids, the enemy's vehicle, a vacant id: all rejected.
     let mut seq = 0u32;
-    for units in [vec![], vec![v; 121], vec![enemy], vec![SimId(60_000)]] {
+    for units in [
+        vec![],
+        vec![v; frontline_sim::MAX_UNITS + 1],
+        vec![enemy],
+        vec![SimId(60_000)],
+    ] {
         for k in all(units) {
             let r0 = rejected(&w);
             w.step(&[cmd(0, seq, k.clone())]);

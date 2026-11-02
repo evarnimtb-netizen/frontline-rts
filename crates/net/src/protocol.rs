@@ -21,8 +21,9 @@ use serde::{Deserialize, Serialize};
 /// per-type re-call cooldown instead of joining a queue (the one bump for
 /// the S3b slice; the Suppress command, `SuppressUnits`, lands under the same
 /// version). 5 (S3c): the `Recrew` and `Abandon` commands (the one bump for
-/// the S3c slice).
-pub const PROTOCOL_VERSION: u16 = 5;
+/// the S3c slice). 6 (S4): unit ids per command 120 -> 150 (`MAX_UNITS`,
+/// the S4 pop cap; the one bump for the S4 slice).
+pub const PROTOCOL_VERSION: u16 = 6;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -883,13 +884,13 @@ mod tests {
             })
         };
         let mut buf = Vec::new();
-        // At the limits (120 ids, 16 points): in limits and decoded.
+        // At the limits (150 ids, 16 points): in limits and decoded.
         for k in listed(MAX_UNITS, MAX_DIG_POINTS) {
             assert!(command_in_limits(&k), "{k:?}");
             encode(1, &input(k.clone()), &mut buf).unwrap();
             assert!(decode(&buf).is_ok(), "{k:?}");
         }
-        // One id over (121): every listed command is refused, so the relay
+        // One id over (151): every listed command is refused, so the relay
         // drops the datagram (`Dig` has no id list).
         let refused = |k: &CommandKind, buf: &mut Vec<u8>| {
             assert!(!command_in_limits(k), "{k:?}");
