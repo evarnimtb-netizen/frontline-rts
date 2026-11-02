@@ -362,3 +362,150 @@ since AI values do not enter the staged cases).
   failed. clippy -D warnings, fmt, validate ok.
 - Standard set (40 matches) alone gave G 11 / U 29; the 160-match set gave
   72 / 88. Use 160 for decisions on faction wins.
+
+## Fix and close (2026-11-02)
+
+Two reviews of `090c4a9` (determinism-correctness, balance-play). Every
+confirmed medium finding and the cheap low ones are fixed; the rest are
+recorded as owner questions or known gaps below.
+
+### What changed and why
+
+- **No re-crew of a burning or useless tank** (correctness review 1,
+  medium). Nothing on the player path checked for fire: a crew could board
+  a burning tank and it was abandoned again the next tick (one tank counted
+  as two losses, the men getting out twice). `bail::board_blocked` now
+  refuses `Recrew` (refusals `Burning`, `Useless`) for a tank that burns
+  (engine or ammunition) or has gun and mobility out under `useless_bail`,
+  and boarding waits while either holds. The AI already avoided both.
+- **Capture needs a tank crew** (balance review 1, medium). New rule
+  `[vehicles.recrew] capture_needs_crew = 1` (TODO S3c-32 (A)): only a crew
+  squad may capture an enemy's vehicle; infantry still re-crew their own
+  side's (refusal "only a tank crew can capture it"). Reason in the TOML:
+  an enemy tank's controls, sights and ammunition are unfamiliar, and
+  captured tanks were taken into service by trained crews (German
+  Beutepanzer units, US use of captured Panthers), not by riflemen in the
+  field. It removes the free 620 MP tank a human could take with three
+  riflemen while the AI never captures. Abandoned tanks still never
+  expire (S3c-32 (C), not done: no historical basis).
+- **Exits clear of other hulls** (correctness 2, low). A bailing man was
+  placed beside his hull without checking other hulls and could stand
+  inside a neighbour's. `get_out` now tries the far side, the other side,
+  ahead and behind, and takes the first spot `exit_clear_cm` clear of
+  every other hull (live, abandoned, wreck), else the one farthest from
+  them.
+- **A boarding squad keeps its place** (correctness 3, low): a lower-id
+  squad arriving later no longer resets its progress.
+- **Limit or pop reached while boarding** (correctness 4, low): refused
+  once with `VehicleLimit` / `PopCap` in the snapshot and the squad goes
+  `Idle` (was a silent, endless wait). Status-stage refusals now reach the
+  snapshot (`World::fill_snapshot` drains them; before, only refusals from
+  commands did).
+- **Tests** (correctness 5, low): the determinism script now really has a
+  capture (riflemen next to tank A after its crew walks off) and a re-crew
+  (tank C by its crew), asserts both, and adds a save/load while boarding;
+  the rearm test checks every MG has rounds again and that the tank leaves
+  the base afterwards. New tests: burning and useless refusals, exits
+  beside a neighbouring tank, the limit filling while boarding, capture
+  refused without a crew. armour-test case 15 f checks capture with
+  `capture_needs_crew` off and the crew-only refusal.
+- **Feed line** (balance 4, low): "Panzer IV abandoned (ammo fire): 4 of 5
+  bailing out." (was cut off at 1600x900).
+- **Docs** (balance 2 and 5, low): T10 is quoted from a `--jobs 3` run
+  (spec, `docs/modding/tuning.md`); the `min_men` comment says the
+  effective minimum is max(`min_men`, `crew_below`) = 3.
+
+Rejected or deferred, with reasons:
+
+- Balance 3 (2.8 crew deaths per tank loss vs ~1 historically): not tuned.
+  The deaths come from the penetrating rounds, spall and rack detonations
+  that touch the men; `crew_below = 4` only moved men alive at bail-out
+  from 3.0 to 3.26 and added 9 % tank losses. TODO S3c-35 (A): revisit
+  with the spall model.
+- Balance 6 (abandoned enemy tanks shown through fog): kept as specified
+  ("like a wreck"). TODO S3c-34 (A).
+- Balance 4, second half (the abandoned marker floats ~90 px above the
+  hull): cosmetic, left as a known gap.
+- AI capture (S3c-2 (C)): TODO S3c-33 (A) S4, behind a flag.
+
+### Final targets
+
+Skirmish: seeds 1-20 x both bases (standard 40) and seeds 1-80 x both
+bases (160, `--jobs 3`), `--minutes 45`, `--threads 1`. Every match line
+of the 160 set (winner, length, losses, rockets, satchels, HE share) is
+identical to the review's run of `090c4a9`; only the hashes differ, since
+the match setup (with the new rule field) is part of the state hash. The
+fixes change player paths and edge cases the AI does not reach.
+
+| # | Target | Final | Status |
+|---|---|---|---|
+| T1 | each faction 35-65 %; no base side > 62 % | 160: G 72 (45 %) / U 88, base 0 88 / base 1 72 (55 %); standard 40: G 11 / U 29, base 0 21 / base 1 19 | met on 160; the 40 set misses on faction wins (seed block 1-20 is an outlier: blocks 21-40, 41-60, 61-80 give G 22/21/18 of 40) |
+| T2 | rockets + satchels >= 20 % of tank losses | 70 of 725 (9.7 %) | **missed** (S3c-28 (A): target 10 %) |
+| T3 | satchel at a vehicle in >= 6 of 20 normal-base matches | 5 of 80 normal-base matches | **missed** (S3c-30) |
+| T4 | rockets fired in >= 16 of 20 normal-base matches | 60 of 80 (75 %); 40 set 14 of 20 | **missed**, narrowly |
+| T5 | >= 1 low-ammo base return per 10 matches | 5 trips (AI rearms 4 G / 1 U), 1 low-ammo return in 160; MG dry 0.0 %, HE at reserve 0.1-0.2 % | **missed** (S3c-30): tanks are lost before they run low |
+| T6 | bailed crews: a man out in >= 70 %; >= 50 % alive 60 s later | 99 % / 100 % with a man out; 80 % (G) / 82 % (U) alive after 60 s | met |
+| T7 | AI re-crews >= 1 per 10 matches | 222 orders, 56 tanks re-crewed (G 19, U 37) | met |
+| T8 | US attackers <= 60 %; defenders >= 75 % | two bases of fire 37.5 %; one base 66.2 %; Germany attacking 36.2 % (51.2 % with two bases); defenders 90-100 % | met (two bases, the AI's habit when its MG is weaker) |
+| T9 | match 10-40 min, median 15-30 | 10.5-31.7 min, mean 17.8 | met |
+| T10 | tick p99 at peak < 1.5 ms; stress p99 < 10 ms | 0.997 ms (160, `--jobs 3`); 40 set at `--jobs 6` 0.688 ms; stress p99 1.399 ms | met (`--jobs 6` on 160 gave 1.546 ms in review: load-dependent) |
+| T11 | tanks lost by base side within +-15 % | 345 vs 380 (+10 %) | met |
+| T12 | 600 m duel reported | 3f: Panzer IV 14, Sherman 6 of 20; 3a 300 m: Panzer IV 6, Sherman 12, none 2 | met (report) |
+| T13 | T9 kills > 0 / T14 >= 0.05 m with a physical cause | T9 kills 4 (fragments over a falling edge); lip 0.035 m per burst | T9 met; T14 lip documented (S3c-22, S3c-23) |
+| T14 | hard checks pass; HE share < 60 % per match | armour-test all hard checks pass; fortify PASS; golden 46/46; validate ok; HE mean 43.8 %, over 60 % in 1 of 160 (65.5 %) | hard checks met; HE limit missed by 1 match (S3c-31) |
+| T15 | determinism | 459 passed, 0 failed (incl. soaks, net loopback, 1/2/3/8 threads, save/load) | met |
+
+### Tests (Fix stage)
+
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets --release
+  -D warnings`: clean.
+- `CARGO_BUILD_JOBS=4 cargo test --workspace --release --
+  --include-ignored`: 459 passed, 0 failed (456 + 3 new; one new test was
+  folded into the existing capture test).
+- `ballistics --golden mods/ww2/tests/ballistics.toml`: 46 rows, 0 failed.
+  `validate mods/ww2`: ok.
+- armour-test `--stress --seeds 10`: all hard checks pass (case 15 7 of 7
+  checks, 20 of 20 runs; the first full run failed 15 f because riflemen
+  were refused under the new default; the case now sets the flag
+  explicitly and checks the refusal).
+- fortify-test `--seeds 10`: PASS.
+- Godot (bridge rebuilt): `check_project` OK, `test_match_view` 215/215,
+  `test_net_ui` 143/143, `test_data_reload` 8/8.
+- `--autoplay 10` vs AI at 4x: no script errors; 2 own Panzer IVs, 1 enemy
+  tank seen, 1 abandonment with 3 men out, 18 shots fired; AI won at 10:00.
+  Exit 3 only for the known S1b frag-shot miss (`s1b_frag_tool`,
+  `s1b_frag_trench`). Screenshots looked at (tank, battle, end): HUD, call-in
+  panel, Crew (K) button and vehicle cards render normally.
+- `settings.cfg` unchanged (md5 5755cc78... equals the backup); no Godot
+  process left running.
+
+### Open owner questions (all on (A))
+
+S3c-28 (T2 target 10 %), S3c-29 (Panzerfaust in S4), S3c-30 (reword T3
+and T5), S3c-31 (T14 HE limit as mean < 50 % and < 60 % in 99 %), S3c-32
+(capture needs a crew: done on (A)), S3c-33 (AI capture in S4, flagged),
+S3c-34 (abandoned enemy tanks visible map-wide: kept), S3c-35 (crew deaths
+per loss: accept, revisit with spall), plus the earlier S3c-1..27 in
+`docs/TODO.md`.
+
+### Known gaps
+
+- T2, T3, T4, T5 and T14's HE limit miss the written targets (above).
+- Capture is unmeasured in skirmish: the AI never captures (S3c-33).
+- 208 of 629 abandoned tanks still stand at match end (160 matches);
+  they never expire.
+- Crews lose about 2.8 men per tank loss (historical ~1).
+- The abandoned marker floats about 90 px above the hull.
+- No full autoplay screenshot of an abandoned tank (autoplay triggers are
+  fixed; the staged `armour_bailout` scene covers it).
+- T10 depends on parallel load; quote it from `--jobs 3`.
+
+### What the next stage (S4) must know
+
+- `RecrewRefusal` has three new variants (`Burning`, `Useless`,
+  `CaptureNeedsCrew`); the bridge's `recrew_words` names them.
+- `[vehicles.recrew] capture_needs_crew` is a required rules key; mods and
+  overrides that copy `[vehicles.recrew]` need it.
+- SAVE_VERSION 11 / PROTOCOL_VERSION 5 unchanged by the Fix stage (no
+  state or command layout change).
+- Use 160 matches (seeds 1-80 x both bases) for faction-win decisions.
