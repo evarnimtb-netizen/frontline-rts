@@ -41,6 +41,9 @@ needed.
 | APHE filler, barrel, crew and component boxes (S3b) | `defs/ammo/` `[filler]` (`rays`, `cone_deg`, `damage`, `reach_cm`); `defs/vehicles/` `barrel` on the main gun, `[crew.boxes]`, `[[components]]` `box` or `boxes`. A hull-frame box must lie inside the hull box; a turret-frame box inside the turret box or below it down to the hull floor (the turret basket, S3b Tune) | the def's own file |
 | Vehicle MG stowage (S3b Fix): rounds per coax / hull MG, refilled a belt per base rearm step | `defs/vehicles/` | `rounds` on a `coax` or `hull` `[[weapons]]` entry (omit: no limit) |
 | Call-in cost and re-call cooldown (S3b) | `defs/units/*.toml` (squads), `defs/vehicles/*.toml` (tanks) | `cost`, `recall_cooldown_s`, `initial_cooldown_s`; optional `cooldown_group` in a unit def (types in one group share a timer) |
+| S4 card block: `cooldown_s` / `unlock_s` (the new names of `recall_cooldown_s` / `initial_cooldown_s`), `max_alive`, `limit_group`, `available_from` / `available_to`, `tags`, `capabilities`, `training`, `ai_weight`, `short_name`, `sources`; men by `[[members]]` slots; `extends` (a variant gives only what differs) | `defs/units/*.toml`; `docs/modding/variants.md` | top-level keys, `[[members]]` |
+| S4 training profiles (aim, reload, steadiness, spotting, build rate, as % of a regular soldier) | `defs/training/*.toml` | the def's own file |
+| S4 match date for card dates, default training, named unit limits, the AI mix by tag | `defs/rules/skirmish.toml` | `[call_in] date`, `[training] default`, `[limit_groups]`, `[ai.mix]` (or the old `mix_*_pct` keys of `[ai]`) |
 
 Each key has a comment with its unit and meaning. Units are in the key's
 name: `_mm`, `_cm`, `_m`, `_s`, `_ms`, `_pct`, `_deg`, `_mm_s`. Values are
@@ -70,8 +73,12 @@ cost = 620                    # [defs.<kind>."<id>"] patches one def
 ```
 
 The def kinds are `units`, `weapons`, `items`, `factions`, `maps`,
-`vehicles` and `ammo`. An array, such as a vehicle's `[[weapons]]`, is
-replaced whole.
+`vehicles`, `ammo` and (S4) `training`. An array, such as a vehicle's
+`[[weapons]]`, is replaced whole. S4: the patch applies to the def's file
+as written and every def then resolves again, so a patch on a parent also
+changes each variant that `extends` it (each change is listed); a
+`[[defs.units."<id>".members]]` patch replaces a legacy squad's `men` /
+`weapon` keys (`docs/modding/variants.md`).
 
 Pass the file with `--rules-override FILE` to `skirmish`, `armour-test` or
 `fortify-test`. The flag can be given more than once; files apply in order.

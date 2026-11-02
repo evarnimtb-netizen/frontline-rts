@@ -132,7 +132,12 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
 - `build_id`: `<git commit, 12 hex>[-dirty]-p<protocol>-s<save version>`,
   for example `3f2a9c1d0b7e-p2-s8`.
 - `content_hash`: xxh3-64 of postcard(`ModDefs`), from
-  `ModDefs::content_hash()`.
+  `ModDefs::content_hash()`. It covers the resolved defs (after `extends`),
+  not the raw files. S4 Part A changed it for the same `mods/ww2` files
+  (unit defs gained the card-block, `members`, `tags` and `capabilities`
+  fields, rules gained `[training]`, and the training profiles joined the
+  defs): a build from before S4 and one from after refuse each other with
+  `Content`, as intended. The protocol and its limits are unchanged.
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.

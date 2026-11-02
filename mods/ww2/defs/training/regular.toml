@@ -1,0 +1,23 @@
+# Training profile (S4): the regular soldier, the reference every other
+# profile is a percentage of. A profile changes the man, never the weapon.
+# No in-match veterancy: a card's profile is fixed (roadmap §2.5).
+# Every S4 card is regular (owner question S4-10 (A)); S4 Part A parses and
+# checks profiles, the sim applies them from Part B on.
+id = "ww2:training_regular"
+name = "Regular"
+# Aim error: multiplies the weapon's spread (%).
+spread_pct = 100
+# Time to open fire on a new target (%; today half a second).
+aim_time_pct = 100
+# Reload time (%).
+reload_pct = 100
+# Scatter of thrown items (%).
+throw_scatter_pct = 100
+# Multiplies the card's steadiness_pct: duck and pin thresholds (%).
+steadiness_pct = 100
+# Suppression decay per second (%).
+suppression_decay_pct = 100
+# The men's sight range (%).
+spot_pct = 100
+# Multiplies the card's dig_rate_pct (%).
+build_rate_pct = 100

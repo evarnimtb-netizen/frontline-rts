@@ -22,6 +22,11 @@ use crate::defs::{
     WeaponDef, check_id,
 };
 use crate::issue::{ContentError, Issue};
+use crate::resolve::{DEF_KINDS, RawDef, RawDefs, Resolved, merge_level, merge_tables};
+use crate::variant::{
+    DERIVED_CAPABILITIES, TrainingDef, canonical_capabilities, expand_legacy, role_capabilities,
+    role_of_tags, role_tag,
+};
 use crate::vehicle::{AmmoDef, AmmoMechanism, MountKind, VehicleDef};
 
 /// A mod's manifest (`mod.toml`, §7.2).
@@ -47,11 +52,13 @@ fn default_true() -> bool {
     true
 }
 
-/// Every def of one mod, validated, keyed by id.
+/// Every def of one mod, resolved (`extends`, S4) and validated, keyed by
+/// id.
 ///
 /// `Serialize` exists for [`ModDefs::content_hash`] only; nothing reads the
-/// encoding back.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+/// encoding back. Equality and the hash cover the resolved defs, not
+/// [`ModDefs::raw`].
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ModDefs {
     pub manifest: Option<ModManifest>,
     pub squads: BTreeMap<String, SquadDef>,
@@ -64,7 +71,30 @@ pub struct ModDefs {
     pub vehicles: BTreeMap<String, VehicleDef>,
     /// Rounds for cannons and launchers (S3, `defs/ammo/`).
     pub ammo: BTreeMap<String, AmmoDef>,
+    /// Training profiles (S4, `defs/training/`).
+    pub training: BTreeMap<String, TrainingDef>,
+    /// S4: every def file as parsed TOML before `extends` (the SDK view).
+    /// Tuning overrides patch these and every def resolves again.
+    #[serde(skip)]
+    pub raw: RawDefs,
 }
+
+impl PartialEq for ModDefs {
+    fn eq(&self, o: &ModDefs) -> bool {
+        self.manifest == o.manifest
+            && self.squads == o.squads
+            && self.weapons == o.weapons
+            && self.items == o.items
+            && self.factions == o.factions
+            && self.maps == o.maps
+            && self.rules == o.rules
+            && self.vehicles == o.vehicles
+            && self.ammo == o.ammo
+            && self.training == o.training
+    }
+}
+
+impl Eq for ModDefs {}
 
 /// Collects issues for one mod directory.
 struct Loader {
@@ -108,19 +138,12 @@ impl Loader {
         }
     }
 
-    /// Loads every `*.toml` in `defs/<dir>` (sorted), validating each and
-    /// rejecting duplicate ids.
-    fn load_kind<T: DeserializeOwned>(
-        &mut self,
-        dir: &str,
-        ns: &str,
-        id: impl Fn(&T) -> &str,
-        validate: impl Fn(&T) -> Vec<Issue>,
-    ) -> BTreeMap<String, T> {
-        let mut out = BTreeMap::new();
-        let path = self.root.join("defs").join(dir);
+    /// Reads every `*.toml` in `dir/<kind>` (sorted) into `raw`: parse
+    /// errors, ids outside the namespace and duplicate ids are issues.
+    fn read_kind(&mut self, raw: &mut RawDefs, dir: &Path, kind: &str, ns: &str) {
+        let path = dir.join(kind);
         let Ok(rd) = std::fs::read_dir(&path) else {
-            return out;
+            return;
         };
         let mut files: Vec<PathBuf> = rd
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -128,14 +151,37 @@ impl Loader {
             .collect();
         files.sort();
         for f in files {
-            let Some(def) = self.parse::<T>(&f) else {
-                continue;
-            };
             let file = self.rel(&f);
-            for i in validate(&def) {
-                self.push(&file, i);
-            }
-            let def_id = id(&def).to_owned();
+            let src = match std::fs::read_to_string(&f) {
+                Ok(s) => s,
+                Err(e) => {
+                    self.push(&file, Issue::new("", format!("cannot read: {e}")));
+                    continue;
+                }
+            };
+            let table: toml::Table = match toml::from_str(&src) {
+                Ok(t) => t,
+                Err(e) => {
+                    self.push(&file, Issue::new("", e.to_string().trim_end().to_owned()));
+                    continue;
+                }
+            };
+            let def_id = match table.get("id") {
+                Some(toml::Value::String(id)) => id.clone(),
+                _ => {
+                    #[derive(Deserialize)]
+                    #[allow(dead_code)]
+                    struct IdOnly {
+                        id: String,
+                    }
+                    let msg = match toml::from_str::<IdOnly>(&src) {
+                        Err(e) => e.to_string().trim_end().to_owned(),
+                        Ok(_) => "missing field `id`".to_owned(),
+                    };
+                    self.push(&file, Issue::new("", msg));
+                    continue;
+                }
+            };
             if !ns.is_empty() && !def_id.starts_with(&format!("{ns}:")) {
                 self.push(
                     &file,
@@ -146,17 +192,194 @@ impl Loader {
                     .with_hint(format!("id = \"{ns}:...\"")),
                 );
             }
-            if out.contains_key(&def_id) {
+            if raw.get(kind, &def_id).is_some() {
                 self.push(
                     &file,
-                    Issue::new("id", format!("`{def_id}` is defined twice in defs/{dir}")),
+                    Issue::new("id", format!("`{def_id}` is defined twice in defs/{kind}")),
                 );
                 continue;
             }
-            out.insert(def_id, def);
+            raw.insert(
+                kind,
+                def_id,
+                RawDef {
+                    file,
+                    src: Some(src),
+                    table,
+                },
+            );
         }
-        out
     }
+}
+
+/// Reads one resolved table into a def. A def without `extends` that fails
+/// is read again from its file text, so the error quotes the line.
+fn read_def<T: DeserializeOwned>(rd: &RawDef, res: &Resolved) -> Result<T, String> {
+    match toml::Value::Table(res.table.clone()).try_into::<T>() {
+        Ok(d) => Ok(d),
+        Err(e) => {
+            if res.parents.is_empty()
+                && let Some(src) = &rd.src
+                && let Err(e2) = toml::from_str::<T>(src)
+            {
+                return Err(e2.to_string().trim_end().to_owned());
+            }
+            let after = if res.parents.is_empty() {
+                String::new()
+            } else {
+                format!(" (after extends {})", res.parents.join(" -> "))
+            };
+            Err(format!("{}{after}", e.to_string().trim_end()))
+        }
+    }
+}
+
+/// Prefixes an issue's path with its file (the loader's format).
+fn at_file(file: &str, issue: Issue) -> Issue {
+    let path = if issue.path.is_empty() {
+        file.to_owned()
+    } else {
+        format!("{file}: {}", issue.path)
+    };
+    Issue { path, ..issue }
+}
+
+/// Resolves every def of `kind` from `raw`; issues go to `issues` with the
+/// file prefix. `prepare` runs before `validate` (units: the role),
+/// `finish` after it (units: the canonical view).
+fn resolve_kind<T: DeserializeOwned>(
+    raw: &RawDefs,
+    kind: &str,
+    validate: impl Fn(&T) -> Vec<Issue>,
+    mut prepare: impl FnMut(&mut T, &Resolved) -> Vec<Issue>,
+    mut finish: impl FnMut(&mut T) -> Vec<Issue>,
+    issues: &mut Vec<Issue>,
+) -> BTreeMap<String, T> {
+    let mut out = BTreeMap::new();
+    for id in raw.ids(kind) {
+        let rd = raw.get(kind, &id).expect("listed");
+        let res = match crate::resolve::resolve(raw, kind, &id) {
+            Ok(r) => r,
+            Err(e) => {
+                issues.extend(e.into_iter().map(|i| at_file(&rd.file, i)));
+                continue;
+            }
+        };
+        let mut def: T = match read_def(rd, &res) {
+            Ok(d) => d,
+            Err(msg) => {
+                issues.push(at_file(&rd.file, Issue::new("", msg)));
+                continue;
+            }
+        };
+        let mut local = prepare(&mut def, &res);
+        local.extend(validate(&def));
+        local.extend(finish(&mut def));
+        for mut i in local {
+            if let Some(p) = res.origin_note(&id, &i.path) {
+                i.message = format!("{} (from `{p}`)", i.message);
+            }
+            issues.push(at_file(&rd.file, i));
+        }
+        out.insert(id, def);
+    }
+    out
+}
+
+/// S4: units without `role` take it from their tags, their vehicle or their
+/// weapons; `role` and the reserved `crew` tag must agree.
+fn prepare_unit(
+    s: &mut SquadDef,
+    res: &Resolved,
+    weapons: &BTreeMap<String, WeaponDef>,
+) -> Vec<Issue> {
+    let mut out = Vec::new();
+    if res.table.contains_key("role") {
+        let crew_tag = s.has_tag("crew");
+        if !s.tags.is_empty() && crew_tag != (s.role == SquadRole::Crew) {
+            out.push(
+                Issue::new(
+                    "tags",
+                    "the reserved tag `crew` marks exactly the crew squads (role = \"crew\")",
+                )
+                .with_hint(if crew_tag {
+                    "remove \"crew\" from tags"
+                } else {
+                    "add \"crew\" to tags"
+                }),
+            );
+        }
+        return out;
+    }
+    if s.tags.is_empty() && s.vehicle.is_none() {
+        out.push(
+            Issue::new(
+                "tags",
+                "required: what the unit is, for the AI mix and the HUD (or the legacy `role`)",
+            )
+            .with_hint("tags = [\"line\"]"),
+        );
+    }
+    let class_of = |w: &str| weapons.get(w).map(|d| d.class);
+    let carries = |c: WeaponClass| {
+        s.members.iter().any(|m| class_of(&m.weapon) == Some(c))
+            || (!s.weapon.is_empty() && class_of(&s.weapon) == Some(c))
+    };
+    s.role = if s.vehicle.is_some() {
+        SquadRole::Vehicle
+    } else if let Some(r) = role_of_tags(&s.tags) {
+        r
+    } else if carries(WeaponClass::Mortar) {
+        SquadRole::Mortar
+    } else if carries(WeaponClass::Launcher) {
+        SquadRole::AntiTank
+    } else {
+        SquadRole::Rifle
+    };
+    out
+}
+
+/// S4 canonical view of a unit: legacy soldiers expanded into `members`,
+/// `tags` and `capabilities` from the role when left empty, derived
+/// capabilities added, and the card keys under their S4 names.
+fn finish_unit(s: &mut SquadDef, weapons: &BTreeMap<String, WeaponDef>) -> Vec<Issue> {
+    let mut out = Vec::new();
+    if s.role != SquadRole::Vehicle && s.members.is_empty() {
+        s.members = expand_legacy(s);
+    }
+    if s.tags.is_empty() {
+        s.tags = vec![role_tag(s.role).to_owned()];
+    }
+    let explicit = s.capabilities.clone();
+    if s.capabilities.is_empty() {
+        s.capabilities = role_capabilities(s.role, s.dig_rate_pct);
+    }
+    let class_of = |w: &str| weapons.get(w).map(|d| d.class);
+    let has = |c: WeaponClass| s.members.iter().any(|m| class_of(&m.weapon) == Some(c));
+    let derived = [
+        ("barrage", has(WeaponClass::Mortar), "a mortar"),
+        ("at_hunt", has(WeaponClass::Launcher), "a launcher"),
+    ];
+    for (cap, yes, what) in derived {
+        debug_assert!(DERIVED_CAPABILITIES.contains(&cap));
+        if yes {
+            s.capabilities.push(cap.to_owned());
+        } else if explicit.iter().any(|c| c == cap) {
+            out.push(
+                Issue::new(
+                    "capabilities",
+                    format!("`{cap}` comes from {what} among the members, and none carries one"),
+                )
+                .with_hint(format!("remove `{cap}`, or give a member {what}")),
+            );
+        }
+    }
+    canonical_capabilities(&mut s.capabilities);
+    if s.role != SquadRole::Vehicle {
+        s.cooldown_s = Some(s.card_cooldown_s());
+        s.unlock_s = Some(s.card_unlock_s());
+    }
+    out
 }
 
 impl ModDefs {
@@ -187,27 +410,16 @@ impl ModDefs {
                 l.push("mod.toml", i);
             }
         }
+        let mut raw = RawDefs::default();
+        for kind in DEF_KINDS {
+            l.read_kind(&mut raw, &root.join("defs"), kind, &ns);
+        }
         let mut defs = ModDefs {
-            squads: l.load_kind("units", &ns, |d: &SquadDef| &d.id, SquadDef::validate),
-            weapons: l.load_kind("weapons", &ns, |d: &WeaponDef| &d.id, WeaponDef::validate),
-            items: l.load_kind("items", &ns, |d: &ItemDef| &d.id, ItemDef::validate),
-            factions: l.load_kind(
-                "factions",
-                &ns,
-                |d: &FactionDef| &d.id,
-                FactionDef::validate,
-            ),
-            maps: l.load_kind("maps", &ns, |d: &MapFileDef| &d.id, MapFileDef::validate),
-            rules: l.load_kind("rules", &ns, |d: &RulesDef| &d.id, RulesDef::validate),
-            vehicles: l.load_kind(
-                "vehicles",
-                &ns,
-                |d: &VehicleDef| &d.id,
-                VehicleDef::validate,
-            ),
-            ammo: l.load_kind("ammo", &ns, |d: &AmmoDef| &d.id, AmmoDef::validate),
             manifest,
+            raw,
+            ..ModDefs::default()
         };
+        l.issues.extend(defs.resolve_all());
         l.issues.extend(defs.cross_check());
         if l.issues.is_empty() {
             Ok(defs)
@@ -218,6 +430,120 @@ impl ModDefs {
                 issues: l.issues,
             })
         }
+    }
+
+    /// Resolves every def from [`ModDefs::raw`] (`extends`, S4), replacing
+    /// the resolved maps; returns the per-def issues, file first.
+    pub fn resolve_all(&mut self) -> Vec<Issue> {
+        fn plain<T: DeserializeOwned>(
+            raw: &RawDefs,
+            kind: &str,
+            validate: impl Fn(&T) -> Vec<Issue>,
+            issues: &mut Vec<Issue>,
+        ) -> BTreeMap<String, T> {
+            resolve_kind(
+                raw,
+                kind,
+                validate,
+                |_, _| Vec::new(),
+                |_| Vec::new(),
+                issues,
+            )
+        }
+        let raw = &self.raw;
+        let mut is: [Vec<Issue>; DEF_KINDS.len()] = Default::default();
+        let k = |kind: &str| DEF_KINDS.iter().position(|x| *x == kind).expect("a kind");
+        let weapons: BTreeMap<String, WeaponDef> =
+            plain(raw, "weapons", WeaponDef::validate, &mut is[k("weapons")]);
+        let items = plain(raw, "items", ItemDef::validate, &mut is[k("items")]);
+        let ammo = plain(raw, "ammo", AmmoDef::validate, &mut is[k("ammo")]);
+        let vehicles = plain(
+            raw,
+            "vehicles",
+            VehicleDef::validate,
+            &mut is[k("vehicles")],
+        );
+        let training = plain(
+            raw,
+            "training",
+            TrainingDef::validate,
+            &mut is[k("training")],
+        );
+        let factions = plain(
+            raw,
+            "factions",
+            FactionDef::validate,
+            &mut is[k("factions")],
+        );
+        let maps = plain(raw, "maps", MapFileDef::validate, &mut is[k("maps")]);
+        let rules = plain(raw, "rules", RulesDef::validate, &mut is[k("rules")]);
+        let squads = resolve_kind(
+            raw,
+            "units",
+            SquadDef::validate,
+            |s: &mut SquadDef, r: &Resolved| prepare_unit(s, r, &weapons),
+            |s: &mut SquadDef| finish_unit(s, &weapons),
+            &mut is[k("units")],
+        );
+        // The S1-S3 report order: units, weapons, items, factions, maps,
+        // rules, vehicles, ammo (DEF_KINDS order).
+        let out: Vec<Issue> = is.into_iter().flatten().collect();
+        self.squads = squads;
+        self.weapons = weapons;
+        self.items = items;
+        self.factions = factions;
+        self.maps = maps;
+        self.rules = rules;
+        self.vehicles = vehicles;
+        self.ammo = ammo;
+        self.training = training;
+        out
+    }
+
+    /// Adds the def files under `dir/<kind>/` (e.g. a mod's
+    /// `tests/variants/units/x.toml`) to these defs: they may extend the
+    /// mod's defs, must not reuse their ids, and are validated with
+    /// everything else. On an error nothing changes.
+    pub fn add_defs_dir(&mut self, dir: &Path) -> Result<Vec<String>, ContentError> {
+        let mut work = self.clone();
+        let mut l = Loader {
+            root: dir.parent().unwrap_or(dir).to_owned(),
+            issues: Vec::new(),
+        };
+        let ns = self
+            .manifest
+            .as_ref()
+            .map(|m| m.id.clone())
+            .unwrap_or_default();
+        let mut extra = RawDefs::default();
+        for kind in DEF_KINDS {
+            l.read_kind(&mut extra, dir, kind, &ns);
+        }
+        let mut added = Vec::new();
+        for (kind, defs) in extra.kinds {
+            for (id, rd) in defs {
+                if work.raw.get(&kind, &id).is_some() {
+                    l.push(
+                        &rd.file,
+                        Issue::new("id", format!("`{id}` is already a {kind} def of the mod"))
+                            .with_hint("give the variant an id of its own"),
+                    );
+                    continue;
+                }
+                added.push(id.clone());
+                work.raw.insert(&kind, id, rd);
+            }
+        }
+        l.issues.extend(work.resolve_all());
+        l.issues.extend(work.cross_check());
+        if !l.issues.is_empty() {
+            return Err(ContentError::Invalid {
+                origin: dir.display().to_string(),
+                issues: l.issues,
+            });
+        }
+        *self = work;
+        Ok(added)
     }
 
     /// Loads a test override of a rules def: a partial rules file whose
@@ -272,7 +598,7 @@ impl ModDefs {
         };
         merge_tables(&mut merged, table);
         let def: RulesDef =
-            toml::Value::Table(merged)
+            toml::Value::Table(merged.clone())
                 .try_into()
                 .map_err(|e: toml::de::Error| ContentError::Parse {
                     origin: origin.clone(),
@@ -293,10 +619,21 @@ impl ModDefs {
                 format!("`{}` is already a rules id", def.id),
             ));
         }
+        issues.extend(self.check_rules_refs(&def));
         if !issues.is_empty() {
             return Err(invalid(issues));
         }
         let id = def.id.clone();
+        // S4: kept as a raw def too, so later overrides re-resolve it.
+        self.raw.insert(
+            "rules",
+            id.clone(),
+            RawDef {
+                file: origin.clone(),
+                src: None,
+                table: merged,
+            },
+        );
         self.rules.insert(id.clone(), def);
         Ok(id)
     }
@@ -358,7 +695,7 @@ impl ModDefs {
                 ]));
             }
         }
-        let mut changes = Vec::new();
+        let before = self.clone();
         if let Some(defs) = table.remove("defs") {
             let toml::Value::Table(defs) = defs else {
                 return Err(invalid(vec![
@@ -373,42 +710,26 @@ impl ModDefs {
                         "must be a table of def ids",
                     )]));
                 };
+                if !DEF_KINDS.contains(&kind.as_str()) || kind == "rules" {
+                    return Err(invalid(vec![
+                        Issue::new(format!("defs.{kind}"), format!("unknown def kind `{kind}`"))
+                            .with_hint(
+                                "one of units, weapons, items, factions, maps, vehicles, ammo, \
+                             training (the rules are patched by top-level tables)",
+                            ),
+                    ]));
+                }
                 for (id, patch) in ids {
                     let at = format!("defs.{kind}.\"{id}\"");
                     let toml::Value::Table(patch) = patch else {
                         return Err(invalid(vec![Issue::new(at, "must be a table of keys")]));
                     };
-                    match kind.as_str() {
-                        "units" => patch_in(&mut self.squads, &id, patch, &at, SquadDef::validate),
-                        "weapons" => {
-                            patch_in(&mut self.weapons, &id, patch, &at, WeaponDef::validate)
-                        }
-                        "items" => patch_in(&mut self.items, &id, patch, &at, ItemDef::validate),
-                        "factions" => {
-                            patch_in(&mut self.factions, &id, patch, &at, FactionDef::validate)
-                        }
-                        "maps" => patch_in(&mut self.maps, &id, patch, &at, MapFileDef::validate),
-                        "vehicles" => {
-                            patch_in(&mut self.vehicles, &id, patch, &at, VehicleDef::validate)
-                        }
-                        "ammo" => patch_in(&mut self.ammo, &id, patch, &at, AmmoDef::validate),
-                        _ => Err(vec![
-                            Issue::new(
-                                format!("defs.{kind}"),
-                                format!("unknown def kind `{kind}`"),
-                            )
-                            .with_hint(
-                                "one of units, weapons, items, factions, maps, vehicles, ammo",
-                            ),
-                        ]),
-                    }
-                    .map(|c| changes.extend(c))
-                    .map_err(invalid)?;
+                    self.patch_raw(&kind, &id, patch, &at).map_err(invalid)?;
                 }
             }
         }
         if !table.is_empty() {
-            if !self.rules.contains_key(rules_id) {
+            if self.raw.get("rules", rules_id).is_none() {
                 return Err(invalid(vec![Issue::new(
                     "",
                     format!(
@@ -417,21 +738,164 @@ impl ModDefs {
                     ),
                 )]));
             }
-            let c = patch_in(
-                &mut self.rules,
-                rules_id,
-                table,
-                &format!("rules \"{rules_id}\""),
-                RulesDef::validate,
-            )
-            .map_err(invalid)?;
-            changes.extend(c);
+            self.patch_raw("rules", rules_id, table, &format!("rules \"{rules_id}\""))
+                .map_err(invalid)?;
         }
-        let issues = self.cross_check();
+        let mut issues = self.resolve_all();
+        issues.extend(self.cross_check());
         if !issues.is_empty() {
             return Err(invalid(issues));
         }
-        Ok(changes)
+        Ok(self.changes_since(&before))
+    }
+
+    /// Merges a tuning override's `patch` onto the raw def `kind` / `id`
+    /// (S4: as one more `extends` level, so `[[members]]` in a patch
+    /// replaces a legacy squad's soldier keys). The def's issues are
+    /// named `at` from then on.
+    fn patch_raw(
+        &mut self,
+        kind: &str,
+        id: &str,
+        patch: toml::Table,
+        at: &str,
+    ) -> Result<(), Vec<Issue>> {
+        for key in ["id", "extends", "abstract"] {
+            if patch.contains_key(key) {
+                return Err(vec![
+                    Issue::new(
+                        format!("{at}: {key}"),
+                        "an override changes values, not a def's id or parent",
+                    )
+                    .with_hint(format!("remove `{key}`")),
+                ]);
+            }
+        }
+        let known = self.raw.ids(kind);
+        let Some(rd) = self.raw.get_mut(kind, id) else {
+            return Err(vec![Issue::new(
+                at,
+                format!("unknown id `{id}`{}", did_you_mean(id, known.iter())),
+            )]);
+        };
+        let mut from = BTreeMap::new();
+        merge_level(kind, &mut rd.table, &mut from, patch, "override").map_err(|e| {
+            e.into_iter()
+                .map(|i| Issue {
+                    path: format!("{at}: {}", i.path),
+                    ..i
+                })
+                .collect::<Vec<_>>()
+        })?;
+        rd.src = None;
+        rd.file = at.to_owned();
+        Ok(())
+    }
+
+    /// Every resolved value that differs from `before`: defs first (by
+    /// kind and id), then rules. Canonical unit keys the loader fills
+    /// (`members`, `tags`, `capabilities`, `cooldown_s`, `unlock_s`) are
+    /// listed only where a file or patch sets them.
+    fn changes_since(&self, before: &ModDefs) -> Vec<OverrideChange> {
+        fn flat<T: Serialize>(d: Option<&T>) -> BTreeMap<String, String> {
+            let mut out = BTreeMap::new();
+            if let Some(d) = d
+                && let Ok(toml::Value::Table(t)) = toml::Value::try_from(d)
+            {
+                flatten("", &t, &mut out);
+            }
+            out
+        }
+        fn diff<T: Serialize>(
+            a: &BTreeMap<String, T>,
+            b: &BTreeMap<String, T>,
+            at: impl Fn(&str) -> String,
+            keep: impl Fn(&str, &str) -> bool,
+            out: &mut Vec<OverrideChange>,
+        ) {
+            let ids: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+            for id in ids {
+                let (x, y) = (flat(a.get(id)), flat(b.get(id)));
+                let keys: std::collections::BTreeSet<&String> = x.keys().chain(y.keys()).collect();
+                for k in keys {
+                    if x.get(k) != y.get(k) && keep(id, k) {
+                        out.push(OverrideChange {
+                            path: format!("{}: {k}", at(id)),
+                            old: x.get(k).cloned(),
+                            new: y.get(k).cloned(),
+                        });
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        let all = |_: &str, _: &str| true;
+        let set_by_file = |id: &str, key: &str| {
+            let top = key.split('.').next().unwrap_or_default();
+            if !["members", "tags", "capabilities", "cooldown_s", "unlock_s"].contains(&top) {
+                return true;
+            }
+            crate::resolve::resolve(&self.raw, "units", id).is_ok_and(|r| r.table.contains_key(top))
+        };
+        let at = |kind: &'static str| move |id: &str| format!("defs.{kind}.\"{id}\"");
+        diff(
+            &before.squads,
+            &self.squads,
+            at("units"),
+            set_by_file,
+            &mut out,
+        );
+        diff(&before.weapons, &self.weapons, at("weapons"), all, &mut out);
+        diff(&before.items, &self.items, at("items"), all, &mut out);
+        diff(
+            &before.factions,
+            &self.factions,
+            at("factions"),
+            all,
+            &mut out,
+        );
+        diff(&before.maps, &self.maps, at("maps"), all, &mut out);
+        diff(
+            &before.vehicles,
+            &self.vehicles,
+            at("vehicles"),
+            all,
+            &mut out,
+        );
+        diff(&before.ammo, &self.ammo, at("ammo"), all, &mut out);
+        diff(
+            &before.training,
+            &self.training,
+            at("training"),
+            all,
+            &mut out,
+        );
+        diff(
+            &before.rules,
+            &self.rules,
+            |id| format!("rules \"{id}\""),
+            all,
+            &mut out,
+        );
+        out
+    }
+
+    /// S4: a rules def's references (the training default).
+    fn check_rules_refs(&self, r: &RulesDef) -> Vec<Issue> {
+        let mut out = Vec::new();
+        if let Some(t) = &r.training
+            && !self.training.contains_key(&t.default)
+        {
+            out.push(Issue::new(
+                "training.default",
+                format!(
+                    "unknown training profile `{}`{}",
+                    t.default,
+                    did_you_mean(&t.default, self.training.keys())
+                ),
+            ));
+        }
+        out
     }
 
     /// References between defs: squads → factions, weapons, items and
@@ -465,6 +929,11 @@ impl ModDefs {
                         Some(_) => {}
                     }
                 }
+                continue;
+            }
+            self.check_unit_refs(id, s, &mut out);
+            if !s.is_legacy() || (s.weapon.is_empty() && !s.members.is_empty()) {
+                // `[[members]]` cards: checked slot by slot above.
                 continue;
             }
             match self.weapons.get(&s.weapon) {
@@ -627,8 +1096,26 @@ impl ModDefs {
                 }
             }
         }
+        for (id, r) in &self.rules {
+            for i in self.check_rules_refs(r) {
+                out.push(Issue {
+                    path: format!("rules `{id}`: {}", i.path),
+                    ..i
+                });
+            }
+        }
         for (id, f) in &self.factions {
             for (i, s) in f.roster.iter().enumerate() {
+                if self.squads.get(s).is_some_and(|sq| sq.is_abstract) {
+                    out.push(
+                        Issue::new(
+                            format!("faction `{id}`: roster[{i}]"),
+                            format!("squad `{s}` is abstract (a template for other units)"),
+                        )
+                        .with_hint("list a unit that extends it"),
+                    );
+                    continue;
+                }
                 match self.squads.get(s) {
                     None => out.push(Issue::new(
                         format!("faction `{id}`: roster[{i}]"),
@@ -646,6 +1133,12 @@ impl ModDefs {
                 }
             }
             for (i, s) in f.start_squads.iter().enumerate() {
+                if self.squads.get(s).is_some_and(|sq| sq.is_abstract) {
+                    out.push(Issue::new(
+                        format!("faction `{id}`: start_squads[{i}]"),
+                        format!("squad `{s}` is abstract (a template for other units)"),
+                    ));
+                }
                 if self
                     .squads
                     .get(s)
@@ -666,7 +1159,11 @@ impl ModDefs {
                         format!("vehicle `{id}`: crew_squad"),
                         format!("unknown squad `{c}`{}", did_you_mean(c, self.squads.keys())),
                     )),
-                    Some(sq) if sq.role != SquadRole::Crew || sq.faction != v.faction => {
+                    Some(sq)
+                        if sq.role != SquadRole::Crew
+                            || sq.faction != v.faction
+                            || sq.is_abstract =>
+                    {
                         out.push(Issue::new(
                             format!("vehicle `{id}`: crew_squad"),
                             format!("squad `{c}` is not a crew of faction `{}`", v.faction),
@@ -677,6 +1174,120 @@ impl ModDefs {
             }
         }
         out
+    }
+}
+
+impl ModDefs {
+    /// S4 references of a unit card: training profile, limit group, and
+    /// for `[[members]]` cards each slot's weapon, sidearm and items.
+    fn check_unit_refs(&self, id: &str, s: &SquadDef, out: &mut Vec<Issue>) {
+        let at = |p: String| format!("squad `{id}`: {p}");
+        if let Some(t) = &s.training
+            && !self.training.contains_key(t)
+        {
+            out.push(Issue::new(
+                at("training".into()),
+                format!(
+                    "unknown training profile `{t}`{}",
+                    did_you_mean(t, self.training.keys())
+                ),
+            ));
+        }
+        if let Some(g) = &s.limit_group
+            && !self.rules.values().any(|r| r.limit_groups.contains_key(g))
+        {
+            out.push(
+                Issue::new(
+                    at("limit_group".into()),
+                    format!("no rules def has the limit group `{g}`"),
+                )
+                .with_hint(format!("[limit_groups] \"{g}\" = 2 in the rules")),
+            );
+        }
+        if s.is_legacy() {
+            return;
+        }
+        let mut mortar = false;
+        let mut launcher = false;
+        for (i, m) in s.members.iter().enumerate() {
+            let p = format!("members[{i}]");
+            match self.weapons.get(&m.weapon) {
+                None => out.push(Issue::new(
+                    at(format!("{p}.weapon")),
+                    format!(
+                        "unknown weapon `{}`{}",
+                        m.weapon,
+                        did_you_mean(&m.weapon, self.weapons.keys())
+                    ),
+                )),
+                Some(w) if w.class == WeaponClass::Cannon => out.push(Issue::new(
+                    at(format!("{p}.weapon")),
+                    "a cannon is a vehicle weapon",
+                )),
+                Some(w) => {
+                    mortar |= w.class == WeaponClass::Mortar;
+                    launcher |= w.class == WeaponClass::Launcher;
+                }
+            }
+            if let Some(side) = &m.sidearm {
+                match self.weapons.get(side) {
+                    None => out.push(Issue::new(
+                        at(format!("{p}.sidearm")),
+                        format!(
+                            "unknown weapon `{side}`{}",
+                            did_you_mean(side, self.weapons.keys())
+                        ),
+                    )),
+                    Some(w)
+                        if !matches!(
+                            w.class,
+                            WeaponClass::Rifle
+                                | WeaponClass::Smg
+                                | WeaponClass::Mg
+                                | WeaponClass::Pistol
+                        ) =>
+                    {
+                        out.push(Issue::new(
+                            at(format!("{p}.sidearm")),
+                            "a sidearm is a rifle, SMG, MG or pistol",
+                        ))
+                    }
+                    Some(_) => {}
+                }
+            }
+            let mut kinds = [false; ITEM_KINDS];
+            for (item, &n) in &m.items {
+                match self.items.get(item) {
+                    None => out.push(Issue::new(
+                        at(format!("{p}.items.\"{item}\"")),
+                        format!(
+                            "unknown item `{item}`{}",
+                            did_you_mean(item, self.items.keys())
+                        ),
+                    )),
+                    Some(it) if n > 0 && kinds[it.kind.index()] => out.push(Issue::new(
+                        at(format!("{p}.items.\"{item}\"")),
+                        format!(
+                            "a second {:?} item; a man carries one of each kind",
+                            it.kind
+                        ),
+                    )),
+                    Some(it) => kinds[it.kind.index()] |= n > 0,
+                }
+            }
+        }
+        if s.role == SquadRole::Mortar && !mortar {
+            out.push(Issue::new(
+                at("members".into()),
+                "a mortar squad needs a member with a mortar weapon",
+            ));
+        }
+        if s.role == SquadRole::AntiTank && !launcher {
+            out.push(Issue::new(
+                at("members".into()),
+                "an anti-tank team (tag `at`) needs a member with a launcher until S4 Part B",
+            ));
+        }
     }
 }
 
@@ -704,57 +1315,6 @@ impl std::fmt::Display for OverrideChange {
     }
 }
 
-/// Merges `patch` onto def `id` of `defs` (TOML round trip), validates it
-/// and stores it; returns the changed values. `at` names the def in issues.
-fn patch_in<T: Serialize + DeserializeOwned>(
-    defs: &mut BTreeMap<String, T>,
-    id: &str,
-    patch: toml::Table,
-    at: &str,
-    validate: impl Fn(&T) -> Vec<Issue>,
-) -> Result<Vec<OverrideChange>, Vec<Issue>> {
-    let Some(def) = defs.get(id) else {
-        return Err(vec![Issue::new(
-            at,
-            format!("unknown id `{id}`{}", did_you_mean(id, defs.keys())),
-        )]);
-    };
-    let before = match toml::Value::try_from(def) {
-        Ok(toml::Value::Table(t)) => t,
-        _ => return Err(vec![Issue::new(at, "this def cannot be patched as TOML")]),
-    };
-    let mut merged = before.clone();
-    merge_tables(&mut merged, patch);
-    let new: T = toml::Value::Table(merged.clone())
-        .try_into()
-        .map_err(|e: toml::de::Error| vec![Issue::new(at, e.to_string().trim_end().to_owned())])?;
-    let issues: Vec<Issue> = validate(&new)
-        .into_iter()
-        .map(|i| Issue {
-            path: format!("{at}: {}", i.path),
-            ..i
-        })
-        .collect();
-    if !issues.is_empty() {
-        return Err(issues);
-    }
-    let (mut a, mut b) = (BTreeMap::new(), BTreeMap::new());
-    flatten("", &before, &mut a);
-    flatten("", &merged, &mut b);
-    let keys: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
-    let changes = keys
-        .into_iter()
-        .filter(|k| a.get(*k) != b.get(*k))
-        .map(|k| OverrideChange {
-            path: format!("{at}: {k}"),
-            old: a.get(k).cloned(),
-            new: b.get(k).cloned(),
-        })
-        .collect();
-    defs.insert(id.to_owned(), new);
-    Ok(changes)
-}
-
 /// Dotted path → TOML text of every non-table value under `t`.
 fn flatten(prefix: &str, t: &toml::Table, out: &mut BTreeMap<String, String>) {
     for (k, v) in t {
@@ -772,22 +1332,9 @@ fn flatten(prefix: &str, t: &toml::Table, out: &mut BTreeMap<String, String>) {
     }
 }
 
-/// Merges `over` into `base`: tables merge key by key, anything else
-/// replaces.
-fn merge_tables(base: &mut toml::Table, over: toml::Table) {
-    for (k, v) in over {
-        match (base.get_mut(&k), v) {
-            (Some(toml::Value::Table(b)), toml::Value::Table(o)) => merge_tables(b, o),
-            (_, v) => {
-                base.insert(k, v);
-            }
-        }
-    }
-}
-
 /// `" (did you mean `x`?)"` for the closest known id, or `""` when nothing
 /// is close (§8.2: actionable errors).
-pub(crate) fn did_you_mean<'a>(id: &str, known: impl Iterator<Item = &'a String>) -> String {
+pub fn did_you_mean<'a>(id: &str, known: impl Iterator<Item = &'a String>) -> String {
     let best = known
         .map(|k| (edit_distance(id, k), k))
         .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));

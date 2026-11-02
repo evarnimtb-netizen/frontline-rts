@@ -593,6 +593,20 @@ Q21 (B). Work proceeds on (A) of each question below.
   (unverified). (B) From 1944-06.
 - [ ] **S4-18. Tripod vs bipod MG.** (A) Tripod 600 m / 12 mrad / 6 s setup,
   bipod 450 m / 22 mrad / 1 s. (B) One MG 42 def.
+- [ ] **S4-19. Renamed card keys across `extends`** (Part A). (A) A level
+  that sets `cooldown_s` drops an inherited `recall_cooldown_s` (and the
+  same for `unlock_s` / `initial_cooldown_s`); only one file setting both
+  names is an error. (B) Any def whose resolved form has both names is an
+  error (the spec's literal wording; a variant of a legacy card would then
+  have to use the legacy name).
+- [ ] **S4-20. Member `ammo` format** (Part A). (A) `ammo = <rounds>` for the
+  man's own weapon, stored and ignored until S5. (B) A table by ammo id.
+- [ ] **S4-21. What Part A refuses at resolve** (Part A). (A) Besides the
+  spec's list (members beyond weapon + sidearm, item patterns, training,
+  `max_alive`): member `sidearm`, capabilities differing from the role's,
+  `limit_group`, a vehicle card's own cost / cooldown, `[ai.mix]` tags
+  beyond the six legacy ones; all lift in Part B. (B) Accept them and
+  ignore what the sim cannot run yet.
 
 ## S3 owner checklist (needs a person)
 

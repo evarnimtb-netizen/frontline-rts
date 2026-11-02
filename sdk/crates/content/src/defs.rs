@@ -8,6 +8,8 @@
 //! file on its own; cross-file references are checked by
 //! [`crate::ModDefs`].
 
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +49,22 @@ pub enum SquadRole {
     Crew,
 }
 
-/// A buyable squad (`defs/units/*.toml`).
+impl Default for SquadRole {
+    /// Only a placeholder while a unit file without `role` is read: the
+    /// loader derives the role from its tags and weapons (S4).
+    fn default() -> SquadRole {
+        SquadRole::Rifle
+    }
+}
+
+/// A unit card (`defs/units/*.toml`): a buyable squad or vehicle, or a crew.
+///
+/// S4: a file may `extends` another unit (see `docs/modding/variants.md`);
+/// what [`crate::ModDefs`] holds is the resolved card. Soldiers are given
+/// either as `[[members]]` slots or by the legacy keys (`men`, `weapon`,
+/// `weapon_men`, `sidearm`, `loadout`); after loading, a legacy card also
+/// carries its expanded `members`, and every card its `tags`,
+/// `capabilities`, `cooldown_s` and `unlock_s`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SquadDef {
@@ -57,6 +74,11 @@ pub struct SquadDef {
     pub name: String,
     /// Faction id that fields this squad.
     pub faction: String,
+    /// Legacy role (S1-S3). S4: optional; it fills `tags` and
+    /// `capabilities` left empty. Without it the loader derives the role
+    /// from the tags (crew, vehicle, at, mortar, engineer, mg, line) or the
+    /// weapons; set `tags` or `role`.
+    #[serde(default)]
     pub role: SquadRole,
     /// `vehicle` squads: the vehicle def id. Its def holds cost, pop,
     /// re-call cooldowns, speed and sight, so the soldier fields below
@@ -125,6 +147,98 @@ pub struct SquadDef {
     /// kind. Empty: nothing to throw.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loadout: Vec<LoadoutDef>,
+
+    // ------------------------------------------------ S4 card block --
+    /// S4: seconds after a call-in before this card can be called in again
+    /// (the unit spawns at the base at once; nothing is queued). Alias:
+    /// `recall_cooldown_s` (one of the two per file). Vehicle cards: unset
+    /// = the vehicle def's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_s: Option<u32>,
+    /// S4: match seconds before the first call-in. Alias:
+    /// `initial_cooldown_s`. Vehicle cards: unset = the vehicle def's; the
+    /// rules' `[vehicles] unlock_s` stays a floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlock_s: Option<u32>,
+    /// S4: most squads of this card alive at once per player; 0 = no cap.
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
+    pub max_alive: u16,
+    /// S4: a group from the rules' `[limit_groups]`; alive units of every
+    /// card in the group count against its limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_group: Option<String>,
+    /// S4: first and last month (`"YYYY-MM"`) the card is fielded; a card
+    /// outside the rules' `[call_in] date` leaves the roster. Unset: always.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_to: Option<String>,
+    /// S4: free labels for the AI mix and HUD filters (`[a-z0-9_]`, at most
+    /// 8). Reserved: `vehicle`, `crew`, `at`, `understrength`. Empty: from
+    /// `role`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// S4: what the unit can do (orders follow): `dig_basic`, `dig_full`,
+    /// `recrew`, `vehicle_crew`; `barrage` and `at_hunt` are derived from
+    /// the members' weapons. Empty: from `role`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
+    /// S4: training profile id (`defs/training/`); unset = the rules'
+    /// `[training] default`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub training: Option<String>,
+    /// S4: the AI's weight among ready cards of the same mix tag
+    /// (default 100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_weight: Option<u32>,
+    /// S4: HUD tile name, at most 14 characters (default `name`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_name: Option<String>,
+    /// S4: citations for the card's strength and weapons.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    /// S4: the men by slot (replaces the legacy soldier keys).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<crate::variant::MemberDef>,
+    /// S4: a template other units extend; it resolves and validates but
+    /// is never in a roster, start squads or the match. Not inherited.
+    #[serde(rename = "abstract", default, skip_serializing_if = "is_false")]
+    pub is_abstract: bool,
+}
+
+fn is_zero_u16(v: &u16) -> bool {
+    *v == 0
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+impl SquadDef {
+    /// Re-call cooldown of a soldier card: `cooldown_s` or its alias.
+    pub fn card_cooldown_s(&self) -> u32 {
+        self.cooldown_s.unwrap_or(self.recall_cooldown_s)
+    }
+
+    /// First call-in time of a soldier card: `unlock_s` or its alias.
+    pub fn card_unlock_s(&self) -> u32 {
+        self.unlock_s.unwrap_or(self.initial_cooldown_s)
+    }
+
+    /// Whether the soldiers are given by the legacy keys.
+    pub fn is_legacy(&self) -> bool {
+        self.men != 0 || !self.weapon.is_empty()
+    }
+
+    /// Whether the card carries the tag.
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.iter().any(|t| t == tag)
+    }
+
+    /// Whether the card has the capability.
+    pub fn has_capability(&self, cap: &str) -> bool {
+        self.capabilities.iter().any(|c| c == cap)
+    }
 }
 
 /// How many of one item a squad's men carry.
@@ -642,8 +756,56 @@ pub struct RulesDef {
     pub ai: AiDef,
     /// Where arriving men look for cover (S3b tuning table).
     pub cover: CoverTuning,
-    /// Where bought squads spawn in the base (S3b tuning table).
-    pub call_in: CallInTuning,
+    /// Where bought squads spawn in the base (S3b tuning table), and (S4)
+    /// the match date for card `available_from` / `available_to`.
+    pub call_in: CallInRulesDef,
+    /// S4: the training profile of cards that name none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub training: Option<TrainingRulesDef>,
+    /// S4: named limits on alive units, by group id (e.g.
+    /// `"ww2:heavy_armour" = 2`); a card joins one with `limit_group`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub limit_groups: BTreeMap<String, u32>,
+}
+
+/// `[call_in]` of a rules def: the S3b spawn tuning ([`CallInTuning`],
+/// which the match setup carries) plus the S4 match date.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CallInRulesDef {
+    /// Six spawn spots sit on a ring at this share of the base radius
+    /// (the seventh is the centre) (%).
+    pub spawn_ring_pct: u32,
+    /// A spot with a man or vehicle this close is passed over for the
+    /// least crowded one (m).
+    pub spawn_clear_m: u32,
+    /// A vehicle counts as this many men when spots are compared.
+    pub spawn_vehicle_weight: u32,
+    /// S4: the match month, `"YYYY-MM"`: cards whose `available_from` /
+    /// `available_to` exclude it leave the rosters. Empty (default): no
+    /// date filter (skirmish).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub date: String,
+}
+
+impl CallInRulesDef {
+    /// The spawn tuning table the match setup carries.
+    pub fn tuning(&self) -> CallInTuning {
+        CallInTuning {
+            spawn_ring_pct: self.spawn_ring_pct,
+            spawn_clear_m: self.spawn_clear_m,
+            spawn_vehicle_weight: self.spawn_vehicle_weight,
+        }
+    }
+}
+
+/// `[training]` of a rules def (S4).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TrainingRulesDef {
+    /// Training profile id of cards without `training`, e.g.
+    /// `ww2:training_regular`.
+    pub default: String,
 }
 
 /// Vehicle rules (S3, `docs/slices/S3-armour.md`). Per-vehicle numbers
@@ -893,11 +1055,16 @@ pub struct AiDef {
     pub retreat_strength_pct: u32,
     /// Spotted enemies this close to a point or squad count as a threat.
     pub threat_radius_m: u32,
-    /// Target army mix by squad role, in percent of squads.
-    pub mix_rifle_pct: u32,
-    pub mix_mg_pct: u32,
-    pub mix_engineer_pct: u32,
-    pub mix_mortar_pct: u32,
+    /// Target army mix by squad role, in percent of squads (legacy form;
+    /// S4: or `[ai.mix]`, exactly one of the two).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix_rifle_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix_mg_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix_engineer_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix_mortar_pct: Option<u32>,
     /// Rounds per mortar Barrage order.
     pub barrage_rounds: u32,
     /// Trench length engineers dig at a held point ...
@@ -912,8 +1079,16 @@ pub struct AiDef {
     /// S3 mix: vehicles after unlock (under the vehicle limit), and AT
     /// teams after unlock once an enemy vehicle has been seen, in percent
     /// of squads.
-    pub mix_vehicle_pct: u32,
-    pub mix_at_pct: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix_vehicle_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix_at_pct: Option<u32>,
+    /// S4: the target army mix by card tag, in percent of squads, e.g.
+    /// `line = 50`, `mg = 20`, `vehicle = 20`, `at = 20` (replaces the
+    /// `mix_*_pct` keys; set one form). `vehicle` counts after the vehicle
+    /// unlock, `at` once an enemy vehicle was seen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix: Option<BTreeMap<String, u32>>,
     /// Tanks hold this far from a point where enemy AT was seen ...
     pub tank_standoff_m: u32,
     /// ... else advance with their escort to this far from the enemy
@@ -983,6 +1158,8 @@ fn check_name(out: &mut Vec<Issue>, path: &str, name: &str) {
 }
 
 impl SquadDef {
+    /// Checks one resolved unit card on its own (cross-file references:
+    /// [`crate::ModDefs::cross_check`]).
     pub fn validate(&self) -> Vec<Issue> {
         let mut out = Vec::new();
         check_id(&mut out, "id", &self.id);
@@ -990,6 +1167,7 @@ impl SquadDef {
         if let Some(g) = &self.cooldown_group {
             check_id(&mut out, "cooldown_group", g);
         }
+        self.validate_card(&mut out);
         if self.role == SquadRole::Vehicle {
             // The vehicle def holds everything else.
             if self.vehicle.is_none() {
@@ -1003,7 +1181,6 @@ impl SquadDef {
                 ("weapon", !self.weapon.is_empty()),
                 ("weapon_men", self.weapon_men.is_some()),
                 ("sidearm", self.sidearm.is_some()),
-                ("cost", self.cost != 0),
                 ("recall_cooldown_s", self.recall_cooldown_s != 0),
                 ("initial_cooldown_s", self.initial_cooldown_s != 0),
                 ("hp", self.hp != default_hp()),
@@ -1016,13 +1193,21 @@ impl SquadDef {
                     self.steadiness_pct != default_steadiness(),
                 ),
                 ("loadout", !self.loadout.is_empty()),
+                ("members", !self.members.is_empty()),
+                ("training", self.training.is_some()),
             ];
             for (key, set) in soldier_fields {
                 if set {
-                    out.push(
-                        Issue::new(key, "not allowed on a vehicle squad")
-                            .with_hint("set it in the vehicle def, or remove it"),
-                    );
+                    let hint = match key {
+                        "recall_cooldown_s" => {
+                            "a vehicle card sets cooldown_s (S4), or the vehicle def"
+                        }
+                        "initial_cooldown_s" => {
+                            "a vehicle card sets unlock_s (S4), or the vehicle def"
+                        }
+                        _ => "set it in the vehicle def, or remove it",
+                    };
+                    out.push(Issue::new(key, "not allowed on a vehicle squad").with_hint(hint));
                 }
             }
             return out;
@@ -1030,40 +1215,71 @@ impl SquadDef {
         if self.vehicle.is_some() {
             out.push(Issue::new(
                 "vehicle",
-                "only squads with role = \"vehicle\" name a vehicle",
+                "only squads with role = \"vehicle\" (or the `vehicle` tag) name a vehicle",
             ));
         }
-        if self.men == 0 {
-            out.push(Issue::new("men", "required: soldiers in the squad, 1..=16"));
+        if !self.members.is_empty() {
+            // S4: the men are given by slots; the legacy keys stay out.
+            let legacy = [
+                ("men", self.men != 0),
+                ("weapon", !self.weapon.is_empty()),
+                ("weapon_men", self.weapon_men.is_some()),
+                ("sidearm", self.sidearm.is_some()),
+                ("loadout", !self.loadout.is_empty()),
+            ];
+            for (key, set) in legacy {
+                if set {
+                    out.push(
+                        Issue::new(
+                            key,
+                            "set either [[members]] or the legacy men/weapon keys, not both",
+                        )
+                        .with_hint(format!(
+                            "remove `{key}` (each slot has its weapon, items and count)"
+                        )),
+                    );
+                }
+            }
+            crate::variant::check_members(&mut out, &self.members);
         } else {
-            range(&mut out, "men", self.men as u32, 1, MAX_SQUAD_MEN as u32);
-        }
-        if self.weapon.is_empty() {
-            out.push(Issue::new(
-                "weapon",
-                "required: the weapon id the men carry",
-            ));
-        }
-        if let Some(n) = self.weapon_men {
-            range(&mut out, "weapon_men", n as u32, 1, self.men.max(1) as u32);
-            if n < self.men && self.sidearm.is_none() {
+            if self.men == 0 {
                 out.push(
                     Issue::new(
-                        "sidearm",
-                        format!(
-                            "{} men carry no `weapon`; they need a sidearm",
-                            self.men - n
-                        ),
+                        "men",
+                        "required: soldiers in the squad, 1..=16 (or [[members]] slots)",
                     )
-                    .with_hint("sidearm = \"ww2:kar98k\""),
+                    .with_hint("[[members]] slot = \"rifleman\", count = 8, weapon = \"...\""),
                 );
+            } else {
+                range(&mut out, "men", self.men as u32, 1, MAX_SQUAD_MEN as u32);
             }
-        }
-        if self.sidearm.is_some() && self.weapon_men.is_none_or(|n| n >= self.men) {
-            out.push(Issue::new(
-                "sidearm",
-                "every man carries `weapon`; set weapon_men below men or remove it",
-            ));
+            if self.weapon.is_empty() {
+                out.push(Issue::new(
+                    "weapon",
+                    "required: the weapon id the men carry",
+                ));
+            }
+            if let Some(n) = self.weapon_men {
+                range(&mut out, "weapon_men", n as u32, 1, self.men.max(1) as u32);
+                if n < self.men && self.sidearm.is_none() {
+                    out.push(
+                        Issue::new(
+                            "sidearm",
+                            format!(
+                                "{} men carry no `weapon`; they need a sidearm",
+                                self.men - n
+                            ),
+                        )
+                        .with_hint("sidearm = \"ww2:kar98k\""),
+                    );
+                }
+            }
+            if self.sidearm.is_some() && self.weapon_men.is_none_or(|n| n >= self.men) {
+                out.push(Issue::new(
+                    "sidearm",
+                    "every man carries `weapon`; set weapon_men below men or remove it",
+                ));
+            }
         }
         range(
             &mut out,
@@ -1109,7 +1325,102 @@ impl SquadDef {
                 ));
             }
         }
+        for cap in ["dig_basic", "dig_full"] {
+            if self.dig_rate_pct == 0 && self.has_capability(cap) {
+                out.push(
+                    Issue::new(
+                        "capabilities",
+                        format!("`{cap}` needs a digging speed (dig_rate_pct is 0)"),
+                    )
+                    .with_hint("dig_rate_pct = 100"),
+                );
+            }
+        }
         out
+    }
+
+    /// S4 card-block keys shared by soldier and vehicle cards.
+    fn validate_card(&self, out: &mut Vec<Issue>) {
+        if let Some(c) = self.cooldown_s {
+            range(out, "cooldown_s", c, 0, MAX_COOLDOWN_S);
+        }
+        if let Some(c) = self.unlock_s {
+            range(out, "unlock_s", c, 0, MAX_INITIAL_COOLDOWN_S);
+        }
+        range(
+            out,
+            "max_alive",
+            self.max_alive as u32,
+            0,
+            crate::variant::MAX_ALIVE_CAP as u32,
+        );
+        if let Some(g) = &self.limit_group {
+            check_id(out, "limit_group", g);
+        }
+        if let Some(t) = &self.training {
+            check_id(out, "training", t);
+        }
+        if let Some(w) = self.ai_weight {
+            range(out, "ai_weight", w, 0, 1000);
+        }
+        if let Some(n) = &self.short_name {
+            let len = n.chars().count();
+            if n.trim().is_empty() || len > crate::variant::MAX_SHORT_NAME {
+                out.push(Issue::new(
+                    "short_name",
+                    format!(
+                        "must be 1..={} characters, got {len}",
+                        crate::variant::MAX_SHORT_NAME
+                    ),
+                ));
+            }
+        }
+        for (i, src) in self.sources.iter().enumerate() {
+            if src.trim().is_empty() {
+                out.push(Issue::new(format!("sources[{i}]"), "must not be empty"));
+            }
+        }
+        let mut months = [None, None];
+        for (k, (key, v)) in [
+            ("available_from", &self.available_from),
+            ("available_to", &self.available_to),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if let Some(v) = v {
+                months[k] = crate::variant::parse_month(v);
+                if months[k].is_none() {
+                    out.push(
+                        Issue::new(key, format!("`{v}` is not a month \"YYYY-MM\""))
+                            .with_hint(format!("{key} = \"1944-06\"")),
+                    );
+                }
+            }
+        }
+        if let [Some(a), Some(b)] = months
+            && a > b
+        {
+            out.push(Issue::new(
+                "available_from",
+                "must not be after available_to",
+            ));
+        }
+        crate::variant::check_labels(out, &self.tags, &self.capabilities);
+        let has_vehicle_tag = self.has_tag("vehicle");
+        if !self.tags.is_empty() && has_vehicle_tag != self.vehicle.is_some() {
+            out.push(
+                Issue::new(
+                    "tags",
+                    "the reserved tag `vehicle` marks exactly the cards that name a vehicle",
+                )
+                .with_hint(if self.vehicle.is_some() {
+                    "add \"vehicle\" to tags"
+                } else {
+                    "remove \"vehicle\" from tags"
+                }),
+            );
+        }
     }
 }
 
@@ -1714,17 +2025,11 @@ impl RulesDef {
         for (name, v, lo, hi) in [
             ("retreat_strength_pct", a.retreat_strength_pct, 0, 100),
             ("threat_radius_m", a.threat_radius_m, 1, 500),
-            ("mix_rifle_pct", a.mix_rifle_pct, 0, 100),
-            ("mix_mg_pct", a.mix_mg_pct, 0, 100),
-            ("mix_engineer_pct", a.mix_engineer_pct, 0, 100),
-            ("mix_mortar_pct", a.mix_mortar_pct, 0, 100),
             ("barrage_rounds", a.barrage_rounds, 1, 50),
             ("dig_length_m", a.dig_length_m, 2, 1000),
             ("dig_offset_m", a.dig_offset_m, 0, 100),
             ("throw_cooldown_s", a.throw_cooldown_s, 1, 600),
             ("frag_group_men", a.frag_group_men, 1, 16),
-            ("mix_vehicle_pct", a.mix_vehicle_pct, 0, 100),
-            ("mix_at_pct", a.mix_at_pct, 0, 100),
             ("tank_standoff_m", a.tank_standoff_m, 1, 2000),
             ("assault_close_m", a.assault_close_m, 1, 500),
             ("at_clear_s", a.at_clear_s, 1, 600),
@@ -1732,11 +2037,24 @@ impl RulesDef {
         ] {
             range(&mut out, &format!("ai.{name}"), v, lo, hi);
         }
-        if a.mix_rifle_pct + a.mix_mg_pct + a.mix_engineer_pct + a.mix_mortar_pct == 0 {
-            out.push(Issue::new(
-                "ai.mix_rifle_pct",
-                "the mix must not be all zero",
-            ));
+        a.check_mix(&mut out);
+        if !self.call_in.date.is_empty()
+            && crate::variant::parse_month(&self.call_in.date).is_none()
+        {
+            out.push(
+                Issue::new(
+                    "call_in.date",
+                    format!("`{}` is not a month \"YYYY-MM\"", self.call_in.date),
+                )
+                .with_hint("[call_in] date = \"1944-06\" (or \"\" for no date filter)"),
+            );
+        }
+        if let Some(t) = &self.training {
+            check_id(&mut out, "training.default", &t.default);
+        }
+        for (g, &n) in &self.limit_groups {
+            check_id(&mut out, &format!("limit_groups.\"{g}\""), g);
+            range(&mut out, &format!("limit_groups.\"{g}\""), n, 0, 1000);
         }
         if a.dig_length_m > self.dig.profiles.trench.max_length_m {
             out.push(Issue::new(
@@ -1758,6 +2076,7 @@ impl RulesDef {
             1,
             10_000,
         );
+        let call_in = self.call_in.tuning();
         check_tuning(
             &mut out,
             "",
@@ -1781,9 +2100,103 @@ impl RulesDef {
                 cover: &self.cover,
                 throw: &self.items.throw,
                 dig_common: &self.dig.common,
-                call_in: &self.call_in,
+                call_in: &call_in,
             },
         );
         out
+    }
+}
+
+/// The legacy `mix_*_pct` keys of `[ai]` and the `[ai.mix]` tag each maps
+/// to (S4: the old form maps 1:1).
+pub const LEGACY_MIX_KEYS: [(&str, &str); 6] = [
+    ("mix_rifle_pct", "line"),
+    ("mix_mg_pct", "mg"),
+    ("mix_engineer_pct", "engineer"),
+    ("mix_mortar_pct", "mortar"),
+    ("mix_vehicle_pct", "vehicle"),
+    ("mix_at_pct", "at"),
+];
+
+impl AiDef {
+    fn legacy_mix(&self) -> [Option<u32>; 6] {
+        [
+            self.mix_rifle_pct,
+            self.mix_mg_pct,
+            self.mix_engineer_pct,
+            self.mix_mortar_pct,
+            self.mix_vehicle_pct,
+            self.mix_at_pct,
+        ]
+    }
+
+    /// The target mix by tag, from whichever form the rules use.
+    pub fn mix_by_tag(&self) -> BTreeMap<String, u32> {
+        if let Some(m) = &self.mix {
+            return m.clone();
+        }
+        LEGACY_MIX_KEYS
+            .iter()
+            .zip(self.legacy_mix())
+            .map(|((_, tag), v)| (tag.to_string(), v.unwrap_or(0)))
+            .collect()
+    }
+
+    fn check_mix(&self, out: &mut Vec<Issue>) {
+        let legacy = self.legacy_mix();
+        let any_legacy = legacy.iter().any(Option::is_some);
+        match &self.mix {
+            Some(_) if any_legacy => {
+                for ((key, tag), v) in LEGACY_MIX_KEYS.iter().zip(legacy) {
+                    if v.is_some() {
+                        out.push(
+                            Issue::new(
+                                format!("ai.{key}"),
+                                "set the mix either as [ai.mix] or as the mix_*_pct keys",
+                            )
+                            .with_hint(format!("move it to [ai.mix] {tag} = ...")),
+                        );
+                    }
+                }
+            }
+            Some(m) => {
+                for (tag, &v) in m {
+                    let p = format!("ai.mix.{tag}");
+                    if !crate::variant::is_label(tag, crate::variant::MAX_TAG_LEN) {
+                        out.push(Issue::new(&p, format!("`{tag}` is not a tag")));
+                    }
+                    range(out, &p, v, 0, 100);
+                }
+                if m.iter()
+                    .filter(|(t, _)| *t != "vehicle" && *t != "at")
+                    .all(|(_, &v)| v == 0)
+                {
+                    out.push(Issue::new(
+                        "ai.mix",
+                        "the infantry mix (tags other than vehicle and at) must not be all zero",
+                    ));
+                }
+            }
+            None => {
+                for ((key, _), v) in LEGACY_MIX_KEYS.iter().zip(legacy) {
+                    match v {
+                        None => out.push(
+                            Issue::new(
+                                format!("ai.{key}"),
+                                "required (or give the whole mix as [ai.mix] by tag)",
+                            )
+                            .with_hint(format!("{key} = 0")),
+                        ),
+                        Some(v) => range(out, &format!("ai.{key}"), v, 0, 100),
+                    }
+                }
+                if legacy[..4].iter().map(|v| v.unwrap_or(0)).sum::<u32>() == 0 && any_legacy {
+                    out.push(Issue::new(
+                        "ai.mix_rifle_pct",
+                        "the mix must not be all zero",
+                    ));
+                }
+            }
+        }
     }
 }

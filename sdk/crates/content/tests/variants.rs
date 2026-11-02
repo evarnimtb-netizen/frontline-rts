@@ -1,0 +1,597 @@
+//! S4 variant system in the content crate (docs/slices/S4-variants.md,
+//! Part A): `extends` on every def kind, `[[members]]`, the card block,
+//! capabilities, tags and training, with actionable errors; overrides on a
+//! parent reach its variants; what today's sim cannot run is refused at
+//! resolve with "needs S4 Part B".
+
+use std::path::{Path, PathBuf};
+
+use frontline_content::{ContentError, Difficulty, MatchRequest, ModDefs, SquadRole};
+
+fn ww2_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2")
+}
+
+fn copy_dir(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for e in std::fs::read_dir(src).unwrap() {
+        let e = e.unwrap();
+        let to = dst.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_dir(&e.path(), &to);
+        } else {
+            std::fs::copy(e.path(), to).unwrap();
+        }
+    }
+}
+
+/// A copy of the ww2 mod with `files` (path under the mod, text) added or
+/// replaced.
+fn mod_with(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    let dst = std::env::temp_dir().join(format!("frontline-s4-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dst);
+    copy_dir(&ww2_root(), &dst);
+    for (rel, text) in files {
+        let p = dst.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    dst
+}
+
+fn load_with(name: &str, files: &[(&str, &str)]) -> Result<ModDefs, ContentError> {
+    let root = mod_with(name, files);
+    let r = ModDefs::load(&root);
+    let _ = std::fs::remove_dir_all(&root);
+    r
+}
+
+fn errors(r: Result<ModDefs, ContentError>) -> String {
+    match r {
+        Ok(_) => panic!("expected errors"),
+        Err(e) => e.to_string(),
+    }
+}
+
+fn skirmish() -> MatchRequest {
+    MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal)
+}
+
+fn write_tmp(name: &str, text: &str) -> PathBuf {
+    let p = std::env::temp_dir().join(format!("frontline-s4-{name}-{}.toml", std::process::id()));
+    std::fs::write(&p, text).unwrap();
+    p
+}
+
+const UNIT: &str = "defs/units/zz_variant.toml";
+
+#[test]
+fn the_example_variant_resolves_from_its_parent() {
+    let mut d = ModDefs::load(&ww2_root()).unwrap();
+    d.add_defs_dir(&ww2_root().join("tests/variants")).unwrap();
+    let v = &d.squads["ww2:usa_rifle_squad_understrength"];
+    let p = &d.squads["ww2:usa_rifle_squad"];
+    assert_eq!(v.role, SquadRole::Rifle);
+    assert_eq!(v.tags, ["line", "understrength"]);
+    assert_eq!(v.capabilities, p.capabilities);
+    assert_eq!(
+        (v.cost, v.cooldown_s, v.speed_cm_s),
+        (p.cost, p.cooldown_s, p.speed_cm_s)
+    );
+    // [[members]] replaced the parent's legacy soldier keys.
+    assert!(!v.is_legacy() && v.loadout.is_empty());
+    assert_eq!(v.members.iter().map(|m| m.count).sum::<u8>(), 9);
+    // The variant's own file is kept raw (the SDK view), with its parent.
+    let raw = d.raw.get("units", &v.id).unwrap();
+    assert_eq!(raw.extends(), Some("ww2:usa_rifle_squad"));
+    // It is not in a roster without the roster patch, but it resolves.
+    let s = d.resolve(&skirmish()).unwrap();
+    let t = s.squad_type_index(&v.id).unwrap();
+    assert_eq!(s.squad_types[t as usize].men, 9);
+    // Its id cannot be added twice.
+    let e = d
+        .clone()
+        .add_defs_dir(&ww2_root().join("tests/variants"))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("already a units def"), "{e}");
+}
+
+#[test]
+fn extends_errors_are_actionable() {
+    // A cycle names its defs.
+    let e = errors(load_with(
+        "cycle",
+        &[
+            (
+                "defs/units/zz_a.toml",
+                "id = \"ww2:zz_a\"\nextends = \"ww2:zz_b\"\n",
+            ),
+            (
+                "defs/units/zz_b.toml",
+                "id = \"ww2:zz_b\"\nextends = \"ww2:zz_a\"\n",
+            ),
+        ],
+    ));
+    assert!(
+        e.contains("defs/units/zz_a.toml: extends")
+            && e.contains("ww2:zz_a -> ww2:zz_b -> ww2:zz_a"),
+        "{e}"
+    );
+    // An unknown parent suggests the closest id.
+    let e = errors(load_with(
+        "unknown",
+        &[(
+            UNIT,
+            "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_sqad\"\n",
+        )],
+    ));
+    assert!(e.contains("did you mean `ww2:usa_rifle_squad`"), "{e}");
+    // A parent of another kind is named as such.
+    let e = errors(load_with(
+        "kind",
+        &[(UNIT, "id = \"ww2:zz_variant\"\nextends = \"ww2:kar98k\"\n")],
+    ));
+    assert!(e.contains("`ww2:kar98k` is a weapons def"), "{e}");
+    // Five parents are one too many.
+    let mut files = Vec::new();
+    let texts: Vec<(String, String)> = (0..6)
+        .map(|k| {
+            let parent = if k == 0 {
+                "ww2:usa_rifle_squad".to_owned()
+            } else {
+                format!("ww2:zz_{}", k - 1)
+            };
+            (
+                format!("defs/units/zz_{k}.toml"),
+                format!("id = \"ww2:zz_{k}\"\nextends = \"{parent}\"\n"),
+            )
+        })
+        .collect();
+    for (p, t) in &texts {
+        files.push((p.as_str(), t.as_str()));
+    }
+    let e = errors(load_with("deep", &files));
+    assert!(
+        e.contains("defs/units/zz_4.toml: extends") && e.contains("5 parents deep"),
+        "{e}"
+    );
+    assert!(!e.contains("zz_3.toml: extends"), "{e}");
+}
+
+#[test]
+fn unit_rules_of_the_merge_are_enforced() {
+    // Legacy soldier keys over a parent with [[members]].
+    let e = errors(load_with(
+        "legacy_over_members",
+        &[
+            (
+                "defs/units/zz_a.toml",
+                "id = \"ww2:zz_a\"\nextends = \"ww2:usa_rifle_squad\"\n\
+                 [[members]]\nslot = \"r\"\ncount = 4\nweapon = \"ww2:m1_garand\"\n",
+            ),
+            (
+                "defs/units/zz_b.toml",
+                "id = \"ww2:zz_b\"\nextends = \"ww2:zz_a\"\nmen = 6\n",
+            ),
+        ],
+    ));
+    assert!(
+        e.contains("zz_b.toml: men") && e.contains("parent `ww2:zz_a` uses [[members]]"),
+        "{e}"
+    );
+    // An alias and its S4 name in one file.
+    let e = errors(load_with(
+        "alias",
+        &[(
+            UNIT,
+            "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\n\
+             cooldown_s = 10\nrecall_cooldown_s = 12\n",
+        )],
+    ));
+    assert!(e.contains("are one key"), "{e}");
+    // The S4 name over a parent's alias replaces it.
+    let d = load_with(
+        "alias_ok",
+        &[(
+            UNIT,
+            "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\ncooldown_s = 10\n",
+        )],
+    )
+    .unwrap();
+    let v = &d.squads["ww2:zz_variant"];
+    assert_eq!((v.cooldown_s, v.recall_cooldown_s), (Some(10), 0));
+    let s = d.resolve(&skirmish()).unwrap();
+    let t = s.squad_type_index("ww2:zz_variant").unwrap();
+    assert_eq!(s.squad_types[t as usize].recall_cooldown_ticks, 10 * 30);
+    // Members and legacy keys in one file.
+    let e = errors(load_with(
+        "both",
+        &[(
+            UNIT,
+            "id = \"ww2:zz_variant\"\nname = \"X\"\nfaction = \"ww2:usa\"\ntags = [\"line\"]\n\
+             men = 3\nspeed_cm_s = 300\nsight_m = 150\nspacing_dm = 30\n\
+             [[members]]\nslot = \"r\"\nweapon = \"ww2:m1_garand\"\n",
+        )],
+    ));
+    assert!(e.contains("set either [[members]] or the legacy"), "{e}");
+}
+
+#[test]
+fn members_tags_capabilities_and_dates_are_checked() {
+    let e = errors(load_with(
+        "labels",
+        &[(
+            UNIT,
+            r#"
+id = "ww2:zz_variant"
+extends = "ww2:usa_rifle_squad"
+tags = ["line", "Bad-Tag", "line"]
+capabilities = ["dig_basic", "breach", "dig_ful", "barrage"]
+available_from = "1944-13"
+available_to = "1943-01"
+short_name = "A name far too long"
+[[members]]
+slot = "lead"
+count = 2
+weapon = "ww2:m1_garand"
+traits = ["leader", "officer", "crew_gunr"]
+items = { "ww2:mk2_grenade" = 11, "ww2:stielhandgranate" = 1, "ww2:nope" = 1 }
+[[members]]
+slot = "r"
+count = 15
+weapon = "ww2:m1_garnd"
+"#,
+        )],
+    ));
+    for want in [
+        "tags[1]",
+        "tags[2]: `line` is listed twice",
+        "capability `breach` is reserved",
+        "did you mean `dig_full`",
+        "`barrage` comes from a mortar",
+        "available_from: `1944-13` is not a month",
+        "short_name",
+        "a `leader` slot comes first and has count = 1",
+        "trait `officer` is reserved",
+        "did you mean `crew_gunner`",
+        "items.\"ww2:mk2_grenade\": must be in 0..=10",
+        "a second Frag item",
+        "unknown item `ww2:nope`",
+        "the slots hold 17 men",
+        "did you mean `ww2:m1_garand`",
+    ] {
+        assert!(e.contains(want), "missing {want:?} in\n{e}");
+    }
+    // A unit without role or tags says what to add.
+    let e = errors(load_with(
+        "notags",
+        &[(
+            UNIT,
+            "id = \"ww2:zz_variant\"\nname = \"X\"\nfaction = \"ww2:usa\"\n\
+             speed_cm_s = 300\nsight_m = 150\nspacing_dm = 30\n\
+             [[members]]\nslot = \"r\"\nweapon = \"ww2:m1_garand\"\n",
+        )],
+    ));
+    assert!(e.contains("zz_variant.toml: tags: required"), "{e}");
+    // The reserved vehicle and crew tags must match the card.
+    let e = errors(load_with(
+        "reserved",
+        &[(
+            UNIT,
+            "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\n\
+             tags = [\"line\", \"vehicle\", \"crew\"]\n",
+        )],
+    ));
+    assert!(
+        e.contains("`vehicle` marks exactly") && e.contains("`crew` marks exactly"),
+        "{e}"
+    );
+    // An issue in an inherited value names the parent.
+    let e = errors(load_with(
+        "from_parent",
+        &[
+            (
+                "defs/units/zz_a.toml",
+                "id = \"ww2:zz_a\"\nextends = \"ww2:usa_rifle_squad\"\nabstract = true\n\
+                 sight_m = 0\n",
+            ),
+            (UNIT, "id = \"ww2:zz_variant\"\nextends = \"ww2:zz_a\"\n"),
+        ],
+    ));
+    assert!(
+        e.contains("zz_variant.toml: sight_m: must be in 1..=2000, got 0 (from `ww2:zz_a`)"),
+        "{e}"
+    );
+}
+
+#[test]
+fn training_profiles_and_rules_keys_are_checked() {
+    let e = errors(load_with(
+        "training",
+        &[
+            (
+                "defs/training/zz.toml",
+                "id = \"ww2:training_zz\"\nname = \"Z\"\nspread_pct = 500\n",
+            ),
+            (
+                UNIT,
+                "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\n\
+                 training = \"ww2:training_regualr\"\n",
+            ),
+        ],
+    ));
+    assert!(
+        e.contains("spread_pct: must be in 25..=400, got 500"),
+        "{e}"
+    );
+    assert!(e.contains("did you mean `ww2:training_regular`"), "{e}");
+    // The rules' date and default training are checked too.
+    let mut d = ModDefs::load(&ww2_root()).unwrap();
+    let p = write_tmp(
+        "rules_keys",
+        "[call_in]\ndate = \"June 44\"\n[training]\ndefault = \"ww2:training_x\"\n",
+    );
+    let e = d
+        .apply_override(&p, "ww2:skirmish")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("call_in.date") && e.contains("unknown training profile"),
+        "{e}"
+    );
+}
+
+#[test]
+fn an_override_on_a_parent_reaches_its_variants() {
+    let mut d = ModDefs::load(&ww2_root()).unwrap();
+    d.add_defs_dir(&ww2_root().join("tests/variants")).unwrap();
+    let p = write_tmp(
+        "parent",
+        "[defs.units.\"ww2:usa_rifle_squad\"]\ncost = 300\nsight_m = 160\n",
+    );
+    let changes = d.apply_override(&p, "ww2:skirmish").unwrap();
+    let shown: Vec<String> = changes.iter().map(|c| c.to_string()).collect();
+    assert_eq!(
+        shown,
+        [
+            "defs.units.\"ww2:usa_rifle_squad\": cost: 250 -> 300",
+            "defs.units.\"ww2:usa_rifle_squad\": sight_m: 150 -> 160",
+            "defs.units.\"ww2:usa_rifle_squad_understrength\": cost: 250 -> 300",
+            "defs.units.\"ww2:usa_rifle_squad_understrength\": sight_m: 150 -> 160",
+        ]
+    );
+    assert_eq!(d.squads["ww2:usa_rifle_squad_understrength"].cost, 300);
+    // A [[members]] patch on a legacy squad replaces its soldier keys.
+    let p = write_tmp(
+        "members_patch",
+        "[defs.units.\"ww2:ger_mg_team\"]\n\
+         [[defs.units.\"ww2:ger_mg_team\".members]]\nslot = \"gunner\"\nweapon = \"ww2:mg42\"\n\
+         [[defs.units.\"ww2:ger_mg_team\".members]]\nslot = \"rifleman\"\ncount = 3\n\
+         weapon = \"ww2:kar98k\"\n",
+    );
+    d.apply_override(&p, "ww2:skirmish").unwrap();
+    let s = d.resolve(&skirmish()).unwrap();
+    let ty = &s.squad_types[s.squad_type_index("ww2:ger_mg_team").unwrap() as usize];
+    assert_eq!((ty.men, ty.weapon_men), (4, 1));
+    assert!(ty.sidearm.is_some());
+}
+
+#[test]
+fn what_todays_sim_cannot_run_is_refused_at_resolve() {
+    for (name, extra, want) in [
+        (
+            "three_weapons",
+            "[[members]]\nslot = \"a\"\nweapon = \"ww2:m1_garand\"\n\
+             [[members]]\nslot = \"b\"\nweapon = \"ww2:m3_smg\"\n\
+             [[members]]\nslot = \"c\"\nweapon = \"ww2:m1919\"\n",
+            "slot `c` carries `ww2:m1919`",
+        ),
+        (
+            "sidearm",
+            "[[members]]\nslot = \"a\"\nweapon = \"ww2:m1919\"\nsidearm = \"ww2:m1911a1\"\n",
+            "sets a sidearm",
+        ),
+        (
+            "training",
+            "training = \"ww2:training_conscript\"\n",
+            "training profile `ww2:training_conscript`",
+        ),
+        ("max_alive", "max_alive = 2\n", "a card limit"),
+        (
+            "caps",
+            "capabilities = [\"dig_basic\", \"dig_full\", \"recrew\"]\n",
+            "capabilities",
+        ),
+    ] {
+        let text = format!("id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\n{extra}");
+        let d = load_with(name, &[(UNIT, &text)]).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let e = d.resolve(&skirmish()).unwrap_err().to_string();
+        assert!(
+            e.contains("needs S4 Part B") && e.contains(want),
+            "{name}: {e}"
+        );
+    }
+}
+
+#[test]
+fn abstract_templates_resolve_but_never_reach_a_match() {
+    let files = [
+        (
+            "defs/units/zz_template.toml",
+            "id = \"ww2:zz_template\"\nextends = \"ww2:usa_rifle_squad\"\nabstract = true\n\
+             name = \"Template\"\n",
+        ),
+        (
+            UNIT,
+            "id = \"ww2:zz_variant\"\nextends = \"ww2:zz_template\"\nname = \"From template\"\n",
+        ),
+    ];
+    let d = load_with("abstract", &files).unwrap();
+    assert!(d.squads["ww2:zz_template"].is_abstract);
+    assert!(!d.squads["ww2:zz_variant"].is_abstract);
+    let s = d.resolve(&skirmish()).unwrap();
+    assert!(s.squad_type_index("ww2:zz_template").is_none());
+    assert!(s.squad_type_index("ww2:zz_variant").is_some());
+    // Squad indices stay dense: the crew squads still point at crews.
+    for v in &s.vehicles {
+        let c = v.crew_squad.unwrap();
+        assert_eq!(s.squad_types[c as usize].role, SquadRole::Crew);
+    }
+    let usa = std::fs::read_to_string(ww2_root().join("defs/factions/usa.toml"))
+        .unwrap()
+        .replace(
+            "\"ww2:usa_rifle_squad\",\n    \"ww2:usa_mg_team\"",
+            "\"ww2:usa_rifle_squad\",\n    \"ww2:zz_template\",\n    \"ww2:usa_mg_team\"",
+        );
+    let mut with_roster = files.to_vec();
+    with_roster.push(("defs/factions/usa.toml", &usa));
+    let e = errors(load_with("abstract_roster", &with_roster));
+    assert!(e.contains("squad `ww2:zz_template` is abstract"), "{e}");
+}
+
+#[test]
+fn the_match_date_filters_rosters() {
+    let files = [(
+        UNIT,
+        "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\n\
+         available_from = \"1944-08\"\n",
+    )];
+    let usa = std::fs::read_to_string(ww2_root().join("defs/factions/usa.toml"))
+        .unwrap()
+        .replace(
+            "\"ww2:usa_mg_team\",",
+            "\"ww2:usa_mg_team\",\n    \"ww2:zz_variant\",",
+        );
+    let mut all = files.to_vec();
+    all.push(("defs/factions/usa.toml", &usa));
+    let mut d = load_with("date", &all).unwrap();
+    let in_roster = |d: &ModDefs| {
+        let s = d.resolve(&skirmish()).unwrap();
+        let t = s.squad_type_index("ww2:zz_variant").unwrap();
+        s.factions.iter().any(|f| f.roster.contains(&t))
+    };
+    // Skirmish has no date: every card is fielded.
+    assert!(in_roster(&d));
+    let june = write_tmp("june", "[call_in]\ndate = \"1944-06\"\n");
+    let mut early = d.clone();
+    early.apply_override(&june, "ww2:skirmish").unwrap();
+    assert!(!in_roster(&early));
+    let sept = write_tmp("sept", "[call_in]\ndate = \"1944-09\"\n");
+    d.apply_override(&sept, "ww2:skirmish").unwrap();
+    assert!(in_roster(&d));
+    // A start squad outside the date is an error at resolve.
+    let start = write_tmp(
+        "start",
+        "[defs.factions.\"ww2:usa\"]\nstart_squads = [\"ww2:zz_variant\"]\n",
+    );
+    early.apply_override(&start, "ww2:skirmish").unwrap();
+    let e = early.resolve(&skirmish()).unwrap_err().to_string();
+    assert!(e.contains("not fielded on the match date 1944-06"), "{e}");
+}
+
+#[test]
+fn the_ai_mix_by_tag_maps_one_to_one_onto_the_old_keys() {
+    let rules = std::fs::read_to_string(ww2_root().join("defs/rules/skirmish.toml")).unwrap();
+    let mut out = String::new();
+    for line in rules.lines() {
+        if line.starts_with("mix_") {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out = out.replace(
+        "[ai.infantry]",
+        "[ai.mix]\nline = 50\nmg = 20\nengineer = 15\nmortar = 15\nvehicle = 20\nat = 20\n\n\
+         [ai.infantry]",
+    );
+    let d = load_with("mix", &[("defs/rules/skirmish.toml", &out)]).unwrap();
+    let base = ModDefs::load(&ww2_root()).unwrap();
+    let bytes = |d: &ModDefs| postcard::to_allocvec(&d.resolve(&skirmish()).unwrap()).unwrap();
+    assert_eq!(bytes(&d), bytes(&base));
+    // Both forms at once is an error naming the keys to move.
+    let mut both = d.clone();
+    let p = write_tmp("mix_both", "[ai]\nmix_mg_pct = 20\n");
+    let e = both
+        .apply_override(&p, "ww2:skirmish")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("ai.mix_mg_pct") && e.contains("[ai.mix] mg"),
+        "{e}"
+    );
+    // A tag the S3 AI does not buy by is refused at resolve in Part A.
+    let p = write_tmp("mix_new_tag", "[ai.mix]\nassault = 10\n");
+    both.apply_override(&p, "ww2:skirmish").unwrap();
+    let e = both.resolve(&skirmish()).unwrap_err().to_string();
+    assert!(
+        e.contains("ai.mix.assault") && e.contains("S4 Part B"),
+        "{e}"
+    );
+}
+
+#[test]
+fn extends_works_for_every_def_kind() {
+    let d = load_with(
+        "kinds",
+        &[
+            (
+                "defs/weapons/zz.toml",
+                "id = \"ww2:zz_kar\"\nextends = \"ww2:kar98k\"\nname = \"Kar (long)\"\nrange_m = 400\n",
+            ),
+            (
+                "defs/items/zz.toml",
+                "id = \"ww2:zz_frag\"\nextends = \"ww2:mk2_grenade\"\n[he]\nfrag_count = 10\n",
+            ),
+            (
+                "defs/vehicles/zz.toml",
+                "id = \"ww2:zz_pz4\"\nextends = \"ww2:ger_pz4_h\"\nname = \"Pz IV (test)\"\ncost = 700\n",
+            ),
+            (
+                "defs/ammo/zz.toml",
+                "id = \"ww2:zz_ap\"\nextends = \"ww2:75mm_pzgr39\"\nname = \"AP (test)\"\n",
+            ),
+            (
+                "defs/maps/zz.toml",
+                "id = \"ww2:zz_map\"\nextends = \"ww2:kessel_ridge\"\nname = \"Ridge (test)\"\n",
+            ),
+            (
+                "defs/rules/zz.toml",
+                "id = \"ww2:zz_rules\"\nextends = \"ww2:skirmish\"\nname = \"R\"\n[economy]\n\
+                 start_manpower = 900\n",
+            ),
+            (
+                "defs/training/zz.toml",
+                "id = \"ww2:zz_green\"\nextends = \"ww2:training_conscript\"\nname = \"Green\"\n\
+                 spread_pct = 140\n",
+            ),
+        ],
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let (k, base) = (&d.weapons["ww2:zz_kar"], &d.weapons["ww2:kar98k"]);
+    assert_eq!((k.range_m, k.damage), (400, base.damage));
+    let f = d.items["ww2:zz_frag"].he.as_ref().unwrap();
+    let fb = d.items["ww2:mk2_grenade"].he.as_ref().unwrap();
+    assert_eq!((f.frag_count, f.damage), (10, fb.damage));
+    assert_eq!(d.vehicles["ww2:zz_pz4"].cost, 700);
+    assert_eq!(
+        d.vehicles["ww2:zz_pz4"].hull,
+        d.vehicles["ww2:ger_pz4_h"].hull
+    );
+    assert_eq!(
+        d.ammo["ww2:zz_ap"].caliber_mm,
+        d.ammo["ww2:75mm_pzgr39"].caliber_mm
+    );
+    assert_eq!(
+        d.maps["ww2:zz_map"].capture_points,
+        d.maps["ww2:kessel_ridge"].capture_points
+    );
+    assert_eq!(d.rules["ww2:zz_rules"].economy.start_manpower, 900);
+    assert_eq!(
+        d.rules["ww2:zz_rules"].tickets,
+        d.rules["ww2:skirmish"].tickets
+    );
+    let g = &d.training["ww2:zz_green"];
+    assert_eq!((g.spread_pct, g.reload_pct), (140, 115));
+}

@@ -21,8 +21,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::defs::{
-    DigProfileDef, ITEM_KINDS, ItemHeDef, ItemKind, MAX_ITEM_COUNT, SquadRole, WeaponClass,
-    parse_color,
+    DigProfileDef, ITEM_KINDS, ItemHeDef, ItemKind, MAX_ITEM_COUNT, SquadDef, SquadRole,
+    WeaponClass, parse_color,
 };
 use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
@@ -834,6 +834,11 @@ impl ModDefs {
                 }),
             })
             .collect();
+        // S4 Part A: cards today's sim cannot run are refused here.
+        let part_b = self.part_a_refusals(rules);
+        if !part_b.is_empty() {
+            return Err(invalid(part_b));
+        }
         let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
         let vehicles = self.lower_vehicles(hz);
         let weapon_idx = |id: &str| index_of(self.weapons.keys(), id).unwrap_or(0);
@@ -843,6 +848,7 @@ impl ModDefs {
             .values()
             .filter_map(|s| s.cooldown_group.as_deref())
             .collect();
+        // Abstract units (S4 templates) never reach the match.
         let group_of = |s: &crate::SquadDef| {
             s.cooldown_group
                 .as_deref()
@@ -852,6 +858,7 @@ impl ModDefs {
         let squad_types: Vec<SquadTypeSetup> = self
             .squads
             .values()
+            .filter(|s| !s.is_abstract)
             .map(|s| {
                 let faction = index_of(self.factions.keys(), &s.faction).unwrap_or(0);
                 let cooldown_group = group_of(s);
@@ -884,6 +891,10 @@ impl ModDefs {
                         sidearm: None,
                     };
                 }
+                // S4: legacy soldiers as written, or `[[members]]`
+                // projected onto them (refused above when they do not fit).
+                let soldiers = self.legacy_soldiers(s);
+                let s = &soldiers;
                 SquadTypeSetup {
                     id: s.id.clone(),
                     name: s.name.clone(),
@@ -892,8 +903,8 @@ impl ModDefs {
                     men: s.men,
                     weapon: weapon_idx(&s.weapon),
                     cost: s.cost,
-                    recall_cooldown_ticks: s.recall_cooldown_s * hz,
-                    initial_cooldown_ticks: s.initial_cooldown_s * hz,
+                    recall_cooldown_ticks: s.card_cooldown_s() * hz,
+                    initial_cooldown_ticks: s.card_unlock_s() * hz,
                     cooldown_group,
                     hp: s.hp,
                     speed: Fixed::from_cm(s.speed_cm_s),
@@ -916,18 +927,50 @@ impl ModDefs {
                 }
             })
             .collect();
-        let squad_idx = |id: &String| index_of(self.squads.keys(), id).unwrap_or(0);
+        let squad_idx = |id: &String| index_of(self.playable_ids(), id).unwrap_or(0);
+        // S4: the match date drops cards it is outside of from the rosters.
+        let date = crate::variant::parse_month(&rules.call_in.date);
+        let fielded = |id: &String| {
+            let Some(d) = date else { return true };
+            self.squads.get(id).is_none_or(|s| {
+                let m = |v: &Option<String>| v.as_deref().and_then(crate::variant::parse_month);
+                m(&s.available_from).is_none_or(|a| a <= d)
+                    && m(&s.available_to).is_none_or(|b| d <= b)
+            })
+        };
+        let mut date_issues = Vec::new();
         let factions: Vec<FactionSetup> = self
             .factions
             .values()
-            .map(|f| FactionSetup {
-                id: f.id.clone(),
-                name: f.name.clone(),
-                color_rgb: parse_color(&f.color).unwrap_or(0),
-                roster: f.roster.iter().map(squad_idx).collect(),
-                start_squads: f.start_squads.iter().map(squad_idx).collect(),
+            .map(|f| {
+                for (i, s) in f.start_squads.iter().enumerate() {
+                    if !fielded(s) {
+                        date_issues.push(Issue::new(
+                            format!("faction `{}`: start_squads[{i}]", f.id),
+                            format!(
+                                "squad `{s}` is not fielded on the match date {}",
+                                rules.call_in.date
+                            ),
+                        ));
+                    }
+                }
+                FactionSetup {
+                    id: f.id.clone(),
+                    name: f.name.clone(),
+                    color_rgb: parse_color(&f.color).unwrap_or(0),
+                    roster: f
+                        .roster
+                        .iter()
+                        .filter(|s| fielded(s))
+                        .map(squad_idx)
+                        .collect(),
+                    start_squads: f.start_squads.iter().map(squad_idx).collect(),
+                }
             })
             .collect();
+        if !date_issues.is_empty() {
+            return Err(invalid(date_issues));
+        }
         let players = req
             .players
             .iter()
@@ -1080,22 +1123,19 @@ impl ModDefs {
                 },
                 ai: {
                     let a = &rules.ai;
+                    let by_tag = a.mix_by_tag();
+                    let mix = |t: &str| by_tag.get(t).copied().unwrap_or(0);
                     AiSetup {
                         retreat_strength_pct: a.retreat_strength_pct,
                         threat_radius: Fixed::from_int(a.threat_radius_m as i32),
-                        mix_pct: [
-                            a.mix_rifle_pct,
-                            a.mix_mg_pct,
-                            a.mix_engineer_pct,
-                            a.mix_mortar_pct,
-                        ],
+                        mix_pct: [mix("line"), mix("mg"), mix("engineer"), mix("mortar")],
                         barrage_rounds: a.barrage_rounds as u16,
                         dig_length: Fixed::from_int(a.dig_length_m as i32),
                         dig_offset: Fixed::from_int(a.dig_offset_m as i32),
                         throw_cooldown_ticks: a.throw_cooldown_s * hz,
                         frag_group_men: a.frag_group_men,
-                        mix_vehicle_pct: a.mix_vehicle_pct,
-                        mix_at_pct: a.mix_at_pct,
+                        mix_vehicle_pct: mix("vehicle"),
+                        mix_at_pct: mix("at"),
                         tank_standoff: Fixed::from_int(a.tank_standoff_m as i32),
                         assault_close: Fixed::from_int(a.assault_close_m as i32),
                         at_clear_ticks: a.at_clear_s * hz,
@@ -1106,7 +1146,7 @@ impl ModDefs {
                     }
                 },
                 cover: rules.cover.clone(),
-                call_in: rules.call_in.clone(),
+                call_in: rules.call_in.tuning(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -1170,6 +1210,122 @@ impl ModDefs {
 }
 
 impl ModDefs {
+    /// Ids of the units that reach a match (all but abstract ones), sorted:
+    /// the order of [`MatchSetup::squad_types`].
+    pub fn playable_ids(&self) -> impl Iterator<Item = &String> {
+        self.squads
+            .iter()
+            .filter(|(_, s)| !s.is_abstract)
+            .map(|(id, _)| id)
+    }
+
+    /// A soldier card with its legacy fields as today's `SquadTypeSetup`
+    /// takes them: as written, or projected from `[[members]]`.
+    fn legacy_soldiers(&self, s: &SquadDef) -> SquadDef {
+        let mut out = s.clone();
+        if s.is_legacy() {
+            return out;
+        }
+        if let Ok(p) = crate::variant::project_members(&s.members) {
+            out.men = p.men;
+            out.weapon = p.weapon;
+            out.weapon_men = Some(p.weapon_men);
+            out.sidearm = p.sidearm;
+            out.loadout = p.loadout;
+        }
+        out
+    }
+
+    /// S4 Part A: what today's sim cannot run (refused at resolve with
+    /// "needs S4 Part B"; the loader and `validate` accept it).
+    fn part_a_refusals(&self, rules: &crate::defs::RulesDef) -> Vec<Issue> {
+        let mut out = Vec::new();
+        let needs = |id: &str, key: &str, why: String| {
+            Issue::new(
+                format!("squad `{id}`: {key}"),
+                format!("{why}: needs S4 Part B (the sim does not run it yet)"),
+            )
+        };
+        let regular = |t: &str| self.training.get(t).is_none_or(|d| d.is_regular());
+        let default_training = rules.training.as_ref().map(|t| t.default.as_str());
+        for (id, s) in self.squads.iter().filter(|(_, s)| !s.is_abstract) {
+            if s.role == SquadRole::Vehicle {
+                if s.cost != 0 || s.cooldown_s.is_some() || s.unlock_s.is_some() {
+                    out.push(needs(
+                        id,
+                        "cost",
+                        "a vehicle card's own cost, cooldown_s or unlock_s".into(),
+                    ));
+                }
+            } else {
+                if !s.is_legacy()
+                    && let Err(why) = crate::variant::project_members(&s.members)
+                {
+                    out.push(needs(id, "members", why));
+                }
+                let t = s.training.as_deref().or(default_training);
+                if let Some(t) = t
+                    && !regular(t)
+                {
+                    out.push(needs(id, "training", format!("training profile `{t}`")));
+                }
+                let mut want = crate::variant::role_capabilities(s.role, s.dig_rate_pct);
+                let w = self.legacy_soldiers(s);
+                let class = |w: &str| self.weapons.get(w).map(|d| d.class);
+                let classes = [Some(w.weapon.as_str()), w.sidearm.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(class)
+                    .collect::<Vec<_>>();
+                if classes.contains(&WeaponClass::Mortar) {
+                    want.push("barrage".into());
+                }
+                if classes.contains(&WeaponClass::Launcher) {
+                    want.push("at_hunt".into());
+                }
+                crate::variant::canonical_capabilities(&mut want);
+                if want != s.capabilities {
+                    out.push(needs(
+                        id,
+                        "capabilities",
+                        format!(
+                            "capabilities {:?} differ from the {:?} role's {want:?}",
+                            s.capabilities, s.role
+                        ),
+                    ));
+                }
+            }
+            if s.max_alive != 0 {
+                out.push(needs(id, "max_alive", "a card limit".into()));
+            }
+            if let Some(g) = &s.limit_group {
+                if !rules.limit_groups.contains_key(g) {
+                    out.push(Issue::new(
+                        format!("squad `{id}`: limit_group"),
+                        format!("the rules `{}` have no limit group `{g}`", rules.id),
+                    ));
+                }
+                out.push(needs(id, "limit_group", format!("limit group `{g}`")));
+            }
+        }
+        let known = ["line", "mg", "engineer", "mortar", "vehicle", "at"];
+        if let Some(m) = &rules.ai.mix {
+            for (tag, &v) in m {
+                if v > 0 && !known.contains(&tag.as_str()) {
+                    out.push(Issue::new(
+                        format!("rules `{}`: ai.mix.{tag}", rules.id),
+                        format!(
+                            "the AI buys by the tags {} until S4 Part B (the sim does not run \
+                             other mix tags yet)",
+                            known.join(", ")
+                        ),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
     /// Every vehicle def lowered at `hz`, sorted by id (also what
     /// `frontline-cli ballistics` builds its armour tables from, without a
     /// whole match).
@@ -1190,7 +1346,7 @@ impl ModDefs {
                 out.crew_squad = v
                     .crew_squad
                     .as_ref()
-                    .and_then(|c| index_of(self.squads.keys(), c));
+                    .and_then(|c| index_of(self.playable_ids(), c));
                 out
             })
             .collect()

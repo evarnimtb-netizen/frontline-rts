@@ -851,3 +851,16 @@ spawn_clear_m = 10
 # A vehicle counts as this many men when comparing spots (a 6 x 3 m hull
 # covers the ground of about a whole squad).
 spawn_vehicle_weight = 8
+# S4: the match month ("YYYY-MM") for unit cards' available_from /
+# available_to; a card outside it leaves the roster. Empty: no date filter
+# (skirmish fields every card).
+date = ""
+
+# S4: the training profile (defs/training/) of unit cards that name none.
+[training]
+default = "ww2:training_regular"
+
+# S4: named limits on alive units per player, "<group id>" = most alive; a
+# unit card joins one with limit_group (all its cards' alive units count).
+# None in ww2 yet: vehicles keep the [vehicles] limit.
+[limit_groups]

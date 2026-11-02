@@ -62,7 +62,10 @@ const BASELINE: [(&str, u64); 6] = [
     ("test_unlock ger-usa seed 1 normal", 0x8b78652432150cb0),
     ("example override ger-usa seed 1 normal", 0x5871bd969965f5a6),
     ("human ger vs ai usa seed 3 easy", 0x59a3d2447901500a),
-    ("unit and weapon patch ger-usa seed 1 normal", 0x35fe520d10f8ce52),
+    (
+        "unit and weapon patch ger-usa seed 1 normal",
+        0x35fe520d10f8ce52,
+    ),
 ];
 
 /// An override that changes a unit, a weapon and the rules (the patch path
@@ -91,7 +94,8 @@ fn baseline_setups() -> Vec<(&'static str, MatchSetup)> {
         .apply_override(&root.join("tests/overrides/example.toml"), "ww2:skirmish")
         .unwrap_or_else(|e| panic!("{e}"));
     let mut patched = defs.clone();
-    let patch = std::env::temp_dir().join(format!("frontline-s4-patch-{}.toml", std::process::id()));
+    let patch =
+        std::env::temp_dir().join(format!("frontline-s4-patch-{}.toml", std::process::id()));
     std::fs::write(&patch, PATCH).unwrap();
     patched
         .apply_override(&patch, "ww2:skirmish")
@@ -109,7 +113,10 @@ fn baseline_setups() -> Vec<(&'static str, MatchSetup)> {
         ),
         (
             BASELINE[1].0,
-            r(&defs, ai_vs_ai("ww2:skirmish", usa, ger, 7, Difficulty::Hard)),
+            r(
+                &defs,
+                ai_vs_ai("ww2:skirmish", usa, ger, 7, Difficulty::Hard),
+            ),
         ),
         (
             BASELINE[2].0,
@@ -170,6 +177,13 @@ fn resolved_json(d: &ModDefs) -> Value {
     })
 }
 
+/// The S4 canonical view: every kind including training profiles.
+fn canonical_json(d: &ModDefs) -> Value {
+    let mut v = resolved_json(d);
+    v["training"] = serde_json::to_value(&d.training).expect("defs serialise");
+    v
+}
+
 fn bless() -> bool {
     std::env::var_os("BLESS").is_some()
 }
@@ -227,4 +241,75 @@ fn legacy_view_matches_snapshot() {
         "the legacy view changed:\n{}",
         diffs.join("\n")
     );
+}
+
+#[test]
+fn canonical_view_matches_snapshot() {
+    let got = canonical_json(&load());
+    let name = "ww2_canonical.json";
+    match read_snapshot(name) {
+        Some(want) if !bless() => {
+            let mut diffs = Vec::new();
+            missing("", &want, &got, &mut diffs);
+            missing("", &got, &want, &mut diffs);
+            assert!(
+                diffs.is_empty(),
+                "the canonical view changed (BLESS=1 to accept):\n{}",
+                diffs.join("\n")
+            );
+        }
+        _ => {
+            write_snapshot(name, &got);
+            if !bless() {
+                panic!("wrote tests/snapshots/{name}; commit it and run again");
+            }
+        }
+    }
+}
+
+/// The legacy expansion keeps today's men exactly (S4-2): an MG team is
+/// three MG gunners, an AT team a launcher and a rifleman, a crew one SMG
+/// and pistols; every soldier card has its role's tag and capabilities.
+#[test]
+fn legacy_cards_expand_to_todays_men() {
+    let d = load();
+    let slots = |id: &str| -> Vec<(String, u8, String)> {
+        d.squads[id]
+            .members
+            .iter()
+            .map(|m| (m.slot.clone(), m.count, m.weapon.clone()))
+            .collect()
+    };
+    let s = |a: &str, n: u8, w: &str| (a.to_owned(), n, w.to_owned());
+    assert_eq!(
+        slots("ww2:ger_mg_team"),
+        [s("leader", 1, "ww2:mg42"), s("weapon", 2, "ww2:mg42")]
+    );
+    assert_eq!(
+        slots("ww2:usa_bazooka_team"),
+        [
+            s("leader", 1, "ww2:m9_bazooka"),
+            s("sidearm", 1, "ww2:m1_garand")
+        ]
+    );
+    assert_eq!(
+        slots("ww2:ger_tank_crew"),
+        [s("leader", 1, "ww2:mp40"), s("sidearm", 4, "ww2:p38")]
+    );
+    let rifle = &d.squads["ww2:ger_rifle_squad"];
+    assert_eq!(rifle.tags, ["line"]);
+    assert_eq!(rifle.capabilities, ["dig_basic", "recrew"]);
+    assert_eq!(rifle.members[0].items.get("ww2:stielhandgranate"), Some(&2));
+    assert_eq!((rifle.cooldown_s, rifle.unlock_s), (Some(24), Some(0)));
+    assert!(d.squads["ww2:ger_mortar_team"].has_capability("barrage"));
+    assert!(d.squads["ww2:usa_bazooka_team"].has_capability("at_hunt"));
+    assert!(d.squads["ww2:usa_engineer_squad"].has_capability("dig_full"));
+    assert!(d.squads["ww2:ger_tank_crew"].has_capability("vehicle_crew"));
+    let tank = &d.squads["ww2:ger_pz4_h_squad"];
+    assert_eq!(tank.tags, ["vehicle"]);
+    assert!(tank.members.is_empty() && tank.capabilities.is_empty());
+    assert_eq!(tank.cooldown_s, None);
+    assert_eq!(d.training.len(), 4);
+    assert!(d.training["ww2:training_regular"].is_regular());
+    assert!(!d.training["ww2:training_conscript"].is_regular());
 }

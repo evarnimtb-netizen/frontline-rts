@@ -4,8 +4,10 @@
 //! A mod folder (one holding `mod.toml`) is loaded with every def checked
 //! on its own and against the others; then each rules override in its
 //! `tests/rules_*.toml` is applied, each tuning override in
-//! `tests/overrides/*.toml` is applied to a copy (S3b), and every rules def
-//! is resolved with every map for the first two factions. Asset checks arrive with the mod
+//! `tests/overrides/*.toml` is applied to a copy (S3b), S4 example variants
+//! (`tests/variants/<kind>/*.toml` plus the override files beside them) load
+//! on a copy, and every rules def is resolved with every map for the first
+//! two factions, with and without the variants. Asset checks arrive with the mod
 //! loader (M3).
 
 use std::path::Path;
@@ -87,28 +89,39 @@ pub fn mod_dir(root: &Path) -> FileResult {
                     problems.extend(content_problems(e, &name));
                 }
             }
-            let factions: Vec<String> = defs.factions.keys().take(2).cloned().collect();
-            if factions.len() == 2 {
-                for rules in defs.rules.keys() {
-                    for map in defs.maps.keys() {
-                        let req = MatchRequest {
-                            rules: rules.clone(),
-                            map: map.clone(),
-                            seed: 1,
-                            players: factions
-                                .iter()
-                                .map(|f| PlayerRequest {
-                                    faction: f.clone(),
-                                    ai: true,
-                                    difficulty: Default::default(),
-                                })
-                                .collect(),
-                        };
-                        if let Err(e) = defs.resolve(&req) {
-                            problems.extend(content_problems(e, &format!("{rules} on {map}")));
+            // S4: example variants (tests/variants/<kind>/*.toml) load on
+            // top of the mod, with their override files (tests/variants/
+            // *.toml), and resolve like the mod.
+            let variants = root.join("tests/variants");
+            let mut checked = vec![defs.clone()];
+            if variants.is_dir() {
+                let mut with = defs.clone();
+                match with.add_defs_dir(&variants) {
+                    Err(e) => problems.extend(content_problems(e, "tests/variants")),
+                    Ok(_) => {
+                        let mut files: Vec<_> = std::fs::read_dir(&variants)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|e| e.ok().map(|e| e.path()))
+                            .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+                            .collect();
+                        files.sort();
+                        for o in &files {
+                            let name = o
+                                .strip_prefix(root)
+                                .unwrap_or(o)
+                                .to_string_lossy()
+                                .replace('\\', "/");
+                            if let Err(e) = with.apply_override(o, crate::overrides::BASE_RULES) {
+                                problems.extend(content_problems(e, &name));
+                            }
                         }
+                        checked.push(with);
                     }
                 }
+            }
+            for defs in &checked {
+                resolve_all(defs, &mut problems);
             }
         }
     }
@@ -116,6 +129,34 @@ pub fn mod_dir(root: &Path) -> FileResult {
         ok: problems.is_empty(),
         file,
         problems,
+    }
+}
+
+/// Resolves every rules def with every map for the first two factions.
+fn resolve_all(defs: &ModDefs, problems: &mut Vec<Problem>) {
+    let factions: Vec<String> = defs.factions.keys().take(2).cloned().collect();
+    if factions.len() != 2 {
+        return;
+    }
+    for rules in defs.rules.keys() {
+        for map in defs.maps.keys() {
+            let req = MatchRequest {
+                rules: rules.clone(),
+                map: map.clone(),
+                seed: 1,
+                players: factions
+                    .iter()
+                    .map(|f| PlayerRequest {
+                        faction: f.clone(),
+                        ai: true,
+                        difficulty: Default::default(),
+                    })
+                    .collect(),
+            };
+            if let Err(e) = defs.resolve(&req) {
+                problems.extend(content_problems(e, &format!("{rules} on {map}")));
+            }
+        }
     }
 }
 

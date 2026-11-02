@@ -1,0 +1,22 @@
+# Training profile (S4): a veteran (combat experience). Starting values by
+# reasoning, not a measured source (docs/slices/S4-variants.md "Training
+# profiles"): tighter and quicker aim, faster reloads, steadier under fire
+# and quicker to recover, sees a little farther. Digging unchanged.
+id = "ww2:training_veteran"
+name = "Veteran"
+# Aim error: multiplies the weapon's spread (%).
+spread_pct = 85
+# Time to open fire on a new target (%).
+aim_time_pct = 80
+# Reload time (%).
+reload_pct = 90
+# Scatter of thrown items (%).
+throw_scatter_pct = 85
+# Multiplies the card's steadiness_pct: duck and pin thresholds (%).
+steadiness_pct = 125
+# Suppression decay per second (%).
+suppression_decay_pct = 120
+# The men's sight range (%).
+spot_pct = 110
+# Multiplies the card's dig_rate_pct (%).
+build_rate_pct = 100

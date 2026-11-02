@@ -195,6 +195,8 @@ fn schema_export_writes_valid_json() {
         "faction",
         "map",
         "rules",
+        // S4: training profiles.
+        "training",
         "match_request",
     ]
     .iter()
