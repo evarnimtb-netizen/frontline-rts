@@ -867,6 +867,11 @@ table above); `ww2_resolved.json` was not touched.
 | T13 | >= 1 capture per 10 matches; T1 within 5 points of `capture_m` 0 | 2 in 40 | 9 captures in 160 (2 Germany, 7 USA), 103 capture orders (28 / 75); wins at 150 m vs 300 m: Germany 80 vs 82 of 160 at the same costs | **miss** (5.6 %) |
 | T16 | pop | G 53/55/69, US 60/74/86 | mean pop at 5/10/20 min: Germany 60/66/82, USA 56/66/72; pop-cap holds 0.0 / match | reported |
 
+Out-of-sample check (seeds 101-180 x both bases, shipped mod): Germany 69
+(43.1 %), USA 91, base 0 81 / base 1 79, 10.5-31.1 min, HE mean 46.3 %.
+Tick p99 of the 40 set: 1.030 ms on a quiet machine, 1.364 ms in a rerun
+with a browser and other apps open (load average 6.7); both under 1.5 ms.
+
 T7-T10, T14, T15 are covered by the test suite (all pass). Godot was not
 re-run: no production code changed in this stage (data and tests only).
 
