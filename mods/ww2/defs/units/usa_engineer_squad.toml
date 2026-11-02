@@ -1,33 +1,34 @@
+# Engineer Squad (S4): eight engineers (roadmap; the T/O&E 5-15 combat
+# engineer squad is 12, not read in the original, S4-4 (A)): the leader
+# with an M1, a satchel charge and a smoke grenade, one M3 SMG and six M1
+# rifles. Digs at twice the rate and the AT ditch (`dig_full`).
 id = "ww2:usa_engineer_squad"
 name = "Engineer Squad"
+short_name = "Engineers"
 faction = "ww2:usa"
-role = "engineer"
-men = 5
-weapon = "ww2:m3_smg"
-cost = 220
-# Call-in (S3b): a call-in spawns the engineers at once at the base (no
-# queue, no delivery time; it walks to the front itself). Then this
-# type cannot be called in again for recall_cooldown_s seconds. 36 s set
-# by the owner on 2026-11-01 (20 % under the first proposal of 45 s).
-recall_cooldown_s = 36
-# Seconds from the match start before the first call-in; 0 = at once.
-initial_cooldown_s = 0
+tags = ["engineer"]
+capabilities = ["dig_basic", "dig_full", "recrew"]
+cost = 280
+cooldown_s = 30
+unlock_s = 0
 speed_cm_s = 290
 sight_m = 150
 spacing_dm = 30
 dig_rate_pct = 200
 
-# Items (S1b abilities): one frag each, two and a smoke grenade for the
-# squad leader, who also carries the squad's satchel charge.
-[[loadout]]
-item = "ww2:mk2_grenade"
-count = 1
-leader_count = 2
+[[members]]
+slot = "leader"
+weapon = "ww2:m1_garand"
+traits = ["leader"]
+items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1, "ww2:m37_satchel" = 1 }
 
-[[loadout]]
-item = "ww2:m15_smoke"
-leader_count = 1
+[[members]]
+slot = "engineer_smg"
+weapon = "ww2:m3_smg"
+items = { "ww2:mk2_grenade" = 1 }
 
-[[loadout]]
-item = "ww2:m37_satchel"
-leader_count = 1
+[[members]]
+slot = "engineer"
+count = 6
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }

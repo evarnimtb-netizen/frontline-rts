@@ -22,11 +22,23 @@ fn ww2_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2")
 }
 
+/// The S3c content frozen before the S4 content switch (`fixtures/
+/// ww2_s3c/README.md`): the legacy unit files the legacy guards load.
+fn s3c_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ww2_s3c")
+}
+
 fn snapshots() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots")
 }
 
+/// The frozen S3c content (legacy guards).
 fn load() -> ModDefs {
+    ModDefs::load(&s3c_root()).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// The live `mods/ww2` (the canonical view).
+fn live() -> ModDefs {
     ModDefs::load(&ww2_root()).unwrap_or_else(|e| panic!("{e}"))
 }
 
@@ -55,16 +67,22 @@ fn setup_hash(s: &MatchSetup) -> u64 {
     xxhash_rust::xxh3::xxh3_64(&bytes)
 }
 
-/// xxh3 of the setups recorded at `63c3e36` (S4 Plan baseline).
+/// xxh3 of the setups of the frozen S3c content (`fixtures/ww2_s3c`).
+/// S4 Part A kept the `63c3e36` values (0x5871bd969965f5a6,
+/// 0x423d6bd094b287d8, 0x8b78652432150cb0, 0x5871bd969965f5a6,
+/// 0x59a3d2447901500a, 0x35fe520d10f8ce52); Part B (B1) changed the setup
+/// layout on purpose (members, tags, capabilities, training, card limits,
+/// the AI mix by tag, the fourth item kind), and these are its values. The
+/// live `mods/ww2` is guarded by the canonical snapshot instead.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x5871bd969965f5a6),
-    ("skirmish usa-ger seed 7 hard", 0x423d6bd094b287d8),
-    ("test_unlock ger-usa seed 1 normal", 0x8b78652432150cb0),
-    ("example override ger-usa seed 1 normal", 0x5871bd969965f5a6),
-    ("human ger vs ai usa seed 3 easy", 0x59a3d2447901500a),
+    ("skirmish ger-usa seed 1 normal", 0x61dcc7e06ca47ff6),
+    ("skirmish usa-ger seed 7 hard", 0xe66560dffba1e680),
+    ("test_unlock ger-usa seed 1 normal", 0xe1faafbe66546d9f),
+    ("example override ger-usa seed 1 normal", 0x61dcc7e06ca47ff6),
+    ("human ger vs ai usa seed 3 easy", 0x609ba8ba1224583f),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x35fe520d10f8ce52,
+        0x672de1cdc6cb85c6,
     ),
 ];
 
@@ -83,7 +101,7 @@ range_m = 400
 "#;
 
 fn baseline_setups() -> Vec<(&'static str, MatchSetup)> {
-    let root = ww2_root();
+    let root = s3c_root();
     let defs = load();
     let mut unlock = defs.clone();
     unlock
@@ -245,7 +263,7 @@ fn legacy_view_matches_snapshot() {
 
 #[test]
 fn canonical_view_matches_snapshot() {
-    let got = canonical_json(&load());
+    let got = canonical_json(&live());
     let name = "ww2_canonical.json";
     match read_snapshot(name) {
         Some(want) if !bless() => {

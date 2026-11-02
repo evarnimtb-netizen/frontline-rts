@@ -149,8 +149,18 @@ impl MatchState {
             squads.sort_unstable();
             squads.dedup();
             for sid in squads {
-                if let Some(l) = self.squads.get_mut(&sid).and_then(|s| s.launcher.as_mut()) {
+                let Some(sq) = self.squads.get_mut(&sid) else {
+                    continue;
+                };
+                if let Some(l) = sq.launcher.as_mut() {
                     l.attack = Some(target);
+                    teams += 1;
+                }
+                // S4: squads with single-shot AT items (Panzerfausts) aim
+                // their nearest carrier at it first, at the next search.
+                if let Some(pz) = sq.pzf.as_mut() {
+                    pz.attack = Some(target);
+                    pz.search = 0;
                     teams += 1;
                 }
             }
@@ -246,8 +256,8 @@ impl MatchState {
         let men = self.unit_set(ctx, p, ids).map(|mut men| {
             men.retain(|&m| {
                 let sq = ctx.ents.squad[m.index()].and_then(|s| self.squads.get(&s));
-                sq.is_some_and(|sq| {
-                    let w = crate::combat::weapon_of(&self.setup, sq, m);
+                sq.is_some_and(|_| {
+                    let w = ctx.ents.kit[m.index()].weapon;
                     self.setup.weapons[w as usize].he.is_none()
                 })
             });

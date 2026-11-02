@@ -1,0 +1,26 @@
+# Panzerfaust 60 (S4, owner question S3c-29 (A)): a single-shot anti-tank
+# weapon carried by German line squads (two per Grenadiergruppe, one per
+# Feldstärke squad, S4-5 (A)). Not thrown: the man aims `windup_ms` at a
+# seen enemy vehicle within the weapon's engagement distance, then fires
+# it as `ww2:pzf60`; the tube is spent. At most one per squad per
+# `items.single_shot_gap_s`. One comes back per `items.resupply_s` in the
+# own base, free until S5 prices it (S4-6 (A)).
+# Sources: Wikipedia "Panzerfaust" (citing Rottman 2014); 36 per rifle
+# company in late-1944 tables of issue (Tactical and Technical Trends, Oct
+# 1944, secondary): the (B) of S4-5.
+id = "ww2:panzerfaust60"
+name = "Panzerfaust 60"
+kind = "single_shot_at"
+sources = [
+    "Wikipedia, Panzerfaust (citing Rottman 2014)",
+    "Tactical and Technical Trends, Oct 1944 (issue per company; secondary)",
+]
+weapon = "ww2:pzf60"
+# The shot's distances are the weapon's engage_still_m / engage_moving_m;
+# range_m bounds it (m), min_range_m is the arming distance (m).
+min_range_m = 10
+range_m = 60
+# Aim time before the shot (ms).
+windup_ms = 1500
+fuse_ms = 0
+scatter_pct = 0

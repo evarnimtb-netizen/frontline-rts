@@ -1,0 +1,43 @@
+# Light MG Section (S4): the T/O&E 7-17 light machine gun squad of five with
+# one M1919A4 on its tripod, replacing the S1-S3 MG Team (which fielded three
+# M1919s, S4-2 (A)): the squad leader (M1), the gunner (M1919A4 and an
+# M1911A1), the assistant gunner (M1911A1) and two ammo bearers with M1
+# carbines (S4-3 (A)).
+# Sources: battleorder.org "U.S. Army Rifle Company 1944" (T/O&E 7-17,
+# 26 Feb 1944: LMG section = HQ 2 + 2 squads of 5).
+id = "ww2:usa_lmg_squad"
+name = "Light MG Section"
+short_name = "Light MG"
+faction = "ww2:usa"
+tags = ["mg"]
+capabilities = ["recrew"]
+sources = ["battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, LMG squad)"]
+cost = 200
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 260
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "squad_leader"
+weapon = "ww2:m1_garand"
+traits = ["leader"]
+
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:m1919a4_tripod"
+sidearm = "ww2:m1911a1"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:m1911a1"
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 2
+weapon = "ww2:m1_carbine"
+traits = ["ammo_bearer"]

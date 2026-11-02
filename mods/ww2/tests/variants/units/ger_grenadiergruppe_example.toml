@@ -1,0 +1,39 @@
+# S4 example variant (docs/modding/variants.md, target T9): a unit card made
+# only of `extends` and a member list. Everything not set here (faction,
+# cost, cooldown, speed, sight, spacing, digging, tags) comes from the
+# parent, the Grenadiergruppe.
+#
+# Load it with `ModDefs::add_defs_dir("mods/ww2/tests/variants")`; it is
+# called in through the roster patch in `roster.toml` beside this folder.
+# `frontline-cli validate mods/ww2` checks both; `crates/sim/tests/
+# variants.rs` calls it in, fights with it and kills its MG gunner to see
+# the assistant pick the gun up.
+id = "ww2:ger_grenadiergruppe_example"
+extends = "ww2:ger_grenadiergruppe"
+name = "Grenadiergruppe (example)"
+
+# [[members]] replaces the parent's whole list (arrays replace). The first
+# man of the first slot is the squad leader.
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2 }
+
+# The MG 42 is a crew weapon: when its gunner falls, the crew assistant
+# picks it up after the weapon's handover_ms.
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:mg42_bipod"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:p38"
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "rifleman"
+count = 3
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1 }

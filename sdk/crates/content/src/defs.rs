@@ -68,7 +68,7 @@ impl Default for SquadRole {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SquadDef {
-    /// Namespaced id, e.g. `ww2:ger_rifle_squad`.
+    /// Namespaced id, e.g. `ww2:ger_grenadiergruppe`.
     pub id: String,
     /// Display name.
     pub name: String,
@@ -299,13 +299,28 @@ pub enum ItemKind {
     Smoke = 1,
     /// Satchel charge: a big HE blast whose crater cuts trenches.
     Satchel = 2,
+    /// S4: a single-shot anti-tank weapon (Panzerfaust): not thrown, fired
+    /// at a vehicle like a launcher (`weapon` names the launcher def it
+    /// fires as); the tube is spent.
+    SingleShotAt = 3,
 }
 
 /// Number of [`ItemKind`]s.
-pub const ITEM_KINDS: usize = 3;
+pub const ITEM_KINDS: usize = 4;
 
 impl ItemKind {
-    pub const ALL: [ItemKind; ITEM_KINDS] = [ItemKind::Frag, ItemKind::Smoke, ItemKind::Satchel];
+    pub const ALL: [ItemKind; ITEM_KINDS] = [
+        ItemKind::Frag,
+        ItemKind::Smoke,
+        ItemKind::Satchel,
+        ItemKind::SingleShotAt,
+    ];
+
+    /// Whether the item is thrown (frag, smoke, satchel).
+    #[inline]
+    pub const fn thrown(self) -> bool {
+        !matches!(self, ItemKind::SingleShotAt)
+    }
 
     /// Position in [`ItemKind::ALL`] (per-soldier count arrays).
     #[inline]
@@ -340,6 +355,14 @@ pub struct ItemDef {
     /// Smoke: the cloud.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smoke: Option<SmokeDef>,
+    /// S4 `single_shot_at`: the launcher weapon def it fires as (range,
+    /// engagement distances, spread, round, fire reveal). `windup_ms` is
+    /// the aim time before the shot; `range_m` the farthest shot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon: Option<String>,
+    /// S4: citations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
 }
 
 /// An item's blast (like a weapon's [`HeDef`], plus damage and suppression).
@@ -560,6 +583,28 @@ pub struct WeaponDef {
     /// High-explosive effect of each round.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub he: Option<HeDef>,
+    /// S4: a crew weapon (an MG, launcher or mortar): when its carrier
+    /// falls, the nearest man of his squad picks it up after `handover_ms`
+    /// (assistants and ammo bearers first). Default: true for the `mg`,
+    /// `mortar` and `launcher` classes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crew_weapon: Option<bool>,
+    /// S4: name on the squad card (at most 14 characters; default `name`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_name: Option<String>,
+    /// S4: citations for the values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+}
+
+impl WeaponDef {
+    /// Whether the weapon is a crew weapon (S4; see `crew_weapon`).
+    pub fn is_crew_weapon(&self) -> bool {
+        self.crew_weapon.unwrap_or(matches!(
+            self.class,
+            WeaponClass::Mg | WeaponClass::Mortar | WeaponClass::Launcher
+        ))
+    }
 }
 
 /// High-explosive blast.
@@ -897,10 +942,17 @@ pub struct ItemRulesDef {
     /// A soldier in his own base gets one item back this often, up to his
     /// loadout.
     pub resupply_s: u32,
+    /// S4: a squad fires at most one single-shot AT item (Panzerfaust)
+    /// this often (s), so it does not empty its kit at one tank.
+    #[serde(default = "default_single_shot_gap_s")]
+    pub single_shot_gap_s: u32,
     /// Throw flight and smoke reach (S3b tuning table).
     pub throw: ThrowTuning,
 }
 
+fn default_single_shot_gap_s() -> u32 {
+    3
+}
 fn default_tick_hz() -> u32 {
     30
 }
@@ -1458,6 +1510,15 @@ impl ItemDef {
                     .with_hint("[smoke] radius_m = 8 ..."),
             );
         }
+        if (self.kind == ItemKind::SingleShotAt) != self.weapon.is_some() {
+            out.push(
+                Issue::new(
+                    "weapon",
+                    "single_shot_at items need `weapon` (the launcher def they fire as), others must not",
+                )
+                .with_hint("weapon = \"ww2:pzf60\""),
+            );
+        }
         if let Some(h) = &self.he {
             for i in h.validate() {
                 out.push(Issue {
@@ -1576,11 +1637,34 @@ impl WeaponDef {
         }
         if launcher {
             range(&mut out, "rounds_carried", self.rounds_carried, 1, 50);
-            range(&mut out, "handover_ms", self.handover_ms, 0, 60_000);
-        } else if self.rounds_carried != 0 || self.handover_ms != 0 {
+        } else if self.rounds_carried != 0 {
             out.push(Issue::new(
                 "rounds_carried",
-                "only launchers have rounds_carried and handover_ms",
+                "only launchers have rounds_carried",
+            ));
+        }
+        // S4: every crew weapon has a hand-over time (launchers since S3).
+        if self.is_crew_weapon() {
+            range(&mut out, "handover_ms", self.handover_ms, 0, 60_000);
+        } else if self.handover_ms != 0 {
+            out.push(
+                Issue::new(
+                    "handover_ms",
+                    "only crew weapons (MGs, mortars, launchers or crew_weapon = true) have handover_ms",
+                )
+                .with_hint("crew_weapon = true"),
+            );
+        }
+        if let Some(n) = &self.short_name
+            && (n.trim().is_empty() || n.chars().count() > crate::variant::MAX_SHORT_NAME)
+        {
+            out.push(Issue::new(
+                "short_name",
+                format!(
+                    "must be 1..={} characters, got {}",
+                    crate::variant::MAX_SHORT_NAME,
+                    n.chars().count()
+                ),
             ));
         }
         if self.class == WeaponClass::Cannon && self.he.is_some() {

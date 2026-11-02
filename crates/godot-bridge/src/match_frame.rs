@@ -35,7 +35,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup, SquadRole, WeaponClass};
+use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup, WeaponClass};
 use frontline_sim::projectile::{NO_AMMO, SUBSTEP_HZ};
 use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
@@ -187,6 +187,10 @@ pub struct MatchFrame {
     pub items: Vec<[u8; ITEM_KINDS]>,
     pub throwing: Vec<bool>,
     pub slot: Vec<u8>,
+    /// Per soldier (S4): his weapon (index into `MatchSetup::weapons`) and
+    /// `[[members]]` slot (index into his squad type's `members`).
+    pub weapon: Vec<u16>,
+    pub member_slot: Vec<u8>,
     /// The local player's detached men, ascending id.
     pub units: Vec<UnitView>,
     pub thrown: Vec<ThrownView>,
@@ -241,6 +245,8 @@ impl MatchFrame {
             items: Vec::new(),
             throwing: Vec::new(),
             slot: Vec::new(),
+            weapon: Vec::new(),
+            member_slot: Vec::new(),
             units: Vec::new(),
             thrown: Vec::new(),
             smoke: Vec::new(),
@@ -287,6 +293,8 @@ impl MatchFrame {
             .extend(snap.soldier_stance_order.iter().map(|s| *s as u8));
         self.detached.clone_from(&snap.soldier_detached);
         self.items.clone_from(&snap.soldier_items);
+        self.weapon.clone_from(&snap.soldier_weapon);
+        self.member_slot.clone_from(&snap.soldier_member_slot);
         self.throwing.clone_from(&snap.soldier_throwing);
         self.units.clear();
         self.units.extend(
@@ -455,7 +463,7 @@ impl MatchFrame {
                 v.visible |= c.seen_by & bit != 0;
             }
             let w = &setup.weapons[ty.weapon as usize];
-            v.setup = ty.role == SquadRole::Mg
+            v.setup = setup.type_word(sq.type_idx) == "mg"
                 && sq.nav.phase == NavPhase::Holding
                 && (combat[lead.index()].still as u32) < w.setup_ticks;
             match &sq.order {
@@ -758,6 +766,20 @@ pub struct TickEvents {
     pub call_ins: Vec<frontline_sim::CallInEvent>,
     /// S3c: the local player's refused re-crews this tick.
     pub recrew_refusals: Vec<frontline_sim::RecrewEvent>,
+    /// S4: crew weapons the local player's men picked up this tick.
+    pub pickups: Vec<PickupView>,
+}
+
+/// S4: an own man picked up a fallen man's crew weapon.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PickupView {
+    /// Index into `MatchSetup::weapons`.
+    pub weapon: u16,
+    /// His squad type and `[[members]]` slot (his role word).
+    pub squad_type: u16,
+    pub member_slot: u8,
+    /// Sim xy where he stands.
+    pub pos: [f32; 2],
 }
 
 impl TickEvents {
@@ -768,6 +790,7 @@ impl TickEvents {
             && self.armour.is_empty()
             && self.call_ins.is_empty()
             && self.recrew_refusals.is_empty()
+            && self.pickups.is_empty()
     }
 
     /// This tick's events of `world` as seen by `ctx.local`. Call after
@@ -862,6 +885,22 @@ impl TickEvents {
                 .filter(|c| c.player.0 == local)
                 .copied(),
         );
+        // S4: own crew-weapon pickups.
+        if let Some(g) = world.game() {
+            for p in &snap.pickups {
+                let Some(sq) = g.squad(p.squad).filter(|q| q.owner.0 == local) else {
+                    continue;
+                };
+                let k = ents.kit()[p.man.index()];
+                let pos = ents.transform()[p.man.index()].pos.to_f32();
+                ev.pickups.push(PickupView {
+                    weapon: p.weapon,
+                    squad_type: sq.type_idx,
+                    member_slot: k.slot,
+                    pos: [pos[0], pos[1]],
+                });
+            }
+        }
         ev
     }
 
@@ -1040,9 +1079,7 @@ mod tests {
             .unwrap()
             .squads()
             .iter()
-            .find(|(_, s)| {
-                s.owner.0 == 0 && setup.squad_types[s.type_idx as usize].role == SquadRole::Rifle
-            })
+            .find(|(_, s)| s.owner.0 == 0 && setup.type_word(s.type_idx) == "rifle")
             .map(|(id, s)| (*id, s.clone()))
             .unwrap();
         let idx = |f: &MatchFrame, id: SimId| f.ids.binary_search(&id.0).unwrap();

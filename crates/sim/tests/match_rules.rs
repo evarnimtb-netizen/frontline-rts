@@ -55,12 +55,16 @@ fn capture_takes_20_s_alone_and_less_with_more_men() {
     let mut s = setup(1);
     // A one-man engineer squad, so the base rate shows.
     let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
-    s.squad_types[eng as usize].men = 1;
+    // S4: one man is one member slot of one.
+    let t = &mut s.squad_types[eng as usize];
+    t.men = 1;
+    t.members.truncate(1);
+    t.members[0].count = 1;
     let mut w = World::new_match(s, 2).unwrap();
     let (b, b_pos) = point(&w, "B");
     let (c, c_pos) = point(&w, "C");
     let one = squad(&w, 0, "ww2:ger_engineer_squad");
-    let eight = squad(&w, 0, "ww2:ger_rifle_squad");
+    let eight = squad(&w, 0, "ww2:ger_grenadiergruppe");
     place(&mut w, one, b_pos);
     place(&mut w, eight, c_pos);
 
@@ -102,7 +106,7 @@ fn capture_takes_20_s_alone_and_less_with_more_men() {
 fn contested_points_freeze_and_empty_points_fade() {
     let mut w = World::new_match(setup(2), 2).unwrap();
     let (b, b_pos) = point(&w, "B");
-    let ger = squad(&w, 0, "ww2:ger_rifle_squad");
+    let ger = squad(&w, 0, "ww2:ger_grenadiergruppe");
     let us = squad(&w, 1, "ww2:usa_rifle_squad");
     place(&mut w, ger, b_pos);
     steps(&mut w, 100);
@@ -141,7 +145,7 @@ fn income_accrues_every_tick_and_grows_with_points() {
     assert_eq!(w.game().unwrap().players()[0].manpower, 600 + 120);
     assert_eq!(w.snapshot().players[0].income_per_min, 240);
     let (_, c_pos) = point(&w, "C");
-    let ger = squad(&w, 0, "ww2:ger_rifle_squad");
+    let ger = squad(&w, 0, "ww2:ger_grenadiergruppe");
     place(&mut w, ger, c_pos);
     steps(&mut w, 240);
     // C is worth 2: 240 + 2 × 60.
@@ -217,7 +221,7 @@ fn running_out_of_tickets_loses_and_ends_the_match() {
     s.rules.tickets = 2;
     let mut w = World::new_match(s, 1).unwrap();
     let (_, c_pos) = point(&w, "C");
-    let ger = squad(&w, 0, "ww2:ger_rifle_squad");
+    let ger = squad(&w, 0, "ww2:ger_grenadiergruppe");
     place(&mut w, ger, c_pos);
     // Flip at 240, then 40 tickets a minute: one per 45 ticks.
     steps(&mut w, 240 + 45);
@@ -312,7 +316,7 @@ fn rules_state_survives_save_load_mid_capture() {
         let mut w = World::new_match(setup(7), threads).unwrap();
         let (_, c_pos) = point(&w, "C");
         let (_, b_pos) = point(&w, "B");
-        let ger = squad(&w, 0, "ww2:ger_rifle_squad");
+        let ger = squad(&w, 0, "ww2:ger_grenadiergruppe");
         let eng = squad(&w, 0, "ww2:ger_engineer_squad");
         place(&mut w, ger, c_pos);
         place(&mut w, eng, b_pos);

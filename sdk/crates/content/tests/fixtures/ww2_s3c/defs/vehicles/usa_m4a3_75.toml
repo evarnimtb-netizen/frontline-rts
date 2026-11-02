@@ -1,0 +1,213 @@
+# M4A3 (75) Sherman (S3, docs/slices/S3-armour.md "Units"). Cheaper than
+# the Panzer IV because of the frontal asymmetry; if it plays badly, tune
+# cost first. Approximate public figures; every number is a starting value
+# for tuning. Frames as in ger_pz4_h.toml.
+id = "ww2:usa_m4a3_75"
+name = "M4A3 (75) Sherman"
+short_name = "Sherman"
+faction = "ww2:usa"
+role = "tank"
+# S3b (step (b) cost balance, owner question S3b-10 (A): within +-15 %):
+# Sherman 560 -> 590 (+5 %), Panzer IV 640 -> 620; the measurements are
+# in ger_pz4_h.toml. A gameplay balance value, not a price.
+cost = 590
+pop = 12
+# Call-in (S3b): a call-in spawns the tank at once at the base (no
+# queue, no delivery time; it walks to the front itself). Then this
+# type cannot be called in again for recall_cooldown_s seconds. 120 s set
+# by the owner on 2026-11-01 (20 % under the first proposal of 150 s).
+recall_cooldown_s = 120
+# Seconds from the match start before the first call-in; 0 = at once.
+# Rules' vehicle unlock (vehicles.unlock_s) applies as well.
+initial_cooldown_s = 0
+sight_m = 175
+spot_size_pct = 200
+eye_height_cm = 250
+sources = ["placeholder: citations are an owner / M2 task"]
+# S3c: the squad the surviving crew become when they bail out.
+crew_squad = "ww2:usa_tank_crew"
+
+[mobility]
+type = "tracked"
+speed_cm_s = 650
+reverse_cm_s = 250
+turn_deg_s = 32
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 6
+unbog_s = [20, 40]
+# The gyrostabiliser: ×3 on the move instead of ×4.
+moving_spread_pct = 300
+
+[hull]
+box = { center = [0, 0, 115], half = [295, 131, 75] }
+track_band_pct = 45
+track_mm = 20
+
+[turret]
+pivot = [-10, 0, 190]
+box = { center = [0, 0, 45], half = [110, 95, 45] }
+traverse_deg_s = 24
+# Main gun elevation (deg/s). 6: the S3 code value (gunnery.rs
+# ELEVATE_DEG_S, moved to data in S3b); no sourced figure yet, a starting
+# value for tuning.
+elevate_deg_s = 6
+
+[armor]
+# S3b Fix (review L4, a known simplification): 63.5 mm at 47° is the
+# later one-piece glacis of the wet-stowage M4A3 (75)W hull; the dry-
+# stowage hull this def models had 51 mm at 56°. Kept, because the line-
+# of-sight thickness is nearly the same (93 vs 91 mm); the 56° plate
+# would also ricochet more, which the owner question S3b-4 leaves open.
+hull_front   = { thickness_mm = 63.5, slope_deg = 47, material = "rha" }
+hull_side    = { thickness_mm = 38, slope_deg = 0,  material = "rha" }
+hull_rear    = { thickness_mm = 38, slope_deg = 10, material = "rha" }
+hull_top     = { thickness_mm = 19, material = "rha" }
+turret_front = { thickness_mm = 76, slope_deg = 30, material = "rha" }
+turret_side  = { thickness_mm = 51, slope_deg = 5,  material = "rha" }
+turret_rear  = { thickness_mm = 51, slope_deg = 0,  material = "rha" }
+turret_top   = { thickness_mm = 25, material = "rha" }
+
+[crew]
+seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
+
+# S3b (crew layout): driver (left) and assistant driver (right) sit in the
+# nose either side of the transmission, just behind the glacis; boxes moved
+# 0.3 m forward (x 170 -> 200; box fronts 0.6 m behind the nose face).
+# Source: Hunnicutt, Sherman; TM 9-759 (layout); approximate.
+# S3b Tune (turret basket): the turret crew boxes reach down into the hull
+# (turret frame z below 0 = below the turret ring, 190 cm above the ground)
+# instead of sitting wholly above the ring. The gunner sits on a seat
+# hung from the turret with his legs in the basket (z -70..70); the loader
+# stands on the basket floor, about 0.5 m above the ground (z -120..70);
+# the commander sits high behind the gunner (z -40..85). Before, a hull
+# hit at the height of the visible-mass centre passed under all three.
+# Source: TM 9-759 (turret basket), Hunnicutt; approximate.
+[crew.boxes]
+driver    = { frame = "hull",   center = [200, 60, 120],  half = [35, 30, 40] }
+radio_mg  = { frame = "hull",   center = [200, -60, 120], half = [35, 30, 40] }
+gunner    = { frame = "turret", center = [20, -45, 0],    half = [30, 25, 70] }
+loader    = { frame = "turret", center = [10, 45, -25],   half = [30, 25, 95] }
+commander = { frame = "turret", center = [-60, -40, 22],  half = [30, 30, 63] }
+
+[[weapons]]
+def = "ww2:m3_75mm"
+mount = "turret_main"
+muzzle = [340, 0, 45]
+elevation_deg = [-10, 25]
+ammo = [{ id = "ww2:75mm_m61", count = 30 }, { id = "ww2:75mm_m48", count = 40 }]
+# S3b: the exposed barrel, from the muzzle back to the turret front (340 -
+# 110 cm); see ger_pz4_h.toml.
+barrel = { length_cm = 230, radius_cm = 8 }
+
+# S3b Fix (review M4): MG rounds stowed per mount. The M4A3 (75) carried
+# 4,750 rounds of cal .30 for its coaxial and bow M1919A4 (Hunnicutt,
+# Sherman, data sheets; TM 9-759); split evenly between the mounts (the
+# 300 rounds of the cal .50 AA gun are not modelled: no AA mount). Spent
+# rounds refill one 100-round belt per base rearm step.
+[[weapons]]
+def = "ww2:m1919"
+mount = "coax"
+muzzle = [110, 25, 45]
+rounds = 2375
+
+[[weapons]]
+def = "ww2:m1919"
+mount = "hull"
+muzzle = [300, -60, 150]
+arc_deg = 15
+seat = "radio_mg"
+rounds = 2375
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-210, 0, 110], half = [70, 100, 50] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 118, 45] }, { pos = [0, 118, 45] }, { pos = [-250, 118, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -118, 45] }, { pos = [0, -118, 45] }, { pos = [-250, -118, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+# The breech; S3b: the barrel is the main-gun mount's barrel box.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [-10, 0, 180], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+# S3b (rack geometry, owner question S3b-4 (A): dry stowage): the M4A3 (75)
+# carried most rounds in sponson racks above the tracks on both sides of the
+# hull under the turret, plus ready rounds on the turret basket floor
+# (Hunnicutt, Sherman; TM 9-759). Flank hits above the running gear reach
+# them, as wartime loss reports describe. Three boxes, one HP pool;
+# approximate within the box model.
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [-30, 105, 150], half = [60, 22, 25] },
+  { frame = "hull", center = [-30, -105, 150], half = [60, 22, 25] },
+  { frame = "hull", center = [-10, -40, 60], half = [30, 30, 15] },
+]
+
+# S3b: the front transmission and differential in the nose between the
+# driver and the assistant driver (Hunnicutt). As the Panzer IV's.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [220, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's hatch
+# over the turret's right (the gunner follows him out), the oval loader's
+# hatch on the left (production from late 1943; owner question S3c-7 (A)
+# models the late hull), and the driver's and assistant driver's hatches in
+# the hull roof (TM 9-759; theshermantank.com). The floor escape hatch is
+# not modelled (A). Exit times are starting values as for the Panzer IV.
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [-40, -40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [-30, 40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [200, 60, 190]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [200, -60, 190]
+exit_ms = 4000

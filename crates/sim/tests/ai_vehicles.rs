@@ -11,8 +11,14 @@ use std::path::Path;
 use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs};
 use frontline_sim::{EntityKind, PathReq, PlayerId, SimId, World};
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 fn setup(seed: u64) -> MatchSetup {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let mut defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     let rules = defs
         .add_rules_override(&root.join("tests/rules_test_unlock.toml"))

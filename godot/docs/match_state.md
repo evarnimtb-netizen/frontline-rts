@@ -964,3 +964,67 @@ no queue and no delivery time anywhere in the state.
   says the same for a tile it will not send (`refusal_text`), so a click
   on a blocked tile also gets a feed line.
 - Keys: Tab focuses the call-in column, then 1–9 buy that tile.
+
+## S4: cards, members and capabilities
+
+S4 (`docs/slices/S4-variants.md`) gives every unit card its men by
+`[[members]]` slot, tags and capabilities. The presenter keeps the S1-S3c
+`type` word (derived from the card's tags: crew, vehicle, at, mortar,
+engineer, mg, line -> `rifle`), so older code paths keep working; new code
+reads the keys below. Two cards may share a `type` (a full and an
+understrength rifle squad): **the call-in catalog and the `call_in` intent
+are keyed by the card `id`**.
+
+```text
+callin.catalog[]: {               # S3b keys, plus (S4):
+  id: String,                     # card id ("ww2:ger_grenadiergruppe"); the
+                                  # call_in intent sends it (it wins over type)
+  short: String,                  # tile name, every card ("Grenadiere")
+  men: int,                       # 10 (0 for vehicles)
+  tags: PackedStringArray,        # ["line", "understrength"]
+  understrength: bool,            # the tile's half chevron
+  gloss: String,                  # tooltip: "Grenadiergruppe — rifle squad,
+                                  # 10 men: 1 MP 40, 1 MG 42, 1 P 38, 7 Kar98k;
+                                  # 2 Panzerfaust 60" (S4-13 (A))
+}
+squads[]: {                       # S1-S3c keys, plus (S4):
+  tags: PackedStringArray,
+  capabilities: PackedStringArray,# "dig_basic" | "dig_full" | "barrage" |
+                                  # "recrew" | "vehicle_crew" | "at_hunt";
+                                  # the orders grid follows them (below)
+  understrength: bool,
+  slot_names: PackedStringArray,  # own soldier squads: the role word of each
+                                  # formation slot in spawn order ("Leader",
+                                  # "MG gunner", ...), for fallen men's rows
+}
+soldiers[] (own): {               # S1b keys, plus (S4):
+  name: String,                   # his member slot as a role word ("MG gunner")
+  weapon: String,                 # the weapon he carries now ("MG 42"); a man
+                                  # who picked up a crew weapon shows it
+  crew_weapon: bool,              # he carries a crew weapon (MG, mortar,
+                                  # launcher): the squad card's accent diamond
+  items: { frag, smoke, satchel, panzerfaust: int },
+}
+```
+
+- **Orders by capability.** Dig needs `dig_basic` (the AT-ditch profile
+  `dig_full`), Barrage `barrage`, Crew K `recrew` or `vehicle_crew`. A
+  state without `capabilities` (the S1-S3c mock) falls back to the type
+  lists (`MatchView.DIGGERS`, `MORTARS`).
+- **Panzerfaust.** With Panzerfausts and no satchel in the selection, the
+  ability row's third slot is "Pzfaust" (count badge): it arms a tool;
+  clicking a seen enemy vehicle sends `attack_unit` (the men of the squads
+  that carry one) and `attack_move` to it. Right-clicking an enemy vehicle
+  does the same for those squads. The men also fire on their own at
+  vehicles within the weapon's reach (60 m still, 40 m moving).
+- **Call-in tiles.** One tile per card; a soldier tile shows its men in a
+  disc on the title line, its re-call cooldown as a ring round the disc
+  (vehicle tiles keep the fill), and an understrength card a half-filled
+  chevron. Refusal words gain "N alive (max)" (`max_alive`) and "<group>
+  limit" (a limit group); "vehicles unlock in" is now "unlocks in m:ss"
+  (cards may have their own `unlock_s`).
+- **Feed.** `crew_weapon_picked_up`: "MG 42 picked up by MG assistant."
+  (own squads; `pos` where he stands).
+- **Mock.** `MockMatchSource` has two cards for rifle and MG (an
+  understrength rifle squad, a heavy MG squad), keys its cooldowns by card
+  id, and sends `capabilities` per squad.

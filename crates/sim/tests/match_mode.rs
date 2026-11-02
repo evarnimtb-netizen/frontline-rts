@@ -83,8 +83,9 @@ fn match_starts_with_squads_at_bases() {
     let g = w.game().unwrap();
     assert_eq!(g.players().len(), 2);
     assert_eq!(g.squads().len(), 6);
-    // 2 rifle squads + 1 engineer squad each: (8 + 8 + 5) · 2.
-    assert_eq!(w.entities().soldier_count(), 42);
+    // S4: 2 line squads + 1 engineer squad each: Germany 10 + 10 + 8,
+    // USA 12 + 12 + 8.
+    assert_eq!(w.entities().soldier_count(), 60);
     for (&id, sq) in g.squads() {
         let base = g.base_of(sq.owner);
         for &m in &sq.members {
@@ -95,10 +96,10 @@ fn match_starts_with_squads_at_bases() {
     }
     let snap = w.snapshot();
     assert_eq!(snap.squads.len(), 6);
-    assert_eq!(snap.soldier_squad.len(), 42);
-    assert_eq!(snap.soldier_owner.len(), 42);
+    assert_eq!(snap.soldier_squad.len(), 60);
+    assert_eq!(snap.soldier_owner.len(), 60);
     assert_eq!(snap.players.len(), 2);
-    assert_eq!(snap.players[0].pop, 21);
+    assert_eq!(snap.players[0].pop, 28);
     assert_eq!(snap.players[0].manpower, 600);
     // The map is real terrain: a ridge at C well above the valley at B.
     let t = w.terrain();
@@ -152,8 +153,8 @@ fn bad_orders_are_rejected() {
     let mut w = world(3, 1);
     let mine = squads_of(&w, 0);
     let theirs = squads_of(&w, 1);
-    let usa_mg = type_index(&w, "ww2:usa_mg_team");
-    let ger_mg = type_index(&w, "ww2:ger_mg_team");
+    let usa_mg = type_index(&w, "ww2:usa_lmg_squad");
+    let ger_mg = type_index(&w, "ww2:ger_smg_gruppe");
     let line = vec![FxVec2::from_int(200, 200), FxVec2::from_int(220, 200)];
     let too_long = vec![FxVec2::from_int(200, 200), FxVec2::from_int(270, 200)];
     let target = FxVec2::from_int(500, 500);
@@ -239,16 +240,16 @@ fn call_in_spawns_at_once_and_starts_its_cooldown() {
     // and the squad stands in the base in the same tick.
     let mut w = world(4, 2);
     let s = w.match_setup().unwrap().clone();
-    let rifle = type_index(&w, "ww2:ger_rifle_squad");
+    let rifle = type_index(&w, "ww2:ger_grenadiergruppe");
     let ty = &s.squad_types[rifle as usize];
     w.step(&[cmd(0, 0, CommandKind::CallIn { squad_type: rifle })]);
     let g = w.game().unwrap();
     assert_eq!(g.players()[0].manpower, s.rules.start_manpower - ty.cost);
     assert_eq!(g.squads().len(), 7);
-    assert_eq!(w.entities().soldier_count(), 42 + 8);
+    assert_eq!(w.entities().soldier_count(), 60 + 10);
     let (&new, sq) = g.squads().last_key_value().unwrap();
     assert_eq!((sq.owner, sq.type_idx), (PlayerId(0), rifle));
-    assert_eq!(w.snapshot().players[0].pop, 21 + 8);
+    assert_eq!(w.snapshot().players[0].pop, 28 + 10);
     assert_eq!(
         w.snapshot().call_ins,
         [CallInEvent {
@@ -279,10 +280,10 @@ fn call_in_spawns_at_once_and_starts_its_cooldown() {
 fn call_ins_are_refused_with_a_reason() {
     let mut w = world(4, 1);
     let s = w.match_setup().unwrap().clone();
-    let rifle = type_index(&w, "ww2:ger_rifle_squad");
+    let rifle = type_index(&w, "ww2:ger_grenadiergruppe");
     let eng = type_index(&w, "ww2:ger_engineer_squad");
-    let mg = type_index(&w, "ww2:ger_mg_team");
-    let usa_mg = type_index(&w, "ww2:usa_mg_team");
+    let mg = type_index(&w, "ww2:ger_smg_gruppe");
+    let usa_mg = type_index(&w, "ww2:usa_lmg_squad");
     let result = |w: &World| {
         let c = w.snapshot().call_ins.last().copied().unwrap();
         assert_eq!(c.player, PlayerId(0));
@@ -327,8 +328,8 @@ fn call_ins_are_refused_with_a_reason() {
 fn cooldowns_end_on_their_tick_and_groups_and_start_cooldowns_apply() {
     let mut s = setup(4);
     s.rules.start_manpower = 100_000;
-    let rifle = s.squad_type_index("ww2:ger_rifle_squad").unwrap();
-    let mg = s.squad_type_index("ww2:ger_mg_team").unwrap();
+    let rifle = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
+    let mg = s.squad_type_index("ww2:ger_smg_gruppe").unwrap();
     let mortar = s.squad_type_index("ww2:ger_mortar_team").unwrap();
     // MG and mortar share a timer; the mortar also waits 90 ticks at the
     // start.
@@ -339,9 +340,11 @@ fn cooldowns_end_on_their_tick_and_groups_and_start_cooldowns_apply() {
     let mg_cd = s.squad_types[mg as usize].recall_cooldown_ticks as u64;
     let mut w = World::new_match(s, 1).unwrap();
     w.step(&[cmd(0, 0, CommandKind::CallIn { squad_type: mortar })]);
+    // S4: a card's own unlock is refused as "locked" (before the cooldown
+    // check).
     assert_eq!(
         w.snapshot().call_ins[0].result,
-        Err(CallInRefusal::Cooldown { ticks: 90 })
+        Err(CallInRefusal::Locked { ticks: 90 })
     );
     w.step(&[
         cmd(0, 1, CommandKind::CallIn { squad_type: rifle }),
@@ -375,7 +378,7 @@ fn squads_bought_in_quick_succession_spread_over_the_base() {
     for t in s.squad_types.iter_mut().filter(|t| t.vehicle.is_none()) {
         t.recall_cooldown_ticks = 0;
     }
-    let rifle = s.squad_type_index("ww2:ger_rifle_squad").unwrap();
+    let rifle = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
     let clear = Fx::from_int(s.rules.call_in.spawn_clear_m as i32);
     let mut w = World::new_match(s, 1).unwrap();
     // The start squads leave the base.

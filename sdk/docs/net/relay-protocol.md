@@ -138,6 +138,13 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   fields, rules gained `[training]`, and the training profiles joined the
   defs): a build from before S4 and one from after refuse each other with
   `Content`, as intended. The protocol and its limits are unchanged.
+  S4 Part B changed the content (the S4 cards, weapons, the Panzerfaust)
+  and the save version (`-s12`: per-man weapons, crew-weapon drops, the
+  Panzerfaust state, S4 counters), so `build_id` and `content_hash` both
+  differ from Part A builds. No command changed: `PROTOCOL_VERSION` stays
+  5 (a `Throw` may name the new item kind `single_shot_at`; the sim refuses
+  it, and only builds that agree on the content ever meet). Relay limits
+  are unchanged.
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.

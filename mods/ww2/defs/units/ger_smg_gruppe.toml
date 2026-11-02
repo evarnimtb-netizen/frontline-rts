@@ -1,0 +1,45 @@
+# sMG-Gruppe (S4): a heavy MG squad with one MG 42 on the Lafette 42 tripod,
+# replacing the S1-S3 MG-Trupp (which fielded three MG 42s, S4-2 (A)). The
+# Gruppenführer, the gunner (MG 42 and a P 38), his assistant (P 38) and
+# three ammo bearers with Kar98k: six men, the optimum sustained-fire crew
+# (S4-3 (A); heavy MG squads were 7 in 1944).
+# Sources: Wikipedia "MG 42" (sustained-fire crew of 6, 7 in 1944).
+id = "ww2:ger_smg_gruppe"
+name = "sMG-Gruppe"
+short_name = "sMG-Gruppe"
+faction = "ww2:germany"
+tags = ["mg"]
+capabilities = ["recrew"]
+sources = ["Wikipedia, MG 42 (sustained-fire crew)"]
+# Manpower per call-in (S4 starting value).
+cost = 220
+# Re-call cooldown (s): its own timer (Q21 (B)).
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 260
+sight_m = 150
+spacing_dm = 25
+# The MG squads do not dig (as the S1-S3 MG team).
+dig_rate_pct = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:kar98k"
+traits = ["leader"]
+
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:mg42"
+sidearm = "ww2:p38"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:p38"
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 3
+weapon = "ww2:kar98k"
+traits = ["ammo_bearer"]

@@ -56,7 +56,8 @@
 
 use std::collections::BTreeMap;
 
-use frontline_content::{DigProfile, MatchSetup, SquadRole, WeaponClass};
+use frontline_content::setup::{Capability, SquadTypeSetup};
+use frontline_content::{DigProfile, ItemKind, MatchSetup, WeaponClass};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::AiState;
@@ -226,17 +227,55 @@ pub struct Squad {
     pub focus: Option<SimId>,
     /// AT teams (S3): the team's launcher; `None` for other squads.
     pub launcher: Option<Launcher>,
+    /// S4: crew weapons of fallen men waiting to be picked up (`crate::
+    /// combat` "Crew weapons"), in the order they fell.
+    pub drops: Vec<WeaponDrop>,
+    /// S4: single-shot AT items (Panzerfaust): the squad's aim and gap;
+    /// `Some` for squads whose members carry one at spawn.
+    pub pzf: Option<SingleShot>,
+}
+
+/// Most crew weapons waiting at once in one squad (S4).
+pub const MAX_DROPS: usize = 16;
+
+/// S4: a crew weapon lying where its carrier fell (`crate::combat` "Crew
+/// weapons").
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct WeaponDrop {
+    /// Index into `MatchSetup::weapons`.
+    pub weapon: u16,
+    /// Where it lies.
+    pub at: FxVec2,
+    /// Ticks until the nearest man has it (the weapon's `handover_ticks`).
+    pub ticks: u16,
+}
+
+/// S4: a squad's single-shot AT items (`crate::combat` "Panzerfaust").
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct SingleShot {
+    /// The man aiming one, and at what.
+    pub man: Option<SimId>,
+    pub target: Option<SimId>,
+    /// Against `target`: aim at its turret, not its hull.
+    pub aim_turret: bool,
+    /// Ticks of aiming left before the shot.
+    pub aim: u16,
+    /// Ticks until the squad may fire the next one
+    /// (`items.single_shot_gap_ticks`).
+    pub gap: u16,
+    /// Ticks until the next target search.
+    pub search: u16,
+    /// `AttackUnit`: the enemy vehicle to fire at first.
+    pub attack: Option<SimId>,
 }
 
 /// An AT team's launcher (S3, `crate::combat` "Launchers"): who carries
-/// it, the hand-over after its gunner falls, the rockets left and the
-/// `AttackUnit` vehicle.
+/// it, the rockets left and the `AttackUnit` vehicle. S4: when its carrier
+/// falls it is a [`WeaponDrop`] until the next man picks it up.
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct Launcher {
     /// The man carrying it; `None` while it waits to be picked up.
     pub carrier: Option<SimId>,
-    /// Ticks until the next man takes it up (after the carrier fell).
-    pub handover: u16,
     /// Rockets left.
     pub rounds: u16,
     /// Ticks in a row in the own base toward the next rocket.
@@ -270,6 +309,11 @@ pub enum CallInRefusal {
     VehicleLimit,
     /// The type's re-call cooldown: ticks until it is ready.
     Cooldown { ticks: u32 },
+    /// S4: as many squads of this card alive as its `max_alive`.
+    MaxAlive { max: u16 },
+    /// S4: the card's limit group (index into `RulesSetup::limit_groups`)
+    /// is full.
+    GroupLimit { group: u16 },
     /// Short of manpower by this much.
     Manpower { short: u32 },
     /// The squad would take the player over the pop cap.
@@ -314,6 +358,18 @@ pub struct PlayerState {
     pub rockets: u32,
     /// S3c bail-out and re-crew counters (report).
     pub crew: CrewCounters,
+    /// S4 counters (report).
+    pub s4: S4Counters,
+}
+
+/// S4 per-player counters (saved and hashed, read only by reports and
+/// the HUD).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S4Counters {
+    /// Crew weapons own men picked up from a fallen man.
+    pub pickups: u32,
+    /// Single-shot AT items (Panzerfausts) fired.
+    pub single_shots: u32,
 }
 
 /// S3c per-player counters (`crate::bail`; saved and hashed, read only by
@@ -470,6 +526,19 @@ pub struct MatchState {
     /// `call_in_events` (never saved, hashed or read by the sim).
     #[serde(skip)]
     pub(crate) recrew_events: Vec<crate::bail::RecrewEvent>,
+    /// S4: crew weapons picked up this tick, moved to the snapshot like
+    /// `call_in_events` (never saved, hashed or read by the sim).
+    #[serde(skip)]
+    pub(crate) pickup_events: Vec<PickupEvent>,
+}
+
+/// S4: a man picked up a fallen man's crew weapon (presentation only).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct PickupEvent {
+    pub squad: SquadId,
+    pub man: SimId,
+    /// Index into `MatchSetup::weapons`.
+    pub weapon: u16,
 }
 
 /// Mutable world parts a match operation needs.
@@ -506,6 +575,7 @@ impl MatchState {
                 kills_by: [0; kill_class::COUNT],
                 rockets: 0,
                 crew: CrewCounters::default(),
+                s4: S4Counters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -548,6 +618,7 @@ impl MatchState {
             hit_log: None,
             call_in_events: Vec::new(),
             recrew_events: Vec::new(),
+            pickup_events: Vec::new(),
             setup,
         }
     }
@@ -665,9 +736,30 @@ impl MatchState {
             .map_or(0, |&t| t.saturating_sub(tick).min(u32::MAX as u64) as u32)
     }
 
+    /// S4: `player`'s squads of `squad_type` alive now.
+    pub fn alive_of_type(&self, player: PlayerId, squad_type: u16) -> u32 {
+        self.squads
+            .values()
+            .filter(|sq| sq.owner == player && sq.type_idx == squad_type)
+            .count() as u32
+    }
+
+    /// S4: `player`'s squads alive now whose card is in limit group `g`.
+    pub fn alive_in_group(&self, player: PlayerId, g: u16) -> u32 {
+        let s = &self.setup;
+        self.squads
+            .values()
+            .filter(|sq| {
+                sq.owner == player && s.squad_types[sq.type_idx as usize].limit_group == Some(g)
+            })
+            .count() as u32
+    }
+
     /// Whether `player` could call in `squad_type` at `tick` (S3b), checked
-    /// in this order: roster, vehicle unlock, vehicle limit, cooldown,
-    /// manpower, pop cap. The AI and the command use the same rule.
+    /// in this order: roster, unlock (the card's `unlock_s`, and the rules'
+    /// vehicle unlock as a floor for vehicles), S4 `max_alive`, S4 limit
+    /// group, vehicle limit, cooldown, manpower, pop cap. The AI and the
+    /// command use the same rule.
     pub fn call_in_check(
         &self,
         ents: &Entities,
@@ -684,15 +776,26 @@ impl MatchState {
         }
         let ty = &s.squad_types[squad_type as usize];
         let vr = &s.rules.vehicles;
-        if ty.vehicle.is_some() {
-            if tick < vr.unlock_ticks as u64 {
-                return Err(CallInRefusal::Locked {
-                    ticks: (vr.unlock_ticks as u64 - tick) as u32,
-                });
-            }
-            if self.vehicles_counted(ents, player) >= vr.limit {
-                return Err(CallInRefusal::VehicleLimit);
-            }
+        let unlock = if ty.vehicle.is_some() {
+            ty.initial_cooldown_ticks.max(vr.unlock_ticks)
+        } else {
+            ty.initial_cooldown_ticks
+        };
+        if tick < unlock as u64 {
+            return Err(CallInRefusal::Locked {
+                ticks: (unlock as u64 - tick) as u32,
+            });
+        }
+        if ty.max_alive > 0 && self.alive_of_type(player, squad_type) >= ty.max_alive as u32 {
+            return Err(CallInRefusal::MaxAlive { max: ty.max_alive });
+        }
+        if let Some(g) = ty.limit_group
+            && self.alive_in_group(player, g) >= s.rules.limit_groups[g as usize].limit
+        {
+            return Err(CallInRefusal::GroupLimit { group: g });
+        }
+        if ty.vehicle.is_some() && self.vehicles_counted(ents, player) >= vr.limit {
+            return Err(CallInRefusal::VehicleLimit);
         }
         let wait = self.cooldown_left(player, squad_type, tick);
         if wait > 0 {
@@ -803,12 +906,13 @@ impl MatchState {
             && ents.owner[vehicle.index()] == player
     }
 
-    /// Whether a squad type of `role` digging at `rate` may dig `profile`
-    /// (S3: the AT ditch is the engineers').
-    pub(crate) fn digs_profile(&self, role: SquadRole, rate: u32, profile: DigProfile) -> bool {
-        rate > 0
+    /// Whether squad type `ty` may dig `profile` (S4: `dig_basic` and a
+    /// dig rate; a profile marked `engineers_only` needs `dig_full`).
+    pub(crate) fn digs_profile(&self, ty: &SquadTypeSetup, profile: DigProfile) -> bool {
+        ty.dig_rate_pct > 0
+            && ty.has(Capability::DigBasic)
             && (!self.setup.rules.dig_profile(profile).engineers_only
-                || role == SquadRole::Engineer)
+                || ty.has(Capability::DigFull))
     }
 
     /// Whether a job digging `profile` may start: an AT-ditch job needs
@@ -920,7 +1024,7 @@ impl MatchState {
             return false;
         }
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
-        if !self.digs_profile(ty.role, ty.dig_rate_pct, profile)
+        if !self.digs_profile(ty, profile)
             || !self.dig_line_ok(ctx, line, profile)
             || !self.at_ditch_room(profile)
         {
@@ -962,7 +1066,7 @@ impl MatchState {
             return false;
         }
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
-        if ty.role != SquadRole::Mortar || !(1..=MAX_BARRAGE_ROUNDS).contains(&rounds) {
+        if !ty.has(Capability::Barrage) || !(1..=MAX_BARRAGE_ROUNDS).contains(&rounds) {
             return false;
         }
         let w = &self.setup.weapons[ty.weapon as usize];
@@ -1175,33 +1279,36 @@ impl MatchState {
             ctx.ents.mover[i].waypoint = q;
             ctx.ents.mover[i].speed = speed;
             ctx.ents.squad[i] = Some(id);
-            // The first `weapon_men` men carry the squad weapon, the rest
-            // the sidearm (S3).
-            let wk = match ty.sidearm {
-                Some(side) if k >= ty.weapon_men as usize => side,
-                _ => ty.weapon,
-            };
+            // S4: men spawn by `[[members]]` slot, each with his slot's
+            // weapon and items; the first man leads.
+            let slot = ty.slot_of(k);
+            let wk = ty.members[slot as usize].weapon;
             ctx.ents.combat[i] = combat::spawn_combat(
                 ty.hp,
                 &self.setup.weapons[wk as usize],
                 &self.setup.rules.combat.body,
             );
-            // The first man leads the squad and carries the leader's kit.
             ctx.ents.kit[i] = Kit {
-                items: ty.full_kit(&self.setup.items, k == 0),
-                leader: k == 0,
+                items: ty.full_kit(slot),
+                slot,
+                weapon: wk,
                 ..Kit::default()
             };
             ctx.hash.mark_entity_chunk(sid.chunk());
             members.push(sid);
         }
-        // AT teams: the first man carries the launcher (S3).
+        // AT teams: the first man with the launcher carries it (S3).
         let w = &self.setup.weapons[ty.weapon as usize];
         let launcher = (w.class == WeaponClass::Launcher).then(|| Launcher {
-            carrier: members.first().copied(),
+            carrier: members
+                .iter()
+                .copied()
+                .find(|m| ctx.ents.kit[m.index()].weapon == ty.weapon),
             rounds: w.rounds_carried.min(u16::MAX as u32) as u16,
             ..Launcher::default()
         });
+        // S4: squads with a single-shot AT item (Panzerfaust).
+        let pzf = (ty.squad_items(ItemKind::SingleShotAt) > 0).then(SingleShot::default);
         self.squads.insert(
             id,
             Squad {
@@ -1219,6 +1326,8 @@ impl MatchState {
                 },
                 focus: None,
                 launcher,
+                drops: Vec::new(),
+                pzf,
             },
         );
         id
@@ -1272,6 +1381,8 @@ impl MatchState {
                 },
                 focus: None,
                 launcher: None,
+                drops: Vec::new(),
+                pzf: None,
             },
         );
     }
@@ -1571,8 +1682,9 @@ impl MatchState {
                 None => w.class != WeaponClass::Launcher,
                 Some(l) => {
                     w.class == WeaponClass::Launcher
-                        && l.carrier.is_none_or(|c| sq.members.contains(&c))
-                        && l.handover as u32 <= w.handover_ticks
+                        && l.carrier.is_none_or(|c| {
+                            sq.members.contains(&c) && ents.kit[c.index()].weapon == ty.weapon
+                        })
                         && l.rounds as u32 <= w.rounds_carried
                         && (l.resupply as u32) < s.rules.items.resupply_ticks.max(1)
                         && l.attack.is_none_or(|t| {
@@ -1583,6 +1695,44 @@ impl MatchState {
             };
             if !launcher_ok {
                 return Err("launcher state is inconsistent");
+            }
+            // S4: crew weapons waiting to be picked up, and the squad's
+            // single-shot AT state.
+            let drops_ok = sq.drops.len() <= MAX_DROPS
+                && sq.drops.iter().all(|d| {
+                    s.weapons
+                        .get(d.weapon as usize)
+                        .is_some_and(|w| w.crew && d.ticks as u32 <= w.handover_ticks.max(1))
+                        && d.at.x >= Fx::ZERO
+                        && d.at.y >= Fx::ZERO
+                        && d.at.x <= Fx::from_int(s.map.size_m)
+                        && d.at.y <= Fx::from_int(s.map.size_m)
+                });
+            if !drops_ok || (ty.vehicle.is_some() && !sq.drops.is_empty()) {
+                return Err("crew weapon drops are inconsistent");
+            }
+            let live_enemy_vehicle = |t: SimId| {
+                ents.kind.get(t.index()) == Some(&EntityKind::Vehicle)
+                    && ents.owner[t.index()] != sq.owner
+            };
+            let pzf_ok = match &sq.pzf {
+                None => ty.squad_items(ItemKind::SingleShotAt) == 0 || ty.vehicle.is_some(),
+                Some(p) => {
+                    let aim_max = ty
+                        .kit(&s.items, ItemKind::SingleShotAt)
+                        .map_or(0, |(_, it)| it.windup_ticks.max(1));
+                    ty.squad_items(ItemKind::SingleShotAt) > 0
+                        && p.man.is_some() == p.target.is_some()
+                        && p.man.is_none_or(|m| sq.members.contains(&m))
+                        && p.target.is_none_or(live_enemy_vehicle)
+                        && p.attack.is_none_or(live_enemy_vehicle)
+                        && p.aim as u32 <= aim_max
+                        && p.gap as u32 <= s.rules.items.single_shot_gap_ticks
+                        && p.search as u32 <= s.tick_hz.max(1)
+                }
+            };
+            if !pzf_ok {
+                return Err("single-shot AT state is inconsistent");
             }
         }
         for (&id, d) in &self.unit_digs {
@@ -1737,9 +1887,9 @@ impl MatchState {
             // S3c: the crew squad link names a crew squad; a boarding squad
             // is re-crewing this vehicle.
             let crew_ok = vs.crew_squad.is_none_or(|q| {
-                self.squads
-                    .get(&q)
-                    .is_some_and(|sq| s.squad_types[sq.type_idx as usize].role == SquadRole::Crew)
+                self.squads.get(&q).is_some_and(|sq| {
+                    s.squad_types[sq.type_idx as usize].has(Capability::VehicleCrew)
+                })
             }) && vs.board.is_none_or(|(q, _)| {
                 self.squads
                     .get(&q)

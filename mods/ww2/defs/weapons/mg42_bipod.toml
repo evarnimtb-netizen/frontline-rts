@@ -1,0 +1,37 @@
+# MG 42 on its bipod (S4): the Grenadiergruppe's light MG, carried and fired
+# by the MG-Schütze 1 with the squad; it moves with the squad and fires in
+# short bursts. The tripod gun (Lafette 42) is `ww2:mg42`.
+# Sources: Wikipedia "MG 42" (11.6 kg with bipod; cyclic ~1,200 rpm; 740 m/s
+# with the s.S. round; 50-round Gurttrommel drum; US comparative tests:
+# the bipod gun fired in bursts of 3-7 rounds). Game ranges are compressed
+# (rifles 300 m): the bipod/tripod gap is kept as a ratio, not the real
+# 2-3 km.
+id = "ww2:mg42_bipod"
+name = "MG 42 (bipod)"
+short_name = "MG 42"
+class = "mg"
+sources = [
+    "Wikipedia, MG 42 (weight, cyclic rate, muzzle velocity, drum, burst length)",
+]
+# Effective reach on the compressed scale (m): 1.5 x a rifle's 300 m.
+range_m = 450
+# Damage per hit (the same 7.92 mm round as the Kar98k's, at MG range).
+damage = 45
+# Cyclic rate (rpm): ~1,200.
+rounds_per_min = 1200
+# Rounds between reloads: the 50-round drum (Gurttrommel 34).
+magazine = 50
+# A drum change (ms).
+reload_ms = 5000
+# Dispersion half-angle (mrad): wider than the tripod's 12 (no traverse and
+# elevation mechanism, fired off the bipod).
+spread_mrad = 22
+# m/s (s.S. ball).
+muzzle_velocity_m_s = 740
+# Down on the bipod and aimed (ms): a second.
+setup_ms = 1000
+# Suppression per near miss (out of 100).
+suppression = 15
+# A crew weapon: when the gunner falls, his assistant (or the nearest man,
+# ammo bearers first) takes the gun up after this long (ms).
+handover_ms = 3000

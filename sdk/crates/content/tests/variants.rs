@@ -8,7 +8,14 @@ use std::path::{Path, PathBuf};
 
 use frontline_content::{ContentError, Difficulty, MatchRequest, ModDefs, SquadRole};
 
+/// S4: the loader tests extend and patch the S1-S3c legacy cards, frozen
+/// before the content switch (`fixtures/ww2_s3c`).
 fn ww2_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ww2_s3c")
+}
+
+/// The live `mods/ww2` (the S4 content and its example variant).
+fn live_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2")
 }
 
@@ -67,34 +74,127 @@ const UNIT: &str = "defs/units/zz_variant.toml";
 
 #[test]
 fn the_example_variant_resolves_from_its_parent() {
-    let mut d = ModDefs::load(&ww2_root()).unwrap();
-    d.add_defs_dir(&ww2_root().join("tests/variants")).unwrap();
-    let v = &d.squads["ww2:usa_rifle_squad_understrength"];
-    let p = &d.squads["ww2:usa_rifle_squad"];
+    let root = live_root();
+    let mut d = ModDefs::load(&root).unwrap();
+    d.add_defs_dir(&root.join("tests/variants")).unwrap();
+    let v = &d.squads["ww2:ger_grenadiergruppe_example"];
+    let p = &d.squads["ww2:ger_grenadiergruppe"];
     assert_eq!(v.role, SquadRole::Rifle);
-    assert_eq!(v.tags, ["line", "understrength"]);
-    assert_eq!(v.capabilities, p.capabilities);
+    assert_eq!(v.tags, p.tags);
+    // Its own members carry no Panzerfaust: `at_hunt` is derived, so it
+    // drops out.
+    assert_eq!(v.capabilities, ["dig_basic", "recrew"]);
+    assert!(p.has_capability("at_hunt"));
     assert_eq!(
         (v.cost, v.cooldown_s, v.speed_cm_s),
         (p.cost, p.cooldown_s, p.speed_cm_s)
     );
-    // [[members]] replaced the parent's legacy soldier keys.
-    assert!(!v.is_legacy() && v.loadout.is_empty());
-    assert_eq!(v.members.iter().map(|m| m.count).sum::<u8>(), 9);
+    assert_eq!(v.members.iter().map(|m| m.count).sum::<u8>(), 6);
     // The variant's own file is kept raw (the SDK view), with its parent.
     let raw = d.raw.get("units", &v.id).unwrap();
-    assert_eq!(raw.extends(), Some("ww2:usa_rifle_squad"));
+    assert_eq!(raw.extends(), Some("ww2:ger_grenadiergruppe"));
     // It is not in a roster without the roster patch, but it resolves.
     let s = d.resolve(&skirmish()).unwrap();
     let t = s.squad_type_index(&v.id).unwrap();
-    assert_eq!(s.squad_types[t as usize].men, 9);
+    assert_eq!(s.squad_types[t as usize].men, 6);
     // Its id cannot be added twice.
     let e = d
         .clone()
-        .add_defs_dir(&ww2_root().join("tests/variants"))
+        .add_defs_dir(&root.join("tests/variants"))
         .unwrap_err()
         .to_string();
     assert!(e.contains("already a units def"), "{e}");
+}
+
+/// S4 content (B6): the shipped cards resolve with their men, costs,
+/// tags and the rules' pop cap and tag mix.
+#[test]
+fn the_s4_content_resolves_with_historical_squads() {
+    let d = ModDefs::load(&live_root()).unwrap();
+    let s = d.resolve(&skirmish()).unwrap();
+    let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
+    for (id, men, cost) in [
+        ("ww2:ger_grenadiergruppe", 10, 320),
+        ("ww2:ger_grenadiergruppe_7", 7, 230),
+        ("ww2:ger_smg_gruppe", 6, 220),
+        ("ww2:ger_engineer_squad", 8, 280),
+        ("ww2:usa_rifle_squad", 12, 340),
+        ("ww2:usa_rifle_squad_9", 9, 260),
+        ("ww2:usa_rifle_squad_2bar", 12, 360),
+        ("ww2:usa_lmg_squad", 5, 200),
+        ("ww2:usa_engineer_squad", 8, 280),
+        ("ww2:ger_mortar_team", 3, 280),
+        ("ww2:usa_mortar_team", 3, 280),
+    ] {
+        assert_eq!((ty(id).men, ty(id).cost), (men, cost), "{id}");
+    }
+    // One gun per MG and mortar card (S4-2).
+    let guns = |id: &str| {
+        ty(id)
+            .members
+            .iter()
+            .filter(|m| s.weapons[m.weapon as usize].crew)
+            .map(|m| m.count as u32)
+            .sum::<u32>()
+    };
+    for id in [
+        "ww2:ger_smg_gruppe",
+        "ww2:usa_lmg_squad",
+        "ww2:ger_mortar_team",
+        "ww2:usa_mortar_team",
+        "ww2:ger_grenadiergruppe",
+    ] {
+        assert_eq!(guns(id), 1, "{id}");
+    }
+    // Two Panzerfausts per Grenadiergruppe, one per Feldstärke squad.
+    let pzf = |id: &str| ty(id).squad_items(frontline_content::ItemKind::SingleShotAt);
+    assert_eq!(
+        (
+            pzf("ww2:ger_grenadiergruppe"),
+            pzf("ww2:ger_grenadiergruppe_7")
+        ),
+        (2, 1)
+    );
+    assert!(ty("ww2:ger_grenadiergruppe_7").has_tag(s.tag("understrength")));
+    assert_eq!(s.rules.pop_cap, 150);
+    let mix: Vec<(&str, u32)> = s
+        .rules
+        .ai
+        .mix
+        .iter()
+        .map(|m| (s.tags[m.tag as usize].as_str(), m.pct))
+        .collect();
+    assert_eq!(
+        mix,
+        [
+            ("line", 50),
+            ("mg", 20),
+            ("engineer", 15),
+            ("mortar", 15),
+            ("at", 20),
+            ("vehicle", 20)
+        ]
+    );
+    // Start squads: two full line squads and the engineers (S4-14 (A)).
+    let men = |f: &str| {
+        let f = s.factions.iter().find(|x| x.id == f).unwrap();
+        f.start_squads
+            .iter()
+            .map(|&t| s.squad_types[t as usize].men as u32)
+            .sum::<u32>()
+    };
+    assert_eq!((men("ww2:germany"), men("ww2:usa")), (28, 32));
+    // Every S4 card is regular (S4-10 (A)).
+    assert!(
+        s.squad_types
+            .iter()
+            .all(|t| s.training[t.training as usize].is_regular())
+    );
+    // The two-BAR card is dated; skirmish has no date filter.
+    assert!(s.factions.iter().any(|f| {
+        f.roster
+            .contains(&s.squad_type_index("ww2:usa_rifle_squad_2bar").unwrap())
+    }));
 }
 
 #[test]
@@ -344,8 +444,9 @@ fn training_profiles_and_rules_keys_are_checked() {
 
 #[test]
 fn an_override_on_a_parent_reaches_its_variants() {
-    let mut d = ModDefs::load(&ww2_root()).unwrap();
-    d.add_defs_dir(&ww2_root().join("tests/variants")).unwrap();
+    // The live content: the US rifle squad and its two shipped variants
+    // (the understrength and two-BAR squads set their own cost).
+    let mut d = ModDefs::load(&live_root()).unwrap();
     let p = write_tmp(
         "parent",
         "[defs.units.\"ww2:usa_rifle_squad\"]\ncost = 300\nsight_m = 160\n",
@@ -355,14 +456,17 @@ fn an_override_on_a_parent_reaches_its_variants() {
     assert_eq!(
         shown,
         [
-            "defs.units.\"ww2:usa_rifle_squad\": cost: 250 -> 300",
+            "defs.units.\"ww2:usa_rifle_squad\": cost: 340 -> 300",
             "defs.units.\"ww2:usa_rifle_squad\": sight_m: 150 -> 160",
-            "defs.units.\"ww2:usa_rifle_squad_understrength\": cost: 250 -> 300",
-            "defs.units.\"ww2:usa_rifle_squad_understrength\": sight_m: 150 -> 160",
+            "defs.units.\"ww2:usa_rifle_squad_2bar\": sight_m: 150 -> 160",
+            "defs.units.\"ww2:usa_rifle_squad_9\": sight_m: 150 -> 160",
         ]
     );
-    assert_eq!(d.squads["ww2:usa_rifle_squad_understrength"].cost, 300);
-    // A [[members]] patch on a legacy squad replaces its soldier keys.
+    assert_eq!(d.squads["ww2:usa_rifle_squad_9"].cost, 260);
+    assert_eq!(d.squads["ww2:usa_rifle_squad_9"].sight_m, 160);
+    // A [[members]] patch on a legacy squad (the frozen S3c content)
+    // replaces its soldier keys.
+    let mut d = ModDefs::load(&ww2_root()).unwrap();
     let p = write_tmp(
         "members_patch",
         "[defs.units.\"ww2:ger_mg_team\"]\n\
@@ -373,45 +477,50 @@ fn an_override_on_a_parent_reaches_its_variants() {
     d.apply_override(&p, "ww2:skirmish").unwrap();
     let s = d.resolve(&skirmish()).unwrap();
     let ty = &s.squad_types[s.squad_type_index("ww2:ger_mg_team").unwrap() as usize];
-    assert_eq!((ty.men, ty.weapon_men), (4, 1));
-    assert!(ty.sidearm.is_some());
+    assert_eq!(ty.men, 4);
+    assert_eq!(
+        ty.members.iter().map(|m| m.count).collect::<Vec<_>>(),
+        [1, 3]
+    );
+    assert_ne!(ty.members[0].weapon, ty.members[1].weapon);
 }
 
 #[test]
-fn what_todays_sim_cannot_run_is_refused_at_resolve() {
-    for (name, extra, want) in [
+fn what_part_a_refused_resolves_in_part_b() {
+    // S4 Part B (B1): three weapons, member sidearms, other training,
+    // card limits and capabilities that differ from the legacy role's all
+    // reach the sim now.
+    for (name, extra) in [
         (
             "three_weapons",
             "[[members]]\nslot = \"a\"\nweapon = \"ww2:m1_garand\"\n\
              [[members]]\nslot = \"b\"\nweapon = \"ww2:m3_smg\"\n\
              [[members]]\nslot = \"c\"\nweapon = \"ww2:m1919\"\n",
-            "slot `c` carries `ww2:m1919`",
         ),
         (
             "sidearm",
             "[[members]]\nslot = \"a\"\nweapon = \"ww2:m1919\"\nsidearm = \"ww2:m1911a1\"\n",
-            "sets a sidearm",
         ),
-        (
-            "training",
-            "training = \"ww2:training_conscript\"\n",
-            "training profile `ww2:training_conscript`",
-        ),
-        ("max_alive", "max_alive = 2\n", "a card limit"),
+        ("training", "training = \"ww2:training_conscript\"\n"),
+        ("max_alive", "max_alive = 2\n"),
         (
             "caps",
             "capabilities = [\"dig_basic\", \"dig_full\", \"recrew\"]\n",
-            "capabilities",
         ),
     ] {
         let text = format!("id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\n{extra}");
         let d = load_with(name, &[(UNIT, &text)]).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let e = d.resolve(&skirmish()).unwrap_err().to_string();
-        assert!(
-            e.contains("needs S4 Part B") && e.contains(want),
-            "{name}: {e}"
-        );
+        let s = d
+            .resolve(&skirmish())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(s.squad_type_index("ww2:zz_variant").is_some(), "{name}");
     }
+    // An unknown limit group is still refused (at load: no rules def has
+    // it), with a hint.
+    let text =
+        "id = \"ww2:zz_variant\"\nextends = \"ww2:usa_rifle_squad\"\nlimit_group = \"ww2:zz\"\n";
+    let e = load_with("limit", &[(UNIT, text)]).unwrap_err().to_string();
+    assert!(e.contains("limit group `ww2:zz`"), "{e}");
 }
 
 #[test]
@@ -436,7 +545,7 @@ fn abstract_templates_resolve_but_never_reach_a_match() {
     // Squad indices stay dense: the crew squads still point at crews.
     for v in &s.vehicles {
         let c = v.crew_squad.unwrap();
-        assert_eq!(s.squad_types[c as usize].role, SquadRole::Crew);
+        assert!(s.type_has_tag(c, "crew"));
     }
     let usa = std::fs::read_to_string(ww2_root().join("defs/factions/usa.toml"))
         .unwrap()
@@ -521,13 +630,14 @@ fn the_ai_mix_by_tag_maps_one_to_one_onto_the_old_keys() {
         e.contains("ai.mix_mg_pct") && e.contains("[ai.mix] mg"),
         "{e}"
     );
-    // A tag the S3 AI does not buy by is refused at resolve in Part A.
+    // S4 Part B: a new tag resolves; it follows the legacy six in the mix.
     let p = write_tmp("mix_new_tag", "[ai.mix]\nassault = 10\n");
     both.apply_override(&p, "ww2:skirmish").unwrap();
-    let e = both.resolve(&skirmish()).unwrap_err().to_string();
-    assert!(
-        e.contains("ai.mix.assault") && e.contains("S4 Part B"),
-        "{e}"
+    let s = both.resolve(&skirmish()).unwrap();
+    let last = s.rules.ai.mix.last().unwrap();
+    assert_eq!(
+        (s.tags[last.tag as usize].as_str(), last.pct),
+        ("assault", 10)
     );
 }
 

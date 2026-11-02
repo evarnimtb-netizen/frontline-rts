@@ -10,9 +10,15 @@ use frontline_sim::{
     ArmourEventKind, Command, CommandKind, Fx, FxVec2, ItemKind, PlayerId, SimId, SquadId, World,
 };
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 /// Flat open ground with the test unlock, both sides human.
 fn setup() -> MatchSetup {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let mut defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     let rules = defs
         .add_rules_override(&root.join("tests/rules_test_unlock.toml"))
@@ -233,7 +239,12 @@ fn the_next_man_takes_the_launcher_after_the_hand_over_and_reloads_alone() {
     assert_eq!(handover, 90, "3 s at 30 Hz");
     w.kill_soldier(men[0]);
     let l = launcher(&w, team);
-    assert_eq!((l.carrier, l.handover as u64), (None, handover));
+    // S4: the launcher lies where he fell until the next man picks it up.
+    let drops = w.game().unwrap().squads()[&team].drops.clone();
+    assert_eq!(
+        (l.carrier, drops.len(), drops[0].ticks as u64),
+        (None, 1, handover)
+    );
     w.step(&[]);
     // A save in the middle of the hand-over loads and continues alike.
     let mut loaded = World::load(&w.save(), 2).unwrap();

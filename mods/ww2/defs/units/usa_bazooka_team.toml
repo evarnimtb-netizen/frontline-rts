@@ -1,21 +1,27 @@
-# Bazooka team (S3): a launcher gunner and a loader with a rifle.
+# Bazooka Team (S3): a launcher gunner and a loader with a rifle. Available
+# from the start; the AI buys it after vehicles unlock and an enemy vehicle
+# has been seen. S4: as [[members]] and card keys, unchanged.
 id = "ww2:usa_bazooka_team"
 name = "Bazooka Team"
+short_name = "Bazooka"
 faction = "ww2:usa"
-role = "anti_tank"
-men = 2
-weapon = "ww2:m9_bazooka"
-weapon_men = 1
-sidearm = "ww2:m1_garand"
+tags = ["at"]
 cost = 180
-# Call-in (S3b): a call-in spawns the AT team at once at the base (no
-# queue, no delivery time; it walks to the front itself). Then this
-# type cannot be called in again for recall_cooldown_s seconds. 48 s set
-# by the owner on 2026-11-01 (20 % under the first proposal of 60 s).
-recall_cooldown_s = 48
-# Seconds from the match start before the first call-in; 0 = at once.
-initial_cooldown_s = 0
+# Call-in (S3b): 48 s set by the owner on 2026-11-01 (20 % under the first
+# proposal of 60 s).
+cooldown_s = 48
+unlock_s = 0
 speed_cm_s = 280
 sight_m = 150
 spacing_dm = 30
 dig_rate_pct = 100
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:m9_bazooka"
+traits = ["leader", "crew_gunner"]
+
+[[members]]
+slot = "loader"
+weapon = "ww2:m1_garand"
+traits = ["crew_assistant"]

@@ -9,7 +9,9 @@ extends SceneTree
 ##   Godot --headless --path godot -s res://tools/test_data_reload.gd
 ##
 ## The broken mod is a copy of mods/ww2 in user:// with one bad value; the
-## real mods/ are never edited.
+## real mods/ are never edited. S4: a copy with the `extends` variant
+## `ger_grenadiergruppe_7` edited (checks clean), then broken (an unknown
+## parent, a legacy key over [[members]]).
 
 var _fails := 0
 var _checks := 0
@@ -56,6 +58,27 @@ func _run() -> void:
 	_check(current_scene == m2 and m2.source.is_running(), "broken data does not end the running match")
 	_check(m2.view.data_error.visible and m2.view.data_error.message == err, "broken data shows the banner")
 	_remove_dir(broken)
+	# S4: an `extends` variant edited and checked again (F5), then broken
+	# two ways: an unknown parent (did-you-mean) and a legacy soldier key
+	# over a [[members]] parent.
+	var variant_mod := ProjectSettings.globalize_path("user://s4_variant_mod")
+	_copy_dir(ProjectSettings.globalize_path("res://").path_join("../mods/ww2").simplify_path(), variant_mod)
+	var v_path := variant_mod.path_join("defs/units/ger_grenadiergruppe_7.toml")
+	var v_text := FileAccess.get_file_as_string(v_path)
+	_check(v_text.contains("extends = \"ww2:ger_grenadiergruppe\""), "S4: the field-strength card is an extends variant")
+	FileAccess.open(v_path, FileAccess.WRITE).store_string(v_text.replace("cost = 230", "cost = 250"))
+	m2.source.mods_dir = variant_mod
+	_check(m2.source.check_mods(session.match_setup()) == "", "S4: an edited extends variant checks clean")
+	FileAccess.open(v_path, FileAccess.WRITE).store_string(v_text.replace("extends = \"ww2:ger_grenadiergruppe\"", "extends = \"ww2:ger_grenadiergrupe\""))
+	var v_err: String = m2.source.check_mods(session.match_setup())
+	_check(v_err.contains("ger_grenadiergruppe_7") and v_err.contains("ww2:ger_grenadiergruppe"), "S4: an unknown parent names the file and suggests the parent: %s" % v_err.left(200))
+	FileAccess.open(v_path, FileAccess.WRITE).store_string(v_text + "\nmen = 5\n")
+	v_err = m2.source.check_mods(session.match_setup())
+	_check(v_err.contains("members"), "S4: a legacy key over a [[members]] parent is refused: %s" % v_err.left(200))
+	m2._reload_data()
+	await _frames(10)
+	_check(current_scene == m2 and m2.view.data_error.visible, "S4: the broken variant shows the banner, the match goes on")
+	_remove_dir(variant_mod)
 	print("test_data_reload: %d/%d checks passed" % [_checks - _fails, _checks])
 	m2.source.stop_match()
 	quit(1 if _fails > 0 else 0)

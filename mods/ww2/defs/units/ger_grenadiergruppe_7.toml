@@ -1,0 +1,47 @@
+# Grenadiergruppe (Feldstärke) (S4): the same squad at a field strength of
+# seven, as most German squads stood by mid-1944 (roadmap §3.1; owner Q6
+# (A): cheaper understrength cards). The leader, the MG team of three and
+# three Schützen, one with a Panzerfaust 60 (S4-5 (A)). Made only of
+# `extends` and a member list, plus its card keys.
+id = "ww2:ger_grenadiergruppe_7"
+extends = "ww2:ger_grenadiergruppe"
+name = "Grenadiergruppe (Feldstärke)"
+short_name = "Grenadiere 7"
+tags = ["line", "understrength"]
+# 220 for the squad, +10 for the Panzerfaust.
+cost = 230
+# The AI buys it about half as often as the full squad (S4-8 (A)).
+ai_weight = 50
+
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2, "ww2:nbhgr39" = 1 }
+
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:mg42_bipod"
+sidearm = "ww2:p38"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:p38"
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+weapon = "ww2:kar98k"
+traits = ["ammo_bearer"]
+
+[[members]]
+slot = "rifleman_pzf"
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1, "ww2:panzerfaust60" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 2
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1 }

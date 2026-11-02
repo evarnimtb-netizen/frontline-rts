@@ -1,0 +1,33 @@
+id = "ww2:ger_engineer_squad"
+name = "Pioniergruppe"
+faction = "ww2:germany"
+role = "engineer"
+men = 5
+weapon = "ww2:mp40"
+cost = 220
+# Call-in (S3b): a call-in spawns the engineers at once at the base (no
+# queue, no delivery time; it walks to the front itself). Then this
+# type cannot be called in again for recall_cooldown_s seconds. 36 s set
+# by the owner on 2026-11-01 (20 % under the first proposal of 45 s).
+recall_cooldown_s = 36
+# Seconds from the match start before the first call-in; 0 = at once.
+initial_cooldown_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 200
+
+# Items (S1b abilities): one frag each, two and a smoke grenade for the
+# squad leader, who also carries the squad's satchel charge.
+[[loadout]]
+item = "ww2:stielhandgranate"
+count = 1
+leader_count = 2
+
+[[loadout]]
+item = "ww2:nbhgr39"
+leader_count = 1
+
+[[loadout]]
+item = "ww2:geballte_ladung"
+leader_count = 1

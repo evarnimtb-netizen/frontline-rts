@@ -1,18 +1,29 @@
+# Mortar Team (S4): one 81 mm M1 and two men with M1 carbines (the S1-S3
+# team carried a tube each, S4-2 (A)). The tube is a crew weapon.
 id = "ww2:usa_mortar_team"
 name = "Mortar Team"
+short_name = "81mm Mortar"
 faction = "ww2:usa"
-role = "mortar"
-men = 3
-weapon = "ww2:m1_mortar"
+tags = ["mortar"]
+capabilities = ["recrew"]
 cost = 280
-# Call-in (S3b): a call-in spawns the mortar team at once at the base (no
-# queue, no delivery time; it walks to the front itself). Then this
-# type cannot be called in again for recall_cooldown_s seconds. 60 s set
-# by the owner on 2026-11-01 (20 % under the first proposal of 75 s).
-recall_cooldown_s = 60
-# Seconds from the match start before the first call-in; 0 = at once.
-initial_cooldown_s = 0
+# Call-in (S3b): 60 s set by the owner on 2026-11-01 (20 % under the first
+# proposal of 75 s).
+cooldown_s = 60
+unlock_s = 0
 speed_cm_s = 240
 sight_m = 150
 spacing_dm = 25
 dig_rate_pct = 0
+
+[[members]]
+slot = "mortar_gunner"
+weapon = "ww2:m1_mortar"
+sidearm = "ww2:m1911a1"
+traits = ["leader", "crew_gunner"]
+
+[[members]]
+slot = "mortar_crew"
+count = 2
+weapon = "ww2:m1_carbine"
+traits = ["crew_assistant"]

@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, SquadRole};
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs};
 use frontline_sim::vehicle::{node_at, sample_ground};
 use frontline_sim::{
     CallInRefusal, Command, CommandKind, EntityKind, Fx, FxVec2, ItemKind, NavPhase, Order,
@@ -347,7 +347,7 @@ fn soldiers_walk_round_a_parked_tank() {
     let mut w = World::new_match(flat_setup(), 1).unwrap();
     // A friendly tank (an enemy one would shoot them; avoidance is the same).
     let (_, v) = tank_at(&mut w, 0, xy(500, 500), EAST);
-    let rifle = type_index(&w, "ww2:ger_rifle_squad");
+    let rifle = type_index(&w, "ww2:ger_grenadiergruppe");
     let sq = w
         .spawn_squad_at(
             PlayerId(0),
@@ -654,7 +654,7 @@ fn a_player_with_only_a_vehicle_left_is_not_wiped_out() {
 fn vehicles_are_spotted_at_twice_sight_and_spot_as_observers() {
     let mut w = World::new_match(flat_setup(), 1).unwrap();
     // A German rifleman squad at (200, 500) facing east; sight 150 m.
-    let rifle = type_index(&w, "ww2:ger_rifle_squad");
+    let rifle = type_index(&w, "ww2:ger_grenadiergruppe");
     let sight = w.match_setup().unwrap().squad_types[rifle as usize].sight;
     assert_eq!(Fx::from(sight), Fx::from_int(150));
     w.spawn_squad_at(
@@ -1000,7 +1000,7 @@ fn vehicle_stress_report() {
     s.rules.pop_cap = 2000;
     let mut w = World::new_match(s, 3).unwrap();
     let rifle = [
-        type_index(&w, "ww2:ger_rifle_squad"),
+        type_index(&w, "ww2:ger_grenadiergruppe"),
         type_index(&w, "ww2:usa_rifle_squad"),
     ];
     let mut tanks: Vec<(u8, SquadId)> = Vec::new();
@@ -1105,7 +1105,7 @@ fn walk_times_from_each_base_to_the_front() {
                     let f = &s.factions[s.players[player as usize].faction as usize];
                     *f.roster
                         .iter()
-                        .find(|&&t| s.squad_types[t as usize].role == SquadRole::Rifle)
+                        .find(|&&t| s.type_has_tag(t, "line"))
                         .unwrap()
                 };
                 let base = w.game().unwrap().base_of(PlayerId(player));

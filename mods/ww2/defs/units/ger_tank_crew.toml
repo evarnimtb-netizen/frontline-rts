@@ -1,19 +1,26 @@
-# S3c: a German tank crew that bailed out (role "crew"; never bought, the
+# S3c: a German tank crew that bailed out (tag `crew`; never bought, the
 # Panzer IV's crew_squad). Up to five men; the commander (the first man out
 # of a full crew) has the MP 40 stowed in the fighting compartment, the rest
 # their P 38 pistols (owner question S3c-7 (A); exact stowage is a citation
-# task). No grenades. Walks like riflemen, sees like infantry.
+# task). No grenades. Walks like riflemen, sees like infantry. S4: as
+# [[members]]; the MP 40 stays with its man (S4-2 (A)).
 id = "ww2:ger_tank_crew"
 name = "Panzerbesatzung"
 faction = "ww2:germany"
-role = "crew"
-men = 5
-weapon = "ww2:mp40"
-# One MP 40 (the first man out); the others carry the sidearm.
-weapon_men = 1
-sidearm = "ww2:p38"
+tags = ["crew"]
+capabilities = ["vehicle_crew"]
 cost = 0
 speed_cm_s = 300
 sight_m = 150
 spacing_dm = 30
 dig_rate_pct = 0
+
+[[members]]
+slot = "commander"
+weapon = "ww2:mp40"
+traits = ["leader"]
+
+[[members]]
+slot = "crewman"
+count = 4
+weapon = "ww2:p38"

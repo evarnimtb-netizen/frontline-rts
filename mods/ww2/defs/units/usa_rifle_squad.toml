@@ -1,29 +1,64 @@
+# US Rifle Squad (S4): twelve men after T/O&E 7-17 (26 Feb 1944): the squad
+# leader and his assistant, the BAR team (automatic rifleman with the
+# M1918A2, his assistant and an ammo bearer), two scouts and five riflemen,
+# all with M1 rifles (two of the riflemen are rifle grenadiers: their M7
+# launchers come in S11).
+# Sources: battleorder.org "U.S. Army Rifle Company 1944" (T/O&E 7-17, 26 Feb
+# 1944, changes 30 Jun 1944; FM 7-10, 18 Mar 1944): 11 M1 + 1 BAR.
 id = "ww2:usa_rifle_squad"
 name = "Rifle Squad"
+short_name = "Rifle Squad"
 faction = "ww2:usa"
-role = "rifle"
-men = 8
-weapon = "ww2:m1_garand"
-cost = 250
-# Call-in (S3b): a call-in spawns the rifle squad at once at the base (no
-# queue, no delivery time; it walks to the front itself). Then this
-# type cannot be called in again for recall_cooldown_s seconds. 24 s set
-# by the owner on 2026-11-01 (20 % under the first proposal of 30 s).
-recall_cooldown_s = 24
-# Seconds from the match start before the first call-in; 0 = at once.
-initial_cooldown_s = 0
+tags = ["line"]
+capabilities = ["dig_basic", "recrew"]
+sources = ["battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)"]
+# Manpower per call-in (S4 starting value for twelve men).
+cost = 340
+# Call-in (S3b, S4 card block): spawns at once at the base; its own
+# cooldown (Q21 (B)).
+cooldown_s = 20
+unlock_s = 0
 speed_cm_s = 300
 sight_m = 150
 spacing_dm = 30
 dig_rate_pct = 100
 
-# Items (S1b abilities): one frag each, two and a smoke grenade for the
-# squad leader.
-[[loadout]]
-item = "ww2:mk2_grenade"
-count = 1
-leader_count = 2
+[[members]]
+slot = "squad_leader"
+weapon = "ww2:m1_garand"
+traits = ["leader"]
+items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
 
-[[loadout]]
-item = "ww2:m15_smoke"
-leader_count = 1
+[[members]]
+slot = "asst_squad_leader"
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "automatic_rifleman"
+weapon = "ww2:bar_m1918a2"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "asst_ar"
+weapon = "ww2:m1_garand"
+traits = ["crew_assistant"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "ammo_bearer"
+weapon = "ww2:m1_garand"
+traits = ["ammo_bearer"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "scout"
+count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 5
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }

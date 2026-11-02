@@ -1,33 +1,36 @@
+# Pioniergruppe (S4): eight engineers (roadmap; the US T/O&E combat engineer
+# squad is 12, S4-4 (A)): the leader with an MP 40, a satchel charge and a
+# smoke grenade, one more MP 40 and six Kar98k. Digs at twice the rate and
+# the AT ditch (`dig_full`).
 id = "ww2:ger_engineer_squad"
 name = "Pioniergruppe"
+short_name = "Pioniere"
 faction = "ww2:germany"
-role = "engineer"
-men = 5
-weapon = "ww2:mp40"
-cost = 220
-# Call-in (S3b): a call-in spawns the engineers at once at the base (no
-# queue, no delivery time; it walks to the front itself). Then this
-# type cannot be called in again for recall_cooldown_s seconds. 36 s set
-# by the owner on 2026-11-01 (20 % under the first proposal of 45 s).
-recall_cooldown_s = 36
-# Seconds from the match start before the first call-in; 0 = at once.
-initial_cooldown_s = 0
+tags = ["engineer"]
+capabilities = ["dig_basic", "dig_full", "recrew"]
+# Manpower per call-in (S4 starting value for eight men).
+cost = 280
+# Re-call cooldown (s): its own timer (Q21 (B)).
+cooldown_s = 30
+unlock_s = 0
 speed_cm_s = 290
 sight_m = 150
 spacing_dm = 30
 dig_rate_pct = 200
 
-# Items (S1b abilities): one frag each, two and a smoke grenade for the
-# squad leader, who also carries the squad's satchel charge.
-[[loadout]]
-item = "ww2:stielhandgranate"
-count = 1
-leader_count = 2
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2, "ww2:nbhgr39" = 1, "ww2:geballte_ladung" = 1 }
 
-[[loadout]]
-item = "ww2:nbhgr39"
-leader_count = 1
+[[members]]
+slot = "pionier_smg"
+weapon = "ww2:mp40"
+items = { "ww2:stielhandgranate" = 1 }
 
-[[loadout]]
-item = "ww2:geballte_ladung"
-leader_count = 1
+[[members]]
+slot = "pionier"
+count = 6
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1 }

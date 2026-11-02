@@ -1,0 +1,64 @@
+# German stick grenade (S1b abilities). Values are starting points for
+# tuning (docs/slices/S1b-abilities.md "Items").
+id = "ww2:stielhandgranate"
+name = "Stielhandgranate 24"
+kind = "frag"
+min_range_m = 5
+range_m = 30
+windup_ms = 1000
+# From the start of the throw; it never goes off before it lands.
+fuse_ms = 4000
+# Landing point scatter, percent of the throw distance.
+scatter_pct = 6
+
+[he]
+damage = 150
+suppression = 50
+# S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and
+# blasts"): no radial damage. A defensive hand grenade (Mk 2 and
+# Stielhandgranate 24 with its fragmentation sleeve treated alike).
+# Overpressure: full `damage` to a man within blast_radius_cm with a clear
+# line from the burst (about the old lethal radius or less), and the
+# vs_vehicle_pct share to track anchors within it (cm).
+# blast_radius_cm: 200, not the spec's starting 100: the old lethal radius
+# (the owner's rule: overpressure "about lethal radius"). A grenade's blast
+# is its main killer at close range, the more so in a trench; with 100
+# grenades thrown into a trench lost most of their effect (abilities test
+# "frags lobbed into a trench", fortify-test grenade rows).
+blast_radius_cm = 200
+# Fragments: frag_count rays per burst (azimuth stratified, elevation in
+# frag_elev_deg [min, max] above the ground plane, degrees), each stopping
+# at the first man, vehicle, wreck or earth within frag_reach_cm (cm). One
+# fragment deals frag_damage to a man near the burst, falling linearly to
+# frag_far_pct % of it at full reach, and frag_track_damage to a track whose
+# band it strikes. Starting values from the spec, set to keep the old
+# lethality in the open within about 20 % (the Tune stage measures it).
+# frag_count: 96, not the spec's starting 48: with 48 the expected damage
+# to a standing man at 2-3 m was a third to a half of the old radial rule
+# (150 within 2 m, falling to 0 at 6 m), and grenades thrown into a trench
+# lost most of their effect. Real grenades throw hundreds of fragments; 96
+# rays bring 2-3 m back near the old values. The Tune stage measures it.
+frag_count = 96
+frag_reach_cm = 1000
+frag_damage = 60
+frag_far_pct = 25
+frag_elev_deg = [2, 50]
+# frag_track_damage: 0, not the spec's starting 2: a grenade 1 m beside a
+# hull sends about 40 of its 96 fragments into that side's track band, and
+# hand-grenade splinters do not hurt track links (old behaviour: only the
+# overpressure, 10 % of its damage, touched the track).
+frag_track_damage = 0
+suppression_radius_m = 10
+crater_radius_cm = 50
+crater_depth_cm = 20
+# Against vehicles (S3): armour it defeats on contact (mm), the inner burst
+# if it does, and damage to track anchors within blast_radius_cm (10 % of
+# its damage). Blasts never reach a closed vehicle's insides.
+pen_mm = 2
+inside_damage = 100
+# S3b: when it beats a plate, inside_rays fragment rays from the contact
+# point into the hull, inside_damage each to the first box within
+# inside_reach_cm (cm), instead of a radius.
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 10

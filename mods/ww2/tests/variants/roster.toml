@@ -1,13 +1,14 @@
-# Tuning override that puts the example variant in the US roster
+# Tuning override that puts the example variant in the German roster
 # (docs/modding/tuning.md: arrays replace, so the whole roster is listed).
 # Apply it after `ModDefs::add_defs_dir("mods/ww2/tests/variants")`.
-[defs.factions."ww2:usa"]
+[defs.factions."ww2:germany"]
 roster = [
-    "ww2:usa_rifle_squad",
-    "ww2:usa_rifle_squad_understrength",
-    "ww2:usa_mg_team",
-    "ww2:usa_engineer_squad",
-    "ww2:usa_mortar_team",
-    "ww2:usa_bazooka_team",
-    "ww2:usa_m4a3_75_squad",
+    "ww2:ger_grenadiergruppe",
+    "ww2:ger_grenadiergruppe_7",
+    "ww2:ger_grenadiergruppe_example",
+    "ww2:ger_smg_gruppe",
+    "ww2:ger_engineer_squad",
+    "ww2:ger_mortar_team",
+    "ww2:ger_panzerschreck_team",
+    "ww2:ger_pz4_h_squad",
 ]

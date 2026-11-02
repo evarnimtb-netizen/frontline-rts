@@ -1,0 +1,46 @@
+# Rifle Squad (understrength) (S4): nine men, a squad as it typically stood
+# in autumn 1944 after losses and replacements (roadmap; no table): the
+# leader and his assistant, the BAR team of three and four riflemen. Made of
+# `extends` and a member list plus card keys (owner Q6 (A)).
+id = "ww2:usa_rifle_squad_9"
+extends = "ww2:usa_rifle_squad"
+name = "Rifle Squad (understrength)"
+short_name = "Rifle Squad 9"
+tags = ["line", "understrength"]
+cost = 260
+# The AI buys it about half as often as the full squad (S4-8 (A)).
+ai_weight = 50
+
+[[members]]
+slot = "squad_leader"
+weapon = "ww2:m1_garand"
+traits = ["leader"]
+items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
+
+[[members]]
+slot = "asst_squad_leader"
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "automatic_rifleman"
+weapon = "ww2:bar_m1918a2"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "asst_ar"
+weapon = "ww2:m1_garand"
+traits = ["crew_assistant"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "ammo_bearer"
+weapon = "ww2:m1_garand"
+traits = ["ammo_bearer"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 4
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }

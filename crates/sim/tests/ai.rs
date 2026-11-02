@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest, SquadRole};
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs, PlayerRequest};
 use frontline_sim::{CommandKind, Fx, FxVec2, Order, Outcome, PlayerId, SquadId, World};
 
 fn setup(seed: u64, d0: Difficulty, d1: Difficulty, ai0: bool) -> MatchSetup {
@@ -146,7 +146,7 @@ fn ai_vs_ai_plays_by_the_rules() {
                 // S3c: crews walk back to base at any strength.
                 Order::Retreat
                     if ty.vehicle.is_none()
-                        && ty.role != SquadRole::Crew
+                        && !s.type_has_tag(sq.type_idx, "crew")
                         && seen.retreats.insert(id) =>
                 {
                     assert!(
@@ -158,7 +158,7 @@ fn ai_vs_ai_plays_by_the_rules() {
                 }
                 // Engineers dig, next to a capture point.
                 Order::Dig { line, .. } if seen.digs.insert(id) => {
-                    assert_eq!(ty.role, SquadRole::Engineer);
+                    assert!(s.type_has_tag(sq.type_idx, "engineer"));
                     let mid = (line[0] + line[line.len() - 1]).div_int(2);
                     let near = s
                         .map
@@ -169,7 +169,7 @@ fn ai_vs_ai_plays_by_the_rules() {
                 }
                 // Mortars fire at targets inside their range band.
                 Order::Barrage { target, .. } if seen.barrages.insert(id) => {
-                    assert_eq!(ty.role, SquadRole::Mortar);
+                    assert!(ty.has(frontline_content::setup::Capability::Barrage));
                     let wpn = &s.weapons[ty.weapon as usize];
                     let d = (*target - lead).length();
                     assert!(d >= Fx::from(wpn.range_min), "barrage at {d:?}");

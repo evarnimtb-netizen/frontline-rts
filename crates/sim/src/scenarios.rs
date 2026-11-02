@@ -22,6 +22,7 @@
 //! factions swapped.
 
 use frontline_content::setup::{BandSetup, Fixed, FixedVec2};
+use frontline_content::variant::role_tag;
 use frontline_content::{ComponentKind, MatchSetup, SquadRole, WeaponClass};
 
 use crate::command::{Command, CommandKind};
@@ -103,14 +104,28 @@ pub fn add_crest(
     });
 }
 
-/// The first squad type of player `p`'s roster with `role`.
+/// The first squad type of player `p`'s roster with `role` (S4: the
+/// legacy role's tag, `frontline_content::variant::role_tag`).
 pub fn type_of(w: &World, p: u8, role: SquadRole) -> Option<u16> {
-    let s = w.match_setup()?;
+    type_with_tag(w.match_setup()?, p, role_tag(role))
+}
+
+/// S4: the first squad type of player `p`'s roster carrying `tag`.
+pub fn type_with_tag(s: &MatchSetup, p: u8, tag: &str) -> Option<u16> {
     let f = &s.factions[s.players.get(p as usize)?.faction as usize];
-    f.roster
-        .iter()
-        .copied()
-        .find(|&t| s.squad_types[t as usize].role == role)
+    f.roster.iter().copied().find(|&t| s.type_has_tag(t, tag))
+}
+
+/// S4: spawns player `p`'s first roster squad with `tag` at `center`.
+pub fn spawn_tag(
+    w: &mut World,
+    p: u8,
+    tag: &str,
+    center: FxVec2,
+    facing: FxVec2,
+) -> Option<SquadId> {
+    let t = type_with_tag(w.match_setup()?, p, tag)?;
+    w.spawn_squad_at(PlayerId(p), t, center, facing)
 }
 
 /// Spawns player `p`'s squad of `role` at `center` facing `facing`.
@@ -327,11 +342,7 @@ pub fn hull_down(mut setup: MatchSetup, threads: usize, p: u8) -> Result<Staged,
 }
 
 fn type_of_setup(s: &MatchSetup, p: u8, role: SquadRole) -> Option<u16> {
-    let f = &s.factions[s.players.get(p as usize)?.faction as usize];
-    f.roster
-        .iter()
-        .find(|&&t| s.squad_types[t as usize].role == role)
-        .and_then(|&t| s.squad_types[t as usize].vehicle)
+    type_with_tag(s, p, role_tag(role)).and_then(|t| s.squad_types[t as usize].vehicle)
 }
 
 /// Case 3f: the tanks' sight (m), so that they see each other at 600 m
@@ -650,8 +661,14 @@ pub fn he_infantry(
     let bait: Vec<u16> = setup
         .squad_types
         .iter()
-        .filter(|t| t.faction == faction && t.role == SquadRole::Rifle)
-        .flat_map(|t| std::iter::once(t.weapon).chain(t.sidearm))
+        .enumerate()
+        .filter(|&(k, t)| t.faction == faction && setup.type_has_tag(k as u16, "line"))
+        .flat_map(|(_, t)| {
+            t.members
+                .iter()
+                .flat_map(|m| std::iter::once(m.weapon).chain(m.sidearm))
+                .collect::<Vec<_>>()
+        })
         .collect();
     for k in bait {
         let w = &mut setup.weapons[k as usize];

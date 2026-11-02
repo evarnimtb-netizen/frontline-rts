@@ -11,8 +11,14 @@ use frontline_sim::{
     World, tile_heights_f32,
 };
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 fn world(seed: u64, threads: usize) -> World {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     let mut setup = defs
         .resolve(&MatchRequest::skirmish(
@@ -22,6 +28,7 @@ fn world(seed: u64, threads: usize) -> World {
             Difficulty::Normal,
         ))
         .unwrap_or_else(|e| panic!("{e}"));
+
     // These tests drive both sides by hand.
     setup.players.iter_mut().for_each(|p| p.is_ai = false);
     World::new_match(setup, threads).unwrap()

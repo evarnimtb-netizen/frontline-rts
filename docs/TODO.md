@@ -607,6 +607,68 @@ Q21 (B). Work proceeds on (A) of each question below.
   `limit_group`, a vehicle card's own cost / cooldown, `[ai.mix]` tags
   beyond the six legacy ones; all lift in Part B. (B) Accept them and
   ignore what the sim cannot run yet.
+  *Part B: lifted (B1); only an unknown `limit_group` and two different
+  items of one kind in one squad are still refused (S4-26).*
+- [ ] **S4-22. Panzerfaust def shape** (Part B). (A) The `single_shot_at`
+  item names a launcher weapon def (`weapon = "ww2:pzf60"`) that holds its
+  range, engagement distances, spread, round and fire reveal; the item
+  keeps the count, the aim time (`windup_ms`) and the arming distance.
+  (B) The spec's flat item keys (`ammo`, `engage_still_m`, ... on the item).
+- [ ] **S4-23. Squad focus weapon** (Part B). (A) The longest-reaching
+  non-crew weapon of the members (keeps every S1-S3c card's focus exactly;
+  a Grenadiergruppe focuses at Kar98k range). (B) The spec's "most
+  numerous non-crew weapon" (changes the tank crews' focus to the pistol).
+- [ ] **S4-24. M1919A4 tripod id** (Part B). (A) A new weapon
+  `ww2:m1919a4_tripod` for the Light MG Section; `ww2:m1919` stays the
+  Sherman's coax and bow MG unchanged. (B) Change `ww2:m1919` as the spec
+  says (moves the Sherman's MGs to 600 m and 12 mrad).
+- [ ] **S4-25. AI choice inside a mix tag** (Part B). (A) The ready card
+  furthest below its `ai_weight` share of this match's buys (fewest buys
+  per weight; ties: roster order); out of manpower or pop for it, save up.
+  No RNG draw. With a per-plan weighted draw (the spec's) the AI bought
+  the cheaper understrength cards about 6 : 1 (each plan re-drew while
+  saving). (B) The spec's one RNG draw per buy.
+- [ ] **S4-26. Items of one kind per squad** (Part B). (A) One item id per
+  kind per squad (the sim's kit is per kind); two different frags in one
+  squad are refused at resolve. (B) Per-man item ids.
+- [ ] **S4-27. Panzerfaust backblast reveal** (Part B). (A) The firer is
+  revealed by his own weapon's figures (his rifle's), not the Panzerfaust
+  def's 300 % / 3 s; a per-man last-fired weapon is S5 work with counted
+  ammo. (B) Reveal by the Panzerfaust's figures now (new soldier state).
+- [ ] **S4-28. MG squads dig** (Part B). (A) The sMG-Gruppe and the Light MG
+  Section keep `dig_rate_pct = 0` as the S1-S3c MG teams. (B) 100 (they
+  have riflemen now).
+- [ ] **S4-29. Legacy multi-gun crews** (Part B). (A) A legacy MG or mortar
+  team (every man carries the gun) loses a fallen man's gun: nobody
+  without a crew weapon is left to take it (keeps S3c results exactly).
+  (B) Pass it to the next man anyway.
+- [ ] **S4-30. Unlock wording** (Part B). (A) "unlocks in m:ss" for every
+  card (cards may have their own `unlock_s`), not "vehicles unlock in".
+  (B) Keep "vehicles unlock in" for vehicle cards.
+- [ ] **S4-31. Panzerfaust ability button** (Part B). (A) It takes the
+  Satchel slot of the ability row when the selection carries Panzerfausts
+  and no satchel; the tool and the right-click on an enemy vehicle send
+  `attack_unit` for the carriers' men plus `attack_move`. (B) A sixth
+  ability slot.
+- [ ] **S4-32. Mock catalog** (Part B). (A) Two cards for rifle and MG only
+  (understrength rifle, heavy MG); the other roles keep one. (B) Two for
+  every role.
+- [ ] **S4-33. fortify-test smoke control** (Part B). (A) The control
+  counts as fired on from 5 rounds (was 20): the MG card is one tripod gun
+  with a 6 s setup (5-130 rounds in the 20 runs), the S1-S3c MG team three
+  bipod guns. The hidden side must still draw none. (B) Keep 20 and give
+  the control longer.
+- [ ] **S4-34. Mechanics tests on the frozen S3c content** (Part B). (A)
+  The S1-S3c mechanics tests written for 8-man squads (throws, soldier
+  control, digging, combat, vehicle orders, bail, armour, AT, AI vehicles
+  and assault, `ww2_mod.rs`) run on `sdk/crates/content/tests/fixtures/
+  ww2_s3c`; the S4 cards have their own tests. (B) Rewrite them for the
+  S4 squads.
+- [ ] **S4-35. AI capture on old content** (Part B). (A) `capture_m`
+  defaults to 150 when a rules file lacks it, so S1-S3c rules files get
+  AI captures too (the only S4 change in their results: with
+  `capture_m = 0` the 40 set equals the Plan baseline line for line). (B)
+  Default 0 when absent.
 
 ## S3 owner checklist (needs a person)
 

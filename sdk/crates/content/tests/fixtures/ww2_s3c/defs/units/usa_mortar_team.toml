@@ -1,0 +1,18 @@
+id = "ww2:usa_mortar_team"
+name = "Mortar Team"
+faction = "ww2:usa"
+role = "mortar"
+men = 3
+weapon = "ww2:m1_mortar"
+cost = 280
+# Call-in (S3b): a call-in spawns the mortar team at once at the base (no
+# queue, no delivery time; it walks to the front itself). Then this
+# type cannot be called in again for recall_cooldown_s seconds. 60 s set
+# by the owner on 2026-11-01 (20 % under the first proposal of 75 s).
+recall_cooldown_s = 60
+# Seconds from the match start before the first call-in; 0 = at once.
+initial_cooldown_s = 0
+speed_cm_s = 240
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0

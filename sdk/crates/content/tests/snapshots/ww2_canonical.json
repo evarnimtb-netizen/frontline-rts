@@ -297,6 +297,60 @@
       },
       "track_damage": 50
     },
+    "ww2:pzf60_heat": {
+      "caliber_mm": 149,
+      "core": {
+        "damage": 120,
+        "length_cm": 100,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 60,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 40,
+        "cuts_trenches": false,
+        "damage": 100,
+        "frag_count": 24,
+        "frag_damage": 50,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 600,
+        "frag_track_damage": 1,
+        "inside_damage": 0,
+        "inside_rays": 0,
+        "inside_reach_cm": 0,
+        "pen_mm": 0,
+        "suppression": 20,
+        "suppression_radius_m": 6,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:pzf60_heat",
+      "mechanism": "heat",
+      "muzzle_velocity_m_s": 45,
+      "name": "Panzerfaust 60 warhead",
+      "nonpen_damage": 30,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          200
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, Panzerfaust (citing Rottman 2014): calibre, velocity, penetration"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 25,
+        "rays": 7
+      },
+      "track_damage": 50
+    },
     "ww2:rpzb54_heat": {
       "caliber_mm": 88,
       "core": {
@@ -358,16 +412,17 @@
       "id": "ww2:germany",
       "name": "Germany",
       "roster": [
-        "ww2:ger_rifle_squad",
-        "ww2:ger_mg_team",
+        "ww2:ger_grenadiergruppe",
+        "ww2:ger_grenadiergruppe_7",
+        "ww2:ger_smg_gruppe",
         "ww2:ger_engineer_squad",
         "ww2:ger_mortar_team",
         "ww2:ger_panzerschreck_team",
         "ww2:ger_pz4_h_squad"
       ],
       "start_squads": [
-        "ww2:ger_rifle_squad",
-        "ww2:ger_rifle_squad",
+        "ww2:ger_grenadiergruppe",
+        "ww2:ger_grenadiergruppe",
         "ww2:ger_engineer_squad"
       ]
     },
@@ -377,7 +432,9 @@
       "name": "USA",
       "roster": [
         "ww2:usa_rifle_squad",
-        "ww2:usa_mg_team",
+        "ww2:usa_rifle_squad_9",
+        "ww2:usa_rifle_squad_2bar",
+        "ww2:usa_lmg_squad",
         "ww2:usa_engineer_squad",
         "ww2:usa_mortar_team",
         "ww2:usa_bazooka_team",
@@ -521,6 +578,21 @@
         "radius_m": 8
       },
       "windup_ms": 1000
+    },
+    "ww2:panzerfaust60": {
+      "fuse_ms": 0,
+      "id": "ww2:panzerfaust60",
+      "kind": "single_shot_at",
+      "min_range_m": 10,
+      "name": "Panzerfaust 60",
+      "range_m": 60,
+      "scatter_pct": 0,
+      "sources": [
+        "Wikipedia, Panzerfaust (citing Rottman 2014)",
+        "Tactical and Technical Trends, Oct 1944 (issue per company; secondary)"
+      ],
+      "weapon": "ww2:pzf60",
+      "windup_ms": 1500
     },
     "ww2:stielhandgranate": {
       "fuse_ms": 4000,
@@ -725,6 +797,7 @@
       "ai": {
         "armour": {
           "backup_m": 30,
+          "capture_m": 150,
           "deny_m": 300,
           "escort_grace_s": 8,
           "escort_join_m": 150,
@@ -751,6 +824,8 @@
           "at_hunt_stuck_m": 500,
           "bound_m": 40,
           "lift_fire_m": 15,
+          "pzf_clear_m": 40,
+          "pzf_hunt_m": 100,
           "satchel_chase_s": 6,
           "satchel_crawl_m": 25,
           "satchel_hunt_m": 250,
@@ -783,12 +858,14 @@
           "trench_probe_m": 60,
           "trench_probe_step_m": 4
         },
-        "mix_at_pct": 20,
-        "mix_engineer_pct": 15,
-        "mix_mg_pct": 20,
-        "mix_mortar_pct": 15,
-        "mix_rifle_pct": 50,
-        "mix_vehicle_pct": 20,
+        "mix": {
+          "at": 20,
+          "engineer": 15,
+          "line": 50,
+          "mg": 20,
+          "mortar": 15,
+          "vehicle": 20
+        },
         "repair_clear_m": 150,
         "retreat_strength_pct": 40,
         "tank_standoff_m": 160,
@@ -937,6 +1014,7 @@
       "id": "ww2:skirmish",
       "items": {
         "resupply_s": 20,
+        "single_shot_gap_s": 3,
         "throw": {
           "lob_tan_milli": 1000,
           "min_flight_ms": 300,
@@ -968,7 +1046,7 @@
         "trench_cost_pct": 60
       },
       "name": "Skirmish",
-      "pop_cap": 120,
+      "pop_cap": 150,
       "projectile_cap": 2048,
       "tick_hz": 30,
       "tickets": 500,
@@ -1145,30 +1223,13 @@
         "dig_full",
         "recrew"
       ],
-      "cooldown_s": 36,
-      "cost": 220,
+      "cooldown_s": 30,
+      "cost": 280,
       "dig_rate_pct": 200,
       "faction": "ww2:germany",
       "hp": 100,
       "id": "ww2:ger_engineer_squad",
       "initial_cooldown_s": 0,
-      "loadout": [
-        {
-          "count": 1,
-          "item": "ww2:stielhandgranate",
-          "leader_count": 2
-        },
-        {
-          "count": 0,
-          "item": "ww2:nbhgr39",
-          "leader_count": 1
-        },
-        {
-          "count": 0,
-          "item": "ww2:geballte_ladung",
-          "leader_count": 1
-        }
-      ],
       "members": [
         {
           "count": 1,
@@ -1178,21 +1239,33 @@
             "ww2:stielhandgranate": 2
           },
           "slot": "leader",
+          "traits": [
+            "leader"
+          ],
           "weapon": "ww2:mp40"
         },
         {
-          "count": 4,
+          "count": 1,
           "items": {
             "ww2:stielhandgranate": 1
           },
-          "slot": "weapon",
+          "slot": "pionier_smg",
           "weapon": "ww2:mp40"
+        },
+        {
+          "count": 6,
+          "items": {
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "pionier",
+          "weapon": "ww2:kar98k"
         }
       ],
-      "men": 5,
+      "men": 0,
       "name": "Pioniergruppe",
-      "recall_cooldown_s": 36,
+      "recall_cooldown_s": 0,
       "role": "engineer",
+      "short_name": "Pioniere",
       "sight_m": 150,
       "spacing_dm": 30,
       "speed_cm_s": 290,
@@ -1201,44 +1274,185 @@
         "engineer"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:mp40"
+      "weapon": ""
     },
-    "ww2:ger_mg_team": {
+    "ww2:ger_grenadiergruppe": {
       "capabilities": [
-        "recrew"
+        "dig_basic",
+        "recrew",
+        "at_hunt"
       ],
-      "cooldown_s": 36,
-      "cost": 200,
-      "dig_rate_pct": 0,
+      "cooldown_s": 20,
+      "cost": 320,
+      "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
-      "id": "ww2:ger_mg_team",
+      "id": "ww2:ger_grenadiergruppe",
       "initial_cooldown_s": 0,
       "members": [
         {
           "count": 1,
+          "items": {
+            "ww2:nbhgr39": 1,
+            "ww2:stielhandgranate": 2
+          },
           "slot": "leader",
-          "weapon": "ww2:mg42"
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 1,
+          "sidearm": "ww2:p38",
+          "slot": "mg_gunner",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:mg42_bipod"
+        },
+        {
+          "count": 1,
+          "slot": "mg_assistant",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:p38"
+        },
+        {
+          "count": 1,
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:kar98k"
         },
         {
           "count": 2,
-          "slot": "weapon",
-          "weapon": "ww2:mg42"
+          "items": {
+            "ww2:panzerfaust60": 1,
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "rifleman_pzf",
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 4,
+          "items": {
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "rifleman",
+          "weapon": "ww2:kar98k"
         }
       ],
-      "men": 3,
-      "name": "MG-Trupp",
-      "recall_cooldown_s": 36,
-      "role": "mg",
+      "men": 0,
+      "name": "Grenadiergruppe",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Grenadiere",
       "sight_m": 150,
-      "spacing_dm": 25,
-      "speed_cm_s": 260,
+      "sources": [
+        "Wikipedia, MG 42 (squad organisation)",
+        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
       "steadiness_pct": 100,
       "tags": [
-        "mg"
+        "line"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:mg42"
+      "weapon": ""
+    },
+    "ww2:ger_grenadiergruppe_7": {
+      "ai_weight": 50,
+      "capabilities": [
+        "dig_basic",
+        "recrew",
+        "at_hunt"
+      ],
+      "cooldown_s": 20,
+      "cost": 230,
+      "dig_rate_pct": 100,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_grenadiergruppe_7",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "items": {
+            "ww2:nbhgr39": 1,
+            "ww2:stielhandgranate": 2
+          },
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 1,
+          "sidearm": "ww2:p38",
+          "slot": "mg_gunner",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:mg42_bipod"
+        },
+        {
+          "count": 1,
+          "slot": "mg_assistant",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:p38"
+        },
+        {
+          "count": 1,
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:panzerfaust60": 1,
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "rifleman_pzf",
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 2,
+          "items": {
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "rifleman",
+          "weapon": "ww2:kar98k"
+        }
+      ],
+      "men": 0,
+      "name": "Grenadiergruppe (Feldstärke)",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Grenadiere 7",
+      "sight_m": 150,
+      "sources": [
+        "Wikipedia, MG 42 (squad organisation)",
+        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "line",
+        "understrength"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
     },
     "ww2:ger_mortar_team": {
       "capabilities": [
@@ -1255,19 +1469,28 @@
       "members": [
         {
           "count": 1,
-          "slot": "leader",
+          "sidearm": "ww2:p38",
+          "slot": "mortar_gunner",
+          "traits": [
+            "leader",
+            "crew_gunner"
+          ],
           "weapon": "ww2:grw34"
         },
         {
           "count": 2,
-          "slot": "weapon",
-          "weapon": "ww2:grw34"
+          "slot": "mortar_crew",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:kar98k"
         }
       ],
-      "men": 3,
+      "men": 0,
       "name": "Granatwerfertrupp",
-      "recall_cooldown_s": 60,
+      "recall_cooldown_s": 0,
       "role": "mortar",
+      "short_name": "Granatwerfer",
       "sight_m": 150,
       "spacing_dm": 25,
       "speed_cm_s": 240,
@@ -1276,7 +1499,7 @@
         "mortar"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:grw34"
+      "weapon": ""
     },
     "ww2:ger_panzerschreck_team": {
       "capabilities": [
@@ -1293,20 +1516,27 @@
       "members": [
         {
           "count": 1,
-          "slot": "leader",
+          "slot": "gunner",
+          "traits": [
+            "leader",
+            "crew_gunner"
+          ],
           "weapon": "ww2:rpzb54"
         },
         {
           "count": 1,
-          "slot": "sidearm",
+          "slot": "loader",
+          "traits": [
+            "crew_assistant"
+          ],
           "weapon": "ww2:kar98k"
         }
       ],
-      "men": 2,
+      "men": 0,
       "name": "Panzerschrecktrupp",
-      "recall_cooldown_s": 48,
+      "recall_cooldown_s": 0,
       "role": "anti_tank",
-      "sidearm": "ww2:kar98k",
+      "short_name": "Panzerschreck",
       "sight_m": 150,
       "spacing_dm": 30,
       "speed_cm_s": 280,
@@ -1315,8 +1545,7 @@
         "at"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:rpzb54",
-      "weapon_men": 1
+      "weapon": ""
     },
     "ww2:ger_pz4_h_squad": {
       "cost": 0,
@@ -1329,6 +1558,7 @@
       "name": "Panzer IV Ausf. H",
       "recall_cooldown_s": 0,
       "role": "vehicle",
+      "short_name": "Panzer IV",
       "sight_m": 0,
       "spacing_dm": 0,
       "speed_cm_s": 0,
@@ -1339,62 +1569,69 @@
       "vehicle": "ww2:ger_pz4_h",
       "weapon": ""
     },
-    "ww2:ger_rifle_squad": {
+    "ww2:ger_smg_gruppe": {
       "capabilities": [
-        "dig_basic",
         "recrew"
       ],
-      "cooldown_s": 24,
-      "cost": 240,
-      "dig_rate_pct": 100,
+      "cooldown_s": 30,
+      "cost": 220,
+      "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
-      "id": "ww2:ger_rifle_squad",
+      "id": "ww2:ger_smg_gruppe",
       "initial_cooldown_s": 0,
-      "loadout": [
-        {
-          "count": 1,
-          "item": "ww2:stielhandgranate",
-          "leader_count": 2
-        },
-        {
-          "count": 0,
-          "item": "ww2:nbhgr39",
-          "leader_count": 1
-        }
-      ],
       "members": [
         {
           "count": 1,
-          "items": {
-            "ww2:nbhgr39": 1,
-            "ww2:stielhandgranate": 2
-          },
           "slot": "leader",
+          "traits": [
+            "leader"
+          ],
           "weapon": "ww2:kar98k"
         },
         {
-          "count": 7,
-          "items": {
-            "ww2:stielhandgranate": 1
-          },
-          "slot": "weapon",
+          "count": 1,
+          "sidearm": "ww2:p38",
+          "slot": "mg_gunner",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:mg42"
+        },
+        {
+          "count": 1,
+          "slot": "mg_assistant",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:p38"
+        },
+        {
+          "count": 3,
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
           "weapon": "ww2:kar98k"
         }
       ],
-      "men": 8,
-      "name": "Schützengruppe",
-      "recall_cooldown_s": 24,
-      "role": "rifle",
+      "men": 0,
+      "name": "sMG-Gruppe",
+      "recall_cooldown_s": 0,
+      "role": "mg",
+      "short_name": "sMG-Gruppe",
       "sight_m": 150,
-      "spacing_dm": 30,
-      "speed_cm_s": 300,
+      "sources": [
+        "Wikipedia, MG 42 (sustained-fire crew)"
+      ],
+      "spacing_dm": 25,
+      "speed_cm_s": 260,
       "steadiness_pct": 100,
       "tags": [
-        "line"
+        "mg"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:kar98k"
+      "weapon": ""
     },
     "ww2:ger_tank_crew": {
       "capabilities": [
@@ -1410,20 +1647,22 @@
       "members": [
         {
           "count": 1,
-          "slot": "leader",
+          "slot": "commander",
+          "traits": [
+            "leader"
+          ],
           "weapon": "ww2:mp40"
         },
         {
           "count": 4,
-          "slot": "sidearm",
+          "slot": "crewman",
           "weapon": "ww2:p38"
         }
       ],
-      "men": 5,
+      "men": 0,
       "name": "Panzerbesatzung",
       "recall_cooldown_s": 0,
       "role": "crew",
-      "sidearm": "ww2:p38",
       "sight_m": 150,
       "spacing_dm": 30,
       "speed_cm_s": 300,
@@ -1432,8 +1671,7 @@
         "crew"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:mp40",
-      "weapon_men": 1
+      "weapon": ""
     },
     "ww2:usa_bazooka_team": {
       "capabilities": [
@@ -1450,20 +1688,27 @@
       "members": [
         {
           "count": 1,
-          "slot": "leader",
+          "slot": "gunner",
+          "traits": [
+            "leader",
+            "crew_gunner"
+          ],
           "weapon": "ww2:m9_bazooka"
         },
         {
           "count": 1,
-          "slot": "sidearm",
+          "slot": "loader",
+          "traits": [
+            "crew_assistant"
+          ],
           "weapon": "ww2:m1_garand"
         }
       ],
-      "men": 2,
+      "men": 0,
       "name": "Bazooka Team",
-      "recall_cooldown_s": 48,
+      "recall_cooldown_s": 0,
       "role": "anti_tank",
-      "sidearm": "ww2:m1_garand",
+      "short_name": "Bazooka",
       "sight_m": 150,
       "spacing_dm": 30,
       "speed_cm_s": 280,
@@ -1472,8 +1717,7 @@
         "at"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:m9_bazooka",
-      "weapon_men": 1
+      "weapon": ""
     },
     "ww2:usa_engineer_squad": {
       "capabilities": [
@@ -1481,30 +1725,13 @@
         "dig_full",
         "recrew"
       ],
-      "cooldown_s": 36,
-      "cost": 220,
+      "cooldown_s": 30,
+      "cost": 280,
       "dig_rate_pct": 200,
       "faction": "ww2:usa",
       "hp": 100,
       "id": "ww2:usa_engineer_squad",
       "initial_cooldown_s": 0,
-      "loadout": [
-        {
-          "count": 1,
-          "item": "ww2:mk2_grenade",
-          "leader_count": 2
-        },
-        {
-          "count": 0,
-          "item": "ww2:m15_smoke",
-          "leader_count": 1
-        },
-        {
-          "count": 0,
-          "item": "ww2:m37_satchel",
-          "leader_count": 1
-        }
-      ],
       "members": [
         {
           "count": 1,
@@ -1514,21 +1741,33 @@
             "ww2:mk2_grenade": 2
           },
           "slot": "leader",
-          "weapon": "ww2:m3_smg"
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_garand"
         },
         {
-          "count": 4,
+          "count": 1,
           "items": {
             "ww2:mk2_grenade": 1
           },
-          "slot": "weapon",
+          "slot": "engineer_smg",
           "weapon": "ww2:m3_smg"
+        },
+        {
+          "count": 6,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "engineer",
+          "weapon": "ww2:m1_garand"
         }
       ],
-      "men": 5,
+      "men": 0,
       "name": "Engineer Squad",
-      "recall_cooldown_s": 36,
+      "recall_cooldown_s": 0,
       "role": "engineer",
+      "short_name": "Engineers",
       "sight_m": 150,
       "spacing_dm": 30,
       "speed_cm_s": 290,
@@ -1537,7 +1776,71 @@
         "engineer"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:m3_smg"
+      "weapon": ""
+    },
+    "ww2:usa_lmg_squad": {
+      "capabilities": [
+        "recrew"
+      ],
+      "cooldown_s": 30,
+      "cost": 200,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_lmg_squad",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "squad_leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "sidearm": "ww2:m1911a1",
+          "slot": "mg_gunner",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:m1919a4_tripod"
+        },
+        {
+          "count": 1,
+          "slot": "mg_assistant",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1911a1"
+        },
+        {
+          "count": 2,
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_carbine"
+        }
+      ],
+      "men": 0,
+      "name": "Light MG Section",
+      "recall_cooldown_s": 0,
+      "role": "mg",
+      "short_name": "Light MG",
+      "sight_m": 150,
+      "sources": [
+        "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, LMG squad)"
+      ],
+      "spacing_dm": 25,
+      "speed_cm_s": 260,
+      "steadiness_pct": 100,
+      "tags": [
+        "mg"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
     },
     "ww2:usa_m4a3_75_squad": {
       "cost": 0,
@@ -1550,6 +1853,7 @@
       "name": "M4A3 (75) Sherman",
       "recall_cooldown_s": 0,
       "role": "vehicle",
+      "short_name": "Sherman",
       "sight_m": 0,
       "spacing_dm": 0,
       "speed_cm_s": 0,
@@ -1559,43 +1863,6 @@
       ],
       "vehicle": "ww2:usa_m4a3_75",
       "weapon": ""
-    },
-    "ww2:usa_mg_team": {
-      "capabilities": [
-        "recrew"
-      ],
-      "cooldown_s": 36,
-      "cost": 190,
-      "dig_rate_pct": 0,
-      "faction": "ww2:usa",
-      "hp": 100,
-      "id": "ww2:usa_mg_team",
-      "initial_cooldown_s": 0,
-      "members": [
-        {
-          "count": 1,
-          "slot": "leader",
-          "weapon": "ww2:m1919"
-        },
-        {
-          "count": 2,
-          "slot": "weapon",
-          "weapon": "ww2:m1919"
-        }
-      ],
-      "men": 3,
-      "name": "MG Team",
-      "recall_cooldown_s": 36,
-      "role": "mg",
-      "sight_m": 150,
-      "spacing_dm": 25,
-      "speed_cm_s": 260,
-      "steadiness_pct": 100,
-      "tags": [
-        "mg"
-      ],
-      "unlock_s": 0,
-      "weapon": "ww2:m1919"
     },
     "ww2:usa_mortar_team": {
       "capabilities": [
@@ -1612,19 +1879,28 @@
       "members": [
         {
           "count": 1,
-          "slot": "leader",
+          "sidearm": "ww2:m1911a1",
+          "slot": "mortar_gunner",
+          "traits": [
+            "leader",
+            "crew_gunner"
+          ],
           "weapon": "ww2:m1_mortar"
         },
         {
           "count": 2,
-          "slot": "weapon",
-          "weapon": "ww2:m1_mortar"
+          "slot": "mortar_crew",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1_carbine"
         }
       ],
-      "men": 3,
+      "men": 0,
       "name": "Mortar Team",
-      "recall_cooldown_s": 60,
+      "recall_cooldown_s": 0,
       "role": "mortar",
+      "short_name": "81mm Mortar",
       "sight_m": 150,
       "spacing_dm": 25,
       "speed_cm_s": 240,
@@ -1633,32 +1909,20 @@
         "mortar"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:m1_mortar"
+      "weapon": ""
     },
     "ww2:usa_rifle_squad": {
       "capabilities": [
         "dig_basic",
         "recrew"
       ],
-      "cooldown_s": 24,
-      "cost": 250,
+      "cooldown_s": 20,
+      "cost": 340,
       "dig_rate_pct": 100,
       "faction": "ww2:usa",
       "hp": 100,
       "id": "ww2:usa_rifle_squad",
       "initial_cooldown_s": 0,
-      "loadout": [
-        {
-          "count": 1,
-          "item": "ww2:mk2_grenade",
-          "leader_count": 2
-        },
-        {
-          "count": 0,
-          "item": "ww2:m15_smoke",
-          "leader_count": 1
-        }
-      ],
       "members": [
         {
           "count": 1,
@@ -1666,23 +1930,76 @@
             "ww2:m15_smoke": 1,
             "ww2:mk2_grenade": 2
           },
-          "slot": "leader",
+          "slot": "squad_leader",
+          "traits": [
+            "leader"
+          ],
           "weapon": "ww2:m1_garand"
         },
         {
-          "count": 7,
+          "count": 1,
           "items": {
             "ww2:mk2_grenade": 1
           },
-          "slot": "weapon",
+          "slot": "asst_squad_leader",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "automatic_rifleman",
+          "weapon": "ww2:bar_m1918a2"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "asst_ar",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 2,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "scout",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 5,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman",
           "weapon": "ww2:m1_garand"
         }
       ],
-      "men": 8,
+      "men": 0,
       "name": "Rifle Squad",
-      "recall_cooldown_s": 24,
+      "recall_cooldown_s": 0,
       "role": "rifle",
+      "short_name": "Rifle Squad",
       "sight_m": 150,
+      "sources": [
+        "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)"
+      ],
       "spacing_dm": 30,
       "speed_cm_s": 300,
       "steadiness_pct": 100,
@@ -1690,7 +2007,199 @@
         "line"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:m1_garand"
+      "weapon": ""
+    },
+    "ww2:usa_rifle_squad_2bar": {
+      "ai_weight": 50,
+      "available_from": "1944-08",
+      "capabilities": [
+        "dig_basic",
+        "recrew"
+      ],
+      "cooldown_s": 30,
+      "cost": 360,
+      "dig_rate_pct": 100,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_rifle_squad_2bar",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "items": {
+            "ww2:m15_smoke": 1,
+            "ww2:mk2_grenade": 2
+          },
+          "slot": "squad_leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "asst_squad_leader",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 2,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "automatic_rifleman",
+          "weapon": "ww2:bar_m1918a2"
+        },
+        {
+          "count": 2,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "asst_ar",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 2,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "scout",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 3,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman",
+          "weapon": "ww2:m1_garand"
+        }
+      ],
+      "men": 0,
+      "name": "Rifle Squad (two BARs)",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Rifle Sq 2BAR",
+      "sight_m": 150,
+      "sources": [
+        "Wikipedia, M1918 Browning Automatic Rifle (two BAR teams per squad, 1944-45)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "line"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_rifle_squad_9": {
+      "ai_weight": 50,
+      "capabilities": [
+        "dig_basic",
+        "recrew"
+      ],
+      "cooldown_s": 20,
+      "cost": 260,
+      "dig_rate_pct": 100,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_rifle_squad_9",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "items": {
+            "ww2:m15_smoke": 1,
+            "ww2:mk2_grenade": 2
+          },
+          "slot": "squad_leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "asst_squad_leader",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "automatic_rifleman",
+          "weapon": "ww2:bar_m1918a2"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "asst_ar",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 4,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman",
+          "weapon": "ww2:m1_garand"
+        }
+      ],
+      "men": 0,
+      "name": "Rifle Squad (understrength)",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Rifle Squad 9",
+      "sight_m": 150,
+      "sources": [
+        "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "line",
+        "understrength"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
     },
     "ww2:usa_tank_crew": {
       "capabilities": [
@@ -1706,25 +2215,27 @@
       "members": [
         {
           "count": 1,
-          "slot": "leader",
+          "slot": "commander",
+          "traits": [
+            "leader"
+          ],
           "weapon": "ww2:m3_smg"
         },
         {
           "count": 1,
-          "slot": "weapon",
+          "slot": "crewman_smg",
           "weapon": "ww2:m3_smg"
         },
         {
           "count": 3,
-          "slot": "sidearm",
+          "slot": "crewman",
           "weapon": "ww2:m1911a1"
         }
       ],
-      "men": 5,
+      "men": 0,
       "name": "Tank crew",
       "recall_cooldown_s": 0,
       "role": "crew",
-      "sidearm": "ww2:m1911a1",
       "sight_m": 150,
       "spacing_dm": 30,
       "speed_cm_s": 300,
@@ -1733,8 +2244,7 @@
         "crew"
       ],
       "unlock_s": 0,
-      "weapon": "ww2:m3_smg",
-      "weapon_men": 2
+      "weapon": ""
     }
   },
   "vehicles": {
@@ -2757,6 +3267,29 @@
     }
   },
   "weapons": {
+    "ww2:bar_m1918a2": {
+      "class": "rifle",
+      "crew_weapon": false,
+      "damage": 65,
+      "handover_ms": 0,
+      "id": "ww2:bar_m1918a2",
+      "magazine": 20,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 860,
+      "name": "BAR M1918A2",
+      "range_m": 350,
+      "reload_ms": 4000,
+      "rounds_carried": 0,
+      "rounds_per_min": 450,
+      "setup_ms": 0,
+      "short_name": "BAR",
+      "sources": [
+        "Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)"
+      ],
+      "spread_mrad": 14,
+      "spread_urad": 0,
+      "suppression": 10
+    },
     "ww2:grw34": {
       "class": "mortar",
       "damage": 150,
@@ -2868,6 +3401,51 @@
       "spread_mrad": 15,
       "spread_urad": 0,
       "suppression": 14
+    },
+    "ww2:m1919a4_tripod": {
+      "class": "mg",
+      "damage": 45,
+      "handover_ms": 3000,
+      "id": "ww2:m1919a4_tripod",
+      "magazine": 125,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 853,
+      "name": "M1919A4 (tripod)",
+      "range_m": 600,
+      "reload_ms": 7000,
+      "rounds_carried": 0,
+      "rounds_per_min": 500,
+      "setup_ms": 4000,
+      "short_name": "M1919A4",
+      "sources": [
+        "Wikipedia, M1919 Browning machine gun (weight, rate, muzzle velocity, belt)",
+        "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)"
+      ],
+      "spread_mrad": 12,
+      "spread_urad": 0,
+      "suppression": 14
+    },
+    "ww2:m1_carbine": {
+      "class": "rifle",
+      "damage": 45,
+      "handover_ms": 0,
+      "id": "ww2:m1_carbine",
+      "magazine": 15,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 607,
+      "name": "M1 carbine",
+      "range_m": 180,
+      "reload_ms": 2500,
+      "rounds_carried": 0,
+      "rounds_per_min": 40,
+      "setup_ms": 0,
+      "short_name": "M1 carbine",
+      "sources": [
+        "Wikipedia, M1 carbine (velocity, practical range, magazine)"
+      ],
+      "spread_mrad": 14,
+      "spread_urad": 0,
+      "suppression": 6
     },
     "ww2:m1_garand": {
       "class": "rifle",
@@ -3007,18 +3585,44 @@
     "ww2:mg42": {
       "class": "mg",
       "damage": 45,
-      "handover_ms": 0,
+      "handover_ms": 3000,
       "id": "ww2:mg42",
+      "magazine": 150,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 740,
+      "name": "MG 42 (Lafette 42)",
+      "range_m": 600,
+      "reload_ms": 8000,
+      "rounds_carried": 0,
+      "rounds_per_min": 1200,
+      "setup_ms": 6000,
+      "short_name": "MG 42 (s)",
+      "sources": [
+        "Wikipedia, MG 42 (Lafette 42 weight, tripod ranges, barrel change interval, crew)"
+      ],
+      "spread_mrad": 12,
+      "spread_urad": 0,
+      "suppression": 15
+    },
+    "ww2:mg42_bipod": {
+      "class": "mg",
+      "damage": 45,
+      "handover_ms": 3000,
+      "id": "ww2:mg42_bipod",
       "magazine": 50,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 740,
-      "name": "MG 42",
+      "name": "MG 42 (bipod)",
       "range_m": 450,
       "reload_ms": 5000,
       "rounds_carried": 0,
       "rounds_per_min": 1200,
-      "setup_ms": 3000,
-      "spread_mrad": 18,
+      "setup_ms": 1000,
+      "short_name": "MG 42",
+      "sources": [
+        "Wikipedia, MG 42 (weight, cyclic rate, muzzle velocity, drum, burst length)"
+      ],
+      "spread_mrad": 22,
       "spread_urad": 0,
       "suppression": 15
     },
@@ -3057,6 +3661,33 @@
       "spread_mrad": 30,
       "spread_urad": 0,
       "suppression": 2
+    },
+    "ww2:pzf60": {
+      "ammo": "ww2:pzf60_heat",
+      "class": "launcher",
+      "damage": 300,
+      "engage_moving_m": 40,
+      "engage_still_m": 60,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:pzf60",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 45,
+      "name": "Panzerfaust 60",
+      "range_m": 60,
+      "reload_ms": 0,
+      "rounds_carried": 1,
+      "rounds_per_min": 6,
+      "setup_ms": 0,
+      "short_name": "Panzerfaust",
+      "sources": [
+        "Wikipedia, Panzerfaust (citing Rottman 2014): range, velocity, penetration"
+      ],
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 20
     },
     "ww2:rpzb54": {
       "ammo": "ww2:rpzb54_heat",

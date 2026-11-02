@@ -56,7 +56,7 @@ macro_rules! tuning_table {
         pub struct $name:ident {
             $(
                 $(#[doc = $doc:expr])*
-                $field:ident : $lo:literal ..= $hi:literal,
+                $field:ident : $lo:literal ..= $hi:literal $(= $def:literal)?,
             )*
         }
     ) => {
@@ -64,7 +64,7 @@ macro_rules! tuning_table {
         #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
         #[serde(deny_unknown_fields)]
         pub struct $name {
-            $( $(#[doc = $doc])* pub $field: u32, )*
+            $( $(#[doc = $doc])* $(#[serde(default = $def)])? pub $field: u32, )*
         }
 
         impl $name {
@@ -315,7 +315,26 @@ tuning_table! {
         /// it (m; 0: off).
         at_follow_m: 0..=1000,
         at_follow_back_m: 0..=500,
+        /// S4 Panzerfaust hunts: a squad with a single-shot AT item goes
+        /// for a known enemy vehicle this close to it (m; 0: off; absent in
+        /// older rules: 100) ...
+        pzf_hunt_m: 0..=500 = "default_pzf_hunt_m",
+        /// ... unless a known enemy soldier is this close to the middle of
+        /// its route (m; absent: 40).
+        pzf_clear_m: 0..=500 = "default_pzf_clear_m",
     }
+}
+
+fn default_pzf_hunt_m() -> u32 {
+    100
+}
+
+fn default_pzf_clear_m() -> u32 {
+    40
+}
+
+fn default_capture_m() -> u32 {
+    150
 }
 
 impl AiAssaultTuning {
@@ -409,6 +428,12 @@ tuning_table! {
         /// abandoned vehicle this close (m; only with
         /// `vehicles.recrew.capture` on; 0: off).
         deny_m: 0..=2000,
+        /// S4 AI capture (S3c-33 (A)): a crew squad (`vehicle_crew`) whose
+        /// tank is gone captures an enemy abandoned vehicle this close to
+        /// it (not burning, not useless, no known enemy soldier within
+        /// `recrew_clear_m`), when the rules allow captures (m; 0: off;
+        /// absent in older rules: 150).
+        capture_m: 0..=2000 = "default_capture_m",
     }
 }
 

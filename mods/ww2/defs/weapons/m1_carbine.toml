@@ -1,0 +1,18 @@
+# M1 carbine (S4): the US mortar crews' and ammo bearers' weapon.
+# Sources: Wikipedia "M1 carbine" (2.4 kg, .30 Carbine, 607 m/s, practical
+# range ~180 m (200 yd), 15-round magazine).
+id = "ww2:m1_carbine"
+name = "M1 carbine"
+short_name = "M1 carbine"
+class = "rifle"
+sources = ["Wikipedia, M1 carbine (velocity, practical range, magazine)"]
+# Practical range (m).
+range_m = 180
+damage = 45
+# Aimed semi-automatic fire (rpm).
+rounds_per_min = 40
+magazine = 15
+reload_ms = 2500
+spread_mrad = 14
+muzzle_velocity_m_s = 607
+suppression = 6

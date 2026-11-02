@@ -1,18 +1,30 @@
+# Granatwerfertrupp (S4): one 8 cm GrW 34 and two men with Kar98k (the S1-S3
+# team carried a tube each, S4-2 (A)). The tube is a crew weapon: when its
+# gunner falls the nearest man takes it up.
 id = "ww2:ger_mortar_team"
 name = "Granatwerfertrupp"
+short_name = "Granatwerfer"
 faction = "ww2:germany"
-role = "mortar"
-men = 3
-weapon = "ww2:grw34"
+tags = ["mortar"]
+capabilities = ["recrew"]
 cost = 280
-# Call-in (S3b): a call-in spawns the mortar team at once at the base (no
-# queue, no delivery time; it walks to the front itself). Then this
-# type cannot be called in again for recall_cooldown_s seconds. 60 s set
-# by the owner on 2026-11-01 (20 % under the first proposal of 75 s).
-recall_cooldown_s = 60
-# Seconds from the match start before the first call-in; 0 = at once.
-initial_cooldown_s = 0
+# Call-in (S3b): 60 s set by the owner on 2026-11-01 (20 % under the first
+# proposal of 75 s).
+cooldown_s = 60
+unlock_s = 0
 speed_cm_s = 240
 sight_m = 150
 spacing_dm = 25
 dig_rate_pct = 0
+
+[[members]]
+slot = "mortar_gunner"
+weapon = "ww2:grw34"
+sidearm = "ww2:p38"
+traits = ["leader", "crew_gunner"]
+
+[[members]]
+slot = "mortar_crew"
+count = 2
+weapon = "ww2:kar98k"
+traits = ["crew_assistant"]

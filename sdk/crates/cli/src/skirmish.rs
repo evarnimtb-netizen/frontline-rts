@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use frontline_content::vehicle::AmmoMechanism;
-use frontline_content::{Difficulty, MatchRequest, MatchSetup, PlayerRequest, SquadRole};
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, PlayerRequest};
 use frontline_sim::{
     ArmourEventKind, BlastKind, Outcome, PlayerId, SquadId, World, kill_class, vehicle_flags,
 };
@@ -281,6 +281,11 @@ pub struct PlayerArmour {
     pub rocket_hits: u32,
     pub rocket_pens: u32,
     pub rocket_disabled_parts: u32,
+    /// S4: of the rocket numbers, the single-shot AT items' (Panzerfaust)
+    /// hits, penetrations and knock-outs (abandonments included).
+    pub pzf_hits: u32,
+    pub pzf_pens: u32,
+    pub ko_by_pzf: u32,
     pub hits_by_zone: BTreeMap<String, u32>,
     /// S3c: own vehicles put out of action split into destroyed (a wreck
     /// straight away) and abandoned (the crew bailed out), the
@@ -340,7 +345,30 @@ pub struct PlayerReport {
     pub armour: PlayerArmour,
     /// S3c baseline counters (report only, `crate::s3c_tally`).
     pub s3c: S3cPlayer,
+    /// S4 counters.
+    pub s4: S4Player,
 }
+
+/// S4 per-player report counters.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S4Player {
+    /// AI call-ins by card id (`AiCounters::bought`).
+    pub bought: BTreeMap<String, u32>,
+    /// Single-shot AT items (Panzerfausts) fired.
+    pub panzerfausts: u32,
+    /// Crew weapons own men picked up.
+    pub pickups: u32,
+    /// Own population at 5, 10 and 20 match minutes (`None`: over sooner).
+    pub pop_at_min: [Option<u32>; 3],
+    /// AI buy plans held back by the pop cap alone.
+    pub pop_cap_holds: u32,
+    /// AI Panzerfaust hunts started and capture orders given.
+    pub pzf_hunts: u32,
+    pub capture_orders: u32,
+}
+
+/// Match minutes the S4 report samples the population at.
+pub const POP_MINUTES: [u64; 3] = [5, 10, 20];
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Totals {
@@ -403,6 +431,8 @@ struct ArmourTally {
     man_value: Vec<u32>,
     /// S3c: abandoned vehicles still standing, by id: their last owner.
     abandoned: BTreeMap<u32, u8>,
+    /// S4: ammo indices fired by single-shot AT items (Panzerfausts).
+    pzf_ammo: Vec<u16>,
 }
 
 /// S3c abandonment trigger names, by `bail::AB_*` (index 0 unused).
@@ -434,16 +464,23 @@ impl ArmourTally {
                 let f = &setup.factions[setup.players[p].faction as usize];
                 f.roster
                     .iter()
+                    .find(|&&t| setup.type_has_tag(t, "line"))
                     .map(|&t| &setup.squad_types[t as usize])
-                    .find(|t| t.role == SquadRole::Rifle)
                     .map_or(0, |t| t.cost / t.men.max(1) as u32)
             })
+            .collect();
+        let pzf_ammo = setup
+            .items
+            .iter()
+            .filter_map(|it| it.weapon)
+            .filter_map(|w| setup.weapons.get(w as usize).and_then(|w| w.ammo))
             .collect();
         ArmourTally {
             players: vec![PlayerArmour::default(); n],
             at_men_lost: vec![0; n],
             vehicle_cost,
             man_value,
+            pzf_ammo,
             ..ArmourTally::default()
         }
     }
@@ -473,6 +510,10 @@ impl ArmourTally {
                     if heat {
                         p.rocket_hits += 1;
                         p.rocket_pens += pen as u32;
+                        if self.pzf_ammo.contains(&e.ammo) {
+                            p.pzf_hits += 1;
+                            p.pzf_pens += pen as u32;
+                        }
                     } else if a.mechanism.penetrator() {
                         p.gun_hits += 1;
                         p.gun_pens += pen as u32;
@@ -526,9 +567,14 @@ impl ArmourTally {
                     .get(&e.vehicle)
                     .and_then(|&a| s.ammo.get(a as usize))
                     .is_some_and(|a| a.mechanism == AmmoMechanism::Heat);
+                let pzf = self
+                    .last_ammo
+                    .get(&e.vehicle)
+                    .is_some_and(|a| self.pzf_ammo.contains(a));
                 if let Some(p) = self.players.get_mut(e.attacker as usize) {
                     if rocket {
                         p.ko_by_rocket += 1;
+                        p.ko_by_pzf += pzf as u32;
                         p.at_mp_killed += cost;
                     } else {
                         p.ko_by_gun += 1;
@@ -586,9 +632,14 @@ impl ArmourTally {
                     .get(&e.vehicle)
                     .and_then(|&a| s.ammo.get(a as usize))
                     .is_some_and(|a| a.mechanism == AmmoMechanism::Heat);
+                let pzf = self
+                    .last_ammo
+                    .get(&e.vehicle)
+                    .is_some_and(|a| self.pzf_ammo.contains(a));
                 if let Some(p) = self.players.get_mut(e.attacker as usize) {
                     if rocket {
                         p.ko_by_rocket += 1;
+                        p.ko_by_pzf += pzf as u32;
                         p.at_mp_killed += cost;
                     } else {
                         p.ko_by_gun += 1;
@@ -760,6 +811,9 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let smoke_at_start = world.snapshot().smoke.last().map_or(0, |c| c.id as u64 + 1);
     let mut smoke_seen = smoke_at_start;
     let throws_at_start = world.stats().throws;
+    // S4: own population at POP_MINUTES, per player.
+    let n_players = world.match_setup().map_or(0, |s| s.players.len());
+    let mut pop_at: Vec<[Option<u32>; 3]> = vec![[None; 3]; n_players];
     while running(&world) && world.tick() < limit {
         if args.paced {
             let deadline = start + period * (world.tick() - start_tick) as u32;
@@ -794,6 +848,15 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         note_squads(&world, &mut fielded);
         tally.observe(&world);
         s3c.observe(&world);
+        for (k, &m) in POP_MINUTES.iter().enumerate() {
+            if world.tick() == m * 60 * hz
+                && let Some(g) = world.game()
+            {
+                for (p, at) in pop_at.iter_mut().enumerate() {
+                    at[k] = Some(g.population(world.entities(), PlayerId(p as u8)));
+                }
+            }
+        }
         if args.trace_vehicles && world.tick().is_multiple_of(10 * hz) {
             trace_vehicles(&world);
         }
@@ -841,14 +904,14 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             let ai = g.ai(PlayerId(p as u8));
             let owned = |o: &PlayerId| o.0 as usize == p;
             let mut armour = std::mem::take(&mut tally.players[p]);
-            let role_bought = |r: SquadRole| {
+            let tag_bought = |tag: &str| {
                 fielded
                     .values()
-                    .filter(|(o, t)| owned(o) && s.squad_types[*t as usize].role == r)
+                    .filter(|(o, t)| owned(o) && s.type_has_tag(*t, tag))
                     .count() as u32
             };
-            armour.vehicles_bought = role_bought(SquadRole::Vehicle);
-            armour.at_teams_bought = role_bought(SquadRole::AntiTank);
+            armour.vehicles_bought = tag_bought("vehicle");
+            armour.at_teams_bought = tag_bought("at");
             armour.kills_by = names(&pl.kills_by);
             // Kills by own tank weapons and rockets, valued at the enemy
             // rifleman's share (the knock-outs were counted as they came).
@@ -864,8 +927,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             let at_cost = s.factions[s.players[p].faction as usize]
                 .roster
                 .iter()
+                .find(|&&t| s.type_has_tag(t, "at"))
                 .map(|&t| &s.squad_types[t as usize])
-                .find(|t| t.role == SquadRole::AntiTank)
                 .map_or(0, |t| t.cost / t.men.max(1) as u32);
             armour.at_mp_lost = tally.at_men_lost[p] * at_cost;
             armour.at_shots = pl.rockets;
@@ -949,6 +1012,29 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 trenches_planned: ai.map_or(0, |a| a.trenches.len() as u32),
                 armour,
                 s3c: std::mem::take(&mut s3c.players[p]),
+                s4: S4Player {
+                    bought: ai.map_or_else(BTreeMap::new, |a| {
+                        a.counters
+                            .bought
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, n)| **n > 0)
+                            .map(|(t, &n)| {
+                                let id = &s.squad_types[t].id;
+                                (
+                                    id.split_once(':').map_or(id.as_str(), |x| x.1).to_owned(),
+                                    n,
+                                )
+                            })
+                            .collect()
+                    }),
+                    panzerfausts: pl.s4.single_shots,
+                    pickups: pl.s4.pickups,
+                    pop_at_min: pop_at.get(p).copied().unwrap_or([None; 3]),
+                    pop_cap_holds: ai.map_or(0, |a| a.counters.pop_cap_holds),
+                    pzf_hunts: ai.map_or(0, |a| a.counters.pzf_hunts),
+                    capture_orders: ai.map_or(0, |a| a.counters.capture_orders),
+                },
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1323,6 +1409,33 @@ pub struct FactionSummary {
     pub crew_home: u32,
     /// S3c Part B AI counters, summed.
     pub ai_s3c: BTreeMap<String, u32>,
+    /// S4 counters over the run.
+    pub s4: S4Faction,
+}
+
+/// S4 numbers of one faction over a `--seeds` run.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S4Faction {
+    pub matches: u32,
+    /// Per card id: matches with at least one bought, and the total bought.
+    pub bought_matches: BTreeMap<String, u32>,
+    pub bought: BTreeMap<String, u32>,
+    pub panzerfausts: u32,
+    pub pzf_hits: u32,
+    pub pzf_pens: u32,
+    pub ko_by_pzf: u32,
+    /// Matches with at least one Panzerfaust fired: all, and with normal
+    /// bases (player 0 at base 0).
+    pub matches_with_pzf: u32,
+    pub matches_with_pzf_normal: u32,
+    pub pickups: u32,
+    pub pzf_hunts: u32,
+    pub capture_orders: u32,
+    pub pop_cap_holds: u32,
+    /// Population at `POP_MINUTES`: sums and how many matches were still
+    /// running then.
+    pub pop_sum: [u64; 3],
+    pub pop_n: [u32; 3],
 }
 
 /// The compact table of a `--seeds` run (`--summary`).
@@ -1450,6 +1563,7 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
     let mut he = 0.0;
     for m in matches {
         let r = &m.report;
+        let swapped = m.swapped;
         let min = r.game_seconds / 60.0;
         minutes += min;
         s.minutes_min = s.minutes_min.min(min);
@@ -1510,6 +1624,29 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.crew_bailed += a.crew_bailed;
             f.crew_out += a.crew_out;
             f.crew_home += a.crew_home;
+            let q = &p.s4;
+            let s4 = &mut f.s4;
+            s4.matches += 1;
+            for (k, &v) in &q.bought {
+                *s4.bought.entry(k.clone()).or_default() += v;
+                *s4.bought_matches.entry(k.clone()).or_default() += u32::from(v > 0);
+            }
+            s4.panzerfausts += q.panzerfausts;
+            s4.pzf_hits += a.pzf_hits;
+            s4.pzf_pens += a.pzf_pens;
+            s4.ko_by_pzf += a.ko_by_pzf;
+            s4.matches_with_pzf += u32::from(q.panzerfausts > 0);
+            s4.matches_with_pzf_normal += u32::from(q.panzerfausts > 0 && !swapped);
+            s4.pickups += q.pickups;
+            s4.pzf_hunts += q.pzf_hunts;
+            s4.capture_orders += q.capture_orders;
+            s4.pop_cap_holds += q.pop_cap_holds;
+            for k in 0..3 {
+                if let Some(v) = q.pop_at_min[k] {
+                    s4.pop_sum[k] += v as u64;
+                    s4.pop_n[k] += 1;
+                }
+            }
         }
     }
     let n = matches.len().max(1) as f64;
@@ -1643,6 +1780,51 @@ pub fn many_text(r: &ManyReport) -> String {
     }
     for f in &s.factions {
         out += &format!("S3c AI {}: {}\n", f.faction, join(&f.ai_s3c));
+    }
+    // S4: cards bought, Panzerfausts, pickups, captures, population.
+    for f in &s.factions {
+        let q = &f.s4;
+        let n = q.matches.max(1) as f64;
+        let cards: Vec<String> = q
+            .bought
+            .iter()
+            .map(|(k, v)| format!("{k} {}/{} ({v})", q.bought_matches[k], q.matches))
+            .collect();
+        let pop: Vec<String> = (0..3)
+            .map(|k| {
+                if q.pop_n[k] == 0 {
+                    "-".into()
+                } else {
+                    format!("{:.0}", q.pop_sum[k] as f64 / q.pop_n[k] as f64)
+                }
+            })
+            .collect();
+        out += &format!(
+            "S4 {}: cards bought (matches with one/matches, total): {}\n\
+             S4 {}: panzerfausts fired {} (matches {}/{}, normal bases {}), hit {}, pen {}, \
+             ko {}; pzf hunts {}; pickups {:.1}/match; capture orders {}, captures {}; \
+             mean pop at 5/10/20 min {}; pop-cap holds {:.1}/match\n",
+            f.faction,
+            if cards.is_empty() {
+                "none".into()
+            } else {
+                cards.join(", ")
+            },
+            f.faction,
+            q.panzerfausts,
+            q.matches_with_pzf,
+            q.matches,
+            q.matches_with_pzf_normal,
+            q.pzf_hits,
+            q.pzf_pens,
+            q.ko_by_pzf,
+            q.pzf_hunts,
+            q.pickups as f64 / n,
+            q.capture_orders,
+            f.captures,
+            pop.join("/"),
+            q.pop_cap_holds as f64 / n,
+        );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
     for m in &r.matches {

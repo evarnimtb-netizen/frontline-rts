@@ -371,7 +371,11 @@ impl MatchState {
             {
                 continue;
             }
-            let rate = self.setup.squad_types[sq.type_idx as usize].dig_rate_pct as u64;
+            // S4: training scales the build (dig) rate.
+            let rate = crate::combat::pct_of(
+                self.setup.squad_types[sq.type_idx as usize].dig_rate_pct,
+                crate::combat::training_of(&self.setup, sq).build_rate_pct,
+            ) as u64;
             let Order::Dig { line, job } = &mut sq.order else {
                 continue;
             };
@@ -465,7 +469,10 @@ impl MatchState {
             let Some(sq) = ents.squad[i].and_then(|s| self.squads.get(&s)) else {
                 continue;
             };
-            let rate = self.setup.squad_types[sq.type_idx as usize].dig_rate_pct as u64;
+            let rate = crate::combat::pct_of(
+                self.setup.squad_types[sq.type_idx as usize].dig_rate_pct,
+                crate::combat::training_of(&self.setup, sq).build_rate_pct,
+            ) as u64;
             diggers.push((job, SimId(i as u32), rate));
         }
         diggers.sort_unstable();

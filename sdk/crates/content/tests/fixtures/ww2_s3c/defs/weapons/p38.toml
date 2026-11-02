@@ -1,0 +1,20 @@
+# Walther P 38 (S3c): the German tank crewman's pistol (9x19 mm, 8-round
+# magazine, about 350 m/s at the muzzle). Crews carried pistols for
+# personal defence after bailing out (Lone Sentry, "Crew and communications
+# of the German Panzer IV"; exact issue is citation task S3c-7). Range and
+# rate are practical combat values, not the sight setting: a handgun hits a
+# man only at short range. Damage as the MP 40 (same cartridge).
+id = "ww2:p38"
+name = "P 38"
+class = "pistol"
+# Effective combat range of a service pistol (m).
+range_m = 30
+damage = 35
+# Aimed fire, about one round a second (rounds/min).
+rounds_per_min = 60
+magazine = 8
+reload_ms = 2500
+spread_mrad = 30
+muzzle_velocity_m_s = 350
+# Little suppression: a pistol is no base of fire (points per near miss).
+suppression = 2

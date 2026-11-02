@@ -24,6 +24,15 @@ extends SceneTree
 ## Panzer IV", To tank), K + click and the right-click context re-crew,
 ## Bail out asking for a second press, and the feed lines.
 ##
+## S4 (cards and capabilities on the mock): one tile per card keyed by id
+## (two rifle and two MG cards), the call_in intent carries the id, each
+## card its own cooldown, the men disc and its cooldown ring, the
+## understrength chevron and the gloss tooltip; orders by capability (Dig,
+## Barrage, Crew from `capabilities`); the squad card's member rows (role
+## word and weapon, the crew-weapon diamond, the fallen men's slot names);
+## the Panzerfaust slot and tool (attack_unit + attack_move at an enemy
+## vehicle).
+##
 ##   Godot --headless --path godot -s res://tools/test_match_view.gd
 ##
 ## Exits 0 when every check passes. Events are fed straight to the
@@ -82,6 +91,7 @@ func _run() -> void:
 	await _test_bail()
 	_test_cost()
 	await _test_callin_need()
+	await _test_s4()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1155,6 +1165,107 @@ func _test_end() -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await process_frame
+
+
+# --- S4 ----------------------------------------------------------------------
+
+func _test_s4() -> void:
+	var ci: Control = _view.call_in
+	_source.players[0].manpower = 2000.0
+	await _frames(2)
+	var cat: Array = _view.state.callin.catalog
+	var full: int = ci.index_of_id("ww2:ger_rifle")
+	var under: int = ci.index_of_id("ww2:ger_rifle_9")
+	_check(full >= 0 and under >= 0 and full != under and cat[full].type == cat[under].type, "S4: two rifle cards, one tile each, keyed by id")
+	_check(ci.index_of_id("ww2:ger_mg") >= 0 and ci.index_of_id("ww2:ger_mg_heavy") >= 0, "S4: two MG cards")
+	_check(bool(cat[under].get("understrength", false)) and not bool(cat[full].get("understrength", false)), "S4: the understrength card carries the marker flag")
+	_check(ci.men_disc_rect(under).size.x > 0.0 and ci.men_disc_rect(full).size.x > 0.0, "S4: soldier tiles have a men disc")
+	var tank_tile := -1
+	for i in cat.size():
+		if ci.is_vehicle(cat[i]):
+			tank_tile = i
+	_check(tank_tile >= 0 and ci.men_disc_rect(tank_tile).size == Vector2.ZERO, "S4: vehicle tiles have no men disc")
+	# Buying the understrength card sends its id and starts its own
+	# cooldown only (Q21 (B)).
+	_intents.clear()
+	ci.call_in_index(under)
+	await _frames(2)
+	var sent: Variant = _last(&"call_in")
+	_check(sent != null and String(sent.get("id", "")) == "ww2:ger_rifle_9", "S4: the call-in intent carries the card id")
+	cat = _view.state.callin.catalog
+	_check(float(cat[under].get("cooldown_s", 0.0)) > 0.0, "S4: the bought card is on cooldown")
+	_check(ci.ring_frac(under) > 0.9 and ci.ring_frac(under) <= 1.0, "S4: its ring is lit (%.2f)" % ci.ring_frac(under))
+	# The MG card bought earlier is on its cooldown; its sibling is not.
+	var mg_i: int = ci.index_of_id("ww2:ger_mg")
+	var heavy_i: int = ci.index_of_id("ww2:ger_mg_heavy")
+	_check(float(cat[mg_i].get("cooldown_s", 0.0)) > 0.0 and ci.ring_frac(heavy_i) == 0.0 and ci.is_ready(heavy_i), "S4: a sibling card is ready while the other is on cooldown (own cooldowns)")
+	var newest := -1
+	for sid in _source.squad_ids(0, "rifle"):
+		newest = maxi(newest, sid)
+	_check(_source.squads[newest].men.size() == int(cat[under].men), "S4: the understrength squad spawns with its card's men (%d)" % int(cat[under].men))
+	# Tooltip gloss (the bridge sends `gloss`; the mock's falls back).
+	var tip: String = ci._get_tooltip(ci.tile_rect(under).get_center())
+	_check(tip.contains("manpower") and tip.contains("Rifle squad (understrength)"), "S4: tile tooltip names the card")
+	# Orders follow capabilities: a rifle squad digs, it cannot barrage;
+	# a mortar squad barrages.
+	var rifle: int = _source.squad_ids(0, "rifle")[0]
+	var mortar: int = _source.squad_ids(0, "mortar")[0]
+	var mg: int = _source.squad_ids(0, "mg")[0]
+	_check(_view.squads_by_id[rifle].has("capabilities"), "S4: squads carry capabilities")
+	_sel.select_squads(PackedInt32Array([rifle]))
+	await _frames(1)
+	_check(_sel.can(&"dig") and not _sel.can(&"barrage") and _sel.can(&"crew"), "S4: rifle squad: Dig and Crew, no Barrage")
+	_sel.select_squads(PackedInt32Array([mortar]))
+	await _frames(1)
+	_check(_sel.can(&"barrage") and not _sel.can(&"dig"), "S4: mortar squad: Barrage, no Dig")
+	_sel.select_squads(PackedInt32Array([mg]))
+	await _frames(1)
+	_check(not _sel.can(&"dig") and not _sel.can(&"barrage"), "S4: MG squad: no Dig, no Barrage")
+	# Capabilities rule over the type: strip dig_basic from the rifle squad.
+	_view.squads_by_id[rifle].capabilities = PackedStringArray(["recrew"])
+	_sel.select_squads(PackedInt32Array([rifle]))
+	_check(not _sel.can(&"dig"), "S4: no dig_basic, no Dig (capabilities win over the type)")
+	await _frames(2)
+	# Squad card member rows: role words and weapons, the crew diamond,
+	# the fallen men's slot names.
+	var r_men: PackedInt32Array = _source.unit_ids(rifle)
+	var so: Dictionary = _view.soldiers_by_id[r_men[0]]
+	so.name = "MG gunner"
+	so.weapon = "MG 42"
+	so.crew_weapon = true
+	_view.squads_by_id[rifle].slot_names = PackedStringArray(["Leader", "MG gunner", "MG assistant", "Ammo bearer", "Rifleman", "Rifleman", "Rifleman", "Rifleman"])
+	_sel.select_squads(PackedInt32Array([rifle]))
+	await _frames(0)
+	var detail: Control = _view.detail
+	detail.rows = detail._squad_rows(rifle)
+	_check(_view.soldier_name(so) == "MG gunner" and _view.soldier_weapon(so) == "MG 42", "S4: a man reads by his slot and weapon")
+	detail.queue_redraw()
+	await _frames(1)
+	_check(detail.mode() == "squad", "S4: the squad card shows member rows")
+	# The Panzerfaust takes the Satchel slot when the selection carries
+	# one and no satchel.
+	var grid: Control = _view.orders
+	var g_men: PackedInt32Array = _source.unit_ids(rifle)
+	for id in g_men:
+		_view.soldiers_by_id[id].items = {"frag": 1, "smoke": 0, "satchel": 0, "panzerfaust": 1}
+	_sel.select_squads(PackedInt32Array([rifle]))
+	grid.update_state(_view.state)
+	_check(grid.button_rect(&"panzerfaust").size.x > 0.0 and grid.button_rect(&"satchel").size == Vector2.ZERO, "S4: Panzerfaust in the third ability slot")
+	_check(grid.enabled(&"panzerfaust") and _sel.item_count("panzerfaust") == g_men.size(), "S4: Panzerfaust button enabled with its count")
+	var target := -1
+	for vid in _view.vehicles_by_id:
+		if int(_view.vehicles_by_id[vid].owner) == 1:
+			target = int(vid)
+	if target != -1:
+		_intents.clear()
+		_check(_sel.panzerfaust_at(target), "S4: Panzerfaust at an enemy vehicle")
+		var au: Variant = _last(&"attack_unit")
+		var am: Variant = _last(&"attack_move")
+		_check(au != null and int(au.target) == target and PackedInt32Array(au.units).size() == g_men.size() and am != null, "S4: attack_unit for the carriers' men and attack_move to it")
+	else:
+		_check(false, "S4: an enemy vehicle on the mock for the Panzerfaust check")
+	_sel.select_only(PackedInt32Array())
+	await _frames(1)
 
 
 func _check(ok: bool, what: String) -> void:

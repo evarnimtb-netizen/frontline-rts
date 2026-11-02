@@ -462,6 +462,10 @@ pub struct RenderSnapshot {
     /// [`ItemKind::index`], and whether he is winding up a throw.
     pub soldier_items: Vec<[u8; ITEM_KINDS]>,
     pub soldier_throwing: Vec<bool>,
+    /// Per entry of `soldiers` (match mode only, S4): the weapon he carries
+    /// (index into `MatchSetup::weapons`) and his `[[members]]` slot.
+    pub soldier_weapon: Vec<u16>,
+    pub soldier_member_slot: Vec<u8>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -487,6 +491,8 @@ pub struct RenderSnapshot {
     pub call_ins: Vec<crate::game::CallInEvent>,
     /// S3c: this tick's refused `Recrew` commands (the feed says why).
     pub recrew_refusals: Vec<crate::bail::RecrewEvent>,
+    /// S4: crew weapons picked up in the last tick.
+    pub pickups: Vec<crate::game::PickupEvent>,
     /// Squads in ascending id order (match mode only).
     pub squads: Vec<SquadSnapshot>,
     /// Per player slot (match mode only).
@@ -543,6 +549,8 @@ impl RenderSnapshot {
         self.soldier_detached.clear();
         self.soldier_items.clear();
         self.soldier_throwing.clear();
+        self.soldier_weapon.clear();
+        self.soldier_member_slot.clear();
         self.units.clear();
         self.corpses.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
@@ -571,6 +579,8 @@ impl RenderSnapshot {
                         let k = &ents.kit()[i];
                         self.soldier_items.push(k.items);
                         self.soldier_throwing.push(k.windup.is_some());
+                        self.soldier_weapon.push(k.weapon);
+                        self.soldier_member_slot.push(k.slot);
                         if u.detached
                             && let Some(g) = game
                         {

@@ -1,0 +1,11 @@
+id = "ww2:m1_garand"
+name = "M1 Garand"
+class = "rifle"
+range_m = 300
+damage = 65
+rounds_per_min = 24
+magazine = 8
+reload_ms = 3000
+spread_mrad = 11
+muzzle_velocity_m_s = 850
+suppression = 8

@@ -1,0 +1,15 @@
+id = "ww2:usa"
+name = "USA"
+color = "#7d8b4a"
+roster = [
+    "ww2:usa_rifle_squad",
+    "ww2:usa_mg_team",
+    "ww2:usa_engineer_squad",
+    "ww2:usa_mortar_team",
+    # S3: the AT team (available from the start) and the tank (unlocks at
+    # the rules' `vehicles.unlock_s`).
+    "ww2:usa_bazooka_team",
+    "ww2:usa_m4a3_75_squad",
+]
+# Squads on the field at tick 0, at the player's base.
+start_squads = ["ww2:usa_rifle_squad", "ww2:usa_rifle_squad", "ww2:usa_engineer_squad"]

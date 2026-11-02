@@ -97,7 +97,7 @@
 use frontline_content::setup::{CombatSetup, HeSetup, WeaponSetup};
 use frontline_content::tuning::BodyTuning;
 use frontline_content::vehicle::{AmmoMechanism, AmmoSetup};
-use frontline_content::{ComponentKind, MatchSetup, WeaponClass};
+use frontline_content::{ComponentKind, ItemKind, MatchSetup, WeaponClass};
 
 use crate::armour::{self, ArmourHit, ArmourTables};
 use crate::damage::{ArmourEv, Dealt, FireRolls, Inner};
@@ -222,33 +222,10 @@ pub(crate) fn suppress_aim_at(
     Some((aim, probe))
 }
 
-/// The weapon (index into `MatchSetup::weapons`) soldier `id` of squad
-/// `sq` uses (S3): an AT team's launcher for its carrier and the sidearm
-/// for the other men; in other squads the first `weapon_men` men in member
-/// order carry the squad weapon and the rest the sidearm.
-pub(crate) fn weapon_of(setup: &MatchSetup, sq: &Squad, id: SimId) -> u16 {
-    let ty = &setup.squad_types[sq.type_idx as usize];
-    let Some(side) = ty.sidearm else {
-        return ty.weapon;
-    };
-    match &sq.launcher {
-        Some(l) if l.carrier == Some(id) => ty.weapon,
-        Some(_) => side,
-        None => match sq.members.iter().position(|m| *m == id) {
-            Some(k) if k < ty.weapon_men as usize => ty.weapon,
-            _ => side,
-        },
-    }
-}
-
-/// The squad's small-arms weapon (focus range): the sidearm of an AT
-/// team, else the squad weapon.
+/// The squad's small-arms weapon (focus range; S4: the squad type's
+/// `small_arms`, its longest-reaching non-crew weapon).
 pub(crate) fn small_arms_of(setup: &MatchSetup, sq: &Squad) -> u16 {
-    let ty = &setup.squad_types[sq.type_idx as usize];
-    match (&sq.launcher, ty.sidearm) {
-        (Some(_), Some(side)) => side,
-        _ => ty.weapon,
-    }
+    setup.squad_types[sq.type_idx as usize].small_arms
 }
 
 /// A live soldier as other soldiers see him this tick.
@@ -552,18 +529,22 @@ pub(crate) fn aim_and_fire(
         changed = true;
         ws.cooldown = ws.cooldown.saturating_sub(1);
         c.retarget = c.retarget.saturating_sub(1);
-        let wi = weapon_of(setup, sq, SimId(i as u32));
+        // S4: every man carries his own weapon (`Kit::weapon`).
+        let wi = ctx.kit[i].weapon;
         let w = &setup.weapons[wi as usize];
         // A launcher carrier fires in `fire_launchers` (S3).
         if w.class == WeaponClass::Launcher {
             continue;
         }
+        // S4: his training scales his aim time, spread and reload.
+        let tr = training_of(setup, sq);
+        let aim_ticks = pct_of(hz / 2, tr.aim_time_pct) as u16;
         let still = is_still(&ctx.velocity[i], &rules.body);
         let u = &ctx.unit[i];
         // S3b: a ducked man keeps his target but does not fire; coming up
         // again costs the half second of aiming.
         if c.ducked {
-            ws.cooldown = ws.cooldown.max((hz / 2) as u16);
+            ws.cooldown = ws.cooldown.max(aim_ticks);
             continue;
         }
         // A man winding up a throw does not fire.
@@ -598,13 +579,13 @@ pub(crate) fn aim_and_fire(
                 continue;
             }
             let dist = (aim - from).length();
-            let pct = spread_pct(rules, c, !still, dist, range);
+            let pct = spread_pct(rules, c, !still, dist, range) * tr.spread_pct as i64 / 100;
             let spread = Fx::from_raw(
                 (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32,
             );
             let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
             let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
-            fire_round(out, ws, c, w, id, wi, owner, from, vel);
+            fire_round(out, ws, c, w, id, wi, owner, from, vel, tr.reload_pct);
             continue;
         }
         let r = range_sq(w.range_max.into());
@@ -628,7 +609,7 @@ pub(crate) fn aim_and_fire(
             if c.target.is_some() && before.is_none() {
                 // Aim before opening fire (and rise from cover); switching
                 // targets mid-fight costs nothing.
-                ws.cooldown = ws.cooldown.max((hz / 2) as u16);
+                ws.cooldown = ws.cooldown.max(aim_ticks);
             }
         }
         let Some(t) = c.target else { continue };
@@ -639,14 +620,30 @@ pub(crate) fn aim_and_fire(
         let aim = ctx.marks[ctx.mark_of[t.index()] as usize].aim;
         let dist = (aim - from).length();
         let range: Fx = w.range_max.into();
-        let pct = spread_pct(rules, c, !still, dist, range);
+        let pct = spread_pct(rules, c, !still, dist, range) * tr.spread_pct as i64 / 100;
         let spread =
             Fx::from_raw((Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32);
         let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
         let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
-        fire_round(out, ws, c, w, id, wi, owner, from, vel);
+        fire_round(out, ws, c, w, id, wi, owner, from, vel, tr.reload_pct);
     }
     changed
+}
+
+/// S4: the training profile of squad `sq`'s card.
+#[inline]
+pub(crate) fn training_of<'a>(
+    setup: &'a MatchSetup,
+    sq: &Squad,
+) -> &'a frontline_content::setup::TrainingSetup {
+    let t = setup.squad_types[sq.type_idx as usize].training;
+    &setup.training[t as usize]
+}
+
+/// `v` scaled by `pct` percent (exact at 100).
+#[inline]
+pub(crate) fn pct_of(v: u32, pct: u32) -> u32 {
+    (v as u64 * pct as u64 / 100).min(u32::MAX as u64) as u32
 }
 
 /// Requests one small-arms round and runs the magazine and cooldown.
@@ -661,6 +658,7 @@ fn fire_round(
     owner: u8,
     from: FxVec3,
     vel: FxVec3,
+    reload_pct: u32,
 ) {
     out.push(FireRequest {
         shooter: id,
@@ -678,7 +676,9 @@ fn fire_round(
     c.mag = c.mag.saturating_sub(1);
     if c.mag == 0 {
         c.mag = w.magazine.min(u16::MAX as u32) as u16;
-        ws.cooldown = w.reload_ticks.max(interval_ceil(w)).min(u16::MAX as u32) as u16;
+        ws.cooldown = pct_of(w.reload_ticks, reload_pct)
+            .max(interval_ceil(w))
+            .min(u16::MAX as u32) as u16;
     } else {
         ws.cooldown = interval_after(w, ws.shots).min(u16::MAX as u32) as u16;
     }
@@ -703,25 +703,28 @@ impl MatchState {
         let per_point = setup.rules.combat.suppression.spread_per_point_pct as i64;
         let mut repath = Vec::new();
         for (&id, sq) in self.squads.iter_mut() {
-            if sq.members.is_empty() {
+            if sq.members.is_empty() || !matches!(sq.order, Order::Barrage { .. }) {
                 continue;
             }
-            // The formation leader fires; with every man detached, nobody.
-            let gunner = sq.lead(ents);
+            // S4: the first man in formation order carrying a mortar who
+            // is not detached fires it (with every one of them detached or
+            // fallen, nobody).
+            let Some(gunner) = sq.members.iter().copied().find(|m| {
+                !ents.unit[m.index()].detached
+                    && setup.weapons[ents.kit[m.index()].weapon as usize]
+                        .he
+                        .is_some()
+            }) else {
+                continue;
+            };
             let Order::Barrage { target, rounds } = &mut sq.order else {
                 continue;
             };
-            if sq.nav.phase != NavPhase::Holding
-                || *rounds == 0
-                || ents.unit[gunner.index()].detached
-            {
+            if sq.nav.phase != NavPhase::Holding || *rounds == 0 {
                 continue;
             }
-            let ty = &setup.squad_types[sq.type_idx as usize];
-            let w = &setup.weapons[ty.weapon as usize];
-            if w.he.is_none() {
-                continue;
-            }
+            let wi = ents.kit[gunner.index()].weapon;
+            let w = &setup.weapons[wi as usize];
             let i = gunner.index();
             let pos = ents.transform[i].pos;
             let d = (*target - pos.xy()).length();
@@ -772,7 +775,7 @@ impl MatchState {
                 seq: 0,
                 pos: from,
                 vel,
-                weapon: ty.weapon,
+                weapon: wi,
                 player: sq.owner.0,
                 ttl: ttl.clamp(2, u16::MAX as i32) as u16,
                 he: true,
@@ -811,6 +814,17 @@ impl MatchState {
         out: &mut Vec<FireRequest>,
         rockets: &mut u64,
     ) {
+        // S4: crew weapons of fallen men are picked up first (the
+        // launcher's hand-over is one of them).
+        let dropping: Vec<SquadId> = self
+            .squads
+            .iter()
+            .filter(|(_, sq)| !sq.drops.is_empty())
+            .map(|(&id, _)| id)
+            .collect();
+        for id in dropping {
+            self.pick_up(ents, hash, id);
+        }
         let ids: Vec<SquadId> = self
             .squads
             .iter()
@@ -819,6 +833,256 @@ impl MatchState {
             .collect();
         for id in ids {
             self.fire_launcher(ents, terrain, hash, seed, tick, id, out, rockets);
+        }
+        // S4: single-shot AT items (Panzerfausts), serially in ascending
+        // squad id.
+        let ids: Vec<SquadId> = self
+            .squads
+            .iter()
+            .filter(|(_, sq)| sq.pzf.is_some())
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.fire_single_shot(ents, terrain, hash, seed, tick, id, out, rockets);
+        }
+    }
+
+    /// S4 single-shot AT items (module docs "Panzerfaust"): the squad's
+    /// man with one aims `windup_ticks` at a seen enemy vehicle within the
+    /// item weapon's engagement distance, then fires it as that launcher
+    /// weapon (a physical round, a shell slot) and the tube is spent; his
+    /// own weapon is idle while he aims. One per squad per
+    /// `items.single_shot_gap_ticks`; the `AttackUnit` vehicle first.
+    #[allow(clippy::too_many_arguments)]
+    fn fire_single_shot(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &Heightfield,
+        hash: &mut HashCache,
+        seed: u64,
+        tick: u64,
+        id: SquadId,
+        out: &mut Vec<FireRequest>,
+        rockets: &mut u64,
+    ) {
+        let setup = &self.setup;
+        let hz = setup.tick_hz.max(1);
+        let sq = &self.squads[&id];
+        let ty = &setup.squad_types[sq.type_idx as usize];
+        let k = ItemKind::SingleShotAt.index();
+        let Some((_, it)) = ty.kit(&setup.items, ItemKind::SingleShotAt) else {
+            return;
+        };
+        let Some(wi) = it.weapon else { return };
+        let w = &setup.weapons[wi as usize];
+        let mut p = sq.pzf.expect("single-shot squad");
+        let before = p;
+        p.gap = p.gap.saturating_sub(1);
+        p.search = p.search.saturating_sub(1);
+        let body = &setup.rules.combat.body;
+        let owner = sq.owner;
+        // Whether man `m` may fire one now (the launcher carrier's rule).
+        let able = |ents: &Entities, m: SimId| {
+            let i = m.index();
+            ents.kit[i].items[k] > 0
+                && ents.kit[i].windup.is_none()
+                && !ents.combat[i].ducked
+                && !ents.combat[i].pinned
+                && match engage_of(&sq.order, &ents.unit[i]) {
+                    Engage::Never => false,
+                    Engage::Still => is_still(&ents.velocity[i], body),
+                    Engage::Always => true,
+                }
+        };
+        if let (Some(m), Some(t)) = (p.man, p.target) {
+            let i = m.index();
+            let ok = sq.members.contains(&m)
+                && able(ents, m)
+                && self.launcher_target_ok(ents, owner, ents.transform[i].pos.xy(), w, t);
+            if !ok {
+                (p.man, p.target, p.aim) = (None, None, 0);
+            } else {
+                // Aiming: his own weapon waits.
+                let ws = &mut ents.weapon[i];
+                ws.cooldown = ws.cooldown.max(2);
+                hash.mark_entity_chunk(m.chunk());
+                p.aim = p.aim.saturating_sub(1);
+                if p.aim == 0 {
+                    let from = muzzle(ents.transform[i].pos, &ents.combat[i], body);
+                    if let (Some(ammo), Some(tf)) = (w.ammo, self.vderived.frame(t)) {
+                        let at = crate::gunnery::aim_at(from, tf, p.aim_turret);
+                        let speed: Fx = setup
+                            .ammo
+                            .get(ammo as usize)
+                            .map_or(w.muzzle_speed, |a| a.speed)
+                            .into();
+                        let vr = &setup.rules.vehicles;
+                        let vel = self.vehicles.get(&t).map_or(FxVec2::ZERO, |v| {
+                            if v.avg_vel.length() > Fx::from(vr.moving_speed) {
+                                crate::gunnery::lead_estimate(
+                                    v.avg_vel,
+                                    seed,
+                                    m,
+                                    t,
+                                    ents.kit[i].items[k],
+                                    vr.gunnery.lead_error_pct,
+                                    0,
+                                    100,
+                                )
+                            } else {
+                                v.avg_vel
+                            }
+                        });
+                        let (dir, _) = crate::gunnery::solution(from, at, vel, speed);
+                        let dist = (at - from).length();
+                        let still = is_still(&ents.velocity[i], body);
+                        let pct = spread_pct(
+                            &setup.rules.combat,
+                            &ents.combat[i],
+                            !still,
+                            dist,
+                            w.range_max.into(),
+                        ) * training_of(setup, sq).spread_pct as i64
+                            / 100;
+                        let spread = Fx::from_raw(
+                            (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64)
+                                as i32,
+                        );
+                        let mut rng = RngStream::new(seed, tick, m, Purpose::SINGLE_SHOT);
+                        let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
+                        let up = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
+                        let shot =
+                            (dir + right * tri(&mut rng, spread) + up * tri(&mut rng, spread))
+                                .normalize_or_zero();
+                        out.push(FireRequest {
+                            shooter: m,
+                            seq: 0,
+                            pos: from,
+                            vel: shot * speed,
+                            weapon: wi,
+                            player: owner.0,
+                            ttl: round_ttl(w),
+                            he: true,
+                            ammo,
+                        });
+                        *rockets += 1;
+                        ents.kit[i].items[k] -= 1;
+                        ents.combat[i].since_shot = 0;
+                        let ws = &mut ents.weapon[i];
+                        ws.cooldown = ws.cooldown.max((hz / 2) as u16);
+                        if let Some(pl) = self.players.get_mut(owner.0 as usize) {
+                            pl.s4.single_shots += 1;
+                        }
+                    }
+                    p.gap = setup.rules.items.single_shot_gap_ticks.min(u16::MAX as u32) as u16;
+                    (p.man, p.target) = (None, None);
+                }
+            }
+        }
+        if p.man.is_none() && p.gap == 0 && p.search == 0 {
+            p.search = (hz / 3).max(1) as u16;
+            // The `AttackUnit` vehicle first, then the nearest (man,
+            // vehicle) pair; at most `LOS_TRIES` lines of fire tried.
+            let mut cands: Vec<(u64, SimId, SimId)> = Vec::new();
+            for &m in &sq.members {
+                if !able(ents, m) {
+                    continue;
+                }
+                let at = ents.transform[m.index()].pos.xy();
+                for (&t, ts) in &self.vehicles {
+                    if ts.wreck_tick.is_some() || !self.launcher_target_ok(ents, owner, at, w, t) {
+                        continue;
+                    }
+                    let d = (ents.transform[t.index()].pos.xy() - at).length_sq_raw();
+                    let key = if p.attack == Some(t) { d / 4 } else { d.max(1) };
+                    cands.push((key, m, t));
+                }
+            }
+            cands.sort_unstable();
+            for &(_, m, t) in cands.iter().take(LOS_TRIES) {
+                let i = m.index();
+                let from = muzzle(ents.transform[i].pos, &ents.combat[i], body);
+                let Some(tf) = self.vderived.frame(t) else {
+                    continue;
+                };
+                let Some(part) = crate::gunnery::aim_choice(from, tf, terrain) else {
+                    continue;
+                };
+                let at = crate::gunnery::aim_at(from, tf, part == armour::BoxPart::Turret);
+                if self.smoke_blocks(from, at, tick, (t, m)) {
+                    continue;
+                }
+                p.man = Some(m);
+                p.target = Some(t);
+                p.aim_turret = part == armour::BoxPart::Turret;
+                p.aim = it.windup_ticks.clamp(1, u16::MAX as u32) as u16;
+                let ws = &mut ents.weapon[i];
+                ws.cooldown = ws.cooldown.max(2);
+                hash.mark_entity_chunk(m.chunk());
+                break;
+            }
+        }
+        if p != before {
+            self.squads.get_mut(&id).expect("live").pzf = Some(p);
+        }
+    }
+
+    /// S4 crew weapons (module docs "Crew weapons"): counts squad `id`'s
+    /// drops down; a drop whose time ran out goes to the nearest living
+    /// man not carrying a crew weapon (crew assistants and ammo bearers
+    /// first, ties by ascending id), who drops his own weapon and takes
+    /// aim afresh. With nobody to take it, it is lost.
+    fn pick_up(&mut self, ents: &mut Entities, hash: &mut HashCache, id: SquadId) {
+        use frontline_content::setup::member_trait;
+        let setup = &self.setup;
+        let sq = self.squads.get_mut(&id).expect("live");
+        let ty = &setup.squad_types[sq.type_idx as usize];
+        let mut k = 0;
+        while k < sq.drops.len() {
+            let d = &mut sq.drops[k];
+            d.ticks = d.ticks.saturating_sub(1);
+            if d.ticks > 0 {
+                k += 1;
+                continue;
+            }
+            let d = sq.drops.remove(k);
+            let picker = sq
+                .members
+                .iter()
+                .copied()
+                .filter(|m| !setup.weapons[ents.kit[m.index()].weapon as usize].crew)
+                .min_by_key(|m| {
+                    let kit = &ents.kit[m.index()];
+                    let traits = ty.members.get(kit.slot as usize).map_or(0, |s| s.traits);
+                    let helper =
+                        traits & (member_trait::CREW_ASSISTANT | member_trait::AMMO_BEARER);
+                    let dist = (ents.transform[m.index()].pos.xy() - d.at).length_sq_raw();
+                    (helper == 0, dist, m.0)
+                });
+            let Some(p) = picker else { continue };
+            let i = p.index();
+            let w = &setup.weapons[d.weapon as usize];
+            ents.kit[i].weapon = d.weapon;
+            // He drops his own weapon and target and takes aim afresh.
+            ents.combat[i].target = None;
+            ents.combat[i].retarget = 0;
+            match &mut sq.launcher {
+                Some(l) if d.weapon == ty.weapon && l.carrier.is_none() => l.carrier = Some(p),
+                _ => {
+                    // A gun or tube: a fresh belt, and set up again.
+                    ents.combat[i].mag = w.magazine.min(u16::MAX as u32) as u16;
+                    ents.combat[i].still = 0;
+                }
+            }
+            hash.mark_entity_chunk(p.chunk());
+            if let Some(pl) = self.players.get_mut(sq.owner.0 as usize) {
+                pl.s4.pickups += 1;
+            }
+            self.pickup_events.push(crate::game::PickupEvent {
+                squad: id,
+                man: p,
+                weapon: d.weapon,
+            });
         }
     }
 
@@ -872,20 +1136,8 @@ impl MatchState {
         let ty = &setup.squad_types[sq.type_idx as usize];
         let w = &setup.weapons[ty.weapon as usize];
         let mut l = sq.launcher.clone().expect("launcher squad");
-        // Hand-over: the carrier fell (`kill` started the count); the next
-        // living man takes it up when it runs out.
-        if l.carrier.is_none() {
-            l.handover = l.handover.saturating_sub(1);
-            if l.handover == 0
-                && let Some(&next) = sq.members.first()
-            {
-                l.carrier = Some(next);
-                // He drops his rifle target and takes aim afresh.
-                ents.combat[next.index()].target = None;
-                ents.combat[next.index()].retarget = 0;
-                hash.mark_entity_chunk(next.chunk());
-            }
-        }
+        // S4: while the carrier's launcher waits for the next man (a
+        // `WeaponDrop`, picked up in `pick_up`), nobody fires it.
         let Some(c) = l.carrier else {
             self.squads.get_mut(&id).expect("live").launcher = Some(l);
             return;
@@ -2130,6 +2382,9 @@ impl MatchState {
     ) {
         let i = id.index();
         let owner = ents.owner[i].0 as usize;
+        // S4: what he carried (a crew weapon is dropped where he fell).
+        let carried = ents.kit[i].weapon;
+        let fell_at = ents.transform[i].pos.xy();
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();
         let prone = Fx::from_milli(self.setup.rules.combat.body.prone_mm as i32);
@@ -2163,15 +2418,29 @@ impl MatchState {
         if sq.focus == Some(id) {
             sq.focus = None;
         }
-        // An AT team's gunner fell: the launcher waits for the next man
-        // (S3, `fire_launchers`).
-        if let Some(l) = &mut sq.launcher
-            && l.carrier == Some(id)
+        // S4: a crew weapon (an AT team's launcher since S3) waits
+        // `handover_ticks` for the next man (`pick_up`); other weapons stay
+        // with the man who carried them.
+        if let Some(p) = &mut sq.pzf
+            && p.man == Some(id)
         {
-            let ty = &self.setup.squad_types[sq.type_idx as usize];
-            let w = &self.setup.weapons[ty.weapon as usize];
-            l.carrier = None;
-            l.handover = w.handover_ticks.min(u16::MAX as u32) as u16;
+            (p.man, p.target, p.aim) = (None, None, 0);
+        }
+        let ty = &self.setup.squad_types[sq.type_idx as usize];
+        if ty.vehicle.is_none() {
+            let w = &self.setup.weapons[carried as usize];
+            if let Some(l) = &mut sq.launcher
+                && l.carrier == Some(id)
+            {
+                l.carrier = None;
+            }
+            if w.crew && sq.drops.len() < crate::game::MAX_DROPS {
+                sq.drops.push(crate::game::WeaponDrop {
+                    weapon: carried,
+                    at: fell_at,
+                    ticks: w.handover_ticks.min(u16::MAX as u32) as u16,
+                });
+            }
         }
         for q in &mut self.path_queue.queues {
             q.retain(|r| *r != PathReq::Unit(id));
@@ -2235,6 +2504,8 @@ pub(crate) fn status(
         }
         changed = true;
         let sq = ctx.squad[i].and_then(|s| ctx.game.squad(s));
+        // S4: training scales the decay and the steadiness.
+        let tr = sq.map(|s| training_of(setup, s));
         // S3b: a ducked man's meter decays slower (`duck_decay_pct`).
         let decay = if c.ducked {
             (rules.suppression_decay_milli as u64 * rules.suppression.duck_decay_pct as u64 / 100)
@@ -2242,19 +2513,23 @@ pub(crate) fn status(
         } else {
             rules.suppression_decay_milli
         };
+        let decay = tr.map_or(decay, |t| pct_of(decay, t.suppression_decay_pct));
         let u = &ctx.unit[i];
         let retreating = if u.detached {
             u.order == UnitOrder::Retreat
         } else {
             sq.is_some_and(|s| s.order == Order::Retreat)
         };
-        let weapon = sq.map(|s| &setup.weapons[weapon_of(setup, s, SimId(i as u32)) as usize]);
+        let weapon = sq.map(|_| &setup.weapons[ctx.kit[i].weapon as usize]);
         c.suppression = c.suppression.saturating_sub(decay);
         let points = c.suppression / 1000;
         // S3b: the squad type's steadiness scales the pin and duck
         // thresholds (the veterancy hook).
         let steadiness = sq.map_or(100, |s| {
-            setup.squad_types[s.type_idx as usize].steadiness_pct
+            pct_of(
+                setup.squad_types[s.type_idx as usize].steadiness_pct,
+                training_of(setup, s).steadiness_pct,
+            )
         });
         c.pinned = points >= steady(rules.pin_suppression, steadiness) && !retreating;
         let pos = ctx.transform[i].pos;
@@ -2963,6 +3238,8 @@ mod tests {
             .position(|t| r.game.setup().weapons[t.weapon as usize].class == WeaponClass::Mg)
             .unwrap();
         r.game.squads.get_mut(&r.squad).unwrap().type_idx = mg as u16;
+        // S4: the man carries the MG himself (`Kit::weapon`).
+        r.ents.kit[man.index()].weapon = r.game.setup().squad_types[mg].weapon;
         r.ents.combat[man.index()].still = u16::MAX;
         check(&mut r, O::Auto, 0, S::Prone);
         check(&mut r, O::Crouch, 0, S::Crouch);

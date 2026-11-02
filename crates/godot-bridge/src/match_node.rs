@@ -49,7 +49,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use frontline_content::{ArmourZone, ItemKind, MatchSetup, SeatRole, SquadRole, WeaponClass};
+use frontline_content::setup::Capability;
+use frontline_content::{ArmourZone, ItemKind, MatchSetup, SeatRole, WeaponClass};
 use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
     ArmourEventKind, CommandKind, Fx, NavPhase, OrderKind, Outcome, SeatSnap, SquadId, World,
@@ -1121,7 +1122,7 @@ impl MatchRuntime {
         self.setup
             .squad_types
             .get(type_idx as usize)
-            .map_or("rifle", |t| role_name(t.role))
+            .map_or("rifle", |_| role_name(&self.setup, type_idx))
     }
 
     /// Sim `[x, y, z]` → Godot.
@@ -1656,7 +1657,7 @@ impl MatchRuntime {
             .roster
             .iter()
             .map(|&t| &setup.squad_types[t as usize])
-            .find(|t| t.role == SquadRole::Mortar)
+            .find(|t| t.has(Capability::Barrage))
             .map(|t| &setup.weapons[t.weapon as usize]);
 
         let mut map = vdict! {
@@ -1765,6 +1766,8 @@ impl MatchRuntime {
         let mut soldiers = VarArray::new();
         let mut units: BTreeMap<u32, PackedInt32Array> = BTreeMap::new();
         let mut detached = f.units.iter().peekable();
+        // S4: squad types by squad id (own soldiers' role words, weapons).
+        let squad_type: BTreeMap<u32, u16> = f.squads.iter().map(|s| (s.id, s.type_idx)).collect();
         for (i, &id) in f.ids.iter().enumerate() {
             if !f.visible[i] {
                 continue;
@@ -1800,6 +1803,20 @@ impl MatchRuntime {
                 d.set("stance_override", stance_order_name(f.stance_order[i]));
                 d.set("detached", f.detached[i]);
                 d.set("items", &items_dict(f.items[i].map(u16::from)));
+                // S4: his role word (member slot), his own weapon, and
+                // whether it is a crew weapon (marked on the squad card).
+                let ty = squad_type
+                    .get(&sq)
+                    .and_then(|&t| setup.squad_types.get(t as usize));
+                if let Some(m) = ty.and_then(|ty| ty.members.get(f.member_slot[i] as usize)) {
+                    d.set("name", crate::s4_ui::slot_word(&m.slot).as_str());
+                }
+                if let Some(w) = f.weapon.get(i).and_then(|&w| setup.weapons.get(w as usize))
+                    && ty.is_some_and(|t| t.vehicle.is_none())
+                {
+                    d.set("weapon", w.short_name.as_str());
+                    d.set("crew_weapon", w.crew);
+                }
                 while detached.next_if(|u| u.id < id).is_some() {}
                 if f.throwing[i] {
                     d.set("order", "throw");
@@ -1872,10 +1889,18 @@ impl MatchRuntime {
             let ty = &setup.squad_types[t as usize];
             let mut d = vdict! {
                 "id" => ty.id.as_str(),
-                "type" => role_name(ty.role),
+                "type" => role_name(setup, t),
                 "name" => ty.name.as_str(),
                 "men" => ty.men as i64,
                 "pop" => ty.pop(&setup.vehicles) as i64,
+                // S4: tile name, tags, the understrength marker and the
+                // tooltip gloss.
+                "short" => ty.short_name.as_str(),
+                "tags" => &PackedStringArray::from_iter(
+                    crate::s4_ui::tag_words(setup, ty).iter().map(GString::from),
+                ),
+                "understrength" => crate::s4_ui::understrength(setup, ty),
+                "gloss" => crate::s4_ui::card_gloss(setup, t).as_str(),
             };
             if let Some(v) = ty.vehicle.and_then(|v| setup.vehicles.get(v as usize)) {
                 d.set("vehicle", short_id(&v.id));
@@ -2371,6 +2396,35 @@ impl MatchRuntime {
     fn squad_dict(&self, s: &SquadView) -> VarDictionary {
         let setup = &self.setup;
         let ty = &setup.squad_types[s.type_idx as usize];
+        let s4 = |d: &mut VarDictionary| {
+            // S4: tags and capabilities (orders follow them), the
+            // understrength marker, and (own squads) the role word of each
+            // formation slot for the card's rows of fallen men.
+            d.set(
+                "tags",
+                &PackedStringArray::from_iter(
+                    crate::s4_ui::tag_words(setup, ty).iter().map(GString::from),
+                ),
+            );
+            d.set(
+                "capabilities",
+                &PackedStringArray::from_iter(
+                    crate::s4_ui::capability_words(ty)
+                        .into_iter()
+                        .map(GString::from),
+                ),
+            );
+            d.set("understrength", crate::s4_ui::understrength(setup, ty));
+            if s.owner == self.local && ty.vehicle.is_none() {
+                d.set(
+                    "slot_names",
+                    &PackedStringArray::from_iter(
+                        (0..ty.men as usize)
+                            .map(|k| GString::from(crate::s4_ui::spawn_slot_word(ty, k).as_str())),
+                    ),
+                );
+            }
+        };
         let men = s.men.max(1) as u32;
         let supp = s.suppression_sum as f32 / (100.0 * men as f32);
         let status = if s.order == OrderKind::Retreat {
@@ -2409,7 +2463,7 @@ impl MatchRuntime {
         let mut d = vdict! {
             "id" => s.id as i64,
             "owner" => s.owner as i64,
-            "type" => role_name(ty.role),
+            "type" => role_name(setup, s.type_idx),
             "name" => ty.name.as_str(),
             "men" => s.men as i64,
             "men_max" => ty.men as i64,
@@ -2457,6 +2511,7 @@ impl MatchRuntime {
             d.set("crew_of", v.id as i64);
             d.set("crew_of_name", vehicle_short(&self.setup, v.type_idx));
         }
+        s4(&mut d);
         d
     }
 

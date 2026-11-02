@@ -342,7 +342,11 @@ fn prepare_unit(
 /// S4 canonical view of a unit: legacy soldiers expanded into `members`,
 /// `tags` and `capabilities` from the role when left empty, derived
 /// capabilities added, and the card keys under their S4 names.
-fn finish_unit(s: &mut SquadDef, weapons: &BTreeMap<String, WeaponDef>) -> Vec<Issue> {
+fn finish_unit(
+    s: &mut SquadDef,
+    weapons: &BTreeMap<String, WeaponDef>,
+    items: &BTreeMap<String, ItemDef>,
+) -> Vec<Issue> {
     let mut out = Vec::new();
     if s.role != SquadRole::Vehicle && s.members.is_empty() {
         s.members = expand_legacy(s);
@@ -356,9 +360,23 @@ fn finish_unit(s: &mut SquadDef, weapons: &BTreeMap<String, WeaponDef>) -> Vec<I
     }
     let class_of = |w: &str| weapons.get(w).map(|d| d.class);
     let has = |c: WeaponClass| s.members.iter().any(|m| class_of(&m.weapon) == Some(c));
+    // S4 Part B: a single-shot AT item (Panzerfaust) in the kit gives
+    // `at_hunt` too.
+    let single_shot = s.members.iter().any(|m| {
+        m.items.iter().any(|(id, &n)| {
+            n > 0
+                && items
+                    .get(id)
+                    .is_some_and(|d| d.kind == crate::defs::ItemKind::SingleShotAt)
+        })
+    });
     let derived = [
         ("barrage", has(WeaponClass::Mortar), "a mortar"),
-        ("at_hunt", has(WeaponClass::Launcher), "a launcher"),
+        (
+            "at_hunt",
+            has(WeaponClass::Launcher) || single_shot,
+            "a launcher or a single-shot AT item",
+        ),
     ];
     for (cap, yes, what) in derived {
         debug_assert!(DERIVED_CAPABILITIES.contains(&cap));
@@ -482,7 +500,7 @@ impl ModDefs {
             "units",
             SquadDef::validate,
             |s: &mut SquadDef, r: &Resolved| prepare_unit(s, r, &weapons),
-            |s: &mut SquadDef| finish_unit(s, &weapons),
+            |s: &mut SquadDef| finish_unit(s, &weapons, &items),
             &mut is[k("units")],
         );
         // The S1-S3 report order: units, weapons, items, factions, maps,

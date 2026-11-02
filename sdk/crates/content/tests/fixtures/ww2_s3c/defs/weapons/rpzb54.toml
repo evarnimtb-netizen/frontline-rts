@@ -1,0 +1,26 @@
+# Raketenpanzerbüchse 54 "Panzerschreck" (S3): the German AT team's
+# launcher. It only targets vehicles; the loader's rifle engages infantry.
+id = "ww2:rpzb54"
+name = "RPzB 54 Panzerschreck"
+class = "launcher"
+range_m = 150
+damage = 300
+rounds_per_min = 6
+magazine = 1
+# 16 s without the loader (the crew rule doubles it).
+reload_ms = 8000
+spread_mrad = 12
+# Must match the rocket's speed.
+muzzle_velocity_m_s = 110
+suppression = 20
+# Opens fire on a vehicle standing still within 120 m, a moving one
+# (over 1 m/s) within 70 m.
+engage_still_m = 120
+engage_moving_m = 70
+# The backblast gives the team away.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+ammo = "ww2:rpzb54_heat"
+rounds_carried = 6
+# The next living man takes the launcher this long after the gunner dies.
+handover_ms = 3000

@@ -45,6 +45,9 @@ const ROW_STANCE := [
 	[&"auto", "Auto", &"", "Stance chosen by the situation (the default)."],
 ]
 const REGROUP := [&"regroup", "Regroup", &"order_regroup", "Detached men of the selected squads rejoin their squad's formation."]
+## S4: takes the Satchel slot when the selection carries Panzerfausts and
+## no satchel (German line squads).
+const PANZERFAUST := [&"panzerfaust", "Pzfaust", &"ability_satchel", "Panzerfaust 60: click a seen enemy vehicle. The selected squads that carry one aim at it first and close in; a man fires within 60 m (40 m at a moving vehicle). The men also fire on their own at vehicles in reach."]
 ## S3c.
 const CREW := [&"crew", "Crew", &"order_crew", "Click an abandoned vehicle: the selected squads walk to it and man it. Tank crews man it fully; other infantry (not AT teams) man it untrained (slower reload and traverse, wider spread). An enemy's abandoned vehicle is captured. Needs a free vehicle slot and pop. Right-click on it with a tank crew selected does the same."]
 const BAIL := [&"bail", "Bail out", &"", "The crew leave the vehicle by its hatches and become a crew squad; the vehicle stays, abandoned, and can be re-crewed (by anyone, enemies included). Press twice within 2 s."]
@@ -66,9 +69,12 @@ const ROW_AMMO := [
 	[&"ammo_apcr", "APCR", &"", "Fire the special APCR rounds (a handful, Panzer IV only). N cycles Auto, AP, APCR, HE."],
 	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, APCR, HE."],
 ]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew"]
+const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"panzerfaust"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
+## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
+## throw).
+const COUNTED := [&"frag", &"smoke", &"satchel", &"panzerfaust"]
 const STANCE_IDS := [&"stand", &"crouch", &"prone"]
 
 var view: MatchView
@@ -78,6 +84,8 @@ var buttons: Array = []
 var grid_mode := "soldier"
 var _hover: StringName = &""
 var _size := Vector2.ZERO
+## S4: the third ability slot shows the Panzerfaust.
+var _pzf_slot := false
 
 
 func bind(v: MatchView) -> void:
@@ -89,9 +97,11 @@ func bind(v: MatchView) -> void:
 func update_state(_s: Dictionary) -> void:
 	var sel: Node = view.selection
 	var want := "vehicle" if not sel.selected_vehicles().is_empty() and sel.selected_soldiers().is_empty() else "soldier"
-	if size != _size or buttons.is_empty() or want != grid_mode:
+	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot:
 		_size = size
 		grid_mode = want
+		_pzf_slot = pzf
 		_layout()
 	queue_redraw()
 
@@ -117,7 +127,8 @@ func _layout() -> void:
 			_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
 		return
 	for i in ROW_ABILITY.size():
-		_add(ROW_ABILITY[i], Rect2(i * (abw + g), 0, abw, bh), "ability")
+		var def: Array = PANZERFAUST if i == 2 and _pzf_slot else ROW_ABILITY[i]
+		_add(def, Rect2(i * (abw + g), 0, abw, bh), "ability")
 	for i in ROW_ORDERS.size():
 		_add(ROW_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
 	# S3c: the stance strip spans three columns; Crew takes the fourth.
@@ -218,7 +229,7 @@ func _draw() -> void:
 		var txt_col := HudStyle.TEXT if on else HudStyle.OFF_TEXT
 		_draw_key(b, bold, key_col)
 		# Count badge on the item buttons.
-		if id in ITEMS:
+		if id in COUNTED:
 			var n: int = sel.item_count(String(id))
 			HudStyle.text(self, bold, Vector2(r.end.x - 6.0, r.position.y + 16.0), "×%d" % n, HudStyle.FONT_SMALL, txt_col, 1)
 		# S3c: Bail out waits for its second press.

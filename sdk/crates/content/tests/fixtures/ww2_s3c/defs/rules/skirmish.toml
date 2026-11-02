@@ -1,0 +1,866 @@
+# Skirmish rules (docs/slices/S1-skirmish.md "Economy", "Victory", "Capture").
+id = "ww2:skirmish"
+name = "Skirmish"
+tick_hz = 30
+hash_interval = 30
+tickets = 500
+# Soldiers per side, alive or called in.
+pop_cap = 120
+projectile_cap = 2048
+
+[economy]
+start_manpower = 600
+income_per_min = 240
+# Extra income per held capture point.
+point_income_per_min = 60
+
+[tickets_drain]
+# Per point of difference in held points.
+per_min_per_point = 20
+
+[capture]
+radius_m = 15
+time_s = 20
+# Capture speeds up with each man up to this many.
+max_men = 4
+# Each man beyond the first adds this much speed (percent of one man's).
+# S3b: was rules.rs CAPTURE_EXTRA_MAN_PCT (S1 value).
+extra_man_pct = 50
+
+[movement]
+# Path cost multiplier per 100 % grade: cost = base * (100 + grade_pct * slope_cost_pct / 100) / 100.
+slope_cost_pct = 300
+# Grid steps steeper than this are impassable.
+max_slope_pct = 80
+arrive_cm = 40
+retreat_speed_pct = 140
+# Members behind their formation slot walk this much faster.
+catch_up_speed_pct = 125
+# A man ordered prone crawls at this much of his walking speed.
+prone_speed_pct = 30
+# A* node expansions per tick (all players), and per single search.
+path_budget_per_tick = 4000
+path_max_expansions = 8000
+# Steps between two trench cells cost this much of a normal step, so squads
+# already in a trench line prefer to follow it.
+trench_cost_pct = 60
+# Infantry step cost into an AT-ditch cell (percent): men go round a ditch
+# when a short detour exists (S3). S3b: was path.rs DITCH_COST_PCT.
+ditch_cost_pct = 300
+
+# Squad walking and soldier movement details. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[movement.formation]
+# A leader (or a detached man) moves on to his next waypoint within this (m).
+waypoint_reach_m = 2
+# A member this far from his slot is behind and speeds up (m).
+catch_up_m = 2
+# A member this far from his slot makes the leader slow down (m) ...
+stretched_m = 10
+# ... to this share of his speed (percent).
+stretched_speed_pct = 70
+# Members on the move aim this far past their moving slot, so they keep
+# walking with the leader instead of stopping at it every tick (mm).
+slot_lead_mm = 1500
+# Arriving gives up waiting for stragglers after this long (s).
+arrive_timeout_s = 20
+# A man this close to a vehicle's avoidance circle, heading into it, slides
+# round it instead of stopping in front of the hull (mm, S3).
+slide_gap_mm = 1500
+# Steep dug ground (trench walls, craters): grades up to this do not slow a
+# man (percent grade over the next 0.25 m) ...
+steep_free_pct = 60
+# ... and his slowest pace is this much of his speed (percent). A 1.6 m
+# trench wall (about 400 % grade) is climbed at about 15 %.
+steep_min_pct = 15
+
+# Dig profiles: a flat floor, walls sloping out over wall_cm to the lip,
+# and a spoil bank (parapet or berm) on the enemy side. One man at
+# dig_rate_pct = 100 does 100 work points per second.
+[dig.profiles.trench]
+depth_cm = 160
+floor_cm = 80
+wall_cm = 40
+parapet_cm = 30
+max_length_m = 60
+# A rifle squad digs 20 m in about 3.5 min.
+work_per_m = 8400
+# It deepens in this many equal passes (each pass is visible).
+passes = 8
+
+# The anti-tank ditch (S3): about 3.4 m wide at the top and 2.3 m deep, so
+# vehicles cannot cross it (their ditch_block_dm is 19). Engineers only;
+# one 5-man engineer squad digs 10 m in about 3.7 min.
+[dig.profiles.at_ditch]
+depth_cm = 230
+floor_cm = 100
+wall_cm = 120
+parapet_cm = 60
+max_length_m = 30
+work_per_m = 22000
+passes = 8
+engineers_only = true
+
+# Every dig profile: the spoil bank shape and how close a digger works.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[dig.common]
+# The parapet rises over this run beyond the lip (mm) ...
+parapet_rise_mm = 300
+# ... stays at full height over this run (mm) ...
+parapet_top_mm = 400
+# ... and falls back to the ground over this run (mm).
+parapet_fall_mm = 600
+# The parapet only raises ground at most this far below the base surface,
+# so it never fills another trench or a crater (mm).
+parapet_undug_mm = 50
+# A digger works when this close to his spot (mm).
+reach_mm = 1500
+# S3b: an HE crater centred on raised spoil (a parapet) blows the loose
+# spoil away within its radius down to this share of the crater depth below
+# the spoil's top (never below the base surface) and raises no rim there
+# (%). 150: loose earth flies further than dug ground; tank HE (0.3 m deep)
+# then takes up to 0.45 m off a parapet (docs/slices/S3b-balance.md P5).
+spoil_crater_pct = 150
+
+[combat]
+# Spotting: LOS rays per player per tick, and how often each enemy soldier
+# is re-checked while the budget lasts. Each check tries the nearest few
+# observers in range (one ray each).
+spot_rays_per_tick = 160
+spot_period_ms = 200
+spot_observers = 2
+# Sight range against prone, entrenched, wooded and firing targets (percent
+# of the observer's sight; a recent shot replaces the other three).
+prone_spot_pct = 50
+trench_spot_pct = 60
+woods_spot_pct = 50
+firing_spot_pct = 150
+reveal_ms = 2000
+# Suppression, in points out of 100: rounds passing within near_miss_cm add
+# the weapon's `suppression`, a hit adds hit_suppression. Soldiers crouch at
+# crouch_suppression and are pinned (prone, no movement, worse aim) at
+# pin_suppression.
+near_miss_cm = 200
+hit_suppression = 25
+suppression_decay_per_s = 8
+crouch_suppression = 30
+pin_suppression = 70
+# Accuracy: weapon spread is scaled while moving and while pinned, and grows
+# linearly with range up to range_spread_pct extra at full range.
+moving_spread_pct = 250
+pinned_spread_pct = 200
+range_spread_pct = 50
+# A man firing from a trench stands on the fire step, this much above the
+# parapet.
+fire_exposure_cm = 30
+corpse_s = 30
+
+# A soldier's hit capsule and posture points, heights from the feet.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.body]
+# Capsule heights by stance (mm): a standing man about 1.75 m.
+stand_mm = 1750
+crouch_mm = 1200
+prone_mm = 400
+# Capsule radius standing or crouched (mm).
+radius_mm = 250
+# Prone: a horizontal capsule along the heading, radius and half length (mm).
+prone_radius_mm = 200
+prone_half_mm = 700
+# The muzzle sits this far below the top of the firing capsule (mm).
+muzzle_drop_mm = 150
+# Shooters aim at a man on a fire step this far below his top: head and
+# shoulders (mm).
+head_aim_mm = 150
+# Eyes (and the head spotting point) this far below the top (mm).
+eye_drop_mm = 100
+# A man this far below the base surface stands in a trench (mm).
+trench_depth_mm = 1000
+# Slower than this counts as standing still: MG and mortar set-up, moving
+# spread (mm/s).
+still_mm_s = 300
+
+# Mortar laying and flight. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.mortar]
+# Muzzle height above the crew's feet (mm).
+muzzle_mm = 800
+# Flight time is sqrt(range in m * flight_milli / 1000) s, at least
+# min_flight_s: about a 60 degree arc at every range.
+flight_milli = 350
+min_flight_s = 4
+# A team holding out of range walks to 90 % of its range again unless that
+# spot is within this of its last walk; then the barrage ends (m).
+barrage_retry_m = 20
+
+# HE bursts of shells, rockets and thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.blast]
+# Damage and sight rays from a burst start this far above it (mm).
+lift_mm = 300
+# Crater depth roll, percent of the weapon's crater_depth, inclusive.
+crater_depth_min_pct = 75
+crater_depth_max_pct = 140
+# A burst more than this above the ground under it (on a vehicle) carves no
+# crater (mm).
+crater_lift_mm = 500
+# S3c (B8, T9; physical-contact rule): a burst on the ground throws its
+# fragments in the HE def's frag_elev_deg band above the horizontal. Where
+# the ground falls away beside the burst (a shell bursting on a parapet
+# crest above the trench behind it), fragments also go down over the fall:
+# the ground is sampled this far around the burst (8 directions), and the
+# steepest drop lowers the band's minimum by its angle, with extra rays at
+# the band's density (so flat ground is unchanged). Without it a tank HE
+# shell on the crest could never reach men below the lip (S3b T9: 0 kills
+# in 5b). 150 cm: about the parapet's back slope into a 1.5 m trench
+# (cm; 0 turns it off).
+frag_fall_probe_cm = 150
+
+# Suppression details (the thresholds and decay are the [combat] keys
+# above). S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[combat.suppression]
+# A near miss on a man crouched below cover (in a trench, off the fire
+# step) adds this share of the weapon's suppression (percent). S3b: 50 ->
+# 100. The trench already protects by geometry (only rounds passing over
+# the lip or striking the parapet near him count, and they cannot hit
+# him); halving the suppression too made a trench line unpinnable (Gates
+# of Hell: men in a trench still duck under heavy fire). Measured in
+# fortify-test (MG suppressing, rifles from 150 m): 50 -> defenders ducked
+# 12 %, 100 with the duck keys below -> ducked 61 %, pinned 29 %.
+covered_near_miss_pct = 100
+# A burst with earth between it and a man suppresses him this much
+# (percent).
+blast_behind_cover_pct = 50
+# Each point of suppression widens a shooter's spread by this many
+# hundredths of a percent (100: 1 % per point; pinned men use
+# pinned_spread_pct instead).
+spread_per_point_pct = 100
+# S3b duck state (docs/slices/S3b-balance.md B1; owner 2026-11-01: keep
+# the pinning fire, informed by Gates of Hell, where men in a trench keep
+# their heads down under heavy fire and stop returning it). A man in a
+# trench or crater at or above duck_points ducks below the lip: no fire,
+# no throw, the crouched capsule. He comes back up only below
+# duck_release_points. Both (and pin_suppression) are scaled by the squad
+# type's steadiness_pct (all 100 now). Only real rounds, fragments and
+# bursts fill the meter (physical-contact rule). The spec's 35 / 20
+# (points) assumed an MG 42 on a 25 m line gave about 3 near misses a
+# second per man (15 points x 50 % covered = ~24 points/s against a decay
+# of 8); covered_near_miss_pct is now 100 (S3b-25), see below; a rifle
+# squad alone (1-2 points/s per man) does not keep a line ducked. Open ground is
+# unchanged (owner question S3b-3 (A)). Measured (Part B): an MG 34/42 at
+# 150 m on a 30 m line gives each man only ~0.5 near misses a second (wide
+# MG spread, grazing fire into the ground in front), so 35 / 20 ducked a
+# line 12-17 % of the time; 25 / 10 with the slow decay below: ~60 %.
+duck_points = 25
+duck_release_points = 10
+# A ducked man's suppression decays at this share of
+# suppression_decay_per_s: he keeps his head down until the fire slackens
+# (Gates of Hell feel), so a steady MG keeps a line down once it is down
+# (%). 25: a ducked man comes up about 6 s after the last near miss from
+# 25 points, instead of 2 s.
+duck_decay_pct = 25
+
+# The Suppress order (S3b, docs/slices/S3b-balance.md B2; owner 2026-11-01,
+# after Gates of Hell's 2025 "suppression fire" order): men and vehicles
+# hold and fire real rounds at a point or short line without a spotted
+# target. Each shot aims at a random point on the line (counter RNG keyed
+# by shooter and shot count), this high above the ground there.
+[combat.suppress]
+# Rounds below the parapet crest (~0.3 m) stop in it short of the men and
+# rounds more than ~1.6 m over a crouched man's head pass without a near
+# miss, so the aim sits in that band. Part B measurement: 30 cm put half
+# of an MG's rounds into the ground in front (grazing fire from a prone
+# gun); 80 cm raised near misses per round by ~60 %, 120 cm by less (cm).
+aim_cm = 80
+# Longest line one order covers: about two squad frontages (m).
+line_max_m = 40
+# A shot needs a clear line from the muzzle to a point this far short of
+# its aim point (one ray per shot); else it is not fired. 300 cm: a round
+# aimed over a parapet whose crest stands ~1-2 m in front of the line
+# still goes (cm).
+clear_cm = 300
+# A vehicle on Suppress fires its main gun's HE at the line at most every
+# tank_he_s seconds while more than tank_he_reserve HE rounds are left
+# (owner question S3b-2 (A): tanks spend real HE, with a reserve). 12 s:
+# a deliberate rate, about a fifth of the gun's; 6 rounds kept for
+# targets the gunner picks himself.
+tank_he_s = 12
+tank_he_reserve = 6
+# The HE is aimed this high above the ground at the line's middle: 0, so
+# the shell bursts on the parapet or in the trench; aimed at aim_cm it
+# flies over a flat trench line and bursts behind it (cm).
+tank_he_aim_cm = 0
+
+# Cover on arrival: each man moves his slot to the nearest free trench spot,
+# else (an enemy seen) to a spot with terrain between him and that enemy.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[cover]
+# Men look for cover this far from their line slot (m).
+radius_m = 10
+# Only enemies this close to the goal count for terrain cover (m).
+enemy_m = 400
+# Two men's cover spots keep at least this far apart (mm).
+gap_mm = 1200
+# A trench spot needs dug ground this far around it too, so a man who stops
+# near it still stands in the trench (mm).
+trench_margin_mm = 400
+# Enemy eye height and the covered man's chest height for cover rays (mm).
+eye_mm = 1500
+chest_mm = 1000
+
+[items]
+# A soldier in his own base gets one item back this often, up to his
+# loadout.
+resupply_s = 20
+
+# Thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[items.throw]
+# The item leaves the hand this far below the top of the firing capsule
+# (mm).
+release_drop_mm = 150
+# Shortest flight: a satchel dropped at the feet still arcs (ms).
+min_flight_ms = 300
+# Lob steepness: tangent of the launch angle over flat ground, in
+# thousandths (1000 = 45 degrees).
+lob_tan_milli = 1000
+# A smoke cloud reaches this far below its centre (a sight line along a
+# slope) (mm).
+smoke_below_mm = 2000
+
+[vehicles]
+# S3 (docs/slices/S3-armour.md). Vehicles can be called in from 4:00 of
+# match time, at most 4 alive per player (S3b: no call-in queue any
+# more; each vehicle def adds its own re-call cooldown). Tests use the override
+# in mods/ww2/tests/rules_test_unlock.toml (unlock_s = 0).
+unlock_s = 240
+limit = 4
+# Most wrecks on the map; beyond it the oldest is removed.
+wreck_cap = 32
+# A crewman moving into an empty driver or gunner seat.
+seat_swap_s = 4
+crew_hp = 100
+# A crewman below this is wounded (role penalties, see the slice).
+wounded_hp = 50
+# Faster than 1 m/s counts as moving (spotting, spread, launcher fire
+# discipline).
+moving_cm_s = 100
+# Sight range against a moving vehicle (the size factor is the vehicle's
+# spot_size_pct, 300 % after firing is the gun's; the highest applies).
+moving_spot_pct = 250
+# Enemy soldiers this close spot a vehicle without a sight line (engine
+# noise and size).
+near_spot_m = 25
+# Gunnery: spread against a target faster than 1 m/s; each further shot at
+# the same target 20 % tighter down to 50 %; HE at infantry uses a wider
+# area spread and is never fired within 30 m of own men. S3b: the gunner
+# aims at the centre of the target's visible mass (aim_hull_margin_pct,
+# "the weakest plate", is gone). S3b Tune (owner question S3b-21 (A)):
+# moving_target_spread_pct 300 -> 600. The lead estimation error alone
+# barely misses a 5.8 m long crossing hull at 300 m (case 3d 86-91 % of
+# stationary); 500 gave 65 %, 550 60 %, 600 55 % (target <= 60 %). It
+# stands for the tracking and range-estimation errors against a mover
+# that the model does not simulate; wartime first-round hit rates on
+# moving tanks were roughly half of those on still ones. S3b Fix (review
+# M2): the extra (600 - 100 %) scales with the share of the target's
+# speed across the line of fire (|sin| of the angle), so a tank driving
+# straight at the gunner gets none and a crossing one all of it.
+moving_target_spread_pct = 600
+ranging_step_pct = 20
+ranging_floor_pct = 50
+he_area_spread_mrad = 6
+he_clear_m = 30
+# Trench crossing: a track sample over ground dug 1.0 m or more caps speed
+# at 1 m/s; a new crossing (one bog roll) starts after 2 s with none.
+crossing_dug_cm = 100
+crossing_speed_cm_s = 100
+crossing_gap_s = 2
+# Fire: an engine hit for 40+ starts one with 30 %. It burns the engine at
+# 5 HP/s; every 4 s a living crew puts it out with 25 %; after 20 s it
+# knocks the vehicle out.
+fire_min_damage = 40
+fire_start_pct = 30
+fire_burn_hp_s = 5
+fire_check_s = 4
+fire_out_pct = 25
+fire_burnout_s = 20
+# Ammo rack: each hit for 30+ detonates it with rack_detonate_pct, else
+# starts an ammo fire with [vehicles.damage] rack_fire_pct. S3b: 35 -> 20.
+# Reasoning: wartime loss surveys (US and British) recorded most burned-out
+# tanks as propellant fires and a minority as prompt explosions; exact
+# shares are an owner / M2 citation task (docs/slices/S3b-balance.md P2).
+rack_min_damage = 30
+rack_detonate_pct = 20
+# Inside the own base: 2 % of every component's HP per second, one AP or
+# HE round per 2 s, one dead crew seat per 20 s. Free.
+base_repair_pct_s = 2
+base_rearm_s = 2
+base_crew_s = 20
+
+# How a vehicle follows its path, yields and sits on the ground.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.driving]
+# Hull pitch and roll limit (deg) and their fastest change (deg/s).
+max_tilt_deg = 30
+tilt_rate_deg_s = 20
+# Avoidance circle radius: half the hull width plus this (mm).
+circle_pad_mm = 250
+# The driver moves on to the next waypoint within this (m); the last one
+# counts as reached within arrive_mm (mm).
+waypoint_reach_m = 3
+arrive_mm = 2500
+# Over pivot_err_deg of heading error the driver stops pushing and turns,
+# on the spot below pivot_speed_mm_s (mm/s).
+pivot_err_deg = 60
+pivot_speed_mm_s = 1000
+# Full steer at this heading error and beyond (deg).
+full_steer_deg = 10
+# Full throttle up to this heading error, none at pivot_err_deg (deg).
+full_throttle_deg = 20
+# A move to a target behind the hull and this close reverses (m).
+reverse_order_m = 40
+# Yield box length, percent of the hull length.
+yield_len_pct = 150
+# A vehicle slower than this counts as standing for the yield rule (mm/s).
+yield_still_mm_s = 500
+# A friendly soldier this far ahead (m) slows a vehicle to walk_mm_s (mm/s).
+friendly_ahead_m = 4
+walk_mm_s = 1500
+# Less progress than stuck_progress_m (m) in stuck_s (s) re-paths.
+stuck_progress_m = 1
+stuck_s = 5
+# Heading offset to the right while two vehicles meet head-on (deg).
+keep_right_deg = 35
+# A vehicle making no progress backs off for 1 s after this long (s).
+back_off_s = 2
+# At most one re-path per vehicle per this long (s).
+repath_gap_s = 2
+# A face order is done within this heading error (deg).
+face_done_deg = 2
+# An approaching vehicle re-aims when its target moved this far (m).
+approach_slack_m = 15
+# A soldier pushed out of a hull footprint lands this far past its side,
+# beyond his own radius (mm), never onto ground dug push_deeper_mm deeper.
+push_gap_mm = 100
+push_deeper_mm = 100
+# Spotting check points sit this far below the hull and turret tops (mm).
+spot_drop_mm = 100
+
+# Vehicle path costs, percent of a normal step, and blocked ground.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.path]
+woods_pct = 200
+# Ground dug at least dug_dm (craters) and deep_dm (trenches) (dm).
+dug_pct = 150
+dug_dm = 4
+deep_pct = 400
+deep_dm = 10
+# The avoided node of a stuck re-path, and the clearance band next to a
+# blocked node.
+avoid_pct = 800
+margin_pct = 400
+# AT-ditch lines block nodes within this (m); a wreck's footprint is padded
+# by wreck_pad_m (m).
+ditch_reach_m = 2
+wreck_pad_m = 2
+
+# The infantry file behind a vehicle (Escort orders). S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.escort]
+# Rows start this far behind the hull (m) ...
+behind_m = 4
+# ... and are this far apart, as are the files (mm).
+gap_mm = 1500
+# Men per file.
+file_men = 8
+
+# Vehicle weapons and hits on vehicles (gun and turret rates are in each
+# vehicle def). S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[vehicles.gunnery]
+# The coax engages men this close to the turret's line (deg).
+coax_cone_deg = 5
+# A spall ray ends after this (m). (S3b: external_reach_mm is gone; a round
+# must strike the barrel box to damage the gun.)
+spall_reach_m = 3
+# Tank HE at infantry: enemy men within this of a man count as his group
+# when the gunner picks the best group (m). 6: the old HE damage radius it
+# used to read, so target choice is unchanged.
+he_group_m = 6
+# S3b lead estimation error (owner question S3b-6 (A)): against a moving
+# target the gunner leads by his estimate of its velocity, the ~1 s average
+# times (1 + e), e triangular within +-lead_error_pct; each further shot at
+# the same target shrinks e like the spread (ranging_step_pct down to
+# ranging_floor_pct). 40: a starting value; wartime first-round hit rates
+# on moving targets were far below stationary ones, and the error was
+# mostly in the speed and angle estimate (docs/slices/S3b-balance.md P4).
+lead_error_pct = 40
+# S3b: Auto loads a gun's special penetrator (PzGr 40 APCR) only against a
+# target the standard round penetrates with less than this chance, and only
+# when the special round's chance is higher (%). 50: the spec's rule
+# (docs/slices/S3b-balance.md P1 (c)).
+special_below_pct = 50
+
+# S3b: what a hit on the ammo stowage does (docs/slices/S3b-balance.md P2).
+[vehicles.damage]
+# A rack hit that does not detonate starts an ammo fire with this chance
+# (%); a rack destroyed by damage burns unless the detonation roll succeeds.
+# 60: most penetrations that reached stowed rounds started a propellant
+# fire (loss surveys; citation is an owner / M2 task).
+rack_fire_pct = 60
+# An ammo fire knocks the vehicle out after this long; the crew cannot put
+# it out (s). 8: propellant fires took hold within seconds.
+ammo_fire_s = 8
+
+# S3c bail-out (owner decision S3b-5 (B), 2026-11-01; triggers are owner
+# question S3c-1 (A), docs/slices/S3c-armour.md "Triggers"). The surviving
+# crew of a vehicle with a crew_squad leave it by its hatches as a crew
+# squad; the vehicle stays, abandoned, and can be re-crewed. A rack
+# detonation still destroys the vehicle with everyone in it. Survival
+# reference: Dupuy, Attrition (1990) pp. 80-81, about one crew casualty per
+# US tank lost (898 losses, 1944-45); crews left burning tanks within
+# seconds.
+[vehicles.bail]
+# 1: the crew bail out as soon as an ammo fire starts. Propellant fires gave
+# seconds; crews left at once.
+ammo_fire_bail = 1
+# The crew bail out of an engine fire still burning after this long (s).
+# 8: two fire_check_s tries with the extinguishers first.
+engine_fire_bail_s = 8
+# The crew bail out when fewer than this many are alive (men). 3: two men
+# cannot drive, load and fire. Replaces S3b's crew_ko_below = 2.
+crew_below = 3
+# 1: bail out of a tank whose main gun is destroyed and that cannot move
+# (track, engine or transmission out): it can neither fight nor leave.
+useless_bail = 1
+# A tank with its gun destroyed or immobilised that is penetrated again
+# within this long of the previous penetration is abandoned (s): "disabled
+# under fire", the second penetration tells the crew they are a target.
+under_fire_s = 10
+# A crewman below this many HP is wounded (HP of crew_hp 100) ...
+wounded_hp = 50
+# ... and takes this share of his hatch's exit time (%). 150: a starting
+# value.
+wounded_exit_pct = 150
+# A man out of the hatch stands this far outside the hull box, on the side
+# away from the last hit (cm).
+exit_clear_cm = 60
+# He cannot fire for this long after getting out (ms): climbing down the
+# hull.
+dismount_ms = 1500
+# He arrives with this much suppression (points; 40 = crouch): a crew that
+# just left a burning tank keeps low. A state from the event, not damage.
+bail_suppression = 40
+# Most abandoned vehicles on the map; beyond it the oldest becomes a wreck
+# (counted "scrapped"). 16: half the wreck cap.
+abandoned_cap = 16
+# A crew squad in its own base with no order is dismissed after this long
+# (s), no refund (owner question S3c-4 (A)): the base refills dead crew
+# seats for free, so crews are not banked.
+crew_dismiss_s = 30
+
+# S3c re-crewing an abandoned vehicle (owner questions S3c-2, S3c-3 (A)).
+[vehicles.recrew]
+# The squad boards within this of the hull (m).
+reach_m = 4
+# Time for the men at one hatch to get in, per man (s); the hatches work at
+# once, so a crew of five through five hatches takes 3 s. A starting value.
+board_s = 3
+# Fewest men a squad needs to re-crew: driver and gunner. The effective
+# minimum is max(min_men, [vehicles.bail] crew_below), 3 with the values
+# here, so a re-crewed tank is never at once abandoned again for too few men
+# (S3c-14).
+min_men = 2
+# 1: any infantry squad but AT teams may board, untrained (genre reference:
+# infantry can man an empty tank, poorly).
+any_infantry = 1
+# 1: an enemy squad may capture an abandoned vehicle (genre reference; owner
+# question S3c-2 (A)). The captor needs a free vehicle slot and pop.
+capture = 1
+# 1: only a tank crew squad may capture an enemy's vehicle; infantry may
+# still re-crew their own side's (S3c Fix, owner question S3c-32 (A)).
+# Reasoning: an enemy tank's controls, sights, radio and ammunition are
+# unfamiliar; captured tanks (German "Beutepanzer", US use of captured
+# Panthers) were taken into service by trained tank crews, not by riflemen
+# in the field. It also keeps a human from walking three riflemen onto a
+# 600 MP tank the AI cannot take back (S3c review, balance finding 1).
+capture_needs_crew = 1
+# An untrained loader (or a gunner without a loader) reloads this slowly
+# (% of the reload time). 150: a starting value.
+untrained_reload_pct = 150
+# An untrained gunner traverses the turret at this share (%).
+untrained_traverse_pct = 75
+# An untrained gunner's spread (% of the trained spread).
+untrained_spread_pct = 150
+
+[difficulty.easy]
+income_pct = 80
+reaction_ms = 4000
+replan_ms = 3000
+decision_quality_pct = 50
+
+[difficulty.normal]
+income_pct = 100
+reaction_ms = 2000
+replan_ms = 2000
+decision_quality_pct = 80
+
+[difficulty.hard]
+income_pct = 125
+reaction_ms = 1000
+replan_ms = 2000
+decision_quality_pct = 100
+
+[ai]
+# Squads below this strength (percent of their full men) fall back to base
+# while enemies are near.
+retreat_strength_pct = 40
+# Spotted enemies this close to a point or squad count as a threat to it.
+threat_radius_m = 80
+# Target army mix by squad role, in percent of squads.
+mix_rifle_pct = 50
+mix_mg_pct = 20
+mix_engineer_pct = 15
+mix_mortar_pct = 15
+# Rounds per mortar barrage order.
+barrage_rounds = 6
+# Engineers dig a trench this long at each held point, this far in front of
+# it toward the nearest enemy.
+dig_length_m = 20
+dig_offset_m = 10
+# A squad throws at most one item (frag, smoke, satchel) this often.
+throw_cooldown_s = 10
+# Frags go at spotted enemies in a trench, or at a group of at least this
+# many men within 5 m of each other.
+frag_group_men = 3
+# S3: vehicles join the mix after unlock (under the vehicle limit), AT
+# teams after unlock once an enemy vehicle has been seen.
+# S3c Tune: mix_at_pct 10 -> 20. Since the shell-lifetime fix (S3c-26) tanks
+# fight at 300-600 m and the AT teams (180-200 MP, under a third of a
+# 600 MP tank) were reaching an enemy tank in only 11 of 20 normal-base
+# matches. Measured (160 matches, seeds 1-80 x both bases): rockets fired
+# 123 -> 198 per 80 matches, matches with a rocket 55 -> 70 %, rocket
+# knock-outs 5.3 -> 6.9 % of tank losses, wins by base 82/78, tank losses
+# by base 358/382. 25 (with at_hunt_m 500) fired more rockets but gave
+# no more matches with one, and 30 only noise. AT teams go from 7.7 % to
+# 14.3 % of bought squads (the other roles keep their ratios).
+mix_vehicle_pct = 20
+mix_at_pct = 20
+# Tanks hold 160 m (outside launcher range) from a point where enemy AT
+# was seen in the last 30 s; else they advance with their escort to 40 m
+# from the enemy trench. An immobilised vehicle repairs when no seen enemy
+# is within 150 m.
+tank_standoff_m = 160
+assault_close_m = 40
+at_clear_s = 30
+repair_clear_m = 150
+
+# The AI's infantry, mortar and satchel rules. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[ai.infantry]
+# Most squads bought per plan.
+buys_per_plan = 2
+# Mortars never fire this close to own men (m).
+danger_close_m = 35
+# A mortar's support spot is this far behind the point it supports (m).
+support_back_m = 200
+# Frag targets: spotted men within this of each other count as one group
+# (frag_group_men sets the size) (m).
+frag_group_m = 5
+# Satchels go at vehicles no faster than this: stopped, bogged, immobilised
+# or crossing a trench at 1 m/s, with a margin (mm/s) ...
+satchel_slow_mm_s = 1100
+# ... landing this far outside the hull side (mm).
+satchel_side_mm = 800
+# Enemy trench probe: the first ground dug at least trench_probe_dm (dm) on
+# the approach, up to trench_probe_m (m) in front of the point, in steps of
+# trench_probe_step_m (m).
+trench_probe_dm = 8
+trench_probe_m = 60
+trench_probe_step_m = 4
+
+# The AI's vehicles and their escorts. S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
+[ai.armour]
+# Most squads escorting one vehicle, joining from within escort_join_m (m).
+escort_squads = 2
+escort_join_m = 150
+# Escorts are released when their vehicle halts, but not in its first
+# seconds while it waits for its path and its file (s).
+escort_grace_s = 8
+# An escorted assault has reached the enemy once an escort squad's leader is
+# this close to the enemy trench or point (m).
+escort_reached_m = 30
+# Below this speed a vehicle counts as halted (mm/s).
+halted_mm_s = 300
+# Idle vehicles turn toward a threat more than face_slack_deg (deg) off
+# their heading within face_range_m (m).
+face_slack_deg = 20
+face_range_m = 600
+# Enemy vehicles this close to a point are an armour threat to it (m).
+threat_m = 300
+# A vehicle retreats with its engine under this share of its HP (percent).
+retreat_engine_pct = 30
+# A vehicle backing up an own point stands this far behind it (m).
+backup_m = 30
+# S3b call-in without a queue: after the vehicle unlock, while under the
+# vehicle limit, the AI's infantry call-ins leave at least this much
+# manpower unspent (MP), so a tank can be bought soon after its 120 s
+# re-call cooldown ends. 200 MP is under a third of a tank (Panzer IV 600,
+# Sherman 620) and about 50 s of base income: a small reserve, not a freeze
+# of infantry buying (owner, 2026-11-01: "keep a small reserve for a tank").
+tank_reserve_mp = 200
+# S3c rearm (S3b-42, S3c-10 (A)): a tank with every limited MG dry, HE at or
+# below combat.suppress.tank_he_reserve, or its penetrator at or below
+# rearm_ap_below (rounds), and no known enemy vehicle within threat_m,
+# drives back to base and stays until its gun rounds and MG stowage are
+# rearm_full_pct (%) full or rearm_max_s (s) have passed. A tank with no AP
+# left cannot fight tanks; 3 rounds is one engagement's worth.
+rearm_ap_below = 3
+rearm_full_pct = 90
+rearm_max_s = 120
+# S3c re-crew (B5): an AI crew squad re-crews its abandoned tank (not
+# burning, not useless) when no known enemy soldier is within
+# recrew_clear_m (m; 80: past grenade and most SMG fire) and no known enemy
+# vehicle within threat_m; an idle crew takes another abandoned own tank
+# within recrew_reach_m (m). Otherwise crews walk back to base.
+recrew_clear_m = 80
+recrew_reach_m = 300
+# S3c denial (S3c-9 (A)): a tank with no live target fires at an enemy
+# abandoned tank within deny_m (m) in view, while capture is on (so the
+# enemy cannot take it back). 0 turns it off.
+deny_m = 300
+
+# The AI's fire-and-move, AT-team hunts and satchel hunts (S3b,
+# docs/slices/S3b-balance.md B3-B5). Starting values for the Tune stage.
+[ai.assault]
+# A base of fire (one squad suppressing an enemy trench or the enemies seen
+# at a point while the others advance) stands at most this far from the
+# line: MG 250 m (an MG 34/42 on a bipod is effective well past it), rifles
+# 150 m, a tank 200 m (its MGs; HE has the range anyway).
+support_mg_m = 250
+support_rifle_m = 150
+support_tank_m = 200
+# Manoeuvre squads leapfrog: one more than this ahead of the rearmost halts
+# and fires normally until the others catch up (m). 40 m: two to three
+# rushes of a section (fire-and-move doctrine).
+bound_m = 40
+# The base lifts its fire (back to normal fire) once a manoeuvre squad's
+# leader is this close to the line: grenade range closes it (m).
+lift_fire_m = 15
+# The suppress line laid along a probed enemy trench (m; at most
+# combat.suppress.line_max_m): about one squad's trench section.
+trench_line_m = 24
+# An AT team goes after a known enemy vehicle within at_hunt_m of the team
+# or its point, unless a known enemy soldier is within at_hunt_clear_m of
+# the middle of its route; it stops at_hunt_inset_m inside its launcher's
+# engage_still, on the vehicle's side or rear (m). 250 m: a tank this
+# close can reach the point in under a minute. S3b Tune: 250 -> 400
+# (T7): at 250 rockets were fired in 6-7 of 10 matches (normal bases);
+# at 400 in 8 of 10, with the AI still holding AT teams back from tanks
+# beyond a point's reach (A/B, seeds 1-10 both bases).
+at_hunt_m = 400
+# S3c Tune: at_hunt_clear_m 40 -> 20. With 40 m an AT team would not leave
+# for a tank while any enemy soldier stood near its route (rifle squads
+# at every point), so after the shell-lifetime fix (S3c-26) it often sat
+# while tanks shelled the point from 160 m. 20 m (grenade range: a
+# stalking team goes round the men, not through them) over 160 matches
+# (seeds 1-80 x both bases): rocket knock-outs 6.9 -> 9.7 % of tank
+# losses (51 -> 71), rockets fired 396 -> 445, matches with a rocket 70 -> 75
+# %, wins by faction 66/94 -> 76/84, base 0/1 wins 84/76.
+at_hunt_clear_m = 20
+at_hunt_inset_m = 10
+# Engineers with a satchel go for a known enemy vehicle within
+# satchel_hunt_m that has been slower than ai.infantry.satchel_slow_mm_s
+# (stopped, bogged, immobilised) for satchel_slow_s; the throw rule fires
+# within the satchel's range (m, s). They walk to a spot satchel_stand_m
+# outside the hull side nearer them (5 m: the satchel lands ~0.8 m off the
+# hull, so the thrower stands ~4 m from it, inside the 3-8 m throw range).
+# S3b Tune: satchel_hunt_m 60 -> 150 (T7): AI tanks halt 40-160 m from
+# enemy points, so at 60 m a hunt rarely started; at 150 engineers in the
+# trench go for a tank halted in front of it.
+# S3c Tune: 150 -> 250. Since the shell-lifetime fix tanks halt at the
+# 160 m tank_standoff_m from a point with AT seen, and the engineers dig in
+# 10 m in front of it, so a halted tank stood just outside 150 m. Satchels
+# thrown at vehicles in 160 matches (seeds 1-80 x both bases): 1 at 150 m;
+# 10 at 250 m (7 normal-base matches); 5 at 250 m together with the
+# at_hunt_clear_m of 20 below (5 normal-base matches); 6 at 350 m, so 250.
+# Most hunts still end with the carrier shot on the approach (case 8:
+# engineers lose 100 of 100 against live MGs).
+satchel_hunt_m = 250
+satchel_slow_s = 3
+satchel_stand_m = 5
+# S3c sticky hunts (S3b-36 (A), docs/slices/S3c-armour.md B2): a hunt keeps
+# its vehicle while it was seen within satchel_stick_s (s; the squad goes to
+# its last seen position), has not been faster than satchel_slow_mm_s for
+# more than satchel_chase_s (s; a tank stopping and starting stays hunted),
+# is within satchel_hunt_m + satchel_leash_m (m) of the squad, and for at
+# most satchel_hunt_max_s (s). Hunters crouch on the approach and crawl
+# within satchel_crawl_m (m) while the tank's hull MG arc covers them
+# (tank-hunting drill: close in the MG's dead ground, crawl the last
+# stretch; 0 turns crawling off). Baseline: 96 hunts gave 1 throw, 45 were
+# dropped with the target still there.
+satchel_stick_s = 20
+satchel_chase_s = 6
+satchel_leash_m = 50
+satchel_crawl_m = 25
+satchel_hunt_max_s = 120
+# S3c second base of fire (S3b-41 (A), S3c-11 (A)): an assault with at least
+# three squads gets a second base (an MG team, else a rifle squad) when the
+# first base's fire weight (rounds/min x suppression over its men) is under
+# second_base_below_pct (%) of the enemy's strongest MG team weapon, from a
+# spot at least second_base_gap_m (m) from the first. M1919A4 500 x 14 =
+# 7,000 vs MG 42 1,200 x 15 = 18,000: US assaults get two bases, German one.
+second_base_below_pct = 100
+second_base_gap_m = 30
+# S3c rockets (B3, only because T2 stayed under 20 % after Part A): AT teams
+# also hunt an immobile or bogged enemy tank within at_hunt_stuck_m (m; a
+# stuck tank cannot turn away, so a longer stalk pays), and an AT team with
+# no hunt follows an own tank on an assault within at_follow_m (m),
+# at_follow_back_m (m) behind it (tank-infantry teams: the bazooka and
+# Panzerschreck teams went with the armour to meet counter-attacking tanks).
+# 0 turns either off. Measured one at a time (80 matches, seeds 1-40 x both
+# bases, Part B code): with following on (150 m), rockets knocked out 33 of
+# 233 tanks (14.2 %); with it off 48 of 243 (19.8 %) and 260 rockets fired
+# instead of 216: AT teams trailing their own tanks are not at the points
+# the enemy tanks come to. So following is off. The stuck-tank stalk made 3
+# hunts in 80 matches and no measurable difference (36 vs 33 rocket
+# knock-outs off/on); kept, as a stuck tank is the realistic target.
+at_hunt_stuck_m = 500
+at_follow_m = 0
+at_follow_back_m = 30
+
+# Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
+# once in the base, no queue and no delivery time).
+[call_in]
+# Six spots on a ring at this share of the base radius (%), the seventh
+# the base centre. 50: the S1 spawn ring (base radius 40 m -> 20 m), so an
+# 8-man line (21 m wide) stays inside the base.
+spawn_ring_pct = 50
+# Each squad tries its own spot first (squad id mod 7); a spot with men or
+# vehicles within this distance (m) is passed over for the least crowded
+# one. 10 m: about half an 8-man line, so a squad still standing on its
+# spot is seen, while the 20 m between ring spots stays clear.
+spawn_clear_m = 10
+# A vehicle counts as this many men when comparing spots (a 6 x 3 m hull
+# covers the ground of about a whole squad).
+spawn_vehicle_weight = 8
+# S4: the match month ("YYYY-MM") for unit cards' available_from /
+# available_to; a card outside it leaves the roster. Empty: no date filter
+# (skirmish fields every card).
+date = ""
+
+# S4: the training profile (defs/training/) of unit cards that name none.
+[training]
+default = "ww2:training_regular"
+
+# S4: named limits on alive units per player, "<group id>" = most alive; a
+# unit card joins one with limit_group (all its cards' alive units count).
+# None in ww2 yet: vehicles keep the [vehicles] limit.
+[limit_groups]

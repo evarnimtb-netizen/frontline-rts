@@ -1,0 +1,58 @@
+# Rifle Squad, two BARs (S4): US divisions increasingly gave squads a
+# second BAR team in 1944-45, following Marine practice. As the Rifle
+# Squad, with a second automatic rifleman and assistant in place of two
+# riflemen.
+# Sources: Wikipedia "M1918 Browning Automatic Rifle" (the practice; no
+# date). available_from is a field-practice date, unverified (S4-17 (A));
+# skirmish has no date filter.
+id = "ww2:usa_rifle_squad_2bar"
+extends = "ww2:usa_rifle_squad"
+name = "Rifle Squad (two BARs)"
+short_name = "Rifle Sq 2BAR"
+sources = ["Wikipedia, M1918 Browning Automatic Rifle (two BAR teams per squad, 1944-45)"]
+cost = 360
+cooldown_s = 30
+available_from = "1944-08"
+ai_weight = 50
+
+[[members]]
+slot = "squad_leader"
+weapon = "ww2:m1_garand"
+traits = ["leader"]
+items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
+
+[[members]]
+slot = "asst_squad_leader"
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "automatic_rifleman"
+count = 2
+weapon = "ww2:bar_m1918a2"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "asst_ar"
+count = 2
+weapon = "ww2:m1_garand"
+traits = ["crew_assistant"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "ammo_bearer"
+weapon = "ww2:m1_garand"
+traits = ["ammo_bearer"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "scout"
+count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 3
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }

@@ -1,0 +1,32 @@
+# M1919A4 on the M2 tripod (S4): the US Light MG Section's gun. A new id:
+# `ww2:m1919` stays the Sherman's coax and bow MG unchanged (owner question
+# S4-24 (A)).
+# Sources: Wikipedia "M1919 Browning machine gun" (14 kg gun, 400-600 rpm,
+# 853 m/s, 250-round belt); battleorder.org "U.S. Army Rifle Company 1944"
+# after T/O&E 7-17 (26 Feb 1944): the LMG squad of 5 with one M1919A4.
+id = "ww2:m1919a4_tripod"
+name = "M1919A4 (tripod)"
+short_name = "M1919A4"
+class = "mg"
+sources = [
+    "Wikipedia, M1919 Browning machine gun (weight, rate, muzzle velocity, belt)",
+    "battleorder.org, U.S. Army Rifle Company 1944 (T/O&E 7-17, 26 Feb 1944)",
+]
+# Effective reach on the compressed scale (m), as the tripod MG 42.
+range_m = 600
+damage = 45
+# Cyclic rate (rpm): 400-600.
+rounds_per_min = 500
+# The 250-round belt fired in bursts: an air-cooled barrel's discipline,
+# abstracted as 125 rounds between pauses.
+magazine = 125
+# Pause, new belt (ms).
+reload_ms = 7000
+# Dispersion half-angle (mrad): on the tripod.
+spread_mrad = 12
+muzzle_velocity_m_s = 853
+# Mount, lay and load (ms).
+setup_ms = 4000
+suppression = 14
+# Crew weapon hand-over (ms).
+handover_ms = 3000

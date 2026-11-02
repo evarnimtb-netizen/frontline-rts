@@ -47,7 +47,6 @@
 
 use frontline_content::SeatRole;
 
-use crate::combat::weapon_of;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId, Stance};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::MatchState;
@@ -130,7 +129,10 @@ pub(crate) fn spot(
         let Some(sq) = ents.squad[i].and_then(|s| game.squad(s)) else {
             continue;
         };
+        // S4: training scales the men's sight range.
+        let spot = crate::combat::training_of(setup, sq).spot_pct;
         let sight = Fx::from(setup.squad_types[sq.type_idx as usize].sight);
+        let sight = Fx::from_raw((sight.raw() as i64 * spot as i64 / 100) as i32);
         let pos = ents.transform[i].pos;
         // In a trench he looks over the parapet from the fire step.
         let eye_h = if c.in_trench { c.fire_height } else { c.height };
@@ -184,7 +186,7 @@ pub(crate) fn spot(
         let w = (!corpse)
             .then(|| ents.squad[i].and_then(|s| game.squad(s)))
             .flatten()
-            .map(|sq| &game.setup().weapons[weapon_of(game.setup(), sq, SimId(i as u32)) as usize]);
+            .map(|_| &game.setup().weapons[ents.kit[i].weapon as usize]);
         let (reveal_ticks, reveal_pct) = w
             .map_or((rules.reveal_ticks, rules.firing_spot_pct), |w| {
                 (w.fire_reveal_ticks, w.fire_reveal_pct)

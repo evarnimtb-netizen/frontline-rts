@@ -1,0 +1,41 @@
+# 7.5 cm PzGr 40: APCR (a tungsten-carbide core in a light body) for the
+# KwK 40 L/48 (S3b, docs/slices/S3b-balance.md P1 (c), owner question
+# S3b-7 (A)). Issued in small numbers because tungsten was scarce. Higher
+# velocity and penetration than the PzGr 39 up close, falling off faster;
+# no HE filler, so less damage behind the plate. Honest note: the PzGr 39
+# already defeats a Sherman everywhere at our ranges, so it matters little
+# today; it is here because it is small and historical.
+id = "ww2:75mm_pzgr40"
+name = "7.5 cm PzGr 40"
+mechanism = "ap"
+caliber_mm = 75
+# 990 m/s from the L/48 (approximate published figure; citation is an
+# owner / M2 task).
+muzzle_velocity_m_s = 990
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0° (normal), 50 %
+# success. S3b Fix (review H2): Bird & Livingston, WWII Ballistics: Armor
+# and Gunnery (Overmatch Press, 2001), p. 61, APCR from the 7.5 cm KwK 40
+# L/48 (930 m/s): 176 mm at 100 m, 154 at 500, 130 at 1000, 109 at 1500,
+# 92 at 2000; one source and criterion with the PzGr 39 and M61 rows. The
+# old row (120/97/77 at 30°) was the German table shifted one range step.
+penetration = [[100, 176], [500, 154], [1000, 130], [1500, 109], [2000, 92]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# Damage to the gun when it strikes the barrel box, and to a track from a
+# hit in the running-gear band (as the PzGr 39).
+nonpen_damage = 40
+track_damage = 60
+sources = ["placeholder: citations are an owner / M2 task"]
+
+# After penetration: the small core goes on 1.2 m (a lighter projectile
+# than the PzGr 39's 1.5 m) and throws spall; no filler.
+[core]
+damage = 100
+length_cm = 120
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25

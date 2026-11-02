@@ -15,8 +15,14 @@ use frontline_sim::{
     Stance, World,
 };
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 fn setup(seed: u64) -> MatchSetup {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     defs.resolve(&MatchRequest::skirmish(
         seed,
@@ -28,6 +34,7 @@ fn setup(seed: u64) -> MatchSetup {
         // These tests drive both sides by hand, and call in several squads
         // of one type at once (S3b re-call cooldowns off).
         s.players.iter_mut().for_each(|p| p.is_ai = false);
+
         s.squad_types
             .iter_mut()
             .filter(|t| t.vehicle.is_none())

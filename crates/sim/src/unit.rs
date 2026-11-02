@@ -346,7 +346,7 @@ impl MatchState {
         men.retain(|m| {
             let sq = &self.squads[&ctx.ents.squad[m.index()].expect("squad man")];
             let ty = &self.setup.squad_types[sq.type_idx as usize];
-            self.digs_profile(ty.role, ty.dig_rate_pct, profile)
+            self.digs_profile(ty, profile)
         });
         if men.is_empty() || !self.dig_line_ok(ctx, line, profile) {
             return false;

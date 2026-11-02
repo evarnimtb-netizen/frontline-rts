@@ -411,7 +411,7 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// boarding state, the `Recrew` order, per-player crew counters, the
 /// vehicles' crew squad and hatches and the bail and re-crew tuning tables
 /// in the setup). One bump for the whole slice.
-const SAVE_VERSION: u32 = 11;
+const SAVE_VERSION: u32 = 12;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -1978,6 +1978,10 @@ impl World {
         // Refusals from the Status stage (a limit reached while boarding).
         if let Some(game) = &mut self.state.game {
             self.recrew_events.append(&mut game.recrew_events);
+            // S4: crew weapons picked up this tick (Weapons stage).
+            self.snapshot.pickups = std::mem::take(&mut game.pickup_events);
+        } else {
+            self.snapshot.pickups.clear();
         }
         self.snapshot.fill(
             self.state.tick,
@@ -2769,18 +2773,20 @@ mod tests {
         for _ in 0..70 {
             w.step(&[]);
         }
-        throw(&mut w, men[1], ItemKind::Frag);
+        // S4: men 4 and 5 of a Grenadiergruppe are riflemen with a frag
+        // (men 1-3 are the MG team, who carry none).
+        throw(&mut w, men[4], ItemKind::Frag);
         for _ in 0..40 {
             w.step(&[]);
         }
-        throw(&mut w, men[2], ItemKind::Frag);
+        throw(&mut w, men[5], ItemKind::Frag);
         for _ in 0..5 {
             w.step(&[]);
         }
         let g = w.game().unwrap();
         assert_eq!(g.smoke().len(), 1);
         assert!(g.thrown().len() == 1 && !g.thrown()[0].landed);
-        assert!(w.entities().kit[men[2].index()].windup.is_some());
+        assert!(w.entities().kit[men[5].index()].windup.is_some());
         w
     }
 
@@ -2799,17 +2805,20 @@ mod tests {
             .index();
         let leader = ents
             .soldiers()
-            .find(|id| ents.kit[id.index()].leader)
+            .find(|id| ents.kit[id.index()].slot == 0 && ents.squad[id.index()].is_some())
             .unwrap()
             .index();
         let base = w.full_state_hash();
         type Edit = Box<dyn Fn(&mut SimState)>;
-        let edits: [Edit; 8] = [
-            // Off the leader kit, with no more than a rifleman carries.
+        let edits: [Edit; 9] = [
+            // Off the leader kit (S4: into the riflemen's slot), with no
+            // more than a rifleman carries.
             Box::new(move |s| {
-                s.entities.kit[leader].leader = false;
+                s.entities.kit[leader].slot = 1;
                 s.entities.kit[leader].items = Default::default();
             }),
+            // S4: the weapon he carries.
+            Box::new(move |s| s.entities.kit[leader].weapon ^= 1),
             Box::new(move |s| s.entities.kit[winder].resupply = 3),
             Box::new(move |s| s.entities.kit[winder].windup.as_mut().unwrap().ticks -= 1),
             Box::new(move |s| s.entities.kit[winder].throws += 1),
@@ -2828,10 +2837,20 @@ mod tests {
         // A second leader kit in one squad (more items for everyone).
         let bytes = save_edited(&w, |s| {
             for k in s.entities.kit.iter_mut() {
-                k.leader = true;
+                k.slot = 0;
             }
         });
-        assert!(load_err(&bytes).contains("leader"));
+        // (S4: a rifleman with a Panzerfaust in the leader's slot is
+        // caught first, by his items.)
+        let e = load_err(&bytes);
+        assert!(e.contains("leader") || e.contains("kit"), "{e}");
+        // S4: a weapon none of his squad's members carries, or a slot past
+        // the squad type's.
+        let bytes = save_edited(&w, move |s| s.entities.kit[leader].weapon = 9999);
+        assert!(load_err(&bytes).contains("weapon"));
+        let bytes = save_edited(&w, move |s| s.entities.kit[leader].slot = 99);
+        let e = load_err(&bytes);
+        assert!(e.contains("slot") || e.contains("kit"), "{e}");
         // Exhausted id counters would overflow on the next throw, cloud,
         // unit dig or squad.
         type Counter = fn(&mut crate::game::MatchState) -> &mut u32;
@@ -3562,7 +3581,7 @@ mod tests {
         let rifle = w
             .match_setup()
             .unwrap()
-            .squad_type_index("ww2:ger_rifle_squad")
+            .squad_type_index("ww2:ger_grenadiergruppe")
             .unwrap();
         let sq = w
             .spawn_squad_at(
@@ -3727,7 +3746,7 @@ mod tests {
         let ger = w
             .match_setup()
             .unwrap()
-            .squad_type_index("ww2:ger_rifle_squad")
+            .squad_type_index("ww2:ger_grenadiergruppe")
             .unwrap();
         let sq = w
             .spawn_squad_at(
@@ -3835,7 +3854,7 @@ mod tests {
         let (mut w, v) = flat_tank_world();
         let s = w.match_setup().unwrap();
         let usa = s.squad_type_index("ww2:usa_m4a3_75_squad").unwrap();
-        let rifle = s.squad_type_index("ww2:ger_rifle_squad").unwrap();
+        let rifle = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
         let us_rifle = s.squad_type_index("ww2:usa_rifle_squad").unwrap();
         let east = FxVec2::new(Fx::ONE, Fx::ZERO);
         let e = w
@@ -4209,7 +4228,7 @@ mod tests {
         let ty = w
             .match_setup()
             .unwrap()
-            .squad_type_index("ww2:ger_rifle_squad")
+            .squad_type_index("ww2:ger_grenadiergruppe")
             .unwrap();
         let north = FxVec2::new(Fx::ZERO, Fx::ONE);
         let sq = w.spawn_squad_at(PlayerId(0), ty, at, north).unwrap();
@@ -4510,7 +4529,7 @@ mod tests {
             .spawn_squad_at(PlayerId(1), usa, FxVec2::from_int(600, 500), -east)
             .unwrap();
         let vb = w.game().unwrap().squads[&b].members[0];
-        let rif = ty(&w, "ww2:ger_rifle_squad");
+        let rif = ty(&w, "ww2:ger_grenadiergruppe");
         let r = w
             .spawn_squad_at(PlayerId(0), rif, FxVec2::from_int(480, 520), north)
             .unwrap();
@@ -4651,6 +4670,166 @@ mod tests {
         assert_eq!(loaded.full_state_hash(), w.full_state_hash());
     }
 
+    /// S4: the Panzerfaust aim and gap, crew-weapon drops and the S4
+    /// counters are saved, every field changes the hash, and broken values
+    /// are refused on load.
+    #[test]
+    fn s4_squad_and_player_state_is_saved_hashed_and_checked() {
+        use crate::game::{S4Counters, SingleShot, WeaponDrop};
+        let (mut w, va) = flat_tank_world_with(|_| {});
+        let ty = |w: &World, id: &str| w.match_setup().unwrap().squad_type_index(id).unwrap();
+        let t = ty(&w, "ww2:ger_grenadiergruppe");
+        let g = w
+            .spawn_squad_at(
+                PlayerId(0),
+                t,
+                FxVec2::from_int(300, 500),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        // An enemy vehicle for the aim.
+        let us_tank = ty(&w, "ww2:usa_m4a3_75_squad");
+        let vs = w
+            .spawn_squad_at(
+                PlayerId(1),
+                us_tank,
+                FxVec2::from_int(600, 500),
+                FxVec2::new(Fx::NEG_ONE, Fx::ZERO),
+            )
+            .unwrap();
+        let vb = w.game().unwrap().squads[&vs].members[0];
+        let _ = va;
+        let men = w.game().unwrap().squads[&g].members.clone();
+        let mg = w
+            .match_setup()
+            .unwrap()
+            .weapons
+            .iter()
+            .position(|x| x.id == "ww2:mg42_bipod")
+            .unwrap() as u16;
+        {
+            let gm = w.state.game.as_mut().unwrap();
+            let sq = gm.squads.get_mut(&g).unwrap();
+            sq.pzf = Some(SingleShot {
+                man: Some(men[4]),
+                target: Some(vb),
+                aim_turret: false,
+                aim: 10,
+                gap: 0,
+                search: 3,
+                attack: Some(vb),
+            });
+            sq.drops.push(WeaponDrop {
+                weapon: mg,
+                at: FxVec2::from_int(300, 500),
+                ticks: 40,
+            });
+            gm.players[0].s4 = S4Counters {
+                pickups: 2,
+                single_shots: 1,
+            };
+        }
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        // Every field changes the hash (the destructures fail to compile
+        // when a field is added and not listed here).
+        let SingleShot {
+            man: _,
+            target: _,
+            aim_turret: _,
+            aim: _,
+            gap: _,
+            search: _,
+            attack: _,
+        } = SingleShot::default();
+        let WeaponDrop {
+            weapon: _,
+            at: _,
+            ticks: _,
+        } = WeaponDrop::default();
+        let S4Counters {
+            pickups: _,
+            single_shots: _,
+        } = S4Counters::default();
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        fn pz(s: &mut SimState, g: SquadId) -> &mut SingleShot {
+            s.game
+                .as_mut()
+                .unwrap()
+                .squads
+                .get_mut(&g)
+                .unwrap()
+                .pzf
+                .as_mut()
+                .unwrap()
+        }
+        fn dr(s: &mut SimState, g: SquadId) -> &mut WeaponDrop {
+            &mut s.game.as_mut().unwrap().squads.get_mut(&g).unwrap().drops[0]
+        }
+        let (m0, m5) = (men[0], men[5]);
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            ("pzf.man", Box::new(move |s| pz(s, g).man = Some(m5))),
+            ("pzf.target", Box::new(move |s| pz(s, g).target = None)),
+            (
+                "pzf.aim_turret",
+                Box::new(move |s| pz(s, g).aim_turret ^= true),
+            ),
+            ("pzf.aim", Box::new(move |s| pz(s, g).aim -= 1)),
+            ("pzf.gap", Box::new(move |s| pz(s, g).gap += 1)),
+            ("pzf.search", Box::new(move |s| pz(s, g).search -= 1)),
+            ("pzf.attack", Box::new(move |s| pz(s, g).attack = None)),
+            ("drop.weapon", Box::new(move |s| dr(s, g).weapon += 1)),
+            ("drop.at", Box::new(move |s| dr(s, g).at.x += Fx::ONE)),
+            ("drop.ticks", Box::new(move |s| dr(s, g).ticks -= 1)),
+            (
+                "s4.pickups",
+                Box::new(|s| s.game.as_mut().unwrap().players[0].s4.pickups += 1),
+            ),
+            (
+                "s4.single_shots",
+                Box::new(|s| s.game.as_mut().unwrap().players[0].s4.single_shots += 1),
+            ),
+            (
+                "ai.bought",
+                Box::new(|s| {
+                    if let Some(Some(ai)) = s.game.as_mut().unwrap().ai.get_mut(0) {
+                        ai.counters.bought.push(1);
+                    } else {
+                        s.game.as_mut().unwrap().players[0].s4.pickups += 7;
+                    }
+                }),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(w2.full_state_hash(), w2.state_hash());
+        }
+        // Loads refuse a broken aim, gap or drop.
+        let bad: Vec<(StateEdit, &str)> = vec![
+            (Box::new(move |s| pz(s, g).aim = 9999), "single-shot"),
+            (Box::new(move |s| pz(s, g).gap = 9999), "single-shot"),
+            (Box::new(move |s| pz(s, g).man = None), "single-shot"),
+            (Box::new(move |s| pz(s, g).target = Some(m0)), "single-shot"),
+            (Box::new(move |s| dr(s, g).ticks = 9999), "crew weapon"),
+            (Box::new(move |s| dr(s, g).weapon = 0), "crew weapon"),
+            (
+                Box::new(move |s| s.game.as_mut().unwrap().squads.get_mut(&g).unwrap().pzf = None),
+                "single-shot",
+            ),
+        ];
+        for (edit, want) in bad {
+            let bytes = save_edited(&w, edit);
+            let e = load_err(&bytes);
+            assert!(e.contains(want), "{e}");
+        }
+    }
+
     #[test]
     fn launcher_escort_and_dig_profile_state_is_saved_hashed_and_checked() {
         use crate::game::{Launcher, Order};
@@ -4681,7 +4860,6 @@ mod tests {
         // compile when a field is added and not listed.
         let Launcher {
             carrier: _,
-            handover: _,
             rounds: _,
             resupply: _,
             attack: _,
@@ -4707,8 +4885,21 @@ mod tests {
                 Box::new(move |s| launcher_of(s, t).carrier = None),
             ),
             (
-                "handover",
-                Box::new(move |s| launcher_of(s, t).handover = 3),
+                "drops",
+                Box::new(move |s| {
+                    let g = game(s);
+                    let w = g.setup.squad_types[g.squads[&t].type_idx as usize].weapon;
+                    game(s)
+                        .squads
+                        .get_mut(&t)
+                        .unwrap()
+                        .drops
+                        .push(crate::game::WeaponDrop {
+                            weapon: w,
+                            at: FxVec2::from_int(300, 300),
+                            ticks: 3,
+                        })
+                }),
             ),
             ("rounds", Box::new(move |s| launcher_of(s, t).rounds -= 1)),
             (
@@ -4764,8 +4955,21 @@ mod tests {
                 "launcher",
             ),
             (
-                Box::new(move |s| launcher_of(s, t).handover = 9999),
-                "launcher",
+                Box::new(move |s| {
+                    let g = game(s);
+                    let w = g.setup.squad_types[g.squads[&t].type_idx as usize].weapon;
+                    game(s)
+                        .squads
+                        .get_mut(&t)
+                        .unwrap()
+                        .drops
+                        .push(crate::game::WeaponDrop {
+                            weapon: w,
+                            at: FxVec2::from_int(300, 300),
+                            ticks: 9999,
+                        })
+                }),
+                "crew weapon",
             ),
             (
                 Box::new(move |s| {

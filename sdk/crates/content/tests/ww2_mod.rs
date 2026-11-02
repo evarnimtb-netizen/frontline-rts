@@ -8,8 +8,13 @@ use frontline_content::{
     ContentError, Difficulty, MatchRequest, ModDefs, PlayerRequest, SquadRole, WeaponClass,
 };
 
+/// S4: the S1-S3c content frozen before the content switch
+/// (`fixtures/ww2_s3c`): these tests check its legacy unit files, rules and
+/// error reports value by value. The live `mods/ww2` is checked by
+/// `validate`, the canonical snapshot (`resolved_defs.rs`) and
+/// `variants.rs`.
 fn ww2_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ww2_s3c")
 }
 
 fn load() -> ModDefs {
@@ -121,7 +126,16 @@ fn skirmish_resolves_to_fixed_point() {
     let ai = &s.rules.ai;
     assert_eq!(ai.retreat_strength_pct, 40);
     assert_eq!(ai.threat_radius, Fixed::from_int(80));
-    assert_eq!(ai.mix_pct, [50, 20, 15, 15]);
+    // S4: the mix by tag, legacy tags first in their old order.
+    let mix: Vec<(&str, u32)> = ai
+        .mix
+        .iter()
+        .map(|m| (s.tags[m.tag as usize].as_str(), m.pct))
+        .collect();
+    assert_eq!(
+        &mix[..4],
+        [("line", 50), ("mg", 20), ("engineer", 15), ("mortar", 15)]
+    );
     assert_eq!(ai.dig_length, Fixed::from_int(20));
     assert!(ai.dig_length <= s.rules.dig.max_length);
 
@@ -274,23 +288,13 @@ fn items_and_loadouts_resolve() {
     let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
     // Rifles: a frag each, two and a smoke for the leader; engineers add
     // the satchel; MG and mortar teams carry nothing.
-    assert_eq!(
-        ty("ww2:ger_rifle_squad").full_kit(&s.items, false),
-        [1, 0, 0]
-    );
-    assert_eq!(
-        ty("ww2:ger_rifle_squad").full_kit(&s.items, true),
-        [2, 1, 0]
-    );
-    assert_eq!(
-        ty("ww2:usa_engineer_squad").full_kit(&s.items, true),
-        [2, 1, 1]
-    );
-    assert_eq!(ty("ww2:usa_mg_team").full_kit(&s.items, true), [0, 0, 0]);
-    assert_eq!(
-        ty("ww2:ger_mortar_team").full_kit(&s.items, true),
-        [0, 0, 0]
-    );
+    // S4: by member slot (slot 0 is the leader's).
+    let rifleman = ty("ww2:ger_rifle_squad").members.len() as u8 - 1;
+    assert_eq!(ty("ww2:ger_rifle_squad").full_kit(rifleman), [1, 0, 0, 0]);
+    assert_eq!(ty("ww2:ger_rifle_squad").full_kit(0), [2, 1, 0, 0]);
+    assert_eq!(ty("ww2:usa_engineer_squad").full_kit(0), [2, 1, 1, 0]);
+    assert_eq!(ty("ww2:usa_mg_team").full_kit(0), [0, 0, 0, 0]);
+    assert_eq!(ty("ww2:ger_mortar_team").full_kit(0), [0, 0, 0, 0]);
     let (_, it) = ty("ww2:usa_rifle_squad")
         .kit(&s.items, ItemKind::Frag)
         .unwrap();
@@ -461,10 +465,7 @@ fn s3c_crews_and_hatches_resolve() {
         let vs = s.vehicles.iter().find(|x| x.id == v).unwrap();
         let c = vs.crew_squad.unwrap();
         assert_eq!(s.squad_types[c as usize].id, crew);
-        assert_eq!(
-            s.squad_types[c as usize].role,
-            frontline_content::SquadRole::Crew
-        );
+        assert!(s.type_has_tag(c, "crew"));
         // Every seat leaves by exactly one hatch.
         let mut seen = vec![0; vs.seats.len()];
         for h in &vs.hatches {

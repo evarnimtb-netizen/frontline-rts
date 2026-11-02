@@ -1,0 +1,23 @@
+# Browning Automatic Rifle M1918A2 (S4): the US rifle squad's automatic
+# rifleman. Fired off its bipod by one man; not a crew weapon (it stays
+# with its man, like a rifle).
+# Sources: Wikipedia "M1918 Browning Automatic Rifle" (8.8 kg; A2 rates
+# 300-450 rpm slow, 500-650 fast; 20-round box; 860 m/s).
+id = "ww2:bar_m1918a2"
+name = "BAR M1918A2"
+short_name = "BAR"
+class = "rifle"
+crew_weapon = false
+sources = ["Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)"]
+# Effective reach on the compressed scale (m): a little over a rifle's.
+range_m = 350
+damage = 65
+# Rate (rpm): the A2's slow setting, 300-450.
+rounds_per_min = 450
+# 20-round box.
+magazine = 20
+reload_ms = 4000
+# Dispersion half-angle (mrad): automatic fire off the bipod.
+spread_mrad = 14
+muzzle_velocity_m_s = 860
+suppression = 10

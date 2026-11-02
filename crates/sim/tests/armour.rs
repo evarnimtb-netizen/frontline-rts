@@ -8,8 +8,14 @@ use frontline_content::{ArmourZone, Difficulty, MatchRequest, MatchSetup, ModDef
 use frontline_sim::armour::{BoxPart, Face, PenResult, deg, impact_cos, penetrates, shot_dir};
 use frontline_sim::{Fx, World};
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 fn setup() -> MatchSetup {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     defs.resolve(&MatchRequest::skirmish(
         5,
@@ -23,6 +29,7 @@ fn setup() -> MatchSetup {
 #[test]
 fn tables_are_built_at_start_and_rebuilt_after_load() {
     let s = setup();
+
     let pz = s
         .vehicles
         .iter()

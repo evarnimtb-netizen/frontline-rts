@@ -1,0 +1,58 @@
+id = "ww2:m1_mortar"
+name = "81 mm M1"
+class = "mortar"
+min_range_m = 60
+range_m = 600
+damage = 150
+rounds_per_min = 15
+magazine = 1
+reload_ms = 0
+spread_mrad = 50
+muzzle_velocity_m_s = 180
+setup_ms = 3000
+suppression = 30
+
+[he]
+# S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and
+# blasts"): no radial damage. An 81 mm mortar bomb (about 0.6 kg TNT, thin
+# cast casing: many small fragments).
+# Overpressure: full `damage` to a man within blast_radius_cm with a clear
+# line from the burst (about the old lethal radius or less), and the
+# vs_vehicle_pct share to track anchors within it (cm).
+blast_radius_cm = 150
+# Fragments: frag_count rays per burst (azimuth stratified, elevation in
+# frag_elev_deg [min, max] above the ground plane, degrees), each stopping
+# at the first man, vehicle, wreck or earth within frag_reach_cm (cm). One
+# fragment deals frag_damage to a man near the burst, falling linearly to
+# frag_far_pct % of it at full reach, and frag_track_damage to a track whose
+# band it strikes. Starting values from the spec, set to keep the old
+# lethality in the open within about 20 % (the Tune stage measures it).
+# S3b Tune (owner question S3b-23 (A)): frag_count 96 -> 120. With 96 a
+# 10-round barrage killed 58 men in the open in fortify-test (the S1 value
+# before fragments was 74, -22 %); 120 gives 60 (-19 %, inside the spec's
+# +-20 %) and the trench still loses 6 (10 %). A real 81 mm bomb throws
+# hundreds of fragments; the rays are a sample.
+frag_count = 120
+frag_reach_cm = 1500
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 50]
+# frag_track_damage: 1, not the spec's starting 5 (2 for grenades): a burst
+# 1 m beside a hull sends about 20 fragments into that side's track band,
+# and 5 each broke the track on top of the overpressure (old behaviour:
+# only the overpressure broke tracks). Track links shrug off fragments.
+frag_track_damage = 1
+suppression_radius_m = 15
+crater_radius_cm = 200
+crater_depth_cm = 70
+# Against vehicles (S3): armour it defeats on contact (mm), the inner burst
+# if it does, and damage to track anchors within blast_radius_cm (40 % of
+# its damage). Blasts never reach a closed vehicle's insides.
+pen_mm = 8
+inside_damage = 150
+# S3b: when it beats a plate, inside_rays fragment rays from the contact
+# point into the hull, inside_damage each to the first box within
+# inside_reach_cm (cm), instead of a radius.
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

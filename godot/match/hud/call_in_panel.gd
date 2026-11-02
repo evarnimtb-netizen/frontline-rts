@@ -22,7 +22,15 @@ extends Control
 ## 12 s."); the sim's own refusals arrive the same way (bridge events).
 ##
 ## S3: vehicle tiles show cost and pop and an `n/4` badge for the vehicle
-## limit. The call-in intent carries the catalog `id`. When one column of
+## limit. The call-in intent carries the catalog `id`.
+##
+## S4: one tile per card (catalog `id`; two cards may share a `type`). A
+## soldier tile shows its men ("10") in a small disc on the title line;
+## its re-call cooldown runs as a ring around the disc (instead of the
+## vehicle tiles' fill). An understrength card (`understrength`) gets a
+## half-filled chevron before the disc. The tooltip leads with the card's
+## `gloss` (period name and English gloss: "Grenadiergruppe — rifle squad,
+## 10 men: ..."). When one column of
 ## tiles would rise above CLEAR_TOP of the HUD height (the S1b 1280 bar: no
 ## higher than y460 of 800), the tiles go two per row in a column two
 ## tiles wide.
@@ -180,12 +188,43 @@ func call_in_index(i: int) -> bool:
 	return true
 
 
-## Index of a squad type in the catalog, or -1.
+## Index of the first catalog entry of a squad type, or -1 (legacy: S4
+## cards are keyed by `id`, see index_of_id).
 func index_of(type: String) -> int:
 	for i in _catalog.size():
 		if _catalog[i].type == type:
 			return i
 	return -1
+
+
+## S4: index of the catalog entry with card id `id`, or -1.
+func index_of_id(id: String) -> int:
+	for i in _catalog.size():
+		if String(_catalog[i].get("id", "")) == id:
+			return i
+	return -1
+
+
+## S4: the men disc of a soldier tile (zero rect for vehicle tiles): on
+## the title line's right end.
+func men_disc_rect(i: int) -> Rect2:
+	if i < 0 or i >= _catalog.size() or is_vehicle(_catalog[i]):
+		return Rect2()
+	var r := tile_rect(i)
+	var d := 18.0
+	return Rect2(r.end.x - 8.0 - d, r.position.y + 3.0, d, d)
+
+
+## S4: the share of tile `i`'s ring that is lit (its cooldown left of its
+## full length; 0 when ready).
+func ring_frac(i: int) -> float:
+	if i < 0 or i >= _catalog.size():
+		return 0.0
+	var c: Dictionary = _catalog[i]
+	var cd := float(c.get("cooldown_s", 0.0))
+	if cd <= 0.0:
+		return 0.0
+	return clampf(cd / maxf(float(c.get("cooldown_total_s", cd)), 0.01), 0.0, 1.0)
 
 
 func toggle_focus() -> void:
@@ -235,7 +274,8 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 	else:
 		draw_rect(Rect2(r.position.x + 8, r.position.y, r.size.x - 16, 1), Color(HudStyle.TEXT, 0.14))
 	var cd := float(c.get("cooldown_s", 0.0))
-	if cd > 0.0:
+	var vehicle := is_vehicle(c)
+	if cd > 0.0 and vehicle:
 		var frac := clampf(cd / maxf(float(c.get("cooldown_total_s", cd)), 0.01), 0.0, 1.0)
 		draw_rect(Rect2(r.position.x + 1, r.end.y - r.size.y * frac, r.size.x - 2, r.size.y * frac - 1), Color(HudStyle.TEXT, 0.12))
 	if (_hover == i and not off) or (focused and cursor == i):
@@ -244,7 +284,6 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 		draw_rect(Rect2(r.position + Vector2(0, 2), Vector2(3, r.size.y - 4)), HudStyle.ACCENT)
 	var x0 := r.position.x + 8.0
 	var x1 := r.end.x - 8.0
-	var vehicle := is_vehicle(c)
 	# Focused: the tile's buy key (1–9) before its name.
 	if focused and i < 9:
 		var key := "%d" % (i + 1)
@@ -260,6 +299,8 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 		HudStyle.box(self, br, Color(HudStyle.DANGER, 0.35) if full else HudStyle.BG_CHIP, 3)
 		HudStyle.text(self, bold, Vector2(br.get_center().x, br.position.y + 12.5), badge, HudStyle.FONT_SMALL, HudStyle.TEXT, 0)
 		badge_w += 4.0
+	else:
+		badge_w = _draw_men_disc(i, c, bold, off)
 	var title := HudStyle.fit(bold, _short(c.type, c.get("short", "")), x1 - x0 - badge_w, HudStyle.FONT)
 	HudStyle.text(self, bold, Vector2(x0, r.position.y + 16.0), title, HudStyle.FONT, HudStyle.OFF_TEXT if off else HudStyle.TEXT)
 	x0 = r.position.x + 8.0
@@ -285,6 +326,34 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 		var pop := "%d pop" % int(c.get("pop", 0))
 		if HudStyle.text_w(font, pop, HudStyle.FONT_SMALL) <= x1 - x0 - 6.0 - cost_w:
 			HudStyle.text(self, font, Vector2(x1, r.end.y - 5.0), pop, HudStyle.FONT_SMALL, HudStyle.DIM, 1)
+
+
+## S4: the men disc (count, cooldown ring) and the understrength chevron
+## of soldier tile `i`; returns the width they take on the title line.
+func _draw_men_disc(i: int, c: Dictionary, bold: Font, off: bool) -> float:
+	var dr := men_disc_rect(i)
+	if dr.size == Vector2.ZERO:
+		return 0.0
+	var ctr := dr.get_center()
+	var rad := dr.size.x * 0.5
+	draw_circle(ctr, rad, HudStyle.BG_CHIP)
+	draw_arc(ctr, rad - 1.0, 0.0, TAU, 24, Color(HudStyle.TEXT, 0.18), 1.5, true)
+	var frac := ring_frac(i)
+	if frac > 0.0:
+		# The cooldown left, clockwise from the top.
+		draw_arc(ctr, rad - 1.0, -PI * 0.5, -PI * 0.5 + TAU * frac, 24, HudStyle.ACCENT, 2.5, true)
+	var men := "%d" % int(c.get("men", 0))
+	HudStyle.text(self, bold, Vector2(ctr.x, ctr.y + 4.5), men, HudStyle.FONT_SMALL, HudStyle.OFF_TEXT if off else HudStyle.TEXT, 0)
+	var w := dr.size.x + 4.0
+	if bool(c.get("understrength", false)):
+		# Half-filled chevron (a squad below establishment).
+		var cx := dr.position.x - 9.0
+		var cy := ctr.y
+		var pts := PackedVector2Array([Vector2(cx - 5, cy - 4), Vector2(cx, cy + 3), Vector2(cx + 5, cy - 4)])
+		draw_polyline(pts, HudStyle.ACCENT, 1.5, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(cx - 5, cy - 4), Vector2(cx, cy + 3), Vector2(cx, cy - 1)]), HudStyle.ACCENT)
+		w += 14.0
+	return w
 
 
 ## The reason tile `i` writes right of its cost ("need 192"), or "" when it
@@ -385,4 +454,6 @@ func _get_tooltip(at: Vector2) -> String:
 	var recall := float(c.get("recall_s", c.get("cooldown_total_s", 0.0)))
 	var after := "" if recall <= 0.0 else " Then %d s before the next." % int(recall)
 	var why := refusal_text(c)
-	return "%s: %s, %d manpower. Deploys at the base at once.%s%s" % [c.name, what, int(c.cost), after, "" if why == "" else "\nNot now: " + why]
+	# S4: the card's gloss ("Grenadiergruppe — rifle squad, 10 men: ...").
+	var head := String(c.get("gloss", "%s: %s" % [c.name, what]))
+	return "%s\n%d manpower. Deploys at the base at once.%s%s" % [head, int(c.cost), after, "" if why == "" else "\nNot now: " + why]

@@ -16,8 +16,14 @@ use frontline_sim::{
     UnitOrder, World,
 };
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 fn setup(seed: u64, ai: [bool; 2]) -> MatchSetup {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     defs.resolve(&MatchRequest::skirmish(
         seed,
@@ -149,7 +155,7 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
     w.place_squad(sq, at(430, 420), EAST);
     let men = members(&w, sq);
     let leader = men[0];
-    assert!(w.entities().kit()[leader.index()].leader);
+    assert_eq!(w.entities().kit()[leader.index()].slot, 0);
     assert_eq!(items(&w, leader, ItemKind::Frag), 2);
     assert_eq!(items(&w, leader, ItemKind::Smoke), 1);
     assert_eq!(items(&w, men[1], ItemKind::Frag), 1);
@@ -163,7 +169,7 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
             .unwrap()
             .items
     };
-    assert_eq!(card(&w), [9, 1, 0]);
+    assert_eq!(card(&w), [9, 1, 0, 0]);
 
     // Nearest to the target, ties by lowest id: recomputed here.
     let target = at(455, 423);
@@ -180,7 +186,7 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
     assert_eq!(items(&w, first, ItemKind::Frag), (first == leader) as u8);
     let u = &w.entities().unit()[first.index()];
     assert!(u.detached && u.order == UnitOrder::Idle && u.nav.phase == NavPhase::Holding);
-    assert_eq!(card(&w), [8, 1, 0]);
+    assert_eq!(card(&w), [8, 1, 0, 0]);
     assert!(w.snapshot().soldier_throwing.iter().filter(|t| **t).count() == 1);
     // He is busy: the next throw goes to the next nearest man.
     let rest: Vec<SimId> = men.iter().copied().filter(|&m| m != first).collect();

@@ -113,6 +113,25 @@ func _ready() -> void:
 		camera.height = 150.0
 		camera.pitch_deg = -89.0
 		camera.jump_to(Vector3.ZERO)
+	elif setup == "s4_card":
+		_stage_s4_card.call_deferred()
+
+
+## S4 screenshot staging on the real match: the own first line squad
+## selected (its member rows on the card) a moment after the start, with
+## manpower left so the call-in column shows ready and dimmed tiles.
+func _stage_s4_card() -> void:
+	await get_tree().create_timer(1.5).timeout
+	var own := -1
+	for sq in view.state.get("squads", []):
+		if int(sq.owner) == view.local_player and String(sq.get("type", "")) == "rifle":
+			own = int(sq.id)
+			break
+	if own != -1:
+		view.selection.select_squads(PackedInt32Array([own]))
+		var p: Vector3 = view.squads_by_id[own].pos
+		camera.height = 45.0
+		camera.jump_to(p)
 
 
 ## Debug builds (S3b): re-reads mods/ TOML and restarts this match with the

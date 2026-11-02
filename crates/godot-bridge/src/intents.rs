@@ -18,7 +18,7 @@
 //! (men and vehicles) carries a `polyline` of one or two points, or a
 //! `target` ([`unit_command`]).
 
-use frontline_content::{DigProfile, ItemKind, MatchSetup, SquadRole};
+use frontline_content::{DigProfile, ItemKind, MatchSetup};
 use frontline_sim::game::MAX_DIG_POINTS;
 use frontline_sim::{AmmoChoice, CommandKind, Fx, FxVec2, MAX_UNITS, SimId, SquadId, StanceOrder};
 
@@ -37,30 +37,24 @@ pub fn sim_to_fx(p: [f32; 2]) -> FxVec2 {
     FxVec2::new(q(p[0]), q(p[1]))
 }
 
-/// Role name used by the presenter (`rifle`, `mg`, `engineer`, `mortar`;
-/// S3: `at`, `vehicle`).
-pub fn role_name(r: SquadRole) -> &'static str {
-    match r {
-        SquadRole::Rifle => "rifle",
-        SquadRole::Mg => "mg",
-        SquadRole::Engineer => "engineer",
-        SquadRole::Mortar => "mortar",
-        SquadRole::AntiTank => "at",
-        SquadRole::Vehicle => "vehicle",
-        // S3c: a bailed-out tank crew.
-        SquadRole::Crew => "crew",
-    }
+/// The presenter's `type` word of squad type `t` (`rifle`, `mg`,
+/// `engineer`, `mortar`, `at`, `vehicle`, `crew`; S4: derived from the
+/// card's tags, `MatchSetup::type_word`).
+pub fn role_name(setup: &MatchSetup, t: u16) -> &'static str {
+    setup.type_word(t)
 }
 
-/// The squad type of `role` in player `player`'s faction roster.
+/// The first squad type of `role` (a `type` word) in player `player`'s
+/// faction roster (legacy intent; S4 HUD tiles call in by card id).
 pub fn call_in_type(setup: &MatchSetup, player: u8, role: &str) -> Option<u16> {
     let f = setup.players.get(player as usize)?.faction as usize;
-    setup.factions.get(f)?.roster.iter().copied().find(|&t| {
-        setup
-            .squad_types
-            .get(t as usize)
-            .is_some_and(|ty| role_name(ty.role) == role)
-    })
+    setup
+        .factions
+        .get(f)?
+        .roster
+        .iter()
+        .copied()
+        .find(|&t| setup.type_word(t) == role)
 }
 
 /// The squad type with id `id` (`ww2:ger_pz4_h_squad`) in player
@@ -240,6 +234,7 @@ pub fn item_kind(name: &str) -> Option<ItemKind> {
         "frag" => ItemKind::Frag,
         "smoke" => ItemKind::Smoke,
         "satchel" => ItemKind::Satchel,
+        "panzerfaust" => ItemKind::SingleShotAt,
         _ => return None,
     })
 }
@@ -249,6 +244,7 @@ pub fn item_name(k: ItemKind) -> &'static str {
         ItemKind::Frag => "frag",
         ItemKind::Smoke => "smoke",
         ItemKind::Satchel => "satchel",
+        ItemKind::SingleShotAt => "panzerfaust",
     }
 }
 

@@ -3,7 +3,9 @@
 //! Every distance and time is rules data (`[ai.assault]`); see the module
 //! docs of [`crate::ai`], step 8.
 
-use frontline_content::{ItemKind, SquadRole};
+use frontline_content::ItemKind;
+
+use super::AiKind;
 
 use super::{
     AiHunt, AiState, Known, KnownVehicle, Mine, MyTank, NO_POINT, Planner, PointEval, Rel,
@@ -230,10 +232,7 @@ impl Planner<'_> {
                 .copied()
                 .filter(|m| {
                     !skip.contains(&m.id)
-                        && matches!(
-                            m.role,
-                            SquadRole::Rifle | SquadRole::Mg | SquadRole::Engineer
-                        )
+                        && matches!(m.role, AiKind::Rifle | AiKind::Mg | AiKind::Engineer)
                 })
                 .collect();
             if here.len() < 2 || free.is_empty() {
@@ -248,8 +247,8 @@ impl Planner<'_> {
                     .get(&m.id)
                     .is_some_and(|t| t.kind == TaskKind::Suppress && t.point == i as u8);
                 let role = match m.role {
-                    SquadRole::Mg => 0,
-                    SquadRole::Rifle => 1,
+                    AiKind::Mg => 0,
+                    AiKind::Rifle => 1,
                     _ => 2,
                 };
                 (!cont, role, m.id)
@@ -257,7 +256,7 @@ impl Planner<'_> {
             let Some(base) = free
                 .iter()
                 .copied()
-                .filter(|m| m.role != SquadRole::Engineer)
+                .filter(|m| m.role != AiKind::Engineer)
                 .min_by_key(|m| rank(m))
             else {
                 continue;
@@ -279,16 +278,14 @@ impl Planner<'_> {
                         .get(&m.id)
                         .is_some_and(|t| t.kind == TaskKind::Suppress && t.point == i as u8);
                     let role = match m.role {
-                        SquadRole::Mg => 0,
+                        AiKind::Mg => 0,
                         _ => 1,
                     };
                     (!cont, role, m.id)
                 };
                 free.iter()
                     .copied()
-                    .filter(|m| {
-                        m.id != base.id && matches!(m.role, SquadRole::Mg | SquadRole::Rifle)
-                    })
+                    .filter(|m| m.id != base.id && matches!(m.role, AiKind::Mg | AiKind::Rifle))
                     .min_by_key(|m| rank2(m))
             } else {
                 None
@@ -371,7 +368,7 @@ impl Planner<'_> {
         let cfg = &g.setup.rules.ai.assault;
         let body = &g.setup.rules.combat.body;
         let (support, height) = match base.role {
-            SquadRole::Mg => (cfg.support_mg_m, body.prone_mm),
+            AiKind::Mg => (cfg.support_mg_m, body.prone_mm),
             _ => (cfg.support_rifle_m, body.stand_mm - body.muzzle_drop_mm),
         };
         let gap = avoid.map(|a| (a, sq_m(Fx::from_int(cfg.second_base_gap_m as i32))));
@@ -417,16 +414,13 @@ impl Planner<'_> {
     }
 
     /// A squad's fire weight (S3c B4): rounds per minute × suppression per
-    /// round, summed over its men (the first `weapon_men` carry the squad
-    /// weapon, the rest the sidearm).
+    /// round, summed over its men (S4: each by the weapon he carries).
     fn fire_weight(&self, m: &Mine) -> u64 {
-        let g = self.g;
-        let sq = &g.squads[&m.id];
-        let ty = &g.setup.squad_types[sq.type_idx as usize];
-        let men = sq.members.len() as u64;
-        let main = men.min(ty.weapon_men as u64);
-        let w = |k: Option<u16>| k.map_or(0, |k| self.weapon_weight(k));
-        main * w(Some(ty.weapon)) + (men - main) * w(ty.sidearm)
+        let sq = &self.g.squads[&m.id];
+        sq.members
+            .iter()
+            .map(|p| self.weapon_weight(self.ents.kit()[p.index()].weapon))
+            .sum()
     }
 
     /// One weapon's rounds per minute × suppression per round.
@@ -447,12 +441,13 @@ impl Planner<'_> {
         g.setup
             .squad_types
             .iter()
-            .filter(|t| {
-                t.role == SquadRole::Mg
+            .enumerate()
+            .filter(|&(k, t)| {
+                super::ai_kind(&g.setup, k as u16) == AiKind::Mg
                     && t.faction != mine
                     && g.setup.players.iter().any(|p| p.faction == t.faction)
             })
-            .map(|t| self.weapon_weight(t.weapon))
+            .map(|(_, t)| self.weapon_weight(t.weapon))
             .max()
             .unwrap_or(0)
     }
@@ -524,17 +519,20 @@ impl Planner<'_> {
                 .find(|a| a.0 == j)
                 .map_or(m.lead, |a| points[a.1].pos);
             let pick = match m.role {
-                SquadRole::AntiTank => self
+                AiKind::AntiTank => self
                     .at_hunt(m, home, known, kv)
                     .map(|(s, h, stuck)| (s, h, TaskKind::Hunt, stuck))
                     .or_else(|| {
                         self.at_follow(m)
                             .map(|s| (s, false, TaskKind::Follow, false))
                     }),
-                SquadRole::Engineer => self
+                AiKind::Engineer => self
                     .satchel_hunt(m, kv)
                     .map(|(s, h)| (s, h, TaskKind::Hunt, false)),
-                _ => None,
+                // S4: squads carrying a Panzerfaust hunt close vehicles.
+                _ => self
+                    .pzf_hunt(m, known, kv)
+                    .map(|(s, h)| (s, h, TaskKind::Hunt, false)),
             };
             let Some((spot, hold, kind, stuck)) = pick else {
                 continue;
@@ -543,11 +541,12 @@ impl Planner<'_> {
             if !was {
                 match (m.role, kind) {
                     (_, TaskKind::Follow) => self.ai.counters.at_follows += 1,
-                    (SquadRole::AntiTank, _) => {
+                    (AiKind::AntiTank, _) => {
                         self.ai.counters.at_hunts += 1;
                         self.ai.counters.at_stuck_hunts += u32::from(stuck);
                     }
-                    _ => self.ai.counters.satchel_hunts += 1,
+                    (AiKind::Engineer, _) => self.ai.counters.satchel_hunts += 1,
+                    _ => self.ai.counters.pzf_hunts += 1,
                 }
             }
             let sq = &self.g.squads[&m.id];
@@ -569,7 +568,7 @@ impl Planner<'_> {
                 self.ai.emit(self.due, c);
             }
             self.task(m.id, kind, NO_POINT, spot);
-            if m.role == SquadRole::Engineer {
+            if m.role == AiKind::Engineer {
                 self.hunt_stance(m);
             }
             out.push(m.id);
@@ -774,6 +773,13 @@ impl Planner<'_> {
         if (m.lead - v.pos).length_sq_raw() <= sq_m(now) {
             return Some((m.lead, true, far));
         }
+        self.flank_spot(v, reach, m.lead).map(|s| (s, false, far))
+    }
+
+    /// The nearest to `from` of five spots `reach` from vehicle `v` (sides,
+    /// rear quarters, rear) off its turret's front.
+    fn flank_spot(&self, v: &KnownVehicle, reach: Fx, from: FxVec2) -> Option<FxVec2> {
+        let g = self.g;
         let fwd = crate::vehicle::yaw_dir(v.yaw);
         let turret = g
             .vehicles
@@ -792,8 +798,60 @@ impl Planner<'_> {
             .copied()
             .filter(|&d| off_front(d))
             .map(|d| self.terrain.clamp(v.pos + d * reach))
-            .min_by_key(|s| ((*s - m.lead).length_sq_raw(), s.x, s.y))
-            .map(|s| (s, false, far))
+            .min_by_key(|s| ((*s - from).length_sq_raw(), s.x, s.y))
+    }
+
+    /// S4 Panzerfaust hunt: a squad whose men still carry a single-shot AT
+    /// item goes for the nearest known enemy vehicle within
+    /// `ai.assault.pzf_hunt_m` of its leader, unless a known enemy soldier
+    /// is within `pzf_clear_m` of the route's middle: it holds when the
+    /// vehicle is within the item weapon's reach for its motion (the men
+    /// fire by the weapon's own rules), else walks to the nearest flank
+    /// spot `at_hunt_inset_m` inside its `engage_still`.
+    fn pzf_hunt(&self, m: &Mine, known: &[Known], kv: &[KnownVehicle]) -> Option<(FxVec2, bool)> {
+        let g = self.g;
+        let cfg = &g.setup.rules.ai.assault;
+        if cfg.pzf_hunt_m == 0 || kv.is_empty() {
+            return None;
+        }
+        let sq = &g.squads[&m.id];
+        sq.pzf?;
+        let k = ItemKind::SingleShotAt.index();
+        if !sq
+            .members
+            .iter()
+            .any(|p| self.ents.kit()[p.index()].items[k] > 0)
+        {
+            return None;
+        }
+        let ty = &g.setup.squad_types[sq.type_idx as usize];
+        let (_, it) = ty.kit(&g.setup.items, ItemKind::SingleShotAt)?;
+        let w = &g.setup.weapons[it.weapon? as usize];
+        let r = sq_m(Fx::from_int(cfg.pzf_hunt_m as i32));
+        let v = kv
+            .iter()
+            .filter(|v| (v.pos - m.lead).length_sq_raw() <= r)
+            .min_by_key(|v| ((v.pos - m.lead).length_sq_raw(), v.id))?;
+        let clear = sq_m(Fx::from_int(cfg.pzf_clear_m as i32));
+        let mid = (m.lead + v.pos).div_int(2);
+        if known.iter().any(|k| (k.pos - mid).length_sq_raw() <= clear) {
+            return None;
+        }
+        let inset = Fx::from_int(cfg.at_hunt_inset_m as i32);
+        let reach_of = |e: frontline_content::Fixed| {
+            (Fx::from(e).min(w.range_max.into()) - inset).max(Fx::from_int(10))
+        };
+        let moving = v.vel.length() > Fx::from(g.setup.rules.vehicles.moving_speed);
+        let now = reach_of(if moving {
+            w.engage_moving
+        } else {
+            w.engage_still
+        });
+        if (m.lead - v.pos).length_sq_raw() <= sq_m(now) {
+            return Some((m.lead, true));
+        }
+        self.flank_spot(v, reach_of(w.engage_still), m.lead)
+            .map(|s| (s, false))
     }
 
     /// An engineer squad's sticky satchel hunt (S3c B2, module docs of

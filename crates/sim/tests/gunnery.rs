@@ -56,7 +56,7 @@ fn tank(w: &mut World, player: u8, at: FxVec2, f: FxVec2) -> (SquadId, SimId) {
 
 fn rifles(w: &mut World, player: u8, at: FxVec2, f: FxVec2) -> SquadId {
     let id = if player == 0 {
-        "ww2:ger_rifle_squad"
+        "ww2:ger_grenadiergruppe"
     } else {
         "ww2:usa_rifle_squad"
     };

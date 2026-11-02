@@ -35,7 +35,7 @@
 use std::collections::BTreeMap;
 
 use frontline_content::vehicle::AmmoMechanism;
-use frontline_content::{ItemKind, MatchSetup, SquadRole};
+use frontline_content::{ItemKind, MatchSetup};
 use frontline_sim::{ArmourEventKind, PlayerId, SimId, SquadId, TaskKind, World};
 use serde::Serialize;
 
@@ -185,10 +185,10 @@ impl S3cTally {
             ents.kind().get(m.index()) == Some(&frontline_sim::EntityKind::Soldier)
                 && ents.squad()[m.index()]
                     .and_then(|q| g.squad(q))
-                    .is_some_and(|q| s.squad_types[q.type_idx as usize].role == SquadRole::Crew)
+                    .is_some_and(|q| s.type_has_tag(q.type_idx, "crew"))
         };
         for sq in g.squads().values() {
-            if s.squad_types[sq.type_idx as usize].role != SquadRole::Crew {
+            if !s.type_has_tag(sq.type_idx, "crew") {
                 continue;
             }
             for &m in &sq.members {
@@ -381,7 +381,7 @@ impl S3cTally {
                     continue;
                 }
                 let Some(sq) = g.squad(sid) else { continue };
-                if s.squad_types[sq.type_idx as usize].role != SquadRole::Engineer {
+                if !s.type_has_tag(sq.type_idx, "engineer") {
                     continue;
                 }
                 on_hunt.push(sid);

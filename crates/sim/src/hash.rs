@@ -154,7 +154,8 @@ impl StableHash for Unit {
 impl StableHash for Kit {
     fn put(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&self.items);
-        self.leader.put(out);
+        self.slot.put(out);
+        self.weapon.put(out);
         self.throws.put(out);
         self.resupply.put(out);
         match self.windup {
@@ -345,6 +346,9 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         ] {
             n.put(out);
         }
+        // S4.
+        p.s4.pickups.put(out);
+        p.s4.single_shots.put(out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -385,11 +389,30 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             Some(l) => {
                 1u8.put(out);
                 l.carrier.put(out);
-                l.handover.put(out);
                 l.rounds.put(out);
                 l.resupply.put(out);
                 l.attack.put(out);
                 l.aim_turret.put(out);
+            }
+        }
+        // S4: crew weapon drops and the single-shot AT state.
+        (sq.drops.len() as u32).put(out);
+        for d in &sq.drops {
+            d.weapon.put(out);
+            d.at.put(out);
+            d.ticks.put(out);
+        }
+        match &sq.pzf {
+            None => 0u8.put(out),
+            Some(p) => {
+                1u8.put(out);
+                p.man.put(out);
+                p.target.put(out);
+                p.aim_turret.put(out);
+                p.aim.put(out);
+                p.gap.put(out);
+                p.search.put(out);
+                p.attack.put(out);
             }
         }
     }

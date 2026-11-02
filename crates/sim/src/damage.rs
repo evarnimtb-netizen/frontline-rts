@@ -893,6 +893,15 @@ impl MatchState {
             {
                 l.attack = None;
             }
+            // S4: the single-shot AT aim and order at it.
+            if let Some(p) = &mut sq.pzf {
+                if p.attack == Some(id) {
+                    p.attack = None;
+                }
+                if p.target == Some(id) {
+                    (p.man, p.target, p.aim) = (None, None, 0);
+                }
+            }
         }
         for (i, c) in ents.combat.iter_mut().enumerate() {
             if c.target == Some(id) && ents.kind[i] == EntityKind::Soldier {

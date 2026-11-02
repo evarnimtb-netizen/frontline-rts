@@ -1,0 +1,245 @@
+# Panzer IV Ausf. H (S3, docs/slices/S3-armour.md "Units"). Hull and
+# turret are oriented boxes; each box face is an armour plate whose
+# ballistic normal is tilted by `slope_deg`. Approximate public figures;
+# every number is a starting value for tuning.
+#
+# Frames, in cm: hull frame x forward, y left, z up from the ground under
+# the hull's centre; turret frame from the turret pivot, turning with the
+# turret.
+id = "ww2:ger_pz4_h"
+name = "Panzer IV Ausf. H"
+short_name = "Panzer IV"
+faction = "ww2:germany"
+role = "tank"
+# S3b (step (b) cost balance, owner question S3b-10 (A): within +-15 %).
+# Tune: Panzer IV 640 -> 600, Sherman 560 -> 620. S3b Fix: Panzer IV 620
+# (-3 % from S3), Sherman 590 (+5 %), measured over 40 AI matches (seeds
+# 1-20, both base orders) on the Fix data (Bird & Livingston AP rows,
+# HEAT spall 7, MG stowage): 640/560 Germany 12, USA 27, 1 draw, base 1
+# won 20 of 39; 600/620 Germany 18, USA 22, base 1 won 28 of 40 (70 %);
+# 620/590 Germany 17, USA 21, 2 draws, base 1 won 21 of 38 (55 %). The
+# smallest move that balances both. A gameplay balance value, not a price.
+cost = 620
+pop = 12
+# Call-in (S3b): a call-in spawns the tank at once at the base (no
+# queue, no delivery time; it walks to the front itself). Then this
+# type cannot be called in again for recall_cooldown_s seconds. 120 s set
+# by the owner on 2026-11-01 (20 % under the first proposal of 150 s).
+recall_cooldown_s = 120
+# Seconds from the match start before the first call-in; 0 = at once.
+# Rules' vehicle unlock (vehicles.unlock_s) applies as well.
+initial_cooldown_s = 0
+sight_m = 175
+# Seen at 200 % of an observer's sight (size); 250 % moving and 300 %
+# after firing come from the rules and the gun.
+spot_size_pct = 200
+eye_height_cm = 250
+sources = ["placeholder: citations are an owner / M2 task"]
+# S3c: the squad the surviving crew become when they bail out.
+crew_squad = "ww2:ger_tank_crew"
+
+[mobility]
+type = "tracked"
+speed_cm_s = 600
+reverse_cm_s = 200
+turn_deg_s = 30
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+# 27°: under the 30° pitch clamp.
+max_slope_pct = 50
+# AT-ditch ground at least 1.9 m deep blocks it.
+ditch_block_dm = 19
+bog_pct = 6
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+box = { center = [0, 0, 108], half = [290, 140, 68] }
+# The lower 45 % of each side is running gear (track hits, +20 mm).
+track_band_pct = 45
+track_mm = 20
+
+[turret]
+pivot = [20, 0, 176]
+box = { center = [0, 0, 45], half = [115, 95, 45] }
+traverse_deg_s = 14
+# Main gun elevation (deg/s). 6: the S3 code value (gunnery.rs
+# ELEVATE_DEG_S, moved to data in S3b); no sourced figure yet, a starting
+# value for tuning.
+elevate_deg_s = 6
+
+[armor]
+hull_front   = { thickness_mm = 80, slope_deg = 10, material = "rha" }
+hull_side    = { thickness_mm = 30, slope_deg = 0,  material = "rha" }
+hull_rear    = { thickness_mm = 20, slope_deg = 10, material = "rha" }
+hull_top     = { thickness_mm = 12, material = "rha" }
+turret_front = { thickness_mm = 50, slope_deg = 10, material = "rha" }
+turret_side  = { thickness_mm = 30, slope_deg = 25, material = "rha" }
+turret_rear  = { thickness_mm = 30, slope_deg = 15, material = "rha" }
+turret_top   = { thickness_mm = 16, material = "rha" }
+
+[crew]
+seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
+
+# S3b (crew layout): in our box model the hull's front face is the nose;
+# the real driver's front plate (Fahrerfrontplatte) sits about 0.6 m
+# behind it, and the driver (left) and radio operator (right) sit right
+# behind that plate with the gearbox between them. Their boxes moved 0.4 m
+# forward (x 150 -> 190; box fronts 0.65 m behind the nose) so a frontal
+# HEAT jet (1.0 m) reaches them. Source: Jentz & Doyle, Panzer Tracts 4-3
+# (layout drawings); positions approximate within the box model.
+# S3b Tune (turret basket): the turret crew boxes reach down into the hull
+# (turret frame z below 0 = below the turret ring, 176 cm above the ground)
+# instead of sitting wholly above the ring. The gunner sits left of the gun
+# with his legs below the ring (z -70..70); the loader stands on the
+# turret platform, about 0.4 m above the ground (z -120..70); the
+# commander sits high under his cupola (z -40..85). Before, a hull hit at
+# the height of the visible-mass centre passed under all three. Source:
+# Jentz & Doyle, Panzer Tracts 4-3 (turret layout); approximate.
+[crew.boxes]
+driver    = { frame = "hull",   center = [190, 60, 115], half = [35, 30, 40] }
+radio_mg  = { frame = "hull",   center = [190, -60, 115], half = [35, 30, 40] }
+gunner    = { frame = "turret", center = [10, 45, 0],    half = [30, 25, 70] }
+loader    = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
+commander = { frame = "turret", center = [-70, 0, 22],   half = [30, 30, 63] }
+
+[[weapons]]
+def = "ww2:kwk40_l48"
+mount = "turret_main"
+# From the turret pivot.
+muzzle = [450, 0, 45]
+elevation_deg = [-8, 20]
+# S3b: 6 PzGr 40 APCR as a special third round (owner question S3b-7 (A);
+# tungsten was scarce, a handful per tank). Auto loads it only against a
+# target the PzGr 39 likely fails on ([vehicles.gunnery]
+# special_below_pct).
+ammo = [
+  { id = "ww2:75mm_pzgr39", count = 30 },
+  { id = "ww2:75mm_sprgr34", count = 30 },
+  { id = "ww2:75mm_pzgr40", count = 6 },
+]
+# S3b: the exposed barrel, from the muzzle back to the turret front (450 -
+# 115 cm); a round or rocket must strike it to damage the gun. 8 cm: the
+# barrel with its sleeve, a little thicker than the 75 mm bore.
+barrel = { length_cm = 335, radius_cm = 8 }
+
+# S3b Fix (review M4): MG rounds stowed per mount. The Ausf. H carried
+# 3,150 rounds of 7.92 mm in belt bags for its two MG 34 (Jentz & Doyle,
+# Panzer Tracts 4-3, specification table); split evenly between the
+# mounts. Spent rounds refill one 150-round belt per base rearm step
+# (vehicles.base_rearm_s). Suppressive fire now spends real ammunition.
+[[weapons]]
+def = "ww2:mg34"
+mount = "coax"
+muzzle = [120, 25, 45]
+rounds = 1575
+
+[[weapons]]
+def = "ww2:mg34"
+mount = "hull"
+# Hull frame.
+muzzle = [295, -60, 140]
+arc_deg = 15
+seat = "radio_mg"
+rounds = 1575
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-200, 0, 100], half = [70, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 125, 45] }, { pos = [0, 125, 45] }, { pos = [-250, 125, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -125, 45] }, { pos = [0, -125, 45] }, { pos = [-250, -125, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+# The breech inside the turret; S3b: the barrel is the main-gun mount's
+# barrel box, damaged only by rounds that strike it. No field repair.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [20, 0, 166], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+# S3b (rack geometry): the Ausf. H stowed its 87 rounds in bins low along
+# both hull sides of the fighting compartment and beside the radio operator,
+# none in the turret (Jentz & Doyle, Panzer Tracts 4-3). Three bins, one HP
+# pool, instead of one slab 2.2 m wide across the whole hull that every
+# core and spall ray crossed. Positions approximate within the box model.
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [-20, 95, 70], half = [55, 30, 25] },
+  { frame = "hull", center = [-20, -95, 70], half = [55, 30, 25] },
+  { frame = "hull", center = [110, -95, 80], half = [25, 25, 30] },
+]
+
+# S3b: the gearbox and final-drive train in the nose between the driver and
+# the radio operator (front sprockets; Panzer Tracts 4-3). Damaged: half
+# speed; destroyed: immobilised. Values as the engine's (100 HP, field
+# repair to 50 in 60 s); no fire. A starting value for tuning.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [200, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+# Direct control (§5.12), unused until M5.
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's cupola
+# (a single hatch on the H), a two-piece side door each side of the turret
+# (gunner left, loader right), and the driver's and radio operator's hatches
+# in the superstructure roof (Jentz & Doyle, Panzer Tracts 4-3; Lone Sentry).
+# Positions in cm (hull frame, or turret frame from the pivot); exit times
+# are starting values: about 3 s out of a turret hatch, 4 s out of a hull
+# hatch past the gun and the hull MG.
+[[hatches]]
+seats = ["commander"]
+frame = "turret"
+pos = [-70, 0, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["gunner"]
+frame = "turret"
+pos = [10, 95, 45]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [10, -95, 45]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [190, 60, 176]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [190, -60, 176]
+exit_ms = 4000

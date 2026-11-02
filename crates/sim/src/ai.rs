@@ -167,7 +167,8 @@
 
 use std::collections::BTreeMap;
 
-use frontline_content::{ComponentKind, DigProfile, SquadRole};
+use frontline_content::setup::Capability;
+use frontline_content::{ComponentKind, DigProfile, MatchSetup};
 use serde::{Deserialize, Serialize};
 
 use crate::command::CommandKind;
@@ -352,6 +353,15 @@ pub struct AiCounters {
     pub recrews: u32,
     pub crew_retreats: u32,
     pub denials: u32,
+    /// S4: call-ins by squad type (index into `MatchSetup::squad_types`;
+    /// grows to the type count on the first buy).
+    pub bought: Vec<u32>,
+    /// S4: hunts started by squads with single-shot AT items, and capture
+    /// orders at enemy abandoned vehicles.
+    pub pzf_hunts: u32,
+    pub capture_orders: u32,
+    /// S4: plans whose buy waited only for the pop cap.
+    pub pop_cap_holds: u32,
 }
 
 impl AiState {
@@ -490,24 +500,45 @@ fn units_of(kind: &CommandKind) -> Option<&[SimId]> {
     }
 }
 
-/// Roles in the buy mix: the S1 roles in `AiSetup::mix_pct` order, then
-/// the S3 AT team and vehicle.
-const MIX_ROLES: usize = 6;
-const MIX_AT: usize = 4;
-const MIX_VEHICLE: usize = 5;
+/// S4: what the AI treats a squad as, from its card's tags (the first of
+/// crew, vehicle, at, mortar, engineer, mg, line it carries; `Other` for
+/// none). The behaviours keyed on it (point scores, digging, assaults,
+/// hunts) are the S1-S3c role behaviours; capabilities gate the orders.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum AiKind {
+    Rifle,
+    Mg,
+    Engineer,
+    Mortar,
+    AntiTank,
+    Vehicle,
+    Crew,
+    Other,
+}
 
-fn role_index(r: SquadRole) -> usize {
-    match r {
-        SquadRole::Rifle => 0,
-        SquadRole::Mg => 1,
-        SquadRole::Engineer => 2,
-        SquadRole::Mortar => 3,
-        SquadRole::AntiTank => MIX_AT,
-        SquadRole::Vehicle => MIX_VEHICLE,
-        // S3c: crews are never bought (`buy` skips them); a slot for the
-        // type only.
-        SquadRole::Crew => 0,
+/// The [`AiKind`] of squad type `t`.
+pub(crate) fn ai_kind(s: &MatchSetup, t: u16) -> AiKind {
+    match s.type_word(t) {
+        "crew" => AiKind::Crew,
+        "vehicle" => AiKind::Vehicle,
+        "at" => AiKind::AntiTank,
+        "mortar" => AiKind::Mortar,
+        "engineer" => AiKind::Engineer,
+        "mg" => AiKind::Mg,
+        "rifle" => AiKind::Rifle,
+        _ => AiKind::Other,
     }
+}
+
+/// S4: the buy-mix slot (index into `AiSetup::mix`) of squad type `t`:
+/// the first mix entry whose tag the card carries; `None` for a card the
+/// AI never buys (no mix tag, or a crew).
+fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
+    let ty = &s.squad_types[t as usize];
+    if ty.has_tag(s.tag("crew")) {
+        return None;
+    }
+    s.rules.ai.mix.iter().position(|m| ty.tags.contains(&m.tag))
 }
 
 /// Squared distance bound for `m` metres, comparable with `length_sq_raw`.
@@ -552,7 +583,7 @@ struct MyTank {
 /// One of the AI's own squads at plan time.
 struct Mine {
     id: SquadId,
-    role: SquadRole,
+    role: AiKind,
     lead: FxVec2,
     strength_pct: u32,
 }
@@ -672,7 +703,7 @@ impl Planner<'_> {
             }
             let ty = &g.setup.squad_types[sq.type_idx as usize];
             // S3c: crews re-crew or walk back to base (step 9).
-            if ty.role == SquadRole::Crew {
+            if ai_kind(&g.setup, sq.type_idx) == AiKind::Crew {
                 crews.push(id);
                 continue;
             }
@@ -691,7 +722,7 @@ impl Planner<'_> {
             }
             mine.push(Mine {
                 id,
-                role: ty.role,
+                role: ai_kind(&g.setup, sq.type_idx),
                 lead: self.ents.transform[sq.lead(self.ents).index()].pos.xy(),
                 strength_pct: sq.members.len() as u32 * 100 / ty.men.max(1) as u32,
             });
@@ -815,17 +846,62 @@ impl Planner<'_> {
         let s = &g.setup;
         let p = self.me.0 as usize;
         let faction = &s.factions[s.players[p].faction as usize];
-        let mut by_role: [Option<u16>; MIX_ROLES] = [None; MIX_ROLES];
+        let ai = &s.rules.ai;
+        // S4 tag mix: one slot per `AiSetup::mix` entry; a card counts
+        // toward the first entry whose tag it carries.
+        let slots = ai.mix.len();
+        let at_slot = s
+            .tag("at")
+            .and_then(|t| ai.mix.iter().position(|m| m.tag == t));
+        let veh_slot = s
+            .tag("vehicle")
+            .and_then(|t| ai.mix.iter().position(|m| m.tag == t));
+        let gated = |r: usize| Some(r) == at_slot || Some(r) == veh_slot;
+        let mut cards: Vec<Vec<u16>> = vec![Vec::new(); slots];
         for &t in &faction.roster {
-            by_role[role_index(s.squad_types[t as usize].role)].get_or_insert(t);
+            if let Some(r) = mix_slot(s, t) {
+                cards[r].push(t);
+            }
         }
-        let mut counts = [0i64; MIX_ROLES];
-        let mut count = |t: u16| counts[role_index(s.squad_types[t as usize].role)] += 1;
-        for sq in g.squads.values().filter(|sq| {
-            sq.owner == self.me && s.squad_types[sq.type_idx as usize].role != SquadRole::Crew
-        }) {
-            count(sq.type_idx);
+        // The slot's highest-weight card (ties: the first in the roster):
+        // the one the AI saves up for.
+        let best = |r: usize| -> Option<u16> {
+            cards[r]
+                .iter()
+                .copied()
+                .fold(None, |b: Option<u16>, t| match b {
+                    Some(b)
+                        if s.squad_types[b as usize].ai_weight
+                            >= s.squad_types[t as usize].ai_weight =>
+                    {
+                        Some(b)
+                    }
+                    _ => Some(t),
+                })
+        };
+        let mut counts = vec![0i64; slots];
+        let mut alive_by_type = vec![0u32; s.squad_types.len()];
+        for sq in g.squads.values().filter(|sq| sq.owner == self.me) {
+            alive_by_type[sq.type_idx as usize] += 1;
+            if let Some(r) = mix_slot(s, sq.type_idx) {
+                counts[r] += 1;
+            }
         }
+        // S4: own squads still carrying a single-shot AT item count as half
+        // an AT team toward the urgent-AT rule.
+        let k = ItemKind::SingleShotAt.index();
+        let pzf_squads = g
+            .squads
+            .values()
+            .filter(|sq| {
+                sq.owner == self.me
+                    && sq.pzf.is_some()
+                    && sq
+                        .members
+                        .iter()
+                        .any(|m| self.ents.kit()[m.index()].items[k] > 0)
+            })
+            .count() as i64;
         let pl = &g.players[p];
         let mut budget = pl.manpower as i64;
         let mut pop = g.population(self.ents, self.me) as i64;
@@ -836,7 +912,10 @@ impl Planner<'_> {
         for c in &self.ai.pending {
             if let CommandKind::CallIn { squad_type } = c.kind {
                 let ty = &s.squad_types[squad_type as usize];
-                count(squad_type);
+                if let Some(r) = mix_slot(s, squad_type) {
+                    counts[r] += 1;
+                }
+                alive_by_type[squad_type as usize] += 1;
                 budget -= ty.cost as i64;
                 pop += ty.pop(&s.vehicles) as i64;
                 vehicles += ty.vehicle.is_some() as u32;
@@ -844,12 +923,28 @@ impl Planner<'_> {
             }
         }
         // A type can be bought when its cooldown is over by the time the
-        // command is applied and no pending buy restarts it.
+        // command is applied and no pending buy restarts it; S4: and its
+        // card limits (`max_alive`, limit group) leave room.
         let due = self.due;
         let me = self.me;
-        let ready = |t: u16, bought: &[u16]| {
-            let group = s.squad_types[t as usize].cooldown_group;
-            g.cooldown_left(me, t, due) == 0
+        let ready = |t: u16, bought: &[u16], alive: &[u32]| {
+            let ty = &s.squad_types[t as usize];
+            let group = ty.cooldown_group;
+            let under_max = ty.max_alive == 0 || alive[t as usize] < ty.max_alive as u32;
+            let under_group = ty.limit_group.is_none_or(|lg| {
+                let n: u32 = s
+                    .squad_types
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, o)| o.limit_group == Some(lg))
+                    .map(|(k, _)| alive[k])
+                    .sum();
+                n < s.rules.limit_groups[lg as usize].limit
+            });
+            under_max
+                && under_group
+                && due >= ty.initial_cooldown_ticks as u64
+                && g.cooldown_left(me, t, due) == 0
                 && !bought.iter().any(|&b| {
                     b == t || (group.is_some() && s.squad_types[b as usize].cooldown_group == group)
                 })
@@ -859,26 +954,34 @@ impl Planner<'_> {
         // the mix is the S1 one.
         let vr = &s.rules.vehicles;
         let unlocked = self.tick >= vr.unlock_ticks as u64;
-        let ai = &s.rules.ai;
-        let mut mix = [0u32; MIX_ROLES];
-        mix[..4].copy_from_slice(&ai.mix_pct);
-        if unlocked && self.ai.enemy_vehicle_seen {
-            mix[MIX_AT] = ai.mix_at_pct;
+        let mut mix: Vec<u32> = ai
+            .mix
+            .iter()
+            .enumerate()
+            .map(|(r, m)| if gated(r) { 0 } else { m.pct })
+            .collect();
+        if let Some(r) = at_slot
+            && unlocked
+            && self.ai.enemy_vehicle_seen
+        {
+            mix[r] = ai.mix[r].pct;
         }
-        if unlocked && vehicles < vr.limit {
-            mix[MIX_VEHICLE] = ai.mix_vehicle_pct;
+        if let Some(r) = veh_slot
+            && unlocked
+            && vehicles < vr.limit
+        {
+            mix[r] = ai.mix[r].pct;
         }
+        let count_of = |counts: &[i64], r: Option<usize>| r.map_or(0, |r| counts[r]);
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
             let total: i64 = counts.iter().sum();
-            let active = |r: usize| by_role[r].is_some() && (r < MIX_AT || mix[r] > 0);
-            let weight: i64 = (0..MIX_ROLES)
+            let active = |r: usize| !cards[r].is_empty() && (!gated(r) || mix[r] > 0);
+            let weight: i64 = (0..slots)
                 .filter(|&r| active(r))
                 .map(|r| mix[r] as i64)
                 .sum();
-            // Roles by how far they are below the mix, furthest first.
-            let mut ranked: Vec<usize> = (0..MIX_ROLES)
-                .filter(|&r| active(r) && mix[r] > 0)
-                .collect();
+            // Slots by how far they are below the mix, furthest first.
+            let mut ranked: Vec<usize> = (0..slots).filter(|&r| active(r) && mix[r] > 0).collect();
             ranked.sort_by_key(|&r| {
                 (
                     -(mix[r] as i64 * (total + 1) - weight * counts[r]),
@@ -888,12 +991,15 @@ impl Planner<'_> {
             let mut role = ranked.first().copied();
             let roll = self.below(200);
             // Saving up for a vehicle: no stray buy spends the savings.
-            let saving = role == Some(MIX_VEHICLE)
-                && by_role[MIX_VEHICLE].is_some_and(|t| {
-                    budget < s.squad_types[t as usize].cost as i64 && ready(t, &bought)
-                });
+            let saving = role.is_some() && role == veh_slot && {
+                let r = role.unwrap_or(0);
+                best(r).is_some_and(|t| {
+                    budget < s.squad_types[t as usize].cost as i64
+                        && ready(t, &bought, &alive_by_type)
+                })
+            };
             if roll < 100 - self.quality && !saving {
-                let options: Vec<usize> = (0..MIX_ROLES).filter(|&r| active(r)).collect();
+                let options: Vec<usize> = (0..slots).filter(|&r| active(r)).collect();
                 if !options.is_empty() {
                     role = Some(options[self.below(options.len() as u32) as usize]);
                 }
@@ -901,42 +1007,74 @@ impl Planner<'_> {
             // More enemy vehicles in sight than own AT teams and vehicles:
             // an AT team first, reserve or not.
             let mut urgent_at = false;
-            if mix[MIX_AT] > 0
-                && by_role[MIX_AT].is_some()
-                && kv.len() as i64 > counts[MIX_AT] + counts[MIX_VEHICLE]
+            if let Some(a) = at_slot
+                && mix[a] > 0
+                && !cards[a].is_empty()
+                && 2 * kv.len() as i64
+                    > 2 * (count_of(&counts, at_slot) + count_of(&counts, veh_slot)) + pzf_squads
             {
-                role = Some(MIX_AT);
+                role = Some(a);
                 urgent_at = true;
             }
-            // S3b: the chosen role if its type is off cooldown, else the
+            // S3b: the chosen slot if a card of it is off cooldown, else the
             // next in mix order that is.
             let Some(first) = role else {
                 return;
             };
             let Some(r) = std::iter::once(first)
                 .chain(ranked.iter().copied().filter(|&r| r != first))
-                .find(|&r| by_role[r].is_some_and(|t| ready(t, &bought)))
+                .find(|&r| cards[r].iter().any(|&t| ready(t, &bought, &alive_by_type)))
             else {
                 return;
             };
-            let Some(t) = by_role[r] else {
+            // S4: among the slot's ready cards, the one furthest below its
+            // `ai_weight` share of this match's buys (fewest buys per weight;
+            // ties: roster order), so full and understrength cards come in
+            // the ratio of their weights. Out of manpower or pop for it:
+            // save up (no cheaper card instead).
+            let ready_cards: Vec<u16> = cards[r]
+                .iter()
+                .copied()
+                .filter(|&t| ready(t, &bought, &alive_by_type))
+                .collect();
+            // (`AiCounters::bought` counts at emit: pending buys included.)
+            let buys = |t: u16| {
+                self.ai
+                    .counters
+                    .bought
+                    .get(t as usize)
+                    .copied()
+                    .unwrap_or(0) as u64
+            };
+            let Some(&t) = ready_cards.iter().min_by(|&&a, &&b| {
+                let wa = s.squad_types[a as usize].ai_weight.max(1) as u64;
+                let wb = s.squad_types[b as usize].ai_weight.max(1) as u64;
+                ((buys(a) + 1) * wb).cmp(&((buys(b) + 1) * wa))
+            }) else {
                 return;
             };
+            {
+                let ty = &s.squad_types[t as usize];
+                if budget < ty.cost as i64 {
+                    return;
+                }
+                if pop + ty.pop(&s.vehicles) as i64 > s.rules.pop_cap as i64 {
+                    // S4 report: held back by the pop cap.
+                    self.ai.counters.pop_cap_holds += 1;
+                    return;
+                }
+            }
             let ty = &s.squad_types[t as usize];
             let men = ty.pop(&s.vehicles) as i64;
-            if budget < ty.cost as i64 || pop + men > s.rules.pop_cap as i64 {
-                // Save up for it rather than buying something else.
-                return;
-            }
             // After the unlock, under the vehicle limit: infantry leaves a
             // small reserve toward the next vehicle.
-            let reserve = if mix[MIX_VEHICLE] > 0 && by_role[MIX_VEHICLE].is_some() {
+            let reserve = if veh_slot.is_some_and(|v| mix[v] > 0 && !cards[v].is_empty()) {
                 ai.armour.tank_reserve_mp as i64
             } else {
                 0
             };
-            if r != MIX_VEHICLE
-                && !(urgent_at && r == MIX_AT)
+            if Some(r) != veh_slot
+                && !(urgent_at && Some(r) == at_slot)
                 && budget - (ty.cost as i64) < reserve
             {
                 return;
@@ -946,18 +1084,21 @@ impl Planner<'_> {
             budget -= ty.cost as i64;
             pop += men;
             bought.push(t);
-            let r = role_index(ty.role);
+            alive_by_type[t as usize] += 1;
             counts[r] += 1;
-            match r {
-                MIX_VEHICLE => {
-                    self.ai.counters.vehicles_bought += 1;
-                    vehicles += 1;
-                    if vehicles >= vr.limit {
-                        mix[MIX_VEHICLE] = 0;
-                    }
+            let c = &mut self.ai.counters;
+            if c.bought.len() < s.squad_types.len() {
+                c.bought.resize(s.squad_types.len(), 0);
+            }
+            c.bought[t as usize] += 1;
+            if Some(r) == veh_slot {
+                c.vehicles_bought += 1;
+                vehicles += 1;
+                if vehicles >= vr.limit {
+                    mix[r] = 0;
                 }
-                MIX_AT => self.ai.counters.at_bought += 1,
-                _ => {}
+            } else if Some(r) == at_slot {
+                c.at_bought += 1;
             }
         }
     }
@@ -1022,7 +1163,7 @@ impl Planner<'_> {
     fn assign(&mut self, mine: &[Mine], points: &mut [PointEval]) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
         for (j, m) in mine.iter().enumerate() {
-            if m.role == SquadRole::Mortar {
+            if m.role == AiKind::Mortar {
                 continue;
             }
             let cur = self.ai.tasks.get(&m.id).map(|t| t.point);
@@ -1033,12 +1174,12 @@ impl Planner<'_> {
                 }
                 let weak = m.strength_pct < 60;
                 score += match (m.role, pt.rel) {
-                    (SquadRole::AntiTank, Rel::Own) if pt.armour > 0 => 150,
-                    (SquadRole::AntiTank, Rel::Own) => 40,
-                    (SquadRole::AntiTank, _) => -60,
-                    (SquadRole::Engineer, Rel::Own) if !pt.trench_done => 80,
-                    (SquadRole::Mg, Rel::Own) => 30,
-                    (SquadRole::Mg, Rel::Enemy) => -20,
+                    (AiKind::AntiTank, Rel::Own) if pt.armour > 0 => 150,
+                    (AiKind::AntiTank, Rel::Own) => 40,
+                    (AiKind::AntiTank, _) => -60,
+                    (AiKind::Engineer, Rel::Own) if !pt.trench_done => 80,
+                    (AiKind::Mg, Rel::Own) => 30,
+                    (AiKind::Mg, Rel::Enemy) => -20,
                     (_, Rel::Own) if weak => 40,
                     _ if weak => -40,
                     _ => 0,
@@ -1095,7 +1236,7 @@ impl Planner<'_> {
             let k = slot[i];
             slot[i] += 1;
             let sq = &g.squads[&m.id];
-            let wants_dig = m.role == SquadRole::Engineer
+            let wants_dig = m.role == AiKind::Engineer
                 && pt.rel == Rel::Own
                 && !pt.trench_done
                 && pt.threat < 4;
@@ -1245,7 +1386,11 @@ impl Planner<'_> {
             .max_by_key(|p| p.priority)
             .or_else(|| points.iter().max_by_key(|p| p.priority))
             .map(|p| p.pos);
-        for m in mine.iter().filter(|m| m.role == SquadRole::Mortar) {
+        // S4: squads that can barrage (a member carries a mortar).
+        for m in mine
+            .iter()
+            .filter(|m| s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::Barrage))
+        {
             let sq = &g.squads[&m.id];
             if matches!(sq.order, Order::Barrage { .. }) {
                 continue;
@@ -1649,7 +1794,7 @@ impl Planner<'_> {
                         .filter(|a| a.1 == pi as usize)
                         .map(|a| &mine[a.0])
                         .filter(|m| {
-                            matches!(m.role, SquadRole::Rifle | SquadRole::Engineer)
+                            matches!(m.role, AiKind::Rifle | AiKind::Engineer)
                                 && m.strength_pct >= 60
                                 && !taken.contains(&m.id)
                                 && !hunting.contains(&m.id)
@@ -1747,7 +1892,7 @@ impl Planner<'_> {
     fn satchel_vehicle(&self, sq: &crate::game::Squad, kv: &[KnownVehicle]) -> Option<ThrowPick> {
         let g = self.g;
         let ty = &g.setup.squad_types[sq.type_idx as usize];
-        if ty.role != SquadRole::Engineer || kv.is_empty() {
+        if ai_kind(&g.setup, sq.type_idx) != AiKind::Engineer || kv.is_empty() {
             return None;
         }
         let (_, it) = ty.kit(&g.setup.items, ItemKind::Satchel)?;
@@ -1857,8 +2002,7 @@ impl Planner<'_> {
 
     /// Engineers: a satchel at a spotted enemy in a trench in range.
     fn satchel(&self, sq: &crate::game::Squad, known: &[Known]) -> Option<ThrowPick> {
-        let ty = &self.g.setup.squad_types[sq.type_idx as usize];
-        if ty.role != SquadRole::Engineer {
+        if ai_kind(&self.g.setup, sq.type_idx) != AiKind::Engineer {
             return None;
         }
         known.iter().filter(|k| k.in_trench).find_map(|k| {

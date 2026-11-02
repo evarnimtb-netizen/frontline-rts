@@ -21,6 +21,7 @@ pub mod net_session;
 mod node;
 pub mod present;
 pub mod rig;
+pub mod s4_ui;
 pub mod terrain_view;
 
 pub use match_node::FrontlineMatch;

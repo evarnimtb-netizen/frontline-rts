@@ -80,6 +80,9 @@ impl Purpose {
     /// a vehicle's MGs skip two draws per mount). The main gun draws
     /// nothing: its HE aims at the line's middle.
     pub const SUPPRESS: Purpose = Purpose(27);
+    /// S4 single-shot AT item (Panzerfaust): the shot's spread and lead
+    /// estimate (tick, firer).
+    pub const SINGLE_SHOT: Purpose = Purpose(28);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

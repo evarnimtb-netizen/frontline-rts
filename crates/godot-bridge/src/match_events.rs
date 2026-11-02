@@ -77,12 +77,21 @@ pub fn refusal_words(why: CallInRefusal, setup: &MatchSetup, hz: u32) -> String 
         CallInRefusal::NotInRoster => "not in your roster".to_owned(),
         CallInRefusal::Locked { ticks } => {
             let s = secs(ticks);
-            format!("vehicles unlock in {}:{:02}", s / 60, s % 60)
+            format!("unlocks in {}:{:02}", s / 60, s % 60)
         }
         CallInRefusal::VehicleLimit => {
             format!("vehicle limit reached ({})", setup.rules.vehicles.limit)
         }
         CallInRefusal::Cooldown { ticks } => format!("ready again in {} s", secs(ticks)),
+        CallInRefusal::MaxAlive { max } => format!("{max} alive (max)"),
+        CallInRefusal::GroupLimit { group } => format!(
+            "{} limit",
+            setup
+                .rules
+                .limit_groups
+                .get(group as usize)
+                .map_or("group", |g| g.id.split(':').next_back().unwrap_or(&g.id))
+        ),
         CallInRefusal::Manpower { short } => format!("need {short} more manpower"),
         CallInRefusal::PopCap => format!("pop cap reached ({})", setup.rules.pop_cap),
     }
@@ -311,6 +320,28 @@ impl EventTracker {
                 kind,
                 text,
                 pos,
+                player: local as i32,
+                tick: ev.tick,
+            });
+        }
+        // S4: crew weapons picked up ("MG 42 picked up by MG assistant.").
+        for p in &ev.pickups {
+            let weapon = setup
+                .weapons
+                .get(p.weapon as usize)
+                .map_or("Weapon", |w| w.short_name.as_str());
+            let who = setup
+                .squad_types
+                .get(p.squad_type as usize)
+                .and_then(|t| t.members.get(p.member_slot as usize))
+                .map_or_else(
+                    || "the next man".to_owned(),
+                    |m| crate::s4_ui::slot_word(&m.slot),
+                );
+            out.push(UiEvent {
+                kind: "crew_weapon_picked_up",
+                text: format!("{weapon} picked up by {who}."),
+                pos: Some(p.pos),
                 player: local as i32,
                 tick: ev.tick,
             });
@@ -599,7 +630,7 @@ mod tests {
         );
         assert_eq!(
             refusal_words(CallInRefusal::Locked { ticks: 61 * 30 }, &setup, 30),
-            "vehicles unlock in 1:01"
+            "unlocks in 1:01"
         );
         // A squad that vanishes from the frame is reported lost.
         out.clear();

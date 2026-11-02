@@ -31,7 +31,17 @@ const CATALOG := [
 	{"type": "engineer", "name": "Engineer squad", "cost": 140, "recall_s": 36.0, "men": 5},
 	{"type": "mortar", "name": "Mortar team", "cost": 200, "recall_s": 60.0, "men": 3},
 	{"type": "at", "name": "AT team", "cost": 200, "recall_s": 48.0, "men": 2},
+	# S4: a second card for two roles (one tile per card, keyed by `id`;
+	# each card its own cooldown, Q21 (B)).
+	{"type": "rifle", "card": "rifle_9", "name": "Rifle squad (understrength)", "short": "Rifle 6", "cost": 90, "recall_s": 24.0, "men": 6, "understrength": true},
+	{"type": "mg", "card": "mg_heavy", "name": "Heavy MG squad", "short": "Heavy MG", "cost": 180, "recall_s": 36.0, "men": 4},
 ]
+## S4: capabilities by legacy type (the mock's squads send them as the
+## bridge does; orders follow them).
+const CAPABILITIES := {
+	"rifle": ["dig_basic", "recrew"], "mg": ["recrew"], "engineer": ["dig_basic", "dig_full", "recrew"],
+	"mortar": ["recrew", "barrage"], "at": ["dig_basic", "at_hunt"], "crew": ["vehicle_crew"],
+}
 const RULES := {
 	"pop_cap": 120,
 	"tickets_max": 500,
@@ -180,8 +190,12 @@ static func loadout(type: String, slot: int) -> Dictionary:
 func _spawn(owner: int, type: String, at: Vector2, men := -1) -> int:
 	var def: Dictionary = {}
 	for c in CATALOG:
-		if c.type == type:
+		if c.type == type and def.is_empty():
 			def = c
+	# S4: a card with its own men count (an understrength squad).
+	if men > 0 and type != "crew":
+		def = def.duplicate()
+		def.men = men
 	# S3c: a bailed-out tank crew (never bought), `men` of five.
 	if type == "crew":
 		def = {"type": "crew", "name": "Tank crew", "men": men if men > 0 else 5}
@@ -786,7 +800,8 @@ func catalog(owner: int) -> Array:
 	var out: Array = []
 	for c in CATALOG:
 		var e: Dictionary = c.duplicate()
-		e.id = "ww2:%s_%s" % [short, c.type]
+		e.id = "ww2:%s_%s" % [short, c.get("card", c.type)]
+		e.erase("card")
 		e.pop = int(c.men)
 		if c.type == "at":
 			var at: Dictionary = MockVehicles.AT_TEAM.get(faction, MockVehicles.AT_TEAM.germany)
@@ -825,7 +840,8 @@ func _call_in_entry(owner: int, def: Dictionary) -> bool:
 		return false
 	var type: String = def.type
 	players[owner].manpower -= def.cost
-	recall_cooldown[owner][type] = [float(def.recall_s), float(def.recall_s)]
+	# S4: per card (keyed by its id).
+	recall_cooldown[owner][String(def.id)] = [float(def.recall_s), float(def.recall_s)]
 	stats[owner].squads_called += 1
 	var at := _spawn_spot(owner)
 	if def.has("vehicle"):
@@ -833,7 +849,7 @@ func _call_in_entry(owner: int, def: Dictionary) -> bool:
 		if owner == local_player:
 			_push_event(owner, "vehicle_arrived", "%s deployed at base." % MockVehicles.TYPES[def.vehicle].short, _v3(at))
 		return true
-	var id := _spawn(owner, type, at)
+	var id := _spawn(owner, type, at, int(def.men))
 	if owner == local_player:
 		_push_event(owner, "squad_arrived", "%s deployed at base." % squads[id].name, _v3(at))
 	return true
@@ -848,7 +864,7 @@ func call_in_block(owner: int, def: Dictionary) -> String:
 				return "vehicles unlock in %s" % UiPalette.mmss(ceilf(veh.locked_s()))
 			"limit":
 				return "vehicle limit reached (%d)" % veh.limit
-	var cd: Array = recall_cooldown[owner].get(def.type, [])
+	var cd: Array = recall_cooldown[owner].get(String(def.get("id", def.type)), [])
 	if not cd.is_empty():
 		return "ready again in %d s" % ceili(float(cd[0]))
 	var short := int(def.cost) - int(players[owner].manpower)
@@ -1434,9 +1450,9 @@ func _build_state() -> Dictionary:
 	var catalog: Array = []
 	for entry in catalog(local_player):
 		var cds: Dictionary = recall_cooldown[local_player]
-		if cds.has(entry.type):
-			entry.cooldown_s = cds[entry.type][0]
-			entry.cooldown_total_s = cds[entry.type][1]
+		if cds.has(entry.id):
+			entry.cooldown_s = cds[entry.id][0]
+			entry.cooldown_total_s = cds[entry.id][1]
 		if entry.type == "vehicle" and veh.locked_s() > 0.0:
 			entry.locked_s = veh.locked_s()
 		catalog.append(entry)
@@ -1504,6 +1520,8 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 		"order": sq.order,
 		"pos": _v3(sq.pos),
 		"units": units,
+		# S4: what the squad can do (orders follow it).
+		"capabilities": PackedStringArray(CAPABILITIES.get(sq.type, [])),
 	}
 	if sq.owner == local_player:
 		out.items = items

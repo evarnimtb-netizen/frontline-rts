@@ -20,9 +20,8 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use frontline_content::{
-    Difficulty, DigProfile, MatchRequest, MatchSetup, ModDefs, PlayerRequest, SquadRole,
-};
+use frontline_content::setup::Capability;
+use frontline_content::{Difficulty, DigProfile, MatchRequest, MatchSetup, ModDefs, PlayerRequest};
 use frontline_sim::{
     AmmoChoice, Command, CommandKind, EntityKind, FxVec2, Outcome, PlayerId, StanceOrder, World,
 };
@@ -574,12 +573,14 @@ impl Scripter {
                     game.squads()
                         .iter()
                         .find(|(_, q)| {
-                            let role = setup.squad_types[q.type_idx as usize].role;
+                            // S4: by capability (trained crew, else any
+                            // squad that may re-crew).
+                            let ty = &setup.squad_types[q.type_idx as usize];
                             q.owner.0 == self.slot
                                 && if crew {
-                                    role == SquadRole::Crew
+                                    ty.has(Capability::VehicleCrew)
                                 } else {
-                                    !matches!(role, SquadRole::AntiTank | SquadRole::Vehicle)
+                                    ty.has(Capability::Recrew)
                                 }
                         })
                         .map(|(&id, _)| id)
@@ -600,8 +601,7 @@ impl Scripter {
             }
             _ => {
                 let eng = game.squads().iter().find(|(_, q)| {
-                    q.owner.0 == self.slot
-                        && setup.squad_types[q.type_idx as usize].role == SquadRole::Engineer
+                    q.owner.0 == self.slot && setup.type_has_tag(q.type_idx, "engineer")
                 });
                 let a = near(&mut self.rng);
                 let b = world.terrain().clamp(a + FxVec2::from_int(10, 0));

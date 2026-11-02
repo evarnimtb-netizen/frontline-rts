@@ -1,0 +1,11 @@
+id = "ww2:m3_smg"
+name = "M3 SMG"
+class = "smg"
+range_m = 100
+damage = 38
+rounds_per_min = 350
+magazine = 30
+reload_ms = 3200
+spread_mrad = 35
+muzzle_velocity_m_s = 280
+suppression = 6

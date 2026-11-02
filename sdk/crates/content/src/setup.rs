@@ -21,8 +21,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::defs::{
-    DigProfileDef, ITEM_KINDS, ItemHeDef, ItemKind, MAX_ITEM_COUNT, SquadDef, SquadRole,
-    WeaponClass, parse_color,
+    DigProfileDef, ITEM_KINDS, ItemHeDef, ItemKind, MAX_ITEM_COUNT, SquadDef, WeaponClass,
+    parse_color,
 };
 use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
@@ -188,6 +188,52 @@ pub struct MatchSetup {
     pub ammo: Vec<AmmoSetup>,
     /// Vehicle types (S3), sorted by id.
     pub vehicles: Vec<VehicleSetup>,
+    /// S4: every tag of the mod's units, sorted (cards and the AI mix
+    /// index into it).
+    pub tags: Vec<String>,
+    /// S4: training profiles, sorted by id.
+    pub training: Vec<TrainingSetup>,
+}
+
+impl MatchSetup {
+    /// Index of tag `name` in [`Self::tags`].
+    pub fn tag(&self, name: &str) -> Option<u16> {
+        self.tags.iter().position(|t| t == name).map(|i| i as u16)
+    }
+
+    /// Whether squad type `t` carries tag `name`.
+    pub fn type_has_tag(&self, t: u16, name: &str) -> bool {
+        self.squad_types
+            .get(t as usize)
+            .is_some_and(|ty| ty.has_tag(self.tag(name)))
+    }
+
+    /// The presenter's legacy `type` word of squad type `t` (S4: derived
+    /// from its tags in the order crew, vehicle, at, mortar, engineer, mg,
+    /// line; `other` for none of them).
+    pub fn type_word(&self, t: u16) -> &'static str {
+        let Some(ty) = self.squad_types.get(t as usize) else {
+            return "other";
+        };
+        for (tag, word) in [
+            ("crew", "crew"),
+            ("vehicle", "vehicle"),
+            ("at", "at"),
+            ("mortar", "mortar"),
+            ("engineer", "engineer"),
+            ("mg", "mg"),
+            ("line", "rifle"),
+        ] {
+            if ty.has_tag(self.tag(tag)) {
+                return word;
+            }
+        }
+        if ty.vehicle.is_some() {
+            "vehicle"
+        } else {
+            "other"
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +265,8 @@ pub struct RulesSetup {
     pub cover: CoverTuning,
     /// Spawn spots of bought squads (S3b).
     pub call_in: CallInTuning,
+    /// S4: `[limit_groups]`, sorted by id.
+    pub limit_groups: Vec<LimitGroupSetup>,
 }
 
 impl RulesSetup {
@@ -305,6 +353,9 @@ pub struct VehicleRulesSetup {
 pub struct ItemRulesSetup {
     /// A man in his own base gets one item back every this many ticks.
     pub resupply_ticks: u32,
+    /// S4: a squad fires at most one single-shot AT item (Panzerfaust)
+    /// this often.
+    pub single_shot_gap_ticks: u32,
     /// S3b tuning table (TOML units).
     pub throw: ThrowTuning,
 }
@@ -314,18 +365,18 @@ pub struct ItemRulesSetup {
 pub struct AiSetup {
     pub retreat_strength_pct: u32,
     pub threat_radius: Fixed,
-    /// Target share per [`SquadRole`] in role order (rifle, MG, engineer,
-    /// mortar), percent.
-    pub mix_pct: [u32; 4],
+    /// S4: the target army mix by tag (`[ai.mix]`, or the legacy
+    /// `mix_*_pct` keys), percent; the legacy tags first in their old
+    /// order (line, mg, engineer, mortar, at, vehicle), then the others by
+    /// name. `at` counts after the vehicle unlock once an enemy vehicle was
+    /// seen, `vehicle` after the unlock under the vehicle limit.
+    pub mix: Vec<MixSetup>,
     pub barrage_rounds: u16,
     pub dig_length: Fixed,
     pub dig_offset: Fixed,
     /// A squad throws at most one item this often.
     pub throw_cooldown_ticks: u32,
     pub frag_group_men: u32,
-    /// S3: vehicle and AT-team shares of the mix, percent.
-    pub mix_vehicle_pct: u32,
-    pub mix_at_pct: u32,
     pub tank_standoff: Fixed,
     pub assault_close: Fixed,
     pub at_clear_ticks: u32,
@@ -535,6 +586,10 @@ pub struct WeaponSetup {
     pub engage_still: Fixed,
     pub engage_moving: Fixed,
     pub handover_ticks: u32,
+    /// S4: a crew weapon (picked up when its carrier falls).
+    pub crew: bool,
+    /// S4: squad-card name.
+    pub short_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -577,6 +632,9 @@ pub struct ItemSetup {
     pub scatter_pct: u32,
     pub he: Option<ItemHeSetup>,
     pub smoke: Option<SmokeSetup>,
+    /// S4 single-shot AT items: the launcher weapon it fires as (index
+    /// into `MatchSetup::weapons`); `windup_ticks` is the aim time.
+    pub weapon: Option<u16>,
 }
 
 /// An item's blast: a weapon-style [`HeSetup`] plus its own damage and
@@ -605,27 +663,168 @@ impl SmokeSetup {
     }
 }
 
-/// One loadout entry: `count` per man, `leader_count` for the squad leader.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KitSetup {
-    /// Index into [`MatchSetup::items`].
-    pub item: u16,
+/// S4 member traits (bit set in [`MemberSetup::traits`]).
+pub mod member_trait {
+    /// The squad leader's slot (first slot only).
+    pub const LEADER: u8 = 1;
+    /// Serves a crew weapon (the gunner).
+    pub const CREW_GUNNER: u8 = 2;
+    /// Picks a fallen gunner's crew weapon up first.
+    pub const CREW_ASSISTANT: u8 = 4;
+    /// Picks a fallen gunner's crew weapon up first (after assistants
+    /// tie on distance).
+    pub const AMMO_BEARER: u8 = 8;
+    /// Trait names in bit order.
+    pub const NAMES: [(&str, u8); 4] = [
+        ("leader", LEADER),
+        ("crew_gunner", CREW_GUNNER),
+        ("crew_assistant", CREW_ASSISTANT),
+        ("ammo_bearer", AMMO_BEARER),
+    ];
+    /// Every trait bit.
+    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER;
+}
+
+/// S4 capabilities: what a unit can do; orders and sim rules follow them
+/// (bit `Capability as u32` of [`SquadTypeSetup::caps`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum Capability {
+    /// Dig (trench profile).
+    DigBasic = 0,
+    /// Dig profiles that need it (the AT ditch).
+    DigFull = 1,
+    /// Barrage (a member carries a mortar).
+    Barrage = 2,
+    /// Board an own abandoned vehicle as untrained crew.
+    Recrew = 3,
+    /// Trained vehicle crew: may capture, dismissed in base.
+    VehicleCrew = 4,
+    /// A launcher member or a single-shot AT item in the kit.
+    AtHunt = 5,
+}
+
+impl Capability {
+    pub const ALL: [Capability; 6] = [
+        Capability::DigBasic,
+        Capability::DigFull,
+        Capability::Barrage,
+        Capability::Recrew,
+        Capability::VehicleCrew,
+        Capability::AtHunt,
+    ];
+
+    #[inline]
+    pub const fn bit(self) -> u32 {
+        1 << self as u32
+    }
+
+    /// The TOML name (`crate::variant::CAPABILITIES`).
+    pub const fn name(self) -> &'static str {
+        crate::variant::CAPABILITIES[self as usize]
+    }
+
+    /// Every capability bit.
+    pub const MASK: u32 = (1 << 6) - 1;
+}
+
+/// S4: one `[[members]]` slot, lowered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemberSetup {
+    /// Slot name (squad card).
+    pub slot: String,
+    /// Men in the slot (1..=16).
     pub count: u8,
-    pub leader_count: u8,
+    /// Index into [`MatchSetup::weapons`]: what each man carries.
+    pub weapon: u16,
+    /// Index into [`MatchSetup::weapons`]: what he fights with after he
+    /// hands a crew weapon on (parsed and kept; S4 men hand nothing on).
+    pub sidearm: Option<u16>,
+    /// Items each man of the slot carries, by [`ItemKind::index`]; which
+    /// item of a kind is [`SquadTypeSetup::items`].
+    pub items: [u8; ITEM_KINDS],
+    /// [`member_trait`] bits.
+    pub traits: u8,
+    /// Rounds he carries (stored; unlimited until S5).
+    pub ammo: u32,
+}
+
+/// S4: a training profile, percent multipliers (100 = regular; see
+/// `crate::variant::TrainingDef`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrainingSetup {
+    pub id: String,
+    pub name: String,
+    pub spread_pct: u32,
+    pub aim_time_pct: u32,
+    pub reload_pct: u32,
+    pub throw_scatter_pct: u32,
+    pub steadiness_pct: u32,
+    pub suppression_decay_pct: u32,
+    pub spot_pct: u32,
+    pub build_rate_pct: u32,
+}
+
+impl TrainingSetup {
+    /// Whether every multiplier is 100.
+    pub fn is_regular(&self) -> bool {
+        [
+            self.spread_pct,
+            self.aim_time_pct,
+            self.reload_pct,
+            self.throw_scatter_pct,
+            self.steadiness_pct,
+            self.suppression_decay_pct,
+            self.spot_pct,
+            self.build_rate_pct,
+        ]
+        .iter()
+        .all(|&v| v == 100)
+    }
+}
+
+/// S4: a limit group of the rules (`[limit_groups]`): alive units of all
+/// its cards count against `limit`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LimitGroupSetup {
+    pub id: String,
+    pub limit: u32,
+}
+
+/// S4: one `[ai.mix]` entry: a tag (index into [`MatchSetup::tags`]) and
+/// its target share of bought squads in percent.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MixSetup {
+    pub tag: u16,
+    pub pct: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SquadTypeSetup {
     pub id: String,
     pub name: String,
+    /// S4: HUD tile name (`short_name`, else `name`).
+    pub short_name: String,
     /// Index into [`MatchSetup::factions`].
     pub faction: u16,
-    pub role: SquadRole,
+    /// S4: the men by slot, in spawn and formation order; the first man
+    /// of the first slot leads. Empty for vehicle squads.
+    pub members: Vec<MemberSetup>,
+    /// Men: the sum of the slot counts (0 for vehicle squads).
     pub men: u8,
-    /// Index into [`MatchSetup::weapons`].
+    /// The squad's main weapon (index into [`MatchSetup::weapons`]): a
+    /// vehicle's main gun; else the first crew weapon among the members
+    /// (launcher, mortar, MG), else the leader's weapon.
     pub weapon: u16,
+    /// S4: the focus weapon (squad focus range): the most numerous
+    /// non-crew weapon among the members (ties: the earlier slot), else
+    /// `weapon`.
+    pub small_arms: u16,
+    /// S4: which item of each kind the men carry (index into
+    /// [`MatchSetup::items`] by [`ItemKind::index`]).
+    pub items: [Option<u16>; ITEM_KINDS],
     pub cost: u32,
-    /// Ticks after a call-in before this type can be called in again, and
+    /// Ticks after a call-in before this card can be called in again, and
     /// before its first call-in (S3b; a call-in spawns the squad at once).
     pub recall_cooldown_ticks: u32,
     pub initial_cooldown_ticks: u32,
@@ -642,18 +841,23 @@ pub struct SquadTypeSetup {
     /// S3b: suppression thresholds (duck, release, pin) are scaled by this
     /// (percent; 100 for vehicles).
     pub steadiness_pct: u32,
-    /// What the men carry, at most one entry per item kind.
-    pub loadout: Vec<KitSetup>,
-    /// S3: the vehicle (index into `MatchSetup::vehicles`) for `Vehicle`
-    /// squads. Those have `men = 0`, the main gun as `weapon`, and the
-    /// vehicle's cost, cooldowns, speed and sight; [`Self::pop`] is the
-    /// vehicle's.
+    /// S3: the vehicle (index into `MatchSetup::vehicles`) for vehicle
+    /// squads. Those have no members, the main gun as `weapon`, and the
+    /// vehicle's (or the card's) cost, cooldowns, speed and sight;
+    /// [`Self::pop`] is the vehicle's.
     pub vehicle: Option<u16>,
-    /// The first `weapon_men` men carry `weapon` (all of them when it is at
-    /// least `men`), the rest `sidearm`.
-    pub weapon_men: u8,
-    /// Index into `MatchSetup::weapons`.
-    pub sidearm: Option<u16>,
+    /// S4: tags (indices into [`MatchSetup::tags`], ascending).
+    pub tags: Vec<u16>,
+    /// S4: [`Capability`] bits.
+    pub caps: u32,
+    /// S4: training profile (index into [`MatchSetup::training`]).
+    pub training: u16,
+    /// S4: most squads of this card alive at once per player; 0 = no cap.
+    pub max_alive: u16,
+    /// S4: limit group (index into [`RulesSetup::limit_groups`]).
+    pub limit_group: Option<u16>,
+    /// S4: the AI's weight among ready cards of the same mix tag.
+    pub ai_weight: u32,
 }
 
 impl SquadTypeSetup {
@@ -665,27 +869,50 @@ impl SquadTypeSetup {
         }
     }
 
-    /// The loadout entry for items of `kind`, with the item's setup.
-    pub fn kit<'a>(
-        &'a self,
-        items: &'a [ItemSetup],
-        kind: ItemKind,
-    ) -> Option<(&'a KitSetup, &'a ItemSetup)> {
-        self.loadout.iter().find_map(|k| {
-            let it = items.get(k.item as usize)?;
-            (it.kind == kind).then_some((k, it))
-        })
+    /// Whether the card has capability `c` (S4).
+    #[inline]
+    pub fn has(&self, c: Capability) -> bool {
+        self.caps & c.bit() != 0
     }
 
-    /// Items a man of this type carries when full, by [`ItemKind`].
-    pub fn full_kit(&self, items: &[ItemSetup], leader: bool) -> [u8; ITEM_KINDS] {
-        let mut out = [0; ITEM_KINDS];
-        for kind in ItemKind::ALL {
-            if let Some((k, _)) = self.kit(items, kind) {
-                out[kind.index()] = if leader { k.leader_count } else { k.count };
+    /// Whether the card carries tag `tag` (index into `MatchSetup::tags`).
+    #[inline]
+    pub fn has_tag(&self, tag: Option<u16>) -> bool {
+        tag.is_some_and(|t| self.tags.contains(&t))
+    }
+
+    /// The slot (index into `members`) of the man spawned `k`-th; men
+    /// past the last slot belong to it.
+    pub fn slot_of(&self, k: usize) -> u8 {
+        let mut n = 0usize;
+        for (s, m) in self.members.iter().enumerate() {
+            n += m.count as usize;
+            if k < n {
+                return s as u8;
             }
         }
-        out
+        self.members.len().saturating_sub(1) as u8
+    }
+
+    /// The item of `kind` the men carry, with its setup.
+    pub fn kit<'a>(&self, items: &'a [ItemSetup], kind: ItemKind) -> Option<(u16, &'a ItemSetup)> {
+        let i = self.items[kind.index()]?;
+        Some((i, items.get(i as usize)?))
+    }
+
+    /// Items a man of slot `slot` carries when full, by [`ItemKind`].
+    pub fn full_kit(&self, slot: u8) -> [u8; ITEM_KINDS] {
+        self.members
+            .get(slot as usize)
+            .map_or([0; ITEM_KINDS], |m| m.items)
+    }
+
+    /// Items of `kind` the whole squad carries when full.
+    pub fn squad_items(&self, kind: ItemKind) -> u32 {
+        self.members
+            .iter()
+            .map(|m| m.items[kind.index()] as u32 * m.count as u32)
+            .sum()
     }
 }
 
@@ -811,6 +1038,8 @@ impl ModDefs {
                 engage_still: Fixed::from_int(w.engage_still_m.unwrap_or(w.range_m) as i32),
                 engage_moving: Fixed::from_int(w.engage_moving_m.unwrap_or(w.range_m) as i32),
                 handover_ticks: ms_to_ticks(w.handover_ms, hz),
+                crew: w.is_crew_weapon(),
+                short_name: w.short_name.clone().unwrap_or_else(|| w.name.clone()),
             })
             .collect();
         let items: Vec<ItemSetup> = self
@@ -832,12 +1061,17 @@ impl ModDefs {
                     hold_ticks: ms_to_ticks(m.hold_ms, hz),
                     fade_ticks: ms_to_ticks(m.fade_ms, hz),
                 }),
+                weapon: it
+                    .weapon
+                    .as_ref()
+                    .and_then(|w| index_of(self.weapons.keys(), w)),
             })
             .collect();
-        // S4 Part A: cards today's sim cannot run are refused here.
-        let part_b = self.part_a_refusals(rules);
-        if !part_b.is_empty() {
-            return Err(invalid(part_b));
+        // S4: what the sim cannot run (unknown limit groups, mixed items
+        // of one kind) is refused here.
+        let refused = self.card_refusals(rules);
+        if !refused.is_empty() {
+            return Err(invalid(refused));
         }
         let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
         let vehicles = self.lower_vehicles(hz);
@@ -855,6 +1089,75 @@ impl ModDefs {
                 .and_then(|g| groups.iter().position(|x| *x == g))
                 .map(|k| k as u16)
         };
+        // S4: tags (cards and the AI mix), training profiles, limit groups.
+        let mix_by_tag = rules.ai.mix_by_tag();
+        let tags: Vec<String> = {
+            let mut t: std::collections::BTreeSet<String> = self
+                .squads
+                .values()
+                .filter(|s| !s.is_abstract)
+                .flat_map(|s| s.tags.iter().cloned())
+                .collect();
+            t.extend(mix_by_tag.keys().cloned());
+            t.into_iter().collect()
+        };
+        let tag_idx = |t: &str| tags.iter().position(|x| x == t).map(|i| i as u16);
+        let training: Vec<TrainingSetup> = if self.training.is_empty() {
+            vec![TrainingSetup {
+                id: String::new(),
+                name: "Regular".into(),
+                spread_pct: 100,
+                aim_time_pct: 100,
+                reload_pct: 100,
+                throw_scatter_pct: 100,
+                steadiness_pct: 100,
+                suppression_decay_pct: 100,
+                spot_pct: 100,
+                build_rate_pct: 100,
+            }]
+        } else {
+            self.training
+                .values()
+                .map(|t| TrainingSetup {
+                    id: t.id.clone(),
+                    name: t.name.clone(),
+                    spread_pct: t.spread_pct,
+                    aim_time_pct: t.aim_time_pct,
+                    reload_pct: t.reload_pct,
+                    throw_scatter_pct: t.throw_scatter_pct,
+                    steadiness_pct: t.steadiness_pct,
+                    suppression_decay_pct: t.suppression_decay_pct,
+                    spot_pct: t.spot_pct,
+                    build_rate_pct: t.build_rate_pct,
+                })
+                .collect()
+        };
+        let default_training = rules.training.as_ref().map(|t| t.default.clone());
+        let training_idx = |s: &SquadDef| -> u16 {
+            let want = s.training.clone().or_else(|| default_training.clone());
+            want.and_then(|w| training.iter().position(|t| t.id == w))
+                .or_else(|| training.iter().position(|t| t.is_regular()))
+                .unwrap_or(0) as u16
+        };
+        let limit_idx = |g: &str| {
+            rules
+                .limit_groups
+                .keys()
+                .position(|x| x == g)
+                .map(|i| i as u16)
+        };
+        let caps_of = |s: &SquadDef| -> u32 {
+            s.capabilities
+                .iter()
+                .filter_map(|c| Capability::ALL.iter().find(|k| k.name() == c))
+                .fold(0, |a, k| a | k.bit())
+        };
+        let tags_of = |s: &SquadDef| -> Vec<u16> {
+            let mut v: Vec<u16> = s.tags.iter().filter_map(|t| tag_idx(t)).collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
         let squad_types: Vec<SquadTypeSetup> = self
             .squads
             .values()
@@ -866,18 +1169,29 @@ impl ModDefs {
                     .vehicle
                     .as_ref()
                     .and_then(|v| index_of(self.vehicles.keys(), v));
+                let short_name = s.short_name.clone().unwrap_or_else(|| s.name.clone());
                 if let Some(v) = vehicle {
                     let vs = &vehicles[v as usize];
+                    let gun = vs.main_gun().weapon;
+                    // S4-15 (A): the card may override the vehicle def's
+                    // cost, cooldown and unlock.
                     return SquadTypeSetup {
                         id: s.id.clone(),
                         name: s.name.clone(),
+                        short_name,
                         faction,
-                        role: s.role,
+                        members: Vec::new(),
                         men: 0,
-                        weapon: vs.main_gun().weapon,
-                        cost: vs.cost,
-                        recall_cooldown_ticks: vs.recall_cooldown_ticks,
-                        initial_cooldown_ticks: vs.initial_cooldown_ticks,
+                        weapon: gun,
+                        small_arms: gun,
+                        items: [None; ITEM_KINDS],
+                        cost: if s.cost != 0 { s.cost } else { vs.cost },
+                        recall_cooldown_ticks: s
+                            .cooldown_s
+                            .map_or(vs.recall_cooldown_ticks, |c| c * hz),
+                        initial_cooldown_ticks: s
+                            .unlock_s
+                            .map_or(vs.initial_cooldown_ticks, |c| c * hz),
                         cooldown_group,
                         hp: s.hp,
                         speed: vs.mobility.speed,
@@ -885,23 +1199,88 @@ impl ModDefs {
                         spacing: Fixed::ONE,
                         dig_rate_pct: 0,
                         steadiness_pct: crate::defs::DEFAULT_STEADINESS_PCT,
-                        loadout: Vec::new(),
                         vehicle: Some(v),
-                        weapon_men: 0,
-                        sidearm: None,
+                        tags: tags_of(s),
+                        caps: caps_of(s),
+                        training: training_idx(s),
+                        max_alive: s.max_alive,
+                        limit_group: s.limit_group.as_deref().and_then(limit_idx),
+                        ai_weight: s.ai_weight.unwrap_or(crate::variant::DEFAULT_AI_WEIGHT),
                     };
                 }
-                // S4: legacy soldiers as written, or `[[members]]`
-                // projected onto them (refused above when they do not fit).
-                let soldiers = self.legacy_soldiers(s);
-                let s = &soldiers;
+                // S4: the members, lowered (legacy cards were expanded into
+                // `members` by the loader, exactly).
+                let mut kit_items: [Option<u16>; ITEM_KINDS] = [None; ITEM_KINDS];
+                let members: Vec<MemberSetup> = s
+                    .members
+                    .iter()
+                    .map(|m| {
+                        let mut items = [0u8; ITEM_KINDS];
+                        for (id, &n) in &m.items {
+                            if n == 0 {
+                                continue;
+                            }
+                            if let (Some(i), Some(d)) =
+                                (index_of(self.items.keys(), id), self.items.get(id))
+                            {
+                                items[d.kind.index()] = n;
+                                kit_items[d.kind.index()].get_or_insert(i);
+                            }
+                        }
+                        let traits = m
+                            .traits
+                            .iter()
+                            .filter_map(|t| {
+                                member_trait::NAMES
+                                    .iter()
+                                    .find(|(n, _)| n == t)
+                                    .map(|(_, b)| *b)
+                            })
+                            .fold(0u8, |a, b| a | b);
+                        MemberSetup {
+                            slot: m.slot.clone(),
+                            count: m.count,
+                            weapon: weapon_idx(&m.weapon),
+                            sidearm: m.sidearm.as_deref().map(weapon_idx),
+                            items,
+                            traits,
+                            ammo: m.ammo.unwrap_or(0),
+                        }
+                    })
+                    .collect();
+                let men: u32 = members.iter().map(|m| m.count as u32).sum();
+                let crew_w = |w: u16| weapons.get(w as usize).is_some_and(|w| w.crew);
+                let main = members
+                    .iter()
+                    .map(|m| m.weapon)
+                    .find(|&w| crew_w(w))
+                    .or_else(|| members.first().map(|m| m.weapon))
+                    .unwrap_or(0);
+                // The focus weapon: the longest-reaching non-crew weapon
+                // (ties: the earlier slot), else the main weapon (S4-23).
+                let small_arms = members
+                    .iter()
+                    .map(|m| m.weapon)
+                    .filter(|&w| !crew_w(w))
+                    .fold(None::<u16>, |best, w| match best {
+                        Some(b)
+                            if weapons[b as usize].range_max >= weapons[w as usize].range_max =>
+                        {
+                            Some(b)
+                        }
+                        _ => Some(w),
+                    })
+                    .unwrap_or(main);
                 SquadTypeSetup {
                     id: s.id.clone(),
                     name: s.name.clone(),
+                    short_name,
                     faction,
-                    role: s.role,
-                    men: s.men,
-                    weapon: weapon_idx(&s.weapon),
+                    members,
+                    men: men.min(u8::MAX as u32) as u8,
+                    weapon: main,
+                    small_arms,
+                    items: kit_items,
                     cost: s.cost,
                     recall_cooldown_ticks: s.card_cooldown_s() * hz,
                     initial_cooldown_ticks: s.card_unlock_s() * hz,
@@ -912,18 +1291,13 @@ impl ModDefs {
                     spacing: Fixed::from_ratio(s.spacing_dm as i64, 10),
                     dig_rate_pct: s.dig_rate_pct,
                     steadiness_pct: s.steadiness_pct,
-                    loadout: s
-                        .loadout
-                        .iter()
-                        .map(|l| KitSetup {
-                            item: index_of(self.items.keys(), &l.item).unwrap_or(0),
-                            count: l.count,
-                            leader_count: l.leader_count,
-                        })
-                        .collect(),
                     vehicle: None,
-                    weapon_men: s.weapon_men.unwrap_or(s.men),
-                    sidearm: s.sidearm.as_deref().map(weapon_idx),
+                    tags: tags_of(s),
+                    caps: caps_of(s),
+                    training: training_idx(s),
+                    max_alive: s.max_alive,
+                    limit_group: s.limit_group.as_deref().and_then(limit_idx),
+                    ai_weight: s.ai_weight.unwrap_or(crate::variant::DEFAULT_AI_WEIGHT),
                 }
             })
             .collect();
@@ -1074,6 +1448,7 @@ impl ModDefs {
                 },
                 items: ItemRulesSetup {
                     resupply_ticks: rules.items.resupply_s * hz,
+                    single_shot_gap_ticks: rules.items.single_shot_gap_s * hz,
                     throw: rules.items.throw.clone(),
                 },
                 vehicles: {
@@ -1123,19 +1498,31 @@ impl ModDefs {
                 },
                 ai: {
                     let a = &rules.ai;
-                    let by_tag = a.mix_by_tag();
-                    let mix = |t: &str| by_tag.get(t).copied().unwrap_or(0);
+                    // S4: legacy tags first in their old order, then the
+                    // others by name (`AiSetup::mix`).
+                    const LEGACY: [&str; 6] = ["line", "mg", "engineer", "mortar", "at", "vehicle"];
+                    let mut mix: Vec<MixSetup> = Vec::new();
+                    for t in LEGACY {
+                        if let (Some(&pct), Some(tag)) = (mix_by_tag.get(t), tag_idx(t)) {
+                            mix.push(MixSetup { tag, pct });
+                        }
+                    }
+                    for (t, &pct) in &mix_by_tag {
+                        if !LEGACY.contains(&t.as_str())
+                            && let Some(tag) = tag_idx(t)
+                        {
+                            mix.push(MixSetup { tag, pct });
+                        }
+                    }
                     AiSetup {
                         retreat_strength_pct: a.retreat_strength_pct,
                         threat_radius: Fixed::from_int(a.threat_radius_m as i32),
-                        mix_pct: [mix("line"), mix("mg"), mix("engineer"), mix("mortar")],
+                        mix,
                         barrage_rounds: a.barrage_rounds as u16,
                         dig_length: Fixed::from_int(a.dig_length_m as i32),
                         dig_offset: Fixed::from_int(a.dig_offset_m as i32),
                         throw_cooldown_ticks: a.throw_cooldown_s * hz,
                         frag_group_men: a.frag_group_men,
-                        mix_vehicle_pct: mix("vehicle"),
-                        mix_at_pct: mix("at"),
                         tank_standoff: Fixed::from_int(a.tank_standoff_m as i32),
                         assault_close: Fixed::from_int(a.assault_close_m as i32),
                         at_clear_ticks: a.at_clear_s * hz,
@@ -1147,6 +1534,14 @@ impl ModDefs {
                 },
                 cover: rules.cover.clone(),
                 call_in: rules.call_in.tuning(),
+                limit_groups: rules
+                    .limit_groups
+                    .iter()
+                    .map(|(id, &limit)| LimitGroupSetup {
+                        id: id.clone(),
+                        limit,
+                    })
+                    .collect(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -1199,6 +1594,8 @@ impl ModDefs {
             players,
             ammo,
             vehicles,
+            tags,
+            training,
         };
         let issues = setup.validate();
         if issues.is_empty() {
@@ -1219,107 +1616,46 @@ impl ModDefs {
             .map(|(id, _)| id)
     }
 
-    /// A soldier card with its legacy fields as today's `SquadTypeSetup`
-    /// takes them: as written, or projected from `[[members]]`.
-    fn legacy_soldiers(&self, s: &SquadDef) -> SquadDef {
-        let mut out = s.clone();
-        if s.is_legacy() {
-            return out;
-        }
-        if let Ok(p) = crate::variant::project_members(&s.members) {
-            out.men = p.men;
-            out.weapon = p.weapon;
-            out.weapon_men = Some(p.weapon_men);
-            out.sidearm = p.sidearm;
-            out.loadout = p.loadout;
-        }
-        out
-    }
-
-    /// S4 Part A: what today's sim cannot run (refused at resolve with
-    /// "needs S4 Part B"; the loader and `validate` accept it).
-    fn part_a_refusals(&self, rules: &crate::defs::RulesDef) -> Vec<Issue> {
+    /// S4: cards the sim cannot run, refused at resolve (the loader and
+    /// `validate` accept them): an unknown limit group, and two different
+    /// items of one kind in one squad.
+    fn card_refusals(&self, rules: &crate::defs::RulesDef) -> Vec<Issue> {
         let mut out = Vec::new();
-        let needs = |id: &str, key: &str, why: String| {
-            Issue::new(
-                format!("squad `{id}`: {key}"),
-                format!("{why}: needs S4 Part B (the sim does not run it yet)"),
-            )
-        };
-        let regular = |t: &str| self.training.get(t).is_none_or(|d| d.is_regular());
-        let default_training = rules.training.as_ref().map(|t| t.default.as_str());
         for (id, s) in self.squads.iter().filter(|(_, s)| !s.is_abstract) {
-            if s.role == SquadRole::Vehicle {
-                if s.cost != 0 || s.cooldown_s.is_some() || s.unlock_s.is_some() {
-                    out.push(needs(
-                        id,
-                        "cost",
-                        "a vehicle card's own cost, cooldown_s or unlock_s".into(),
-                    ));
-                }
-            } else {
-                if !s.is_legacy()
-                    && let Err(why) = crate::variant::project_members(&s.members)
-                {
-                    out.push(needs(id, "members", why));
-                }
-                let t = s.training.as_deref().or(default_training);
-                if let Some(t) = t
-                    && !regular(t)
-                {
-                    out.push(needs(id, "training", format!("training profile `{t}`")));
-                }
-                let mut want = crate::variant::role_capabilities(s.role, s.dig_rate_pct);
-                let w = self.legacy_soldiers(s);
-                let class = |w: &str| self.weapons.get(w).map(|d| d.class);
-                let classes = [Some(w.weapon.as_str()), w.sidearm.as_deref()]
-                    .into_iter()
-                    .flatten()
-                    .filter_map(class)
-                    .collect::<Vec<_>>();
-                if classes.contains(&WeaponClass::Mortar) {
-                    want.push("barrage".into());
-                }
-                if classes.contains(&WeaponClass::Launcher) {
-                    want.push("at_hunt".into());
-                }
-                crate::variant::canonical_capabilities(&mut want);
-                if want != s.capabilities {
-                    out.push(needs(
-                        id,
-                        "capabilities",
-                        format!(
-                            "capabilities {:?} differ from the {:?} role's {want:?}",
-                            s.capabilities, s.role
-                        ),
-                    ));
-                }
-            }
-            if s.max_alive != 0 {
-                out.push(needs(id, "max_alive", "a card limit".into()));
-            }
-            if let Some(g) = &s.limit_group {
-                if !rules.limit_groups.contains_key(g) {
-                    out.push(Issue::new(
+            if let Some(g) = &s.limit_group
+                && !rules.limit_groups.contains_key(g)
+            {
+                out.push(
+                    Issue::new(
                         format!("squad `{id}`: limit_group"),
                         format!("the rules `{}` have no limit group `{g}`", rules.id),
-                    ));
-                }
-                out.push(needs(id, "limit_group", format!("limit group `{g}`")));
+                    )
+                    .with_hint(format!("[limit_groups] \"{g}\" = 2")),
+                );
             }
-        }
-        let known = ["line", "mg", "engineer", "mortar", "vehicle", "at"];
-        if let Some(m) = &rules.ai.mix {
-            for (tag, &v) in m {
-                if v > 0 && !known.contains(&tag.as_str()) {
-                    out.push(Issue::new(
-                        format!("rules `{}`: ai.mix.{tag}", rules.id),
-                        format!(
-                            "the AI buys by the tags {} until S4 Part B (the sim does not run \
-                             other mix tags yet)",
-                            known.join(", ")
+            let mut kinds: [Option<&str>; ITEM_KINDS] = [None; ITEM_KINDS];
+            for m in &s.members {
+                for (item, &n) in &m.items {
+                    let Some(d) = self.items.get(item) else {
+                        continue;
+                    };
+                    if n == 0 {
+                        continue;
+                    }
+                    match kinds[d.kind.index()] {
+                        Some(o) if o != item => out.push(
+                            Issue::new(
+                                format!("squad `{id}`: members"),
+                                format!(
+                                    "items `{o}` and `{item}` are both {:?}; one squad carries one \
+                                     item of each kind",
+                                    d.kind
+                                ),
+                            )
+                            .with_hint("give every member the same item of that kind"),
                         ),
-                    ));
+                        _ => kinds[d.kind.index()] = Some(item),
+                    }
                 }
             }
         }
@@ -1701,16 +2037,18 @@ impl MatchSetup {
         check(
             a.retreat_strength_pct <= 100
                 && fx_in(a.threat_radius, 1, 500)
-                && a.mix_pct.iter().all(|&v| v <= 100)
-                && a.mix_pct.iter().sum::<u32>() > 0
+                && a.mix
+                    .iter()
+                    .all(|m| m.pct <= 100 && (m.tag as usize) < self.tags.len())
+                && a.mix.iter().map(|m| m.pct).sum::<u32>() > 0
+                && (1..=a.mix.len())
+                    .all(|k| a.mix[..k - 1].iter().all(|o| o.tag != a.mix[k - 1].tag))
                 && (1..=50).contains(&a.barrage_rounds)
                 && fx_in(a.dig_length, 2, 1000)
                 && a.dig_length <= d.max_length
                 && fx_in(a.dig_offset, 0, 100)
                 && (1..=600 * 30).contains(&a.throw_cooldown_ticks)
                 && (1..=16).contains(&a.frag_group_men)
-                && a.mix_vehicle_pct <= 100
-                && a.mix_at_pct <= 100
                 && fx_in(a.tank_standoff, 1, 2000)
                 && fx_in(a.assault_close, 1, 500)
                 && (1..=600 * 30).contains(&a.at_clear_ticks)
@@ -1722,6 +2060,45 @@ impl MatchSetup {
             (1..=600 * 30).contains(&r.items.resupply_ticks),
             "rules.items.resupply_ticks",
             "out of range",
+        );
+        check(
+            r.items.single_shot_gap_ticks <= 600 * 30,
+            "rules.items.single_shot_gap_ticks",
+            "out of range",
+        );
+        check(
+            r.limit_groups.len() <= u16::MAX as usize
+                && r.limit_groups.iter().all(|g| g.limit <= 1000)
+                && r.limit_groups.windows(2).all(|w| w[0].id < w[1].id),
+            "rules.limit_groups",
+            "out of range or not sorted",
+        );
+        check(
+            !self.training.is_empty()
+                && self.training.len() <= u16::MAX as usize
+                && self.training.iter().all(|t| {
+                    [
+                        t.spread_pct,
+                        t.aim_time_pct,
+                        t.reload_pct,
+                        t.throw_scatter_pct,
+                        t.steadiness_pct,
+                        t.suppression_decay_pct,
+                        t.spot_pct,
+                        t.build_rate_pct,
+                    ]
+                    .iter()
+                    .all(|v| (25..=400).contains(v))
+                }),
+            "training",
+            "need a profile; multipliers in 25..=400 %",
+        );
+        check(
+            self.tags.len() <= u16::MAX as usize
+                && self.tags.windows(2).all(|w| w[0] < w[1])
+                && self.tags.iter().all(|t| !t.is_empty() && t.len() <= 24),
+            "tags",
+            "not sorted, or a tag out of range",
         );
         check(
             r.capture_extra_man_pct <= 1000,
@@ -1785,6 +2162,16 @@ impl MatchSetup {
                 he == it.he.is_some() && (it.kind == ItemKind::Smoke) == it.smoke.is_some(),
                 "items.effect",
                 "frag and satchel items need a blast, smoke items a cloud",
+            );
+            check(
+                (it.kind == ItemKind::SingleShotAt)
+                    == it.weapon.is_some_and(|w| {
+                        self.weapons
+                            .get(w as usize)
+                            .is_some_and(|w| w.class == WeaponClass::Launcher && w.ammo.is_some())
+                    }),
+                "items.weapon",
+                "a single-shot AT item fires as a launcher weapon; other items name none",
             );
             if let Some(h) = &it.he {
                 check(item_he_ok(h), "items.he", "out of range");
@@ -1887,39 +2274,73 @@ impl MatchSetup {
                 "squad_types.faction",
                 "index out of range",
             );
-            let is_vehicle = s.role == SquadRole::Vehicle;
+            let is_vehicle = s.vehicle.is_some();
             if is_vehicle {
                 let vehicle = s.vehicle.and_then(|v| self.vehicles.get(v as usize));
                 check(
                     vehicle.is_some_and(|v| {
                         v.faction == s.faction
-                            && v.cost == s.cost
-                            && v.recall_cooldown_ticks == s.recall_cooldown_ticks
-                            && v.initial_cooldown_ticks == s.initial_cooldown_ticks
                             && v.main_gun().weapon == s.weapon
+                            && s.small_arms == s.weapon
                     }) && s.men == 0
-                        && s.weapon_men == 0
-                        && s.sidearm.is_none()
-                        && s.loadout.is_empty()
+                        && s.members.is_empty()
+                        && s.items.iter().all(Option::is_none)
                         && s.dig_rate_pct == 0,
                     "squad_types.vehicle",
                     "a vehicle squad must match its vehicle and have no men",
                 );
             } else {
+                let total: u32 = s.members.iter().map(|m| m.count as u32).sum();
                 check(
-                    s.vehicle.is_none()
-                        && (1..=16).contains(&s.weapon_men)
-                        && (s.weapon_men >= s.men || s.sidearm.is_some())
-                        && s.sidearm.is_none_or(|w| (w as usize) < nw),
-                    "squad_types.weapon_men",
-                    "weapon_men out of range, or men without a weapon and no sidearm",
-                );
-                check(
-                    (1..=16).contains(&s.men),
+                    (1..=16).contains(&s.men)
+                        && total == s.men as u32
+                        && !s.members.is_empty()
+                        && s.members.len() <= 16
+                        && (s.small_arms as usize) < nw,
                     "squad_types.men",
-                    "must be in 1..=16",
+                    "men must be in 1..=16 and equal the members' counts",
                 );
+                for m in &s.members {
+                    check(
+                        (1..=16).contains(&m.count)
+                            && (m.weapon as usize) < nw
+                            && m.sidearm.is_none_or(|w| (w as usize) < nw)
+                            && m.traits & !member_trait::ALL == 0
+                            && m.items.iter().all(|&n| n <= MAX_ITEM_COUNT)
+                            && m.items
+                                .iter()
+                                .zip(&s.items)
+                                .all(|(&n, it)| n == 0 || it.is_some()),
+                        "squad_types.members",
+                        "a member's count, weapon, traits or items are out of range",
+                    );
+                }
+                for (k, it) in s.items.iter().enumerate() {
+                    check(
+                        it.is_none_or(|i| {
+                            self.items
+                                .get(i as usize)
+                                .is_some_and(|d| d.kind.index() == k)
+                        }),
+                        "squad_types.items",
+                        "unknown item, or an item of another kind",
+                    );
+                }
             }
+            check(
+                s.caps & !Capability::MASK == 0
+                    && (s.training as usize) < self.training.len()
+                    && s.tags.iter().all(|&t| (t as usize) < self.tags.len())
+                    && s.tags.windows(2).all(|w| w[0] < w[1])
+                    && s.tags.len() <= crate::variant::MAX_TAGS
+                    && s.max_alive <= crate::variant::MAX_ALIVE_CAP
+                    && s.limit_group
+                        .is_none_or(|g| (g as usize) < r.limit_groups.len())
+                    && s.ai_weight <= 10_000
+                    && !s.short_name.is_empty(),
+                "squad_types.card",
+                "capabilities, training, tags, card limits or weight out of range",
+            );
             check(
                 s.speed > Fixed::ZERO && fx_in(s.speed, 0, 20),
                 "squad_types.speed",
@@ -1949,19 +2370,6 @@ impl MatchSetup {
                 "squad_types.steadiness_pct",
                 "must be in 25..=400",
             );
-            let mut kinds = [false; ITEM_KINDS];
-            for k in &s.loadout {
-                let ok = self.items.get(k.item as usize).is_some_and(|it| {
-                    !std::mem::replace(&mut kinds[it.kind.index()], true)
-                        && k.count <= MAX_ITEM_COUNT
-                        && k.leader_count <= MAX_ITEM_COUNT
-                });
-                check(
-                    ok,
-                    "squad_types.loadout",
-                    "unknown item, a kind twice, or too many",
-                );
-            }
         }
         for f in &self.factions {
             check(
@@ -1974,11 +2382,10 @@ impl MatchSetup {
             );
             // S3c: crews are never bought or fielded at the start.
             check(
-                f.roster.iter().chain(&f.start_squads).all(|&i| {
-                    self.squad_types
-                        .get(i as usize)
-                        .is_none_or(|t| t.role != SquadRole::Crew)
-                }),
+                f.roster
+                    .iter()
+                    .chain(&f.start_squads)
+                    .all(|&i| !self.type_has_tag(i, "crew")),
                 "factions.roster",
                 "a crew squad cannot be bought or start on the field",
             );
@@ -1986,9 +2393,11 @@ impl MatchSetup {
         for v in &self.vehicles {
             check(
                 v.crew_squad.is_none_or(|c| {
-                    self.squad_types
-                        .get(c as usize)
-                        .is_some_and(|t| t.role == SquadRole::Crew && t.faction == v.faction)
+                    self.type_has_tag(c, "crew")
+                        && self
+                            .squad_types
+                            .get(c as usize)
+                            .is_some_and(|t| t.faction == v.faction)
                 }),
                 "vehicles.crew_squad",
                 "not a crew squad of the vehicle's faction",

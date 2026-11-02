@@ -86,8 +86,12 @@ pub struct Windup {
 pub struct Kit {
     /// Items carried, by [`ItemKind::index`].
     pub items: [u8; ITEM_KINDS],
-    /// He was his squad's leader at spawn (leader loadout).
-    pub leader: bool,
+    /// S4: his `[[members]]` slot (index into the squad type's `members`):
+    /// his loadout and traits. Slot 0's first man led at spawn.
+    pub slot: u8,
+    /// S4: the weapon he carries (index into `MatchSetup::weapons`), fixed
+    /// at spawn; changes only when he picks up a fallen man's crew weapon.
+    pub weapon: u16,
     /// Throws released so far (scatter RNG key), wrapping.
     pub throws: u16,
     /// Ticks spent in base toward the next resupplied item.
@@ -179,16 +183,14 @@ impl MatchState {
     ) -> Option<(u16, &ItemSetup)> {
         let sq = self.squads.get(&ents.squad[m.index()]?)?;
         let ty = &self.setup.squad_types[sq.type_idx as usize];
-        let (k, it) = ty.kit(&self.setup.items, kind)?;
-        Some((k.item, it))
+        ty.kit(&self.setup.items, kind)
     }
 
     /// Full kit of soldier `m` (his loadout), all zero outside a squad.
     pub(crate) fn full_kit(&self, ents: &Entities, m: SimId) -> [u8; ITEM_KINDS] {
         let i = m.index();
         match ents.squad[i].and_then(|s| self.squads.get(&s)) {
-            Some(sq) => self.setup.squad_types[sq.type_idx as usize]
-                .full_kit(&self.setup.items, ents.kit[i].leader),
+            Some(sq) => self.setup.squad_types[sq.type_idx as usize].full_kit(ents.kit[i].slot),
             None => [0; ITEM_KINDS],
         }
     }
@@ -204,7 +206,9 @@ impl MatchState {
     ) -> Option<u64> {
         let i = m.index();
         let k = &ents.kit[i];
+        // S4: a single-shot AT item is fired (`crate::combat`), not thrown.
         if ents.kind[i] != EntityKind::Soldier
+            || !kind.thrown()
             || k.items[kind.index()] == 0
             || k.windup.is_some()
             || ents.combat[i].pinned
@@ -315,9 +319,20 @@ impl MatchState {
             let m = SimId(i as u32);
             hash.mark_entity_chunk(m.chunk());
             let u = &ents.unit[i];
-            let item = self
-                .item_of(ents, m, w.kind)
-                .map(|(idx, it)| (idx, it.scatter_pct, it.fuse_ticks, it.windup_ticks));
+            // S4: training scales the scatter.
+            let scatter = ents.squad[i]
+                .and_then(|q| self.squads.get(&q))
+                .map_or(100, |q| {
+                    crate::combat::training_of(&self.setup, q).throw_scatter_pct
+                });
+            let item = self.item_of(ents, m, w.kind).map(|(idx, it)| {
+                (
+                    idx,
+                    crate::combat::pct_of(it.scatter_pct, scatter),
+                    it.fuse_ticks,
+                    it.windup_ticks,
+                )
+            });
             let full = self.full_kit(ents, m)[w.kind.index()];
             let keep_on = ents.kind[i] == EntityKind::Soldier
                 && !ents.combat[i].pinned
@@ -568,15 +583,34 @@ impl MatchState {
                 return Err("soldier kit is inconsistent");
             }
         }
-        // Only the first man at spawn gets the leader loadout.
-        if self.squads.values().any(|sq| {
-            sq.members
-                .iter()
-                .filter(|m| ents.kit[m.index()].leader)
-                .count()
-                > 1
-        }) {
-            return Err("a squad has more than one leader kit");
+        // S4: no slot holds more men than it has (one leader kit), and
+        // every man carries a weapon of his squad's members.
+        for sq in self.squads.values() {
+            let ty = &s.squad_types[sq.type_idx as usize];
+            if ty.vehicle.is_some() {
+                continue;
+            }
+            let mut n = vec![0u32; ty.members.len()];
+            for m in &sq.members {
+                let k = &ents.kit[m.index()];
+                let carried = ty
+                    .members
+                    .iter()
+                    .any(|ms| ms.weapon == k.weapon || ms.sidearm == Some(k.weapon));
+                match n.get_mut(k.slot as usize) {
+                    Some(c) if carried => *c += 1,
+                    _ => return Err("a soldier's slot or weapon is not his squad's"),
+                }
+            }
+            // The first slot's kit (the leader's) is never doubled: a man
+            // gets slot 0 only as the first of an empty squad. Later slots
+            // may overfill (a crew squad refilled by a second bail-out).
+            if n.first()
+                .zip(ty.members.first())
+                .is_some_and(|(&c, ms)| c > ms.count as u32)
+            {
+                return Err("a squad has more leader kits than its first slot has men");
+            }
         }
         let np = s.players.len();
         let in_air = |v: FxVec3| on_map(v.xy()) && v.z.abs() < Fx::from_int(5000);
@@ -797,7 +831,7 @@ mod tests {
     fn pinned_men_and_men_without_the_item_cannot_throw() {
         let terrain = Heightfield::generate(crate::terrain::TerrainKind::Flat, 1024, 1);
         let mut g = MatchState::new(setup());
-        let ty = g.setup.squad_type_index("ww2:ger_rifle_squad").unwrap();
+        let ty = g.setup.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
         let mut ents = Entities::default();
         let mut hash = HashCache::default();
         let mut ctx = Ctx {
@@ -809,7 +843,8 @@ mod tests {
         let sq = g.spawn_squad(&mut ctx, PlayerId(0), ty);
         let men = g.squads[&sq].members.clone();
         let target = |m: SimId| ents.transform[m.index()].pos.xy() + FxVec2::from_int(20, 0);
-        let m = men[1];
+        // S4: man 4 is a rifleman with a frag (men 1-3: the MG team).
+        let m = men[4];
         assert!(g.can_throw(&ents, m, ItemKind::Frag, target(m)).is_some());
         assert!(g.can_throw(&ents, m, ItemKind::Smoke, target(m)).is_none());
         assert!(
@@ -818,6 +853,12 @@ mod tests {
         );
         assert!(
             g.can_throw(&ents, m, ItemKind::Satchel, target(m))
+                .is_none()
+        );
+        // S4: he carries a Panzerfaust, which is fired, never thrown.
+        assert_eq!(ents.kit[m.index()].items[ItemKind::SingleShotAt.index()], 1);
+        assert!(
+            g.can_throw(&ents, m, ItemKind::SingleShotAt, target(m))
                 .is_none()
         );
         ents.combat[m.index()].pinned = true;

@@ -18,8 +18,14 @@ use frontline_sim::{
     ArmourEventKind, CommandKind, EntityKind, Order, PlayerId, RecrewRefusal, SimId, SquadId, World,
 };
 
+/// The S1-S3c content frozen before the S4 content switch: these mechanics
+/// tests were written for its squads (8-man rifle squads, 3-man MG teams)
+/// and keep running on it; the S4 cards are covered by `s4_members.rs`,
+/// `variants.rs` and the AI-vs-AI runs.
+const S3C_MOD: &str = "../../sdk/crates/content/tests/fixtures/ww2_s3c";
+
 fn setup(seed: u64) -> MatchSetup {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(S3C_MOD);
     let mut defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
     let rules = defs
         .add_rules_override(&root.join("tests/rules_test_unlock.toml"))
@@ -168,7 +174,7 @@ fn the_abandon_order_bails_out_and_men_leave_by_their_hatches() {
     let crew = crew_of(&w, v).expect("crew squad");
     let g = w.game().unwrap();
     let csq = g.squad(crew).unwrap();
-    assert_eq!(s.squad_types[csq.type_idx as usize].role, SquadRole::Crew);
+    assert!(s.type_has_tag(csq.type_idx, "crew"));
     assert_eq!(Some(csq.type_idx), def.crew_squad);
     assert_eq!(csq.members.len(), 5);
     assert_eq!(g.players()[0].crew.out, 5);

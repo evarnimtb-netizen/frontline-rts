@@ -1,12 +1,31 @@
+# MG 42 on the Lafette 42 tripod (S4): the sMG-Gruppe's sustained-fire gun.
+# Same id as the S1-S3 MG team's gun so legacy mods keep loading; S4 gives
+# it its tripod values. The bipod gun is `ww2:mg42_bipod`.
+# Sources: Wikipedia "MG 42" (Lafette 42 20.5 kg; with the MGZ 34 sight
+# 3,000 m direct and 3,500 m indirect; barrel changed after ~150 rounds of
+# rapid fire, in under 10 s; optimum sustained-fire crew 6). Game ranges are
+# compressed (rifles 300 m); the tripod gun reaches 2 x a rifle.
 id = "ww2:mg42"
-name = "MG 42"
+name = "MG 42 (Lafette 42)"
+short_name = "MG 42 (s)"
 class = "mg"
-range_m = 450
+sources = [
+    "Wikipedia, MG 42 (Lafette 42 weight, tripod ranges, barrel change interval, crew)",
+]
+# Effective reach on the compressed scale (m).
+range_m = 600
 damage = 45
+# Cyclic rate (rpm).
 rounds_per_min = 1200
-magazine = 50
-reload_ms = 5000
-spread_mrad = 18
+# Rounds between pauses: the barrel-change interval of rapid fire (~150).
+magazine = 150
+# Barrel change and belt (ms).
+reload_ms = 8000
+# Dispersion half-angle (mrad): the tripod holds the gun on the line.
+spread_mrad = 12
 muzzle_velocity_m_s = 740
-setup_ms = 3000
+# Mount, lay and load (ms): six seconds before the first burst.
+setup_ms = 6000
 suppression = 15
+# Crew weapon hand-over (ms).
+handover_ms = 3000

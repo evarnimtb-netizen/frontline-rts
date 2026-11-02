@@ -1,0 +1,71 @@
+# Grenadiergruppe (S4): the German rifle squad at establishment strength,
+# replacing the S1-S3 Schützengruppe (owner Q6 (A): historical squad sizes).
+# A Gruppenführer with an MP 40, the MG team of three (the gunner with the
+# MG 42 on its bipod and a P 38, his assistant with a P 38, the third man an
+# ammo bearer with a Kar98k), and six Schützen with Kar98k, two of whom carry
+# a Panzerfaust 60 (S3c-29 (A), S4-5 (A)).
+# Sources: Wikipedia "MG 42" (squad organisation around the MG); battleorder.org
+# "Volksgrenadiers 1944" (K.St.N. 131V, 1 Nov 1944: MG-Schütze 1 with MG 42,
+# MG-Schütze 2 with Kar98k). Some 1944 secondary sources give 9 men; 10 kept
+# (roster, Q6 (A)); the K.St.N. 131 primary table was not read (citation
+# task, S4 log).
+id = "ww2:ger_grenadiergruppe"
+name = "Grenadiergruppe"
+short_name = "Grenadiere"
+faction = "ww2:germany"
+tags = ["line"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "Wikipedia, MG 42 (squad organisation)",
+    "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)",
+]
+# Manpower per call-in: 300 for the squad, +10 for each Panzerfaust (S4-5 (A)).
+cost = 320
+# Call-in (S3b, S4 card block): a call-in spawns the squad at once at the
+# base; then this card cannot be called in again for cooldown_s seconds
+# (its own timer: owner Q21 (B), no cooldown_group). 20 s for a 10-man
+# squad (S4 starting value).
+cooldown_s = 20
+# Seconds from the match start before the first call-in; 0 = at once.
+unlock_s = 0
+# Walking speed (cm/s), sight (m), formation spacing (dm).
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+# Digging speed per man (% of the base rate).
+dig_rate_pct = 100
+
+# The men, in spawn and formation order; the first man leads.
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2, "ww2:nbhgr39" = 1 }
+
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:mg42_bipod"
+sidearm = "ww2:p38"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:p38"
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+weapon = "ww2:kar98k"
+traits = ["ammo_bearer"]
+
+[[members]]
+slot = "rifleman_pzf"
+count = 2
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1, "ww2:panzerfaust60" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 4
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1 }

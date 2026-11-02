@@ -1,7 +1,9 @@
 # The M4A3 (75) Sherman as a buyable squad of one (S3). Cost, pop, call-in
-# time and sight are in the vehicle def.
+# time and sight are in the vehicle def (S4-15 (A): the card may override
+# them).
 id = "ww2:usa_m4a3_75_squad"
 name = "M4A3 (75) Sherman"
+short_name = "Sherman"
 faction = "ww2:usa"
-role = "vehicle"
+tags = ["vehicle"]
 vehicle = "ww2:usa_m4a3_75"

@@ -68,8 +68,9 @@
 //! wreck ("scrapped": no knock-out event, no losses beyond men still
 //! inside).
 
+use frontline_content::setup::{Capability, SquadTypeSetup};
 use frontline_content::vehicle::VehicleSetup;
-use frontline_content::{ComponentKind, MatchSetup, SquadRole};
+use frontline_content::{ComponentKind, MatchSetup};
 
 use crate::combat;
 use crate::damage::{ArmourEv, KO_AMMO_FIRE, KO_FIRE};
@@ -189,13 +190,11 @@ pub(crate) fn board_blocked(s: &MatchSetup, vs: &VehicleState) -> Option<RecrewR
     None
 }
 
-/// Whether a squad of `role` may man a vehicle under these rules.
-pub fn can_crew(s: &MatchSetup, role: SquadRole) -> bool {
-    match role {
-        SquadRole::Crew => true,
-        SquadRole::AntiTank | SquadRole::Vehicle => false,
-        _ => s.rules.vehicles.recrew.any_infantry != 0,
-    }
+/// Whether a squad of type `ty` may man a vehicle under these rules (S4:
+/// `vehicle_crew` always, `recrew` when `recrew.any_infantry` allows it).
+pub fn can_crew(s: &MatchSetup, ty: &SquadTypeSetup) -> bool {
+    ty.has(Capability::VehicleCrew)
+        || (ty.has(Capability::Recrew) && s.rules.vehicles.recrew.any_infantry != 0)
 }
 
 impl MatchState {
@@ -228,15 +227,15 @@ impl MatchState {
         else {
             return Err(RecrewRefusal::NotAbandoned);
         };
-        let role = s.squad_types[sq.type_idx as usize].role;
-        if !can_crew(s, role) {
+        let ty = &s.squad_types[sq.type_idx as usize];
+        if !can_crew(s, ty) {
             return Err(RecrewRefusal::NotCrew);
         }
         let enemy = ents.owner[vehicle.index()] != p;
         if r.capture == 0 && enemy {
             return Err(RecrewRefusal::NoCapture);
         }
-        if r.capture_needs_crew != 0 && enemy && role != SquadRole::Crew {
+        if r.capture_needs_crew != 0 && enemy && !ty.has(Capability::VehicleCrew) {
             return Err(RecrewRefusal::CaptureNeedsCrew);
         }
         if let Some(why) = board_blocked(s, vs) {
@@ -640,17 +639,18 @@ impl MatchState {
                         },
                         focus: None,
                         launcher: None,
+                        drops: Vec::new(),
+                        pzf: None,
                     },
                 );
                 q
             }
         };
         let ty = &s.squad_types[crew_type as usize];
+        // S4: the n-th man out takes the n-th member slot's weapon and kit.
         let nth = self.squads[&squad].members.len();
-        let wk = match ty.sidearm {
-            Some(side) if nth >= ty.weapon_men as usize => side,
-            _ => ty.weapon,
-        };
+        let slot = ty.slot_of(nth);
+        let wk = ty.members[slot as usize].weapon;
         let sid = ctx.ents.spawn(EntityKind::Soldier, owner);
         let si = sid.index();
         ctx.ents.transform[si].pos = spot.extend(ctx.terrain.height_at(spot));
@@ -668,8 +668,9 @@ impl MatchState {
         ctx.ents.weapon[si].cooldown =
             (b.dismount_ms as u64 * hz as u64 / 1000).min(u16::MAX as u64) as u16;
         ctx.ents.kit[si] = Kit {
-            items: ty.full_kit(&s.items, nth == 0),
-            leader: nth == 0,
+            items: ty.full_kit(slot),
+            slot,
+            weapon: wk,
             ..Kit::default()
         };
         ctx.hash.mark_entity_chunk(sid.chunk());
@@ -849,7 +850,7 @@ impl MatchState {
         let p = self.squads[&q].owner;
         let last = ctx.ents.owner[i];
         let untrained =
-            self.setup.squad_types[self.squads[&q].type_idx as usize].role != SquadRole::Crew;
+            !self.setup.squad_types[self.squads[&q].type_idx as usize].has(Capability::VehicleCrew);
         let crew_hp = self.setup.rules.vehicles.crew_hp.min(u16::MAX as u32) as u16;
         let type_idx = self.vehicles[&id].type_idx;
         // Seats in seat order, each empty one to the next man.
@@ -873,6 +874,12 @@ impl MatchState {
                 if k < sq.nav.slots.len() {
                     sq.nav.slots.remove(k);
                 }
+            }
+            // S4: a man aiming a Panzerfaust boards: the aim ends.
+            if let Some(p) = &mut sq.pzf
+                && p.man == Some(m)
+            {
+                (p.man, p.target, p.aim) = (None, None, 0);
             }
             for queue in &mut self.path_queue.queues {
                 queue.retain(|r| *r != PathReq::Unit(m));
@@ -923,6 +930,8 @@ impl MatchState {
                 },
                 focus: None,
                 launcher: None,
+                drops: Vec::new(),
+                pzf: None,
             },
         );
         let vs = self.vehicles.get_mut(&id).expect("listed");
@@ -1010,7 +1019,7 @@ impl MatchState {
                 idle.push(q);
                 continue;
             }
-            if s.squad_types[sq.type_idx as usize].role != SquadRole::Crew
+            if !s.squad_types[sq.type_idx as usize].has(Capability::VehicleCrew)
                 || sq.order != Order::Idle
                 || sq.nav.phase != NavPhase::Holding
                 || sq.nav.phase_ticks < dismiss

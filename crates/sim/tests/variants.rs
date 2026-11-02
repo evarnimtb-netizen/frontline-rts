@@ -1,7 +1,6 @@
-//! S4 Part A (target T9, first half): a unit card made of `extends` and a
-//! `[[members]]` list (`mods/ww2/tests/variants/`) loads, resolves into
-//! today's squad setup, is called in at once and fights. The crew-weapon
-//! pickup half of T9 comes with S4 Part B.
+//! S4 target T9: a unit card made only of `extends` and a `[[members]]`
+//! list (`mods/ww2/tests/variants/`) loads, resolves, is called in at once,
+//! fights, and its crew assistant picks up the MG when the gunner falls.
 
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,7 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2")
 }
 
-const VARIANT: &str = "ww2:usa_rifle_squad_understrength";
+const VARIANT: &str = "ww2:ger_grenadiergruppe_example";
 
 fn setup(seed: u64) -> MatchSetup {
     let r = root();
@@ -47,40 +46,48 @@ fn squad(w: &World, p: u8, ty: &str) -> SquadId {
 }
 
 #[test]
-fn a_variant_of_extends_and_members_is_called_in_and_fights() {
+fn a_variant_of_extends_and_members_is_called_in_fights_and_picks_up_its_mg() {
     let s = setup(3);
     let t = s
         .squad_type_index(VARIANT)
         .expect("the variant is a squad type");
     let ty = &s.squad_types[t as usize];
-    let parent = &s.squad_types[s.squad_type_index("ww2:usa_rifle_squad").unwrap() as usize];
-    // Nine men with the parent's rifle, cost, cooldown, speed and sight.
-    assert_eq!((ty.men, ty.weapon_men, ty.sidearm), (9, 9, None));
-    assert_eq!(ty.weapon, parent.weapon);
+    let parent = &s.squad_types[s.squad_type_index("ww2:ger_grenadiergruppe").unwrap() as usize];
+    // Six men by its own member list, with the parent's card keys.
+    assert_eq!(ty.men, 6);
     assert_eq!(
-        (ty.cost, ty.recall_cooldown_ticks, ty.speed, ty.sight),
+        ty.members.iter().map(|m| m.count).collect::<Vec<_>>(),
+        [1, 1, 1, 3]
+    );
+    assert_eq!(
+        (
+            ty.cost,
+            ty.recall_cooldown_ticks,
+            ty.speed,
+            ty.sight,
+            &ty.tags
+        ),
         (
             parent.cost,
             parent.recall_cooldown_ticks,
             parent.speed,
-            parent.sight
+            parent.sight,
+            &parent.tags
         )
     );
-    // The leader's two frags and a smoke, one frag for each rifleman.
-    let mut kit: Vec<(u8, u8)> = ty
-        .loadout
+    // Its main weapon is the MG (the first crew weapon).
+    assert_eq!(s.weapons[ty.weapon as usize].id, "ww2:mg42_bipod");
+    let ger = s
+        .factions
         .iter()
-        .map(|k| (k.count, k.leader_count))
-        .collect();
-    kit.sort();
-    assert_eq!(kit, [(0, 1), (1, 2)]);
-    let usa = s.factions.iter().position(|f| f.id == "ww2:usa").unwrap();
-    assert!(s.factions[usa].roster.contains(&t));
+        .position(|f| f.id == "ww2:germany")
+        .unwrap();
+    assert!(s.factions[ger].roster.contains(&t));
 
     let mut w = World::new_match(s, 2).unwrap();
     let known: Vec<SquadId> = w.game().unwrap().squads().keys().copied().collect();
     let cmd = Command {
-        player: PlayerId(1),
+        player: PlayerId(0),
         seq: 0,
         kind: CommandKind::CallIn { squad_type: t },
     };
@@ -95,19 +102,37 @@ fn a_variant_of_extends_and_members_is_called_in_and_fights() {
         .expect("the variant spawns in the call-in tick");
     let sq = w.game().unwrap().squad(id).unwrap();
     assert_eq!(sq.type_idx, t);
-    assert_eq!(sq.members.len(), 9);
+    assert_eq!(sq.members.len(), 6);
+    let (gunner, assistant) = (sq.members[1], sq.members[2]);
+    let weapon = |w: &World, m: frontline_sim::SimId| {
+        let k = w.entities().kit()[m.index()].weapon;
+        w.match_setup().unwrap().weapons[k as usize].id.clone()
+    };
+    assert_eq!(weapon(&w, gunner), "ww2:mg42_bipod");
 
-    // It fights a German rifle squad 120 m away until one side is gone.
-    let ger = squad(&w, 0, "ww2:ger_rifle_squad");
+    // It fights a US rifle squad 120 m away; its MG gunner falls first and
+    // the crew assistant takes the MG up.
+    let us = squad(&w, 1, "ww2:usa_rifle_squad");
     let east = FxVec2::new(Fx::ONE, Fx::ZERO);
     let west = FxVec2::new(Fx::NEG_ONE, Fx::ZERO);
-    assert!(w.place_squad(ger, FxVec2::from_int(430, 420), east));
-    assert!(w.place_squad(id, FxVec2::from_int(550, 420), west));
+    assert!(w.place_squad(id, FxVec2::from_int(430, 420), east));
+    assert!(w.place_squad(us, FxVec2::from_int(550, 420), west));
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    w.kill_soldier(gunner);
     let losses = |w: &World, p: usize| w.game().unwrap().players()[p].losses;
     let alive = |w: &World, q: SquadId| w.game().unwrap().squad(q).is_some();
-    while alive(&w, ger) && alive(&w, id) {
+    let mut picked = false;
+    while alive(&w, id) && alive(&w, us) {
         w.step(&[]);
+        picked |= alive(&w, id) && weapon(&w, assistant) == "ww2:mg42_bipod";
         assert!(w.tick() < 30 * 300, "the fight never ended");
     }
-    assert!(losses(&w, 0) > 0 && losses(&w, 1) > 0);
+    assert!(picked, "the crew assistant never had the MG");
+    assert!(w.game().unwrap().players()[0].s4.pickups >= 1);
+    // One side is gone (the six-man example against twelve US riflemen
+    // usually loses; the fight itself is what T9 asks for).
+    assert!(!alive(&w, id) || !alive(&w, us));
+    assert!(losses(&w, 0) + losses(&w, 1) > 1);
 }

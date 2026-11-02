@@ -2447,6 +2447,144 @@ fn case15(env: &Env) -> Result<CaseReport> {
 
 // ----------------------------------------------------------- case 14 --
 
+// ----------------------------------------------------------- case 16 --
+
+/// S4 (B7): a German Grenadiergruppe (two Panzerfaust 60s) against a
+/// Sherman `d` m east of its line, the tank standing or driving across
+/// (40 m and 60 m, still and moving); per run 60 s. Hard: no Panzerfaust is
+/// fired beyond the weapon's engagement distance for the tank's motion
+/// (`engage_still` 60 m, `engage_moving` 40 m; +2 m for one tick of tank
+/// travel), and every Panzerfaust round that hits the tank is a physical
+/// HEAT hit in the armour log. Report: fired, hits, penetrations, tanks
+/// disabled, per variant.
+fn case16(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(
+        16,
+        "Grenadiergruppe Panzerfausts vs a Sherman, 40 / 60 m, still / moving",
+    );
+    let mut far = 0u32;
+    let mut stray = 0u32;
+    for (d, moving) in [(40, false), (60, false), (40, true), (60, true)] {
+        let (mut fired, mut hits, mut pens, mut dis, mut runs) = (0u32, 0u64, 0u64, 0u32, 0u32);
+        for &seed in &env.seeds {
+            let mut setup = env.setup(seed)?;
+            setup.players.iter_mut().for_each(|p| p.is_ai = false);
+            setup.map.terrain.octaves.clear();
+            setup.map.terrain.bands.clear();
+            setup.map.woods.clear();
+            let mut w = World::new_match(setup, env.threads)?;
+            let s = w.match_setup().expect("match").clone();
+            let g = s
+                .squad_type_index("ww2:ger_grenadiergruppe")
+                .ok_or_else(|| anyhow!("no ww2:ger_grenadiergruppe"))?;
+            let sh = s
+                .squad_type_index("ww2:usa_m4a3_75_squad")
+                .ok_or_else(|| anyhow!("no ww2:usa_m4a3_75_squad"))?;
+            let pzf = s
+                .items
+                .iter()
+                .find(|it| it.kind == ItemKind::SingleShotAt)
+                .and_then(|it| it.weapon)
+                .ok_or_else(|| anyhow!("no single-shot AT item"))?;
+            let wpn = &s.weapons[pzf as usize];
+            let pzf_ammo = wpn.ammo;
+            let (still_m, moving_m) = (
+                Fx::from(wpn.engage_still).to_f32() as f64,
+                Fx::from(wpn.engage_moving).to_f32() as f64,
+            );
+            let x = TRENCH_X - 100;
+            let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+            let north = FxVec2::new(Fx::ZERO, Fx::ONE);
+            let Some(gsq) = w.spawn_squad_at(PlayerId(0), g, at(x, LANE_Y), east) else {
+                return Err(anyhow!("could not place the Grenadiergruppe"));
+            };
+            let y0 = if moving { LANE_Y - 70 } else { LANE_Y };
+            let Some(tsq) = w.spawn_squad_at(PlayerId(1), sh, at(x + d, y0), north) else {
+                return Err(anyhow!("could not place the Sherman"));
+            };
+            let tank = members(&w, tsq)[0];
+            let men = members(&w, gsq);
+            w.enable_hit_log();
+            if moving {
+                order(
+                    &mut w,
+                    1,
+                    vec![CommandKind::Move {
+                        squad: tsq,
+                        target: at(x + d, LANE_Y + 90),
+                    }],
+                );
+            }
+            runs += 1;
+            let shots0 = w.game().expect("match").players()[0].s4.single_shots;
+            for _ in 0..60 * hz(&w) {
+                w.step(&[]);
+                // Every Panzerfaust fired this tick: within its engagement
+                // distance of the tank.
+                let tank_at = pos(&w, tank);
+                let moving_now = w
+                    .game()
+                    .and_then(|g| g.vehicle(tank))
+                    .is_some_and(|v| v.avg_vel.length() > Fx::from(s.rules.vehicles.moving_speed));
+                for sh in w
+                    .snapshot()
+                    .shots
+                    .iter()
+                    .filter(|sh| sh.weapon == pzf && men.contains(&sh.shooter))
+                {
+                    let reach = if moving_now { moving_m } else { still_m };
+                    let (dx, dy) = (
+                        f64::from(sh.from[0] - tank_at.x.to_f32()),
+                        f64::from(sh.from[1] - tank_at.y.to_f32()),
+                    );
+                    if (dx * dx + dy * dy).sqrt() > reach + 2.0 {
+                        far += 1;
+                    }
+                }
+                for h in w.take_hit_log() {
+                    if Some(h.ammo) == pzf_ammo && h.vehicle == tank {
+                        hits += 1;
+                        pens += (h.result == PenResult::Penetration) as u64;
+                    } else if Some(h.ammo) == pzf_ammo {
+                        stray += 1;
+                    }
+                }
+                if disabled(&w, tank) {
+                    break;
+                }
+            }
+            fired += w.game().expect("match").players()[0].s4.single_shots - shots0;
+            dis += disabled(&w, tank) as u32;
+            if env.verbose {
+                eprintln!(
+                    "case 16 seed {seed} {d} m {}: fired {}, disabled {}",
+                    if moving { "moving" } else { "still" },
+                    w.game().expect("match").players()[0].s4.single_shots - shots0,
+                    disabled(&w, tank)
+                );
+            }
+        }
+        r.runs += runs;
+        r.row(
+            format!("{d} m {}", if moving { "moving" } else { "still" }),
+            format!(
+                "{fired} Panzerfausts fired in {runs} runs, {hits} hit, {pens} penetrated; tank disabled in {dis}"
+            ),
+        );
+    }
+    r.check(
+        "no Panzerfaust beyond its engagement distance",
+        far == 0,
+        format!("{far} fired too far"),
+    );
+    r.check(
+        "Panzerfaust hits are physical hits on a vehicle",
+        stray == 0,
+        format!("{stray} logged on another vehicle"),
+    );
+    Ok(r)
+}
+
 // Wall-clock time here only measures; it never feeds the sim.
 #[allow(clippy::disallowed_methods)]
 fn case14(env: &Env) -> Result<CaseReport> {
@@ -2590,7 +2728,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 15] = [
+    let all: [(u32, CaseFn); 16] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -2606,6 +2744,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (13, case13),
         (14, case14),
         (15, case15),
+        (16, case16),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

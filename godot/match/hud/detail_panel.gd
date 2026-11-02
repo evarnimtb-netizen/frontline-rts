@@ -15,6 +15,11 @@ extends Control
 ##
 ## S3c: a crew squad whose tank stands abandoned is headed "Crew — Panzer
 ## IV" with a "To tank" button that jumps the camera to the vehicle.
+##
+## S4: the squad card's rows name each man by his member slot (the
+## state's soldier `name`, the squad's `slot_names` for the fallen) and
+## his weapon; the man carrying a crew weapon (MG, mortar, launcher) has an
+## accent diamond, and a man with a Panzerfaust a "Pzf" mark.
 
 const PAD := 10.0
 const HEAD := 27.0
@@ -133,7 +138,10 @@ func _draw_soldier(so: Dictionary) -> void:
 	y += rh
 	# Items.
 	var x := x0
-	for item in MatchView.ITEMS:
+	var items: Array = MatchView.ITEMS.duplicate()
+	if view.item_count(so, "panzerfaust") > 0:
+		items.append("panzerfaust")
+	for item in items:
 		var n := view.item_count(so, item)
 		var label: String = item.capitalize()
 		HudStyle.text(self, font, Vector2(x, y + base), label, HudStyle.FONT, HudStyle.DIM if n > 0 else HudStyle.OFF_TEXT)
@@ -244,6 +252,8 @@ func _draw_squad(sid: int) -> void:
 	var sel: Node = view.selection
 	var ps: float = view.hud.m.pip
 	var names: Array = MatchView.MAN_NAMES.get(sq.type, [])
+	if sq.has("slot_names"):
+		names = Array(sq.slot_names)
 	for row in rows:
 		var r: Rect2 = row.rect
 		var id: int = row.id
@@ -266,7 +276,28 @@ func _draw_squad(sid: int) -> void:
 		HudStyle.pip(self, pr, picked, view.soldier_wounded(so), view.soldier_pinned(so), bool(so.get("detached", false)), false)
 		var hp := "%d" % roundi(float(so.get("hp", 100.0)))
 		var f := bold if picked else font
-		var nm := HudStyle.fit(f, view.soldier_name(so), colw - 32.0 - HudStyle.text_w(font, "100", HudStyle.FONT), HudStyle.FONT)
+		# S4 marks: the crew weapon's carrier, a Panzerfaust.
+		var mark_w := 0.0
+		var hp_w := HudStyle.text_w(font, "100", HudStyle.FONT)
+		var mx := x + colw - 8.0 - hp_w
+		if view.item_count(so, "panzerfaust") > 0:
+			var pz := "Pzf"
+			var pw := HudStyle.text_w(bold, pz, HudStyle.FONT_SMALL)
+			HudStyle.text(self, bold, Vector2(mx - pw, by), pz, HudStyle.FONT_SMALL, HudStyle.ACCENT)
+			mark_w += pw + 4.0
+			mx -= pw + 4.0
+		if bool(so.get("crew_weapon", false)):
+			var c := Vector2(mx - 5.0, by - 4.5)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -4.5), c + Vector2(4.5, 0), c + Vector2(0, 4.5), c + Vector2(-4.5, 0)]), HudStyle.ACCENT)
+			mark_w += 13.0
+		# His role word, and his weapon when the row has room for both.
+		var room := colw - 32.0 - hp_w - mark_w
+		var label := view.soldier_name(so)
+		if so.has("weapon") and so.has("name"):
+			var both := "%s · %s" % [so.name, so.weapon]
+			if HudStyle.text_w(f, both, HudStyle.FONT) <= room:
+				label = both
+		var nm := HudStyle.fit(f, label, room, HudStyle.FONT)
 		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, HudStyle.FONT, HudStyle.TEXT)
 		HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)
 

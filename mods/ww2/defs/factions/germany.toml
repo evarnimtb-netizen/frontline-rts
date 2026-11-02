@@ -2,8 +2,10 @@ id = "ww2:germany"
 name = "Germany"
 color = "#8c96a0"
 roster = [
-    "ww2:ger_rifle_squad",
-    "ww2:ger_mg_team",
+    # S4: the full and the field-strength Grenadiergruppe, the sMG-Gruppe.
+    "ww2:ger_grenadiergruppe",
+    "ww2:ger_grenadiergruppe_7",
+    "ww2:ger_smg_gruppe",
     "ww2:ger_engineer_squad",
     "ww2:ger_mortar_team",
     # S3: the AT team (available from the start) and the tank (unlocks at
@@ -11,5 +13,6 @@ roster = [
     "ww2:ger_panzerschreck_team",
     "ww2:ger_pz4_h_squad",
 ]
-# Squads on the field at tick 0, at the player's base.
-start_squads = ["ww2:ger_rifle_squad", "ww2:ger_rifle_squad", "ww2:ger_engineer_squad"]
+# Squads on the field at tick 0, at the player's base. S4-14 (A): two full
+# line squads and the engineers.
+start_squads = ["ww2:ger_grenadiergruppe", "ww2:ger_grenadiergruppe", "ww2:ger_engineer_squad"]

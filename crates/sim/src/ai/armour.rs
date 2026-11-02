@@ -142,10 +142,27 @@ impl Planner<'_> {
     /// abandoned vehicle when [`Self::recrewable`], else the nearest other
     /// abandoned own vehicle within `recrew_reach_m` that is; waits beside
     /// its vehicle while men are still getting out; otherwise walks back
-    /// to base (where it is dismissed). The AI does not capture (S3c-2).
+    /// to base (where it is dismissed). S4 (S3c-33 (A)): with no own
+    /// vehicle to man, a crew captures the nearest enemy abandoned vehicle
+    /// within `ai.armour.capture_m` that is re-crewable, while the rules
+    /// allow captures (`recrew_check`).
     pub(super) fn crews(&mut self, crews: &[SquadId], known: &[Known], kv: &[KnownVehicle]) {
         let g = self.g;
         let reach = sq_m(Fx::from_int(g.setup.rules.ai.armour.recrew_reach_m as i32));
+        let capture_m = g.setup.rules.ai.armour.capture_m;
+        let capture = sq_m(Fx::from_int(capture_m as i32));
+        let enemy: Vec<SimId> = if capture_m == 0 || g.setup.rules.vehicles.recrew.capture == 0 {
+            Vec::new()
+        } else {
+            g.vehicles
+                .keys()
+                .copied()
+                .filter(|v| {
+                    self.ents.kind[v.index()] == EntityKind::Abandoned
+                        && self.ents.owner[v.index()] != self.me
+                })
+                .collect()
+        };
         let wait = sq_m(Fx::from_int(CREW_WAIT_M));
         let own: Vec<SimId> = g
             .vehicles
@@ -187,6 +204,24 @@ impl Planner<'_> {
                                 *v,
                             )
                         })
+                })
+                .or_else(|| {
+                    // S4 capture.
+                    enemy
+                        .iter()
+                        .copied()
+                        .filter(|v| {
+                            (self.ents.transform[v.index()].pos.xy() - lead).length_sq_raw()
+                                <= capture
+                                && !taken.contains(v)
+                                && self.recrewable(id, *v, known, kv)
+                        })
+                        .min_by_key(|v| {
+                            (
+                                (self.ents.transform[v.index()].pos.xy() - lead).length_sq_raw(),
+                                *v,
+                            )
+                        })
                 });
             if let Some(v) = pick {
                 taken.push(v);
@@ -198,7 +233,11 @@ impl Planner<'_> {
                             vehicle: v,
                         },
                     );
-                    self.ai.counters.recrews += 1;
+                    if self.ents.owner[v.index()] == self.me {
+                        self.ai.counters.recrews += 1;
+                    } else {
+                        self.ai.counters.capture_orders += 1;
+                    }
                 }
                 let at = self.ents.transform[v.index()].pos.xy();
                 self.task(id, TaskKind::Recrew, NO_POINT, at);

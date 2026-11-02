@@ -1,0 +1,60 @@
+# 7.5 cm PzGr 39: APCBC with HE filler for the KwK 40 L/48 (S3,
+# docs/slices/S3-armour.md "Ammo"). Approximate public figures; every
+# number is a starting value for tuning.
+id = "ww2:75mm_pzgr39"
+name = "7.5 cm PzGr 39"
+mechanism = "aphe"
+caliber_mm = 75
+muzzle_velocity_m_s = 790
+# No drag in S3 (must be 0).
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0° (normal), 50 %
+# success. S3b Fix (review H2): Bird & Livingston, WWII Ballistics: Armor
+# and Gunnery (Overmatch Press, 2001), p. 61, APCBC from the 7.5 cm KwK 40
+# L/48 (750 m/s): 135 mm at 100 m, 123 at 500, 109 at 1000, 97 at 1500, 86
+# at 2000; the same source and criterion as the M61 row. It replaces the
+# German wartime 30° table (106/96/85/74/64; Doyle & Jentz, Panzer Tracts
+# 4-3, p. 18) normalised by cos 30° (122/111/98/85/74).
+penetration = [[100, 135], [500, 123], [1000, 109], [1500, 97], [2000, 86]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# Damage to the gun when it strikes the barrel box (S3b: no more "within
+# 1 m"), and to a track from a hit in the running-gear band.
+nonpen_damage = 40
+track_damage = 60
+sources = ["placeholder: citations are an owner / M2 task"]
+
+# After penetration: the core goes on 1.5 m, then spall and the filler.
+[core]
+damage = 100
+length_cm = 150
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+# S3b physical-contact rule: the filler bursts offset_cm past the entry
+# into `rays` fragment rays within cone_deg of the shell path, each dealing
+# `damage` to the first seat or component box it crosses within reach_cm
+# (it used to deal 80 to every box within 1.2 m, through other boxes, so
+# one turret penetration took out the gun, the ring and three crew).
+# PzGr 39: about 17 g of filler; rays and damage are starting values for the Tune stage.
+# S3b Tune: reach_cm 150 -> 300, as the spall reach (vehicles.gunnery
+# spall_reach_m 3). At 150 the rays from a burst 1 m behind the front
+# plate ended in the empty middle of the hull between the driver, the bow
+# gunner and the turret basket, so a tank survived 5-12 frontal
+# penetrations (case 3a). Shell-body fragments cross a fighting
+# compartment (2-3 m) with lethal energy.
+# S3b Fix (review L4): rays 10 -> 8 and the M61 10 -> 12. The two
+# fillers were equal although the M61 carries about 4x the explosive
+# (~17 g of PETN-wax here vs ~70 g of Explosive D, about 2x in TNT
+# equivalent); fragment count grows slower than charge mass, so 8 vs 12
+# (x1.5). Reasoning, not a measured fragment count.
+[filler]
+offset_cm = 100
+rays = 8
+cone_deg = 60
+damage = 60
+reach_cm = 300

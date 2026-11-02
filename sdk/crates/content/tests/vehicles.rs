@@ -6,10 +6,15 @@ use std::path::{Path, PathBuf};
 
 use frontline_content::setup::{DigProfile, Fixed};
 use frontline_content::vehicle::{AmmoMechanism, ArmourZone, ComponentKind, MountKind, SeatRole};
-use frontline_content::{ContentError, Difficulty, MatchRequest, ModDefs, SquadRole};
+use frontline_content::{ContentError, Difficulty, MatchRequest, ModDefs};
 
+/// S4: the S1-S3c content frozen before the content switch
+/// (`fixtures/ww2_s3c`): these tests check its legacy unit files, rules and
+/// error reports value by value. The live `mods/ww2` is checked by
+/// `validate`, the canonical snapshot (`resolved_defs.rs`) and
+/// `variants.rs`.
 fn ww2_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ww2_s3c")
 }
 
 fn load() -> ModDefs {
@@ -182,16 +187,21 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     // one launcher and a rifle.
     let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
     let tank = ty("ww2:ger_pz4_h_squad");
-    assert_eq!(tank.role, SquadRole::Vehicle);
+    assert!(s.type_has_tag(
+        s.squad_type_index("ww2:ger_pz4_h_squad").unwrap(),
+        "vehicle"
+    ));
     assert_eq!(tank.vehicle, Some(0));
     assert_eq!((tank.men, tank.cost, tank.pop(&s.vehicles)), (0, 620, 12)); // S3b Fix: 640 -> 620
     let at = ty("ww2:usa_bazooka_team");
+    assert!(s.type_has_tag(s.squad_type_index("ww2:usa_bazooka_team").unwrap(), "at"));
     assert_eq!(
-        (at.role, at.men, at.weapon_men),
-        (SquadRole::AntiTank, 2, 1)
+        at.members.iter().map(|m| m.count).collect::<Vec<_>>(),
+        [1, 1]
     );
     assert_eq!(s.weapons[at.weapon as usize].id, "ww2:m9_bazooka");
-    assert_eq!(s.weapons[at.sidearm.unwrap() as usize].id, "ww2:m1_garand");
+    assert_eq!(s.weapons[at.members[1].weapon as usize].id, "ww2:m1_garand");
+    assert_eq!(s.weapons[at.small_arms as usize].id, "ww2:m1_garand");
     assert_eq!(at.pop(&s.vehicles), 2);
     let launcher = &s.weapons[at.weapon as usize];
     assert_eq!(s.ammo[launcher.ammo.unwrap() as usize].id, "ww2:m6a3_heat");
@@ -761,8 +771,8 @@ fn setup_validate_rejects_broken_vehicles_and_ammo() {
     );
     let at = s.squad_type_index("ww2:ger_panzerschreck_team").unwrap() as usize;
     bad(
-        &|t| t.squad_types[at].sidearm = None,
-        "squad_types.weapon_men",
+        &|t| t.squad_types[at].members[1].count = 3,
+        "squad_types.men",
     );
     bad(&|t| t.rules.vehicles.wreck_cap = 0, "rules.vehicles");
     bad(

@@ -1,0 +1,16 @@
+# US smoke grenade (S1b abilities): a cloud that blocks spotting.
+id = "ww2:m15_smoke"
+name = "M15-style Smoke Grenade"
+kind = "smoke"
+min_range_m = 5
+range_m = 30
+windup_ms = 1000
+# The cloud starts where it lands.
+fuse_ms = 0
+scatter_pct = 6
+
+[smoke]
+radius_m = 8
+grow_ms = 3000
+hold_ms = 25000
+fade_ms = 5000

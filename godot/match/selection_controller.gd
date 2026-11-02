@@ -34,7 +34,9 @@ extends Node
 ## retreat send vehicle ids in the *_units intent next to the soldiers'
 ## orders; vehicle-only orders touch only vehicles. Right-click on a seen
 ## enemy vehicle: own vehicles and AT gunners get attack_unit, other men
-## attack-move to it. Right-click on an own vehicle with infantry selected:
+## attack-move to it (S4: men of squads with Panzerfausts get attack_unit
+## too and attack-move to it; the Panzerfaust tool does the same for them
+## alone). Right-click on an own vehicle with infantry selected:
 ## the soldiers escort it (follow_units). Alt+right-click: vehicles reverse
 ## (reverse_units), soldiers move. O face tool, N next ammo, J repair.
 ##
@@ -133,9 +135,11 @@ func prune() -> void:
 		cancel_tool()
 	elif tool == &"crew" and not can(&"crew"):
 		cancel_tool()
-	elif tool == &"dig" and not _has_type(MatchView.DIGGERS):
+	elif tool == &"dig" and not can(&"dig"):
 		cancel_tool()
-	elif tool == &"barrage" and not _has_type(MatchView.MORTARS):
+	elif tool == &"barrage" and not can(&"barrage"):
+		cancel_tool()
+	elif tool == &"panzerfaust" and not can(&"panzerfaust"):
 		cancel_tool()
 	elif tool == &"throw" and item_count(throw_item) == 0:
 		cancel_tool()
@@ -283,6 +287,28 @@ func _has_type(types: Array) -> bool:
 	return false
 
 
+## S4: whether a selected squad has any of `caps` (its state
+## `capabilities`; a state without them, the mock's, falls back to the
+## legacy `types`).
+func _has_cap(caps: Array, types: Array) -> bool:
+	for sid in selected_squads():
+		if squad_has_cap(sid, caps, types):
+			return true
+	return false
+
+
+## S4: whether squad `sid` has any of `caps` (or, without capabilities in
+## the state, is one of `types`).
+func squad_has_cap(sid: int, caps: Array, types: Array) -> bool:
+	var sq: Dictionary = view.squads_by_id.get(sid, {})
+	if sq.has("capabilities"):
+		for c in sq.capabilities:
+			if String(c) in caps:
+				return true
+		return false
+	return view.squad_type(sid) in types
+
+
 func _squads_of_type(types: Array) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	for sid in selected_squads():
@@ -325,6 +351,38 @@ func send_order(kind: StringName, data := {}, types: Array = [], exclude := Pack
 		d.units = parts[1]
 		view.emit_intent(StringName(String(kind) + "_units"), d)
 	return not parts[0].is_empty() or not parts[1].is_empty()
+
+
+## S4: whether a man of squad `sid` carries `item` (state items).
+func _carries(sid: int, item: String) -> bool:
+	for id in selected_in(sid):
+		if view.item_count(view.soldiers_by_id.get(id, {}), item) > 0:
+			return true
+	return false
+
+
+## S4 Panzerfaust tool: the selected men of squads carrying one get
+## attack_unit on enemy vehicle `target` and attack-move to it. False
+## when none carries one.
+func panzerfaust_at(target: int) -> bool:
+	var v: Dictionary = view.vehicles_by_id.get(target, {})
+	if v.is_empty():
+		return false
+	var men := PackedInt32Array()
+	var squads := PackedInt32Array()
+	for sid in selected_squads():
+		if _carries(sid, "panzerfaust"):
+			squads.append(sid)
+			men.append_array(selected_in(sid))
+	if men.is_empty():
+		return false
+	men.sort()
+	view.emit_intent(&"attack_unit", {"units": men, "target": target})
+	view.emit_intent(&"attack_move", {"squads": squads, "target": v.pos})
+	if view.overlay != null:
+		view.overlay.marker(v.pos, &"attack_move")
+	AudioManager.play_ui(&"confirm")
+	return true
 
 
 ## Sum of an item over the selected men (ability button counts).
@@ -406,17 +464,23 @@ func can(order: StringName) -> bool:
 		return false
 	match order:
 		&"dig":
-			return _has_type(MatchView.DIGGERS)
+			# S4: by capability (`dig_basic`).
+			return _has_cap(["dig_basic"], MatchView.DIGGERS)
 		&"barrage":
-			return _has_type(MatchView.MORTARS)
-		&"frag", &"smoke", &"satchel":
+			return _has_cap(["barrage"], MatchView.MORTARS)
+		&"frag", &"smoke", &"satchel", &"panzerfaust":
 			return item_count(String(order)) > 0
 		&"regroup":
 			return not selected_soldiers().is_empty()
 		&"crew":
-			# S3c: infantry (not AT teams) can man an abandoned vehicle.
+			# S3c: infantry (not AT teams) can man an abandoned vehicle;
+			# S4: squads with `recrew` or `vehicle_crew`.
 			for sid in selected_squads():
-				if not view.squad_type(sid) in ["at", "vehicle"]:
+				var sq: Dictionary = view.squads_by_id.get(sid, {})
+				if sq.has("capabilities"):
+					if squad_has_cap(sid, ["recrew", "vehicle_crew"], []):
+						return true
+				elif not view.squad_type(sid) in ["at", "vehicle"]:
 					return true
 			return false
 		&"ammo_apcr":
@@ -770,6 +834,9 @@ func attack_vehicle(target: int) -> void:
 		if view.squad_type(sid) == "at":
 			at_squads.append(sid)
 			focus.append_array(selected_in(sid))
+		elif _carries(sid, "panzerfaust"):
+			# S4: Panzerfaust carriers aim at it first and close in.
+			focus.append_array(selected_in(sid))
 	focus.sort()
 	if not focus.is_empty():
 		view.emit_intent(&"attack_unit", {"units": focus, "target": target})
@@ -835,6 +902,16 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 		AudioManager.play_ui(&"error")
 		return
 	match tool:
+		&"panzerfaust":
+			# S4: the seen enemy vehicle under the click; the selected
+			# squads carrying Panzerfausts aim at it and close in.
+			var pv := pick_vehicle(screen, 0)
+			if pv == -1 or not panzerfaust_at(pv):
+				AudioManager.play_ui(&"error")
+				return
+			if not shift:
+				_set_tool(&"")
+			return
 		&"crew":
 			# S3c: the abandoned vehicle under the click.
 			var v := pick_vehicle(screen, -1)

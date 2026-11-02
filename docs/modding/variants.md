@@ -5,33 +5,45 @@ differs. Unit cards can list their men slot by slot, say what they can do
 (capabilities) and what they are (tags), and name a training profile.
 `docs/slices/S4-variants.md` is the design; this page is the how-to.
 
-S4 is built in two parts. **Part A** (now) is the content crate: every key
+S4 was built in two parts. **Part A** is the content crate: every key
 below loads, merges and is checked, and `frontline-cli validate` reports
-mistakes with a fix. The sim still runs the S3 squad model, so a card it
-cannot run yet is refused when a match starts, with the words "needs S4
-Part B" (see [What Part A can play](#what-part-a-can-play)). Part B teaches
-the sim the rest.
+mistakes with a fix. **Part B** (now) runs it in the sim: per-man weapons
+from `[[members]]`, crew-weapon pickup, capabilities and tags instead of
+the S1-S3c role, training profiles, the card limits (`max_alive`, limit
+groups, per-card `unlock_s`, dates), the AI's tag mix, and the
+single-shot AT item (Panzerfaust). `mods/ww2` itself is written this way
+(the shipped cards are good examples: `defs/units/ger_grenadiergruppe.toml`
+and its variant `ger_grenadiergruppe_7.toml`).
 
 ## `extends`
 
 ```toml
-# defs/units/usa_rifle_squad_understrength.toml
-id      = "ww2:usa_rifle_squad_understrength"
-extends = "ww2:usa_rifle_squad"
-name    = "Rifle Squad (understrength)"
-tags    = ["line", "understrength"]
+# mods/ww2/tests/variants/units/ger_grenadiergruppe_example.toml
+id      = "ww2:ger_grenadiergruppe_example"
+extends = "ww2:ger_grenadiergruppe"
+name    = "Grenadiergruppe (example)"
 
 [[members]]
-slot = "squad_leader"
-weapon = "ww2:m1_garand"
-items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
+slot = "leader"
+weapon = "ww2:mp40"
 traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2 }
+
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:mg42_bipod"          # a crew weapon
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:p38"
+traits = ["crew_assistant"]        # picks the MG up first
 
 [[members]]
 slot = "rifleman"
-count = 8
-weapon = "ww2:m1_garand"
-items = { "ww2:mk2_grenade" = 1 }
+count = 3
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1 }
 ```
 
 - Every kind can extend: `units`, `weapons`, `items`, `ammo`, `vehicles`,
@@ -76,14 +88,24 @@ legacy squad replaces its legacy soldier keys the same way.
 | `slot` | free name shown on the squad card: lower-case letters, digits, `_` |
 | `count` | men in the slot, 1..=16 (default 1); all slots 1..=16 |
 | `weapon` | weapon id each man carries |
-| `sidearm` | what he fights with after handing a crew weapon on (Part B) |
-| `items` | `{ "<item id>" = n }` per man; one item of each kind (frag, smoke, satchel) per man; n ≤ 10 |
+| `sidearm` | what he fights with after handing a crew weapon on (stored; nobody hands one on in S4) |
+| `items` | `{ "<item id>" = n }` per man; one item of each kind (frag, smoke, satchel, single_shot_at) per man, and one item id per kind in the whole squad (S4-26); n ≤ 10 |
 | `ammo` | rounds he carries; stored, but rounds stay unlimited until S5 |
 | `traits` | `leader` (first slot, count 1), `crew_gunner`, `crew_assistant`, `ammo_bearer` |
 
 Slots are in spawn and formation order. The first man of the first slot
 leads the squad (he gets the leader's items). `officer`, `radio`, `medic`
 and `sniper` are reserved traits and refused until their slice.
+
+**Each man keeps his own weapon** from spawn. **Crew weapons** (a weapon
+with `crew_weapon = true`; by default every `mg`, `mortar` and `launcher`
+class weapon) are picked up: when the carrier falls, after the weapon's
+`handover_ms` the nearest living man of his squad who carries no crew
+weapon takes it (`crew_assistant` and `ammo_bearer` men first, then the
+nearest, ties by id); he drops his own weapon. Other weapons stay with the
+man who carried them (a tank crew's SMG is not passed on). The man firing a
+mortar is the first one in formation order who carries it. The squad's
+focus range is its longest-reaching non-crew weapon (S4-23).
 
 **Legacy squads** expand into slots when they load, so every card has
 `members` afterwards:
@@ -94,9 +116,11 @@ and `sniper` are reserved traits and refused until their slice.
 | `weapon` | `weapon_men` − 1 | `weapon` | each item's `count` |
 | `sidearm` | `men` − `weapon_men` | `sidearm` | each item's `count` |
 
-Without `sidearm` every man carries `weapon`. That is today's behaviour,
-and it means the S1-S3 MG teams field three MGs each and every mortar man
-carries the tube (S4-2: the content switch in Part B changes that).
+Without `sidearm` every man carries `weapon`. That is the S1-S3c
+behaviour: a legacy MG team fields three MGs and every mortar man carries
+the tube (a fallen man's gun is then lost: nobody without a crew weapon is
+left to take it, S4-29). The shipped `ww2` cards give one gun and
+assistants (S4-2).
 
 ## The card block (unit files, top-level keys)
 
@@ -204,28 +228,41 @@ at = 20                           # once an enemy vehicle was seen
 `engineer`, `mortar`, `vehicle`, `at`, one to one). A rules file uses one
 form; both at once is an error naming the keys to move.
 
-## What Part A can play
+## What a match refuses
 
-`frontline-cli validate` accepts everything above. Until S4 Part B, a match
-refuses (naming the card and the key, ending in "needs S4 Part B"):
+`frontline-cli validate` accepts everything above, and a match runs it. A
+match start still refuses (naming the card and the key):
 
-- `[[members]]` that are not "one weapon, then one sidearm" (a third
-  weapon, or the first weapon again after the second), items that differ
-  between men other than the leader, or a member `sidearm`;
-- a training profile other than 100 everywhere;
-- `capabilities` that differ from what the card's role gives;
-- `max_alive` or `limit_group`;
-- a vehicle card's own `cost`, `cooldown_s` or `unlock_s`;
-- `[ai.mix]` tags other than the six above.
+- a `limit_group` the rules' `[limit_groups]` do not list;
+- two different items of one kind in one squad (S4-26).
 
-Traits, `ammo`, `ai_weight`, `short_name`, `sources` and extra tags load
-and are kept, but do nothing yet.
+## Single-shot AT items (Panzerfaust)
+
+An item of kind `single_shot_at` is fired, not thrown. It names the
+launcher weapon it fires as:
+
+```toml
+# defs/items/panzerfaust60.toml
+kind = "single_shot_at"
+weapon = "ww2:pzf60"   # a class = "launcher" weapon: range, engage_still_m,
+                       # engage_moving_m, spread, ammo (a HEAT round), reveal
+min_range_m = 10       # arming distance
+range_m = 60
+windup_ms = 1500       # aim time before the shot
+```
+
+A man carrying one aims at a seen enemy vehicle within the weapon's
+`engage_still_m` (`engage_moving_m` when it moves), then fires it as a
+physical round (the jet and spall do the damage); the tube is spent. A
+squad fires at most one per the rules' `items.single_shot_gap_s`. Cards
+whose men carry one get the derived capability `at_hunt`; the AI hunts
+close vehicles with them (`ai.assault.pzf_hunt_m`).
 
 ## Trying a variant
 
 `mods/ww2/tests/variants/` holds the example above
-(`units/usa_rifle_squad_understrength.toml`) and `roster.toml`, a tuning
-override that puts it in the US roster. In Rust:
+(`units/ger_grenadiergruppe_example.toml`) and `roster.toml`, a tuning
+override that puts it in the German roster. In Rust:
 
 ```rust
 let mut defs = ModDefs::load(&mods)?;

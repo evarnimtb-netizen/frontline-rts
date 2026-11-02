@@ -110,7 +110,10 @@ pub const SMOKE_WATCH_S: u64 = 20;
 /// the line over a small rise), which would make a poor control.
 const SMOKE_MG_X: i32 = 450;
 /// The control only counts as fired on with at least this many rounds.
-const SMOKE_CONTROL_SHOTS: u32 = 20;
+/// S4: 5 (was 20): the MG card is one tripod gun with a 6 s setup (the
+/// S1-S3c MG team fired three bipod guns), so a seen control draws 5-130
+/// rounds; the hidden side must still draw none (S4-33).
+const SMOKE_CONTROL_SHOTS: u32 = 5;
 
 /// Where things stand: open ground east of the map centre with clear lines
 /// of sight (the same spots the sim's combat tests use).
@@ -346,27 +349,24 @@ fn dig(w: &mut World) {
 }
 
 /// Player `p`'s first squad with the given role name in its id.
+/// Player `p`'s first squad whose card carries tag `role` (S4: by tag,
+/// `line`, `mg`, ...).
 fn squad(w: &World, p: u8, role: &str) -> Result<SquadId> {
     let g = w.game().expect("match world");
     let s = g.setup();
     g.squads()
         .iter()
-        .find(|(_, q)| {
-            q.owner == PlayerId(p) && s.squad_types[q.type_idx as usize].id.ends_with(role)
-        })
+        .find(|(_, q)| q.owner == PlayerId(p) && s.type_has_tag(q.type_idx, role))
         .map(|(id, _)| *id)
         .ok_or_else(|| anyhow::anyhow!("player {p} has no {role} squad"))
 }
 
-/// Buys player `p`'s squad type ending in `role` and steps until it arrives.
+/// Buys player `p`'s first roster card with tag `role` and steps until it
+/// arrives.
 fn call_in(w: &mut World, p: u8, role: &str) -> Result<SquadId> {
     let s = w.match_setup().expect("match world");
     let faction = &s.factions[s.players[p as usize].faction as usize];
-    let Some(&ty) = faction
-        .roster
-        .iter()
-        .find(|&&t| s.squad_types[t as usize].id.ends_with(role))
-    else {
+    let Some(&ty) = faction.roster.iter().find(|&&t| s.type_has_tag(t, role)) else {
         bail!("{} has no {role} in its roster", faction.id);
     };
     let known: Vec<SquadId> = w.game().unwrap().squads().keys().copied().collect();
@@ -416,8 +416,8 @@ fn world(args: &FortifyArgs, seed: u64) -> Result<World> {
 fn rifle_run(args: &FortifyArgs, seed: u64, dug: u8) -> Result<Run> {
     let mut w = world(args, seed)?;
     let open = 1 - dug;
-    let a = squad(&w, dug, "rifle_squad")?;
-    let b = squad(&w, open, "rifle_squad")?;
+    let a = squad(&w, dug, "line")?;
+    let b = squad(&w, open, "line")?;
     dig(&mut w);
     w.place_squad(a, at(TRENCH_X, LINE_Y), EAST);
     w.place_squad(b, at(TRENCH_X + RIFLE_GAP_M, LINE_Y), WEST);
@@ -442,12 +442,12 @@ fn rifle_run(args: &FortifyArgs, seed: u64, dug: u8) -> Result<Run> {
 fn mortar_run(args: &FortifyArgs, seed: u64, target: u8, trench: bool) -> Result<(u32, f64)> {
     let mut w = world(args, seed)?;
     let gunner = 1 - target;
-    let rifle = squad(&w, target, "rifle_squad")?;
+    let rifle = squad(&w, target, "line")?;
     if trench {
         dig(&mut w);
     }
     w.place_squad(rifle, at(TRENCH_X, LINE_Y), EAST);
-    let m = call_in(&mut w, gunner, "mortar_team")?;
+    let m = call_in(&mut w, gunner, "mortar")?;
     w.place_squad(m, at(TRENCH_X + MORTAR_GAP_M, LINE_Y), WEST);
     let hz = w.match_setup().unwrap().tick_hz as u64;
     let start = w.tick();
@@ -538,8 +538,8 @@ fn assault_run(
 ) -> Result<AssaultRun> {
     let mut w = world(args, seed)?;
     let att = 1 - dug;
-    let a = squad(&w, dug, "rifle_squad")?;
-    let b = squad(&w, att, "rifle_squad")?;
+    let a = squad(&w, dug, "line")?;
+    let b = squad(&w, att, "line")?;
     dig(&mut w);
     w.place_squad(a, at(TRENCH_X, LINE_Y), EAST);
     w.place_squad(b, at(TRENCH_X + start_m, LINE_Y), WEST);
@@ -619,14 +619,14 @@ fn suppress_run(
 ) -> Result<SuppressRun> {
     let mut w = world(args, seed)?;
     let att = 1 - dug;
-    let a = squad(&w, dug, "rifle_squad")?;
-    let b = squad(&w, att, "rifle_squad")?;
+    let a = squad(&w, dug, "line")?;
+    let b = squad(&w, att, "line")?;
     dig(&mut w);
     w.place_squad(a, at(TRENCH_X, LINE_Y), EAST);
     w.place_squad(b, at(TRENCH_X + SUPPRESS_START_M, LINE_Y), WEST);
     let mut defenders = vec![a];
     if def_mg {
-        let d = call_in(&mut w, dug, "mg_team")?;
+        let d = call_in(&mut w, dug, "mg")?;
         w.place_squad(d, at(TRENCH_X, LINE_Y + DEF_MG_DY), EAST);
         defenders.push(d);
     }
@@ -637,7 +637,7 @@ fn suppress_run(
     let mut mg_squad = None;
     let mut second_squad = None;
     if second {
-        let r = call_in(&mut w, att, "rifle_squad")?;
+        let r = call_in(&mut w, att, "line")?;
         second_squad = Some(r);
         w.place_squad(r, at(TRENCH_X + SUPPRESS_START_M, LINE_Y + 20), WEST);
         let units = members(&w, r);
@@ -651,7 +651,7 @@ fn suppress_run(
         );
     }
     if mg {
-        let m = call_in(&mut w, att, "mg_team")?;
+        let m = call_in(&mut w, att, "mg")?;
         mg_squad = Some(m);
         w.place_squad(m, at(TRENCH_X + SUPPRESS_START_M, LINE_Y - 20), WEST);
         let units = members(&w, m);
@@ -790,14 +790,14 @@ fn smoke_run(args: &FortifyArgs, seed: u64, hidden: u8, smoke: bool) -> Result<S
         };
         w.place_squad(sq, spot, EAST);
     }
-    let mg = call_in(&mut w, gunner, "mg_team")?;
+    let mg = call_in(&mut w, gunner, "mg")?;
     let park = if gunner == 0 {
         at(80, 900)
     } else {
         at(900, 80)
     };
     w.place_squad(mg, park, EAST);
-    let rifle = squad(&w, hidden, "rifle_squad")?;
+    let rifle = squad(&w, hidden, "line")?;
     let spot = at(SMOKE_MG_X + SMOKE_GAP_M, LINE_Y);
     w.place_squad(rifle, spot, NORTH);
     let hz = w.match_setup().unwrap().tick_hz as u64;

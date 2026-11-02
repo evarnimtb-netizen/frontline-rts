@@ -32,4 +32,4 @@ cost = 620
 traverse_deg_s = 24
 
 [defs.units."ww2:usa_rifle_squad"]
-cost = 250
+cost = 340

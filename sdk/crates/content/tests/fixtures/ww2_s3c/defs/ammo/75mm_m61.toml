@@ -1,0 +1,59 @@
+# 75 mm M61: APC with HE filler for the M3 gun (S3,
+# docs/slices/S3-armour.md "Ammo"). Approximate public figures; every
+# number is a starting value for tuning.
+id = "ww2:75mm_m61"
+name = "75 mm M61 APC"
+mechanism = "aphe"
+caliber_mm = 75
+muzzle_velocity_m_s = 618
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0° (normal), 50 %
+# success. S3b Fix (review H2): Bird & Livingston, WWII Ballistics: Armor
+# and Gunnery (Overmatch Press, 2001), pp. 62-63, APC M61 from the M3 gun
+# (618 m/s) vs RHA: 88 mm at 100 m, 81 at 500, 73 at 1000, 65 at 1500, 59
+# at 2000. The same book gives the PzGr 39 and PzGr 40 rows (p. 61) on the
+# same criterion, so both sides now come from one source. The Tune
+# stage's row was the US wartime table at 30° (Hunnicutt, Sherman, p.
+# 562: 66 mm at 500 yd) divided by cos 30° (76 mm); the US tables used a
+# stricter acceptance criterion than the German ones the PzGr 39 row came
+# from, so mixing them under-rated the M61 by ~7 mm against the German
+# round (it beat the Panzer IV H's 80 mm / 10° front at 300 m 13 % of the
+# time; with this row 90 %, as the S3 row's 88 %).
+penetration = [[100, 88], [500, 81], [1000, 73], [1500, 65], [2000, 59]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# Damage to the gun when it strikes the barrel box (S3b, physical contact).
+nonpen_damage = 40
+track_damage = 60
+sources = ["placeholder: citations are an owner / M2 task"]
+
+[core]
+damage = 100
+length_cm = 150
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+# S3b physical-contact rule: the filler bursts offset_cm past the entry
+# into `rays` fragment rays within cone_deg of the shell path, each dealing
+# `damage` to the first seat or component box it crosses within reach_cm
+# (it used to deal 80 to every box within 1.2 m, through other boxes, so
+# one turret penetration took out the gun, the ring and three crew).
+# M61: a small burster (about 0.07 kg); rays and damage are starting values for the Tune stage.
+# S3b Tune: reach_cm 150 -> 300, as the spall reach (vehicles.gunnery
+# spall_reach_m 3). At 150 the rays from a burst 1 m behind the glacis
+# ended in the empty middle of the hull between the driver, the bow
+# gunner and the turret basket, so a tank survived 5-12 frontal
+# penetrations (case 3a). Shell-body fragments cross a fighting
+# compartment (2-3 m) with lethal energy.
+# S3b Fix (review L4): rays 10 -> 12 and the PzGr 39 10 -> 8, for the
+# larger burster (see 75mm_pzgr39.toml).
+[filler]
+offset_cm = 100
+rays = 12
+cone_deg = 60
+damage = 60
+reach_cm = 300
