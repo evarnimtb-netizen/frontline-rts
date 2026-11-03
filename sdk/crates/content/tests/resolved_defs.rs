@@ -336,7 +336,7 @@ fn legacy_cards_expand_to_todays_men() {
     assert_eq!(rifle.capabilities, ["dig_basic", "recrew"]);
     assert_eq!(rifle.members[0].items.get("ww2:stielhandgranate"), Some(&2));
     assert_eq!((rifle.cooldown_s, rifle.unlock_s), (Some(24), Some(0)));
-    assert!(d.squads["ww2:ger_mortar_team"].has_capability("barrage"));
+    assert!(d.squads["ww2:ger_mortar_team"].has_capability("fire_mission"));
     assert!(d.squads["ww2:usa_bazooka_team"].has_capability("at_hunt"));
     assert!(d.squads["ww2:usa_engineer_squad"].has_capability("dig_full"));
     assert!(d.squads["ww2:ger_tank_crew"].has_capability("vehicle_crew"));

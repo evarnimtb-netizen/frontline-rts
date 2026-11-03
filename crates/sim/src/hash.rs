@@ -100,6 +100,10 @@ impl StableHash for Projectile {
             self.player.put(out);
             self.ammo.put(out);
             self.origin.put(out);
+            // S5b: only mission bombs carry it (other rounds hash as before).
+            if self.mission != 0 {
+                self.mission.put(out);
+            }
         }
     }
 }
@@ -319,6 +323,14 @@ pub(crate) fn terrain_combined(base: u64, terrain: &Heightfield, tiles: &[u64]) 
     })
 }
 
+/// Appends `v`'s postcard encoding, length first (postcard's encoding is
+/// explicit and stable; S5b state).
+fn put_postcard<T: serde::Serialize + ?Sized>(v: &T, out: &mut Vec<u8>) {
+    let bytes = postcard::to_allocvec(v).expect("serialising match state cannot fail");
+    (bytes.len() as u32).put(out);
+    out.extend_from_slice(&bytes);
+}
+
 /// Encodes the whole match state (the setup goes in as bytes separately).
 fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     (g.players.len() as u32).put(out);
@@ -370,6 +382,9 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         for v in a.refilled {
             v.put(out);
         }
+        // S5b: the knowledge map and the fire-mission counters.
+        put_postcard(&p.intel, out);
+        put_postcard(&p.fm, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -386,9 +401,11 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             Order::Idle | Order::Retreat => {}
             Order::Move { target } | Order::AttackMove { target } => target.put(out),
             Order::Dig { line, job } => put_dig(line, job, out),
-            Order::Barrage { target, rounds } => {
+            Order::FireMission { target, rounds, m } => {
                 target.put(out);
                 rounds.put(out);
+                // S5b: every mission field (legacy missions are all zero).
+                put_postcard(m, out);
             }
             Order::Follow { vehicle } => vehicle.0.put(out),
             Order::Suppress { line } => line.put(out),
@@ -437,6 +454,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
                 p.attack.put(out);
             }
         }
+        // S5b: the ranging memory.
+        put_postcard(&sq.ranging, out);
     }
     (g.points.len() as u32).put(out);
     for c in &g.points {
@@ -517,6 +536,7 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         l.put(out);
     }
     g.armour_seq.put(out);
+    g.next_mission.put(out);
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {

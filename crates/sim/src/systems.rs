@@ -417,6 +417,8 @@ pub(crate) struct FireRequest {
     /// S3: the round (index into `MatchSetup::ammo`) of a main-gun shell
     /// or rocket, `NO_AMMO` otherwise.
     pub ammo: u16,
+    /// S5b: the fire mission of a mortar bomb (0: none).
+    pub mission: u32,
 }
 
 /// Counts down weapon cooldowns and fires seeded shots when ready.
@@ -463,6 +465,7 @@ pub(crate) fn fire_weapons(
             ammo: crate::projectile::NO_AMMO,
             ttl: 0,
             he: false,
+            mission: 0,
         });
         w.shots = w.shots.wrapping_add(1);
         let mut rc = RngStream::new(seed, tick, id, Purpose::WEAPON_COOLDOWN);
@@ -483,6 +486,7 @@ pub(crate) fn projectile_from(req: &FireRequest, p: &WeaponParams) -> Projectile
         player: 0,
         ammo: crate::projectile::NO_AMMO,
         origin: req.pos,
+        mission: 0,
     }
 }
 

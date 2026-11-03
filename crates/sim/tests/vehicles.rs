@@ -586,7 +586,7 @@ fn vehicle_ids_take_unit_orders_and_soldier_only_orders_reject_them() {
         cmd(
             0,
             7,
-            CommandKind::Barrage {
+            CommandKind::FireMission {
                 squad: sq,
                 target: xy(700, 700),
                 rounds: 3,

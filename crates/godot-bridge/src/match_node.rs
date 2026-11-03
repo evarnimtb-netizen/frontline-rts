@@ -892,7 +892,7 @@ fn pending_kind(intent: &str) -> Option<&'static str> {
     Some(match intent {
         "move" | "move_units" | "reverse_units" => "move",
         "attack_move" | "attack_move_units" => "attack_move",
-        "barrage" => "barrage",
+        "barrage" | "fire_mission" => "barrage",
         "throw" | "throw_each" => "throw",
         "dig" | "dig_units" => "dig",
         _ => return None,
@@ -1657,7 +1657,7 @@ impl MatchRuntime {
             .roster
             .iter()
             .map(|&t| &setup.squad_types[t as usize])
-            .find(|t| t.has(Capability::Barrage))
+            .find(|t| t.has(Capability::FireMission))
             .map(|t| &setup.weapons[t.weapon as usize]);
 
         let mut map = vdict! {
@@ -2493,7 +2493,8 @@ impl MatchRuntime {
                 OrderKind::AttackMove => "attack_move",
                 OrderKind::Retreat => "retreat",
                 OrderKind::Dig => "dig",
-                OrderKind::Barrage => "barrage",
+                // S5b: the HUD still names it `barrage` until Part B.
+                OrderKind::FireMission => "barrage",
                 OrderKind::Follow => "follow",
                 OrderKind::Suppress => "suppress",
                 OrderKind::Recrew => "recrew",
@@ -2525,7 +2526,7 @@ impl MatchRuntime {
             d.set("dig_line", &line);
             d.set("dig_progress", s.dig_pct as f32 / 100.0);
         }
-        if s.order == OrderKind::Barrage {
+        if s.order == OrderKind::FireMission {
             d.set("rounds", s.rounds as i64);
         }
         if let Some(v) = s.follow {
@@ -2723,14 +2724,19 @@ impl MatchRuntime {
                     out.push(dig_command(s.id, piece, profile));
                 }
             }
-            "barrage" => {
+            // S5b: `fire_mission` (`barrage` kept as an alias for one slice).
+            "barrage" | "fire_mission" => {
                 let Some(t) = target else { return };
-                let rounds = self.setup.rules.ai.barrage_rounds.max(1);
+                let rounds = match &self.setup.rules.fire_mission {
+                    Some(fm) => fm.player_rounds as u16,
+                    None => self.setup.rules.ai.barrage_rounds,
+                }
+                .max(1);
                 // S4 review L2: by capability, as the HUD's Barrage button.
                 for s in own.iter().filter(|s| {
-                    self.setup.squad_types[s.type_idx as usize].has(Capability::Barrage)
+                    self.setup.squad_types[s.type_idx as usize].has(Capability::FireMission)
                 }) {
-                    out.push(CommandKind::Barrage {
+                    out.push(CommandKind::FireMission {
                         squad: SquadId(s.id),
                         target: sim_to_fx(to_sim(t, self.half)),
                         rounds,

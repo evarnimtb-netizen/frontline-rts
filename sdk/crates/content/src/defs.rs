@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning,
-    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
-    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, BailTuning,
+    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
+    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
     SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
     VehiclePathTuning, check_tuning,
 };
@@ -29,7 +29,7 @@ pub const MAP_SIZE_MAX_M: u32 = 8192;
 pub const MAX_SQUAD_MEN: u8 = 16;
 
 /// What a squad does on the field. Drives AI choices and which orders apply
-/// (only squads that can dig take `Dig`, only mortars take `Barrage`).
+/// (only squads that can dig take `Dig`, only mortars take `FireMission`).
 /// A vehicle is a squad of one (`Vehicle`, S3): its squad def names the
 /// vehicle def, which holds cost, pop, call-in time and sight.
 #[derive(
@@ -180,7 +180,7 @@ pub struct SquadDef {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// S4: what the unit can do (orders follow): `dig_basic`, `dig_full`,
-    /// `recrew`, `vehicle_crew`; `barrage` and `at_hunt` are derived from
+    /// `recrew`, `vehicle_crew`; `fire_mission` and `at_hunt` are derived from
     /// the members' weapons. Empty: from `role`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<String>,
@@ -624,6 +624,118 @@ pub struct WeaponDef {
     /// 10-100; absent or 0: the rules' `combat.fire.hold_beyond_pct`).
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub hold_beyond_pct: u32,
+    /// S5b: high-angle indirect fire (mortars): the charges and laying
+    /// limits the charge solver picks from. Without it (legacy content) a
+    /// mortar keeps the S1 flight rule (`[combat.mortar] flight_milli`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indirect: Option<IndirectDef>,
+}
+
+/// S5b `[indirect]` of a mortar: muzzle velocity per charge (m/s, strictly
+/// rising, the lowest first) and the elevation limits (whole degrees, high
+/// angle: 45 to 89). The solver takes the lowest charge that reaches the
+/// target at an elevation inside the limits.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IndirectDef {
+    pub charges_m_s: Vec<u32>,
+    pub elevation_deg: [u32; 2],
+}
+
+/// Most charges in an `[indirect]` table.
+pub const MAX_CHARGES: usize = 12;
+
+/// Drag-free range (m) of muzzle velocity `v` (m/s) at elevation `deg`
+/// (whole degrees) on flat ground: `v² sin 2θ / g`. Content-side check only
+/// (the sim solves in fixed point).
+pub fn indirect_range_m(v: u32, deg: u32) -> f64 {
+    let t = (deg as f64).to_radians();
+    (v as f64) * (v as f64) * (2.0 * t).sin() / 9.81
+}
+
+impl IndirectDef {
+    /// Checks the table against the weapon's ranges; `path` is `indirect`.
+    pub fn check(&self, w: &WeaponDef, out: &mut Vec<Issue>) {
+        let c = &self.charges_m_s;
+        if c.is_empty() || c.len() > MAX_CHARGES {
+            out.push(
+                Issue::new(
+                    "indirect.charges_m_s",
+                    format!("needs 1..={MAX_CHARGES} charges, got {}", c.len()),
+                )
+                .with_hint("charges_m_s = [75, 105, 130, 152, 174]"),
+            );
+            return;
+        }
+        for (k, &v) in c.iter().enumerate() {
+            if !(20..=600).contains(&v) {
+                out.push(Issue::new(
+                    format!("indirect.charges_m_s[{k}]"),
+                    format!("must be in 20..=600 m/s, got {v}"),
+                ));
+                return;
+            }
+        }
+        if c.windows(2).any(|p| p[0] >= p[1]) {
+            out.push(
+                Issue::new(
+                    "indirect.charges_m_s",
+                    "charges must rise strictly (the lowest charge first)",
+                )
+                .with_hint("charges_m_s = [75, 105, 130, 152, 174]"),
+            );
+            return;
+        }
+        let [lo, hi] = self.elevation_deg;
+        if !(45..=89).contains(&lo) || !(45..=89).contains(&hi) || lo >= hi {
+            out.push(
+                Issue::new(
+                    "indirect.elevation_deg",
+                    format!("must be [min, max] within 45..=89 with min < max, got [{lo}, {hi}]"),
+                )
+                .with_hint("high angle only in S5b; set elevation_deg = [45, 85]"),
+            );
+            return;
+        }
+        if w.class != WeaponClass::Mortar || w.he.is_none() {
+            out.push(Issue::new(
+                "indirect",
+                "only a mortar (class = \"mortar\" with an [he] table) has [indirect]",
+            ));
+        }
+        let shortest = indirect_range_m(c[0], hi);
+        if shortest > w.min_range_m as f64 * 1.1 {
+            out.push(
+                Issue::new(
+                    "indirect",
+                    format!(
+                        "the shortest high-angle range is {shortest:.0} m (lowest charge at {hi} deg), min_range_m is {}",
+                        w.min_range_m
+                    ),
+                )
+                .with_hint(format!(
+                    "raise the top elevation or add a lower charge, or set min_range_m = {}",
+                    shortest.ceil() as u32
+                )),
+            );
+        }
+        let longest = indirect_range_m(*c.last().expect("non-empty"), 45);
+        if longest < w.range_m as f64 {
+            out.push(
+                Issue::new(
+                    "indirect.charges_m_s",
+                    format!(
+                        "no charge reaches {} m (the highest at 45 deg reaches {longest:.0} m)",
+                        w.range_m
+                    ),
+                )
+                .with_hint(format!(
+                    "add a charge of at least {} m/s, or lower range_m",
+                    ((w.range_m as f64) * 9.81).sqrt().ceil() as u32
+                )),
+            );
+        }
+    }
 }
 
 fn is_zero_u32(v: &u32) -> bool {
@@ -951,6 +1063,11 @@ pub struct RulesDef {
     /// content) rounds are unlimited and refills free (S5a-22).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supply: Option<SupplyTuning>,
+    /// S5b: fire missions, observers, ranging and the knowledge map.
+    /// Without it (legacy content) a mission runs as the old barrage
+    /// (S5b-1 (A)).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire_mission: Option<FireMissionTuning>,
 }
 
 /// `[call_in]` of a rules def: the S3b spawn tuning ([`CallInTuning`],
@@ -1272,8 +1389,10 @@ pub struct AiDef {
     pub mix_engineer_pct: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mix_mortar_pct: Option<u32>,
-    /// Rounds per mortar Barrage order.
-    pub barrage_rounds: u32,
+    /// Rounds per mortar mission (legacy key; S5b: `[ai.mortar]
+    /// mission_rounds`, set one of the two).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barrage_rounds: Option<u32>,
     /// Trench length engineers dig at a held point ...
     pub dig_length_m: u32,
     /// ... this far in front of it, toward the nearest enemy.
@@ -1315,6 +1434,19 @@ pub struct AiDef {
     /// starting values).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ammo: Option<AiAmmoTuning>,
+    /// S5b: the AI's fire missions (replaces `barrage_rounds`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mortar: Option<AiMortarTuning>,
+}
+
+impl AiDef {
+    /// S5b: `[ai.mortar]`, else the legacy `barrage_rounds` (6 if absent)
+    /// with the S5b starting values.
+    pub fn mortar_tuning(&self) -> AiMortarTuning {
+        self.mortar
+            .clone()
+            .unwrap_or_else(|| AiMortarTuning::legacy(self.barrage_rounds.unwrap_or(6)))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1837,6 +1969,9 @@ impl WeaponDef {
         if self.hold_beyond_pct != 0 {
             range(&mut out, "hold_beyond_pct", self.hold_beyond_pct, 10, 100);
         }
+        if let Some(ind) = &self.indirect {
+            ind.check(self, &mut out);
+        }
         if self.class == WeaponClass::Cannon && self.he.is_some() {
             out.push(Issue::new(
                 "he",
@@ -2286,7 +2421,6 @@ impl RulesDef {
         for (name, v, lo, hi) in [
             ("retreat_strength_pct", a.retreat_strength_pct, 0, 100),
             ("threat_radius_m", a.threat_radius_m, 1, 500),
-            ("barrage_rounds", a.barrage_rounds, 1, 50),
             ("dig_length_m", a.dig_length_m, 2, 1000),
             ("dig_offset_m", a.dig_offset_m, 0, 100),
             ("throw_cooldown_s", a.throw_cooldown_s, 1, 600),
@@ -2366,8 +2500,21 @@ impl RulesDef {
                 share: &self.combat.share.clone().unwrap_or_default(),
                 fire: &self.combat.fire.clone().unwrap_or_default(),
                 ai_ammo: &a.ammo.clone().unwrap_or_default(),
+                fire_mission: self.fire_mission.as_ref(),
+                ai_mortar: &a.mortar_tuning(),
             },
         );
+        match (a.barrage_rounds, &a.mortar) {
+            (Some(_), Some(_)) => out.push(
+                Issue::new(
+                    "ai.barrage_rounds",
+                    "replaced by [ai.mortar] mission_rounds; set only that",
+                )
+                .with_hint("delete ai.barrage_rounds"),
+            ),
+            (Some(r), None) => range(&mut out, "ai.barrage_rounds", r, 1, 50),
+            _ => {}
+        }
         out
     }
 }

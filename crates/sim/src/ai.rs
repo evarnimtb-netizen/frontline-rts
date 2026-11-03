@@ -33,7 +33,8 @@
 //!    point toward the nearest spotted enemy (else the nearest enemy point,
 //!    else the enemy base). Defenders of a point with a finished trench
 //!    stand in it.
-//! 5. **Mortars.** A mortar team fires `barrage_rounds` at the best spotted
+//! 5. **Mortars.** A mortar squad fires a mission of `barrage_rounds` (S5b:
+//!    `[ai.mortar] mission_rounds`) at the best spotted
 //!    enemy group in range (bigger groups and men in trenches score
 //!    higher; never within `ai.infantry.danger_close_m` of own men); otherwise it
 //!    moves to a support spot `ai.infantry.support_back_m` behind the most important
@@ -216,7 +217,8 @@ pub enum TaskKind {
     Attack = 1,
     Defend = 2,
     Dig = 3,
-    Barrage = 4,
+    /// S5b: was `Barrage` (same number).
+    FireMission = 4,
     Support = 5,
     Retreat = 6,
     /// S3 vehicles: hold `tank_standoff` short of an enemy point (AT seen)
@@ -546,7 +548,7 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::Stop { squad }
         | CommandKind::Retreat { squad }
         | CommandKind::Dig { squad, .. }
-        | CommandKind::Barrage { squad, .. } => Some(*squad),
+        | CommandKind::FireMission { squad, .. } => Some(*squad),
         _ => None,
     }
 }
@@ -1243,7 +1245,7 @@ impl Planner<'_> {
             // S4 review L2: every barrage-capable squad is a mortar team to
             // the planner (`mortars`), never also a point holder.
             let barrage = g.squads.get(&m.id).is_some_and(|sq| {
-                g.setup.squad_types[sq.type_idx as usize].has(Capability::Barrage)
+                g.setup.squad_types[sq.type_idx as usize].has(Capability::FireMission)
             });
             if m.role == AiKind::Mortar || barrage {
                 continue;
@@ -1471,10 +1473,10 @@ impl Planner<'_> {
         // S4: squads that can barrage (a member carries a mortar).
         for m in mine
             .iter()
-            .filter(|m| s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::Barrage))
+            .filter(|m| s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::FireMission))
         {
             let sq = &g.squads[&m.id];
-            if matches!(sq.order, Order::Barrage { .. }) {
+            if matches!(sq.order, Order::FireMission { .. }) {
                 continue;
             }
             let w = &s.weapons[s.squad_types[sq.type_idx as usize].weapon as usize];
@@ -1514,13 +1516,13 @@ impl Planner<'_> {
                 };
                 self.ai.emit(
                     self.due,
-                    CommandKind::Barrage {
+                    CommandKind::FireMission {
                         squad: m.id,
                         target,
                         rounds,
                     },
                 );
-                self.task(m.id, TaskKind::Barrage, NO_POINT, target);
+                self.task(m.id, TaskKind::FireMission, NO_POINT, target);
                 continue;
             }
             let Some(front) = front else { continue };

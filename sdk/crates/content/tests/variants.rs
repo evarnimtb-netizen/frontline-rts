@@ -329,7 +329,7 @@ fn members_tags_capabilities_and_dates_are_checked() {
 id = "ww2:zz_variant"
 extends = "ww2:usa_rifle_squad"
 tags = ["line", "Bad-Tag", "line"]
-capabilities = ["dig_basic", "breach", "dig_ful", "barrage"]
+capabilities = ["dig_basic", "breach", "dig_ful", "fire_mission"]
 available_from = "1944-13"
 available_to = "1943-01"
 short_name = "A name far too long"
@@ -351,7 +351,7 @@ weapon = "ww2:m1_garnd"
         "tags[2]: `line` is listed twice",
         "capability `breach` is reserved",
         "did you mean `dig_full`",
-        "`barrage` comes from a mortar",
+        "`fire_mission` comes from a mortar",
         "available_from: `1944-13` is not a month",
         "short_name",
         "a `leader` slot comes first and has count = 1",

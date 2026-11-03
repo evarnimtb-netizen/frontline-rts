@@ -327,7 +327,7 @@ fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
     w.step(&[Command {
         player: PlayerId(0),
         seq: 1,
-        kind: CommandKind::Barrage {
+        kind: CommandKind::FireMission {
             squad: sq,
             target: xy(1000, 500),
             rounds: 50,
@@ -376,7 +376,7 @@ fn base_bombs_wait_after_the_mortar_fired() {
     w.step(&[Command {
         player: PlayerId(0),
         seq: 1,
-        kind: CommandKind::Barrage {
+        kind: CommandKind::FireMission {
             squad: sq,
             target: xy(1000, 500),
             rounds: 50,

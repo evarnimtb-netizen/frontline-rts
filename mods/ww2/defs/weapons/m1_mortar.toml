@@ -1,20 +1,42 @@
 id = "ww2:m1_mortar"
 name = "81 mm M1"
 class = "mortar"
+sources = [
+    "Wikipedia, M1 mortar (18 rpm sustained, 30-35 maximum; M43A1 light HE 3.2 kg, 100-3,300 yd, zone 7)",
+    "M43A1 dealer description, ima-usa.com (ignition cartridge plus six increments; secondary)",
+]
 # S5a: what each shot takes from the man's rounds (defs/cartridges).
 feed = "ww2:81mm_m43a1"
 # Bombs the gunner carries; the crew carry the rest (members' `rounds`).
 load = 3
-min_range_m = 60
+# S5b: 60 -> 90 m. The M43A1 light HE's minimum is 100 yd (91 m) (Wikipedia,
+# M1 mortar); the lowest zone at 85 deg reaches 87 m drag-free.
+min_range_m = 90
 range_m = 600
 damage = 150
-rounds_per_min = 15
+# S5b: 15 -> 18, "18 rpm sustained", 30-35 maximum (Wikipedia, M1 mortar).
+rounds_per_min = 18
 magazine = 1
 reload_ms = 0
+# S5b: the PRECISION spread only (mrad; a game value, S5b-6 (A)); the aim
+# error is the fire mission's (rules [fire_mission]).
 spread_mrad = 50
+# Nominal (unused for the flight, which uses [indirect]).
 muzzle_velocity_m_s = 180
 setup_ms = 3000
 suppression = 30
+
+# S5b: high-angle fire (see grw34.toml).
+[indirect]
+# M43A1 light HE: 7 zones (ignition cartridge plus 0-6 increments); zone 7
+# reaches about 3,300 yd (Wikipedia, M1 mortar). Per-zone velocities are NOT
+# sourced yet: an estimate rising from 70 m/s (ignition cartridge alone,
+# like the GrW 34's charge I) to 188 m/s (owner question S5b-2 (A)). To
+# check: "Firing tables, mortar, 81-mm, M1, firing shell, H.E., M43A1",
+# War Department, Jan. 1945. Only zones 1-2 are used inside 600 m.
+charges_m_s = [70, 95, 117, 137, 155, 172, 188]
+# Laying limits (whole degrees; verify against FM 23-90).
+elevation_deg = [45, 85]
 
 [he]
 # S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and

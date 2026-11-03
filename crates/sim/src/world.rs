@@ -420,7 +420,7 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `[supply]` and `[combat.share]` rules in the setup; per-player ammo
 /// accounts; counted rounds per man, sidearm and refill state in the kit;
 /// the rounds left in a dropped crew weapon). One bump for the whole slice.
-const SAVE_VERSION: u32 = 13;
+const SAVE_VERSION: u32 = 14;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -484,6 +484,8 @@ pub struct World {
     call_in_events: Vec<crate::game::CallInEvent>,
     /// S3c: refused re-crews of the last tick, for the snapshot.
     recrew_events: Vec<crate::bail::RecrewEvent>,
+    /// S5b: refused fire missions of this tick's commands.
+    fm_events: Vec<crate::fire_mission::FireMissionEvent>,
 }
 
 impl World {
@@ -624,6 +626,7 @@ impl World {
             armour_events: Vec::new(),
             call_in_events: Vec::new(),
             recrew_events: Vec::new(),
+            fm_events: Vec::new(),
             state,
         };
         if let Some(g) = world.state.game.as_mut() {
@@ -1454,6 +1457,8 @@ impl World {
                 game.supply_tick(&mut self.state.entities, &mut self.hash, tick);
                 // S5a: squads holding fire spring to discipline.
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
+                // S5b: the players' knowledge maps.
+                game.update_intel(&self.state.entities, tick);
                 game.update_rules(&self.state.entities);
             }
         }
@@ -1488,6 +1493,24 @@ impl World {
             path_expansions,
         };
         published
+    }
+
+    /// S5b: starts (or restarts, empty) the diagnostic log of fire-mission
+    /// bursts (mortar-bench). Never read by the sim; not saved.
+    pub fn enable_burst_log(&mut self) {
+        if let Some(g) = self.state.game.as_mut() {
+            g.burst_log = Some(Vec::new());
+        }
+    }
+
+    /// S5b: takes the burst log's entries so far (empty if not enabled).
+    pub fn take_burst_log(&mut self) -> Vec<crate::fire_mission::BurstRecord> {
+        self.state
+            .game
+            .as_mut()
+            .and_then(|g| g.burst_log.as_mut())
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Starts (or restarts, empty) the diagnostic log of main-gun and rocket
@@ -1601,6 +1624,59 @@ impl World {
             dig,
             self.state.tick,
         );
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S5b staging tool (mortar-bench): player `player` knows point `p`, as
+    /// if an enemy had been seen there in a trench (an intel cell that
+    /// stays for the match). Match worlds with `[fire_mission]` only.
+    pub fn mark_intel(&mut self, player: PlayerId, p: FxVec2) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let Some(fm) = game.setup.rules.fire_mission.clone() else {
+            return false;
+        };
+        if (player.0 as usize) >= game.players.len() || !self.state.terrain.contains(p) {
+            return false;
+        }
+        let cell = Fx::from_int(fm.intel_cell_m as i32);
+        let cols = crate::fire_mission::intel_cols(game.setup.map.size_m, fm.intel_cell_m) as i32;
+        let x = p.x.div(cell).floor_int().clamp(0, cols - 1);
+        let y = p.y.div(cell).floor_int().clamp(0, cols - 1);
+        let c = game.players[player.0 as usize]
+            .intel
+            .entry((y * cols + x) as u32)
+            .or_default();
+        c.seen = self.state.tick;
+        c.flags |= crate::fire_mission::intel_flag::TRENCH;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S5b staging tool (mortar-bench): a fully grown smoke cloud of the
+    /// first smoke item at `p` on the ground. Match worlds only.
+    pub fn smoke_now(&mut self, p: FxVec2) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let Some((item, grow)) = game
+            .setup
+            .items
+            .iter()
+            .enumerate()
+            .find_map(|(k, it)| it.smoke.as_ref().map(|s| (k as u16, s.grow_ticks)))
+        else {
+            return false;
+        };
+        let pos = p.extend(self.state.terrain.height_at(p));
+        game.start_smoke(item, pos);
+        if let Some(c) = game.smoke.last_mut() {
+            c.age = grow.min(u16::MAX as u32) as _;
+        }
         self.refresh_hashes();
         self.fill_snapshot();
         true
@@ -1864,6 +1940,7 @@ impl World {
         ai.clear();
         self.call_in_events.clear();
         self.recrew_events.clear();
+        self.fm_events.clear();
         if let Some(game) = &mut self.state.game {
             game.take_ai_commands(self.state.tick, &mut ai);
         }
@@ -1896,6 +1973,7 @@ impl World {
                 // never holds them between ticks.
                 self.call_in_events.append(&mut game.call_in_events);
                 self.recrew_events.append(&mut game.recrew_events);
+                self.fm_events.append(&mut game.fm_events);
                 continue;
             }
             let ok = match c.kind {
@@ -2054,6 +2132,9 @@ impl World {
         self.snapshot
             .recrew_refusals
             .clone_from(&self.recrew_events);
+        self.snapshot
+            .fire_mission_refusals
+            .clone_from(&self.fm_events);
         self.snapshot
             .fill_shells(&self.state.projectiles, self.state.game.as_ref());
     }
@@ -2246,6 +2327,7 @@ mod tests {
                 player: 0,
                 ammo: crate::projectile::NO_AMMO,
                 origin: Default::default(),
+                mission: 0,
             });
         });
         assert!(load_err(&bytes).contains("weapon"));
@@ -3761,6 +3843,7 @@ mod tests {
                 player: 1,
                 ammo,
                 origin: from,
+                mission: 0,
             })
             .unwrap();
         w.hash.mark_pool_slot(slot);
@@ -4282,6 +4365,7 @@ mod tests {
                 player: 1,
                 ammo: crate::projectile::NO_AMMO,
                 origin: from,
+                mission: 0,
             })
             .unwrap();
         w.hash.mark_pool_slot(slot);

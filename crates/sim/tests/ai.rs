@@ -168,8 +168,8 @@ fn ai_vs_ai_plays_by_the_rules() {
                     assert!(near, "trench at {mid:?} is not at a point");
                 }
                 // Mortars fire at targets inside their range band.
-                Order::Barrage { target, .. } if seen.barrages.insert(id) => {
-                    assert!(ty.has(frontline_content::setup::Capability::Barrage));
+                Order::FireMission { target, .. } if seen.barrages.insert(id) => {
+                    assert!(ty.has(frontline_content::setup::Capability::FireMission));
                     let wpn = &s.weapons[ty.weapon as usize];
                     let d = (*target - lead).length();
                     assert!(d >= Fx::from(wpn.range_min), "barrage at {d:?}");

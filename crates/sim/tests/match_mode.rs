@@ -184,7 +184,7 @@ fn bad_orders_are_rejected() {
         cmd(
             0,
             4,
-            CommandKind::Barrage {
+            CommandKind::FireMission {
                 squad: mine[0],
                 target,
                 rounds: 4,
@@ -494,21 +494,26 @@ fn dig_and_barrage_orders_are_stored() {
     let mortar = type_index(&w, "ww2:ger_mortar_team");
     w.step(&[cmd(0, 1, CommandKind::CallIn { squad_type: mortar })]);
     let m = *w.game().unwrap().squads().last_key_value().unwrap().0;
-    let target = FxVec2::from_int(400, 400);
+    // S5b: the knowledge rule; a capture point is known ground.
+    let target: FxVec2 = w.match_setup().unwrap().map.points[0].pos.into();
     w.step(&[cmd(
         0,
         2,
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: m,
             target,
             rounds: 6,
         },
     )]);
     let s = w.game().unwrap().squad(m).unwrap();
-    assert_eq!(s.order, Order::Barrage { target, rounds: 6 });
+    assert!(
+        matches!(s.order, Order::FireMission { target: t, rounds: 6, .. } if t == target),
+        "{:?}",
+        s.order
+    );
     assert_eq!(
         w.snapshot().squads.last().unwrap().order,
-        OrderKind::Barrage
+        OrderKind::FireMission
     );
 }
 

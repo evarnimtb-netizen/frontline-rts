@@ -1,6 +1,10 @@
 id = "ww2:grw34"
 name = "8 cm GrW 34"
 class = "mortar"
+sources = [
+    "US War Department, German Infantry Weapons (MID 1943), 8-cm heavy mortar model 34 (charges I-IV 246/344/427/499 ft/s, range 60-1,900 m, firing table 869-1,545 mils, rate)",
+    "Wikipedia, 8 cm Granatwerfer 34 (174 m/s full charge, 2.4 km)",
+]
 # S5a: what each shot takes from the man's rounds (defs/cartridges).
 feed = "ww2:8cm_wgr34"
 # Bombs the gunner carries; the crew carry the rest (members' `rounds`;
@@ -9,13 +13,36 @@ load = 3
 min_range_m = 60
 range_m = 600
 damage = 150
+# Practical sustained rate: "6 rounds in 8 to 9 seconds (but this rate
+# cannot be maintained)" (US War Department, German Infantry Weapons, 1943,
+# 8-cm heavy mortar model 34).
 rounds_per_min = 15
 magazine = 1
 reload_ms = 0
+# S5b: the PRECISION spread only (mrad, triangular per axis around the aim
+# point; a game value, S5b-6 (A)). The aim error (where the group lands) is
+# the fire mission's: rules [fire_mission] first_round_error_pct and
+# map_fire_error_pct, shrinking as an observer sees rounds land.
 spread_mrad = 50
+# Full charge (charge V) muzzle velocity (m/s); the flight uses [indirect].
 muzzle_velocity_m_s = 174
 setup_ms = 3000
 suppression = 30
+
+# S5b: high-angle fire. The charge solver takes the lowest charge that
+# reaches the target at an elevation inside elevation_deg; the bomb flies
+# drag-free (as every sim shell) and lands after the true time of flight.
+[indirect]
+# Charges I-IV of the Wgr 34: 246 / 344 / 427 / 499 ft/s = 75 / 105 / 130 /
+# 152 m/s (US War Department, German Infantry Weapons, 1943, section e).
+# Charge V 174 m/s is the full-charge figure most sources quote (Wikipedia,
+# 8 cm Granatwerfer 34; verify). Check: charge I at 87 deg reaches 60 m
+# drag-free, the firing table's first row and min_range_m. Inside 560 m
+# charge I is used (13-15 s of flight), charge II beyond.
+charges_m_s = [75, 105, 130, 152, 174]
+# Laying limits (whole degrees): the firing table runs 869-1,545 mils
+# (48.9-86.9 deg at 6,400 mils to the circle); 45-87 taken (verify).
+elevation_deg = [45, 87]
 
 [he]
 # S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and

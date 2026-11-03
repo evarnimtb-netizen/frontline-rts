@@ -1036,6 +1036,120 @@ impl Default for AiAmmoTuning {
     }
 }
 
+tuning_table! {
+    /// `[fire_mission]` (S5b): mortar fire missions, observers and the
+    /// voice link, aim error and ranging-in, the player's knowledge map
+    /// (artillery-on-map.md §4.1, §4.8; docs/modding/fire-missions.md). A
+    /// rules def without this table runs every mission as the old barrage:
+    /// no observer rule, no aim error, no knowledge rule (S5b-1 (A)).
+    pub struct FireMissionTuning {
+        /// A squad leader adjusts fire on ground points this far (m).
+        observe_leader_m: 0..=5000,
+        /// Men with the `observer` trait (FO teams) observe this far (m).
+        observe_observer_m: 0..=10000,
+        /// Voice link: an observer within this of the mortar's gunner can
+        /// pass corrections (m).
+        observer_link_m: 1..=1000,
+        /// A sight line to a ground point ends this high above it (mm) ...
+        point_lift_mm: 0..=10000,
+        /// ... and to a burst this high above the burst point (mm).
+        burst_seen_lift_mm: 0..=20000,
+        /// Order to first round, observed or map fire (s) ...
+        fire_direction_s: 0..=600,
+        /// ... and direct (the crew sees the point) (s).
+        direct_s: 0..=600,
+        /// After an adjusting round bursts, the wait before the next (s).
+        adjust_wait_s: 0..=120,
+        /// Adjust until the aim error is at most this (m) ...
+        ffe_error_m: 0..=500,
+        /// ... or this many adjusting rounds were fired.
+        adjust_rounds_max: 1..=20,
+        /// First-round aim error, observed and direct (% of range) ...
+        first_round_error_pct: 0..=100,
+        /// ... at least this (m).
+        first_round_error_min_m: 0..=500,
+        /// Each round an observer sees land leaves this share of the aim
+        /// error (%).
+        ranging_step_pct: 0..=100,
+        /// Map fire aim error (% of range) ...
+        map_fire_error_pct: 0..=100,
+        /// ... at least this (m).
+        map_fire_error_min_m: 0..=1000,
+        /// A new mission within this of a ranged target reuses its error (m).
+        ranging_cell_m: 1..=1000,
+        /// Ranging is forgotten after this (s) ...
+        ranging_expiry_s: 1..=7200,
+        /// ... or when the tube moves farther than this from where it
+        /// ranged (m).
+        ranging_keep_move_m: 0..=1000,
+        /// Most remembered target areas per mortar squad.
+        ranging_max_cells: 1..=16,
+        /// Cell size of the player's knowledge map (m).
+        intel_cell_m: 5..=500,
+        /// A cell where an enemy was last seen stays known this long (s).
+        intel_keep_s: 1..=7200,
+        /// A cell where an enemy was seen in a trench stays known this long
+        /// (s; 0: the whole match).
+        intel_trench_keep_s: 0..=86400,
+        /// Knowledge cells are updated this often (s).
+        intel_period_s: 1..=60,
+        /// Map fire is allowed within this of a known cell's centre, a seen
+        /// enemy or a capture point's edge (m).
+        intel_snap_m: 0..=500,
+        /// Rounds in a mission ordered from the HUD tool.
+        player_rounds: 1..=50,
+    }
+}
+
+impl FireMissionTuning {
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        check_order(
+            out,
+            table,
+            ("first_round_error_min_m", self.first_round_error_min_m),
+            ("map_fire_error_min_m", self.map_fire_error_min_m),
+        );
+    }
+}
+
+tuning_table! {
+    /// `[ai.mortar]` (S5b): the AI's fire missions (spotters and map fire
+    /// are used from S5b Part B).
+    pub struct AiMortarTuning {
+        /// Rounds per AI mission (was `ai.barrage_rounds`).
+        mission_rounds: 1..=50,
+        /// Candidate observation spots tried per plan.
+        spot_samples: 0..=32,
+        /// A spotter that has not seen the target by then comes back (s).
+        spot_max_s: 1..=600,
+        /// A spotter with no new target stays this long before rejoining (s).
+        spot_hold_s: 0..=600,
+        /// Map fire only while the mortar holds more than this share of its
+        /// bombs (%) ...
+        map_fire_min_pct: 0..=100,
+        /// ... and only at a target scoring at least this (men·10 +
+        /// trench·20).
+        map_fire_min_score: 0..=1000,
+    }
+}
+
+impl AiMortarTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+
+    /// A rules def without `[ai.mortar]`: `ai.barrage_rounds` rounds per
+    /// mission and the S5b starting values.
+    pub fn legacy(rounds: u32) -> AiMortarTuning {
+        AiMortarTuning {
+            mission_rounds: rounds,
+            spot_samples: 8,
+            spot_max_s: 60,
+            spot_hold_s: 30,
+            map_fire_min_pct: 60,
+            map_fire_min_score: 40,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -1043,6 +1157,8 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("combat.share", ShareTuning::KEYS),
     ("combat.fire", FireTuning::KEYS),
     ("ai.ammo", AiAmmoTuning::KEYS),
+    ("fire_mission", FireMissionTuning::KEYS),
+    ("ai.mortar", AiMortarTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -1091,6 +1207,8 @@ pub(crate) struct TuningRefs<'a> {
     pub share: &'a ShareTuning,
     pub fire: &'a FireTuning,
     pub ai_ammo: &'a AiAmmoTuning,
+    pub fire_mission: Option<&'a FireMissionTuning>,
+    pub ai_mortar: &'a AiMortarTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -1138,6 +1256,10 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.share.check(&p("combat.share"), out);
     t.fire.check(&p("combat.fire"), out);
     t.ai_ammo.check(&p("ai.ammo"), out);
+    if let Some(fm) = t.fire_mission {
+        fm.check(&p("fire_mission"), out);
+    }
+    t.ai_mortar.check(&p("ai.mortar"), out);
 }
 
 #[cfg(test)]

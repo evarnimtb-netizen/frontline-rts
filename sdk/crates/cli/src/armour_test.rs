@@ -1801,7 +1801,7 @@ fn case10(env: &Env) -> Result<CaseReport> {
         order(
             w,
             p,
-            vec![CommandKind::Barrage {
+            vec![CommandKind::FireMission {
                 squad: m,
                 target,
                 rounds: 20,
@@ -2006,7 +2006,7 @@ fn case12(env: &Env) -> Result<CaseReport> {
         order(
             w,
             p,
-            vec![CommandKind::Barrage {
+            vec![CommandKind::FireMission {
                 squad: m,
                 target: at(TRENCH_X, LANE_Y),
                 rounds: 10,

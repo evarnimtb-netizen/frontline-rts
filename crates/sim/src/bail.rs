@@ -637,6 +637,7 @@ impl MatchState {
                             facing,
                             ..Nav::default()
                         },
+                        ranging: Vec::new(),
                         focus: None,
                         launcher: None,
                         drops: Vec::new(),
@@ -929,6 +930,7 @@ impl MatchState {
                     slots: vec![t.pos.xy()],
                     ..Nav::default()
                 },
+                ranging: Vec::new(),
                 focus: None,
                 launcher: None,
                 drops: Vec::new(),

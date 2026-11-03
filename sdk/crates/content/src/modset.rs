@@ -379,7 +379,7 @@ fn finish_unit(
         })
     });
     let derived = [
-        ("barrage", has(WeaponClass::Mortar), "a mortar"),
+        ("fire_mission", has(WeaponClass::Mortar), "a mortar"),
         (
             "at_hunt",
             has(WeaponClass::Launcher) || single_shot,

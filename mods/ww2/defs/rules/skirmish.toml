@@ -206,12 +206,13 @@ still_mm_s = 300
 [combat.mortar]
 # Muzzle height above the crew's feet (mm).
 muzzle_mm = 800
-# Flight time is sqrt(range in m * flight_milli / 1000) s, at least
-# min_flight_s: about a 60 degree arc at every range.
+# Legacy mortars only (a weapon without [indirect]; S5b: ww2 mortars fly by
+# their charges): flight time is sqrt(range in m * flight_milli / 1000) s,
+# at least min_flight_s: about a 60 degree arc at every range.
 flight_milli = 350
 min_flight_s = 4
 # A team holding out of range walks to 90 % of its range again unless that
-# spot is within this of its last walk; then the barrage ends (m).
+# spot is within this of its last walk; then the fire mission ends (m).
 barrage_retry_m = 20
 
 # HE bursts of shells, rockets and thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
@@ -685,8 +686,6 @@ decision_quality_pct = 100
 retreat_strength_pct = 40
 # Spotted enemies this close to a point or squad count as a threat to it.
 threat_radius_m = 80
-# Rounds per mortar barrage order.
-barrage_rounds = 6
 # Engineers dig a trench this long at each held point, this far in front of
 # it toward the nearest enemy.
 dig_length_m = 20
@@ -982,6 +981,16 @@ float_mp = 100
 # this long (s) (S5a-20 (A): the shell budget waits for S6).
 rearm_stall_s = 15
 
+# S5b: the AI's fire missions (docs/slices/S5b-mortars.md "AI mission
+# logic"; spotters and map fire are used from S5b Part B).
+[ai.mortar]
+mission_rounds = 6           # rounds per AI mission (was ai.barrage_rounds)
+spot_samples = 8             # candidate observation spots tried per plan
+spot_max_s = 60              # s: a spotter that has not seen the target by then comes back
+spot_hold_s = 30             # s: a spotter with no new target stays this long before rejoining
+map_fire_min_pct = 60        # %: map fire only while the mortar holds more than this share of its bombs
+map_fire_min_score = 40      # and only at a target scoring at least this (men*10 + trench*20)
+
 # Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
 # once in the base, no queue and no delivery time).
 [call_in]
@@ -1047,3 +1056,74 @@ base_bomb_s = 4                 # s per mortar bomb per man (S5a only)
 base_bomb_after_fire_s = 0
 # Items and AT rockets keep [items] resupply_s, now priced.
 low_pct = 30                 # %: HUD "low" marker below this share of a squad's load (Part B)
+
+# S5b: mortar fire missions (docs/modding/fire-missions.md; design
+# artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
+# Direct (the mortar's own leader sees the point), Observed (another squad
+# leader of the player, within the voice link of the gunner, sees it) or as
+# Map fire (nobody linked sees it, but the player knows the point). Never
+# blind: an order at ground the player has never seen is refused.
+[fire_mission]
+# --- Who observes, and the link ---
+# A squad leader adjusts fire on ground points this far (m; binoculars).
+# It reveals nothing: spotting enemy men still uses the squad's sight_m.
+observe_leader_m = 400
+# Men with the "observer" trait (FO teams, S11; none in ww2 yet) (m).
+observe_observer_m = 1200
+# Voice link: an observer within this of the mortar's gunner passes
+# corrections (m). "A single section can usually communicate by word of
+# mouth" (US WD Intelligence Bulletin, Feb 1944, German instructions for
+# concentrating 81-mm mortar fire). Radio links: S6/S11.
+observer_link_m = 150
+# The sight line to a ground point ends this high above the ground (mm), and
+# to a burst this high above it: the dust and smoke column an observer
+# adjusts on (mm).
+point_lift_mm = 500
+burst_seen_lift_mm = 3000
+
+# --- Timing (artillery-on-map.md §4.8) ---
+# Order to first round: the call, the fire command, laying the tube (s);
+# direct: the crew lays on what it sees (s). 10 s plus 13-21 s of flight is
+# 23-31 s from order to the first burst (§4.8: 20-60 s for a voice-linked
+# section). One value for both factions (S5b-9 (A)).
+fire_direction_s = 10
+direct_s = 4
+# After an adjusting round bursts, the observer's correction reaches the
+# tube and the tube is re-laid before the next round (s).
+adjust_wait_s = 4
+# Adjust single rounds until the aim error is at most ffe_error_m (m), or
+# adjust_rounds_max rounds, then fire for effect at the weapon's rate.
+# Bracketing: "split the bracket", 2-4 adjusting rounds (FM 23-90).
+ffe_error_m = 10
+adjust_rounds_max = 4
+
+# --- Aim error: where the group lands relative to the target; the weapon's
+# spread_mrad (precision) scatters each round around that on top ---
+# Observed and direct: % of range with a floor (m) (S5b-11 (A): the design's
+# 3 % with a mortar-sized floor, 10-18 m at 200-600 m) ...
+first_round_error_pct = 3
+first_round_error_min_m = 10
+# ... and each round an observer SEES land leaves this share of the error
+# (%; a hidden burst teaches nothing).
+ranging_step_pct = 50
+# Map fire (no observer; a known point): no ranging. About 3x the observed
+# first round; set on the mortar-bench (S5b-12).
+map_fire_error_pct = 9
+map_fire_error_min_m = 30
+
+# --- Ranging memory (per mortar squad, per target area; S5b-4 (A): it only
+# helps a later observed or direct mission, never map fire) ---
+ranging_cell_m = 50          # m: a new mission within this of a ranged target reuses its error
+ranging_expiry_s = 600       # s: forgotten after this
+ranging_keep_move_m = 10     # m: forgotten when the tube moves farther than this
+ranging_max_cells = 4        # most remembered target areas per mortar
+
+# --- The knowledge map (intel) for map fire (S5b-3 (A)) ---
+intel_cell_m = 25            # m: cell size of the player's knowledge grid
+intel_keep_s = 300           # s: a cell where an enemy was last seen stays known this long
+intel_trench_keep_s = 0      # s: a cell where an enemy was seen in a trench (0: the whole match)
+intel_period_s = 1           # s: cells are updated this often
+intel_snap_m = 25            # m: map fire within this of a known cell centre, a seen enemy or a capture point's edge
+
+# --- Player orders ---
+player_rounds = 6            # rounds in a mission ordered from the HUD tool (1..=50)

@@ -91,13 +91,18 @@ pub fn tag_words(setup: &MatchSetup, ty: &SquadTypeSetup) -> Vec<String> {
         .collect()
 }
 
-/// The card's capabilities as their TOML names.
+/// The card's capabilities as their TOML names (S5b: `fire_mission` also
+/// as its old name `barrage`, an alias for one slice while the HUD moves).
 pub fn capability_words(ty: &SquadTypeSetup) -> Vec<&'static str> {
-    Capability::ALL
+    let mut out: Vec<&'static str> = Capability::ALL
         .iter()
         .filter(|c| ty.has(**c))
         .map(|c| c.name())
-        .collect()
+        .collect();
+    if ty.has(Capability::FireMission) {
+        out.push("barrage");
+    }
+    out
 }
 
 /// Whether the card carries the reserved `understrength` tag (the HUD's

@@ -58,7 +58,8 @@ pub struct MemberDef {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub items: BTreeMap<String, u8>,
     /// S4 traits: `leader` (first slot only), `crew_gunner`,
-    /// `crew_assistant`, `ammo_bearer`.
+    /// `crew_assistant`, `ammo_bearer`; S5b `observer` (adjusts fire
+    /// missions at `fire_mission.observe_observer_m`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traits: Vec<String>,
 }
@@ -68,7 +69,13 @@ fn one() -> u8 {
 }
 
 /// Traits a member may have in S4.
-pub const TRAITS: [&str; 4] = ["leader", "crew_gunner", "crew_assistant", "ammo_bearer"];
+pub const TRAITS: [&str; 5] = [
+    "leader",
+    "crew_gunner",
+    "crew_assistant",
+    "ammo_bearer",
+    "observer",
+];
 /// Traits reserved for later slices (refused until then).
 pub const RESERVED_TRAITS: [&str; 4] = ["officer", "radio", "medic", "sniper"];
 
@@ -76,14 +83,14 @@ pub const RESERVED_TRAITS: [&str; 4] = ["officer", "radio", "medic", "sniper"];
 pub const CAPABILITIES: [&str; 6] = [
     "dig_basic",
     "dig_full",
-    "barrage",
+    "fire_mission",
     "recrew",
     "vehicle_crew",
     "at_hunt",
 ];
 /// Capabilities the content crate derives from the members' weapons
 /// (setting them is allowed only when the weapons give them).
-pub const DERIVED_CAPABILITIES: [&str; 2] = ["barrage", "at_hunt"];
+pub const DERIVED_CAPABILITIES: [&str; 2] = ["fire_mission", "at_hunt"];
 /// Capabilities reserved for later slices.
 pub const RESERVED_CAPABILITIES: [&str; 14] = [
     "build_structure",

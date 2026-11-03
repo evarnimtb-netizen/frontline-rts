@@ -79,9 +79,9 @@ pub struct SquadView {
     pub dig_pct: u8,
     /// Dig orders: the trench polyline (sim axes).
     pub dig_line: Vec<[f32; 2]>,
-    /// Move, attack-move and barrage target.
+    /// Move, attack-move and fire-mission target.
     pub target: Option<[f32; 2]>,
-    /// Barrage rounds left.
+    /// Fire-mission rounds left.
     pub rounds: u16,
     /// Items the men carry, by [`ItemKind::index`].
     pub items: [u16; ITEM_KINDS],
@@ -511,7 +511,7 @@ impl MatchFrame {
                     v.dig_pct = job.progress_pct(job.rules(&setup.rules), setup.tick_hz);
                     v.dig_line.extend(line.iter().map(|p| p.to_f32()));
                 }
-                Order::Barrage { target, rounds } => {
+                Order::FireMission { target, rounds, .. } => {
                     v.target = Some(target.to_f32());
                     v.rounds = *rounds;
                 }

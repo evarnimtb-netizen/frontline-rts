@@ -350,6 +350,8 @@ pub struct PlayerReport {
     pub s4: S4Player,
     /// S5a ammunition counters.
     pub s5a: S5aPlayer,
+    /// S5b fire-mission counters (`frontline_sim::FmCounters`).
+    pub s5b: frontline_sim::FmCounters,
 }
 
 /// S5a per-player report counters (`frontline_sim::AmmoAccount`).
@@ -1117,6 +1119,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     kills_by: pl.kills_by,
                     ai: ai.map_or_else(S5aAi::default, |a| S5aAi::of(&a.counters)),
                 },
+                s5b: pl.fm,
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1495,6 +1498,27 @@ pub struct FactionSummary {
     pub s4: S4Faction,
     /// S5a counters over the run.
     pub s5a: S5aFaction,
+    /// S5b counters over the run.
+    pub s5b: S5bFaction,
+}
+
+/// S5b numbers of one faction over a `--seeds` run (sums).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S5bFaction {
+    pub matches: u32,
+    pub missions: [u64; 3],
+    pub refused: [u64; frontline_sim::FireMissionRefusal::COUNT],
+    pub bombs: [u64; 3],
+    pub miss_mm: [u64; 3],
+    pub seen: u64,
+    pub unseen: u64,
+    pub adjust: u64,
+    pub flight_ticks: u64,
+    pub base_bombs: [u64; 3],
+    pub upgrades: u64,
+    pub downgrades: u64,
+    pub no_solution: u64,
+    pub spotters: u64,
 }
 
 /// S5a numbers of one faction over a `--seeds` run.
@@ -1757,6 +1781,26 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             s5.ai.add(&q5.ai);
             s5.matches_with_refill += u32::from(q5.ai.refill_trips > 0);
             s5.matches_ambush_fired_normal += u32::from(q5.ai.ambush_shots > 0 && !swapped);
+            let b = &p.s5b;
+            let s6 = &mut f.s5b;
+            s6.matches += 1;
+            for k in 0..3 {
+                s6.missions[k] += b.missions[k] as u64;
+                s6.bombs[k] += b.bombs[k] as u64;
+                s6.miss_mm[k] += b.miss_mm[k];
+                s6.base_bombs[k] += b.base_bombs[k] as u64;
+            }
+            for k in 0..frontline_sim::FireMissionRefusal::COUNT {
+                s6.refused[k] += b.refused[k] as u64;
+            }
+            s6.seen += b.seen as u64;
+            s6.unseen += b.unseen as u64;
+            s6.adjust += b.adjust as u64;
+            s6.flight_ticks += b.flight_ticks;
+            s6.upgrades += b.upgrades as u64;
+            s6.downgrades += b.downgrades as u64;
+            s6.no_solution += b.no_solution as u64;
+            s6.spotters += b.spotters as u64;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;
@@ -2029,6 +2073,57 @@ pub fn many_text(r: &ManyReport) -> String {
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
+        );
+    }
+    // S5b: fire missions by mode, refusals, miss, flight, the base battery.
+    for f in &s.factions {
+        let q = &f.s5b;
+        let n = q.matches.max(1) as f64;
+        let bombs: u64 = q.bombs.iter().sum();
+        let missions: u64 = q.missions.iter().sum();
+        let miss = |k: usize| q.miss_mm[k] as f64 / 1000.0 / q.bombs[k].max(1) as f64;
+        let refused: Vec<String> = (0..frontline_sim::FireMissionRefusal::COUNT)
+            .filter(|&k| q.refused[k] > 0)
+            .map(|k| format!("{} {}", frontline_sim::FireMissionRefusal::NAMES[k], q.refused[k]))
+            .collect();
+        let base: u64 = q.base_bombs.iter().sum();
+        out += &format!(
+            "S5b {}: missions {} ({:.1}/match): direct {}, observed {}, map {} ({:.1} % observed+direct); refused {} [{}]\n\
+             S5b {}: bombs {} ({:.1}/match): direct {}, observed {}, map {}; mean planned miss m: direct {:.1}, observed {:.1}, map {:.1}\n\
+             S5b {}: adjusting rounds {}, bursts seen {} / unseen {}, upgrades {}, downgrades {}, no solution {}, mean flight {:.1} s\n\
+             S5b {}: bombs from inside the own base {} ({:.1} % of bombs; direct {}, observed {}, map {})\n",
+            f.faction,
+            missions,
+            missions as f64 / n,
+            q.missions[0],
+            q.missions[1],
+            q.missions[2],
+            (q.missions[0] + q.missions[1]) as f64 * 100.0 / missions.max(1) as f64,
+            q.refused.iter().sum::<u64>(),
+            refused.join(", "),
+            f.faction,
+            bombs,
+            bombs as f64 / n,
+            q.bombs[0],
+            q.bombs[1],
+            q.bombs[2],
+            miss(0),
+            miss(1),
+            miss(2),
+            f.faction,
+            q.adjust,
+            q.seen,
+            q.unseen,
+            q.upgrades,
+            q.downgrades,
+            q.no_solution,
+            q.flight_ticks as f64 / 30.0 / bombs.max(1) as f64,
+            f.faction,
+            base,
+            base as f64 * 100.0 / bombs.max(1) as f64,
+            q.base_bombs[0],
+            q.base_bombs[1],
+            q.base_bombs[2],
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

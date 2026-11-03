@@ -585,6 +585,7 @@ impl MatchState {
                     ttl: ttl.clamp(2, u16::MAX as i32) as u16,
                     he: true,
                     ammo,
+                    mission: 0,
                 });
                 vs.loaded = None;
                 vs.reload = reload_ticks;
@@ -1067,6 +1068,7 @@ fn mg_fire(
         ttl: crate::combat::round_ttl(w),
         he: false,
         ammo: NO_AMMO,
+        mission: 0,
     });
     st.shots = st.shots.wrapping_add(1);
     if m.rounds.is_some() {

@@ -26,10 +26,14 @@
 //!      MGs ignore the focus and pick among the four nearest (seeded), so
 //!      their bursts sweep and suppress a whole squad; set up, they lie
 //!      prone.
-//!   4. *Mortars* (serial): a team on a Barrage order, holding, set up and in
-//!      range fires one shell per interval on a ballistic arc whose flight
-//!      time grows with range (steep, about 60°), scattered by the spread.
-//!      The order ends with its last round. Holding out of range, the team
+//!   4. *Mortars* (serial): a squad on a FireMission order, holding, set up
+//!      and in range fires one shell per interval (S5b: after laying, the
+//!      adjusting rounds one at a time, then fire for effect; the mode per
+//!      round, `crate::fire_mission`) at the target plus the mission's aim
+//!      offset, scattered by the precision spread, on the high-angle arc of
+//!      the lowest charge that reaches (`crate::indirect`; legacy weapons:
+//!      flight time growing with range, about 60°). The order ends with its
+//!      last round or bomb. Holding out of range, the team
 //!      walks to 90 % of its range again, or drops the order when it already
 //!      tried that spot (unreachable) or the target is inside the minimum.
 //!   5. Requests are spawned in sorted order, HE shells first; small arms
@@ -140,7 +144,7 @@ pub(crate) enum Engage {
 
 pub(crate) fn engage(order: &Order) -> Engage {
     match order {
-        Order::Retreat | Order::Barrage { .. } => Engage::Never,
+        Order::Retreat | Order::FireMission { .. } => Engage::Never,
         Order::Move { .. } | Order::Dig { .. } => Engage::Still,
         Order::Idle | Order::AttackMove { .. } | Order::Follow { .. } => Engage::Always,
         // S3c: walking to an abandoned vehicle and climbing in.
@@ -759,6 +763,7 @@ fn fire_round(
         ttl: round_ttl(w),
         he: false,
         ammo: crate::projectile::NO_AMMO,
+        mission: 0,
     });
     ws.shots = ws.shots.wrapping_add(1);
     c.since_shot = 0;
@@ -789,8 +794,9 @@ fn fire_round(
 // --------------------------------------------------------------- mortars --
 
 impl MatchState {
-    /// Fires the mortar teams' barrages (see the module docs). Runs after
-    /// [`aim_and_fire`] counted their cooldowns down.
+    /// Fires the mortar squads' fire missions (see the module docs and
+    /// `crate::fire_mission`). Runs after [`aim_and_fire`] counted their
+    /// cooldowns down; squads in ascending id.
     pub(crate) fn fire_mortars(
         &mut self,
         ents: &mut Entities,
@@ -800,108 +806,255 @@ impl MatchState {
         tick: u64,
         out: &mut Vec<FireRequest>,
     ) {
-        let setup = &self.setup;
-        let mortar = &setup.rules.combat.mortar;
-        let per_point = setup.rules.combat.suppression.spread_per_point_pct as i64;
+        let ids: Vec<SquadId> = self
+            .squads
+            .iter()
+            .filter(|(_, sq)| {
+                !sq.members.is_empty() && matches!(sq.order, Order::FireMission { .. })
+            })
+            .map(|(&id, _)| id)
+            .collect();
         let mut repath = Vec::new();
-        for (&id, sq) in self.squads.iter_mut() {
-            if sq.members.is_empty() || !matches!(sq.order, Order::Barrage { .. }) {
-                continue;
-            }
-            // S4: the first man in formation order carrying a mortar who
-            // is not detached fires it (with every one of them detached or
-            // fallen, nobody).
-            let Some(gunner) = sq.members.iter().copied().find(|m| {
-                !ents.unit[m.index()].detached
-                    && setup.weapons[ents.kit[m.index()].weapon as usize]
-                        .he
-                        .is_some()
-            }) else {
-                continue;
-            };
-            let Order::Barrage { target, rounds } = &mut sq.order else {
-                continue;
-            };
-            if sq.nav.phase != NavPhase::Holding || *rounds == 0 {
-                continue;
-            }
-            let wi = ents.kit[gunner.index()].weapon;
-            let w = &setup.weapons[wi as usize];
-            let i = gunner.index();
-            let pos = ents.transform[i].pos;
-            let d = (*target - pos.xy()).length();
-            let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
-            if d < min || d > max {
-                // Holding out of range (the gunner fell and the next man
-                // stands elsewhere, or the walk ended short): walk to 90 % of
-                // the range again, unless the last walk already went for
-                // that spot; then it cannot be reached and the order ends.
-                let facing = (*target - pos.xy()).normalize_or_zero();
-                let spot = terrain.clamp(*target - facing * max.mul_int(9).div_int(10));
-                let tried = (spot - sq.nav.goal).length_sq_raw()
-                    <= range_sq(Fx::from_int(mortar.barrage_retry_m as i32));
-                if d < min || tried {
-                    sq.order = Order::Idle;
-                } else {
-                    repath.push((id, spot));
-                }
-                continue;
-            }
-            if ents.weapon[i].cooldown > 0 || (ents.combat[i].still as u32) < w.setup_ticks {
-                continue;
-            }
-            // S5a: each bomb from the gunner's, then his crew's (within
-            // `crew_feed_m`); none left: the barrage ends.
-            if !crate::supply::take_bomb(setup, ents, &sq.members, sq.type_idx, gunner, wi) {
-                sq.order = Order::Idle;
-                continue;
-            }
-            let c = &ents.combat[i];
-            // Scatter the aim point by the spread over the range.
-            let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
-            let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
-            let s = d.mul(w.spread.into()).raw() as i64 * pct / 100;
-            let s = Fx::from_raw(s.min(i32::MAX as i64) as i32);
-            let aim_xy = terrain.clamp(*target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
-            let from = FxVec3::new(
-                pos.x,
-                pos.y,
-                pos.z + Fx::from_milli(mortar.muzzle_mm as i32),
-            );
-            let dxy = aim_xy - from.xy();
-            let flight = dxy
-                .length()
-                .mul(Fx::from_milli(mortar.flight_milli as i32))
-                .sqrt()
-                .max(Fx::from_int(mortar.min_flight_s as i32));
-            let rise = terrain.height_at(aim_xy) - from.z;
-            let vz = (rise + GRAVITY.mul(flight).mul(flight).div_int(2)).div(flight);
-            let vel = FxVec3::new(dxy.x.div(flight), dxy.y.div(flight), vz);
-            let ttl = (flight + Fx::from_int(4)).mul_int(SUBSTEP_HZ).floor_int();
-            out.push(FireRequest {
-                shooter: gunner,
-                seq: 0,
-                pos: from,
-                vel,
-                weapon: wi,
-                player: sq.owner.0,
-                ttl: ttl.clamp(2, u16::MAX as i32) as u16,
-                he: true,
-                ammo: crate::projectile::NO_AMMO,
-            });
-            let ws = &mut ents.weapon[i];
-            ws.shots = ws.shots.wrapping_add(1);
-            ws.cooldown = interval_ceil(w).max(w.reload_ticks).min(u16::MAX as u32) as u16;
-            ents.combat[i].since_shot = 0;
-            hash.mark_entity_chunk(gunner.chunk());
-            *rounds -= 1;
-            if *rounds == 0 {
-                sq.order = Order::Idle;
+        for id in ids {
+            if let Some(spot) = self.fire_mission_tick(ents, terrain, hash, seed, tick, id, out) {
+                repath.push((id, spot));
             }
         }
         for (id, spot) in repath {
             self.request_path(id, spot);
         }
+    }
+
+    /// One squad's mission this tick; `Some(spot)`: walk there (back into
+    /// range).
+    #[allow(clippy::too_many_arguments)]
+    fn fire_mission_tick(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &Heightfield,
+        hash: &mut HashCache,
+        seed: u64,
+        tick: u64,
+        id: SquadId,
+        out: &mut Vec<FireRequest>,
+    ) -> Option<FxVec2> {
+        use crate::fire_mission::{mode, phase};
+        let setup = &self.setup;
+        let mortar = &setup.rules.combat.mortar;
+        let per_point = setup.rules.combat.suppression.spread_per_point_pct as i64;
+        let hz = setup.tick_hz as u64;
+        let sq = &self.squads[&id];
+        // S4: the first man in formation order carrying a mortar who is
+        // not detached fires it (with every one of them detached or fallen,
+        // nobody).
+        let gunner = self.mortar_gunner(ents, sq)?;
+        let Order::FireMission { target, rounds, m } = sq.order else {
+            return None;
+        };
+        if sq.nav.phase != NavPhase::Holding || rounds == 0 {
+            return None;
+        }
+        let wi = ents.kit[gunner.index()].weapon;
+        let w = &setup.weapons[wi as usize];
+        let i = gunner.index();
+        let pos = ents.transform[i].pos;
+        let d = (target - pos.xy()).length();
+        let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
+        if d < min || d > max {
+            // Holding out of range (the gunner fell and the next man stands
+            // elsewhere, or the walk ended short): walk to 90 % of the range
+            // again, unless the last walk already went for that spot; then
+            // it cannot be reached and the order ends.
+            let facing = (target - pos.xy()).normalize_or_zero();
+            let spot = terrain.clamp(target - facing * max.mul_int(9).div_int(10));
+            let tried = (spot - sq.nav.goal).length_sq_raw()
+                <= range_sq(Fx::from_int(mortar.barrage_retry_m as i32));
+            if d < min || tried {
+                self.end_mission(id, ents, tick);
+                return None;
+            }
+            return Some(spot);
+        }
+        let fm = setup.rules.fire_mission.clone();
+        let mut m = m;
+        let mut obs_mode = None;
+        if let Some(fm) = &fm {
+            if tick < m.ready_at {
+                return None;
+            }
+            if m.wait_burst {
+                if tick < m.burst_by {
+                    return None;
+                }
+                // The adjusting round never burst (off the map, expired).
+                m.wait_burst = false;
+                m.ready_at = tick + fm.adjust_wait_s as u64 * hz;
+                self.set_mission(id, m);
+                return None;
+            }
+            if ents.weapon[i].cooldown > 0 || (ents.combat[i].still as u32) < w.setup_ticks {
+                return None;
+            }
+            let (new, obs) = self.mode_for(ents, terrain, id, pos.xy(), target, tick);
+            let counters = &mut self.players[sq.owner.0 as usize].fm;
+            if m.phase == phase::LAYING {
+                m.phase = if new == mode::MAP
+                    || (m.ranged && m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32))
+                {
+                    phase::EFFECT
+                } else {
+                    phase::ADJUST
+                };
+            } else if m.mode == mode::MAP && new != mode::MAP {
+                // The point came into a linked observer's view: range in
+                // from the map-fire offset.
+                m.phase = phase::ADJUST;
+                m.adjust = 0;
+                counters.upgrades += 1;
+            } else if m.mode != mode::MAP && new == mode::MAP {
+                // The observer is lost: fire on the last data.
+                m.phase = phase::EFFECT;
+                counters.downgrades += 1;
+            }
+            if m.phase == phase::ADJUST
+                && m.adjust > 0
+                && (m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32)
+                    || m.adjust as u32 >= fm.adjust_rounds_max)
+            {
+                m.phase = phase::EFFECT;
+            }
+            m.mode = new;
+            m.observer = obs;
+            obs_mode = Some(new);
+        } else if ents.weapon[i].cooldown > 0 || (ents.combat[i].still as u32) < w.setup_ticks {
+            return None;
+        }
+        // Aim: the mission's offset, then the precision spread on top.
+        let c = &ents.combat[i];
+        let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
+        let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
+        let sp = d.mul(w.spread.into()).raw() as i64 * pct / 100;
+        let sp = Fx::from_raw(sp.min(i32::MAX as i64) as i32);
+        let aim_xy = terrain.clamp(target + m.offset + FxVec2::new(tri(&mut rng, sp), tri(&mut rng, sp)));
+        let from = FxVec3::new(
+            pos.x,
+            pos.y,
+            pos.z + Fx::from_milli(mortar.muzzle_mm as i32),
+        );
+        let (vel, flight, charge) = match &w.indirect {
+            Some(ind) => {
+                let to = aim_xy.extend(terrain.height_at(aim_xy));
+                let Some(shot) = crate::indirect::solve(ind, from, to) else {
+                    // No charge reaches from here: the mission ends.
+                    self.players[sq.owner.0 as usize].fm.no_solution += 1;
+                    self.end_mission(id, ents, tick);
+                    return None;
+                };
+                (shot.vel, shot.flight, shot.charge)
+            }
+            None => {
+                let dxy = aim_xy - from.xy();
+                let flight = dxy
+                    .length()
+                    .mul(Fx::from_milli(mortar.flight_milli as i32))
+                    .sqrt()
+                    .max(Fx::from_int(mortar.min_flight_s as i32));
+                let rise = terrain.height_at(aim_xy) - from.z;
+                let vz = (rise + GRAVITY.mul(flight).mul(flight).div_int(2)).div(flight);
+                (
+                    FxVec3::new(dxy.x.div(flight), dxy.y.div(flight), vz),
+                    flight,
+                    0,
+                )
+            }
+        };
+        // S5a: each bomb from the gunner's, then his crew's (within
+        // `crew_feed_m`); none left: the mission ends.
+        let owner = sq.owner;
+        let (members, type_idx) = (sq.members.clone(), sq.type_idx);
+        if !crate::supply::take_bomb(&self.setup, ents, &members, type_idx, gunner, wi) {
+            self.end_mission(id, ents, tick);
+            return None;
+        }
+        let ttl = (flight + Fx::from_int(4)).mul_int(SUBSTEP_HZ).floor_int();
+        out.push(FireRequest {
+            shooter: gunner,
+            seq: 0,
+            pos: from,
+            vel,
+            weapon: wi,
+            player: owner.0,
+            ttl: ttl.clamp(2, u16::MAX as i32) as u16,
+            he: true,
+            ammo: crate::projectile::NO_AMMO,
+            mission: m.id,
+        });
+        let w = &self.setup.weapons[wi as usize];
+        let ws = &mut ents.weapon[i];
+        ws.shots = ws.shots.wrapping_add(1);
+        ws.cooldown = interval_ceil(w).max(w.reload_ticks).min(u16::MAX as u32) as u16;
+        ents.combat[i].since_shot = 0;
+        hash.mark_entity_chunk(gunner.chunk());
+        let flight_ticks = flight.mul_int(hz as i32).round_int().max(0) as u64;
+        if let (Some(md), Some(_)) = (obs_mode, &fm) {
+            m.fired = m.fired.saturating_add(1);
+            m.charge = charge;
+            m.flight = flight_ticks.min(u16::MAX as u64) as u16;
+            let c = &mut self.players[owner.0 as usize].fm;
+            c.bombs[md as usize] += 1;
+            c.miss_mm[md as usize] += ((aim_xy - target).length().raw().max(0) as u64 * 1000) >> 16;
+            c.flight_ticks += flight_ticks;
+            if crate::supply::in_own_base(&self.setup, owner, pos.xy()) {
+                c.base_bombs[md as usize] += 1;
+            }
+            if m.phase == phase::ADJUST {
+                m.wait_burst = true;
+                m.burst_by = tick + flight_ticks + 4 * hz;
+                m.adjust = m.adjust.saturating_add(1);
+                c.adjust += 1;
+            }
+        }
+        let left = rounds - 1;
+        let sq = self.squads.get_mut(&id).expect("live");
+        if let Order::FireMission { rounds, m: sm, .. } = &mut sq.order {
+            *rounds = left;
+            *sm = m;
+        }
+        if left == 0 {
+            self.end_mission(id, ents, tick);
+        }
+        None
+    }
+
+    /// Stores a squad's mission state.
+    fn set_mission(&mut self, id: SquadId, m: crate::fire_mission::Mission) {
+        if let Some(sq) = self.squads.get_mut(&id)
+            && let Order::FireMission { m: sm, .. } = &mut sq.order
+        {
+            *sm = m;
+        }
+    }
+
+    /// Ends a squad's mission (`Idle`); an observed or direct mission with
+    /// a seen round leaves its final offset in the ranging memory.
+    pub(crate) fn end_mission(&mut self, id: SquadId, ents: &Entities, tick: u64) {
+        let gunner = self
+            .squads
+            .get(&id)
+            .and_then(|sq| self.mortar_gunner(ents, sq))
+            .map(|g| ents.transform[g.index()].pos.xy());
+        let fm = self.setup.rules.fire_mission.clone();
+        let Some(sq) = self.squads.get_mut(&id) else {
+            return;
+        };
+        if let (Order::FireMission { target, m, .. }, Some(fm), Some(g)) = (&sq.order, &fm, gunner)
+            && m.seen > 0
+            && m.mode != crate::fire_mission::mode::MAP
+        {
+            let (t, o, n) = (*target, m.offset, m.seen);
+            crate::fire_mission::remember(&mut sq.ranging, fm, t, o, n, tick, g);
+        }
+        sq.order = Order::Idle;
     }
 }
 
@@ -1072,6 +1225,7 @@ impl MatchState {
                             ttl: round_ttl(w),
                             he: true,
                             ammo,
+                            mission: 0,
                         });
                         *rockets += 1;
                         ents.kit[i].items[k] -= 1;
@@ -1401,6 +1555,7 @@ impl MatchState {
                 ttl: round_ttl(w),
                 he: true,
                 ammo,
+                mission: 0,
             });
             l.rounds -= 1;
             *rockets += 1;
@@ -1442,6 +1597,7 @@ pub(crate) fn spawn_rounds(
                 player: r.player,
                 ammo: r.ammo,
                 origin: r.pos,
+                mission: r.mission,
             };
             match pool.spawn(p) {
                 Some(slot) => hash.mark_pool_slot(slot),
@@ -1489,6 +1645,8 @@ pub(crate) struct BallisticEvent {
     pub slot: u32,
     pub shooter: SimId,
     pub blow: Blow,
+    /// S5b: the round's fire mission (0: none).
+    pub mission: u32,
 }
 
 /// Hit capsule `(a, b, radius)` of a soldier: a vertical segment standing or
@@ -1671,7 +1829,8 @@ pub(crate) fn fly(
                 .ammo
                 .get(p.ammo as usize)
                 .is_some_and(|a| a.mechanism.bursts());
-        let (weapon, player, shooter, ammo) = (p.weapon, p.player, p.owner, p.ammo);
+        let (weapon, player, shooter, ammo, mission) =
+            (p.weapon, p.player, p.owner, p.ammo, p.mission);
         let ev = |blow| BallisticEvent {
             weapon,
             player,
@@ -1679,6 +1838,7 @@ pub(crate) fn fly(
             slot: slot_id,
             shooter,
             blow,
+            mission,
         };
         for _ in 0..substeps {
             let from = p.pos;
@@ -2334,6 +2494,8 @@ impl MatchState {
         // (victim, killer, class) in the order they fell.
         let mut dead: Vec<Fallen> = Vec::new();
         let mut fires = FireRolls::default();
+        // S5b: bursts of fire-mission rounds, for the observers.
+        let mut mbursts: Vec<crate::fire_mission::MissionBurst> = Vec::new();
         self.take_fused(fused);
         // S3b: the fragment budget, shared by this tick's bursts in
         // proportion to what each asks for.
@@ -2400,6 +2562,12 @@ impl MatchState {
                 _ => None,
             };
             let Some(pos) = burst_at else { continue };
+            if e.mission != 0 {
+                mbursts.push(crate::fire_mission::MissionBurst {
+                    mission: e.mission,
+                    pos,
+                });
+            }
             let Some((he, damage, suppression)) = self.event_blast(e) else {
                 continue;
             };
@@ -2511,6 +2679,9 @@ impl MatchState {
             }
         }
         self.sweep_vehicle_refs(ctx.ents);
+        if !mbursts.is_empty() {
+            self.observe_bursts(ctx.ents, ctx.terrain, &mbursts, ctx.tick);
+        }
     }
 
     /// Turns soldier `id` into a corpse and takes him out of his squad.
@@ -2958,6 +3129,7 @@ mod tests {
                 player: 0,
                 ammo: crate::projectile::NO_AMMO,
                 origin: from,
+                mission: 0,
             })];
             let ctx = FlightCtx {
                 ents: &self.ents,
@@ -3006,6 +3178,7 @@ mod tests {
                 slot: 0,
                 shooter: SimId(0),
                 blow: Blow::Burst(pos),
+                mission: 0,
             }];
             self.game.apply_blows(
                 &mut ctx,
@@ -3099,6 +3272,7 @@ mod tests {
             player: 1,
             ammo: crate::projectile::NO_AMMO,
             origin: FxVec3::ZERO,
+            mission: 0,
         })];
         let ctx = FlightCtx {
             ents: &r.ents,
@@ -3181,6 +3355,7 @@ mod tests {
             slot: 0,
             shooter: SimId(0),
             blow: Blow::NearMiss(man),
+            mission: 0,
         };
         r.game.apply_blows(
             &mut ctx,

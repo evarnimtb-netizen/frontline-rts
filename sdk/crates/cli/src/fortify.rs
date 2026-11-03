@@ -84,7 +84,11 @@ pub const CLOSE_IN_S: u64 = 10;
 const DEF_MG_DY: i32 = 12;
 
 /// Time given to a barrage (fire, flight and the last burst), game seconds.
-const BARRAGE_S: u64 = 90;
+/// S5b: 90 -> 180: the mission is Direct (the mortar's leader sees the
+/// trench), so it lays (4 s), fires adjusting rounds one at a time (each
+/// waits for its burst, 13-15 s of flight, plus 4 s) and then fires for
+/// effect.
+const BARRAGE_S: u64 = 180;
 /// Grenade assault: the attackers start this far from the trench (the
 /// "advance" variant; the other starts at [`ASSAULT_GAP_M`]) ...
 pub const ASSAULT_START_M: i32 = 60;
@@ -162,6 +166,8 @@ impl Default for FortifyArgs {
 pub struct FortifyReport {
     pub rifles: Experiment,
     pub mortar: Experiment,
+    /// S5b: the same barrage adjusting on the target itself (report only).
+    pub mortar_adjusted: Experiment,
     pub grenade: GrenadeExperiment,
     pub smoke: SmokeExperiment,
     /// S3b: the MG-supported and the unsupported assault from 150 m.
@@ -439,7 +445,21 @@ fn rifle_run(args: &FortifyArgs, seed: u64, dug: u8) -> Result<Run> {
 
 /// Barrage by `1 - target`'s mortar on `target`'s rifle squad, which stands
 /// in a trench or not. Returns the target's losses and the time taken.
-fn mortar_run(args: &FortifyArgs, seed: u64, target: u8, trench: bool) -> Result<(u32, f64)> {
+///
+/// S5b: the mission is Direct (the mortar's leader sees the target). With
+/// `ranged` the mortar first ranges in on a reference point
+/// [`REFERENCE_M`] from the target (a 2-round mission, out of the bursts'
+/// reach), so the barrage starts from the remembered aim and fires for
+/// effect at once (the experiment's pass rule: trench protection under
+/// fire for effect). Without it the barrage adjusts on the target itself:
+/// its single adjusting rounds warn the squad, which drops (report only).
+fn mortar_run(
+    args: &FortifyArgs,
+    seed: u64,
+    target: u8,
+    trench: bool,
+    ranged: bool,
+) -> Result<(u32, f64)> {
     let mut w = world(args, seed)?;
     let gunner = 1 - target;
     let rifle = squad(&w, target, "line")?;
@@ -448,20 +468,26 @@ fn mortar_run(args: &FortifyArgs, seed: u64, target: u8, trench: bool) -> Result
     }
     w.place_squad(rifle, at(TRENCH_X, LINE_Y), EAST);
     let m = call_in(&mut w, gunner, "mortar")?;
-    w.place_squad(m, at(TRENCH_X + MORTAR_GAP_M, LINE_Y), WEST);
+    place_observing(&mut w, m, at(TRENCH_X, LINE_Y), MORTAR_GAP_M)?;
     let hz = w.match_setup().unwrap().tick_hz as u64;
+    if ranged {
+        range_in(&mut w, seed, gunner, m, at(TRENCH_X, LINE_Y))?;
+    }
     let start = w.tick();
     let before = losses(&w, target);
     let shells = w.stats().explosions;
     w.step(&[Command {
         player: PlayerId(gunner),
         seq: 1,
-        kind: CommandKind::Barrage {
+        kind: CommandKind::FireMission {
             squad: m,
             target: at(TRENCH_X, LINE_Y),
             rounds: BARRAGE_ROUNDS,
         },
     }]);
+    if let Some(r) = w.snapshot().fire_mission_refusals.first() {
+        bail!("seed {seed}: the fire mission was refused: {}", r.refusal.text());
+    }
     while w.tick() < start + BARRAGE_S * hz {
         w.step(&[]);
     }
@@ -473,6 +499,98 @@ fn mortar_run(args: &FortifyArgs, seed: u64, target: u8, trench: bool) -> Result
         losses(&w, target) - before,
         (w.tick() - start) as f64 / hz as f64,
     ))
+}
+
+/// S5b: the ranging mission's reference point lies this far from the
+/// target (m): beyond the bursts' fragment reach (15 m) and suppression
+/// radius, inside the ranging memory's 50 m cell.
+const REFERENCE_M: i32 = 40;
+
+/// S5b: mortar squad `m` (player `p`) ranges in on a point [`REFERENCE_M`]
+/// from `target` that its leader sees (2 rounds), and waits for the bursts.
+fn range_in(w: &mut World, seed: u64, p: u8, m: SquadId, target: FxVec2) -> Result<()> {
+    use frontline_sim::fire_mission::mode;
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let r = REFERENCE_M;
+    let refs = [at(0, r), at(0, -r), at(-r, 0), at(r, 0)];
+    let Some(point) = refs.iter().map(|&d| target + d).find(|&pt| {
+        let g = w.game().expect("match world");
+        let sq = g.squad(m).expect("live");
+        g.mortar_gunner(w.entities(), sq).is_some_and(|gn| {
+            let gp = w.entities().transform()[gn.index()].pos.xy();
+            g.mode_for(w.entities(), w.terrain(), m, gp, pt, w.tick()).0 == mode::DIRECT
+        })
+    }) else {
+        bail!("seed {seed}: no reference point near the target is in the mortar leader's view");
+    };
+    w.step(&[Command {
+        player: PlayerId(p),
+        seq: 0,
+        kind: CommandKind::FireMission {
+            squad: m,
+            target: point,
+            rounds: 2,
+        },
+    }]);
+    if let Some(r) = w.snapshot().fire_mission_refusals.first() {
+        bail!("seed {seed}: the ranging mission was refused: {}", r.refusal.text());
+    }
+    let t0 = w.tick();
+    let busy = |w: &World| {
+        w.game()
+            .unwrap()
+            .squad(m)
+            .is_some_and(|s| s.order.kind() == frontline_sim::game::OrderKind::FireMission)
+    };
+    while busy(w) {
+        if w.tick() > t0 + 120 * hz {
+            bail!("seed {seed}: the ranging mission never ended");
+        }
+        w.step(&[]);
+    }
+    // The last round's flight.
+    for _ in 0..25 * hz {
+        w.step(&[]);
+    }
+    let ranged = w
+        .game()
+        .unwrap()
+        .squad(m)
+        .is_some_and(|s| !s.ranging.is_empty());
+    if !ranged {
+        bail!("seed {seed}: the ranging mission left no ranging memory");
+    }
+    Ok(())
+}
+
+/// S5b: places mortar squad `m` `gap` m from `target`, east of it or at
+/// the nearest bearing (10 degree steps, alternating north and south) from
+/// which its own leader sees the target, so the mission is Direct (the
+/// map's ground hides the trench from due east at 250 m).
+pub(crate) fn place_observing(w: &mut World, m: SquadId, target: FxVec2, gap: i32) -> Result<()> {
+    use frontline_sim::fire_mission::mode;
+    for k in 0..36i32 {
+        let deg = if k % 2 == 0 { k / 2 * 10 } else { -(k / 2 + 1) * 10 };
+        let a = Fx::from_ratio(deg as i64 * 314_159, 180 * 100_000);
+        let (sn, cs) = a.sin_cos();
+        let spot = target + FxVec2::new(cs, sn) * Fx::from_int(gap);
+        if !w.terrain().contains(spot) {
+            continue;
+        }
+        let facing = (target - spot).normalize_or_zero();
+        w.place_squad(m, spot, facing);
+        let g = w.game().expect("match world");
+        let sq = g.squad(m).expect("live");
+        let Some(gunner) = g.mortar_gunner(w.entities(), sq) else {
+            bail!("the mortar squad has no gunner");
+        };
+        let gp = w.entities().transform()[gunner.index()].pos.xy();
+        let (md, _) = g.mode_for(w.entities(), w.terrain(), m, gp, target, w.tick());
+        if md == mode::DIRECT || g.setup().rules.fire_mission.is_none() {
+            return Ok(());
+        }
+    }
+    bail!("no spot {gap} m from the target lets the mortar's leader see it")
 }
 
 fn members(w: &World, sq: SquadId) -> Vec<SimId> {
@@ -870,6 +988,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let seeds = args.first_seed..args.first_seed + args.seeds as u64;
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
+    let mut mortar_adjusted = Vec::new();
     let mut assault = Vec::new();
     let mut smoke = Vec::new();
     let mut suppress = Vec::new();
@@ -908,17 +1027,19 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
                 rules_override: args.rules_override.clone(),
                 ..SkirmishArgs::default()
             })?;
-            let (dug, t_dug) = mortar_run(args, seed, side, true)?;
-            let (open, t_open) = mortar_run(args, seed, side, false)?;
-            for (trench, l, t) in [(true, dug, t_dug), (false, open, t_open)] {
-                mortar.push(Run {
-                    seed,
-                    entrenched: faction(&setup, side),
-                    trench: Some(trench),
-                    trench_losses: if trench { l } else { 0 },
-                    open_losses: if trench { 0 } else { l },
-                    seconds: t,
-                });
+            for (ranged, runs) in [(true, &mut mortar), (false, &mut mortar_adjusted)] {
+                let (dug, t_dug) = mortar_run(args, seed, side, true, ranged)?;
+                let (open, t_open) = mortar_run(args, seed, side, false, ranged)?;
+                for (trench, l, t) in [(true, dug, t_dug), (false, open, t_open)] {
+                    runs.push(Run {
+                        seed,
+                        entrenched: faction(&setup, side),
+                        trench: Some(trench),
+                        trench_losses: if trench { l } else { 0 },
+                        open_losses: if trench { 0 } else { l },
+                        seconds: t,
+                    });
+                }
             }
         }
     }
@@ -928,8 +1049,13 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         RIFLE_LIMIT_PCT,
     );
     let mortar = Experiment::new(
-        "10-round 81 mm barrage on a rifle squad: trench vs open",
+        "10-round 81 mm barrage on a rifle squad: trench vs open (S5b: fire for effect after ranging on a reference point 40 m off)",
         mortar,
+        MORTAR_LIMIT_PCT,
+    );
+    let mortar_adjusted = Experiment::new(
+        "the same barrage adjusting on the target itself (S5b, report only: the adjusting rounds warn the squad)",
+        mortar_adjusted,
         MORTAR_LIMIT_PCT,
     );
     let totals = |start: i32, g: bool, smoke: bool| {
@@ -1014,6 +1140,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         pass: rifles.pass && mortar.pass && smoke.pass,
         rifles,
         mortar,
+        mortar_adjusted,
         grenade,
         smoke,
         suppress,
@@ -1023,7 +1150,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
 /// Human summary of a report (several lines, no trailing newline).
 pub fn summary_text(r: &FortifyReport) -> String {
     let mut out = String::new();
-    for e in [&r.rifles, &r.mortar] {
+    for e in [&r.rifles, &r.mortar, &r.mortar_adjusted] {
         out += &format!("{}\n", e.name);
         out += "  seed  entrenched    target   trench_losses  open_losses  seconds\n";
         for run in &e.runs {

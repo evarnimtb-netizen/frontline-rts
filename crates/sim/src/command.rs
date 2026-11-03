@@ -48,9 +48,12 @@ pub enum CommandKind {
         line: Vec<FxVec2>,
         profile: DigProfile,
     },
-    /// Mortar squads: fire `rounds` (1..=50) at `target`. Stage 1 stores the
-    /// order and turns the squad to face the target; firing comes later.
-    Barrage {
+    /// S5b (was `Barrage`): mortar squads fire a mission of `rounds`
+    /// (1..=50) at `target`. The sim picks the mode per round (direct,
+    /// observed, map fire; `crate::fire_mission`); refused, with a
+    /// `FireMissionEvent` in the snapshot, at ground the player has never
+    /// seen, inside the minimum range, or without bombs.
+    FireMission {
         squad: SquadId,
         target: FxVec2,
         rounds: u16,
@@ -142,7 +145,7 @@ pub enum CommandKind {
     /// from the first is pulled in) without a spotted target. Squads named
     /// whole get the squad order `Order::Suppress`, other men a detached
     /// `UnitOrder::Suppress`, vehicles `VehicleState::suppress`; mortar
-    /// men are dropped (they keep `Barrage`). Lasts until another order.
+    /// men are dropped (they keep `FireMission`). Lasts until another order.
     SuppressUnits {
         units: Vec<SimId>,
         line: Vec<FxVec2>,

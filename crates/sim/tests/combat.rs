@@ -261,7 +261,7 @@ fn spotting_follows_range_cover_and_woods() {
     w.step(&[cmd(
         0,
         1,
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: wood,
             target,
             rounds: 2,
@@ -314,7 +314,7 @@ fn barrage_fires_shells_on_an_arc_and_craters() {
     w.step(&[cmd(
         0,
         1,
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: mortar,
             target: FxVec2::from_int(330, 420),
             rounds: 3,
@@ -324,7 +324,7 @@ fn barrage_fires_shells_on_an_arc_and_craters() {
     w.step(&[cmd(
         0,
         2,
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: mortar,
             target,
             rounds: 6,
@@ -333,7 +333,7 @@ fn barrage_fires_shells_on_an_arc_and_craters() {
     let tiles = w.terrain().detail().tiles().len();
     let (mut apex, mut bursts) = (Fx::ZERO, 0);
     let start_z = w.terrain().height_at(FxVec2::from_int(300, 420));
-    while w.game().unwrap().squad(mortar).unwrap().order.kind() == OrderKind::Barrage {
+    while w.game().unwrap().squad(mortar).unwrap().order.kind() == OrderKind::FireMission {
         w.step(&[]);
         assert!(w.tick() < 30 * 120, "barrage never finished");
         for p in w.projectiles().slots().iter().flatten() {
@@ -355,14 +355,14 @@ fn barrage_fires_shells_on_an_arc_and_craters() {
     w.step(&[cmd(
         0,
         3,
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: mortar,
             target: FxVec2::from_int(990, 420),
             rounds: 2,
         },
     )]);
     let s = w.game().unwrap().squad(mortar).unwrap();
-    assert!(matches!(s.order, Order::Barrage { rounds: 2, .. }));
+    assert!(matches!(s.order, Order::FireMission { rounds: 2, .. }));
     assert_ne!(s.nav.phase, NavPhase::Holding);
 }
 
@@ -386,7 +386,7 @@ fn entrenched_men_survive_mortars_better() {
             w.step(&[cmd(
                 1,
                 1,
-                CommandKind::Barrage {
+                CommandKind::FireMission {
                     squad: m,
                     target,
                     rounds: 10,
@@ -482,7 +482,7 @@ fn saturated_pool_drops_rounds_but_never_shells() {
     w.step(&[cmd(
         0,
         1,
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: mortar,
             target,
             rounds: 5,
@@ -533,7 +533,7 @@ fn battle_orders(w: &World, t0: u64) -> Vec<Command> {
         out.push(cmd(
             1,
             1000,
-            CommandKind::Barrage {
+            CommandKind::FireMission {
                 squad: mortar,
                 target: FxVec2::from_int(420, 420),
                 rounds: 8,

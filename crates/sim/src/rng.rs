@@ -29,7 +29,8 @@ impl Purpose {
     pub const SPAWN_WAYPOINT: Purpose = Purpose(6);
     /// Aim error of a small-arms shot (match mode).
     pub const AIM: Purpose = Purpose(7);
-    /// Scatter of a mortar shell's aim point.
+    /// Scatter of a mortar shell's aim point (S5b: the precision spread
+    /// around the mission's aim point).
     pub const SHELL_AIM: Purpose = Purpose(8);
     /// Crater depth of a burst (keyed by its event index in the tick).
     pub const CRATER: Purpose = Purpose(9);
@@ -83,6 +84,8 @@ impl Purpose {
     /// S4 single-shot AT item (Panzerfaust): the shot's spread and lead
     /// estimate (tick, firer).
     pub const SINGLE_SHOT: Purpose = Purpose(28);
+    /// S5b: a fire mission's aim offset bearing (order tick, squad id).
+    pub const MISSION_AIM: Purpose = Purpose(29);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

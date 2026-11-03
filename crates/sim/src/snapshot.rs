@@ -505,6 +505,8 @@ pub struct RenderSnapshot {
     pub call_ins: Vec<crate::game::CallInEvent>,
     /// S3c: this tick's refused `Recrew` commands (the feed says why).
     pub recrew_refusals: Vec<crate::bail::RecrewEvent>,
+    /// S5b: this tick's refused fire missions (the HUD says why).
+    pub fire_mission_refusals: Vec<crate::fire_mission::FireMissionEvent>,
     /// S4: crew weapons picked up in the last tick.
     pub pickups: Vec<crate::game::PickupEvent>,
     /// Squads in ascending id order (match mode only).

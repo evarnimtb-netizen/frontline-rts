@@ -29,9 +29,10 @@
 //! Implemented: Move, AttackMove (halts to fight while the squad has a focus
 //! target and a man with a clear shot), Stop, Retreat, CallIn, Surrender,
 //! Dig (the squad walks to the line, splits it and digs it in passes) and
-//! Barrage (a mortar team in range holds and fires; out of range it first
-//! walks to 90 % of its range from the target, and gives up when it cannot
-//! get into range). Combat (`crate::combat`) and spotting
+//! FireMission (S5b, was Barrage: a mortar squad in range holds and fires;
+//! out of range it first walks to 90 % of its range from the target, and
+//! gives up when it cannot get into range; modes, observers, ranging and
+//! the knowledge rule are in `crate::fire_mission`). Combat (`crate::combat`) and spotting
 //! (`crate::spotting`) keep their per-match state here too: squad focus
 //! targets, kills and losses, and the spotting cursors. Capture, income,
 //! tickets and victory are in `crate::rules`; the AI commander's per-player
@@ -46,7 +47,7 @@
 //! Vehicles (S3) are in `crate::vehicle`: a vehicle is a squad of one
 //! whose only member is the vehicle entity, with its [`VehicleState`] kept
 //! here. Squad orders `Move`, `AttackMove`, `Stop` and `Retreat` (and the
-//! `*Units` versions naming the vehicle id) work on it; `Dig`, `Barrage`,
+//! `*Units` versions naming the vehicle id) work on it; `Dig`, `FireMission`,
 //! `Regroup` and stance orders are rejected. Its path is a
 //! [`PathReq::Vehicle`] on the vehicle costs; it drives in the Movement
 //! stage, not in squad steering. Vehicle call-ins wait for the rules'
@@ -66,6 +67,9 @@ use crate::combat;
 use crate::command::{Command, CommandKind};
 use crate::dig::DigJob;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
+use crate::fire_mission::{
+    FireMissionEvent, FireMissionRefusal, FmCounters, IntelCell, Mission, RangingCell, mode, phase,
+};
 use crate::fx::{Fx, FxVec2};
 use crate::hash::HashCache;
 use crate::items::{Kit, SmokeCloud, Thrown};
@@ -80,8 +84,8 @@ use crate::vehicle::{self, VehicleDerived, VehicleState};
 
 /// Most points in a Dig polyline.
 pub const MAX_DIG_POINTS: usize = 16;
-/// Most rounds in one Barrage order.
-pub const MAX_BARRAGE_ROUNDS: u16 = 50;
+/// Most rounds in one fire mission (S5b; was the Barrage order's).
+pub const MAX_MISSION_ROUNDS: u16 = 50;
 /// Spawn spots per base: six on a ring and the centre.
 const SPAWN_SPOTS: u32 = 7;
 /// Longest stored path (waypoints); a smoothed path is far shorter.
@@ -116,11 +120,13 @@ pub enum Order {
         line: Vec<FxVec2>,
         job: DigJob,
     },
-    /// Mortar fire on `target`; `rounds` left. The order becomes `Idle`
-    /// after the last round.
-    Barrage {
+    /// S5b (was `Barrage`): a mortar fire mission on `target`; `rounds`
+    /// left, `m` its mode, phase and aim state (`crate::fire_mission`). The
+    /// order becomes `Idle` after the last round or the last bomb.
+    FireMission {
         target: FxVec2,
         rounds: u16,
+        m: Mission,
     },
     /// Escort friendly vehicle `vehicle` (S3 `FollowUnits`): the men walk
     /// in single file behind it (`crate::unit` escort steering). Becomes
@@ -151,7 +157,8 @@ pub enum OrderKind {
     AttackMove = 2,
     Retreat = 3,
     Dig = 4,
-    Barrage = 5,
+    /// S5b: was `Barrage` (same number).
+    FireMission = 5,
     /// S3: escorting a vehicle.
     Follow = 6,
     /// S3b: area fire at a point or line.
@@ -168,7 +175,7 @@ impl Order {
             Order::AttackMove { .. } => OrderKind::AttackMove,
             Order::Retreat => OrderKind::Retreat,
             Order::Dig { .. } => OrderKind::Dig,
-            Order::Barrage { .. } => OrderKind::Barrage,
+            Order::FireMission { .. } => OrderKind::FireMission,
             Order::Follow { .. } => OrderKind::Follow,
             Order::Suppress { .. } => OrderKind::Suppress,
             Order::Recrew { .. } => OrderKind::Recrew,
@@ -233,6 +240,9 @@ pub struct Squad {
     /// S4: single-shot AT items (Panzerfaust): the squad's aim and gap;
     /// `Some` for squads whose members carry one at spawn.
     pub pzf: Option<SingleShot>,
+    /// S5b: mortar squads' ranging memory (target areas it ranged on,
+    /// `crate::fire_mission`); empty for other squads.
+    pub ranging: Vec<RangingCell>,
 }
 
 /// Most crew weapons waiting at once in one squad (S4).
@@ -375,6 +385,11 @@ pub struct PlayerState {
     /// S5a: prepaid ammunition credit, manpower paid by supply kind, refill
     /// pauses and rounds fired by class (`crate::supply`).
     pub ammo: crate::supply::AmmoAccount,
+    /// S5b: the player's knowledge map for map fire, by cell index
+    /// (`crate::fire_mission`): only cells where an enemy was seen.
+    pub intel: BTreeMap<u32, IntelCell>,
+    /// S5b: fire-mission counters (report).
+    pub fm: FmCounters,
 }
 
 /// S4 per-player counters (saved and hashed, read only by reports and
@@ -519,6 +534,8 @@ pub struct MatchState {
     pub(crate) at_ditches: Vec<Vec<FxVec2>>,
     /// Armour events so far (S3): the next `ArmourEvent::seq`.
     pub(crate) armour_seq: u32,
+    /// S5b: the next fire-mission number (`Mission::id`; starts at 1).
+    pub(crate) next_mission: u32,
     /// Derived from the setup (S3): plate normals and ammo cosines. Not
     /// saved and not hashed (the setup is); rebuilt by
     /// [`MatchState::rebuild_derived`] after load.
@@ -545,6 +562,14 @@ pub struct MatchState {
     /// `call_in_events` (never saved, hashed or read by the sim).
     #[serde(skip)]
     pub(crate) pickup_events: Vec<PickupEvent>,
+    /// S5b: refused fire missions, moved to the snapshot like
+    /// `call_in_events` (never saved, hashed or read by the sim).
+    #[serde(skip)]
+    pub(crate) fm_events: Vec<FireMissionEvent>,
+    /// S5b diagnostic burst log (`World::enable_burst_log`, mortar-bench):
+    /// not saved, not hashed, never read by the sim.
+    #[serde(skip)]
+    pub(crate) burst_log: Option<Vec<crate::fire_mission::BurstRecord>>,
 }
 
 /// S4: a man picked up a fallen man's crew weapon (presentation only).
@@ -592,6 +617,8 @@ impl MatchState {
                 crew: CrewCounters::default(),
                 s4: S4Counters::default(),
                 ammo: crate::supply::AmmoAccount::default(),
+                intel: BTreeMap::new(),
+                fm: FmCounters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -629,12 +656,15 @@ impl MatchState {
             vehicles: BTreeMap::new(),
             at_ditches: Vec::new(),
             armour_seq: 0,
+            next_mission: 1,
             armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             hit_log: None,
             call_in_events: Vec::new(),
             recrew_events: Vec::new(),
             pickup_events: Vec::new(),
+            fm_events: Vec::new(),
+            burst_log: None,
             setup,
         }
     }
@@ -858,11 +888,11 @@ impl MatchState {
                 line,
                 profile,
             } => self.order_dig(ctx, p, *squad, line, *profile),
-            &CommandKind::Barrage {
+            &CommandKind::FireMission {
                 squad,
                 target,
                 rounds,
-            } => self.order_barrage(ctx, p, squad, target, rounds),
+            } => self.order_fire_mission(ctx, p, squad, target, rounds),
             &CommandKind::CallIn { squad_type } => self.call_in(ctx, p, squad_type),
             CommandKind::Surrender => {
                 let pl = &mut self.players[p.0 as usize];
@@ -1071,7 +1101,75 @@ impl MatchState {
         true
     }
 
-    fn order_barrage(
+    /// S5b: refuses a fire mission with a reason (event and counter).
+    fn refuse_mission(&mut self, p: PlayerId, squad: SquadId, refusal: FireMissionRefusal) -> bool {
+        self.fm_events.push(FireMissionEvent {
+            player: p,
+            squad,
+            refusal,
+        });
+        self.players[p.0 as usize].fm.refused[refusal as usize] += 1;
+        false
+    }
+
+    /// S5b: the refusal a fire mission of squad `id` at `target` would get
+    /// now, if any (read-only; the HUD preview and the AI use it too).
+    pub fn mission_refusal(
+        &self,
+        ents: &Entities,
+        terrain: &Heightfield,
+        id: SquadId,
+        target: FxVec2,
+        rounds: u16,
+        tick: u64,
+    ) -> Option<FireMissionRefusal> {
+        let sq = self.squads.get(&id)?;
+        if !terrain.contains(target) {
+            return Some(FireMissionRefusal::OffMap);
+        }
+        let ty = &self.setup.squad_types[sq.type_idx as usize];
+        if !ty.has(Capability::FireMission) || ty.vehicle.is_some() {
+            return Some(FireMissionRefusal::NotMortar);
+        }
+        if !(1..=MAX_MISSION_ROUNDS).contains(&rounds) {
+            return Some(FireMissionRefusal::Rounds);
+        }
+        let w = &self.setup.weapons[ty.weapon as usize];
+        let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
+        let lead = ents.transform[sq.lead(ents).index()].pos.xy();
+        let dist = (target - lead).length();
+        if dist < min {
+            return Some(FireMissionRefusal::InsideMinimum);
+        }
+        let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
+            return None;
+        };
+        if crate::supply::mortar_bombs(&self.setup, ents, sq).0 == 0 {
+            return Some(FireMissionRefusal::NoBombs);
+        }
+        if !self.known_point(ents, terrain, sq.owner, target, tick) {
+            return Some(FireMissionRefusal::UnknownGround);
+        }
+        if dist <= max
+            && let Some(ind) = &w.indirect
+        {
+            let g = self.mortar_gunner(ents, sq).unwrap_or_else(|| sq.lead(ents));
+            let gp = ents.transform[g.index()].pos;
+            let from = crate::fx::FxVec3::new(
+                gp.x,
+                gp.y,
+                gp.z + Fx::from_milli(self.setup.rules.combat.mortar.muzzle_mm as i32),
+            );
+            let to = target.extend(terrain.height_at(target));
+            if crate::indirect::solve(ind, from, to).is_none() {
+                return Some(FireMissionRefusal::CannotReach);
+            }
+        }
+        let _ = fm;
+        None
+    }
+
+    fn order_fire_mission(
         &mut self,
         ctx: &mut Ctx,
         p: PlayerId,
@@ -1079,24 +1177,81 @@ impl MatchState {
         target: FxVec2,
         rounds: u16,
     ) -> bool {
-        if !self.owned(p, id) || !ctx.terrain.contains(target) {
+        if !self.owned(p, id) {
             return false;
+        }
+        if let Some(r) = self.mission_refusal(ctx.ents, ctx.terrain, id, target, rounds, ctx.tick) {
+            return self.refuse_mission(p, id, r);
         }
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
-        if !ty.has(Capability::Barrage) || !(1..=MAX_BARRAGE_ROUNDS).contains(&rounds) {
-            return false;
-        }
         let w = &self.setup.weapons[ty.weapon as usize];
-        let (min, max): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
+        let max: Fx = w.range_max.into();
         let lead = self.squads[&id].lead(ctx.ents);
         let lead = ctx.ents.transform[lead.index()].pos.xy();
         let dist = (target - lead).length();
-        if dist < min {
-            return false;
+        let fm = self.setup.rules.fire_mission.clone();
+        // Legacy content regrouped detached men (the old Barrage); S5b keeps
+        // them out (the squad's own spotter), unless nobody left in the
+        // formation carries the mortar.
+        let regroup = match &fm {
+            None => self.clear_detached(ctx, id),
+            Some(_) if self.mortar_gunner(ctx.ents, &self.squads[&id]).is_none() => {
+                self.clear_detached(ctx, id)
+            }
+            Some(_) => false,
+        };
+        let mut m = Mission::default();
+        if let Some(fm) = &fm {
+            let sq = &self.squads[&id];
+            let g = self.mortar_gunner(ctx.ents, sq).unwrap_or_else(|| sq.lead(ctx.ents));
+            let gp = ctx.ents.transform[g.index()].pos.xy();
+            let (mode0, obs) = self.mode_for(ctx.ents, ctx.terrain, id, gp, target, ctx.tick);
+            let hz = self.setup.tick_hz;
+            let err = crate::fire_mission::start_error(fm, mode0 == mode::MAP, dist);
+            let mut cells = std::mem::take(&mut self.squads.get_mut(&id).expect("owned").ranging);
+            crate::fire_mission::prune_ranging(&mut cells, fm, ctx.tick, hz, gp);
+            let remembered = (mode0 != mode::MAP)
+                .then(|| crate::fire_mission::ranged_cell(&cells, fm, target))
+                .flatten()
+                .filter(|c| c.offset.length() < err)
+                .map(|c| c.offset);
+            let offset = match remembered {
+                Some(o) => o,
+                None => {
+                    let mut rng = crate::rng::RngStream::new(
+                        self.setup.seed,
+                        ctx.tick,
+                        SimId(id.0),
+                        crate::rng::Purpose::MISSION_AIM,
+                    );
+                    let a = rng.range_fx(Fx::ZERO, Fx::TAU);
+                    let (sn, cs) = a.sin_cos();
+                    FxVec2::new(cs.mul(err), sn.mul(err))
+                }
+            };
+            let prep = if mode0 == mode::DIRECT {
+                fm.direct_s
+            } else {
+                fm.fire_direction_s
+            };
+            m = Mission {
+                id: self.next_mission,
+                mode: mode0,
+                phase: phase::LAYING,
+                offset,
+                err0: offset.length(),
+                order_tick: ctx.tick,
+                ready_at: ctx.tick + prep as u64 * hz as u64,
+                observer: obs,
+                ranged: remembered.is_some(),
+                ..Mission::default()
+            };
+            self.next_mission += 1;
+            self.players[p.0 as usize].fm.missions[mode0 as usize] += 1;
+            self.squads.get_mut(&id).expect("owned").ranging = cells;
         }
-        let regroup = self.clear_detached(ctx, id);
         let sq = self.squads.get_mut(&id).expect("owned");
-        sq.order = Order::Barrage { target, rounds };
+        sq.order = Order::FireMission { target, rounds, m };
         let facing = (target - lead).normalize_or_zero();
         if dist <= max {
             if regroup {
@@ -1118,9 +1273,6 @@ impl MatchState {
         true
     }
 
-    /// A call-in (S3b): buys and spawns the squad at once, or refuses it
-    /// (see [`Self::call_in_check`]). Either way the result is logged for
-    /// the snapshot.
     fn call_in(&mut self, ctx: &mut Ctx, p: PlayerId, squad_type: u16) -> bool {
         let result = match self.call_in_check(ctx.ents, p, squad_type, ctx.tick) {
             Err(why) => Err(why),
@@ -1348,6 +1500,7 @@ impl MatchState {
                     slots,
                     ..Nav::default()
                 },
+                ranging: Vec::new(),
                 focus: None,
                 launcher,
                 drops: Vec::new(),
@@ -1403,6 +1556,7 @@ impl MatchState {
                     slots: vec![spot],
                     ..Nav::default()
                 },
+                ranging: Vec::new(),
                 focus: None,
                 launcher: None,
                 drops: Vec::new(),
@@ -1546,6 +1700,7 @@ impl MatchState {
             self.next_unit_dig,
             self.next_thrown,
             self.next_smoke,
+            self.next_mission,
         ]
         .contains(&u32::MAX)
         {
@@ -1605,6 +1760,15 @@ impl MatchState {
             {
                 return Err("bad ammunition account");
             }
+            // S5b: the knowledge map.
+            if !crate::fire_mission::intel_ok(
+                &pl.intel,
+                s.rules.fire_mission.as_ref(),
+                s.map.size_m,
+                tick,
+            ) {
+                return Err("bad intel map");
+            }
             if self.ai[p].is_some() != s.players[p].is_ai {
                 return Err("AI state disagrees with the setup");
             }
@@ -1653,7 +1817,7 @@ impl MatchState {
                     || sq.focus.is_some()
                     || matches!(
                         sq.order,
-                        Order::Dig { .. } | Order::Barrage { .. } | Order::Suppress { .. }
+                        Order::Dig { .. } | Order::FireMission { .. } | Order::Suppress { .. }
                     )
                 {
                     return Err("vehicle squad is inconsistent");
@@ -1705,6 +1869,10 @@ impl MatchState {
                 && !self.suppress_ok(line)
             {
                 return Err("suppress order is out of range");
+            }
+            // S5b: the fire mission and the ranging memory.
+            if !self.mission_ok(sq, ents, tick) {
+                return Err("fire mission state is inconsistent");
             }
             let ty = &s.squad_types[sq.type_idx as usize];
             let w = &s.weapons[ty.weapon as usize];
@@ -1871,6 +2039,56 @@ impl MatchState {
 
     /// S3b: a saved suppress line lies on the map and is no longer than
     /// the rules allow (a metre of slack for the pull-in's rounding).
+    /// S5b load check of a squad's fire mission and ranging memory.
+    fn mission_ok(&self, sq: &Squad, ents: &Entities, tick: u64) -> bool {
+        let s = &self.setup;
+        let size = Fx::from_int(s.map.size_m);
+        let on_map = |p: FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size;
+        let ty = &s.squad_types[sq.type_idx as usize];
+        let fm = s.rules.fire_mission.as_ref();
+        let cells_ok = match fm {
+            None => sq.ranging.is_empty(),
+            Some(fm) => {
+                sq.ranging.len() <= fm.ranging_max_cells as usize
+                    && (sq.ranging.is_empty() || ty.has(Capability::FireMission))
+                    && sq.ranging.iter().all(|c| {
+                        c.at <= tick
+                            && on_map(c.target)
+                            && on_map(c.from)
+                            && c.offset.length() <= crate::fire_mission::max_error(fm, s.map.size_m)
+                    })
+            }
+        };
+        if !cells_ok {
+            return false;
+        }
+        let Order::FireMission { target, rounds, m } = &sq.order else {
+            return true;
+        };
+        if !ty.has(Capability::FireMission) || !on_map(*target) || *rounds > MAX_MISSION_ROUNDS {
+            return false;
+        }
+        let Some(fm) = fm else {
+            return *m == Mission::default();
+        };
+        let w = &s.weapons[ty.weapon as usize];
+        let charges = w.indirect.as_ref().map_or(1, |i| i.charges.len());
+        let hz = s.tick_hz as u64;
+        let prep = fm.fire_direction_s.max(fm.direct_s).max(fm.adjust_wait_s) as u64 * hz;
+        (m.mode as usize) < mode::COUNT
+            && m.phase <= phase::EFFECT
+            && m.id != 0
+            && m.id < self.next_mission
+            && m.order_tick <= tick
+            && m.ready_at <= tick + prep
+            && m.burst_by <= tick + 60 * hz
+            && m.adjust as u32 <= fm.adjust_rounds_max
+            && (m.charge as usize) < charges
+            && m.offset.length() <= crate::fire_mission::max_error(fm, s.map.size_m)
+            && m.err0 <= crate::fire_mission::max_error(fm, s.map.size_m)
+            && m.observer.is_none_or(|o| o.index() < ents.len())
+    }
+
     pub(crate) fn suppress_ok(&self, line: &[FxVec2; 2]) -> bool {
         let map = Fx::from_int(self.setup.map.size_m);
         let max = Fx::from_int(self.setup.rules.combat.suppress.line_max_m as i32 + 1);

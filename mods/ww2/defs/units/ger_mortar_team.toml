@@ -1,20 +1,27 @@
-# Granatwerfertrupp (S4): one 8 cm GrW 34 and two men with Kar98k (the S1-S3
-# team carried a tube each, S4-2 (A)). The tube is a crew weapon: when its
-# gunner falls the nearest man takes it up.
+# Granatwerfergruppe (S5b): one 8 cm GrW 34 served by a five-man squad: the
+# leader observes and adjusts (binoculars), the gunner lays and fires, the
+# assistant and two ammunition bearers carry the bombs (S5a counts them and
+# feed the tube through take_bomb and the sharing pass). The tube is a crew
+# weapon: when its gunner falls the nearest man takes it up. The historical
+# 1944 Gruppe was larger (1 + 5 or more, verify; K.St.N. not found online);
+# 5 is the roster's pop-capped size (roster-expansion.md §3.1, Q6 (A)).
+# The card id stays (S5b-7 (A)): the AI mix, saves and tests keep working.
 id = "ww2:ger_mortar_team"
-name = "Granatwerfertrupp"
+name = "Granatwerfergruppe"
 short_name = "Granatwerfer"
 faction = "ww2:germany"
 tags = ["mortar"]
 capabilities = ["recrew"]
-# S5a Tune: 280 -> 225 (-20 %). With counted ammunition, fire discipline and the
-# refill trips, Germany won 31 % of 160 matches (S5a log, B7); with those four
-# switched off it wins 44 %, so the S4 balance moved ~13 points against it.
-# Single-change runs on 160 matches: German prices -5 % 51 wins, -10 % 57, -15 %
-# 74 (46 %), -20 % 80 (50 %); out of sample (seeds 101-180) -15 % 70, -20 % 87.
-# The Garand's 24 rounds/min against the Kar98k's 15 stays the root cause.
-# docs/slices/S5a-ammo.md "Tune results".
-cost = 225
+sources = [
+    "roster-expansion.md §3.1 (5 men, about 20 bombs, 300 MP)",
+    "US War Department, German Infantry Weapons (MID 1943), 8-cm heavy mortar model 34 ('Twenty-four rounds are usually carried by a mortar crew in action'; bombs in cases)",
+    "US War Department, Intelligence Bulletin, Feb 1944, 'Concentrating mortar fire' (one section is controlled by voice)",
+]
+# S5b: 300 (the roster's 5-man card) with the S5a-37 German cut (-20 %):
+# 240 (S5b-10 (A); was 225 for the 3-man Granatwerfertrupp). S5a Tune
+# history: 280 -> 225 (-20 %) brought Germany from 31 % to 50 % of 160
+# matches (docs/slices/S5a-ammo.md "Tune results").
+cost = 240
 # Call-in (S3b): 60 s set by the owner on 2026-11-01 (20 % under the first
 # proposal of 75 s).
 cooldown_s = 60
@@ -24,17 +31,33 @@ sight_m = 150
 spacing_dm = 25
 dig_rate_pct = 0
 
+# Gruppenführer: observes fire missions at rules fire_mission.observe_leader_m
+# (every squad leader does).
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+
 [[members]]
 slot = "mortar_gunner"
 weapon = "ww2:grw34"
 sidearm = "ww2:p38"
-traits = ["leader", "crew_gunner"]
+# Two ready bombs at the tube (rounds of the bomb feed; the weapon's load
+# is 3). 20 bombs a squad: 2 + 4 + 7 + 7 (S5b-5 (A) "about 20", under the 24
+# a German crew usually carried in action; per-man loads are not sourced:
+# a case of 3-4 bombs is 11-14 kg, two cases a bearer).
+rounds = { "ww2:8cm_wgr34" = 2 }
+traits = ["crew_gunner"]
 
 [[members]]
-slot = "mortar_crew"
+slot = "mortar_assistant"
+weapon = "ww2:kar98k"
+rounds = { "ww2:8cm_wgr34" = 4 }
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
 count = 2
 weapon = "ww2:kar98k"
-# S5a: six bombs each (two cases of three); 15 for the team with the
-# gunner's 3 (owner question S5a-16 (A); S5b moves to 5 men with bearers).
-rounds = { "ww2:8cm_wgr34" = 6 }
-traits = ["crew_assistant"]
+rounds = { "ww2:8cm_wgr34" = 7 }
+traits = ["ammo_bearer"]

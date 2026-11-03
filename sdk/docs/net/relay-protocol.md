@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **7** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **8** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -97,6 +97,13 @@ kind the relay may not send. Clients cannot send relay messages.
   `Discipline` 0, `AtWill` 1, `Hold` 2). `units` is bounded like every
   unit list (at most 150 ids, `MAX_UNITS`) and the command by the
   1,024 B single-command limit. The one bump for the S5a slice.
+- Version 8 (S5b, 2026-11-03) renames the `Barrage` command to
+  `FireMission { squad, target, rounds }` at the same variant index with
+  the same fields (a `u32` squad id, a point, a `u16` 1..=50): the mode
+  (direct, observed, map fire) is decided by the sim, never sent. Its
+  meaning changed (observers, aim error, the knowledge rule), so a peer
+  can observe it. Still fixed size; no limit changed. The one bump for the
+  S5b slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -387,7 +394,7 @@ BundledCmd { cmd: Command { player: u8, seq: u32, kind: CommandKind }, target: u
 The postcard encoding of `frontline_sim::CommandKind` (variant index, then
 fields). Variants, in index order: `MoveSoldier`, `Spawn`, `Despawn`
 (bench only; the match sim rejects them), `Move`, `AttackMove`, `Stop`,
-`Retreat`, `Dig`, `Barrage`, `CallIn`, `Surrender`, `MoveUnits`,
+`Retreat`, `Dig`, `FireMission` (`Barrage` before version 8), `CallIn`, `Surrender`, `MoveUnits`,
 `AttackMoveUnits`, `StopUnits`, `RetreatUnits`, `DigUnits`, `SetStance`,
 `Regroup`, `Throw`, `ThrowEach`, from version 3 `ReverseUnits`,
 `FaceUnits`, `AttackUnit`, `SetAmmo`, `RepairUnits`, `FollowUnits`, and

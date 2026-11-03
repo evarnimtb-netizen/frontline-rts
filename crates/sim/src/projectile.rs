@@ -61,6 +61,9 @@ pub struct Projectile {
     pub ammo: u16,
     /// S3: the muzzle point (penetration range is measured from it).
     pub origin: FxVec3,
+    /// S5b: the fire mission a mortar bomb belongs to (`Mission::id`; 0:
+    /// none), so its burst can be observed for that mission.
+    pub mission: u32,
 }
 
 /// How a projectile left the pool.

@@ -1,12 +1,21 @@
-# Mortar Team (S4): one 81 mm M1 and two men with M1 carbines (the S1-S3
-# team carried a tube each, S4-2 (A)). The tube is a crew weapon.
+# 81mm Mortar Squad (S5b): one 81 mm M1 served by five men: the squad
+# leader observes and adjusts, the gunner lays and fires, the assistant
+# gunner and two ammunition bearers carry the bombs (S5a counts them). The
+# historical squad was 8 (leader, gunner, assistant, 5 bearers; Wikipedia,
+# M1 mortar); 5 is the roster's pop-capped size (roster-expansion.md §3.2,
+# Q6 (A)). The tube is a crew weapon. The card id stays (S5b-7 (A)).
 id = "ww2:usa_mortar_team"
-name = "Mortar Team"
+name = "81mm Mortar Squad"
 short_name = "81mm Mortar"
 faction = "ww2:usa"
 tags = ["mortar"]
 capabilities = ["recrew"]
-cost = 280
+sources = [
+    "roster-expansion.md §3.2 (5 men, 300 MP)",
+    "Wikipedia, M1 mortar (squad of 8: leader, gunner, assistant gunner, 5 ammunition bearers; M43A1 3.2 kg)",
+]
+# S5b: 300, the roster's 5-man card (S5b-10 (A); was 280 for the 3-man team).
+cost = 300
 # Call-in (S3b): 60 s set by the owner on 2026-11-01 (20 % under the first
 # proposal of 75 s).
 cooldown_s = 60
@@ -16,16 +25,30 @@ sight_m = 150
 spacing_dm = 25
 dig_rate_pct = 0
 
+# Squad leader: observes fire missions at rules fire_mission.observe_leader_m.
+[[members]]
+slot = "leader"
+weapon = "ww2:m1_carbine"
+traits = ["leader"]
+
 [[members]]
 slot = "mortar_gunner"
 weapon = "ww2:m1_mortar"
 sidearm = "ww2:m1911a1"
-traits = ["leader", "crew_gunner"]
+# 20 bombs a squad: 2 + 4 + 7 + 7 (per-bearer loads not sourced, S5b-5 (A):
+# 7 M43A1 light HE = 22 kg).
+rounds = { "ww2:81mm_m43a1" = 2 }
+traits = ["crew_gunner"]
 
 [[members]]
-slot = "mortar_crew"
+slot = "mortar_assistant"
+weapon = "ww2:m1_carbine"
+rounds = { "ww2:81mm_m43a1" = 4 }
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
 count = 2
 weapon = "ww2:m1_carbine"
-# S5a: six bombs each; 15 for the team with the gunner's 3 (S5a-16 (A)).
-rounds = { "ww2:81mm_m43a1" = 6 }
-traits = ["crew_assistant"]
+rounds = { "ww2:81mm_m43a1" = 7 }
+traits = ["ammo_bearer"]

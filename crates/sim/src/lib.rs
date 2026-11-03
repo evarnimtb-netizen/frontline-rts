@@ -44,9 +44,11 @@ pub mod command;
 pub mod damage;
 pub mod dig;
 pub mod ecs;
+pub mod fire_mission;
 pub mod fx;
 pub mod game;
 pub mod gunnery;
+pub mod indirect;
 mod hash;
 pub mod items;
 pub mod orders;
@@ -71,6 +73,9 @@ pub use armour::{ArmourTables, PenResult};
 pub use bail::{RecrewEvent, RecrewRefusal};
 pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
+pub use fire_mission::{
+    BurstRecord, FireMissionEvent, FireMissionRefusal, FmCounters, IntelCell, Mission, RangingCell,
+};
 pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, SimId, Stance};
 pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};

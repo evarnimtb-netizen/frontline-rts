@@ -28,9 +28,9 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning,
-    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
-    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, BailTuning,
+    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
+    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
     SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
     VehiclePathTuning, check_tuning,
 };
@@ -305,6 +305,9 @@ pub struct RulesSetup {
     /// S5a: `[supply]`; `None` (legacy content): unlimited rounds, free
     /// refills (S5a-22).
     pub supply: Option<SupplyTuning>,
+    /// S5b: `[fire_mission]`; `None` (legacy content): missions run as the
+    /// old barrage (S5b-1 (A)).
+    pub fire_mission: Option<FireMissionTuning>,
 }
 
 impl RulesSetup {
@@ -411,6 +414,8 @@ pub struct AiSetup {
     /// name. `at` counts after the vehicle unlock once an enemy vehicle was
     /// seen, `vehicle` after the unlock under the vehicle limit.
     pub mix: Vec<MixSetup>,
+    /// Rounds per AI mission (`[ai.mortar] mission_rounds`, or the legacy
+    /// `ai.barrage_rounds`).
     pub barrage_rounds: u16,
     pub dig_length: Fixed,
     pub dig_offset: Fixed,
@@ -427,6 +432,8 @@ pub struct AiSetup {
     pub assault: AiAssaultTuning,
     /// S5a: `[ai.ammo]`.
     pub ammo: AiAmmoTuning,
+    /// S5b: `[ai.mortar]` (or the legacy values).
+    pub mortar: AiMortarTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -649,6 +656,52 @@ pub struct WeaponSetup {
     /// S5a: the weapon's own fire-discipline share of its range (%; 0: the
     /// rules' `combat.fire.hold_beyond_pct`).
     pub hold_beyond_pct: u32,
+    /// S5b: high-angle fire (`[indirect]`); `None`: the S1 flight rule.
+    pub indirect: Option<IndirectSetup>,
+}
+
+/// S5b: a mortar's charges and laying limits, lowered. The tangents are
+/// computed once at load (here, in f64, rounded to [`Fixed`]), so the sim's
+/// charge solver needs no trigonometry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndirectSetup {
+    /// Muzzle velocity per charge (m/s), strictly rising.
+    pub charges: Vec<Fixed>,
+    /// `tan` of the lowest and highest elevation.
+    pub tan_min: Fixed,
+    pub tan_max: Fixed,
+}
+
+impl IndirectSetup {
+    /// Lowers an `[indirect]` def.
+    pub fn lower(d: &crate::defs::IndirectDef) -> IndirectSetup {
+        let tan = |deg: u32| {
+            let t = (deg as f64).to_radians().tan();
+            Fixed((t * 65536.0).round() as i32)
+        };
+        IndirectSetup {
+            charges: d
+                .charges_m_s
+                .iter()
+                .map(|&v| Fixed::from_int(v as i32))
+                .collect(),
+            tan_min: tan(d.elevation_deg[0]),
+            tan_max: tan(d.elevation_deg[1]),
+        }
+    }
+
+    /// Range checks for a loaded setup (saves are untrusted).
+    pub fn ok(&self) -> bool {
+        let c = &self.charges;
+        (1..=crate::defs::MAX_CHARGES).contains(&c.len())
+            && c.iter()
+                .all(|v| (Fixed::from_int(20)..=Fixed::from_int(600)).contains(v))
+            && c.windows(2).all(|p| p[0] < p[1])
+            // tan 45 deg = 1 .. tan 89 deg = 57.29
+            && Fixed::ONE <= self.tan_min
+            && self.tan_min < self.tan_max
+            && self.tan_max <= Fixed::from_int(58)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -735,15 +788,19 @@ pub mod member_trait {
     /// Picks a fallen gunner's crew weapon up first (after assistants
     /// tie on distance).
     pub const AMMO_BEARER: u8 = 8;
+    /// S5b: observes fire missions at the long `observe_observer_m` (FO
+    /// teams; binoculars and training).
+    pub const OBSERVER: u8 = 16;
     /// Trait names in bit order.
-    pub const NAMES: [(&str, u8); 4] = [
+    pub const NAMES: [(&str, u8); 5] = [
         ("leader", LEADER),
         ("crew_gunner", CREW_GUNNER),
         ("crew_assistant", CREW_ASSISTANT),
         ("ammo_bearer", AMMO_BEARER),
+        ("observer", OBSERVER),
     ];
     /// Every trait bit.
-    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER;
+    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER;
 }
 
 /// S4 capabilities: what a unit can do; orders and sim rules follow them
@@ -755,8 +812,8 @@ pub enum Capability {
     DigBasic = 0,
     /// Dig profiles that need it (the AT ditch).
     DigFull = 1,
-    /// Barrage (a member carries a mortar).
-    Barrage = 2,
+    /// Fire missions (a member carries a mortar; S5b, was `Barrage`).
+    FireMission = 2,
     /// Board an own abandoned vehicle as untrained crew.
     Recrew = 3,
     /// Trained vehicle crew: may capture, dismissed in base.
@@ -769,7 +826,7 @@ impl Capability {
     pub const ALL: [Capability; 6] = [
         Capability::DigBasic,
         Capability::DigFull,
-        Capability::Barrage,
+        Capability::FireMission,
         Capability::Recrew,
         Capability::VehicleCrew,
         Capability::AtHunt,
@@ -1133,6 +1190,7 @@ impl ModDefs {
                 burst_rounds: w.burst_rounds,
                 burst_pause_ticks: ms_to_ticks(w.burst_pause_ms, hz),
                 hold_beyond_pct: w.hold_beyond_pct,
+                indirect: w.indirect.as_ref().map(IndirectSetup::lower),
             })
             .collect();
         let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
@@ -1664,7 +1722,7 @@ impl ModDefs {
                         retreat_strength_pct: a.retreat_strength_pct,
                         threat_radius: Fixed::from_int(a.threat_radius_m as i32),
                         mix,
-                        barrage_rounds: a.barrage_rounds as u16,
+                        barrage_rounds: a.mortar_tuning().mission_rounds as u16,
                         dig_length: Fixed::from_int(a.dig_length_m as i32),
                         dig_offset: Fixed::from_int(a.dig_offset_m as i32),
                         throw_cooldown_ticks: a.throw_cooldown_s * hz,
@@ -1677,6 +1735,7 @@ impl ModDefs {
                         armour: a.armour.clone(),
                         assault: a.assault.clone(),
                         ammo: a.ammo.clone().unwrap_or_default(),
+                        mortar: a.mortar_tuning(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -1690,6 +1749,7 @@ impl ModDefs {
                     })
                     .collect(),
                 supply: rules.supply.clone(),
+                fire_mission: rules.fire_mission.clone(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -2272,6 +2332,7 @@ impl MatchSetup {
                 && (1..=a.mix.len())
                     .all(|k| a.mix[..k - 1].iter().all(|o| o.tag != a.mix[k - 1].tag))
                 && (1..=50).contains(&a.barrage_rounds)
+                && a.barrage_rounds as u32 == a.mortar.mission_rounds
                 && fx_in(a.dig_length, 2, 1000)
                 && a.dig_length <= d.max_length
                 && fx_in(a.dig_offset, 0, 100)
@@ -2373,6 +2434,8 @@ impl MatchSetup {
                 share: &c.share,
                 fire: &c.fire,
                 ai_ammo: &a.ammo,
+                fire_mission: r.fire_mission.as_ref(),
+                ai_mortar: &a.mortar,
             },
         );
         r.at_ditch
@@ -2461,6 +2524,13 @@ impl MatchSetup {
             );
             if let Some(he) = &w.he {
                 check(he_ok(he), "weapons.he", "out of range");
+            }
+            if let Some(ind) = &w.indirect {
+                check(
+                    ind.ok() && w.class == WeaponClass::Mortar && w.he.is_some(),
+                    "weapons.indirect",
+                    "charges or elevation limits out of range, or not a mortar",
+                );
             }
             let launcher = w.class == WeaponClass::Launcher;
             check(

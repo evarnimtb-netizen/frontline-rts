@@ -297,7 +297,7 @@ fn soldier_only_and_engineer_only_orders_reject_the_wrong_squads() {
             line: line.clone(),
             profile: DigProfile::AtDitch,
         },
-        CommandKind::Barrage {
+        CommandKind::FireMission {
             squad: tsq,
             target: xy(800, 800),
             rounds: 2,
