@@ -1,0 +1,62 @@
+description = """Demonstration on the current game (S5b): one multiplier on today's seven German infantry-card costs
+(the tank card left out, as in the S5a demo). 1.00 = the shipped prices. Target Germany 45-55 %. Not shipped."""
+
+minutes = 45
+jobs = 6
+mod_dir = "mods/ww2"     # edits to the mod invalidate the cache
+
+[search]
+batch_seeds = 20         # one batch = 20 fresh seeds x both bases = 40 matches
+max_matches = 800
+seed_start = 1001        # batches use 1001.., 1021.., ...
+
+[[knob]]
+name = "ger_price_mult"
+type = "float"
+min = 0.85               # +-15 % on today's prices
+max = 1.15
+step = 0.01
+tol = 0.025              # stop when the 95 % interval on the level is within +-0.025
+paths = [
+  'defs.units."ww2:ger_grenadiergruppe".cost',
+  'defs.units."ww2:ger_grenadiergruppe_7".cost',
+  'defs.units."ww2:ger_smg_gruppe".cost',
+  'defs.units."ww2:ger_vg_sturmgruppe".cost',
+  'defs.units."ww2:ger_engineer_squad".cost',
+  'defs.units."ww2:ger_panzerschreck_team".cost',
+  'defs.units."ww2:ger_mortar_team".cost',
+]
+bases = [225, 160, 155, 300, 200, 145, 240]
+
+[[target]]                # modelled: solved for
+metric = "share_germany"
+lower = 45
+upper = 55
+
+[[target]]                # checked on the matches near the chosen level
+metric = "base_max"
+upper = 62
+
+[[target]]
+metric = "len_min"
+lower = 10
+
+[[target]]
+metric = "len_max"
+upper = 40
+
+[[target]]
+metric = "len_median"
+lower = 15
+upper = 30
+
+# reported only (no band): what S6 will tune
+[[target]]
+metric = "he_mean"
+role = "check"
+
+[[target]]
+metric = "kill_mortar_germany"
+
+[[target]]
+metric = "kill_mortar_usa"

@@ -1,3 +1,5 @@
+# Old format (the GP search, superseded): kept with runs/s5a_german_price/report.md as that method's record.
+# Its [seeds] and screen_* keys are ignored now; copy specs/s5b_german_price.toml instead.
 description = """Demo: re-find the S5a German card price level. One knob: a single multiplier on the six German card costs
 (the pre-Tune values, S5a Part B). Shipped Tune chose 0.8 (Grenadiergruppe 280 -> 225 etc.)."""
 
