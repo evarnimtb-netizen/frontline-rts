@@ -1,0 +1,60 @@
+description = """Demo: re-find the S5a German card price level. One knob: a single multiplier on the six German card costs
+(the pre-Tune values, S5a Part B). Shipped Tune chose 0.8 (Grenadiergruppe 280 -> 225 etc.)."""
+
+minutes = 45
+jobs = 2
+mod_dir = "mods/ww2"     # edits to the mod invalidate the cache
+
+[seeds]
+screen_start = 1
+screen_count = 20        # 40 matches
+confirm_start = 1
+confirm_count = 80       # 160 matches
+oos_start = 101
+oos_count = 80           # 160 matches, other seeds
+
+[search]
+max_screens = 4
+n_init = 3
+confirm_top = 1
+
+[[knob]]
+name = "ger_price_mult"
+type = "float"
+min = 0.70
+max = 1.00
+step = 0.05
+paths = [
+  'defs.units."ww2:ger_grenadiergruppe".cost',
+  'defs.units."ww2:ger_grenadiergruppe_7".cost',
+  'defs.units."ww2:ger_smg_gruppe".cost',
+  'defs.units."ww2:ger_engineer_squad".cost',
+  'defs.units."ww2:ger_panzerschreck_team".cost',
+  'defs.units."ww2:ger_mortar_team".cost',
+]
+bases = [280, 200, 195, 250, 180, 280]
+
+# the screen bands are the project's 40-match bands; the final bands are the 160-match ones
+[[target]]
+metric = "share_germany"
+lower = 45
+upper = 55
+screen_lower = 35
+screen_upper = 65
+
+[[target]]
+metric = "base_max"
+upper = 62
+
+[[target]]
+metric = "len_min"
+lower = 10
+
+[[target]]
+metric = "len_max"
+upper = 40
+
+[[target]]
+metric = "len_median"
+lower = 15
+upper = 30

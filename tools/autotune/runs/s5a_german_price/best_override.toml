@@ -1,0 +1,20 @@
+# autotune s5a_german_price: ger_price_mult=0.85
+# see report.md for the evidence and its error bars
+[defs.units."ww2:ger_grenadiergruppe"]
+cost = 238
+
+[defs.units."ww2:ger_grenadiergruppe_7"]
+cost = 170
+
+[defs.units."ww2:ger_smg_gruppe"]
+cost = 166
+
+[defs.units."ww2:ger_engineer_squad"]
+cost = 212
+
+[defs.units."ww2:ger_panzerschreck_team"]
+cost = 153
+
+[defs.units."ww2:ger_mortar_team"]
+cost = 238
+
