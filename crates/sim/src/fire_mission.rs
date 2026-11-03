@@ -240,6 +240,8 @@ pub struct BurstRecord {
     pub pos: FxVec3,
     /// Whether a linked observer saw it land.
     pub seen: bool,
+    /// Its mission was still going (else nobody looked for it).
+    pub live: bool,
     /// The mission's aim offset length after this burst (m).
     pub offset: Fx,
 }
@@ -312,7 +314,13 @@ impl MatchState {
 
     /// The observers of squad `q` (`(man, observe range)`): its leader and
     /// its `observer` men.
-    fn observers_of(&self, ents: &Entities, fm: &FireMissionTuning, q: &Squad, out: &mut Vec<(SimId, Fx)>) {
+    fn observers_of(
+        &self,
+        ents: &Entities,
+        fm: &FireMissionTuning,
+        q: &Squad,
+        out: &mut Vec<(SimId, Fx)>,
+    ) {
         let ty = &self.setup.squad_types[q.type_idx as usize];
         if ty.vehicle.is_some() {
             return;
@@ -358,7 +366,14 @@ impl MatchState {
     /// Linked observers of squad `id` whose observe range reaches `point`:
     /// `(direct, man)`, the own non-detached leader first, then ascending
     /// id.
-    fn linked(&self, ents: &Entities, fm: &FireMissionTuning, id: SquadId, gunner: FxVec2, point: FxVec2) -> Vec<(bool, SimId)> {
+    fn linked(
+        &self,
+        ents: &Entities,
+        fm: &FireMissionTuning,
+        id: SquadId,
+        gunner: FxVec2,
+        point: FxVec2,
+    ) -> Vec<(bool, SimId)> {
         let Some(sq) = self.squads.get(&id) else {
             return Vec::new();
         };
@@ -377,8 +392,7 @@ impl MatchState {
                 if !within(at, gunner, link) || !within(at, point, r) {
                     continue;
                 }
-                let direct =
-                    qid == id && Some(o) == own_leader && !ents.unit[o.index()].detached;
+                let direct = qid == id && Some(o) == own_leader && !ents.unit[o.index()].detached;
                 out.push((direct, o));
             }
         }
@@ -418,7 +432,8 @@ impl MatchState {
             return (mode::DIRECT, None);
         };
         let cands = self.linked(ents, fm, id, gunner, target);
-        let to = target.extend(ground_point(terrain, target) + Fx::from_milli(fm.point_lift_mm as i32));
+        let to =
+            target.extend(ground_point(terrain, target) + Fx::from_milli(fm.point_lift_mm as i32));
         match self.first_clear(ents, terrain, &cands, to, tick) {
             Some((true, o)) => (mode::DIRECT, Some(o)),
             Some((false, o)) => (mode::OBSERVED, Some(o)),
@@ -546,7 +561,8 @@ impl MatchState {
             pl.intel.retain(|_, c| {
                 let age = tick.saturating_sub(c.seen);
                 age <= keep
-                    || (c.flags & intel_flag::TRENCH != 0 && (trench_keep == 0 || age <= trench_keep))
+                    || (c.flags & intel_flag::TRENCH != 0
+                        && (trench_keep == 0 || age <= trench_keep))
             });
         }
     }
@@ -567,9 +583,21 @@ impl MatchState {
         };
         let hz = self.setup.tick_hz as u64;
         for b in bursts {
-            let Some((&id, _)) = self.squads.iter().find(|(_, sq)| {
-                matches!(&sq.order, Order::FireMission { m, .. } if m.id == b.mission)
-            }) else {
+            let Some((&id, _)) = self.squads.iter().find(
+                |(_, sq)| matches!(&sq.order, Order::FireMission { m, .. } if m.id == b.mission),
+            ) else {
+                // The mission ended (its last round is still in the air, or
+                // the squad got another order): nobody adjusts on it.
+                if let Some(log) = self.burst_log.as_mut() {
+                    log.push(BurstRecord {
+                        tick,
+                        mission: b.mission,
+                        pos: b.pos,
+                        seen: false,
+                        live: false,
+                        offset: Fx::ZERO,
+                    });
+                }
                 continue;
             };
             let sq = &self.squads[&id];
@@ -623,6 +651,7 @@ impl MatchState {
                     mission: b.mission,
                     pos: b.pos,
                     seen,
+                    live: true,
                     offset: off,
                 });
             }
@@ -688,7 +717,13 @@ pub(crate) fn remember(
 
 /// Drops ranging cells that expired or that the tube (now at `from`) has
 /// moved away from.
-pub(crate) fn prune_ranging(cells: &mut Vec<RangingCell>, fm: &FireMissionTuning, tick: u64, hz: u32, from: FxVec2) {
+pub(crate) fn prune_ranging(
+    cells: &mut Vec<RangingCell>,
+    fm: &FireMissionTuning,
+    tick: u64,
+    hz: u32,
+    from: FxVec2,
+) {
     let expiry = fm.ranging_expiry_s as u64 * hz as u64;
     cells.retain(|c| {
         tick.saturating_sub(c.at) <= expiry && within(c.from, from, m(fm.ranging_keep_move_m))
@@ -696,14 +731,23 @@ pub(crate) fn prune_ranging(cells: &mut Vec<RangingCell>, fm: &FireMissionTuning
 }
 
 /// The remembered cell for `target`, if any.
-pub(crate) fn ranged_cell<'a>(cells: &'a [RangingCell], fm: &FireMissionTuning, target: FxVec2) -> Option<&'a RangingCell> {
+pub(crate) fn ranged_cell<'a>(
+    cells: &'a [RangingCell],
+    fm: &FireMissionTuning,
+    target: FxVec2,
+) -> Option<&'a RangingCell> {
     cells
         .iter()
         .find(|c| within(c.target, target, m(fm.ranging_cell_m)))
 }
 
 /// Intel map validation (load).
-pub(crate) fn intel_ok(intel: &BTreeMap<u32, IntelCell>, fm: Option<&FireMissionTuning>, size_m: i32, tick: u64) -> bool {
+pub(crate) fn intel_ok(
+    intel: &BTreeMap<u32, IntelCell>,
+    fm: Option<&FireMissionTuning>,
+    size_m: i32,
+    tick: u64,
+) -> bool {
     let Some(fm) = fm else {
         return intel.is_empty();
     };

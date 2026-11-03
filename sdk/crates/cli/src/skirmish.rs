@@ -2084,7 +2084,13 @@ pub fn many_text(r: &ManyReport) -> String {
         let miss = |k: usize| q.miss_mm[k] as f64 / 1000.0 / q.bombs[k].max(1) as f64;
         let refused: Vec<String> = (0..frontline_sim::FireMissionRefusal::COUNT)
             .filter(|&k| q.refused[k] > 0)
-            .map(|k| format!("{} {}", frontline_sim::FireMissionRefusal::NAMES[k], q.refused[k]))
+            .map(|k| {
+                format!(
+                    "{} {}",
+                    frontline_sim::FireMissionRefusal::NAMES[k],
+                    q.refused[k]
+                )
+            })
             .collect();
         let base: u64 = q.base_bombs.iter().sum();
         out += &format!(

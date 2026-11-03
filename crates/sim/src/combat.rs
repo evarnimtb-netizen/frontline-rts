@@ -898,6 +898,13 @@ impl MatchState {
             let (new, obs) = self.mode_for(ents, terrain, id, pos.xy(), target, tick);
             let counters = &mut self.players[sq.owner.0 as usize].fm;
             if m.phase == phase::LAYING {
+                // The mode at order time gave the start error; an observer
+                // lost (or gained) while laying counts as a change.
+                if m.mode != mode::MAP && new == mode::MAP {
+                    counters.downgrades += 1;
+                } else if m.mode == mode::MAP && new != mode::MAP {
+                    counters.upgrades += 1;
+                }
                 m.phase = if new == mode::MAP
                     || (m.ranged && m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32))
                 {
@@ -916,9 +923,12 @@ impl MatchState {
                 m.phase = phase::EFFECT;
                 counters.downgrades += 1;
             }
+            // Fire for effect once an observer saw a round land close
+            // enough, or after the most adjusting rounds (an observer who
+            // never sees one land never calls it on the error alone).
             if m.phase == phase::ADJUST
                 && m.adjust > 0
-                && (m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32)
+                && ((m.seen > 0 && m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32))
                     || m.adjust as u32 >= fm.adjust_rounds_max)
             {
                 m.phase = phase::EFFECT;
@@ -935,7 +945,8 @@ impl MatchState {
         let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
         let sp = d.mul(w.spread.into()).raw() as i64 * pct / 100;
         let sp = Fx::from_raw(sp.min(i32::MAX as i64) as i32);
-        let aim_xy = terrain.clamp(target + m.offset + FxVec2::new(tri(&mut rng, sp), tri(&mut rng, sp)));
+        let aim_xy =
+            terrain.clamp(target + m.offset + FxVec2::new(tri(&mut rng, sp), tri(&mut rng, sp)));
         let from = FxVec3::new(
             pos.x,
             pos.y,

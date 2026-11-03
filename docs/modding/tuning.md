@@ -13,7 +13,7 @@ needed.
 | Trench and AT-ditch shapes, digging; HE blowing parapet spoil away (S3b `spoil_crater_pct`) | same | `[dig.profiles.*]`, `[dig.common]` |
 | Spotting, accuracy, suppression thresholds | same | `[combat]` |
 | Hit capsules, posture points | same | `[combat.body]` |
-| Mortar laying and flight | same | `[combat.mortar]` |
+| Mortar laying and flight (S5b: `flight_milli` / `min_flight_s` only for a mortar without `[indirect]`) | same | `[combat.mortar]` |
 | HE bursts and craters | same | `[combat.blast]` |
 | Suppression details; S3b duck state of men in trenches (`duck_points`, `duck_release_points`, `duck_decay_pct`) | same | `[combat.suppression]` |
 | S3b Suppress order (area fire): aim height, line length, line-of-fire probe, a tank's HE interval, reserve and aim | same | `[combat.suppress]` |
@@ -57,6 +57,10 @@ needed.
 | S5a a weapon's feed (`feed`), a man's default load (`load`), bursts (`burst_rounds` shots, then `burst_pause_ms` on top of the interval; 0 = none), its own fire-discipline share of its range (`hold_beyond_pct`, 10-100; 0 or absent: the rules') | `defs/weapons/*.toml` | top-level keys |
 | S5a fire discipline: a man in the default mode opens fire within `hold_beyond_pct` of his weapon's range; in `hold` only within `hold_open_m`; a held squad springs at `hold_spring_points` | `defs/rules/skirmish.toml` | `[combat.fire]` (absent: 100 / 30 / 30, the pre-S5a behaviour, S5a-29) |
 | S5a AI ammunition: refill trips (`return_below_pct`, `dry_pct`, `max_returning_pct`, `refill_full_pct`, `refill_max_s`), mortar reserve (`mortar_reserve_pct`), buys keep `float_mp` back while a unit waits for a paid refill, a paused refill ends after `rearm_stall_s` | same | `[ai.ammo]` (absent: the S5a defaults) |
+| S5b fire missions: who observes and how far (`observe_leader_m`, `observe_observer_m`), the voice link (`observer_link_m`), sight-line lifts (`point_lift_mm`, `burst_seen_lift_mm`), laying and adjusting times (`fire_direction_s`, `direct_s`, `adjust_wait_s`), when to fire for effect (`ffe_error_m`, `adjust_rounds_max`), the aim error (`first_round_error_pct` / `_min_m`, `ranging_step_pct`, `map_fire_error_pct` / `_min_m`), the ranging memory (`ranging_cell_m`, `ranging_expiry_s`, `ranging_keep_move_m`, `ranging_max_cells`), the knowledge map for map fire (`intel_cell_m`, `intel_keep_s`, `intel_trench_keep_s`, `intel_period_s`, `intel_snap_m`), HUD mission rounds (`player_rounds`); see `docs/modding/fire-missions.md` | `defs/rules/skirmish.toml` | `[fire_mission]` (absent: missions run as the old barrage, S5b-1) |
+| S5b AI fire missions: rounds per mission (`mission_rounds`, was `ai.barrage_rounds`), spotters and map fire (`spot_samples`, `spot_max_s`, `spot_hold_s`, `map_fire_min_pct`, `map_fire_min_score`; used from S5b Part B) | same | `[ai.mortar]` (absent: `ai.barrage_rounds` or 6) |
+| S5b a mortar's charges and laying limits (`charges_m_s`, `elevation_deg`): the solver takes the lowest charge with a high-angle solution | `defs/weapons/*.toml` | `[indirect]` (absent: the S1 flight rule) |
+| S5b the `observer` member trait | `defs/units/*.toml` | `traits` in `[[members]]` |
 | S5a AI Panzerfaust ambush hold (`ambush_watch_m`, 0 = off; `ambush_offset_m`, `ambush_max_s`, `ambush_release_m`) | same | `[ai.assault]` (absent in older rules: off, 25, 90, 0 = the watch) |
 | S5a rounds per man by cartridge id | `defs/units/*.toml` | `rounds = { "<id>" = N }` in `[[members]]` |
 | S5a weights of items and rounds (`supply`), rare rounds (`rare`), a vehicle's rare-round cap (`rare_cap`) and stowage (`ammo` counts) | `defs/items/`, `defs/ammo/`, `defs/vehicles/` | top-level keys |

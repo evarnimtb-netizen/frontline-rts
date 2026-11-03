@@ -919,7 +919,6 @@
         },
         "assault_close_m": 40,
         "at_clear_s": 30,
-        "barrage_rounds": 6,
         "dig_length_m": 20,
         "dig_offset_m": 10,
         "frag_group_men": 3,
@@ -941,6 +940,14 @@
           "mg": 20,
           "mortar": 15,
           "vehicle": 20
+        },
+        "mortar": {
+          "map_fire_min_pct": 60,
+          "map_fire_min_score": 40,
+          "mission_rounds": 6,
+          "spot_hold_s": 30,
+          "spot_max_s": 60,
+          "spot_samples": 8
         },
         "repair_clear_m": 150,
         "retreat_strength_pct": 40,
@@ -1098,6 +1105,33 @@
         "income_per_min": 240,
         "point_income_per_min": 60,
         "start_manpower": 600
+      },
+      "fire_mission": {
+        "adjust_rounds_max": 4,
+        "adjust_wait_s": 4,
+        "burst_seen_lift_mm": 3000,
+        "direct_s": 4,
+        "ffe_error_m": 10,
+        "fire_direction_s": 10,
+        "first_round_error_min_m": 10,
+        "first_round_error_pct": 3,
+        "intel_cell_m": 25,
+        "intel_keep_s": 300,
+        "intel_period_s": 1,
+        "intel_snap_m": 25,
+        "intel_trench_keep_s": 0,
+        "map_fire_error_min_m": 27,
+        "map_fire_error_pct": 8,
+        "observe_leader_m": 400,
+        "observe_observer_m": 1200,
+        "observer_link_m": 150,
+        "player_rounds": 6,
+        "point_lift_mm": 500,
+        "ranging_cell_m": 50,
+        "ranging_expiry_s": 600,
+        "ranging_keep_move_m": 10,
+        "ranging_max_cells": 4,
+        "ranging_step_pct": 50
       },
       "hash_interval": 30,
       "id": "ww2:skirmish",
@@ -1573,11 +1607,11 @@
     },
     "ww2:ger_mortar_team": {
       "capabilities": [
-        "barrage",
+        "fire_mission",
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 225,
+      "cost": 240,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1586,32 +1620,58 @@
       "members": [
         {
           "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:8cm_wgr34": 2
+          },
           "sidearm": "ww2:p38",
           "slot": "mortar_gunner",
           "traits": [
-            "leader",
             "crew_gunner"
           ],
           "weapon": "ww2:grw34"
         },
         {
-          "count": 2,
+          "count": 1,
           "rounds": {
-            "ww2:8cm_wgr34": 6
+            "ww2:8cm_wgr34": 4
           },
-          "slot": "mortar_crew",
+          "slot": "mortar_assistant",
           "traits": [
             "crew_assistant"
+          ],
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 2,
+          "rounds": {
+            "ww2:8cm_wgr34": 7
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
           ],
           "weapon": "ww2:kar98k"
         }
       ],
       "men": 0,
-      "name": "Granatwerfertrupp",
+      "name": "Granatwerfergruppe",
       "recall_cooldown_s": 0,
       "role": "mortar",
       "short_name": "Granatwerfer",
       "sight_m": 150,
+      "sources": [
+        "roster-expansion.md §3.1 (5 men, about 20 bombs, 300 MP)",
+        "US War Department, German Infantry Weapons (MID 1943), 8-cm heavy mortar model 34 ('Twenty-four rounds are usually carried by a mortar crew in action'; bombs in cases)",
+        "US War Department, Intelligence Bulletin, Feb 1944, 'Concentrating mortar fire' (one section is controlled by voice)"
+      ],
       "spacing_dm": 25,
       "speed_cm_s": 240,
       "steadiness_pct": 100,
@@ -2053,11 +2113,11 @@
     },
     "ww2:usa_mortar_team": {
       "capabilities": [
-        "barrage",
+        "fire_mission",
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 280,
+      "cost": 300,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",
       "hp": 100,
@@ -2066,32 +2126,57 @@
       "members": [
         {
           "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:81mm_m43a1": 2
+          },
           "sidearm": "ww2:m1911a1",
           "slot": "mortar_gunner",
           "traits": [
-            "leader",
             "crew_gunner"
           ],
           "weapon": "ww2:m1_mortar"
         },
         {
-          "count": 2,
+          "count": 1,
           "rounds": {
-            "ww2:81mm_m43a1": 6
+            "ww2:81mm_m43a1": 4
           },
-          "slot": "mortar_crew",
+          "slot": "mortar_assistant",
           "traits": [
             "crew_assistant"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 2,
+          "rounds": {
+            "ww2:81mm_m43a1": 7
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
           ],
           "weapon": "ww2:m1_carbine"
         }
       ],
       "men": 0,
-      "name": "Mortar Team",
+      "name": "81mm Mortar Squad",
       "recall_cooldown_s": 0,
       "role": "mortar",
       "short_name": "81mm Mortar",
       "sight_m": 150,
+      "sources": [
+        "roster-expansion.md §3.2 (5 men, 300 MP)",
+        "Wikipedia, M1 mortar (squad of 8: leader, gunner, assistant gunner, 5 ammunition bearers; M43A1 3.2 kg)"
+      ],
       "spacing_dm": 25,
       "speed_cm_s": 240,
       "steadiness_pct": 100,
@@ -3530,6 +3615,19 @@
         "vs_vehicle_pct": 40
       },
       "id": "ww2:grw34",
+      "indirect": {
+        "charges_m_s": [
+          75,
+          105,
+          130,
+          152,
+          174
+        ],
+        "elevation_deg": [
+          45,
+          87
+        ]
+      },
       "load": 3,
       "magazine": 1,
       "min_range_m": 60,
@@ -3540,6 +3638,10 @@
       "rounds_carried": 0,
       "rounds_per_min": 15,
       "setup_ms": 3000,
+      "sources": [
+        "US War Department, German Infantry Weapons (MID 1943), 8-cm heavy mortar model 34 (charges I-IV 246/344/427/499 ft/s, range 60-1,900 m, firing table 869-1,545 mils, rate)",
+        "Wikipedia, 8 cm Granatwerfer 34 (174 m/s full charge, 2.4 km)"
+      ],
       "spread_mrad": 50,
       "spread_urad": 0,
       "suppression": 30
@@ -3722,16 +3824,35 @@
         "vs_vehicle_pct": 40
       },
       "id": "ww2:m1_mortar",
+      "indirect": {
+        "charges_m_s": [
+          70,
+          95,
+          117,
+          137,
+          155,
+          172,
+          188
+        ],
+        "elevation_deg": [
+          45,
+          85
+        ]
+      },
       "load": 3,
       "magazine": 1,
-      "min_range_m": 60,
+      "min_range_m": 90,
       "muzzle_velocity_m_s": 180,
       "name": "81 mm M1",
       "range_m": 600,
       "reload_ms": 0,
       "rounds_carried": 0,
-      "rounds_per_min": 15,
+      "rounds_per_min": 18,
       "setup_ms": 3000,
+      "sources": [
+        "Wikipedia, M1 mortar (18 rpm sustained, 30-35 maximum; M43A1 light HE 3.2 kg, 100-3,300 yd, zone 7)",
+        "M43A1 dealer description, ima-usa.com (ignition cartridge plus six increments; secondary)"
+      ],
       "spread_mrad": 50,
       "spread_urad": 0,
       "suppression": 30

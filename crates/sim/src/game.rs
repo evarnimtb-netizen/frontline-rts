@@ -1141,9 +1141,8 @@ impl MatchState {
         if dist < min {
             return Some(FireMissionRefusal::InsideMinimum);
         }
-        let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
-            return None;
-        };
+        // Legacy rules (no `[fire_mission]`): the old barrage's checks only.
+        self.setup.rules.fire_mission.as_ref()?;
         if crate::supply::mortar_bombs(&self.setup, ents, sq).0 == 0 {
             return Some(FireMissionRefusal::NoBombs);
         }
@@ -1153,7 +1152,9 @@ impl MatchState {
         if dist <= max
             && let Some(ind) = &w.indirect
         {
-            let g = self.mortar_gunner(ents, sq).unwrap_or_else(|| sq.lead(ents));
+            let g = self
+                .mortar_gunner(ents, sq)
+                .unwrap_or_else(|| sq.lead(ents));
             let gp = ents.transform[g.index()].pos;
             let from = crate::fx::FxVec3::new(
                 gp.x,
@@ -1165,7 +1166,6 @@ impl MatchState {
                 return Some(FireMissionRefusal::CannotReach);
             }
         }
-        let _ = fm;
         None
     }
 
@@ -1203,11 +1203,15 @@ impl MatchState {
         let mut m = Mission::default();
         if let Some(fm) = &fm {
             let sq = &self.squads[&id];
-            let g = self.mortar_gunner(ctx.ents, sq).unwrap_or_else(|| sq.lead(ctx.ents));
+            let g = self
+                .mortar_gunner(ctx.ents, sq)
+                .unwrap_or_else(|| sq.lead(ctx.ents));
             let gp = ctx.ents.transform[g.index()].pos.xy();
             let (mode0, obs) = self.mode_for(ctx.ents, ctx.terrain, id, gp, target, ctx.tick);
             let hz = self.setup.tick_hz;
-            let err = crate::fire_mission::start_error(fm, mode0 == mode::MAP, dist);
+            // The start error grows with the range from the tube.
+            let range = (target - gp).length();
+            let err = crate::fire_mission::start_error(fm, mode0 == mode::MAP, range);
             let mut cells = std::mem::take(&mut self.squads.get_mut(&id).expect("owned").ranging);
             crate::fire_mission::prune_ranging(&mut cells, fm, ctx.tick, hz, gp);
             let remembered = (mode0 != mode::MAP)
@@ -1273,6 +1277,9 @@ impl MatchState {
         true
     }
 
+    /// A call-in (S3b): buys and spawns the squad at once, or refuses it
+    /// (see [`Self::call_in_check`]). Either way the result is logged for
+    /// the snapshot.
     fn call_in(&mut self, ctx: &mut Ctx, p: PlayerId, squad_type: u16) -> bool {
         let result = match self.call_in_check(ctx.ents, p, squad_type, ctx.tick) {
             Err(why) => Err(why),
@@ -2037,8 +2044,6 @@ impl MatchState {
         Ok(())
     }
 
-    /// S3b: a saved suppress line lies on the map and is no longer than
-    /// the rules allow (a metre of slack for the pull-in's rounding).
     /// S5b load check of a squad's fire mission and ranging memory.
     fn mission_ok(&self, sq: &Squad, ents: &Entities, tick: u64) -> bool {
         let s = &self.setup;
@@ -2089,6 +2094,8 @@ impl MatchState {
             && m.observer.is_none_or(|o| o.index() < ents.len())
     }
 
+    /// S3b: a saved suppress line lies on the map and is no longer than
+    /// the rules allow (a metre of slack for the pull-in's rounding).
     pub(crate) fn suppress_ok(&self, line: &[FxVec2; 2]) -> bool {
         let map = Fx::from_int(self.setup.map.size_m);
         let max = Fx::from_int(self.setup.rules.combat.suppress.line_max_m as i32 + 1);

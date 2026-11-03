@@ -81,8 +81,9 @@ In the sim:
 - every `[combat.share] interval_s` the man lowest on a round (below
   `below_pct` of his own load) takes `share_pct` of a squadmate's load
   (within `reach_m`, above `giver_above_pct`), never above his own load;
-- a mortar fires bombs from the gunner, then from his crew; with none left
-  the barrage ends.
+- a mortar fires bombs from the gunner, then from his crew (S5b: the
+  assistant and the two ammunition bearers of a 5-man squad, 20 bombs in
+  all); with none left the fire mission ends (`docs/modding/fire-missions.md`).
 
 ## Vehicles
 
@@ -149,7 +150,7 @@ enemy within `threat_radius_m`, or under `dry_pct` at all, walks back to
 the base, waits there until `refill_full_pct` or `refill_max_s` (or until
 its paused refill has waited `rearm_stall_s`), then takes a task again. At
 most `max_returning_pct` of the squads at one point leave in one plan; a
-point's last squad stays unless it is dry. Mortars barrage only above
+point's last squad stays unless it is dry. Mortars fire missions only above
 `mortar_reserve_pct` of their bombs (unless an own point is under threat)
 and never order more rounds than they hold. Buys keep `float_mp` back
 while a unit waits in base for a refill. A Panzerfaust squad that sees an

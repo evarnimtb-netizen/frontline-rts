@@ -91,7 +91,7 @@ legacy squad replaces its legacy soldier keys the same way.
 | `sidearm` | what he fights with after handing a crew weapon on (stored; nobody hands one on in S4) |
 | `items` | `{ "<item id>" = n }` per man; one item of each kind (frag, smoke, satchel, single_shot_at) per man, and one item id per kind in the whole squad (S4-26); n ≤ 10 |
 | `ammo` | rounds he carries; stored, but rounds stay unlimited until S5 |
-| `traits` | `leader` (first slot, count 1), `crew_gunner`, `crew_assistant`, `ammo_bearer` |
+| `traits` | `leader` (first slot, count 1), `crew_gunner`, `crew_assistant`, `ammo_bearer`; S5b `observer` (adjusts fire missions at `[fire_mission] observe_observer_m`; every squad's leader already observes at `observe_leader_m`, `docs/modding/fire-missions.md`) |
 
 Slots are in spawn and formation order. The first man of the first slot
 leads the squad (he gets the leader's items). `officer`, `radio`, `medic`
@@ -182,7 +182,7 @@ mortar `mortar`, anti_tank `at`, vehicle `vehicle`, crew `crew`.
 |---|---|---|
 | `dig_basic` | the Dig order (trench) | any infantry role with `dig_rate_pct > 0` |
 | `dig_full` | dig profiles that need it (the AT ditch) | engineer |
-| `barrage` | the Barrage order | always derived: a member with a mortar |
+| `fire_mission` | the FireMission order (S5b; `barrage` before it) | always derived: a member with a mortar |
 | `recrew` | boarding an own abandoned vehicle as untrained crew | rifle, mg, engineer, mortar |
 | `vehicle_crew` | trained crew (capture, dismissal in base) | crew |
 | `at_hunt` | AT hunts | always derived: a member with a launcher |
@@ -190,7 +190,7 @@ mortar `mortar`, anti_tank `at`, vehicle `vehicle`, crew `crew`.
 The tag `crew` and the capability `vehicle_crew` go together: a crew
 squad has both, any other squad neither (the sim keys crew rules on the
 capability, the vehicle's `crew_squad` check on the tag).
-`dig_basic` and `dig_full` need `dig_rate_pct > 0`. Setting `barrage` or
+`dig_basic` and `dig_full` need `dig_rate_pct > 0`. Setting `fire_mission` or
 `at_hunt` without the weapon is an error. Reserved for later slices, and
 refused with a hint: `build_structure`, `build_heavy`, `place_wire`,
 `clear_wire`, `place_mines`, `clear_mines`, `breach`, `demolish`,

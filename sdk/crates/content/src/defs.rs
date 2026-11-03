@@ -17,9 +17,9 @@ use crate::issue::Issue;
 use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, BailTuning,
     BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
-    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
-    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, MortarTuning,
+    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
+    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).

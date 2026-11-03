@@ -43,7 +43,13 @@ pub struct Shot {
 /// `r` and height difference `h` (m): `(u, vx, flight)` as raw Q16.16, or
 /// `None` when it cannot reach or the elevation is outside `[tan_min,
 /// tan_max]`.
-fn solve_charge(r: i128, h: i128, v: i128, tan_min: i128, tan_max: i128) -> Option<(i128, i128, i128)> {
+fn solve_charge(
+    r: i128,
+    h: i128,
+    v: i128,
+    tan_min: i128,
+    tan_max: i128,
+) -> Option<(i128, i128, i128)> {
     if r <= 0 || v <= 0 {
         return None;
     }
@@ -102,6 +108,8 @@ pub fn solve(ind: &IndirectSetup, from: FxVec3, to: FxVec3) -> Option<Shot> {
 }
 
 #[cfg(test)]
+// The f64 reference and the miss in metres are test-side only.
+#[allow(clippy::float_arithmetic)]
 mod tests {
     use super::*;
     use frontline_content::Fixed;

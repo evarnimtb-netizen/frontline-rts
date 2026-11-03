@@ -6,8 +6,9 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use frontline_cli::skirmish::ReportFormat;
 use frontline_cli::{
-    ArmourArgs, BallisticsArgs, FortifyArgs, SimulateArgs, SkirmishArgs, armour_test, ballistics,
-    desync_diff, fortify, overrides, schema, simulate, skirmish, validate,
+    ArmourArgs, BallisticsArgs, BenchArgs, FortifyArgs, SimulateArgs, SkirmishArgs, armour_test,
+    ballistics, desync_diff, fortify, mortar_bench, overrides, schema, simulate, skirmish,
+    validate,
 };
 
 #[derive(Parser)]
@@ -41,6 +42,12 @@ enum Command {
     ///
     /// Exits 0 when both experiments pass, 1 otherwise.
     FortifyTest(FortifyArgs),
+    /// S5b: fire the same mortar mission observed, as map fire, and with
+    /// the bursts hidden by smoke, and compare the misses (the 3x rule).
+    ///
+    /// Exits 0 when the pooled map-to-observed miss ratio is 2.5-3.5 and
+    /// every run ranged as the rules say, 1 otherwise.
+    MortarBench(BenchArgs),
     /// Stage the S3 armour cases (penetration statistics, hull-down, duels,
     /// AT teams, satchels, HE, mortars, enfilade, trench crossing, AT
     /// ditch; --stress adds the stress case) and check their mechanics.
@@ -157,6 +164,20 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 println!("{}", fortify::summary_text(&report));
+            }
+            Ok(if report.pass {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            })
+        }
+        Command::MortarBench(args) => {
+            overrides::announce(args.mods.as_deref(), &args.rules_override)?;
+            let report = mortar_bench::mortar_bench(&args)?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("{}", mortar_bench::summary_text(&report));
             }
             Ok(if report.pass {
                 ExitCode::SUCCESS

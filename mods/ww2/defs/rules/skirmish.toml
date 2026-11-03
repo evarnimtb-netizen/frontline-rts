@@ -1106,10 +1106,15 @@ first_round_error_min_m = 10
 # ... and each round an observer SEES land leaves this share of the error
 # (%; a hidden burst teaches nothing).
 ranging_step_pct = 50
-# Map fire (no observer; a known point): no ranging. About 3x the observed
-# first round; set on the mortar-bench (S5b-12).
-map_fire_error_pct = 9
-map_fire_error_min_m = 30
+# Map fire (no observer; a known point): no ranging (% of range, floor m).
+# Set on the mortar-bench (S5b-12 (A)) so the same 8-round mission misses
+# about 3x as far as map fire as when a spotter in the voice link adjusts
+# it: 50 seeds x both mortars at 200-500 m, mean miss observed 10.6 m, map
+# fire 32.4 m, pooled ratio 3.04 (200 m 4.1, 300 m 3.1, 400 m 2.8, 500 m
+# 2.8). The Plan's 9 % / 30 m (3x the observed first round) gave 3.39 and
+# 4.5 at 200 m: ranging takes the observed mission below its first round.
+map_fire_error_pct = 8
+map_fire_error_min_m = 27
 
 # --- Ranging memory (per mortar squad, per target area; S5b-4 (A): it only
 # helps a later observed or direct mission, never map fire) ---

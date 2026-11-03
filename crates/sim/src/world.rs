@@ -831,6 +831,16 @@ impl World {
                 }) {
                     return Err(err("projectile with an unknown weapon, round or player"));
                 }
+                // S5b: a mortar bomb's mission was numbered before the save.
+                if st
+                    .projectiles
+                    .slots()
+                    .iter()
+                    .flatten()
+                    .any(|p| p.mission >= g.next_mission)
+                {
+                    return Err(err("projectile of an unknown fire mission"));
+                }
             }
         }
         s.state.terrain.rebuild_derived();
@@ -5121,6 +5131,311 @@ mod tests {
                 }),
                 "vehicle",
             ),
+        ];
+        for (edit, want) in bad {
+            let bytes = save_edited(&w, edit);
+            let e = load_err(&bytes);
+            assert!(e.contains(want), "{want}: {e}");
+        }
+    }
+
+    /// S5b: a fire mission (every `Mission` field, with an adjusting round
+    /// in the air), a mortar's ranging memory, the players' knowledge maps
+    /// and fire-mission counters, the bombs' mission number and the mission
+    /// counter are saved, each changes the hash, and broken values are
+    /// refused on load.
+    #[test]
+    fn s5b_fire_mission_state_is_saved_hashed_and_checked() {
+        use crate::fire_mission::{FmCounters, IntelCell, Mission, RangingCell};
+        let (mut w, _) = flat_tank_world_with(|_| {});
+        let t = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_mortar_team")
+            .unwrap();
+        let m = w
+            .spawn_squad_at(
+                PlayerId(0),
+                t,
+                FxVec2::from_int(300, 300),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        w.step(&[Command {
+            player: PlayerId(0),
+            seq: 1,
+            kind: CommandKind::FireMission {
+                squad: m,
+                target: FxVec2::from_int(600, 300),
+                rounds: 6,
+            },
+        }]);
+        assert!(w.snapshot().fire_mission_refusals.is_empty());
+        // Until the adjusting round is in the air.
+        let in_air = |w: &World| match &w.game().unwrap().squads[&m].order {
+            Order::FireMission { m, .. } => m.wait_burst,
+            _ => panic!("the mission ended"),
+        };
+        while !in_air(&w) {
+            w.step(&[]);
+            assert!(w.tick() < 30 * 60, "no adjusting round within a minute");
+        }
+        w.step(&[]);
+        {
+            let g = w.state.game.as_mut().unwrap();
+            g.squads.get_mut(&m).unwrap().ranging = vec![RangingCell {
+                target: FxVec2::from_int(500, 400),
+                offset: FxVec2::from_int(3, -2),
+                seen: 2,
+                at: 5,
+                from: FxVec2::from_int(300, 300),
+            }];
+            let p = &mut g.players[0];
+            p.intel.insert(
+                40,
+                IntelCell {
+                    seen: 3,
+                    flags: crate::fire_mission::intel_flag::TRENCH,
+                },
+            );
+            p.fm = FmCounters {
+                missions: [1, 2, 3],
+                refused: [1; crate::fire_mission::FireMissionRefusal::COUNT],
+                bombs: [4, 5, 6],
+                miss_mm: [7, 8, 9],
+                seen: 10,
+                unseen: 11,
+                adjust: 12,
+                flight_ticks: 13,
+                base_bombs: [14, 15, 16],
+                upgrades: 17,
+                downgrades: 18,
+                no_solution: 19,
+                spotters: 20,
+            };
+        }
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        // Every field is listed below (a new one fails to compile here).
+        let Mission {
+            id: _,
+            mode: _,
+            phase: _,
+            offset: _,
+            err0: _,
+            order_tick: _,
+            ready_at: _,
+            wait_burst: _,
+            burst_by: _,
+            adjust: _,
+            seen: _,
+            fired: _,
+            charge: _,
+            flight: _,
+            observer: _,
+            ranged: _,
+        } = Mission::default();
+        let RangingCell {
+            target: _,
+            offset: _,
+            seen: _,
+            at: _,
+            from: _,
+        } = RangingCell::default();
+        let FmCounters {
+            missions: _,
+            refused: _,
+            bombs: _,
+            miss_mm: _,
+            seen: _,
+            unseen: _,
+            adjust: _,
+            flight_ticks: _,
+            base_bombs: _,
+            upgrades: _,
+            downgrades: _,
+            no_solution: _,
+            spotters: _,
+        } = FmCounters::default();
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        fn mi(s: &mut SimState, m: SquadId) -> &mut Mission {
+            match &mut s.game.as_mut().unwrap().squads.get_mut(&m).unwrap().order {
+                Order::FireMission { m, .. } => m,
+                _ => unreachable!(),
+            }
+        }
+        fn rc(s: &mut SimState, m: SquadId) -> &mut RangingCell {
+            &mut s.game.as_mut().unwrap().squads.get_mut(&m).unwrap().ranging[0]
+        }
+        fn fm(s: &mut SimState) -> &mut FmCounters {
+            &mut s.game.as_mut().unwrap().players[0].fm
+        }
+        fn intel(s: &mut SimState) -> &mut IntelCell {
+            s.game.as_mut().unwrap().players[0]
+                .intel
+                .get_mut(&40)
+                .unwrap()
+        }
+        fn bomb(s: &mut SimState) -> &mut crate::projectile::Projectile {
+            s.projectiles
+                .slots_mut()
+                .iter_mut()
+                .flatten()
+                .find(|p| p.mission != 0)
+                .expect("the adjusting round is in the air")
+        }
+        let one = Fx::ONE;
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            ("mission.id", Box::new(move |s| mi(s, m).id ^= 2)),
+            ("mission.mode", Box::new(move |s| mi(s, m).mode ^= 1)),
+            ("mission.phase", Box::new(move |s| mi(s, m).phase ^= 1)),
+            (
+                "mission.offset",
+                Box::new(move |s| mi(s, m).offset.x += one),
+            ),
+            ("mission.err0", Box::new(move |s| mi(s, m).err0 += one)),
+            (
+                "mission.order_tick",
+                Box::new(move |s| mi(s, m).order_tick ^= 1),
+            ),
+            (
+                "mission.ready_at",
+                Box::new(move |s| mi(s, m).ready_at += 1),
+            ),
+            (
+                "mission.wait_burst",
+                Box::new(move |s| mi(s, m).wait_burst ^= true),
+            ),
+            (
+                "mission.burst_by",
+                Box::new(move |s| mi(s, m).burst_by += 1),
+            ),
+            ("mission.adjust", Box::new(move |s| mi(s, m).adjust ^= 1)),
+            ("mission.seen", Box::new(move |s| mi(s, m).seen += 1)),
+            ("mission.fired", Box::new(move |s| mi(s, m).fired += 1)),
+            ("mission.charge", Box::new(move |s| mi(s, m).charge ^= 1)),
+            ("mission.flight", Box::new(move |s| mi(s, m).flight += 1)),
+            (
+                "mission.observer",
+                Box::new(move |s| mi(s, m).observer = Some(SimId(0))),
+            ),
+            ("mission.ranged", Box::new(move |s| mi(s, m).ranged ^= true)),
+            (
+                "order.rounds",
+                Box::new(move |s| {
+                    if let Order::FireMission { rounds, .. } =
+                        &mut s.game.as_mut().unwrap().squads.get_mut(&m).unwrap().order
+                    {
+                        *rounds -= 1;
+                    }
+                }),
+            ),
+            (
+                "ranging.target",
+                Box::new(move |s| rc(s, m).target.y += one),
+            ),
+            (
+                "ranging.offset",
+                Box::new(move |s| rc(s, m).offset.y += one),
+            ),
+            ("ranging.seen", Box::new(move |s| rc(s, m).seen += 1)),
+            ("ranging.at", Box::new(move |s| rc(s, m).at += 1)),
+            ("ranging.from", Box::new(move |s| rc(s, m).from.x += one)),
+            (
+                "ranging.len",
+                Box::new(move |s| {
+                    s.game
+                        .as_mut()
+                        .unwrap()
+                        .squads
+                        .get_mut(&m)
+                        .unwrap()
+                        .ranging
+                        .clear()
+                }),
+            ),
+            ("intel.seen", Box::new(|s| intel(s).seen += 1)),
+            ("intel.flags", Box::new(|s| intel(s).flags ^= 2)),
+            (
+                "intel.key",
+                Box::new(|s| {
+                    let p = &mut s.game.as_mut().unwrap().players[0];
+                    let c = p.intel.remove(&40).unwrap();
+                    p.intel.insert(41, c);
+                }),
+            ),
+            ("fm.missions", Box::new(|s| fm(s).missions[2] += 1)),
+            ("fm.refused", Box::new(|s| fm(s).refused[5] += 1)),
+            ("fm.bombs", Box::new(|s| fm(s).bombs[0] += 1)),
+            ("fm.miss_mm", Box::new(|s| fm(s).miss_mm[1] += 1)),
+            ("fm.seen", Box::new(|s| fm(s).seen += 1)),
+            ("fm.unseen", Box::new(|s| fm(s).unseen += 1)),
+            ("fm.adjust", Box::new(|s| fm(s).adjust += 1)),
+            ("fm.flight_ticks", Box::new(|s| fm(s).flight_ticks += 1)),
+            ("fm.base_bombs", Box::new(|s| fm(s).base_bombs[2] += 1)),
+            ("fm.upgrades", Box::new(|s| fm(s).upgrades += 1)),
+            ("fm.downgrades", Box::new(|s| fm(s).downgrades += 1)),
+            ("fm.no_solution", Box::new(|s| fm(s).no_solution += 1)),
+            ("fm.spotters", Box::new(|s| fm(s).spotters += 1)),
+            ("projectile.mission", Box::new(|s| bomb(s).mission ^= 4)),
+            (
+                "next_mission",
+                Box::new(|s| s.game.as_mut().unwrap().next_mission += 1),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(w2.full_state_hash(), w2.state_hash());
+        }
+        const FM: &str = "fire mission state is inconsistent";
+        let bad: Vec<(StateEdit, &str)> = vec![
+            (Box::new(move |s| mi(s, m).mode = 3), FM),
+            (Box::new(move |s| mi(s, m).phase = 3), FM),
+            (Box::new(move |s| mi(s, m).id = 0), FM),
+            (Box::new(move |s| mi(s, m).id = 999), FM),
+            (Box::new(move |s| mi(s, m).order_tick = 1_000_000), FM),
+            (Box::new(move |s| mi(s, m).ready_at = 1_000_000), FM),
+            (Box::new(move |s| mi(s, m).burst_by = 1_000_000), FM),
+            (Box::new(move |s| mi(s, m).adjust = 99), FM),
+            (Box::new(move |s| mi(s, m).charge = 5), FM),
+            (
+                Box::new(move |s| mi(s, m).offset = FxVec2::from_int(5000, 0)),
+                FM,
+            ),
+            (Box::new(move |s| mi(s, m).err0 = Fx::from_int(5000)), FM),
+            (
+                Box::new(move |s| mi(s, m).observer = Some(SimId(60_000))),
+                FM,
+            ),
+            (Box::new(move |s| rc(s, m).at = 1_000_000), FM),
+            (
+                Box::new(move |s| rc(s, m).target = FxVec2::from_int(-5, 0)),
+                FM,
+            ),
+            (
+                Box::new(move |s| {
+                    let sq = s.game.as_mut().unwrap().squads.get_mut(&m).unwrap();
+                    let c = sq.ranging[0];
+                    sq.ranging = vec![c; 5];
+                }),
+                FM,
+            ),
+            (Box::new(|s| intel(s).seen = 1_000_000), "intel"),
+            (Box::new(|s| intel(s).flags = 8), "intel"),
+            (
+                Box::new(|s| {
+                    let p = &mut s.game.as_mut().unwrap().players[0];
+                    p.intel.insert(10_000_000, IntelCell::default());
+                }),
+                "intel",
+            ),
+            (Box::new(|s| bomb(s).mission = 999), "unknown fire mission"),
         ];
         for (edit, want) in bad {
             let bytes = save_edited(&w, edit);

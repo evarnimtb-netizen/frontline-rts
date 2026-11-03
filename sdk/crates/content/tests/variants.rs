@@ -123,8 +123,9 @@ fn the_s4_content_resolves_with_historical_squads() {
         ("ww2:usa_rifle_squad_2bar", 12, 380),
         ("ww2:usa_lmg_squad", 5, 280),
         ("ww2:usa_engineer_squad", 8, 280),
-        ("ww2:ger_mortar_team", 3, 225),
-        ("ww2:usa_mortar_team", 3, 280),
+        // S5b: 5-man squads (S5b-7, S5b-10 (A)): 300, Germany -20 %.
+        ("ww2:ger_mortar_team", 5, 240),
+        ("ww2:usa_mortar_team", 5, 300),
     ] {
         assert_eq!((ty(id).men, ty(id).cost), (men, cost), "{id}");
     }

@@ -281,14 +281,17 @@ fn ai_vs_ai_runs_are_seed_sensitive() {
     assert_ne!(ha.last(), hb.last());
 }
 
-/// The S1 "done" bar: AI-vs-AI ends with a winner inside 30 game minutes.
+/// The S1 "done" bar: AI-vs-AI ends with a winner (S1: inside 30 game
+/// minutes; S5b: inside 40, the slices' match-length bound).
 /// Slow in debug builds; `cargo test --release` runs it.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
 fn ai_vs_ai_matches_end_with_a_winner() {
     for seed in 1..=5 {
         let mut w = ai_vs_ai(seed, 2);
-        while w.tick() < 30 * 60 * 30 && w.game().unwrap().outcome() == Outcome::Running {
+        // S5b: 30 -> 40 min, the slices' match-length bound (seed 2 now
+        // ends at 32:26 with fire missions and map fire).
+        while w.tick() < 40 * 60 * 30 && w.game().unwrap().outcome() == Outcome::Running {
             w.step(&[]);
         }
         let g = w.game().unwrap();

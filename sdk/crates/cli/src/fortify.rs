@@ -8,10 +8,14 @@
 //!   the open 150 m away. They fight until one squad is gone or
 //!   [`RIFLE_FIGHT_S`] pass. Pass: the trench side's losses are at most
 //!   [`RIFLE_LIMIT_PCT`] % of the open side's.
-//! * **Mortar.** A [`BARRAGE_ROUNDS`]-round barrage from a mortar team
-//!   250 m away on a rifle squad, once in a trench and once in the open.
-//!   Pass: losses in the trench are at most [`MORTAR_LIMIT_PCT`] % of those
-//!   in the open.
+//! * **Mortar.** A [`BARRAGE_ROUNDS`]-round fire mission from a mortar
+//!   squad 250 m away on a rifle squad, once in a trench and once in the
+//!   open. S5b: the mortar's own leader sees the target, so the mission is
+//!   Direct: it lays, fires an adjusting round, waits for its burst and
+//!   then fires for effect. Pass: losses in the trench are at most
+//!   [`MORTAR_LIMIT_PCT`] % of those in the open. Reported beside it (no
+//!   threshold): the same mission after ranging on a reference point 40 m
+//!   off, so the fire for effect comes without a warning round.
 //! * **Grenade assault** (S1b). A rifle squad walks from [`ASSAULT_START_M`]
 //!   to [`ASSAULT_GAP_M`] in front of a dug-in rifle squad (variant
 //!   "advance"), or starts there (variant "at 25 m"). Once its lead
@@ -166,8 +170,9 @@ impl Default for FortifyArgs {
 pub struct FortifyReport {
     pub rifles: Experiment,
     pub mortar: Experiment,
-    /// S5b: the same barrage adjusting on the target itself (report only).
-    pub mortar_adjusted: Experiment,
+    /// S5b: the same mission after ranging on a reference point 40 m off
+    /// (report only: fire for effect without a warning round).
+    pub mortar_ranged: Experiment,
     pub grenade: GrenadeExperiment,
     pub smoke: SmokeExperiment,
     /// S3b: the MG-supported and the unsupported assault from 150 m.
@@ -486,7 +491,10 @@ fn mortar_run(
         },
     }]);
     if let Some(r) = w.snapshot().fire_mission_refusals.first() {
-        bail!("seed {seed}: the fire mission was refused: {}", r.refusal.text());
+        bail!(
+            "seed {seed}: the fire mission was refused: {}",
+            r.refusal.text()
+        );
     }
     while w.tick() < start + BARRAGE_S * hz {
         w.step(&[]);
@@ -533,7 +541,10 @@ fn range_in(w: &mut World, seed: u64, p: u8, m: SquadId, target: FxVec2) -> Resu
         },
     }]);
     if let Some(r) = w.snapshot().fire_mission_refusals.first() {
-        bail!("seed {seed}: the ranging mission was refused: {}", r.refusal.text());
+        bail!(
+            "seed {seed}: the ranging mission was refused: {}",
+            r.refusal.text()
+        );
     }
     let t0 = w.tick();
     let busy = |w: &World| {
@@ -570,7 +581,11 @@ fn range_in(w: &mut World, seed: u64, p: u8, m: SquadId, target: FxVec2) -> Resu
 pub(crate) fn place_observing(w: &mut World, m: SquadId, target: FxVec2, gap: i32) -> Result<()> {
     use frontline_sim::fire_mission::mode;
     for k in 0..36i32 {
-        let deg = if k % 2 == 0 { k / 2 * 10 } else { -(k / 2 + 1) * 10 };
+        let deg = if k % 2 == 0 {
+            k / 2 * 10
+        } else {
+            -(k / 2 + 1) * 10
+        };
         let a = Fx::from_ratio(deg as i64 * 314_159, 180 * 100_000);
         let (sn, cs) = a.sin_cos();
         let spot = target + FxVec2::new(cs, sn) * Fx::from_int(gap);
@@ -988,7 +1003,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let seeds = args.first_seed..args.first_seed + args.seeds as u64;
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
-    let mut mortar_adjusted = Vec::new();
+    let mut mortar_ranged = Vec::new();
     let mut assault = Vec::new();
     let mut smoke = Vec::new();
     let mut suppress = Vec::new();
@@ -1027,7 +1042,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
                 rules_override: args.rules_override.clone(),
                 ..SkirmishArgs::default()
             })?;
-            for (ranged, runs) in [(true, &mut mortar), (false, &mut mortar_adjusted)] {
+            for (ranged, runs) in [(false, &mut mortar), (true, &mut mortar_ranged)] {
                 let (dug, t_dug) = mortar_run(args, seed, side, true, ranged)?;
                 let (open, t_open) = mortar_run(args, seed, side, false, ranged)?;
                 for (trench, l, t) in [(true, dug, t_dug), (false, open, t_open)] {
@@ -1049,13 +1064,13 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         RIFLE_LIMIT_PCT,
     );
     let mortar = Experiment::new(
-        "10-round 81 mm barrage on a rifle squad: trench vs open (S5b: fire for effect after ranging on a reference point 40 m off)",
+        "10-round mortar mission on a rifle squad: trench vs open (S5b: Direct, adjusting on the target)",
         mortar,
         MORTAR_LIMIT_PCT,
     );
-    let mortar_adjusted = Experiment::new(
-        "the same barrage adjusting on the target itself (S5b, report only: the adjusting rounds warn the squad)",
-        mortar_adjusted,
+    let mortar_ranged = Experiment::new(
+        "the same mission after ranging on a reference point 40 m off (S5b, report only: no warning round)",
+        mortar_ranged,
         MORTAR_LIMIT_PCT,
     );
     let totals = |start: i32, g: bool, smoke: bool| {
@@ -1140,7 +1155,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         pass: rifles.pass && mortar.pass && smoke.pass,
         rifles,
         mortar,
-        mortar_adjusted,
+        mortar_ranged,
         grenade,
         smoke,
         suppress,
@@ -1150,7 +1165,11 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
 /// Human summary of a report (several lines, no trailing newline).
 pub fn summary_text(r: &FortifyReport) -> String {
     let mut out = String::new();
-    for e in [&r.rifles, &r.mortar, &r.mortar_adjusted] {
+    for (e, judged) in [
+        (&r.rifles, true),
+        (&r.mortar, true),
+        (&r.mortar_ranged, false),
+    ] {
         out += &format!("{}\n", e.name);
         out += "  seed  entrenched    target   trench_losses  open_losses  seconds\n";
         for run in &e.runs {
@@ -1172,7 +1191,12 @@ pub fn summary_text(r: &FortifyReport) -> String {
             e.trench_losses,
             e.open_losses,
             e.limit_pct,
-            if e.pass { "PASS" } else { "FAIL" }
+            match (judged, e.pass) {
+                (false, true) => "within (report only)",
+                (false, false) => "over (report only)",
+                (true, true) => "PASS",
+                (true, false) => "FAIL",
+            }
         );
     }
     let g = &r.grenade;

@@ -156,7 +156,8 @@ fn shipped_loads_and_stowage() {
     let team: Vec<u16> = ty.members[1..4].iter().map(|m| m.rounds[k]).collect();
     assert_eq!(team, vec![50, 500, 600]);
     assert!(ty.feeds.len() <= frontline_content::setup::MAX_FEEDS);
-    // Mortar teams: 15 bombs.
+    // Mortar squads: 20 bombs (S5b 5-man squads, S5b-5 (A); S5a's 3-man
+    // teams carried 15).
     for id in ["ww2:ger_mortar_team", "ww2:usa_mortar_team"] {
         let ty = &s.squad_types[s.squad_type_index(id).unwrap() as usize];
         let bombs: u32 = ty
@@ -166,7 +167,7 @@ fn shipped_loads_and_stowage() {
             .filter(|(_, f)| matches!(f, Feed::Cartridge(c) if s.cartridges[*c as usize].kind == SupplyKind::Shells))
             .map(|(k, _)| ty.members.iter().map(|m| m.rounds[k] as u32 * m.count as u32).sum::<u32>())
             .sum();
-        assert_eq!(bombs, 15, "{id}");
+        assert_eq!(bombs, 20, "{id}");
     }
 }
 

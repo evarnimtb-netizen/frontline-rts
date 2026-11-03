@@ -1,7 +1,7 @@
 # 8 cm Wurfgranate 34 for the GrW 34 (S5a): 3.5 kg. Kind "shells": in S5a
 # the base refills it at shell_mp_per_t (owner D1, Q4); from S6 it leaves
-# the base only in crates. Its burst stays on the weapon's [he] table until
-# S5b moves it here with FireMission.
+# the base only in crates. Its burst stays on the weapon's [he] table (S5b-8
+# (A): it moves here when a second bomb type, heavy HE or smoke, exists).
 id = "ww2:8cm_wgr34"
 name = "8 cm Wgr 34"
 caliber_mm = 81

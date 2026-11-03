@@ -302,9 +302,10 @@ fn tank_rearms_in_base_round_by_round_and_rare_rounds_stay_under_the_cap() {
 
 // ------------------------------------------------------------------ T7 --
 
-/// T7: a mortar with no resupply stops after the 15 bombs its team
-/// carries, the barrage order ending; in base the bombs come back one per
-/// `base_bomb_s` per man at the shells price.
+/// T7 (S5b T3): a mortar with no resupply stops after the 20 bombs its
+/// 5-man squad carries, the ammunition bearers' included, the fire mission
+/// ending; in base the bombs come back one per `base_bomb_s` per man at the
+/// shells price.
 #[test]
 fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
     let mut w = World::new_match(
@@ -318,25 +319,51 @@ fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
     .unwrap();
     let sq = spawn(&mut w, 0, "ww2:ger_mortar_team", xy(600, 500), EAST);
     let bombs = feed_slot(&w, sq, "ww2:8cm_wgr34");
-    assert_eq!(squad_rounds(&w, sq, bombs), 15);
+    assert_eq!(squad_rounds(&w, sq, bombs), 20);
     let carried: u32 = members(&w, sq)
         .iter()
         .map(|m| w.entities().kit()[m.index()].rounds[bombs] as u32)
         .sum();
-    assert_eq!(carried, 15);
+    assert_eq!(carried, 20);
+    // S5b: the two ammunition bearers carry 14 of them.
+    let s = w.match_setup().unwrap();
+    let ty = &s.squad_types[w.game().unwrap().squad(sq).unwrap().type_idx as usize];
+    let bearers: u32 = members(&w, sq)
+        .iter()
+        .map(|m| &w.entities().kit()[m.index()])
+        .filter(|k| {
+            ty.members[k.slot as usize].traits & frontline_content::setup::member_trait::AMMO_BEARER
+                != 0
+        })
+        .map(|k| k.rounds[bombs] as u32)
+        .sum();
+    assert_eq!(bearers, 14);
     w.step(&[Command {
         player: PlayerId(0),
         seq: 1,
         kind: CommandKind::FireMission {
             squad: sq,
-            target: xy(1000, 500),
+            // S5b: 300 m, inside the leader's observe range (a Direct
+            // mission; 400 m to the map edge was beyond it: unknown ground).
+            target: xy(900, 500),
             rounds: 50,
         },
     }]);
+    assert!(w.snapshot().fire_mission_refusals.is_empty());
+    // S5b: laying, one adjusting round (its 14 s flight and the wait),
+    // then fire for effect at 15 rounds a minute.
     for _ in 0..4000 {
         w.step(&[]);
     }
-    assert_eq!(fired(&w, 0, fired_class::MORTAR), 15);
+    assert_eq!(fired(&w, 0, fired_class::MORTAR), 20);
+    assert_eq!(
+        members(&w, sq)
+            .iter()
+            .map(|m| w.entities().kit()[m.index()].rounds[bombs] as u32)
+            .sum::<u32>(),
+        0,
+        "every carried bomb fired"
+    );
     assert!(matches!(
         w.game().unwrap().squad(sq).unwrap().order,
         frontline_sim::Order::Idle
@@ -351,15 +378,18 @@ fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
         .iter()
         .map(|m| w.entities().kit()[m.index()].rounds[bombs] as u32)
         .sum();
-    assert_eq!(back, 15, "3 men x one per 4 s: all back within 30 s");
+    assert_eq!(
+        back, 20,
+        "one per man per 4 s: a bearer's 7 within 28 s, all back within 30 s"
+    );
     let paid = w.game().unwrap().players()[0].ammo.paid[2] - paid0;
-    assert_eq!(paid, 15 * 3500 * 1000);
+    assert_eq!(paid, 20 * 3500 * 1000);
 }
 
 /// S5a Fix (review M2): a mortar brought into its base right after its
 /// last bomb gets no bomb until `supply.base_bomb_after_fire_s` (here 120
-/// s; ww2 ships 0 by S5a-42 (A)) after that shot, then all 15 back at the
-/// usual rate.
+/// s; ww2 ships 0 by S5a-42 (A)) after that shot, then all 20 (S5b) back
+/// at the usual rate.
 #[test]
 fn base_bombs_wait_after_the_mortar_fired() {
     let wait = 120u32;
@@ -378,13 +408,16 @@ fn base_bombs_wait_after_the_mortar_fired() {
         seq: 1,
         kind: CommandKind::FireMission {
             squad: sq,
-            target: xy(1000, 500),
+            // S5b: 300 m, inside the leader's observe range (a Direct
+            // mission; 400 m to the map edge was beyond it: unknown ground).
+            target: xy(900, 500),
             rounds: 50,
         },
     }]);
-    while fired(&w, 0, fired_class::MORTAR) < 15 {
+    assert!(w.snapshot().fire_mission_refusals.is_empty());
+    while fired(&w, 0, fired_class::MORTAR) < 20 {
         w.step(&[]);
-        assert!(w.tick() < 4000, "15 bombs fired");
+        assert!(w.tick() < 4000, "20 bombs fired");
     }
     let last = w.tick();
     assert!(w.place_squad(sq, base(&w, 0), EAST));
@@ -398,13 +431,13 @@ fn base_bombs_wait_after_the_mortar_fired() {
         w.step(&[]);
     }
     assert_eq!(held(&w), 0, "no bomb within the wait");
-    while w.tick() < last + (wait as u64 + 25) * 30 {
+    while w.tick() < last + (wait as u64 + 30) * 30 {
         w.step(&[]);
     }
     assert_eq!(
         held(&w),
-        15,
-        "all back 25 s after the wait (3 men, one per 4 s)"
+        20,
+        "all back 30 s after the wait (one per man per 4 s, a bearer's 7)"
     );
 }
 

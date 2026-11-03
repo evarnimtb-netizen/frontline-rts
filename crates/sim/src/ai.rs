@@ -1471,10 +1471,9 @@ impl Planner<'_> {
             .or_else(|| points.iter().max_by_key(|p| p.priority))
             .map(|p| p.pos);
         // S4: squads that can barrage (a member carries a mortar).
-        for m in mine
-            .iter()
-            .filter(|m| s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::FireMission))
-        {
+        for m in mine.iter().filter(|m| {
+            s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::FireMission)
+        }) {
             let sq = &g.squads[&m.id];
             if matches!(sq.order, Order::FireMission { .. }) {
                 continue;

@@ -17,12 +17,15 @@
 //!   (`frontline_sim::scenarios`) with hard checks and report rows.
 //! * [`desync_diff`] compares two sim saves field by field (multiplayer
 //!   desync dumps, S2).
+//! * [`mortar_bench`] (S5b) fires the same mortar mission observed and as
+//!   map fire and compares the misses (the 3x rule).
 
 pub mod armour_test;
 pub mod ballistics;
 pub mod desync_diff;
 pub mod fortify;
 pub mod lower;
+pub mod mortar_bench;
 pub mod overrides;
 pub mod report;
 pub mod s3c_tally;
@@ -34,5 +37,6 @@ pub mod validate;
 pub use armour_test::{ArmourArgs, armour_test};
 pub use ballistics::BallisticsArgs;
 pub use fortify::{FortifyArgs, fortify_test};
+pub use mortar_bench::{BenchArgs, mortar_bench};
 pub use simulate::{SimulateArgs, simulate};
 pub use skirmish::{SkirmishArgs, skirmish};
