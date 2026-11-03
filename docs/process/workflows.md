@@ -67,9 +67,9 @@ engine Build, Review or Fix.
   throughput of `--jobs 3`, identical results, ~33 MB for six matches).
   Tick-time figures only from a clean `--jobs 3` run with nothing else
   running.
-- Batch CLI built with `--profile bench-release` once the tuner session has
-  confirmed identical results and a real speed gain (first clean timing
-  showed none).
+- The batch CLI stays the normal release build: `bench-release` (thin LTO,
+  codegen-units 1) gave identical results but no speed gain at `--jobs 6`
+  (tuner-fix session, 2026-11-03).
 - Tuning goes through `tools/autotune` (free local matches); agents pick the
   knobs, ranges and targets and read the report.
 - Agents run quick checks only; the orchestrator runs the full suite with

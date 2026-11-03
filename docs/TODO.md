@@ -66,8 +66,10 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 
 1. Infra step: `--json` results, `frontline-cli targets`, `tools/check.sh`,
    `docs/STATE.md` (workflow staged).
-2. Autotune fix (session `tuner-fix`, branch `claude/tuner-fix`, paused):
-   pooled logistic fit, synthetic proof done; real run and timing left.
+2. Autotune fix done (branch `claude/tuner-fix`, `c72f91d`, merged by the
+   infra step): pooled logistic fit, synthetic proof, real run. The real run
+   puts Germany at 50 % with German infantry cards x0.959 [0.913-0.999]
+   (today's prices: 44.9 % [40.0-49.9]); input for S6 Tune, not shipped.
 3. S6 HQ and ammo crates (`docs/design/roster/roster-expansion.md` S6 card).
 4. Sim profiling: deferred until after S6 (owner 2026-11-03).
 
