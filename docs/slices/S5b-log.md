@@ -351,3 +351,16 @@ rds", strip "OBS Ranging 2 · ±3 m · 15.1 s", the ranging bar about 85 %).
 - The HUD's preview runs `fire_preview` on the sim thread when a frame is
   published; it never touches the tick, but it does cost up to 4 + 8 rays
   per frame while the tool is armed.
+
+## Tune (one round, no data changed)
+
+See `docs/slices/S5b-mortars.md` "Tune results" for the numbers. In short:
+the Part B binary and data were re-checked (the 40 set reproduces all 40
+hashes; fortify-test, armour-test `--seeds 5` and `--stress --seeds 10`
+pass, case 14 p99 1.647 ms), four A/B probes on a fresh set (seeds
+201-280) and on all three 160 sets showed that no mortar lever and no 9 %
+infantry price cut moves the German share (pooled 45.4 % on 480; set spread
+4.7 points), and the one `no_bombs` AI refusal is a crew-wipe race (seed 8,
+tick 12,420, squad with one man left). T4 and T5 (out of sample) stay open
+as S5b-22 (A) and the new S5b-23. Raw outputs: scratchpad `s5b/tune/`
+(`x_*` probes, `r1_*` re-checks, `seeds/` per-seed 40-set runs).

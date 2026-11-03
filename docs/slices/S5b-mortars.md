@@ -687,6 +687,94 @@ fortify-test `--seeds 10`.
 
 ---
 
+## Tune results
+
+Stage TUNE, one round, **no data changed**. HEAD `0df7568` (the Part B
+binary, data unchanged) was re-checked and then probed with four A/B
+variants. Two targets stay open and the Tune stage found no lever inside
+its remit that moves them (below).
+
+**Re-check of `0df7568`.** The 40 set (`--jobs 3 --minutes 45`) reproduces
+every one of the 40 match hashes of the Part B final run, so the Part B
+numbers for the 40, the 160 (seeds 1-80) and the out-of-sample 160 (seeds
+101-180) stand as measured (the same binary and data cannot change a
+deterministic hash; only timing varies). fortify-test `--seeds 10`: PASS,
+output identical to Part B (mortar row 45 vs 114 = 39.5 %, limit 40 %).
+armour-test `--seeds 5`: all hard checks pass (229.7 s), case 9 is 23 vs 84
+= 27.4 %. armour-test `--stress --seeds 10`: all pass (446.3 s), case 9 is
+46 vs 164 = 28.0 %, case 14 p99 1.647 ms (limit 10 ms; Part B 1.516 ms,
+timing varies with machine load).
+
+**Targets after the round (unchanged from Part B):** T1-T3, T6-T8, T10-T16
+met. **T5** misses out of sample (Germany 40.6 %, seeds 101-180; 47.5 % on
+1-80, 40.0 % on the 40 set). **T4** misses by one AI order per 160 matches
+refused `no_bombs`. Neither is a data fault, see below.
+
+**T5, the German share.** A third untouched set was added (seeds 201-280,
+both bases, 160 matches) so the three 160 sets can be pooled.
+
+| Set (160 matches) | Germany wins | Base 1 wins |
+|---|---|---|
+| seeds 1-80 | 76 (47.5 %) | 86 |
+| seeds 101-180 | 65 (40.6 %) | 97 |
+| seeds 201-280 | 77 (48.1 %) | 87 |
+| pooled (480) | 218 (45.4 %, standard error 2.3) | 270 (56.3 %) |
+
+Germany wins 39.2 % of the matches where it starts in base 0 and 51.7 %
+where it starts in base 1 (240 each): base 1 is worth about 6 points to
+whoever holds it (T6 passes, 53.8-60.6 %), and the German deficit is what
+remains after the two bases cancel, about 4-5 points (S5a-37 recorded the
+same lean: 45.6 % on 1-80, 50.0 % out of sample, 42.5 % on the 40 set).
+It is not caused by the mortars: Germany and the USA kill the same absolute
+number of men with mortars per match (5.3 % of about 110 and 4.8 % of about
+130 kills), the old 21.8 / 18.2 % edge came with the base battery that the
+observer rule has removed (bombs fired from inside the own base: 37-39 % in
+Part A, 6-9 % now).
+
+Four A/B probes (`--rules-override`, `--jobs 3`, German wins out of 160):
+
+| Probe | Result | Mortar numbers |
+|---|---|---|
+| baseline, seeds 201-280 | 77 | 62.7 / 56.9 bombs per match (G / US), 5.3 / 4.8 % of kills |
+| `[ai.mortar] mission_rounds` 6 -> 8 | 66 | missions 11.3 / 9.0 per match, bombs 73.0 / 61.2, 5.8 / 5.2 % of kills, HE share 15.3 % |
+| German mortar card 240 -> 180 (-25 %) | 72 | bombs 79.9 / 53.4 per match |
+| German bombs 20 -> 24 (2 + 4 + 9 + 9; the MID 1943 source says 24 are usually carried) | 75 | bombs 70.8 / 55.4 |
+| `ww2:ger_grenadiergruppe` 225 -> 205 (-9 %), all three sets | 83 / 65 / 69 = 217 | vs baseline 76 / 65 / 77 = 218 |
+
+None of them moves the pooled share: a quarter off the mortar card and
+9 % off the main infantry card (bought about 5 times a match) change
+nothing beyond the spread. That spread is large: the same price change
+moved single sets by +7, 0 and -8 wins (SD about 7.5 wins = 4.7 points,
+against 3.9 points of binomial error for 160 matches), because any change
+re-orders the AI's random draws. At that noise a 45-55 % band on a single
+160 set is a lottery for a side whose true share is about 45-46 %
+(roughly a one in two chance of a pass), and every lever in the Tune remit
+(mortar card cost, bombs carried, error and ranging percentages, observe
+ranges, AI mission thresholds) was shown or argued to have no effect on it
+(`map_fire_min_pct` 85 in Part B: +1 win). Choosing the variant that lands
+in band on all three sets would be fitting noise, so none was shipped.
+Owner question **S5b-23** records the options (the lever has to be an
+infantry or rifle-versus-bolt-action change, the S5a-37 (B) and (C) family,
+not a mortar one).
+
+**T4, the one refusal.** Found by running each seed of the 40 set alone:
+seed 8, German side, `no_bombs` at tick 12,420. The refused squad had one
+member left (its leader; the crew and all bomb carriers had fallen) in the
+reaction delay between the AI's plan, which saw at least 2 bombs, and the
+order's arrival. The sim is right to refuse and the AI cannot know that its
+crew will fall. The order is dropped and the next plan sees the dead crew;
+rate 1 to 3 per 160 matches (Germany 2 and USA 1 in seeds 201-280). S5b-22
+stays (A): accept as a race. No code was changed (a temporary debug print
+used to find it was reverted; the rebuilt binary is byte-identical to the
+Part B one).
+
+**Not tuned, on purpose:** the owner's base battery lever stays 0; ammo
+prices untouched; the 20 % German cut untouched; mortar kill share (4.6-5.5 %
+of kills, S5b-17) is not one of the targets and the HE share (13-14 %,
+limit 26.3 %) has room, so no lethality change was made.
+
+---
+
 ## Implementation order
 
 Two parts, a commit at each numbered step that leaves the tree green.

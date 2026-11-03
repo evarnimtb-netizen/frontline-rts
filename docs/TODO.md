@@ -1061,6 +1061,20 @@ price cut kept). Work proceeds on (A) of each question below.
   the match and guard against it (e.g. no mission while the squad is
   under fire).
 
+- [ ] **S5b-23. German share is a lean of about 4-5 points, not a mortar
+  effect (Tune stage).** Pooled over 480 matches (seeds 1-80, 101-180,
+  201-280) Germany wins 45.4 % (218; standard error 2.3); 39.2 % from base 0
+  and 51.7 % from base 1 (base 1 is worth about 6 points to either side).
+  Four probes (mortar card -25 %, 24 German bombs, 8-round AI missions,
+  Grenadiergruppe -9 %) left it unchanged within the 4.7-point spread of one
+  160 set, so a 45-55 % band per set cannot be met by tuning mortar data;
+  S5a-37 recorded the same lean. (A) Accept: judge the German share on
+  pooled sets of 320+ matches (Part B: 44.1 % on 320, S5a: 48.1 %). (B) A
+  German infantry lever in the S5a-37 family (a further card cut, or the
+  bolt-action rate of fire / MG 42 stat last), measured on 480+ matches.
+  (C) Cut the US rifle squad price. Not touched: the owner keeps the 20 %
+  cut (S5a-37) and chose the cost-balanced order.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an
