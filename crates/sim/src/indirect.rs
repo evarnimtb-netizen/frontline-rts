@@ -107,6 +107,18 @@ pub fn solve(ind: &IndirectSetup, from: FxVec3, to: FxVec3) -> Option<Shot> {
     None
 }
 
+/// S5b: an upper bound on any bomb's time of flight (whole seconds): the
+/// level-ground maximum `2 v / g` of the highest charge (at 90 deg), plus
+/// 20 s for a target up to 1,000 m below the muzzle (`sqrt(2 H / g)` is
+/// 14.3 s). The load check of a saved mission bounds its burst deadline
+/// with it (Review L1: a fixed 60 s refused saves of modded long-flight
+/// mortars).
+pub fn flight_bound_s(ind: &IndirectSetup) -> u64 {
+    let v = ind.charges.iter().map(|c| c.0).max().unwrap_or(0).max(0) as u64;
+    // 2 v / 9.81 with v raw Q16.16, rounded up.
+    (v * 200).div_ceil(981 << Fx::FRAC_BITS) + 20
+}
+
 #[cfg(test)]
 // The f64 reference and the miss in metres are test-side only.
 #[allow(clippy::float_arithmetic)]
@@ -255,5 +267,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Review L1: a modded long-flight table (it passes `validate`) flies
+    /// past 60 s; the bound covers every solved flight, drops included.
+    #[test]
+    fn flight_bound_covers_long_modded_tables() {
+        let ind = IndirectSetup::lower(&frontline_content::defs::IndirectDef {
+            charges_m_s: vec![100, 300],
+            elevation_deg: [45, 89],
+        });
+        let bound = flight_bound_s(&ind) as f64;
+        let mut longest = 0.0f64;
+        for r in (40..=5000).step_by(20) {
+            for h in [-200i32, 0, 50] {
+                let from = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_int(300));
+                let to = FxVec3::new(Fx::from_int(r), Fx::ZERO, Fx::from_int(300 + h));
+                if let Some(s) = solve(&ind, from, to) {
+                    let t = s.flight.raw() as f64 / 65536.0;
+                    longest = longest.max(t);
+                    assert!(t <= bound, "{r} m, h {h}: {t} s > {bound} s");
+                }
+            }
+        }
+        assert!(
+            longest > 60.0,
+            "the table should fly past 60 s, longest {longest}"
+        );
+        // The ww2 tables stay under the old fixed 60 s window.
+        assert!(flight_bound_s(&grw34()) + 4 <= 60);
+        assert!(flight_bound_s(&m1()) + 4 <= 64);
     }
 }

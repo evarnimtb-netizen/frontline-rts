@@ -176,8 +176,9 @@ func _draw_fire_preview(state: Dictionary) -> void:
 	_ring(at, 0.6, 0.4, Color(UiPalette.TEXT, 0.9), 10)
 	if mode == "observed" and fp.has("observer_pos"):
 		var o: Vector3 = fp.observer_pos
-		_dashed(fp.gunner_pos, o, 0.12, Color(HudStyle.ACCENT, 0.7), 1.5, 1.0)
-		_dashed(o, at, 0.1, Color(HudStyle.ACCENT, 0.45), 1.0, 1.4)
+		var px := _m_per_px(o)
+		_dashed(fp.gunner_pos, o, maxf(0.12, 1.5 * px), Color(HudStyle.ACCENT, 0.9), maxf(1.5, 10.0 * px), maxf(1.0, 6.0 * px))
+		_dashed(o, at, maxf(0.1, 1.0 * px), Color(HudStyle.ACCENT, 0.7), maxf(1.0, 8.0 * px), maxf(1.4, 7.0 * px))
 
 
 ## S5b: observer link lines of selected own mortars on a mission:
@@ -190,15 +191,36 @@ func _draw_mission_links(view: MatchView, sel: Node) -> void:
 		if m.is_empty() or String(m.get("mode", "")) == "direct" or not m.has("gunner_pos"):
 			continue
 		var g: Vector3 = m.gunner_pos
-		var col := Color(HudStyle.ACCENT, 0.8)
+		var col := Color(HudStyle.ACCENT, 0.95)
+		# At least 3 px wide (2 px for the thin legs) with a dark outline:
+		# 0.1 m lines were a broken 1 px trace from the 330 m camera
+		# (review L4).
+		var px := _m_per_px(g)
 		if m.has("observer_pos"):
 			var o: Vector3 = m.observer_pos
-			_line(g, o, 0.1, col)
+			var w := maxf(0.1, 1.5 * px)
+			_line(g, o, w + px, Color(0.0, 0.0, 0.0, 0.4))
+			_line(g, o, w, col)
 			if m.has("target"):
-				_dashed(o, m.target, 0.08, Color(col, 0.5), 1.0, 1.4)
+				_dashed(o, m.target, maxf(0.08, 1.0 * px), Color(col, 0.75), maxf(1.0, 8.0 * px), maxf(1.4, 7.0 * px))
 		elif m.has("target"):
 			# The link is broken (map fire, or the observer fell).
-			_dashed(g, m.target, 0.08, Color(UiPalette.DANGER, 0.6), 0.4, 1.6)
+			_dashed(g, m.target, maxf(0.08, 1.0 * px), Color(UiPalette.DANGER, 0.85), maxf(0.4, 3.0 * px), maxf(1.6, 8.0 * px))
+
+
+## S5b (review L4): metres per screen pixel at `at`, for lines that must
+## keep a minimum on-screen width. 0 without a camera (headless tests).
+func _m_per_px(at: Vector3) -> float:
+	if not is_inside_tree():
+		return 0.0
+	var cam := get_viewport().get_camera_3d()
+	var h := get_viewport().get_visible_rect().size.y
+	if cam == null or h <= 0.0:
+		return 0.0
+	if cam.projection == Camera3D.PROJECTION_ORTHOGONAL:
+		return cam.size / h
+	var dist := cam.global_position.distance_to(at)
+	return 2.0 * dist * tan(deg_to_rad(cam.fov) * 0.5) / h
 
 
 ## Net mode (S2): an order sent but not executed yet. A ring of dashes

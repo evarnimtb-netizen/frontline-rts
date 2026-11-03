@@ -939,7 +939,7 @@ Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
   wounded man and the one-man card shows health. (B) A wider detail panel
   or a single-column list that keeps both.
 
-## S5b-mortars (in progress, branch `s5b-mortars`; Parts A and B done, Fix stage next; owner questions open)
+## S5b-mortars (done, branch `s5b-mortars` pushed; owner questions open; log `docs/slices/S5b-log.md`)
 
 Spec: `docs/slices/S5b-mortars.md` (baseline, Barrage code map, data model,
 sim rules, saves, AI, HUD, the `mortar-bench`, content with sources,
@@ -1074,6 +1074,24 @@ price cut kept). Work proceeds on (A) of each question below.
   bolt-action rate of fire / MG 42 stat last), measured on 480+ matches.
   (C) Cut the US rifle squad price. Not touched: the owner keeps the 20 %
   cut (S5a-37) and chose the cost-balanced order.
+- [ ] **S5b-24. Mission accuracy comes mostly from the observer at order
+  time (review L3).** The mortar-bench's observed mission with every burst
+  hidden misses 14.7 m, observed 10.6 m, map fire 32.4 m: about 80 % of the
+  3x gap comes from having an observer when the order is given (the
+  observed start error), and seeing the bursts land is worth about 1.4x.
+  In AI play 35 % / 28 % of missions (Germany / USA) are downgraded to map
+  fire after the order and keep the observed start error (S5b-15 (A)), so
+  by bomb only about 53 / 57 % are observed or direct while T11 counts 75 /
+  76 % of missions. The skirmish summary now prints the share by bomb too.
+  (A) Keep (the observer passed his data before he lost sight; T11 stays
+  per mission, the per-bomb share is reported beside it). (B) S5b-15 (B):
+  re-draw the error at the map-fire size on a downgrade, or grow the offset
+  toward it while no observer sees the bursts.
+- [ ] **S5b-25. Mortar HUD at 1280x800 on the real bridge.** The review's
+  autoplay could not force 1280x800 (Godot kept the 1600x900 window); the
+  real 5-man card and strip are verified at 1600x900 only. The mock
+  stagings (now the 5-man, 240 MP, 2/4/7/7 mortar) are shot at both sizes.
+  (A) Check it in the S6 owner play test. (B) An autoplay size option.
 
 ## S3 owner checklist (needs a person)
 

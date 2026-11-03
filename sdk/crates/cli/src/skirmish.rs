@@ -2144,7 +2144,7 @@ pub fn many_text(r: &ManyReport) -> String {
         let base: u64 = q.base_bombs.iter().sum();
         out += &format!(
             "S5b {}: missions {} ({:.1}/match): direct {}, observed {}, map {} ({:.1} % observed+direct); refused {} [{}]\n\
-             S5b {}: bombs {} ({:.1}/match): direct {}, observed {}, map {}; mean planned miss m: direct {:.1}, observed {:.1}, map {:.1}\n\
+             S5b {}: bombs {} ({:.1}/match): direct {}, observed {}, map {} ({:.1} % observed+direct by bomb); mean planned miss m: direct {:.1}, observed {:.1}, map {:.1}\n\
              S5b {}: adjusting rounds {}, bursts seen {} / unseen {}, upgrades {}, downgrades {}, no solution {}, mean flight {:.1} s\n\
              S5b {}: bombs from inside the own base {} ({:.1} % of bombs; direct {}, observed {}, map {})\n",
             f.faction,
@@ -2162,6 +2162,7 @@ pub fn many_text(r: &ManyReport) -> String {
             q.bombs[0],
             q.bombs[1],
             q.bombs[2],
+            (q.bombs[0] + q.bombs[1]) as f64 * 100.0 / bombs.max(1) as f64,
             miss(0),
             miss(1),
             miss(2),

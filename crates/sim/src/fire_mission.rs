@@ -483,8 +483,16 @@ impl MatchState {
             .unwrap_or_else(|| sq.lead(ents));
         let gp = ents.transform[g.index()].pos.xy();
         let range = (target - gp).length();
-        let walk = range > Fx::from(w.range_max);
-        let spread = range.mul(w.spread.into()).div_int(2);
+        let max = Fx::from(w.range_max);
+        let walk = range > max;
+        // Beyond range the team walks to 90 % of it and fires from there
+        // (`order_fire_mission`): the error and spread are of that range.
+        let fire_range = if walk {
+            range.min(max.mul_int(9).div_int(10))
+        } else {
+            range
+        };
+        let spread = fire_range.mul(w.spread.into()).div_int(2);
         let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
             return Some(FirePreview {
                 refusal,
@@ -502,7 +510,7 @@ impl MatchState {
         } else {
             self.mode_for(ents, terrain, id, gp, target, tick)
         };
-        let mut error = start_error(fm, md == mode::MAP, range);
+        let mut error = start_error(fm, md == mode::MAP, fire_range);
         let mut ranged = false;
         if md != mode::MAP {
             let mut cells = sq.ranging.clone();

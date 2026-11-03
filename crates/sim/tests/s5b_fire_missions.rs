@@ -324,6 +324,27 @@ fn unknown_ground_is_refused_and_known_ground_is_map_fire() {
     );
 }
 
+/// Review L2: a mission ordered beyond range walks the team to 90 % of the
+/// range and fires from there, so its start error is that of 540 m (map
+/// fire: 8 % = 43.2 m), not of the 800 m at order time (64 m).
+#[test]
+fn a_mission_beyond_range_starts_with_the_error_of_its_firing_range() {
+    let mut w = World::new_match(
+        setup_with(|s| s.rules.fire_mission.as_mut().unwrap().observe_leader_m = 100),
+        1,
+    )
+    .unwrap();
+    let sq = mortar(&mut w);
+    assert!(w.place_squad(sq, xy(150, TUBE.1), EAST));
+    let target = xy(950, TUBE.1);
+    assert!(w.mark_intel(PlayerId(0), target));
+    assert_eq!(order(&mut w, sq, target, 1), None);
+    let m = mission(&w, sq).unwrap();
+    assert_eq!(m.mode, mode::MAP);
+    let e = metres(m.err0);
+    assert!((42.9..=43.5).contains(&e), "start error {e} m");
+}
+
 /// The other refusals: inside the minimum range, off the map, no bombs, a
 /// squad without a mortar.
 #[test]

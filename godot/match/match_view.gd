@@ -85,7 +85,7 @@ const MAN_NAMES := {
 	"rifle": ["Sgt (lead)", "Rifle 2", "Rifle 3", "Rifle 4", "Rifle 5", "Rifle 6", "Rifle 7", "Rifle 8"],
 	"mg": ["Gunner", "Loader", "Carrier"],
 	"engineer": ["Sgt (lead)", "Sapper 2", "Sapper 3", "Sapper 4", "Sapper 5"],
-	"mortar": ["Gunner", "Loader", "Carrier"],
+	"mortar": ["Leader", "Gunner", "Assistant", "Bearer 4", "Bearer 5"],
 	"at": ["Gunner", "Loader"],
 	"crew": ["Crewman 1", "Crewman 2", "Crewman 3", "Crewman 4", "Crewman 5"],
 }

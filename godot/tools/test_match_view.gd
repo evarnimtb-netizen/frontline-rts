@@ -1321,6 +1321,12 @@ func _test_s5b() -> void:
 func _test_s4() -> void:
 	var ci: Control = _view.call_in
 	_source.players[0].manpower = 2000.0
+	# The mock mortar is 5 men since S5b (review L5): free room under the
+	# pop cap (4 of the engineers, unused from here on) so these checks
+	# test the cards and their cooldowns, not the cap.
+	var eng_men: PackedInt32Array = _source.unit_ids(_source.squad_ids(0, "engineer")[0])
+	for k in mini(4, eng_men.size()):
+		_source.kill_soldier(eng_men[k])
 	await _frames(2)
 	var cat: Array = _view.state.callin.catalog
 	var full: int = ci.index_of_id("ww2:ger_rifle")
@@ -1347,7 +1353,7 @@ func _test_s4() -> void:
 	# The MG card bought earlier is on its cooldown; its sibling is not.
 	var mg_i: int = ci.index_of_id("ww2:ger_mg")
 	var heavy_i: int = ci.index_of_id("ww2:ger_mg_heavy")
-	_check(float(cat[mg_i].get("cooldown_s", 0.0)) > 0.0 and ci.ring_frac(heavy_i) == 0.0 and ci.is_ready(heavy_i), "S4: a sibling card is ready while the other is on cooldown (own cooldowns)")
+	_check(float(cat[mg_i].get("cooldown_s", 0.0)) > 0.0 and ci.ring_frac(heavy_i) == 0.0 and ci.is_ready(heavy_i), "S4: a sibling card is ready while the other is on cooldown (own cooldowns; heavy MG: '%s')" % ci.blocked_reason(cat[heavy_i]))
 	var newest := -1
 	for sid in _source.squad_ids(0, "rifle"):
 		newest = maxi(newest, sid)

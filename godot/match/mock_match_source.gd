@@ -29,7 +29,7 @@ const CATALOG := [
 	{"type": "rifle", "name": "Rifle squad", "cost": 120, "recall_s": 24.0, "men": 8},
 	{"type": "mg", "name": "MG team", "cost": 150, "recall_s": 36.0, "men": 3},
 	{"type": "engineer", "name": "Engineer squad", "cost": 140, "recall_s": 36.0, "men": 5},
-	{"type": "mortar", "name": "Mortar team", "cost": 200, "recall_s": 60.0, "men": 3},
+	{"type": "mortar", "name": "Granatwerfergruppe", "cost": 240, "recall_s": 60.0, "men": 5},
 	{"type": "at", "name": "AT team", "cost": 200, "recall_s": 48.0, "men": 2},
 	# S4: a second card for two roles (one tile per card, keyed by `id`;
 	# each card its own cooldown, Q21 (B)).
@@ -61,6 +61,10 @@ const WEAPON := {"rifle": "rifle", "mg": "mg", "engineer": "smg", "at": "rifle",
 ## stands for the team's belts), the weapon in hand, and the share under
 ## which the card shows LOW (rules `supply.low_pct`).
 const ROUNDS := {"rifle": 60, "mg": 1150, "engineer": 192, "at": 60, "crew": 16, "mortar": 15}
+## S5b (mock): bombs per formation slot of the 5-man mortar squad, as
+## mods/ww2 ger_mortar_team.toml (leader none, gunner 2, assistant 4, two
+## bearers 7 each: 20).
+const MORTAR_BOMBS := [0, 2, 4, 7, 7]
 const ROUNDS_WEAPON := {"rifle": "Kar98k", "mg": "MG 42", "engineer": "MP 40", "at": "Kar98k", "crew": "P 38", "mortar": "GrW 34"}
 const LOW_PCT := 30
 ## AT launcher reload (S3: 8 s with the loader).
@@ -1161,24 +1165,36 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 		var b: Dictionary = sq.barrage
 		b.t -= dt
 		if b.t <= 0.0:
-			b.fired += 1
-			b.rounds -= 1
-			_effects.append({"kind": "mortar_launch", "pos": _v3(sq.pos)})
-			var tgt: Vector2 = b.target + b.offset + Vector2(rng.randfn(0, 5), rng.randfn(0, 5))
-			_shells.append({"t": 2.5, "pos": tgt, "owner": sq.owner})
-			if b.mode != "map":
-				b.offset *= 0.5
-				b.seen += 1
-			if b.phase == "laying":
-				b.phase = "adjusting" if b.mode != "map" else "effect"
-			if b.phase == "adjusting":
-				b.adjust += 1
-				if b.offset.length() <= 10.0:
-					b.phase = "effect"
-			b.t = 6.0 if b.phase == "adjusting" else 3.5
-			if b.rounds <= 0:
+			# One bomb a round, from the gunner first, then his crew (the
+			# sim's take_bomb); none left: the mission ends.
+			var bearer: Dictionary = {}
+			for slot in [1, 2, 3, 4, 0]:
+				for man in sq.men:
+					if int(man.slot) == slot and int(man.rounds) > 0 and bearer.is_empty():
+						bearer = man
+			if bearer.is_empty():
 				sq.order = "idle"
 				sq.barrage = {}
+			else:
+				bearer.rounds = int(bearer.rounds) - 1
+				b.fired += 1
+				b.rounds -= 1
+				_effects.append({"kind": "mortar_launch", "pos": _v3(sq.pos)})
+				var tgt: Vector2 = b.target + b.offset + Vector2(rng.randfn(0, 5), rng.randfn(0, 5))
+				_shells.append({"t": 2.5, "pos": tgt, "owner": sq.owner})
+				if b.mode != "map":
+					b.offset *= 0.5
+					b.seen += 1
+				if b.phase == "laying":
+					b.phase = "adjusting" if b.mode != "map" else "effect"
+				if b.phase == "adjusting":
+					b.adjust += 1
+					if b.offset.length() <= 10.0:
+						b.phase = "effect"
+				b.t = 6.0 if b.phase == "adjusting" else 3.5
+				if b.rounds <= 0:
+					sq.order = "idle"
+					sq.barrage = {}
 	# Small arms (whole squad, from the anchor).
 	if enemy != -1 and status != "pinned" and not sq.men.is_empty():
 		sq.fire_t -= dt
@@ -1767,6 +1783,11 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 		# S5a: the weapon in hand and its rounds, the fire mode.
 		out.active_weapon = ROUNDS_WEAPON.get(sq.type, "Kar98k")
 		out.rounds = int(man.rounds)
+		if sq.type == "mortar" and int(man.slot) == 0:
+			# S5b: the mortar's leader carries no bombs, his MP 40 (mock:
+			# a full load, outside the squad's bomb count).
+			out.active_weapon = "MP 40"
+			out.rounds = int(ROUNDS.engineer)
 		out.sidearm = false
 		out.fire = man.fire
 		if man.detached:
@@ -1787,6 +1808,8 @@ func _rounds_full(type: String, slot: int) -> int:
 		return 0
 	if type == "mg":
 		return int(ROUNDS.mg)
+	if type == "mortar":
+		return int(MORTAR_BOMBS[slot]) if slot < MORTAR_BOMBS.size() else 0
 	return int(ROUNDS.get(type, 60))
 
 

@@ -1209,8 +1209,15 @@ impl MatchState {
             let gp = ctx.ents.transform[g.index()].pos.xy();
             let (mode0, obs) = self.mode_for(ctx.ents, ctx.terrain, id, gp, target, ctx.tick);
             let hz = self.setup.tick_hz;
-            // The start error grows with the range from the tube.
+            // The start error grows with the range from the tube; beyond
+            // range the team walks to 90 % of it first and fires from there
+            // (Review L2).
             let range = (target - gp).length();
+            let range = if dist > max {
+                range.min(max.mul_int(9).div_int(10))
+            } else {
+                range
+            };
             let err = crate::fire_mission::start_error(fm, mode0 == mode::MAP, range);
             let mut cells = std::mem::take(&mut self.squads.get_mut(&id).expect("owned").ranging);
             crate::fire_mission::prune_ranging(&mut cells, fm, ctx.tick, hz, gp);
@@ -2080,13 +2087,20 @@ impl MatchState {
         let charges = w.indirect.as_ref().map_or(1, |i| i.charges.len());
         let hz = s.tick_hz as u64;
         let prep = fm.fire_direction_s.max(fm.direct_s).max(fm.adjust_wait_s) as u64 * hz;
+        // The burst deadline is the flight plus 4 s (`combat.rs`); the
+        // weapon's longest possible flight bounds it (Review L1).
+        let flight_s = w
+            .indirect
+            .as_ref()
+            .map_or(0, crate::indirect::flight_bound_s);
+        let burst_window = (flight_s + 4).max(60) * hz;
         (m.mode as usize) < mode::COUNT
             && m.phase <= phase::EFFECT
             && m.id != 0
             && m.id < self.next_mission
             && m.order_tick <= tick
             && m.ready_at <= tick + prep
-            && m.burst_by <= tick + 60 * hz
+            && m.burst_by <= tick + burst_window
             && m.adjust as u32 <= fm.adjust_rounds_max
             && (m.charge as usize) < charges
             && m.offset.length() <= crate::fire_mission::max_error(fm, s.map.size_m)
