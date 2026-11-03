@@ -1043,6 +1043,23 @@ price cut kept). Work proceeds on (A) of each question below.
   (the bombs land 20-30 s later); (4) trench cells score 30 + 10 per manned
   neighbour cell (cells keep no head count). (A) Keep all four. (B) Back
   to the spec's rules one by one.
+- [ ] **S5b-21. Balance after S5b (T5 out of sample).** Final Part B:
+  Germany 40.0 % (40 set), 47.5 % (seeds 1-80), **40.6 %** (101-180, base 1
+  60.6 %); 44.1 % over the 320 (S5a final 48.1 %). A change that only
+  re-orders the AI's random draws moved the out-of-sample set by up to 12
+  wins, so the sets carry more spread than their standard error.
+  `map_fire_min_pct` 85 did nothing (+1 win). (A) Leave the data; the
+  Fix stage or S6 re-measures on a larger set (e.g. 320 out of sample)
+  before choosing a lever. (B) A German lever now (AI mortar data first,
+  then `[fire_mission]` values, then card costs; the 20 % cut stays).
+- [ ] **S5b-22. One AI fire mission refused for no bombs.** One AI order
+  per 160 matches (Germany, a seed in 1-20) is refused `no_bombs`: the
+  squad held at least 2 bombs when the AI planned, none a reaction delay
+  later (most likely the bomb carriers fell in that second). Unknown
+  ground is never refused now (the AI orders only at intel cells and
+  capture points). (A) Accept as a race of the reaction delay. (B) Find
+  the match and guard against it (e.g. no mission while the squad is
+  under fire).
 
 ## S3 owner checklist (needs a person)
 

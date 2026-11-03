@@ -196,3 +196,158 @@ sets (Part B).
   save, hash and load checks.
 - `mortar-bench` takes `--rules-override`; a full 50-seed run is 90 s at
   `--jobs 3`.
+
+## Part B: AI missions and spotters, HUD tool, Godot tests, measure
+
+Commits `b15dc4d` and `e30bbff` on `s5b-mortars` (plus this log). No
+version bump: `SAVE_VERSION` 14 and `PROTOCOL_VERSION` 8 from Part A cover
+the new AI state (the AI state is saved and hashed whole, through
+postcard); no command changed.
+
+### What was built (B1-B3)
+
+- **AI fire missions (B1, `crates/sim/src/ai/mortar.rs`)**, the spec's six
+  steps with these additions (S5b-20): targets score a man standing still
+  10 and a moving man 5 (the bombs land 20-30 s after the order), plus
+  remembered trench cells (30 + 10 per manned neighbour cell); map fire is
+  held while the mortar walks to its support spot; a set-up tube stays
+  while the front point is in its band; at most 48 sight-line rays a plan
+  over all mortars (`PLAN_RAYS`, turn order rotating with the plan count);
+  orders only at points the knowledge rule's lasting part accepts
+  (`MatchState::known_by_record`: a capture point or an intel cell; an
+  enemy seen only this instant may be gone a reaction delay later) and no
+  mission below 2 bombs. Spotters: the mortar's own leader (a living
+  `leader` slot man, not the gunner) walks to the first of 16 spots with a
+  sight line from a standing eye (S5b-19: automatic stance); records in
+  `AiState::spotters` (saved, hashed, validated: count, squad ids, man id,
+  tick order). `FmCounters::spotters` (always 0 in Part A) is gone; the AI
+  counts in `AiCounters::fm_*` and the summary prints an `S5b <faction>
+  AI:` line. Legacy rules keep the old planner unchanged
+  (`mortars_legacy`).
+- **Data (B4 levers, AI data first):** `[ai.infantry] support_back_m`
+  200 -> 120 (S5b-16), `[ai.mortar] spot_samples` 8 -> 16 (now the ray
+  budget of one squad's spot search), comments on `spot_max_s` and
+  `map_fire_min_score`. Canonical content snapshot re-blessed (those two
+  values).
+- **Bridge and HUD (B2):** `MatchState::fire_preview` (read-only: the
+  order's refusal check and mode check, the start error or the remembered
+  one, the ring = error + half the precision spread's extent); the bridge
+  asks it on the sim thread between ticks (`PreviewShared`, republished
+  once per request while paused) and sends `fire_preview` and `intel`;
+  own squads carry `mission`; refused orders become `fire_mission_refused`
+  events; intent `fire_mission {squads, target, rounds}` (`barrage` kept).
+  HUD: the tool's cursor label (mode, expected miss, rounds, or the
+  refusal in red), Shift+wheel rounds, the ring (solid / dashed / red
+  cross), the knowledge map, the observer link line, the mortar card's
+  phase and rounds in the header and its mission strip (DIR / OBS / MAP
+  tag, "Ranging 2 · ±3 m · 15.1 s", ranging bar). The grid button reads
+  **Mission** (S5b-18). Mock source and screenshot stagings
+  `s5b_mortars` / `s5b_card`; `godot/docs/match_state.md` "S5b".
+
+### Tests
+
+- `crates/sim/tests/s5b_ai_mortar.rs` (4): the AI sends its leader forward
+  and the mission is Observed through him (inside the voice link, no map
+  fire before he went, refusals 0); with no spotter possible it falls back
+  to map fire above `map_fire_min_pct`; it holds map fire below it, and a
+  mortar that knows of no enemy fires at nothing for two minutes;
+  determinism with a spotter out at 1/2/3/8 threads and through save ->
+  load -> continue.
+- `world::tests::s5b_ai_spotter_state_is_saved_hashed_and_checked`: 17
+  fields change the hash and survive save/load; 7 broken records refused.
+- `ai_vs_ai_plays_by_the_rules` asserts no AI fire mission is refused.
+- Bridge: `fire_missions_previews_and_refusals_reach_the_frame` (preview
+  only while asked, unknown ground refused, a capture point accepted, the
+  enemy's squad never previewed, own mission view, refusal event).
+- Godot: `test_match_view` +24 checks (tool label per mode, ring sizes,
+  observer, Shift+wheel rounds, intent `fire_mission` with rounds, mission
+  view, ranging, strip line and status, tags, refusals for unknown ground
+  and too close, feed line, preview cleared with the tool),
+  `test_data_reload` +4 (a charge edit checks clean; a charge table that
+  does not rise is refused with the fix; banner, match goes on).
+
+### Results (final binary; each run alone, `--jobs 3 --minutes 45`)
+
+| # | Target | Baseline (`3cd5717`) | Part B | Verdict |
+|---|---|---|---|---|
+| T1 | map/observed miss ratio 2.5-3.5 | — | 3.04 (unchanged from Part A; `mortar-bench --seeds 50`) | met |
+| T2 | ranging only on seen bursts | — | bench PASS; sim tests | met |
+| T3 | stops after carried bombs, bearers included | 15 | 20 (tests) | met |
+| T4 | no fire into unknown ground; AI refusals 0 | — | unknown-ground refusals 0 in all three final sets; **1 `no_bombs` refusal** (Germany, a seed in 1-20, so in the 40 and the 160 set) | missed by 1 (S5b-22) |
+| T5 | faction 35-65 % (40); 45-55 % (160 and out of sample) | 50.0 / 43.8 / 51.9 % | Germany **40.0 %** (16/40), **47.5 %** (76/160), **40.6 %** (65/160 out of sample) | 40 and 160 met; **out of sample missed** (S5b-21) |
+| T6 | no base side > 62 % | 50.0 / 52.5 / 50.6 % | base 1: 60.0 / 53.8 / 60.6 % | met (40 and OOS close) |
+| T7 | no match < 10 or > 40 min; median 15-30 | 10.4-38.5, median 16.5 | 11.9-30.6 (median 17.1) / 10.2-33.7 (17.3) / 10.8-31.5 (18.4) | met |
+| T8 | HE share of kills mean <= 26.3 % | 26.9 / 28.3 / 28.5 % | **13.3 / 13.9 / 13.7 %** (max 20.9 / 28.2 / 24.5) | met |
+| T9 | bombs, MP on ammo, base battery | bombs 180.2 / 160.7 per match (160); MP 651.5 / 519.4 | below | reported |
+| T10 | charge solver | — | unchanged | met |
+| T11 | observed+direct >= 70 % of AI missions; >= 1 spotter per match per side | Part A 7.4 / 7.6 % | sim-counted 74.9 / 76.3 % (40), 75.6 / 78.3 % (160), 76.4 / 76.5 % (OOS); spotters 1.80 / 1.82, 1.75 / 1.76, 1.77 / 1.46 per match | met |
+| T12 | determinism, saves, loopback, soaks, per-field | pass | all pass (AI with a spotter out at 1/2/3/8 threads and save/load; per-field test for the AI state) | met |
+| T13 | fortify PASS; armour hard checks at 5 and stress 10; golden; validate; clippy; fmt | pass | all pass; fortify mortar row 39.5 % (limit 40 %) | met (fortify marginal, as Part A) |
+| T14 | tick p99 peak < 1.5 ms; stress case < 10 ms | 0.363 / 1.110 / 1.113; 1.502 | **0.369 / 0.404 / 0.477 ms**; stress case 14 p99 1.516 ms | met (the first Part B binary had one 1.770 ms peak on the out-of-sample set; the 48-ray plan budget came after it) |
+| T15 | Godot checks, screenshots | 251 / 143 / 17 | `check_project` OK, `test_match_view` 275/275, `test_net_ui` 143/143, `test_data_reload` 21/21; `settings.cfg` sha1 `cf03883` before and after; screenshots at 1600x900 and 1280x800 | met |
+| T16 | every test passes | 521 | **538 pass, 0 fail** (`--include-ignored`) | met |
+
+**T9 detail** (160 set, seeds 1-80 × both bases; Germany / USA):
+
+- Bombs fired: 11,015 / 9,002 (68.8 / 56.3 per match; S5a 180.2 / 160.7);
+  by the round's mode direct 2,050 / 1,790, observed 3,860 / 3,533, map
+  5,105 / 3,679. Missions 2,378 / 2,024 (14.9 / 12.7 per match). Mean
+  planned miss: direct 10.0 / 9.6 m, observed 11.9 / 11.1 m, map 25.5 /
+  24.9 m. Many map bombs come from missions ordered observed whose
+  observer walked off or lost sight (downgrades, S5b-15), not from map
+  missions.
+- MP on ammunition per match: 244.9 / 186.9 (S5a 651.5 / 519.4), almost
+  all shells.
+- Bombs fired from inside the own base: 928 (8.4 %) / 540 (6.0 %), Part A
+  36.5 / 39.3 % (40 set): map fire on the way out is held now.
+- Mortar share of each side's kills: 5.3 / 4.6 % (S5a 23.3 / 18.8 %);
+  S5b-17.
+- **Base battery A/B** (`base_bomb_after_fire_s` 0 -> 120, 160 set, final
+  binary): Germany 76 -> 69 wins, base 0/1 74/86 -> 77/83, bombs 11,015 /
+  9,002 -> 9,756 / 8,445 (68.8 / 56.3 -> 61.0 / 52.8 per match), bombs
+  from the own base 928 / 540 -> 689 / 395, MP on ammo 244.9 / 186.9 ->
+  205.9 / 170.8 per match, HE share 13.9 -> 14.1 %, lengths 10.2-34.5
+  (median 17.2). On the first Part B binary the same A/B gave Germany 84
+  -> 82. The brake takes about a tenth of the bombs and moves Germany by
+  2-7 wins of 160 (within noise); the lever stays 0 (S6).
+
+**Balance.** Final binary: Germany 47.5 % on seeds 1-80 but 40.6 % on
+101-180 (base 1 60.6 % there); over the 320 matches 44.1 % (S5a final:
+48.1 %). The out-of-sample miss is about 1 standard error below the band (one
+set of 160 has a standard error of about 4 points), but the same code change
+that only re-orders the AI's random draws moved that set from 56 to 68
+German wins and back to 65, so the two sets disagree by more than their
+own noise: Germany is probably about 44-46 % now, a little worse than in
+S5a, and below the band on one set. One lever was tried on the
+out-of-sample set: `map_fire_min_pct` 60 -> 85 (less German map fire):
+68 -> 69 wins, no effect, not kept. Prices were not touched (the owner
+keeps the 20 % German cut). S5b-21.
+
+**Hard checks** (final binary). fortify-test `--seeds 10` PASS, mortar row
+45 vs 114 = 39.5 % (Part A 39.5 %, limit 40 %); armour-test `--seeds 5`
+all hard checks pass in 220.1 s (case 9: 23 vs 84 men = 27.4 %);
+`--stress --seeds 10` all pass in 442.1 s (case 9 46 vs 164 = 28.0 %;
+case 14 p99 1.516 ms, max 2.709); mortar-bench 3.04 PASS (91.6 s); golden
+ballistics 46/46; `validate mods/ww2` ok; clippy `-D warnings` and fmt
+clean.
+
+**Screenshots** (scratchpad `s5b/`): `s5b_mortars_1600x900.png`,
+`s5b_mortars_1280x800.png` (the tool on an enemy squad: "FIRE MISSION ·
+Observed · ±24 m · 6 rounds · Shift+wheel rounds", the ring, the
+knowledge map squares, the dashed link), `s5b_card_1600x900.png`,
+`s5b_card_1280x800.png` (a mortar ranging in: header "For effect · 6
+rds", strip "OBS Ranging 2 · ±3 m · 15.1 s", the ranging bar about 85 %).
+
+### What the Fix stage must know
+
+- T5 out of sample (40.6 %) and the single `no_bombs` AI refusal are the
+  open misses (S5b-21, S5b-22). Mortars kill little now (S5b-17).
+- Raw outputs: scratchpad `s5b/partB/` (`f_40.txt`, `f_160.txt`,
+  `f_oos.txt`, `f_160_bb120.txt`, `f_fortify10.txt`, `f_bench50.txt`,
+  `f_armour5.txt`, `f_armour_stress10.txt` final; `m_*` the first Part B
+  binary;
+  `r_*` the ray-budget step and the `map_fire_min_pct` 85 A/B;
+  `test_final.txt`, Godot outputs).
+- The HUD's preview runs `fire_preview` on the sim thread when a frame is
+  published; it never touches the tick, but it does cost up to 4 + 8 rays
+  per frame while the tool is armed.
