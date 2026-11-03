@@ -1780,7 +1780,7 @@ impl MatchState {
                 return Err("AI state disagrees with the setup");
             }
             if let Some(ai) = &self.ai[p] {
-                ai.validate(self, PlayerId(p as u8), tick)?;
+                ai.validate(self, PlayerId(p as u8), tick, ents.len())?;
             }
         }
         // Re-call cooldowns (S3b): one per squad type, never further ahead

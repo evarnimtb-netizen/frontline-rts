@@ -5211,7 +5211,6 @@ mod tests {
                 upgrades: 17,
                 downgrades: 18,
                 no_solution: 19,
-                spotters: 20,
             };
         }
         let w = World::from_state(w.state.clone(), 1).unwrap();
@@ -5257,7 +5256,6 @@ mod tests {
             upgrades: _,
             downgrades: _,
             no_solution: _,
-            spotters: _,
         } = FmCounters::default();
         type StateEdit = Box<dyn Fn(&mut SimState)>;
         fn mi(s: &mut SimState, m: SquadId) -> &mut Mission {
@@ -5379,7 +5377,6 @@ mod tests {
             ("fm.upgrades", Box::new(|s| fm(s).upgrades += 1)),
             ("fm.downgrades", Box::new(|s| fm(s).downgrades += 1)),
             ("fm.no_solution", Box::new(|s| fm(s).no_solution += 1)),
-            ("fm.spotters", Box::new(|s| fm(s).spotters += 1)),
             ("projectile.mission", Box::new(|s| bomb(s).mission ^= 4)),
             (
                 "next_mission",
@@ -5441,6 +5438,136 @@ mod tests {
             let bytes = save_edited(&w, edit);
             let e = load_err(&bytes);
             assert!(e.contains(want), "{want}: {e}");
+        }
+    }
+
+    /// S5b Part B: the AI's spotter records and fire-mission counters are
+    /// saved, each field changes the hash, and broken records are refused
+    /// on load.
+    #[test]
+    fn s5b_ai_spotter_state_is_saved_hashed_and_checked() {
+        use crate::ai::AiSpotter;
+        let (mut w, _) = flat_tank_world_with(|s| s.players[1].is_ai = true);
+        for _ in 0..40 {
+            w.step(&[]);
+        }
+        let tick = w.tick();
+        let spotter = AiSpotter {
+            man: SimId(1),
+            spot: FxVec2::from_int(10, 20),
+            target: FxVec2::from_int(30, 40),
+            since: tick - 30,
+            arrived: Some(tick - 20),
+            last_mission: Some(tick - 10),
+            back: None,
+        };
+        fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
+            s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
+        }
+        fn sp(s: &mut SimState) -> &mut AiSpotter {
+            ai(s).spotters.get_mut(&SquadId(0)).unwrap()
+        }
+        {
+            let a = w.state.game.as_mut().unwrap().ai[1].as_mut().unwrap();
+            a.spotters.insert(SquadId(0), spotter.clone());
+            a.counters.fm_missions = [1, 2, 3];
+            a.counters.fm_spotters = 4;
+        }
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        // Every field is listed below (a new one fails to compile here).
+        let AiSpotter {
+            man: _,
+            spot: _,
+            target: _,
+            since: _,
+            arrived: _,
+            last_mission: _,
+            back: _,
+        } = spotter;
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            ("spotter.man", Box::new(|s| sp(s).man = SimId(2))),
+            ("spotter.spot", Box::new(|s| sp(s).spot.x += Fx::ONE)),
+            ("spotter.target", Box::new(|s| sp(s).target.y += Fx::ONE)),
+            ("spotter.since", Box::new(|s| sp(s).since -= 1)),
+            ("spotter.arrived", Box::new(|s| sp(s).arrived = None)),
+            (
+                "spotter.last_mission",
+                Box::new(|s| sp(s).last_mission = None),
+            ),
+            ("spotter.back", Box::new(move |s| sp(s).back = Some(tick))),
+            (
+                "spotters key",
+                Box::new(|s| {
+                    let v = ai(s).spotters.remove(&SquadId(0)).unwrap();
+                    ai(s).spotters.insert(SquadId(1), v);
+                }),
+            ),
+            (
+                "fm_missions",
+                Box::new(|s| ai(s).counters.fm_missions[1] += 1),
+            ),
+            ("fm_spotters", Box::new(|s| ai(s).counters.fm_spotters += 1)),
+            (
+                "fm_spotter_missions",
+                Box::new(|s| ai(s).counters.fm_spotter_missions += 1),
+            ),
+            (
+                "fm_spotter_timeouts",
+                Box::new(|s| ai(s).counters.fm_spotter_timeouts += 1),
+            ),
+            (
+                "fm_spotter_recalls",
+                Box::new(|s| ai(s).counters.fm_spotter_recalls += 1),
+            ),
+            (
+                "fm_map_holds",
+                Box::new(|s| ai(s).counters.fm_map_holds += 1),
+            ),
+            (
+                "fm_blind_holds",
+                Box::new(|s| ai(s).counters.fm_blind_holds += 1),
+            ),
+            (
+                "fm_walk_holds",
+                Box::new(|s| ai(s).counters.fm_walk_holds += 1),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(w2.full_state_hash(), w2.state_hash());
+        }
+        let bad: Vec<StateEdit> = vec![
+            Box::new(move |s| sp(s).since = tick + 1),
+            Box::new(|s| sp(s).man = SimId(1_000_000)),
+            Box::new(|s| sp(s).arrived = Some(0)),
+            Box::new(move |s| sp(s).last_mission = Some(tick + 5)),
+            Box::new(move |s| sp(s).back = Some(tick + 5)),
+            Box::new(|s| {
+                let v = ai(s).spotters[&SquadId(0)].clone();
+                ai(s).spotters.insert(SquadId(60_000), v);
+            }),
+            Box::new(|s| {
+                let v = ai(s).spotters[&SquadId(0)].clone();
+                for k in 0..=crate::ai::MAX_SPOTTERS as u32 {
+                    ai(s).spotters.insert(SquadId(k % 3), v.clone());
+                }
+                let n = ai(s).spotters.len();
+                for k in n..=crate::ai::MAX_SPOTTERS {
+                    ai(s).spotters.insert(SquadId(k as u32 + 3), v.clone());
+                }
+            }),
+        ];
+        for edit in bad {
+            let bytes = save_edited(&w, edit);
+            assert!(load_err(&bytes).contains("AI"));
         }
     }
 

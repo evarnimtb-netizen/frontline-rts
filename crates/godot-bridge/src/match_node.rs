@@ -482,6 +482,29 @@ impl FrontlineMatch {
         }
     }
 
+    /// S5b: the fire-mission tool asks for the preview of own squad
+    /// `squad` firing `rounds` at Godot `point`; the answer comes in the
+    /// state's `fire_preview` (and `intel`) from the next frame on.
+    #[func]
+    fn set_fire_preview(&mut self, squad: i32, point: Vector3, rounds: i32) {
+        if let Some(rt) = self.rt.as_ref() {
+            let p = [point.x + rt.half, -point.z + rt.half];
+            rt.sim.preview.set(Some(crate::match_frame::PreviewReq {
+                squad: squad.max(0) as u32,
+                point: p,
+                rounds: rounds.clamp(1, 50) as u16,
+            }));
+        }
+    }
+
+    /// S5b: the tool is put away; frames stop carrying the preview.
+    #[func]
+    fn clear_fire_preview(&mut self) {
+        if let Some(rt) = self.rt.as_ref() {
+            rt.sim.preview.set(None);
+        }
+    }
+
     /// Ground height (Godot Y) at Godot (x, z), including dug terrain.
     #[func]
     fn height_at(&self, x: f32, z: f32) -> f32 {
@@ -1701,6 +1724,11 @@ impl MatchRuntime {
             "suppress_line_max_m" => rules.combat.suppress.line_max_m as f32,
             "mortar_min_m" => mortar.map_or(60.0, |w| fx(w.range_min)),
             "mortar_max_m" => mortar.map_or(600.0, |w| fx(w.range_max)),
+            // S5b: rounds the fire-mission tool orders by default.
+            "fire_mission_rounds" => rules
+                .fire_mission
+                .as_ref()
+                .map_or(rules.ai.barrage_rounds as i64, |f| f.player_rounds as i64),
             "capture_radius_m" => fx(rules.capture_radius),
             "throw_range_m" => &throw_range,
             "vehicles" => &vdict! {
@@ -1972,6 +2000,10 @@ impl MatchRuntime {
                 let g = sim_to_godot([p[0], p[1], h], self.half);
                 d.set("pos", Vector3::new(g[0], g[1], g[2]));
             }
+            if let Some(q) = e.squad {
+                d.set("squad", q as i64);
+                d.set("reason", e.reason);
+            }
             events.push(&d.to_variant());
         }
         let mut effects = VarArray::new();
@@ -2098,6 +2130,49 @@ impl MatchRuntime {
             },
             "stats" => &stats,
         };
+        // S5b: the fire-mission tool's answer and the knowledge map, while
+        // the tool asks (`set_fire_preview`).
+        if let Some(p) = &f.preview {
+            let mut d = vdict! {
+                "squad" => p.req.squad as i64,
+                "point" => self.ground(p.req.point),
+                "rounds" => p.req.rounds as i64,
+                "ok" => p.refusal.is_none(),
+                "mode" => mode_word(p.mode),
+                "error_m" => p.error_m,
+                "ring_m" => p.ring_m,
+                "ranged" => p.ranged,
+                "walk" => p.walk,
+                "range_m" => p.range_m,
+                "gunner_pos" => self.ground(p.gunner_pos),
+            };
+            if let Some(r) = p.refusal {
+                d.set(
+                    "reason",
+                    frontline_sim::FireMissionRefusal::NAMES[r as usize],
+                );
+                d.set("text", r.text());
+            }
+            if let Some(o) = p.observer {
+                d.set("observer_id", o as i64);
+            }
+            if let Some(op) = p.observer_pos {
+                d.set("observer_pos", self.ground(op));
+            }
+            out.set("fire_preview", &d);
+            let mut intel = VarArray::new();
+            for c in &f.intel {
+                intel.push(
+                    &vdict! {
+                        "pos" => self.ground(c.pos),
+                        "age_s" => c.age_s,
+                        "trench" => c.trench,
+                    }
+                    .to_variant(),
+                );
+            }
+            out.set("intel", &intel);
+        }
         if let Some(sc) = &self.scene {
             out.set(
                 "scene",
@@ -2493,8 +2568,8 @@ impl MatchRuntime {
                 OrderKind::AttackMove => "attack_move",
                 OrderKind::Retreat => "retreat",
                 OrderKind::Dig => "dig",
-                // S5b: the HUD still names it `barrage` until Part B.
-                OrderKind::FireMission => "barrage",
+                // S5b Part B: the order's own name (was `barrage`).
+                OrderKind::FireMission => "fire_mission",
                 OrderKind::Follow => "follow",
                 OrderKind::Suppress => "suppress",
                 OrderKind::Recrew => "recrew",
@@ -2528,6 +2603,36 @@ impl MatchRuntime {
         }
         if s.order == OrderKind::FireMission {
             d.set("rounds", s.rounds as i64);
+        }
+        // S5b: an own fire mission's state (the mortar card and the
+        // observer link line; godot/docs/match_state.md "S5b").
+        if let Some(m) = &s.mission {
+            let mut md = vdict! {
+                "mode" => mode_word(m.mode),
+                "phase" => phase_word(m.phase),
+                "error_m" => m.error_m,
+                "first_error_m" => m.first_error_m,
+                "seen" => m.seen as i64,
+                "fired" => m.fired as i64,
+                "rounds_left" => m.rounds_left as i64,
+                "adjust" => m.adjust as i64,
+                "charge" => m.charge as i64 + 1,
+                "flight_s" => m.flight_s,
+                "ranged" => m.ranged,
+            };
+            if let Some(t) = s.target {
+                md.set("target", self.ground(t));
+            }
+            if let Some(o) = m.observer {
+                md.set("observer_id", o as i64);
+            }
+            if let Some(p) = m.observer_pos {
+                md.set("observer_pos", self.ground(p));
+            }
+            if let Some(p) = m.gunner_pos {
+                md.set("gunner_pos", self.ground(p));
+            }
+            d.set("mission", &md);
         }
         if let Some(v) = s.follow {
             // S3c: a `Recrew` order shares the field (the vehicle it walks
@@ -2727,11 +2832,17 @@ impl MatchRuntime {
             // S5b: `fire_mission` (`barrage` kept as an alias for one slice).
             "barrage" | "fire_mission" => {
                 let Some(t) = target else { return };
-                let rounds = match &self.setup.rules.fire_mission {
-                    Some(fm) => fm.player_rounds as u16,
-                    None => self.setup.rules.ai.barrage_rounds,
-                }
-                .max(1);
+                // S5b: the tool's rounds (Shift+wheel), else the rules'.
+                let asked = data
+                    .get("rounds")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .map(|n| n.clamp(1, 50) as u16);
+                let rounds = asked
+                    .unwrap_or(match &self.setup.rules.fire_mission {
+                        Some(fm) => fm.player_rounds as u16,
+                        None => self.setup.rules.ai.barrage_rounds,
+                    })
+                    .max(1);
                 // S4 review L2: by capability, as the HUD's Barrage button.
                 for s in own.iter().filter(|s| {
                     self.setup.squad_types[s.type_idx as usize].has(Capability::FireMission)
@@ -3009,4 +3120,20 @@ fn ammo_state(setup: &MatchSetup, pct: u32) -> &'static str {
         Some(sp) if pct < sp.low_pct => "low",
         Some(_) => "ok",
     }
+}
+
+/// S5b: a fire mode's word (`fire_mission::mode::NAMES`).
+fn mode_word(m: u8) -> &'static str {
+    frontline_sim::fire_mission::mode::NAMES
+        .get(m as usize)
+        .copied()
+        .unwrap_or("map")
+}
+
+/// S5b: a mission phase's word (`fire_mission::phase::NAMES`).
+fn phase_word(p: u8) -> &'static str {
+    frontline_sim::fire_mission::phase::NAMES
+        .get(p as usize)
+        .copied()
+        .unwrap_or("effect")
 }

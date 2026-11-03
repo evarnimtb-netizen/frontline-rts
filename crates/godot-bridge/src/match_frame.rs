@@ -31,8 +31,19 @@
 //! [`THROWN_NEAR_M`] of his men; armour events for his vehicles, for
 //! vehicles he sees (or saw the tick before: a knock-out turns a vehicle
 //! into a wreck everyone sees), or within that distance of his men.
+//!
+//! S5b adds to own squads on a fire mission their [`MissionView`] (mode,
+//! phase, aim error and the first round's, rounds, observer and gunner
+//! positions, charge, flight time), to the tick events the local player's
+//! refused fire missions, and, while the presenter's fire-mission tool asks
+//! ([`PreviewShared`]), the tool's [`PreviewView`] for the asked squad and
+//! point (the sim's read-only `MatchState::fire_preview`, computed here on
+//! the sim thread between ticks, never inside one) and the local player's
+//! knowledge map ([`IntelView`]).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup, WeaponClass};
@@ -96,6 +107,94 @@ pub struct SquadView {
     pub crew: Option<(u16, u32)>,
     pub holding: u8,
     pub refilling: bool,
+    /// S5b: own squads on a fire mission (S5b rules).
+    pub mission: Option<MissionView>,
+}
+
+/// S5b: an own squad's fire mission, for the mortar card and the observer
+/// link line.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MissionView {
+    /// `frontline_sim::fire_mission::mode` and `phase`.
+    pub mode: u8,
+    pub phase: u8,
+    /// Aim error now and at the first round (m).
+    pub error_m: f32,
+    pub first_error_m: f32,
+    /// Rounds an observer saw land, rounds fired, rounds left.
+    pub seen: u8,
+    pub fired: u16,
+    pub rounds_left: u16,
+    /// Adjusting rounds fired.
+    pub adjust: u8,
+    /// The observer of the last round and where he stands, the gunner's
+    /// position (sim xy).
+    pub observer: Option<u32>,
+    pub observer_pos: Option<[f32; 2]>,
+    pub gunner_pos: Option<[f32; 2]>,
+    /// Charge index of the last round, its flight time (s).
+    pub charge: u8,
+    pub flight_s: f32,
+    /// The mission started from a remembered ranging cell.
+    pub ranged: bool,
+}
+
+/// S5b: what the presenter's fire-mission tool asks the sim thread.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreviewReq {
+    pub squad: u32,
+    /// Sim xy.
+    pub point: [f32; 2],
+    pub rounds: u16,
+}
+
+/// S5b: the fire-mission tool's request, shared between the presenter
+/// (writes) and the sim thread (reads it when it publishes a frame). `generation`
+/// counts writes so a paused sim republishes once per new request.
+#[derive(Debug, Default)]
+pub struct PreviewShared {
+    pub req: Mutex<Option<PreviewReq>>,
+    pub generation: AtomicU64,
+}
+
+impl PreviewShared {
+    /// Sets (or clears) the request.
+    pub fn set(&self, req: Option<PreviewReq>) {
+        if let Ok(mut r) = self.req.lock()
+            && *r != req
+        {
+            *r = req;
+            self.generation.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn get(&self) -> Option<PreviewReq> {
+        self.req.lock().ok().and_then(|r| *r)
+    }
+}
+
+/// S5b: the answer to a [`PreviewReq`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreviewView {
+    pub req: PreviewReq,
+    pub refusal: Option<frontline_sim::FireMissionRefusal>,
+    pub mode: u8,
+    pub observer: Option<u32>,
+    pub observer_pos: Option<[f32; 2]>,
+    pub gunner_pos: [f32; 2],
+    pub error_m: f32,
+    pub ring_m: f32,
+    pub ranged: bool,
+    pub walk: bool,
+    pub range_m: f32,
+}
+
+/// S5b: one cell of the local player's knowledge map (sim xy centre).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IntelView {
+    pub pos: [f32; 2],
+    pub age_s: f32,
+    pub trench: bool,
 }
 
 /// A detached own soldier's order (S1b), for markers and the HUD.
@@ -231,6 +330,10 @@ pub struct MatchFrame {
     /// presenter skips frames).
     pub scene_ready: bool,
     pub scene_ready_at: Option<u64>,
+    /// S5b: the fire-mission tool's answer and the local player's
+    /// knowledge map, while the tool asks (module docs).
+    pub preview: Option<PreviewView>,
+    pub intel: Vec<IntelView>,
 }
 
 impl MatchFrame {
@@ -280,6 +383,8 @@ impl MatchFrame {
             extra: Vec::new(),
             scene_ready: false,
             scene_ready_at: None,
+            preview: None,
+            intel: Vec::new(),
         }
     }
 
@@ -511,9 +616,37 @@ impl MatchFrame {
                     v.dig_pct = job.progress_pct(job.rules(&setup.rules), setup.tick_hz);
                     v.dig_line.extend(line.iter().map(|p| p.to_f32()));
                 }
-                Order::FireMission { target, rounds, .. } => {
+                Order::FireMission { target, rounds, m } => {
                     v.target = Some(target.to_f32());
                     v.rounds = *rounds;
+                    if sq.owner.0 == local && m.id != 0 {
+                        let pos = |id: frontline_sim::SimId| {
+                            let p = ents.transform()[id.index()].pos.to_f32();
+                            [p[0], p[1]]
+                        };
+                        v.mission = Some(MissionView {
+                            mode: m.mode,
+                            phase: m.phase,
+                            error_m: m.offset.length().to_f32(),
+                            first_error_m: m.err0.to_f32(),
+                            seen: m.seen,
+                            fired: m.fired,
+                            rounds_left: *rounds,
+                            adjust: m.adjust,
+                            observer: m.observer.map(|o| o.0),
+                            observer_pos: m
+                                .observer
+                                .filter(|o| {
+                                    ents.kind()[o.index()] == EntityKind::Soldier
+                                        && combat[o.index()].hp > 0
+                                })
+                                .map(pos),
+                            gunner_pos: game.mortar_gunner(ents, sq).map(pos),
+                            charge: m.charge,
+                            flight_s: m.flight as f32 / setup.tick_hz.max(1) as f32,
+                            ranged: m.ranged,
+                        });
+                    }
                 }
                 Order::Follow { vehicle } => v.follow = Some(vehicle.0),
                 Order::Suppress { line } => {
@@ -531,6 +664,66 @@ impl MatchFrame {
         );
         ctx.track(&self.squads, setup.players.len());
         self.extra.clone_from(&ctx.extra);
+        self.fill_preview(world, ctx);
+    }
+
+    /// S5b: the fire-mission tool's preview and the knowledge map, while the
+    /// presenter asks for them (module docs).
+    fn fill_preview(&mut self, world: &World, ctx: &mut FrameCtx) {
+        self.preview = None;
+        self.intel.clear();
+        let Some(req) = ctx.preview.get() else {
+            return;
+        };
+        ctx.preview_gen = ctx.preview.generation.load(Ordering::Relaxed);
+        let Some(game) = world.game() else { return };
+        let ents = world.entities();
+        let id = frontline_sim::SquadId(req.squad);
+        let point = crate::intents::sim_to_fx(req.point);
+        let own = game.squad(id).is_some_and(|q| q.owner.0 == ctx.local);
+        if own
+            && let Some(p) =
+                game.fire_preview(ents, world.terrain(), id, point, req.rounds, world.tick())
+        {
+            let pos = |o: frontline_sim::SimId| {
+                let v = ents.transform()[o.index()].pos.to_f32();
+                [v[0], v[1]]
+            };
+            let sq = game.squad(id).expect("own");
+            let gunner = game
+                .mortar_gunner(ents, sq)
+                .unwrap_or_else(|| sq.lead(ents));
+            self.preview = Some(PreviewView {
+                req,
+                refusal: p.refusal,
+                mode: p.mode,
+                observer: p.observer.map(|o| o.0),
+                observer_pos: p.observer.map(pos),
+                gunner_pos: pos(gunner),
+                error_m: p.error.to_f32(),
+                ring_m: p.ring.to_f32(),
+                ranged: p.ranged,
+                walk: p.walk,
+                range_m: p.range.to_f32(),
+            });
+        }
+        let setup = game.setup();
+        if let (Some(fm), Some(pl)) = (
+            setup.rules.fire_mission.as_ref(),
+            game.players().get(ctx.local as usize),
+        ) {
+            let cols = frontline_sim::fire_mission::intel_cols(setup.map.size_m, fm.intel_cell_m);
+            let cell = fm.intel_cell_m as f32;
+            let hz = setup.tick_hz.max(1) as f32;
+            for (&k, c) in &pl.intel {
+                let (x, y) = (k % cols, k / cols);
+                self.intel.push(IntelView {
+                    pos: [(x as f32 + 0.5) * cell, (y as f32 + 0.5) * cell],
+                    age_s: world.tick().saturating_sub(c.seen) as f32 / hz,
+                    trench: c.flags & frontline_sim::fire_mission::intel_flag::TRENCH != 0,
+                });
+            }
+        }
     }
 
     /// The fog-filtered `vehicles` and `shells` (module docs). `near` says
@@ -655,6 +848,10 @@ pub struct FrameCtx {
     scene_ready_at: Option<u64>,
     started: bool,
     pub extra: Vec<PlayerExtra>,
+    /// S5b: the fire-mission tool's request (shared with the presenter)
+    /// and the request generation the last frame answered.
+    pub preview: Arc<PreviewShared>,
+    pub preview_gen: u64,
 }
 
 impl FrameCtx {
@@ -803,6 +1000,8 @@ pub struct TickEvents {
     pub call_ins: Vec<frontline_sim::CallInEvent>,
     /// S3c: the local player's refused re-crews this tick.
     pub recrew_refusals: Vec<frontline_sim::RecrewEvent>,
+    /// S5b: the local player's refused fire missions this tick.
+    pub fire_mission_refusals: Vec<frontline_sim::FireMissionEvent>,
     /// S4: crew weapons the local player's men picked up this tick.
     pub pickups: Vec<PickupView>,
 }
@@ -827,6 +1026,7 @@ impl TickEvents {
             && self.armour.is_empty()
             && self.call_ins.is_empty()
             && self.recrew_refusals.is_empty()
+            && self.fire_mission_refusals.is_empty()
             && self.pickups.is_empty()
     }
 
@@ -918,6 +1118,12 @@ impl TickEvents {
         );
         ev.recrew_refusals.extend(
             snap.recrew_refusals
+                .iter()
+                .filter(|c| c.player.0 == local)
+                .copied(),
+        );
+        ev.fire_mission_refusals.extend(
+            snap.fire_mission_refusals
                 .iter()
                 .filter(|c| c.player.0 == local)
                 .copied(),
@@ -1228,6 +1434,87 @@ mod tests {
         let mut setup = resolve(&mods, &MenuChoice::default()).unwrap();
         frontline_sim::scenarios::staging(&mut setup, true);
         World::new_match(setup, 2).unwrap()
+    }
+
+    /// S5b: the tool's preview answers only while asked (mode, ring,
+    /// refusal), an own mission shows its state with the link line ends,
+    /// the enemy's does not, and a refused order reaches the local events.
+    #[test]
+    fn fire_missions_previews_and_refusals_reach_the_frame() {
+        use frontline_sim::fire_mission::{mode, phase};
+        use frontline_sim::scenarios::{EAST, WEST, at, cmd};
+        use frontline_sim::{CommandKind, FireMissionRefusal, PlayerId};
+        let mut w = staged();
+        let setup = w.match_setup().unwrap().clone();
+        let t = setup.squad_type_index("ww2:ger_mortar_team").unwrap();
+        let sq = w
+            .spawn_squad_at(PlayerId(0), t, at(300, 512), EAST)
+            .unwrap();
+        let et = setup.squad_type_index("ww2:usa_mortar_team").unwrap();
+        let enemy = w
+            .spawn_squad_at(PlayerId(1), et, at(700, 600), WEST)
+            .unwrap();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        w.step(&[]);
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert!(f.preview.is_none() && f.intel.is_empty(), "nothing asked");
+        // Unknown ground 438 m out (beyond the leader's 400 m), then a
+        // capture point's ground.
+        let ask = |pt: [f32; 2]| PreviewReq {
+            squad: sq.0,
+            point: pt,
+            rounds: 6,
+        };
+        ctx.preview.set(Some(ask([300.0, 950.0])));
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        let p = f.preview.expect("answered");
+        assert_eq!(p.refusal, Some(FireMissionRefusal::UnknownGround));
+        let cp = frontline_sim::FxVec2::from(setup.map.points[0].pos).to_f32();
+        ctx.preview.set(Some(ask(cp)));
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        let p = f.preview.expect("answered");
+        assert_eq!(p.refusal, None, "{p:?}");
+        assert!(p.ring_m >= p.error_m && p.error_m > 0.0, "{p:?}");
+        // The enemy's squad is never previewed.
+        ctx.preview.set(Some(PreviewReq {
+            squad: enemy.0,
+            point: cp,
+            rounds: 6,
+        }));
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert!(f.preview.is_none());
+        ctx.preview.set(None);
+        // A Direct mission 250 m east (the leader sees it on flat ground):
+        // the frame carries its state and the link line ends.
+        let target = at(550, 512);
+        let mut ev = Vec::new();
+        for k in 0..2u32 {
+            let kind = CommandKind::FireMission {
+                squad: sq,
+                // The first at unknown ground far off: refused.
+                target: if k == 0 { at(300, 950) } else { target },
+                rounds: 4,
+            };
+            w.step(&[cmd(0, k, kind)]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+            ev.push(TickEvents::collect(&w, &ctx));
+        }
+        assert_eq!(ev[0].fire_mission_refusals.len(), 1);
+        assert_eq!(
+            ev[0].fire_mission_refusals[0].refusal,
+            FireMissionRefusal::UnknownGround
+        );
+        let v = f.squads.iter().find(|s| s.id == sq.0).unwrap();
+        assert_eq!(v.order, frontline_sim::OrderKind::FireMission);
+        let m = v.mission.expect("own mission");
+        assert_eq!(
+            (m.mode, m.phase, m.rounds_left),
+            (mode::DIRECT, phase::LAYING, 4)
+        );
+        assert!(m.gunner_pos.is_some() && m.observer_pos.is_some());
+        assert!((9.0..=11.0).contains(&m.first_error_m), "{m:?}");
+        assert!(f.squads.iter().all(|s| s.owner == 0 || s.mission.is_none()));
     }
 
     #[test]

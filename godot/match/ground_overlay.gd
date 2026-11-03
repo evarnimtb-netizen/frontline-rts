@@ -14,6 +14,14 @@ extends MeshInstance3D
 ## S3: rings under selected and hovered vehicles, stretched to the hull
 ## (a second SelectionRings batch); escort links (a dashed line from each
 ## own escorting squad or man to its vehicle); the face tool's arrows.
+##
+## S5b: while the fire-mission tool is armed, the expected-miss ring at the
+## cursor (state.fire_preview: solid for observed and direct fire, dashed
+## for map fire, red when refused), the would-be observer's link line and
+## the own knowledge map (state.intel) as faint squares; for a selected own
+## mortar on a mission (or with the tool armed) the observer link line from
+## the gunner to the observer of the last round and on to the target (none
+## for direct fire; dotted when the observer is gone).
 
 const LIFT := 0.35
 const TRENCH_HALF_W := 1.2
@@ -109,6 +117,9 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 			if not sq.is_empty() and sq.type in MatchView.MORTARS:
 				_ring(sq.pos, hi, 1.5, Color(UiPalette.WARN, 0.45), 128)
 				_ring(sq.pos, lo, 0.8, Color(UiPalette.DANGER, 0.5), 48)
+		_draw_intel(state)
+		_draw_fire_preview(state)
+	_draw_mission_links(view, sel)
 	if sel.tool == &"dig":
 		_draw_dig_ghost(sel)
 	elif sel.tool == &"throw":
@@ -123,6 +134,70 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 	for p in view.pending_draw:
 		_draw_pending(p)
 	_im.surface_end()
+
+
+## S5b: the own knowledge map while the fire-mission tool is armed: a
+## faint square per cell (trench cells warmer), fading with age.
+func _draw_intel(state: Dictionary) -> void:
+	for c in state.get("intel", []):
+		var age := float(c.get("age_s", 0.0))
+		var a := clampf(0.35 - age / 900.0, 0.12, 0.35)
+		var col := Color(UiPalette.WARN, a) if c.get("trench", false) else Color(UiPalette.TEXT, a * 0.8)
+		var p: Vector3 = c.pos
+		var h := 10.0
+		_line(Vector3(p.x - h, p.y, p.z - h), Vector3(p.x + h, p.y, p.z - h), 0.12, col)
+		_line(Vector3(p.x + h, p.y, p.z - h), Vector3(p.x + h, p.y, p.z + h), 0.12, col)
+		_line(Vector3(p.x + h, p.y, p.z + h), Vector3(p.x - h, p.y, p.z + h), 0.12, col)
+		_line(Vector3(p.x - h, p.y, p.z + h), Vector3(p.x - h, p.y, p.z - h), 0.12, col)
+
+
+## S5b: the fire-mission tool's expected-miss ring at the cursor point and
+## the would-be observer's link (gunner → observer → point).
+func _draw_fire_preview(state: Dictionary) -> void:
+	var fp: Dictionary = state.get("fire_preview", {})
+	if fp.is_empty():
+		return
+	var at: Vector3 = fp.point
+	var r := maxf(float(fp.get("ring_m", 10.0)), 2.0)
+	if not fp.get("ok", false):
+		_ring(at, 3.0, 0.5, Color(UiPalette.DANGER, 0.9), 24)
+		_line(at + Vector3(-2.2, 0, -2.2), at + Vector3(2.2, 0, 2.2), 0.25, Color(UiPalette.DANGER, 0.9))
+		_line(at + Vector3(-2.2, 0, 2.2), at + Vector3(2.2, 0, -2.2), 0.25, Color(UiPalette.DANGER, 0.9))
+		return
+	var mode := String(fp.get("mode", "map"))
+	if mode == "map":
+		var n := 24
+		for i in n:
+			var a0 := TAU * i / n
+			_arc(at, r, 0.6, a0, a0 + TAU / n * 0.55, Color(UiPalette.WARN, 0.85), 4)
+	else:
+		_ring(at, r, 0.6, Color(UiPalette.OK, 0.85), 64)
+	_ring(at, 0.6, 0.4, Color(UiPalette.TEXT, 0.9), 10)
+	if mode == "observed" and fp.has("observer_pos"):
+		var o: Vector3 = fp.observer_pos
+		_dashed(fp.gunner_pos, o, 0.12, Color(HudStyle.ACCENT, 0.7), 1.5, 1.0)
+		_dashed(o, at, 0.1, Color(HudStyle.ACCENT, 0.45), 1.0, 1.4)
+
+
+## S5b: observer link lines of selected own mortars on a mission:
+## gunner → observer (solid; dotted once the observer is gone) and
+## observer → target (thin). Direct fire draws none.
+func _draw_mission_links(view: MatchView, sel: Node) -> void:
+	for sid in sel.selected_squads():
+		var sq: Dictionary = view.squads_by_id.get(sid, {})
+		var m: Dictionary = sq.get("mission", {})
+		if m.is_empty() or String(m.get("mode", "")) == "direct" or not m.has("gunner_pos"):
+			continue
+		var g: Vector3 = m.gunner_pos
+		var col := Color(HudStyle.ACCENT, 0.8)
+		if m.has("observer_pos"):
+			var o: Vector3 = m.observer_pos
+			_line(g, o, 0.1, col)
+			if m.has("target"):
+				_dashed(o, m.target, 0.08, Color(col, 0.5), 1.0, 1.4)
+		elif m.has("target"):
+			# The link is broken (map fire, or the observer fell).
+			_dashed(g, m.target, 0.08, Color(UiPalette.DANGER, 0.6), 0.4, 1.6)
 
 
 ## Net mode (S2): an order sent but not executed yet. A ring of dashes

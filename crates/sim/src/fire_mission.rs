@@ -191,6 +191,28 @@ pub struct FireMissionEvent {
     pub refusal: FireMissionRefusal,
 }
 
+/// S5b: what the HUD's fire-mission tool shows at a point
+/// ([`MatchState::fire_preview`]; read-only, never in a tick).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct FirePreview {
+    /// The refusal the order would get now, if any.
+    pub refusal: Option<FireMissionRefusal>,
+    /// [`mode`] the first round would be fired in now, and its observer.
+    pub mode: u8,
+    pub observer: Option<SimId>,
+    /// The start aim error (the remembered one after ranging) (m).
+    pub error: Fx,
+    /// The expected miss: the aim error plus half the precision spread's
+    /// extent at that range (m).
+    pub ring: Fx,
+    /// A remembered ranging cell would be used.
+    pub ranged: bool,
+    /// Beyond the weapon's range: the team walks up first.
+    pub walk: bool,
+    /// From the gunner (m).
+    pub range: Fx,
+}
+
 /// S5b per-player fire-mission counters (saved, hashed; reports and HUD).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct FmCounters {
@@ -220,8 +242,6 @@ pub struct FmCounters {
     pub downgrades: u32,
     /// Missions that ended for lack of a charge solution.
     pub no_solution: u32,
-    /// Spotters the AI sent out (S5b Part B).
-    pub spotters: u32,
 }
 
 /// One burst of a mission round (Damage stage), for the observation pass.
@@ -439,6 +459,69 @@ impl MatchState {
             Some((false, o)) => (mode::OBSERVED, Some(o)),
             None => (mode::MAP, None),
         }
+    }
+
+    /// S5b: the fire-mission tool's preview for squad `id` at `target`
+    /// (the refusal, the mode, the expected miss). Read-only: the HUD calls
+    /// it on the presenter's side of the sim thread, outside any tick.
+    /// `None` when the squad does not exist.
+    pub fn fire_preview(
+        &self,
+        ents: &Entities,
+        terrain: &Heightfield,
+        id: SquadId,
+        target: FxVec2,
+        rounds: u16,
+        tick: u64,
+    ) -> Option<FirePreview> {
+        let sq = self.squads.get(&id)?;
+        let refusal = self.mission_refusal(ents, terrain, id, target, rounds, tick);
+        let ty = &self.setup.squad_types[sq.type_idx as usize];
+        let w = &self.setup.weapons[ty.weapon as usize];
+        let g = self
+            .mortar_gunner(ents, sq)
+            .unwrap_or_else(|| sq.lead(ents));
+        let gp = ents.transform[g.index()].pos.xy();
+        let range = (target - gp).length();
+        let walk = range > Fx::from(w.range_max);
+        let spread = range.mul(w.spread.into()).div_int(2);
+        let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
+            return Some(FirePreview {
+                refusal,
+                mode: mode::DIRECT,
+                observer: None,
+                error: Fx::ZERO,
+                ring: spread,
+                ranged: false,
+                walk,
+                range,
+            });
+        };
+        let (md, observer) = if refusal.is_some() {
+            (mode::MAP, None)
+        } else {
+            self.mode_for(ents, terrain, id, gp, target, tick)
+        };
+        let mut error = start_error(fm, md == mode::MAP, range);
+        let mut ranged = false;
+        if md != mode::MAP {
+            let mut cells = sq.ranging.clone();
+            prune_ranging(&mut cells, fm, tick, self.setup.tick_hz, gp);
+            if let Some(c) = ranged_cell(&cells, fm, target).filter(|c| c.offset.length() < error) {
+                error = c.offset.length();
+                ranged = true;
+            }
+        }
+        Some(FirePreview {
+            refusal,
+            mode: md,
+            observer,
+            error,
+            ring: error + spread,
+            ranged,
+            walk,
+            range,
+        })
     }
 
     /// S5b knowledge rule: whether player `p` knows point `pt` (module
@@ -667,7 +750,7 @@ pub(crate) fn ground_point(terrain: &Heightfield, p: FxVec2) -> Fx {
 }
 
 /// Cells per side of the intel grid.
-pub(crate) fn intel_cols(size_m: i32, cell_m: u32) -> u32 {
+pub fn intel_cols(size_m: i32, cell_m: u32) -> u32 {
     (size_m.max(1) as u32).div_ceil(cell_m.max(1))
 }
 

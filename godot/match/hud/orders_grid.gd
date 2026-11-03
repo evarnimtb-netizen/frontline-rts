@@ -28,12 +28,12 @@ extends Control
 ##   cycles; APCR only lights on a gun that carries it, S3b).
 
 ## S3b: area fire without a spotted target (both grids).
-const SUPPRESS := [&"suppress", "Suppress", &"order_suppress", "Fire at an area without a spotted target to keep the enemy's heads down: click a point or drag a line (up to 40 m). Rifles and MGs hold and fire; vehicles fire their MGs and now and then HE. Mortars keep Barrage. Lasts until another order."]
+const SUPPRESS := [&"suppress", "Suppress", &"order_suppress", "Fire at an area without a spotted target to keep the enemy's heads down: click a point or drag a line (up to 40 m). Rifles and MGs hold and fire; vehicles fire their MGs and now and then HE. Mortars keep Fire mission. Lasts until another order."]
 const ROW_ABILITY := [
 	[&"frag", "Frag", &"ability_frag", "Throw a frag grenade (5–30 m). The nearest eligible man throws; Shift+click: every eligible man throws one."],
 	[&"smoke", "Smoke", &"ability_smoke", "Throw a smoke grenade (5–30 m); the cloud blocks spotting for about 30 s."],
 	[&"satchel", "Satchel", &"ability_satchel", "Place or throw a satchel charge (3–8 m); cuts trench lines. Engineers carry one per squad."],
-	[&"barrage", "Barrage", &"order_barrage", "Mortars fire on a position (60–600 m). Right-clicking the ground in range with mortars selected also fires."],
+	[&"barrage", "Fire mission", &"order_barrage", "Mortars fire a mission on a position (60–600 m): observed when a leader in the voice link (150 m) sees it, else map fire on ground you know (never on unknown ground). The cursor shows the mode and the expected miss; Shift+wheel sets the rounds. Right-clicking the ground in range with mortars selected also fires."],
 	SUPPRESS,
 ]
 const ROW_ORDERS := [
@@ -197,6 +197,14 @@ func active(id: StringName) -> bool:
 	if id == &"bail":
 		return sel.bail_armed()
 	return false
+
+
+## The label of laid-out button `id` ("" when it is not shown).
+func label_of(id: StringName) -> String:
+	for b in buttons:
+		if b.id == id:
+			return String(b.label)
+	return ""
 
 
 ## Acts as if the button were clicked (also used by tests).

@@ -93,6 +93,7 @@ func _run() -> void:
 	await _test_callin_need()
 	await _test_s4()
 	await _test_s5a()
+	await _test_s5b()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -263,8 +264,8 @@ func _test_order_mapping(eng: int, _eng_men: PackedInt32Array, rifle: int, rifle
 	await _frames(2)
 	_intents.clear()
 	_rclick(_cam.unproject_position(_source.squad_pos(mortar) + Vector3(0, 0, -150)))
-	var br: Variant = _last(&"barrage")
-	_check(br != null and br.squads == PackedInt32Array([mortar]), "barrage for a selected mortar man goes to his squad")
+	var br: Variant = _last(&"fire_mission")
+	_check(br != null and br.squads == PackedInt32Array([mortar]) and int(br.get("rounds", 0)) == 6, "fire mission for a selected mortar man goes to his squad")
 	_cam.jump_to(_source.squad_pos(eng))
 	await _frames(2)
 
@@ -1218,6 +1219,102 @@ func _test_s5a() -> void:
 	_sel.select_only(PackedInt32Array())
 
 
+# --- S5b ---------------------------------------------------------------------
+
+## Points the mock knows (capture point C at the centre) and an empty one,
+## the mortar placed relative to them; the tool label, ring and refusals,
+## rounds, the mission strip and the link line data.
+func _test_s5b() -> void:
+	var mortar: int = _source.squad_ids(0, "mortar")[0]
+	var others: Array = []
+	for t in ["rifle", "mg", "engineer", "at"]:
+		for id in _source.squad_ids(0, t):
+			others.append(id)
+	# Everyone else far away: no observer in the mortar's voice link.
+	for k in others.size():
+		_source.place_squad(others[k], Vector2(-450 + 12 * k, 450))
+	var c := Vector3(0, 0, 0)
+	c.y = _source.height_at(0.0, 0.0)
+	# Mortar 450 m south of point C: beyond its own observe range (400 m).
+	_source.place_squad(mortar, Vector2(0, 450))
+	_sel.select_squads(PackedInt32Array([mortar]))
+	_cam.jump_to(Vector3(0, 0, 200))
+	_cam.height = 420.0
+	await _frames(2)
+	_key(KEY_B)
+	_check(_sel.tool == &"barrage", "S5b: B arms the fire-mission tool")
+	_check(String(_view.orders.label_of(&"barrage")) == "Fire mission", "S5b: the button reads Fire mission")
+	_sel.cursor_override = _cam.unproject_position(c)
+	await _frames(4)
+	var fp: Dictionary = _view.state.get("fire_preview", {})
+	_check(fp.get("ok", false) and fp.get("mode", "") == "map" and float(fp.get("ring_m", 0.0)) > 30.0, "S5b: a known point out of every observer's sight is map fire with a wide ring (%s)" % str(fp))
+	var lab: Dictionary = _sel.fire_tool_label()
+	_check(lab.ok and String(lab.text).contains("Map fire") and String(lab.text).contains("±") and String(lab.text).contains("6 rounds"), "S5b: label shows Map fire, the miss and the rounds (%s)" % lab.text)
+	_check(not _view.state.get("intel", null) == null, "S5b: the knowledge map comes with the preview")
+	# An own squad inside the voice link that sees C: observed.
+	_source.place_squad(others[0], Vector2(0, 340))
+	await _frames(4)
+	fp = _view.state.get("fire_preview", {})
+	lab = _sel.fire_tool_label()
+	_check(fp.get("mode", "") == "observed" and fp.has("observer_pos") and String(lab.text).contains("Observed"), "S5b: an observer in the link makes it Observed (%s)" % lab.text)
+	_check(float(fp.get("ring_m", 99.0)) < 30.0, "S5b: the observed ring is tighter than map fire")
+	# Shift+wheel: one more round, on the label and in the order.
+	_wheel(true, true)
+	_check(_sel.fire_rounds() == 7, "S5b: Shift+wheel sets the rounds")
+	await _frames(3)
+	_check(String(_sel.fire_tool_label().text).contains("7 rounds"), "S5b: label shows the rounds")
+	_intents.clear()
+	_click(_sel.cursor_override)
+	var fm: Variant = _last(&"fire_mission")
+	_check(fm != null and fm.squads == PackedInt32Array([mortar]) and int(fm.rounds) == 7, "S5b: click sends fire_mission with the rounds")
+	await _frames(2)
+	var m: Dictionary = _view.squads_by_id[mortar].get("mission", {})
+	_check(String(_view.squads_by_id[mortar].get("order", "")) == "fire_mission" and m.get("mode", "") == "observed" and m.get("phase", "") == "laying" and int(m.get("rounds_left", 0)) == 7, "S5b: the squad shows its mission (%s)" % str(m))
+	_check(m.has("observer_pos") and m.has("gunner_pos") and m.has("target"), "S5b: the mission carries the link line ends")
+	# Run the mock to the first (adjusting) round: seen, the error halves.
+	for i in 120:
+		_source._step(0.1)
+	_view.update_state(_source.get_state())
+	m = _view.squads_by_id[mortar].get("mission", {})
+	var DP: GDScript = load("res://match/hud/detail_panel.gd")
+	_check(int(m.get("seen", 0)) >= 1 and DP.ranging_progress(m) > 0.4, "S5b: a seen round ranges in (%s)" % str(m))
+	var line: String = DP.mission_line(m)
+	_check(line.begins_with("Ranging 1") and line.contains("±") and line.contains("left"), "S5b: the mission line (%s)" % line)
+	_check(DP.mission_tag("observed")[0] == "OBS" and DP.mission_tag("map")[0] == "MAP" and DP.mission_tag("direct")[0] == "DIR", "S5b: the mode tags")
+	_check(DP.mission_line({"mode": "map", "error_m": 30.0, "phase": "effect", "rounds_left": 3}) == "No ranging · ±30 m · For effect · 3 left", "S5b: a map mission does not range")
+	_check(_view.detail.mode() == "squad", "S5b: the mortar card draws")
+	# Unknown ground and too close: refused, with the reason in red.
+	_key(KEY_B)
+	var unknown := Vector3(200, 0, 300)
+	unknown.y = _source.height_at(unknown.x, unknown.z)
+	_check(not _source._known(0, Vector2(unknown.x, unknown.z)), "S5b: the test point is unknown ground")
+	_sel.cursor_override = _cam.unproject_position(unknown)
+	await _frames(4)
+	lab = _sel.fire_tool_label()
+	_check(not lab.ok and String(lab.text).contains("Unknown ground"), "S5b: unknown ground refused on the label (%s)" % lab.text)
+	_intents.clear()
+	_click(_sel.cursor_override)
+	_check(_last(&"fire_mission") == null and _sel.tool == &"barrage", "S5b: no fire mission at a refused point; the tool stays")
+	var close := Vector3(0, 0, 420)
+	close.y = _source.height_at(close.x, close.z)
+	_sel.cursor_override = _cam.unproject_position(close)
+	await _frames(4)
+	_check(String(_sel.fire_tool_label().text).contains("Too close"), "S5b: too close is refused")
+	# A refusal from the source reaches the feed with its reason.
+	_view.emit_intent(&"fire_mission", {"squads": PackedInt32Array([mortar]), "target": unknown, "rounds": 3})
+	await _frames(2)
+	var fed := false
+	for l in _view.event_feed.lines:
+		fed = fed or (l.kind == "fire_mission_refused" and String(l.text).contains("Unknown ground"))
+	_check(fed, "S5b: feed: Fire mission refused: Unknown ground ...")
+	_key(KEY_ESCAPE)
+	await _frames(2)
+	_check(_sel.tool == &"" and not _view.state.has("fire_preview"), "S5b: the preview stops with the tool")
+	_sel.cursor_override = null
+	_sel.fm_rounds = 0
+	_sel.select_only(PackedInt32Array())
+
+
 # --- S4 ----------------------------------------------------------------------
 
 func _test_s4() -> void:
@@ -1411,6 +1508,15 @@ func _panel_key(code: int) -> void:
 	e.keycode = code as Key
 	e.pressed = true
 	_view.call_in._gui_input(e)
+
+
+func _wheel(up: bool, shift: bool) -> void:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_WHEEL_UP if up else MOUSE_BUTTON_WHEEL_DOWN
+	e.pressed = true
+	e.shift_pressed = shift
+	e.position = _sel.cursor()
+	_sel._unhandled_input(e)
 
 
 func _key(code: Key, ctrl := false, shift := false) -> void:

@@ -51,6 +51,17 @@ extends Node
 ## Right-click on an abandoned vehicle with a tank crew squad selected
 ## does the same. Bail out (vehicles, no key) asks for a second press
 ## within BAIL_CONFIRM_MS, then sends `abandon` for the selected vehicles.
+##
+## S5b: B arms the fire-mission tool (the old Barrage tool id `barrage`
+## stays internal). While it is armed the controller asks the source for
+## the preview of the first selected mortar squad at the cursor
+## (MatchView.request_fire_preview; the answer is state.fire_preview) and
+## fire_tool_label() says what the cursor label shows: the mode and the
+## expected miss, or in red the refusal. Shift+wheel sets the rounds
+## (1–50, 0: the rules' player_rounds). A click sends `fire_mission`
+## {squads, target, rounds} unless the preview at that point is refused
+## (the reason stays on the label); right-click on the ground with mortars
+## selected sends it too for those in range.
 
 signal tool_changed(tool: StringName)
 
@@ -114,6 +125,11 @@ var _pending_fire := {}
 var _pending_ammo := {}
 ## S3c: when Bail out was pressed once (msec), 0 = not armed.
 var bail_armed_ms := 0
+## S5b: rounds the fire-mission tool orders (0: the rules' player_rounds).
+var fm_rounds := 0
+## S5b: the last preview asked for ([squad, ground point]), to ask again
+## only when the cursor moved.
+var _fp_asked: Array = []
 
 
 func bind(v: MatchView) -> void:
@@ -611,6 +627,69 @@ func activate(order: StringName) -> void:
 			_set_tool(order)
 
 
+## S5b: rounds the fire-mission tool orders now.
+func fire_rounds() -> int:
+	if fm_rounds > 0:
+		return fm_rounds
+	return int(view.rules().get("fire_mission_rounds", 6))
+
+
+## S5b: the mortar squad the fire-mission preview is for (the focused one
+## if it is a mortar, else the first selected mortar squad; -1: none).
+func preview_squad() -> int:
+	var mortars := _squads_of_type(MatchView.MORTARS)
+	if mortars.is_empty():
+		return -1
+	if focus_squad in mortars:
+		return focus_squad
+	return mortars[0]
+
+
+## S5b: the fire-mission tool's cursor label: {text, ok}.
+func fire_tool_label() -> Dictionary:
+	var fp: Dictionary = view.state.get("fire_preview", {})
+	var n := fire_rounds()
+	if fp.is_empty():
+		return {"text": "FIRE MISSION  ·  %d rounds  ·  click a target" % n, "ok": true}
+	if not fp.get("ok", false):
+		return {"text": "FIRE MISSION  ·  %s" % String(fp.get("text", "Refused")), "ok": false}
+	var mode := String(fp.get("mode", "map"))
+	var word: String = {"direct": "Direct", "observed": "Observed", "map": "Map fire"}.get(mode, mode)
+	var text := "FIRE MISSION  ·  %s  ·  ±%d m  ·  %d rounds" % [word, roundi(float(fp.get("ring_m", 0.0))), n]
+	if fp.get("ranged", false):
+		text += "  ·  ranged in"
+	if fp.get("walk", false):
+		text += "  ·  out of range: the team will move"
+	return {"text": text + "  ·  Shift+wheel rounds", "ok": true}
+
+
+## S5b: asks for the preview at the cursor while the tool is armed.
+func _update_fire_preview() -> void:
+	if tool != &"barrage":
+		if not _fp_asked.is_empty():
+			_fp_asked = []
+			view.clear_fire_preview()
+		return
+	var sid := preview_squad()
+	var g: Variant = view.ground_pick(cursor())
+	if sid == -1 or g == null:
+		return
+	if not _fp_asked.is_empty() and _fp_asked[0] == sid and _fp_asked[2] == fire_rounds() \
+			and Vector2(g.x, g.z).distance_to(Vector2(_fp_asked[1].x, _fp_asked[1].z)) < 1.0:
+		return
+	_fp_asked = [sid, g, fire_rounds()]
+	view.request_fire_preview(sid, g, fire_rounds())
+
+
+## Whether the latest preview refuses a mission at `g`.
+func _preview_refuses(g: Vector3) -> bool:
+	var fp: Dictionary = view.state.get("fire_preview", {})
+	if fp.is_empty() or fp.get("ok", true):
+		return false
+	var p: Vector3 = fp.point
+	return Vector2(p.x, p.z).distance_to(Vector2(g.x, g.z)) < 2.0
+
+
 ## S3c: whether Bail out is waiting for its second press.
 func bail_armed() -> bool:
 	return bail_armed_ms > 0 and Time.get_ticks_msec() - bail_armed_ms <= BAIL_CONFIRM_MS
@@ -908,7 +987,7 @@ func order_to_ground(g: Vector3, attack := false, reverse := false) -> void:
 		return
 	var mortars := _mortars_in_range(g)
 	if not mortars.is_empty():
-		view.emit_intent(&"barrage", {"squads": mortars, "target": g})
+		view.emit_intent(&"fire_mission", {"squads": mortars, "target": g, "rounds": fire_rounds()})
 	var moved := send_order(&"move", {"target": g}, [], mortars)
 	if view.overlay != null:
 		view.overlay.marker(g, &"move" if moved else &"barrage")
@@ -923,6 +1002,18 @@ func _mortars_in_range(g: Vector3) -> PackedInt32Array:
 		var p: Vector3 = view.squads_by_id[sid].pos
 		var d := Vector2(p.x, p.z).distance_to(Vector2(g.x, g.z))
 		if d >= lo and d <= hi:
+			out.append(sid)
+	return out
+
+
+## S5b: mortar squads (with a selected man) not inside their minimum range
+## of `g`.
+func _mortars_beyond_min(g: Vector3) -> PackedInt32Array:
+	var lo := float(view.rules().get("mortar_min_m", 60.0))
+	var out := PackedInt32Array()
+	for sid in _squads_of_type(MatchView.MORTARS):
+		var p: Vector3 = view.squads_by_id[sid].pos
+		if Vector2(p.x, p.z).distance_to(Vector2(g.x, g.z)) >= lo:
 			out.append(sid)
 	return out
 
@@ -962,11 +1053,14 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 				_set_tool(&"")
 			return
 		&"barrage":
-			var ids := _mortars_in_range(g)
-			if ids.is_empty():
+			# S5b: every selected mortar outside its minimum range (beyond
+			# its range it walks up first); not at a point the preview
+			# refuses (the label says why).
+			var ids := _mortars_beyond_min(g)
+			if ids.is_empty() or _preview_refuses(g):
 				AudioManager.play_ui(&"error")
 				return
-			view.emit_intent(&"barrage", {"squads": ids, "target": g})
+			view.emit_intent(&"fire_mission", {"squads": ids, "target": g, "rounds": fire_rounds()})
 		&"throw":
 			throw_at(g, shift)
 			return
@@ -1010,6 +1104,8 @@ func suppress_at(line: PackedVector3Array) -> void:
 # --- input -----------------------------------------------------------------
 
 func _process(_delta: float) -> void:
+	if view != null:
+		_update_fire_preview()
 	# A release over a HUD panel never reaches _unhandled_input: finish the
 	# box here once the button is up.
 	if _pressing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
@@ -1051,6 +1147,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _mouse_button(e: InputEventMouseButton) -> void:
 	var ctrl := e.ctrl_pressed or e.meta_pressed
+	# S5b: Shift+wheel sets the fire-mission rounds while the tool is armed.
+	if tool == &"barrage" and e.shift_pressed and e.pressed \
+			and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		var step := 1 if e.button_index == MOUSE_BUTTON_WHEEL_UP else -1
+		fm_rounds = clampi(fire_rounds() + step, 1, 50)
+		get_viewport().set_input_as_handled()
+		return
 	if e.button_index == MOUSE_BUTTON_LEFT:
 		if e.pressed:
 			if tool == &"dig":

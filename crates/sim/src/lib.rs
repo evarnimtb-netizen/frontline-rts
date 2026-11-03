@@ -75,7 +75,8 @@ pub use command::{Command, CommandKind};
 pub use dig::{DigJob, DigSegment};
 pub use ecs::{CHUNK_SIZE, Combat, Entities, EntityKind, IdAllocator, PlayerId, SimId, Stance};
 pub use fire_mission::{
-    BurstRecord, FireMissionEvent, FireMissionRefusal, FmCounters, IntelCell, Mission, RangingCell,
+    BurstRecord, FireMissionEvent, FireMissionRefusal, FirePreview, FmCounters, IntelCell, Mission,
+    RangingCell,
 };
 pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};

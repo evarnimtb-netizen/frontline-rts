@@ -64,6 +64,8 @@ func _ready() -> void:
 	# projects with this frame's view.
 	camera.process_priority = -20
 	view.intent.connect(_on_intent)
+	if source.has_method("set_fire_preview"):
+		view.preview_source = source
 	if source.has_method("start_match"):
 		if Session.net_mode and source.has_method("attach_net"):
 			source.attach_net(Session.net)

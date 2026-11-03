@@ -40,7 +40,7 @@ const CATALOG := [
 ## bridge does; orders follow them).
 const CAPABILITIES := {
 	"rifle": ["dig_basic", "recrew"], "mg": ["recrew"], "engineer": ["dig_basic", "dig_full", "recrew"],
-	"mortar": ["recrew", "barrage"], "at": ["dig_basic", "at_hunt"], "crew": ["vehicle_crew"],
+	"mortar": ["recrew", "fire_mission", "barrage"], "at": ["dig_basic", "at_hunt"], "crew": ["vehicle_crew"],
 }
 const RULES := {
 	"pop_cap": 120,
@@ -49,6 +49,7 @@ const RULES := {
 	"suppress_line_max_m": 40.0,
 	"mortar_min_m": 60.0,
 	"mortar_max_m": 600.0,
+	"fire_mission_rounds": 6,
 	"capture_radius_m": 15.0,
 	"throw_range_m": {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)},
 }
@@ -124,6 +125,21 @@ var _tick := 0
 var _minimap: Texture2D
 ## S3: tanks, wrecks, shells and armour events.
 var veh := MockVehicles.new(self)
+## S5b (mock): the fire-mission tool's request ([squad, Vector3, rounds]).
+var _fp_req: Array = []
+## S5b (mock) fire-mission numbers: voice link, observe range (m), the
+## observed / map first-round error (share of range, floor m), precision
+## spread (share of range, half for the expected miss).
+const FM_LINK_M := 150.0
+const FM_OBSERVE_M := 400.0
+const FM_ERR := Vector2(0.03, 10.0)
+const FM_MAP_ERR := Vector2(0.08, 27.0)
+const FM_SPREAD := 0.05
+const FM_REFUSALS := {
+	"inside_minimum": "Too close: inside the minimum range",
+	"unknown_ground": "Unknown ground: no observer sees it and nothing was seen there",
+	"no_bombs": "No bombs",
+}
 
 
 func _ready() -> void:
@@ -257,13 +273,16 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 			for sq in _own_squads(ids):
 				if sq.type in ["rifle", "engineer"]:
 					_squad_dig(sq, data.polyline)
-		&"barrage":
+		&"barrage", &"fire_mission":
 			var t: Vector3 = data.target
 			for sq in _own_squads(ids):
 				if sq.type == "mortar":
-					sq.order = "barrage"
-					sq.target = sq.pos
-					sq.barrage = {"target": Vector2(t.x, t.z), "rounds": 8, "t": 0.5}
+					var fp := fire_preview_for(sq, t)
+					if not fp.ok:
+						var ev := {"kind": "fire_mission_refused", "text": "Fire mission refused: %s." % fp.text, "player": local_player, "time_s": time_s, "squad": sq.id, "reason": fp.reason}
+						_events.append(ev)
+						continue
+					_start_mission(sq, Vector2(t.x, t.z), int(data.get("rounds", 6)), fp)
 		&"regroup":
 			for sq in _own_squads(ids):
 				for man in sq.men:
@@ -935,11 +954,10 @@ func _ai_plan(ai: int) -> void:
 			_order(sq, "retreat", MockMap.BASES[ai])
 			continue
 		if sq.type == "mortar":
-			if sq.order != "barrage" and rng.randf() < 0.25:
+			if sq.order != "fire_mission" and rng.randf() < 0.25:
 				var tgt := _nearest_enemy(sq, RULES.mortar_max_m)
 				if tgt != -1 and squads[tgt].pos.distance_to(sq.pos) > RULES.mortar_min_m:
-					sq.order = "barrage"
-					sq.barrage = {"target": squads[tgt].pos, "rounds": 6, "t": 1.0}
+					_start_mission(sq, squads[tgt].pos, 6, {"mode": "map", "error_m": 30.0})
 			continue
 		if sq.order == "idle" and rng.randf() < 0.5:
 			var best := -1
@@ -1137,16 +1155,28 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 				if job.men.has(man.id) and man.order == "dig":
 					man.order = "hold"
 			sq.unit_dig = {}
-	# Mortar barrage.
-	if sq.order == "barrage" and not sq.barrage.is_empty() and status != "pinned":
-		sq.barrage.t -= dt
-		if sq.barrage.t <= 0.0:
-			sq.barrage.t = 3.5
-			sq.barrage.rounds -= 1
+	# Mortar fire mission (S5b mock: laying, adjusting rounds that halve
+	# the aim error when observed, then fire for effect).
+	if sq.order == "fire_mission" and not sq.barrage.is_empty() and status != "pinned":
+		var b: Dictionary = sq.barrage
+		b.t -= dt
+		if b.t <= 0.0:
+			b.fired += 1
+			b.rounds -= 1
 			_effects.append({"kind": "mortar_launch", "pos": _v3(sq.pos)})
-			var tgt: Vector2 = sq.barrage.target + Vector2(rng.randfn(0, 9), rng.randfn(0, 9))
+			var tgt: Vector2 = b.target + b.offset + Vector2(rng.randfn(0, 5), rng.randfn(0, 5))
 			_shells.append({"t": 2.5, "pos": tgt, "owner": sq.owner})
-			if sq.barrage.rounds <= 0:
+			if b.mode != "map":
+				b.offset *= 0.5
+				b.seen += 1
+			if b.phase == "laying":
+				b.phase = "adjusting" if b.mode != "map" else "effect"
+			if b.phase == "adjusting":
+				b.adjust += 1
+				if b.offset.length() <= 10.0:
+					b.phase = "effect"
+			b.t = 6.0 if b.phase == "adjusting" else 3.5
+			if b.rounds <= 0:
 				sq.order = "idle"
 				sq.barrage = {}
 	# Small arms (whole squad, from the anchor).
@@ -1533,9 +1563,112 @@ func _build_state() -> Dictionary:
 		"result": result.duplicate(),
 		"stats": stats.duplicate(true),
 	}
+	# S5b: the fire-mission tool's answer and the knowledge map.
+	if not _fp_req.is_empty() and squads.has(_fp_req[0]):
+		var fp := fire_preview_for(squads[_fp_req[0]], _fp_req[1])
+		fp.squad = _fp_req[0]
+		fp.rounds = _fp_req[2]
+		state.fire_preview = fp
+		var intel: Array = []
+		for id2 in ids:
+			var e2: Dictionary = squads[id2]
+			if e2.owner != local_player and _sees(eyes, e2.pos):
+				intel.append({"pos": _v3(e2.pos), "age_s": 0.0, "trench": false})
+		state.intel = intel
 	_events = []
 	_effects = []
 	return state
+
+
+## S5b (mock): the fire-mission tool asks for the preview of `squad`.
+func set_fire_preview(squad: int, point: Vector3, rounds: int) -> void:
+	_fp_req = [squad, point, rounds]
+
+
+func clear_fire_preview() -> void:
+	_fp_req = []
+
+
+## S5b (mock): what the fire-mission tool shows for mortar squad `sq` at
+## `t`: refused inside the minimum range or on unknown ground (no own
+## squad sees a point within 30 m and no capture point is there); Direct
+## within the observe range of the mortar, Observed when another own squad
+## inside the voice link is within it, else map fire.
+func fire_preview_for(sq: Dictionary, t: Vector3) -> Dictionary:
+	var at := Vector2(t.x, t.z)
+	var d: float = sq.pos.distance_to(at)
+	var out := {"point": t, "ok": true, "range_m": d, "walk": d > RULES.mortar_max_m, "ranged": false, "gunner_pos": _v3(sq.pos)}
+	var why := ""
+	if d < RULES.mortar_min_m:
+		why = "inside_minimum"
+	elif not _known(sq.owner, at):
+		why = "unknown_ground"
+	if why != "":
+		out.ok = false
+		out.reason = why
+		out.text = FM_REFUSALS[why]
+		out.mode = "map"
+		return out
+	var mode := "map"
+	if d <= FM_OBSERVE_M:
+		mode = "direct"
+	else:
+		for id in squads:
+			var o: Dictionary = squads[id]
+			if o.owner == sq.owner and o.id != sq.id and not o.men.is_empty() \
+					and o.pos.distance_to(sq.pos) <= FM_LINK_M and o.pos.distance_to(at) <= FM_OBSERVE_M:
+				mode = "observed"
+				out.observer_id = o.men[0].id
+				out.observer_pos = _v3(o.pos)
+				break
+	var e: Vector2 = FM_MAP_ERR if mode == "map" else FM_ERR
+	var err := maxf(d * e.x, e.y)
+	out.mode = mode
+	out.error_m = err
+	out.ring_m = err + d * FM_SPREAD * 0.5
+	return out
+
+
+## Whether player `owner` knows ground point `at` (mock knowledge rule).
+func _known(owner: int, at: Vector2) -> bool:
+	for p in points:
+		if Vector2(p.pos.x, p.pos.z).distance_to(at) <= 40.0:
+			return true
+	var eyes := _eyes(owner)
+	for id in squads:
+		var e: Dictionary = squads[id]
+		if e.owner != owner and e.pos.distance_to(at) <= 30.0 and _sees(eyes, e.pos):
+			return true
+	return false
+
+
+func _start_mission(sq: Dictionary, at: Vector2, rounds: int, fp: Dictionary) -> void:
+	var err := float(fp.get("error_m", 10.0))
+	var a := rng.randf() * TAU
+	sq.order = "fire_mission"
+	sq.target = sq.pos
+	sq.barrage = {
+		"target": at, "rounds": clampi(rounds, 1, 50), "t": 4.0 if fp.get("mode", "map") == "direct" else 10.0,
+		"mode": fp.get("mode", "map"), "offset": Vector2(cos(a), sin(a)) * err, "err0": err,
+		"seen": 0, "fired": 0, "adjust": 0, "phase": "laying",
+		"observer_pos": fp.get("observer_pos", null), "observer_id": int(fp.get("observer_id", -1)),
+	}
+
+
+func _mission_state(sq: Dictionary) -> Dictionary:
+	var b: Dictionary = sq.barrage
+	var m := {
+		"mode": b.mode, "phase": b.phase, "error_m": b.offset.length(), "first_error_m": b.err0,
+		"seen": b.seen, "fired": b.fired, "rounds_left": b.rounds, "adjust": b.adjust,
+		"charge": 1, "flight_s": 14.0 + b.target.distance_to(sq.pos) / 400.0, "ranged": false,
+		"target": _v3(b.target), "gunner_pos": _v3(sq.pos),
+	}
+	if b.mode == "observed" and b.observer_pos != null:
+		m.observer_pos = b.observer_pos
+		m.observer_id = b.observer_id
+	elif b.mode == "direct":
+		m.observer_pos = _v3(sq.pos)
+	return m
 
 
 func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
@@ -1593,6 +1726,9 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 			out.dig_progress = sq.unit_dig.progress
 	if not sq.barrage.is_empty():
 		out.target = _v3(sq.barrage.target)
+		out.rounds = int(sq.barrage.rounds)
+		if sq.owner == local_player:
+			out.mission = _mission_state(sq)
 	elif sq.order in ["move", "attack_move", "retreat"]:
 		out.target = _v3(sq.target)
 	# Escort (S3, opt; a proposed contract key): the vehicle followed.

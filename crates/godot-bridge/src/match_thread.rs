@@ -106,6 +106,8 @@ pub struct MatchHandle {
     thread: Option<JoinHandle<()>>,
     pub counters: Arc<MatchCounters>,
     pub tick_hz: u32,
+    /// S5b: the fire-mission tool's request (frames answer it).
+    pub preview: Arc<crate::match_frame::PreviewShared>,
 }
 
 impl MatchHandle {
@@ -168,6 +170,7 @@ impl MatchHandle {
         let tick_hz = setup.tick_hz.max(1);
         let mut ctx = FrameCtx::new(&setup, local);
         ctx.scene = scene;
+        let preview = Arc::clone(&ctx.preview);
         let anchor = Instant::now();
         let mut first = MatchFrame::empty();
         first.fill(&world, &mut ctx, 0.0, anchor);
@@ -234,6 +237,7 @@ impl MatchHandle {
             thread: Some(thread),
             counters,
             tick_hz,
+            preview,
         })
     }
 
@@ -387,8 +391,10 @@ fn run_loop(
     while !stop.load(Ordering::Relaxed) {
         let paused = counters.paused.load(Ordering::Relaxed);
         if paused {
-            if !was_paused {
-                // Republish so the presenter sees the pause flag.
+            // Republish so the presenter sees the pause flag, and (S5b) for
+            // each new fire-mission tool request.
+            let asked = out.ctx.preview.generation.load(Ordering::Relaxed) != out.ctx.preview_gen;
+            if !was_paused || asked {
                 out.publish(world, 0.0, next - base_period, true, false);
             }
             was_paused = true;

@@ -352,6 +352,50 @@ pub struct PlayerReport {
     pub s5a: S5aPlayer,
     /// S5b fire-mission counters (`frontline_sim::FmCounters`).
     pub s5b: frontline_sim::FmCounters,
+    /// S5b Part B AI fire-mission counters (`AiCounters::fm_*`).
+    pub s5b_ai: S5bAi,
+}
+
+/// S5b Part B AI fire-mission counters of one player (or summed).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S5bAi {
+    /// Missions ordered by the mode the AI expected (direct, observed, map).
+    pub missions: [u64; 3],
+    pub spotters: u64,
+    pub spotter_missions: u64,
+    pub spotter_timeouts: u64,
+    pub spotter_recalls: u64,
+    pub map_holds: u64,
+    pub walk_holds: u64,
+    pub blind_holds: u64,
+}
+
+impl S5bAi {
+    fn of(c: &frontline_sim::ai::AiCounters) -> S5bAi {
+        S5bAi {
+            missions: c.fm_missions.map(u64::from),
+            spotters: c.fm_spotters as u64,
+            spotter_missions: c.fm_spotter_missions as u64,
+            spotter_timeouts: c.fm_spotter_timeouts as u64,
+            spotter_recalls: c.fm_spotter_recalls as u64,
+            map_holds: c.fm_map_holds as u64,
+            walk_holds: c.fm_walk_holds as u64,
+            blind_holds: c.fm_blind_holds as u64,
+        }
+    }
+
+    fn add(&mut self, o: &S5bAi) {
+        for k in 0..3 {
+            self.missions[k] += o.missions[k];
+        }
+        self.spotters += o.spotters;
+        self.spotter_missions += o.spotter_missions;
+        self.spotter_timeouts += o.spotter_timeouts;
+        self.spotter_recalls += o.spotter_recalls;
+        self.map_holds += o.map_holds;
+        self.walk_holds += o.walk_holds;
+        self.blind_holds += o.blind_holds;
+    }
 }
 
 /// S5a per-player report counters (`frontline_sim::AmmoAccount`).
@@ -1120,6 +1164,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     ai: ai.map_or_else(S5aAi::default, |a| S5aAi::of(&a.counters)),
                 },
                 s5b: pl.fm,
+                s5b_ai: ai.map_or_else(S5bAi::default, |a| S5bAi::of(&a.counters)),
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1518,7 +1563,8 @@ pub struct S5bFaction {
     pub upgrades: u64,
     pub downgrades: u64,
     pub no_solution: u64,
-    pub spotters: u64,
+    /// Part B AI counters, summed.
+    pub ai: S5bAi,
 }
 
 /// S5a numbers of one faction over a `--seeds` run.
@@ -1800,7 +1846,7 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             s6.upgrades += b.upgrades as u64;
             s6.downgrades += b.downgrades as u64;
             s6.no_solution += b.no_solution as u64;
-            s6.spotters += b.spotters as u64;
+            s6.ai.add(&p.s5b_ai);
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;
@@ -2130,6 +2176,25 @@ pub fn many_text(r: &ManyReport) -> String {
             q.base_bombs[0],
             q.base_bombs[1],
             q.base_bombs[2],
+        );
+        let a = &q.ai;
+        let am: u64 = a.missions.iter().sum();
+        out += &format!(
+            "S5b {} AI: missions {}: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}\n",
+            f.faction,
+            am,
+            a.missions[0],
+            a.missions[1],
+            a.missions[2],
+            (a.missions[0] + a.missions[1]) as f64 * 100.0 / am.max(1) as f64,
+            a.spotters,
+            a.spotters as f64 / n,
+            a.spotter_missions,
+            a.spotter_timeouts,
+            a.spotter_recalls,
+            a.map_holds,
+            a.walk_holds,
+            a.blind_holds,
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

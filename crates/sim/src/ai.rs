@@ -183,11 +183,13 @@ use frontline_content::ItemKind;
 mod ammo;
 mod armour;
 mod assault;
+mod mortar;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
     END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
     HUNT_ENDS, MAX_HUNTS,
 };
+pub use mortar::{AiSpotter, MAX_SPOTTERS, MODE_CHECKS};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -295,6 +297,9 @@ pub struct AiState {
     pub refill: BTreeMap<SquadId, u64>,
     /// S5a: Panzerfaust ambushes, by squad (at most [`MAX_AMBUSHES`]).
     pub ambush: BTreeMap<SquadId, AiAmbush>,
+    /// S5b: mortar squads' spotters, by squad (at most [`MAX_SPOTTERS`];
+    /// `ai::mortar`).
+    pub spotters: BTreeMap<SquadId, AiSpotter>,
 }
 
 /// S5a: most Panzerfaust ambushes one AI keeps.
@@ -416,6 +421,21 @@ pub struct AiCounters {
     pub ambushes: u32,
     pub ambush_shots: u32,
     pub ambush_ends: [u32; ammo::AMBUSH_ENDS],
+    /// S5b fire missions (`ai::mortar`): missions ordered by the mode the
+    /// AI expected (`fire_mission::mode`), spotters sent, missions observed
+    /// by a spotter, spotters called back after `spot_max_s` with nothing
+    /// seen and after `spot_hold_s` with nothing new, map fire held by
+    /// `map_fire_min_pct` or the reserve, and targets passed over because
+    /// the knowledge rule would refuse them (blind fire, never ordered).
+    pub fm_missions: [u32; mortar::FM_MODES],
+    pub fm_spotters: u32,
+    pub fm_spotter_missions: u32,
+    pub fm_spotter_timeouts: u32,
+    pub fm_spotter_recalls: u32,
+    pub fm_map_holds: u32,
+    pub fm_blind_holds: u32,
+    /// S5b: map fire held while the mortar walks to its support spot.
+    pub fm_walk_holds: u32,
 }
 
 impl AiState {
@@ -437,6 +457,7 @@ impl AiState {
             hunts: BTreeMap::new(),
             refill: BTreeMap::new(),
             ambush: BTreeMap::new(),
+            spotters: BTreeMap::new(),
         }
     }
 
@@ -459,6 +480,7 @@ impl AiState {
         g: &MatchState,
         player: PlayerId,
         tick: u64,
+        ents_len: usize,
     ) -> Result<(), &'static str> {
         let np = g.points.len();
         let bad_squad = |id: &SquadId| id.0 >= g.next_squad;
@@ -513,6 +535,8 @@ impl AiState {
             || self.ambush.len() > MAX_AMBUSHES
             || self.ambush.keys().any(bad_squad)
             || self.ambush.values().any(|a| a.since > tick)
+            // S5b.
+            || !self.validate_spotters(g.next_squad, ents_len, tick)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -623,6 +647,9 @@ struct Known {
     in_trench: bool,
     /// Of an AT team (S3).
     at: bool,
+    /// S5b: has stood still for `ai::mortar::STILL_TICKS` (a mortar
+    /// target that will still be there when the bombs land).
+    still: bool,
 }
 
 /// A spotted enemy vehicle (S3).
@@ -859,6 +886,7 @@ impl Planner<'_> {
                     at: squad
                         .and_then(|s| self.g.squads.get(&s))
                         .is_some_and(|s| s.launcher.is_some()),
+                    still: self.ents.combat[i].still >= mortar::STILL_TICKS,
                 }
             })
             .collect()
@@ -1440,113 +1468,6 @@ impl Planner<'_> {
         let len = (line[1] - line[0]).length();
         (len >= Fx::from_int(2) && len <= Fx::from(g.setup.rules.dig.max_length)).then_some(line)
     }
-
-    // ---------------------------------------------------------- mortars --
-
-    fn mortars(&mut self, mine: &[Mine], points: &[PointEval], known: &[Known]) {
-        let g = self.g;
-        let s = &g.setup;
-        // Enemy groups by squad: (squad, sum x, sum y, men, men in trenches).
-        let mut groups: BTreeMap<u32, (i64, i64, i64, i64)> = BTreeMap::new();
-        for k in known {
-            let e = groups.entry(k.squad).or_default();
-            e.0 += k.pos.x.raw() as i64;
-            e.1 += k.pos.y.raw() as i64;
-            e.2 += 1;
-            e.3 += k.in_trench as i64;
-        }
-        let own: Vec<FxVec2> = self
-            .ents
-            .soldiers()
-            .filter(|id| self.ents.owner[id.index()] == self.me)
-            .map(|id| self.ents.transform[id.index()].pos.xy())
-            .collect();
-        let danger = sq_m(Fx::from_int(
-            self.g.setup.rules.ai.infantry.danger_close_m as i32,
-        ));
-        let front = points
-            .iter()
-            .filter(|p| p.rel != Rel::Own || p.threat > 0)
-            .max_by_key(|p| p.priority)
-            .or_else(|| points.iter().max_by_key(|p| p.priority))
-            .map(|p| p.pos);
-        // S4: squads that can barrage (a member carries a mortar).
-        for m in mine.iter().filter(|m| {
-            s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::FireMission)
-        }) {
-            let sq = &g.squads[&m.id];
-            if matches!(sq.order, Order::FireMission { .. }) {
-                continue;
-            }
-            let w = &s.weapons[s.squad_types[sq.type_idx as usize].weapon as usize];
-            let min = Fx::from(w.range_min) + Fx::from_int(20);
-            let max = Fx::from(w.range_max) - Fx::from_int(10);
-            let mut best: Option<(i64, FxVec2)> = None;
-            for &(sx, sy, n, trench) in groups.values() {
-                let c = FxVec2::new(Fx::from_raw((sx / n) as i32), Fx::from_raw((sy / n) as i32));
-                let d = (c - m.lead).length();
-                if d < min || d > max || own.iter().any(|o| (*o - c).length_sq_raw() <= danger) {
-                    continue;
-                }
-                let score = n * 10 + trench * 20 + self.noise();
-                if score >= 20 && best.is_none_or(|(b, _)| score > b) {
-                    best = Some((score, c));
-                }
-            }
-            // S5a mortar reserve: barrage only above the reserve unless an
-            // own point is under threat, never more rounds than it holds.
-            let (held, pct) = crate::supply::mortar_bombs(s, self.ents, sq);
-            let defend = points.iter().any(|p| p.rel == Rel::Own && p.threat > 0);
-            if best.is_some()
-                && (held == 0
-                    || (pct.is_some_and(|p| p <= s.rules.ai.ammo.mortar_reserve_pct) && !defend))
-            {
-                self.ai.counters.mortar_reserve_holds += 1;
-                best = None;
-            }
-            if let Some((_, target)) = best {
-                let rounds = match pct {
-                    Some(_) => s
-                        .rules
-                        .ai
-                        .barrage_rounds
-                        .min(held.min(u16::MAX as u32) as u16),
-                    None => s.rules.ai.barrage_rounds,
-                };
-                self.ai.emit(
-                    self.due,
-                    CommandKind::FireMission {
-                        squad: m.id,
-                        target,
-                        rounds,
-                    },
-                );
-                self.task(m.id, TaskKind::FireMission, NO_POINT, target);
-                continue;
-            }
-            let Some(front) = front else { continue };
-            let back = (g.base_of(self.me) - front).normalize_or_zero();
-            let spot = self.terrain.clamp(
-                front + back * Fx::from_int(self.g.setup.rules.ai.infantry.support_back_m as i32),
-            );
-            let near = |a: FxVec2, r: i32| (a - spot).length_sq_raw() <= sq_m(Fx::from_int(r));
-            let on_track = match &sq.order {
-                Order::Idle => near(m.lead, 40),
-                Order::Move { target } => near(*target, 40),
-                _ => false,
-            };
-            if !on_track {
-                self.ai.emit(
-                    self.due,
-                    CommandKind::Move {
-                        squad: m.id,
-                        target: spot,
-                    },
-                );
-            }
-            self.task(m.id, TaskKind::Support, NO_POINT, spot);
-        }
-    }
 }
 
 impl Planner<'_> {
@@ -2080,7 +2001,9 @@ impl Planner<'_> {
                 .pending
                 .iter()
                 .any(|c| matches!(c.kind, CommandKind::Regroup { squad } if squad == m.id));
+            // S5b: a mortar's spotter stays out.
             if !pending
+                && !self.ai.spotter_out(m.id)
                 && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
                 && detached.clone().next().is_some()
                 && detached.clone().all(|id| kit(id).windup.is_none())

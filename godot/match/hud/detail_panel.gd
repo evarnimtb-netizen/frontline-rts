@@ -20,6 +20,12 @@ extends Control
 ## state's soldier `name`, the squad's `slot_names` for the fallen) and
 ## his weapon; the man carrying a crew weapon (MG, mortar, launcher) has an
 ## accent diamond, and a man with a Panzerfaust a "Pzf" mark.
+##
+## S5b: an own mortar on a fire mission gets a mission strip under its men
+## (the free fourth row): the mode tag (DIR / OBS / MAP), the ranging line
+## (rounds seen land, aim error now, phase, rounds left, flight time of the
+## last round) and a ranging bar (how far the error has come down from the
+## first round's).
 
 const PAD := 10.0
 const HEAD := 27.0
@@ -270,6 +276,7 @@ func _draw_squad(sid: int) -> void:
 		var line := "Men %d/%d · health %d %%" % [int(sq.get("men", 0)), int(sq.get("men_max", 0)), roundi(float(sq.get("health", 1.0)) * 100.0)]
 		HudStyle.text(self, font, Vector2(PAD, HEAD + 18.0), line, HudStyle.FONT, HudStyle.TEXT)
 		return
+	_draw_mission(sq)
 	var sel: Node = view.selection
 	var ps: float = view.hud.m.pip
 	var names: Array = MatchView.MAN_NAMES.get(sq.type, [])
@@ -358,6 +365,68 @@ func _draw_squad(sid: int) -> void:
 
 ## A man's health as a thin bar, coloured as on the one-man card (dim
 ## while unhurt, so a whole squad reads quietly).
+## S5b: the mission tag word and colour for a mode.
+static func mission_tag(mode: String) -> Array:
+	match mode:
+		"direct":
+			return ["DIR", HudStyle.OWN]
+		"observed":
+			return ["OBS", HudStyle.ACCENT]
+	return ["MAP", HudStyle.DANGER]
+
+
+## S5b: the mission strip's line, e.g. "Ranging 2 · ±6 m · Adjusting · 4
+## left · 14.6 s".
+static func mission_line(m: Dictionary) -> String:
+	var phase: String = {"laying": "Laying", "adjusting": "Adjusting", "effect": "For effect"}.get(String(m.get("phase", "")), "")
+	var parts: Array[String] = []
+	if String(m.get("mode", "map")) == "map":
+		parts.append("No ranging")
+	else:
+		parts.append("Ranging %d" % int(m.get("seen", 0)))
+	parts.append("±%d m" % roundi(float(m.get("error_m", 0.0))))
+	if phase != "":
+		parts.append(phase)
+	parts.append("%d left" % int(m.get("rounds_left", 0)))
+	if int(m.get("fired", 0)) > 0:
+		parts.append("%.1f s" % float(m.get("flight_s", 0.0)))
+	return " · ".join(parts)
+
+
+## S5b: share of the first round's aim error already ranged out (0..1).
+static func ranging_progress(m: Dictionary) -> float:
+	var e0 := float(m.get("first_error_m", 0.0))
+	if e0 <= 0.0:
+		return 0.0
+	return clampf(1.0 - float(m.get("error_m", e0)) / e0, 0.0, 1.0)
+
+
+## S5b: the mission strip (module docs).
+func _draw_mission(sq: Dictionary) -> void:
+	var m: Dictionary = sq.get("mission", {})
+	if m.is_empty() or rows.is_empty():
+		return
+	var last: Rect2 = rows[rows.size() - 1].rect
+	var y := last.end.y + 2.0
+	var h := last.size.y - 2.0
+	if y + h > size.y - 2.0:
+		return
+	var font := get_theme_default_font()
+	var bold := HudStyle.bold()
+	var r := Rect2(PAD - 4.0, y, size.x - 2.0 * PAD + 8.0, h)
+	HudStyle.box(self, r, HudStyle.BG_BUTTON, 3)
+	var tag: Array = mission_tag(String(m.get("mode", "map")))
+	var by := y + h * 0.5 + 4.0
+	var tw := HudStyle.text_w(bold, tag[0], HudStyle.FONT_SMALL) + 8.0
+	HudStyle.tag(self, bold, r.position.x + 4.0 + tw, by, tag[0], tag[1])
+	var tx := r.position.x + tw + 10.0
+	HudStyle.text(self, font, Vector2(tx, by), HudStyle.fit(font, mission_line(m), r.end.x - tx - 6.0, HudStyle.FONT_SMALL), HudStyle.FONT_SMALL, HudStyle.TEXT)
+	# Ranging bar along the strip's foot.
+	var bar := Rect2(tx, r.end.y - 4.0, r.end.x - tx - 6.0, 2.0)
+	draw_rect(bar, Color(0, 0, 0, 0.35))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * ranging_progress(m), bar.size.y)), tag[1])
+
+
 func _hp_bar(bar: Rect2, hp: float) -> void:
 	hp = clampf(hp, 0.0, 100.0)
 	draw_rect(bar, Color(0, 0, 0, 0.35))

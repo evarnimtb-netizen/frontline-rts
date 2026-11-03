@@ -182,6 +182,13 @@ fn ai_vs_ai_plays_by_the_rules() {
     for p in 0..2u8 {
         let ai = g.ai(PlayerId(p)).unwrap();
         assert!(ai.issued > 50, "player {p} issued {}", ai.issued);
+        // S5b T4: the AI never orders a fire mission the knowledge rule (or
+        // any other check) refuses.
+        assert_eq!(
+            g.players()[p as usize].fm.refused,
+            [0; frontline_sim::FireMissionRefusal::COUNT],
+            "player {p}: refused fire missions"
+        );
         assert!(
             ai.rejected * 50 <= ai.issued,
             "player {p}: {} of {} commands rejected",

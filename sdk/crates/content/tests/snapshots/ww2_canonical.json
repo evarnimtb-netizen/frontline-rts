@@ -928,7 +928,7 @@
           "frag_group_m": 5,
           "satchel_side_mm": 800,
           "satchel_slow_mm_s": 1100,
-          "support_back_m": 200,
+          "support_back_m": 120,
           "trench_probe_dm": 8,
           "trench_probe_m": 60,
           "trench_probe_step_m": 4
@@ -947,7 +947,7 @@
           "mission_rounds": 6,
           "spot_hold_s": 30,
           "spot_max_s": 60,
-          "spot_samples": 8
+          "spot_samples": 16
         },
         "repair_clear_m": 150,
         "retreat_strength_pct": 40,

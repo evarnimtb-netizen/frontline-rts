@@ -102,6 +102,23 @@ func _run() -> void:
 	await _frames(10)
 	_check(current_scene == m2 and m2.view.data_error.visible, "S5a: the broken vehicle shows the banner, the match goes on")
 	_remove_dir(ammo_mod)
+	# S5b: a mortar charge edited (F5 checks clean), then a charge table
+	# that does not rise refused with the key and the fix.
+	var fm_mod := ProjectSettings.globalize_path("user://s5b_charge_mod")
+	_copy_dir(ProjectSettings.globalize_path("res://").path_join("../mods/ww2").simplify_path(), fm_mod)
+	var w_path := fm_mod.path_join("defs/weapons/grw34.toml")
+	var w_text := FileAccess.get_file_as_string(w_path)
+	_check(w_text.contains("charges_m_s = [75, 105, 130, 152, 174]"), "S5b: the GrW 34 has its charge table")
+	FileAccess.open(w_path, FileAccess.WRITE).store_string(w_text.replace("charges_m_s = [75, 105, 130, 152, 174]", "charges_m_s = [75, 108, 130, 152, 174]"))
+	m2.source.mods_dir = fm_mod
+	_check(m2.source.check_mods(session.match_setup()) == "", "S5b: an edited charge checks clean")
+	FileAccess.open(w_path, FileAccess.WRITE).store_string(w_text.replace("charges_m_s = [75, 105, 130, 152, 174]", "charges_m_s = [75, 130, 105, 152, 174]"))
+	var f_err: String = m2.source.check_mods(session.match_setup())
+	_check(f_err.contains("charges_m_s") and f_err.contains("rise") and f_err.contains("[75, 105, 130, 152, 174]"), "S5b: a charge table that does not rise is refused with the fix: %s" % f_err.left(200))
+	m2._reload_data()
+	await _frames(10)
+	_check(current_scene == m2 and m2.view.data_error.visible, "S5b: the broken charge table shows the banner, the match goes on")
+	_remove_dir(fm_mod)
 	print("test_data_reload: %d/%d checks passed" % [_checks - _fails, _checks])
 	m2.source.stop_match()
 	quit(1 if _fails > 0 else 0)

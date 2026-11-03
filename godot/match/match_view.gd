@@ -96,14 +96,14 @@ const WEAPONS := {
 }
 const ORDER_TEXT := {
 	"idle": "Holding", "move": "Moving", "attack_move": "Attacking", "retreat": "Retreating",
-	"dig": "Digging", "barrage": "Firing", "setup": "Setting up", "hold": "Holding",
+	"dig": "Digging", "barrage": "Firing", "fire_mission": "Fire mission", "setup": "Setting up", "hold": "Holding",
 	"throw": "Throwing", "follow": "Escorting", "suppress": "Suppressing",
 	"recrew": "Re-crewing",
 }
 ## Intents that get a pending-order marker in net mode, by marker kind.
 const PENDING_KINDS := {
 	&"move": "move", &"move_units": "move", &"attack_move": "attack_move",
-	&"attack_move_units": "attack_move", &"barrage": "barrage", &"throw": "throw",
+	&"attack_move_units": "attack_move", &"barrage": "barrage", &"fire_mission": "barrage", &"throw": "throw",
 	&"throw_each": "throw", &"dig": "dig", &"dig_units": "dig",
 	&"reverse_units": "move", &"face_units": "move", &"suppress_units": "throw",
 }
@@ -131,6 +131,10 @@ const VEHICLE_PICK_REACH_M := 5.5
 
 ## Ground height for picking and overlays: (x: float, z: float) -> float.
 var height_fn: Callable
+## S5b: the source the fire-mission tool asks for its preview (has
+## set_fire_preview(squad, point, rounds) and clear_fire_preview(); null:
+## no preview). The answer comes back in state.fire_preview.
+var preview_source: Object
 var camera: Camera3D
 var overlay: Node3D
 ## Latest state as given (read-only for components).
@@ -625,6 +629,17 @@ func player(idx: int) -> Dictionary:
 	return ps[idx] if idx >= 0 and idx < ps.size() else {}
 
 
+## S5b: asks the source for the fire-mission preview of `squad` at `g`.
+func request_fire_preview(squad: int, g: Vector3, rounds: int) -> void:
+	if preview_source != null:
+		preview_source.set_fire_preview(squad, g, rounds)
+
+
+func clear_fire_preview() -> void:
+	if preview_source != null:
+		preview_source.clear_fire_preview()
+
+
 func rules() -> Dictionary:
 	return state.get("rules", {})
 
@@ -696,7 +711,7 @@ func emit_intent(kind: StringName, data: Dictionary) -> void:
 			retreat_ordered.emit(ids)
 		&"dig":
 			dig_ordered.emit(ids, data.polyline)
-		&"barrage":
+		&"barrage", &"fire_mission":
 			barrage_ordered.emit(ids, data.target)
 		&"regroup":
 			regroup_ordered.emit(ids)

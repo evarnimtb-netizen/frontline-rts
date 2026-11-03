@@ -38,13 +38,18 @@ pub struct UiEvent {
     /// `under_attack`, `tickets_low` or `info`; S3 `vehicle_arrived`,
     /// `vehicle_knocked_out`, `vehicle_damaged`, `vehicle_bogged`; S3b
     /// `call_in_refused`; S3c `vehicle_abandoned`, `vehicle_recrewed`,
-    /// `vehicle_captured`, `recrew_refused`. Since S3b `squad_arrived` and
-    /// `vehicle_arrived` come from a call-in ("... deployed at base.").
+    /// `vehicle_captured`, `recrew_refused`; S5b `fire_mission_refused`.
+    /// Since S3b `squad_arrived` and `vehicle_arrived` come from a call-in
+    /// ("... deployed at base.").
     pub kind: &'static str,
     pub text: String,
     pub pos: Option<[f32; 2]>,
     pub player: i32,
     pub tick: u64,
+    /// S5b `fire_mission_refused`: the squad and the reason word
+    /// (`FireMissionRefusal::NAMES`); `None` / empty for other events.
+    pub squad: Option<u32>,
+    pub reason: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +179,8 @@ impl EventTracker {
                 pos,
                 player: local as i32,
                 tick: f.tick,
+                squad: None,
+                reason: "",
             })
         };
         if !self.started {
@@ -322,6 +329,8 @@ impl EventTracker {
                 pos,
                 player: local as i32,
                 tick: ev.tick,
+                squad: None,
+                reason: "",
             });
         }
         // S4: crew weapons picked up ("MG 42 picked up by MG assistant.").
@@ -344,6 +353,20 @@ impl EventTracker {
                 pos: Some(p.pos),
                 player: local as i32,
                 tick: ev.tick,
+                squad: None,
+                reason: "",
+            });
+        }
+        // S5b: refused fire missions, with the HUD's reason line.
+        for r in &ev.fire_mission_refusals {
+            out.push(UiEvent {
+                kind: "fire_mission_refused",
+                text: format!("Fire mission refused: {}.", r.refusal.text()),
+                pos: None,
+                player: local as i32,
+                tick: ev.tick,
+                squad: Some(r.squad.0),
+                reason: frontline_sim::FireMissionRefusal::NAMES[r.refusal as usize],
             });
         }
         // S3c: refused re-crews.
@@ -354,6 +377,8 @@ impl EventTracker {
                 pos: None,
                 player: local as i32,
                 tick: ev.tick,
+                squad: None,
+                reason: "",
             });
         }
     }
@@ -427,6 +452,8 @@ impl EventTracker {
                 pos: Some([e.pos[0], e.pos[1]]),
                 player: e.owner as i32,
                 tick: ev.tick,
+                squad: None,
+                reason: "",
             });
         }
     }

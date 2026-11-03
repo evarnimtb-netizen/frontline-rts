@@ -303,7 +303,11 @@ func _draw_tool_hint(font: Font, sel: Node) -> void:
 		&"attack_move":
 			text = "ATTACK-MOVE  ·  click target  ·  right-click cancels"
 		&"barrage":
-			text = "BARRAGE  ·  click target in range  ·  right-click cancels"
+			# S5b: the fire-mission tool's mode and expected miss, or why
+			# the point is refused.
+			var lab: Dictionary = sel.fire_tool_label()
+			text = lab.text
+			col = HudStyle.ACCENT if lab.ok else HudStyle.DANGER
 		&"face":
 			text = "FACE  ·  click where the hull front should point  ·  right-click cancels"
 		&"suppress":

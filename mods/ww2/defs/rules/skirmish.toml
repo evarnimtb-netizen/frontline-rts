@@ -748,7 +748,14 @@ buys_per_plan = 2
 # Mortars never fire this close to own men (m).
 danger_close_m = 35
 # A mortar's support spot is this far behind the point it supports (m).
-support_back_m = 200
+# S5b Part B: 200 -> 120. Fire missions are voice-linked (observer_link_m
+# 150): a section adjusting by word of mouth sits close behind the line it
+# supports (US WD Intelligence Bulletin, Feb 1944, German instructions for
+# concentrating 81-mm mortar fire), so the leaders of the squads at the
+# point are inside the link. At 200 m only the mortar's own spotter could
+# observe: 6-match A/B (seeds 1-3, both bases) observed+direct share of AI
+# missions 69/76 % -> 79/83 %, mortar bombs per match 54/85 -> 78/51.
+support_back_m = 120
 # Frag targets: spotted men within this of each other count as one group
 # (frag_group_men sets the size) (m).
 frag_group_m = 5
@@ -985,7 +992,7 @@ rearm_stall_s = 15
 # logic"; spotters and map fire are used from S5b Part B).
 [ai.mortar]
 mission_rounds = 6           # rounds per AI mission (was ai.barrage_rounds)
-spot_samples = 8             # candidate observation spots tried per plan
+spot_samples = 16            # most sight-line rays a mortar squad casts per plan looking for a spotter spot (16 spots, up to 3 targets)
 spot_max_s = 60              # s: a spotter that has not seen the target by then comes back
 spot_hold_s = 30             # s: a spotter with no new target stays this long before rejoining
 map_fire_min_pct = 60        # %: map fire only while the mortar holds more than this share of its bombs
