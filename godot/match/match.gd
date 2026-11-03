@@ -14,7 +14,8 @@ extends Node3D
 ##   flags and explosions;
 ## - match_mock.tscn: MockMatchSource and MockWorld (HUD work and tests).
 ##
-## --capture_setup (see Session) stages a screenshot on the mock: "hud",
+## --capture_setup (see Session) stages a screenshot on the mock (S5a:
+## "s5a_ammo", a squad card with rounds and LOW / DRY tags): "hud",
 ## "throw", "rotated" / "rotated_45" (minimap turning with the camera,
 ## yaw 30° / 45°), "north_up" (minimap locked north-up), "docked" (minimap
 ## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd,
@@ -295,6 +296,21 @@ func _stage(what: String) -> void:
 			source.force_end(0, "tickets")
 		"s3_vehicles", "s3_card", "s3_fit", "s3_locked", "s3_escort":
 			_stage_s3(what)
+		"s5a_ammo":
+			# S5a: the "hud" firefight; the first rifle squad low on rounds
+			# and selected (its card rows show each man's rounds), an MG
+			# team dry, the second rifle squad holding fire.
+			_stage("hud")
+			var rifles := _own_ids("rifle")
+			var mgs := _own_ids("mg")
+			if not rifles.is_empty():
+				source.set_rounds(rifles[0], 0.22)
+			if not mgs.is_empty():
+				source.set_rounds(mgs[0], 0.0)
+			if rifles.size() > 1:
+				source.handle_intent(&"set_fire", {"units": source.unit_ids(rifles[1]), "mode": "hold"})
+			view.update_state(source.get_state())
+			view.selection.select_squads(rifles.slice(0, 1))
 
 
 ## S3 screenshot staging on the mock: the "hud" firefight plus four own

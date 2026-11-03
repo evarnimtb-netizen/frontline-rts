@@ -92,6 +92,7 @@ func _run() -> void:
 	_test_cost()
 	await _test_callin_need()
 	await _test_s4()
+	await _test_s5a()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1165,6 +1166,56 @@ func _test_end() -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await process_frame
+
+
+# --- S5a ---------------------------------------------------------------------
+
+func _test_s5a() -> void:
+	var rifle: int = _source.squad_ids(0, "rifle")[0]
+	var mg: int = _source.squad_ids(0, "mg")[0]
+	var men: PackedInt32Array = _source.unit_ids(rifle)
+	_source.set_rounds(rifle, 1.0)
+	_view.update_state(_source.get_state())
+	var sq: Dictionary = _view.squads_by_id[rifle]
+	_check(sq.get("ammo_state", "") == "ok" and absf(float(sq.get("ammo_pct", 0.0)) - 1.0) < 0.01, "S5a: a full squad's ammo state is ok")
+	var so: Dictionary = _view.soldiers_by_id[men[0]]
+	_check(int(so.get("rounds", -1)) == 60 and String(so.get("active_weapon", "")) == "Kar98k", "S5a: an own man carries his rounds and the weapon in hand")
+	_source.set_rounds(rifle, 0.2)
+	_view.update_state(_source.get_state())
+	_check(String(_view.squads_by_id[rifle].get("ammo_state", "")) == "low", "S5a: under 30 % the squad is LOW")
+	_source.set_rounds(mg, 0.0)
+	_view.update_state(_source.get_state())
+	var msq: Dictionary = _view.squads_by_id[mg]
+	_check(String(msq.get("ammo_state", "")) == "dry" and int(msq.get("crew_rounds", -1)) == 0 and String(msq.get("crew_weapon_name", "")) == "MG 42", "S5a: an empty MG team is DRY and shows its crew weapon rounds")
+	_check(HudStyle.ammo_tag("dry")[0] == "DRY" and HudStyle.ammo_tag("low")[0] == "LOW" and HudStyle.ammo_tag("ok")[0] == "", "S5a: the LOW / DRY tags")
+	# The squad card draws its rows with rounds (no error on the way).
+	_sel.select_squads(PackedInt32Array([rifle]))
+	await _frames(2)
+	_check(_view.detail.mode() == "squad" and not _view.detail.rows.is_empty(), "S5a: the squad card draws the rows")
+	# Fire mode strip: Hold for the selected men, then back to Discipline.
+	_sel.select_only(men)
+	await _frames(1)
+	var grid: Control = _view.orders
+	grid.update_state(_view.state)
+	_check(grid.button_rect(&"fire_hold").size.x > 0.0 and grid.enabled(&"fire_hold"), "S5a: the soldier grid has the fire strip")
+	_check(grid.active(&"fire_discipline"), "S5a: discipline is the default and shows active")
+	_intents.clear()
+	grid.press(&"fire_hold")
+	var sent: Variant = _last(&"set_fire")
+	_check(sent != null and String(sent.mode) == "hold" and (sent.units as PackedInt32Array).size() == men.size(), "S5a: Hold sends set_fire for the selected men")
+	_check(grid.active(&"fire_hold"), "S5a: the strip shows Hold at once (pending)")
+	_view.update_state(_source.get_state())
+	_check(String(_view.squads_by_id[rifle].get("fire_mode", "")) == "hold", "S5a: the squad holds fire (HOLD tag)")
+	grid.press(&"fire_discipline")
+	_view.update_state(_source.get_state())
+	_check(String(_view.squads_by_id[rifle].get("fire_mode", "")) == "discipline", "S5a: back to discipline")
+	# Manpower on ammunition: the top-bar tooltip and the end-screen row.
+	var tb: Control = _view.top_bar
+	_check(tb._get_tooltip(Vector2(20, 10)).contains("ammunition"), "S5a: the manpower tooltip names ammunition spending")
+	_check(_view.end_screen.ammo_text({"small_arms": 34.2, "explosives": 21.0, "shells": 188.4}) == "small arms 34, explosives 21, shells 188 MP", "S5a: the end-screen ammunition row")
+	_source.set_rounds(rifle, 1.0)
+	_source.set_rounds(mg, 1.0)
+	_sel.select_only(PackedInt32Array())
 
 
 # --- S4 ----------------------------------------------------------------------

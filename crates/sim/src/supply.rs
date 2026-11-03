@@ -214,7 +214,7 @@ impl MatchState {
 
 /// The weapon man `kit` fights with now: his slot's sidearm while
 /// [`Kit::on_sidearm`], else the weapon he carries.
-pub(crate) fn active_weapon(ty: &SquadTypeSetup, kit: &Kit) -> u16 {
+pub fn active_weapon(ty: &SquadTypeSetup, kit: &Kit) -> u16 {
     if kit.on_sidearm
         && let Some(sa) = ty.members.get(kit.slot as usize).and_then(|m| m.sidearm)
     {
@@ -232,7 +232,7 @@ pub(crate) fn counted(ty: &SquadTypeSetup) -> bool {
 
 /// Rounds of feed slot `k` man `kit` holds: his pouches plus his active
 /// weapon's magazine when it uses that feed.
-pub(crate) fn man_total(
+pub fn man_total(
     setup: &MatchSetup,
     ty: &SquadTypeSetup,
     kit: &Kit,
@@ -246,7 +246,7 @@ pub(crate) fn man_total(
 
 /// His slot's full load of feed slot `k` (0 when his slot carries none).
 #[inline]
-pub(crate) fn man_load(ty: &SquadTypeSetup, kit: &Kit, k: usize) -> u32 {
+pub fn man_load(ty: &SquadTypeSetup, kit: &Kit, k: usize) -> u32 {
     ty.members
         .get(kit.slot as usize)
         .map_or(0, |m| m.rounds[k] as u32)
@@ -353,7 +353,7 @@ pub(crate) fn reload_dry(
 /// mortar) when a man carries one, else the feed most of its men's main
 /// weapons use (ties: the lower slot); an AT team's rockets count too.
 /// `None` for squads that do not count rounds (legacy, vehicles).
-pub(crate) fn squad_ammo_pct(
+pub fn squad_ammo_pct(
     setup: &MatchSetup,
     ents: &Entities,
     sq: &crate::game::Squad,
@@ -400,6 +400,37 @@ pub(crate) fn squad_ammo_pct(
         pct = Some(pct.map_or(p, |q| q.min(p)));
     }
     pct
+}
+
+/// S5a (HUD): a squad's crew weapon (index into `MatchSetup::weapons`)
+/// and the rounds its living men hold for it (gun, pouches, the
+/// assistant's and bearers' belts), if a man carries one and it counts
+/// rounds (launchers: their team's rockets).
+pub fn crew_rounds(
+    setup: &MatchSetup,
+    ents: &Entities,
+    sq: &crate::game::Squad,
+) -> Option<(u16, u32)> {
+    let ty = &setup.squad_types[sq.type_idx as usize];
+    let wi = sq
+        .members
+        .iter()
+        .map(|m| ents.kit[m.index()].weapon)
+        .find(|&w| setup.weapons[w as usize].crew)?;
+    let w = &setup.weapons[wi as usize];
+    if w.class == WeaponClass::Launcher {
+        return sq.launcher.as_ref().map(|l| (wi, l.rounds as u32));
+    }
+    let k = ty.feed_slot(w)?;
+    let mut n = 0u32;
+    for m in &sq.members {
+        let i = m.index();
+        n += man_total(setup, ty, &ents.kit[i], &ents.combat[i], k);
+        if ents.kit[i].weapon == wi && w.he.is_some() {
+            n += ents.combat[i].mag as u32;
+        }
+    }
+    Some((wi, n))
 }
 
 /// S5a: mortar bombs a mortar squad holds (its mortar's feed, every

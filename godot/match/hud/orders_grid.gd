@@ -9,6 +9,11 @@ extends Control
 ##          (no key: pressing the active stance again returns to Auto),
 ##          then (S3c) Crew K (the re-crew tool: click an abandoned
 ##          vehicle) and Regroup L.
+##   below (S5a), a thin segmented fire strip: Discipline (the default: open
+##          fire within 70 % of the weapon's range), At will (full
+##          range), Hold (fire only at enemies within 30 m, Panzerfausts
+##          at their reach; the squad springs to Discipline when it fires
+##          or comes under fire).
 ## The armed tool and the selection's shared stance are outlined in the
 ## accent colour. Move and Attack arm a click-to-place tool (the mouse
 ## shortcut needs no button). Every button has a tooltip.
@@ -44,6 +49,13 @@ const ROW_STANCE := [
 	[&"prone", "Prone", &"stance_prone", "Go prone. Press again for Auto."],
 	[&"auto", "Auto", &"", "Stance chosen by the situation (the default)."],
 ]
+## S5a: fire modes (`set_fire`).
+const ROW_FIRE := [
+	[&"fire_discipline", "Discipline", &"", "Fire discipline (the default): open fire only within 70 % of the weapon's range, to save rounds. A Suppress order still fires to full range."],
+	[&"fire_at_will", "At will", &"", "Fire at will: engage any seen enemy within the weapon's full range (rounds go faster)."],
+	[&"fire_hold", "Hold", &"", "Hold fire: no shot except at enemies within 30 m; Panzerfausts and launchers fire at their reach. The squad springs to Discipline once one of them fires or comes under fire (ambush)."],
+]
+const FIRE_IDS := [&"fire_discipline", &"fire_at_will", &"fire_hold"]
 const REGROUP := [&"regroup", "Regroup", &"order_regroup", "Detached men of the selected squads rejoin their squad's formation."]
 ## S4: takes the Satchel slot when the selection carries Panzerfausts and
 ## no satchel (German line squads).
@@ -126,6 +138,10 @@ func _layout() -> void:
 		for i in ROW_AMMO.size():
 			_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
 		return
+	# S5a: a thin fire strip below the three button rows (the console is
+	# `fire_h` + a gap taller, so the buttons keep their height).
+	var fh: float = m.get("fire_h", 20.0)
+	bh = (size.y - fh - 3.0 * g) / 3.0
 	for i in ROW_ABILITY.size():
 		var def: Array = PANZERFAUST if i == 2 and _pzf_slot else ROW_ABILITY[i]
 		_add(def, Rect2(i * (abw + g), 0, abw, bh), "ability")
@@ -138,6 +154,9 @@ func _layout() -> void:
 		_add(ROW_STANCE[i], Rect2(i * seg, 2.0 * (bh + g), seg, bh), "stance")
 	_add(CREW, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 	_add(REGROUP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
+	var fseg := sw / 3.0
+	for i in ROW_FIRE.size():
+		_add(ROW_FIRE[i], Rect2(i * fseg, 3.0 * (bh + g), fseg, fh), "fire")
 
 
 func _add(def: Array, r: Rect2, kind: String) -> void:
@@ -157,7 +176,7 @@ func enabled(id: StringName) -> bool:
 	if view.input_blocked():
 		return false
 	var sel: Node = view.selection
-	if id in STANCE_IDS or id == &"auto":
+	if id in STANCE_IDS or id == &"auto" or id in FIRE_IDS:
 		return not sel.selected_soldiers().is_empty() and not view.proxy_soldiers
 	return sel.can(id)
 
@@ -173,6 +192,8 @@ func active(id: StringName) -> bool:
 		return enabled(id) and StringName(sel.active_stance()) == id
 	if id in AMMO_IDS:
 		return enabled(id) and "ammo_" + sel.ammo_choice() == String(id)
+	if id in FIRE_IDS:
+		return enabled(id) and "fire_" + sel.active_fire() == String(id)
 	if id == &"bail":
 		return sel.bail_armed()
 	return false
@@ -195,6 +216,8 @@ func press(id: StringName) -> void:
 		sel.press_stance(String(id))
 	elif id == &"auto":
 		sel.set_stance(&"auto")
+	elif id in FIRE_IDS:
+		sel.set_fire(String(id).trim_prefix("fire_"))
 	else:
 		sel.activate(id)
 
@@ -205,20 +228,23 @@ func _draw() -> void:
 	var font := get_theme_default_font()
 	var bold := HudStyle.bold()
 	var sel: Node = view.selection
-	# Stance strip background (one segmented box).
-	var strip := Rect2()
-	for b in buttons:
-		if b.kind == "stance":
-			strip = b.rect if strip.size == Vector2.ZERO else strip.merge(b.rect)
-	HudStyle.box(self, strip, HudStyle.BG_BUTTON, 4)
+	# Stance strip background (one segmented box); S5a: the fire strip too.
+	for kind in ["stance", "fire"]:
+		var strip := Rect2()
+		for b in buttons:
+			if b.kind == kind:
+				strip = b.rect if strip.size == Vector2.ZERO else strip.merge(b.rect)
+		if strip.size != Vector2.ZERO:
+			HudStyle.box(self, strip, HudStyle.BG_BUTTON, 4)
 	for b in buttons:
 		var r: Rect2 = b.rect
 		var id: StringName = b.id
 		var on := enabled(id)
 		var lit := active(id)
-		if b.kind == "stance":
-			if id != &"stand" and id != &"ammo_auto":
-				draw_rect(Rect2(r.position.x - 0.5, r.position.y + 7.0, 1.0, r.size.y - 14.0), Color(HudStyle.TEXT, 0.2))
+		if b.kind == "stance" or b.kind == "fire":
+			if id != &"stand" and id != &"ammo_auto" and id != &"fire_discipline":
+				var inset := 7.0 if b.kind == "stance" else 4.0
+				draw_rect(Rect2(r.position.x - 0.5, r.position.y + inset, 1.0, r.size.y - 2.0 * inset), Color(HudStyle.TEXT, 0.2))
 		else:
 			HudStyle.box(self, r, HudStyle.BG_ABILITY if b.kind == "ability" else HudStyle.BG_BUTTON, 4)
 		if _hover == id and on:
@@ -234,6 +260,11 @@ func _draw() -> void:
 			HudStyle.text(self, bold, Vector2(r.end.x - 6.0, r.position.y + 16.0), "×%d" % n, HudStyle.FONT_SMALL, txt_col, 1)
 		# S3c: Bail out waits for its second press.
 		var text: String = "Again?" if id == &"bail" and lit else b.label
+		if b.kind == "fire":
+			# S5a: the thin fire strip, small type, centred.
+			var fl := HudStyle.fit(font, text, r.size.x - 6.0, HudStyle.FONT_SMALL)
+			HudStyle.text(self, font, Vector2(r.get_center().x, r.get_center().y + 5.0), fl, HudStyle.FONT_SMALL, txt_col, 0)
+			continue
 		var label := HudStyle.fit(font, text, r.size.x - 6.0, HudStyle.FONT)
 		HudStyle.text(self, font, Vector2(r.get_center().x, r.end.y - 8.0), label, HudStyle.FONT, txt_col, 0)
 

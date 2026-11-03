@@ -16,6 +16,8 @@ const ROWS := [
 	["points_held_s", "Avg. points held", "avg"],
 	["squads_called", "Squads called in", "%d"],
 	["trench_m", "Trench dug", "%d m"],
+	# S5a: manpower spent on ammunition, by kind.
+	["ammo_mp", "Ammunition", "ammo"],
 ]
 
 var view: MatchView
@@ -100,10 +102,21 @@ func show_result(s: Dictionary) -> void:
 		_cell(row[1], UiPalette.TEXT_DIM)
 		for p in [view.local_player, 1 - view.local_player]:
 			var st: Dictionary = stats[p] if p < stats.size() else {}
+			if row[2] == "ammo":
+				_cell(ammo_text(st.get("ammo_mp", {})), UiPalette.TEXT)
+				continue
 			var v: float = float(st.get(row[0], 0))
 			_cell(_format(row[2], v, float(s.get("time_s", 0.0))), UiPalette.TEXT)
 	visible = true
 	Session.last_result = {"result": result, "stats": stats, "time_s": s.get("time_s", 0.0)}
+
+
+## S5a: "small arms 34, explosives 21, shells 188 MP" ("-" without data).
+static func ammo_text(am: Variant) -> String:
+	if not am is Dictionary or (am as Dictionary).is_empty():
+		return "-"
+	var d: Dictionary = am
+	return "small arms %d, explosives %d, shells %d MP" % [roundi(float(d.get("small_arms", 0.0))), roundi(float(d.get("explosives", 0.0))), roundi(float(d.get("shells", 0.0)))]
 
 
 func _format(fmt: String, v: float, time_s: float) -> String:

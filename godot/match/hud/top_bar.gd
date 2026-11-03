@@ -14,6 +14,12 @@ var _blink := 0.0
 var _hover := -2  # chip index, -1 menu, -2 nothing
 
 
+## S5a: the top-bar flag while a refill waits for manpower.
+const NO_MP := "No manpower for ammo"
+## S5a: right end of the MP / income / POP block (its tooltip).
+var _mp_right := 0.0
+
+
 func bind(v: MatchView) -> void:
 	view = v
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -83,7 +89,11 @@ func _draw() -> void:
 	x = _pair(font, bold, x, by, "MP", "%d" % int(me.manpower))
 	HudStyle.text(self, font, Vector2(x, by), "+%.1f/s" % float(me.income), fs, HudStyle.DIM)
 	x += HudStyle.text_w(font, "+%.1f/s" % float(me.income), fs) + 16.0
-	_pair(font, bold, x, by, "POP", "%d/%d" % [int(me.pop), int(rules.get("pop_cap", 120))])
+	x = _pair(font, bold, x, by, "POP", "%d/%d" % [int(me.pop), int(rules.get("pop_cap", 120))])
+	# S5a: a refill stood paused for lack of manpower.
+	_mp_right = x
+	if bool(me.get("refill_paused", false)):
+		HudStyle.tag(self, bold, x + HudStyle.text_w(bold, NO_MP, HudStyle.FONT_SMALL) + 8.0, by, NO_MP, HudStyle.DANGER)
 
 	# Centre: tickets and chips.
 	var tmax := maxf(float(rules.get("tickets_max", 500)), 1.0)
@@ -184,6 +194,16 @@ func _notification(what: int) -> void:
 
 
 func _get_tooltip(at: Vector2) -> String:
+	# S5a: the left block (MP, income, POP): manpower spent on ammunition.
+	if at.x < _mp_right:
+		var me := view.player(view.local_player)
+		var am: Dictionary = me.get("ammo_mp", {})
+		var line := "Manpower %d (+%.1f/s)" % [int(me.get("manpower", 0)), float(me.get("income", 0.0))]
+		if not am.is_empty():
+			line += "\nSpent on ammunition this match: small arms %d, explosives %d, shells %d MP" % [roundi(float(am.get("small_arms", 0.0))), roundi(float(am.get("explosives", 0.0))), roundi(float(am.get("shells", 0.0)))]
+		if bool(me.get("refill_paused", false)):
+			line += "\n" + NO_MP + ": the base refill waits for manpower."
+		return line
 	var i := _chip_at(at)
 	if i == -1:
 		return "Match menu  [Esc]"

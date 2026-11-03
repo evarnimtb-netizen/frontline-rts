@@ -56,6 +56,12 @@ const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6, "at": 3
 const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0, "at": 120.0, "crew": 30.0}
 const FIRE_GAP := {"rifle": 0.7, "mg": 0.12, "engineer": 0.25, "at": 1.4, "crew": 1.0}
 const WEAPON := {"rifle": "rifle", "mg": "mg", "engineer": "smg", "at": "rifle", "crew": "smg"}
+## S5a (mock): rounds a man carries by squad type (the MG team's gunner
+## stands for the team's belts), the weapon in hand, and the share under
+## which the card shows LOW (rules `supply.low_pct`).
+const ROUNDS := {"rifle": 60, "mg": 1150, "engineer": 192, "at": 60, "crew": 16, "mortar": 15}
+const ROUNDS_WEAPON := {"rifle": "Kar98k", "mg": "MG 42", "engineer": "MP 40", "at": "Kar98k", "crew": "P 38", "mortar": "GrW 34"}
+const LOW_PCT := 30
 ## AT launcher reload (S3: 8 s with the loader).
 const ROCKET_RELOAD_S := 8.0
 ## Escort file: slots 1.5 m apart, 4 m behind the vehicle (S3 "Escort").
@@ -91,6 +97,8 @@ const RESUPPLY_S := 20.0
 var setup := {"faction": "germany", "difficulty": "normal", "map": "kessel_ridge", "seed": 1}
 var local_player := 0
 var time_s := 0.0
+## S5a (mock): the last time a refill of each player paused (no manpower).
+var _refill_paused_t: Array[float] = [-100.0, -100.0]
 var paused := false
 var rng := RandomNumberGenerator.new()
 var players: Array[Dictionary] = []
@@ -134,7 +142,7 @@ func start(s: Dictionary) -> void:
 	]
 	stats = []
 	for i in 2:
-		stats.append({"kills": 0, "losses": 0, "points_held_s": 0.0, "squads_called": 0, "trench_m": 0.0})
+		stats.append({"kills": 0, "losses": 0, "points_held_s": 0.0, "squads_called": 0, "trench_m": 0.0, "ammo_mp": {"small_arms": 0.0, "explosives": 0.0, "shells": 0.0, "total": 0.0}})
 	points = []
 	for p in MockMap.POINTS:
 		var pos: Vector2 = p.pos
@@ -155,6 +163,7 @@ func start(s: Dictionary) -> void:
 	for e in foe:
 		_spawn(1, e[0], e[1])
 	time_s = 0.0
+	_refill_paused_t = [-100.0, -100.0]
 	result = {"status": "running", "winner": -1, "reason": ""}
 	_events.clear()
 	_effects.clear()
@@ -218,6 +227,8 @@ func _spawn(owner: int, type: String, at: Vector2, men := -1) -> int:
 			"id": _next_man, "slot": slot, "hp": 100.0, "pos": at, "supp": 0.0,
 			"detached": false, "order": "", "target": at, "stance_override": "auto",
 			"items": loadout(type, slot), "throw": {}, "resupply_t": 0.0,
+			# S5a: rounds, fire mode.
+			"rounds": _rounds_full(type, slot), "fire": "discipline",
 		}
 		_next_man += 1
 		sq.men.append(man)
@@ -293,6 +304,11 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 				if per[sid] == sq.men.size() and sq.type != "mortar" and line.size() >= 2:
 					_order(sq, "suppress", sq.pos)
 					sq.suppress_line = line
+		&"set_fire":
+			var mode: String = data.get("mode", "discipline")
+			if mode in ["discipline", "at_will", "hold"]:
+				for man in _own_men(uids):
+					man.fire = mode
 		&"set_stance":
 			var st: String = data.get("stance", "auto")
 			if st in ["auto", "stand", "crouch", "prone"]:
@@ -1141,6 +1157,16 @@ func _step_squad(sq: Dictionary, dt: float) -> void:
 			sq.fire_t = gap * (0.6 + rng.randf() * 0.8) * (6.0 / maxf(sq.men.size(), 1.0) if sq.type == "rifle" else 1.0)
 			if sq.type == "mg" and rng.randf() < 0.08:
 				sq.fire_t = 1.5  # burst gap
+			# S5a (mock): the shot comes from a man with rounds; none: dry.
+			var shooter: Dictionary = {}
+			for man in sq.men:
+				if int(man.rounds) > 0:
+					shooter = man
+					break
+			if shooter.is_empty():
+				return
+			shooter.rounds = int(shooter.rounds) - (7 if sq.type == "mg" else 1)
+			shooter.rounds = maxi(int(shooter.rounds), 0)
 			_effects.append({"kind": "shot", "weapon": WEAPON[sq.type], "pos": _v3(sq.pos)})
 			_shot_at(sq, squads[enemy])
 
@@ -1151,6 +1177,20 @@ func _step_men(sq: Dictionary, dt: float, speed: float, engaged: bool) -> void:
 		man.moving = false
 		# Resupply inside the own base zone.
 		if man.pos.distance_to(base) < MockMap.BASE_RADIUS:
+			# S5a (mock): rounds refill at 30 a second, paid at 0.2 MP per
+			# kg (28 g a round) from the owner's manpower.
+			var full_r := _rounds_full(sq.type, man.slot)
+			if int(man.rounds) < full_r:
+				var n := mini(full_r - int(man.rounds), maxi(int(30.0 * dt), 1))
+				var cost := n * 0.028 * 0.2
+				if float(players[sq.owner].manpower) >= cost:
+					man.rounds = int(man.rounds) + n
+					players[sq.owner].manpower -= cost
+					var am: Dictionary = stats[sq.owner].ammo_mp
+					am.small_arms += cost
+					am.total += cost
+				else:
+					_refill_paused_t[sq.owner] = time_s
 			man.resupply_t += dt
 			if man.resupply_t >= RESUPPLY_S:
 				man.resupply_t = 0.0
@@ -1459,6 +1499,9 @@ func _build_state() -> Dictionary:
 	for i in 2:
 		out_players[i].vehicles = veh.count(i)
 		out_players[i].vehicle_limit = veh.limit
+		# S5a: manpower on ammunition and the paused-refill flag.
+		out_players[i].ammo_mp = stats[i].ammo_mp.duplicate()
+		out_players[i].refill_paused = time_s - _refill_paused_t[i] < 1.0
 	var rules: Dictionary = RULES.duplicate()
 	rules.merge(veh.rules())
 	var vs := veh.export_state(eyes)
@@ -1525,6 +1568,23 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 	}
 	if sq.owner == local_player:
 		out.items = items
+		# S5a: ammunition share and marker, crew weapon rounds, fire mode,
+		# refill in the own base.
+		var have := 0
+		var full := 0
+		var holding := 0
+		for man in sq.men:
+			have += int(man.rounds)
+			full += _rounds_full(sq.type, man.slot)
+			holding += int(man.fire == "hold")
+		var pct := float(have) / float(maxi(full, 1))
+		out.ammo_pct = pct
+		out.ammo_state = "dry" if have == 0 else ("low" if pct * 100.0 < LOW_PCT else "ok")
+		if sq.type in ["mg", "mortar"] and not sq.men.is_empty():
+			out.crew_weapon_name = ROUNDS_WEAPON[sq.type]
+			out.crew_rounds = have
+		out.fire_mode = "discipline" if holding == 0 else ("hold" if holding == sq.men.size() else "mixed")
+		out.refilling = pct < 1.0 and sq.pos.distance_to(MockMap.BASES[sq.owner]) < MockMap.BASE_RADIUS
 		if not sq.dig.is_empty():
 			out.dig_line = sq.dig.line
 			out.dig_progress = sq.dig.progress
@@ -1568,6 +1628,11 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 		out.stance_override = man.stance_override
 		out.detached = man.detached
 		out.items = man.items.duplicate()
+		# S5a: the weapon in hand and its rounds, the fire mode.
+		out.active_weapon = ROUNDS_WEAPON.get(sq.type, "Kar98k")
+		out.rounds = int(man.rounds)
+		out.sidearm = false
+		out.fire = man.fire
 		if man.detached:
 			out.order = man.order
 			if man.order in ["move", "attack_move", "retreat", "dig"]:
@@ -1577,6 +1642,24 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 			elif man.order == "throw" and not man.throw.is_empty():
 				out.target = _v3(man.throw.target)
 	return out
+
+
+## S5a: full rounds of a man of squad type `type` in formation slot
+## `slot` (the MG team's belts sit with its gunner, slot 0).
+func _rounds_full(type: String, slot: int) -> int:
+	if type == "mg" and slot > 0:
+		return 0
+	if type == "mg":
+		return int(ROUNDS.mg)
+	return int(ROUNDS.get(type, 60))
+
+
+## Staging (S5a): sets the rounds of squad `sid`'s men to `frac` of their
+## loads (0 empties them: the DRY marker; under 0.3: LOW).
+func set_rounds(sid: int, frac: float) -> void:
+	var sq: Dictionary = squads.get(sid, {})
+	for man in sq.get("men", []):
+		man.rounds = int(floor(_rounds_full(sq.type, man.slot) * frac))
 
 
 ## Staging: every AT team with a vehicle in range fires now.

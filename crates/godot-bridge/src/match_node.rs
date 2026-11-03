@@ -1738,6 +1738,10 @@ impl MatchRuntime {
                     "ticket_drain" => ps.drain_per_min as f32 / 60.0,
                     "vehicles" => ps.vehicles_counted as i64,
                     "vehicle_limit" => ps.vehicle_limit as i64,
+                    // S5a: manpower spent on ammunition (by kind) and the
+                    // "No manpower for ammo" flag.
+                    "ammo_mp" => &ammo_mp_dict(ps.ammo_paid),
+                    "refill_paused" => ps.refill_paused,
                 }
                 .to_variant(),
             );
@@ -1817,6 +1821,26 @@ impl MatchRuntime {
                     d.set("weapon", w.short_name.as_str());
                     d.set("crew_weapon", w.crew);
                 }
+                // S5a: the weapon in hand (his sidearm while dry), the
+                // rounds he holds for it (-1: uncounted), and his fire mode.
+                if let Some(aw) = f
+                    .active_weapon
+                    .get(i)
+                    .and_then(|&w| setup.weapons.get(w as usize))
+                {
+                    d.set("active_weapon", aw.short_name.as_str());
+                }
+                let held = f.rounds_held.get(i).copied().unwrap_or(u16::MAX);
+                d.set("rounds", if held == u16::MAX { -1 } else { held as i64 });
+                d.set("sidearm", f.sidearm.get(i).copied().unwrap_or(false));
+                d.set(
+                    "fire",
+                    crate::intents::fire_mode_name(match f.fire.get(i).copied().unwrap_or(0) {
+                        1 => frontline_sim::FireMode::AtWill,
+                        2 => frontline_sim::FireMode::Hold,
+                        _ => frontline_sim::FireMode::Discipline,
+                    }),
+                );
                 while detached.next_if(|u| u.id < id).is_some() {}
                 if f.throwing[i] {
                     d.set("order", "throw");
@@ -2037,6 +2061,7 @@ impl MatchRuntime {
                     "points_held_s" => ps.hold_s as f32,
                     "squads_called" => ex.squads_called as i64,
                     "trench_m" => ex.trench_m,
+                    "ammo_mp" => &ammo_mp_dict(ps.ammo_paid),
                 }
                 .to_variant(),
             );
@@ -2216,6 +2241,19 @@ impl MatchRuntime {
                             .sum()
                     });
                     ammo.set("mg_full", full as i64);
+                }
+                // S5a: the most rare rounds the vehicle may hold, and the
+                // card's low / dry marker from its main-gun rounds.
+                if let Some(t) = self.setup.vehicles.get(v.type_idx as usize) {
+                    if special {
+                        ammo.set("rare_cap", t.rare_cap as i64);
+                    }
+                    let full: u32 = t.main_gun().ammo.iter().map(|a| a.count as u32).sum();
+                    let have: u32 = v.ammo.iter().map(|&n| n as u32).sum();
+                    if full > 0 && self.setup.rules.supply.is_some() {
+                        let p = (have * 100 / full).min(100);
+                        d.set("ammo_state", ammo_state(&self.setup, p));
+                    }
                 }
                 d.set("ammo", &ammo);
                 d.set(
@@ -2514,6 +2552,31 @@ impl MatchRuntime {
             d.set("crew_of", v.id as i64);
             d.set("crew_of_name", vehicle_short(&self.setup, v.type_idx));
         }
+        // S5a: ammunition share and marker, crew weapon rounds, held
+        // fire, and the base refill.
+        if s.owner == self.local {
+            if let Some(p) = s.ammo_pct {
+                d.set("ammo_pct", p as f32 / 100.0);
+                d.set("ammo_state", ammo_state(setup, p as u32));
+            }
+            if let Some((w, n)) = s.crew
+                && let Some(w) = setup.weapons.get(w as usize)
+            {
+                d.set("crew_weapon_name", w.short_name.as_str());
+                d.set("crew_rounds", n as i64);
+            }
+            d.set(
+                "fire_mode",
+                if s.holding == 0 {
+                    "discipline"
+                } else if s.holding >= s.men {
+                    "hold"
+                } else {
+                    "mixed"
+                },
+            );
+            d.set("refilling", s.refilling);
+        }
         s4(&mut d);
         d
     }
@@ -2729,8 +2792,9 @@ impl MatchRuntime {
                 }
             }
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
-            | "set_stance" | "throw" | "throw_each" | "reverse_units" | "face_units"
-            | "attack_unit" | "set_ammo" | "repair_units" | "follow_units" | "suppress_units" => {
+            | "set_stance" | "set_fire" | "throw" | "throw_each" | "reverse_units"
+            | "face_units" | "attack_unit" | "set_ammo" | "repair_units" | "follow_units"
+            | "suppress_units" => {
                 let raw = data
                     .get("units")
                     .and_then(|v| v.try_to::<PackedInt32Array>().ok())
@@ -2795,6 +2859,7 @@ impl MatchRuntime {
                 let word = data
                     .get(match kind {
                         "set_stance" => "stance",
+                        "set_fire" => "mode",
                         "dig_units" => "profile",
                         _ => "item",
                     })
@@ -2912,4 +2977,27 @@ fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd
     let data = PackedByteArray::from(bytes.as_slice());
     let image = Image::create_from_data(px as i32, px as i32, false, ImageFormat::RGB8, &data)?;
     ImageTexture::create_from_image(&image)
+}
+
+/// S5a: manpower spent on ammunition by supply kind (µMP in, MP out).
+fn ammo_mp_dict(paid: [u64; 3]) -> VarDictionary {
+    let mp = |k: usize| paid[k] as f32 / 1e6;
+    vdict! {
+        "small_arms" => mp(0),
+        "explosives" => mp(1),
+        "shells" => mp(2),
+        "total" => mp(0) + mp(1) + mp(2),
+    }
+}
+
+/// S5a: the card marker for an ammunition share (%): "dry" at none,
+/// "low" under the rules' `supply.low_pct`, else "ok" (legacy content:
+/// "ok").
+fn ammo_state(setup: &MatchSetup, pct: u32) -> &'static str {
+    match &setup.rules.supply {
+        None => "ok",
+        Some(_) if pct == 0 => "dry",
+        Some(sp) if pct < sp.low_pct => "low",
+        Some(_) => "ok",
+    }
 }

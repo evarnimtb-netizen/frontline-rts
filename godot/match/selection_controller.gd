@@ -108,6 +108,8 @@ var _last_recall_group := 0
 var _last_recall_ms := 0
 ## soldier id -> [stance, msec sent]
 var _pending_stance := {}
+## S5a: fire modes just ordered, by man: [mode, msec].
+var _pending_fire := {}
 ## vehicle id -> [ammo choice, msec sent] (N twice before the state shows it)
 var _pending_ammo := {}
 ## S3c: when Bail out was pressed once (msec), 0 = not armed.
@@ -456,6 +458,35 @@ func set_stance(stance: StringName) -> void:
 	for id in selected:
 		_pending_stance[id] = [String(stance), now]
 	view.emit_intent(&"set_stance", {"units": selected.duplicate(), "stance": String(stance)})
+
+
+## S5a: the fire mode every selected man shares ("discipline",
+## "at_will", "hold"), or "" when mixed or empty. A mode just ordered
+## shows at once (pending, as stances).
+func active_fire() -> String:
+	var out := ""
+	var now := Time.get_ticks_msec()
+	for id in selected:
+		var so: Dictionary = view.soldiers_by_id.get(id, {})
+		var f: String = so.get("fire", "discipline")
+		var p: Array = _pending_fire.get(id, [])
+		if not p.is_empty() and p[0] != f and now - int(p[1]) <= STANCE_PENDING_MS:
+			f = p[0]
+		if out == "":
+			out = f
+		elif out != f:
+			return ""
+	return out
+
+
+## S5a: sends `set_fire` for the selected men.
+func set_fire(mode: String) -> void:
+	if selected.is_empty() or view.proxy_soldiers or view.input_blocked():
+		return
+	var now := Time.get_ticks_msec()
+	for id in selected:
+		_pending_fire[id] = [mode, now]
+	view.emit_intent(&"set_fire", {"units": selected.duplicate(), "mode": mode})
 
 
 ## Whether an order is available for the current selection (orders grid).

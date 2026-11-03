@@ -109,6 +109,9 @@ func card_width(sid: int, font: Font, bold: Font) -> float:
 	var head := HudStyle.text_w(bold, view.squad_label(sid), HudStyle.FONT) + 14.0 + HudStyle.text_w(font, st[0], HudStyle.FONT)
 	var men_max := maxi(int(sq.get("men_max", 1)), 1)
 	var pips := men_max * (float(m.pip) + float(m.pip_gap)) - float(m.pip_gap) + 12.0 + HudStyle.text_w(font, "%d/%d" % [men_max, men_max], HudStyle.FONT)
+	# S5a: room for a LOW / DRY tag (always, so the card does not twitch).
+	if sq.has("ammo_state"):
+		pips += HudStyle.text_w(bold, "LOW", HudStyle.FONT_SMALL) + 13.0
 	return maxf(head, pips) + PAD + 8.0
 
 
@@ -129,7 +132,7 @@ func vehicle_card_width(vid: int, font: Font, bold: Font) -> float:
 static func ammo_width(font: Font, bold: Font, ap: int, he: int, apcr := false) -> float:
 	var w := HudStyle.text_w(bold, "AP %d" % ap, HudStyle.FONT) + HudStyle.text_w(font, " · ", HudStyle.FONT) + HudStyle.text_w(bold, "HE %d" % he, HudStyle.FONT) + 4.0
 	if apcr:
-		w += HudStyle.text_w(bold, "APCR 8", HudStyle.FONT) + HudStyle.text_w(font, " · ", HudStyle.FONT)
+		w += HudStyle.text_w(bold, "APCR 8/8", HudStyle.FONT) + HudStyle.text_w(font, " · ", HudStyle.FONT)
 	return w
 
 
@@ -299,6 +302,11 @@ func _draw() -> void:
 		var count := "%d/%d" % [men, int(sq.get("men_max", men))]
 		var pr: Rect2 = c.pips[0][0] if not c.pips.is_empty() else r
 		HudStyle.text(self, font, Vector2(r.end.x - 8.0, pr.end.y - 1.0), count, HudStyle.FONT, HudStyle.TEXT, 1)
+		# S5a: LOW / DRY left of the men count.
+		var at: Array = HudStyle.ammo_tag(String(sq.get("ammo_state", "")))
+		if at[0] != "":
+			var cw := HudStyle.text_w(font, count, HudStyle.FONT)
+			HudStyle.tag(self, bold, r.end.x - 8.0 - cw - 5.0, pr.end.y - 1.0, at[0], at[1])
 	if hidden_count > 0:
 		HudStyle.box(self, _more_rect, HudStyle.BG_PANEL, 5)
 		HudStyle.text(self, bold, _more_rect.get_center() + Vector2(0, 5), "+%d" % hidden_count, HudStyle.FONT, HudStyle.TEXT, 0)
@@ -314,7 +322,12 @@ func _draw_vehicle_card(r: Rect2, vid: int, font: Font, bold: Font) -> void:
 	var badge_w := HudStyle.text_w(font, b[0], HudStyle.FONT)
 	Vehicles.silhouette(self, Rect2(r.position + Vector2(PAD, 6.0), Vector2(SIL_W, 14.0)), vt, HudStyle.TEXT if picked else HudStyle.DIM)
 	var x0 := r.position.x + PAD + SIL_W + 6.0
-	var title := HudStyle.fit(bold, view.vehicle_label(vid), r.end.x - 8.0 - badge_w - 14.0 - x0, HudStyle.FONT)
+	# S5a: LOW / DRY from the main-gun rounds, left of the badge.
+	var at: Array = HudStyle.ammo_tag(String(v.get("ammo_state", "")))
+	var tag_w := 0.0
+	if at[0] != "":
+		tag_w = HudStyle.tag(self, bold, r.end.x - 8.0 - badge_w - 6.0, r.position.y + 18.0, at[0], at[1]) + 6.0
+	var title := HudStyle.fit(bold, view.vehicle_label(vid), r.end.x - 8.0 - badge_w - 14.0 - tag_w - x0, HudStyle.FONT)
 	HudStyle.text(self, bold, Vector2(x0, r.position.y + 18.0), title, HudStyle.FONT, HudStyle.TEXT)
 	HudStyle.text(self, font, Vector2(r.end.x - 8.0, r.position.y + 18.0), b[0], HudStyle.FONT, HudStyle.ACCENT if b[1] else HudStyle.DIM, 1)
 	# Row two: crew pips, component strip, ammo.
@@ -389,8 +402,12 @@ static func draw_ammo(ci: CanvasItem, font: Font, bold: Font, at: Vector2, v: Di
 	var keys := ["ap", "", "he"]
 	var fonts := [bold, font, bold]
 	if ammo.has("apcr"):
-		# S3b: the special round between AP and HE.
-		parts = ["AP %d" % int(ammo.get("ap", 0)), " · ", "APCR %d" % int(ammo.get("apcr", 0)), " · ", "HE %d" % int(ammo.get("he", 0))]
+		# S3b: the special round between AP and HE; S5a: out of the
+		# vehicle's rare_cap ("APCR 2/3").
+		var rare := "APCR %d" % int(ammo.get("apcr", 0))
+		if ammo.has("rare_cap"):
+			rare += "/%d" % int(ammo.rare_cap)
+		parts = ["AP %d" % int(ammo.get("ap", 0)), " · ", rare, " · ", "HE %d" % int(ammo.get("he", 0))]
 		keys = ["ap", "", "apcr", "", "he"]
 		fonts = [bold, font, bold, font, bold]
 	var w := 0.0

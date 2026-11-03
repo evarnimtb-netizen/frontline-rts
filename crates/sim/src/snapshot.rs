@@ -184,6 +184,11 @@ pub struct PlayerSnapshot {
     pub vehicles_counted: u8,
     pub vehicle_limit: u8,
     pub unlock_tick: u64,
+    /// S5a: manpower paid for ammunition this match by supply kind (small
+    /// arms, explosives, shells; µMP), and whether a refill of this player
+    /// stood paused for lack of manpower within the last second.
+    pub ammo_paid: [u64; 3],
+    pub refill_paused: bool,
 }
 
 // ---------------------------------------------------------------- S3 --
@@ -466,6 +471,15 @@ pub struct RenderSnapshot {
     /// (index into `MatchSetup::weapons`) and his `[[members]]` slot.
     pub soldier_weapon: Vec<u16>,
     pub soldier_member_slot: Vec<u8>,
+    /// Per entry of `soldiers` (match mode only, S5a): the weapon he fights
+    /// with now (his slot's sidearm while his main weapon is dry), the
+    /// rounds he holds for it (pouches and magazine; `u16::MAX` for
+    /// uncounted weapons: legacy content, launchers), whether he is on his
+    /// sidearm, and his fire mode (`FireMode as u8`).
+    pub soldier_active_weapon: Vec<u16>,
+    pub soldier_rounds: Vec<u16>,
+    pub soldier_sidearm: Vec<bool>,
+    pub soldier_fire: Vec<u8>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -551,6 +565,10 @@ impl RenderSnapshot {
         self.soldier_throwing.clear();
         self.soldier_weapon.clear();
         self.soldier_member_slot.clear();
+        self.soldier_active_weapon.clear();
+        self.soldier_rounds.clear();
+        self.soldier_sidearm.clear();
+        self.soldier_fire.clear();
         self.units.clear();
         self.corpses.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
@@ -581,6 +599,27 @@ impl RenderSnapshot {
                         self.soldier_throwing.push(k.windup.is_some());
                         self.soldier_weapon.push(k.weapon);
                         self.soldier_member_slot.push(k.slot);
+                        // S5a: rounds for the weapon in hand.
+                        let held = game.and_then(|g| {
+                            let sq = g.squad((*ents.squad())[i]?)?;
+                            let setup = g.setup();
+                            let ty = &setup.squad_types[sq.type_idx as usize];
+                            let wi = crate::supply::active_weapon(ty, k);
+                            let w = &setup.weapons[wi as usize];
+                            let n = ty.feed_slot(w).map(|f| {
+                                crate::supply::man_total(setup, ty, k, c, f)
+                                    + if w.he.is_some() { c.mag as u32 } else { 0 }
+                            });
+                            Some((wi, n))
+                        });
+                        self.soldier_active_weapon
+                            .push(held.map_or(k.weapon, |h| h.0));
+                        self.soldier_rounds.push(
+                            held.and_then(|h| h.1)
+                                .map_or(u16::MAX, |n| n.min(u16::MAX as u32 - 1) as u16),
+                        );
+                        self.soldier_sidearm.push(k.on_sidearm);
+                        self.soldier_fire.push(u.fire as u8);
                         if u.detached
                             && let Some(g) = game
                         {
@@ -721,6 +760,9 @@ impl RenderSnapshot {
                 vehicles_counted: g.vehicles_counted(ents, id).min(u8::MAX as u32) as u8,
                 vehicle_limit: g.setup().rules.vehicles.limit.min(u8::MAX as u32) as u8,
                 unlock_tick: g.setup().rules.vehicles.unlock_ticks as u64,
+                ammo_paid: pl.ammo.paid,
+                refill_paused: pl.ammo.paused_at > 0
+                    && pl.ammo.paused_at + g.setup().tick_hz as u64 >= tick,
             });
         }
         let r = &g.setup().rules;

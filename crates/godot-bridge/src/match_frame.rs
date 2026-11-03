@@ -89,6 +89,13 @@ pub struct SquadView {
     pub follow: Option<u32>,
     /// S3b: the line a squad-level `SuppressUnits` fires at (sim xy).
     pub suppress_line: Option<[[f32; 2]; 2]>,
+    /// S5a: the squad's ammunition share (%, `None`: uncounted), its crew
+    /// weapon and the rounds held for it, men holding fire, and whether it
+    /// stands in its own base below a full load (the refill serves it).
+    pub ammo_pct: Option<u8>,
+    pub crew: Option<(u16, u32)>,
+    pub holding: u8,
+    pub refilling: bool,
 }
 
 /// A detached own soldier's order (S1b), for markers and the HUD.
@@ -191,6 +198,13 @@ pub struct MatchFrame {
     /// `[[members]]` slot (index into his squad type's `members`).
     pub weapon: Vec<u16>,
     pub member_slot: Vec<u8>,
+    /// Per soldier (S5a): the weapon in hand, rounds held for it
+    /// (`u16::MAX`: uncounted), on his sidearm, fire mode (`FireMode as
+    /// u8`).
+    pub active_weapon: Vec<u16>,
+    pub rounds_held: Vec<u16>,
+    pub sidearm: Vec<bool>,
+    pub fire: Vec<u8>,
     /// The local player's detached men, ascending id.
     pub units: Vec<UnitView>,
     pub thrown: Vec<ThrownView>,
@@ -247,6 +261,10 @@ impl MatchFrame {
             slot: Vec::new(),
             weapon: Vec::new(),
             member_slot: Vec::new(),
+            active_weapon: Vec::new(),
+            rounds_held: Vec::new(),
+            sidearm: Vec::new(),
+            fire: Vec::new(),
             units: Vec::new(),
             thrown: Vec::new(),
             smoke: Vec::new(),
@@ -295,6 +313,10 @@ impl MatchFrame {
         self.items.clone_from(&snap.soldier_items);
         self.weapon.clone_from(&snap.soldier_weapon);
         self.member_slot.clone_from(&snap.soldier_member_slot);
+        self.active_weapon.clone_from(&snap.soldier_active_weapon);
+        self.rounds_held.clone_from(&snap.soldier_rounds);
+        self.sidearm.clone_from(&snap.soldier_sidearm);
+        self.fire.clone_from(&snap.soldier_fire);
         self.throwing.clone_from(&snap.soldier_throwing);
         self.units.clear();
         self.units.extend(
@@ -450,9 +472,24 @@ impl MatchFrame {
                 visible: sq.owner.0 == local,
                 ..SquadView::default()
             };
+            // S5a: ammunition share, crew weapon rounds, held fire, refill.
+            if sq.owner.0 == local {
+                v.ammo_pct = frontline_sim::supply::squad_ammo_pct(setup, ents, sq)
+                    .map(|p| p.min(100) as u8);
+                v.crew = frontline_sim::supply::crew_rounds(setup, ents, sq);
+                let base = &setup.map.bases[setup.players[sq.owner.0 as usize].base as usize];
+                let r = frontline_sim::Fx::from(base.radius).to_f32();
+                let c = frontline_sim::FxVec2::from(base.center).to_f32();
+                let a = ents.transform()[lead.index()].pos.to_f32();
+                let (dx, dy) = (a[0] - c[0], a[1] - c[1]);
+                v.refilling = setup.rules.supply.is_some()
+                    && v.ammo_pct.is_some_and(|p| p < 100)
+                    && dx * dx + dy * dy <= r * r;
+            }
             for m in &sq.members {
                 let c = &combat[m.index()];
                 v.detached += ents.unit()[m.index()].detached as u8;
+                v.holding += (ents.unit()[m.index()].fire == frontline_sim::FireMode::Hold) as u8;
                 for (n, k) in v.items.iter_mut().zip(ents.kit()[m.index()].items) {
                     *n += k as u16;
                 }

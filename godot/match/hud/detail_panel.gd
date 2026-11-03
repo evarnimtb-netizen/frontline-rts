@@ -87,10 +87,10 @@ func _draw() -> void:
 			_draw_help()
 
 
-func _header(left: String, right: String, right_col := HudStyle.DIM) -> void:
+func _header(left: String, right: String, right_col := HudStyle.DIM, reserve := 0.0) -> void:
 	var font := get_theme_default_font()
 	var bold := HudStyle.bold()
-	var rw := HudStyle.text_w(font, right, HudStyle.FONT)
+	var rw := HudStyle.text_w(font, right, HudStyle.FONT) + reserve
 	HudStyle.text(self, bold, Vector2(PAD, 19), HudStyle.fit(bold, left, size.x - 2.0 * PAD - rw - 12.0, HudStyle.FONT), HudStyle.FONT, HudStyle.TEXT)
 	HudStyle.text(self, font, Vector2(size.x - PAD, 19), right, HudStyle.FONT, right_col, 1)
 
@@ -129,7 +129,11 @@ func _draw_soldier(so: Dictionary) -> void:
 	HudStyle.text(self, font, Vector2(size.x - PAD, y + base), cond, HudStyle.FONT, HudStyle.ACCENT if pinned else HudStyle.DIM, 1)
 	y += rh
 	# Weapon and order target.
-	_pair(font, bold, x0, y + base, "Weapon", view.soldier_weapon(so))
+	# S5a: the weapon in hand and the rounds he holds for it.
+	var wv := view.soldier_weapon(so)
+	if int(so.get("rounds", -1)) >= 0:
+		wv = "%s · %d rds" % [String(so.get("active_weapon", wv)), int(so.rounds)]
+	_pair(font, bold, x0, y + base, "Weapon", wv)
 	if so.has("target"):
 		var t: Vector3 = so.target
 		var d := Vector2(t.x, t.z).distance_to(Vector2(so.pos.x, so.pos.z))
@@ -240,7 +244,24 @@ func _draw_squad(sid: int) -> void:
 	var title := view.squad_label(sid, true)
 	if sq.has("crew_of"):
 		title = "Crew — %s" % String(sq.get("crew_of_name", "tank"))
-	_header(title, right, HudStyle.ACCENT if st[1] else HudStyle.DIM)
+	# S5a: tags left of the status (LOW / DRY, HOLD, Refilling) and a thin
+	# ammunition bar under the header; the title fits what is left.
+	var x0r := size.x - PAD - HudStyle.text_w(font, right, HudStyle.FONT) - 8.0
+	var tx := x0r
+	var at: Array = HudStyle.ammo_tag(String(sq.get("ammo_state", "")))
+	if at[0] != "":
+		tx -= HudStyle.tag(self, bold, tx, 19.0, at[0], at[1]) + 4.0
+	if String(sq.get("fire_mode", "")) == "hold":
+		tx -= HudStyle.tag(self, bold, tx, 19.0, "HOLD", HudStyle.OWN) + 4.0
+	if bool(sq.get("refilling", false)):
+		tx -= HudStyle.tag(self, bold, tx, 19.0, "Refilling", HudStyle.DIM) + 4.0
+	_header(title, right, HudStyle.ACCENT if st[1] else HudStyle.DIM, x0r - tx)
+	if sq.has("ammo_pct"):
+		var ap := clampf(float(sq.ammo_pct), 0.0, 1.0)
+		var bar := Rect2(PAD, HEAD - 4.0, size.x - 2.0 * PAD, 2.0)
+		draw_rect(bar, Color(0, 0, 0, 0.35))
+		var bc: Color = at[1] if at[0] != "" else HudStyle.PIP_MID
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * ap, bar.size.y)), bc)
 	var jr := crew_jump_rect()
 	if jr.size != Vector2.ZERO:
 		HudStyle.box(self, jr, HudStyle.BG_BUTTON, 3)
@@ -290,12 +311,28 @@ func _draw_squad(sid: int) -> void:
 			var c := Vector2(mx - 5.0, by - 4.5)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -4.5), c + Vector2(4.5, 0), c + Vector2(0, 4.5), c + Vector2(-4.5, 0)]), HudStyle.ACCENT)
 			mark_w += 13.0
+			mx -= 13.0
 		# His role word, and his weapon when the row has room for both.
+		# S5a: his rounds in their own column left of his health (the
+		# crew weapon's carrier: the team's rounds for it), and the weapon
+		# in hand (a sidearm while dry: "P 38").
 		var room := colw - 32.0 - hp_w - mark_w
 		var label := view.soldier_name(so)
 		var size := HudStyle.FONT
+		var wtxt := String(so.get("weapon", ""))
+		var rounds := int(so.get("rounds", -1))
+		if rounds >= 0:
+			wtxt = String(so.get("active_weapon", wtxt))
+			if bool(so.get("crew_weapon", false)) and sq.has("crew_rounds") and not bool(so.get("sidearm", false)):
+				wtxt = String(sq.get("crew_weapon_name", wtxt))
+				rounds = int(sq.crew_rounds)
+			var rtxt := str(rounds)
+			var rw := HudStyle.text_w(bold, "8888", HudStyle.FONT_SMALL)
+			var rcol := HudStyle.DANGER if rounds == 0 else (HudStyle.ACCENT if bool(so.get("sidearm", false)) else HudStyle.DIM)
+			HudStyle.text(self, bold, Vector2(mx - 4.0, by), rtxt, HudStyle.FONT_SMALL, rcol, 1)
+			room -= rw + 6.0
 		if so.has("weapon") and so.has("name"):
-			var both := "%s · %s" % [so.name, so.weapon]
+			var both := "%s · %s" % [so.name, wtxt]
 			if HudStyle.text_w(f, both, HudStyle.FONT) <= room:
 				label = both
 			elif HudStyle.text_w(f, both, HudStyle.FONT_SMALL) <= room:
@@ -307,7 +344,9 @@ func _draw_squad(sid: int) -> void:
 				# S4 review: a plain rifleman's role says nothing his weapon
 				# does not ("Kar98k", "M1 Garand"); leaders and crew roles
 				# keep the role word (both are in the tooltip).
-				label = String(so.weapon)
+				label = wtxt
+		elif rounds >= 0:
+			label = "%s · %s" % [label, wtxt]
 		var nm := HudStyle.fit(f, label, room, size)
 		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, size, HudStyle.TEXT)
 		HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)

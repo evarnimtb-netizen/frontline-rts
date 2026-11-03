@@ -55,7 +55,8 @@ const NORMAL := {
 	"feed_w": 300.0,
 	"feed_line": 24.0,
 	"base_gap": 10.0,  # console bottom margin
-	"hc": 130.0,  # console height (one top, one baseline)
+	"hc": 154.0,  # console height (one top, one baseline); S5a: +24 for the fire strip
+	"fire_h": 20.0,  # S5a: the orders grid's fire-mode strip
 	"btn_w": 68.0,
 	"btn_gap": 4.0,
 	"detail_w": 300.0,
@@ -80,7 +81,8 @@ const COMPACT := {
 	"feed_w": 260.0,
 	"feed_line": 24.0,
 	"base_gap": 10.0,
-	"hc": 124.0,
+	"hc": 146.0,
+	"fire_h": 18.0,
 	"btn_w": 62.0,
 	"btn_gap": 4.0,
 	"detail_w": 262.0,
@@ -233,6 +235,27 @@ static func pip(ci: CanvasItem, r: Rect2, selected: bool, wounded: bool, pinned:
 
 
 ## A small clock (call-in re-call cooldown).
+## S5a: a small outlined tag ("LOW", "DRY", "HOLD"), right-aligned at
+## `right_x` on baseline `by` (FONT_SMALL); returns its width.
+static func tag(ci: CanvasItem, font: Font, right_x: float, by: float, s: String, col: Color) -> float:
+	var w := text_w(font, s, FONT_SMALL) + 8.0
+	var r := Rect2(right_x - w, by - 12.0, w, 16.0)
+	box(ci, r, Color(col, 0.18), 3, Color(col, 0.9), 1)
+	text(ci, font, Vector2(r.position.x + 4.0, by - 1.0), s, FONT_SMALL, col)
+	return w
+
+
+## S5a: the card tag for an ammunition state: ["LOW", amber], ["DRY", red]
+## or ["", ...] when the rounds are fine.
+static func ammo_tag(state: String) -> Array:
+	match state:
+		"dry":
+			return ["DRY", DANGER]
+		"low":
+			return ["LOW", ACCENT]
+	return ["", DIM]
+
+
 static func clock(ci: CanvasItem, c: Vector2, radius: float, col: Color) -> void:
 	ci.draw_arc(c, radius, 0.0, TAU, 16, col, 1.4, true)
 	ci.draw_polyline(PackedVector2Array([c + Vector2(0, -radius + 2), c, c + Vector2(radius - 2, 0)]), col, 1.4, true)
