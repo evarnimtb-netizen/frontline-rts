@@ -1022,7 +1022,8 @@ price cut kept). Work proceeds on (A) of each question below.
 - [x] **S5b-17. Mortar kills after S5b.** DECIDED by owner 2026-11-03:
   tune mortars back up in S6's Tune stage (data only: AI mission size, bomb
   load, AI map-fire use; not bomb lethality, S5b-6), aiming for mortars
-  ~10-15 % of kills and HE share ~20-25 % (cap 26.3 %). **Owner 2026-11-03: no preference, so default: modestly stronger, aim ~10 % of kills, tuned with the auto-tuner in S6 (crates change mortar supply anyway).** With observed fire, 20 bombs a
+  ~10-15 % of kills and HE share ~20-25 % (cap 26.3 %). Crates change mortar supply anyway.
+  With observed fire, 20 bombs a
   squad, a 23-30 s wait from order to first burst and the AI holding map
   fire, mortars cause 4-6 % of each side's kills in AI play (S5a: 18-22 %);
   the HE share of kills is about 13.5 % (target <= 26.3 %). (A) Accept:
