@@ -939,7 +939,7 @@ Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
   wounded man and the one-man card shows health. (B) A wider detail panel
   or a single-column list that keeps both.
 
-## S5b-mortars (in progress, branch `s5b-mortars`; owner questions open)
+## S5b-mortars (in progress, branch `s5b-mortars`; Part A done, Part B next; owner questions open)
 
 Spec: `docs/slices/S5b-mortars.md` (baseline, Barrage code map, data model,
 sim rules, saves, AI, HUD, the `mortar-bench`, content with sources,
@@ -967,7 +967,8 @@ price cut kept). Work proceeds on (A) of each question below.
   observed mission). S11 builds it for guns and mortars. (B) Build it now.
 - [ ] **S5b-5. Bombs per 5-man squad.** (A) 20 (assistant 4, two bearers
   8 each); per-bearer loads are not sourced; a German crew "usually"
-  carried 24 in action (US WD 1943). (B) 24.
+  carried 24 in action (US WD 1943). (B) 24. Part A ships the same 20 as
+  gunner 2 ready bombs at the tube, assistant 4, bearers 7 each.
 - [ ] **S5b-6. Precision spread.** (A) Keep `spread_mrad` 50 (game value)
   as the precision term on top of the new aim error; sourced range and
   deflection probable errors wait for the firing tables. (B) Split it now.
@@ -991,6 +992,25 @@ price cut kept). Work proceeds on (A) of each question below.
   mean-miss ratio, which ranging pushes above 3x (Monte Carlo 3.4 for 8
   rounds), so the bench may set it a little lower (about 8 % / 27 m).
   (B) Keep 3x the first round and judge the ratio on first rounds only.
+  Part A: the bench gave 3.39 at 9 % / 30 m and 3.04 at 8 % / 27 m (50
+  seeds, both mortars); ww2 ships 8 % / 27 m.
+- [ ] **S5b-13. fortify-test mortar row.** The pass row is the spec's
+  Direct mission that adjusts on the target: trench 45 vs open 114 = 39.5
+  % on 10 seeds (limit 40 %, baseline 33.8 %); the same mission after
+  ranging on a reference point 40 m off is 44.4 % (report only). Open
+  losses fall with the aim offset left after one adjusting round; the
+  ratio has about ±6 points of noise. (A) Keep the 40 % limit and the
+  adjusting mission as the pass row. (B) Raise the limit to 45 %.
+- [ ] **S5b-14. Observing the last rounds.** The order ends when the last
+  round leaves the tube, so rounds still in the air are not observed
+  (about half of an 8-round mission's bursts): no ranging memory or
+  seen/unseen count from them. (A) Keep (corrections only matter for
+  rounds not yet fired). (B) Keep the order until the last bomb lands (the
+  squad stays busy about 15 s longer).
+- [ ] **S5b-15. Observer lost while laying.** A mission ordered with an
+  observer who loses sight before the first round fires as map fire on
+  the observed start error (counted as a downgrade). (A) Keep: the
+  observer passed the data. (B) Re-draw the error at the map-fire size.
 
 ## S3 owner checklist (needs a person)
 
