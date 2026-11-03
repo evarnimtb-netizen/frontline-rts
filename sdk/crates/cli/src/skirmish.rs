@@ -366,6 +366,61 @@ pub struct S5aPlayer {
     pub paused_s: u32,
     /// Enemy men killed by class (the HE share by source).
     pub kills_by: [u32; kill_class::COUNT],
+    /// Part B AI counters (`AiCounters`): refill trips (all, dry,
+    /// stalled), squads away summed over plans and plans, mortar reserve
+    /// holds, rearm stalls, buys holding `float_mp`, ambushes started,
+    /// tubes fired from them and ends by reason (`AMBUSH_END_NAMES`).
+    pub ai: S5aAi,
+}
+
+/// S5a Part B AI counters of one player (or summed).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S5aAi {
+    pub refill_trips: u64,
+    pub refill_dry_trips: u64,
+    pub refill_stalls: u64,
+    pub refill_away: u64,
+    pub plans: u64,
+    pub mortar_reserve_holds: u64,
+    pub rearm_stalls: u64,
+    pub float_holds: u64,
+    pub ambushes: u64,
+    pub ambush_shots: u64,
+    pub ambush_ends: [u64; frontline_sim::ai::AMBUSH_ENDS],
+}
+
+impl S5aAi {
+    fn of(c: &frontline_sim::ai::AiCounters) -> S5aAi {
+        S5aAi {
+            refill_trips: c.refill_trips as u64,
+            refill_dry_trips: c.refill_dry_trips as u64,
+            refill_stalls: c.refill_stalls as u64,
+            refill_away: c.refill_away as u64,
+            plans: c.plans as u64,
+            mortar_reserve_holds: c.mortar_reserve_holds as u64,
+            rearm_stalls: c.rearm_stalls as u64,
+            float_holds: c.float_holds as u64,
+            ambushes: c.ambushes as u64,
+            ambush_shots: c.ambush_shots as u64,
+            ambush_ends: c.ambush_ends.map(|v| v as u64),
+        }
+    }
+
+    fn add(&mut self, o: &S5aAi) {
+        self.refill_trips += o.refill_trips;
+        self.refill_dry_trips += o.refill_dry_trips;
+        self.refill_stalls += o.refill_stalls;
+        self.refill_away += o.refill_away;
+        self.plans += o.plans;
+        self.mortar_reserve_holds += o.mortar_reserve_holds;
+        self.rearm_stalls += o.rearm_stalls;
+        self.float_holds += o.float_holds;
+        self.ambushes += o.ambushes;
+        self.ambush_shots += o.ambush_shots;
+        for (a, b) in self.ambush_ends.iter_mut().zip(&o.ambush_ends) {
+            *a += b;
+        }
+    }
 }
 
 /// S4 per-player report counters.
@@ -1060,6 +1115,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     refilled: pl.ammo.refilled,
                     paused_s: pl.ammo.paused_ticks / s.tick_hz.max(1),
                     kills_by: pl.kills_by,
+                    ai: ai.map_or_else(S5aAi::default, |a| S5aAi::of(&a.counters)),
                 },
             }
         })
@@ -1451,6 +1507,12 @@ pub struct S5aFaction {
     pub paused_s: u64,
     /// Enemy men killed by class (the HE share by source).
     pub kills_by: [u64; kill_class::COUNT],
+    /// Part B AI counters, summed.
+    pub ai: S5aAi,
+    /// Matches with refill trips; normal-base matches with a Panzerfaust
+    /// fired from an ambush.
+    pub matches_with_refill: u32,
+    pub matches_ambush_fired_normal: u32,
 }
 
 /// S4 numbers of one faction over a `--seeds` run.
@@ -1692,6 +1754,9 @@ fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             for k in 0..kill_class::COUNT {
                 s5.kills_by[k] += q5.kills_by[k] as u64;
             }
+            s5.ai.add(&q5.ai);
+            s5.matches_with_refill += u32::from(q5.ai.refill_trips > 0);
+            s5.matches_ambush_fired_normal += u32::from(q5.ai.ambush_shots > 0 && !swapped);
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;
@@ -1908,7 +1973,11 @@ pub fn many_text(r: &ManyReport) -> String {
              {:.1}/match); refilled {}/{}/{}; refill paused {} s\n\
              S5a {}: kills by source % (of this side's kills): mortar {:.1}, tank HE {:.1}, \
              frag {:.1}, satchel {:.1}, rocket {:.1}, tank AP {:.1}, MG {:.1}, rifle {:.1}, \
-             smg {:.1}, vehicle MG {:.1}\n",
+             smg {:.1}, vehicle MG {:.1}\n\
+             S5a {}: AI refill trips {} ({:.1}/match, {} dry, {} stalled; matches with a trip {}), \
+             mean squads away {:.2}; mortar reserve holds {}; rearm stalls {}; float holds {}\n\
+             S5a {}: ambushes {} (tubes gone during one, fired or with a fallen carrier, {}; normal-base matches with one {}), \
+             ends {}\n",
             f.faction,
             fired.join(", "),
             f.faction,
@@ -1938,6 +2007,28 @@ pub fn many_text(r: &ManyReport) -> String {
             pct(kill_class::RIFLE),
             pct(kill_class::SMG),
             pct(kill_class::VEHICLE_MG),
+            f.faction,
+            q.ai.refill_trips,
+            q.ai.refill_trips as f64 / n,
+            q.ai.refill_dry_trips,
+            q.ai.refill_stalls,
+            q.matches_with_refill,
+            q.ai.refill_away as f64 / q.ai.plans.max(1) as f64,
+            q.ai.mortar_reserve_holds,
+            q.ai.rearm_stalls,
+            q.ai.float_holds,
+            f.faction,
+            q.ai.ambushes,
+            q.ai.ambush_shots,
+            q.matches_ambush_fired_normal,
+            (0..frontline_sim::ai::AMBUSH_ENDS)
+                .map(|k| format!(
+                    "{} {}",
+                    frontline_sim::ai::AMBUSH_END_NAMES[k],
+                    q.ai.ambush_ends[k]
+                ))
+                .collect::<Vec<_>>()
+                .join(", "),
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

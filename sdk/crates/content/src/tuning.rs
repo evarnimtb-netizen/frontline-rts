@@ -322,7 +322,27 @@ tuning_table! {
         /// ... unless a known enemy soldier is this close to the middle of
         /// its route (m; absent: 40).
         pzf_clear_m: 0..=500 = "default_pzf_clear_m",
+        /// S5a Panzerfaust ambush hold (S4-42 / T12): a known enemy vehicle
+        /// this close to the point a Panzerfaust squad holds (or to the
+        /// squad) starts an ambush (m; 0: off; absent: 0, so older rules
+        /// keep the S4 hunt, S5a-29 (A)) ...
+        ambush_watch_m: 0..=1000 = "default_ambush_watch_m",
+        /// ... the squad waits at a spot this far to the side of the
+        /// vehicle's projected path (m; absent: 25) ...
+        ambush_offset_m: 5..=200 = "default_ambush_offset_m",
+        /// ... and gives up after this long (s; absent: 90).
+        ambush_max_s: 1..=900 = "default_ambush_max_s",
     }
+}
+
+fn default_ambush_watch_m() -> u32 {
+    0
+}
+fn default_ambush_offset_m() -> u32 {
+    25
+}
+fn default_ambush_max_s() -> u32 {
+    90
 }
 
 fn default_pzf_hunt_m() -> u32 {
@@ -890,11 +910,102 @@ impl Default for ShareTuning {
     }
 }
 
+tuning_table! {
+    /// `[combat.fire]` (S5a): fire discipline (infantry-structures.md
+    /// §6.2, S5a-4, S5a-18).
+    pub struct FireTuning {
+        /// In `discipline` mode a man opens fire only at targets within
+        /// this share of his weapon's range (%).
+        hold_beyond_pct: 10..=100,
+        /// A man in `hold` mode returns fire at enemies this close (m).
+        hold_open_m: 0..=200,
+    }
+}
+
+impl FireTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+impl Default for FireTuning {
+    /// A rules def without `[combat.fire]` (legacy content, S5a-29 (A)):
+    /// discipline fires to full range, as before S5a, so older mods and the
+    /// frozen fixtures keep their behaviour. `mods/ww2` sets 70.
+    fn default() -> FireTuning {
+        FireTuning {
+            hold_beyond_pct: 100,
+            hold_open_m: 30,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.ammo]` (S5a): the AI's ammunition reserve and refill trips.
+    pub struct AiAmmoTuning {
+        /// A squad below this share of its main feed with no known enemy
+        /// within `threat_radius_m` goes to the base to refill (%) ...
+        return_below_pct: 0..=100,
+        /// ... below this it goes even under threat (%).
+        dry_pct: 0..=100,
+        /// At most this share of the squads at one point leave to refill
+        /// in one plan (%; at least one).
+        max_returning_pct: 1..=100,
+        /// A refilling squad leaves the base at this share of its load
+        /// (%) ...
+        refill_full_pct: 1..=100,
+        /// ... or after this long in the base (s).
+        refill_max_s: 1..=900,
+        /// A mortar barrages only above this share of its bombs, unless an
+        /// own point is under threat (%).
+        mortar_reserve_pct: 0..=100,
+        /// Manpower kept back from unit buys while an own unit waits in the
+        /// base for a paid refill (MP).
+        float_mp: 0..=10000,
+        /// A unit leaves the base after this long with its refill paused
+        /// for lack of manpower (s).
+        rearm_stall_s: 1..=600,
+    }
+}
+
+impl AiAmmoTuning {
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        check_order(
+            out,
+            table,
+            ("dry_pct", self.dry_pct),
+            ("return_below_pct", self.return_below_pct),
+        );
+        check_order(
+            out,
+            table,
+            ("return_below_pct", self.return_below_pct),
+            ("refill_full_pct", self.refill_full_pct),
+        );
+    }
+}
+
+impl Default for AiAmmoTuning {
+    /// The S5a starting values (a rules def without `[ai.ammo]`).
+    fn default() -> AiAmmoTuning {
+        AiAmmoTuning {
+            return_below_pct: 30,
+            dry_pct: 5,
+            max_returning_pct: 34,
+            refill_full_pct: 90,
+            refill_max_s: 120,
+            mortar_reserve_pct: 30,
+            float_mp: 100,
+            rearm_stall_s: 15,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("supply", SupplyTuning::KEYS),
     ("combat.share", ShareTuning::KEYS),
+    ("combat.fire", FireTuning::KEYS),
+    ("ai.ammo", AiAmmoTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -941,6 +1052,8 @@ pub(crate) struct TuningRefs<'a> {
     pub call_in: &'a CallInTuning,
     pub supply: Option<&'a SupplyTuning>,
     pub share: &'a ShareTuning,
+    pub fire: &'a FireTuning,
+    pub ai_ammo: &'a AiAmmoTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -986,6 +1099,8 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
         sp.check(&p("supply"), out);
     }
     t.share.check(&p("combat.share"), out);
+    t.fire.check(&p("combat.fire"), out);
+    t.ai_ammo.check(&p("ai.ammo"), out);
 }
 
 #[cfg(test)]

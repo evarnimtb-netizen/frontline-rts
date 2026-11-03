@@ -887,6 +887,7 @@ impl MatchState {
                 profile,
             } => self.units_dig(ctx, p, units, line, *profile),
             CommandKind::SetStance { units, stance } => self.set_stance(ctx, p, units, *stance),
+            CommandKind::SetFire { units, mode } => self.set_fire(ctx, p, units, *mode),
             &CommandKind::Regroup { squad } => {
                 !self.is_vehicle_squad(squad) && self.regroup(ctx, p, squad)
             }
@@ -1787,7 +1788,8 @@ impl MatchState {
                 // checked by the entity store).
                 u.order != UnitOrder::Idle
                     || *nav != Default::default()
-                    || (!soldier && u.stance != Default::default())
+                    || (!soldier
+                        && (u.stance != Default::default() || u.fire != Default::default()))
             } else {
                 !soldier
                     || nav.path.len() > MAX_PATH_POINTS

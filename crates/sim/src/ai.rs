@@ -179,8 +179,10 @@ use crate::rng::{Purpose, RngStream};
 use crate::terrain::Heightfield;
 use frontline_content::ItemKind;
 
+mod ammo;
 mod armour;
 mod assault;
+pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
     END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
     HUNT_ENDS, MAX_HUNTS,
@@ -232,6 +234,12 @@ pub enum TaskKind {
     Recrew = 12,
     /// S3c: an AT team following an own vehicle's assault.
     Follow = 13,
+    /// S5a: a squad walking back to the base to refill its rounds, then
+    /// waiting there (`ai::ammo`).
+    Refill = 14,
+    /// S5a: a Panzerfaust squad waiting in ambush beside an enemy
+    /// vehicle's path, holding fire (`ai::ammo`).
+    Ambush = 15,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -280,6 +288,31 @@ pub struct AiState {
     /// S3c sticky satchel hunts, by the hunting engineer squad (at most
     /// `assault::MAX_HUNTS`).
     pub hunts: BTreeMap<SquadId, AiHunt>,
+    /// S5a: squads on a refill trip and the tick each reached the base
+    /// (0: still on the way; at most [`MAX_PENDING`] entries).
+    pub refill: BTreeMap<SquadId, u64>,
+    /// S5a: Panzerfaust ambushes, by squad (at most [`MAX_AMBUSHES`]).
+    pub ambush: BTreeMap<SquadId, AiAmbush>,
+}
+
+/// S5a: most Panzerfaust ambushes one AI keeps.
+pub const MAX_AMBUSHES: usize = 64;
+
+/// S5a: a Panzerfaust squad's ambush on one enemy vehicle
+/// (`ai::ammo`).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct AiAmbush {
+    pub vehicle: SimId,
+    /// Tick it started.
+    pub since: u64,
+    /// The spot it waits at.
+    pub spot: FxVec2,
+    /// Tubes its men carried at the last plan (shots fired are counted from
+    /// the drop).
+    pub tubes: u16,
+    /// Given up (time out): the squad is free again (the S4 hunt may take
+    /// it) until the vehicle is gone, so it does not start again.
+    pub done: bool,
 }
 
 /// An engineer squad's satchel hunt on one enemy vehicle (S3c B2).
@@ -362,6 +395,25 @@ pub struct AiCounters {
     pub capture_orders: u32,
     /// S4: plans whose buy waited only for the pop cap.
     pub pop_cap_holds: u32,
+    /// S5a: refill trips started (all, and those started dry below
+    /// `ai.ammo.dry_pct`), and trips ended by a paused refill.
+    pub refill_trips: u32,
+    pub refill_dry_trips: u32,
+    pub refill_stalls: u32,
+    /// S5a: plan-squads away on a refill trip (summed per plan) and plans
+    /// (mean squads away = `refill_away / plans`).
+    pub refill_away: u32,
+    pub plans: u32,
+    /// S5a: mortar barrages held back by the bomb reserve; vehicle rearm
+    /// waits ended by a paused refill; buys that kept `float_mp` back.
+    pub mortar_reserve_holds: u32,
+    pub rearm_stalls: u32,
+    pub float_holds: u32,
+    /// S5a Panzerfaust ambushes: started, tubes fired from one, and ends by
+    /// reason (index: `ammo::AMBUSH_*`).
+    pub ambushes: u32,
+    pub ambush_shots: u32,
+    pub ambush_ends: [u32; ammo::AMBUSH_ENDS],
 }
 
 impl AiState {
@@ -381,6 +433,8 @@ impl AiState {
             counters: AiCounters::default(),
             slow_since: BTreeMap::new(),
             hunts: BTreeMap::new(),
+            refill: BTreeMap::new(),
+            ambush: BTreeMap::new(),
         }
     }
 
@@ -450,6 +504,13 @@ impl AiState {
             })
             || !self.validate_assault(tick)
             || self.hunts.keys().any(bad_squad)
+            // S5a.
+            || self.refill.len() > MAX_PENDING
+            || self.refill.keys().any(bad_squad)
+            || self.refill.values().any(|&t| t > tick)
+            || self.ambush.len() > MAX_AMBUSHES
+            || self.ambush.keys().any(bad_squad)
+            || self.ambush.values().any(|a| a.since > tick)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -731,12 +792,19 @@ impl Planner<'_> {
         }
 
         self.retreats(&mut mine, &known);
+        // S5a: refill trips, staggered per point.
+        self.refills(&mut mine, &known);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
         self.crews(&crews, &known, &kv);
         self.buy(&kv);
         let mut points = self.evaluate_points(&known, &kv);
         let assigned = self.assign(&mine, &mut points);
-        let hunting = self.hunts(&mine, &assigned, &points, &known, &kv);
+        // S5a: Panzerfaust ambushes first; the hunts skip their squads.
+        let ambushing = self.ambushes(&mine, &assigned, &points, &kv);
+        let mut hunting = self.hunts(&mine, &assigned, &points, &known, &kv);
+        hunting.extend(ambushing);
+        hunting.sort_unstable();
+        hunting.dedup();
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );
@@ -906,6 +974,12 @@ impl Planner<'_> {
             .count() as i64;
         let pl = &g.players[p];
         let mut budget = pl.manpower as i64;
+        // S5a: keep `float_mp` back while an own unit waits for a paid
+        // refill in the base.
+        if self.waiting_refill() {
+            budget -= s.rules.ai.ammo.float_mp as i64;
+            self.ai.counters.float_holds += 1;
+        }
         let mut pop = g.population(self.ents, self.me) as i64;
         let mut vehicles = g.vehicles_counted(self.ents, self.me);
         // S3b: types bought by call-ins still pending are on cooldown from
@@ -1418,13 +1492,32 @@ impl Planner<'_> {
                     best = Some((score, c));
                 }
             }
+            // S5a mortar reserve: barrage only above the reserve unless an
+            // own point is under threat, never more rounds than it holds.
+            let (held, pct) = crate::supply::mortar_bombs(s, self.ents, sq);
+            let defend = points.iter().any(|p| p.rel == Rel::Own && p.threat > 0);
+            if best.is_some()
+                && (held == 0
+                    || (pct.is_some_and(|p| p <= s.rules.ai.ammo.mortar_reserve_pct) && !defend))
+            {
+                self.ai.counters.mortar_reserve_holds += 1;
+                best = None;
+            }
             if let Some((_, target)) = best {
+                let rounds = match pct {
+                    Some(_) => s
+                        .rules
+                        .ai
+                        .barrage_rounds
+                        .min(held.min(u16::MAX as u32) as u16),
+                    None => s.rules.ai.barrage_rounds,
+                };
                 self.ai.emit(
                     self.due,
                     CommandKind::Barrage {
                         squad: m.id,
                         target,
-                        rounds: s.rules.ai.barrage_rounds,
+                        rounds,
                     },
                 );
                 self.task(m.id, TaskKind::Barrage, NO_POINT, target);

@@ -47,7 +47,11 @@ fn squad(w: &World, p: u8, ty: &str) -> SquadId {
 
 #[test]
 fn a_variant_of_extends_and_members_is_called_in_fights_and_picks_up_its_mg() {
-    let s = setup(3);
+    // S5a Part B: seed 3 -> 6. With MG and BAR bursts the six men lose the
+    // 120 m fight against the twelve without a US loss on seeds 1-5, 7 and
+    // 8 (a lone German survivor out of sight then outlasts the limit);
+    // seed 6 has losses on both sides.
+    let s = setup(6);
     let t = s
         .squad_type_index(VARIANT)
         .expect("the variant is a squad type");

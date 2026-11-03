@@ -300,10 +300,6 @@ tank_he_reserve = 6
 # flies over a flat trench line and bursts behind it (cm).
 tank_he_aim_cm = 0
 
-# Cover on arrival: each man moves his slot to the nearest free trench spot,
-# else (an enemy seen) to a spot with terrain between him and that enemy.
-# S3b: moved from the sim's Rust constants unchanged (same values);
-# docs/modding/tuning.md lists every table.
 [combat.share]
 # S5a: sharing rounds inside a squad (infantry-structures.md 6). One pass per
 # squad this often (s); a man below below_pct of his own load takes
@@ -318,6 +314,24 @@ giver_above_pct = 50         # % of the giver's own load
 share_pct = 20               # % of the giver's own load per pass
 crew_feed_m = 5              # m
 
+# S5a fire discipline (infantry-structures.md §6.2; S5a-4, S5a-18 (A)): in
+# the default "discipline" mode a man opens fire only at targets within
+# hold_beyond_pct (%) of his weapon's range (rifles 210 m of 300); a
+# Suppress order and the "at will" mode fire to full range. In "hold" mode
+# a man fires only at enemies within hold_open_m (m), or once a squadmate
+# fired or came under fire (the squad springs to discipline); single-shot
+# AT items and launchers in hold fire at their engage_moving distance (the
+# ambush). Reasoning: unaimed fire beyond effective range wastes the
+# rounds a man carries (FM 7-10 / German Schiessvorschrift fire control,
+# summarised in infantry-structures.md).
+[combat.fire]
+hold_beyond_pct = 70
+hold_open_m = 30
+
+# Cover on arrival: each man moves his slot to the nearest free trench spot,
+# else (an enemy seen) to a spot with terrain between him and that enemy.
+# S3b: moved from the sim's Rust constants unchanged (same values);
+# docs/modding/tuning.md lists every table.
 [cover]
 # Men look for cover this far from their line slot (m).
 radius_m = 10
@@ -900,6 +914,45 @@ at_follow_back_m = 30
 # the hunts off (the men still fire at vehicles that come into range).
 pzf_hunt_m = 100
 pzf_clear_m = 40
+# S5a Panzerfaust ambush hold (S4-42 / T12; docs/slices/S5a-ammo.md "AI"
+# step 5): instead of hunting into the escort's MG fire, a squad carrying
+# Panzerfausts that sees an enemy vehicle within ambush_watch_m (m) of its
+# point or itself waits in cover beside the vehicle's projected path,
+# ambush_offset_m (m) to the side, prone and holding fire; the carriers
+# fire at the Panzerfaust's engage_moving (40 m) and the squad springs to
+# discipline with the first shot. Gives up after ambush_max_s (s).
+# Reasoning: Panzerfaust drill was the close ambush from cover (Rottman,
+# "Panzerfaust and Panzerschreck", 2014); starting values from the spec.
+ambush_watch_m = 200
+ambush_offset_m = 25
+ambush_max_s = 90
+
+# S5a: the AI's ammunition reserve and refill trips (docs/slices/S5a-ammo.md
+# "AI" steps 1-4). The base is the only source in S5a (no crates until S6).
+[ai.ammo]
+# A squad below this share (%) of its main feed (the crew weapon's belts,
+# else its men's main weapon) with no known enemy within threat_radius_m
+# walks back to refill ...
+return_below_pct = 30
+# ... below this share (%) it goes even under threat (as a retreat).
+dry_pct = 5
+# At most this share (%) of the squads at one point leave to refill in one
+# plan, the lowest first (at least one); a point's last squad holds unless
+# it is dry ("send dry squads back in turns", Appendix A.5).
+max_returning_pct = 34
+# A refilling squad leaves the base at this share (%) of its load ...
+refill_full_pct = 90
+# ... or after this long (s) in the base.
+refill_max_s = 120
+# A mortar barrages only while it holds more than this share (%) of its
+# bombs, unless an enemy is near an own point (keeps a reserve for defence).
+mortar_reserve_pct = 30
+# Manpower (MP) kept back from unit buys while an own unit waits in base
+# for a paid refill (so the refill is not starved by buys).
+float_mp = 100
+# A unit whose refill paused for lack of manpower leaves the base after
+# this long (s) (S5a-20 (A): the shell budget waits for S6).
+rearm_stall_s = 15
 
 # Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
 # once in the base, no queue and no delivery time).

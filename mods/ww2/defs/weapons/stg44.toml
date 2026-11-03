@@ -1,0 +1,40 @@
+# StG 44 (MP 43/44) assault rifle (S5a Part B): the Volksgrenadier
+# Sturmgruppe's weapon. Fired mostly in semi-automatic or short bursts.
+# Sources: Wikipedia "StG 44" (5.2 kg; cyclic ~550-600 rpm; 685 m/s;
+# 30-round magazine; effective ~300 m semi-automatic, ~150 m in bursts);
+# lonesentry.com "New German Assault Rifle" (Tactical and Technical Trends
+# 1945: used chiefly in short bursts). Game ranges are compressed (rifles
+# 300 m): between the MP 40's 100 m and the Kar98k's 300 m.
+id = "ww2:stg44"
+name = "StG 44"
+short_name = "StG 44"
+class = "rifle"
+# S5a: what each shot takes from the man's rounds (defs/cartridges).
+feed = "ww2:792x33"
+# Rounds carried, the magazine in the gun included: six 30-round magazines
+# (infantry-structures.md §6.2; a forum claim of four magazines, feldgrau.net;
+# verify against K.St.N. 131V).
+load = 180
+sources = [
+    "Wikipedia, StG 44 (weight, rate, velocity, magazine, effective range)",
+    "lonesentry.com, New German Assault Rifle (Tactical and Technical Trends, 1945)",
+]
+# Effective reach on the compressed scale (m).
+range_m = 250
+# Damage per hit: the short round, a little below the full-power Kar98k's 70.
+damage = 55
+# Practical rate in short bursts and aimed single shots (rpm): well below
+# the 550-600 cyclic (the bursts below pace it further).
+rounds_per_min = 300
+# 30-round box magazine.
+magazine = 30
+reload_ms = 3000
+# Dispersion half-angle (mrad): between the Kar98k's 10 and the MP 40's 35.
+spread_mrad = 18
+# m/s.
+muzzle_velocity_m_s = 685
+suppression = 8
+# S5a bursts: 3 rounds, then 0.8 s to re-aim (starting values; the 1945
+# US intelligence report notes short bursts; verify).
+burst_rounds = 3
+burst_pause_ms = 800

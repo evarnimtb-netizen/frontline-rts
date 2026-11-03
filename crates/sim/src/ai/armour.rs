@@ -85,9 +85,18 @@ impl Planner<'_> {
                     .emit(self.due, CommandKind::Retreat { squad: t.squad });
                 return true;
             }
-            if !self.rearmed(vs, v) && vs.base_ticks < s.rules.ai.armour.rearm_max_s * hz {
+            // S5a: a rearm paused for lack of manpower ends after
+            // `ai.ammo.rearm_stall_s` in base.
+            let stalled = vs.supply_due != 0
+                && self.refill_paused()
+                && vs.base_ticks >= s.rules.ai.ammo.rearm_stall_s * hz;
+            if !self.rearmed(vs, v)
+                && vs.base_ticks < s.rules.ai.armour.rearm_max_s * hz
+                && !stalled
+            {
                 return true;
             }
+            self.ai.counters.rearm_stalls += u32::from(stalled);
             self.ai.tasks.remove(&t.squad);
             return false;
         }

@@ -28,11 +28,11 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning, BodyTuning,
-    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning,
-    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
-    check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning,
+    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
+    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -425,6 +425,8 @@ pub struct AiSetup {
     pub infantry: AiInfantryTuning,
     pub armour: AiArmourTuning,
     pub assault: AiAssaultTuning,
+    /// S5a: `[ai.ammo]`.
+    pub ammo: AiAmmoTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -515,6 +517,8 @@ pub struct CombatSetup {
     pub suppress: SuppressTuning,
     /// S5a: `[combat.share]`.
     pub share: ShareTuning,
+    /// S5a: `[combat.fire]`.
+    pub fire: FireTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -642,6 +646,9 @@ pub struct WeaponSetup {
     /// (ticks). Used from Part B.
     pub burst_rounds: u32,
     pub burst_pause_ticks: u32,
+    /// S5a: the weapon's own fire-discipline share of its range (%; 0: the
+    /// rules' `combat.fire.hold_beyond_pct`).
+    pub hold_beyond_pct: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1125,6 +1132,7 @@ impl ModDefs {
                 load: w.load.unwrap_or(w.magazine),
                 burst_rounds: w.burst_rounds,
                 burst_pause_ticks: ms_to_ticks(w.burst_pause_ms, hz),
+                hold_beyond_pct: w.hold_beyond_pct,
             })
             .collect();
         let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
@@ -1580,6 +1588,7 @@ impl ModDefs {
                         suppression: c.suppression.clone(),
                         suppress: c.suppress.clone(),
                         share: c.share.clone().unwrap_or_default(),
+                        fire: c.fire.clone().unwrap_or_default(),
                     }
                 },
                 items: ItemRulesSetup {
@@ -1667,6 +1676,7 @@ impl ModDefs {
                         infantry: a.infantry.clone(),
                         armour: a.armour.clone(),
                         assault: a.assault.clone(),
+                        ammo: a.ammo.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2361,6 +2371,8 @@ impl MatchSetup {
                 call_in: &r.call_in,
                 supply: r.supply.as_ref(),
                 share: &c.share,
+                fire: &c.fire,
+                ai_ammo: &a.ammo,
             },
         );
         r.at_ditch
@@ -2477,9 +2489,10 @@ impl MatchSetup {
                 w.feed.is_none_or(|f| self.feed_ok(f))
                     && w.load <= u16::MAX as u32
                     && w.burst_rounds <= 1000
-                    && w.burst_pause_ticks <= 10 * 30,
+                    && w.burst_pause_ticks <= 10 * 30
+                    && w.hold_beyond_pct <= 100,
                 "weapons.feed",
-                "unknown feed, or load or bursts out of range",
+                "unknown feed, or load, bursts or hold_beyond_pct out of range",
             );
         }
         for c in &self.cartridges {

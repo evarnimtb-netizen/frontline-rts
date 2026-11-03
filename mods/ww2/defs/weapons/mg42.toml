@@ -34,3 +34,8 @@ setup_ms = 6000
 suppression = 15
 # Crew weapon hand-over (ms).
 handover_ms = 3000
+# S5a bursts (B1): on the Lafette tripod longer bursts of 10 rounds with
+# 1.2 s pauses (about 350 rounds a minute sustained; starting values,
+# verify against the sMG drill).
+burst_rounds = 10
+burst_pause_ms = 1200

@@ -13,3 +13,7 @@ spread_mrad = 15
 muzzle_velocity_m_s = 850
 setup_ms = 3000
 suppression = 14
+# S5a bursts (B1): bursts of 8 rounds (FM 23-55 gives bursts of 6-9 rounds
+# for the M1919A4), 1.0 s pause (starting values, verify).
+burst_rounds = 8
+burst_pause_ms = 1000

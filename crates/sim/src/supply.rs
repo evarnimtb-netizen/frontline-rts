@@ -347,6 +347,91 @@ pub(crate) fn reload_dry(
     false
 }
 
+/// S5a squad ammunition share (%, the AI's reserve and the HUD marker):
+/// the lowest share of its main feeds, each the rounds its living men hold
+/// over their slots' loads. The main feeds are its crew weapons' (MG,
+/// mortar) when a man carries one, else the feed most of its men's main
+/// weapons use (ties: the lower slot); an AT team's rockets count too.
+/// `None` for squads that do not count rounds (legacy, vehicles).
+pub(crate) fn squad_ammo_pct(
+    setup: &MatchSetup,
+    ents: &Entities,
+    sq: &crate::game::Squad,
+) -> Option<u32> {
+    let ty = &setup.squad_types[sq.type_idx as usize];
+    if !counted(ty) || ty.vehicle.is_some() {
+        return None;
+    }
+    let mut crew = [false; MAX_FEEDS];
+    let mut votes = [0u32; MAX_FEEDS];
+    for m in &sq.members {
+        let kit = &ents.kit[m.index()];
+        let w = &setup.weapons[kit.weapon as usize];
+        if w.class == WeaponClass::Launcher {
+            continue;
+        }
+        if let Some(k) = ty.feed_slot(w) {
+            votes[k] += 1;
+            crew[k] |= w.crew;
+        }
+    }
+    let main: Vec<usize> = if crew.iter().any(|&c| c) {
+        (0..MAX_FEEDS).filter(|&k| crew[k]).collect()
+    } else {
+        let best = (0..MAX_FEEDS).max_by_key(|&k| (votes[k], std::cmp::Reverse(k)));
+        best.filter(|&k| votes[k] > 0).into_iter().collect()
+    };
+    let mut pct: Option<u32> = None;
+    for k in main {
+        let (mut have, mut load) = (0u64, 0u64);
+        for m in &sq.members {
+            let i = m.index();
+            have += man_total(setup, ty, &ents.kit[i], &ents.combat[i], k) as u64;
+            load += man_load(ty, &ents.kit[i], k) as u64;
+        }
+        if let Some(p) = (have * 100).checked_div(load) {
+            let p = p.min(100) as u32;
+            pct = Some(pct.map_or(p, |q| q.min(p)));
+        }
+    }
+    if let Some(l) = &sq.launcher {
+        let full = setup.weapons[ty.weapon as usize].rounds_carried.max(1) as u64;
+        let p = (l.rounds as u64 * 100 / full).min(100) as u32;
+        pct = Some(pct.map_or(p, |q| q.min(p)));
+    }
+    pct
+}
+
+/// S5a: mortar bombs a mortar squad holds (its mortar's feed, every
+/// living man) and their share of the squad's load (%; `None` for legacy
+/// types, which do not count bombs: then `held` is `u32::MAX`).
+pub(crate) fn mortar_bombs(
+    setup: &MatchSetup,
+    ents: &Entities,
+    sq: &crate::game::Squad,
+) -> (u32, Option<u32>) {
+    let ty = &setup.squad_types[sq.type_idx as usize];
+    let Some(k) = ty.feed_slot(&setup.weapons[ty.weapon as usize]) else {
+        return (u32::MAX, None);
+    };
+    let (mut have, mut load) = (0u32, 0u32);
+    for m in &sq.members {
+        let i = m.index();
+        have += man_total(setup, ty, &ents.kit[i], &ents.combat[i], k);
+        have += if ents.kit[i].weapon == ty.weapon && setup.weapons[ty.weapon as usize].he.is_some()
+        {
+            ents.combat[i].mag as u32
+        } else {
+            0
+        };
+        load += man_load(ty, &ents.kit[i], k);
+    }
+    (
+        have,
+        (load > 0).then(|| (have as u64 * 100 / load as u64).min(100) as u32),
+    )
+}
+
 /// Whether `p` stands inside player `owner`'s base.
 pub(crate) fn in_own_base(setup: &MatchSetup, owner: PlayerId, p: FxVec2) -> bool {
     let base = &setup.map.bases[setup.players[owner.0 as usize].base as usize];
@@ -461,21 +546,24 @@ impl MatchState {
                     (t * 1000 / load, t, load)
                 })
             };
+            // The man who carries a crew weapon keeps its rounds (he is
+            // fed, he does not feed), and is fed whole magazines by the
+            // crew feed only (S5a Part B: a part-filled pouch made part
+            // belts).
+            let keeps = |g: SimId| {
+                let w = &setup.weapons[ents.kit[g.index()].weapon as usize];
+                w.crew && ty.feed_slot(w) == Some(k)
+            };
             let taker = sq
                 .members
                 .iter()
                 .copied()
+                .filter(|&m| !keeps(m))
                 .filter_map(|m| share_of(m).map(|s| (s, m)))
                 .filter(|((pm, _, _), _)| *pm < sh.below_pct * 10)
                 .min_by_key(|((pm, _, _), m)| (*pm, m.0));
             let Some(((_, t_total, t_load), taker)) = taker else {
                 continue;
-            };
-            // The man who carries a crew weapon keeps its rounds (he is
-            // fed, he does not feed).
-            let keeps = |g: SimId| {
-                let w = &setup.weapons[ents.kit[g.index()].weapon as usize];
-                w.crew && ty.feed_slot(w) == Some(k)
             };
             let giver = sq
                 .members
@@ -832,13 +920,20 @@ pub const DUE_RARE: u8 = 2;
 pub const DUE_MG: u8 = 4;
 
 /// S5a T5: ticks weapon `w` needs to fire `rounds` rounds steadily, first
-/// shot to last: the shot interval inside each magazine, and between
-/// magazines one interval (the empty gun waits for a squadmate's feed)
-/// plus the reload. Bursts come with Part B.
+/// shot to last, from full magazines: after each shot the interval
+/// (Bresenham on the shot counter), plus the burst pause after every
+/// `burst_rounds` shots (B1); between magazines one interval (the empty
+/// gun waits for a squadmate's feed) plus the reload.
 pub fn expected_fire_ticks(w: &frontline_content::setup::WeaponSetup, rounds: u32) -> u64 {
     let mag = w.magazine.max(1);
-    let mags = rounds.div_ceil(mag) as u64;
-    let gaps = (rounds as u64).saturating_sub(mags);
     let ceil = w.interval_milli.div_ceil(1000) as u64;
-    gaps * w.interval_milli as u64 / 1000 + mags.saturating_sub(1) * (w.reload_ticks as u64 + ceil)
+    let mut t = 0u64;
+    for n in 1..rounds {
+        t += if n.is_multiple_of(mag) {
+            ceil + w.reload_ticks as u64
+        } else {
+            crate::combat::burst_cooldown(w, n) as u64
+        };
+    }
+    t
 }

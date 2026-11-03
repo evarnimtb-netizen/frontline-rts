@@ -1452,6 +1452,8 @@ impl World {
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 game.supply_tick(&mut self.state.entities, &mut self.hash, tick);
+                // S5a: squads holding fire spring to discipline.
+                game.spring_holds(&mut self.state.entities, &mut self.hash);
                 game.update_rules(&self.state.entities);
             }
         }
@@ -1545,9 +1547,10 @@ impl World {
             ents.transform[i].yaw = yaw;
             ents.velocity[i] = Default::default();
             ents.mover[i].waypoint = q;
-            let stance = ents.unit[i].stance;
+            let (stance, fire) = (ents.unit[i].stance, ents.unit[i].fire);
             ents.unit[i] = crate::unit::Unit {
                 stance,
+                fire,
                 ..Default::default()
             };
             self.hash.mark_entity_chunk(m.chunk());
@@ -5078,6 +5081,116 @@ mod tests {
             World::load(&bad.save(), 1).is_err(),
             "a counter per type at most"
         );
+    }
+
+    /// S5a Part B: a man's fire mode and the AI's refill trips and
+    /// ambushes are hashed, saved and checked on load.
+    #[test]
+    fn s5a_fire_mode_and_ai_ammo_state_are_saved_hashed_and_checked() {
+        use crate::unit::FireMode;
+        let (mut w, va) = flat_tank_world_with(|s| s.players[1].is_ai = true);
+        let t = w
+            .match_setup()
+            .unwrap()
+            .squad_type_index("ww2:ger_grenadiergruppe")
+            .unwrap();
+        let g = w
+            .spawn_squad_at(
+                PlayerId(1),
+                t,
+                FxVec2::from_int(300, 500),
+                FxVec2::new(Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        let man = w.game().unwrap().squads[&g].members[0].index();
+        w.state.entities.unit[man].fire = FireMode::Hold;
+        w.state.tick = 100;
+        {
+            let ai = w.state.game.as_mut().unwrap().ai[1].as_mut().unwrap();
+            ai.refill.insert(g, 40);
+            ai.ambush.insert(
+                g,
+                crate::ai::AiAmbush {
+                    vehicle: va,
+                    since: 50,
+                    spot: FxVec2::from_int(310, 500),
+                    tubes: 2,
+                    done: false,
+                },
+            );
+            ai.counters.ambushes = 1;
+        }
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
+            s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
+        }
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            (
+                "unit.fire",
+                Box::new(move |s| s.entities.unit[man].fire = FireMode::AtWill),
+            ),
+            (
+                "ai.refill",
+                Box::new(move |s| *ai(s).refill.get_mut(&g).unwrap() += 1),
+            ),
+            (
+                "ai.ambush.since",
+                Box::new(move |s| ai(s).ambush.get_mut(&g).unwrap().since += 1),
+            ),
+            (
+                "ai.ambush.spot",
+                Box::new(move |s| ai(s).ambush.get_mut(&g).unwrap().spot.x += Fx::ONE),
+            ),
+            (
+                "ai.ambush.tubes",
+                Box::new(move |s| ai(s).ambush.get_mut(&g).unwrap().tubes -= 1),
+            ),
+            (
+                "ai.ambush.done",
+                Box::new(move |s| ai(s).ambush.get_mut(&g).unwrap().done = true),
+            ),
+            (
+                "ai.counters.ambushes",
+                Box::new(|s| ai(s).counters.ambushes += 1),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let mut st = w.state.clone();
+            edit(&mut st);
+            let w2 = World::from_state(st, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+        }
+        let bad: Vec<(StateEdit, &str)> = vec![
+            // A vehicle (not a soldier) with a fire mode.
+            (
+                Box::new(move |s| s.entities.unit[va.index()].fire = FireMode::Hold),
+                "unit",
+            ),
+            (
+                Box::new(move |s| *ai(s).refill.get_mut(&g).unwrap() = 1_000),
+                "AI",
+            ),
+            (
+                Box::new(move |s| {
+                    ai(s).refill.insert(SquadId(9_999), 0);
+                }),
+                "AI",
+            ),
+            (
+                Box::new(move |s| ai(s).ambush.get_mut(&g).unwrap().since = 1_000),
+                "AI",
+            ),
+        ];
+        for (edit, want) in bad {
+            let bytes = save_edited(&w, edit);
+            let e = load_err(&bytes);
+            assert!(e.contains(want), "{want}: {e}");
+        }
     }
 
     #[test]

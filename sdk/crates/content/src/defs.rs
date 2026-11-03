@@ -15,11 +15,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
 use crate::tuning::{
-    AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning, BodyTuning,
-    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FormationTuning,
-    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
-    check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, BailTuning, BlastTuning,
+    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
+    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -619,6 +619,11 @@ pub struct WeaponDef {
     pub burst_rounds: u32,
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub burst_pause_ms: u32,
+    /// S5a fire discipline per weapon (S5a-18): a man with this weapon in
+    /// `discipline` mode opens fire within this share of its range (%;
+    /// 10-100; absent or 0: the rules' `combat.fire.hold_beyond_pct`).
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub hold_beyond_pct: u32,
 }
 
 fn is_zero_u32(v: &u32) -> bool {
@@ -1243,6 +1248,9 @@ pub struct CombatDef {
     /// values).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub share: Option<ShareTuning>,
+    /// S5a: fire discipline (default: the S5a starting values).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire: Option<FireTuning>,
 }
 
 /// AI commander tuning (weights in data, §9). Difficulty is separate.
@@ -1303,6 +1311,10 @@ pub struct AiDef {
     pub armour: AiArmourTuning,
     /// Fire-and-move, AT and satchel hunts (S3b tuning table).
     pub assault: AiAssaultTuning,
+    /// S5a: ammunition reserve and refill trips (default: the S5a
+    /// starting values).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ammo: Option<AiAmmoTuning>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1822,6 +1834,9 @@ impl WeaponDef {
         }
         range(&mut out, "burst_rounds", self.burst_rounds, 0, 1000);
         range(&mut out, "burst_pause_ms", self.burst_pause_ms, 0, 10_000);
+        if self.hold_beyond_pct != 0 {
+            range(&mut out, "hold_beyond_pct", self.hold_beyond_pct, 10, 100);
+        }
         if self.class == WeaponClass::Cannon && self.he.is_some() {
             out.push(Issue::new(
                 "he",
@@ -2349,6 +2364,8 @@ impl RulesDef {
                 call_in: &call_in,
                 supply: self.supply.as_ref(),
                 share: &self.combat.share.clone().unwrap_or_default(),
+                fire: &self.combat.fire.clone().unwrap_or_default(),
+                ai_ammo: &a.ammo.clone().unwrap_or_default(),
             },
         );
         out

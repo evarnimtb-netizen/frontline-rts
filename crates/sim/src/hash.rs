@@ -131,6 +131,7 @@ impl StableHash for Combat {
 impl StableHash for Unit {
     fn put(&self, out: &mut Vec<u8>) {
         (self.stance as u8).put(out);
+        (self.fire as u8).put(out);
         self.detached.put(out);
         (self.order.kind() as u8).put(out);
         match self.order {

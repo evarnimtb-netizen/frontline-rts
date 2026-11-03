@@ -113,7 +113,7 @@ use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
 use crate::systems::FireRequest;
 use crate::terrain::Heightfield;
-use crate::unit::{StanceOrder, Unit, UnitOrder};
+use crate::unit::{FireMode, StanceOrder, Unit, UnitOrder};
 use crate::vehicle::{VehicleDerived, VehicleFrame};
 use crate::world::Stats;
 
@@ -581,7 +581,8 @@ pub(crate) fn aim_and_fire(
         // S3b Suppress: area fire at the line, no target search.
         if let Some(line) = suppress_of(&sq.order, u) {
             c.target = None;
-            if ws.cooldown > 0 || (c.still as u32) < w.setup_ticks {
+            // S5a: a Suppress order fires to full range, except in hold.
+            if u.fire == FireMode::Hold || ws.cooldown > 0 || (c.still as u32) < w.setup_ticks {
                 continue;
             }
             let id = SimId(i as u32);
@@ -618,7 +619,8 @@ pub(crate) fn aim_and_fire(
             );
             continue;
         }
-        let r = range_sq(w.range_max.into());
+        // S5a fire discipline: the reach his fire mode allows.
+        let r = range_sq(fire_reach(&rules.fire, u.fire, w));
         if let Some(t) = c.target
             && valid_target(ctx.marks, ctx.mark_of, t, owner, pos.xy(), r).is_none()
         {
@@ -671,6 +673,44 @@ pub(crate) fn aim_and_fire(
         );
     }
     changed
+}
+
+/// S5a: how far a man in fire mode `mode` opens fire with weapon `w`
+/// (docs/slices/S5a-ammo.md "Fire discipline and fire modes"):
+/// `discipline` within the weapon's `hold_beyond_pct` of its range (else
+/// the rules'), `at_will` to it, `hold` within `hold_open_m`.
+pub(crate) fn fire_reach(
+    t: &frontline_content::tuning::FireTuning,
+    mode: FireMode,
+    w: &WeaponSetup,
+) -> Fx {
+    let full: Fx = w.range_max.into();
+    match mode {
+        FireMode::AtWill => full,
+        FireMode::Discipline => {
+            let pct = if w.hold_beyond_pct > 0 {
+                w.hold_beyond_pct
+            } else {
+                t.hold_beyond_pct
+            };
+            // In i64: a 600 m range times 100 overflows Q16.16.
+            Fx::from_raw((full.raw() as i64 * pct.min(100) as i64 / 100) as i32)
+        }
+        FireMode::Hold => Fx::from_int(t.hold_open_m.min(10_000) as i32).min(full),
+    }
+}
+
+/// S5a MG bursts: the cooldown after shot number `shots` (1-based) of
+/// weapon `w` within its magazine: the shot interval, plus the weapon's
+/// `burst_pause_ticks` after every `burst_rounds` shots (counted on the
+/// shot counter; a reload also pauses).
+pub(crate) fn burst_cooldown(w: &WeaponSetup, shots: u32) -> u32 {
+    let base = interval_after(w, shots);
+    if w.burst_rounds > 0 && shots.is_multiple_of(w.burst_rounds) {
+        base + w.burst_pause_ticks
+    } else {
+        base
+    }
 }
 
 /// S4: the training profile of squad `sq`'s card.
@@ -742,7 +782,7 @@ fn fire_round(
         }
         .min(u16::MAX as u32) as u16;
     } else {
-        ws.cooldown = interval_after(w, ws.shots).min(u16::MAX as u32) as u16;
+        ws.cooldown = burst_cooldown(w, ws.shots).min(u16::MAX as u32) as u16;
     }
 }
 
@@ -966,7 +1006,14 @@ impl MatchState {
             let i = m.index();
             let ok = sq.members.contains(&m)
                 && able(ents, m)
-                && self.launcher_target_ok(ents, owner, ents.transform[i].pos.xy(), w, t);
+                && self.launcher_target_ok(
+                    ents,
+                    owner,
+                    ents.transform[i].pos.xy(),
+                    w,
+                    t,
+                    ents.unit[i].fire == FireMode::Hold,
+                );
             if !ok {
                 (p.man, p.target, p.aim) = (None, None, 0);
             } else {
@@ -1058,7 +1105,10 @@ impl MatchState {
                 }
                 let at = ents.transform[m.index()].pos.xy();
                 for (&t, ts) in &self.vehicles {
-                    if ts.wreck_tick.is_some() || !self.launcher_target_ok(ents, owner, at, w, t) {
+                    let hold = ents.unit[m.index()].fire == FireMode::Hold;
+                    if ts.wreck_tick.is_some()
+                        || !self.launcher_target_ok(ents, owner, at, w, t, hold)
+                    {
                         continue;
                     }
                     let d = (ents.transform[t.index()].pos.xy() - at).length_sq_raw();
@@ -1188,7 +1238,8 @@ impl MatchState {
     /// Whether vehicle `t` is a launcher target for a man of `owner` at
     /// `from` with weapon `w`: a live enemy vehicle he sees within the
     /// engagement distance for its motion (`engage_still`, or
-    /// `engage_moving` above the rules' moving speed).
+    /// `engage_moving` above the rules' moving speed; S5a: `engage_moving`
+    /// whatever its motion for a man holding fire, the ambush).
     fn launcher_target_ok(
         &self,
         ents: &Entities,
@@ -1196,6 +1247,7 @@ impl MatchState {
         from: FxVec2,
         w: &WeaponSetup,
         t: SimId,
+        hold: bool,
     ) -> bool {
         let ti = t.index();
         if ents.kind.get(ti) != Some(&EntityKind::Vehicle)
@@ -1208,6 +1260,7 @@ impl MatchState {
             return false;
         };
         let moving = vs.avg_vel.length() > Fx::from(self.setup.rules.vehicles.moving_speed);
+        let _ = hold;
         let reach: Fx = if moving {
             w.engage_moving.into()
         } else {
@@ -1262,7 +1315,8 @@ impl MatchState {
             return;
         }
         let from = muzzle(pos, &ents.combat[i], &self.setup.rules.combat.body);
-        let ok = |t: SimId| self.launcher_target_ok(ents, owner, pos.xy(), w, t);
+        let hold = ents.unit[i].fire == FireMode::Hold;
+        let ok = |t: SimId| self.launcher_target_ok(ents, owner, pos.xy(), w, t, hold);
         let before = ents.combat[i].target;
         let mut target = before.filter(|&t| ok(t));
         if target.is_none() || ents.combat[i].retarget == 0 {

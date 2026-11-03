@@ -40,3 +40,9 @@ suppression = 15
 # A crew weapon: when the gunner falls, his assistant (or the nearest man,
 # ammo bearers first) takes the gun up after this long (ms).
 handover_ms = 3000
+# S5a bursts (B1): 7 rounds (0.35 s at 1,200 rpm), then a 1.0 s pause to
+# re-lay: about 300 rounds a minute in steady fire (German MG drill of short
+# bursts of 5-7 rounds as summarised in secondary sources; US comparative
+# tests saw bursts of 3-7, Wikipedia "MG 42"; verify against the drill).
+burst_rounds = 7
+burst_pause_ms = 1000

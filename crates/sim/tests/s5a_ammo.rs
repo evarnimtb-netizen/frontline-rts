@@ -128,8 +128,9 @@ fn suppress(w: &mut World, seq: u32, units: Vec<SimId>, at: FxVec2) {
 
 // ------------------------------------------------------------------ T5 --
 
-/// T5: an MG team firing steadily goes dry in the time its rounds, rate
-/// and drum changes give (±3 %), the assistant and bearer feeding the gun;
+/// T5: an MG team firing steadily goes dry in the time its rounds, rate,
+/// bursts (B1) and drum changes give (±3 %), the assistant and bearer
+/// feeding the gun;
 /// in base it refills paying each round's weight at the small-arms price;
 /// with no manpower the refill pauses and resumes when manpower comes.
 #[test]
@@ -149,7 +150,7 @@ fn mg_team_goes_dry_on_time_and_refills_in_base_for_manpower() {
     suppress(&mut w, 1, vec![gunner], xy(800, 500));
     let mut first = None;
     let mut last = None;
-    for _ in 0..8000 {
+    for _ in 0..14000 {
         w.step(&[]);
         let n = fired(&w, 0, fired_class::MG);
         if n > 0 && first.is_none() {

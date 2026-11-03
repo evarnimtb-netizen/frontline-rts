@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 /// version). 5 (S3c): the `Recrew` and `Abandon` commands (the one bump for
 /// the S3c slice). 6 (S4): unit ids per command 120 -> 150 (`MAX_UNITS`,
 /// the S4 pop cap; the one bump for the S4 slice).
-pub const PROTOCOL_VERSION: u16 = 6;
+pub const PROTOCOL_VERSION: u16 = 7;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -566,6 +566,7 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::StopUnits { units }
         | CommandKind::RetreatUnits { units }
         | CommandKind::SetStance { units, .. }
+        | CommandKind::SetFire { units, .. }
         | CommandKind::Throw { units, .. }
         | CommandKind::ThrowEach { units, .. }
         | CommandKind::ReverseUnits { units, .. }
@@ -826,6 +827,10 @@ mod tests {
                 units: units.clone(),
                 stance: frontline_sim::StanceOrder::Crouch,
             },
+            CommandKind::SetFire {
+                units: units.clone(),
+                mode: frontline_sim::FireMode::Hold,
+            },
             CommandKind::Throw {
                 units: units.clone(),
                 item: ItemKind::Satchel,
@@ -905,7 +910,7 @@ mod tests {
                 n += 1;
             }
         }
-        assert_eq!(n, 15, "every command with a unit list");
+        assert_eq!(n, 16, "every command with a unit list");
         // One point over (17): both dig commands are refused.
         for k in listed(MAX_UNITS, MAX_DIG_POINTS + 1) {
             if matches!(k, CommandKind::Dig { .. } | CommandKind::DigUnits { .. }) {

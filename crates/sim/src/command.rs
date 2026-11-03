@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::ecs::{PlayerId, SimId};
 use crate::fx::FxVec2;
 use crate::game::SquadId;
-use crate::unit::StanceOrder;
+use crate::unit::{FireMode, StanceOrder};
 use crate::vehicle::AmmoChoice;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -157,4 +157,8 @@ pub enum CommandKind {
     /// The crew of the player's vehicle squad `squad` bail out (vehicles
     /// with a crew squad only).
     Abandon { squad: SquadId },
+    // ---- S5a fire discipline (`crate::combat`).
+    /// The men's fire mode (`units` as above; vehicles are dropped: their
+    /// MGs keep discipline). Not an order to go anywhere.
+    SetFire { units: Vec<SimId>, mode: FireMode },
 }

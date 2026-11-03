@@ -13,3 +13,7 @@ reload_ms = 6000
 spread_mrad = 15
 muzzle_velocity_m_s = 755
 suppression = 14
+# S5a bursts (B1): the vehicle MG 34 fires the same short bursts as the
+# infantry gun: 7 rounds, 1.0 s pause (starting values, verify).
+burst_rounds = 7
+burst_pause_ms = 1000

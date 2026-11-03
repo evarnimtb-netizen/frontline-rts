@@ -90,7 +90,7 @@ pub use snapshot::{
 };
 pub use supply::{AmmoAccount, fired_class};
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};
-pub use unit::{MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};
+pub use unit::{FireMode, MAX_UNITS, StanceOrder, Unit, UnitDig, UnitNav, UnitOrder};
 pub use vehicle::{AmmoChoice, BlockLayer, MgState, Seat, VehicleFrame, VehicleState};
 pub use world::{
     SimConfig, SimError, SimState, SoldierParams, StageTimes, Stats, TickRate, WeaponParams, World,

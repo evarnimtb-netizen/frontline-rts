@@ -74,6 +74,27 @@ pub enum StanceOrder {
     Prone = 3,
 }
 
+/// S5a fire mode of a soldier (`SetFire`, docs/slices/S5a-ammo.md "Fire
+/// discipline and fire modes"). Kept through regroups like the stance
+/// order.
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default, Serialize, Deserialize,
+)]
+#[repr(u8)]
+pub enum FireMode {
+    /// Opens fire only within `combat.fire.hold_beyond_pct` of his weapon's
+    /// range (a Suppress order still fires to full range).
+    #[default]
+    Discipline = 0,
+    /// Fires to his weapon's full range.
+    AtWill = 1,
+    /// Holds fire except at enemies within `combat.fire.hold_open_m`; his
+    /// single-shot AT item or launcher fires at its `engage_moving`
+    /// distance. The squad springs to `Discipline` once one of them fired
+    /// or came under fire (`MatchState::spring_holds`).
+    Hold = 2,
+}
+
 /// A detached soldier's own order.
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum UnitOrder {
@@ -142,6 +163,8 @@ pub struct UnitNav {
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct Unit {
     pub stance: StanceOrder,
+    /// S5a: his fire mode.
+    pub fire: FireMode,
     pub detached: bool,
     pub order: UnitOrder,
     pub nav: UnitNav,
@@ -152,6 +175,7 @@ impl Unit {
     fn rejoin(&mut self) {
         *self = Unit {
             stance: self.stance,
+            fire: self.fire,
             ..Unit::default()
         };
     }
@@ -419,6 +443,56 @@ impl MatchState {
             ctx.hash.mark_entity_chunk(m.chunk());
         }
         true
+    }
+
+    /// S5a `SetFire`: the men's fire mode. Not an order to go anywhere
+    /// (like `SetStance`); vehicles keep discipline (their MGs) and are
+    /// dropped.
+    pub(crate) fn set_fire(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        ids: &[SimId],
+        mode: FireMode,
+    ) -> bool {
+        let Some(men) = self.unit_set(ctx, p, ids) else {
+            return false;
+        };
+        for m in men {
+            ctx.ents.unit[m.index()].fire = mode;
+            ctx.hash.mark_entity_chunk(m.chunk());
+        }
+        true
+    }
+
+    /// S5a (Status stage, serial, ascending squad id): a squad with men
+    /// holding fire springs to discipline once one of its men fired this
+    /// tick or came under fire (suppression at the crouch threshold).
+    pub(crate) fn spring_holds(
+        &mut self,
+        ents: &mut crate::ecs::Entities,
+        hash: &mut crate::hash::HashCache,
+    ) {
+        let crouch = self.setup.rules.combat.crouch_suppression;
+        for sq in self.squads.values() {
+            let held = |m: &SimId| ents.unit[m.index()].fire == FireMode::Hold;
+            if !sq.members.iter().any(held) {
+                continue;
+            }
+            let hot = sq.members.iter().any(|m| {
+                let c = &ents.combat[m.index()];
+                c.since_shot <= 1 || c.suppression / 1000 >= crouch
+            });
+            if !hot {
+                continue;
+            }
+            for &m in &sq.members {
+                if ents.unit[m.index()].fire == FireMode::Hold {
+                    ents.unit[m.index()].fire = FireMode::Discipline;
+                    hash.mark_entity_chunk(m.chunk());
+                }
+            }
+        }
     }
 
     /// `Regroup`: detached men rejoin; a squad that is not walking forms a

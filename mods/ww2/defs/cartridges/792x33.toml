@@ -1,0 +1,12 @@
+# 7.92x33 mm Kurz (Pistolenpatrone 43 m.E.) for the StG 44 (S5a Part B).
+# About 17 g a round (Wikipedia, 7.92x33mm Kurz: 17.05 g complete round);
+# about 20 g with its share of carton and magazine pouch (starting value,
+# verify).
+id = "ww2:792x33"
+name = "7.92 mm Kurz"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 20 }
+sources = [
+    "Wikipedia, 7.92x33mm Kurz (round weight)",
+    "S5a plan: plus carton share (verify)",
+]

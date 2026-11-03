@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **6** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **7** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -92,6 +92,11 @@ kind the relay may not send. Clients cannot send relay messages.
   a larger selection into several commands of at most 150 ids. 150 ids
   still fit the 1,024 B single-command limit. The one bump for the S4
   slice.
+- Version 7 (S5a, 2026-11-03) adds one command at the end of
+  `CommandKind`: `SetFire { units, mode }` (the men's fire mode:
+  `Discipline` 0, `AtWill` 1, `Hold` 2). `units` is bounded like every
+  unit list (at most 150 ids, `MAX_UNITS`) and the command by the
+  1,024 B single-command limit. The one bump for the S5a slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -157,7 +162,11 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   `[combat.share]`) and the save version (`-s13`: counted rounds, sidearm
   and refill state per man, the rounds in a dropped crew weapon, a
   vehicle's due rearm steps, per-player ammunition accounts). No command
-  changed in Part A; Part B adds `SetFire` with `PROTOCOL_VERSION` 7.
+  changed in Part A; Part B adds `SetFire` with `PROTOCOL_VERSION` 7
+  (above) and changes the content again (`[combat.fire]`, `[ai.ammo]`,
+  the ambush keys, the StG 44 and the Volksgrenadier-Sturmgruppe, MG and
+  BAR bursts). The save version stays `-s13` (the per-man fire mode is
+  in the S5a save layout).
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.

@@ -21,7 +21,9 @@
 
 use frontline_content::{DigProfile, ItemKind, MatchSetup};
 use frontline_sim::game::MAX_DIG_POINTS;
-use frontline_sim::{AmmoChoice, CommandKind, Fx, FxVec2, MAX_UNITS, SimId, SquadId, StanceOrder};
+use frontline_sim::{
+    AmmoChoice, CommandKind, FireMode, Fx, FxVec2, MAX_UNITS, SimId, SquadId, StanceOrder,
+};
 
 /// Lateral spacing (m) between squads sent to one point together.
 pub const GROUP_SPACING_M: f32 = 18.0;
@@ -237,6 +239,24 @@ pub fn stance_order_name(s: u8) -> &'static str {
     }
 }
 
+/// S5a `set_fire` intent mode names.
+pub fn fire_mode(name: &str) -> Option<FireMode> {
+    Some(match name {
+        "discipline" => FireMode::Discipline,
+        "at_will" => FireMode::AtWill,
+        "hold" => FireMode::Hold,
+        _ => return None,
+    })
+}
+
+pub fn fire_mode_name(m: FireMode) -> &'static str {
+    match m {
+        FireMode::Discipline => "discipline",
+        FireMode::AtWill => "at_will",
+        FireMode::Hold => "hold",
+    }
+}
+
 /// Throw intent item names.
 pub fn item_kind(name: &str) -> Option<ItemKind> {
     Some(match name {
@@ -289,6 +309,10 @@ pub fn unit_command(
         "set_stance" => CommandKind::SetStance {
             units,
             stance: stance_order(word)?,
+        },
+        "set_fire" => CommandKind::SetFire {
+            units,
+            mode: fire_mode(word)?,
         },
         "throw" => CommandKind::Throw {
             units,
@@ -454,6 +478,14 @@ mod tests {
             })
         ));
         assert!(unit_command("set_stance", u(), None, &[], "lie").is_none());
+        assert!(matches!(
+            unit_command("set_fire", u(), None, &[], "hold"),
+            Some(CommandKind::SetFire {
+                mode: FireMode::Hold,
+                ..
+            })
+        ));
+        assert!(unit_command("set_fire", u(), None, &[], "fire").is_none());
         assert!(matches!(
             unit_command("throw", u(), t, &[], "smoke"),
             Some(CommandKind::Throw {

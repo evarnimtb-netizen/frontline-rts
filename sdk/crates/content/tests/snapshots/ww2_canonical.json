@@ -448,6 +448,7 @@
         "ww2:ger_grenadiergruppe",
         "ww2:ger_grenadiergruppe_7",
         "ww2:ger_smg_gruppe",
+        "ww2:ger_vg_sturmgruppe",
         "ww2:ger_engineer_squad",
         "ww2:ger_mortar_team",
         "ww2:ger_panzerschreck_team",
@@ -856,6 +857,16 @@
   "rules": {
     "ww2:skirmish": {
       "ai": {
+        "ammo": {
+          "dry_pct": 5,
+          "float_mp": 100,
+          "max_returning_pct": 34,
+          "mortar_reserve_pct": 30,
+          "rearm_stall_s": 15,
+          "refill_full_pct": 90,
+          "refill_max_s": 120,
+          "return_below_pct": 30
+        },
         "armour": {
           "backup_m": 30,
           "capture_m": 300,
@@ -877,6 +888,9 @@
           "threat_m": 300
         },
         "assault": {
+          "ambush_max_s": 90,
+          "ambush_offset_m": 25,
+          "ambush_watch_m": 200,
           "at_follow_back_m": 30,
           "at_follow_m": 0,
           "at_hunt_clear_m": 20,
@@ -967,6 +981,10 @@
         },
         "corpse_s": 30,
         "crouch_suppression": 30,
+        "fire": {
+          "hold_beyond_pct": 70,
+          "hold_open_m": 30
+        },
         "fire_exposure_cm": 30,
         "firing_spot_pct": 150,
         "hit_suppression": 25,
@@ -1775,6 +1793,61 @@
       "tags": [
         "crew"
       ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:ger_vg_sturmgruppe": {
+      "ai_weight": 50,
+      "available_from": "1944-09",
+      "capabilities": [
+        "dig_basic",
+        "recrew"
+      ],
+      "cooldown_s": 45,
+      "cost": 300,
+      "dig_rate_pct": 100,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_vg_sturmgruppe",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "items": {
+            "ww2:stielhandgranate": 2
+          },
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:stg44"
+        },
+        {
+          "count": 7,
+          "items": {
+            "ww2:stielhandgranate": 2
+          },
+          "slot": "sturmmann",
+          "weapon": "ww2:stg44"
+        }
+      ],
+      "men": 0,
+      "name": "VG-Sturmgruppe",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "VG-Sturm",
+      "sight_m": 150,
+      "sources": [
+        "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)",
+        "Wikipedia, Volksgrenadier"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "line"
+      ],
+      "training": "ww2:training_conscript",
       "unlock_s": 0,
       "weapon": ""
     },
@@ -3402,6 +3475,8 @@
   },
   "weapons": {
     "ww2:bar_m1918a2": {
+      "burst_pause_ms": 600,
+      "burst_rounds": 4,
       "class": "rifle",
       "crew_weapon": false,
       "damage": 65,
@@ -3527,6 +3602,8 @@
       "suppression": 2
     },
     "ww2:m1919": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 8,
       "class": "mg",
       "damage": 45,
       "feed": "ww2:3006_belt",
@@ -3546,13 +3623,15 @@
       "suppression": 14
     },
     "ww2:m1919a4_tripod": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 8,
       "class": "mg",
       "damage": 45,
       "feed": "ww2:3006_belt",
       "handover_ms": 3000,
       "id": "ww2:m1919a4_tripod",
       "load": 250,
-      "magazine": 125,
+      "magazine": 250,
       "min_range_m": 0,
       "muzzle_velocity_m_s": 853,
       "name": "M1919A4 (tripod)",
@@ -3718,6 +3797,8 @@
       "suppression": 20
     },
     "ww2:mg34": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 7,
       "class": "mg",
       "damage": 45,
       "feed": "ww2:792x57_belt",
@@ -3737,6 +3818,8 @@
       "suppression": 14
     },
     "ww2:mg42": {
+      "burst_pause_ms": 1200,
+      "burst_rounds": 10,
       "class": "mg",
       "damage": 45,
       "feed": "ww2:792x57_belt",
@@ -3761,6 +3844,8 @@
       "suppression": 15
     },
     "ww2:mg42_bipod": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 7,
       "class": "mg",
       "damage": 45,
       "feed": "ww2:792x57_belt",
@@ -3873,6 +3958,33 @@
       "spread_mrad": 12,
       "spread_urad": 0,
       "suppression": 20
+    },
+    "ww2:stg44": {
+      "burst_pause_ms": 800,
+      "burst_rounds": 3,
+      "class": "rifle",
+      "damage": 55,
+      "feed": "ww2:792x33",
+      "handover_ms": 0,
+      "id": "ww2:stg44",
+      "load": 180,
+      "magazine": 30,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 685,
+      "name": "StG 44",
+      "range_m": 250,
+      "reload_ms": 3000,
+      "rounds_carried": 0,
+      "rounds_per_min": 300,
+      "setup_ms": 0,
+      "short_name": "StG 44",
+      "sources": [
+        "Wikipedia, StG 44 (weight, rate, velocity, magazine, effective range)",
+        "lonesentry.com, New German Assault Rifle (Tactical and Technical Trends, 1945)"
+      ],
+      "spread_mrad": 18,
+      "spread_urad": 0,
+      "suppression": 8
     }
   }
 }

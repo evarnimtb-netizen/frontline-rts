@@ -81,17 +81,21 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 /// `rare_cap` and the rack factor, the `[supply]` and `[combat.share]`
 /// rules); the S4 Fix values were 0x10e500c23953fb93, 0x3689d883fe85dd98,
 /// 0xe43938148a1d867e, 0x10e500c23953fb93, 0xdc46d00b47f91e5c,
-/// 0xb73ebf70d33b818b, and these are the new ones. The live `mods/ww2` is
+/// 0xb73ebf70d33b818b. S5a Part B changed it again on purpose (the
+/// `[combat.fire]` and `[ai.ammo]` rules, the weapon `hold_beyond_pct`);
+/// the Part A values were 0x981be222d89dc533, 0xa361b2c3d8ab0501,
+/// 0x8c8da20bb09e1c4a, 0x981be222d89dc533, 0xbf2dcec35942ab25,
+/// 0x8a441c7150adde30, and these are the new ones. The live `mods/ww2` is
 /// guarded by the canonical snapshot instead.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x981be222d89dc533),
-    ("skirmish usa-ger seed 7 hard", 0xa361b2c3d8ab0501),
-    ("test_unlock ger-usa seed 1 normal", 0x8c8da20bb09e1c4a),
-    ("example override ger-usa seed 1 normal", 0x981be222d89dc533),
-    ("human ger vs ai usa seed 3 easy", 0xbf2dcec35942ab25),
+    ("skirmish ger-usa seed 1 normal", 0xc75149efb1159f88),
+    ("skirmish usa-ger seed 7 hard", 0xa2342d0679d92657),
+    ("test_unlock ger-usa seed 1 normal", 0x8fa980212ecdf1f2),
+    ("example override ger-usa seed 1 normal", 0xc75149efb1159f88),
+    ("human ger vs ai usa seed 3 easy", 0xcd0a7c0c5ede5b2a),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x8a441c7150adde30,
+        0xf7f2ebfeb6842321,
     ),
 ];
 

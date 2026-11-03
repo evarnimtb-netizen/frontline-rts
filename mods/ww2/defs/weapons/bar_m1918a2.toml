@@ -26,3 +26,8 @@ reload_ms = 4000
 spread_mrad = 14
 muzzle_velocity_m_s = 860
 suppression = 10
+# S5a bursts (B1): short bursts of 4 rounds, 0.6 s pause (BAR drill of
+# 2-3 or 4-5 round bursts as summarised in secondary sources; starting
+# values, verify against FM 23-15).
+burst_rounds = 4
+burst_pause_ms = 600

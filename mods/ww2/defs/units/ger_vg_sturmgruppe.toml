@@ -1,0 +1,49 @@
+# Volksgrenadier-Sturmgruppe (S5a Part B, roster S5 row): the late-war
+# Volksgrenadier assault squad of the Sturmzug, eight men all armed with the
+# StG 44 (leader included), conscript-trained (the VG divisions were raised
+# from Luftwaffe and Kriegsmarine men and young recruits with short
+# training).
+# Sources: battleorder.org "Volksgrenadiers 1944" (K.St.N. 131V, 1 Nov 1944:
+# Sturmzug squads of 8 after the November reduction from 9; secondary);
+# Wikipedia "Volksgrenadier" (organisation, StG 44 issue, training). Two
+# stick grenades each is a starting value (verify).
+id = "ww2:ger_vg_sturmgruppe"
+name = "VG-Sturmgruppe"
+short_name = "VG-Sturm"
+faction = "ww2:germany"
+# S5a-14 (A): a line squad in the AI mix, at half the weight of the full
+# Grenadiergruppe.
+tags = ["line"]
+ai_weight = 50
+capabilities = ["dig_basic", "recrew"]
+training = "ww2:training_conscript"
+sources = [
+    "battleorder.org, Volksgrenadiers 1944 (K.St.N. 131V, 1 Nov 1944)",
+    "Wikipedia, Volksgrenadier",
+]
+# Manpower per call-in (roster table): eight automatic weapons against the
+# Grenadiergruppe's ten men with one MG at 280.
+cost = 300
+# Call-in cooldown (s), its own timer (roster table).
+cooldown_s = 45
+# From September 1944 (the first VG divisions; skirmish has no date filter).
+available_from = "1944-09"
+unlock_s = 0
+# Walking speed (cm/s), sight (m), formation spacing (dm): as the
+# Grenadiergruppe.
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:stg44"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2 }
+
+[[members]]
+slot = "sturmmann"
+count = 7
+weapon = "ww2:stg44"
+items = { "ww2:stielhandgranate" = 2 }

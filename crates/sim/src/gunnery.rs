@@ -62,7 +62,7 @@ use frontline_content::vehicle::{MountKind, MountSetup, VehicleSetup};
 use frontline_content::{ComponentKind, MatchSetup, SeatRole};
 
 use crate::armour::{BoxPart, Face, deg};
-use crate::combat::{Mark, interval_after, tri};
+use crate::combat::{Mark, tri};
 use crate::damage::ArmourEv;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
@@ -633,7 +633,13 @@ impl MatchState {
             }
             let w = &setup.weapons[m.weapon as usize];
             let from = mg_muzzle(&f, m);
-            let r = range_sq(w.range_max.into());
+            // S5a: vehicle MGs keep fire discipline against infantry (a
+            // Suppress order still fires to full range).
+            let r = range_sq(crate::combat::fire_reach(
+                &setup.rules.combat.fire,
+                crate::unit::FireMode::Discipline,
+                w,
+            ));
             let axis_yaw = Fx::atan2(axis.y, axis.x);
             // Suppress: fire at the line instead (module docs).
             if let Some(line) = suppress {
@@ -1074,7 +1080,8 @@ fn mg_fire(
             .max(w.interval_milli.div_ceil(1000))
             .min(u16::MAX as u32) as u16;
     } else {
-        st.cooldown = interval_after(w, st.shots).min(u16::MAX as u32) as u16;
+        // S5a: bursts with pauses (the weapon def's `burst_*`).
+        st.cooldown = crate::combat::burst_cooldown(w, st.shots).min(u16::MAX as u32) as u16;
     }
 }
 

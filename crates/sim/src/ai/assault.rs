@@ -46,7 +46,7 @@ pub const HUNT_END_NAMES: [&str; HUNT_ENDS] = [
 const SPOT_TRIES: usize = 8;
 
 /// Squared distance from `p` to segment `[a, b]` (Q32 metres²).
-fn seg_dist_sq(p: FxVec2, a: FxVec2, b: FxVec2) -> u64 {
+pub(super) fn seg_dist_sq(p: FxVec2, a: FxVec2, b: FxVec2) -> u64 {
     let d = b - a;
     let len_sq = d.length_sq_raw();
     if len_sq == 0 {
@@ -778,7 +778,7 @@ impl Planner<'_> {
 
     /// The nearest to `from` of five spots `reach` from vehicle `v` (sides,
     /// rear quarters, rear) off its turret's front.
-    fn flank_spot(&self, v: &KnownVehicle, reach: Fx, from: FxVec2) -> Option<FxVec2> {
+    pub(super) fn flank_spot(&self, v: &KnownVehicle, reach: Fx, from: FxVec2) -> Option<FxVec2> {
         let g = self.g;
         let fwd = crate::vehicle::yaw_dir(v.yaw);
         let turret = g
