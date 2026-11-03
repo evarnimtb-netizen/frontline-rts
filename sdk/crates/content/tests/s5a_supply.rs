@@ -198,6 +198,32 @@ fn rare_cap_above_the_rules_limit_fails_to_load() {
     assert!(e.contains("3 rare rounds stowed, above rare_cap 2"), "{e}");
 }
 
+/// S5a Fix (review L8, M1): an MG mount without `rounds` in a priced mod
+/// and an ambush release inside the watch are refused with fixes.
+#[test]
+fn mg_mount_without_rounds_and_short_ambush_release_are_refused() {
+    let root = broken_copy("mg-rounds", |r| {
+        replace_in(&r.join("defs/vehicles/ger_pz4_h.toml"), "rounds = 1575", "");
+        replace_in(
+            &r.join("defs/rules/skirmish.toml"),
+            "ambush_release_m = 300",
+            "ambush_release_m = 150",
+        );
+    });
+    let e = issues(ModDefs::load(&root).unwrap_err());
+    assert!(
+        e.contains("vehicle `ww2:ger_pz4_h`: weapons[1].rounds")
+            && e.contains("required on coax and hull MG mounts")
+            && e.contains("rounds = 3000"),
+        "{e}"
+    );
+    assert!(
+        e.contains("ai.assault.ambush_watch_m") && e.contains("must not exceed ambush_release_m"),
+        "{e}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// Feeds and supply tables are checked with fixes.
 #[test]
 fn missing_feeds_and_supply_tables_are_refused() {

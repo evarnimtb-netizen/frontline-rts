@@ -461,3 +461,108 @@ of data changes on `9dd59ba`:
 - Test edits for the prices: `variants.rs` cost expectations,
   `match_mode.rs` `call_ins_are_refused_with_a_reason` (mortar team for the
   short-of-manpower step), `ww2_canonical.json` re-blessed (7 lines).
+
+## Fix and close
+
+Review of `b0374da..7f8cf8a` (2 high, 2 medium, 8 low findings) and the
+Tune report. Raw outputs: scratchpad `s5a/fx/` (`tests.txt`, `golden.txt`,
+`s40.txt`, `s160.txt`, `oos.txt`, `armour5.txt`, `armour_stress10.txt`,
+`fortify10.txt`, `godot_*.txt`, `autoplay.log`, `shots/`, and the probes
+`probe_bw120.txt`, `probe_bw120_spring30.txt`, `probe_bw60.txt`).
+
+### Findings and what was done
+
+| Finding | Done |
+|---|---|
+| H1 T9 Panzerfausts missed; the ambush springs on suppression alone | Fixed in code, **target still missed**. New `[combat.fire] hold_spring_points` (ww2 70 = `pin_suppression`; absent 30, the Part B rule; 0 = own fire only): a held squad springs on its own shot or once a man is pinned, not on stray near misses (the drill: hold until the leader opens fire). Panzerfausts fired in normal-base matches: 0 of 20 (40 set), 6 of 80 (160 set, Tune 8), 13 of 80 out of sample (Tune 6). 216 tubes go with a fallen carrier during ambushes against 22 fired: the carriers die waiting, to tank HE and MG fire at 150-300 m. S5a-39 stays (A); S5a-43 records the spring level |
+| H2 T10 all-dry recovery over 180 s | Not fixable by data (S5a-35). Re-measured: 278 s on `7f8cf8a` and after the Fix (the Tune report's 205 s was the B7 figure, before the price change); the test keeps its 360 s allowance |
+| M1 ambush has no hysteresis | Fixed: `[ai.assault] ambush_release_m` (ww2 300 = 1.5 x watch; absent 0 = the watch; a value below `ambush_watch_m` fails to load with the fix). "Gone" ends fell from 81 % (1,486 of 1,836) to 72 % (1,087 of 1,504) on the 160 set; timeouts 135 -> 203. A per-vehicle restart counter was not added (needs new saved AI state); the end-reason counts show the change |
+| M2 a mortar in base fires without limit | Lever added, **shipped off**: `[supply] base_bomb_after_fire_s` (no bomb into a mortar squad in base until this long after its mortar fired; test `base_bombs_wait_after_the_mortar_fired`). Measured on the 160 set: 120 s halves the bombs refilled (Germany 28,999 -> 13,890) and base 1 wins 98 of 160 (61.3 %, T2 limit 62 %); 60 s: 94 of 160 (58.8 %). The AI's mortars do fire from (or near) their own base, contrary to the review's "the AI does not do it": they support points near the base from inside it, and the bases have different near points. 0 by S5a-42 (A); S5b measures FireMission and the observer rule against a base-parked mortar with this lever |
+| L1 runs of spaces in six validation messages | Fixed (`modset.rs`) |
+| L2 dead `hold` parameter and stale "engage_moving whatever the motion" docs | Fixed: parameter removed from `launcher_target_ok`; `unit.rs`, `ai/ammo.rs` module docs, `skirmish.toml` (two places), `S5a-ammo.md` (table and AI step 5), `ammo.md`, `match_state.md` corrected to S5a-30 (A) |
+| L3 parapet change cut lip erosion tenfold | Recorded in S5a-38: lip lost within 1 m per burst 0.004 m (5 seeds) / 0.002 m (10 seeds stress), target 0.05 m (S3b-22); gaps 0 of 10. For S5b/S6 |
+| L4 ammo numbers unlabelled; names crushed at 1280 | Fixed: rounds read "60 rd"; when the name would get less room than "Kar98k" the health number gives way (the pip shows a wounded man; the one-man card keeps health). Looked at in the real bridge at 1280x800 and 1600x900 (`shots/s1b_hud_*.png`): names readable, rounds labelled; at both sizes the squad card's two-column rows now drop the health number (S5a-46) |
+| L5 stall-guard test may not test refills | Fixed: `all_dry_ai_vs_ai_fires_again` also requires, within the same 360 s, a new refill trip and paid small-arms rounds refilled in base on both sides (both reached at 278 s) |
+| L6 crew small arms refilled free at bail-out | Not fixed: needs per-seat saved state for a tiny value (S5a-44) |
+| L7 vehicle card DRY with a round in the breech | Fixed in the bridge (`match_node.rs`: the loaded round counts) |
+| L8 MG mount without `rounds` fires unlimited in a priced mod; stale price comments | Fixed: `check_supply` requires `rounds` on coax and hull mounts in a mod with `[supply]` (content test `mg_mount_without_rounds_and_short_ambush_release_are_refused`); comments in `ger_vg_sturmgruppe.toml` and `ger_grenadiergruppe.toml` corrected |
+
+New rules keys (all in `mods/ww2/defs/rules/skirmish.toml` with unit and
+reasoning, `docs/modding/tuning.md` and `ammo.md`): `combat.fire.
+hold_spring_points` 70, `ai.assault.ambush_release_m` 300,
+`supply.base_bomb_after_fire_s` 0. They change the setup bytes:
+`resolved_defs` baseline updated (old values in its comment), canonical
+snapshot re-blessed (4 added lines). No saved-state or command change:
+SAVE_VERSION 13 and PROTOCOL_VERSION 7 stay.
+
+### Final targets (shipped `mods/ww2`, each run alone, `--jobs 3 --minutes 45`)
+
+| Target | Result | Verdict |
+|---|---|---|
+| T1 each faction 35-65 % on 40; 45-55 % on 160 | 40 set Germany 20/40 (50.0 %); 160 set (seeds 1-80) 70/160 (43.8 %); out of sample (101-180) 83/160 (51.9 %); pooled 153/320 (47.8 %, as the Tune) | 40 met; **160 set missed by 2 wins** (inside one standard error, about 6), S5a-45 |
+| T2 no base side > 62 % | 50.0 % (40), 52.5 % (160), 50.6 % (out of sample) | met |
+| T3 10-40 min, median 15-30 | 40: 10.4-38.5, median 16.5; 160: 10.2-38.5, median 17.4; out of sample 10.1-33.6, median 17.6 | met |
+| T4 HE share of kills does not rise (S4 mean 43.7 %) | mean 26.9 / 28.3 / 28.5 %, max 37.2 / 52.6 / 43.9 % | met |
+| T5 MG dry on time, priced refill, pause | `mg_team_goes_dry_on_time_and_refills_in_base_for_manpower` | met |
+| T6 tank rearm priced; rare_cap; rare_cap_max refusal | sim and content tests | met |
+| T7 mortar stops after its 15 bombs | sim test (and the new wait test) | met |
+| T8 reported | per tank bought (160 set, Germany / USA): main gun 9.4 / 10.5 (S4 8.5 / 7.5), vehicle MG 244 / 187 (S4 572 / 292); MP on ammo per match 651.5 / 519.4 (small arms 561 / 231, explosives 22 / 5, shells 103,658 / 82,860 in all) | report |
+| T9 Panzerfausts in >= half of normal-base matches | 0 of 20 (40), 6 of 80 (160), 13 of 80 (out of sample) | **missed** (S5a-39) |
+| T10 stall guard | no match near the 45-min limit (longest 38.5 min); low-load test passes (8 matches); all-dry test fires again and refills after 278 s (spec 180 s, allowance 360 s) | partly (S5a-35) |
+| T11-T13 discipline, sharing, determinism | tests pass (1/2/3/8 threads, save/load mid-trip and mid-ambush, net loopback, soaks); the 40 set's 40 hashes equal the first 40 of the 160 set | met |
+| T14 fortify; armour-test at 5 and 10 seeds; golden; validate | fortify PASS (barrage row 33.8 %); armour `--seeds 5` all hard checks pass in 222.1 s (case 9 23/84 = 27.4 %); `--stress --seeds 10` all pass in 481.2 s (case 9 46/164 = 28.0 %); golden 46/46; `validate mods/ww2` ok | met |
+| T15 tick p99 peak < 1.5 ms; stress < 10 ms | 0.429 ms (40), 1.333 ms (160), 0.490 ms (out of sample); stress case p99 1.848 ms | met |
+| T16 AI uses the new content | VG-Sturmgruppe in 40/40 and 158/160 German matches; refill trips 11.9 / 9.5 per match (160); mortar reserve holds 0 (S5a-40) | met / reserve not exercised |
+| T17 prices | content test | met |
+| T18 HUD and Godot | `check_project` OK; `test_match_view` 251/251; `test_net_ui` 143/143; `test_data_reload` 17/17; `--autoplay 10` at 4x looked at (exit 3 only for the known missing frag-trench shots) | met |
+
+Run alongside another batch, tick p99 read 11.6 ms: the two probe runs that
+shared the machine are not timing evidence; every number above is from a
+run alone.
+
+### Tests
+
+`cargo test --workspace --release -- --include-ignored`: **521 passed, 0
+failed** (519 + `base_bombs_wait_after_the_mortar_fired` +
+`mg_mount_without_rounds_and_short_ambush_release_are_refused`; net
+loopback IPv4/IPv6/rough path/vehicles and both soaks included). clippy
+`-D warnings` and `cargo fmt --check` clean. `settings.cfg` md5 equals the
+backup before and after the Godot runs; no Godot or test process left.
+
+### Open owner questions (work proceeded on (A))
+
+S5a-1 to S5a-45 in `docs/TODO.md`; added in this stage: S5a-42 (base
+battery lever off), S5a-43 (hold springs when pinned), S5a-44 (crew loads
+at bail-out), S5a-45 (T1 160 set two wins short), S5a-46 (squad card
+health number gives way). Updated: S5a-35 (278 s), S5a-38 (lip erosion),
+S5a-39 (Fix numbers).
+
+### Known gaps
+
+- T9 Panzerfausts (S4-42's goal) is still missed: the ambush holds, but
+  the carriers die before a tank comes within 40-60 m.
+- T10 all-dry recovery 278 s against 180 s.
+- T1 160 set at 43.8 % (pooled 47.8 %).
+- The base battery is not braked in `mods/ww2` (lever off, S5a-42).
+- Lip erosion from tank HE about tenfold below S3b-22's 0.05 m (S5a-38).
+- Crew small arms come back free at bail-out (S5a-44).
+- Not built (from Part B): armour-test ambush row, per-card small-arms
+  line and dry man-time share, the "rounds beyond hold range" counter,
+  `load_price_check`.
+
+### What S5b must know
+
+- Re-run the balance first (160 + out of sample): mortars carry it
+  (Germany fires 28,834 bombs on the 160 set, the USA 25,709), and
+  FireMission replaces Barrage (S5a-41).
+- Measure the base battery with `base_bomb_after_fire_s` against
+  FireMission's observer rule and 3x map-fire scatter; any brake on it
+  moves base wins by up to 11 points through the AI's mortar support
+  spots inside the base (S5a-42).
+- Bombs are counted per man (`kit.rounds` on the mortar feed, `take_bomb`
+  in `supply.rs`); the base refill is `refill_men` (one bomb per
+  `base_bomb_s` per man at the shells price). True flight time and
+  charges will change rounds per minute and therefore the 15-bomb dry
+  time.
+- The 5-man mortar squads change `squad_ammo_pct` and the 30 % refill
+  trip; the mortar reserve (S5a-40) is still never the binding limit.

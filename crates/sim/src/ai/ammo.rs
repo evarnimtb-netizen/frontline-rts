@@ -30,12 +30,15 @@
 //!   vehicle is stalked (S5a-30 (A)): the squad goes to the nearest of the
 //!   S4 hunt's flank spots off its turret's front inside the Panzerfaust's
 //!   `engage_still` (less `at_hunt_inset_m`), or stays if already in
-//!   reach. It holds fire (`SetFire hold`) crouched on the way and prone at the spot; the carriers
-//!   fire by the launcher's own rule (`engage_moving` / `engage_still`) and the squad springs to discipline with the
-//!   first shot (`crate::unit`). It ends with the last tube, after
+//!   reach. It holds fire (`SetFire hold`) crouched on the way and prone
+//!   at the spot; the carriers fire by the launcher's own rule
+//!   (`engage_moving` / `engage_still`) and the squad springs to
+//!   discipline with the first shot, or when a man is suppressed to
+//!   `combat.fire.hold_spring_points` (`crate::unit`). It ends with the last tube, after
 //!   `ambush_max_s` (then the S4 hunt may take the squad until the vehicle
 //!   is gone), when the vehicle is destroyed or seen beyond
-//!   `ambush_watch_m` (an unseen vehicle keeps the ambush), or when
+//!   `ambush_release_m` (at least `ambush_watch_m`, S5a Fix review M1; an
+//!   unseen vehicle keeps the ambush), or when
 //!   the squad retreats; then `SetFire discipline` and the automatic
 //!   stance.
 
@@ -234,6 +237,11 @@ impl Planner<'_> {
             return out;
         }
         let watch = sq_m(Fx::from_int(cfg.ambush_watch_m as i32));
+        // Hysteresis (S5a Fix, review M1): an ambush ends as "gone" only
+        // beyond `ambush_release_m` (0: the watch).
+        let release = sq_m(Fx::from_int(
+            cfg.ambush_release_m.max(cfg.ambush_watch_m).min(1500) as i32,
+        ));
         for (j, m) in mine.iter().enumerate() {
             if matches!(m.role, AiKind::AntiTank | AiKind::Engineer) {
                 continue;
@@ -254,9 +262,10 @@ impl Planner<'_> {
                 .iter()
                 .find(|a| a.0 == j)
                 .map_or(m.lead, |a| points[a.1].pos);
-            let near = |v: &KnownVehicle| {
-                (v.pos - home).length_sq_raw() <= watch || (v.pos - m.lead).length_sq_raw() <= watch
+            let within = |v: &KnownVehicle, r: u64| {
+                (v.pos - home).length_sq_raw() <= r || (v.pos - m.lead).length_sq_raw() <= r
             };
+            let near = |v: &KnownVehicle| within(v, watch);
             let tubes = self.tubes(m.id);
             if let Some(a) = self.ai.ambush.get(&m.id).cloned() {
                 // Seen: within watch; unseen: still alive (it may come).
@@ -266,7 +275,7 @@ impl Planner<'_> {
                     .get(&a.vehicle)
                     .is_some_and(|vs| vs.wreck_tick.is_none());
                 let gone = match seen {
-                    Some(v) => !near(v),
+                    Some(v) => !within(v, release),
                     None => !alive,
                 };
                 let lost = a.tubes.saturating_sub(tubes);

@@ -706,6 +706,8 @@ Q21 (B). Work proceeds on (A) of each question below.
   limit). The fix is AI behaviour: an ambush hold where carriers stay
   hidden and fire at 30-40 m. Planned for S5 with the Panzerfaust 100;
   T12 is reported, not gated. (B) Build the ambush hold in S4.
+  **S5a: the ambush hold is built (Part B, Fix M1 hysteresis); T9 is still
+  missed (S5a-39).**
 - [ ] **S4-43. Trenches nearly immune to direct fire** (Fix, review). (A)
   Accept as a design call for now: with 180 cm trenches a dug-in squad
   loses about 2 % to MG plus rifles in fortify-test T10 (90 % at the S3c
@@ -734,7 +736,7 @@ Q21 (B). Work proceeds on (A) of each question below.
   **S5a Tune: closed by (A) in effect** (S5a-38: the cause is the thin
   parapet, `parapet_top_mm` 1400; case 9 27.4 % at 5 seeds).
 
-## S5a-ammo (in progress, branch `s5a-ammo`; owner questions open)
+## S5a-ammo (done, branch `s5a-ammo`; owner questions open)
 
 Spec: `docs/slices/S5a-ammo.md` (baseline, code map, data model, sim rules,
 saves, AI, HUD, content with sources, targets, Part A / Part B). Takes
@@ -850,9 +852,11 @@ Work proceeds on (A) of each question below.
   (MGs firing to full range is the realistic candidate). (B) Remove the
   key.
 - [ ] **S5a-35. All-dry recovery time.** (A) The staged all-dry test
-  allows six minutes (measured 205 s: the walk back from a front
-  400-500 m out takes about three minutes alone); the plan said three.
-  (B) Faster refill trips (e.g. Retreat speed for dry squads).
+  allows six minutes (measured 205 s at B7 and 278 s since the Tune prices,
+  unchanged by the Fix: the walk back from a front 400-500 m out takes
+  about three minutes alone); the plan said three. Since the Fix the test
+  also requires a refill trip and a paid base refill on both sides (review
+  L5). (B) Faster refill trips (e.g. Retreat speed for dry squads).
 - [ ] **S5a-36. Console height.** (A) The HUD console is 24 px (compact
   22 px) taller for the thin fire strip under the stance row, so the
   order buttons keep their height. (B) Fire modes elsewhere (a cycling
@@ -871,10 +875,21 @@ Tune stage (S5a, `docs/slices/S5a-ammo.md` "Tune results"), work proceeds on (A)
 - [ ] **S5a-38. Parapet thickness (closes S4-47).** (A) `[dig.common]
   parapet_top_mm` 400 -> 1400: a bank about 1 m thick; armour-test case 9
   27.4 % at 5 seeds, 28.0 % at 10 (was 42.9 / 45.1 %, limit 40 %).
+  Side effect (review L3): the wider bank cut the lip lost to one burst
+  within 1 m about tenfold (case 9: 0.046 m at B7, 0.029 m in S4, about
+  0.004 m now; S3b-22 asks >= 0.05 m), gaps opened stay 0 of 10. S5b or S6
+  should check the crater stamp against the wider parapet top.
   (B) Keep 400 and widen the case-9 limit (S4-47 (B)).
 - [ ] **S5a-39. Panzerfaust ambush reach (T9).** (A) Accept the miss:
   Panzerfausts are fired in 8 of 80 normal-base matches (target 40); no
-  data key moves it (probes in the spec). A human player uses them. (B) AI
+  data key moves it (probes in the spec). A human player uses them. Fix
+  stage: the ambush release hysteresis (review M1, `ambush_release_m` 300)
+  and the spring at the pin level (`hold_spring_points` 70) cut "gone" ends
+  from 81 % to 72 % of ambushes, but Panzerfausts still fire in 0 of 20
+  (40 set), 6 of 80 (160 set) and 13 of 80 (out of sample) normal-base
+  matches; 216 tubes are lost with a fallen carrier during ambushes
+  against 22 fired: the carriers die waiting, mostly to tank HE and MG fire
+  at 150-300 m. (B) AI
   change: Panzerfaust squads hold a dug trench at the point the enemy tank
   must pass, and tanks halt short of squads that carry Panzerfausts too.
   (C) Make T9 a report row.
@@ -888,6 +903,41 @@ Tune stage (S5a, `docs/slices/S5a-ammo.md` "Tune results"), work proceeds on (A)
   bombs on 160 matches, the USA 25k); S5b replaces Barrage with FireMission,
   so S5b re-runs the balance (160 + out of sample) before anything else
   moves. (B) Fix the prices now.
+
+Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
+
+- [ ] **S5a-42. Base battery brake (review M2).** (A) The lever
+  `[supply] base_bomb_after_fire_s` exists (no bomb into a mortar squad in
+  base until this long after its mortar fired) but ships at 0 (off):
+  at 120 s base 1 wins 98 of 160 (61 %, T2 limit 62 %), at 60 s 94 of 160,
+  because the AI's mortars support near points from inside their own base
+  and the two bases have different near points. S5b's FireMission and
+  observer rule decide the base battery and are measured against a
+  base-parked mortar with this lever. (B) Ship 120 s now and fix the base
+  lean in the AI's support spots.
+- [ ] **S5a-43. Hold fire under suppression.** (A) A squad holding fire
+  springs on its own shot or once a man is pinned
+  (`[combat.fire] hold_spring_points` 70 = `pin_suppression`), not at the
+  crouch level (30): a hidden ambush party keeps its fire under stray near
+  misses. Applies to a player's `hold` too. (B) 30 (the Part B rule) or 0
+  (own fire only).
+- [ ] **S5a-44. Crew small arms at bail-out (review L6).** (A) Leave it:
+  bailed crewmen spawn with a full load and kit, so Abandon -> Recrew
+  cycles refill crew carbines and pistols anywhere for free (tiny value;
+  keeping them needs per-seat saved state). (B) Store the crew's rounds and
+  items on the vehicle's seats and restore them at bail-out.
+- [ ] **S5a-45. T1 on the 160 set after the Fix.** (A) Accept: with the
+  Fix AI changes Germany wins 70 of 160 on seeds 1-80 (43.8 %, two wins
+  under 45 %), 83 of 160 out of sample (51.9 %), 153 of 320 pooled
+  (47.8 %, the same as the Tune's pooled figure); one 160 count has a
+  standard error of about 6 wins. S5b re-runs the balance first (S5a-41).
+  (B) Another German price step now.
+- [ ] **S5a-46. Squad card health number.** (A) On the squad card's
+  two-column man rows the health number gives way when the name would get
+  less room than "Kar98k" (review L4); the rounds read "60 rd". At 1280x800
+  and 1600x900 this drops the number on every row; the pip still shows a
+  wounded man and the one-man card shows health. (B) A wider detail panel
+  or a single-column list that keeps both.
 
 ## S3 owner checklist (needs a person)
 

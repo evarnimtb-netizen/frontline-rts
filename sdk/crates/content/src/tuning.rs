@@ -332,6 +332,12 @@ tuning_table! {
         ambush_offset_m: 5..=200 = "default_ambush_offset_m",
         /// ... and gives up after this long (s; absent: 90).
         ambush_max_s: 1..=900 = "default_ambush_max_s",
+        /// The ambush ends as "gone" only once the vehicle is seen beyond
+        /// `ambush_release_m` (m; at least `ambush_watch_m`; absent or 0:
+        /// `ambush_watch_m`, the S5a Part B behaviour). S5a Fix (review M1):
+        /// a wider release than watch stops ambushes from starting and
+        /// ending over and over at the edge of the watch.
+        ambush_release_m: 0..=1500 = "default_ambush_release_m",
     }
 }
 
@@ -343,6 +349,9 @@ fn default_ambush_offset_m() -> u32 {
 }
 fn default_ambush_max_s() -> u32 {
     90
+}
+fn default_ambush_release_m() -> u32 {
+    0
 }
 
 fn default_pzf_hunt_m() -> u32 {
@@ -358,7 +367,16 @@ fn default_capture_m() -> u32 {
 }
 
 impl AiAssaultTuning {
-    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        if self.ambush_release_m != 0 {
+            check_order(
+                out,
+                table,
+                ("ambush_watch_m", self.ambush_watch_m),
+                ("ambush_release_m", self.ambush_release_m),
+            );
+        }
+    }
 }
 
 tuning_table! {
@@ -862,9 +880,18 @@ tuning_table! {
         /// One mortar bomb per this many seconds per man in the own base
         /// (S5a only: from S6 bombs come in crates).
         base_bomb_s: 1..=600,
+        /// No bomb goes into a mortar squad in the own base until this long
+        /// after its mortar last fired (s; 0 or absent: no wait). S5a Fix
+        /// (review M2): brakes the base battery (artillery-on-map.md §4.10)
+        /// until S6 crates.
+        base_bomb_after_fire_s: 0..=1800 = "default_base_bomb_after_fire_s",
         /// HUD "low" marker below this share of a squad's load (%).
         low_pct: 1..=100,
     }
+}
+
+fn default_base_bomb_after_fire_s() -> u32 {
+    0
 }
 
 impl SupplyTuning {
@@ -919,7 +946,16 @@ tuning_table! {
         hold_beyond_pct: 10..=100,
         /// A man in `hold` mode returns fire at enemies this close (m).
         hold_open_m: 0..=200,
+        /// A squad holding fire springs to `discipline` once one of its men
+        /// fired, or once one is suppressed to this many points (0: never
+        /// on suppression alone; absent: 30, the S5a Part B rule at the
+        /// ww2 `crouch_suppression`). S5a Fix (review H1).
+        hold_spring_points: 0..=1000 = "default_hold_spring_points",
     }
+}
+
+fn default_hold_spring_points() -> u32 {
+    30
 }
 
 impl FireTuning {
@@ -934,6 +970,7 @@ impl Default for FireTuning {
         FireTuning {
             hold_beyond_pct: 100,
             hold_open_m: 30,
+            hold_spring_points: default_hold_spring_points(),
         }
     }
 }

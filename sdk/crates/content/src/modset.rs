@@ -1364,11 +1364,11 @@ impl ModDefs {
                     Issue::new(
                         at("rare_cap"),
                         format!(
-                            "rare_cap {c} is above the rules' supply.rare_cap_max ({mx}, rules                              `{rid}`)"
+                            "rare_cap {c} is above the rules' supply.rare_cap_max ({mx}, rules `{rid}`)"
                         ),
                     )
                     .with_hint(format!(
-                        "lower rare_cap to at most {mx}, or raise [supply] rare_cap_max in                          defs/rules"
+                        "lower rare_cap to at most {mx}, or raise [supply] rare_cap_max in defs/rules"
                     )),
                 );
             }
@@ -1387,11 +1387,24 @@ impl ModDefs {
                 );
             }
             if priced {
+                // S5a Fix (review L8): an MG mount without `rounds` would
+                // fire without limit in a priced mod.
+                for (k, m) in v.weapons.iter().enumerate() {
+                    if m.mount != MountKind::TurretMain && m.rounds.is_none() {
+                        out.push(
+                            Issue::new(
+                                at(&format!("weapons[{k}].rounds")),
+                                "required on coax and hull MG mounts in a mod with a [supply] table (S5a: every round counted)",
+                            )
+                            .with_hint("rounds = 3000"),
+                        );
+                    }
+                }
                 if v.rare_cap.is_none() {
                     out.push(
                         Issue::new(
                             at("rare_cap"),
-                            "required in a mod with a [supply] table (D3: the most rare rounds                              it holds)",
+                            "required in a mod with a [supply] table (D3: the most rare rounds it holds)",
                         )
                         .with_hint(format!("rare_cap = {rare_n}")),
                     );
@@ -1408,7 +1421,7 @@ impl ModDefs {
                         Some(sp) if sp.kind != "shells" => out.push(Issue::new(
                             at(&format!("weapons[0].ammo[{k}]")),
                             format!(
-                                "ammo `{}`: a vehicle main gun's rounds are `shells` (no cheap                                  tank rounds), got `{}`",
+                                "ammo `{}`: a vehicle main gun's rounds are `shells` (no cheap tank rounds), got `{}`",
                                 a.id, sp.kind
                             ),
                         )),
@@ -1441,7 +1454,7 @@ impl ModDefs {
                         Issue::new(
                             format!("weapon `{w}`: feed"),
                             format!(
-                                "{w} fires counted rounds since S5a: add `feed = \"<cartridge                                  id>\"` (cartridges of kind small_arms: {})",
+                                "{w} fires counted rounds since S5a: add `feed = \"<cartridge id>\"` (cartridges of kind small_arms: {})",
                                 small_arms
                                     .iter()
                                     .map(|s| s.as_str())
@@ -1459,7 +1472,7 @@ impl ModDefs {
                     out.push(
                         Issue::new(
                             format!("item `{it}`: supply"),
-                            "carried items need a `supply` table in a mod with [supply] (priced                              refill)",
+                            "carried items need a `supply` table in a mod with [supply] (priced refill)",
                         )
                         .with_hint("supply = { kind = \"explosives\", g = 600 }"),
                     );

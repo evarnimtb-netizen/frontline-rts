@@ -332,14 +332,21 @@ crew_feed_m = 5              # m
 # hold_beyond_pct (%) of his weapon's range (rifles 210 m of 300); a
 # Suppress order and the "at will" mode fire to full range. In "hold" mode
 # a man fires only at enemies within hold_open_m (m), or once a squadmate
-# fired or came under fire (the squad springs to discipline); single-shot
-# AT items and launchers in hold fire at their engage_moving distance (the
-# ambush). Reasoning: unaimed fire beyond effective range wastes the
+# fired or was suppressed to hold_spring_points (points, as
+# crouch_suppression; 0: own fire only): the squad springs to discipline.
+# Single-shot AT items and launchers in hold fire by their own rule
+# (engage_moving at a moving vehicle, engage_still at a stopped one;
+# S5a-30 (A)). Reasoning: unaimed fire beyond effective range wastes the
 # rounds a man carries (FM 7-10 / German Schiessvorschrift fire control,
-# summarised in infantry-structures.md).
+# summarised in infantry-structures.md). hold_spring_points = 70 (the
+# pin_suppression level, S5a Fix review H1): a hidden ambush party keeps
+# its fire under the near misses of a tank's MG raking the area and gives
+# itself away only when pinned, as the drill (hold until the leader
+# opens fire) asks; at 30 the ambushes sprang on stray fire.
 [combat.fire]
 hold_beyond_pct = 70
 hold_open_m = 30
+hold_spring_points = 70
 
 # Cover on arrival: each man moves his slot to the nearest free trench spot,
 # else (an enemy seen) to a spot with terrain between him and that enemy.
@@ -932,13 +939,21 @@ pzf_clear_m = 40
 # Panzerfausts that sees an enemy vehicle within ambush_watch_m (m) of its
 # point or itself waits in cover beside the vehicle's projected path,
 # ambush_offset_m (m) to the side, prone and holding fire; the carriers
-# fire at the Panzerfaust's engage_moving (40 m) and the squad springs to
-# discipline with the first shot. Gives up after ambush_max_s (s).
+# fire by the Panzerfaust's own rule (engage_moving 40 m at a moving
+# vehicle, engage_still 60 m at a stopped one; S5a-30 (A)) and the squad
+# springs to discipline with the first shot ([combat.fire]
+# hold_spring_points). Gives up after ambush_max_s (s). The ambush ends as
+# "gone" only once the vehicle is seen beyond ambush_release_m (m; at least
+# ambush_watch_m): S5a Fix (review M1), with release = watch 81 % of 1,836
+# ambushes on 160 matches ended "gone" at the edge of the watch and
+# restarted.
 # Reasoning: Panzerfaust drill was the close ambush from cover (Rottman,
-# "Panzerfaust and Panzerschreck", 2014); starting values from the spec.
+# "Panzerfaust and Panzerschreck", 2014); starting values from the spec,
+# release 1.5 x watch (review M1).
 ambush_watch_m = 200
 ambush_offset_m = 25
 ambush_max_s = 90
+ambush_release_m = 300
 
 # S5a: the AI's ammunition reserve and refill trips (docs/slices/S5a-ammo.md
 # "AI" steps 1-4). The base is the only source in S5a (no crates until S6).
@@ -1018,5 +1033,17 @@ rare_rearm_base_s = 10       # s: one rare round per this in base (standard: veh
 # source in S5a; HQ, dumps and crates come with S6).
 base_small_arms_rounds_s = 30   # rounds per s per man (most depleted small-arms feed first)
 base_bomb_s = 4                 # s per mortar bomb per man (S5a only)
+# S5a Fix (review M2): no bomb goes into a mortar squad in base until this
+# long after its mortar last fired (s; 0: no wait). Brakes the base battery
+# (artillery-on-map.md §4.10): without it a mortar parked in base fed 0.75
+# bombs/s against its 0.25 bombs/s rate of fire and never ran dry, while a
+# mortar at the front walks 300-500 m back after 15 bombs (about 2-3 min).
+# Measured on 160 AI matches (seeds 1-80 x both bases, S5a log "Fix"): 120 s
+# halves the bombs refilled (28,000 -> 14,000 for Germany) and base 1 wins
+# 98 of 160 (61 %, T2 limit 62 %); 60 s: 94 of 160. The AI's mortars support
+# points near their own base from inside it, and the map gives the two bases
+# different near points. Off (0) in S5a by S5a-42 (A): S5b's FireMission
+# and observer rule decide the base battery, measured against this lever.
+base_bomb_after_fire_s = 0
 # Items and AT rockets keep [items] resupply_s, now priced.
 low_pct = 30                 # %: HUD "low" marker below this share of a squad's load (Part B)

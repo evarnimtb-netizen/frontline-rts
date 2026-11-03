@@ -307,7 +307,15 @@ fn tank_rearms_in_base_round_by_round_and_rare_rounds_stay_under_the_cap() {
 /// `base_bomb_s` per man at the shells price.
 #[test]
 fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
-    let mut w = World::new_match(setup_with(|s| s.rules.combat.share.crew_feed_m = 10), 1).unwrap();
+    let mut w = World::new_match(
+        setup_with(|s| {
+            s.rules.combat.share.crew_feed_m = 10;
+            // The base battery brake has its own test below.
+            s.rules.supply.as_mut().unwrap().base_bomb_after_fire_s = 0;
+        }),
+        1,
+    )
+    .unwrap();
     let sq = spawn(&mut w, 0, "ww2:ger_mortar_team", xy(600, 500), EAST);
     let bombs = feed_slot(&w, sq, "ww2:8cm_wgr34");
     assert_eq!(squad_rounds(&w, sq, bombs), 15);
@@ -346,6 +354,58 @@ fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
     assert_eq!(back, 15, "3 men x one per 4 s: all back within 30 s");
     let paid = w.game().unwrap().players()[0].ammo.paid[2] - paid0;
     assert_eq!(paid, 15 * 3500 * 1000);
+}
+
+/// S5a Fix (review M2): a mortar brought into its base right after its
+/// last bomb gets no bomb until `supply.base_bomb_after_fire_s` (here 120
+/// s; ww2 ships 0 by S5a-42 (A)) after that shot, then all 15 back at the
+/// usual rate.
+#[test]
+fn base_bombs_wait_after_the_mortar_fired() {
+    let wait = 120u32;
+    let mut w = World::new_match(
+        setup_with(|s| {
+            s.rules.combat.share.crew_feed_m = 10;
+            s.rules.supply.as_mut().unwrap().base_bomb_after_fire_s = wait;
+        }),
+        1,
+    )
+    .unwrap();
+    let sq = spawn(&mut w, 0, "ww2:ger_mortar_team", xy(600, 500), EAST);
+    let bombs = feed_slot(&w, sq, "ww2:8cm_wgr34");
+    w.step(&[Command {
+        player: PlayerId(0),
+        seq: 1,
+        kind: CommandKind::Barrage {
+            squad: sq,
+            target: xy(1000, 500),
+            rounds: 50,
+        },
+    }]);
+    while fired(&w, 0, fired_class::MORTAR) < 15 {
+        w.step(&[]);
+        assert!(w.tick() < 4000, "15 bombs fired");
+    }
+    let last = w.tick();
+    assert!(w.place_squad(sq, base(&w, 0), EAST));
+    let held = |w: &World| -> u32 {
+        members(w, sq)
+            .iter()
+            .map(|m| w.entities().kit()[m.index()].rounds[bombs] as u32)
+            .sum()
+    };
+    while w.tick() < last + (wait as u64 - 5) * 30 {
+        w.step(&[]);
+    }
+    assert_eq!(held(&w), 0, "no bomb within the wait");
+    while w.tick() < last + (wait as u64 + 25) * 30 {
+        w.step(&[]);
+    }
+    assert_eq!(
+        held(&w),
+        15,
+        "all back 25 s after the wait (3 men, one per 4 s)"
+    );
 }
 
 // ----------------------------------------------------------------- T12 --

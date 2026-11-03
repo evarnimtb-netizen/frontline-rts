@@ -22,7 +22,9 @@ sources = [
     "Wikipedia, Volksgrenadier",
 ]
 # Manpower per call-in (roster table): eight automatic weapons against the
-# Grenadiergruppe's ten men with one MG at 280.
+# Grenadiergruppe's ten men with one MG (280 when this was set; 225 since
+# the S5a Tune, which left this card at 300: it was bought in 158 of 160
+# German matches at this price).
 cost = 300
 # Call-in cooldown (s), its own timer (roster table).
 cooldown_s = 45

@@ -2249,7 +2249,10 @@ impl MatchRuntime {
                         ammo.set("rare_cap", t.rare_cap as i64);
                     }
                     let full: u32 = t.main_gun().ammo.iter().map(|a| a.count as u32).sum();
-                    let have: u32 = v.ammo.iter().map(|&n| n as u32).sum();
+                    // The round in the breech counts (S5a Fix, review
+                    // L7: the sim's `held` counts it too).
+                    let have: u32 =
+                        v.ammo.iter().map(|&n| n as u32).sum::<u32>() + u32::from(v.loaded != 0);
                     if full > 0 && self.setup.rules.supply.is_some() {
                         let p = (have * 100 / full).min(100);
                         d.set("ammo_state", ammo_state(&self.setup, p));

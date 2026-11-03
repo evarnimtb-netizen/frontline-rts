@@ -278,7 +278,10 @@ fn ai_vs_ai_with_a_tenth_of_the_rounds_still_ends_with_refill_trips() {
 /// both AIs fire small arms again (refill trips and the base refill
 /// restart the war). The spec asked for three minutes; the walk back from
 /// a front 400-500 m from the base takes about that long alone, so the
-/// test allows six and prints the time (S5a log).
+/// test allows six and prints the time (S5a log). S5a Fix (review L5): a
+/// new squad bought with a full load could satisfy the first check alone,
+/// so both sides must also make a refill trip and pay for small-arms
+/// rounds refilled in base within the same six minutes.
 #[test]
 fn all_dry_ai_vs_ai_fires_again() {
     let mut w = World::new_match(ai_setup(3, false, |_| {}), 2).unwrap();
@@ -299,6 +302,10 @@ fn all_dry_ai_vs_ai_fires_again() {
         });
     }
     let before = (small_arms(&w, 0), small_arms(&w, 1));
+    let small = frontline_content::setup::SupplyKind::SmallArms.index();
+    let refilled = |w: &World, p: usize| w.game().unwrap().players()[p].ammo.refilled[small];
+    let trips_before = [counters(&w, 0).refill_trips, counters(&w, 1).refill_trips];
+    let refilled_before = [refilled(&w, 0), refilled(&w, 1)];
     let mut t = 0;
     while small_arms(&w, 0) == before.0 || small_arms(&w, 1) == before.1 {
         w.step(&[]);
@@ -313,6 +320,29 @@ fn all_dry_ai_vs_ai_fires_again() {
         );
     }
     println!("both sides fired again after {} s", t / 30);
+    let fired_again = t;
+    let refilled_ok = |w: &World, p: usize| {
+        counters(w, p as u8).refill_trips > trips_before[p] && refilled(w, p) > refilled_before[p]
+    };
+    while !(refilled_ok(&w, 0) && refilled_ok(&w, 1)) {
+        w.step(&[]);
+        t += 1;
+        assert!(
+            t < 30 * 360,
+            "a dry side made no refill trip with a paid base refill: trips {:?} -> {} / {}, small-arms refilled {:?} -> {} / {}",
+            trips_before,
+            counters(&w, 0).refill_trips,
+            counters(&w, 1).refill_trips,
+            refilled_before,
+            refilled(&w, 0),
+            refilled(&w, 1)
+        );
+    }
+    println!(
+        "both sides refilled in base after {} s (fired again at {} s)",
+        t / 30,
+        fired_again / 30
+    );
 }
 
 /// Steps to `end`, one full-state hash per game second.

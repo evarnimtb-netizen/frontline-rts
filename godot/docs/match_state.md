@@ -1081,7 +1081,8 @@ fire within `combat.fire.hold_beyond_pct` (70 %) of the weapon's range (a
 weapon's own `hold_beyond_pct` wins); `at_will` to full range; `hold`
 only at enemies within `hold_open_m` (30 m), Panzerfausts and launchers by
 their own reach, and the squad springs to discipline once one of its men
-fires or comes under fire. A Suppress order fires to full range except in
+fires or is suppressed to `combat.fire.hold_spring_points` (ww2: 70,
+pinned). A Suppress order fires to full range except in
 `hold`.
 
 **HUD (HUD v2, military direction).**

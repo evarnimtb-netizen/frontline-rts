@@ -89,9 +89,10 @@ pub enum FireMode {
     /// Fires to his weapon's full range.
     AtWill = 1,
     /// Holds fire except at enemies within `combat.fire.hold_open_m`; his
-    /// single-shot AT item or launcher fires at its `engage_moving`
-    /// distance. The squad springs to `Discipline` once one of them fired
-    /// or came under fire (`MatchState::spring_holds`).
+    /// single-shot AT item or launcher fires by its own rule
+    /// (`engage_moving` at a moving vehicle, `engage_still` at a stopped
+    /// one; S5a-30 (A)). The squad springs to `Discipline` once one of
+    /// them fired or came under fire (`MatchState::spring_holds`).
     Hold = 2,
 }
 
@@ -467,13 +468,14 @@ impl MatchState {
 
     /// S5a (Status stage, serial, ascending squad id): a squad with men
     /// holding fire springs to discipline once one of its men fired this
-    /// tick or came under fire (suppression at the crouch threshold).
+    /// tick or came under fire (suppression at `combat.fire.
+    /// hold_spring_points`; 0: own fire only, S5a Fix review H1).
     pub(crate) fn spring_holds(
         &mut self,
         ents: &mut crate::ecs::Entities,
         hash: &mut crate::hash::HashCache,
     ) {
-        let crouch = self.setup.rules.combat.crouch_suppression;
+        let spring = self.setup.rules.combat.fire.hold_spring_points;
         for sq in self.squads.values() {
             let held = |m: &SimId| ents.unit[m.index()].fire == FireMode::Hold;
             if !sq.members.iter().any(held) {
@@ -481,7 +483,7 @@ impl MatchState {
             }
             let hot = sq.members.iter().any(|m| {
                 let c = &ents.combat[m.index()];
-                c.since_shot <= 1 || c.suppression / 1000 >= crouch
+                c.since_shot <= 1 || (spring > 0 && c.suppression / 1000 >= spring)
             });
             if !hot {
                 continue;

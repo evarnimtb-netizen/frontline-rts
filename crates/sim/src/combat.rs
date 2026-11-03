@@ -1006,14 +1006,7 @@ impl MatchState {
             let i = m.index();
             let ok = sq.members.contains(&m)
                 && able(ents, m)
-                && self.launcher_target_ok(
-                    ents,
-                    owner,
-                    ents.transform[i].pos.xy(),
-                    w,
-                    t,
-                    ents.unit[i].fire == FireMode::Hold,
-                );
+                && self.launcher_target_ok(ents, owner, ents.transform[i].pos.xy(), w, t);
             if !ok {
                 (p.man, p.target, p.aim) = (None, None, 0);
             } else {
@@ -1105,10 +1098,7 @@ impl MatchState {
                 }
                 let at = ents.transform[m.index()].pos.xy();
                 for (&t, ts) in &self.vehicles {
-                    let hold = ents.unit[m.index()].fire == FireMode::Hold;
-                    if ts.wreck_tick.is_some()
-                        || !self.launcher_target_ok(ents, owner, at, w, t, hold)
-                    {
+                    if ts.wreck_tick.is_some() || !self.launcher_target_ok(ents, owner, at, w, t) {
                         continue;
                     }
                     let d = (ents.transform[t.index()].pos.xy() - at).length_sq_raw();
@@ -1238,8 +1228,9 @@ impl MatchState {
     /// Whether vehicle `t` is a launcher target for a man of `owner` at
     /// `from` with weapon `w`: a live enemy vehicle he sees within the
     /// engagement distance for its motion (`engage_still`, or
-    /// `engage_moving` above the rules' moving speed; S5a: `engage_moving`
-    /// whatever its motion for a man holding fire, the ambush).
+    /// `engage_moving` above the rules' moving speed), whatever the man's
+    /// fire mode (S5a-30 (A): a man holding fire in an ambush fires by the
+    /// same rule).
     fn launcher_target_ok(
         &self,
         ents: &Entities,
@@ -1247,7 +1238,6 @@ impl MatchState {
         from: FxVec2,
         w: &WeaponSetup,
         t: SimId,
-        hold: bool,
     ) -> bool {
         let ti = t.index();
         if ents.kind.get(ti) != Some(&EntityKind::Vehicle)
@@ -1260,7 +1250,6 @@ impl MatchState {
             return false;
         };
         let moving = vs.avg_vel.length() > Fx::from(self.setup.rules.vehicles.moving_speed);
-        let _ = hold;
         let reach: Fx = if moving {
             w.engage_moving.into()
         } else {
@@ -1315,8 +1304,7 @@ impl MatchState {
             return;
         }
         let from = muzzle(pos, &ents.combat[i], &self.setup.rules.combat.body);
-        let hold = ents.unit[i].fire == FireMode::Hold;
-        let ok = |t: SimId| self.launcher_target_ok(ents, owner, pos.xy(), w, t, hold);
+        let ok = |t: SimId| self.launcher_target_ok(ents, owner, pos.xy(), w, t);
         let before = ents.combat[i].target;
         let mut target = before.filter(|&t| ok(t));
         if target.is_none() || ents.combat[i].retarget == 0 {

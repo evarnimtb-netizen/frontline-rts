@@ -29,7 +29,7 @@ sources = [
 # Manpower per call-in: 260 for the squad, +10 for each Panzerfaust (S4-5 (A)).
 # S4 Tune: 320 -> 280. Ten men with bolt-action Kar98k (15 rounds/min) and one MG 42 field about half
 # the rifle fire of the twelve semi-automatic Garands of the US squad (24/min), so
-# the same manpower buys more German squads (28 MP a man, the US squad 30). Measured in docs/slices/S4-variants.md
+# the same manpower buys more German squads (28 MP a man at 280, now 22.5; the US squad 30). Measured in docs/slices/S4-variants.md
 # "Tune results" (160 matches, seeds 1-80 x both bases).
 # S5a Tune: 280 -> 225 (-20 %). With counted ammunition, fire discipline and the
 # refill trips, Germany won 31 % of 160 matches (S5a log, B7); with those four

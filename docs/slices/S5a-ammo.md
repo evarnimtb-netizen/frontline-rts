@@ -418,7 +418,7 @@ Per-man fire mode, `Unit::fire` (u8), set by the new command
 |---|---|---|
 | `discipline` (default) | targets within `hold_beyond_pct` (70 %) of his weapon's `range_max` | Rifles 210 m, MG 42 tripod 420 m, MG 42 bipod 315 m |
 | `at_will` | targets within `range_max` | the "unless ordered" case |
-| `hold` | nobody, except an enemy within `hold_open_m` (30 m), or once a squadmate fired or was hit (the squad springs to `discipline`) | Single-shot AT items and launchers fire at `engage_moving` (Panzerfaust 60: 40 m) whatever the target's motion: the ambush |
+| `hold` | nobody, except an enemy within `hold_open_m` (30 m), or once a squadmate fired or was suppressed to `hold_spring_points` (70, Fix stage; the squad springs to `discipline`) | Single-shot AT items and launchers fire by their own rule (`engage_moving` 40 m at a moving vehicle, `engage_still` 60 m at a stopped one; S5a-30 (A), Fix stage L2) |
 
 A Suppress order fires at its line at full range in any mode except
 `hold` (it is an order). Vehicle MGs follow `discipline` against
@@ -574,10 +574,13 @@ both soaks.
      (one ray each), else the nearest; ties by position;
    - then `SetFire hold`, `SetStance prone` (crouch in a trench). The men
      do not fire, so the escort's MGs have nothing to shoot back at; the
-     carriers fire at `engage_moving` (40 m) by the `hold` rule and the
-     squad springs to `discipline` with the first shot;
+     carriers fire by the launcher's own rule (`engage_moving` 40 m at a
+     moving vehicle, `engage_still` 60 m at a stopped one; S5a-30 (A)) and
+     the squad springs to `discipline` with the first shot or when a man
+     is pinned (`hold_spring_points`, Fix stage);
    - it ends after the last tube, after `ambush_max_s`, when the vehicle
-     is gone or farther than `ambush_watch_m`, or when the squad retreats;
+     is gone or seen farther than `ambush_release_m` (300 m, Fix stage
+     review M1; at least `ambush_watch_m`), or when the squad retreats;
      then `SetFire discipline` and its normal task. The S4 hunt
      (`pzf_hunt`) remains as the fallback for a stopped or stuck tank
      within `pzf_hunt_m` when no ambush applies.

@@ -112,7 +112,9 @@ In his own base:
 
 - a man gets `base_small_arms_rounds_s` small-arms rounds per second (the
   most depleted round first), and alongside them items one per
-  `[items] resupply_s` and mortar bombs one per `base_bomb_s`;
+  `[items] resupply_s` and mortar bombs one per `base_bomb_s`, but no
+  bomb until `base_bomb_after_fire_s` after the squad's mortar last fired
+  (the base battery brake; 0: no wait);
 - an AT team gets a rocket per `[items] resupply_s`;
 - a vehicle gets a standard round per `[vehicles] base_rearm_s` (the entry
   furthest below its load), a rare round per `rare_rearm_base_s` up to its
@@ -133,7 +135,8 @@ Every man has a fire mode (`SetFire`; the HUD's fire strip): `discipline`
 weapon's range, or the weapon's own `hold_beyond_pct`; `at_will` to full
 range; `hold` only at enemies within `hold_open_m` (30 m), while his
 Panzerfaust or launcher fires by its own reach. A held squad springs to
-discipline once one of its men fires or reaches the crouch suppression.
+discipline once one of its men fires or is suppressed to
+`hold_spring_points` (0: own fire only).
 A Suppress order fires to full range in any mode but `hold`. Vehicle MGs
 keep discipline. A rules file without `[combat.fire]` fires to full range
 (the behaviour before S5a, S5a-29).
@@ -152,5 +155,6 @@ and never order more rounds than they hold. Buys keep `float_mp` back
 while a unit waits in base for a refill. A Panzerfaust squad that sees an
 enemy vehicle within `ambush_watch_m` of its point or itself holds fire in
 an ambush beside the vehicle's path (or stalks a stopped vehicle to a
-flank spot inside the Panzerfaust's reach) for at most `ambush_max_s`
+flank spot inside the Panzerfaust's reach) for at most `ambush_max_s`,
+until the vehicle is seen beyond `ambush_release_m`
 (`crates/sim/src/ai/ammo.rs` has the rules).

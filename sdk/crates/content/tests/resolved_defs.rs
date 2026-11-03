@@ -85,17 +85,21 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 /// `[combat.fire]` and `[ai.ammo]` rules, the weapon `hold_beyond_pct`);
 /// the Part A values were 0x981be222d89dc533, 0xa361b2c3d8ab0501,
 /// 0x8c8da20bb09e1c4a, 0x981be222d89dc533, 0xbf2dcec35942ab25,
-/// 0x8a441c7150adde30, and these are the new ones. The live `mods/ww2` is
+/// 0x8a441c7150adde30. The S5a Fix added three rules keys
+/// (`hold_spring_points`, `ambush_release_m`, `base_bomb_after_fire_s`);
+/// the Part B values were 0xc75149efb1159f88, 0xa2342d0679d92657,
+/// 0x8fa980212ecdf1f2, 0xc75149efb1159f88, 0xcd0a7c0c5ede5b2a,
+/// 0xf7f2ebfeb6842321, and these are the new ones. The live `mods/ww2` is
 /// guarded by the canonical snapshot instead.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xc75149efb1159f88),
-    ("skirmish usa-ger seed 7 hard", 0xa2342d0679d92657),
-    ("test_unlock ger-usa seed 1 normal", 0x8fa980212ecdf1f2),
-    ("example override ger-usa seed 1 normal", 0xc75149efb1159f88),
-    ("human ger vs ai usa seed 3 easy", 0xcd0a7c0c5ede5b2a),
+    ("skirmish ger-usa seed 1 normal", 0xbb3b8dae2e8c822a),
+    ("skirmish usa-ger seed 7 hard", 0x69d3ee2a3c5151fe),
+    ("test_unlock ger-usa seed 1 normal", 0xb46ab44ea1747786),
+    ("example override ger-usa seed 1 normal", 0xbb3b8dae2e8c822a),
+    ("human ger vs ai usa seed 3 easy", 0x46802df03f79e372),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xf7f2ebfeb6842321,
+        0x3940489958d5181a,
     ),
 ];
 

@@ -890,6 +890,7 @@
         "assault": {
           "ambush_max_s": 90,
           "ambush_offset_m": 25,
+          "ambush_release_m": 300,
           "ambush_watch_m": 200,
           "at_follow_back_m": 30,
           "at_follow_m": 0,
@@ -983,7 +984,8 @@
         "crouch_suppression": 30,
         "fire": {
           "hold_beyond_pct": 70,
-          "hold_open_m": 30
+          "hold_open_m": 30,
+          "hold_spring_points": 70
         },
         "fire_exposure_cm": 30,
         "firing_spot_pct": 150,
@@ -1137,6 +1139,7 @@
       "pop_cap": 150,
       "projectile_cap": 2048,
       "supply": {
+        "base_bomb_after_fire_s": 0,
         "base_bomb_s": 4,
         "base_small_arms_rounds_s": 30,
         "explosives_mp_per_t": 500,

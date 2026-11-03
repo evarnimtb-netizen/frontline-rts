@@ -300,8 +300,18 @@ func _draw_squad(sid: int) -> void:
 		# S4 marks: the crew weapon's carrier, a Panzerfaust.
 		var mark_w := 0.0
 		var hp_w := HudStyle.text_w(font, "100", HudStyle.FONT)
-		var mx := x + colw - 8.0 - hp_w
-		if view.item_count(so, "panzerfaust") > 0:
+		# S5a Fix (review L4): the rounds carry an "rd" unit, and on a
+		# narrow row the health number gives way (the pip shows a wounded
+		# man) so the name keeps at least a short word.
+		var has_pzf: bool = view.item_count(so, "panzerfaust") > 0
+		var has_rounds := int(so.get("rounds", -1)) >= 0
+		var rw := HudStyle.text_w(bold, "8888 rd", HudStyle.FONT_SMALL) if has_rounds else 0.0
+		var marks_est := (HudStyle.text_w(bold, "Pzf", HudStyle.FONT_SMALL) + 4.0 if has_pzf else 0.0) + (13.0 if bool(so.get("crew_weapon", false)) else 0.0)
+		var min_name := HudStyle.text_w(font, "Kar98k", HudStyle.FONT_SMALL)
+		var show_hp := colw - 32.0 - hp_w - marks_est - (rw + 6.0 if has_rounds else 0.0) >= min_name
+		var hp_col := hp_w + 8.0 if show_hp else 4.0
+		var mx := x + colw - hp_col
+		if has_pzf:
 			var pz := "Pzf"
 			var pw := HudStyle.text_w(bold, pz, HudStyle.FONT_SMALL)
 			HudStyle.text(self, bold, Vector2(mx - pw, by), pz, HudStyle.FONT_SMALL, HudStyle.ACCENT)
@@ -316,7 +326,7 @@ func _draw_squad(sid: int) -> void:
 		# S5a: his rounds in their own column left of his health (the
 		# crew weapon's carrier: the team's rounds for it), and the weapon
 		# in hand (a sidearm while dry: "P 38").
-		var room := colw - 32.0 - hp_w - mark_w
+		var room := colw - 24.0 - hp_col - mark_w
 		var label := view.soldier_name(so)
 		var size := HudStyle.FONT
 		var wtxt := String(so.get("weapon", ""))
@@ -326,8 +336,7 @@ func _draw_squad(sid: int) -> void:
 			if bool(so.get("crew_weapon", false)) and sq.has("crew_rounds") and not bool(so.get("sidearm", false)):
 				wtxt = String(sq.get("crew_weapon_name", wtxt))
 				rounds = int(sq.crew_rounds)
-			var rtxt := str(rounds)
-			var rw := HudStyle.text_w(bold, "8888", HudStyle.FONT_SMALL)
+			var rtxt := "%d rd" % rounds
 			var rcol := HudStyle.DANGER if rounds == 0 else (HudStyle.ACCENT if bool(so.get("sidearm", false)) else HudStyle.DIM)
 			HudStyle.text(self, bold, Vector2(mx - 4.0, by), rtxt, HudStyle.FONT_SMALL, rcol, 1)
 			room -= rw + 6.0
@@ -349,7 +358,8 @@ func _draw_squad(sid: int) -> void:
 			label = "%s · %s" % [label, wtxt]
 		var nm := HudStyle.fit(f, label, room, size)
 		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, size, HudStyle.TEXT)
-		HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)
+		if show_hp:
+			HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)
 
 
 ## The stance override every living man of the list shares, as a word

@@ -618,7 +618,8 @@ impl MatchState {
     /// `base_small_arms_rounds_s` per man (the most depleted small-arms
     /// feed first), and alongside them items and mortar bombs one at a
     /// time (`items.resupply_s` per item, `base_bomb_s` per bomb; items
-    /// first by kind, then bombs). Each round is paid as it goes in; with
+    /// first by kind, then bombs; bombs wait `base_bomb_after_fire_s` after
+    /// the mortar last fired). Each round is paid as it goes in; with
     /// no manpower the refill pauses and stays due.
     fn refill_men(&mut self, ents: &mut Entities, hash: &mut HashCache, tick: u64) {
         let Some(sp) = self.setup.rules.supply.clone() else {
@@ -627,6 +628,7 @@ impl MatchState {
         let hz = self.setup.tick_hz.max(1);
         let item_every = self.setup.rules.items.resupply_ticks.max(1);
         let bomb_every = (sp.base_bomb_s * hz).max(1);
+        let bomb_wait = (sp.base_bomb_after_fire_s * hz).min(u16::MAX as u32);
         for i in 0..ents.len() {
             if ents.kind[i] != EntityKind::Soldier {
                 continue;
@@ -699,7 +701,9 @@ impl MatchState {
             let item = (0..ITEM_KINDS).find(|&j| ents.kit[i].items[j] < full[j]);
             let next = match item {
                 Some(j) => Some((false, j, item_every)),
-                None => pick(self, ents, false).map(|k| (true, k, bomb_every)),
+                None => pick(self, ents, false)
+                    .filter(|&k| !self.bombs_wait(ents, sid, k, bomb_wait))
+                    .map(|k| (true, k, bomb_every)),
             };
             match next {
                 None => {
@@ -738,6 +742,25 @@ impl MatchState {
                 hash.mark_entity_chunk(m.chunk());
             }
         }
+    }
+
+    /// S5a Fix (review M2, `supply.base_bomb_after_fire_s`): squad `sid`'s
+    /// feed `k` waits for base bombs while a man carrying the crew weapon
+    /// it feeds fired within `wait` ticks (the base battery brake).
+    fn bombs_wait(&self, ents: &Entities, sid: SquadId, k: usize, wait: u32) -> bool {
+        if wait == 0 {
+            return false;
+        }
+        let Some(sq) = self.squads.get(&sid) else {
+            return false;
+        };
+        let ty = &self.setup.squad_types[sq.type_idx as usize];
+        sq.members.iter().any(|g| {
+            let w = &self.setup.weapons[ents.kit[g.index()].weapon as usize];
+            w.crew
+                && ty.feed_slot(w) == Some(k)
+                && (ents.combat[g.index()].since_shot as u32) < wait
+        })
     }
 
     /// S5a: AT teams' rockets in the own base, one per `items.resupply_s`,
