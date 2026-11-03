@@ -93,6 +93,12 @@ highest at 45 degrees reaching `range_m`; each error names the fix. A
 mortar without `[indirect]` keeps the old rule (`[combat.mortar]
 flight_milli`, `min_flight_s`).
 
+Long flights are allowed: a heavy mortar or a gun table may fly a minute
+or more. A save taken while an adjusting round is in the air checks the
+mission's burst deadline against the weapon's own bound (`2 v / g` of the
+highest charge + 20 s for a target below the muzzle + 4 s, at least 60 s),
+so long-flight tables load (S5b review L1).
+
 ## The AI (`[ai.mortar]`, S5b Part B)
 
 Each plan, a mortar squad that is not on a mission (`crates/sim/src/ai/mortar.rs`):

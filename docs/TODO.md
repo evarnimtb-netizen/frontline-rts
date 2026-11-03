@@ -939,7 +939,7 @@ Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
   wounded man and the one-man card shows health. (B) A wider detail panel
   or a single-column list that keeps both.
 
-## S5b-mortars (done, branch `s5b-mortars` pushed; owner questions open; log `docs/slices/S5b-log.md`)
+## S5b-mortars (done 2026-11-03, branch `s5b-mortars`, pushed; owner questions open; log `docs/slices/S5b-log.md`)
 
 Spec: `docs/slices/S5b-mortars.md` (baseline, Barrage code map, data model,
 sim rules, saves, AI, HUD, the `mortar-bench`, content with sources,
@@ -1087,10 +1087,12 @@ price cut kept). Work proceeds on (A) of each question below.
   per mission, the per-bomb share is reported beside it). (B) S5b-15 (B):
   re-draw the error at the map-fire size on a downgrade, or grow the offset
   toward it while no observer sees the bursts.
-- [ ] **S5b-25. Mortar HUD at 1280x800 on the real bridge.** The review's
+- [ ] **S5b-25. Mortar card at 1280x800 on the real bridge.** The review's
   autoplay could not force 1280x800 (Godot kept the 1600x900 window); the
-  real 5-man card and strip are verified at 1600x900 only. The mock
-  stagings (now the 5-man, 240 MP, 2/4/7/7 mortar) are shot at both sizes.
+  real 5-man card and strip are verified at 1600x900 only (the Fix stage's
+  autoplay `s1b_hud_1280` shot shows the real "Granatwerfer · Fire mission
+  · 5/5" tile at 1280x800, not the card). The mock stagings (now the
+  5-man, 240 MP, 2/4/7/7 mortar) fit at both sizes.
   (A) Check it in the S6 owner play test. (B) An autoplay size option.
 
 ## S3 owner checklist (needs a person)

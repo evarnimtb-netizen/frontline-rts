@@ -364,3 +364,129 @@ infantry price cut moves the German share (pooled 45.4 % on 480; set spread
 tick 12,420, squad with one man left). T4 and T5 (out of sample) stay open
 as S5b-22 (A) and the new S5b-23. Raw outputs: scratchpad `s5b/tune/`
 (`x_*` probes, `r1_*` re-checks, `seeds/` per-seed 40-set runs).
+
+## Fix and close
+
+Commits `f18b49c` (code, HUD, tests, TODO) and the close commit with this
+log; branch pushed to `origin/s5b-mortars`. The review (read-only,
+`3cd5717..2fa50be`) found no high or medium findings; it confirmed four
+lows and one observation. All five were acted on:
+
+| Finding | Fix | Effect on hashes |
+|---|---|---|
+| **L1** a save with a modded long-flight mortar (e.g. charges `[100, 300]`, elevation `[45, 89]`, flights to 61 s) was refused on load: `mission_ok` capped the burst deadline at a fixed 60 s | `indirect::flight_bound_s`: `2 v / g` of the highest charge + 20 s for a target up to 1,000 m below the muzzle; the load check allows that + 4 s, at least the old 60 s. For the ww2 tables the window is 60 s (GrW 34: highest charge 174 m/s, 36 + 20 + 4 s) and 63 s (M1, 188 m/s); their real flights stay under about 21 s. Unit test `flight_bound_covers_long_modded_tables` (every solved flight of the review's table, 40-5,000 m, drops to 200 m, is under the bound; the table does fly past 60 s). `docs/modding/fire-missions.md` says so | none (load check only) |
+| **L2** a mission ordered beyond range drew its start error at the order-time range although the team walks to 90 % of `range_max` and fires from there (800 m: map 64 m instead of 43 m) | `order_fire_mission` and `fire_preview` clamp the range to 90 % of `range_max` when walking (the HUD ring and its precision spread too). Test `a_mission_beyond_range_starts_with_the_error_of_its_firing_range` (map fire at 800 m: 43.2 m) | none in AI play (the AI orders inside range); the 40, 160 and out-of-sample hashes are unchanged |
+| **L3** mission accuracy comes mostly from having an observer at order time; T11 counts missions by their order-time mode | metric only: the skirmish summary's bombs line now prints the observed+direct share **by bomb** beside the per-mission share (40 set: 52.8 % / 57.2 % by bomb, 74.9 % / 76.3 % by mission). The rule itself is an owner call: S5b-24 (A) keep S5b-15 (A) | none |
+| **L4** the observer link line was about 1 px and faint at the 330 m camera | `ground_overlay.gd`: link and preview lines are at least 3 px (gunner → observer, with a 1 px dark outline) or 2 px (the thin legs) on screen, from the camera's metres per pixel (`_m_per_px`), dashes scaled the same way, alpha 0.75-0.95 | presenter only |
+| **L5** the S5b screenshots used a stale 3-man, 200 MP, 15-round mock mortar | mock: "Granatwerfergruppe", 5 men, 240 MP, bombs by slot 0/2/4/7/7 (leader with his MP 40, gunner, assistant, two bearers), one bomb taken per round from the gunner first, the mission ends when none is left; fallback man names Leader / Gunner / Assistant / Bearer. `test_match_view`'s S4 call-in checks free 4 pop first (4 engineers, unused afterwards; the bigger mortar filled the cap and the heavy-MG card read "pop cap"); the check now prints the blocking reason | presenter only |
+
+Rejected: none. Not done: S5b-15 (B) (re-draw the error on a downgrade)
+stays an owner question (S5b-24); the review's 1280x800 real-bridge card
+check could not be forced (S5b-25).
+
+### Final measurements (this binary; each CLI run alone except where noted)
+
+- `cargo fmt --check` clean; `cargo clippy --workspace --all-targets
+  --release -- -D warnings` clean; `cargo test --workspace --release --
+  --include-ignored`: **540 pass, 0 fail** (+2: the L1 and L2 tests).
+- `ballistics --golden mods/ww2/tests/ballistics.toml` 46/46;
+  `validate mods/ww2` ok.
+- skirmish 40 (`--seeds 20 --both-bases --jobs 3 --minutes 45`): **all 40
+  hashes equal** the review's and Part B's; Germany 16 (40.0 %), base 1 24
+  (60.0 %), length 11.9-30.6 min, median 17.1, HE share 13.3 % (max 20.9),
+  tick p99 peak **0.531 ms**; refusals: 1 `no_bombs` (Germany, the S5b-22
+  race), 0 unknown ground.
+- skirmish 160 (seeds 1-80) and out of sample (101-180, `--seed 101`):
+  re-run on this binary, **all 160 + 160 hashes equal** Part B's `f_160` /
+  `f_oos`. Germany 76 (47.5 %) / 65 (40.6 %); base 1 86 / 97; length
+  10.2-33.7 / 10.8-31.5 min; HE share 13.9 / 13.7 %; tick p99 peak 0.393 /
+  0.439 ms; observed+direct by bomb 53.7 / 59.1 % and 52.8 / 56.2 %
+  (Germany / USA).
+- `mortar-bench --seeds 50`: PASS, map/observed **3.04** (observed 10.6 m,
+  map 32.4 m, hidden bursts 14.7 m); ranging PASS.
+- `fortify-test --seeds 10`: PASS, output identical to the review's;
+  mortar row 45 vs 114 = 39.5 % (limit 40 %).
+- `armour-test --seeds 5`: all hard checks pass (255.3 s), output
+  identical to the review's (case 9: 23 vs 84 men = 27.4 %).
+- `armour-test --stress --seeds 10`: all hard checks pass (454.4 s; case 9
+  46 vs 164 = 28.0 %; case 14 p99 **1.640 ms**, max 2.776, limit 10 ms;
+  the Godot headless tests ran beside it for part of the time).
+- Godot (bridge rebuilt with `tools/build_bridge.sh`): `check_project` OK,
+  `test_match_view` **275/275**, `test_net_ui` **143/143**,
+  `test_data_reload` **21/21**. `settings.cfg` sha1 `cf03883` before and
+  after every Godot run (equal to the backup).
+- Mock stagings re-shot at 1600x900 and 1280x800 (scratchpad
+  `s5b/fix/shots/`): the 5-man card with 192 / 2 / 4 / 7 / 7 rounds, 240
+  MP tile, "OBS Ranging 2 · ±3 m · 15.1 s" strip and the link line as a
+  clear 2-3 px dashed trace; the card fits at both sizes.
+- `--autoplay 10` at 4x vs the AI (real bridge, 1600x900): plays to the
+  time limit (lost on surrender at 10:00, as scripted); the battle shot
+  shows the "Granatwerfer 5/5" tile and the 240 MP card, the 1280x800 HUD
+  shot the "Granatwerfer · Fire mission · 5/5" tile; the mortar fired at an
+  enemy trench from 320 m. Exit code 3 only because `s1b_frag_tool` and
+  `s1b_frag_trench` were not taken (they need the default 18-minute run;
+  not an S5b problem).
+
+### Final targets
+
+| # | Target | Baseline (`3cd5717`) | Final | Verdict |
+|---|---|---|---|---|
+| T1 | map/observed miss ratio 2.5-3.5 (bench) | — | **3.04** (observed 10.6 m, map 32.4 m) | met |
+| T2 | ranging only on seen bursts | — | bench PASS; sim tests (hidden bursts teach nothing) | met |
+| T3 | no resupply: stops after carried bombs, bearers included | 15 (3-man) | 20 (2 + 4 + 7 + 7), tests | met |
+| T4 | no fire into unknown ground; AI refusals 0 | — | unknown ground refused (tests), 0 such AI refusals; **1 `no_bombs` AI refusal** per 40 / 160 (a crew-wipe race, S5b-22) | met for unknown ground; missed by 1 race refusal |
+| T5 | each faction 35-65 % (40); 45-55 % (160 and out of sample) | 50.0 / 43.8 / 51.9 % | Germany **40.0 %** (40), **47.5 %** (160), **40.6 %** (out of sample); pooled 480 (Tune) 45.4 % | 40 and 160 met; **out of sample missed** (S5b-21, S5b-23) |
+| T6 | no base side > 62 % | 50.0 / 52.5 / 50.6 % | base 1 60.0 / 53.8 / 60.6 % | met |
+| T7 | no match < 10 or > 40 min; median 15-30 | 10.4-38.5, median 16.5 | 11.9-30.6 (median 17.1) / 10.2-33.7 (17.3) / 10.8-31.5 (18.4) | met |
+| T8 | HE share of kills falls by >= 1/3 from S3b's 39.5 % (<= 26.3 %) | 26.9 / 28.3 / 28.5 % | **13.3 / 13.9 / 13.7 %** | met |
+| T9 | bombs and MP on ammo per kind vs S5a; base battery measured | S5a bombs 180.2 / 160.7 per match (160); MP 651.5 / 519.4 | bombs 68.8 / 56.3 per match (160); MP on ammo 244.9 / 186.9; bombs from inside the own base 8.4 / 6.0 % (S5a 36.5 / 39.3 %); `base_bomb_after_fire_s` 120 A/B: -7 German wins of 160, within noise; lever stays 0 (S6) | reported |
+| T10 | charge solver: true flight, high angle | 60° rule | solver within 0.5 % of f64, bombs land within 1 m; GrW 34 charge I to 560 m, 13.5-15 s | met |
+| T11 | AI observed+direct >= 70 % of missions; >= 1 spotter per match per side | Part A 7.4 / 7.6 % | 74.9 / 76.3 % of missions (40); **by bomb 52.8 / 57.2 %** (new line, S5b-24); spotters 1.80 / 1.82 per match | met as defined (per mission) |
+| T12 | determinism 1/2/3/8 threads and save/load; per-field tests | pass | all pass; L1 widens only the load check | met |
+| T13 | fortify PASS; armour hard checks at `--seeds 5` and `--stress --seeds 10`; golden; validate; clippy; fmt | pass | all pass; fortify mortar row 39.5 % (limit 40 %) | met (fortify marginal) |
+| T14 | tick p99 peak < 1.5 ms (`--jobs 3`); stress < 10 ms | 0.363 ms; 1.502 ms | **0.531 ms**; stress 1.640 ms | met |
+| T15 | Godot checks and screenshots | 251 / 143 / 17 | OK, 275 / 143 / 21; stagings re-shot at both sizes; `settings.cfg` unchanged | met |
+| T16 | every test passes | 521 | **540** pass, 0 fail | met |
+
+### Open owner questions (each proceeds on its (A))
+
+- **S5b-21 / S5b-23** German share: (A) accept, judge on pooled 320+
+  matches (480 pooled: 45.4 %).
+- **S5b-22** the `no_bombs` race refusal: (A) accept.
+- **S5b-24** accuracy from the observer at order time (review L3): (A) keep
+  S5b-15 (A); the per-bomb share is reported.
+- **S5b-25** the real-bridge mortar card at 1280x800: (A) check it in the
+  S6 owner play test.
+- Earlier ones still open with their (A): S5b-1..20 (see `docs/TODO.md`).
+
+### Known gaps
+
+- T5 out of sample (40.6 %) and the single T4 race refusal (above).
+- Mortars kill little in AI play (5.5 / 4.4 % of kills; S5a 21.8 / 18.2 %):
+  S5b-17. The trench vs open mortar row sits at 39.5 % against a 40 %
+  limit (36.8 % on seeds 11-30, review).
+- The base-parked mortar fires unlimited from its base (measured, not
+  braked; 8-9 % of bombs, almost all weak map fire); the brake waits for
+  S6 (`base_bomb_after_fire_s` 0).
+- Radio links, registered fire and the S5b-15 (B) downgrade rule are not
+  in S5b.
+- The solid gunner → observer link can show small gaps where the ground
+  rises between its 2 m segments (depth-tested overlay); readable, not
+  fixed.
+
+### What S6 must know
+
+- The base-battery brake (`[supply] base_bomb_after_fire_s`, 0 now) is the
+  S6 lever; the A/B (120 s) took about a tenth of the bombs and moved
+  Germany by -7 wins of 160 (noise).
+- Judge faction balance on pooled sets (320+); one 160 set has a spread
+  of about 4.7 points (Tune). Base 1 is worth about 6 points to either
+  side.
+- Long-flight weapons (S11 guns, heavy mortars) load fine now (L1); the
+  ww2 GrW 34 / M1 tables fly at most about 21 s.
+- The skirmish summary has the per-bomb observed+direct share; use it
+  with T11.
+- `SAVE_VERSION` 14 and `PROTOCOL_VERSION` 8 (one bump each for S5b); the
+  Fix stage changed no layout or command.
+- Raw outputs: scratchpad `s5b/fix/` (`z_*.txt` CLI, `g_*.txt` Godot,
+  `test.txt`, `shots/`, `auto/`, `autoplay.log`).
