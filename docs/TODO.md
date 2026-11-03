@@ -818,6 +818,43 @@ Work proceeds on (A) of each question below.
   nothing to reload waits one shot interval for a squadmate's feed, then
   takes the weapon's full reload time (training does not scale this
   second reload yet). (B) Scale it by training like the normal reload.
+- [ ] **S5a-29. Legacy fire rules (Part B).** (A) A rules file without
+  `[combat.fire]` fires to full range (`hold_beyond_pct` 100) and without
+  the ambush keys has no ambush (`ambush_watch_m` 0), so older mods and
+  the frozen S3c fixture keep their behaviour and hashes; `mods/ww2` sets
+  70 % and 200 m. (B) The S5a values as defaults (the plan's wording).
+- [ ] **S5a-30. Ambush on a stopped vehicle.** (A) A stopped vehicle is
+  stalked: the squad goes to the nearest S4 flank spot off the turret's
+  front inside the Panzerfaust's `engage_still` (less `at_hunt_inset_m`)
+  holding fire, and the launcher fires by its own rule (60 m still, 40 m
+  moving). The plan's "fire at engage_moving whatever the motion" cut
+  the reach at a stopped tank to 40 m and no tube was fired. (B) The plan's
+  rule.
+- [ ] **S5a-31. Bursts on the shot counter.** (A) Bursts count on the
+  existing shot counter (`Weapon::shots`, `MgState::shots`): a pause after
+  every `burst_rounds`-th shot, a magazine change also pauses; no new saved
+  state. (B) A `burst` field per weapon reset by each reload (the plan's
+  `Weapon::burst` / `MgState::burst`).
+- [ ] **S5a-32. Vehicles and SetFire.** (A) `SetFire` names men only;
+  vehicle MGs always keep discipline against infantry (a Suppress order
+  fires to full range). (B) A per-vehicle fire mode.
+- [ ] **S5a-33. Crew weapon fed whole belts.** (A) The man carrying a crew
+  weapon is not a taker in the sharing pass either: his gun is fed whole
+  magazines by the crew feed only (part belts from the pass made extra
+  drum changes, T5 3.2 % off). (B) He takes like anyone.
+- [ ] **S5a-34. Per-weapon discipline.** (A) A weapon key
+  `hold_beyond_pct` (S5a-18 (B) as a data lever) overrides the rules'
+  share; none is set in `mods/ww2` (all weapons 70 %); Tune may use it
+  (MGs firing to full range is the realistic candidate). (B) Remove the
+  key.
+- [ ] **S5a-35. All-dry recovery time.** (A) The staged all-dry test
+  allows six minutes (measured 205 s: the walk back from a front
+  400-500 m out takes about three minutes alone); the plan said three.
+  (B) Faster refill trips (e.g. Retreat speed for dry squads).
+- [ ] **S5a-36. Console height.** (A) The HUD console is 24 px (compact
+  22 px) taller for the thin fire strip under the stance row, so the
+  order buttons keep their height. (B) Fire modes elsewhere (a cycling
+  button, the squad card).
 
 ## S3 owner checklist (needs a person)
 

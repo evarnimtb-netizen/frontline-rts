@@ -39,9 +39,16 @@ weapon's feed.
 ```toml
 feed = "ww2:792x57_clip"   # what each shot takes from the man's rounds
 load = 60                  # rounds he carries by default, the magazine included
-burst_rounds = 7           # MG bursts (Part B; 0 = none)
-burst_pause_ms = 1000
+burst_rounds = 7           # bursts: after every 7th shot ...
+burst_pause_ms = 1000      # ... this pause on top of the interval (0 = none)
+hold_beyond_pct = 0        # own fire-discipline share of range (0: the rules')
 ```
+
+Bursts count on the man's (or vehicle MG's) shot counter, so they need no
+saved state; a magazine change also pauses. The shipped bursts: MG 42
+bipod 7 / 1.0 s, MG 42 tripod 10 / 1.2 s, MG 34 (vehicles) 7 / 1.0 s,
+M1919 and M1919A4 8 / 1.0 s, BAR 4 / 0.6 s, StG 44 3 / 0.8 s (sources in
+each file). SMGs fire their magazines (S5a-24 (A)).
 
 In a mod with `[supply]`, every weapon a soldier carries (or a vehicle
 mounts as an MG) needs a `feed`. Launchers fire their `ammo` (a team count,
@@ -118,3 +125,32 @@ goes into debt. The unit's owner always pays.
 
 Shipped weights and loads, with sources, are in each def file's comments
 and in `docs/slices/S5a-ammo.md` "Content".
+
+## Fire discipline (`[combat.fire]`)
+
+Every man has a fire mode (`SetFire`; the HUD's fire strip): `discipline`
+(the default) opens fire only within `hold_beyond_pct` (70 %) of his
+weapon's range, or the weapon's own `hold_beyond_pct`; `at_will` to full
+range; `hold` only at enemies within `hold_open_m` (30 m), while his
+Panzerfaust or launcher fires by its own reach. A held squad springs to
+discipline once one of its men fires or reaches the crouch suppression.
+A Suppress order fires to full range in any mode but `hold`. Vehicle MGs
+keep discipline. A rules file without `[combat.fire]` fires to full range
+(the behaviour before S5a, S5a-29).
+
+## The AI (`[ai.ammo]`, ambush keys in `[ai.assault]`)
+
+A squad whose ammunition share (its crew weapon's feed, else its men's
+main weapon; AT rockets too) falls under `return_below_pct` with no known
+enemy within `threat_radius_m`, or under `dry_pct` at all, walks back to
+the base, waits there until `refill_full_pct` or `refill_max_s` (or until
+its paused refill has waited `rearm_stall_s`), then takes a task again. At
+most `max_returning_pct` of the squads at one point leave in one plan; a
+point's last squad stays unless it is dry. Mortars barrage only above
+`mortar_reserve_pct` of their bombs (unless an own point is under threat)
+and never order more rounds than they hold. Buys keep `float_mp` back
+while a unit waits in base for a refill. A Panzerfaust squad that sees an
+enemy vehicle within `ambush_watch_m` of its point or itself holds fire in
+an ambush beside the vehicle's path (or stalks a stopped vehicle to a
+flank spot inside the Panzerfaust's reach) for at most `ambush_max_s`
+(`crates/sim/src/ai/ammo.rs` has the rules).

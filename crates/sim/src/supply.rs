@@ -232,13 +232,7 @@ pub(crate) fn counted(ty: &SquadTypeSetup) -> bool {
 
 /// Rounds of feed slot `k` man `kit` holds: his pouches plus his active
 /// weapon's magazine when it uses that feed.
-pub fn man_total(
-    setup: &MatchSetup,
-    ty: &SquadTypeSetup,
-    kit: &Kit,
-    c: &Combat,
-    k: usize,
-) -> u32 {
+pub fn man_total(setup: &MatchSetup, ty: &SquadTypeSetup, kit: &Kit, c: &Combat, k: usize) -> u32 {
     let w = &setup.weapons[active_weapon(ty, kit) as usize];
     let in_gun = ty.feed_slot(w) == Some(k) && w.he.is_none();
     kit.rounds[k] as u32 + if in_gun { c.mag as u32 } else { 0 }
@@ -353,11 +347,7 @@ pub(crate) fn reload_dry(
 /// mortar) when a man carries one, else the feed most of its men's main
 /// weapons use (ties: the lower slot); an AT team's rockets count too.
 /// `None` for squads that do not count rounds (legacy, vehicles).
-pub fn squad_ammo_pct(
-    setup: &MatchSetup,
-    ents: &Entities,
-    sq: &crate::game::Squad,
-) -> Option<u32> {
+pub fn squad_ammo_pct(setup: &MatchSetup, ents: &Entities, sq: &crate::game::Squad) -> Option<u32> {
     let ty = &setup.squad_types[sq.type_idx as usize];
     if !counted(ty) || ty.vehicle.is_some() {
         return None;

@@ -1028,3 +1028,86 @@ soldiers[] (own): {               # S1b keys, plus (S4):
 - **Mock.** `MockMatchSource` has two cards for rifle and MG (an
   understrength rifle squad, a heavy MG squad), keys its cooldowns by card
   id, and sends `capabilities` per squad.
+
+## S5a: counted rounds, fire modes, ammunition spending
+
+S5a (`docs/slices/S5a-ammo.md`) counts every round a man carries and
+prices the base refill. The presenter shows rounds per man and per crew
+weapon, a LOW / DRY marker, held fire and the manpower spent on
+ammunition. Keys are own-only unless marked; a state without them (older
+builds, legacy content) shows nothing new.
+
+```text
+soldiers[] (own): {               # S4 keys, plus (S5a):
+  active_weapon: String,          # the weapon in hand ("Kar98k"; his slot's
+                                  # sidearm while his main weapon is dry: "P 38")
+  rounds: int,                    # rounds he holds for it (pouches and
+                                  # magazine; -1: uncounted, e.g. launchers)
+  sidearm: bool,                  # on his sidearm
+  fire: String,                   # "discipline" | "at_will" | "hold"
+}
+squads[] (own): {                 # plus (S5a):
+  ammo_pct: float,                # 0..1, the squad's ammunition share (its
+                                  # crew weapon's feed, else its men's main
+                                  # weapon; AT teams' rockets count too);
+                                  # absent for uncounted squads
+  ammo_state: String,             # "ok" | "low" (under rules supply.low_pct)
+                                  # | "dry" (nothing left of that feed)
+  crew_weapon_name: String,       # "MG 42" when a man carries a crew weapon
+  crew_rounds: int,               # the team's rounds for it (gun, gunner,
+                                  # assistant and bearers; launchers: rockets)
+  fire_mode: String,              # "discipline" | "hold" (every man) | "mixed"
+  refilling: bool,                # in its own base below a full load: the
+                                  # base refill is serving it
+}
+vehicles[] (own): {               # plus (S5a):
+  ammo: { ..., rare_cap: int },   # the most rare rounds it may hold (guns
+                                  # with a special round: "APCR 2/3")
+  ammo_state: String,             # "ok" | "low" | "dry" from main-gun rounds
+}
+players[]: {                      # plus (S5a):
+  ammo_mp: { small_arms, explosives, shells, total: float },  # MP spent on
+                                  # ammunition this match, by supply kind
+  refill_paused: bool,            # a refill waited for manpower within the
+                                  # last second (top-bar flag)
+}
+stats[]: { ..., ammo_mp: {...} }  # end screen: the same by player
+```
+
+**Intent.** `set_fire { units: PackedInt32Array, mode: "discipline" |
+"at_will" | "hold" }` -> `CommandKind::SetFire` (own men only; vehicles
+are dropped, their MGs keep discipline). `discipline` (the default) opens
+fire within `combat.fire.hold_beyond_pct` (70 %) of the weapon's range (a
+weapon's own `hold_beyond_pct` wins); `at_will` to full range; `hold`
+only at enemies within `hold_open_m` (30 m), Panzerfausts and launchers by
+their own reach, and the squad springs to discipline once one of its men
+fires or comes under fire. A Suppress order fires to full range except in
+`hold`.
+
+**HUD (HUD v2, military direction).**
+
+- **Squad card rows** (`detail_panel.gd`): each man's rounds in a small
+  column left of his health (red at 0, amber while on his sidearm); the
+  crew weapon's carrier shows the team's rounds for it. The label keeps
+  "role · weapon in hand". The single-soldier card's Weapon line reads
+  "Kar98k · 45 rds".
+- **Card header:** tags left of the status: amber LOW, red DRY, a blue
+  HOLD when the whole squad holds fire, "Refilling" in base; a 2 px
+  ammunition bar under the header.
+- **Strip cards** (`roster.gd`): LOW / DRY left of the men count (room is
+  always reserved); vehicle cards: the same tag left of the badge, from
+  main-gun rounds; the ammo text reads "APCR 2/3" with `rare_cap`.
+- **Orders grid:** a thin segmented fire strip under the stance row
+  (Discipline | At will | Hold; the selection's shared mode outlined, a
+  new mode shows at once as pending). The console is `fire_h` + a gap
+  taller (NORMAL 154 px, COMPACT 146 px) so the buttons keep their size.
+- **Top bar:** the MP block's tooltip gives the manpower spent on
+  ammunition by kind; a red "No manpower for ammo" tag while a refill
+  waits. **End screen:** an "Ammunition" row, "small arms 34, explosives
+  21, shells 188 MP".
+- **Mock** (`MockMatchSource`): rounds per man by type (the MG team's
+  belts with its gunner), shots spend them (an MG burst 7), the base
+  refills 30 a second at 0.2 MP per kg (28 g), `set_fire` per man, the
+  keys above; `set_rounds(sid, frac)` stages LOW / DRY. Screenshot
+  staging `--capture_setup s5a_ammo`: the "hud" firefight with Rifle 1
+  LOW and selected, MG team 1 DRY, Rifle 2 holding fire.
