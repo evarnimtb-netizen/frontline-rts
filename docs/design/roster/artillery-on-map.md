@@ -13,7 +13,7 @@ off-map. This file answers the request. It replaces the off-map parts of
 The gun entity, crew slots, towing and AT-gun parts of that file still
 stand, and this file builds on them.
 
-Read with: `roster-expansion.md` (S5, S6, S8, S9, S11), `guns-artillery.md`
+Read with: `roster-expansion.md` (S6, S8, S9, S11; the S5 card is in `docs/archive/roster-done.md`), `guns-artillery.md`
 §3–4, `SYSTEM_DESIGN.md` §2.2 and §5.7, `docs/slices/S3-armour.md`,
 `docs/slices/S3b-balance.md` (fragment rays, parapet erosion, the duck
 state).
