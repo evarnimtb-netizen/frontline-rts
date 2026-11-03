@@ -1,146 +1,181 @@
 # Autotune: the Tune stage's number search, run locally
 
-`tools/autotune/autotune.py` searches a few TOML settings inside ranges a
-human or agent picked, by running AI-vs-AI batches with `frontline-cli`, and
-writes a report and the best override file. Matches cost no plan usage; the
-agent only chooses knobs, ranges and targets, starts the run and reads the
-report. It never invents a knob: **realism first**. A range must be one
-you would defend from sources (price level, rate, cap); the tuner only
+`tools/autotune/autotune.py` solves for one to three TOML settings inside
+ranges a human or agent picked, by running AI-vs-AI batches with
+`frontline-cli`, and writes a report and the chosen override file. Matches cost
+no plan usage; the agent only chooses knobs, ranges and targets, starts the run
+and reads the report. It never invents a knob: **realism first**. A range must
+be one you would defend from sources (price level, rate, cap); the tuner only
 decides where inside it the balance lands.
 
 Python 3 standard library only (3.9 works; no venv, no numpy). Run it with `-I`.
 
 ## Use in a slice's Tune stage
 
-1. Pick one to three knobs and a range for each, with the historical or design
-   reason in the slice log. Prefer one knob; a second only if the first
-   cannot reach the band.
-2. Copy `tools/autotune/specs/s5a_german_price.toml`, edit knobs, targets, seeds.
-3. Build once (`CARGO_BUILD_JOBS=4 cargo build --release -p frontline-cli`),
-   then start it in the background and do something else:
+1. Pick one knob (two or three only if one cannot reach the band) and a range,
+   with the historical or design reason in the slice log.
+2. Copy `tools/autotune/specs/s5b_german_price.toml`; edit knob, targets, budget.
+3. Build once, then start it in the background and do something else:
 
    ```sh
-   python3 -I tools/autotune/autotune.py tools/autotune/specs/my.toml \
-       --cli target/release/frontline-cli --jobs 3
+   CARGO_BUILD_JOBS=4 cargo build --profile bench-release -p frontline-cli
+   python3 -I tools/autotune/autotune.py tools/autotune/specs/my.toml
    ```
 
-   `--cli` may point to any built binary (another checkout's included); the
-   tool only reads it. `--out DIR` sets the output folder (default
+   Defaults: `--jobs 6`, and the CLI `target/bench-release/frontline-cli` if
+   it exists, else `target/release/frontline-cli` (`--cli` picks any binary,
+   another checkout's included). `--out DIR` sets the output folder (default
    `tools/autotune/runs/<spec name>/`). Stop it any time; running it again
    resumes from `cache.jsonl`.
-4. Read `report.md` in the output folder, then copy the values from
-   `best_override.toml` into `mods/ww2` by hand (or ship the override). Quote
-   the report's intervals in the slice log, not just the point estimate.
-5. Check whatever the targets do not cover (armour-test, fortify-test,
-   tick p99 from a clean `--jobs 3` run). Tick p99 in a tuner run is
-   inflated if other work shares the machine; do not quote it.
+4. Read `report.md`. Quote the **solved level with its interval** and the
+   predicted share with its interval in the slice log, not a point estimate.
+   Copy the values from `best_override.toml` into `mods/ww2` by hand.
+5. Check what the targets do not cover (armour-test, fortify-test). **Tick
+   p99 only from a clean `--jobs 3` run** with nothing else on the machine;
+   the tuner's tick figures (6 parallel matches) are inflated, do not quote them.
 
 ## Spec file
 
 ```toml
 description = "..."          # shown in the report
 minutes = 45                 # --minutes
-jobs = 2                     # --jobs (--jobs on the command line wins)
+jobs = 6                     # --jobs (the command line wins)
 mod_dir = "mods/ww2"         # hashed into the cache key (optional)
 tag = ""                     # bump to force fresh runs
 
-[seeds]                      # each seed plays twice (--both-bases): count 20 = 40 matches
-screen_start = 1
-screen_count = 20
-confirm_start = 1
-confirm_count = 80
-oos_start = 101              # out of sample: other seeds
-oos_count = 80
-
 [search]
-max_screens = 6      # screens in total (including the initial design)
-n_init = 3           # initial design: min, max, middle (1 knob); corners + random (more)
-confirm_top = 1      # best screens re-run on the confirm set
-noise_frac = 0.15    # GP noise as a share of the loss variance
+batch_seeds = 20             # one batch: 20 fresh seeds x both bases = 40 matches
+max_matches = 800            # budget; a run stops earlier once settled
+min_matches = 0
+seed_start = 1001            # batch i plays seeds seed_start + 20 i ..
 
 [[knob]]
 name = "ger_price_mult"
-type = "float"            # or "int"
-min = 0.70
-max = 1.00
-step = 0.05               # optional grid; without it 21 points
-# either one TOML path (dotted, quote ids that contain ":"):
-#   path = 'defs.units."ww2:ger_grenadiergruppe".cost'
-# or a multiplier on several base values (value is rounded to an integer):
-paths = ['defs.units."ww2:ger_smg_gruppe".cost', ...]
-bases = [195, ...]
+type = "float"               # or "int"
+min = 0.85
+max = 1.15
+step = 0.01                  # grid the batches are placed on
+tol = 0.025                  # settled when the 95 % level interval is within +- tol (default: step)
+# one TOML path:  path = 'defs.units."ww2:ger_grenadiergruppe".cost'
+# or a multiplier on several base values (rounded to integers):
+paths = ['defs.units."ww2:ger_grenadiergruppe".cost', ...]
+bases = [225, ...]           # today's values in the mod
 
 [[target]]
-metric = "share_germany"  # see below
-lower = 45                # either bound optional
+metric = "share_germany"
+lower = 45                   # either bound optional; no bound at all = reported only
 upper = 55
 weight = 1.0
-screen_lower = 35         # wider bands for the 40-match screen (default: same)
-screen_upper = 65
+# role = "check"             # force a modellable metric to be only checked
 ```
 
-Dotted paths follow the override format of `tuning.md` (`[combat] ...`,
-`[defs.<kind>."<id>"] ...`). For a multiplier, `bases` are the values it scales
-(the unmodified mod's), so list them in the spec.
+Dotted paths follow the override format of `tuning.md`. Specs of the old GP
+method (`[seeds]`, `max_screens`, `screen_lower`, ...) still parse; those keys
+are ignored.
 
-Metrics (over all matches of the run): `share_<faction>` (e.g.
-`share_germany`, `share_usa`; % of matches won; a draw counts for neither),
-`base0_share`, `base1_share`, `base_max` (higher of the two),
-`len_min`, `len_median`, `len_max` (minutes), `he_mean`, `he_max` (HE share of
-kills, %), `tick_p99` (peak ms; reported only, not a target worth setting
-under load).
+**Modelled metrics** (solved for, fitted over all matches): `share_<faction>`
+(% of matches won; a draw counts for neither), `he_mean` (HE share of kills
+per match, %), `len_mean` (minutes), `kill_<source>_<faction>` (% of that
+side's kills by a source, per batch, weighted by kills: `kill_mortar_germany`,
+`kill_tank_he_usa`; sources `mortar tank_he frag satchel rocket tank_ap mg
+rifle smg vehicle_mg`). **Checked metrics** (measured on the matches near the
+chosen level): `base0_share`, `base1_share`, `base_max`, `len_min`,
+`len_median`, `len_max`, `he_max`, `tick_p99`, plus any modelled metric with
+`role = "check"`. The first modelled target steers the design.
 
-## What it does
+All summary parsing is in `parse_summary()`; a later step switches it to a
+`--json` file.
 
-1. **Screen** the candidates on the small seed set (default 40 matches).
-   Every candidate plays the *same seeds* (common random numbers), so the
-   differences between candidates are far less noisy than the matches
-   themselves.
-2. **Search.** Loss per candidate = sum of weight x (scaled distance outside
-   a band)^2, plus a weak pull to the middle of two-sided bands, so the loss
-   is smooth and zero in the band. A Gaussian process (RBF kernel, length
-   scale chosen by marginal likelihood, a noise term of `noise_frac` of the
-   loss variance) is fitted to the screens and the next candidate is the grid
-   point with the largest expected improvement. Exact for 1-3 knobs on a grid
-   of a few hundred points, written in about 40 lines of pure Python.
-   *Why not a bracketing search:* it needs the metric to be monotone in the knob and
-   handles only one knob; with 40-match screens whose standard error is
-   ~8 points of share, the GP's pooling of neighbours makes better use of
-   every noisy sample and extends to two or three knobs unchanged. Its
-   weakness: with 4-6 screens it is close to a smoothed interpolation, not a
-   global optimiser, and the fixed noise fraction is a simplification.
-3. **Confirm.** The best `confirm_top` screens are re-run on the confirm set
-   (default 160 matches), the best of those on an out-of-sample set of other
-   seeds (default 160). Only the chosen level gets the out-of-sample run.
-4. **Report.** `report.md`: every run with metrics, 95 % Wilson intervals on
-   every share, the targets' statuses (`pass (CI inside)`, `pass (CI
-   overlaps)`, `miss (CI overlaps)`, `FAIL (clear)`), the chosen override and
-   a verdict. A faction share on 160 matches has a standard error of about 4
-   points (6 wins), so a 10-point band is never confirmed with "CI inside":
-   the tool says "not distinguishable from the band" and never "proved".
-   The Wilson interval treats matches as independent; the swapped pair of a
-   seed is positively related, so it is conservative.
+## Method
 
-Limits: the sim is chaotic, so the *same seeds* do not stay comparable
-across candidates: a one-point price change reshuffles a match. In the demo
-the 0.80 level (prices within 1 of the shipped ones) screened at 27.5 % where
-the shipped mod scored 42.5 % on the same 40 matches. Common random numbers
-therefore reduce noise less than hoped; the binomial error bars are the honest
-ones, and the screen is a coarse filter. A screen cannot tell levels apart that differ by less than its
-noise (about 8 points of share, more in practice), so a flat region near the band is resolved
-by the confirm set, not the screen. If screens and confirm disagree, trust the
-confirm and out-of-sample sets. A run uses 4-6 screens and 2 big batches, so
-it is cheap but coarse; more `max_screens` or `confirm_top` buys precision at
-CPU cost, not plan usage. The cache key covers the CLI binary (size and
-mtime), the `mod_dir` TOML contents, `tag`, minutes, seed set and the override.
-Rules in `mods/ww2` that you edit by hand while a run is going change the keys.
+The sim is chaotic: a one-point price change reshuffles a match, so "the same
+seeds" do not make two levels comparable, and a 40-match share has a 95 %
+interval of about +-15 points. The old method (a Gaussian process on the loss
+of 40-match screens) mostly fitted that noise: in the S5a demo its screens
+read 67.5, 27.5, 47.5, 27.5 % at 0.70, 1.00, 0.85, 0.80. It is gone; see the
+comparison below.
 
-Demo result (pre-Tune prices x multiplier 0.70-1.00, step 0.05; the shipped
-Tune is 0.80): the search chose 0.85, with Germany 42.5 % [35-50] on the 160
-confirm set and 48.1 % [41-56] out of sample: not distinguishable from the
-45-55 band, and the 0.80 level is equally plausible. The report's verdict says
-"not proven" because the confirm point estimate is below the band. One run took
-about 35 min at `--jobs 2`.
+1. **Every match is one observation.** A faction's win is fitted by a
+   logistic dose-response model, `logit P(win) = b0 + b . knobs + c . side`
+   (side = +-1/2 for which base the faction held), by maximum likelihood over
+   every match of every level at once (Newton/IRLS). Other modelled metrics
+   use least squares. Intervals are cluster-robust: a seed's normal and
+   swapped match are one cluster. Prediction averages the two bases.
+2. **Fresh seeds every batch.** Re-running a level on the same seeds would
+   return the same matches (determinism), so every batch plays new seeds.
+3. **Initial design:** the range ends and the middle (with more knobs: the
+   centre and each knob's ends), one batch each (120 matches for one knob).
+4. **Sequential design.** After each batch the models are refitted and the
+   best level is the one whose predicted values minimise the band loss (for a
+   share band: its middle). Until the slope is clearly non-zero, batches go to
+   the initial points. Then they cycle: the solved level, a flank below, the
+   solved level, a flank above; the flanks sit where the predicted share
+   moves by about 15 points, so the slope stays estimable while most matches
+   land near the level being pinned down.
+5. **Stop** when every modelled target is settled: its predicted 95 %
+   interval at the chosen level is inside the band ("in band"), or clearly
+   outside it at the best level ("out of band", the range cannot reach it), or
+   the level interval is within `tol` ("level resolved"); or when the budget
+   is spent ("not resolved").
+6. **Checks.** Every target is measured on the matches played within `tol`
+   of the chosen level (Wilson intervals on shares), so `base_max` and the
+   length bounds are feasibility checks on the chosen level.
 
-Demo: `tools/autotune/specs/s5a_german_price.toml` (one multiplier on the six
-German card costs); its result is in `tools/autotune/runs/s5a_german_price/report.md`.
+### How to read the report
+
+- **Solved level**: `share_germany = 50 at ger_price_mult = 0.93, 95 %
+  interval 0.90 to 0.96` is a Fieller interval: the levels at which a 50 %
+  share is not rejected. It accounts for the slope's uncertainty and becomes
+  "unbounded" when the data cannot tell the knob matters. The line under it
+  gives the levels where the fitted curve is inside the band.
+- **Predicted at the chosen level**: the model's share and its interval. It
+  pools all matches through the fitted curve, so it is much tighter than a
+  raw 160-match share (+-7.7 points) — as long as the curve's shape is right.
+- **Per level table**: observed (pooled, Wilson) next to the model; and the
+  **lack-of-fit** test in the Fit section. If lack of fit is flagged
+  (p < 0.05) or the observed shares zig-zag around the curve, do not trust
+  the intervals; narrow the range around the solved level and run again.
+- **Slope**: points of share per `tol` of knob, with its interval; and the
+  base-side effect (base 0 minus base 1, points).
+- **Verdicts**: *in band* (every modelled target's interval inside its band,
+  no check fails), *level resolved* (level known to `tol`, the value not
+  distinguishable from the band), *not found* (a target clearly outside its
+  band at the best level, or a check clearly fails), *not resolved* (budget).
+
+### Proof on synthetic truth
+
+`tools/autotune/synth.py` draws matches from a known logistic truth (no sim;
+seed effect shared across levels, 6-point base advantage, the true level
+uniform in 0.75-0.95 of a 0.70-1.00 range) and runs both methods 200 times
+per setting; `runs/synthetic/report.md` has the full table. With 6 points of
+share per 0.05 step:
+
+| method | true share at the chosen level in 45-55 | 95 % interval covers the true level | matches |
+|---|---|---|---|
+| old GP, 4 screens + confirm + oos | 46 % | (none reported) | 440 |
+| old GP, 6 screens + confirm + oos | 48 % | (none reported) | 519 |
+| new, budget 800 | 97 % | 96 % | 506 (mean; stops when settled) |
+
+At 5 and 8 points per step the new method gets 98 % (old 42-56 %). With a
+budget of 480 about half the runs stop "not resolved"; plan on **about 500-550
+matches for one knob, budget 800**. "In band" verdicts were wrong in about
+3 % of runs (true share just outside the band), as a 95 % interval allows.
+Weak spot: when the true curve is not logistic (a kink that halves the slope
+above the level) the interval covers only ~84 % and the level error doubles;
+the chosen level was still in band 96 % of the time. That is what the
+lack-of-fit line is for.
+
+Tests: `python3 -I tools/autotune/test_autotune.py` (parser, fitter, Fieller
+coverage, a 25-run harness check, the out-of-range case).
+
+## Speed
+
+On the M3 (4P+4E, 8 GB): 20 matches take 35.5 s at `--jobs 3`, 24.7 s at
+`--jobs 6`, 22.4 s at `--jobs 8` (identical summaries; ~33 MB peak for 6
+jobs), hence the default 6. The `bench-release` profile (thin LTO, one codegen
+unit) gives the same 20-match summary as `release` (same hashes and winners,
+checked); SPEED_NOTE. A one-knob run of ~500 matches takes about 11 minutes.
+
+## Real run on the current game
+
+SPEC_RESULT
