@@ -1,0 +1,21 @@
+[defs.units."ww2:ger_grenadiergruppe"]
+cost = 212
+
+[defs.units."ww2:ger_grenadiergruppe_7"]
+cost = 150
+
+[defs.units."ww2:ger_smg_gruppe"]
+cost = 146
+
+[defs.units."ww2:ger_vg_sturmgruppe"]
+cost = 282
+
+[defs.units."ww2:ger_engineer_squad"]
+cost = 188
+
+[defs.units."ww2:ger_panzerschreck_team"]
+cost = 136
+
+[defs.units."ww2:ger_mortar_team"]
+cost = 226
+

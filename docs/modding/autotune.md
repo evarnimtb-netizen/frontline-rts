@@ -18,7 +18,7 @@ Python 3 standard library only (3.9 works; no venv, no numpy). Run it with `-I`.
 3. Build once, then start it in the background and do something else:
 
    ```sh
-   CARGO_BUILD_JOBS=4 cargo build --profile bench-release -p frontline-cli
+   CARGO_BUILD_JOBS=4 cargo build --profile bench-release -p frontline-cli   # or --release: same speed
    python3 -I tools/autotune/autotune.py tools/autotune/specs/my.toml
    ```
 
@@ -139,8 +139,10 @@ comparison below.
   base-side effect (base 0 minus base 1, points).
 - **Verdicts**: *in band* (every modelled target's interval inside its band,
   no check fails), *level resolved* (level known to `tol`, the value not
-  distinguishable from the band), *not found* (a target clearly outside its
-  band at the best level, or a check clearly fails), *not resolved* (budget).
+  distinguishable from the band), *check fails* (the modelled targets are
+  settled but a check near the chosen level fails; look at it across levels
+  before blaming the knob), *not found* (a modelled target clearly outside its
+  band at the best level), *not resolved* (budget).
 
 ### Proof on synthetic truth
 
@@ -174,8 +176,33 @@ On the M3 (4P+4E, 8 GB): 20 matches take 35.5 s at `--jobs 3`, 24.7 s at
 `--jobs 6`, 22.4 s at `--jobs 8` (identical summaries; ~33 MB peak for 6
 jobs), hence the default 6. The `bench-release` profile (thin LTO, one codegen
 unit) gives the same 20-match summary as `release` (same hashes and winners,
-checked); SPEED_NOTE. A one-knob run of ~500 matches takes about 11 minutes.
+checked) but is **not faster**: 20 matches at `--jobs 6`, alternating runs,
+release 23.6 / 24.1 s, bench-release 23.6 / 24.3 s. The tuner prefers it only
+because it is the profile benchmarks use; a plain `--release` build (40 s
+instead of 87 s to compile) is just as good for tuning. Batches are spread
+over 6 parallel matches, so a 40-match batch takes about 50 s and a one-knob
+run of ~500 matches about 11 minutes.
 
 ## Real run on the current game
 
-SPEC_RESULT
+`specs/s5b_german_price.toml`: one multiplier on today's seven German
+infantry-card costs (1.00 = shipped; range 0.85-1.15; tank left out as in the
+S5a demo), target Germany 45-55 %. Report: `runs/s5b_german_price/report.md`.
+A demonstration: the override is **not** shipped into `mods/ww2`.
+
+- Stopped settled after 12 batches, **480 matches, 556 s** of match time at `--jobs 6`.
+- **Germany = 50 % at 0.959, 95 % interval 0.913 to 0.999** (+-0.043; the
+  `tol` of +-0.025 was not reached; it stopped because the predicted share's
+  interval was inside the band). The fitted curve is inside 45-55 for 0.919-0.999.
+- Predicted at the grid level 0.96 (Grenadiergruppe 225 -> 216 etc.):
+  **49.9 % [45.2-54.6]**. Raw share of the 200 matches near 0.96: 48.0 % [41-55].
+  At the shipped 1.00 the model says 44.9 % [40.0-49.9] (40 raw matches: 42.5 %),
+  so today's prices sit at or just under the band's low edge.
+- Slope: -3.1 [-4.6 to -1.7] points of share per 0.025 (about 6 per 0.05, as
+  the harness assumed). Base 1 wins more: base 0 minus base 1 = -9.2 [-18.3 to
+  -0.2] points. Lack of fit p 0.66 (the straight logistic is fine here).
+- Checks near 0.96: `base_max` 55.0 [48-62] pass; `len_max` 33.7, `len_median`
+  17.2 pass; **`len_min` 9.9 fails by a hair** (2 of all 480 matches were
+  under 10 min, at 0.85 and 0.96, so not a price effect). Reported only:
+  `he_mean` 14.8 %, mortar share of kills Germany 5.6 %, USA 5.7 % (S6 wants
+  10-15 %). Verdict: "solved, but a check fails (len_min)".

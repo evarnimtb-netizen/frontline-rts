@@ -750,8 +750,10 @@ def search(knobs, targets, opt, run_batch, log=lambda s: None):
 def verdict(st):
     fails = [r["t"].metric for r in st.checks if r["fail"]]
     states = [r["state"] for r in st.rows]
-    if fails or "out of band (clear)" in states:
+    if "out of band (clear)" in states:
         return "not found"
+    if fails:
+        return "check fails"
     if states and all(s == "in band (CI inside)" for s in states):
         return "in band"
     if states and all(s in ("in band (CI inside)", "level resolved") for s in states):
@@ -913,8 +915,12 @@ def write_report(outdir, name, spec, knobs, targets, st, cli, jobs):
         "level resolved": "**Level resolved.** The level that puts each two-sided target at the middle of its band "
                           "is known to within the tolerance and no check fails; the target's own interval still "
                           "overlaps a band edge, so the value is \"not distinguishable from the band\", not proven inside it.",
-        "not found": "**Not found.** A target is clearly outside its band at the best level, or a check clearly "
-                     "fails. Widen a range or add a knob you can defend; the tuner will not invent knobs.",
+        "not found": "**Not found.** A modelled target is clearly outside its band at the best level. Widen a range or add a knob you can defend; the tuner will not invent knobs.",
+        "check fails": "**Solved, but a check fails:** " + ", ".join(
+                           r["t"].metric for r in st.checks if r["fail"]) + ". The modelled targets are settled "
+                       "(above); the failing check is measured on the matches near the chosen level only. "
+                       "Look at it across levels (Batches table, cache.jsonl) before blaming the knob: "
+                       "a minimum or maximum over a few hundred matches fails by a hair more often as the pool grows.",
         "not resolved": "**Not resolved.** The match budget ran out before the level was pinned down; "
                         "raise `max_matches` (matches are free, the run resumes from the cache).",
     }
