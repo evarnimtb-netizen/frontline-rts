@@ -708,7 +708,7 @@ Q21 (B). Work proceeds on (A) of each question below.
   T12 is reported, not gated. (B) Build the ambush hold in S4.
   **S5a: the ambush hold is built (Part B, Fix M1 hysteresis); T9 is still
   missed (S5a-39).**
-- [ ] **S4-43. Trenches nearly immune to direct fire** (Fix, review). (A)
+- [x] **S4-43. Trenches nearly immune to direct fire** **Owner 2026-11-03: keep trenches strong against small arms (A); attackers crack them with HE, grenades, tanks or flanking.** (Fix, review). (A)
   Accept as a design call for now: with 180 cm trenches a dug-in squad
   loses about 2 % to MG plus rifles in fortify-test T10 (90 % at the S3c
   baseline, 160 cm, 8-man squads). Grenades, the assault and mortars stay
@@ -864,7 +864,7 @@ Work proceeds on (A) of each question below.
 
 Tune stage (S5a, `docs/slices/S5a-ammo.md` "Tune results"), work proceeds on (A):
 
-- [ ] **S5a-37. German balance prices.** (A) Six German cards 20 % cheaper
+- [x] **S5a-37. German balance prices.** **Owner 2026-11-03: keep the 20 % German price cut (A).** (A) Six German cards 20 % cheaper
   (Grenadiergruppe 225, Feldstärke 160, sMG-Gruppe 155, Pioniere 200,
   Panzerschreck 145, Granatwerfer 225), VG 300 and the US cards unchanged:
   Germany 45.6 % on the 160 set, 50.0 % out of sample, 42.5 % on the 40 set.
@@ -906,7 +906,7 @@ Tune stage (S5a, `docs/slices/S5a-ammo.md` "Tune results"), work proceeds on (A)
 
 Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
 
-- [ ] **S5a-42. Base battery brake (review M2).** (A) The lever
+- [x] **S5a-42. Base battery brake (review M2).** **Owner 2026-11-03: wait for S6 (A); S6 ends base refill of mortar bombs.** (A) The lever
   `[supply] base_bomb_after_fire_s` exists (no bomb into a mortar squad in
   base until this long after its mortar fired) but ships at 0 (off):
   at 120 s base 1 wins 98 of 160 (61 %, T2 limit 62 %), at 60 s 94 of 160,
