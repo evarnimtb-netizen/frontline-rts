@@ -1019,7 +1019,7 @@ price cut kept). Work proceeds on (A) of each question below.
   A/B: observed+direct 69/76 % -> 79/83 % of AI missions. (A) Keep 120
   until radio links (S6/S11) let a tube stand farther back. (B) 200 and
   rely on spotters.
-- [ ] **S5b-17. Mortar kills after S5b.** With observed fire, 20 bombs a
+- [ ] **S5b-17. Mortar kills after S5b.** **Owner 2026-11-03: no preference, so default: modestly stronger, aim ~10 % of kills, tuned with the auto-tuner in S6 (crates change mortar supply anyway).** With observed fire, 20 bombs a
   squad, a 23-30 s wait from order to first burst and the AI holding map
   fire, mortars cause 4-6 % of each side's kills in AI play (S5a: 18-22 %);
   the HE share of kills is about 13.5 % (target <= 26.3 %). (A) Accept:
