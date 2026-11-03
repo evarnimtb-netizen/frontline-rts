@@ -890,6 +890,204 @@ more men consuming state per tick (a few bytes and one Status pass; T15).
 
 ---
 
+## Tune results
+
+Stage TUNE (after Part B, `9dd59ba`). Release build, `--jobs 3 --minutes 45`.
+"40 set" = seeds 1-20 x both bases, "160 set" = seeds 1-80 x both bases,
+"out of sample" = seeds 101-180 x both bases. Experiments were `--rules-override`
+files or scratch copies of `mods/ww2` (`--mods DIR`), then the winning values
+went into the TOML with their reasons in the comments. Raw outputs: scratchpad
+`s5a/t/`. Part B left four targets missed: T1 (Germany 31 %), T9, T14
+(case 9) and T10 (all-dry time). One round of data changes fixed T1 and T14;
+T9 and T10 are not reachable with data (below).
+
+### What changed (data only; one verbose diagnostic, test expectations)
+
+| Where | Was | Now | Why (measured) |
+|---|---|---|---|
+| `[dig.common] parapet_top_mm` | 400 | 1400 | armour-test case 9 (S4-47), below |
+| `ger_grenadiergruppe` cost | 280 | 225 | German balance price, below |
+| `ger_grenadiergruppe_7` | 200 | 160 | same -20 % |
+| `ger_smg_gruppe` | 195 | 155 | same |
+| `ger_engineer_squad` | 250 | 200 | same |
+| `ger_panzerschreck_team` | 180 | 145 | same |
+| `ger_mortar_team` | 280 | 225 | same |
+
+Unchanged on purpose: the owner's ammunition prices (200 / 500 / 1000 per
+tonne), the VG-Sturmgruppe's 300 MP (owner spec), the US cards, tank costs,
+loads, `[ai.ammo]` thresholds, discipline ranges (`hold_beyond_pct` 70),
+bursts, `ai_weight`, the ambush keys.
+
+Test-side edits that follow from the prices: `the_s4_content_resolves_with_historical_squads`
+(cost expectations), `call_ins_are_refused_with_a_reason` (the 600 MP
+rifle squad plus engineers now leave 175, so the sMG-Gruppe at 155 is
+affordable; the short-of-manpower step uses the mortar team at 225), and
+the canonical snapshot `ww2_canonical.json` (re-blessed: exactly the 7 changed
+lines above). `armour-test --case 9 --verbose` now prints each man's last
+state when he dies (position, stance, ducked, suppression).
+
+### T1: the German balance (160 matches unless noted; Germany wins)
+
+Where the 31 % came from. Part B on 160: **50** (31.3 %). Single switches
+(160 each): fire discipline off 46, bursts off 51, refill trips off 49,
+ambush off 40, VG-Sturmgruppe off 50; all five off together **70 (43.8 %)**.
+Each switch alone is inside the noise (one 160-match count has a standard
+error of about 6 wins; two near-identical configurations differed by 16);
+together they cost about 13 points. What is left with them off (counted
+rounds and priced refills only) is 43.8 %, close to S4 itself (40-43 %), so the
+S4 lean was never closed and the S5a rules add to it. (Part B's "40-match
+A/B" reading that discipline was the single largest cost was noise.)
+
+What moved it (every row with the parapet at 1400 mm, so the parapet alone
+is row 1):
+
+| Change | Germany wins / 160 |
+|---|---|
+| none (parapet only) | 47 |
+| German line cards -9 % (255 / 180 / VG 270) | 51 |
+| ... plus the five other cards -10 % (mortar 250) | 73 |
+| ... line -9 % and sMG / engineers / Panzerschreck -10 % (no mortar) | 54 |
+| ... line -9 % and mortar 250 | 55 |
+| all six German cards -5 % | 51 |
+| all six -10 % | 57 |
+| all six -15 % | 74; out of sample 70 |
+| all six -20 % | 80; out of sample 87 |
+| the four infantry cards -20 %, mortar and Panzerschreck unchanged | 66; out of sample 68 |
+| -10 % and US rifle cards +5.5 % and the German MG team 1,500 rounds | 54; out of sample 73 |
+| -10 % and `ai_weight` 25 on the 7-man and VG cards | 73 (the weights alone: 41) |
+
+Price sweep (all six German cards, VG unchanged): 47 wins at 0 %, 51 at
+5 %, 57 at 10 %, 74 at 15 %, 80 at 20 % (about 1.4 wins per percent, ±6
+noise per point); 20 % was the centre. The mortar and Panzerschreck
+cuts matter (the four-card cut stops at 42 %), as in S4 ("the LMG and
+mortar did it"). The US-price and MG-load row did not beat the plain discount
+and was dropped; the `ai_weight` row is noise.
+
+Why a price and not a rule: the Kar98k's 15 rounds/min against the
+Garand's 24 (and twelve men against ten) are real, and the S5a rules cost
+Germany about as much as the US; a 20 % price cut is the S4 lever again
+(S4 Tune: 320 -> 280 and so on) and the cost-balanced-realism order puts
+prices before stats. The shipped values are rounded to 225 / 160 / 155 /
+200 / 145 / 225.
+
+Shipped result:
+
+| Set | Germany | USA | Base 0 / base 1 |
+|---|---|---|---|
+| 40 set | **17 (42.5 %)** | 23 | 19 / 21 |
+| 160 set | **73 (45.6 %)** | 87 | 77 / 83 |
+| out of sample (101-180) | **80 (50.0 %)** | 80 | 84 / 76 |
+| 160 + out of sample | 153 of 320 (47.8 %) | | 161 / 159 |
+
+T1 is met on the 160 set, at the lower edge of 45-55 % (the 320-match mean
+is the better estimate, 47.8 %, standard error 2.8 points). Pop at 5 / 10 /
+20 min (160 set): Germany 66 / 74 / 88, USA 57 / 63 / 67 (it was 62 / 64 / 73
+against 58 / 69 / 71): the cheaper cards give Germany the bigger army, as
+in S4. Mortar bombs fired went up (Germany 28,023, USA 24,930 on 160).
+
+### T14: armour-test case 9 at the default 5 seeds (S4-47)
+
+What the cause is (`armour-test --case 9 --verbose`): every man who dies in
+the trench is standing on the fire step (stance Stand, not ducked,
+suppression 0 at death). The tank aims at the man who is up; the HE round
+bursts on the parapet crest 1.4-1.9 m in front of him (z 20.3) and kills him
+and one or two neighbours. A shell that lands elsewhere on the parapet kills
+nobody. The ratio is therefore the share of rounds that hit the crest
+in front of a standing man, about 0.4 men a round against 0.85 in the open,
+whatever the squad size; the 12.6 % of S3c was a thin-margin result of the
+eight-man squads. What did **not** help: the duck decay (25 -> 8 %), the
+blast suppression behind cover (50 -> 100 %), fire discipline and vehicle MG
+bursts (Part B), and the fire exposure (30 -> 25 / 20 / 15 cm give 30 / 22 /
+17 of 84, but below 25 cm the trench riflemen can no longer fire over the lip:
+fortify rifles row open losses 170 -> 70).
+
+The lever: the parapet is a 40 cm hump (`parapet_top_mm` 400, total base 1.3
+m), so the burst sits next to the head. Widening the flat top moves the
+burst outwards and lets the bank stop fragments:
+
+| `parapet_top_mm` | case 9, 5 seeds | case 9, 10 seeds |
+|---|---|---|
+| 400 (was) | 36 / 84 = 42.9 % | 74 / 164 = 45.1 % |
+| 700 | 29 / 84 = 34.5 % | 57 / 164 = 34.8 % |
+| 1000 | 30 / 84 = 35.7 % | 59 / 164 = 36.0 % |
+| **1400 (shipped)** | **23 / 84 = 27.4 %** | **46 / 164 = 28.0 %** |
+
+A real parapet is a bank of spoil about a metre thick (verify FM 5-15), and
+the 1.8 m trench digs about 2.2 m2 of earth a metre against the bank's
+0.6 m2. Side effects measured: fortify-test PASS (rifles row 0 vs 167 open;
+barrage row 33.8 %, unchanged; T10 advance rows defenders 2.7 % / attackers
+71.5 %, still the missed report line); no other armour-test row moved.
+
+### Targets, shipped mod (R1)
+
+All runs alone on the machine, `--jobs 3`.
+
+| # | Target | Result | |
+|---|---|---|---|
+| T1 | 35-65 % on 40; 45-55 % on 160 | 40 set Germany 42.5 %; 160 set 45.6 %; out of sample 50.0 % | met |
+| T2 | no base side > 62 % | 52.5 % (40), 51.9 % (160), 52.5 % (out of sample) | met |
+| T3 | 10-40 min, median 15-30 | 40 set 10.4-30.2, median 17.2; 160 set 10.2-30.8, median 17.0; out of sample 10.1-32.2, median 16.5; none over 40 | met |
+| T4 | HE share of kills <= 43.7 % | mean 27.6 % (40), 28.5 % (160), 29.0 % (out of sample); max 37.8 / 52.6 / 48.1 % (S4 max 55.2 %) | met |
+| T5-T7, T12, T13 | tests | 519 tests pass, see "Tests" | met |
+| T8 | reported | below | report |
+| T9 | Panzerfausts in >= 10 of 20 normal-base matches | 40 set: 1 of 20; 160 set: 8 of 80; out of sample 6 of 80 (17 and 15 tubes fired) | **missed** |
+| T10 | stall guard | no match near the limit (longest 30.2 / 30.8 / 32.2 min); low-load test passes; all-dry test fires again after 205 s, not 180 | partly (S5a-35) |
+| T14 | fortify PASS; armour-test at 10 and 5 seeds | fortify PASS; `--seeds 5` all hard checks pass in 223.5 s (case 9 27.4 %); `--stress --seeds 10` all pass in 446.6 s (case 9 28.0 %) | met |
+| T15 | tick p99 peak < 1.5 ms; stress < 10 ms | 40 set 1.058 ms; 160 set 1.495 ms (just inside); out of sample 0.510 ms; case 14 p99 1.512 ms | met |
+| T16 | VG in >= 50 % of Germany's matches; refill trips >= 1 per match; mortar reserve | VG bought in 40 of 40 (66 cards) and 158 of 160; trips 11.9 (Germany) / 10.1 (USA) per match; reserve holds 0 (the 30 % refill trip always comes first) | met / not exercised |
+| T18 | Godot | not re-run: Tune changed no code or Godot file (data and test expectations only) | n/a |
+
+T8 (40 set, Germany / USA): main-gun rounds per tank bought 9.8 / 10.6 (AP
+1.7 / 2.4, HE 8.1 / 8.2; S4 8.5 / 7.5), vehicle MG rounds per tank 277 /
+199 (S4 572 / 292); manpower spent on ammunition per match 675 / 554 (small
+arms 3.9 / 2.0, explosives 0, the rest mortar bombs and tank rounds; the
+German figure is higher because the cheaper German mortar team is bought
+more often); rifle rounds 57,429 / 104,086, MG 66,564 / 23,405, mortar
+bombs 7,489 / 6,756 (the S4 reference: MG 137,119 for Germany). Kills by
+source, 160 set, Germany / USA: mortar 23.0 / 19.0 %, tank HE 8.1 / 7.0,
+rifle 43.7 / 57.0, MG 7.5 / 3.5, vehicle MG 10.5 / 7.3.
+
+### T9: why the Panzerfaust miss stays (probes, 80 matches unless noted)
+
+Part B started 461 ambushes in 40 matches and fired 6 tubes; the shipped
+mod's 160 set has 1,836 ambushes and 17 tubes fired. Probes against that:
+
+| Probe | Panzerfausts fired | Normal-base matches with one |
+|---|---|---|
+| shipped | 17 per 160 | 8 of 80 |
+| `ambush_watch_m` 300 and `ambush_max_s` 150 | 5 | 4 of 40 |
+| ambush off, `pzf_hunt_m` 200, `pzf_clear_m` 25 | 10 | 4 of 40 |
+| `tank_standoff_m` 100 | 7 | 2 of 40 |
+| `tank_standoff_m` 130 | 6 | 2 of 40 |
+| six Panzerfaust carriers in the Grenadiergruppe instead of two | 6 | 2 of 40 |
+
+More tubes, a longer watch, hunting without the ambush and shorter tank
+standoffs all stay at 5-10 % of normal-base matches. Tubes are not the
+limit and the keys do not reach it: the AI tanks open fire on infantry at
+300-600 m and halt 160 m from points where a Panzerschreck or Bazooka team
+was seen (the AT teams, not the Panzerfaust squads, mark "AT seen"); the
+carriers die on the 100 m stalk or while waiting. Reaching 10 of 20 needs an
+AI change (S5a-39), not data.
+
+### T10: the all-dry recovery time
+
+205 s against the plan's 180 s. A front 400-500 m from the base is 150 s
+of walking at 3 m/s, so no threshold in `[ai.ammo]` moves it by 25 s;
+the test keeps its 360 s allowance (S5a-35).
+
+### Tests (R1)
+
+Release `cargo test --workspace --no-fail-fast -- --include-ignored`: 519
+passed, 0 failed (net loopback and both soaks included); golden ballistics 46/46; `validate mods/ww2` ok; clippy `-D
+warnings` and `cargo fmt` clean. Determinism is unchanged by data (the
+hash-equality and save/load tests pass on the new prices).
+
+### Owner questions added in Tune
+
+See `docs/TODO.md` S5a-37 to S5a-41; work proceeds on each (A).
+
+---
+
 ## Sources consulted in the Plan stage
 
 - [armedconflicts.com, Pz.Kpfw. IV Ausf. H](https://origin.armedconflicts.com/topic/view/6417) (87 rounds, 3,150 MG rounds, from Panzer Tracts 23)

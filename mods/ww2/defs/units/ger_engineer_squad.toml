@@ -11,7 +11,14 @@ capabilities = ["dig_basic", "dig_full", "recrew"]
 # Manpower per call-in (S4 starting value for eight men: 280).
 # S4 Tune: 280 -> 250. Germany's non-line cards cost about 10 % less (its income buys fewer men). Measured in docs/slices/S4-variants.md
 # "Tune results" (160 matches, seeds 1-80 x both bases).
-cost = 250
+# S5a Tune: 250 -> 200 (-20 %). With counted ammunition, fire discipline and the
+# refill trips, Germany won 31 % of 160 matches (S5a log, B7); with those four
+# switched off it wins 44 %, so the S4 balance moved ~13 points against it.
+# Single-change runs on 160 matches: German prices -5 % 51 wins, -10 % 57, -15 %
+# 74 (46 %), -20 % 80 (50 %); out of sample (seeds 101-180) -15 % 70, -20 % 87.
+# The Garand's 24 rounds/min against the Kar98k's 15 stays the root cause.
+# docs/slices/S5a-ammo.md "Tune results".
+cost = 200
 # Re-call cooldown (s): its own timer (Q21 (B)).
 cooldown_s = 30
 unlock_s = 0

@@ -444,3 +444,20 @@ T5 loop 8,000 -> 14,000 ticks (bursts).
   hold range" counter (the staged T11 test is the hard check),
   `load_price_check`.
 - Owner questions S5a-29 to S5a-36 added (TODO).
+
+## Tune
+
+Full account and numbers: `docs/slices/S5a-ammo.md` "Tune results". One round
+of data changes on `9dd59ba`:
+
+- `[dig.common] parapet_top_mm` 400 -> 1400: armour-test case 9 27.4 % at
+  `--seeds 5` (was 42.9 %), 28.0 % at `--stress --seeds 10` (was 45.1 %).
+  Cause: the burst on the crest in front of a standing man (S5a-38).
+- Six German cards 20 % cheaper (225 / 160 / 155 / 200 / 145 / 225):
+  Germany 17 of 40 (42.5 %), 73 of 160 (45.6 %), 80 of 160 out of sample
+  (50.0 %); base sides 52.5 / 51.9 / 52.5 % at most (S5a-37).
+- Missed and left: T9 Panzerfausts (8 of 80 normal-base matches; six probes
+  moved nothing, S5a-39) and the all-dry recovery (205 s, S5a-35).
+- Test edits for the prices: `variants.rs` cost expectations,
+  `match_mode.rs` `call_ins_are_refused_with_a_reason` (mortar team for the
+  short-of-manpower step), `ww2_canonical.json` re-blessed (7 lines).

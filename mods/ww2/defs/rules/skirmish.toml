@@ -114,7 +114,20 @@ engineers_only = true
 # The parapet rises over this run beyond the lip (mm) ...
 parapet_rise_mm = 300
 # ... stays at full height over this run (mm) ...
-parapet_top_mm = 400
+# S5a Tune: 400 -> 1400 (armour-test case 9 at the default 5 seeds, S4-47).
+# With 400 mm a tank HE round aimed at a man standing on the fire step
+# burst on the crest 1.4-1.9 m in front of him and killed him and his
+# neighbours (verbose diagnostics: every trench death was a man standing to
+# fire, never a ducked one), so 10-12-man squads lost 41-45 % as many men in
+# the trench as in the open (limit 40 %). A real parapet is a bank of spoil
+# about a metre thick, not a 40 cm hump (field-fortification manuals ask for
+# roughly 1 m of earth against rifle fire; verify FM 5-15); the spoil of a
+# 1.8 m trench is ample (the bank is ~0.6 m2 a metre, the dig ~2.2 m2).
+# Case 9 at 5 / 10 seeds: 400 mm 42.9 / 45.1 %, 700 mm 34.5 / 34.8 %,
+# 1000 mm 35.7 / 36.0 %, 1400 mm 27 / 28 %. fire_exposure_cm and the duck
+# keys were tried and do not help (exposure below 25 cm stops the trench
+# riflemen firing over the lip).
+parapet_top_mm = 1400
 # ... and falls back to the ground over this run (mm).
 parapet_fall_mm = 600
 # The parapet only raises ground at most this far below the base surface,

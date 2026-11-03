@@ -31,7 +31,14 @@ sources = [
 # the rifle fire of the twelve semi-automatic Garands of the US squad (24/min), so
 # the same manpower buys more German squads (28 MP a man, the US squad 30). Measured in docs/slices/S4-variants.md
 # "Tune results" (160 matches, seeds 1-80 x both bases).
-cost = 280
+# S5a Tune: 280 -> 225 (-20 %). With counted ammunition, fire discipline and the
+# refill trips, Germany won 31 % of 160 matches (S5a log, B7); with those four
+# switched off it wins 44 %, so the S4 balance moved ~13 points against it.
+# Single-change runs on 160 matches: German prices -5 % 51 wins, -10 % 57, -15 %
+# 74 (46 %), -20 % 80 (50 %); out of sample (seeds 101-180) -15 % 70, -20 % 87.
+# The Garand's 24 rounds/min against the Kar98k's 15 stays the root cause.
+# docs/slices/S5a-ammo.md "Tune results".
+cost = 225
 # Call-in (S3b, S4 card block): a call-in spawns the squad at once at the
 # base; then this card cannot be called in again for cooldown_s seconds
 # (its own timer: owner Q21 (B), no cooldown_group). 20 s for a 10-man

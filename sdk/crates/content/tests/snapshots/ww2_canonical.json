@@ -1064,7 +1064,7 @@
         "common": {
           "parapet_fall_mm": 600,
           "parapet_rise_mm": 300,
-          "parapet_top_mm": 400,
+          "parapet_top_mm": 1400,
           "parapet_undug_mm": 50,
           "reach_mm": 1500,
           "spoil_crater_pct": 150
@@ -1324,7 +1324,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 250,
+      "cost": 200,
       "dig_rate_pct": 200,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1383,7 +1383,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 280,
+      "cost": 225,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1479,7 +1479,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 200,
+      "cost": 160,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1574,7 +1574,7 @@
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 280,
+      "cost": 225,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1624,7 +1624,7 @@
         "at_hunt"
       ],
       "cooldown_s": 48,
-      "cost": 180,
+      "cost": 145,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1691,7 +1691,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 195,
+      "cost": 155,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,

@@ -114,16 +114,16 @@ fn the_s4_content_resolves_with_historical_squads() {
     let s = d.resolve(&skirmish()).unwrap();
     let ty = |id: &str| &s.squad_types[s.squad_type_index(id).unwrap() as usize];
     for (id, men, cost) in [
-        ("ww2:ger_grenadiergruppe", 10, 280),
-        ("ww2:ger_grenadiergruppe_7", 7, 200),
-        ("ww2:ger_smg_gruppe", 6, 195),
-        ("ww2:ger_engineer_squad", 8, 250),
+        ("ww2:ger_grenadiergruppe", 10, 225),
+        ("ww2:ger_grenadiergruppe_7", 7, 160),
+        ("ww2:ger_smg_gruppe", 6, 155),
+        ("ww2:ger_engineer_squad", 8, 200),
         ("ww2:usa_rifle_squad", 12, 360),
         ("ww2:usa_rifle_squad_9", 9, 275),
         ("ww2:usa_rifle_squad_2bar", 12, 380),
         ("ww2:usa_lmg_squad", 5, 280),
         ("ww2:usa_engineer_squad", 8, 280),
-        ("ww2:ger_mortar_team", 3, 280),
+        ("ww2:ger_mortar_team", 3, 225),
         ("ww2:usa_mortar_team", 3, 280),
     ] {
         assert_eq!((ty(id).men, ty(id).cost), (men, cost), "{id}");

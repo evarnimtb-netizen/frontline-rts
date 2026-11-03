@@ -284,12 +284,15 @@ fn call_ins_are_refused_with_a_reason() {
     let eng = type_index(&w, "ww2:ger_engineer_squad");
     let mg = type_index(&w, "ww2:ger_smg_gruppe");
     let usa_mg = type_index(&w, "ww2:usa_lmg_squad");
+    let mortar = type_index(&w, "ww2:ger_mortar_team");
     let result = |w: &World| {
         let c = w.snapshot().call_ins.last().copied().unwrap();
         assert_eq!(c.player, PlayerId(0));
         c.result
     };
-    // 600 MP: a rifle squad (240) and engineers (220) leave 140.
+    // 600 MP: a rifle squad (225) and engineers (200) leave 175 (S5a Tune
+    // prices; the sMG-Gruppe at 155 is now affordable, the mortar team at
+    // 225 is not).
     w.step(&[
         cmd(0, 0, CommandKind::CallIn { squad_type: rifle }),
         cmd(0, 1, CommandKind::CallIn { squad_type: eng }),
@@ -301,8 +304,8 @@ fn call_ins_are_refused_with_a_reason() {
     let cd = s.squad_types[rifle as usize].recall_cooldown_ticks;
     assert_eq!(result(&w), Err(CallInRefusal::Cooldown { ticks: cd - 1 }));
     // Short of manpower: the shortfall.
-    w.step(&[cmd(0, 3, CommandKind::CallIn { squad_type: mg })]);
-    let short = s.squad_types[mg as usize].cost - w.game().unwrap().players()[0].manpower;
+    w.step(&[cmd(0, 3, CommandKind::CallIn { squad_type: mortar })]);
+    let short = s.squad_types[mortar as usize].cost - w.game().unwrap().players()[0].manpower;
     assert_eq!(result(&w), Err(CallInRefusal::Manpower { short }));
     // Another faction's type.
     w.step(&[cmd(0, 4, CommandKind::CallIn { squad_type: usa_mg })]);

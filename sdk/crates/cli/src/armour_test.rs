@@ -1611,6 +1611,10 @@ fn case9(env: &Env) -> Result<CaseReport> {
             let mut he = 0u64;
             let mut done_at = None;
             let mut prev = lip0.clone();
+            let mut seen: std::collections::BTreeMap<
+                u32,
+                ([f32; 4], frontline_sim::Stance, bool, u8),
+            > = std::collections::BTreeMap::new();
             while w.tick() < limit && done_at.is_none_or(|t| w.tick() < t + 15 * hz(w)) {
                 w.step(&[]);
                 if trench {
@@ -1642,6 +1646,40 @@ fn case9(env: &Env) -> Result<CaseReport> {
                         }
                         prev = now;
                     }
+                }
+                if env.verbose {
+                    // Diagnostics: the last state of every man of the target
+                    // squad, printed when he drops out of the snapshot.
+                    let snap = w.snapshot();
+                    let mut now = std::collections::BTreeMap::new();
+                    for (i, id) in snap.soldier_ids.iter().enumerate() {
+                        if snap.soldier_owner[i] == 1 - p {
+                            now.insert(
+                                id.0,
+                                (
+                                    snap.soldiers[i],
+                                    snap.soldier_stance[i],
+                                    snap.soldier_ducked[i],
+                                    snap.soldier_suppression[i],
+                                ),
+                            );
+                        }
+                    }
+                    for (id, st) in &seen {
+                        if !now.contains_key(id) {
+                            eprintln!(
+                                "case 9 seed {seed} p{p} trench {trench} t {}: man {id} died at ({:.1}, {:.1}, z {:.2}) stance {:?} ducked {} supp {}",
+                                w.tick(),
+                                st.0[0],
+                                st.0[1],
+                                st.0[2],
+                                st.1,
+                                st.2,
+                                st.3
+                            );
+                        }
+                    }
+                    seen = now;
                 }
                 he += w
                     .snapshot()

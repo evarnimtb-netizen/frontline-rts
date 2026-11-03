@@ -731,6 +731,8 @@ Q21 (B). Work proceeds on (A) of each question below.
   seeds it fails at 40.2 % (S3c baseline 12.6 % with 8-man squads). Look
   at why bigger squads lose three times as many men per HE round in the
   trench in S5. (B) Raise the limit or scale it with squad size now.
+  **S5a Tune: closed by (A) in effect** (S5a-38: the cause is the thin
+  parapet, `parapet_top_mm` 1400; case 9 27.4 % at 5 seeds).
 
 ## S5a-ammo (in progress, branch `s5a-ammo`; owner questions open)
 
@@ -855,6 +857,37 @@ Work proceeds on (A) of each question below.
   22 px) taller for the thin fire strip under the stance row, so the
   order buttons keep their height. (B) Fire modes elsewhere (a cycling
   button, the squad card).
+
+Tune stage (S5a, `docs/slices/S5a-ammo.md` "Tune results"), work proceeds on (A):
+
+- [ ] **S5a-37. German balance prices.** (A) Six German cards 20 % cheaper
+  (Grenadiergruppe 225, Feldstärke 160, sMG-Gruppe 155, Pioniere 200,
+  Panzerschreck 145, Granatwerfer 225), VG 300 and the US cards unchanged:
+  Germany 45.6 % on the 160 set, 50.0 % out of sample, 42.5 % on the 40 set.
+  The S5a rules (counted rounds, discipline, bursts, refill trips) cost
+  Germany about 13 points on top of the S4 lean. (B) Keep the S4 prices and
+  move a stat (Kar98k rate of fire, MG 42 burst pause): the last resort in
+  the cost-balanced order. (C) Raise US prices instead or as well.
+- [ ] **S5a-38. Parapet thickness (closes S4-47).** (A) `[dig.common]
+  parapet_top_mm` 400 -> 1400: a bank about 1 m thick; armour-test case 9
+  27.4 % at 5 seeds, 28.0 % at 10 (was 42.9 / 45.1 %, limit 40 %).
+  (B) Keep 400 and widen the case-9 limit (S4-47 (B)).
+- [ ] **S5a-39. Panzerfaust ambush reach (T9).** (A) Accept the miss:
+  Panzerfausts are fired in 8 of 80 normal-base matches (target 40); no
+  data key moves it (probes in the spec). A human player uses them. (B) AI
+  change: Panzerfaust squads hold a dug trench at the point the enemy tank
+  must pass, and tanks halt short of squads that carry Panzerfausts too.
+  (C) Make T9 a report row.
+- [ ] **S5a-40. Mortar reserve is not exercised.** (A) Leave it: the 30 %
+  refill trip fires before the 30 % reserve holds a barrage, so reserve holds
+  are 0 and the barrage never asks for more bombs than held. (B) A reserve
+  above the trip threshold (mortar idles below it) or trips for mortars at
+  the reserve.
+- [ ] **S5a-41. Re-tune after S5b.** (A) The German price cut is a balance
+  price for S5a. The mortar team's cut (225) matters most (Germany fires 28k
+  bombs on 160 matches, the USA 25k); S5b replaces Barrage with FireMission,
+  so S5b re-runs the balance (160 + out of sample) before anything else
+  moves. (B) Fix the prices now.
 
 ## S3 owner checklist (needs a person)
 
