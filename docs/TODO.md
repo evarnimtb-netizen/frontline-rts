@@ -939,6 +939,59 @@ Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
   wounded man and the one-man card shows health. (B) A wider detail panel
   or a single-column list that keeps both.
 
+## S5b-mortars (in progress, branch `s5b-mortars`; owner questions open)
+
+Spec: `docs/slices/S5b-mortars.md` (baseline, Barrage code map, data model,
+sim rules, saves, AI, HUD, the `mortar-bench`, content with sources,
+targets, Part A / Part B). FireMission with Direct / Observed / Map fire,
+the voice-linked observer rule, ranging-in, the intel map for map fire,
+the charge solver, 5-man mortar squads. Owner decisions 2026-11-03 apply
+(base battery measured, not braked; trenches strong vs small arms; German
+price cut kept). Work proceeds on (A) of each question below.
+
+- [ ] **S5b-1. Legacy rules without `[fire_mission]`.** (A) `FireMission`
+  runs as the old `Barrage` (no observer rule, aim error or knowledge rule,
+  old flight rule), so the frozen S3c fixture and old mods keep their
+  hashes. (B) Refuse such mods.
+- [ ] **S5b-2. M1 81 mm charge velocities.** (A) Estimated zones 70-188 m/s
+  until the Jan. 1945 M43A1 firing table is found (only zones 1-2 are used
+  inside 600 m). (B) Copy the GrW 34's charges.
+- [ ] **S5b-3. What counts as known ground for map fire.** (A) Last-seen
+  enemies (5 min), cells where an enemy was seen in a trench (all match),
+  capture points, and what an own observer sees now; not ground seen
+  empty, not trenches seen without men (needs per-player terrain
+  visibility). (B) An "explored" layer later (S6/S11).
+- [ ] **S5b-4. Registered fire.** (A) Not in S5b: the ranging memory only
+  helps a later observed or direct mission at the same area; map fire
+  never uses it (else a base mortar fires accurately all match after one
+  observed mission). S11 builds it for guns and mortars. (B) Build it now.
+- [ ] **S5b-5. Bombs per 5-man squad.** (A) 20 (assistant 4, two bearers
+  8 each); per-bearer loads are not sourced; a German crew "usually"
+  carried 24 in action (US WD 1943). (B) 24.
+- [ ] **S5b-6. Precision spread.** (A) Keep `spread_mrad` 50 (game value)
+  as the precision term on top of the new aim error; sourced range and
+  deflection probable errors wait for the firing tables. (B) Split it now.
+- [ ] **S5b-7. Mortar card ids.** (A) The 5-man squads keep the ids
+  `ww2:ger_mortar_team` / `ww2:usa_mortar_team` (names Granatwerfergruppe
+  / 81mm Mortar Squad); the 3-man teams are gone. (B) New ids, keep the
+  3-man teams as understrength cards.
+- [ ] **S5b-8. Bomb burst on the cartridge.** (A) Stays on the weapon's
+  `[he]` until a second bomb type exists. (B) Move it now.
+- [ ] **S5b-9. Fire-direction time.** (A) One `fire_direction_s` (10 s) for
+  both factions; per-faction doctrine values are for S11 guns. (B) Per
+  faction now (Germany 25, USA 15).
+- [ ] **S5b-10. Mortar card prices.** (A) The roster's 300 for the 5-man
+  squads, Germany with the S5a-37 cut (240); the 20 bombs are in the card.
+  (B) Price the bearers' bombs on top.
+- [ ] **S5b-11. First-round error.** (A) 3 % of range, 10 m floor (10-18 m
+  at 200-600 m): one or two adjusting rounds are usual. (B) The gun
+  design's 25 m floor (more adjusting, later fire).
+- [ ] **S5b-12. Map-fire error and the 3x target.** (A) Start at 3x the
+  observed first round (9 % / 30 m); the done-when's 3x is a whole-mission
+  mean-miss ratio, which ranging pushes above 3x (Monte Carlo 3.4 for 8
+  rounds), so the bench may set it a little lower (about 8 % / 27 m).
+  (B) Keep 3x the first round and judge the ratio on first rounds only.
+
 ## S3 owner checklist (needs a person)
 
 - [ ] **11. Play a match vs AI to victory** using tanks, an AT team and an
