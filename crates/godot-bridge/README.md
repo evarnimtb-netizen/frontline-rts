@@ -115,7 +115,7 @@ players[i].name   # lobby names; is_ai is false for both
   closes after a surrender therefore shows the end screen, not a
   disconnect.
 - **`pending_orders`:** each positional intent (`move`, `attack_move`,
-  `barrage`, `throw`, `dig` and their `*_units`/`throw_each` forms) adds a
+  `fire_mission` (S5b; `barrage` still accepted), `throw`, `dig` and their `*_units`/`throw_each` forms) adds a
   marker. A marker stays until the last command of that intent has run in
   the sim. Orders sent while the match is paused stay pending until it
   resumes, and after a desync they stay forever. At most 64 markers are
@@ -226,3 +226,18 @@ contract in `godot/docs/match_state.md` "Vehicles (S3)"):
       orders run;
     - an injected desync that dumps both clients;
     - lobby reason codes.
+
+## S5b: the fire-mission preview
+
+`FrontlineMatch.set_fire_preview(squad, point, rounds)` /
+`clear_fire_preview()` write a request into a small shared cell
+(`match_frame::PreviewShared`, a mutex and a generation counter). The
+`frontline-match` thread reads it each time it publishes a frame and fills
+`MatchFrame::preview` (and the own knowledge map, `MatchFrame::intel`) by
+calling the sim's read-only `MatchState::fire_preview` between ticks: the
+same refusal check and mode check as the order, never inside a step, so it
+cannot change the match or its hash. While paused (single player) the
+thread republishes once per new request. The state carries the answer as
+`fire_preview` and `intel` (`godot/docs/match_state.md` "S5b"); refused
+orders arrive as `fire_mission_refused` events; an own squad on a mission
+carries `mission`.

@@ -1113,22 +1113,26 @@ impl FireMissionTuning {
 }
 
 tuning_table! {
-    /// `[ai.mortar]` (S5b): the AI's fire missions (spotters and map fire
-    /// are used from S5b Part B).
+    /// `[ai.mortar]` (S5b): the AI's fire missions, spotters and map fire
+    /// (`crates/sim/src/ai/mortar.rs`, docs/modding/fire-missions.md "The
+    /// AI").
     pub struct AiMortarTuning {
         /// Rounds per AI mission (was `ai.barrage_rounds`).
         mission_rounds: 1..=50,
-        /// Candidate observation spots tried per plan.
+        /// Most sight-line rays a mortar squad casts per plan looking for
+        /// a spotter spot (16 spots on up to 3 targets; 0: no spotters).
         spot_samples: 0..=32,
-        /// A spotter that has not seen the target by then comes back (s).
+        /// A spotter who has seen nothing this long after reaching his spot
+        /// comes back (s; three times this if he never gets there); a
+        /// recalled spotter blocks a new one this long.
         spot_max_s: 1..=600,
         /// A spotter with no new target stays this long before rejoining (s).
         spot_hold_s: 0..=600,
         /// Map fire only while the mortar holds more than this share of its
         /// bombs (%) ...
         map_fire_min_pct: 0..=100,
-        /// ... and only at a target scoring at least this (men·10 +
-        /// trench·20).
+        /// ... and only at a target scoring at least this (still men·10 +
+        /// moving men·5 + men in trenches·20; S5b Part B).
         map_fire_min_score: 0..=1000,
     }
 }

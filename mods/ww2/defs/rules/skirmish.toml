@@ -993,10 +993,10 @@ rearm_stall_s = 15
 [ai.mortar]
 mission_rounds = 6           # rounds per AI mission (was ai.barrage_rounds)
 spot_samples = 16            # most sight-line rays a mortar squad casts per plan looking for a spotter spot (16 spots, up to 3 targets)
-spot_max_s = 60              # s: a spotter that has not seen the target by then comes back
+spot_max_s = 60              # s: a spotter who has seen nothing this long after reaching his spot comes back (3x if he never gets there); a recalled one blocks a new spotter this long
 spot_hold_s = 30             # s: a spotter with no new target stays this long before rejoining
 map_fire_min_pct = 60        # %: map fire only while the mortar holds more than this share of its bombs
-map_fire_min_score = 40      # and only at a target scoring at least this (men*10 + trench*20)
+map_fire_min_score = 40      # and only at a target scoring at least this (still men*10 + moving men*5 + men in trenches*20)
 
 # Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
 # once in the base, no queue and no delivery time).

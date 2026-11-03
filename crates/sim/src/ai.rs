@@ -189,7 +189,7 @@ pub use assault::{
     END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
     HUNT_ENDS, MAX_HUNTS,
 };
-pub use mortar::{AiSpotter, MAX_SPOTTERS, MODE_CHECKS};
+pub use mortar::{AiSpotter, MAX_SPOTTERS, MODE_CHECKS, PLAN_RAYS};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -436,6 +436,9 @@ pub struct AiCounters {
     pub fm_blind_holds: u32,
     /// S5b: map fire held while the mortar walks to its support spot.
     pub fm_walk_holds: u32,
+    /// S5b: mortar squads that waited a plan because the plan's ray budget
+    /// (`ai::mortar::PLAN_RAYS`) was spent.
+    pub fm_ray_holds: u32,
 }
 
 impl AiState {
@@ -746,6 +749,7 @@ impl MatchState {
                     tick,
                     quality: d.decision_quality_pct.min(100) as i64,
                     rng: RngStream::new(self.setup.seed, tick, SimId(p as u32), Purpose::AI_PLAN),
+                    mortar_rays: mortar::PLAN_RAYS,
                 }
                 .plan();
             }
@@ -764,6 +768,9 @@ struct Planner<'a> {
     tick: u64,
     quality: i64,
     rng: RngStream,
+    /// S5b: sight-line rays the mortar planner may still cast this plan
+    /// (`ai::mortar::PLAN_RAYS`).
+    mortar_rays: usize,
 }
 
 impl Planner<'_> {

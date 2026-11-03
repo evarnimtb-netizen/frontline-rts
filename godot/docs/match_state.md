@@ -112,7 +112,7 @@ state = {
       suppression: float,        # 0..1, squad average
       status: String,            # "ok" | "suppressed" | "heads_down" (S3b: half ducked below a trench lip) | "pinned" | "retreating"
       order: String,             # "idle" | "move" | "attack_move" | "retreat"
-                                 # | "dig" | "barrage" | "setup" (MG setting up)
+                                 # | "dig" | "fire_mission" (S5b; was "barrage") | "setup" (MG setting up)
                                  # | "follow" (S3 escort; `follow`: the vehicle)
                                  # | "suppress" (S3b area fire; `suppress_line`)
       pos: Vector3,              # selection anchor (leader point)
@@ -291,7 +291,7 @@ own soldier ids.
 | `stop` | `{squads}` | `stop_ordered(squad_ids)` | Stop |
 | `retreat` | `{squads}` | `retreat_ordered(squad_ids)` | Retreat |
 | `dig` | `{squads, polyline: PackedVector3Array}` | `dig_ordered(squad_ids, polyline)` | Dig (≤ `rules.dig_max_m`; only rifle/engineer squads) |
-| `barrage` | `{squads, target: Vector3}` | `barrage_ordered(squad_ids, target)` | Barrage (only mortar squads in range; a selected mortar man sends his squad) |
+| `fire_mission` (S5b; `barrage` an alias for one slice) | `{squads, target: Vector3, rounds: int}` | `barrage_ordered(squad_ids, target)` | Fire mission (mortar squads; a selected mortar man sends his squad; see "S5b") |
 | `regroup` | `{squads}` | `regroup_ordered(squad_ids)` | Regroup (S1b sim): clears `detached`, the men rejoin the formation; the squad keeps its order |
 | `move_units` | `{units, target: Vector3}` | `move_units_ordered(unit_ids, target)` | MoveUnits |
 | `attack_move_units` | `{units, target: Vector3}` | `attack_move_units_ordered(unit_ids, target)` | AttackMoveUnits |
@@ -352,7 +352,7 @@ rebindable through InputMap). These are the owner's S1b hotkeys
 | Ctrl+right-click | attack-move |
 | H / R / L | stop / retreat / regroup (immediate) |
 | Y | dig tool: click points, Backspace removes the last, right-click digs |
-| B | barrage tool (mortars) |
+| B | fire-mission tool (mortars; S5b) |
 | M | move tool (left click places, Shift keeps it) |
 | G / T / F | frag / smoke / satchel throw tool: range ring, target ring and cursor red out of range; click throws (one man), Shift+click: every eligible man |
 | X / C / Z | stand / crouch / prone for the selected men; the active stance again returns to Auto |
@@ -1112,3 +1112,116 @@ pinned). A Suppress order fires to full range except in
   keys above; `set_rounds(sid, frac)` stages LOW / DRY. Screenshot
   staging `--capture_setup s5a_ammo`: the "hud" firefight with Rifle 1
   LOW and selected, MG team 1 DRY, Rifle 2 holding fire.
+
+## S5b: fire missions, observers, ranging, map fire
+
+S5b (`docs/slices/S5b-mortars.md`) replaces the Barrage with the fire
+mission. A mission is Direct (the mortar's own leader sees the point),
+Observed (a leader of the player inside the voice link of the gunner,
+`fire_mission.observer_link_m` 150 m, sees it; the mortar's own leader
+sent forward counts) or Map fire (a point the player knows, wider aim
+error, no ranging); unknown ground is refused. Keys are own-only; a state
+without them (older builds, legacy content) shows the old behaviour.
+
+```text
+squads[] (own): {                 # plus (S5b):
+  order: String,                  # "fire_mission" (was "barrage")
+  rounds: int,                    # rounds left of the mission
+  mission: {                      # while on a mission (S5b rules only)
+    mode: String,                 # "direct" | "observed" | "map": the last
+                                  # round's (the order's before the first)
+    phase: String,                # "laying" | "adjusting" | "effect"
+    error_m: float,               # aim error now (m) ...
+    first_error_m: float,         # ... and at the first round (ranging bar)
+    seen: int,                    # rounds an observer saw land
+    fired: int, rounds_left: int, adjust: int,
+    charge: int,                  # charge of the last round (1 = charge I)
+    flight_s: float,              # flight time of the last round (s)
+    ranged: bool,                 # started from a remembered ranging cell
+    target: Vector3,              # the mission's point (ground)
+    gunner_pos: Vector3,          # the man at the tube
+    observer_id: int,             # the observer of the last round, and
+    observer_pos: Vector3,        # where he stands (absent: no observer
+                                  # now, or he fell): the link line
+  },
+}
+fire_preview: {                   # while the tool asks (set_fire_preview)
+  squad: int, point: Vector3, rounds: int,
+  ok: bool,                       # false: refused now
+  reason: String,                 # when refused: "not_mortar" | "rounds" |
+                                  # "off_map" | "inside_minimum" |
+                                  # "cannot_reach" | "unknown_ground" |
+                                  # "no_bombs"
+  text: String,                   # the HUD's reason line (refused)
+  mode: String,                   # "direct" | "observed" | "map"
+  error_m: float,                 # start aim error (the remembered one
+                                  # when `ranged`)
+  ring_m: float,                  # expected miss: error_m plus half the
+                                  # precision spread's extent at that range
+  ranged: bool, walk: bool,       # walk: beyond range, the team walks up
+  range_m: float,                 # from the gunner
+  gunner_pos: Vector3,
+  observer_id: int, observer_pos: Vector3,  # observed / direct
+}
+intel: [ { pos: Vector3, age_s: float, trench: bool } ]  # the own knowledge
+                                  # map (25 m cells: enemies last seen there,
+                                  # trench cells for the match), with the
+                                  # preview only
+events[]: { kind: "fire_mission_refused", text, squad: int,
+            reason: String, ... } # "Fire mission refused: Unknown ground: ..."
+rules: { ..., fire_mission_rounds: int }  # the tool's default rounds
+                                  # (fire_mission.player_rounds)
+squads[].capabilities: ["fire_mission", "barrage", ...]  # "barrage" kept as
+                                  # an alias for one slice
+```
+
+**Preview.** `FrontlineMatch.set_fire_preview(squad: int, point: Vector3,
+rounds: int)` asks; `clear_fire_preview()` stops. The sim thread answers
+when it publishes the next frame (also while paused, once per new
+request) with the sim's read-only `MatchState::fire_preview`: the same
+refusal check and mode check as the order, never inside a tick, so it
+cannot change the match. The mock (`MockMatchSource`) has the same two
+methods and a simple model (Direct within 400 m of the mortar, Observed
+when another own squad inside 150 m of it is within 400 m of the point,
+known = a capture point within 40 m or a seen enemy within 30 m).
+`MatchView.preview_source` is the source when it has `set_fire_preview`
+(`match.gd`).
+
+**Intent.** `fire_mission { squads: PackedInt32Array, target: Vector3,
+rounds: int }` -> `CommandKind::FireMission` per mortar squad (`rounds`
+1..=50; absent: `fire_mission.player_rounds`). `barrage` is kept as an
+alias for one slice; both emit `barrage_ordered`.
+
+**HUD (HUD v2, military direction).**
+
+- **Fire-mission tool** (key B, orders-grid button "Mission", tooltip
+  "Fire mission: ..."): while armed, the selection controller asks for
+  the preview of the focused (else first) selected mortar squad at the
+  cursor; the cursor label reads `FIRE MISSION · Observed · ±24 m · 6
+  rounds · Shift+wheel rounds` (`· ranged in`, `· out of range: the team
+  will move` when they apply) or, in red, the refusal (`FIRE MISSION ·
+  Unknown ground: no observer sees it and nothing was seen there`, `Too
+  close: inside the minimum range`, `No bombs`, ...). A click at a refused
+  point sends nothing (error sound; the tool stays). Shift+wheel sets the
+  rounds 1..50. The ground shows the expected-miss ring (solid green for
+  observed and direct, dashed amber for map fire, a red cross when
+  refused), the would-be observer's link (gunner -> observer -> point,
+  dashed) and the knowledge map (faint squares; trench cells amber). The
+  range rings stay.
+- **Observer link line** (`ground_overlay.gd`): a selected own mortar on
+  a mission draws gunner -> observer (solid) and observer -> target
+  (dashed); none for direct fire; a dotted red line to the target when
+  the link is broken (map fire, or the observer fell).
+- **Mortar card** (`detail_panel.gd`): the header status gives the phase
+  and rounds left ("For effect · 6 rds"); a mission strip under the men:
+  the mode tag (DIR blue / OBS amber / MAP red), "Ranging 2 · ±3 m ·
+  15.1 s" (rounds seen land, aim error now, flight time of the last
+  round; map fire: "No ranging") and a ranging bar (share of the first
+  round's error ranged out).
+- **Feed:** `fire_mission_refused` events ("Fire mission refused: ...").
+- **Mock:** missions with modes, laying 10 s (direct 4 s), adjusting
+  rounds that halve the error when observed, then fire for effect;
+  refusals as events; the preview and intel. Screenshot staging
+  `--capture_setup s5b_mortars` (the tool armed on an enemy squad with an
+  observer in the link) and `s5b_card` (an observed mission ranging in,
+  the mortar selected).

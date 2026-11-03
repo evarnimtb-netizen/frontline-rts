@@ -33,7 +33,7 @@ const ROW_ABILITY := [
 	[&"frag", "Frag", &"ability_frag", "Throw a frag grenade (5–30 m). The nearest eligible man throws; Shift+click: every eligible man throws one."],
 	[&"smoke", "Smoke", &"ability_smoke", "Throw a smoke grenade (5–30 m); the cloud blocks spotting for about 30 s."],
 	[&"satchel", "Satchel", &"ability_satchel", "Place or throw a satchel charge (3–8 m); cuts trench lines. Engineers carry one per squad."],
-	[&"barrage", "Fire mission", &"order_barrage", "Mortars fire a mission on a position (60–600 m): observed when a leader in the voice link (150 m) sees it, else map fire on ground you know (never on unknown ground). The cursor shows the mode and the expected miss; Shift+wheel sets the rounds. Right-clicking the ground in range with mortars selected also fires."],
+	[&"barrage", "Mission", &"order_barrage", "Fire mission: mortars fire a mission on a position (60–600 m): observed when a leader in the voice link (150 m) sees it, else map fire on ground you know (never on unknown ground). The cursor shows the mode and the expected miss; Shift+wheel sets the rounds. Right-clicking the ground in range with mortars selected also fires."],
 	SUPPRESS,
 ]
 const ROW_ORDERS := [
@@ -273,8 +273,13 @@ func _draw() -> void:
 			var fl := HudStyle.fit(font, text, r.size.x - 6.0, HudStyle.FONT_SMALL)
 			HudStyle.text(self, font, Vector2(r.get_center().x, r.get_center().y + 5.0), fl, HudStyle.FONT_SMALL, txt_col, 0)
 			continue
-		var label := HudStyle.fit(font, text, r.size.x - 6.0, HudStyle.FONT)
-		HudStyle.text(self, font, Vector2(r.get_center().x, r.end.y - 8.0), label, HudStyle.FONT, txt_col, 0)
+		# S5b: a label too long for the button ("Fire mission") steps down
+		# to the small type before it is cut.
+		var fs := HudStyle.FONT
+		if HudStyle.text_w(font, text, fs) > r.size.x - 6.0:
+			fs = HudStyle.FONT_SMALL
+		var label := HudStyle.fit(font, text, r.size.x - 6.0, fs)
+		HudStyle.text(self, font, Vector2(r.get_center().x, r.end.y - 8.0), label, fs, txt_col, 0)
 
 
 func _draw_key(b: Dictionary, bold: Font, col: Color) -> void:

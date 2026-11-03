@@ -368,6 +368,7 @@ pub struct S5bAi {
     pub map_holds: u64,
     pub walk_holds: u64,
     pub blind_holds: u64,
+    pub ray_holds: u64,
 }
 
 impl S5bAi {
@@ -380,6 +381,7 @@ impl S5bAi {
             spotter_recalls: c.fm_spotter_recalls as u64,
             map_holds: c.fm_map_holds as u64,
             walk_holds: c.fm_walk_holds as u64,
+            ray_holds: c.fm_ray_holds as u64,
             blind_holds: c.fm_blind_holds as u64,
         }
     }
@@ -394,6 +396,7 @@ impl S5bAi {
         self.spotter_recalls += o.spotter_recalls;
         self.map_holds += o.map_holds;
         self.walk_holds += o.walk_holds;
+        self.ray_holds += o.ray_holds;
         self.blind_holds += o.blind_holds;
     }
 }
@@ -2180,7 +2183,7 @@ pub fn many_text(r: &ManyReport) -> String {
         let a = &q.ai;
         let am: u64 = a.missions.iter().sum();
         out += &format!(
-            "S5b {} AI: missions {}: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}\n",
+            "S5b {} AI: missions {}: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}; waits for the plan's ray budget {}\n",
             f.faction,
             am,
             a.missions[0],
@@ -2195,6 +2198,7 @@ pub fn many_text(r: &ManyReport) -> String {
             a.map_holds,
             a.walk_holds,
             a.blind_holds,
+            a.ray_holds,
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

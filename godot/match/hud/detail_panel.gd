@@ -23,9 +23,9 @@ extends Control
 ##
 ## S5b: an own mortar on a fire mission gets a mission strip under its men
 ## (the free fourth row): the mode tag (DIR / OBS / MAP), the ranging line
-## (rounds seen land, aim error now, phase, rounds left, flight time of the
-## last round) and a ranging bar (how far the error has come down from the
-## first round's).
+## (rounds seen land, aim error now, flight time of the last round) and a
+## ranging bar (how far the error has come down from the first round's);
+## the header's status gives the phase and the rounds left.
 
 const PAD := 10.0
 const HEAD := 27.0
@@ -247,6 +247,9 @@ func _draw_squad(sid: int) -> void:
 	var common := _common_stance(units)
 	if common != "":
 		right += " · " + common
+	# S5b: a mortar on a mission shows its phase and rounds left instead.
+	if sq.has("mission") and st[0] == "Fire mission":
+		right = mission_status(sq.mission)
 	var title := view.squad_label(sid, true)
 	if sq.has("crew_of"):
 		title = "Crew — %s" % String(sq.get("crew_of_name", "tank"))
@@ -375,22 +378,25 @@ static func mission_tag(mode: String) -> Array:
 	return ["MAP", HudStyle.DANGER]
 
 
-## S5b: the mission strip's line, e.g. "Ranging 2 · ±6 m · Adjusting · 4
-## left · 14.6 s".
+## S5b: the mission strip's line, e.g. "Ranging 2 · ±6 m · 14.6 s" (rounds
+## seen land, the aim error now, flight time of the last round).
 static func mission_line(m: Dictionary) -> String:
-	var phase: String = {"laying": "Laying", "adjusting": "Adjusting", "effect": "For effect"}.get(String(m.get("phase", "")), "")
 	var parts: Array[String] = []
 	if String(m.get("mode", "map")) == "map":
 		parts.append("No ranging")
 	else:
 		parts.append("Ranging %d" % int(m.get("seen", 0)))
 	parts.append("±%d m" % roundi(float(m.get("error_m", 0.0))))
-	if phase != "":
-		parts.append(phase)
-	parts.append("%d left" % int(m.get("rounds_left", 0)))
 	if int(m.get("fired", 0)) > 0:
 		parts.append("%.1f s" % float(m.get("flight_s", 0.0)))
 	return " · ".join(parts)
+
+
+## S5b: the card header's status for a mortar on a mission: the phase and
+## the rounds left, e.g. "For effect · 6 rds".
+static func mission_status(m: Dictionary) -> String:
+	var phase: String = {"laying": "Laying", "adjusting": "Adjusting", "effect": "For effect"}.get(String(m.get("phase", "")), "Firing")
+	return "%s · %d rds" % [phase, int(m.get("rounds_left", 0))]
 
 
 ## S5b: share of the first round's aim error already ranged out (0..1).

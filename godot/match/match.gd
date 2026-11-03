@@ -15,7 +15,10 @@ extends Node3D
 ## - match_mock.tscn: MockMatchSource and MockWorld (HUD work and tests).
 ##
 ## --capture_setup (see Session) stages a screenshot on the mock (S5a:
-## "s5a_ammo", a squad card with rounds and LOW / DRY tags): "hud",
+## "s5a_ammo", a squad card with rounds and LOW / DRY tags; S5b:
+## "s5b_mortars", the fire-mission tool armed on an enemy squad with an
+## observer in the link, "s5b_card", a mortar ranging in on an observed
+## mission, selected, with its card and link line): "hud",
 ## "throw", "rotated" / "rotated_45" (minimap turning with the camera,
 ## yaw 30° / 45°), "north_up" (minimap locked north-up), "docked" (minimap
 ## bottom-left), "dig", "pause" or "end". --autoplay adds match/autoplay.gd,
@@ -313,6 +316,39 @@ func _stage(what: String) -> void:
 				source.handle_intent(&"set_fire", {"units": source.unit_ids(rifles[1]), "mode": "hold"})
 			view.update_state(source.get_state())
 			view.selection.select_squads(rifles.slice(0, 1))
+		"s5b_mortars", "s5b_card":
+			_stage_s5b(what)
+
+
+## S5b screenshot staging on the mock: the "hud" firefight, the own mortar
+## 440 m behind the foes (beyond its leader's 400 m) and a rifle squad
+## inside its voice link as the observer. "s5b_mortars": the fire-mission
+## tool armed, cursor on the first foe squad (Observed, its ring, the link
+## line, the knowledge map). "s5b_card": an observed mission on that squad
+## ranging in, the mortar selected (card strip and link line).
+func _stage_s5b(what: String) -> void:
+	_stage("hud")
+	var mortars := _own_ids("mortar")
+	var rifles := _own_ids("rifle")
+	var foes: PackedInt32Array = source.squad_ids(1 - source.local_player, "rifle")
+	if mortars.is_empty() or rifles.is_empty() or foes.is_empty():
+		return
+	var mortar := mortars[0]
+	source.place_squad(mortar, Vector2(-60, 560), Vector2(1, -1))
+	source.place_squad(rifles[rifles.size() - 1], Vector2(10, 470), Vector2(1, -1))
+	var foe: Vector3 = source.squad_pos(foes[0])
+	view.update_state(source.get_state())
+	camera.height = 330.0
+	camera.pitch_deg = -72.0
+	camera.jump_to(Vector3(80, 0, 330))
+	view.selection.select_squads(PackedInt32Array([mortar]))
+	if what == "s5b_mortars":
+		view.selection.activate(&"barrage")
+		view.selection.cursor_override = camera.unproject_position(foe)
+	else:
+		source.handle_intent(&"fire_mission", {"squads": PackedInt32Array([mortar]), "target": foe, "rounds": 8})
+		source.prewarm(13.0)
+		view.update_state(source.get_state())
 
 
 ## S3 screenshot staging on the mock: the "hud" firefight plus four own

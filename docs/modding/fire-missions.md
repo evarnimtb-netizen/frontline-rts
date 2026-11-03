@@ -93,6 +93,49 @@ highest at 45 degrees reaching `range_m`; each error names the fix. A
 mortar without `[indirect]` keeps the old rule (`[combat.mortar]
 flight_milli`, `min_flight_s`).
 
+## The AI (`[ai.mortar]`, S5b Part B)
+
+Each plan, a mortar squad that is not on a mission (`crates/sim/src/ai/mortar.rs`):
+
+1. **Targets**: seen enemy squads in range of the gunner, not within
+   `ai.infantry.danger_close_m` of own men, scored `still men x 10 +
+   moving men x 5 + men in trenches x 20` (a man still for 3 s; the bombs
+   land 20-30 s after the order, so a group on the move counts half), at
+   least 20; plus remembered trench cells (30, +10 per manned neighbour).
+2. **Observed or direct now**: the sim's own mode check on the best three;
+   the first an observer sees gets a mission of `mission_rounds` (never
+   more than it holds) while it holds more than `ai.ammo.mortar_reserve_pct`
+   of its bombs (or an own point is threatened).
+3. **Spotter**: else its leader walks forward to the first of 16 spots on
+   the line to a target (inside the voice link, not past danger close, not
+   within 50 m of a seen enemy) with a sight line to it; at most
+   `spot_samples` rays a plan. While he is out the squad waits; it fires
+   through him once he sees a target. He comes back `spot_max_s` after he
+   arrived with nothing seen (or `3 x spot_max_s` if he never arrives) and
+   `spot_hold_s` after the last mission; a recalled spotter blocks a new
+   one for `spot_max_s`.
+4. **Map fire** only as a fallback: no spotter out, the best target scores
+   at least `map_fire_min_score`, the squad holds more than
+   `map_fire_min_pct` of its bombs, and it is not walking.
+5. **Never blind**: a target is ordered only where the knowledge rule's
+   lasting part holds (a capture point or an intel cell within
+   `intel_snap_m`; an enemy seen only this instant may be gone a reaction
+   delay later), else passed over; a squad with fewer than 2 bombs orders
+   nothing. The sim refuses no AI mission.
+6. Otherwise it moves to its support spot `ai.infantry.support_back_m`
+   behind the front point (ww2: 120 m, so the leaders of the squads at the
+   point are inside the voice link) and stays there while the front point
+   is between `range_min + danger_close_m + 20` and `range_max - 200` m.
+
+The planner casts at most 48 sight-line rays a plan over all its mortars
+(a mode check counts 4, a spot one); squads take turns from a start that
+rotates each plan, and one that finds the budget spent waits a plan.
+
+The skirmish summary's `S5b <faction> AI:` line counts missions by the
+mode the AI expected, spotters sent, missions through a spotter, spotter
+time-outs and recalls, map fire held (reserve / walking), blind targets
+passed over and waits for the ray budget.
+
 ## Rules without `[fire_mission]`
 
 Older mods fire a mission exactly as the old barrage: no observers, no aim

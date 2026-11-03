@@ -524,16 +524,13 @@ impl MatchState {
         })
     }
 
-    /// S5b knowledge rule: whether player `p` knows point `pt` (module
-    /// docs). Legacy rules: every point.
-    pub fn known_point(
-        &self,
-        ents: &Entities,
-        terrain: &Heightfield,
-        p: PlayerId,
-        pt: FxVec2,
-        tick: u64,
-    ) -> bool {
+    /// S5b: the lasting part of the knowledge rule: a capture point's area
+    /// (grown by `intel_snap_m`) or an intel cell within `intel_snap_m`
+    /// covers `pt`. No rays; what it accepts stays known for at least the
+    /// cell's keep time, so the AI orders only such points (an enemy seen
+    /// this instant may be gone when the order applies). Legacy rules:
+    /// every point.
+    pub fn known_by_record(&self, p: PlayerId, pt: FxVec2) -> bool {
         let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
             return true;
         };
@@ -565,6 +562,27 @@ impl MatchState {
                     }
                 }
             }
+        }
+        false
+    }
+
+    /// S5b knowledge rule: whether player `p` knows point `pt` (module
+    /// docs). Legacy rules: every point.
+    pub fn known_point(
+        &self,
+        ents: &Entities,
+        terrain: &Heightfield,
+        p: PlayerId,
+        pt: FxVec2,
+        tick: u64,
+    ) -> bool {
+        let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
+            return true;
+        };
+        let snap = m(fm.intel_snap_m);
+        // (b) and (c): a capture point or an intel cell.
+        if self.known_by_record(p, pt) {
+            return true;
         }
         // (d) an enemy seen now within the snap distance.
         let bit = 1u16 << p.0;

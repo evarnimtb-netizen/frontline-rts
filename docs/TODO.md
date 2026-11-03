@@ -939,7 +939,7 @@ Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
   wounded man and the one-man card shows health. (B) A wider detail panel
   or a single-column list that keeps both.
 
-## S5b-mortars (in progress, branch `s5b-mortars`; Part A done, Part B next; owner questions open)
+## S5b-mortars (in progress, branch `s5b-mortars`; Parts A and B done, Fix stage next; owner questions open)
 
 Spec: `docs/slices/S5b-mortars.md` (baseline, Barrage code map, data model,
 sim rules, saves, AI, HUD, the `mortar-bench`, content with sources,
@@ -1011,6 +1011,38 @@ price cut kept). Work proceeds on (A) of each question below.
   observer who loses sight before the first round fires as map fire on
   the observed start error (counted as a downgrade). (A) Keep: the
   observer passed the data. (B) Re-draw the error at the map-fire size.
+- [ ] **S5b-16. Mortar support spot 200 -> 120 m.** Part B moved the AI's
+  mortar support spot (`[ai.infantry] support_back_m`, used by mortars
+  only) from 200 to 120 m behind the point it supports: with voice links
+  only (150 m) a tube 200 m back can observe only through its own spotter;
+  at 120 m the leaders of the squads at the point are in the link. 6-match
+  A/B: observed+direct 69/76 % -> 79/83 % of AI missions. (A) Keep 120
+  until radio links (S6/S11) let a tube stand farther back. (B) 200 and
+  rely on spotters.
+- [ ] **S5b-17. Mortar kills after S5b.** With observed fire, 20 bombs a
+  squad, a 23-30 s wait from order to first burst and the AI holding map
+  fire, mortars cause 4-6 % of each side's kills in AI play (S5a: 18-22 %);
+  the HE share of kills is about 13.5 % (target <= 26.3 %). (A) Accept:
+  the cut comes from the realism rules, not from the bomb. (B) Raise the AI
+  mission size or the load (S5b-5 (B), 24 bombs) to give mortars back some
+  weight; never the bomb's lethality without the owner (S5b-6).
+- [ ] **S5b-18. Orders-grid label.** "Fire mission" does not fit a grid
+  button even in the small type; the button reads **Mission** (key B), its
+  tooltip starts "Fire mission:", the cursor label "FIRE MISSION · ...".
+  (A) Keep. (B) Widen the ability row or use an icon.
+- [ ] **S5b-19. Spotter stance.** The spec said the AI spotter crouches.
+  Part B leaves him on the automatic stance (up while not under fire,
+  down when suppressed) and checks spots from a standing eye: a crouch
+  order slows his walk and loses most sight lines over the map's rolling
+  ground. (A) Keep. (B) Crouch.
+- [ ] **S5b-20. AI rules beyond the spec.** (1) Map fire is held while
+  the mortar walks to its support spot (no more map fire from the base on
+  the way out); (2) a set-up tube stays while the front point is within
+  `range_min + danger_close + 20` .. `range_max - 200` m (it no longer
+  follows every change of the front); (3) targets score a moving man half
+  (the bombs land 20-30 s later); (4) trench cells score 30 + 10 per manned
+  neighbour cell (cells keep no head count). (A) Keep all four. (B) Back
+  to the spec's rules one by one.
 
 ## S3 owner checklist (needs a person)
 

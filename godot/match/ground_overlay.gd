@@ -141,14 +141,15 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 func _draw_intel(state: Dictionary) -> void:
 	for c in state.get("intel", []):
 		var age := float(c.get("age_s", 0.0))
-		var a := clampf(0.35 - age / 900.0, 0.12, 0.35)
-		var col := Color(UiPalette.WARN, a) if c.get("trench", false) else Color(UiPalette.TEXT, a * 0.8)
+		var a := clampf(0.55 - age / 600.0, 0.2, 0.55)
+		var col := Color(UiPalette.WARN, a) if c.get("trench", false) else Color(UiPalette.DANGER, a * 0.8)
 		var p: Vector3 = c.pos
-		var h := 10.0
-		_line(Vector3(p.x - h, p.y, p.z - h), Vector3(p.x + h, p.y, p.z - h), 0.12, col)
-		_line(Vector3(p.x + h, p.y, p.z - h), Vector3(p.x + h, p.y, p.z + h), 0.12, col)
-		_line(Vector3(p.x + h, p.y, p.z + h), Vector3(p.x - h, p.y, p.z + h), 0.12, col)
-		_line(Vector3(p.x - h, p.y, p.z + h), Vector3(p.x - h, p.y, p.z - h), 0.12, col)
+		var h := 11.0
+		var w := 0.3
+		_line(Vector3(p.x - h, p.y, p.z - h), Vector3(p.x + h, p.y, p.z - h), w, col)
+		_line(Vector3(p.x + h, p.y, p.z - h), Vector3(p.x + h, p.y, p.z + h), w, col)
+		_line(Vector3(p.x + h, p.y, p.z + h), Vector3(p.x - h, p.y, p.z + h), w, col)
+		_line(Vector3(p.x - h, p.y, p.z + h), Vector3(p.x - h, p.y, p.z - h), w, col)
 
 
 ## S5b: the fire-mission tool's expected-miss ring at the cursor point and
@@ -169,9 +170,9 @@ func _draw_fire_preview(state: Dictionary) -> void:
 		var n := 24
 		for i in n:
 			var a0 := TAU * i / n
-			_arc(at, r, 0.6, a0, a0 + TAU / n * 0.55, Color(UiPalette.WARN, 0.85), 4)
+			_arc(at, r, 0.9, a0, a0 + TAU / n * 0.55, Color(UiPalette.WARN, 0.95), 4)
 	else:
-		_ring(at, r, 0.6, Color(UiPalette.OK, 0.85), 64)
+		_ring(at, r, 0.9, Color(UiPalette.OK, 0.95), 64)
 	_ring(at, 0.6, 0.4, Color(UiPalette.TEXT, 0.9), 10)
 	if mode == "observed" and fp.has("observer_pos"):
 		var o: Vector3 = fp.observer_pos

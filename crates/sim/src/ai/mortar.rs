@@ -15,7 +15,7 @@
 //!    neighbours stand in for the spec's "10 per man seen there last").
 //!    Best first (ties: the lower position).
 //! 2. **Observed or direct now.** The sim's own read-only mode check
-//!    ([`MatchState::mode_for`], at most 4 rays each) on the best
+//!    ([`crate::game::MatchState::mode_for`], at most 4 rays each) on the best
 //!    [`MODE_CHECKS`] targets; the first that is not map fire gets a
 //!    `FireMission` of `mission_rounds` (never more than it holds) when the
 //!    squad holds more than `mortar_reserve_pct` of its bombs or an own
@@ -41,10 +41,13 @@
 //! 4. **Map fire** (fallback, no spotter out): the best target, while the
 //!    squad holds more than `map_fire_min_pct` of its bombs and the score is
 //!    at least `map_fire_min_score` (the sim fires it as map fire).
-//! 5. **No blind fire:** a target the sim's knowledge rule
-//!    ([`MatchState::known_point`]) would refuse is never ordered
-//!    (`AiCounters::fm_blind_holds`; the sim's refusal count for an AI
-//!    player stays 0).
+//! 5. **No blind fire:** a target is ordered only where the knowledge
+//!    rule's lasting part accepts it ([`crate::game::MatchState::known_by_record`]: a
+//!    capture point or an intel cell, which stay known well past the
+//!    reaction delay; an enemy seen only this instant may be gone when the
+//!    order applies), else passed over (`AiCounters::fm_blind_holds`); a
+//!    squad with fewer than [`MIN_BOMBS`] orders nothing. The sim's refusal
+//!    count for an AI player stays 0.
 //! 6. Otherwise, with no spotter out: the support spot as before
 //!    (`support_back_m` behind the most important point).
 //!
@@ -59,7 +62,7 @@ use serde::{Deserialize, Serialize};
 use super::{AiState, Known, Mine, NO_POINT, Planner, PointEval, Rel, TaskKind, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::SimId;
-use crate::fire_mission::{intel_cols, intel_flag, mode};
+use crate::fire_mission::{self, intel_cols, intel_flag, mode};
 use crate::fx::{Fx, FxVec2};
 use crate::game::{NavPhase, Order, Squad, SquadId};
 
@@ -68,6 +71,17 @@ pub const MAX_SPOTTERS: usize = 64;
 /// Targets the mode check looks at per plan and squad (each at most
 /// `fire_mission::OBSERVE_RAYS` rays).
 pub const MODE_CHECKS: usize = 3;
+/// Most sight-line rays the mortar planner casts in one plan over all its
+/// squads: a mode check counts `fire_mission::OBSERVE_RAYS`, the spot
+/// search one per spot. Squads are taken in turn from a start that rotates
+/// with the plan count; one that finds the budget spent waits for the next
+/// plan (`AiCounters::fm_ray_holds`). The knowledge rule's own rays are not
+/// counted: AI targets are seen men or intel cells, which it accepts before
+/// casting any. Bounds the plan tick's cost (T14 tick p99).
+pub const PLAN_RAYS: usize = 48;
+/// A squad holding fewer bombs orders no mission: the man with the last
+/// one may fall before the order applies (the sim would refuse it).
+pub const MIN_BOMBS: u32 = 2;
 /// A spot within this of a spotted enemy is passed over (m).
 pub const SPOT_CLEAR_M: i32 = 50;
 /// An enemy soldier standing still this long (ticks, 3 s at 30 Hz) is
@@ -181,9 +195,20 @@ impl Planner<'_> {
             .or_else(|| points.iter().max_by_key(|p| p.priority))
             .map(|p| p.pos);
         let defend = points.iter().any(|p| p.rel == Rel::Own && p.threat > 0);
-        for m in mine.iter().filter(|m| {
-            s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::FireMission)
-        }) {
+        let tubes: Vec<&Mine> = mine
+            .iter()
+            .filter(|m| {
+                s.squad_types[g.squads[&m.id].type_idx as usize].has(Capability::FireMission)
+            })
+            .collect();
+        // The ray budget's turn order rotates with the plan count.
+        let start = if tubes.is_empty() {
+            0
+        } else {
+            self.ai.counters.plans as usize % tubes.len()
+        };
+        for k in 0..tubes.len() {
+            let m = tubes[(start + k) % tubes.len()];
             let sq = &g.squads[&m.id];
             let on_mission = matches!(sq.order, Order::FireMission { .. });
             let out = self.spotter_upkeep(m.id, sq, on_mission);
@@ -194,15 +219,30 @@ impl Planner<'_> {
                 .mortar_gunner(self.ents, sq)
                 .map_or(m.lead, |g| self.ents.transform[g.index()].pos.xy());
             let targets = self.mortar_targets(sq, gunner, known, &own);
+            // 2-4 need rays: with the plan's budget spent a squad with
+            // targets waits for the next plan (no map fire before the mode
+            // check); it still keeps to its support spot.
+            let starved = !targets.is_empty() && self.mortar_rays < fire_mission::OBSERVE_RAYS;
+            if starved {
+                self.ai.counters.fm_ray_holds += 1;
+                let walking = matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending);
+                if out.is_none()
+                    && let Some(front) = front
+                    && (walking || !self.in_band(sq, gunner, front))
+                {
+                    self.support_move(m, sq, front);
+                }
+                continue;
+            }
             let (held, pct) = crate::supply::mortar_bombs(s, self.ents, sq);
             let am = &s.rules.ai.mortar;
             let rounds = match pct {
                 Some(_) => (am.mission_rounds as u16).min(held.min(u16::MAX as u32) as u16),
                 None => am.mission_rounds as u16,
             };
-            let reserve_ok =
-                held > 0 && (defend || pct.is_none_or(|p| p > s.rules.ai.ammo.mortar_reserve_pct));
-            let map_ok = held > 0 && pct.is_none_or(|p| p > am.map_fire_min_pct);
+            let reserve_ok = held >= MIN_BOMBS
+                && (defend || pct.is_none_or(|p| p > s.rules.ai.ammo.mortar_reserve_pct));
+            let map_ok = held >= MIN_BOMBS && pct.is_none_or(|p| p > am.map_fire_min_pct);
             if !targets.is_empty() && !reserve_ok {
                 self.ai.counters.mortar_reserve_holds += 1;
             }
@@ -263,10 +303,11 @@ impl Planner<'_> {
         d >= lo && d <= hi
     }
 
-    /// The knowledge rule, as the sim will apply it.
+    /// The knowledge rule's lasting part (`MatchState::known_by_record`):
+    /// a point the sim will still accept when the order applies a
+    /// reaction delay later (an enemy seen only this instant may be gone).
     fn knows(&self, p: FxVec2) -> bool {
-        self.g
-            .known_point(self.ents, self.terrain, self.me, p, self.tick)
+        self.g.known_by_record(self.me, p)
     }
 
     /// Emits the mission and its task; `mode` is what the AI expects.
@@ -293,6 +334,10 @@ impl Planner<'_> {
     ) -> bool {
         let spotter = self.ai.spotters.get(&id).filter(|s| s.out()).map(|s| s.man);
         for t in targets.iter().take(MODE_CHECKS) {
+            if self.mortar_rays < fire_mission::OBSERVE_RAYS {
+                break;
+            }
+            self.mortar_rays -= fire_mission::OBSERVE_RAYS;
             let (md, obs) = self
                 .g
                 .mode_for(self.ents, self.terrain, id, gunner, t.pos, self.tick);
@@ -506,11 +551,14 @@ impl Planner<'_> {
         }) else {
             return false;
         };
-        let mut rays = s.rules.ai.mortar.spot_samples as usize;
-        let Some((spot, target)) = targets.iter().take(MODE_CHECKS).find_map(|t| {
+        let mut rays = (s.rules.ai.mortar.spot_samples as usize).min(self.mortar_rays);
+        let before = rays;
+        let found = targets.iter().take(MODE_CHECKS).find_map(|t| {
             self.spot_for(sq, gunner, t.pos, known, &mut rays)
                 .map(|p| (p, t.pos))
-        }) else {
+        });
+        self.mortar_rays -= before - rays;
+        let Some((spot, target)) = found else {
             return false;
         };
         self.ai.emit(
