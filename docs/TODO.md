@@ -932,7 +932,7 @@ Fix stage (S5a, `docs/slices/S5a-log.md` "Fix"), work proceeds on (A):
   (47.8 %, the same as the Tune's pooled figure); one 160 count has a
   standard error of about 6 wins. S5b re-runs the balance first (S5a-41).
   (B) Another German price step now.
-- [ ] **S5a-46. Squad card health number.** (A) On the squad card's
+- [x] **S5a-46. Squad card health number.** Fixed after S5a: each man's row now has a thin health bar along its foot (dim while unhurt, amber when wounded, red under 30), so health is always shown and the name keeps its width; the number is in the tooltip. (A) On the squad card's
   two-column man rows the health number gives way when the name would get
   less room than "Kar98k" (review L4); the rounds read "60 rd". At 1280x800
   and 1600x900 this drops the number on every row; the pip still shows a

@@ -295,21 +295,17 @@ func _draw_squad(sid: int) -> void:
 			continue
 		var so: Dictionary = view.soldiers_by_id[id]
 		HudStyle.pip(self, pr, picked, view.soldier_wounded(so), view.soldier_pinned(so), bool(so.get("detached", false)), false)
-		var hp := "%d" % roundi(float(so.get("hp", 100.0)))
 		var f := bold if picked else font
 		# S4 marks: the crew weapon's carrier, a Panzerfaust.
 		var mark_w := 0.0
-		var hp_w := HudStyle.text_w(font, "100", HudStyle.FONT)
-		# S5a Fix (review L4): the rounds carry an "rd" unit, and on a
-		# narrow row the health number gives way (the pip shows a wounded
-		# man) so the name keeps at least a short word.
+		# Owner fix after S5a (S5a-46): health is a thin bar along the
+		# row's foot, so it is always shown and costs the name no width;
+		# the exact number is in the tooltip.
+		_hp_bar(Rect2(x + 24.0, r.end.y - 4.0, colw - 28.0, 2.0), float(so.get("hp", 100.0)))
 		var has_pzf: bool = view.item_count(so, "panzerfaust") > 0
 		var has_rounds := int(so.get("rounds", -1)) >= 0
 		var rw := HudStyle.text_w(bold, "8888 rd", HudStyle.FONT_SMALL) if has_rounds else 0.0
-		var marks_est := (HudStyle.text_w(bold, "Pzf", HudStyle.FONT_SMALL) + 4.0 if has_pzf else 0.0) + (13.0 if bool(so.get("crew_weapon", false)) else 0.0)
-		var min_name := HudStyle.text_w(font, "Kar98k", HudStyle.FONT_SMALL)
-		var show_hp := colw - 32.0 - hp_w - marks_est - (rw + 6.0 if has_rounds else 0.0) >= min_name
-		var hp_col := hp_w + 8.0 if show_hp else 4.0
+		var hp_col := 4.0
 		var mx := x + colw - hp_col
 		if has_pzf:
 			var pz := "Pzf"
@@ -358,8 +354,15 @@ func _draw_squad(sid: int) -> void:
 			label = "%s · %s" % [label, wtxt]
 		var nm := HudStyle.fit(f, label, room, size)
 		HudStyle.text(self, f, Vector2(x + 24.0, by), nm, size, HudStyle.TEXT)
-		if show_hp:
-			HudStyle.text(self, font, Vector2(x + colw - 4.0, by), hp, HudStyle.FONT, HudStyle.DIM, 1)
+
+
+## A man's health as a thin bar, coloured as on the one-man card (dim
+## while unhurt, so a whole squad reads quietly).
+func _hp_bar(bar: Rect2, hp: float) -> void:
+	hp = clampf(hp, 0.0, 100.0)
+	draw_rect(bar, Color(0, 0, 0, 0.35))
+	var col := HudStyle.PIP_MID if hp >= 99.5 else (HudStyle.TEXT if hp >= MatchView.WOUNDED_HP else (HudStyle.ACCENT if hp >= 30.0 else HudStyle.DANGER))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * hp / 100.0, bar.size.y)), col)
 
 
 ## The stance override every living man of the list shares, as a word
