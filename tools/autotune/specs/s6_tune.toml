@@ -1,0 +1,88 @@
+description = """S6 tune: Germany 45-55 % (S6 baseline 61.9 % on 160), mortar share of kills 10-15 % per side
+(baseline 4.9 / 3.6 %), HE share 20-25 % (13.8 %). Knobs: a German card price multiplier (1.00 = shipped, -20 %
+cut of S5a-37; 1.25 = no cut), the AI's mortar share of buys (ai.mix.mortar, weight 15 of 140 today) and its rounds per mission. No bomb lethality (S5b-6)."""
+
+minutes = 120
+jobs = 6
+mod_dir = "mods/ww2"
+tag = "s6b"
+
+[search]
+batch_seeds = 20
+max_matches = 700
+seed_start = 1001
+
+[[knob]]
+name = "ger_price_mult"
+type = "float"
+min = 1.00
+max = 1.25
+step = 0.01
+tol = 0.03
+paths = [
+  'defs.units."ww2:ger_grenadiergruppe".cost',
+  'defs.units."ww2:ger_grenadiergruppe_7".cost',
+  'defs.units."ww2:ger_smg_gruppe".cost',
+  'defs.units."ww2:ger_vg_sturmgruppe".cost',
+  'defs.units."ww2:ger_engineer_squad".cost',
+  'defs.units."ww2:ger_panzerschreck_team".cost',
+  'defs.units."ww2:ger_mortar_team".cost',
+  'defs.units."ww2:ger_zugtrupp".cost',
+  'defs.units."ww2:ger_munitionstraeger".cost',
+]
+bases = [225, 160, 155, 300, 200, 145, 240, 160, 80]
+
+[[knob]]
+name = "mix_mortar"
+type = "int"
+path = 'ai.mix.mortar'
+min = 15
+max = 50
+step = 1
+tol = 4
+
+[[knob]]
+name = "mission_rounds"
+type = "int"
+path = 'ai.mortar.mission_rounds'
+min = 6
+max = 12
+step = 1
+tol = 2
+
+[[target]]
+metric = "share_germany"
+lower = 45
+upper = 55
+
+[[target]]
+metric = "kill_mortar_germany"
+lower = 10
+upper = 15
+
+[[target]]
+metric = "kill_mortar_usa"
+lower = 10
+upper = 15
+
+[[target]]
+metric = "he_mean"
+lower = 20
+upper = 25
+
+[[target]]
+metric = "base_max"
+upper = 62
+
+[[target]]
+metric = "len_min"
+lower = 10
+
+[[target]]
+metric = "len_max"
+upper = 40
+
+[[target]]
+metric = "len_median"
+lower = 15
+upper = 30

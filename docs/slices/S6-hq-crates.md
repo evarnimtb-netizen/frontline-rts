@@ -298,3 +298,15 @@ Carried over from S5b: T4 refusals 0, T5 faction 35-65 % (40) and 45-55 %
   new crew stay base-only. (B) Base always.
 - **S6-10 Stock box broken.** (A) The whole stock is lost; cook-off bursts
   scale with the shells + explosives kg (one per 16 kg, at most 8).
+
+## Tune results
+
+Autotune (`tools/autotune/specs/s6_tune.toml`, report in `runs/s6_tune/`),
+680 matches, 3 knobs. Before: Germany 61.9 %, mortar kills 4.9 / 3.6 %, HE 13.8 %.
+- `ger_price_mult` (nine German cards, x1.03 shipped): Germany 50 % at 1.033
+  [0.970-1.089]; -3.4 [-5.4 to -1.5] points per 0.03. Cut is now -17.6 %.
+- `ai.mix.mortar` 15 -> 50 (29 % of buys): mortar kills +0.6 points per 4;
+  model 10.2 / 8.5 %. `mission_rounds` stays 6 (no effect, CI spans 0).
+- Crate budget and run threshold (60 / 90) added only 17 % bombs: dropped.
+- Confirm: 160 Germany 48.8 %, oos 55.6 % (pooled 52.2 %); mortar 10.7 / 7.9 %,
+  HE 18.3 / 17.6 %. Misses left: T9b, T8 (needs AI or code), T5d (+0.6 over).

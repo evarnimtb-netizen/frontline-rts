@@ -118,3 +118,13 @@ crate orders and spent 259 / 372 MP a match: Germany 67.5 %.)
 - **Never seen in AI play:** cook-offs (0) and tank crate runs (0; the AI
   only brings a crate to an immobile tank under 25 %).
 - Open questions S6-11..16 in `docs/TODO.md`.
+
+## Tune stage
+
+Autotune run (spec `tools/autotune/specs/s6_tune.toml`, 17 batches, 680 matches):
+see spec "Tune results". Applied: German cards x1.03, `[ai.mix] mortar = 50`.
+Targets (40 + 160 + oos): 41 pass, 6 miss (5 hard): T4a 2 `no_bombs`
+refusals (AI), T5d 55.6 %, T8a/b HE 18.3 / 17.6 %, T9b USA mortar 7.9 %.
+Unreachable by numbers: HE 20-25 % and USA mortar 10 %; mission size and
+crate budget do not move them. Needs AI work (mortars fire later in a match,
+USA mortars vs Germany) or a code change.

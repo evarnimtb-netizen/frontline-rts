@@ -18,7 +18,7 @@ sources = [
 ]
 # 5 men at about the line squads' price per man (the HQ itself is a
 # separate 100 MP, Appendix A.2), with the S5a-37 German cut (-20 %).
-cost = 160
+cost = 165   # S6 tune: x1.03 on 160 (autotune ger_price_mult 1.033 [0.970-1.089], Germany 50 %); the S5a-37 cut is now -17.6 %
 max_alive = 1
 cooldown_s = 60
 unlock_s = 0

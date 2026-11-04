@@ -942,7 +942,7 @@
           "engineer": 15,
           "line": 50,
           "mg": 20,
-          "mortar": 15,
+          "mortar": 50,
           "vehicle": 20
         },
         "mortar": {
@@ -1433,7 +1433,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 200,
+      "cost": 206,
       "dig_rate_pct": 200,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1492,7 +1492,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 225,
+      "cost": 232,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1588,7 +1588,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 160,
+      "cost": 165,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1683,7 +1683,7 @@
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 240,
+      "cost": 247,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1758,7 +1758,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 80,
+      "cost": 82,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1808,7 +1808,7 @@
         "at_hunt"
       ],
       "cooldown_s": 48,
-      "cost": 145,
+      "cost": 149,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1875,7 +1875,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 155,
+      "cost": 160,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1988,7 +1988,7 @@
         "recrew"
       ],
       "cooldown_s": 45,
-      "cost": 300,
+      "cost": 309,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -2041,7 +2041,7 @@
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 160,
+      "cost": 165,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,

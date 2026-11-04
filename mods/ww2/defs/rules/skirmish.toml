@@ -781,7 +781,7 @@ repair_clear_m = 150
 line = 50
 mg = 20
 engineer = 15
-mortar = 15
+mortar = 50                  # S6 tune: was 15. Mortar teams are 50 of 175 weight = 29 % of AI buys (about one team per 2.5 other squads; a 1944 rifle battalion fields 3 heavy 81 mm tubes per 3 rifle companies plus company 60 mm, sources in roster-expansion.md 3.1). Autotune: mortar share of kills +0.6 points per 4 weight; 15 gives 4.5 %, 50 gives 10.2 / 8.5 %
 at = 20
 vehicle = 20
 

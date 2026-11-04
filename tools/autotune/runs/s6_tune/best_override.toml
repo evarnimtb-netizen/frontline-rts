@@ -1,0 +1,35 @@
+# autotune s6_tune2: ger_price_mult=1.05, mix_mortar=50, mission_rounds=6 (not found)
+# see report.md for the evidence and its error bars
+[defs.units."ww2:ger_grenadiergruppe"]
+cost = 236
+
+[defs.units."ww2:ger_grenadiergruppe_7"]
+cost = 168
+
+[defs.units."ww2:ger_smg_gruppe"]
+cost = 163
+
+[defs.units."ww2:ger_vg_sturmgruppe"]
+cost = 315
+
+[defs.units."ww2:ger_engineer_squad"]
+cost = 210
+
+[defs.units."ww2:ger_panzerschreck_team"]
+cost = 152
+
+[defs.units."ww2:ger_mortar_team"]
+cost = 252
+
+[defs.units."ww2:ger_zugtrupp"]
+cost = 168
+
+[defs.units."ww2:ger_munitionstraeger"]
+cost = 84
+
+[ai.mix]
+mortar = 50
+
+[ai.mortar]
+mission_rounds = 6
+
