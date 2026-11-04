@@ -23,6 +23,7 @@ presenter. One map (Kessel Ridge, 1024 m, 5 capture points), two factions
 | Armour physics | plates with sloped normals, penetration chance (the one ballistics function) | `armour.rs` |
 | Bail-out, re-crew | abandoned tanks, crew escape, capture | `bail.rs` |
 | Ammunition | counted rounds per man/gun/vehicle, priced base refill | `supply.rs` |
+| HQ, dumps, crates (S6) | pits, stock, crates issued and carried, forward bombs, small arms and tank rearm, static boxes, cook-off | `structures.rs`, `ai/supply.rs` |
 | Fire missions | mortars: modes direct/observed/map, observers, ranging, charges | `fire_mission.rs`, `indirect.rs` |
 | Match rules | tickets, manpower, capture, call-in cards with cooldowns | `rules.rs`, `game.rs`, `command.rs` |
 | AI commander | per-player controller: assault, armour, ammo, mortar habits | `ai.rs`, `ai/{assault,armour,ammo,mortar}.rs` |
@@ -35,14 +36,14 @@ presenter. One map (Kessel Ridge, 1024 m, 5 capture points), two factions
 | CLI | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff | `sdk/crates/cli/src/` |
 | Tools | autotune, check.sh, bridge/export scripts | `tools/` |
 
-Not in the game yet: HQ and crates, any other vehicle, AT guns, on-map
+Not in the game yet (S6 on branch `s6-hq-crates` adds HQ and crates): any other vehicle, AT guns, on-map
 artillery, fortification blueprints, wounds and medics, flamethrowers, a
 third faction, a second map, radio.
 
 ## Versions
 
 `SAVE_VERSION` 14 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 8
-(`crates/net/src/protocol.rs`), `REPORT_VERSION` 1 (simulate reports), JSON
+(`crates/net/src/protocol.rs`); S6 (branch `s6-hq-crates`): 15 and 9, `REPORT_VERSION` 1 (simulate reports), JSON
 files from `--json` carry `"schema": 1`. A change to a save layout, the hash
 or a command bumps these in the same commit.
 
@@ -138,6 +139,7 @@ Sim profiling is deferred until after S6.
 | Variants: data model, content, Panzerfaust | `S4-variants.md` Data model, Content; log `S4-log.md` |
 | Ammunition: data model, rules, base refill, AI | `S5a-ammo.md` Data model, Sim rules, AI; log `S5a-log.md` |
 | Fire missions: modes, observers, charges, bench | `S5b-mortars.md` Data model, Sim rules, Targets; `S5b-log.md` "Final measurements", "Final targets" (every log has "Final targets") |
+| HQ, dumps, crates: data, rules, AI, HUD | `S6-hq-crates.md`; `S6-log.md`; module docs of `structures.rs`, `ai/supply.rs`; `godot/docs/match_state.md` "S6" |
 | TOML keys: ammo; fire missions and `[ai.mortar]`; variants (`extends`, `[[members]]`) | `docs/modding/ammo.md`; `fire-missions.md`; `variants.md` |
 | Tuning overrides, A/B, `--json`, targets, check.sh; autotune | `docs/modding/tuning.md`; `docs/modding/autotune.md` |
 | Roster plan, slice order, owner decisions, HQ/ammo page | `docs/design/roster/roster-expansion.md` 1, 4, Appendix A |

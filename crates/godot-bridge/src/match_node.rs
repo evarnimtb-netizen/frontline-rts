@@ -1793,9 +1793,9 @@ impl MatchRuntime {
             let d = &setup.stocks[st.def as usize];
             let mut stock = VarDictionary::new();
             let mut cap = VarDictionary::new();
-            for k in 0..3 {
-                stock.set(kinds[k], st.stock_kg[k]);
-                cap.set(kinds[k], st.cap_kg[k]);
+            for (k, name) in kinds.iter().enumerate() {
+                stock.set(*name, st.stock_kg[k]);
+                cap.set(*name, st.cap_kg[k]);
             }
             let mut boxes = VarArray::new();
             let (sn, cs) = st.yaw.sin_cos();

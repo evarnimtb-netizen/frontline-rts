@@ -367,7 +367,7 @@ fn t24_a_tank_at_an_hq_rearms_at_the_d3_rates_from_the_stock() {
     // Due ticks: (tick + id) % every == 0 over the ticks stepped.
     let due = |every: u64| {
         (t0..t0 + n)
-            .filter(|t| (t + v.0 as u64) % every == 0)
+            .filter(|t| (t + v.0 as u64).is_multiple_of(every))
             .count() as u32
     };
     let a = acc(&w, 0);

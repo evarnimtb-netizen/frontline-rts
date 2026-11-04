@@ -849,7 +849,7 @@ impl RenderSnapshot {
     /// S6: structures and crates.
     fn fill_supply(&mut self, ents: &Entities, g: &MatchState) {
         let setup = g.setup();
-        let kg = |gr: u32| gr as f32 / 1000.0;
+        let kg = |gr: u32| crate::fx::Fx::from_ratio(gr as i64, 1000).to_f32();
         for (&id, s) in &g.supply6().structures {
             let d = &setup.stocks[s.def as usize];
             let build_pct = match s.builder.and_then(|b| g.squad(b)) {

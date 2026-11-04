@@ -157,6 +157,8 @@ fn ai_vs_ai_plays_by_the_rules() {
                     );
                 }
                 // Engineers dig, next to a capture point.
+                // S6: the HQ squad digs its HQ pit behind a point.
+                Order::Dig { .. } if s.type_has_tag(sq.type_idx, "hq") => {}
                 Order::Dig { line, .. } if seen.digs.insert(id) => {
                     assert!(s.type_has_tag(sq.type_idx, "engineer"));
                     let mid = (line[0] + line[line.len() - 1]).div_int(2);
@@ -171,7 +173,14 @@ fn ai_vs_ai_plays_by_the_rules() {
                 Order::FireMission { target, .. } if seen.barrages.insert(id) => {
                     assert!(ty.has(frontline_content::setup::Capability::FireMission));
                     let wpn = &s.weapons[ty.weapon as usize];
-                    let d = (*target - lead).length();
+                    // S6: from the gunner (the sim's rule), not the leader:
+                    // a squad at the HQ stands spread round its ring.
+                    let at = sq
+                        .members
+                        .iter()
+                        .find(|m| w.entities().kit()[m.index()].weapon == ty.weapon)
+                        .map_or(lead, |m| w.entities().transform()[m.index()].pos.xy());
+                    let d = (*target - at).length();
                     assert!(d >= Fx::from(wpn.range_min), "barrage at {d:?}");
                 }
                 _ => {}

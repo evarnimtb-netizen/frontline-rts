@@ -359,9 +359,28 @@ impl Planner<'_> {
         let budget = income * cfg.shell_mp_max_pct as u64 / 100 * crate::supply::MICRO;
         let spent = g.supply6.accounts[me.0 as usize].crate_micro;
         let (live, shells) = g.supply6.crates_of(s, me);
+        // Only what the sim will accept (no refused commands): the base
+        // ready when the command applies, a free man in the base, the
+        // caps and the price (a shells crate is the dearest).
+        let free_man = sq.members.iter().any(|&m| {
+            !g.supply6.carries(m)
+                && crate::supply::in_own_base(s, me, self.ents.transform[m.index()].pos.xy())
+        });
+        let price_mp = s
+            .stock_of(
+                s.players[me.0 as usize].faction,
+                StockKind::Crate,
+                Some(SupplyKind::Shells),
+            )
+            .map_or(u64::MAX, |d| {
+                crate::supply::micro_price(s, SupplyKind::Shells, s.stocks[d as usize].g)
+                    .div_ceil(crate::supply::MICRO)
+            });
         let can_issue = spent < budget
             && live < sp.crate_cap
-            && g.players[me.0 as usize].manpower >= 60
+            && free_man
+            && g.supply6.accounts[me.0 as usize].issue_at <= self.due
+            && (g.players[me.0 as usize].manpower as u64) >= price_mp + 20
             && carried.len() < sq.members.len();
         if in_base && can_issue {
             // Shells first; small arms when the HQ's are lower.
@@ -376,6 +395,10 @@ impl Planner<'_> {
                 _ if shells >= sp.shell_crate_cap => SupplyKind::SmallArms,
                 _ => SupplyKind::Shells,
             };
+            let faction = s.players[me.0 as usize].faction;
+            if s.stock_of(faction, StockKind::Crate, Some(kind)).is_none() {
+                return;
+            }
             self.ai
                 .emit(self.due, CommandKind::IssueCrate { squad: b, kind });
             self.ai.counters.s6_crates_asked += 1;
