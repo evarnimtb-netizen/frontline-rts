@@ -6,8 +6,8 @@ Spec: `docs/slices/S6-hq-crates.md`. Baseline: its "Baseline" section
 ## Build stage
 
 Commits: `c4bcb32` (content, sim, CLI, AI, bridge, HUD), `5ba1178` (T20
-check, AI crate targets, HUD box positions, Godot checks, baselines), and
-the close commit with this log.
+check, AI crate targets, HUD box positions, Godot checks, baselines),
+`6ffa773` (AI sends only acceptable crate orders, clippy, tests, log).
 
 ### What was built
 
@@ -94,22 +94,24 @@ the close commit with this log.
 ### Targets (40-match set, `--runs skirmish40`, the S6 file with the 160
 metrics read on the 40 set; scratchpad `s6/S6-40.toml`, `targets40.txt`)
 
-37 pass, 10 miss (9 hard), 5 skipped (armour, fortify, timing not run).
-Misses: T4a 1 `no_bombs` refusal (as baseline); T5 Germany 67.5 % (base-
-line 40.0 %); T8 HE share 13.8 % (baseline 13.3 %); T9 mortar share
-4.2 / 5.0 % (baseline 160: 5.3 / 4.6). Passes of note: T20 base and
+Final binary (`6ffa773`): 39 pass, 8 miss (7 hard), 5 skipped (armour,
+fortify, timing not run). Misses: T4a 1 `no_bombs` refusal (as baseline);
+T5c/d Germany 65.0 % (in the 40-set band 35-65, outside the 160 band;
+baseline 40.0 %); T8 HE share 13.6 % (baseline 13.3 %); T9 mortar share
+4.9 / 4.0 % (baseline 160: 5.3 / 4.6). Passes of note: T20 base and
 unsourced bombs 0/0, T22 0 kg, T27 HQ built 100 / 100 %, crates delivered
-7.5 / 13.5 per match, length median 17.6 min, base side 57.5 %, no
-match without a winner. Reported: crate MP 259 / 372 per match, forward
-tank rounds 1.9 / 3.9, cook-offs 0, tank crate runs 0, bombs 48.8 / 51.8
-per match (baseline 160: 68.8 / 56.3).
+4.7 / 7.5 per match, length median 19.2 min (10.9-27.8), base side
+57.5 %, no match without a winner. Reported: crate MP 178 / 204 per
+match, forward tank rounds 1.5 / 4.2, cook-offs 0, tank crate runs 0.
+(The first run, before the AI checked the issue timer and price, refused
+crate orders and spent 259 / 372 MP a match: Germany 67.5 %.)
 
 ### What the Tune stage must know
 
-- **Faction balance moved.** Germany 67.5 % on 40 (baseline 40 %). The US
-  AI spends more on crates (372 vs 259 MP a match) and delivers twice as
-  many; check `shell_mp_max_pct`, the bearer buy and the small-arms runs
-  first, on 160+160 matches.
+- **Faction balance moved.** Germany 65 % on 40 (baseline 40 %), well
+  past 40-match noise. Suspects: the S6 overhead per side (HQ card 160 vs
+  200 MP, bearers 80 vs 100, HQ 100, crates ~180-200 MP), the US delivering
+  more crates, the end of the base bomb refill. Measure on 160+160 first.
 - **Mortars are weaker** without the base refill, as the spec expected
   (bombs per match down ~20 % for Germany). Levers: crate runs to mortars,
   `crate_run_below_pct`, mission size, bomb load, map fire.
