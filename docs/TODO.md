@@ -61,6 +61,14 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S5b-2 (M1 charge velocities are estimates), S5b-10 (mortar card prices),
   S5b-21/23 (German share about 4-5 points low out of sample),
   S5b-25 (card layout at 1280x800).
+- S6-1..10 (`docs/slices/S6-hq-crates.md` "Owner questions"), each on its
+  (A): S6-1 a carried shells crate rearms a tank within 5 m (owner request
+  2026-11-01 vs Appendix A); S6-2 cook-off bursts belong to whoever broke
+  the box; S6-3 a dead carrier's crate drops and stays his; S6-4 HQ costs
+  100 MP and dig time, no material until S10; S6-5 bullets stop at boxes,
+  only HE cooks off; S6-6 mortar teams dig their own pit; S6-7 radio box is
+  a state only until S11; S6-8 build cost paid on order; S6-9 retreat to
+  the HQ, else base; S6-10 a broken stock box loses all its stock.
 
 ## Planned work queue
 
