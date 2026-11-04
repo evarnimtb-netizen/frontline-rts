@@ -151,6 +151,94 @@ For the staged checks, run the same override through
 assault; the test rules are derived after the override) and
 `frontline-cli fortify-test --rules-override $B`.
 
+## Results as JSON, targets and checks (read numbers, not text)
+
+Agents and tools should read these files, not the text tables.
+
+**`--json FILE`.** `skirmish` (one match, `--seeds`, `--ab`), `armour-test`
+and `fortify-test` write one JSON object with every number their text output
+prints; the normal output is unchanged. (A bare `--json` on `armour-test` and
+`fortify-test` still prints the old JSON report instead of the text.)
+
+```sh
+frontline-cli skirmish --ai-vs-ai --seeds 20 --both-bases --minutes 45 --jobs 6 --summary --json /tmp/s40.json
+frontline-cli armour-test --seeds 5 --json /tmp/arm5.json
+frontline-cli fortify-test --seeds 10 --json /tmp/fort10.json
+```
+
+- Skirmish file (`"kind": "skirmish"`): `matches`, `per_match[]` (`seed`,
+  `side` normal or swapped, `winner_faction`, `winner_base`, `length_s`,
+  `he_share_pct`, `hash`, tanks lost, rockets and satchels per player),
+  `wins` (`germany`, `germany_pct`, `usa`, `usa_pct`, `base0`, `base0_pct`,
+  `base1`, `base1_pct`, `base_max_pct`, `no_winner`), `length_min` (`mean`,
+  `min`, `median`, `max`, `over_25`), `he_share_pct` (`mean`, `max`),
+  `tick_p99_ms` (`peak`, `all`; only meaningful from a `--jobs 3` run
+  alone), `tank_losses`, `factions.<name>` (the per-faction tables: kills,
+  tanks, `ammo.fired`, `ammo.spend_mp` per kind, `kills_by_source_pct`,
+  `s4`, `s5a`, `s5b` and `s5b_derived` such as `ai_observed_direct_pct`,
+  `refused_total`, `bombs_total`) and `s3c`. `--ab` writes `{a, b}`.
+- armour-test file: `cases[]` (`id` `case9`, `name`, `pass`), each with
+  `checks[]` (`id`, `name`, `value`, `limit`, `pass`, `detail`; `value` and
+  `limit` are null for checks that are a yes/no on several runs) and
+  `rows[]` (the report rows with their `target` text). fortify-test file:
+  `checks[]` (rifles, mortar, smoke) and `rows[]` (ranged mortar, grenade
+  variants, MG suppression totals).
+
+**`frontline-cli targets FILE.toml [--from-json DIR] [--jobs N] [--runs a,b]
+[--out DIR]`.** A targets file lists the runs that feed it and the targets
+(`docs/slices/targets/S5b.toml` is the model):
+
+```toml
+[runs.skirmish40]          # kind: skirmish | armour-test | fortify-test
+kind = "skirmish"
+seeds = 20                 # first_seed (default 1), both_bases, minutes, jobs
+both_bases = true
+minutes = 45
+
+[[target]]
+id = "T5a"
+metric = "skirmish40.wins.germany_pct"   # <run>.<path into that run's JSON>
+min = 35                                  # min and/or max, inclusive
+max = 65
+kind = "hard"              # hard (default) or report
+```
+
+A path walks objects by key and arrays by index or by an element's `id` or
+`name` (`armour5.cases.case9.checks.trench_casualties_40_of_open.value`).
+The command plays the runs the targets name (in this process, same
+results as the CLI; JSON saved to `target/targets/<file>/<run>.json`), or
+with `--from-json DIR` reads `DIR/<run>.json`. It prints one line per target
+and a count:
+
+```
+T5a skirmish40.wins.germany_pct 40 [35,65] PASS
+T4a skirmish40.factions.germany.s5b_derived.refused_total 1 [-,0] MISS
+T14a timing40.tick_p99_ms.peak - [-,1.5] SKIP (run timing40 not played)
+12 pass, 1 miss (hard: 1), 11 skipped
+```
+
+`--runs` limits which runs are played (the others print SKIP); `--jobs`
+sets matches at once (default 6, the balance-batch setting). A run's own
+`jobs = 3` overrides it: put tick-time targets on a separate run with
+`jobs = 3` and play it alone. Exit code 1 when a hard target misses
+(including a path that does not exist); report targets only print MISS.
+
+**`tools/check.sh quick [BASE] | full`.** Few lines instead of cargo's and
+Godot's output; full logs in `target/check/*.log`.
+
+- `quick` runs `cargo fmt --check`, clippy `-D warnings` and `cargo test -q`
+  for the crates changed against `BASE` (default: `$CHECK_BASE`, else the
+  merge-base with `origin/<branch>`, else with `main`; a slice passes its
+  base commit). It prints `tests (cli): ok (29 passed, 0 failed)` and, for a
+  failing test, its first 40 lines.
+- `full` adds the whole workspace's tests including the ignored ones
+  (`--release`), golden ballistics, `validate mods/ww2`, the bridge build,
+  the four Godot headless tests (`check_project`, `test_match_view`,
+  `test_net_ui`, `test_data_reload`) and a check that Godot's
+  `settings.cfg` still equals the saved copy (`$SETTINGS_BAK`). One line each:
+  `name: ok` or `name: FAIL (see target/check/name.log)`.
+- Both exit non-zero on any failure. `$GODOT` overrides the Godot binary.
+
 ## Reload in Godot
 
 Every new match reads `mods/` from disk, so edits apply at the next start.

@@ -72,8 +72,12 @@ engine Build, Review or Fix.
   (tuner-fix session, 2026-11-03).
 - Tuning goes through `tools/autotune` (free local matches); agents pick the
   knobs, ranges and targets and read the report.
-- Agents run quick checks only; the orchestrator runs the full suite with
-  shell scripts before pushing.
+- Agents run `tools/check.sh quick <base commit>` only; the orchestrator
+  runs `tools/check.sh full` before pushing. Both print a few lines (logs in
+  `target/check/`).
+- Slice numbers come from `frontline-cli targets docs/slices/targets/<slice>.toml`
+  (one line per target) and from `--json FILE` results, never from reading
+  the text tables (`docs/modding/tuning.md`).
 
 ## 5. What agents read
 

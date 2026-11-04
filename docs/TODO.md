@@ -64,8 +64,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 
 ## Planned work queue
 
-1. Infra step: `--json` results, `frontline-cli targets`, `tools/check.sh`,
-   `docs/STATE.md` (workflow staged).
+1. Infra step (done on branch `infra-checks`, to be pushed): `--json` results,
+   `frontline-cli targets`, `tools/check.sh`, `docs/STATE.md`.
 2. Autotune fix done (branch `claude/tuner-fix`, `c72f91d`, merged by the
    infra step): pooled logistic fit, synthetic proof, real run. The real run
    puts Germany at 50 % with German infantry cards x0.959 [0.913-0.999]
