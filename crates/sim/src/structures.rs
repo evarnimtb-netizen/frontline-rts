@@ -764,6 +764,11 @@ impl MatchState {
     pub(crate) fn mortar_bombs_by_player(&self, ents: &Entities) -> Vec<u64> {
         let mut out = vec![0u64; self.players.len()];
         for sq in self.squads.values() {
+            let w =
+                &self.setup.weapons[self.setup.squad_types[sq.type_idx as usize].weapon as usize];
+            if w.class != frontline_content::WeaponClass::Mortar || w.he.is_none() {
+                continue;
+            }
             let (have, pct) = crate::supply::mortar_bombs(&self.setup, ents, sq);
             if pct.is_some() {
                 out[sq.owner.0 as usize] += have as u64;
@@ -1010,7 +1015,7 @@ impl MatchState {
                     let i = m.index();
                     let load = man_load(ty, &ents.kit[i], k);
                     let mut t = man_total(&self.setup, ty, &ents.kit[i], &ents.combat[i], k);
-                    if ents.kit[i].weapon == ty.weapon {
+                    if crate::supply::active_weapon(ty, &ents.kit[i]) == ty.weapon {
                         t += ents.combat[i].mag as u32;
                     }
                     (load > 0 && t < load).then(|| (t * 1000 / load, m))

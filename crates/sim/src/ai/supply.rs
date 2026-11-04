@@ -426,7 +426,11 @@ impl Planner<'_> {
             dest = g
                 .squads
                 .iter()
-                .filter(|(_, q)| q.owner == me)
+                .filter(|(_, q)| {
+                    q.owner == me
+                        && !q.members.is_empty()
+                        && super::ai_kind(s, q.type_idx) == super::AiKind::Mortar
+                })
                 .filter_map(|(_, q)| {
                     let (_, pct) = crate::supply::mortar_bombs(s, self.ents, q);
                     let pct = pct?;
@@ -440,6 +444,24 @@ impl Planner<'_> {
                 })
                 .min_by_key(|&(d, at)| (d, at.x.raw(), at.y.raw()))
                 .map(|(_, at)| (at + FxVec2::from_int(2, 2), false));
+        }
+        // Small arms: the lowest own squad holding a point (a Defend
+        // task), below crate_run_below_pct, outside the base.
+        if dest.is_none() && !shells_crate {
+            dest = self
+                .ai
+                .tasks
+                .iter()
+                .filter(|(_, t)| t.kind == super::TaskKind::Defend)
+                .filter_map(|(id, _)| {
+                    let q = g.squads.get(id)?;
+                    let pct = crate::supply::squad_ammo_pct(s, self.ents, q)?;
+                    let at = self.ents.transform[q.lead(self.ents).index()].pos.xy();
+                    (pct < cfg.crate_run_below_pct && !crate::supply::in_own_base(s, me, at))
+                        .then_some((pct, *id, at))
+                })
+                .min_by_key(|&(p, id, _)| (p, id))
+                .map(|(_, _, at)| (at + FxVec2::from_int(2, 0), false));
         }
         if dest.is_none()
             && let Some(h) = hq.filter(|h| h.built)

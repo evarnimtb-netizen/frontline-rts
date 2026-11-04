@@ -1,4 +1,3 @@
-class_name SupplyView
 extends Node3D
 ## S6 renderer: the state's `structures` (HQ and dumps: each def box as a
 ## plain box, stock crates olive, the radio box dark grey; a structure
@@ -35,16 +34,21 @@ func update_state(s: Dictionary) -> void:
 			var f := Vector2(cos(yaw), sin(yaw))
 			var l := Vector2(-f.y, f.x)
 			var at := f * off.x + l * off.y
-			var p := pos + Vector3(at.x, size.y * 0.5, -at.y)
+			# The bridge gives the ground under the box; the mock only the
+			# pit centre.
+			var ground: Vector3 = b.get("pos", pos + Vector3(at.x, 0.0, -at.y))
+			var p := ground + Vector3(0, size.y * 0.5, 0)
 			var col := RADIO if b.part == "radio" else STOCK
 			var alpha := 1.0 if built else 0.3
 			_box(n, p, size, yaw, _tint(col, int(st.owner), local), alpha)
 			n += 1
 	for c in s.get("crates", []):
-		if int(c.get("carrier", -1)) != -1:
-			continue
 		var cp: Vector3 = c.pos
-		_box(n, cp + Vector3(0, CRATE_SIZE.y * 0.5, 0), CRATE_SIZE, 0.0, _tint(CRATE, int(c.owner), local), 1.0)
+		if int(c.get("carrier", -1)) != -1:
+			# On the carrier's back (drawn where the state puts him).
+			_box(n, cp + Vector3(0, 1.15, 0), CRATE_SIZE * 0.7, 0.0, _tint(CRATE, int(c.owner), local), 1.0)
+		else:
+			_box(n, cp + Vector3(0, CRATE_SIZE.y * 0.5, 0), CRATE_SIZE, 0.0, _tint(CRATE, int(c.owner), local), 1.0)
 		n += 1
 	for k in range(n, _pool.size()):
 		_pool[k].visible = false

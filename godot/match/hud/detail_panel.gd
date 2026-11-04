@@ -508,11 +508,15 @@ func _draw_supply(sq: Dictionary) -> void:
 		var have := float(hq.stock_kg.get(k[0], 0.0))
 		var cap := maxf(float(hq.cap_kg.get(k[0], 1.0)), 1.0)
 		HudStyle.text(self, bold, Vector2(x, by), k[1], HudStyle.FONT_SMALL, HudStyle.DIM)
-		var bar := Rect2(x + 12.0, y + h * 0.5 - 3.0, bw - 18.0, 6.0)
+		# kg on the right of each bar, the bar between.
+		var kg := "%d" % roundi(have)
+		var kw := HudStyle.text_w(font, kg, HudStyle.FONT_SMALL)
+		var bar := Rect2(x + 12.0, y + h * 0.5 - 4.0, bw - 22.0 - kw, 8.0)
 		draw_rect(bar, Color(0, 0, 0, 0.35))
 		var f := clampf(have / cap, 0.0, 1.0)
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), HudStyle.DANGER if f < low else HudStyle.PIP_MID)
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), HudStyle.DANGER if f < low else HudStyle.ACCENT)
 		draw_rect(Rect2(bar.position.x + bar.size.x * low, bar.position.y - 1.0, 1.0, bar.size.y + 2.0), Color(HudStyle.TEXT, 0.6))
+		HudStyle.text(self, font, Vector2(bar.end.x + 4.0, by), kg, HudStyle.FONT_SMALL, HudStyle.TEXT)
 		x += bw
 	var radio := bool(hq.get("radio", false))
 	HudStyle.text(self, font, Vector2(r.end.x - radio_w, by), "Radio" if radio else "No radio", HudStyle.FONT_SMALL, HudStyle.TEXT if radio else HudStyle.DANGER)

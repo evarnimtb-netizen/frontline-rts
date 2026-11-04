@@ -69,6 +69,16 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   only HE cooks off; S6-6 mortar teams dig their own pit; S6-7 radio box is
   a state only until S11; S6-8 build cost paid on order; S6-9 retreat to
   the HQ, else base; S6-10 a broken stock box loses all its stock.
+- S6-11..16 (raised in the S6 build), each on its (A): S6-11 the base
+  issues one crate per `base_crate_issue_s` per player and refuses (Busy)
+  in between instead of queueing; (B) a FIFO queue. S6-12 mortar teams
+  do not dig (dig rate 0): a mortar pit is dug by engineers or the
+  Zugtrupp with `Dig` profile `mortar_pit` (S6-6 (A) deferred: it needs a
+  per-profile dig rate). S6-13 cook-offs burst as the faction's 75 mm HE
+  round (no separate cook-off ammo defs). S6-14 a structure whose stock
+  box breaks is destroyed (pit stays; the HQ's `rebuild_s` starts). S6-15
+  a carrier's whole squad walks at the crate's carry pace. S6-16 the AI
+  builds no dumps yet, and its mortars do not target enemy HQs and crates.
 
 ## Planned work queue
 

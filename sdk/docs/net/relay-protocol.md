@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **8** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **9** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -174,6 +174,11 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   the ambush keys, the StG 44 and the Volksgrenadier-Sturmgruppe, MG and
   BAR bursts). The save version stays `-s13` (the per-man fire mode is
   in the S5a save layout).
+  S6 bumped `PROTOCOL_VERSION` to 9 (the four supply commands and the
+  pit dig profiles), the content hash (the new `defs/supply` kind, pit
+  profiles, the S6 `[supply]` keys and `[ai.supply]`, four cards) and the
+  save version (`-s15`: structures, crates, cook-offs and per-player S6
+  accounts).
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.
@@ -400,8 +405,14 @@ fields). Variants, in index order: `MoveSoldier`, `Spawn`, `Despawn`
 `FaceUnits`, `AttackUnit`, `SetAmmo`, `RepairUnits`, `FollowUnits`, and
 from version 4 `SuppressUnits { units, line }`, and from version 5
 `Recrew { squad, vehicle }` (a `u32` squad id and a `u32` entity id) and
-`Abandon { squad }`. `Dig` and `DigUnits` end
-with `profile` (`DigProfile`: 0 trench, 1 AT ditch). `SetAmmo` carries an
+`Abandon { squad }`, and from version 9 (S6) `Build { squad, def, pos,
+facing }` (a `u32` squad id, a `u16` supply def index, two Q16.16
+points), `IssueCrate { squad, kind }` (`SupplyKind` as its variant index:
+0 small arms, 1 explosives, 2 shells), `PlaceCrate { squad, pos }` and
+`PickUpCrate { squad, crate_id }` (a `u32`); none has a list, so each
+stays far below the 1,024-byte single-command limit. `Dig` and `DigUnits`
+end with `profile` (`DigProfile`: 0 trench, 1 AT ditch, from version 9
+2 mortar pit, 3 HQ pit, 4 dump pit). `SetAmmo` carries an
 `AmmoChoice` as its variant index: 0 `Auto`, 1 `Ap`, 2 `He`, and from
 version 4 3 `Apcr` (the special penetrator; the standard one on a gun
 without it). Every variant with a `units` list is held to 150 ids, every

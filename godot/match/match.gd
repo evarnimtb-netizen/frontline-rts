@@ -47,8 +47,8 @@ var autoplay: Node
 var started := false
 var vehicle_view: VehicleView
 var vehicle_fx: VehicleFx
-## S6: HQs, dumps and crates.
-var supply_view: SupplyView
+## S6: HQs, dumps and crates (`match/supply_view.gd`).
+var supply_view: Node3D
 ## Screenshot staging: [seconds before the capture, Callable] still to run.
 var _capture_hooks: Array = []
 
@@ -60,7 +60,7 @@ func _ready() -> void:
 	vehicle_fx = VehicleFx.new()
 	vehicle_fx.name = "VehicleFx"
 	add_child(vehicle_fx)
-	supply_view = SupplyView.new()
+	supply_view = preload("res://match/supply_view.gd").new()
 	supply_view.name = "Supply"
 	add_child(supply_view)
 	var h: Callable = source.height_at

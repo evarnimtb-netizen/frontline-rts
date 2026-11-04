@@ -1798,9 +1798,14 @@ impl MatchRuntime {
                 cap.set(kinds[k], st.cap_kg[k]);
             }
             let mut boxes = VarArray::new();
+            let (sn, cs) = st.yaw.sin_cos();
             for (k, b) in d.boxes.iter().enumerate() {
+                // The box's centre on the ground (sim xy), for drawing.
+                let (ox, oy) = (fx(b.offset[0]), fx(b.offset[1]));
+                let bxy = [st.pos[0] + cs * ox - sn * oy, st.pos[1] + sn * ox + cs * oy];
                 boxes.push(
                     &vdict! {
+                        "pos" => self.ground(bxy),
                         "part" => frontline_content::defs::STOCK_BOX_PARTS[b.part as usize % 3],
                         "pct" => st.box_pct.get(k).copied().unwrap_or(0) as i64,
                         "size" => Vector3::new(

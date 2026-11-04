@@ -452,7 +452,9 @@
         "ww2:ger_engineer_squad",
         "ww2:ger_mortar_team",
         "ww2:ger_panzerschreck_team",
-        "ww2:ger_pz4_h_squad"
+        "ww2:ger_pz4_h_squad",
+        "ww2:ger_zugtrupp",
+        "ww2:ger_munitionstraeger"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -472,7 +474,9 @@
         "ww2:usa_engineer_squad",
         "ww2:usa_mortar_team",
         "ww2:usa_bazooka_team",
-        "ww2:usa_m4a3_75_squad"
+        "ww2:usa_m4a3_75_squad",
+        "ww2:usa_platoon_hq",
+        "ww2:usa_ammo_bearers"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -951,6 +955,15 @@
         },
         "repair_clear_m": 150,
         "retreat_strength_pct": 40,
+        "supply": {
+          "crate_run_below_pct": 50,
+          "dry_walk_s": 120,
+          "hq_after_s": 60,
+          "hq_behind_m": 120,
+          "hq_probe_rays": 8,
+          "shell_mp_max_pct": 25,
+          "tank_crate_below_pct": 25
+        },
         "tank_standoff_m": 160,
         "threat_radius_m": 80,
         "throw_cooldown_s": 10
@@ -1080,22 +1093,62 @@
         },
         "profiles": {
           "at_ditch": {
+            "all_round": false,
             "depth_cm": 230,
             "engineers_only": true,
             "floor_cm": 100,
             "max_length_m": 30,
             "parapet_cm": 60,
             "passes": 8,
+            "pit_length_cm": 0,
             "wall_cm": 120,
             "work_per_m": 22000
           },
+          "dump_pit": {
+            "all_round": true,
+            "depth_cm": 120,
+            "engineers_only": false,
+            "floor_cm": 120,
+            "max_length_m": 5,
+            "parapet_cm": 40,
+            "passes": 4,
+            "pit_length_cm": 250,
+            "wall_cm": 40,
+            "work_per_m": 62000
+          },
+          "hq_pit": {
+            "all_round": true,
+            "depth_cm": 150,
+            "engineers_only": false,
+            "floor_cm": 170,
+            "max_length_m": 5,
+            "parapet_cm": 40,
+            "passes": 4,
+            "pit_length_cm": 300,
+            "wall_cm": 40,
+            "work_per_m": 116000
+          },
+          "mortar_pit": {
+            "all_round": true,
+            "depth_cm": 110,
+            "engineers_only": false,
+            "floor_cm": 130,
+            "max_length_m": 5,
+            "parapet_cm": 40,
+            "passes": 4,
+            "pit_length_cm": 250,
+            "wall_cm": 40,
+            "work_per_m": 75000
+          },
           "trench": {
+            "all_round": false,
             "depth_cm": 180,
             "engineers_only": false,
             "floor_cm": 80,
             "max_length_m": 60,
             "parapet_cm": 30,
             "passes": 8,
+            "pit_length_cm": 0,
             "wall_cm": 40,
             "work_per_m": 8400
           }
@@ -1174,16 +1227,35 @@
       "projectile_cap": 2048,
       "supply": {
         "base_bomb_after_fire_s": 0,
-        "base_bomb_s": 4,
+        "base_bomb_s": 0,
+        "base_crate_issue_s": 10,
         "base_small_arms_rounds_s": 30,
+        "bullet_box_damage": 4,
+        "cookoff_kg_per_burst": 16,
+        "cookoff_max": 8,
+        "cookoff_s": 6,
+        "crate_bomb_s": 4,
+        "crate_cap": 12,
+        "crate_feed_m": 5,
+        "dump_max": 3,
         "explosives_mp_per_t": 500,
+        "fwd_rearm_s": 4,
+        "hq_max": 1,
         "low_pct": 30,
+        "pickup_m": 2,
         "rack_rearm_price_pct": 100,
         "rack_refill_max_card_pct": 75,
         "rare_cap_max": 10,
         "rare_rearm_base_s": 10,
+        "rare_rearm_fwd_s": 30,
+        "serve_men": 6,
+        "serve_period_ms": 500,
+        "shell_box_damage": 400,
+        "shell_crate_cap": 8,
         "shell_mp_per_t": 1000,
-        "small_arms_mp_per_t": 200
+        "small_arms_mp_per_t": 200,
+        "structure_bomb_s": 2,
+        "unfired_s": 3
       },
       "tick_hz": 30,
       "tickets": 500,
@@ -1681,6 +1753,55 @@
       "unlock_s": 0,
       "weapon": ""
     },
+    "ww2:ger_munitionstraeger": {
+      "capabilities": [
+        "recrew"
+      ],
+      "cooldown_s": 30,
+      "cost": 80,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_munitionstraeger",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader",
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 3,
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:kar98k"
+        }
+      ],
+      "men": 0,
+      "name": "Munitionsträger",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Mun.-Träger",
+      "sight_m": 150,
+      "sources": [
+        "US War Department TM-E 30-451, Handbook on German Military Forces (1945): ammunition bearers (Munitionsschützen) in heavy-weapons sections",
+        "US War Department, German Infantry Weapons (MID 1943), 8-cm mortar: bombs carried in cases of three"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "tags": [
+        "bearers"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
     "ww2:ger_panzerschreck_team": {
       "capabilities": [
         "dig_basic",
@@ -1911,6 +2032,114 @@
         "line"
       ],
       "training": "ww2:training_conscript",
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:ger_zugtrupp": {
+      "capabilities": [
+        "dig_basic",
+        "recrew"
+      ],
+      "cooldown_s": 60,
+      "cost": 160,
+      "dig_rate_pct": 100,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_zugtrupp",
+      "initial_cooldown_s": 0,
+      "max_alive": 1,
+      "members": [
+        {
+          "count": 1,
+          "items": {
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 1,
+          "slot": "deputy",
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 2,
+          "slot": "runner",
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 1,
+          "slot": "radio_man",
+          "weapon": "ww2:kar98k"
+        }
+      ],
+      "men": 0,
+      "name": "Zugtrupp",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Zugtrupp",
+      "sight_m": 150,
+      "sources": [
+        "US War Department TM-E 30-451, Handbook on German Military Forces (1945), ch. II: rifle platoon headquarters (platoon leader, messengers)",
+        "roster-expansion.md S6 card (Zugtrupp / Platoon HQ builds the HQ)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "tags": [
+        "hq"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_ammo_bearers": {
+      "capabilities": [
+        "recrew"
+      ],
+      "cooldown_s": 30,
+      "cost": 100,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_ammo_bearers",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader",
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 3,
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_carbine"
+        }
+      ],
+      "men": 0,
+      "name": "Ammunition Bearers",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Ammo Bearers",
+      "sight_m": 150,
+      "sources": [
+        "US War Department FM 23-90, 81-mm Mortar M1 (1943): ammunition bearers of the mortar squad"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "tags": [
+        "bearers"
+      ],
       "unlock_s": 0,
       "weapon": ""
     },
@@ -2182,6 +2411,66 @@
       "steadiness_pct": 100,
       "tags": [
         "mortar"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_platoon_hq": {
+      "capabilities": [
+        "dig_basic",
+        "recrew"
+      ],
+      "cooldown_s": 60,
+      "cost": 200,
+      "dig_rate_pct": 100,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_platoon_hq",
+      "initial_cooldown_s": 0,
+      "max_alive": 1,
+      "members": [
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 1,
+          "slot": "sergeant",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "slot": "guide",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 2,
+          "slot": "messenger",
+          "weapon": "ww2:m1_carbine"
+        }
+      ],
+      "men": 0,
+      "name": "Platoon HQ",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Platoon HQ",
+      "sight_m": 150,
+      "sources": [
+        "US War Department FM 7-10, Rifle Company, Infantry Regiment (1942): platoon headquarters (leader, sergeant, guide, two messengers)",
+        "roster-expansion.md S6 card (Zugtrupp / Platoon HQ builds the HQ)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "tags": [
+        "hq"
       ],
       "unlock_s": 0,
       "weapon": ""

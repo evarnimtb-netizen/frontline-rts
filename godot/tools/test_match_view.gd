@@ -1430,8 +1430,18 @@ func _test_s4() -> void:
 ## the HQ strip (stock bars), the crate line and roster tag, the 3D boxes
 ## and the place / pick-up tools.
 func _test_s6() -> void:
-	var eng: int = _source.squad_ids(0, "engineer")[0]
-	var rifle: int = _source.squad_ids(0, "rifle")[0]
+	# Two own infantry squads with men left (earlier tests killed some):
+	# the first plays the HQ squad, the second the bearers.
+	var manned: Array = []
+	for t in ["engineer", "rifle", "mg", "at"]:
+		for sid in _source.squad_ids(0, t):
+			if not _source.unit_ids(sid).is_empty():
+				manned.append(sid)
+	_check(manned.size() >= 2, "S6: two manned squads to stage with")
+	if manned.size() < 2:
+		return
+	var eng: int = manned[0]
+	var rifle: int = manned[1]
 	var rmen: PackedInt32Array = _source.unit_ids(rifle)
 	_source.set_tags(eng, ["hq"])
 	_source.set_tags(rifle, ["bearers"])

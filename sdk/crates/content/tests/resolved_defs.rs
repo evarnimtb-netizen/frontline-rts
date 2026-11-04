@@ -93,18 +93,22 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 /// weapon `indirect` table, the `[fire_mission]` rules and `[ai.mortar]`,
 /// all absent or legacy defaults in this content); the S5a Fix values were
 /// 0xbb3b8dae2e8c822a, 0x69d3ee2a3c5151fe, 0xb46ab44ea1747786,
-/// 0xbb3b8dae2e8c822a, 0x46802df03f79e372, 0x3940489958d5181a, and these
-/// are the new ones. The live `mods/ww2` is guarded by the canonical
-/// snapshot instead.
+/// 0xbb3b8dae2e8c822a, 0x46802df03f79e372, 0x3940489958d5181a. S6 changed
+/// the layout on purpose (the `stocks` list, the pit profiles in the
+/// rules, the S6 `[supply]` keys with their defaults and `[ai.supply]`);
+/// the S5b values were 0x41265dc0ea30e6f4, 0x09ac37c094fbee1b,
+/// 0x1183b57b79b09e46, 0x41265dc0ea30e6f4, 0x1c4ee9689e2794e7,
+/// 0x855841c1470238ab, and these are the new ones. The live `mods/ww2` is
+/// guarded by the canonical snapshot instead.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x41265dc0ea30e6f4),
-    ("skirmish usa-ger seed 7 hard", 0x09ac37c094fbee1b),
-    ("test_unlock ger-usa seed 1 normal", 0x1183b57b79b09e46),
-    ("example override ger-usa seed 1 normal", 0x41265dc0ea30e6f4),
-    ("human ger vs ai usa seed 3 easy", 0x1c4ee9689e2794e7),
+    ("skirmish ger-usa seed 1 normal", 0xb05ebf261ab0a6d0),
+    ("skirmish usa-ger seed 7 hard", 0x37e505284272d288),
+    ("test_unlock ger-usa seed 1 normal", 0xb923a689252fb652),
+    ("example override ger-usa seed 1 normal", 0xb05ebf261ab0a6d0),
+    ("human ger vs ai usa seed 3 easy", 0x1fb482f543103c0a),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x855841c1470238ab,
+        0x796a5341fe2d7f00,
     ),
 ];
 

@@ -439,7 +439,11 @@ pub(crate) fn mortar_bombs(
     for m in &sq.members {
         let i = m.index();
         have += man_total(setup, ty, &ents.kit[i], &ents.combat[i], k);
-        have += if ents.kit[i].weapon == ty.weapon && setup.weapons[ty.weapon as usize].he.is_some()
+        // The tube's ready bomb, only while the mortar is the weapon in
+        // hand (S6 fix: a gunner on his sidearm holds pistol rounds in
+        // `mag`, which counted as bombs).
+        have += if active_weapon(ty, &ents.kit[i]) == ty.weapon
+            && setup.weapons[ty.weapon as usize].he.is_some()
         {
             ents.combat[i].mag as u32
         } else {
