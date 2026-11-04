@@ -75,6 +75,8 @@ pub struct ModDefs {
     pub training: BTreeMap<String, TrainingDef>,
     /// S5a: counted rounds without ballistics (`defs/cartridges/`).
     pub cartridges: BTreeMap<String, CartridgeDef>,
+    /// S6: HQ, dump and crate defs (`defs/supply/`).
+    pub supply: BTreeMap<String, crate::defs::StockDef>,
     /// S4: every def file as parsed TOML before `extends` (the SDK view).
     /// Tuning overrides patch these and every def resolves again.
     #[serde(skip)]
@@ -94,6 +96,7 @@ impl PartialEq for ModDefs {
             && self.ammo == o.ammo
             && self.training == o.training
             && self.cartridges == o.cartridges
+            && self.supply == o.supply
     }
 }
 
@@ -518,6 +521,12 @@ impl ModDefs {
             CartridgeDef::validate,
             &mut is[k("cartridges")],
         );
+        let supply = plain(
+            raw,
+            "supply",
+            crate::defs::StockDef::validate,
+            &mut is[k("supply")],
+        );
         let factions = plain(
             raw,
             "factions",
@@ -547,6 +556,7 @@ impl ModDefs {
         self.ammo = ammo;
         self.training = training;
         self.cartridges = cartridges;
+        self.supply = supply;
         out
     }
 
@@ -927,6 +937,7 @@ impl ModDefs {
             all,
             &mut out,
         );
+        diff(&before.supply, &self.supply, at("supply"), all, &mut out);
         diff(
             &before.rules,
             &self.rules,
@@ -1231,6 +1242,69 @@ impl ModDefs {
             }
         }
         out.extend(self.check_supply());
+        out.extend(self.check_stocks());
+        out
+    }
+
+    /// S6 content checks: a supply def's faction exists, its cook-off
+    /// round is an ammo def with a blast, its `built_by` tags are some
+    /// unit's tags; at most one HQ, one dump and one crate per kind per
+    /// faction.
+    pub fn check_stocks(&self) -> Vec<Issue> {
+        use crate::defs::StockKind;
+        let mut out = Vec::new();
+        let tags: std::collections::BTreeSet<&str> = self
+            .squads
+            .values()
+            .flat_map(|s| s.tags.iter().map(|t| t.as_str()))
+            .collect();
+        let mut seen: std::collections::BTreeSet<(String, StockKind, String)> =
+            std::collections::BTreeSet::new();
+        for (id, d) in &self.supply {
+            let at = |p: &str| format!("supply `{id}`: {p}");
+            if !self.factions.contains_key(&d.faction) {
+                out.push(Issue::new(
+                    at("faction"),
+                    format!(
+                        "unknown faction `{}`{}",
+                        d.faction,
+                        did_you_mean(&d.faction, self.factions.keys())
+                    ),
+                ));
+            }
+            if let Some(c) = &d.cookoff {
+                match self.ammo.get(c) {
+                    Some(a) if a.he.is_some() => {}
+                    Some(_) => out.push(Issue::new(
+                        at("cookoff"),
+                        format!("ammo `{c}` has no blast"),
+                    )),
+                    None => out.push(Issue::new(
+                        at("cookoff"),
+                        format!("unknown ammo `{c}`{}", did_you_mean(c, self.ammo.keys())),
+                    )),
+                }
+            }
+            for t in &d.built_by {
+                if !tags.contains(t.as_str()) {
+                    out.push(Issue::new(
+                        at("built_by"),
+                        format!("no unit has the tag `{t}`"),
+                    ));
+                }
+            }
+            let key = (
+                d.faction.clone(),
+                d.kind,
+                d.supply.clone().unwrap_or_default(),
+            );
+            if !seen.insert(key) {
+                out.push(Issue::new(
+                    at("kind"),
+                    "a faction has one def per kind (and one crate per supply kind)",
+                ));
+            }
+        }
         out
     }
 

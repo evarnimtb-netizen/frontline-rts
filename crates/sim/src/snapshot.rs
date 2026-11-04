@@ -189,6 +189,10 @@ pub struct PlayerSnapshot {
     /// stood paused for lack of manpower within the last second.
     pub ammo_paid: [u64; 3],
     pub refill_paused: bool,
+    /// S6: ticks until the base issues the next crate (0: ready), and the
+    /// live crates (all, shells).
+    pub crate_ready_ticks: u32,
+    pub crates_live: [u16; 2],
 }
 
 // ---------------------------------------------------------------- S3 --
@@ -424,6 +428,43 @@ pub struct ArmourEvent {
     pub seq: u32,
 }
 
+/// S6: an HQ or dump (own and enemy; the bridge hides unseen enemy
+/// ones), ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StructureSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    /// Index into `MatchSetup::stocks`.
+    pub def: u16,
+    pub pos: [f32; 2],
+    pub yaw: f32,
+    pub radius: f32,
+    pub built: bool,
+    /// While digging: the builder's pit progress (0..=100).
+    pub build_pct: u8,
+    pub radio: bool,
+    /// Stock and caps, kg by supply kind.
+    pub stock_kg: [f32; 3],
+    pub cap_kg: [f32; 3],
+    /// Hit points left of each def box (%).
+    pub box_pct: Vec<u8>,
+}
+
+/// S6: a crate, ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CrateSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    /// Index into `MatchSetup::stocks`.
+    pub def: u16,
+    /// `SupplyKind::index`.
+    pub kind: u8,
+    pub pos: [f32; 3],
+    /// The man carrying it, `u32::MAX` for none.
+    pub carrier: u32,
+    pub kg: f32,
+}
+
 /// One capture point, in map order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PointSnapshot {
@@ -507,6 +548,12 @@ pub struct RenderSnapshot {
     pub recrew_refusals: Vec<crate::bail::RecrewEvent>,
     /// S5b: this tick's refused fire missions (the HUD says why).
     pub fire_mission_refusals: Vec<crate::fire_mission::FireMissionEvent>,
+    /// S6: this tick's refused S6 commands (the HUD says why).
+    pub supply_refusals: Vec<crate::structures::SupplyEvent>,
+    /// S6: HQs and dumps, ascending id (match mode only).
+    pub structures: Vec<StructureSnapshot>,
+    /// S6: crates, ascending id (match mode only).
+    pub crates: Vec<CrateSnapshot>,
     /// S4: crew weapons picked up in the last tick.
     pub pickups: Vec<crate::game::PickupEvent>,
     /// Squads in ascending id order (match mode only).
@@ -677,6 +724,8 @@ impl RenderSnapshot {
         self.squads.clear();
         self.players.clear();
         self.points.clear();
+        self.structures.clear();
+        self.crates.clear();
         self.thrown.clear();
         self.smoke.clear();
         self.outcome = Outcome::Running;
@@ -765,6 +814,16 @@ impl RenderSnapshot {
                 ammo_paid: pl.ammo.paid,
                 refill_paused: pl.ammo.paused_at > 0
                     && pl.ammo.paused_at + g.setup().tick_hz as u64 >= tick,
+                crate_ready_ticks: g.supply6().accounts.get(p).map_or(0, |a| {
+                    a.issue_at.saturating_sub(tick).min(u32::MAX as u64) as u32
+                }),
+                crates_live: {
+                    let (n, sh) = g.supply6().crates_of(g.setup(), id);
+                    [
+                        n.min(u16::MAX as u32) as u16,
+                        sh.min(u16::MAX as u32) as u16,
+                    ]
+                },
             });
         }
         let r = &g.setup().rules;
@@ -780,9 +839,63 @@ impl RenderSnapshot {
                 contested: c.contested,
             });
         }
+        self.fill_supply(ents, g);
         self.outcome = g.outcome();
         if let Outcome::Won { winner } = g.outcome() {
             self.winner = Some(winner.0);
+        }
+    }
+
+    /// S6: structures and crates.
+    fn fill_supply(&mut self, ents: &Entities, g: &MatchState) {
+        let setup = g.setup();
+        let kg = |gr: u32| gr as f32 / 1000.0;
+        for (&id, s) in &g.supply6().structures {
+            let d = &setup.stocks[s.def as usize];
+            let build_pct = match s.builder.and_then(|b| g.squad(b)) {
+                Some(sq) => match &sq.order {
+                    Order::Dig { job, .. } => {
+                        job.progress_pct(job.rules(&setup.rules), setup.tick_hz)
+                    }
+                    _ => 0,
+                },
+                None => 100,
+            };
+            self.structures.push(StructureSnapshot {
+                id,
+                owner: s.owner.0,
+                def: s.def,
+                pos: s.pos.to_f32(),
+                yaw: s.yaw.to_f32(),
+                radius: crate::fx::Fx::from(d.radius).to_f32(),
+                built: s.built,
+                build_pct,
+                radio: s.radio,
+                stock_kg: [kg(s.stock_g[0]), kg(s.stock_g[1]), kg(s.stock_g[2])],
+                cap_kg: [kg(d.cap_g[0]), kg(d.cap_g[1]), kg(d.cap_g[2])],
+                box_pct: d
+                    .boxes
+                    .iter()
+                    .enumerate()
+                    .map(|(k, b)| (s.box_hp[k] as u64 * 100 / b.hp.max(1) as u64) as u8)
+                    .collect(),
+            });
+        }
+        for (&id, c) in &g.supply6().crates {
+            let d = &setup.stocks[c.def as usize];
+            let pos = match c.carrier {
+                Some(m) if m.index() < ents.len() => ents.transform()[m.index()].pos.to_f32(),
+                _ => [c.pos.x.to_f32(), c.pos.y.to_f32(), 0.0],
+            };
+            self.crates.push(CrateSnapshot {
+                id,
+                owner: c.owner.0,
+                def: c.def,
+                kind: d.supply.map_or(0, |k| k.index() as u8),
+                pos,
+                carrier: c.carrier.map_or(u32::MAX, |m| m.0),
+                kg: kg(c.g),
+            });
         }
     }
 

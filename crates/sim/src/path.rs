@@ -831,6 +831,8 @@ mod tests {
             work_per_m: 22_000,
             passes: 10,
             engineers_only: true,
+            all_round: false,
+            pit_line: Fixed::ZERO,
             common: frontline_content::tuning::DigCommonTuning {
                 parapet_rise_mm: 300,
                 parapet_top_mm: 400,

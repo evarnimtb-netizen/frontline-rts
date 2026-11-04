@@ -568,9 +568,11 @@ pub(crate) fn aim_and_fire(
             ws.cooldown = ws.cooldown.max(aim_ticks);
             continue;
         }
-        // A man winding up a throw does not fire.
+        // A man winding up a throw does not fire; S6: nor one carrying a
+        // crate.
         let may = w.he.is_none()
             && kit.windup.is_none()
+            && !ctx.game.supply6().carries(SimId(i as u32))
             && match engage_of(&sq.order, u) {
                 Engage::Never => false,
                 Engage::Still => still,
@@ -1644,6 +1646,10 @@ pub(crate) enum Blow {
     /// A small-arms round stopped on a vehicle or wreck: no damage, no
     /// event (counted only).
     Stopped(SimId),
+    /// S6: a round that does not burst stopped on static box `idx` (this
+    /// tick's `MatchState::statics`): it takes `bullet_box_damage` (small
+    /// arms) or `shell_box_damage` (a main-gun round).
+    Static(u32),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -1740,6 +1746,8 @@ pub(crate) struct FlightCtx<'a> {
     pub vehicles: Option<&'a VehicleDerived>,
     pub armour: &'a ArmourTables,
     pub ammo: &'a [AmmoSetup],
+    /// S6: this tick's structure boxes and set-down crates.
+    pub statics: &'a [crate::structures::StaticBox],
 }
 
 /// A soldier near a round's segment this substep.
@@ -1859,6 +1867,19 @@ pub(crate) fn fly(
             let boxed = ctx
                 .vehicles
                 .and_then(|vd| first_box(ctx, vd, from, d, player, box_tests));
+            // S6: a structure box or crate in front of any vehicle box takes
+            // its place (strictly nearer; a tie goes to the vehicle).
+            let sboxed = if ctx.statics.is_empty() {
+                None
+            } else {
+                crate::structures::first_static(ctx.statics, from, d, player)
+            };
+            let static_first = sboxed.is_some_and(|(st, _)| boxed.is_none_or(|(vt, _, _)| st < vt));
+            let any_box_t = if static_first {
+                sboxed.map(|b| b.0)
+            } else {
+                boxed.map(|b| b.0)
+            };
             // Soldiers near the segment, nearest capsule hit first.
             let mut hit: Option<(Fx, SimId)> = None;
             near.clear();
@@ -1898,10 +1919,10 @@ pub(crate) fn fly(
             // Earliest hit wins; at equal t: terrain, then box, then
             // capsule. A box hit re-tests the terrain in front of it at
             // 0.25 m steps (a crest just in front of a hull blocks).
-            let box_first = box_before(boxed.map(|b| b.0), hit.map(|h| h.0));
+            let box_first = box_before(any_box_t, hit.map(|h| h.0));
             let mut end_s = Fx::ONE;
             let ground = if box_first {
-                let (bt, _, _) = boxed.expect("box first");
+                let bt = any_box_t.expect("box first");
                 end_s = bt;
                 ctx.terrain.segment_hit_fine(from, from + d * bt)
             } else {
@@ -1922,8 +1943,13 @@ pub(crate) fn fly(
             } else {
                 None
             };
-            let box_hit = if ground.is_none() && box_first {
+            let box_hit = if ground.is_none() && box_first && !static_first {
                 boxed
+            } else {
+                None
+            };
+            let static_hit = if ground.is_none() && box_first && static_first {
+                sboxed
             } else {
                 None
             };
@@ -1950,6 +1976,17 @@ pub(crate) fn fly(
                     events.push(ev(Blow::Burst(surface)));
                 }
                 ended.push((slot_id, ProjectileEnd::GroundHit));
+                *slot = None;
+                break;
+            }
+            if let Some((st, k)) = static_hit {
+                p.pos = from + d * st;
+                events.push(ev(if bursts {
+                    Blow::Burst(p.pos)
+                } else {
+                    Blow::Static(k as u32)
+                }));
+                ended.push((slot_id, ProjectileEnd::VehicleHit));
                 *slot = None;
                 break;
             }
@@ -2139,6 +2176,27 @@ impl MatchState {
                 hurt(ctx.ents, ctx.hash, dead, id, b.damage, (b.player, b.class));
             }
         }
+        // S6: overpressure on structure boxes and crates within the blast
+        // radius with a clear line (ascending index).
+        if blast_r > Fx::ZERO && !self.statics.0.is_empty() {
+            let near: Vec<usize> = self
+                .statics
+                .0
+                .iter()
+                .enumerate()
+                .filter(|(_, sb)| {
+                    sb.owner != b.player
+                        && sb.reach >= Fx::ZERO
+                        && crate::armour::box_dist_sq_raw(&sb.frame, pos)
+                            <= (blast_r.raw() as u64).pow(2)
+                        && ctx.terrain.line_of_sight(lift, sb.frame.center)
+                })
+                .map(|(k, _)| k)
+                .collect();
+            for k in near {
+                self.hit_static(k, b.damage, Some((b.player, b.class)), ctx.tick);
+            }
+        }
         self.fragments(ctx, b, rays, struck, rules, dead, fires, events);
         // A burst on a vehicle (or a man) well above the ground leaves it as
         // it is (S3).
@@ -2280,9 +2338,26 @@ impl MatchState {
             .collect();
         let purpose = if b.key.1 == Purpose::ITEM_CRATER {
             Purpose::ITEM_FRAGMENT
+        } else if b.key.1 == Purpose::COOKOFF_CRATER {
+            Purpose::COOKOFF_FRAGMENT
         } else {
             Purpose::FRAGMENT
         };
+        // S6: live static boxes within reach not of this burst's player:
+        // (index, frame).
+        let statics: Vec<(usize, crate::vehicle::BoxFrame)> = self
+            .statics
+            .0
+            .iter()
+            .enumerate()
+            .filter(|(_, sb)| {
+                sb.owner != b.player
+                    && sb.reach >= Fx::ZERO
+                    && armour::segment_near(o, FxVec3::ZERO, sb.frame.center, reach + sb.reach)
+            })
+            .map(|(k, sb)| (k, sb.frame))
+            .collect();
+        let mut static_hits: Vec<(usize, u32)> = Vec::new();
         let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, purpose);
         let stratum = Fx::TAU.div_int(n as i32);
         let half = stratum.div_int(2);
@@ -2340,6 +2415,26 @@ impl MatchState {
             if blocked {
                 continue;
             }
+            // S6: a structure box or crate nearer than any man or vehicle
+            // stops the ray (unless the earth does first).
+            let sbox = statics
+                .iter()
+                .filter_map(|(k, f)| armour::segment_box(f, o, d).map(|h| (h.0, *k)))
+                .min();
+            if let Some((st, k)) = sbox
+                && boxed.is_none_or(|(bt, _, _)| st < bt)
+                && man.is_none_or(|(ms, _)| st < ms)
+            {
+                if ctx.terrain.segment_hit(o, o + d * st).is_none() {
+                    let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(st);
+                    let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
+                    let dmg = (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS))
+                        as u32;
+                    static_hits.push((k, dmg));
+                    ctx.stats.frag_hits += 1;
+                }
+                continue;
+            }
             let box_first = box_before(boxed.map(|x| x.0), man.map(|m| m.0));
             let end = match (box_first, boxed, man) {
                 (true, Some((t, _, _)), _) => t,
@@ -2383,6 +2478,11 @@ impl MatchState {
                 hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
                 ctx.stats.frag_hits += 1;
             }
+        }
+        // S6: boxes struck, in ray order (HE: a broken box with shells or
+        // explosives cooks off).
+        for (k, dmg) in static_hits {
+            self.hit_static(k, dmg, Some((b.player, b.class)), ctx.tick);
         }
         // Tracks struck, ascending vehicle id (no fire, no rack: no
         // knock-out).
@@ -2565,6 +2665,17 @@ impl MatchState {
                     ctx.stats.rounds_stopped += 1;
                     None
                 }
+                Blow::Static(k) => {
+                    ctx.stats.rounds_stopped += 1;
+                    let sp = self.setup.rules.supply.as_ref();
+                    let dmg = if e.ammo == NO_AMMO {
+                        sp.map_or(0, |s| s.bullet_box_damage)
+                    } else {
+                        sp.map_or(0, |s| s.shell_box_damage)
+                    };
+                    self.hit_static(k as usize, dmg, None, ctx.tick);
+                    None
+                }
                 Blow::Burst(pos) => Some(pos),
                 Blow::Armour { .. } => self.armour_blow(ctx, e, &mut fires, armour_events),
             };
@@ -2618,6 +2729,44 @@ impl MatchState {
                 e.player,
                 struck,
                 e.ammo,
+                &mut fires,
+                armour_events,
+            );
+        }
+        // S6: cook-off bursts due now (ascending cook-off id).
+        for (id, pos, player, class, ammo) in self.due_cookoffs(ctx.tick) {
+            let Some(bl) = self
+                .setup
+                .ammo
+                .get(ammo as usize)
+                .and_then(|a| a.blast.clone())
+            else {
+                continue;
+            };
+            ctx.stats.explosions += 1;
+            explosions.push(Explosion {
+                pos,
+                weapon: u16::MAX,
+                kind: BlastKind::Shell,
+            });
+            let b = Burst {
+                pos,
+                player,
+                he: &bl.blast,
+                damage: bl.damage,
+                suppression: bl.suppression,
+                cut: false,
+                key: (SimId(id), Purpose::COOKOFF_CRATER),
+                class,
+            };
+            let rays = frag_share(bl.blast.frag_count, requested);
+            self.burst(
+                ctx,
+                &b,
+                rays,
+                None,
+                &rules,
+                &mut dead,
                 &mut fires,
                 armour_events,
             );
@@ -3152,6 +3301,7 @@ mod tests {
                 vehicles: None,
                 armour: self.game.armour(),
                 ammo: &setup.ammo,
+                statics: &[],
             };
             let (mut ended, mut events) = (Vec::new(), Vec::new());
             for _ in 0..60 {
@@ -3295,6 +3445,7 @@ mod tests {
             vehicles: None,
             armour: r.game.armour(),
             ammo: &r.game.setup().ammo,
+            statics: &[],
         };
         let (mut ended, mut events) = (Vec::new(), Vec::new());
         fly(0, &mut slots, &ctx, 2, &mut ended, &mut events, &mut 0);

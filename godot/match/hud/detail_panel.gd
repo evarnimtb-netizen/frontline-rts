@@ -280,6 +280,7 @@ func _draw_squad(sid: int) -> void:
 		HudStyle.text(self, font, Vector2(PAD, HEAD + 18.0), line, HudStyle.FONT, HudStyle.TEXT)
 		return
 	_draw_mission(sq)
+	_draw_supply(sq)
 	var sel: Node = view.selection
 	var ps: float = view.hud.m.pip
 	var names: Array = MatchView.MAN_NAMES.get(sq.type, [])
@@ -431,6 +432,90 @@ func _draw_mission(sq: Dictionary) -> void:
 	var bar := Rect2(tx, r.end.y - 4.0, r.end.x - tx - 6.0, 2.0)
 	draw_rect(bar, Color(0, 0, 0, 0.35))
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * ranging_progress(m), bar.size.y)), tag[1])
+
+
+## S6: the own HQ (else the first own dump) for the supply strip.
+func own_hq() -> Dictionary:
+	var best: Dictionary = {}
+	for st in view.state.get("structures", []):
+		if int(st.owner) != view.local_player:
+			continue
+		if st.kind == "hq":
+			return st
+		if best.is_empty():
+			best = st
+	return best
+
+
+## S6: the supply strip's crate line for a squad, e.g. "Crates: shells
+## 32 kg ×2 · ammo 25 kg" ("" when its men carry none).
+func crate_line(sid: int) -> String:
+	var kinds := {}
+	for id in view.squad_units.get(sid, PackedInt32Array()):
+		var so: Dictionary = view.soldiers_by_id.get(id, {})
+		if so.has("crate"):
+			var k: String = {"shells": "shells", "small_arms": "ammo", "explosives": "expl."}.get(String(so.crate.kind), "?")
+			var e: Array = kinds.get(k, [0, 0.0])
+			kinds[k] = [e[0] + 1, e[1] + float(so.crate.kg)]
+	if kinds.is_empty():
+		return ""
+	var parts: Array[String] = []
+	for k in kinds:
+		var e: Array = kinds[k]
+		parts.append("%s %d kg%s" % [k, roundi(e[1]), "" if e[0] == 1 else " ×%d" % e[0]])
+	return "Crates: " + " · ".join(parts)
+
+
+## S6: the supply strip (the free row under the men, as the mission
+## strip): for the HQ squad its HQ's stock bars (kg of the cap per kind,
+## the low marker at the rules' low_pct), the radio and build progress;
+## for any squad carrying crates, what it carries.
+func _draw_supply(sq: Dictionary) -> void:
+	if rows.is_empty() or sq.has("mission"):
+		return
+	var tags: PackedStringArray = sq.get("tags", PackedStringArray())
+	var line := crate_line(int(sq.id))
+	var hq := own_hq() if tags.has("hq") else {}
+	if line == "" and hq.is_empty() and not tags.has("hq"):
+		return
+	var last: Rect2 = rows[rows.size() - 1].rect
+	var y := last.end.y + 2.0
+	var h := maxf(last.size.y - 2.0, 18.0)
+	if y + h > size.y - 2.0:
+		return
+	var font := get_theme_default_font()
+	var bold := HudStyle.bold()
+	var r := Rect2(PAD - 4.0, y, size.x - 2.0 * PAD + 8.0, h)
+	HudStyle.box(self, r, HudStyle.BG_BUTTON, 3)
+	var by := y + h * 0.5 + 4.0
+	if line != "":
+		HudStyle.text(self, font, Vector2(r.position.x + 6.0, by), HudStyle.fit(font, line, r.size.x - 12.0, HudStyle.FONT_SMALL), HudStyle.FONT_SMALL, HudStyle.TEXT)
+		return
+	if hq.is_empty():
+		HudStyle.text(self, font, Vector2(r.position.x + 6.0, by), "No HQ — Build HQ, then bring crates", HudStyle.FONT_SMALL, HudStyle.DIM)
+		return
+	var tag := "HQ" if hq.kind == "hq" else "DUMP"
+	var tw := HudStyle.text_w(bold, tag, HudStyle.FONT_SMALL) + 8.0
+	HudStyle.tag(self, bold, r.position.x + 4.0 + tw, by, tag, HudStyle.ACCENT)
+	var x := r.position.x + tw + 10.0
+	if not bool(hq.get("built", false)):
+		HudStyle.text(self, font, Vector2(x, by), "Digging %d %%" % int(hq.get("build_pct", 0)), HudStyle.FONT_SMALL, HudStyle.TEXT)
+		return
+	var radio_w := 44.0
+	var bw := (r.end.x - x - radio_w - 8.0) / 3.0
+	var low := float(view.rules().get("supply", {}).get("low_pct", 30)) / 100.0
+	for k in [["shells", "S"], ["small_arms", "A"], ["explosives", "E"]]:
+		var have := float(hq.stock_kg.get(k[0], 0.0))
+		var cap := maxf(float(hq.cap_kg.get(k[0], 1.0)), 1.0)
+		HudStyle.text(self, bold, Vector2(x, by), k[1], HudStyle.FONT_SMALL, HudStyle.DIM)
+		var bar := Rect2(x + 12.0, y + h * 0.5 - 3.0, bw - 18.0, 6.0)
+		draw_rect(bar, Color(0, 0, 0, 0.35))
+		var f := clampf(have / cap, 0.0, 1.0)
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), HudStyle.DANGER if f < low else HudStyle.PIP_MID)
+		draw_rect(Rect2(bar.position.x + bar.size.x * low, bar.position.y - 1.0, 1.0, bar.size.y + 2.0), Color(HudStyle.TEXT, 0.6))
+		x += bw
+	var radio := bool(hq.get("radio", false))
+	HudStyle.text(self, font, Vector2(r.end.x - radio_w, by), "Radio" if radio else "No radio", HudStyle.FONT_SMALL, HudStyle.TEXT if radio else HudStyle.DANGER)
 
 
 func _hp_bar(bar: Rect2, hp: float) -> void:

@@ -1,0 +1,21 @@
+# Ammunition Bundle (S6): a shells crate one man carries (32 kg). Issued in the
+# own base to a man of the squad and paid there: kg x [supply]
+# shell_mp_per_t / 1000 (owner D1: every kg priced once, at base; D2: no distance
+# surcharge; draws from it are free). Set down within crate_feed_m of a
+# mortar, men or a tank it feeds them; set down inside an own HQ or dump
+# radius it empties into the stock.
+id = "ww2:usa_shells_crate"
+name = "Ammunition Bundle"
+faction = "ww2:usa"
+kind = "crate"
+supply = "shells"
+kg = 32
+# The carrier's squad walks at this share of its pace (%; a 25-32 kg load,
+# verify).
+carry_speed_pct = 70
+# Cooks off when HE breaks it (bursts of this round).
+cookoff = "ww2:75mm_m48"
+boxes = [{ part = "crate", size_cm = [70, 40, 35], hp = 60 }]
+sources = [
+    "81 mm M43A1 light HE (about 3.1 kg complete round) packed 3 to a bundle, TM 9-1904 (verify): about 32 kg for two bundles and frames",
+]

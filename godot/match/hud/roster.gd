@@ -304,12 +304,25 @@ func _draw() -> void:
 		HudStyle.text(self, font, Vector2(r.end.x - 8.0, pr.end.y - 1.0), count, HudStyle.FONT, HudStyle.TEXT, 1)
 		# S5a: LOW / DRY left of the men count.
 		var at: Array = HudStyle.ammo_tag(String(sq.get("ammo_state", "")))
+		var tx := r.end.x - 8.0 - HudStyle.text_w(font, count, HudStyle.FONT) - 5.0
 		if at[0] != "":
-			var cw := HudStyle.text_w(font, count, HudStyle.FONT)
-			HudStyle.tag(self, bold, r.end.x - 8.0 - cw - 5.0, pr.end.y - 1.0, at[0], at[1])
+			tx -= HudStyle.tag(self, bold, tx, pr.end.y - 1.0, at[0], at[1]) + 4.0
+		# S6: a crate tag ("CRATE" or "CRATE×n") while its men carry any.
+		var n := crates_carried(sid)
+		if n > 0:
+			HudStyle.tag(self, bold, tx, pr.end.y - 1.0, "CRATE" if n == 1 else "CRATE×%d" % n, HudStyle.ACCENT)
 	if hidden_count > 0:
 		HudStyle.box(self, _more_rect, HudStyle.BG_PANEL, 5)
 		HudStyle.text(self, bold, _more_rect.get_center() + Vector2(0, 5), "+%d" % hidden_count, HudStyle.FONT, HudStyle.TEXT, 0)
+
+
+## S6: crates the men of squad `sid` carry.
+func crates_carried(sid: int) -> int:
+	var n := 0
+	for id in view.squad_units.get(sid, PackedInt32Array()):
+		if view.soldiers_by_id.get(id, {}).has("crate"):
+			n += 1
+	return n
 
 
 func _draw_vehicle_card(r: Rect2, vid: int, font: Font, bold: Font) -> void:

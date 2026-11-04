@@ -1,0 +1,19 @@
+# Patronenkasten (S6): a small_arms crate one man carries (25 kg). Issued in the
+# own base to a man of the squad and paid there: kg x [supply]
+# small_arms_mp_per_t / 1000 (owner D1: every kg priced once, at base; D2: no distance
+# surcharge; draws from it are free). Set down within crate_feed_m of a
+# mortar, men or a tank it feeds them; set down inside an own HQ or dump
+# radius it empties into the stock.
+id = "ww2:ger_small_arms_crate"
+name = "Patronenkasten"
+faction = "ww2:germany"
+kind = "crate"
+supply = "small_arms"
+kg = 25
+# The carrier's squad walks at this share of its pace (%; a 25-32 kg load,
+# verify).
+carry_speed_pct = 80
+boxes = [{ part = "crate", size_cm = [50, 30, 30], hp = 40 }]
+sources = [
+    "7.92 mm in 300-round steel boxes (about 9-10 kg each, verify): two boxes and belts, 25 kg",
+]

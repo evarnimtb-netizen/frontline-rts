@@ -360,6 +360,11 @@ pub struct PlayerReport {
     pub s5b: frontline_sim::FmCounters,
     /// S5b Part B AI fire-mission counters (`AiCounters::fm_*`).
     pub s5b_ai: S5bAi,
+    /// S6 per-player account (`frontline_sim::S6Account`), the stock its
+    /// HQ and dumps held at the end (g), and the AI's crate runs to tanks.
+    pub s6: frontline_sim::S6Account,
+    pub s6_stock_held_g: u64,
+    pub s6_tank_crate_runs: u32,
 }
 
 /// S5b Part B AI fire-mission counters of one player (or summed).
@@ -1174,6 +1179,15 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 },
                 s5b: pl.fm,
                 s5b_ai: ai.map_or_else(S5bAi::default, |a| S5bAi::of(&a.counters)),
+                s6: g.supply6().accounts.get(p).copied().unwrap_or_default(),
+                s6_stock_held_g: g
+                    .supply6()
+                    .structures
+                    .values()
+                    .filter(|x| x.owner.0 as usize == p)
+                    .map(|x| x.stock_g.iter().map(|&v| v as u64).sum::<u64>())
+                    .sum(),
+                s6_tank_crate_runs: ai.map_or(0, |a| a.counters.tank_crate_runs),
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1554,6 +1568,38 @@ pub struct FactionSummary {
     pub s5a: S5aFaction,
     /// S5b counters over the run.
     pub s5b: S5bFaction,
+    /// S6 counters over the run.
+    pub s6: S6Faction,
+}
+
+/// S6 numbers of one faction over a `--seeds` run (sums).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S6Faction {
+    pub matches: u32,
+    /// Matches in which an HQ of this faction stood.
+    pub hq_built: u32,
+    pub structures_built: u64,
+    pub structures_lost: u64,
+    pub crates_issued: [u64; 3],
+    pub crate_micro: u64,
+    pub crates_delivered: u64,
+    pub crates_lost: u64,
+    pub stock_in_g: u64,
+    pub stock_out_g: u64,
+    pub stock_lost_g: u64,
+    pub stock_held_g: u64,
+    pub base_bombs: u64,
+    pub structure_bombs: u64,
+    pub crate_bombs: u64,
+    pub unsourced_bombs: u64,
+    pub fwd_rounds: u64,
+    pub fwd_items: u64,
+    pub tank_rounds_fwd: u64,
+    pub tank_rare_fwd: u64,
+    pub tank_crate_rounds: u64,
+    pub rack_credit_mp: u64,
+    pub cookoffs: u64,
+    pub tank_crate_runs: u64,
 }
 
 /// S5b numbers of one faction over a `--seeds` run (sums).
@@ -1856,6 +1902,34 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             s6.downgrades += b.downgrades as u64;
             s6.no_solution += b.no_solution as u64;
             s6.ai.add(&p.s5b_ai);
+            let a = &p.s6;
+            let t = &mut f.s6;
+            t.matches += 1;
+            t.hq_built += u32::from(a.hq_built_at > 0);
+            t.structures_built += a.structures_built as u64;
+            t.structures_lost += a.structures_lost as u64;
+            for k in 0..3 {
+                t.crates_issued[k] += a.crates_issued[k] as u64;
+            }
+            t.crate_micro += a.crate_micro;
+            t.crates_delivered += a.crates_delivered as u64;
+            t.crates_lost += a.crates_lost as u64;
+            t.stock_in_g += a.stock_in_g;
+            t.stock_out_g += a.stock_out_g;
+            t.stock_lost_g += a.stock_lost_g;
+            t.stock_held_g += p.s6_stock_held_g;
+            t.base_bombs += a.base_bombs as u64;
+            t.structure_bombs += a.structure_bombs as u64;
+            t.crate_bombs += a.crate_bombs as u64;
+            t.unsourced_bombs += a.unsourced_bombs as u64;
+            t.fwd_rounds += a.fwd_rounds as u64;
+            t.fwd_items += a.fwd_items as u64;
+            t.tank_rounds_fwd += a.tank_rounds_fwd as u64;
+            t.tank_rare_fwd += a.tank_rare_fwd as u64;
+            t.tank_crate_rounds += a.tank_crate_rounds as u64;
+            t.rack_credit_mp += a.rack_credit_mp as u64;
+            t.cookoffs += a.cookoffs as u64;
+            t.tank_crate_runs += p.s6_tank_crate_runs as u64;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

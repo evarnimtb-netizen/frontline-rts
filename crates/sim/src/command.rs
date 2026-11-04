@@ -5,6 +5,7 @@
 //! payload breaks any remaining ties, so the order is total). Invalid commands
 //! (dead unit, wrong owner) are ignored, identically on every client.
 
+use frontline_content::setup::SupplyKind;
 use frontline_content::{DigProfile, ItemKind};
 use serde::{Deserialize, Serialize};
 
@@ -160,6 +161,27 @@ pub enum CommandKind {
     /// The crew of the player's vehicle squad `squad` bail out (vehicles
     /// with a crew squad only).
     Abandon { squad: SquadId },
+    /// S6: build supply def `def` (an HQ or dump of the player's faction,
+    /// index into `MatchSetup::stocks`) centred at `pos`, its long axis
+    /// along `facing`: the squad (a `built_by` tag, able to dig) digs its
+    /// pit and it stands when the pit is done. Paid on acceptance.
+    /// Refused (a `SupplyEvent` in the snapshot) at the cap, during the
+    /// HQ's `rebuild_s`, in another player's base or without manpower.
+    Build {
+        squad: SquadId,
+        def: u16,
+        pos: FxVec2,
+        facing: FxVec2,
+    },
+    /// S6: a man of the squad in the own base takes a crate of `kind`
+    /// (paid now: kg x the kind's price). One per `base_crate_issue_s`
+    /// per player; `crate_cap` / `shell_crate_cap` live crates.
+    IssueCrate { squad: SquadId, kind: SupplyKind },
+    /// S6: the squad walks to `pos` and sets its carried crates down there.
+    PlaceCrate { squad: SquadId, pos: FxVec2 },
+    /// S6: the squad walks to own set-down crate `crate_id`; its first man
+    /// within `pickup_m` takes it.
+    PickUpCrate { squad: SquadId, crate_id: u32 },
     // ---- S5a fire discipline (`crate::combat`).
     /// The men's fire mode (`units` as above; vehicles are dropped: their
     /// MGs keep discipline). Not an order to go anywhere.

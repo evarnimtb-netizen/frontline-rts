@@ -1,0 +1,21 @@
+# Sprengmittelkiste (S6): a explosives crate one man carries (20 kg). Issued in the
+# own base to a man of the squad and paid there: kg x [supply]
+# explosives_mp_per_t / 1000 (owner D1: every kg priced once, at base; D2: no distance
+# surcharge; draws from it are free). Set down within crate_feed_m of a
+# mortar, men or a tank it feeds them; set down inside an own HQ or dump
+# radius it empties into the stock.
+id = "ww2:ger_explosives_crate"
+name = "Sprengmittelkiste"
+faction = "ww2:germany"
+kind = "crate"
+supply = "explosives"
+kg = 20
+# The carrier's squad walks at this share of its pace (%; a 25-32 kg load,
+# verify).
+carry_speed_pct = 80
+# Cooks off when HE breaks it (bursts of this round).
+cookoff = "ww2:75mm_sprgr34"
+boxes = [{ part = "crate", size_cm = [60, 30, 30], hp = 40 }]
+sources = [
+    "Stielhandgranate 24 crate of 15 (about 15 kg, verify) plus charges",
+]

@@ -1225,3 +1225,65 @@ alias for one slice; both emit `barrage_ordered`.
   `--capture_setup s5b_mortars` (the tool armed on an enemy squad with an
   observer in the link) and `s5b_card` (an observed mission ranging in,
   the mortar selected).
+
+## S6: HQ, ammunition dumps and crates
+
+Design: `docs/slices/S6-hq-crates.md`. The bridge fills these from the
+render snapshot (`StructureSnapshot`, `CrateSnapshot`); the mock shows only
+what a test stages (`stage_hq`, `stage_crate`, `set_tags`).
+
+### State keys
+
+- `squads[].tags: PackedStringArray` — the card's tags (`hq` builds the HQ,
+  `bearers` carry crates; others as S4).
+- `structures: Array` — own HQs and dumps, and enemy ones within sight of
+  an own man, ascending id: `{id, owner, kind: "hq"|"dump", name, pos:
+  Vector3 (pit centre on the ground), yaw (rad, sim: from +x counter-
+  clockwise seen from above), radius (m), built: bool, build_pct (0..100
+  while the pit is dug), radio: bool, stock_kg: {small_arms, explosives,
+  shells}, cap_kg: {...}, boxes: [{part: "stock"|"radio", pct (hp left,
+  0..100), size: Vector3 (along, up, across, m), offset: Vector2 (along,
+  across the facing, m)}]}`.
+- `crates: Array` — own crates and enemy ones within sight (set down) or on
+  a seen man, ascending id: `{id, owner, name, kind: "small_arms"|
+  "explosives"|"shells", kg, pos: Vector3 (on the ground, or the carrier's
+  position), carrier: man id or -1}`.
+- `soldiers[].crate: {id, kind, kg}` — the crate he carries (absent: none).
+- `players[].crate_ready_s` (s until the base issues the next crate),
+  `players[].crates`, `players[].shell_crates` (live crates; caps
+  `crate_cap` / `shell_crate_cap`).
+- `rules.supply: {crate_feed_m, low_pct}`; `rules.dig_profiles` gains
+  `mortar_pit`, `hq_pit`, `dump_pit`.
+- `events[]` kind `supply_refused` (text "Refused: <why>.", `reason` one
+  of not_allowed, cannot_build, cap, rebuild, bad_spot, manpower,
+  no_carrier, busy, no_crate; `squad`).
+
+### Intents
+
+- `build {squads, target: Vector3, what: "hq"|"dump", facing: Vector3}` —
+  the first selected squad whose card may build it digs the pit there.
+- `issue_crate {squads, kind}` — each selected squad takes one crate of
+  `kind` in the own base (paid there).
+- `place_crate {squads, target}` — the squads set their carried crates
+  down at `target` (into an HQ or dump stock inside its ring).
+- `pick_up_crate {squads, crate: id}` — the first selected squad picks up
+  an own crate on the ground.
+- `dig {profile}` also takes `mortar_pit`, `hq_pit`, `dump_pit`.
+
+### Presenter
+
+- Orders grid "supply" mode (only HQ squads or bearers selected): Build HQ,
+  Dump, Shells, Ammo, Expl. in the top row; Place and Pick up beside the
+  stance strip.
+- Detail panel supply strip under the men: the HQ squad's HQ (three stock
+  bars, kg of the cap per kind, the low marker at `rules.supply.low_pct`,
+  radio state, or "Digging N %"); any squad carrying crates: "Crates:
+  shells 32 kg ×2".
+- Roster cards: `CRATE` / `CRATE×n` tag while the squad's men carry crates.
+- Ground overlay: own structures' radius rings (dashed while digging) when
+  an HQ squad, bearers or a mortar is selected or a supply tool is armed;
+  5 m feed rings round own set-down shells crates with a mortar selected;
+  the radius ghost under a build tool.
+- `SupplyView` (`match/supply_view.gd`) draws structure boxes and set-down
+  crates as plain boxes (ghosts while the pit is dug).
+- Autoplay scene `armour_hq_supply` (sim `scenarios::scene("hq_supply")`).

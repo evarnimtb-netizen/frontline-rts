@@ -101,8 +101,21 @@ impl Planner<'_> {
         let base = g.base_of(me);
         let mut keep = Vec::with_capacity(mine.len());
         let mut cands: Vec<(u32, Mine, bool)> = Vec::new();
+        // S6 (owner Q4): with `base_bomb_s = 0` the base gives mortars no
+        // bombs, so a mortar squad makes no refill trip for them (crates
+        // and the HQ feed it, `ai::supply`).
+        let no_base_bombs = g
+            .setup
+            .rules
+            .supply
+            .as_ref()
+            .is_some_and(|s| s.base_bomb_s == 0);
         for m in mine.drain(..) {
             let sq = &g.squads[&m.id];
+            if no_base_bombs && m.role == AiKind::Mortar {
+                keep.push(m);
+                continue;
+            }
             let Some(pct) = crate::supply::squad_ammo_pct(&g.setup, self.ents, sq) else {
                 keep.push(m);
                 continue;

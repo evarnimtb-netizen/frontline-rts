@@ -124,6 +124,26 @@ pub fn abandon_words(cause: u8) -> &'static str {
 }
 
 /// S3c feed words for a refused re-crew.
+/// S6: a refused build or crate order: (reason name, feed text).
+pub fn supply_words(why: frontline_sim::SupplyRefusal, hz: u32) -> (&'static str, String) {
+    use frontline_sim::SupplyRefusal as R;
+    let s = |t: u32| t.div_ceil(hz.max(1));
+    match why {
+        R::NotAllowed => ("not_allowed", "not this squad or faction".to_owned()),
+        R::CannotBuild => ("cannot_build", "this squad cannot build that".to_owned()),
+        R::Cap => ("cap", "at the limit".to_owned()),
+        R::Rebuild { ticks } => (
+            "rebuild",
+            format!("the HQ can be rebuilt in {} s", s(ticks)),
+        ),
+        R::BadSpot => ("bad_spot", "cannot build there".to_owned()),
+        R::Manpower { short } => ("manpower", format!("{short} manpower short")),
+        R::NoCarrier => ("no_carrier", "no free man in the base".to_owned()),
+        R::Busy { ticks } => ("busy", format!("next crate in {} s", s(ticks))),
+        R::NoCrate => ("no_crate", "no crate".to_owned()),
+    }
+}
+
 pub fn recrew_words(why: frontline_sim::RecrewRefusal, setup: &MatchSetup) -> String {
     use frontline_sim::RecrewRefusal as R;
     match why {
@@ -367,6 +387,19 @@ impl EventTracker {
                 tick: ev.tick,
                 squad: Some(r.squad.0),
                 reason: frontline_sim::FireMissionRefusal::NAMES[r.refusal as usize],
+            });
+        }
+        // S6: refused build and crate orders.
+        for r in &ev.supply_refusals {
+            let (reason, text) = supply_words(r.refusal, setup.tick_hz);
+            out.push(UiEvent {
+                kind: "supply_refused",
+                text: format!("Refused: {text}."),
+                pos: None,
+                player: local as i32,
+                tick: ev.tick,
+                squad: Some(r.squad.0),
+                reason,
             });
         }
         // S3c: refused re-crews.

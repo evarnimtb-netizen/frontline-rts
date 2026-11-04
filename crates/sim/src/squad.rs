@@ -38,7 +38,7 @@ use frontline_content::setup::RulesSetup;
 
 use crate::ecs::{Entities, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
-use crate::game::{Ctx, MatchState, NavPhase, Order, Squad};
+use crate::game::{Ctx, MatchState, NavPhase, Order, Squad, SquadId};
 use crate::terrain::Heightfield;
 use crate::unit::StanceOrder;
 use crate::vehicle::BlockLayer;
@@ -366,6 +366,20 @@ impl MatchState {
         let prone_pct = mv.prone_speed_pct;
         let mut form: Vec<SimId> = Vec::new();
         let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
+        // S6: squads with a man carrying a crate walk at the slowest
+        // crate's carry pace (ascending squad id, pace in %).
+        let mut carrying: Vec<(SquadId, u32)> = Vec::new();
+        for c in self.supply6.crates.values() {
+            let Some(m) = c.carrier else { continue };
+            let Some(sid) = ctx.ents.squad.get(m.index()).copied().flatten() else {
+                continue;
+            };
+            let pct = self.setup.stocks[c.def as usize].carry_speed_pct;
+            match carrying.iter_mut().find(|(s, _)| *s == sid) {
+                Some(e) => e.1 = e.1.min(pct),
+                None => carrying.push((sid, pct)),
+            }
+        }
         for (&id, sq) in self.squads.iter_mut() {
             // Vehicle squads drive in the Movement stage (`crate::vehicle`).
             if self.setup.squad_types[sq.type_idx as usize]
@@ -390,6 +404,9 @@ impl MatchState {
             let mut speed: Fx = ty.speed.into();
             if sq.order == Order::Retreat {
                 speed = speed.mul_int(mv.retreat_speed_pct as i32).div_int(100);
+            }
+            if let Some(&(_, pct)) = carrying.iter().find(|(s, _)| *s == id) {
+                speed = speed.mul_int(pct as i32).div_int(100);
             }
             let fast = speed.mul_int(mv.catch_up_speed_pct as i32).div_int(100);
             // A man's own pace (prone men crawl).

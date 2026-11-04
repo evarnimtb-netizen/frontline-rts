@@ -81,7 +81,22 @@ const ROW_AMMO := [
 	[&"ammo_apcr", "APCR", &"", "Fire the special APCR rounds (a handful, Panzer IV only). N cycles Auto, AP, APCR, HE."],
 	[&"ammo_he", "HE", &"", "Fire HE only. N cycles Auto, AP, APCR, HE."],
 ]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"panzerfaust"]
+## S6, only HQ squads and ammunition bearers selected (the supply grid):
+##   row 1: Build HQ, Build dump (tools: click the spot), Shells, Ammo,
+##          Explosives (each selected squad takes a crate of that kind in
+##          the own base, paid there: kg x the kind's price);
+##   row 2: the orders row; row 3: the stance strip, Place (tool: set the
+##          carried crates down), Pick up (tool: click an own crate).
+const ROW_SUPPLY := [
+	[&"build_hq", "Build HQ", &"", "Dig in the HQ here (the Zugtrupp / Platoon HQ): 100 MP when ordered. It stands when the pit is done, starts empty and fills only from crates set down inside its ring; men, mortars and tanks inside are served from it."],
+	[&"build_dump", "Dump", &"", "Dig an ammunition dump here (up to 3): a smaller ring and stock than the HQ."],
+	[&"crate_shells", "Shells", &"", "In the base: each selected squad takes a 32 kg shells crate (mortar bombs, tank rounds), paid now. One crate per 10 s from the base; 12 live crates at most (8 of shells)."],
+	[&"crate_small_arms", "Ammo", &"", "In the base: each selected squad takes a 25 kg small-arms crate, paid now."],
+	[&"crate_explosives", "Expl.", &"", "In the base: each selected squad takes a 20 kg crate of grenades and charges, paid now."],
+]
+const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
+const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
+const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -109,6 +124,8 @@ func bind(v: MatchView) -> void:
 func update_state(_s: Dictionary) -> void:
 	var sel: Node = view.selection
 	var want := "vehicle" if not sel.selected_vehicles().is_empty() and sel.selected_soldiers().is_empty() else "soldier"
+	if want == "soldier" and sel.supply_only():
+		want = "supply"
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
 	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot:
 		_size = size
@@ -142,8 +159,9 @@ func _layout() -> void:
 	# `fire_h` + a gap taller, so the buttons keep their height).
 	var fh: float = m.get("fire_h", 20.0)
 	bh = (size.y - fh - 3.0 * g) / 3.0
-	for i in ROW_ABILITY.size():
-		var def: Array = PANZERFAUST if i == 2 and _pzf_slot else ROW_ABILITY[i]
+	var top: Array = ROW_SUPPLY if grid_mode == "supply" else ROW_ABILITY
+	for i in top.size():
+		var def: Array = PANZERFAUST if i == 2 and _pzf_slot and grid_mode != "supply" else top[i]
 		_add(def, Rect2(i * (abw + g), 0, abw, bh), "ability")
 	for i in ROW_ORDERS.size():
 		_add(ROW_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
@@ -152,8 +170,12 @@ func _layout() -> void:
 	var seg := sw / 4.0
 	for i in ROW_STANCE.size():
 		_add(ROW_STANCE[i], Rect2(i * seg, 2.0 * (bh + g), seg, bh), "stance")
-	_add(CREW, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
-	_add(REGROUP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
+	if grid_mode == "supply":
+		_add(PLACE, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
+		_add(PICK_UP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
+	else:
+		_add(CREW, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
+		_add(REGROUP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 	var fseg := sw / 3.0
 	for i in ROW_FIRE.size():
 		_add(ROW_FIRE[i], Rect2(i * fseg, 3.0 * (bh + g), fseg, fh), "fire")

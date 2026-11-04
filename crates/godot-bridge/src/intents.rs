@@ -76,8 +76,27 @@ pub fn call_in_by_id(setup: &MatchSetup, player: u8, id: &str) -> Option<u16> {
 pub fn dig_profile(name: &str) -> DigProfile {
     match name {
         "at_ditch" => DigProfile::AtDitch,
+        // S6 pits.
+        "mortar_pit" => DigProfile::MortarPit,
+        "hq_pit" => DigProfile::HqPit,
+        "dump_pit" => DigProfile::DumpPit,
         _ => DigProfile::Trench,
     }
+}
+
+/// S6 `issue_crate` kind names (`match_state.md`).
+pub fn supply_kind(name: &str) -> Option<frontline_content::setup::SupplyKind> {
+    frontline_content::setup::SupplyKind::from_name(name)
+}
+
+/// S6 `build` names: `"hq"` or `"dump"`.
+pub fn stock_kind(name: &str) -> Option<frontline_content::setup::StockKind> {
+    use frontline_content::setup::StockKind;
+    Some(match name {
+        "hq" => StockKind::Hq,
+        "dump" => StockKind::Dump,
+        _ => return None,
+    })
 }
 
 /// `set_ammo` names (`"auto"`, `"ap"`, `"he"`; S3b `"apcr"`).

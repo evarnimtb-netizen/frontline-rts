@@ -115,6 +115,10 @@ pub fn schemas() -> Vec<SchemaDoc> {
             schema: schemars::schema_for!(crate::defs::CartridgeDef),
         },
         SchemaDoc {
+            name: "supply",
+            schema: schemars::schema_for!(crate::defs::StockDef),
+        },
+        SchemaDoc {
             name: "match_request",
             schema: schemars::schema_for!(MatchRequest),
         },
@@ -130,7 +134,7 @@ pub fn schemas() -> Vec<SchemaDoc> {
 }
 
 /// Schemas of def files, which may name a parent with `extends` (S4).
-const DEF_SCHEMAS: [&str; 10] = [
+const DEF_SCHEMAS: [&str; 11] = [
     "squad",
     "weapon",
     "item",
@@ -141,6 +145,7 @@ const DEF_SCHEMAS: [&str; 10] = [
     "rules",
     "training",
     "cartridge",
+    "supply",
 ];
 
 /// Adds the S4 `extends` key (resolved away by the loader, so not a field

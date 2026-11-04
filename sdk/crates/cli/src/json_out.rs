@@ -177,6 +177,11 @@ pub fn skirmish(r: &ManyReport) -> Value {
         },
         "factions": factions,
         "s3c": s.s3c,
+        "s6": {
+            "cookoffs_per_match": round3(
+                s.factions.iter().map(|f| f.s6.cookoffs).sum::<u64>() as f64 / n
+            ),
+        },
     })
 }
 
@@ -292,6 +297,44 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             "ai_missions_total": am,
             "ai_observed_direct_pct": pct((b.ai.missions[0] + b.ai.missions[1]) as f64, am as f64),
             "ai_spotters_per_match": round3(b.ai.spotters as f64 / bn),
+        }),
+    );
+    // S6: per-match means and the T20/T22 checks.
+    let t = &f.s6;
+    let tn = t.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / tn);
+    // T22 balance: what the stocks held, gave out and lost, beyond what
+    // crates put in (0 when stock enters only from crates).
+    let not_crate = (t.stock_held_g + t.stock_out_g + t.stock_lost_g).saturating_sub(t.stock_in_g);
+    let fwd_bombs = t.structure_bombs + t.crate_bombs;
+    o.insert(
+        "s6_derived".into(),
+        json!({
+            "hq_built_pct": pct(t.hq_built as f64, t.matches as f64),
+            "structures_built_per_match": per(t.structures_built),
+            "structures_lost_per_match": per(t.structures_lost),
+            "crates_issued_per_match": {
+                "small_arms": per(t.crates_issued[0]),
+                "explosives": per(t.crates_issued[1]),
+                "shells": per(t.crates_issued[2]),
+            },
+            "crate_mp_per_match": round3(t.crate_micro as f64 / 1e6 / tn),
+            "crates_delivered_per_match": per(t.crates_delivered),
+            "crates_lost_per_match": per(t.crates_lost),
+            "stock_in_kg_per_match": round3(t.stock_in_g as f64 / 1000.0 / tn),
+            "stock_in_not_crate_kg": round3(not_crate as f64 / 1000.0),
+            "base_bomb_refills": t.base_bombs,
+            "bomb_refills_unsourced": t.unsourced_bombs,
+            "bombs_from_structures_per_match": per(t.structure_bombs),
+            "bombs_from_crates_per_match": per(t.crate_bombs),
+            "bombs_forward_per_match": per(fwd_bombs),
+            "small_arms_forward_per_match": per(t.fwd_rounds),
+            "items_forward_per_match": per(t.fwd_items),
+            "tank_rounds_forward_per_match": per(t.tank_rounds_fwd + t.tank_rare_fwd),
+            "tank_rounds_from_crates_per_match": per(t.tank_crate_rounds),
+            "rack_credit_mp_per_match": per(t.rack_credit_mp),
+            "cookoffs_per_match": per(t.cookoffs),
+            "tank_crate_runs_per_match": per(t.tank_crate_runs),
         }),
     );
     v

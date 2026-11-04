@@ -537,6 +537,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     }
     g.armour_seq.put(out);
     g.next_mission.put(out);
+    // S6: structures, crates, cook-offs and accounts (every field).
+    put_postcard(&g.supply6, out);
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {

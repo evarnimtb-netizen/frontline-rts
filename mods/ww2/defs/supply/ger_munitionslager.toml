@@ -1,0 +1,21 @@
+# Munitionslager (S6): an ammunition dump, up to [supply] dump_max per player.
+# Built by the Zugtrupp (tag "hq") or engineers on a dump pit; smaller radius
+# and caps than the HQ, no radio. Fills only by carried crates (Q2 C).
+id = "ww2:ger_munitionslager"
+name = "Munitionslager"
+faction = "ww2:germany"
+kind = "dump"
+cost = 50
+pit = "dump_pit"
+radius_m = 15
+cap_kg = { small_arms = 150, explosives = 100, shells = 300 }
+rebuild_s = 0
+built_by = ["hq", "engineer"]
+cookoff = "ww2:75mm_sprgr34"
+boxes = [
+    { part = "stock", size_cm = [160, 100, 80], offset_cm = [0, 0, 0], hp = 250 },
+]
+sources = [
+    "roster-expansion.md Appendix A (dump caps half the HQ's)",
+    "TM-E 30-451, Handbook on German Military Forces (1945): ammunition supply points and carrying parties",
+]

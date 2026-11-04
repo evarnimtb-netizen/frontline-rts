@@ -830,7 +830,7 @@ pub fn stress(mut setup: MatchSetup, threads: usize) -> Result<Staged, SimError>
 // ------------------------------------------------------- Godot scenes --
 
 /// The staged autoplay scenes (`--autoplay_scene armour_<name>`).
-pub const SCENES: [&str; 10] = [
+pub const SCENES: [&str; 11] = [
     "callin_locked",
     "vehicle_card",
     "tank_firing",
@@ -842,6 +842,9 @@ pub const SCENES: [&str; 10] = [
     "escort",
     // S3c: a tank abandoned (gun and a track out) with its crew beside it.
     "bailout",
+    // S6: a dug-in HQ with stock, its Zugtrupp, a mortar in its ring and
+    // ammunition bearers carrying shells crates up to it.
+    "hq_supply",
 ];
 
 /// A staged scene: the world, the commands to send on the first step, the
@@ -978,6 +981,79 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
             focus = at(TRENCH_X - 20, LANE_Y);
             max_ticks = 30 * 20;
         }
+        "hq_supply" => {
+            let s = w.match_setup().expect("match");
+            let f = s.players[0].faction;
+            let hq = s
+                .stock_of(f, frontline_content::setup::StockKind::Hq, None)
+                .ok_or_else(|| SimError::InvalidConfig("no HQ def".into()))?;
+            let hq_at = at(TRENCH_X, LANE_Y);
+            w.build_structure_now(PlayerId(0), hq, hq_at, Fx::ZERO, [140, 60, 380])
+                .ok_or_else(|| SimError::InvalidConfig("HQ not placed".into()))?;
+            need(
+                spawn_tag(&mut w, 0, "hq", at(TRENCH_X + 8, LANE_Y + 6), EAST),
+                "HQ squad",
+            )?;
+            need(
+                spawn(
+                    &mut w,
+                    0,
+                    SquadRole::Mortar,
+                    at(TRENCH_X - 6, LANE_Y - 12),
+                    EAST,
+                ),
+                "mortar",
+            )?;
+            let b = need(
+                spawn_tag(&mut w, 0, "bearers", at(TRENCH_X - 70, LANE_Y + 10), EAST),
+                "bearers",
+            )?;
+            // Two crates already in hand (issued in the base, staged here).
+            let shells = w
+                .match_setup()
+                .and_then(|s| {
+                    s.stock_of(
+                        f,
+                        frontline_content::setup::StockKind::Crate,
+                        Some(frontline_content::setup::SupplyKind::Shells),
+                    )
+                })
+                .ok_or_else(|| SimError::InvalidConfig("no shells crate def".into()))?;
+            let men = members(&w, b);
+            let (g, hp) = {
+                let d = &w.match_setup().expect("match").stocks[shells as usize];
+                (d.g, d.boxes[0].hp)
+            };
+            w.edit_supply6(|st| {
+                for &m in men.iter().take(2) {
+                    let id = st.next_crate;
+                    st.next_crate += 1;
+                    st.crates.insert(
+                        id,
+                        crate::structures::Crate {
+                            owner: PlayerId(0),
+                            def: shells,
+                            pos: at(TRENCH_X - 70, LANE_Y + 10),
+                            carrier: Some(m),
+                            dest: None,
+                            claim: None,
+                            g,
+                            hp,
+                        },
+                    );
+                }
+            });
+            commands.push(cmd(
+                0,
+                1,
+                CommandKind::PlaceCrate {
+                    squad: b,
+                    pos: at(TRENCH_X - 4, LANE_Y + 8),
+                },
+            ));
+            focus = at(TRENCH_X - 25, LANE_Y);
+            max_ticks = 30 * 30;
+        }
         _ => return Err(SimError::InvalidConfig(format!("unknown scene {name}"))),
     }
     Ok(Scene {
@@ -1032,6 +1108,16 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
             .vehicles
             .iter()
             .any(|v| v.owner == 0 && v.followers > 0),
+        // S6: a built own HQ with stock, and a crate on a man's back.
+        "hq_supply" => {
+            snap.structures
+                .iter()
+                .any(|s| s.owner == 0 && s.built && s.stock_kg[2] > 0.0)
+                && snap
+                    .crates
+                    .iter()
+                    .any(|c| c.owner == 0 && c.carrier != u32::MAX)
+        }
         _ => false,
     }
 }

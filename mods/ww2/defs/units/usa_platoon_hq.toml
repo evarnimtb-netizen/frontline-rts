@@ -1,0 +1,44 @@
+# Platoon HQ (S6): the rifle platoon headquarters. It builds and holds the
+# Command Post (defs/supply/usa_command_post.toml). Five men: the platoon
+# leader, the platoon sergeant, the platoon guide and two messengers (FM
+# 7-10, 1942, rifle platoon headquarters). The radio (SCR-536) came with
+# the company; here it is the CP's radio box.
+# Not in the AI mix (no mix tag): the AI buys it once for its HQ.
+id = "ww2:usa_platoon_hq"
+name = "Platoon HQ"
+short_name = "Platoon HQ"
+faction = "ww2:usa"
+tags = ["hq"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "US War Department FM 7-10, Rifle Company, Infantry Regiment (1942): platoon headquarters (leader, sergeant, guide, two messengers)",
+    "roster-expansion.md S6 card (Zugtrupp / Platoon HQ builds the HQ)",
+]
+# 5 men at about the line squads' price per man; the CP is 100 MP more.
+cost = 200
+max_alive = 1
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:m1_carbine"
+traits = ["leader"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "sergeant"
+weapon = "ww2:m1_garand"
+
+[[members]]
+slot = "guide"
+weapon = "ww2:m1_garand"
+
+[[members]]
+slot = "messenger"
+count = 2
+weapon = "ww2:m1_carbine"

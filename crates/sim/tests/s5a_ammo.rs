@@ -313,6 +313,9 @@ fn mortar_stops_after_its_carried_bombs_and_refills_at_the_shells_price() {
             s.rules.combat.share.crew_feed_m = 10;
             // The base battery brake has its own test below.
             s.rules.supply.as_mut().unwrap().base_bomb_after_fire_s = 0;
+            // S6 turned the base bomb refill off in mods/ww2 (owner Q4);
+            // the S5a rule stays for mods that set it.
+            s.rules.supply.as_mut().unwrap().base_bomb_s = 4;
         }),
         1,
     )
@@ -397,6 +400,7 @@ fn base_bombs_wait_after_the_mortar_fired() {
         setup_with(|s| {
             s.rules.combat.share.crew_feed_m = 10;
             s.rules.supply.as_mut().unwrap().base_bomb_after_fire_s = wait;
+            s.rules.supply.as_mut().unwrap().base_bomb_s = 4;
         }),
         1,
     )

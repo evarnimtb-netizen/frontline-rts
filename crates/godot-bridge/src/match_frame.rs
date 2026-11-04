@@ -334,6 +334,11 @@ pub struct MatchFrame {
     /// knowledge map, while the tool asks (module docs).
     pub preview: Option<PreviewView>,
     pub intel: Vec<IntelView>,
+    /// S6: HQs and dumps (own; enemy ones within sight of an own man),
+    /// and crates (own; enemy set-down ones within sight), ascending id;
+    /// a set-down crate's z is the ground there.
+    pub structures: Vec<frontline_sim::StructureSnapshot>,
+    pub crates: Vec<frontline_sim::CrateSnapshot>,
 }
 
 impl MatchFrame {
@@ -385,6 +390,8 @@ impl MatchFrame {
             scene_ready_at: None,
             preview: None,
             intel: Vec::new(),
+            structures: Vec::new(),
+            crates: Vec::new(),
         }
     }
 
@@ -535,6 +542,33 @@ impl MatchFrame {
         }
 
         self.fill_vehicles(&snap.vehicles, &snap.shells, ctx, &near, &seen_by);
+        // S6: structures and crates the local player knows of.
+        self.structures.clear();
+        for st in &snap.structures {
+            if st.owner == local || near([st.pos[0], st.pos[1], 0.0], ctx.sight_m) {
+                self.structures.push(st.clone());
+            }
+        }
+        self.crates.clear();
+        for c in &snap.crates {
+            let mut c = c.clone();
+            if c.carrier == u32::MAX {
+                c.pos[2] = world
+                    .terrain()
+                    .height_at(frontline_sim::FxVec2::new(
+                        frontline_sim::Fx::from_raw((c.pos[0] * 65536.0) as i32),
+                        frontline_sim::Fx::from_raw((c.pos[1] * 65536.0) as i32),
+                    ))
+                    .to_f32();
+            }
+            let carried_seen = c.carrier != u32::MAX && (c.owner == local || seen_by(c.carrier));
+            if c.owner == local
+                || carried_seen
+                || (c.carrier == u32::MAX && near(c.pos, ctx.sight_m))
+            {
+                self.crates.push(c);
+            }
+        }
         self.scene_ready = ctx
             .scene
             .as_deref()
@@ -1004,6 +1038,8 @@ pub struct TickEvents {
     pub fire_mission_refusals: Vec<frontline_sim::FireMissionEvent>,
     /// S4: crew weapons the local player's men picked up this tick.
     pub pickups: Vec<PickupView>,
+    /// S6: the local player's refused build and crate orders this tick.
+    pub supply_refusals: Vec<frontline_sim::SupplyEvent>,
 }
 
 /// S4: an own man picked up a fallen man's crew weapon.
@@ -1028,6 +1064,7 @@ impl TickEvents {
             && self.recrew_refusals.is_empty()
             && self.fire_mission_refusals.is_empty()
             && self.pickups.is_empty()
+            && self.supply_refusals.is_empty()
     }
 
     /// This tick's events of `world` as seen by `ctx.local`. Call after
@@ -1118,6 +1155,12 @@ impl TickEvents {
         );
         ev.recrew_refusals.extend(
             snap.recrew_refusals
+                .iter()
+                .filter(|c| c.player.0 == local)
+                .copied(),
+        );
+        ev.supply_refusals.extend(
+            snap.supply_refusals
                 .iter()
                 .filter(|c| c.player.0 == local)
                 .copied(),

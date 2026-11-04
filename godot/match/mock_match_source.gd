@@ -1531,7 +1531,12 @@ func _build_state() -> Dictionary:
 			continue
 		out_squads.append(_squad_state(sq, seen))
 		for man in seen:
-			out_soldiers.append(_soldier_state(sq, man, own))
+			var sd := _soldier_state(sq, man, own)
+			# S6 (mock): the crate he carries.
+			for c in s6_crates:
+				if int(c.carrier) == int(man.id):
+					sd.crate = {"id": c.id, "kind": c.kind, "kg": c.kg}
+			out_soldiers.append(sd)
 	out_soldiers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.id < b.id)
 	var catalog: Array = []
 	for entry in catalog(local_player):
@@ -1572,6 +1577,8 @@ func _build_state() -> Dictionary:
 		"thrown": thrown,
 		"callin": {"catalog": catalog, "vehicles": veh.count(local_player), "vehicle_limit": veh.limit},
 		"vehicles": vs.vehicles,
+		"structures": s6_structures.duplicate(true),
+		"crates": _s6_crates_out(),
 		"shells": vs.shells,
 		"armour_events": vs.armour_events,
 		"events": _events,
@@ -1714,6 +1721,8 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 		"units": units,
 		# S4: what the squad can do (orders follow it).
 		"capabilities": PackedStringArray(CAPABILITIES.get(sq.type, [])),
+		# S6: card tags (the mock's squads have none unless a test sets them).
+		"tags": PackedStringArray(sq.get("tags", [])),
 	}
 	if sq.owner == local_player:
 		out.items = items
@@ -1815,6 +1824,53 @@ func _rounds_full(type: String, slot: int) -> int:
 
 ## Staging (S5a): sets the rounds of squad `sid`'s men to `frac` of their
 ## loads (0 empties them: the DRY marker; under 0.3: LOW).
+# --- S6 (mock) --------------------------------------------------------------
+
+## S6: HQs and dumps, and crates, as the bridge reports them
+## (`match_state.md`); the mock only shows what a test stages.
+var s6_structures: Array = []
+## Crates: {id, owner, kind, kg, pos (Vector3), carrier (man id or -1)}.
+var s6_crates: Array = []
+
+
+## S6 staging: squad `sid` gets card tags `tags` (e.g. ["hq"]).
+func set_tags(sid: int, tags: Array) -> void:
+	if squads.has(sid):
+		squads[sid].tags = tags
+
+
+## S6 staging: an own built HQ at `pos` with `stock` kg by kind.
+func stage_hq(pos: Vector3, stock: Dictionary) -> void:
+	s6_structures.append({
+		"id": s6_structures.size(), "owner": local_player, "kind": "hq", "name": "Gefechtsstand",
+		"pos": pos, "yaw": 0.0, "radius": 25.0, "built": true, "build_pct": 100, "radio": true,
+		"stock_kg": stock, "cap_kg": {"small_arms": 300.0, "explosives": 200.0, "shells": 600.0},
+		"boxes": [
+			{"part": "stock", "pct": 100, "size": Vector3(2.0, 0.9, 1.2), "offset": Vector2(0, -1.5)},
+			{"part": "radio", "pct": 100, "size": Vector3(0.5, 0.4, 0.4), "offset": Vector2(1.2, 0.8)},
+		],
+	})
+
+
+## S6 staging: man `man` carries a crate of `kind` (`kg`); -1 sets it down
+## at `pos`.
+func stage_crate(man: int, kind: String, kg: float, pos := Vector3.ZERO) -> void:
+	s6_crates.append({"id": s6_crates.size(), "owner": local_player, "kind": kind, "kg": kg, "pos": pos, "carrier": man, "name": "Crate"})
+
+
+func _s6_crates_out() -> Array:
+	var out: Array = []
+	for c in s6_crates:
+		var d: Dictionary = c.duplicate()
+		var mid := int(c.carrier)
+		if mid != -1 and man_squad.has(mid) and squads.has(man_squad[mid]):
+			for man in squads[man_squad[mid]].men:
+				if int(man.id) == mid:
+					d.pos = _v3(man.pos)
+		out.append(d)
+	return out
+
+
 func set_rounds(sid: int, frac: float) -> void:
 	var sq: Dictionary = squads.get(sid, {})
 	for man in sq.get("men", []):

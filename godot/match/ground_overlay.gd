@@ -120,6 +120,7 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 		_draw_intel(state)
 		_draw_fire_preview(state)
 	_draw_mission_links(view, sel)
+	_draw_supply(view, sel, state)
 	if sel.tool == &"dig":
 		_draw_dig_ghost(sel)
 	elif sel.tool == &"throw":
@@ -134,6 +135,50 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 	for p in view.pending_draw:
 		_draw_pending(p)
 	_im.surface_end()
+
+
+## S6: supply radius rings of own HQs and dumps while the HQ squad, the
+## bearers or a mortar is selected or a supply tool is armed (a dug-in
+## structure's ring solid, one still digging dashed), crate feed rings
+## (5 m) round set-down own crates while a mortar is selected, and the
+## placement ghost (the def's radius) under the cursor of a build tool.
+func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
+	var show: bool = sel.tool in [&"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+	var mortar := false
+	for sid in sel.selected_squads():
+		var sq: Dictionary = view.squads_by_id.get(sid, {})
+		var tags: PackedStringArray = sq.get("tags", PackedStringArray())
+		if tags.has("hq") or tags.has("bearers"):
+			show = true
+		if sq.get("type", "") in MatchView.MORTARS:
+			show = true
+			mortar = true
+	if not show:
+		return
+	var local := view.local_player
+	for st in state.get("structures", []):
+		if int(st.owner) != local:
+			continue
+		var r := float(st.get("radius", 20.0))
+		var col := Color(HudStyle.ACCENT, 0.7)
+		if bool(st.get("built", false)):
+			_ring(st.pos, r, 0.35, col, 96)
+		else:
+			var segs := 32
+			for k in segs:
+				if k % 2 == 0:
+					_arc(st.pos, r, 0.3, TAU * k / segs, TAU * (k + 1) / segs, Color(col, 0.5), 3)
+	if mortar:
+		var feed := float(view.rules().get("supply", {}).get("crate_feed_m", 5.0))
+		for c in state.get("crates", []):
+			if int(c.owner) == local and int(c.get("carrier", -1)) == -1 and c.kind == "shells":
+				_ring(c.pos, feed, 0.15, Color(UiPalette.OK, 0.75), 32)
+	if sel.tool == &"build_hq" or sel.tool == &"build_dump":
+		var g: Variant = view.ground_pick(sel.cursor())
+		if g != null:
+			var r := 25.0 if sel.tool == &"build_hq" else 15.0
+			_ring(g, r, 0.4, Color(UiPalette.TEXT, 0.5), 96)
+			_ring(g, 1.5, 0.3, Color(UiPalette.TEXT, 0.8), 24)
 
 
 ## S5b: the own knowledge map while the fire-mission tool is armed: a

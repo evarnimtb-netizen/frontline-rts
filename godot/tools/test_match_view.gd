@@ -94,6 +94,7 @@ func _run() -> void:
 	await _test_s4()
 	await _test_s5a()
 	await _test_s5b()
+	await _test_s6()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1421,6 +1422,71 @@ func _test_s4() -> void:
 		_check(false, "S4: an enemy vehicle on the mock for the Panzerfaust check")
 	_sel.select_only(PackedInt32Array())
 	await _frames(1)
+
+
+# --- S6 ----------------------------------------------------------------------
+
+## The supply grid for HQ squads and bearers, its build and crate intents,
+## the HQ strip (stock bars), the crate line and roster tag, the 3D boxes
+## and the place / pick-up tools.
+func _test_s6() -> void:
+	var eng: int = _source.squad_ids(0, "engineer")[0]
+	var rifle: int = _source.squad_ids(0, "rifle")[0]
+	var rmen: PackedInt32Array = _source.unit_ids(rifle)
+	_source.set_tags(eng, ["hq"])
+	_source.set_tags(rifle, ["bearers"])
+	var at: Vector3 = _source.squad_pos(eng) + Vector3(15, 0, 0)
+	_source.stage_hq(at, {"small_arms": 120.0, "explosives": 30.0, "shells": 380.0})
+	_source.stage_crate(rmen[0], "shells", 32.0)
+	_source.stage_crate(-1, "shells", 32.0, at + Vector3(3, 0, 3))
+	_view.update_state(_source.get_state())
+	_check(_view.state.get("structures", []).size() == 1 and _view.state.get("crates", []).size() == 2, "S6: structures and crates reach the view")
+	_check(_view.soldiers_by_id[rmen[0]].has("crate"), "S6: a carrier's soldier entry has his crate")
+	# The supply grid for the HQ squad.
+	_sel.select_squads(PackedInt32Array([eng]))
+	await _frames(2)
+	var grid: Control = _view.orders
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "supply" and grid.label_of(&"build_hq") == "Build HQ" and grid.label_of(&"place_crate") == "Place", "S6: HQ squad selected: the supply grid")
+	_check(grid.enabled(&"build_hq") and grid.enabled(&"crate_shells"), "S6: Build HQ and the crate buttons are live")
+	_intents.clear()
+	grid.press(&"crate_small_arms")
+	var ic: Variant = _last(&"issue_crate")
+	_check(ic != null and String(ic.kind) == "small_arms" and (ic.squads as PackedInt32Array) == PackedInt32Array([eng]), "S6: Ammo sends issue_crate small_arms")
+	grid.press(&"build_hq")
+	_check(_sel.tool == &"build_hq", "S6: Build HQ arms the build tool")
+	_click(_ground_screen(at + Vector3(-20, 0, 0)))
+	var bi: Variant = _last(&"build")
+	_check(bi != null and String(bi.what) == "hq" and bi.has("facing") and bi.has("target"), "S6: a click sends build hq with a facing")
+	# The HQ strip and the crate line.
+	_check(not _view.detail.own_hq().is_empty(), "S6: the detail panel finds the own HQ")
+	_check(_view.detail.crate_line(rifle) == "Crates: shells 32 kg", "S6: crate line (%s)" % _view.detail.crate_line(rifle))
+	_check(_view.roster.crates_carried(rifle) == 1, "S6: the roster counts the carried crate")
+	await _frames(1)
+	_check(_match.supply_view.drawn >= 3, "S6: the HQ's two boxes and the set-down crate are drawn (%d)" % _match.supply_view.drawn)
+	# Bearers: Place needs a carried crate; Pick up a crate under the click.
+	_sel.select_squads(PackedInt32Array([rifle]))
+	await _frames(1)
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "supply" and grid.enabled(&"place_crate"), "S6: bearers carrying a crate can Place")
+	grid.press(&"place_crate")
+	_click(_ground_screen(at))
+	var pc: Variant = _last(&"place_crate")
+	_check(pc != null and (pc.squads as PackedInt32Array) == PackedInt32Array([rifle]), "S6: Place sends place_crate")
+	grid.press(&"pick_up")
+	_click(_ground_screen(at + Vector3(3, 0, 3)))
+	var pu: Variant = _last(&"pick_up_crate")
+	_check(pu != null and int(pu.crate) == 1, "S6: Pick up sends the crate under the click")
+	# A plain line squad keeps the soldier grid.
+	_source.set_tags(rifle, [])
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "soldier", "S6: line squads keep the soldier grid")
+	_source.set_tags(eng, [])
+	_source.s6_structures.clear()
+	_source.s6_crates.clear()
+	_sel.select_only(PackedInt32Array())
+	_view.update_state(_source.get_state())
 
 
 func _check(ok: bool, what: String) -> void:

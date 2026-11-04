@@ -32,6 +32,9 @@ const SCENES := {
 	# S3c: the abandoned tank and its crew squad (selected: the card reads
 	# "Crew — Panzer IV").
 	"bailout": {"height": 16.0, "pitch": -32.0, "yaw": -150.0, "settle": 1.5},
+	# S6: the HQ squad selected (its card's strip: the HQ's stock bars),
+	# the radius ring, the bearers' card with its crate tag.
+	"hq_supply": {"height": 26.0, "pitch": -40.0, "yaw": -20.0, "settle": 3.0},
 }
 
 var m: Node3D
@@ -141,6 +144,12 @@ func _stage(s: Dictionary) -> bool:
 			return false
 		"callin_locked":
 			view.selection.select_only(PackedInt32Array())
+		"hq_supply":
+			for sq in s.get("squads", []):
+				if int(sq.owner) == int(s.get("local_player", 0)) and PackedStringArray(sq.get("tags", PackedStringArray())).has("hq"):
+					view.selection.select_squads(PackedInt32Array([int(sq.id)]))
+					return true
+			return false
 		"bailout":
 			# Wait for the crew squad; select it and frame the tank.
 			for sq in _own_squads(s, "crew"):
@@ -217,6 +226,17 @@ func _check(s: Dictionary) -> String:
 			return "" if d > 1.5 else "AT ditch not dug at the focus (%.2f m)" % d
 		"at_team_firing":
 			return "" if _seen.has("own_rocket") and _seen.has("rocket_launch") else "no own rocket in flight yet"
+		"hq_supply":
+			var hq := false
+			for st in s.get("structures", []):
+				if int(st.owner) == int(s.get("local_player", 0)) and bool(st.get("built", false)) and float(st.stock_kg.get("shells", 0.0)) > 0.0:
+					hq = true
+			if not hq:
+				return "no built own HQ with shells in structures"
+			for so in s.get("soldiers", []):
+				if so.has("crate"):
+					return ""
+			return "no soldier carries a crate"
 		"escort":
 			for v in own:
 				if int(v.get("followers", 0)) > 0:

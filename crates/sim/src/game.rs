@@ -570,6 +570,21 @@ pub struct MatchState {
     /// not saved, not hashed, never read by the sim.
     #[serde(skip)]
     pub(crate) burst_log: Option<Vec<crate::fire_mission::BurstRecord>>,
+    /// S6: structures, crates, cook-offs and per-player accounts
+    /// (`crate::structures`; saved, hashed, validated).
+    pub(crate) supply6: crate::structures::SupplyState,
+    /// S6: this tick's static boxes (derived each tick before the
+    /// Ballistics stage; never saved or hashed).
+    #[serde(skip)]
+    pub(crate) statics: crate::structures::StaticList,
+    /// S6: refused S6 commands, moved to the snapshot like
+    /// `call_in_events` (never saved, hashed or read by the sim).
+    #[serde(skip)]
+    pub(crate) supply_events: Vec<crate::structures::SupplyEvent>,
+    /// S6: bombs counted sources put into mortar squads this tick, per
+    /// player (the T20 check; empty between ticks).
+    #[serde(skip)]
+    pub(crate) bombs_explained: Vec<u64>,
 }
 
 /// S4: a man picked up a fallen man's crew weapon (presentation only).
@@ -665,6 +680,10 @@ impl MatchState {
             pickup_events: Vec::new(),
             fm_events: Vec::new(),
             burst_log: None,
+            supply6: crate::structures::SupplyState::new(setup.players.len()),
+            statics: Default::default(),
+            supply_events: Vec::new(),
+            bombs_explained: Vec::new(),
             setup,
         }
     }
@@ -944,6 +963,17 @@ impl MatchState {
             CommandKind::SuppressUnits { units, line } => self.units_suppress(ctx, p, units, line),
             &CommandKind::Recrew { squad, vehicle } => self.order_recrew(ctx, p, squad, vehicle),
             &CommandKind::Abandon { squad } => self.order_abandon(ctx.ents, p, squad),
+            &CommandKind::Build {
+                squad,
+                def,
+                pos,
+                facing,
+            } => self.order_build(ctx, p, squad, def, pos, facing),
+            &CommandKind::IssueCrate { squad, kind } => self.issue_crate(ctx, p, squad, kind),
+            &CommandKind::PlaceCrate { squad, pos } => self.place_crate(ctx, p, squad, pos),
+            &CommandKind::PickUpCrate { squad, crate_id } => {
+                self.pick_up_crate(ctx, p, squad, crate_id)
+            }
         }
     }
 
@@ -1004,7 +1034,11 @@ impl MatchState {
         self.clear_detached(ctx, id);
         let goal = match &order {
             Order::Move { target } | Order::AttackMove { target } => ctx.terrain.clamp(*target),
-            _ => self.base_of(p),
+            // S6-9 (A): the nearest own built HQ, else the base.
+            _ => {
+                let lead = self.squads[&id].lead(ctx.ents);
+                self.retreat_goal(p, ctx.ents.transform[lead.index()].pos.xy())
+            }
         };
         if self.is_vehicle_squad(id) {
             // A short Move to a point behind the hull backs up to it.
@@ -1715,11 +1749,16 @@ impl MatchState {
             self.next_thrown,
             self.next_smoke,
             self.next_mission,
+            self.supply6.next_structure,
+            self.supply6.next_crate,
+            self.supply6.next_cookoff,
         ]
         .contains(&u32::MAX)
         {
             return Err("an id counter is exhausted");
         }
+        // S6.
+        self.supply6.validate(s, ents, &self.squads)?;
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np

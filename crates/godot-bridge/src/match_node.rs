@@ -1738,6 +1738,14 @@ impl MatchRuntime {
             "dig_profiles" => &vdict! {
                 "trench" => &profile(&rules.dig),
                 "at_ditch" => &profile(&rules.at_ditch),
+                "mortar_pit" => &profile(&rules.mortar_pit),
+                "hq_pit" => &profile(&rules.hq_pit),
+                "dump_pit" => &profile(&rules.dump_pit),
+            },
+            // S6: crate feed distance and the HUD low marker.
+            "supply" => &vdict! {
+                "crate_feed_m" => rules.supply.as_ref().map_or(0.0, |s| s.crate_feed_m as f32),
+                "low_pct" => rules.supply.as_ref().map_or(30, |s| s.low_pct as i64),
             },
             "vehicle_types" => &self.vehicle_types,
         };
@@ -1770,6 +1778,76 @@ impl MatchRuntime {
                     // "No manpower for ammo" flag.
                     "ammo_mp" => &ammo_mp_dict(ps.ammo_paid),
                     "refill_paused" => ps.refill_paused,
+                    // S6: the base's next crate, live crates (all, shells).
+                    "crate_ready_s" => ps.crate_ready_ticks as f32 / hz,
+                    "crates" => ps.crates_live[0] as i64,
+                    "shell_crates" => ps.crates_live[1] as i64,
+                }
+                .to_variant(),
+            );
+        }
+        // S6: HQs and dumps, and crates (`match_state.md`).
+        let kinds = frontline_content::setup::SupplyKind::NAMES;
+        let mut structures = VarArray::new();
+        for st in &f.structures {
+            let d = &setup.stocks[st.def as usize];
+            let mut stock = VarDictionary::new();
+            let mut cap = VarDictionary::new();
+            for k in 0..3 {
+                stock.set(kinds[k], st.stock_kg[k]);
+                cap.set(kinds[k], st.cap_kg[k]);
+            }
+            let mut boxes = VarArray::new();
+            for (k, b) in d.boxes.iter().enumerate() {
+                boxes.push(
+                    &vdict! {
+                        "part" => frontline_content::defs::STOCK_BOX_PARTS[b.part as usize % 3],
+                        "pct" => st.box_pct.get(k).copied().unwrap_or(0) as i64,
+                        "size" => Vector3::new(
+                            fx(b.half[0]) * 2.0,
+                            fx(b.half[2]) * 2.0,
+                            fx(b.half[1]) * 2.0,
+                        ),
+                        "offset" => Vector2::new(fx(b.offset[0]), fx(b.offset[1])),
+                    }
+                    .to_variant(),
+                );
+            }
+            structures.push(
+                &vdict! {
+                    "id" => st.id as i64,
+                    "owner" => st.owner as i64,
+                    "kind" => match d.kind {
+                        frontline_content::setup::StockKind::Hq => "hq",
+                        _ => "dump",
+                    },
+                    "name" => d.name.as_str(),
+                    "pos" => self.ground(st.pos),
+                    "yaw" => st.yaw,
+                    "radius" => st.radius,
+                    "built" => st.built,
+                    "build_pct" => st.build_pct as i64,
+                    "radio" => st.radio,
+                    "stock_kg" => &stock,
+                    "cap_kg" => &cap,
+                    "boxes" => &boxes,
+                }
+                .to_variant(),
+            );
+        }
+        let mut crates = VarArray::new();
+        for c in &f.crates {
+            let d = &setup.stocks[c.def as usize];
+            let p = sim_to_godot(c.pos, self.half);
+            crates.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "owner" => c.owner as i64,
+                    "name" => d.name.as_str(),
+                    "kind" => kinds[c.kind as usize % 3],
+                    "kg" => c.kg,
+                    "pos" => Vector3::new(p[0], p[1], p[2]),
+                    "carrier" => if c.carrier == u32::MAX { -1 } else { c.carrier as i64 },
                 }
                 .to_variant(),
             );
@@ -1831,6 +1909,17 @@ impl MatchRuntime {
                 "suppression" => f.suppression[i] as f32 / 100.0,
                 "in_trench" => f.in_trench[i],
             };
+            // S6: the crate he carries (kind and kg), if any.
+            if let Some(c) = f.crates.iter().find(|c| c.carrier == id) {
+                d.set(
+                    "crate",
+                    &vdict! {
+                        "id" => c.id as i64,
+                        "kind" => frontline_content::setup::SupplyKind::NAMES[c.kind as usize % 3],
+                        "kg" => c.kg,
+                    },
+                );
+            }
             if owner == self.local {
                 d.set("stance_override", stance_order_name(f.stance_order[i]));
                 d.set("detached", f.detached[i]);
@@ -2119,6 +2208,8 @@ impl MatchRuntime {
                 "vehicle_limit" => me.map_or(0, |p| p.vehicle_limit as i64),
             },
             "vehicles" => &self.vehicles_state(),
+            "structures" => &structures,
+            "crates" => &crates,
             "shells" => &shells,
             "armour_events" => &armour_events,
             "events" => &events,
@@ -2893,6 +2984,72 @@ impl MatchRuntime {
                             vehicle: frontline_sim::SimId(v as u32),
                         }),
                 );
+            }
+            // S6: the first selected squad that may builds an HQ or a dump
+            // (`what`: "hq" or "dump") at `target`, its long axis along
+            // `facing` (a Vector3; default across the line to the enemy).
+            "build" => {
+                let Some(t) = target else { return };
+                let what = data.get("what").map(|v| v.to_string()).unwrap_or_default();
+                let Some(kind) = crate::intents::stock_kind(&what) else {
+                    return;
+                };
+                let faction = self.setup.players[self.local as usize].faction;
+                let Some(def) = self.setup.stock_of(faction, kind, None) else {
+                    return;
+                };
+                let d = &self.setup.stocks[def as usize];
+                let facing = data
+                    .get("facing")
+                    .and_then(|v| v.try_to::<Vector3>().ok())
+                    .map_or([1.0, 0.0], |f| [f.x, -f.z]);
+                if let Some(s) = own.iter().find(|s| {
+                    let ty = &self.setup.squad_types[s.type_idx as usize];
+                    d.built_by.iter().any(|&tg| ty.has_tag(Some(tg)))
+                }) {
+                    out.push(CommandKind::Build {
+                        squad: SquadId(s.id),
+                        def,
+                        pos: sim_to_fx(to_sim(t, self.half)),
+                        facing: sim_to_fx(facing),
+                    });
+                }
+            }
+            // S6: each selected squad takes a crate of `kind` (one per
+            // squad; the base issues one per `base_crate_issue_s`).
+            "issue_crate" => {
+                let kind = data.get("kind").map(|v| v.to_string()).unwrap_or_default();
+                let Some(kind) = crate::intents::supply_kind(&kind) else {
+                    return;
+                };
+                out.extend(own.iter().map(|s| CommandKind::IssueCrate {
+                    squad: SquadId(s.id),
+                    kind,
+                }));
+            }
+            // S6: the selected squads set their crates down at `target`.
+            "place_crate" => {
+                let Some(t) = target else { return };
+                out.extend(own.iter().map(|s| CommandKind::PlaceCrate {
+                    squad: SquadId(s.id),
+                    pos: sim_to_fx(to_sim(t, self.half)),
+                }));
+            }
+            // S6: the first selected squad picks up crate `crate`.
+            "pick_up_crate" => {
+                let Some(c) = data
+                    .get("crate")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .filter(|&i| i >= 0)
+                else {
+                    return;
+                };
+                if let Some(s) = own.first() {
+                    out.push(CommandKind::PickUpCrate {
+                        squad: SquadId(s.id),
+                        crate_id: c as u32,
+                    });
+                }
             }
             // S3c: the crews of the selected own vehicles (`units`) bail out.
             "abandon" => {

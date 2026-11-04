@@ -61,6 +61,7 @@ pub mod snapshot;
 pub mod spatial;
 mod spotting;
 mod squad;
+pub mod structures;
 pub mod supply;
 mod systems;
 pub mod terrain;
@@ -89,10 +90,14 @@ pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;
 pub use snapshot::{
-    ArmourEvent, ArmourEventKind, CorpseSnapshot, ExplosionSnapshot, LoadedSnap, NO_SQUAD,
-    PlayerSnapshot, PointSnapshot, RenderSnapshot, SeatSnap, ShellKind, ShellSnapshot,
-    ShotSnapshot, SmokeSnapshot, SquadSnapshot, ThrownSnapshot, UnitSnapshot, VehicleSnapshot,
-    tile_heights_f32, vehicle_flags,
+    ArmourEvent, ArmourEventKind, CorpseSnapshot, CrateSnapshot, ExplosionSnapshot, LoadedSnap,
+    NO_SQUAD, PlayerSnapshot, PointSnapshot, RenderSnapshot, SeatSnap, ShellKind, ShellSnapshot,
+    ShotSnapshot, SmokeSnapshot, SquadSnapshot, StructureSnapshot, ThrownSnapshot, UnitSnapshot,
+    VehicleSnapshot, tile_heights_f32, vehicle_flags,
+};
+pub use structures::{
+    CookOff, Crate, S6Account, StaticBox, StaticRef, Structure, SupplyEvent, SupplyRefusal,
+    SupplyState,
 };
 pub use supply::{AmmoAccount, fired_class};
 pub use terrain::{DetailTile, Heightfield, TILE_M, TILE_POINTS, TerrainKind};

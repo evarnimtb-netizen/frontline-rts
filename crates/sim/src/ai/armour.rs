@@ -73,7 +73,48 @@ impl Planner<'_> {
         let in_base = (t.pos - base_at).length_sq_raw() <= sq_m(base.radius.into());
         let hz = s.tick_hz.max(1);
         let on_trip = self.ai.tasks.get(&t.squad).map(|k| k.kind) == Some(TaskKind::Rearm);
+        // S6 (D3): an own HQ or dump with shells for ten rounds or more
+        // rearms forward; nearest first (a `Retreat` goes to the nearest
+        // HQ, so with an empty HQ the trip drives to the base instead).
+        let round_g = v
+            .main_gun()
+            .ammo
+            .first()
+            .and_then(|a| s.ammo[a.ammo as usize].supply)
+            .map_or(u32::MAX, |x| x.g);
+        let fwd = g
+            .supply6
+            .structures
+            .values()
+            .filter(|x| {
+                x.owner == self.me
+                    && x.built
+                    && x.stock_g[frontline_content::setup::SupplyKind::Shells.index()]
+                        >= round_g.saturating_mul(10)
+            })
+            .map(|x| {
+                (
+                    (x.pos - t.pos).length_sq_raw(),
+                    x.pos,
+                    s.stocks[x.def as usize].radius,
+                )
+            })
+            .min_by_key(|&(d, p, _)| (d, p.x.raw(), p.y.raw()));
+        let at_fwd = fwd.is_some_and(|(_, p, r)| (t.pos - p).length_sq_raw() <= sq_m(r.into()));
+        let any_hq = g.supply6.structures.values().any(|x| {
+            x.owner == self.me
+                && x.built
+                && s.stocks[x.def as usize].kind == frontline_content::setup::StockKind::Hq
+        });
         if on_trip {
+            if at_fwd {
+                // Forward rearm: until rearmed, or the stock runs low.
+                if !self.rearmed(vs, v) {
+                    return true;
+                }
+                self.ai.tasks.remove(&t.squad);
+                return false;
+            }
             if !in_base {
                 if t.immobile {
                     // Stuck on the way: the field repair rule goes first.
@@ -81,8 +122,25 @@ impl Planner<'_> {
                     return false;
                 }
                 // The retreat ended short (blocked) or was replaced.
-                self.ai
-                    .emit(self.due, CommandKind::Retreat { squad: t.squad });
+                let cmd = match fwd {
+                    Some((_, p, _)) => CommandKind::Move {
+                        squad: t.squad,
+                        target: p,
+                    },
+                    None if any_hq => CommandKind::Move {
+                        squad: t.squad,
+                        target: base_at,
+                    },
+                    None => CommandKind::Retreat { squad: t.squad },
+                };
+                // Without an HQ: the S3c rule (Retreat every plan).
+                let walking = matches!(
+                    g.squads[&t.squad].order,
+                    crate::game::Order::Move { .. } | crate::game::Order::Retreat
+                );
+                if !any_hq || !walking {
+                    self.ai.emit(self.due, cmd);
+                }
                 return true;
             }
             // S5a: a rearm paused for lack of manpower ends after
@@ -110,9 +168,25 @@ impl Planner<'_> {
         if let Some(e) = self.ai.escorts.remove(&t.squad) {
             self.release(&e, t.id, &[]);
         }
-        self.ai
-            .emit(self.due, CommandKind::Retreat { squad: t.squad });
-        self.task(t.squad, TaskKind::Rearm, NO_POINT, base_at);
+        let (cmd, goal) = match fwd {
+            Some((_, p, _)) => (
+                CommandKind::Move {
+                    squad: t.squad,
+                    target: p,
+                },
+                p,
+            ),
+            None if any_hq => (
+                CommandKind::Move {
+                    squad: t.squad,
+                    target: base_at,
+                },
+                base_at,
+            ),
+            None => (CommandKind::Retreat { squad: t.squad }, base_at),
+        };
+        self.ai.emit(self.due, cmd);
+        self.task(t.squad, TaskKind::Rearm, NO_POINT, goal);
         self.ai.counters.rearms += 1;
         true
     }

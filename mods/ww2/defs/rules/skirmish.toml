@@ -107,6 +107,51 @@ work_per_m = 22000
 passes = 8
 engineers_only = true
 
+# S6 pits: a short line dug to a rectangle with rounded ends and the spoil
+# all round (all_round), so the parapet covers every side. pit_length_cm is
+# the outside length; the dug line is that minus the floor and both walls.
+# work_per_m is per metre of that short line, set so the pit's work matches
+# its volume at the trench's 8,400 points for ~1.6 m3 a metre (5,250 a m3).
+# FM 23-90 (81-mm mortar emplacement) and FM 5-15 (Field Fortifications,
+# 1944) give pits of about these sizes (verify the exact dimensions).
+# Mortar pit: 2.5 x 2.1 m outside, 1.1 m deep (about 5.8 m3, 30,000 points
+# on a 0.4 m line). Engineers and the Zugtrupp dig it (S6-6 (A)).
+[dig.profiles.mortar_pit]
+depth_cm = 110
+floor_cm = 130
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 5
+work_per_m = 75000
+passes = 4
+all_round = true
+pit_length_cm = 250
+
+# HQ pit: 3.0 x 2.5 m outside, 1.5 m deep (about 11 m3: 58,000 points on a
+# 0.5 m line; the 5-man Zugtrupp at 100 % digs it in about 2 min).
+[dig.profiles.hq_pit]
+depth_cm = 150
+floor_cm = 170
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 5
+work_per_m = 116000
+passes = 4
+all_round = true
+pit_length_cm = 300
+
+# Dump pit: 2.5 x 2.0 m outside, 1.2 m deep (about 6 m3).
+[dig.profiles.dump_pit]
+depth_cm = 120
+floor_cm = 120
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 5
+work_per_m = 62000
+passes = 4
+all_round = true
+pit_length_cm = 250
+
 # Every dig profile: the spoil bank shape and how close a digger works.
 # S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
@@ -1048,7 +1093,9 @@ rare_rearm_base_s = 10       # s: one rare round per this in base (standard: veh
 # Base refill rates per man in his own base (the base is the only supply
 # source in S5a; HQ, dumps and crates come with S6).
 base_small_arms_rounds_s = 30   # rounds per s per man (most depleted small-arms feed first)
-base_bomb_s = 4                 # s per mortar bomb per man (S5a only)
+# S6 (owner Q4, S5a-42): the base refills no mortar bombs (0); they come
+# only in crates, from an HQ or a dump. S5a had 4 s per bomb per man.
+base_bomb_s = 0
 # S5a Fix (review M2): no bomb goes into a mortar squad in base until this
 # long after its mortar last fired (s; 0: no wait). Brakes the base battery
 # (artillery-on-map.md §4.10): without it a mortar parked in base fed 0.75
@@ -1063,6 +1110,40 @@ base_bomb_s = 4                 # s per mortar bomb per man (S5a only)
 base_bomb_after_fire_s = 0
 # Items and AT rockets keep [items] resupply_s, now priced.
 low_pct = 30                 # %: HUD "low" marker below this share of a squad's load (Part B)
+# --- S6: HQ, dumps and crates (docs/slices/S6-hq-crates.md "Sim rules";
+# owner Q2 (C) the HQ fills only by carried crates, D1 every kg priced once
+# at base (crate kg x the kind's price above), D2 no distance surcharge,
+# D3 forward rearm rates) ---
+crate_feed_m = 5             # m: a crate this close feeds a mortar's gunner, men or a tank
+base_crate_issue_s = 10      # s: one crate issued per player per this in the own base
+crate_cap = 12               # live crates per player (carried or set down) ...
+shell_crate_cap = 8          # ... of which shells crates
+hq_max = 1                   # HQs per player (built or digging)
+dump_max = 3                 # dumps per player
+structure_bomb_s = 2         # s per bomb into a mortar squad inside an HQ or dump radius
+crate_bomb_s = 4             # s per bomb from a shells crate within crate_feed_m of the gunner
+fwd_rearm_s = 4              # s per standard main-gun round forward (D3)
+rare_rearm_fwd_s = 30        # s per rare round forward, up to rare_cap (D3)
+serve_men = 6                # men served per source per service ...
+serve_period_ms = 500        # ... one service per this (ms)
+unfired_s = 3                # s: a man is served once he has not fired this long
+bullet_box_damage = 4        # hp a rifle-calibre bullet takes from a box (S6-5 (A))
+shell_box_damage = 400       # hp a main-gun round that does not burst takes from a box
+cookoff_kg_per_burst = 16    # kg: one cook-off burst per this (S6-10 (A)) ...
+cookoff_max = 8              # ... at most this many ...
+cookoff_s = 6                # ... spread over this (s)
+pickup_m = 2                 # m: an own man this close picks up a crate
+
+# S6: the AI's HQ, crate runs and supply to tanks (owner request
+# 2026-11-01: bring supply to a tank, not only drive it back).
+[ai.supply]
+hq_behind_m = 120            # m behind the most valuable held point, toward the own base
+hq_probe_rays = 8            # candidate HQ spots tested per plan (reverse-slope rays)
+crate_run_below_pct = 50     # %: a mortar or the HQ below this gets a crate run
+tank_crate_below_pct = 25    # %: a tank this low that cannot reach a source gets a crate
+shell_mp_max_pct = 25        # %: at most this share of income goes on crates
+hq_after_s = 60              # s: the AI buys its HQ squad after this
+dry_walk_s = 120             # s: a dry mortar with no run walks to the HQ or base
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

@@ -878,8 +878,9 @@ tuning_table! {
         /// Small-arms rounds per second per man refilled in the own base.
         base_small_arms_rounds_s: 1..=1000,
         /// One mortar bomb per this many seconds per man in the own base
-        /// (S5a only: from S6 bombs come in crates).
-        base_bomb_s: 1..=600,
+        /// (S5a). 0: the base refills no bombs; they come only in crates
+        /// (S6, owner Q4 and S5a-42).
+        base_bomb_s: 0..=600,
         /// No bomb goes into a mortar squad in the own base until this long
         /// after its mortar last fired (s; 0 or absent: no wait). S5a Fix
         /// (review M2): brakes the base battery (artillery-on-map.md §4.10)
@@ -887,11 +888,158 @@ tuning_table! {
         base_bomb_after_fire_s: 0..=1800 = "default_base_bomb_after_fire_s",
         /// HUD "low" marker below this share of a squad's load (%).
         low_pct: 1..=100,
+        /// S6: a crate this close to a mortar's gunner, a man or a tank's
+        /// hull feeds it (m).
+        crate_feed_m: 1..=50 = "d_crate_feed_m",
+        /// S6: one crate issued in the own base per this many seconds per
+        /// player (s).
+        base_crate_issue_s: 0..=600 = "d_base_crate_issue_s",
+        /// S6: live crates per player (carried or set down) ...
+        crate_cap: 0..=100 = "d_crate_cap",
+        /// ... of which shells crates.
+        shell_crate_cap: 0..=100 = "d_shell_crate_cap",
+        /// S6: built or digging HQs per player ...
+        hq_max: 0..=4 = "d_hq_max",
+        /// ... and ammunition dumps.
+        dump_max: 0..=16 = "d_dump_max",
+        /// S6: one bomb into a mortar squad inside an HQ or dump radius
+        /// per this many seconds (s) ...
+        structure_bomb_s: 1..=600 = "d_structure_bomb_s",
+        /// ... and from a shells crate within `crate_feed_m` of its
+        /// gunner (s).
+        crate_bomb_s: 1..=600 = "d_crate_bomb_s",
+        /// S6 (D3): one standard main-gun round forward (HQ, dump, shells
+        /// crate) per this many seconds (s) ...
+        fwd_rearm_s: 1..=600 = "d_fwd_rearm_s",
+        /// ... and one rare round, up to the vehicle's `rare_cap` (s).
+        rare_rearm_fwd_s: 1..=600 = "d_rare_rearm_fwd_s",
+        /// S6: a source serves this many men per service ...
+        serve_men: 1..=50 = "d_serve_men",
+        /// ... one service per this many milliseconds (ms).
+        serve_period_ms: 100..=10000 = "d_serve_period_ms",
+        /// S6: a man is served once he has not fired this long (s).
+        unfired_s: 0..=60 = "d_unfired_s",
+        /// S6: hit points a bullet takes from a crate or structure box ...
+        bullet_box_damage: 0..=1000 = "d_bullet_box_damage",
+        /// ... and a main-gun round that does not burst (AP) (hp).
+        shell_box_damage: 0..=10000 = "d_shell_box_damage",
+        /// S6: a broken box holding shells or explosives cooks off one
+        /// burst per this many kg ...
+        cookoff_kg_per_burst: 1..=1000 = "d_cookoff_kg_per_burst",
+        /// ... at most this many bursts ...
+        cookoff_max: 0..=32 = "d_cookoff_max",
+        /// ... spread over this many seconds (s).
+        cookoff_s: 1..=60 = "d_cookoff_s",
+        /// S6: an own man this close picks up a crate (m).
+        pickup_m: 1..=20 = "d_pickup_m",
     }
 }
 
 fn default_base_bomb_after_fire_s() -> u32 {
     0
+}
+
+// S6 defaults for a `[supply]` table without the S6 keys (the S5a
+// fixtures): docs/slices/S6-hq-crates.md "Rules".
+fn d_crate_feed_m() -> u32 {
+    5
+}
+fn d_base_crate_issue_s() -> u32 {
+    10
+}
+fn d_crate_cap() -> u32 {
+    12
+}
+fn d_shell_crate_cap() -> u32 {
+    8
+}
+fn d_hq_max() -> u32 {
+    1
+}
+fn d_dump_max() -> u32 {
+    3
+}
+fn d_structure_bomb_s() -> u32 {
+    2
+}
+fn d_crate_bomb_s() -> u32 {
+    4
+}
+fn d_fwd_rearm_s() -> u32 {
+    4
+}
+fn d_rare_rearm_fwd_s() -> u32 {
+    30
+}
+fn d_serve_men() -> u32 {
+    6
+}
+fn d_serve_period_ms() -> u32 {
+    500
+}
+fn d_unfired_s() -> u32 {
+    3
+}
+fn d_bullet_box_damage() -> u32 {
+    4
+}
+fn d_shell_box_damage() -> u32 {
+    400
+}
+fn d_cookoff_kg_per_burst() -> u32 {
+    16
+}
+fn d_cookoff_max() -> u32 {
+    8
+}
+fn d_cookoff_s() -> u32 {
+    6
+}
+fn d_pickup_m() -> u32 {
+    2
+}
+
+tuning_table! {
+    /// `[ai.supply]` (S6): the AI's HQ, crate runs and supply to tanks.
+    pub struct AiSupplyTuning {
+        /// The HQ goes this far behind the most valuable held point,
+        /// toward the own base (m).
+        hq_behind_m: 0..=1000,
+        /// Candidate HQ spots tested per plan (reverse-slope rays) ...
+        hq_probe_rays: 1..=32,
+        /// A mortar or the HQ below this share of its bombs or stock gets
+        /// a crate run (%).
+        crate_run_below_pct: 0..=100,
+        /// A tank below this share of its main-gun rounds that cannot
+        /// reach a source gets a shells crate carried to it (%).
+        tank_crate_below_pct: 0..=100,
+        /// At most this share of income goes on crates (%).
+        shell_mp_max_pct: 0..=100,
+        /// The AI buys its HQ squad after this many seconds of match (s).
+        hq_after_s: 0..=3600,
+        /// A mortar squad with no bombs and no crate run for this long
+        /// walks to the HQ or base (s).
+        dry_walk_s: 1..=3600,
+    }
+}
+
+impl AiSupplyTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+impl Default for AiSupplyTuning {
+    /// The S6 starting values (a rules def without `[ai.supply]`).
+    fn default() -> AiSupplyTuning {
+        AiSupplyTuning {
+            hq_behind_m: 120,
+            hq_probe_rays: 8,
+            crate_run_below_pct: 50,
+            tank_crate_below_pct: 25,
+            shell_mp_max_pct: 25,
+            hq_after_s: 60,
+            dry_walk_s: 120,
+        }
+    }
 }
 
 impl SupplyTuning {
@@ -1163,6 +1311,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.ammo", AiAmmoTuning::KEYS),
     ("fire_mission", FireMissionTuning::KEYS),
     ("ai.mortar", AiMortarTuning::KEYS),
+    ("ai.supply", AiSupplyTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -1213,6 +1362,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_ammo: &'a AiAmmoTuning,
     pub fire_mission: Option<&'a FireMissionTuning>,
     pub ai_mortar: &'a AiMortarTuning,
+    pub ai_supply: &'a AiSupplyTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -1264,6 +1414,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
         fm.check(&p("fire_mission"), out);
     }
     t.ai_mortar.check(&p("ai.mortar"), out);
+    t.ai_supply.check(&p("ai.supply"), out);
 }
 
 #[cfg(test)]

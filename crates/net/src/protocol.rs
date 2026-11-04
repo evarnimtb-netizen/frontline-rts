@@ -24,8 +24,10 @@ use serde::{Deserialize, Serialize};
 /// the S3c slice). 6 (S4): unit ids per command 120 -> 150 (`MAX_UNITS`,
 /// the S4 pop cap; the one bump for the S4 slice). 7 (S5a): `SetFire`. 8
 /// (S5b): `Barrage` becomes `FireMission` (same index and fields, new
-/// meaning; the one bump for the S5b slice).
-pub const PROTOCOL_VERSION: u16 = 8;
+/// meaning; the one bump for the S5b slice). 9 (S6): `Build`,
+/// `IssueCrate`, `PlaceCrate`, `PickUpCrate` and the pit `DigProfile`s
+/// (the one bump for the S6 slice).
+pub const PROTOCOL_VERSION: u16 = 9;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -590,7 +592,12 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::Regroup { .. }
         // S3c: a squad and a vehicle id, no lists.
         | CommandKind::Recrew { .. }
-        | CommandKind::Abandon { .. } => true,
+        | CommandKind::Abandon { .. }
+        // S6: a squad, an id or kind and at most two points, no lists.
+        | CommandKind::Build { .. }
+        | CommandKind::IssueCrate { .. }
+        | CommandKind::PlaceCrate { .. }
+        | CommandKind::PickUpCrate { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }

@@ -184,6 +184,7 @@ mod ammo;
 mod armour;
 mod assault;
 mod mortar;
+mod supply;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
     END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
@@ -439,6 +440,18 @@ pub struct AiCounters {
     /// S5b: mortar squads that waited a plan because the plan's ray budget
     /// (`ai::mortar::PLAN_RAYS`) was spent.
     pub fm_ray_holds: u32,
+    /// S6 (`ai::supply`): HQ and bearer squads bought, HQ build orders,
+    /// sight rays cast siting them and enemy eyes on the spots chosen,
+    /// crates asked for at base, crate runs (and those to stranded tanks),
+    /// dry mortars sent to the HQ.
+    pub s6_buys: u32,
+    pub s6_hq_orders: u32,
+    pub s6_hq_rays: u32,
+    pub s6_hq_seen: u32,
+    pub s6_crates_asked: u32,
+    pub s6_crate_runs: u32,
+    pub tank_crate_runs: u32,
+    pub s6_dry_walks: u32,
 }
 
 impl AiState {
@@ -830,6 +843,8 @@ impl Planner<'_> {
         self.retreats(&mut mine, &known);
         // S5a: refill trips, staggered per point.
         self.refills(&mut mine, &known);
+        // S6: the HQ, crate runs, dry mortars to the HQ.
+        self.supply(&mut mine, &tanks, &known);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
         self.crews(&crews, &known, &kv);
         self.buy(&kv);

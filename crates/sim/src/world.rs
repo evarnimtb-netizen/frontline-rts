@@ -420,7 +420,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `[supply]` and `[combat.share]` rules in the setup; per-player ammo
 /// accounts; counted rounds per man, sidearm and refill state in the kit;
 /// the rounds left in a dropped crew weapon). One bump for the whole slice.
-const SAVE_VERSION: u32 = 14;
+/// 14: S5b (fire missions). 15: S6 (supply defs and pit profiles in the
+/// setup; structures, crates, cook-offs and per-player S6 accounts in the
+/// match state). One bump for the whole slice.
+const SAVE_VERSION: u32 = 15;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -486,6 +489,8 @@ pub struct World {
     recrew_events: Vec<crate::bail::RecrewEvent>,
     /// S5b: refused fire missions of this tick's commands.
     fm_events: Vec<crate::fire_mission::FireMissionEvent>,
+    /// S6: refused S6 commands of this tick.
+    supply_events: Vec<crate::structures::SupplyEvent>,
 }
 
 impl World {
@@ -627,6 +632,7 @@ impl World {
             call_in_events: Vec::new(),
             recrew_events: Vec::new(),
             fm_events: Vec::new(),
+            supply_events: Vec::new(),
             state,
         };
         if let Some(g) = world.state.game.as_mut() {
@@ -1086,6 +1092,8 @@ impl World {
                     armour_events,
                 );
                 g.rebuild_vehicle_index(&state.entities);
+                // S6: structures' boxes and set-down crates.
+                g.rebuild_statics(&state.terrain);
                 // Ballistics and blasts test soldiers where they now stand.
                 spatial.rebuild(&state.entities);
             }
@@ -1303,6 +1311,7 @@ impl World {
                         vehicles: (!g.vehicles.is_empty()).then_some(&g.vderived),
                         armour: g.armour(),
                         ammo: &g.setup().ammo,
+                        statics: g.static_boxes(),
                     };
                     threads.install(|| {
                         projectiles
@@ -1464,7 +1473,16 @@ impl World {
                 );
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
+                let bombs_before = game.mortar_bombs_by_player(&self.state.entities);
                 game.supply_tick(&mut self.state.entities, &mut self.hash, tick);
+                // S6: structures, crates, forward sources and rearm.
+                game.structures_tick(
+                    &mut self.state.entities,
+                    &self.state.terrain,
+                    &mut self.hash,
+                    tick,
+                    &bombs_before,
+                );
                 // S5a: squads holding fire spring to discipline.
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
                 // S5b: the players' knowledge maps.
@@ -1847,6 +1865,19 @@ impl World {
         true
     }
 
+    /// S6: edits the match's structures, crates and accounts directly
+    /// (staged tests and tools: a built HQ with stock, a crate set down).
+    /// The caller keeps them valid (`SupplyState::validate`).
+    pub fn edit_supply6(&mut self, f: impl FnOnce(&mut crate::structures::SupplyState)) -> bool {
+        let Some(g) = self.state.game.as_mut() else {
+            return false;
+        };
+        f(&mut g.supply6);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Kills soldier `id` at once (staged tests): a corpse, out of his
     /// squad, a loss for his owner and a kill for nobody.
     pub fn kill_soldier(&mut self, id: SimId) -> bool {
@@ -1910,6 +1941,64 @@ impl World {
     /// Digs a finished AT ditch along `line` at once (the rules' `at_ditch`
     /// profile, berm on the left of the line direction for `front = 1`)
     /// and records the line, so it blocks vehicles (S3). Match worlds only.
+    /// S6 (staged scenes and tests): a built structure of def `def` for
+    /// player `p` at `pos` along yaw `yaw`, its pit dug at once, with
+    /// `stock_kg` by supply kind (capped). Returns its id.
+    pub fn build_structure_now(
+        &mut self,
+        p: PlayerId,
+        def: u16,
+        pos: FxVec2,
+        yaw: Fx,
+        stock_kg: [u32; 3],
+    ) -> Option<u32> {
+        let game = self.state.game.as_mut()?;
+        let d = game.setup.stocks.get(def as usize)?.clone();
+        if d.kind == frontline_content::setup::StockKind::Crate
+            || p.0 as usize >= game.players.len()
+            || !self.state.terrain.contains(pos)
+        {
+            return None;
+        }
+        let line = game.pit_line(def, pos, yaw);
+        let dig = game.setup.rules.dig_profile(d.pit).clone();
+        let n = dig.passes as i32;
+        let len = crate::squad::polyline_length(&line);
+        crate::dig::stamp(
+            &mut self.state.terrain,
+            &line,
+            1,
+            Fx::ZERO,
+            len,
+            n,
+            n,
+            &dig,
+            self.state.tick,
+        );
+        let hp = |k: usize| d.boxes.get(k).map_or(0, |b| b.hp);
+        let st = &mut game.supply6;
+        let id = st.next_structure;
+        st.next_structure += 1;
+        st.structures.insert(
+            id,
+            crate::structures::Structure {
+                owner: p,
+                def,
+                pos,
+                yaw,
+                builder: None,
+                built: true,
+                box_hp: [hp(0), hp(1), hp(2), hp(3)],
+                radio: d.boxes.iter().any(|b| b.part == 1),
+                stock_g: [0, 1, 2].map(|k| (stock_kg[k] * 1000).min(d.cap_g[k])),
+            },
+        );
+        st.accounts[p.0 as usize].structures_built += 1;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        Some(id)
+    }
+
     pub fn dig_at_ditch_now(&mut self, line: &[FxVec2], front: i8) -> bool {
         let Some(game) = self.state.game.as_mut() else {
             return false;
@@ -1951,6 +2040,7 @@ impl World {
         self.call_in_events.clear();
         self.recrew_events.clear();
         self.fm_events.clear();
+        self.supply_events.clear();
         if let Some(game) = &mut self.state.game {
             game.take_ai_commands(self.state.tick, &mut ai);
         }
@@ -1984,6 +2074,7 @@ impl World {
                 self.call_in_events.append(&mut game.call_in_events);
                 self.recrew_events.append(&mut game.recrew_events);
                 self.fm_events.append(&mut game.fm_events);
+                self.supply_events.append(&mut game.supply_events);
                 continue;
             }
             let ok = match c.kind {
@@ -2146,9 +2237,16 @@ impl World {
             .fire_mission_refusals
             .clone_from(&self.fm_events);
         self.snapshot
+            .supply_refusals
+            .clone_from(&self.supply_events);
+        self.snapshot
             .fill_shells(&self.state.projectiles, self.state.game.as_ref());
     }
 }
+
+#[cfg(test)]
+#[path = "s6_tests.rs"]
+mod s6_tests;
 
 #[cfg(test)]
 mod tests {

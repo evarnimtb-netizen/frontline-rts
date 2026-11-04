@@ -13,6 +13,9 @@ roster = [
     # the rules' `vehicles.unlock_s`).
     "ww2:usa_bazooka_team",
     "ww2:usa_m4a3_75_squad",
+    # S6: the platoon HQ (builds the HQ) and the ammunition bearers.
+    "ww2:usa_platoon_hq",
+    "ww2:usa_ammo_bearers",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

@@ -86,6 +86,10 @@ impl Purpose {
     pub const SINGLE_SHOT: Purpose = Purpose(28);
     /// S5b: a fire mission's aim offset bearing (order tick, squad id).
     pub const MISSION_AIM: Purpose = Purpose(29);
+    /// S6: a cook-off burst's crater depth (tick, cook-off id).
+    pub const COOKOFF_CRATER: Purpose = Purpose(30);
+    /// S6: a cook-off burst's fragment rays (tick, cook-off id).
+    pub const COOKOFF_FRAGMENT: Purpose = Purpose(31);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

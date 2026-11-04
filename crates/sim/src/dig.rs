@@ -325,7 +325,8 @@ pub(crate) fn stamp(
             if depth > Fx::ZERO {
                 return cur.min(base - depth);
             }
-            if left == (front >= 0) && cur >= base - undug {
+            // S6: a pit's spoil goes all round.
+            if (prof.all_round || left == (front >= 0)) && cur >= base - undug {
                 let h = parapet_height(r - lip, prof, k, n);
                 if h > Fx::ZERO {
                     return cur.max(base + h);
@@ -588,6 +589,8 @@ mod tests {
             work_per_m: 8400,
             passes: 8,
             engineers_only: false,
+            all_round: false,
+            pit_line: Fixed::ZERO,
             common: frontline_content::tuning::DigCommonTuning {
                 parapet_rise_mm: 300,
                 parapet_top_mm: 400,

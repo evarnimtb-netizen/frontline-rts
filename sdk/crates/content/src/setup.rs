@@ -20,6 +20,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use std::collections::BTreeMap;
+
 use crate::defs::{
     DigProfileDef, ITEM_KINDS, ItemHeDef, ItemKind, MAX_ITEM_COUNT, SquadDef, WeaponClass,
     parse_color,
@@ -28,11 +30,12 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, BailTuning,
-    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
-    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, MortarTuning,
-    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
-    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning,
+    AiSupplyTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
+    DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning,
+    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
+    check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -197,6 +200,59 @@ pub struct MatchSetup {
     /// S5a: counted rounds whose flight lives on the weapon (small arms,
     /// mortar bombs), sorted by id.
     pub cartridges: Vec<CartridgeSetup>,
+    /// S6: HQ, dump and crate defs (`defs/supply/`), sorted by id.
+    pub stocks: Vec<StockSetup>,
+}
+
+pub use crate::defs::StockKind;
+
+/// S6: one box of a supply def (lowered `StockBoxDef`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StockBoxSetup {
+    /// Index into `defs::STOCK_BOX_PARTS` (0 stock, 1 radio, 2 crate).
+    pub part: u8,
+    /// Half extents (along the facing, across, up).
+    pub half: [Fixed; 3],
+    /// Centre offset in the facing frame; z from the ground.
+    pub offset: [Fixed; 3],
+    pub hp: u32,
+}
+
+/// S6: a lowered supply def (an HQ, a dump or a crate).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StockSetup {
+    pub id: String,
+    pub name: String,
+    /// Index into `MatchSetup::factions`.
+    pub faction: u16,
+    pub kind: StockKind,
+    pub cost: u32,
+    pub pit: DigProfile,
+    pub radius: Fixed,
+    /// Stock caps in grams, by `SupplyKind::index`.
+    pub cap_g: [u32; 3],
+    pub rebuild_ticks: u32,
+    /// Tag indices (into `MatchSetup::tags`) that may build it.
+    pub built_by: Vec<u16>,
+    /// Crate: its kind and grams.
+    pub supply: Option<SupplyKind>,
+    pub g: u32,
+    pub carry_speed_pct: u32,
+    /// Index into `MatchSetup::ammo`: the cook-off burst.
+    pub cookoff: Option<u16>,
+    pub boxes: Vec<StockBoxSetup>,
+}
+
+impl MatchSetup {
+    /// S6: faction `f`'s def of `kind` (crates: of supply kind `supply`).
+    pub fn stock_of(&self, f: u16, kind: StockKind, supply: Option<SupplyKind>) -> Option<u16> {
+        self.stocks
+            .iter()
+            .position(|d| {
+                d.faction == f && d.kind == kind && (kind != StockKind::Crate || d.supply == supply)
+            })
+            .map(|i| i as u16)
+    }
 }
 
 /// S5a: most distinct feeds (cartridge or ammo ids) one squad type uses
@@ -290,6 +346,10 @@ pub struct RulesSetup {
     pub dig: DigSetup,
     /// The anti-tank ditch profile (`DigProfile::AtDitch`, S3).
     pub at_ditch: DigSetup,
+    /// S6: the pit profiles (legacy rules: the trench's).
+    pub mortar_pit: DigSetup,
+    pub hq_pit: DigSetup,
+    pub dump_pit: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
     /// Vehicle rules (S3).
@@ -316,6 +376,9 @@ impl RulesSetup {
         match p {
             DigProfile::Trench => &self.dig,
             DigProfile::AtDitch => &self.at_ditch,
+            DigProfile::MortarPit => &self.mortar_pit,
+            DigProfile::HqPit => &self.hq_pit,
+            DigProfile::DumpPit => &self.dump_pit,
         }
     }
 }
@@ -341,6 +404,22 @@ pub enum DigProfile {
     #[default]
     Trench = 0,
     AtDitch = 1,
+    /// S6: a mortar pit (rectangle, all-round parapet).
+    MortarPit = 2,
+    /// S6: the HQ's pit, dug before the HQ stands.
+    HqPit = 3,
+    /// S6: an ammunition dump's pit.
+    DumpPit = 4,
+}
+
+impl DigProfile {
+    /// S6: whether this is a pit (dug by `Build`, or a short `Dig` line).
+    pub fn is_pit(self) -> bool {
+        matches!(
+            self,
+            DigProfile::MortarPit | DigProfile::HqPit | DigProfile::DumpPit
+        )
+    }
 }
 
 /// Vehicle rules (see `VehicleRulesDef`): durations in ticks, distances
@@ -434,6 +513,8 @@ pub struct AiSetup {
     pub ammo: AiAmmoTuning,
     /// S5b: `[ai.mortar]` (or the legacy values).
     pub mortar: AiMortarTuning,
+    /// S6: `[ai.supply]` (or the S6 starting values).
+    pub supply: AiSupplyTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -472,9 +553,25 @@ pub struct DigSetup {
     pub passes: u32,
     /// Only engineer squads dig it (S3: the AT ditch).
     pub engineers_only: bool,
+    /// S6: spoil all round (a pit), not on the front only.
+    pub all_round: bool,
+    /// S6: a pit's dug line length (outside length minus the floor and
+    /// both walls; zero for line profiles).
+    pub pit_line: Fixed,
     /// The spoil bank shape and digger reach (the rules' `[dig.common]`,
     /// the same for every profile; S3b).
     pub common: DigCommonTuning,
+}
+
+/// S6: a pit profile of the rules, else (legacy rules) the trench's.
+fn pit_setup(
+    dig: &crate::defs::DigDef,
+    pick: impl Fn(&crate::defs::DigProfilesDef) -> Option<&DigProfileDef>,
+) -> DigSetup {
+    DigSetup::lower(
+        pick(&dig.profiles).unwrap_or(&dig.profiles.trench),
+        &dig.common,
+    )
 }
 
 impl DigSetup {
@@ -488,6 +585,8 @@ impl DigSetup {
             work_per_m: d.work_per_m,
             passes: d.passes,
             engineers_only: d.engineers_only,
+            all_round: d.all_round,
+            pit_line: Fixed::from_cm(d.pit_length_cm.saturating_sub(d.floor_cm + 2 * d.wall_cm)),
             common: common.clone(),
         }
     }
@@ -1582,6 +1681,11 @@ impl ModDefs {
             decision_quality_pct: d.decision_quality_pct,
         };
         let m = &rules.movement;
+        let stocks: Vec<StockSetup> = self
+            .supply
+            .values()
+            .map(|d| lower_stock(d, &self.factions, &tags, &self.ammo, hz))
+            .collect();
         let setup = MatchSetup {
             mod_id: self
                 .manifest
@@ -1619,6 +1723,9 @@ impl ModDefs {
                 },
                 dig: DigSetup::lower(&rules.dig.profiles.trench, &rules.dig.common),
                 at_ditch: DigSetup::lower(&rules.dig.profiles.at_ditch, &rules.dig.common),
+                mortar_pit: pit_setup(&rules.dig, |p| p.mortar_pit.as_ref()),
+                hq_pit: pit_setup(&rules.dig, |p| p.hq_pit.as_ref()),
+                dump_pit: pit_setup(&rules.dig, |p| p.dump_pit.as_ref()),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -1736,6 +1843,7 @@ impl ModDefs {
                         assault: a.assault.clone(),
                         ammo: a.ammo.clone().unwrap_or_default(),
                         mortar: a.mortar_tuning(),
+                        supply: a.supply.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -1814,6 +1922,7 @@ impl ModDefs {
                     g: c.supply.g,
                 })
                 .collect(),
+            stocks,
         };
         let issues = setup.validate();
         if issues.is_empty() {
@@ -2037,6 +2146,60 @@ pub(crate) fn item_he_ok(h: &ItemHeSetup) -> bool {
 }
 
 /// Position of `id` among sorted map keys.
+/// S6: lowers one supply def (references checked by `check_stocks`).
+fn lower_stock(
+    d: &crate::defs::StockDef,
+    factions: &BTreeMap<String, crate::defs::FactionDef>,
+    tags: &[String],
+    ammo: &BTreeMap<String, crate::vehicle::AmmoDef>,
+    hz: u32,
+) -> StockSetup {
+    let mut cap_g = [0u32; 3];
+    for (k, v) in &d.cap_kg {
+        if let Some(kind) = SupplyKind::from_name(k) {
+            cap_g[kind.index()] = v.saturating_mul(1000);
+        }
+    }
+    let cm = |v: i32| Fixed::from_ratio(v as i64, 100);
+    StockSetup {
+        id: d.id.clone(),
+        name: d.name.clone(),
+        faction: index_of(factions.keys(), &d.faction).unwrap_or(0),
+        kind: d.kind,
+        cost: d.cost,
+        pit: d.pit.unwrap_or(DigProfile::HqPit),
+        radius: Fixed::from_int(d.radius_m as i32),
+        cap_g,
+        rebuild_ticks: d.rebuild_s.saturating_mul(hz),
+        built_by: d
+            .built_by
+            .iter()
+            .filter_map(|t| tags.iter().position(|x| x == t).map(|i| i as u16))
+            .collect(),
+        supply: d.supply.as_deref().and_then(SupplyKind::from_name),
+        g: d.kg.saturating_mul(1000),
+        carry_speed_pct: d.carry_speed_pct,
+        cookoff: d.cookoff.as_ref().and_then(|c| index_of(ammo.keys(), c)),
+        boxes: d
+            .boxes
+            .iter()
+            .map(|b| StockBoxSetup {
+                part: crate::defs::STOCK_BOX_PARTS
+                    .iter()
+                    .position(|p| *p == b.part)
+                    .unwrap_or(0) as u8,
+                half: [
+                    cm(b.size_cm[0] as i32 / 2),
+                    cm(b.size_cm[1] as i32 / 2),
+                    cm(b.size_cm[2] as i32 / 2),
+                ],
+                offset: [cm(b.offset_cm[0]), cm(b.offset_cm[1]), cm(b.offset_cm[2])],
+                hp: b.hp,
+            })
+            .collect(),
+    }
+}
+
 fn index_of<'a>(mut keys: impl Iterator<Item = &'a String>, id: &str) -> Option<u16> {
     keys.position(|k| k == id).map(|i| i as u16)
 }
@@ -2192,7 +2355,12 @@ impl MatchSetup {
             "rules.movement.trench_cost_pct",
             "out of range",
         );
-        for d in [&r.dig, &r.at_ditch] {
+        for d in [&r.dig, &r.at_ditch, &r.mortar_pit, &r.hq_pit, &r.dump_pit] {
+            check(
+                d.pit_line >= Fixed::ZERO && fx_in(d.pit_line, 0, 20),
+                "rules.dig.pit_line",
+                "out of range",
+            );
             check(
                 fx_in(d.max_length, 1, 1000),
                 "rules.dig.max_length",
@@ -2436,6 +2604,7 @@ impl MatchSetup {
                 ai_ammo: &a.ammo,
                 fire_mission: r.fire_mission.as_ref(),
                 ai_mortar: &a.mortar,
+                ai_supply: &a.supply,
             },
         );
         r.at_ditch
@@ -2570,6 +2739,33 @@ impl MatchSetup {
                 (1..=100_000).contains(&c.g) && !c.id.is_empty(),
                 "cartridges",
                 "weight out of range",
+            );
+        }
+        // S6: supply defs (saves are untrusted).
+        for d in &self.stocks {
+            check(
+                (d.faction as usize) < self.factions.len()
+                    && d.cookoff.is_none_or(|a| {
+                        self.ammo.get(a as usize).is_some_and(|a| a.blast.is_some())
+                    })
+                    && d.built_by.iter().all(|&t| (t as usize) < self.tags.len())
+                    && (1..=4).contains(&d.boxes.len())
+                    && d.boxes.iter().all(|b| {
+                        b.part < 3
+                            && (1..=10_000).contains(&b.hp)
+                            && b.half.iter().all(|h| *h > Fixed::ZERO && fx_in(*h, 0, 10))
+                            && b.offset
+                                .iter()
+                                .all(|o| (-(10 << 16)..=(10 << 16)).contains(&o.0))
+                    })
+                    && d.radius >= Fixed::ZERO
+                    && fx_in(d.radius, 0, 100)
+                    && d.cap_g.iter().all(|g| *g <= 10_000_000)
+                    && d.g <= 200_000
+                    && (10..=100).contains(&d.carry_speed_pct)
+                    && (d.kind != StockKind::Crate || (d.supply.is_some() && d.g > 0)),
+                "stocks",
+                "a supply def is out of range",
             );
         }
         let supply_ok = |sp: &Option<SupplySetup>| sp.is_none_or(|x| (1..=100_000).contains(&x.g));

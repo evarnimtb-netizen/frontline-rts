@@ -1,0 +1,35 @@
+# Munitionsträger (S6): four ammunition bearers. Each man may carry one
+# crate (defs/supply/ger_*_crate.toml) from the base to the HQ, a dump, a
+# mortar or a trench, at the crate's carry pace. Riflemen; they do not fire
+# while carrying. Not in the AI mix: the AI buys them for crate runs when it
+# has a mortar or an HQ (docs/slices/S6-hq-crates.md "AI").
+id = "ww2:ger_munitionstraeger"
+name = "Munitionsträger"
+short_name = "Mun.-Träger"
+faction = "ww2:germany"
+tags = ["bearers"]
+capabilities = ["recrew"]
+sources = [
+    "US War Department TM-E 30-451, Handbook on German Military Forces (1945): ammunition bearers (Munitionsschützen) in heavy-weapons sections",
+    "US War Department, German Infantry Weapons (MID 1943), 8-cm mortar: bombs carried in cases of three",
+]
+# 4 men, cheaper than a line squad of 4 (no MG, no grenades), with the
+# S5a-37 German cut (-20 %).
+cost = 80
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:kar98k"
+traits = ["leader", "ammo_bearer"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 3
+weapon = "ww2:kar98k"
+traits = ["ammo_bearer"]

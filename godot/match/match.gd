@@ -47,6 +47,8 @@ var autoplay: Node
 var started := false
 var vehicle_view: VehicleView
 var vehicle_fx: VehicleFx
+## S6: HQs, dumps and crates.
+var supply_view: SupplyView
 ## Screenshot staging: [seconds before the capture, Callable] still to run.
 var _capture_hooks: Array = []
 
@@ -58,6 +60,9 @@ func _ready() -> void:
 	vehicle_fx = VehicleFx.new()
 	vehicle_fx.name = "VehicleFx"
 	add_child(vehicle_fx)
+	supply_view = SupplyView.new()
+	supply_view.name = "Supply"
+	add_child(supply_view)
 	var h: Callable = source.height_at
 	camera.height_fn = h
 	view.height_fn = h
@@ -171,6 +176,7 @@ func _process(_delta: float) -> void:
 	view.update_state(s)
 	vehicle_view.update_state(s)
 	vehicle_fx.update_state(s)
+	supply_view.update_state(s)
 	if mock_world != null:
 		mock_world.update_state(s)
 	if world_fx != null:

@@ -505,11 +505,66 @@ func set_fire(mode: String) -> void:
 	view.emit_intent(&"set_fire", {"units": selected.duplicate(), "mode": mode})
 
 
+## S6: whether a selected squad has card tag `tag` (state `tags`).
+func has_tag(tag: String) -> bool:
+	for sid in selected_squads():
+		var tags: PackedStringArray = view.squads_by_id.get(sid, {}).get("tags", PackedStringArray())
+		if tags.has(tag):
+			return true
+	return false
+
+
+## S6: whether every selected squad is an HQ squad or bearers (the supply
+## grid; no vehicles selected).
+func supply_only() -> bool:
+	var sq := selected_squads()
+	if sq.is_empty() or not selected_vehicles().is_empty():
+		return false
+	for sid in sq:
+		var tags: PackedStringArray = view.squads_by_id.get(sid, {}).get("tags", PackedStringArray())
+		if not (tags.has("hq") or tags.has("bearers")):
+			return false
+	return true
+
+
+## S6: crates the selected men carry.
+func carried_crates() -> Array:
+	var out: Array = []
+	for id in selected:
+		var so: Dictionary = view.soldiers_by_id.get(id, {})
+		if so.has("crate"):
+			out.append(so.crate)
+	return out
+
+
+## S6: the own set-down crate nearest `g` within 4 m (-1: none).
+func crate_near(g: Vector3) -> int:
+	var best := -1
+	var bd := 16.0
+	for c in view.state.get("crates", []):
+		if int(c.owner) != view.local_player or int(c.get("carrier", -1)) != -1:
+			continue
+		var d: float = Vector2(c.pos.x - g.x, c.pos.z - g.z).length_squared()
+		if d <= bd:
+			bd = d
+			best = int(c.id)
+	return best
+
+
 ## Whether an order is available for the current selection (orders grid).
 func can(order: StringName) -> bool:
 	if selected.is_empty():
 		return false
 	match order:
+		# S6.
+		&"build_hq":
+			return has_tag("hq")
+		&"build_dump":
+			return has_tag("hq") or has_tag("engineer")
+		&"crate_shells", &"crate_small_arms", &"crate_explosives", &"pick_up":
+			return not selected_squads().is_empty()
+		&"place_crate":
+			return not carried_crates().is_empty()
 		&"dig":
 			# S4: by capability (`dig_basic`).
 			return _has_cap(["dig_basic"], MatchView.DIGGERS)
@@ -615,6 +670,10 @@ func activate(order: StringName) -> void:
 			set_ammo(String(order).trim_prefix("ammo_"))
 		&"regroup":
 			view.emit_intent(&"regroup", {"squads": selected_squads()})
+			cancel_tool()
+		# S6: a crate of that kind for each selected squad (in the base).
+		&"crate_shells", &"crate_small_arms", &"crate_explosives":
+			view.emit_intent(&"issue_crate", {"squads": selected_squads(), "kind": String(order).trim_prefix("crate_")})
 			cancel_tool()
 		&"dig":
 			_set_tool(&"dig")
@@ -1043,6 +1102,20 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			if not shift:
 				_set_tool(&"")
 			return
+		# S6: build an HQ or dump here (long axis across the line to the
+		# camera's forward), set crates down, pick one up.
+		&"build_hq", &"build_dump":
+			var fwd: Vector3 = -view.camera.global_transform.basis.z if view.camera != null else Vector3(0, 0, -1)
+			var across := Vector3(-fwd.z, 0, fwd.x)
+			view.emit_intent(&"build", {"squads": selected_squads(), "target": g, "what": "hq" if tool == &"build_hq" else "dump", "facing": across})
+		&"place_crate":
+			view.emit_intent(&"place_crate", {"squads": selected_squads(), "target": g})
+		&"pick_up":
+			var c := crate_near(g)
+			if c == -1:
+				AudioManager.play_ui(&"error")
+				return
+			view.emit_intent(&"pick_up_crate", {"squads": selected_squads(), "crate": c})
 		&"move", &"attack_move":
 			send_order(tool, {"target": g})
 		&"face":

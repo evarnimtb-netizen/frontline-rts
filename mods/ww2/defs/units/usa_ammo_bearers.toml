@@ -1,0 +1,32 @@
+# Ammunition Bearers (S6): four men who carry crates (defs/supply/usa_*
+# _crate.toml) forward, one each. FM 23-90 gives the 81-mm mortar squad
+# ammunition bearers who carry bombs in bundles and on carts; this card is
+# the pool of such men for crate runs. Not in the AI mix: the AI buys them
+# for crate runs (docs/slices/S6-hq-crates.md "AI").
+id = "ww2:usa_ammo_bearers"
+name = "Ammunition Bearers"
+short_name = "Ammo Bearers"
+faction = "ww2:usa"
+tags = ["bearers"]
+capabilities = ["recrew"]
+sources = [
+    "US War Department FM 23-90, 81-mm Mortar M1 (1943): ammunition bearers of the mortar squad",
+]
+cost = 100
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:m1_garand"
+traits = ["leader", "ammo_bearer"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 3
+weapon = "ww2:m1_carbine"
+traits = ["ammo_bearer"]

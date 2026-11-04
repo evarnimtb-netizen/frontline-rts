@@ -14,12 +14,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::issue::Issue;
+use crate::setup::DigProfile;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, BailTuning,
-    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
-    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, MortarTuning,
-    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
-    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning,
+    AiSupplyTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
+    DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning,
+    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
+    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
+    check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -845,6 +847,169 @@ impl CartridgeDef {
     }
 }
 
+/// S6: what a supply def is (`kind`).
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum StockKind {
+    /// The platoon HQ (one per player): a pit, a stock box and a radio box.
+    #[default]
+    Hq = 0,
+    /// An ammunition dump (up to the rules' `dump_max`).
+    Dump = 1,
+    /// A crate one man carries.
+    Crate = 2,
+}
+
+/// S6: one oriented box of a supply def (`boxes = [...]`): what stops
+/// bullets and fragments and holds hit points.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StockBoxDef {
+    /// `stock` (holds the kg; breaking it loses them), `radio` (HQ: the
+    /// radio state) or `crate`.
+    pub part: String,
+    /// Length (along the facing), width, height (cm).
+    pub size_cm: [u32; 3],
+    /// Centre offset from the def's centre, in its facing frame (cm; z
+    /// from the ground).
+    #[serde(default)]
+    pub offset_cm: [i32; 3],
+    /// Hit points (fragment and bullet damage points).
+    pub hp: u32,
+}
+
+/// S6: an HQ, an ammunition dump or a crate (`defs/supply/*.toml`;
+/// docs/slices/S6-hq-crates.md "Data model").
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StockDef {
+    pub id: String,
+    pub name: String,
+    pub faction: String,
+    pub kind: StockKind,
+    /// HQ and dump: manpower paid when the build order is accepted.
+    #[serde(default)]
+    pub cost: u32,
+    /// HQ and dump: the dig profile dug before it stands (`hq_pit`,
+    /// `dump_pit`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pit: Option<DigProfile>,
+    /// HQ and dump: men, mortars and tanks inside this radius are served (m).
+    #[serde(default)]
+    pub radius_m: u32,
+    /// HQ and dump: the most stock it holds, kg by supply kind.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub cap_kg: BTreeMap<String, u32>,
+    /// HQ: seconds after its destruction before a new one may be ordered.
+    #[serde(default)]
+    pub rebuild_s: u32,
+    /// HQ and dump: unit tags that may build it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub built_by: Vec<String>,
+    /// Crate: its supply kind (`small_arms`, `explosives`, `shells`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<String>,
+    /// Crate: kg it holds, paid at issue (kg x the kind's price, D1).
+    #[serde(default)]
+    pub kg: u32,
+    /// Crate: its carrier's squad walks at this share of its pace (%).
+    #[serde(default = "full_pct")]
+    pub carry_speed_pct: u32,
+    /// The HE round (an ammo def with `blast`) whose bursts a broken box
+    /// holding shells or explosives sets off (cook-off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cookoff: Option<String>,
+    pub boxes: Vec<StockBoxDef>,
+    /// Citations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+}
+
+fn full_pct() -> u32 {
+    100
+}
+
+/// S6: box part names (`StockBoxDef::part`), by their setup index.
+pub const STOCK_BOX_PARTS: [&str; 3] = ["stock", "radio", "crate"];
+
+impl StockDef {
+    pub fn validate(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        check_id(&mut out, "id", &self.id);
+        check_name(&mut out, "name", &self.name);
+        check_id(&mut out, "faction", &self.faction);
+        if self.boxes.is_empty() || self.boxes.len() > 4 {
+            out.push(Issue::new("boxes", "needs 1..=4 boxes"));
+        }
+        for (k, b) in self.boxes.iter().enumerate() {
+            if !STOCK_BOX_PARTS.contains(&b.part.as_str()) {
+                out.push(Issue::new(
+                    format!("boxes[{k}].part"),
+                    format!("`{}` is not one of stock, radio, crate", b.part),
+                ));
+            }
+            for (j, s) in b.size_cm.iter().enumerate() {
+                range(&mut out, &format!("boxes[{k}].size_cm[{j}]"), *s, 10, 1000);
+            }
+            for (j, o) in b.offset_cm.iter().enumerate() {
+                if o.unsigned_abs() > 1000 {
+                    out.push(Issue::new(
+                        format!("boxes[{k}].offset_cm[{j}]"),
+                        "must be in -1000..=1000",
+                    ));
+                }
+            }
+            range(&mut out, &format!("boxes[{k}].hp"), b.hp, 1, 10_000);
+        }
+        if let Some(c) = &self.cookoff {
+            check_id(&mut out, "cookoff", c);
+        }
+        match self.kind {
+            StockKind::Crate => {
+                match self.supply.as_deref().and_then(SupplyKind::from_name) {
+                    Some(_) => {}
+                    None => out.push(
+                        Issue::new("supply", "a crate names its supply kind")
+                            .with_hint("supply = \"shells\""),
+                    ),
+                }
+                range(&mut out, "kg", self.kg, 1, 200);
+                range(&mut out, "carry_speed_pct", self.carry_speed_pct, 10, 100);
+            }
+            StockKind::Hq | StockKind::Dump => {
+                if !matches!(self.pit, Some(DigProfile::HqPit | DigProfile::DumpPit)) {
+                    out.push(
+                        Issue::new("pit", "an HQ or dump names its pit profile")
+                            .with_hint("pit = \"hq_pit\""),
+                    );
+                }
+                range(&mut out, "radius_m", self.radius_m, 1, 100);
+                range(&mut out, "cost", self.cost, 0, 10_000);
+                range(&mut out, "rebuild_s", self.rebuild_s, 0, 3600);
+                for (k, v) in &self.cap_kg {
+                    if SupplyKind::from_name(k).is_none() {
+                        out.push(Issue::new(
+                            format!("cap_kg.{k}"),
+                            "unknown supply kind; one of small_arms, explosives, shells",
+                        ));
+                    }
+                    range(&mut out, &format!("cap_kg.{k}"), *v, 0, 10_000);
+                }
+                if self.built_by.is_empty() {
+                    out.push(
+                        Issue::new("built_by", "names at least one unit tag")
+                            .with_hint("built_by = [\"hq\"]"),
+                    );
+                }
+            }
+        }
+        out
+    }
+}
+
 impl WeaponDef {
     /// Whether the weapon is a crew weapon (S4; see `crew_weapon`).
     pub fn is_crew_weapon(&self) -> bool {
@@ -1288,6 +1453,15 @@ pub struct DigProfilesDef {
     pub trench: DigProfileDef,
     /// The anti-tank ditch (S3): deep and wide enough to block vehicles.
     pub at_ditch: DigProfileDef,
+    /// S6: pits (a rectangle with an all-round parapet; `pit_length_cm`
+    /// set): the mortar pit, the HQ pit and the dump pit. Absent (legacy
+    /// content): the trench profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mortar_pit: Option<DigProfileDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hq_pit: Option<DigProfileDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dump_pit: Option<DigProfileDef>,
 }
 
 /// A dug cross-section: a flat floor, walls sloping out to the lip, and a
@@ -1308,6 +1482,14 @@ pub struct DigProfileDef {
     /// Only engineer squads dig it.
     #[serde(default)]
     pub engineers_only: bool,
+    /// S6: a pit: the spoil goes all round, not to the front only.
+    #[serde(default)]
+    pub all_round: bool,
+    /// S6: a pit's outside length along its long axis (cm; 0: a line
+    /// profile). The dug line is this minus the floor and both walls, so
+    /// the rounded ends make the pit's length.
+    #[serde(default)]
+    pub pit_length_cm: u32,
 }
 
 /// Spotting, accuracy, suppression and corpse rules. Suppression is in
@@ -1437,6 +1619,9 @@ pub struct AiDef {
     /// S5b: the AI's fire missions (replaces `barrage_rounds`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mortar: Option<AiMortarTuning>,
+    /// S6: the AI's HQ and crate runs (default: the S6 starting values).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<AiSupplyTuning>,
 }
 
 impl AiDef {
@@ -2282,10 +2467,17 @@ impl RulesDef {
             10,
             100,
         );
+        let pits = &self.dig.profiles;
         for (name, d) in [
-            ("trench", &self.dig.profiles.trench),
-            ("at_ditch", &self.dig.profiles.at_ditch),
-        ] {
+            ("trench", Some(&self.dig.profiles.trench)),
+            ("at_ditch", Some(&self.dig.profiles.at_ditch)),
+            ("mortar_pit", pits.mortar_pit.as_ref()),
+            ("hq_pit", pits.hq_pit.as_ref()),
+            ("dump_pit", pits.dump_pit.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(n, d)| d.map(|d| (n, d)))
+        {
             let p = format!("dig.profiles.{name}");
             range(&mut out, &format!("{p}.depth_cm"), d.depth_cm, 10, 1000);
             range(&mut out, &format!("{p}.floor_cm"), d.floor_cm, 10, 1000);
@@ -2306,6 +2498,19 @@ impl RulesDef {
                 10_000_000,
             );
             range(&mut out, &format!("{p}.passes"), d.passes, 1, 32);
+            range(
+                &mut out,
+                &format!("{p}.pit_length_cm"),
+                d.pit_length_cm,
+                0,
+                2000,
+            );
+            if d.pit_length_cm > 0 && d.pit_length_cm < d.floor_cm + 2 * d.wall_cm + 20 {
+                out.push(Issue::new(
+                    format!("{p}.pit_length_cm"),
+                    "a pit is at least its floor and both walls plus 20 cm long",
+                ));
+            }
         }
         let v = &self.vehicles;
         for (name, val, lo, hi) in [
@@ -2502,6 +2707,7 @@ impl RulesDef {
                 ai_ammo: &a.ammo.clone().unwrap_or_default(),
                 fire_mission: self.fire_mission.as_ref(),
                 ai_mortar: &a.mortar_tuning(),
+                ai_supply: &a.supply.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

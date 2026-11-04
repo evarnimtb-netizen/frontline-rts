@@ -1,0 +1,48 @@
+# Zugtrupp (S6): the platoon headquarters section. It builds and holds the
+# Gefechtsstand (defs/supply/ger_gefechtsstand.toml): an HQ pit with a stock
+# box and a radio box that serves men, mortars and tanks inside its radius.
+# Five men: the Zugführer, his deputy (Zugtruppführer), two runners (Melder)
+# and a radio man. The 1944 Zugtrupp also had a medic and a bicycle
+# messenger (verify); 5 is the roster's pop-capped size.
+# Not in the AI mix (no mix tag): the AI buys it once for its HQ
+# (docs/slices/S6-hq-crates.md "AI", [ai.supply] hq_after_s).
+id = "ww2:ger_zugtrupp"
+name = "Zugtrupp"
+short_name = "Zugtrupp"
+faction = "ww2:germany"
+tags = ["hq"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "US War Department TM-E 30-451, Handbook on German Military Forces (1945), ch. II: rifle platoon headquarters (platoon leader, messengers)",
+    "roster-expansion.md S6 card (Zugtrupp / Platoon HQ builds the HQ)",
+]
+# 5 men at about the line squads' price per man (the HQ itself is a
+# separate 100 MP, Appendix A.2), with the S5a-37 German cut (-20 %).
+cost = 160
+max_alive = 1
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+# Digs its own pit (S6-6 (A)): a rifleman's pace.
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 1 }
+
+[[members]]
+slot = "deputy"
+weapon = "ww2:mp40"
+
+[[members]]
+slot = "runner"
+count = 2
+weapon = "ww2:kar98k"
+
+[[members]]
+slot = "radio_man"
+weapon = "ww2:kar98k"

@@ -1,0 +1,34 @@
+# Gefechtsstand (S6): the platoon HQ. Built by the Zugtrupp (tag "hq"): the
+# squad digs the HQ pit ([dig.profiles.hq_pit]); the HQ stands when the pit
+# is done and starts empty. It fills only by carried crates (owner Q2 C):
+# a crate set down inside the radius empties into the stock up to the caps.
+# Men, mortars and tanks inside the radius are served from the stock
+# ([supply] serve_*, structure_bomb_s, fwd_rearm_s). Retreat goes to the
+# nearest own HQ (S6-9 (A)).
+id = "ww2:ger_gefechtsstand"
+name = "Gefechtsstand"
+faction = "ww2:germany"
+kind = "hq"
+# Appendix A.2: 100 MP (the 120 kg of material waits for S10, S6-4 (A)).
+cost = 100
+pit = "hq_pit"
+radius_m = 25
+# kg by supply kind (Appendix A caps).
+cap_kg = { small_arms = 300, explosives = 200, shells = 600 }
+rebuild_s = 120
+built_by = ["hq"]
+# A broken stock box with shells or explosives cooks off as bursts of this
+# HE round (S6-10 (A): one per 16 kg, at most 8).
+cookoff = "ww2:75mm_sprgr34"
+# Boxes: centre offsets from the pit centre in its facing frame (x along
+# the facing, y across, z from the ground); hp in fragment/bullet points.
+# The stock: about 2 m of stacked ammunition boxes (verify); the radio: a
+# field set on its case (Torn.Fu / SCR-284 size class, verify).
+boxes = [
+    { part = "stock", size_cm = [200, 120, 90], offset_cm = [0, -150, 0], hp = 400 },
+    { part = "radio", size_cm = [50, 40, 40], offset_cm = [120, 80, 0], hp = 40 },
+]
+sources = [
+    "roster-expansion.md Appendix A (HQ 100 MP + 120 kg; stock caps)",
+    "TM-E 30-451, Handbook on German Military Forces (1945): ammunition supply points and carrying parties",
+]

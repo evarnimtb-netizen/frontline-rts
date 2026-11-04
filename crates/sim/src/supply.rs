@@ -699,9 +699,17 @@ impl MatchState {
             let ty = &self.setup.squad_types[ty_idx];
             let full = ty.full_kit(ents.kit[i].slot);
             let item = (0..ITEM_KINDS).find(|&j| ents.kit[i].items[j] < full[j]);
+            // S6 (owner Q4): with `base_bomb_s = 0` the base refills no
+            // shells feed (mortar bombs): they come only in crates.
+            let no_bombs = sp.base_bomb_s == 0;
             let next = match item {
                 Some(j) => Some((false, j, item_every)),
                 None => pick(self, ents, false)
+                    .filter(|&k| {
+                        !(no_bombs
+                            && feed_supply(&self.setup, self.setup.squad_types[ty_idx].feeds[k])
+                                .is_some_and(|(kd, _)| kd == SupplyKind::Shells))
+                    })
                     .filter(|&k| !self.bombs_wait(ents, sid, k, bomb_wait))
                     .map(|k| (true, k, bomb_every)),
             };
@@ -727,6 +735,14 @@ impl MatchState {
                         };
                         let price = micro_price(&self.setup, kd, g);
                         if self.pay(owner.0 as usize, kd, price, tick) {
+                            if bomb && kd == SupplyKind::Shells {
+                                // S6 report and the T20 check.
+                                let p = owner.0 as usize;
+                                if let Some(a) = self.supply6.accounts.get_mut(p) {
+                                    a.base_bombs += 1;
+                                }
+                                self.explain_bombs(p, 1);
+                            }
                             let kit = &mut ents.kit[i];
                             kit.resupply = 0;
                             if bomb {
