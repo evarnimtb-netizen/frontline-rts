@@ -3,29 +3,40 @@
 
     python3 -I tools/autotune/test_autotune.py
 """
-import math, os, random, sys, unittest
+import json, math, os, random, subprocess, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import autotune as at  # noqa: E402
 import synth  # noqa: E402
 
-SUMMARY = """skirmish summary: 4 matches (2 with swapped bases), 4 at once
-faction        wins  base0/1  tanks lost/bought  ko gun/rocket  rockets fired/hit/pen (matches)  satchels@veh (matches)  kills/losses
-ww2:germany       1    1/0           9/12            10/0             0/0/0 (0/4)             0 (0/4)  404/447
-ww2:usa           2    1/1          10/15             9/0             5/4/4 (2/4)             0 (0/4)  447/404
-wins by base: base 0 2, base 1 1; no winner 1
-tick p99 ms (max over matches, parallel runs): peak 3.388, all 1.418
-S5a ww2:germany: kills by source % (of this side's kills): mortar 4.7, tank HE 10.4, frag 0.2, satchel 0.0, rocket 0.0, tank AP 5.7, MG 10.4, rifle 58.2, smg 1.0, vehicle MG 9.4
-S5a ww2:usa: kills by source % (of this side's kills): mortar 3.6, tank HE 5.1, frag 0.0, satchel 0.0, rocket 0.2, tank AP 5.1, MG 4.0, rifle 77.0, smg 0.0, vehicle MG 4.9
-seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash
-1     normal   ww2:usa           1   13:21         0/2              0/1             0/0        12.2  0xb3d07b7a9ddfa03e
-1     swapped  ww2:germany       1   12:25         2/1              0/0             0/0         8.6  0x571ecfb042672f13
-2     normal   ww2:usa           0   25:39         5/5              0/0             0/0        15.4  0x5a973178610ed564
-2     swapped  -                 -   45:00         2/2              0/4             0/0         7.6  0xa097dfe98797a9f3
-S3c baseline (report only):
-faction        tank base returns (low ammo)  MG dry % (<1/4)  HE<=reserve %  satchel hunts: seen, ends, mean start m  KOs (with living crew), mean crew alive by cause
-ww2:germany       0 (0)               0.0 (0.0)           0.0  3 [called_off 3] 105 m  6 (1) [ko_ammo_fire 0.00, ko_ammo_rack 3.00, ko_fire 0.00]
-"""
+def _pm(seed, side, winner, base, secs, he):
+    return {"seed": seed, "side": side, "result": "won" if winner else "time_limit",
+            "winner_faction": winner, "winner_base": base, "length_s": secs,
+            "he_share_pct": he, "hash": "0x0"}
+
+_G_SRC = {"rifle": 58.2, "smg": 1.0, "mg": 10.4, "mortar": 4.7, "tank_ap": 5.7,
+          "tank_he": 10.4, "vehicle_mg": 9.4, "rocket": 0.0, "satchel": 0.0,
+          "frag": 0.2, "other": 0.1}
+_U_SRC = {"rifle": 77.0, "smg": 0.0, "mg": 4.0, "mortar": 3.6, "tank_ap": 5.1,
+          "tank_he": 5.1, "vehicle_mg": 4.9, "rocket": 0.2, "satchel": 0.0,
+          "frag": 0.0, "other": 0.0}
+
+# The part of `skirmish --seeds 2 --both-bases --json FILE` the tuner reads
+# (four matches; the real file has many more fields).
+SUMMARY = json.dumps({
+    "schema": 1, "kind": "skirmish", "matches": 4,
+    "per_match": [
+        _pm(1, "normal", "ww2:usa", 1, 801.4, 12.2),
+        _pm(1, "swapped", "ww2:germany", 1, 745.2, 8.6),
+        _pm(2, "normal", "ww2:usa", 0, 1539.9, 15.4),
+        _pm(2, "swapped", None, None, 2700.0, 7.6),
+    ],
+    "tick_p99_ms": {"peak": 3.388, "all": 1.418},
+    "factions": {
+        "germany": {"wins": 1, "kills": 404, "losses": 447, "kills_by_source_pct": _G_SRC},
+        "usa": {"wins": 2, "kills": 447, "losses": 404, "kills_by_source_pct": _U_SRC},
+    },
+})
 
 def rows_logistic(b0, b1, n, rng):
     rows = []
@@ -40,7 +51,7 @@ class Parse(unittest.TestCase):
         self.assertEqual(len(p["matches"]), 4)
         m = p["matches"]
         self.assertEqual((m[0]["winner"], m[0]["base"], m[0]["bases"]), ("usa", 1, "normal"))
-        self.assertAlmostEqual(m[0]["len_min"], 13 + 21 / 60)
+        self.assertAlmostEqual(m[0]["len_min"], 801.4 / 60)
         self.assertEqual((m[3]["winner"], m[3]["base"]), (None, None))
         self.assertEqual(p["tick_p99"], 3.388)
         g = p["sides"]["germany"]
@@ -48,7 +59,26 @@ class Parse(unittest.TestCase):
         self.assertEqual(g["kill_src"]["mortar"], 4.7)
         self.assertEqual(g["kill_src"]["tank_he"], 10.4)
         self.assertEqual(p["sides"]["usa"]["kill_src"]["vehicle_mg"], 4.9)
-        self.assertNotIn("S3c", p["sides"])
+        self.assertNotIn("other", g["kill_src"])
+        self.assertEqual(set(p["sides"]), {"germany", "usa"})
+
+    @unittest.skipUnless(os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                     "..", "..", "target", "release", "frontline-cli")),
+                         "needs target/release/frontline-cli")
+    def test_real_cli_file_parses(self):
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+        cli = os.path.join(root, "target", "release", "frontline-cli")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "b.json")
+            subprocess.run([cli, "skirmish", "--ai-vs-ai", "--seed", "1", "--seeds", "1", "--both-bases",
+                            "--summary", "--minutes", "1", "--jobs", "2", "--json", out],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            with open(out) as f:
+                p = at.parse_summary(f.read())
+        self.assertEqual(len(p["matches"]), 2)
+        self.assertIn("germany", p["sides"])
+        self.assertIn("mortar", p["sides"]["germany"]["kill_src"])
+        self.assertGreater(p["tick_p99"], 0)
 
     def test_metrics_and_normal_base(self):
         p = at.parse_summary(SUMMARY)

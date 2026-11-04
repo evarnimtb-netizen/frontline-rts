@@ -146,6 +146,11 @@ pub struct SkirmishArgs {
     /// A -> B of each headline number (one-command A/B test).
     #[arg(long, requires_all = ["seeds", "rules_override"])]
     pub ab: bool,
+    /// Also write one JSON object with every number the --summary prints
+    /// (per match and totals; `docs/modding/tuning.md`). The normal output is
+    /// unchanged. Works for one match, --seeds and --ab.
+    #[arg(long, value_name = "FILE")]
+    pub json: Option<PathBuf>,
 }
 
 impl Default for SkirmishArgs {
@@ -174,6 +179,7 @@ impl Default for SkirmishArgs {
             summary: false,
             jobs: None,
             ab: false,
+            json: None,
         }
     }
 }
@@ -1726,7 +1732,7 @@ pub fn skirmish_many(args: &SkirmishArgs) -> Result<ManyReport> {
     })
 }
 
-fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
+pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
     let mut s = ManySummary {
         matches: matches.len() as u32,
         minutes_min: f64::MAX,

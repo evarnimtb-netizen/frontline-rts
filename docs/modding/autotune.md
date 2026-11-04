@@ -18,12 +18,12 @@ Python 3 standard library only (3.9 works; no venv, no numpy). Run it with `-I`.
 3. Build once, then start it in the background and do something else:
 
    ```sh
-   CARGO_BUILD_JOBS=4 cargo build --profile bench-release -p frontline-cli   # or --release: same speed
+   CARGO_BUILD_JOBS=4 cargo build --release -p frontline-cli   # bench-release: same speed
    python3 -I tools/autotune/autotune.py tools/autotune/specs/my.toml
    ```
 
-   Defaults: `--jobs 6`, and the CLI `target/bench-release/frontline-cli` if
-   it exists, else `target/release/frontline-cli` (`--cli` picks any binary,
+   Defaults: `--jobs 6`, and the CLI `target/release/frontline-cli` if it
+   exists, else `target/bench-release/frontline-cli` (`--cli` picks any binary,
    another checkout's included). `--out DIR` sets the output folder (default
    `tools/autotune/runs/<spec name>/`). Stop it any time; running it again
    resumes from `cache.jsonl`.
@@ -83,8 +83,8 @@ chosen level): `base0_share`, `base1_share`, `base_max`, `len_min`,
 `len_median`, `len_max`, `he_max`, `tick_p99`, plus any modelled metric with
 `role = "check"`. The first modelled target steers the design.
 
-All summary parsing is in `parse_summary()`; a later step switches it to a
-`--json` file.
+Each batch is read from the `--json FILE` the CLI writes
+(`docs/modding/tuning.md`); all of that reading is in `parse_summary()`.
 
 ## Method
 
@@ -177,8 +177,8 @@ On the M3 (4P+4E, 8 GB): 20 matches take 35.5 s at `--jobs 3`, 24.7 s at
 jobs), hence the default 6. The `bench-release` profile (thin LTO, one codegen
 unit) gives the same 20-match summary as `release` (same hashes and winners,
 checked) but is **not faster**: 20 matches at `--jobs 6`, alternating runs,
-release 23.6 / 24.1 s, bench-release 23.6 / 24.3 s. The tuner prefers it only
-because it is the profile benchmarks use; a plain `--release` build (40 s
+release 23.6 / 24.1 s, bench-release 23.6 / 24.3 s. The tuner no longer prefers it: it
+was only the profile benchmarks use; the tuner now prefers `release`, and a plain `--release` build (40 s
 instead of 87 s to compile) is just as good for tuning. Batches are spread
 over 6 parallel matches, so a 40-match batch takes about 50 s and a one-knob
 run of ~500 matches about 11 minutes.

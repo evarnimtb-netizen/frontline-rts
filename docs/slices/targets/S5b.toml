@@ -1,0 +1,167 @@
+# S5b targets (docs/slices/S5b-mortars.md "Targets"), machine-checkable part.
+#   frontline-cli targets docs/slices/targets/S5b.toml --jobs 6 [--runs skirmish40]
+# Run names are the first word of each metric. Balance batches use --jobs 6;
+# tick-time targets (T14) read `timing40`, which fixes jobs = 3 and must run
+# alone on a quiet machine (docs/process/workflows.md section 4).
+# Not checked here: T1 (mortar-bench --seeds 50), T2, T3, T10, T12, T16 (cargo
+# tests), T9 (reported only: bombs, MP per kind, base battery A/B -- read them
+# from the runs' JSON in target/targets/S5b/), T15 (Godot checks and
+# screenshots), and the golden/validate/clippy/fmt part of T13 (tools/check.sh).
+
+name = "S5b mortars"
+
+[runs.skirmish40]
+kind = "skirmish"
+seeds = 20            # seeds 1-20 x both bases = 40 matches
+both_bases = true
+minutes = 45
+
+[runs.timing40]       # the same 40 matches, run alone at 3 at a time
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+jobs = 3
+
+[runs.skirmish160]
+kind = "skirmish"
+seeds = 80            # seeds 1-80
+both_bases = true
+minutes = 45
+
+[runs.skirmish160_oos]
+kind = "skirmish"
+seeds = 80
+first_seed = 101      # out of sample: seeds 101-180
+both_bases = true
+minutes = 45
+
+[runs.armour5]
+kind = "armour-test"
+seeds = 5
+
+[runs.armour_stress10]
+kind = "armour-test"
+seeds = 10
+stress = true
+
+[runs.fortify10]
+kind = "fortify-test"
+seeds = 10
+
+# --- T4: no AI order refused (40 set) ------------------------------------
+[[target]]
+id = "T4a"
+metric = "skirmish40.factions.germany.s5b_derived.refused_total"
+max = 0
+[[target]]
+id = "T4b"
+metric = "skirmish40.factions.usa.s5b_derived.refused_total"
+max = 0
+
+# --- T5: each faction 35-65 % on 40; 45-55 % on both 160 sets -------------
+[[target]]
+id = "T5a"
+metric = "skirmish40.wins.germany_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5b"
+metric = "skirmish40.wins.usa_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5c"
+metric = "skirmish160.wins.germany_pct"
+min = 45
+max = 55
+[[target]]
+id = "T5d"
+metric = "skirmish160_oos.wins.germany_pct"
+min = 45
+max = 55
+
+# --- T6: no base side above 62 % ------------------------------------------
+[[target]]
+id = "T6a"
+metric = "skirmish40.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6b"
+metric = "skirmish160.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6c"
+metric = "skirmish160_oos.wins.base_max_pct"
+max = 62
+
+# --- T7: no match under 10 or over 40 min; median 15-30 --------------------
+[[target]]
+id = "T7a"
+metric = "skirmish40.length_min.min"
+min = 10
+[[target]]
+id = "T7b"
+metric = "skirmish40.length_min.max"
+max = 40
+[[target]]
+id = "T7c"
+metric = "skirmish40.length_min.median"
+min = 15
+max = 30
+
+# --- T8: HE share of kills, mean at most 26.3 % ------------------------------
+[[target]]
+id = "T8a"
+metric = "skirmish40.he_share_pct.mean"
+max = 26.3
+[[target]]
+id = "T8b"
+metric = "skirmish160.he_share_pct.mean"
+max = 26.3
+[[target]]
+id = "T8c"
+metric = "skirmish160_oos.he_share_pct.mean"
+max = 26.3
+
+# --- T11: the AI fires through observers (40 set) -----------------------------
+[[target]]
+id = "T11a"
+metric = "skirmish40.factions.germany.s5b_derived.ai_observed_direct_pct"
+min = 70
+[[target]]
+id = "T11b"
+metric = "skirmish40.factions.usa.s5b_derived.ai_observed_direct_pct"
+min = 70
+[[target]]
+id = "T11c"
+metric = "skirmish40.factions.germany.s5b_derived.ai_spotters_per_match"
+min = 1
+[[target]]
+id = "T11d"
+metric = "skirmish40.factions.usa.s5b_derived.ai_spotters_per_match"
+min = 1
+
+# --- T13: fortify-test and armour-test hard checks ----------------------------
+[[target]]
+id = "T13a"
+metric = "fortify10.pass"
+min = 1
+[[target]]
+id = "T13b"
+metric = "armour5.pass"
+min = 1
+[[target]]
+id = "T13c"
+metric = "armour_stress10.pass"
+min = 1
+
+# --- T14: tick p99 peak under 1.5 ms (jobs = 3, alone); stress case under 10 ms
+[[target]]
+id = "T14a"
+metric = "timing40.tick_p99_ms.peak"
+max = 1.5
+[[target]]
+id = "T14b"
+metric = "armour_stress10.cases.case14.checks.sim_tick_p99_10_ms_on_3_threads.value"
+max = 10

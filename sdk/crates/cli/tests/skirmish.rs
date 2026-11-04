@@ -269,3 +269,248 @@ fn many_seeds_run_in_parallel_give_the_single_runs_hashes() {
         "{text}"
     );
 }
+
+/// `--json FILE` (infra step): the file parses and every number in it equals
+/// the one in the `--summary` text; the normal output is unchanged by it.
+#[test]
+fn json_file_matches_the_summary_text_and_leaves_stdout_alone() {
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let file = tmp("many.json");
+    let _ = std::fs::remove_file(&file);
+    let args = [
+        "skirmish",
+        "--ai-vs-ai",
+        "--seed",
+        "7",
+        "--seeds",
+        "2",
+        "--both-bases",
+        "--minutes",
+        "2",
+        "--jobs",
+        "2",
+        "--summary",
+    ];
+    let plain = Command::new(exe).args(args).output().unwrap();
+    let with = Command::new(exe)
+        .args(args)
+        .arg("--json")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(plain.status.success() && with.status.success());
+    // Same text (the tick timing line varies with the machine's load).
+    let strip = |b: &[u8]| {
+        String::from_utf8_lossy(b)
+            .lines()
+            .filter(|l| !l.starts_with("tick p99"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(strip(&plain.stdout), strip(&with.stdout));
+
+    let j: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(j["schema"], 1);
+    assert_eq!(j["kind"], "skirmish");
+    assert_eq!(j["matches"], 4);
+    let text = String::from_utf8_lossy(&with.stdout).into_owned();
+
+    // Per match: seed, side, winner, winning base, length, HE share, hash.
+    let rows: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains(" normal ") || l.contains(" swapped "))
+        .filter(|l| l.contains("0x"))
+        .collect();
+    let per = j["per_match"].as_array().unwrap();
+    assert_eq!(rows.len(), per.len());
+    for (row, m) in rows.iter().zip(per) {
+        let f: Vec<&str> = row.split_whitespace().collect();
+        assert_eq!(f[0], m["seed"].to_string());
+        assert_eq!(f[1], m["side"].as_str().unwrap());
+        assert_eq!(f[2], m["winner_faction"].as_str().unwrap_or("time_limit"));
+        let base = m["winner_base"]
+            .as_u64()
+            .map_or("-".into(), |b| b.to_string());
+        assert_eq!(f[3], base);
+        let s = m["length_s"].as_f64().unwrap() as u64;
+        assert_eq!(f[4], format!("{}:{:02}", s / 60, s % 60));
+        let he: f64 = f[f.len() - 2].parse().unwrap();
+        assert!((he - m["he_share_pct"].as_f64().unwrap()).abs() < 0.051);
+        assert_eq!(f[f.len() - 1], m["hash"].as_str().unwrap());
+    }
+
+    // Aggregates against the text lines.
+    let line = |p: &str| text.lines().find(|l| l.starts_with(p)).unwrap().to_string();
+    let wb = line("wins by base:");
+    assert!(
+        wb.starts_with(&format!(
+            "wins by base: base 0 {}, base 1 {}; no winner {}",
+            j["wins"]["base0"], j["wins"]["base1"], j["wins"]["no_winner"]
+        )),
+        "{wb}"
+    );
+    let he = line("HE share of kills:");
+    assert!(he.contains(&format!(
+        "mean {:.1} %, max {:.1} %",
+        j["he_share_pct"]["mean"].as_f64().unwrap(),
+        j["he_share_pct"]["max"].as_f64().unwrap()
+    )));
+    let len = line("length min:");
+    assert!(len.contains(&format!(
+        "mean {:.1}, {:.1}-{:.1}, {} over 25",
+        j["length_min"]["mean"].as_f64().unwrap(),
+        j["length_min"]["min"].as_f64().unwrap(),
+        j["length_min"]["max"].as_f64().unwrap(),
+        j["length_min"]["over_25"]
+    )));
+    for f in ["germany", "usa"] {
+        let row = text
+            .lines()
+            .find(|l| l.starts_with(&format!("ww2:{f} ")) && l.contains('/'))
+            .unwrap();
+        let c: Vec<&str> = row.split_whitespace().collect();
+        let jf = &j["factions"][f];
+        assert_eq!(c[1], jf["wins"].to_string());
+        assert_eq!(j["wins"][f], jf["wins"]);
+        assert_eq!(
+            c[2],
+            format!("{}/{}", jf["wins_by_base"][0], jf["wins_by_base"][1])
+        );
+        assert_eq!(
+            c.last().unwrap().to_string(),
+            format!("{}/{}", jf["kills"], jf["losses"])
+        );
+        // Ammunition per kind (the S5a line).
+        let a = text
+            .lines()
+            .find(|l| l.starts_with(&format!("S5a ww2:{f}: MP on ammo")))
+            .unwrap();
+        let m = &jf["ammo"]["spend_mp"];
+        assert!(
+            a.contains(&format!(
+                "small arms {:.0}, explosives {:.0}, shells {:.0} (total {:.0}, {:.1}/match)",
+                m["small_arms"].as_f64().unwrap(),
+                m["explosives"].as_f64().unwrap(),
+                m["shells"].as_f64().unwrap(),
+                m["total"].as_f64().unwrap(),
+                m["per_match"].as_f64().unwrap()
+            )),
+            "{a}"
+        );
+    }
+    // The tick line is timing; compare it with the same rounding.
+    let tick = line("tick p99 ms");
+    assert!(tick.contains(&format!(
+        "peak {:.3}, all {:.3}",
+        j["tick_p99_ms"]["peak"].as_f64().unwrap(),
+        j["tick_p99_ms"]["all"].as_f64().unwrap()
+    )));
+
+    // One match writes the same shape.
+    let one = tmp("one.json");
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--seed", "3", "--minutes", "1"])
+        .arg("--json")
+        .arg(&one)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    let j1: serde_json::Value = serde_json::from_slice(&std::fs::read(&one).unwrap()).unwrap();
+    assert_eq!(j1["matches"], 1);
+    assert_eq!(j1["per_match"][0]["seed"], 3);
+    assert!(
+        j1["per_match"][0]["hash"]
+            .as_str()
+            .unwrap()
+            .starts_with("0x")
+    );
+}
+
+/// `targets` plays the runs it needs, prints one line per target and exits 1
+/// on a hard miss; `--from-json` reads the saved runs back to the same lines.
+#[test]
+fn targets_command_prints_lines_and_exits_by_hard_misses() {
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let dir = tmp("targets");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("t.toml");
+    std::fs::write(
+        &file,
+        r#"
+[runs.s2]
+kind = "skirmish"
+seeds = 2
+both_bases = true
+minutes = 2
+[runs.other]
+kind = "fortify-test"
+seeds = 1
+
+[[target]]
+id = "A1"
+metric = "s2.matches"
+min = 4
+max = 4
+[[target]]
+id = "A2"
+metric = "s2.wins.base_max_pct"
+min = 0
+max = 100
+kind = "report"
+[[target]]
+id = "A3"
+metric = "other.pass"
+min = 1
+"#,
+    )
+    .unwrap();
+    let saved = dir.join("saved");
+    let run = Command::new(exe)
+        .arg("targets")
+        .arg(&file)
+        .args(["--jobs", "2", "--runs", "s2"])
+        .arg("--out")
+        .arg(&saved)
+        .output()
+        .unwrap();
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let text = String::from_utf8_lossy(&run.stdout).into_owned();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines[0], "A1 s2.matches 4 [4,4] PASS", "{text}");
+    assert!(lines[1].starts_with("A2 s2.wins.base_max_pct "), "{text}");
+    assert!(lines[2].ends_with("SKIP (run other not played)"), "{text}");
+    assert!(
+        lines[3].starts_with("2 pass, 0 miss (hard: 0), 1 skipped"),
+        "{text}"
+    );
+    assert!(saved.join("s2.json").exists());
+
+    // Reading the saved run gives the same lines; a target the data cannot
+    // meet is a hard miss: exit code 1.
+    let strict = std::fs::read_to_string(&file)
+        .unwrap()
+        .replace("min = 4\nmax = 4", "min = 5\nmax = 6");
+    let file2 = dir.join("t2.toml");
+    std::fs::write(&file2, strict).unwrap();
+    let again = Command::new(exe)
+        .arg("targets")
+        .arg(&file2)
+        .arg("--from-json")
+        .arg(&saved)
+        .output()
+        .unwrap();
+    assert_eq!(again.status.code(), Some(1));
+    let t2 = String::from_utf8_lossy(&again.stdout).into_owned();
+    assert!(t2.starts_with("A1 s2.matches 4 [5,6] MISS\n"), "{t2}");
+    assert!(
+        t2.trim_end()
+            .ends_with("1 pass, 1 miss (hard: 1), 1 skipped"),
+        "{t2}"
+    );
+}

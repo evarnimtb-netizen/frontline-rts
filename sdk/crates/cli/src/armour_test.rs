@@ -64,9 +64,11 @@ pub struct ArmourArgs {
     /// Case 12's crossings per angle per run.
     #[arg(long, value_name = "N", default_value_t = CROSSINGS)]
     pub crossings: u32,
-    /// Print the report as JSON instead of text.
-    #[arg(long)]
-    pub json: bool,
+    /// Bare `--json`: print the report as JSON instead of text. With a
+    /// file, `--json FILE`: print the text as usual and also write the
+    /// checks and report rows as one JSON object (`docs/modding/tuning.md`).
+    #[arg(long, value_name = "FILE", num_args = 0..=1)]
+    pub json: Option<Option<PathBuf>>,
     /// Print one line per run to stderr (diagnostics).
     #[arg(long)]
     pub verbose: bool,
@@ -87,7 +89,7 @@ impl Default for ArmourArgs {
             cases: Vec::new(),
             stress: false,
             crossings: CROSSINGS,
-            json: false,
+            json: None,
             verbose: false,
             rules_override: Vec::new(),
         }
@@ -99,6 +101,10 @@ pub struct Check {
     pub name: String,
     pub pass: bool,
     pub detail: String,
+    /// The measured number the check judges, when it is one (`--json`).
+    pub value: Option<f64>,
+    /// The bound it is judged against, as text (`--json`).
+    pub limit: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -135,6 +141,25 @@ impl CaseReport {
             name: name.into(),
             pass,
             detail: detail.into(),
+            value: None,
+            limit: None,
+        });
+    }
+    /// A check with its measured value and bound (`--json`).
+    fn check_v(
+        &mut self,
+        name: impl Into<String>,
+        pass: bool,
+        value: f64,
+        limit: impl Into<String>,
+        detail: impl Into<String>,
+    ) {
+        self.checks.push(Check {
+            name: name.into(),
+            pass,
+            detail: detail.into(),
+            value: Some(value),
+            limit: Some(limit.into()),
         });
     }
     fn row(&mut self, name: impl Into<String>, value: impl Into<String>) {
@@ -346,20 +371,26 @@ fn case1(env: &Env) -> Result<CaseReport> {
         .values()
         .map(|s| s.mismatches + s.chance_mismatches)
         .sum();
-    r.check(
+    r.check_v(
         "every logged hit's outcome equals the rule (penetrates, pen_chance_ppm)",
         mism == 0 && total_hits > 0,
+        mism as f64,
+        "0 mismatches",
         format!("{total_hits} hits, {mism} mismatches"),
     );
     for (&(range, angle), st) in &pairs {
-        r.check(
+        r.check_v(
             format!("{range} m, {angle}°: at least 100 hits"),
             st.hits >= 100,
+            st.hits as f64,
+            ">= 100",
             format!("{} hits", st.hits),
         );
-        r.check(
+        r.check_v(
             format!("{range} m, {angle}°: penetrations within 3σ of Σp"),
             within_3s(st.pens as f64, st.expected, st.var),
+            st.pens as f64,
+            format!("{:.1} ± {:.1}", st.expected, 3.0 * st.var.sqrt()),
             format!(
                 "observed {}, expected {:.1} (σ {:.1})",
                 st.pens,
@@ -415,9 +446,11 @@ fn case2(env: &Env) -> Result<CaseReport> {
         *outcome.entry(key).or_default() += 1;
     }
     let hits = hull + turret;
-    r.check(
+    r.check_v(
         "hull hits ≤ 2 % of hits on the hull-down tank",
         hits > 0 && hull * 100 <= 2 * hits,
+        hull as f64 * 100.0 / hits.max(1) as f64,
+        "<= 2 %",
         format!("{hull} hull of {hits} hits"),
     );
     for (k, n) in outcome {
@@ -644,18 +677,22 @@ fn case3(env: &Env) -> Result<CaseReport> {
     if let Some(st) = stats.get("c 150 m, Sherman on the flank") {
         let h = st.hits.get(&(1, BoxPart::Hull)).copied().unwrap_or(0);
         let all = h + st.hits.get(&(1, BoxPart::Turret)).copied().unwrap_or(0);
-        r.check(
+        r.check_v(
             "3c (both parts penetrated at 150 m on the flank): ≥ 40 % of the Sherman's hits on the hull",
             all > 0 && h * 100 >= 40 * all,
+            h as f64 * 100.0 / all.max(1) as f64,
+            ">= 40 %",
             format!("{h} of {all}"),
         );
     }
     if let Some(st) = stats.get("b 300 m, Panzer IV angled 30°") {
         // S3b: the centre of visible mass, not the weakest plate.
-        r.check(
+        r.check_v(
             "3b: the Sherman's gunner aims within 0.3 m of the angled Panzer IV's visible-mass \
              centroid",
             st.aim_hull > 0 && st.aim_turret == 0 && st.aim_shots > 0 && st.aim_worst_m <= 0.3,
+            st.aim_worst_m,
+            "<= 0.3 m",
             format!(
                 "ticks aiming at the centroid {}, at the turret {}; {} shots, worst laid miss \
                  {:.2} m",
@@ -906,18 +943,22 @@ fn case4(env: &Env) -> Result<CaseReport> {
             e.3 += disabled(w, tank) as u32;
         }
     }
-    r.check(
+    r.check_v(
         "at least one rocket hit per flank and front run",
         no_hit.is_empty(),
+        no_hit.len() as f64,
+        "0 runs without a hit",
         if no_hit.is_empty() {
             "every run".to_string()
         } else {
             format!("no hit in: {}", no_hit.join(", "))
         },
     );
-    r.check(
+    r.check_v(
         "no launcher shot at a moving tank beyond engage_moving",
         violations == 0,
+        violations as f64,
+        "0 shots",
         format!("{violations} shots"),
     );
     r.row(
@@ -1033,9 +1074,11 @@ fn case5(env: &Env) -> Result<CaseReport> {
         }
     }
     let hurt: Vec<String> = st.iter().flat_map(|a| a.hurt.iter().cloned()).collect();
-    r.check(
+    r.check_v(
         "no component or seat damage from small arms",
         hurt.is_empty(),
+        hurt.len() as f64,
+        "0",
         if hurt.is_empty() {
             "none".to_string()
         } else {
@@ -1043,9 +1086,11 @@ fn case5(env: &Env) -> Result<CaseReport> {
         },
     );
     let died: u32 = st.iter().map(|a| a.died).sum();
-    r.check(
+    r.check_v(
         "the tank survives every run",
         died == 0,
+        died as f64,
+        "0 lost",
         format!("{died} lost"),
     );
     for (name, a) in [("5", &st[0]), ("5b", &st[1])] {
@@ -1548,9 +1593,11 @@ fn case8(env: &Env) -> Result<CaseReport> {
             e.3 += (w.stats().throws > throws0) as u32;
         }
     }
-    r.check(
+    r.check_v(
         "a satchel burst with a track anchor inside its blast radius destroys that track",
         failures.is_empty(),
+        failures.len() as f64,
+        "0 failures",
         if failures.is_empty() {
             format!("{bursts_checked} tracks in reach, all destroyed")
         } else {
@@ -1737,9 +1784,11 @@ fn case9(env: &Env) -> Result<CaseReport> {
             }
         }
     }
-    r.check(
+    r.check_v(
         "trench casualties ≤ 40 % of open",
         lost[0] > 0 && lost[1] * 100 <= 40 * lost[0],
+        lost[1] as f64 * 100.0 / lost[0].max(1) as f64,
+        "<= 40 %",
         format!(
             "trench {} vs open {} men lost ({} HE fired at the trench, {} in the open: \
              {:.2} vs {:.2} men per round)",
@@ -1842,9 +1891,11 @@ fn case10(env: &Env) -> Result<CaseReport> {
             .filter(|&&k| after.component(k) == 0)
             .count() as u64;
     }
-    r.check(
+    r.check_v(
         "no penetration, seat or internal component damage, no knock-out",
         bad.is_empty(),
+        bad.len() as f64,
+        "0",
         if bad.is_empty() {
             "none".to_string()
         } else {
@@ -2047,14 +2098,18 @@ fn case12(env: &Env) -> Result<CaseReport> {
             }
         }
     }
-    r.check(
+    r.check_v(
         "exactly one bog roll per crossing",
         wrong_rolls == 0,
+        wrong_rolls as f64,
+        "0 crossings",
         format!("{wrong_rolls} of {n} crossings did not start exactly one"),
     );
-    r.check(
+    r.check_v(
         "bogs within 3σ of bog_pct",
         within_3s(bogs as f64, exp, var),
+        bogs as f64,
+        format!("{exp:.1} ± {:.1}", 3.0 * var.sqrt()),
         format!("{bogs} of {n}, expected {exp:.1} (σ {:.1})", var.sqrt()),
     );
     let mean = |t: u64, k: u64| t as f64 / k.max(1) as f64 / 30.0;
@@ -2067,9 +2122,11 @@ fn case12(env: &Env) -> Result<CaseReport> {
             mean(open_ticks, open_n)
         ),
     );
-    r.check(
+    r.check_v(
         "the cratered trench stays crossable (no blocked node, no crossing stuck)",
         blocked == 0 && stuck == 0,
+        (blocked + stuck) as f64,
+        "0",
         format!("{blocked} blocked samples, {stuck} of {crater_n} crossings stuck"),
     );
     for (angle, (k, b)) in per_angle {
@@ -2212,9 +2269,11 @@ fn case13(env: &Env) -> Result<CaseReport> {
         }
         satchels.push(used);
     }
-    r.check(
+    r.check_v(
         "the tank never puts a track sample on a blocked node",
         on_blocked == 0,
+        on_blocked as f64,
+        "0 runs",
         format!("{on_blocked} runs with a sample on blocked ground"),
     );
     for (k, v) in outcomes {
@@ -2464,7 +2523,7 @@ fn case15(env: &Env) -> Result<CaseReport> {
         ),
     ] {
         let (pass, detail) = all(k);
-        r.check(name, pass, detail);
+        r.check_v(name, pass, k as f64, format!("{n} of {n}"), detail);
     }
     let med = |v: &mut Vec<u64>| {
         v.sort_unstable();
@@ -2621,14 +2680,18 @@ fn case16(env: &Env) -> Result<CaseReport> {
             ),
         );
     }
-    r.check(
+    r.check_v(
         "no Panzerfaust beyond its engagement distance",
         far == 0,
+        far as f64,
+        "0",
         format!("{far} fired too far"),
     );
-    r.check(
+    r.check_v(
         "Panzerfaust hits are physical hits on a vehicle",
         stray == 0,
+        stray as f64,
+        "0",
         format!("{stray} logged on another vehicle"),
     );
     Ok(r)
@@ -2712,9 +2775,11 @@ fn case14(env: &Env) -> Result<CaseReport> {
         peak_box = peak_box.max(w.stats().armour_box_peak);
     }
     let all = Summary::from_nanos(&mut tick);
-    r.check(
+    r.check_v(
         "sim tick P99 < 10 ms on 3 threads",
         all.p99_ms < 10.0,
+        all.p99_ms,
+        "< 10 ms",
         format!("p99 {:.3} ms, max {:.3} ms", all.p99_ms, all.max_ms),
     );
     r.row(

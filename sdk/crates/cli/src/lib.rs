@@ -17,6 +17,8 @@
 //!   (`frontline_sim::scenarios`) with hard checks and report rows.
 //! * [`desync_diff`] compares two sim saves field by field (multiplayer
 //!   desync dumps, S2).
+//! * [`json_out`] builds the `--json FILE` documents; [`targets`] checks them
+//!   against a targets file.
 //! * [`mortar_bench`] (S5b) fires the same mortar mission observed and as
 //!   map fire and compares the misses (the 3x rule).
 
@@ -24,6 +26,7 @@ pub mod armour_test;
 pub mod ballistics;
 pub mod desync_diff;
 pub mod fortify;
+pub mod json_out;
 pub mod lower;
 pub mod mortar_bench;
 pub mod overrides;
@@ -32,6 +35,7 @@ pub mod s3c_tally;
 pub mod schema;
 pub mod simulate;
 pub mod skirmish;
+pub mod targets;
 pub mod validate;
 
 pub use armour_test::{ArmourArgs, armour_test};

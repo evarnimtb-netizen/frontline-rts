@@ -168,45 +168,29 @@ def build_override(knobs, xs):
 
 # ---------------------------------------------------------------- running
 
-MATCH_RE = re.compile(
-    r'^(\d+)\s+(normal|swapped)\s+(\S+)\s+(\S+)\s+(\d+):(\d+)\s+.*?\s([\d.]+)\s+0x[0-9a-f]+\s*$')
-TICK_RE = re.compile(r'tick p99 ms.*?peak ([\d.]+)')
-SIDE_RE = re.compile(r'^(?:\w+:)?(\w+)\s+(\d+)\s+\d+/\d+\s.*\s(\d+)/(\d+)\s*$')
-KSRC_RE = re.compile(r"^S5a (?:\w+:)?(\w+): kills by source % \(of this side's kills\): (.*)$")
+def _short(faction):
+    return faction.split(":")[-1]
 
 def parse_summary(text):
-    """Everything the tuner reads from `skirmish --summary` lives here (a later
-    step switches it to a --json file). Per match: seed, bases, winner, the
-    winner's base, length (min), HE share of kills (%). Per faction, batch
-    totals: wins, kills, losses, kill shares by source (% of its kills)."""
-    matches, sides, tick, head = [], {}, None, True
-    for line in text.splitlines():
-        m = MATCH_RE.match(line)
-        if m:
-            w = m.group(3).split(":")[-1]
-            matches.append({"seed": int(m.group(1)), "bases": m.group(2),
-                            "winner": w if w not in ("-", "none") else None,
-                            "base": int(m.group(4)) if m.group(4).isdigit() else None,
-                            "len_min": int(m.group(5)) + int(m.group(6)) / 60,
-                            "he": float(m.group(7))})
-            continue
-        if line.startswith("wins by base"):
-            head = False
-        f = SIDE_RE.match(line) if head else None
-        if f:
-            sides.setdefault(f.group(1), {}).update(
-                wins=int(f.group(2)), kills=int(f.group(3)), losses=int(f.group(4)))
-        k = KSRC_RE.match(line)
-        if k:
-            src = {}
-            for part in k.group(2).split(","):
-                name, _, v = part.strip().rpartition(" ")
-                src[name.lower().replace(" ", "_")] = float(v)
-            sides.setdefault(k.group(1), {})["kill_src"] = src
-        t = TICK_RE.search(line)
-        if t:
-            tick = float(t.group(1))
-    return {"matches": matches, "tick_p99": tick, "sides": sides}
+    """Everything the tuner reads from a batch lives here: the file written by
+    `skirmish --seeds ... --json FILE` (docs/modding/tuning.md). Per match:
+    seed, bases, winner, the winner's base, length (min), HE share of kills
+    (%). Per faction, batch totals: wins, kills, losses, kill shares by source
+    (% of its kills). Also the tick p99 peak (ms)."""
+    d = json.loads(text)
+    matches = []
+    for m in d["per_match"]:
+        w = m["winner_faction"]
+        matches.append({"seed": m["seed"], "bases": m["side"],
+                        "winner": _short(w) if w else None,
+                        "base": m["winner_base"],
+                        "len_min": m["length_s"] / 60,
+                        "he": m["he_share_pct"]})
+    sides = {}
+    for fac, f in d["factions"].items():
+        sides[fac] = {"wins": f["wins"], "kills": f["kills"], "losses": f["losses"],
+                      "kill_src": {k: v for k, v in f["kills_by_source_pct"].items() if k != "other"}}
+    return {"matches": matches, "tick_p99": d["tick_p99_ms"]["peak"], "sides": sides}
 
 class Runner:
     def __init__(self, spec, cli, outdir, jobs):
@@ -239,15 +223,23 @@ class Runner:
         os.makedirs(os.path.join(self.outdir, "overrides"), exist_ok=True)
         path = os.path.join(self.outdir, "overrides", key + ".toml")
         open(path, "w").write(override)
+        jpath = os.path.join(self.outdir, "overrides", key + ".json")
+        if os.path.exists(jpath):
+            os.remove(jpath)
         cmd = [self.cli, "skirmish", "--ai-vs-ai", "--seed", str(seed), "--seeds", str(seeds),
-               "--both-bases", "--summary", "--jobs", str(self.jobs), "--minutes", str(self.minutes)]
+               "--both-bases", "--summary", "--jobs", str(self.jobs), "--minutes", str(self.minutes),
+               "--json", jpath]
         if override.strip():
             cmd += ["--rules-override", path]
         t0 = time.time()
-        p = subprocess.run(cmd, capture_output=True, text=True)
-        parsed = parse_summary(p.stdout)
-        if p.returncode != 0 or len(parsed["matches"]) != 2 * seeds:
-            raise SystemExit(f"batch failed (rc={p.returncode}, {len(parsed['matches'])} of {2*seeds} matches):\n{p.stderr[-800:]}")
+        p = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        parsed = None
+        if p.returncode == 0 and os.path.exists(jpath):
+            parsed = parse_summary(open(jpath).read())
+        if parsed is None or len(parsed["matches"]) != 2 * seeds:
+            n = len(parsed["matches"]) if parsed else 0
+            raise SystemExit(f"batch failed (rc={p.returncode}, {n} of {2*seeds} matches):\n{p.stderr[-800:]}")
+        os.remove(jpath)
         rec = {"key": key, "seed": seed, "seeds": seeds, "override": override, **parsed,
                "wall_s": round(time.time() - t0, 1)}
         self.cache[key] = rec
@@ -768,7 +760,7 @@ def fmt_x(knobs, xs):
 def default_cli():
     root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
     for base in (os.getcwd(), root):
-        for prof in ("bench-release", "release"):
+        for prof in ("release", "bench-release"):
             p = os.path.join(base, "target", prof, "frontline-cli")
             if os.path.exists(p):
                 return p
@@ -777,7 +769,7 @@ def default_cli():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("spec")
-    ap.add_argument("--cli", help="frontline-cli binary (default: target/bench-release, else target/release)")
+    ap.add_argument("--cli", help="frontline-cli binary (default: target/release, else target/bench-release)")
     ap.add_argument("--out", help="output dir (default: tools/autotune/runs/<spec name>)")
     ap.add_argument("--jobs", type=int, help="parallel matches (default: spec jobs, else 6)")
     a = ap.parse_args()

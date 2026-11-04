@@ -144,9 +144,11 @@ pub struct FortifyArgs {
     /// Mod directory (default: `mods/ww2` here or in the source tree).
     #[arg(long, value_name = "DIR")]
     pub mods: Option<PathBuf>,
-    /// Print the report as JSON instead of text.
-    #[arg(long)]
-    pub json: bool,
+    /// Bare `--json`: print the report as JSON instead of text. With a
+    /// file, `--json FILE`: print the text as usual and also write the
+    /// checks and report rows as one JSON object (`docs/modding/tuning.md`).
+    #[arg(long, value_name = "FILE", num_args = 0..=1)]
+    pub json: Option<Option<PathBuf>>,
     /// Tuning override (S3b): a partial TOML file merged onto the rules and
     /// defs. Repeatable; `docs/modding/tuning.md`.
     #[arg(long = "rules-override", value_name = "FILE")]
@@ -160,7 +162,7 @@ impl Default for FortifyArgs {
             first_seed: 1,
             threads: 2,
             mods: None,
-            json: false,
+            json: None,
             rules_override: Vec::new(),
         }
     }

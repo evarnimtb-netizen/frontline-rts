@@ -5,10 +5,11 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use frontline_cli::skirmish::ReportFormat;
+use frontline_cli::targets::{self, TargetsArgs};
 use frontline_cli::{
     ArmourArgs, BallisticsArgs, BenchArgs, FortifyArgs, SimulateArgs, SkirmishArgs, armour_test,
-    ballistics, desync_diff, fortify, mortar_bench, overrides, schema, simulate, skirmish,
-    validate,
+    ballistics, desync_diff, fortify, json_out, mortar_bench, overrides, schema, simulate,
+    skirmish, validate,
 };
 
 #[derive(Parser)]
@@ -55,6 +56,14 @@ enum Command {
     /// Exits 0 when every hard check passes, 1 otherwise. Report rows (with
     /// the owner's targets) never fail the run.
     ArmourTest(ArmourArgs),
+    /// Check a slice's numeric targets: play (or read saved) runs and print
+    /// one line per target, then `N pass, M miss (hard: K)`.
+    ///
+    /// The file lists runs (skirmish seed sets, armour-test, fortify-test)
+    /// and targets (metric path into the run's `--json` document, bounds,
+    /// hard or report); see docs/modding/tuning.md. Exits 1 when a hard
+    /// target misses.
+    Targets(TargetsArgs),
     /// Compare two sim saves field by field (a multiplayer desync dump's
     /// `paused.sav` files, or `checkpoint.sav` from both clients).
     ///
@@ -120,6 +129,9 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         }
         Command::Skirmish(args) if args.ab => {
             let report = skirmish::skirmish_ab(&args)?;
+            if let Some(path) = &args.json {
+                json_out::write(path, &json_out::skirmish_ab(&report))?;
+            }
             match args.report {
                 ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
                 ReportFormat::Text => print!("{}", skirmish::ab_text(&report)),
@@ -128,6 +140,9 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         }
         Command::Skirmish(args) if args.seeds.is_some() => {
             let report = skirmish::skirmish_many(&args)?;
+            if let Some(path) = &args.json {
+                json_out::write(path, &json_out::skirmish(&report))?;
+            }
             match (args.report, args.summary) {
                 (ReportFormat::Json, _) => println!("{}", serde_json::to_string_pretty(&report)?),
                 (ReportFormat::Text, true) => print!("{}", skirmish::many_text(&report)),
@@ -145,6 +160,14 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Skirmish(args) => {
             overrides::announce(args.mods.as_deref(), &args.rules_override)?;
             let report = skirmish::skirmish(&args)?;
+            if let Some(path) = &args.json {
+                let one = skirmish::ManyMatch {
+                    seed: report.seed,
+                    swapped: report.players.first().is_some_and(|p| p.base == 1),
+                    report: report.clone(),
+                };
+                json_out::write(path, &json_out::skirmish_one(one, Vec::new()))?;
+            }
             match args.report {
                 ReportFormat::Text => println!("{}", skirmish::summary_text(&report)),
                 ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
@@ -160,7 +183,10 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::FortifyTest(args) => {
             overrides::announce(args.mods.as_deref(), &args.rules_override)?;
             let report = fortify::fortify_test(&args)?;
-            if args.json {
+            if let Some(Some(path)) = &args.json {
+                json_out::write(path, &json_out::fortify(&report))?;
+            }
+            if args.json == Some(None) {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 println!("{}", fortify::summary_text(&report));
@@ -188,7 +214,10 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::ArmourTest(args) => {
             overrides::announce(args.mods.as_deref(), &args.rules_override)?;
             let report = armour_test::armour_test(&args)?;
-            if args.json {
+            if let Some(Some(path)) = &args.json {
+                json_out::write(path, &json_out::armour(&report))?;
+            }
+            if args.json == Some(None) {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 println!("{}", armour_test::summary_text(&report));
@@ -197,6 +226,17 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE
+            })
+        }
+        Command::Targets(args) => {
+            let (lines, hard_miss) = targets::run(&args)?;
+            for l in lines {
+                println!("{l}");
+            }
+            Ok(if hard_miss {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
             })
         }
         Command::DesyncDiff { a, b, max } => {
