@@ -17,8 +17,8 @@ next starts. Process rules: `docs/process/workflows.md`.
 - Trenches stay strong against small arms; attackers crack them with HE,
   grenades, tanks or flanking (S4-43).
 - Call-in has no queue: buy if affordable, spawn at base at once, per-card
-  cooldown (rifle 24 s, engineers/MG 36, AT 48, mortar 60, tank 120); each
-  card its own cooldown.
+  cooldown, each card its own (Q21 B); values from the S4 roster table in
+  each unit's TOML (rifle 20 s, engineers/SMG/LMG 30, AT 48, mortar 60).
 - No free ammo anywhere, base included. Small arms cheap, explosives
   moderate, shells and tank rounds priced; distance costs only physical
   delivery, never a surcharge (D1, D2). Tanks rearm at base, HQ or truck;

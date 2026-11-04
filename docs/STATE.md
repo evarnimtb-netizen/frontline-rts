@@ -97,8 +97,6 @@ Source: `docs/TODO.md` "Owner decisions in force"; each question's full text:
 - Mortars kill too little; the base-parked mortar fires unlimited from base (S6).
 - Base 1 is worth about 6 points of win share to either faction.
 - AI rarely throws satchels or fires Panzerfausts. No radio, registered fire.
-- `docs/TODO.md` quotes older cooldowns (rifle 24 s, engineers/MG 36 s); the
-  unit files hold the values above and win.
 - No cross-OS CI; MPL-2.0 text and `socket2` missing from
   `THIRD_PARTY_NOTICES`; `frontline-relay` not run on Linux yet.
 - Host crash: guest waits about 75 s, no "claim the win" button. Presenter:
