@@ -61,55 +61,55 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S5b-2 (M1 charge velocities are estimates), S5b-10 (mortar card prices),
   S5b-21/23 (German share about 4-5 points low out of sample),
   S5b-25 (card layout at 1280x800).
-- S6-1..10 (`docs/slices/S6-hq-crates.md` "Owner questions"), each on its
-  (A): S6-1 a carried shells crate rearms a tank within 5 m (owner request
-  2026-11-01 vs Appendix A); S6-2 cook-off bursts belong to whoever broke
-  the box; S6-3 a dead carrier's crate drops and stays his; S6-4 HQ costs
-  100 MP and dig time, no material until S10; S6-5 bullets stop at boxes,
-  only HE cooks off; S6-6 mortar teams dig their own pit; S6-7 radio box is
-  a state only until S11; S6-8 build cost paid on order; S6-9 retreat to
-  the HQ, else base; S6-10 a broken stock box loses all its stock.
-- S6-11..16 (raised in the S6 build), each on its (A): S6-11 the base
-  issues one crate per `base_crate_issue_s` per player and refuses (Busy)
-  in between instead of queueing; (B) a FIFO queue. S6-12 mortar teams
-  do not dig (dig rate 0): a mortar pit is dug by engineers or the
-  Zugtrupp with `Dig` profile `mortar_pit` (S6-6 (A) deferred: it needs a
-  per-profile dig rate). S6-13 cook-offs burst as the faction's 75 mm HE
-  round (no separate cook-off ammo defs). S6-14 a structure whose stock
-  box breaks is destroyed (pit stays; the HQ's `rebuild_s` starts). S6-15
-  a carrier's whole squad walks at the crate's carry pace. S6-16 the AI
-  builds no dumps yet, and its mortars do not target enemy HQs and crates.
-- S6-17..19 (raised in the S6 review fix), each on its (A): S6-17 an AI
-  tank far from every source (`tank_crate_far_m` 300 m straight line, the
-  spec's "path budget") holds for a bearers' crate run instead of driving
-  back; (B) path length. S6-18 structures are not selectable yet: the HQ
-  squad's strip shows its HQ (else the first dump), other dumps show only
-  their ring and boxes, until a later HUD pass; (B) structure selection in
-  S6. S6-19 a carrier sets his crate down within 2 x `pickup_m` of the
-  point or where he stands once his squad holds its formation there.
+- S6-1..19 (`docs/slices/S6-hq-crates.md` "Owner questions"), each on its (A):
+  S6-1 a shells crate within 5 m rearms a tank at the forward rate (B: base or HQ only, Appendix A).
+  S6-2 cook-off bursts belong to whoever broke the box.
+  S6-3 a dead carrier's crate drops and stays his player's.
+  S6-4 HQ costs 100 MP and dig time; no material until S10.
+  S6-5 bullets stop at boxes; only HE cooks off.
+  S6-6 mortar teams dig their own pit (deferred, see S6-12).
+  S6-7 the radio box is a state only until S11.
+  S6-8 build cost is paid on order.
+  S6-9 infantry retreat to the nearest HQ only when it is nearer base than they are; vehicle and crew squads to base.
+  S6-10 a broken stock box loses all its stock.
+  S6-11 the base issues one crate per `base_crate_issue_s` per player and refuses (Busy) in between (B: FIFO queue).
+  S6-12 mortar teams do not dig; a mortar pit is dug by engineers or the Zugtrupp with `mortar_pit`.
+  S6-13 cook-offs burst as the faction's 75 mm HE round (no separate cook-off defs).
+  S6-14 a structure whose stock box breaks is destroyed (the HQ's `rebuild_s` starts).
+  S6-15 a carrier's whole squad walks at the crate's carry pace.
+  S6-16 the AI builds no dumps yet and its mortars do not target enemy HQs or crates.
+  S6-17 an AI tank far from every source (`tank_crate_far_m` 300) holds for a bearers' run (B: path length).
+  S6-18 structures are not selectable yet; the strip shows the HQ, else the first dump (B: selection in S6).
+  S6-19 a carrier sets his crate down within 2 x `pickup_m` of the point, or where he stands once his squad holds there.
 
 ## Planned work queue
 
-1. Infra step (done on branch `infra-checks`, to be pushed): `--json` results,
-   `frontline-cli targets`, `tools/check.sh`, `docs/STATE.md`.
-2. Autotune fix done (branch `claude/tuner-fix`, `c72f91d`, merged by the
-   infra step): pooled logistic fit, synthetic proof, real run. The real run
-   puts Germany at 50 % with German infantry cards x0.959 [0.913-0.999]
-   (today's prices: 44.9 % [40.0-49.9]); input for S6 Tune, not shipped.
-3. S6 HQ and ammo crates (`docs/design/roster/roster-expansion.md` S6 card).
-4. Sim profiling: deferred until after S6 (owner 2026-11-03).
+1. Infra step (done on branch `infra-checks`, to be pushed).
+2. Autotune fix (done, merged by the infra step).
+3. S6 HQ and ammo crates: built, reviewed and fixed on branch `s6-hq-crates`
+   (head `d355350`, not pushed). Follow-ups before S7: balance on 160 + 160
+   matches (`base_bomb_s = 4` A/B, T9 after the fixes), retake the HUD
+   screenshot, S6-18 structure selection (its own item when scheduled).
+4. S7 assault guns and TDs (next slice after S6 is pushed and its balance check passes).
+5. Sim profiling: deferred until after S6 (owner 2026-11-03).
 
 ## Known issues still open
 
 Balance issues from S1-S3c are superseded by later measurements (latest:
-`docs/slices/S5b-log.md` "Final measurements"). Still open:
+`docs/slices/S6-log.md` "Targets" and "Tune"). Still open:
 
 - Map: base 1 is worth about 6 points of win share to either faction.
-- Mortars kill too little in AI play (about 5 % of kills): S6 Tune.
-- The base-parked mortar fires unlimited from base: S6.
+- Balance after S6 fixes: Germany 50 % on 40 matches, 52.2 % pooled on 160 sets;
+  re-measure on 320+ matches before tuning again.
+- Mortars: USA mortar share 7.9 % on 160 (band 10-15 %); the allowed levers do
+  not reach it (S6 Tune). Needs AI or code work.
+- HE share 17.6-18.3 % on 160 sets (band 20-26.3 %); same cause.
+- T4a / T4b: one `no_bombs` AI refusal per run (S5b-22 race).
+- Structures are not selectable in the HUD (S6-18); S6 screenshot shows old labels.
+- Tank crate runs and cook-offs are rare in AI play (0 tank runs per match).
 - fortify-test mortar row 39.5 % against a 40 % limit (marginal).
-- AI rarely throws satchels, rarely fires Panzerfausts (carriers die
-  waiting; AI tanks stand off).
+- AI rarely throws satchels, rarely fires Panzerfausts (carriers die waiting;
+  AI tanks stand off).
 - No cross-OS CI (GitHub Actions blocked by billing). MPL-2.0 text and
   `socket2` missing from `THIRD_PARTY_NOTICES`.
 - `frontline-relay` not built or run on Linux yet.
@@ -124,3 +124,4 @@ Balance issues from S1-S3c are superseded by later measurements (latest:
 - Autoplay: frag-into-trench shot fails most runs; shots of two instances
   share file names.
 - `bench/results` S1 hashes stale since S1b.
+- `docs/slices/S6-hq-crates.md` is about 312 lines (limit 300).
