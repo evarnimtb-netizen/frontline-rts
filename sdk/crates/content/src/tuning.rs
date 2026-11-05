@@ -1027,7 +1027,15 @@ tuning_table! {
         /// A mortar squad with no bombs and no crate run for this long
         /// walks to the HQ or base (s).
         dry_walk_s: 1..=3600,
+        /// S6b: the AI keeps one bearer squad per this many own mortar
+        /// squads, rounded up, at least one (0, the default: one bearer
+        /// squad, as in S6).
+        mortars_per_bearers: 0..=64 = "d_mortars_per_bearers",
     }
+}
+
+fn d_mortars_per_bearers() -> u32 {
+    0
 }
 
 impl AiSupplyTuning {
@@ -1046,6 +1054,7 @@ impl Default for AiSupplyTuning {
             shell_mp_max_pct: 25,
             hq_after_s: 60,
             dry_walk_s: 120,
+            mortars_per_bearers: 0,
         }
     }
 }
@@ -1290,7 +1299,15 @@ tuning_table! {
         /// ... and only at a target scoring at least this (still men·10 +
         /// moving men·5 + men in trenches·20; S5b Part B).
         map_fire_min_score: 0..=1000,
+        /// S6b: map fire only where the sim's map start error at that range
+        /// (`[fire_mission] map_fire_error_pct` / `_min_m`) is at most this
+        /// (m; 1000, the default: no limit).
+        map_fire_max_miss_m: 0..=1000 = "default_map_fire_max_miss_m",
     }
+}
+
+fn default_map_fire_max_miss_m() -> u32 {
+    1000
 }
 
 impl AiMortarTuning {
@@ -1306,6 +1323,7 @@ impl AiMortarTuning {
             spot_hold_s: 30,
             map_fire_min_pct: 60,
             map_fire_min_score: 40,
+            map_fire_max_miss_m: 1000,
         }
     }
 }

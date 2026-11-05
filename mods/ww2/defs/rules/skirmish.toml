@@ -1025,7 +1025,11 @@ refill_full_pct = 90
 refill_max_s = 120
 # A mortar barrages only while it holds more than this share (%) of its
 # bombs, unless an enemy is near an own point (keeps a reserve for defence).
-mortar_reserve_pct = 30
+# S6b: 0 (was 30). Held tubes had ~2.4 bombs on average while crates came;
+# with crate runs at 90 % the tube fires its last bombs and is refilled
+# (160 set: bombs fired +10-20 per match; S6b-mortar-ai.md). A mission
+# still needs 2 bombs (ai::mortar::MIN_BOMBS).
+mortar_reserve_pct = 0
 # Manpower (MP) kept back from unit buys while an own unit waits in base
 # for a paid refill (so the refill is not starved by buys).
 float_mp = 100
@@ -1042,6 +1046,7 @@ spot_max_s = 60              # s: a spotter who has seen nothing this long after
 spot_hold_s = 30             # s: a spotter with no new target stays this long before rejoining
 map_fire_min_pct = 60        # %: map fire only while the mortar holds more than this share of its bombs
 map_fire_min_score = 40      # and only at a target scoring at least this (still men*10 + moving men*5 + men in trenches*20)
+map_fire_max_miss_m = 20     # S6b: m: and only where the map start error at that range (max(8 % of range, 27 m) here) is at most this: 20 m -> no AI map fire on these tables (AI map bombs landed ~36 m off and killed almost nothing; S6b-mortar-ai.md); a player can still order it
 
 # Where a bought squad spawns (S3b, owner 2026-11-01: a call-in spawns at
 # once in the base, no queue and no delivery time).
@@ -1142,7 +1147,7 @@ pickup_m = 2                 # m: an own man this close picks up a crate
 [ai.supply]
 hq_behind_m = 120            # m behind the most valuable held point, toward the own base
 hq_probe_rays = 8            # candidate HQ spots tested per plan (reverse-slope rays)
-crate_run_below_pct = 50     # %: a mortar or the HQ below this gets a crate run
+crate_run_below_pct = 90     # %: a mortar or the HQ below this gets a crate run (S6b: was 50; tubes sat near dry a quarter of the time waiting for a run that started at half)
 tank_crate_below_pct = 25    # %: a tank this low that cannot reach a source gets a crate
 tank_crate_far_m = 300       # m: ... "cannot reach": immobile, or (not on a rearm trip)
                              # farther than this from the base and every built HQ/dump
@@ -1153,6 +1158,7 @@ tank_crate_far_m = 300       # m: ... "cannot reach": immobile, or (not on a rea
 shell_mp_max_pct = 25        # %: at most this share of income goes on crates
 hq_after_s = 60              # s: the AI buys its HQ squad after this
 dry_walk_s = 120             # s: a dry mortar with no run walks to the HQ or base
+mortars_per_bearers = 2      # S6b: one bearer squad per this many own mortar squads (rounded up, at least one; 0: one squad as in S6). Tubes sat near dry (~2 bombs) a quarter of the time with one squad running crates (S6b-mortar-ai.md)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

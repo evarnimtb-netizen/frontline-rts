@@ -6,7 +6,8 @@
 //!
 //! * **Buy.** After `hq_after_s` the AI buys its HQ squad (one, the card's
 //!   `max_alive`) when it can also pay the HQ, then one bearer squad once
-//!   it has an HQ or a mortar. Neither is in `[ai.mix]`.
+//!   it has an HQ or a mortar (S6b: one per `mortars_per_bearers` mortar
+//!   squads, rounded up, when that is not 0). Neither is in `[ai.mix]`.
 //! * **HQ siting.** Candidates `hq_behind_m` behind the most valuable own
 //!   point (else the point nearest the own base), toward the base: the spot
 //!   and `hq_probe_rays - 1` around it 20 m out. Each is scored by how many
@@ -165,9 +166,20 @@ impl Planner<'_> {
             self.ai.counters.s6_buys += 1;
             return;
         }
-        let has_mortar = mine.iter().any(|m| m.role == super::AiKind::Mortar);
-        if bearers.is_empty()
-            && (has_hq || has_mortar)
+        let mortars = mine
+            .iter()
+            .filter(|m| m.role == super::AiKind::Mortar)
+            .count();
+        // S6b: one bearer squad per `mortars_per_bearers` mortars (rounded
+        // up, at least one); 0: one.
+        let per = s.rules.ai.supply.mortars_per_bearers as usize;
+        let want = if per == 0 {
+            1
+        } else {
+            mortars.div_ceil(per).max(1)
+        };
+        if bearers.len() < want
+            && (has_hq || mortars > 0)
             && let Some(t) = card("bearers")
             && !pending(t)
             && g.call_in_check(self.ents, me, t, self.tick).is_ok()

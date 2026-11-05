@@ -187,6 +187,8 @@ fn the_ai_sends_a_spotter_and_fires_an_observed_mission_through_him() {
 fn without_a_spotter_the_ai_falls_back_to_map_fire_above_its_reserve() {
     fn no_spots(s: &mut MatchSetup) {
         s.rules.ai.mortar.spot_samples = 0;
+        // S6b: the S5b map-fire rules (no miss limit).
+        s.rules.ai.mortar.map_fire_max_miss_m = 1000;
     }
     let (mut w, mortar, _) = staged(no_spots, 1);
     let mut fired = None;
@@ -219,6 +221,7 @@ fn the_ai_keeps_its_map_fire_reserve_and_never_fires_blind() {
         s.rules.ai.mortar.spot_samples = 0;
         // 20 bombs held = 100 %: hold map fire at every share.
         s.rules.ai.mortar.map_fire_min_pct = 100;
+        s.rules.ai.mortar.map_fire_max_miss_m = 1000;
     }
     let (mut w, mortar, _) = staged(no_spots_high_reserve, 1);
     for _ in 0..60 * 30 {

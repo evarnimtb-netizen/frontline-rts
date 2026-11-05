@@ -422,8 +422,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// the rounds left in a dropped crew weapon). One bump for the whole slice.
 /// 14: S5b (fire missions). 15: S6 (supply defs and pit profiles in the
 /// setup; structures, crates, cook-offs and per-player S6 accounts in the
-/// match state). One bump for the whole slice.
-const SAVE_VERSION: u32 = 15;
+/// match state). One bump for the whole slice. 16: S6b (two AI
+/// fire-mission counters; `[ai.mortar] map_fire_max_miss_m` and
+/// `[ai.supply] mortars_per_bearers` in the setup).
+const SAVE_VERSION: u32 = 16;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2042,7 +2044,7 @@ impl World {
         self.fm_events.clear();
         self.supply_events.clear();
         if let Some(game) = &mut self.state.game {
-            game.take_ai_commands(self.state.tick, &mut ai);
+            game.take_ai_commands(&self.state.entities, self.state.tick, &mut ai);
         }
         let n = cmds.len();
         let get = |i: usize| if i < n { &cmds[i] } else { &ai[i - n] };
@@ -5636,6 +5638,14 @@ mod tests {
             (
                 "fm_walk_holds",
                 Box::new(|s| ai(s).counters.fm_walk_holds += 1),
+            ),
+            (
+                "fm_miss_holds",
+                Box::new(|s| ai(s).counters.fm_miss_holds += 1),
+            ),
+            (
+                "fm_dry_drops",
+                Box::new(|s| ai(s).counters.fm_dry_drops += 1),
             ),
         ];
         for (name, edit) in &edits {

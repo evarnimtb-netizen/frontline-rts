@@ -281,7 +281,11 @@ fn ai_vs_ai_with_a_tenth_of_the_rounds_still_ends_with_refill_trips() {
 /// test allows six and prints the time (S5a log). S5a Fix (review L5): a
 /// new squad bought with a full load could satisfy the first check alone,
 /// so both sides must also make a refill trip and pay for small-arms
-/// rounds refilled in base within the same six minutes.
+/// rounds refilled in base within the same six minutes. S6b: seven
+/// minutes for both checks: this one seed's time moves with any AI
+/// change (S6 values 341 s; S6b 388 s, and 337-341 s with either S6b
+/// mortar-supply value reverted alone), the walk back and out again being
+/// most of it.
 #[test]
 fn all_dry_ai_vs_ai_fires_again() {
     let mut w = World::new_match(ai_setup(3, false, |_| {}), 2).unwrap();
@@ -311,7 +315,7 @@ fn all_dry_ai_vs_ai_fires_again() {
         w.step(&[]);
         t += 1;
         assert!(
-            t < 30 * 360,
+            t < 30 * 420,
             "a dry side never fired again: {:?} -> {:?}, trips {} / {}",
             before,
             (small_arms(&w, 0), small_arms(&w, 1)),
@@ -328,7 +332,7 @@ fn all_dry_ai_vs_ai_fires_again() {
         w.step(&[]);
         t += 1;
         assert!(
-            t < 30 * 360,
+            t < 30 * 420,
             "a dry side made no refill trip with a paid base refill: trips {:?} -> {} / {}, small-arms refilled {:?} -> {} / {}",
             trips_before,
             counters(&w, 0).refill_trips,

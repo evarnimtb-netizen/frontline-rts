@@ -40,7 +40,9 @@
 //!    regroup-on-walk rule skips a squad with a spotter out.
 //! 4. **Map fire** (fallback, no spotter out): the best target, while the
 //!    squad holds more than `map_fire_min_pct` of its bombs and the score is
-//!    at least `map_fire_min_score` (the sim fires it as map fire).
+//!    at least `map_fire_min_score` (the sim fires it as map fire); S6b:
+//!    only where the sim's map start error at that range is at most
+//!    `map_fire_max_miss_m` (else `fm_miss_holds`).
 //! 5. **No blind fire:** a target is ordered only where the knowledge
 //!    rule's lasting part accepts it ([`crate::game::MatchState::known_by_record`]: a
 //!    capture point or an intel cell, which stay known well past the
@@ -68,6 +70,7 @@ use crate::game::{NavPhase, Order, Squad, SquadId};
 
 /// Most spotter records one AI keeps (one per mortar squad).
 pub const MAX_SPOTTERS: usize = 64;
+
 /// Targets the mode check looks at per plan and squad (each at most
 /// `fire_mission::OBSERVE_RAYS` rays).
 pub const MODE_CHECKS: usize = 3;
@@ -262,7 +265,8 @@ impl Planner<'_> {
                 continue;
             }
             // 4. Map fire on the best target, from where the tube is set
-            // up: not while it walks to its support spot.
+            // up: not while it walks to its support spot; S6b: only where
+            // the map start error is at most `map_fire_max_miss_m`.
             let walking = matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending);
             if let Some(best) = targets.first().copied()
                 && best.score >= am.map_fire_min_score as i64
@@ -272,6 +276,8 @@ impl Planner<'_> {
                     self.ai.counters.fm_walk_holds += 1;
                 } else if !map_ok || !reserve_ok {
                     self.ai.counters.fm_map_holds += 1;
+                } else if !self.map_fire_hits(gunner, best.pos) {
+                    self.ai.counters.fm_miss_holds += 1;
                 } else if self.knows(best.pos) {
                     self.fire(m.id, best.pos, rounds, mode::MAP as usize);
                     continue;
@@ -289,6 +295,33 @@ impl Planner<'_> {
             }
             self.support_move(m, sq, front);
         }
+    }
+
+    /// S6b: whether map fire at `target` starts within
+    /// `ai.mortar.map_fire_max_miss_m` (the sim's own map start error at
+    /// that range).
+    fn map_fire_hits(&self, gunner: FxVec2, target: FxVec2) -> bool {
+        let s = &self.g.setup;
+        let Some(fm) = s.rules.fire_mission.as_ref() else {
+            return true;
+        };
+        let err = fire_mission::start_error(fm, true, (target - gunner).length());
+        err <= Fx::from_int(s.rules.ai.mortar.map_fire_max_miss_m.min(1000) as i32)
+    }
+
+    /// Calls squad `id`'s spotter back now.
+    fn recall(&mut self, id: SquadId, timeout: bool) {
+        let Some(mut rec) = self.ai.spotters.get(&id).cloned() else {
+            return;
+        };
+        self.ai.emit(self.due, CommandKind::Regroup { squad: id });
+        rec.back = Some(self.tick);
+        if timeout {
+            self.ai.counters.fm_spotter_timeouts += 1;
+        } else {
+            self.ai.counters.fm_spotter_recalls += 1;
+        }
+        self.ai.spotters.insert(id, rec);
     }
 
     /// Whether `front` lies between `range_min + danger_close_m + 20` and
@@ -403,14 +436,8 @@ impl Planner<'_> {
             _ => None,
         };
         if let Some(timeout) = recall {
-            self.ai.emit(self.due, CommandKind::Regroup { squad: id });
-            rec.back = Some(tick);
-            if timeout {
-                self.ai.counters.fm_spotter_timeouts += 1;
-            } else {
-                self.ai.counters.fm_spotter_recalls += 1;
-            }
             self.ai.spotters.insert(id, rec);
+            self.recall(id, timeout);
             return None;
         }
         self.ai.spotters.insert(id, rec);

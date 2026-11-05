@@ -440,6 +440,11 @@ pub struct AiCounters {
     /// S5b: mortar squads that waited a plan because the plan's ray budget
     /// (`ai::mortar::PLAN_RAYS`) was spent.
     pub fm_ray_holds: u32,
+    /// S6b (`ai::mortar`): map fire held because its start error exceeds
+    /// `ai.mortar.map_fire_max_miss_m`, and fire missions withdrawn
+    /// because the squad was dry when they came due.
+    pub fm_miss_holds: u32,
+    pub fm_dry_drops: u32,
     /// S6 (`ai::supply`): HQ and bearer squads bought, HQ build orders,
     /// sight rays cast siting them and enemy eyes on the spots chosen,
     /// crates asked for at base, crate runs (and those to stranded tanks),
@@ -723,15 +728,42 @@ struct PointEval {
 
 impl MatchState {
     /// Moves due AI commands (all AI players, in player order) into `out`.
-    pub(crate) fn take_ai_commands(&mut self, tick: u64, out: &mut Vec<crate::Command>) {
+    /// S6b (S5b-22): a fire mission whose squad holds no bombs when it
+    /// comes due (the men carrying them fell during the reaction delay) is
+    /// withdrawn (`AiCounters::fm_dry_drops`) instead of refused.
+    pub(crate) fn take_ai_commands(
+        &mut self,
+        ents: &Entities,
+        tick: u64,
+        out: &mut Vec<crate::Command>,
+    ) {
+        let squads = &self.squads;
+        let setup = &self.setup;
         for (p, ai) in self.ai.iter_mut().enumerate() {
             let Some(ai) = ai else { continue };
             let n = ai.pending.iter().take_while(|c| c.due <= tick).count();
-            out.extend(ai.pending.drain(..n).map(|c| crate::Command {
-                player: PlayerId(p as u8),
-                seq: c.seq,
-                kind: c.kind,
-            }));
+            let mut dropped = 0u32;
+            out.extend(
+                ai.pending
+                    .drain(..n)
+                    .filter(|c| {
+                        let CommandKind::FireMission { squad, .. } = &c.kind else {
+                            return true;
+                        };
+                        let dry = setup.rules.fire_mission.is_some()
+                            && squads.get(squad).is_some_and(|sq| {
+                                crate::supply::mortar_bombs(setup, ents, sq).0 == 0
+                            });
+                        dropped += dry as u32;
+                        !dry
+                    })
+                    .map(|c| crate::Command {
+                        player: PlayerId(p as u8),
+                        seq: c.seq,
+                        kind: c.kind,
+                    }),
+            );
+            ai.counters.fm_dry_drops += dropped;
         }
     }
 

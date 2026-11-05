@@ -382,6 +382,10 @@ pub struct S5bAi {
     pub walk_holds: u64,
     pub blind_holds: u64,
     pub ray_holds: u64,
+    /// S6b: map fire held by its expected miss, fire missions withdrawn
+    /// because the tube was dry when due.
+    pub miss_holds: u64,
+    pub dry_drops: u64,
 }
 
 impl S5bAi {
@@ -396,6 +400,8 @@ impl S5bAi {
             walk_holds: c.fm_walk_holds as u64,
             ray_holds: c.fm_ray_holds as u64,
             blind_holds: c.fm_blind_holds as u64,
+            miss_holds: c.fm_miss_holds as u64,
+            dry_drops: c.fm_dry_drops as u64,
         }
     }
 
@@ -411,6 +417,8 @@ impl S5bAi {
         self.walk_holds += o.walk_holds;
         self.ray_holds += o.ray_holds;
         self.blind_holds += o.blind_holds;
+        self.miss_holds += o.miss_holds;
+        self.dry_drops += o.dry_drops;
     }
 }
 
@@ -2269,7 +2277,7 @@ pub fn many_text(r: &ManyReport) -> String {
         let a = &q.ai;
         let am: u64 = a.missions.iter().sum();
         out += &format!(
-            "S5b {} AI: missions {}: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}; waits for the plan's ray budget {}\n",
+            "S5b {} AI: missions {}: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}; waits for the plan's ray budget {}; map fire held by its miss {}, dry orders withdrawn {}\n",
             f.faction,
             am,
             a.missions[0],
@@ -2285,6 +2293,8 @@ pub fn many_text(r: &ManyReport) -> String {
             a.walk_holds,
             a.blind_holds,
             a.ray_holds,
+            a.miss_holds,
+            a.dry_drops,
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

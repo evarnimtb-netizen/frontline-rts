@@ -122,7 +122,10 @@ Each plan, a mortar squad that is not on a mission (`crates/sim/src/ai/mortar.rs
    one for `spot_max_s`.
 4. **Map fire** only as a fallback: no spotter out, the best target scores
    at least `map_fire_min_score`, the squad holds more than
-   `map_fire_min_pct` of its bombs, and it is not walking.
+   `map_fire_min_pct` of its bombs, it is not walking, and (S6b) the map
+   start error at that range is at most `map_fire_max_miss_m` (ww2: 20 m
+   against a 27 m minimum, so the ww2 AI orders no map fire). S6b: an AI
+   mission whose squad is dry when it comes due is withdrawn, not refused.
 5. **Never blind**: a target is ordered only where the knowledge rule's
    lasting part holds (a capture point or an intel cell within
    `intel_snap_m`; an enemy seen only this instant may be gone a reaction
