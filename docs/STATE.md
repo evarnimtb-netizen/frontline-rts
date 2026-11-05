@@ -46,6 +46,14 @@ Main (S5b): `SAVE_VERSION` 14 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 8
 once for S6 (`REPORT_VERSION` 1; `--json` files carry `"schema": 1`). A change
 to a save layout, the hash or a command bumps these in the same commit.
 
+## S6b (branch `s6b-mortar-ai` from `55b322d`, not pushed)
+
+Mortar AI pass (`docs/slices/S6b-log.md`): no AI map fire past 20 m
+expected miss, no bomb reserve, crate runs below 90 %, one bearer squad per
+two mortars, dry AI orders withdrawn. 160: mortar 14.2 / 12.0 %, HE 21.9 %
+(oos 21.5 %), Germany 52.5 %, but 43.1 % out of sample (T5d miss; Tune
+next). `SAVE_VERSION` 16.
+
 ## Balance now (S6 on branch, head `d355350`)
 
 Measured in `docs/slices/S6-log.md`; before S6, `docs/slices/S5b-log.md`.
