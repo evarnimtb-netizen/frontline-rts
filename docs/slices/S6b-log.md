@@ -87,3 +87,15 @@ Before (S6, same sets): mortar 11.6 / 9.2 %, HE 19.8 / 19.1 %, Germany
   probes, `p_*` 40 probes, `sum.py`).
 - The post code is gone; if an owner wants FO behaviour later, the
   leader must not leave the tube's Direct role (measured).
+
+## Tune
+
+- Autotune (spec in scratchpad `s6b/tune/s6b_tune.toml`; report there too):
+  German price multiplier on the S6 costs, 560 matches. Solved 0.992
+  [0.970-1.021]; shipped 0.99. Checks near the level: HE 21.5, mortar 13.4 /
+  11.7, length median 17.3, base_max 57.5 (all pass).
+- Confirm with `targets` on 40 + 160 + oos: 45 pass, 2 miss (T5c 43.1, T5d
+  55.6). Pooled 49.4 % over 320. The two sets swap sides between runs
+  (Build: 52.5 / 43.1), so this is sampling noise, not a lever left to pull.
+- No AI knob needed retuning; mortar and HE targets hold (T8a 21.4, T8b 21.1,
+  T9a 13.6, T9b 11.6). Not run: tick timing, armour/fortify, Godot, full check.

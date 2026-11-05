@@ -92,3 +92,13 @@ both counters in `s5b.ai` (JSON) and the `S5b ... AI:` line.
   (one seed; 341 s at S6 values, 388 s at S6b, 337-341 s with either
   supply value reverted alone).
 - Content snapshot and setup-bytes baseline re-blessed; per-field hashes.
+
+## Tune results
+
+Build left Germany at 52.5 / 43.1 % (160 / oos). One knob, the nine German
+card costs (same set as S6): autotune, 560 matches, 14 batches, range 0.88-1.04
+of the S6 values. Solved **0.992, 95 % interval 0.970-1.021**; model 50.4 %
+[45.8-54.9]; fit 5.0 points per 0.025. Shipped x0.99 (230/163/158/306/204/148/
+245/163/81). Confirm (seeds 1-80 / 101-180): Germany 43.1 / 55.6 % (pooled 320:
+49.4 %), base side 59.4 / 59.4, HE 21.4 / 21.1, mortar 13.6 / 11.6, length
+median 18.5. T5c and T5d: one set low, one high, each within 7.7 points of 50.

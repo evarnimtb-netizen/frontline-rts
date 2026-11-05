@@ -15,7 +15,7 @@ tags = ["at"]
 # 74 (46 %), -20 % 80 (50 %); out of sample (seeds 101-180) -15 % 70, -20 % 87.
 # The Garand's 24 rounds/min against the Kar98k's 15 stays the root cause.
 # docs/slices/S5a-ammo.md "Tune results".
-cost = 149   # S6 tune: x1.03 on 145 (autotune ger_price_mult 1.033 [0.970-1.089], Germany 50 %); the S5a-37 cut is now -17.6 %
+cost = 148   # S6b tune: x0.99 on the S6 value 149 (autotune ger_price_mult 0.992 [0.970-1.021], Germany 50 %); S6 had x1.03 on the S5a-37 value
 # Call-in (S3b): 48 s set by the owner on 2026-11-01 (20 % under the first
 # proposal of 60 s).
 cooldown_s = 48
