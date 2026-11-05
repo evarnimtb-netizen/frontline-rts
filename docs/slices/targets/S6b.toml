@@ -1,0 +1,327 @@
+# S6b targets (docs/slices/S6b-mortar-ai.md), machine-checkable part.
+# Owner choice 2026-11-05: "Mortar AI pass first" (before S7): mortars reach
+# the S5b-17 bands by AI behaviour only (mission size, bomb load, map fire;
+# never lethality). Copied from S6.toml; every target and band unchanged.
+# MAIN TARGETS of this slice: T9b (USA mortar share 10-15 %) and T8a / T8b
+# (HE share of kills 20-26.3 %, in and out of sample); all others must hold.
+#   frontline-cli targets docs/slices/targets/S6b.toml --jobs 6 [--runs skirmish40]
+# Run names are the first word of each metric. Balance batches use --jobs 6;
+# tick-time targets (T14) read `timing40`, which fixes jobs = 3 and must run
+# alone on a quiet machine (docs/process/workflows.md section 4).
+# Not checked here (cargo tests, see the spec): T20 mortar stops dry with no
+# crate in reach, T21 crate within 5 m keeps it firing, T23 cook-off only on
+# fragment contact, T24 tank rearm 1 per 4 s / rare 1 per 30 s to rare_cap,
+# T25 caps and refusals, T26 crate price kg x kind price and no distance
+# term, T12 determinism (1/2/3/8 threads, save/load, per-field tests),
+# Godot checks and screenshots, golden/validate/clippy/fmt (tools/check.sh).
+
+name = "S6b mortar AI pass"
+
+[runs.skirmish40]
+kind = "skirmish"
+seeds = 20            # seeds 1-20 x both bases = 40 matches
+both_bases = true
+minutes = 45
+
+[runs.timing40]       # the same 40 matches, run alone at 3 at a time
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+jobs = 3
+
+[runs.skirmish160]
+kind = "skirmish"
+seeds = 80            # seeds 1-80
+both_bases = true
+minutes = 45
+
+[runs.skirmish160_oos]
+kind = "skirmish"
+seeds = 80
+first_seed = 101      # out of sample: seeds 101-180
+both_bases = true
+minutes = 45
+
+[runs.armour5]
+kind = "armour-test"
+seeds = 5
+
+[runs.armour_stress10]
+kind = "armour-test"
+seeds = 10
+stress = true
+
+[runs.fortify10]
+kind = "fortify-test"
+seeds = 10
+
+# --- T4: no AI fire-mission order refused (40 set) -------------------------
+[[target]]
+id = "T4a"
+metric = "skirmish40.factions.germany.s5b_derived.refused_total"
+max = 0
+[[target]]
+id = "T4b"
+metric = "skirmish40.factions.usa.s5b_derived.refused_total"
+max = 0
+
+# --- T5: each faction 35-65 % on 40; 45-55 % on both 160 sets -------------
+[[target]]
+id = "T5a"
+metric = "skirmish40.wins.germany_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5b"
+metric = "skirmish40.wins.usa_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5c"
+metric = "skirmish160.wins.germany_pct"
+min = 45
+max = 55
+[[target]]
+id = "T5d"
+metric = "skirmish160_oos.wins.germany_pct"
+min = 45
+max = 55
+
+# --- T6: no base side above 62 % ------------------------------------------
+[[target]]
+id = "T6a"
+metric = "skirmish40.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6b"
+metric = "skirmish160.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6c"
+metric = "skirmish160_oos.wins.base_max_pct"
+max = 62
+
+# --- T7: no match under 10 or over 40 min; median 15-30 --------------------
+[[target]]
+id = "T7a"
+metric = "skirmish40.length_min.min"
+min = 10
+[[target]]
+id = "T7b"
+metric = "skirmish40.length_min.max"
+max = 40
+[[target]]
+id = "T7c"
+metric = "skirmish40.length_min.median"
+min = 15
+max = 30
+[[target]]
+id = "T7d"
+metric = "skirmish160.length_min.median"
+min = 15
+max = 30
+
+# --- T8: HE share of kills 20-25 % (S5b-17), hard cap 26.3 % -----------------
+[[target]]
+id = "T8a"
+metric = "skirmish160.he_share_pct.mean"
+min = 20
+max = 26.3
+[[target]]
+id = "T8b"
+metric = "skirmish160_oos.he_share_pct.mean"
+min = 20
+max = 26.3
+[[target]]
+id = "T8c"
+metric = "skirmish40.he_share_pct.mean"
+max = 26.3
+[[target]]
+id = "T8d"
+metric = "skirmish160.he_share_pct.mean"
+min = 20
+max = 25
+kind = "report"
+note = "owner band; the hard limit is T8a"
+
+# --- T9: mortars 10-15 % of each side's kills (S5b-17; S5b ended at ~5 %) ----
+[[target]]
+id = "T9a"
+metric = "skirmish160.factions.germany.kills_by_source_pct.mortar"
+min = 10
+max = 15
+[[target]]
+id = "T9b"
+metric = "skirmish160.factions.usa.kills_by_source_pct.mortar"
+min = 10
+max = 15
+
+# --- T10: reported: bombs fired and MP on ammo per kind (160 set) ------------
+[[target]]
+id = "T10a"
+metric = "skirmish160.factions.germany.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10b"
+metric = "skirmish160.factions.usa.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10c"
+metric = "skirmish160.factions.germany.ammo.spend_mp.per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10d"
+metric = "skirmish160.factions.usa.ammo.spend_mp.per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10e"
+metric = "skirmish160.factions.germany.ammo.spend_mp.shells"
+min = 0
+kind = "report"
+note = "total over 160 matches; small_arms and explosives in the same JSON"
+[[target]]
+id = "T10f"
+metric = "skirmish160.factions.usa.ammo.spend_mp.shells"
+min = 0
+kind = "report"
+[[target]]
+id = "T10g"
+metric = "skirmish160.factions.germany.s6_derived.crate_mp_per_match"
+min = 0
+kind = "report"
+note = "MP paid for crates at base (part of spend_mp)"
+[[target]]
+id = "T10h"
+metric = "skirmish160.factions.usa.s6_derived.crate_mp_per_match"
+min = 0
+kind = "report"
+
+# --- T11: AI fires through observers (40 set), as S5b ------------------------
+[[target]]
+id = "T11a"
+metric = "skirmish40.factions.germany.s5b_derived.ai_observed_direct_pct"
+min = 70
+[[target]]
+id = "T11b"
+metric = "skirmish40.factions.usa.s5b_derived.ai_observed_direct_pct"
+min = 70
+
+# --- T13: fortify-test and armour-test hard checks ----------------------------
+[[target]]
+id = "T13a"
+metric = "fortify10.pass"
+min = 1
+[[target]]
+id = "T13b"
+metric = "armour5.pass"
+min = 1
+[[target]]
+id = "T13c"
+metric = "armour_stress10.pass"
+min = 1
+
+# --- T14: tick p99 peak under 1.5 ms (jobs = 3, alone); stress case under 10 ms
+[[target]]
+id = "T14a"
+metric = "timing40.tick_p99_ms.peak"
+max = 1.5
+[[target]]
+id = "T14b"
+metric = "armour_stress10.cases.case14.checks.sim_tick_p99_10_ms_on_3_threads.value"
+max = 10
+
+# --- T15: stall guard: every match has a winner (no 45 min limit hit) ---------
+[[target]]
+id = "T15a"
+metric = "skirmish40.wins.no_winner"
+max = 0
+[[target]]
+id = "T15b"
+metric = "skirmish160.wins.no_winner"
+max = 0
+[[target]]
+id = "T15c"
+metric = "skirmish160_oos.wins.no_winner"
+max = 0
+
+# --- T20: the base refills no mortar bombs (owner Q4, S5a-42) -----------------
+[[target]]
+id = "T20a"
+metric = "skirmish160.factions.germany.s6_derived.base_bomb_refills"
+max = 0
+[[target]]
+id = "T20b"
+metric = "skirmish160.factions.usa.s6_derived.base_bomb_refills"
+max = 0
+# A bomb refill with no crate within crate_feed_m and no HQ or dump radius.
+[[target]]
+id = "T20c"
+metric = "skirmish160.factions.germany.s6_derived.bomb_refills_unsourced"
+max = 0
+[[target]]
+id = "T20d"
+metric = "skirmish160.factions.usa.s6_derived.bomb_refills_unsourced"
+max = 0
+
+# --- T22: HQ and dump stock fills only from carried crates (owner Q2 C) -------
+[[target]]
+id = "T22a"
+metric = "skirmish160.factions.germany.s6_derived.stock_in_not_crate_kg"
+max = 0
+[[target]]
+id = "T22b"
+metric = "skirmish160.factions.usa.s6_derived.stock_in_not_crate_kg"
+max = 0
+
+# --- T23: crate and stock cook-offs happen in play (reported) -----------------
+[[target]]
+id = "T23a"
+metric = "skirmish160.s6.cookoffs_per_match"
+min = 0
+kind = "report"
+
+# --- T24: tank rearm forward (HQ and dumps, D3 rates; reported) ---------------
+[[target]]
+id = "T24a"
+metric = "skirmish160.factions.germany.s6_derived.tank_rounds_forward_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T24b"
+metric = "skirmish160.factions.usa.s6_derived.tank_rounds_forward_per_match"
+min = 0
+kind = "report"
+
+# --- T27: the AI builds an HQ in most matches and runs crates -----------------
+[[target]]
+id = "T27a"
+metric = "skirmish160.factions.germany.s6_derived.hq_built_pct"
+min = 70
+[[target]]
+id = "T27b"
+metric = "skirmish160.factions.usa.s6_derived.hq_built_pct"
+min = 70
+[[target]]
+id = "T27c"
+metric = "skirmish160.factions.germany.s6_derived.crates_delivered_per_match"
+min = 3
+[[target]]
+id = "T27d"
+metric = "skirmish160.factions.usa.s6_derived.crates_delivered_per_match"
+min = 3
+[[target]]
+id = "T27e"
+metric = "skirmish160.factions.germany.s6_derived.tank_crate_runs_per_match"
+min = 0
+kind = "report"
+note = "owner 2026-11-01: crates carried to stranded tanks"
+[[target]]
+id = "T27f"
+metric = "skirmish160.factions.usa.s6_derived.tank_crate_runs_per_match"
+min = 0
+kind = "report"
