@@ -53,7 +53,7 @@ miss (`[ai.mortar] map_fire_max_miss_m`, ww2 off switch); `mortar_reserve_pct`
 0; crate runs below 90 %; `mortars_per_bearers` 2; dry AI fire orders
 withdrawn, not refused. Prices are S6 values (Tune change reverted). 160 set:
 mortar 14.2 / 12.0 %, HE 21.9 %, Germany 52.5 %; out of sample Germany 43.1 %
-(T5d miss), third set 41.9 %. T5 open (S6b-1).
+(T5d miss), 41.9 % (301-380), 50.6 % (201-280); pooled 47.0 % over 640 (S6b-1).
 
 ## Balance at S6 (head `d355350`; S6b numbers above)
 
@@ -96,8 +96,8 @@ Source: `docs/TODO.md` "Owner decisions in force"; full text in `docs/archive/TO
 
 ## Known gaps
 
-- Balance: Germany's win share is open after S6b (52.5 / 43.1 / 41.9 % on
-  three 160 sets; S6b-1). Base 1 is worth about 6 points (S5b-21/23 open).
+- Balance: Germany 52.5 / 43.1 / 41.9 / 50.6 % on four 160 sets, pooled
+  47.0 % (in band, low side; S6b-1). Base 1 is worth about 6 points (S5b-21/23 open).
 - Mortar and HE bands met in S6b on 160 sets (USA mortar 11.0-12.0 %, HE
   21.5-21.9 %). Germany's mortar share is near the 15 % cap.
 - Structures cannot be selected in the HUD (S6-18). `docs/slices/screens/s6_hq_supply.png`

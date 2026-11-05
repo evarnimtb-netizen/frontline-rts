@@ -84,7 +84,7 @@ interval includes 1.00. Reverted in `529d134`. The Tune gave no usable lever.
 ## Known gaps
 
 - **T5 not settled.** Germany: 52.5 % (1-80), 43.1 % (101-180), 41.9 %
-  (301-380). Pooled 45.8 % over 480. Owner question S6b-1.
+  (301-380), 50.6 % (201-280, orchestrator). Pooled 47.0 % over 640. S6b-1.
 - Germany's mortar share 13.6-14.5 % (cap 15 %); map bombs still 28 % of bombs.
 - Cook-offs 0.05 -> 0.19 per match; crates lost 16 / 6 -> 54 / 21 (G / U).
 - Not run: `timing40`, armour-test, fortify-test, Godot checks, `check.sh full`.

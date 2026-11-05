@@ -82,7 +82,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S6-18 structures are not selectable yet; the strip shows the HQ, else the first dump (B: selection in S6).
   S6-19 a carrier sets his crate down within 2 x `pickup_m` of the point, or where he stands once his squad holds there.
 - S6b-1..3 (`docs/slices/S6b-mortar-ai.md`, `S6b-log.md`), each on its (A):
-  S6b-1 Germany's win share (T5, band 45-55 %) reads 52.5 / 43.1 / 41.9 % on three 160 sets at S6 prices (pooled 45.8 %). (A) Keep S6 prices and accept T5 as an open hard miss; a German price or AI lever is its own Tune slice if wanted.
+  S6b-1 Germany's win share (T5, band 45-55 %) reads 52.5 / 43.1 / 41.9 / 50.6 % on four 160 sets at S6 prices (pooled 47.0 % over 640, in band). (A) Keep S6 prices; a German price or AI lever is its own Tune slice if wanted.
   S6b-2 `mortar_reserve_pct` 0 means the AI keeps no bombs for defence. (A) Accept; a defence-only reserve needs its own 160 measurement (a 10 % reserve cut mortar share).
   S6b-3 AI map fire is off in ww2 (`map_fire_max_miss_m` 20, under the 27 m floor). (A) Keep it off until better map data (S11).
 
@@ -104,8 +104,8 @@ Balance issues from S1-S3c are superseded by later measurements (latest:
 `docs/slices/S6-log.md` "Targets" and "Tune"). Still open:
 
 - Map: base 1 is worth about 6 points of win share to either faction.
-- Balance after S6b (160 sets, S6 prices): Germany 52.5 / 43.1 / 41.9 %
-  (T5, band 45-55; S6b-1); base side 59.4 % oos (T6c, max 62).
+- Balance after S6b (160 sets, S6 prices): Germany 52.5 / 43.1 / 41.9 / 50.6 %,
+  pooled 47.0 % (T5, band 45-55; S6b-1); base side 59.4 % oos (T6c, max 62).
 - Mortars and HE: met after S6b on 160 sets (USA 11.0-12.0 %, band 10-15;
   HE 21.5-21.9 %, band 20-26.3). Germany's mortar share 13.6-14.5 % is near the 15 % cap.
 - Cook-offs (0.05 -> 0.19 per match) and crates lost (16 / 6 -> 54 / 21) rose

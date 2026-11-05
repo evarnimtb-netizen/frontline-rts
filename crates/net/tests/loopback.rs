@@ -455,7 +455,13 @@ fn soak_with_vehicles_36000_ticks() {
 #[test]
 #[ignore]
 fn soak_20_minutes_seeds_1_to_3() {
-    for seed in 1..=3 {
+    // Three seeds that run the full 20 minutes. 100 000 tickets stop a
+    // ticket win, but a side can still be wiped (no units and less
+    // manpower than its cheapest card): since S6b's mortar AI, seed 3 ends
+    // that way at ~17.6 min. Such a run must still be clean to its end with
+    // both peers on the same outcome; the next seed (up to 8) replaces it.
+    let mut full = 0;
+    for seed in 1..=8 {
         let spec = VirtualSpec {
             seed,
             seconds: 1200,
@@ -465,6 +471,11 @@ fn soak_20_minutes_seeds_1_to_3() {
         };
         let r = harness::run_virtual(&setup(seed, Some(100_000)), &spec);
         eprintln!("soak seed {seed}: {}", summary(&r));
+        if r.outcomes[0] != Outcome::Running {
+            assert_eq!(r.outcomes[0], r.outcomes[1], "{}", summary(&r));
+            assert_clean(&r, r.ticks[0].min(r.ticks[1]));
+            continue;
+        }
         assert_clean(&r, 1198 * 30);
         assert_eq!(
             r.outcomes,
@@ -472,5 +483,10 @@ fn soak_20_minutes_seeds_1_to_3() {
             "{}",
             summary(&r)
         );
+        full += 1;
+        if full == 3 {
+            return;
+        }
     }
+    panic!("fewer than three of seeds 1-8 ran the full 20 minutes");
 }
