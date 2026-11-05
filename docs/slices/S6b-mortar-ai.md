@@ -32,36 +32,33 @@ No change to blast, fragments, warheads, dispersion or damage. Branch
    runs at 90 % and more bearers it adds 10-20 bombs per match (below).
 3. **Few observers for unseen targets.** ~1.1-1.4 spotter missions per
    match; longer spotter stays (150 s) change little.
-4. **USA buys fewer mortars because it buys fewer squads.** Mortar teams
-   are 21.6 % (G) and 22.5 % (U) of AI buys; the USA buys 3,385 squads vs
-   4,483 over 160. USA mortar kills per match are about Germany's (10.4 vs
-   10.7) and per bomb a little higher; its share is lower because USA kills
-   more in total (113 vs 92 per match: Germany fields more, cheaper men).
-   Same logic for both sides; no buy change.
-5. **`no_bombs` refusal (S5b-22):** the AI checks bombs (>= 2) at plan time;
-   the men carrying them can fall during the 1-4 s reaction delay.
+4. **USA buys fewer mortars because it buys fewer squads** (3,385 vs
+   4,483 over 160; mortars 22.5 / 21.6 % of buys). USA mortar kills per
+   match are about Germany's (10.4 vs 10.7); its share is lower because it
+   kills more in total (113 vs 92 per match). Same logic; no buy change.
+5. **`no_bombs` refusal (S5b-22):** bombs checked at plan time; carriers
+   can fall during the 1-4 s reaction delay.
 
 ## Build findings (seeds 1-80 x both bases, 160 each; a temporary per-plan tally)
 
-Tube-plans: on a mission 23 %, walking 34 % (mostly fresh teams walking
-out from base), held by the reserve with targets 24 % (mean 2.4 bombs
-left), set up with no target 7-10 %, target but no observer ~6 %. Target
-scoring (trench weight 0, only men within 15 m of the aim point) and
-`mission_rounds` 4 / 8 did not move kills per bomb (0.10-0.11). What moved
-it was bombs: reserve 0 plus earlier crate runs. A standing observation
-post (leader sent toward the front point with no target, built and
-tested) took the leader from the tube: Direct bombs fell 26 -> 16 per
-match and the mortar share with it, so it was removed (owner-facing note).
+Tube-plans: on a mission 23 %, walking 34 % (fresh teams walking out),
+held by the reserve with targets 24 % (mean 2.4 bombs left), no target
+7-10 %, no observer ~6 %. Target scoring and `mission_rounds` 4 / 8 did
+not move kills per bomb (0.10-0.11); more bombs did (reserve 0, earlier
+crate runs). A standing observation post (leader sent forward with no
+target) took the leader from the tube (Direct bombs 26 -> 16 per match);
+removed (owner-facing note).
 
 ## Changes (both factions, same code; every value in TOML)
 
-- **C1 map fire only when it can hit** (map fire lever). New
+- **C1 no AI map fire past a miss limit** (map fire lever). New
   `[ai.mortar] map_fire_max_miss_m` (m; default 1000 = no limit; ww2
-  **20**): the AI orders map fire only where the sim's own map start error
-  at that range (`fire_mission::start_error`) is at most this, else holds
-  (`fm_miss_holds`). With the ww2 `[fire_mission]` (minimum 27 m) the AI
-  orders no map fire; a player still can; a mod with better map data
-  (registered fire, S11) gets AI map fire back without code.
+  **20**): the AI orders map fire only where the sim's map start error at
+  that range (`fire_mission::start_error`) is at most this, else holds
+  (`fm_miss_holds`). The ww2 `[fire_mission]` floor is 27 m, so 20 is an off
+  switch: the AI orders no map fire (a player can; better map data, S11,
+  brings it back without code). Map bombs remain, 28 % of bombs on 160
+  (mean miss 14.4 m, S6 21.7 m): observed missions whose observer fell.
 - **C2 keep tubes fed** (bomb load / crate runs, AI only):
   `[ai.ammo] mortar_reserve_pct` 30 -> **0** (a mission still needs 2
   bombs); `[ai.supply] crate_run_below_pct` 50 -> **90**; new
@@ -70,15 +67,18 @@ match and the mortar share with it, so it was removed (owner-facing note).
 - **C3 dry orders withdrawn** (S5b-22): when an AI `FireMission` comes due
   and its squad holds no bombs, the AI withdraws it (`fm_dry_drops`); the
   sim's refusal count for an AI player stays 0.
+- Owner note: reserve 0 drops the `defend` override (no bombs kept for
+  defence); the 10 % probe cost mortar share (12.8 / 8.6 -> 11.9 / 8.1).
 - Not changed: `mission_rounds` 6, bomb load 20 per team (MID 1943 gives
   24 for the German crew; no US source for more), buys, prices, physics.
 
 ## State, versions
 
 `AiCounters::{fm_miss_holds, fm_dry_drops}`, saved and hashed with the AI
-state (postcard, whole); per-field hash entries in `world.rs`.
-`SAVE_VERSION` 15 -> 16. No command change: `PROTOCOL_VERSION` 9. CLI:
-both counters in `s5b.ai` (JSON) and the `S5b ... AI:` line.
+state; per-field hash entries in `world.rs`. `SAVE_VERSION` 15 -> 16;
+`PROTOCOL_VERSION` 9 (no command change). CLI: both counters in `s5b.ai`
+and the `S5b ... AI:` line; `ai_missions_total` and that line count
+missions sent (planned minus dry orders withdrawn; `ai_missions_planned`).
 
 ## Tests
 
@@ -87,18 +87,14 @@ both counters in `s5b.ai` (JSON) and the `S5b ... AI:` line.
   refusal); bombs lost while the order waits: withdrawn, no refusal;
   bearer squads 2 for 3 mortars (1 with the key 0); determinism at
   1/2/3/8 threads and save -> load -> continue under the ww2 values.
-- `s5b_ai_mortar.rs` map-fire tests set `map_fire_max_miss_m` 1000 (S5b
-  rules). `s5a_ai.rs` `all_dry_ai_vs_ai_fires_again`: 7 min instead of 6
-  (one seed; 341 s at S6 values, 388 s at S6b, 337-341 s with either
-  supply value reverted alone).
+- `s5b_ai_mortar.rs` map-fire tests set `map_fire_max_miss_m` 1000.
+  `s5a_ai.rs` `all_dry_ai_vs_ai_fires_again`: 7 min instead of 6 (one
+  seed; 341 s at S6, 388 s at S6b).
 - Content snapshot and setup-bytes baseline re-blessed; per-field hashes.
 
 ## Tune results
 
-Build left Germany at 52.5 / 43.1 % (160 / oos). One knob, the nine German
-card costs (same set as S6): autotune, 560 matches, 14 batches, range 0.88-1.04
-of the S6 values. Solved **0.992, 95 % interval 0.970-1.021**; model 50.4 %
-[45.8-54.9]; fit 5.0 points per 0.025. Shipped x0.99 (230/163/158/306/204/148/
-245/163/81). Confirm (seeds 1-80 / 101-180): Germany 43.1 / 55.6 % (pooled 320:
-49.4 %), base side 59.4 / 59.4, HE 21.4 / 21.1, mortar 13.6 / 11.6, length
-median 18.5. T5c and T5d: one set low, one high, each within 7.7 points of 50.
+Tune shipped German cards x0.99 (autotune 0.992 [0.970-1.021], 560
+matches); the interval holds the S6 prices and T5c / T5d went 52.5 / 43.1
+-> 43.1 / 55.6 %. Review: out of scope (non-mortar prices), unsupported;
+reverted in the fix stage. Prices are the S6 values; T5: see the log.

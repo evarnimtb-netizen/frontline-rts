@@ -1436,7 +1436,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 204,
+      "cost": 206,
       "dig_rate_pct": 200,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1495,7 +1495,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 230,
+      "cost": 232,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1591,7 +1591,7 @@
         "at_hunt"
       ],
       "cooldown_s": 20,
-      "cost": 163,
+      "cost": 165,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1686,7 +1686,7 @@
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 245,
+      "cost": 247,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1761,7 +1761,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 81,
+      "cost": 82,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1811,7 +1811,7 @@
         "at_hunt"
       ],
       "cooldown_s": 48,
-      "cost": 148,
+      "cost": 149,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1878,7 +1878,7 @@
         "recrew"
       ],
       "cooldown_s": 30,
-      "cost": 158,
+      "cost": 160,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
       "hp": 100,
@@ -1991,7 +1991,7 @@
         "recrew"
       ],
       "cooldown_s": 45,
-      "cost": 306,
+      "cost": 309,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,
@@ -2044,7 +2044,7 @@
         "recrew"
       ],
       "cooldown_s": 60,
-      "cost": 163,
+      "cost": 165,
       "dig_rate_pct": 100,
       "faction": "ww2:germany",
       "hp": 100,

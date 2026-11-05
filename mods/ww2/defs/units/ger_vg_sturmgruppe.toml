@@ -25,7 +25,7 @@ sources = [
 # Grenadiergruppe's ten men with one MG (280 when this was set; 225 since
 # the S5a Tune, which left this card at 300: it was bought in 158 of 160
 # German matches at this price).
-cost = 306   # S6b tune: x0.99 on the S6 value 309 (autotune ger_price_mult 0.992 [0.970-1.021], Germany 50 %); S6 had x1.03 on the S5a-37 value
+cost = 309   # S6 tune: x1.03 on 300 (autotune ger_price_mult 1.033 [0.970-1.089], Germany 50 %); the S5a-37 cut is now -17.6 %
 # Call-in cooldown (s), its own timer (roster table).
 cooldown_s = 45
 # From September 1944 (the first VG divisions; skirmish has no date filter).

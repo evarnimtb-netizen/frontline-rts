@@ -275,7 +275,11 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             )
         })
         .collect();
-    let am: u64 = b.ai.missions.iter().sum();
+    // S6b: `ai.missions` counts orders as planned; dry orders withdrawn
+    // before they reach the sim are taken off the total (not per mode: a
+    // withdrawn order carries no mode).
+    let am_planned: u64 = b.ai.missions.iter().sum();
+    let am = am_planned.saturating_sub(b.ai.dry_drops);
     o.insert(
         "s5b_derived".into(),
         json!({
@@ -295,7 +299,8 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             "base_bombs_pct": pct(base as f64, bombs as f64),
             "ai_missions": mode_map(&|k| json!(b.ai.missions[k])),
             "ai_missions_total": am,
-            "ai_observed_direct_pct": pct((b.ai.missions[0] + b.ai.missions[1]) as f64, am as f64),
+            "ai_missions_planned": am_planned,
+            "ai_observed_direct_pct": pct((b.ai.missions[0] + b.ai.missions[1]) as f64, am_planned as f64),
             "ai_spotters_per_match": round3(b.ai.spotters as f64 / bn),
         }),
     );

@@ -2277,8 +2277,9 @@ pub fn many_text(r: &ManyReport) -> String {
         let a = &q.ai;
         let am: u64 = a.missions.iter().sum();
         out += &format!(
-            "S5b {} AI: missions {}: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}; waits for the plan's ray budget {}; map fire held by its miss {}, dry orders withdrawn {}\n",
+            "S5b {} AI: missions {} sent of {} planned: direct {}, observed {}, map {} ({:.1} % observed+direct); spotters sent {} ({:.2}/match), missions through a spotter {}, time-outs {}, recalls {}; map fire held {} (reserve) / {} (walking); blind targets passed over {}; waits for the plan's ray budget {}; map fire held by its miss {}, dry orders withdrawn {}\n",
             f.faction,
+            am.saturating_sub(a.dry_drops),
             am,
             a.missions[0],
             a.missions[1],
