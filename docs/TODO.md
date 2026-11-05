@@ -81,17 +81,22 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S6-17 an AI tank far from every source (`tank_crate_far_m` 300) holds for a bearers' run (B: path length).
   S6-18 structures are not selectable yet; the strip shows the HQ, else the first dump (B: selection in S6).
   S6-19 a carrier sets his crate down within 2 x `pickup_m` of the point, or where he stands once his squad holds there.
+- S6b-1..3 (`docs/slices/S6b-mortar-ai.md`, `S6b-log.md`), each on its (A):
+  S6b-1 Germany's win share (T5, band 45-55 %) reads 52.5 / 43.1 / 41.9 % on three 160 sets at S6 prices (pooled 45.8 %). (A) Keep S6 prices and accept T5 as an open hard miss; a German price or AI lever is its own Tune slice if wanted.
+  S6b-2 `mortar_reserve_pct` 0 means the AI keeps no bombs for defence. (A) Accept; a defence-only reserve needs its own 160 measurement (a 10 % reserve cut mortar share).
+  S6b-3 AI map fire is off in ww2 (`map_fire_max_miss_m` 20, under the 27 m floor). (A) Keep it off until better map data (S11).
 
 ## Planned work queue
 
 1. Infra step (done on branch `infra-checks`, to be pushed).
 2. Autotune fix (done, merged by the infra step).
 3. S6 HQ and ammo crates: built, reviewed and fixed on branch `s6-hq-crates`
-   (head `d355350`, not pushed). Follow-ups before S7: balance on 160 + 160
-   matches (`base_bomb_s = 4` A/B, T9 after the fixes), retake the HUD
-   screenshot, S6-18 structure selection (its own item when scheduled).
-4. S7 assault guns and TDs (next slice after S6 is pushed and its balance check passes).
-5. Sim profiling: deferred until after S6 (owner 2026-11-03).
+   (head `d355350`, not pushed). Open: retake the HUD screenshot, S6-18
+   structure selection (its own item when scheduled).
+4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (not pushed). Mortar and
+   HE bands met on 160 sets; T5 open (S6b-1).
+5. S7 assault guns and TDs (next slice after S6 and S6b are pushed; S6b-1 answered first if wanted).
+6. Sim profiling: deferred until after S6 (owner 2026-11-03).
 
 ## Known issues still open
 
@@ -99,12 +104,13 @@ Balance issues from S1-S3c are superseded by later measurements (latest:
 `docs/slices/S6-log.md` "Targets" and "Tune"). Still open:
 
 - Map: base 1 is worth about 6 points of win share to either faction.
-- Balance after S6 fixes (320 matches, final binary): Germany 50.6 / 51.9 %;
-  base side 64.4 % on the out-of-sample 160 (T6c, max 62).
-- Mortars: USA mortar share 9.2 % on 160 (band 10-15 %); the allowed levers do
-  not reach it (S6 Tune). Needs AI or code work.
-- HE share 19.1-19.8 % on 160 sets (band 20-26.3 %); same cause.
-- T4a / T4b: one `no_bombs` AI refusal per run (S5b-22 race).
+- Balance after S6b (160 sets, S6 prices): Germany 52.5 / 43.1 / 41.9 %
+  (T5, band 45-55; S6b-1); base side 59.4 % oos (T6c, max 62).
+- Mortars and HE: met after S6b on 160 sets (USA 11.0-12.0 %, band 10-15;
+  HE 21.5-21.9 %, band 20-26.3). Germany's mortar share 13.6-14.5 % is near the 15 % cap.
+- Cook-offs (0.05 -> 0.19 per match) and crates lost (16 / 6 -> 54 / 21) rose
+  under S6b; not diagnosed (S7 to look).
+- T4a / T4b: `no_bombs` refusals 0 since S6b (dry orders withdrawn).
 - Structures are not selectable in the HUD (S6-18); S6 screenshot shows old labels.
 - Tank crate runs and cook-offs are rare in AI play (0 tank runs per match).
 - fortify-test mortar row 39.5 % against a 40 % limit (marginal).

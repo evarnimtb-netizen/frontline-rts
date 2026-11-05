@@ -1,6 +1,6 @@
 # Frontline RTS: state (read this first)
 
-Where the project stands after S6 (branch `s6-hq-crates`, from `1575568`; not
+Where the project stands after S6b (branch `s6b-mortar-ai`, from `55b322d`; not
 pushed). Main is S5b plus the infra step (`9509ae6`). Read the sections you
 need, then the doc the index (last section) names. Checked 2026-11-05.
 
@@ -44,40 +44,31 @@ wounds and medics, flamethrowers, a third faction, a second map, radio.
 Main (S5b): `SAVE_VERSION` 14 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 8
 (`crates/net/src/protocol.rs`). Branch `s6-hq-crates`: 15 and 9, each bumped
 once for S6 (`REPORT_VERSION` 1; `--json` files carry `"schema": 1`). A change
-to a save layout, the hash or a command bumps these in the same commit.
+S6b on its branch: `SAVE_VERSION` 16, `PROTOCOL_VERSION` 9. A change to a save layout, the hash or a command bumps these in the same commit.
 
 ## S6b (branch `s6b-mortar-ai` from `55b322d`, not pushed)
 
-Mortar AI pass (`docs/slices/S6b-log.md`): no AI map fire past 20 m
-expected miss, no bomb reserve, crate runs below 90 %, one bearer squad per
-two mortars, dry AI orders withdrawn. 160: mortar 14.2 / 12.0 %, HE 21.9 %
-(oos 21.5 %), Germany 52.5 %, but 43.1 % out of sample (T5d miss; Tune
-next). `SAVE_VERSION` 16.
+Mortar AI pass (`docs/slices/S6b-log.md`). AI map fire held past 20 m expected
+miss (`[ai.mortar] map_fire_max_miss_m`, ww2 off switch); `mortar_reserve_pct`
+0; crate runs below 90 %; `mortars_per_bearers` 2; dry AI fire orders
+withdrawn, not refused. Prices are S6 values (Tune change reverted). 160 set:
+mortar 14.2 / 12.0 %, HE 21.9 %, Germany 52.5 %; out of sample Germany 43.1 %
+(T5d miss), third set 41.9 %. T5 open (S6b-1).
 
-## Balance now (S6 on branch, head `d355350`)
+## Balance at S6 (head `d355350`; S6b numbers above)
 
 Measured in `docs/slices/S6-log.md`; before S6, `docs/slices/S5b-log.md`.
 
-- Skirmish 40 after the review fixes (seeds 1-20 x both bases): Germany 50 %
-  (T5a/b 50 / 50), base side 55 %, length 10.5-34.5 min (median 17.6), HE
-  share 19.4 % (band 20-26.3 loose), mortar share 12.8 / 8.6 %, AI
-  observed-or-direct 84 %, 0 matches without a winner. Refusals: 1 `no_bombs` each side.
-- Sets of 160 (final binary `6d88ea1`, orchestrator check): Germany 50.6 %,
-  51.9 % out of sample; base side up to 64.4 % oos (T6c miss). Mortar share
-  Germany 11.6 % (in band), USA 9.2 % (below 10); HE 19.8 / 19.1 % (below 20).
-- Base refills no mortar bombs (`base_bomb_s = 0`, owner Q4): base bombs and
-  unsourced bombs are both 0 on every run (T20). HQ and dump stock comes only
-  from crates (T22).
-- Crates: shells crate 32 kg, priced at issue (kg x price); AI issues 4.7-6.9
-  shells crates and delivers 4-7 per match; crate MP 180-200 per match. HQ built
-  in 100 % of matches (T27). Cook-offs rare (0.05-0.125 per match); tank crate
-  runs 0 (AI tanks never run low).
-- Tune values in force (`mods/ww2`): German infantry cards x1.03 (intervals in
-  TOML comments), `[ai.mix] mortar = 50`.
+- Skirmish 40 (seeds 1-20 x both bases): Germany 50 %, base 55 %, median
+  length 17.6 min, HE 19.4 %, mortar 12.8 / 8.6 %, observed-or-direct 84 %.
+- Sets of 160 (binary `6d88ea1`): Germany 50.6 %, 51.9 % oos; base up to
+  64.4 % oos (T6c miss); mortar 11.6 / 9.2 %; HE 19.8 / 19.1 %.
+- Base refills no mortar bombs (`base_bomb_s = 0`); HQ and dump stock comes
+  only from crates. Crates: shells 32 kg, priced at issue; HQ built in 100 %
+  of matches. Cook-offs 0.05-0.125 per match; AI tank crate runs 0.
 - Data (`mods/ww2/defs/rules/skirmish.toml`): 500 tickets, 600 start manpower,
-  +240/min, pop cap 150, `shell_box_damage` 150, `tank_crate_far_m` 300. HQ 100 MP
-  (25 m), dump 50 MP (15 m). Call-in cooldowns: rifle 20 s, engineers/SMG/LMG 30,
-  AT 48, mortar 60, tank 120.
+  pop cap 150; HQ 100 MP (25 m), dump 50 MP (15 m). Call-in cooldowns: rifle
+  20 s, engineers/SMG/LMG 30, AT 48, mortar 60, tank 120.
 - Tests at `d355350`: `check.sh quick` 440 pass, 0 fail (cli, content, sim; the
   Tune run reported 551 over another set, not reconciled). Godot: `test_match_view`
   291/291, `test_data_reload` 21/21, `test_net_ui` 143/143. Tick p99 0.475 ms (`--jobs 6`).
@@ -105,21 +96,21 @@ Source: `docs/TODO.md` "Owner decisions in force"; full text in `docs/archive/TO
 
 ## Known gaps
 
-- Balance: Germany 50 % on 40 matches, 51.3 % pooled on 320; base 1 is
-  worth about 6 points of win share to either faction (S5b-21/23 open).
-- USA mortar share 9.2 % and HE share 19.1-19.8 % are below band on 160 sets;
-  the Tune levers do not reach them (needs AI or code work).
+- Balance: Germany's win share is open after S6b (52.5 / 43.1 / 41.9 % on
+  three 160 sets; S6b-1). Base 1 is worth about 6 points (S5b-21/23 open).
+- Mortar and HE bands met in S6b on 160 sets (USA mortar 11.0-12.0 %, HE
+  21.5-21.9 %). Germany's mortar share is near the 15 % cap.
 - Structures cannot be selected in the HUD (S6-18). `docs/slices/screens/s6_hq_supply.png`
   predates the tune and the fixes: retake it.
-- One `no_bombs` AI refusal per 40 matches (S5b-22). AI rarely throws satchels
-  or fires Panzerfausts. No radio, registered fire, cross-OS CI.
-- Full list: `docs/TODO.md` "Known issues still open".
+- AI `no_bombs` refusals: 0 in S6b (dry orders withdrawn). AI rarely throws
+  satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
 
 ## Roadmap position
 
 Done: S1 to S5b, autotune fix, infra step. S6 HQ
 and ammo crates: built, reviewed, fixed on branch `s6-hq-crates` (not pushed).
-Next: S6 balance check on 160 + 160 matches, then S7 assault guns and TDs, S8
+S6b mortar AI pass: built and fixed on branch `s6b-mortar-ai` (not pushed);
+T5 open. Next: S7 assault guns and TDs, S8
 half-tracks/trucks/recon, S9 AT guns, S10a/b fortifications, S11a/b artillery,
 S12 wounds and medics, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 `docs/process/workflows.md` section 1. Sim profiling after S6 (owner).
@@ -147,6 +138,7 @@ S12 wounds and medics, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 | Variants: data model, content, Panzerfaust | `S4-variants.md` Data model, Content; log `S4-log.md` |
 | Ammunition: data model, rules, base refill, AI | `S5a-ammo.md` Data model, Sim rules, AI; log `S5a-log.md` |
 | Fire missions: modes, observers, charges, bench | `S5b-mortars.md` Data model, Sim rules, Targets; `S5b-log.md` "Final measurements", "Final targets" |
+| Mortar AI: map fire limit, reserve, bearers, dry orders | `S6b-mortar-ai.md` Changes, Tests; `S6b-log.md` |
 | HQ, dumps, crates: spec, build, review, fixes | `S6-hq-crates.md`; `S6-log.md`; module docs of `structures.rs`, `ai/supply.rs`; `godot/docs/match_state.md` "S6" |
 | TOML keys: ammo, fire missions, variants, `[supply]` | `docs/modding/ammo.md`; `fire-missions.md`; `variants.md`; `S6-hq-crates.md` Data model |
 | Tuning overrides, A/B, `--json`, targets, check.sh; autotune | `docs/modding/tuning.md`; `docs/modding/autotune.md` |
