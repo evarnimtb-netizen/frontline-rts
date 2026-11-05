@@ -962,7 +962,8 @@
           "hq_behind_m": 120,
           "hq_probe_rays": 8,
           "shell_mp_max_pct": 25,
-          "tank_crate_below_pct": 25
+          "tank_crate_below_pct": 25,
+          "tank_crate_far_m": 300
         },
         "tank_standoff_m": 160,
         "threat_radius_m": 80,
@@ -1250,7 +1251,7 @@
         "rare_rearm_fwd_s": 30,
         "serve_men": 6,
         "serve_period_ms": 500,
-        "shell_box_damage": 400,
+        "shell_box_damage": 150,
         "shell_crate_cap": 8,
         "shell_mp_per_t": 1000,
         "small_arms_mp_per_t": 200,

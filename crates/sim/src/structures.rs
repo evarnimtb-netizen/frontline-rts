@@ -296,12 +296,24 @@ impl SupplyState {
             .map(|(&id, _)| id)
     }
 
-    /// The nearest own built HQ to `from` (retreat, S6-9 (A)).
-    pub fn nearest_hq(&self, setup: &MatchSetup, p: PlayerId, from: FxVec2) -> Option<FxVec2> {
+    /// The nearest own built HQ to `from` that lies nearer the own base
+    /// (`base`) than `from` does (retreat, S6-9 (A)): an HQ dug at the
+    /// front never pulls a retreat toward the enemy.
+    pub fn nearest_hq(
+        &self,
+        setup: &MatchSetup,
+        p: PlayerId,
+        from: FxVec2,
+        base: FxVec2,
+    ) -> Option<FxVec2> {
+        let behind = (from - base).length_sq_raw();
         self.structures
             .values()
             .filter(|s| {
-                s.owner == p && s.built && setup.stocks[s.def as usize].kind == StockKind::Hq
+                s.owner == p
+                    && s.built
+                    && setup.stocks[s.def as usize].kind == StockKind::Hq
+                    && (s.pos - base).length_sq_raw() < behind
             })
             .map(|s| ((s.pos - from).length_sq_raw(), s.pos))
             .min_by_key(|&(d, q)| (d, q.x.raw(), q.y.raw()))
@@ -355,7 +367,19 @@ impl SupplyState {
             if s.built == s.builder.is_some() {
                 return Err("a structure is built xor has a builder");
             }
+            if d.faction != setup.players[s.owner.0 as usize].faction {
+                return Err("structure def of another faction");
+            }
+            // The Status stage drops a structure whose builder is gone or
+            // stopped digging, so a saved builder is an own live squad.
+            if s.builder
+                .is_some_and(|b| squads.get(&b).is_none_or(|q| q.owner != s.owner))
+            {
+                return Err("structure builder is not an own squad");
+            }
         }
+        let size = Fx::from_int(setup.map.size_m);
+        let on_map = |p: FxVec2| [p.x, p.y].iter().all(|v| *v >= Fx::ZERO && *v <= size);
         let mut carriers: Vec<SimId> = Vec::new();
         for (&id, c) in &self.crates {
             if id >= self.next_crate {
@@ -370,11 +394,20 @@ impl SupplyState {
             if c.g > d.g || c.hp > d.boxes.first().map_or(0, |b| b.hp) || c.hp == 0 {
                 return Err("crate grams or hit points out of range");
             }
+            if d.faction != setup.players[c.owner.0 as usize].faction {
+                return Err("crate def of another faction");
+            }
+            if !on_map(c.pos) || c.dest.is_some_and(|q| !on_map(q)) {
+                return Err("crate or its destination off the map");
+            }
             if let Some(m) = c.carrier {
                 let i = m.index();
+                // Carriers who fell drop their crates in the Status stage,
+                // after the Damage stage's deaths: a saved carrier lives.
                 if i >= ents.len()
                     || ents.kind[i] != EntityKind::Soldier
                     || ents.owner[i] != c.owner
+                    || ents.combat[i].hp == 0
                     || carriers.contains(&m)
                 {
                     return Err("crate carrier is not a live own soldier, or carries two");
@@ -407,6 +440,7 @@ impl SupplyState {
                 || k.player as usize >= np
                 || k.left == 0
                 || k.every == 0
+                || !on_map(k.pos.xy())
                 || setup
                     .ammo
                     .get(k.ammo as usize)
@@ -461,12 +495,18 @@ impl MatchState {
         &self.statics.0
     }
 
-    /// Where a retreat of `p` from `from` goes: the nearest own built HQ,
-    /// else the base (S6-9 (A)).
-    pub fn retreat_goal(&self, p: PlayerId, from: FxVec2) -> FxVec2 {
+    /// Where a retreat of `p` from `from` goes: for infantry the nearest
+    /// own built HQ nearer the base than `from`, else the base (S6-9 (A)).
+    /// `base_only` (vehicle and crew squads): the base, the only place a
+    /// tank is repaired and re-crewed (`crate::vehicle` base service).
+    pub fn retreat_goal(&self, p: PlayerId, from: FxVec2, base_only: bool) -> FxVec2 {
+        let base = self.base_of(p);
+        if base_only {
+            return base;
+        }
         self.supply6
-            .nearest_hq(&self.setup, p, from)
-            .unwrap_or_else(|| self.base_of(p))
+            .nearest_hq(&self.setup, p, from, base)
+            .unwrap_or(base)
     }
 
     /// The two ends of structure `s`'s pit line.
@@ -844,8 +884,22 @@ impl MatchState {
                         cr.dest = None;
                         continue;
                     }
+                    // Set down within 2 x pickup_m of the point, or where
+                    // he stands once his squad holds its formation there
+                    // (his slot can lie a few metres off the point). The
+                    // AI aims at the client (the mortar's gunner, beside
+                    // a hull), so the crate lands inside the feed range
+                    // (review S6 F2).
+                    let holding =
+                        ents.squad[i]
+                            .and_then(|q| self.squads.get(&q))
+                            .is_some_and(|q| {
+                                q.nav.phase == crate::game::NavPhase::Holding
+                                    && c.dest
+                                        .is_some_and(|d| within(q.nav.goal, d, reach.mul_int(2)))
+                            });
                     if let Some(dest) = c.dest
-                        && within(at, dest, reach.mul_int(2))
+                        && (holding || within(at, dest, reach.mul_int(2)))
                     {
                         cr.carrier = None;
                         cr.dest = None;
@@ -992,14 +1046,7 @@ impl MatchState {
             let Some((kind, g)) = round_g(&self.setup, ty.feeds[k]) else {
                 continue;
             };
-            // The man laying the tube (else the leader) is where it stands.
-            let Some(gunner) = sq
-                .members
-                .iter()
-                .copied()
-                .find(|m| ents.kit[m.index()].weapon == ty.weapon)
-                .or_else(|| sq.members.first().copied())
-            else {
+            let Some(gunner) = mortar_gunner(ty, ents, &sq.members) else {
                 continue;
             };
             let at = ents.transform[gunner.index()].pos.xy();
@@ -1463,6 +1510,21 @@ impl MatchState {
         self.supply6.cookoffs.retain(|k| k.left > 0);
         out
     }
+}
+
+/// Where a mortar squad's tube stands for crate and stock feeding: the man
+/// laying it (his kit weapon is the squad's), else the first member. The
+/// AI sets mortar crates down at this man (review S6 F2).
+pub(crate) fn mortar_gunner(
+    ty: &frontline_content::setup::SquadTypeSetup,
+    ents: &Entities,
+    members: &[SimId],
+) -> Option<SimId> {
+    members
+        .iter()
+        .copied()
+        .find(|m| ents.kit[m.index()].weapon == ty.weapon)
+        .or_else(|| members.first().copied())
 }
 
 /// One static box of def box `b` centred over `c` at yaw `yaw`.

@@ -365,6 +365,8 @@ pub struct PlayerReport {
     pub s6: frontline_sim::S6Account,
     pub s6_stock_held_g: u64,
     pub s6_tank_crate_runs: u32,
+    /// Review S6 F2: stranded shells crates the AI's bearers picked up.
+    pub s6_crate_pickups: u32,
 }
 
 /// S5b Part B AI fire-mission counters of one player (or summed).
@@ -1188,6 +1190,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     .map(|x| x.stock_g.iter().map(|&v| v as u64).sum::<u64>())
                     .sum(),
                 s6_tank_crate_runs: ai.map_or(0, |a| a.counters.tank_crate_runs),
+                s6_crate_pickups: ai.map_or(0, |a| a.counters.s6_crate_pickups),
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1600,6 +1603,7 @@ pub struct S6Faction {
     pub rack_credit_mp: u64,
     pub cookoffs: u64,
     pub tank_crate_runs: u64,
+    pub crate_pickups: u64,
 }
 
 /// S5b numbers of one faction over a `--seeds` run (sums).
@@ -1930,6 +1934,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             t.rack_credit_mp += a.rack_credit_mp as u64;
             t.cookoffs += a.cookoffs as u64;
             t.tank_crate_runs += p.s6_tank_crate_runs as u64;
+            t.crate_pickups += p.s6_crate_pickups as u64;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

@@ -1846,8 +1846,8 @@ func stage_hq(pos: Vector3, stock: Dictionary) -> void:
 		"pos": pos, "yaw": 0.0, "radius": 25.0, "built": true, "build_pct": 100, "radio": true,
 		"stock_kg": stock, "cap_kg": {"small_arms": 300.0, "explosives": 200.0, "shells": 600.0},
 		"boxes": [
-			{"part": "stock", "pct": 100, "size": Vector3(2.0, 0.9, 1.2), "offset": Vector2(0, -1.5)},
-			{"part": "radio", "pct": 100, "size": Vector3(0.5, 0.4, 0.4), "offset": Vector2(1.2, 0.8)},
+			{"part": "stock", "pct": 100, "size": Vector3(1.6, 0.9, 1.2), "offset": Vector2(-0.3, 0)},
+			{"part": "radio", "pct": 100, "size": Vector3(0.5, 0.4, 0.4), "offset": Vector2(0.8, 0)},
 		],
 	})
 

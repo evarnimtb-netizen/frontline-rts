@@ -1938,9 +1938,6 @@ impl World {
         true
     }
 
-    /// Digs a finished AT ditch along `line` at once (the rules' `at_ditch`
-    /// profile, berm on the left of the line direction for `front = 1`)
-    /// and records the line, so it blocks vehicles (S3). Match worlds only.
     /// S6 (staged scenes and tests): a built structure of def `def` for
     /// player `p` at `pos` along yaw `yaw`, its pit dug at once, with
     /// `stock_kg` by supply kind (capped). Returns its id.
@@ -1999,6 +1996,9 @@ impl World {
         Some(id)
     }
 
+    /// Digs a finished AT ditch along `line` at once (the rules' `at_ditch`
+    /// profile, berm on the left of the line direction for `front = 1`)
+    /// and records the line, so it blocks vehicles (S3). Match worlds only.
     pub fn dig_at_ditch_now(&mut self, line: &[FxVec2], front: i8) -> bool {
         let Some(game) = self.state.game.as_mut() else {
             return false;
@@ -2568,7 +2568,7 @@ mod tests {
         fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
             s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
         }
-        let edits: [fn(&mut SimState); 35] = [
+        let edits: [fn(&mut SimState); 36] = [
             |s| s.game.as_mut().unwrap().players[0].point_ticks += 1,
             // S3b: a re-call cooldown.
             |s| s.game.as_mut().unwrap().players[1].ready_at[2] += 1,
@@ -2630,6 +2630,9 @@ mod tests {
                 h.unseen = true;
                 ai(s).hunts.insert(SquadId(1), h);
             },
+            // S6 review F2 (after the hunts: `edits[31..]` are compared
+            // with a plain hunt too).
+            |s| ai(s).counters.s6_crate_pickups += 1,
         ];
         // A fresh hunt at tick 0 (S3c); the edits above change one field.
         fn hunt() -> crate::ai::AiHunt {

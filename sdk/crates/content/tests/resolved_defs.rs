@@ -101,14 +101,14 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 /// 0x855841c1470238ab, and these are the new ones. The live `mods/ww2` is
 /// guarded by the canonical snapshot instead.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xb05ebf261ab0a6d0),
-    ("skirmish usa-ger seed 7 hard", 0x37e505284272d288),
-    ("test_unlock ger-usa seed 1 normal", 0xb923a689252fb652),
-    ("example override ger-usa seed 1 normal", 0xb05ebf261ab0a6d0),
-    ("human ger vs ai usa seed 3 easy", 0x1fb482f543103c0a),
+    ("skirmish ger-usa seed 1 normal", 0xc1ee12e6f518a545),
+    ("skirmish usa-ger seed 7 hard", 0xf3b32cf1b0378f38),
+    ("test_unlock ger-usa seed 1 normal", 0x4488c561880a75ae),
+    ("example override ger-usa seed 1 normal", 0xc1ee12e6f518a545),
+    ("human ger vs ai usa seed 3 easy", 0x816f3f3071c87775),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x796a5341fe2d7f00,
+        0x04b382a239e8d0b9,
     ),
 ];
 

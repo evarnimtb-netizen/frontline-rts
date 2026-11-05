@@ -335,6 +335,7 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             "rack_credit_mp_per_match": per(t.rack_credit_mp),
             "cookoffs_per_match": per(t.cookoffs),
             "tank_crate_runs_per_match": per(t.tank_crate_runs),
+            "crate_pickups_per_match": per(t.crate_pickups),
         }),
     );
     v

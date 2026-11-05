@@ -79,6 +79,14 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   box breaks is destroyed (pit stays; the HQ's `rebuild_s` starts). S6-15
   a carrier's whole squad walks at the crate's carry pace. S6-16 the AI
   builds no dumps yet, and its mortars do not target enemy HQs and crates.
+- S6-17..19 (raised in the S6 review fix), each on its (A): S6-17 an AI
+  tank far from every source (`tank_crate_far_m` 300 m straight line, the
+  spec's "path budget") holds for a bearers' crate run instead of driving
+  back; (B) path length. S6-18 structures are not selectable yet: the HQ
+  squad's strip shows its HQ (else the first dump), other dumps show only
+  their ring and boxes, until a later HUD pass; (B) structure selection in
+  S6. S6-19 a carrier sets his crate down within 2 x `pickup_m` of the
+  point or where he stands once his squad holds its formation there.
 
 ## Planned work queue
 

@@ -19,11 +19,18 @@
 //!   (`shell_mp_max_pct` of the income so far) and the caps allow; once
 //!   every man carries one (or no more can be issued) they set them down
 //!   at the first of: an own tank below `tank_crate_below_pct` of its
-//!   rounds that cannot drive (owner request 2026-11-01), a mortar squad
+//!   rounds or at its rearm trigger that cannot reach a source (owner
+//!   request 2026-11-01; the tank then holds for the crate, `ai::armour`
+//!   `rearm`), a mortar squad
 //!   below `crate_run_below_pct` of its bombs outside every HQ radius, the
 //!   HQ when its stock of that kind is below `crate_run_below_pct`, else
-//!   the HQ, else the nearest mortar. Bearers without crates outside the
-//!   base walk back to it.
+//!   the HQ. A tank "cannot reach" a source when it is immobile, or not on
+//!   a rearm trip and farther than `tank_crate_far_m` from the base and
+//!   every own structure. Crates are aimed at the client itself (the
+//!   mortar's gunner, the hull) so they land within `crate_feed_m`.
+//!   Bearers without crates first pick up a stranded own shells crate
+//!   (outside the base and every radius, no own mortar gunner or tank
+//!   within `crate_feed_m`), else walk back to the base.
 //! * **Dry mortars.** A mortar squad with no bombs walks to an own HQ with
 //!   shells stock and stays in its radius until `refill_full_pct` of its
 //!   load (the mortar planner does not move it meanwhile).
@@ -39,6 +46,9 @@ use crate::game::{Order, SquadId};
 const PROBE_MEN: usize = 8;
 /// Candidate spots lie this far around the first (m).
 const RING_M: i32 = 20;
+/// A crate for a tank is set down this far from its centre, toward the
+/// bearers (m): past the hull's half width and avoidance pad.
+const TANK_SIDE_M: i32 = 4;
 
 impl Planner<'_> {
     /// S6 (module docs). `mine` loses the HQ and bearer squads and the
@@ -327,6 +337,7 @@ impl Planner<'_> {
         if self.ai.pending.iter().any(|c| match &c.kind {
             CommandKind::IssueCrate { squad, .. }
             | CommandKind::PlaceCrate { squad, .. }
+            | CommandKind::PickUpCrate { squad, .. }
             | CommandKind::Move { squad, .. } => *squad == b,
             _ => false,
         }) {
@@ -405,6 +416,22 @@ impl Planner<'_> {
             return;
         }
         if carried.is_empty() {
+            // A stranded shells crate first (review S6 F2): one this squad
+            // claimed (renewed when the walk ended short), else the nearest
+            // unclaimed one.
+            if let Some((id, mine)) = self.stranded_crate(b, tanks, sp) {
+                if !mine || matches!(sq.order, Order::Idle) {
+                    self.ai.emit(
+                        self.due,
+                        CommandKind::PickUpCrate {
+                            squad: b,
+                            crate_id: id,
+                        },
+                    );
+                    self.ai.counters.s6_crate_pickups += u32::from(!mine);
+                }
+                return;
+            }
             if !in_base && !matches!(sq.order, Order::Move { .. }) {
                 let to = self.terrain.clamp(ring_slot(g.base_of(me), b.0 % 8 + 1));
                 self.ai.emit(
@@ -438,8 +465,25 @@ impl Planner<'_> {
                                 + u32::from(vs.loaded == Some(k as u8));
                             (h + n, l + a.count as u32)
                         });
-                if t.immobile && have * 100 < load * cfg.tank_crate_below_pct {
-                    dest = Some((t.pos + FxVec2::from_int(3, 0), true));
+                // Cannot reach a source: immobile, or far from every one
+                // and not driving back (review S6 F3; the spec's "path
+                // budget" as a straight line, `tank_crate_far_m`).
+                let on_trip = self.ai.tasks.get(&t.squad).map(|k| k.kind)
+                    == Some(super::TaskKind::Rearm)
+                    || g.squads[&t.squad].order == Order::Retreat;
+                let stranded =
+                    t.immobile || (!on_trip && self.far_from_sources(t.pos, tank_round_g(s, v)));
+                // Low: below tank_crate_below_pct of its rounds, or at the
+                // armour planner's own rearm trigger (AP or HE nearly
+                // out), which comes long before 25 % of all rounds: on
+                // the 40 set the percentage alone never fired.
+                let low = have * 100 < load * cfg.tank_crate_below_pct || self.needs_rearm(vs, v);
+                if stranded && low {
+                    // Beside the hull on the bearers' side (the hull
+                    // pushes men out of its footprint), well inside the
+                    // forward rearm's crate_feed_m + 3 m from its centre.
+                    let side = (lead - t.pos).normalize_or_zero() * Fx::from_int(TANK_SIDE_M);
+                    dest = Some((t.pos + side, true));
                     break;
                 }
             }
@@ -457,7 +501,10 @@ impl Planner<'_> {
                 .filter_map(|(_, q)| {
                     let (_, pct) = crate::supply::mortar_bombs(s, self.ents, q);
                     let pct = pct?;
-                    let at = self.ents.transform[q.lead(self.ents).index()].pos.xy();
+                    // At the gunner, where the sim feeds from (review S6 F2).
+                    let ty = &s.squad_types[q.type_idx as usize];
+                    let gunner = crate::structures::mortar_gunner(ty, self.ents, &q.members)?;
+                    let at = self.ents.transform[gunner.index()].pos.xy();
                     let in_hq =
                         hq_r.is_some_and(|(p, r)| (at - p).length_sq_raw() <= sq_m(r.into()));
                     (pct < cfg.crate_run_below_pct
@@ -466,7 +513,7 @@ impl Planner<'_> {
                     .then(|| ((at - lead).length_sq_raw(), at))
                 })
                 .min_by_key(|&(d, at)| (d, at.x.raw(), at.y.raw()))
-                .map(|(_, at)| (at + FxVec2::from_int(2, 2), false));
+                .map(|(_, at)| (at, false));
         }
         // Small arms: the lowest own squad holding a point (a Defend
         // task), below crate_run_below_pct, outside the base.
@@ -500,6 +547,127 @@ impl Planner<'_> {
             self.ai.counters.tank_crate_runs += 1;
         }
     }
+
+    /// Whether `at` is farther than `tank_crate_far_m` from the own base
+    /// centre and every own built structure that could rearm a tank
+    /// (shells for ten rounds of `round_g`, as `ai::armour` `rearm`).
+    pub(super) fn far_from_sources(&self, at: FxVec2, round_g: u32) -> bool {
+        let g = self.g;
+        let far = sq_m(Fx::from_int(
+            g.setup.rules.ai.supply.tank_crate_far_m as i32,
+        ));
+        (at - g.base_of(self.me)).length_sq_raw() > far
+            && g.supply6
+                .structures
+                .values()
+                .filter(|x| {
+                    x.owner == self.me
+                        && x.built
+                        && x.stock_g[SupplyKind::Shells.index()] >= round_g.saturating_mul(10)
+                })
+                .all(|x| (at - x.pos).length_sq_raw() > far)
+    }
+
+    /// Whether an own bearer squad holds shells crates with no place to
+    /// set them yet (taking crates at the base): the next crate run can
+    /// still go to a tank (`ai::armour` `rearm` holds a far tank for it).
+    pub(super) fn bearers_loading(&self) -> bool {
+        let g = self.g;
+        let s = &g.setup;
+        let Some(t) = s.tag("bearers") else {
+            return false;
+        };
+        g.squads.values().any(|q| {
+            q.owner == self.me && s.squad_types[q.type_idx as usize].has_tag(Some(t)) && {
+                let mut it = g
+                    .supply6
+                    .crates
+                    .values()
+                    .filter(|c| c.carrier.is_some_and(|m| q.members.contains(&m)));
+                let mut shells = false;
+                let placing = it.any(|c| {
+                    shells |= s.stocks[c.def as usize].supply == Some(SupplyKind::Shells);
+                    c.dest.is_some()
+                });
+                shells && !placing
+            }
+        })
+    }
+
+    /// A set-down own shells crate nobody uses (review S6 F2): outside the
+    /// own base and every own structure radius, no own mortar gunner or
+    /// tank within `crate_feed_m`, not claimed by another squad. `(id,
+    /// claimed by b)`: the one `b` claimed, else the nearest to its lead
+    /// (ties by id).
+    fn stranded_crate(
+        &self,
+        b: SquadId,
+        tanks: &[MyTank],
+        sp: &frontline_content::tuning::SupplyTuning,
+    ) -> Option<(u32, bool)> {
+        let g = self.g;
+        let s = &g.setup;
+        let me = self.me;
+        let feed = sq_m(Fx::from_int(sp.crate_feed_m as i32));
+        // The forward rearm reaches crate_feed_m from a hull's edge.
+        let tank_feed = sq_m(Fx::from_int(sp.crate_feed_m as i32 + 3));
+        let gunners: Vec<FxVec2> = g
+            .squads
+            .values()
+            .filter(|q| {
+                q.owner == me
+                    && !q.members.is_empty()
+                    && super::ai_kind(s, q.type_idx) == super::AiKind::Mortar
+            })
+            .filter_map(|q| {
+                let ty = &s.squad_types[q.type_idx as usize];
+                crate::structures::mortar_gunner(ty, self.ents, &q.members)
+                    .map(|m| self.ents.transform[m.index()].pos.xy())
+            })
+            .collect();
+        let lead = self.lead_of(b);
+        let mut best: Option<(u64, u32)> = None;
+        for (&id, c) in &g.supply6.crates {
+            if c.owner != me
+                || c.carrier.is_some()
+                || s.stocks[c.def as usize].supply != Some(SupplyKind::Shells)
+            {
+                continue;
+            }
+            match c.claim {
+                Some(q) if q == b => return Some((id, true)),
+                Some(_) => continue,
+                None => {}
+            }
+            if crate::supply::in_own_base(s, me, c.pos)
+                || g.supply6.serving(s, me, c.pos).is_some()
+                || gunners.iter().any(|&p| (p - c.pos).length_sq_raw() <= feed)
+                || tanks
+                    .iter()
+                    .any(|t| (t.pos - c.pos).length_sq_raw() <= tank_feed)
+            {
+                continue;
+            }
+            let d = (c.pos - lead).length_sq_raw();
+            if best.is_none_or(|(bd, bid)| (d, id) < (bd, bid)) {
+                best = Some((d, id));
+            }
+        }
+        best.map(|(_, id)| (id, false))
+    }
+}
+
+/// Grams of one round of `v`'s first main-gun ammunition (u32::MAX: none
+/// is supplied).
+pub(super) fn tank_round_g(
+    s: &frontline_content::MatchSetup,
+    v: &frontline_content::vehicle::VehicleSetup,
+) -> u32 {
+    v.main_gun()
+        .ammo
+        .first()
+        .and_then(|a| s.ammo[a.ammo as usize].supply)
+        .map_or(u32::MAX, |x| x.g)
 }
 
 /// Stock of `kind` in `h` as a share of its cap (%; 100 with no cap).

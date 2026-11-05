@@ -998,6 +998,9 @@ fn d_cookoff_s() -> u32 {
 fn d_pickup_m() -> u32 {
     2
 }
+fn d_tank_crate_far_m() -> u32 {
+    300
+}
 
 tuning_table! {
     /// `[ai.supply]` (S6): the AI's HQ, crate runs and supply to tanks.
@@ -1013,6 +1016,10 @@ tuning_table! {
         /// A tank below this share of its main-gun rounds that cannot
         /// reach a source gets a shells crate carried to it (%).
         tank_crate_below_pct: 0..=100,
+        /// ... when it cannot drive, or (not on a rearm trip) when every
+        /// own source (the base, a built HQ or dump) is farther than this
+        /// straight line: the spec's "path budget" (m; review S6 F3).
+        tank_crate_far_m: 0..=2000 = "d_tank_crate_far_m",
         /// At most this share of income goes on crates (%).
         shell_mp_max_pct: 0..=100,
         /// The AI buys its HQ squad after this many seconds of match (s).
@@ -1035,6 +1042,7 @@ impl Default for AiSupplyTuning {
             hq_probe_rays: 8,
             crate_run_below_pct: 50,
             tank_crate_below_pct: 25,
+            tank_crate_far_m: d_tank_crate_far_m(),
             shell_mp_max_pct: 25,
             hq_after_s: 60,
             dry_walk_s: 120,

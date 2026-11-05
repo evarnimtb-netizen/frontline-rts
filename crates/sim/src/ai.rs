@@ -452,6 +452,10 @@ pub struct AiCounters {
     pub s6_crate_runs: u32,
     pub tank_crate_runs: u32,
     pub s6_dry_walks: u32,
+    /// S6 review F2: stranded shells crates (no own mortar gunner or tank
+    /// within `crate_feed_m`, outside the base and every radius) that
+    /// bearers went to pick up again.
+    pub s6_crate_pickups: u32,
 }
 
 impl AiState {

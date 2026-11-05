@@ -504,19 +504,19 @@ func _draw_supply(sq: Dictionary) -> void:
 	var radio_w := 44.0
 	var bw := (r.end.x - x - radio_w - 8.0) / 3.0
 	var low := float(view.rules().get("supply", {}).get("low_pct", 30)) / 100.0
-	for k in [["shells", "S"], ["small_arms", "A"], ["explosives", "E"]]:
+	# Each kind a gauge: the fill (kg of the cap) behind its label and
+	# "kg/cap kg" (review S6 F7: named kinds, unit and cap; "Rifle", not
+	# "A", which read as the orders grid's "Ammo").
+	for k in [["shells", "Shells"], ["small_arms", "Rifle"], ["explosives", "Expl."]]:
 		var have := float(hq.stock_kg.get(k[0], 0.0))
 		var cap := maxf(float(hq.cap_kg.get(k[0], 1.0)), 1.0)
-		HudStyle.text(self, bold, Vector2(x, by), k[1], HudStyle.FONT_SMALL, HudStyle.DIM)
-		# kg on the right of each bar, the bar between.
-		var kg := "%d" % roundi(have)
-		var kw := HudStyle.text_w(font, kg, HudStyle.FONT_SMALL)
-		var bar := Rect2(x + 12.0, y + h * 0.5 - 4.0, bw - 22.0 - kw, 8.0)
+		var bar := Rect2(x, y + 3.0, bw - 4.0, h - 6.0)
 		draw_rect(bar, Color(0, 0, 0, 0.35))
 		var f := clampf(have / cap, 0.0, 1.0)
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), HudStyle.DANGER if f < low else HudStyle.ACCENT)
-		draw_rect(Rect2(bar.position.x + bar.size.x * low, bar.position.y - 1.0, 1.0, bar.size.y + 2.0), Color(HudStyle.TEXT, 0.6))
-		HudStyle.text(self, font, Vector2(bar.end.x + 4.0, by), kg, HudStyle.FONT_SMALL, HudStyle.TEXT)
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), Color(HudStyle.DANGER if f < low else HudStyle.ACCENT, 0.45))
+		draw_rect(Rect2(bar.position.x + bar.size.x * low, bar.position.y, 1.0, bar.size.y), Color(HudStyle.TEXT, 0.6))
+		var label := "%s %d/%d kg" % [k[1], roundi(have), roundi(cap)]
+		HudStyle.text(self, font, Vector2(x + 4.0, by), HudStyle.fit(font, label, bar.size.x - 6.0, HudStyle.FONT_SMALL), HudStyle.FONT_SMALL, HudStyle.TEXT)
 		x += bw
 	var radio := bool(hq.get("radio", false))
 	HudStyle.text(self, font, Vector2(r.end.x - radio_w, by), "Radio" if radio else "No radio", HudStyle.FONT_SMALL, HudStyle.TEXT if radio else HudStyle.DANGER)

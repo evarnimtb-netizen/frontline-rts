@@ -1034,10 +1034,14 @@ impl MatchState {
         self.clear_detached(ctx, id);
         let goal = match &order {
             Order::Move { target } | Order::AttackMove { target } => ctx.terrain.clamp(*target),
-            // S6-9 (A): the nearest own built HQ, else the base.
+            // S6-9 (A): infantry to the nearest own built HQ behind it,
+            // else the base; vehicles and tank crews to the base.
             _ => {
-                let lead = self.squads[&id].lead(ctx.ents);
-                self.retreat_goal(p, ctx.ents.transform[lead.index()].pos.xy())
+                let sq = &self.squads[&id];
+                let base_only = self.is_vehicle_squad(id)
+                    || self.setup.squad_types[sq.type_idx as usize].has(Capability::VehicleCrew);
+                let lead = sq.lead(ctx.ents);
+                self.retreat_goal(p, ctx.ents.transform[lead.index()].pos.xy(), base_only)
             }
         };
         if self.is_vehicle_squad(id) {

@@ -76,12 +76,7 @@ impl Planner<'_> {
         // S6 (D3): an own HQ or dump with shells for ten rounds or more
         // rearms forward; nearest first (a `Retreat` goes to the nearest
         // HQ, so with an empty HQ the trip drives to the base instead).
-        let round_g = v
-            .main_gun()
-            .ammo
-            .first()
-            .and_then(|a| s.ammo[a.ammo as usize].supply)
-            .map_or(u32::MAX, |x| x.g);
+        let round_g = super::supply::tank_round_g(s, v);
         let fwd = g
             .supply6
             .structures
@@ -165,6 +160,21 @@ impl Planner<'_> {
         if kv.iter().any(|k| (k.pos - t.pos).length_sq_raw() <= threat) {
             return false;
         }
+        // S6 (owner 2026-11-01, review F3): a shells crate carried to this
+        // tank (`ai::supply` crate runs), or one set down within
+        // crate_feed_m with a round left: hold and rearm there instead of
+        // driving back. The bearers' crates hold no other state: when the
+        // carrier falls or the crate is empty, the trip starts as before.
+        // ... or bearers still taking crates at the base while every
+        // source is far: hold for their run (it picks this tank first).
+        if self.crate_for(t.pos, round_g)
+            || (self.bearers_loading() && self.far_from_sources(t.pos, round_g))
+        {
+            if !matches!(g.squads[&t.squad].order, crate::game::Order::Idle) {
+                self.ai.emit(self.due, CommandKind::Stop { squad: t.squad });
+            }
+            return true;
+        }
         if let Some(e) = self.ai.escorts.remove(&t.squad) {
             self.release(&e, t.id, &[]);
         }
@@ -189,6 +199,36 @@ impl Planner<'_> {
         self.task(t.squad, TaskKind::Rearm, NO_POINT, goal);
         self.ai.counters.rearms += 1;
         true
+    }
+
+    /// Whether an own shells crate is on its way to `at` (carried, set to
+    /// be put down within `crate_feed_m` + 3 m of it, the forward rearm's
+    /// reach from a hull centre) or set down there with at least
+    /// `round_g` grams.
+    fn crate_for(&self, at: FxVec2, round_g: u32) -> bool {
+        let g = self.g;
+        let s = &g.setup;
+        let Some(sp) = s.rules.supply.as_ref() else {
+            return false;
+        };
+        // As the forward rearm: crate_feed_m from the hull's edge, 3 m
+        // from its centre (`structures::rearm_forward`).
+        let feed = sq_m(Fx::from_int(sp.crate_feed_m as i32 + 3));
+        // A crate run ordered this plan (`supply` runs first).
+        let ordered = self.ai.pending.iter().any(|c| {
+            matches!(c.kind, CommandKind::PlaceCrate { pos, .. }
+                if (pos - at).length_sq_raw() <= feed)
+        });
+        ordered
+            || g.supply6.crates.values().any(|c| {
+                c.owner == self.me
+                    && s.stocks[c.def as usize].supply
+                        == Some(frontline_content::setup::SupplyKind::Shells)
+                    && match c.carrier {
+                        Some(_) => c.dest.is_some_and(|d| (d - at).length_sq_raw() <= feed),
+                        None => c.g >= round_g && (c.pos - at).length_sq_raw() <= feed,
+                    }
+            })
     }
 
     /// B5: whether the AI re-crews abandoned vehicle `id` with crew squad

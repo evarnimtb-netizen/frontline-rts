@@ -13,6 +13,11 @@ const HZ: u64 = 30;
 
 /// The ww2 mod on flat open ground, both players human.
 fn flat_world(threads: usize) -> World {
+    flat_world_with(threads, |_| {})
+}
+
+/// [`flat_world`] with an edit of the setup (after the humans are set).
+fn flat_world_with(threads: usize, edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> World {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
     let defs = frontline_content::ModDefs::load(&root).unwrap();
     let req = frontline_content::MatchRequest::skirmish(
@@ -26,6 +31,7 @@ fn flat_world(threads: usize) -> World {
     setup.map.terrain.octaves.clear();
     setup.map.terrain.bands.clear();
     setup.map.woods.clear();
+    edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }
 
@@ -307,7 +313,7 @@ fn t23_only_he_sets_off_a_cook_off() {
 }
 
 #[test]
-fn t23_bullets_and_fragments_stop_at_boxes() {
+fn t23_a_bullet_stops_at_a_box() {
     // A rifle round fired through an enemy crate stops on it and takes
     // bullet_box_damage.
     let mut w = flat_world(1);
@@ -346,6 +352,219 @@ fn t23_bullets_and_fragments_stop_at_boxes() {
     steps(&mut w, 3);
     let hp = w.game().unwrap().supply6().crates[&c].hp;
     assert_eq!(hp, 60 - 4, "the bullet took bullet_box_damage");
+}
+
+/// Spawns a round of `weapon` (and `ammo`, `None`: small arms) for
+/// `player` at `from` with velocity `vel` (review S6 F6: staged real
+/// projectiles, not direct `hit_static` calls).
+fn fire(w: &mut World, player: u8, weapon: &str, ammo: Option<&str>, from: FxVec3, vel: FxVec3) {
+    let s = w.match_setup().unwrap();
+    let wk = s.weapons.iter().position(|x| x.id == weapon).unwrap() as u16;
+    let ak = ammo.map_or(crate::projectile::NO_AMMO, |a| {
+        s.ammo.iter().position(|x| x.id == a).unwrap() as u16
+    });
+    let slot = w
+        .state
+        .projectiles
+        .spawn(crate::projectile::Projectile {
+            pos: from,
+            vel,
+            owner: SimId(9999),
+            drag: Fx::ZERO,
+            ttl: 120,
+            weapon: wk,
+            player,
+            ammo: ak,
+            origin: from,
+            mission: 0,
+        })
+        .unwrap();
+    w.hash.mark_pool_slot(slot);
+}
+
+/// 20 cm above the ground at (x, y).
+fn low(w: &World, x: i32, y: i32) -> FxVec3 {
+    let h = w.state.terrain.height_at(FxVec2::from_int(x, y));
+    FxVec3::new(Fx::from_int(x), Fx::from_int(y), h + Fx::from_milli(200))
+}
+
+#[test]
+fn t23_an_he_burst_beside_a_crate_cooks_it_off_and_ap_does_not() {
+    let mut w = flat_world(1);
+    let d = def(&w, 0, StockKind::Crate, Some(SupplyKind::Shells));
+    let a = add_crate_at(&mut w, 0, d, FxVec2::from_int(500, 500));
+    let b = add_crate_at(&mut w, 0, d, FxVec2::from_int(500, 520));
+    w.step(&[]);
+    // An enemy 75 mm HE shell falls on the ground 0.8 m from crate a: the
+    // Damage stage's overpressure and fragments break it, and it cooks off.
+    let h = w.state.terrain.height_at(FxVec2::from_int(500, 500));
+    let from = FxVec3::new(
+        Fx::from_ratio(4992, 10),
+        Fx::from_int(500),
+        h + Fx::from_int(3),
+    );
+    fire(
+        &mut w,
+        1,
+        "ww2:m3_75mm",
+        Some("ww2:75mm_m48"),
+        from,
+        FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_int(-300)),
+    );
+    steps(&mut w, 3);
+    let g = w.game().unwrap().supply6();
+    assert!(!g.crates.contains_key(&a), "the HE burst broke crate a");
+    assert_eq!(g.accounts[0].cookoffs, 1, "and it cooked off");
+    // An enemy 75 mm AP round straight into crate b: shell_box_damage
+    // breaks it (60 hp), but solid shot sets nothing off.
+    let from = low(&w, 480, 520);
+    fire(
+        &mut w,
+        1,
+        "ww2:m3_75mm",
+        Some("ww2:75mm_m61"),
+        from,
+        FxVec3::new(Fx::from_int(600), Fx::ZERO, Fx::ZERO),
+    );
+    steps(&mut w, 3);
+    let g = w.game().unwrap().supply6();
+    assert!(!g.crates.contains_key(&b), "the AP round broke crate b");
+    assert_eq!(g.accounts[0].crates_lost, 2);
+    assert_eq!(g.accounts[0].cookoffs, 1, "no cook-off from solid shot");
+}
+
+#[test]
+fn f1_one_ap_round_does_not_destroy_an_hq() {
+    // Review S6 F1: shell_box_damage stays well below the stock box's hp.
+    let mut w = flat_world(1);
+    let hq = def(&w, 0, StockKind::Hq, None);
+    let id = add_built(&mut w, 0, hq, FxVec2::from_int(500, 500), [100, 50, 300]);
+    w.step(&[]);
+    // The stock box (part 0) lies at x -0.3 m along the facing (+x).
+    let from = FxVec3::new(
+        Fx::from_ratio(4997, 10),
+        Fx::from_int(480),
+        w.state.terrain.height_at(FxVec2::from_int(500, 500)) + Fx::from_ratio(1, 2),
+    );
+    fire(
+        &mut w,
+        1,
+        "ww2:m3_75mm",
+        Some("ww2:75mm_m61"),
+        from,
+        FxVec3::new(Fx::ZERO, Fx::from_int(600), Fx::ZERO),
+    );
+    steps(&mut w, 3);
+    let g = w.game().unwrap().supply6();
+    let s = g
+        .structures
+        .get(&id)
+        .expect("one AP round destroyed the HQ");
+    let full = w.match_setup().unwrap().stocks[hq as usize].boxes[0].hp;
+    let shell = w
+        .match_setup()
+        .unwrap()
+        .rules
+        .supply
+        .as_ref()
+        .unwrap()
+        .shell_box_damage;
+    assert_eq!(s.box_hp[0], full - shell, "the round struck the stock box");
+    assert_eq!(s.stock_g[2], 300_000, "the stock is intact");
+}
+
+#[test]
+fn f3_ai_bearers_carry_crates_to_a_far_tank_that_waits_for_them() {
+    // Review S6 F3 (owner 2026-11-01): an AI tank low on rounds, mobile,
+    // far from the base and any HQ, is not driven back while the bearers
+    // carry shells crates to it; it rearms from them where it stands.
+    let mut w = flat_world_with(1, |s| s.players[0].is_ai = true);
+    let base = base_center(&w, 0);
+    let mid = FxVec2::from_int(512, 512);
+    let at = base + (mid - base).normalize_or_zero() * Fx::from_int(400);
+    let tt = ty(&w, "ww2:ger_pz4_h_squad");
+    let sq = w
+        .spawn_squad_at(PlayerId(0), tt, at, FxVec2::new(Fx::ONE, Fx::ZERO))
+        .unwrap();
+    let v = members(&w, sq)[0];
+    w.edit_vehicle(v, |vs| {
+        vs.ammo.iter_mut().for_each(|a| *a = (*a).min(1));
+        vs.loaded = None;
+    });
+    let bt = ty(&w, "ww2:ger_munitionstraeger");
+    let near = at - (mid - base).normalize_or_zero() * Fx::from_int(40);
+    let b = w
+        .spawn_squad_at(PlayerId(0), bt, near, FxVec2::new(Fx::ONE, Fx::ZERO))
+        .unwrap();
+    let d = def(&w, 0, StockKind::Crate, Some(SupplyKind::Shells));
+    for m in members(&w, b) {
+        let mut c = crate_at(&w, 0, d, near);
+        c.carrier = Some(m);
+        add_crate(&mut w, c);
+    }
+    let rounds = |w: &World| -> u32 {
+        let vs = &w.game().unwrap().vehicles[&v];
+        vs.ammo.iter().map(|&a| a as u32).sum::<u32>() + u32::from(vs.loaded.is_some())
+    };
+    let start = rounds(&w);
+    let mut t = 0;
+    // Four crates of 32 kg: the tank gets six rounds before any trip.
+    while rounds(&w) < start + 6 {
+        w.step(&[]);
+        t += 1;
+        assert!(
+            t < 240 * HZ,
+            "the tank got no rounds from the crates in 4 min"
+        );
+        let g = w.game().unwrap();
+        let ai = g.ai[0].as_ref().unwrap();
+        assert_ne!(
+            ai.tasks.get(&sq).map(|k| k.kind),
+            Some(crate::ai::TaskKind::Rearm),
+            "the tank was sent back to rearm"
+        );
+    }
+    let g = w.game().unwrap();
+    assert!(g.ai[0].as_ref().unwrap().counters.tank_crate_runs >= 1);
+    let n = members(&w, b).len() as u64;
+    let left: u64 = g.supply6().crates.values().map(|c| c.g as u64).sum();
+    let full = w.match_setup().unwrap().stocks[d as usize].g as u64;
+    assert!(left < n * full, "the rounds came from the crates");
+    assert_eq!(
+        acc(&w, 0).crates_delivered,
+        n as u32,
+        "every crate set down"
+    );
+}
+
+#[test]
+fn f2_ai_bearers_pick_up_a_stranded_shells_crate() {
+    // Review S6 F2: a set-down own shells crate with no mortar or tank in
+    // reach, outside the base and every radius, is taken up again.
+    let mut w = flat_world_with(1, |s| s.players[0].is_ai = true);
+    let base = base_center(&w, 0);
+    let mid = FxVec2::from_int(512, 512);
+    let away = (mid - base).normalize_or_zero();
+    let bt = ty(&w, "ww2:ger_munitionstraeger");
+    let at = base + away * Fx::from_int(250);
+    let b = w
+        .spawn_squad_at(PlayerId(0), bt, at, FxVec2::new(Fx::ONE, Fx::ZERO))
+        .unwrap();
+    let d = def(&w, 0, StockKind::Crate, Some(SupplyKind::Shells));
+    let c = add_crate_at(&mut w, 0, d, at + away * Fx::from_int(30));
+    let mut t = 0;
+    loop {
+        w.step(&[]);
+        t += 1;
+        let g = w.game().unwrap();
+        let carrier = g.supply6().crates.get(&c).and_then(|x| x.carrier);
+        if carrier.is_some_and(|m| members(&w, b).contains(&m)) {
+            break;
+        }
+        assert!(t < 90 * HZ, "the stranded crate was not picked up in 90 s");
+    }
+    let ai = w.game().unwrap().ai[0].as_ref().unwrap();
+    assert_eq!(ai.counters.s6_crate_pickups, 1);
 }
 
 // ------------------------------------------------------------------ T24 --
@@ -583,13 +802,50 @@ fn build_digs_the_pit_then_the_hq_stands_and_retreat_goes_there() {
     let terrain = &w.state.terrain;
     let c = FxVec2::from_int(410, 400);
     assert!(terrain.base_height_at(c) - terrain.height_at(c) >= Fx::from_ratio(13, 10));
+    // Review S6 F1: both boxes stand on the floor, their tops at least
+    // 30 cm below the ground the pit was dug in.
+    w.step(&[]);
+    let terrain = &w.state.terrain;
+    let boxes: Vec<_> = w
+        .game()
+        .unwrap()
+        .static_boxes()
+        .iter()
+        .filter(|b| matches!(b.of, crate::structures::StaticRef::Structure(i, _) if i == id))
+        .map(|b| b.frame)
+        .collect();
+    assert_eq!(boxes.len(), 2);
+    for f in boxes {
+        let top = f.center.z + f.half.z;
+        assert!(
+            top < terrain.base_height_at(f.center.xy()) - Fx::from_ratio(3, 10),
+            "a box stands above the pit"
+        );
+    }
     assert_eq!(acc(&w, 0).structures_built, 1);
     assert!(acc(&w, 0).hq_built_at > 0);
-    // A retreat from 100 m away goes to the HQ, not the base.
-    let r = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 500, 400);
-    run(&mut w, 0, 2, CommandKind::Retreat { squad: r });
-    let goal = w.game().unwrap().squads[&r].nav.goal;
-    assert_eq!(goal, FxVec2::from_int(410, 400));
+    // A retreat from 90 m ahead of the HQ (away from the base) goes to the
+    // HQ; from 90 m behind it, to the base (the HQ is not rearward); a
+    // tank crew always goes to the base (review F4).
+    let base = base_center(&w, 0);
+    let away = (c - base).normalize_or_zero();
+    let ahead = c + away * Fx::from_int(90);
+    let behind = c - away * Fx::from_int(90);
+    let sp = |w: &mut World, card: &str, at: FxVec2| {
+        let t = ty(w, card);
+        w.spawn_squad_at(PlayerId(0), t, at, FxVec2::new(Fx::ONE, Fx::ZERO))
+            .unwrap()
+    };
+    let r = sp(&mut w, "ww2:ger_grenadiergruppe", ahead);
+    let r2 = sp(&mut w, "ww2:ger_grenadiergruppe", behind);
+    let crew = sp(&mut w, "ww2:ger_tank_crew", ahead);
+    for (k, q) in [r, r2, crew].into_iter().enumerate() {
+        run(&mut w, 0, 10 + k as u32, CommandKind::Retreat { squad: q });
+    }
+    let goal = |w: &World, q| w.game().unwrap().squads[&q].nav.goal;
+    assert_eq!(goal(&w, r), c, "ahead of the HQ: retreat to it");
+    assert_eq!(goal(&w, r2), base, "behind the HQ: retreat to the base");
+    assert_eq!(goal(&w, crew), base, "a tank crew retreats to the base");
     // A second build order for an HQ is refused at the cap.
     run(
         &mut w,
@@ -948,7 +1204,37 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
         assert_ne!(h, base, "{name} is not hashed");
     }
     // Validated on load: each of these is rejected.
+    let us_hq = def(&w, 1, StockKind::Hq, None);
+    let us_crate = def(&w, 1, StockKind::Crate, Some(SupplyKind::Shells));
     let bad: Vec<(&str, StateEdit)> = vec![
+        // Review S6 F5: builder, faction and map checks.
+        (
+            "structure builder missing",
+            Box::new(|s| {
+                st(s).built = false;
+                st(s).builder = Some(SquadId(9_999));
+            }),
+        ),
+        (
+            "structure def of the other faction",
+            Box::new(move |s| st(s).def = us_hq),
+        ),
+        (
+            "crate def of the other faction",
+            Box::new(move |s| cr(s).def = us_crate),
+        ),
+        (
+            "crate off the map",
+            Box::new(|s| cr(s).pos.x = Fx::from_int(-5)),
+        ),
+        (
+            "crate dest off the map",
+            Box::new(|s| cr(s).dest = Some(FxVec2::from_int(5, 5_000))),
+        ),
+        (
+            "cookoff off the map",
+            Box::new(|s| s.cookoffs[0].pos.y = Fx::from_int(-5)),
+        ),
         ("structure id >= next", Box::new(|s| s.next_structure = 0)),
         (
             "structure def a crate",
@@ -1018,4 +1304,32 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
         w2.state = s;
         assert!(World::load(&w2.save(), 1).is_err(), "{name} was accepted");
     }
+    // A carrier must be alive (review S6 F5): the same own man loads while
+    // he lives and is rejected once dead.
+    let mut s = w.state.clone();
+    let g = s.game.as_ref().unwrap();
+    let man = (0..s.entities.len())
+        .map(|i| SimId(i as u32))
+        .find(|m| {
+            let i = m.index();
+            s.entities.kind[i] == crate::ecs::EntityKind::Soldier
+                && s.entities.owner[i] == PlayerId(0)
+                && s.entities.combat[i].hp > 0
+                && !g.supply6().carries(*m)
+        })
+        .unwrap();
+    {
+        let c = cr(&mut s.game.as_mut().unwrap().supply6);
+        c.carrier = Some(man);
+        c.dest = None;
+        c.claim = None;
+    }
+    let load = |st: &SimState| {
+        let mut w2 = World::from_state(w.state.clone(), 1).unwrap();
+        w2.state = st.clone();
+        World::load(&w2.save(), 1)
+    };
+    assert!(load(&s).is_ok(), "a live carrier was rejected");
+    s.entities.combat[man.index()].hp = 0;
+    assert!(load(&s).is_err(), "a dead carrier was accepted");
 }

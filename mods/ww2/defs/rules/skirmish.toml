@@ -1128,7 +1128,10 @@ serve_men = 6                # men served per source per service ...
 serve_period_ms = 500        # ... one service per this (ms)
 unfired_s = 3                # s: a man is served once he has not fired this long
 bullet_box_damage = 4        # hp a rifle-calibre bullet takes from a box (S6-5 (A))
-shell_box_damage = 400       # hp a main-gun round that does not burst takes from a box
+shell_box_damage = 150       # hp a main-gun round that does not burst takes from a box
+                             # (below the HQ stock's 400 and the dump's 250: one AP
+                             # round holes a stack of ammunition boxes, it does not
+                             # destroy it; a 60 hp crate breaks, review S6 F1)
 cookoff_kg_per_burst = 16    # kg: one cook-off burst per this (S6-10 (A)) ...
 cookoff_max = 8              # ... at most this many ...
 cookoff_s = 6                # ... spread over this (s)
@@ -1141,6 +1144,12 @@ hq_behind_m = 120            # m behind the most valuable held point, toward the
 hq_probe_rays = 8            # candidate HQ spots tested per plan (reverse-slope rays)
 crate_run_below_pct = 50     # %: a mortar or the HQ below this gets a crate run
 tank_crate_below_pct = 25    # %: a tank this low that cannot reach a source gets a crate
+tank_crate_far_m = 300       # m: ... "cannot reach": immobile, or (not on a rearm trip)
+                             # farther than this from the base and every built HQ/dump
+                             # holding shells for ten of its rounds; such a tank holds
+                             # for bearers taking crates at the base instead of driving back
+                             # (straight line; about 75 s each way at a tank's 4 m/s
+                             # off-road, the length of a mortar crate run; review S6 F3)
 shell_mp_max_pct = 25        # %: at most this share of income goes on crates
 hq_after_s = 60              # s: the AI buys its HQ squad after this
 dry_walk_s = 120             # s: a dry mortar with no run walks to the HQ or base

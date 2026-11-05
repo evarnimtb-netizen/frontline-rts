@@ -22,11 +22,15 @@ built_by = ["hq"]
 cookoff = "ww2:75mm_sprgr34"
 # Boxes: centre offsets from the pit centre in its facing frame (x along
 # the facing, y across, z from the ground); hp in fragment/bullet points.
-# The stock: about 2 m of stacked ammunition boxes (verify); the radio: a
+# Both stand on the pit floor (hq_pit: floor 170 cm across, 220 cm along
+# the facing; 150 cm deep), so their tops stay 60 cm and more below the
+# lip: a flat shot cannot reach them, only HE from above or a burst in the
+# pit (review S6 F1: the stock box used to sit on the spoil).
+# The stock: 1.6 m of stacked ammunition boxes (verify); the radio: a
 # field set on its case (Torn.Fu / SCR-284 size class, verify).
 boxes = [
-    { part = "stock", size_cm = [200, 120, 90], offset_cm = [0, -150, 0], hp = 400 },
-    { part = "radio", size_cm = [50, 40, 40], offset_cm = [120, 80, 0], hp = 40 },
+    { part = "stock", size_cm = [160, 120, 90], offset_cm = [-30, 0, 0], hp = 400 },
+    { part = "radio", size_cm = [50, 40, 40], offset_cm = [80, 0, 0], hp = 40 },
 ]
 sources = [
     "roster-expansion.md Appendix A (HQ 100 MP + 120 kg; stock caps)",
