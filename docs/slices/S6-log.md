@@ -130,8 +130,8 @@ holds for a bearers' run; S6-18 (A) structures stay unselectable until a HUD pas
 
 ## Known gaps
 
-- Germany 50 % on the 40 set after fixes; 52.2 % pooled on 160 sets.
-- T9b USA mortar share 7.9 % and HE share 17.6-18.3 % are below band. The
+- Orchestrator check on `6d88ea1` (320 matches): Germany 50.6 / 51.9 %, base side 64.4 % oos (T6c MISS).
+- T9b USA mortar share 9.2 % and HE share 19.1-19.8 % are below band. The
   allowed levers do not reach them; they need AI work (mortars fire earlier,
   more HE from tanks and mortars) or code change.
 - Structures cannot be selected (S6-18). The screenshot is stale. Cook-offs and tank crate runs are rare in AI play (0 tank runs).

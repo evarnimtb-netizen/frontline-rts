@@ -54,9 +54,9 @@ Measured in `docs/slices/S6-log.md`; before S6, `docs/slices/S5b-log.md`.
   (T5a/b 50 / 50), base side 55 %, length 10.5-34.5 min (median 17.6), HE
   share 19.4 % (band 20-26.3 loose), mortar share 12.8 / 8.6 %, AI
   observed-or-direct 84 %, 0 matches without a winner. Refusals: 1 `no_bombs` each side.
-- Sets of 160 (Tune binary `479244f`, before the review fixes): Germany 48.75 %,
-  55.6 % out of sample (pooled 52.2 %); base side 50 / 56.3 / 58.1 %. Mortar share
-  Germany 10.7 % (in band), USA 7.9 % (below 10); HE 17.6-18.3 % (below 20).
+- Sets of 160 (final binary `6d88ea1`, orchestrator check): Germany 50.6 %,
+  51.9 % out of sample; base side up to 64.4 % oos (T6c miss). Mortar share
+  Germany 11.6 % (in band), USA 9.2 % (below 10); HE 19.8 / 19.1 % (below 20).
 - Base refills no mortar bombs (`base_bomb_s = 0`, owner Q4): base bombs and
   unsourced bombs are both 0 on every run (T20). HQ and dump stock comes only
   from crates (T22).
@@ -97,9 +97,9 @@ Source: `docs/TODO.md` "Owner decisions in force"; full text in `docs/archive/TO
 
 ## Known gaps
 
-- Balance: Germany 50 % on 40 matches, 52.2 % pooled on 160 sets; base 1 is
+- Balance: Germany 50 % on 40 matches, 51.3 % pooled on 320; base 1 is
   worth about 6 points of win share to either faction (S5b-21/23 open).
-- USA mortar share 7.9 % and HE share 17.6-18.3 % are below band on 160 sets;
+- USA mortar share 9.2 % and HE share 19.1-19.8 % are below band on 160 sets;
   the Tune levers do not reach them (needs AI or code work).
 - Structures cannot be selected in the HUD (S6-18). `docs/slices/screens/s6_hq_supply.png`
   predates the tune and the fixes: retake it.

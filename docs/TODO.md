@@ -99,11 +99,11 @@ Balance issues from S1-S3c are superseded by later measurements (latest:
 `docs/slices/S6-log.md` "Targets" and "Tune"). Still open:
 
 - Map: base 1 is worth about 6 points of win share to either faction.
-- Balance after S6 fixes: Germany 50 % on 40 matches, 52.2 % pooled on 160 sets;
-  re-measure on 320+ matches before tuning again.
-- Mortars: USA mortar share 7.9 % on 160 (band 10-15 %); the allowed levers do
+- Balance after S6 fixes (320 matches, final binary): Germany 50.6 / 51.9 %;
+  base side 64.4 % on the out-of-sample 160 (T6c, max 62).
+- Mortars: USA mortar share 9.2 % on 160 (band 10-15 %); the allowed levers do
   not reach it (S6 Tune). Needs AI or code work.
-- HE share 17.6-18.3 % on 160 sets (band 20-26.3 %); same cause.
+- HE share 19.1-19.8 % on 160 sets (band 20-26.3 %); same cause.
 - T4a / T4b: one `no_bombs` AI refusal per run (S5b-22 race).
 - Structures are not selectable in the HUD (S6-18); S6 screenshot shows old labels.
 - Tank crate runs and cook-offs are rare in AI play (0 tank runs per match).

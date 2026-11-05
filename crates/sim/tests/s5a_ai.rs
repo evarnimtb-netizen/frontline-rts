@@ -364,32 +364,42 @@ fn run(w: &mut World, end: u64) -> Vec<(u64, u64)> {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
 fn refill_trips_and_ambushes_are_deterministic_and_survive_save_load() {
-    const SEED: u64 = 2;
     let end = 14 * 60 * 30;
-    let mut straight = World::new_match(ai_setup(SEED, false, |_| {}), 1).unwrap();
-    let reference = run(&mut straight, end);
-    let (c0, c1) = (counters(&straight, 0), counters(&straight, 1));
-    assert!(c0.refill_trips + c1.refill_trips > 0, "no refill trip");
-    assert!(c0.ambushes + c1.ambushes > 0, "no ambush");
-    for threads in [2, 3, 8] {
-        let mut w = World::new_match(ai_setup(SEED, false, |_| {}), threads).unwrap();
-        assert_eq!(run(&mut w, end), reference, "{threads} threads");
-    }
-    // Save at the first second with both a refill trip and an ambush.
-    let mut first = World::new_match(ai_setup(SEED, false, |_| {}), 2).unwrap();
     let busy = |w: &World| {
         let g = w.game().unwrap();
         let ai = |p: u8| g.ai(PlayerId(p)).unwrap();
         (0..2).any(|p| !ai(p).refill.is_empty())
             && (0..2).any(|p| ai(p).ambush.values().any(|a| !a.done))
     };
-    while !busy(&first) {
-        first.step(&[]);
-        assert!(
-            first.tick() < end - 600,
-            "no moment with a trip and an ambush"
-        );
+    // The first seed (1-8) with a second where a refill trip and an ambush
+    // are both under way. A fixed seed broke when S6 changed the AI's buys
+    // (seed 2 no longer has such a second); the checks below are unchanged.
+    let (seed, first) = (1..=8u64)
+        .find_map(|seed| {
+            let mut w = World::new_match(ai_setup(seed, false, |_| {}), 2).unwrap();
+            while !busy(&w) {
+                if w.tick() >= end - 600 {
+                    return None;
+                }
+                w.step(&[]);
+            }
+            Some((seed, w))
+        })
+        .expect("no seed 1-8 has a moment with a trip and an ambush");
+    println!(
+        "seed {seed}: trip and ambush both under way at tick {}",
+        first.tick()
+    );
+    let mut straight = World::new_match(ai_setup(seed, false, |_| {}), 1).unwrap();
+    let reference = run(&mut straight, end);
+    let (c0, c1) = (counters(&straight, 0), counters(&straight, 1));
+    assert!(c0.refill_trips + c1.refill_trips > 0, "no refill trip");
+    assert!(c0.ambushes + c1.ambushes > 0, "no ambush");
+    for threads in [2, 3, 8] {
+        let mut w = World::new_match(ai_setup(seed, false, |_| {}), threads).unwrap();
+        assert_eq!(run(&mut w, end), reference, "{threads} threads");
     }
+    // Save at that first second with both a refill trip and an ambush.
     let mid = first.tick();
     let mut resumed = World::load(&first.save(), 3).unwrap();
     assert_eq!(resumed.state_hash(), first.state_hash());
