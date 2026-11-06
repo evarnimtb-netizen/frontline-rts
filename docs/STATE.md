@@ -1,8 +1,9 @@
 # Frontline RTS: state (read this first)
 
-Where the project stands after S6b (branch `s6b-mortar-ai`, from `55b322d`; not
-pushed). Main is S5b plus the infra step (`9509ae6`). Read the sections you
-need, then the doc the index (last section) names. Checked 2026-11-05.
+Where the project stands after S7 (branch `s7-casemate-td`, from `9f216e9`; not
+pushed; S6b is its base lineage). Main is S5b plus the infra step (`9509ae6`).
+Read the sections you need, then the doc the index (last section) names.
+Checked 2026-11-06.
 
 ## What the game is now
 
@@ -19,7 +20,8 @@ workspace in `Cargo.toml`.
 | Perception | ray-budgeted spotting, smoke | `spotting.rs` |
 | Infantry combat | physical bullets and fragments, suppression, cover | `combat.rs`, `projectile.rs` |
 | Throwables, AT items | frag, smoke, satchel, Panzerfaust (single-shot) | `items.rs` |
-| Vehicles | Pz IV H and M4A3 (75): hull/turret plates, components, crew seats | `vehicle.rs`, `damage.rs`, `gunnery.rs` |
+| Vehicles | Pz IV H, M4A3 (75), StuG III G, M10: box list, turret or casemate mount, open tops, crew seats, components | `vehicle.rs`, `damage.rs`, `gunnery.rs`, `armour.rs` |
+| Casemate and open top (S7) | arc-limited casemate gun, pivot-to-lay (`lay_turn`); open faces with no plate; items and rounds into open tops | `gunnery.rs`, `damage.rs`, `items.rs` |
 | Armour physics | plates with sloped normals, penetration chance (the one ballistics function) | `armour.rs` |
 | Bail-out, re-crew | abandoned tanks, crew escape, capture | `bail.rs` |
 | Ammunition | counted rounds per man/gun/vehicle, priced base refill | `supply.rs` |
@@ -29,49 +31,48 @@ workspace in `Cargo.toml`.
 | AI commander | per-player controller: assault, armour, ammo, mortar, supply habits | `ai.rs`, `ai/{assault,armour,ammo,mortar,supply}.rs` |
 | World, save, hash | tick loop, save/load, state hash, render snapshot | `world.rs`, `hash.rs`, `snapshot.rs` |
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
-| Mod `ww2` | 2 factions, 16 cards plus 2 S6 cards per faction (Zugtrupp / Platoon HQ, Munitionsträger / Ammunition Bearers), 2 vehicles, 21 weapons; `defs/supply/`: 4 structures (HQ, dump per faction), 6 crates | `mods/ww2/defs/` |
+| Mod `ww2` | 2 factions, 16 cards plus 2 S6 cards (Zugtrupp / Platoon HQ, Munitionsträger / Ammunition Bearers) and the S7 vehicle card per faction; 4 vehicles (Pz IV H, M4A3 75, StuG III G, M10), 21 weapons plus S7 guns `stuk40_l48`, `m7_3in`; `defs/supply/`: 4 structures, 6 crates | `mods/ww2/defs/` |
 | Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect | `crates/net/src/` |
 | Godot bridge | GDExtension: match thread, intents, frames | `crates/godot-bridge/src/` |
 | Presenter | match view, HUD v2, menus, net lobby, mock source, supply grid | `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff | `sdk/crates/cli/src/` |
 | Tools | autotune, check.sh, bridge/export | `tools/` |
 
-Not in the game yet: other vehicles, AT guns, on-map artillery, fortifications,
-wounds and medics, flamethrowers, a third faction, a second map, radio.
+Not in the game yet: Jagdpanzer IV, 38(t), M18, AT guns, on-map artillery, fortifications, wounds, a third faction, a second map, radio.
 
 ## Versions
 
 Main (S5b): `SAVE_VERSION` 14 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 8
 (`crates/net/src/protocol.rs`). Branch `s6-hq-crates`: 15 and 9, each bumped
 once for S6 (`REPORT_VERSION` 1; `--json` files carry `"schema": 1`). A change
-S6b on its branch: `SAVE_VERSION` 16, `PROTOCOL_VERSION` 9. A change to a save layout, the hash or a command bumps these in the same commit.
+S6b on its branch: `SAVE_VERSION` 16, `PROTOCOL_VERSION` 9. S7 (branch `s7-casemate-td`): `SAVE_VERSION` 17 (bumped once), `PROTOCOL_VERSION` 9 (no command or wire change). A change to a save layout, the hash or a command bumps these in the same commit.
 
-## S6b (branch `s6b-mortar-ai` from `55b322d`, not pushed)
+## S7 (branch `s7-casemate-td` from `9f216e9`, not pushed)
 
-Mortar AI pass (`docs/slices/S6b-log.md`). AI map fire held past 20 m expected
-miss (`[ai.mortar] map_fire_max_miss_m`, ww2 off switch); `mortar_reserve_pct`
-0; crate runs below 90 %; `mortars_per_bearers` 2; dry AI fire orders
-withdrawn, not refused. Prices are S6 values (Tune change reverted). 160 set:
-mortar 14.2 / 12.0 %, HE 21.9 %, Germany 52.5 %; out of sample Germany 43.1 %
-(T5d miss), 41.9 % (301-380), 50.6 % (201-280); pooled 47.0 % over 640 (S6b-1).
+Assault guns and tank destroyers (`docs/slices/S7-log.md`, spec `S7-casemate-td.md`).
+Vehicle schema: 1..=4 armour boxes (own 8-zone plate tables, `open` faces),
+optional `[turret]`, mounts `turret_main` / `casemate` / `coax` / `hull`, seats
+as a list. Zone id = box x 4 + face (`<box>_<face>`); old tanks keep ids 0-7.
+StuG III G (500 MP, casemate arc +-10 deg, pop 10, 120 s) and M10 (520 MP, pop 10,
+120 s, hand traverse 5 deg/s). AI: both cards `ai_weight` 100 via the `vehicle` slot;
+overwatch 35 m behind own points (`skirmish.toml` `overwatch_back_m`); open tops
+back off from infantry; infantry throw into stopped open tops within 25 m.
+Balance on 160 sets at 35 m: Germany 48.8 / 45.0 / 48.8 % (pooled 47.5 % over 480);
+HE 21.0-21.7 %; StuG and M10 take about 3 % and 2 % of kills (T32a misses on seeds
+1-80: Pz IV 18.8 %, S7-15). Targets at final: 25 pass, 0 miss on 40 + armour5.
 
-## Balance at S6 (head `d355350`; S6b numbers above)
+## S6b (branch `s6b-mortar-ai` from `55b322d`, merged into the S7 lineage)
 
-Measured in `docs/slices/S6-log.md`; before S6, `docs/slices/S5b-log.md`.
+Mortar AI pass (`docs/slices/S6b-log.md`): map fire held past 20 m expected miss;
+`mortar_reserve_pct` 0; crate runs below 90 %; `mortars_per_bearers` 2. Pooled
+Germany 47.0 % over 640 (S6b-1). HE 21.9 %, mortar 14.2 / 12.0 % on the 160 set.
 
-- Skirmish 40 (seeds 1-20 x both bases): Germany 50 %, base 55 %, median
-  length 17.6 min, HE 19.4 %, mortar 12.8 / 8.6 %, observed-or-direct 84 %.
-- Sets of 160 (binary `6d88ea1`): Germany 50.6 %, 51.9 % oos; base up to
-  64.4 % oos (T6c miss); mortar 11.6 / 9.2 %; HE 19.8 / 19.1 %.
-- Base refills no mortar bombs (`base_bomb_s = 0`); HQ and dump stock comes
-  only from crates. Crates: shells 32 kg, priced at issue; HQ built in 100 %
-  of matches. Cook-offs 0.05-0.125 per match; AI tank crate runs 0.
-- Data (`mods/ww2/defs/rules/skirmish.toml`): 500 tickets, 600 start manpower,
-  pop cap 150; HQ 100 MP (25 m), dump 50 MP (15 m). Call-in cooldowns: rifle
-  20 s, engineers/SMG/LMG 30, AT 48, mortar 60, tank 120.
-- Tests at `d355350`: `check.sh quick` 440 pass, 0 fail (cli, content, sim; the
-  Tune run reported 551 over another set, not reconciled). Godot: `test_match_view`
-  291/291, `test_data_reload` 21/21, `test_net_ui` 143/143. Tick p99 0.475 ms (`--jobs 6`).
+## Balance at S6 (head `d355350`)
+
+Skirmish 40: Germany 50 %, base 55 %, median 17.6 min, HE 19.4 %, mortar 12.8 / 8.6 %.
+Data: 500 tickets, 600 start manpower, pop cap 150; HQ 100 MP, dump 50 MP. Call-in
+cooldowns: rifle 20 s, engineers/SMG/LMG 30, AT 48, mortar 60, tank 120. Details in
+`docs/slices/S6-log.md` and `S5b-log.md`.
 
 ## Owner decisions in force
 
@@ -96,21 +97,19 @@ Source: `docs/TODO.md` "Owner decisions in force"; full text in `docs/archive/TO
 
 ## Known gaps
 
-- Balance: Germany 52.5 / 43.1 / 41.9 / 50.6 % on four 160 sets, pooled
-  47.0 % (in band, low side; S6b-1). Base 1 is worth about 6 points (S5b-21/23 open).
-- Mortar and HE bands met in S6b on 160 sets (USA mortar 11.0-12.0 %, HE
-  21.5-21.9 %). Germany's mortar share is near the 15 % cap.
-- Structures cannot be selected in the HUD (S6-18). `docs/slices/screens/s6_hq_supply.png`
-  predates the tune and the fixes: retake it.
-- AI `no_bombs` refusals: 0 in S6b (dry orders withdrawn). AI rarely throws
-  satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
+- Balance: Germany 47.5 % pooled (S7, in band); base 1 is worth about 6 points (S5b-21/23).
+- StuG and M10 take about 3 % and 2 % of kills; T32a misses (S7-15).
+- Mortar and HE bands met (S6b, S7); Germany's mortar share is near the 15 % cap.
+- Structures cannot be selected in the HUD (S6-18); the S6 screenshot predates the fixes.
+- AI rarely throws satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
 
 ## Roadmap position
 
 Done: S1 to S5b, autotune fix, infra step. S6 HQ
 and ammo crates: built, reviewed, fixed on branch `s6-hq-crates` (not pushed).
-S6b mortar AI pass: built and fixed on branch `s6b-mortar-ai` (not pushed);
-T5 open. Next: S7 assault guns and TDs, S8
+S6b mortar AI pass: built and fixed on branch `s6b-mortar-ai` (not pushed).
+S7 assault guns and TDs: built, reviewed and fixed on branch `s7-casemate-td`
+(not pushed). Next: S8
 half-tracks/trucks/recon, S9 AT guns, S10a/b fortifications, S11a/b artillery,
 S12 wounds and medics, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 `docs/process/workflows.md` section 1. Sim profiling after S6 (owner).
@@ -147,4 +146,5 @@ S12 wounds and medics, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 | Guns, AT guns, howitzers, penetration data | `docs/design/roster/guns-artillery.md` 3, 5, 6 |
 | On-map artillery: range, limiters, direct fire, counter-battery | `docs/design/roster/artillery-on-map.md` 3-6 |
 | Vehicle catalogue, systems, ammo, build waves | `docs/design/roster/vehicles.md` 4, 6, 7, 9 |
+| S7 vehicle schema, casemate, open top, StuG/M10, AI overwatch | `docs/slices/S7-casemate-td.md`; log `S7-log.md`; `godot/docs/match_state.md` "S7" |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |

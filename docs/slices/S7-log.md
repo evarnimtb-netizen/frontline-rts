@@ -2,147 +2,149 @@
 
 Owner 2026-11-06: "Start S7". Branch `s7-casemate-td` from `9f216e9`, not
 pushed. Spec `S7-casemate-td.md`; targets `targets/S7.toml`; owner questions
-S7-1..11 in `docs/TODO.md`. Commits: `60dfc91` plan, `a2b104b` Build A schema
-and port, then the Build A content commit (this section).
+S7-1..15 in `docs/TODO.md`, each with its (A).
 
-## Build A (schema, port, casemate gunnery, StuG and M10 data)
+## Commits
 
-An earlier Build A agent died on a network error after `a2b104b`; its
-uncommitted StuG / M10 defs, roster entries, scenario and armour-test cases
-17-18 were checked against the spec and finished, not redone.
+- `60dfc91` plan; `a2b104b` schema, port; `e15ed25` content, armour-test 17-18;
+  `6aee94b` open top, 19-20; `0fde907` AI; `c0f14d6` presenter; `588448f` log;
+  `1c8898b` Tune (docs only); `421e617`, `1a13f63` review fixes.
 
-### Port proof (before and after the new cards joined the rosters)
+## What was built and why
 
-- Golden ballistics: 46 / 46 rows pass, file not edited.
-- armour-test `--seeds 5`: every check of cases 1-13, 15, 16 (14 is the
-  stress case, not in the default run) equals `verify-s6b/armour5.json`.
-- skirmish 40 (`--seeds 20 --both-bases --minutes 45 --jobs 6`): every
-  `per_match` field except `hash`, every `factions` number and every
-  top-level number (wins, HE share, lengths, s3c, s6, tank losses) equals
-  `verify-s6b/skirmish40.json`, both at `a2b104b` and again with the StuG
-  and M10 cards in the rosters (AI weight 0, below). Added fields only:
-  `factions.<f>.s7`, `s7_derived`.
-- Expected differences: the state and setup hashes (the setup and
-  `VehicleState` change shape) and so save files. `SAVE_VERSION` 16 -> 17
-  once; `PROTOCOL_VERSION` stays 9 (no command or wire change).
+- **Schema (spec 1, 2).** `[[boxes]]` 1..=4, each with its own 8-zone plate
+  table, optional `open` face mask and `floor_cm`; optional `[turret]`; mounts
+  `turret_main`, `casemate`, `coax`, `hull`; `[[seats]]` with id, role, box, `in`.
+  Zone id = box index x 4 + face group (S7-9), so the Pz IV and Sherman keep
+  ids 0-7 and their names.
+- **Port proof (before and after the cards joined the rosters).** Golden
+  ballistics 46/46, file not edited. Armour-test cases 1-13, 15, 16 equal
+  `verify-s6b/armour5.json` check for check (14 is not in the default run).
+  Skirmish 40: every `per_match` field except `hash`, every faction and top-level
+  number equals `verify-s6b/skirmish40.json`; added fields only. Expected
+  difference: state and setup hashes, so saves. Review re-ran it: 0 differences
+  except the hash.
+- **Casemate gunnery (spec 3).** `lay_gun` clamps to the arc (StuG +-10 deg) and
+  reports "laid" only inside it. A bearing outside the arc, beyond a 3 deg margin,
+  sets `VehicleState::lay_turn`; the driver pivots (proportional steer, no
+  overshoot), then the gunner lays. Orders, auto targets and the AI share it.
+  Cleared on wreck, abandon, `clear_orders`, bail. Low silhouette via
+  `spot_size_pct` (StuG 160).
+- **Open top (spec 4).** An open face has no plate; a box's bottom is its floor.
+  AP cores go through the boxes inside, HE bursts on the first box inside, small
+  arms hit the first seat, no spall. Fragments reach the first box inside or an
+  exposed seat; a burst on the M10's deck still reaches its crew. Thrown items
+  collide with enemy vehicles (S7-5, S7-13): a plate drops them; an open face
+  takes them in (`Thrown::inside`) and they burst inside.
+- **Content (spec 5).** `ger_stug3_g` (80 mm casemate, 30 mm sides, 40 km/h,
+  500 MP, pop 10, 120 s); `usa_m10` (turret 57 mm, hull 38 mm at 55 deg, 520 MP,
+  pop 10, 120 s). Guns `stuk40_l48` (kwk40_l48 ballistics), `m7_3in` with
+  `3in_m62` (APC, penetration derived, S7-6) and `3in_m42a1` (HE). Cards appended
+  to each roster's end, so `scenarios::tank()` still picks the Pz IV and Sherman.
+  M10 traverse 5 deg/s. StuG traverse and casemate/M10 elevation unsourced (S7-10).
+- **AI (spec 6).** Both cards `ai_weight` 100 through the `vehicle` slot (S7-2).
+  Overwatch: anchor `overwatch_back_m` behind the most threatened own point, best
+  of 9 spots, face the threat, relocate after 2 shots or a penetration. Open tops
+  reverse 40 m from infantry within 60 m; infantry throw frags (else satchels) into
+  a stopped open top within 25 m.
+- **Presenter (spec 7).** `vehicle_types` gains casemate, open-top, boxes, gun
+  pivot and seat keys (`godot/docs/match_state.md` "S7"); call-in panel has up to
+  three columns (S7-14).
 
-### What was built
+## Review, fix and tune
 
-- Schema (spec 1): `[[boxes]]` 1..=4 with own plate tables, `open`,
-  `floor_cm`; optional `[turret]`; `casemate` mount (pivot, arc, rates);
-  `[[seats]]` with id / role / box / `in`; roles `tank`, `assault_gun`,
-  `tank_destroyer`; turret ring iff turret. Zone id = box x 4 + face (S7-9).
-- Casemate gunnery (spec 3): `lay_gun` clamps to the arc and reports laid
-  only inside it; a bearing outside the arc less `casemate_margin_deg` (3)
-  sets `VehicleState::lay_turn`, the driver pivots with the FaceUnits steer
-  (proportional, cannot overshoot), cleared back inside the arc, on wreck,
-  abandon or a move order. Same path for orders, auto targets and the AI.
-- Aim and spotting use the upper box (turret, else the casemate); low
-  silhouette only via `spot_size_pct` (StuG 160, M10 190, tanks 200).
-- Per-type kill and knock-out counters (`kills_by_vehicle`,
-  `kos_by_vehicle`), JSON `s7` / `s7_derived` (spec 10).
-- Content: `ger_stug3_g`, `usa_m10`, `stuk40_l48`, `m7_3in`, `3in_m62`,
-  `3in_m42a1`, cards `ger_stug3_g_squad` (500 MP), `usa_m10_squad` (520),
-  appended to the rosters; sources and "verify" flags in the TOML comments.
-  M10 traverse 5 deg/s (whole degrees; vehicles.md 4.4 says about 4.5).
-- `ai_weight = 0` now means "the AI never buys this card" (ai.rs buy;
-  documented in `variants.md`). Both new cards carry 0 until Build B gives
-  the AI its habits; Build B sets 100 (S7-2).
-- armour-test cases 17, 18 (StuG vs Sherman; report checks, T34 bounds).
+- **M1 (fixed):** overwatch sent FaceUnits back to the axis while a laid gun had
+  a target, so the hull swung between shots. Now only with no target. Test
+  `overwatch_does_not_face_away_from_an_engaged_target`: 5 faces before, 0 after.
+- **M2 (fixed by a knob):** StuG and M10 were bought in nearly every match but
+  scored 2.5 / 1.7 % of kills; the 80 m anchor kept them idle.
+  `overwatch_back_m` 80 to 35 (`skirmish.toml`, measured there).
+- **L1 (fixed):** a fully rejected spot list returns a point behind the anchor.
+- **L2 (fixed):** T34e and T36a are `kind = "report"`, min 0.
+- **L3 (no change):** AI open-top throws are 0 in play; report targets watch it.
+- **Tune (`1c8898b`):** StuG cost 425-575, 800 matches: +0.2 points per 15 MP
+  (95 % interval -0.7 to +1.0). Price is no lever; kept 500.
 
-### Tests added
+## Measurements
 
-- `crates/sim/tests/casemate.rs`: content lowering (roles, boxes, open top,
-  arc); arc clamp (never laid outside, 15° in 2.5 s inside); pivot-to-lay
-  both ways (error falls monotonically, never changes sign, gun fires in
-  under 8 s, ends inside the arc); StuG vs M10 fight identical at 1/2/3/8
-  threads and across save/load/continue (penetrations > 0); `lay_turn`
-  saved, loaded, hashed and refused on load when |yaw| > pi, on a tank or on
-  a wreck; tanks stay first in the rosters.
-- `sdk/crates/content/tests/s7_vehicles.rs`: StuG and M10 defs; schema
-  errors (turret and casemate, arc without 0, open hull box, unknown seat
-  box, plate on an open face, missing / extra turret ring).
-- `world.rs`: per-player S7 counters saved, hashed, length-checked.
-- Canonical snapshot re-blessed: additions only (6 defs, 2 cards, rosters).
+### Armour-test (`--seeds 5`, 10 runs per case)
 
-### Measurements (armour-test `--seeds 5`, 10 runs per case)
+| Case | Result |
+|---|---|
+| 17 StuG frontal, 300 m | StuG wins 100 %, fires 100 %; first hit StuG 1.4 s, Sherman 8.5 s |
+| 18 Sherman at 45 deg, 200 m | Sherman wins 90 %, StuG fires 10 %; first hit 2.5 s (1 run), 1.3 s |
+| 19 grenade, stopped M10 | lands inside 25/30; crew hit 25/30 |
+| 19 grenade, moving M10 | lands inside 0/30 |
+| 20 81 mm near miss, M10 crew | 2/60 hit; Sherman crew 0/60 |
 
-| Case | StuG wins | Sherman wins | StuG fired | First hit StuG / Sherman (median s) |
+Case 18: the Sherman starts laid; 9 of 10 hits penetrate the 30 mm side and
+disable the StuG before its pivot and lay (about 2.5 s). T34e misses as a hard
+target (S7-11, now a report). `casemate.rs` proves the pivot: fires within 8 s on
+a target that does not shoot back. Case 20: crew boxes rise 14-24 cm over the
+66 cm rim; ground-burst fragments climb at 2-50 deg, so the rim and turret wall
+shadow almost every line (S7-12, a report). Deck bursts hit crew in half.
+
+### Skirmish balance
+
+| Set | Germany | Base max | HE share | Mortar G / US |
 |---|---|---|---|---|
-| 17 frontal 300 m | 100 % | 0 % | 100 % | 1.4 / 8.5 (2 runs hit, 0 pen) |
-| 18 Sherman 45° at 200 m | 10 % | 90 % | 10 % | 2.5 (1 run) / 1.3 |
+| 40 (seeds 1-20, both bases), final 35 m | 45 % | 55 % | 21.0 % | median 16.6 min |
+| 160 seeds 1-80, 80 m (Build B) | 43.75 % | 51.3 % | 20.7 % | 14.9 / 11.3 % |
+| 160 seeds 201-280, 80 m (Tune oos) | 51.9 % | 53.1 % | 21.0 % | 14.1 / 11.9 % |
+| 160 seeds 1-80, 35 m | 48.8 % | see note | 21.0-21.7 % | 14.0-14.5 / 11.7-12.2 % |
+| 160 seeds 101-180, 35 m | 45.0 % | see note | 21.0-21.7 % | see note |
+| 160 seeds 201-280, 35 m | 48.8 % | see note | 21.0-21.7 % | see note |
 
-Case 18: the Sherman starts laid; 10 hits, 9 penetrations on the 30 mm
-side, each disabling the StuG before its pivot (~1.3 s) and lay end. T34e
-(StuG fired >= 80 %) misses; owner question S7-11 (A) makes it a report.
+Note: at 35 m the fix stage reported base max 50.0-60.0 % and mortar ranges
+across sets, not per set. Pooled Germany: 47.5 %
+over the three 35 m sets (480 matches); 47.8 % over the two 80 m sets (1-80,
+201-280); 51.7 % over the 800 Tune matches.
 
-`targets S7.toml --from-json` (skirmish40 + armour5 of this stage): 19
-pass, 6 miss, 65 skipped (160 sets not played). Misses: T34e (above) and
-T35a-c, T36a-b (cases 19-20 are Build B).
+Vehicles at 35 m (sets 1-80 / 101-180 / 201-280):
+- StuG 2.8-3.3 % of German kills; M10 1.9-2.3 % of US kills; both together about
+  10.3-10.6 % of AI manpower.
+- KOs per bought: StuG 0.064 / 0.095 / 0.074, M10 0.070 / 0.054 / 0.103. At 80 m:
+  StuG 0.015, M10 0.032; Pz IV 0.13, Sherman 0.086.
+- Pz IV share of German kills 18.8 / 17.4 / 16.9 % (T32a limit 18 %).
 
-### What Build B must know (done in Build B)
+### Targets
 
-`ai_weight` 100, open faces in the sim, T33's zero-bought cards (Zugtrupp,
-bearers never bought on skirmish40, not traced; still so in Build B).
+- Build A: 19 pass, 6 miss. Build B (40 + 160 + armour5): 75 pass, 3 miss (T5c,
+  T34e, T36a). Tune (out-of-sample 160, 80 m): 83 pass, 3 miss, 4 skipped.
+- Final (`--runs skirmish40,armour5`): **25 pass, 0 miss (hard 0), 65 skipped.**
+  T34e (10 %) and T36a (3.3 %) pass as reports.
+- The 160 sets ran with `skirmish --json`, not `targets`.
+- Tick p99 0.70 ms at `--jobs 6` (no clean `--jobs 3` run); 40 hashes unchanged by the Tune.
 
-## Build B (open top, AI, presenter, balance numbers)
+## Checks (commit `1a13f63`)
 
-Commits `6aee94b` open top, `0fde907` AI, `c0f14d6` presenter, then this
-log. `SAVE_VERSION` stays 17, `PROTOCOL_VERSION` 9.
+- `tools/check.sh quick 9f216e9`: fmt, clippy ok; 524 passed, 0 failed.
+- Release `--include-ignored`: 588 passed (Build B); after M2 only the four s7_ai
+  tests re-ran (4/4).
+- Godot: `test_match_view` 293/293, `test_data_reload` 21/21, `test_net_ui` 143/143,
+  `check_project` OK. `validate mods/ww2` ok; bridge builds.
+- `SAVE_VERSION` 16 to 17 once; `PROTOCOL_VERSION` 9 unchanged. Determinism at
+  1/2/3/8 threads: `casemate.rs`, `open_top.rs`.
+- Screenshot `s7/s7_stug_m10.png` looked at (StuG casemate, M10 open turret, call-in tile).
 
-### What was built
+## Known gaps
 
-- Open top (spec 4): `hit_armour` reports `HitVia::{Plate, Open, Seat}`; an
-  open face has no plate (a box's bottom is its floor, never open); seats in
-  an open box are struck directly over the rim (`VehicleArmour::exposed`).
-  Rounds through an open face: core along the path to where it leaves the
-  box, APHE filler, no spall; HE bursts at the first box (`inside_*`); small
-  arms hit the first seat. Fragments: the first box inside, or the exposed
-  seat; a burst on an open-topped vehicle's own plate still reaches its
-  crew (closed vehicles unchanged). Overpressure reaches an exposed seat's
-  head when no plate and no earth is in the line (`blast_open_crew`).
-- Items sweep enemy vehicle boxes (S7-5, S7-13): a plate drops them; an
-  open face takes them in (`Thrown::inside`), they ride and burst inside
-  (overpressure to the box's seats, `inside_rays` up in a 90° cone, RNG
-  `INSIDE_ITEM`, outer rays out the top). Lobs over an open box aim at its
-  floor + 30 cm (`[vehicles.gunnery] open_top_item_*`).
-- AI (`ai/overwatch.rs`): StuG and M10 `ai_weight` 100 (S7-2). Assault guns
-  and TDs hold overwatch (anchor 80 m behind the most threatened own point
-  toward the threat; best of 9 spots by hull-down lines; face; relocate
-  after 2 shots or a penetration; a known vehicle within 300 m turns it);
-  open tops reverse 40 m from infantry within 60 m; infantry throw frags
-  (else satchels) into stopped open tops within 25 m. `[ai.armour]` and
-  `[ai.infantry]` keys with defaults; `AiState::overwatch` and four counters.
-- Presenter: `vehicle_types` + `casemate`, `open_top`, `turret_floor`,
-  `boxes`, `gun_pivot`, `seat_ids` (`match_state.md` "S7"); casemate block
-  fixed to the hull, open turret without roof; mock StuG / M10; call-in up
-  to three columns (S7-14); scene `armour_casemate_td`, screenshot looked at.
-- CLI: armour-test 19, 20; `World::drop_shell_now`, `edit_thrown`; JSON
-  `s7.{open_top_*, overwatch_holds, relocations}` and `*_per_match`.
-- Tests: `tests/open_top.rs` (drop in, ride, crew hit, Sherman safe, deck
-  bursts, `Thrown::inside` per field, 1/2/3/8 threads + save/load),
-  `tests/s7_ai.rs` (release), `world.rs` overwatch per field, meshgen, Godot.
+- Germany's share swings by set (43.75-51.9 % at 80 m); pooled 47.5 % is in band.
+- StuG and M10 still take about 3 % and 2 % of kills; T32a misses on seeds 1-80 (S7-15).
+- AI open-top throws never happen in play (L3); covered by `s7_ai.rs` only.
+- `ger_zugtrupp` and `ger_munitionstraeger` are never bought on skirmish (not traced).
+- Thrown items hit vehicles (S7-13); no aimed small arms at open-top crews (S7-7).
+- `vehicle_view.gd` draws at most 48 vehicles per type.
 
-### Numbers (armour-test `--seeds 5`; skirmish 40 = seeds 1-20, 160 = 1-80)
+## What S8 must know
 
-- Case 19: stopped M10 25/30 inside, crew hit 25/30; moving 0/30 (T35 met).
-  Case 20: M10 crew hit by 2/60 near misses, Sherman 0/60: T36a misses
-  (S7-12, physical: 14-24 cm of crew over the rim). Case 18 / T34e as Build A.
-- 40: Germany 45 %, HE 21.1 %, median 16.6 min, p99 0.70 ms (`--jobs 6`).
-- 160: Germany 43.75 % (T5c miss, band 45-55), base max 51.3 %, HE 20.7 %,
-  mortar 14.9 / 11.3 %, median 18.6 min. StuG bought in 95 %, M10 93 %.
-  Vehicle kills 18.6 / 16.3 % of a side's (Pz IV 16.1, StuG 2.5, Sherman
-  14.6, M10 1.7); vehicle MP 25.3 / 23.9 % (StuG 9.4, M10 9.1). KOs per
-  bought: StuG 0.015, M10 0.032, Pz IV 0.13, Sherman 0.086. Relocations
-  1.9 / 1.2 per match; AI open-top throws 0 (no squad came within 25 m of a
-  stopped M10); M10 back-offs 50.
-- Targets (40 + armour5 + 160): 75 pass, 3 miss (T5c, T34e, T36a), 12 skipped
-  (oos 160 and timing40 not played).
-
-### What the Tune stage must know
-
-- The new vehicles hardly fight: overwatch 80 m behind own points keeps
-  them out of range; StuG and M10 kill 2.5 / 1.7 % and knock out almost no
-  vehicles. Candidates: `overwatch_back_m` lower, `td_hunt_m` higher,
-  prices (S7-3 band). Germany fell to 43.75 % with them.
-- AI open-top throws need a stopped M10 near infantry; the back-off avoids it.
+1. The vehicle schema is general (boxes, turret, mounts, seats). Keep box order
+   `hull`, `turret` so zone ids stay stable.
+2. `SAVE_VERSION` 17 and `PROTOCOL_VERSION` 9 already include S7 state; S8 bumps
+   once only if its save layout changes.
+3. Balance levers are AI habits, not price: `[ai.armour]` `overwatch_back_m` (35)
+   and `td_hunt_m`. Check each on the 160 sets: Germany 45-55 %, HE 20-26.3 %,
+   mortar 10-15 %, no type above 18 % of kills.
+4. Open tops are live. S8 half-track and truck decks should reuse
+   `Thrown::inside` and `HitVia::Open`.
+5. Call-in panel: three columns. Jagdpanzer IV, 38(t), M18 remain data work (spec 5).

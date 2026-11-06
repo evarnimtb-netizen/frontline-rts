@@ -85,7 +85,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S6b-1 Germany's win share (T5, band 45-55 %) reads 52.5 / 43.1 / 41.9 / 50.6 % on four 160 sets at S6 prices (pooled 47.0 % over 640, in band). (A) Keep S6 prices; a German price or AI lever is its own Tune slice if wanted.
   S6b-2 `mortar_reserve_pct` 0 means the AI keeps no bombs for defence. (A) Accept; a defence-only reserve needs its own 160 measurement (a 10 % reserve cut mortar share).
   S6b-3 AI map fire is off in ww2 (`map_fire_max_miss_m` 20, under the 27 m floor). (A) Keep it off until better map data (S11).
-- S7-1..10 (`docs/slices/S7-casemate-td.md` section 12), each on its (A):
+- S7-1..15 (`docs/slices/S7-casemate-td.md` section 12 and `S7-log.md`), each on its (A):
   S7-1 No StuG roof MG 34 or M10 .50 (pintle mounts out of scope). (A) None; add with pintle mounts in S8.
   S7-2 StuG and M10 buy through the existing `vehicle` mix slot, split by card `ai_weight` (100 each), not new `[ai.mix]` slots (those would bypass the vehicle unlock, limit and savings). (A) Yes.
   S7-3 StuG 500 MP / pop 10 / 120 s; M10 520 / 10 / 120 s (vehicles.md 8.4 said 520/500 and 90 s). (A) As stated; the Tune may move each within +-15 %.
@@ -111,8 +111,9 @@ Full text in the archive file. None blocks a slice; answer any you care about.
    structure selection (its own item when scheduled).
 4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (not pushed). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
-5. S7 assault guns and TDs: planned on branch `s7-casemate-td` (from `9f216e9`); spec `docs/slices/S7-casemate-td.md`, targets `S7.toml`.
-6. Sim profiling: deferred until after S6 (owner 2026-11-03).
+5. S7 assault guns and TDs: done on branch `s7-casemate-td` (from `9f216e9`, head `1a13f63`, not pushed); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
+6. S8 half-tracks, trucks, recon: next (roadmap in `docs/STATE.md`).
+7. Sim profiling: deferred until after S6 (owner 2026-11-03).
 
 ## Known issues still open
 
@@ -124,6 +125,9 @@ Balance issues from S1-S3c are superseded by later measurements (latest:
   pooled 47.0 % (T5, band 45-55; S6b-1); base side 59.4 % oos (T6c, max 62).
 - Mortars and HE: met after S6b on 160 sets (USA 11.0-12.0 %, band 10-15;
   HE 21.5-21.9 %, band 20-26.3). Germany's mortar share 13.6-14.5 % is near the 15 % cap.
+- S7 balance (35 m overwatch, 160 sets): Germany 48.8 / 45.0 / 48.8 %, pooled 47.5 %;
+  T32a misses on seeds 1-80 (Pz IV 18.8 % of German kills, S7-15). StuG and M10 take
+  about 3 % and 2 % of kills; price is no lever (Tune). AI open-top throws 0 in play.
 - Cook-offs (0.05 -> 0.19 per match) and crates lost (16 / 6 -> 54 / 21) rose
   under S6b; not diagnosed (S7 to look).
 - T4a / T4b: `no_bombs` refusals 0 since S6b (dry orders withdrawn).
