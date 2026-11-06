@@ -140,3 +140,85 @@ fn an_ai_open_top_backs_off_from_infantry() {
         assert!(now > start + Fx::from_int(10), "{start:?} -> {now:?}");
     }
 }
+
+/// Review M1: an assault gun laid on infantry well off its overwatch axis
+/// keeps its lay. The planner must not turn the hull back to the axis
+/// (`FaceUnits`) while the gun has a target, and the gun keeps firing.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "AI plans: release only")]
+fn overwatch_does_not_face_away_from_an_engaged_target() {
+    let mut w = World::new_match(setup(3, 0), 1).unwrap();
+    let (sq, stug) = spawn(&mut w, 0, "ww2:ger_stug3_g_squad", xy(300, 500), EAST);
+    let ai = |w: &World| {
+        w.game()
+            .unwrap()
+            .ai(PlayerId(0))
+            .unwrap()
+            .overwatch
+            .get(&sq)
+            .copied()
+    };
+    // Settle at the spot, facing the axis, with nothing to shoot.
+    let mut settled = 0;
+    for _ in 0..30 * 120 {
+        w.step(&[]);
+        let held = ai(&w).is_some_and(|o| o.held);
+        let o = &w.game().unwrap().squad(sq).unwrap().order;
+        settled = if held && *o == frontline_sim::Order::Idle {
+            settled + 1
+        } else {
+            0
+        };
+        if settled >= 30 * 5 {
+            break;
+        }
+    }
+    assert!(settled >= 30 * 5, "never settled at an overwatch spot");
+    let o = ai(&w).unwrap();
+    let p = pos(&w, stug);
+    // Infantry 35 deg off the axis at 150 m (outside the 120 m stand-off).
+    let d = o.axis - p;
+    let a = f64::from(d.y.to_f32()).atan2(f64::from(d.x.to_f32())) + 35f64.to_radians();
+    let at = |r: f64| {
+        let px = f64::from(p.x.to_f32()) + r * a.cos();
+        let py = f64::from(p.y.to_f32()) + r * a.sin();
+        xy(px.round() as i32, py.round() as i32)
+    };
+    let (inf, _) = spawn(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        at(150.0),
+        (p - at(150.0)).normalize_or_zero(),
+    );
+    let _ = inf;
+    let faces0 = counters(&w, 0).faces;
+    let (mut fired, mut engaged, mut bad) = (0, 0, 0);
+    for _ in 0..30 * 60 {
+        let had = w
+            .game()
+            .unwrap()
+            .vehicle(stug)
+            .is_some_and(|v| v.target.is_some());
+        let f0 = counters(&w, 0).faces;
+        w.step(&[]);
+        engaged += usize::from(had);
+        if had && counters(&w, 0).faces > f0 {
+            bad += 1;
+        }
+        fired += w
+            .snapshot()
+            .armour_events
+            .iter()
+            .filter(|e| e.kind == ArmourEventKind::Fired as u8 && e.vehicle == stug.0)
+            .count();
+    }
+    assert!(engaged > 0, "the StuG never took the infantry as a target");
+    assert_eq!(
+        bad,
+        0,
+        "faced the axis {bad} times while engaged ({} faces in all)",
+        counters(&w, 0).faces - faces0
+    );
+    assert!(fired >= 2, "the StuG fired {fired} rounds");
+}

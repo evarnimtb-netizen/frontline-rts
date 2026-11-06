@@ -16,9 +16,11 @@
 //!   hull-down (the gun-height line clear, the hull-centre line blocked) 2,
 //!   clear 1, else 0; points within `td_infantry_standoff_m` of known enemy
 //!   infantry are passed over; ties go to the nearest, then the lower
-//!   index. It drives there (`Move`), then faces the threat (`FaceUnits`)
-//!   and holds; the gun fires through the usual targeting (a casemate turns
-//!   its hull with `lay_turn`).
+//!   index; with every point passed over, a point `td_infantry_standoff_m`
+//!   behind the anchor (away from the threat). It drives there (`Move`),
+//!   then, while its gun has no target, faces the threat (`FaceUnits`) and
+//!   holds; the gun fires through the usual targeting (a casemate turns its
+//!   hull with `lay_turn`).
 //! * **Relocate.** After `relocate_after_shots` main-gun shots from the
 //!   spot, or a penetration since it was chosen, it takes the next best spot
 //!   at least `relocate_m` from the old one. An anchor that moved more than
@@ -190,8 +192,9 @@ impl super::Planner<'_> {
                 entry.rounds = rounds;
                 self.ai.counters.overwatch_holds += 1;
             }
-            // Face the threat while idle there.
-            if sq.order == Order::Idle && vs.lay_turn.is_none() {
+            // Face the threat while idle there and not engaged: a face would
+            // clear `lay_turn` and swing a laid gun off its target.
+            if sq.order == Order::Idle && vs.lay_turn.is_none() && vs.target.is_none() {
                 let d = entry.axis - t.pos;
                 let off = (Fx::atan2(d.y, d.x) - t.yaw).wrap_angle().abs();
                 let slack = Fx::from_int(r.face_slack_deg as i32)
@@ -270,7 +273,16 @@ impl super::Planner<'_> {
                 best = Some((key, c));
             }
         }
-        best.map_or(anchor, |(_, c)| c)
+        // Every candidate passed over: not the rejected anchor but a point
+        // the stand-off distance further back from the threat.
+        best.map_or_else(
+            || {
+                let back = (anchor - axis).normalize_or_zero();
+                self.terrain
+                    .clamp(anchor + back * Fx::from_int(r.td_infantry_standoff_m as i32))
+            },
+            |(_, c)| c,
+        )
     }
 
     /// S7: a squad's throw into a slow enemy open-topped vehicle in reach
