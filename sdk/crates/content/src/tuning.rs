@@ -649,11 +649,26 @@ tuning_table! {
         /// less this margin makes the driver turn the hull toward it
         /// (deg; default 3).
         casemate_margin_deg: 0..=30 = "default_casemate_margin_deg",
+        /// S7 open-top exposure: a thrown item going off inside an open box
+        /// sends its inner rays in a cone of this full angle up from the
+        /// floor (deg; default 90).
+        open_top_item_cone_deg: 1..=180 = "default_open_top_item_cone_deg",
+        /// S7: a throw aimed inside an enemy open box's footprint aims this
+        /// high above its floor, so the lob drops in (cm; default 30).
+        open_top_item_aim_cm: 0..=200 = "default_open_top_item_aim_cm",
     }
 }
 
 fn default_casemate_margin_deg() -> u32 {
     3
+}
+
+fn default_open_top_item_cone_deg() -> u32 {
+    90
+}
+
+fn default_open_top_item_aim_cm() -> u32 {
+    30
 }
 
 impl GunneryTuning {

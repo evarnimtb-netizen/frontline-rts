@@ -519,6 +519,16 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         t.pos.put(out);
         t.landed.put(out);
         t.fuse.put(out);
+        // S7: at rest inside an open box.
+        match &t.inside {
+            None => 0u8.put(out),
+            Some(i) => {
+                1u8.put(out);
+                i.vehicle.0.put(out);
+                i.part.put(out);
+                i.local.put(out);
+            }
+        }
     }
     g.next_smoke.put(out);
     (g.smoke.len() as u32).put(out);

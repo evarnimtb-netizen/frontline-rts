@@ -85,7 +85,7 @@ pub use game::{
     CallInEvent, CallInRefusal, CapturePoint, CrewCounters, Launcher, MatchState, NavPhase, Order,
     OrderKind, Outcome, PathReq, PlayerState, Squad, SquadId, kill_class,
 };
-pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, Windup};
+pub use items::{BlastKind, Kit, MAX_SMOKE, MAX_THROWN, SmokeCloud, Thrown, ThrownInside, Windup};
 pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;

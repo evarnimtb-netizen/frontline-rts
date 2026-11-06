@@ -1992,7 +1992,9 @@ pub(crate) fn fly(
             }
             if let Some((_, vid, h)) = box_hit {
                 p.pos = h.point;
-                let blow = if shell || mortar {
+                // S7: a small-arms round through an open face or into an
+                // exposed seat goes on to the crew (`damage::open_hit`).
+                let blow = if shell || mortar || h.via != armour::HitVia::Plate {
                     Blow::Armour {
                         vehicle: vid,
                         hit: h,
@@ -2054,6 +2056,8 @@ pub(crate) struct Burst<'a> {
     pub key: (SimId, Purpose),
     /// `game::kill_class` of the men it kills (S3 report).
     pub class: u8,
+    /// S7: a thrown item going off inside an open box (vehicle, box).
+    pub inside: Option<(SimId, u8)>,
 }
 
 /// Mutable world parts the damage stage needs.
@@ -2160,7 +2164,7 @@ impl MatchState {
             if dist > supp_r && dist > blast_r {
                 continue;
             }
-            let clear = ctx.terrain.line_of_sight(lift, body);
+            let clear = ctx.terrain.line_of_sight(lift, body) && self.out_of_box(b, lift, body);
             if dist <= supp_r {
                 let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
                     / supp_r.raw().max(1) as i64) as u32;
@@ -2198,6 +2202,17 @@ impl MatchState {
             }
         }
         self.fragments(ctx, b, rays, struck, rules, dead, fires, events);
+        // S7: the exposed crew of open-topped vehicles.
+        self.blast_open_crew(
+            ctx,
+            pos,
+            he,
+            b.damage,
+            (b.player, b.class),
+            b.inside,
+            fires,
+            events,
+        );
         // A burst on a vehicle (or a man) well above the ground leaves it as
         // it is (S3).
         if pos.z > ctx.terrain.height_at(pos.xy()) + Fx::from_milli(blast.crater_lift_mm as i32) {
@@ -2222,6 +2237,22 @@ impl MatchState {
                 ctx.tick,
             );
         }
+    }
+
+    /// S7: whether the line `from → to` from a burst inside an open box
+    /// leaves it through an open face (always true for a burst outside).
+    fn out_of_box(&self, b: &Burst, from: FxVec3, to: FxVec3) -> bool {
+        let Some((v, bx)) = b.inside else {
+            return true;
+        };
+        let (Some(f), Some(vs)) = (self.vderived.frame(v), self.vehicles.get(&v)) else {
+            return true;
+        };
+        let plates = &self.armour.vehicles[vs.type_idx as usize];
+        let k = (bx as usize).min((f.n_boxes as usize).max(1) - 1);
+        let dir = (to - from).normalize_or_zero();
+        let (_, face) = armour::exit_of(&f.boxes[k], from, dir);
+        plates.face(armour::BoxPart(k as u8), face).open
     }
 
     /// `n` fragment rays of burst `b` (S3b, the physical-contact rule): from
@@ -2364,6 +2395,8 @@ impl MatchState {
         let pad = Fx::from_int(VEHICLE_SPHERE_PAD_M);
         ctx.stats.frag_rays += extra as u64;
         let mut tracks: Vec<(SimId, ComponentKind, u32)> = Vec::new();
+        // S7: seats and parts of open-topped vehicles struck, in ray order.
+        let mut crew: Vec<(SimId, Inner, u32)> = Vec::new();
         let x_stratum = Fx::TAU.div_int(extra.max(1) as i32);
         let x_half = x_stratum.div_int(2);
         for k in 0..n + extra {
@@ -2392,6 +2425,19 @@ impl MatchState {
             let mut boxed: Option<(Fx, usize, ArmourHit)> = None;
             let mut blocked = false;
             for (j, f) in frames.iter().enumerate() {
+                if let Some((iv, ib)) = b.inside
+                    && iv == f.id
+                {
+                    // S7: a burst inside an open box: rays leave only
+                    // through its open face (and then miss this vehicle).
+                    let plates = &self.armour.vehicles[f.type_idx as usize];
+                    let bx = (ib as usize).min((f.n_boxes as usize).max(1) - 1);
+                    let (_, face) = armour::exit_of(&f.boxes[bx], o, dir);
+                    if !plates.face(armour::BoxPart(bx as u8), face).open {
+                        blocked = true;
+                    }
+                    continue;
+                }
                 if Some(f.id) == struck {
                     // A burst on its plate: rays into it stop there.
                     let probe = o + dir * STRUCK_PROBE;
@@ -2400,6 +2446,18 @@ impl MatchState {
                         .any(|b| armour::box_dist_sq_raw(b, probe) == 0)
                     {
                         blocked = true;
+                        continue;
+                    }
+                    // S7: a ray leaving the plate may still reach the
+                    // vehicle's exposed crew or an open face (never another
+                    // of its plates: closed vehicles as before).
+                    let plates = &self.armour.vehicles[f.type_idx as usize];
+                    if !plates.exposed.is_empty()
+                        && let Some(h) = armour::hit_armour(o, d, f, plates)
+                        && h.via != armour::HitVia::Plate
+                        && boxed.is_none_or(|(bt, _, _)| h.t < bt)
+                    {
+                        boxed = Some((h.t, j, h));
                     }
                     continue;
                 }
@@ -2446,9 +2504,39 @@ impl MatchState {
                 continue;
             }
             if box_first {
-                let (_, j, h) = boxed.expect("box first");
+                let (bt, j, h) = boxed.expect("box first");
                 let f = &frames[j];
-                if f.wreck || f.owner.0 == b.player || he.frag_track_damage == 0 {
+                if f.wreck || f.owner.0 == b.player {
+                    continue;
+                }
+                // S7: through an open face or into an exposed seat: the
+                // first seat or component inside takes the fragment.
+                if h.via != armour::HitVia::Plate {
+                    let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(bt);
+                    let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
+                    let dmg = (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS))
+                        as u32;
+                    let inner = match h.via {
+                        armour::HitVia::Seat(k) => Some(Inner::Seat(k)),
+                        _ => {
+                            let v = &self.setup.vehicles[f.type_idx as usize];
+                            let boxes = crate::damage::inner_boxes(f, v);
+                            let bx = (h.part.0 as usize).min((f.n_boxes as usize).max(1) - 1);
+                            let len = armour::exit_of(&f.boxes[bx], h.point, dir).0;
+                            crate::damage::ray_boxes(&boxes, h.point, dir * len, 1)
+                                .first()
+                                .map(|&k| boxes[k].1)
+                        }
+                    };
+                    if let Some(inner) = inner
+                        && dmg > 0
+                    {
+                        crew.push((f.id, inner, dmg));
+                        ctx.stats.frag_hits += 1;
+                    }
+                    continue;
+                }
+                if he.frag_track_damage == 0 {
                     continue;
                 }
                 let plates = &self.armour.vehicles[f.type_idx as usize];
@@ -2518,6 +2606,20 @@ impl MatchState {
                 pos,
                 NO_AMMO,
             );
+        }
+        // S7: open-topped vehicles' crew and parts struck, ascending
+        // vehicle id (ray order within one).
+        crew.sort_by_key(|c| c.0);
+        let mut k = 0;
+        while k < crew.len() {
+            let id = crew[k].0;
+            let dealt: Vec<Dealt> = crew[k..]
+                .iter()
+                .take_while(|c| c.0 == id)
+                .map(|&(_, inner, dmg)| Dealt { inner, dmg })
+                .collect();
+            k += dealt.len();
+            self.hit_open(ctx, id, &dealt, (b.player, b.class), pos, fires, events);
         }
     }
 }
@@ -2727,6 +2829,7 @@ impl MatchState {
                 cut: false,
                 key: (SimId(k as u32), Purpose::CRATER),
                 class: self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter),
+                inside: None,
             };
             let rays = frag_share(he.frag_count, requested);
             ctx.stats.frag_rays_capped += (he.frag_count - rays) as u64;
@@ -2777,6 +2880,7 @@ impl MatchState {
                 cut: false,
                 key: (SimId(id), Purpose::COOKOFF_CRATER),
                 class,
+                inside: None,
             };
             let rays = frag_share(bl.blast.frag_count, requested);
             self.burst(
@@ -2817,7 +2921,15 @@ impl MatchState {
                     } else {
                         kill_class::FRAG
                     },
+                    inside: t
+                        .inside
+                        .filter(|i| self.vderived.frame(i.vehicle).is_some())
+                        .map(|i| (i.vehicle, i.part)),
                 };
+                // S7: inside an open box, its inner rays first.
+                if b.inside.is_some() {
+                    self.inside_item(ctx, t, &b, &mut fires, armour_events);
+                }
                 let rays = frag_share(h.blast.frag_count, requested);
                 ctx.stats.frag_rays_capped += (h.blast.frag_count - rays) as u64;
                 self.burst(
@@ -2830,6 +2942,9 @@ impl MatchState {
                     &mut fires,
                     armour_events,
                 );
+                if b.inside.is_some() {
+                    continue;
+                }
                 self.blast_tracks(
                     ctx,
                     t.pos,

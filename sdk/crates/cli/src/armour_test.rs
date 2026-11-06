@@ -2831,6 +2831,249 @@ fn case18(env: &Env) -> Result<CaseReport> {
     casemate_case(env, 18, scenarios::CasemateDuel::Flank45)
 }
 
+// ------------------------------------------------------- cases 19, 20 --
+
+/// S7 open-top cases: flat open ground, both sides human, the crew stay in
+/// (no bail-out on losses).
+fn open_top_world(env: &Env, seed: u64) -> Result<World> {
+    let mut s = env.setup(seed)?;
+    s.players.iter_mut().for_each(|p| p.is_ai = false);
+    s.rules.start_manpower = 100_000;
+    s.map.terrain.octaves.clear();
+    s.map.terrain.bands.clear();
+    s.map.woods.clear();
+    s.rules.vehicles.bail.crew_below = 0;
+    World::new_match(s, env.threads).map_err(|e| anyhow!("{e}"))
+}
+
+fn spawn_card(w: &mut World, p: u8, card: &str, at: FxVec2, f: FxVec2) -> Result<(SquadId, SimId)> {
+    let t = w
+        .match_setup()
+        .and_then(|s| s.squad_type_index(card))
+        .ok_or_else(|| anyhow!("no card {card}"))?;
+    let sq = w
+        .spawn_squad_at(PlayerId(p), t, at, f)
+        .ok_or_else(|| anyhow!("cannot spawn {card}"))?;
+    let v = members(w, sq)[0];
+    Ok((sq, v))
+}
+
+/// The vehicle's living crew HP, seat by seat.
+fn crew_hp(w: &World, v: SimId) -> Vec<u16> {
+    vstate(w, v).map_or(Vec::new(), |vs| vs.seats.iter().map(|s| s.hp).collect())
+}
+
+fn crew_hurt(before: &[u16], after: &[u16]) -> bool {
+    after.len() < before.len() || after.iter().zip(before).any(|(a, b)| a < b)
+}
+
+fn no_ammo(w: &mut World, v: SimId) {
+    w.edit_vehicle(v, |vs| {
+        vs.ammo.iter_mut().for_each(|n| *n = 0);
+        vs.loaded = None;
+    });
+}
+
+/// Case 19 trials per run and kind (stopped, moving).
+const CASE19_TRIALS: u64 = 3;
+
+/// Case 19 (vehicles.md 10): a German rifleman lobs a stick grenade from 15
+/// m at a disarmed M10's hull centre, stopped or crossing at speed: where
+/// it comes to rest (inside the open turret or not) and whether the crew
+/// is hit (no success roll: the lob's physics decides).
+fn case19(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(19, "grenades at a stopped and a moving M10 from 15 m");
+    // [stopped, moving]: trials, inside, crew hit.
+    let mut n = [0u32; 2];
+    let mut inside = [0u32; 2];
+    let mut hit = [0u32; 2];
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        for k in 0..CASE19_TRIALS {
+            for (m, moving) in [false, true].into_iter().enumerate() {
+                let mut w = open_top_world(env, seed * 16 + k * 2 + flip as u64)?;
+                // The M10 faces across the throw line; the bearing varies.
+                let az = (seed * 37 + k * 71 + flip as u64 * 13) % 360;
+                let f = dir_deg(az as i32);
+                let c = at(500, 500);
+                let (vsq, v) = spawn_card(&mut w, 1, "ww2:usa_m10_squad", c, f)?;
+                no_ammo(&mut w, v);
+                let side = FxVec2::new(-f.y, f.x);
+                // A moving M10 starts 25 m back along its path and crosses.
+                let start = if moving { c - f * Fx::from_int(25) } else { c };
+                if moving {
+                    w.place_vehicle(v, start, Fx::atan2(f.y, f.x));
+                    order(
+                        &mut w,
+                        1,
+                        vec![CommandKind::Move {
+                            squad: vsq,
+                            target: c + f * Fx::from_int(60),
+                        }],
+                    );
+                }
+                let (gsq, _) = spawn_card(
+                    &mut w,
+                    0,
+                    "ww2:ger_grenadiergruppe",
+                    c + side * Fx::from_int(15),
+                    -side,
+                )?;
+                // Grenades only: the squad's Panzerfaust stays out of it.
+                for m in members(&w, gsq) {
+                    w.edit_soldier(m, |k, _| k.items[ItemKind::SingleShotAt.index()] = 0);
+                }
+                let Some(man) = members(&w, gsq)
+                    .into_iter()
+                    .find(|m| w.entities().kit()[m.index()].items[ItemKind::Frag.index()] > 0)
+                else {
+                    continue;
+                };
+                // Moving: throw (at where it is, no lead) when it comes
+                // within 6 m of the thrower's line.
+                for t in 0..10 * hz(&w) {
+                    w.step(&[]);
+                    let near = dist(pos(&w, v), c) < 6.0;
+                    if (!moving && t + 1 >= hz(&w)) || (moving && near) {
+                        break;
+                    }
+                }
+                let before = crew_hp(&w, v);
+                let target = pos(&w, v);
+                order(
+                    &mut w,
+                    0,
+                    vec![CommandKind::Throw {
+                        units: vec![man],
+                        item: ItemKind::Frag,
+                        target,
+                    }],
+                );
+                n[m] += 1;
+                let mut was_inside = false;
+                for _ in 0..8 * hz(&w) {
+                    w.step(&[]);
+                    let g = w.game().expect("match");
+                    was_inside |= g
+                        .thrown()
+                        .iter()
+                        .any(|t| t.inside.is_some_and(|i| i.vehicle == v));
+                    if g.thrown().is_empty() && w.tick() > 0 && was_inside {
+                        break;
+                    }
+                }
+                inside[m] += u32::from(was_inside);
+                hit[m] += u32::from(crew_hurt(&before, &crew_hp(&w, v)));
+                if env.verbose {
+                    eprintln!(
+                        "case 19 seed {seed} k {k} moving {moving}: inside {was_inside}, crew {before:?} -> {:?}, throws {}",
+                        crew_hp(&w, v),
+                        w.stats().throws
+                    );
+                }
+            }
+        }
+    }
+    let p = |a: u32, b: u32| a as f64 * 100.0 / b.max(1) as f64;
+    r.row(
+        "result",
+        format!(
+            "stopped: {} of {} inside, crew hit in {}; moving: {} of {} inside, crew hit in {}",
+            inside[0], n[0], hit[0], inside[1], n[1], hit[1]
+        ),
+    );
+    let mut report = |name: &str, v: f64, what: String| {
+        r.check_v(name, true, round3(v), "report (S7.toml T35)", what);
+    };
+    report(
+        "stopped inside pct",
+        p(inside[0], n[0]),
+        format!("{} of {}", inside[0], n[0]),
+    );
+    report(
+        "stopped crew hit pct",
+        p(hit[0], n[0]),
+        format!("{} of {}", hit[0], n[0]),
+    );
+    report(
+        "moving inside pct",
+        p(inside[1], n[1]),
+        format!("{} of {}", inside[1], n[1]),
+    );
+    report(
+        "moving crew hit pct",
+        p(hit[1], n[1]),
+        format!("{} of {}", hit[1], n[1]),
+    );
+    Ok(r)
+}
+
+/// Case 20 bombs per run and vehicle.
+const CASE20_BOMBS: u64 = 6;
+
+/// Case 20 (vehicles.md 10): 81 mm bombs (GrW 34) bursting on the ground 3-6
+/// m from a stopped M10 and a stopped Sherman (bearing and distance vary):
+/// how often the crew is hit. Fragments reach an open turret's crew over the
+/// rim; walls and roofs stop them (no fragment pierces a plate, S7-8).
+fn case20(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(20, "81 mm near misses 3-6 m from an M10 and a Sherman");
+    let mut n = [0u32; 2];
+    let mut hit = [0u32; 2];
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        for (m, card) in ["ww2:usa_m10_squad", "ww2:usa_m4a3_75_squad"]
+            .into_iter()
+            .enumerate()
+        {
+            for k in 0..CASE20_BOMBS {
+                let mut w = open_top_world(env, seed * 32 + k * 2 + flip as u64)?;
+                let weapon = w
+                    .match_setup()
+                    .and_then(|s| s.weapons.iter().position(|x| x.id == "ww2:grw34"))
+                    .ok_or_else(|| anyhow!("no grw34"))? as u16;
+                let (_, v) = spawn_card(&mut w, 1, card, at(500, 500), dir_deg(0))?;
+                no_ammo(&mut w, v);
+                w.step(&[]);
+                let before = crew_hp(&w, v);
+                let az = ((seed * 53 + k * 61 + flip as u64 * 29) % 360) as i32;
+                let d = 3.0 + ((seed + k * 7 + flip as u64) % 4) as f64;
+                let p = pos(&w, v) + dir_deg(az) * Fx::from_milli((d * 1000.0) as i32);
+                if !w.drop_shell_now(0, weapon, p) {
+                    continue;
+                }
+                n[m] += 1;
+                for _ in 0..hz(&w) {
+                    w.step(&[]);
+                }
+                hit[m] += u32::from(crew_hurt(&before, &crew_hp(&w, v)));
+            }
+        }
+    }
+    let p = |a: u32, b: u32| a as f64 * 100.0 / b.max(1) as f64;
+    r.row(
+        "result",
+        format!(
+            "M10 crew hit by {} of {} bombs; Sherman crew by {} of {}",
+            hit[0], n[0], hit[1], n[1]
+        ),
+    );
+    r.check_v(
+        "m10 crew hit pct",
+        true,
+        round3(p(hit[0], n[0])),
+        "report (S7.toml T36)",
+        format!("{} of {}", hit[0], n[0]),
+    );
+    r.check_v(
+        "sherman crew hit pct",
+        hit[1] == 0,
+        round3(p(hit[1], n[1])),
+        "0 (a closed tank)",
+        format!("{} of {}", hit[1], n[1]),
+    );
+    Ok(r)
+}
+
 // Wall-clock time here only measures; it never feeds the sim.
 #[allow(clippy::disallowed_methods)]
 fn case14(env: &Env) -> Result<CaseReport> {
@@ -2976,7 +3219,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 18] = [
+    let all: [(u32, CaseFn); 20] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -2995,6 +3238,8 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (16, case16),
         (17, case17),
         (18, case18),
+        (19, case19),
+        (20, case20),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

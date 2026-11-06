@@ -620,6 +620,16 @@ special_below_pct = 50
 # the gunner lays within the arc. 3: a starting value (keeps the bearing a
 # little inside the arc so the gun does not sit on its stop).
 casemate_margin_deg = 3
+# S7 open-top exposure (docs/slices/S7-casemate-td.md 4): a thrown item that
+# comes to rest inside an open box (the M10 turret) sends its inside_rays
+# in a cone of this full angle up from the floor (deg). 90: a grenade on a
+# floor throws its fragments up and out; a starting value.
+open_top_item_cone_deg = 90
+# S7: a throw aimed inside an enemy open box's footprint aims this high
+# above its floor (cm), so the lob drops in rather than at the ground under
+# the vehicle; the physics then decides (no success roll). 30: about a
+# grenade's tumble above the floor; a starting value.
+open_top_item_aim_cm = 30
 
 # S3b: what a hit on the ammo stowage does (docs/slices/S3b-balance.md P2).
 [vehicles.damage]

@@ -107,16 +107,18 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S7 (`docs/slices/S7-casemate-td.md` 2): re-recorded once, the vehicle
 // setup's shape changed (armour boxes, seat ids, turret flag, gun arc,
 // `[vehicles.gunnery] casemate_margin_deg`);
-// the S7 port proof shows the same plates, boxes and match results.
+// the S7 port proof shows the same plates, boxes and match results. Build B
+// re-recorded it for the open-top and AI keys (`[vehicles.gunnery]
+// open_top_item_*`, `[ai.armour]` overwatch, `[ai.infantry]` throws).
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x1274af11fcca1b34),
-    ("skirmish usa-ger seed 7 hard", 0xf2f125bbaa458367),
-    ("test_unlock ger-usa seed 1 normal", 0xd014df7187dfa677),
-    ("example override ger-usa seed 1 normal", 0x1274af11fcca1b34),
-    ("human ger vs ai usa seed 3 easy", 0xf36c9060a5310170),
+    ("skirmish ger-usa seed 1 normal", 0xf88c33cbcd386b39),
+    ("skirmish usa-ger seed 7 hard", 0x0c75dad86c19dfe3),
+    ("test_unlock ger-usa seed 1 normal", 0x0b60a9b6ea56427b),
+    ("example override ger-usa seed 1 normal", 0xf88c33cbcd386b39),
+    ("human ger vs ai usa seed 3 easy", 0xe7f0cec5723528a9),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xda29d39e6c13ae5a,
+        0x2342cd6d53ebfdee,
     ),
 ];
 

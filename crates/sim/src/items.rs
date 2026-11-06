@@ -127,6 +127,18 @@ pub struct Thrown {
     pub landed: bool,
     /// Ticks until the fuse runs out (it goes off at 0 once landed).
     pub fuse: u16,
+    /// S7: at rest inside an enemy vehicle's open box; it rides with it.
+    pub inside: Option<ThrownInside>,
+}
+
+/// S7: where an item rests inside an open box (open-top exposure).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct ThrownInside {
+    pub vehicle: SimId,
+    /// Armour box index (it has an open face).
+    pub part: u8,
+    /// In the box's frame from its centre (m).
+    pub local: FxVec3,
 }
 
 /// A smoke cloud standing on the ground at `pos`.
@@ -376,7 +388,10 @@ impl MatchState {
             let d = (w.target - from.xy()).length();
             let s = d.mul_int(scatter_pct as i32).div_int(100);
             let aim = terrain.clamp(w.target + FxVec2::new(tri(&mut rng, s), tri(&mut rng, s)));
-            let (from, vel) = lob(from, aim.extend(lob_height(terrain, aim)), throw);
+            let z = self
+                .open_box_aim(aim, ents.owner[i])
+                .unwrap_or_else(|| lob_height(terrain, aim));
+            let (from, vel) = lob(from, aim.extend(z), throw);
             let fuse = fuse_ticks.saturating_sub(windup_ticks) + 1;
             self.thrown.push(Thrown {
                 id: self.next_thrown,
@@ -389,6 +404,7 @@ impl MatchState {
                 pos: from,
                 landed: false,
                 fuse: fuse.min(u16::MAX as u32) as u16,
+                inside: None,
             });
             self.next_thrown += 1;
             released += 1;
@@ -397,11 +413,38 @@ impl MatchState {
     }
 
     /// Flies the items in the air for `substeps` 60 Hz steps (Ballistics
-    /// stage; module docs).
+    /// stage; module docs). S7: each step is also swept against the boxes
+    /// of vehicles not the thrower's player's (wrecks included): a plate
+    /// stops it and it drops to the ground below the strike; an open face
+    /// (or a seat over the rim) takes it in, and it comes to rest on that
+    /// box's floor and rides with the vehicle until its fuse runs out.
     pub(crate) fn fly_thrown(&mut self, terrain: &Heightfield, substeps: u32) {
         let half_g = GRAVITY.div_int(2);
         let max_step = (MAX_FLIGHT_S * SUBSTEP_HZ) as u16;
-        for t in self.thrown.iter_mut().filter(|t| !t.landed) {
+        let vd = &self.vderived;
+        let armour = &self.armour;
+        let setup = &self.setup;
+        let players = &mut self.players;
+        for t in self.thrown.iter_mut() {
+            // Riding inside an open box.
+            if let Some(i) = t.inside {
+                match vd.frame(i.vehicle) {
+                    Some(f) => {
+                        let k = (i.part as usize).min((f.n_boxes as usize).max(1) - 1);
+                        let b = &f.boxes[k];
+                        t.pos = b.center + b.axes.apply(i.local);
+                    }
+                    None => {
+                        let xy = terrain.clamp(t.pos.xy());
+                        t.pos = xy.extend(terrain.height_at(xy));
+                        t.inside = None;
+                    }
+                }
+                continue;
+            }
+            if t.landed {
+                continue;
+            }
             for _ in 0..substeps {
                 t.step += 1;
                 let s = Fx::from_ratio(t.step as i64, SUBSTEP_HZ as i64);
@@ -410,6 +453,86 @@ impl MatchState {
                 let ground = terrain.segment_hit(t.pos, next).or_else(|| {
                     (!terrain.contains(next.xy()) || t.step >= max_step).then_some(next)
                 });
+                let d = next - t.pos;
+                let len = d.length();
+                let ground_t = ground.map(|g| {
+                    if len > Fx::ZERO {
+                        (g - t.pos).length().div(len)
+                    } else {
+                        Fx::ZERO
+                    }
+                });
+                // The first vehicle box on the step, ascending id on ties.
+                let mut hit: Option<(Fx, SimId, crate::armour::ArmourHit)> = None;
+                if !vd.frames.is_empty() {
+                    let mut ids: Vec<SimId> = Vec::new();
+                    let reach = len + vd.max_reach + Fx::from_int(2);
+                    vd.index.for_each_near(t.pos.xy(), reach, |id| ids.push(id));
+                    ids.sort_unstable();
+                    ids.dedup();
+                    for id in ids {
+                        let Some(f) = vd.frame(id) else { continue };
+                        if !f.wreck && f.owner == t.owner {
+                            continue;
+                        }
+                        let Some(a) = armour.vehicles.get(f.type_idx as usize) else {
+                            continue;
+                        };
+                        if !crate::armour::segment_near(
+                            t.pos,
+                            d,
+                            f.origin,
+                            f.reach + Fx::from_int(2),
+                        ) {
+                            continue;
+                        }
+                        if let Some(h) = crate::armour::hit_armour(t.pos, d, f, a)
+                            && hit.is_none_or(|(bt, _, _)| h.t < bt)
+                        {
+                            hit = Some((h.t, id, h));
+                        }
+                    }
+                }
+                if let Some((bt, id, h)) = hit
+                    && ground_t.is_none_or(|gt| bt < gt)
+                {
+                    let f = vd.frame(id).expect("found above");
+                    t.landed = true;
+                    let k = (h.part.0 as usize).min((f.n_boxes as usize).max(1) - 1);
+                    let open = h.via != crate::armour::HitVia::Plate && !f.wreck;
+                    let bx = setup.vehicles[f.type_idx as usize].boxes.get(k);
+                    match (open, bx) {
+                        (true, Some(bs)) => {
+                            let b = &f.boxes[k];
+                            let local = crate::armour::to_local(b, h.point - b.center);
+                            let m = Fx::from_ratio(5, 100);
+                            let cl = |v: Fx, hv: Fx| {
+                                v.clamp(-(hv - m).max(Fx::ZERO), (hv - m).max(Fx::ZERO))
+                            };
+                            let floor = Fx::from(bs.floor) - Fx::from(bs.bounds.center.z);
+                            let local = FxVec3::new(
+                                cl(local.x, b.half.x),
+                                cl(local.y, b.half.y),
+                                floor.max(-b.half.z),
+                            );
+                            t.pos = b.center + b.axes.apply(local);
+                            t.inside = Some(ThrownInside {
+                                vehicle: id,
+                                part: k as u8,
+                                local,
+                            });
+                            if let Some(p) = players.get_mut(t.owner.0 as usize) {
+                                p.s7.open_top_throws = p.s7.open_top_throws.saturating_add(1);
+                            }
+                        }
+                        _ => {
+                            // A plate: it drops to the ground below.
+                            let xy = terrain.clamp(h.point.xy());
+                            t.pos = xy.extend(terrain.height_at(xy));
+                        }
+                    }
+                    break;
+                }
                 if let Some(g) = ground {
                     let xy = terrain.clamp(g.xy());
                     t.pos = xy.extend(terrain.height_at(xy));
@@ -683,6 +806,25 @@ impl MatchState {
         {
             return Err("thrown items are inconsistent");
         }
+        // S7: an item inside rests in an open box of a vehicle that exists,
+        // within that box.
+        for t in &self.thrown {
+            let Some(i) = t.inside else { continue };
+            let ok = t.landed
+                && self.vehicles.get(&i.vehicle).is_some_and(|vs| {
+                    let v = &s.vehicles[vs.type_idx as usize];
+                    v.boxes.get(i.part as usize).is_some_and(|b| {
+                        let h = crate::vehicle::v3(b.bounds.half);
+                        b.open != 0
+                            && i.local.x.abs() <= h.x
+                            && i.local.y.abs() <= h.y
+                            && i.local.z.abs() <= h.z
+                    })
+                });
+            if !ok {
+                return Err("an item inside a vehicle is inconsistent");
+            }
+        }
         if self.smoke.len() > MAX_SMOKE
             || !ascending(self.smoke.iter().map(|c| c.id), self.next_smoke)
             || self.smoke.iter().any(|c| {
@@ -696,6 +838,51 @@ impl MatchState {
             return Err("smoke clouds are inconsistent");
         }
         Ok(())
+    }
+}
+
+impl MatchState {
+    /// S7: the height a throw at `aim` by `owner`'s man aims at when `aim`
+    /// lies inside the footprint of an enemy vehicle's open box: its floor
+    /// plus `vehicles.gunnery.open_top_item_aim_cm` (lowest vehicle id
+    /// first), so the lob drops in. `None`: not over an open box.
+    fn open_box_aim(&self, aim: FxVec2, owner: PlayerId) -> Option<Fx> {
+        if self.vderived.frames.is_empty() {
+            return None;
+        }
+        let mut ids: Vec<SimId> = Vec::new();
+        self.vderived
+            .index
+            .for_each_near(aim, self.vderived.max_reach, |id| ids.push(id));
+        ids.sort_unstable();
+        ids.dedup();
+        let above = Fx::from_ratio(
+            self.setup.rules.vehicles.gunnery.open_top_item_aim_cm as i64,
+            100,
+        );
+        for id in ids {
+            let Some(f) = self.vderived.frame(id) else {
+                continue;
+            };
+            if f.wreck || f.owner == owner {
+                continue;
+            }
+            let v = &self.setup.vehicles[f.type_idx as usize];
+            for (k, bs) in v.boxes.iter().enumerate().take(f.n_boxes as usize) {
+                if bs.open == 0 {
+                    continue;
+                }
+                let b = &f.boxes[k];
+                let rel = aim - b.center.xy();
+                let lx = b.axes.x.xy().dot(rel);
+                let ly = b.axes.y.xy().dot(rel);
+                if lx.abs() <= b.half.x && ly.abs() <= b.half.y {
+                    let floor = Fx::from(bs.floor) - Fx::from(bs.bounds.center.z);
+                    return Some(b.center.z + floor.max(-b.half.z) + above);
+                }
+            }
+        }
+        None
     }
 }
 

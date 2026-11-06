@@ -90,6 +90,9 @@ impl Purpose {
     pub const COOKOFF_CRATER: Purpose = Purpose(30);
     /// S6: a cook-off burst's fragment rays (tick, cook-off id).
     pub const COOKOFF_FRAGMENT: Purpose = Purpose(31);
+    /// S7: the inner rays of a thrown item going off inside an open box
+    /// (tick, item id).
+    pub const INSIDE_ITEM: Purpose = Purpose(32);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

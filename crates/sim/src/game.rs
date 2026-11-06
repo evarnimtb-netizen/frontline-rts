@@ -404,6 +404,15 @@ pub struct PlayerState {
 pub struct S7Counters {
     pub kills_by_vehicle: Vec<u32>,
     pub kos_by_vehicle: Vec<u32>,
+    /// Build B: seats and parts of enemy open-topped vehicles this player
+    /// struck through an open face, over the rim or from inside.
+    pub open_top_hits: u32,
+    /// Items this player's men threw that came to rest inside an enemy
+    /// open box.
+    pub open_top_throws: u32,
+    /// AI overwatch: spots taken, and moves to a new spot after firing.
+    pub overwatch_holds: u32,
+    pub relocations: u32,
 }
 
 /// S4 per-player counters (saved and hashed, read only by reports and
@@ -684,6 +693,7 @@ impl MatchState {
                 s7: S7Counters {
                     kills_by_vehicle: vec![0; setup.vehicles.len()],
                     kos_by_vehicle: vec![0; setup.vehicles.len()],
+                    ..S7Counters::default()
                 },
             })
             .collect();

@@ -1715,6 +1715,43 @@ impl World {
         true
     }
 
+    /// S7 staging tool (armour-test case 20): a shell of mortar weapon
+    /// `weapon` (an index with `he`) for `player` falling straight down onto
+    /// `p` from 20 m at 60 m/s. Match worlds only; false when the weapon is
+    /// not a mortar or the projectile pool is full.
+    pub fn drop_shell_now(&mut self, player: u8, weapon: u16, p: FxVec2) -> bool {
+        let Some(game) = self.state.game.as_ref() else {
+            return false;
+        };
+        if game
+            .setup
+            .weapons
+            .get(weapon as usize)
+            .is_none_or(|w| w.he.is_none())
+            || player as usize >= game.setup.players.len()
+        {
+            return false;
+        }
+        let from = p.extend(self.state.terrain.height_at(p) + Fx::from_int(20));
+        let Some(slot) = self.state.projectiles.spawn(crate::projectile::Projectile {
+            pos: from,
+            vel: crate::fx::FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_int(-60)),
+            owner: SimId(u32::MAX - 1),
+            drag: Fx::ZERO,
+            ttl: 120,
+            weapon,
+            player,
+            ammo: crate::projectile::NO_AMMO,
+            origin: from,
+            mission: 0,
+        }) else {
+            return false;
+        };
+        self.hash.mark_pool_slot(slot);
+        self.refresh_hashes();
+        true
+    }
+
     /// Spawns a squad of `squad_type` for `player` at once (as a call-in
     /// would, without cost, limits or delay) and places it at `center`
     /// facing `facing` (a unit vector). Match worlds only.
@@ -1802,6 +1839,18 @@ impl World {
             return false;
         };
         f(vs);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S7: edits thrown item `k` (in id order) directly (staged tests of
+    /// the save checks). The caller keeps it consistent.
+    pub fn edit_thrown(&mut self, k: usize, f: impl FnOnce(&mut crate::items::Thrown)) -> bool {
+        let Some(t) = self.state.game.as_mut().and_then(|g| g.thrown.get_mut(k)) else {
+            return false;
+        };
+        f(t);
         self.refresh_hashes();
         self.fill_snapshot();
         true

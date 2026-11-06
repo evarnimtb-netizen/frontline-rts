@@ -449,6 +449,11 @@ impl MatchState {
             }
             return Some(out);
         }
+        if hit.via != armour::HitVia::Plate {
+            out.result = PenResult::Penetration;
+            self.open_hit(seed, tick, e, &f, v, &hit, dir, &mut out.dealt);
+            return Some(out);
+        }
         let plate = plates.face(hit.part, hit.face);
         let c = armour::impact_cos(dir, hit.normal);
         let band = armour::in_track_band(&hit, f.hull.half.z, plates.track_band_pct);
@@ -577,6 +582,132 @@ impl MatchState {
             (_, _) => {}
         }
         Some(out)
+    }
+
+    /// S7 open-top exposure (spec 4, vehicles.md 6.5): a round that came in
+    /// through an open face (no plate) or struck a seat over the rim. A
+    /// penetrator's core goes on along its path to where it leaves the box
+    /// (a plate met from inside stops it), dealing its damage to every box
+    /// it crosses; an APHE filler bursts as on a plate; no spall. HE bursts
+    /// at the first box on the path (or where the path leaves the box):
+    /// `inside_rays` rays within 45° of the path, `inside_damage` each to
+    /// the first box within `inside_reach` (RNG `HE_INSIDE`), and a seat it
+    /// struck takes `inside_damage`. A small-arms round deals its damage to
+    /// the first seat on the path, nothing to components.
+    #[allow(clippy::too_many_arguments)]
+    fn open_hit(
+        &self,
+        seed: u64,
+        tick: u64,
+        e: &BallisticEvent,
+        f: &VehicleFrame,
+        v: &VehicleSetup,
+        hit: &armour::ArmourHit,
+        dir: FxVec3,
+        dealt: &mut Vec<Dealt>,
+    ) {
+        let setup = &self.setup;
+        let Some(weapon) = setup.weapons.get(e.weapon as usize) else {
+            return;
+        };
+        let ammo = setup.ammo.get(e.ammo as usize);
+        let boxes = inner_boxes(f, v);
+        let b = (hit.part.0 as usize).min((f.n_boxes as usize).max(1) - 1);
+        // The path inside: to where it leaves the open box (from the entry
+        // face), or through the struck seat for a core's length.
+        let seat = match hit.via {
+            armour::HitVia::Seat(k) => Some(k),
+            _ => None,
+        };
+        let path = if seat.is_some() {
+            Fx::from_int(2)
+        } else {
+            armour::exit_of(&f.boxes[b], hit.point, dir).0
+        };
+        let mech = ammo.map(|a| a.mechanism);
+        let he = ammo
+            .and_then(|a| a.blast.as_ref())
+            .map(|bl| &bl.blast)
+            .or(weapon.he.as_ref());
+        match mech {
+            Some(m) if m.penetrator() => {
+                let a = ammo.expect("penetrator ammo");
+                if let Some(core) = &a.core {
+                    let len = Fx::from(core.length).min(path);
+                    for k in ray_boxes(&boxes, hit.point, dir * len, core.max_boxes as usize) {
+                        dealt.push(Dealt {
+                            inner: boxes[k].1,
+                            dmg: core.damage,
+                        });
+                    }
+                }
+                if m == AmmoMechanism::Aphe
+                    && let Some(fl) = &a.filler
+                {
+                    let at = hit.point + dir * Fx::from(fl.offset).min(path);
+                    let mut r = RngStream::new(seed, tick, SimId(e.slot), Purpose::HE_FILLER);
+                    ray_burst(
+                        &boxes,
+                        at,
+                        dir,
+                        armour::deg(fl.cone_deg),
+                        fl.reach.into(),
+                        fl.rays as usize,
+                        fl.damage,
+                        &mut r,
+                        dealt,
+                    );
+                }
+            }
+            _ if he.is_some() && (mech.is_some() || weapon.he.is_some()) => {
+                let h = he.expect("checked");
+                if let Some(k) = seat {
+                    dealt.push(Dealt {
+                        inner: Inner::Seat(k),
+                        dmg: h.inside_damage,
+                    });
+                }
+                let at = match (seat, ray_boxes(&boxes, hit.point, dir * path, 1).first()) {
+                    (Some(_), _) => hit.point,
+                    (None, Some(&k)) => {
+                        let t = armour::segment_box(&boxes[k].0, hit.point, dir * path)
+                            .map_or(Fx::ZERO, |x| x.0);
+                        hit.point + dir * path.mul(t)
+                    }
+                    (None, None) => hit.point + dir * path,
+                };
+                let mut r = RngStream::new(seed, tick, SimId(e.slot), Purpose::HE_INSIDE);
+                ray_burst(
+                    &boxes,
+                    at,
+                    dir,
+                    armour::deg(INSIDE_CONE_DEG),
+                    h.inside_reach.into(),
+                    h.inside_rays as usize,
+                    h.inside_damage,
+                    &mut r,
+                    dealt,
+                );
+            }
+            _ => {
+                // Small arms: the first seat on the path.
+                let first = match seat {
+                    Some(k) => Some(k),
+                    None => ray_boxes(&boxes, hit.point, dir * path, MAX_BOXES)
+                        .into_iter()
+                        .find_map(|k| match boxes[k].1 {
+                            Inner::Seat(s) => Some(s),
+                            Inner::Part(_) => None,
+                        }),
+                };
+                if let Some(k) = first {
+                    dealt.push(Dealt {
+                        inner: Inner::Seat(k),
+                        dmg: weapon.damage,
+                    });
+                }
+            }
+        }
     }
 
     /// Applies `dealt` to vehicle `id` in order (see the module docs);
@@ -770,6 +901,180 @@ impl MatchState {
                 ammo,
             );
         }
+    }
+
+    /// S7: `dealt` to live vehicle `id` from fragments, overpressure or a
+    /// burst inside an open box (open-top exposure); `by` is the attacker
+    /// and the `game::kill_class`. Knocks it out if that ends it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hit_open(
+        &mut self,
+        ctx: &mut DamageCtx,
+        id: SimId,
+        dealt: &[Dealt],
+        by: (u8, u8),
+        pos: FxVec3,
+        fires: &mut FireRolls,
+        events: &mut Vec<ArmourEv>,
+    ) {
+        if dealt.is_empty() || ctx.ents.kind.get(id.index()) != Some(&EntityKind::Vehicle) {
+            return;
+        }
+        let Some(vs) = self.vehicles.get_mut(&id) else {
+            return;
+        };
+        vs.repairing = None;
+        vs.repair_progress = 0;
+        vs.last_attacker = Some(by.0);
+        if let Some(p) = self.players.get_mut(by.0 as usize) {
+            p.s7.open_top_hits = p.s7.open_top_hits.saturating_add(dealt.len() as u32);
+        }
+        if let Some(cause) = self.deal(ctx, id, dealt, by, id, fires, events, pos, NO_AMMO) {
+            self.knock_out(ctx, id, cause, by.1, events);
+        }
+    }
+
+    /// S7: overpressure of a burst at `pos` on the exposed crew of enemy
+    /// open-topped vehicles (spec 4): a seat in an open box takes `damage`
+    /// when its head (10 cm below the top of its seat box) is within the
+    /// blast radius and the line from `combat.blast.lift_mm` above the
+    /// burst to it crosses no earth and no plate of that vehicle (the S1
+    /// line test plus the plates as blockers). A burst inside an open box
+    /// (`inside`) reaches every seat in that box within the radius.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn blast_open_crew(
+        &mut self,
+        ctx: &mut DamageCtx,
+        pos: FxVec3,
+        he: &HeSetup,
+        damage: u32,
+        by: (u8, u8),
+        inside: Option<(SimId, u8)>,
+        fires: &mut FireRolls,
+        events: &mut Vec<ArmourEv>,
+    ) {
+        let r: Fx = he.blast_radius.into();
+        if damage == 0 || r <= Fx::ZERO || self.vehicles.is_empty() {
+            return;
+        }
+        let lift = FxVec3::new(
+            pos.x,
+            pos.y,
+            pos.z + Fx::from_milli(self.setup.rules.combat.blast.lift_mm as i32),
+        );
+        let mut ids: Vec<SimId> = Vec::new();
+        self.vderived
+            .index
+            .for_each_near(pos.xy(), r + self.vderived.max_reach, |id| ids.push(id));
+        ids.sort_unstable();
+        ids.dedup();
+        let rr = (r.raw().max(0) as u64).pow(2);
+        for id in ids {
+            if ctx.ents.kind.get(id.index()) != Some(&EntityKind::Vehicle)
+                || ctx.ents.owner[id.index()].0 == by.0
+            {
+                continue;
+            }
+            let (Some(f), Some(vs)) = (self.vderived.frame(id).copied(), self.vehicles.get(&id))
+            else {
+                continue;
+            };
+            let plates = &self.armour.vehicles[vs.type_idx as usize];
+            if plates.exposed.is_empty() {
+                continue;
+            }
+            let mut dealt: Vec<Dealt> = Vec::new();
+            for e in &plates.exposed {
+                if vs.seats.get(e.seat as usize).is_none_or(|s| s.hp == 0) {
+                    continue;
+                }
+                let sb = part_box(&f, &e.part);
+                if inside == Some((id, e.in_box)) {
+                    if armour::box_dist_sq_raw(&sb, pos) <= rr {
+                        dealt.push(Dealt {
+                            inner: Inner::Seat(e.seat),
+                            dmg: damage,
+                        });
+                    }
+                    continue;
+                }
+                let head = sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(1, 10));
+                if (head - lift).length_sq_raw() > rr
+                    || !ctx.terrain.line_of_sight(lift, head)
+                    || armour::hit_armour(lift, head - lift, &f, plates)
+                        .is_some_and(|h| h.via == armour::HitVia::Plate)
+                {
+                    continue;
+                }
+                dealt.push(Dealt {
+                    inner: Inner::Seat(e.seat),
+                    dmg: damage,
+                });
+            }
+            self.hit_open(ctx, id, &dealt, by, pos, fires, events);
+        }
+    }
+
+    /// S7: the inner rays of thrown item `t` going off inside an open box
+    /// (spec 4): `inside_rays` rays in a cone of
+    /// `vehicles.gunnery.open_top_item_cone_deg` (full angle) up from the
+    /// floor, each dealing `inside_damage` to the first seat or component
+    /// box within `inside_reach` (RNG `INSIDE_ITEM`, keyed by tick and item
+    /// id, rays in order). Boxes holding the item are left to the
+    /// overpressure ([`Self::blast_open_crew`]).
+    pub(crate) fn inside_item(
+        &mut self,
+        ctx: &mut DamageCtx,
+        t: &crate::items::Thrown,
+        b: &crate::combat::Burst,
+        fires: &mut FireRolls,
+        events: &mut Vec<ArmourEv>,
+    ) {
+        let (Some(i), Some(he)) = (t.inside, self.setup.items[t.item as usize].he.as_ref()) else {
+            return;
+        };
+        let h = &he.blast;
+        let (Some(f), Some(vs)) = (
+            self.vderived.frame(i.vehicle).copied(),
+            self.vehicles.get(&i.vehicle),
+        ) else {
+            return;
+        };
+        let v = &self.setup.vehicles[vs.type_idx as usize];
+        let boxes: Vec<(BoxFrame, Inner)> = inner_boxes(&f, v)
+            .into_iter()
+            .filter(|(bx, _)| armour::box_dist_sq_raw(bx, t.pos) > 0)
+            .collect();
+        let k = (i.part as usize).min((f.n_boxes as usize).max(1) - 1);
+        let axes = f.boxes[k].axes;
+        let half_cone =
+            armour::deg(self.setup.rules.vehicles.gunnery.open_top_item_cone_deg as i32).div_int(2);
+        let spread = half_cone
+            .sin()
+            .div(half_cone.cos().max(Fx::from_ratio(1, 100)));
+        let from = t.pos + axes.z * Fx::from_ratio(5, 100);
+        let reach: Fx = h.inside_reach.into();
+        let mut r = RngStream::new(ctx.seed, ctx.tick, SimId(t.id), Purpose::INSIDE_ITEM);
+        let mut dealt: Vec<Dealt> = Vec::new();
+        for _ in 0..h.inside_rays.min(frontline_content::defs::MAX_INSIDE_RAYS) {
+            let d = (axes.z + axes.x * tri(&mut r, spread) + axes.y * tri(&mut r, spread))
+                .normalize_or_zero();
+            if let Some(&j) = ray_boxes(&boxes, from, d * reach, 1).first() {
+                dealt.push(Dealt {
+                    inner: boxes[j].1,
+                    dmg: h.inside_damage,
+                });
+            }
+        }
+        self.hit_open(
+            ctx,
+            i.vehicle,
+            &dealt,
+            (b.player, b.class),
+            t.pos,
+            fires,
+            events,
+        );
     }
 
     /// Counts `n` crewmen of `owner` lost, killed by `by` with a round of

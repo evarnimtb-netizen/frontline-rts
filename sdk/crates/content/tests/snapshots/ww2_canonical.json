@@ -1445,6 +1445,8 @@
           "coax_cone_deg": 5,
           "he_group_m": 6,
           "lead_error_pct": 40,
+          "open_top_item_aim_cm": 30,
+          "open_top_item_cone_deg": 90,
           "spall_reach_m": 3,
           "special_below_pct": 50
         },

@@ -32,7 +32,7 @@
 //! `Fx::sin_cos` and `Fx::atan2` only; angles in the setup are integer
 //! degrees ([`deg`]).
 
-use frontline_content::vehicle::{AmmoSetup, VehicleSetup};
+use frontline_content::vehicle::{AmmoSetup, PartBoxSetup, VehicleSetup};
 use frontline_content::{AmmoMechanism, MAX_ARMOUR_BOXES, PlateGroup};
 
 use crate::fx::{Fx, FxVec3};
@@ -354,9 +354,26 @@ pub struct VehicleArmour {
     /// percent of the side.
     pub track_mm: Fx,
     pub track_band_pct: u32,
+    /// S7: seats in an open box, which a segment from outside can strike
+    /// directly ([`HitVia::Seat`]).
+    pub exposed: Vec<ExposedSeat>,
+}
+
+/// S7: a seat in an open-topped box (its box in the def's frame).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExposedSeat {
+    pub seat: u8,
+    pub in_box: u8,
+    pub part: PartBoxSetup,
 }
 
 impl VehicleArmour {
+    /// S7: whether box `b` has an open face.
+    #[inline]
+    pub fn box_open(&self, b: usize) -> bool {
+        b < self.boxes as usize && self.faces[b].iter().any(|f| f.open)
+    }
+
     pub fn new(v: &VehicleSetup) -> VehicleArmour {
         let mut faces = [[PlateFace::default(); 6]; MAX_ARMOUR_BOXES];
         for (b, bx) in v.boxes.iter().enumerate().take(MAX_ARMOUR_BOXES) {
@@ -367,12 +384,28 @@ impl VehicleArmour {
                     zone: Some(g.zone(b)),
                     normal: plate_normal(f, plate.slope_deg),
                     thickness: plate.thickness.into(),
-                    open: bx.open & (1 << g.index()) != 0,
+                    // S7: an open group leaves its outer face open; a
+                    // box's bottom is its floor and never open.
+                    open: f != Face::Bottom && bx.open & (1 << g.index()) != 0,
                 };
             }
         }
+        // S7: seats in an open box can be struck from outside (a head over
+        // the rim), seat order.
+        let exposed = v
+            .seats
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| v.boxes.get(s.in_box as usize).is_some_and(|b| b.open != 0))
+            .map(|(k, s)| ExposedSeat {
+                seat: k as u8,
+                in_box: s.in_box,
+                part: s.part,
+            })
+            .collect();
         VehicleArmour {
             faces,
+            exposed,
             boxes: v.boxes.len().clamp(1, MAX_ARMOUR_BOXES) as u8,
             track_mm: Fx::from_int(v.track_mm as i32),
             track_band_pct: v.track_band_pct,
@@ -421,6 +454,22 @@ pub struct ArmourHit {
     /// The hit point in the box's own frame (from the box centre): the
     /// track band reads its height.
     pub local: FxVec3,
+    /// S7: a plate, an open face (no plate; the boxes inside are next), or
+    /// an exposed seat struck from outside.
+    pub via: HitVia,
+}
+
+/// S7: what a segment met first on a vehicle (open-top exposure,
+/// vehicles.md 6.5).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum HitVia {
+    /// A plate (or the barrel): the penetration rule.
+    #[default]
+    Plate,
+    /// An open face of box `part`: no plate; what is inside is struck.
+    Open,
+    /// Seat index (def order) in an open box, struck from outside.
+    Seat(u8),
 }
 
 // ---------------------------------------------------------- narrowphase --
@@ -534,6 +583,12 @@ pub fn hit_armour(
             continue;
         }
         let plate = a.face(part, face);
+        // S7: an open face has no plate (a segment starting inside the box
+        // has no entry face: it is not an entry).
+        let open = part != BoxPart::BARREL && plate.open;
+        if open && t == Fx::ZERO {
+            continue;
+        }
         best = Some(ArmourHit {
             t,
             part,
@@ -542,9 +597,42 @@ pub fn hit_armour(
             normal: b.axes.apply(plate.normal),
             point: from + d * t,
             local,
+            via: if open { HitVia::Open } else { HitVia::Plate },
+        });
+    }
+    // S7: a seat over an open box's rim, struck before any plate or open
+    // face (a tie goes to the plate).
+    for e in &a.exposed {
+        let sb = crate::damage::part_box(f, &e.part);
+        let Some((t, face, local)) = segment_box(&sb, from, d) else {
+            continue;
+        };
+        if t == Fx::ZERO || best.is_some_and(|h| h.t <= t) {
+            continue;
+        }
+        best = Some(ArmourHit {
+            t,
+            part: BoxPart(e.in_box),
+            face,
+            zone: face.zone(BoxPart(e.in_box)),
+            normal: sb.axes.apply(plate_normal(face, 0)),
+            point: from + d * t,
+            local,
+            via: HitVia::Seat(e.seat),
         });
     }
     best
+}
+
+/// S7: where a straight path entering box `b` at `entry` along unit `dir`
+/// leaves it: `(distance, exit face)`.
+pub fn exit_of(b: &BoxFrame, entry: FxVec3, dir: FxVec3) -> (Fx, Face) {
+    let l = (b.half.x + b.half.y + b.half.z).mul_int(2) + Fx::ONE;
+    let far = entry + dir * l;
+    match segment_box(b, far, -(dir * l)) {
+        Some((t, face, _)) => (l.mul(Fx::ONE - t), face),
+        None => (Fx::ZERO, Face::Bottom),
+    }
 }
 
 /// Whether a hull-side hit at box-frame `local` is in the running-gear
@@ -886,6 +974,7 @@ mod tests {
             normal: FxVec3::ZERO,
             point: FxVec3::ZERO,
             local: v(0, 1400, z),
+            via: HitVia::Plate,
         };
         let hz = Fx::from_milli(680);
         // 45 % of 1.36 m = 0.612 m from the bottom (z = −0.068).
