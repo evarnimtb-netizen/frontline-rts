@@ -3,7 +3,11 @@ extends Node3D
 ## S3 vehicle renderer: state.vehicles (own, seen enemy and wrecks) drawn
 ## as one MultiMesh per (type, part): hull, turret and gun from the
 ## procedural meshes in crates/godot-bridge/src/meshgen.rs
-## (FrontlineMeshes). Instance transforms are composed in Rust, hull ×
+## (FrontlineMeshes). S7: the part shapes follow the type's boxes
+## (rules.vehicle_types[t].casemate, open_top, turret_floor): a casemate's
+## "turret" is its block, fixed to the hull, and only the gun turns by
+## turret_yaw; an open-topped turret is walls without a roof (style-neutral
+## blockouts). Instance transforms are composed in Rust, hull ×
 ## turret yaw × gun pitch (FrontlineMeshes.vehicle_buffers), and each
 ## batch gets one buffer upload per frame (§4.1); no Node per vehicle.
 ##
@@ -203,6 +207,10 @@ static func _fallback_mesh(part: String, d: Dictionary) -> Mesh:
 	var lift := Vector3(0, b.size.y * 0.5, 0)
 	if part == "hull":
 		lift.y += float(d.get("hull_ground", 0.4))
+	elif part == "turret":
+		# S7: a casemate block starts below its gun pivot.
+		lift.y += float(d.get("turret_floor", 0.0))
+		lift.z -= float(d.get("turret_offset_x", 0.0))
 	elif part == "gun":
 		lift = Vector3(0, 0, -b.size.z * 0.5)
 	for i in verts.size():
@@ -224,7 +232,10 @@ static func _compose_gd(poses: PackedFloat32Array, o: int, d: Dictionary) -> Arr
 	var hull := Basis(Vector3.UP, poses[o + 3]) * Basis(Vector3.RIGHT, poses[o + 4]) * Basis(Vector3.BACK, -poses[o + 5])
 	var pivot := pos + hull * Vector3(0, float(d.get("turret_base", 1.76)), -float(d.get("turret_x", 0.2)))
 	var turret := hull * Basis(Vector3.UP, poses[o + 6])
-	var tf := minf(float(d.get("turret_offset_x", 0.0)) + float(d.get("turret_length", 2.3)) * 0.42, float(d.get("gun_length", 4.5)) * 0.5)
+	# S7: a casemate gun pitches at its pivot; the block stays with the hull.
+	var casemate := bool(d.get("casemate", false))
+	var tf := 0.0 if casemate else minf(float(d.get("turret_offset_x", 0.0)) + float(d.get("turret_length", 2.3)) * 0.42, float(d.get("gun_length", 4.5)) * 0.5)
 	var trunnion := pivot + turret * Vector3(0, float(d.get("gun_height", 0.45)), -tf)
 	var gun := turret * Basis(Vector3.RIGHT, poses[o + 7])
-	return [Transform3D(hull, pos), Transform3D(turret, pivot), Transform3D(gun, trunnion)]
+	var upper := hull if casemate else turret
+	return [Transform3D(hull, pos), Transform3D(upper, pivot), Transform3D(gun, trunnion)]

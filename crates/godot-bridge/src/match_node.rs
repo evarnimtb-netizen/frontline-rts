@@ -212,6 +212,47 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             .factions
             .get(v.faction as usize)
             .map_or("", |f| short_id(&f.id));
+        // S7: the armour boxes (sim frame: x forward, y left, z up; m; a
+        // turret-frame box from the pivot), the gun pivot and seat ids.
+        let casemate = gun.kind == frontline_content::vehicle::MountKind::Casemate;
+        let v3 = |p: frontline_content::vehicle::FixedVec3| {
+            godot::builtin::Vector3::new(fx(p.x), fx(p.y), fx(p.z))
+        };
+        let mut boxes = VarArray::new();
+        let mut open_top = false;
+        for b in &v.boxes {
+            open_top |= b.frame == frontline_content::vehicle::Frame::Turret && b.open != 0;
+            boxes.push(
+                &vdict! {
+                    "id" => b.id.as_str(),
+                    "frame" => match b.frame {
+                        frontline_content::vehicle::Frame::Hull => "hull",
+                        frontline_content::vehicle::Frame::Turret => "turret",
+                    },
+                    "center" => v3(b.bounds.center),
+                    "half" => v3(b.bounds.half),
+                    "open" => b.open as i64,
+                }
+                .to_variant(),
+            );
+        }
+        let seat_ids: PackedStringArray = v
+            .seats
+            .iter()
+            .map(|s| GString::from(s.id.as_str()))
+            .collect();
+        // A casemate's "turret" is its upper box, fixed to the hull and
+        // measured from the gun pivot (the presenter turns only the gun).
+        let upper = v.boxes.get(1).filter(|_| casemate).map(|b| {
+            let (c, h) = (&b.bounds.center, &b.bounds.half);
+            (
+                2.0 * fx(h.x),
+                2.0 * fx(h.y),
+                2.0 * fx(h.z),
+                fx(c.x) - fx(v.turret_pivot.x),
+                fx(c.z) - fx(h.z) - fx(v.turret_pivot.z),
+            )
+        });
         let d = vdict! {
             "id" => v.id.as_str(),
             "name" => v.name.as_str(),
@@ -238,7 +279,20 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "glacis_deg" => v.plate(0).map_or(0, |p| p.slope_deg) as f32,
             "seats" => &seats,
             "ammo" => &ammo,
+            "casemate" => casemate,
+            "open_top" => open_top,
+            "turret_floor" => upper.map_or(0.0, |u| u.4),
+            "boxes" => &boxes,
+            "gun_pivot" => v3(v.turret_pivot),
+            "seat_ids" => &seat_ids,
         };
+        let mut d = d;
+        if let Some((l, w, h, off, _)) = upper {
+            d.set("turret_length", l);
+            d.set("turret_width", w);
+            d.set("turret_height", h);
+            d.set("turret_offset_x", off);
+        }
         out.set(short_id(&v.id), &d);
     }
     out

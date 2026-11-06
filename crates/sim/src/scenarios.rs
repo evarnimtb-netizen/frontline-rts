@@ -911,7 +911,7 @@ pub fn stress(mut setup: MatchSetup, threads: usize) -> Result<Staged, SimError>
 // ------------------------------------------------------- Godot scenes --
 
 /// The staged autoplay scenes (`--autoplay_scene armour_<name>`).
-pub const SCENES: [&str; 11] = [
+pub const SCENES: [&str; 12] = [
     "callin_locked",
     "vehicle_card",
     "tank_firing",
@@ -926,6 +926,9 @@ pub const SCENES: [&str; 11] = [
     // S6: a dug-in HQ with stock, its Zugtrupp, a mortar in its ring and
     // ammunition bearers carrying shells crates up to it.
     "hq_supply",
+    // S7: a StuG III (casemate) and an M10 (open-topped turret) side by
+    // side, stopped and not firing (the blockouts for the screenshot).
+    "casemate_td",
 ];
 
 /// A staged scene: the world, the commands to send on the first step, the
@@ -1062,6 +1065,38 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
             focus = at(TRENCH_X - 20, LANE_Y);
             max_ticks = 30 * 20;
         }
+        "casemate_td" => {
+            use frontline_content::VehicleRole;
+            let ag = need(
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::AssaultGun,
+                    at(TRENCH_X, LANE_Y + 6),
+                    EAST,
+                ),
+                "assault gun",
+            )?;
+            let td = need(
+                vehicle_of_role(
+                    &mut w,
+                    1,
+                    VehicleRole::TankDestroyer,
+                    at(TRENCH_X + 4, LANE_Y - 6),
+                    dir_deg(135),
+                ),
+                "tank destroyer",
+            )?;
+            // Hold fire: no rounds aboard either.
+            for v in [ag.1, td.1] {
+                w.edit_vehicle(v, |vs| {
+                    vs.ammo.iter_mut().for_each(|n| *n = 0);
+                    vs.loaded = None;
+                });
+            }
+            focus = at(TRENCH_X + 2, LANE_Y);
+            max_ticks = 30 * 5;
+        }
         "hq_supply" => {
             let s = w.match_setup().expect("match");
             let f = s.players[0].faction;
@@ -1189,6 +1224,15 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
             .vehicles
             .iter()
             .any(|v| v.owner == 0 && v.followers > 0),
+        // S7: both vehicles alive and drawn.
+        "casemate_td" => {
+            snap.vehicles
+                .iter()
+                .filter(|v| v.flags & vehicle_flags::WRECK == 0)
+                .count()
+                >= 2
+                && w.tick() >= 30
+        }
         // S6: a built own HQ with stock, and a crate on a man's back.
         "hq_supply" => {
             snap.structures

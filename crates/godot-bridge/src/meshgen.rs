@@ -250,6 +250,13 @@ pub struct VehicleDims {
     /// Upper front plate slope from vertical (presenter look only: a steep
     /// glacis reads as a Sherman, a near-vertical one as a Panzer IV).
     pub glacis_deg: f32,
+    /// S7: a casemate gun: the "turret" part is the casemate block, fixed
+    /// to the hull, from `turret_floor` (below the pivot) up; only the gun
+    /// turns (by the state's turret yaw) about the pivot.
+    pub casemate: bool,
+    pub turret_floor: f32,
+    /// S7: an open-topped turret: walls, no roof.
+    pub open_top: bool,
 }
 
 impl Default for VehicleDims {
@@ -269,6 +276,9 @@ impl Default for VehicleDims {
             gun_length: 4.5,
             gun_height: 0.45,
             glacis_deg: 10.0,
+            casemate: false,
+            turret_floor: 0.0,
+            open_top: false,
         }
     }
 }
@@ -277,6 +287,10 @@ impl VehicleDims {
     /// Gun trunnion (the pitch axis) relative to the turret pivot: forward
     /// distance and height. Near the turret front, at the muzzle height.
     pub fn trunnion(&self) -> (f32, f32) {
+        // S7: a casemate gun pitches at its pivot in the front plate.
+        if self.casemate {
+            return (0.0, self.gun_height);
+        }
         let fwd = self.turret_offset_x + self.turret_length * 0.42;
         (fwd.min(self.gun_length * 0.5), self.gun_height)
     }
@@ -508,6 +522,35 @@ pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
     let metal = [0.22, 0.21, 0.19, FIXED];
     let (tl, tw, th) = (d.turret_length * 0.5, d.turret_width * 0.5, d.turret_height);
     let cz = -d.turret_offset_x;
+    if d.casemate {
+        // S7 blockout: a low casemate block, its front sloped back (a
+        // narrower top), from the floor up; origin at the gun pivot.
+        let y0 = d.turret_floor;
+        let bottom = vec![[-tw, cz - tl], [-tw, cz + tl], [tw, cz + tl], [tw, cz - tl]];
+        let top = vec![
+            [-tw * 0.9, cz - tl * 0.7],
+            [-tw * 0.9, cz + tl * 0.95],
+            [tw * 0.9, cz + tl * 0.95],
+            [tw * 0.9, cz - tl * 0.7],
+        ];
+        m.add_loft_y(&bottom, y0, &top, y0 + th, paint);
+        // The mantlet (Saukopf) around the gun at the pivot.
+        m.add_box([0.0, d.gun_height, -0.05], [0.28, 0.24, 0.18], paint, None);
+        return m;
+    }
+    if d.open_top {
+        // S7 blockout: an open-topped turret: four 6 cm walls, no roof.
+        let wall = 0.03;
+        let h2 = th * 0.5;
+        m.add_box([0.0, h2, cz - tl + wall], [tw, h2, wall], paint, None);
+        m.add_box([0.0, h2, cz + tl - wall], [tw, h2, wall], paint, None);
+        m.add_box([-tw + wall, h2, cz], [wall, h2, tl], paint, None);
+        m.add_box([tw - wall, h2, cz], [wall, h2, tl], paint, None);
+        // The gun's mount at the front wall.
+        let (tf, ty) = d.trunnion();
+        m.add_box([0.0, ty, -tf], [0.22, 0.2, 0.18], metal, None);
+        return m;
+    }
     // Top view (x, z): the front (−z) is narrower, the sides taper to the
     // roof.
     let ring = |sx: f32, sz: f32| -> Vec<[f32; 2]> {
@@ -643,9 +686,11 @@ pub fn compose_vehicle(p: &VehiclePose, d: &VehicleDims) -> [Rows; 3] {
     let (tf, ty) = d.trunnion();
     let trunnion = add(pivot, mat_vec(&turret, [0.0, ty, -tf]));
     let gun = mat_mul(&turret, &rot_x(p.gun_pitch));
+    // S7: a casemate block stays with the hull; only the gun turns.
+    let upper = if d.casemate { hull } else { turret };
     [
         rows(&hull, p.pos),
-        rows(&turret, pivot),
+        rows(&upper, pivot),
         rows(&gun, trunnion),
     ]
 }
@@ -845,6 +890,14 @@ mod gd_api {
         out.gun_length = get("gun_length", out.gun_length);
         out.gun_height = get("gun_height", out.gun_height);
         out.glacis_deg = get("glacis_deg", out.glacis_deg);
+        out.turret_floor = get("turret_floor", out.turret_floor);
+        let flag = |k: &str| {
+            d.get(k)
+                .and_then(|v| v.try_to::<bool>().ok())
+                .unwrap_or(false)
+        };
+        out.casemate = flag("casemate");
+        out.open_top = flag("open_top");
         out
     }
 
@@ -982,6 +1035,7 @@ mod tests {
             gun_length: 4.0,
             gun_height: 0.4,
             glacis_deg: 47.0,
+            ..VehicleDims::default()
         }
     }
 
@@ -1106,5 +1160,38 @@ mod tests {
     fn placeholder_meshes_are_small() {
         assert!(tank_mesh().tri_count() < 200);
         assert_eq!(tracer_mesh().tri_count(), 12);
+    }
+
+    #[test]
+    fn s7_casemate_and_open_top_parts() {
+        let stug = VehicleDims {
+            casemate: true,
+            turret_length: 3.0,
+            turret_width: 2.2,
+            turret_height: 0.66,
+            turret_offset_x: -0.7,
+            turret_floor: -0.23,
+            gun_length: 3.0,
+            gun_height: 0.0,
+            ..VehicleDims::default()
+        };
+        let m = vehicle_turret_mesh(&stug);
+        assert!(m.tri_count() > 0 && winding_ok_fraction(&m) > 0.99);
+        // The block stays with the hull: turret yaw turns only the gun.
+        let p = VehiclePose {
+            turret_yaw: 0.15,
+            ..VehiclePose::default()
+        };
+        let [hull, upper, gun] = compose_vehicle(&p, &stug);
+        assert_eq!(hull[..3], upper[..3]);
+        assert_ne!(gun[..3], upper[..3]);
+        assert_eq!(stug.trunnion(), (0.0, 0.0));
+        let m10 = VehicleDims {
+            open_top: true,
+            ..VehicleDims::default()
+        };
+        let walls = vehicle_turret_mesh(&m10);
+        // Four walls and the gun mount: five boxes, no roof.
+        assert_eq!(walls.tri_count(), 5 * 12);
     }
 }

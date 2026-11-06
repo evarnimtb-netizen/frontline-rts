@@ -1287,3 +1287,41 @@ what a test stages (`stage_hq`, `stage_crate`, `set_tags`).
 - `SupplyView` (`match/supply_view.gd`) draws structure boxes and set-down
   crates as plain boxes (ghosts while the pit is dug).
 - Autoplay scene `armour_hq_supply` (sim `scenarios::scene("hq_supply")`).
+
+## S7: assault guns, tank destroyers, open tops
+
+### State keys
+
+`rules.vehicle_types["<type>"]` gains (both sources; the mock has one
+casemate type, `ger_stug3_g`, and one open-topped type, `usa_m10`):
+
+```
+role: String,                    # "tank" | "assault_gun" | "tank_destroyer"
+casemate: bool,                  # the main gun sits in a casemate (no turret)
+open_top: bool,                  # a turret-frame box has an open top
+turret_floor: float,             # casemate: block bottom below the gun pivot (m)
+boxes: [                         # armour boxes, box 0 the hull (sim frame:
+  { id: String,                  #   x forward, y left, z up, m; a "turret"
+    frame: String,               #   box from the pivot) "hull" | "turret"
+    center: Vector3, half: Vector3,
+    open: int },                 # open plate groups, bit 0 front 1 side 2 rear 3 top
+],
+gun_pivot: Vector3,              # turret pivot or casemate gun pivot (sim frame)
+seat_ids: PackedStringArray,     # def seat ids in seat order ("driver", "asst_driver", ...)
+```
+
+For a casemate, `turret_length/width/height` and `turret_offset_x` describe
+the casemate block (from the gun pivot), and `vehicles[].turret_yaw` is the
+gun's yaw within its arc (the hull turns when a target lies outside it).
+Seat pips stay by role (`seats`); an M10's assistant driver takes the
+`radio_mg` pip (S7-4). Thrown items inside an open box ride with the
+vehicle: `thrown[].pos` follows it (no new key).
+
+### Presenter
+
+- `VehicleView`: the "turret" part of a casemate type is its block, fixed
+  to the hull; only the gun turns about the pivot. An open-topped turret
+  is four walls without a roof (`meshgen::vehicle_turret_mesh`). Style-
+  neutral blockouts; the GDScript fallback composes the same.
+- Call-in tiles: the new cards come from the roster like any card (bridge:
+  `ger_stug3_g_squad`, `usa_m10_squad`; mock: `MockVehicles.FACTION_TD`).

@@ -35,6 +35,8 @@ const SCENES := {
 	# S6: the HQ squad selected (its card's strip: the HQ's stock bars),
 	# the radius ring, the bearers' card with its crate tag.
 	"hq_supply": {"height": 26.0, "pitch": -40.0, "yaw": -20.0, "settle": 3.0},
+	# S7: a StuG III (casemate blockout) and an M10 (open-topped turret).
+	"casemate_td": {"height": 11.0, "pitch": -34.0, "yaw": -35.0, "settle": 1.0},
 }
 
 var m: Node3D
@@ -245,6 +247,16 @@ func _check(s: Dictionary) -> String:
 							return ""
 					return "followers but no squads[].follow link"
 			return "no own vehicle with followers"
+		"casemate_td":
+			var vt: Dictionary = s.get("rules", {}).get("vehicle_types", {})
+			var kinds := {}
+			for v in s.get("vehicles", []):
+				var t: Dictionary = vt.get(String(v.type), {})
+				if bool(t.get("casemate", false)):
+					kinds["casemate"] = true
+				if bool(t.get("open_top", false)):
+					kinds["open_top"] = true
+			return "" if kinds.size() == 2 else "no casemate and open-topped vehicle drawn: %s" % kinds.keys()
 	return "unknown scene %s" % scene
 
 

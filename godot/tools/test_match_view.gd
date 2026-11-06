@@ -782,6 +782,15 @@ func _test_vehicles() -> void:
 	var tint := VehicleView.tint(String(MockVehicles.TYPES[mine].faction), 0, 0)
 	_check(Vehicles.is_wreck(first) or (absf(b[12] - tint.r) < 0.01 and absf(b[15] - 1.0) < 0.01), "custom data: team tint and full brightness")
 	_check(_match.vehicle_fx.counts.fires >= 1 and _match.vehicle_fx.counts.smokes >= 1, "fire on the burning tank, smoke over the fresh wreck")
+	# S7: the state carries a casemate and an open-topped type, and each
+	# faction's catalog both vehicle cards (tiles).
+	var vts: Dictionary = _view.state.rules.vehicle_types
+	_check(bool(vts.get("ger_stug3_g", {}).get("casemate", false)) and bool(vts.get("usa_m10", {}).get("open_top", false)), "S7: a casemate and an open-topped vehicle type")
+	var vcards := 0
+	for card in _view.state.get("callin", {}).get("catalog", []):
+		if String(card.get("type", "")) == "vehicle":
+			vcards += 1
+	_check(vcards == 2, "S7: two vehicle call-in tiles (%d)" % vcards)
 
 	# Picking: centre, inside the footprint, outside. The escort file
 	# behind the first tank overlaps it on screen, so test on a tank with

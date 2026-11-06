@@ -72,15 +72,16 @@ func column_height(m: Dictionary) -> float:
 
 
 ## Column size for a metrics set when its bottom is at `bottom` on a HUD
-## `hud_h` tall: one column of tiles, or two when one would rise above
-## CLEAR_TOP × hud_h. Sets `columns`. The HUD layout calls this.
+## `hud_h` tall: one column of tiles, or two (S7: or three, with the
+## second vehicle card) when fewer would rise above CLEAR_TOP × hud_h.
+## Sets `columns`. The HUD layout calls this.
 func column_size(m: Dictionary, bottom: float, hud_h: float) -> Vector2:
 	var n := maxi(view.state.get("callin", {}).get("catalog", []).size(), 1)
 	columns = 1
 	var h := _strip_h(m, n, 1)
-	if bottom - h < hud_h * CLEAR_TOP and n > 1:
-		columns = 2
-		h = _strip_h(m, n, 2)
+	while bottom - h < hud_h * CLEAR_TOP and columns < mini(n, 3):
+		columns += 1
+		h = _strip_h(m, n, columns)
 	return Vector2(float(m.callin_w) * columns + COL_GAP * (columns - 1), h)
 
 

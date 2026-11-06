@@ -32,13 +32,40 @@ const TYPES := {
 		"seats": ["driver", "gunner", "commander", "loader", "radio_mg"],
 		"ammo": [{"kind": "ap", "name": "75 mm M61", "max": 30}, {"kind": "he", "name": "75 mm M48", "max": 40}],
 	},
+	# S7: one casemate type and one open-topped type (the sim's StuG III G
+	# and M10; dims from their defs, the casemate block from the gun pivot).
+	"ger_stug3_g": {
+		"id": "ww2:ger_stug3_g", "name": "StuG III Ausf. G", "short": "StuG III", "faction": "germany",
+		"role": "assault_gun", "cost": 500, "pop": 10, "recall_s": 120.0, "speed": 6.0, "sight_m": 160.0,
+		"hull_length": 5.4, "hull_width": 2.9, "hull_height": 1.04, "hull_ground": 0.38,
+		"turret_x": -1.10, "turret_base": 1.65, "turret_length": 3.0, "turret_width": 2.2,
+		"turret_height": 0.66, "turret_offset_x": -0.7, "gun_length": 3.0, "gun_height": 0.0,
+		"casemate": true, "open_top": false, "turret_floor": -0.23,
+		"seats": ["driver", "gunner", "commander", "loader"],
+		"ammo": [{"kind": "ap", "name": "7.5 cm PzGr 39", "max": 27}, {"kind": "he", "name": "7.5 cm Sprgr 34", "max": 24}],
+	},
+	"usa_m10": {
+		"id": "ww2:usa_m10", "name": "3-inch GMC M10", "short": "M10", "faction": "usa",
+		"role": "tank_destroyer", "cost": 520, "pop": 10, "recall_s": 120.0, "speed": 7.4, "sight_m": 175.0,
+		"hull_length": 5.8, "hull_width": 3.0, "hull_height": 1.4, "hull_ground": 0.5,
+		"turret_x": 0.20, "turret_base": 1.90, "turret_length": 2.2, "turret_width": 2.1,
+		"turret_height": 0.66, "turret_offset_x": 0.0, "gun_length": 3.9, "gun_height": 0.35,
+		"casemate": false, "open_top": true, "turret_floor": 0.0,
+		"seats": ["driver", "gunner", "commander", "loader", "radio_mg"],
+		"ammo": [{"kind": "ap", "name": "3-inch M62 APC", "max": 36}, {"kind": "he", "name": "3-inch M42A1 HE", "max": 18}],
+	},
 }
 ## Mock-only handling numbers (not part of the state).
 const HANDLING := {
 	"ger_pz4_h": {"turn": 30.0, "traverse": 14.0, "reverse": 2.0, "reload": 6.5, "elev": Vector2(-8, 20), "ap_speed": 790.0, "he_speed": 550.0},
 	"usa_m4a3_75": {"turn": 32.0, "traverse": 24.0, "reverse": 2.5, "reload": 6.0, "elev": Vector2(-10, 25), "ap_speed": 618.0, "he_speed": 463.0},
+	# S7: the casemate gun lays only within "arc" (deg) of the nose.
+	"ger_stug3_g": {"turn": 30.0, "traverse": 6.0, "arc": 10.0, "reverse": 2.0, "reload": 6.5, "elev": Vector2(-6, 20), "ap_speed": 790.0, "he_speed": 550.0},
+	"usa_m10": {"turn": 32.0, "traverse": 5.0, "reverse": 2.5, "reload": 6.0, "elev": Vector2(-10, 19), "ap_speed": 792.0, "he_speed": 579.0},
 }
 const FACTION_TANK := {"germany": "ger_pz4_h", "usa": "usa_m4a3_75"}
+## S7: each faction's second vehicle card (a call-in tile of its own).
+const FACTION_TD := {"germany": "ger_stug3_g", "usa": "usa_m10"}
 const AT_TEAM := {
 	"germany": {"name": "Panzerschreck team", "short": "Schreck", "cost": 200, "speed": 110.0, "range": 120.0},
 	"usa": {"name": "Bazooka team", "short": "Bazooka", "cost": 180, "speed": 85.0, "range": 100.0},
@@ -143,6 +170,11 @@ func call_in_block(owner: int) -> String:
 
 func faction_tank(owner: int) -> String:
 	return FACTION_TANK.get(String(src.players[owner].faction), "ger_pz4_h")
+
+
+## S7: the faction's assault gun or tank destroyer.
+func faction_td(owner: int) -> String:
+	return FACTION_TD.get(String(src.players[owner].faction), "ger_stug3_g")
 
 
 # --- intents -----------------------------------------------------------------
@@ -425,6 +457,9 @@ func _gunnery(v: Dictionary, h: Dictionary, vt: Dictionary, dt: float) -> void:
 		want_turret = wrapf(Vehicles.yaw_toward(to.x, to.y) - v.yaw, -PI, PI)
 		var dy: float = MockMap.height(aim_at.x, aim_at.y) - MockMap.height(v.pos.x, v.pos.y)
 		want_pitch = clampf(atan2(dy, maxf(to.length(), 1.0)) + to.length() * 0.00004, deg_to_rad(h.elev.x), deg_to_rad(h.elev.y))
+	# S7: a casemate gun lays only within its arc.
+	if h.has("arc"):
+		want_turret = clampf(want_turret, -deg_to_rad(float(h.arc)), deg_to_rad(float(h.arc)))
 	var err := wrapf(want_turret - v.turret_yaw, -PI, PI)
 	v.turret_yaw = wrapf(v.turret_yaw + clampf(err, -trav * dt, trav * dt), -PI, PI)
 	v.gun_pitch = move_toward(v.gun_pitch, want_pitch, deg_to_rad(6.0) * dt)

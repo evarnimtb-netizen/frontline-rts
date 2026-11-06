@@ -848,12 +848,13 @@ func catalog(owner: int) -> Array:
 			e.short = at.short
 			e.cost = int(at.cost)
 		out.append(e)
-	var vkey := veh.faction_tank(owner)
-	var vt: Dictionary = MockVehicles.TYPES[vkey]
-	out.append({
-		"id": vt.id + "_squad", "type": "vehicle", "vehicle": vkey, "name": vt.name, "short": vt.short,
-		"cost": int(vt.cost), "recall_s": float(vt.recall_s), "men": 0, "pop": int(vt.pop),
-	})
+	# The tank first, then (S7) the assault gun or tank destroyer.
+	for vkey in [veh.faction_tank(owner), veh.faction_td(owner)]:
+		var vt: Dictionary = MockVehicles.TYPES[vkey]
+		out.append({
+			"id": vt.id + "_squad", "type": "vehicle", "vehicle": vkey, "name": vt.name, "short": vt.short,
+			"cost": int(vt.cost), "recall_s": float(vt.recall_s), "men": 0, "pop": int(vt.pop),
+		})
 	return out
 
 
