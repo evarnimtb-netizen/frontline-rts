@@ -914,8 +914,12 @@ capture_m = 300
 # vehicle within td_hunt_m (m) turns the overwatch toward it. Spots within
 # td_infantry_standoff_m (m) of known enemy infantry are passed over, and an
 # open-topped vehicle with known enemy infantry within open_top_infantry_m
-# (m) reverses away. All starting values (S7-2 (A); Tune may move them).
-overwatch_back_m = 80
+# (m) reverses away. All starting values (S7-2 (A)) except overwatch_back_m:
+# S7 Fix moved it 80 -> 35 m (at 80 m the spots sat beyond the 175 m sight of
+# the front; three 160 sets, seeds 1-80/101-180/201-280: Germany 48.8/45.0/
+# 48.8 %, StuG KOs per bought 0.064/0.095/0.074, M10 0.070/0.054/0.103; 50 m
+# gave 46.9/43.1 % and about half the KOs).
+overwatch_back_m = 35
 overwatch_candidates = 8
 overwatch_ring_m = 30
 relocate_after_shots = 2

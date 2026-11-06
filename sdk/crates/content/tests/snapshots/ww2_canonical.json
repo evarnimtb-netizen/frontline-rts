@@ -992,7 +992,7 @@
           "face_slack_deg": 20,
           "halted_mm_s": 300,
           "open_top_infantry_m": 60,
-          "overwatch_back_m": 80,
+          "overwatch_back_m": 35,
           "overwatch_candidates": 8,
           "overwatch_ring_m": 30,
           "rearm_ap_below": 3,
