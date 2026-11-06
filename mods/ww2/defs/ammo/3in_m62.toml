@@ -1,0 +1,48 @@
+# 3-inch M62 APC: armour-piercing capped with an HE filler for the 3-inch
+# M7 gun of the M10 (S7, docs/slices/S7-casemate-td.md 5).
+id = "ww2:3in_m62"
+name = "3-inch M62 APC"
+mechanism = "aphe"
+# S5a priced refill: complete round 12.4 kg (27.2 lb; Hunnicutt, Sherman,
+# 3-inch ammunition table; verify).
+supply = { kind = "shells", g = 12400 }
+caliber_mm = 76
+# 2,600 ft/s (Hunnicutt): 792 m/s.
+muzzle_velocity_m_s = 792
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0°, 50 % success.
+# Derived, not read (owner question S7-6 (A)): the US wartime table at 30°
+# (Hunnicutt, Sherman, 3-inch M62 firing data: 93 / 88 / 82 / 75 mm at
+# 500 / 1000 / 1500 / 2000 yd; verify) divided by cos 30° and multiplied by
+# 1.066, the gap between Bird & Livingston's 0° row and the US 30° table
+# measured on the Sherman's M61 round (81 vs 76 mm at 500 m), so both sides
+# stay on the B&L criterion (see 75mm_m61.toml). 100 m extrapolated.
+penetration = [[100, 118], [457, 114], [914, 108], [1371, 101], [1829, 92]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# As the M61 (S3b): damage to a struck barrel and to a track in the band.
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Hunnicutt, Sherman: A History of the American Medium Tank (1978), 3-inch ammunition data",
+  "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001), M61 row for the 1.066 factor",
+]
+
+# After penetration: as the M61 (S3b values; the same family of round).
+[core]
+damage = 100
+length_cm = 150
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+# The filler: as the M61's with 12 rays (spec 5; a starting value).
+[filler]
+offset_cm = 100
+rays = 12
+cone_deg = 60
+damage = 60
+reach_cm = 300

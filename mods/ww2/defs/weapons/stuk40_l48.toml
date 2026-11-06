@@ -1,0 +1,23 @@
+# 7.5 cm StuK 40 L/48: the StuG III G's main gun (S7,
+# docs/slices/S7-casemate-td.md 5): the assault-gun version of the KwK 40
+# L/48, the same ballistics and rounds (PzGr 39, Sprgr 34, PzGr 40), its
+# own def so the casemate mount and the reports name it. Values as
+# kwk40_l48.toml.
+id = "ww2:stuk40_l48"
+name = "7.5 cm StuK 40 L/48"
+class = "cannon"
+# Engagement range (m).
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 10
+magazine = 1
+# With a loader; the crew rules scale it (ms).
+reload_ms = 6500
+# 2.5 mrad stationary (urad); ranging in, movement and damage scale it.
+spread_urad = 2500
+muzzle_velocity_m_s = 790
+suppression = 30
+# The muzzle blast gives it away: 300 % sight range for 3 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000

@@ -1,0 +1,13 @@
+# The 3-inch GMC M10 as a buyable squad of one (S7): call-in, cards and the
+# AI use the squad path. Cost, pop, call-in time and sight are in the
+# vehicle def. It shares the `vehicle` mix slot with the Sherman (S7-2 (A)).
+id = "ww2:usa_m10_squad"
+name = "3-inch GMC M10"
+short_name = "M10"
+faction = "ww2:usa"
+tags = ["vehicle"]
+vehicle = "ww2:usa_m10"
+# AI weight within the `vehicle` slot (0..1000; 0 = the AI never buys it).
+# 0 until S7 Build B gives the AI its open-top and overwatch habits; then
+# 100, the tank's (S7-2 (A)).
+ai_weight = 0

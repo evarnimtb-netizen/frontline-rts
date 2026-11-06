@@ -412,6 +412,81 @@ pub fn duel(
     Ok(s)
 }
 
+/// S7: the first squad type of player `p`'s roster whose vehicle has
+/// `role` (the casemate and open-top cases spawn the StuG and the M10).
+pub fn type_with_vehicle_role(
+    s: &MatchSetup,
+    p: u8,
+    role: frontline_content::VehicleRole,
+) -> Option<u16> {
+    let f = &s.factions[s.players.get(p as usize)?.faction as usize];
+    f.roster.iter().copied().find(|&t| {
+        s.squad_types[t as usize]
+            .vehicle
+            .and_then(|v| s.vehicles.get(v as usize))
+            .is_some_and(|v| v.role == role)
+    })
+}
+
+/// S7: spawns player `p`'s first vehicle of `role` at `pos` facing `facing`.
+pub fn vehicle_of_role(
+    w: &mut World,
+    p: u8,
+    role: frontline_content::VehicleRole,
+    pos: FxVec2,
+    facing: FxVec2,
+) -> Option<(SquadId, SimId)> {
+    let t = type_with_vehicle_role(w.match_setup()?, p, role)?;
+    let sq = w.spawn_squad_at(PlayerId(p), t, pos, facing)?;
+    let v = *w.game()?.squad(sq)?.members.first()?;
+    Some((sq, v))
+}
+
+/// S7 casemate duels (armour-test cases 17 and 18; vehicles.md 10). The
+/// StuG is player 0's assault gun, the Sherman player 1's tank.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum CasemateDuel {
+    /// 17: 300 m, both frontal.
+    Frontal300,
+    /// 18: the Sherman 200 m away, 45° off the StuG's nose, facing it.
+    Flank45,
+}
+
+/// Cases 17 and 18; `flip` mirrors east–west. Vehicles: `[StuG, Sherman]`.
+pub fn casemate_duel(
+    mut setup: MatchSetup,
+    threads: usize,
+    kind: CasemateDuel,
+    flip: bool,
+) -> Result<Staged, SimError> {
+    staging(&mut setup, true);
+    let mut s = Staged::new(new_world(setup, threads)?);
+    let w = &mut s.world;
+    let mx = |x: i32| if flip { 1000 - x } else { x };
+    let md = |d: FxVec2| if flip { FxVec2::new(-d.x, d.y) } else { d };
+    let (stug_at, sh_at) = match kind {
+        CasemateDuel::Frontal300 => ((350, LANE_Y), (650, LANE_Y)),
+        // 200 m at 45°: 141 m ahead and 141 m to the left.
+        CasemateDuel::Flank45 => ((350, LANE_Y), (491, LANE_Y + 141)),
+    };
+    let stug_pos = at(mx(stug_at.0), stug_at.1);
+    let sh_pos = at(mx(sh_at.0), sh_at.1);
+    let to_stug = (stug_pos - sh_pos).normalize_or_zero();
+    let stug = need(
+        vehicle_of_role(
+            w,
+            0,
+            frontline_content::VehicleRole::AssaultGun,
+            stug_pos,
+            md(EAST),
+        ),
+        "assault gun",
+    )?;
+    let sh = need(tank(w, 1, sh_pos, to_stug), "Sherman")?;
+    s.tanks = vec![stug, sh];
+    Ok(s)
+}
+
 /// Case 3d: player `p`'s tank at `(350, LANE_Y)` facing east and the
 /// enemy tank 300 m east, either still or (with `moving`) about to cross
 /// north at [`CROSSING_CM_S`] (the runner orders the move). The target's

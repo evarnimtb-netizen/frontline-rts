@@ -1,0 +1,216 @@
+# 3-inch Gun Motor Carriage M10 (S7, docs/slices/S7-casemate-td.md 5): a
+# tank destroyer, the 3-inch M7 gun in an open-topped, hand-traversed
+# turret on the M4A2 Sherman chassis. The best gun of the four at combat
+# range against an open top, 19 mm hull sides and a slow turret.
+# Sources: Hunnicutt, Sherman: A History of the American Medium Tank (1978),
+# M10 chapter (data sheet, stowage); Zaloga, M10 and M36 Tank Destroyers
+# 1942-53 (Osprey New Vanguard 57); TM 9-752. Figures not read in a source
+# are marked "verify" (owner questions S7-6, S7-10). Frames as in
+# usa_m4a3_75.toml (cm).
+id = "ww2:usa_m10"
+name = "3-inch GMC M10"
+short_name = "M10"
+faction = "ww2:usa"
+role = "tank_destroyer"
+# S7-3 (A): vehicles.md 8.4's 500 against a 560 Sherman, scaled to the
+# Sherman's 590 (x 590 / 560): 520 MP. Tune within +-15 %. A gameplay
+# balance value, not a price.
+cost = 520
+# Population (S7-3): as the StuG.
+pop = 10
+recall_cooldown_s = 120
+initial_cooldown_s = 0
+sight_m = 175
+# S7 silhouette: seen at 190 % of an observer's sight (2.57 m high against
+# the Sherman's 2.74 m at 200 %). A starting value.
+spot_size_pct = 190
+# The commander standing in the open turret (2.56 m + 0.15), cm.
+eye_height_cm = 270
+sources = [
+  "Hunnicutt, Sherman: A History of the American Medium Tank (1978), M10 chapter",
+  "Zaloga, M10 and M36 Tank Destroyers 1942-53 (Osprey New Vanguard 57)",
+  "TM 9-752, 3-inch Gun Motor Carriage M10A1",
+]
+crew_squad = "ww2:usa_tank_crew"
+# No HVAP in 1944 for the 3-inch (rare rounds: none).
+rare_cap = 0
+
+[mobility]
+type = "tracked"
+# 30 mph (48 km/h) road (Hunnicutt) on the game's road-speed scale
+# (Sherman 42 km/h -> 650 cm/s): 740 cm/s.
+speed_cm_s = 740
+reverse_cm_s = 250
+turn_deg_s = 32
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 6
+unbog_s = [20, 40]
+# No gyrostabiliser on the M7 gun: x4 on the move.
+moving_spread_pct = 400
+
+[hull]
+# As the Sherman's (the M4A2 lower hull).
+track_band_pct = 45
+track_mm = 20
+
+# The open-topped turret: hand traverse, slow (vehicles.md 4.4: a full turn
+# about 80 s, 4.5 deg/s; whole degrees here: 5, 72 s, S7-10).
+[turret]
+pivot = [-20, 0, 190]
+traverse_deg_s = 5
+# Elevation rate (deg/s): no source read, a starting value (S7-10).
+elevate_deg_s = 4
+
+# Armour boxes: box 0 the hull (5.8 x 3.0 m, 0.5-1.9 m up), box 1 the
+# open-topped turret (2.2 x 2.1 m, 0.66 m high, turret frame from the
+# pivot). Zone ids: hull_front 0 ... hull_top 3, turret_front 4 ...
+# turret_top 7 (open).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 120], half = [290, 150, 70] }
+[boxes.armor]
+# 38 mm upper glacis at 55° (Hunnicutt data sheet).
+front = { thickness_mm = 38, slope_deg = 55 }
+# 19 mm at 38° (Hunnicutt); rear 19 at 38° and top 19 (verify).
+side = { thickness_mm = 19, slope_deg = 38 }
+rear = { thickness_mm = 19, slope_deg = 38 }
+top = { thickness_mm = 19 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 33], half = [110, 105, 33] }
+# The turret has no roof (S7 open-top exposure, Build B): rounds, fragments
+# and thrown items enter through it. Items rest on the turret floor.
+open = ["top"]
+floor_cm = 0
+[boxes.armor]
+# 57 mm front at 45° (Hunnicutt); 25 mm sides at 20°; rear 25 (verify).
+front = { thickness_mm = 57, slope_deg = 45 }
+side = { thickness_mm = 25, slope_deg = 20 }
+rear = { thickness_mm = 25, slope_deg = 0 }
+
+# Crew of five (Zaloga; positions approximate within the box model): the
+# driver and the assistant driver in the hull front (the M10 had no bow
+# MG; the assistant driver takes the radio_mg role, S7-4), the gunner,
+# loader and commander in the open turret, their boxes 10-25 cm above the
+# rim (exposed, S7 Build B).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [200, 60, 130], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "asst_driver"
+role = "radio_mg"
+box = { frame = "hull", center = [200, -60, 130], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [20, 45, 20], half = [30, 25, 60] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [0, -45, 15], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-60, 40, 25], half = [30, 30, 65] }
+in = "turret"
+
+[[weapons]]
+def = "ww2:m7_3in"
+mount = "turret_main"
+muzzle = [390, 0, 35]
+# -10° / +19° (Hunnicutt).
+elevation_deg = [-10, 19]
+# Stowage 54 rounds (Hunnicutt): 36 M62 APC, 18 M42A1 HE (the split is a
+# starting value, verify).
+ammo = [{ id = "ww2:3in_m62", count = 36 }, { id = "ww2:3in_m42a1", count = 18 }]
+# The exposed barrel from the muzzle back to the turret front (390 - 110).
+barrel = { length_cm = 280, radius_cm = 8 }
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-210, 0, 115], half = [65, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 130, 45] }, { pos = [0, 130, 45] }, { pos = [-250, 130, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -130, 45] }, { pos = [0, -130, 45] }, { pos = [-250, -130, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [40, 0, 30], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [-20, 0, 182], half = [90, 90, 8] }
+repair = { to_hp = 50, time_s = 40 }
+
+# Stowage (Hunnicutt; positions approximate): sponson racks both sides of
+# the hull and ready rounds in the turret bustle (count verify).
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [20, 120, 150], half = [60, 25, 30] },
+  { frame = "hull", center = [20, -120, 150], half = [60, 25, 30] },
+  { frame = "turret", center = [-90, 0, 30], half = [15, 60, 20] },
+]
+
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [230, 0, 90], half = [55, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# Hatches: the driver's and assistant driver's in the hull roof; the turret
+# crew climb out over the open top (quicker, 2.5 s each; starting values).
+[[hatches]]
+seats = ["commander", "gunner", "loader"]
+frame = "turret"
+pos = [0, 0, 66]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [200, 60, 190]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [200, -60, 190]
+exit_ms = 4000

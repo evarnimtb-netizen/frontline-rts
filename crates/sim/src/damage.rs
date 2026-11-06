@@ -1277,8 +1277,19 @@ mod tests {
                 .iter()
                 .filter(|(_, i)| *i == Inner::Part(ComponentKind::AmmoRack))
                 .count();
-            assert_eq!(racks, 3, "{}", v.id);
-            assert_eq!(boxes.len(), 5 + 3 + 4, "{}: seats, rack bins, others", v.id);
+            // (seats, rack bins, other boxed components): S7 StuG has two
+            // bins and no turret ring, four crew.
+            let (seats, bins, others) = match v.id.as_str() {
+                "ww2:ger_stug3_g" => (4, 2, 3),
+                _ => (5, 3, 4),
+            };
+            assert_eq!(racks, bins, "{}", v.id);
+            assert_eq!(
+                boxes.len(),
+                seats + bins + others,
+                "{}: seats, rack bins, others",
+                v.id
+            );
             assert!(boxes.len() <= MAX_BOXES);
             assert!(
                 boxes

@@ -1017,6 +1017,10 @@ impl Planner<'_> {
         let gated = |r: usize| Some(r) == at_slot || Some(r) == veh_slot;
         let mut cards: Vec<Vec<u16>> = vec![Vec::new(); slots];
         for &t in &faction.roster {
+            // S7: `ai_weight = 0` keeps a card out of the AI's buys.
+            if s.squad_types[t as usize].ai_weight == 0 {
+                continue;
+            }
             if let Some(r) = mix_slot(s, t) {
                 cards[r].push(t);
             }

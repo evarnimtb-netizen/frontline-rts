@@ -1,0 +1,24 @@
+# 3-inch Gun M7: the M10's main gun (S7, docs/slices/S7-casemate-td.md 5).
+# Its rounds are on the vehicle mount (defs/vehicles/usa_m10.toml); the
+# muzzle velocity here is nominal, each round flies at its own. Values as
+# the other 75 mm guns where no figure was read (starting values).
+id = "ww2:m7_3in"
+name = "3-inch Gun M7"
+class = "cannon"
+# Engagement range (m), as the tank guns.
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 10
+magazine = 1
+# Hand-loaded 3-inch fixed rounds, heavier than the 75 mm: as the KwK 40's
+# 6.5 s (ms; the crew rules scale it).
+reload_ms = 6500
+# 2.5 mrad stationary (urad), as the tank guns.
+spread_urad = 2500
+# 2,600 ft/s with the M62 (Hunnicutt), m/s.
+muzzle_velocity_m_s = 792
+suppression = 30
+# The muzzle blast gives it away: 300 % sight range for 3 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000

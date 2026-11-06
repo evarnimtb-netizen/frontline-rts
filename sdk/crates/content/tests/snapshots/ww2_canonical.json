@@ -1,5 +1,112 @@
 {
   "ammo": {
+    "ww2:3in_m42a1": {
+      "caliber_mm": 76,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 100,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 70,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_reach_cm": 1200,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:3in_m42a1",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 853,
+      "name": "3-inch M42A1 HE",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Hunnicutt, Sherman: A History of the American Medium Tank (1978), 3-inch ammunition data"
+      ],
+      "supply": {
+        "g": 10900,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
+    "ww2:3in_m62": {
+      "caliber_mm": 76,
+      "core": {
+        "damage": 100,
+        "length_cm": 150,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 12,
+        "reach_cm": 300
+      },
+      "id": "ww2:3in_m62",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 792,
+      "name": "3-inch M62 APC",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          118
+        ],
+        [
+          457,
+          114
+        ],
+        [
+          914,
+          108
+        ],
+        [
+          1371,
+          101
+        ],
+        [
+          1829,
+          92
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "sources": [
+        "Hunnicutt, Sherman: A History of the American Medium Tank (1978), 3-inch ammunition data",
+        "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001), M61 row for the 1.066 factor"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "supply": {
+        "g": 12400,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
     "ww2:75mm_m48": {
       "caliber_mm": 75,
       "drag_coeff": 0.0,
@@ -454,7 +561,8 @@
         "ww2:ger_panzerschreck_team",
         "ww2:ger_pz4_h_squad",
         "ww2:ger_zugtrupp",
-        "ww2:ger_munitionstraeger"
+        "ww2:ger_munitionstraeger",
+        "ww2:ger_stug3_g_squad"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -476,7 +584,8 @@
         "ww2:usa_bazooka_team",
         "ww2:usa_m4a3_75_squad",
         "ww2:usa_platoon_hq",
-        "ww2:usa_ammo_bearers"
+        "ww2:usa_ammo_bearers",
+        "ww2:usa_m10_squad"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -1944,6 +2053,29 @@
       "unlock_s": 0,
       "weapon": ""
     },
+    "ww2:ger_stug3_g_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_stug3_g_squad",
+      "initial_cooldown_s": 0,
+      "men": 0,
+      "name": "Sturmgeschütz III Ausf. G",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "StuG III",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:ger_stug3_g",
+      "weapon": ""
+    },
     "ww2:ger_tank_crew": {
       "capabilities": [
         "vehicle_crew"
@@ -2320,6 +2452,29 @@
         "mg"
       ],
       "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_m10_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_m10_squad",
+      "initial_cooldown_s": 0,
+      "men": 0,
+      "name": "3-inch GMC M10",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "M10",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:usa_m10",
       "weapon": ""
     },
     "ww2:usa_m4a3_75_squad": {
@@ -3379,6 +3534,944 @@
         }
       ]
     },
+    "ww2:ger_stug3_g": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 21,
+              "thickness_mm": 80.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 10,
+              "thickness_mm": 50.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 30.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 16.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              90
+            ],
+            "half": [
+              270,
+              145,
+              52
+            ]
+          },
+          "frame": "hull",
+          "id": "hull"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 10,
+              "thickness_mm": 80.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 30,
+              "thickness_mm": 30.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 11,
+              "thickness_mm": 30.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 10.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              175
+            ],
+            "half": [
+              150,
+              110,
+              33
+            ]
+          },
+          "frame": "hull",
+          "id": "casemate"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -200,
+              0,
+              90
+            ],
+            "frame": "hull",
+            "half": [
+              65,
+              100,
+              45
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "engine"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                230,
+                125,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                125,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -230,
+                125,
+                40
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_left"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                230,
+                -125,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -125,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -230,
+                -125,
+                40
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_right"
+        },
+        {
+          "box": {
+            "center": [
+              70,
+              -15,
+              160
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              20,
+              18
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "boxes": [
+            {
+              "center": [
+                20,
+                95,
+                120
+              ],
+              "frame": "hull",
+              "half": [
+                55,
+                25,
+                35
+              ]
+            },
+            {
+              "center": [
+                20,
+                -95,
+                120
+              ],
+              "frame": "hull",
+              "half": [
+                55,
+                25,
+                35
+              ]
+            }
+          ],
+          "hp": 60,
+          "type": "ammo_rack"
+        },
+        {
+          "box": {
+            "center": [
+              210,
+              0,
+              80
+            ],
+            "frame": "hull",
+            "half": [
+              55,
+              30,
+              40
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "transmission"
+        }
+      ],
+      "cost": 500,
+      "crew_squad": "ww2:ger_tank_crew",
+      "eye_height_cm": 230,
+      "faction": "ww2:germany",
+      "hatches": [
+        {
+          "exit_ms": 3500,
+          "frame": "hull",
+          "pos": [
+            10,
+            50,
+            208
+          ],
+          "seats": [
+            "commander",
+            "gunner",
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 3000,
+          "frame": "hull",
+          "pos": [
+            50,
+            -55,
+            208
+          ],
+          "seats": [
+            "loader"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 45,
+        "track_mm": 20
+      },
+      "id": "ww2:ger_stug3_g",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 150,
+        "bog_pct": 6,
+        "brake_cm_s2": 400,
+        "ditch_block_dm": 19,
+        "max_slope_pct": 50,
+        "moving_spread_pct": 400,
+        "reverse_cm_s": 200,
+        "speed_cm_s": 620,
+        "turn_deg_s": 30,
+        "type": "tracked",
+        "unbog_s": [
+          20,
+          40
+        ]
+      },
+      "name": "Sturmgeschütz III Ausf. G",
+      "pop": 10,
+      "rare_cap": 3,
+      "recall_cooldown_s": 120,
+      "role": "assault_gun",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              180,
+              60,
+              110
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          },
+          "id": "driver",
+          "in": "hull",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              80,
+              50,
+              135
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              60
+            ]
+          },
+          "id": "gunner",
+          "in": "casemate",
+          "role": "gunner"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              50,
+              145
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              30,
+              60
+            ]
+          },
+          "id": "commander",
+          "in": "casemate",
+          "role": "commander"
+        },
+        {
+          "box": {
+            "center": [
+              50,
+              -55,
+              130
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              30,
+              70
+            ]
+          },
+          "id": "loader",
+          "in": "casemate",
+          "role": "loader"
+        }
+      ],
+      "short_name": "StuG III",
+      "sight_m": 175,
+      "sources": [
+        "Jentz & Doyle, Panzer Tracts 8-2: Sturmgeschütz (specification, stowage, layout)",
+        "Wikipedia, Sturmgeschütz III (specification table, unit price)"
+      ],
+      "spot_size_pct": 160,
+      "stations": [
+        {
+          "id": "driver_gunner",
+          "seats": [
+            "driver",
+            "gunner"
+          ]
+        },
+        {
+          "id": "commander",
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 27,
+              "id": "ww2:75mm_pzgr39"
+            },
+            {
+              "count": 24,
+              "id": "ww2:75mm_sprgr34"
+            },
+            {
+              "count": 3,
+              "id": "ww2:75mm_pzgr40"
+            }
+          ],
+          "barrel": {
+            "length_cm": 220,
+            "radius_cm": 8
+          },
+          "def": "ww2:stuk40_l48",
+          "elevate_deg_s": 4,
+          "elevation_deg": [
+            -6,
+            20
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            300,
+            0,
+            0
+          ],
+          "pivot": [
+            110,
+            -15,
+            165
+          ],
+          "traverse_deg": [
+            -10,
+            10
+          ],
+          "traverse_deg_s": 6
+        }
+      ]
+    },
+    "ww2:usa_m10": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 55,
+              "thickness_mm": 38.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 38,
+              "thickness_mm": 19.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 38,
+              "thickness_mm": 19.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 19.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              120
+            ],
+            "half": [
+              290,
+              150,
+              70
+            ]
+          },
+          "frame": "hull",
+          "id": "hull"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 45,
+              "thickness_mm": 57.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 25.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 20,
+              "thickness_mm": 25.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              33
+            ],
+            "half": [
+              110,
+              105,
+              33
+            ]
+          },
+          "floor_cm": 0,
+          "frame": "turret",
+          "id": "turret",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -210,
+              0,
+              115
+            ],
+            "frame": "hull",
+            "half": [
+              65,
+              100,
+              45
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "engine"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                250,
+                130,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                130,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -250,
+                130,
+                45
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_left"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                250,
+                -130,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -130,
+                45
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -250,
+                -130,
+                45
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_right"
+        },
+        {
+          "box": {
+            "center": [
+              40,
+              0,
+              30
+            ],
+            "frame": "turret",
+            "half": [
+              45,
+              20,
+              20
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -20,
+              0,
+              182
+            ],
+            "frame": "hull",
+            "half": [
+              90,
+              90,
+              8
+            ]
+          },
+          "hp": 80,
+          "repair": {
+            "time_s": 40,
+            "to_hp": 50
+          },
+          "type": "turret_ring"
+        },
+        {
+          "boxes": [
+            {
+              "center": [
+                20,
+                120,
+                150
+              ],
+              "frame": "hull",
+              "half": [
+                60,
+                25,
+                30
+              ]
+            },
+            {
+              "center": [
+                20,
+                -120,
+                150
+              ],
+              "frame": "hull",
+              "half": [
+                60,
+                25,
+                30
+              ]
+            },
+            {
+              "center": [
+                -90,
+                0,
+                30
+              ],
+              "frame": "turret",
+              "half": [
+                15,
+                60,
+                20
+              ]
+            }
+          ],
+          "hp": 60,
+          "type": "ammo_rack"
+        },
+        {
+          "box": {
+            "center": [
+              230,
+              0,
+              90
+            ],
+            "frame": "hull",
+            "half": [
+              55,
+              30,
+              40
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "transmission"
+        }
+      ],
+      "cost": 520,
+      "crew_squad": "ww2:usa_tank_crew",
+      "eye_height_cm": 270,
+      "faction": "ww2:usa",
+      "hatches": [
+        {
+          "exit_ms": 2500,
+          "frame": "turret",
+          "pos": [
+            0,
+            0,
+            66
+          ],
+          "seats": [
+            "commander",
+            "gunner",
+            "loader"
+          ]
+        },
+        {
+          "exit_ms": 4000,
+          "frame": "hull",
+          "pos": [
+            200,
+            60,
+            190
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 4000,
+          "frame": "hull",
+          "pos": [
+            200,
+            -60,
+            190
+          ],
+          "seats": [
+            "radio_mg"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 45,
+        "track_mm": 20
+      },
+      "id": "ww2:usa_m10",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 150,
+        "bog_pct": 6,
+        "brake_cm_s2": 400,
+        "ditch_block_dm": 19,
+        "max_slope_pct": 50,
+        "moving_spread_pct": 400,
+        "reverse_cm_s": 250,
+        "speed_cm_s": 740,
+        "turn_deg_s": 32,
+        "type": "tracked",
+        "unbog_s": [
+          20,
+          40
+        ]
+      },
+      "name": "3-inch GMC M10",
+      "pop": 10,
+      "rare_cap": 0,
+      "recall_cooldown_s": 120,
+      "role": "tank_destroyer",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              200,
+              60,
+              130
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          },
+          "id": "driver",
+          "in": "hull",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              200,
+              -60,
+              130
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              40
+            ]
+          },
+          "id": "asst_driver",
+          "in": "hull",
+          "role": "radio_mg"
+        },
+        {
+          "box": {
+            "center": [
+              20,
+              45,
+              20
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              25,
+              60
+            ]
+          },
+          "id": "gunner",
+          "in": "turret",
+          "role": "gunner"
+        },
+        {
+          "box": {
+            "center": [
+              0,
+              -45,
+              15
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              25,
+              70
+            ]
+          },
+          "id": "loader",
+          "in": "turret",
+          "role": "loader"
+        },
+        {
+          "box": {
+            "center": [
+              -60,
+              40,
+              25
+            ],
+            "frame": "turret",
+            "half": [
+              30,
+              30,
+              65
+            ]
+          },
+          "id": "commander",
+          "in": "turret",
+          "role": "commander"
+        }
+      ],
+      "short_name": "M10",
+      "sight_m": 175,
+      "sources": [
+        "Hunnicutt, Sherman: A History of the American Medium Tank (1978), M10 chapter",
+        "Zaloga, M10 and M36 Tank Destroyers 1942-53 (Osprey New Vanguard 57)",
+        "TM 9-752, 3-inch Gun Motor Carriage M10A1"
+      ],
+      "spot_size_pct": 190,
+      "stations": [
+        {
+          "id": "driver_gunner",
+          "seats": [
+            "driver",
+            "gunner"
+          ]
+        },
+        {
+          "id": "commander",
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "turret": {
+        "elevate_deg_s": 4,
+        "pivot": [
+          -20,
+          0,
+          190
+        ],
+        "traverse_deg_s": 5
+      },
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 36,
+              "id": "ww2:3in_m62"
+            },
+            {
+              "count": 18,
+              "id": "ww2:3in_m42a1"
+            }
+          ],
+          "barrel": {
+            "length_cm": 280,
+            "radius_cm": 8
+          },
+          "def": "ww2:m7_3in",
+          "elevation_deg": [
+            -10,
+            19
+          ],
+          "mount": "turret_main",
+          "muzzle": [
+            390,
+            0,
+            35
+          ]
+        }
+      ]
+    },
     "ww2:usa_m4a3_75": {
       "boxes": [
         {
@@ -4246,6 +5339,26 @@
       "spread_urad": 0,
       "suppression": 6
     },
+    "ww2:m7_3in": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:m7_3in",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 792,
+      "name": "3-inch Gun M7",
+      "range_m": 600,
+      "reload_ms": 6500,
+      "rounds_carried": 0,
+      "rounds_per_min": 10,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
+    },
     "ww2:m9_bazooka": {
       "ammo": "ww2:m6a3_heat",
       "class": "launcher",
@@ -4458,6 +5571,26 @@
       "spread_mrad": 18,
       "spread_urad": 0,
       "suppression": 8
+    },
+    "ww2:stuk40_l48": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:stuk40_l48",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 790,
+      "name": "7.5 cm StuK 40 L/48",
+      "range_m": 600,
+      "reload_ms": 6500,
+      "rounds_carried": 0,
+      "rounds_per_min": 10,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
     }
   }
 }

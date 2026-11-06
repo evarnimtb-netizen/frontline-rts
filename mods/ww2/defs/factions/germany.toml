@@ -17,6 +17,9 @@ roster = [
     # S6: the platoon HQ (builds the HQ) and the ammunition bearers.
     "ww2:ger_zugtrupp",
     "ww2:ger_munitionstraeger",
+    # S7: the assault gun / tank destroyer (appended: the scenarios and the
+    # AI's tie-breaks keep picking the tank first).
+    "ww2:ger_stug3_g_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

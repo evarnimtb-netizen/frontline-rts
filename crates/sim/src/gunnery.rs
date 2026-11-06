@@ -181,9 +181,14 @@ pub fn lay_gun_pct(
     let pitch = pitch.clamp(deg(lo), deg(hi));
     // S7: a casemate gun lays only within its arc (the driver turns the
     // hull for the rest, `crate::vehicle` `lay_turn`).
-    let yaw = match v.gun_arc_deg {
-        Some([a, b]) => yaw.wrap_angle().clamp(deg(a), deg(b)),
-        None => yaw,
+    // Laid means inside the arc and on the solution.
+    let (yaw, in_arc) = match v.gun_arc_deg {
+        Some([a, b]) => {
+            let y = yaw.wrap_angle();
+            let c = y.clamp(deg(a), deg(b));
+            (c, c == y)
+        }
+        None => (yaw, true),
     };
     let err = (yaw.wrap_angle() - vs.turret_yaw).wrap_angle();
     let step = err.clamp(-traverse, traverse);
@@ -191,7 +196,7 @@ pub fn lay_gun_pct(
     let elev = deg(v.elevate_deg_s).div_int(hz);
     let perr = pitch - vs.gun_pitch;
     vs.gun_pitch += perr.clamp(-elev, elev);
-    step == err && perr.abs() <= elev
+    in_arc && step == err && perr.abs() <= elev
 }
 
 /// Projected area of box `b` seen along unit `u` (a quarter of it:

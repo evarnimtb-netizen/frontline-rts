@@ -2698,6 +2698,139 @@ fn case16(env: &Env) -> Result<CaseReport> {
     Ok(r)
 }
 
+/// S7 cases 17 and 18 (vehicles.md 10, casemate duel): a StuG III G
+/// against a Sherman, 120 s, every seed both ways. Reports who wins (the
+/// other knocked out, disabled or abandoned), the time to each side's
+/// first hit (median, s), and in how many runs the StuG fired. Report-only
+/// checks: `docs/slices/targets/S7.toml` T34 holds the bounds.
+fn casemate_case(env: &Env, n: u32, kind: scenarios::CasemateDuel) -> Result<CaseReport> {
+    let name = match kind {
+        scenarios::CasemateDuel::Frontal300 => "casemate duel: StuG frontal vs Sherman at 300 m",
+        scenarios::CasemateDuel::Flank45 => {
+            "casemate duel: Sherman 45° off the StuG's nose at 200 m"
+        }
+    };
+    let mut r = CaseReport::new(n, name);
+    let (mut stug_wins, mut sh_wins, mut stug_fired, mut runs) = (0u32, 0u32, 0u32, 0u32);
+    let mut first_hit: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
+    let mut hits = [0u32; 2];
+    let mut pens = [0u32; 2];
+    let mut pivots = 0u32;
+    for (seed, flip) in env.runs() {
+        let mut s = scenarios::casemate_duel(env.setup(seed)?, env.threads, kind, flip == 1)?;
+        runs += 1;
+        r.runs += 1;
+        let (stug, sh) = (s.tanks[0].1, s.tanks[1].1);
+        let w = &mut s.world;
+        let rate = hz(w) as f64;
+        w.enable_hit_log();
+        let start = w.tick();
+        let limit = start + 120 * hz(w);
+        let mut first: [Option<u64>; 2] = [None, None];
+        let mut fired = false;
+        let mut pivoted = false;
+        while w.tick() < limit && !disabled(w, stug) && !disabled(w, sh) {
+            w.step(&[]);
+            fired |= w
+                .snapshot()
+                .armour_events
+                .iter()
+                .any(|e| e.kind == ArmourEventKind::Fired as u8 && e.vehicle == stug.0);
+            pivoted |= vstate(w, stug).is_some_and(|v| v.lay_turn.is_some());
+            for h in w.take_hit_log() {
+                let side = (h.vehicle == stug) as usize;
+                // side 0: the StuG hit the Sherman; 1: the Sherman hit the StuG.
+                hits[side] += 1;
+                if h.result == PenResult::Penetration {
+                    pens[side] += 1;
+                }
+                if first[side].is_none() {
+                    first[side] = Some(w.tick() - start);
+                }
+            }
+        }
+        for (k, f) in first.iter().enumerate() {
+            if let Some(t) = f {
+                first_hit[k].push(*t as f64 / rate);
+            }
+        }
+        stug_fired += u32::from(fired);
+        pivots += u32::from(pivoted);
+        match (disabled(w, stug), disabled(w, sh)) {
+            (false, true) => stug_wins += 1,
+            (true, false) => sh_wins += 1,
+            _ => {}
+        }
+    }
+    let med = |v: &Vec<f64>| {
+        let mut v = v.clone();
+        v.sort_by(f64::total_cmp);
+        v.get(v.len() / 2).copied().unwrap_or(-1.0)
+    };
+    let p = |k: u32| k as f64 * 100.0 / runs.max(1) as f64;
+    r.row(
+        "result",
+        format!(
+            "StuG won {stug_wins}, Sherman won {sh_wins}, neither {} of {runs}; StuG fired in \
+             {stug_fired}, asked for a hull turn in {pivots}; hits StuG -> Sherman {} (pen {}), \
+             Sherman -> StuG {} (pen {})",
+            runs - stug_wins - sh_wins,
+            hits[0],
+            pens[0],
+            hits[1],
+            pens[1]
+        ),
+    );
+    let report = |r: &mut CaseReport, name: &str, v: f64, what: String| {
+        r.check_v(name, true, round3(v), "report (S7.toml T34)", what);
+    };
+    report(
+        &mut r,
+        "StuG wins pct",
+        p(stug_wins),
+        format!("{stug_wins} of {runs}"),
+    );
+    report(
+        &mut r,
+        "Sherman wins pct",
+        p(sh_wins),
+        format!("{sh_wins} of {runs}"),
+    );
+    report(
+        &mut r,
+        "StuG fired pct",
+        p(stug_fired),
+        format!("{stug_fired} of {runs}"),
+    );
+    report(
+        &mut r,
+        "first hit s StuG",
+        med(&first_hit[0]),
+        format!(
+            "median of {} runs with a hit (-1: none)",
+            first_hit[0].len()
+        ),
+    );
+    report(
+        &mut r,
+        "first hit s Sherman",
+        med(&first_hit[1]),
+        format!(
+            "median of {} runs with a hit (-1: none)",
+            first_hit[1].len()
+        ),
+    );
+    Ok(r)
+}
+
+fn case17(env: &Env) -> Result<CaseReport> {
+    casemate_case(env, 17, scenarios::CasemateDuel::Frontal300)
+}
+
+fn case18(env: &Env) -> Result<CaseReport> {
+    casemate_case(env, 18, scenarios::CasemateDuel::Flank45)
+}
+
 // Wall-clock time here only measures; it never feeds the sim.
 #[allow(clippy::disallowed_methods)]
 fn case14(env: &Env) -> Result<CaseReport> {
@@ -2843,7 +2976,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 16] = [
+    let all: [(u32, CaseFn); 18] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -2860,6 +2993,8 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (14, case14),
         (15, case15),
         (16, case16),
+        (17, case17),
+        (18, case18),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

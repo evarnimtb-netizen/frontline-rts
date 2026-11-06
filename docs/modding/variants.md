@@ -147,7 +147,7 @@ assistants (S4-2).
 | `tags` | AI mix and HUD labels, at most 8, `[a-z0-9_]` | from `role` |
 | `capabilities` | what the unit can do; orders follow | from `role` |
 | `training` | training profile id | the rules' `[training] default` |
-| `ai_weight` | the AI's weight among ready cards of one mix tag | 100 |
+| `ai_weight` | the AI's weight among ready cards of one mix tag; 0: the AI never buys it (S7) | 100 |
 | `short_name` | HUD tile name, ≤ 14 characters | `name` |
 | `sources` | citations, a list of strings | none |
 | `abstract` | a template (see above) | false |

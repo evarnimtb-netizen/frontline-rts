@@ -2573,12 +2573,17 @@ pub(crate) fn lower_vehicle(
                             })
                     }),
                     open,
-                    floor: Fixed::from_ratio(
+                    // The box bottom unless set (the same fixed-point
+                    // arithmetic as the bounds, so it lies in them).
+                    floor: {
+                        let bb: BoxSetup = (&b.bounds).into();
+                        let (lo, hi) = (
+                            Fixed(bb.center.z.0 - bb.half.z.0),
+                            Fixed(bb.center.z.0 + bb.half.z.0),
+                        );
                         b.floor_cm
-                            .unwrap_or(b.bounds.center[2] - b.bounds.half[2] as i32)
-                            as i64,
-                        100,
-                    ),
+                            .map_or(lo, |f| Fixed::from_ratio(f as i64, 100).clamp(lo, hi))
+                    },
                 }
             })
             .collect(),

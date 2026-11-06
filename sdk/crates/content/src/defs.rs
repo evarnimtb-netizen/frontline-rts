@@ -191,7 +191,7 @@ pub struct SquadDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub training: Option<String>,
     /// S4: the AI's weight among ready cards of the same mix tag
-    /// (default 100).
+    /// (default 100). S7: 0 = the AI never buys the card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_weight: Option<u32>,
     /// S4: HUD tile name, at most 14 characters (default `name`).

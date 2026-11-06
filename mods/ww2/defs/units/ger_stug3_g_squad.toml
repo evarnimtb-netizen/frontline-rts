@@ -1,0 +1,13 @@
+# The StuG III G as a buyable squad of one (S7): call-in, cards and the AI
+# use the squad path. Cost, pop, call-in time and sight are in the vehicle
+# def. It shares the `vehicle` mix slot with the Panzer IV (S7-2 (A)).
+id = "ww2:ger_stug3_g_squad"
+name = "Sturmgeschütz III Ausf. G"
+short_name = "StuG III"
+faction = "ww2:germany"
+tags = ["vehicle"]
+vehicle = "ww2:ger_stug3_g"
+# AI weight within the `vehicle` slot (0..1000; 0 = the AI never buys it).
+# 0 until S7 Build B gives the AI its open-top and overwatch habits; then
+# 100, the tank's (S7-2 (A)).
+ai_weight = 0
