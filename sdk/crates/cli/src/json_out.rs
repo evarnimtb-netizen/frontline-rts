@@ -364,6 +364,9 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                 "vehicle_kills_pct": pct(all as f64, kills),
                 "kills_by_vehicle_max_pct": max_pct,
                 "kos_per_bought": kos_per,
+                "open_top_throws_per_match": round3(u.open_top_throws as f64 / u.matches.max(1) as f64),
+                "open_top_hits_per_match": round3(u.open_top_hits as f64 / u.matches.max(1) as f64),
+                "relocations_per_match": round3(u.relocations as f64 / u.matches.max(1) as f64),
             }),
         );
     }

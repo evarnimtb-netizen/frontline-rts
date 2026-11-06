@@ -69,7 +69,7 @@ pub mod unit;
 pub mod vehicle;
 pub mod world;
 
-pub use ai::{AiCommand, AiCounters, AiEscort, AiState, AiTrench, Task, TaskKind};
+pub use ai::{AiCommand, AiCounters, AiEscort, AiOverwatch, AiState, AiTrench, Task, TaskKind};
 pub use armour::{ArmourTables, PenResult};
 pub use bail::{RecrewEvent, RecrewRefusal};
 pub use command::{Command, CommandKind};

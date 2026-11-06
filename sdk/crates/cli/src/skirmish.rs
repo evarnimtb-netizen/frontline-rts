@@ -378,6 +378,15 @@ pub struct PlayerReport {
 pub struct S7Player {
     pub kills_by_vehicle: BTreeMap<String, u32>,
     pub kos_by_vehicle: BTreeMap<String, u32>,
+    /// Build B: own items at rest inside enemy open boxes, enemy open-top
+    /// seats and parts struck; AI throws ordered into open tops, overwatch
+    /// spots reached, relocations, open-top back-offs.
+    pub open_top_throws: u32,
+    pub open_top_hits: u32,
+    pub open_top_throw_orders: u32,
+    pub overwatch_holds: u32,
+    pub relocations: u32,
+    pub open_top_backoffs: u32,
     pub card_cost: BTreeMap<String, u32>,
     pub vehicle_card: BTreeMap<String, String>,
 }
@@ -1228,6 +1237,12 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     S7Player {
                         kills_by_vehicle: named(&pl.s7.kills_by_vehicle),
                         kos_by_vehicle: named(&pl.s7.kos_by_vehicle),
+                        open_top_throws: pl.s7.open_top_throws,
+                        open_top_hits: pl.s7.open_top_hits,
+                        open_top_throw_orders: ai.map_or(0, |a| a.counters.open_top_throws),
+                        overwatch_holds: ai.map_or(0, |a| a.counters.overwatch_holds),
+                        relocations: ai.map_or(0, |a| a.counters.relocations),
+                        open_top_backoffs: ai.map_or(0, |a| a.counters.open_top_backoffs),
                         card_cost: roster
                             .iter()
                             .filter_map(|&t| s.squad_types.get(t as usize))
@@ -1636,6 +1651,12 @@ pub struct S7Faction {
     pub matches: u32,
     pub kills_by_vehicle: BTreeMap<String, u64>,
     pub kos_by_vehicle: BTreeMap<String, u64>,
+    pub open_top_throws: u64,
+    pub open_top_hits: u64,
+    pub open_top_throw_orders: u64,
+    pub overwatch_holds: u64,
+    pub relocations: u64,
+    pub open_top_backoffs: u64,
     #[serde(skip)]
     pub card_cost: BTreeMap<String, u32>,
     #[serde(skip)]
@@ -2005,6 +2026,12 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             // S7.
             let u = &mut f.s7;
             u.matches += 1;
+            u.open_top_throws += p.s7.open_top_throws as u64;
+            u.open_top_hits += p.s7.open_top_hits as u64;
+            u.open_top_throw_orders += p.s7.open_top_throw_orders as u64;
+            u.overwatch_holds += p.s7.overwatch_holds as u64;
+            u.relocations += p.s7.relocations as u64;
+            u.open_top_backoffs += p.s7.open_top_backoffs as u64;
             for (k, v) in &p.s7.kills_by_vehicle {
                 *u.kills_by_vehicle.entry(k.clone()).or_default() += *v as u64;
             }

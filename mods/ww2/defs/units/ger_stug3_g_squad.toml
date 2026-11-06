@@ -8,6 +8,5 @@ faction = "ww2:germany"
 tags = ["vehicle"]
 vehicle = "ww2:ger_stug3_g"
 # AI weight within the `vehicle` slot (0..1000; 0 = the AI never buys it).
-# 0 until S7 Build B gives the AI its open-top and overwatch habits; then
-# 100, the tank's (S7-2 (A)).
-ai_weight = 0
+# 100, the tank's (S7-2 (A)): the vehicle slot alternates the two types.
+ai_weight = 100

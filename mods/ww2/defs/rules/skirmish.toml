@@ -831,6 +831,13 @@ satchel_side_mm = 800
 trench_probe_dm = 8
 trench_probe_m = 60
 trench_probe_step_m = 4
+# S7 (docs/slices/S7-casemate-td.md 6): a squad with frags or satchels within
+# open_top_throw_m (m, inside a grenade's 30 m range) of a known enemy
+# open-topped vehicle (the M10) moving no faster than open_top_slow_mm_s
+# (mm/s: stopped or creeping) throws into its open box (the existing Throw;
+# the lob's physics decides whether it drops in). Starting values.
+open_top_throw_m = 25
+open_top_slow_mm_s = 300
 
 # The AI's vehicles and their escorts. S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
@@ -895,6 +902,27 @@ deny_m = 300
 # threat near it), with the faction wins unchanged (82 vs 80 Germany of 160
 # at the same costs). T13's one capture in ten matches is still missed.
 capture_m = 300
+# S7 overwatch for assault guns and tank destroyers (StuG, M10; tanks keep
+# their assaults). The anchor stands overwatch_back_m (m) behind the most
+# threatened own or contested point, on the line toward the threat (the
+# known enemy vehicle nearest it, else the enemy side); the spot is the best
+# of overwatch_candidates points on a ring of overwatch_ring_m (m) around
+# it, scored by terrain lines to the threat (hull-down 2: gun line clear,
+# hull line blocked; clear 1), ties nearest. The vehicle faces the threat
+# and holds; after relocate_after_shots main-gun shots (or a penetration)
+# it moves to the next best spot at least relocate_m (m) away. A known enemy
+# vehicle within td_hunt_m (m) turns the overwatch toward it. Spots within
+# td_infantry_standoff_m (m) of known enemy infantry are passed over, and an
+# open-topped vehicle with known enemy infantry within open_top_infantry_m
+# (m) reverses away. All starting values (S7-2 (A); Tune may move them).
+overwatch_back_m = 80
+overwatch_candidates = 8
+overwatch_ring_m = 30
+relocate_after_shots = 2
+relocate_m = 40
+td_hunt_m = 300
+td_infantry_standoff_m = 120
+open_top_infantry_m = 60
 
 # The AI's fire-and-move, AT-team hunts and satchel hunts (S3b,
 # docs/slices/S3b-balance.md B3-B5). Starting values for the Tune stage.

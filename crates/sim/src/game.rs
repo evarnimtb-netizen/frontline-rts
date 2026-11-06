@@ -410,9 +410,6 @@ pub struct S7Counters {
     /// Items this player's men threw that came to rest inside an enemy
     /// open box.
     pub open_top_throws: u32,
-    /// AI overwatch: spots taken, and moves to a new spot after firing.
-    pub overwatch_holds: u32,
-    pub relocations: u32,
 }
 
 /// S4 per-player counters (saved and hashed, read only by reports and

@@ -991,13 +991,21 @@
           "face_range_m": 600,
           "face_slack_deg": 20,
           "halted_mm_s": 300,
+          "open_top_infantry_m": 60,
+          "overwatch_back_m": 80,
+          "overwatch_candidates": 8,
+          "overwatch_ring_m": 30,
           "rearm_ap_below": 3,
           "rearm_full_pct": 90,
           "rearm_max_s": 120,
           "recrew_clear_m": 80,
           "recrew_reach_m": 300,
+          "relocate_after_shots": 2,
+          "relocate_m": 40,
           "retreat_engine_pct": 30,
           "tank_reserve_mp": 200,
+          "td_hunt_m": 300,
+          "td_infantry_standoff_m": 120,
           "threat_m": 300
         },
         "assault": {
@@ -1039,6 +1047,8 @@
           "buys_per_plan": 2,
           "danger_close_m": 35,
           "frag_group_m": 5,
+          "open_top_slow_mm_s": 300,
+          "open_top_throw_m": 25,
           "satchel_side_mm": 800,
           "satchel_slow_mm_s": 1100,
           "support_back_m": 120,
@@ -2056,7 +2066,7 @@
       "weapon": ""
     },
     "ww2:ger_stug3_g_squad": {
-      "ai_weight": 0,
+      "ai_weight": 100,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -2457,7 +2467,7 @@
       "weapon": ""
     },
     "ww2:usa_m10_squad": {
-      "ai_weight": 0,
+      "ai_weight": 100,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",

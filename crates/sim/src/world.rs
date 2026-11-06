@@ -2653,6 +2653,101 @@ mod tests {
         }
     }
 
+    /// S7 Build B: the AI overwatch state and the four counters are saved,
+    /// hashed (one edit per field) and checked on load.
+    #[test]
+    fn s7_ai_overwatch_state_is_saved_hashed_and_checked() {
+        let mut w = match_world();
+        let k = w
+            .game()
+            .unwrap()
+            .ai
+            .iter()
+            .position(|a| a.is_some())
+            .expect("an AI player");
+        let sq = *w.game().unwrap().squads.keys().next().expect("a squad");
+        {
+            let ai = w.state.game.as_mut().unwrap().ai[k].as_mut().unwrap();
+            ai.overwatch.insert(
+                sq,
+                crate::ai::AiOverwatch {
+                    anchor: FxVec2::from_int(400, 400),
+                    spot: FxVec2::from_int(420, 410),
+                    axis: FxVec2::from_int(600, 500),
+                    rounds: 40,
+                    since: 2,
+                    held: false,
+                },
+            );
+        }
+        let w = World::from_state(w.state.clone(), 1).unwrap();
+        let loaded = World::load(&w.save(), 2).unwrap();
+        assert_eq!(loaded.state(), w.state());
+        assert_eq!(loaded.full_state_hash(), w.full_state_hash());
+        type StateEdit = Box<dyn Fn(&mut SimState)>;
+        fn ai(s: &mut SimState, k: usize) -> &mut crate::ai::AiState {
+            s.game.as_mut().unwrap().ai[k].as_mut().unwrap()
+        }
+        fn ow(s: &mut SimState, k: usize, sq: SquadId) -> &mut crate::ai::AiOverwatch {
+            ai(s, k).overwatch.get_mut(&sq).unwrap()
+        }
+        let base = w.full_state_hash();
+        let edits: Vec<(&str, StateEdit)> = vec![
+            (
+                "anchor",
+                Box::new(move |s| ow(s, k, sq).anchor.x += Fx::ONE),
+            ),
+            ("spot", Box::new(move |s| ow(s, k, sq).spot.y += Fx::ONE)),
+            ("axis", Box::new(move |s| ow(s, k, sq).axis.x += Fx::ONE)),
+            ("rounds", Box::new(move |s| ow(s, k, sq).rounds -= 1)),
+            ("since", Box::new(move |s| ow(s, k, sq).since -= 1)),
+            ("held", Box::new(move |s| ow(s, k, sq).held = true)),
+            (
+                "overwatch_holds",
+                Box::new(move |s| ai(s, k).counters.overwatch_holds += 1),
+            ),
+            (
+                "relocations",
+                Box::new(move |s| ai(s, k).counters.relocations += 1),
+            ),
+            (
+                "open_top_throws",
+                Box::new(move |s| ai(s, k).counters.open_top_throws += 1),
+            ),
+            (
+                "open_top_backoffs",
+                Box::new(move |s| ai(s, k).counters.open_top_backoffs += 1),
+            ),
+            (
+                "player s7.open_top_throws",
+                Box::new(|s| s.game.as_mut().unwrap().players[0].s7.open_top_throws += 1),
+            ),
+            (
+                "player s7.open_top_hits",
+                Box::new(|s| s.game.as_mut().unwrap().players[1].s7.open_top_hits += 1),
+            ),
+        ];
+        for (name, edit) in &edits {
+            let bytes = save_edited(&w, edit);
+            let w2 = World::load(&bytes, 1).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_ne!(w2.full_state_hash(), base, "{name} is not hashed");
+            assert_eq!(World::load(&w2.save(), 3).unwrap().state(), w2.state());
+        }
+        let bad: Vec<StateEdit> = vec![
+            Box::new(move |s| ow(s, k, sq).since = 1_000_000),
+            Box::new(move |s| ow(s, k, sq).spot.x = Fx::from_int(-5)),
+            Box::new(move |s| ow(s, k, sq).axis.y = Fx::from_int(100_000)),
+            Box::new(move |s| {
+                let o = *ow(s, k, sq);
+                ai(s, k).overwatch.insert(SquadId(1_000_000), o);
+            }),
+        ];
+        for edit in bad {
+            let e = load_err(&save_edited(&w, edit));
+            assert!(e.contains("AI"), "{e}");
+        }
+    }
+
     #[test]
     fn match_rules_and_ai_state_are_hashed() {
         let w = match_world();

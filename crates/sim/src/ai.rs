@@ -184,6 +184,7 @@ mod ammo;
 mod armour;
 mod assault;
 mod mortar;
+mod overwatch;
 mod supply;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
@@ -301,6 +302,27 @@ pub struct AiState {
     /// S5b: mortar squads' spotters, by squad (at most [`MAX_SPOTTERS`];
     /// `ai::mortar`).
     pub spotters: BTreeMap<SquadId, AiSpotter>,
+    /// S7: assault guns' and tank destroyers' overwatch spots, by the
+    /// vehicle's squad (at most [`MAX_OVERWATCH`]; `ai::overwatch`).
+    pub overwatch: BTreeMap<SquadId, AiOverwatch>,
+}
+
+/// S7: most overwatch entries one AI keeps.
+pub const MAX_OVERWATCH: usize = 32;
+
+/// S7: an assault gun's or tank destroyer's overwatch (`ai::overwatch`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct AiOverwatch {
+    /// The anchor it was chosen around, the spot, and the threat it faces.
+    pub anchor: FxVec2,
+    pub spot: FxVec2,
+    pub axis: FxVec2,
+    /// Main-gun rounds aboard when it reached the spot (shots fired from
+    /// it are counted against this).
+    pub rounds: u16,
+    /// Tick the spot was chosen; whether the vehicle has reached it.
+    pub since: u64,
+    pub held: bool,
 }
 
 /// S5a: most Panzerfaust ambushes one AI keeps.
@@ -461,6 +483,13 @@ pub struct AiCounters {
     /// within `crate_feed_m`, outside the base and every radius) that
     /// bearers went to pick up again.
     pub s6_crate_pickups: u32,
+    /// S7: overwatch spots reached and moves to a new spot after firing or
+    /// a penetration; throws ordered into enemy open-topped vehicles; open-
+    /// topped vehicles reversed away from enemy infantry.
+    pub overwatch_holds: u32,
+    pub relocations: u32,
+    pub open_top_throws: u32,
+    pub open_top_backoffs: u32,
 }
 
 impl AiState {
@@ -483,6 +512,7 @@ impl AiState {
             refill: BTreeMap::new(),
             ambush: BTreeMap::new(),
             spotters: BTreeMap::new(),
+            overwatch: BTreeMap::new(),
         }
     }
 
@@ -562,6 +592,16 @@ impl AiState {
             || self.ambush.values().any(|a| a.since > tick)
             // S5b.
             || !self.validate_spotters(g.next_squad, ents_len, tick)
+            // S7.
+            || self.overwatch.len() > MAX_OVERWATCH
+            || self.overwatch.keys().any(bad_squad)
+            || self.overwatch.values().any(|o| {
+                let size = Fx::from_int(g.setup.map.size_m);
+                let on = |p: FxVec2| {
+                    p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size
+                };
+                o.since > tick || !on(o.anchor) || !on(o.spot) || !on(o.axis)
+            })
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -573,7 +613,8 @@ impl AiState {
                 | CommandKind::ThrowEach { units, .. }
                 | CommandKind::FaceUnits { units, .. }
                 | CommandKind::RepairUnits { units }
-                | CommandKind::FollowUnits { units, .. } => units.len() > crate::unit::MAX_UNITS,
+                | CommandKind::FollowUnits { units, .. }
+                | CommandKind::ReverseUnits { units, .. } => units.len() > crate::unit::MAX_UNITS,
                 CommandKind::SuppressUnits { units, line } => {
                     units.len() > crate::unit::MAX_UNITS || !(1..=2).contains(&line.len())
                 }
@@ -828,6 +869,9 @@ impl Planner<'_> {
         let me = self.me;
         self.ai
             .tasks
+            .retain(|id, _| g.squads.get(id).is_some_and(|s| s.owner == me));
+        self.ai
+            .overwatch
             .retain(|id, _| g.squads.get(id).is_some_and(|s| s.owner == me));
         let mut busy: Vec<SquadId> = Vec::new();
         for c in &self.ai.pending {
@@ -1812,6 +1856,10 @@ impl Planner<'_> {
             .flat_map(|e| e.squads.iter().copied())
             .collect();
         for t in tanks {
+            // S7: assault guns and tank destroyers hold overwatch.
+            if self.overwatch(t, points, known, kv) {
+                continue;
+            }
             let sq = &g.squads[&t.squad];
             let vs = &g.vehicles[&t.id];
             let mut ordered = false;
@@ -2025,6 +2073,20 @@ impl Planner<'_> {
         for m in mine {
             let sq = &g.squads[&m.id];
             if sq.order == Order::Retreat || self.ai.last_throw.contains_key(&m.id) {
+                continue;
+            }
+            // S7: into a stopped open-topped vehicle first.
+            if let Some((item, units, target)) = self.open_top_throw(sq, kv) {
+                self.ai.emit(
+                    self.due,
+                    CommandKind::Throw {
+                        units,
+                        item,
+                        target,
+                    },
+                );
+                self.ai.counters.open_top_throws += 1;
+                self.ai.last_throw.insert(m.id, tick);
                 continue;
             }
             let at_vehicle = self.satchel_vehicle(sq, kv);

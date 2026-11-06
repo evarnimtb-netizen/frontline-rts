@@ -406,7 +406,20 @@ tuning_table! {
         trench_probe_m: 1..=500,
         /// ... in steps of this (m).
         trench_probe_step_m: 1..=50,
+        /// S7: a squad with frags or satchels this close to a known enemy
+        /// open-topped vehicle throws into its open box (m; 0: off) ...
+        open_top_throw_m: 0..=100 = "default_open_top_throw_m",
+        /// ... when it is no faster than this (mm/s).
+        open_top_slow_mm_s: 0..=20000 = "default_open_top_slow_mm_s",
     }
+}
+
+fn default_open_top_throw_m() -> u32 {
+    25
+}
+
+fn default_open_top_slow_mm_s() -> u32 {
+    300
 }
 
 impl AiInfantryTuning {
@@ -472,7 +485,62 @@ tuning_table! {
         /// `recrew_clear_m`), when the rules allow captures (m; 0: off;
         /// absent in older rules: 150).
         capture_m: 0..=2000 = "default_capture_m",
+        /// S7 overwatch (assault guns and tank destroyers): the anchor
+        /// stands this far behind the most threatened own or contested
+        /// point, on the line to the threat (m; 0: off, they act as tanks)
+        /// ...
+        overwatch_back_m: 0..=1000 = "default_overwatch_back_m",
+        /// ... and the spot is the best of this many on a ring ...
+        overwatch_candidates: 1..=32 = "default_overwatch_candidates",
+        /// ... of this radius around it (m).
+        overwatch_ring_m: 0..=500 = "default_overwatch_ring_m",
+        /// After this many main-gun shots from a spot (or a penetration)
+        /// it moves to the next best spot ...
+        relocate_after_shots: 1..=50 = "default_relocate_after_shots",
+        /// ... at least this far from the old one (m).
+        relocate_m: 0..=500 = "default_relocate_m",
+        /// A known enemy vehicle this close turns the overwatch toward it
+        /// (m).
+        td_hunt_m: 0..=2000 = "default_td_hunt_m",
+        /// Overwatch spots this close to known enemy infantry are passed
+        /// over (m) ...
+        td_infantry_standoff_m: 0..=1000 = "default_td_infantry_standoff_m",
+        /// ... and an open-topped vehicle with known enemy infantry this
+        /// close reverses away (m).
+        open_top_infantry_m: 0..=500 = "default_open_top_infantry_m",
     }
+}
+
+fn default_overwatch_back_m() -> u32 {
+    80
+}
+
+fn default_overwatch_candidates() -> u32 {
+    8
+}
+
+fn default_overwatch_ring_m() -> u32 {
+    30
+}
+
+fn default_relocate_after_shots() -> u32 {
+    2
+}
+
+fn default_relocate_m() -> u32 {
+    40
+}
+
+fn default_td_hunt_m() -> u32 {
+    300
+}
+
+fn default_td_infantry_standoff_m() -> u32 {
+    120
+}
+
+fn default_open_top_infantry_m() -> u32 {
+    60
 }
 
 impl AiArmourTuning {
