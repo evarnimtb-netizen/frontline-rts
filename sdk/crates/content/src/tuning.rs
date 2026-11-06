@@ -645,7 +645,15 @@ tuning_table! {
         /// target the standard round penetrates with less than this
         /// chance, and only when the special round's chance is higher (%).
         special_below_pct: 0..=100,
+        /// S7 casemate gunnery: a target bearing outside the gun's arc
+        /// less this margin makes the driver turn the hull toward it
+        /// (deg; default 3).
+        casemate_margin_deg: 0..=30 = "default_casemate_margin_deg",
     }
+}
+
+fn default_casemate_margin_deg() -> u32 {
+    3
 }
 
 impl GunneryTuning {

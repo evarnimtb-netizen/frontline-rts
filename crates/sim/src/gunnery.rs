@@ -164,18 +164,27 @@ pub fn lay_gun_pct(
     traverse_pct: u32,
 ) -> bool {
     let hz = hz.max(1) as i32;
-    let ring = vs.component(ComponentKind::TurretRing);
     let mut traverse = deg(v.traverse_deg_s)
         .mul_int(traverse_pct.min(100) as i32)
         .div_int(100)
         .div_int(hz);
-    if ring == 0 {
-        traverse = Fx::ZERO;
-    } else if ring < 50 {
-        traverse = traverse.div_int(2);
+    // The ring factor only with a turret (S7: a casemate has none).
+    if v.has_turret {
+        let ring = vs.component(ComponentKind::TurretRing);
+        if ring == 0 {
+            traverse = Fx::ZERO;
+        } else if ring < 50 {
+            traverse = traverse.div_int(2);
+        }
     }
     let [lo, hi] = v.main_gun().elevation_deg;
     let pitch = pitch.clamp(deg(lo), deg(hi));
+    // S7: a casemate gun lays only within its arc (the driver turns the
+    // hull for the rest, `crate::vehicle` `lay_turn`).
+    let yaw = match v.gun_arc_deg {
+        Some([a, b]) => yaw.wrap_angle().clamp(deg(a), deg(b)),
+        None => yaw,
+    };
     let err = (yaw.wrap_angle() - vs.turret_yaw).wrap_angle();
     let step = err.clamp(-traverse, traverse);
     vs.turret_yaw = (vs.turret_yaw + step).wrap_angle();
@@ -194,42 +203,52 @@ fn projected_area(b: &BoxFrame, u: FxVec3) -> Fx {
         + h.x.mul(h.y).mul(b.axes.z.dot(u).abs())
 }
 
-/// The centre of `target`'s visible mass seen from `from` (S3b): the hull
-/// and turret centres weighted by their projected areas toward the shooter.
-/// Real gunners were taught to aim at the centre of the visible target.
+/// The centre of `target`'s visible mass seen from `from` (S3b): the
+/// armour box centres (S3: hull and turret) weighted by their projected
+/// areas toward the shooter. Real gunners were taught to aim at the centre
+/// of the visible target.
 pub fn mass_centre(from: FxVec3, target: &VehicleFrame) -> FxVec3 {
     let u = (target.hull.center - from).normalize_or_zero();
-    let (h, t) = (&target.hull, &target.turret);
-    let (ah, at) = (projected_area(h, u), projected_area(t, u));
-    let sum = ah + at;
+    let boxes = target.armour_boxes();
+    let h = &target.hull;
+    let mut areas = [Fx::ZERO; frontline_content::MAX_ARMOUR_BOXES];
+    let mut sum = Fx::ZERO;
+    for (a, b) in areas.iter_mut().zip(boxes) {
+        *a = projected_area(b, u);
+        sum += *a;
+    }
     if sum <= Fx::ZERO {
         return h.center;
     }
     // Relative to the hull centre, so the products stay small.
-    h.center + (t.center - h.center) * at.div(sum)
+    let mut c = h.center;
+    for (a, b) in areas.iter().zip(boxes).skip(1) {
+        c += (b.center - h.center) * a.div(sum);
+    }
+    c
 }
 
 /// Where to aim at `target` from `from` (S3b, see the module docs):
-/// `Hull` = the centre of its visible mass ([`mass_centre`]) when that
-/// point is in a clear line of fire; else `Turret` = the turret's centre
-/// when that is (partial hull-down); else `None`. Launcher gunners use the
-/// same rule.
+/// `HULL` = the centre of its visible mass ([`mass_centre`]) when that
+/// point is in a clear line of fire; else the upper box (S3: the turret;
+/// S7: a casemate) = its centre when that is (partial hull-down); else
+/// `None`. Launcher gunners use the same rule.
 pub fn aim_choice(from: FxVec3, target: &VehicleFrame, terrain: &Heightfield) -> Option<BoxPart> {
     if terrain.line_of_sight(from, mass_centre(from, target)) {
-        Some(BoxPart::Hull)
-    } else if terrain.line_of_sight(from, target.turret.center) {
-        Some(BoxPart::Turret)
+        Some(BoxPart::HULL)
+    } else if terrain.line_of_sight(from, target.upper_box().center) {
+        Some(BoxPart(target.upper))
     } else {
         None
     }
 }
 
 /// The point a gunner at `from` aims at on `target` for an
-/// [`aim_choice`] result (`turret`: the turret's centre; else the centre of
-/// visible mass).
+/// [`aim_choice`] result (`turret`: the upper box's centre; else the
+/// centre of visible mass).
 pub fn aim_at(from: FxVec3, target: &VehicleFrame, turret: bool) -> FxVec3 {
     if turret {
-        target.turret.center
+        target.upper_box().center
     } else {
         mass_centre(from, target)
     }
@@ -536,6 +555,20 @@ impl MatchState {
                     && area_probe.is_some_and(|(_, probe)| ctx.terrain.line_of_sight(muzzle, probe))
                     && a.point != muzzle
             });
+        // S7 casemate gunnery: a bearing outside the arc (less the margin)
+        // asks the driver to turn the hull toward it (`crate::vehicle`
+        // `lay_pivot`); back inside, or no aim, the request ends.
+        if let Some([lo, hi]) = v.gun_arc_deg {
+            let margin = deg(setup.rules.vehicles.gunnery.casemate_margin_deg as i32);
+            let (lo, hi) = (deg(lo) + margin, deg(hi) - margin);
+            let want = want_yaw.wrap_angle();
+            vs.lay_turn = match aim.or(area) {
+                Some(_) if gun_ok && (want < lo.min(Fx::ZERO) || want > hi.max(Fx::ZERO)) => {
+                    Some((f.yaw + want).wrap_angle())
+                }
+                _ => None,
+            };
+        }
         if gunner {
             // S3c: an untrained gunner traverses slower.
             let pct = if vs.seat(v, SeatRole::Gunner).is_some_and(|st| st.untrained) {
@@ -623,7 +656,7 @@ impl MatchState {
                     turret_dir,
                 ),
                 MountKind::Hull => (m.seat, deg(m.arc_deg), f.hull.axes.x),
-                MountKind::TurretMain => continue,
+                MountKind::TurretMain | MountKind::Casemate => continue,
             };
             let seat_ok = vs.manned(v, crew);
             // S3b Fix: an MG with its stowage spent is silent until rearmed.
@@ -724,11 +757,11 @@ impl MatchState {
             return false;
         };
         let part = if turret {
-            BoxPart::Turret
+            BoxPart(tf.upper)
         } else {
-            BoxPart::Hull
+            BoxPart::HULL
         };
-        let b = if turret { &tf.turret } else { &tf.hull };
+        let b = if turret { tf.upper_box() } else { &tf.hull };
         let from = f.turret.center;
         let rel = b.center - from;
         let range = rel.length();
@@ -883,7 +916,7 @@ impl MatchState {
                     continue;
                 };
                 if let Some(part) = aim_choice(from, tf, ctx.terrain) {
-                    return (Some(t), part == BoxPart::Turret);
+                    return (Some(t), part != BoxPart::HULL);
                 }
             }
         }

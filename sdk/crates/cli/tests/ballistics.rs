@@ -6,7 +6,6 @@ use std::process::Command;
 
 use frontline_cli::ballistics::{self, Armoury, BallisticsArgs, Descent};
 use frontline_cli::validate;
-use frontline_content::ArmourZone;
 
 fn ww2() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2")
@@ -90,7 +89,7 @@ fn one_shot_matches_the_spec_numbers() {
         &a,
         pz,
         sherman,
-        ArmourZone::HullFront,
+        0, // hull_front
         300,
         30,
         Descent::Deg(0),
@@ -107,7 +106,7 @@ fn one_shot_matches_the_spec_numbers() {
         &a,
         pz,
         sherman,
-        ArmourZone::HullFront,
+        0, // hull_front
         450,
         30,
         Descent::Deg(0),
@@ -121,7 +120,7 @@ fn one_shot_matches_the_spec_numbers() {
         &a,
         pz,
         sherman,
-        ArmourZone::HullFront,
+        0, // hull_front
         300,
         65,
         Descent::Deg(0),
@@ -131,7 +130,9 @@ fn one_shot_matches_the_spec_numbers() {
     // Unknown ids and zones say what exists.
     let e = a.ammo_index("ww2:nope").unwrap_err().to_string();
     assert!(e.contains("ww2:75mm_m61"), "{e}");
-    let e = ballistics::parse_zone("hull_frnt").unwrap_err().to_string();
+    let e = ballistics::parse_zone(&a.vehicles[sherman], "hull_frnt")
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("hull_front"), "{e}");
 }
 
@@ -289,7 +290,7 @@ fn validate_checks_the_mod_folder() {
     };
     has("defs/ammo/75mm_m48.toml: drag_coeff", "no drag");
     has(
-        "defs/vehicles/ger_pz4_h.toml: crew.boxes.driver",
+        "defs/vehicles/ger_pz4_h.toml: seats[0].box",
         "outside its frame",
     );
     // With the defs fixed, a typo in a rules override is reported too.

@@ -453,6 +453,7 @@ impl MatchState {
         vs.base_ticks = 0;
         vs.followers.clear();
         vs.face = None;
+        vs.lay_turn = None;
         vs.suppress = None;
         vs.board = None;
         vs.crew_squad = None;

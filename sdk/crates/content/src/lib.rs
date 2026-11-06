@@ -48,8 +48,8 @@ pub use setup::{
 };
 pub use variant::{MemberDef, TrainingDef};
 pub use vehicle::{
-    ARMOUR_ZONES, AmmoDef, AmmoMechanism, ArmourZone, COMPONENTS, ComponentKind, Frame, MountKind,
-    SEAT_ROLES, SeatRole, VehicleDef,
+    AmmoDef, AmmoMechanism, COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MAX_ZONES,
+    MountKind, PLATE_GROUPS, PlateGroup, SEAT_ROLES, SeatRole, VehicleDef, VehicleRole,
 };
 
 /// Most capture points on a map (the sim's AI keeps point indices in a

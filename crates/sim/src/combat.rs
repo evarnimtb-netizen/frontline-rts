@@ -1283,13 +1283,13 @@ impl MatchState {
                 let Some(part) = crate::gunnery::aim_choice(from, tf, terrain) else {
                     continue;
                 };
-                let at = crate::gunnery::aim_at(from, tf, part == armour::BoxPart::Turret);
+                let at = crate::gunnery::aim_at(from, tf, part != armour::BoxPart::HULL);
                 if self.smoke_blocks(from, at, tick, (t, m)) {
                     continue;
                 }
                 p.man = Some(m);
                 p.target = Some(t);
-                p.aim_turret = part == armour::BoxPart::Turret;
+                p.aim_turret = part != armour::BoxPart::HULL;
                 p.aim = it.windup_ticks.clamp(1, u16::MAX as u32) as u16;
                 let ws = &mut ents.weapon[i];
                 ws.cooldown = ws.cooldown.max(2);
@@ -1494,12 +1494,12 @@ impl MatchState {
                 let Some(part) = crate::gunnery::aim_choice(from, tf, terrain) else {
                     continue;
                 };
-                let at = crate::gunnery::aim_at(from, tf, part == armour::BoxPart::Turret);
+                let at = crate::gunnery::aim_at(from, tf, part != armour::BoxPart::HULL);
                 if self.smoke_blocks(from, at, tick, (t, c)) {
                     continue;
                 }
                 target = Some(t);
-                l.aim_turret = part == armour::BoxPart::Turret;
+                l.aim_turret = part != armour::BoxPart::HULL;
                 break;
             }
             ents.combat[i].retarget = if target.is_some() { hz } else { hz / 3 }.max(1) as u16;
@@ -2395,8 +2395,9 @@ impl MatchState {
                 if Some(f.id) == struck {
                     // A burst on its plate: rays into it stop there.
                     let probe = o + dir * STRUCK_PROBE;
-                    if armour::box_dist_sq_raw(&f.hull, probe) == 0
-                        || armour::box_dist_sq_raw(&f.turret, probe) == 0
+                    if f.armour_boxes()
+                        .iter()
+                        .any(|b| armour::box_dist_sq_raw(b, probe) == 0)
                     {
                         blocked = true;
                     }
@@ -2543,6 +2544,24 @@ impl MatchState {
         ammo: u16,
         shooter: SimId,
     ) -> u8 {
+        let base = self.base_class(ents, weapon, ammo, shooter);
+        // S7: a round from a vehicle (alive, wreck or abandoned since)
+        // carries its type, for the per-type report.
+        match self.vehicles.get(&shooter) {
+            Some(vs)
+                if matches!(
+                    ents.kind.get(shooter.index()),
+                    Some(EntityKind::Vehicle | EntityKind::Wreck | EntityKind::Abandoned)
+                ) =>
+            {
+                kill_class::with_vehicle(base, vs.type_idx)
+            }
+            _ => base,
+        }
+    }
+
+    /// [`MatchState::round_class`] without the shooting vehicle's type.
+    fn base_class(&self, ents: &Entities, weapon: u16, ammo: u16, shooter: SimId) -> u8 {
         let class = self.setup.weapons.get(weapon as usize).map(|w| w.class);
         if class == Some(WeaponClass::Launcher) {
             return kill_class::ROCKET;
@@ -2835,7 +2854,13 @@ impl MatchState {
             ctx.stats.deaths += 1;
             if let Some(p) = self.players.get_mut(by as usize) {
                 p.kills += 1;
-                p.kills_by[class as usize] += 1;
+                p.kills_by[kill_class::base(class) as usize] += 1;
+                // S7: per shooting vehicle type.
+                if let Some(n) =
+                    kill_class::vehicle(class).and_then(|t| p.s7.kills_by_vehicle.get_mut(t))
+                {
+                    *n += 1;
+                }
             }
         }
         self.sweep_vehicle_refs(ctx.ents);

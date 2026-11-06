@@ -42,36 +42,48 @@ unbog_s = [20, 40]
 moving_spread_pct = 300
 
 [hull]
-box = { center = [0, 0, 115], half = [295, 131, 75] }
+# S7: the hull box and its plates moved to [[boxes]] "hull" (box 0).
 track_band_pct = 45
 track_mm = 20
 
 [turret]
 pivot = [-10, 0, 190]
-box = { center = [0, 0, 45], half = [110, 95, 45] }
 traverse_deg_s = 24
 # Main gun elevation (deg/s). 6: the S3 code value (gunnery.rs
 # ELEVATE_DEG_S, moved to data in S3b); no sourced figure yet, a starting
 # value for tuning.
 elevate_deg_s = 6
 
-[armor]
+# S7 (docs/slices/S7-casemate-td.md 1): armour boxes, box 0 the running-gear
+# hull, then the turret; zone ids hull_front = 0 ... turret_top = 7 as in S3.
+# Each box: its own front / side / rear / top plates (the bottom reads top).
 # S3b Fix (review L4, a known simplification): 63.5 mm at 47° is the
 # later one-piece glacis of the wet-stowage M4A3 (75)W hull; the dry-
 # stowage hull this def models had 51 mm at 56°. Kept, because the line-
 # of-sight thickness is nearly the same (93 vs 91 mm); the 56° plate
 # would also ricochet more, which the owner question S3b-4 leaves open.
-hull_front   = { thickness_mm = 63.5, slope_deg = 47, material = "rha" }
-hull_side    = { thickness_mm = 38, slope_deg = 0,  material = "rha" }
-hull_rear    = { thickness_mm = 38, slope_deg = 10, material = "rha" }
-hull_top     = { thickness_mm = 19, material = "rha" }
-turret_front = { thickness_mm = 76, slope_deg = 30, material = "rha" }
-turret_side  = { thickness_mm = 51, slope_deg = 5,  material = "rha" }
-turret_rear  = { thickness_mm = 51, slope_deg = 0,  material = "rha" }
-turret_top   = { thickness_mm = 25, material = "rha" }
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 115], half = [295, 131, 75] }
+[boxes.armor]
+front = { thickness_mm = 63.5, slope_deg = 47 }
+side = { thickness_mm = 38, slope_deg = 0 }
+rear = { thickness_mm = 38, slope_deg = 10 }
+top = { thickness_mm = 19 }
 
-[crew]
-seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 45], half = [110, 95, 45] }
+[boxes.armor]
+front = { thickness_mm = 76, slope_deg = 30 }
+side = { thickness_mm = 51, slope_deg = 5 }
+rear = { thickness_mm = 51, slope_deg = 0 }
+top = { thickness_mm = 25 }
+
+# S7: crew seats in the snapshot order (id, role, box, the armour box
+# they sit in).
 
 # S3b (crew layout): driver (left) and assistant driver (right) sit in the
 # nose either side of the transmission, just behind the glacis; boxes moved
@@ -85,12 +97,35 @@ seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
 # the commander sits high behind the gunner (z -40..85). Before, a hull
 # hit at the height of the visible-mass centre passed under all three.
 # Source: TM 9-759 (turret basket), Hunnicutt; approximate.
-[crew.boxes]
-driver    = { frame = "hull",   center = [200, 60, 120],  half = [35, 30, 40] }
-radio_mg  = { frame = "hull",   center = [200, -60, 120], half = [35, 30, 40] }
-gunner    = { frame = "turret", center = [20, -45, 0],    half = [30, 25, 70] }
-loader    = { frame = "turret", center = [10, 45, -25],   half = [30, 25, 95] }
-commander = { frame = "turret", center = [-60, -40, 22],  half = [30, 30, 63] }
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [200, 60, 120], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [20, -45, 0], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-60, -40, 22], half = [30, 30, 63] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [10, 45, -25], half = [30, 25, 95] }
+in = "turret"
+
+[[seats]]
+id = "radio_mg"
+role = "radio_mg"
+box = { frame = "hull", center = [200, -60, 120], half = [35, 30, 40] }
+in = "hull"
 
 [[weapons]]
 def = "ww2:m3_75mm"

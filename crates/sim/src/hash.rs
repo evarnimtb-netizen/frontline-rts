@@ -385,6 +385,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         // S5b: the knowledge map and the fire-mission counters.
         put_postcard(&p.intel, out);
         put_postcard(&p.fm, out);
+        // S7.
+        put_postcard(&p.s7, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);

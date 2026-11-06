@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
+use frontline_content::ModDefs;
 use frontline_content::vehicle::{AmmoSetup, VehicleSetup};
-use frontline_content::{ArmourZone, ModDefs};
 use frontline_sim::Fx;
 use frontline_sim::armour::{
     self, AmmoTable, PPM, PenResult, PlateShot, VehicleArmour, aimed_descent, deg, plate_shot,
@@ -150,11 +150,17 @@ impl Armoury {
     }
 }
 
-pub fn parse_zone(z: &str) -> Result<ArmourZone> {
-    ArmourZone::from_name(z).ok_or_else(|| {
+/// A zone of `v` by name (S7: `<box id>_<group>`, e.g. `hull_front`,
+/// `casemate_side`) as its zone id.
+pub fn parse_zone(v: &VehicleSetup, z: &str) -> Result<u8> {
+    v.zone_by_name(z).ok_or_else(|| {
         anyhow!(
-            "unknown zone `{z}`; zones: {}",
-            ArmourZone::ALL.map(|z| z.name()).join(", ")
+            "unknown zone `{z}` of {}; zones: {}",
+            v.id,
+            (0..v.zones() as u8)
+                .map(|k| v.zone_name(k))
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     })
 }
@@ -232,7 +238,7 @@ pub fn shot(
     a: &Armoury,
     ammo: usize,
     target: usize,
-    zone: ArmourZone,
+    zone: u8,
     range_m: i32,
     angle_deg: i32,
     descent: Descent,
@@ -268,12 +274,12 @@ pub fn shot(
         mechanism: am.mechanism.name().to_owned(),
         speed_m_s: f64::from(Fx::from(am.speed).to_f32()),
         target: a.vehicles[target].id.clone(),
-        zone: zone.name().to_owned(),
+        zone: a.vehicles[target].zone_name(zone),
         range_m,
         angle_deg,
         descent_deg: f(desc).to_degrees(),
         thickness_mm: f(s.thickness),
-        slope_deg: a.vehicles[target].armour[zone.index()].slope_deg,
+        slope_deg: a.vehicles[target].plate(zone).map_or(0, |p| p.slope_deg),
         track_mm: f(s.extra),
         impact_deg: c.clamp(-1.0, 1.0).acos().to_degrees(),
         impact_cos: c,
@@ -369,14 +375,14 @@ pub fn table(
         .map(|&r| f64::from(a.ammo_table(ammo).pen0(Fx::from_int(r)).to_f32()))
         .collect();
     let mut rows = Vec::new();
-    for zone in ArmourZone::ALL {
+    for zone in 0..a.vehicles[target].zones() as u8 {
         for angle in TABLE_ANGLES_DEG {
             let shots: Vec<ShotReport> = TABLE_RANGES_M
                 .iter()
                 .map(|&r| shot(a, ammo, target, zone, r, angle, descent, track_band))
                 .collect();
             rows.push(TableRow {
-                zone: zone.name().to_owned(),
+                zone: a.vehicles[target].zone_name(zone),
                 angle_deg: angle,
                 effective_mm: shots.iter().map(|s| s.effective_mm).collect(),
                 pen_pct: shots
@@ -489,7 +495,8 @@ pub fn golden(a: &Armoury, path: &Path) -> Result<GoldenReport> {
         let target = a
             .vehicle_index(&row.target)
             .with_context(|| format!("row {n}"))?;
-        let zone = parse_zone(&row.zone).with_context(|| format!("row {n}"))?;
+        let zone =
+            parse_zone(&a.vehicles[target], &row.zone).with_context(|| format!("row {n}"))?;
         let s = shot(
             a,
             ammo,
@@ -594,7 +601,7 @@ pub fn run(args: &BallisticsArgs) -> Result<(String, bool)> {
         };
         return Ok((out, true));
     }
-    let zone = parse_zone(&need(&args.zone, "--zone")?)?;
+    let zone = parse_zone(&a.vehicles[target], &need(&args.zone, "--zone")?)?;
     let s = shot(
         &a,
         ammo,

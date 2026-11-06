@@ -104,20 +104,22 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 /// 0xf3b32cf1b0378f38, 0x4488c561880a75ae, 0xc1ee12e6f518a545,
 /// 0x816f3f3071c87775, 0x04b382a239e8d0b9, and these are the new ones.
 /// The live `mods/ww2` is guarded by the canonical snapshot instead.
+// S7 (`docs/slices/S7-casemate-td.md` 2): re-recorded once, the vehicle
+// setup's shape changed (armour boxes, seat ids, turret flag, gun arc,
+// `[vehicles.gunnery] casemate_margin_deg`);
+// the S7 port proof shows the same plates, boxes and match results.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xe62f62a912fae842),
-    ("skirmish usa-ger seed 7 hard", 0x640d49ddce5211d9),
-    ("test_unlock ger-usa seed 1 normal", 0x68e65016af7508ac),
-    ("example override ger-usa seed 1 normal", 0xe62f62a912fae842),
-    ("human ger vs ai usa seed 3 easy", 0xfb18f8292ea73507),
+    ("skirmish ger-usa seed 1 normal", 0x1274af11fcca1b34),
+    ("skirmish usa-ger seed 7 hard", 0xf2f125bbaa458367),
+    ("test_unlock ger-usa seed 1 normal", 0xd014df7187dfa677),
+    ("example override ger-usa seed 1 normal", 0x1274af11fcca1b34),
+    ("human ger vs ai usa seed 3 easy", 0xf36c9060a5310170),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x0eb121cd9fd2b007,
+        0xda29d39e6c13ae5a,
     ),
 ];
 
-/// An override that changes a unit, a weapon and the rules (the patch path
-/// must lower exactly as before too).
 const PATCH: &str = r#"
 [ai]
 mix_mg_pct = 30
@@ -275,7 +277,8 @@ fn legacy_view_matches_snapshot() {
         write_snapshot(name, &got);
         panic!("wrote tests/snapshots/{name}; commit it and run again");
     };
-    let mut diffs = Vec::new();
+    let mut want = want;
+    let mut diffs = s7_moved_vehicle_keys(&mut want, &got);
     missing("", &want, &got, &mut diffs);
     // The same defs, no more and no fewer, per kind.
     for (k, w) in want.as_object().unwrap() {
@@ -289,6 +292,65 @@ fn legacy_view_matches_snapshot() {
         "the legacy view changed:\n{}",
         diffs.join("\n")
     );
+}
+
+/// S7 (`docs/slices/S7-casemate-td.md` 2): the vehicle schema moved
+/// `hull.box`, `turret.box`, `[armor]` and `[crew]` into `[[boxes]]` and
+/// `[[seats]]`. The old keys must equal the new ones exactly (box 0 =
+/// hull, box 1 = turret, plates by group, seats in the old order with the
+/// old boxes); then they leave the legacy view.
+fn s7_moved_vehicle_keys(want: &mut Value, got: &Value) -> Vec<String> {
+    let mut diffs = Vec::new();
+    let ids: Vec<String> = want["vehicles"]
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    for id in ids {
+        let w = &mut want["vehicles"][&id];
+        let g = &got["vehicles"][&id];
+        let mut same = |what: &str, a: &Value, b: &Value| {
+            if a != b {
+                diffs.push(format!("vehicles.{id}: {what}: {a} -> {b}"));
+            }
+        };
+        same("hull.box", &w["hull"]["box"], &g["boxes"][0]["box"]);
+        same("turret.box", &w["turret"]["box"], &g["boxes"][1]["box"]);
+        same(
+            "box ids",
+            &serde_json::json!(["hull", "turret"]),
+            &serde_json::json!([g["boxes"][0]["id"], g["boxes"][1]["id"]]),
+        );
+        for (b, part) in ["hull", "turret"].iter().enumerate() {
+            for grp in ["front", "side", "rear", "top"] {
+                same(
+                    &format!("armor.{part}_{grp}"),
+                    &w["armor"][format!("{part}_{grp}")],
+                    &g["boxes"][b]["armor"][grp],
+                );
+            }
+        }
+        let roles: Vec<Value> = w["crew"]["seats"].as_array().cloned().unwrap_or_default();
+        let seats = g["seats"].as_array().cloned().unwrap_or_default();
+        same(
+            "crew.seats",
+            &Value::Array(roles.clone()),
+            &Value::Array(seats.iter().map(|s| s["role"].clone()).collect()),
+        );
+        for (k, r) in roles.iter().enumerate() {
+            let r = r.as_str().unwrap_or("");
+            same(
+                &format!("crew.boxes.{r}"),
+                &w["crew"]["boxes"][r],
+                &seats.get(k).map_or(Value::Null, |s| s["box"].clone()),
+            );
+        }
+        let o = w.as_object_mut().unwrap();
+        o.remove("armor");
+        o.remove("crew");
+        o["hull"].as_object_mut().unwrap().remove("box");
+        o["turret"].as_object_mut().unwrap().remove("box");
+    }
+    diffs
 }
 
 #[test]

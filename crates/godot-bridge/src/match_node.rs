@@ -50,7 +50,7 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use frontline_content::setup::Capability;
-use frontline_content::{ArmourZone, ItemKind, MatchSetup, SeatRole, WeaponClass};
+use frontline_content::{ItemKind, MatchSetup, SeatRole, WeaponClass};
 use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
     ArmourEventKind, CommandKind, Fx, NavPhase, OrderKind, Outcome, SeatSnap, SquadId, World,
@@ -107,7 +107,8 @@ const MAX_PENDING_MARKERS: usize = 64;
 /// Armour events kept for the next `get_state()` at most.
 const MAX_ARMOUR_BACKLOG: usize = 256;
 /// State names of `ComponentKind::index`, `SeatRole::index`,
-/// `ArmourZone::index` and `ArmourEventKind` (`match_state.md`).
+/// zone ids (S7: box × 4 + group; a vehicle type's own names past the
+/// S3 eight) and `ArmourEventKind` (`match_state.md`).
 const COMPONENT_KEYS: [&str; 7] = [
     "engine",
     "track_l",
@@ -118,16 +119,6 @@ const COMPONENT_KEYS: [&str; 7] = [
     "transmission",
 ];
 const SEAT_KEYS: [&str; 5] = ["driver", "gunner", "commander", "loader", "radio_mg"];
-const ZONE_KEYS: [&str; 8] = [
-    "hull_front",
-    "hull_side",
-    "hull_rear",
-    "hull_top",
-    "turret_front",
-    "turret_side",
-    "turret_rear",
-    "turret_top",
-];
 const ARMOUR_KINDS: [&str; 12] = [
     "fired",
     "ricochet",
@@ -226,7 +217,7 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "name" => v.name.as_str(),
             "short" => v.short_name.as_str(),
             "faction" => faction,
-            "role" => "tank",
+            "role" => v.role.name(),
             "cost" => v.cost as i64,
             "pop" => v.pop as i64,
             "recall_s" => v.recall_cooldown_ticks as f32 / setup.tick_hz.max(1) as f32,
@@ -244,7 +235,7 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "turret_offset_x" => fx(tur.center.x),
             "gun_length" => fx(gun.muzzle.x),
             "gun_height" => fx(gun.muzzle.z),
-            "glacis_deg" => v.armour[ArmourZone::HullFront.index()].slope_deg as f32,
+            "glacis_deg" => v.plate(0).map_or(0, |p| p.slope_deg) as f32,
             "seats" => &seats,
             "ammo" => &ammo,
         };
@@ -2520,13 +2511,17 @@ impl MatchRuntime {
             }
             _ => "",
         };
-        let zone = if e.zone == NONE_U8 {
-            ""
+        // S7: `<box id>_<group>` of the vehicle's type (the S3 names for a
+        // hull and turret).
+        let zone_name: String = if e.zone == NONE_U8 {
+            String::new()
         } else {
-            ArmourZone::ALL
-                .get(e.zone as usize)
-                .map_or("", |z| ZONE_KEYS[z.index()])
+            self.setup
+                .vehicles
+                .get(a.type_idx as usize)
+                .map_or(String::new(), |v| v.zone_name(e.zone))
         };
+        let zone = zone_name.as_str();
         vdict! {
             "kind" => kind,
             "vehicle" => e.vehicle as i64,

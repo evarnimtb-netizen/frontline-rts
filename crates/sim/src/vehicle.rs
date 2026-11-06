@@ -69,7 +69,7 @@
 use frontline_content::setup::VehicleRulesSetup;
 use frontline_content::tuning::{DrivingTuning, VehiclePathTuning};
 use frontline_content::vehicle::{FixedVec3, VehicleSetup};
-use frontline_content::{COMPONENTS, ComponentKind, MatchSetup, SeatRole};
+use frontline_content::{COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MatchSetup, SeatRole};
 use serde::{Deserialize, Serialize};
 
 use crate::armour::deg;
@@ -224,6 +224,11 @@ pub struct VehicleState {
     pub wreck_tick: Option<u64>,
     /// `FaceUnits`: the point the hull front turns to while holding.
     pub face: Option<FxVec2>,
+    /// S7 casemate gunnery: the world yaw the gunner wants the hull turned
+    /// to (the target's bearing lies outside the gun's arc); the driver
+    /// pivots toward it while holding (after a followed path and a
+    /// `FaceUnits` turn), `crate::gunnery` sets and clears it.
+    pub lay_turn: Option<Fx>,
     /// S3b `SuppressUnits`: the line (both ends equal for a point) the MGs
     /// and, every `combat.suppress.tank_he_s`, the main gun's HE fire at
     /// while holding (`crate::gunnery`).
@@ -304,6 +309,7 @@ impl VehicleState {
             followers: Vec::new(),
             wreck_tick: None,
             face: None,
+            lay_turn: None,
             suppress: None,
             abandoned: None,
             abandon_cause: 0,
@@ -323,6 +329,7 @@ impl VehicleState {
     pub fn clear_orders(&mut self) {
         self.attack = None;
         self.face = None;
+        self.lay_turn = None;
         self.suppress = None;
         self.repairing = None;
         self.repair_progress = 0;
@@ -445,6 +452,14 @@ impl VehicleState {
                 !(Fx::ZERO..=map).contains(&f.x) || !(Fx::ZERO..=map).contains(&f.y)
             })
             || (self.wreck_tick.is_some() && self.face.is_some())
+            // S7: only a casemate gun asks for a hull turn, within ±π.
+            || self.lay_turn.is_some_and(|y| {
+                y.abs() > Fx::PI
+                    || s.vehicles
+                        .get(self.type_idx as usize)
+                        .is_none_or(|v| v.gun_arc_deg.is_none())
+            })
+            || ((self.wreck_tick.is_some() || self.abandoned.is_some()) && self.lay_turn.is_some())
             || self.suppress.is_some_and(|l| {
                 l.iter()
                     .any(|p| !(Fx::ZERO..=map).contains(&p.x) || !(Fx::ZERO..=map).contains(&p.y))
@@ -527,6 +542,13 @@ pub struct Geo {
     pub trunnion: FxVec3,
     pub muzzle_x: Fx,
     pub barrel_half: FxVec3,
+    /// S7: the armour boxes (frame, centre, half extents; hull frame from
+    /// the origin, turret frame from the pivot), `n_boxes` in use; box 0
+    /// is `hull_*`, a turret box equals `turret_*`.
+    pub boxes: [(Frame, FxVec3, FxVec3); MAX_ARMOUR_BOXES],
+    pub n_boxes: u8,
+    /// [`VehicleSetup::upper_box`].
+    pub upper: u8,
 }
 
 impl Geo {
@@ -548,6 +570,19 @@ impl Geo {
         let turret_r = pivot.xy().length()
             + FxVec2::new(turret_center.x.abs() + turret_half.x, turret_half.y).length();
         let gun_r = pivot.xy().length() + v3(v.main_gun().muzzle).xy().length();
+        // S7: every armour box (hull frame: its corner from the origin;
+        // turret frame: as the turret). The two S3 boxes add nothing new.
+        let mut boxes = [(Frame::Hull, FxVec3::ZERO, FxVec3::ZERO); MAX_ARMOUR_BOXES];
+        let mut box_r = Fx::ZERO;
+        for (k, b) in v.boxes.iter().take(MAX_ARMOUR_BOXES).enumerate() {
+            let (c, h) = (v3(b.bounds.center), v3(b.bounds.half));
+            boxes[k] = (b.frame, c, h);
+            let r = FxVec2::new(c.x.abs() + h.x, c.y.abs() + h.y).length();
+            box_r = box_r.max(match b.frame {
+                Frame::Hull => r,
+                Frame::Turret => pivot.xy().length() + r,
+            });
+        }
         Geo {
             hull_center,
             hull_half,
@@ -557,7 +592,7 @@ impl Geo {
             track_y,
             circle_r: hull_half.y + Fx::from_milli(drv.circle_pad_mm as i32),
             max_tilt: deg(drv.max_tilt_deg as i32),
-            reach: hull_r.max(turret_r).max(gun_r),
+            reach: hull_r.max(turret_r).max(gun_r).max(box_r),
             eye: v.eye_height.into(),
             trunnion: {
                 let mz = v3(v.main_gun().muzzle);
@@ -569,6 +604,9 @@ impl Geo {
                 let r: Fx = m.barrel_radius.into();
                 FxVec3::new(Fx::from(m.barrel_length).div_int(2), r, r)
             },
+            boxes,
+            n_boxes: v.boxes.len().clamp(1, MAX_ARMOUR_BOXES) as u8,
+            upper: v.upper_box() as u8,
         }
     }
 
@@ -645,10 +683,18 @@ pub struct VehicleFrame {
     /// Hull origin (on the ground under the hull's centre) and heading.
     pub origin: FxVec3,
     pub yaw: Fx,
+    /// Box 0 (the running-gear hull).
     pub hull: BoxFrame,
-    /// Turret pivot in world space.
+    /// The gun frame's pivot in world space (turret or, S7, casemate gun).
     pub pivot: FxVec3,
+    /// The turret box; S7: a zero box at the pivot for a casemate gun (the
+    /// gun frame: its axes are the gun's yaw).
     pub turret: BoxFrame,
+    /// S7: the armour boxes in world space (`n_boxes` in use; box 0 is
+    /// `hull`, a turret box equals `turret`), and the upper box's index.
+    pub boxes: [BoxFrame; MAX_ARMOUR_BOXES],
+    pub n_boxes: u8,
+    pub upper: u8,
     /// S3b: the main gun's exposed barrel, turning and elevating with the
     /// gun (zero half extents: none).
     pub barrel: BoxFrame,
@@ -665,11 +711,24 @@ impl VehicleFrame {
         ([c + a, c - a], geo.circle_r)
     }
 
-    /// Spotting check points: the turret top, then the hull top centre,
-    /// each `drop_mm` below the box top (the rules' `spot_drop_mm`).
+    /// The armour boxes in use.
+    #[inline]
+    pub fn armour_boxes(&self) -> &[BoxFrame] {
+        &self.boxes[..(self.n_boxes as usize).min(MAX_ARMOUR_BOXES)]
+    }
+
+    /// S7: the upper box (turret, casemate; S3's turret).
+    #[inline]
+    pub fn upper_box(&self) -> &BoxFrame {
+        &self.boxes[(self.upper as usize).min(MAX_ARMOUR_BOXES - 1)]
+    }
+
+    /// Spotting check points: the upper box's top (S3: the turret; S7: a
+    /// casemate), then the hull top centre, each `drop_mm` below the box
+    /// top (the rules' `spot_drop_mm`).
     pub fn spot_points(&self, drop_mm: u32) -> [FxVec3; 2] {
         let drop = Fx::from_milli(drop_mm as i32);
-        let t = &self.turret;
+        let t = self.upper_box();
         let h = &self.hull;
         [
             t.center + t.axes.z * (t.half.z - drop),
@@ -699,6 +758,21 @@ pub fn frame_of(
         z: turret_axes.z * cp - turret_axes.x * sp,
     };
     let trunnion = pivot + turret_axes.apply(geo.trunnion);
+    let mut boxes = [BoxFrame::default(); MAX_ARMOUR_BOXES];
+    for (b, &(frame, c, h)) in boxes.iter_mut().zip(&geo.boxes[..geo.n_boxes as usize]) {
+        *b = match frame {
+            Frame::Hull => BoxFrame {
+                center: origin + hull_axes.apply(c),
+                axes: hull_axes,
+                half: h,
+            },
+            Frame::Turret => BoxFrame {
+                center: pivot + turret_axes.apply(c),
+                axes: turret_axes,
+                half: h,
+            },
+        };
+    }
     VehicleFrame {
         id,
         owner,
@@ -723,6 +797,9 @@ pub fn frame_of(
             axes: gun_axes,
             half: geo.barrel_half,
         },
+        boxes,
+        n_boxes: geo.n_boxes,
+        upper: geo.upper,
         reach: geo.reach,
     }
 }
@@ -1569,6 +1646,7 @@ impl MatchState {
             vs.base_ticks = 0;
             vs.followers.clear();
             vs.face = None;
+            vs.lay_turn = None;
             vs.suppress = None;
             vs.reload = 0;
             vs.loaded = None;
@@ -1736,6 +1814,25 @@ struct Follow<'a> {
     tick: u64,
 }
 
+/// S7 casemate gunnery (`docs/slices/S7-casemate-td.md` 3): pivot the
+/// hull toward `vs.lay_turn` with the `FaceUnits` steer (proportional
+/// within `full_steer_deg`; the turn per tick never exceeds the error, so
+/// it does not overshoot), done within `face_done_deg`. No turn asked: no
+/// steer.
+fn lay_pivot(c: &Follow, yaw: Fx, vs: &mut VehicleState) -> (i8, i8) {
+    let Some(want) = vs.lay_turn else {
+        return (0, 0);
+    };
+    let err = (want - yaw).wrap_angle();
+    if err.abs() <= deg(c.drv.face_done_deg as i32) {
+        vs.lay_turn = None;
+        return (0, 0);
+    }
+    let full = deg(c.drv.full_steer_deg as i32);
+    let steer = (err.raw() as i64 * 127 / full.raw().max(1) as i64).clamp(-127, 127);
+    (0, steer as i8)
+}
+
 /// The RTS path follower: throttle and steer for this tick from the
 /// squad's path (see the module docs). Arrival and the stuck and blocked
 /// checks update the squad; re-paths go to `repath`.
@@ -1749,7 +1846,10 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         vs.progress_at = pos;
         vs.progress_ticks = 0;
         // `FaceUnits`: pivot until the front points at the spot.
-        let Some(f) = vs.face else { return (0, 0) };
+        let Some(f) = vs.face else {
+            // S7: else the casemate gunner's hull turn.
+            return lay_pivot(c, t.yaw, vs);
+        };
         let to = f - pos;
         let err = (Fx::atan2(to.y, to.x) - t.yaw).wrap_angle();
         if to.length_sq_raw() == 0 || err.abs() <= deg(c.drv.face_done_deg as i32) {
@@ -1764,11 +1864,12 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         vs.progress_at = pos;
         vs.progress_ticks = 0;
     }
-    // Attack-move: halt while the main gun has a target to fire at.
+    // Attack-move: halt while the main gun has a target to fire at (S7:
+    // and pivot a casemate toward it).
     if matches!(sq.order, Order::AttackMove { .. }) && halts_to_fire(vs, c.v) {
         vs.progress_at = pos;
         vs.progress_ticks = 0;
-        return (0, 0);
+        return lay_pivot(c, t.yaw, vs);
     }
     let d = c.drv;
     let reach_sq = FxVec2::from_int(d.waypoint_reach_m as i32, 0).length_sq_raw();

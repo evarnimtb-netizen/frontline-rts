@@ -390,6 +390,20 @@ pub struct PlayerState {
     pub intel: BTreeMap<u32, IntelCell>,
     /// S5b: fire-mission counters (report).
     pub fm: FmCounters,
+    /// S7: per-vehicle-type kill and knock-out counters (report).
+    pub s7: S7Counters,
+}
+
+/// S7 per-player counters (saved and hashed, read only by reports): by
+/// vehicle type (index into `MatchSetup::vehicles`, length the setup's
+/// vehicle count), the enemy men killed and the enemy vehicles knocked
+/// out by rounds, spall or bursts from a vehicle of that type (the
+/// projectile's shooter, [`kill_class::with_vehicle`]). Later fire deaths
+/// stay in `kills` only.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S7Counters {
+    pub kills_by_vehicle: Vec<u32>,
+    pub kos_by_vehicle: Vec<u32>,
 }
 
 /// S4 per-player counters (saved and hashed, read only by reports and
@@ -441,6 +455,39 @@ pub mod kill_class {
     /// Crew lost with a vehicle burnt out or knocked out by a setup tool.
     pub const OTHER: u8 = 10;
     pub const COUNT: usize = 11;
+
+    /// S7: a class value may carry the shooting vehicle's type in its high
+    /// nibble (`class | (type + 1) << 4`) so per-type kills need no new
+    /// plumbing. The low nibble is the class; [`base`] before indexing.
+    const BASE_MASK: u8 = 0x0F;
+    /// Most vehicle types a class can name (types past it go uncounted per
+    /// type; `kills_by` is unaffected).
+    pub const MAX_VEHICLE_TYPES: usize = 15;
+
+    /// The class proper.
+    #[inline]
+    pub const fn base(c: u8) -> u8 {
+        c & BASE_MASK
+    }
+
+    /// The shooting vehicle's type, if `c` carries one.
+    #[inline]
+    pub const fn vehicle(c: u8) -> Option<usize> {
+        match c >> 4 {
+            0 => None,
+            t => Some(t as usize - 1),
+        }
+    }
+
+    /// `c` carrying vehicle type `t` (unchanged past [`MAX_VEHICLE_TYPES`]).
+    #[inline]
+    pub const fn with_vehicle(c: u8, t: u16) -> u8 {
+        if (t as usize) < MAX_VEHICLE_TYPES {
+            base(c) | ((t as u8 + 1) << 4)
+        } else {
+            base(c)
+        }
+    }
     /// Report names, by class.
     pub const NAMES: [&str; COUNT] = [
         "rifle",
@@ -634,6 +681,10 @@ impl MatchState {
                 ammo: crate::supply::AmmoAccount::default(),
                 intel: BTreeMap::new(),
                 fm: FmCounters::default(),
+                s7: S7Counters {
+                    kills_by_vehicle: vec![0; setup.vehicles.len()],
+                    kos_by_vehicle: vec![0; setup.vehicles.len()],
+                },
             })
             .collect();
         let np = setup.players.len();
@@ -1842,6 +1893,11 @@ impl MatchState {
             .max()
             .unwrap_or(0);
         for pl in &self.players {
+            if pl.s7.kills_by_vehicle.len() != s.vehicles.len()
+                || pl.s7.kos_by_vehicle.len() != s.vehicles.len()
+            {
+                return Err("a player's per-vehicle counters have the wrong length");
+            }
             if pl.ready_at.len() != s.squad_types.len()
                 || pl
                     .ready_at

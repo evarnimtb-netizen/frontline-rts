@@ -614,6 +614,12 @@ lead_error_pct = 40
 # when the special round's chance is higher (%). 50: the spec's rule
 # (docs/slices/S3b-balance.md P1 (c)).
 special_below_pct = 50
+# S7 casemate gunnery (docs/slices/S7-casemate-td.md 3): a casemate gun lays
+# only within its traverse arc; when the target's bearing lies outside the
+# arc less this margin (deg), the driver pivots the hull toward it, then
+# the gunner lays within the arc. 3: a starting value (keeps the bearing a
+# little inside the arc so the gun does not sit on its stop).
+casemate_margin_deg = 3
 
 # S3b: what a hit on the ammo stowage does (docs/slices/S3b-balance.md P2).
 [vehicles.damage]

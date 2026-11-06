@@ -26,37 +26,37 @@ use crate::setup::{Fixed, ItemHeSetup};
 
 // ------------------------------------------------------------- enums --
 
-/// Armour zones (§7.4 names). A box face maps to the zone of its box and
-/// side; the bottom face of a box uses that box's top zone.
+/// S7 (`docs/slices/S7-casemate-td.md` 1): the four plate groups of one
+/// armour box. A box face maps to its group; both sides share `Side`, and
+/// the bottom face reads the `Top` plate (as in S3). A vehicle's **zone id**
+/// is `box index × 4 + group` and its name `<box id>_<group>`, so a vehicle
+/// whose boxes are `hull` then `turret` keeps the S3 ids and names
+/// (`hull_front` = 0 ... `turret_top` = 7; owner question S7-9).
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
-pub enum ArmourZone {
-    HullFront = 0,
-    HullSide = 1,
-    HullRear = 2,
-    HullTop = 3,
-    TurretFront = 4,
-    TurretSide = 5,
-    TurretRear = 6,
-    TurretTop = 7,
+pub enum PlateGroup {
+    Front = 0,
+    Side = 1,
+    Rear = 2,
+    Top = 3,
 }
 
-/// Number of [`ArmourZone`]s.
-pub const ARMOUR_ZONES: usize = 8;
+/// Plate groups per armour box.
+pub const PLATE_GROUPS: usize = 4;
+/// S7: most armour boxes per vehicle (box 0 is the running-gear hull).
+pub const MAX_ARMOUR_BOXES: usize = 4;
+/// Most zone ids per vehicle (`MAX_ARMOUR_BOXES × PLATE_GROUPS`).
+pub const MAX_ZONES: usize = MAX_ARMOUR_BOXES * PLATE_GROUPS;
 
-impl ArmourZone {
-    pub const ALL: [ArmourZone; ARMOUR_ZONES] = [
-        ArmourZone::HullFront,
-        ArmourZone::HullSide,
-        ArmourZone::HullRear,
-        ArmourZone::HullTop,
-        ArmourZone::TurretFront,
-        ArmourZone::TurretSide,
-        ArmourZone::TurretRear,
-        ArmourZone::TurretTop,
+impl PlateGroup {
+    pub const ALL: [PlateGroup; PLATE_GROUPS] = [
+        PlateGroup::Front,
+        PlateGroup::Side,
+        PlateGroup::Rear,
+        PlateGroup::Top,
     ];
 
     #[inline]
@@ -64,31 +64,39 @@ impl ArmourZone {
         self as usize
     }
 
-    /// The def key, e.g. `hull_front`.
+    /// The def key, e.g. `front`.
     pub const fn name(self) -> &'static str {
         match self {
-            ArmourZone::HullFront => "hull_front",
-            ArmourZone::HullSide => "hull_side",
-            ArmourZone::HullRear => "hull_rear",
-            ArmourZone::HullTop => "hull_top",
-            ArmourZone::TurretFront => "turret_front",
-            ArmourZone::TurretSide => "turret_side",
-            ArmourZone::TurretRear => "turret_rear",
-            ArmourZone::TurretTop => "turret_top",
+            PlateGroup::Front => "front",
+            PlateGroup::Side => "side",
+            PlateGroup::Rear => "rear",
+            PlateGroup::Top => "top",
         }
     }
 
-    pub fn from_name(s: &str) -> Option<ArmourZone> {
-        ArmourZone::ALL.into_iter().find(|z| z.name() == s)
+    pub fn from_name(s: &str) -> Option<PlateGroup> {
+        PlateGroup::ALL.into_iter().find(|z| z.name() == s)
     }
 
-    /// Top plates are flat in S3 (`slope_deg` must be 0).
+    /// Top plates are flat (`slope_deg` must be 0).
     pub const fn is_top(self) -> bool {
-        matches!(self, ArmourZone::HullTop | ArmourZone::TurretTop)
+        matches!(self, PlateGroup::Top)
     }
 
-    pub const fn is_turret(self) -> bool {
-        self as u8 >= ArmourZone::TurretFront as u8
+    /// The group of zone id `z`.
+    pub const fn of_zone(z: u8) -> PlateGroup {
+        match z % 4 {
+            0 => PlateGroup::Front,
+            1 => PlateGroup::Side,
+            2 => PlateGroup::Rear,
+            _ => PlateGroup::Top,
+        }
+    }
+
+    /// Zone id of this group on armour box `b`.
+    #[inline]
+    pub const fn zone(self, b: usize) -> u8 {
+        (b * PLATE_GROUPS + self as usize) as u8
     }
 }
 
@@ -235,6 +243,17 @@ pub enum MountKind {
     Coax = 1,
     /// Hull MG: fixed in the hull, within `arc_deg` of straight ahead.
     Hull = 2,
+    /// S7: the main gun in a casemate (no turret): it turns within
+    /// `traverse_deg` of the hull's front about its `pivot`; outside that
+    /// arc the driver turns the hull (`docs/slices/S7-casemate-td.md` 3).
+    Casemate = 3,
+}
+
+impl MountKind {
+    /// The main gun (exactly one per vehicle): `turret_main` or `casemate`.
+    pub const fn is_main(self) -> bool {
+        matches!(self, MountKind::TurretMain | MountKind::Casemate)
+    }
 }
 
 /// How a round defeats armour (§2.4).
@@ -275,13 +294,26 @@ impl AmmoMechanism {
     }
 }
 
-/// What a vehicle is for (S3: tanks only; tank destroyers are S3b).
+/// What a vehicle is for (S7: assault guns and tank destroyers; the AI's
+/// habits read it).
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum VehicleRole {
     Tank,
+    AssaultGun,
+    TankDestroyer,
+}
+
+impl VehicleRole {
+    pub const fn name(self) -> &'static str {
+        match self {
+            VehicleRole::Tank => "tank",
+            VehicleRole::AssaultGun => "assault_gun",
+            VehicleRole::TankDestroyer => "tank_destroyer",
+        }
+    }
 }
 
 #[derive(
@@ -374,10 +406,17 @@ pub struct VehicleDef {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
     pub mobility: MobilityDef,
+    /// The running gear (track band) of box 0.
     pub hull: HullDef,
-    pub turret: TurretDef,
-    pub armor: ArmorDef,
-    pub crew: CrewDef,
+    /// S7: the turret, if any (none: a casemate main gun).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turret: Option<TurretDef>,
+    /// S7: 1..=4 armour boxes, box 0 the running-gear hull (frame `hull`).
+    /// A turret needs exactly one `turret`-frame box.
+    pub boxes: Vec<ArmourBoxDef>,
+    /// S7: the crew seats (each role at most once; driver and gunner
+    /// required), in the snapshot's order.
+    pub seats: Vec<SeatDef>,
     pub weapons: Vec<MountDef>,
     pub components: Vec<ComponentDef>,
     /// Direct-control stations (§5.12), unused until M5.
@@ -492,27 +531,89 @@ impl PartBoxDef {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HullDef {
-    /// The hull box in the hull frame.
-    #[serde(rename = "box")]
-    pub bounds: BoxDef,
-    /// The lower part of each hull side, in percent of the side's height,
-    /// is running gear: AP and HEAT hits there damage that side's track.
+    /// The lower part of each side of box 0, in percent of the side's
+    /// height, is running gear: AP and HEAT hits there damage that side's
+    /// track.
     pub track_band_pct: u32,
     /// Extra armour a round meets going through the running gear.
     pub track_mm: u32,
 }
 
+/// S7: the turret (its armour is the one `turret`-frame box).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TurretDef {
     /// Turret pivot in the hull frame (on the hull roof).
     pub pivot: [i32; 3],
-    /// The turret box in the turret frame (origin at the pivot).
-    #[serde(rename = "box")]
-    pub bounds: BoxDef,
+    /// Traverse rate (deg/s; S7: a hand-traversed turret is slow).
     pub traverse_deg_s: u32,
     /// Main gun elevation rate (deg/s).
     pub elevate_deg_s: u32,
+}
+
+/// S7: one armour box: a box in its frame with its own four plates. A
+/// face listed in `open` has no plate (an open top).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ArmourBoxDef {
+    /// Unique per vehicle; zone names are `<id>_<group>`.
+    pub id: String,
+    /// `hull` or `turret` (the turret frame from the pivot).
+    #[serde(default)]
+    pub frame: Frame,
+    #[serde(rename = "box")]
+    pub bounds: BoxDef,
+    /// The plates; a group in `open` has none.
+    pub armor: BoxArmorDef,
+    /// Plate groups with no plate (S7: `["top"]` for an open-topped turret).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open: Vec<PlateGroup>,
+    /// Open boxes: the floor items rest on, cm in the box's frame (default:
+    /// the box bottom).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_cm: Option<i32>,
+}
+
+/// S7: an armour box's plates by group (`front`, `side`, `rear`, `top`;
+/// the bottom reads `top`). Every group not `open` needs one.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BoxArmorDef {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub front: Option<PlateDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<PlateDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rear: Option<PlateDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<PlateDef>,
+}
+
+impl BoxArmorDef {
+    pub fn get(&self, g: PlateGroup) -> Option<&PlateDef> {
+        match g {
+            PlateGroup::Front => self.front.as_ref(),
+            PlateGroup::Side => self.side.as_ref(),
+            PlateGroup::Rear => self.rear.as_ref(),
+            PlateGroup::Top => self.top.as_ref(),
+        }
+    }
+}
+
+/// S7: one crew seat.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SeatDef {
+    /// Unique per vehicle (the presenter's label, e.g. `asst_driver`).
+    pub id: String,
+    pub role: SeatRole,
+    /// The man's box in its frame.
+    #[serde(rename = "box")]
+    pub bounds: PartBoxDef,
+    /// The armour box he sits in (default `hull`, box 0): an open box
+    /// exposes him (S7 Build B).
+    #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+    pub in_box: Option<String>,
 }
 
 /// A length in millimetres with at most one decimal (`63.5`), kept as
@@ -567,82 +668,30 @@ pub struct PlateDef {
     pub material: ArmourMaterial,
 }
 
-/// Every [`ArmourZone`] once (missing or misspelled zones are errors).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ArmorDef {
-    pub hull_front: PlateDef,
-    pub hull_side: PlateDef,
-    pub hull_rear: PlateDef,
-    pub hull_top: PlateDef,
-    pub turret_front: PlateDef,
-    pub turret_side: PlateDef,
-    pub turret_rear: PlateDef,
-    pub turret_top: PlateDef,
-}
-
-impl ArmorDef {
-    pub fn get(&self, z: ArmourZone) -> &PlateDef {
-        match z {
-            ArmourZone::HullFront => &self.hull_front,
-            ArmourZone::HullSide => &self.hull_side,
-            ArmourZone::HullRear => &self.hull_rear,
-            ArmourZone::HullTop => &self.hull_top,
-            ArmourZone::TurretFront => &self.turret_front,
-            ArmourZone::TurretSide => &self.turret_side,
-            ArmourZone::TurretRear => &self.turret_rear,
-            ArmourZone::TurretTop => &self.turret_top,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CrewDef {
-    /// Seats in this vehicle, each role at most once; driver and gunner are
-    /// required.
-    pub seats: Vec<SeatRole>,
-    /// One box per seat.
-    pub boxes: CrewBoxesDef,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CrewBoxesDef {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub driver: Option<PartBoxDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gunner: Option<PartBoxDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub commander: Option<PartBoxDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub loader: Option<PartBoxDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub radio_mg: Option<PartBoxDef>,
-}
-
-impl CrewBoxesDef {
-    pub fn get(&self, r: SeatRole) -> Option<&PartBoxDef> {
-        match r {
-            SeatRole::Driver => self.driver.as_ref(),
-            SeatRole::Gunner => self.gunner.as_ref(),
-            SeatRole::Commander => self.commander.as_ref(),
-            SeatRole::Loader => self.loader.as_ref(),
-            SeatRole::RadioMg => self.radio_mg.as_ref(),
-        }
-    }
-}
-
 /// A weapon on the vehicle.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MountDef {
-    /// Weapon id: a `cannon` for `turret_main`, an `mg` for the others.
+    /// Weapon id: a `cannon` for `turret_main` and `casemate`, an `mg` for
+    /// the others.
     pub def: String,
     pub mount: MountKind,
     /// Muzzle point: from the turret pivot in the turret frame
-    /// (`turret_main`, `coax`), in the hull frame for `hull`.
+    /// (`turret_main`, `coax`), from the gun's `pivot` in the gun frame
+    /// (`casemate`), in the hull frame for `hull`.
     pub muzzle: [i32; 3],
+    /// `casemate` (S7): the gun's pivot in the hull frame, cm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pivot: Option<[i32; 3]>,
+    /// `casemate` (S7): the traverse arc `[min, max]` in degrees from the
+    /// hull's front, positive to the left (counter-clockwise from above).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traverse_deg: Option<[i32; 2]>,
+    /// `casemate` (S7): traverse and elevation rates, deg/s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traverse_deg_s: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevate_deg_s: Option<u32>,
     /// `turret_main`: gun depression and elevation limits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub elevation_deg: Option<[i32; 2]>,
@@ -874,12 +923,19 @@ fn check_box(out: &mut Vec<Issue>, path: &str, b: &BoxDef) {
     }
 }
 
-/// `part` must lie inside its frame's box (the hull or the turret).
-fn check_part(out: &mut Vec<Issue>, path: &str, part: &PartBoxDef, hull: &BoxDef, turret: &BoxDef) {
+/// `part` must lie inside its frame's bounds ([`VehicleDef::frame_bounds`]).
+fn check_part(out: &mut Vec<Issue>, path: &str, part: &PartBoxDef, frames: &[Option<BoxDef>; 2]) {
     check_box(out, path, &part.bounds());
-    let (frame, name) = match part.frame {
-        Frame::Hull => (hull, "hull"),
-        Frame::Turret => (turret, "turret"),
+    let name = match part.frame {
+        Frame::Hull => "hull",
+        Frame::Turret => "turret",
+    };
+    let Some(frame) = frames[part.frame as usize] else {
+        out.push(
+            Issue::new(path, format!("no {name} frame on this vehicle"))
+                .with_hint("set frame = \"hull\""),
+        );
+        return;
     };
     if !frame.contains(&part.bounds()) {
         let lo = |a| frame.lo(a);
@@ -888,7 +944,7 @@ fn check_part(out: &mut Vec<Issue>, path: &str, part: &PartBoxDef, hull: &BoxDef
             Issue::new(
                 path,
                 format!(
-                    "box {:?} ± {:?} lies outside its frame: the {name} box spans x {}..{}, y {}..{}, z {}..{} cm",
+                    "box {:?} ± {:?} lies outside its frame: the {name} boxes span x {}..{}, y {}..{}, z {}..{} cm",
                     part.center,
                     part.half,
                     lo(0),
@@ -900,7 +956,7 @@ fn check_part(out: &mut Vec<Issue>, path: &str, part: &PartBoxDef, hull: &BoxDef
                 ),
             )
             .with_hint(format!(
-                "move it inside the {name} box, or set frame = \"{}\" if it belongs to the {}",
+                "move it inside the {name} boxes, or set frame = \"{}\" if it belongs to the {}",
                 match part.frame {
                     Frame::Hull => "turret",
                     Frame::Turret => "hull",
@@ -1018,13 +1074,137 @@ impl VehicleDef {
             1000,
         );
 
-        let hull = &self.hull.bounds;
-        check_box(&mut out, "hull.box", hull);
+        // S7: armour boxes (box 0 the running-gear hull).
+        if self.boxes.is_empty() || self.boxes.len() > MAX_ARMOUR_BOXES {
+            out.push(Issue::new(
+                "boxes",
+                format!(
+                    "needs 1..={MAX_ARMOUR_BOXES} armour boxes, got {}",
+                    self.boxes.len()
+                ),
+            ));
+        }
+        let zero = BoxDef {
+            center: [0, 0, 100],
+            half: [100, 100, 50],
+        };
+        let hull = self.boxes.first().map_or(&zero, |b| &b.bounds);
+        if self.boxes.first().is_some_and(|b| b.frame != Frame::Hull) {
+            out.push(Issue::new(
+                "boxes[0].frame",
+                "box 0 is the running-gear hull: frame = \"hull\"",
+            ));
+        }
         if hull.lo(2) < 0 {
             out.push(Issue::new(
-                "hull.box",
+                "boxes[0].box",
                 "the hull box reaches below the ground (center.z < half.z)",
             ));
+        }
+        let turret_boxes = self
+            .boxes
+            .iter()
+            .filter(|b| b.frame == Frame::Turret)
+            .count();
+        let casemate = self.weapons.iter().any(|w| w.mount == MountKind::Casemate);
+        match (&self.turret, turret_boxes) {
+            (Some(_), 1) | (None, 0) => {}
+            (Some(_), n) => out.push(Issue::new(
+                "boxes",
+                format!("a [turret] needs exactly one frame = \"turret\" box, got {n}"),
+            )),
+            (None, _) => out.push(
+                Issue::new("boxes", "a frame = \"turret\" box needs a [turret]")
+                    .with_hint("add [turret] pivot, traverse_deg_s, elevate_deg_s"),
+            ),
+        }
+        if self.turret.is_some() && casemate {
+            out.push(Issue::new(
+                "turret",
+                "a vehicle has a turret or a casemate gun, not both",
+            ));
+        }
+        for (i, b) in self.boxes.iter().enumerate() {
+            let p = format!("boxes[{i}]");
+            check_id_word(&mut out, &format!("{p}.id"), &b.id);
+            if self.boxes[..i].iter().any(|o| o.id == b.id) {
+                out.push(Issue::new(
+                    format!("{p}.id"),
+                    format!("`{}` is used twice", b.id),
+                ));
+            }
+            check_box(&mut out, &format!("{p}.box"), &b.bounds);
+            for (k, g) in b.open.iter().enumerate() {
+                if b.open[..k].contains(g) {
+                    out.push(Issue::new(
+                        format!("{p}.open[{k}]"),
+                        format!("`{}` is listed twice", g.name()),
+                    ));
+                }
+            }
+            if i == 0 && !b.open.is_empty() {
+                out.push(Issue::new(
+                    format!("{p}.open"),
+                    "box 0 (the running-gear hull) has no open face",
+                ));
+            }
+            if let Some(f) = b.floor_cm {
+                if b.open.is_empty() {
+                    out.push(Issue::new(
+                        format!("{p}.floor_cm"),
+                        "only an open box has a floor",
+                    ));
+                }
+                range(
+                    &mut out,
+                    &format!("{p}.floor_cm"),
+                    f as i64,
+                    b.bounds.lo(2),
+                    b.bounds.hi(2),
+                );
+            }
+            for g in PlateGroup::ALL {
+                let path = format!("{p}.armor.{}", g.name());
+                let open = b.open.contains(&g);
+                let Some(pl) = b.armor.get(g) else {
+                    if !open {
+                        out.push(
+                            Issue::new(path, "missing plate")
+                                .with_hint(format!("{} = {{ thickness_mm = 20 }}", g.name())),
+                        );
+                    }
+                    continue;
+                };
+                if open {
+                    out.push(Issue::new(path, "an open face has no plate"));
+                    continue;
+                }
+                if !(10..=5000).contains(&pl.thickness_mm.0) {
+                    out.push(Issue::new(
+                        format!("{path}.thickness_mm"),
+                        format!("must be in 1..=500 mm, got {}", pl.thickness_mm),
+                    ));
+                }
+                if g.is_top() {
+                    if pl.slope_deg != 0 {
+                        out.push(
+                            Issue::new(
+                                format!("{path}.slope_deg"),
+                                format!("top plates are flat, got {}°", pl.slope_deg),
+                            )
+                            .with_hint("remove slope_deg"),
+                        );
+                    }
+                } else {
+                    range(
+                        &mut out,
+                        &format!("{path}.slope_deg"),
+                        pl.slope_deg as i64,
+                        0,
+                        80,
+                    );
+                }
+            }
         }
         range(
             &mut out,
@@ -1034,115 +1214,83 @@ impl VehicleDef {
             100,
         );
         range(&mut out, "hull.track_mm", self.hull.track_mm as i64, 0, 500);
-        let turret_box = &self.turret.bounds;
-        check_box(&mut out, "turret.box", turret_box);
-        // S3b Tune: a turret-frame part (a turret crewman, the breech) may
-        // reach below the turret box down to the hull floor: the turret
-        // basket, where the gunner's and loader's legs and the loader's
-        // standing place are, turning with the turret.
-        let basket = basket_def(turret_box, self.turret.pivot[2], hull);
-        let turret = &basket;
-        for (a, p) in self.turret.pivot.iter().enumerate() {
-            range(
-                &mut out,
-                &format!("turret.pivot[{a}]"),
-                *p as i64,
-                -2000,
-                2000,
-            );
-        }
-        if (0..2).any(|a| {
-            let p = self.turret.pivot[a] as i64;
-            p < hull.lo(a) || p > hull.hi(a)
-        }) {
-            out.push(Issue::new(
-                "turret.pivot",
-                "the pivot must lie over the hull box (x and y inside it)",
-            ));
-        }
-        range(
-            &mut out,
-            "turret.traverse_deg_s",
-            self.turret.traverse_deg_s as i64,
-            1,
-            360,
-        );
-        range(
-            &mut out,
-            "turret.elevate_deg_s",
-            self.turret.elevate_deg_s as i64,
-            1,
-            90,
-        );
-
-        for z in ArmourZone::ALL {
-            let p = self.armor.get(z);
-            let path = format!("armor.{}", z.name());
-            if !(10..=5000).contains(&p.thickness_mm.0) {
-                out.push(Issue::new(
-                    format!("{path}.thickness_mm"),
-                    format!("must be in 1..=500 mm, got {}", p.thickness_mm),
-                ));
-            }
-            if z.is_top() {
-                if p.slope_deg != 0 {
-                    out.push(
-                        Issue::new(
-                            format!("{path}.slope_deg"),
-                            format!("top plates are flat in S3, got {}°", p.slope_deg),
-                        )
-                        .with_hint("remove slope_deg"),
-                    );
-                }
-            } else {
+        if let Some(t) = &self.turret {
+            for (a, p) in t.pivot.iter().enumerate() {
                 range(
                     &mut out,
-                    &format!("{path}.slope_deg"),
-                    p.slope_deg as i64,
-                    0,
-                    80,
+                    &format!("turret.pivot[{a}]"),
+                    *p as i64,
+                    -2000,
+                    2000,
                 );
             }
+            if (0..2).any(|a| {
+                let p = t.pivot[a] as i64;
+                p < hull.lo(a) || p > hull.hi(a)
+            }) {
+                out.push(Issue::new(
+                    "turret.pivot",
+                    "the pivot must lie over the hull box (x and y inside it)",
+                ));
+            }
+            range(
+                &mut out,
+                "turret.traverse_deg_s",
+                t.traverse_deg_s as i64,
+                1,
+                360,
+            );
+            range(
+                &mut out,
+                "turret.elevate_deg_s",
+                t.elevate_deg_s as i64,
+                1,
+                90,
+            );
         }
+        // Where parts of each frame may lie (S3b Tune: the turret basket;
+        // S7: up to `EXPOSED_CM` above an open-topped box).
+        let frames = self.frame_bounds();
 
-        let seats = &self.crew.seats;
+        let roles: Vec<SeatRole> = self.seats.iter().map(|s| s.role).collect();
+        let seats = &roles;
         if seats.is_empty() || seats.len() > SEAT_ROLES {
             out.push(Issue::new(
-                "crew.seats",
+                "seats",
                 format!("needs 1..={SEAT_ROLES} seats, got {}", seats.len()),
             ));
         }
-        for (i, r) in seats.iter().enumerate() {
-            if seats[..i].contains(r) {
+        for (i, st) in self.seats.iter().enumerate() {
+            let p = format!("seats[{i}]");
+            if seats[..i].contains(&st.role) {
                 out.push(Issue::new(
-                    format!("crew.seats[{i}]"),
-                    format!("`{}` is listed twice", r.name()),
+                    format!("{p}.role"),
+                    format!("`{}` is listed twice", st.role.name()),
                 ));
             }
+            check_id_word(&mut out, &format!("{p}.id"), &st.id);
+            if self.seats[..i].iter().any(|o| o.id == st.id) {
+                out.push(Issue::new(
+                    format!("{p}.id"),
+                    format!("`{}` is used twice", st.id),
+                ));
+            }
+            if let Some(b) = &st.in_box
+                && !self.boxes.iter().any(|x| &x.id == b)
+            {
+                out.push(Issue::new(
+                    format!("{p}.in"),
+                    format!("no armour box `{b}`"),
+                ));
+            }
+            check_part(&mut out, &format!("{p}.box"), &st.bounds, &frames);
         }
         for need in [SeatRole::Driver, SeatRole::Gunner] {
             if !seats.contains(&need) {
                 out.push(
-                    Issue::new("crew.seats", format!("needs a `{}` seat", need.name()))
-                        .with_hint(format!("add \"{}\" to crew.seats", need.name())),
+                    Issue::new("seats", format!("needs a `{}` seat", need.name()))
+                        .with_hint(format!("[[seats]] role = \"{}\"", need.name())),
                 );
-            }
-        }
-        for r in SeatRole::ALL {
-            let path = format!("crew.boxes.{}", r.name());
-            match (seats.contains(&r), self.crew.boxes.get(r)) {
-                (true, None) => {
-                    out.push(Issue::new(path, "the seat has no box").with_hint(format!(
-                        "{} = {{ frame = \"hull\", center = [x, y, z], half = [x, y, z] }}",
-                        r.name()
-                    )))
-                }
-                (false, Some(_)) => out.push(Issue::new(
-                    path,
-                    format!("a box for a seat not in crew.seats (`{}`)", r.name()),
-                )),
-                (true, Some(b)) => check_part(&mut out, &path, b, hull, turret),
-                (false, None) => {}
             }
         }
 
@@ -1152,22 +1300,32 @@ impl VehicleDef {
                 format!("at most {MAX_MOUNTS} weapons, got {}", self.weapons.len()),
             ));
         }
-        for kind in [MountKind::TurretMain, MountKind::Coax, MountKind::Hull] {
+        let mains = self.weapons.iter().filter(|w| w.mount.is_main()).count();
+        if mains != 1 {
+            out.push(Issue::new(
+                "weapons",
+                format!("needs exactly one main gun (`turret_main` or `casemate`), got {mains}"),
+            ));
+        }
+        for kind in [MountKind::Coax, MountKind::Hull] {
             let n = self.weapons.iter().filter(|w| w.mount == kind).count();
-            if n > 1 || (kind == MountKind::TurretMain && n == 0) {
+            if n > 1 {
                 out.push(Issue::new(
                     "weapons",
-                    format!(
-                        "needs {} `{:?}` mount, got {n}",
-                        if kind == MountKind::TurretMain {
-                            "exactly one"
-                        } else {
-                            "at most one"
-                        },
-                        kind
-                    ),
+                    format!("needs at most one `{kind:?}` mount, got {n}"),
                 ));
             }
+        }
+        if self.turret.is_none()
+            && self
+                .weapons
+                .iter()
+                .any(|w| matches!(w.mount, MountKind::TurretMain | MountKind::Coax))
+        {
+            out.push(
+                Issue::new("weapons", "`turret_main` and `coax` mounts need a [turret]")
+                    .with_hint("mount = \"casemate\" with pivot and traverse_deg"),
+            );
         }
         for (i, w) in self.weapons.iter().enumerate() {
             let p = format!("weapons[{i}]");
@@ -1181,7 +1339,75 @@ impl VehicleDef {
                 );
             }
             match w.mount {
-                MountKind::TurretMain => {
+                MountKind::TurretMain | MountKind::Casemate => {
+                    let casemate = w.mount == MountKind::Casemate;
+                    let cfields = w.pivot.is_some()
+                        || w.traverse_deg.is_some()
+                        || w.traverse_deg_s.is_some()
+                        || w.elevate_deg_s.is_some();
+                    if !casemate && cfields {
+                        out.push(Issue::new(
+                            p.clone(),
+                            "`pivot`, `traverse_deg`, `traverse_deg_s` and `elevate_deg_s` are casemate fields",
+                        ));
+                    }
+                    if casemate {
+                        match w.pivot {
+                            None => out.push(
+                                Issue::new(format!("{p}.pivot"), "a casemate gun needs a pivot")
+                                    .with_hint("pivot = [110, -15, 165]"),
+                            ),
+                            Some(pv) => {
+                                if (0..2).any(|a| {
+                                    let c = pv[a] as i64;
+                                    c < hull.lo(a) || c > hull.hi(a)
+                                }) || !(0..=1000).contains(&pv[2])
+                                {
+                                    out.push(Issue::new(
+                                        format!("{p}.pivot"),
+                                        "the pivot must lie over the hull box, 0..=1000 cm up",
+                                    ));
+                                }
+                            }
+                        }
+                        match w.traverse_deg {
+                            None => out.push(
+                                Issue::new(
+                                    format!("{p}.traverse_deg"),
+                                    "a casemate gun needs its arc",
+                                )
+                                .with_hint("traverse_deg = [-10, 10]"),
+                            ),
+                            Some([lo, hi]) => {
+                                if !(-90..=0).contains(&lo) || !(0..=90).contains(&hi) || lo == hi {
+                                    out.push(Issue::new(
+                                        format!("{p}.traverse_deg"),
+                                        format!(
+                                            "must be [-90..=0, 0..=90] and not empty, got [{lo}, {hi}]"
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
+                        match w.traverse_deg_s {
+                            None => out.push(Issue::new(
+                                format!("{p}.traverse_deg_s"),
+                                "a casemate gun needs its traverse rate",
+                            )),
+                            Some(r) => {
+                                range(&mut out, &format!("{p}.traverse_deg_s"), r as i64, 1, 360)
+                            }
+                        }
+                        match w.elevate_deg_s {
+                            None => out.push(Issue::new(
+                                format!("{p}.elevate_deg_s"),
+                                "a casemate gun needs its elevation rate",
+                            )),
+                            Some(r) => {
+                                range(&mut out, &format!("{p}.elevate_deg_s"), r as i64, 1, 90)
+                            }
+                        }
+                    }
                     match w.elevation_deg {
                         None => out.push(
                             Issue::new(format!("{p}.elevation_deg"), "the main gun needs limits")
@@ -1250,6 +1476,16 @@ impl VehicleDef {
                     }
                 }
                 MountKind::Coax | MountKind::Hull => {
+                    if w.pivot.is_some()
+                        || w.traverse_deg.is_some()
+                        || w.traverse_deg_s.is_some()
+                        || w.elevate_deg_s.is_some()
+                    {
+                        out.push(Issue::new(
+                            p.clone(),
+                            "`pivot`, `traverse_deg`, `traverse_deg_s` and `elevate_deg_s` are casemate fields",
+                        ));
+                    }
                     if let Some(n) = w.rounds {
                         range(&mut out, &format!("{p}.rounds"), n as i64, 1, 20_000);
                     }
@@ -1293,11 +1529,21 @@ impl VehicleDef {
 
         for kind in ComponentKind::ALL {
             let n = self.components.iter().filter(|c| c.kind == kind).count();
-            if n != 1 {
+            // S7: a turret ring exactly with a turret.
+            let want = if kind == ComponentKind::TurretRing && self.turret.is_none() {
+                0
+            } else {
+                1
+            };
+            if n != want {
                 out.push(
                     Issue::new(
                         "components",
-                        format!("needs exactly one `{}` component, got {n}", kind.name()),
+                        format!(
+                            "needs {} `{}` component, got {n}",
+                            if want == 1 { "exactly one" } else { "no" },
+                            kind.name()
+                        ),
                     )
                     .with_hint(format!("[[components]] type = \"{}\" ...", kind.name())),
                 );
@@ -1306,7 +1552,7 @@ impl VehicleDef {
         // S3b Fix: the damage pass tests at most MAX_INNER_BOXES inner boxes
         // (seats first, then components); a box past the cap could never
         // be damaged.
-        let inner = self.crew.seats.len()
+        let inner = self.seats.len()
             + self
                 .components
                 .iter()
@@ -1356,10 +1602,10 @@ impl VehicleDef {
             }
             if c.kind.has_box() {
                 if let Some(b) = &c.bounds {
-                    check_part(&mut out, &format!("{p}.box"), b, hull, turret);
+                    check_part(&mut out, &format!("{p}.box"), b, &frames);
                 }
                 for (k, b) in c.boxes.iter().enumerate() {
-                    check_part(&mut out, &format!("{p}.boxes[{k}]"), b, hull, turret);
+                    check_part(&mut out, &format!("{p}.boxes[{k}]"), b, &frames);
                 }
             }
             let anchors = match c.kind {
@@ -1463,9 +1709,12 @@ impl VehicleDef {
                 100,
                 30_000,
             );
-            let b = match h.frame {
-                Frame::Hull => self.hull.bounds,
-                Frame::Turret => self.turret.bounds,
+            let Some(b) = frames[h.frame as usize] else {
+                out.push(Issue::new(
+                    format!("hatches[{i}].frame"),
+                    "no turret: use frame = \"hull\"",
+                ));
+                continue;
             };
             let on = (0..3).all(|a| {
                 let lo = b.center[a] as i64 - b.half[a] as i64;
@@ -1498,9 +1747,62 @@ impl VehicleDef {
 
     /// The main gun mount (validated defs have exactly one).
     pub fn main_gun(&self) -> Option<&MountDef> {
-        self.weapons
-            .iter()
-            .find(|w| w.mount == MountKind::TurretMain)
+        self.weapons.iter().find(|w| w.mount.is_main())
+    }
+
+    /// Where parts of each frame may lie, by `Frame as usize` (`None`: no
+    /// such frame). Hull: the bounds of every hull-frame box; turret: the
+    /// turret box extended down to the hull floor (S3b Tune, the basket).
+    /// S7: either extends `EXPOSED_CM` above an open-topped box of its
+    /// frame (an exposed crewman's head and shoulders).
+    pub fn frame_bounds(&self) -> [Option<BoxDef>; 2] {
+        let hull = self.boxes.first().map(|b| b.bounds);
+        let mut out = [None, None];
+        for (k, frame) in [Frame::Hull, Frame::Turret].into_iter().enumerate() {
+            let mut lo = [i64::MAX; 3];
+            let mut hi = [i64::MIN; 3];
+            for b in self.boxes.iter().filter(|b| b.frame == frame) {
+                let bb = match (frame, &self.turret, hull) {
+                    (Frame::Turret, Some(t), Some(h)) => basket_def(&b.bounds, t.pivot[2], &h),
+                    _ => b.bounds,
+                };
+                let up = if b.open.contains(&PlateGroup::Top) {
+                    EXPOSED_CM
+                } else {
+                    0
+                };
+                for a in 0..3 {
+                    lo[a] = lo[a].min(bb.lo(a));
+                    hi[a] = hi[a].max(bb.hi(a) + if a == 2 { up } else { 0 });
+                }
+            }
+            if lo[0] <= hi[0] {
+                out[k] = Some(BoxDef {
+                    center: [0, 1, 2].map(|a| (lo[a] + hi[a]).div_euclid(2) as i32),
+                    half: [0, 1, 2].map(|a| ((hi[a] - lo[a] + 1) / 2) as u32),
+                });
+            }
+        }
+        out
+    }
+}
+
+/// S7: how far above an open-topped box a part of its frame may reach
+/// (cm): an exposed crewman's head and shoulders.
+pub const EXPOSED_CM: i64 = 50;
+
+/// A short lowercase id word (`hull`, `asst_driver`).
+fn check_id_word(out: &mut Vec<Issue>, path: &str, id: &str) {
+    let ok = !id.is_empty()
+        && id.len() <= 24
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_');
+    if !ok {
+        out.push(Issue::new(
+            path,
+            format!("`{id}`: 1..=24 of a-z, 0-9 and _"),
+        ));
     }
 }
 
@@ -1759,7 +2061,7 @@ pub struct AnchorSetup {
     pub pos: FixedVec3,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlateSetup {
     /// Millimetres (from tenths, so exact for one decimal).
     pub thickness: Fixed,
@@ -1788,8 +2090,27 @@ pub struct MobilitySetup {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeatSetup {
+    /// S7: the def's seat id (a presenter label).
+    pub id: String,
     pub role: SeatRole,
     pub part: PartBoxSetup,
+    /// S7: index of the armour box he sits in.
+    pub in_box: u8,
+}
+
+/// S7: a resolved armour box (see [`ArmourBoxDef`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArmourBoxSetup {
+    pub id: String,
+    pub frame: Frame,
+    /// In its frame (turret frame from the pivot), metres.
+    pub bounds: BoxSetup,
+    /// By [`PlateGroup::index`]; an open group's plate is zero.
+    pub plates: [PlateSetup; PLATE_GROUPS],
+    /// Open groups, bit [`PlateGroup::index`].
+    pub open: u8,
+    /// The floor items rest on (frame z, m); the box bottom when closed.
+    pub floor: Fixed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1878,18 +2199,28 @@ pub struct VehicleSetup {
     pub spot_size_pct: u32,
     pub eye_height: Fixed,
     pub mobility: MobilitySetup,
+    /// Box 0's bounds (the running-gear hull, hull frame).
     pub hull: BoxSetup,
     pub track_band_pct: u32,
     pub track_mm: u32,
-    /// Turret pivot in the hull frame.
+    /// The gun frame's pivot in the hull frame: the turret's, or (S7) the
+    /// casemate gun's.
     pub turret_pivot: FixedVec3,
-    /// Turret box in the turret frame.
+    /// The turret box in the turret frame; S7: a zero box at the pivot for
+    /// a casemate gun (the gun frame keeps its role, no armour).
     pub turret: BoxSetup,
+    /// Traverse rate of the turret or the casemate gun (deg/s).
     pub traverse_deg_s: i32,
     /// Main gun elevation rate (deg/s).
     pub elevate_deg_s: i32,
-    /// By [`ArmourZone::index`].
-    pub armour: [PlateSetup; ARMOUR_ZONES],
+    /// S7: the vehicle has a turret (a turret ring, full traverse).
+    pub has_turret: bool,
+    /// S7: a casemate gun's arc `[min, max]` in integer degrees from the
+    /// hull's front, positive left; `None` with a turret.
+    pub gun_arc_deg: Option<[i32; 2]>,
+    /// S7: the armour boxes (1..=4; box 0 the running-gear hull). Zone id
+    /// = box index × 4 + [`PlateGroup::index`].
+    pub boxes: Vec<ArmourBoxSetup>,
     /// In the def's seat order.
     pub seats: Vec<SeatSetup>,
     /// Main gun first, then the def's order.
@@ -1914,6 +2245,55 @@ impl VehicleSetup {
     /// The main gun (validated setups have it first).
     pub fn main_gun(&self) -> &MountSetup {
         &self.mounts[0]
+    }
+
+    /// The plate of zone id `z` (`None`: no such box).
+    pub fn plate(&self, z: u8) -> Option<&PlateSetup> {
+        self.boxes
+            .get(z as usize / PLATE_GROUPS)
+            .map(|b| &b.plates[z as usize % PLATE_GROUPS])
+    }
+
+    /// Whether zone `z` is an open face (S7).
+    pub fn zone_open(&self, z: u8) -> bool {
+        self.boxes
+            .get(z as usize / PLATE_GROUPS)
+            .is_some_and(|b| b.open & (1 << (z as usize % PLATE_GROUPS)) != 0)
+    }
+
+    /// Zone count (`boxes × 4`).
+    pub fn zones(&self) -> usize {
+        self.boxes.len() * PLATE_GROUPS
+    }
+
+    /// Zone `z`'s name, `<box id>_<group>` (S7-9).
+    pub fn zone_name(&self, z: u8) -> String {
+        match self.boxes.get(z as usize / PLATE_GROUPS) {
+            Some(b) => format!("{}_{}", b.id, PlateGroup::of_zone(z).name()),
+            None => format!("zone{z}"),
+        }
+    }
+
+    /// The zone id named `name` (`hull_front`, `casemate_side`).
+    pub fn zone_by_name(&self, name: &str) -> Option<u8> {
+        (0..self.zones() as u8).find(|&z| self.zone_name(z) == name)
+    }
+
+    /// S7: the upper armour box: the turret box, else the box whose top is
+    /// highest (ties: the lower index), box 0 alone. Aim points and
+    /// spotting read it where S3 read the turret.
+    pub fn upper_box(&self) -> usize {
+        if let Some(k) = self.boxes.iter().position(|b| b.frame == Frame::Turret) {
+            return k;
+        }
+        let top = |b: &ArmourBoxSetup| b.bounds.center.z.0 as i64 + b.bounds.half.z.0 as i64;
+        let mut best = 0;
+        for (k, b) in self.boxes.iter().enumerate().skip(1) {
+            if best == 0 || top(b) > top(&self.boxes[best]) {
+                best = k;
+            }
+        }
+        best
     }
 
     /// The seat for `role`, if this vehicle has one.
@@ -2038,9 +2418,10 @@ pub(crate) fn lower_vehicle(
     ammo_def: impl Fn(&str) -> Option<AmmoMechanism>,
 ) -> VehicleSetup {
     let m = &v.mobility;
+    let main = v.main_gun();
     let mut mounts: Vec<&MountDef> = v.weapons.iter().collect();
     // Main gun first; the rest keep the def's order.
-    mounts.sort_by_key(|w| w.mount != MountKind::TurretMain);
+    mounts.sort_by_key(|w| !w.mount.is_main());
     let mount = |w: &MountDef| {
         // Penetrators in the def's order, the HE round second (S3b: the
         // standard penetrator, HE, then a special penetrator).
@@ -2081,11 +2462,17 @@ pub(crate) fn lower_vehicle(
         }
     };
     let component = |k: ComponentKind| {
-        let c = v
-            .components
-            .iter()
-            .find(|c| c.kind == k)
-            .expect("validated vehicles have every component");
+        let Some(c) = v.components.iter().find(|c| c.kind == k) else {
+            // S7: no turret ring without a turret: 0 HP, no box; the sim
+            // never reads it.
+            return ComponentSetup {
+                kind: k,
+                hp: 0,
+                parts: Vec::new(),
+                anchors: Vec::new(),
+                repair: None,
+            };
+        };
         ComponentSetup {
             kind: k,
             hp: c.hp,
@@ -2135,30 +2522,78 @@ pub(crate) fn lower_vehicle(
             unbog_ticks: [m.unbog_s[0] * hz, m.unbog_s[1] * hz],
             moving_spread_pct: m.moving_spread_pct,
         },
-        hull: (&v.hull.bounds).into(),
+        hull: v
+            .boxes
+            .first()
+            .map_or_else(BoxSetup::default, |b| (&b.bounds).into()),
         track_band_pct: v.hull.track_band_pct,
         track_mm: v.hull.track_mm,
-        turret_pivot: FixedVec3::from_cm(v.turret.pivot),
-        turret: (&v.turret.bounds).into(),
-        traverse_deg_s: v.turret.traverse_deg_s as i32,
-        elevate_deg_s: v.turret.elevate_deg_s as i32,
-        armour: ArmourZone::ALL.map(|z| {
-            let p = v.armor.get(z);
-            PlateSetup {
-                thickness: Fixed::from_ratio(p.thickness_mm.0 as i64, 10),
-                slope_deg: p.slope_deg as i32,
-                material: p.material,
-            }
+        turret_pivot: FixedVec3::from_cm(match (&v.turret, main) {
+            (Some(t), _) => t.pivot,
+            (None, Some(m)) => m.pivot.unwrap_or([0, 0, 0]),
+            (None, None) => [0, 0, 0],
         }),
+        turret: v
+            .boxes
+            .iter()
+            .find(|b| b.frame == Frame::Turret)
+            .map_or_else(BoxSetup::default, |b| (&b.bounds).into()),
+        traverse_deg_s: match (&v.turret, main) {
+            (Some(t), _) => t.traverse_deg_s as i32,
+            (None, Some(m)) => m.traverse_deg_s.unwrap_or(1) as i32,
+            (None, None) => 1,
+        },
+        elevate_deg_s: match (&v.turret, main) {
+            (Some(t), _) => t.elevate_deg_s as i32,
+            (None, Some(m)) => m.elevate_deg_s.unwrap_or(1) as i32,
+            (None, None) => 1,
+        },
+        has_turret: v.turret.is_some(),
+        gun_arc_deg: match (&v.turret, main) {
+            (None, Some(m)) => m.traverse_deg,
+            _ => None,
+        },
+        boxes: v
+            .boxes
+            .iter()
+            .map(|b| {
+                let open = b.open.iter().fold(0u8, |m, g| m | (1 << g.index()));
+                ArmourBoxSetup {
+                    id: b.id.clone(),
+                    frame: b.frame,
+                    bounds: (&b.bounds).into(),
+                    plates: PlateGroup::ALL.map(|g| {
+                        b.armor
+                            .get(g)
+                            .filter(|_| open & (1 << g.index()) == 0)
+                            .map_or(PlateSetup::default(), |p| PlateSetup {
+                                thickness: Fixed::from_ratio(p.thickness_mm.0 as i64, 10),
+                                slope_deg: p.slope_deg as i32,
+                                material: p.material,
+                            })
+                    }),
+                    open,
+                    floor: Fixed::from_ratio(
+                        b.floor_cm
+                            .unwrap_or(b.bounds.center[2] - b.bounds.half[2] as i32)
+                            as i64,
+                        100,
+                    ),
+                }
+            })
+            .collect(),
         seats: v
-            .crew
             .seats
             .iter()
-            .filter_map(|&r| {
-                v.crew.boxes.get(r).map(|b| SeatSetup {
-                    role: r,
-                    part: b.into(),
-                })
+            .map(|st| SeatSetup {
+                id: st.id.clone(),
+                role: st.role,
+                part: (&st.bounds).into(),
+                in_box: st
+                    .in_box
+                    .as_ref()
+                    .and_then(|b| v.boxes.iter().position(|x| &x.id == b))
+                    .unwrap_or(0) as u8,
             })
             .collect(),
         mounts: mounts.into_iter().map(mount).collect(),
@@ -2179,7 +2614,7 @@ pub(crate) fn lower_vehicle(
                 seats: h
                     .seats
                     .iter()
-                    .filter_map(|r| v.crew.seats.iter().position(|x| x == r))
+                    .filter_map(|r| v.seats.iter().position(|x| x.role == *r))
                     .map(|k| k as u8)
                     .collect(),
                 frame: h.frame,
@@ -2216,6 +2651,37 @@ fn basket_def(turret: &BoxDef, pivot_z: i32, hull: &BoxDef) -> BoxDef {
             ((lo + hi).div_euclid(2)) as i32,
         ],
         half: [turret.half[0], turret.half[1], ((hi - lo + 1) / 2) as u32],
+    }
+}
+
+/// The bounds of every hull-frame armour box (S7: a part may lie in any).
+fn hull_bounds(v: &VehicleSetup) -> BoxSetup {
+    let mut lo = [i64::MAX; 3];
+    let mut hi = [i64::MIN; 3];
+    for b in v.boxes.iter().filter(|b| b.frame == Frame::Hull) {
+        let c = [b.bounds.center.x, b.bounds.center.y, b.bounds.center.z];
+        let h = [b.bounds.half.x, b.bounds.half.y, b.bounds.half.z];
+        for a in 0..3 {
+            lo[a] = lo[a].min(c[a].0 as i64 - h[a].0 as i64);
+            hi[a] = hi[a].max(c[a].0 as i64 + h[a].0 as i64);
+        }
+    }
+    if lo[0] > hi[0] {
+        return v.hull;
+    }
+    let ctr = |a: usize| Fixed(((lo[a] + hi[a]).div_euclid(2)) as i32);
+    let half = |a: usize| Fixed(((hi[a] - lo[a] + 1) / 2) as i32);
+    BoxSetup {
+        center: FixedVec3 {
+            x: ctr(0),
+            y: ctr(1),
+            z: ctr(2),
+        },
+        half: FixedVec3 {
+            x: half(0),
+            y: half(1),
+            z: half(2),
+        },
     }
 }
 
@@ -2339,8 +2805,18 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.values: out of range");
     }
+    let casemate = v.mounts.first().map(|m| m.kind) == Some(MountKind::Casemate);
+    let turret_ok = if v.has_turret {
+        box_ok(&v.turret) && !casemate && v.gun_arc_deg.is_none()
+    } else {
+        v.turret == BoxSetup::default()
+            && casemate
+            && v.gun_arc_deg.is_some_and(|[lo, hi]| {
+                (-90..=0).contains(&lo) && (0..=90).contains(&hi) && lo < hi
+            })
+    };
     if !box_ok(&v.hull)
-        || !box_ok(&v.turret)
+        || !turret_ok
         || v.track_band_pct > 100
         || v.track_mm > 500
         || !(1..=360).contains(&v.traverse_deg_s)
@@ -2350,21 +2826,69 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.boxes: out of range");
     }
-    for (z, p) in ArmourZone::ALL.iter().zip(&v.armour) {
-        let slope_ok = if z.is_top() {
-            p.slope_deg == 0
-        } else {
-            (0..=80).contains(&p.slope_deg)
-        };
-        if !(p.thickness >= Fixed::from_int(1) && p.thickness <= Fixed::from_int(500)) || !slope_ok
+    // S7: armour boxes.
+    let turret_boxes = v.boxes.iter().filter(|b| b.frame == Frame::Turret).count();
+    if v.boxes.is_empty()
+        || v.boxes.len() > MAX_ARMOUR_BOXES
+        || v.boxes[0].frame != Frame::Hull
+        || v.boxes[0].bounds != v.hull
+        || v.boxes[0].open != 0
+        || turret_boxes != v.has_turret as usize
+        || v.boxes
+            .iter()
+            .any(|b| b.frame == Frame::Turret && b.bounds != v.turret)
+    {
+        return Some("vehicles.boxes: count, frames or bounds wrong");
+    }
+    for b in &v.boxes {
+        let lo = b.bounds.center.z.0 as i64 - b.bounds.half.z.0 as i64;
+        let hi = b.bounds.center.z.0 as i64 + b.bounds.half.z.0 as i64;
+        if !box_ok(&b.bounds)
+            || b.open >= 1 << PLATE_GROUPS
+            || b.id.is_empty()
+            || b.id.len() > 24
+            || !(lo..=hi).contains(&(b.floor.0 as i64))
         {
-            return Some("vehicles.armour: plate out of range");
+            return Some("vehicles.boxes: box, open faces or floor out of range");
+        }
+        for (g, p) in PlateGroup::ALL.iter().zip(&b.plates) {
+            let open = b.open & (1 << g.index()) != 0;
+            let slope_ok = if g.is_top() {
+                p.slope_deg == 0
+            } else {
+                (0..=80).contains(&p.slope_deg)
+            };
+            let thick_ok = if open {
+                p.thickness == Fixed::ZERO && p.slope_deg == 0
+            } else {
+                p.thickness >= Fixed::from_int(1) && p.thickness <= Fixed::from_int(500)
+            };
+            if !thick_ok || !slope_ok {
+                return Some("vehicles.armour: plate out of range");
+            }
         }
     }
-    let basket = basket(v);
+    let basket = if v.has_turret { basket(v) } else { v.turret };
+    // Parts lie within their frame's bounds: hull frame, every hull-frame
+    // box; S7: plus EXPOSED_CM above an open-topped box.
+    let exposed = |f: Frame| {
+        v.boxes
+            .iter()
+            .any(|b| b.frame == f && b.open & (1 << PlateGroup::Top.index()) != 0)
+    };
+    let grow = |mut b: BoxSetup, f: Frame| {
+        if exposed(f) {
+            let e = Fixed::from_ratio(EXPOSED_CM, 100);
+            b.half.z = Fixed(b.half.z.0 + e.0 / 2);
+            b.center.z = Fixed(b.center.z.0 + e.0 / 2);
+        }
+        b
+    };
+    let hull_frame = grow(hull_bounds(v), Frame::Hull);
+    let turret_frame = grow(basket, Frame::Turret);
     let frame = |f: Frame| match f {
-        Frame::Hull => &v.hull,
-        Frame::Turret => &basket,
+        Frame::Hull => &hull_frame,
+        Frame::Turret => &turret_frame,
     };
     if v.seats.is_empty()
         || v.seats.len() > SEAT_ROLES
@@ -2374,9 +2898,14 @@ pub(crate) fn check_vehicle(
             .any(|(i, s)| v.seats[..i].iter().any(|o| o.role == s.role))
         || v.seat(SeatRole::Driver).is_none()
         || v.seat(SeatRole::Gunner).is_none()
-        || v.seats
-            .iter()
-            .any(|s| !box_ok(&s.part.bounds) || !inside(frame(s.part.frame), &s.part.bounds))
+        || v.seats.iter().any(|s| {
+            !box_ok(&s.part.bounds)
+                || (s.part.frame == Frame::Turret && !v.has_turret)
+                || !inside(frame(s.part.frame), &s.part.bounds)
+                || s.in_box as usize >= v.boxes.len()
+                || s.id.is_empty()
+                || s.id.len() > 24
+        })
     {
         return Some("vehicles.seats: missing, repeated or outside the frame");
     }
@@ -2387,8 +2916,10 @@ pub(crate) fn check_vehicle(
         let Some(ws) = weapons.get(w.weapon as usize) else {
             return Some("vehicles.mounts.weapon: index out of range");
         };
-        let main = w.kind == MountKind::TurretMain;
+        let main = w.kind.is_main();
         if main != (i == 0)
+            || (w.kind == MountKind::TurretMain && !v.has_turret)
+            || (w.kind == MountKind::Coax && !v.has_turret)
             || (main && ws.class != WeaponClass::Cannon)
             || (!main && ws.class != WeaponClass::Mg)
             || v.seat(w.seat).is_none()
@@ -2440,6 +2971,13 @@ pub(crate) fn check_vehicle(
         return Some("vehicles.components: wrong count");
     }
     for (k, c) in ComponentKind::ALL.iter().zip(&v.components) {
+        // S7: no turret ring without a turret (0 HP, nothing else).
+        if *k == ComponentKind::TurretRing && !v.has_turret {
+            if c.kind != *k || c.hp != 0 || !c.parts.is_empty() || c.repair.is_some() {
+                return Some("vehicles.components: a turret ring without a turret");
+            }
+            continue;
+        }
         let anchors_ok = match k {
             k if k.is_track() => (1..=MAX_ANCHORS).contains(&c.anchors.len()),
             _ => c.anchors.is_empty(),

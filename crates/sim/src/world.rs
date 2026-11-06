@@ -425,7 +425,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// match state). One bump for the whole slice. 16: S6b (two AI
 /// fire-mission counters; `[ai.mortar] map_fire_max_miss_m` and
 /// `[ai.supply] mortars_per_bearers` in the setup).
-const SAVE_VERSION: u32 = 16;
+/// 17: S7 (vehicle armour boxes, seat ids, turret flag and casemate arc in
+/// the setup; the casemate hull turn `VehicleState::lay_turn`; per-type
+/// vehicle kill counters). One bump for the whole slice.
+const SAVE_VERSION: u32 = 17;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2563,6 +2566,44 @@ mod tests {
         assert_eq!(g.players()[0].tickets, 0);
     }
 
+    /// S7: the per-vehicle-type counters are saved, loaded, hashed (each
+    /// field) and their lengths checked on load.
+    #[test]
+    fn s7_player_counters_are_saved_hashed_and_checked() {
+        let w = match_world();
+        let base = w.full_state_hash();
+        let n = w.game().unwrap().setup().vehicles.len();
+        assert!(n >= 2);
+        let pl = &w.game().unwrap().players()[1].s7;
+        assert_eq!((pl.kills_by_vehicle.len(), pl.kos_by_vehicle.len()), (n, n));
+        let edits: [fn(&mut SimState); 2] = [
+            |s| s.game.as_mut().unwrap().players[1].s7.kills_by_vehicle[1] += 1,
+            |s| s.game.as_mut().unwrap().players[0].s7.kos_by_vehicle[0] += 1,
+        ];
+        for edit in edits {
+            let bytes = save_edited(&w, edit);
+            let w2 = World::load(&bytes, 1).unwrap();
+            assert_ne!(w2.full_state_hash(), base);
+            let w3 = World::load(&w2.save(), 2).unwrap();
+            assert_eq!(w3.full_state_hash(), w2.full_state_hash());
+            assert_eq!(w3.state(), w2.state());
+        }
+        let bad: [fn(&mut SimState); 2] = [
+            |s| {
+                s.game.as_mut().unwrap().players[1]
+                    .s7
+                    .kills_by_vehicle
+                    .push(0)
+            },
+            |s| {
+                s.game.as_mut().unwrap().players[0].s7.kos_by_vehicle.pop();
+            },
+        ];
+        for edit in bad {
+            assert!(World::load(&save_edited(&w, edit), 1).is_err());
+        }
+    }
+
     #[test]
     fn match_rules_and_ai_state_are_hashed() {
         let w = match_world();
@@ -3428,6 +3469,7 @@ mod tests {
             followers: _,
             wreck_tick: _,
             face: _,
+            lay_turn: _,
             suppress: _,
             abandoned: _,
             abandon_cause: _,
@@ -3992,10 +4034,7 @@ mod tests {
         let plate: Vec<_> = evs.iter().filter(|e| matches!(e.kind, 1..=3)).collect();
         assert_eq!(plate.len(), 1, "{evs:?}");
         assert_eq!(plate[0].vehicle, v.0);
-        assert_eq!(
-            plate[0].zone,
-            frontline_content::ArmourZone::HullFront as u8
-        );
+        assert_eq!(plate[0].zone, 0, "hull_front");
         // Small arms stop on it, silently.
         let stopped = w.stats().rounds_stopped;
         shoot(&mut w, None, fx3(530, 500, 1100), fx3(-800, 0, 0));
@@ -4184,7 +4223,7 @@ mod tests {
             "hull hidden"
         );
         let part = crate::gunnery::aim_choice(from, &f, w.terrain());
-        assert_eq!(part, Some(crate::armour::BoxPart::Turret));
+        assert_eq!(part, Some(crate::armour::BoxPart(1)));
         // A round aimed level at the hull's upper edge over the crest top
         // (the coarse 1 m test can step over it; the re-test cannot).
         let top = w.terrain().height_at(FxVec2::from_int(508, 500))

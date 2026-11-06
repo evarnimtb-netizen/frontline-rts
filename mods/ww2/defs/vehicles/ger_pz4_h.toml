@@ -57,32 +57,44 @@ unbog_s = [20, 40]
 moving_spread_pct = 400
 
 [hull]
-box = { center = [0, 0, 108], half = [290, 140, 68] }
+# S7: the hull box and its plates moved to [[boxes]] "hull" (box 0).
 # The lower 45 % of each side is running gear (track hits, +20 mm).
 track_band_pct = 45
 track_mm = 20
 
 [turret]
 pivot = [20, 0, 176]
-box = { center = [0, 0, 45], half = [115, 95, 45] }
 traverse_deg_s = 14
 # Main gun elevation (deg/s). 6: the S3 code value (gunnery.rs
 # ELEVATE_DEG_S, moved to data in S3b); no sourced figure yet, a starting
 # value for tuning.
 elevate_deg_s = 6
 
-[armor]
-hull_front   = { thickness_mm = 80, slope_deg = 10, material = "rha" }
-hull_side    = { thickness_mm = 30, slope_deg = 0,  material = "rha" }
-hull_rear    = { thickness_mm = 20, slope_deg = 10, material = "rha" }
-hull_top     = { thickness_mm = 12, material = "rha" }
-turret_front = { thickness_mm = 50, slope_deg = 10, material = "rha" }
-turret_side  = { thickness_mm = 30, slope_deg = 25, material = "rha" }
-turret_rear  = { thickness_mm = 30, slope_deg = 15, material = "rha" }
-turret_top   = { thickness_mm = 16, material = "rha" }
+# S7 (docs/slices/S7-casemate-td.md 1): armour boxes, box 0 the running-gear
+# hull, then the turret; zone ids hull_front = 0 ... turret_top = 7 as in S3.
+# Each box: its own front / side / rear / top plates (the bottom reads top).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 108], half = [290, 140, 68] }
+[boxes.armor]
+front = { thickness_mm = 80, slope_deg = 10 }
+side = { thickness_mm = 30, slope_deg = 0 }
+rear = { thickness_mm = 20, slope_deg = 10 }
+top = { thickness_mm = 12 }
 
-[crew]
-seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 45], half = [115, 95, 45] }
+[boxes.armor]
+front = { thickness_mm = 50, slope_deg = 10 }
+side = { thickness_mm = 30, slope_deg = 25 }
+rear = { thickness_mm = 30, slope_deg = 15 }
+top = { thickness_mm = 16 }
+
+# S7: crew seats in the snapshot order (id, role, box, the armour box
+# they sit in).
 
 # S3b (crew layout): in our box model the hull's front face is the nose;
 # the real driver's front plate (Fahrerfrontplatte) sits about 0.6 m
@@ -99,12 +111,35 @@ seats = ["driver", "gunner", "commander", "loader", "radio_mg"]
 # commander sits high under his cupola (z -40..85). Before, a hull hit at
 # the height of the visible-mass centre passed under all three. Source:
 # Jentz & Doyle, Panzer Tracts 4-3 (turret layout); approximate.
-[crew.boxes]
-driver    = { frame = "hull",   center = [190, 60, 115], half = [35, 30, 40] }
-radio_mg  = { frame = "hull",   center = [190, -60, 115], half = [35, 30, 40] }
-gunner    = { frame = "turret", center = [10, 45, 0],    half = [30, 25, 70] }
-loader    = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
-commander = { frame = "turret", center = [-70, 0, 22],   half = [30, 30, 63] }
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [190, 60, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [10, 45, 0], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-70, 0, 22], half = [30, 30, 63] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
+in = "turret"
+
+[[seats]]
+id = "radio_mg"
+role = "radio_mg"
+box = { frame = "hull", center = [190, -60, 115], half = [35, 30, 40] }
+in = "hull"
 
 [[weapons]]
 def = "ww2:kwk40_l48"

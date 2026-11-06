@@ -166,7 +166,7 @@ fn the_gunner_aims_at_the_centre_of_visible_mass() {
     // sits about 1.4 m up, between the hull centre (1.08 m) and the
     // turret centre (2.21 m), so most shots strike the upper hull front.
     let (part, c, f) = look(&w, sh, pz);
-    assert_eq!(part, Some(BoxPart::Hull));
+    assert_eq!(part, Some(BoxPart::HULL));
     let h = c.z - f.origin.z;
     assert!(
         h > Fx::from_milli(1350) && h < Fx::from_milli(1500),
@@ -174,12 +174,12 @@ fn the_gunner_aims_at_the_centre_of_visible_mass() {
     );
     assert!((c.xy() - f.hull.center.xy()).length() < Fx::from_milli(300));
     let (part, _, _) = look(&w, pz, sh);
-    assert_eq!(part, Some(BoxPart::Hull));
+    assert_eq!(part, Some(BoxPart::HULL));
     // Angled 30°: still the centre of mass (the angle changes the weights
     // a little, not the rule).
     w.place_vehicle(pz, xy(400, 500), deg(30));
     let (part, c, f) = look(&w, sh, pz);
-    assert_eq!(part, Some(BoxPart::Hull));
+    assert_eq!(part, Some(BoxPart::HULL));
     assert!(c.z - f.origin.z > Fx::from_milli(1300));
     // The gunnery pass itself: the Sherman's gunner aims at the centre of
     // mass (the Panzer IV's gun broken, so it does not shoot first).

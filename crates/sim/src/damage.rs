@@ -381,7 +381,7 @@ impl MatchState {
             };
             *stat += 1;
             let ev = ArmourEv::new(kind, id, owner, attacker)
-                .zone(hit.zone.index() as u8)
+                .zone(hit.zone)
                 .ammo(e.ammo)
                 .at(hit.point);
             self.push_event(events, ev);
@@ -435,7 +435,7 @@ impl MatchState {
         let v = &setup.vehicles[vt];
         let plates = &self.armour.vehicles[vt];
         let dir = vel.normalize_or_zero();
-        if hit.part == armour::BoxPart::Barrel {
+        if hit.part == armour::BoxPart::BARREL {
             // S3b: the barrel has no plate. A main-gun round or rocket
             // striking it damages the gun; a mortar shell only bursts.
             out.result = PenResult::NonPenetration;
@@ -471,7 +471,7 @@ impl MatchState {
                 player: e.player,
                 ammo: e.ammo,
                 part: hit.part,
-                zone: hit.zone.index() as u8,
+                zone: hit.zone,
                 track_band: band,
                 pen0,
                 c,
@@ -782,7 +782,13 @@ impl MatchState {
             && by != Some(owner.0)
         {
             p.kills += n;
-            p.kills_by[class as usize] += n;
+            p.kills_by[kill_class::base(class) as usize] += n;
+            // S7: per shooting vehicle type.
+            if let Some(k) =
+                kill_class::vehicle(class).and_then(|t| p.s7.kills_by_vehicle.get_mut(t))
+            {
+                *k += n;
+            }
         }
     }
 
@@ -832,6 +838,17 @@ impl MatchState {
         let squad = ctx.ents.squad[i];
         let pos = ctx.ents.transform[i].pos;
         self.crew_lost(owner, by, class, alive);
+        // S7: the knock-out per shooting vehicle type (the round that did
+        // it; a later fire carries none).
+        if let (Some(t), Some(b)) = (kill_class::vehicle(class), by)
+            && b != owner.0
+            && let Some(k) = self
+                .players
+                .get_mut(b as usize)
+                .and_then(|p| p.s7.kos_by_vehicle.get_mut(t))
+        {
+            *k += 1;
+        }
         stats.knockouts += 1;
         // Followers stop where they are.
         for m in followers {

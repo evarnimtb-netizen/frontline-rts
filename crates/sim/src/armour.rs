@@ -6,8 +6,9 @@
 //! the golden tests all call these same functions; there is no second copy
 //! of the math.
 //!
-//! **Plates.** A vehicle is a hull box and a turret box (`VehicleSetup`).
-//! Each box face is a plate of its zone ([`Face::zone`]); the face is
+//! **Plates.** A vehicle is 1..=4 armour boxes (S7; S3 had a hull and a
+//! turret box). Each box face is a plate of its zone ([`Face::group`]: zone
+//! id = box × 4 + group; S7 open faces have no plate); the face is
 //! geometrically vertical (or flat), but its **ballistic normal** is tilted
 //! by the zone's `slope_deg`: a front plate sloped `s` back from vertical
 //! has the outward normal `(cos s, 0, sin s)` in the box frame (x forward,
@@ -32,7 +33,7 @@
 //! degrees ([`deg`]).
 
 use frontline_content::vehicle::{AmmoSetup, VehicleSetup};
-use frontline_content::{AmmoMechanism, ArmourZone};
+use frontline_content::{AmmoMechanism, MAX_ARMOUR_BOXES, PlateGroup};
 
 use crate::fx::{Fx, FxVec3};
 use crate::rng::RngStream;
@@ -55,15 +56,27 @@ pub fn deg(d: i32) -> Fx {
     Fx::from_raw((d as i64 * Fx::PI.raw() as i64 / 180) as i32)
 }
 
-/// Which box of a vehicle.
+/// Which box of a vehicle: an armour box by index (S7: 0 the running-gear
+/// hull, up to `MAX_ARMOUR_BOXES`), or the main gun's exposed barrel.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(u8)]
-pub enum BoxPart {
-    Hull = 0,
-    Turret = 1,
+pub struct BoxPart(pub u8);
+
+impl BoxPart {
+    /// Box 0, the running-gear hull.
+    pub const HULL: BoxPart = BoxPart(0);
     /// S3b: the main gun's exposed barrel (no plate; a strike damages the
     /// gun, `crate::damage`).
-    Barrel = 2,
+    pub const BARREL: BoxPart = BoxPart(u8::MAX);
+
+    /// Its armour box index (`None`: the barrel).
+    #[inline]
+    pub const fn armour_box(self) -> Option<usize> {
+        if self.0 == u8::MAX {
+            None
+        } else {
+            Some(self.0 as usize)
+        }
+    }
 }
 
 /// A face of a box, by its outward axis in the box frame.
@@ -99,35 +112,37 @@ impl Face {
         self as usize
     }
 
-    /// The armour zone of this face of `part`.
-    pub const fn zone(self, part: BoxPart) -> ArmourZone {
-        match (part, self) {
-            (BoxPart::Hull, Face::Front) => ArmourZone::HullFront,
-            (BoxPart::Hull, Face::Rear) => ArmourZone::HullRear,
-            (BoxPart::Hull, Face::Left | Face::Right) => ArmourZone::HullSide,
-            (BoxPart::Hull, Face::Top | Face::Bottom) => ArmourZone::HullTop,
-            (BoxPart::Turret, Face::Front) => ArmourZone::TurretFront,
-            (BoxPart::Turret, Face::Rear) => ArmourZone::TurretRear,
-            (BoxPart::Turret, Face::Left | Face::Right) => ArmourZone::TurretSide,
-            (BoxPart::Turret, Face::Top | Face::Bottom) => ArmourZone::TurretTop,
-            // Nominal: a barrel strike never runs the plate rule.
-            (BoxPart::Barrel, _) => ArmourZone::TurretFront,
+    /// The plate group of this face (both sides `Side`; the bottom reads
+    /// `Top`).
+    pub const fn group(self) -> PlateGroup {
+        match self {
+            Face::Front => PlateGroup::Front,
+            Face::Rear => PlateGroup::Rear,
+            Face::Left | Face::Right => PlateGroup::Side,
+            Face::Top | Face::Bottom => PlateGroup::Top,
+        }
+    }
+
+    /// The zone id of this face of `part` (S7: box × 4 + group; the barrel
+    /// reads box 1's front, nominal: a barrel strike never runs the plate
+    /// rule).
+    pub const fn zone(self, part: BoxPart) -> u8 {
+        match part.armour_box() {
+            Some(b) => self.group().zone(b),
+            None => PlateGroup::Front.zone(1),
         }
     }
 
     /// The box and face a zone names (sides: the left face; tops: the top
     /// face). For tools that start from a zone (`ballistics`).
-    pub const fn of_zone(z: ArmourZone) -> (BoxPart, Face) {
-        match z {
-            ArmourZone::HullFront => (BoxPart::Hull, Face::Front),
-            ArmourZone::HullSide => (BoxPart::Hull, Face::Left),
-            ArmourZone::HullRear => (BoxPart::Hull, Face::Rear),
-            ArmourZone::HullTop => (BoxPart::Hull, Face::Top),
-            ArmourZone::TurretFront => (BoxPart::Turret, Face::Front),
-            ArmourZone::TurretSide => (BoxPart::Turret, Face::Left),
-            ArmourZone::TurretRear => (BoxPart::Turret, Face::Rear),
-            ArmourZone::TurretTop => (BoxPart::Turret, Face::Top),
-        }
+    pub const fn of_zone(z: u8) -> (BoxPart, Face) {
+        let face = match PlateGroup::of_zone(z) {
+            PlateGroup::Front => Face::Front,
+            PlateGroup::Side => Face::Left,
+            PlateGroup::Rear => Face::Rear,
+            PlateGroup::Top => Face::Top,
+        };
+        (BoxPart(z / 4), face)
     }
 
     /// The face's untilted outward horizontal direction (x, y); zero for
@@ -319,17 +334,22 @@ impl AmmoTable {
 /// One plate face of a vehicle type.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PlateFace {
-    pub zone: Option<ArmourZone>,
+    pub zone: Option<u8>,
     /// Outward ballistic normal in the box frame.
     pub normal: FxVec3,
-    /// mm.
+    /// mm (0 for an open face).
     pub thickness: Fx,
+    /// S7: an open face (no plate).
+    pub open: bool,
 }
 
-/// A vehicle type's plates: `faces[part][face]`.
+/// A vehicle type's plates: `faces[box][face]` (S7: up to
+/// `MAX_ARMOUR_BOXES` boxes, `boxes` in use).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct VehicleArmour {
-    pub faces: [[PlateFace; 6]; 2],
+    pub faces: [[PlateFace; 6]; MAX_ARMOUR_BOXES],
+    /// Armour boxes in use (1..=4).
+    pub boxes: u8,
     /// Extra mm in a hull side's track band, and the band's height in
     /// percent of the side.
     pub track_mm: Fx,
@@ -338,27 +358,33 @@ pub struct VehicleArmour {
 
 impl VehicleArmour {
     pub fn new(v: &VehicleSetup) -> VehicleArmour {
-        let face = |part: BoxPart, f: Face| {
-            let zone = f.zone(part);
-            let plate = &v.armour[zone.index()];
-            PlateFace {
-                zone: Some(zone),
-                normal: plate_normal(f, plate.slope_deg),
-                thickness: plate.thickness.into(),
+        let mut faces = [[PlateFace::default(); 6]; MAX_ARMOUR_BOXES];
+        for (b, bx) in v.boxes.iter().enumerate().take(MAX_ARMOUR_BOXES) {
+            for f in Face::ALL {
+                let g = f.group();
+                let plate = &bx.plates[g.index()];
+                faces[b][f.index()] = PlateFace {
+                    zone: Some(g.zone(b)),
+                    normal: plate_normal(f, plate.slope_deg),
+                    thickness: plate.thickness.into(),
+                    open: bx.open & (1 << g.index()) != 0,
+                };
             }
-        };
+        }
         VehicleArmour {
-            faces: [BoxPart::Hull, BoxPart::Turret].map(|p| Face::ALL.map(|f| face(p, f))),
+            faces,
+            boxes: v.boxes.len().clamp(1, MAX_ARMOUR_BOXES) as u8,
             track_mm: Fx::from_int(v.track_mm as i32),
             track_band_pct: v.track_band_pct,
         }
     }
 
     /// The plate of `part`'s face `f` (the barrel, which has none, reads
-    /// the turret's; callers never run the plate rule on it).
+    /// the last box's; callers never run the plate rule on it).
     #[inline]
     pub fn face(&self, part: BoxPart, f: Face) -> &PlateFace {
-        &self.faces[(part as usize).min(1)][f.index()]
+        let last = self.boxes.max(1) as usize - 1;
+        &self.faces[(part.0 as usize).min(last)][f.index()]
     }
 }
 
@@ -387,7 +413,8 @@ pub struct ArmourHit {
     pub t: Fx,
     pub part: BoxPart,
     pub face: Face,
-    pub zone: ArmourZone,
+    /// Zone id (box × 4 + group).
+    pub zone: u8,
     /// Outward ballistic normal in world space.
     pub normal: FxVec3,
     pub point: FxVec3,
@@ -478,10 +505,11 @@ pub fn segment_near(from: FxVec3, d: FxVec3, c: FxVec3, r: Fx) -> bool {
 }
 
 /// The narrowphase (`docs/slices/S3-armour.md` "Geometry and pose"): the
-/// first plate of `f`'s hull or turret box, or (S3b) its barrel box, that
-/// the segment `from → from + d` enters, with its ballistic normal in world
-/// space. At equal `t` the hull wins, then the turret. M2 replaces the body
-/// with the mesh BVH; callers do not change.
+/// first plate of `f`'s armour boxes (S7: in box order; S3's hull, then
+/// turret) or (S3b) its barrel box that the segment `from → from + d`
+/// enters, with its ballistic normal in world space. At equal `t` the lower
+/// box index wins, then the barrel. M2 replaces the body with the mesh BVH;
+/// callers do not change.
 pub fn hit_armour(
     from: FxVec3,
     d: FxVec3,
@@ -489,11 +517,12 @@ pub fn hit_armour(
     a: &VehicleArmour,
 ) -> Option<ArmourHit> {
     let mut best: Option<ArmourHit> = None;
-    let parts = [
-        (BoxPart::Hull, &f.hull),
-        (BoxPart::Turret, &f.turret),
-        (BoxPart::Barrel, &f.barrel),
-    ];
+    let n = (f.n_boxes as usize).min(MAX_ARMOUR_BOXES);
+    let parts = f.boxes[..n]
+        .iter()
+        .enumerate()
+        .map(|(k, b)| (BoxPart(k as u8), b))
+        .chain(std::iter::once((BoxPart::BARREL, &f.barrel)));
     for (part, b) in parts {
         if b.half.x <= Fx::ZERO {
             continue;
@@ -521,7 +550,7 @@ pub fn hit_armour(
 /// Whether a hull-side hit at box-frame `local` is in the running-gear
 /// band: the lower `band_pct` of the side.
 pub fn in_track_band(hit: &ArmourHit, half_z: Fx, band_pct: u32) -> bool {
-    hit.part == BoxPart::Hull
+    hit.part == BoxPart::HULL
         && matches!(hit.face, Face::Left | Face::Right)
         && hit.local.z + half_z < half_z.mul_int(2).mul_int(band_pct as i32).div_int(100)
 }
@@ -548,7 +577,7 @@ pub struct PlateShot {
 pub fn plate_shot(
     ammo: &AmmoTable,
     vehicle: &VehicleArmour,
-    zone: ArmourZone,
+    zone: u8,
     range: Fx,
     angle: Fx,
     descent: Fx,
@@ -557,7 +586,7 @@ pub fn plate_shot(
     let (part, face) = Face::of_zone(zone);
     let plate = vehicle.face(part, face);
     let c = impact_cos(shot_dir(face, angle, descent), plate.normal);
-    let extra = if track_band && zone == ArmourZone::HullSide {
+    let extra = if track_band && zone == PlateGroup::Side.zone(0) {
         vehicle.track_mm
     } else {
         Fx::ZERO
@@ -860,23 +889,19 @@ mod tests {
         };
         let hz = Fx::from_milli(680);
         // 45 % of 1.36 m = 0.612 m from the bottom (z = −0.068).
-        assert!(in_track_band(&hit(BoxPart::Hull, Face::Left, -100), hz, 45));
-        assert!(!in_track_band(&hit(BoxPart::Hull, Face::Left, -50), hz, 45));
+        assert!(in_track_band(&hit(BoxPart::HULL, Face::Left, -100), hz, 45));
+        assert!(!in_track_band(&hit(BoxPart::HULL, Face::Left, -50), hz, 45));
         assert!(in_track_band(
-            &hit(BoxPart::Hull, Face::Right, -600),
+            &hit(BoxPart::HULL, Face::Right, -600),
             hz,
             45
         ));
         assert!(!in_track_band(
-            &hit(BoxPart::Hull, Face::Front, -600),
+            &hit(BoxPart::HULL, Face::Front, -600),
             hz,
             45
         ));
-        assert!(!in_track_band(
-            &hit(BoxPart::Turret, Face::Left, -600),
-            hz,
-            45
-        ));
+        assert!(!in_track_band(&hit(BoxPart(1), Face::Left, -600), hz, 45));
     }
 
     #[test]

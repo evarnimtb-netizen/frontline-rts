@@ -312,6 +312,61 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // crates put in (0 when stock enters only from crates).
     let not_crate = (t.stock_held_g + t.stock_out_g + t.stock_lost_g).saturating_sub(t.stock_in_g);
     let fwd_bombs = t.structure_bombs + t.crate_bombs;
+    // S7: per-type shares (docs/slices/S7-casemate-td.md 10). Manpower
+    // shares are cards bought × card price; vehicle kill shares are of the
+    // faction's kills.
+    {
+        let q4 = &f.s4;
+        let u = &f.s7;
+        let spent: f64 = q4
+            .bought
+            .iter()
+            .map(|(k, &n)| n as f64 * u.card_cost.get(k).copied().unwrap_or(0) as f64)
+            .sum();
+        let mut bought_pct = Map::new();
+        let mut mp_share = Map::new();
+        for (card, &cost) in &u.card_cost {
+            let n = q4.bought.get(card).copied().unwrap_or(0) as f64;
+            let m = q4.bought_matches.get(card).copied().unwrap_or(0) as f64;
+            bought_pct.insert(card.clone(), json!(pct(m, q4.matches as f64)));
+            mp_share.insert(card.clone(), json!(pct(n * cost as f64, spent)));
+        }
+        let vehicle_mp: f64 = u
+            .vehicle_card
+            .values()
+            .map(|c| {
+                q4.bought.get(c).copied().unwrap_or(0) as f64
+                    * u.card_cost.get(c).copied().unwrap_or(0) as f64
+            })
+            .sum();
+        let kills = f.kills.max(1) as f64;
+        let mut by_vehicle = Map::new();
+        let mut kos_per = Map::new();
+        let mut max_pct: f64 = 0.0;
+        let mut all = 0u64;
+        for (veh, card) in &u.vehicle_card {
+            let k = u.kills_by_vehicle.get(veh).copied().unwrap_or(0);
+            all += k;
+            let p = pct(k as f64, kills);
+            max_pct = max_pct.max(p);
+            by_vehicle.insert(veh.clone(), json!(p));
+            let bought = q4.bought.get(card).copied().unwrap_or(0) as f64;
+            let kos = u.kos_by_vehicle.get(veh).copied().unwrap_or(0) as f64;
+            kos_per.insert(veh.clone(), json!(round3(kos / bought.max(1.0))));
+        }
+        o.insert(
+            "s7_derived".into(),
+            json!({
+                "bought_matches_pct": bought_pct,
+                "mp_share_pct": mp_share,
+                "vehicle_mp_pct": pct(vehicle_mp, spent),
+                "kills_by_vehicle_pct": by_vehicle,
+                "vehicle_kills_pct": pct(all as f64, kills),
+                "kills_by_vehicle_max_pct": max_pct,
+                "kos_per_bought": kos_per,
+            }),
+        );
+    }
     o.insert(
         "s6_derived".into(),
         json!({

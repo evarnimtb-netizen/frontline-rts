@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use frontline_content::{ArmourZone, Difficulty, MatchRequest, MatchSetup, ModDefs};
+use frontline_content::{Difficulty, MatchRequest, MatchSetup, ModDefs};
 use frontline_sim::armour::{BoxPart, Face, PenResult, deg, impact_cos, penetrates, shot_dir};
 use frontline_sim::{Fx, World};
 
@@ -44,8 +44,8 @@ fn tables_are_built_at_start_and_rebuilt_after_load() {
     assert_eq!(t.vehicles.len(), 2);
     assert_eq!(t.ammo.len(), 7);
     // The Panzer IV's hull front: 80 mm, normal tilted up 10°.
-    let front = t.vehicles[pz].face(BoxPart::Hull, Face::Front);
-    assert_eq!(front.zone, Some(ArmourZone::HullFront));
+    let front = t.vehicles[pz].face(BoxPart::HULL, Face::Front);
+    assert_eq!(front.zone, Some(0)); // hull_front
     assert_eq!(front.thickness, Fx::from_int(80));
     assert_eq!(front.normal.z, deg(10).sin());
     // M61 at 500 m head-on (S3b Fix: Bird & Livingston's 0° row, 81 mm)

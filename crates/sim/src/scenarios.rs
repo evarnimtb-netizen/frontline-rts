@@ -291,8 +291,14 @@ pub fn hull_down(mut setup: MatchSetup, threads: usize, p: u8) -> Result<Staged,
     let ty = type_of_setup(&setup, p, SquadRole::Vehicle);
     let v = &setup.vehicles[need(ty, "hull-down tank")? as usize];
     let hull_top = Fx::from(v.hull.center.z) + Fx::from(v.hull.half.z);
-    let turret_top =
-        Fx::from(v.turret_pivot.z) + Fx::from(v.turret.center.z) + Fx::from(v.turret.half.z);
+    // S7: the upper box's top (the turret's, a casemate's).
+    let up = &v.boxes[v.upper_box()];
+    let turret_top = Fx::from(up.bounds.center.z)
+        + Fx::from(up.bounds.half.z)
+        + match up.frame {
+            frontline_content::Frame::Turret => Fx::from(v.turret_pivot.z),
+            frontline_content::Frame::Hull => Fx::ZERO,
+        };
     let crest_x = 640;
     let crest_cm = ((hull_top + turret_top).div_int(2).mul_int(100)).floor_int();
     add_crest(

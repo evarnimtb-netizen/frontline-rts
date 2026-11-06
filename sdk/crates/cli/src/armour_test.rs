@@ -430,9 +430,10 @@ fn case2(env: &Env) -> Result<CaseReport> {
             w.step(&[]);
             for h in w.take_hit_log() {
                 if h.vehicle == hd {
-                    match h.part {
-                        BoxPart::Hull => hull += 1,
-                        BoxPart::Turret | BoxPart::Barrel => turret += 1,
+                    if h.part == BoxPart::HULL {
+                        hull += 1;
+                    } else {
+                        turret += 1;
                     }
                 }
             }
@@ -626,10 +627,10 @@ fn case3(env: &Env) -> Result<CaseReport> {
                 |m: &BTreeMap<(u8, BoxPart), u64>, part| m.get(&(p, part)).copied().unwrap_or(0);
             format!(
                 "{} hull / {} turret (penetrated {} / {})",
-                n(&st.hits, BoxPart::Hull),
-                n(&st.hits, BoxPart::Turret),
-                n(&st.pens, BoxPart::Hull),
-                n(&st.pens, BoxPart::Turret)
+                n(&st.hits, BoxPart::HULL),
+                n(&st.hits, BoxPart(1)),
+                n(&st.pens, BoxPart::HULL),
+                n(&st.pens, BoxPart(1))
             )
         };
         let med = |v: &Vec<u64>| {
@@ -675,8 +676,8 @@ fn case3(env: &Env) -> Result<CaseReport> {
         );
     }
     if let Some(st) = stats.get("c 150 m, Sherman on the flank") {
-        let h = st.hits.get(&(1, BoxPart::Hull)).copied().unwrap_or(0);
-        let all = h + st.hits.get(&(1, BoxPart::Turret)).copied().unwrap_or(0);
+        let h = st.hits.get(&(1, BoxPart::HULL)).copied().unwrap_or(0);
+        let all = h + st.hits.get(&(1, BoxPart(1))).copied().unwrap_or(0);
         r.check_v(
             "3c (both parts penetrated at 150 m on the flank): ≥ 40 % of the Sherman's hits on the hull",
             all > 0 && h * 100 >= 40 * all,

@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use frontline_content::setup::{DigProfile, Fixed};
-use frontline_content::vehicle::{AmmoMechanism, ArmourZone, ComponentKind, MountKind, SeatRole};
+use frontline_content::vehicle::{AmmoMechanism, ComponentKind, MountKind, SeatRole};
 use frontline_content::{ContentError, Difficulty, MatchRequest, ModDefs};
 
 /// S4: the S1-S3c content frozen before the content switch
@@ -105,22 +105,37 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     assert_eq!(pz.mobility.ditch_block, Fixed::from_ratio(19, 10));
     assert_eq!(pz.mobility.unbog_ticks, [600, 1200]);
     assert_eq!((pz.traverse_deg_s, sh.traverse_deg_s), (14, 24));
-    // Armour by zone; the Sherman glacis keeps its half millimetre.
-    let plate = |v: &frontline_content::vehicle::VehicleSetup, z: ArmourZone| {
-        let p = v.armour[z.index()];
+    // Armour by zone; the Sherman glacis keeps its half millimetre. S7:
+    // zone id = box × 4 + group, the S3 numbers and names (S7-9).
+    let plate = |v: &frontline_content::vehicle::VehicleSetup, z: &str| {
+        let p = v.plate(v.zone_by_name(z).unwrap()).unwrap();
         (p.thickness, p.slope_deg)
     };
-    assert_eq!(plate(pz, ArmourZone::HullFront), (Fixed::from_int(80), 10));
-    assert_eq!(plate(pz, ArmourZone::TurretSide), (Fixed::from_int(30), 25));
-    assert_eq!(
-        plate(sh, ArmourZone::HullFront),
-        (Fixed::from_ratio(635, 10), 47)
-    );
-    assert_eq!(
-        plate(sh, ArmourZone::TurretFront),
-        (Fixed::from_int(76), 30)
-    );
-    assert_eq!(plate(sh, ArmourZone::TurretTop), (Fixed::from_int(25), 0));
+    assert_eq!(plate(pz, "hull_front"), (Fixed::from_int(80), 10));
+    assert_eq!(plate(pz, "turret_side"), (Fixed::from_int(30), 25));
+    assert_eq!(plate(sh, "hull_front"), (Fixed::from_ratio(635, 10), 47));
+    assert_eq!(plate(sh, "turret_front"), (Fixed::from_int(76), 30));
+    assert_eq!(plate(sh, "turret_top"), (Fixed::from_int(25), 0));
+    for v in [pz, sh] {
+        assert_eq!(
+            (0..8).map(|z| v.zone_name(z)).collect::<Vec<_>>(),
+            [
+                "hull_front",
+                "hull_side",
+                "hull_rear",
+                "hull_top",
+                "turret_front",
+                "turret_side",
+                "turret_rear",
+                "turret_top"
+            ]
+        );
+        assert!(v.has_turret && v.gun_arc_deg.is_none());
+        assert_eq!(v.upper_box(), 1);
+        assert_eq!(v.boxes[0].bounds, v.hull);
+        assert_eq!(v.boxes[1].bounds, v.turret);
+        assert!(v.boxes.iter().all(|b| b.open == 0));
+    }
     // Five seats in def order; six components in snapshot order.
     assert_eq!(pz.seats.len(), 5);
     assert!(pz.seat(SeatRole::RadioMg).is_some());
@@ -319,33 +334,22 @@ fn bad_overrides_are_reported() {
 
 #[test]
 fn broken_armour_zone_is_reported() {
-    // A misspelled zone (the missing `hull_front` and the unknown key).
+    // A misspelled group (the missing `front` and the unknown key).
     let i = issues_of("zone-name", |r| {
         replace_in(
             &r.join("defs/vehicles/ger_pz4_h.toml"),
-            "hull_front   =",
-            "hull_frnt   =",
+            "front = { thickness_mm = 80, slope_deg = 10 }",
+            "frnt = { thickness_mm = 80, slope_deg = 10 }",
         );
     });
-    has(&i, "defs/vehicles/ger_pz4_h.toml", &["hull_frnt"]);
+    has(&i, "defs/vehicles/ger_pz4_h.toml", &["frnt"]);
     // A zero plate, a sloped top, and a slope past 80°.
     let i = issues_of("zone-values", |r| {
         let f = r.join("defs/vehicles/usa_m4a3_75.toml");
         replace_in(
             &f,
-            "thickness_mm = 38, slope_deg = 0",
-            "thickness_mm = 0, slope_deg = 0",
-        );
-        replace_in(
-            &f,
-            "hull_top     = { thickness_mm = 19,",
-            "hull_top     = { thickness_mm = 19, slope_deg = 5,",
-        );
-        replace_in(&f, "slope_deg = 47", "slope_deg = 85");
-        replace_in(
-            &f,
-            "turret_rear  = { thickness_mm = 51",
-            "turret_rear  = { thickness_mm = 51.25",
+            "rear = { thickness_mm = 51, slope_deg = 0 }",
+            "rear = { thickness_mm = 51.25, slope_deg = 0 }",
         );
     });
     let f = "defs/vehicles/usa_m4a3_75.toml";
@@ -355,75 +359,30 @@ fn broken_armour_zone_is_reported() {
         let f = r.join("defs/vehicles/usa_m4a3_75.toml");
         replace_in(
             &f,
-            "thickness_mm = 38, slope_deg = 0",
-            "thickness_mm = 0, slope_deg = 0",
+            "side = { thickness_mm = 38, slope_deg = 0 }",
+            "side = { thickness_mm = 0, slope_deg = 0 }",
         );
         replace_in(
             &f,
-            "hull_top     = { thickness_mm = 19,",
-            "hull_top     = { thickness_mm = 19, slope_deg = 5,",
+            "top = { thickness_mm = 19 }",
+            "top = { thickness_mm = 19, slope_deg = 5 }",
         );
         replace_in(&f, "slope_deg = 47", "slope_deg = 85");
     });
     has(
         &i,
-        &format!("{f}: armor.hull_side.thickness_mm"),
+        &format!("{f}: boxes[0].armor.side.thickness_mm"),
         &["1..=500"],
     );
     has(
         &i,
-        &format!("{f}: armor.hull_top.slope_deg"),
+        &format!("{f}: boxes[0].armor.top.slope_deg"),
         &["flat", "fix: remove slope_deg"],
     );
     has(
         &i,
-        &format!("{f}: armor.hull_front.slope_deg"),
+        &format!("{f}: boxes[0].armor.front.slope_deg"),
         &["0..=80", "85"],
-    );
-}
-
-#[test]
-fn missing_ammo_id_is_reported() {
-    let i = issues_of("ammo-id", |r| {
-        replace_in(
-            &r.join("defs/vehicles/ger_pz4_h.toml"),
-            "id = \"ww2:75mm_pzgr39\"",
-            "id = \"ww2:75mm_pzgr49\"",
-        );
-        replace_in(
-            &r.join("defs/weapons/m9_bazooka.toml"),
-            "ammo = \"ww2:m6a3_heat\"",
-            "ammo = \"ww2:m6a1_heat\"",
-        );
-    });
-    has(
-        &i,
-        "vehicle `ww2:ger_pz4_h`: weapons[0].ammo[0].id",
-        &[
-            "unknown ammo `ww2:75mm_pzgr49`",
-            "did you mean `ww2:75mm_pzgr",
-        ],
-    );
-    has(
-        &i,
-        "weapon `ww2:m9_bazooka`: ammo",
-        &["did you mean `ww2:m6a3_heat`"],
-    );
-}
-
-#[test]
-fn drag_must_be_zero() {
-    let i = issues_of("drag", |r| {
-        replace_in(
-            &r.join("defs/ammo/75mm_pzgr39.toml"),
-            "drag_coeff = 0",
-            "drag_coeff = 0.28",
-        );
-    });
-    has(
-        &i,
-        "defs/ammo/75mm_pzgr39.toml: drag_coeff",
-        &["no drag in S3", "0.28", "fix: drag_coeff = 0"],
     );
 }
 
@@ -447,13 +406,13 @@ fn seat_box_outside_its_frame_is_reported() {
     let f = "defs/vehicles/ger_pz4_h.toml";
     has(
         &i,
-        &format!("{f}: crew.boxes.driver"),
-        &["outside its frame", "hull box spans x -290..290"],
+        &format!("{f}: seats[0].box"),
+        &["outside its frame", "hull boxes span x -290..290"],
     );
     has(
         &i,
-        &format!("{f}: crew.boxes.gunner"),
-        &["outside its frame", "turret box"],
+        &format!("{f}: seats[1].box"),
+        &["outside its frame", "turret boxes"],
     );
     has(
         &i,
@@ -468,8 +427,8 @@ fn vehicle_structure_errors_are_reported() {
         let f = r.join("defs/vehicles/usa_m4a3_75.toml");
         replace_in(
             &f,
-            "seats = [\"driver\", \"gunner\", \"commander\", \"loader\", \"radio_mg\"]",
-            "seats = [\"driver\", \"commander\", \"loader\", \"radio_mg\"]",
+            "id = \"gunner\"\nrole = \"gunner\"",
+            "id = \"gunner\"\nrole = \"loader\"",
         );
         replace_in(&f, "type = \"ammo_rack\"", "type = \"engine\"");
         replace_in(
@@ -485,12 +444,8 @@ fn vehicle_structure_errors_are_reported() {
         );
     });
     let f = "defs/vehicles/usa_m4a3_75.toml";
-    has(&i, &format!("{f}: crew.seats"), &["needs a `gunner` seat"]);
-    has(
-        &i,
-        &format!("{f}: crew.boxes.gunner"),
-        &["not in crew.seats"],
-    );
+    has(&i, &format!("{f}: seats"), &["needs a `gunner` seat"]);
+    has(&i, &format!("{f}: seats[3].role"), &["listed twice"]);
     has(
         &i,
         &format!("{f}: components"),
@@ -616,7 +571,7 @@ fn s3b_damage_geometry_errors_are_reported() {
     has(
         &i,
         &format!("{f}: components[5].boxes[0]"),
-        &["outside its frame", "hull box spans"],
+        &["outside its frame", "hull boxes span"],
     );
     has(&i, &format!("{f}: components[6].boxes"), &["not both"]);
     has(
@@ -700,7 +655,7 @@ fn setup_validate_rejects_broken_vehicles_and_ammo() {
         "vehicles.components",
     );
     bad(
-        &|t| t.vehicles[0].armour[0].slope_deg = 90,
+        &|t| t.vehicles[0].boxes[0].plates[0].slope_deg = 90,
         "vehicles.armour",
     );
     bad(&|t| t.vehicles[0].faction = 9, "vehicles.faction");

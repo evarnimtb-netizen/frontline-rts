@@ -593,8 +593,7 @@ fn apcr_goes_only_where_ap_would_likely_fail() {
             .iter()
             .position(|v| v.id == "ww2:usa_m4a3_75")
             .unwrap();
-        s.vehicles[sh].armour[frontline_content::ArmourZone::HullFront.index()].thickness =
-            frontline_content::Fixed::from_int(thick_mm);
+        s.vehicles[sh].boxes[0].plates[0].thickness = frontline_content::Fixed::from_int(thick_mm);
         let mut w = World::new_match(s, 1).unwrap();
         let (_, v) = tank(&mut w, 0, xy(350, 500), EAST);
         let (_, enemy) = tank(&mut w, 1, xy(650, 500), WEST);

@@ -367,6 +367,19 @@ pub struct PlayerReport {
     pub s6_tank_crate_runs: u32,
     /// Review S6 F2: stranded shells crates the AI's bearers picked up.
     pub s6_crate_pickups: u32,
+    /// S7 per-vehicle-type counters and the roster's card prices.
+    pub s7: S7Player,
+}
+
+/// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
+/// ids, plus what the derived shares need: the faction's roster card
+/// prices and each vehicle type's card.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S7Player {
+    pub kills_by_vehicle: BTreeMap<String, u32>,
+    pub kos_by_vehicle: BTreeMap<String, u32>,
+    pub card_cost: BTreeMap<String, u32>,
+    pub vehicle_card: BTreeMap<String, String>,
 }
 
 /// S5b Part B AI fire-mission counters of one player (or summed).
@@ -1199,6 +1212,37 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     .sum(),
                 s6_tank_crate_runs: ai.map_or(0, |a| a.counters.tank_crate_runs),
                 s6_crate_pickups: ai.map_or(0, |a| a.counters.s6_crate_pickups),
+                s7: {
+                    let short = |id: &str| id.split_once(':').map_or(id, |x| x.1).to_owned();
+                    let named = |v: &[u32]| {
+                        s.vehicles
+                            .iter()
+                            .zip(v)
+                            .map(|(vt, &n)| (short(&vt.id), n))
+                            .collect::<BTreeMap<_, _>>()
+                    };
+                    let roster = s
+                        .factions
+                        .get(s.players[p].faction as usize)
+                        .map_or(&[][..], |f| &f.roster[..]);
+                    S7Player {
+                        kills_by_vehicle: named(&pl.s7.kills_by_vehicle),
+                        kos_by_vehicle: named(&pl.s7.kos_by_vehicle),
+                        card_cost: roster
+                            .iter()
+                            .filter_map(|&t| s.squad_types.get(t as usize))
+                            .map(|t| (short(&t.id), t.cost))
+                            .collect(),
+                        vehicle_card: roster
+                            .iter()
+                            .filter_map(|&t| s.squad_types.get(t as usize))
+                            .filter_map(|t| {
+                                let v = s.vehicles.get(t.vehicle? as usize)?;
+                                Some((short(&v.id), short(&t.id)))
+                            })
+                            .collect(),
+                    }
+                },
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1581,6 +1625,21 @@ pub struct FactionSummary {
     pub s5b: S5bFaction,
     /// S6 counters over the run.
     pub s6: S6Faction,
+    /// S7 counters over the run.
+    pub s7: S7Faction,
+}
+
+/// S7 numbers of one faction over a `--seeds` run (sums; the card prices
+/// and vehicle cards as seen).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S7Faction {
+    pub matches: u32,
+    pub kills_by_vehicle: BTreeMap<String, u64>,
+    pub kos_by_vehicle: BTreeMap<String, u64>,
+    #[serde(skip)]
+    pub card_cost: BTreeMap<String, u32>,
+    #[serde(skip)]
+    pub vehicle_card: BTreeMap<String, String>,
 }
 
 /// S6 numbers of one faction over a `--seeds` run (sums).
@@ -1943,6 +2002,21 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             t.cookoffs += a.cookoffs as u64;
             t.tank_crate_runs += p.s6_tank_crate_runs as u64;
             t.crate_pickups += p.s6_crate_pickups as u64;
+            // S7.
+            let u = &mut f.s7;
+            u.matches += 1;
+            for (k, v) in &p.s7.kills_by_vehicle {
+                *u.kills_by_vehicle.entry(k.clone()).or_default() += *v as u64;
+            }
+            for (k, v) in &p.s7.kos_by_vehicle {
+                *u.kos_by_vehicle.entry(k.clone()).or_default() += *v as u64;
+            }
+            for (k, v) in &p.s7.card_cost {
+                u.card_cost.insert(k.clone(), *v);
+            }
+            for (k, v) in &p.s7.vehicle_card {
+                u.vehicle_card.insert(k.clone(), v.clone());
+            }
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

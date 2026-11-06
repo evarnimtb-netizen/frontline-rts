@@ -27,7 +27,7 @@ use crate::variant::{
     DERIVED_CAPABILITIES, TrainingDef, canonical_capabilities, expand_legacy, role_capabilities,
     role_of_tags, role_tag,
 };
-use crate::vehicle::{AmmoDef, AmmoMechanism, MountKind, VehicleDef};
+use crate::vehicle::{AmmoDef, AmmoMechanism, VehicleDef};
 
 /// A mod's manifest (`mod.toml`, §7.2).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1119,7 +1119,7 @@ impl ModDefs {
                         ),
                     )),
                     Some(w) => {
-                        let want = if m.mount == MountKind::TurretMain {
+                        let want = if m.mount.is_main() {
                             WeaponClass::Cannon
                         } else {
                             WeaponClass::Mg
@@ -1413,11 +1413,7 @@ impl ModDefs {
             }
         }
         for v in self.vehicles.values() {
-            for m in v
-                .weapons
-                .iter()
-                .filter(|m| m.mount != MountKind::TurretMain)
-            {
+            for m in v.weapons.iter().filter(|m| !m.mount.is_main()) {
                 carried.insert(m.def.as_str());
             }
         }
@@ -1464,7 +1460,7 @@ impl ModDefs {
                 // S5a Fix (review L8): an MG mount without `rounds` would
                 // fire without limit in a priced mod.
                 for (k, m) in v.weapons.iter().enumerate() {
-                    if m.mount != MountKind::TurretMain && m.rounds.is_none() {
+                    if !m.mount.is_main() && m.rounds.is_none() {
                         out.push(
                             Issue::new(
                                 at(&format!("weapons[{k}].rounds")),
