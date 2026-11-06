@@ -101,6 +101,22 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S7-13 Thrown items now collide with enemy vehicles (S7-5: a plate drops them to the ground below), so S6b matches with tanks differ slightly even before the new cards. (A) Accept; the Build B log measures it with the rest.
   S7-14 With the second vehicle card a faction has 11 call-in tiles; two columns rose above 57.5 % of the screen, so the call-in panel takes up to three columns. (A) Keep three columns; a compact tile row is presenter polish for later.
   S7-15 With overwatch_back_m 35 (S7 Fix, review M2) the Pz IV takes 18.8 % of German kills on the in-sample 160 (seeds 1-80), 0.8 over T32a's 18 % (17.4 and 16.9 % on seeds 101-180 and 201-280; 16.1 % before the fix). 50 m keeps it at 17.4 % but halves the StuG/M10 KOs and gives Germany 45.0 % pooled. (A) Keep 35 m; the Tune of the next vehicle slice rechecks T32 with td_hunt_m (450 m untested).
+- S8a-1..15 (`docs/slices/S8a-halftracks.md` section 14), each on its (A):
+  S8a-1 Main gun optional (half-tracks have none). (A) Yes.
+  S8a-2 M3A1 capacity 11; squads never split, a squad that does not fit is refused (US 12-man squad rides after a loss). (A) Yes. (B) capacity 12.
+  S8a-3 MG pen tables use the belt's AP round for every round (no belt-mix roll). (A) Yes; `ap_share_pct` later if MGs run high.
+  S8a-4 Face-hardened plate x 125 % against every round (`[vehicles] face_hardened_pct`). (A) Yes, verify.
+  S8a-5 Transports skip the vehicle limit of 4, unlock at 2:00, cap 2 per card. (A) Yes.
+  S8a-6 Half-tracks steer like tanks (neutral pivot) until S8b's wheeled model. (A) Yes.
+  S8a-7 Hotkeys Embark V, Disembark U, Shift+U over the sides. (A) Yes.
+  S8a-8 `Disembark { vehicles, over_sides }`; door is the default. (A) Yes.
+  S8a-9 Riders are targets only while their slot box is above the rim and the vehicle is seen. (A) Yes.
+  S8a-10 251 commander fires the front MG; no 251 rear AA MG, no M3A1 .30s; StuG roof MG and M10 .50 (S7-1) stay out. (A) Yes.
+  S8a-11 Cards 290 / 310 MP, pop 3, 60 s, cap 2, unlock 2:00. (A) Yes; Tune +-15 %.
+  S8a-12 The sim emits every small-arms penetration event; the feed coalesces them per vehicle per 2 s. (A) Yes.
+  S8a-13 Thin-plate fragment values `frag_pen_mm`: 75 mm 12, mortars 9, grenades 3. (A) Starting values, verify.
+  S8a-14 Cross-country speeds 750 / 850 cm/s (road 52 / 72 km/h). (A) Starting values, verify.
+  S8a-15 Half-track crews bail as the faction's tank crew squad. (A) Yes.
 
 ## Planned work queue
 
@@ -112,7 +128,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (on main). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
 5. S7 assault guns and TDs: done on branch `s7-casemate-td` (on main; tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
-6. S8 half-tracks, trucks, recon: next (roadmap in `docs/STATE.md`).
+6. S8 half-tracks, trucks, recon: split. S8a half-tracks in progress on branch `s8a-halftracks` (spec
+   `docs/slices/S8a-halftracks.md`, targets `S8a.toml`); S8b trucks, recon cars, wheels, supply trucks next.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 
 ## Known issues still open
