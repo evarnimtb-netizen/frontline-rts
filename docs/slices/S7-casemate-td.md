@@ -272,19 +272,8 @@ cost. Balance: Germany 45-55 % per 160 set and pooled; mortar 10-15 %, HE 20-26.
 
 ## 11. Build order
 
-**Build A** (schema, port, casemate, data, armour tests, save):
-1. Content schema and lowering; port the two TOMLs; golden and content tests.
-2. Sim boxes, zones, frames; bridge and CLI names; port proof (section 2); commit.
-3. `SAVE_VERSION` 17; `lay_turn`, casemate lay and pivot; upper-box aim and spotting; per-type kill
-   stats and JSON fields; tests; commit.
-4. StuG and M10 defs, ammo, weapons, cards (appended); armour-test 17-18; release tests; commit.
-
-**Build B** (open top, AI, presenter, balance):
-5. Open faces: rounds, frag rays, overpressure, items inside; cases 19-20; tests; commit.
-6. AI weights, overwatch, stand-off, open-top throws, back-off; AI save/hash tests; commit.
-7. Presenter, mock, `match_state.md`, screenshot; Godot tests; commit.
-8. Balance: skirmish40, 160, 160 oos at `--jobs 6`; timing40 alone at 3; `targets S7.toml`. Tune
-   only prices, `ai_weight` and AI distances, never lethality. Release test run; log <= 150 lines.
+Build A: schema, port, casemate, data, armour tests 17-18, save v17. Build B: open faces, cases 19-20,
+AI, presenter, balance runs (prices, `ai_weight`, AI distances only; never lethality). Done; see the log.
 
 ## 12. Owner questions (work proceeds on (A); also in `docs/TODO.md`)
 
@@ -298,3 +287,13 @@ cost. Balance: Germany 45-55 % per 160 set and pooled; mortar 10-15 %, HE 20-26.
 - S7-8 Fragments never pierce plates in S7 (all plates here >= 10 mm). (A) Yes; rule with 6.4.
 - S7-9 Zone id = box x 4 + face group, name `<box>_<face>` (`casemate_front`). (A) Yes.
 - S7-10 StuG traverse 6 deg/s, elevation rates 4 deg/s: no source. (A) Starting values, verify.
+
+## 13. Tune results (Tune stage, autotune on the StuG price)
+
+One knob: `ww2:ger_stug3_g` cost 425-575 (S7-3 +-15 %), 800 matches (seeds 3001-3400 both bases), target
+Germany 45-55 %. Slope +0.2 points per 15 MP [-0.7 to +1.0]: the price does not move the result
+(Germany 49.3 / 56.7 / 51.1 % at 425 / 500 / 575, pooled 51.7 %; model at 500: 52.1 % [48.6-55.6]).
+Prices stay as shipped. T5c's 43.75 % (seeds 1-80) is sampling noise (+-7.7 points); seeds 201-280:
+51.9 % (T5d band met, base max 53.1 %), HE mean 21.0 %, mortar share 14.1 / 11.9 %. T34e and T36a stay
+report targets (S7-11, S7-12). The StuG/M10 weakness (kill shares 2.5 / 1.8 %) needs AI code, not price.
+
