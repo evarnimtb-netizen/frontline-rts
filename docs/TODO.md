@@ -111,9 +111,9 @@ Full text in the archive file. None blocks a slice; answer any you care about.
    structure selection (its own item when scheduled).
 4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (not pushed). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
-5. S7 assault guns and TDs: done on branch `s7-casemate-td` (from `9f216e9`, head `1a13f63`, not pushed); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
+5. S7 assault guns and TDs: done and pushed on branch `s7-casemate-td` (from `9f216e9`, tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
 6. S8 half-tracks, trucks, recon: next (roadmap in `docs/STATE.md`).
-7. Sim profiling: deferred until after S6 (owner 2026-11-03).
+7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 
 ## Known issues still open
 
@@ -125,8 +125,8 @@ Balance issues from S1-S3c are superseded by later measurements (latest:
   pooled 47.0 % (T5, band 45-55; S6b-1); base side 59.4 % oos (T6c, max 62).
 - Mortars and HE: met after S6b on 160 sets (USA 11.0-12.0 %, band 10-15;
   HE 21.5-21.9 %, band 20-26.3). Germany's mortar share 13.6-14.5 % is near the 15 % cap.
-- S7 balance (35 m overwatch, 160 sets): Germany 48.8 / 45.0 / 48.8 %, pooled 47.5 %;
-  T32a misses on seeds 1-80 (Pz IV 18.8 % of German kills, S7-15). StuG and M10 take
+- S7 balance after the tick fix (160 sets 1-80 / 101-180 / 201-280): Germany 48.1 / 44.4 / 48.1 %,
+  pooled 46.9 % (T5d misses by 0.6 on 101-180); T32a misses on seeds 1-80 (Pz IV 18.9 %, S7-15). StuG and M10 take
   about 3 % and 2 % of kills; price is no lever (Tune). AI open-top throws 0 in play.
 - Cook-offs (0.05 -> 0.19 per match) and crates lost (16 / 6 -> 54 / 21) rose
   under S6b; not diagnosed (S7 to look).

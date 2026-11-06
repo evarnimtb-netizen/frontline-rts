@@ -45,6 +45,10 @@ const BACKOFF_M: i32 = 40;
 const AT_SPOT_M: i32 = 6;
 /// A move order within this of the spot needs no new order (m).
 const ON_TRACK_M: i32 = 5;
+/// A vehicle idle short of its spot this long after the spot was chosen
+/// takes where it stands as the spot (s): the spot was on ground it cannot
+/// reach, and re-sending it there only re-runs a failed path search.
+const SPOT_GIVE_UP_S: u64 = 20;
 /// The threat on the enemy side of a point with no known vehicle (m).
 const ENEMY_SIDE_M: i32 = 150;
 /// Sight-line heights above the ground at the threat (mm).
@@ -173,6 +177,14 @@ impl super::Planner<'_> {
                 }
             }
         };
+        let hz = g.setup.tick_hz.max(1) as u64;
+        if sq.order == Order::Idle
+            && !t.immobile
+            && self.tick >= entry.since + SPOT_GIVE_UP_S * hz
+            && (t.pos - entry.spot).length_sq_raw() > sq_m(Fx::from_int(AT_SPOT_M))
+        {
+            entry.spot = t.pos;
+        }
         let at_spot = (t.pos - entry.spot).length_sq_raw() <= sq_m(Fx::from_int(AT_SPOT_M));
         if !at_spot && !t.immobile {
             let on_track = matches!(&sq.order, Order::Move { target } | Order::AttackMove { target }

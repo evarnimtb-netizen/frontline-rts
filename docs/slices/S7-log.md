@@ -114,7 +114,8 @@ Vehicles at 35 m (sets 1-80 / 101-180 / 201-280):
 - Final (`--runs skirmish40,armour5`): **25 pass, 0 miss (hard 0), 65 skipped.**
   T34e (10 %) and T36a (3.3 %) pass as reports.
 - The 160 sets ran with `skirmish --json`, not `targets`.
-- Tick p99 0.70 ms at `--jobs 6` (no clean `--jobs 3` run); 40 hashes unchanged by the Tune.
+- Tick fix (orchestrator): clean p99 1.05 ms (S6b 0.41) came from a vehicle re-searching an unreachable overwatch spot
+  every 2 ticks at the 8000 cap; now it stops, re-paths wait `repath_gap_s`, AI adopts its spot after 20 s. p99 0.38.
 
 ## Checks (commit `1a13f63`)
 
@@ -132,9 +133,8 @@ Vehicles at 35 m (sets 1-80 / 101-180 / 201-280):
 - Germany's share swings by set (43.75-51.9 % at 80 m); pooled 47.5 % is in band.
 - StuG and M10 still take about 3 % and 2 % of kills; T32a misses on seeds 1-80 (S7-15).
 - AI open-top throws never happen in play (L3); covered by `s7_ai.rs` only.
-- `ger_zugtrupp` and `ger_munitionstraeger` are never bought on skirmish (not traced).
+- Zugtrupp and Munitionstraeger are never bought on skirmish (not traced); vehicle_view draws <= 48 per type.
 - Thrown items hit vehicles (S7-13); no aimed small arms at open-top crews (S7-7).
-- `vehicle_view.gd` draws at most 48 vehicles per type.
 
 ## What S8 must know
 

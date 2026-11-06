@@ -915,3 +915,47 @@ fn orders_escorts_launchers_and_ditches_are_deterministic_and_survive_save_load(
     assert!(!ditches.is_empty(), "no AT-ditch section dug in 80 s");
     assert!(ditches.iter().flatten().all(|q| q.y == Fx::from_int(420)));
 }
+
+/// S7 tick-time fix: a vehicle sent onto ground it cannot reach (here the
+/// middle of a wreck) stops at the nearest point it can, ends the order,
+/// and does not search again and again (seed 16 swapped spent 21 million
+/// node expansions on one assault gun, a failed search every 2 ticks).
+#[test]
+fn a_vehicle_sent_to_unreachable_ground_stops_without_searching_again() {
+    let mut w = World::new_match(setup(), 1).unwrap();
+    let (_, wreck) = tank(&mut w, 1, xy(520, 500), NORTH);
+    w.wreck_vehicle(wreck);
+    let (sq, v) = tank(&mut w, 0, xy(480, 500), EAST);
+    let goal = xy(520, 500);
+    assert!(
+        w.game()
+            .unwrap()
+            .vehicle_derived()
+            .block
+            .blocked_at(w.terrain(), goal),
+        "the goal must be blocked ground"
+    );
+    w.step(&[cmd(
+        0,
+        0,
+        CommandKind::Move {
+            squad: sq,
+            target: goal,
+        },
+    )]);
+    let mut expansions: u64 = 0;
+    for _ in 0..30 * 60 {
+        w.step(&[]);
+        expansions += u64::from(w.stage_times().path_expansions);
+    }
+    let pos = w.entities().transform()[v.index()].pos.xy();
+    assert!(
+        (pos - goal).length() < Fx::from_int(15),
+        "it drove up to the wreck: {pos:?}"
+    );
+    assert_eq!(order(&w, sq), Order::Idle, "the order ends");
+    assert!(
+        expansions <= 40_000,
+        "{expansions} node expansions in 60 s for one unreachable goal"
+    );
+}

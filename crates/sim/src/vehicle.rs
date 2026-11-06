@@ -1880,9 +1880,20 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     let wp = nav.path[nav.next as usize];
     let to = wp - pos;
     let dist = to.length();
+    let gap_ok = vs
+        .repath_tick
+        .is_none_or(|r| c.tick >= r + (d.repath_gap_s * c.hz) as u64);
     if nav.next == last && dist <= Fx::from_milli(d.arrive_mm as i32) {
-        if nav.partial {
-            repath.push((c.sid, nav.goal, None));
+        // A partial path (the search hit its cap) continues from its end, at
+        // most once per `repath_gap_s`. One that found no node nearer than
+        // where the vehicle stands (a single point) is as close as it gets:
+        // it ends like an arrival. Without this, a goal it cannot reach (a
+        // wreck, blocked ground) re-searched every tick at the full cap
+        // (S7 tick-time fix).
+        if nav.partial && nav.path.len() > 1 {
+            if gap_ok {
+                repath.push((c.sid, nav.goal, None));
+            }
         } else {
             hold_vehicle(nav, pos);
             if matches!(
@@ -1898,9 +1909,6 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     if dist > Fx::from_milli(250) {
         nav.heading = to.normalize_or_zero();
     }
-    let gap_ok = vs
-        .repath_tick
-        .is_none_or(|r| c.tick >= r + (d.repath_gap_s * c.hz) as u64);
 
     // Stuck: under 1 m of progress in 5 s re-paths around the node ahead.
     let fwd = yaw_dir(t.yaw);
