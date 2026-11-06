@@ -30,6 +30,12 @@ reload_ms = 7000
 # Dispersion half-angle (mrad): on the tripod.
 spread_mrad = 12
 muzzle_velocity_m_s = 853
+# S8a (vehicles.md 6.4, S8a-3 (A)): .30 M2 AP for every round (no
+# belt-mix roll): mm of RHA beaten at 0 deg, [range_m, mm], linear between
+# rows, flat past the last (verify; quoted from memory).
+penetration = [[0, 12], [100, 10], [300, 7], [600, 4]]
+# Past the plate: on length_cm, at most max_boxes boxes, damage HP each.
+core = { damage = 35, length_cm = 40, max_boxes = 1 }
 # Mount, lay and load (ms).
 setup_ms = 4000
 suppression = 14

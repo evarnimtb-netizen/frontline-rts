@@ -730,7 +730,12 @@ impl MatchState {
             at_ditches: Vec::new(),
             armour_seq: 0,
             next_mission: 1,
-            armour: ArmourTables::new(&setup.ammo, &setup.vehicles),
+            armour: ArmourTables::new(
+                &setup.ammo,
+                &setup.vehicles,
+                &setup.weapons,
+                &setup.rules.vehicles.gunnery,
+            ),
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             hit_log: None,
             call_in_events: Vec::new(),
@@ -750,7 +755,12 @@ impl MatchState {
     /// structures that also need the entities and terrain are rebuilt by
     /// `rebuild_vehicle_derived`.
     pub(crate) fn rebuild_derived(&mut self) {
-        self.armour = ArmourTables::new(&self.setup.ammo, &self.setup.vehicles);
+        self.armour = ArmourTables::new(
+            &self.setup.ammo,
+            &self.setup.vehicles,
+            &self.setup.weapons,
+            &self.setup.rules.vehicles.gunnery,
+        );
         self.vderived = VehicleDerived::new(&self.setup, grid_dim(&self.setup));
     }
 
@@ -878,6 +888,16 @@ impl MatchState {
             .count() as u32
     }
 
+    /// S8a: whether squad type `t` is a transport vehicle's card.
+    pub fn is_transport_type(&self, t: u16) -> bool {
+        let s = &self.setup;
+        s.squad_types
+            .get(t as usize)
+            .and_then(|ty| ty.vehicle)
+            .and_then(|v| s.vehicles.get(v as usize))
+            .is_some_and(|v| v.role == frontline_content::vehicle::VehicleRole::Transport)
+    }
+
     /// Whether `player` could call in `squad_type` at `tick` (S3b), checked
     /// in this order: roster, unlock (the card's `unlock_s`, and the rules'
     /// vehicle unlock as a floor for vehicles), S4 `max_alive`, S4 limit
@@ -899,10 +919,15 @@ impl MatchState {
         }
         let ty = &s.squad_types[squad_type as usize];
         let vr = &s.rules.vehicles;
-        let unlock = if ty.vehicle.is_some() {
-            ty.initial_cooldown_ticks.max(vr.unlock_ticks)
-        } else {
-            ty.initial_cooldown_ticks
+        // S8a-5: a transport's floor is `[vehicles.transport] unlock_s`,
+        // never later than the vehicles' own.
+        let transport = self.is_transport_type(squad_type);
+        let unlock = match ty.vehicle {
+            Some(_) if transport => ty
+                .initial_cooldown_ticks
+                .max((vr.transport.unlock_s * s.tick_hz).min(vr.unlock_ticks)),
+            Some(_) => ty.initial_cooldown_ticks.max(vr.unlock_ticks),
+            None => ty.initial_cooldown_ticks,
         };
         if tick < unlock as u64 {
             return Err(CallInRefusal::Locked {
@@ -917,7 +942,7 @@ impl MatchState {
         {
             return Err(CallInRefusal::GroupLimit { group: g });
         }
-        if ty.vehicle.is_some() && self.vehicles_counted(ents, player) >= vr.limit {
+        if ty.vehicle.is_some() && !transport && self.vehicles_counted(ents, player) >= vr.limit {
             return Err(CallInRefusal::VehicleLimit);
         }
         let wait = self.cooldown_left(player, squad_type, tick);

@@ -57,6 +57,11 @@ crater_depth_cm = 20
 # if it does, and damage to track anchors within blast_radius_cm (10 % of
 # its damage). Blasts never reach a closed vehicle's insides.
 pen_mm = 2
+# S8a thin-plate rule (S7-8, owner question S8a-13 (A)): a fragment of the
+# Stielhandgranate 24 pierces a plate whose effective thickness (thickness x material
+# / cos) is below this many mm at the burst, falling with distance as
+# frag_damage does (verify: starting value).
+frag_pen_mm = 3
 inside_damage = 100
 # S3b: when it beats a plate, inside_rays fragment rays from the contact
 # point into the hull, inside_damage each to the first box within

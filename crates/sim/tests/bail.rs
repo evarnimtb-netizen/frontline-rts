@@ -322,7 +322,7 @@ fn riflemen_re_crew_untrained_and_reload_slower() {
     assert_eq!(g.squad(rif).unwrap().members.len(), 3);
     let s = w.match_setup().unwrap();
     let def = &s.vehicles[vs.type_idx as usize];
-    let base = s.weapons[def.main_gun().weapon as usize].reload_ticks;
+    let base = s.weapons[def.main_gun().unwrap().weapon as usize].reload_ticks;
     let r = frontline_sim::gunnery::reload_of(vs, def, s) as u32;
     assert_eq!(r, base * s.rules.vehicles.recrew.untrained_reload_pct / 100);
     // AT teams never man a tank.

@@ -236,7 +236,7 @@ fn tank_rearms_in_base_round_by_round_and_rare_rounds_stay_under_the_cap() {
     let vt = &s.vehicles[w.game().unwrap().vehicle(v).unwrap().type_idx as usize];
     assert_eq!(vt.rack_price_pct, 53);
     assert_eq!(vt.rare_cap, 3);
-    let gun = vt.main_gun().clone();
+    let gun = vt.main_gun().unwrap().clone();
     let counts: Vec<u32> = gun.ammo.iter().map(|a| a.count as u32).collect();
     assert_eq!(counts, vec![42, 42, 3], "Panzer IV stowage 87");
     let full_rack: u64 = gun

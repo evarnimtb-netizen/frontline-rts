@@ -959,7 +959,7 @@ impl RenderSnapshot {
                 let hp = vs.component(c.kind) as u32;
                 components[c.kind.index()] = (hp * 100 / c.hp.max(1)).min(100) as u8;
             }
-            let gun = &setup.weapons[v.main_gun().weapon as usize];
+            let gun = &setup.weapons[v.primary_weapon() as usize];
             let reload_total = gun.reload_ticks.max(1);
             self.vehicles.push(VehicleSnapshot {
                 id: id.0,
@@ -1009,9 +1009,8 @@ impl RenderSnapshot {
                 followers: vs.followers.len().min(u8::MAX as usize) as u8,
                 suppress: vs.suppress.map(|l| [l[0].to_f32(), l[1].to_f32()]),
                 mg_rounds: v
-                    .mounts
+                    .mg_mounts()
                     .iter()
-                    .skip(1)
                     .zip(&vs.mgs)
                     .filter_map(|(m, st)| m.rounds.map(|n| n.saturating_sub(st.spent)))
                     .reduce(|a, b| a.saturating_add(b))

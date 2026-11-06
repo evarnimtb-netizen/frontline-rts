@@ -68,8 +68,11 @@
 
 use frontline_content::setup::VehicleRulesSetup;
 use frontline_content::tuning::{DrivingTuning, VehiclePathTuning};
-use frontline_content::vehicle::{FixedVec3, VehicleSetup};
-use frontline_content::{COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MatchSetup, SeatRole};
+use frontline_content::vehicle::MAX_SHIELDS;
+use frontline_content::vehicle::{FixedVec3, VehicleRole, VehicleSetup};
+use frontline_content::{
+    COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MatchSetup, MountKind, SeatRole,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::armour::deg;
@@ -134,6 +137,9 @@ pub struct MgState {
     /// S3b Fix: rounds spent from the mount's stowage (`MountSetup::rounds`;
     /// stays 0 on an unlimited mount). Refilled a belt per base rearm step.
     pub spent: u32,
+    /// S8a pintle mounts: the MG's yaw from the hull front (radians,
+    /// positive left), within the mount's arc; 0 on other kinds.
+    pub yaw: Fx,
 }
 
 /// Per-vehicle state (`MatchState::vehicles`), saved and hashed through
@@ -281,14 +287,23 @@ impl VehicleState {
                 })
                 .collect(),
             components,
-            ammo: v.main_gun().ammo.iter().map(|a| a.count).collect(),
+            ammo: v
+                .main_gun()
+                .map_or_else(Vec::new, |g| g.ammo.iter().map(|a| a.count).collect()),
             loaded: None,
             ammo_choice: AmmoChoice::Auto,
             reload: 0,
             target: None,
             attack: None,
             aim_turret: false,
-            mgs: vec![MgState::default(); v.mounts.len().saturating_sub(1)],
+            mgs: v
+                .mg_mounts()
+                .iter()
+                .map(|m| MgState {
+                    yaw: crate::gunnery::pintle_rest(m),
+                    ..MgState::default()
+                })
+                .collect(),
             ranging: 0,
             since_fire: u16::MAX,
             burn: 0,
@@ -353,6 +368,19 @@ impl VehicleState {
         self.components[k.index()]
     }
 
+    /// Whether its armament is out (bail-out "useless" and "under fire"
+    /// triggers, AI): the main gun destroyed; S8a-1: without a main gun,
+    /// every MG dry or without its crewman.
+    pub fn gun_out(&self, v: &VehicleSetup) -> bool {
+        if v.main_gun().is_some() {
+            return self.component(ComponentKind::Gun) == 0;
+        }
+        v.mg_mounts()
+            .iter()
+            .zip(&self.mgs)
+            .all(|(m, st)| m.rounds.is_some_and(|n| st.spent >= n) || !self.manned(v, m.seat))
+    }
+
     /// Cannot move at all: no driver, engine or a track destroyed, bogged,
     /// on blocked ground, under repair, or a wreck.
     pub fn immobile(&self, v: &VehicleSetup) -> bool {
@@ -384,6 +412,7 @@ impl VehicleState {
         let tilt = deg(r.driving.max_tilt_deg as i32) + Fx::from_milli(1);
         let top = Fx::from(v.mobility.speed).max(Fx::from(v.mobility.reverse));
         let swap_max = r.seat_swap_ticks.min(u16::MAX as u32) as u16;
+        let main_ammo: &[_] = v.main_gun().map_or(&[], |g| &g.ammo);
         let bad = self.seats.len() != v.seats.len()
             || self.seats.iter().any(|st| {
                 st.hp as u32 > r.crew_hp
@@ -393,29 +422,28 @@ impl VehicleState {
             || v.components
                 .iter()
                 .any(|c| self.components[c.kind.index()] as u32 > c.hp)
-            || self.ammo.len() != v.main_gun().ammo.len()
-            || self
-                .ammo
-                .iter()
-                .zip(&v.main_gun().ammo)
-                .any(|(n, a)| *n > a.count)
+            || self.ammo.len() != main_ammo.len()
+            || self.ammo.iter().zip(main_ammo).any(|(n, a)| *n > a.count)
             || self.loaded.is_some_and(|l| l as usize >= self.ammo.len())
             || self
                 .ammo
                 .iter()
-                .zip(&v.main_gun().ammo)
+                .zip(main_ammo)
                 .enumerate()
                 .any(|(k, (n, a))| {
                     *n as u32 + (self.loaded == Some(k as u8)) as u32 > a.count as u32
                 })
-            || self.reload as u32 > s.weapons[v.main_gun().weapon as usize].reload_ticks * 2
-            || self.mgs.len() != v.mounts.len().saturating_sub(1)
-            || self.mgs.iter().zip(v.mounts.iter().skip(1)).any(|(m, mt)| {
+            || self.reload as u32
+                > v.main_gun()
+                    .map_or(0, |g| s.weapons[g.weapon as usize].reload_ticks * 2)
+            || self.mgs.len() != v.mg_mounts().len()
+            || self.mgs.iter().zip(v.mg_mounts()).any(|(m, mt)| {
                 let w = &s.weapons[mt.weapon as usize];
                 m.belt as u32 >= w.magazine.max(1)
                     || m.spent > mt.rounds.unwrap_or(0)
                     || m.cooldown as u32
                         > w.reload_ticks.max(w.interval_milli.div_ceil(1000)).max(1)
+                    || !crate::gunnery::pintle_yaw_ok(mt, m.yaw)
             })
             || self.burn as u32 > r.fire_burnout_ticks
             || self.ammo_fire as u32 > r.damage.ammo_fire_s * s.tick_hz.max(1)
@@ -513,6 +541,9 @@ pub fn yaw_dir(yaw: Fx) -> FxVec2 {
     FxVec2::new(c, s)
 }
 
+/// S8a: one MG shield's geometry ([`Geo::shields`]).
+pub type ShieldGeo = (Option<(u8, FxVec3)>, FxVec3, FxVec3);
+
 /// Geometry of a vehicle type in sim units, derived from its setup.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Geo {
@@ -549,6 +580,11 @@ pub struct Geo {
     pub n_boxes: u8,
     /// [`VehicleSetup::upper_box`].
     pub upper: u8,
+    /// S8a MG shields: (index into `VehicleState::mgs` of the pintle it
+    /// turns with, that pintle's pivot), centre, half extents (from the
+    /// pivot in the MG's frame, or the hull frame); `n_shields` in use.
+    pub shields: [ShieldGeo; MAX_SHIELDS],
+    pub n_shields: u8,
 }
 
 impl Geo {
@@ -569,7 +605,32 @@ impl Geo {
         let hull_r = FxVec2::new(hull_center.x.abs() + hull_half.x, hull_half.y).length();
         let turret_r = pivot.xy().length()
             + FxVec2::new(turret_center.x.abs() + turret_half.x, turret_half.y).length();
-        let gun_r = pivot.xy().length() + v3(v.main_gun().muzzle).xy().length();
+        let main = v.main_gun();
+        let main_muzzle = main.map_or(FxVec3::ZERO, |m| v3(m.muzzle));
+        let gun_r = if main.is_some() {
+            pivot.xy().length() + main_muzzle.xy().length()
+        } else {
+            Fx::ZERO
+        };
+        // S8a: pintle MGs (pivot plus muzzle) and shields reach out too.
+        let pintle_r = v
+            .mounts
+            .iter()
+            .filter(|m| m.kind == MountKind::Pintle)
+            .map(|m| v3(m.pivot).xy().length() + v3(m.muzzle).xy().length())
+            .fold(Fx::ZERO, Fx::max);
+        let shield_r = v
+            .shields
+            .iter()
+            .map(|sh| {
+                let base = sh
+                    .mount
+                    .and_then(|k| v.mounts.get(k as usize))
+                    .map_or(Fx::ZERO, |m| v3(m.pivot).xy().length());
+                let (c, h) = (v3(sh.bounds.center), v3(sh.bounds.half));
+                base + FxVec2::new(c.x.abs() + h.x, c.y.abs() + h.y).length()
+            })
+            .fold(Fx::ZERO, Fx::max);
         // S7: every armour box (hull frame: its corner from the origin;
         // turret frame: as the turret). The two S3 boxes add nothing new.
         let mut boxes = [(Frame::Hull, FxVec3::ZERO, FxVec3::ZERO); MAX_ARMOUR_BOXES];
@@ -592,21 +653,36 @@ impl Geo {
             track_y,
             circle_r: hull_half.y + Fx::from_milli(drv.circle_pad_mm as i32),
             max_tilt: deg(drv.max_tilt_deg as i32),
-            reach: hull_r.max(turret_r).max(gun_r).max(box_r),
+            reach: hull_r
+                .max(turret_r)
+                .max(gun_r)
+                .max(box_r)
+                .max(pintle_r)
+                .max(shield_r),
             eye: v.eye_height.into(),
-            trunnion: {
-                let mz = v3(v.main_gun().muzzle);
-                FxVec3::new(Fx::ZERO, mz.y, mz.z)
-            },
-            muzzle_x: v3(v.main_gun().muzzle).x,
-            barrel_half: {
-                let m = v.main_gun();
+            trunnion: FxVec3::new(Fx::ZERO, main_muzzle.y, main_muzzle.z),
+            muzzle_x: main_muzzle.x,
+            barrel_half: main.map_or(FxVec3::ZERO, |m| {
                 let r: Fx = m.barrel_radius.into();
                 FxVec3::new(Fx::from(m.barrel_length).div_int(2), r, r)
-            },
+            }),
             boxes,
             n_boxes: v.boxes.len().clamp(1, MAX_ARMOUR_BOXES) as u8,
             upper: v.upper_box() as u8,
+            shields: {
+                let first_mg = v.mounts.len() - v.mg_mounts().len();
+                let mut out = [(None, FxVec3::ZERO, FxVec3::ZERO); MAX_SHIELDS];
+                for (o, sh) in out.iter_mut().zip(&v.shields) {
+                    let turn = sh.mount.and_then(|k| {
+                        let m = v.mounts.get(k as usize)?;
+                        let mg = (k as usize).checked_sub(first_mg)?;
+                        Some((mg as u8, v3(m.pivot)))
+                    });
+                    *o = (turn, v3(sh.bounds.center), v3(sh.bounds.half));
+                }
+                out
+            },
+            n_shields: v.shields.len().min(MAX_SHIELDS) as u8,
         }
     }
 
@@ -700,6 +776,9 @@ pub struct VehicleFrame {
     pub barrel: BoxFrame,
     /// [`Geo::reach`].
     pub reach: Fx,
+    /// S8a: MG shields in world space (`n_shields` in use).
+    pub shields: [BoxFrame; MAX_SHIELDS],
+    pub n_shields: u8,
 }
 
 impl VehicleFrame {
@@ -801,6 +880,29 @@ pub fn frame_of(
         n_boxes: geo.n_boxes,
         upper: geo.upper,
         reach: geo.reach,
+        shields: {
+            let mut out = [BoxFrame::default(); MAX_SHIELDS];
+            for (o, &(turn, c, h)) in out.iter_mut().zip(&geo.shields[..geo.n_shields as usize]) {
+                *o = match turn {
+                    Some((mg, pv)) => {
+                        let yaw = vs.mgs.get(mg as usize).map_or(Fx::ZERO, |m| m.yaw);
+                        let axes = hull_axes.turned(yaw);
+                        BoxFrame {
+                            center: origin + hull_axes.apply(pv) + axes.apply(c),
+                            axes,
+                            half: h,
+                        }
+                    }
+                    None => BoxFrame {
+                        center: origin + hull_axes.apply(c),
+                        axes: hull_axes,
+                        half: h,
+                    },
+                };
+            }
+            out
+        },
+        n_shields: geo.n_shields,
     }
 }
 
@@ -1489,10 +1591,13 @@ impl MatchState {
     /// Vehicles of `player` alive (the limit's count; S3b: a bought
     /// vehicle is alive at once, nothing waits in a queue).
     pub fn vehicles_counted(&self, ents: &Entities, player: PlayerId) -> u32 {
+        // S8a-5: transports do not count against the limit.
         self.vehicles
-            .keys()
-            .filter(|id| {
-                ents.kind[id.index()] == EntityKind::Vehicle && ents.owner[id.index()] == player
+            .iter()
+            .filter(|(id, vs)| {
+                ents.kind[id.index()] == EntityKind::Vehicle
+                    && ents.owner[id.index()] == player
+                    && self.setup.vehicles[vs.type_idx as usize].role != VehicleRole::Transport
             })
             .count() as u32
     }
@@ -2323,7 +2428,7 @@ mod tests {
     #[test]
     fn the_barrel_box_follows_the_gun() {
         let r = Rig::new();
-        let m = r.s.vehicles[0].main_gun();
+        let m = r.s.vehicles[0].main_gun().unwrap();
         let mut vs = r.vs.clone();
         let f = frame_of(SimId(1), PlayerId(0), &r.t, &vs, &r.geo);
         // Along the hull axis (east), from the turret front to the muzzle.

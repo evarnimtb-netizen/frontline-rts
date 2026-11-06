@@ -1,0 +1,9 @@
+# .50 BMG (12.7x99 mm) in 105-round belts for the M2HB flexible MG (S8a).
+# A round of M2 AP with its link weighs about 120 g; a 105-round belt in
+# the M2 ammunition box about 30 lb with the box (verify; quoted from
+# memory).
+id = "ww2:50bmg_belt"
+name = ".50 BMG (belted)"
+caliber_mm = 13
+supply = { kind = "small_arms", g = 120 }
+sources = ["TM 9-1225 / FM 23-65 (Browning M2HB), round and belt weights (verify)"]

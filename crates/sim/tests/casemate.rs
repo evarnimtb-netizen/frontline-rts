@@ -202,9 +202,24 @@ fn the_first_vehicle_of_each_role_is_found() {
             .map(|v| s.vehicles[v as usize].role)
             .collect::<Vec<_>>()
     };
-    // The tank stays first (scenarios and AI tie-breaks pick it).
-    assert_eq!(roles(0), [VehicleRole::Tank, VehicleRole::AssaultGun]);
-    assert_eq!(roles(1), [VehicleRole::Tank, VehicleRole::TankDestroyer]);
+    // The tank stays first (scenarios and AI tie-breaks pick it); S8a
+    // appends the half-track.
+    assert_eq!(
+        roles(0),
+        [
+            VehicleRole::Tank,
+            VehicleRole::AssaultGun,
+            VehicleRole::Transport
+        ]
+    );
+    assert_eq!(
+        roles(1),
+        [
+            VehicleRole::Tank,
+            VehicleRole::TankDestroyer,
+            VehicleRole::Transport
+        ]
+    );
 }
 
 /// S7 save field `VehicleState::lay_turn`: saved, loaded, hashed, and

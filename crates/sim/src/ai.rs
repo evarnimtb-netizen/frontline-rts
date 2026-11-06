@@ -1682,7 +1682,7 @@ impl Planner<'_> {
                 .find(|c| c.kind == ComponentKind::Engine)
                 .map_or(0, |c| c.hp);
             let dead = vs.seats.iter().filter(|st| st.hp == 0).count();
-            let beaten = vs.component(ComponentKind::Gun) == 0
+            let beaten = vs.gun_out(v)
                 || dead >= 2
                 || (vs.component(ComponentKind::Engine) as u32) * 100
                     < engine_max * self.g.setup.rules.ai.armour.retreat_engine_pct;

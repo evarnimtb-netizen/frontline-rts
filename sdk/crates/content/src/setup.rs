@@ -34,8 +34,8 @@ use crate::tuning::{
     AiSupplyTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
     DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning,
     GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
-    check_tuning,
+    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -466,6 +466,8 @@ pub struct VehicleRulesSetup {
     /// S3c tuning tables.
     pub bail: BailTuning,
     pub recrew: RecrewTuning,
+    /// S8a `[vehicles.transport]`.
+    pub transport: TransportTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -757,6 +759,10 @@ pub struct WeaponSetup {
     pub hold_beyond_pct: u32,
     /// S5b: high-angle fire (`[indirect]`); `None`: the S1 flight rule.
     pub indirect: Option<IndirectSetup>,
+    /// S8a (6.4): small arms against plates: mm RHA beaten at 0 deg by
+    /// range (rows rising; empty: never), and the core past the plate.
+    pub pen: Vec<crate::vehicle::PenRowSetup>,
+    pub core: Option<crate::vehicle::CoreSetup>,
 }
 
 /// S5b: a mortar's charges and laying limits, lowered. The tangents are
@@ -827,6 +833,8 @@ pub struct HeSetup {
     pub inside_rays: u32,
     pub inside_reach: Fixed,
     pub vs_vehicle_pct: u32,
+    /// S8a thin-plate rule: mm RHA a fragment pierces at the burst.
+    pub frag_pen_mm: u32,
 }
 
 /// A thrown item (see `ItemDef`).
@@ -1271,6 +1279,7 @@ impl ModDefs {
                     inside_rays: h.inside_rays,
                     inside_reach: Fixed::from_cm(h.inside_reach_cm),
                     vs_vehicle_pct: h.vs_vehicle_pct,
+                    frag_pen_mm: h.frag_pen_mm,
                 }),
                 fire_reveal_pct: w.fire_reveal_pct.unwrap_or(rules.combat.firing_spot_pct),
                 fire_reveal_ticks: ms_to_ticks(
@@ -1290,6 +1299,19 @@ impl ModDefs {
                 burst_pause_ticks: ms_to_ticks(w.burst_pause_ms, hz),
                 hold_beyond_pct: w.hold_beyond_pct,
                 indirect: w.indirect.as_ref().map(IndirectSetup::lower),
+                pen: w
+                    .penetration
+                    .iter()
+                    .map(|&[r, mm]| crate::vehicle::PenRowSetup {
+                        range: Fixed::from_int(r as i32),
+                        mm,
+                    })
+                    .collect(),
+                core: w.core.map(|c| crate::vehicle::CoreSetup {
+                    damage: c.damage,
+                    length: Fixed::from_cm(c.length_cm),
+                    max_boxes: c.max_boxes as u8,
+                }),
             })
             .collect();
         let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
@@ -1465,7 +1487,7 @@ impl ModDefs {
                 let short_name = s.short_name.clone().unwrap_or_else(|| s.name.clone());
                 if let Some(v) = vehicle {
                     let vs = &vehicles[v as usize];
-                    let gun = vs.main_gun().weapon;
+                    let gun = vs.primary_weapon();
                     // S4-15 (A): the card may override the vehicle def's
                     // cost, cooldown and unlock.
                     return SquadTypeSetup {
@@ -1800,6 +1822,7 @@ impl ModDefs {
                         damage: v.damage.clone(),
                         bail: v.bail.clone(),
                         recrew: v.recrew.clone(),
+                        transport: v.transport.clone(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -2112,6 +2135,7 @@ pub(crate) fn lower_item_he(h: &ItemHeDef) -> ItemHeSetup {
             inside_rays: h.inside_rays,
             inside_reach: Fixed::from_cm(h.inside_reach_cm),
             vs_vehicle_pct: h.vs_vehicle_pct,
+            frag_pen_mm: h.frag_pen_mm,
         },
         cuts_trenches: h.cuts_trenches,
     }
@@ -2139,6 +2163,7 @@ pub(crate) fn he_ok(b: &HeSetup) -> bool {
         && b.inside_rays <= crate::defs::MAX_INSIDE_RAYS
         && fx_in(b.inside_reach, 0, 10)
         && b.vs_vehicle_pct <= 100
+        && b.frag_pen_mm <= 100
 }
 
 pub(crate) fn item_he_ok(h: &ItemHeSetup) -> bool {
@@ -2592,6 +2617,7 @@ impl MatchSetup {
                 gunnery: &v.gunnery,
                 bail: &v.bail,
                 recrew: &v.recrew,
+                transport: &v.transport,
                 vehicle_damage: &v.damage,
                 formation: &m.formation,
                 cover: &r.cover,
@@ -2694,6 +2720,21 @@ impl MatchSetup {
             if let Some(he) = &w.he {
                 check(he_ok(he), "weapons.he", "out of range");
             }
+            // S8a: the small-arms penetration table and core.
+            check(
+                w.pen.len() <= crate::defs::MAX_PEN_ROWS
+                    && w.pen.windows(2).all(|p| p[0].range < p[1].range)
+                    && w.pen.iter().all(|r| r.mm <= 100 && fx_in(r.range, 0, 5000))
+                    && w.pen.is_empty() == w.core.is_none()
+                    && w.core.is_none_or(|c| {
+                        (1..=1000).contains(&c.damage)
+                            && c.length > Fixed::ZERO
+                            && fx_in(c.length, 0, 5)
+                            && (1..=4).contains(&c.max_boxes)
+                    }),
+                "weapons.pen",
+                "penetration rows or core out of range",
+            );
             if let Some(ind) = &w.indirect {
                 check(
                     ind.ok() && w.class == WeaponClass::Mortar && w.he.is_some(),
@@ -2826,7 +2867,7 @@ impl MatchSetup {
                 check(
                     vehicle.is_some_and(|v| {
                         v.faction == s.faction
-                            && v.main_gun().weapon == s.weapon
+                            && v.primary_weapon() == s.weapon
                             && s.small_arms == s.weapon
                     }) && s.men == 0
                         && s.members.is_empty()

@@ -182,7 +182,7 @@ pub(crate) fn board_blocked(s: &MatchSetup, vs: &VehicleState) -> Option<RecrewR
         return Some(RecrewRefusal::Burning);
     }
     if s.rules.vehicles.bail.useless_bail != 0
-        && vs.component(ComponentKind::Gun) == 0
+        && vs.gun_out(&s.vehicles[vs.type_idx as usize])
         && immobile(vs)
     {
         return Some(RecrewRefusal::Useless);
@@ -363,7 +363,7 @@ impl MatchState {
         let hz = self.setup.tick_hz.max(1);
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
         let broken = immobile(vs);
-        let gun_out = vs.component(ComponentKind::Gun) == 0;
+        let gun_out = vs.gun_out(v);
         let cause = if vs.bail_order {
             AB_ORDER
         } else if b.ammo_fire_bail != 0 && vs.ammo_fire > 0 {

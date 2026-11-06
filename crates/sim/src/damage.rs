@@ -95,6 +95,9 @@ pub const MAX_BOXES: usize = frontline_content::vehicle::MAX_INNER_BOXES;
 /// normal, per axis: the hemisphere behind the plate as the spall rule's
 /// cone (geometry, not a tuning value).
 const INSIDE_CONE_DEG: i32 = 45;
+/// S8a: how far past an MG shield a round that went through it is traced
+/// on into the same vehicle (m; a shield stands on or beside the hull).
+const SHIELD_PAST_M: i32 = 8;
 
 /// `ArmourEventKind::KnockedOut` causes (`ArmourEvent::component`): too few
 /// crew, a rack detonation, an engine fire burned out, and (S3b) an ammo
@@ -342,6 +345,18 @@ impl MatchState {
             Some(EntityKind::Vehicle | EntityKind::Abandoned)
         );
         let r = self.resolve(ctx.seed, ctx.tick, e, alive)?;
+        // S8a: a small-arms round that does not get through is only
+        // stopped (counted; no event, no attacker, repairs go on).
+        let small = e.ammo == NO_AMMO
+            && self
+                .setup
+                .weapons
+                .get(e.weapon as usize)
+                .is_some_and(|w| w.he.is_none());
+        if small && (!alive || (r.result != PenResult::Penetration && r.dealt.is_empty())) {
+            ctx.stats.rounds_stopped += 1;
+            return None;
+        }
         if !alive {
             // A wreck (or one knocked out earlier this tick) only stops it.
             return r.burst;
@@ -368,7 +383,17 @@ impl MatchState {
             vs.prev_pen = vs.last_pen;
             vs.last_pen = Some(ctx.tick);
         }
-        if e.ammo != NO_AMMO {
+        if small {
+            // S8a: only penetrations emit (the feed coalesces them, S8a-12);
+            // S7 open-face and exposed-seat hits stay silent as before.
+            if r.result == PenResult::Penetration && hit.via == armour::HitVia::Plate {
+                ctx.stats.small_arms_pens += 1;
+                let ev = ArmourEv::new(ArmourEventKind::Penetration, id, owner, attacker)
+                    .zone(hit.zone)
+                    .at(hit.point);
+                self.push_event(events, ev);
+            }
+        } else if e.ammo != NO_AMMO {
             let (kind, stat) = match r.result {
                 PenResult::Ricochet => (ArmourEventKind::Ricochet, &mut ctx.stats.ricochets),
                 PenResult::NonPenetration => (
@@ -449,6 +474,52 @@ impl MatchState {
             }
             return Some(out);
         }
+        // S8a: small arms (no round, no blast) take their weapon's table.
+        let small = ammo.is_none() && weapon.he.is_none();
+        let range = (hit.point - origin).length();
+        let (pen0, cos_ric) = match (ammo, self.armour.ammo.get(e.ammo as usize)) {
+            (Some(_), Some(t)) => (t.pen0(range), t.cos_ricochet),
+            _ if small => (
+                self.armour
+                    .small
+                    .get(e.weapon as usize)
+                    .map_or(Fx::ZERO, |t| t.pen0(range)),
+                self.armour.small_cos_ricochet,
+            ),
+            // A mortar shell: its flat `pen_mm`, ricochet over 80°.
+            _ => (
+                Fx::from_int(weapon.he.as_ref().map_or(0, |h| h.pen_mm) as i32),
+                armour::deg(80).cos(),
+            ),
+        };
+        if let armour::HitVia::Shield(k) = hit.via {
+            // S8a: the plate rule once at the shield; a bursting round
+            // bursts there, a pass goes on along the same path into what
+            // is behind it on this vehicle (`hit_armour_past`).
+            let t = plates.shields.get(k as usize).copied().unwrap_or(Fx::ZERO);
+            let c = armour::impact_cos(dir, hit.normal);
+            let mut rng = RngStream::new(seed, tick, SimId(e.slot), Purpose::SHIELD);
+            let var = armour::variation(&mut rng);
+            out.result = armour::penetrates(pen0, c, t, Fx::ZERO, cos_ric, var);
+            if out.result != PenResult::Penetration || bursts {
+                out.result = PenResult::NonPenetration.min(out.result);
+                return Some(out);
+            }
+            let reach = Fx::from_int(SHIELD_PAST_M);
+            let Some(next) = armour::hit_armour_past(hit.point, dir * reach, &f, plates, Some(k))
+            else {
+                out.result = PenResult::NonPenetration;
+                return Some(out);
+            };
+            let mut e2 = *e;
+            e2.blow = Blow::Armour {
+                vehicle: id,
+                hit: next,
+                vel,
+                origin,
+            };
+            return self.resolve(seed, tick, &e2, alive);
+        }
         if hit.via != armour::HitVia::Plate {
             out.result = PenResult::Penetration;
             self.open_hit(seed, tick, e, &f, v, &hit, dir, &mut out.dealt);
@@ -458,14 +529,6 @@ impl MatchState {
         let c = armour::impact_cos(dir, hit.normal);
         let band = armour::in_track_band(&hit, f.hull.half.z, plates.track_band_pct);
         let extra = if band { plates.track_mm } else { Fx::ZERO };
-        let (pen0, cos_ric) = match (ammo, self.armour.ammo.get(e.ammo as usize)) {
-            (Some(_), Some(t)) => (t.pen0((hit.point - origin).length()), t.cos_ricochet),
-            // A mortar shell: its flat `pen_mm`, ricochet over 80°.
-            _ => (
-                Fx::from_int(weapon.he.as_ref().map_or(0, |h| h.pen_mm) as i32),
-                armour::deg(80).cos(),
-            ),
-        };
         let mut rng = RngStream::new(seed, tick, SimId(e.slot), Purpose::PENETRATION);
         let var = armour::variation(&mut rng);
         out.result = armour::penetrates(pen0, c, plate.thickness, extra, cos_ric, var);
@@ -504,6 +567,22 @@ impl MatchState {
             });
         }
         let boxes = inner_boxes(&f, v);
+        if small {
+            // S8a (6.4): a small-arms core past the plate: `length` on, at
+            // most `max_boxes` boxes for `damage` each; no spall.
+            if out.result == PenResult::Penetration
+                && let Some(core) = &weapon.core
+            {
+                let len: Fx = core.length.into();
+                for k in ray_boxes(&boxes, hit.point, dir * len, core.max_boxes as usize) {
+                    dealt.push(Dealt {
+                        inner: boxes[k].1,
+                        dmg: core.damage,
+                    });
+                }
+            }
+            return Some(out);
+        }
         let mech = ammo.map(|a| a.mechanism);
         match (out.result, mech) {
             (PenResult::Penetration, Some(m)) if m.penetrator() => {
@@ -1001,8 +1080,9 @@ impl MatchState {
                 let head = sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(1, 10));
                 if (head - lift).length_sq_raw() > rr
                     || !ctx.terrain.line_of_sight(lift, head)
-                    || armour::hit_armour(lift, head - lift, &f, plates)
-                        .is_some_and(|h| h.via == armour::HitVia::Plate)
+                    || armour::hit_armour(lift, head - lift, &f, plates).is_some_and(|h| {
+                        matches!(h.via, armour::HitVia::Plate | armour::HitVia::Shield(_))
+                    })
                 {
                     continue;
                 }
@@ -1480,13 +1560,12 @@ fn repair_step(vs: &mut VehicleState, v: &VehicleSetup, k: u8) {
 /// Base rearm: one round of the entry furthest below its load (ties: the
 /// first), and (S3b Fix) one belt into each MG with spent stowage.
 fn rearm_one(vs: &mut VehicleState, v: &VehicleSetup, weapons: &[WeaponSetup]) {
-    for (st, m) in vs.mgs.iter_mut().zip(v.mounts.iter().skip(1)) {
+    for (st, m) in vs.mgs.iter_mut().zip(v.mg_mounts().iter()) {
         let belt = weapons[m.weapon as usize].magazine.max(1);
         st.spent = st.spent.saturating_sub(belt);
     }
     let best = v
-        .main_gun()
-        .ammo
+        .main_ammo()
         .iter()
         .enumerate()
         .map(|(k, a)| {
@@ -1586,6 +1665,9 @@ mod tests {
             // bins and no turret ring, four crew.
             let (seats, bins, others) = match v.id.as_str() {
                 "ww2:ger_stug3_g" => (4, 2, 3),
+                // S8a half-tracks: two crew, no gun or rack; engine and
+                // transmission (passenger slots are Build B's).
+                "ww2:ger_sdkfz251_1" | "ww2:usa_m3a1" => (2, 0, 2),
                 _ => (5, 3, 4),
             };
             assert_eq!(racks, bins, "{}", v.id);

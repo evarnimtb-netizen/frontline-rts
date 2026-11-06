@@ -724,7 +724,22 @@ tuning_table! {
         /// S7: a throw aimed inside an enemy open box's footprint aims this
         /// high above its floor, so the lob drops in (cm; default 30).
         open_top_item_aim_cm: 0..=200 = "default_open_top_item_aim_cm",
+        /// S8a (S8a-4): a face-hardened plate's thickness counts as this
+        /// share of itself against every round (%; default 125, verify:
+        /// FH plate resists small calibre about 1.2-1.4x RHA).
+        face_hardened_pct: 100..=200 = "default_face_hardened_pct",
+        /// S8a: a small-arms round meeting a plate more obliquely than
+        /// this glances off (deg from the normal; default 70).
+        small_arms_ricochet_deg: 30..=89 = "default_small_arms_ricochet_deg",
     }
+}
+
+fn default_small_arms_ricochet_deg() -> u32 {
+    70
+}
+
+fn default_face_hardened_pct() -> u32 {
+    125
 }
 
 fn default_casemate_margin_deg() -> u32 {
@@ -802,6 +817,51 @@ tuning_table! {
 }
 
 impl BailTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+tuning_table! {
+    /// `[vehicles.transport]` (S8a, vehicles.md 6.6): infantry carriers.
+    /// Defaults are the S8a starting values.
+    pub struct TransportTuning {
+        /// Transports can be called in from this much match time on (s),
+        /// instead of `[vehicles] unlock_s`; never later than it (S8a-5).
+        unlock_s: 0..=3600 = "default_transport_unlock_s",
+        /// Men who dismount at once (knock-out, fire) cannot fire for this
+        /// long and arrive with `[vehicles.bail] bail_suppression` (ms).
+        stun_ms: 0..=10000 = "default_transport_stun_ms",
+        /// A man boards within this of the door (cm).
+        board_reach_cm: 50..=1000 = "default_transport_board_reach_cm",
+        /// Nobody boards or gets out while the vehicle is faster (cm/s).
+        move_block_cm_s: 0..=1000 = "default_transport_move_block_cm_s",
+    }
+}
+
+fn default_transport_unlock_s() -> u32 {
+    120
+}
+fn default_transport_stun_ms() -> u32 {
+    2000
+}
+fn default_transport_board_reach_cm() -> u32 {
+    300
+}
+fn default_transport_move_block_cm_s() -> u32 {
+    100
+}
+
+impl Default for TransportTuning {
+    fn default() -> TransportTuning {
+        TransportTuning {
+            unlock_s: default_transport_unlock_s(),
+            stun_ms: default_transport_stun_ms(),
+            board_reach_cm: default_transport_board_reach_cm(),
+            move_block_cm_s: default_transport_move_block_cm_s(),
+        }
+    }
+}
+
+impl TransportTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
@@ -1444,6 +1504,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("vehicles.damage", VehicleDamageTuning::KEYS),
     ("vehicles.bail", BailTuning::KEYS),
     ("vehicles.recrew", RecrewTuning::KEYS),
+    ("vehicles.transport", TransportTuning::KEYS),
     ("movement.formation", FormationTuning::KEYS),
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
@@ -1468,6 +1529,7 @@ pub(crate) struct TuningRefs<'a> {
     pub vehicle_damage: &'a VehicleDamageTuning,
     pub bail: &'a BailTuning,
     pub recrew: &'a RecrewTuning,
+    pub transport: &'a TransportTuning,
     pub formation: &'a FormationTuning,
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
@@ -1516,6 +1578,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.vehicle_damage.check(&p("vehicles.damage"), out);
     t.bail.check(&p("vehicles.bail"), out);
     t.recrew.check(&p("vehicles.recrew"), out);
+    t.transport.check(&p("vehicles.transport"), out);
     t.formation.check(&p("movement.formation"), out);
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);

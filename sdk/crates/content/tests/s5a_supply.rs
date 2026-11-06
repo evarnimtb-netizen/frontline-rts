@@ -109,8 +109,7 @@ fn refill_prices_match_the_hand_figures() {
         let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
         assert_eq!(v.rack_price_pct, pct, "{id}");
         let rack: u64 = v
-            .main_gun()
-            .ammo
+            .main_ammo()
             .iter()
             .map(|a| a.count as u64 * price(&s, Feed::Ammo(a.ammo)) * pct as u64 / 100)
             .sum();
@@ -129,16 +128,16 @@ fn refill_prices_match_the_hand_figures() {
 fn shipped_loads_and_stowage() {
     let s = setup();
     let pz = s.vehicles.iter().find(|v| v.id == "ww2:ger_pz4_h").unwrap();
-    let n: Vec<u16> = pz.main_gun().ammo.iter().map(|a| a.count).collect();
+    let n: Vec<u16> = pz.main_ammo().iter().map(|a| a.count).collect();
     assert_eq!(n, vec![42, 42, 3]);
     assert_eq!(pz.rare_cap, 3);
-    assert!(pz.main_gun().ammo[2].rare);
+    assert!(pz.main_ammo()[2].rare);
     let sh = s
         .vehicles
         .iter()
         .find(|v| v.id == "ww2:usa_m4a3_75")
         .unwrap();
-    let n: Vec<u16> = sh.main_gun().ammo.iter().map(|a| a.count).collect();
+    let n: Vec<u16> = sh.main_ammo().iter().map(|a| a.count).collect();
     assert_eq!(n, vec![35, 62]);
     assert_eq!(sh.rare_cap, 0);
     // The Grenadiergruppe's MG team: 50 + 500 + 600 belt rounds.

@@ -20,8 +20,8 @@ use crate::tuning::{
     AiSupplyTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
     DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning,
     GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning,
-    check_tuning,
+    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -421,6 +421,11 @@ pub struct ItemHeDef {
     /// Damage to track anchors within `blast_radius_cm`, in percent of the
     /// blast's damage. Blasts never reach a closed vehicle's insides.
     pub vs_vehicle_pct: u32,
+    /// S8a thin-plate rule (S7-8): a fragment pierces a plate whose
+    /// effective thickness is below this (mm RHA at the burst, falling with
+    /// distance as `frag_damage` does). 0: never.
+    #[serde(default)]
+    pub frag_pen_mm: u32,
 }
 
 /// Most fragment rays one burst may throw (S3b; the per-tick budget is the
@@ -631,7 +636,30 @@ pub struct WeaponDef {
     /// mortar keeps the S1 flight rule (`[combat.mortar] flight_milli`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub indirect: Option<IndirectDef>,
+    /// S8a (vehicles.md 6.4): small arms against thin armour: rows of
+    /// `[range_m, mm]` (mm RHA beaten at 0 deg; linear between rows, flat
+    /// past the last), ranges strictly rising. Empty: the round never
+    /// beats a plate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub penetration: Vec<[u32; 2]>,
+    /// S8a: what a penetrating round does inside (needs `penetration`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core: Option<SmallCoreDef>,
 }
+
+/// S8a: a small-arms round past a plate: it goes on `length_cm` and hits at
+/// most `max_boxes` inner boxes (crew, riders, components) for `damage`
+/// each. No spall, no filler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SmallCoreDef {
+    pub damage: u32,
+    pub length_cm: u32,
+    pub max_boxes: u32,
+}
+
+/// S8a: most rows of a small-arms penetration table.
+pub const MAX_PEN_ROWS: usize = 8;
 
 /// S5b `[indirect]` of a mortar: muzzle velocity per charge (m/s, strictly
 /// rising, the lowest first) and the elevation limits (whole degrees, high
@@ -1060,6 +1088,11 @@ pub struct HeDef {
     /// Damage to track anchors within `blast_radius_cm`, in percent of the
     /// blast's damage. Blasts never reach a closed vehicle's insides.
     pub vs_vehicle_pct: u32,
+    /// S8a thin-plate rule (S7-8): a fragment pierces a plate whose
+    /// effective thickness is below this (mm RHA at the burst, falling with
+    /// distance as `frag_damage` does). 0: never.
+    #[serde(default)]
+    pub frag_pen_mm: u32,
 }
 
 /// A playable side (`defs/factions/*.toml`).
@@ -1355,6 +1388,9 @@ pub struct VehicleRulesDef {
     pub bail: BailTuning,
     /// Re-crewing abandoned vehicles (S3c tuning table).
     pub recrew: RecrewTuning,
+    /// Infantry carriers (S8a tuning table; defaults when absent).
+    #[serde(default)]
+    pub transport: TransportTuning,
 }
 
 /// Thrown items (S1b abilities).
@@ -2055,6 +2091,7 @@ impl ItemHeDef {
                 self.vs_vehicle_pct,
             ],
         );
+        range(&mut out, "frag_pen_mm", self.frag_pen_mm, 0, 100);
         out
     }
 }
@@ -2220,7 +2257,44 @@ impl WeaponDef {
             }
             (None, _) => {}
         }
+        if let Some(he) = &self.he {
+            range(&mut out, "he.frag_pen_mm", he.frag_pen_mm, 0, 100);
+        }
+        check_pen_table(&mut out, &self.penetration, self.core.as_ref());
         out
+    }
+}
+
+/// S8a: a weapon's `penetration` rows and `core`.
+fn check_pen_table(out: &mut Vec<Issue>, rows: &[[u32; 2]], core: Option<&SmallCoreDef>) {
+    if rows.len() > MAX_PEN_ROWS {
+        out.push(Issue::new(
+            "penetration",
+            format!("at most {MAX_PEN_ROWS} rows, got {}", rows.len()),
+        ));
+    }
+    for (i, [r, mm]) in rows.iter().enumerate() {
+        range(out, &format!("penetration[{i}][0]"), *r, 0, 5000);
+        range(out, &format!("penetration[{i}][1]"), *mm, 0, 100);
+        if i > 0 && rows[i - 1][0] >= *r {
+            out.push(Issue::new(
+                format!("penetration[{i}]"),
+                "ranges must rise strictly",
+            ));
+        }
+    }
+    match (rows.is_empty(), core) {
+        (false, None) => out.push(
+            Issue::new("core", "a weapon with `penetration` needs a `core`")
+                .with_hint("core = { damage = 35, length_cm = 40, max_boxes = 1 }"),
+        ),
+        (true, Some(_)) => out.push(Issue::new("core", "`core` needs `penetration`")),
+        _ => {}
+    }
+    if let Some(c) = core {
+        range(out, "core.damage", c.damage, 1, 1000);
+        range(out, "core.length_cm", c.length_cm, 1, 500);
+        range(out, "core.max_boxes", c.max_boxes, 1, 4);
     }
 }
 
@@ -2695,6 +2769,7 @@ impl RulesDef {
                 gunnery: &v.gunnery,
                 bail: &v.bail,
                 recrew: &v.recrew,
+                transport: &v.transport,
                 vehicle_damage: &v.damage,
                 formation: &self.movement.formation,
                 cover: &self.cover,

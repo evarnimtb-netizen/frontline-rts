@@ -247,6 +247,10 @@ pub enum MountKind {
     /// `traverse_deg` of the hull's front about its `pivot`; outside that
     /// arc the driver turns the hull (`docs/slices/S7-casemate-td.md` 3).
     Casemate = 3,
+    /// S8a: a pintle or ring MG (vehicles.md 6.7): it turns within
+    /// `traverse_deg` of the hull's front about its `pivot` (hull frame) at
+    /// `traverse_deg_s`; an exposed seat fires it.
+    Pintle = 4,
 }
 
 impl MountKind {
@@ -304,6 +308,9 @@ pub enum VehicleRole {
     Tank,
     AssaultGun,
     TankDestroyer,
+    /// S8a: an infantry carrier (half-track): `[transport]`, no main gun;
+    /// outside the rules' vehicle `limit`, unlocked at `transport_unlock_s`.
+    Transport,
 }
 
 impl VehicleRole {
@@ -312,6 +319,7 @@ impl VehicleRole {
             VehicleRole::Tank => "tank",
             VehicleRole::AssaultGun => "assault_gun",
             VehicleRole::TankDestroyer => "tank_destroyer",
+            VehicleRole::Transport => "transport",
         }
     }
 }
@@ -322,6 +330,10 @@ impl VehicleRole {
 #[serde(rename_all = "snake_case")]
 pub enum MobilityKind {
     Tracked,
+    /// S8a (vehicles.md 6.8): driven front wheels and rear tracks. Same
+    /// drive as `tracked` (neutral pivot, S8a-6); the difference is data
+    /// (bog chance, turn rate, speed). `wheeled` is reserved for S8b.
+    Halftrack,
 }
 
 /// Armour material. Only rolled homogeneous armour exists in S3
@@ -344,6 +356,9 @@ pub enum MobilityKind {
 pub enum ArmourMaterial {
     #[default]
     Rha,
+    /// S8a (S8a-4): face-hardened plate; its thickness counts as the rules'
+    /// `[vehicles] face_hardened_pct` of itself against every round.
+    FaceHardened,
 }
 
 // -------------------------------------------------------------- vehicle --
@@ -357,7 +372,12 @@ pub const MAX_STATIONS: usize = 4;
 pub const MAX_COMPONENT_BOXES: usize = 4;
 /// Most inner boxes per vehicle: every crew seat box plus every component
 /// box (the sim's damage pass keeps this many; S3b Fix, a performance cap).
-pub const MAX_INNER_BOXES: usize = 14;
+/// S8a: 14 -> 24 (passenger slot boxes count from S8a Build B).
+pub const MAX_INNER_BOXES: usize = 24;
+/// S8a: most passenger slots of a transport.
+pub const MAX_PASSENGERS: usize = 12;
+/// S8a: most MG shields per vehicle.
+pub const MAX_SHIELDS: usize = 2;
 /// Most spall rays of a penetration: the sim traces the core plus at most
 /// this many (S3b Fix: was 8 in validation while the sim kept 7).
 pub const MAX_SPALL_RAYS: u32 = 7;
@@ -438,6 +458,63 @@ pub struct VehicleDef {
     /// `[supply]` table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rare_cap: Option<u32>,
+    /// S8a (6.7): MG shields: armour only, no contents, no zone id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shields: Vec<ShieldDef>,
+    /// S8a (6.6): an infantry carrier's door and timings (role
+    /// `transport`); its seats are `passenger_slots`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<TransportDef>,
+    /// S8a: one per passenger seat (hull frame); the box is the seated
+    /// man's hit volume.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passenger_slots: Vec<PassengerSlotDef>,
+}
+
+/// S8a (6.7): an MG shield: one plate all round a thin box. It follows a
+/// pintle mount's yaw about the mount's pivot, or sits in the hull frame.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShieldDef {
+    /// Index into `weapons` of the pintle mount it turns with (box in that
+    /// mount's frame: from the pivot, x along the MG); omitted: hull frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<usize>,
+    #[serde(rename = "box")]
+    pub bounds: BoxDef,
+    /// Millimetres (RHA; at most one decimal).
+    #[schemars(with = "f64")]
+    pub thickness_mm: TenthsMm,
+}
+
+/// S8a (6.6): how men get in and out of an infantry carrier.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TransportDef {
+    /// Passengers (equals the number of `passenger_slots`).
+    pub capacity: u32,
+    /// The door, hull frame, cm: men board and exit here.
+    pub entry: [i32; 3],
+    /// Time per man boarding by the door (ms).
+    pub board_ms: u32,
+    /// Time per man out of the door (ms).
+    pub exit_ms: u32,
+    /// Time per man over the sides (ms); omitted: no side exits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_over_sides_ms: Option<u32>,
+    /// A man going over the side stands this much higher for his exit
+    /// time (cm).
+    #[serde(default)]
+    pub exit_raise_cm: u32,
+}
+
+/// S8a: one passenger seat; the box (hull frame, cm) is the man's hit
+/// volume while he rides.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PassengerSlotDef {
+    #[serde(rename = "box")]
+    pub bounds: BoxDef,
 }
 
 /// S3c: a crew hatch. The men of `seats` leave by it one after another, in
@@ -1285,7 +1362,13 @@ impl VehicleDef {
             }
             check_part(&mut out, &format!("{p}.box"), &st.bounds, &frames);
         }
-        for need in [SeatRole::Driver, SeatRole::Gunner] {
+        // S8a-1: a gunner only with a main gun.
+        let gunner = if self.main_gun().is_some() {
+            &[SeatRole::Driver, SeatRole::Gunner][..]
+        } else {
+            &[SeatRole::Driver][..]
+        };
+        for &need in gunner {
             if !seats.contains(&need) {
                 out.push(
                     Issue::new("seats", format!("needs a `{}` seat", need.name()))
@@ -1301,11 +1384,27 @@ impl VehicleDef {
             ));
         }
         let mains = self.weapons.iter().filter(|w| w.mount.is_main()).count();
-        if mains != 1 {
+        // S8a-1: a transport has no main gun; every other role exactly one.
+        let want_mains = if self.role == VehicleRole::Transport {
+            0..=1
+        } else {
+            1..=1
+        };
+        if !want_mains.contains(&mains) {
             out.push(Issue::new(
                 "weapons",
-                format!("needs exactly one main gun (`turret_main` or `casemate`), got {mains}"),
+                format!(
+                    "needs {} main gun (`turret_main` or `casemate`), got {mains}",
+                    if self.role == VehicleRole::Transport {
+                        "at most one"
+                    } else {
+                        "exactly one"
+                    }
+                ),
             ));
+        }
+        if self.weapons.is_empty() {
+            out.push(Issue::new("weapons", "needs at least one weapon"));
         }
         for kind in [MountKind::Coax, MountKind::Hull] {
             let n = self.weapons.iter().filter(|w| w.mount == kind).count();
@@ -1475,6 +1574,72 @@ impl VehicleDef {
                         );
                     }
                 }
+                MountKind::Pintle => {
+                    match w.pivot {
+                        None => out.push(
+                            Issue::new(format!("{p}.pivot"), "a pintle mount needs a pivot")
+                                .with_hint("pivot = [150, 0, 190]"),
+                        ),
+                        Some(pv) => {
+                            if (0..2).any(|a| {
+                                let c = pv[a] as i64;
+                                c < hull.lo(a) || c > hull.hi(a)
+                            }) || !(0..=1000).contains(&pv[2])
+                            {
+                                out.push(Issue::new(
+                                    format!("{p}.pivot"),
+                                    "the pivot must lie over the hull box, 0..=1000 cm up",
+                                ));
+                            }
+                        }
+                    }
+                    match w.traverse_deg {
+                        None => out.push(
+                            Issue::new(format!("{p}.traverse_deg"), "a pintle mount needs its arc")
+                                .with_hint("traverse_deg = [-35, 35] (or [-180, 180], a ring)"),
+                        ),
+                        Some([lo, hi]) => {
+                            if !(-180..=0).contains(&lo) || !(0..=180).contains(&hi) || lo == hi {
+                                out.push(Issue::new(
+                                    format!("{p}.traverse_deg"),
+                                    format!(
+                                        "must be [-180..=0, 0..=180] and not empty, got [{lo}, {hi}]"
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                    match w.traverse_deg_s {
+                        None => out.push(Issue::new(
+                            format!("{p}.traverse_deg_s"),
+                            "a pintle mount needs its traverse rate",
+                        )),
+                        Some(r) => {
+                            range(&mut out, &format!("{p}.traverse_deg_s"), r as i64, 1, 360)
+                        }
+                    }
+                    if w.elevate_deg_s.is_some() || w.arc_deg.is_some() {
+                        out.push(Issue::new(
+                            p.clone(),
+                            "a pintle mount has no `elevate_deg_s` or `arc_deg`",
+                        ));
+                    }
+                    if !w.ammo.is_empty() || w.elevation_deg.is_some() || w.barrel.is_some() {
+                        out.push(Issue::new(
+                            p.clone(),
+                            "only the main gun has `ammo`, `elevation_deg` and `barrel`",
+                        ));
+                    }
+                    if let Some(n) = w.rounds {
+                        range(&mut out, &format!("{p}.rounds"), n as i64, 1, 20_000);
+                    }
+                    if w.seat.is_none() {
+                        out.push(
+                            Issue::new(format!("{p}.seat"), "a pintle mount needs a seat")
+                                .with_hint("seat = \"commander\""),
+                        );
+                    }
+                }
                 MountKind::Coax | MountKind::Hull => {
                     if w.pivot.is_some()
                         || w.traverse_deg.is_some()
@@ -1529,8 +1694,12 @@ impl VehicleDef {
 
         for kind in ComponentKind::ALL {
             let n = self.components.iter().filter(|c| c.kind == kind).count();
-            // S7: a turret ring exactly with a turret.
-            let want = if kind == ComponentKind::TurretRing && self.turret.is_none() {
+            // S7: a turret ring exactly with a turret; S8a: a gun and an
+            // ammo rack exactly with a main gun.
+            let want = if (kind == ComponentKind::TurretRing && self.turret.is_none())
+                || (matches!(kind, ComponentKind::Gun | ComponentKind::AmmoRack)
+                    && self.main_gun().is_none())
+            {
                 0
             } else {
                 1
@@ -1553,6 +1722,7 @@ impl VehicleDef {
         // (seats first, then components); a box past the cap could never
         // be damaged.
         let inner = self.seats.len()
+            + self.passenger_slots.len()
             + self
                 .components
                 .iter()
@@ -1564,7 +1734,7 @@ impl VehicleDef {
                 Issue::new(
                     "components",
                     format!(
-                        "at most {MAX_INNER_BOXES} inner boxes (crew seats plus component boxes), got {inner}"
+                        "at most {MAX_INNER_BOXES} inner boxes (crew seats, passenger slots and component boxes), got {inner}"
                     ),
                 )
                 .with_hint("merge stowage bins or drop a seat"),
@@ -1742,7 +1912,106 @@ impl VehicleDef {
                 }
             }
         }
+        self.validate_s8a(&mut out, &frames);
         out
+    }
+
+    /// S8a: shields, `[transport]` and passenger slots.
+    fn validate_s8a(&self, out: &mut Vec<Issue>, frames: &[Option<BoxDef>; 2]) {
+        if self.shields.len() > MAX_SHIELDS {
+            out.push(Issue::new(
+                "shields",
+                format!("at most {MAX_SHIELDS} shields, got {}", self.shields.len()),
+            ));
+        }
+        for (i, sh) in self.shields.iter().enumerate() {
+            let p = format!("shields[{i}]");
+            check_box(out, &format!("{p}.box"), &sh.bounds);
+            if !(1..=500).contains(&(sh.thickness_mm.0 / 10)) {
+                out.push(Issue::new(
+                    format!("{p}.thickness_mm"),
+                    "must be 1..=500 mm",
+                ));
+            }
+            if let Some(k) = sh.mount
+                && self
+                    .weapons
+                    .get(k)
+                    .is_none_or(|w| w.mount != MountKind::Pintle)
+            {
+                out.push(Issue::new(
+                    format!("{p}.mount"),
+                    format!("weapons[{k}] is not a pintle mount"),
+                ));
+            }
+        }
+        let transport = self.role == VehicleRole::Transport;
+        match (&self.transport, transport) {
+            (None, true) => out.push(
+                Issue::new("transport", "a `transport` vehicle needs [transport]")
+                    .with_hint("[transport] capacity = 10 ..."),
+            ),
+            (Some(_), false) => out.push(Issue::new(
+                "transport",
+                "only role = \"transport\" has [transport]",
+            )),
+            _ => {}
+        }
+        if !transport && !self.passenger_slots.is_empty() {
+            out.push(Issue::new(
+                "passenger_slots",
+                "only role = \"transport\" has passenger slots",
+            ));
+        }
+        let Some(t) = &self.transport else {
+            return;
+        };
+        range(
+            out,
+            "transport.capacity",
+            t.capacity as i64,
+            1,
+            MAX_PASSENGERS as i64,
+        );
+        if self.passenger_slots.len() != t.capacity as usize {
+            out.push(Issue::new(
+                "passenger_slots",
+                format!(
+                    "needs one slot per passenger ({}), got {}",
+                    t.capacity,
+                    self.passenger_slots.len()
+                ),
+            ));
+        }
+        for (a, c) in t.entry.iter().enumerate() {
+            range(
+                out,
+                &format!("transport.entry[{a}]"),
+                *c as i64,
+                -2000,
+                2000,
+            );
+        }
+        range(out, "transport.board_ms", t.board_ms as i64, 100, 30_000);
+        range(out, "transport.exit_ms", t.exit_ms as i64, 100, 30_000);
+        if let Some(ms) = t.exit_over_sides_ms {
+            range(out, "transport.exit_over_sides_ms", ms as i64, 100, 30_000);
+        }
+        range(
+            out,
+            "transport.exit_raise_cm",
+            t.exit_raise_cm as i64,
+            0,
+            200,
+        );
+        for (i, sl) in self.passenger_slots.iter().enumerate() {
+            let part = PartBoxDef {
+                frame: Frame::Hull,
+                center: sl.bounds.center,
+                half: sl.bounds.half,
+            };
+            check_part(out, &format!("passenger_slots[{i}].box"), &part, frames);
+        }
     }
 
     /// The main gun mount (validated defs have exactly one).
@@ -2144,6 +2413,39 @@ pub struct MountSetup {
     pub seat: SeatRole,
     /// `Coax`, `Hull` (S3b Fix): rounds stowed; `None` unlimited.
     pub rounds: Option<u32>,
+    /// S8a `Pintle`: the pivot in the hull frame (the muzzle is from it,
+    /// turned by the mount's yaw), the arc `[min, max]` in integer degrees
+    /// from the hull front (positive left) and the traverse rate (deg/s);
+    /// zero for other kinds.
+    pub pivot: FixedVec3,
+    pub traverse_deg: [i32; 2],
+    pub traverse_deg_s: i32,
+}
+
+/// S8a: a resolved MG shield (see [`ShieldDef`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShieldSetup {
+    /// Index into `VehicleSetup::mounts` of the pintle it turns with
+    /// (`None`: hull frame).
+    pub mount: Option<u8>,
+    /// In the mount's frame (from its pivot) or the hull frame, m.
+    pub bounds: BoxSetup,
+    /// mm (RHA).
+    pub thickness: Fixed,
+}
+
+/// S8a: a resolved `[transport]` (see [`TransportDef`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransportSetup {
+    /// Door, hull frame, m.
+    pub entry: FixedVec3,
+    pub board_ticks: u32,
+    pub exit_ticks: u32,
+    /// `None`: no side exits.
+    pub exit_over_sides_ticks: Option<u32>,
+    pub exit_raise: Fixed,
+    /// Passenger slot boxes (hull frame, m); `len()` is the capacity.
+    pub slots: Vec<BoxSetup>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2239,12 +2541,33 @@ pub struct VehicleSetup {
     /// filled in by the setup: a full rack costs at most the rules'
     /// `rack_refill_max_card_pct` of the card).
     pub rack_price_pct: u32,
+    /// S8a: MG shields.
+    pub shields: Vec<ShieldSetup>,
+    /// S8a: an infantry carrier's door, timings and slots.
+    pub transport: Option<TransportSetup>,
 }
 
 impl VehicleSetup {
-    /// The main gun (validated setups have it first).
-    pub fn main_gun(&self) -> &MountSetup {
-        &self.mounts[0]
+    /// The main gun (validated setups have it first); S8a-1: `None` on a
+    /// transport without one.
+    pub fn main_gun(&self) -> Option<&MountSetup> {
+        self.mounts.first().filter(|m| m.kind.is_main())
+    }
+
+    /// The main gun's rounds (S8a: empty without one).
+    pub fn main_ammo(&self) -> &[AmmoLoadSetup] {
+        self.main_gun().map_or(&[], |g| &g.ammo)
+    }
+
+    /// S8a: the weapon a card shows (the main gun, else the first MG).
+    pub fn primary_weapon(&self) -> u16 {
+        self.mounts.first().map_or(0, |m| m.weapon)
+    }
+
+    /// S8a: the MG mounts (coax, hull, pintle), after the main gun, in the
+    /// order of `VehicleState::mgs`.
+    pub fn mg_mounts(&self) -> &[MountSetup] {
+        &self.mounts[self.main_gun().is_some() as usize..]
     }
 
     /// The plate of zone id `z` (`None`: no such box).
@@ -2459,6 +2782,21 @@ pub(crate) fn lower_vehicle(
             barrel_radius: w
                 .barrel
                 .map_or(Fixed::ZERO, |b| Fixed::from_cm(b.radius_cm)),
+            pivot: if w.mount == MountKind::Pintle {
+                FixedVec3::from_cm(w.pivot.unwrap_or([0, 0, 0]))
+            } else {
+                FixedVec3::default()
+            },
+            traverse_deg: if w.mount == MountKind::Pintle {
+                w.traverse_deg.unwrap_or([0, 0])
+            } else {
+                [0, 0]
+            },
+            traverse_deg_s: if w.mount == MountKind::Pintle {
+                w.traverse_deg_s.unwrap_or(1) as i32
+            } else {
+                0
+            },
         }
     };
     let component = |k: ComponentKind| {
@@ -2601,6 +2939,36 @@ pub(crate) fn lower_vehicle(
                     .unwrap_or(0) as u8,
             })
             .collect(),
+        shields: v
+            .shields
+            .iter()
+            .map(|sh| ShieldSetup {
+                // The def's weapon index, mapped to the sorted mount list.
+                mount: sh.mount.and_then(|k| {
+                    let w = v.weapons.get(k)?;
+                    mounts
+                        .iter()
+                        .position(|m| std::ptr::eq(*m, w))
+                        .map(|i| i as u8)
+                }),
+                bounds: (&sh.bounds).into(),
+                thickness: Fixed::from_ratio(sh.thickness_mm.0 as i64, 10),
+            })
+            .collect(),
+        transport: v.transport.as_ref().map(|t| TransportSetup {
+            entry: FixedVec3::from_cm(t.entry),
+            board_ticks: (t.board_ms as u64 * hz as u64).div_ceil(1000) as u32,
+            exit_ticks: (t.exit_ms as u64 * hz as u64).div_ceil(1000) as u32,
+            exit_over_sides_ticks: t
+                .exit_over_sides_ms
+                .map(|ms| (ms as u64 * hz as u64).div_ceil(1000) as u32),
+            exit_raise: Fixed::from_cm(t.exit_raise_cm),
+            slots: v
+                .passenger_slots
+                .iter()
+                .map(|sl| (&sl.bounds).into())
+                .collect(),
+        }),
         mounts: mounts.into_iter().map(mount).collect(),
         components: ComponentKind::ALL.into_iter().map(component).collect(),
         stations: v
@@ -2813,6 +3181,11 @@ pub(crate) fn check_vehicle(
     let casemate = v.mounts.first().map(|m| m.kind) == Some(MountKind::Casemate);
     let turret_ok = if v.has_turret {
         box_ok(&v.turret) && !casemate && v.gun_arc_deg.is_none()
+    } else if v.main_gun().is_none() {
+        // S8a-1: no main gun (a transport).
+        v.turret == BoxSetup::default()
+            && v.gun_arc_deg.is_none()
+            && v.role == VehicleRole::Transport
     } else {
         v.turret == BoxSetup::default()
             && casemate
@@ -2902,7 +3275,7 @@ pub(crate) fn check_vehicle(
             .enumerate()
             .any(|(i, s)| v.seats[..i].iter().any(|o| o.role == s.role))
         || v.seat(SeatRole::Driver).is_none()
-        || v.seat(SeatRole::Gunner).is_none()
+        || (v.main_gun().is_some() && v.seat(SeatRole::Gunner).is_none())
         || v.seats.iter().any(|s| {
             !box_ok(&s.part.bounds)
                 || (s.part.frame == Frame::Turret && !v.has_turret)
@@ -2922,7 +3295,7 @@ pub(crate) fn check_vehicle(
             return Some("vehicles.mounts.weapon: index out of range");
         };
         let main = w.kind.is_main();
-        if main != (i == 0)
+        if (main && i != 0)
             || (w.kind == MountKind::TurretMain && !v.has_turret)
             || (w.kind == MountKind::Coax && !v.has_turret)
             || (main && ws.class != WeaponClass::Cannon)
@@ -2950,6 +3323,19 @@ pub(crate) fn check_vehicle(
         } else {
             w.arc_deg == 0
         };
+        // S8a: a pintle's pivot, arc and rate; zero on other kinds.
+        let pintle_ok = if w.kind == MountKind::Pintle {
+            let [lo, hi] = w.traverse_deg;
+            (-180..=0).contains(&lo)
+                && (0..=180).contains(&hi)
+                && lo < hi
+                && (1..=360).contains(&w.traverse_deg_s)
+                && [w.pivot.x, w.pivot.y, w.pivot.z]
+                    .iter()
+                    .all(|&c| fx_in(c, -20, 20))
+        } else {
+            w.pivot == FixedVec3::default() && w.traverse_deg == [0, 0] && w.traverse_deg_s == 0
+        };
         let muzzle_ok = [w.muzzle.x, w.muzzle.y, w.muzzle.z]
             .iter()
             .all(|&c| fx_in(c, -20, 20));
@@ -2968,7 +3354,7 @@ pub(crate) fn check_vehicle(
             Some(n) => !main && (1..=20_000).contains(&n),
             None => true,
         };
-        if !(elev_ok && ammo_ok && arc_ok && muzzle_ok && order_ok && rounds_ok) {
+        if !(elev_ok && ammo_ok && arc_ok && muzzle_ok && order_ok && rounds_ok && pintle_ok) {
             return Some("vehicles.mounts: limits, ammo or arc out of range");
         }
     }
@@ -2977,9 +3363,12 @@ pub(crate) fn check_vehicle(
     }
     for (k, c) in ComponentKind::ALL.iter().zip(&v.components) {
         // S7: no turret ring without a turret (0 HP, nothing else).
-        if *k == ComponentKind::TurretRing && !v.has_turret {
+        // S8a-1: no gun or ammo rack without a main gun.
+        if (*k == ComponentKind::TurretRing && !v.has_turret)
+            || (matches!(k, ComponentKind::Gun | ComponentKind::AmmoRack) && v.main_gun().is_none())
+        {
             if c.kind != *k || c.hp != 0 || !c.parts.is_empty() || c.repair.is_some() {
-                return Some("vehicles.components: a turret ring without a turret");
+                return Some("vehicles.components: a turret ring, gun or rack it cannot have");
             }
             continue;
         }
@@ -3014,8 +3403,47 @@ pub(crate) fn check_vehicle(
             return Some("vehicles.components: kind, hp, box, anchors or repair out of range");
         }
     }
-    if v.seats.len() + v.components.iter().map(|c| c.parts.len()).sum::<usize>() > MAX_INNER_BOXES {
+    let slots = v.transport.as_ref().map_or(0, |t| t.slots.len());
+    if v.seats.len() + slots + v.components.iter().map(|c| c.parts.len()).sum::<usize>()
+        > MAX_INNER_BOXES
+    {
         return Some("vehicles: more inner boxes than MAX_INNER_BOXES");
+    }
+    // S8a: shields and the transport.
+    if v.shields.len() > MAX_SHIELDS
+        || v.shields.iter().any(|sh| {
+            !box_ok(&sh.bounds)
+                || sh.thickness < Fixed::ONE
+                || sh.thickness > Fixed::from_int(500)
+                || sh.mount.is_some_and(|k| {
+                    v.mounts
+                        .get(k as usize)
+                        .is_none_or(|m| m.kind != MountKind::Pintle)
+                })
+        })
+    {
+        return Some("vehicles.shields: out of range");
+    }
+    if (v.role == VehicleRole::Transport) != v.transport.is_some() {
+        return Some("vehicles.transport: exactly on a transport");
+    }
+    if let Some(t) = &v.transport {
+        let tick_ok = |n: u32| (1..=30 * 30).contains(&n);
+        if t.slots.is_empty()
+            || t.slots.len() > MAX_PASSENGERS
+            || t.slots
+                .iter()
+                .any(|b| !box_ok(b) || !inside(frame(Frame::Hull), b))
+            || !tick_ok(t.board_ticks)
+            || !tick_ok(t.exit_ticks)
+            || t.exit_over_sides_ticks.is_some_and(|n| !tick_ok(n))
+            || !fx_in(t.exit_raise, 0, 2)
+            || [t.entry.x, t.entry.y, t.entry.z]
+                .iter()
+                .any(|&c| !fx_in(c, -20, 20))
+        {
+            return Some("vehicles.transport: slots, door or times out of range");
+        }
     }
     if v.stations.len() > MAX_STATIONS
         || v.stations

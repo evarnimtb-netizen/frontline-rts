@@ -325,7 +325,7 @@ pub fn hull_down(mut setup: MatchSetup, threads: usize, p: u8) -> Result<Staged,
         };
         let vs = need(g.vehicle(open.1), "open state")?;
         let ov = &g.setup().vehicles[vs.type_idx as usize];
-        let muzzle = crate::gunnery::main_muzzle(fo, vs, ov.main_gun());
+        let muzzle = crate::gunnery::main_muzzle(fo, vs, ov.main_gun().expect("main gun"));
         let [turret, hull] = fh.spot_points(g.setup().rules.vehicles.driving.spot_drop_mm);
         let front =
             fh.hull.center + fh.hull.axes.x * fh.hull.half.x + fh.hull.axes.z * fh.hull.half.z;
@@ -730,7 +730,7 @@ pub fn he_infantry(
     let mgs: Vec<u16> = setup
         .vehicles
         .iter()
-        .flat_map(|v| v.mounts.iter().skip(1).map(|m| m.weapon))
+        .flat_map(|v| v.mg_mounts().iter().map(|m| m.weapon))
         .collect();
     for k in mgs {
         let w = &mut setup.weapons[k as usize];

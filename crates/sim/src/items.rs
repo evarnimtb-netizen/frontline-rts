@@ -499,7 +499,10 @@ impl MatchState {
                     let f = vd.frame(id).expect("found above");
                     t.landed = true;
                     let k = (h.part.0 as usize).min((f.n_boxes as usize).max(1) - 1);
-                    let open = h.via != crate::armour::HitVia::Plate && !f.wreck;
+                    let open = matches!(
+                        h.via,
+                        crate::armour::HitVia::Open | crate::armour::HitVia::Seat(_)
+                    ) && !f.wreck;
                     let bx = setup.vehicles[f.type_idx as usize].boxes.get(k);
                     match (open, bx) {
                         (true, Some(bs)) => {

@@ -19,6 +19,8 @@ roster = [
     # S7: the assault gun / tank destroyer (appended: the scenarios and the
     # AI's tie-breaks keep picking the tank first).
     "ww2:usa_m10_squad",
+    # S8a: the half-track (appended for the same reason).
+    "ww2:usa_m3a1_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

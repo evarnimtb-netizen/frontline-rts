@@ -564,11 +564,7 @@ fn vehicle_mgs_spend_stowed_rounds_and_rearm_in_the_base() {
     let stowed: Vec<u32> = {
         let s = w.match_setup().unwrap();
         let vt = &s.vehicles[w.game().unwrap().vehicle(v).unwrap().type_idx as usize];
-        vt.mounts
-            .iter()
-            .skip(1)
-            .map(|m| m.rounds.unwrap())
-            .collect()
+        vt.mg_mounts().iter().map(|m| m.rounds.unwrap()).collect()
     };
     assert_eq!(stowed, vec![1575, 1575], "Panzer IV H: 3,150 rounds");
     // Both MGs dry: no MG round in a minute.

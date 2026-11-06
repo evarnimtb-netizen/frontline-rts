@@ -258,6 +258,92 @@ fn body_point(pos: FxVec3, c: &Combat) -> FxVec3 {
     FxVec3::new(pos.x, pos.y, pos.z + c.height.div_int(2))
 }
 
+/// S8a: a live vehicle as soldiers see it this tick (small arms against
+/// thin armour and exposed crews, vehicles.md 6.4).
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct VMark {
+    pub id: SimId,
+    pub owner: u8,
+    pub seen_by: u16,
+}
+
+/// Lists live (manned, not abandoned) vehicles, ascending id.
+pub(crate) fn build_vmarks(ents: &Entities, out: &mut Vec<VMark>) {
+    out.clear();
+    for i in 0..ents.len() {
+        if ents.kind[i] == EntityKind::Vehicle {
+            out.push(VMark {
+                id: SimId(i as u32),
+                owner: ents.owner[i].0,
+                seen_by: ents.combat[i].seen_by,
+            });
+        }
+    }
+}
+
+/// S8a: where soldier fire from `from` (player `owner`, weapon `wi`) aims
+/// at vehicle mark `m` within `r` (range², Q32), if it may: (a) the head of
+/// a living crewman in an exposed seat (S7-7; S8b-B adds riders), else (b)
+/// the centre of the facing plate of the box whose plate the weapon beats
+/// at this range (the load-time reach table: one comparison).
+pub(crate) fn vehicle_aim(
+    game: &MatchState,
+    owner: u8,
+    from: FxVec3,
+    wi: u16,
+    m: &VMark,
+    r: u64,
+) -> Option<FxVec3> {
+    if m.owner == owner || m.seen_by & (1 << owner) == 0 {
+        return None;
+    }
+    let f = game.vderived.frame(m.id)?;
+    let d_sq = (f.hull.center.xy() - from.xy()).length_sq_raw();
+    if d_sq > r {
+        return None;
+    }
+    let vs = game.vehicles.get(&m.id)?;
+    let plates = game.armour.vehicles.get(vs.type_idx as usize)?;
+    for e in &plates.exposed {
+        if vs.seats.get(e.seat as usize).is_some_and(|s| s.hp > 0) {
+            let sb = crate::damage::part_box(f, &e.part);
+            return Some(sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(15, 100)));
+        }
+    }
+    let reach_tab = game.armour.reach.get(wi as usize)?;
+    let reach = reach_tab.get(vs.type_idx as usize)?;
+    let mut best: Option<(Fx, FxVec3)> = None;
+    for (k, b) in f.armour_boxes().iter().enumerate() {
+        let l = armour::to_local(b, from - b.center);
+        let face = if l.x.abs() >= l.y.abs() {
+            if l.x >= Fx::ZERO {
+                armour::Face::Front
+            } else {
+                armour::Face::Rear
+            }
+        } else if l.y >= Fx::ZERO {
+            armour::Face::Left
+        } else {
+            armour::Face::Right
+        };
+        let z = face.zone(armour::BoxPart(k as u8));
+        let rz = reach.get(z as usize).copied().unwrap_or(Fx::ZERO);
+        if rz <= Fx::ZERO || range_sq(rz) < d_sq {
+            continue;
+        }
+        let n = match face {
+            armour::Face::Front => b.axes.x * b.half.x,
+            armour::Face::Rear => -(b.axes.x * b.half.x),
+            armour::Face::Left => b.axes.y * b.half.y,
+            _ => -(b.axes.y * b.half.y),
+        };
+        if best.is_none_or(|(br, _)| rz > br) {
+            best = Some((rz, b.center + n));
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 /// Lists live soldiers (`marks`, ascending id) and indexes them by id
 /// (`mark_of`, `u32::MAX` for others).
 pub(crate) fn build_marks(
@@ -358,6 +444,8 @@ pub(crate) struct FireCtx<'a> {
     pub unit: &'a [Unit],
     pub marks: &'a [Mark],
     pub mark_of: &'a [u32],
+    /// S8a: live vehicles (small-arms targets).
+    pub vmarks: &'a [VMark],
     pub game: &'a MatchState,
     pub terrain: &'a Heightfield,
     pub seed: u64,
@@ -438,6 +526,36 @@ fn search(
                 .smoke_blocks(from, aim, ctx.tick, (id, SimId(i as u32))))
         .then_some(id)
     })
+}
+
+/// S8a: the nearest vehicle soldier `i` with weapon `wi` may fire at from
+/// `from` within `r` with a clear line: `(dist², id, aim)`.
+fn search_vehicle(
+    ctx: &FireCtx,
+    i: usize,
+    from: FxVec3,
+    wi: u16,
+    r: u64,
+) -> Option<(u64, SimId, FxVec3)> {
+    let owner = ctx.owner[i].0;
+    let mut best: Option<(u64, SimId, FxVec3)> = None;
+    for m in ctx.vmarks {
+        let Some(aim) = vehicle_aim(ctx.game, owner, from, wi, m, r) else {
+            continue;
+        };
+        let d = (aim.xy() - from.xy()).length_sq_raw();
+        if best.is_some_and(|(bd, bid, _)| (bd, bid) <= (d, m.id)) {
+            continue;
+        }
+        if ctx.terrain.line_of_sight(from, aim)
+            && !ctx
+                .game
+                .smoke_blocks(from, aim, ctx.tick, (m.id, SimId(i as u32)))
+        {
+            best = Some((d, m.id, aim));
+        }
+    }
+    best
 }
 
 /// Triangular roll in `[-s, s]`.
@@ -627,21 +745,52 @@ pub(crate) fn aim_and_fire(
         }
         // S5a fire discipline: the reach his fire mode allows.
         let r = range_sq(fire_reach(&rules.fire, u.fire, w));
-        if let Some(t) = c.target
-            && valid_target(ctx.marks, ctx.mark_of, t, owner, pos.xy(), r).is_none()
-        {
-            c.target = None;
-        }
         let from = muzzle(pos, c, &rules.body);
+        // S8a: a vehicle target (an exposed crew or a plate the weapon
+        // beats) stays valid while `vehicle_aim` gives a point.
+        let vmark = |t: SimId| ctx.vmarks.iter().find(|m| m.id == t);
+        let mut vaim: Option<FxVec3> = None;
+        if let Some(t) = c.target {
+            let ok = if ctx.kind.get(t.index()) == Some(&EntityKind::Vehicle) {
+                vaim = vmark(t).and_then(|m| vehicle_aim(ctx.game, owner, from, wi, m, r));
+                vaim.is_some()
+            } else {
+                valid_target(ctx.marks, ctx.mark_of, t, owner, pos.xy(), r).is_some()
+            };
+            if !ok {
+                c.target = None;
+            }
+        }
         if c.target.is_none() || c.retarget == 0 {
             let before = c.target;
-            c.target = if w.class == WeaponClass::Mg {
+            let man = if w.class == WeaponClass::Mg {
                 let roll =
                     RngStream::new(ctx.seed, ctx.tick, SimId(i as u32), Purpose::SWEEP).next_u64();
                 search(ctx, i, from, r, None, SWEEP_POOL, (roll >> 32) as usize)
             } else {
                 let focus = if u.detached { None } else { sq.focus };
                 search(ctx, i, from, r, focus, LOS_TRIES, 0)
+            };
+            // S8a: the nearest vehicle he can hurt, if nearer than the man
+            // (soldiers win a tie).
+            let veh = search_vehicle(ctx, i, from, wi, r);
+            let man_d = man.map(|t| {
+                (ctx.marks[ctx.mark_of[t.index()] as usize].pos.xy() - from.xy()).length_sq_raw()
+            });
+            c.target = match (man, veh) {
+                (Some(_), Some((vd, vid, p))) if man_d.is_some_and(|md| vd < md) => {
+                    vaim = Some(p);
+                    Some(vid)
+                }
+                (Some(m), _) => {
+                    vaim = None;
+                    Some(m)
+                }
+                (None, Some((_, vid, p))) => {
+                    vaim = Some(p);
+                    Some(vid)
+                }
+                (None, None) => None,
             };
             c.retarget = if c.target.is_some() { hz } else { hz / 3 }.max(1) as u16;
             if c.target.is_some() && before.is_none() {
@@ -655,7 +804,10 @@ pub(crate) fn aim_and_fire(
             continue;
         }
         let id = SimId(i as u32);
-        let aim = ctx.marks[ctx.mark_of[t.index()] as usize].aim;
+        let aim = match vaim {
+            Some(p) => p,
+            None => ctx.marks[ctx.mark_of[t.index()] as usize].aim,
+        };
         let dist = (aim - from).length();
         let range: Fx = w.range_max.into();
         let pct = spread_pct(rules, c, !still, dist, range) * tr.spread_pct as i64 / 100;
@@ -1848,6 +2000,14 @@ pub(crate) fn fly(
                 .ammo
                 .get(p.ammo as usize)
                 .is_some_and(|a| a.mechanism.bursts());
+        // S8a (6.4): small arms with a penetration table take the plate
+        // rule in the Damage stage; the others stop on any plate.
+        let pens = !shell
+            && !mortar
+            && ctx
+                .weapons
+                .get(p.weapon as usize)
+                .is_some_and(|w| !w.pen.is_empty());
         let (weapon, player, shooter, ammo, mission) =
             (p.weapon, p.player, p.owner, p.ammo, p.mission);
         let ev = |blow| BallisticEvent {
@@ -1993,8 +2153,10 @@ pub(crate) fn fly(
             if let Some((_, vid, h)) = box_hit {
                 p.pos = h.point;
                 // S7: a small-arms round through an open face or into an
-                // exposed seat goes on to the crew (`damage::open_hit`).
-                let blow = if shell || mortar || h.via != armour::HitVia::Plate {
+                // exposed seat goes on to the crew (`damage::open_hit`);
+                // S8a: one that may beat the plate, and every shield hit,
+                // take the plate rule (`damage::resolve`).
+                let blow = if shell || mortar || pens || h.via != armour::HitVia::Plate {
                     Blow::Armour {
                         vehicle: vid,
                         hit: h,
@@ -2509,15 +2671,54 @@ impl MatchState {
                 if f.wreck || f.owner.0 == b.player {
                     continue;
                 }
-                // S7: through an open face or into an exposed seat: the
-                // first seat or component inside takes the fragment.
-                if h.via != armour::HitVia::Plate {
-                    let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(bt);
-                    let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
-                    let dmg = (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS))
-                        as u32;
+                let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(bt);
+                let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
+                let dmg =
+                    (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS)) as u32;
+                // S8a thin-plate rule (S7-8): the fragment's penetration
+                // falls with distance as its damage does.
+                let frag_pen = Fx::from_raw(
+                    ((he.frag_pen_mm as i64 * pct.raw() as i64) / 100).min(i32::MAX as i64) as i32,
+                );
+                let plates = &self.armour.vehicles[f.type_idx as usize];
+                let pierces = |h: &ArmourHit, t: Fx| {
+                    frag_pen > Fx::ZERO
+                        && armour::effective_thickness(
+                            armour::impact_cos(dir, h.normal),
+                            t,
+                            Fx::ZERO,
+                        ) < frag_pen
+                };
+                // S8a: a shield the fragment pierces lets it on to what is
+                // behind it on this vehicle (one more hit), else stops it.
+                let h = match h.via {
+                    armour::HitVia::Shield(k) => {
+                        let t = plates.shields.get(k as usize).copied().unwrap_or(Fx::ZERO);
+                        if !pierces(&h, t) {
+                            continue;
+                        }
+                        ctx.stats.frag_plate_pierces += 1;
+                        let rest = d * (Fx::ONE - bt);
+                        match armour::hit_armour_past(h.point, rest, f, plates, Some(k)) {
+                            Some(next) => next,
+                            None => continue,
+                        }
+                    }
+                    _ => h,
+                };
+                let pierced = h.via == armour::HitVia::Plate
+                    && h.part != armour::BoxPart::BARREL
+                    && pierces(&h, plates.face(h.part, h.face).thickness);
+                if pierced {
+                    ctx.stats.frag_plate_pierces += 1;
+                }
+                // S7: through an open face or into an exposed seat (S8a: or
+                // through a thin plate): the first seat or component inside
+                // takes the fragment.
+                if h.via != armour::HitVia::Plate || pierced {
                     let inner = match h.via {
                         armour::HitVia::Seat(k) => Some(Inner::Seat(k)),
+                        armour::HitVia::Shield(_) => None,
                         _ => {
                             let v = &self.setup.vehicles[f.type_idx as usize];
                             let boxes = crate::damage::inner_boxes(f, v);
@@ -2539,7 +2740,6 @@ impl MatchState {
                 if he.frag_track_damage == 0 {
                     continue;
                 }
-                let plates = &self.armour.vehicles[f.type_idx as usize];
                 if armour::in_track_band(&h, f.hull.half.z, plates.track_band_pct) {
                     let side = if h.face == armour::Face::Left {
                         ComponentKind::TrackLeft
@@ -3677,6 +3877,8 @@ mod tests {
             let body = self.game.setup().rules.combat.body.clone();
             let (mut marks, mut mark_of) = (Vec::new(), Vec::new());
             build_marks(&self.ents, &mut marks, &mut mark_of, &body);
+            let mut vmarks = Vec::new();
+            build_vmarks(&self.ents, &mut vmarks);
             let ctx = FireCtx {
                 kind: &self.ents.kind,
                 owner: &self.ents.owner,
@@ -3686,6 +3888,7 @@ mod tests {
                 unit: &self.ents.unit,
                 marks: &marks,
                 mark_of: &mark_of,
+                vmarks: &vmarks,
                 game: &self.game,
                 terrain: &self.terrain,
                 seed: 1,

@@ -498,7 +498,7 @@ fn aim_miss_m(w: &World, sh: SimId, pz: SimId) -> Option<f64> {
     let vs = g.vehicle(sh)?;
     let s = w.match_setup()?;
     let v = &s.vehicles[vs.type_idx as usize];
-    let main = v.main_gun();
+    let main = v.main_gun()?;
     let muzzle = gunnery::main_muzzle(fs, vs, main);
     let centre = gunnery::mass_centre(muzzle, fp);
     let speed = main
@@ -3074,6 +3074,180 @@ fn case20(env: &Env) -> Result<CaseReport> {
     Ok(r)
 }
 
+/// Case 21 shots per run, weapon, vehicle and range.
+const CASE21_SHOTS: u64 = 6;
+
+/// One small-arms round of `gun` for `p` at vehicle `v` from `d` m on the
+/// bearing `from_deg` (world), aimed at `aim` (drop compensated). Whether
+/// it struck the vehicle and whether it got through a plate.
+fn small_shot(
+    w: &mut World,
+    p: u8,
+    gun: u16,
+    aim: FxVec3,
+    from_deg: i32,
+    d: i32,
+) -> Option<(bool, bool)> {
+    let speed = f64::from(Fx::from(w.match_setup()?.weapons[gun as usize].muzzle_speed).to_f32());
+    let from2 = aim.xy() + dir_deg(from_deg) * Fx::from_int(d);
+    let from = from2.extend(aim.z + Fx::from_ratio(10, 100));
+    let t = f64::from(d) / speed.max(1.0);
+    let drop = 0.5 * 9.81 * t * t;
+    let up = aim + FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_milli((drop * 1000.0) as i32));
+    let (pens0, stopped0) = (w.stats().small_arms_pens, w.stats().rounds_stopped);
+    if !w.fire_round_now(p, gun, from, up) {
+        return None;
+    }
+    for _ in 0..hz(w) {
+        w.step(&[]);
+    }
+    let pens = w.stats().small_arms_pens - pens0;
+    let stopped = w.stats().rounds_stopped - stopped0;
+    Some((pens + stopped > 0, pens > 0))
+}
+
+/// Case 21 (vehicles.md 6.4, 10): small arms against the half-tracks'
+/// thin plates, rounds fired straight at the plate (no spread): MG 42 at the
+/// M3A1's face-hardened side and the .50 at the 251's sloped side from 50,
+/// 150 and 300 m; rifles at both fronts from 50 m; MG 42 at the M10's
+/// exposed loader from 100 m (S7-7).
+fn case21(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(21, "small arms against half-track plates (6.4)");
+    r.runs = env.runs().len() as u32;
+    // (label, gun, card, bearing of the shooter from the vehicle facing
+    // north (0 = east: its side), ranges)
+    let combos: [(&str, &str, &str, i32, &[i32]); 4] = [
+        (
+            "mg42 m3a1 side",
+            "ww2:mg42_bipod",
+            "ww2:usa_m3a1_squad",
+            0,
+            &[50, 150, 300],
+        ),
+        (
+            "m2hb 251 side",
+            "ww2:m2hb",
+            "ww2:ger_sdkfz251_1_squad",
+            0,
+            &[50, 150, 300],
+        ),
+        (
+            "rifle 251 front",
+            "ww2:m1_garand",
+            "ww2:ger_sdkfz251_1_squad",
+            90,
+            &[50],
+        ),
+        (
+            "rifle m3a1 front",
+            "ww2:kar98k",
+            "ww2:usa_m3a1_squad",
+            90,
+            &[50],
+        ),
+    ];
+    for (label, gun_id, card, bearing, ranges) in combos {
+        for &d in ranges {
+            let (mut hit, mut pen) = (0u32, 0u32);
+            for (seed, flip) in env.runs() {
+                let mut w = open_top_world(env, seed * 64 + d as u64 + flip as u64)?;
+                let gun = w
+                    .match_setup()
+                    .and_then(|s| s.weapons.iter().position(|x| x.id == gun_id))
+                    .ok_or_else(|| anyhow!("no {gun_id}"))? as u16;
+                let owner = if card.starts_with("ww2:ger") { 0 } else { 1 };
+                let (_, v) = spawn_card(&mut w, owner, card, at(500, 500), dir_deg(90))?;
+                w.edit_vehicle(v, |vs| {
+                    vs.mgs.iter_mut().for_each(|m| m.spent = u32::MAX / 2)
+                });
+                w.step(&[]);
+                let base = w.entities().transform()[v.index()].pos;
+                for k in 0..CASE21_SHOTS {
+                    // Spread over the plate: 1.6 m along it, 0.5-1.4 m up.
+                    let along = ((seed * 7 + k * 13 + flip as u64 * 5) % 17) as i32 * 10 - 80;
+                    let up = 50 + ((seed * 11 + k * 7) % 10) as i32 * 10;
+                    let off = if bearing == 0 {
+                        FxVec3::new(
+                            Fx::ZERO,
+                            Fx::from_milli(along * 10),
+                            Fx::from_milli(up * 10),
+                        )
+                    } else {
+                        FxVec3::new(Fx::from_milli(along * 5), Fx::ZERO, Fx::from_milli(up * 10))
+                    };
+                    if let Some((h, p)) = small_shot(&mut w, 1 - owner, gun, base + off, bearing, d)
+                    {
+                        hit += u32::from(h);
+                        pen += u32::from(p);
+                    }
+                }
+            }
+            let pct = round3(pen as f64 * 100.0 / hit.max(1) as f64);
+            let name = if ranges.len() == 1 {
+                format!("{label} pen pct")
+            } else {
+                format!("{label} {d} pen pct")
+            };
+            let (pass, limit) = match (label, d) {
+                ("mg42 m3a1 side", 50) => (pct >= 80.0, ">= 80"),
+                ("mg42 m3a1 side", _) => (true, "report"),
+                ("m2hb 251 side", _) => (pct >= 80.0, ">= 80"),
+                _ => (pen == 0, "0"),
+            };
+            r.check_v(
+                name,
+                pass,
+                pct,
+                limit,
+                format!("{pen} of {hit} rounds that struck"),
+            );
+        }
+    }
+    // S7-7: MG 42 rounds at the M10's exposed loader's head from 100 m.
+    let (mut shots, mut hits) = (0u32, 0u32);
+    for (seed, flip) in env.runs() {
+        let mut w = open_top_world(env, seed * 64 + 7 + flip as u64)?;
+        let gun = w
+            .match_setup()
+            .and_then(|s| s.weapons.iter().position(|x| x.id == "ww2:mg42_bipod"))
+            .ok_or_else(|| anyhow!("no mg42_bipod"))? as u16;
+        let (_, v) = spawn_card(&mut w, 1, "ww2:usa_m10_squad", at(500, 500), dir_deg(180))?;
+        no_ammo(&mut w, v);
+        w.step(&[]);
+        let s = w.match_setup().ok_or_else(|| anyhow!("match"))?;
+        let vt = &s.vehicles[vstate(&w, v).map_or(0, |x| x.type_idx) as usize];
+        let k = vt
+            .seats
+            .iter()
+            .position(|x| x.role == frontline_content::SeatRole::Loader)
+            .ok_or_else(|| anyhow!("no loader"))?;
+        let part = vt.seats[k].part;
+        for _ in 0..CASE21_SHOTS {
+            let f = *w
+                .game()
+                .and_then(|g| g.vehicle_derived().frame(v))
+                .ok_or_else(|| anyhow!("frame"))?;
+            let sb = frontline_sim::damage::part_box(&f, &part);
+            let head = sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(15, 100));
+            let before = crew_hp(&w, v).get(k).copied().unwrap_or(0);
+            if small_shot(&mut w, 0, gun, head, 180, 100).is_none() {
+                continue;
+            }
+            shots += 1;
+            hits += u32::from(crew_hp(&w, v).get(k).copied().unwrap_or(0) < before);
+            w.edit_vehicle(v, |vs| vs.seats[k].hp = 100);
+        }
+    }
+    r.check_v(
+        "mg42 m10 loader hit pct",
+        hits > 0,
+        round3(hits as f64 * 100.0 / shots.max(1) as f64),
+        "> 0 (report)",
+        format!("{hits} of {shots}"),
+    );
+    Ok(r)
+}
+
 // Wall-clock time here only measures; it never feeds the sim.
 #[allow(clippy::disallowed_methods)]
 fn case14(env: &Env) -> Result<CaseReport> {
@@ -3219,7 +3393,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 20] = [
+    let all: [(u32, CaseFn); 21] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3240,6 +3414,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (18, case18),
         (19, case19),
         (20, case20),
+        (21, case21),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

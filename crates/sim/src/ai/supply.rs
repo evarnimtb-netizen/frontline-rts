@@ -468,8 +468,7 @@ impl Planner<'_> {
                 let vs = &g.vehicles[&t.id];
                 let v = &s.vehicles[vs.type_idx as usize];
                 let (have, load) =
-                    v.main_gun()
-                        .ammo
+                    v.main_ammo()
                         .iter()
                         .enumerate()
                         .fold((0u32, 0u32), |(h, l), (k, a)| {
@@ -675,8 +674,7 @@ pub(super) fn tank_round_g(
     s: &frontline_content::MatchSetup,
     v: &frontline_content::vehicle::VehicleSetup,
 ) -> u32 {
-    v.main_gun()
-        .ammo
+    v.main_ammo()
         .first()
         .and_then(|a| s.ammo[a.ammo as usize].supply)
         .map_or(u32::MAX, |x| x.g)

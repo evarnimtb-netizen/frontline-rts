@@ -149,7 +149,7 @@ fn vehicles_and_ammo_lower_into_the_setup() {
     assert_eq!(track.repair.as_ref().unwrap().ticks, 30 * 30);
     assert!(pz.components[ComponentKind::Gun.index()].repair.is_none());
     // Main gun first, penetrator before HE.
-    let main = pz.main_gun();
+    let main = pz.main_gun().unwrap();
     assert_eq!(main.kind, MountKind::TurretMain);
     assert_eq!(s.weapons[main.weapon as usize].id, "ww2:kwk40_l48");
     assert_eq!(main.elevation_deg, [-8, 20]);
@@ -594,21 +594,22 @@ fn s3b_damage_geometry_errors_are_reported() {
     );
 }
 
-/// S3b Fix: the sim tests at most MAX_INNER_BOXES (14) seat and component
-/// boxes; more is a load error, not a silent cut.
+/// S3b Fix: the sim tests at most MAX_INNER_BOXES (S8a: 24) seat, passenger
+/// slot and component boxes; more is a load error, not a silent cut.
 #[test]
 fn too_many_inner_boxes_are_reported() {
     let i = issues_of("inner-boxes", |r| {
-        replace_in(
-            &r.join("defs/vehicles/ger_pz4_h.toml"),
-            "box = { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }",
-            "boxes = [{ frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }, { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }, { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }, { frame = \"hull\", center = [-200, 0, 100], half = [70, 100, 45] }]",
-        );
+        // The Panzer IV has 12 seat and component boxes: 13 passenger
+        // slots (also refused on a non-transport) make 25.
+        let slot = "[[passenger_slots]]\nbox = { center = [0, 0, 100], half = [20, 20, 40] }\n";
+        let f = r.join("defs/vehicles/ger_pz4_h.toml");
+        let s = std::fs::read_to_string(&f).unwrap();
+        std::fs::write(&f, s + &slot.repeat(13)).unwrap();
     });
     has(
         &i,
         "defs/vehicles/ger_pz4_h.toml: components",
-        &["at most 14 inner boxes", "got 15"],
+        &["at most 24 inner boxes", "got 25"],
     );
 }
 
@@ -675,11 +676,15 @@ fn setup_validate_rejects_broken_vehicles_and_ammo() {
         },
         "vehicles.components",
     );
-    // S3b Fix: 15 inner boxes, each component within its own cap.
+    // S3b Fix: more inner boxes than the cap (S8a: 24), each component
+    // within its own cap (5 seats + 5 boxed components x 4 = 25).
     bad(
         &|t| {
-            let p = t.vehicles[0].components[0].parts[0];
-            t.vehicles[0].components[0].parts.extend([p; 3]);
+            for c in t.vehicles[0].components.iter_mut() {
+                if let Some(&p) = c.parts.first() {
+                    c.parts.resize(4, p);
+                }
+            }
         },
         "MAX_INNER_BOXES",
     );

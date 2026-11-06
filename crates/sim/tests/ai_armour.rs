@@ -52,9 +52,8 @@ fn dry_mgs(w: &mut World, v: SimId) {
     let s = w.match_setup().unwrap().clone();
     let ty = w.game().unwrap().vehicle(v).unwrap().type_idx as usize;
     let rounds: Vec<u32> = s.vehicles[ty]
-        .mounts
+        .mg_mounts()
         .iter()
-        .skip(1)
         .map(|m| m.rounds.unwrap_or(0))
         .collect();
     w.edit_vehicle(v, |vs| {
@@ -125,9 +124,8 @@ fn a_tank_with_dry_mgs_drives_back_rearms_and_returns() {
     let ty = &s.vehicles[vs.type_idx as usize];
     // Every MG has rounds again (`dry_mgs` emptied them all).
     let stowed: Vec<(u32, u32)> = ty
-        .mounts
+        .mg_mounts()
         .iter()
-        .skip(1)
         .zip(&vs.mgs)
         .filter_map(|(m, st)| m.rounds.map(|n| (n, st.spent)))
         .collect();

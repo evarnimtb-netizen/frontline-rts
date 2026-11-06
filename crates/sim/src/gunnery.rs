@@ -136,13 +136,65 @@ pub fn main_muzzle(f: &VehicleFrame, vs: &VehicleState, m: &MountSetup) -> FxVec
 }
 
 /// An MG's muzzle in world space (coax: turret frame from the pivot; hull:
-/// hull frame from the origin).
-pub fn mg_muzzle(f: &VehicleFrame, m: &MountSetup) -> FxVec3 {
+/// hull frame from the origin; S8a pintle: from its pivot in the hull
+/// frame, turned by its `yaw`).
+pub fn mg_muzzle(f: &VehicleFrame, m: &MountSetup, yaw: Fx) -> FxVec3 {
     let mz: FxVec3 = crate::vehicle::v3(m.muzzle);
     match m.kind {
         MountKind::Hull => f.origin + f.hull.axes.apply(mz),
+        MountKind::Pintle => {
+            let local = crate::vehicle::v3(m.pivot) + rot_z(mz, yaw);
+            f.origin + f.hull.axes.apply(local)
+        }
         _ => f.pivot + f.turret.axes.apply(mz),
     }
+}
+
+/// `p` turned by `yaw` about the z axis (positive left).
+pub fn rot_z(p: FxVec3, yaw: Fx) -> FxVec3 {
+    let (s, c) = yaw.sin_cos();
+    FxVec3::new(p.x.mul(c) - p.y.mul(s), p.x.mul(s) + p.y.mul(c), p.z)
+}
+
+/// S8a: a pintle mount's resting yaw (the middle of its arc; 0 for other
+/// kinds and for a ring).
+pub fn pintle_rest(m: &MountSetup) -> Fx {
+    if m.kind != MountKind::Pintle {
+        return Fx::ZERO;
+    }
+    let [lo, hi] = m.traverse_deg;
+    if hi - lo >= 360 {
+        return Fx::ZERO;
+    }
+    (deg(lo) + deg(hi)).div_int(2)
+}
+
+/// S8a: whether `yaw` is a valid saved yaw for mount `m` (inside a
+/// pintle's arc; exactly 0 on other kinds).
+pub fn pintle_yaw_ok(m: &MountSetup, yaw: Fx) -> bool {
+    if m.kind != MountKind::Pintle {
+        return yaw == Fx::ZERO;
+    }
+    let [lo, hi] = m.traverse_deg;
+    yaw >= deg(lo.max(-180)) && yaw <= deg(hi.min(180))
+}
+
+/// S8a: turns pintle `yaw` one tick toward hull-relative `want` (clamped to
+/// the arc; a ring takes the short way) at the mount's rate. Returns the new
+/// yaw and whether it is on `want` (inside the arc).
+pub fn pintle_turn(m: &MountSetup, yaw: Fx, want: Fx, hz: u32) -> (Fx, bool) {
+    let [lo, hi] = m.traverse_deg;
+    let rate = deg(m.traverse_deg_s).div_int(hz.max(1) as i32);
+    let want = want.wrap_angle();
+    if hi - lo >= 360 {
+        let err = (want - yaw).wrap_angle();
+        let step = err.clamp(-rate, rate);
+        return ((yaw + step).wrap_angle(), step == err);
+    }
+    let c = want.clamp(deg(lo), deg(hi));
+    let err = c - yaw;
+    let step = err.clamp(-rate, rate);
+    (yaw + step, c == want && step == err)
 }
 
 /// Turns the turret and gun toward hull-relative `yaw` and `pitch` at the
@@ -177,7 +229,7 @@ pub fn lay_gun_pct(
             traverse = traverse.div_int(2);
         }
     }
-    let [lo, hi] = v.main_gun().elevation_deg;
+    let [lo, hi] = v.main_gun().map_or([0, 0], |g| g.elevation_deg);
     let pitch = pitch.clamp(deg(lo), deg(hi));
     // S7: a casemate gun lays only within its arc (the driver turns the
     // hull for the rest, `crate::vehicle` `lay_turn`).
@@ -376,284 +428,298 @@ impl MatchState {
             .is_some_and(|sq| sq.order == Order::Retreat);
         let vs = self.vehicles.get(&id).expect("listed");
         let v = &setup.vehicles[vs.type_idx as usize];
-        let main = v.main_gun();
-        let gunner = vs.manned(v, SeatRole::Gunner);
-        let gun_ok = gunner
-            && vs.component(ComponentKind::Gun) > 0
-            && vs.repairing.is_none()
-            && !order_retreat;
         // S3b Suppress (module docs).
         let suppress = vs.suppress.filter(|_| !order_retreat);
-        let ap_left = vs.loaded.is_some_and(|k| k != HE)
-            || [AP, SPECIAL]
-                .iter()
-                .any(|&k| vs.ammo.get(k as usize).is_some_and(|n| *n > 0));
-
-        // Re-target once a second (staggered), or when the target is gone.
-        let valid = vs
-            .target
-            .and_then(|t| self.gun_target(ents, ctx, owner, &f, t, main, vs.aim_turret));
         let due = (ctx.tick + id.0 as u64).is_multiple_of(hz as u64);
-        let lost = vs.target.is_some() && valid.is_none();
-        let (target, aim_turret) = if lost || due {
-            self.pick_target(
-                ents,
-                ctx,
-                id,
-                &f,
-                gunner,
-                gun_ok && ap_left,
-                suppress.is_none(),
-            )
-        } else {
-            (vs.target, vs.aim_turret)
-        };
-        let aim = target.and_then(|t| self.gun_target(ents, ctx, owner, &f, t, main, aim_turret));
-        let target = aim.and(target);
-        let sup = &setup.rules.combat.suppress;
-        // Suppress: the HE aim point on the line's middle, when the gun has
-        // no vehicle to fight.
-        let area_probe = match (suppress, aim) {
-            (Some(line), None) if matches!(vs.ammo_choice, AmmoChoice::Auto | AmmoChoice::He) => {
-                let range: Fx = setup.weapons[main.weapon as usize].range_max.into();
-                crate::combat::suppress_aim_at(
-                    ctx.terrain,
-                    &setup.rules.combat,
-                    &line,
-                    Fx::HALF,
-                    f.turret.center,
-                    range,
-                    setup.rules.combat.suppress.tank_he_aim_cm,
-                )
-                .map(|(p, probe)| {
-                    (
-                        Aim {
-                            point: p,
-                            vel: FxVec2::ZERO,
-                            vehicle: false,
-                        },
-                        probe,
-                    )
-                })
-            }
-            _ => None,
-        };
-        let area = area_probe.map(|(a, _)| a);
-
-        let moving: Fx = setup.rules.vehicles.moving_speed.into();
-        let target_vel = target
-            .and_then(|t| self.vehicles.get(&t))
-            .map(|t| t.avg_vel);
-        let target_moving = target_vel.is_some_and(|v| v.length() > moving);
-        let clear = aim
-            .or(area)
-            .is_none_or(|a| a.vehicle || !self.own_men_near(ents, ctx, owner, a.point));
-        let special_better = match (aim, target) {
-            (Some(a), Some(t)) if a.vehicle && main.ammo.len() > SPECIAL as usize => {
-                self.special_better(&f, t, main, aim_turret)
-            }
-            _ => false,
-        };
         let mut fired: Option<ArmourEv> = None;
-        let vs = self.vehicles.get_mut(&id).expect("listed");
-        if vs.target != target {
-            vs.ranging = 0;
-        }
-        vs.target = target;
-        vs.aim_turret = aim_turret;
-        vs.since_fire = vs.since_fire.saturating_add(1);
-        vs.reload = vs.reload.saturating_sub(1);
-
-        // Ammo: the wanted round, swapping a wrong one for one reload.
-        let has_special = vs.ammo.len() > SPECIAL as usize;
-        let wanted = match vs.ammo_choice {
-            AmmoChoice::Ap => AP,
-            AmmoChoice::He => HE,
-            AmmoChoice::Apcr if has_special => SPECIAL,
-            AmmoChoice::Apcr => AP,
-            AmmoChoice::Auto => match aim.or(area) {
-                Some(a) if !a.vehicle => HE,
-                _ if special_better => SPECIAL,
-                _ => AP,
-            },
-        };
-        // Auto: the first round in its preference order that is loaded or
-        // left (a special round never goes at infantry).
-        let wanted = if vs.ammo_choice == AmmoChoice::Auto {
-            let order: &[u8] = match wanted {
-                HE => &[HE, AP],
-                SPECIAL => &[SPECIAL, AP, HE],
-                _ => &[AP, SPECIAL, HE],
+        // S8a-1: a vehicle without a main gun runs only its MGs.
+        let main_man = 'main: {
+            let Some(main) = v.main_gun() else {
+                break 'main None;
             };
-            order
-                .iter()
-                .copied()
-                .find(|&k| vs.loaded == Some(k) || vs.ammo.get(k as usize).is_some_and(|n| *n > 0))
-                .unwrap_or(wanted)
-        } else {
-            wanted
-        };
-        let reload_ticks = reload_of(vs, v, setup);
-        if vs.reload == 0 {
-            match vs.loaded {
-                Some(k)
-                    if k != wanted
-                        && (target.is_some() || area.is_some())
-                        && vs.ammo.get(wanted as usize).is_some_and(|n| *n > 0) =>
-                {
-                    vs.ammo[k as usize] = vs.ammo[k as usize].saturating_add(1);
-                    vs.loaded = None;
-                    vs.reload = reload_ticks;
-                }
-                None => {
-                    if let Some(n) = vs.ammo.get_mut(wanted as usize)
-                        && *n > 0
-                    {
-                        *n -= 1;
-                        vs.loaded = Some(wanted);
-                    }
-                }
-                _ => {}
-            }
-        }
+            let gunner = vs.manned(v, SeatRole::Gunner);
+            let gun_ok = gunner
+                && vs.component(ComponentKind::Gun) > 0
+                && vs.repairing.is_none()
+                && !order_retreat;
+            let ap_left = vs.loaded.is_some_and(|k| k != HE)
+                || [AP, SPECIAL]
+                    .iter()
+                    .any(|&k| vs.ammo.get(k as usize).is_some_and(|n| *n > 0));
 
-        // Laying: on the solution, or back to the front without a target.
-        let round = vs
-            .loaded
-            .or(Some(wanted))
-            .and_then(|k| main.ammo.get(k as usize))
-            .map(|a| a.ammo);
-        let speed: Fx = round
-            .and_then(|a| setup.ammo.get(a as usize))
-            .map_or(setup.weapons[main.weapon as usize].muzzle_speed, |a| {
-                a.speed
-            })
-            .into();
-        let muzzle = main_muzzle(&f, vs, main);
-        let gr = &setup.rules.vehicles;
-        let lead = |a: &Aim| match target {
-            Some(t) if a.vehicle && target_moving => lead_estimate(
-                a.vel,
-                ctx.seed,
-                id,
-                t,
-                vs.ranging,
-                gr.gunnery.lead_error_pct,
-                gr.ranging_step_pct,
-                gr.ranging_floor_pct,
-            ),
-            _ => a.vel,
-        };
-        let (want_yaw, want_pitch) = match aim.or(area) {
-            Some(a) => to_lay(&f.hull.axes, solution(muzzle, a.point, lead(&a), speed).0),
-            None => (Fx::ZERO, Fx::ZERO),
-        };
-        // Suppress: HE at the line only at its interval, with the reserve
-        // kept, and with the line of fire reaching the line.
-        let area_ok = aim.is_none()
-            && area.is_some_and(|a| {
-                vs.since_fire as u32 >= sup.tank_he_s * hz
-                    && vs
-                        .ammo
-                        .get(HE as usize)
-                        .is_some_and(|&n| n as u32 > sup.tank_he_reserve)
-                    && area_probe.is_some_and(|(_, probe)| ctx.terrain.line_of_sight(muzzle, probe))
-                    && a.point != muzzle
-            });
-        // S7 casemate gunnery: a bearing outside the arc (less the margin)
-        // asks the driver to turn the hull toward it (`crate::vehicle`
-        // `lay_pivot`); back inside, or no aim, the request ends.
-        if let Some([lo, hi]) = v.gun_arc_deg {
-            let margin = deg(setup.rules.vehicles.gunnery.casemate_margin_deg as i32);
-            let (lo, hi) = (deg(lo) + margin, deg(hi) - margin);
-            let want = want_yaw.wrap_angle();
-            vs.lay_turn = match aim.or(area) {
-                Some(_) if gun_ok && (want < lo.min(Fx::ZERO) || want > hi.max(Fx::ZERO)) => {
-                    Some((f.yaw + want).wrap_angle())
+            // Re-target once a second (staggered), or when the target is gone.
+            let valid = vs
+                .target
+                .and_then(|t| self.gun_target(ents, ctx, owner, &f, t, main, vs.aim_turret));
+            let lost = vs.target.is_some() && valid.is_none();
+            let (target, aim_turret) = if lost || due {
+                self.pick_target(
+                    ents,
+                    ctx,
+                    id,
+                    &f,
+                    gunner,
+                    gun_ok && ap_left,
+                    suppress.is_none(),
+                )
+            } else {
+                (vs.target, vs.aim_turret)
+            };
+            let aim =
+                target.and_then(|t| self.gun_target(ents, ctx, owner, &f, t, main, aim_turret));
+            let target = aim.and(target);
+            let sup = &setup.rules.combat.suppress;
+            // Suppress: the HE aim point on the line's middle, when the gun has
+            // no vehicle to fight.
+            let area_probe = match (suppress, aim) {
+                (Some(line), None)
+                    if matches!(vs.ammo_choice, AmmoChoice::Auto | AmmoChoice::He) =>
+                {
+                    let range: Fx = setup.weapons[main.weapon as usize].range_max.into();
+                    crate::combat::suppress_aim_at(
+                        ctx.terrain,
+                        &setup.rules.combat,
+                        &line,
+                        Fx::HALF,
+                        f.turret.center,
+                        range,
+                        setup.rules.combat.suppress.tank_he_aim_cm,
+                    )
+                    .map(|(p, probe)| {
+                        (
+                            Aim {
+                                point: p,
+                                vel: FxVec2::ZERO,
+                                vehicle: false,
+                            },
+                            probe,
+                        )
+                    })
                 }
                 _ => None,
             };
-        }
-        if gunner {
-            // S3c: an untrained gunner traverses slower.
-            let pct = if vs.seat(v, SeatRole::Gunner).is_some_and(|st| st.untrained) {
-                setup.rules.vehicles.recrew.untrained_traverse_pct
-            } else {
-                100
-            };
-            lay_gun_pct(vs, v, want_yaw, want_pitch, hz, pct);
-        }
+            let area = area_probe.map(|(a, _)| a);
 
-        // Fire the main gun when laid within the spread.
-        if let (Some(a), Some(k), true) = (aim.or(area.filter(|_| area_ok)), vs.loaded, gun_ok)
-            && vs.reload == 0
-            && !(a.vehicle && k == HE && vs.ammo_choice == AmmoChoice::Auto)
-            && (aim.is_some() || k == HE)
-        {
-            // Review fix (S3b Fix): only the part of the target's motion
-            // across the line of fire widens the spread; a tank driving
-            // straight at the gunner is not harder to hit than a still one.
-            let cross = match target_vel {
-                Some(tv) if a.vehicle && target_moving => cross_pct(tv, muzzle, a.point),
-                _ => 0,
+            let moving: Fx = setup.rules.vehicles.moving_speed.into();
+            let target_vel = target
+                .and_then(|t| self.vehicles.get(&t))
+                .map(|t| t.avg_vel);
+            let target_moving = target_vel.is_some_and(|v| v.length() > moving);
+            let clear = aim
+                .or(area)
+                .is_none_or(|a| a.vehicle || !self.own_men_near(ents, ctx, owner, a.point));
+            let special_better = match (aim, target) {
+                (Some(a), Some(t)) if a.vehicle && main.ammo.len() > SPECIAL as usize => {
+                    self.special_better(&f, t, main, aim_turret)
+                }
+                _ => false,
             };
-            let spread = main_spread(vs, v, setup, &a, k, cross);
-            let [lo, hi] = main.elevation_deg;
-            let laid_yaw = (want_yaw - vs.turret_yaw).wrap_angle().abs() <= spread;
-            let want_pitch = want_pitch.clamp(deg(lo), deg(hi));
-            let laid_pitch = (want_pitch - vs.gun_pitch).abs() <= spread;
-            if laid_yaw && laid_pitch && clear {
-                let muzzle = main_muzzle(&f, vs, main);
-                let dir = f.hull.axes.apply(gun_local(vs.turret_yaw, vs.gun_pitch));
-                let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::GUN_SPREAD);
-                let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
-                let up = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
-                let shot = (dir + right * tri(&mut rng, spread) + up * tri(&mut rng, spread))
-                    .normalize_or_zero();
-                let ammo = main.ammo[k as usize].ammo;
-                let w = &setup.weapons[main.weapon as usize];
-                let ttl = shell_ttl(w.range_max.into(), speed);
-                out.push(FireRequest {
-                    shooter: id,
-                    seq: 0,
-                    pos: muzzle,
-                    vel: shot * speed,
-                    weapon: main.weapon,
-                    player: owner.0,
-                    ttl: ttl.clamp(2, u16::MAX as i32) as u16,
-                    he: true,
-                    ammo,
-                    mission: 0,
-                });
-                vs.loaded = None;
-                vs.reload = reload_ticks;
-                vs.since_fire = 0;
-                vs.ranging = vs.ranging.saturating_add(1);
-                let kind = match k {
-                    AP => 1,
-                    HE => 2,
-                    _ => 3,
-                };
-                fired = Some(
-                    ArmourEv::new(ArmourEventKind::Fired, id, owner.0, owner.0)
-                        .component(kind)
-                        .ammo(ammo)
-                        .at(muzzle),
-                );
+            let vs = self.vehicles.get_mut(&id).expect("listed");
+            if vs.target != target {
+                vs.ranging = 0;
             }
-        }
+            vs.target = target;
+            vs.aim_turret = aim_turret;
+            vs.since_fire = vs.since_fire.saturating_add(1);
+            vs.reload = vs.reload.saturating_sub(1);
+
+            // Ammo: the wanted round, swapping a wrong one for one reload.
+            let has_special = vs.ammo.len() > SPECIAL as usize;
+            let wanted = match vs.ammo_choice {
+                AmmoChoice::Ap => AP,
+                AmmoChoice::He => HE,
+                AmmoChoice::Apcr if has_special => SPECIAL,
+                AmmoChoice::Apcr => AP,
+                AmmoChoice::Auto => match aim.or(area) {
+                    Some(a) if !a.vehicle => HE,
+                    _ if special_better => SPECIAL,
+                    _ => AP,
+                },
+            };
+            // Auto: the first round in its preference order that is loaded or
+            // left (a special round never goes at infantry).
+            let wanted = if vs.ammo_choice == AmmoChoice::Auto {
+                let order: &[u8] = match wanted {
+                    HE => &[HE, AP],
+                    SPECIAL => &[SPECIAL, AP, HE],
+                    _ => &[AP, SPECIAL, HE],
+                };
+                order
+                    .iter()
+                    .copied()
+                    .find(|&k| {
+                        vs.loaded == Some(k) || vs.ammo.get(k as usize).is_some_and(|n| *n > 0)
+                    })
+                    .unwrap_or(wanted)
+            } else {
+                wanted
+            };
+            let reload_ticks = reload_of(vs, v, setup);
+            if vs.reload == 0 {
+                match vs.loaded {
+                    Some(k)
+                        if k != wanted
+                            && (target.is_some() || area.is_some())
+                            && vs.ammo.get(wanted as usize).is_some_and(|n| *n > 0) =>
+                    {
+                        vs.ammo[k as usize] = vs.ammo[k as usize].saturating_add(1);
+                        vs.loaded = None;
+                        vs.reload = reload_ticks;
+                    }
+                    None => {
+                        if let Some(n) = vs.ammo.get_mut(wanted as usize)
+                            && *n > 0
+                        {
+                            *n -= 1;
+                            vs.loaded = Some(wanted);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Laying: on the solution, or back to the front without a target.
+            let round = vs
+                .loaded
+                .or(Some(wanted))
+                .and_then(|k| main.ammo.get(k as usize))
+                .map(|a| a.ammo);
+            let speed: Fx = round
+                .and_then(|a| setup.ammo.get(a as usize))
+                .map_or(setup.weapons[main.weapon as usize].muzzle_speed, |a| {
+                    a.speed
+                })
+                .into();
+            let muzzle = main_muzzle(&f, vs, main);
+            let gr = &setup.rules.vehicles;
+            let lead = |a: &Aim| match target {
+                Some(t) if a.vehicle && target_moving => lead_estimate(
+                    a.vel,
+                    ctx.seed,
+                    id,
+                    t,
+                    vs.ranging,
+                    gr.gunnery.lead_error_pct,
+                    gr.ranging_step_pct,
+                    gr.ranging_floor_pct,
+                ),
+                _ => a.vel,
+            };
+            let (want_yaw, want_pitch) = match aim.or(area) {
+                Some(a) => to_lay(&f.hull.axes, solution(muzzle, a.point, lead(&a), speed).0),
+                None => (Fx::ZERO, Fx::ZERO),
+            };
+            // Suppress: HE at the line only at its interval, with the reserve
+            // kept, and with the line of fire reaching the line.
+            let area_ok = aim.is_none()
+                && area.is_some_and(|a| {
+                    vs.since_fire as u32 >= sup.tank_he_s * hz
+                        && vs
+                            .ammo
+                            .get(HE as usize)
+                            .is_some_and(|&n| n as u32 > sup.tank_he_reserve)
+                        && area_probe
+                            .is_some_and(|(_, probe)| ctx.terrain.line_of_sight(muzzle, probe))
+                        && a.point != muzzle
+                });
+            // S7 casemate gunnery: a bearing outside the arc (less the margin)
+            // asks the driver to turn the hull toward it (`crate::vehicle`
+            // `lay_pivot`); back inside, or no aim, the request ends.
+            if let Some([lo, hi]) = v.gun_arc_deg {
+                let margin = deg(setup.rules.vehicles.gunnery.casemate_margin_deg as i32);
+                let (lo, hi) = (deg(lo) + margin, deg(hi) - margin);
+                let want = want_yaw.wrap_angle();
+                vs.lay_turn = match aim.or(area) {
+                    Some(_) if gun_ok && (want < lo.min(Fx::ZERO) || want > hi.max(Fx::ZERO)) => {
+                        Some((f.yaw + want).wrap_angle())
+                    }
+                    _ => None,
+                };
+            }
+            if gunner {
+                // S3c: an untrained gunner traverses slower.
+                let pct = if vs.seat(v, SeatRole::Gunner).is_some_and(|st| st.untrained) {
+                    setup.rules.vehicles.recrew.untrained_traverse_pct
+                } else {
+                    100
+                };
+                lay_gun_pct(vs, v, want_yaw, want_pitch, hz, pct);
+            }
+
+            // Fire the main gun when laid within the spread.
+            if let (Some(a), Some(k), true) = (aim.or(area.filter(|_| area_ok)), vs.loaded, gun_ok)
+                && vs.reload == 0
+                && !(a.vehicle && k == HE && vs.ammo_choice == AmmoChoice::Auto)
+                && (aim.is_some() || k == HE)
+            {
+                // Review fix (S3b Fix): only the part of the target's motion
+                // across the line of fire widens the spread; a tank driving
+                // straight at the gunner is not harder to hit than a still one.
+                let cross = match target_vel {
+                    Some(tv) if a.vehicle && target_moving => cross_pct(tv, muzzle, a.point),
+                    _ => 0,
+                };
+                let spread = main_spread(vs, v, setup, &a, k, cross);
+                let [lo, hi] = main.elevation_deg;
+                let laid_yaw = (want_yaw - vs.turret_yaw).wrap_angle().abs() <= spread;
+                let want_pitch = want_pitch.clamp(deg(lo), deg(hi));
+                let laid_pitch = (want_pitch - vs.gun_pitch).abs() <= spread;
+                if laid_yaw && laid_pitch && clear {
+                    let muzzle = main_muzzle(&f, vs, main);
+                    let dir = f.hull.axes.apply(gun_local(vs.turret_yaw, vs.gun_pitch));
+                    let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::GUN_SPREAD);
+                    let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
+                    let up = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
+                    let shot = (dir + right * tri(&mut rng, spread) + up * tri(&mut rng, spread))
+                        .normalize_or_zero();
+                    let ammo = main.ammo[k as usize].ammo;
+                    let w = &setup.weapons[main.weapon as usize];
+                    let ttl = shell_ttl(w.range_max.into(), speed);
+                    out.push(FireRequest {
+                        shooter: id,
+                        seq: 0,
+                        pos: muzzle,
+                        vel: shot * speed,
+                        weapon: main.weapon,
+                        player: owner.0,
+                        ttl: ttl.clamp(2, u16::MAX as i32) as u16,
+                        he: true,
+                        ammo,
+                        mission: 0,
+                    });
+                    vs.loaded = None;
+                    vs.reload = reload_ticks;
+                    vs.since_fire = 0;
+                    vs.ranging = vs.ranging.saturating_add(1);
+                    let kind = match k {
+                        AP => 1,
+                        HE => 2,
+                        _ => 3,
+                    };
+                    fired = Some(
+                        ArmourEv::new(ArmourEventKind::Fired, id, owner.0, owner.0)
+                            .component(kind)
+                            .ammo(ammo)
+                            .at(muzzle),
+                    );
+                }
+            }
+
+            match aim {
+                Some(a) if !a.vehicle => target,
+                _ => None,
+            }
+        };
 
         // MGs.
         let vs = self.vehicles.get(&id).expect("listed");
-        let main_man = match aim {
-            Some(a) if !a.vehicle => target,
-            _ => None,
-        };
-        let moving = vs.speed.abs() > moving;
+        let moving = vs.speed.abs() > Fx::from(setup.rules.vehicles.moving_speed);
         let turret_dir = f.hull.axes.apply(gun_local(vs.turret_yaw, Fx::ZERO));
         let mut mgs = vs.mgs.clone();
-        for (k, (m, st)) in v.mounts.iter().skip(1).zip(mgs.iter_mut()).enumerate() {
+        for (k, (m, st)) in v.mg_mounts().iter().zip(mgs.iter_mut()).enumerate() {
             st.cooldown = st.cooldown.saturating_sub(1);
+            // S8a pintle: the arc is the mount's, the MG fires along its
+            // own yaw (turned toward the target at the mount's rate below).
             let (crew, cone, axis) = match m.kind {
                 MountKind::Coax => (
                     SeatRole::Gunner,
@@ -661,6 +727,15 @@ impl MatchState {
                     turret_dir,
                 ),
                 MountKind::Hull => (m.seat, deg(m.arc_deg), f.hull.axes.x),
+                MountKind::Pintle => {
+                    let [lo, hi] = m.traverse_deg;
+                    let mid = (deg(lo) + deg(hi)).div_int(2);
+                    (
+                        m.seat,
+                        (deg(hi) - deg(lo)).div_int(2),
+                        f.hull.axes.apply(gun_local(mid, Fx::ZERO)),
+                    )
+                }
                 MountKind::TurretMain | MountKind::Casemate => continue,
             };
             let seat_ok = vs.manned(v, crew);
@@ -671,7 +746,7 @@ impl MatchState {
                 continue;
             }
             let w = &setup.weapons[m.weapon as usize];
-            let from = mg_muzzle(&f, m);
+            let from = mg_muzzle(&f, m, st.yaw);
             // S5a: vehicle MGs keep fire discipline against infantry (a
             // Suppress order still fires to full range).
             let r = range_sq(crate::combat::fire_reach(
@@ -706,6 +781,9 @@ impl MatchState {
                 {
                     continue;
                 }
+                if m.kind == MountKind::Pintle && !lay_pintle(&f, m, st, from, aim, hz) {
+                    continue;
+                }
                 mg_fire(
                     ctx, vs, v, setup, id, owner, k, m, st, crew, from, aim, moving, out,
                 );
@@ -728,10 +806,15 @@ impl MatchState {
                 st.target = self.mg_search(ctx, owner, from, axis_yaw, cone, r, roll);
             }
             let Some(t) = st.target else { continue };
+            let aim = ctx.marks[ctx.mark_of[t.index()] as usize].aim;
+            // S8a: a pintle turns toward the man every tick and fires only
+            // when on him.
+            if m.kind == MountKind::Pintle && !lay_pintle(&f, m, st, from, aim, hz) {
+                continue;
+            }
             if st.cooldown > 0 {
                 continue;
             }
-            let aim = ctx.marks[ctx.mark_of[t.index()] as usize].aim;
             mg_fire(
                 ctx, vs, v, setup, id, owner, k, m, st, crew, from, aim, moving, out,
             );
@@ -890,7 +973,9 @@ impl MatchState {
         let owner = ents.owner[i];
         let vs = &self.vehicles[&id];
         let v = &setup.vehicles[vs.type_idx as usize];
-        let main = v.main_gun();
+        let Some(main) = v.main_gun() else {
+            return (None, false);
+        };
         let w = &setup.weapons[main.weapon as usize];
         let r = range_sq(w.range_max.into());
         let from = main_muzzle(f, vs, main);
@@ -1127,6 +1212,22 @@ fn mg_fire(
 
 /// Whether the horizontal direction `d` lies within `cone` of heading
 /// `axis_yaw`.
+/// S8a: turns pintle `st` one tick toward `aim` from `from`; whether it is
+/// laid on it (within the MG's spread, at least a tenth of a degree).
+fn lay_pintle(
+    f: &VehicleFrame,
+    m: &MountSetup,
+    st: &mut crate::vehicle::MgState,
+    from: FxVec3,
+    aim: FxVec3,
+    hz: u32,
+) -> bool {
+    let (want, _) = to_lay(&f.hull.axes, aim - from);
+    let (yaw, _) = pintle_turn(m, st.yaw, want, hz);
+    st.yaw = yaw;
+    (want - yaw).wrap_angle().abs() <= Fx::from_milli(2)
+}
+
 fn in_cone(axis_yaw: Fx, d: FxVec2, cone: Fx) -> bool {
     (Fx::atan2(d.y, d.x) - axis_yaw).wrap_angle().abs() <= cone
 }
@@ -1135,7 +1236,10 @@ fn in_cone(axis_yaw: Fx, d: FxVec2, cone: Fx) -> bool {
 /// wounded, ×2 with his seat empty (the gunner loads); S3c: × the rules'
 /// `untrained_reload_pct` when the man loading is untrained.
 pub fn reload_of(vs: &VehicleState, v: &VehicleSetup, s: &MatchSetup) -> u16 {
-    let base = s.weapons[v.main_gun().weapon as usize].reload_ticks;
+    let Some(main) = v.main_gun() else {
+        return 0;
+    };
+    let base = s.weapons[main.weapon as usize].reload_ticks;
     let loader = vs.seat(v, SeatRole::Loader);
     let pct = match loader {
         None => 100,
@@ -1179,7 +1283,10 @@ fn main_spread(
     cross: i64,
 ) -> Fx {
     let r = &s.rules.vehicles;
-    let w = &s.weapons[v.main_gun().weapon as usize];
+    let Some(main) = v.main_gun() else {
+        return Fx::ZERO;
+    };
+    let w = &s.weapons[main.weapon as usize];
     let base: Fx = if !a.vehicle && round == HE {
         r.he_area_spread.into()
     } else {
@@ -1261,7 +1368,7 @@ mod tests {
         let s = setup();
         let v = &s.vehicles[0];
         let mut vs = VehicleState::new(0, v, &s.rules.vehicles);
-        let base = s.weapons[v.main_gun().weapon as usize].reload_ticks;
+        let base = s.weapons[v.main_gun().unwrap().weapon as usize].reload_ticks;
         assert_eq!(base, 195, "6.5 s at 30 Hz");
         let loader = v
             .seats
@@ -1292,7 +1399,7 @@ mod tests {
         let sp = |vs: &VehicleState, a: &Aim, k: u8, moving: bool| {
             main_spread(vs, v, &s, a, k, if moving { 100 } else { 0 }).raw()
         };
-        let gun = Fx::from(s.weapons[v.main_gun().weapon as usize].spread).raw();
+        let gun = Fx::from(s.weapons[v.main_gun().unwrap().weapon as usize].spread).raw();
         assert_eq!(sp(&vs, &at_tank, AP, false), gun, "2.5 mrad");
         // HE at men: the area spread (6 mrad).
         assert_eq!(

@@ -25,6 +25,13 @@ reload_ms = 4000
 # Dispersion half-angle (mrad): automatic fire off the bipod.
 spread_mrad = 14
 muzzle_velocity_m_s = 860
+# S8a (vehicles.md 6.4): ball ammunition against thin armour, mm of RHA
+# beaten at 0 deg, [range_m, mm] (verify; quoted from memory). It beats no
+# plate in the game (the thinnest, the M3A1's 6.35 mm face-hardened side,
+# counts as 7.9 mm); the table lets rifles aim at exposed crews only.
+penetration = [[0, 7], [100, 5], [300, 3]]
+# Past the plate: on length_cm, at most max_boxes boxes, damage HP each.
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
 suppression = 10
 # S5a bursts (B1): short bursts of 4 rounds, 0.6 s pause (BAR drill of
 # 2-3 or 4-5 round bursts as summarised in secondary sources; starting

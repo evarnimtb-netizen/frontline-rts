@@ -83,7 +83,15 @@ impl Armoury {
         let ammo = defs.lower_ammo();
         // Tick rate only matters for durations, which ballistics never uses.
         let vehicles = defs.lower_vehicles(30);
-        let tables = frontline_sim::ArmourTables::new(&ammo, &vehicles);
+        // S8a: the plate rule's face-hardened factor is the rules' (the
+        // first rules def); small arms are not in the ballistics CLI.
+        let gunnery = defs
+            .rules
+            .values()
+            .next()
+            .map(|r| r.vehicles.gunnery.clone())
+            .expect("a mod with vehicles has rules");
+        let tables = frontline_sim::ArmourTables::new(&ammo, &vehicles, &[], &gunnery);
         Armoury {
             ns: defs
                 .manifest

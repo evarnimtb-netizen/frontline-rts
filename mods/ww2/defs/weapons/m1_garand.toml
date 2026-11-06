@@ -14,4 +14,11 @@ magazine = 8
 reload_ms = 3000
 spread_mrad = 11
 muzzle_velocity_m_s = 850
+# S8a (vehicles.md 6.4): ball ammunition against thin armour, mm of RHA
+# beaten at 0 deg, [range_m, mm] (verify; quoted from memory). It beats no
+# plate in the game (the thinnest, the M3A1's 6.35 mm face-hardened side,
+# counts as 7.9 mm); the table lets rifles aim at exposed crews only.
+penetration = [[0, 7], [100, 5], [300, 3]]
+# Past the plate: on length_cm, at most max_boxes boxes, damage HP each.
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
 suppression = 8

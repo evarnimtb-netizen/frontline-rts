@@ -331,6 +331,10 @@ pub struct Stats {
     pub frag_rays: u64,
     pub frag_hits: u64,
     pub frag_rays_capped: u64,
+    /// S8a (match mode, hashed): small-arms rounds that beat a plate
+    /// (6.4), and fragments that pierced a thin plate (S7-8).
+    pub small_arms_pens: u64,
+    pub frag_plate_pierces: u64,
 }
 
 /// Everything that is saved. All of it is covered by the state hash, except
@@ -428,7 +432,7 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// 17: S7 (vehicle armour boxes, seat ids, turret flag and casemate arc in
 /// the setup; the casemate hull turn `VehicleState::lay_turn`; per-type
 /// vehicle kill counters). One bump for the whole slice.
-const SAVE_VERSION: u32 = 17;
+const SAVE_VERSION: u32 = 18;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -476,6 +480,8 @@ pub struct World {
     spot_passes: Vec<SpotPass>,
     marks: Vec<Mark>,
     mark_of: Vec<u32>,
+    /// S8a: live vehicles as soldiers see them this tick (scratch).
+    vmarks: Vec<combat::VMark>,
     blow_bufs: Vec<Vec<BallisticEvent>>,
     /// Armour slab tests per projectile chunk (S3).
     box_test_bufs: Vec<u64>,
@@ -626,6 +632,7 @@ impl World {
             spot_passes: Vec::new(),
             marks: Vec::new(),
             mark_of: Vec::new(),
+            vmarks: Vec::new(),
             blow_bufs: Vec::new(),
             box_test_bufs: Vec::new(),
             blows: Vec::new(),
@@ -1171,6 +1178,7 @@ impl World {
                 fire_merged,
                 marks,
                 mark_of,
+                vmarks,
                 shots,
                 spatial,
                 armour_events,
@@ -1186,6 +1194,7 @@ impl World {
             } = state;
             let game = game.as_mut().expect("match world");
             combat::build_marks(entities, marks, mark_of, &game.setup().rules.combat.body);
+            combat::build_vmarks(entities, vmarks);
             game.update_focus(entities, marks, mark_of);
             fire_bufs.resize_with(entities.chunk_count(), Vec::new);
             {
@@ -1210,6 +1219,7 @@ impl World {
                     unit,
                     marks,
                     mark_of,
+                    vmarks,
                     game: &*game,
                     terrain,
                     seed,
@@ -1739,6 +1749,48 @@ impl World {
             owner: SimId(u32::MAX - 1),
             drag: Fx::ZERO,
             ttl: 120,
+            weapon,
+            player,
+            ammo: crate::projectile::NO_AMMO,
+            origin: from,
+            mission: 0,
+        }) else {
+            return false;
+        };
+        self.hash.mark_pool_slot(slot);
+        self.refresh_hashes();
+        true
+    }
+
+    /// S8a staging tool (armour-test case 21): one round of small arm
+    /// `weapon` (no `he`) for `player` from `from` straight at `aim` at
+    /// the weapon's muzzle speed (no spread, no drop compensation: keep the
+    /// range short or aim high). Match worlds only; false when the weapon
+    /// bursts or the projectile pool is full.
+    pub fn fire_round_now(
+        &mut self,
+        player: u8,
+        weapon: u16,
+        from: crate::fx::FxVec3,
+        aim: crate::fx::FxVec3,
+    ) -> bool {
+        let Some(game) = self.state.game.as_ref() else {
+            return false;
+        };
+        let Some(w) = game.setup.weapons.get(weapon as usize) else {
+            return false;
+        };
+        if w.he.is_some() || player as usize >= game.setup.players.len() {
+            return false;
+        }
+        let speed: Fx = w.muzzle_speed.into();
+        let ttl = crate::combat::round_ttl(w);
+        let Some(slot) = self.state.projectiles.spawn(crate::projectile::Projectile {
+            pos: from,
+            vel: (aim - from).normalize_or_zero() * speed,
+            owner: SimId(u32::MAX - 1),
+            drag: Fx::ZERO,
+            ttl,
             weapon,
             player,
             ammo: crate::projectile::NO_AMMO,
@@ -3672,6 +3724,7 @@ mod tests {
             ("mgs.shots", Box::new(|v| v.mgs[0].shots += 1)),
             ("mgs.belt", Box::new(|v| v.mgs[1].belt += 1)),
             ("mgs.spent", Box::new(|v| v.mgs[0].spent += 1)),
+            ("mgs.yaw", Box::new(|v| v.mgs[0].yaw += Fx::EPSILON)),
             ("repair_progress", Box::new(|v| v.repair_progress += 1)),
             ("base_ticks", Box::new(|v| v.base_ticks += 1)),
             ("supply_due", Box::new(|v| v.supply_due = 1)),
@@ -3722,6 +3775,8 @@ mod tests {
             Box::new(|s| s.stats.frag_rays += 1),
             Box::new(|s| s.stats.frag_hits += 1),
             Box::new(|s| s.stats.frag_rays_capped += 1),
+            Box::new(|s| s.stats.small_arms_pens += 1),
+            Box::new(|s| s.stats.frag_plate_pierces += 1),
             Box::new(|s| {
                 s.game.as_mut().unwrap().path_queue.queues[0][0] = crate::game::PathReq::Vehicle {
                     squad: SquadId(3),
@@ -3872,6 +3927,11 @@ mod tests {
             // S3b Fix: more MG rounds spent than the mount stows.
             (
                 Box::new(move |s| vehicle(s, va).mgs[0].spent = 60_000),
+                "out of range",
+            ),
+            // S8a: a coax or hull MG has no yaw (a pintle's stays in its arc).
+            (
+                Box::new(move |s| vehicle(s, va).mgs[0].yaw = Fx::ONE),
                 "out of range",
             ),
             // S3b Fix: a suppress line longer than the order allows.

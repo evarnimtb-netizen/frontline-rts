@@ -630,6 +630,13 @@ open_top_item_cone_deg = 90
 # the vehicle; the physics then decides (no success roll). 30: about a
 # grenade's tumble above the floor; a starting value.
 open_top_item_aim_cm = 30
+# S8a (S8a-4 (A)): a face-hardened plate counts as this share of its
+# thickness against every round (%; verify: face-hardened plate resisted
+# small calibre about 1.2-1.4x homogeneous plate).
+face_hardened_pct = 125
+# S8a (6.4): a small-arms round meeting a plate more obliquely than this
+# glances off (deg from the plate's normal; a starting value).
+small_arms_ricochet_deg = 70
 
 # S3b: what a hit on the ammo stowage does (docs/slices/S3b-balance.md P2).
 [vehicles.damage]
@@ -722,6 +729,22 @@ untrained_reload_pct = 150
 untrained_traverse_pct = 75
 # An untrained gunner's spread (% of the trained spread).
 untrained_spread_pct = 150
+
+# S8a (docs/slices/S8a-halftracks.md 3, 5): infantry carriers (role
+# "transport"). They do not count against [vehicles] limit; their cards cap
+# them with max_alive.
+[vehicles.transport]
+# Transports can be called in from this much match time on (s), instead of
+# [vehicles] unlock_s, and never later than it (S8a-5 (A)).
+unlock_s = 120
+# Men who dismount at once (knock-out, fire) cannot fire for this long and
+# arrive with [vehicles.bail] bail_suppression (ms; S8a Build B).
+stun_ms = 2000
+# A man boards within this of the door (cm; Build B).
+board_reach_cm = 300
+# Nobody boards or gets out while the vehicle is faster than this (cm/s;
+# Build B).
+move_block_cm_s = 100
 
 [difficulty.easy]
 income_pct = 80

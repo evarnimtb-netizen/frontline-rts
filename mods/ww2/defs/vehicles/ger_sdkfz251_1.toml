@@ -1,0 +1,224 @@
+# Mittlerer Schützenpanzerwagen SdKfz 251/1 Ausf. D (S8a,
+# docs/slices/S8a-halftracks.md 6): the German armoured infantry carrier,
+# a half-track with an open troop compartment for a squad of 10 and an
+# MG 34 behind a shield at the front of the compartment. No main gun
+# (S8a-1); a transport (role "transport": outside the rules' vehicle limit,
+# unlocked at [vehicles.transport] unlock_s, S8a-5).
+# Sources (verify each title and figure; numbers not read in a source are
+# marked "verify", owner questions S8a-13/14): Jentz and Doyle, Panzer
+# Tracts 15 (mittlerer Schützenpanzerwagen); Spielberger, Halftracked
+# Vehicles of the German Army 1909-1945; vehicles.md 4.1.
+# Frames (cm): hull frame x forward, y left, z up from the ground under the
+# hull centre. Size 5.98 x 2.10 x 1.75 m (verify).
+id = "ww2:ger_sdkfz251_1"
+name = "SdKfz 251/1 Ausf. D"
+short_name = "SdKfz 251"
+faction = "ww2:germany"
+role = "transport"
+# S8a-11 (A): vehicles.md 8.4's 300 against a 620 Panzer IV, scaled to the
+# German card price (x 600 / 620, rounded): 290 MP. Tune within +-15 %. A
+# gameplay balance value, not a price.
+cost = 290
+# Population (S8a-11 (A)): the crew of two and the vehicle's weight in the
+# cap; its passengers keep their own pop.
+pop = 3
+# Re-call cooldown (s; S8a-11 (A)).
+recall_cooldown_s = 60
+initial_cooldown_s = 0
+# Crew sight (m): an open compartment, as the M10's open turret.
+sight_m = 175
+# Seen at 150 % of an observer's sight (1.75 m high against the Sherman's
+# 2.74 m at 200 %). A starting value.
+spot_size_pct = 150
+# The commander standing at the MG (1.75 m rim + 0.35), cm.
+eye_height_cm = 210
+sources = [
+  "Jentz and Doyle, Panzer Tracts 15: mittlerer Schuetzenpanzerwagen (verify)",
+  "Spielberger, Halftracked Vehicles of the German Army 1909-1945 (verify)",
+]
+crew_squad = "ww2:ger_tank_crew"
+# No main gun: no rare rounds.
+rare_cap = 0
+
+[mobility]
+# S8a-6 (A): steers like a tank (neutral pivot) until S8b's wheeled model.
+type = "halftrack"
+# S8a-14 (A): cross-country practical speed, not road (road about 52 km/h,
+# verify): 750 cm/s (27 km/h).
+speed_cm_s = 750
+reverse_cm_s = 250
+# Slower turning than a tank (steered front wheels plus track braking).
+turn_deg_s = 26
+accel_cm_s2 = 120
+brake_cm_s2 = 400
+max_slope_pct = 45
+# Crosses trenches like tanks, stops at AT ditches (dm).
+ditch_block_dm = 19
+# Bogs more often in a trench crossing than a tank (6 %): front wheels
+# (S8a-6; a starting value).
+bog_pct = 15
+unbog_s = [20, 40]
+# No main gun: the MG's spread on the move is the combat rules'.
+moving_spread_pct = 400
+
+[hull]
+# The lower 40 % of box 0's sides is running gear (rear tracks, front
+# wheels); 5 mm of road wheels and track in the way (starting values).
+track_band_pct = 40
+track_mm = 5
+
+# Armour boxes: box 0 the lower hull (5.98 x 2.10 m, 0.35-1.05 m up,
+# closed), box 1 the engine compartment over the front (1.05-1.45 m),
+# box 2 the open cab and troop compartment (1.05-1.75 m, no roof). Zone
+# ids: hull_* 0-3, engine_* 4-7, compartment_* 8-11 (top open).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 70], half = [299, 105, 35] }
+[boxes.armor]
+# Nose 14.5 mm at 30 deg; sides 8 at 30 (the 251's sloped side plates);
+# rear 8; floor and deck 8 (vehicles.md 4.1 "14.5 / 8"; slopes verify).
+front = { thickness_mm = 14.5, slope_deg = 30 }
+side = { thickness_mm = 8, slope_deg = 30 }
+rear = { thickness_mm = 8, slope_deg = 0 }
+top = { thickness_mm = 8 }
+
+[[boxes]]
+id = "engine"
+frame = "hull"
+box = { center = [225, 0, 125], half = [74, 95, 20] }
+[boxes.armor]
+# Engine front plate 14.5 at 30; sides 8 at 30; the bulkhead 8; engine
+# deck 5.5 (verify).
+front = { thickness_mm = 14.5, slope_deg = 30 }
+side = { thickness_mm = 8, slope_deg = 30 }
+rear = { thickness_mm = 8, slope_deg = 0 }
+top = { thickness_mm = 5.5 }
+
+[[boxes]]
+id = "compartment"
+frame = "hull"
+box = { center = [-74, 0, 140], half = [225, 100, 35] }
+# No roof: rounds, fragments and thrown items come in over the sides.
+open = ["top"]
+[boxes.armor]
+# Cab front (visor plate) 14.5 at 35; sides 8 at 30; rear doors 8
+# (verify).
+front = { thickness_mm = 14.5, slope_deg = 35 }
+side = { thickness_mm = 8, slope_deg = 30 }
+rear = { thickness_mm = 8, slope_deg = 0 }
+
+# Crew of two (S8a-10 (A)): the driver in the cab (head at the vision
+# slit) and the commander standing at the front MG, head and shoulders over
+# the rim. Both in the open compartment (exposed to plunging fire and
+# fragments; the commander also to direct fire over the rim).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [120, 45, 140], half = [30, 25, 35] }
+in = "compartment"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [110, -35, 160], half = [25, 25, 55] }
+in = "compartment"
+
+# The MG 34 on its pintle at the front of the compartment, behind its
+# shield (S8a-10 (A): the commander fires it; the rear AA MG is left out).
+[[weapons]]
+def = "ww2:mg34"
+mount = "pintle"
+# Pivot on the front rim, cm (hull frame); the muzzle from it along the MG.
+pivot = [145, -20, 185]
+muzzle = [90, 0, 5]
+# +-35 deg either side of straight ahead (verify), 60 deg/s by hand.
+traverse_deg = [-35, 35]
+traverse_deg_s = 60
+seat = "commander"
+# Rounds stowed (vehicles.md 4.1, 2,010 for the 251/1; verify).
+rounds = 2010
+
+# The MG shield: one 8 mm plate (verify) turning with the MG, in the MG's
+# frame from its pivot (cm).
+[[shields]]
+mount = 0
+box = { center = [25, 0, 10], half = [1, 28, 22] }
+thickness_mm = 8
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [225, 0, 120], half = [60, 60, 25] }
+repair = { to_hp = 50, time_s = 60 }
+
+# The tracks are the rear running gear (front wheels are not modelled
+# apart).
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [40, 90, 40] }, { pos = [-110, 90, 40] }, { pos = [-260, 90, 40] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [40, -90, 40] }, { pos = [-110, -90, 40] }, { pos = [-260, -90, 40] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [120, 0, 80], half = [45, 35, 25] }
+repair = { to_hp = 50, time_s = 60 }
+
+# Hatches: the crew climb out over the sides of the open cab (2.5 s each,
+# as the M10's open turret; starting values).
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [120, 100, 175]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [110, -100, 175]
+exit_ms = 2500
+
+# S8a (6.6): ten men on two benches along the sides (heads and shoulders
+# over the 1.75 m rim, S8a-9), the rear double door for boarding.
+[transport]
+capacity = 10
+# The rear door, hull frame (cm).
+entry = [-305, 0, 60]
+# One man in per 1.0 s by the door, out per 0.8 s by it, 0.5 s over the
+# sides; a man going over the side stands 50 cm higher for that time
+# (starting values, verify).
+board_ms = 1000
+exit_ms = 800
+exit_over_sides_ms = 500
+exit_raise_cm = 50
+
+# Slot boxes (hull frame, cm): seated men 0.90 m tall from the compartment
+# floor (1.05 m), the top 20 cm over the rim.
+[[passenger_slots]]
+box = { center = [-20, 70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-75, 70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-130, 70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-185, 70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-240, 70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-20, -70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-75, -70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-130, -70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-185, -70, 150], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-240, -70, 150], half = [22, 20, 45] }

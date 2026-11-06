@@ -607,7 +607,7 @@ fn t24_a_tank_at_an_hq_rearms_at_the_d3_rates_from_the_stock() {
     // The stock fell by the rounds' grams.
     let s = w.match_setup().unwrap();
     let vt = &s.vehicles[w.game().unwrap().vehicles[&v].type_idx as usize];
-    let ammo = &vt.main_gun().ammo;
+    let ammo = &vt.main_ammo();
     let mut g = 0u32;
     for (k, &n) in per.iter().enumerate() {
         g += n * s.ammo[ammo[k].ammo as usize].supply.unwrap().g;

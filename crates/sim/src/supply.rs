@@ -900,7 +900,9 @@ impl MatchState {
                     continue;
                 }
                 let v = &self.setup.vehicles[vs.type_idx as usize];
-                let gun = v.main_gun();
+                let Some(gun) = v.main_gun() else {
+                    continue;
+                };
                 let held = |k: usize| vs.ammo[k] as u32 + (vs.loaded == Some(k as u8)) as u32;
                 let rare_held: u32 = gun
                     .ammo

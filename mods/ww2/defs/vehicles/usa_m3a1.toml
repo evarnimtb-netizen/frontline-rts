@@ -1,0 +1,209 @@
+# Car, Half-Track, M3A1 (S8a, docs/slices/S8a-halftracks.md 6): the US
+# armored-infantry carrier: an open body for a rifle squad (11 seats,
+# S8a-2) and a .50 M2HB on the M49 ring mount over the cab. Face-hardened
+# plate throughout (S8a-4). No main gun (S8a-1); a transport (role
+# "transport": outside the rules' vehicle limit, unlocked at
+# [vehicles.transport] unlock_s, S8a-5).
+# Sources (verify each title and figure; numbers not read in a source are
+# marked "verify", owner questions S8a-13/14): TM 9-710 (1944) Basic
+# Half-Track Vehicles; Hunnicutt, Half-Track (2001); Zaloga, M3 Infantry
+# Half-Track 1940-73 (Osprey New Vanguard 11); vehicles.md 4.2.
+# Frames (cm): hull frame x forward, y left, z up from the ground under the
+# hull centre. Size 6.18 x 2.22 x 2.26 m with the ring (verify).
+id = "ww2:usa_m3a1"
+name = "M3A1 half-track"
+short_name = "M3A1"
+faction = "ww2:usa"
+role = "transport"
+# S8a-11 (A): vehicles.md 8.4's 300 against a 560 Sherman, scaled to the
+# Sherman's 590 (x 590 / 560, rounded): 310 MP. Tune within +-15 %. A
+# gameplay balance value, not a price.
+cost = 310
+# Population (S8a-11 (A)).
+pop = 3
+# Re-call cooldown (s; S8a-11 (A)).
+recall_cooldown_s = 60
+initial_cooldown_s = 0
+# Crew sight (m): an open body.
+sight_m = 175
+# Seen at 170 % of an observer's sight (2.26 m with the ring against the
+# Sherman's 2.74 m at 200 %). A starting value.
+spot_size_pct = 170
+# The commander standing in the ring (1.90 m rim + 0.40), cm.
+eye_height_cm = 230
+sources = [
+  "TM 9-710, Basic Half-Track Vehicles (1944) (verify)",
+  "Hunnicutt, Half-Track: A History of American Semi-Tracked Vehicles (2001) (verify)",
+  "Zaloga, M3 Infantry Half-Track 1940-73 (Osprey New Vanguard 11) (verify)",
+]
+crew_squad = "ww2:usa_tank_crew"
+# No main gun: no rare rounds.
+rare_cap = 0
+
+[mobility]
+# S8a-6 (A): steers like a tank (neutral pivot) until S8b's wheeled model.
+type = "halftrack"
+# S8a-14 (A): cross-country practical speed, not road (road about 72 km/h,
+# verify): 850 cm/s (31 km/h).
+speed_cm_s = 850
+reverse_cm_s = 250
+turn_deg_s = 24
+accel_cm_s2 = 130
+brake_cm_s2 = 400
+max_slope_pct = 45
+# Crosses trenches like tanks, stops at AT ditches (dm).
+ditch_block_dm = 19
+# Bogs more often than a tank in a trench crossing (front wheels; a
+# starting value).
+bog_pct = 15
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+# Lower 40 % of box 0's sides is running gear; 5 mm of it in the way.
+track_band_pct = 40
+track_mm = 5
+
+# Armour boxes: box 0 the lower hull (6.18 x 2.22 m, 0.40-1.10 m up,
+# closed), box 1 the hood over the engine (1.10-1.54 m), box 2 the open
+# cab and body (1.10-1.90 m, no roof). Zone ids: hull_* 0-3, hood_* 4-7,
+# body_* 8-11 (top open). All plate face-hardened (S8a-4: counted x the
+# rules' face_hardened_pct).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 75], half = [309, 111, 35] }
+[boxes.armor]
+# Front 12.7 (1/2 inch) FH; sides and rear 6.35 (1/4 inch) FH, written
+# 6.4 (thickness takes one decimal) (vehicles.md 4.2; TM 9-710, verify);
+# floor 6.35 (verify).
+front = { thickness_mm = 12.7, slope_deg = 0, material = "face_hardened" }
+side = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+rear = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+top = { thickness_mm = 6.4, material = "face_hardened" }
+
+[[boxes]]
+id = "hood"
+frame = "hull"
+box = { center = [240, 0, 132], half = [69, 95, 22] }
+[boxes.armor]
+# Radiator armour 12.7 FH; hood sides and top 6.35 FH (verify).
+front = { thickness_mm = 12.7, slope_deg = 0, material = "face_hardened" }
+side = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+rear = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+top = { thickness_mm = 6.4, material = "face_hardened" }
+
+[[boxes]]
+id = "body"
+frame = "hull"
+box = { center = [-70, 0, 150], half = [239, 108, 40] }
+# No roof.
+open = ["top"]
+[boxes.armor]
+# The windshield armour (12.7 FH, lowered in action; verify) at 30 deg;
+# body sides and rear door 6.35 FH.
+front = { thickness_mm = 12.7, slope_deg = 30, material = "face_hardened" }
+side = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+rear = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+
+# Crew of two (S8a-10 (A)): the driver in the cab (left) and the commander
+# standing in the M49 ring over the right of the cab, firing the .50.
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [120, 50, 150], half = [30, 25, 40] }
+in = "body"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [110, -50, 170], half = [25, 25, 60] }
+in = "body"
+
+# The .50 M2HB on the M49 ring mount (S8a-10 (A): the M3A1's .30 pintle
+# sockets are left out). Ring centre over the cab, cm (hull frame); the
+# muzzle from it along the gun.
+[[weapons]]
+def = "ww2:m2hb"
+mount = "pintle"
+pivot = [110, -50, 215]
+muzzle = [100, 0, 10]
+# A full ring (vehicles.md 6.7), 30 deg/s by hand (verify).
+traverse_deg = [-180, 180]
+traverse_deg_s = 30
+seat = "commander"
+# Rounds stowed (verify): 700.
+rounds = 700
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [240, 0, 128], half = [55, 60, 25] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [20, 95, 40] }, { pos = [-120, 95, 40] }, { pos = [-260, 95, 40] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [20, -95, 40] }, { pos = [-120, -95, 40] }, { pos = [-260, -95, 40] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [130, 0, 85], half = [40, 30, 25] }
+repair = { to_hp = 50, time_s = 60 }
+
+# Hatches: the crew climb out over the sides of the open cab.
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [120, 111, 190]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [110, -111, 190]
+exit_ms = 2500
+
+# S8a (6.6): eleven seats: one in the cab between the crew and ten on
+# benches in the body (S8a-2 (A): the 12-man rifle squad does not fit until
+# it has lost a man). The rear door for boarding.
+[transport]
+capacity = 11
+entry = [-315, 0, 60]
+board_ms = 1000
+exit_ms = 800
+exit_over_sides_ms = 500
+exit_raise_cm = 50
+
+# Slot boxes (hull frame, cm): seated men 0.90 m from the floor (1.10 m),
+# heads 10 cm over the 1.90 m rim.
+[[passenger_slots]]
+box = { center = [120, 0, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-10, 78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-65, 78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-120, 78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-175, 78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-230, 78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-10, -78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-65, -78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-120, -78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-175, -78, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-230, -78, 155], half = [22, 20, 45] }

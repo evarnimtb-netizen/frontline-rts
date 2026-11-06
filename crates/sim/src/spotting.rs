@@ -267,7 +267,7 @@ fn spot_vehicle(
         let m = Fx::from(vr.moving_speed).raw() as u64;
         m * m
     };
-    let gun = &setup.weapons[v.main_gun().weapon as usize];
+    let gun = &setup.weapons[v.primary_weapon() as usize];
     let mut pct = v.spot_size_pct;
     if moving {
         pct = pct.max(vr.moving_spot_pct);

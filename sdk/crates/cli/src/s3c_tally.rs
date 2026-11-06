@@ -300,24 +300,21 @@ impl S3cTally {
             self.crew
                 .insert(id, vs.seats.iter().filter(|st| st.hp > 0).count() as u32);
             let limited: Vec<bool> = v
-                .mounts
+                .mg_mounts()
                 .iter()
-                .skip(1)
                 .zip(&vs.mgs)
                 .filter_map(|(m, st)| m.rounds.map(|n| st.spent >= n))
                 .collect();
             let mg_dry = !limited.is_empty() && limited.iter().all(|&d| d);
             let (left, full) = v
-                .mounts
+                .mg_mounts()
                 .iter()
-                .skip(1)
                 .zip(&vs.mgs)
                 .filter_map(|(m, st)| m.rounds.map(|n| (n.saturating_sub(st.spent), n)))
                 .fold((0u64, 0u64), |a, b| (a.0 + b.0 as u64, a.1 + b.1 as u64));
             let mg_low = full > 0 && left * 4 < full;
             let he_idx = v
-                .main_gun()
-                .ammo
+                .main_ammo()
                 .iter()
                 .position(|a| s.ammo[a.ammo as usize].mechanism == AmmoMechanism::He);
             let he_low = he_idx

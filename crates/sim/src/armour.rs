@@ -32,8 +32,10 @@
 //! `Fx::sin_cos` and `Fx::atan2` only; angles in the setup are integer
 //! degrees ([`deg`]).
 
-use frontline_content::vehicle::{AmmoSetup, PartBoxSetup, VehicleSetup};
-use frontline_content::{AmmoMechanism, MAX_ARMOUR_BOXES, PlateGroup};
+use frontline_content::setup::WeaponSetup;
+use frontline_content::tuning::GunneryTuning;
+use frontline_content::vehicle::{AmmoSetup, ArmourMaterial, PartBoxSetup, VehicleSetup};
+use frontline_content::{AmmoMechanism, MAX_ARMOUR_BOXES, MAX_ZONES, PlateGroup};
 
 use crate::fx::{Fx, FxVec3};
 use crate::rng::RngStream;
@@ -357,6 +359,8 @@ pub struct VehicleArmour {
     /// S7: seats in an open box, which a segment from outside can strike
     /// directly ([`HitVia::Seat`]).
     pub exposed: Vec<ExposedSeat>,
+    /// S8a: MG shield thickness (mm), by shield.
+    pub shields: Vec<Fx>,
 }
 
 /// S7: a seat in an open-topped box (its box in the def's frame).
@@ -374,16 +378,22 @@ impl VehicleArmour {
         b < self.boxes as usize && self.faces[b].iter().any(|f| f.open)
     }
 
-    pub fn new(v: &VehicleSetup) -> VehicleArmour {
+    /// The plates of `v`; S8a: a face-hardened plate counts as `fh_pct` %
+    /// of its thickness (`[vehicles.gunnery] face_hardened_pct`).
+    pub fn new(v: &VehicleSetup, fh_pct: u32) -> VehicleArmour {
         let mut faces = [[PlateFace::default(); 6]; MAX_ARMOUR_BOXES];
         for (b, bx) in v.boxes.iter().enumerate().take(MAX_ARMOUR_BOXES) {
             for f in Face::ALL {
                 let g = f.group();
                 let plate = &bx.plates[g.index()];
+                let t: Fx = plate.thickness.into();
                 faces[b][f.index()] = PlateFace {
                     zone: Some(g.zone(b)),
                     normal: plate_normal(f, plate.slope_deg),
-                    thickness: plate.thickness.into(),
+                    thickness: match plate.material {
+                        ArmourMaterial::Rha => t,
+                        ArmourMaterial::FaceHardened => t.mul_int(fh_pct as i32).div_int(100),
+                    },
                     // S7: an open group leaves its outer face open; a
                     // box's bottom is its floor and never open.
                     open: f != Face::Bottom && bx.open & (1 << g.index()) != 0,
@@ -406,6 +416,7 @@ impl VehicleArmour {
         VehicleArmour {
             faces,
             exposed,
+            shields: v.shields.iter().map(|sh| sh.thickness.into()).collect(),
             boxes: v.boxes.len().clamp(1, MAX_ARMOUR_BOXES) as u8,
             track_mm: Fx::from_int(v.track_mm as i32),
             track_band_pct: v.track_band_pct,
@@ -427,15 +438,131 @@ impl VehicleArmour {
 pub struct ArmourTables {
     pub ammo: Vec<AmmoTable>,
     pub vehicles: Vec<VehicleArmour>,
+    /// S8a (6.4) reach table: per weapon index (empty: no penetration
+    /// table), per vehicle type, per zone id: the greatest range (m) at
+    /// which the weapon can beat that plate at 0 deg incidence on its slope
+    /// (the top of the ±7 % band; 0: never; open faces 0). The per-man
+    /// target check is one comparison against it.
+    pub reach: Vec<Vec<[Fx; MAX_ZONES]>>,
+    /// S8a: `cos` of the small-arms ricochet angle.
+    pub small_cos_ricochet: Fx,
+    /// S8a: per weapon index, its small-arms penetration table as an
+    /// [`AmmoTable`] (0 deg reference; no rows: never beats a plate), so
+    /// small arms use the same `pen0` interpolation as rounds.
+    pub small: Vec<AmmoTable>,
 }
 
 impl ArmourTables {
-    pub fn new(ammo: &[AmmoSetup], vehicles: &[VehicleSetup]) -> ArmourTables {
+    pub fn new(
+        ammo: &[AmmoSetup],
+        vehicles: &[VehicleSetup],
+        weapons: &[WeaponSetup],
+        g: &GunneryTuning,
+    ) -> ArmourTables {
+        let vehicles: Vec<VehicleArmour> = vehicles
+            .iter()
+            .map(|v| VehicleArmour::new(v, g.face_hardened_pct))
+            .collect();
+        let reach = weapons
+            .iter()
+            .map(|w| {
+                if w.pen.is_empty() {
+                    return Vec::new();
+                }
+                vehicles
+                    .iter()
+                    .map(|va| {
+                        let mut out = [Fx::ZERO; MAX_ZONES];
+                        for (z, o) in out.iter_mut().enumerate().take(va.boxes as usize * 4) {
+                            let (part, face) = Face::of_zone(z as u8);
+                            let plate = va.face(part, face);
+                            if plate.open || plate.thickness <= Fx::ZERO {
+                                continue;
+                            }
+                            // 0 deg horizontal incidence: c = the normal's
+                            // horizontal share (cos slope).
+                            let c = FxVec3::new(plate.normal.x, plate.normal.y, Fx::ZERO).length();
+                            *o = small_reach(w, plate.thickness, c);
+                        }
+                        out
+                    })
+                    .collect()
+            })
+            .collect();
+        let small = weapons
+            .iter()
+            .map(|w| AmmoTable {
+                mechanism: None,
+                cos_ricochet: deg(g.small_arms_ricochet_deg as i32).cos(),
+                cos_ref: Fx::ONE,
+                rows: w
+                    .pen
+                    .iter()
+                    .map(|r| (Fx::from(r.range), Fx::from_int(r.mm as i32)))
+                    .collect(),
+            })
+            .collect();
         ArmourTables {
             ammo: ammo.iter().map(AmmoTable::new).collect(),
-            vehicles: vehicles.iter().map(VehicleArmour::new).collect(),
+            vehicles,
+            reach,
+            small,
+            small_cos_ricochet: deg(g.small_arms_ricochet_deg as i32).cos(),
         }
     }
+
+    /// S8a: the reach of weapon `w` against zone `z` of vehicle type `vt`
+    /// (m; 0: never).
+    #[inline]
+    pub fn small_reach(&self, w: u16, vt: u16, z: u8) -> Fx {
+        self.reach
+            .get(w as usize)
+            .and_then(|r| r.get(vt as usize))
+            .and_then(|r| r.get(z as usize))
+            .copied()
+            .unwrap_or(Fx::ZERO)
+    }
+}
+
+/// S8a: the greatest range (m) at which small arm `w` beats `thickness`
+/// mm met at impact cosine `c` at the top of the ±7 % band, capped at its
+/// `range_max`; 0 when it never does. Piecewise-linear table, scanned by
+/// segment (no sampling).
+pub fn small_reach(w: &WeaponSetup, thickness: Fx, c: Fx) -> Fx {
+    if c <= Fx::ZERO {
+        return Fx::ZERO;
+    }
+    // pen0 · (1 + band) · c ≥ thickness  ⇔  pen0 ≥ need.
+    let need = thickness.div((Fx::ONE + PEN_BAND).mul(c));
+    let max: Fx = w.range_max.into();
+    let rows: Vec<(Fx, Fx)> = w
+        .pen
+        .iter()
+        .map(|r| (Fx::from(r.range), Fx::from_int(r.mm as i32)))
+        .collect();
+    let (Some(&(r0, p0)), Some(&(_, plast))) = (rows.first(), rows.last()) else {
+        return Fx::ZERO;
+    };
+    if plast >= need {
+        return max; // flat past the last row
+    }
+    let mut best: Option<Fx> = (p0 >= need).then_some(r0);
+    for pair in rows.windows(2) {
+        let ((ra, pa), (rb, pb)) = (pair[0], pair[1]);
+        let r = if pb >= need {
+            rb
+        } else if pa >= need {
+            // Linear crossing in i64.
+            let num = (pa.raw() as i64 - need.raw() as i64) * (rb.raw() as i64 - ra.raw() as i64);
+            let den = (pa.raw() as i64 - pb.raw() as i64).max(1);
+            Fx::from_raw((ra.raw() as i64 + num / den) as i32)
+        } else {
+            continue;
+        };
+        best = Some(best.map_or(r, |b| b.max(r)));
+    }
+    // A reach of 0 m still beats it point-blank: at least 1 cm.
+    best.map_or(Fx::ZERO, |b| b.max(Fx::from_ratio(1, 100)).min(max))
 }
 
 /// A round meeting a vehicle's plate (the narrowphase result,
@@ -470,6 +597,9 @@ pub enum HitVia {
     Open,
     /// Seat index (def order) in an open box, struck from outside.
     Seat(u8),
+    /// S8a: MG shield `k` (no zone, no contents): the plate rule once; a
+    /// pass goes on along the same path.
+    Shield(u8),
 }
 
 // ---------------------------------------------------------- narrowphase --
@@ -565,6 +695,18 @@ pub fn hit_armour(
     f: &VehicleFrame,
     a: &VehicleArmour,
 ) -> Option<ArmourHit> {
+    hit_armour_past(from, d, f, a, None)
+}
+
+/// [`hit_armour`] ignoring shield `skip_shield` (S8a: a round that went
+/// through a shield goes on).
+pub fn hit_armour_past(
+    from: FxVec3,
+    d: FxVec3,
+    f: &VehicleFrame,
+    a: &VehicleArmour,
+    skip_shield: Option<u8>,
+) -> Option<ArmourHit> {
     let mut best: Option<ArmourHit> = None;
     let n = (f.n_boxes as usize).min(MAX_ARMOUR_BOXES);
     let parts = f.boxes[..n]
@@ -598,6 +740,32 @@ pub fn hit_armour(
             point: from + d * t,
             local,
             via: if open { HitVia::Open } else { HitVia::Plate },
+        });
+    }
+    // S8a: MG shields, struck before what is behind them (a tie goes to
+    // the box).
+    for (k, sb) in f.shields[..(f.n_shields as usize).min(f.shields.len())]
+        .iter()
+        .enumerate()
+    {
+        if skip_shield == Some(k as u8) {
+            continue;
+        }
+        let Some((t, face, local)) = segment_box(sb, from, d) else {
+            continue;
+        };
+        if t == Fx::ZERO || best.is_some_and(|h| h.t <= t) {
+            continue;
+        }
+        best = Some(ArmourHit {
+            t,
+            part: BoxPart::HULL,
+            face,
+            zone: face.zone(BoxPart::HULL),
+            normal: sb.axes.apply(plate_normal(face, 0)),
+            point: from + d * t,
+            local,
+            via: HitVia::Shield(k as u8),
         });
     }
     // S7: a seat over an open box's rim, struck before any plate or open

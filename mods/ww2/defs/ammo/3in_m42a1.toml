@@ -37,6 +37,11 @@ suppression_radius_m = 12
 crater_radius_cm = 60
 crater_depth_cm = 30
 pen_mm = 10
+# S8a thin-plate rule (S7-8, owner question S8a-13 (A)): a fragment of the
+# 3-inch M42A1 pierces a plate whose effective thickness (thickness x material
+# / cos) is below this many mm at the burst, falling with distance as
+# frag_damage does (verify: starting value).
+frag_pen_mm = 12
 inside_damage = 150
 inside_rays = 16
 inside_reach_cm = 150

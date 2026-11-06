@@ -16,6 +16,7 @@
           45
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 12,
         "frag_reach_cm": 1200,
         "frag_track_damage": 1,
         "inside_damage": 150,
@@ -123,6 +124,7 @@
           45
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 12,
         "frag_reach_cm": 1200,
         "frag_track_damage": 1,
         "inside_damage": 150,
@@ -339,6 +341,7 @@
           45
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 12,
         "frag_reach_cm": 1200,
         "frag_track_damage": 1,
         "inside_damage": 150,
@@ -392,6 +395,7 @@
           45
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 0,
         "frag_reach_cm": 600,
         "frag_track_damage": 1,
         "inside_damage": 0,
@@ -450,6 +454,7 @@
           45
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 0,
         "frag_reach_cm": 600,
         "frag_track_damage": 1,
         "inside_damage": 0,
@@ -508,6 +513,7 @@
           45
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 0,
         "frag_reach_cm": 600,
         "frag_track_damage": 1,
         "inside_damage": 0,
@@ -562,7 +568,8 @@
         "ww2:ger_pz4_h_squad",
         "ww2:ger_zugtrupp",
         "ww2:ger_munitionstraeger",
-        "ww2:ger_stug3_g_squad"
+        "ww2:ger_stug3_g_squad",
+        "ww2:ger_sdkfz251_1_squad"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -585,7 +592,8 @@
         "ww2:usa_m4a3_75_squad",
         "ww2:usa_platoon_hq",
         "ww2:usa_ammo_bearers",
-        "ww2:usa_m10_squad"
+        "ww2:usa_m10_squad",
+        "ww2:usa_m3a1_squad"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -610,6 +618,7 @@
           40
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 0,
         "frag_reach_cm": 800,
         "frag_track_damage": 1,
         "inside_damage": 300,
@@ -667,6 +676,7 @@
           40
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 0,
         "frag_reach_cm": 800,
         "frag_track_damage": 1,
         "inside_damage": 300,
@@ -704,6 +714,7 @@
           50
         ],
         "frag_far_pct": 25,
+        "frag_pen_mm": 3,
         "frag_reach_cm": 1000,
         "frag_track_damage": 0,
         "inside_damage": 100,
@@ -780,6 +791,7 @@
           50
         ],
         "frag_far_pct": 25,
+        "frag_pen_mm": 3,
         "frag_reach_cm": 1000,
         "frag_track_damage": 0,
         "inside_damage": 100,
@@ -1453,10 +1465,12 @@
         "gunnery": {
           "casemate_margin_deg": 3,
           "coax_cone_deg": 5,
+          "face_hardened_pct": 125,
           "he_group_m": 6,
           "lead_error_pct": 40,
           "open_top_item_aim_cm": 30,
           "open_top_item_cone_deg": 90,
+          "small_arms_ricochet_deg": 70,
           "spall_reach_m": 3,
           "special_below_pct": 50
         },
@@ -1494,6 +1508,12 @@
           "untrained_traverse_pct": 75
         },
         "seat_swap_s": 4,
+        "transport": {
+          "board_reach_cm": 300,
+          "move_block_cm_s": 100,
+          "stun_ms": 2000,
+          "unlock_s": 120
+        },
         "unlock_s": 240,
         "wounded_hp": 50,
         "wreck_cap": 32
@@ -1995,6 +2015,30 @@
       "vehicle": "ww2:ger_pz4_h",
       "weapon": ""
     },
+    "ww2:ger_sdkfz251_1_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_sdkfz251_1_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "SdKfz 251/1 Ausf. D",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "SdKfz 251",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:ger_sdkfz251_1",
+      "weapon": ""
+    },
     "ww2:ger_smg_gruppe": {
       "capabilities": [
         "recrew"
@@ -2487,6 +2531,30 @@
         "vehicle"
       ],
       "vehicle": "ww2:usa_m10",
+      "weapon": ""
+    },
+    "ww2:usa_m3a1_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_m3a1_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "M3A1 half-track",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "M3A1",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:usa_m3a1",
       "weapon": ""
     },
     "ww2:usa_m4a3_75_squad": {
@@ -3546,6 +3614,531 @@
         }
       ]
     },
+    "ww2:ger_sdkfz251_1": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 30,
+              "thickness_mm": 14.5
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 8.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 30,
+              "thickness_mm": 8.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 8.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              70
+            ],
+            "half": [
+              299,
+              105,
+              35
+            ]
+          },
+          "frame": "hull",
+          "id": "hull"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 30,
+              "thickness_mm": 14.5
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 8.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 30,
+              "thickness_mm": 8.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 5.5
+            }
+          },
+          "box": {
+            "center": [
+              225,
+              0,
+              125
+            ],
+            "half": [
+              74,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "engine"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 35,
+              "thickness_mm": 14.5
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 8.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 30,
+              "thickness_mm": 8.0
+            }
+          },
+          "box": {
+            "center": [
+              -74,
+              0,
+              140
+            ],
+            "half": [
+              225,
+              100,
+              35
+            ]
+          },
+          "frame": "hull",
+          "id": "compartment",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              225,
+              0,
+              120
+            ],
+            "frame": "hull",
+            "half": [
+              60,
+              60,
+              25
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "engine"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                40,
+                90,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -110,
+                90,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -260,
+                90,
+                40
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_left"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                40,
+                -90,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -110,
+                -90,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -260,
+                -90,
+                40
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_right"
+        },
+        {
+          "box": {
+            "center": [
+              120,
+              0,
+              80
+            ],
+            "frame": "hull",
+            "half": [
+              45,
+              35,
+              25
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "transmission"
+        }
+      ],
+      "cost": 290,
+      "crew_squad": "ww2:ger_tank_crew",
+      "eye_height_cm": 210,
+      "faction": "ww2:germany",
+      "hatches": [
+        {
+          "exit_ms": 2500,
+          "frame": "hull",
+          "pos": [
+            120,
+            100,
+            175
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 2500,
+          "frame": "hull",
+          "pos": [
+            110,
+            -100,
+            175
+          ],
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 40,
+        "track_mm": 5
+      },
+      "id": "ww2:ger_sdkfz251_1",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 120,
+        "bog_pct": 15,
+        "brake_cm_s2": 400,
+        "ditch_block_dm": 19,
+        "max_slope_pct": 45,
+        "moving_spread_pct": 400,
+        "reverse_cm_s": 250,
+        "speed_cm_s": 750,
+        "turn_deg_s": 26,
+        "type": "halftrack",
+        "unbog_s": [
+          20,
+          40
+        ]
+      },
+      "name": "SdKfz 251/1 Ausf. D",
+      "passenger_slots": [
+        {
+          "box": {
+            "center": [
+              -20,
+              70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -75,
+              70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -130,
+              70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -185,
+              70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -240,
+              70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -20,
+              -70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -75,
+              -70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -130,
+              -70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -185,
+              -70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -240,
+              -70,
+              150
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        }
+      ],
+      "pop": 3,
+      "rare_cap": 0,
+      "recall_cooldown_s": 60,
+      "role": "transport",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              120,
+              45,
+              140
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              35
+            ]
+          },
+          "id": "driver",
+          "in": "compartment",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              110,
+              -35,
+              160
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              25,
+              55
+            ]
+          },
+          "id": "commander",
+          "in": "compartment",
+          "role": "commander"
+        }
+      ],
+      "shields": [
+        {
+          "box": {
+            "center": [
+              25,
+              0,
+              10
+            ],
+            "half": [
+              1,
+              28,
+              22
+            ]
+          },
+          "mount": 0,
+          "thickness_mm": 8.0
+        }
+      ],
+      "short_name": "SdKfz 251",
+      "sight_m": 175,
+      "sources": [
+        "Jentz and Doyle, Panzer Tracts 15: mittlerer Schuetzenpanzerwagen (verify)",
+        "Spielberger, Halftracked Vehicles of the German Army 1909-1945 (verify)"
+      ],
+      "spot_size_pct": 150,
+      "transport": {
+        "board_ms": 1000,
+        "capacity": 10,
+        "entry": [
+          -305,
+          0,
+          60
+        ],
+        "exit_ms": 800,
+        "exit_over_sides_ms": 500,
+        "exit_raise_cm": 50
+      },
+      "weapons": [
+        {
+          "def": "ww2:mg34",
+          "mount": "pintle",
+          "muzzle": [
+            90,
+            0,
+            5
+          ],
+          "pivot": [
+            145,
+            -20,
+            185
+          ],
+          "rounds": 2010,
+          "seat": "commander",
+          "traverse_deg": [
+            -35,
+            35
+          ],
+          "traverse_deg_s": 60
+        }
+      ]
+    },
     "ww2:ger_stug3_g": {
       "boxes": [
         {
@@ -4484,6 +5077,528 @@
         }
       ]
     },
+    "ww2:usa_m3a1": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 12.7
+            },
+            "rear": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            },
+            "side": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            },
+            "top": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              75
+            ],
+            "half": [
+              309,
+              111,
+              35
+            ]
+          },
+          "frame": "hull",
+          "id": "hull"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 12.7
+            },
+            "rear": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            },
+            "side": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            },
+            "top": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            }
+          },
+          "box": {
+            "center": [
+              240,
+              0,
+              132
+            ],
+            "half": [
+              69,
+              95,
+              22
+            ]
+          },
+          "frame": "hull",
+          "id": "hood"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "face_hardened",
+              "slope_deg": 30,
+              "thickness_mm": 12.7
+            },
+            "rear": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            },
+            "side": {
+              "material": "face_hardened",
+              "slope_deg": 0,
+              "thickness_mm": 6.4
+            }
+          },
+          "box": {
+            "center": [
+              -70,
+              0,
+              150
+            ],
+            "half": [
+              239,
+              108,
+              40
+            ]
+          },
+          "frame": "hull",
+          "id": "body",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              240,
+              0,
+              128
+            ],
+            "frame": "hull",
+            "half": [
+              55,
+              60,
+              25
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "engine"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                20,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -260,
+                95,
+                40
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_left"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                20,
+                -95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                -95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -260,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 100,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 100
+          },
+          "type": "track_right"
+        },
+        {
+          "box": {
+            "center": [
+              130,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              30,
+              25
+            ]
+          },
+          "hp": 100,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 50
+          },
+          "type": "transmission"
+        }
+      ],
+      "cost": 310,
+      "crew_squad": "ww2:usa_tank_crew",
+      "eye_height_cm": 230,
+      "faction": "ww2:usa",
+      "hatches": [
+        {
+          "exit_ms": 2500,
+          "frame": "hull",
+          "pos": [
+            120,
+            111,
+            190
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 2500,
+          "frame": "hull",
+          "pos": [
+            110,
+            -111,
+            190
+          ],
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 40,
+        "track_mm": 5
+      },
+      "id": "ww2:usa_m3a1",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 130,
+        "bog_pct": 15,
+        "brake_cm_s2": 400,
+        "ditch_block_dm": 19,
+        "max_slope_pct": 45,
+        "moving_spread_pct": 400,
+        "reverse_cm_s": 250,
+        "speed_cm_s": 850,
+        "turn_deg_s": 24,
+        "type": "halftrack",
+        "unbog_s": [
+          20,
+          40
+        ]
+      },
+      "name": "M3A1 half-track",
+      "passenger_slots": [
+        {
+          "box": {
+            "center": [
+              120,
+              0,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -10,
+              78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -65,
+              78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -175,
+              78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -230,
+              78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -10,
+              -78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -65,
+              -78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -175,
+              -78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -230,
+              -78,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        }
+      ],
+      "pop": 3,
+      "rare_cap": 0,
+      "recall_cooldown_s": 60,
+      "role": "transport",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              120,
+              50,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              40
+            ]
+          },
+          "id": "driver",
+          "in": "body",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              110,
+              -50,
+              170
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              25,
+              60
+            ]
+          },
+          "id": "commander",
+          "in": "body",
+          "role": "commander"
+        }
+      ],
+      "short_name": "M3A1",
+      "sight_m": 175,
+      "sources": [
+        "TM 9-710, Basic Half-Track Vehicles (1944) (verify)",
+        "Hunnicutt, Half-Track: A History of American Semi-Tracked Vehicles (2001) (verify)",
+        "Zaloga, M3 Infantry Half-Track 1940-73 (Osprey New Vanguard 11) (verify)"
+      ],
+      "spot_size_pct": 170,
+      "transport": {
+        "board_ms": 1000,
+        "capacity": 11,
+        "entry": [
+          -315,
+          0,
+          60
+        ],
+        "exit_ms": 800,
+        "exit_over_sides_ms": 500,
+        "exit_raise_cm": 50
+      },
+      "weapons": [
+        {
+          "def": "ww2:m2hb",
+          "mount": "pintle",
+          "muzzle": [
+            100,
+            0,
+            10
+          ],
+          "pivot": [
+            110,
+            -50,
+            215
+          ],
+          "rounds": 700,
+          "seat": "commander",
+          "traverse_deg": [
+            -180,
+            180
+          ],
+          "traverse_deg_s": 30
+        }
+      ]
+    },
     "ww2:usa_m4a3_75": {
       "boxes": [
         {
@@ -5020,6 +6135,11 @@
       "burst_pause_ms": 600,
       "burst_rounds": 4,
       "class": "rifle",
+      "core": {
+        "damage": 30,
+        "length_cm": 30,
+        "max_boxes": 1
+      },
       "crew_weapon": false,
       "damage": 65,
       "feed": "ww2:3006_bar",
@@ -5030,6 +6150,20 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 860,
       "name": "BAR M1918A2",
+      "penetration": [
+        [
+          0,
+          7
+        ],
+        [
+          100,
+          5
+        ],
+        [
+          300,
+          3
+        ]
+      ],
       "range_m": 350,
       "reload_ms": 4000,
       "rounds_carried": 0,
@@ -5059,6 +6193,7 @@
           50
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 9,
         "frag_reach_cm": 1500,
         "frag_track_damage": 1,
         "inside_damage": 150,
@@ -5102,6 +6237,11 @@
     },
     "ww2:kar98k": {
       "class": "rifle",
+      "core": {
+        "damage": 30,
+        "length_cm": 30,
+        "max_boxes": 1
+      },
       "damage": 70,
       "feed": "ww2:792x57_clip",
       "handover_ms": 0,
@@ -5111,6 +6251,20 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 760,
       "name": "Kar98k",
+      "penetration": [
+        [
+          0,
+          7
+        ],
+        [
+          100,
+          5
+        ],
+        [
+          300,
+          3
+        ]
+      ],
       "range_m": 300,
       "reload_ms": 3500,
       "rounds_carried": 0,
@@ -5164,6 +6318,11 @@
       "burst_pause_ms": 1000,
       "burst_rounds": 8,
       "class": "mg",
+      "core": {
+        "damage": 35,
+        "length_cm": 40,
+        "max_boxes": 1
+      },
       "damage": 45,
       "feed": "ww2:3006_belt",
       "handover_ms": 0,
@@ -5172,6 +6331,24 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 850,
       "name": "M1919A4",
+      "penetration": [
+        [
+          0,
+          12
+        ],
+        [
+          100,
+          10
+        ],
+        [
+          300,
+          7
+        ],
+        [
+          600,
+          4
+        ]
+      ],
       "range_m": 450,
       "reload_ms": 6000,
       "rounds_carried": 0,
@@ -5185,6 +6362,11 @@
       "burst_pause_ms": 1000,
       "burst_rounds": 8,
       "class": "mg",
+      "core": {
+        "damage": 35,
+        "length_cm": 40,
+        "max_boxes": 1
+      },
       "damage": 45,
       "feed": "ww2:3006_belt",
       "handover_ms": 3000,
@@ -5194,6 +6376,24 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 853,
       "name": "M1919A4 (tripod)",
+      "penetration": [
+        [
+          0,
+          12
+        ],
+        [
+          100,
+          10
+        ],
+        [
+          300,
+          7
+        ],
+        [
+          600,
+          4
+        ]
+      ],
       "range_m": 600,
       "reload_ms": 7000,
       "rounds_carried": 0,
@@ -5234,6 +6434,11 @@
     },
     "ww2:m1_garand": {
       "class": "rifle",
+      "core": {
+        "damage": 30,
+        "length_cm": 30,
+        "max_boxes": 1
+      },
       "damage": 65,
       "feed": "ww2:3006_clip",
       "handover_ms": 0,
@@ -5243,6 +6448,20 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 850,
       "name": "M1 Garand",
+      "penetration": [
+        [
+          0,
+          7
+        ],
+        [
+          100,
+          5
+        ],
+        [
+          300,
+          3
+        ]
+      ],
       "range_m": 300,
       "reload_ms": 3000,
       "rounds_carried": 0,
@@ -5268,6 +6487,7 @@
           50
         ],
         "frag_far_pct": 30,
+        "frag_pen_mm": 9,
         "frag_reach_cm": 1500,
         "frag_track_damage": 1,
         "inside_damage": 150,
@@ -5310,6 +6530,51 @@
       "spread_mrad": 50,
       "spread_urad": 0,
       "suppression": 30
+    },
+    "ww2:m2hb": {
+      "burst_pause_ms": 1200,
+      "burst_rounds": 5,
+      "class": "mg",
+      "core": {
+        "damage": 60,
+        "length_cm": 60,
+        "max_boxes": 1
+      },
+      "damage": 100,
+      "feed": "ww2:50bmg_belt",
+      "handover_ms": 0,
+      "id": "ww2:m2hb",
+      "magazine": 105,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 890,
+      "name": "M2HB .50",
+      "penetration": [
+        [
+          0,
+          28
+        ],
+        [
+          100,
+          25
+        ],
+        [
+          500,
+          19
+        ],
+        [
+          1000,
+          11
+        ]
+      ],
+      "range_m": 600,
+      "reload_ms": 8000,
+      "rounds_carried": 0,
+      "rounds_per_min": 500,
+      "setup_ms": 0,
+      "short_name": "M2HB",
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 20
     },
     "ww2:m3_75mm": {
       "class": "cannon",
@@ -5398,6 +6663,11 @@
       "burst_pause_ms": 1000,
       "burst_rounds": 7,
       "class": "mg",
+      "core": {
+        "damage": 35,
+        "length_cm": 40,
+        "max_boxes": 1
+      },
       "damage": 45,
       "feed": "ww2:792x57_belt",
       "handover_ms": 0,
@@ -5406,6 +6676,24 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 755,
       "name": "MG 34",
+      "penetration": [
+        [
+          0,
+          13
+        ],
+        [
+          100,
+          11
+        ],
+        [
+          300,
+          7
+        ],
+        [
+          600,
+          4
+        ]
+      ],
       "range_m": 450,
       "reload_ms": 6000,
       "rounds_carried": 0,
@@ -5419,6 +6707,11 @@
       "burst_pause_ms": 1200,
       "burst_rounds": 10,
       "class": "mg",
+      "core": {
+        "damage": 35,
+        "length_cm": 40,
+        "max_boxes": 1
+      },
       "damage": 45,
       "feed": "ww2:792x57_belt",
       "handover_ms": 3000,
@@ -5428,6 +6721,24 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 740,
       "name": "MG 42 (Lafette 42)",
+      "penetration": [
+        [
+          0,
+          13
+        ],
+        [
+          100,
+          11
+        ],
+        [
+          300,
+          7
+        ],
+        [
+          600,
+          4
+        ]
+      ],
       "range_m": 600,
       "reload_ms": 8000,
       "rounds_carried": 0,
@@ -5445,6 +6756,11 @@
       "burst_pause_ms": 1000,
       "burst_rounds": 7,
       "class": "mg",
+      "core": {
+        "damage": 35,
+        "length_cm": 40,
+        "max_boxes": 1
+      },
       "damage": 45,
       "feed": "ww2:792x57_belt",
       "handover_ms": 3000,
@@ -5454,6 +6770,24 @@
       "min_range_m": 0,
       "muzzle_velocity_m_s": 740,
       "name": "MG 42 (bipod)",
+      "penetration": [
+        [
+          0,
+          13
+        ],
+        [
+          100,
+          11
+        ],
+        [
+          300,
+          7
+        ],
+        [
+          600,
+          4
+        ]
+      ],
       "range_m": 450,
       "reload_ms": 5000,
       "rounds_carried": 0,

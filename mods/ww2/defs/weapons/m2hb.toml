@@ -1,0 +1,34 @@
+# Browning M2HB .50 flexible MG on the M3A1 half-track's M49 ring mount
+# (S8a, docs/slices/S8a-halftracks.md 6). A vehicle MG: rounds stowed are
+# the mount's `rounds`. Sources: FM 23-65 Browning Machine Gun Caliber .50
+# HB M2 (1945); TM 9-1225 (verify each figure).
+id = "ww2:m2hb"
+name = "M2HB .50"
+class = "mg"
+short_name = "M2HB"
+# S5a: what each shot takes from the mount's rounds (defs/cartridges).
+feed = "ww2:50bmg_belt"
+# The game's vehicle-MG scale (the MG 34 and M1919 engage to 450 m); the
+# heavy round reaches a little farther (a starting value).
+range_m = 600
+# HP to a man per hit (a .50 hit is lethal; rifles are 65-70).
+damage = 100
+# Cyclic rate about 450-575 rounds/min (FM 23-65; verify): 500.
+rounds_per_min = 500
+# Rounds per belt (the 105-round belt of the M2 box; verify).
+magazine = 105
+reload_ms = 8000
+# Dispersion half-angle (mrad): the flexible mount on a moving half-track
+# (as the vehicle MG 34 and M1919, 15).
+spread_mrad = 15
+muzzle_velocity_m_s = 890
+# S8a (vehicles.md 6.4): M2 AP, mm of RHA beaten at 0 deg, [range_m, mm],
+# linear between rows, flat past the last (verify; quoted from memory).
+penetration = [[0, 28], [100, 25], [500, 19], [1000, 11]]
+# Past the plate: on length_cm, at most max_boxes boxes, damage HP each.
+core = { damage = 60, length_cm = 60, max_boxes = 1 }
+# Suppression per near miss (the MG 34's 14 and the heavier round).
+suppression = 20
+# S5a bursts: 5-round bursts, 1.2 s pause (starting values, verify).
+burst_rounds = 5
+burst_pause_ms = 1200

@@ -195,7 +195,7 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             .map(|r| GString::from(SEAT_KEYS[r.index()]))
             .collect();
         let mut ammo = VarArray::new();
-        for load in &gun.ammo {
+        for load in gun.map_or(&[][..], |g| &g.ammo[..]) {
             let Some(a) = setup.ammo.get(load.ammo as usize) else {
                 continue;
             };
@@ -214,7 +214,8 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             .map_or("", |f| short_id(&f.id));
         // S7: the armour boxes (sim frame: x forward, y left, z up; m; a
         // turret-frame box from the pivot), the gun pivot and seat ids.
-        let casemate = gun.kind == frontline_content::vehicle::MountKind::Casemate;
+        let casemate =
+            gun.is_some_and(|g| g.kind == frontline_content::vehicle::MountKind::Casemate);
         let v3 = |p: frontline_content::vehicle::FixedVec3| {
             godot::builtin::Vector3::new(fx(p.x), fx(p.y), fx(p.z))
         };
@@ -235,6 +236,47 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
                 }
                 .to_variant(),
             );
+        }
+        // S8a: pintle MGs (pivot, muzzle from it, arc deg), shields (the
+        // pintle index into `pintles` they turn with, -1: hull) and
+        // passenger slots (hull frame boxes).
+        let mut pintles = VarArray::new();
+        let mut pintle_of = Vec::new();
+        for m in v.mg_mounts() {
+            if m.kind == frontline_content::vehicle::MountKind::Pintle {
+                pintle_of.push(pintles.len() as i64);
+                pintles.push(
+                    &vdict! {
+                        "pivot" => v3(m.pivot),
+                        "muzzle" => v3(m.muzzle),
+                        "arc" => godot::builtin::Vector2::new(m.traverse_deg[0] as f32, m.traverse_deg[1] as f32),
+                    }
+                    .to_variant(),
+                );
+            } else {
+                pintle_of.push(-1);
+            }
+        }
+        let first_mg = v.mounts.len() - v.mg_mounts().len();
+        let mut shields = VarArray::new();
+        for sh in &v.shields {
+            let p = sh
+                .mount
+                .and_then(|k| (k as usize).checked_sub(first_mg))
+                .and_then(|k| pintle_of.get(k).copied())
+                .unwrap_or(-1);
+            shields.push(
+                &vdict! {
+                    "pintle" => p,
+                    "center" => v3(sh.bounds.center),
+                    "half" => v3(sh.bounds.half),
+                }
+                .to_variant(),
+            );
+        }
+        let mut slots = VarArray::new();
+        for b in v.transport.iter().flat_map(|t| &t.slots) {
+            slots.push(&vdict! { "center" => v3(b.center), "half" => v3(b.half) }.to_variant());
         }
         let seat_ids: PackedStringArray = v
             .seats
@@ -274,8 +316,12 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "turret_width" => 2.0 * fx(tur.half.y),
             "turret_height" => 2.0 * fx(tur.half.z),
             "turret_offset_x" => fx(tur.center.x),
-            "gun_length" => fx(gun.muzzle.x),
-            "gun_height" => fx(gun.muzzle.z),
+            "gun_length" => gun.map_or(0.0, |g| fx(g.muzzle.x)),
+            "gun_height" => gun.map_or(0.0, |g| fx(g.muzzle.z)),
+            "has_gun" => gun.is_some(),
+            "pintles" => &pintles,
+            "shields" => &shields,
+            "slots" => &slots,
             "glacis_deg" => v.plate(0).map_or(0, |p| p.slope_deg) as f32,
             "seats" => &seats,
             "ammo" => &ammo,
@@ -2440,7 +2486,7 @@ impl MatchRuntime {
                     .setup
                     .vehicles
                     .get(v.type_idx as usize)
-                    .is_some_and(|t| t.main_gun().ammo.len() > 2);
+                    .is_some_and(|t| t.main_ammo().len() > 2);
                 if special {
                     ammo.set("apcr", v.ammo[2] as i64);
                 }
@@ -2449,9 +2495,8 @@ impl MatchRuntime {
                     ammo.set("mg", v.mg_rounds as i64);
                     // S3c (B9): the full stowage, for the card's colour.
                     let full: u64 = self.setup.vehicles.get(v.type_idx as usize).map_or(0, |t| {
-                        t.mounts
+                        t.mg_mounts()
                             .iter()
-                            .skip(1)
                             .filter_map(|m| m.rounds)
                             .map(u64::from)
                             .sum()
@@ -2464,7 +2509,7 @@ impl MatchRuntime {
                     if special {
                         ammo.set("rare_cap", t.rare_cap as i64);
                     }
-                    let full: u32 = t.main_gun().ammo.iter().map(|a| a.count as u32).sum();
+                    let full: u32 = t.main_ammo().iter().map(|a| a.count as u32).sum();
                     // The round in the breech counts (S5a Fix, review
                     // L7: the sim's `held` counts it too).
                     let have: u32 =

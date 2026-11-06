@@ -33,6 +33,15 @@ reload_ms = 5000
 spread_mrad = 22
 # m/s (s.S. ball).
 muzzle_velocity_m_s = 740
+# S8a (vehicles.md 6.4, owner question S8a-3 (A)): small arms against thin
+# armour. The belt's SmK (steel-core AP) table stands for every round (no
+# belt-mix roll): mm of RHA beaten at 0 deg, [range_m, mm], linear between
+# rows, flat past the last (verify: SmK about 13 mm at 100 m on period
+# German tables; quoted from memory).
+penetration = [[0, 13], [100, 11], [300, 7], [600, 4]]
+# A round past the plate goes on length_cm and strikes at most max_boxes
+# boxes inside (crew, riders, components) for damage HP each; no spall.
+core = { damage = 35, length_cm = 40, max_boxes = 1 }
 # Down on the bipod and aimed (ms): a second.
 setup_ms = 1000
 # Suppression per near miss (out of 100).

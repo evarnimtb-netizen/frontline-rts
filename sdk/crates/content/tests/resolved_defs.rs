@@ -111,14 +111,14 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // re-recorded it for the open-top and AI keys (`[vehicles.gunnery]
 // open_top_item_*`, `[ai.armour]` overwatch, `[ai.infantry]` throws).
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x74677314fd575725),
-    ("skirmish usa-ger seed 7 hard", 0xaf015f734ec093b4),
-    ("test_unlock ger-usa seed 1 normal", 0xfa9ab919c9bf813a),
-    ("example override ger-usa seed 1 normal", 0x74677314fd575725),
-    ("human ger vs ai usa seed 3 easy", 0xe0d670f75d48592e),
+    ("skirmish ger-usa seed 1 normal", 0xfebaa8b6ecc9c870),
+    ("skirmish usa-ger seed 7 hard", 0xe68d5e191d683914),
+    ("test_unlock ger-usa seed 1 normal", 0x19504db2b5db0adb),
+    ("example override ger-usa seed 1 normal", 0xfebaa8b6ecc9c870),
+    ("human ger vs ai usa seed 3 easy", 0x38296b76327786a6),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x934ccaf3b8ad82a1,
+        0x74255f61fd0d4691,
     ),
 ];
 

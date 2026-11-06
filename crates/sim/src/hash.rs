@@ -620,6 +620,8 @@ pub(crate) fn globals(
                 st.frag_rays,
                 st.frag_hits,
                 st.frag_rays_capped,
+                st.small_arms_pens,
+                st.frag_plate_pierces,
             ] {
                 v.put(out);
             }

@@ -25,9 +25,8 @@ impl Planner<'_> {
     pub(super) fn needs_rearm(&self, vs: &VehicleState, v: &VehicleSetup) -> bool {
         let r = &self.g.setup.rules;
         let limited: Vec<bool> = v
-            .mounts
+            .mg_mounts()
             .iter()
-            .skip(1)
             .zip(&vs.mgs)
             .filter_map(|(m, st)| m.rounds.map(|n| st.spent >= n))
             .collect();
@@ -46,12 +45,12 @@ impl Planner<'_> {
     /// full.
     pub(super) fn rearmed(&self, vs: &VehicleState, v: &VehicleSetup) -> bool {
         let pct = self.g.setup.rules.ai.armour.rearm_full_pct;
-        let gun = v.main_gun().ammo.iter().enumerate().all(|(k, a)| {
+        let gun = v.main_ammo().iter().enumerate().all(|(k, a)| {
             let have =
                 vs.ammo.get(k).copied().unwrap_or(0) as u32 + u32::from(vs.loaded == Some(k as u8));
             have * 100 >= a.count as u32 * pct
         });
-        let mgs = v.mounts.iter().skip(1).zip(&vs.mgs).all(|(m, st)| {
+        let mgs = v.mg_mounts().iter().zip(&vs.mgs).all(|(m, st)| {
             m.rounds
                 .is_none_or(|n| n.saturating_sub(st.spent) * 100 >= n * pct)
         });
@@ -250,7 +249,10 @@ impl Planner<'_> {
         ]
         .iter()
         .any(|&k| vs.component(k) == 0);
-        if vs.burn > 0 || vs.ammo_fire > 0 || (vs.component(ComponentKind::Gun) == 0 && broken) {
+        if vs.burn > 0
+            || vs.ammo_fire > 0
+            || (vs.gun_out(&self.g.setup.vehicles[vs.type_idx as usize]) && broken)
+        {
             return false;
         }
         let at = self.ents.transform[id.index()].pos.xy();
