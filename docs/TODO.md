@@ -85,6 +85,17 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S6b-1 Germany's win share (T5, band 45-55 %) reads 52.5 / 43.1 / 41.9 / 50.6 % on four 160 sets at S6 prices (pooled 47.0 % over 640, in band). (A) Keep S6 prices; a German price or AI lever is its own Tune slice if wanted.
   S6b-2 `mortar_reserve_pct` 0 means the AI keeps no bombs for defence. (A) Accept; a defence-only reserve needs its own 160 measurement (a 10 % reserve cut mortar share).
   S6b-3 AI map fire is off in ww2 (`map_fire_max_miss_m` 20, under the 27 m floor). (A) Keep it off until better map data (S11).
+- S7-1..10 (`docs/slices/S7-casemate-td.md` section 12), each on its (A):
+  S7-1 No StuG roof MG 34 or M10 .50 (pintle mounts out of scope). (A) None; add with pintle mounts in S8.
+  S7-2 StuG and M10 buy through the existing `vehicle` mix slot, split by card `ai_weight` (100 each), not new `[ai.mix]` slots (those would bypass the vehicle unlock, limit and savings). (A) Yes.
+  S7-3 StuG 500 MP / pop 10 / 120 s; M10 520 / 10 / 120 s (vehicles.md 8.4 said 520/500 and 90 s). (A) As stated; the Tune may move each within +-15 %.
+  S7-4 The M10's assistant driver takes the `radio_mg` seat role (no hull MG), labelled by seat id. (A) Yes; a sixth role when a vehicle needs both.
+  S7-5 A thrown item that strikes a plate drops to the ground below it (no deck charges, no grenade screens). (A) Yes; deck satchels are a later decision.
+  S7-6 3-inch M62 penetration row derived from the US 30° table x 1.066 / cos 30° until a Bird & Livingston row is read. (A) Use it, marked verify.
+  S7-7 Small arms do not aim at open-top crews (stray rounds through an open face still hit seats). (A) Yes; aimed fire with 6.4 (S8).
+  S7-8 Fragments never pierce plates in S7 (all plates here >= 10 mm). (A) Yes; a thin-plate rule with 6.4.
+  S7-9 Armour zone id = box index x 4 + face group, name `<box>_<face>` (`casemate_front`); the two tanks keep ids 0-7 and names. (A) Yes.
+  S7-10 StuG gun traverse 6 deg/s and casemate/M10 elevation 4 deg/s have no source. (A) Starting values, marked verify.
 
 ## Planned work queue
 
@@ -95,7 +106,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
    structure selection (its own item when scheduled).
 4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (not pushed). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
-5. S7 assault guns and TDs (next slice after S6 and S6b are pushed; S6b-1 answered first if wanted).
+5. S7 assault guns and TDs: planned on branch `s7-casemate-td` (from `9f216e9`); spec `docs/slices/S7-casemate-td.md`, targets `S7.toml`.
 6. Sim profiling: deferred until after S6 (owner 2026-11-03).
 
 ## Known issues still open

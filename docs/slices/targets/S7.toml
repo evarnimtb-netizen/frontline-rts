@@ -1,0 +1,539 @@
+# S7 targets (docs/slices/S7-casemate-td.md), machine-checkable part.
+# Owner 2026-11-06: "Start S7": assault guns and tank destroyers (StuG III G,
+# M10), the general vehicle schema, casemate gunnery, open-top exposure.
+# Copied from S6b.toml with every target and band unchanged (T4-T27), plus
+# the S7 targets T30-T38 at the end. Baseline numbers in the comments come
+# from the verified S6b JSON (scratchpad/verify-s6b, head 9f216e9).
+#   frontline-cli targets docs/slices/targets/S7.toml --jobs 6 [--runs skirmish40]
+# Run names are the first word of each metric. Balance batches use --jobs 6;
+# tick-time targets (T14) read `timing40`, which fixes jobs = 3 and must run
+# alone on a quiet machine (docs/process/workflows.md section 4).
+# New JSON fields (Build stages add them; spec "Targets"):
+#   skirmish: factions.<f>.s7.{kills_by_vehicle, kos_by_vehicle,
+#     open_top_throws, relocations} and factions.<f>.s7_derived.{
+#     bought_matches_pct.<card>, mp_share_pct.<card>, vehicle_mp_pct,
+#     kills_by_vehicle_pct.<vehicle>, vehicle_kills_pct,
+#     kills_by_vehicle_max_pct, kos_per_bought.<vehicle>,
+#     open_top_throws_per_match}
+#   armour-test: cases 17-20 with the check names used below.
+# Not checked here (cargo tests, see the spec): the port proof (Pz IV and
+# Sherman behave as before: armour-test case 1-3 numbers, golden ballistics
+# and 40 skirmish matches equal before and after the port), per-field
+# save/load/hash tests, determinism at 1/2/3/8 threads with save/load,
+# Godot checks and the screenshot, golden/validate/clippy/fmt (check.sh).
+
+name = "S7 assault guns and tank destroyers"
+
+[runs.skirmish40]
+kind = "skirmish"
+seeds = 20            # seeds 1-20 x both bases = 40 matches
+both_bases = true
+minutes = 45
+
+[runs.timing40]       # the same 40 matches, run alone at 3 at a time
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+jobs = 3
+
+[runs.skirmish160]
+kind = "skirmish"
+seeds = 80            # seeds 1-80
+both_bases = true
+minutes = 45
+
+[runs.skirmish160_oos]
+kind = "skirmish"
+seeds = 80
+first_seed = 101      # out of sample: seeds 101-180
+both_bases = true
+minutes = 45
+
+[runs.armour5]
+kind = "armour-test"
+seeds = 5
+
+[runs.armour_stress10]
+kind = "armour-test"
+seeds = 10
+stress = true
+
+[runs.fortify10]
+kind = "fortify-test"
+seeds = 10
+
+# --- T4: no AI fire-mission order refused (40 set) -------------------------
+[[target]]
+id = "T4a"
+metric = "skirmish40.factions.germany.s5b_derived.refused_total"
+max = 0
+[[target]]
+id = "T4b"
+metric = "skirmish40.factions.usa.s5b_derived.refused_total"
+max = 0
+
+# --- T5: each faction 35-65 % on 40; 45-55 % on both 160 sets -------------
+[[target]]
+id = "T5a"
+metric = "skirmish40.wins.germany_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5b"
+metric = "skirmish40.wins.usa_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5c"
+metric = "skirmish160.wins.germany_pct"
+min = 45
+max = 55
+[[target]]
+id = "T5d"
+metric = "skirmish160_oos.wins.germany_pct"
+min = 45
+max = 55
+
+# --- T6: no base side above 62 % ------------------------------------------
+[[target]]
+id = "T6a"
+metric = "skirmish40.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6b"
+metric = "skirmish160.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6c"
+metric = "skirmish160_oos.wins.base_max_pct"
+max = 62
+
+# --- T7: no match under 10 or over 40 min; median 15-30 --------------------
+[[target]]
+id = "T7a"
+metric = "skirmish40.length_min.min"
+min = 10
+[[target]]
+id = "T7b"
+metric = "skirmish40.length_min.max"
+max = 40
+[[target]]
+id = "T7c"
+metric = "skirmish40.length_min.median"
+min = 15
+max = 30
+[[target]]
+id = "T7d"
+metric = "skirmish160.length_min.median"
+min = 15
+max = 30
+
+# --- T8: HE share of kills 20-25 % (S5b-17), hard cap 26.3 % -----------------
+[[target]]
+id = "T8a"
+metric = "skirmish160.he_share_pct.mean"
+min = 20
+max = 26.3
+[[target]]
+id = "T8b"
+metric = "skirmish160_oos.he_share_pct.mean"
+min = 20
+max = 26.3
+[[target]]
+id = "T8c"
+metric = "skirmish40.he_share_pct.mean"
+max = 26.3
+[[target]]
+id = "T8d"
+metric = "skirmish160.he_share_pct.mean"
+min = 20
+max = 25
+kind = "report"
+note = "owner band; the hard limit is T8a"
+
+# --- T9: mortars 10-15 % of each side's kills (S5b-17; S5b ended at ~5 %) ----
+[[target]]
+id = "T9a"
+metric = "skirmish160.factions.germany.kills_by_source_pct.mortar"
+min = 10
+max = 15
+[[target]]
+id = "T9b"
+metric = "skirmish160.factions.usa.kills_by_source_pct.mortar"
+min = 10
+max = 15
+
+# --- T10: reported: bombs fired and MP on ammo per kind (160 set) ------------
+[[target]]
+id = "T10a"
+metric = "skirmish160.factions.germany.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10b"
+metric = "skirmish160.factions.usa.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10c"
+metric = "skirmish160.factions.germany.ammo.spend_mp.per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10d"
+metric = "skirmish160.factions.usa.ammo.spend_mp.per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10e"
+metric = "skirmish160.factions.germany.ammo.spend_mp.shells"
+min = 0
+kind = "report"
+note = "total over 160 matches; small_arms and explosives in the same JSON"
+[[target]]
+id = "T10f"
+metric = "skirmish160.factions.usa.ammo.spend_mp.shells"
+min = 0
+kind = "report"
+[[target]]
+id = "T10g"
+metric = "skirmish160.factions.germany.s6_derived.crate_mp_per_match"
+min = 0
+kind = "report"
+note = "MP paid for crates at base (part of spend_mp)"
+[[target]]
+id = "T10h"
+metric = "skirmish160.factions.usa.s6_derived.crate_mp_per_match"
+min = 0
+kind = "report"
+
+# --- T11: AI fires through observers (40 set), as S5b ------------------------
+[[target]]
+id = "T11a"
+metric = "skirmish40.factions.germany.s5b_derived.ai_observed_direct_pct"
+min = 70
+[[target]]
+id = "T11b"
+metric = "skirmish40.factions.usa.s5b_derived.ai_observed_direct_pct"
+min = 70
+
+# --- T13: fortify-test and armour-test hard checks ----------------------------
+[[target]]
+id = "T13a"
+metric = "fortify10.pass"
+min = 1
+[[target]]
+id = "T13b"
+metric = "armour5.pass"
+min = 1
+[[target]]
+id = "T13c"
+metric = "armour_stress10.pass"
+min = 1
+
+# --- T14: tick p99 peak under 1.5 ms (jobs = 3, alone); stress case under 10 ms
+[[target]]
+id = "T14a"
+metric = "timing40.tick_p99_ms.peak"
+max = 1.5
+[[target]]
+id = "T14b"
+metric = "armour_stress10.cases.case14.checks.sim_tick_p99_10_ms_on_3_threads.value"
+max = 10
+
+# --- T15: stall guard: every match has a winner (no 45 min limit hit) ---------
+[[target]]
+id = "T15a"
+metric = "skirmish40.wins.no_winner"
+max = 0
+[[target]]
+id = "T15b"
+metric = "skirmish160.wins.no_winner"
+max = 0
+[[target]]
+id = "T15c"
+metric = "skirmish160_oos.wins.no_winner"
+max = 0
+
+# --- T20: the base refills no mortar bombs (owner Q4, S5a-42) -----------------
+[[target]]
+id = "T20a"
+metric = "skirmish160.factions.germany.s6_derived.base_bomb_refills"
+max = 0
+[[target]]
+id = "T20b"
+metric = "skirmish160.factions.usa.s6_derived.base_bomb_refills"
+max = 0
+# A bomb refill with no crate within crate_feed_m and no HQ or dump radius.
+[[target]]
+id = "T20c"
+metric = "skirmish160.factions.germany.s6_derived.bomb_refills_unsourced"
+max = 0
+[[target]]
+id = "T20d"
+metric = "skirmish160.factions.usa.s6_derived.bomb_refills_unsourced"
+max = 0
+
+# --- T22: HQ and dump stock fills only from carried crates (owner Q2 C) -------
+[[target]]
+id = "T22a"
+metric = "skirmish160.factions.germany.s6_derived.stock_in_not_crate_kg"
+max = 0
+[[target]]
+id = "T22b"
+metric = "skirmish160.factions.usa.s6_derived.stock_in_not_crate_kg"
+max = 0
+
+# --- T23: crate and stock cook-offs happen in play (reported) -----------------
+[[target]]
+id = "T23a"
+metric = "skirmish160.s6.cookoffs_per_match"
+min = 0
+kind = "report"
+
+# --- T24: tank rearm forward (HQ and dumps, D3 rates; reported) ---------------
+[[target]]
+id = "T24a"
+metric = "skirmish160.factions.germany.s6_derived.tank_rounds_forward_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T24b"
+metric = "skirmish160.factions.usa.s6_derived.tank_rounds_forward_per_match"
+min = 0
+kind = "report"
+
+# --- T27: the AI builds an HQ in most matches and runs crates -----------------
+[[target]]
+id = "T27a"
+metric = "skirmish160.factions.germany.s6_derived.hq_built_pct"
+min = 70
+[[target]]
+id = "T27b"
+metric = "skirmish160.factions.usa.s6_derived.hq_built_pct"
+min = 70
+[[target]]
+id = "T27c"
+metric = "skirmish160.factions.germany.s6_derived.crates_delivered_per_match"
+min = 3
+[[target]]
+id = "T27d"
+metric = "skirmish160.factions.usa.s6_derived.crates_delivered_per_match"
+min = 3
+[[target]]
+id = "T27e"
+metric = "skirmish160.factions.germany.s6_derived.tank_crate_runs_per_match"
+min = 0
+kind = "report"
+note = "owner 2026-11-01: crates carried to stranded tanks"
+[[target]]
+id = "T27f"
+metric = "skirmish160.factions.usa.s6_derived.tank_crate_runs_per_match"
+min = 0
+kind = "report"
+
+# ============================ S7 ============================================
+# Card and vehicle keys are the def ids without the namespace.
+
+# --- T30: the AI buys the new cards in most matches ---------------------------
+[[target]]
+id = "T30a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+min = 60
+[[target]]
+id = "T30b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+min = 60
+[[target]]
+id = "T30c"
+metric = "skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+min = 60
+[[target]]
+id = "T30d"
+metric = "skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+min = 60
+
+# --- T31: vehicles do not take over: all vehicles' share of a side's kills ----
+# Baseline (one tank type, tank_ap + tank_he + vehicle_mg): Germany 23.5 /
+# 25.7 %, USA 21.2 / 20.7 % (160 / oos).
+[[target]]
+id = "T31a"
+metric = "skirmish160.factions.germany.s7_derived.vehicle_kills_pct"
+max = 30
+[[target]]
+id = "T31b"
+metric = "skirmish160.factions.usa.s7_derived.vehicle_kills_pct"
+max = 30
+[[target]]
+id = "T31c"
+metric = "skirmish160_oos.factions.germany.s7_derived.vehicle_kills_pct"
+max = 30
+[[target]]
+id = "T31d"
+metric = "skirmish160_oos.factions.usa.s7_derived.vehicle_kills_pct"
+max = 30
+
+# --- T32: no single vehicle type above 18 % of its side's kills ---------------
+# (Before S7 the one tank type held all of T31's share, 21-26 %.)
+[[target]]
+id = "T32a"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_max_pct"
+max = 18
+[[target]]
+id = "T32b"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_max_pct"
+max = 18
+
+# --- T33: share of each side's AI manpower spent on cards ---------------------
+# Baseline vehicle share of card manpower: Germany 28.5 / 28.3 %, USA 27.0 /
+# 26.0 % (160 / oos); about 3.1 vehicles bought per match per side.
+[[target]]
+id = "T33a"
+metric = "skirmish160.factions.germany.s7_derived.vehicle_mp_pct"
+max = 35
+[[target]]
+id = "T33b"
+metric = "skirmish160.factions.usa.s7_derived.vehicle_mp_pct"
+max = 35
+[[target]]
+id = "T33c"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pz4_h_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T33d"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_stug3_g_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T33e"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m4a3_75_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T33f"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m10_squad"
+min = 0
+kind = "report"
+# Each vehicle type's share of its side's kills (men killed by its rounds).
+[[target]]
+id = "T33g"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_pz4_h"
+min = 0
+kind = "report"
+[[target]]
+id = "T33h"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_stug3_g"
+min = 0
+kind = "report"
+[[target]]
+id = "T33i"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m4a3_75"
+min = 0
+kind = "report"
+[[target]]
+id = "T33j"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m10"
+min = 0
+kind = "report"
+# Enemy vehicles knocked out per vehicle bought, per type (TDs hunt tanks).
+[[target]]
+id = "T33k"
+metric = "skirmish160.factions.germany.s7_derived.kos_per_bought.ger_stug3_g"
+min = 0
+kind = "report"
+[[target]]
+id = "T33l"
+metric = "skirmish160.factions.usa.s7_derived.kos_per_bought.usa_m10"
+min = 0
+kind = "report"
+[[target]]
+id = "T33m"
+metric = "skirmish160.factions.germany.s7_derived.kos_per_bought.ger_pz4_h"
+min = 0
+kind = "report"
+[[target]]
+id = "T33n"
+metric = "skirmish160.factions.usa.s7_derived.kos_per_bought.usa_m4a3_75"
+min = 0
+kind = "report"
+
+# --- T34: casemate duel (armour-test case 17, 18; vehicles.md 10) -------------
+# 17: StuG frontal vs Sherman frontal at 300 m. The StuG's 80 mm / 10°
+# front against the M61 (about 50 % pen at 300 m) vs the Sherman's glacis
+# against the PzGr 39 (pens): the StuG should win most.
+[[target]]
+id = "T34a"
+metric = "armour5.cases.case17.checks.stug_wins_pct.value"
+min = 55
+[[target]]
+id = "T34b"
+metric = "armour5.cases.case17.checks.first_hit_s_stug.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T34c"
+metric = "armour5.cases.case17.checks.first_hit_s_sherman.value"
+min = 0
+kind = "report"
+# 18: a Sherman 45° off the StuG's nose at 200 m: the StuG must pivot its
+# hull before it can lay; the Sherman's turret is on it first.
+[[target]]
+id = "T34d"
+metric = "armour5.cases.case18.checks.sherman_wins_pct.value"
+min = 50
+[[target]]
+id = "T34e"
+metric = "armour5.cases.case18.checks.stug_fired_pct.value"
+min = 80
+[[target]]
+id = "T34f"
+metric = "armour5.cases.case18.checks.first_hit_s_stug.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T34g"
+metric = "armour5.cases.case18.checks.first_hit_s_sherman.value"
+min = 0
+kind = "report"
+
+# --- T35: grenades into an M10 (case 19) --------------------------------------
+[[target]]
+id = "T35a"
+metric = "armour5.cases.case19.checks.stopped_inside_pct.value"
+min = 50
+[[target]]
+id = "T35b"
+metric = "armour5.cases.case19.checks.stopped_crew_hit_pct.value"
+min = 50
+[[target]]
+id = "T35c"
+metric = "armour5.cases.case19.checks.moving_inside_pct.value"
+max = 20
+
+# --- T36: 81 mm near-miss on an M10 wounds crew; a closed Sherman's do not ----
+[[target]]
+id = "T36a"
+metric = "armour5.cases.case20.checks.m10_crew_hit_pct.value"
+min = 20
+[[target]]
+id = "T36b"
+metric = "armour5.cases.case20.checks.sherman_crew_hit_pct.value"
+max = 0
+
+# --- T37: AI infantry throws into stopped open-top vehicles (reported) --------
+[[target]]
+id = "T37a"
+metric = "skirmish160.factions.germany.s7_derived.open_top_throws_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T37b"
+metric = "skirmish160.factions.usa.s7_derived.open_top_throws_per_match"
+min = 0
+kind = "report"
+
+# --- T38: pooled German win share (owner band 45-55 %; computed in the log) ---
+# The CLI cannot pool runs: T5c and T5d check each set; the log reports
+# (wins 160 + wins oos) / 320. Baseline pooled: (84 + 81) / 320 = 51.6 %.
