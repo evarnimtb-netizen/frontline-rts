@@ -1,7 +1,9 @@
 # Frontline RTS: state (read this first)
 
-Where the project stands after S7 (branch `s7-casemate-td`, from `9f216e9`; not
-pushed; S6b is its base lineage). Main is S5b plus the infra step (`9509ae6`).
+Where the project stands after S7. Main holds everything through S7 (`393165b`,
+fast-forwarded and pushed 2026-11-06); new slices branch from main.
+The slice branches (`infra-checks`, `s6-hq-crates`, `s6b-mortar-ai`,
+`s7-casemate-td`) are all on origin and contained in main.
 Read the sections you need, then the doc the index (last section) names.
 Checked 2026-11-06.
 
@@ -42,12 +44,12 @@ Not in the game yet: Jagdpanzer IV, 38(t), M18, AT guns, on-map artillery, forti
 
 ## Versions
 
-Main (S5b): `SAVE_VERSION` 14 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 8
-(`crates/net/src/protocol.rs`). Branch `s6-hq-crates`: 15 and 9, each bumped
+Main (S7): `SAVE_VERSION` 17 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 9
+(`crates/net/src/protocol.rs`). History: S5b 14 and 8; S6: 15 and 9, each bumped
 once for S6 (`REPORT_VERSION` 1; `--json` files carry `"schema": 1`). A change
 S6b on its branch: `SAVE_VERSION` 16, `PROTOCOL_VERSION` 9. S7 (branch `s7-casemate-td`): `SAVE_VERSION` 17 (bumped once), `PROTOCOL_VERSION` 9 (no command or wire change). A change to a save layout, the hash or a command bumps these in the same commit.
 
-## S7 (branch `s7-casemate-td` from `9f216e9`, not pushed)
+## S7 (branch `s7-casemate-td` from `9f216e9`, merged into main)
 
 Assault guns and tank destroyers (`docs/slices/S7-log.md`, spec `S7-casemate-td.md`).
 Vehicle schema: 1..=4 armour boxes (own 8-zone plate tables, `open` faces),
@@ -105,11 +107,8 @@ Source: `docs/TODO.md` "Owner decisions in force"; full text in `docs/archive/TO
 
 ## Roadmap position
 
-Done: S1 to S5b, autotune fix, infra step. S6 HQ
-and ammo crates: built, reviewed, fixed on branch `s6-hq-crates` (not pushed).
-S6b mortar AI pass: built and fixed on branch `s6b-mortar-ai` (not pushed).
-S7 assault guns and TDs: built, reviewed and fixed on branch `s7-casemate-td`
-(not pushed). Next: S8
+Done and on main: S1 to S5b, autotune fix, infra step, S6 HQ and ammo
+crates, S6b mortar AI pass, S7 assault guns and TDs. Next: S8
 half-tracks/trucks/recon, S9 AT guns, S10a/b fortifications, S11a/b artillery,
 S12 wounds and medics, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 `docs/process/workflows.md` section 1. Sim profiling after S6 (owner).

@@ -104,14 +104,14 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 
 ## Planned work queue
 
-1. Infra step (done on branch `infra-checks`, to be pushed).
+1. Infra step (done; on main).
 2. Autotune fix (done, merged by the infra step).
 3. S6 HQ and ammo crates: built, reviewed and fixed on branch `s6-hq-crates`
-   (head `d355350`, not pushed). Open: retake the HUD screenshot, S6-18
+   (on main). Open: retake the HUD screenshot, S6-18
    structure selection (its own item when scheduled).
-4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (not pushed). Mortar and
+4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (on main). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
-5. S7 assault guns and TDs: done and pushed on branch `s7-casemate-td` (from `9f216e9`, tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
+5. S7 assault guns and TDs: done on branch `s7-casemate-td` (on main; tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
 6. S8 half-tracks, trucks, recon: next (roadmap in `docs/STATE.md`).
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 
