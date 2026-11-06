@@ -32,6 +32,7 @@
 //! `Fx::sin_cos` and `Fx::atan2` only; angles in the setup are integer
 //! degrees ([`deg`]).
 
+use frontline_content::Fixed;
 use frontline_content::setup::WeaponSetup;
 use frontline_content::tuning::GunneryTuning;
 use frontline_content::vehicle::{AmmoSetup, ArmourMaterial, PartBoxSetup, VehicleSetup};
@@ -369,6 +370,9 @@ pub struct ExposedSeat {
     pub seat: u8,
     pub in_box: u8,
     pub part: PartBoxSetup,
+    /// S8a: his box rises above the open box's rim (head and shoulders
+    /// over it: a direct-fire target, S7-7).
+    pub above_rim: bool,
 }
 
 impl VehicleArmour {
@@ -411,6 +415,12 @@ impl VehicleArmour {
                 seat: k as u8,
                 in_box: s.in_box,
                 part: s.part,
+                above_rim: v.boxes.get(s.in_box as usize).is_some_and(|b| {
+                    let top = |c: Fixed, h: Fixed| c.0 as i64 + h.0 as i64;
+                    b.frame == s.part.frame
+                        && top(s.part.bounds.center.z, s.part.bounds.half.z)
+                            > top(b.bounds.center.z, b.bounds.half.z)
+                }),
             })
             .collect();
         VehicleArmour {

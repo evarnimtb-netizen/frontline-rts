@@ -117,6 +117,10 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8a-13 Thin-plate fragment values `frag_pen_mm`: 75 mm 12, mortars 9, grenades 3. (A) Starting values, verify.
   S8a-14 Cross-country speeds 750 / 850 cm/s (road 52 / 72 km/h). (A) Starting values, verify.
   S8a-15 Half-track crews bail as the faction's tank crew squad. (A) Yes.
+  S8a-16 (Build A) A half-track whose MG is dry or unmanned counts as "gun out" for the bail triggers, so a second penetration within `under_fire_s` after the commander falls abandons it. (A) Yes (the driver alone does not fight on). (B) Transports never take the "under fire" trigger.
+  S8a-17 (Build A) A soldier picks a vehicle only when it is nearer than the nearest man he can see (soldiers win a tie); vehicle MGs keep engaging men only. (A) Yes. (B) Vehicle MGs also fire at half-tracks they can hurt.
+  S8a-18 (Build A) Rifles carry a ball table that beats no plate in the game; it only lets riflemen aim at exposed crews (S7-7). (A) Yes.
+  S8a-19 (Build A) `board_ms`/`exit_ms`/`exit_over_sides_ms` in milliseconds and `[vehicles.transport]` (and `face_hardened_pct`, `small_arms_ricochet_deg` in `[vehicles.gunnery]`) as tuning tables, not the spec's `_s` keys in `[vehicles]`. (A) Yes (integers, `--set` works).
 
 ## Planned work queue
 

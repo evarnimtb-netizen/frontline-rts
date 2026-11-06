@@ -18,7 +18,11 @@
 //!      the nearest seen enemies in range, at most [`LOS_TRIES`] LOS rays
 //!      from his firing muzzle (a ray through smoke counts as blocked,
 //!      `crate::items`). A man winding up a throw does not fire. Opening
-//!      fire costs half a second of aiming.
+//!      fire costs half a second of aiming. S8a (6.4): a man whose weapon
+//!      has a penetration table may instead pick a nearer seen enemy vehicle
+//!      ([`vehicle_aim`]: an exposed crewman's head, else a plate in the
+//!      load-time reach table); such rounds take the plate rule in the
+//!      Damage stage (`crate::damage`), the rest stop on any plate.
 //!      When his cooldown is up and his weapon is set up (MG: still for
 //!      `setup_ticks`), he fires a real round at the target's aim point,
 //!      compensated for drop, with angular error from the weapon spread
@@ -52,7 +56,8 @@
 //!   damage as overpressure to soldiers within `blast_radius` whose body
 //!   point is in clear line from the blast point (+`combat.blast.lift_mm`),
 //!   then throws `frag_count` fragment rays that strike the first man,
-//!   vehicle, wreck or earth in their way (`MatchState::fragments`);
+//!   vehicle, wreck or earth in their way (`MatchState::fragments`; S8a:
+//!   a fragment pierces a plate thinner than its `frag_pen_mm` there);
 //!   it suppresses to the suppression radius (scaled by
 //!   `combat.suppression.blast_behind_cover_pct` behind earth) and
 //!   carves a crater. Thrown frags and satchels that go off this tick burst
@@ -281,9 +286,10 @@ pub(crate) fn build_vmarks(ents: &Entities, out: &mut Vec<VMark>) {
     }
 }
 
-/// S8a: where soldier fire from `from` (player `owner`, weapon `wi`) aims
-/// at vehicle mark `m` within `r` (range², Q32), if it may: (a) the head of
-/// a living crewman in an exposed seat (S7-7; S8b-B adds riders), else (b)
+/// S8a: where soldier fire from `from` (player `owner`, weapon `wi`, which
+/// must have a penetration table, S8a-18) aims at vehicle mark `m` within
+/// `r` (range², Q32), if it may: (a) the head of a living crewman whose
+/// seat rises over an open box's rim (S7-7; Build B adds riders), else (b)
 /// the centre of the facing plate of the box whose plate the weapon beats
 /// at this range (the load-time reach table: one comparison).
 pub(crate) fn vehicle_aim(
@@ -294,7 +300,9 @@ pub(crate) fn vehicle_aim(
     m: &VMark,
     r: u64,
 ) -> Option<FxVec3> {
-    if m.owner == owner || m.seen_by & (1 << owner) == 0 {
+    // S8a-18: only a weapon with a penetration table picks vehicles.
+    let reach_tab = game.armour.reach.get(wi as usize)?;
+    if reach_tab.is_empty() || m.owner == owner || m.seen_by & (1 << owner) == 0 {
         return None;
     }
     let f = game.vderived.frame(m.id)?;
@@ -304,13 +312,12 @@ pub(crate) fn vehicle_aim(
     }
     let vs = game.vehicles.get(&m.id)?;
     let plates = game.armour.vehicles.get(vs.type_idx as usize)?;
-    for e in &plates.exposed {
+    for e in plates.exposed.iter().filter(|e| e.above_rim) {
         if vs.seats.get(e.seat as usize).is_some_and(|s| s.hp > 0) {
             let sb = crate::damage::part_box(f, &e.part);
             return Some(sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(15, 100)));
         }
     }
-    let reach_tab = game.armour.reach.get(wi as usize)?;
     let reach = reach_tab.get(vs.type_idx as usize)?;
     let mut best: Option<(Fx, FxVec3)> = None;
     for (k, b) in f.armour_boxes().iter().enumerate() {

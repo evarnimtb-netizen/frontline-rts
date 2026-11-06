@@ -23,11 +23,12 @@ needed.
 | Ammo fire, rack outcome (S3b) | same | `[vehicles.damage]` |
 | S3c bail-out: triggers (`ammo_fire_bail`, `engine_fire_bail_s`, `crew_below` (replaces S3b's `crew_ko_below`), `useless_bail`, `under_fire_s`), exits (`wounded_hp`, `wounded_exit_pct`, `exit_clear_cm`, `dismount_ms`, `bail_suppression`), `abandoned_cap`, `crew_dismiss_s` | same | `[vehicles.bail]` |
 | S3c re-crewing an abandoned vehicle: `reach_m`, `board_s`, `min_men`, `any_infantry`, `capture`, untrained penalties (`untrained_reload_pct`, `untrained_traverse_pct`, `untrained_spread_pct`) | same | `[vehicles.recrew]` |
+| S8a infantry carriers: `unlock_s` (transport unlock floor, never later than `[vehicles] unlock_s`), `stun_ms`, `board_reach_cm`, `move_block_cm_s` | same | `[vehicles.transport]` (absent in older rules: 120, 2000, 300, 100) |
 | S3c a vehicle's crew squad and hatches (`crew_squad`; `[[hatches]]` `seats`, `frame`, `pos` cm, `exit_ms`); the crew squad defs (role `crew`, never in a roster) and their pistols (`class = "pistol"`) | `defs/vehicles/`, `defs/units/*_tank_crew.toml`, `defs/weapons/p38.toml`, `m1911a1.toml` | the def's own file |
 | Driving, yielding, ground pose | same | `[vehicles.driving]` |
 | Vehicle path costs | same | `[vehicles.path]` |
 | Escort file behind a vehicle | same | `[vehicles.escort]` |
-| Coax cone, spall reach; S3b: HE group radius, lead estimation error, when Auto loads APCR | same | `[vehicles.gunnery]` |
+| Coax cone, spall reach; S3b: HE group radius, lead estimation error, when Auto loads APCR; S8a: `face_hardened_pct`, `small_arms_ricochet_deg` | same | `[vehicles.gunnery]` |
 | AI difficulty | same | `[difficulty.*]` |
 | AI commander (S3b: `tank_reserve_mp` in `[ai.armour]`; fire-and-move, AT and satchel hunts in `[ai.assault]`) | same | `[ai]`, `[ai.infantry]`, `[ai.armour]`, `[ai.assault]` |
 | S3c AI armour habits: rearm trips (`rearm_ap_below`, `rearm_full_pct`, `rearm_max_s`), crews re-crewing (`recrew_clear_m`, `recrew_reach_m`), denial fire at enemy abandoned tanks (`deny_m`) | same | `[ai.armour]` |

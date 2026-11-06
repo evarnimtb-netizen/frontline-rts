@@ -2919,9 +2919,16 @@ fn case19(env: &Env) -> Result<CaseReport> {
                     c + side * Fx::from_int(15),
                     -side,
                 )?;
-                // Grenades only: the squad's Panzerfaust stays out of it.
+                // Grenades only: the squad's Panzerfaust stays out of it;
+                // S8a: so do its rifles and MG (6.4 lets them fire at the
+                // M10's exposed crew, S7-7), so the case still measures
+                // the grenade alone.
                 for m in members(&w, gsq) {
-                    w.edit_soldier(m, |k, _| k.items[ItemKind::SingleShotAt.index()] = 0);
+                    w.edit_soldier(m, |k, c| {
+                        k.items[ItemKind::SingleShotAt.index()] = 0;
+                        k.rounds.iter_mut().for_each(|n| *n = 0);
+                        c.mag = 0;
+                    });
                 }
                 let Some(man) = members(&w, gsq)
                     .into_iter()

@@ -42,6 +42,10 @@
 //! among the four nearest, as S1 MGs). Both need their crewman (gunner,
 //! radio operator), fire at the MG's interval with belts and reloads, and
 //! go through the S1 spread (moving, range). Vehicles are never suppressed.
+//! S8a: a pintle MG (`MountKind::Pintle`) engages men within its arc and
+//! fires only when its own yaw (`MgState::yaw`, turned at the mount's rate,
+//! [`pintle_turn`]) is on the target; a vehicle without a main gun runs
+//! only its MGs.
 //!
 //! **Suppress (S3b, docs/slices/S3b-balance.md B2).** A vehicle holding
 //! with `VehicleState::suppress` picks only vehicle targets for its main

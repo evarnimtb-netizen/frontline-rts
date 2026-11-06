@@ -123,10 +123,12 @@ fn a_half_track_fires_only_its_mg_and_never_lays_a_gun() {
         let (_, v) = spawn(&mut w, player, card, xy(500, 500), EAST);
         // Enemy riflemen 120 m ahead and 20 deg to the left (inside the
         // 251's +-35 deg arc).
+        // (SMG men: no penetration table, so they never shoot back at the
+        // exposed commander and the test sees his MG.)
         let foe = if player == 0 {
             "ww2:usa_rifle_squad"
         } else {
-            "ww2:ger_grenadiergruppe"
+            "ww2:ger_smg_gruppe"
         };
         spawn(&mut w, 1 - player, foe, xy(613, 541), WEST);
         let (mut yaw_moved, mut fired) = (false, false);
