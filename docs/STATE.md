@@ -45,9 +45,23 @@ Not in the game yet: Jagdpanzer IV, 38(t), M18, AT guns, on-map artillery, forti
 ## Versions
 
 Main (S7): `SAVE_VERSION` 17 (`crates/sim/src/world.rs`), `PROTOCOL_VERSION` 9
+(S8a branch: 18 and 10)
 (`crates/net/src/protocol.rs`). History: S5b 14 and 8; S6: 15 and 9, each bumped
 once for S6 (`REPORT_VERSION` 1; `--json` files carry `"schema": 1`). A change
 S6b on its branch: `SAVE_VERSION` 16, `PROTOCOL_VERSION` 9. S7 (branch `s7-casemate-td`): `SAVE_VERSION` 17 (bumped once), `PROTOCOL_VERSION` 9 (no command or wire change). A change to a save layout, the hash or a command bumps these in the same commit.
+
+## S8a (branch `s8a-halftracks` from `17a94df`, not pushed; Build A and B done)
+
+Half-tracks (`docs/slices/S8a-log.md`, spec `S8a-halftracks.md`, targets
+`S8a.toml`). SdKfz 251/1 D and M3A1 (cards 290 / 310 MP, pop 3, cap 2, unlock
+2:00, outside the vehicle limit), pintle MGs and shields, small arms against
+thin plates (pen tables, reach table), the thin-plate fragment rule, riding
+(`crate::transport`: passengers stay soldiers with `Unit::riding`, slot boxes
+as hit volumes, door and side exits, forced dismount), `Embark` / `Disembark`,
+AI half-track jobs (`ai::transport`, `[ai.transport]`), presenter blockouts,
+Board V / Unload U. `SAVE_VERSION` 18, `PROTOCOL_VERSION` 10. Owner questions
+S8a-1..27 in `docs/TODO.md`. Next: the Tune (`ai_weight`, `[ai.transport]`,
+`td_hunt_m`), then S8b (trucks, recon, wheels).
 
 ## S7 (branch `s7-casemate-td` from `9f216e9`, merged into main)
 
