@@ -2030,7 +2030,7 @@
       "weapon": ""
     },
     "ww2:ger_sdkfz251_1_squad": {
-      "ai_weight": 150,
+      "ai_weight": 100,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -2548,7 +2548,7 @@
       "weapon": ""
     },
     "ww2:usa_m3a1_squad": {
-      "ai_weight": 150,
+      "ai_weight": 100,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",

@@ -11,8 +11,9 @@ vehicle = "ww2:usa_m3a1"
 # Most alive per player (S8a-5 (A); spec 6): 2.
 max_alive = 2
 # AI weight within the `vehicle` slot (0..1000; 0 = the AI never buys it).
-# 150 (S8a Build B, S8a-21 (A)): the vehicle slot's buys go to the card
-# furthest below its weight share, so the half-track (unlocked at 2:00,
-# outside the vehicle limit) comes before the first tank; at 100 (the
-# tanks') it came third, after 12 minutes. max_alive caps it at 2.
+# 100, the tanks' (S8a Build B; S8a-21 (A)): the vehicle slot's buys go to
+# the card furthest below its weight share; before the 4:00 tank unlock the
+# half-track (2:00, outside the vehicle limit) is the only eligible card.
+# 150 put it before the first tank and cut tank HE kills (HE share 17.6 %
+# on the 40 set); 100 keeps HE at 20 %. max_alive caps it at 2.
 ai_weight = 100

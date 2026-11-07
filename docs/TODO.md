@@ -101,7 +101,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S7-13 Thrown items now collide with enemy vehicles (S7-5: a plate drops them to the ground below), so S6b matches with tanks differ slightly even before the new cards. (A) Accept; the Build B log measures it with the rest.
   S7-14 With the second vehicle card a faction has 11 call-in tiles; two columns rose above 57.5 % of the screen, so the call-in panel takes up to three columns. (A) Keep three columns; a compact tile row is presenter polish for later.
   S7-15 With overwatch_back_m 35 (S7 Fix, review M2) the Pz IV takes 18.8 % of German kills on the in-sample 160 (seeds 1-80), 0.8 over T32a's 18 % (17.4 and 16.9 % on seeds 101-180 and 201-280; 16.1 % before the fix). 50 m keeps it at 17.4 % but halves the StuG/M10 KOs and gives Germany 45.0 % pooled. (A) Keep 35 m; the Tune of the next vehicle slice rechecks T32 with td_hunt_m (450 m untested).
-- S8a-1..15 (`docs/slices/S8a-halftracks.md` section 14), each on its (A):
+- S8a-1..27 (`docs/slices/S8a-halftracks.md` section 14; 16-19 Build A, 20-27 Build B), each on its (A):
   S8a-1 Main gun optional (half-tracks have none). (A) Yes.
   S8a-2 M3A1 capacity 11; squads never split, a squad that does not fit is refused (US 12-man squad rides after a loss). (A) Yes. (B) capacity 12.
   S8a-3 MG pen tables use the belt's AP round for every round (no belt-mix roll). (A) Yes; `ap_share_pct` later if MGs run high.
@@ -121,6 +121,14 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8a-17 (Build A) A soldier picks a vehicle only when it is nearer than the nearest man he can see (soldiers win a tie); vehicle MGs keep engaging men only. (A) Yes. (B) Vehicle MGs also fire at half-tracks they can hurt.
   S8a-18 (Build A) Rifles carry a ball table that beats no plate in the game; it only lets riflemen aim at exposed crews (S7-7). (A) Yes.
   S8a-19 (Build A) `board_ms`/`exit_ms`/`exit_over_sides_ms` in milliseconds and `[vehicles.transport]` (and `face_hardened_pct`, `small_arms_ricochet_deg` in `[vehicles.gunnery]`) as tuning tables, not the spec's `_s` keys in `[vehicles]`. (A) Yes (integers, `--set` works).
+  S8a-20 (Build B) The crew rule's floor is `[vehicles.bail] crew_below` capped at seats - 1 (and re-crewing needs at most the seat count), so a two-man half-track is not abandoned at once (with 3 it was abandoned on spawn). Tanks (4-5 seats) unchanged. (A) Yes. (B) A per-vehicle `crew_below` key.
+  S8a-21 (Build B) Half-track cards `ai_weight` 100 (the tanks'): bought in 92-95 % of matches, about one ride each. 150 bought them before the first tank but cut tank HE kills (HE share 17.6 % on the 40 set). (A) 100; the Tune weighs rides against HE.
+  S8a-22 (Build B) A round, fragment or burst that strikes a passenger over the rim does not count as a penetration of the vehicle (`last_pen`, the bail "under fire" trigger); the AI's "hit" rule also counts riders suppressed past `rider_suppression_pct` (50). (A) Yes.
+  S8a-23 (Build B) Rounds stopped by a transport (and small-arms hits on it) suppress its riders as a covered near miss; there is no other near-miss suppression aboard (riders are not in the soldier spatial hash). (A) Yes.
+  S8a-24 (Build B) Men walking to a half-track that are beside or in front of it walk to the hull corner on their side first (local steering cannot go around the hull); boarding is only at the door (`board_reach_cm` + 1 m). (A) Yes; boarding over the sides stays out (spec 5).
+  S8a-25 (Build B) Ride counters ("time saved") compare the ride (first man in to last man out) with walking the straight line at the squad's speed: a lower bound of the saving. (A) Yes.
+  S8a-26 (Build B) The AI's Support phase is the S7 overwatch habit (hull-down or stand-off spot); it returns to the base only when a squad waits there (or an infantry call-in is pending) and meets squads on the road (within 40 m). The Load wait counts the picked squad's walk at 1 m/s and ends after 3 x `wait_s` at most. (A) Yes; the Tune measures rides.
+  S8a-27 (Build B) Passengers are drawn crouched at the bottom of their slot (no seated pose yet); the vehicle card lists them in place of the main-gun ammunition row; the components row still shows the gun, ring and rack a half-track lacks. (A) Accept for S8a; presenter polish later.
 
 ## Planned work queue
 
@@ -132,8 +140,9 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (on main). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
 5. S7 assault guns and TDs: done on branch `s7-casemate-td` (on main; tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
-6. S8 half-tracks, trucks, recon: split. S8a half-tracks in progress on branch `s8a-halftracks` (spec
-   `docs/slices/S8a-halftracks.md`, targets `S8a.toml`); S8b trucks, recon cars, wheels, supply trucks next.
+6. S8 half-tracks, trucks, recon: split. S8a half-tracks on branch `s8a-halftracks` (spec
+   `docs/slices/S8a-halftracks.md`, targets `S8a.toml`, log `S8a-log.md`): Build A and B done, Tune next
+   (`ai_weight`, `[ai.transport]`, `td_hunt_m`); S8b trucks, recon cars, wheels, supply trucks after.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 
 ## Known issues still open
