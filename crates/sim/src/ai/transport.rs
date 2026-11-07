@@ -260,7 +260,11 @@ impl super::Planner<'_> {
                         self.ai.counters.transport_rides += 1;
                         self.drive(t, job, job.goal);
                     }
-                } else if tick >= job.since + a.wait_s as u64 * hz {
+                } else if tick >= job.since + 3 * a.wait_s as u64 * hz
+                    || (tick >= job.since + a.wait_s as u64 * hz
+                        && !self.infantry_coming()
+                        && !(job.squad.is_none() && self.squad_waits(t.id, t.pos, PICK_M)))
+                {
                     // Nobody came: support alone, then try again; a squad
                     // still walking to it stops (free for other orders).
                     if let Some(sq) = job.squad.filter(|&q| {
@@ -332,7 +336,7 @@ impl super::Planner<'_> {
                 // Back for the next squad once one waits near the base;
                 // else it keeps supporting.
                 if tick >= job.since + a.support_s as u64 * hz
-                    && self.squad_waits(t.id, base, 2 * PICK_M)
+                    && (self.squad_waits(t.id, base, 2 * PICK_M) || self.infantry_coming())
                 {
                     job.goal = base;
                     set(job, TransportPhase::Return);
@@ -394,6 +398,17 @@ impl super::Planner<'_> {
                     let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
                     (lead - at).length_sq_raw() <= r && (t.target - lead).length_sq_raw() > ride
                 })
+        })
+    }
+
+    /// Whether an infantry call-in of this AI is pending (a squad about to
+    /// appear in the base).
+    fn infantry_coming(&self) -> bool {
+        let s = &self.g.setup;
+        self.ai.pending.iter().any(|c| {
+            matches!(c.kind, CommandKind::CallIn { squad_type }
+                if s.squad_types.get(squad_type as usize).is_some_and(|t| t.vehicle.is_none())
+                    && matches!(super::ai_kind(s, squad_type), AiKind::Rifle | AiKind::Engineer | AiKind::Mg))
         })
     }
 

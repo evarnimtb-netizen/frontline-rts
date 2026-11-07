@@ -15,4 +15,4 @@ max_alive = 2
 # furthest below its weight share, so the half-track (unlocked at 2:00,
 # outside the vehicle limit) comes before the first tank; at 100 (the
 # tanks') it came third, after 12 minutes. max_alive caps it at 2.
-ai_weight = 150
+ai_weight = 100
