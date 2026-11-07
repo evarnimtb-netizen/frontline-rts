@@ -229,7 +229,9 @@ impl MatchState {
         let i = m.index();
         let k = &ents.kit[i];
         // S4: a single-shot AT item is fired (`crate::combat`), not thrown.
+        // S8a: nor thrown from a transport (v1).
         if ents.kind[i] != EntityKind::Soldier
+            || ents.unit[i].riding.is_some()
             || !kind.thrown()
             || k.items[kind.index()] == 0
             || k.windup.is_some()
@@ -501,7 +503,9 @@ impl MatchState {
                     let k = (h.part.0 as usize).min((f.n_boxes as usize).max(1) - 1);
                     let open = matches!(
                         h.via,
-                        crate::armour::HitVia::Open | crate::armour::HitVia::Seat(_)
+                        crate::armour::HitVia::Open
+                            | crate::armour::HitVia::Seat(_)
+                            | crate::armour::HitVia::Rider(_)
                     ) && !f.wreck;
                     let bx = setup.vehicles[f.type_idx as usize].boxes.get(k);
                     match (open, bx) {

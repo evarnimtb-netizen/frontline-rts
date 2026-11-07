@@ -99,6 +99,8 @@ const ORDER_TEXT := {
 	"dig": "Digging", "barrage": "Firing", "fire_mission": "Fire mission", "setup": "Setting up", "hold": "Holding",
 	"throw": "Throwing", "follow": "Escorting", "suppress": "Suppressing",
 	"recrew": "Re-crewing",
+	# S8a: walking to a half-track or aboard (the card says "Mounted").
+	"embark": "Boarding",
 }
 ## Intents that get a pending-order marker in net mode, by marker kind.
 const PENDING_KINDS := {

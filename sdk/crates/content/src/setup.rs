@@ -31,11 +31,11 @@ use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning,
-    AiSupplyTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
-    DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning,
-    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiSupplyTuning, AiTransportTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
+    FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning,
+    SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -517,6 +517,8 @@ pub struct AiSetup {
     pub mortar: AiMortarTuning,
     /// S6: `[ai.supply]` (or the S6 starting values).
     pub supply: AiSupplyTuning,
+    /// S8a: `[ai.transport]` (or the S8a starting values).
+    pub transport: AiTransportTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1867,6 +1869,7 @@ impl ModDefs {
                         ammo: a.ammo.clone().unwrap_or_default(),
                         mortar: a.mortar_tuning(),
                         supply: a.supply.clone().unwrap_or_default(),
+                        transport: a.transport.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2631,6 +2634,7 @@ impl MatchSetup {
                 fire_mission: r.fire_mission.as_ref(),
                 ai_mortar: &a.mortar,
                 ai_supply: &a.supply,
+                ai_transport: &a.transport,
             },
         );
         r.at_ditch

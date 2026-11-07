@@ -257,6 +257,15 @@ pub struct VehicleDims {
     pub turret_floor: f32,
     /// S7: an open-topped turret: walls, no roof.
     pub open_top: bool,
+    /// S8a: a half-track: the hull is drawn from its hull-frame armour
+    /// boxes (`tboxes`, sim frame: centre x y z, half x y z, open 0/1; an
+    /// open box is walls and a floor), the "turret" is the MG shield (in
+    /// the pintle's frame: `turret_*`, `turret_lift` its centre height) and
+    /// the "gun" the MG (pivot at the pintle).
+    pub transport: bool,
+    pub turret_lift: f32,
+    pub tboxes: [[f32; 7]; 4],
+    pub n_tboxes: u8,
 }
 
 impl Default for VehicleDims {
@@ -279,6 +288,10 @@ impl Default for VehicleDims {
             casemate: false,
             turret_floor: 0.0,
             open_top: false,
+            transport: false,
+            turret_lift: 0.0,
+            tboxes: [[0.0; 7]; 4],
+            n_tboxes: 0,
         }
     }
 }
@@ -287,8 +300,9 @@ impl VehicleDims {
     /// Gun trunnion (the pitch axis) relative to the turret pivot: forward
     /// distance and height. Near the turret front, at the muzzle height.
     pub fn trunnion(&self) -> (f32, f32) {
-        // S7: a casemate gun pitches at its pivot in the front plate.
-        if self.casemate {
+        // S7: a casemate gun pitches at its pivot in the front plate; S8a:
+        // a pintle MG at its pintle.
+        if self.casemate || self.transport {
             return (0.0, self.gun_height);
         }
         let fwd = self.turret_offset_x + self.turret_length * 0.42;
@@ -418,6 +432,9 @@ impl MeshData {
 /// tinted except the running gear. Origin on the ground under the hull
 /// centre, facing −Z.
 pub fn vehicle_hull_mesh(d: &VehicleDims) -> MeshData {
+    if d.transport {
+        return halftrack_hull_mesh(d);
+    }
     let mut m = MeshData::default();
     let paint = [1.0, 1.0, 1.0, TEAM_TINT];
     let shade = [0.82, 0.82, 0.80, TEAM_TINT];
@@ -514,6 +531,79 @@ pub fn vehicle_hull_mesh(d: &VehicleDims) -> MeshData {
     m
 }
 
+/// S8a half-track hull blockout: its hull-frame armour boxes (a closed box
+/// solid, an open one four 3 cm walls and a floor), front wheels and rear
+/// tracks. Team tinted except the running gear. Origin on the ground under
+/// the hull centre, facing −Z (sim x forward → −Z, y left → −X, z up → Y).
+pub fn halftrack_hull_mesh(d: &VehicleDims) -> MeshData {
+    let mut m = MeshData::default();
+    let paint = [1.0, 1.0, 1.0, TEAM_TINT];
+    let shade = [0.82, 0.82, 0.80, TEAM_TINT];
+    let track = [0.13, 0.12, 0.11, FIXED];
+    let wheel = [0.18, 0.17, 0.16, FIXED];
+    let (hl, hw, g) = (d.hull_length * 0.5, d.hull_width * 0.5, d.hull_ground);
+    for b in &d.tboxes[..(d.n_tboxes as usize).min(4)] {
+        let c = [-b[1], b[2], -b[0]];
+        let h = [b[4], b[5], b[3]];
+        if b[6] > 0.5 {
+            let wall = 0.03;
+            m.add_box(
+                [c[0], c[1], c[2] - h[2] + wall],
+                [h[0], h[1], wall],
+                paint,
+                None,
+            );
+            m.add_box(
+                [c[0], c[1], c[2] + h[2] - wall],
+                [h[0], h[1], wall],
+                paint,
+                None,
+            );
+            m.add_box(
+                [c[0] - h[0] + wall, c[1], c[2]],
+                [wall, h[1], h[2]],
+                paint,
+                None,
+            );
+            m.add_box(
+                [c[0] + h[0] - wall, c[1], c[2]],
+                [wall, h[1], h[2]],
+                paint,
+                None,
+            );
+            m.add_box(
+                [c[0], c[1] - h[1] + wall, c[2]],
+                [h[0], wall, h[2]],
+                shade,
+                None,
+            );
+        } else {
+            m.add_box(c, h, paint, None);
+        }
+    }
+    // Rear tracks (the back 60 %) and two steered front wheels.
+    for side in [-1.0f32, 1.0] {
+        m.add_box(
+            [side * (hw - 0.18), g * 0.5 + 0.02, hl * 0.35],
+            [0.18, g * 0.5 + 0.02, hl * 0.6],
+            track,
+            None,
+        );
+        m.add_tube(
+            [side * (hw - 0.02), g * 0.75, -hl * 0.72],
+            [side * (hw - 0.28), g * 0.75, -hl * 0.72],
+            g * 0.75,
+            g * 0.75,
+            1.0,
+            10,
+            1,
+            wheel,
+            None,
+        );
+    }
+    m
+}
+
 /// Turret part: sloped-sided turret, mantlet and commander's cupola. Origin
 /// at the turret pivot (turret ring centre, ring height), facing −Z.
 pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
@@ -522,6 +612,19 @@ pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
     let metal = [0.22, 0.21, 0.19, FIXED];
     let (tl, tw, th) = (d.turret_length * 0.5, d.turret_width * 0.5, d.turret_height);
     let cz = -d.turret_offset_x;
+    if d.transport {
+        // S8a: the MG shield, one plate in the pintle's frame; a mount post.
+        if tl > 0.0 {
+            m.add_box(
+                [0.0, d.turret_lift, cz],
+                [tw, th * 0.5, tl.max(0.01)],
+                paint,
+                None,
+            );
+        }
+        m.add_box([0.0, -0.15, 0.0], [0.04, 0.15, 0.04], metal, None);
+        return m;
+    }
     if d.casemate {
         // S7 blockout: a low casemate block, its front sloped back (a
         // narrower top), from the floor up; origin at the gun pivot.
@@ -596,6 +699,23 @@ pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
 pub fn vehicle_gun_mesh(d: &VehicleDims) -> MeshData {
     let mut m = MeshData::default();
     let dark = [0.17, 0.16, 0.15, FIXED];
+    if d.transport {
+        // S8a: the MG, a thin barrel and its receiver.
+        let len = d.gun_length.max(0.3);
+        m.add_box([0.0, 0.0, 0.1], [0.05, 0.06, 0.25], dark, None);
+        m.add_tube(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -len],
+            0.025,
+            0.025,
+            1.0,
+            6,
+            1,
+            dark,
+            None,
+        );
+        return m;
+    }
     let (tf, _) = d.trunnion();
     let len = (d.gun_length - tf).max(0.5);
     m.add_tube(
@@ -898,6 +1018,35 @@ mod gd_api {
         };
         out.casemate = flag("casemate");
         out.open_top = flag("open_top");
+        // S8a: a half-track's hull boxes.
+        out.transport = flag("transport");
+        out.turret_lift = get("turret_lift", 0.0);
+        if out.transport
+            && let Some(arr) = d.get("boxes").and_then(|v| v.try_to::<VarArray>().ok())
+        {
+            let mut n = 0usize;
+            for b in arr.iter_shared() {
+                let Ok(bd) = b.try_to::<VarDictionary>() else {
+                    continue;
+                };
+                if n >= 4 || bd.get("frame").map(|f| f.to_string()) != Some("hull".into()) {
+                    continue;
+                }
+                let v3 = |k: &str| {
+                    bd.get(k)
+                        .and_then(|v| v.try_to::<godot::builtin::Vector3>().ok())
+                        .unwrap_or_default()
+                };
+                let (c, h) = (v3("center"), v3("half"));
+                let open = bd
+                    .get("open")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .unwrap_or(0);
+                out.tboxes[n] = [c.x, c.y, c.z, h.x, h.y, h.z, (open != 0) as i32 as f32];
+                n += 1;
+            }
+            out.n_tboxes = n as u8;
+        }
         out
     }
 

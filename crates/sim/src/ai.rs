@@ -186,12 +186,14 @@ mod assault;
 mod mortar;
 mod overwatch;
 mod supply;
+mod transport;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
     END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
     HUNT_ENDS, MAX_HUNTS,
 };
 pub use mortar::{AiSpotter, MAX_SPOTTERS, MODE_CHECKS, PLAN_RAYS};
+pub use transport::{AiTransport, MAX_TRANSPORTS, TransportPhase};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -305,6 +307,9 @@ pub struct AiState {
     /// S7: assault guns' and tank destroyers' overwatch spots, by the
     /// vehicle's squad (at most [`MAX_OVERWATCH`]; `ai::overwatch`).
     pub overwatch: BTreeMap<SquadId, AiOverwatch>,
+    /// S8a: half-track jobs, by the vehicle's squad (at most
+    /// [`transport::MAX_TRANSPORTS`]; `ai::transport`).
+    pub transports: BTreeMap<SquadId, AiTransport>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -490,6 +495,13 @@ pub struct AiCounters {
     pub relocations: u32,
     pub open_top_throws: u32,
     pub open_top_backoffs: u32,
+    /// S8a (`ai::transport`): squads told to board, rides started, unloads
+    /// ordered (and of those under fire), failed transport moves.
+    pub transport_loads: u32,
+    pub transport_rides: u32,
+    pub transport_unloads: u32,
+    pub transport_unloads_fire: u32,
+    pub transport_fails: u32,
 }
 
 impl AiState {
@@ -513,6 +525,7 @@ impl AiState {
             ambush: BTreeMap::new(),
             spotters: BTreeMap::new(),
             overwatch: BTreeMap::new(),
+            transports: BTreeMap::new(),
         }
     }
 
@@ -602,6 +615,15 @@ impl AiState {
                 };
                 o.since > tick || !on(o.anchor) || !on(o.spot) || !on(o.axis)
             })
+            // S8a.
+            || self.transports.len() > MAX_TRANSPORTS
+            || self.transports.iter().any(|(id, j)| {
+                bad_squad(id)
+                    || j.squad.as_ref().is_some_and(bad_squad)
+                    || j.since > tick + 36_000
+                    || j.moved_at > tick
+                    || j.moving_at > tick
+            })
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -633,6 +655,8 @@ impl AiState {
 /// The squad a command addresses, if any.
 fn squad_of(kind: &CommandKind) -> Option<SquadId> {
     match kind {
+        // S8a: the vehicle's squad is not named; its id stands for it.
+        CommandKind::Embark { squads, .. } => squads.first().copied(),
         CommandKind::Move { squad, .. }
         | CommandKind::AttackMove { squad, .. }
         | CommandKind::Stop { squad }
@@ -651,6 +675,8 @@ fn units_of(kind: &CommandKind) -> Option<&[SimId]> {
         | CommandKind::FaceUnits { units, .. }
         | CommandKind::RepairUnits { units }
         | CommandKind::SuppressUnits { units, .. } => Some(units),
+        // S8a: the vehicles' squads.
+        CommandKind::Disembark { vehicles, .. } => Some(vehicles),
         _ => None,
     }
 }
@@ -875,6 +901,12 @@ impl Planner<'_> {
             .retain(|id, _| g.squads.get(id).is_some_and(|s| s.owner == me));
         let mut busy: Vec<SquadId> = Vec::new();
         for c in &self.ai.pending {
+            // S8a: an Embark keeps its vehicle busy too.
+            if let CommandKind::Embark { vehicle, .. } = c.kind
+                && let Some(vs) = self.ents.squad.get(vehicle.index()).copied().flatten()
+            {
+                busy.push(vs);
+            }
             if let Some(s) = squad_of(&c.kind) {
                 busy.push(s);
             } else if let Some(units) = units_of(&c.kind) {
@@ -897,6 +929,11 @@ impl Planner<'_> {
             // S3c: crews re-crew or walk back to base (step 9).
             if ai_kind(&g.setup, sq.type_idx) == AiKind::Crew {
                 crews.push(id);
+                continue;
+            }
+            // S8a: squads walking to or riding a half-track belong to its
+            // job (`ai::transport`).
+            if matches!(sq.order, Order::Embark { .. }) {
                 continue;
             }
             if ty.vehicle.is_some() {
@@ -925,6 +962,9 @@ impl Planner<'_> {
         self.refills(&mut mine, &known);
         // S6: the HQ, crate runs, dry mortars to the HQ.
         self.supply(&mut mine, &tanks, &known);
+        // S8a: half-track jobs take their vehicles out of the tank habits
+        // (but support, which is the overwatch habit).
+        let waiting = self.transport_jobs(&mut tanks, &known, &busy);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
         self.crews(&crews, &known, &kv);
         self.buy(&kv);
@@ -941,6 +981,8 @@ impl Planner<'_> {
         );
         let mut claimed: Vec<SquadId> = hunting.iter().chain(&escorting).copied().collect();
         claimed.extend(self.fire_and_move(&mine, &assigned, &points, &known, &claimed));
+        let loading = self.transport_loads(&waiting, &mine, &assigned, &points, &claimed);
+        claimed.extend(loading);
         self.order_infantry(&mine, &assigned, &mut points, &known, &escorting, &claimed);
         self.mortars(&mine, &points, &known);
         self.throws(&mine, &known, &kv);
@@ -1071,11 +1113,22 @@ impl Planner<'_> {
         }
         // The slot's highest-weight card (ties: the first in the roster):
         // the one the AI saves up for.
+        // S8a: a vehicle card the AI may save up for now (its unlock).
+        let now = self.tick;
+        let unlocked_card = |t: u16| {
+            let vr = &s.rules.vehicles;
+            match s.squad_types[t as usize].vehicle {
+                None => true,
+                Some(_) if g.is_transport_type(t) => {
+                    now >= (vr.transport.unlock_s * s.tick_hz).min(vr.unlock_ticks) as u64
+                }
+                Some(_) => now >= vr.unlock_ticks as u64,
+            }
+        };
         let best = |r: usize| -> Option<u16> {
-            cards[r]
-                .iter()
-                .copied()
-                .fold(None, |b: Option<u16>, t| match b {
+            cards[r].iter().copied().filter(|&t| unlocked_card(t)).fold(
+                None,
+                |b: Option<u16>, t| match b {
                     Some(b)
                         if s.squad_types[b as usize].ai_weight
                             >= s.squad_types[t as usize].ai_weight =>
@@ -1083,7 +1136,8 @@ impl Planner<'_> {
                         Some(b)
                     }
                     _ => Some(t),
-                })
+                },
+            )
         };
         let mut counts = vec![0i64; slots];
         let mut alive_by_type = vec![0u32; s.squad_types.len()];
@@ -1130,7 +1184,8 @@ impl Planner<'_> {
                 alive_by_type[squad_type as usize] += 1;
                 budget -= ty.cost as i64;
                 pop += ty.pop(&s.vehicles) as i64;
-                vehicles += ty.vehicle.is_some() as u32;
+                // S8a: transports are outside the vehicle limit.
+                vehicles += (ty.vehicle.is_some() && !g.is_transport_type(squad_type)) as u32;
                 bought.push(squad_type);
             }
         }
@@ -1139,6 +1194,21 @@ impl Planner<'_> {
         // card limits (`max_alive`, limit group) leave room.
         let due = self.due;
         let me = self.me;
+        // S3: vehicles after the unlock and under the limit; S8a:
+        // transports after their own unlock, outside the limit.
+        let vr = &s.rules.vehicles;
+        let unlocked = self.tick >= vr.unlock_ticks as u64;
+        let transport_unlock = (vr.transport.unlock_s * s.tick_hz).min(vr.unlock_ticks) as u64;
+        let transports_unlocked = self.tick >= transport_unlock;
+        let vehicles_now = vehicles;
+        let eligible = |t: u16| {
+            let ty = &s.squad_types[t as usize];
+            match ty.vehicle {
+                None => true,
+                Some(_) if g.is_transport_type(t) => transports_unlocked,
+                Some(_) => unlocked && vehicles_now < vr.limit,
+            }
+        };
         let ready = |t: u16, bought: &[u16], alive: &[u32]| {
             let ty = &s.squad_types[t as usize];
             let group = ty.cooldown_group;
@@ -1155,17 +1225,17 @@ impl Planner<'_> {
             });
             under_max
                 && under_group
+                && eligible(t)
                 && due >= ty.initial_cooldown_ticks as u64
                 && g.cooldown_left(me, t, due) == 0
                 && !bought.iter().any(|&b| {
                     b == t || (group.is_some() && s.squad_types[b as usize].cooldown_group == group)
                 })
         };
-        // S3: vehicles after the unlock and under the limit; AT teams after
-        // the unlock once an enemy vehicle has been seen. Before the unlock
-        // the mix is the S1 one.
-        let vr = &s.rules.vehicles;
-        let unlocked = self.tick >= vr.unlock_ticks as u64;
+        // S3: vehicles after the unlock and under the limit (S8a: or a
+        // transport after its unlock); AT teams after the unlock once an
+        // enemy vehicle has been seen. Before the unlock the mix is the S1
+        // one.
         let mut mix: Vec<u32> = ai
             .mix
             .iter()
@@ -1179,8 +1249,7 @@ impl Planner<'_> {
             mix[r] = ai.mix[r].pct;
         }
         if let Some(r) = veh_slot
-            && unlocked
-            && vehicles < vr.limit
+            && cards[r].iter().any(|&t| eligible(t))
         {
             mix[r] = ai.mix[r].pct;
         }
@@ -1305,8 +1374,10 @@ impl Planner<'_> {
             c.bought[t as usize] += 1;
             if Some(r) == veh_slot {
                 c.vehicles_bought += 1;
-                vehicles += 1;
-                if vehicles >= vr.limit {
+                if !g.is_transport_type(t) {
+                    vehicles += 1;
+                }
+                if vehicles >= vr.limit && !cards[r].iter().any(|&x| g.is_transport_type(x)) {
                     mix[r] = 0;
                 }
             } else if Some(r) == at_slot {

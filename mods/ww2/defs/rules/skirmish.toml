@@ -1231,6 +1231,24 @@ hq_after_s = 60              # s: the AI buys its HQ squad after this
 dry_walk_s = 120             # s: a dry mortar with no run walks to the HQ or base
 mortars_per_bearers = 2      # S6b: one bearer squad per this many own mortar squads (rounded up, at least one; 0: one squad as in S6). Tubes sat near dry (~2 bombs) a quarter of the time with one squad running crates (S6b-mortar-ai.md)
 
+# S8a (docs/slices/S8a-halftracks.md 7): how the AI uses its half-tracks.
+# Load a squad at the base, ride toward its objective, get off out of sight
+# of known enemies (or at once when hit), support with the MG from
+# overwatch, return for the next squad. Starting values.
+[ai.transport]
+min_ride_m = 150             # m: a squad rides only to an objective farther than this; a ride this long counts as "transported" (report)
+wait_s = 30                  # s: the vehicle waits at most this long at the base for its squad, then goes to support alone
+dismount_back_m = 40         # m: the men get off this far short of the first point on the way ...
+dismount_sight_m = 300       # m: ... within this of a known enemy with a clear line
+los_rays = 8                 # sight-line rays per check along the way (0: distance only)
+hit_s = 2                    # s: a penetration this recent counts as "hit": everyone out
+rider_suppression_pct = 50   # %: a rider suppressed past this gets everyone out (the crouch threshold)
+stuck_s = 10                 # s: stopped this long on the way: the men get off where it stands
+support_s = 60               # s: after unloading, the MG supports from overwatch this long before it returns for the next squad
+arrive_m = 15                # m: a move that ends farther than this from its goal is a failed move ...
+max_fails = 2                # ... and after this many the job uses where the vehicle stands (no move loops, S7 tick fix)
+repath_s = 5                 # s: no job sends the same move again within this
+
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
 # Direct (the mortar's own leader sees the point), Observed (another squad

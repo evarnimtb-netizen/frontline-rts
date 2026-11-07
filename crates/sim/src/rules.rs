@@ -139,6 +139,10 @@ impl MatchState {
         let mut men = vec![0u32; np * self.points.len()];
         for id in ents.soldiers() {
             let i = id.index();
+            // S8a: men riding a transport neither capture nor contest.
+            if ents.unit[i].riding.is_some() {
+                continue;
+            }
             let retreating = ents.squad[i]
                 .and_then(|s| self.squads.get(&s))
                 .is_some_and(|s| s.order == Order::Retreat);

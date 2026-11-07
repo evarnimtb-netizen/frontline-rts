@@ -369,6 +369,13 @@ pub struct PlayerReport {
     pub s6_crate_pickups: u32,
     /// S7 per-vehicle-type counters and the roster's card prices.
     pub s7: S7Player,
+    /// S8a transport counters (`frontline_sim::S8aCounters`) and the
+    /// roster's transport cards (short ids).
+    pub s8a: frontline_sim::S8aCounters,
+    pub s8a_cards: Vec<String>,
+    /// S8a AI transport counters: loads, rides, unloads, unloads under
+    /// fire, failed moves (`AiCounters::transport_*`).
+    pub s8a_ai: [u32; 5],
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -1258,6 +1265,33 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                             .collect(),
                     }
                 },
+                s8a: pl.s8a,
+                s8a_ai: ai.map_or([0; 5], |a| {
+                    let c = &a.counters;
+                    [
+                        c.transport_loads,
+                        c.transport_rides,
+                        c.transport_unloads,
+                        c.transport_unloads_fire,
+                        c.transport_fails,
+                    ]
+                }),
+                s8a_cards: {
+                    let roster = s
+                        .factions
+                        .get(s.players[p].faction as usize)
+                        .map_or(&[][..], |f| &f.roster[..]);
+                    roster
+                        .iter()
+                        .filter_map(|&t| s.squad_types.get(t as usize))
+                        .filter(|t| {
+                            t.vehicle
+                                .and_then(|v| s.vehicles.get(v as usize))
+                                .is_some_and(|v| v.transport.is_some())
+                        })
+                        .map(|t| t.id.split_once(':').map_or(&t.id[..], |x| x.1).to_owned())
+                        .collect()
+                },
             }
         })
         .collect::<Vec<PlayerReport>>();
@@ -1642,6 +1676,31 @@ pub struct FactionSummary {
     pub s6: S6Faction,
     /// S7 counters over the run.
     pub s7: S7Faction,
+    /// S8a counters over the run.
+    pub s8a: S8aFaction,
+}
+
+/// S8a numbers of one faction over a `--seeds` run (sums of
+/// `frontline_sim::S8aCounters`; the transport cards as seen).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S8aFaction {
+    pub matches: u32,
+    pub rides: u64,
+    pub transported: u64,
+    pub ride_ticks: u64,
+    pub ride_walk_ticks: u64,
+    pub riders_lost: u64,
+    pub small_arms_pens: u64,
+    pub dismounts_under_fire: u64,
+    pub transport_trips: u64,
+    /// AI: loads, rides, unloads, unloads under fire, failed moves.
+    pub ai_loads: u64,
+    pub ai_rides: u64,
+    pub ai_unloads: u64,
+    pub ai_unloads_fire: u64,
+    pub ai_fails: u64,
+    #[serde(skip)]
+    pub transport_cards: std::collections::BTreeSet<String>,
 }
 
 /// S7 numbers of one faction over a `--seeds` run (sums; the card prices
@@ -2044,6 +2103,24 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             for (k, v) in &p.s7.vehicle_card {
                 u.vehicle_card.insert(k.clone(), v.clone());
             }
+            // S8a.
+            let e = &mut f.s8a;
+            let c = &p.s8a;
+            e.matches += 1;
+            e.rides += c.rides as u64;
+            e.transported += c.transported as u64;
+            e.ride_ticks += c.ride_ticks;
+            e.ride_walk_ticks += c.ride_walk_ticks;
+            e.riders_lost += c.riders_lost as u64;
+            e.small_arms_pens += c.small_arms_pens as u64;
+            e.dismounts_under_fire += c.dismounts_under_fire as u64;
+            e.transport_trips += c.transport_trips as u64;
+            e.transport_cards.extend(p.s8a_cards.iter().cloned());
+            e.ai_loads += p.s8a_ai[0] as u64;
+            e.ai_rides += p.s8a_ai[1] as u64;
+            e.ai_unloads += p.s8a_ai[2] as u64;
+            e.ai_unloads_fire += p.s8a_ai[3] as u64;
+            e.ai_fails += p.s8a_ai[4] as u64;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

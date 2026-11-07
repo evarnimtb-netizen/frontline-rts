@@ -8,7 +8,8 @@ extends Control
 ##   row 3, a segmented stance strip: Stand X, Crouch C, Prone Z, Auto
 ##          (no key: pressing the active stance again returns to Auto),
 ##          then (S3c) Crew K (the re-crew tool: click an abandoned
-##          vehicle) and Regroup L.
+##          vehicle) split with (S8a) Board V (click an own half-track),
+##          and Regroup L (S8a: Unload U for a mounted selection).
 ##   below (S5a), a thin segmented fire strip: Discipline (the default: open
 ##          fire within 70 % of the weapon's range), At will (full
 ##          range), Hold (fire only at enemies within 30 m, Panzerfausts
@@ -21,7 +22,8 @@ extends Control
 ## S3, vehicles only selected (a mixed selection keeps the soldier grid;
 ## the vehicle keys still reach the vehicles):
 ##   row 1: Reverse (Alt+RMB, arms a reverse tool), Face O (tool), Repair J,
-##   S3b Suppress P (tool);
+##   S3b Suppress P (tool), S8a Unload U (half-tracks: Shift+U or
+##   Shift+click over the sides);
 ##   row 2: Move, Attack, Stop H, Retreat R, S3c Bail out (no key: a
 ##   second press within 2 s; the label says "Again?" meanwhile);
 ##   row 3: the ammo toggle, a segmented strip Auto | AP | APCR | HE (N
@@ -62,6 +64,9 @@ const REGROUP := [&"regroup", "Regroup", &"order_regroup", "Detached men of the 
 const PANZERFAUST := [&"panzerfaust", "Pzfaust", &"ability_satchel", "Panzerfaust 60: click a seen enemy vehicle. The selected squads that carry one aim at it first and close in; a man fires within 60 m (40 m at a moving vehicle). The men also fire on their own at vehicles in reach."]
 ## S3c.
 const CREW := [&"crew", "Crew", &"order_crew", "Click an abandoned vehicle: the selected squads walk to it and man it. Tank crews man it fully; other infantry (not AT teams) man it untrained (slower reload and traverse, wider spread). An enemy's abandoned vehicle is captured. Needs a free vehicle slot and pop. Right-click on it with a tank crew selected does the same."]
+## S8a.
+const BOARD := [&"embark", "Board", &"order_embark", "Click an own half-track: the selected squads walk to its door and climb in, one man a second. A squad that does not fit is refused (squads never split). Right-click on it does the same."]
+const UNLOAD := [&"disembark", "Unload", &"order_disembark", "The half-track stops and its passengers get out by the rear door, one man every 0.8 s. Shift+U (or Shift+click): over the sides, faster (0.5 s) but each man stands up over the rim while he climbs out, on the side away from the last hit."]
 const BAIL := [&"bail", "Bail out", &"", "The crew leave the vehicle by its hatches and become a crew squad; the vehicle stays, abandoned, and can be re-crewed (by anyone, enemies included). Press twice within 2 s."]
 const ROW_VEHICLE := [
 	[&"reverse", "Reverse", &"order_reverse", "Back up to a point, front kept toward the enemy (Alt+right-click). The button arms a click-to-place tool."],
@@ -96,7 +101,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -113,6 +118,8 @@ var _hover: StringName = &""
 var _size := Vector2.ZERO
 ## S4: the third ability slot shows the Panzerfaust.
 var _pzf_slot := false
+## S8a: the selection has passengers (Unload replaces Regroup).
+var _mounted := false
 
 
 func bind(v: MatchView) -> void:
@@ -127,10 +134,12 @@ func update_state(_s: Dictionary) -> void:
 	if want == "soldier" and sel.supply_only():
 		want = "supply"
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
-	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot:
+	var mounted: bool = not sel.unload_vehicles().is_empty()
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or mounted != _mounted:
 		_size = size
 		grid_mode = want
 		_pzf_slot = pzf
+		_mounted = mounted
 		_layout()
 	queue_redraw()
 
@@ -151,6 +160,8 @@ func _layout() -> void:
 			_add(ROW_VEHICLE_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
 		# S3c: Bail out in the fifth slot of the orders row.
 		_add(BAIL, Rect2(4.0 * (bw + g), bh + g, bw, bh), "order")
+		# S8a: Unload in the fifth slot of the top row.
+		_add(UNLOAD, Rect2(4.0 * (abw + g), 0, abw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
 		for i in ROW_AMMO.size():
 			_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
@@ -174,8 +185,13 @@ func _layout() -> void:
 		_add(PLACE, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 		_add(PICK_UP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 	else:
-		_add(CREW, Rect2(3.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
-		_add(REGROUP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
+		# S8a: Crew and Board share the fourth slot; a mounted selection
+		# gets Unload in Regroup's.
+		var half := (bw - g) * 0.5
+		_add(CREW, Rect2(3.0 * (bw + g), 2.0 * (bh + g), half, bh), "order")
+		_add(BOARD, Rect2(3.0 * (bw + g) + half + g, 2.0 * (bh + g), half, bh), "order")
+		var mounted: bool = not view.selection.unload_vehicles().is_empty()
+		_add(UNLOAD if mounted else REGROUP, Rect2(4.0 * (bw + g), 2.0 * (bh + g), bw, bh), "order")
 	var fseg := sw / 3.0
 	for i in ROW_FIRE.size():
 		_add(ROW_FIRE[i], Rect2(i * fseg, 3.0 * (bh + g), fseg, fh), "fire")

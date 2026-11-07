@@ -3255,6 +3255,462 @@ fn case21(env: &Env) -> Result<CaseReport> {
     Ok(r)
 }
 
+/// S8a: a transport of `card` for player `p` at `c` facing `f` (its MG
+/// dry when `silent`), with a squad of `inf` (also player `p`) seated in
+/// it.
+fn loaded_transport(
+    w: &mut World,
+    p: u8,
+    card: &str,
+    inf: &str,
+    c: FxVec2,
+    f: FxVec2,
+    silent: bool,
+) -> Result<(SquadId, SimId, SquadId)> {
+    let (vsq, v) = spawn_card(w, p, card, c, f)?;
+    if silent {
+        w.edit_vehicle(v, |vs| {
+            vs.mgs.iter_mut().for_each(|m| m.spent = u32::MAX / 2)
+        });
+    }
+    let (isq, _) = spawn_card(w, p, inf, c - f * Fx::from_int(12), f)?;
+    if !w.seat_now(isq, v) {
+        return Err(anyhow!("{inf} does not fit in {card}"));
+    }
+    Ok((vsq, v, isq))
+}
+
+/// HP of each of `men` (0 once dead or gone).
+fn men_hp(w: &World, men: &[SimId]) -> Vec<u16> {
+    men.iter()
+        .map(|m| {
+            let i = m.index();
+            if w.entities().kind().get(i) == Some(&EntityKind::Soldier) {
+                w.entities().combat()[i].hp
+            } else {
+                0
+            }
+        })
+        .collect()
+}
+
+fn weapon_idx(w: &World, id: &str) -> Result<u16> {
+    w.match_setup()
+        .and_then(|s| s.weapons.iter().position(|x| x.id == id))
+        .map(|k| k as u16)
+        .ok_or_else(|| anyhow!("no {id}"))
+}
+
+/// Case 22 (vehicles.md 10): one bazooka rocket at a loaded 251's
+/// compartment side from 100 m (no spread; the point along the side
+/// varies): how often a passenger is hit, and the passengers lost.
+fn case22(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(22, "a bazooka rocket into a loaded SdKfz 251 (6.6)");
+    let (mut n, mut hit, mut lost, mut ko) = (0u32, 0u32, 0u32, 0u32);
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        for k in 0..3u64 {
+            let mut w = open_top_world(env, seed * 32 + k * 2 + flip as u64)?;
+            let gun = weapon_idx(&w, "ww2:m9_bazooka")?;
+            let (_, v, isq) = loaded_transport(
+                &mut w,
+                0,
+                "ww2:ger_sdkfz251_1_squad",
+                "ww2:ger_grenadiergruppe",
+                at(500, 500),
+                dir_deg(90),
+                true,
+            )?;
+            w.step(&[]);
+            let men = members(&w, isq);
+            let before = men_hp(&w, &men);
+            // The right side faces east: from 100 m east, at the
+            // compartment (1.0-1.6 m up, 2.2 m along it).
+            let base = w.entities().transform()[v.index()].pos;
+            let along = ((seed * 7 + k * 5 + flip as u64 * 3) % 9) as i32 * 25 - 100 - 74;
+            let up = 100 + ((seed * 3 + k * 11) % 7) as i32 * 10;
+            let aim = FxVec3::new(
+                base.x + Fx::ONE,
+                base.y + Fx::from_milli(along * 10),
+                base.z + Fx::from_milli(up * 10),
+            );
+            let speed = w
+                .match_setup()
+                .and_then(|s| {
+                    let wd = &s.weapons[gun as usize];
+                    wd.ammo
+                        .and_then(|a| s.ammo.get(a as usize))
+                        .map(|a| a.speed)
+                })
+                .map_or(80.0, |sp| f64::from(Fx::from(sp).to_f32()));
+            let t = 100.0 / speed.max(1.0);
+            let drop = Fx::from_milli((0.5 * 9.81 * t * t * 1000.0) as i32);
+            let from = FxVec3::new(
+                aim.x + Fx::from_int(100),
+                aim.y,
+                aim.z + Fx::from_ratio(1, 10),
+            );
+            let up_aim = FxVec3::new(aim.x, aim.y, aim.z + drop);
+            if !w.fire_rocket_now(1, gun, from, up_aim) {
+                return Err(anyhow!("cannot fire the rocket"));
+            }
+            for _ in 0..3 * hz(&w) {
+                w.step(&[]);
+            }
+            let after = men_hp(&w, &men);
+            n += 1;
+            let h = before.iter().zip(&after).filter(|(b, a)| a < b).count() as u32;
+            let dead = after.iter().filter(|&&a| a == 0).count() as u32;
+            hit += u32::from(h > 0);
+            lost += dead;
+            ko += u32::from(!alive(&w, v));
+            if env.verbose {
+                eprintln!(
+                    "case 22 seed {seed} k {k}: {h} men hit, {dead} lost, alive {}",
+                    alive(&w, v)
+                );
+            }
+        }
+    }
+    let pct = round3(hit as f64 * 100.0 / n.max(1) as f64);
+    r.check_v(
+        "passenger hit pct",
+        pct >= 50.0,
+        pct,
+        ">= 50 (S8a.toml T45a)",
+        format!("{hit} of {n} rockets hit a passenger"),
+    );
+    r.check_v(
+        "passengers lost mean",
+        true,
+        round3(lost as f64 / n.max(1) as f64),
+        "report",
+        format!("{lost} men lost in {n} rockets; vehicle knocked out {ko} times"),
+    );
+    Ok(r)
+}
+
+/// Case 23 (vehicles.md 10): a German rifleman lobs a stick grenade from 15
+/// m at a loaded 251 (as case 19), stopped or driving across: the share of
+/// passengers lost when stopped, and how often the grenade comes to rest
+/// inside when it moves.
+fn case23(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(
+        23,
+        "a stick grenade at a loaded SdKfz 251, stopped and moving",
+    );
+    let mut n = [0u32; 2];
+    let mut inside = [0u32; 2];
+    let mut riders = [0u32; 2];
+    let mut lost = [0u32; 2];
+    let mut speed_sum = 0.0f64;
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        for k in 0..CASE19_TRIALS {
+            for (m, moving) in [false, true].into_iter().enumerate() {
+                let mut w = open_top_world(env, seed * 16 + k * 2 + flip as u64)?;
+                let az = (seed * 37 + k * 71 + flip as u64 * 13) % 360;
+                let f = dir_deg(az as i32);
+                let c = at(500, 500);
+                let start = if moving { c - f * Fx::from_int(25) } else { c };
+                let (vsq, v, isq) = loaded_transport(
+                    &mut w,
+                    1,
+                    "ww2:ger_sdkfz251_1_squad",
+                    "ww2:ger_grenadiergruppe",
+                    start,
+                    f,
+                    true,
+                )?;
+                if moving {
+                    order(
+                        &mut w,
+                        1,
+                        vec![CommandKind::Move {
+                            squad: vsq,
+                            target: c + f * Fx::from_int(60),
+                        }],
+                    );
+                }
+                let side = FxVec2::new(-f.y, f.x);
+                let (gsq, _) = spawn_card(
+                    &mut w,
+                    0,
+                    "ww2:ger_grenadiergruppe",
+                    c + side * Fx::from_int(15),
+                    -side,
+                )?;
+                for man in members(&w, gsq) {
+                    w.edit_soldier(man, |kt, cb| {
+                        kt.items[ItemKind::SingleShotAt.index()] = 0;
+                        kt.rounds.iter_mut().for_each(|x| *x = 0);
+                        cb.mag = 0;
+                    });
+                }
+                let Some(man) = members(&w, gsq)
+                    .into_iter()
+                    .find(|x| w.entities().kit()[x.index()].items[ItemKind::Frag.index()] > 0)
+                else {
+                    continue;
+                };
+                for t in 0..10 * hz(&w) {
+                    w.step(&[]);
+                    let near = dist(pos(&w, v), c) < 6.0;
+                    if (!moving && t + 1 >= hz(&w)) || (moving && near) {
+                        break;
+                    }
+                }
+                if moving {
+                    speed_sum += f64::from(vstate(&w, v).map_or(0.0, |x| x.speed.to_f32()));
+                }
+                let men = members(&w, isq);
+                let target = pos(&w, v);
+                order(
+                    &mut w,
+                    0,
+                    vec![CommandKind::Throw {
+                        units: vec![man],
+                        item: ItemKind::Frag,
+                        target,
+                    }],
+                );
+                n[m] += 1;
+                let mut was_inside = false;
+                for _ in 0..8 * hz(&w) {
+                    w.step(&[]);
+                    let g = w.game().expect("match");
+                    was_inside |= g
+                        .thrown()
+                        .iter()
+                        .any(|t| t.inside.is_some_and(|i| i.vehicle == v));
+                    if g.thrown().is_empty() && was_inside {
+                        break;
+                    }
+                }
+                let dead = men_hp(&w, &men).iter().filter(|&&h| h == 0).count() as u32;
+                inside[m] += u32::from(was_inside);
+                riders[m] += men.len() as u32;
+                lost[m] += dead;
+                if env.verbose {
+                    eprintln!(
+                        "case 23 seed {seed} k {k} moving {moving}: inside {was_inside}, {dead} of {} lost",
+                        men.len()
+                    );
+                }
+            }
+        }
+    }
+    let p = |a: u32, b: u32| round3(a as f64 * 100.0 / b.max(1) as f64);
+    let stopped_lost = p(lost[0], riders[0]);
+    let moving_in = p(inside[1], n[1]);
+    r.row(
+        "result",
+        format!(
+            "stopped: {} of {} inside, {} of {} passengers lost; moving ({:.1} m/s mean at the throw): {} of {} inside, {} of {} lost",
+            inside[0],
+            n[0],
+            lost[0],
+            riders[0],
+            speed_sum / n[1].max(1) as f64,
+            inside[1],
+            n[1],
+            lost[1],
+            riders[1]
+        ),
+    );
+    r.check_v(
+        "stopped passengers lost pct",
+        stopped_lost >= 50.0,
+        stopped_lost,
+        ">= 50 (S8a.toml T46a)",
+        format!("{} of {}", lost[0], riders[0]),
+    );
+    r.check_v(
+        "stopped inside pct",
+        true,
+        p(inside[0], n[0]),
+        "report",
+        format!("{} of {}", inside[0], n[0]),
+    );
+    r.check_v(
+        "moving inside pct",
+        moving_in <= 20.0,
+        moving_in,
+        "<= 20 (S8a.toml T46b)",
+        format!("{} of {}", inside[1], n[1]),
+    );
+    r.check_v(
+        "moving passengers lost pct",
+        true,
+        p(lost[1], riders[1]),
+        "report",
+        format!("{} of {}", lost[1], riders[1]),
+    );
+    Ok(r)
+}
+
+/// Case 24 (vehicles.md 10): ten men get out of a 251 under MG 42 fire
+/// from 200 m off its right side, by the rear door or over the sides. The
+/// gun (no spread but a small aim jitter) fires 15 rounds a second at the
+/// nearest man on foot within 20 m of the vehicle, else at the head of the
+/// man getting out (the slot box top), from a second before the order.
+/// Exit time and men hit until 5 s after the last man is out.
+fn case24(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(24, "dismounting under MG 42 fire: door against sides");
+    let mut ticks = [0u64; 2];
+    let mut hits = [0u32; 2];
+    let mut n = [0u32; 2];
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        for (m, over_sides) in [false, true].into_iter().enumerate() {
+            let mut w = open_top_world(env, seed * 8 + flip as u64)?;
+            let gun = weapon_idx(&w, "ww2:mg42_bipod")?;
+            let (_, v, isq) = loaded_transport(
+                &mut w,
+                0,
+                "ww2:ger_sdkfz251_1_squad",
+                "ww2:ger_grenadiergruppe",
+                at(500, 500),
+                dir_deg(90),
+                false,
+            )?;
+            let men = members(&w, isq);
+            let before = men_hp(&w, &men);
+            let hz = hz(&w);
+            let fire = |w: &mut World, t: u64| {
+                if !t.is_multiple_of(2) {
+                    return;
+                }
+                let vp = w.entities().transform()[v.index()].pos;
+                let foot = men
+                    .iter()
+                    .filter(|x| {
+                        let i = x.index();
+                        w.entities().kind()[i] == EntityKind::Soldier
+                            && w.entities().unit()[i].riding.is_none()
+                            && dist(pos(w, **x), vp.xy()) < 20.0
+                    })
+                    .min_by_key(|x| (dist(pos(w, **x), vp.xy()) * 1000.0) as i64);
+                let aim = match foot {
+                    Some(x) => {
+                        let p = w.entities().transform()[x.index()].pos;
+                        FxVec3::new(p.x, p.y, p.z + Fx::from_ratio(9, 10))
+                    }
+                    None => {
+                        let Some(f) = w.game().and_then(|g| g.vehicle_derived().frame(v)) else {
+                            return;
+                        };
+                        if f.n_riders == 0 {
+                            return;
+                        }
+                        let b = f.riders[0];
+                        b.center + b.axes.z * (b.half.z - Fx::from_ratio(15, 100))
+                    }
+                };
+                let j = ((seed * 31 + t * 17) % 9) as i32 - 4;
+                let jz = ((seed * 13 + t * 7) % 5) as i32 - 2;
+                let aim = FxVec3::new(
+                    aim.x,
+                    aim.y + Fx::from_milli(j * 100),
+                    aim.z + Fx::from_milli(jz * 100),
+                );
+                let speed = 755.0f64;
+                let tt = 200.0 / speed;
+                let drop = Fx::from_milli((0.5 * 9.81 * tt * tt * 1000.0) as i32);
+                let from = FxVec3::new(
+                    aim.x + Fx::from_int(200),
+                    aim.y,
+                    aim.z + Fx::from_ratio(1, 10),
+                );
+                w.fire_round_now(1, gun, from, FxVec3::new(aim.x, aim.y, aim.z + drop));
+            };
+            for t in 0..hz {
+                fire(&mut w, t);
+                w.step(&[]);
+            }
+            order(
+                &mut w,
+                0,
+                vec![CommandKind::Disembark {
+                    vehicles: vec![v],
+                    over_sides,
+                }],
+            );
+            let t0 = w.tick();
+            let mut out_at = None;
+            for t in 0..40 * hz {
+                fire(&mut w, hz + t);
+                w.step(&[]);
+                let aboard = w.game().map_or(0, |g| g.riders_of(v).len());
+                if aboard == 0 && out_at.is_none() {
+                    out_at = Some(w.tick());
+                }
+                if out_at.is_some_and(|o| w.tick() >= o + 5 * hz) {
+                    break;
+                }
+            }
+            let after = men_hp(&w, &men);
+            let h = before.iter().zip(&after).filter(|(b, a)| a < b).count() as u32;
+            ticks[m] += out_at.unwrap_or(w.tick()) - t0;
+            hits[m] += h;
+            n[m] += 1;
+            if env.verbose {
+                eprintln!(
+                    "case 24 seed {seed} flip {flip} sides {over_sides}: out in {} ticks, {h} men hit",
+                    out_at.unwrap_or(w.tick()) - t0
+                );
+            }
+        }
+    }
+    let mean = |a: u64, b: u32| a as f64 / b.max(1) as f64;
+    let (door_s, sides_s) = (mean(ticks[0], n[0]) / 30.0, mean(ticks[1], n[1]) / 30.0);
+    let faster = sides_s < door_s;
+    r.row(
+        "result",
+        format!(
+            "door: {door_s:.1} s, {:.2} men hit; sides: {sides_s:.1} s, {:.2} men hit",
+            mean(hits[0] as u64, n[0]),
+            mean(hits[1] as u64, n[1])
+        ),
+    );
+    r.check_v(
+        "sides faster",
+        faster,
+        f64::from(u8::from(faster)),
+        "1 (S8a.toml T47a)",
+        format!("door {door_s:.1} s, sides {sides_s:.1} s"),
+    );
+    r.check_v(
+        "door exit s",
+        true,
+        round3(door_s),
+        "report",
+        "order to the last man out",
+    );
+    r.check_v(
+        "sides exit s",
+        true,
+        round3(sides_s),
+        "report",
+        "order to the last man out",
+    );
+    r.check_v(
+        "door men hit mean",
+        true,
+        round3(mean(hits[0] as u64, n[0])),
+        "report",
+        "men hit until 5 s after the last is out",
+    );
+    r.check_v(
+        "sides men hit mean",
+        true,
+        round3(mean(hits[1] as u64, n[1])),
+        "report",
+        "men hit until 5 s after the last is out",
+    );
+    Ok(r)
+}
+
 // Wall-clock time here only measures; it never feeds the sim.
 #[allow(clippy::disallowed_methods)]
 fn case14(env: &Env) -> Result<CaseReport> {
@@ -3400,7 +3856,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 21] = [
+    let all: [(u32, CaseFn); 24] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3422,6 +3878,9 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (19, case19),
         (20, case20),
         (21, case21),
+        (22, case22),
+        (23, case23),
+        (24, case24),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

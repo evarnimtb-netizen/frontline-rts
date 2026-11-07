@@ -145,6 +145,12 @@ pub enum Order {
     Recrew {
         vehicle: SimId,
     },
+    /// S8a `Embark`: walk to own transport `vehicle`'s door and board it
+    /// (`crate::transport`); kept while the men ride. Becomes `Idle` when
+    /// the men are out (or the vehicle is gone).
+    Embark {
+        vehicle: SimId,
+    },
 }
 
 /// [`Order`] without its payload, for the snapshot.
@@ -165,6 +171,8 @@ pub enum OrderKind {
     Suppress = 7,
     /// S3c: re-crewing an abandoned vehicle.
     Recrew = 8,
+    /// S8a: boarding or riding a transport.
+    Embark = 9,
 }
 
 impl Order {
@@ -179,6 +187,7 @@ impl Order {
             Order::Follow { .. } => OrderKind::Follow,
             Order::Suppress { .. } => OrderKind::Suppress,
             Order::Recrew { .. } => OrderKind::Recrew,
+            Order::Embark { .. } => OrderKind::Embark,
         }
     }
 }
@@ -392,6 +401,31 @@ pub struct PlayerState {
     pub fm: FmCounters,
     /// S7: per-vehicle-type kill and knock-out counters (report).
     pub s7: S7Counters,
+    /// S8a: transport and small-arms counters (report).
+    pub s8a: S8aCounters,
+}
+
+/// S8a per-player counters (saved and hashed, read only by reports;
+/// `crate::transport`). A ride is one squad's loaded trip from the first
+/// man aboard to the vehicle empty; `transported` counts rides of at least
+/// `[ai.transport] min_ride_m` (straight line, board to unload).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S8aCounters {
+    pub rides: u32,
+    pub transported: u32,
+    /// Ticks the rides took (boarding to the last man out).
+    pub ride_ticks: u64,
+    /// Ticks the same squads would have walked (straight line at their
+    /// walking speed).
+    pub ride_walk_ticks: u64,
+    /// Own men killed while riding.
+    pub riders_lost: u32,
+    /// Penetrations by this player's small arms (vehicles.md 6.4).
+    pub small_arms_pens: u32,
+    /// Unloads ordered under fire (or forced by a knock-out or fire).
+    pub dismounts_under_fire: u32,
+    /// Loaded trips of at least `min_ride_m` that ended in an unload.
+    pub transport_trips: u32,
 }
 
 /// S7 per-player counters (saved and hashed, read only by reports): by
@@ -692,6 +726,7 @@ impl MatchState {
                     kos_by_vehicle: vec![0; setup.vehicles.len()],
                     ..S7Counters::default()
                 },
+                s8a: S8aCounters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -973,6 +1008,14 @@ impl MatchState {
         {
             return false;
         }
+        // S8a: a squad with men aboard a transport takes only `Disembark`
+        // (sent for its vehicle); its men are left out of soldier orders
+        // (`unit_set`).
+        if let Some(sq) = command_squad(&c.kind)
+            && self.squad_rides(ctx.ents, sq)
+        {
+            return false;
+        }
         match &c.kind {
             CommandKind::MoveSoldier { .. }
             | CommandKind::Spawn { .. }
@@ -1057,6 +1100,11 @@ impl MatchState {
             &CommandKind::PickUpCrate { squad, crate_id } => {
                 self.pick_up_crate(ctx, p, squad, crate_id)
             }
+            CommandKind::Embark { squads, vehicle } => self.order_embark(ctx, p, squads, *vehicle),
+            CommandKind::Disembark {
+                vehicles,
+                over_sides,
+            } => self.order_disembark(ctx, p, vehicles, *over_sides),
         }
     }
 
@@ -2151,6 +2199,7 @@ impl MatchState {
         }
         self.validate_items(ents)?;
         self.validate_vehicles(ents, tick)?;
+        self.validate_riders(ents)?;
         let mut queued: Vec<PathReq> = self.path_queue.queues.iter().flatten().copied().collect();
         let nodes = grid_dim(s) * grid_dim(s);
         if queued.iter().any(|r| match *r {
@@ -2385,7 +2434,26 @@ fn dig_consistent(
 }
 
 /// Stops `sq` where its men stand, facing `facing` (kept if zero).
-fn hold_in_place(sq: &mut Squad, ents: &Entities, facing: FxVec2) {
+/// S8a: the infantry squad a squad-level command addresses, if any.
+fn command_squad(kind: &CommandKind) -> Option<SquadId> {
+    match kind {
+        CommandKind::Move { squad, .. }
+        | CommandKind::AttackMove { squad, .. }
+        | CommandKind::Stop { squad }
+        | CommandKind::Retreat { squad }
+        | CommandKind::Dig { squad, .. }
+        | CommandKind::FireMission { squad, .. }
+        | CommandKind::Regroup { squad }
+        | CommandKind::Recrew { squad, .. }
+        | CommandKind::Build { squad, .. }
+        | CommandKind::IssueCrate { squad, .. }
+        | CommandKind::PlaceCrate { squad, .. }
+        | CommandKind::PickUpCrate { squad, .. } => Some(*squad),
+        _ => None,
+    }
+}
+
+pub(crate) fn hold_in_place(sq: &mut Squad, ents: &Entities, facing: FxVec2) {
     let nav = &mut sq.nav;
     nav.phase = NavPhase::Holding;
     nav.path.clear();

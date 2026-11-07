@@ -169,14 +169,27 @@ pub struct Unit {
     pub detached: bool,
     pub order: UnitOrder,
     pub nav: UnitNav,
+    /// S8a (`crate::transport`): the transport and passenger slot he rides
+    /// in; `None` on foot.
+    pub riding: Option<Riding>,
+}
+
+/// S8a: a passenger's place (`crate::transport`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Riding {
+    pub vehicle: SimId,
+    /// Passenger slot index (`TransportSetup::slots`).
+    pub slot: u8,
 }
 
 impl Unit {
-    /// Formation state, keeping the stance order.
+    /// Formation state, keeping the stance order (and the seat he rides
+    /// in).
     fn rejoin(&mut self) {
         *self = Unit {
             stance: self.stance,
             fire: self.fire,
+            riding: self.riding,
             ..Unit::default()
         };
     }
@@ -214,6 +227,7 @@ impl MatchState {
             i < ents.len()
                 && ents.kind[i] == EntityKind::Soldier
                 && ents.owner[i] == p
+                && ents.unit[i].riding.is_none()
                 && ents.squad[i].is_some_and(|s| self.squads.contains_key(&s))
         });
         (!men.is_empty()).then_some(men)

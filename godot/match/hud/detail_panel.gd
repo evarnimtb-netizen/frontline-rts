@@ -209,6 +209,11 @@ func _draw_vehicle(vid: int) -> void:
 		if rep_c == c:
 			HudStyle.box(self, bar.grow(2.0), Color(0, 0, 0, 0), 3, HudStyle.ACCENT, 1)
 	y += 2.0 * rh
+	# S8a: a half-track's last row lists its passengers (squad, men aboard,
+	# health) and its MG stowage instead of main-gun ammunition.
+	if int(v.get("capacity", 0)) > 0:
+		_draw_passengers(v, Rect2(PAD, y, size.x - 2.0 * PAD, rh), base)
+		return
 	# Ammo: counts with the loaded round, the choice (N), the reload.
 	var w := ROSTER.draw_ammo(self, font, bold, Vector2(PAD - 2.0, y + base), v, -1)
 	# S3c (B9): MG stowage left (amber under a quarter, red when dry).
@@ -228,6 +233,31 @@ func _draw_vehicle(vid: int) -> void:
 	if rbar.size.x >= 24.0:
 		HudStyle.box(self, rbar, Color(0, 0, 0, 0.35), 2)
 		HudStyle.box(self, Rect2(rbar.position, Vector2(rbar.size.x * reload, rbar.size.y)), HudStyle.TEXT if reload >= 1.0 else HudStyle.ACCENT, 2)
+
+
+## S8a: "Aboard n/cap" and each passenger squad (name, men aboard, a
+## health bar), then the MG stowage; "Unloading" while men get out.
+func _draw_passengers(v: Dictionary, r: Rect2, base: float) -> void:
+	var font := get_theme_default_font()
+	var bold := HudStyle.bold()
+	var y := r.position.y
+	var head := "Aboard %d/%d" % [int(v.get("riders", 0)), int(v.get("capacity", 0))]
+	var un := String(v.get("unload", ""))
+	if un != "":
+		head += " · unloading" + (" (sides)" if un == "sides" else "")
+	HudStyle.text(self, bold, Vector2(r.position.x, y + base), head, HudStyle.FONT, HudStyle.TEXT)
+	var x := r.position.x + HudStyle.text_w(bold, head, HudStyle.FONT) + 10.0
+	for p in v.get("passengers", []):
+		var label := "%s %d" % [String(p.name), int(p.mounted)]
+		var lw := HudStyle.text_w(font, label, HudStyle.FONT_SMALL)
+		if x + lw + 30.0 > r.end.x:
+			break
+		HudStyle.text(self, font, Vector2(x, y + base), label, HudStyle.FONT_SMALL, HudStyle.DIM)
+		_hp_bar(Rect2(x + lw + 4.0, y + r.size.y * 0.5 - 3.0, 22.0, 6.0), float(p.get("health", 1.0)) * 100.0)
+		x += lw + 34.0
+	var mg: Array = ROSTER.mg_label(v.get("ammo", {}))
+	if mg[0] != "" and x + HudStyle.text_w(bold, mg[0], HudStyle.FONT) < r.end.x:
+		HudStyle.text(self, bold, Vector2(r.end.x - HudStyle.text_w(bold, mg[0], HudStyle.FONT), y + base), mg[0], HudStyle.FONT, mg[1])
 
 
 func _pair(font: Font, bold: Font, x: float, by: float, label: String, value: String) -> void:
@@ -251,6 +281,12 @@ func _draw_squad(sid: int) -> void:
 	if sq.has("mission") and st[0] == "Fire mission":
 		right = mission_status(sq.mission)
 	var title := view.squad_label(sid, true)
+	# S8a: a squad aboard a half-track.
+	if int(sq.get("mounted", 0)) > 0:
+		var vl := String(view.vehicle_label(int(sq.get("embark", -1)))) if view.vehicles_by_id.has(int(sq.get("embark", -1))) else "half-track"
+		right = "Mounted (%s)" % vl
+		if int(sq.mounted) < int(sq.get("men", 0)):
+			right = "Boarding %d/%d" % [int(sq.mounted), int(sq.get("men", 0))]
 	if sq.has("crew_of"):
 		title = "Crew — %s" % String(sq.get("crew_of_name", "tank"))
 	# S5a: tags left of the status (LOW / DRY, HOLD, Refilling) and a thin

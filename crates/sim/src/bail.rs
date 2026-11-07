@@ -157,6 +157,28 @@ pub(crate) fn board_max(v: &VehicleSetup, s: &MatchSetup) -> u32 {
 }
 
 /// Whether vehicles of this def can bail out at all.
+/// S8a: the crew rule's floor for `v`: `[vehicles.bail] crew_below`,
+/// but below its seat count (a crew of two is not abandoned for losing
+/// one man: S8a-20).
+pub(crate) fn crew_floor(v: &VehicleSetup, s: &MatchSetup) -> u32 {
+    s.rules
+        .vehicles
+        .bail
+        .crew_below
+        .min(v.seats.len().saturating_sub(1) as u32)
+}
+
+/// S8a: the fewest men who may re-crew `v`: `[vehicles.recrew] min_men`
+/// and the crew floor, at most its seats.
+pub(crate) fn fewest_to_man(v: &VehicleSetup, s: &MatchSetup) -> u32 {
+    s.rules
+        .vehicles
+        .recrew
+        .min_men
+        .max(crew_floor(v, s))
+        .min(v.seats.len() as u32)
+}
+
 pub fn can_bail(v: &VehicleSetup) -> bool {
     v.crew_squad.is_some() && !v.hatches.is_empty()
 }
@@ -241,13 +263,14 @@ impl MatchState {
         if let Some(why) = board_blocked(s, vs) {
             return Err(why);
         }
-        if (sq.members.len() as u32) < r.min_men.max(s.rules.vehicles.bail.crew_below) {
+        let v = &s.vehicles[vs.type_idx as usize];
+        if (sq.members.len() as u32) < fewest_to_man(v, s) {
             return Err(RecrewRefusal::TooFewMen);
         }
-        if self.vehicles_counted(ents, p) >= s.rules.vehicles.limit {
+        // S8a: transports are outside the vehicle limit.
+        if v.transport.is_none() && self.vehicles_counted(ents, p) >= s.rules.vehicles.limit {
             return Err(RecrewRefusal::VehicleLimit);
         }
-        let v = &s.vehicles[vs.type_idx as usize];
         let men = (sq.members.len()).min(v.seats.len()) as u32;
         if self.population(ents, p).saturating_sub(men) + v.pop > s.rules.pop_cap {
             return Err(RecrewRefusal::PopCap);
@@ -370,7 +393,7 @@ impl MatchState {
             AB_AMMO_FIRE
         } else if b.engine_fire_bail_s > 0 && vs.burn as u32 >= b.engine_fire_bail_s * hz {
             AB_ENGINE_FIRE
-        } else if living == 0 || living < b.crew_below {
+        } else if living == 0 || living < crew_floor(v, &self.setup) {
             AB_CREW
         } else if b.useless_bail != 0 && gun_out && broken {
             AB_USELESS
@@ -766,7 +789,7 @@ impl MatchState {
         let empty = vs.seats.iter().filter(|st| st.hp == 0).count();
         // Fewest men who board: `min_men`, and never so few that the crew
         // rule would make them bail out again at once.
-        let fewest = r.min_men.max(s.rules.vehicles.bail.crew_below).max(1);
+        let fewest = fewest_to_man(v, s).max(1);
         // The boarding squad: the one already boarding while it still can
         // (a squad that arrives later does not reset its progress), else the
         // lowest id with a Recrew of this vehicle whose boarding men (one

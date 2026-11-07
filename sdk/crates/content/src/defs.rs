@@ -17,11 +17,11 @@ use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning,
-    AiSupplyTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning,
-    DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning,
-    GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiSupplyTuning, AiTransportTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
+    FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning,
+    SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -1658,6 +1658,9 @@ pub struct AiDef {
     /// S6: the AI's HQ and crate runs (default: the S6 starting values).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supply: Option<AiSupplyTuning>,
+    /// S8a: the AI's half-tracks (default: the S8a starting values).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<AiTransportTuning>,
 }
 
 impl AiDef {
@@ -2783,6 +2786,7 @@ impl RulesDef {
                 fire_mission: self.fire_mission.as_ref(),
                 ai_mortar: &a.mortar_tuning(),
                 ai_supply: &a.supply.clone().unwrap_or_default(),
+                ai_transport: &a.transport.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

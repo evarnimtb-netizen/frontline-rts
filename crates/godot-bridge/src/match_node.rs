@@ -333,6 +333,36 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "seat_ids" => &seat_ids,
         };
         let mut d = d;
+        // S8a: a half-track's blockout (meshgen `transport`): the hull from
+        // its boxes, the "turret" its first pintle's shield, the "gun" that
+        // MG; the snapshot's turret yaw is the MG's yaw.
+        if v.transport.is_some()
+            && let Some(m) = v
+                .mg_mounts()
+                .iter()
+                .find(|m| m.kind == frontline_content::vehicle::MountKind::Pintle)
+        {
+            d.set("transport", true);
+            d.set("turret_x", fx(m.pivot.x));
+            d.set("turret_base", fx(m.pivot.z));
+            d.set("gun_length", fx(m.muzzle.x));
+            d.set("gun_height", fx(m.muzzle.z));
+            let sh = v.shields.iter().find(|s| s.mount.is_some());
+            d.set(
+                "turret_length",
+                sh.map_or(0.0, |s| 2.0 * fx(s.bounds.half.x)),
+            );
+            d.set(
+                "turret_width",
+                sh.map_or(0.0, |s| 2.0 * fx(s.bounds.half.y)),
+            );
+            d.set(
+                "turret_height",
+                sh.map_or(0.0, |s| 2.0 * fx(s.bounds.half.z)),
+            );
+            d.set("turret_offset_x", sh.map_or(0.0, |s| fx(s.bounds.center.x)));
+            d.set("turret_lift", sh.map_or(0.0, |s| fx(s.bounds.center.z)));
+        }
         if let Some((l, w, h, off, _)) = upper {
             d.set("turret_length", l);
             d.set("turret_width", w);
@@ -2425,7 +2455,37 @@ impl MatchRuntime {
                 "state" => vehicle_badge(v.flags, v.speed, own),
                 // S3c: public on every vehicle.
                 "abandoned" => abandoned,
+                // S8a: passengers aboard (men over the rim are seen), slots,
+                // the unload under way.
+                "riders" => v.riders as i64,
+                "capacity" => v.capacity as i64,
+                "unload" => match v.unload {
+                    1 => "door",
+                    2 => "sides",
+                    _ => "",
+                },
             };
+            // S8a: an own transport lists its passengers' squads.
+            if own && v.capacity > 0 {
+                let mut pass = VarArray::new();
+                for sq in f.squads.iter().filter(|q| {
+                    q.order == OrderKind::Embark && q.follow == Some(v.id) && q.mounted > 0
+                }) {
+                    let ty = &setup.squad_types[sq.type_idx as usize];
+                    let hp_max = (ty.hp.max(1) * sq.men.max(1) as u32) as f32;
+                    pass.push(
+                        &vdict! {
+                            "squad" => sq.id as i64,
+                            "name" => ty.name.as_str(),
+                            "men" => sq.men as i64,
+                            "mounted" => sq.mounted as i64,
+                            "health" => (sq.hp_sum as f32 / hp_max).clamp(0.0, 1.0),
+                        }
+                        .to_variant(),
+                    );
+                }
+                d.set("passengers", &pass);
+            }
             if abandoned {
                 // Its last owner, why, its crew squad, men still inside, and
                 // the parts that are out (anyone can see an empty tank's
@@ -2763,6 +2823,7 @@ impl MatchRuntime {
                 OrderKind::Follow => "follow",
                 OrderKind::Suppress => "suppress",
                 OrderKind::Recrew => "recrew",
+                OrderKind::Embark => "embark",
             }
         };
         let pos = match self.anchors.get(&s.id) {
@@ -2828,13 +2889,18 @@ impl MatchRuntime {
             // S3c: a `Recrew` order shares the field (the vehicle it walks
             // to); `recrew` says which.
             d.set(
-                if s.order == OrderKind::Recrew {
-                    "recrew"
-                } else {
-                    "follow"
+                match s.order {
+                    OrderKind::Recrew => "recrew",
+                    // S8a: the transport it walks to or rides in.
+                    OrderKind::Embark => "embark",
+                    _ => "follow",
                 },
                 v as i64,
             );
+        }
+        // S8a: men aboard ("Mounted (vehicle)" on the card).
+        if s.order == OrderKind::Embark {
+            d.set("mounted", s.mounted as i64);
         }
         if let Some(l) = s.suppress_line {
             let line: PackedVector3Array = l.iter().map(|p| self.ground(*p)).collect();
@@ -3147,6 +3213,72 @@ impl MatchRuntime {
                     out.push(CommandKind::PickUpCrate {
                         squad: SquadId(s.id),
                         crate_id: c as u32,
+                    });
+                }
+            }
+            // S8a: the selected infantry squads board own transport
+            // `vehicle` (the sim refuses a squad that does not fit).
+            "embark" => {
+                let Some(v) = data
+                    .get("vehicle")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .filter(|&i| i >= 0)
+                else {
+                    return;
+                };
+                let squads: Vec<SquadId> = own
+                    .iter()
+                    .filter(|s| {
+                        self.setup.squad_types[s.type_idx as usize]
+                            .vehicle
+                            .is_none()
+                    })
+                    .map(|s| SquadId(s.id))
+                    .take(frontline_sim::MAX_UNITS)
+                    .collect();
+                if !squads.is_empty() {
+                    out.push(CommandKind::Embark {
+                        squads,
+                        vehicle: frontline_sim::SimId(v as u32),
+                    });
+                }
+            }
+            // S8a: the passengers of the selected own transports (`units`)
+            // and of the selected mounted squads' transports get out, by
+            // the door or (`over_sides`) over the sides.
+            "disembark" => {
+                let raw = data
+                    .get("units")
+                    .and_then(|v| v.try_to::<PackedInt32Array>().ok())
+                    .unwrap_or_default();
+                let over_sides = data
+                    .get("over_sides")
+                    .and_then(|v| v.try_to::<bool>().ok())
+                    .unwrap_or(false);
+                let f = self.newest();
+                let mut vehicles: Vec<frontline_sim::SimId> = Vec::new();
+                for &id in raw.as_slice() {
+                    if let Ok(k) = f.vehicles.binary_search_by_key(&(id as u32), |v| v.id)
+                        && f.vehicles[k].owner == self.local
+                        && f.vehicles[k].riders > 0
+                    {
+                        vehicles.push(frontline_sim::SimId(id as u32));
+                    }
+                }
+                for s in &own {
+                    if s.order == OrderKind::Embark
+                        && let Some(v) = s.follow
+                    {
+                        vehicles.push(frontline_sim::SimId(v));
+                    }
+                }
+                vehicles.sort_unstable();
+                vehicles.dedup();
+                vehicles.truncate(frontline_sim::MAX_UNITS);
+                if !vehicles.is_empty() {
+                    out.push(CommandKind::Disembark {
+                        vehicles,
+                        over_sides,
                     });
                 }
             }

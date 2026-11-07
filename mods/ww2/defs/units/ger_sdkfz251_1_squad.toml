@@ -11,5 +11,8 @@ vehicle = "ww2:ger_sdkfz251_1"
 # Most alive per player (S8a-5 (A); spec 6): 2.
 max_alive = 2
 # AI weight within the `vehicle` slot (0..1000; 0 = the AI never buys it).
-# 0 in S8a Build A (no transport AI yet); Build B sets it.
-ai_weight = 0
+# 150 (S8a Build B, S8a-21 (A)): the vehicle slot's buys go to the card
+# furthest below its weight share, so the half-track (unlocked at 2:00,
+# outside the vehicle limit) comes before the first tank; at 100 (the
+# tanks') it came third, after 12 minutes. max_alive caps it at 2.
+ai_weight = 150

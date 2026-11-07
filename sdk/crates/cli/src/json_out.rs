@@ -370,6 +370,35 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             }),
         );
     }
+    // S8a (docs/slices/S8a-halftracks.md 11): per-match means, the time a
+    // ride saved against walking the same straight line, trips per
+    // transport bought.
+    {
+        let e = &f.s8a;
+        let en = e.matches.max(1) as f64;
+        let rides = e.rides.max(1) as f64;
+        let saved_s = (e.ride_walk_ticks as f64 - e.ride_ticks as f64) / 30.0;
+        let bought: u64 = e
+            .transport_cards
+            .iter()
+            .map(|c| f.s4.bought.get(c).copied().unwrap_or(0) as u64)
+            .sum();
+        o.insert(
+            "s8a_derived".into(),
+            json!({
+                "transported_per_match": round3(e.transported as f64 / en),
+                "rides_per_match": round3(e.rides as f64 / en),
+                "ride_saved_s_per_ride": round3(saved_s / rides),
+                "ride_saved_s_per_match": round3(saved_s / en),
+                "ride_s_per_ride": round3(e.ride_ticks as f64 / 30.0 / rides),
+                "riders_lost_per_match": round3(e.riders_lost as f64 / en),
+                "small_arms_pens_per_match": round3(e.small_arms_pens as f64 / en),
+                "dismounts_under_fire_pct": pct(e.dismounts_under_fire as f64, e.rides as f64),
+                "transports_bought": bought,
+                "transport_trips_per_bought": round3(e.transport_trips as f64 / bought.max(1) as f64),
+            }),
+        );
+    }
     o.insert(
         "s6_derived".into(),
         json!({

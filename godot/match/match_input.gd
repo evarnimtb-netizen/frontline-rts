@@ -15,7 +15,10 @@ extends RefCounted
 ## only) reloads the mod data and restarts the match (S3b). S3c: K arms the
 ## Crew tool (click an abandoned vehicle: the selected infantry re-crew it;
 ## owner question S3c-6 (A)); Bail out has no key (a button that asks for
-## a second click).
+## a second click). S8a (owner question S8a-7 (A)): V arms the Board tool
+## (click an own half-track: the selected squads board it; right-click on
+## it does the same), U unloads the selected half-tracks (or the selected
+## mounted squads' half-tracks) by the door, Shift+U over the sides.
 
 const ACTIONS := {
 	&"order_move": KEY_M,
@@ -37,6 +40,9 @@ const ACTIONS := {
 	&"order_suppress": KEY_P,
 	# S3c re-crew tool, owner question S3c-6 (A).
 	&"order_crew": KEY_K,
+	# S8a transport, owner question S8a-7 (A).
+	&"order_embark": KEY_V,
+	&"order_disembark": KEY_U,
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
@@ -68,6 +74,8 @@ const LABELS := {
 	&"order_repair": "J",
 	&"order_suppress": "P",
 	&"order_crew": "K",
+	&"order_embark": "V",
+	&"order_disembark": "U",
 	&"focus_call_in": "Tab",
 }
 

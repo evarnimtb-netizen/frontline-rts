@@ -152,8 +152,9 @@ pub(crate) fn engage(order: &Order) -> Engage {
         Order::Retreat | Order::FireMission { .. } => Engage::Never,
         Order::Move { .. } | Order::Dig { .. } => Engage::Still,
         Order::Idle | Order::AttackMove { .. } | Order::Follow { .. } => Engage::Always,
-        // S3c: walking to an abandoned vehicle and climbing in.
-        Order::Recrew { .. } => Engage::Still,
+        // S3c: walking to an abandoned vehicle and climbing in; S8a: to a
+        // transport's door (riders never fire, `fire_chunk`).
+        Order::Recrew { .. } | Order::Embark { .. } => Engage::Still,
         // Holding; area fire replaces target search (`aim_and_fire`).
         Order::Suppress { .. } => Engage::Still,
     }
@@ -289,7 +290,8 @@ pub(crate) fn build_vmarks(ents: &Entities, out: &mut Vec<VMark>) {
 /// S8a: where soldier fire from `from` (player `owner`, weapon `wi`, which
 /// must have a penetration table, S8a-18) aims at vehicle mark `m` within
 /// `r` (range², Q32), if it may: (a) the head of a living crewman whose
-/// seat rises over an open box's rim (S7-7; Build B adds riders), else (b)
+/// seat rises over an open box's rim (S7-7), then (S8a-9) of a passenger
+/// whose slot does, else (b)
 /// the centre of the facing plate of the box whose plate the weapon beats
 /// at this range (the load-time reach table: one comparison).
 pub(crate) fn vehicle_aim(
@@ -316,6 +318,16 @@ pub(crate) fn vehicle_aim(
         if vs.seats.get(e.seat as usize).is_some_and(|s| s.hp > 0) {
             let sb = crate::damage::part_box(f, &e.part);
             return Some(sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(15, 100)));
+        }
+    }
+    // S8a-9: then a passenger whose slot rises over the rim.
+    if let Some(geo) = game.vderived.geo.get(vs.type_idx as usize) {
+        for n in 0..f.n_riders as usize {
+            let k = f.rider_slot[n] as u32;
+            if k < 16 && geo.slots_above_rim & (1 << k) != 0 {
+                let sb = &f.riders[n];
+                return Some(sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(15, 100)));
+            }
         }
     }
     let reach = reach_tab.get(vs.type_idx as usize)?;
@@ -364,6 +376,11 @@ pub(crate) fn build_marks(
     mark_of.resize(ents.len(), u32::MAX);
     for id in ents.soldiers() {
         let i = id.index();
+        // S8a: passengers are struck through their vehicle (slot boxes),
+        // never aimed at as men.
+        if ents.unit[i].riding.is_some() {
+            continue;
+        }
         let c = &ents.combat[i];
         let pos = ents.transform[i].pos;
         mark_of[i] = marks.len() as u32;
@@ -663,6 +680,11 @@ pub(crate) fn aim_and_fire(
         changed = true;
         ws.cooldown = ws.cooldown.saturating_sub(1);
         c.retarget = c.retarget.saturating_sub(1);
+        // S8a: a passenger does not fire from the vehicle (v1).
+        if ctx.unit[i].riding.is_some() {
+            c.target = None;
+            continue;
+        }
         // S4: every man carries his own weapon (`Kit::weapon`); S5a: his
         // slot's sidearm while his main weapon is dry.
         let ty = &setup.squad_types[sq.type_idx as usize];
@@ -1321,6 +1343,7 @@ impl MatchState {
                 && ents.kit[i].windup.is_none()
                 && !ents.combat[i].ducked
                 && !ents.combat[i].pinned
+                && ents.unit[i].riding.is_none()
                 && match engage_of(&sq.order, &ents.unit[i]) {
                     Engage::Never => false,
                     Engage::Still => is_still(&ents.velocity[i], body),
@@ -1617,6 +1640,8 @@ impl MatchState {
         let may = ents.kit[i].windup.is_none()
             && !ents.combat[i].ducked
             && l.rounds > 0
+            // S8a: not from a transport.
+            && ents.unit[i].riding.is_none()
             && match engage_of(&sq.order, &ents.unit[i]) {
                 Engage::Never => false,
                 Engage::Still => still,
@@ -2238,10 +2263,13 @@ pub(crate) struct DamageCtx<'a> {
     pub stats: &'a mut Stats,
     pub seed: u64,
     pub tick: u64,
+    /// S8a: passengers dropped to 0 HP inside a vehicle (`damage::deal`),
+    /// killed with the rest at the end of the Damage stage.
+    pub fallen: Vec<Fallen>,
 }
 
 /// A soldier at 0 HP this tick: `(victim, killer's player, kill class)`.
-type Fallen = (SimId, u8, u8);
+pub(crate) type Fallen = (SimId, u8, u8);
 
 /// Takes `dmg` hit points from soldier `id`; one who drops to 0 joins
 /// `dead` with the player who killed him and the `game::kill_class`.
@@ -2621,7 +2649,7 @@ impl MatchState {
                     // vehicle's exposed crew or an open face (never another
                     // of its plates: closed vehicles as before).
                     let plates = &self.armour.vehicles[f.type_idx as usize];
-                    if !plates.exposed.is_empty()
+                    if (!plates.exposed.is_empty() || f.n_riders > 0)
                         && let Some(h) = armour::hit_armour(o, d, f, plates)
                         && h.via != armour::HitVia::Plate
                         && boxed.is_none_or(|(bt, _, _)| h.t < bt)
@@ -2725,6 +2753,7 @@ impl MatchState {
                 if h.via != armour::HitVia::Plate || pierced {
                     let inner = match h.via {
                         armour::HitVia::Seat(k) => Some(Inner::Seat(k)),
+                        armour::HitVia::Rider(k) => Some(Inner::Rider(k)),
                         armour::HitVia::Shield(_) => None,
                         _ => {
                             let v = &self.setup.vehicles[f.type_idx as usize];
@@ -2832,7 +2861,7 @@ impl MatchState {
 }
 
 #[inline]
-fn add_suppression(c: &mut Combat, milli: u32) {
+pub(crate) fn add_suppression(c: &mut Combat, milli: u32) {
     c.suppression = c.suppression.saturating_add(milli).min(100_000);
 }
 
@@ -2989,8 +3018,9 @@ impl MatchState {
                     ctx.hash.mark_entity_chunk(id.chunk());
                     None
                 }
-                Blow::Stopped(_) => {
+                Blow::Stopped(v) => {
                     ctx.stats.rounds_stopped += 1;
+                    self.suppress_riders(ctx, v, e.weapon, &rules);
                     None
                 }
                 Blow::Static(k) => {
@@ -3005,7 +3035,12 @@ impl MatchState {
                     None
                 }
                 Blow::Burst(pos) => Some(pos),
-                Blow::Armour { .. } => self.armour_blow(ctx, e, &mut fires, armour_events),
+                Blow::Armour { vehicle, .. } => {
+                    if e.ammo == NO_AMMO {
+                        self.suppress_riders(ctx, vehicle, e.weapon, &rules);
+                    }
+                    self.armour_blow(ctx, e, &mut fires, armour_events)
+                }
             };
             let struck = match e.blow {
                 Blow::Armour { vehicle, .. } => Some(vehicle),
@@ -3170,6 +3205,7 @@ impl MatchState {
                 self.start_smoke(t.item, t.pos);
             }
         }
+        dead.append(&mut ctx.fallen);
         dead.sort_unstable();
         for (id, by, class) in dead {
             self.kill(ctx.ents, ctx.hash, id, rules.corpse_ticks);
@@ -3188,6 +3224,27 @@ impl MatchState {
         self.sweep_vehicle_refs(ctx.ents);
         if !mbursts.is_empty() {
             self.observe_bursts(ctx.ents, ctx.terrain, &mbursts, ctx.tick);
+        }
+    }
+
+    /// S8a: a small-arms round striking transport `v` is a near miss for
+    /// its passengers (covered: `covered_near_miss_pct`).
+    fn suppress_riders(&self, ctx: &mut DamageCtx, v: SimId, weapon: u16, rules: &CombatSetup) {
+        let Some(vs) = self.vehicles.get(&v) else {
+            return;
+        };
+        if vs.riders.iter().all(|r| r.is_none()) {
+            return;
+        }
+        let Some(w) = self.setup.weapons.get(weapon as usize) else {
+            return;
+        };
+        let add = (w.suppression as u64 * 1000 * rules.suppression.covered_near_miss_pct as u64
+            / 100)
+            .min(u32::MAX as u64) as u32;
+        for m in vs.riders.iter().flatten() {
+            add_suppression(&mut ctx.ents.combat[m.index()], add);
+            ctx.hash.mark_entity_chunk(m.chunk());
         }
     }
 
@@ -3210,6 +3267,19 @@ impl MatchState {
             ents.combat[i].mag
         };
         let fell_at = ents.transform[i].pos.xy();
+        // S8a: a passenger leaves his slot; his body lies on the vehicle's
+        // ground level where he sat.
+        if let Some(r) = ents.unit[i].riding {
+            if let Some(vs) = self.vehicles.get_mut(&r.vehicle)
+                && vs.riders.get(r.slot as usize) == Some(&Some(id))
+            {
+                vs.riders[r.slot as usize] = None;
+            }
+            ents.transform[i].pos.z = ents.transform[r.vehicle.index()].pos.z;
+            if let Some(p) = self.players.get_mut(owner) {
+                p.s8a.riders_lost = p.s8a.riders_lost.saturating_add(1);
+            }
+        }
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();
         let prone = Fx::from_milli(self.setup.rules.combat.body.prone_mm as i32);
@@ -3678,6 +3748,7 @@ mod tests {
                 stats: &mut stats,
                 seed: 1,
                 tick: 1,
+                fallen: Vec::new(),
             };
             let ev = [BallisticEvent {
                 weapon: mortar,
@@ -3849,6 +3920,7 @@ mod tests {
             stats: &mut stats,
             seed: 1,
             tick: 1,
+            fallen: Vec::new(),
         };
         let mg = r
             .game

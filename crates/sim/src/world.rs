@@ -1104,6 +1104,8 @@ impl World {
                     armour_events,
                 );
                 g.rebuild_vehicle_index(&state.entities);
+                // S8a: passengers sit in their slots.
+                g.follow_slots(&mut state.entities, hash);
                 // S6: structures' boxes and set-down crates.
                 g.rebuild_statics(&state.terrain);
                 // Ballistics and blasts test soldiers where they now stand.
@@ -1401,6 +1403,7 @@ impl World {
                 stats,
                 seed,
                 tick,
+                fallen: Vec::new(),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -1486,6 +1489,8 @@ impl World {
                     seed,
                     &mut self.armour_events,
                 );
+                // S8a: boarding, unloading, forced dismounts.
+                game.transport_status(&mut ctx);
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 let bombs_before = game.mortar_bombs_by_player(&self.state.entities);
@@ -1804,6 +1809,73 @@ impl World {
         true
     }
 
+    /// S8a tools and tests: a launcher round of `weapon` (its rocket) from
+    /// `from` straight at `aim` (no spread, no drop correction).
+    pub fn fire_rocket_now(
+        &mut self,
+        player: u8,
+        weapon: u16,
+        from: crate::fx::FxVec3,
+        aim: crate::fx::FxVec3,
+    ) -> bool {
+        let Some(game) = self.state.game.as_ref() else {
+            return false;
+        };
+        let Some(w) = game.setup.weapons.get(weapon as usize) else {
+            return false;
+        };
+        let Some(ammo) = w.ammo else {
+            return false;
+        };
+        if player as usize >= game.setup.players.len() {
+            return false;
+        }
+        let speed: Fx = game
+            .setup
+            .ammo
+            .get(ammo as usize)
+            .map_or(w.muzzle_speed, |a| a.speed)
+            .into();
+        let ttl = crate::combat::round_ttl(w);
+        let Some(slot) = self.state.projectiles.spawn(crate::projectile::Projectile {
+            pos: from,
+            vel: (aim - from).normalize_or_zero() * speed,
+            owner: SimId(u32::MAX - 1),
+            drag: Fx::ZERO,
+            ttl,
+            weapon,
+            player,
+            ammo,
+            origin: from,
+            mission: 0,
+        }) else {
+            return false;
+        };
+        self.hash.mark_pool_slot(slot);
+        self.refresh_hashes();
+        true
+    }
+
+    /// S8a tools and tests: squad `squad` sits in own transport `vehicle`
+    /// at once (lowest free slots, member order), as if it had boarded.
+    /// False when it does not fit or anything is not as required.
+    pub fn seat_now(&mut self, squad: SquadId, vehicle: SimId) -> bool {
+        let tick = self.state.tick;
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let mut ctx = Ctx {
+            ents: &mut self.state.entities,
+            terrain: &self.state.terrain,
+            hash: &mut self.hash,
+            tick,
+        };
+        let ok = game.seat_now(&mut ctx, squad, vehicle);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        ok
+    }
+
     /// Spawns a squad of `squad_type` for `player` at once (as a call-in
     /// would, without cost, limits or delay) and places it at `center`
     /// facing `facing` (a unit vector). Match worlds only.
@@ -1944,6 +2016,19 @@ impl World {
         let i = id.index();
         let e = &mut self.state.entities;
         f(&mut e.kit[i], &mut e.combat[i]);
+        self.hash.mark_entity_chunk(id.chunk());
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S8a tests: edits soldier `id`'s soldier-level order state (his
+    /// `Unit`, riding included). False for anything but a live soldier.
+    pub fn edit_unit(&mut self, id: SimId, f: impl FnOnce(&mut crate::unit::Unit)) -> bool {
+        if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Soldier) {
+            return false;
+        }
+        f(&mut self.state.entities.unit[id.index()]);
         self.hash.mark_entity_chunk(id.chunk());
         self.refresh_hashes();
         self.fill_snapshot();
@@ -3677,6 +3762,10 @@ mod tests {
             board: _,
             bail_order: _,
             supply_due: _,
+            riders: _,
+            door_ticks: _,
+            unload: _,
+            trip: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -3708,6 +3797,17 @@ mod tests {
             ("prev_pen", Box::new(|v| v.prev_pen = Some(1))),
             ("board", Box::new(|v| v.board = Some((SquadId(2), 1)))),
             ("bail_order", Box::new(|v| v.bail_order ^= true)),
+            // S8a (the tank has no slots: a pushed rider stands for one).
+            ("riders", Box::new(|v| v.riders.push(None))),
+            ("door_ticks", Box::new(|v| v.door_ticks = 3)),
+            (
+                "unload",
+                Box::new(|v| v.unload = Some(crate::vehicle::Unload::default())),
+            ),
+            (
+                "trip",
+                Box::new(|v| v.trip = Some(crate::vehicle::Trip::default())),
+            ),
             ("components", Box::new(|v| v.components[3] -= 1)),
             ("ammo", Box::new(|v| v.ammo[1] -= 1)),
             ("loaded", Box::new(|v| v.loaded = Some(1))),
@@ -4481,6 +4581,7 @@ mod tests {
             stats,
             seed: 1,
             tick,
+            fallen: Vec::new(),
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -4595,6 +4696,7 @@ mod tests {
                 stats: &mut state.stats,
                 seed: 1,
                 tick: 9,
+                fallen: Vec::new(),
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(

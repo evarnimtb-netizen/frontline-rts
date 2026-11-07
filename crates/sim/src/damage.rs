@@ -159,6 +159,8 @@ pub enum Inner {
     /// Seat index in the def's order.
     Seat(u8),
     Part(ComponentKind),
+    /// S8a: the man in passenger slot `k` (`crate::transport`).
+    Rider(u8),
 }
 
 /// A part box in world space.
@@ -198,6 +200,10 @@ pub fn inner_boxes(f: &VehicleFrame, v: &VehicleSetup) -> Vec<(BoxFrame, Inner)>
         for p in &c.parts {
             out.push((part_box(f, p), Inner::Part(c.kind)));
         }
+    }
+    // S8a: passengers last (vehicles without them keep their order).
+    for k in 0..(f.n_riders as usize).min(f.riders.len()) {
+        out.push((f.riders[k], Inner::Rider(f.rider_slot[k])));
     }
     debug_assert!(
         out.len() <= MAX_BOXES,
@@ -379,7 +385,12 @@ impl MatchState {
         if dir != FxVec2::ZERO {
             vs.last_hit_dir = dir;
         }
-        if r.result == PenResult::Penetration && vs.last_pen != Some(ctx.tick) {
+        // S8a: a round striking a passenger over the rim is not a hit on
+        // the vehicle (its bail-out rule).
+        if r.result == PenResult::Penetration
+            && !matches!(hit.via, armour::HitVia::Rider(_))
+            && vs.last_pen != Some(ctx.tick)
+        {
             vs.prev_pen = vs.last_pen;
             vs.last_pen = Some(ctx.tick);
         }
@@ -388,6 +399,9 @@ impl MatchState {
             // S7 open-face and exposed-seat hits stay silent as before.
             if r.result == PenResult::Penetration && hit.via == armour::HitVia::Plate {
                 ctx.stats.small_arms_pens += 1;
+                if let Some(p) = self.players.get_mut(attacker as usize) {
+                    p.s8a.small_arms_pens = p.s8a.small_arms_pens.saturating_add(1);
+                }
                 let ev = ArmourEv::new(ArmourEventKind::Penetration, id, owner, attacker)
                     .zone(hit.zone)
                     .at(hit.point);
@@ -693,9 +707,11 @@ impl MatchState {
         let boxes = inner_boxes(f, v);
         let b = (hit.part.0 as usize).min((f.n_boxes as usize).max(1) - 1);
         // The path inside: to where it leaves the open box (from the entry
-        // face), or through the struck seat for a core's length.
+        // face), or through the struck seat (S8a: or passenger) for a
+        // core's length.
         let seat = match hit.via {
-            armour::HitVia::Seat(k) => Some(k),
+            armour::HitVia::Seat(k) => Some(Inner::Seat(k)),
+            armour::HitVia::Rider(k) => Some(Inner::Rider(k)),
             _ => None,
         };
         let path = if seat.is_some() {
@@ -742,7 +758,7 @@ impl MatchState {
                 let h = he.expect("checked");
                 if let Some(k) = seat {
                     dealt.push(Dealt {
-                        inner: Inner::Seat(k),
+                        inner: k,
                         dmg: h.inside_damage,
                     });
                 }
@@ -769,19 +785,18 @@ impl MatchState {
                 );
             }
             _ => {
-                // Small arms: the first seat on the path.
+                // Small arms: the first seat (S8a: or passenger) on the
+                // path.
                 let first = match seat {
                     Some(k) => Some(k),
                     None => ray_boxes(&boxes, hit.point, dir * path, MAX_BOXES)
                         .into_iter()
-                        .find_map(|k| match boxes[k].1 {
-                            Inner::Seat(s) => Some(s),
-                            Inner::Part(_) => None,
-                        }),
+                        .map(|k| boxes[k].1)
+                        .find(|i| matches!(i, Inner::Seat(_) | Inner::Rider(_))),
                 };
                 if let Some(k) = first {
                     dealt.push(Dealt {
-                        inner: Inner::Seat(k),
+                        inner: k,
                         dmg: weapon.damage,
                     });
                 }
@@ -818,6 +833,27 @@ impl MatchState {
         let ev = |k| ArmourEv::new(k, id, owner, attacker).ammo(ammo).at(pos);
         for d in dealt {
             match d.inner {
+                // S8a: a passenger is a soldier: his own hit points (he
+                // falls with the round's class in the Damage stage's kill
+                // list).
+                Inner::Rider(k) => {
+                    let Some(m) = vs.riders.get(k as usize).copied().flatten() else {
+                        continue;
+                    };
+                    let c = &mut ctx.ents.combat[m.index()];
+                    if c.hp == 0 {
+                        continue;
+                    }
+                    c.hp = c.hp.saturating_sub(d.dmg.min(u16::MAX as u32) as u16);
+                    crate::combat::add_suppression(
+                        c,
+                        self.setup.rules.combat.hit_suppression * 1000,
+                    );
+                    if c.hp == 0 {
+                        ctx.fallen.push((m, attacker, class));
+                    }
+                    ctx.hash.mark_entity_chunk(m.chunk());
+                }
                 Inner::Seat(k) => {
                     let Some(s) = vs.seats.get_mut(k as usize) else {
                         continue;
@@ -1059,10 +1095,31 @@ impl MatchState {
                 continue;
             };
             let plates = &self.armour.vehicles[vs.type_idx as usize];
-            if plates.exposed.is_empty() {
+            if plates.exposed.is_empty() && f.n_riders == 0 {
                 continue;
             }
             let mut dealt: Vec<Dealt> = Vec::new();
+            // S8a: passengers as exposed seats (their slot boxes).
+            let riders = (0..f.n_riders as usize)
+                .map(|k| (f.riders[k], f.rider_box[k], Inner::Rider(f.rider_slot[k])));
+            for (sb, in_box, inner) in riders {
+                if inside == Some((id, in_box)) {
+                    if armour::box_dist_sq_raw(&sb, pos) <= rr {
+                        dealt.push(Dealt { inner, dmg: damage });
+                    }
+                    continue;
+                }
+                let head = sb.center + sb.axes.z * (sb.half.z - Fx::from_ratio(1, 10));
+                if (head - lift).length_sq_raw() > rr
+                    || !ctx.terrain.line_of_sight(lift, head)
+                    || armour::hit_armour(lift, head - lift, &f, plates).is_some_and(|h| {
+                        matches!(h.via, armour::HitVia::Plate | armour::HitVia::Shield(_))
+                    })
+                {
+                    continue;
+                }
+                dealt.push(Dealt { inner, dmg: damage });
+            }
             for e in &plates.exposed {
                 if vs.seats.get(e.seat as usize).is_none_or(|s| s.hp == 0) {
                     continue;

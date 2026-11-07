@@ -98,6 +98,8 @@ pub struct SquadView {
     pub items: [u16; ITEM_KINDS],
     /// S3: the vehicle a squad-level `FollowUnits` escorts.
     pub follow: Option<u32>,
+    /// S8a: men of the squad aboard a transport (order `Embark`).
+    pub mounted: u8,
     /// S3b: the line a squad-level `SuppressUnits` fires at (sim xy).
     pub suppress_line: Option<[[f32; 2]; 2]>,
     /// S5a: the squad's ammunition share (%, `None`: uncounted), its crew
@@ -409,8 +411,24 @@ impl MatchFrame {
         self.owner.clone_from(&snap.soldier_owner);
         self.squad.clone_from(&snap.soldier_squad);
         self.stance.clear();
-        self.stance
-            .extend(snap.soldier_stance.iter().map(|s| *s as u8));
+        // S8a: men aboard a transport are drawn seated (crouched at the
+        // bottom of their slot).
+        self.stance.extend(
+            snap.soldier_stance
+                .iter()
+                .zip(
+                    snap.soldier_riding
+                        .iter()
+                        .chain(std::iter::repeat(&u32::MAX)),
+                )
+                .map(|(s, r)| {
+                    if *r != u32::MAX {
+                        frontline_sim::Stance::Crouch as u8
+                    } else {
+                        *s as u8
+                    }
+                }),
+        );
         self.visible.clear();
         self.visible
             .extend(snap.soldier_visible.iter().map(|v| v & bit != 0));
@@ -633,6 +651,7 @@ impl MatchFrame {
                     *n += k as u16;
                 }
                 v.hp_sum += c.hp as u32;
+                v.mounted += ents.unit()[m.index()].riding.is_some() as u8;
                 v.suppression_sum += (c.suppression / 1000).min(100);
                 v.pinned += c.pinned as u8;
                 v.ducked += c.ducked as u8;
@@ -687,6 +706,8 @@ impl MatchFrame {
                     v.suppress_line = Some([line[0].to_f32(), line[1].to_f32()]);
                 }
                 Order::Recrew { vehicle } => v.follow = Some(vehicle.0),
+                // S8a: the transport it walks to or rides in.
+                Order::Embark { vehicle } => v.follow = Some(vehicle.0),
                 Order::Idle | Order::Retreat => {}
             }
             self.squads.push(v);
@@ -821,6 +842,11 @@ pub fn enemy_view(v: &VehicleSnapshot, local: u8) -> VehicleSnapshot {
         seen_by: 1 << local,
         repairing: NONE_U8,
         target: u32::MAX,
+        // S8a: men over the rim and the MG are seen with the vehicle.
+        riders: v.riders,
+        capacity: v.capacity,
+        unload: v.unload,
+        mg_yaw: v.mg_yaw,
         ..VehicleSnapshot::default()
     }
 }

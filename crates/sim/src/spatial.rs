@@ -48,20 +48,29 @@ impl SpatialHash {
     }
 
     /// Rebuilds from all live soldiers.
+    /// S8a: men riding a transport are not in it (they are struck through
+    /// the vehicle's slot boxes, `crate::transport`).
     pub fn rebuild(&mut self, ents: &Entities) {
-        self.rebuild_kinds(ents, |k| k == EntityKind::Soldier);
+        self.rebuild_where(ents, |i, k| {
+            k == EntityKind::Soldier && ents.unit[i].riding.is_none()
+        });
     }
 
     /// Rebuilds from the live entities whose kind passes `keep` (S3: the
     /// vehicle index holds vehicles and wrecks at their hull origins).
     pub fn rebuild_kinds(&mut self, ents: &Entities, keep: impl Fn(EntityKind) -> bool) {
+        self.rebuild_where(ents, |_, k| keep(k));
+    }
+
+    /// Rebuilds from the entities `keep(index, kind)` passes.
+    fn rebuild_where(&mut self, ents: &Entities, keep: impl Fn(usize, EntityKind) -> bool) {
         let n_cells = (self.dim * self.dim) as usize;
         self.cell_start.clear();
         self.cell_start.resize(n_cells + 1, 0);
         self.cell_of_id.clear();
         self.cell_of_id.resize(ents.len(), u32::MAX);
         for (i, kind) in ents.kind.iter().enumerate() {
-            if keep(*kind) {
+            if keep(i, *kind) {
                 let c = self.cell_index(ents.transform[i].pos.xy());
                 self.cell_of_id[i] = c;
                 self.cell_start[c as usize + 1] += 1;

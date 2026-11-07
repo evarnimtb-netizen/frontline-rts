@@ -153,6 +153,8 @@ func prune() -> void:
 		cancel_tool()
 	elif tool == &"crew" and not can(&"crew"):
 		cancel_tool()
+	elif tool == &"embark" and not can(&"embark"):
+		cancel_tool()
 	elif tool == &"dig" and not can(&"dig"):
 		cancel_tool()
 	elif tool == &"barrage" and not can(&"barrage"):
@@ -587,6 +589,11 @@ func can(order: StringName) -> bool:
 			return false
 		&"ammo_apcr":
 			return selection_has_apcr()
+		&"embark":
+			# S8a: infantry on foot (not vehicles' squads).
+			return not boarders().is_empty()
+		&"disembark":
+			return not unload_vehicles().is_empty()
 		&"suppress":
 			# Anyone but mortar crews (they keep Barrage).
 			if not selected_vehicles().is_empty():
@@ -671,6 +678,12 @@ func activate(order: StringName) -> void:
 		&"regroup":
 			view.emit_intent(&"regroup", {"squads": selected_squads()})
 			cancel_tool()
+		# S8a: unload by the door (Shift: over the sides).
+		&"disembark":
+			unload(Input.is_key_pressed(KEY_SHIFT))
+			cancel_tool()
+		&"embark":
+			_set_tool(&"embark")
 		# S6: a crate of that kind for each selected squad (in the base).
 		&"crate_shells", &"crate_small_arms", &"crate_explosives":
 			view.emit_intent(&"issue_crate", {"squads": selected_squads(), "kind": String(order).trim_prefix("crate_")})
@@ -747,6 +760,56 @@ func _preview_refuses(g: Vector3) -> bool:
 		return false
 	var p: Vector3 = fp.point
 	return Vector2(p.x, p.z).distance_to(Vector2(g.x, g.z)) < 2.0
+
+
+## S8a: the selected squads that may board a half-track: infantry on foot
+## (not AT teams' launchers excluded: anyone fits by men count).
+func boarders() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for sid in selected_squads():
+		var sq: Dictionary = view.squads_by_id.get(sid, {})
+		if view.squad_type(sid) == "vehicle" or sq.get("order", "") == "embark":
+			continue
+		out.append(sid)
+	return out
+
+
+## S8a: own half-tracks with passengers in the selection (vehicles, and the
+## ones the selected mounted squads ride).
+func unload_vehicles() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in selected_vehicles():
+		if int(view.vehicles_by_id.get(id, {}).get("riders", 0)) > 0:
+			out.append(id)
+	for sid in selected_squads():
+		var sq: Dictionary = view.squads_by_id.get(sid, {})
+		if int(sq.get("mounted", 0)) > 0 and sq.has("embark") and not out.has(int(sq.embark)):
+			out.append(int(sq.embark))
+	return out
+
+
+## S8a: the selected squads board own half-track `vehicle`.
+func embark(vehicle: int) -> bool:
+	var v: Dictionary = view.vehicles_by_id.get(vehicle, {})
+	if v.is_empty() or int(v.get("capacity", 0)) == 0 or int(v.get("owner", -1)) != view.local_player:
+		return false
+	var squads := boarders()
+	if squads.is_empty():
+		return false
+	view.emit_intent(&"embark", {"squads": squads, "vehicle": vehicle})
+	if view.overlay != null:
+		view.overlay.marker(v.pos, &"follow")
+	AudioManager.play_ui(&"confirm")
+	return true
+
+
+## S8a: the passengers of the selected half-tracks get out.
+func unload(over_sides: bool) -> void:
+	var vs := unload_vehicles()
+	if vs.is_empty():
+		return
+	view.emit_intent(&"disembark", {"units": vs, "over_sides": over_sides})
+	AudioManager.play_ui(&"confirm")
 
 
 ## S3c: whether Bail out is waiting for its second press.
@@ -970,6 +1033,11 @@ func _order_at(screen: Vector2, attack: bool, reverse := false) -> void:
 		if gv != null:
 			order_to_ground(gv, attack, reverse)
 		return
+	# S8a: right-click on an own half-track with infantry selected boards
+	# it.
+	var own_v := pick_vehicle(screen, 1) if pick_soldier(screen, 1) == -1 else -1
+	if own_v != -1 and int(view.vehicles_by_id.get(own_v, {}).get("capacity", 0)) > 0 and embark(own_v):
+		return
 	var enemy_v := pick_vehicle(screen, 0) if pick_soldier(screen, 0) == -1 else -1
 	if enemy_v != -1:
 		attack_vehicle(enemy_v)
@@ -1097,6 +1165,15 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			# S3c: the abandoned vehicle under the click.
 			var v := pick_vehicle(screen, -1)
 			if v == -1 or not recrew(v):
+				AudioManager.play_ui(&"error")
+				return
+			if not shift:
+				_set_tool(&"")
+			return
+		&"embark":
+			# S8a: the own half-track under the click.
+			var ev := pick_vehicle(screen, 1)
+			if ev == -1 or not embark(ev):
 				AudioManager.play_ui(&"error")
 				return
 			if not shift:
@@ -1329,7 +1406,7 @@ func _key(e: InputEventKey) -> void:
 			activate(StringName(ABILITY_KEYS[action]))
 			get_viewport().set_input_as_handled()
 			return
-	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair", &"suppress", &"crew"]:
+	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair", &"suppress", &"crew", &"embark", &"disembark"]:
 		if e.is_action_pressed(StringName("order_" + order)):
 			activate(order)
 			get_viewport().set_input_as_handled()

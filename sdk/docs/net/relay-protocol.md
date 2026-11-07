@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **9** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **10** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -104,6 +104,16 @@ kind the relay may not send. Clients cannot send relay messages.
   meaning changed (observers, aim error, the knowledge rule), so a peer
   can observe it. Still fixed size; no limit changed. The one bump for the
   S5b slice.
+- Version 9 (S6, 2026-11-04) adds `Build`, `IssueCrate`, `PlaceCrate`,
+  `PickUpCrate` and the pit `DigProfile`s (see the build id notes).
+- Version 10 (S8a, 2026-11-07) adds two commands at the end of
+  `CommandKind`: `Embark { squads, vehicle }` (infantry squads walk to an
+  own half-track and board it; a squad that does not fit is refused) and
+  `Disembark { vehicles, over_sides }` (the passengers get out by the door
+  or over the sides). `squads` and `vehicles` hold 1 to 150 ids
+  (`MAX_UNITS`), checked on the wire; both are bounded by the 1,024 B
+  single-command limit. The save version is `-s18` (riders, door timers,
+  pintle MG yaw). The one bump for the S8a slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -128,6 +138,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Unit ids per command | 150 (`MAX_UNITS`; 120 before version 6) |
 | Points per dig line | 16 (`MAX_DIG_POINTS`) |
 | Points per `SuppressUnits` line (version 4) | 1–2 (`MAX_SUPPRESS_POINTS`) |
+| Squads per `Embark`, vehicles per `Disembark` (version 10) | 1–150 (`MAX_UNITS`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
 | Commands per bundled turn | 34 (2 × (16 + 1 relay-injected `Surrender`)) |

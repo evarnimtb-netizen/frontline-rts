@@ -870,7 +870,7 @@ impl MatchState {
                 let nm = self.vehicles[&id].mgs.len();
                 for k in 0..nm {
                     let v = &self.setup.vehicles[self.vehicles[&id].type_idx as usize];
-                    let m = &v.mounts[k + 1];
+                    let m = &v.mg_mounts()[k];
                     let w = &self.setup.weapons[m.weapon as usize];
                     let belt = w.magazine.max(1);
                     let (kd, g) = w

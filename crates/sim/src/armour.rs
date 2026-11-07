@@ -610,6 +610,9 @@ pub enum HitVia {
     /// S8a: MG shield `k` (no zone, no contents): the plate rule once; a
     /// pass goes on along the same path.
     Shield(u8),
+    /// S8a: the man in passenger slot `k`, struck from outside (over the
+    /// rim, `crate::transport`).
+    Rider(u8),
 }
 
 // ---------------------------------------------------------- narrowphase --
@@ -797,6 +800,27 @@ pub fn hit_armour_past(
             point: from + d * t,
             local,
             via: HitVia::Seat(e.seat),
+        });
+    }
+    // S8a: passengers, as exposed seats (a tie goes to what came first).
+    for k in 0..(f.n_riders as usize).min(f.riders.len()) {
+        let rb = &f.riders[k];
+        let Some((t, face, local)) = segment_box(rb, from, d) else {
+            continue;
+        };
+        if t == Fx::ZERO || best.is_some_and(|h| h.t <= t) {
+            continue;
+        }
+        let part = BoxPart(f.rider_box[k]);
+        best = Some(ArmourHit {
+            t,
+            part,
+            face,
+            zone: face.zone(part),
+            normal: rb.axes.apply(plate_normal(face, 0)),
+            point: from + d * t,
+            local,
+            via: HitVia::Rider(f.rider_slot[k]),
         });
     }
     best

@@ -201,7 +201,8 @@ pub(crate) fn plan_velocities(
 
     for (j, out_v) in out.iter_mut().enumerate() {
         let i = base + j;
-        if ents.kind[i] != EntityKind::Soldier {
+        // S8a: a passenger moves with his slot (`crate::transport`).
+        if ents.kind[i] != EntityKind::Soldier || ents.unit[i].riding.is_some() {
             *out_v = FxVec2::ZERO;
             continue;
         }

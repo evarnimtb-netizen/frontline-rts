@@ -1193,6 +1193,104 @@ impl AiSupplyTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
 }
 
+tuning_table! {
+    /// `[ai.transport]` (S8a, docs/slices/S8a-halftracks.md 7): how the AI
+    /// uses its half-tracks. Defaults are the S8a starting values.
+    pub struct AiTransportTuning {
+        /// A squad rides only to an objective farther than this from the
+        /// vehicle; a ride this long counts as transported (m).
+        min_ride_m: 0..=2000 = "d_tr_min_ride_m",
+        /// The vehicle waits at most this long for its squad to board, then
+        /// goes to support alone (s).
+        wait_s: 1..=600 = "d_tr_wait_s",
+        /// The men get off this far short of the first point on the way
+        /// within `dismount_sight_m` of a known enemy with a clear line (m).
+        dismount_back_m: 0..=500 = "d_tr_dismount_back_m",
+        /// ... (m).
+        dismount_sight_m: 0..=2000 = "d_tr_dismount_sight_m",
+        /// Sight-line rays per check (0: no line test, distance only).
+        los_rays: 0..=32 = "d_tr_los_rays",
+        /// A penetration this recent counts as "hit": everyone out (s).
+        hit_s: 0..=60 = "d_tr_hit_s",
+        /// A rider above this suppression gets everyone out (%).
+        rider_suppression_pct: 1..=100 = "d_tr_rider_suppression_pct",
+        /// Stopped this long on the way: the men get off where it stands
+        /// (s).
+        stuck_s: 1..=600 = "d_tr_stuck_s",
+        /// After unloading, the vehicle supports from overwatch this long
+        /// before it returns for the next squad (s).
+        support_s: 0..=3600 = "d_tr_support_s",
+        /// A move that ends farther than this from its goal is a failed
+        /// move (m) ...
+        arrive_m: 1..=200 = "d_tr_arrive_m",
+        /// ... and after this many the job uses where the vehicle stands.
+        max_fails: 1..=10 = "d_tr_max_fails",
+        /// No job sends the same move again within this (s).
+        repath_s: 1..=120 = "d_tr_repath_s",
+    }
+}
+
+fn d_tr_min_ride_m() -> u32 {
+    150
+}
+fn d_tr_wait_s() -> u32 {
+    30
+}
+fn d_tr_dismount_back_m() -> u32 {
+    40
+}
+fn d_tr_dismount_sight_m() -> u32 {
+    300
+}
+fn d_tr_los_rays() -> u32 {
+    8
+}
+fn d_tr_hit_s() -> u32 {
+    2
+}
+fn d_tr_rider_suppression_pct() -> u32 {
+    50
+}
+fn d_tr_stuck_s() -> u32 {
+    10
+}
+fn d_tr_support_s() -> u32 {
+    60
+}
+fn d_tr_arrive_m() -> u32 {
+    15
+}
+fn d_tr_max_fails() -> u32 {
+    2
+}
+fn d_tr_repath_s() -> u32 {
+    5
+}
+
+impl AiTransportTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+impl Default for AiTransportTuning {
+    /// The S8a starting values (a rules def without `[ai.transport]`).
+    fn default() -> AiTransportTuning {
+        AiTransportTuning {
+            min_ride_m: d_tr_min_ride_m(),
+            wait_s: d_tr_wait_s(),
+            dismount_back_m: d_tr_dismount_back_m(),
+            dismount_sight_m: d_tr_dismount_sight_m(),
+            los_rays: d_tr_los_rays(),
+            hit_s: d_tr_hit_s(),
+            rider_suppression_pct: d_tr_rider_suppression_pct(),
+            stuck_s: d_tr_stuck_s(),
+            support_s: d_tr_support_s(),
+            arrive_m: d_tr_arrive_m(),
+            max_fails: d_tr_max_fails(),
+            repath_s: d_tr_repath_s(),
+        }
+    }
+}
+
 impl Default for AiSupplyTuning {
     /// The S6 starting values (a rules def without `[ai.supply]`).
     fn default() -> AiSupplyTuning {
@@ -1489,6 +1587,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("fire_mission", FireMissionTuning::KEYS),
     ("ai.mortar", AiMortarTuning::KEYS),
     ("ai.supply", AiSupplyTuning::KEYS),
+    ("ai.transport", AiTransportTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -1542,6 +1641,7 @@ pub(crate) struct TuningRefs<'a> {
     pub fire_mission: Option<&'a FireMissionTuning>,
     pub ai_mortar: &'a AiMortarTuning,
     pub ai_supply: &'a AiSupplyTuning,
+    pub ai_transport: &'a AiTransportTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -1595,6 +1695,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     }
     t.ai_mortar.check(&p("ai.mortar"), out);
     t.ai_supply.check(&p("ai.supply"), out);
+    t.ai_transport.check(&p("ai.transport"), out);
 }
 
 #[cfg(test)]

@@ -26,8 +26,9 @@ use serde::{Deserialize, Serialize};
 /// (S5b): `Barrage` becomes `FireMission` (same index and fields, new
 /// meaning; the one bump for the S5b slice). 9 (S6): `Build`,
 /// `IssueCrate`, `PlaceCrate`, `PickUpCrate` and the pit `DigProfile`s
-/// (the one bump for the S6 slice).
-pub const PROTOCOL_VERSION: u16 = 9;
+/// (the one bump for the S6 slice). 10 (S8a): `Embark` and `Disembark`
+/// (the one bump for the S8a slice).
+pub const PROTOCOL_VERSION: u16 = 10;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -579,6 +580,11 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::SetAmmo { units, .. }
         | CommandKind::RepairUnits { units }
         | CommandKind::FollowUnits { units, .. } => units.len() <= MAX_UNITS,
+        // S8a: squads or vehicles, as many as unit ids.
+        CommandKind::Embark { squads, .. } => !squads.is_empty() && squads.len() <= MAX_UNITS,
+        CommandKind::Disembark { vehicles, .. } => {
+            !vehicles.is_empty() && vehicles.len() <= MAX_UNITS
+        }
         CommandKind::MoveSoldier { .. }
         | CommandKind::Spawn { .. }
         | CommandKind::Despawn { .. }

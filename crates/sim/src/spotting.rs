@@ -134,8 +134,13 @@ pub(crate) fn spot(
         let sight = Fx::from(setup.squad_types[sq.type_idx as usize].sight);
         let sight = Fx::from_raw((sight.raw() as i64 * spot as i64 / 100) as i32);
         let pos = ents.transform[i].pos;
-        // In a trench he looks over the parapet from the fire step.
-        let eye_h = if c.in_trench { c.fire_height } else { c.height };
+        // In a trench he looks over the parapet from the fire step; S8a:
+        // aboard a transport, from the top of his slot.
+        let eye_h = match ents.unit[i].riding {
+            Some(r) => game.rider_height(r),
+            None if c.in_trench => c.fire_height,
+            None => c.height,
+        };
         out.observers
             .push((id, pos.xy(), head(pos, eye_h, eye_drop), sight, true));
     }
@@ -180,6 +185,16 @@ pub(crate) fn spot(
             continue;
         }
         let c = &ents.combat[i];
+        // S8a: a passenger is seen while his vehicle is and his slot rises
+        // over the rim (no rays of his own).
+        if let Some(r) = ents.unit[i].riding {
+            let seen =
+                ents.combat[r.vehicle.index()].seen_by & (1 << p.0) != 0 && game.rider_exposed(r);
+            if seen != (c.seen_by & (1 << p.0) != 0) {
+                out.changes.push((SimId(i as u32), seen));
+            }
+            continue;
+        }
         let pos = ents.transform[i].pos;
         // Firing reveals a man by his weapon's figures (S3: a launcher's
         // backblast more than a rifle).

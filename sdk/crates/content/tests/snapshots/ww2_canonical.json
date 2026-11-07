@@ -1100,7 +1100,21 @@
         },
         "tank_standoff_m": 160,
         "threat_radius_m": 80,
-        "throw_cooldown_s": 10
+        "throw_cooldown_s": 10,
+        "transport": {
+          "arrive_m": 15,
+          "dismount_back_m": 40,
+          "dismount_sight_m": 300,
+          "hit_s": 2,
+          "los_rays": 8,
+          "max_fails": 2,
+          "min_ride_m": 150,
+          "repath_s": 5,
+          "rider_suppression_pct": 50,
+          "stuck_s": 10,
+          "support_s": 60,
+          "wait_s": 30
+        }
       },
       "call_in": {
         "spawn_clear_m": 10,
@@ -2016,7 +2030,7 @@
       "weapon": ""
     },
     "ww2:ger_sdkfz251_1_squad": {
-      "ai_weight": 0,
+      "ai_weight": 150,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -2534,7 +2548,7 @@
       "weapon": ""
     },
     "ww2:usa_m3a1_squad": {
-      "ai_weight": 0,
+      "ai_weight": 150,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",

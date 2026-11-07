@@ -389,12 +389,11 @@ impl MatchState {
                 continue;
             }
             form.clear();
-            form.extend(
-                sq.members
-                    .iter()
-                    .copied()
-                    .filter(|m| !ctx.ents.unit[m.index()].detached),
-            );
+            // S8a: men riding a transport are not steered.
+            form.extend(sq.members.iter().copied().filter(|m| {
+                let u = &ctx.ents.unit[m.index()];
+                !u.detached && u.riding.is_none()
+            }));
             // Every man detached: nobody to steer.
             let Some(&lead) = form.first() else {
                 continue;
@@ -493,7 +492,8 @@ impl MatchState {
                     let yaw = Fx::atan2(sq.nav.facing.y, sq.nav.facing.x);
                     let mut all_there = true;
                     for (k, &m) in sq.members.iter().enumerate() {
-                        if ctx.ents.unit[m.index()].detached {
+                        let u = &ctx.ents.unit[m.index()];
+                        if u.detached || u.riding.is_some() {
                             continue;
                         }
                         let slot = sq.nav.slots[k];

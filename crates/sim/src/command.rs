@@ -186,4 +186,18 @@ pub enum CommandKind {
     /// The men's fire mode (`units` as above; vehicles are dropped: their
     /// MGs keep discipline). Not an order to go anywhere.
     SetFire { units: Vec<SimId>, mode: FireMode },
+    // ---- S8a transport (`crate::transport`). `squads` and `vehicles`
+    // hold 1 to `unit::MAX_UNITS` ids; they are sorted and deduplicated.
+    /// The squads walk to own transport `vehicle` and board it (a squad
+    /// that does not fit the free slots is refused).
+    Embark {
+        squads: Vec<SquadId>,
+        vehicle: SimId,
+    },
+    /// The vehicles stop and their passengers get out, by the door or
+    /// (`over_sides`, where the def allows) over the sides.
+    Disembark {
+        vehicles: Vec<SimId>,
+        over_sides: bool,
+    },
 }

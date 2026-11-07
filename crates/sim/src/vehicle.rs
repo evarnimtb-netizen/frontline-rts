@@ -68,8 +68,8 @@
 
 use frontline_content::setup::VehicleRulesSetup;
 use frontline_content::tuning::{DrivingTuning, VehiclePathTuning};
-use frontline_content::vehicle::MAX_SHIELDS;
 use frontline_content::vehicle::{FixedVec3, VehicleRole, VehicleSetup};
+use frontline_content::vehicle::{MAX_PASSENGERS, MAX_SHIELDS};
 use frontline_content::{
     COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MatchSetup, MountKind, SeatRole,
 };
@@ -258,6 +258,37 @@ pub struct VehicleState {
     /// S3c: the owner ordered the crew out (`Abandon`); acted on in the
     /// Status stage.
     pub bail_order: bool,
+    /// S8a transports (`crate::transport`): the soldier in each passenger
+    /// slot (empty for other vehicles).
+    pub riders: Vec<Option<SimId>>,
+    /// S8a: ticks until the door takes the next man in or out.
+    pub door_ticks: u16,
+    /// S8a: `Disembark` under way (one man out per door or side time).
+    pub unload: Option<Unload>,
+    /// S8a: the loaded trip under way, from the first man aboard to the
+    /// last man out (report counters only).
+    pub trip: Option<Trip>,
+}
+
+/// S8a: an unload under way (`crate::transport`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Unload {
+    /// Over the sides (faster, raised) instead of the door.
+    pub over_sides: bool,
+    /// Ordered while under fire (report counter).
+    pub under_fire: bool,
+}
+
+/// S8a: a loaded trip (`crate::transport`; report counters only).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Trip {
+    /// Where the first man boarded, and when.
+    pub from: FxVec2,
+    pub since: u64,
+    /// Squads that boarded on this trip (saturating).
+    pub squads: u8,
+    /// Walking speed of the first squad aboard (mm/s).
+    pub walk_mm_s: u32,
 }
 
 impl VehicleState {
@@ -335,6 +366,10 @@ impl VehicleState {
             prev_pen: None,
             board: None,
             bail_order: false,
+            riders: vec![None; v.transport.as_ref().map_or(0, |t| t.slots.len())],
+            door_ticks: 0,
+            unload: None,
+            trip: None,
         }
     }
 
@@ -544,6 +579,27 @@ pub fn yaw_dir(yaw: Fx) -> FxVec2 {
 /// S8a: one MG shield's geometry ([`Geo::shields`]).
 pub type ShieldGeo = (Option<(u8, FxVec3)>, FxVec3, FxVec3);
 
+/// S8a: the armour box (hull frame) a passenger slot sits in: the first
+/// open box holding its centre, else the first box holding it, else the
+/// last box.
+fn slot_box(v: &VehicleSetup, sl: &frontline_content::vehicle::BoxSetup) -> u8 {
+    let c = v3(sl.center);
+    let inside = |b: &&frontline_content::vehicle::ArmourBoxSetup| {
+        let (bc, bh) = (v3(b.bounds.center), v3(b.bounds.half));
+        b.frame == Frame::Hull
+            && (c.x - bc.x).abs() <= bh.x
+            && (c.y - bc.y).abs() <= bh.y
+            && (c.z - bc.z).abs() <= bh.z
+    };
+    let n = v.boxes.len().clamp(1, MAX_ARMOUR_BOXES);
+    let boxes = &v.boxes[..n];
+    boxes
+        .iter()
+        .position(|b| b.open != 0 && inside(&b))
+        .or_else(|| boxes.iter().position(|b| inside(&b)))
+        .unwrap_or(n - 1) as u8
+}
+
 /// Geometry of a vehicle type in sim units, derived from its setup.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Geo {
@@ -585,6 +641,14 @@ pub struct Geo {
     /// pivot in the MG's frame, or the hull frame); `n_shields` in use.
     pub shields: [ShieldGeo; MAX_SHIELDS],
     pub n_shields: u8,
+    /// S8a transports: passenger slot boxes (hull frame centre, half
+    /// extents, the open armour box holding it), `n_slots` in use; bit
+    /// `k` of `slots_above_rim` set when slot `k`'s top rises over that
+    /// box's rim (S8a-9); a man going over the side is raised `exit_raise`.
+    pub slots: [(FxVec3, FxVec3, u8); MAX_PASSENGERS],
+    pub n_slots: u8,
+    pub slots_above_rim: u16,
+    pub exit_raise: Fx,
 }
 
 impl Geo {
@@ -683,6 +747,37 @@ impl Geo {
                 out
             },
             n_shields: v.shields.len().min(MAX_SHIELDS) as u8,
+            slots: {
+                let mut out = [(FxVec3::ZERO, FxVec3::ZERO, 0u8); MAX_PASSENGERS];
+                if let Some(t) = &v.transport {
+                    for (o, sl) in out.iter_mut().zip(&t.slots) {
+                        *o = (v3(sl.center), v3(sl.half), slot_box(v, sl));
+                    }
+                }
+                out
+            },
+            n_slots: v
+                .transport
+                .as_ref()
+                .map_or(0, |t| t.slots.len().min(MAX_PASSENGERS)) as u8,
+            slots_above_rim: v.transport.as_ref().map_or(0, |t| {
+                let mut bits = 0u16;
+                for (k, sl) in t.slots.iter().enumerate().take(MAX_PASSENGERS) {
+                    let b = &v.boxes[slot_box(v, sl) as usize];
+                    let top = |c: Fx, h: Fx| c + h;
+                    if b.open != 0
+                        && top(v3(sl.center).z, v3(sl.half).z)
+                            > top(v3(b.bounds.center).z, v3(b.bounds.half).z)
+                    {
+                        bits |= 1 << k;
+                    }
+                }
+                bits
+            }),
+            exit_raise: v
+                .transport
+                .as_ref()
+                .map_or(Fx::ZERO, |t| t.exit_raise.into()),
         }
     }
 
@@ -779,6 +874,13 @@ pub struct VehicleFrame {
     /// S8a: MG shields in world space (`n_shields` in use).
     pub shields: [BoxFrame; MAX_SHIELDS],
     pub n_shields: u8,
+    /// S8a: the occupied passenger slots' boxes in world space
+    /// (`n_riders` in use, ascending slot): the men's hit volumes; each
+    /// with its slot index and the armour box holding it.
+    pub riders: [BoxFrame; MAX_PASSENGERS],
+    pub rider_slot: [u8; MAX_PASSENGERS],
+    pub rider_box: [u8; MAX_PASSENGERS],
+    pub n_riders: u8,
 }
 
 impl VehicleFrame {
@@ -852,6 +954,31 @@ pub fn frame_of(
             },
         };
     }
+    // S8a: occupied passenger slots (the man getting out over the side
+    // stands `exit_raise` higher for his exit time).
+    let mut rboxes = [BoxFrame::default(); MAX_PASSENGERS];
+    let mut rider_slot = [0u8; MAX_PASSENGERS];
+    let mut rider_box = [0u8; MAX_PASSENGERS];
+    let mut n_riders = 0u8;
+    let raised = crate::transport::exiting_over_side(vs);
+    for (k, r) in vs.riders.iter().enumerate().take(geo.n_slots as usize) {
+        if r.is_none() {
+            continue;
+        }
+        let (mut c, h, b) = geo.slots[k];
+        if raised == Some(k) {
+            c.z += geo.exit_raise;
+        }
+        let n = n_riders as usize;
+        rboxes[n] = BoxFrame {
+            center: origin + hull_axes.apply(c),
+            axes: hull_axes,
+            half: h,
+        };
+        rider_slot[n] = k as u8;
+        rider_box[n] = b;
+        n_riders += 1;
+    }
     VehicleFrame {
         id,
         owner,
@@ -903,6 +1030,10 @@ pub fn frame_of(
             out
         },
         n_shields: geo.n_shields,
+        riders: rboxes,
+        rider_slot,
+        rider_box,
+        n_riders,
     }
 }
 

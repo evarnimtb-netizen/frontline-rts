@@ -334,6 +334,15 @@ pub struct VehicleSnapshot {
     pub crew_squad: u32,
     /// S3c: crewmen still inside an abandoned vehicle. Public.
     pub inside: u8,
+    /// S8a transports: passengers aboard and slots (0 for other vehicles),
+    /// and the unload under way (0 none, 1 door, 2 over the sides). Public
+    /// (the men are seen over the rim).
+    pub riders: u8,
+    pub capacity: u8,
+    pub unload: u8,
+    /// S8a: the first two MGs' yaw from the hull front (radians; pintles
+    /// turn, other MGs read 0).
+    pub mg_yaw: [f32; 2],
 }
 
 /// `ShellSnapshot::kind`.
@@ -521,6 +530,10 @@ pub struct RenderSnapshot {
     pub soldier_rounds: Vec<u16>,
     pub soldier_sidearm: Vec<bool>,
     pub soldier_fire: Vec<u8>,
+    /// S8a, per entry of `soldiers` (match mode only): the transport he
+    /// rides (`u32::MAX`: on foot) and his passenger slot.
+    pub soldier_riding: Vec<u32>,
+    pub soldier_ride_slot: Vec<u8>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -618,6 +631,8 @@ impl RenderSnapshot {
         self.soldier_rounds.clear();
         self.soldier_sidearm.clear();
         self.soldier_fire.clear();
+        self.soldier_riding.clear();
+        self.soldier_ride_slot.clear();
         self.units.clear();
         self.corpses.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
@@ -669,6 +684,9 @@ impl RenderSnapshot {
                         );
                         self.soldier_sidearm.push(k.on_sidearm);
                         self.soldier_fire.push(u.fire as u8);
+                        self.soldier_riding
+                            .push(u.riding.map_or(u32::MAX, |r| r.vehicle.0));
+                        self.soldier_ride_slot.push(u.riding.map_or(0, |r| r.slot));
                         if u.detached
                             && let Some(g) = game
                         {
@@ -974,7 +992,13 @@ impl RenderSnapshot {
                 yaw: t.yaw.to_f32(),
                 pitch: vs.pitch.to_f32(),
                 roll: vs.roll.to_f32(),
-                turret_yaw: vs.turret_yaw.to_f32(),
+                // S8a: a vehicle without a main gun shows its first MG's
+                // yaw here (a pintle turns; the presenter turns its shield).
+                turret_yaw: if v.main_gun().is_none() {
+                    vs.mgs.first().map_or(0.0, |m| m.yaw.to_f32())
+                } else {
+                    vs.turret_yaw.to_f32()
+                },
                 gun_pitch: vs.gun_pitch.to_f32(),
                 speed: vs.speed.to_f32(),
                 flags,
@@ -1023,6 +1047,14 @@ impl RenderSnapshot {
                 } else {
                     0
                 },
+                riders: vs.riders.iter().filter(|r| r.is_some()).count() as u8,
+                capacity: vs.riders.len().min(u8::MAX as usize) as u8,
+                unload: match vs.unload {
+                    None => 0,
+                    Some(u) if u.over_sides => 2,
+                    Some(_) => 1,
+                },
+                mg_yaw: [0usize, 1].map(|k| vs.mgs.get(k).map_or(0.0, |m| m.yaw.to_f32())),
             });
         }
     }
