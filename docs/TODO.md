@@ -144,7 +144,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 4. S6b mortar AI pass: done on branch `s6b-mortar-ai` (on main). Mortar and
    HE bands met on 160 sets; T5 open (S6b-1).
 5. S7 assault guns and TDs: done on branch `s7-casemate-td` (on main; tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
-6. S8 half-tracks, trucks, recon: split. S8a half-tracks: done on branch `s8a-halftracks` (not pushed;
+6. S8 half-tracks, trucks, recon: split. S8a half-tracks: done, verified and on main (`fa5c50a`;
    spec `docs/slices/S8a-halftracks.md`, targets `S8a.toml`, log `S8a-log.md`; Build A, B, Tune, review and Fix).
    Open: S8a-28 to S8a-31. Next: S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.

@@ -1,7 +1,7 @@
 # Frontline RTS: state (read this first)
 
-Where the project stands after S8a. Main holds everything through S7 (`393165b`);
-S8a is on branch `s8a-halftracks` (head `b3627a6`, not pushed or merged).
+Where the project stands after S8a. Main holds everything through S8a (`fa5c50a`,
+verified by the orchestrator and pushed 2026-11-07).
 Read the sections you need, then the doc the index names. Checked 2026-11-07.
 
 ## What the game is now
@@ -45,14 +45,14 @@ a third faction, a second map, radio, tank riders, fire from a vehicle.
 
 ## Versions
 
-`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on the S8a branch (main: 17 and 9).
+`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a).
 `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in
 `crates/net/src/protocol.rs`. History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
 S8a 18 (`MgState.yaw`, riding fields) and 10 (Embark, Disembark). A change to a
 save layout, the hash or a command bumps these in the same commit.
 `sdk/docs/net/relay-protocol.md` lists the commands.
 
-## S8a (branch `s8a-halftracks`, not pushed)
+## S8a (on main)
 
 Half-tracks (log `docs/slices/S8a-log.md`, spec `S8a-halftracks.md`, targets
 `S8a.toml`). SdKfz 251/1 D (capacity 10) and M3A1 (capacity 11, M2HB): cards
@@ -111,8 +111,7 @@ Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
 
 ## Roadmap position
 
-Done and on main: S1 to S7, S6b, infra, autotune fix. S8a half-tracks: done on
-branch `s8a-halftracks` (not merged). Next: S8b trucks, recon cars, wheeled
+Done and on main: S1 to S7, S6b, infra, autotune fix, S8a half-tracks. Next: S8b trucks, recon cars, wheeled
 mobility, recon optics, supply trucks. Then S9 AT guns, S10a/b fortifications,
 S11a/b artillery, S12 wounds, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 `docs/process/workflows.md` section 1.
