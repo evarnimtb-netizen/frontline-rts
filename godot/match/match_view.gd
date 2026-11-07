@@ -590,6 +590,9 @@ func squad_status(sq: Dictionary) -> Array:
 		"retreating":
 			return ["Retreating", false]
 	var o: String = sq.get("order", "idle")
+	# S8a: every man aboard a half-track.
+	if o == "embark" and int(sq.get("mounted", 0)) > 0 and int(sq.get("mounted", 0)) >= int(sq.get("men", 0)):
+		return ["Mounted", false]
 	return [ORDER_TEXT.get(o, o.capitalize()), false]
 
 

@@ -37,6 +37,10 @@ const SCENES := {
 	"hq_supply": {"height": 26.0, "pitch": -40.0, "yaw": -20.0, "settle": 3.0},
 	# S7: a StuG III (casemate blockout) and an M10 (open-topped turret).
 	"casemate_td": {"height": 11.0, "pitch": -34.0, "yaw": -35.0, "settle": 1.0},
+	# S8a: a loaded SdKfz 251 and a loaded M3A1 (open compartments, the
+	# MG shields, seated riders); the 251 selected (its card lists the
+	# passengers).
+	"halftracks": {"height": 14.0, "pitch": -40.0, "yaw": -20.0, "settle": 1.5},
 }
 
 var m: Node3D
@@ -108,6 +112,12 @@ func on_state(s: Dictionary) -> void:
 func _stage(s: Dictionary) -> bool:
 	var own := _own_vehicles(s)
 	match scene:
+		"halftracks":
+			# The 251 selected (its card lists the passengers), both in
+			# frame from the scene's focus between them.
+			if not own.is_empty():
+				view.selection.select_only(PackedInt32Array([int(own[0].id)]))
+				view.selection.focus_squad = int(own[0].squad)
 		"vehicle_card", "bogged_in_trench", "burning":
 			if not own.is_empty():
 				var v: Dictionary = own[0]
@@ -247,6 +257,12 @@ func _check(s: Dictionary) -> String:
 							return ""
 					return "followers but no squads[].follow link"
 			return "no own vehicle with followers"
+		"halftracks":
+			var loaded := 0
+			for v in s.get("vehicles", []):
+				if int(v.get("riders", 0)) > 0 and int(v.get("capacity", 0)) > 0:
+					loaded += 1
+			return "" if loaded >= 2 else "%d loaded half-tracks drawn" % loaded
 		"casemate_td":
 			var vt: Dictionary = s.get("rules", {}).get("vehicle_types", {})
 			var kinds := {}

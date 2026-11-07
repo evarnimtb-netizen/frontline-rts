@@ -1325,3 +1325,63 @@ vehicle: `thrown[].pos` follows it (no new key).
   neutral blockouts; the GDScript fallback composes the same.
 - Call-in tiles: the new cards come from the roster like any card (bridge:
   `ger_stug3_g_squad`, `usa_m10_squad`; mock: `MockVehicles.FACTION_TD`).
+
+## S8a: half-tracks, passengers, Board and Unload
+
+Spec `docs/slices/S8a-halftracks.md` 5 and 8 (the bridge only; the mock has
+no half-track yet).
+
+### State keys
+
+`rules.vehicle_types["<type>"]` (Build A, plus the blockout keys):
+
+```
+role: "transport",               # an infantry carrier
+has_gun: false,                  # no main gun
+pintles: [{ pivot, muzzle: Vector3, arc: Vector2 }],   # sim frame, deg
+shields: [{ pintle: int, center, half: Vector3 }],     # pintle frame or hull (-1)
+slots: [{ center, half: Vector3 }],                    # passenger slots, hull frame
+transport: true,                 # meshgen: hull from `boxes`, "turret" = the
+turret_lift: float,              #   first pintle's shield (turret_* its size,
+                                 #   turret_x/base its pivot), "gun" = that MG
+```
+
+`vehicles[]` (every vehicle; public, the men over the rim are seen):
+`riders: int` (men aboard), `capacity: int` (slots; 0 for other vehicles),
+`unload: String` ("" | "door" | "sides"). A vehicle without a main gun sends
+its first MG's yaw as `turret_yaw` (the shield and MG turn with it). Own
+transports add `passengers: [{ squad, name, men, mounted, health 0..1 }]`.
+
+`squads[]`: a squad walking to or riding a half-track has `order: "embark"`,
+`embark: <vehicle id>` and `mounted: int` (men aboard). Men aboard keep their
+ids in `soldiers`, stand at the bottom of their slot and are drawn crouched
+(seated); they take no orders (the sim refuses squad commands to a squad
+with men aboard and drops them from soldier commands).
+
+### Intents
+
+- `embark {squads, vehicle}`: the selected infantry squads board own
+  transport `vehicle` (one `Embark`; the sim refuses a squad that does not
+  fit the free slots).
+- `disembark {units, over_sides}`: the passengers of the listed own
+  transports, and of the selected mounted squads' transports, get out by the
+  door or over the sides (one `Disembark`).
+
+### Presenter
+
+- Hotkeys (S8a-7 (A)): V arms the Board tool (click an own half-track),
+  right-click on an own half-track with infantry selected boards it too;
+  U unloads by the door, Shift+U (or Shift+click on the button) over the
+  sides.
+- Orders grid: Board shares the Crew slot (soldier grid); Unload replaces
+  Regroup while the selection has passengers, and takes the fifth top-row
+  slot of the vehicle grid.
+- Cards: a squad aboard reads "Mounted" (roster) and "Mounted (SdKfz 251)"
+  (detail; "Boarding n/m" while men still climb in); a half-track's card
+  lists "Aboard n/cap", each passenger squad with its men and a health bar,
+  and its MG stowage in place of the main-gun ammunition row.
+- `VehicleView`: half-track blockouts from the hull-frame boxes (a closed
+  box solid, the open compartment four walls and a floor), rear tracks and
+  front wheels, the MG shield and MG turning with the pintle.
+- Autoplay: `--autoplay_scene armour_halftracks` (a loaded SdKfz 251 and a
+  loaded M3A1, the 251 selected) saves `s3_halftracks.png`.

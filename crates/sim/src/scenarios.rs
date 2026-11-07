@@ -911,7 +911,7 @@ pub fn stress(mut setup: MatchSetup, threads: usize) -> Result<Staged, SimError>
 // ------------------------------------------------------- Godot scenes --
 
 /// The staged autoplay scenes (`--autoplay_scene armour_<name>`).
-pub const SCENES: [&str; 12] = [
+pub const SCENES: [&str; 13] = [
     "callin_locked",
     "vehicle_card",
     "tank_firing",
@@ -929,6 +929,9 @@ pub const SCENES: [&str; 12] = [
     // S7: a StuG III (casemate) and an M10 (open-topped turret) side by
     // side, stopped and not firing (the blockouts for the screenshot).
     "casemate_td",
+    // S8a: a loaded SdKfz 251 and a loaded M3A1 side by side, stopped,
+    // their MGs dry (the blockouts and seated riders for the screenshot).
+    "halftracks",
 ];
 
 /// A staged scene: the world, the commands to send on the first step, the
@@ -1097,6 +1100,65 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
             focus = at(TRENCH_X + 2, LANE_Y);
             max_ticks = 30 * 5;
         }
+        "halftracks" => {
+            use frontline_content::VehicleRole;
+            let a = need(
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::Transport,
+                    at(TRENCH_X, LANE_Y + 5),
+                    EAST,
+                ),
+                "German half-track",
+            )?;
+            let b = need(
+                vehicle_of_role(
+                    &mut w,
+                    1,
+                    VehicleRole::Transport,
+                    at(TRENCH_X + 3, LANE_Y - 5),
+                    dir_deg(160),
+                ),
+                "US half-track",
+            )?;
+            for (p, v, back) in [
+                (0u8, a.1, at(TRENCH_X - 14, LANE_Y + 5)),
+                (1, b.1, at(TRENCH_X + 16, LANE_Y - 9)),
+            ] {
+                // The squad that fits: the first line squad of the roster
+                // no larger than the slots.
+                let s = w.match_setup().expect("match");
+                let cap = w
+                    .game()
+                    .and_then(|g| g.vehicle(v))
+                    .map_or(0, |vs| vs.riders.len());
+                let f = s.players[p as usize].faction;
+                let t = s.factions[f as usize]
+                    .roster
+                    .iter()
+                    .copied()
+                    .find(|&t| {
+                        let ty = &s.squad_types[t as usize];
+                        s.type_word(t) == "rifle"
+                            && ty.vehicle.is_none()
+                            && (ty.men as usize) <= cap
+                    })
+                    .ok_or_else(|| SimError::InvalidConfig("no squad fits".into()))?;
+                let sq = w
+                    .spawn_squad_at(PlayerId(p), t, back, EAST)
+                    .ok_or_else(|| SimError::InvalidConfig("squad not placed".into()))?;
+                if !w.seat_now(sq, v) {
+                    return Err(SimError::InvalidConfig("squad not seated".into()));
+                }
+                // Hold fire: the MGs dry.
+                w.edit_vehicle(v, |vs| {
+                    vs.mgs.iter_mut().for_each(|m| m.spent = u32::MAX / 2)
+                });
+            }
+            focus = at(TRENCH_X + 1, LANE_Y);
+            max_ticks = 30 * 5;
+        }
         "hq_supply" => {
             let s = w.match_setup().expect("match");
             let f = s.players[0].faction;
@@ -1229,6 +1291,15 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
             snap.vehicles
                 .iter()
                 .filter(|v| v.flags & vehicle_flags::WRECK == 0)
+                .count()
+                >= 2
+                && w.tick() >= 30
+        }
+        // S8a: both half-tracks alive with men aboard.
+        "halftracks" => {
+            snap.vehicles
+                .iter()
+                .filter(|v| v.flags & vehicle_flags::WRECK == 0 && v.riders > 0)
                 .count()
                 >= 2
                 && w.tick() >= 30

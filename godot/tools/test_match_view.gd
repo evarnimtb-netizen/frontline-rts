@@ -95,6 +95,7 @@ func _run() -> void:
 	await _test_s5a()
 	await _test_s5b()
 	await _test_s6()
+	_test_s8a()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1506,6 +1507,24 @@ func _test_s6() -> void:
 	_source.s6_crates.clear()
 	_sel.select_only(PackedInt32Array())
 	_view.update_state(_source.get_state())
+
+
+## S8a: hotkeys, the Board / Unload buttons, the mounted squad's status
+## and the selection helpers on staged state dictionaries.
+func _test_s8a() -> void:
+	_check(MatchInput.ACTIONS.get(&"order_embark") == KEY_V and MatchInput.ACTIONS.get(&"order_disembark") == KEY_U, "S8a: Board V, Unload U")
+	var dup := 0
+	for a in MatchInput.ACTIONS:
+		if MatchInput.ACTIONS[a] in [KEY_V, KEY_U] and not a in [&"order_embark", &"order_disembark"]:
+			dup += 1
+	_check(dup == 0, "S8a: V and U are free of other actions (%d)" % dup)
+	_check(String(_view.squad_status({"order": "embark", "mounted": 9, "men": 9})[0]) == "Mounted", "S8a: a squad aboard reads Mounted")
+	_check(String(_view.squad_status({"order": "embark", "mounted": 3, "men": 9})[0]) == "Boarding", "S8a: a squad still boarding reads Boarding")
+	_view.selection.select_only(PackedInt32Array())
+	_view.orders.grid_mode = ""
+	_view.orders.update_state(_view.state)
+	_check(_view.orders.label_of(&"embark") == "Board" and _view.orders.label_of(&"crew") == "Crew", "S8a: Board shares the Crew slot")
+	_check(_view.selection.unload_vehicles().is_empty() and not _view.selection.can(&"disembark"), "S8a: nothing to unload with nothing selected")
 
 
 func _check(ok: bool, what: String) -> void:

@@ -1035,8 +1035,8 @@ func _order_at(screen: Vector2, attack: bool, reverse := false) -> void:
 		return
 	# S8a: right-click on an own half-track with infantry selected boards
 	# it.
-	var own_v := pick_vehicle(screen, 1) if pick_soldier(screen, 1) == -1 else -1
-	if own_v != -1 and int(view.vehicles_by_id.get(own_v, {}).get("capacity", 0)) > 0 and embark(own_v):
+	var ht_v := pick_vehicle(screen, 1) if pick_soldier(screen, 1) == -1 else -1
+	if ht_v != -1 and int(view.vehicles_by_id.get(ht_v, {}).get("capacity", 0)) > 0 and embark(ht_v):
 		return
 	var enemy_v := pick_vehicle(screen, 0) if pick_soldier(screen, 0) == -1 else -1
 	if enemy_v != -1:

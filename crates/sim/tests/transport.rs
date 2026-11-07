@@ -426,3 +426,59 @@ fn riding_is_deterministic_across_threads_and_save_load() {
     }
     assert_eq!(run(3, Some(600)), base, "save/load/continue while embarked");
 }
+
+/// S8a AI (`ai::transport`): in an AI-vs-AI match a side buys a
+/// half-track, loads a squad, rides and unloads it, and its transport moves
+/// do not loop (few failed moves, almost no refused commands). Scans seeds
+/// 1-4 for a match where a ride happens by 15 minutes. Slow in debug: run
+/// with `--release -- --include-ignored`.
+#[test]
+#[ignore]
+fn the_ai_rides_its_half_tracks_without_move_loops() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap();
+    let mut found = None;
+    for seed in 1..=4u64 {
+        let req = MatchRequest::skirmish(seed, "ww2:germany", "ww2:usa", Difficulty::Normal);
+        let mut s = defs.resolve(&req).unwrap();
+        s.players.iter_mut().for_each(|p| p.is_ai = true);
+        let mut w = World::new_match(s, 2).unwrap();
+        let mut rode = [false; 2];
+        for _ in 0..30 * 60 * 15 {
+            w.step(&[]);
+            if w.tick().is_multiple_of(30) {
+                let g = w.game().unwrap();
+                for (id, vs) in g.vehicles() {
+                    if vs.riders.iter().any(|r| r.is_some()) {
+                        rode[w.entities().owner()[id.index()].0 as usize] = true;
+                    }
+                }
+            }
+        }
+        let g = w.game().unwrap();
+        let rides: u32 = g.players().iter().map(|p| p.s8a.rides).sum();
+        if rides == 0 {
+            continue;
+        }
+        for p in 0..2u8 {
+            let ai = g.ai(PlayerId(p)).unwrap();
+            let c = &ai.counters;
+            assert!(
+                c.transport_fails <= 2 * c.transport_rides + 4,
+                "seed {seed} player {p}: {} failed moves for {} rides",
+                c.transport_fails,
+                c.transport_rides
+            );
+            assert!(
+                ai.rejected * 50 <= ai.issued,
+                "seed {seed} player {p}: {} of {} refused",
+                ai.rejected,
+                ai.issued
+            );
+        }
+        found = Some((seed, rode, rides));
+        break;
+    }
+    let (_, rode, rides) = found.expect("no AI ride in seeds 1-4");
+    assert!(rides > 0 && rode.iter().any(|&r| r));
+}

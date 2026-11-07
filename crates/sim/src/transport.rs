@@ -77,7 +77,7 @@ fn sq_m(m: Fx) -> u64 {
 
 impl MatchState {
     /// S8a: the transport def of vehicle `id`, if it is one.
-    pub(crate) fn transport_of(&self, id: SimId) -> Option<&TransportSetup> {
+    pub fn transport_of(&self, id: SimId) -> Option<&TransportSetup> {
         let vs = self.vehicles.get(&id)?;
         self.setup.vehicles[vs.type_idx as usize].transport.as_ref()
     }

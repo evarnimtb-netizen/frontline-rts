@@ -344,7 +344,7 @@ pub struct Scripter {
 }
 
 /// The S3 commands a vehicle script issues ([`Scripter::vehicles`]).
-pub const VEHICLE_COMMANDS: [&str; 10] = [
+pub const VEHICLE_COMMANDS: [&str; 12] = [
     "ReverseUnits",
     "FaceUnits",
     "AttackUnit",
@@ -356,6 +356,9 @@ pub const VEHICLE_COMMANDS: [&str; 10] = [
     // S3c: a crew bails out; a squad re-crews an abandoned vehicle.
     "Abandon",
     "Recrew",
+    // S8a: a squad boards a half-track; its passengers get out.
+    "Embark",
+    "Disembark",
 ];
 
 impl Scripter {
@@ -597,6 +600,43 @@ impl Scripter {
                 CommandKind::Recrew {
                     squad,
                     vehicle: target,
+                }
+            }
+            10 | 11 => {
+                // S8a: an own half-track (else a call-in of one, else the
+                // vehicle: refused, still on the wire).
+                let ht = own
+                    .iter()
+                    .copied()
+                    .find(|id| game.transport_of(*id).is_some());
+                let card = setup.factions[f].roster.iter().copied().find(|&t| {
+                    setup.squad_types[t as usize]
+                        .vehicle
+                        .and_then(|vt| setup.vehicles.get(vt as usize))
+                        .is_some_and(|vt| vt.transport.is_some())
+                });
+                match (ht, card) {
+                    (None, Some(t)) => CommandKind::CallIn { squad_type: t },
+                    (ht, _) if k == 10 => {
+                        let squad = game
+                            .squads()
+                            .iter()
+                            .filter(|(_, q)| {
+                                q.owner.0 == self.slot
+                                    && setup.squad_types[q.type_idx as usize].vehicle.is_none()
+                            })
+                            .min_by_key(|(id, q)| (q.members.len(), **id))
+                            .map(|(&id, _)| id)
+                            .unwrap_or_default();
+                        CommandKind::Embark {
+                            squads: vec![squad],
+                            vehicle: ht.unwrap_or(v),
+                        }
+                    }
+                    (ht, _) => CommandKind::Disembark {
+                        vehicles: vec![ht.unwrap_or(v)],
+                        over_sides: self.rng.below(2) == 0,
+                    },
                 }
             }
             _ => {

@@ -3211,6 +3211,49 @@ mod tests {
         assert!(load_err(&bytes).contains("twice"));
     }
 
+    /// S8a: the squad order `Embark` and the AI's transport jobs are
+    /// saved and hashed; an `Embark` naming no transport is refused.
+    #[test]
+    fn embark_orders_and_ai_transport_jobs_are_saved_and_hashed() {
+        use crate::game::Order;
+        let w = match_world();
+        let base = w.full_state_hash();
+        let (sid, other) = {
+            let g = w.game().unwrap();
+            let mut it = g.squads().iter().filter(|(_, q)| q.owner == PlayerId(0));
+            let a = *it.next().unwrap().0;
+            (a, SimId(0))
+        };
+        // An Embark naming a vehicle that is not a transport: refused.
+        let bytes = save_edited(&w, |s| {
+            s.game.as_mut().unwrap().squads.get_mut(&sid).unwrap().order =
+                Order::Embark { vehicle: other };
+        });
+        assert!(load_err(&bytes).contains("Embark"));
+        // AI transport jobs: hashed (postcard), round-trip equal.
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            let ai = g.ai.iter_mut().flatten().next().expect("an AI player");
+            ai.transports.insert(sid, crate::ai::AiTransport::default());
+        });
+        let w2 = World::load(&bytes, 1).unwrap();
+        assert_ne!(
+            w2.full_state_hash(),
+            base,
+            "AI transport jobs are not hashed"
+        );
+        assert_eq!(
+            World::load(&w2.save(), 2).unwrap().full_state_hash(),
+            w2.full_state_hash()
+        );
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            let ai = g.ai.iter_mut().flatten().next().expect("an AI player");
+            ai.counters.transport_fails += 1;
+        });
+        assert_ne!(World::load(&bytes, 1).unwrap().full_state_hash(), base);
+    }
+
     /// S3b: a squad and a detached man on `SuppressUnits`; the squad
     /// order, the man's order and the duck flag are saved, hashed and
     /// checked on load.
