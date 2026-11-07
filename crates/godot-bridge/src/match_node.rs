@@ -2541,12 +2541,19 @@ impl MatchRuntime {
                         .unwrap_or(""),
                 );
                 // S3b: "apcr" only for a gun that carries a special round.
-                let mut ammo = vdict! {"ap" => v.ammo[0] as i64, "he" => v.ammo[1] as i64};
-                let special = self
+                // S8a Fix (review L4): "ap" and "he" only for a vehicle with
+                // a main gun (a half-track has none).
+                let mut ammo = VarDictionary::new();
+                let n_main = self
                     .setup
                     .vehicles
                     .get(v.type_idx as usize)
-                    .is_some_and(|t| t.main_ammo().len() > 2);
+                    .map_or(0, |t| t.main_ammo().len());
+                if n_main > 0 {
+                    ammo.set("ap", v.ammo[0] as i64);
+                    ammo.set("he", v.ammo[1] as i64);
+                }
+                let special = n_main > 2;
                 if special {
                     ammo.set("apcr", v.ammo[2] as i64);
                 }

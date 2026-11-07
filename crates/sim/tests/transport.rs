@@ -476,9 +476,122 @@ fn the_ai_rides_its_half_tracks_without_move_loops() {
                 ai.issued
             );
         }
+        // Review M2: the AI measured the rides (order to the point).
+        let measured: u32 = (0..2u8)
+            .map(|p| {
+                let ai = g.ai(PlayerId(p)).unwrap();
+                let c = &ai.counters;
+                c.obj_rides + c.obj_lost + ai.ride_meas.values().filter(|m| m.rode).count() as u32
+            })
+            .sum();
+        assert!(measured > 0, "seed {seed}: rides but no ride measurement");
         found = Some((seed, rode, rides));
         break;
     }
     let (_, rode, rides) = found.expect("no AI ride in seeds 1-4");
     assert!(rides > 0 && rode.iter().any(|&r| r));
+}
+
+/// S8a Fix (review L3): the refusals, one case per row. Each starts from
+/// `loaded_world` (a 251 with a Grenadiergruppe behind it), sets the case
+/// up and sends one command that the sim must not apply.
+#[test]
+fn transport_orders_that_must_be_refused() {
+    type Setup = Box<dyn Fn(&mut World, SimId, SquadId) -> Command>;
+    let embark = |inf: SquadId, v: SimId| {
+        cmd(
+            0,
+            9,
+            CommandKind::Embark {
+                squads: vec![inf],
+                vehicle: v,
+            },
+        )
+    };
+    let cases: Vec<(&str, Setup)> = vec![
+        (
+            "Embark into an enemy vehicle",
+            Box::new(move |w, _, inf| {
+                let (_, e) = spawn(w, 1, "ww2:usa_m3a1_squad", xy(470, 500), EAST);
+                embark(inf, e)
+            }),
+        ),
+        (
+            "Embark into a wreck",
+            Box::new(move |w, v, inf| {
+                assert!(w.wreck_vehicle(v));
+                w.step(&[]);
+                embark(inf, v)
+            }),
+        ),
+        (
+            "Embark into a burning vehicle",
+            Box::new(move |w, v, inf| {
+                assert!(w.edit_vehicle(v, |vs| vs.burn = 30));
+                embark(inf, v)
+            }),
+        ),
+        (
+            "Embark into an unloading vehicle",
+            Box::new(move |w, v, inf| {
+                board_all(w, v, inf);
+                assert!(accepts(
+                    w,
+                    cmd(
+                        0,
+                        2,
+                        CommandKind::Disembark {
+                            vehicles: vec![v],
+                            over_sides: false,
+                        },
+                    )
+                ));
+                assert!(w.game().unwrap().vehicle(v).unwrap().unload.is_some());
+                let (other, _) = spawn(w, 0, "ww2:ger_grenadiergruppe", xy(480, 510), EAST);
+                embark(other, v)
+            }),
+        ),
+        (
+            "Disembark of an empty vehicle",
+            Box::new(move |_, v, _| {
+                cmd(
+                    0,
+                    9,
+                    CommandKind::Disembark {
+                        vehicles: vec![v],
+                        over_sides: true,
+                    },
+                )
+            }),
+        ),
+        (
+            "Move to a mounted squad",
+            Box::new(move |w, v, inf| {
+                board_all(w, v, inf);
+                cmd(
+                    0,
+                    9,
+                    CommandKind::Move {
+                        squad: inf,
+                        target: xy(600, 600),
+                    },
+                )
+            }),
+        ),
+        (
+            "Retreat to a mounted squad",
+            Box::new(move |w, v, inf| {
+                board_all(w, v, inf);
+                cmd(0, 9, CommandKind::Retreat { squad: inf })
+            }),
+        ),
+    ];
+    // Control: the same command into its own idle vehicle is applied.
+    let (mut w, v, _, inf) = loaded_world(7);
+    assert!(accepts(&mut w, embark(inf, v)), "control refused");
+    for (name, case) in &cases {
+        let (mut w, v, _, inf) = loaded_world(7);
+        let c = case(&mut w, v, inf);
+        assert!(!accepts(&mut w, c), "{name}: accepted");
+    }
 }

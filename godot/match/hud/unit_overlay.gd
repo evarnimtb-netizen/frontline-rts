@@ -250,6 +250,9 @@ func _vehicle_tooltip(font: Font, sel: Node) -> bool:
 		if ammo.has("apcr"):
 			rounds = "AP %d · APCR %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("apcr", 0)), int(ammo.get("he", 0))]
 		line2 = "Crew %d/%d · %s · %s" % [alive, seats, rounds, Vehicles.AMMO_TEXT.get(String(v.get("ammo_choice", "auto")), "Auto")]
+		if not ammo.has("ap"):
+			# S8a Fix (L4): no main gun (half-track).
+			line2 = "Crew %d/%d" % [alive, seats]
 	else:
 		line1 = "Enemy %s" % Vehicles.short_name(view.vehicle_type(int(v.id)), String(v.get("name", "vehicle")))
 		line2 = Vehicles.badge(v)[0] + " · right-click: attack"

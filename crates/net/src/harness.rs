@@ -747,6 +747,9 @@ pub struct VirtualReport {
     pub executed: [Vec<Executed>; 2],
     /// Own seqs stamped but never run (for players still connected).
     pub lost: [u64; 2],
+    /// The target ticks those lost seqs were stamped for (`u64::MAX`: not
+    /// in the client's stamp log).
+    pub lost_targets: [Vec<u64>; 2],
     /// `(player, seq)` run more than once or out of order.
     pub order_errors: u64,
     /// The two worlds ran different command streams.
@@ -1144,6 +1147,7 @@ fn report(
         1
     };
     let mut lost = [0u64; 2];
+    let mut lost_targets: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
     let mut order_errors = 0u64;
     let mut executed: [Vec<Executed>; 2] = [Vec::new(), Vec::new()];
     let mut injected = Vec::new();
@@ -1172,6 +1176,10 @@ fn report(
             || peers[pl as usize].said_bye;
         if connected {
             lost[pl as usize] = stamped.saturating_sub(ran_own);
+            let c = &peers[pl as usize].client;
+            lost_targets[pl as usize] = (ran_own..stamped)
+                .map(|s| c.stamp_target(s as u32).unwrap_or(u64::MAX))
+                .collect();
         }
         executed[pl as usize] = mine;
     }
@@ -1219,6 +1227,7 @@ fn report(
         queued,
         executed,
         lost,
+        lost_targets,
         order_errors,
         streams_differ,
         relay_restamps: relay.restamps(),
@@ -1449,6 +1458,7 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
         queued: [queued[order[0]], queued[order[1]]],
         executed,
         lost,
+        lost_targets: [Vec::new(), Vec::new()],
         order_errors,
         streams_differ: false,
         relay_restamps: relay.restamps,

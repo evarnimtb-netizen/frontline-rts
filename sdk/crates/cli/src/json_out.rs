@@ -391,6 +391,18 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                 "ride_saved_s_per_ride": round3(saved_s / rides),
                 "ride_saved_s_per_match": round3(saved_s / en),
                 "ride_s_per_ride": round3(e.ride_ticks as f64 / 30.0 / rides),
+                // Review M2: from the Embark order to the point, against a
+                // straight walk from where the squad stood at the order.
+                "obj_rides_per_match": round3(e.obj_rides as f64 / en),
+                "obj_saved_s_per_ride": round3(
+                    (e.obj_walk_ticks as f64 - e.obj_ride_ticks as f64) / 30.0 / e.obj_rides.max(1) as f64
+                ),
+                "obj_saved_s_per_match": round3(
+                    (e.obj_walk_ticks as f64 - e.obj_ride_ticks as f64) / 30.0 / en
+                ),
+                "obj_ride_s_per_ride": round3(e.obj_ride_ticks as f64 / 30.0 / e.obj_rides.max(1) as f64),
+                "obj_walk_s_per_ride": round3(e.obj_walk_ticks as f64 / 30.0 / e.obj_rides.max(1) as f64),
+                "obj_lost_per_match": round3(e.obj_lost as f64 / en),
                 "riders_lost_per_match": round3(e.riders_lost as f64 / en),
                 "small_arms_pens_per_match": round3(e.small_arms_pens as f64 / en),
                 "dismounts_under_fire_pct": pct(e.dismounts_under_fire as f64, e.rides as f64),

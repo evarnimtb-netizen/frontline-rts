@@ -193,7 +193,7 @@ pub use assault::{
     HUNT_ENDS, MAX_HUNTS,
 };
 pub use mortar::{AiSpotter, MAX_SPOTTERS, MODE_CHECKS, PLAN_RAYS};
-pub use transport::{AiTransport, MAX_TRANSPORTS, TransportPhase};
+pub use transport::{AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -310,6 +310,9 @@ pub struct AiState {
     /// S8a: half-track jobs, by the vehicle's squad (at most
     /// [`transport::MAX_TRANSPORTS`]; `ai::transport`).
     pub transports: BTreeMap<SquadId, AiTransport>,
+    /// S8a Fix (review M2): open ride measurements, by the riding squad
+    /// (at most [`transport::MAX_RIDE_MEAS`]; report only).
+    pub ride_meas: BTreeMap<SquadId, AiRideMeas>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -502,6 +505,14 @@ pub struct AiCounters {
     pub transport_unloads: u32,
     pub transport_unloads_fire: u32,
     pub transport_fails: u32,
+    /// S8a Fix (review M2): transported squads that reached the point they
+    /// rode for; ticks from the `Embark` order to arrival, and the ticks a
+    /// straight walk from the order position would have taken; squads lost
+    /// (gone or timed out) after boarding.
+    pub obj_rides: u32,
+    pub obj_ride_ticks: u64,
+    pub obj_walk_ticks: u64,
+    pub obj_lost: u32,
 }
 
 impl AiState {
@@ -526,6 +537,7 @@ impl AiState {
             spotters: BTreeMap::new(),
             overwatch: BTreeMap::new(),
             transports: BTreeMap::new(),
+            ride_meas: BTreeMap::new(),
         }
     }
 
@@ -623,6 +635,14 @@ impl AiState {
                     || j.since > tick + 36_000
                     || j.moved_at > tick
                     || j.moving_at > tick
+            })
+            || self.ride_meas.len() > transport::MAX_RIDE_MEAS
+            || self.ride_meas.iter().any(|(id, m)| {
+                let size = Fx::from_int(g.setup.map.size_m);
+                let on = |p: FxVec2| {
+                    p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size
+                };
+                bad_squad(id) || m.order_tick > tick || !on(m.from) || !on(m.point)
             })
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
@@ -1143,7 +1163,11 @@ impl Planner<'_> {
         let mut alive_by_type = vec![0u32; s.squad_types.len()];
         for sq in g.squads.values().filter(|sq| sq.owner == self.me) {
             alive_by_type[sq.type_idx as usize] += 1;
-            if let Some(r) = mix_slot(s, sq.type_idx) {
+            // S8a Fix (review M4): transports stay outside the tank share
+            // of the vehicle slot (they would take the tanks' buys).
+            if let Some(r) = mix_slot(s, sq.type_idx)
+                && !g.is_transport_type(sq.type_idx)
+            {
                 counts[r] += 1;
             }
         }
@@ -1178,7 +1202,9 @@ impl Planner<'_> {
         for c in &self.ai.pending {
             if let CommandKind::CallIn { squad_type } = c.kind {
                 let ty = &s.squad_types[squad_type as usize];
-                if let Some(r) = mix_slot(s, squad_type) {
+                if let Some(r) = mix_slot(s, squad_type)
+                    && !g.is_transport_type(squad_type)
+                {
                     counts[r] += 1;
                 }
                 alive_by_type[squad_type as usize] += 1;
@@ -1366,7 +1392,9 @@ impl Planner<'_> {
             pop += men;
             bought.push(t);
             alive_by_type[t as usize] += 1;
-            counts[r] += 1;
+            if !g.is_transport_type(t) {
+                counts[r] += 1;
+            }
             let c = &mut self.ai.counters;
             if c.bought.len() < s.squad_types.len() {
                 c.bought.resize(s.squad_types.len(), 0);

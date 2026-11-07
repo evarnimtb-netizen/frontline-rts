@@ -587,8 +587,12 @@ min = 60
 
 # --- T41: squads transported per match, time saved per ride --------------------
 # A transported squad = one that boarded at least `[ai.transport] min_ride_m`
-# away from where it got off. Saved time per ride = (ridden path length / the
-# squad's walk speed) - (boarding + ride + exit time); negative = slower.
+# away from where it got off. Saved time per ride (Fix, review M2): (straight
+# walk from where the squad stood at the Embark order to the capture radius of
+# the point it rode for) - (order to its lead inside that radius); it counts
+# the walk to the door, the boarding wait and the last stretch on foot.
+# Negative = slower. T41g/h keep the Build B vehicle-trip figure (an upper
+# bound: boarding to the last man out, straight line from the door).
 [[target]]
 id = "T41a"
 metric = "skirmish160.factions.germany.s8a_derived.transported_per_match"
@@ -599,23 +603,34 @@ metric = "skirmish160.factions.usa.s8a_derived.transported_per_match"
 min = 1
 [[target]]
 id = "T41c"
-metric = "skirmish160.factions.germany.s8a_derived.ride_saved_s_per_ride"
+metric = "skirmish160.factions.germany.s8a_derived.obj_saved_s_per_ride"
 min = 0
 kind = "report"
 note = "walk-to-the-front exploit check (vehicles.md 6.6); compare with the match median"
 [[target]]
 id = "T41d"
-metric = "skirmish160.factions.usa.s8a_derived.ride_saved_s_per_ride"
+metric = "skirmish160.factions.usa.s8a_derived.obj_saved_s_per_ride"
 min = 0
 kind = "report"
 [[target]]
 id = "T41e"
-metric = "skirmish160.factions.germany.s8a_derived.ride_saved_s_per_match"
+metric = "skirmish160.factions.germany.s8a_derived.obj_saved_s_per_match"
 min = 0
 kind = "report"
 [[target]]
 id = "T41f"
-metric = "skirmish160.factions.usa.s8a_derived.ride_saved_s_per_match"
+metric = "skirmish160.factions.usa.s8a_derived.obj_saved_s_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T41g"
+metric = "skirmish160.factions.germany.s8a_derived.ride_saved_s_per_ride"
+min = 0
+kind = "report"
+note = "Build B vehicle-trip measure (upper bound)"
+[[target]]
+id = "T41h"
+metric = "skirmish160.factions.usa.s8a_derived.ride_saved_s_per_ride"
 min = 0
 kind = "report"
 

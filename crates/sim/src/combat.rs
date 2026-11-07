@@ -561,6 +561,17 @@ fn search_vehicle(
     wi: u16,
     r: u64,
 ) -> Option<(u64, SimId, FxVec3)> {
+    // Review L1: a weapon with no penetration table skips the loop.
+    if ctx.vmarks.is_empty()
+        || ctx
+            .game
+            .armour
+            .reach
+            .get(wi as usize)
+            .is_none_or(|t| t.is_empty())
+    {
+        return None;
+    }
     let owner = ctx.owner[i].0;
     let mut best: Option<(u64, SimId, FxVec3)> = None;
     for m in ctx.vmarks {

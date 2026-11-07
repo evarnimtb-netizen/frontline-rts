@@ -3,8 +3,10 @@
 //! keyed by the vehicle's squad), in phases:
 //!
 //! 1. **Load.** A free line, engineer or MG squad of at least half strength
-//!    within `PICK_M` of the vehicle whose assigned point is farther than
-//!    `min_ride_m` and that fits gets `Embark` (the newest first). Once
+//!    within `PICK_M` of the vehicle whose assigned point lies at least
+//!    `min_ride_m` + the walked last stretch from the squad, and at least
+//!    `min_ride_m` farther than the vehicle's door, and that fits gets
+//!    `Embark` (the newest first). Once
 //!    everyone is aboard the job rides; with nobody aboard after `wait_s`
 //!    the vehicle goes to support alone (and with some aboard it rides).
 //! 2. **Ride** to `dismount_back_m` + `APPROACH_EXTRA_M` short of the
@@ -50,6 +52,26 @@ const RIDER_EYE_MM: i32 = 1800;
 /// Most transport jobs one AI keeps.
 pub const MAX_TRANSPORTS: usize = 32;
 
+/// Most open ride measurements one AI keeps ([`AiRideMeas`]).
+pub const MAX_RIDE_MEAS: usize = 32;
+/// A ride measurement still open this long after the order is dropped (s).
+const MEAS_TIMEOUT_S: u64 = 600;
+
+/// S8a Fix (review M2): one transported squad's trip, measured from the
+/// `Embark` order to its lead within `capture_radius` of the point it rode
+/// for, against walking straight there from where it stood at the order
+/// (report only: `AiCounters::obj_*`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct AiRideMeas {
+    /// Tick of the `Embark` order (when it was planned).
+    pub order_tick: u64,
+    /// The squad lead's position at the order, and the point.
+    pub from: FxVec2,
+    pub point: FxVec2,
+    /// A man of the squad has been seen aboard.
+    pub rode: bool,
+}
+
 /// A transport job's phase.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[repr(u8)]
@@ -91,6 +113,7 @@ impl super::Planner<'_> {
         known: &[Known],
         busy: &[SquadId],
     ) -> Vec<MyTank> {
+        self.ride_meas_update();
         let g = self.g;
         let me = self.me;
         self.ai.transports.retain(|id, _| {
@@ -170,7 +193,17 @@ impl super::Planner<'_> {
                 .vehicle(t.id)
                 .map_or(0, |vs| vs.riders.iter().filter(|r| r.is_none()).count());
             let pick = sq_m(Fx::from_int(PICK_M));
-            let ride = sq_m(Fx::from_int(a.min_ride_m.min(30_000) as i32));
+            let min_ride = Fx::from_int(a.min_ride_m.min(30_000) as i32);
+            // Review M1: measured from the squad, not the vehicle. The point
+            // lies at least the ride plus the walked last stretch from the
+            // squad, and the ride gains at least `min_ride_m` over the walk
+            // to the door (no short hops, no walking backwards to board).
+            let last_leg = Fx::from_int(a.dismount_back_m.min(30_000) as i32 + APPROACH_EXTRA_M);
+            let worth = |lead: FxVec2, point: FxVec2| {
+                let d_pl = (point - lead).length();
+                let d_lv = (lead - t.pos).length();
+                d_pl >= min_ride + last_leg && d_pl - d_lv >= min_ride
+            };
             let mut best: Option<(SquadId, usize)> = None;
             for &(mi, pi) in assigned {
                 let m = &mine[mi];
@@ -183,7 +216,7 @@ impl super::Planner<'_> {
                     || taken.contains(&m.id)
                     || sq.members.len() > free.min(cap)
                     || (m.lead - t.pos).length_sq_raw() > pick
-                    || (points[pi].pos - t.pos).length_sq_raw() <= ride
+                    || !worth(m.lead, points[pi].pos)
                     || matches!(sq.order, Order::Retreat | Order::Embark { .. })
                 {
                     continue;
@@ -204,6 +237,18 @@ impl super::Planner<'_> {
             self.ai.counters.transport_loads += 1;
             taken.push(sid);
             let at = points[pi].pos;
+            let lead0 = mine.iter().find(|m| m.id == sid).map_or(t.pos, |m| m.lead);
+            if self.ai.ride_meas.len() < MAX_RIDE_MEAS || self.ai.ride_meas.contains_key(&sid) {
+                self.ai.ride_meas.insert(
+                    sid,
+                    AiRideMeas {
+                        order_tick: self.tick,
+                        from: lead0,
+                        point: at,
+                        rode: false,
+                    },
+                );
+            }
             let dir = (at - t.pos).normalize_or_zero();
             let back = Fx::from_int(a.dismount_back_m as i32 + APPROACH_EXTRA_M);
             let goal = self.terrain.clamp(at - dir * back);
@@ -221,6 +266,65 @@ impl super::Planner<'_> {
             self.task(sid, super::TaskKind::Capture, pi as u8, at);
         }
         taken
+    }
+
+    /// Review M2: closes the open ride measurements ([`AiRideMeas`]): a
+    /// squad that rode and whose lead is within `capture_radius` of its
+    /// point adds (order to arrival) and (straight walk from the order
+    /// position to the edge of the radius) to the counters; a squad that
+    /// never boarded is dropped; one gone or past `MEAS_TIMEOUT_S` after
+    /// riding counts as lost.
+    fn ride_meas_update(&mut self) {
+        let g = self.g;
+        let tick = self.tick;
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let radius: Fx = g.setup.rules.capture_radius.into();
+        let keys: Vec<SquadId> = self.ai.ride_meas.keys().copied().collect();
+        for sid in keys {
+            let m = self.ai.ride_meas[&sid];
+            let Some(sq) = g.squads.get(&sid).filter(|q| !q.members.is_empty()) else {
+                if m.rode {
+                    self.ai.counters.obj_lost += 1;
+                }
+                self.ai.ride_meas.remove(&sid);
+                continue;
+            };
+            let aboard = sq
+                .members
+                .iter()
+                .any(|u| self.ents.unit()[u.index()].riding.is_some());
+            let embarking = matches!(sq.order, Order::Embark { .. });
+            if !m.rode && !aboard {
+                // The order is applied a plan later; a squad no longer
+                // walking to its vehicle never boarded.
+                if !embarking && tick > m.order_tick + 5 * hz {
+                    self.ai.ride_meas.remove(&sid);
+                }
+                continue;
+            }
+            if !m.rode
+                && let Some(e) = self.ai.ride_meas.get_mut(&sid)
+            {
+                e.rode = true;
+            }
+            let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
+            if !aboard && (lead - m.point).length_sq_raw() <= sq_m(radius) {
+                let walk_mm_s = {
+                    let ty = &g.setup.squad_types[sq.type_idx as usize];
+                    ((Fx::from(ty.speed).raw().max(0) as u64 * 1000) >> Fx::FRAC_BITS).max(1)
+                };
+                let dist = ((m.point - m.from).length() - radius).max(Fx::ZERO);
+                let dist_mm = (dist.raw().max(0) as u64 * 1000) >> Fx::FRAC_BITS;
+                let c = &mut self.ai.counters;
+                c.obj_rides += 1;
+                c.obj_ride_ticks += tick.saturating_sub(m.order_tick);
+                c.obj_walk_ticks += dist_mm * hz / walk_mm_s;
+                self.ai.ride_meas.remove(&sid);
+            } else if tick > m.order_tick + MEAS_TIMEOUT_S * hz {
+                self.ai.counters.obj_lost += 1;
+                self.ai.ride_meas.remove(&sid);
+            }
+        }
     }
 
     /// One plan of transport `t`'s job (module docs).

@@ -376,6 +376,9 @@ pub struct PlayerReport {
     /// S8a AI transport counters: loads, rides, unloads, unloads under
     /// fire, failed moves (`AiCounters::transport_*`).
     pub s8a_ai: [u32; 5],
+    /// Review M2: AI ride measurements (`AiCounters::obj_*`): rides that
+    /// reached their point, order-to-arrival ticks, straight-walk ticks, lost.
+    pub s8a_obj: (u32, u64, u64, u32),
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -1266,6 +1269,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     }
                 },
                 s8a: pl.s8a,
+                s8a_obj: ai.map_or((0, 0, 0, 0), |a| {
+                    let c = &a.counters;
+                    (c.obj_rides, c.obj_ride_ticks, c.obj_walk_ticks, c.obj_lost)
+                }),
                 s8a_ai: ai.map_or([0; 5], |a| {
                     let c = &a.counters;
                     [
@@ -1699,6 +1706,13 @@ pub struct S8aFaction {
     pub ai_unloads: u64,
     pub ai_unloads_fire: u64,
     pub ai_fails: u64,
+    /// Review M2: transported squads that reached their point, ticks from
+    /// the Embark order to arrival, ticks of the straight walk from the
+    /// order position, squads lost after boarding.
+    pub obj_rides: u64,
+    pub obj_ride_ticks: u64,
+    pub obj_walk_ticks: u64,
+    pub obj_lost: u64,
     #[serde(skip)]
     pub transport_cards: std::collections::BTreeSet<String>,
 }
@@ -2121,6 +2135,10 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             e.ai_unloads += p.s8a_ai[2] as u64;
             e.ai_unloads_fire += p.s8a_ai[3] as u64;
             e.ai_fails += p.s8a_ai[4] as u64;
+            e.obj_rides += p.s8a_obj.0 as u64;
+            e.obj_ride_ticks += p.s8a_obj.1;
+            e.obj_walk_ticks += p.s8a_obj.2;
+            e.obj_lost += p.s8a_obj.3 as u64;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

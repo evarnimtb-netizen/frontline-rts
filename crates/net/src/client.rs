@@ -30,6 +30,8 @@ pub const MATCH_PING_US: u64 = 1_000_000;
 /// Bundles held ahead of the next needed tick; later ones are dropped (the
 /// relay resends them).
 pub const MAX_BUFFERED: u64 = 4096;
+/// Own turns kept in the stamp log (`Client::stamp_target`).
+const STAMP_LOG: usize = 64;
 /// Commands queued but not yet stamped; more are refused, so a stuck
 /// presenter cannot grow the queue without bound. An honest player never
 /// gets near it.
@@ -203,6 +205,10 @@ pub struct NetClient {
     next_seq: u32,
     last_target: u64,
     unacked: VecDeque<StampedTurn>,
+    /// The last `STAMP_LOG` own turns as `(seq0, count, target)` (the test
+    /// harness checks that orders a finished match never ran were stamped
+    /// for a tick at or after its end).
+    stamp_log: VecDeque<(u32, u32, u64)>,
     /// Own seqs below this were seen in a bundle.
     own_seen: u32,
     next_input: u64,
@@ -238,6 +244,7 @@ impl NetClient {
             next_seq: 0,
             last_target: 0,
             unacked: VecDeque::new(),
+            stamp_log: VecDeque::new(),
             own_seen: 0,
             next_input: 0,
             held: 0,
@@ -288,6 +295,15 @@ impl NetClient {
     /// Highest tick whose hashes the relay confirmed equal.
     pub fn confirmed(&self) -> u64 {
         self.status.confirmed
+    }
+
+    /// The target tick own command `seq` was stamped for, if it is among
+    /// the last `STAMP_LOG` turns.
+    pub fn stamp_target(&self, seq: u32) -> Option<u64> {
+        self.stamp_log
+            .iter()
+            .find(|&&(s0, n, _)| seq >= s0 && seq - s0 < n)
+            .map(|&(_, _, t)| t)
     }
 
     pub fn status(&self) -> ClientStatus {
@@ -644,6 +660,12 @@ impl NetClient {
         self.next_seq += cmds.len() as u32;
         self.status.stamped += cmds.len() as u64;
         self.last_target = target;
+        if !cmds.is_empty() {
+            if self.stamp_log.len() >= STAMP_LOG {
+                self.stamp_log.pop_front();
+            }
+            self.stamp_log.push_back((seq0, cmds.len() as u32, target));
+        }
         let size = encoded_len(&InputTurn {
             target,
             seq0,

@@ -411,6 +411,9 @@ static func mg_label(ammo: Dictionary) -> Array:
 
 static func draw_ammo(ci: CanvasItem, font: Font, bold: Font, at: Vector2, v: Dictionary, align: int) -> float:
 	var ammo: Dictionary = v.get("ammo", {})
+	if not ammo.has("ap"):
+		# S8a Fix (L4): no main gun (half-track): no rounds, no bar.
+		return 0.0
 	var parts := ["AP %d" % int(ammo.get("ap", 0)), " · ", "HE %d" % int(ammo.get("he", 0))]
 	var keys := ["ap", "", "he"]
 	var fonts := [bold, font, bold]
@@ -566,6 +569,9 @@ static func vehicle_tooltip(mv: MatchView, vid: int) -> String:
 	var rounds := "AP %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("he", 0))]
 	if ammo.has("apcr"):
 		rounds = "AP %d · APCR %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("apcr", 0)), int(ammo.get("he", 0))]
+	if not ammo.has("ap"):
+		# S8a Fix (L4): no main gun (half-track).
+		rounds = "No main gun"
 	if ammo.has("mg"):
 		# S3b Fix: MG belts left in stowage.
 		rounds += " · MG %d" % int(ammo.get("mg", 0))

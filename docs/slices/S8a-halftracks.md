@@ -174,11 +174,11 @@ the M3A1's .30 pintle sockets are left out (S8a-10). S7-1: StuG roof MG and M10 
 balance and need exposed loader or commander boxes; data-only in S8b).
 
 ## 7. AI (`ai/transport.rs`, `[ai.transport]`)
-Bought through the `vehicle` mix slot by card `ai_weight` (Build A: 0; Build B: 100, the tanks'). Per transport
-one saved job `{ vehicle, squad, phase, goal, fails, since }`; phases:
+Bought through the `vehicle` mix slot by card `ai_weight`; Fix (review M4): transports are not counted in the slot's
+share, so they no longer take the tanks' buys. Per transport one saved job `{ vehicle, squad, phase, goal, fails, since }`:
 
-1. **Load** at base: the newest idle line, engineer or MG squad in base whose objective is farther than
-   `min_ride_m` (150) and that fits; `Embark`. Waits at most `wait_s` (30), then goes alone to Support.
+1. **Load**: the newest idle line, engineer or MG squad within 120 m whose point lies >= `min_ride_m` + the walked
+   last stretch from the squad and >= `min_ride_m` beyond the door (Fix, M1); `Embark`. Waits `wait_s`, then Support.
 2. **Ride** toward the squad's assault point. Every `check_s` (1) it tests the path ahead: the first point
    within `dismount_sight_m` (300) of a known enemy with a clear line (at most `los_rays` 8 rays per check);
    dismount `dismount_back_m` (40) before it. Immediate dismount when the vehicle is hit (any `Penetrated`,
@@ -235,7 +235,7 @@ updated.
 ## 11. Targets (S8a.toml T40-T49, plus all S7 targets)
 
 T40 half-tracks bought in >= 60 % of matches; T41 >= 1 squad transported per match and the time saved per ride
-(report); T42 each half-track <= 10 % of its side's kills, S7-15 recheck out of sample; T43 riders lost,
+(report; Fix M2: Embark order to the point vs a straight walk from the order position, `AiRideMeas`); T42 each half-track <= 10 % of its side's kills, S7-15 recheck out of sample; T43 riders lost,
 small-arms pens, dismounts under fire (reports); T44 case 21 (MG 42 vs M3A1 side at 50 m >= 80 %, .50 vs 251
 side >= 80 % at all three ranges, rifles 0); T45 rocket hits a rider in >= 50 %; T46 stopped >= 50 % of riders
 lost, moving <= 20 % inside; T47 sides faster; T48 >= 1 trip per half-track bought (no loops). Balance: Germany
@@ -294,5 +294,5 @@ JSON fields: S8a.toml header.
 - Changed (`[ai.transport]`): `min_ride_m` 150 -> 120, `wait_s` 30 -> 20, `support_s` 60 -> 30. USA transported per match 0.86 -> 1.125, trips per bought 0.90 -> 1.18 (T41b, T48b pass); saved per ride Germany 13.7 s, USA 29.6 s (still positive).
 - Autotune (`ht_cost_mult`, 0.9-1.4 on the 290/310 MP costs, 520 matches, target HE >= 20.5 %): "not resolved"; slope on HE +0.0 [-0.1, +0.2] per 0.05, so card cost does not move HE (20.3 / 20.2 / 20.6 at 0.9 / 1.15 / 1.4). Costs, `ai_weight` (70 = no change) left as shipped. Tuner HE over 520 matches: 20.3 %, Germany 44.5 % (raw interval about +-4).
 - Targets after the tune (seeds 1-80 / 101-180 / 201-280): Germany 48.1 / 48.1 / 44.4 %, pooled 46.9 % over 480; HE 20.1 / 19.1 / 20.6; T32 17.1 / 12.4 %; `td_hunt_m` stays 300.
-- Open misses: T8b (HE 19.1 % on 101-180, floor 20; Build B 19.4) is seed noise on a flat knob, and T15c (seed 175 swapped, 45 min, tickets 141 vs 24, not a loop) came only with the new knob values (the old values give a 688 s win); a variant with `wait_s` 30 had no stall but Germany 38.8 % on 1-80, so it was not taken. Seed hunting would overfit.
+- Fix (review M1-M4): rides picked from the squad, the order-to-point measure, transports outside the tanks' mix share. HE 21.0 / 20.3 / 20.2 % (T8 holds), no stalls (T15), Germany 42.5 / 45.6 / 48.1 % (pooled 45.4); rides lose 6-29 s against walking (S8a-28); T5c, T41b, T48b missed (S8a-29, S8a-30).
 

@@ -111,7 +111,10 @@ fn assert_clean(r: &VirtualReport, min_ticks: u64) {
 /// `assert_clean` that allows up to `max_lost` stamped orders per player
 /// that never ran: a match that ends (a side wiped or out of tickets) can
 /// end between an order's stamp and its tick (S8a Tune: seed 2 now ends at
-/// 15.8 min with one such order). Full-length runs allow none.
+/// 15.8 min with one such order). Full-length runs allow none. S8a Fix
+/// (review L2): each such order must have been stamped for a tick at or
+/// after the last tick the match ran (`end`), so a dropped order (an
+/// Embark or Disembark among them) still fails.
 fn assert_clean_lost(r: &VirtualReport, min_ticks: u64, max_lost: u64) {
     let s = summary(r);
     assert!(
@@ -127,6 +130,17 @@ fn assert_clean_lost(r: &VirtualReport, min_ticks: u64, max_lost: u64) {
     assert!(!r.streams_differ, "{s}");
     assert_eq!(r.order_errors, 0, "{s}");
     assert!(r.lost.iter().all(|&n| n <= max_lost), "{s}");
+    let end = r.ticks[0].max(r.ticks[1]);
+    for p in 0..2 {
+        if r.lost[p] > 0 {
+            assert_eq!(r.lost_targets[p].len() as u64, r.lost[p], "{s}");
+            assert!(
+                r.lost_targets[p].iter().all(|&t| t != u64::MAX && t >= end),
+                "lost orders of player {p} were due before the end tick {end} ({:?}): {s}",
+                r.lost_targets[p]
+            );
+        }
+    }
     assert_eq!(r.stamped, r.queued, "every queued order was stamped: {s}");
     assert!(r.stamped.iter().all(|&n| n > 20), "the script ran: {s}");
     assert_eq!(

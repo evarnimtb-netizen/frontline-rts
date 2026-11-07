@@ -3252,6 +3252,56 @@ mod tests {
             ai.counters.transport_fails += 1;
         });
         assert_ne!(World::load(&bytes, 1).unwrap().full_state_hash(), base);
+        // S8a Fix (review M2): ride measurements and their counters:
+        // hashed, round-trip equal, checked on load.
+        let meas = |order_tick: u64| crate::ai::AiRideMeas {
+            order_tick,
+            from: FxVec2::from_int(100, 100),
+            point: FxVec2::from_int(500, 500),
+            rode: true,
+        };
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            let ai = g.ai.iter_mut().flatten().next().expect("an AI player");
+            ai.ride_meas.insert(sid, meas(0));
+        });
+        let w3 = World::load(&bytes, 1).unwrap();
+        assert_ne!(
+            w3.full_state_hash(),
+            base,
+            "ride measurements are not hashed"
+        );
+        assert_eq!(
+            World::load(&w3.save(), 2).unwrap().full_state_hash(),
+            w3.full_state_hash()
+        );
+        let bytes = save_edited(&w, |s| {
+            let g = s.game.as_mut().unwrap();
+            let ai = g.ai.iter_mut().flatten().next().expect("an AI player");
+            ai.ride_meas.insert(sid, meas(u64::MAX));
+        });
+        assert!(
+            World::load(&bytes, 1).is_err(),
+            "a measurement from the future"
+        );
+        for k in 0..4 {
+            let bytes = save_edited(&w, |s| {
+                let g = s.game.as_mut().unwrap();
+                let ai = g.ai.iter_mut().flatten().next().expect("an AI player");
+                let c = &mut ai.counters;
+                match k {
+                    0 => c.obj_rides += 1,
+                    1 => c.obj_ride_ticks += 1,
+                    2 => c.obj_walk_ticks += 1,
+                    _ => c.obj_lost += 1,
+                }
+            });
+            assert_ne!(
+                World::load(&bytes, 1).unwrap().full_state_hash(),
+                base,
+                "obj counter {k}"
+            );
+        }
     }
 
     /// S3b: a squad and a detached man on `SuppressUnits`; the squad

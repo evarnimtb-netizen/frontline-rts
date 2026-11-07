@@ -565,7 +565,8 @@ vehicles: [                        # own + seen enemy + every wreck, ascending i
     },
     repairing: String,             # "" | "engine" | "track_l" | "track_r" | "ring"
                                    # | "transmission"
-    ammo: { ap: int, he: int,      # main-gun rounds left; S3b: apcr only on a
+    ammo: { ap: int, he: int,      # main-gun rounds left (S8a Fix: absent with no
+                                   # main gun, half-tracks); S3b: apcr only on a
             apcr: int,             # gun that carries a special round (Panzer IV);
             mg: int,               # S3b Fix: MG rounds left in stowage (if limited)
             mg_full: int },        # S3c: the full stowage (with mg); the vehicle

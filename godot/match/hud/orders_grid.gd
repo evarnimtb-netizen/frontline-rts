@@ -120,6 +120,8 @@ var _size := Vector2.ZERO
 var _pzf_slot := false
 ## S8a: the selection has passengers (Unload replaces Regroup).
 var _mounted := false
+## S8a Fix (L4): a selected vehicle has a main gun (ammo buttons shown).
+var _gun := true
 
 
 func bind(v: MatchView) -> void:
@@ -135,11 +137,16 @@ func update_state(_s: Dictionary) -> void:
 		want = "supply"
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
 	var mounted: bool = not sel.unload_vehicles().is_empty()
-	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or mounted != _mounted:
+	var gun := false
+	for id in sel.selected_vehicles():
+		if (view.vehicles_by_id.get(id, {}).get("ammo", {}) as Dictionary).has("ap"):
+			gun = true
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or mounted != _mounted or gun != _gun:
 		_size = size
 		grid_mode = want
 		_pzf_slot = pzf
 		_mounted = mounted
+		_gun = gun
 		_layout()
 	queue_redraw()
 
@@ -163,6 +170,8 @@ func _layout() -> void:
 		# S8a: Unload in the fifth slot of the top row.
 		_add(UNLOAD, Rect2(4.0 * (abw + g), 0, abw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
+		if not _gun:
+			return
 		for i in ROW_AMMO.size():
 			_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
 		return
