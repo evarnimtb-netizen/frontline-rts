@@ -76,8 +76,6 @@ targets `targets/S8a.toml`; owner questions S8a-1..19 in `docs/TODO.md`.
   (rifles and MGs at the M10's exposed crew); the thin-plate rule alone
   changes none. Case 21: MG 42 vs M3A1 side 80 / 80 / 0 % at 50 / 150 /
   300 m (276 m reach), .50 vs 251 side 100 % at all three, rifles 0.
-- Tests: `tests/halftracks.rs` (10); release 600 passed. `s7_ai.rs`
-  back-off test scans seeds 5-9 (same assertion).
 
 ## Build B: what was built and why
 
@@ -120,15 +118,12 @@ targets `targets/S8a.toml`; owner questions S8a-1..19 in `docs/TODO.md`.
   passenger squads, squad card "Mounted (SdKfz 251)", Board V (shares the
   Crew slot; right-click on an own half-track), Unload U / Shift+U,
   `match_state.md` "S8a", autoplay scene `halftracks`.
-- **CLI.** armour-test cases 22-24; JSON `factions.<f>.s8a` (sums and AI
-  counters) and `s8a_derived`.
+- **CLI.** armour-test 22-24; JSON `factions.<f>.s8a` and `s8a_derived`.
 
 ## Build B: measurements
 
-- Checks: `check.sh quick 17a94df` all ok (577 tests); release
-  `--include-ignored` 609 passed, 0 failed; Godot `test_match_view` 299/299,
-  `test_data_reload` 21/21, `check_project` ok; settings.cfg unchanged; net
-  loopback scripts `Embark` and `Disembark` on both slots.
+- Checks: quick ok (577); release 609 passed, 0 failed; Godot 299/299, 21/21,
+  check_project ok; settings.cfg unchanged; loopback scripts both commands.
 - armour5 (cases 22-24): a bazooka rocket hits a passenger in 90 % (0.83 men
   lost); a stick grenade into a stopped 251 kills 63.7 % of its riders, into
   a moving one lands inside 0 %; unloading under MG 42 fire takes 7.0 s by the
@@ -146,10 +141,9 @@ targets `targets/S8a.toml`; owner questions S8a-1..19 in `docs/TODO.md`.
 
 ## What the Tune must know
 
-1. Germany 40.0 % on 1-80 (S7 48.1): Build A's 6.4 targeting already gave
-   40 % on the 40 set; half-tracks add little to kills. Pooled 480 not run.
+1. Germany 40.0 % on 1-80 (S7 48.1; Build A's 6.4 gave 40 % on 40). 480 not run.
 2. Rides: about one trip per half-track; most are lost or wait at the front
    (Support returns only for a waiting squad). Levers: `ai_weight`,
    `[ai.transport]` `support_s`, `wait_s`, `min_ride_m`, PICK_M/MEET_M.
-3. Tick time rose ~0.15 ms; profile riders (frame rider boxes, `frame_of`
-   in spotting) and the small-arms vehicle search before tuning.
+3. Tick time rose ~0.15 ms: profile riders (frame boxes, `frame_of` in
+   spotting) and the small-arms vehicle search.
