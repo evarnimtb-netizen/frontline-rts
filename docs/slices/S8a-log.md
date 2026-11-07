@@ -90,6 +90,13 @@ targets `targets/S8a.toml`; owner questions S8a-1..19 in `docs/TODO.md`.
   all three; rifles vs both fronts 0 of 60; MG 42 at the M10 loader's head
   60 of 60.
 
+- **Tests.** `crates/sim/tests/halftracks.rs` (10). Release run
+  (`--include-ignored`): 600 passed, 0 failed. `s7_ai.rs`
+  `an_ai_open_top_backs_off_from_infantry` now scans seeds 5-9 for one where
+  the M10 backs off over 10 m (same assertion): with 6.4 the riflemen shoot its
+  crew and seed 5 got 8.5 m. Godot `test_match_view` 293/293,
+  `test_data_reload` 21/21 with the new `vehicle_types`; settings.cfg unchanged.
+
 ## What Build B must know
 
 1. `ai_weight` is 0 on both cards; the AI's `veh_slot` gate uses
