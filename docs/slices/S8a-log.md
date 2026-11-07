@@ -139,11 +139,8 @@ targets `targets/S8a.toml`; owner questions S8a-1..19 in `docs/TODO.md`.
   saves 16 / 38 s against walking the straight line (lower bound, S8a-25);
   riders lost 0.04 / 0.09 per match; dismounts under fire 7 / 10 %.
 
-## What the Tune must know
+## Tune (see spec section 15)
 
-1. Germany 40.0 % on 1-80 (S7 48.1; Build A's 6.4 gave 40 % on 40). 480 not run.
-2. Rides: about one trip per half-track; most are lost or wait at the front
-   (Support returns only for a waiting squad). Levers: `ai_weight`,
-   `[ai.transport]` `support_s`, `wait_s`, `min_ride_m`, PICK_M/MEET_M.
-3. Tick time rose ~0.15 ms: profile riders (frame boxes, `frame_of` in
-   spotting) and the small-arms vehicle search.
+1. `[ai.transport]` min_ride_m 120, wait_s 20, support_s 30: USA 1.125 transported, 1.18 trips per bought.
+2. Half-track cost does not move HE (autotune slope +0.0 per 0.05); costs unchanged.
+3. Open: T8b HE 19.1 % (oos), T15c one 45 min stall (seed 175 swapped). Not forced.

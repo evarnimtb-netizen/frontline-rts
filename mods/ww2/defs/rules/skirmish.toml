@@ -1236,15 +1236,15 @@ mortars_per_bearers = 2      # S6b: one bearer squad per this many own mortar sq
 # of known enemies (or at once when hit), support with the MG from
 # overwatch, return for the next squad. Starting values.
 [ai.transport]
-min_ride_m = 150             # m: a squad rides only to an objective farther than this; a ride this long counts as "transported" (report)
-wait_s = 30                  # s: the vehicle waits at most this long at the base for its squad, then goes to support alone
+min_ride_m = 120             # m: a squad rides only to an objective farther than this; a ride this long counts as "transported" (report). S8a Tune: 150 -> 120 (USA 0.86 -> 1.12 transported per match, saved time per ride still +30 s)
+wait_s = 20                  # s: the vehicle waits at most this long at the base for its squad, then goes to support alone. S8a Tune: 30 -> 20
 dismount_back_m = 40         # m: the men get off this far short of the first point on the way ...
 dismount_sight_m = 300       # m: ... within this of a known enemy with a clear line
 los_rays = 8                 # sight-line rays per check along the way (0: distance only)
 hit_s = 2                    # s: a penetration this recent counts as "hit": everyone out
 rider_suppression_pct = 50   # %: a rider suppressed past this gets everyone out (the crouch threshold)
 stuck_s = 10                 # s: stopped this long on the way: the men get off where it stands
-support_s = 60               # s: after unloading, the MG supports from overwatch this long before it returns for the next squad
+support_s = 30               # s: after unloading, the MG supports from overwatch this long before it returns for the next squad. S8a Tune: 60 -> 30 (many half-tracks were lost before a second trip)
 arrive_m = 15                # m: a move that ends farther than this from its goal is a failed move ...
 max_fails = 2                # ... and after this many the job uses where the vehicle stands (no move loops, S7 tick fix)
 repath_s = 5                 # s: no job sends the same move again within this

@@ -6,7 +6,6 @@ limit: **S8a** = SdKfz 251/1 Ausf. D, M3A1 and their systems (vehicles.md 6.4, 6
 from `17a94df`; targets `docs/slices/targets/S8a.toml`; questions S8a-N in section 14.
 
 ## 1. Baseline (verified S7 JSON after the tick fix, no rerun)
-
 | Set | Germany % | base max % | HE % | mortar G / U % | vehicle kills G / U % | top type G / U % |
 |---|---|---|---|---|---|---|
 | 160 (1-80) | 48.1 | 50.6 | 20.9 | 14.2 / 11.9 | 21.8 / 17.9 | Pz IV 18.9 / Sherman 16.1 |
@@ -18,7 +17,6 @@ Pooled Germany 46.9 % / 480. Vehicle MGs 6.6-8.5 % of kills; StuG 3.0-3.6, M10 1
 ms. S8a.toml on this JSON: 91 pass, 37 miss (T5d, T32a as in S7; the rest are new fields and cases 21-24).
 
 ## 2. Code map (where each change goes)
-
 | Area | File:line (at 17a94df) | Change |
 |---|---|---|
 | Vehicle schema | `sdk/crates/content/src/vehicle.rs` 239 `MountKind`, 303 `VehicleRole`, 323 `MobilityKind`, 344 `ArmourMaterial`, 376 `VehicleDef`, 674 `MountDef`, 1303 "exactly one main gun", 2186 `VehicleSetup`, 2246 `main_gun()`, 353/360 `MAX_MOUNTS`/`MAX_INNER_BOXES` | `Pintle`, `Transport`, `Halftrack`, `FaceHardened`; `[transport]`, `[[passenger_slots]]`, `[[shields]]`; main gun 0..=1; inner cap 14 -> 24 |
@@ -38,7 +36,6 @@ ms. S8a.toml on this JSON: 91 pass, 37 miss (T5d, T32a as in S7; the rest are ne
 | Presenter | `crates/godot-bridge/src/match_node.rs`, `present.rs`; `godot/match/vehicle_view.gd`, `vehicles.gd`, `mock_vehicles.gd`, `match_input.gd` 21-46, `hud/detail_panel.gd`, `hud/orders_grid.gd`, `hud/roster.gd`; `godot/docs/match_state.md` | blockouts, riders, cards, buttons |
 
 ## 3. Schema additions
-
 **Main gun optional (S8a-1).** `0..=1` main mounts. `VehicleSetup::main_gun()` returns `Option<&MountSetup>`;
 `mg_mounts()` = the mounts after the main gun. `VehicleState::mgs` keeps one entry per MG mount in that order,
 so the four existing vehicles keep their indices. A vehicle with no main gun never runs main-gun targeting,
@@ -115,7 +112,6 @@ pivot allowed); the difference is data: higher `bog_pct`, lower `turn_deg_s`, `d
 trenches like tanks, stops at AT ditches). Speeds are cross-country practical, not road.
 
 ## 4. Small arms against thin armour (6.4; settles S7-7)
-
 - **Hit path.** A small-arms round striking a plate with a weapon that has a table runs `armour::penetrates`
   (pen0 from the table at the round's flown range, the plate's cos and material). Stop: `Blow::Stopped` as now,
   no event. Pass: the core continues `length_cm` and hits at most `max_boxes` inner boxes (seats, riders,
@@ -131,7 +127,6 @@ trenches like tanks, stops at AT ditches). Speeds are cross-country practical, n
 - **Budget.** `armour_box_tests` counts the tests; T43c reports pens per match; T14b (stress tick) holds.
 
 ## 5. Transport (6.6 lean)
-
 - **State.** `Unit.riding: Option<Riding { vehicle: SimId, slot: u8 }>`; `VehicleState.riders:
   Vec<Option<SimId>>` (one per slot), `door_ticks: u16` (time to the next man in or out), `unload: Option<Unload
   { over_sides }>`; `Order::Embark { vehicle }` on the squad. Riders keep HP, kit, weapons, squad and
@@ -156,7 +151,6 @@ trenches like tanks, stops at AT ditches). Speeds are cross-country practical, n
   sides.
 
 ## 6. Content (both vehicles: boxes and numbers verify unless a source says)
-
 | | SdKfz 251/1 Ausf. D | M3A1 |
 |---|---|---|
 | Card (id) | `ger_sdkfz251_1_squad`, vehicle `ger_sdkfz251_1` | `usa_m3a1_squad`, `usa_m3a1` |
@@ -180,7 +174,6 @@ the M3A1's .30 pintle sockets are left out (S8a-10). S7-1: StuG roof MG and M10 
 balance and need exposed loader or commander boxes; data-only in S8b).
 
 ## 7. AI (`ai/transport.rs`, `[ai.transport]`)
-
 Bought through the `vehicle` mix slot by card `ai_weight` (Build A: 0; Build B: 100, the tanks'). Per transport
 one saved job `{ vehicle, squad, phase, goal, fails, since }`; phases:
 
@@ -201,7 +194,6 @@ one saved job `{ vehicle, squad, phase, goal, fails, since }`; phases:
 Support there). No job issues the same move twice in `repath_s` (5).
 
 ## 8. Presenter
-
 Blockouts from the boxes (S7 `vehicle_types` path): cab, open compartment, MG and its shield turning with the
 pintle yaw. Riders drawn seated at their slot (`UnitSnapshot.riding`); a vehicle card lists its passengers
 (squad name, men, HP pips); a squad card shows "Mounted (vehicle)". Embark tool **V** (click an own transport),
@@ -210,7 +202,6 @@ penetrations. `match_state.md` "S8a". Autoplay scene `halftracks`: a loaded 251 
 `scratchpad/s8a/`.
 
 ## 9. Save, hash, protocol
-
 `SAVE_VERSION` 17 -> 18 once (Build A, with `MgState.yaw`; Build B adds the riding fields under 18 before
 anything leaves the branch). New fields: `MgState.yaw`; `Unit.riding` (manual `StableHash` in `hash.rs` 135);
 `VehicleState.{riders, door_ticks, unload}` (postcard hash); `Order::Embark`; the AI transport jobs; per-player
@@ -297,3 +288,11 @@ JSON fields: S8a.toml header.
 - S8a-13 Thin-plate fragment values (75 mm 12, mortars 9, grenades 3). (A) Starting values, verify.
 - S8a-14 Cross-country speeds 750 / 850 cm/s (road 52 / 72 km/h). (A) Starting values, verify.
 - S8a-15 Half-track crews bail as tank crews (`*_tank_crew`). (A) Yes.
+
+## 15. Tune results (S8a Tune)
+
+- Changed (`[ai.transport]`): `min_ride_m` 150 -> 120, `wait_s` 30 -> 20, `support_s` 60 -> 30. USA transported per match 0.86 -> 1.125, trips per bought 0.90 -> 1.18 (T41b, T48b pass); saved per ride Germany 13.7 s, USA 29.6 s (still positive).
+- Autotune (`ht_cost_mult`, 0.9-1.4 on the 290/310 MP costs, 520 matches, target HE >= 20.5 %): "not resolved"; slope on HE +0.0 [-0.1, +0.2] per 0.05, so card cost does not move HE (20.3 / 20.2 / 20.6 at 0.9 / 1.15 / 1.4). Costs, `ai_weight` (70 = no change) left as shipped. Tuner HE over 520 matches: 20.3 %, Germany 44.5 % (raw interval about +-4).
+- Targets after the tune (seeds 1-80 / 101-180 / 201-280): Germany 48.1 / 48.1 / 44.4 %, pooled 46.9 % over 480; HE 20.1 / 19.1 / 20.6; T32 17.1 / 12.4 %; `td_hunt_m` stays 300.
+- Open misses: T8b (HE 19.1 % on 101-180, floor 20; Build B 19.4) is seed noise on a flat knob, and T15c (seed 175 swapped, 45 min, tickets 141 vs 24, not a loop) came only with the new knob values (the old values give a 688 s win); a variant with `wait_s` 30 had no stall but Germany 38.8 % on 1-80, so it was not taken. Seed hunting would overfit.
+

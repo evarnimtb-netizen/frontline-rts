@@ -1108,12 +1108,12 @@
           "hit_s": 2,
           "los_rays": 8,
           "max_fails": 2,
-          "min_ride_m": 150,
+          "min_ride_m": 120,
           "repath_s": 5,
           "rider_suppression_pct": 50,
           "stuck_s": 10,
-          "support_s": 60,
-          "wait_s": 30
+          "support_s": 30,
+          "wait_s": 20
         }
       },
       "call_in": {

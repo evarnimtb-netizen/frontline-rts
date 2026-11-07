@@ -105,6 +105,14 @@ fn summary(r: &VirtualReport) -> String {
 
 /// The checks every healthy run must pass.
 fn assert_clean(r: &VirtualReport, min_ticks: u64) {
+    assert_clean_lost(r, min_ticks, 0);
+}
+
+/// `assert_clean` that allows up to `max_lost` stamped orders per player
+/// that never ran: a match that ends (a side wiped or out of tickets) can
+/// end between an order's stamp and its tick (S8a Tune: seed 2 now ends at
+/// 15.8 min with one such order). Full-length runs allow none.
+fn assert_clean_lost(r: &VirtualReport, min_ticks: u64, max_lost: u64) {
     let s = summary(r);
     assert!(
         r.ticks.iter().all(|&t| t >= min_ticks),
@@ -118,7 +126,7 @@ fn assert_clean(r: &VirtualReport, min_ticks: u64) {
     assert_eq!(r.relay_desync, None, "{s}");
     assert!(!r.streams_differ, "{s}");
     assert_eq!(r.order_errors, 0, "{s}");
-    assert_eq!(r.lost, [0, 0], "{s}");
+    assert!(r.lost.iter().all(|&n| n <= max_lost), "{s}");
     assert_eq!(r.stamped, r.queued, "every queued order was stamped: {s}");
     assert!(r.stamped.iter().all(|&n| n > 20), "the script ran: {s}");
     assert_eq!(
@@ -473,7 +481,7 @@ fn soak_20_minutes_seeds_1_to_3() {
         eprintln!("soak seed {seed}: {}", summary(&r));
         if r.outcomes[0] != Outcome::Running {
             assert_eq!(r.outcomes[0], r.outcomes[1], "{}", summary(&r));
-            assert_clean(&r, r.ticks[0].min(r.ticks[1]));
+            assert_clean_lost(&r, r.ticks[0].min(r.ticks[1]), 1);
             continue;
         }
         assert_clean(&r, 1198 * 30);
