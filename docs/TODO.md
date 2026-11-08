@@ -34,6 +34,9 @@ next starts. Process rules: `docs/process/workflows.md`.
   counter-battery; no shell ration; field howitzers on all maps, cap 1.
 - Vehicles before fortifications in the roadmap.
 - Match length: no match under 10 or over 40 min; median 15-30.
+- Vehicle spotting stays 2x; AT guns get a 250 % optic bonus inside their arc (Q12 (A), owner 2026-11-08).
+- AT gun capture: kill the crew and the gun turns neutral; an enemy squad can serve it, only with the rounds left at the gun or from captured crates of the gun's faction (owner 2026-11-08).
+- T33 (vehicle manpower cap) counts tanks and tank destroyers/assault guns only (owner, S8b-26).
 - Workflows: tiers, review gate and model/effort rules in
   `docs/process/workflows.md` (owner 2026-11-03).
 
@@ -159,12 +162,27 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-23 (Build C) "MG dry" on the 251 card was the `halftracks` screenshot scene, which empties the MGs to hold fire; the bridge test shows a fresh 251 reports its stowage. The "red hatched ammo bar" was the absent parts in the roster's component strip (S8a-27). (A) Closed.
   S8b-24 (Build C) Recon AI reuses the S7 overwatch entry (`AiOverwatch`), not a new saved `AiRecon` job; the float for rearming stays the existing `[ai.ammo] float_mp`; a new `ammo_float_mp` key adds nothing. (A) Yes.
   S8b-25 (Build C) Truck blockouts: 3 axles for every truck, 4 on a long armoured car (no axle field in the defs). (A) Accept until art.
-  S8b-26 (Build C) T33a (vehicles at most 35 % of manpower) reads 36.3 % on seeds 1-80: the cap predates recon cars and trucks (their manpower is 6 % and 3 % of spend). (A) Accept; raise the cap to 40 or count only tanks and TDs in the next vehicle slice.
+  S8b-26 (decided 2026-11-08: T33 counts tanks and tank destroyers/assault guns only; `tank_td_mp_pct` in S9.toml) (Build C) T33a (vehicles at most 35 % of manpower) reads 36.3 % on seeds 1-80: the cap predates recon cars and trucks (their manpower is 6 % and 3 % of spend). (A) Accept; raise the cap to 40 or count only tanks and TDs in the next vehicle slice.
   S8b-28 (Fix) `wheeled_stuck_repaths` 12: a wheeled move re-pathed that often within 6 m ends idle where it stands, so a goal behind a closed trench line ends like an arrival (a DropCrates sets its crates there). Tracked vehicles keep re-pathing as before. (A) Accept. (B) Same rule for tracks in a later slice.
   S8b-29 (Fix) A recon car that backed off holds the place it backed to until its anchor moves or it is fired on, even if the threat is gone from sight; a car facing away drives off instead of reversing. (A) Accept. (B) Return to the spot when the threat has been unseen for some seconds.
   S8b-27 (Build C) T50e (Germany on 201-280) -8.75 s and T41b (USA on 1-80) 0.981: five of six ride pairs are above 0, rides per set are few (about 50), so each pair moves by about +-10 s by chance. (A) Accept; not chased further.
   S8b-30 (Build B, was S8b-21) A destroyed cargo box always starts an ammo fire and the fire detonates the load at the same 40 kg rule (so one penetrating hit detonates a loaded truck about 70 % of the time), matching 7.3 "a penetration or fire". (A) Yes. (B) A `cargo_detonate_pct` of its own.
   S8b-31 (Build B, was S8b-22) A truck need not stop to serve (the radii are short, and `DropCrates` and loading already need it stopped). (A) Yes. (B) Serve only when stopped.
+  S9-1 (Plan) Gun optic range. The owner's 250 % applied as written multiplies the target's size factor (a tank 200 %, moving 250 %) and gives 875-1090 m on the 1 km map; the design says "about 400-500 m". (A) Inside the arc against vehicles the range is `sight_m` 175 x 250 % = 437 m, no size or moving boost. (B) Literal multiply (875 m and more).
+  S9-2 (Plan) A card with a tow pays gun + tow, the tow arrives hitched with the crew riding; the stand-alone Sd.Kfz. 11 card is for spares and its `max_alive` does not limit the gun card. (A) Yes. (B) Guns and tows only as separate cards.
+  S9-3 (Plan) The 57 mm comes with an M3A1 (340 + 310 = 650 MP against the Pak 40's 560): the CCKW is cheaper but carries no men in this slice (its crew would walk). (A) M3A1. (B) CCKW at 540 MP with a walking crew.
+  S9-4 (Plan) The S5a-37 German price cut is not applied to gun cards (roster prices 380 and 260). (A) Yes; the Tune may move them. (B) Apply the cut.
+  S9-5 (Plan) A gun's own `pop` is 1 (the validator range starts at 1); the crew are counted as soldiers. (A) Yes.
+  S9-6 (Plan) AI displacement (`displace_after_shots`, HE within 20 m) is left out; a Hold gun only re-sites when overrun. (A) Yes. (B) Build it now.
+  S9-7 (Plan) Any infantry except AT teams can serve a gun (untrained: reload and spread 150 %); crews are tag `gun_crew`, not `crew`. (A) Yes, as designed.
+  S9-8 (Plan) Captured crates: a squad can pick up a set-down enemy crate; it becomes that player's and feeds only weapons of the crate's own faction (the captured gun). (A) Yes. (B) Only crates lying within reach of the gun, no pick-up.
+  S9-9 (Plan) Gun pit 55 cm deep so wheels are not blocked and no ramp is needed (design: 60-80 cm with a ramp). (A) Yes.
+  S9-10 (Plan) A neutral gun is seen by everyone (the S3c abandoned rule). (A) Yes. (B) Fog applies.
+  S9-11 (Plan) Destroying the `Gun` part wrecks the gun; `Recoil` is field-repairable; barrel is part of `Gun`; `Sight` and `Recoil` are new parts. (A) Yes.
+  S9-12 (Plan) Men at the slots hold their rifles while the gun has a target. (A) Yes. (B) They always fire their personal weapons.
+  S9-13 (Plan) Gun cards `max_alive` 2 and available from 0:00 (the roster gives no cap or unlock; the AI waits until 2:00 and buys only once a tank has been seen or at its date). (A) Yes. (B) Tighter cap or a later unlock.
+  S9-14 (Plan) The 57 mm has AP only in S9 (M303 HE is late 1944, verify). (A) Yes. (B) Give it HE from 1944-06 for balance.
+  S9-15 (Plan) The AI buys only the Pak 40 and the 57 mm (Pak 38 stays `ai_weight` 0); very old neutral guns are scrapped by the abandoned cap. (A) Yes.
 
 ## Planned work queue
 
@@ -180,7 +198,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
    spec `docs/slices/S8a-halftracks.md`, targets `S8a.toml`, log `S8a-log.md`; Build A, B, Tune, review and Fix).
    Open: S8a-30, S8a-31 (S8a-28 and -29 settled by S8b). S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks: built, tuned, reviewed and fixed on `s8b-trucks-recon` (Plan, Build A, B, C, Tune, Review, Fix, Docs; spec `docs/slices/S8b-trucks-recon.md`, targets `S8b.toml`, log `S8b-log.md`). Merge next.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
-8. S9 AT guns: next slice after the S8b merge. Decide S8b-26 (vehicle manpower cap) before its mix runs.
+8. S9 AT guns: Plan done on `s9-at-guns` (spec `docs/slices/S9-at-guns.md`, targets `S9.toml`, questions S9-1..15).
 
 ## Known issues still open
 

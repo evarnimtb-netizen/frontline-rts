@@ -339,6 +339,16 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                     * u.card_cost.get(c).copied().unwrap_or(0) as f64
             })
             .sum();
+        // S9 (T33, owner S8b-26): tanks and TDs/assault guns only.
+        let tank_td_mp: f64 = u
+            .vehicle_card
+            .iter()
+            .filter(|(v, _)| u.tank_td_vehicles.contains(*v))
+            .map(|(_, c)| {
+                q4.bought.get(c).copied().unwrap_or(0) as f64
+                    * u.card_cost.get(c).copied().unwrap_or(0) as f64
+            })
+            .sum();
         let kills = f.kills.max(1) as f64;
         let mut by_vehicle = Map::new();
         let mut kos_per = Map::new();
@@ -360,6 +370,7 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                 "bought_matches_pct": bought_pct,
                 "mp_share_pct": mp_share,
                 "vehicle_mp_pct": pct(vehicle_mp, spent),
+                "tank_td_mp_pct": pct(tank_td_mp, spent),
                 "kills_by_vehicle_pct": by_vehicle,
                 "vehicle_kills_pct": pct(all as f64, kills),
                 "kills_by_vehicle_max_pct": max_pct,

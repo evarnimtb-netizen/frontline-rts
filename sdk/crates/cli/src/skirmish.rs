@@ -7,7 +7,7 @@
 //! twice: over the whole match and over the "peak" ticks, those with at
 //! least [`PEAK_SHARE_PCT`] % of the match's highest live soldier count.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -406,6 +406,9 @@ pub struct S7Player {
     pub open_top_backoffs: u32,
     pub card_cost: BTreeMap<String, u32>,
     pub vehicle_card: BTreeMap<String, String>,
+    /// S9 (T33): vehicles the owner's manpower cap counts (tanks, assault
+    /// guns and tank destroyers), by short id.
+    pub tank_td_vehicles: BTreeSet<String>,
 }
 
 /// S5b Part B AI fire-mission counters of one player (or summed).
@@ -1273,6 +1276,20 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                                 Some((short(&v.id), short(&t.id)))
                             })
                             .collect(),
+                        tank_td_vehicles: roster
+                            .iter()
+                            .filter_map(|&t| s.squad_types.get(t as usize))
+                            .filter_map(|t| s.vehicles.get(t.vehicle? as usize))
+                            .filter(|v| {
+                                matches!(
+                                    v.role,
+                                    frontline_content::VehicleRole::Tank
+                                        | frontline_content::VehicleRole::AssaultGun
+                                        | frontline_content::VehicleRole::TankDestroyer
+                                )
+                            })
+                            .map(|v| short(&v.id))
+                            .collect(),
                     }
                 },
                 s8a: pl.s8a,
@@ -1776,6 +1793,9 @@ pub struct S7Faction {
     pub card_cost: BTreeMap<String, u32>,
     #[serde(skip)]
     pub vehicle_card: BTreeMap<String, String>,
+    /// S9 (T33): tanks, assault guns and tank destroyers by short id.
+    #[serde(skip)]
+    pub tank_td_vehicles: BTreeSet<String>,
 }
 
 /// S6 numbers of one faction over a `--seeds` run (sums).
@@ -2159,6 +2179,8 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             for (k, v) in &p.s7.vehicle_card {
                 u.vehicle_card.insert(k.clone(), v.clone());
             }
+            u.tank_td_vehicles
+                .extend(p.s7.tank_td_vehicles.iter().cloned());
             // S8a.
             let e = &mut f.s8a;
             let c = &p.s8a;
