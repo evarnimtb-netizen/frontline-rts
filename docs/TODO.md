@@ -91,11 +91,11 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S7-3 StuG 500 MP / pop 10 / 120 s; M10 520 / 10 / 120 s (vehicles.md 8.4 said 520/500 and 90 s). (A) As stated; the Tune may move each within +-15 %.
   S7-4 The M10's assistant driver takes the `radio_mg` seat role (no hull MG), labelled by seat id. (A) Yes; a sixth role when a vehicle needs both.
   S7-5 A thrown item that strikes a plate drops to the ground below it (no deck charges, no grenade screens). (A) Yes; deck satchels are a later decision.
-  S7-6 3-inch M62 penetration row derived from the US 30° table x 1.066 / cos 30° until a Bird & Livingston row is read. (A) Use it, marked verify.
+  S7-6 3-inch M62 penetration row derived from the US 30° table x 1.066 / cos 30° until a Bird & Livingston row is read. (A) Use it, marked verify. Sourcing pass: not settled; only the 1000 yd input (88 mm) is supported by Wikipedia, so the row keeps verify (sourcing-log.md).
   S7-7 Small arms do not aim at open-top crews (stray rounds through an open face still hit seats). (A) Yes; aimed fire with 6.4 (S8). S8a: settled (reach table; a crewman's head over the rim is a target, S8a-17/18).
   S7-8 Fragments never pierce plates in S7 (all plates here >= 10 mm). (A) Yes; a thin-plate rule with 6.4. S8a: settled (`frag_pen_mm` 12 / 9 / 3, S8a-13).
   S7-9 Armour zone id = box index x 4 + face group, name `<box>_<face>` (`casemate_front`); the two tanks keep ids 0-7 and names. (A) Yes.
-  S7-10 StuG gun traverse 6 deg/s and casemate/M10 elevation 4 deg/s have no source. (A) Starting values, marked verify.
+  S7-10 StuG gun traverse 6 deg/s and casemate/M10 elevation 4 deg/s have no source. (A) Starting values, marked verify. Sourcing pass: not settled; no source for traverse or elevation rates (sourcing-log.md).
   S7-11 T34e (StuG fires in >= 80 % of armour-test case 18) cannot hold as the case is set: the Sherman starts laid on the StuG at 200 m, hits at 1.3 s (median) and 9 of 10 first hits penetrate the 30 mm side and disable it; the StuG's pivot and lay take 2.5 s (its first hit in the one run it survived). (A) Keep the scenario as vehicles.md 10 states it, make T34e a report; the pivot-to-lay is proven by `crates/sim/tests/casemate.rs` (fires in under 8 s on a target that does not shoot back).
   S7-12 T36a (an 81 mm ground burst 3-6 m from an M10 hits its crew in >= 20 %) does not hold physically: the crew boxes rise only 14-24 cm over the 66 cm rim and ground-burst fragments climb at 2-50°, so the hull edge and turret wall shadow almost every line; armour-test case 20 measures 2 of 60 (3.3 %), a Sherman 0. Bursts on the deck behind the turret hit the crew in about half (sim test). (A) Keep the physics and the Build A seat boxes; T36a becomes a report until the owner wants standing crew (head and shoulders ~40 cm over the rim) or airbursts.
   S7-13 Thrown items now collide with enemy vehicles (S7-5: a plate drops them to the ground below), so S6b matches with tanks differ slightly even before the new cards. (A) Accept; the Build B log measures it with the rest.
@@ -105,7 +105,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8a-1 Main gun optional (half-tracks have none). (A) Yes.
   S8a-2 M3A1 capacity 11; squads never split, a squad that does not fit is refused (US 12-man squad rides after a loss). ANSWERED 2026-11-08 by the owner: (B), capacity 12 (twelfth slot behind the cab, S8b Tune).
   S8a-3 MG pen tables use the belt's AP round for every round (no belt-mix roll). (A) Yes; `ap_share_pct` later if MGs run high.
-  S8a-4 Face-hardened plate x 125 % against every round (`[vehicles] face_hardened_pct`). (A) Yes, verify.
+  S8a-4 Face-hardened plate x 125 % against every round (`[vehicles] face_hardened_pct`). (A) Yes, verify. Sourcing pass: not settled; reports range 1.1 to 1.5, 125 % lies inside, forum sources only (sourcing-log.md).
   S8a-5 Transports skip the vehicle limit of 4, unlock at 2:00, cap 2 per card. (A) Yes.
   S8a-6 Half-tracks steer like tanks (neutral pivot) until S8b's wheeled model. (A) Yes.
   S8a-7 Hotkeys Embark V, Disembark U, Shift+U over the sides. (A) Yes.
@@ -114,8 +114,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8a-10 251 commander fires the front MG; no 251 rear AA MG, no M3A1 .30s; StuG roof MG and M10 .50 (S7-1) stay out. (A) Yes.
   S8a-11 Cards 290 / 310 MP, pop 3, 60 s, cap 2, unlock 2:00. (A) Yes; Tune +-15 %.
   S8a-12 The sim emits every small-arms penetration event; the feed coalesces them per vehicle per 2 s. (A) Yes.
-  S8a-13 Thin-plate fragment values `frag_pen_mm`: 75 mm 12, mortars 9, grenades 3. (A) Starting values, verify.
-  S8a-14 Cross-country speeds 750 / 850 cm/s (road 52 / 72 km/h). (A) Starting values, verify.
+  S8a-13 Thin-plate fragment values `frag_pen_mm`: 75 mm 12, mortars 9, grenades 3. (A) Starting values, verify. Sourcing pass: not settled; no terminal-ballistics source reached (sourcing-log.md).
+  S8a-14 Cross-country speeds 750 / 850 cm/s (road 52 / 72 km/h). (A) Starting values, verify. Sourcing pass: road speeds confirmed (251 about 52.5, M3A1 72 km/h per TM 9-2800); cross-country values stay gameplay assumptions (sourcing-log.md).
   S8a-15 Half-track crews bail as the faction's tank crew squad. (A) Yes.
   S8a-16 (Build A) A half-track whose MG is dry or unmanned counts as "gun out" for the bail triggers, so a second penetration within `under_fire_s` after the commander falls abandons it. (A) Yes (the driver alone does not fight on). (B) Transports never take the "under fire" trigger.
   S8a-17 (Build A) A soldier picks a vehicle only when it is nearer than the nearest man he can see (soldiers win a tie); vehicle MGs keep engaging men only. (A) Yes. (B) Vehicle MGs also fire at half-tracks they can hurt.
@@ -144,7 +144,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-8 (Plan) No road speed; both cars and trucks use cross-country speeds (no roads on our maps). (A) Yes.
   S8b-9 (Plan) Cargo detonates only with at least 40 kg of shells or explosives; below that it burns. (A) Yes.
   S8b-10 (Plan) Tanks keep `stationary_sight_pct` 100 (no optics change to the tank balance). (A) Yes, values with a later tank pass.
-  S8b-11 (Plan) Figures not in vehicles.md (2 cm AP and HE, stowages, reloads, truck plates) are from memory and marked verify in the defs. (A) Use them; an owner or M2 task checks sources.
+  S8b-11 (Plan) Figures not in vehicles.md (2 cm AP and HE, stowages, reloads, truck plates) are from memory and marked verify in the defs. (A) Use them; an owner or M2 task checks sources. Sourcing pass: partly settled: CCKW payload now 2270 kg, several plates and stowage totals confirmed; the rest stays verify (sourcing-log.md).
   S8b-12 (Plan) The 2 cm gun is a one-shot model with an averaged reload (no 10-round magazine, no bursts). (A) Yes.
   S8b-13 (Plan) The push-limit reserve (`push_without_supply_m`, 7.6) is left out. (A) Yes, with the heavy wave.
   S8b-14 (Plan) AI tanks fire only 6.4-6.9 main-gun rounds per tank bought and start 0-4 rearm trips in 160 matches (S8a data), so truck rearms of tanks stay few; crates are the measured work and tank-round targets are reports. (A) Keep the truck as the owner asked. (B) Raise AI tank fire first, out of scope.

@@ -19,7 +19,7 @@ sources = [
 ]
 
 # The M48's HE values (75mm_m48.toml, S3b physical-contact rule) scaled to
-# the lighter shell: filler 0.86 lb TNT against the M48's 1.47 lb (verify),
+# the lighter shell: filler 0.86 lb TNT (Wikipedia 76 mm gun M1) against the M48's 1.47 lb (verify),
 # so blast_radius_cm 120 x (0.86 / 1.47)^(1/3) = 100; body 12.9 lb against
 # 14.6 lb, so frag_count 80 x 0.88 = 70. The rest as the M48 (starting
 # values; units as there: cm, %, degrees, m).

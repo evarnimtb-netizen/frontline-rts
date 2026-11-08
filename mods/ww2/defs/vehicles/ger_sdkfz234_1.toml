@@ -82,7 +82,7 @@ front = { thickness_mm = 30, slope_deg = 35 }
 # 8-10 mm (vehicles.md 4.1).
 side = { thickness_mm = 8, slope_deg = 30 }
 rear = { thickness_mm = 10, slope_deg = 30 }
-# Top plate (verify).
+# Top plate 5 mm (WWII Vehicle and Gun Database, Quartermaster Section: 5-6 mm).
 top = { thickness_mm = 5 }
 
 [[boxes]]
@@ -129,7 +129,7 @@ in = "turret"
 def = "ww2:kwk38_2cm"
 mount = "turret_main"
 muzzle = [190, 0, 40]
-# Degrees (verify).
+# Degrees (verify: sources give +70 for AA use, but the validator caps the upper limit at 60; data-sourcing log).
 elevation_deg = [-4, 60]
 # Stowage 480 x 2 cm (spec 8; split verify).
 ammo = [
@@ -144,7 +144,7 @@ barrel = { length_cm = 105, radius_cm = 4 }
 def = "ww2:mg42"
 mount = "coax"
 muzzle = [100, 20, 40]
-# Rounds stowed (verify).
+# Rounds stowed (2400: Quartermaster Section Sd.Kfz 234 8-Rad; historyofwar.org Sd.Kfz 234/1).
 rounds = 2400
 
 [[components]]

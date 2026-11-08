@@ -75,7 +75,7 @@ box = { center = [0, 0, 120], half = [290, 150, 70] }
 [boxes.armor]
 # 38 mm upper glacis at 55° (Hunnicutt data sheet).
 front = { thickness_mm = 38, slope_deg = 55 }
-# 19 mm at 38° (Hunnicutt); rear 19 at 38° and top 19 (verify).
+# 19 mm at 38° (Hunnicutt); rear 19 at 38° (AFV Database, Wikipedia M10); top 19 over the crew, 9.5 over the engine deck.
 side = { thickness_mm = 19, slope_deg = 38 }
 rear = { thickness_mm = 19, slope_deg = 38 }
 top = { thickness_mm = 19 }
@@ -89,7 +89,7 @@ box = { center = [0, 0, 33], half = [110, 105, 33] }
 open = ["top"]
 floor_cm = 0
 [boxes.armor]
-# 57 mm front at 45° (Hunnicutt); 25 mm sides at 20°; rear 25 (verify).
+# 57 mm front at 45° (Hunnicutt); 25 mm sides at 20°; rear 25 (AFV Database, Wikipedia M10; AFV Database gives the sides at 15°).
 front = { thickness_mm = 57, slope_deg = 45 }
 side = { thickness_mm = 25, slope_deg = 20 }
 rear = { thickness_mm = 25, slope_deg = 0 }

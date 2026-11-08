@@ -6131,7 +6131,7 @@
         }
       ],
       "supply": {
-        "cap_kg_total": 2500,
+        "cap_kg_total": 2270,
         "cookoff": "ww2:75mm_m48",
         "crates": [
           "ww2:usa_shells_crate",

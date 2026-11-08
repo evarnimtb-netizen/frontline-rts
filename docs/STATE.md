@@ -105,9 +105,9 @@ Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
 - Balance: T5c (Germany 41.9 % on seeds 1-80, pool in band, S8a-30), T33a/b (S8b-26), T50e (S8b-27).
 - Tick: settled by a clean run on the final build, no rise over S8a (S8b log, "Tick time").
 - Godot: all four checks pass on the final build (12-seat M3A1); `Vehicles.COMPONENTS` lists all 10 parts.
-- Net loopback sends `DropCrates` at a non-truck (refused there; covered by sim tests).
-- Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels or fires Panzerfausts. No radio,
+- Net loopback sends `DropCrates` at a non-truck (refused there; covered by sim tests). Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels or fires Panzerfausts. No radio,
   registered fire, cross-OS CI.
+- Data sourcing pass (branch `data-sourcing`, `docs/slices/sourcing-log.md`): CCKW payload 2270 kg; most "verify" figures stay unresolved.
 
 ## Roadmap position
 

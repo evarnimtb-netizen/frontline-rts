@@ -142,7 +142,7 @@ exit_ms = 2000
 # 7.3: the truck's stock. Each kg is paid at its kind's price as it loads
 # in base (D1, no surcharge D2); shells share the base crate queue.
 [supply]
-cap_kg_total = 2500          # kg per kind, at most (payload, verify)
+cap_kg_total = 2270          # kg per kind, at most (2.5 short tons off-road; Wikipedia GMC CCKW, warhistory.org US Army trucks)
 load_kg = { shells = 320, small_arms = 120, explosives = 40 }  # kg it takes on while stopped in base (S8b-3)
 radius_m = 8                  # m: men are served within this
 vehicle_radius_m = 15         # m: vehicles rearm within this
