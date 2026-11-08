@@ -2036,6 +2036,17 @@ impl ModDefs {
                     .crew_squad
                     .as_ref()
                     .and_then(|c| index_of(self.playable_ids(), c));
+                // S8b: the truck's crate defs, per kind.
+                if let (Some(t), Some(d)) = (out.supply.as_mut(), v.supply.as_ref()) {
+                    for c in &d.crates {
+                        let kind = self.supply.get(c).and_then(|x| {
+                            x.supply.as_deref().and_then(SupplyKind::from_name)
+                        });
+                        if let Some(kind) = kind {
+                            t.crates[kind.index()] = index_of(self.supply.keys(), c);
+                        }
+                    }
+                }
                 out
             })
             .collect()
@@ -2852,6 +2863,20 @@ impl MatchSetup {
         for v in &self.vehicles {
             if let Some(m) = check_vehicle(v, &self.weapons, &self.ammo, nf) {
                 check(false, "vehicles", m);
+            }
+            // S8b: a truck's crate defs are crates of its kind and faction.
+            if let Some(t) = &v.supply {
+                let ok = t.crates.iter().enumerate().all(|(k, c)| {
+                    c.is_none_or(|c| {
+                        self.stocks.get(c as usize).is_some_and(|d| {
+                            d.kind == StockKind::Crate
+                                && d.faction == v.faction
+                                && d.supply.map(|s| s.index()) == Some(k)
+                                && d.g > 0
+                        })
+                    })
+                });
+                check(ok, "vehicles.supply.crates", "not a crate of its kind and faction");
             }
         }
         for s in &self.squad_types {

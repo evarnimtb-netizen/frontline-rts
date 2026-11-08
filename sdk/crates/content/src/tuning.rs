@@ -1091,6 +1091,19 @@ tuning_table! {
         cookoff_s: 1..=60 = "d_cookoff_s",
         /// S6: an own man this close picks up a crate (m).
         pickup_m: 1..=20 = "d_pickup_m",
+        /// S8b (7.3): MG rounds per second a vehicle's stowage takes from a
+        /// forward source (HQ, dump, truck; 0: none, the S6 behaviour).
+        fwd_mg_rounds_s: 0..=1000 = "d_fwd_mg_rounds_s",
+        /// S8b (7.3): kg per second of small arms or explosives a stopped
+        /// truck loads in base (shells share the crate queue).
+        truck_load_kg_s: 1..=1000 = "d_truck_load_kg_s",
+        /// S8b: a truck drops one crate per this many seconds (s).
+        drop_s: 1..=60 = "d_drop_s",
+        /// S8b: a truck this close to its drop point stops and drops (m).
+        drop_reach_m: 1..=50 = "d_drop_reach_m",
+        /// S8b (S8b-9): kg of shells and explosives in the cargo for a hit
+        /// to detonate it; below this it only burns.
+        cargo_detonate_min_kg: 0..=5000 = "d_cargo_detonate_min_kg",
     }
 }
 
@@ -1156,6 +1169,21 @@ fn d_cookoff_s() -> u32 {
 }
 fn d_pickup_m() -> u32 {
     2
+}
+fn d_fwd_mg_rounds_s() -> u32 {
+    0
+}
+fn d_truck_load_kg_s() -> u32 {
+    8
+}
+fn d_drop_s() -> u32 {
+    3
+}
+fn d_drop_reach_m() -> u32 {
+    8
+}
+fn d_cargo_detonate_min_kg() -> u32 {
+    40
 }
 fn d_tank_crate_far_m() -> u32 {
     300

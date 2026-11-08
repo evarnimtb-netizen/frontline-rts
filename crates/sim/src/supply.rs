@@ -903,24 +903,7 @@ impl MatchState {
                 let Some(gun) = v.main_gun() else {
                     continue;
                 };
-                let held = |k: usize| vs.ammo[k] as u32 + (vs.loaded == Some(k as u8)) as u32;
-                let rare_held: u32 = gun
-                    .ammo
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, a)| a.rare)
-                    .map(|(k, _)| held(k))
-                    .sum();
-                let best = gun
-                    .ammo
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, a)| a.rare == rare)
-                    .map(|(k, a)| (k, (a.count as u32).saturating_sub(held(k))))
-                    .filter(|(_, short)| *short > 0)
-                    .max_by_key(|&(k, short)| (short, std::cmp::Reverse(k)));
-                let best = best.filter(|_| !rare || rare_held < v.rare_cap);
-                let Some((k, _)) = best else {
+                let Some(k) = pick_round(vs, v, rare) else {
                     self.vehicles.get_mut(&id).expect("listed").supply_due &= !bit;
                     continue;
                 };
@@ -936,6 +919,37 @@ impl MatchState {
             }
         }
     }
+}
+
+/// S8b: the main-gun entry (standard or `rare`) furthest below its load, the
+/// one a rearm step fills; `None` when nothing is short, a rare round is
+/// at `rare_cap`, or the vehicle has no main gun. Base and forward rearm
+/// both choose with this.
+pub(crate) fn pick_round(
+    vs: &crate::vehicle::VehicleState,
+    v: &frontline_content::vehicle::VehicleSetup,
+    rare: bool,
+) -> Option<usize> {
+    let gun = v.main_gun()?;
+    let held = |k: usize| vs.ammo[k] as u32 + (vs.loaded == Some(k as u8)) as u32;
+    let rare_held: u32 = gun
+        .ammo
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.rare)
+        .map(|(k, _)| held(k))
+        .sum();
+    if rare && rare_held >= v.rare_cap {
+        return None;
+    }
+    gun.ammo
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.rare == rare)
+        .map(|(k, a)| (k, (a.count as u32).saturating_sub(held(k))))
+        .filter(|(_, short)| *short > 0)
+        .max_by_key(|&(k, short)| (short, std::cmp::Reverse(k)))
+        .map(|(k, _)| k)
 }
 
 /// S5a: takes one mortar bomb for `gunner` (squad `members` of type

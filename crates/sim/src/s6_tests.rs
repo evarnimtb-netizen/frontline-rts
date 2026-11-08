@@ -1081,6 +1081,16 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
         crates_lost: _,
         stock_out_g: _,
         stock_lost_g: _,
+        truck_loaded_g: _,
+        truck_load_micro: _,
+        truck_out_g: _,
+        truck_dropped_g: _,
+        truck_lost_g: _,
+        truck_crates_dropped: _,
+        truck_tank_rounds: _,
+        truck_men_rounds: _,
+        fwd_belt_rounds: _,
+        cargo_detonations: _,
     } = S6Account::default();
     fn st(s: &mut SupplyState) -> &mut Structure {
         s.structures.values_mut().next().unwrap()

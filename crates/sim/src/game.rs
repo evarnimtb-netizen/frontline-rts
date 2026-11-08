@@ -1119,6 +1119,12 @@ impl MatchState {
             &CommandKind::PickUpCrate { squad, crate_id } => {
                 self.pick_up_crate(ctx, p, squad, crate_id)
             }
+            &CommandKind::DropCrates {
+                vehicle,
+                point,
+                count,
+                kind,
+            } => self.order_drop_crates(ctx, p, vehicle, point, count, kind),
             CommandKind::Embark { squads, vehicle } => self.order_embark(ctx, p, squads, *vehicle),
             CommandKind::Disembark {
                 vehicles,

@@ -30,6 +30,14 @@
 //!   rack factor's difference credited to the owner. One source per client
 //!   and service: structures (ascending id) before crates (ascending id), so
 //!   rates never stack. Draws are free (paid at issue).
+//! * **Supply trucks (S8b).** A truck (`[supply]`) is a third kind of
+//!   source through the same code (`source_for`, `draw`): it rearms vehicles
+//!   within `vehicle_radius_m` and men within `radius_m`, from a stock in
+//!   `cargo_g` paid as it loads, stopped in the own base (shells on the
+//!   crate queue, D1, no surcharge). It never feeds a mortar directly
+//!   (`Reach::None`, S8b-4). `DropCrates` drives it to a point and sets
+//!   crates down; a penetrating hit on the cargo box detonates it like a
+//!   rack.
 //! * **Boxes.** Built structures' boxes and set-down crates are oriented
 //!   boxes ([`StaticBox`], derived each tick before the Ballistics stage).
 //!   Bullets and shells stop at the first one in their path (`crate::
@@ -67,6 +75,8 @@ pub const MAX_BOXES: usize = 4;
 pub const MAX_STRUCTURES: usize = 256;
 pub const MAX_CRATES: usize = 1024;
 pub const MAX_COOKOFFS: usize = 256;
+/// S8b: most crates in one `DropCrates`.
+pub const MAX_DROP: u8 = 8;
 
 /// An HQ or dump.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -171,6 +181,23 @@ pub struct S6Account {
     /// box (with `stock_in_g` and the stock held: the T22 balance).
     pub stock_out_g: u64,
     pub stock_lost_g: u64,
+    /// S8b: grams loaded into trucks and the µMP paid for them.
+    pub truck_loaded_g: [u32; 3],
+    pub truck_load_micro: u64,
+    /// S8b: grams trucks served, dropped as crates and lost (loaded = out +
+    /// dropped + lost + held).
+    pub truck_out_g: u64,
+    pub truck_dropped_g: u64,
+    pub truck_lost_g: u64,
+    /// S8b: crates set down by trucks.
+    pub truck_crates_dropped: u32,
+    /// S8b: main-gun rounds and small-arms rounds trucks gave out.
+    pub truck_tank_rounds: u32,
+    pub truck_men_rounds: u32,
+    /// S8b: MG rounds any forward stock put into vehicle stowage.
+    pub fwd_belt_rounds: u32,
+    /// S8b: truck cargoes that detonated.
+    pub cargo_detonations: u32,
 }
 
 /// All S6 state (`MatchState::supply6`).
@@ -456,6 +483,11 @@ impl SupplyState {
     }
 }
 
+/// Greatest common divisor (intervals in ticks).
+fn gcd(a: u64, b: u64) -> u64 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
 /// Whether `a` and `b` are within `r` (m) of each other.
 fn within(a: FxVec2, b: FxVec2, r: Fx) -> bool {
     let rr = r.raw().max(0) as u64;
@@ -473,11 +505,36 @@ fn round_g(setup: &MatchSetup, f: frontline_content::setup::Feed) -> Option<(Sup
     feed_supply(setup, f)
 }
 
-/// Where a client draws: a structure's stock or a crate.
+/// Where a client draws: a structure's stock, a truck's cargo or a crate.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Source {
     Structure(u32),
+    /// The truck and its owner.
+    Truck(SimId, u8),
     Crate(u32),
+}
+
+/// S8b: a live supply truck this tick (ascending id).
+#[derive(Copy, Clone)]
+struct TruckSrc {
+    id: SimId,
+    owner: PlayerId,
+    pos: FxVec2,
+    /// Men and vehicles are served within these (m).
+    men: Fx,
+    vehicles: Fx,
+    /// Ticks per standard main-gun round.
+    every: u64,
+}
+
+/// Which clients a truck can serve in [`MatchState::source_for`].
+#[derive(Copy, Clone)]
+enum Reach {
+    /// Trucks do not serve this client (a mortar: S8b-4).
+    NoTruck,
+    /// A vehicle: within `vehicle_radius_m`; `every` is the standard round
+    /// interval of a structure or crate (the fastest source in reach wins).
+    Vehicle { every: u64 },
 }
 
 impl MatchState {
@@ -780,11 +837,14 @@ impl MatchState {
         self.update_crates(ents);
         self.stock_in(&sp);
         self.feed_mortars(ents, hash, tick, &sp);
+        let trucks = self.trucks_now(ents);
+        self.load_trucks(tick, &sp, &trucks);
+        self.drop_crates(ents, terrain, tick, &sp, &trucks);
         let period = (sp.serve_period_ms as u64 * self.setup.tick_hz as u64 / 1000).max(1);
         if tick.is_multiple_of(period) {
-            self.serve_men(ents, hash, tick, &sp, period);
+            self.serve_men(ents, hash, tick, &sp, period, &trucks);
         }
-        self.rearm_forward(ents, tick, &sp);
+        self.rearm_forward(ents, tick, &sp, &trucks);
         // T20: every bomb that entered a mortar squad came from a counted
         // source.
         let after = self.mortar_bombs_by_player(ents);
@@ -972,8 +1032,12 @@ impl MatchState {
     }
 
     /// The source serving a client of `p` at `pos` for supply `kind` with
-    /// at least `g` grams: a structure whose radius holds it, else a
-    /// set-down crate of that kind within `feed` (ascending ids).
+    /// at least `g` grams: the fastest in reach, ties structures, then
+    /// trucks, then crates (ascending ids); a structure whose radius holds
+    /// it, a truck within its radius (`reach`), a set-down crate of that
+    /// kind within `feed`. One source per client and service: rates never
+    /// stack.
+    #[allow(clippy::too_many_arguments)]
     fn source_for(
         &self,
         p: PlayerId,
@@ -981,28 +1045,77 @@ impl MatchState {
         kind: SupplyKind,
         g: u32,
         feed: Fx,
+        trucks: &[TruckSrc],
+        reach: Reach,
     ) -> Option<Source> {
         let k = kind.index();
-        for (&id, s) in &self.supply6.structures {
-            if s.owner == p
-                && s.built
-                && s.stock_g[k] >= g
-                && within(s.pos, pos, self.setup.stocks[s.def as usize].radius.into())
-            {
-                return Some(Source::Structure(id));
-            }
+        let structure = self
+            .supply6
+            .structures
+            .iter()
+            .find(|(_, s)| {
+                s.owner == p
+                    && s.built
+                    && s.stock_g[k] >= g
+                    && within(s.pos, pos, self.setup.stocks[s.def as usize].radius.into())
+            })
+            .map(|(&id, _)| Source::Structure(id));
+        let (every, truck) = match reach {
+            Reach::NoTruck => (0, None),
+            Reach::Vehicle { every } => (
+                every,
+                trucks
+                    .iter()
+                    .filter(|t| {
+                        t.owner == p
+                            && within(t.pos, pos, t.vehicles)
+                            && self.vehicles[&t.id].cargo_g[k] >= g
+                    })
+                    .min_by_key(|t| (t.every, t.id.0))
+                    .map(|t| (Source::Truck(t.id, t.owner.0), t.every)),
+            ),
+        };
+        if let Some((src, t)) = truck
+            && t < every
+        {
+            return Some(src);
         }
-        for (&id, c) in &self.supply6.crates {
-            if c.owner == p
-                && c.carrier.is_none()
-                && c.g >= g
-                && self.setup.stocks[c.def as usize].supply == Some(kind)
-                && within(c.pos, pos, feed)
-            {
-                return Some(Source::Crate(id));
-            }
+        if structure.is_some() {
+            return structure;
         }
-        None
+        if let Some((src, t)) = truck
+            && t == every
+        {
+            return Some(src);
+        }
+        self.supply6
+            .crates
+            .iter()
+            .find(|(_, c)| {
+                c.owner == p
+                    && c.carrier.is_none()
+                    && c.g >= g
+                    && self.setup.stocks[c.def as usize].supply == Some(kind)
+                    && within(c.pos, pos, feed)
+            })
+            .map(|(&id, _)| Source::Crate(id))
+            .or(truck.map(|(src, _)| src))
+    }
+
+    /// Grams of `kind` at `src`.
+    fn stock_held(&self, src: Source, kind: SupplyKind) -> u32 {
+        let k = kind.index();
+        match src {
+            Source::Structure(id) => self.supply6.structures.get(&id).map_or(0, |s| s.stock_g[k]),
+            Source::Truck(id, _) => self.vehicles.get(&id).map_or(0, |v| v.cargo_g[k]),
+            Source::Crate(id) => self.supply6.crates.get(&id).map_or(0, |c| {
+                if self.setup.stocks[c.def as usize].supply == Some(kind) {
+                    c.g
+                } else {
+                    0
+                }
+            }),
+        }
     }
 
     /// Takes `g` grams of `kind` from `src` (checked by `source_for`).
@@ -1013,6 +1126,10 @@ impl MatchState {
                 s.stock_g[kind.index()] -= g;
                 let o = s.owner.0 as usize;
                 self.supply6.accounts[o].stock_out_g += g as u64;
+            }
+            Source::Truck(id, o) => {
+                self.vehicles.get_mut(&id).expect("source").cargo_g[kind.index()] -= g;
+                self.supply6.accounts[o as usize].truck_out_g += g as u64;
             }
             Source::Crate(id) => {
                 let c = self.supply6.crates.get_mut(&id).expect("source");
@@ -1070,11 +1187,12 @@ impl MatchState {
                 .min_by_key(|&(s, m)| (s, m.0))
                 .map(|(_, m)| m);
             let Some(taker) = taker else { continue };
-            let Some(src) = self.source_for(sq.owner, at, kind, g, feed) else {
+            let Some(src) = self.source_for(sq.owner, at, kind, g, feed, &[], Reach::NoTruck)
+            else {
                 continue;
             };
             let every = match src {
-                Source::Structure(_) => sp.structure_bomb_s,
+                Source::Structure(_) | Source::Truck(..) => sp.structure_bomb_s,
                 Source::Crate(_) => sp.crate_bomb_s,
             } as u64
                 * hz;
@@ -1087,7 +1205,7 @@ impl MatchState {
             hash.mark_entity_chunk(taker.chunk());
             let acc = &mut self.supply6.accounts[owner];
             match src {
-                Source::Structure(_) => acc.structure_bombs += 1,
+                Source::Structure(_) | Source::Truck(..) => acc.structure_bombs += 1,
                 Source::Crate(_) => acc.crate_bombs += 1,
             }
             self.explain_bombs(owner, 1);
@@ -1103,19 +1221,23 @@ impl MatchState {
         tick: u64,
         sp: &frontline_content::tuning::SupplyTuning,
         period: u64,
+        trucks: &[TruckSrc],
     ) {
         let hz = self.setup.tick_hz as u64;
         let unfired = (sp.unfired_s as u64 * hz).min(u16::MAX as u64) as u16;
         let per = (sp.base_small_arms_rounds_s as u64 * sp.serve_period_ms as u64 / 1000).max(1);
         let item_every = (self.setup.rules.items.resupply_ticks as u64 / period).max(1);
         let feed = Fx::from_int(sp.crate_feed_m as i32);
-        // Sources in order: structures, then crates.
+        // Sources in order: structures, trucks, then crates.
         let mut sources: Vec<(Source, PlayerId, FxVec2, Fx)> = Vec::new();
         for (&id, s) in &self.supply6.structures {
             if s.built {
                 let r = self.setup.stocks[s.def as usize].radius;
                 sources.push((Source::Structure(id), s.owner, s.pos, r.into()));
             }
+        }
+        for t in trucks {
+            sources.push((Source::Truck(t.id, t.owner.0), t.owner, t.pos, t.men));
         }
         for (&id, c) in &self.supply6.crates {
             let kind = self.setup.stocks[c.def as usize].supply;
@@ -1187,25 +1309,16 @@ impl MatchState {
                     })
                     .min();
                 if let Some((_, k, g, short)) = pick {
-                    let have = match src {
-                        Source::Structure(id) => {
-                            self.supply6.structures[&id].stock_g[SupplyKind::SmallArms.index()]
-                        }
-                        Source::Crate(id) => self.supply6.crates.get(&id).map_or(0, |c| {
-                            if self.setup.stocks[c.def as usize].supply
-                                == Some(SupplyKind::SmallArms)
-                            {
-                                c.g
-                            } else {
-                                0
-                            }
-                        }),
-                    };
+                    let have = self.stock_held(src, SupplyKind::SmallArms);
                     let n = (per as u32).min(short).min(have / g.max(1));
                     if n > 0 {
                         self.draw(src, SupplyKind::SmallArms, n * g);
                         ents.kit[i].rounds[k] += n as u16;
-                        self.supply6.accounts[owner.0 as usize].fwd_rounds += n;
+                        let acc = &mut self.supply6.accounts[owner.0 as usize];
+                        acc.fwd_rounds += n;
+                        if matches!(src, Source::Truck(..)) {
+                            acc.truck_men_rounds += n;
+                        }
                         any = true;
                     }
                 }
@@ -1218,18 +1331,7 @@ impl MatchState {
                         let (kind, g) = ty.items[j]
                             .and_then(|x| self.setup.items[x as usize].supply)
                             .map_or((SupplyKind::Explosives, 0), |s| (s.kind, s.g));
-                        let have = match src {
-                            Source::Structure(id) => {
-                                self.supply6.structures[&id].stock_g[kind.index()]
-                            }
-                            Source::Crate(id) => self.supply6.crates.get(&id).map_or(0, |c| {
-                                if self.setup.stocks[c.def as usize].supply == Some(kind) {
-                                    c.g
-                                } else {
-                                    0
-                                }
-                            }),
-                        };
+                        let have = self.stock_held(src, kind);
                         if g > 0 && have >= g {
                             self.draw(src, kind, g);
                             ents.kit[i].items[j] += 1;
@@ -1253,28 +1355,36 @@ impl MatchState {
         }
     }
 
-    /// D3 forward rearm of tanks outside the own base (module docs).
+    /// D3 forward rearm of vehicles outside the own base (module docs): one
+    /// main-gun round per due step and (S8b) MG belts, from one source at a
+    /// time, the fastest in reach.
     fn rearm_forward(
         &mut self,
         ents: &Entities,
         tick: u64,
         sp: &frontline_content::tuning::SupplyTuning,
+        trucks: &[TruckSrc],
     ) {
         let hz = self.setup.tick_hz as u64;
         let std_every = (sp.fwd_rearm_s as u64 * hz).max(1);
         let rare_every = (sp.rare_rearm_fwd_s as u64 * hz).max(1);
+        // Every interval a standard round can be due on.
+        let std_gate = trucks.iter().fold(std_every, |a, t| gcd(a, t.every));
         // A crate within crate_feed_m of the hull's edge (3 m from its
         // centre for these tanks).
         let feed = Fx::from_int(sp.crate_feed_m as i32 + 3);
+        let reach = Reach::Vehicle { every: std_every };
         let ids: Vec<SimId> = self.vehicles.keys().copied().collect();
         for id in ids {
             let i = id.index();
             if ents.kind[i] != EntityKind::Vehicle {
                 continue;
             }
-            let std_due = (tick + id.0 as u64).is_multiple_of(std_every);
-            let rare_due = (tick + id.0 as u64).is_multiple_of(rare_every);
-            if !std_due && !rare_due {
+            let now = tick + id.0 as u64;
+            let std_due = now.is_multiple_of(std_gate);
+            let rare_due = now.is_multiple_of(rare_every);
+            let belts_due = sp.fwd_mg_rounds_s > 0 && now.is_multiple_of(hz);
+            if !std_due && !rare_due && !belts_due {
                 continue;
             }
             let owner = ents.owner[i];
@@ -1288,36 +1398,33 @@ impl MatchState {
                 }
                 let vs = &self.vehicles[&id];
                 let v = &self.setup.vehicles[vs.type_idx as usize];
-                let Some(gun) = v.main_gun() else {
+                let Some(k) = crate::supply::pick_round(vs, v, rare) else {
                     continue;
                 };
-                let held = |k: usize| vs.ammo[k] as u32 + (vs.loaded == Some(k as u8)) as u32;
-                let rare_held: u32 = gun
-                    .ammo
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, a)| a.rare)
-                    .map(|(k, _)| held(k))
-                    .sum();
-                if rare && rare_held >= v.rare_cap {
-                    continue;
-                }
-                let best = gun
-                    .ammo
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, a)| a.rare == rare)
-                    .map(|(k, a)| (k, (a.count as u32).saturating_sub(held(k))))
-                    .filter(|(_, short)| *short > 0)
-                    .max_by_key(|&(k, short)| (short, std::cmp::Reverse(k)));
-                let Some((k, _)) = best else { continue };
+                let gun = v.main_gun().expect("pick_round found a round");
+                let rack = v.rack_price_pct as u64;
                 let Some(s) = self.setup.ammo[gun.ammo[k].ammo as usize].supply else {
                     continue;
                 };
-                let Some(src) = self.source_for(owner, at, s.kind, s.g, feed) else {
+                let Some(src) = self.source_for(owner, at, s.kind, s.g, feed, trucks, reach)
+                else {
                     continue;
                 };
-                let rack = v.rack_price_pct as u64;
+                // The chosen source's interval: one source, one draw per
+                // due tick, so rates never stack.
+                let every = if rare {
+                    rare_every
+                } else {
+                    match src {
+                        Source::Truck(t, _) => {
+                            trucks.iter().find(|x| x.id == t).map_or(std_every, |x| x.every)
+                        }
+                        _ => std_every,
+                    }
+                };
+                if !now.is_multiple_of(every) {
+                    continue;
+                }
                 self.draw(src, s.kind, s.g);
                 self.vehicles.get_mut(&id).expect("listed").ammo[k] += 1;
                 // D4: the round was paid at the full shell price in the
@@ -1331,8 +1438,10 @@ impl MatchState {
                 } else {
                     acc.tank_rounds_fwd += 1;
                 }
-                if matches!(src, Source::Crate(_)) {
-                    acc.tank_crate_rounds += 1;
+                match src {
+                    Source::Crate(_) => acc.tank_crate_rounds += 1,
+                    Source::Truck(..) => acc.truck_tank_rounds += 1,
+                    Source::Structure(_) => {}
                 }
                 acc.rack_credit_micro += credit;
                 let whole = acc.rack_credit_micro / MICRO;
@@ -1340,6 +1449,328 @@ impl MatchState {
                 acc.rack_credit_mp += whole as u32;
                 self.players[p].manpower = self.players[p].manpower.saturating_add(whole as u32);
             }
+            if belts_due {
+                self.rearm_belts(id, owner, at, sp.fwd_mg_rounds_s, feed, trucks, reach);
+            }
+        }
+    }
+
+    /// S8b (7.3): `budget` MG rounds into vehicle `id`'s stowage this
+    /// second, mount by mount, each from one source (the only forward code
+    /// that fills MG stowage).
+    #[allow(clippy::too_many_arguments)]
+    fn rearm_belts(
+        &mut self,
+        id: SimId,
+        owner: PlayerId,
+        at: FxVec2,
+        budget: u32,
+        feed: Fx,
+        trucks: &[TruckSrc],
+        reach: Reach,
+    ) {
+        let mut budget = budget;
+        let nm = self.vehicles[&id].mgs.len();
+        for k in 0..nm {
+            let vs = &self.vehicles[&id];
+            let spent = vs.mgs[k].spent;
+            if spent == 0 || budget == 0 {
+                continue;
+            }
+            let v = &self.setup.vehicles[vs.type_idx as usize];
+            let w = &self.setup.weapons[v.mg_mounts()[k].weapon as usize];
+            let Some((kd, g)) = w.feed.and_then(|f| feed_supply(&self.setup, f)) else {
+                continue;
+            };
+            if g == 0 {
+                continue;
+            }
+            let Some(src) = self.source_for(owner, at, kd, g, feed, trucks, reach) else {
+                continue;
+            };
+            let n = budget.min(spent).min(self.stock_held(src, kd) / g);
+            if n == 0 {
+                continue;
+            }
+            self.draw(src, kd, n * g);
+            self.vehicles.get_mut(&id).expect("listed").mgs[k].spent -= n;
+            self.supply6.accounts[owner.0 as usize].fwd_belt_rounds += n;
+            budget -= n;
+        }
+    }
+
+    // ------------------------------------------------------------- trucks --
+
+    /// S8b: the live supply trucks of this tick, ascending id.
+    fn trucks_now(&self, ents: &Entities) -> Vec<TruckSrc> {
+        let mut out = Vec::new();
+        for (&id, vs) in &self.vehicles {
+            let i = id.index();
+            let v = &self.setup.vehicles[vs.type_idx as usize];
+            let Some(t) = &v.supply else { continue };
+            if ents.kind[i] != EntityKind::Vehicle {
+                continue;
+            }
+            out.push(TruckSrc {
+                id,
+                owner: ents.owner[i],
+                pos: ents.transform[i].pos.xy(),
+                men: t.radius.into(),
+                vehicles: t.vehicle_radius.into(),
+                every: (t.round_interval_ticks as u64).max(1),
+            });
+        }
+        out
+    }
+
+    /// S8b: trucks stopped in the own base take on their load, each kg paid
+    /// at its kind's price as it loads (D1, no surcharge D2); shells share
+    /// the player's crate queue.
+    fn load_trucks(
+        &mut self,
+        tick: u64,
+        sp: &frontline_content::tuning::SupplyTuning,
+        trucks: &[TruckSrc],
+    ) {
+        let hz = self.setup.tick_hz as u64;
+        for t in trucks {
+            let vs = &self.vehicles[&t.id];
+            if vs.base_ticks == 0 || vs.speed != Fx::ZERO {
+                continue;
+            }
+            let d = self.setup.vehicles[vs.type_idx as usize]
+                .supply
+                .expect("listed truck");
+            let p = t.owner.0 as usize;
+            for kind in SupplyKind::ALL {
+                let k = kind.index();
+                let held = self.vehicles[&t.id].cargo_g[k];
+                let room = d.load_g[k].min(d.cap_g).saturating_sub(held);
+                if room == 0 {
+                    continue;
+                }
+                let step = if kind == SupplyKind::Shells {
+                    if tick < self.supply6.accounts[p].issue_at {
+                        continue;
+                    }
+                    let Some(c) = d.crates[k] else { continue };
+                    self.setup.stocks[c as usize].g
+                } else {
+                    if !(tick + t.id.0 as u64).is_multiple_of(hz) {
+                        continue;
+                    }
+                    sp.truck_load_kg_s * 1000
+                };
+                let g = step.min(room);
+                let micro = micro_price(&self.setup, kind, g);
+                if !self.pay(p, kind, micro, tick) {
+                    continue;
+                }
+                // `pay` counts a round refilled; a load is not one.
+                let r = &mut self.players[p].ammo.refilled[k];
+                *r = r.saturating_sub(1);
+                self.vehicles.get_mut(&t.id).expect("listed").cargo_g[k] += g;
+                let acc = &mut self.supply6.accounts[p];
+                acc.truck_loaded_g[k] += g;
+                acc.truck_load_micro += micro;
+                if kind == SupplyKind::Shells {
+                    acc.issue_at = tick + sp.base_crate_issue_s as u64 * hz;
+                }
+            }
+        }
+    }
+
+    /// S8b `DropCrates`: own live truck `vehicle` goes to `point` and sets
+    /// down `count` crates of `kind`.
+    pub(crate) fn order_drop_crates(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        vehicle: SimId,
+        point: FxVec2,
+        count: u8,
+        kind: SupplyKind,
+    ) -> bool {
+        let Some(sp) = self.setup.rules.supply.clone() else {
+            return false;
+        };
+        let i = vehicle.index();
+        if ctx.ents.kind.get(i) != Some(&EntityKind::Vehicle) || ctx.ents.owner[i] != p {
+            return false;
+        }
+        let Some(squad) = ctx.ents.squad[i] else {
+            return false;
+        };
+        let Some(vs) = self.vehicles.get(&vehicle) else {
+            return false;
+        };
+        let Some(d) = self.setup.vehicles[vs.type_idx as usize].supply else {
+            return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
+        };
+        if !(1..=MAX_DROP).contains(&count) {
+            return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
+        }
+        let Some(def) = d.crates[kind.index()] else {
+            return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
+        };
+        let size = Fx::from_int(self.setup.map.size_m);
+        if [point.x, point.y].iter().any(|v| *v < Fx::ZERO || *v > size) {
+            return self.refuse6(p, squad, SupplyRefusal::BadSpot);
+        }
+        if vs.cargo_g[kind.index()] < self.setup.stocks[def as usize].g {
+            return self.refuse6(p, squad, SupplyRefusal::NoCrate);
+        }
+        let (n, shells) = self.supply6.crates_of(&self.setup, p);
+        if n >= sp.crate_cap || (kind == SupplyKind::Shells && shells >= sp.shell_crate_cap) {
+            return self.refuse6(p, squad, SupplyRefusal::Cap);
+        }
+        // Already at the point: stop here; else the ordinary vehicle path.
+        // A goal it cannot reach ends like an arrival.
+        let at = ctx.ents.transform[i].pos.xy();
+        let moved = if within(at, point, Fx::from_int(sp.drop_reach_m as i32)) {
+            self.order_stop(ctx, p, squad)
+        } else {
+            self.order_move(ctx, p, squad, Order::Move { target: point })
+        };
+        if moved && let Some(vs) = self.vehicles.get_mut(&vehicle) {
+            vs.drop = Some(crate::vehicle::CrateDrop {
+                point,
+                count,
+                kind,
+                next_tick: ctx.tick,
+            });
+        }
+        moved
+    }
+
+    /// S8b: trucks with a drop order: once at the point (or stopped short of
+    /// one they cannot reach) one crate per `drop_s` behind the tailgate.
+    fn drop_crates(
+        &mut self,
+        ents: &Entities,
+        terrain: &Heightfield,
+        tick: u64,
+        sp: &frontline_content::tuning::SupplyTuning,
+        trucks: &[TruckSrc],
+    ) {
+        let hz = self.setup.tick_hz as u64;
+        let reach = Fx::from_int(sp.drop_reach_m as i32);
+        for t in trucks {
+            let vs = &self.vehicles[&t.id];
+            let Some(d) = vs.drop else { continue };
+            let i = t.id.index();
+            let Some(squad) = ents.squad[i] else {
+                self.vehicles.get_mut(&t.id).expect("listed").drop = None;
+                continue;
+            };
+            let near = within(t.pos, d.point, reach);
+            let order = &self.squads[&squad].order;
+            let driving = matches!(order, Order::Move { target } if *target == d.point);
+            if !driving && (*order != Order::Idle || vs.face.is_some()) {
+                // Another order took over.
+                self.vehicles.get_mut(&t.id).expect("listed").drop = None;
+                continue;
+            }
+            if driving {
+                if !near {
+                    continue;
+                }
+                // At the point: stop here.
+                let sq = self.squads.get_mut(&squad).expect("listed");
+                sq.order = Order::Idle;
+                crate::vehicle::hold_vehicle(&mut sq.nav, t.pos);
+                self.vehicles.get_mut(&t.id).expect("listed").reverse = false;
+            }
+            let vs = &self.vehicles[&t.id];
+            if vs.speed != Fx::ZERO || tick < d.next_tick {
+                continue;
+            }
+            let v = &self.setup.vehicles[vs.type_idx as usize];
+            let Some(def) = v.supply.and_then(|s| s.crates[d.kind.index()]) else {
+                self.vehicles.get_mut(&t.id).expect("listed").drop = None;
+                continue;
+            };
+            let k = d.kind.index();
+            let st = &self.setup.stocks[def as usize];
+            let (g, hp) = (st.g, st.boxes.first().map_or(1, |b| b.hp));
+            let (n, shells) = self.supply6.crates_of(&self.setup, t.owner);
+            if vs.cargo_g[k] < g
+                || n >= sp.crate_cap
+                || (d.kind == SupplyKind::Shells && shells >= sp.shell_crate_cap)
+                || self.supply6.crates.len() >= MAX_CRATES
+            {
+                self.vehicles.get_mut(&t.id).expect("listed").drop = None;
+                continue;
+            }
+            // Behind the tailgate, in three lanes so crates do not stack.
+            let f = dir(ents.transform[i].yaw);
+            let back = Fx::from(v.hull.half.x) + Fx::from_int(2);
+            let lane = Fx::from_int(d.count as i32 % 3 - 1) * Fx::from_ratio(6, 5);
+            let side = FxVec2::new(-f.y, f.x);
+            let pos = terrain.clamp(t.pos - f * back + side * lane);
+            let id = self.supply6.next_crate;
+            self.supply6.next_crate += 1;
+            self.supply6.crates.insert(
+                id,
+                Crate {
+                    owner: t.owner,
+                    def,
+                    pos,
+                    carrier: None,
+                    dest: None,
+                    claim: None,
+                    g,
+                    hp,
+                },
+            );
+            let acc = &mut self.supply6.accounts[t.owner.0 as usize];
+            acc.truck_crates_dropped += 1;
+            acc.truck_dropped_g += g as u64;
+            let vs = self.vehicles.get_mut(&t.id).expect("listed");
+            vs.cargo_g[k] -= g;
+            vs.drop = (d.count > 1).then(|| crate::vehicle::CrateDrop {
+                count: d.count - 1,
+                next_tick: tick + sp.drop_s as u64 * hz,
+                ..d
+            });
+        }
+    }
+
+    /// S8b: a truck's cargo when it is wrecked: lost, and after a
+    /// detonation or an ammo fire it bursts (the S6 cook-off) when it holds
+    /// at least `cargo_detonate_min_kg` of shells and explosives.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn truck_wrecked(
+        &mut self,
+        id: SimId,
+        owner: usize,
+        tick: u64,
+        pos: FxVec3,
+        cook: bool,
+        by: u8,
+        class: u8,
+    ) {
+        let Some(vs) = self.vehicles.get_mut(&id) else {
+            return;
+        };
+        let Some(t) = self.setup.vehicles[vs.type_idx as usize].supply else {
+            return;
+        };
+        let cargo = std::mem::replace(&mut vs.cargo_g, [0; 3]);
+        vs.drop = None;
+        let held: u64 = cargo.iter().map(|&g| g as u64).sum();
+        if let Some(acc) = self.supply6.accounts.get_mut(owner) {
+            acc.truck_lost_g += held;
+        }
+        let Some(sp) = self.setup.rules.supply.clone() else {
+            return;
+        };
+        let kg = (cargo[SupplyKind::Shells.index()] + cargo[SupplyKind::Explosives.index()]) / 1000;
+        if cook && kg >= sp.cargo_detonate_min_kg && kg > 0 {
+            if let Some(acc) = self.supply6.accounts.get_mut(owner) {
+                acc.cargo_detonations += 1;
+            }
+            self.start_cookoff(&sp, tick, pos, by, class, t.cookoff, kg, owner);
         }
     }
 
@@ -1409,7 +1840,6 @@ impl MatchState {
             .supply
             .clone()
             .expect("statics need [supply]");
-        let hz = self.setup.tick_hz;
         // (def, kg of shells + explosives, owner) of what broke.
         let broke: Option<(u16, u32, PlayerId)> = match b.of {
             StaticRef::Crate(id) => {
@@ -1478,6 +1908,23 @@ impl MatchState {
         let Some(ammo) = self.setup.stocks[def as usize].cookoff else {
             return;
         };
+        self.start_cookoff(&sp, tick, b.frame.center, player, class, ammo, kg, owner.0 as usize);
+    }
+
+    /// Starts a cook-off of `kg` at `pos` (S6; S8b: a truck's cargo).
+    #[allow(clippy::too_many_arguments)]
+    fn start_cookoff(
+        &mut self,
+        sp: &frontline_content::tuning::SupplyTuning,
+        tick: u64,
+        pos: FxVec3,
+        player: u8,
+        class: u8,
+        ammo: u16,
+        kg: u32,
+        owner: usize,
+    ) {
+        let hz = self.setup.tick_hz;
         let n = (kg / sp.cookoff_kg_per_burst.max(1)).min(sp.cookoff_max);
         if n == 0 || self.supply6.cookoffs.len() >= MAX_COOKOFFS {
             return;
@@ -1487,7 +1934,7 @@ impl MatchState {
         self.supply6.next_cookoff += 1;
         self.supply6.cookoffs.push(CookOff {
             id,
-            pos: b.frame.center,
+            pos,
             player,
             class,
             ammo,
@@ -1495,7 +1942,7 @@ impl MatchState {
             next_tick: tick + 1,
             every,
         });
-        self.supply6.accounts[owner.0 as usize].cookoffs += 1;
+        self.supply6.accounts[owner].cookoffs += 1;
     }
 
     /// Cook-off bursts due at `tick`: `(id, pos, player, class, ammo)`, in

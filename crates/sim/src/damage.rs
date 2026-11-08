@@ -71,7 +71,7 @@
 
 use frontline_content::setup::{HeSetup, WeaponSetup};
 use frontline_content::vehicle::{Frame, PartBoxSetup, VehicleSetup};
-use frontline_content::{AmmoMechanism, ComponentKind, SeatRole};
+use frontline_content::{AmmoMechanism, ComponentKind, SeatRole, SupplyKind};
 
 use crate::armour::{self, PenResult};
 use crate::combat::{BallisticEvent, Blow, DamageCtx, tri};
@@ -838,6 +838,7 @@ impl MatchState {
         let mut rack_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_RACK);
         let mut fire_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_FIRE);
         let mut detonated = false;
+        let mut cargo_gone = false;
         let mut dead = 0u32;
         let mut evs: Vec<ArmourEv> = Vec::new();
         let vs = self.vehicles.get_mut(&id).expect("vehicle state");
@@ -900,11 +901,26 @@ impl MatchState {
                     // that destroys it) detonates with `rack_detonate_pct`;
                     // else it starts an ammo fire with `rack_fire_pct`, and
                     // a destroyed rack always burns.
-                    if kind == ComponentKind::AmmoRack
+                    // S8b: a truck's cargo box is a rack while it holds
+                    // anything: below `cargo_detonate_min_kg` of shells and
+                    // explosives it only burns.
+                    let cargo_any = kind == ComponentKind::Cargo && vs.cargo_g != [0; 3];
+                    let cargo_blows = cargo_any
+                        && self.setup.rules.supply.as_ref().is_some_and(|sp| {
+                            let g = vs.cargo_g[SupplyKind::Shells.index()]
+                                + vs.cargo_g[SupplyKind::Explosives.index()];
+                            g / 1000 >= sp.cargo_detonate_min_kg && g > 0
+                        });
+                    if kind == ComponentKind::Cargo && gone {
+                        cargo_gone = true;
+                    }
+                    if (kind == ComponentKind::AmmoRack || cargo_any)
                         && (gone || d.dmg >= r.rack_min_damage)
                         && !detonated
                     {
-                        if rack_rng.range_i32(0, 99) < r.rack_detonate_pct as i32 {
+                        if (kind == ComponentKind::AmmoRack || cargo_blows)
+                            && rack_rng.range_i32(0, 99) < r.rack_detonate_pct as i32
+                        {
                             detonated = true;
                         } else if vs.ammo_fire == 0
                             && (gone || fire_rng.range_i32(0, 99) < r.damage.rack_fire_pct as i32)
@@ -926,6 +942,12 @@ impl MatchState {
         // is knocked out when every seat is empty.
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
         let crew_gone = living == 0 && !crate::bail::can_bail(v);
+        // S8b: a cargo box destroyed without a detonation loses its load.
+        if cargo_gone && !detonated {
+            let held: u64 = vs.cargo_g.iter().map(|&g| g as u64).sum();
+            vs.cargo_g = [0; 3];
+            self.supply6.accounts[owner as usize].truck_lost_g += held;
+        }
         for e in evs {
             self.push_event(events, e);
         }
@@ -1323,6 +1345,16 @@ impl MatchState {
                 q.retain(|r| !matches!(r, PathReq::Vehicle { squad, .. } if *squad == sq));
             }
         }
+        // S8b: a wreck's cargo is lost; a detonation or an ammo fire bursts.
+        self.truck_wrecked(
+            id,
+            owner.0 as usize,
+            ctx.tick,
+            pos + FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE),
+            cause == KO_RACK || cause == KO_AMMO_FIRE,
+            by.unwrap_or(owner.0),
+            class,
+        );
         let removed = self.make_wreck(ctx.ents, ctx.hash, id, ctx.tick);
         for gone in std::iter::once(id).chain(removed) {
             self.forget(ctx.ents, ctx.hash, gone);

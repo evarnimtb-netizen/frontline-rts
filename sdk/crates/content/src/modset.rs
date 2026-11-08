@@ -1305,6 +1305,67 @@ impl ModDefs {
                 ));
             }
         }
+        out.extend(self.check_truck_supply());
+        out
+    }
+
+    /// S8b: a truck's `[supply]` names crates of its own faction, one per
+    /// kind, a crate for every kind it loads, and a cook-off round with a
+    /// blast.
+    pub fn check_truck_supply(&self) -> Vec<Issue> {
+        use crate::defs::StockKind;
+        let mut out = Vec::new();
+        for (id, v) in &self.vehicles {
+            let Some(t) = &v.supply else { continue };
+            let at = |p: &str| format!("vehicle `{id}`: supply.{p}");
+            match self.ammo.get(&t.cookoff) {
+                Some(a) if a.he.is_some() => {}
+                Some(_) => out.push(Issue::new(
+                    at("cookoff"),
+                    format!("ammo `{}` has no blast", t.cookoff),
+                )),
+                None => out.push(Issue::new(
+                    at("cookoff"),
+                    format!(
+                        "unknown ammo `{}`{}",
+                        t.cookoff,
+                        did_you_mean(&t.cookoff, self.ammo.keys())
+                    ),
+                )),
+            }
+            let mut kinds: Vec<&str> = Vec::new();
+            for c in &t.crates {
+                let Some(d) = self.supply.get(c) else {
+                    out.push(Issue::new(
+                        at("crates"),
+                        format!(
+                            "unknown supply def `{c}`{}",
+                            did_you_mean(c, self.supply.keys())
+                        ),
+                    ));
+                    continue;
+                };
+                if d.kind != StockKind::Crate || d.faction != v.faction {
+                    out.push(Issue::new(
+                        at("crates"),
+                        format!("`{c}` is not a crate of this vehicle's faction"),
+                    ));
+                }
+                let kind = d.supply.as_deref().unwrap_or_default();
+                if kinds.contains(&kind) {
+                    out.push(Issue::new(at("crates"), "one crate def per supply kind"));
+                }
+                kinds.push(kind);
+            }
+            for (k, kg) in &t.load_kg {
+                if *kg > 0 && !kinds.contains(&k.as_str()) {
+                    out.push(Issue::new(
+                        at("load_kg"),
+                        format!("loads `{k}` but lists no crate of that kind"),
+                    ));
+                }
+            }
+        }
         out
     }
 

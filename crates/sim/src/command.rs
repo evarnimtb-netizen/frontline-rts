@@ -200,4 +200,14 @@ pub enum CommandKind {
         vehicles: Vec<SimId>,
         over_sides: bool,
     },
+    /// S8b: own supply truck `vehicle` drives to `point` and sets down
+    /// `count` crates of `kind` from its cargo there (one per `drop_s`).
+    /// Refused without cargo for one crate or at the crate caps. Any
+    /// other order to the truck ends it.
+    DropCrates {
+        vehicle: SimId,
+        point: FxVec2,
+        count: u8,
+        kind: SupplyKind,
+    },
 }

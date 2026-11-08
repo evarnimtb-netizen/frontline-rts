@@ -1,0 +1,12 @@
+# The Opel Blitz 3-ton truck as a buyable squad of one (S8b): call-in, cards and the AI use
+# the squad path. Cost, pop, call-in time and sight are in the vehicle def.
+id = "ww2:ger_opel_blitz_squad"
+name = "Opel Blitz 3-ton truck"
+short_name = "Blitz"
+faction = "ww2:germany"
+tags = ["vehicle", "truck"]
+vehicle = "ww2:ger_opel_blitz"
+# Most alive per player (S8b-1 (A); 8.4): 2. Outside the vehicle limit.
+max_alive = 2
+# 0: the AI never buys it (Build B: no AI yet; S8b-17 sets its budget).
+ai_weight = 0

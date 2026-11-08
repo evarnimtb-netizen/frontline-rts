@@ -143,6 +143,18 @@ pub struct MgState {
     pub yaw: Fx,
 }
 
+/// S8b: a truck's `DropCrates` in progress.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct CrateDrop {
+    /// Where it drives to and drops.
+    pub point: FxVec2,
+    /// Crates still to drop.
+    pub count: u8,
+    pub kind: frontline_content::setup::SupplyKind,
+    /// The first tick the next crate may go down.
+    pub next_tick: u64,
+}
+
 /// Per-vehicle state (`MatchState::vehicles`), saved and hashed through
 /// postcard bytes. Fields the later S3 stages act on (gunnery, damage,
 /// repair, escort) are here from the start so the save shape is stable.
@@ -191,6 +203,11 @@ pub struct VehicleState {
     pub since_fire: u16,
     /// S8b (6.9): ticks at speed zero, saturating (recon optics).
     pub still_ticks: u16,
+    /// S8b (section 7): a supply truck's stock in grams, by
+    /// `SupplyKind::index` (0 on every other vehicle).
+    pub cargo_g: [u32; 3],
+    /// S8b: `DropCrates` in progress (only on a truck).
+    pub drop: Option<CrateDrop>,
     /// Ticks the engine fire has burned (0: not burning).
     pub burn: u16,
     /// S3b: ticks the ammo fire has burned (0: none); it knocks the
@@ -341,6 +358,8 @@ impl VehicleState {
             ranging: 0,
             since_fire: u16::MAX,
             still_ticks: 0,
+            cargo_g: [0; 3],
+            drop: None,
             burn: 0,
             ammo_fire: 0,
             repairing: None,
@@ -387,6 +406,7 @@ impl VehicleState {
         self.suppress = None;
         self.repairing = None;
         self.repair_progress = 0;
+        self.drop = None;
     }
 
     /// The seat of `role`, if the vehicle has one.
@@ -573,7 +593,18 @@ impl VehicleState {
             || self.prev_pen.is_some_and(|t| self.last_pen.is_none_or(|l| t > l))
             || self.last_hit_dir.x.abs() > Fx::from_int(2)
             || self.last_hit_dir.y.abs() > Fx::from_int(2)
-            || (self.wreck_tick.is_some() && self.bail_order);
+            || (self.wreck_tick.is_some() && self.bail_order)
+            // S8b: cargo only on a truck, within its cap; a wreck holds none.
+            || self.cargo_g.iter().any(|&g| g > v.supply.map_or(0, |t| t.cap_g))
+            || (self.wreck_tick.is_some() && self.cargo_g != [0; 3])
+            || self.drop.is_some_and(|d| {
+                v.supply.is_none()
+                    || self.wreck_tick.is_some()
+                    || d.count == 0
+                    || d.count > crate::structures::MAX_DROP
+                    || !(Fx::ZERO..=map).contains(&d.point.x)
+                    || !(Fx::ZERO..=map).contains(&d.point.y)
+            });
         if bad {
             return Err("vehicle state is out of range");
         }

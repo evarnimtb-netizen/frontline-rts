@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 /// meaning; the one bump for the S5b slice). 9 (S6): `Build`,
 /// `IssueCrate`, `PlaceCrate`, `PickUpCrate` and the pit `DigProfile`s
 /// (the one bump for the S6 slice). 10 (S8a): `Embark` and `Disembark`
-/// (the one bump for the S8a slice).
-pub const PROTOCOL_VERSION: u16 = 10;
+/// (the one bump for the S8a slice). 11 (S8b): `DropCrates` (the one bump
+/// for the S8b slice).
+pub const PROTOCOL_VERSION: u16 = 11;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -603,7 +604,9 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::Build { .. }
         | CommandKind::IssueCrate { .. }
         | CommandKind::PlaceCrate { .. }
-        | CommandKind::PickUpCrate { .. } => true,
+        | CommandKind::PickUpCrate { .. }
+        // S8b: a vehicle id, a point, a count and a kind.
+        | CommandKind::DropCrates { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }

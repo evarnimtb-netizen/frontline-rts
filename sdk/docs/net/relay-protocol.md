@@ -114,6 +114,11 @@ kind the relay may not send. Clients cannot send relay messages.
   (`MAX_UNITS`), checked on the wire; both are bounded by the 1,024 B
   single-command limit. The save version is `-s18` (riders, door timers,
   pintle MG yaw). The one bump for the S8a slice.
+- Version 11 (S8b) adds `DropCrates { vehicle, point, count, kind }` at the
+  end of `CommandKind`: a supply truck (a `u32` entity id) drives to a point
+  (Q16.16) and sets down `count` (`u8`, 1 to 8) crates of `kind` (`SupplyKind`
+  as its variant index: 0 small arms, 1 explosives, 2 shells). Fixed size, no
+  list. The save version is `-s19`. The one bump for the S8b slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells

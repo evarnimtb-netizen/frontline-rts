@@ -17,6 +17,8 @@
 //! so the sim builds its armour tables (plate normals, cosines) from them.
 //! Units are in the field names, as for every def.
 
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -516,6 +518,30 @@ pub struct VehicleDef {
     /// S8b (6.9): stationary observation; absent: no effect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub optics: Option<OpticsDef>,
+    /// S8b (section 7): a supply truck's stock; exactly on role `truck`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<TruckSupplyDef>,
+}
+
+/// S8b (7.3): a supply truck: a stock in kg per kind, paid as it loads in
+/// the own base, serving vehicles and men in radius and dropping crates.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TruckSupplyDef {
+    /// Most kg of each kind.
+    pub cap_kg_total: u32,
+    /// What it takes on while stopped in base, kg per kind name.
+    pub load_kg: BTreeMap<String, u32>,
+    /// Men are served within this (m).
+    pub radius_m: u32,
+    /// Vehicles rearm within this (m).
+    pub vehicle_radius_m: u32,
+    /// One standard main-gun round per this (s).
+    pub round_interval_s: u32,
+    /// The crate defs it drops (`DropCrates`), one per kind at most.
+    pub crates: Vec<String>,
+    /// The round whose bursts its detonating cargo throws.
+    pub cookoff: String,
 }
 
 /// S8b (6.9): a vehicle stopped for `settle_s` sees `stationary_sight_pct`
@@ -1237,6 +1263,7 @@ impl VehicleDef {
                 300,
             );
         }
+        self.validate_truck(&mut out);
         range(
             &mut out,
             "mobility.accel_cm_s2",
@@ -2057,6 +2084,72 @@ impl VehicleDef {
         out
     }
 
+    /// S8b: `[supply]` exactly on role `truck` (cross-references are
+    /// checked by the mod set, which knows the supply and ammo defs).
+    fn validate_truck(&self, out: &mut Vec<Issue>) {
+        let truck = self.role == VehicleRole::Truck;
+        match (&self.supply, truck) {
+            (None, true) => {
+                out.push(
+                    Issue::new("supply", "a `truck` vehicle needs [supply]")
+                        .with_hint("[supply] cap_kg_total = 2500 ..."),
+                );
+                return;
+            }
+            (Some(_), false) => {
+                out.push(Issue::new("supply", "only role = \"truck\" has [supply]"));
+                return;
+            }
+            _ => {}
+        }
+        if truck && self.transport.is_some() {
+            out.push(Issue::new(
+                "transport",
+                "a truck carries supply only (S8b-5)",
+            ));
+        }
+        let Some(t) = &self.supply else {
+            return;
+        };
+        range(out, "supply.cap_kg_total", t.cap_kg_total as i64, 1, 10_000);
+        range(out, "supply.radius_m", t.radius_m as i64, 1, 50);
+        range(
+            out,
+            "supply.vehicle_radius_m",
+            t.vehicle_radius_m as i64,
+            1,
+            50,
+        );
+        range(
+            out,
+            "supply.round_interval_s",
+            t.round_interval_s as i64,
+            1,
+            60,
+        );
+        if t.load_kg.is_empty() {
+            out.push(Issue::new("supply.load_kg", "a truck loads something"));
+        }
+        for (k, kg) in &t.load_kg {
+            if crate::defs::SupplyKind::from_name(k).is_none() {
+                out.push(Issue::new(
+                    format!("supply.load_kg.{k}"),
+                    "not a supply kind (small_arms, explosives, shells)",
+                ));
+            }
+            range(
+                out,
+                &format!("supply.load_kg.{k}"),
+                *kg as i64,
+                0,
+                t.cap_kg_total as i64,
+            );
+        }
+        if t.crates.is_empty() || t.crates.len() > 3 {
+            out.push(Issue::new("supply.crates", "needs 1 to 3 crate defs"));
+        }
+    }
+
     /// S8a: shields, `[transport]` and passenger slots.
     fn validate_s8a(&self, out: &mut Vec<Issue>, frames: &[Option<BoxDef>; 2]) {
         if self.shields.len() > MAX_SHIELDS {
@@ -2698,6 +2791,26 @@ pub struct VehicleSetup {
     pub settle_ticks: u32,
     /// S8b (6.9): percent of `sight` once settled (100: no effect).
     pub stationary_sight_pct: u32,
+    /// S8b (section 7): the supply truck's stock; `None` on every other
+    /// role.
+    pub supply: Option<TruckSupplySetup>,
+}
+
+/// S8b: a resolved `[supply]` (see [`TruckSupplyDef`]). Arrays are by
+/// `SupplyKind::index`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TruckSupplySetup {
+    /// Most grams of each kind.
+    pub cap_g: u32,
+    /// Grams it takes on in base.
+    pub load_g: [u32; 3],
+    pub radius: Fixed,
+    pub vehicle_radius: Fixed,
+    pub round_interval_ticks: u32,
+    /// Index into `MatchSetup::stocks` of the crate it drops per kind.
+    pub crates: [Option<u16>; 3],
+    /// Index into `MatchSetup::ammo` (a round with a blast).
+    pub cookoff: u16,
 }
 
 impl VehicleSetup {
@@ -3123,6 +3236,25 @@ pub(crate) fn lower_vehicle(
             .collect(),
         settle_ticks: v.optics.map_or(0, |o| o.settle_s * hz),
         stationary_sight_pct: v.optics.map_or(100, |o| o.stationary_sight_pct),
+        // Crate indices are filled by `lower_vehicles`, which knows the
+        // supply defs.
+        supply: v.supply.as_ref().map(|t| {
+            let mut load_g = [0u32; 3];
+            for (k, kg) in &t.load_kg {
+                if let Some(kind) = crate::defs::SupplyKind::from_name(k) {
+                    load_g[kind.index()] = kg.saturating_mul(1000);
+                }
+            }
+            TruckSupplySetup {
+                cap_g: t.cap_kg_total.saturating_mul(1000),
+                load_g,
+                radius: Fixed::from_int(t.radius_m as i32),
+                vehicle_radius: Fixed::from_int(t.vehicle_radius_m as i32),
+                round_interval_ticks: t.round_interval_s.saturating_mul(hz),
+                crates: [None; 3],
+                cookoff: ammo(&t.cookoff),
+            }
+        }),
         transport: v.transport.as_ref().map(|t| TransportSetup {
             entry: FixedVec3::from_cm(t.entry),
             board_ticks: (t.board_ms as u64 * hz as u64).div_ceil(1000) as u32,
@@ -3467,8 +3599,25 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.seats: missing, repeated or outside the frame");
     }
-    if v.mounts.is_empty() || v.mounts.len() > MAX_MOUNTS {
+    if (v.mounts.is_empty() && v.role != VehicleRole::Truck) || v.mounts.len() > MAX_MOUNTS {
         return Some("vehicles.mounts: count out of range");
+    }
+    if v.supply.is_some() != (v.role == VehicleRole::Truck) {
+        return Some("vehicles.supply: exactly on role truck");
+    }
+    if let Some(t) = &v.supply {
+        let g_ok = (1..=10_000_000).contains(&t.cap_g) && t.load_g.iter().all(|g| *g <= t.cap_g);
+        let r_ok = fx_in(t.radius, 0, 50)
+            && t.radius > Fixed::ZERO
+            && fx_in(t.vehicle_radius, 0, 50)
+            && t.vehicle_radius > Fixed::ZERO;
+        if !g_ok
+            || !r_ok
+            || !(1..=60 * 30).contains(&t.round_interval_ticks)
+            || !ammo.get(t.cookoff as usize).is_some_and(|a| a.blast.is_some())
+        {
+            return Some("vehicles.supply: out of range");
+        }
     }
     for (i, w) in v.mounts.iter().enumerate() {
         let Some(ws) = weapons.get(w.weapon as usize) else {

@@ -977,8 +977,10 @@ impl RenderSnapshot {
                 let hp = vs.component(c.kind) as u32;
                 components[c.kind.index()] = (hp * 100 / c.hp.max(1)).min(100) as u8;
             }
-            let gun = &setup.weapons[v.primary_weapon() as usize];
-            let reload_total = gun.reload_ticks.max(1);
+            // S8b: a truck has no gun (never index `mounts[0]`).
+            let reload_total = v
+                .main_gun()
+                .map_or(1, |g| setup.weapons[g.weapon as usize].reload_ticks.max(1));
             self.vehicles.push(VehicleSnapshot {
                 id: id.0,
                 squad: ents.squad()[i].map_or(NO_SQUAD, |s| s.0),

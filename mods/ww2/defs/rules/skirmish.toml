@@ -1218,6 +1218,12 @@ cookoff_kg_per_burst = 16    # kg: one cook-off burst per this (S6-10 (A)) ...
 cookoff_max = 8              # ... at most this many ...
 cookoff_s = 6                # ... spread over this (s)
 pickup_m = 2                 # m: an own man this close picks up a crate
+# --- S8b: supply vehicles (vehicles.md 7.3; docs/slices/S8b-trucks-recon.md 7) ---
+fwd_mg_rounds_s = 50         # MG rounds per s into a vehicle's stowage from any forward stock (the 7.3 row S6 left out, S8b-6)
+truck_load_kg_s = 8          # kg per s of small arms or explosives into a truck stopped in its own base (shells: base_crate_issue_s per crate of kg)
+drop_s = 3                   # s per crate off a truck
+drop_reach_m = 8             # m: a truck this close to its drop point stops and drops there
+cargo_detonate_min_kg = 40   # kg of shells + explosives in the cargo for a hit to detonate it (S8b-9); below this it only burns
 
 # S6: the AI's HQ, crate runs and supply to tanks (owner request
 # 2026-11-01: bring supply to a tank, not only drive it back).

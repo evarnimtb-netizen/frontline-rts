@@ -3861,6 +3861,8 @@ mod tests {
             ranging: _,
             since_fire: _,
             still_ticks: _,
+            cargo_g: _,
+            drop: _,
             burn: _,
             ammo_fire: _,
             repairing: _,
@@ -3938,6 +3940,18 @@ mod tests {
             ),
             ("components", Box::new(|v| v.components[3] -= 1)),
             ("still_ticks", Box::new(|v| v.still_ticks ^= 1)),
+            ("cargo_g", Box::new(|v| v.cargo_g[0] += 1)),
+            (
+                "drop",
+                Box::new(|v| {
+                    v.drop = Some(crate::vehicle::CrateDrop {
+                        point: FxVec2::from_int(10, 10),
+                        count: 1,
+                        kind: frontline_content::setup::SupplyKind::Shells,
+                        next_tick: 0,
+                    })
+                }),
+            ),
             ("ammo", Box::new(|v| v.ammo[1] -= 1)),
             ("loaded", Box::new(|v| v.loaded = Some(1))),
             (
