@@ -386,6 +386,10 @@ pub struct PlayerReport {
     /// failed, flee plans, services started, tanks served, drops ordered;
     /// failed transport moves are in `s8a_ai`.
     pub s8b_ai: [u32; 8],
+    /// S9 per-player counters, and the AI's gun counters: unhitches,
+    /// guns in cover, gun jobs failed, pits, re-lays, recrew orders.
+    pub s9: frontline_sim::S9Counters,
+    pub s9_ai: [u32; 6],
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -409,6 +413,8 @@ pub struct S7Player {
     /// S9 (T33): vehicles the owner's manpower cap counts (tanks, assault
     /// guns and tank destroyers), by short id.
     pub tank_td_vehicles: BTreeSet<String>,
+    /// S9: the roster's AT guns, by short id.
+    pub gun_vehicles: BTreeSet<String>,
 }
 
 /// S5b Part B AI fire-mission counters of one player (or summed).
@@ -1290,6 +1296,13 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                             })
                             .map(|v| short(&v.id))
                             .collect(),
+                        gun_vehicles: roster
+                            .iter()
+                            .filter_map(|&t| s.squad_types.get(t as usize))
+                            .filter_map(|t| s.vehicles.get(t.vehicle? as usize))
+                            .filter(|v| v.role == frontline_content::VehicleRole::AtGun)
+                            .map(|v| short(&v.id))
+                            .collect(),
                     }
                 },
                 s8a: pl.s8a,
@@ -1308,6 +1321,18 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         c.truck_serves,
                         c.stranded_served,
                         c.truck_drops_ordered,
+                    ]
+                }),
+                s9: pl.s9,
+                s9_ai: ai.map_or([0; 6], |a| {
+                    let c = &a.counters;
+                    [
+                        c.gun_unhitches,
+                        c.guns_in_cover,
+                        c.gun_ai_fails,
+                        c.gun_pits,
+                        c.gun_relays,
+                        c.gun_recrew_orders,
                     ]
                 }),
                 s8b_ride: ai.map_or([0; 6], |a| {
@@ -1772,6 +1797,10 @@ pub struct S8aFaction {
     pub truck_crates_dropped: u64,
     pub truck_lost_g: u64,
     pub cargo_detonations: u64,
+    /// S9: `Player::s9` and `s9_ai` (sums), and matches with a gun round fired.
+    pub s9: frontline_sim::S9Counters,
+    pub s9_ai: [u64; 6],
+    pub gun_fired_matches: u64,
     #[serde(skip)]
     pub transport_cards: std::collections::BTreeSet<String>,
 }
@@ -1796,6 +1825,8 @@ pub struct S7Faction {
     /// S9 (T33): tanks, assault guns and tank destroyers by short id.
     #[serde(skip)]
     pub tank_td_vehicles: BTreeSet<String>,
+    #[serde(skip)]
+    pub gun_vehicles: BTreeSet<String>,
 }
 
 /// S6 numbers of one faction over a `--seeds` run (sums).
@@ -2181,6 +2212,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             }
             u.tank_td_vehicles
                 .extend(p.s7.tank_td_vehicles.iter().cloned());
+            u.gun_vehicles.extend(p.s7.gun_vehicles.iter().cloned());
             // S8a.
             let e = &mut f.s8a;
             let c = &p.s8a;
@@ -2215,6 +2247,25 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             e.truck_crates_dropped += p.s6.truck_crates_dropped as u64;
             e.truck_lost_g += p.s6.truck_lost_g;
             e.cargo_detonations += p.s6.cargo_detonations as u64;
+            for (a, b) in e.s9_ai.iter_mut().zip(p.s9_ai) {
+                *a += b as u64;
+            }
+            e.gun_fired_matches += (p.s9.gun_rounds > 0) as u64;
+            let (a, b) = (&mut e.s9, &p.s9);
+            a.guns_bought += b.guns_bought;
+            a.guns_emplaced += b.guns_emplaced;
+            a.guns_in_cover += b.guns_in_cover;
+            a.gun_rounds += b.gun_rounds;
+            a.gun_ko_tanks += b.gun_ko_tanks;
+            a.gun_crew_lost += b.gun_crew_lost;
+            a.guns_neutral += b.guns_neutral;
+            a.guns_captured += b.guns_captured;
+            a.guns_recrewed += b.guns_recrewed;
+            a.tows_lost += b.tows_lost;
+            a.ai_unhitches += b.ai_unhitches;
+            a.ai_ambush_rounds += b.ai_ambush_rounds;
+            a.gun_ai_fails += b.gun_ai_fails;
+            a.captured_gun_kills += b.captured_gun_kills;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

@@ -1269,6 +1269,10 @@ impl MatchState {
             {
                 *k += n;
             }
+            // S9: with a captured gun.
+            if let (Some(t), Some(b)) = (kill_class::vehicle(class), by) {
+                self.note_gun_kill(b as usize, t, n);
+            }
         }
     }
 
@@ -1333,6 +1337,19 @@ impl MatchState {
                 .and_then(|p| p.s7.kos_by_vehicle.get_mut(t))
         {
             *k += 1;
+            // S9: a tank or tank destroyer knocked out by a gun.
+            let vs_type = self.vehicles[&id].type_idx as usize;
+            let by_gun = self.setup.vehicles.get(t).is_some_and(|v| v.served());
+            let armoured = matches!(
+                self.setup.vehicles[vs_type].role,
+                frontline_content::VehicleRole::Tank
+                    | frontline_content::VehicleRole::AssaultGun
+                    | frontline_content::VehicleRole::TankDestroyer
+            );
+            if by_gun && armoured {
+                let s9 = &mut self.players[b as usize].s9;
+                s9.gun_ko_tanks = s9.gun_ko_tanks.saturating_add(1);
+            }
         }
         stats.knockouts += 1;
         // Followers stop where they are.

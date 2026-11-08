@@ -7,7 +7,7 @@ faction = "ww2:germany"
 tags = ["vehicle"]
 vehicle = "ww2:ger_pak40"
 # 0 = the AI never buys it (Build C; a separate budget, never the mix).
-ai_weight = 0
+ai_weight = 5
 # S9-13 (A): at most 2 alive.
 max_alive = 2
 # The tow it comes with (card, S9-2/S9-3 (A)): pays gun + tow.

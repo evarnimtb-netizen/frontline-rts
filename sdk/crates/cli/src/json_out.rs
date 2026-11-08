@@ -470,26 +470,58 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             }),
         );
     }
-    // S9 Build A: stubs, the counters are filled by Build C (AI buys).
-    o.insert(
-        "s9".into(),
-        json!({
-            "guns_bought": 0, "guns_emplaced": 0, "guns_in_cover": 0, "gun_rounds": 0,
-            "gun_ko_tanks": 0, "gun_crew_lost": 0, "guns_neutral": 0, "guns_captured": 0,
-            "guns_recrewed": 0, "tows_lost": 0, "ai_unhitches": 0, "ai_ambush_rounds": 0,
-            "gun_ai_fails": 0,
-        }),
-    );
-    o.insert(
-        "s9_derived".into(),
-        json!({
-            "gun_fired_matches_pct": 0.0, "gun_in_cover_pct": 0.0, "guns_bought_per_match": 0.0,
-            "gun_rounds_per_match": 0.0, "gun_ko_tanks_per_match": 0.0,
-            "gun_crew_lost_per_match": 0.0, "guns_neutral_per_match": 0.0,
-            "guns_captured_per_match": 0.0, "captured_gun_kills_per_match": 0.0,
-            "gun_mp_pct": 0.0,
-        }),
-    );
+    // S9: the guns (`docs/slices/S9-at-guns.md` 16).
+    {
+        let e = &f.s8a;
+        let u = &f.s7;
+        let q4 = &f.s4;
+        let en = e.matches.max(1) as f64;
+        let c = &e.s9;
+        let in_cover = e.s9_ai[1];
+        let spent: f64 = u
+            .card_cost
+            .iter()
+            .map(|(k, &cost)| q4.bought.get(k).copied().unwrap_or(0) as f64 * cost as f64)
+            .sum();
+        let gun_mp: f64 = u
+            .vehicle_card
+            .iter()
+            .filter(|(v, _)| u.gun_vehicles.contains(*v))
+            .map(|(_, k)| {
+                q4.bought.get(k).copied().unwrap_or(0) as f64
+                    * u.card_cost.get(k).copied().unwrap_or(0) as f64
+            })
+            .sum();
+        o.insert(
+            "s9".into(),
+            json!({
+                "guns_bought": c.guns_bought, "guns_emplaced": c.guns_emplaced,
+                "guns_in_cover": in_cover, "gun_rounds": c.gun_rounds,
+                "gun_ko_tanks": c.gun_ko_tanks, "gun_crew_lost": c.gun_crew_lost,
+                "guns_neutral": c.guns_neutral, "guns_captured": c.guns_captured,
+                "guns_recrewed": c.guns_recrewed, "tows_lost": c.tows_lost,
+                "ai_unhitches": e.s9_ai[0], "ai_ambush_rounds": c.ai_ambush_rounds,
+                "gun_ai_fails": e.s9_ai[2], "gun_pits": e.s9_ai[3],
+                "gun_relays": e.s9_ai[4], "gun_recrew_orders": e.s9_ai[5],
+            }),
+        );
+        o.insert(
+            "s9_derived".into(),
+            json!({
+                "gun_fired_matches_pct": pct(e.gun_fired_matches as f64, en),
+                "gun_in_cover_pct": pct(in_cover as f64, c.guns_emplaced as f64),
+                "guns_bought_per_match": round3(c.guns_bought as f64 / en),
+                "guns_emplaced_per_match": round3(c.guns_emplaced as f64 / en),
+                "gun_rounds_per_match": round3(c.gun_rounds as f64 / en),
+                "gun_ko_tanks_per_match": round3(c.gun_ko_tanks as f64 / en),
+                "gun_crew_lost_per_match": round3(c.gun_crew_lost as f64 / en),
+                "guns_neutral_per_match": round3(c.guns_neutral as f64 / en),
+                "guns_captured_per_match": round3(c.guns_captured as f64 / en),
+                "captured_gun_kills_per_match": round3(c.captured_gun_kills as f64 / en),
+                "gun_mp_pct": pct(gun_mp, spent),
+            }),
+        );
+    }
     o.insert(
         "s6_derived".into(),
         json!({

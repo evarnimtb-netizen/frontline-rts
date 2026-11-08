@@ -83,6 +83,7 @@ pub use fire_mission::{
 };
 pub use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup};
 pub use fx::{Fx, FxVec2, FxVec3};
+pub use guns::S9Counters;
 pub use game::{
     CallInEvent, CallInRefusal, CapturePoint, CrewCounters, Launcher, MatchState, NavPhase, Order,
     OrderKind, Outcome, PathReq, PlayerState, S8aCounters, Squad, SquadId, kill_class,

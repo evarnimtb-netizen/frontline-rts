@@ -31,7 +31,7 @@ use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
-    AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
+    AiGunsTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
     CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
     FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning,
     ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning,
@@ -530,6 +530,8 @@ pub struct AiSetup {
     pub recon: AiReconTuning,
     /// S8b: `[ai.truck]` (or the S8b starting values).
     pub truck: AiTruckTuning,
+    /// S9: `[ai.guns]` (or the S9 starting values).
+    pub guns: AiGunsTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1903,6 +1905,7 @@ impl ModDefs {
                         transport: a.transport.clone().unwrap_or_default(),
                         recon: a.recon.clone().unwrap_or_default(),
                         truck: a.truck.clone().unwrap_or_default(),
+                        guns: a.guns.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2690,6 +2693,7 @@ impl MatchSetup {
                 ai_transport: &a.transport,
                 ai_recon: &a.recon,
                 ai_truck: &a.truck,
+                ai_guns: &a.guns,
             },
         );
         r.at_ditch

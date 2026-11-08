@@ -187,6 +187,7 @@ mod mortar;
 mod overwatch;
 mod supply;
 mod transport;
+mod guns;
 mod truck;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
@@ -198,6 +199,7 @@ pub use transport::{
     AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
 };
 
+pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use truck::{AiTruck, GAVE_UP_GOALS, MAX_TRUCKS, TruckPhase};
 
 /// Most AI commands waiting for their reaction delay.
@@ -324,6 +326,11 @@ pub struct AiState {
     /// S8b: truck jobs, by the vehicle's squad (at most
     /// [`truck::MAX_TRUCKS`]; `ai::truck`).
     pub trucks: BTreeMap<SquadId, AiTruck>,
+    /// S9: gun jobs, by the gun's squad (at most [`guns::MAX_GUNS`]).
+    pub guns: BTreeMap<SquadId, AiGun>,
+    /// S9: guns infantry was sent to serve, and when (at most
+    /// [`guns::MAX_RECREW_TRIES`]).
+    pub gun_recrews: BTreeMap<SimId, u64>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -547,6 +554,15 @@ pub struct AiCounters {
     pub truck_serves: u32,
     pub stranded_served: u32,
     pub truck_drops_ordered: u32,
+    /// S9 (`ai::guns`): guns taken off the tow at a site; of those emplaced,
+    /// in cover (woods, hull-down or a pit); gun orders failed or given up;
+    /// pits ordered; trail re-lays ordered; infantry sent to serve a gun.
+    pub gun_unhitches: u32,
+    pub guns_in_cover: u32,
+    pub gun_ai_fails: u32,
+    pub gun_pits: u32,
+    pub gun_relays: u32,
+    pub gun_recrew_orders: u32,
 }
 
 impl AiState {
@@ -574,6 +590,8 @@ impl AiState {
             ride_meas: BTreeMap::new(),
             ride_locks: BTreeMap::new(),
             trucks: BTreeMap::new(),
+            guns: BTreeMap::new(),
+            gun_recrews: BTreeMap::new(),
         }
     }
 
@@ -669,6 +687,19 @@ impl AiState {
                     || !on(o.anchor)
                     || !on(o.spot)
                     || !on(o.axis)
+            })
+            // S9.
+            || self.guns.len() > guns::MAX_GUNS
+            || self.gun_recrews.len() > guns::MAX_RECREW_TRIES
+            || self.guns.iter().any(|(id, j)| {
+                bad_squad(id)
+                    || j.tow.as_ref().is_some_and(bad_squad)
+                    || j.pit_by.as_ref().is_some_and(bad_squad)
+                    || j.since > tick + 36_000
+                    || j.moved_at > tick + 36_000
+                    || !on_map(j.site)
+                    || !on_map(j.facing)
+                    || !on_map(j.moved_to)
             })
             // S8a.
             || self.transports.len() > MAX_TRANSPORTS
@@ -1054,6 +1085,8 @@ impl Planner<'_> {
             });
         }
 
+        // S9: guns, tows and crews are the gun jobs'.
+        let guns = self.take_guns(&mut tanks, &mut mine);
         self.retreats(&mut mine, &known);
         // S5a: refill trips, staggered per point.
         self.refills(&mut mine, &known);
@@ -1068,7 +1101,9 @@ impl Planner<'_> {
         self.crews(&crews, &known, &kv);
         self.buy(&kv);
         self.buy_recon_truck();
+        self.buy_gun();
         let mut points = self.evaluate_points(&known, &kv);
+        self.gun_jobs(&guns, &mut mine, &points, &known, &kv);
         let assigned = self.assign(&mine, &mut points);
         // S5a: Panzerfaust ambushes first; the hunts skip their squads.
         let ambushing = self.ambushes(&mine, &assigned, &points, &kv);
@@ -1267,7 +1302,8 @@ impl Planner<'_> {
             })
             .count() as i64;
         let pl = &g.players[p];
-        let mut budget = pl.manpower as i64;
+        // S9: the guns' own budget (`ai::guns`) is not for other cards.
+        let mut budget = pl.manpower as i64 - self.gun_pot();
         // S5a: keep `float_mp` back while an own unit waits for a paid
         // refill in the base.
         if self.waiting_refill() {

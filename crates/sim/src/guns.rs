@@ -91,20 +91,27 @@ pub(crate) fn may_fire_rifle(
 
 /// Whether gun `vs` holds its fire at aim point `aim` (`hold_fire_m`,
 /// S9): a target farther than the hold range is laid on but not fired at,
-/// until the gun is struck (`last_attacker`).
+/// until the gun is struck (`last_attacker`). Men are not worth breaking
+/// an ambush for: they count only inside `ambush_infantry_m`.
 pub(crate) fn holds_fire(
     vs: &VehicleState,
     s: &MatchSetup,
     muzzle: FxVec3,
-    aim: Option<FxVec3>,
+    aim: Option<(FxVec3, bool)>,
 ) -> bool {
-    let (Some(sv), Some(p)) = (vs.served.as_ref(), aim) else {
+    let (Some(sv), Some((p, vehicle))) = (vs.served.as_ref(), aim) else {
         return false;
     };
     if sv.hold_fire_m == 0 || vs.last_attacker.is_some() {
         return false;
     }
-    let hold = (sv.hold_fire_m as i32).max(s.rules.vehicles.guns.self_defence_m as i32);
+    let r = &s.rules.vehicles.guns;
+    let range = if vehicle {
+        sv.hold_fire_m as u32
+    } else {
+        (sv.hold_fire_m as u32).min(r.ambush_infantry_m)
+    };
+    let hold = (range as i32).max(r.self_defence_m as i32);
     (p - muzzle).xy().length_sq_raw() > FxVec2::new(Fx::from_int(hold), Fx::ZERO).length_sq_raw()
 }
 
@@ -598,7 +605,22 @@ impl MatchState {
         list
     }
 
-    fn squad_of_gun(&self, ents: &Entities, gun: SimId) -> Option<SquadId> {
+    /// S9: `n` kills by a gun of type `t` credited to player `by`: counts
+    /// those made with a captured gun (the JSON per-type map lists the
+    /// player's own roster only).
+    pub(crate) fn note_gun_kill(&mut self, by: usize, t: usize, n: u32) {
+        let (Some(v), Some(ps)) = (self.setup.vehicles.get(t), self.setup.players.get(by)) else {
+            return;
+        };
+        if v.served()
+            && v.faction != ps.faction
+            && let Some(p) = self.players.get_mut(by)
+        {
+            p.s9.captured_gun_kills = p.s9.captured_gun_kills.saturating_add(n);
+        }
+    }
+
+        fn squad_of_gun(&self, ents: &Entities, gun: SimId) -> Option<SquadId> {
         ents.squad.get(gun.index()).copied().flatten()
     }
 

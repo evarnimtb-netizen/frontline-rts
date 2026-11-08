@@ -872,6 +872,8 @@ tuning_table! {
         /// A man at a slot fires his own weapon only while the gun has no
         /// target and an enemy is this close (m; 0: never).
         self_defence_m: 0..=500 = "default_guns_self_defence_m",
+        /// A gun holding fire breaks it for men only this close (m).
+        ambush_infantry_m: 0..=1000 = "default_guns_ambush_infantry_m",
         /// Fewest men at the slots who emplace, pack or re-lay a gun.
         min_men: 1..=16 = "default_guns_min_men",
         /// A gun with no man of its owner at a slot and none within this
@@ -887,6 +889,9 @@ tuning_table! {
 
 fn default_guns_slot_swap_s() -> u32 {
     3
+}
+fn default_guns_ambush_infantry_m() -> u32 {
+    150
 }
 fn default_guns_self_defence_m() -> u32 {
     40
@@ -909,6 +914,7 @@ impl Default for GunsTuning {
         GunsTuning {
             slot_swap_s: default_guns_slot_swap_s(),
             self_defence_m: default_guns_self_defence_m(),
+            ambush_infantry_m: default_guns_ambush_infantry_m(),
             min_men: default_guns_min_men(),
             hold_m: default_guns_hold_m(),
             abandon_s: default_guns_abandon_s(),
@@ -1445,6 +1451,103 @@ impl Default for AiReconTuning {
 }
 
 tuning_table! {
+    /// `[ai.guns]` (S9, docs/slices/S9-at-guns.md 12): how the AI buys,
+    /// sites and holds its AT guns.
+    pub struct AiGunsTuning {
+        /// It buys a gun from this match time (s), or once an enemy
+        /// vehicle has been seen.
+        after_s: 0..=3600,
+        /// All its gun cards cost at most this share of the income so far
+        /// (%): that share is set aside for them from the time it may buy.
+        income_max_pct: 0..=100,
+        /// Manpower that stays after a gun is bought.
+        reserve_mp: 0..=10000,
+        /// Guns alive or called in at once.
+        max_guns: 0..=8,
+        /// Sites lie this far behind the point (m) ...
+        site_min_m: 1..=1000,
+        /// ... up to this far (m) ...
+        site_max_m: 1..=1000,
+        /// ... on this many rings ...
+        site_rings: 1..=8,
+        /// ... with this many bearings on each ...
+        site_bearings: 1..=16,
+        /// ... up to this far either side of the approach (degrees).
+        site_spread_deg: 0..=90,
+        /// Two guns site at least this far apart (m).
+        site_apart_m: 0..=500,
+        /// The approach sampled ahead of the point (m).
+        approach_m: 1..=1000,
+        /// Sight-line rays per site tested, along the approach.
+        los_rays: 1..=16,
+        /// No site within this of known enemy men (m).
+        enemy_standoff_m: 0..=500,
+        /// A move that ends farther than this from its goal has failed (m).
+        arrive_m: 1..=200,
+        /// Failed moves before it unhitches where it stands.
+        max_fails: 1..=10,
+        /// No job sends the same order again within this (s).
+        repath_s: 1..=120,
+        /// The tow unhitches at the latest this long after setting off (s).
+        go_max_s: 10..=1800,
+        /// No unhitching with an enemy this close (m).
+        contact_m: 0..=500,
+        /// Holds fire until a target is this close (m).
+        engage_still_m: 0..=2000,
+        /// Re-lays the trail at most this often (s).
+        relay_gap_s: 1..=600,
+        /// An idle engineer squad this close digs its pit (m; 0: never).
+        pit_engineer_m: 0..=1000,
+        /// Idle infantry this close serves a gun with no crew (m; 0: never).
+        recrew_m: 0..=1000,
+        /// One such order per gun within this (s).
+        recrew_gap_s: 1..=1800,
+    }
+}
+
+impl AiGunsTuning {
+    fn check_more(&self, at: &str, out: &mut Vec<Issue>) {
+        check_order(
+            out,
+            at,
+            ("site_min_m", self.site_min_m),
+            ("site_max_m", self.site_max_m),
+        );
+    }
+}
+
+impl Default for AiGunsTuning {
+    /// S9 starting values (a rules def without `[ai.guns]`).
+    fn default() -> AiGunsTuning {
+        AiGunsTuning {
+            after_s: 120,
+            income_max_pct: 30,
+            reserve_mp: 0,
+            max_guns: 2,
+            site_min_m: 100,
+            site_max_m: 250,
+            site_rings: 5,
+            site_bearings: 9,
+            site_spread_deg: 55,
+            site_apart_m: 60,
+            approach_m: 350,
+            los_rays: 6,
+            enemy_standoff_m: 80,
+            arrive_m: 15,
+            max_fails: 2,
+            repath_s: 8,
+            go_max_s: 150,
+            contact_m: 60,
+            engage_still_m: 400,
+            relay_gap_s: 25,
+            pit_engineer_m: 150,
+            recrew_m: 100,
+            recrew_gap_s: 60,
+        }
+    }
+}
+
+tuning_table! {
     /// `[ai.truck]` (S8b, docs/slices/S8b-trucks-recon.md 9): how the AI
     /// uses its supply trucks.
     pub struct AiTruckTuning {
@@ -1832,6 +1935,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.transport", AiTransportTuning::KEYS),
     ("ai.recon", AiReconTuning::KEYS),
     ("ai.truck", AiTruckTuning::KEYS),
+    ("ai.guns", AiGunsTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -1890,6 +1994,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_transport: &'a AiTransportTuning,
     pub ai_recon: &'a AiReconTuning,
     pub ai_truck: &'a AiTruckTuning,
+    pub ai_guns: &'a AiGunsTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -1947,6 +2052,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_transport.check(&p("ai.transport"), out);
     t.ai_recon.check(&p("ai.recon"), out);
     t.ai_truck.check(&p("ai.truck"), out);
+    t.ai_guns.check(&p("ai.guns"), out);
 }
 
 #[cfg(test)]

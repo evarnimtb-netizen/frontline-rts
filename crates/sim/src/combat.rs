@@ -3237,6 +3237,10 @@ impl MatchState {
                     *n += 1;
                 }
             }
+            // S9: with a captured gun.
+            if let Some(t) = kill_class::vehicle(class) {
+                self.note_gun_kill(by as usize, t, 1);
+            }
         }
         self.sweep_vehicle_refs(ctx.ents);
         if !mbursts.is_empty() {

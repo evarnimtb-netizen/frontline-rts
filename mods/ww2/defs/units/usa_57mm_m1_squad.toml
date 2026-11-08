@@ -5,7 +5,7 @@ short_name = "57 mm M1"
 faction = "ww2:usa"
 tags = ["vehicle"]
 vehicle = "ww2:usa_57mm_m1"
-ai_weight = 0
+ai_weight = 5
 max_alive = 2
 # The tow it comes with (card, S9-2/S9-3 (A)): pays gun + tow.
 tow = "ww2:usa_m3a1_squad"

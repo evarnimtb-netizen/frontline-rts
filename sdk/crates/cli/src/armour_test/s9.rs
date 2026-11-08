@@ -1,7 +1,7 @@
 //! S9 armour-test cases (`docs/slices/S9-at-guns.md` 15): MG against a
 //! shielded crew (33), the ambush (34 Pak 40 v Sherman, 35 57 mm v Pz IV),
-//! the gun optic inside the arc (37), recrew and capture (38), mobility
-//! and the tow (39), the gun pit (40). Build C adds 36.
+//! the tank firing HE at a gun (36), the gun optic inside the arc (37),
+//! recrew and capture (38), mobility and the tow (39), the gun pit (40).
 
 use anyhow::{Result, anyhow};
 use frontline_content::vehicle::VehicleSetup;
@@ -24,6 +24,101 @@ const USA_GUN: &str = "ww2:usa_57mm_m1_squad";
 const USA_CREW: &str = "ww2:usa_57mm_crew";
 const GER_TANK: &str = "ww2:ger_pz4_h_squad";
 const USA_TANK: &str = "ww2:usa_m4a3_75_squad";
+
+/// `(HE rounds, all rounds, seconds to silence or `None`, crew lost, gun
+/// parts struck)` of a tank that has spotted a gun at 150 m (the gun has
+/// no rounds and never answers).
+fn tank_v_gun(env: &Env, seed: u64, flip: u8) -> Result<(u64, u64, Option<f64>, u64, u64)> {
+    use frontline_content::ComponentKind as K;
+    let (own, gun_card, _) = gun_side(flip);
+    let tank_card = if flip == 0 { USA_TANK } else { GER_TANK };
+    let mut w = open_top_world(env, seed)?;
+    let (_, gun) = spawn_card(&mut w, own, gun_card, at(400, 500), dir_deg(0))?;
+    let (_, tank) = spawn_card(&mut w, 1 - own, tank_card, at(550, 500), dir_deg(180))?;
+    w.edit_vehicle(gun, |vs| {
+        vs.ammo.iter_mut().for_each(|n| *n = 0);
+        vs.loaded = None;
+    });
+    let parts = [K::Gun, K::Sight, K::Recoil, K::WheelsFront, K::AmmoRack];
+    let hp = |w: &World, k: K| vstate(w, gun).map_or(0, |v| v.component(k));
+    let before: Vec<_> = parts.iter().map(|&k| hp(&w, k)).collect();
+    let men = |w: &World| {
+        vstate(w, gun)
+            .and_then(|v| v.served.as_ref().map(|s| s.slots.iter().filter(|x| x.man.is_some()).count()))
+            .unwrap_or(0) as u64
+    };
+    let start_men = men(&w);
+    let rate = hz(&w);
+    let start = w.tick();
+    let limit = start + 120 * rate;
+    let (mut he, mut all, mut silent) = (0u64, 0u64, None);
+    while w.tick() < limit && !disabled(&w, tank) {
+        w.step(&[]);
+        for e in &w.snapshot().armour_events {
+            if e.kind == ArmourEventKind::Fired as u8 && e.vehicle == tank.0 {
+                all += 1;
+                he += u64::from(e.component == 2);
+            }
+        }
+        if silent.is_none() && (men(&w) == 0 || disabled(&w, gun)) {
+            silent = Some((w.tick() - start) as f64 / rate as f64);
+            break;
+        }
+    }
+    let hit = parts
+        .iter()
+        .zip(&before)
+        .filter(|&(&k, &b)| hp(&w, k) < b)
+        .count() as u64;
+    Ok((he, all, silent, start_men.saturating_sub(men(&w)), hit))
+}
+
+/// Case 36 (T75, spec 8): a tank that spots a gun first fires HE at the
+/// crew; time to silence it, crew losses and gun parts hit (report).
+pub(super) fn case36(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(36, "tank v gun: HE at the crew");
+    let (mut he, mut all, mut lost, mut parts, mut runs, mut silent, mut secs) =
+        (0u64, 0u64, 0u64, 0u64, 0u32, 0u32, 0.0f64);
+    for (seed, flip) in env.runs() {
+        for rep in 0..3u64 {
+            let (h, a, s, l, p) = tank_v_gun(env, seed * 23 + rep * 11, flip)?;
+            r.runs += 1;
+            runs += 1;
+            he += h;
+            all += a;
+            lost += l;
+            parts += p;
+            if let Some(t) = s {
+                silent += 1;
+                secs += t;
+            }
+        }
+    }
+    let n = f64::from(runs.max(1));
+    let pct = 100.0 * he as f64 / (all.max(1)) as f64;
+    r.check_v(
+        "he_at_crew_pct",
+        pct >= 80.0,
+        round3(pct),
+        ">= 80 (T75a)",
+        format!("{he} HE of {all} rounds"),
+    );
+    r.check_v(
+        "silence_s_mean",
+        true,
+        round3(secs / f64::from(silent.max(1))),
+        "report",
+        format!("{silent} of {runs} runs silenced within 120 s"),
+    );
+    r.check_v(
+        "gun_parts_hit_mean",
+        true,
+        round3(parts as f64 / n),
+        "report",
+        format!("crew lost {:.1} per run", lost as f64 / n),
+    );
+    Ok(r)
+}
 
 /// `(owner, gun card, crew card)` of side `flip`.
 fn gun_side(flip: u8) -> (u8, &'static str, &'static str) {

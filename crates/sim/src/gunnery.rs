@@ -654,7 +654,9 @@ impl MatchState {
 
             // S9: a gun holding fire for an ambush keeps laying but does
             // not fire yet (`crate::guns::holds_fire`).
-            let held = crate::guns::holds_fire(vs, setup, muzzle, aim.map(|a| a.point));
+            let at_vehicle = target.is_some_and(|t| ents.kind[t.index()] == EntityKind::Vehicle);
+            let held =
+                crate::guns::holds_fire(vs, setup, muzzle, aim.map(|a| (a.point, at_vehicle)));
             // Fire the main gun when laid within the spread.
             if let (Some(a), Some(k), true) = (aim.or(area.filter(|_| area_ok)), vs.loaded, gun_ok)
                 && vs.reload == 0
@@ -831,6 +833,13 @@ impl MatchState {
         }
         self.vehicles.get_mut(&id).expect("listed").mgs = mgs;
         if let Some(ev) = fired {
+            // S9: gun rounds, and those from behind a hold-fire order.
+            if let Some(sv) = self.vehicles[&id].served.as_ref() {
+                let held = sv.hold_fire_m > 0;
+                let s9 = &mut self.players[owner.0 as usize].s9;
+                s9.gun_rounds = s9.gun_rounds.saturating_add(1);
+                s9.ai_ambush_rounds = s9.ai_ambush_rounds.saturating_add(held as u32);
+            }
             self.push_event(events, ev);
         }
     }
@@ -932,6 +941,18 @@ impl MatchState {
                 if (tf.origin.xy() - f.origin.xy()).length_sq_raw() > r {
                     return None;
                 }
+                // S9 (spec 8): a live gun with men at it is an HE target,
+                // aimed at the man at the first manned slot; only a gun
+                // without a crew is aimed at like a vehicle.
+                if k == EntityKind::Vehicle
+                    && let Some(point) = self.gun_crew_point(ents, t)
+                {
+                    return Some(Aim {
+                        point,
+                        vel: FxVec2::ZERO,
+                        vehicle: false,
+                    });
+                }
                 let point = aim_at(f.turret.center, tf, aim_turret);
                 Some(Aim {
                     point,
@@ -960,6 +981,21 @@ impl MatchState {
             }
             _ => None,
         }
+    }
+
+    /// S9: where a shooter aims HE at gun `t`: half a metre above the man
+    /// at its first manned slot; `None` for anything but a served gun with
+    /// a man at a slot.
+    fn gun_crew_point(&self, ents: &Entities, t: SimId) -> Option<FxVec3> {
+        let man = self
+            .vehicles
+            .get(&t)?
+            .served
+            .as_ref()?
+            .slots
+            .iter()
+            .find_map(|s| s.man)?;
+        Some(ents.transform[man.index()].pos + FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::HALF))
     }
 
     /// The main gun's next target (see the module docs): `(target, aim at

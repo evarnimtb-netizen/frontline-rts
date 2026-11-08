@@ -17,7 +17,7 @@ use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
-    AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
+    AiGunsTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
     CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
     FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning,
     ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning,
@@ -1675,6 +1675,8 @@ pub struct AiDef {
     pub recon: Option<AiReconTuning>,
     /// S8b: `[ai.truck]`.
     pub truck: Option<AiTruckTuning>,
+    /// S9: `[ai.guns]`.
+    pub guns: Option<AiGunsTuning>,
 }
 
 impl AiDef {
@@ -2805,6 +2807,7 @@ impl RulesDef {
                 ai_transport: &a.transport.clone().unwrap_or_default(),
                 ai_recon: &a.recon.clone().unwrap_or_default(),
                 ai_truck: &a.truck.clone().unwrap_or_default(),
+                ai_guns: &a.guns.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

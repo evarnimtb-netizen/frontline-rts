@@ -787,7 +787,7 @@ impl super::Planner<'_> {
     }
 
     /// Own live or pending vehicles of `role`.
-    fn of_role(&self, role: VehicleRole) -> usize {
+    pub(super) fn of_role(&self, role: VehicleRole) -> usize {
         let g = self.g;
         let s = &g.setup;
         let is_role = |t: u16| {
@@ -810,6 +810,19 @@ impl super::Planner<'_> {
     }
 
     fn buy_role(&mut self, role: VehicleRole, income_pct: u32) {
+        let reserve = self.g.setup.rules.ai.armour.tank_reserve_mp;
+        self.buy_role_within(role, income_pct, reserve);
+    }
+
+    /// Buys a card of `role`: its cost plus what the role has spent stays
+    /// within `income_pct` of the income so far; at least `reserve`
+    /// manpower stays.
+    pub(super) fn buy_role_within(
+        &mut self,
+        role: VehicleRole,
+        income_pct: u32,
+        reserve: u32,
+    ) {
         let g = self.g;
         let s = &g.setup;
         let me = self.me;
@@ -840,9 +853,8 @@ impl super::Planner<'_> {
         let minutes = self.tick / (60 * s.tick_hz.max(1) as u64);
         let income = s.rules.start_manpower as u64 + s.rules.income_per_min as u64 * minutes;
         let mp = g.players[me.0 as usize].manpower as u64;
-        let reserve = s.rules.ai.armour.tank_reserve_mp as u64;
         if (spent + ty.cost as u64) * 100 > income * income_pct as u64
-            || mp < ty.cost as u64 + reserve
+            || mp < ty.cost as u64 + reserve as u64
             || g.call_in_check(self.ents, me, card, self.due).is_err()
         {
             return;
