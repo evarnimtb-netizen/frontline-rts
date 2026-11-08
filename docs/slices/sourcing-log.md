@@ -82,3 +82,9 @@ Version bumps: none. A data value change needs no SAVE_VERSION or PROTOCOL_VERSI
 
 Applied 1, reverted 1, unresolved about 49 figures (keep verify), confirmed about 30 (comments updated only where a
 "verify" comment sat on the exact figure; the rest of the confirmations are listed here only).
+
+## Balance effect
+
+The one value changed (CCKW `cap_kg_total` 2500 -> 2270) was measured on three 160 sets, seeds 1-80, 101-180, 201-280,
+against the S8b tip: Germany 41.9 / 47.5 / 50.0 %, pooled 46.46 %, the same numbers. The AI loads a truck far below either
+cap (about 535 kg), so the cap does not bind in AI matches. Full suite: 644 tests, Godot checks, 203 of 207 targets as S8b.
