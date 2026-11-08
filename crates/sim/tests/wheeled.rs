@@ -83,7 +83,12 @@ fn the_ditch_depth_ignores_wheeled_defs() {
     let tanks = s
         .vehicles
         .iter()
-        .filter(|v| v.mobility.kind != frontline_content::MobilityKind::Wheeled)
+        .filter(|v| {
+            !matches!(
+                v.mobility.kind,
+                frontline_content::MobilityKind::Wheeled | frontline_content::MobilityKind::Towed
+            )
+        })
         .map(|v| v.mobility.ditch_block)
         .min()
         .map(|d| (Fx::from(d).mul_int(10)).round_int() as u16)
