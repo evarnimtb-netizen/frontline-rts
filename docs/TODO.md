@@ -185,7 +185,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 ## Known issues still open
 
 - S8a (on main): T5c, T41b, T48b missed on S8a (S8a-29/30); T41b and T48b pass on the S8b build; tick p99 0.493 / 0.625 ms against S7's 0.38 / 0.56, not profiled.
-- S8b (branch `s8b-trucks-recon`): T5c (Germany 41.9 % on 1-80; S8a-30), T33a/b (vehicles 36 % of manpower against a 35 cap; S8b-26), T50e (Germany -2.8 s per ride on 201-280; S8b-27). Tick: the post-Fix runs were not clean (0.67 ms peak; Build C clean 0.522), one clean `timing40` run is open. Net loopback refuses `DropCrates` at a non-truck. Godot not run since the 11-seat M3A1 slot; `Vehicles.COMPONENTS` may still list 7 parts (bridge sends 10).
+- S8b (branch `s8b-trucks-recon`): T5c (Germany 41.9 % on 1-80; S8a-30), T33a/b (vehicles 36 % of manpower against a 35 cap; S8b-26), T50e (Germany -2.8 s per ride on 201-280; S8b-27). Net loopback refuses `DropCrates` at a non-truck.
 
 Balance issues from S1-S3c are superseded by later measurements (latest:
 `docs/slices/S6-log.md` "Targets" and "Tune"). Still open:

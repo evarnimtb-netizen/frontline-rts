@@ -111,14 +111,13 @@ Hard misses: T5c (Germany 41.9 % on 1-80; pool in band), T33a/b (vehicles 36.0 /
 Clean run (Build C): `timing40` alone at 3 jobs, p99 0.427 ms all, 0.522 ms peak (S8a after Fix 0.488 / 0.621). The
 Review's clean run before the Fix read 0.406 / 0.487. After the Fix the runs were not clean: 1.101 peak right after
 the batches, then 0.672 and 0.677 with load average about 4. Those two are +8-9 % on S8a's 0.621 (below the 25 % line)
-but 29 % above Build C's clean peak. Not profiled. Open until one clean `timing40` run settles it; if it stays above
-about 0.65 ms peak, profile with `/usr/bin/sample` before the next slice.
+but 29 % above Build C's clean peak. Not profiled. Settled by the orchestrator's clean `timing40` on the final build (f6e19b2): 0.449 ms all, 0.568 peak, below S8a. Not profiled.
 
 ## Checks
 
 - Fix build: `tools/check.sh quick 0dc13dd` all ok, 610 passed. Release `--include-ignored` 644 passed, 0 failed.
-- Godot (Build C): check_project OK, test_match_view 306/306, test_net_ui 143/143, test_data_reload 21/21. Not run since
-  the Tune slot (11 seats) or the Fix.
+- Godot (Build C): check_project OK, test_match_view 306/306, test_net_ui 143/143, test_data_reload 21/21. Rerun on the
+  final build by the orchestrator: same counts, all pass.
 - Determinism: per-field save, hash and validate tests for the new AI state; whole-match AI determinism at 1, 2, 3, 8
   threads with save, load and continue; `wheeled.rs` and `trucks.rs` cover wheels and cargo.
 
@@ -132,8 +131,7 @@ about 0.65 ms peak, profile with `/usr/bin/sample` before the next slice.
   (S8b-11, S8b-25). Vehicle manpower is over the 35 % cap because the cap predates recon and trucks (S8b-26).
 - The net loopback sends `DropCrates` at a non-truck, so the sim refuses it there; accepted drops are covered by the AI
   determinism test, not loopback.
-- Godot `Vehicles.COMPONENTS` may still list 7 parts while the bridge sends 10 (absent as 0). Check before S9 relies on it.
-- Tick time after the Fix is not clean (above).
+- Godot `Vehicles.COMPONENTS` lists all 10 parts (checked on the final build).
 
 ## What later slices need
 

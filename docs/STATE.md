@@ -75,7 +75,7 @@ Balance (Fix build, 3 x 160 sets; `skirmish160` = seeds 1-80): Germany 41.9 / 47
 35: T33a/b miss, S8b-26). Saved seconds per ride GER +2.0 / +4.5 / -2.8, USA +14.9 / +11.4 / +19.9 (ride pay: USA on
 all three sets, Germany on two). Rider moved 1.21 / 1.17 per match, trips per bought 1.22 / 1.29 on 1-80.
 
-Checks: `check.sh quick` 610 passed; release 644 passed, 0 failed. Tick p99: Build C clean 0.427 / 0.522 ms; post-Fix runs not clean (0.67 ms peak): open.
+Checks: `check.sh quick` 610 passed; release 644 passed, 0 failed. Tick p99 on the final build, clean `timing40` alone: 0.449 / 0.568 ms (S8a 0.488 / 0.621).
 
 ## S8a (on main)
 
@@ -103,8 +103,8 @@ Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
 ## Known gaps
 
 - Balance: T5c (Germany 41.9 % on seeds 1-80, pool in band, S8a-30), T33a/b (S8b-26), T50e (S8b-27).
-- Tick: Build C clean; the Fix runs were not clean, not profiled (S8b log, "Tick time").
-- Godot: no run since the 11-seat M3A1; `Vehicles.COMPONENTS` may still list 7 parts (bridge sends 10).
+- Tick: settled by a clean run on the final build, no rise over S8a (S8b log, "Tick time").
+- Godot: all four checks pass on the final build (12-seat M3A1); `Vehicles.COMPONENTS` lists all 10 parts.
 - Net loopback sends `DropCrates` at a non-truck (refused there; covered by sim tests).
 - Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels or fires Panzerfausts. No radio,
   registered fire, cross-OS CI.
