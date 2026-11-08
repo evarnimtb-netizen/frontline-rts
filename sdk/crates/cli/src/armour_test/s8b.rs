@@ -35,16 +35,11 @@ fn side(flip: u8) -> (u8, &'static str, &'static str) {
 }
 
 /// A truck of `card` for `p` at `x, y` facing east holding `shells` kg.
-fn truck_at(
-    w: &mut World,
-    p: u8,
-    card: &str,
-    x: i32,
-    y: i32,
-    shells: u32,
-) -> Result<SimId> {
+fn truck_at(w: &mut World, p: u8, card: &str, x: i32, y: i32, shells: u32) -> Result<SimId> {
     let (_, v) = spawn_card(w, p, card, at(x, y), dir_deg(0))?;
-    w.edit_vehicle(v, |vs| vs.cargo_g[SupplyKind::Shells.index()] = shells * 1000);
+    w.edit_vehicle(v, |vs| {
+        vs.cargo_g[SupplyKind::Shells.index()] = shells * 1000
+    });
     Ok(v)
 }
 
@@ -79,7 +74,10 @@ fn manpower(w: &World, p: u8) -> Result<u32> {
 
 /// The account of `p` (S6 and S8b counters).
 fn acc(w: &World, p: u8) -> Result<frontline_sim::S6Account> {
-    Ok(w.game().ok_or_else(|| anyhow!("no game"))?.supply6().accounts[p as usize])
+    Ok(w.game()
+        .ok_or_else(|| anyhow!("no game"))?
+        .supply6()
+        .accounts[p as usize])
 }
 
 /// Grams a truck's shells fell by and rounds gained, per the current stock.
@@ -532,7 +530,11 @@ pub(super) fn case28(env: &Env) -> Result<CaseReport> {
                     b.y + Fx::ONE,
                     b.z + Fx::from_ratio(3, 2),
                 );
-                let from = FxVec3::new(aim.x, aim.y + Fx::from_int(60), aim.z + Fx::from_ratio(1, 4));
+                let from = FxVec3::new(
+                    aim.x,
+                    aim.y + Fx::from_int(60),
+                    aim.z + Fx::from_ratio(1, 4),
+                );
                 // The rocket drops under gravity over 60 m at its speed.
                 let speed = w
                     .match_setup()
@@ -595,11 +597,7 @@ pub(super) fn case29(env: &Env) -> Result<CaseReport> {
         r.runs += 1;
         let (p, tc, tank) = side(flip);
         let mut w = open_top_world(env, seed * 96 + flip as u64)?;
-        let f = w
-            .match_setup()
-            .ok_or_else(|| anyhow!("setup"))?
-            .players[p as usize]
-            .faction;
+        let f = w.match_setup().ok_or_else(|| anyhow!("setup"))?.players[p as usize].faction;
         let hq = w
             .match_setup()
             .and_then(|s| s.stock_of(f, StockKind::Hq, None))
@@ -975,9 +973,9 @@ pub(super) fn case31(env: &Env) -> Result<CaseReport> {
     // MG 42 at a truck's side from 150 m (7.3): nearly every round through;
     // how long until the driver or engine goes.
     let mg = weapon_idx(&w, "ww2:mg42")?;
-    let interval_s = w
-        .match_setup()
-        .map_or(0.05, |s| f64::from(s.weapons[mg as usize].interval_milli) / 30_000.0);
+    let interval_s = w.match_setup().map_or(0.05, |s| {
+        f64::from(s.weapons[mg as usize].interval_milli) / 30_000.0
+    });
     let (mut mg_pens, mut mg_struck) = (0u32, 0u32);
     let mut stop_shots: Vec<u32> = Vec::new();
     for (seed, flip) in env.runs() {
@@ -1029,7 +1027,10 @@ pub(super) fn case31(env: &Env) -> Result<CaseReport> {
         stop_s <= 60.0,
         round3(stop_s),
         "<= 60",
-        format!("median {med} rounds through the cab, {} of the runs stopped", stop_shots.len()),
+        format!(
+            "median {med} rounds through the cab, {} of the runs stopped",
+            stop_shots.len()
+        ),
     );
     // The farthest tank (spot size 200 %) the car spots settled, against a
     // car with no stationary bonus: a ladder 400-660 m.

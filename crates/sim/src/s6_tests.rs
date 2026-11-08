@@ -17,7 +17,10 @@ pub(super) fn flat_world(threads: usize) -> World {
 }
 
 /// [`flat_world`] with an edit of the setup (after the humans are set).
-pub(super) fn flat_world_with(threads: usize, edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> World {
+pub(super) fn flat_world_with(
+    threads: usize,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> World {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
     let defs = frontline_content::ModDefs::load(&root).unwrap();
     let req = frontline_content::MatchRequest::skirmish(

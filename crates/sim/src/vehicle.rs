@@ -2618,7 +2618,14 @@ mod tests {
 
     impl Rig {
         fn new() -> Rig {
-            let s = setup();
+            // The tank at index 0: the list is sorted by id, trucks first.
+            let mut s = setup();
+            let pz = s
+                .vehicles
+                .iter()
+                .position(|v| v.id == "ww2:ger_pz4_h")
+                .expect("the Panzer IV");
+            s.vehicles.swap(0, pz);
             let terrain = Heightfield::generate(TerrainKind::Flat, 256, 1);
             let block = BlockLayer::new(terrain.dim(), BlockLayer::ditch_dm_of(&s));
             let geo = Geo::of(&s.vehicles[0], &s.rules.vehicles.driving);

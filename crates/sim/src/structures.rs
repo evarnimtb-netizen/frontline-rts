@@ -1406,8 +1406,7 @@ impl MatchState {
                 let Some(s) = self.setup.ammo[gun.ammo[k].ammo as usize].supply else {
                     continue;
                 };
-                let Some(src) = self.source_for(owner, at, s.kind, s.g, feed, trucks, reach)
-                else {
+                let Some(src) = self.source_for(owner, at, s.kind, s.g, feed, trucks, reach) else {
                     continue;
                 };
                 // The chosen source's interval: one source, one draw per
@@ -1416,9 +1415,10 @@ impl MatchState {
                     rare_every
                 } else {
                     match src {
-                        Source::Truck(t, _) => {
-                            trucks.iter().find(|x| x.id == t).map_or(std_every, |x| x.every)
-                        }
+                        Source::Truck(t, _) => trucks
+                            .iter()
+                            .find(|x| x.id == t)
+                            .map_or(std_every, |x| x.every),
                         _ => std_every,
                     }
                 };
@@ -1615,7 +1615,10 @@ impl MatchState {
             return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
         };
         let size = Fx::from_int(self.setup.map.size_m);
-        if [point.x, point.y].iter().any(|v| *v < Fx::ZERO || *v > size) {
+        if [point.x, point.y]
+            .iter()
+            .any(|v| *v < Fx::ZERO || *v > size)
+        {
             return self.refuse6(p, squad, SupplyRefusal::BadSpot);
         }
         if vs.cargo_g[kind.index()] < self.setup.stocks[def as usize].g {
@@ -1757,7 +1760,7 @@ impl MatchState {
         let Some(t) = self.setup.vehicles[vs.type_idx as usize].supply else {
             return;
         };
-        let cargo = std::mem::replace(&mut vs.cargo_g, [0; 3]);
+        let cargo = std::mem::take(&mut vs.cargo_g);
         vs.drop = None;
         let held: u64 = cargo.iter().map(|&g| g as u64).sum();
         if let Some(acc) = self.supply6.accounts.get_mut(owner) {
@@ -1909,7 +1912,16 @@ impl MatchState {
         let Some(ammo) = self.setup.stocks[def as usize].cookoff else {
             return;
         };
-        self.start_cookoff(&sp, tick, b.frame.center, player, class, ammo, kg, owner.0 as usize);
+        self.start_cookoff(
+            &sp,
+            tick,
+            b.frame.center,
+            player,
+            class,
+            ammo,
+            kg,
+            owner.0 as usize,
+        );
     }
 
     /// Starts a cook-off of `kg` at `pos` (S6; S8b: a truck's cargo).

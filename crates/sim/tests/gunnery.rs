@@ -76,6 +76,16 @@ fn events(w: &World, kind: ArmourEventKind) -> usize {
         .count()
 }
 
+/// The Panzer IV's def (the vehicle list is sorted by id).
+fn pz_def(w: &World) -> frontline_content::vehicle::VehicleSetup {
+    let s = w.match_setup().unwrap();
+    s.vehicles
+        .iter()
+        .find(|v| v.id == "ww2:ger_pz4_h")
+        .unwrap()
+        .clone()
+}
+
 #[test]
 fn lay_gun_turns_at_the_def_rates_within_the_elevation_limits() {
     let mut w = World::new_match(setup(1), 1).unwrap();
@@ -339,7 +349,7 @@ fn an_empty_gunner_seat_is_refilled_by_the_radio_operator() {
     let (_, v) = tank(&mut w, 0, xy(500, 500), EAST);
     w.edit_vehicle(v, |vs| vs.seats[1].hp = 0);
     w.step(&[]);
-    let def = &w.match_setup().unwrap().vehicles[0].clone();
+    let def = &pz_def(&w);
     let vs = w.game().unwrap().vehicle(v).unwrap();
     // Seat order: driver, gunner, commander, loader, radio_mg.
     assert_eq!(def.seats[4].role, frontline_content::SeatRole::RadioMg);
@@ -417,7 +427,7 @@ fn field_repair_fixes_the_worst_part_first_and_a_hit_stops_it() {
         vs.components[ComponentKind::TrackLeft as usize] = 0;
         vs.components[ComponentKind::Engine as usize] = 20;
     });
-    let def = w.match_setup().unwrap().vehicles[0].clone();
+    let def = pz_def(&w);
     assert!(w.game().unwrap().vehicle(v).unwrap().immobilised(&def));
     assert!(w.start_repair(v));
     let vs = w.game().unwrap().vehicle(v).unwrap();

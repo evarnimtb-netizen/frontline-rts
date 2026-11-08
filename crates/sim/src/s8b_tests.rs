@@ -70,7 +70,11 @@ fn a_tank_at_15m_of_a_truck_rearms_at_one_round_per_4s_and_the_stock_falls() {
     assert_eq!(a.truck_tank_rounds, a.tank_rounds_fwd + a.tank_rare_fwd);
     let (held, grams) = rack(&w, tank);
     assert_eq!(held, a.tank_rounds_fwd + a.tank_rare_fwd);
-    assert_eq!(cargo(&w, t)[SHELLS], 600_000 - grams, "the stock falls by the kg");
+    assert_eq!(
+        cargo(&w, t)[SHELLS],
+        600_000 - grams,
+        "the stock falls by the kg"
+    );
     assert_eq!(a.truck_out_g, grams as u64);
 }
 
@@ -193,7 +197,9 @@ fn men_within_8m_take_small_arms_from_a_truck_not_at_12m() {
     let far = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 512, 520);
     for sq in [near, far] {
         for m in members(&w, sq) {
-            w.edit_soldier(m, |k, _| k.rounds = [0; frontline_content::setup::MAX_FEEDS]);
+            w.edit_soldier(m, |k, _| {
+                k.rounds = [0; frontline_content::setup::MAX_FEEDS]
+            });
         }
     }
     steps(&mut w, 10 * HZ);
@@ -239,7 +245,10 @@ fn belts_fill_at_fifty_rounds_a_second_from_a_truck() {
     steps(&mut w, 2 * HZ);
     let vs = &w.game().unwrap().vehicles[&v];
     let left = vs.mgs[0].spent + vs.mgs[1].spent;
-    assert!((600 - 100..600).contains(&left), "at most 2 s of 50: left {left}");
+    assert!(
+        (600 - 100..600).contains(&left),
+        "at most 2 s of 50: left {left}"
+    );
     assert_eq!(acc(&w, 0).fwd_belt_rounds, 600 - left);
     assert!(cargo(&w, t)[0] < 40_000);
     steps(&mut w, 11 * HZ);
@@ -279,7 +288,11 @@ fn drop_crates_moves_grams_into_crates_and_charges_nothing() {
     assert_eq!(a.truck_dropped_g, 64_000);
     let crates = &g.supply6().crates;
     assert_eq!(crates.len(), 2);
-    assert!(crates.values().all(|c| c.carrier.is_none() && c.g == 32_000));
+    assert!(
+        crates
+            .values()
+            .all(|c| c.carrier.is_none() && c.g == 32_000)
+    );
     assert!(g.players()[0].manpower >= mp0 && g.players()[0].ammo.credit == credit0);
 }
 
@@ -312,13 +325,25 @@ fn drop_crates_refuses_what_it_cannot_do() {
     assert_eq!(w.game().unwrap().vehicles[&v].drop, None, "off the map");
     assert!(w.game().unwrap().supply6().crates.is_empty());
     // The cap.
-    let cap = w.game().unwrap().setup().rules.supply.as_ref().unwrap().crate_cap;
+    let cap = w
+        .game()
+        .unwrap()
+        .setup()
+        .rules
+        .supply
+        .as_ref()
+        .unwrap()
+        .crate_cap;
     let c = def(&w, 0, StockKind::Crate, Some(SupplyKind::SmallArms));
     for k in 0..cap {
         add_crate_at(&mut w, 0, c, FxVec2::from_int(300 + k as i32, 300));
     }
     run(&mut w, 0, 7, drop(v, 1, SupplyKind::Shells, 540));
-    assert_eq!(w.game().unwrap().vehicles[&v].drop, None, "at the crate cap");
+    assert_eq!(
+        w.game().unwrap().vehicles[&v].drop,
+        None,
+        "at the crate cap"
+    );
 }
 
 #[test]
@@ -423,7 +448,8 @@ fn the_new_state_is_validated_on_load() {
     let tank = spawn(&mut w, 0, TANK, 480, 500);
     let tv = members(&w, tank)[0];
     steps(&mut w, 2);
-    let bad: Vec<(&str, Box<dyn Fn(&mut World)>)> = vec![
+    type Edit = Box<dyn Fn(&mut World)>;
+    let bad: Vec<(&str, Edit)> = vec![
         (
             "cargo above the cap",
             Box::new(move |w| {

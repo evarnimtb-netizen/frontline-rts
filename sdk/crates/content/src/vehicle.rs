@@ -3614,7 +3614,9 @@ pub(crate) fn check_vehicle(
         if !g_ok
             || !r_ok
             || !(1..=60 * 30).contains(&t.round_interval_ticks)
-            || !ammo.get(t.cookoff as usize).is_some_and(|a| a.blast.is_some())
+            || !ammo
+                .get(t.cookoff as usize)
+                .is_some_and(|a| a.blast.is_some())
         {
             return Some("vehicles.supply: out of range");
         }

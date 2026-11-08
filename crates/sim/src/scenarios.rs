@@ -992,9 +992,13 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
         "bogged_in_trench" => {
             trench_ns(&mut w);
             let t = need(tank(&mut w, 0, at(TRENCH_X, LANE_Y), WEST), "tank")?;
-            let ticks = w
-                .match_setup()
-                .map_or(0, |s| s.vehicles[0].mobility.unbog_ticks[1].max(30 * 20));
+            let ticks = w.match_setup().map_or(0, |s| {
+                let tank = s
+                    .vehicles
+                    .iter()
+                    .find(|v| v.role == frontline_content::VehicleRole::Tank);
+                tank.map_or(30 * 20, |v| v.mobility.unbog_ticks[1].max(30 * 20))
+            });
             w.edit_vehicle(t.1, |vs| {
                 vs.bog = ticks;
                 vs.crossing = true;

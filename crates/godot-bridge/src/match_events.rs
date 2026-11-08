@@ -898,7 +898,11 @@ mod tests {
         tr.armour(&s3c, &setup, &mut feed);
         tr.call_ins(&s3c, &setup, &mut feed);
         let lines: Vec<String> = feed.iter().map(|e| e.text.clone()).collect();
-        let seats = setup.vehicles[0].seats.len();
+        let seats = setup
+            .vehicles
+            .iter()
+            .find(|v| v.id == "ww2:ger_pz4_h")
+            .map_or(0, |v| v.seats.len());
         assert_eq!(
             lines,
             vec![

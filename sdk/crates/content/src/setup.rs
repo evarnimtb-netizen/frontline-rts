@@ -2039,9 +2039,10 @@ impl ModDefs {
                 // S8b: the truck's crate defs, per kind.
                 if let (Some(t), Some(d)) = (out.supply.as_mut(), v.supply.as_ref()) {
                     for c in &d.crates {
-                        let kind = self.supply.get(c).and_then(|x| {
-                            x.supply.as_deref().and_then(SupplyKind::from_name)
-                        });
+                        let kind = self
+                            .supply
+                            .get(c)
+                            .and_then(|x| x.supply.as_deref().and_then(SupplyKind::from_name));
                         if let Some(kind) = kind {
                             t.crates[kind.index()] = index_of(self.supply.keys(), c);
                         }
@@ -2876,7 +2877,11 @@ impl MatchSetup {
                         })
                     })
                 });
-                check(ok, "vehicles.supply.crates", "not a crate of its kind and faction");
+                check(
+                    ok,
+                    "vehicles.supply.crates",
+                    "not a crate of its kind and faction",
+                );
             }
         }
         for s in &self.squad_types {

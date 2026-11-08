@@ -143,7 +143,7 @@ Target: T50 above 0 on the six set-faction pairs, T41b and T48b at least 1. Rech
 
 ## 7. Supply vehicles and the one-source-function plan (section 7)
 
-**State.** `VehicleState::cargo_g: [u32; 3]` by `SupplyKind::index`, `drop: Option<CrateDrop>`; `Order::DropCrates { point, count, kind }` (`OrderKind` 10).
+**State.** `VehicleState::cargo_g: [u32; 3]` by `SupplyKind::index`, `drop: Option<CrateDrop>`. The truck drives with an ordinary `Order::Move` (Build B: no `Order::DropCrates` / `OrderKind` 10; any other order clears `drop`).
 
 **Loading at base.** Stopped in own base (`base_ticks` > 0): shells 32 kg per `base_crate_issue_s` **on the player's crate queue** (the
 same timer as `IssueCrate`, so a truck competes with crates, 7.3); small arms and explosives `truck_load_kg_s`. Up to `load_kg`, never
@@ -172,7 +172,8 @@ from cargo to crate, nothing paid. Refusals through the S6 `SupplyRefusal` list.
 
 **Cargo.** `Cargo` component with a box; `deal` treats it as `AmmoRack` (rack_min_damage, detonate %, fire) while it holds at least
 `cargo_detonate_min_kg` of shells + explosives (S8b-9); below that it burns (`ammo_fire`). A detonation is `KO_RACK`, cargo lost
-(`stock_lost_g`), and bursts via the S6 `CookOff` with `cookoff_kg_per_burst` (the physical-contact rule: real bursts, real fragments). A
+(`truck_lost_g`, own counters so the T22 stock balance stays closed), and bursts via the S6 `CookOff` with `cookoff_kg_per_burst` (the physical-contact rule: real bursts, real fragments). A
+cargo box destroyed always starts an ammo fire while it holds anything; the fire ends in `KO_AMMO_FIRE` and detonates at the same kg rule (Build B: so a penetration detonates a loaded truck about 70 % of the time; case 28 counts both paths). A truck on fire serves nobody. A
 wreck's cargo is lost. Trucks are unarmoured (1-2 mm plates), so the S8a small-arms core goes through them into crew and engine.
 
 ## 8. Content (figures marked verify are from memory; each def has `sources`)

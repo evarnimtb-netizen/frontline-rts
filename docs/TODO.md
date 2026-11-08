@@ -153,6 +153,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-18 (Plan) The M8's .50 ring is a 360 degree hull-frame pintle, not a turret-mounted gun. (A) Yes.
   S8b-19 (Plan) Drop Crates hotkey `I`. (A) Yes.
   S8b-20 (Plan) Trucks load only at base, not from an HQ (vehicles.md 7.3 allows both). (A) Yes.
+  S8b-21 (Build B) A destroyed cargo box always starts an ammo fire and the fire detonates the load at the same 40 kg rule (so one penetrating hit detonates a loaded truck about 70 % of the time), matching 7.3 "a penetration or fire". (A) Yes. (B) A `cargo_detonate_pct` of its own.
+  S8b-22 (Build B) A truck need not stop to serve (the radii are short, and `DropCrates` and loading already need it stopped). (A) Yes. (B) Serve only when stopped.
 
 ## Planned work queue
 

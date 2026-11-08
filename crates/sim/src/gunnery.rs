@@ -1370,7 +1370,11 @@ mod tests {
     #[test]
     fn crew_and_gun_damage_scale_reload_and_spread() {
         let s = setup();
-        let v = &s.vehicles[0];
+        let v = s
+            .vehicles
+            .iter()
+            .find(|v| v.id == "ww2:ger_pz4_h")
+            .expect("the Panzer IV");
         let mut vs = VehicleState::new(0, v, &s.rules.vehicles);
         let base = s.weapons[v.main_gun().unwrap().weapon as usize].reload_ticks;
         assert_eq!(base, 195, "6.5 s at 30 Hz");
