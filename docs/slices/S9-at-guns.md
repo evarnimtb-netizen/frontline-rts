@@ -195,3 +195,12 @@ Spiking; sound-ranging and counter-battery; camouflage nets; indirect fire, infa
 ## 19. Owner questions
 
 S9-1 to S9-15 are in `docs/TODO.md` with (A) defaults. S9-1 (optic range), S9-2/S9-3 (tow and price) and S9-13 (cap and unlock) are the ones that change how the game plays.
+
+## 20. Build B notes (what Build C must know)
+
+- States: a card with a tow arrives `Hitched` with its crew riding; a card without one (Pak 38) `Limbered`; guns spawned by tools (`spawn_squad_at`) arrive `Emplaced` (the harness default, kept for the Build A cases).
+- A crew stays linked to its gun (`Served.crew`) through hitching and tow loss: an idle crew walks back and serves it. A squad-level order (Move, Dig, ...) or naming men in a unit order takes men off the gun; a squad order clears the link.
+- T79a counts rounds aimed at the carriage that reach the gun at all; from the front the shield covers the axle, so the pit's effect is earth instead of gun (3.10).
+- Guns use the wheel block layer shared with trucks and cars (shallowest wheeled ditch 10 dm), not their own 6 dm (S9-16): only standard trenches and deeper block them.
+- `Abandon` as a command does nothing for guns (no hatches): the neutral rule covers it. `AB_GUN` = 7 is the neutral cause.
+- Armour-test 40's series use one gun per round: a penetration can wreck the gun at once.

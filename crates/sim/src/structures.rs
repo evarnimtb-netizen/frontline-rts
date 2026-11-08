@@ -798,15 +798,11 @@ impl MatchState {
         if !self.owned(p, squad) {
             return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
         }
-        let ok = self
-            .supply6
-            .crates
-            .get(&crate_id)
-            .is_some_and(|c| {
-                // S9: an enemy's set-down crate can be taken (it keeps its
-                // own faction's rounds, `source_for`).
-                c.carrier.is_none() && (c.owner == p || c.claim.is_none())
-            });
+        let ok = self.supply6.crates.get(&crate_id).is_some_and(|c| {
+            // S9: an enemy's set-down crate can be taken (it keeps its
+            // own faction's rounds, `source_for`).
+            c.carrier.is_none() && (c.owner == p || c.claim.is_none())
+        });
         if !ok {
             return self.refuse6(p, squad, SupplyRefusal::NoCrate);
         }

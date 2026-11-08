@@ -658,7 +658,7 @@ impl VehicleState {
             || self.exit.len() != self.seats.len()
             || self.abandoned.is_some_and(|t| t > tick)
             || (self.abandoned.is_some() != (self.abandon_cause != 0))
-            || self.abandon_cause > crate::bail::AB_ORDER
+            || self.abandon_cause > crate::bail::AB_GUN
             || (self.abandoned.is_some() && self.wreck_tick.is_some())
             || self.exit.iter().zip(&self.seats).any(|(&e, st)| {
                 e != 0 && (self.abandoned.is_none() || st.hp == 0)

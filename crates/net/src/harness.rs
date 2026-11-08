@@ -344,7 +344,7 @@ pub struct Scripter {
 }
 
 /// The S3 commands a vehicle script issues ([`Scripter::vehicles`]).
-pub const VEHICLE_COMMANDS: [&str; 13] = [
+pub const VEHICLE_COMMANDS: [&str; 19] = [
     "ReverseUnits",
     "FaceUnits",
     "AttackUnit",
@@ -362,6 +362,14 @@ pub const VEHICLE_COMMANDS: [&str; 13] = [
     // S8b: a truck drops crates (refused unless the vehicle is a truck
     // with cargo; still on the wire).
     "DropCrates",
+    // S9: gun orders (refused unless the vehicle is a served gun; still
+    // on the wire).
+    "Emplace",
+    "PackGun",
+    "PushGun",
+    "Hitch",
+    "Unhitch",
+    "SetAmbush",
 ];
 
 impl Scripter {
@@ -651,6 +659,24 @@ impl Scripter {
                     1 => frontline_content::setup::SupplyKind::Explosives,
                     _ => frontline_content::setup::SupplyKind::Shells,
                 },
+            },
+            13 => CommandKind::Emplace {
+                guns: vec![v],
+                facing: near(&mut self.rng),
+            },
+            14 => CommandKind::PackGun { guns: vec![v] },
+            15 => CommandKind::PushGun {
+                guns: vec![v],
+                point: near(&mut self.rng),
+            },
+            16 => CommandKind::Hitch {
+                guns: vec![v],
+                tow: v,
+            },
+            17 => CommandKind::Unhitch { guns: vec![v] },
+            18 => CommandKind::SetAmbush {
+                guns: vec![v],
+                range_m: 300,
             },
             _ => {
                 let eng = game.squads().iter().find(|(_, q)| {

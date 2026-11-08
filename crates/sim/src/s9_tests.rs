@@ -251,7 +251,11 @@ fn send(w: &mut World, p: u8, kind: CommandKind) {
 }
 
 fn state(w: &World, g: SimId) -> GunState {
-    w.game().unwrap().vehicles[&g].served.as_ref().unwrap().state
+    w.game().unwrap().vehicles[&g]
+        .served
+        .as_ref()
+        .unwrap()
+        .state
 }
 
 fn limber(w: &mut World, g: SimId) {
@@ -303,8 +307,9 @@ fn kill_crew(w: &mut World, g: SimId) {
     }
 }
 
-fn near(a: Fx, b: f32, eps: f32) -> bool {
-    (a.to_f32() - b).abs() <= eps
+/// Whether `a` is within `eps_cm` of `b_cm` (centimetres).
+fn near_cm(a: Fx, b_cm: i32, eps_cm: i32) -> bool {
+    (a.mul_int(100).floor_int() - b_cm).abs() <= eps_cm
 }
 
 #[test]
@@ -364,7 +369,11 @@ fn work_needs_two_men_at_the_slots() {
     }
     let t = secs(&w, 40);
     steps(&mut w, t);
-    assert_eq!(state(&w, g), GunState::Emplacing, "one man cannot emplace it");
+    assert_eq!(
+        state(&w, g),
+        GunState::Emplacing,
+        "one man cannot emplace it"
+    );
 }
 
 #[test]
@@ -392,12 +401,13 @@ fn a_pushed_gun_moves_at_its_push_speed_scaled_by_the_men() {
         let a = xy(&w, g);
         let t = secs(&w, 10);
         steps(&mut w, t);
-        (xy(&w, g) - a).length().to_f32() / 10.0
+        // cm/s over the 10 s.
+        (xy(&w, g) - a).length().mul_int(10).floor_int()
     };
     let full = run(0);
-    assert!((0.30..=0.40).contains(&full), "full crew {full} m/s");
+    assert!((30..=40).contains(&full), "full crew {full} cm/s");
     let two = run(4);
-    assert!((0.08..=0.2).contains(&two), "two men {two} m/s");
+    assert!((8..=20).contains(&two), "two men {two} cm/s");
 }
 
 #[test]
@@ -446,14 +456,7 @@ fn a_tow_hitches_carries_the_crew_and_the_gun_follows_on_a_bar() {
     let (tq, tow) = tow_for(&mut w, 0, 500, 500);
     steps(&mut w, 2);
     limber(&mut w, g);
-    send(
-        &mut w,
-        0,
-        CommandKind::Hitch {
-            guns: vec![g],
-            tow,
-        },
-    );
+    send(&mut w, 0, CommandKind::Hitch { guns: vec![g], tow });
     assert_eq!(state(&w, g), GunState::Hitching);
     let t = secs(&w, 21);
     steps(&mut w, t);
@@ -476,13 +479,16 @@ fn a_tow_hitches_carries_the_crew_and_the_gun_follows_on_a_bar() {
     );
     let t = secs(&w, 25);
     steps(&mut w, t);
-    let sp = w.game().unwrap().vehicles[&tow].speed.to_f32();
-    assert!(sp > 4.0 && sp <= 6.5, "towed speed {sp} m/s");
+    let sp = w.game().unwrap().vehicles[&tow]
+        .speed
+        .mul_int(100)
+        .floor_int();
+    assert!((400..=650).contains(&sp), "towed speed {sp} cm/s");
     let (gx, tx) = (xy(&w, g), xy(&w, tow));
     assert!(tx.x < gx.x, "the tow leads");
-    let bar = 3.1 + 2.77;
+    // Tow half length 277 cm plus the bar 310 cm.
     assert!(
-        near((gx - tx).length(), bar, 0.3),
+        near_cm((gx - tx).length(), 587, 30),
         "bar {:?}",
         (gx - tx).length()
     );
@@ -668,7 +674,12 @@ fn an_order_off_the_gun_takes_the_men_away_and_breaks_the_crew_link() {
     let mut w = flat_world(1);
     let g = gun(&mut w, 0, 500, 500);
     steps(&mut w, 2);
-    let crew = w.game().unwrap().vehicles[&g].served.as_ref().unwrap().crew.unwrap();
+    let crew = w.game().unwrap().vehicles[&g]
+        .served
+        .as_ref()
+        .unwrap()
+        .crew
+        .unwrap();
     send(
         &mut w,
         0,
@@ -744,7 +755,10 @@ fn the_gun_pit_lowers_the_ground_under_the_gun_and_does_not_block_its_wheels() {
     assert!(w.dig_pit_now(&line, frontline_content::DigProfile::GunPit));
     steps(&mut w, 2);
     let z1 = w.entities().transform[g.index()].pos.z;
-    assert!((z0 - z1).to_f32() > 0.3, "settled into the pit {z0:?} -> {z1:?}");
+    assert!(
+        (z0 - z1).to_f32() > 0.3,
+        "settled into the pit {z0:?} -> {z1:?}"
+    );
     assert!(!w.game().unwrap().vehicles[&g].on_blocked);
     limber(&mut w, g);
     send(
@@ -780,7 +794,10 @@ fn every_build_b_field_changes_the_hash_and_validation_catches_the_tow_link() {
     assert_eq!(w.full_state_hash(), base);
     // The links.
     w.edit_vehicle(tow, |vs| vs.towing = Some(g));
-    assert!(World::load(&w.save(), 1).is_err(), "gun does not name the tow");
+    assert!(
+        World::load(&w.save(), 1).is_err(),
+        "gun does not name the tow"
+    );
     w.edit_vehicle(tow, |vs| vs.towing = None);
     w.edit_vehicle(g, |v| {
         let s = v.served.as_mut().unwrap();
@@ -819,11 +836,8 @@ fn gun_scene(w: &mut World, t: u64, g: SimId, tow: SimId, tq: SquadId) -> Vec<Co
             guns: vec![g],
             point: FxVec2::from_int(495, 505),
         })],
-        x if x == 40 * hz => vec![mk(CommandKind::Hitch {
-            guns: vec![g],
-            tow,
-        })],
-        x if x == 90 * hz => vec![mk(CommandKind::Move {
+        x if x == 60 * hz => vec![mk(CommandKind::Hitch { guns: vec![g], tow })],
+        x if x == 100 * hz => vec![mk(CommandKind::Move {
             squad: tq,
             target: FxVec2::from_int(460, 500),
         })],
@@ -845,14 +859,14 @@ fn guns_are_deterministic_through_their_whole_life_at_every_thread_count() {
     let mut s0 = flat_world(1);
     let g = gun(&mut s0, 0, 500, 500);
     let (tq, tow) = tow_for(&mut s0, 0, 500, 500);
-    let rifles = spawn(&mut s0, 1, "ww2:usa_rifle_squad", 470, 505);
+    let rifles = spawn(&mut s0, 1, "ww2:usa_rifle_squad", 790, 505);
     steps(&mut s0, 5);
     let save = s0.save();
     let hz = 30u64;
     let run = |threads: usize, split: bool| {
         let mut w = World::load(&save, threads).unwrap();
         let mut hashes = Vec::new();
-        for t in 0..300 * hz {
+        for t in 0..420 * hz {
             if split && t % (20 * hz) == 3 {
                 w = World::load(&w.save(), threads).unwrap();
             }
@@ -861,7 +875,7 @@ fn guns_are_deterministic_through_their_whole_life_at_every_thread_count() {
             if t == 240 * hz {
                 kill_crew(&mut w, g);
             }
-            if t == 255 * hz {
+            if t == 252 * hz {
                 cmds.push(Command {
                     player: PlayerId(1),
                     seq: t as u32,
@@ -873,19 +887,23 @@ fn guns_are_deterministic_through_their_whole_life_at_every_thread_count() {
             }
             w.step(&cmds);
             if !split {
-                if t == 80 * hz {
-                    assert_eq!(state(&w, g), GunState::Hitched, "hitched by 80 s");
+                if t == 95 * hz {
+                    assert_eq!(state(&w, g), GunState::Hitched, "hitched by 95 s");
                 }
-                if t == 110 * hz {
+                if t == 128 * hz {
                     assert!(xy(&w, g).x < Fx::from_int(490), "the tow pulled it");
                 }
                 if t == 220 * hz {
                     assert_eq!(state(&w, g), GunState::Emplaced, "emplaced");
                 }
                 if t == 254 * hz {
-                    assert_eq!(w.entities().kind[g.index()], EntityKind::Abandoned, "neutral");
+                    assert_eq!(
+                        w.entities().kind[g.index()],
+                        EntityKind::Abandoned,
+                        "neutral"
+                    );
                 }
-                if t == 299 * hz {
+                if t == 419 * hz {
                     assert_eq!(w.entities().owner[g.index()], PlayerId(1), "captured");
                 }
             }
@@ -899,4 +917,47 @@ fn guns_are_deterministic_through_their_whole_life_at_every_thread_count() {
     for threads in [1, 2, 3, 8] {
         assert_eq!(run(threads, true), reference, "threads {threads}");
     }
+}
+
+#[test]
+fn own_infantry_serve_an_unmanned_gun_before_it_turns_neutral() {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    let q = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 505, 500);
+    steps(&mut w, 2);
+    kill_crew(&mut w, g);
+    steps(&mut w, 2);
+    assert_eq!(w.entities().kind[g.index()], EntityKind::Vehicle, "held");
+    send(
+        &mut w,
+        0,
+        CommandKind::Recrew {
+            squad: q,
+            vehicle: g,
+        },
+    );
+    let t = secs(&w, 40);
+    for _ in 0..t {
+        w.step(&[]);
+        if slots(&w, g).iter().any(|s| s.man.is_some()) {
+            break;
+        }
+    }
+    assert!(
+        slots(&w, g).iter().any(|s| s.man.is_some()),
+        "own men took the slots"
+    );
+    assert_eq!(w.entities().owner[g.index()], PlayerId(0));
+    let sv = w.game().unwrap().vehicles[&g].served.clone().unwrap();
+    assert_eq!(sv.crew, Some(q));
+    // Riflemen are untrained at the gun.
+    let vs = &w.game().unwrap().vehicles[&g];
+    let v = w.match_setup().unwrap().vehicles[vs.type_idx as usize].clone();
+    let t = secs(&w, 2);
+    steps(&mut w, t);
+    assert!(
+        w.game().unwrap().vehicles[&g]
+            .seat(&v, frontline_content::SeatRole::Gunner)
+            .is_some_and(|s| s.untrained)
+    );
 }

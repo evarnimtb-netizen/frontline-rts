@@ -1145,9 +1145,7 @@ impl MatchState {
             CommandKind::PushGun { guns, point } => self.order_push(ctx, p, guns, *point),
             CommandKind::Hitch { guns, tow } => self.order_hitch(ctx, p, guns, *tow),
             CommandKind::Unhitch { guns } => self.order_unhitch(ctx, p, guns),
-            CommandKind::SetAmbush { guns, range_m } => {
-                self.order_ambush(ctx, p, guns, *range_m)
-            }
+            CommandKind::SetAmbush { guns, range_m } => self.order_ambush(ctx, p, guns, *range_m),
         }
     }
 

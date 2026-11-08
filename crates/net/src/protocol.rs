@@ -28,7 +28,9 @@ use serde::{Deserialize, Serialize};
 /// `IssueCrate`, `PlaceCrate`, `PickUpCrate` and the pit `DigProfile`s
 /// (the one bump for the S6 slice). 10 (S8a): `Embark` and `Disembark`
 /// (the one bump for the S8a slice). 11 (S8b): `DropCrates` (the one bump
-/// for the S8b slice).
+/// for the S8b slice). 12 (S9): `Emplace`, `PackGun`, `PushGun`, `Hitch`,
+/// `Unhitch`, `SetAmbush` and the gun pit `DigProfile` (the one bump for
+/// the S9 slice).
 pub const PROTOCOL_VERSION: u16 = 12;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
@@ -582,6 +584,13 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::RepairUnits { units }
         | CommandKind::FollowUnits { units, .. } => units.len() <= MAX_UNITS,
         // S8a: squads or vehicles, as many as unit ids.
+        // S9: guns, as many as unit ids.
+        CommandKind::Emplace { guns, .. }
+        | CommandKind::PackGun { guns }
+        | CommandKind::PushGun { guns, .. }
+        | CommandKind::Hitch { guns, .. }
+        | CommandKind::Unhitch { guns }
+        | CommandKind::SetAmbush { guns, .. } => !guns.is_empty() && guns.len() <= MAX_UNITS,
         CommandKind::Embark { squads, .. } => !squads.is_empty() && squads.len() <= MAX_UNITS,
         CommandKind::Disembark { vehicles, .. } => {
             !vehicles.is_empty() && vehicles.len() <= MAX_UNITS

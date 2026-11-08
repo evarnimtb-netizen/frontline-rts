@@ -183,6 +183,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S9-13 (ANSWERED 2026-11-08 by the owner: (A)) Gun cards `max_alive` 2 and available from 0:00 (the roster gives no cap or unlock; the AI waits until 2:00 and buys only once a tank has been seen or at its date). (A) Yes. (B) Tighter cap or a later unlock.
   S9-14 (Plan) The 57 mm has AP only in S9 (M303 HE is late 1944, verify). (A) Yes. (B) Give it HE from 1944-06 for balance.
   S9-15 (Plan) The AI buys only the Pak 40 and the 57 mm (Pak 38 stays `ai_weight` 0); very old neutral guns are scrapped by the abandoned cap. (A) Yes.
+  S9-16 (Build B) Guns run on the wheel block layer of the trucks and cars (shallowest wheeled ditch 10 dm), not their own 6 dm: only standard trenches and deeper block them; a 6-10 dm scrape does not. (A) Accept until a third dig depth exists. (B) Give guns a third layer.
 
 ## Planned work queue
 

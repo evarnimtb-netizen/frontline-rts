@@ -1252,7 +1252,6 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
     }
     // Validated on load: each of these is rejected.
     let us_hq = def(&w, 1, StockKind::Hq, None);
-    let us_crate = def(&w, 1, StockKind::Crate, Some(SupplyKind::Shells));
     let bad: Vec<(&str, StateEdit)> = vec![
         // Review S6 F5: builder, faction and map checks.
         (
@@ -1266,10 +1265,7 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
             "structure def of the other faction",
             Box::new(move |s| st(s).def = us_hq),
         ),
-        (
-            "crate def of the other faction",
-            Box::new(move |s| cr(s).def = us_crate),
-        ),
+        // S9-8: a crate may name an enemy faction's def (captured).
         (
             "crate off the map",
             Box::new(|s| cr(s).pos.x = Fx::from_int(-5)),

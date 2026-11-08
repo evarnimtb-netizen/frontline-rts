@@ -269,9 +269,7 @@ impl MatchState {
             return Err(RecrewRefusal::TooFewMen);
         }
         // S8a: transports are outside the vehicle limit.
-        if !gun
-            && v.transport.is_none()
-            && self.vehicles_counted(ents, p) >= s.rules.vehicles.limit
+        if !gun && v.transport.is_none() && self.vehicles_counted(ents, p) >= s.rules.vehicles.limit
         {
             return Err(RecrewRefusal::VehicleLimit);
         }

@@ -8,7 +8,9 @@ use frontline_content::vehicle::VehicleSetup;
 use frontline_sim::scenarios::{at, dir_deg, members};
 use frontline_sim::unit::StanceOrder;
 use frontline_sim::vehicle::GunState;
-use frontline_sim::{ArmourEventKind, EntityKind, Fx, FxVec2, FxVec3, PenResult, PlayerId, SimId, World};
+use frontline_sim::{
+    ArmourEventKind, EntityKind, Fx, FxVec2, FxVec3, PenResult, PlayerId, SimId, World,
+};
 
 use super::{
     CaseReport, CommandKind, Env, disabled, hz, open_top_world, order, pos, spawn_card, vstate,
@@ -146,7 +148,11 @@ fn mg_series_at(env: &Env, seed: u64, flip: u8, mode: Fire, pit: bool) -> Result
             + (right * Fx::from_milli((ny * 1000.0) as i32))
                 .extend(Fx::from_milli((nz * 1000.0) as i32));
         // In a pit the MG stands on the ground around it, not on the floor.
-        let ground = if pit { Fx::from_ratio(55, 100) } else { Fx::ZERO };
+        let ground = if pit {
+            Fx::from_ratio(55, 100)
+        } else {
+            Fx::ZERO
+        };
         let from = (chest.xy() + dir * Fx::from_int(RANGE_M))
             .extend(chest.z + Fx::from_ratio(1, 10) + ground);
         let hp0: Vec<u16> = men
@@ -462,7 +468,9 @@ fn capture_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, bool, i64, i
     }
     let slots = |w: &World| vstate(w, g).and_then(|v| v.served).map(|s| s.slots);
     // The swap.
-    let gunner = slots(&w).and_then(|s| s[0].man).ok_or_else(|| anyhow!("no gunner"))?;
+    let gunner = slots(&w)
+        .and_then(|s| s[0].man)
+        .ok_or_else(|| anyhow!("no gunner"))?;
     w.kill_soldier(gunner);
     w.step(&[]);
     let swap = time_until(&mut w, 12, |w: &World| {
@@ -526,8 +534,7 @@ fn capture_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, bool, i64, i
     for _ in 0..40 * rate {
         w.step(&[]);
         if ammo(&w) < left0
-            || w
-                .snapshot()
+            || w.snapshot()
                 .armour_events
                 .iter()
                 .any(|e| e.kind == ArmourEventKind::Fired as u8 && e.vehicle == g.0)
@@ -650,8 +657,10 @@ fn mobility_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, f64, f64, f
             facing: at(800, 500),
         }],
     );
-    let emplace = time_until(&mut w, 60, |w: &World| gun_state(w, g) == Some(GunState::Emplaced))
-        .ok_or_else(|| anyhow!("never emplaced"))?;
+    let emplace = time_until(&mut w, 60, |w: &World| {
+        gun_state(w, g) == Some(GunState::Emplaced)
+    })
+    .ok_or_else(|| anyhow!("never emplaced"))?;
     order(
         &mut w,
         own,
@@ -662,12 +671,16 @@ fn mobility_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, f64, f64, f
     );
     w.step(&[]);
     let relay = time_until(&mut w, 40, |w: &World| {
-        vstate(w, g).and_then(|v| v.served).is_some_and(|s| s.relay_ticks == 0)
+        vstate(w, g)
+            .and_then(|v| v.served)
+            .is_some_and(|s| s.relay_ticks == 0)
     })
     .ok_or_else(|| anyhow!("never re-laid"))?;
     order(&mut w, own, vec![CommandKind::PackGun { guns: vec![g] }]);
-    let pack = time_until(&mut w, 40, |w: &World| gun_state(w, g) == Some(GunState::Limbered))
-        .ok_or_else(|| anyhow!("never packed"))?;
+    let pack = time_until(&mut w, 40, |w: &World| {
+        gun_state(w, g) == Some(GunState::Limbered)
+    })
+    .ok_or_else(|| anyhow!("never packed"))?;
     // Push.
     let mut w = open_top_world(env, seed)?;
     let (_, g) = spawn_card(&mut w, own, card, c, dir_deg(0))?;
@@ -699,16 +712,11 @@ fn mobility_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, f64, f64, f
         w.step(&[]);
     }
     limber(&mut w, g);
-    order(
-        &mut w,
-        own,
-        vec![CommandKind::Hitch {
-            guns: vec![g],
-            tow,
-        }],
-    );
-    time_until(&mut w, 40, |w: &World| gun_state(w, g) == Some(GunState::Hitched))
-        .ok_or_else(|| anyhow!("never hitched"))?;
+    order(&mut w, own, vec![CommandKind::Hitch { guns: vec![g], tow }]);
+    time_until(&mut w, 40, |w: &World| {
+        gun_state(w, g) == Some(GunState::Hitched)
+    })
+    .ok_or_else(|| anyhow!("never hitched"))?;
     for _ in 0..25 * hz(&w) {
         w.step(&[]);
     }
@@ -730,8 +738,17 @@ fn mobility_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, f64, f64, f
         w.step(&[]);
     }
     let tow_speed = f64::from((pos(&w, tow) - t0).length().to_f32()) / 10.0;
-    let hit = vstate(&w, g).and_then(|v| v.served).is_some_and(|s| s.state == GunState::Hitched);
-    Ok((emplace, pack, relay, push, if hit { tow_speed } else { 0.0 }, rode))
+    let hit = vstate(&w, g)
+        .and_then(|v| v.served)
+        .is_some_and(|s| s.state == GunState::Hitched);
+    Ok((
+        emplace,
+        pack,
+        relay,
+        push,
+        if hit { tow_speed } else { 0.0 },
+        rode,
+    ))
 }
 
 /// Case 39 (T78): the mobility times, push speed and the tow.
@@ -830,8 +847,7 @@ fn carriage_hits(env: &Env, seed: u64, flip: u8, in_pit: bool) -> Result<(u64, u
         // Aimed at the axle, 45 cm over the gun's ground, plus 31 cm for
         // the drop over 200 m (the tool has no compensation).
         let dy = Fx::from_ratio((k % 7) as i64 - 3, 5);
-        let aim = c.extend(ground + Fx::from_ratio(76, 100))
-            + FxVec3::new(Fx::ZERO, dy, Fx::ZERO);
+        let aim = c.extend(ground + Fx::from_ratio(76, 100)) + FxVec3::new(Fx::ZERO, dy, Fx::ZERO);
         let origin = at(350, 500);
         let from = origin.extend(w.terrain().height_at(origin) + Fx::from_ratio(15, 10));
         if !w.fire_shell_now(enemy, weapon, ammo, from, aim) {

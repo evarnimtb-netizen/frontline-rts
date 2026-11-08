@@ -1682,11 +1682,7 @@ impl World {
 
     /// S9 staging tool: digs a finished `profile` pit along `line` at once
     /// (the pit's spoil all round, ground under it settles every tick).
-    pub fn dig_pit_now(
-        &mut self,
-        line: &[FxVec2],
-        profile: frontline_content::DigProfile,
-    ) -> bool {
+    pub fn dig_pit_now(&mut self, line: &[FxVec2], profile: frontline_content::DigProfile) -> bool {
         let Some(game) = self.state.game.as_ref() else {
             return false;
         };

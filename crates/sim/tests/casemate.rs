@@ -212,7 +212,9 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::Transport,
             VehicleRole::Recon,
             VehicleRole::Truck,
-            VehicleRole::AtGun
+            VehicleRole::AtGun,
+            VehicleRole::AtGun,
+            VehicleRole::Tractor
         ]
     );
     assert_eq!(

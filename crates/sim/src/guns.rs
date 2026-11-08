@@ -41,14 +41,14 @@ use frontline_content::{AmmoMechanism, MatchSetup};
 use serde::{Deserialize, Serialize};
 
 use crate::combat::{BallisticEvent, Blow, DamageCtx, add_suppression, capsule, seg_seg};
+use crate::command::CommandKind;
+use crate::damage::ArmourEv;
 use crate::ecs::{Entities, EntityKind, PlayerId, SimId, Transform};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::SquadId;
 use crate::game::{Ctx, MatchState, Nav, NavPhase, Order, Squad, hold_in_place};
-use crate::command::CommandKind;
-use crate::unit::{Serving, StanceOrder};
-use crate::damage::ArmourEv;
 use crate::snapshot::ArmourEventKind;
+use crate::unit::{Serving, StanceOrder};
 use crate::vehicle::{self, GunState, Seat, VehicleState, yaw_dir};
 
 /// World position (xy) of service-slot offset `at` of a gun at `t`.
@@ -144,9 +144,7 @@ impl MatchState {
                 return Err("a gun's tow does not name it back");
             }
             // A turn in progress names where it ends; only then.
-            if sv.relay_to.is_some()
-                != (sv.relay_ticks > 0 || sv.state == GunState::Emplacing)
-            {
+            if sv.relay_to.is_some() != (sv.relay_ticks > 0 || sv.state == GunState::Emplacing) {
                 return Err("a gun's turn target does not match its state");
             }
             if let Some(q) = sv.crew
@@ -548,12 +546,7 @@ pub fn can_serve(s: &MatchSetup, ty: &frontline_content::setup::SquadTypeSetup) 
 }
 
 /// Whether live gun `id` is `p`'s and nobody serves it.
-pub(crate) fn own_gun_unserved(
-    ents: &Entities,
-    p: PlayerId,
-    id: SimId,
-    vs: &VehicleState,
-) -> bool {
+pub(crate) fn own_gun_unserved(ents: &Entities, p: PlayerId, id: SimId, vs: &VehicleState) -> bool {
     ents.kind.get(id.index()) == Some(&EntityKind::Vehicle)
         && ents.owner[id.index()] == p
         && vs
@@ -903,13 +896,7 @@ impl MatchState {
             let block = self.vderived.block_of(v);
             let geo = &self.vderived.geo[self.vehicles[&gun].type_idx as usize];
             let vs = self.vehicles.get_mut(&gun).expect("a gun");
-            vehicle::settle(
-                ctx.terrain,
-                block,
-                geo,
-                vs,
-                &mut ctx.ents.transform[i],
-            );
+            vehicle::settle(ctx.terrain, block, geo, vs, &mut ctx.ents.transform[i]);
             let sv = vs.served.as_mut().expect("a gun");
             sv.state = GunState::Hitched;
             sv.hitched = Some(tow);
@@ -963,13 +950,14 @@ impl MatchState {
             | CommandKind::IssueCrate { squad, .. }
             | CommandKind::PlaceCrate { squad, .. }
             | CommandKind::PickUpCrate { squad, .. } => Some(*squad),
-            CommandKind::Recrew { squad, vehicle } => Some(*squad).filter(|_| {
-                !self
+            CommandKind::Recrew { squad, vehicle } => {
+                let serving_it = self
                     .vehicles
                     .get(vehicle)
                     .and_then(|v| v.served.as_ref())
-                    .is_some_and(|s| s.crew == Some(*squad))
-            }),
+                    .is_some_and(|s| s.crew == Some(*squad));
+                (!serving_it).then_some(*squad)
+            }
             _ => None,
         };
         if let Some(q) = squad_order
@@ -1246,7 +1234,8 @@ impl MatchState {
         };
         let left = if emplacing { sv.timer } else { sv.relay_ticks }.max(1);
         let err = (to - ctx.ents.transform[i].yaw).wrap_angle();
-        ctx.ents.transform[i].yaw = (ctx.ents.transform[i].yaw + err.div_int(left as i32)).wrap_angle();
+        ctx.ents.transform[i].yaw =
+            (ctx.ents.transform[i].yaw + err.div_int(left as i32)).wrap_angle();
     }
 
     /// Slides `id` toward the bar position behind `tow` over the rest of
@@ -1265,7 +1254,9 @@ impl MatchState {
             dir = yaw_dir(t.yaw);
         }
         let want = hitch + dir * bar;
-        let xy = ctx.terrain.clamp(t.pos.xy() + (want - t.pos.xy()).div_int(timer as i32));
+        let xy = ctx
+            .terrain
+            .clamp(t.pos.xy() + (want - t.pos.xy()).div_int(timer as i32));
         let yaw_err = (Fx::atan2(dir.y, dir.x) - t.yaw).wrap_angle();
         let tr = &mut ctx.ents.transform[i];
         tr.pos = xy.extend(ctx.terrain.height_at(xy));
@@ -1391,14 +1382,11 @@ impl MatchState {
             );
         let r = FxVec2::new(Fx::from_int(hold as i32), Fx::ZERO).length_sq_raw();
         let near = !held
-            && ctx
-                .ents
-                .soldiers()
-                .any(|m| {
-                    ctx.ents.owner[m.index()] == owner
-                        && ctx.ents.unit[m.index()].riding.is_none()
-                        && (ctx.ents.transform[m.index()].pos.xy() - pos).length_sq_raw() <= r
-                });
+            && ctx.ents.soldiers().any(|m| {
+                ctx.ents.owner[m.index()] == owner
+                    && ctx.ents.unit[m.index()].riding.is_none()
+                    && (ctx.ents.transform[m.index()].pos.xy() - pos).length_sq_raw() <= r
+            });
         let sv = self
             .vehicles
             .get_mut(&id)
@@ -1539,7 +1527,10 @@ impl MatchState {
             sl.man = Some(m);
             sl.swap = 0;
             let u = &mut ctx.ents.unit[m.index()];
-            u.serving = Some(Serving { gun: id, slot: k as u8 });
+            u.serving = Some(Serving {
+                gun: id,
+                slot: k as u8,
+            });
             u.stance = stance_of(v.service[k].pose);
             u.detached = false;
             ctx.hash.mark_entity_chunk(m.chunk());
@@ -1558,10 +1549,9 @@ impl MatchState {
         let gun_ok = ctx.ents.kind.get(gun.index()) == Some(&EntityKind::Vehicle)
             && self.vehicles.get(&gun).is_some_and(|v| v.served.is_some());
         let tow_ok = ctx.ents.kind.get(tow.index()) == Some(&EntityKind::Vehicle)
-            && self
-                .vehicles
-                .get(&tow)
-                .is_some_and(|v| v.towing.is_none() && self.setup.vehicles[v.type_idx as usize].tow.is_some());
+            && self.vehicles.get(&tow).is_some_and(|v| {
+                v.towing.is_none() && self.setup.vehicles[v.type_idx as usize].tow.is_some()
+            });
         if !gun_ok || !tow_ok || ctx.ents.owner[gun.index()] != ctx.ents.owner[tow.index()] {
             return false;
         }
