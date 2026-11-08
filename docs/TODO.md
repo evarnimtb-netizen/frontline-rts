@@ -175,15 +175,13 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 5. S7 assault guns and TDs: done on branch `s7-casemate-td` (on main; tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
 6. S8 half-tracks, trucks, recon: split. S8a half-tracks: done, verified and on main (`fa5c50a`;
    spec `docs/slices/S8a-halftracks.md`, targets `S8a.toml`, log `S8a-log.md`; Build A, B, Tune, review and Fix).
-   Open: S8a-28 to S8a-31. S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks: in progress on `s8b-trucks-recon` (Plan done: spec `docs/slices/S8b-trucks-recon.md`, targets `S8b.toml`).
+   Open: S8a-28 to S8a-31. S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks: built on `s8b-trucks-recon` (Plan, Build A, B, C; spec `docs/slices/S8b-trucks-recon.md`, targets `S8b.toml`, log `S8b-log.md`); review and merge next.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 
 ## Known issues still open
 
-- S8a (branch `s8a-halftracks`): T5c, T41b, T48b miss (S8a-29/30); AI riding is slower
-  than walking (S8a-28, make rides pay in S8b); tick p99 0.493 / 0.625 ms against S7's
-  0.38 / 0.56, not profiled; "MG dry" on the 251 card while the sim fires (bridge or card);
-  the gun, ring and rack bars still show on half-tracks (S8a-27).
+- S8a (branch `s8a-halftracks`): T5c, T41b, T48b miss (S8a-29/30); AI rides pay since S8b (S8a-28, five of six pairs above 0); tick p99 0.493 / 0.625 ms against S7's
+  0.38 / 0.56, not profiled; S8a-27 fixed in S8b; "MG dry" was a screenshot scene (S8b-23).
 
 Balance issues from S1-S3c are superseded by later measurements (latest:
 `docs/slices/S6-log.md` "Targets" and "Tune"). Still open:

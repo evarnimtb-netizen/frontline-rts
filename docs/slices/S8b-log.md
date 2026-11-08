@@ -39,7 +39,33 @@ crate (`source_for`; fastest in reach, one draw per due tick: rates never stack)
 
 ## Balance (160 sets; pooled 480)
 
-BALANCE_TABLE
+| | 1-80 | 101-180 | 201-280 |
+|---|---|---|---|
+| Germany wins % | 41.2 | 47.5 | 47.5 |
+| HE share % | 20.4 | 20.6 | 19.5 |
+| ger saved s/ride | 4.171 | 2.606 | -8.75 |
+| ger transported/match | 1.113 | 1.213 | 1.094 |
+| ger trips/bought | 1.127 | 1.252 | 1.129 |
+| ger riders lost/match | 0.119 | 0.194 | 0.188 |
+| ger crates dropped/match | 6.238 | 6.05 | 5.831 |
+| ger stranded served/match | 0.0 | 0.0 | 0.0 |
+| ger top kills % | 16.655 | 16.82 | 16.31 |
+| ger move fails/match | 0.069 | 0.169 | 0.113 |
+| usa saved s/ride | 17.896 | 8.702 | 11.764 |
+| usa transported/match | 0.981 | 0.838 | 0.875 |
+| usa trips/bought | 1.09 | 0.887 | 0.875 |
+| usa riders lost/match | 0.1 | 0.094 | 0.088 |
+| usa crates dropped/match | 11.288 | 9.606 | 11.156 |
+| usa stranded served/match | 0.0 | 0.025 | 0.006 |
+| usa top kills % | 13.964 | 14.372 | 14.066 |
+| usa move fails/match | 0.025 | 0.075 | 0.1 |
+| GER 234/1 kills % | 6.041 | 5.557 | 5.99 |
+| USA M8 kills % | 7.778 | 8.432 | 7.799 |
+| GER 234/1 MP % | 6.112 | 6.082 | 6.273 |
+| USA M8 MP % | 6.206 | 6.101 | 6.231 |
+| median length min | 17.532 | 17.946 | 17.879 |
+
+Pooled Germany 218 of 480 = 45.42 % (S8a 45.4 %), in band. Seeds 1-80 read 41.2 % (S8a 42.5): set noise, T5c, not tuned against. HE share holds (19.5-20.6 %).
 
 ## Targets
 
