@@ -1604,7 +1604,9 @@ mod tests {
         let v = &f.vehicles[0];
         assert_eq!(v.id, own.0);
         assert_eq!(v.squad, own_sq.0);
-        assert!(v.seats.iter().any(|&s| s != 0) && v.components.iter().all(|&c| c == 100));
+        // S8b: the parts a tank has are whole; wheels and cargo read 0.
+        assert!(v.seats.iter().any(|&s| s != 0) && v.components[..7].iter().all(|&c| c == 100));
+        assert!(v.components[7..].iter().all(|&c| c == 0));
         assert!(v.ammo[0] > 0);
         // A vehicle's squad is not a squad of men.
         assert!(f.squads.iter().all(|s| s.id != own_sq.0));
