@@ -159,3 +159,16 @@ an ambush beside the vehicle's path (or stalks a stopped vehicle to a
 flank spot inside the Panzerfaust's reach) for at most `ambush_max_s`,
 until the vehicle is seen beyond `ambush_release_m`
 (`crates/sim/src/ai/ammo.rs` has the rules).
+
+## Supply trucks (S8b)
+
+A vehicle def with `role = "truck"` has a `[supply]` table (`cap_kg_total`,
+`load_kg` per kind, `radius_m` for men, `vehicle_radius_m` for vehicles,
+`round_interval_s`, `crates` per kind, `cookoff`) and a `cargo` component with a
+box. Stopped in its own base it loads up to `load_kg`, paid per kg at the
+kind's price as it loads (no distance surcharge); a truck hit in the cargo box
+with at least `[supply] cargo_detonate_min_kg` of shells and explosives
+aboard detonates (the rack rule). `DropCrates` sets down crates of a kind;
+the rules are in `docs/slices/S8b-trucks-recon.md` 7. A vehicle draws from one
+source at a time, the fastest in reach; rates never stack. Mortars take bombs
+from a truck only as dropped crates (S8b-4). The AI's use: `[ai.truck]`.

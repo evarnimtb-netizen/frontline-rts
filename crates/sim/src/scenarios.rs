@@ -1168,7 +1168,13 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
         "recon_trucks" => {
             use frontline_content::VehicleRole;
             let a = need(
-                vehicle_of_role(&mut w, 0, VehicleRole::Recon, at(TRENCH_X, LANE_Y + 7), EAST),
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::Recon,
+                    at(TRENCH_X, LANE_Y + 7),
+                    EAST,
+                ),
                 "German armoured car",
             )?;
             let b = need(

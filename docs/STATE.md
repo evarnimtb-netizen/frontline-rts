@@ -39,18 +39,28 @@ workspace in `Cargo.toml`.
 | CLI | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff | `sdk/crates/cli/src/` |
 | Tools | autotune, check.sh, bridge/export | `tools/` |
 
-Not in the game yet: trucks, recon cars, wheeled mobility, supply trucks (S8b);
-Jagdpanzer IV, 38(t), M18, AT guns, on-map artillery, fortifications, wounds,
+Not in the game yet: Jagdpanzer IV, 38(t), M18, AT guns, on-map artillery, fortifications, wounds,
 a third faction, a second map, radio, tank riders, fire from a vehicle.
 
 ## Versions
 
-`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a).
+`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a); on branch
+`s8b-trucks-recon`: 19 and 11.
 `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in
 `crates/net/src/protocol.rs`. History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
-S8a 18 (`MgState.yaw`, riding fields) and 10 (Embark, Disembark). A change to a
+S8a 18 (`MgState.yaw`, riding fields) and 10 (Embark, Disembark); S8b 19 (component
+kinds, cargo, still_ticks, AI jobs) and 11 (DropCrates). A change to a
 save layout, the hash or a command bumps these in the same commit.
 `sdk/docs/net/relay-protocol.md` lists the commands.
+
+## S8b (branch `s8b-trucks-recon`, not on main yet)
+
+Wheeled mobility, recon cars, supply trucks (log `docs/slices/S8b-log.md`, spec
+`S8b-trucks-recon.md`, targets `S8b.toml`). SdKfz 234/1, M8 (recon), Opel Blitz, GMC
+CCKW (trucks): bicycle drive and a wheel block layer, `[optics]`, grenade screens,
+`[supply]` trucks through the one forward source function, `DropCrates`, cargo that
+detonates; AI: rides that pay (Meet phase, ride lock), recon on the S7 overwatch,
+truck jobs (`ai/truck.rs`), tanks to the nearest stock.
 
 ## S8a (on main)
 
@@ -103,8 +113,6 @@ Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
 ## Known gaps
 
 - Balance: T5c (Germany 42.5 % on 1-80, pooled in band), T41b / T48b; S8a-29/30.
-- Half-tracks: riding costs time for the AI (S8a-28); "MG dry" shows on the 251
-  card while the sim fires (bridge or card bug, not fixed).
 - Tick p99 about 30 % above S7 after S8a; not profiled.
 - Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels or
   fires Panzerfausts. No radio, registered fire, cross-OS CI.

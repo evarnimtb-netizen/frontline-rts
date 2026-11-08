@@ -1317,6 +1317,14 @@
           "spot_max_s": 60,
           "spot_samples": 16
         },
+        "recon": {
+          "after_s": 90,
+          "at_threat_m": 200,
+          "backoff_m": 60,
+          "income_max_pct": 12,
+          "second_after_s": 720,
+          "view_back_m": 200
+        },
         "repair_clear_m": 150,
         "retreat_strength_pct": 40,
         "supply": {
@@ -1335,17 +1343,39 @@
         "throw_cooldown_s": 10,
         "transport": {
           "arrive_m": 15,
+          "counted_ride_m": 120,
           "dismount_back_m": 40,
-          "dismount_sight_m": 300,
+          "dismount_sight_m": 150,
+          "drop_short_m": 30,
           "hit_s": 2,
           "los_rays": 8,
           "max_fails": 2,
-          "min_ride_m": 120,
+          "meet_ahead_m": 30,
+          "meet_stand_m": 20,
+          "min_ride_m": 200,
+          "pick_m": 400,
           "repath_s": 5,
+          "ride_lock_s": 60,
           "rider_suppression_pct": 50,
           "stuck_s": 10,
-          "support_s": 30,
-          "wait_s": 20
+          "support_s": 15,
+          "unload_rolling": 1,
+          "wait_s": 10
+        },
+        "truck": {
+          "arrive_m": 15,
+          "flee_m": 120,
+          "follow_m": 150,
+          "hq_wait_s": 300,
+          "income_max_pct": 9,
+          "load_shells_kg": 160,
+          "load_wait_s": 90,
+          "los_rays": 8,
+          "max_fails": 2,
+          "min_load_pct": 40,
+          "min_vehicles": 2,
+          "repath_s": 8,
+          "return_below_pct": 20
         }
       },
       "call_in": {
@@ -2202,7 +2232,7 @@
       "weapon": ""
     },
     "ww2:ger_opel_blitz_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -2295,7 +2325,7 @@
       "weapon": ""
     },
     "ww2:ger_sdkfz234_1_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -2686,7 +2716,7 @@
       "weapon": ""
     },
     "ww2:usa_cckw_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",
@@ -2909,7 +2939,7 @@
       "weapon": ""
     },
     "ww2:usa_m8_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",
@@ -3630,7 +3660,7 @@
           "type": "cargo"
         }
       ],
-      "cost": 170,
+      "cost": 150,
       "crew_squad": "ww2:ger_tank_crew",
       "eye_height_cm": 230,
       "faction": "ww2:germany",
@@ -4587,7 +4617,7 @@
           "type": "transmission"
         }
       ],
-      "cost": 280,
+      "cost": 260,
       "crew_squad": "ww2:ger_tank_crew",
       "eye_height_cm": 260,
       "faction": "ww2:germany",
@@ -5985,7 +6015,7 @@
           "type": "cargo"
         }
       ],
-      "cost": 180,
+      "cost": 200,
       "crew_squad": "ww2:usa_tank_crew",
       "eye_height_cm": 230,
       "faction": "ww2:usa",
@@ -7928,7 +7958,7 @@
           "type": "transmission"
         }
       ],
-      "cost": 290,
+      "cost": 300,
       "crew_squad": "ww2:usa_tank_crew",
       "eye_height_cm": 255,
       "faction": "ww2:usa",

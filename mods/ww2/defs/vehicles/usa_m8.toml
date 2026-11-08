@@ -8,7 +8,7 @@ short_name = "M8"
 faction = "ww2:usa"
 role = "recon"
 # 8.4 starting value (260-300).
-cost = 290
+cost = 300                  # MP (S8b Tune: within 8.4's band; was 290: pooled Germany 43.1 % over 480)
 pop = 4
 recall_cooldown_s = 60
 # Card unlock 1:30 (8.4), s.

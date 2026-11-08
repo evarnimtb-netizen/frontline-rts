@@ -153,6 +153,11 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-18 (Plan) The M8's .50 ring is a 360 degree hull-frame pintle, not a turret-mounted gun. (A) Yes.
   S8b-19 (Plan) Drop Crates hotkey `I`. (A) Yes.
   S8b-20 (Plan) Trucks load only at base, not from an HQ (vehicles.md 7.3 allows both). (A) Yes.
+  S8b-21 (Build C) `min_ride_m` 120 -> 200 picks longer rides (short ones cost more than they save); "transported" (T41) keeps the S8a 120 m through `counted_ride_m`. (A) Yes.
+  S8b-22 (Build C) Own-budget shares above the S8b-17 starts (recon 12 %, trucks 9 % of income): at 8 % and 5 % the first car comes at about 12 minutes. (A) Yes.
+  S8b-23 (Build C) "MG dry" on the 251 card was the `halftracks` screenshot scene, which empties the MGs to hold fire; the bridge test shows a fresh 251 reports its stowage. The "red hatched ammo bar" was the absent parts in the roster's component strip (S8a-27). (A) Closed.
+  S8b-24 (Build C) Recon AI reuses the S7 overwatch entry (`AiOverwatch`), not a new saved `AiRecon` job; the float for rearming stays the existing `[ai.ammo] float_mp`; a new `ammo_float_mp` key adds nothing. (A) Yes.
+  S8b-25 (Build C) Truck blockouts: 3 axles for every truck, 4 on a long armoured car (no axle field in the defs). (A) Accept until art.
   S8b-21 (Build B) A destroyed cargo box always starts an ammo fire and the fire detonates the load at the same 40 kg rule (so one penetrating hit detonates a loaded truck about 70 % of the time), matching 7.3 "a penetration or fire". (A) Yes. (B) A `cargo_detonate_pct` of its own.
   S8b-22 (Build B) A truck need not stop to serve (the radii are short, and `DropCrates` and loading already need it stopped). (A) Yes. (B) Serve only when stopped.
 

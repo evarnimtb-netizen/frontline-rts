@@ -8,7 +8,7 @@ short_name = "CCKW"
 faction = "ww2:usa"
 role = "truck"
 # vehicles.md 8.4 trucks 150-200 MP; S5a-37 price cut applied (spec 8).
-cost = 180
+cost = 200                  # MP (S8b Tune: within 8.4's band; was 180: pooled Germany 43.1 % over 480)
 # Population (8.4).
 pop = 2
 recall_cooldown_s = 45

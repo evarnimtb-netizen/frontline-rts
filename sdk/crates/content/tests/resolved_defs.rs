@@ -113,14 +113,14 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S8b Build A re-recorded it (wheeled mobility keys, optics and screens,
 // the two armoured cars and their guns, `[vehicles.driving]` wheeled keys).
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xd683e9aac6d5315e),
-    ("skirmish usa-ger seed 7 hard", 0xadea3d227914a3ca),
-    ("test_unlock ger-usa seed 1 normal", 0x6c3b4754bd359298),
-    ("example override ger-usa seed 1 normal", 0xd683e9aac6d5315e),
-    ("human ger vs ai usa seed 3 easy", 0x34ee8a0543b875e0),
+    ("skirmish ger-usa seed 1 normal", 0xaecbd30b1d034c2a),
+    ("skirmish usa-ger seed 7 hard", 0x690a388d5e86f558),
+    ("test_unlock ger-usa seed 1 normal", 0xe8e1b894ab34166d),
+    ("example override ger-usa seed 1 normal", 0xaecbd30b1d034c2a),
+    ("human ger vs ai usa seed 3 easy", 0x3f426302eb5cadcf),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xa05f330b89ee350a,
+        0x8ddc542883cd3448,
     ),
 ];
 

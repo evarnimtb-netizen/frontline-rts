@@ -657,7 +657,11 @@ impl super::Planner<'_> {
 
     /// Whether a truck is coming to or serving vehicle `id`.
     pub(super) fn truck_coming(&self, id: SimId) -> bool {
-        self.ai.trucks.values().any(|j| j.client == Some(id))
+        let hz = self.g.setup.tick_hz.max(1) as u64;
+        self.ai
+            .trucks
+            .values()
+            .any(|j| j.client == Some(id) && self.tick < j.since + JOB_MAX_S * hz)
     }
 
     /// Own trucks with shells for ten rounds of `round_g`: squared distance

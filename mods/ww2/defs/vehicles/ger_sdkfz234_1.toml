@@ -10,7 +10,7 @@ short_name = "234/1"
 faction = "ww2:germany"
 role = "recon"
 # 8.4 starting value (260-300), the S5a-37 price cut applied (S8b section 8).
-cost = 280
+cost = 260                  # MP (S8b Tune: within 8.4's band; was 280: pooled Germany 43.1 % over 480)
 # Population (8.4).
 pop = 4
 recall_cooldown_s = 60

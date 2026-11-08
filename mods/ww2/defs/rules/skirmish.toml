@@ -1256,11 +1256,11 @@ los_rays = 8                 # sight-line rays per check along the way (0: dista
 hit_s = 2                    # s: a penetration this recent counts as "hit": everyone out
 rider_suppression_pct = 50   # %: a rider suppressed past this gets everyone out (the crouch threshold)
 stuck_s = 10                 # s: stopped this long on the way: the men get off where it stands
-support_s = 30               # s: after unloading, the MG supports from overwatch this long before it returns for the next squad. S8a Tune: 60 -> 30 (many half-tracks were lost before a second trip)
+support_s = 15               # s: after unloading, the MG supports from overwatch this long before it goes for the next squad. S8a Tune: 60 -> 30 (many half-tracks were lost before a second trip); S8b 30 -> 15
 arrive_m = 15                # m: a move that ends farther than this from its goal is a failed move ...
 max_fails = 2                # ... and after this many the job uses where the vehicle stands (no move loops, S7 tick fix)
 repath_s = 5                 # s: no job sends the same move again within this
-pick_m = 250                 # m: S8b: squads this close to the vehicle may be picked (S8b-15)
+pick_m = 400                 # m: S8b: squads this close to the vehicle may be picked (S8b-15: 250 start, 400 for USA trips per bought >= 1)
 meet_ahead_m = 30            # m: S8b: the vehicle meets a farther squad this far ahead of it, on its way to its point
 meet_stand_m = 20            # m: S8b: the squad boards when the vehicle stands this close (else it keeps walking)
 drop_short_m = 30            # m: S8b: the ride ends this far short of the point; the men walk the rest. Was dismount_back_m + 20 = 60 (spent 50 s on foot per ride)

@@ -563,7 +563,8 @@ impl super::Planner<'_> {
                         self.due,
                         CommandKind::Disembark {
                             vehicles: vec![t.id],
-                            over_sides: fire,
+                            // S8b: on arrival with no enemy near, the faster way.
+                            over_sides: fire || (arrived && !exposed),
                         },
                     );
                     self.ai.counters.transport_unloads += 1;
