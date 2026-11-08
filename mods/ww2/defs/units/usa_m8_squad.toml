@@ -9,5 +9,5 @@ tags = ["vehicle", "recon"]
 vehicle = "ww2:usa_m8"
 # Most alive per player (S8b-1 (A); 8.4): 2. Outside the vehicle limit.
 max_alive = 2
-# 0: the AI never buys it (Build A and B: no AI yet; S8b-17 sets its budget).
+# 0: the AI never buys it; above 0 it buys this card on its own budget ([ai.recon], [ai.truck]).
 ai_weight = 5                # weight of this card among its kind for the AI (S8b Build C: own buy, section 9)
