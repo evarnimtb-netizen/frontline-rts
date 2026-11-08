@@ -69,15 +69,15 @@ Pooled Germany 218 of 480 = 45.42 % (S8a 45.4 %), in band. Seeds 1-80 read 41.2 
 
 ## Targets
 
-TARGETS_LINE
+`targets S8b.toml` over all runs: 199 pass, 8 miss (hard: 4). Hard misses: T5c (Germany 41.2 % on 1-80, the pool is in band), T33a (vehicles 36.3 % of manpower, S8b-26), T41b (USA 0.981), T50e (Germany -8.75 s on 201-280, S8b-27). Reports missed: T70a-d (USA transported and trips on the other sets, 0.84-0.89). Two extra sets on the final build, seeds 301-380 and 401-480: Germany 45.0 and 43.8 %, 800 matches pooled 45.0 %.
 
 ## Tick time
 
-TICK_LINE
+timing40 alone at 3 jobs: p99 0.427 ms all, 0.522 ms peak (S8a after Fix 0.488 / 0.621): down 12 %, not profiled (no rise above 25 %). The saving comes from the half-track's fewer retasks and the capped AI move orders, not measured apart.
 
 ## Checks
 
-CHECKS_LINE
+`tools/check.sh quick 0dc13dd`: all ok, 608 passed. Release `--include-ignored`: 641 passed, 0 failed (the bridge's event test fix included). Godot: check_project OK, test_match_view 306/306, test_net_ui 143/143, test_data_reload 21/21. armour-test seeds 5: all hard checks pass (case 32: 100 % served, 19 rounds gained). Determinism: AI recon and trucks at 1, 2, 3, 8 threads, save, load and continue (`transport.rs`), trucks and wheels likewise. Net loopback sends `DropCrates` (see Known gaps). Screenshot `scratchpad/s8b/s3_recon_trucks.png`, looked at.
 
 ## What was tuned, and why
 
