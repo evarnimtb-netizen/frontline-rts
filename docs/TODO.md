@@ -103,7 +103,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S7-15 With overwatch_back_m 35 (S7 Fix, review M2) the Pz IV takes 18.8 % of German kills on the in-sample 160 (seeds 1-80), 0.8 over T32a's 18 % (17.4 and 16.9 % on seeds 101-180 and 201-280; 16.1 % before the fix). 50 m keeps it at 17.4 % but halves the StuG/M10 KOs and gives Germany 45.0 % pooled. (A) Keep 35 m; the Tune of the next vehicle slice rechecks T32 with td_hunt_m (450 m untested). S8a: T32 holds (Germany top type 17.9 %, cap 18); the out-of-sample S7-15 report reads 20.0 %, still open.
 - S8a-1..31 (`docs/slices/S8a-halftracks.md` section 14; 16-19 Build A, 20-27 Build B, 28-31 Fix), each on its (A):
   S8a-1 Main gun optional (half-tracks have none). (A) Yes.
-  S8a-2 M3A1 capacity 11; squads never split, a squad that does not fit is refused (US 12-man squad rides after a loss). (A) Yes. (B) capacity 12.
+  S8a-2 M3A1 capacity 11; squads never split, a squad that does not fit is refused (US 12-man squad rides after a loss). ANSWERED 2026-11-08 by the owner: (B), capacity 12 (twelfth slot behind the cab, S8b Tune).
   S8a-3 MG pen tables use the belt's AP round for every round (no belt-mix roll). (A) Yes; `ap_share_pct` later if MGs run high.
   S8a-4 Face-hardened plate x 125 % against every round (`[vehicles] face_hardened_pct`). (A) Yes, verify.
   S8a-5 Transports skip the vehicle limit of 4, unlock at 2:00, cap 2 per card. (A) Yes.

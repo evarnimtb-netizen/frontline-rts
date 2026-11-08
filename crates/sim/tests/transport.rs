@@ -178,17 +178,8 @@ fn a_squad_that_does_not_fit_is_refused() {
     let (big, _) = spawn(&mut w, 1, "ww2:usa_rifle_squad", xy(512, 500), WEST);
     let (small, _) = spawn(&mut w, 1, "ww2:usa_rifle_squad_9", xy(512, 510), WEST);
     assert_eq!(members(&w, big).len(), 12);
-    assert!(!accepts(
-        &mut w,
-        cmd(
-            1,
-            1,
-            CommandKind::Embark {
-                squads: vec![big],
-                vehicle: v,
-            },
-        )
-    ));
+    // S8b: capacity 12, so the full 12-man squad fits alone (S8a-2 (B)); the
+    // refusal is for a pair that together exceeds the seats.
     assert!(accepts(
         &mut w,
         cmd(
@@ -201,8 +192,8 @@ fn a_squad_that_does_not_fit_is_refused() {
         )
     ));
     let g = w.game().unwrap();
-    assert_eq!(g.squad(small).unwrap().order, Order::Embark { vehicle: v });
-    assert_ne!(g.squad(big).unwrap().order, Order::Embark { vehicle: v });
+    assert_eq!(g.squad(big).unwrap().order, Order::Embark { vehicle: v });
+    assert_ne!(g.squad(small).unwrap().order, Order::Embark { vehicle: v });
 }
 
 /// Ticks from the order until the last man is out, and where they stand.

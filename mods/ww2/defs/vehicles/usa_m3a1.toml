@@ -172,11 +172,13 @@ frame = "hull"
 pos = [110, -111, 190]
 exit_ms = 2500
 
-# S8a (6.6): eleven seats: one in the cab between the crew and ten on
-# benches in the body (S8a-2 (A): the 12-man rifle squad does not fit until
-# it has lost a man). The rear door for boarding.
+# S8a (6.6), S8b owner decision 2026-11-08 (S8a-2 (B)): twelve seats, so a
+# full 12-man rifle squad rides: one in the cab, one on the engine-side seat
+# behind the cab (the armored-infantry driver often came from the squad, so
+# the squad gives up a man there), and ten on benches in the body. The rear
+# door for boarding.
 [transport]
-capacity = 11
+capacity = 12
 entry = [-315, 0, 60]
 board_ms = 1000
 exit_ms = 800
@@ -187,6 +189,8 @@ exit_raise_cm = 50
 # heads 10 cm over the 1.90 m rim.
 [[passenger_slots]]
 box = { center = [120, 0, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [60, 0, 155], half = [22, 20, 45] }
 [[passenger_slots]]
 box = { center = [-10, 78, 155], half = [22, 20, 45] }
 [[passenger_slots]]

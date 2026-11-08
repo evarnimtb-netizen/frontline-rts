@@ -102,7 +102,7 @@ fn crew_hp(w: &World, v: SimId) -> Vec<u16> {
 fn half_tracks_have_no_main_gun_and_one_pintle_mg() {
     let w = World::new_match(setup(1), 1).unwrap();
     let s = w.match_setup().unwrap();
-    for (id, cap, shields) in [("ww2:ger_sdkfz251_1", 10, 1), ("ww2:usa_m3a1", 11, 0)] {
+    for (id, cap, shields) in [("ww2:ger_sdkfz251_1", 10, 1), ("ww2:usa_m3a1", 12, 0)] {
         let v = &s.vehicles[vtype(&w, id)];
         assert_eq!(v.role, VehicleRole::Transport, "{id}");
         assert!(v.main_gun().is_none(), "{id}");

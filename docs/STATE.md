@@ -65,7 +65,7 @@ truck jobs (`ai/truck.rs`), tanks to the nearest stock.
 ## S8a (on main)
 
 Half-tracks (log `docs/slices/S8a-log.md`, spec `S8a-halftracks.md`, targets
-`S8a.toml`). SdKfz 251/1 D (capacity 10) and M3A1 (capacity 11, M2HB): cards
+`S8a.toml`). SdKfz 251/1 D (capacity 10) and M3A1 (capacity 12, M2HB): cards
 290 / 310 MP, pop 3, cap 2, 60 s, unlock 2:00, outside the vehicle limit.
 Pintle MGs with arcs and shields; small arms penetrate thin plates into boxes
 (`penetration` tables, `core`); riders stay soldiers in slot boxes, exit by the

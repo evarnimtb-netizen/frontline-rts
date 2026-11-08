@@ -6944,6 +6944,20 @@
         {
           "box": {
             "center": [
+              60,
+              0,
+              155
+            ],
+            "half": [
+              22,
+              20,
+              45
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
               -10,
               78,
               155
@@ -7134,7 +7148,7 @@
       "spot_size_pct": 170,
       "transport": {
         "board_ms": 1000,
-        "capacity": 11,
+        "capacity": 12,
         "entry": [
           -315,
           0,
