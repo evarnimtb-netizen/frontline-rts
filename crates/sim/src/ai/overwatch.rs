@@ -317,7 +317,8 @@ impl super::Planner<'_> {
                 return None;
             }
             let v = &g.setup.vehicles[k.type_idx as usize];
-            let b = v.boxes.iter().position(|b| b.open != 0)?;
+            // S8b (6.5): a screened face turns the item away.
+            let b = v.boxes.iter().position(|b| b.open & !b.screen != 0)?;
             let f = g.vderived.frame(k.id)?;
             let target = self.terrain.clamp(f.boxes.get(b)?.center.xy());
             [ItemKind::Frag, ItemKind::Satchel]

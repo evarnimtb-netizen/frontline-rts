@@ -164,10 +164,19 @@ pub enum ComponentKind {
     /// S3b: the gearbox and final drives (damaged: half speed; destroyed:
     /// immobilised).
     Transmission = 6,
+    /// S8b (6.8): a wheeled vehicle's front axles (anchors only, like a
+    /// track); at 0 HP the vehicle cannot move.
+    WheelsFront = 7,
+    /// S8b (6.8): its rear axles.
+    WheelsRear = 8,
+    /// S8b (section 7): a supply truck's load (a box; detonates like a
+    /// rack while it holds enough shells or explosives).
+    Cargo = 9,
 }
 
-/// Number of [`ComponentKind`]s (every vehicle has each exactly once).
-pub const COMPONENTS: usize = 7;
+/// Number of [`ComponentKind`]s (indices of `VehicleSetup::components`; a
+/// part a vehicle does not have has 0 HP there).
+pub const COMPONENTS: usize = 10;
 
 impl ComponentKind {
     pub const ALL: [ComponentKind; COMPONENTS] = [
@@ -178,6 +187,9 @@ impl ComponentKind {
         ComponentKind::TurretRing,
         ComponentKind::AmmoRack,
         ComponentKind::Transmission,
+        ComponentKind::WheelsFront,
+        ComponentKind::WheelsRear,
+        ComponentKind::Cargo,
     ];
 
     #[inline]
@@ -194,16 +206,31 @@ impl ComponentKind {
             ComponentKind::TurretRing => "turret_ring",
             ComponentKind::AmmoRack => "ammo_rack",
             ComponentKind::Transmission => "transmission",
+            ComponentKind::WheelsFront => "wheels_front",
+            ComponentKind::WheelsRear => "wheels_rear",
+            ComponentKind::Cargo => "cargo",
         }
     }
 
-    /// Needs at least one box (internal); tracks are anchors only.
+    /// Needs at least one box (internal); running gear is anchors only.
     pub const fn has_box(self) -> bool {
-        !self.is_track()
+        !self.is_running_gear()
     }
 
     pub const fn is_track(self) -> bool {
         matches!(self, ComponentKind::TrackLeft | ComponentKind::TrackRight)
+    }
+
+    /// S8b: a track or a wheel axle (anchors only; a blast under it or a
+    /// hit in the band damages it; at 0 HP the vehicle cannot move).
+    pub const fn is_running_gear(self) -> bool {
+        matches!(
+            self,
+            ComponentKind::TrackLeft
+                | ComponentKind::TrackRight
+                | ComponentKind::WheelsFront
+                | ComponentKind::WheelsRear
+        )
     }
 }
 
@@ -311,6 +338,10 @@ pub enum VehicleRole {
     /// S8a: an infantry carrier (half-track): `[transport]`, no main gun;
     /// outside the rules' vehicle `limit`, unlocked at `transport_unlock_s`.
     Transport,
+    /// S8b: an armoured car (optics, scouting); outside the vehicle limit.
+    Recon,
+    /// S8b: a supply truck (no weapons needed); outside the vehicle limit.
+    Truck,
 }
 
 impl VehicleRole {
@@ -320,7 +351,17 @@ impl VehicleRole {
             VehicleRole::AssaultGun => "assault_gun",
             VehicleRole::TankDestroyer => "tank_destroyer",
             VehicleRole::Transport => "transport",
+            VehicleRole::Recon => "recon",
+            VehicleRole::Truck => "truck",
         }
+    }
+
+    /// S8b: outside the rules' vehicle `limit` (capped by its own card).
+    pub const fn outside_limit(self) -> bool {
+        matches!(
+            self,
+            VehicleRole::Transport | VehicleRole::Recon | VehicleRole::Truck
+        )
     }
 }
 
@@ -332,8 +373,11 @@ pub enum MobilityKind {
     Tracked,
     /// S8a (vehicles.md 6.8): driven front wheels and rear tracks. Same
     /// drive as `tracked` (neutral pivot, S8a-6); the difference is data
-    /// (bog chance, turn rate, speed). `wheeled` is reserved for S8b.
+    /// (bog chance, turn rate, speed).
     Halftrack,
+    /// S8b (6.8): a bicycle model: a turning radius, no neutral pivot,
+    /// any ground dug `ditch_block_dm` deep is a wall.
+    Wheeled,
 }
 
 /// Armour material. Only rolled homogeneous armour exists in S3
@@ -469,6 +513,20 @@ pub struct VehicleDef {
     /// man's hit volume.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub passenger_slots: Vec<PassengerSlotDef>,
+    /// S8b (6.9): stationary observation; absent: no effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optics: Option<OpticsDef>,
+}
+
+/// S8b (6.9): a vehicle stopped for `settle_s` sees `stationary_sight_pct`
+/// percent of its `sight_m`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OpticsDef {
+    /// Seconds stopped before the bonus applies.
+    pub settle_s: u32,
+    /// Percent of `sight_m` (100..=300).
+    pub stationary_sight_pct: u32,
 }
 
 /// S8a (6.7): an MG shield: one plate all round a thin box. It follows a
@@ -534,6 +592,25 @@ pub struct HatchDef {
 /// Most hatches per vehicle.
 pub const MAX_HATCHES: usize = 8;
 
+/// S8b: whether a def with these traits lacks part `k` (0 HP, no box).
+fn component_absent(
+    k: ComponentKind,
+    turret: bool,
+    main_gun: bool,
+    mobility: MobilityKind,
+    role: VehicleRole,
+) -> bool {
+    let wheeled = mobility == MobilityKind::Wheeled;
+    match k {
+        ComponentKind::TurretRing => !turret,
+        ComponentKind::Gun | ComponentKind::AmmoRack => !main_gun,
+        ComponentKind::TrackLeft | ComponentKind::TrackRight => wheeled,
+        ComponentKind::WheelsFront | ComponentKind::WheelsRear => !wheeled,
+        ComponentKind::Cargo => role != VehicleRole::Truck,
+        ComponentKind::Engine | ComponentKind::Transmission => false,
+    }
+}
+
 fn default_spot_size_pct() -> u32 {
     200
 }
@@ -549,13 +626,25 @@ pub struct MobilityDef {
     /// Top speed on open flat ground.
     pub speed_cm_s: u32,
     pub reverse_cm_s: u32,
-    /// Hull turn rate.
+    /// Hull turn rate (S8b: not used by, and omitted on, `wheeled`).
+    #[serde(default)]
     pub turn_deg_s: u32,
+    /// S8b: full-lock turning radius at the vehicle's origin, cm (required
+    /// on `wheeled`; forbidden otherwise).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_radius_cm: Option<u32>,
+    /// S8b: speed in woods in percent of `speed_cm_s` (default 50).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub woods_speed_pct: Option<u32>,
+    /// S8b: percent of speed lost at `max_slope_pct`, linear (default 70).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slope_loss_pct: Option<u32>,
     pub accel_cm_s2: u32,
     pub brake_cm_s2: u32,
     /// Steepest slope it climbs; speed falls linearly to 30 % there.
     pub max_slope_pct: u32,
-    /// Ground inside an AT-ditch footprint at least this deep blocks it.
+    /// Ground inside an AT-ditch footprint at least this deep blocks it;
+    /// S8b: `wheeled`: any ground dug this deep, ditch or not.
     pub ditch_block_dm: u32,
     /// Chance to bog once per trench crossing.
     pub bog_pct: u32,
@@ -649,6 +738,10 @@ pub struct ArmourBoxDef {
     /// the box bottom).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_cm: Option<i32>,
+    /// S8b (6.5): open faces with a wire screen: thrown items bounce off
+    /// and fall beside the vehicle; bullets and fragments pass.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grenade_screen: Vec<PlateGroup>,
 }
 
 /// S7: an armour box's plates by group (`front`, `side`, `rear`, `top`;
@@ -1101,7 +1194,49 @@ impl VehicleDef {
             1,
             m.speed_cm_s as i64,
         );
-        range(&mut out, "mobility.turn_deg_s", m.turn_deg_s as i64, 1, 360);
+        let wheeled = m.kind == MobilityKind::Wheeled;
+        if wheeled {
+            match m.turn_radius_cm {
+                Some(r) => range(&mut out, "mobility.turn_radius_cm", r as i64, 300, 2000),
+                None => out.push(
+                    Issue::new(
+                        "mobility.turn_radius_cm",
+                        "`wheeled` needs a turning radius",
+                    )
+                    .with_hint("turn_radius_cm = 700"),
+                ),
+            }
+            if m.turn_deg_s != 0 {
+                out.push(Issue::new(
+                    "mobility.turn_deg_s",
+                    "`wheeled` steers by turn_radius_cm; remove turn_deg_s",
+                ));
+            }
+        } else {
+            range(&mut out, "mobility.turn_deg_s", m.turn_deg_s as i64, 1, 360);
+            if m.turn_radius_cm.is_some() {
+                out.push(Issue::new(
+                    "mobility.turn_radius_cm",
+                    "only `wheeled` has a turning radius",
+                ));
+            }
+        }
+        if let Some(p) = m.woods_speed_pct {
+            range(&mut out, "mobility.woods_speed_pct", p as i64, 1, 100);
+        }
+        if let Some(p) = m.slope_loss_pct {
+            range(&mut out, "mobility.slope_loss_pct", p as i64, 0, 95);
+        }
+        if let Some(o) = &self.optics {
+            range(&mut out, "optics.settle_s", o.settle_s as i64, 0, 60);
+            range(
+                &mut out,
+                "optics.stationary_sight_pct",
+                o.stationary_sight_pct as i64,
+                100,
+                300,
+            );
+        }
         range(
             &mut out,
             "mobility.accel_cm_s2",
@@ -1216,6 +1351,14 @@ impl VehicleDef {
                     out.push(Issue::new(
                         format!("{p}.open[{k}]"),
                         format!("`{}` is listed twice", g.name()),
+                    ));
+                }
+            }
+            for (k, g) in b.grenade_screen.iter().enumerate() {
+                if !b.open.contains(g) || b.grenade_screen[..k].contains(g) {
+                    out.push(Issue::new(
+                        format!("{p}.grenade_screen[{k}]"),
+                        format!("`{}` is not an open face or is listed twice", g.name()),
                     ));
                 }
             }
@@ -1384,26 +1527,20 @@ impl VehicleDef {
             ));
         }
         let mains = self.weapons.iter().filter(|w| w.mount.is_main()).count();
-        // S8a-1: a transport has no main gun; every other role exactly one.
-        let want_mains = if self.role == VehicleRole::Transport {
-            0..=1
-        } else {
-            1..=1
+        // S8a-1: a transport may have a main gun; S8b: a truck has none;
+        // every other role exactly one.
+        let (want_mains, needs) = match self.role {
+            VehicleRole::Transport => (0..=1, "at most one"),
+            VehicleRole::Truck => (0..=0, "no"),
+            _ => (1..=1, "exactly one"),
         };
         if !want_mains.contains(&mains) {
             out.push(Issue::new(
                 "weapons",
-                format!(
-                    "needs {} main gun (`turret_main` or `casemate`), got {mains}",
-                    if self.role == VehicleRole::Transport {
-                        "at most one"
-                    } else {
-                        "exactly one"
-                    }
-                ),
+                format!("needs {needs} main gun (`turret_main` or `casemate`), got {mains}"),
             ));
         }
-        if self.weapons.is_empty() {
+        if self.weapons.is_empty() && self.role != VehicleRole::Truck {
             out.push(Issue::new("weapons", "needs at least one weapon"));
         }
         for kind in [MountKind::Coax, MountKind::Hull] {
@@ -1695,11 +1832,15 @@ impl VehicleDef {
         for kind in ComponentKind::ALL {
             let n = self.components.iter().filter(|c| c.kind == kind).count();
             // S7: a turret ring exactly with a turret; S8a: a gun and an
-            // ammo rack exactly with a main gun.
-            let want = if (kind == ComponentKind::TurretRing && self.turret.is_none())
-                || (matches!(kind, ComponentKind::Gun | ComponentKind::AmmoRack)
-                    && self.main_gun().is_none())
-            {
+            // ammo rack exactly with a main gun; S8b: wheels or tracks by
+            // the mobility, cargo exactly on a truck.
+            let want = if component_absent(
+                kind,
+                self.turret.is_some(),
+                self.main_gun().is_some(),
+                self.mobility.kind,
+                self.role,
+            ) {
                 0
             } else {
                 1
@@ -1754,7 +1895,7 @@ impl VehicleDef {
                 ),
                 (false, n) if n > 0 => out.push(Issue::new(
                     format!("{p}.box"),
-                    "tracks have anchors, not a box",
+                    "running gear has anchors, not a box",
                 )),
                 _ => {}
             }
@@ -1779,7 +1920,7 @@ impl VehicleDef {
                 }
             }
             let anchors = match c.kind {
-                k if k.is_track() => 1..=MAX_ANCHORS,
+                k if k.is_running_gear() => 1..=MAX_ANCHORS,
                 _ => 0..=0,
             };
             if !anchors.contains(&c.anchors.len()) {
@@ -2346,6 +2487,12 @@ pub struct MobilitySetup {
     pub speed: Fixed,
     pub reverse: Fixed,
     pub turn_deg_s: i32,
+    /// S8b: full-lock radius (m; zero unless `Wheeled`).
+    pub turn_radius: Fixed,
+    /// S8b: percent of speed in woods.
+    pub woods_speed_pct: u32,
+    /// S8b: percent of speed lost at `max_slope_pct`.
+    pub slope_loss_pct: u32,
     /// m/s².
     pub accel: Fixed,
     pub brake: Fixed,
@@ -2378,6 +2525,8 @@ pub struct ArmourBoxSetup {
     pub plates: [PlateSetup; PLATE_GROUPS],
     /// Open groups, bit [`PlateGroup::index`].
     pub open: u8,
+    /// S8b: open groups with a grenade screen (a subset of `open`).
+    pub screen: u8,
     /// The floor items rest on (frame z, m); the box bottom when closed.
     pub floor: Fixed,
 }
@@ -2545,6 +2694,10 @@ pub struct VehicleSetup {
     pub shields: Vec<ShieldSetup>,
     /// S8a: an infantry carrier's door, timings and slots.
     pub transport: Option<TransportSetup>,
+    /// S8b (6.9): ticks stopped before `stationary_sight_pct` applies.
+    pub settle_ticks: u32,
+    /// S8b (6.9): percent of `sight` once settled (100: no effect).
+    pub stationary_sight_pct: u32,
 }
 
 impl VehicleSetup {
@@ -2552,6 +2705,12 @@ impl VehicleSetup {
     /// transport without one.
     pub fn main_gun(&self) -> Option<&MountSetup> {
         self.mounts.first().filter(|m| m.kind.is_main())
+    }
+
+    /// S8b: whether the def has part `k` (an absent part reads 0 HP and is
+    /// never damaged or tested).
+    pub fn has_part(&self, k: ComponentKind) -> bool {
+        self.components.get(k.index()).is_some_and(|c| c.hp > 0)
     }
 
     /// The main gun's rounds (S8a: empty without one).
@@ -2852,6 +3011,9 @@ pub(crate) fn lower_vehicle(
             speed: Fixed::from_cm(m.speed_cm_s),
             reverse: Fixed::from_cm(m.reverse_cm_s),
             turn_deg_s: m.turn_deg_s as i32,
+            turn_radius: Fixed::from_cm(m.turn_radius_cm.unwrap_or(0)),
+            woods_speed_pct: m.woods_speed_pct.unwrap_or(50),
+            slope_loss_pct: m.slope_loss_pct.unwrap_or(70),
             accel: Fixed::from_cm(m.accel_cm_s2),
             brake: Fixed::from_cm(m.brake_cm_s2),
             max_slope_pct: m.max_slope_pct,
@@ -2911,6 +3073,10 @@ pub(crate) fn lower_vehicle(
                             })
                     }),
                     open,
+                    screen: b
+                        .grenade_screen
+                        .iter()
+                        .fold(0u8, |m, g| m | (1 << g.index())),
                     // The box bottom unless set (the same fixed-point
                     // arithmetic as the bounds, so it lies in them).
                     floor: {
@@ -2955,6 +3121,8 @@ pub(crate) fn lower_vehicle(
                 thickness: Fixed::from_ratio(sh.thickness_mm.0 as i64, 10),
             })
             .collect(),
+        settle_ticks: v.optics.map_or(0, |o| o.settle_s * hz),
+        stationary_sight_pct: v.optics.map_or(100, |o| o.stationary_sight_pct),
         transport: v.transport.as_ref().map(|t| TransportSetup {
             entry: FixedVec3::from_cm(t.entry),
             board_ticks: (t.board_ms as u64 * hz as u64).div_ceil(1000) as u32,
@@ -3157,6 +3325,15 @@ pub(crate) fn check_vehicle(
         return Some("vehicles.faction: index out of range");
     }
     let m = &v.mobility;
+    let turn_ok = if m.kind == MobilityKind::Wheeled {
+        fx_in(m.turn_radius, 3, 20) && m.turn_radius > Fixed::ZERO && m.turn_deg_s == 0
+    } else {
+        (1..=360).contains(&m.turn_deg_s) && m.turn_radius == Fixed::ZERO
+    };
+    let optics_ok = v.settle_ticks <= 60 * 30 && (100..=300).contains(&v.stationary_sight_pct);
+    if !optics_ok {
+        return Some("vehicles.optics: out of range");
+    }
     if !(1..=120).contains(&v.pop)
         || v.cost > 100_000
         || !fx_in(v.sight, 1, 2000)
@@ -3164,7 +3341,9 @@ pub(crate) fn check_vehicle(
         || !fx_in(v.eye_height, 0, 10)
         || !(m.speed > Fixed::ZERO && fx_in(m.speed, 0, 30))
         || !(m.reverse > Fixed::ZERO && m.reverse <= m.speed)
-        || !(1..=360).contains(&m.turn_deg_s)
+        || !turn_ok
+        || !(1..=100).contains(&m.woods_speed_pct)
+        || m.slope_loss_pct > 95
         || !(m.accel > Fixed::ZERO && fx_in(m.accel, 0, 20))
         || !(m.brake > Fixed::ZERO && fx_in(m.brake, 0, 50))
         || !(1..=MAX_VEHICLE_SLOPE_PCT).contains(&m.max_slope_pct)
@@ -3185,7 +3364,7 @@ pub(crate) fn check_vehicle(
         // S8a-1: no main gun (a transport).
         v.turret == BoxSetup::default()
             && v.gun_arc_deg.is_none()
-            && v.role == VehicleRole::Transport
+            && matches!(v.role, VehicleRole::Transport | VehicleRole::Truck)
     } else {
         v.turret == BoxSetup::default()
             && casemate
@@ -3223,6 +3402,7 @@ pub(crate) fn check_vehicle(
         let hi = b.bounds.center.z.0 as i64 + b.bounds.half.z.0 as i64;
         if !box_ok(&b.bounds)
             || b.open >= 1 << PLATE_GROUPS
+            || b.screen & !b.open != 0
             || b.id.is_empty()
             || b.id.len() > 24
             || !(lo..=hi).contains(&(b.floor.0 as i64))
@@ -3363,17 +3543,21 @@ pub(crate) fn check_vehicle(
     }
     for (k, c) in ComponentKind::ALL.iter().zip(&v.components) {
         // S7: no turret ring without a turret (0 HP, nothing else).
-        // S8a-1: no gun or ammo rack without a main gun.
-        if (*k == ComponentKind::TurretRing && !v.has_turret)
-            || (matches!(k, ComponentKind::Gun | ComponentKind::AmmoRack) && v.main_gun().is_none())
-        {
-            if c.kind != *k || c.hp != 0 || !c.parts.is_empty() || c.repair.is_some() {
-                return Some("vehicles.components: a turret ring, gun or rack it cannot have");
+        // S8a-1: no gun or ammo rack without a main gun. S8b: no wheels on
+        // tracks and the other way round, cargo only on a truck.
+        if component_absent(*k, v.has_turret, v.main_gun().is_some(), m.kind, v.role) {
+            if c.kind != *k
+                || c.hp != 0
+                || !c.parts.is_empty()
+                || !c.anchors.is_empty()
+                || c.repair.is_some()
+            {
+                return Some("vehicles.components: a part it cannot have");
             }
             continue;
         }
         let anchors_ok = match k {
-            k if k.is_track() => (1..=MAX_ANCHORS).contains(&c.anchors.len()),
+            k if k.is_running_gear() => (1..=MAX_ANCHORS).contains(&c.anchors.len()),
             _ => c.anchors.is_empty(),
         };
         let part_ok = if k.has_box() {

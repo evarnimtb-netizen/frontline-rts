@@ -68,10 +68,11 @@
 
 use frontline_content::setup::VehicleRulesSetup;
 use frontline_content::tuning::{DrivingTuning, VehiclePathTuning};
-use frontline_content::vehicle::{FixedVec3, VehicleRole, VehicleSetup};
+use frontline_content::vehicle::{FixedVec3, VehicleSetup};
 use frontline_content::vehicle::{MAX_PASSENGERS, MAX_SHIELDS};
 use frontline_content::{
-    COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MatchSetup, MountKind, SeatRole,
+    COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MatchSetup, MobilityKind, MountKind,
+    SeatRole,
 };
 use serde::{Deserialize, Serialize};
 
@@ -188,6 +189,8 @@ pub struct VehicleState {
     pub ranging: u8,
     /// Ticks since the main gun fired, saturating (`u16::MAX`: never).
     pub since_fire: u16,
+    /// S8b (6.9): ticks at speed zero, saturating (recon optics).
+    pub still_ticks: u16,
     /// Ticks the engine fire has burned (0: not burning).
     pub burn: u16,
     /// S3b: ticks the ammo fire has burned (0: none); it knocks the
@@ -337,6 +340,7 @@ impl VehicleState {
                 .collect(),
             ranging: 0,
             since_fire: u16::MAX,
+            still_ticks: 0,
             burn: 0,
             ammo_fire: 0,
             repairing: None,
@@ -410,6 +414,11 @@ impl VehicleState {
         if v.main_gun().is_some() {
             return self.component(ComponentKind::Gun) == 0;
         }
+        // S8b: a truck has no armament to be out of (`all` on nothing
+        // would read true and bail its crew at once).
+        if v.mounts.is_empty() {
+            return false;
+        }
         v.mg_mounts()
             .iter()
             .zip(&self.mgs)
@@ -428,13 +437,22 @@ impl VehicleState {
     }
 
     /// Mechanically unable to move (`vehicle_flags::IMMOBILISED`): no
-    /// driver, engine, a track or (S3b) the transmission destroyed.
+    /// driver, engine, a track or wheel axle (S8b) or (S3b) the
+    /// transmission destroyed.
     pub fn immobilised(&self, v: &VehicleSetup) -> bool {
-        !self.manned(v, SeatRole::Driver)
-            || self.component(ComponentKind::Engine) == 0
-            || self.component(ComponentKind::TrackLeft) == 0
-            || self.component(ComponentKind::TrackRight) == 0
-            || self.component(ComponentKind::Transmission) == 0
+        !self.manned(v, SeatRole::Driver) || self.mobility_part_out(v)
+    }
+
+    /// Whether any mobility part the def has (engine, transmission, tracks
+    /// or wheels) is at 0 HP. S8b: a part the def lacks reads 0 HP and
+    /// does not count.
+    pub fn mobility_part_out(&self, v: &VehicleSetup) -> bool {
+        ComponentKind::ALL.iter().any(|&k| {
+            (k.is_running_gear()
+                || matches!(k, ComponentKind::Engine | ComponentKind::Transmission))
+                && v.has_part(k)
+                && self.component(k) == 0
+        })
     }
 
     /// Checks a loaded state against its def (untrusted saves): counts
@@ -661,7 +679,12 @@ impl Geo {
         let track_y = v
             .components
             .iter()
-            .find(|c| c.kind == ComponentKind::TrackLeft)
+            .find(|c| {
+                matches!(
+                    c.kind,
+                    ComponentKind::TrackLeft | ComponentKind::WheelsFront
+                )
+            })
             .and_then(|c| c.anchors.first())
             .map(|a| Fx::from(a.pos.y).abs())
             .filter(|y| *y > Fx::ZERO && *y <= hull_half.y)
@@ -1149,6 +1172,11 @@ pub struct BlockLayer {
     margin: Vec<bool>,
     /// Node rectangles `[x0, y0, x1, y1]` (inclusive) to recompute.
     pending: Vec<[u32; 4]>,
+    /// S8b: the wheeled layer: any ground dug `ditch_dm` deep blocks, on a
+    /// ditch line or not, on the raw nodes only (S8b-16: no dilation, or a
+    /// truck parked by a new trench would read as standing on blocked
+    /// ground and a 10 m gap would be closed; the dilation is its margin).
+    any_dug: bool,
 }
 
 /// A wreck's footprint for the block layer.
@@ -1171,20 +1199,46 @@ impl BlockLayer {
             blocked: vec![false; n],
             margin: vec![false; n],
             pending: Vec::new(),
+            any_dug: false,
         }
     }
 
-    /// The setup's ditch depth that blocks, in decimetres.
+    /// S8b: the wheeled layer (see `any_dug`).
+    pub fn new_wheeled(dim: u32, dug_dm: u16) -> BlockLayer {
+        BlockLayer {
+            any_dug: true,
+            ..BlockLayer::new(dim, dug_dm)
+        }
+    }
+
+    /// `v`'s blocking depth, in decimetres.
+    fn dm_of(v: &VehicleSetup) -> u16 {
+        let raw = Fx::from(v.mobility.ditch_block).raw() as i64;
+        ((raw * 10 + (1 << (Fx::FRAC_BITS - 1))) >> Fx::FRAC_BITS).clamp(0, 255) as u16
+    }
+
+    /// The setup's ditch depth that blocks, in decimetres. S8b: not the
+    /// wheeled defs' (10 dm would make every AT ditch dug 1 m a wall for
+    /// tanks); they have their own layer.
     pub fn ditch_dm_of(setup: &MatchSetup) -> u16 {
         setup
             .vehicles
             .iter()
-            .map(|v| {
-                let raw = Fx::from(v.mobility.ditch_block).raw() as i64;
-                ((raw * 10 + (1 << (Fx::FRAC_BITS - 1))) >> Fx::FRAC_BITS).clamp(0, 255) as u16
-            })
+            .filter(|v| v.mobility.kind != MobilityKind::Wheeled)
+            .map(Self::dm_of)
             .min()
             .unwrap_or(u16::MAX)
+    }
+
+    /// S8b: the shallowest dug ground that blocks a wheeled def, in
+    /// decimetres (`None`: the setup has no wheeled vehicle).
+    pub fn wheeled_dm_of(setup: &MatchSetup) -> Option<u16> {
+        setup
+            .vehicles
+            .iter()
+            .filter(|v| v.mobility.kind == MobilityKind::Wheeled)
+            .map(Self::dm_of)
+            .min()
     }
 
     #[inline]
@@ -1292,10 +1346,15 @@ impl BlockLayer {
                 for gx in r[0]..=r[2] {
                     let p = FxVec2::from_int(gx as i32 * SPACING_M, gy as i32 * SPACING_M);
                     let dug = terrain.dug_dm(gx, gy);
-                    let near = (dug >= TRENCH_NAV_DM || dug as u16 >= self.ditch_dm)
+                    let near = !self.any_dug
+                        && (dug >= TRENCH_NAV_DM || dug as u16 >= self.ditch_dm)
                         && ditches.iter().any(|l| near_line(l, p, reach_sq));
                     self.ditch[(gy * dim + gx) as usize] = near && dug >= TRENCH_NAV_DM;
-                    let ditch = near && dug as u16 >= self.ditch_dm;
+                    let ditch = if self.any_dug {
+                        dug as u16 >= self.ditch_dm
+                    } else {
+                        near && dug as u16 >= self.ditch_dm
+                    };
                     let wreck = !ditch
                         && wrecks.iter().any(|w| {
                             let d = p - w.center;
@@ -1319,7 +1378,15 @@ impl BlockLayer {
                     for gx in r[0].saturating_sub(grow)..=(r[2] + grow).min(max) {
                         let k = (gy * dim + gx) as usize;
                         if pass == 0 {
-                            self.blocked[k] = dilate(&self.raw, gx, gy);
+                            // S8b: a car is far narrower than a grid cell,
+                            // so the wheeled layer blocks the raw nodes
+                            // only; the dilation is its margin (a 10 m gap
+                            // in a trench stays a way through).
+                            self.blocked[k] = if self.any_dug {
+                                self.raw[k]
+                            } else {
+                                dilate(&self.raw, gx, gy)
+                            };
                         } else {
                             self.margin[k] = dilate(&self.blocked, gx, gy);
                         }
@@ -1380,6 +1447,9 @@ pub struct VehicleDerived {
     /// The largest [`Geo::reach`]: index queries pad by it.
     pub max_reach: Fx,
     pub block: BlockLayer,
+    /// S8b: where wheeled vehicles cannot go (`None`: no wheeled def in the
+    /// setup, nothing to keep up to date).
+    pub wheel_block: Option<BlockLayer>,
 }
 
 impl PartialEq for VehicleDerived {
@@ -1402,6 +1472,17 @@ impl VehicleDerived {
             geo,
             max_reach,
             block: BlockLayer::new(grid_dim, BlockLayer::ditch_dm_of(setup)),
+            wheel_block: BlockLayer::wheeled_dm_of(setup)
+                .map(|dm| BlockLayer::new_wheeled(grid_dim, dm)),
+        }
+    }
+
+    /// S8b: the block layer vehicle type `v` obeys.
+    #[inline]
+    pub fn block_of(&self, v: &VehicleSetup) -> &BlockLayer {
+        match &self.wheel_block {
+            Some(w) if v.mobility.kind == MobilityKind::Wheeled => w,
+            _ => &self.block,
         }
     }
 
@@ -1515,10 +1596,10 @@ pub fn drive(
     let mut pct: i64 = 100;
     let grade = grade_pct(vs.pitch) as i64;
     let max_slope = m.max_slope_pct.max(1) as i64;
-    pct = pct * (100 - 70 * grade.min(max_slope) / max_slope) / 100;
+    pct = pct * (100 - m.slope_loss_pct as i64 * grade.min(max_slope) / max_slope) / 100;
     let xy = t.pos.xy();
     if ctx.terrain.woods_at(xy) {
-        pct = pct * 50 / 100;
+        pct = pct * m.woods_speed_pct as i64 / 100;
     }
     let driver = vs.seat(v, SeatRole::Driver).map_or(0, |s| s.hp as u32);
     if driver < r.wounded_hp {
@@ -1562,13 +1643,23 @@ pub fn drive(
     } else {
         approach(s0, target, if s0 > Fx::ZERO { brake } else { accel })
     };
+    let wheeled = m.kind == MobilityKind::Wheeled;
     let turn = if immobile {
         Fx::ZERO
+    } else if wheeled {
+        // S8b (6.8): a bicycle: the yaw rate is speed over radius, so no
+        // turn at a standstill, and reversing turns the other way.
+        speed
+            .div(m.turn_radius.into())
+            .mul_int(steer)
+            .div_int(127)
+            .div_int(hz)
     } else {
         deg(m.turn_deg_s).mul_int(steer).div_int(127).div_int(hz)
     };
 
-    // Candidate pose; refused steps fall back to turning only, then to
+    // Candidate pose; refused steps fall back to turning only (S8b: not a
+    // wheeled vehicle, which cannot turn without rolling), then to
     // standing still.
     let yaw0 = t.yaw;
     let yaw1 = (yaw0 + turn).wrap_angle();
@@ -1586,7 +1677,7 @@ pub fn drive(
         speed = Fx::ZERO;
         xy1 = xy;
         g = sample_ground(ctx.terrain, xy1, yaw, ctx.geo);
-        if !(turning && ok(&g)) {
+        if wheeled || !(turning && ok(&g)) {
             yaw = yaw0;
             g = sample_ground(ctx.terrain, xy1, yaw, ctx.geo);
         }
@@ -1621,6 +1712,12 @@ pub fn drive(
     t.pos = xy1.extend(gp.z);
     t.yaw = yaw;
     vs.speed = speed;
+    // S8b (6.9): how long it has stood (the optics' settle time).
+    vs.still_ticks = if speed == Fx::ZERO {
+        vs.still_ticks.saturating_add(1)
+    } else {
+        0
+    };
     vel.lin = (xy1 - xy).mul_int(hz);
     vs.avg_vel = vs.avg_vel + (vel.lin - vs.avg_vel).div_int(hz);
     changed
@@ -1722,13 +1819,16 @@ impl MatchState {
     /// Vehicles of `player` alive (the limit's count; S3b: a bought
     /// vehicle is alive at once, nothing waits in a queue).
     pub fn vehicles_counted(&self, ents: &Entities, player: PlayerId) -> u32 {
-        // S8a-5: transports do not count against the limit.
+        // S8a-5: transports do not count against the limit; S8b-1: recon
+        // cars and trucks neither.
         self.vehicles
             .iter()
             .filter(|(id, vs)| {
                 ents.kind[id.index()] == EntityKind::Vehicle
                     && ents.owner[id.index()] == player
-                    && self.setup.vehicles[vs.type_idx as usize].role != VehicleRole::Transport
+                    && !self.setup.vehicles[vs.type_idx as usize]
+                        .role
+                        .outside_limit()
             })
             .count() as u32
     }
@@ -1793,6 +1893,9 @@ impl MatchState {
         let r = geo.reach + Fx::from_int(self.setup.rules.vehicles.path.wreck_pad_m as i32);
         let rv = FxVec2::new(r, r);
         self.vderived.block.mark_rect(c - rv, c + rv);
+        if let Some(w) = &mut self.vderived.wheel_block {
+            w.mark_rect(c - rv, c + rv);
+        }
     }
 
     /// Marks the block layer around an AT-ditch line.
@@ -1806,6 +1909,9 @@ impl MatchState {
         let reach = self.setup.rules.vehicles.path.ditch_reach_m as i32;
         let pad = FxVec2::from_int(reach, reach);
         self.vderived.block.mark_rect(lo - pad, hi + pad);
+        if let Some(w) = &mut self.vderived.wheel_block {
+            w.mark_rect(lo - pad, hi + pad);
+        }
     }
 
     /// Brings the block layer up to date: the terrain tiles changed this
@@ -1817,6 +1923,9 @@ impl MatchState {
         tiles: &[(u16, u16)],
     ) {
         self.vderived.block.mark_tiles(tiles);
+        if let Some(w) = &mut self.vderived.wheel_block {
+            w.mark_tiles(tiles);
+        }
         let wrecks = self.wreck_footprints(ents);
         let MatchState {
             setup,
@@ -1827,6 +1936,9 @@ impl MatchState {
         vderived
             .block
             .update(terrain, at_ditches, &wrecks, &setup.rules.vehicles.path);
+        if let Some(w) = &mut vderived.wheel_block {
+            w.update(terrain, at_ditches, &wrecks, &setup.rules.vehicles.path);
+        }
     }
 
     /// Rebuilds every derived vehicle structure from the state (load, new
@@ -1835,6 +1947,9 @@ impl MatchState {
         self.vderived = VehicleDerived::new(&self.setup, terrain.dim());
         self.rebuild_vehicle_index(ents);
         self.vderived.block.mark_all();
+        if let Some(w) = &mut self.vderived.wheel_block {
+            w.mark_all();
+        }
         self.update_block(ents, terrain, &[]);
     }
 
@@ -1985,7 +2100,7 @@ impl MatchState {
                 };
             let ctx = DriveCtx {
                 terrain,
-                block: &vderived.block,
+                block: vderived.block_of(v),
                 v,
                 geo,
                 rules: &setup.rules.vehicles,
@@ -2081,6 +2196,12 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     if nav.phase != NavPhase::Moving {
         vs.progress_at = pos;
         vs.progress_ticks = 0;
+        // S8b: a wheeled vehicle cannot pivot; it keeps its heading.
+        if c.v.mobility.kind == MobilityKind::Wheeled {
+            vs.face = None;
+            vs.lay_turn = None;
+            return (0, 0);
+        }
         // `FaceUnits`: pivot until the front points at the spot.
         let Some(f) = vs.face else {
             // S7: else the casemate gunner's hull turn.
@@ -2108,7 +2229,18 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         return lay_pivot(c, t.yaw, vs);
     }
     let d = c.drv;
-    let reach_sq = FxVec2::from_int(d.waypoint_reach_m as i32, 0).length_sq_raw();
+    let wheeled = c.v.mobility.kind == MobilityKind::Wheeled;
+    let reach_m = if wheeled {
+        d.wheeled_waypoint_reach_m
+    } else {
+        d.waypoint_reach_m
+    };
+    let arrive_mm = if wheeled {
+        d.wheeled_arrive_mm
+    } else {
+        d.arrive_mm
+    };
+    let reach_sq = FxVec2::from_int(reach_m as i32, 0).length_sq_raw();
     let last = nav.path.len() as u32 - 1;
     while nav.next < last && (nav.path[nav.next as usize] - pos).length_sq_raw() <= reach_sq {
         nav.next += 1;
@@ -2119,7 +2251,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     let gap_ok = vs
         .repath_tick
         .is_none_or(|r| c.tick >= r + (d.repath_gap_s * c.hz) as u64);
-    if nav.next == last && dist <= Fx::from_milli(d.arrive_mm as i32) {
+    if nav.next == last && dist <= Fx::from_milli(arrive_mm as i32) {
         // A partial path (the search hit its cap) continues from its end, at
         // most once per `repath_gap_s`. One that found no node nearer than
         // where the vehicle stands (a single point) is as close as it gets:
@@ -2175,7 +2307,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     let every = (c.hz / 2).max(1);
     if nav.phase_ticks.is_multiple_of(every) && gap_ok {
         let next2 = nav.path.get(nav.next as usize + 1).copied();
-        let b = &c.derived.block;
+        let b = c.derived.block_of(c.v);
         if b.segment_blocked(c.terrain, pos + dir * c.geo.hull_half.x, wp)
             || next2.is_some_and(|n| b.segment_blocked(c.terrain, wp, n))
         {
@@ -2205,6 +2337,10 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     } else {
         ((hi - ae).raw() as i64 * 127 / (hi - lo).raw() as i64) as i32
     };
+    if wheeled {
+        // S8b: no pivot: it steers by rolling, so it keeps rolling.
+        throttle = throttle.max(127 * d.wheeled_creep_pct as i32 / 100);
+    }
     let top: Fx = if vs.reverse {
         c.v.mobility.reverse.into()
     } else {
@@ -2222,6 +2358,9 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
     if let Some(cap) = c.escort {
         throttle = throttle.min(throttle_for(cap, top).max(8));
     }
+    if wheeled {
+        return wheeled_controls(c, vs, fwd, to, err, throttle, steer);
+    }
     if ae >= hi && vs.speed.abs() < Fx::from_milli(d.pivot_speed_mm_s as i32) {
         // Pivot on the spot.
         throttle = 0;
@@ -2230,6 +2369,41 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         throttle = -throttle;
     }
     (throttle as i8, steer as i8)
+}
+
+/// S8b (6.8): throttle and steer of a wheeled vehicle, which turns only by
+/// rolling. On a large heading error it creeps at full lock instead of
+/// pivoting; a waypoint inside the turning circle on its side (out of reach
+/// on any forward arc) makes it back up with the opposite lock until the
+/// waypoint is outside it. No state: geometry each tick. Reversing mirrors
+/// the same rules through `sign`.
+fn wheeled_controls(
+    c: &Follow,
+    vs: &VehicleState,
+    fwd: FxVec2,
+    to: FxVec2,
+    err: Fx,
+    throttle: i32,
+    steer: i32,
+) -> (i8, i8) {
+    let creep = (127 * c.drv.wheeled_creep_pct as i32 / 100).clamp(1, 127);
+    let sign = if vs.reverse { -1 } else { 1 };
+    let r: Fx = c.v.mobility.turn_radius.into();
+    let left = FxVec2::new(-fwd.y, fwd.x);
+    let centre = if fwd.det(to) >= Fx::ZERO {
+        left * r
+    } else {
+        -(left * r)
+    };
+    let inside = (to - centre).length_sq_raw() < FxVec2::new(r, Fx::ZERO).length_sq_raw();
+    if inside {
+        // Roll the other way; the full opposite lock swings the nose (or
+        // tail) toward the waypoint while it backs out of the circle.
+        let t = -sign;
+        let lock = if err >= Fx::ZERO { 127 } else { -127 };
+        return ((creep * t) as i8, (lock * t) as i8);
+    }
+    ((throttle * sign) as i8, (steer * sign) as i8)
 }
 
 /// Speed cap from what is ahead (`None`: no cap). A wreck or a standing

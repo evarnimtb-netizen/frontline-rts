@@ -3,7 +3,6 @@
 //! abandoned vehicles. Every distance and time is rules data
 //! (`[ai.armour]`); see the module docs of [`crate::ai`], step 9.
 
-use frontline_content::ComponentKind;
 use frontline_content::vehicle::VehicleSetup;
 
 use super::{Known, KnownVehicle, MyTank, NO_POINT, Planner, TaskKind, sq_m};
@@ -241,18 +240,8 @@ impl Planner<'_> {
             return false;
         };
         let a = &g.setup.rules.ai.armour;
-        let broken = [
-            ComponentKind::Engine,
-            ComponentKind::TrackLeft,
-            ComponentKind::TrackRight,
-            ComponentKind::Transmission,
-        ]
-        .iter()
-        .any(|&k| vs.component(k) == 0);
-        if vs.burn > 0
-            || vs.ammo_fire > 0
-            || (vs.gun_out(&self.g.setup.vehicles[vs.type_idx as usize]) && broken)
-        {
+        let def = &self.g.setup.vehicles[vs.type_idx as usize];
+        if vs.burn > 0 || vs.ammo_fire > 0 || (vs.gun_out(def) && vs.mobility_part_out(def)) {
             return false;
         }
         let at = self.ents.transform[id.index()].pos.xy();

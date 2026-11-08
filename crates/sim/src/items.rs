@@ -45,7 +45,8 @@
 
 use frontline_content::setup::{ItemSetup, MAX_FEEDS, SmokeSetup};
 use frontline_content::tuning::ThrowTuning;
-use frontline_content::{ITEM_KINDS, ItemKind};
+use frontline_content::vehicle::PLATE_GROUPS;
+use frontline_content::{ITEM_KINDS, ItemKind, PlateGroup};
 use serde::{Deserialize, Serialize};
 
 use crate::combat::tri;
@@ -508,7 +509,34 @@ impl MatchState {
                             | crate::armour::HitVia::Rider(_)
                     ) && !f.wreck;
                     let bx = setup.vehicles[f.type_idx as usize].boxes.get(k);
-                    match (open, bx) {
+                    // S8b (6.5): a wire screen over the open face turns the
+                    // item away (bullets and fragments never read this).
+                    let screened = open
+                        && bx.is_some_and(|b| {
+                            let face = match h.via {
+                                crate::armour::HitVia::Open => h.zone as usize % PLATE_GROUPS,
+                                _ => PlateGroup::Top.index(),
+                            };
+                            b.screen & (1 << face) != 0
+                        });
+                    match (open && !screened, bx) {
+                        (false, _) if screened => {
+                            // It falls beside the hull, off the nearest side.
+                            let b0 = &f.boxes[0];
+                            let l = crate::armour::to_local(b0, h.point - b0.center);
+                            let m = Fx::from_ratio(3, 10);
+                            let side = |v: Fx, hv: Fx| {
+                                if v >= Fx::ZERO { hv + m } else { -(hv + m) }
+                            };
+                            let (lx, ly) = if b0.half.y - l.y.abs() <= b0.half.x - l.x.abs() {
+                                (l.x, side(l.y, b0.half.y))
+                            } else {
+                                (side(l.x, b0.half.x), l.y)
+                            };
+                            let p = b0.center + b0.axes.apply(FxVec3::new(lx, ly, Fx::ZERO));
+                            let xy = terrain.clamp(p.xy());
+                            t.pos = xy.extend(terrain.height_at(xy));
+                        }
                         (true, Some(bs)) => {
                             let b = &f.boxes[k];
                             let local = crate::armour::to_local(b, h.point - b.center);
@@ -876,7 +904,8 @@ impl MatchState {
             }
             let v = &self.setup.vehicles[f.type_idx as usize];
             for (k, bs) in v.boxes.iter().enumerate().take(f.n_boxes as usize) {
-                if bs.open == 0 {
+                // S8b: a screened face takes no lob (`throw_open` faces).
+                if bs.open & !bs.screen == 0 {
                     continue;
                 }
                 let b = &f.boxes[k];

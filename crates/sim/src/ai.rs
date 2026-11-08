@@ -736,7 +736,18 @@ pub(crate) fn ai_kind(s: &MatchSetup, t: u16) -> AiKind {
 /// AI never buys (no mix tag, or a crew).
 fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
     let ty = &s.squad_types[t as usize];
-    if ty.has_tag(s.tag("crew")) {
+    // S8b: recon cars and trucks have their own buys, never a tank's slot
+    // (S8a's half-tracks displaced tanks there).
+    let own_buy = ty
+        .vehicle
+        .and_then(|v| s.vehicles.get(v as usize))
+        .is_some_and(|v| {
+            matches!(
+                v.role,
+                frontline_content::VehicleRole::Recon | frontline_content::VehicleRole::Truck
+            )
+        });
+    if ty.has_tag(s.tag("crew")) || own_buy {
         return None;
     }
     s.rules.ai.mix.iter().position(|m| ty.tags.contains(&m.tag))

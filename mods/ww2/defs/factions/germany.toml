@@ -22,6 +22,8 @@ roster = [
     "ww2:ger_stug3_g_squad",
     # S8a: the half-track (appended for the same reason).
     "ww2:ger_sdkfz251_1_squad",
+    # S8b: the armoured car (appended for the same reason).
+    "ww2:ger_sdkfz234_1_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

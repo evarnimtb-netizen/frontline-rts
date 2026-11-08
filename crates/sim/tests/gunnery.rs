@@ -473,7 +473,7 @@ fn base_repair_restores_parts_rounds_and_crew() {
     let base = w.game().unwrap().base_of(PlayerId(0));
     let (_, v) = tank(&mut w, 0, base, EAST);
     w.edit_vehicle(v, |vs| {
-        vs.components = [10, 50, 100, 0, 80, 60, 100];
+        vs.components = [10, 50, 100, 0, 80, 60, 100, 0, 0, 0];
         vs.ammo = vec![20, 25, 2];
         vs.seats[3].hp = 0;
     });

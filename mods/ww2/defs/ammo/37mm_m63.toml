@@ -1,0 +1,37 @@
+# 37 mm M63 HE for the M6 gun of the M8 (S8b). Filler about 39 g (memory,
+# verify, S8b-11).
+id = "ww2:37mm_m63"
+name = "37 mm M63 HE"
+mechanism = "he"
+# S5a priced refill: complete round about 1.59 kg (verify).
+supply = { kind = "shells", g = 1590 }
+caliber_mm = 37
+# m/s (verify).
+muzzle_velocity_m_s = 792
+drag_coeff = 0
+# Flat 5 mm: the blast's pen_mm.
+penetration = [[0, 5]]
+ricochet_angle_deg = 80
+track_damage = 15
+sources = ["memory, verify (S8b-11): US 37 mm ammunition tables"]
+
+# Cm, %, degrees, m as 75mm_m48.toml, scaled to a small filler.
+[he]
+damage = 100
+suppression = 20
+blast_radius_cm = 70
+frag_count = 30
+frag_reach_cm = 700
+frag_damage = 50
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 0
+suppression_radius_m = 8
+crater_radius_cm = 35
+crater_depth_cm = 15
+pen_mm = 5
+frag_pen_mm = 6
+inside_damage = 100
+inside_rays = 10
+inside_reach_cm = 120
+vs_vehicle_pct = 40

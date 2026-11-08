@@ -1,0 +1,31 @@
+# 2 cm PzGr 40: tungsten-cored APCR for the 234/1 (S8b; vehicles.md 4.5).
+# `ap` with `rare`, like the 7.5 cm PzGr 40 (no separate APCR rule yet).
+id = "ww2:2cm_pzgr40"
+name = "2 cm PzGr 40"
+mechanism = "ap"
+# S5a priced refill: complete round about 0.28 kg (verify).
+supply = { kind = "shells", g = 280 }
+caliber_mm = 20
+# vehicles.md 4.5, m/s.
+muzzle_velocity_m_s = 1050
+drag_coeff = 0
+# [range_m, mm] against plate at 30 deg, 50 % success (vehicles.md 4.5;
+# about 40 at 100 m, 25 at 500 m; verify; 1000 m extrapolated).
+penetration = [[100, 40], [500, 25], [1000, 12]]
+pen_reference_angle_deg = 30
+ricochet_angle_deg = 70
+nonpen_damage = 5
+track_damage = 8
+sources = ["vehicles.md 4.5 (public tables, verify)"]
+# S5a (D3): a rare round, refilled slowly and capped by rare_cap.
+rare = true
+
+[core]
+damage = 50
+length_cm = 90
+max_boxes = 2
+
+[spall]
+rays = 2
+damage = 15
+cone_deg = 20

@@ -1,0 +1,12 @@
+# The SdKfz 234/1 as a buyable squad of one (S8b): call-in, cards and the AI
+# use the squad path. Cost, pop, call-in time and sight are in the vehicle def.
+id = "ww2:ger_sdkfz234_1_squad"
+name = "SdKfz 234/1"
+short_name = "234/1"
+faction = "ww2:germany"
+tags = ["vehicle", "recon"]
+vehicle = "ww2:ger_sdkfz234_1"
+# Most alive per player (S8b-1 (A); 8.4): 2. Outside the vehicle limit.
+max_alive = 2
+# 0: the AI never buys it (Build A and B: no AI yet; S8b-17 sets its budget).
+ai_weight = 0

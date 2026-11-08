@@ -1,0 +1,29 @@
+# 37 mm M51 APC for the M6 gun of the M8 (S8b; vehicles.md 4.5).
+id = "ww2:37mm_m51"
+name = "37 mm M51 APC"
+mechanism = "ap"
+# S5a priced refill: complete round about 1.59 kg (verify).
+supply = { kind = "shells", g = 1590 }
+caliber_mm = 37
+# vehicles.md 4.5, m/s.
+muzzle_velocity_m_s = 884
+drag_coeff = 0
+# [range_m, mm] against plate at 30 deg, 50 % success: about 61 / 53 / 46
+# at 100 / 500 / 1000 m (vehicles.md 4.5; verify).
+penetration = [[100, 61], [500, 53], [1000, 46]]
+pen_reference_angle_deg = 30
+ricochet_angle_deg = 70
+nonpen_damage = 15
+track_damage = 25
+sources = ["vehicles.md 4.5 (public tables, verify)"]
+
+# After penetration: a small shot with no filler; starting values.
+[core]
+damage = 70
+length_cm = 120
+max_boxes = 2
+
+[spall]
+rays = 4
+damage = 25
+cone_deg = 25

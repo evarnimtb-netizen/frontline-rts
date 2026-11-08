@@ -522,6 +522,12 @@ circle_pad_mm = 250
 # counts as reached within arrive_mm (mm).
 waypoint_reach_m = 3
 arrive_mm = 2500
+# S8b: wheeled vehicles: next waypoint within this (m; a turning circle is
+# wider than a hull), arrived within this (mm), throttle while steering on
+# a large heading error or backing out of the turning circle (%).
+wheeled_waypoint_reach_m = 6
+wheeled_arrive_mm = 2500
+wheeled_creep_pct = 30
 # Over pivot_err_deg of heading error the driver stops pushing and turns,
 # on the spot below pivot_speed_mm_s (mm/s).
 pivot_err_deg = 60

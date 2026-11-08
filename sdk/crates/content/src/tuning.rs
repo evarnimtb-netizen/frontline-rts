@@ -582,6 +582,14 @@ tuning_table! {
         waypoint_reach_m: 1..=50,
         /// The last waypoint counts as reached within this (mm).
         arrive_mm: 100..=20000,
+        /// S8b: a wheeled vehicle moves on to the next waypoint within
+        /// this (m; a turning circle is wider than a hull).
+        wheeled_waypoint_reach_m: 1..=50,
+        /// S8b: a wheeled vehicle has arrived within this (mm).
+        wheeled_arrive_mm: 100..=20000,
+        /// S8b: throttle while a wheeled vehicle steers on a large heading
+        /// error or backs out of its turning circle (%).
+        wheeled_creep_pct: 1..=100,
         /// Over this heading error the driver stops pushing and turns (deg)
         /// ...
         pivot_err_deg: 1..=180,
@@ -1738,6 +1746,6 @@ mod tests {
     #[test]
     fn keys_list_every_field() {
         assert_eq!(BodyTuning::KEYS.len(), 11);
-        assert_eq!(DrivingTuning::KEYS.len(), 24);
+        assert_eq!(DrivingTuning::KEYS.len(), 27);
     }
 }

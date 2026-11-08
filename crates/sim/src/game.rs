@@ -867,6 +867,11 @@ impl MatchState {
     /// Derived vehicle data (S3): index, frames, block layer. Valid after
     /// the Movement stage of the last tick.
     #[inline]
+    /// The armour tables (armour-test's closed-form penetration checks).
+    pub fn armour_tables(&self) -> &ArmourTables {
+        &self.armour
+    }
+
     pub fn vehicle_derived(&self) -> &VehicleDerived {
         &self.vderived
     }
@@ -933,6 +938,17 @@ impl MatchState {
             .is_some_and(|v| v.role == frontline_content::vehicle::VehicleRole::Transport)
     }
 
+    /// S8b-1: whether squad type `t` is a vehicle card outside the limit
+    /// (transport, recon car, truck: capped by its own card).
+    pub fn is_outside_limit_type(&self, t: u16) -> bool {
+        let s = &self.setup;
+        s.squad_types
+            .get(t as usize)
+            .and_then(|ty| ty.vehicle)
+            .and_then(|v| s.vehicles.get(v as usize))
+            .is_some_and(|v| v.role.outside_limit())
+    }
+
     /// Whether `player` could call in `squad_type` at `tick` (S3b), checked
     /// in this order: roster, unlock (the card's `unlock_s`, and the rules'
     /// vehicle unlock as a floor for vehicles), S4 `max_alive`, S4 limit
@@ -957,10 +973,13 @@ impl MatchState {
         // S8a-5: a transport's floor is `[vehicles.transport] unlock_s`,
         // never later than the vehicles' own.
         let transport = self.is_transport_type(squad_type);
+        let outside = self.is_outside_limit_type(squad_type);
         let unlock = match ty.vehicle {
             Some(_) if transport => ty
                 .initial_cooldown_ticks
                 .max((vr.transport.unlock_s * s.tick_hz).min(vr.unlock_ticks)),
+            // S8b-1: a recon car or truck keeps its card's own unlock.
+            Some(_) if outside => ty.initial_cooldown_ticks,
             Some(_) => ty.initial_cooldown_ticks.max(vr.unlock_ticks),
             None => ty.initial_cooldown_ticks,
         };
@@ -977,7 +996,7 @@ impl MatchState {
         {
             return Err(CallInRefusal::GroupLimit { group: g });
         }
-        if ty.vehicle.is_some() && !transport && self.vehicles_counted(ents, player) >= vr.limit {
+        if ty.vehicle.is_some() && !outside && self.vehicles_counted(ents, player) >= vr.limit {
             return Err(CallInRefusal::VehicleLimit);
         }
         let wait = self.cooldown_left(player, squad_type, tick);
@@ -1716,7 +1735,7 @@ impl MatchState {
         let mut vs = VehicleState::new(vt, v, &self.setup.rules.vehicles);
         vehicle::settle(
             ctx.terrain,
-            &self.vderived.block,
+            self.vderived.block_of(v),
             &geo,
             &mut vs,
             &mut ctx.ents.transform[i],
@@ -1841,7 +1860,9 @@ impl MatchState {
                         ..cost
                     };
                     let veh = VehiclePathCost {
-                        block: &self.vderived.block,
+                        block: self
+                            .vderived
+                            .block_of(&self.setup.vehicles[self.vehicles[&v].type_idx as usize]),
                         avoid,
                         costs: &self.setup.rules.vehicles.path,
                     };

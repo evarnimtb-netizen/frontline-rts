@@ -117,6 +117,12 @@ pub(crate) fn spot(
                 None => 100,
             };
             let sight = Fx::from(v.sight).mul_int(pct).div_int(100);
+            // S8b (6.9): recon optics: settled, it sees farther.
+            let sight = if vs.still_ticks as u32 >= v.settle_ticks {
+                sight.mul_int(v.stationary_sight_pct as i32).div_int(100)
+            } else {
+                sight
+            };
             let pos = ents.transform[i].pos;
             let eye = FxVec3::new(pos.x, pos.y, pos.z + Fx::from(v.eye_height));
             out.observers.push((id, pos.xy(), eye, sight, false));
@@ -282,13 +288,16 @@ fn spot_vehicle(
         let m = Fx::from(vr.moving_speed).raw() as u64;
         m * m
     };
-    let gun = &setup.weapons[v.primary_weapon() as usize];
     let mut pct = v.spot_size_pct;
     if moving {
         pct = pct.max(vr.moving_spot_pct);
     }
-    if (vs.since_fire as u32) < gun.fire_reveal_ticks {
-        pct = pct.max(gun.fire_reveal_pct);
+    // S8b: a truck has no weapon to reveal it (index 0 is someone else's).
+    if !v.mounts.is_empty() {
+        let gun = &setup.weapons[v.primary_weapon() as usize];
+        if (vs.since_fire as u32) < gun.fire_reveal_ticks {
+            pct = pct.max(gun.fire_reveal_pct);
+        }
     }
     if terrain.woods_at(xy) {
         pct = pct * rules.woods_spot_pct / 100;

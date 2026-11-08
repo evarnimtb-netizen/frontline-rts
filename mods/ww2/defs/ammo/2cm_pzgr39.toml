@@ -1,0 +1,32 @@
+# 2 cm PzGr 39: the 234/1's standard AP round (S8b). Figures from memory,
+# verify (S8b-11).
+id = "ww2:2cm_pzgr39"
+name = "2 cm PzGr 39"
+mechanism = "ap"
+# S5a priced refill: complete round about 0.32 kg (verify).
+supply = { kind = "shells", g = 320 }
+caliber_mm = 20
+# m/s (verify).
+muzzle_velocity_m_s = 780
+drag_coeff = 0
+# [range_m, mm] against plate at 30 deg, 50 % success: about 23 at 100 m,
+# 14 at 500 m (memory, verify).
+penetration = [[100, 23], [500, 14], [1000, 8]]
+pen_reference_angle_deg = 30
+ricochet_angle_deg = 70
+# Damage to a struck barrel and to a wheel or track in the band (small).
+nonpen_damage = 5
+track_damage = 8
+sources = ["memory, verify (S8b-11): German 2 cm tables, Jentz, Panzer Tracts"]
+
+# After penetration: a small core; starting values.
+[core]
+damage = 45
+length_cm = 90
+max_boxes = 2
+
+# A small round throws little spall; starting values.
+[spall]
+rays = 2
+damage = 15
+cone_deg = 20

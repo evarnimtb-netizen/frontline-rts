@@ -2788,11 +2788,8 @@ impl MatchState {
                     continue;
                 }
                 if armour::in_track_band(&h, f.hull.half.z, plates.track_band_pct) {
-                    let side = if h.face == armour::Face::Left {
-                        ComponentKind::TrackLeft
-                    } else {
-                        ComponentKind::TrackRight
-                    };
+                    let side =
+                        crate::damage::band_part(&self.setup.vehicles[f.type_idx as usize], &h);
                     match tracks.iter_mut().find(|(v, c, _)| *v == f.id && *c == side) {
                         Some(t) => t.2 += he.frag_track_damage,
                         None => tracks.push((f.id, side, he.frag_track_damage)),

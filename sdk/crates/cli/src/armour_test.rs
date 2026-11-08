@@ -192,6 +192,8 @@ pub struct ArmourTestReport {
 }
 
 /// Loaded defs and the run options.
+mod s8b;
+
 struct Env {
     defs: ModDefs,
     rules: String,
@@ -2837,13 +2839,23 @@ fn case18(env: &Env) -> Result<CaseReport> {
 /// (no bail-out on losses).
 fn open_top_world(env: &Env, seed: u64) -> Result<World> {
     let mut s = env.setup(seed)?;
+    open_top_from(&mut s, env.threads, |_| {})
+}
+
+/// `open_top_world`'s staging on an existing setup, then `edit` on it.
+fn open_top_from(
+    s: &mut MatchSetup,
+    threads: usize,
+    edit: impl FnOnce(&mut MatchSetup),
+) -> Result<World> {
     s.players.iter_mut().for_each(|p| p.is_ai = false);
     s.rules.start_manpower = 100_000;
     s.map.terrain.octaves.clear();
     s.map.terrain.bands.clear();
     s.map.woods.clear();
     s.rules.vehicles.bail.crew_below = 0;
-    World::new_match(s, env.threads).map_err(|e| anyhow!("{e}"))
+    edit(s);
+    World::new_match(s.clone(), threads).map_err(|e| anyhow!("{e}"))
 }
 
 fn spawn_card(w: &mut World, p: u8, card: &str, at: FxVec2, f: FxVec2) -> Result<(SquadId, SimId)> {
@@ -3856,7 +3868,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 24] = [
+    let all: [(u32, CaseFn); 28] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3881,6 +3893,10 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (22, case22),
         (23, case23),
         (24, case24),
+        (25, s8b::case25),
+        (26, s8b::case26),
+        (30, s8b::case30),
+        (31, s8b::case31),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

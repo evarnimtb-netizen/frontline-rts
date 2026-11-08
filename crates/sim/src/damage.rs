@@ -189,6 +189,23 @@ pub fn anchor_at(f: &VehicleFrame, frame: Frame, pos: FxVec3) -> FxVec3 {
     }
 }
 
+/// S8b: the running-gear part a hit in the band of `v`'s hull strikes: the
+/// track on that side, or (wheeled) the front or rear axles by where along
+/// the hull it landed.
+pub(crate) fn band_part(v: &VehicleSetup, hit: &armour::ArmourHit) -> ComponentKind {
+    if v.mobility.kind == frontline_content::MobilityKind::Wheeled {
+        if hit.local.x >= Fx::ZERO {
+            ComponentKind::WheelsFront
+        } else {
+            ComponentKind::WheelsRear
+        }
+    } else if hit.face == armour::Face::Left {
+        ComponentKind::TrackLeft
+    } else {
+        ComponentKind::TrackRight
+    }
+}
+
 /// Every seat and internal component box of a vehicle in world space:
 /// seats in def order, then components by kind.
 pub fn inner_boxes(f: &VehicleFrame, v: &VehicleSetup) -> Vec<(BoxFrame, Inner)> {
@@ -570,13 +587,8 @@ impl MatchState {
         let dealt = &mut out.dealt;
         // The running gear: any hit in the track band.
         if band && let Some(a) = ammo {
-            let track = if hit.face == armour::Face::Left {
-                ComponentKind::TrackLeft
-            } else {
-                ComponentKind::TrackRight
-            };
             dealt.push(Dealt {
-                inner: Inner::Part(track),
+                inner: Inner::Part(band_part(v, &hit)),
                 dmg: a.track_damage,
             });
         }
@@ -983,7 +995,7 @@ impl MatchState {
                 .components
                 .iter()
                 .filter(|c| {
-                    matches!(c.kind, ComponentKind::TrackLeft | ComponentKind::TrackRight)
+                    c.kind.is_running_gear()
                         && c.anchors.iter().any(|an| {
                             let p = anchor_at(&f, an.frame, crate::vehicle::v3(an.pos));
                             (p - pos).length_sq_raw() <= reach * reach
@@ -1725,6 +1737,9 @@ mod tests {
                 // S8a half-tracks: two crew, no gun or rack; engine and
                 // transmission (passenger slots are Build B's).
                 "ww2:ger_sdkfz251_1" | "ww2:usa_m3a1" => (2, 0, 2),
+                // S8b armoured cars: four crew, two rack bins; engine,
+                // gun, turret ring and transmission.
+                "ww2:ger_sdkfz234_1" | "ww2:usa_m8" => (4, 2, 4),
                 _ => (5, 3, 4),
             };
             assert_eq!(racks, bins, "{}", v.id);

@@ -110,15 +110,17 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // the S7 port proof shows the same plates, boxes and match results. Build B
 // re-recorded it for the open-top and AI keys (`[vehicles.gunnery]
 // open_top_item_*`, `[ai.armour]` overwatch, `[ai.infantry]` throws).
+// S8b Build A re-recorded it (wheeled mobility keys, optics and screens,
+// the two armoured cars and their guns, `[vehicles.driving]` wheeled keys).
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x98cda9935fb1a773),
-    ("skirmish usa-ger seed 7 hard", 0xfcc63ed8fc0bd835),
-    ("test_unlock ger-usa seed 1 normal", 0x80e669abdf7477c1),
-    ("example override ger-usa seed 1 normal", 0x98cda9935fb1a773),
-    ("human ger vs ai usa seed 3 easy", 0x4f1cb4fefbacce88),
+    ("skirmish ger-usa seed 1 normal", 0xb6a8c4cad0a6ffec),
+    ("skirmish usa-ger seed 7 hard", 0x76c3d96a8c14c1b8),
+    ("test_unlock ger-usa seed 1 normal", 0xed1e099d1cc888eb),
+    ("example override ger-usa seed 1 normal", 0xb6a8c4cad0a6ffec),
+    ("human ger vs ai usa seed 3 easy", 0xdfb29cdbbd5eb74a),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xc111b9cefe4bfd0f,
+        0xee2b5ffb2849941b,
     ),
 ];
 

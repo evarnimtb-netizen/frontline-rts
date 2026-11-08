@@ -1,0 +1,26 @@
+# 2 cm KwK 38 L/55: the SdKfz 234/1's main gun (S8b, docs/slices/S8b-trucks-recon.md 8).
+# S8b-12 (A): a one-shot model with an averaged reload: 120 rounds a minute
+# practical (10-round magazines, one change every 5 s), so one round per
+# 600 ms and no magazine state. Rounds are on the vehicle mount; the muzzle
+# velocity here is nominal. Figures from memory, verify (S8b-11).
+id = "ww2:kwk38_2cm"
+name = "2 cm KwK 38"
+class = "cannon"
+# Engagement range (m): a light autocannon's practical reach.
+range_m = 600
+# A direct hit on a man.
+damage = 150
+# Practical rate (rounds/min; verify, S8b-12).
+rounds_per_min = 120
+magazine = 1
+# ms per round: the 120 per minute above.
+reload_ms = 600
+# 2 mrad stationary (urad): a light, stiff mount (a starting value).
+spread_urad = 2000
+# PzGr 39, m/s (verify).
+muzzle_velocity_m_s = 780
+# Suppression per near-miss (a starting value).
+suppression = 12
+# Muzzle flash: 200 % sight range for 2 s (a light gun; a starting value).
+fire_reveal_pct = 200
+fire_reveal_ms = 2000

@@ -432,7 +432,7 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// 17: S7 (vehicle armour boxes, seat ids, turret flag and casemate arc in
 /// the setup; the casemate hull turn `VehicleState::lay_turn`; per-type
 /// vehicle kill counters). One bump for the whole slice.
-const SAVE_VERSION: u32 = 18;
+const SAVE_VERSION: u32 = 19;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -1767,6 +1767,37 @@ impl World {
         true
     }
 
+    /// S8b staging tool (armour-test case 30): a live item (`item`, an
+    /// index into `MatchSetup::items`) of `thrower`'s falling straight down
+    /// from `height` metres above the ground at `p`.
+    pub fn drop_item_now(&mut self, thrower: SimId, item: u16, p: FxVec2, height: Fx) -> bool {
+        let owner = self.state.entities.owner[thrower.index()];
+        let ground = self.state.terrain.height_at(p);
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if (item as usize) >= game.setup.items.len() {
+            return false;
+        }
+        let from = p.extend(ground + height);
+        game.thrown.push(crate::items::Thrown {
+            id: game.next_thrown,
+            item,
+            owner,
+            thrower,
+            from,
+            vel: crate::fx::FxVec3::ZERO,
+            step: 0,
+            pos: from,
+            landed: false,
+            fuse: 90,
+            inside: None,
+        });
+        game.next_thrown += 1;
+        self.refresh_hashes();
+        true
+    }
+
     /// S8a staging tool (armour-test case 21): one round of small arm
     /// `weapon` (no `he`) for `player` from `from` straight at `aim` at
     /// the weapon's muzzle speed (no spread, no drop compensation: keep the
@@ -1928,7 +1959,10 @@ impl World {
         vs.progress_at = xy;
         vs.progress_ticks = 0;
         let geo = game.vderived.geo[vs.type_idx as usize];
-        crate::vehicle::settle(t, &game.vderived.block, &geo, vs, &mut ents.transform[i]);
+        let block = game
+            .vderived
+            .block_of(&game.setup.vehicles[vs.type_idx as usize]);
+        crate::vehicle::settle(t, block, &geo, vs, &mut ents.transform[i]);
         if let Some(sid) = ents.squad[i]
             && let Some(sq) = game.squads.get_mut(&sid)
         {
@@ -3826,6 +3860,7 @@ mod tests {
             mgs: _,
             ranging: _,
             since_fire: _,
+            still_ticks: _,
             burn: _,
             ammo_fire: _,
             repairing: _,
@@ -3902,6 +3937,7 @@ mod tests {
                 Box::new(|v| v.trip = Some(crate::vehicle::Trip::default())),
             ),
             ("components", Box::new(|v| v.components[3] -= 1)),
+            ("still_ticks", Box::new(|v| v.still_ticks ^= 1)),
             ("ammo", Box::new(|v| v.ammo[1] -= 1)),
             ("loaded", Box::new(|v| v.loaded = Some(1))),
             (
@@ -4890,7 +4926,7 @@ mod tests {
 
         assert!(outcomes.iter().any(|o| *o != (a.1.clone(), a.2)));
         // Something inside was hurt.
-        assert!(a.1.iter().any(|s| s.hp < 100) || a.2 != [100, 100, 100, 80, 80, 60, 100]);
+        assert!(a.1.iter().any(|s| s.hp < 100) || a.2 != [100, 100, 100, 80, 80, 60, 100, 0, 0, 0]);
     }
 
     /// Puts a US 60 mm mortar shell in flight straight down onto `at`

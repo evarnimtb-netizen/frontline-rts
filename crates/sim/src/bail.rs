@@ -183,19 +183,6 @@ pub fn can_bail(v: &VehicleSetup) -> bool {
     v.crew_squad.is_some() && !v.hatches.is_empty()
 }
 
-/// Whether any of `vs`'s mobility parts (engine, tracks, transmission) is
-/// out.
-pub(crate) fn immobile(vs: &VehicleState) -> bool {
-    [
-        ComponentKind::Engine,
-        ComponentKind::TrackLeft,
-        ComponentKind::TrackRight,
-        ComponentKind::Transmission,
-    ]
-    .iter()
-    .any(|&k| vs.component(k) == 0)
-}
-
 /// Why nobody may board abandoned vehicle `vs` now, if so: a manned
 /// vehicle in this state would be abandoned again in the next Status stage
 /// (a fire, or gun and mobility out under `useless_bail`).
@@ -205,7 +192,7 @@ pub(crate) fn board_blocked(s: &MatchSetup, vs: &VehicleState) -> Option<RecrewR
     }
     if s.rules.vehicles.bail.useless_bail != 0
         && vs.gun_out(&s.vehicles[vs.type_idx as usize])
-        && immobile(vs)
+        && vs.mobility_part_out(&s.vehicles[vs.type_idx as usize])
     {
         return Some(RecrewRefusal::Useless);
     }
@@ -385,7 +372,7 @@ impl MatchState {
         let b = &self.setup.rules.vehicles.bail;
         let hz = self.setup.tick_hz.max(1);
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
-        let broken = immobile(vs);
+        let broken = vs.mobility_part_out(v);
         let gun_out = vs.gun_out(v);
         let cause = if vs.bail_order {
             AB_ORDER

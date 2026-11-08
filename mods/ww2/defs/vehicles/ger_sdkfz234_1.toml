@@ -1,0 +1,222 @@
+# SdKfz 234/1 (S8b, docs/slices/S8b-trucks-recon.md 8): the 8x8 heavy
+# armoured car with the 2 cm KwK 38 and MG 42 in an open turret with wire
+# grenade screens, and a second driving position in the rear (full speed in
+# reverse). vehicles.md 4.1, 6.8, 6.9; figures not in it are from memory
+# and marked verify (S8b-11). Frames cm: x forward, y left, z up, origin on
+# the ground below the hull centre.
+id = "ww2:ger_sdkfz234_1"
+name = "SdKfz 234/1 Heavy Armoured Car"
+short_name = "234/1"
+faction = "ww2:germany"
+role = "recon"
+# 8.4 starting value (260-300), the S5a-37 price cut applied (S8b section 8).
+cost = 280
+# Population (8.4).
+pop = 4
+recall_cooldown_s = 60
+# Card unlock 1:30 (8.4), s.
+initial_cooldown_s = 90
+# Sight of a crew in an open turret, m (6.9, a starting value).
+sight_m = 220
+# Seen at this % of an observer's sight (6.9: 120-150 for cars).
+spot_size_pct = 130
+# The commander's eye over the open turret, cm.
+eye_height_cm = 260
+sources = [
+  "docs/design/roster/vehicles.md 4.1, 6.8, 6.9",
+  "memory, verify (S8b-11): Chamberlain and Doyle, Encyclopedia of German Tanks; Jentz, Panzer Tracts 13",
+]
+crew_squad = "ww2:ger_tank_crew"
+# Rare rounds held (PzGr 40, spec 8; verify).
+rare_cap = 10
+
+[mobility]
+type = "wheeled"
+# 36 km/h cross-country, cm/s (6.8: no roads; road_speed reserved).
+speed_cm_s = 1000
+# The rear driving position (6.8): as fast backwards, cm/s.
+reverse_cm_s = 1000
+# Full-lock radius at the origin, cm (8-wheel steering; verify).
+turn_radius_cm = 700
+accel_cm_s2 = 180
+brake_cm_s2 = 450
+max_slope_pct = 45
+# Any ground dug this deep (dm) is a wall (6.8).
+ditch_block_dm = 10
+# Chance (%) to bog per crossing (6.8).
+bog_pct = 12
+unbog_s = [20, 40]
+# Poor cross-country factors (6.8): % of speed in woods; % lost at max slope.
+woods_speed_pct = 30
+slope_loss_pct = 85
+# Unstabilised on the move (%).
+moving_spread_pct = 400
+
+# 6.9: stopped for settle_s the crew sees stationary_sight_pct % of sight_m.
+[optics]
+settle_s = 4
+stationary_sight_pct = 140
+
+[hull]
+# The band a hit reaches the wheels in (%, of box 0's height); wheel plate mm.
+track_band_pct = 45
+track_mm = 10
+
+# The open turret: hand traverse (verify).
+[turret]
+pivot = [40, 0, 165]
+# deg/s, hand traverse (verify, S8b-11).
+traverse_deg_s = 18
+# deg/s (verify).
+elevate_deg_s = 8
+
+# Armour boxes: box 0 the hull (6.0 x 2.3 m, 0.55-1.65 m up), box 1 the
+# open turret (1.7 x 1.6 m, 0.7 m high, turret frame from the pivot).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 110], half = [300, 115, 55] }
+[boxes.armor]
+# 30 mm at 35 deg (vehicles.md 4.1).
+front = { thickness_mm = 30, slope_deg = 35 }
+# 8-10 mm (vehicles.md 4.1).
+side = { thickness_mm = 8, slope_deg = 30 }
+rear = { thickness_mm = 10, slope_deg = 30 }
+# Top plate (verify).
+top = { thickness_mm = 5 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 35], half = [85, 80, 35] }
+# Open top with wire screens (6.5): thrown items bounce off; bullets and
+# fragments pass.
+open = ["top"]
+grenade_screen = ["top"]
+floor_cm = 0
+[boxes.armor]
+# Front as the hull's; sides 8-10 (verify).
+front = { thickness_mm = 30, slope_deg = 35 }
+side = { thickness_mm = 10, slope_deg = 25 }
+rear = { thickness_mm = 10, slope_deg = 25 }
+
+# Crew of four: driver, rear driver (radio), gunner and commander.
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [220, 0, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "rear_driver"
+role = "radio_mg"
+box = { frame = "hull", center = [-220, 0, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [10, 35, 20], half = [28, 25, 55] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-25, -35, 22], half = [28, 25, 58] }
+in = "turret"
+
+[[weapons]]
+def = "ww2:kwk38_2cm"
+mount = "turret_main"
+muzzle = [190, 0, 40]
+# Degrees (verify).
+elevation_deg = [-4, 60]
+# Stowage 480 x 2 cm (spec 8; split verify).
+ammo = [
+  { id = "ww2:2cm_pzgr39", count = 200 },
+  { id = "ww2:2cm_sprgr", count = 270 },
+  { id = "ww2:2cm_pzgr40", count = 10 },
+]
+# The barrel from the muzzle back to the turret front (190 - 85).
+barrel = { length_cm = 105, radius_cm = 4 }
+
+[[weapons]]
+def = "ww2:mg42"
+mount = "coax"
+muzzle = [100, 20, 40]
+# Rounds stowed (verify).
+rounds = 2400
+
+[[components]]
+type = "engine"
+hp = 80
+box = { frame = "hull", center = [-150, 0, 105], half = [60, 75, 40] }
+repair = { to_hp = 40, time_s = 60 }
+
+# The wheel axles (anchors only; a blast under one or a hit in the band
+# damages it; at 0 HP the car cannot move). 4 axles, two per group.
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [230, 100, 40] }, { pos = [230, -100, 40] }, { pos = [100, 100, 40] }, { pos = [100, -100, 40] }]
+repair = { to_hp = 60, time_s = 25 }
+
+[[components]]
+type = "wheels_rear"
+hp = 60
+anchors = [{ pos = [-100, 100, 40] }, { pos = [-100, -100, 40] }, { pos = [-230, 100, 40] }, { pos = [-230, -100, 40] }]
+repair = { to_hp = 60, time_s = 25 }
+
+[[components]]
+type = "gun"
+hp = 60
+box = { frame = "turret", center = [40, 0, 35], half = [40, 15, 15] }
+
+[[components]]
+type = "turret_ring"
+hp = 60
+box = { frame = "hull", center = [40, 0, 160], half = [75, 75, 5] }
+repair = { to_hp = 40, time_s = 40 }
+
+# Stowage (positions approximate): magazines in the turret sides and the hull.
+[[components]]
+type = "ammo_rack"
+hp = 40
+boxes = [
+  { frame = "hull", center = [60, 85, 105], half = [50, 20, 25] },
+  { frame = "hull", center = [60, -85, 105], half = [50, 20, 25] },
+]
+
+[[components]]
+type = "transmission"
+hp = 80
+box = { frame = "hull", center = [0, 0, 85], half = [60, 30, 25] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# The turret crew climb out over the open top; the drivers by hull hatches
+# (ms; starting values).
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [0, 0, 60]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [220, 0, 160]
+exit_ms = 3500
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [-220, 0, 160]
+exit_ms = 3500

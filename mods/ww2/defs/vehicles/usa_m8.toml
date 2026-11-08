@@ -1,0 +1,211 @@
+# M8 Greyhound (S8b, docs/slices/S8b-trucks-recon.md 8): the 6x6 armoured
+# car: 37 mm M6, .30 coax, .50 on a ring (a pintle mount, S8b-18), open-top
+# turret, a thin floor. vehicles.md 4.2, 6.8, 6.9; figures not in it are from
+# memory and marked verify (S8b-11). Frames cm as usa_m10.toml.
+id = "ww2:usa_m8"
+name = "M8 Greyhound Armored Car"
+short_name = "M8"
+faction = "ww2:usa"
+role = "recon"
+# 8.4 starting value (260-300).
+cost = 290
+pop = 4
+recall_cooldown_s = 60
+# Card unlock 1:30 (8.4), s.
+initial_cooldown_s = 90
+sight_m = 220
+# 6.9: 120-150 for cars; the M8 is a broad target.
+spot_size_pct = 140
+eye_height_cm = 255
+sources = [
+  "docs/design/roster/vehicles.md 4.2, 6.8, 6.9",
+  "memory, verify (S8b-11): Hunnicutt, Armored Car; Zaloga, M8 Greyhound Light Armored Car (Osprey New Vanguard 53)",
+]
+crew_squad = "ww2:usa_tank_crew"
+# No rare rounds for the 37 mm here.
+rare_cap = 0
+
+[mobility]
+type = "wheeled"
+# 36 km/h cross-country, cm/s (6.8).
+speed_cm_s = 1000
+# One driver facing front: an ordinary reverse gear (verify).
+reverse_cm_s = 280
+# Full-lock radius, cm (verify).
+turn_radius_cm = 850
+accel_cm_s2 = 170
+brake_cm_s2 = 450
+max_slope_pct = 45
+ditch_block_dm = 10
+bog_pct = 12
+unbog_s = [20, 40]
+woods_speed_pct = 30
+slope_loss_pct = 85
+moving_spread_pct = 400
+
+[optics]
+settle_s = 4
+stationary_sight_pct = 140
+
+[hull]
+track_band_pct = 45
+track_mm = 10
+
+[turret]
+pivot = [-20, 0, 150]
+# deg/s, hand traverse (verify, S8b-11).
+traverse_deg_s = 15
+elevate_deg_s = 8
+
+# Armour boxes: box 0 the hull (5.0 x 2.5 m, 0.5-1.5 m up), box 1 the open
+# turret (1.8 x 1.8 m, 0.72 m high).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 100], half = [250, 125, 50] }
+[boxes.armor]
+# 19 mm front (vehicles.md 4.2: 16-19), sides 10, floor about 6 (the top
+# group is the bottom too).
+front = { thickness_mm = 19, slope_deg = 30 }
+side = { thickness_mm = 10, slope_deg = 30 }
+rear = { thickness_mm = 10, slope_deg = 30 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 36], half = [90, 90, 36] }
+# Open top (no grenade screens on the M8): items go in.
+open = ["top"]
+floor_cm = 0
+[boxes.armor]
+# 19 mm all round (vehicles.md 4.2), slopes verify.
+front = { thickness_mm = 19, slope_deg = 15 }
+side = { thickness_mm = 19, slope_deg = 15 }
+rear = { thickness_mm = 19, slope_deg = 15 }
+
+# Crew of four: driver and assistant in the hull, gunner and commander in
+# the turret (the commander on the ring MG).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [170, 45, 105], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "asst_driver"
+role = "radio_mg"
+box = { frame = "hull", center = [170, -45, 105], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [10, 40, 20], half = [28, 25, 55] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-25, -40, 22], half = [28, 25, 58] }
+in = "turret"
+
+[[weapons]]
+def = "ww2:m6_37mm"
+mount = "turret_main"
+muzzle = [200, 0, 42]
+# Degrees (verify).
+elevation_deg = [-10, 20]
+# Stowage 80 x 37 mm (spec 8; split verify).
+ammo = [{ id = "ww2:37mm_m51", count = 50 }, { id = "ww2:37mm_m63", count = 30 }]
+barrel = { length_cm = 110, radius_cm = 5 }
+
+[[weapons]]
+def = "ww2:m1919"
+mount = "coax"
+muzzle = [110, 18, 42]
+# Rounds stowed (verify).
+rounds = 1500
+
+# The .50 on the ring (S8b-18): a hull-frame pintle, commander's seat.
+[[weapons]]
+def = "ww2:m2hb"
+mount = "pintle"
+pivot = [-40, 0, 235]
+muzzle = [100, 0, 10]
+traverse_deg = [-180, 180]
+# deg/s, by hand (verify).
+traverse_deg_s = 30
+seat = "commander"
+# Rounds stowed (verify).
+rounds = 400
+
+[[components]]
+type = "engine"
+hp = 80
+box = { frame = "hull", center = [-180, 0, 95], half = [55, 80, 40] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [170, 105, 40] }, { pos = [170, -105, 40] }]
+repair = { to_hp = 60, time_s = 25 }
+
+[[components]]
+type = "wheels_rear"
+hp = 60
+anchors = [{ pos = [-60, 105, 40] }, { pos = [-60, -105, 40] }, { pos = [-180, 105, 40] }, { pos = [-180, -105, 40] }]
+repair = { to_hp = 60, time_s = 25 }
+
+[[components]]
+type = "gun"
+hp = 60
+box = { frame = "turret", center = [50, 0, 42], half = [40, 15, 15] }
+
+[[components]]
+type = "turret_ring"
+hp = 60
+box = { frame = "hull", center = [-20, 0, 145], half = [80, 80, 5] }
+repair = { to_hp = 40, time_s = 40 }
+
+# Stowage (positions approximate): under the turret and along the hull.
+[[components]]
+type = "ammo_rack"
+hp = 40
+boxes = [
+  { frame = "hull", center = [40, 95, 95], half = [50, 20, 25] },
+  { frame = "hull", center = [40, -95, 95], half = [50, 20, 25] },
+]
+
+[[components]]
+type = "transmission"
+hp = 80
+box = { frame = "hull", center = [0, 0, 80], half = [60, 30, 25] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [0, 0, 60]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [170, 45, 150]
+exit_ms = 3500
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [170, -45, 150]
+exit_ms = 3500

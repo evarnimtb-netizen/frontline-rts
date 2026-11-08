@@ -1,0 +1,22 @@
+# 37 mm Gun M6: the M8 Greyhound's main gun (S8b, docs/slices/S8b-trucks-recon.md 8).
+# Rounds are on the vehicle mount; the muzzle velocity here is nominal.
+# Figures from memory, verify (S8b-11).
+id = "ww2:m6_37mm"
+name = "37 mm Gun M6"
+class = "cannon"
+# Engagement range (m), as the larger tank guns.
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 24
+magazine = 1
+# Hand-loaded small fixed rounds (ms; verify, S8b-11).
+reload_ms = 2500
+# 2.5 mrad stationary (urad), as the tank guns.
+spread_urad = 2500
+# M51, m/s (vehicles.md 4.5).
+muzzle_velocity_m_s = 884
+suppression = 18
+# 200 % sight range for 2 s (a small gun; a starting value).
+fire_reveal_pct = 200
+fire_reveal_ms = 2000
