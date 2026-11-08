@@ -1,0 +1,9 @@
+# The 57 mm M1 card (S9). AI weight 0 until Build C (S9-13).
+id = "ww2:usa_57mm_m1_squad"
+name = "57 mm Gun M1"
+short_name = "57 mm M1"
+faction = "ww2:usa"
+tags = ["vehicle"]
+vehicle = "ww2:usa_57mm_m1"
+ai_weight = 0
+max_alive = 2

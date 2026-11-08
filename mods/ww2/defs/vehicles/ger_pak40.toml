@@ -1,0 +1,177 @@
+# 7,5 cm Pak 40 (S9, docs/slices/S9-at-guns.md 3, 11; guns-artillery.md 3.1, 5.2, 7.1):
+# a towed anti-tank gun: a vehicle def with `crew_model = "served"` and
+# `role = "at_gun"`. No turret, no seats: the crew are soldiers (ger_pak40_crew)
+# in the [[service]] slots, gun frame cm (x forward, y left, z up).
+# Boxes are thin on purpose (S9 done-when): a bullet that misses the
+# shield reaches a man, so the axle and the trail do not cover the men.
+# Figures with no source in the design documents are marked "verify".
+id = "ww2:ger_pak40"
+name = "7,5 cm Pak 40"
+short_name = "Pak 40"
+faction = "ww2:germany"
+role = "at_gun"
+crew_model = "served"
+# Mass, kg (guns-artillery.md 5.2).
+mass_kg = 1425
+# Card price, MP: the roster's 380 + tow price comes from the card in Build B (S9-2, S9-4).
+cost = 380
+# S9-5 (A): a gun's pop is 1; its crew are counted as soldiers.
+pop = 1
+# Card cooldown (s): roster 90; available from 0:00 (S9-13 (A)).
+recall_cooldown_s = 90
+initial_cooldown_s = 0
+# Sight, m (the crew's eye, as a tank's commander): 175 (owner question 12 (A)).
+sight_m = 175
+# Silhouette: seen at this share of an observer's sight (1.25 m tall: 90 %,
+# guns-artillery.md 3.5).
+spot_size_pct = 90
+# Eye height, cm (kneeling behind the sight; verify).
+eye_height_cm = 110
+crew_squad = "ww2:ger_pak40_crew"
+# Rare rounds (PzGr 40): at most 2 held (D3).
+rare_cap = 2
+sources = ["guns-artillery.md 5.2, 6 (public tables, verify)", "owner roster, S9"]
+
+[mobility]
+type = "towed"
+# Full-crew push speed on flat firm ground, cm/s (guns-artillery.md 7.1 push_cm_s; verify).
+speed_cm_s = 35
+reverse_cm_s = 35
+# Crew turn rate when pushed, deg/s (verify).
+turn_deg_s = 20
+accel_cm_s2 = 50
+brake_cm_s2 = 200
+# Steepest slope the crew push it up, % (push_max_slope_pct).
+max_slope_pct = 15
+# Ground dug this deep blocks the wheels (dm; wheel_block_dm).
+ditch_block_dm = 6
+# A gun does not bog when pushed.
+bog_pct = 0
+unbog_s = [0, 0]
+# Fired only from emplaced, so no moving spread.
+moving_spread_pct = 100
+# Men for full push speed (push_men).
+push_men = 5
+# Seconds to emplace (limbered -> firing), pack, hitch or unhitch.
+emplace_s = 30
+pack_s = 18
+hitch_s = 20
+# Seconds to re-lay the trail for a target outside the arc (verify).
+relay_trail_s = 15
+
+[hull]
+# No tracks: no running-gear band.
+track_band_pct = 0
+track_mm = 0
+
+# Armour boxes. Box 0 is the axle (wide, low, 30 cm long), box 1 the shield
+# (two 4 mm plates about 2.5 cm apart, modelled as one 8 mm face sloped 18 deg;
+# verify), box 2 the trail (low, 40 cm wide, rear). Shield 2.2 m wide, 1.4 m tall.
+[[boxes]]
+id = "axle"
+frame = "hull"
+box = { center = [0, 0, 45], half = [15, 95, 20] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "shield"
+frame = "hull"
+box = { center = [40, 0, 85], half = [4, 110, 55] }
+[boxes.armor]
+front = { thickness_mm = 8, slope_deg = 18 }
+side = { thickness_mm = 4 }
+rear = { thickness_mm = 4, slope_deg = 18 }
+top = { thickness_mm = 4 }
+
+[[boxes]]
+id = "trail"
+frame = "hull"
+box = { center = [-170, 0, 25], half = [140, 20, 25] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+# The crew's places, priority order (the last listed living man moves up
+# for a dead gunner, then loader). Each slot's capsule must clear the boxes.
+[[service]]
+role = "gunner"
+at = [-60, 55, 0]
+pose = "kneel"
+[[service]]
+role = "loader"
+at = [-60, -55, 0]
+pose = "kneel"
+[[service]]
+role = "commander"
+at = [-300, 80, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-440, 90, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-440, 0, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-440, -90, 0]
+pose = "kneel"
+
+# The gun optic inside the arc against vehicles (S9-1 (A)): 175 m x 250 % = 437 m.
+[optic]
+sight_pct = 250
+
+[[weapons]]
+def = "ww2:pak40_l46"
+mount = "casemate"
+# Gun pivot in the gun frame, cm.
+pivot = [0, 0, 85]
+# Muzzle from the pivot, cm (L/46: about 3.45 m; verify).
+muzzle = [345, 0, 12]
+# Traverse arc, deg left of the trail line; 65 deg total (guns-artillery.md 5.2).
+traverse_deg = [-32, 32]
+# Hand traverse, deg/s (verify).
+traverse_deg_s = 8
+elevate_deg_s = 5
+elevation_deg = [-5, 22]
+# Stowage: ready rack and reserve together, 20 AP, 16 HE, 2 rare AP
+# (guns-artillery.md 7.1, S9-13 stock; verify).
+ammo = [{ id = "ww2:75mm_pzgr39", count = 20 }, { id = "ww2:75mm_sprgr34", count = 16 }, { id = "ww2:75mm_pzgr40", count = 2 }]
+barrel = { length_cm = 300, radius_cm = 5 }
+
+# Parts (S9-11 (A)): destroying `gun` knocks the gun out; `sight` and
+# `recoil` can be field-repaired; wheels only stop it moving.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [-30, 0, 85], half = [30, 15, 15] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+box = { frame = "hull", center = [-120, -60, 20], half = [30, 25, 15] }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [0, 85, 40] }, { pos = [0, -85, 40] }]
+repair = { to_hp = 60, time_s = 30 }
+
+[[components]]
+type = "sight"
+hp = 30
+anchors = [{ pos = [-15, 30, 110] }]
+repair = { to_hp = 30, time_s = 30 }
+
+[[components]]
+type = "recoil"
+hp = 50
+box = { frame = "hull", center = [10, 0, 75], half = [25, 10, 10] }
+repair = { to_hp = 50, time_s = 45 }

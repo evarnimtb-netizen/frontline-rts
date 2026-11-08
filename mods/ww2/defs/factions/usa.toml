@@ -25,6 +25,8 @@ roster = [
     "ww2:usa_m8_squad",
     # S8b: the supply truck (appended for the same reason).
     "ww2:usa_cckw_squad",
+    # S9: the AT gun (appended for the same reason; ai_weight 0 until Build C).
+    "ww2:usa_57mm_m1_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

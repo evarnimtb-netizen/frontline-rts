@@ -168,9 +168,9 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-27 (Build C) T50e (Germany on 201-280) -8.75 s and T41b (USA on 1-80) 0.981: five of six ride pairs are above 0, rides per set are few (about 50), so each pair moves by about +-10 s by chance. (A) Accept; not chased further.
   S8b-30 (Build B, was S8b-21) A destroyed cargo box always starts an ammo fire and the fire detonates the load at the same 40 kg rule (so one penetrating hit detonates a loaded truck about 70 % of the time), matching 7.3 "a penetration or fire". (A) Yes. (B) A `cargo_detonate_pct` of its own.
   S8b-31 (Build B, was S8b-22) A truck need not stop to serve (the radii are short, and `DropCrates` and loading already need it stopped). (A) Yes. (B) Serve only when stopped.
-  S9-1 (Plan) Gun optic range. The owner's 250 % applied as written multiplies the target's size factor (a tank 200 %, moving 250 %) and gives 875-1090 m on the 1 km map; the design says "about 400-500 m". (A) Inside the arc against vehicles the range is `sight_m` 175 x 250 % = 437 m, no size or moving boost. (B) Literal multiply (875 m and more).
-  S9-2 (Plan) A card with a tow pays gun + tow, the tow arrives hitched with the crew riding; the stand-alone Sd.Kfz. 11 card is for spares and its `max_alive` does not limit the gun card. (A) Yes. (B) Guns and tows only as separate cards.
-  S9-3 (Plan) The 57 mm comes with an M3A1 (340 + 310 = 650 MP against the Pak 40's 560): the CCKW is cheaper but carries no men in this slice (its crew would walk). (A) M3A1. (B) CCKW at 540 MP with a walking crew.
+  S9-1 (ANSWERED 2026-11-08 by the owner: (A)) Gun optic range. The owner's 250 % applied as written multiplies the target's size factor (a tank 200 %, moving 250 %) and gives 875-1090 m on the 1 km map; the design says "about 400-500 m". (A) Inside the arc against vehicles the range is `sight_m` 175 x 250 % = 437 m, no size or moving boost. (B) Literal multiply (875 m and more).
+  S9-2 (ANSWERED 2026-11-08 by the owner: (A)) A card with a tow pays gun + tow, the tow arrives hitched with the crew riding; the stand-alone Sd.Kfz. 11 card is for spares and its `max_alive` does not limit the gun card. (A) Yes. (B) Guns and tows only as separate cards.
+  S9-3 (ANSWERED 2026-11-08 by the owner: (A)) The 57 mm comes with an M3A1 (340 + 310 = 650 MP against the Pak 40's 560): the CCKW is cheaper but carries no men in this slice (its crew would walk). (A) M3A1. (B) CCKW at 540 MP with a walking crew.
   S9-4 (Plan) The S5a-37 German price cut is not applied to gun cards (roster prices 380 and 260). (A) Yes; the Tune may move them. (B) Apply the cut.
   S9-5 (Plan) A gun's own `pop` is 1 (the validator range starts at 1); the crew are counted as soldiers. (A) Yes.
   S9-6 (Plan) AI displacement (`displace_after_shots`, HE within 20 m) is left out; a Hold gun only re-sites when overrun. (A) Yes. (B) Build it now.
@@ -180,7 +180,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S9-10 (Plan) A neutral gun is seen by everyone (the S3c abandoned rule). (A) Yes. (B) Fog applies.
   S9-11 (Plan) Destroying the `Gun` part wrecks the gun; `Recoil` is field-repairable; barrel is part of `Gun`; `Sight` and `Recoil` are new parts. (A) Yes.
   S9-12 (Plan) Men at the slots hold their rifles while the gun has a target. (A) Yes. (B) They always fire their personal weapons.
-  S9-13 (Plan) Gun cards `max_alive` 2 and available from 0:00 (the roster gives no cap or unlock; the AI waits until 2:00 and buys only once a tank has been seen or at its date). (A) Yes. (B) Tighter cap or a later unlock.
+  S9-13 (ANSWERED 2026-11-08 by the owner: (A)) Gun cards `max_alive` 2 and available from 0:00 (the roster gives no cap or unlock; the AI waits until 2:00 and buys only once a tank has been seen or at its date). (A) Yes. (B) Tighter cap or a later unlock.
   S9-14 (Plan) The 57 mm has AP only in S9 (M303 HE is late 1944, verify). (A) Yes. (B) Give it HE from 1944-06 for balance.
   S9-15 (Plan) The AI buys only the Pak 40 and the 57 mm (Pak 38 stays `ai_weight` 0); very old neutral guns are scrapped by the abandoned cap. (A) Yes.
 

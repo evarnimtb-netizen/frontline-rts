@@ -1,0 +1,12 @@
+# The Pak 40 card (S9): the gun, its crew squad comes with it. AI weight 0
+# until Build C buys guns on their own budget (S9-13).
+id = "ww2:ger_pak40_squad"
+name = "7,5 cm Pak 40"
+short_name = "Pak 40"
+faction = "ww2:germany"
+tags = ["vehicle"]
+vehicle = "ww2:ger_pak40"
+# 0 = the AI never buys it (Build C; a separate budget, never the mix).
+ai_weight = 0
+# S9-13 (A): at most 2 alive.
+max_alive = 2

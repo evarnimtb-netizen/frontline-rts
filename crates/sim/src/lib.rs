@@ -48,6 +48,7 @@ pub mod fire_mission;
 pub mod fx;
 pub mod game;
 pub mod gunnery;
+pub mod guns;
 mod hash;
 pub mod indirect;
 pub mod items;

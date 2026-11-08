@@ -442,8 +442,10 @@ impl MatchState {
                 break 'main None;
             };
             let gunner = vs.manned(v, SeatRole::Gunner);
+            // S9: a served gun's recoil system must be whole.
             let gun_ok = gunner
                 && vs.component(ComponentKind::Gun) > 0
+                && (!v.served() || vs.component(ComponentKind::Recoil) > 0)
                 && vs.repairing.is_none()
                 && !order_retreat;
             let ap_left = vs.loaded.is_some_and(|k| k != HE)
@@ -650,9 +652,13 @@ impl MatchState {
                 lay_gun_pct(vs, v, want_yaw, want_pitch, hz, pct);
             }
 
+            // S9: a gun holding fire for an ambush keeps laying but does
+            // not fire yet (`crate::guns::holds_fire`).
+            let held = crate::guns::holds_fire(vs, setup, muzzle, aim.map(|a| a.point));
             // Fire the main gun when laid within the spread.
             if let (Some(a), Some(k), true) = (aim.or(area.filter(|_| area_ok)), vs.loaded, gun_ok)
                 && vs.reload == 0
+                && !held
                 && !(a.vehicle && k == HE && vs.ammo_choice == AmmoChoice::Auto)
                 && (aim.is_some() || k == HE)
             {
@@ -1319,6 +1325,16 @@ fn main_spread(
     }
     if vs.component(ComponentKind::Gun) < 50 {
         pct *= 2;
+    }
+    // S9: a gun's sight, damaged or destroyed.
+    if v.served() {
+        let sight = vs.component(ComponentKind::Sight);
+        let full = v.components[ComponentKind::Sight.index()].hp;
+        if sight == 0 {
+            pct = pct * 5 / 2;
+        } else if (sight as u32) < full {
+            pct = pct * 3 / 2;
+        }
     }
     Fx::from_raw((base.raw() as i64 * pct / 100).clamp(0, i32::MAX as i64) as i32)
 }

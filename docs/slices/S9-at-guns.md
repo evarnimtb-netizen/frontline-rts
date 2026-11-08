@@ -62,7 +62,7 @@ Destroyed `Gun` wrecks the entity (it is the knock-out a report counts, S9-11). 
 Field repair reuses `[[components]] repair` with at least 2 crew at slots.
 
 Geometry (gun frame cm) is thin on purpose: the design's carriage box would swallow the kneeling men, so a bullet from the flank would stop at it.
-- `[[boxes]]`: `shield` (front plate 8 mm for two spaced 4 mm, verify), `axle` (low, wide, 30 cm long), `trail` (low, 40 cm wide, 280 cm long, rear).
+- `[[boxes]]` (order in the def: box 0 `axle`, low, wide, 30 cm long; `shield` (front plate 8 mm for two spaced 4 mm, verify); `trail`, low, 40 cm wide, 280 cm long, rear). Pak 40 slots: gunner and loader 1 m behind the shield at y +-55, commander 3 m back at y 80, three ammo men 4.4 m back; all kneeling, so the men's capsules clear every box.
 - Validator rule: no service slot's capsule inside any box but the shield's.
 
 ## 4. Crew service slots

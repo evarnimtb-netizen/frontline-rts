@@ -19,9 +19,9 @@ use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
     AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
     CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
-    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
-    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
-    VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning,
+    ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning,
+    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -1391,6 +1391,9 @@ pub struct VehicleRulesDef {
     /// Infantry carriers (S8a tuning table; defaults when absent).
     #[serde(default)]
     pub transport: TransportTuning,
+    /// S9 `[vehicles.guns]`.
+    #[serde(default)]
+    pub guns: GunsTuning,
 }
 
 /// Thrown items (S1b abilities).
@@ -2777,6 +2780,7 @@ impl RulesDef {
                 bail: &v.bail,
                 recrew: &v.recrew,
                 transport: &v.transport,
+                guns: &v.guns,
                 vehicle_damage: &v.damage,
                 formation: &self.movement.formation,
                 cover: &self.cover,

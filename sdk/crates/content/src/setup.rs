@@ -33,9 +33,9 @@ use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
     AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
     CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
-    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
-    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
-    VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning,
+    ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning,
+    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -468,6 +468,8 @@ pub struct VehicleRulesSetup {
     pub recrew: RecrewTuning,
     /// S8a `[vehicles.transport]`.
     pub transport: TransportTuning,
+    /// S9 `[vehicles.guns]`.
+    pub guns: GunsTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -933,16 +935,19 @@ pub enum Capability {
     VehicleCrew = 4,
     /// A launcher member or a single-shot AT item in the kit.
     AtHunt = 5,
+    /// S9: a trained gun crew (no untrained penalties at a served gun).
+    GunCrew = 6,
 }
 
 impl Capability {
-    pub const ALL: [Capability; 6] = [
+    pub const ALL: [Capability; 7] = [
         Capability::DigBasic,
         Capability::DigFull,
         Capability::FireMission,
         Capability::Recrew,
         Capability::VehicleCrew,
         Capability::AtHunt,
+        Capability::GunCrew,
     ];
 
     #[inline]
@@ -956,7 +961,7 @@ impl Capability {
     }
 
     /// Every capability bit.
-    pub const MASK: u32 = (1 << 6) - 1;
+    pub const MASK: u32 = (1 << 7) - 1;
 }
 
 /// S4: one `[[members]]` slot, lowered.
@@ -1829,6 +1834,7 @@ impl ModDefs {
                         bail: v.bail.clone(),
                         recrew: v.recrew.clone(),
                         transport: v.transport.clone(),
+                        guns: v.guns.clone(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -2639,6 +2645,7 @@ impl MatchSetup {
                 bail: &v.bail,
                 recrew: &v.recrew,
                 transport: &v.transport,
+                guns: &v.guns,
                 vehicle_damage: &v.damage,
                 formation: &m.formation,
                 cover: &r.cover,
@@ -3036,7 +3043,8 @@ impl MatchSetup {
         for v in &self.vehicles {
             check(
                 v.crew_squad.is_none_or(|c| {
-                    self.type_has_tag(c, "crew")
+                    (self.type_has_tag(c, "crew")
+                        || (v.served() && self.type_has_tag(c, "gun_crew")))
                         && self
                             .squad_types
                             .get(c as usize)

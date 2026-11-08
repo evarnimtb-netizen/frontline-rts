@@ -1,0 +1,28 @@
+# 57 mm M86 APC for the 57 mm Gun M1 (S9, guns-artillery.md 6): APC with no
+# filler (the 37 mm M51's shape). Figures from the design table, verify.
+id = "ww2:57mm_m86"
+name = "57 mm M86 APC"
+mechanism = "ap"
+# Complete round about 6.0 kg (verify).
+supply = { kind = "shells", g = 6000 }
+caliber_mm = 57
+muzzle_velocity_m_s = 850
+drag_coeff = 0
+# [range_m, mm] against plate at 30 deg, 50 % success (guns-artillery.md 6; verify).
+penetration = [[100, 81], [500, 73], [1000, 63], [1500, 54]]
+pen_reference_angle_deg = 30
+ricochet_angle_deg = 70
+nonpen_damage = 25
+track_damage = 40
+sources = ["guns-artillery.md 6 (public tables, verify)"]
+
+# After penetration: a solid core, no filler; starting values.
+[core]
+damage = 90
+length_cm = 140
+max_boxes = 2
+
+[spall]
+rays = 5
+damage = 30
+cone_deg = 25

@@ -26,6 +26,8 @@ roster = [
     "ww2:ger_sdkfz234_1_squad",
     # S8b: the supply truck (appended for the same reason).
     "ww2:ger_opel_blitz_squad",
+    # S9: the AT gun (appended for the same reason; ai_weight 0 until Build C).
+    "ww2:ger_pak40_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

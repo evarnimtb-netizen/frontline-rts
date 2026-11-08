@@ -63,6 +63,9 @@ pub(crate) struct SpotPass {
     pub rays: u32,
     /// Scratch: observers `(id, xy, eye, sight, soldier)`.
     observers: Vec<(SimId, FxVec2, FxVec3, Fx, bool)>,
+    /// Scratch: S9 gun optics (`(observer id, sight, yaw, arc lo, arc hi)`),
+    /// ascending observer id.
+    optics: Vec<(SimId, Fx, Fx, Fx, Fx)>,
 }
 
 /// Head point of a soldier: the top of his capsule less the eye drop
@@ -90,6 +93,7 @@ pub(crate) fn spot(
     out.rays = 0;
     out.cursor = if n == 0 { 0 } else { (cursor % n) as u32 };
     out.observers.clear();
+    out.optics.clear();
     let mut enemies = 0u32;
     let vr = &setup.rules.vehicles;
     for i in 0..n {
@@ -126,6 +130,25 @@ pub(crate) fn spot(
             let pos = ents.transform[i].pos;
             let eye = FxVec3::new(pos.x, pos.y, pos.z + Fx::from(v.eye_height));
             out.observers.push((id, pos.xy(), eye, sight, false));
+            // S9-1 (A): a gun's optic inside its arc, with the gunner at
+            // his slot and the sight whole.
+            if v.optic_sight_pct > 100
+                && vs.manned(v, SeatRole::Gunner)
+                && vs.component(frontline_content::ComponentKind::Sight) > 0
+                && let Some([lo, hi]) = v.gun_arc_deg
+            {
+                let optic = Fx::from_raw(
+                    (Fx::from(v.sight).raw() as i64 * v.optic_sight_pct as i64 / 100)
+                        .min(i32::MAX as i64) as i32,
+                );
+                out.optics.push((
+                    id,
+                    optic,
+                    ents.transform[i].yaw,
+                    crate::armour::deg(lo),
+                    crate::armour::deg(hi),
+                ));
+            }
             continue;
         }
         if kind != EntityKind::Soldier {
@@ -299,7 +322,8 @@ fn spot_vehicle(
             pct = pct.max(gun.fire_reveal_pct);
         }
     }
-    if terrain.woods_at(xy) {
+    let woods = terrain.woods_at(xy);
+    if woods {
         pct = pct * rules.woods_spot_pct / 100;
     }
     let close = Fx::from(vr.near_spot).raw() as u64;
@@ -313,6 +337,31 @@ fn spot_vehicle(
         }
         let range =
             Fx::from_raw((sight.raw() as i64 * pct as i64 / 100).min(i32::MAX as i64) as i32);
+        // S9-1 (A): a gun's optic inside its arc (no size or moving boost;
+        // the woods factor still applies), or the ordinary range if farther.
+        let optic = out
+            .optics
+            .binary_search_by_key(&oid, |x| x.0)
+            .ok()
+            .map(|k| out.optics[k])
+            .filter(|&(_, _, yaw, lo, hi)| {
+                let b = (Fx::atan2((xy - oxy).y, (xy - oxy).x) - yaw).wrap_angle();
+                b >= lo && b <= hi
+            });
+        let range = match optic {
+            Some((_, o, ..)) => {
+                let w = if woods {
+                    Fx::from_raw(
+                        (o.raw() as i64 * rules.woods_spot_pct as i64 / 100).min(i32::MAX as i64)
+                            as i32,
+                    )
+                } else {
+                    o
+                };
+                range.max(w)
+            }
+            None => range,
+        };
         let r = range.raw() as u64;
         if d > r * r {
             continue;

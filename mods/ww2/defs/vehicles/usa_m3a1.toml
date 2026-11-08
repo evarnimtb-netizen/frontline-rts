@@ -40,6 +40,11 @@ crew_squad = "ww2:usa_tank_crew"
 # No main gun: no rare rounds.
 rare_cap = 0
 
+# S9: what it can tow (kg; verify): towed speed = 80 % of its own.
+[tow]
+max_kg = 3000
+towed_speed_pct = 80
+
 [mobility]
 # S8a-6 (A): steers like a tank (neutral pivot) until S8b's wheeled model.
 type = "halftrack"

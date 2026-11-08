@@ -392,7 +392,7 @@ impl MatchState {
             // S8a: men riding a transport are not steered.
             form.extend(sq.members.iter().copied().filter(|m| {
                 let u = &ctx.ents.unit[m.index()];
-                !u.detached && u.riding.is_none()
+                !u.detached && u.riding.is_none() && u.serving.is_none()
             }));
             // Every man detached: nobody to steer.
             let Some(&lead) = form.first() else {
@@ -493,7 +493,7 @@ impl MatchState {
                     let mut all_there = true;
                     for (k, &m) in sq.members.iter().enumerate() {
                         let u = &ctx.ents.unit[m.index()];
-                        if u.detached || u.riding.is_some() {
+                        if u.detached || u.riding.is_some() || u.serving.is_some() {
                             continue;
                         }
                         let slot = sq.nav.slots[k];

@@ -890,6 +890,7 @@ impl MatchState {
             .soldiers()
             .filter(|id| ents.owner[id.index()] == player)
             .count() as u32;
+        // S9: a gun counts its own `pop`; its crew are soldiers (above).
         let vehicles: u32 = self
             .vehicles
             .iter()
@@ -1640,6 +1641,22 @@ impl MatchState {
             self.spawn_vehicle(ctx, owner, id, squad_type, vt, spot, facing);
             return id;
         }
+        self.spawn_men(ctx, owner, id, squad_type, spot, facing);
+        id
+    }
+
+    /// Spawns soldier squad `id` of `squad_type` at `spot` in a line
+    /// facing `facing` (S9: also a gun's crew, `crate::guns`).
+    pub(crate) fn spawn_men(
+        &mut self,
+        ctx: &mut Ctx,
+        owner: PlayerId,
+        id: SquadId,
+        squad_type: u16,
+        spot: FxVec2,
+        facing: FxVec2,
+    ) {
+        let ty = &self.setup.squad_types[squad_type as usize];
         let slots: Vec<FxVec2> =
             squad::line_slots(spot, facing, ty.men as usize, ty.spacing.into())
                 .into_iter()
@@ -1715,7 +1732,6 @@ impl MatchState {
                 pzf,
             },
         );
-        id
     }
 
     /// Spawns vehicle squad `id` (a squad of one) at `spot` facing
@@ -1747,6 +1763,7 @@ impl MatchState {
             &mut ctx.ents.transform[i],
         );
         vs.progress_at = spot;
+        let served = vs.served.is_some();
         self.vehicles.insert(vid, vs);
         ctx.hash.mark_entity_chunk(vid.chunk());
         self.squads.insert(
@@ -1771,6 +1788,9 @@ impl MatchState {
                 pzf: None,
             },
         );
+        if served {
+            self.spawn_gun_crew(ctx, owner, vid);
+        }
     }
 
     // ------------------------------------------------------------- paths --
@@ -2227,6 +2247,7 @@ impl MatchState {
         self.validate_items(ents)?;
         self.validate_vehicles(ents, tick)?;
         self.validate_riders(ents)?;
+        self.validate_guns(ents)?;
         let mut queued: Vec<PathReq> = self.path_queue.queues.iter().flatten().copied().collect();
         let nodes = grid_dim(s) * grid_dim(s);
         if queued.iter().any(|r| match *r {

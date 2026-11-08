@@ -233,6 +233,7 @@ impl MatchState {
         // S8a: nor thrown from a transport (v1).
         if ents.kind[i] != EntityKind::Soldier
             || ents.unit[i].riding.is_some()
+            || ents.unit[i].serving.is_some()
             || !kind.thrown()
             || k.items[kind.index()] == 0
             || k.windup.is_some()

@@ -336,6 +336,53 @@
       },
       "track_damage": 60
     },
+    "ww2:57mm_m86": {
+      "caliber_mm": 57,
+      "core": {
+        "damage": 90,
+        "length_cm": 140,
+        "max_boxes": 2
+      },
+      "drag_coeff": 0.0,
+      "id": "ww2:57mm_m86",
+      "mechanism": "ap",
+      "muzzle_velocity_m_s": 850,
+      "name": "57 mm M86 APC",
+      "nonpen_damage": 25,
+      "pen_reference_angle_deg": 30,
+      "penetration": [
+        [
+          100,
+          81
+        ],
+        [
+          500,
+          73
+        ],
+        [
+          1000,
+          63
+        ],
+        [
+          1500,
+          54
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "sources": [
+        "guns-artillery.md 6 (public tables, verify)"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 30,
+        "rays": 5
+      },
+      "supply": {
+        "g": 6000,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
     "ww2:75mm_m48": {
       "caliber_mm": 75,
       "drag_coeff": 0.0,
@@ -799,7 +846,8 @@
         "ww2:ger_stug3_g_squad",
         "ww2:ger_sdkfz251_1_squad",
         "ww2:ger_sdkfz234_1_squad",
-        "ww2:ger_opel_blitz_squad"
+        "ww2:ger_opel_blitz_squad",
+        "ww2:ger_pak40_squad"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -825,7 +873,8 @@
         "ww2:usa_m10_squad",
         "ww2:usa_m3a1_squad",
         "ww2:usa_m8_squad",
-        "ww2:usa_cckw_squad"
+        "ww2:usa_cckw_squad",
+        "ww2:usa_57mm_m1_squad"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -1759,6 +1808,10 @@
           "spall_reach_m": 3,
           "special_below_pct": 50
         },
+        "guns": {
+          "self_defence_m": 40,
+          "slot_swap_s": 3
+        },
         "he_area_spread_mrad": 6,
         "he_clear_m": 30,
         "limit": 4,
@@ -2257,6 +2310,78 @@
       "vehicle": "ww2:ger_opel_blitz",
       "weapon": ""
     },
+    "ww2:ger_pak40_crew": {
+      "capabilities": [
+        "recrew",
+        "gun_crew"
+      ],
+      "cooldown_s": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_pak40_crew",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "gunner",
+          "weapon": "ww2:p38"
+        },
+        {
+          "count": 1,
+          "slot": "loader",
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 1,
+          "slot": "commander",
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 3,
+          "slot": "ammo",
+          "weapon": "ww2:kar98k"
+        }
+      ],
+      "men": 0,
+      "name": "Pak-Bedienung",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "gun_crew"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:ger_pak40_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_pak40_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "7,5 cm Pak 40",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "Pak 40",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:ger_pak40",
+      "weapon": ""
+    },
     "ww2:ger_panzerschreck_team": {
       "capabilities": [
         "dig_basic",
@@ -2620,6 +2745,78 @@
         "hq"
       ],
       "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_57mm_crew": {
+      "capabilities": [
+        "recrew",
+        "gun_crew"
+      ],
+      "cooldown_s": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_57mm_crew",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "gunner",
+          "weapon": "ww2:m1911a1"
+        },
+        {
+          "count": 1,
+          "slot": "loader",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "slot": "commander",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 3,
+          "slot": "ammo",
+          "weapon": "ww2:m1_garand"
+        }
+      ],
+      "men": 0,
+      "name": "57 mm Antitank Squad",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "gun_crew"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_57mm_m1_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_57mm_m1_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "57 mm Gun M1",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "57 mm M1",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:usa_57mm_m1",
       "weapon": ""
     },
     "ww2:usa_ammo_bearers": {
@@ -3792,7 +3989,378 @@
         "round_interval_s": 4,
         "vehicle_radius_m": 15
       },
+      "tow": {
+        "max_kg": 2000,
+        "towed_speed_pct": 80
+      },
       "weapons": []
+    },
+    "ww2:ger_pak40": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              85
+            ],
+            "half": [
+              4,
+              110,
+              55
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 380,
+      "crew_model": "served",
+      "crew_squad": "ww2:ger_pak40_crew",
+      "eye_height_cm": 110,
+      "faction": "ww2:germany",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ger_pak40",
+      "initial_cooldown_s": 0,
+      "mass_kg": 1425,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 30,
+        "hitch_s": 20,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 18,
+        "push_men": 5,
+        "relay_trail_s": 15,
+        "reverse_cm_s": 35,
+        "speed_cm_s": 35,
+        "turn_deg_s": 20,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "7,5 cm Pak 40",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 1,
+      "rare_cap": 2,
+      "recall_cooldown_s": 90,
+      "role": "at_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -440,
+            90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -440,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -440,
+            -90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "Pak 40",
+      "sight_m": 175,
+      "sources": [
+        "guns-artillery.md 5.2, 6 (public tables, verify)",
+        "owner roster, S9"
+      ],
+      "spot_size_pct": 90,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 20,
+              "id": "ww2:75mm_pzgr39"
+            },
+            {
+              "count": 16,
+              "id": "ww2:75mm_sprgr34"
+            },
+            {
+              "count": 2,
+              "id": "ww2:75mm_pzgr40"
+            }
+          ],
+          "barrel": {
+            "length_cm": 300,
+            "radius_cm": 5
+          },
+          "def": "ww2:pak40_l46",
+          "elevate_deg_s": 5,
+          "elevation_deg": [
+            -5,
+            22
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            345,
+            0,
+            12
+          ],
+          "pivot": [
+            0,
+            0,
+            85
+          ],
+          "traverse_deg": [
+            -32,
+            32
+          ],
+          "traverse_deg_s": 8
+        }
+      ]
     },
     "ww2:ger_pz4_h": {
       "boxes": [
@@ -5809,6 +6377,365 @@
         }
       ]
     },
+    "ww2:usa_57mm_m1": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              90,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 15,
+              "thickness_mm": 6.4
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              80
+            ],
+            "half": [
+              3,
+              100,
+              50
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -160,
+              0,
+              25
+            ],
+            "half": [
+              130,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              80
+            ],
+            "frame": "hull",
+            "half": [
+              28,
+              12,
+              12
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -55,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                80,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -80,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                28,
+                105
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              70
+            ],
+            "frame": "hull",
+            "half": [
+              22,
+              8,
+              8
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 40,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 340,
+      "crew_model": "served",
+      "crew_squad": "ww2:usa_57mm_crew",
+      "eye_height_cm": 110,
+      "faction": "ww2:usa",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:usa_57mm_m1",
+      "initial_cooldown_s": 0,
+      "mass_kg": 1230,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 25,
+        "hitch_s": 18,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 16,
+        "push_men": 5,
+        "relay_trail_s": 12,
+        "reverse_cm_s": 40,
+        "speed_cm_s": 40,
+        "turn_deg_s": 22,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "57 mm Gun M1",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 1,
+      "rare_cap": 0,
+      "recall_cooldown_s": 90,
+      "role": "at_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            50,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -50,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -290,
+            70,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            85,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -85,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "57 mm M1",
+      "sight_m": 175,
+      "sources": [
+        "guns-artillery.md 5.2, 6 (public tables, verify)",
+        "owner roster, S9"
+      ],
+      "spot_size_pct": 85,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 30,
+              "id": "ww2:57mm_m86"
+            }
+          ],
+          "barrel": {
+            "length_cm": 260,
+            "radius_cm": 4
+          },
+          "def": "ww2:m1_57mm",
+          "elevate_deg_s": 6,
+          "elevation_deg": [
+            -5,
+            15
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            300,
+            0,
+            10
+          ],
+          "pivot": [
+            0,
+            0,
+            80
+          ],
+          "traverse_deg": [
+            -45,
+            45
+          ],
+          "traverse_deg_s": 9
+        }
+      ]
+    },
     "ww2:usa_cckw": {
       "boxes": [
         {
@@ -6146,6 +7073,10 @@
         "radius_m": 8,
         "round_interval_s": 4,
         "vehicle_radius_m": 15
+      },
+      "tow": {
+        "max_kg": 3000,
+        "towed_speed_pct": 80
       },
       "weapons": []
     },
@@ -7147,6 +8078,10 @@
         "Zaloga, M3 Infantry Half-Track 1940-73 (Osprey New Vanguard 11) (verify)"
       ],
       "spot_size_pct": 170,
+      "tow": {
+        "max_kg": 3000,
+        "towed_speed_pct": 80
+      },
       "transport": {
         "board_ms": 1000,
         "capacity": 12,
@@ -8515,6 +9450,26 @@
       "spread_urad": 0,
       "suppression": 14
     },
+    "ww2:m1_57mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:m1_57mm",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 850,
+      "name": "57 mm Gun M1",
+      "range_m": 600,
+      "reload_ms": 4300,
+      "rounds_carried": 0,
+      "rounds_per_min": 14,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
     "ww2:m1_carbine": {
       "class": "rifle",
       "damage": 45,
@@ -8967,6 +9922,26 @@
       "spread_mrad": 30,
       "spread_urad": 0,
       "suppression": 2
+    },
+    "ww2:pak40_l46": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:pak40_l46",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 790,
+      "name": "7,5 cm Pak 40 L/46",
+      "range_m": 600,
+      "reload_ms": 4600,
+      "rounds_carried": 0,
+      "rounds_per_min": 13,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
     },
     "ww2:pzf60": {
       "ammo": "ww2:pzf60_heat",

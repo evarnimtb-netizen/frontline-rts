@@ -431,8 +431,11 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `[ai.supply] mortars_per_bearers` in the setup).
 /// 17: S7 (vehicle armour boxes, seat ids, turret flag and casemate arc in
 /// the setup; the casemate hull turn `VehicleState::lay_turn`; per-type
-/// vehicle kill counters). One bump for the whole slice.
-const SAVE_VERSION: u32 = 19;
+/// vehicle kill counters). One bump for the whole slice. 20: S9 (served
+/// guns: `VehicleState::{served, towing}`, `Unit::serving`, service slots,
+/// optic, `[tow]` and `[vehicles.guns]` in the setup, two new components).
+/// One bump for the whole slice.
+const SAVE_VERSION: u32 = 20;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -1803,6 +1806,46 @@ impl World {
     /// the weapon's muzzle speed (no spread, no drop compensation: keep the
     /// range short or aim high). Match worlds only; false when the weapon
     /// bursts or the projectile pool is full.
+    /// S9 tests: as [`Self::fire_round_now`] but a main-gun round of
+    /// `ammo` (the core and filler steps run in the Damage stage).
+    pub fn fire_shell_now(
+        &mut self,
+        player: u8,
+        weapon: u16,
+        ammo: u16,
+        from: crate::fx::FxVec3,
+        aim: crate::fx::FxVec3,
+    ) -> bool {
+        let Some(game) = self.state.game.as_ref() else {
+            return false;
+        };
+        let (Some(w), Some(a)) = (
+            game.setup.weapons.get(weapon as usize),
+            game.setup.ammo.get(ammo as usize),
+        ) else {
+            return false;
+        };
+        let speed: Fx = a.speed.into();
+        let ttl = crate::combat::round_ttl(w);
+        let Some(slot) = self.state.projectiles.spawn(crate::projectile::Projectile {
+            pos: from,
+            vel: (aim - from).normalize_or_zero() * speed,
+            owner: SimId(u32::MAX - 1),
+            drag: Fx::ZERO,
+            ttl,
+            weapon,
+            player,
+            ammo,
+            mission: 0,
+            origin: from,
+        }) else {
+            return false;
+        };
+        self.hash.mark_pool_slot(slot);
+        self.refresh_hashes();
+        true
+    }
+
     pub fn fire_round_now(
         &mut self,
         player: u8,
@@ -1931,11 +1974,41 @@ impl World {
         };
         let id = game.spawn_squad(&mut ctx, player, squad_type);
         self.place_squad(id, center, facing);
+        // S9: a gun's crew go with it (`crate::guns`).
+        if let Some(g) = self.state.game.as_ref()
+            && g.is_vehicle_squad(id)
+        {
+            let gun = g.squads[&id].members[0];
+            g.snap_crew(
+                &mut self.state.entities,
+                &self.state.terrain,
+                &mut self.hash,
+                gun,
+            );
+            self.refresh_hashes();
+            self.fill_snapshot();
+        }
         Some(id)
     }
 
     /// Puts vehicle `id` at `pos` heading `yaw`, stopped, settled on the
     /// ground, its squad idle and holding there (S3).
+    /// S9 tests: puts soldier `id` at `pos`, stopped.
+    pub fn place_soldier(&mut self, id: SimId, pos: FxVec2) -> bool {
+        let i = id.index();
+        let ents = &mut self.state.entities;
+        if ents.kind.get(i) != Some(&EntityKind::Soldier) {
+            return false;
+        }
+        ents.transform[i].pos = pos.extend(self.state.terrain.height_at(pos));
+        ents.velocity[i] = Default::default();
+        ents.mover[i].waypoint = pos;
+        self.hash.mark_entity_chunk(id.chunk());
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     pub fn place_vehicle(&mut self, id: SimId, pos: FxVec2, yaw: Fx) -> bool {
         let Some(game) = self.state.game.as_mut() else {
             return false;
@@ -2476,6 +2549,9 @@ mod s6_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
+#[cfg(test)]
+#[path = "s9_tests.rs"]
+mod s9_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4042,6 +4118,8 @@ mod tests {
             door_ticks: _,
             unload: _,
             trip: _,
+            served: _,
+            towing: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -4084,6 +4162,9 @@ mod tests {
                 "trip",
                 Box::new(|v| v.trip = Some(crate::vehicle::Trip::default())),
             ),
+            // S9.
+            ("served", Box::new(|v| v.served = Some(Default::default()))),
+            ("towing", Box::new(|v| v.towing = Some(SimId(1)))),
             ("components", Box::new(|v| v.components[3] -= 1)),
             ("still_ticks", Box::new(|v| v.still_ticks ^= 1)),
             ("cargo_g", Box::new(|v| v.cargo_g[0] += 1)),
@@ -5088,7 +5169,10 @@ mod tests {
 
         assert!(outcomes.iter().any(|o| *o != (a.1.clone(), a.2)));
         // Something inside was hurt.
-        assert!(a.1.iter().any(|s| s.hp < 100) || a.2 != [100, 100, 100, 80, 80, 60, 100, 0, 0, 0]);
+        assert!(
+            a.1.iter().any(|s| s.hp < 100)
+                || a.2 != [100, 100, 100, 80, 80, 60, 100, 0, 0, 0, 0, 0]
+        );
     }
 
     /// Puts a US 60 mm mortar shell in flight straight down onto `at`

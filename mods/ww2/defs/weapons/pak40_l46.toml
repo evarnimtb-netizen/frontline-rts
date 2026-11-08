@@ -1,0 +1,22 @@
+# 7,5 cm Pak 40 L/46 (S9, guns-artillery.md 5.2, 6): the Pak 40's gun. Rounds are on
+# the vehicle mount; muzzle velocity here is nominal, each round flies at its own.
+id = "ww2:pak40_l46"
+name = "7,5 cm Pak 40 L/46"
+class = "cannon"
+# Engagement range, m: as the tank guns (the optic's 437 m and the 525 m
+# after firing sit inside it).
+range_m = 600
+# A direct hit on a man, HP (AP kills him and stops).
+damage = 300
+# 12-14 rounds/min (guns-artillery.md 5.2).
+rounds_per_min = 13
+magazine = 1
+# Reload, ms: 13 rounds/min with a loader (verify).
+reload_ms = 4600
+# 2.5 mrad stationary, urad (as the tank guns; verify).
+spread_urad = 2500
+muzzle_velocity_m_s = 790
+suppression = 30
+# Muzzle blast and dust: seen at 300 % of sight for 5 s (guns-artillery.md 3.5).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000

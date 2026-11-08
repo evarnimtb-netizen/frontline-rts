@@ -124,6 +124,51 @@ pub struct Seat {
     pub untrained: bool,
 }
 
+/// S9: a served gun's mode (`docs/slices/S9-at-guns.md` 6).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum GunState {
+    Limbered = 0,
+    #[default]
+    Emplaced = 1,
+    Emplacing = 2,
+    Packing = 3,
+    Pushing = 4,
+    Hitched = 5,
+    Hitching = 6,
+}
+
+/// S9: one service slot's occupant.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Slot {
+    /// The man at this slot (his `Unit::serving` names it back).
+    pub man: Option<SimId>,
+    /// Ticks left of a man moving in after a swap (0: none).
+    pub swap: u16,
+}
+
+/// S9: a served gun's crew and mode (`crate::guns`). The men are ordinary
+/// soldiers; each tick the slots are mirrored into `VehicleState::seats`
+/// so gunnery and spotting read them like a tank's crew.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Served {
+    /// The crew's soldier squad (its members serve the slots).
+    pub crew: Option<SquadId>,
+    /// In `VehicleSetup::service` order.
+    pub slots: Vec<Slot>,
+    pub state: GunState,
+    /// Ticks left of the current state change (Build B).
+    pub timer: u16,
+    /// The tow it is hitched to (Build B).
+    pub hitched: Option<SimId>,
+    /// Hold fire until a target is within this (m; 0: off).
+    pub hold_fire_m: u16,
+    /// Ticks with no man of the owner near (Build B).
+    pub abandon_ticks: u16,
+    /// Ticks left of a trail re-lay (Build B).
+    pub relay_ticks: u16,
+}
+
 /// One vehicle MG (coax or hull), in mount order after the main gun.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct MgState {
@@ -252,6 +297,10 @@ pub struct VehicleState {
     pub followers: Vec<SimId>,
     /// Set when knocked out (the entity is then a `Wreck`).
     pub wreck_tick: Option<u64>,
+    /// S9 (`docs/slices/S9-at-guns.md` 3, 4): a served gun's state.
+    pub served: Option<Served>,
+    /// S9: the gun this tow has hitched (Build B).
+    pub towing: Option<SimId>,
     /// `FaceUnits`: the point the hull front turns to while holding.
     pub face: Option<FxVec2>,
     /// S7 casemate gunnery: the world yaw the gunner wants the hull turned
@@ -383,6 +432,17 @@ impl VehicleState {
             stuck_repaths: 0,
             followers: Vec::new(),
             wreck_tick: None,
+            served: v.served().then(|| Served {
+                crew: None,
+                slots: vec![Slot::default(); v.service.len()],
+                state: GunState::Emplaced,
+                timer: 0,
+                hitched: None,
+                hold_fire_m: 0,
+                abandon_ticks: 0,
+                relay_ticks: 0,
+            }),
+            towing: None,
             face: None,
             lay_turn: None,
             suppress: None,
@@ -466,7 +526,8 @@ impl VehicleState {
     /// driver, engine, a track or wheel axle (S8b) or (S3b) the
     /// transmission destroyed.
     pub fn immobilised(&self, v: &VehicleSetup) -> bool {
-        !self.manned(v, SeatRole::Driver) || self.mobility_part_out(v)
+        // S9: a served gun has no driver; its wheels decide (Build B).
+        (!v.served() && !self.manned(v, SeatRole::Driver)) || self.mobility_part_out(v)
     }
 
     /// Whether any mobility part the def has (engine, transmission, tracks
@@ -490,7 +551,11 @@ impl VehicleState {
         let r = &s.rules.vehicles;
         let tilt = deg(r.driving.max_tilt_deg as i32) + Fx::from_milli(1);
         let top = Fx::from(v.mobility.speed).max(Fx::from(v.mobility.reverse));
-        let swap_max = r.seat_swap_ticks.min(u16::MAX as u32) as u16;
+        // S9: a served gun's mirrored seats carry the slot swap.
+        let swap_max = r
+            .seat_swap_ticks
+            .max(r.guns.slot_swap_s * s.tick_hz)
+            .min(u16::MAX as u32) as u16;
         let main_ammo: &[_] = v.main_gun().map_or(&[], |g| &g.ammo);
         let bad = self.seats.len() != v.seats.len()
             || self.seats.iter().any(|st| {
@@ -1265,7 +1330,7 @@ impl BlockLayer {
         setup
             .vehicles
             .iter()
-            .filter(|v| v.mobility.kind != MobilityKind::Wheeled)
+            .filter(|v| !matches!(v.mobility.kind, MobilityKind::Wheeled | MobilityKind::Towed))
             .map(Self::dm_of)
             .min()
             .unwrap_or(u16::MAX)
@@ -2113,7 +2178,9 @@ impl MatchState {
             }
             let v = &setup.vehicles[vs.type_idx as usize];
             let geo = &vderived.geo[vs.type_idx as usize];
-            let (throttle, steer) =
+            let (throttle, steer) = if v.served() {
+                (0, 0)
+            } else {
                 match ents.squad[i].and_then(|s| squads.get_mut(&s).map(|q| (s, q))) {
                     Some((sid, sq)) => follow(
                         &Follow {
@@ -2138,7 +2205,8 @@ impl MatchState {
                         &mut repath,
                     ),
                     None => (0, 0),
-                };
+                }
+            };
             let ctx = DriveCtx {
                 terrain,
                 block: vderived.block_of(v),
@@ -2158,7 +2226,9 @@ impl MatchState {
             ents.transform[i] = t;
             ents.velocity[i] = vel;
             hash.mark_entity_chunk(id.chunk());
-            if moved {
+            // S9: a gun never pushes men out of its way (they stand at its
+            // slots; Build B moves it only when pushed or hitched).
+            if moved && !v.served() {
                 let f = frame_of(id, ents.owner[i], &t, vs, geo);
                 push_out(
                     ents,

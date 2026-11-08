@@ -840,6 +840,15 @@ pub(crate) fn aim_and_fire(
             }
         }
         let Some(t) = c.target else { continue };
+        // S9 (S9-12 (A)): a man at a gun's slot fires his own weapon only
+        // while the gun has no target and the enemy is within
+        // `self_defence_m`.
+        if let Some(s) = ctx.unit[i].serving
+            && !crate::guns::may_fire_rifle(ctx.game, s.gun, pos.xy(), ctx.transform, t, ctx.kind)
+        {
+            c.target = None;
+            continue;
+        }
         if ws.cooldown > 0 || (c.still as u32) < w.setup_ticks {
             continue;
         }
@@ -1863,7 +1872,7 @@ pub(crate) struct BallisticEvent {
 
 /// Hit capsule `(a, b, radius)` of a soldier: a vertical segment standing or
 /// crouched, a horizontal one along the heading when prone.
-fn capsule(t: &Transform, c: &Combat, body: &BodyTuning) -> (FxVec3, FxVec3, Fx) {
+pub(crate) fn capsule(t: &Transform, c: &Combat, body: &BodyTuning) -> (FxVec3, FxVec3, Fx) {
     let pos = t.pos;
     if c.stance == Stance::Prone {
         let (s, co) = t.yaw.sin_cos();
@@ -1886,7 +1895,7 @@ fn capsule(t: &Transform, c: &Combat, body: &BodyTuning) -> (FxVec3, FxVec3, Fx)
 /// `[0, 1]`; after Ericson, *Real-Time Collision Detection* 5.1.9). Inputs
 /// are relative to a nearby origin so all products stay in Q16.16.
 /// Returns `(s, distance²)`.
-fn seg_seg(p1: FxVec3, d1: FxVec3, p2: FxVec3, d2: FxVec3) -> (Fx, Fx) {
+pub(crate) fn seg_seg(p1: FxVec3, d1: FxVec3, p2: FxVec3, d2: FxVec3) -> (Fx, Fx) {
     let eps = Fx::from_raw(16);
     let r = p1 - p2;
     let a = d1.dot(d1);
@@ -3287,6 +3296,17 @@ impl MatchState {
             if let Some(p) = self.players.get_mut(owner) {
                 p.s8a.riders_lost = p.s8a.riders_lost.saturating_add(1);
             }
+        }
+        // S9: a gun crewman leaves his slot.
+        if let Some(s) = ents.unit[i].serving
+            && let Some(sv) = self
+                .vehicles
+                .get_mut(&s.gun)
+                .and_then(|v| v.served.as_mut())
+            && let Some(sl) = sv.slots.get_mut(s.slot as usize)
+            && sl.man == Some(id)
+        {
+            sl.man = None;
         }
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();

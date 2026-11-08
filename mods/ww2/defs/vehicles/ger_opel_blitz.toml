@@ -30,6 +30,11 @@ rare_cap = 0
 # Unarmed (S8b-7).
 weapons = []
 
+# S9: what it can tow (kg; verify): towed speed = 80 % of its own.
+[tow]
+max_kg = 2000
+towed_speed_pct = 80
+
 [mobility]
 type = "wheeled"
 # Practical cross-country speed, cm/s (6.8: no roads on our maps).

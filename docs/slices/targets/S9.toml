@@ -1273,7 +1273,11 @@ min = 400
 [[target]]
 id = "T76b"
 metric = "armour5.cases.case37.checks.sees_tank_out_arc_m.value"
-max = 175
+# Build A fix: outside the arc the gun sees a stationary tank at
+# sight_m x its 200 % size factor = 350 m (spec 7, owner question 12 (A));
+# the Plan's 175 m forgot the size factor. The check is that the optic
+# (437 m) is absent outside the arc.
+max = 350
 
 # --- T77: recrew, abandon, capture (case 38, Build B) ----------------------
 [[target]]

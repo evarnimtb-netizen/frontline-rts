@@ -161,6 +161,14 @@ impl StableHash for Unit {
                 r.vehicle.0.put(out);
             }
         }
+        // S9.
+        match self.serving {
+            None => 0xFFu8.put(out),
+            Some(s) => {
+                s.slot.put(out);
+                s.gun.0.put(out);
+            }
+        }
     }
 }
 

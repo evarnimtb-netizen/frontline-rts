@@ -174,11 +174,17 @@ pub enum ComponentKind {
     /// S8b (section 7): a supply truck's load (a box; detonates like a
     /// rack while it holds enough shells or explosives).
     Cargo = 9,
+    /// S9: a served gun's sight (anchors only; damaged: spread x1.5,
+    /// destroyed: x2.5 and no optic).
+    Sight = 10,
+    /// S9: a served gun's recoil system (a box under the barrel; destroyed:
+    /// it cannot fire until field-repaired).
+    Recoil = 11,
 }
 
 /// Number of [`ComponentKind`]s (indices of `VehicleSetup::components`; a
 /// part a vehicle does not have has 0 HP there).
-pub const COMPONENTS: usize = 10;
+pub const COMPONENTS: usize = 12;
 
 impl ComponentKind {
     pub const ALL: [ComponentKind; COMPONENTS] = [
@@ -192,6 +198,8 @@ impl ComponentKind {
         ComponentKind::WheelsFront,
         ComponentKind::WheelsRear,
         ComponentKind::Cargo,
+        ComponentKind::Sight,
+        ComponentKind::Recoil,
     ];
 
     #[inline]
@@ -211,12 +219,20 @@ impl ComponentKind {
             ComponentKind::WheelsFront => "wheels_front",
             ComponentKind::WheelsRear => "wheels_rear",
             ComponentKind::Cargo => "cargo",
+            ComponentKind::Sight => "sight",
+            ComponentKind::Recoil => "recoil",
         }
     }
 
     /// Needs at least one box (internal); running gear is anchors only.
     pub const fn has_box(self) -> bool {
-        !self.is_running_gear()
+        !self.is_anchored()
+    }
+
+    /// S9: anchors only (running gear and a gun's sight): a blast within
+    /// its lethal radius in clear line damages the part.
+    pub const fn is_anchored(self) -> bool {
+        self.is_running_gear() || matches!(self, ComponentKind::Sight)
     }
 
     pub const fn is_track(self) -> bool {
@@ -344,6 +360,11 @@ pub enum VehicleRole {
     Recon,
     /// S8b: a supply truck (no weapons needed); outside the vehicle limit.
     Truck,
+    /// S9: a towed anti-tank gun (`crew_model = "served"`); outside the
+    /// vehicle limit (capped by its own card).
+    AtGun,
+    /// S9: a gun tractor (`[tow]`, no weapons needed); outside the limit.
+    Tractor,
 }
 
 impl VehicleRole {
@@ -355,6 +376,8 @@ impl VehicleRole {
             VehicleRole::Transport => "transport",
             VehicleRole::Recon => "recon",
             VehicleRole::Truck => "truck",
+            VehicleRole::AtGun => "at_gun",
+            VehicleRole::Tractor => "tractor",
         }
     }
 
@@ -362,7 +385,11 @@ impl VehicleRole {
     pub const fn outside_limit(self) -> bool {
         matches!(
             self,
-            VehicleRole::Transport | VehicleRole::Recon | VehicleRole::Truck
+            VehicleRole::Transport
+                | VehicleRole::Recon
+                | VehicleRole::Truck
+                | VehicleRole::AtGun
+                | VehicleRole::Tractor
         )
     }
 }
@@ -380,6 +407,77 @@ pub enum MobilityKind {
     /// S8b (6.8): a bicycle model: a turning radius, no neutral pivot,
     /// any ground dug `ditch_block_dm` deep is a wall.
     Wheeled,
+    /// S9: a towed gun: it moves only pushed by its crew or hitched to a
+    /// tow; `speed_cm_s` is the full crew's push speed and `max_slope_pct`
+    /// the steepest slope a crew pushes it up.
+    Towed,
+}
+
+/// S9: how a vehicle's crew is modelled.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CrewModel {
+    /// Seats inside the hull (every vehicle up to S8b).
+    #[default]
+    Seats,
+    /// S9: soldiers in `[[service]]` slots beside a gun.
+    Served,
+}
+
+impl CrewModel {
+    /// For `serde`: the default (`seats`) is not written.
+    pub fn is_seats(&self) -> bool {
+        matches!(self, CrewModel::Seats)
+    }
+}
+
+/// S9: a service slot's job.
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum ServiceRole {
+    Gunner = 0,
+    Loader = 1,
+    Commander = 2,
+    Ammo = 3,
+}
+
+impl ServiceRole {
+    /// The seat this slot mirrors into (`None`: an ammo bearer).
+    pub const fn seat(self) -> Option<SeatRole> {
+        match self {
+            ServiceRole::Gunner => Some(SeatRole::Gunner),
+            ServiceRole::Loader => Some(SeatRole::Loader),
+            ServiceRole::Commander => Some(SeatRole::Commander),
+            ServiceRole::Ammo => None,
+        }
+    }
+}
+
+/// S9: how a man holds a service slot.
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum ServicePose {
+    Kneel = 0,
+    Prone = 1,
 }
 
 /// Armour material. Only rolled homogeneous armour exists in S3
@@ -481,7 +579,9 @@ pub struct VehicleDef {
     /// A turret needs exactly one `turret`-frame box.
     pub boxes: Vec<ArmourBoxDef>,
     /// S7: the crew seats (each role at most once; driver and gunner
-    /// required), in the snapshot's order.
+    /// required), in the snapshot's order. S9: none on a served gun (its
+    /// `[[service]]` slots stand in).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub seats: Vec<SeatDef>,
     pub weapons: Vec<MountDef>,
     pub components: Vec<ComponentDef>,
@@ -521,6 +621,58 @@ pub struct VehicleDef {
     /// S8b (section 7): a supply truck's stock; exactly on role `truck`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supply: Option<TruckSupplyDef>,
+    /// S9: how the crew is modelled (default `seats`).
+    #[serde(default, skip_serializing_if = "CrewModel::is_seats")]
+    pub crew_model: CrewModel,
+    /// S9 (served guns): the gun's mass in kg (a tow's `max_kg` takes it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mass_kg: Option<u32>,
+    /// S9 (served guns): the crew's places, priority order (the swap
+    /// order); a served gun has no `[[seats]]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub service: Vec<ServiceSlotDef>,
+    /// S9: a gun's optic (`[optic] sight_pct`), S9-1 (A).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optic: Option<OpticDef>,
+    /// S9: what this vehicle can tow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tow: Option<TowDef>,
+}
+
+/// S9: one `[[service]]` entry (`count` slots at the same spot).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceSlotDef {
+    pub role: ServiceRole,
+    /// His place in the gun's frame (cm; x forward, y left, z up from the
+    /// ground).
+    pub at: [i32; 3],
+    pub pose: ServicePose,
+    /// Slots of this entry (default 1; only `ammo` may have more).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+}
+
+/// S9: most service slots per gun.
+pub const MAX_SERVICE_SLOTS: usize = 10;
+
+/// S9: a gun's optic. Against a vehicle inside the gun's arc, with the
+/// gunner at his slot and the sight intact, the gun sees at `sight_m ×
+/// sight_pct %` (no target size or moving boost; S9-1 (A)).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OpticDef {
+    pub sight_pct: u32,
+}
+
+/// S9: a vehicle that can tow a gun.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TowDef {
+    /// The heaviest gun it tows (kg).
+    pub max_kg: u32,
+    /// Its top speed with a gun hitched, percent of its own.
+    pub towed_speed_pct: u32,
 }
 
 /// S8b (7.3): a supply truck: a stock in kg per kind, paid as it loads in
@@ -627,13 +779,16 @@ fn component_absent(
     role: VehicleRole,
 ) -> bool {
     let wheeled = mobility == MobilityKind::Wheeled;
+    let towed = mobility == MobilityKind::Towed;
     match k {
         ComponentKind::TurretRing => !turret,
         ComponentKind::Gun | ComponentKind::AmmoRack => !main_gun,
-        ComponentKind::TrackLeft | ComponentKind::TrackRight => wheeled,
-        ComponentKind::WheelsFront | ComponentKind::WheelsRear => !wheeled,
+        ComponentKind::TrackLeft | ComponentKind::TrackRight => wheeled || towed,
+        ComponentKind::WheelsFront => !(wheeled || towed),
+        ComponentKind::WheelsRear => !wheeled,
         ComponentKind::Cargo => role != VehicleRole::Truck,
-        ComponentKind::Engine | ComponentKind::Transmission => false,
+        ComponentKind::Engine | ComponentKind::Transmission => towed,
+        ComponentKind::Sight | ComponentKind::Recoil => !towed,
     }
 }
 
@@ -678,6 +833,23 @@ pub struct MobilityDef {
     pub unbog_s: [u32; 2],
     /// Main-gun spread while it moves, in percent.
     pub moving_spread_pct: u32,
+    /// S9 (`towed`): men for full push speed (speed scales with men ÷
+    /// this, at most 100 %).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_men: Option<u32>,
+    /// S9 (`towed`): seconds to emplace the gun from limbered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emplace_s: Option<u32>,
+    /// S9 (`towed`): seconds to pack it from emplaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack_s: Option<u32>,
+    /// S9 (`towed`): seconds to hitch or unhitch it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hitch_s: Option<u32>,
+    /// S9 (`towed`): seconds to re-lay the trail when the target is
+    /// outside the arc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay_trail_s: Option<u32>,
 }
 
 /// An axis-aligned box in a frame, in centimetres: `center ± half`.
@@ -1499,7 +1671,13 @@ impl VehicleDef {
         // S7: up to `EXPOSED_CM` above an open-topped box).
         let frames = self.frame_bounds();
 
-        let roles: Vec<SeatRole> = self.seats.iter().map(|s| s.role).collect();
+        // S9: a served gun's seats are its service slots' roles.
+        let served = self.crew_model == CrewModel::Served;
+        let roles: Vec<SeatRole> = if served {
+            self.service.iter().filter_map(|s| s.role.seat()).collect()
+        } else {
+            self.seats.iter().map(|s| s.role).collect()
+        };
         let seats = &roles;
         if seats.is_empty() || seats.len() > SEAT_ROLES {
             out.push(Issue::new(
@@ -1533,7 +1711,9 @@ impl VehicleDef {
             check_part(&mut out, &format!("{p}.box"), &st.bounds, &frames);
         }
         // S8a-1: a gunner only with a main gun.
-        let gunner = if self.main_gun().is_some() {
+        let gunner = if served {
+            &[SeatRole::Gunner][..]
+        } else if self.main_gun().is_some() {
             &[SeatRole::Driver, SeatRole::Gunner][..]
         } else {
             &[SeatRole::Driver][..]
@@ -1558,7 +1738,7 @@ impl VehicleDef {
         // every other role exactly one.
         let (want_mains, needs) = match self.role {
             VehicleRole::Transport => (0..=1, "at most one"),
-            VehicleRole::Truck => (0..=0, "no"),
+            VehicleRole::Truck | VehicleRole::Tractor => (0..=0, "no"),
             _ => (1..=1, "exactly one"),
         };
         if !want_mains.contains(&mains) {
@@ -1567,9 +1747,12 @@ impl VehicleDef {
                 format!("needs {needs} main gun (`turret_main` or `casemate`), got {mains}"),
             ));
         }
-        if self.weapons.is_empty() && self.role != VehicleRole::Truck {
+        if self.weapons.is_empty()
+            && !matches!(self.role, VehicleRole::Truck | VehicleRole::Tractor)
+        {
             out.push(Issue::new("weapons", "needs at least one weapon"));
         }
+        self.validate_s9(&mut out);
         for kind in [MountKind::Coax, MountKind::Hull] {
             let n = self.weapons.iter().filter(|w| w.mount == kind).count();
             if n > 1 {
@@ -1947,7 +2130,7 @@ impl VehicleDef {
                 }
             }
             let anchors = match c.kind {
-                k if k.is_running_gear() => 1..=MAX_ANCHORS,
+                k if k.is_anchored() => 1..=MAX_ANCHORS,
                 _ => 0..=0,
             };
             if !anchors.contains(&c.anchors.len()) {
@@ -1996,7 +2179,7 @@ impl VehicleDef {
         if self.hatches.len() > MAX_HATCHES {
             out.push(Issue::new("hatches", format!("at most {MAX_HATCHES}")));
         }
-        if self.crew_squad.is_some() && self.hatches.is_empty() {
+        if self.crew_squad.is_some() && self.hatches.is_empty() && !served {
             out.push(
                 Issue::new("hatches", "a vehicle with a crew_squad needs hatches").with_hint(
                     "[[hatches]] seats = [\"driver\"], pos = [200, 60, 176], exit_ms = 4000",
@@ -2082,6 +2265,133 @@ impl VehicleDef {
         }
         self.validate_s8a(&mut out, &frames);
         out
+    }
+
+    /// S9: the `crew_model`, `[[service]]`, towed `[mobility]`, `[optic]`
+    /// and `[tow]` rules.
+    fn validate_s9(&self, out: &mut Vec<Issue>) {
+        let served = self.crew_model == CrewModel::Served;
+        let m = &self.mobility;
+        let towed = m.kind == MobilityKind::Towed;
+        let gun_role = self.role == VehicleRole::AtGun;
+        if served != gun_role || served != towed {
+            out.push(Issue::new(
+                "crew_model",
+                "role `at_gun`, `crew_model = \"served\"` and `mobility.type = \"towed\"` go together",
+            ));
+        }
+        let keys = [
+            ("push_men", m.push_men, 1, 16),
+            ("emplace_s", m.emplace_s, 1, 600),
+            ("pack_s", m.pack_s, 1, 600),
+            ("hitch_s", m.hitch_s, 1, 600),
+            ("relay_trail_s", m.relay_trail_s, 1, 600),
+        ];
+        for (name, v, lo, hi) in keys {
+            let p = format!("mobility.{name}");
+            match (towed, v) {
+                (true, Some(x)) => range(out, &p, x as i64, lo, hi),
+                (true, None) => out.push(Issue::new(p, "a towed gun needs it")),
+                (false, Some(_)) => out.push(Issue::new(p, "only a towed gun has it")),
+                (false, None) => {}
+            }
+        }
+        if let Some(t) = &self.tow {
+            range(out, "tow.max_kg", t.max_kg as i64, 100, 20_000);
+            range(
+                out,
+                "tow.towed_speed_pct",
+                t.towed_speed_pct as i64,
+                10,
+                100,
+            );
+        }
+        if let Some(o) = &self.optic {
+            range(out, "optic.sight_pct", o.sight_pct as i64, 100, 500);
+            if !served {
+                out.push(Issue::new("optic", "only a served gun has an `[optic]`"));
+            }
+        }
+        if !served {
+            if !self.service.is_empty() || self.mass_kg.is_some() {
+                out.push(Issue::new(
+                    "service",
+                    "`[[service]]` and `mass_kg` are for `crew_model = \"served\"`",
+                ));
+            }
+            return;
+        }
+        match self.mass_kg {
+            Some(k) => range(out, "mass_kg", k as i64, 100, 20_000),
+            None => out.push(Issue::new("mass_kg", "a served gun needs its mass")),
+        }
+        if !self.seats.is_empty() {
+            out.push(Issue::new("seats", "a served gun has no `[[seats]]`"));
+        }
+        if self.crew_squad.is_none() {
+            out.push(Issue::new("crew_squad", "a served gun needs a crew squad"));
+        }
+        let mut slots = 0usize;
+        let count = |r: ServiceRole| self.service.iter().filter(|s| s.role == r).count();
+        for r in [
+            ServiceRole::Gunner,
+            ServiceRole::Loader,
+            ServiceRole::Commander,
+        ] {
+            if count(r) > 1 {
+                out.push(Issue::new("service", format!("`{r:?}` is listed twice")));
+            }
+        }
+        if count(ServiceRole::Gunner) != 1 {
+            out.push(Issue::new(
+                "service",
+                "a served gun needs one `gunner` slot",
+            ));
+        }
+        for (i, s) in self.service.iter().enumerate() {
+            let p = format!("service[{i}]");
+            let n = s.count.unwrap_or(1) as usize;
+            if s.role != ServiceRole::Ammo && n != 1 {
+                out.push(Issue::new(format!("{p}.count"), "only `ammo` slots repeat"));
+            }
+            slots += n;
+            for (a, c) in s.at.iter().enumerate() {
+                range(out, &format!("{p}.at[{a}]"), *c as i64, -2000, 2000);
+            }
+            // Done-when: bullets that miss the shield reach the men, so no
+            // kneeling or lying capsule (radius 25 cm, 120 / 40 cm high,
+            // a prone man 70 cm long along x) may sit inside an armour box.
+            let (rx, ry, top) = match s.pose {
+                ServicePose::Kneel => (25i64, 25i64, 120i64),
+                ServicePose::Prone => (90, 20, 40),
+            };
+            let (x, y, z) = (s.at[0] as i64, s.at[1] as i64, s.at[2] as i64);
+            for b in &self.boxes {
+                let bb = &b.bounds;
+                let clear = x + rx <= bb.lo(0)
+                    || x - rx >= bb.hi(0)
+                    || y + ry <= bb.lo(1)
+                    || y - ry >= bb.hi(1)
+                    || z + top <= bb.lo(2)
+                    || z >= bb.hi(2);
+                if !clear {
+                    out.push(Issue::new(
+                        format!("{p}.at"),
+                        format!(
+                            "the man's capsule lies inside armour box `{}`; keep the boxes thin (S9 done-when)",
+                            b.id
+                        ),
+                    ));
+                }
+            }
+        }
+        range(
+            out,
+            "service.len",
+            slots as i64,
+            1,
+            MAX_SERVICE_SLOTS as i64,
+        );
     }
 
     /// S8b: `[supply]` exactly on role `truck` (cross-references are
@@ -2595,6 +2905,34 @@ pub struct MobilitySetup {
     pub bog_pct: u32,
     pub unbog_ticks: [u32; 2],
     pub moving_spread_pct: u32,
+    /// S9: a towed gun's times; `None` on any other mobility.
+    pub towed: Option<TowedSetup>,
+}
+
+/// S9: a towed gun's `[mobility]` times (ticks).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TowedSetup {
+    pub push_men: u32,
+    pub emplace_ticks: u32,
+    pub pack_ticks: u32,
+    pub hitch_ticks: u32,
+    pub relay_trail_ticks: u32,
+}
+
+/// S9: one resolved service slot (`count` expanded).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceSlotSetup {
+    pub role: ServiceRole,
+    /// In the gun's frame (m).
+    pub at: FixedVec3,
+    pub pose: ServicePose,
+}
+
+/// S9: a resolved `[tow]`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TowSetup {
+    pub max_kg: u32,
+    pub towed_speed_pct: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2794,6 +3132,15 @@ pub struct VehicleSetup {
     /// S8b (section 7): the supply truck's stock; `None` on every other
     /// role.
     pub supply: Option<TruckSupplySetup>,
+    /// S9: the service slots (non-empty only on a served gun).
+    pub service: Vec<ServiceSlotSetup>,
+    /// S9: a gun's mass (0 elsewhere).
+    pub mass_kg: u32,
+    /// S9: percent of `sight` inside the arc against vehicles (100: no
+    /// optic).
+    pub optic_sight_pct: u32,
+    /// S9: what it can tow.
+    pub tow: Option<TowSetup>,
 }
 
 /// S8b: a resolved `[supply]` (see [`TruckSupplyDef`]). Arrays are by
@@ -2872,6 +3219,12 @@ impl VehicleSetup {
     /// The zone id named `name` (`hull_front`, `casemate_side`).
     pub fn zone_by_name(&self, name: &str) -> Option<u8> {
         (0..self.zones() as u8).find(|&z| self.zone_name(z) == name)
+    }
+
+    /// S9: a served gun (crew are soldiers in service slots, not seats).
+    #[inline]
+    pub fn served(&self) -> bool {
+        !self.service.is_empty()
     }
 
     /// S7: the upper armour box: the turret box, else the box whose top is
@@ -3134,6 +3487,13 @@ pub(crate) fn lower_vehicle(
             bog_pct: m.bog_pct,
             unbog_ticks: [m.unbog_s[0] * hz, m.unbog_s[1] * hz],
             moving_spread_pct: m.moving_spread_pct,
+            towed: (m.kind == MobilityKind::Towed).then(|| TowedSetup {
+                push_men: m.push_men.unwrap_or(1),
+                emplace_ticks: m.emplace_s.unwrap_or(0) * hz,
+                pack_ticks: m.pack_s.unwrap_or(0) * hz,
+                hitch_ticks: m.hitch_s.unwrap_or(0) * hz,
+                relay_trail_ticks: m.relay_trail_s.unwrap_or(0) * hz,
+            }),
         },
         hull: v
             .boxes
@@ -3204,20 +3564,60 @@ pub(crate) fn lower_vehicle(
                 }
             })
             .collect(),
-        seats: v
-            .seats
+        seats: if v.crew_model == CrewModel::Served {
+            // S9: one seat per role with a seat, a token box (seats hold
+            // no men here; `crate::vehicle` skips their hit boxes).
+            v.service
+                .iter()
+                .filter_map(|s| s.role.seat().map(|r| (r, s)))
+                .map(|(role, s)| SeatSetup {
+                    id: role.name().to_string(),
+                    role,
+                    part: PartBoxSetup {
+                        frame: Frame::Hull,
+                        bounds: BoxSetup {
+                            center: FixedVec3::from_cm(s.at),
+                            half: FixedVec3::from_cm([1, 1, 1]),
+                        },
+                    },
+                    in_box: 0,
+                })
+                .collect()
+        } else {
+            v.seats
+                .iter()
+                .map(|st| SeatSetup {
+                    id: st.id.clone(),
+                    role: st.role,
+                    part: (&st.bounds).into(),
+                    in_box: st
+                        .in_box
+                        .as_ref()
+                        .and_then(|b| v.boxes.iter().position(|x| &x.id == b))
+                        .unwrap_or(0) as u8,
+                })
+                .collect()
+        },
+        service: v
+            .service
             .iter()
-            .map(|st| SeatSetup {
-                id: st.id.clone(),
-                role: st.role,
-                part: (&st.bounds).into(),
-                in_box: st
-                    .in_box
-                    .as_ref()
-                    .and_then(|b| v.boxes.iter().position(|x| &x.id == b))
-                    .unwrap_or(0) as u8,
+            .flat_map(|s| {
+                std::iter::repeat_n(
+                    ServiceSlotSetup {
+                        role: s.role,
+                        at: FixedVec3::from_cm(s.at),
+                        pose: s.pose,
+                    },
+                    s.count.unwrap_or(1) as usize,
+                )
             })
             .collect(),
+        mass_kg: v.mass_kg.unwrap_or(0),
+        optic_sight_pct: v.optic.map_or(100, |o| o.sight_pct),
+        tow: v.tow.map(|t| TowSetup {
+            max_kg: t.max_kg,
+            towed_speed_pct: t.towed_speed_pct,
+        }),
         shields: v
             .shields
             .iter()
@@ -3496,7 +3896,10 @@ pub(crate) fn check_vehicle(
         // S8a-1: no main gun (a transport).
         v.turret == BoxSetup::default()
             && v.gun_arc_deg.is_none()
-            && matches!(v.role, VehicleRole::Transport | VehicleRole::Truck)
+            && matches!(
+                v.role,
+                VehicleRole::Transport | VehicleRole::Truck | VehicleRole::Tractor
+            )
     } else {
         v.turret == BoxSetup::default()
             && casemate
@@ -3586,12 +3989,13 @@ pub(crate) fn check_vehicle(
             .iter()
             .enumerate()
             .any(|(i, s)| v.seats[..i].iter().any(|o| o.role == s.role))
-        || v.seat(SeatRole::Driver).is_none()
+        || (!v.served() && v.seat(SeatRole::Driver).is_none())
         || (v.main_gun().is_some() && v.seat(SeatRole::Gunner).is_none())
         || v.seats.iter().any(|s| {
             !box_ok(&s.part.bounds)
                 || (s.part.frame == Frame::Turret && !v.has_turret)
-                || !inside(frame(s.part.frame), &s.part.bounds)
+                // S9: a served gun's seats are token boxes at its slots.
+                || (!v.served() && !inside(frame(s.part.frame), &s.part.bounds))
                 || s.in_box as usize >= v.boxes.len()
                 || s.id.is_empty()
                 || s.id.len() > 24
@@ -3599,7 +4003,20 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.seats: missing, repeated or outside the frame");
     }
-    if (v.mounts.is_empty() && v.role != VehicleRole::Truck) || v.mounts.len() > MAX_MOUNTS {
+    if v.served() != (v.role == VehicleRole::AtGun)
+        || v.served() != (v.mobility.kind == MobilityKind::Towed)
+        || v.service.len() > MAX_SERVICE_SLOTS
+        || v.mobility.towed.is_some() != v.served()
+        || !(100..=500).contains(&v.optic_sight_pct)
+        || (v.served() && (v.seat(SeatRole::Gunner).is_none() || v.crew_squad.is_none()))
+        || v.tow
+            .is_some_and(|t| t.max_kg == 0 || t.towed_speed_pct == 0)
+    {
+        return Some("vehicles.served: slots, tow or optic out of range");
+    }
+    if (v.mounts.is_empty() && !matches!(v.role, VehicleRole::Truck | VehicleRole::Tractor))
+        || v.mounts.len() > MAX_MOUNTS
+    {
         return Some("vehicles.mounts: count out of range");
     }
     if v.supply.is_some() != (v.role == VehicleRole::Truck) {
@@ -3708,7 +4125,7 @@ pub(crate) fn check_vehicle(
             continue;
         }
         let anchors_ok = match k {
-            k if k.is_running_gear() => (1..=MAX_ANCHORS).contains(&c.anchors.len()),
+            k if k.is_anchored() => (1..=MAX_ANCHORS).contains(&c.anchors.len()),
             _ => c.anchors.is_empty(),
         };
         let part_ok = if k.has_box() {
@@ -3807,7 +4224,7 @@ pub(crate) fn check_vehicle(
                 || !fx_in(h.pos.z, -20, 20)
         })
         || (!v.hatches.is_empty() && seen.iter().any(|&n| n != 1))
-        || (v.crew_squad.is_some() && v.hatches.is_empty())
+        || (v.crew_squad.is_some() && v.hatches.is_empty() && !v.served())
     {
         return Some("vehicles.hatches: out of range or a seat not in exactly one hatch");
     }

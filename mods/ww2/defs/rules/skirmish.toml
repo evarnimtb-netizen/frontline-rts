@@ -742,6 +742,14 @@ untrained_spread_pct = 150
 # S8a (docs/slices/S8a-halftracks.md 3, 5): infantry carriers (role
 # "transport"). They do not count against [vehicles] limit; their cards cap
 # them with max_alive.
+[vehicles.guns]
+# Seconds until a living crewman takes a dead gunner's or loader's place (S9,
+# guns-artillery.md 3.2).
+slot_swap_s = 3
+# A man at a slot fires his own weapon only while the gun has no target and an
+# enemy is this close (m; S9-12 (A)).
+self_defence_m = 40
+
 [vehicles.transport]
 # Transports can be called in from this much match time on (s), instead of
 # [vehicles] unlock_s, and never later than it (S8a-5 (A)).

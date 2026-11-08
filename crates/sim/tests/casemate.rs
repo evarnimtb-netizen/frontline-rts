@@ -211,7 +211,8 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::AssaultGun,
             VehicleRole::Transport,
             VehicleRole::Recon,
-            VehicleRole::Truck
+            VehicleRole::Truck,
+            VehicleRole::AtGun
         ]
     );
     assert_eq!(
@@ -221,7 +222,8 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::TankDestroyer,
             VehicleRole::Transport,
             VehicleRole::Recon,
-            VehicleRole::Truck
+            VehicleRole::Truck,
+            VehicleRole::AtGun
         ]
     );
 }

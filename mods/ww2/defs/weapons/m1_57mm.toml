@@ -1,0 +1,21 @@
+# 57 mm Gun M1 (S9, guns-artillery.md 5.2, 6). Rounds are on the vehicle mount.
+id = "ww2:m1_57mm"
+name = "57 mm Gun M1"
+class = "cannon"
+# Engagement range, m (as the tank guns).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 12-15 rounds/min (guns-artillery.md 5.2).
+rounds_per_min = 14
+magazine = 1
+# Reload, ms (verify).
+reload_ms = 4300
+# 2.5 mrad, urad (verify).
+spread_urad = 2500
+# M86, m/s.
+muzzle_velocity_m_s = 850
+suppression = 25
+# 300 % of sight for 5 s (a smaller gun, same crew drill; verify).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000

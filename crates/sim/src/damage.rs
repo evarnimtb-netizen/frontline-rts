@@ -218,6 +218,11 @@ pub fn inner_boxes(f: &VehicleFrame, v: &VehicleSetup) -> Vec<(BoxFrame, Inner)>
             out.push((part_box(f, p), Inner::Part(c.kind)));
         }
     }
+    // S9: a served gun's seats are mirrors, not hit boxes (its men are
+    // soldier capsules in the world).
+    if v.served() {
+        out.retain(|(_, inner)| !matches!(inner, Inner::Seat(_)));
+    }
     // S8a: passengers last (vehicles without them keep their order).
     for k in 0..(f.n_riders as usize).min(f.riders.len()) {
         out.push((f.riders[k], Inner::Rider(f.rider_slot[k])));
@@ -443,6 +448,11 @@ impl MatchState {
             self.push_event(events, ev);
         }
         let class = self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter);
+        // S9: a penetrator through a gun's shield or carriage: the core
+        // goes on and strikes the men in its line (the crew are soldiers).
+        if r.result == PenResult::Penetration {
+            self.core_through_crew(ctx, id, e, hit.point, attacker, class);
+        }
         let ko = self.deal(
             ctx,
             id,
@@ -936,8 +946,12 @@ impl MatchState {
         // S3c: a vehicle whose crew can bail out is abandoned by the Status
         // stage (`crate::bail`, also with every man dead); one that cannot
         // is knocked out when every seat is empty.
+        // S9: a served gun's crew are soldiers; losing them turns it
+        // neutral (Build B), never a knock-out. Its `Gun` part destroyed
+        // is the knock-out a report counts (S9-11 (A)).
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
-        let crew_gone = living == 0 && !crate::bail::can_bail(v);
+        let crew_gone = living == 0 && !crate::bail::can_bail(v) && !v.served();
+        let gun_gone = v.served() && vs.component(ComponentKind::Gun) == 0;
         for e in evs {
             self.push_event(events, e);
         }
@@ -946,7 +960,7 @@ impl MatchState {
         }
         if detonated {
             Some(KO_RACK)
-        } else if crew_gone {
+        } else if crew_gone || gun_gone {
             Some(KO_CREW)
         } else {
             None
@@ -1007,7 +1021,7 @@ impl MatchState {
                 .components
                 .iter()
                 .filter(|c| {
-                    c.kind.is_running_gear()
+                    c.kind.is_anchored()
                         && c.anchors.iter().any(|an| {
                             let p = anchor_at(&f, an.frame, crate::vehicle::v3(an.pos));
                             (p - pos).length_sq_raw() <= reach * reach
@@ -1298,7 +1312,12 @@ impl MatchState {
         let Some(vs) = self.vehicles.get(&id) else {
             return;
         };
-        let alive = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
+        // S9: a gun's crew are soldiers, they do not die with it.
+        let alive = if self.setup.vehicles[vs.type_idx as usize].served() {
+            0
+        } else {
+            vs.seats.iter().filter(|s| s.hp > 0).count() as u32
+        };
         let by = vs.last_attacker;
         let followers = vs.followers.clone();
         let squad = ctx.ents.squad[i];
@@ -1453,6 +1472,7 @@ impl MatchState {
         let tick = ctx.tick;
         let r = self.setup.rules.vehicles.clone();
         let hz = self.setup.tick_hz.max(1);
+        self.guns_status(ctx);
         let ids: Vec<SimId> = self.vehicles.keys().copied().collect();
         let mut ko: Vec<(SimId, u8)> = Vec::new();
         for id in ids {
@@ -1468,7 +1488,10 @@ impl MatchState {
                 <= FxVec2::new(br, Fx::ZERO).length_sq_raw();
             let vs = self.vehicles.get_mut(&id).expect("listed");
             let v = &self.setup.vehicles[vs.type_idx as usize];
-            swap_seats(vs, v, r.seat_swap_ticks);
+            // S9: a served gun's seats are mirrored from its men.
+            if !v.served() {
+                swap_seats(vs, v, r.seat_swap_ticks);
+            }
             // Fire.
             let crew = vs.seats.iter().any(|s| s.hp > 0);
             let mut fire_events: Vec<ArmourEv> = Vec::new();
@@ -1531,7 +1554,8 @@ impl MatchState {
                 {
                     rearm_one(vs, v, &self.setup.weapons);
                 }
-                if n.is_multiple_of(r.base_crew_ticks.max(1) as u64)
+                if !v.served()
+                    && n.is_multiple_of(r.base_crew_ticks.max(1) as u64)
                     && let Some(s) = vs.seats.iter_mut().find(|s| s.hp == 0 && s.swap == 0)
                 {
                     s.hp = r.crew_hp.min(u16::MAX as u32) as u16;
@@ -1765,6 +1789,9 @@ mod tests {
                 // S8b trucks: two crew, no rack; engine, transmission and
                 // cargo.
                 "ww2:ger_opel_blitz" | "ww2:usa_cckw" => (2, 0, 3),
+                // S9 served guns: no seat boxes (the crew are soldiers),
+                // one rack box; gun and recoil.
+                "ww2:ger_pak40" | "ww2:usa_57mm_m1" => (0, 1, 2),
                 _ => (5, 3, 4),
             };
             assert_eq!(racks, bins, "{}", v.id);
@@ -1775,10 +1802,12 @@ mod tests {
                 v.id
             );
             assert!(boxes.len() <= MAX_BOXES);
+            // S9: a served gun has no transmission.
             assert!(
-                boxes
-                    .iter()
-                    .any(|(_, i)| *i == Inner::Part(ComponentKind::Transmission))
+                v.served()
+                    || boxes
+                        .iter()
+                        .any(|(_, i)| *i == Inner::Part(ComponentKind::Transmission))
             );
         }
     }

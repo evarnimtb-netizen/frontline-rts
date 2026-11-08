@@ -807,7 +807,10 @@ fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
         .is_some_and(|v| {
             matches!(
                 v.role,
-                frontline_content::VehicleRole::Recon | frontline_content::VehicleRole::Truck
+                frontline_content::VehicleRole::Recon
+                    | frontline_content::VehicleRole::Truck
+                    | frontline_content::VehicleRole::AtGun
+                    | frontline_content::VehicleRole::Tractor
             )
         });
     if ty.has_tag(s.tag("crew")) || own_buy {

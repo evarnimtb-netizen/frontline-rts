@@ -862,6 +862,39 @@ fn default_transport_move_block_cm_s() -> u32 {
     100
 }
 
+tuning_table! {
+    /// `[vehicles.guns]` (S9, docs/slices/S9-at-guns.md 4): served guns.
+    /// Defaults are the S9 starting values.
+    pub struct GunsTuning {
+        /// A dead gunner's or loader's place is taken after this long by
+        /// the lowest-priority living man (s).
+        slot_swap_s: 0..=60 = "default_guns_slot_swap_s",
+        /// A man at a slot fires his own weapon only while the gun has no
+        /// target and an enemy is this close (m; 0: never).
+        self_defence_m: 0..=500 = "default_guns_self_defence_m",
+    }
+}
+
+fn default_guns_slot_swap_s() -> u32 {
+    3
+}
+fn default_guns_self_defence_m() -> u32 {
+    40
+}
+
+impl Default for GunsTuning {
+    fn default() -> GunsTuning {
+        GunsTuning {
+            slot_swap_s: default_guns_slot_swap_s(),
+            self_defence_m: default_guns_self_defence_m(),
+        }
+    }
+}
+
+impl GunsTuning {
+    fn check_more(&self, _table: &str, _out: &mut Vec<Issue>) {}
+}
+
 impl Default for TransportTuning {
     fn default() -> TransportTuning {
         TransportTuning {
@@ -1789,6 +1822,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("vehicles.bail", BailTuning::KEYS),
     ("vehicles.recrew", RecrewTuning::KEYS),
     ("vehicles.transport", TransportTuning::KEYS),
+    ("vehicles.guns", GunsTuning::KEYS),
     ("movement.formation", FormationTuning::KEYS),
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
@@ -1814,6 +1848,7 @@ pub(crate) struct TuningRefs<'a> {
     pub bail: &'a BailTuning,
     pub recrew: &'a RecrewTuning,
     pub transport: &'a TransportTuning,
+    pub guns: &'a GunsTuning,
     pub formation: &'a FormationTuning,
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
@@ -1866,6 +1901,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.bail.check(&p("vehicles.bail"), out);
     t.recrew.check(&p("vehicles.recrew"), out);
     t.transport.check(&p("vehicles.transport"), out);
+    t.guns.check(&p("vehicles.guns"), out);
     t.formation.check(&p("movement.formation"), out);
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);

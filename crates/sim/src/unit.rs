@@ -172,6 +172,17 @@ pub struct Unit {
     /// S8a (`crate::transport`): the transport and passenger slot he rides
     /// in; `None` on foot.
     pub riding: Option<Riding>,
+    /// S9 (`crate::guns`): the gun and service slot he serves; `None` for
+    /// everyone else.
+    pub serving: Option<Serving>,
+}
+
+/// S9: a gun crewman's place (`VehicleState::served` names him back).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct Serving {
+    pub gun: SimId,
+    /// Slot index (`VehicleSetup::service`).
+    pub slot: u8,
 }
 
 /// S8a: a passenger's place (`crate::transport`).
@@ -190,6 +201,7 @@ impl Unit {
             stance: self.stance,
             fire: self.fire,
             riding: self.riding,
+            serving: self.serving,
             ..Unit::default()
         };
     }
@@ -228,6 +240,7 @@ impl MatchState {
                 && ents.kind[i] == EntityKind::Soldier
                 && ents.owner[i] == p
                 && ents.unit[i].riding.is_none()
+                && ents.unit[i].serving.is_none()
                 && ents.squad[i].is_some_and(|s| self.squads.contains_key(&s))
         });
         (!men.is_empty()).then_some(men)

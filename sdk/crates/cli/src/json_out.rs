@@ -470,6 +470,26 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             }),
         );
     }
+    // S9 Build A: stubs, the counters are filled by Build C (AI buys).
+    o.insert(
+        "s9".into(),
+        json!({
+            "guns_bought": 0, "guns_emplaced": 0, "guns_in_cover": 0, "gun_rounds": 0,
+            "gun_ko_tanks": 0, "gun_crew_lost": 0, "guns_neutral": 0, "guns_captured": 0,
+            "guns_recrewed": 0, "tows_lost": 0, "ai_unhitches": 0, "ai_ambush_rounds": 0,
+            "gun_ai_fails": 0,
+        }),
+    );
+    o.insert(
+        "s9_derived".into(),
+        json!({
+            "gun_fired_matches_pct": 0.0, "gun_in_cover_pct": 0.0, "guns_bought_per_match": 0.0,
+            "gun_rounds_per_match": 0.0, "gun_ko_tanks_per_match": 0.0,
+            "gun_crew_lost_per_match": 0.0, "guns_neutral_per_match": 0.0,
+            "guns_captured_per_match": 0.0, "captured_gun_kills_per_match": 0.0,
+            "gun_mp_pct": 0.0,
+        }),
+    );
     o.insert(
         "s6_derived".into(),
         json!({

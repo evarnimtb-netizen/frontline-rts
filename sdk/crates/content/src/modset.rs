@@ -27,7 +27,7 @@ use crate::variant::{
     DERIVED_CAPABILITIES, TrainingDef, canonical_capabilities, expand_legacy, role_capabilities,
     role_of_tags, role_tag,
 };
-use crate::vehicle::{AmmoDef, AmmoMechanism, VehicleDef};
+use crate::vehicle::{AmmoDef, AmmoMechanism, CrewModel, VehicleDef};
 
 /// A mod's manifest (`mod.toml`, §7.2).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1228,7 +1228,8 @@ impl ModDefs {
                         format!("unknown squad `{c}`{}", did_you_mean(c, self.squads.keys())),
                     )),
                     Some(sq)
-                        if sq.role != SquadRole::Crew
+                        if !(sq.role == SquadRole::Crew
+                            || (v.crew_model == CrewModel::Served && sq.has_tag("gun_crew")))
                             || sq.faction != v.faction
                             || sq.is_abstract =>
                     {

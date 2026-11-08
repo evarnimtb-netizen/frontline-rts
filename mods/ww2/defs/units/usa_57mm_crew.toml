@@ -1,0 +1,30 @@
+# The 57 mm M1's crew (S9): six soldiers in the gun's service slots (tag
+# `gun_crew`, never bought; the card is usa_57mm_m1_squad). Order: gunner,
+# loader, section leader, three ammo men.
+id = "ww2:usa_57mm_crew"
+name = "57 mm Antitank Squad"
+faction = "ww2:usa"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:m1911a1"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:m1_garand"
+
+[[members]]
+slot = "commander"
+weapon = "ww2:m1_garand"
+
+[[members]]
+slot = "ammo"
+count = 3
+weapon = "ww2:m1_garand"
