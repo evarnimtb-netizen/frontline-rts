@@ -73,7 +73,7 @@ Pooled Germany 218 of 480 = 45.42 % (S8a 45.4 %), in band. Seeds 1-80 read 41.2 
 
 ## Tick time
 
-timing40 alone at 3 jobs: p99 0.427 ms all, 0.522 ms peak (S8a after Fix 0.488 / 0.621): down 12 %, not profiled (no rise above 25 %). The saving comes from the half-track's fewer retasks and the capped AI move orders, not measured apart.
+timing40 alone at 3 jobs: p99 0.427 ms all, 0.522 ms peak (S8a after Fix 0.488 / 0.621): down 12 %, not profiled (no rise above 25 %). Why it fell is not measured.
 
 ## Checks
 
