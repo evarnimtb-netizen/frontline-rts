@@ -133,6 +133,26 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8a-29 (Fix) After the M1 picking fix (the point at least `min_ride_m` + the walked last stretch from the squad and `min_ride_m` beyond the door) USA transported per match is 0.98 / 0.89 / 1.04 and trips per bought 0.86 / 0.78 / 0.87 (T41b, T48b floors 1). (A) Accept the misses for S8a (the old numbers counted short hops); retune with S8a-28.
   S8a-30 (Fix) Germany wins 42.5 % on seeds 1-80 (T5c floor 45), 45.6 % on 101-180, 48.1 % on 201-280: pooled 45.4 % over 480, inside the 45-55 % band. (A) Accept T5c; the pooled band holds.
   S8a-31 (Fix) The AI keeps unloading over the sides under fire: armour case 24 over 80 runs hits 3.02 men by the door and 3.36 over the sides (a gap of about one standard error), while the sides are 2.3 s faster. (A) Keep; recheck with the S8b ride work.
+  S8b-1 (Plan) Recon cars and trucks are outside the rules' vehicle limit, each capped by its card (2); the half-tracks' rule. (A) Yes (recon does not take a tank's place). (B) Recon counts against the limit.
+  S8b-2 (Plan) `DropCrates` carries the kind: `DropCrates { vehicle, point, count, kind }`; the design's form had one crate item, S6 made three crate defs per faction, and the AI needs shells for mortars and small arms for trenches. (A) Yes. (B) Always small arms.
+  S8b-3 (Plan) A truck auto-loads its def's `load_kg` while stopped in base, paying per kg as it loads (shells on the player's crate queue); no load menu. A full default load costs 364 MP. (A) Yes.
+  S8b-4 (Plan) Mortar bombs from a truck only as dropped crates (D1 `crate_only_if_indirect`). (A) Yes.
+  S8b-5 (Plan) Trucks carry no men: `[transport]` is gated on role in the validator and in the AI, so it is not pure data. (A) Supply only in S8b.
+  S8b-6 (Plan) Forward MG belts at HQ, dump and truck (vehicles.md 7.3, not built in S6): this changes tanks at HQs slightly. (A) Yes.
+  S8b-7 (Plan) Both trucks unarmed; the M36 ring MG on about 1 CCKW in 4 is left out. (A) Yes.
+  S8b-8 (Plan) No road speed; both cars and trucks use cross-country speeds (no roads on our maps). (A) Yes.
+  S8b-9 (Plan) Cargo detonates only with at least 40 kg of shells or explosives; below that it burns. (A) Yes.
+  S8b-10 (Plan) Tanks keep `stationary_sight_pct` 100 (no optics change to the tank balance). (A) Yes, values with a later tank pass.
+  S8b-11 (Plan) Figures not in vehicles.md (2 cm AP and HE, stowages, reloads, truck plates) are from memory and marked verify in the defs. (A) Use them; an owner or M2 task checks sources.
+  S8b-12 (Plan) The 2 cm gun is a one-shot model with an averaged reload (no 10-round magazine, no bursts). (A) Yes.
+  S8b-13 (Plan) The push-limit reserve (`push_without_supply_m`, 7.6) is left out. (A) Yes, with the heavy wave.
+  S8b-14 (Plan) AI tanks fire only 6.4-6.9 main-gun rounds per tank bought and start 0-4 rearm trips in 160 matches (S8a data), so truck rearms of tanks stay few; crates are the measured work and tank-round targets are reports. (A) Keep the truck as the owner asked. (B) Raise AI tank fire first, out of scope.
+  S8b-15 (Plan) A half-track picks squads within 250 m and drives to them (was 120 m, waiting at base). (A) Yes.
+  S8b-16 (Plan) A wheeled vehicle drives on the undilated block layer (paths keep the 4-8 m clearance), so a truck parked by a new trench is not stranded. (A) Yes.
+  S8b-17 (Plan) AI own budgets: recon at most 8 %, trucks at most 5 % of income so far, outside the unit mix. (A) Start values; the Tune moves them.
+  S8b-18 (Plan) The M8's .50 ring is a 360 degree hull-frame pintle, not a turret-mounted gun. (A) Yes.
+  S8b-19 (Plan) Drop Crates hotkey `I`. (A) Yes.
+  S8b-20 (Plan) Trucks load only at base, not from an HQ (vehicles.md 7.3 allows both). (A) Yes.
 
 ## Planned work queue
 
@@ -146,7 +166,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 5. S7 assault guns and TDs: done on branch `s7-casemate-td` (on main; tick fix after the log); log `docs/slices/S7-log.md`, spec `S7-casemate-td.md`, targets `S7.toml`. Open: S7-11, S7-12, S7-15.
 6. S8 half-tracks, trucks, recon: split. S8a half-tracks: done, verified and on main (`fa5c50a`;
    spec `docs/slices/S8a-halftracks.md`, targets `S8a.toml`, log `S8a-log.md`; Build A, B, Tune, review and Fix).
-   Open: S8a-28 to S8a-31. Next: S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks.
+   Open: S8a-28 to S8a-31. S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks: in progress on `s8b-trucks-recon` (Plan done: spec `docs/slices/S8b-trucks-recon.md`, targets `S8b.toml`).
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 
 ## Known issues still open
