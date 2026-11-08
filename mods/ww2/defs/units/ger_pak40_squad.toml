@@ -10,3 +10,5 @@ vehicle = "ww2:ger_pak40"
 ai_weight = 0
 # S9-13 (A): at most 2 alive.
 max_alive = 2
+# The tow it comes with (card, S9-2/S9-3 (A)): pays gun + tow.
+tow = "ww2:ger_sdkfz11_squad"

@@ -91,6 +91,8 @@ pub const AB_CREW: u8 = 3;
 pub const AB_USELESS: u8 = 4;
 pub const AB_UNDER_FIRE: u8 = 5;
 pub const AB_ORDER: u8 = 6;
+/// S9: a gun left with nobody near (`crate::guns`).
+pub const AB_GUN: u8 = 7;
 
 /// `ArmourEventKind::Recrewed` components: re-crewed by its own side, or
 /// captured.
@@ -147,6 +149,10 @@ pub(crate) fn exit_max(v: &VehicleSetup, s: &MatchSetup) -> u32 {
 
 /// Boarding ticks for `men` men through `v`'s hatches.
 pub(crate) fn board_ticks(v: &VehicleSetup, s: &MatchSetup, men: u32) -> u32 {
+    // S9: a gun has no hatches: the men walk to their slots.
+    if v.served() {
+        return s.rules.vehicles.recrew.board_s * s.tick_hz.max(1);
+    }
     let hatches = v.hatches.len().max(1) as u32;
     s.rules.vehicles.recrew.board_s * s.tick_hz.max(1) * men.max(1).div_ceil(hatches)
 }
@@ -171,6 +177,9 @@ pub(crate) fn crew_floor(v: &VehicleSetup, s: &MatchSetup) -> u32 {
 /// S8a: the fewest men who may re-crew `v`: `[vehicles.recrew] min_men`
 /// and the crew floor, at most its seats.
 pub(crate) fn fewest_to_man(v: &VehicleSetup, s: &MatchSetup) -> u32 {
+    if v.served() {
+        return s.rules.vehicles.guns.min_men;
+    }
     s.rules
         .vehicles
         .recrew
@@ -229,22 +238,27 @@ impl MatchState {
         let Some(sq) = self.squads.get(&squad).filter(|q| q.owner == p) else {
             return Err(RecrewRefusal::NotAbandoned);
         };
-        let Some(vs) = self
-            .vehicles
-            .get(&vehicle)
-            .filter(|_| ents.kind.get(vehicle.index()) == Some(&EntityKind::Abandoned))
-        else {
+        let Some(vs) = self.vehicles.get(&vehicle).filter(|vs| {
+            ents.kind.get(vehicle.index()) == Some(&EntityKind::Abandoned)
+                || crate::guns::own_gun_unserved(ents, p, vehicle, vs)
+        }) else {
             return Err(RecrewRefusal::NotAbandoned);
         };
         let ty = &s.squad_types[sq.type_idx as usize];
-        if !can_crew(s, ty) {
+        let gun = vs.served.is_some();
+        if if gun {
+            !crate::guns::can_serve(s, ty)
+        } else {
+            !can_crew(s, ty)
+        } {
             return Err(RecrewRefusal::NotCrew);
         }
         let enemy = ents.owner[vehicle.index()] != p;
         if r.capture == 0 && enemy {
             return Err(RecrewRefusal::NoCapture);
         }
-        if r.capture_needs_crew != 0 && enemy && !ty.has(Capability::VehicleCrew) {
+        // S9: any infantry can serve a neutral gun (S9-7 (A)).
+        if !gun && r.capture_needs_crew != 0 && enemy && !ty.has(Capability::VehicleCrew) {
             return Err(RecrewRefusal::CaptureNeedsCrew);
         }
         if let Some(why) = board_blocked(s, vs) {
@@ -255,11 +269,21 @@ impl MatchState {
             return Err(RecrewRefusal::TooFewMen);
         }
         // S8a: transports are outside the vehicle limit.
-        if v.transport.is_none() && self.vehicles_counted(ents, p) >= s.rules.vehicles.limit {
+        if !gun
+            && v.transport.is_none()
+            && self.vehicles_counted(ents, p) >= s.rules.vehicles.limit
+        {
             return Err(RecrewRefusal::VehicleLimit);
         }
-        let men = (sq.members.len()).min(v.seats.len()) as u32;
-        if self.population(ents, p).saturating_sub(men) + v.pop > s.rules.pop_cap {
+        // S9: serving men stay soldiers; a gun adds only its own pop.
+        let men = if gun {
+            0
+        } else {
+            (sq.members.len()).min(v.seats.len()) as u32
+        };
+        let revived = ents.kind[vehicle.index()] == EntityKind::Abandoned;
+        let extra = if gun && !revived { 0 } else { v.pop };
+        if self.population(ents, p).saturating_sub(men) + extra > s.rules.pop_cap {
             return Err(RecrewRefusal::PopCap);
         }
         Ok(())
@@ -758,7 +782,7 @@ impl MatchState {
     }
 
     /// Boarding of abandoned vehicle `id` (module docs).
-    fn boarding(&mut self, ctx: &mut Ctx, id: SimId, events: &mut Vec<ArmourEv>) {
+    pub(crate) fn boarding(&mut self, ctx: &mut Ctx, id: SimId, events: &mut Vec<ArmourEv>) {
         self.hull_slots(ctx, id);
         let s = &self.setup;
         let vs = &self.vehicles[&id];
@@ -772,10 +796,15 @@ impl MatchState {
             return;
         }
         let v = &s.vehicles[vs.type_idx as usize];
+        let is_gun = vs.served.is_some();
         let r = &s.rules.vehicles.recrew;
         let reach = Fx::from_int(r.reach_m as i32);
         let reach_sq = FxVec2::new(reach, Fx::ZERO).length_sq_raw();
-        let empty = vs.seats.iter().filter(|st| st.hp == 0).count();
+        // S9: a gun's places are its service slots.
+        let empty = match &vs.served {
+            Some(sv) => sv.slots.iter().filter(|k| k.man.is_none()).count(),
+            None => vs.seats.iter().filter(|st| st.hp == 0).count(),
+        };
         // Fewest men who board: `min_men`, and never so few that the crew
         // rule would make them bail out again at once.
         let fewest = fewest_to_man(v, s).max(1);
@@ -824,6 +853,10 @@ impl MatchState {
         if t < need {
             return;
         }
+        if is_gun {
+            self.man_gun(ctx, id, q, &men, events);
+            return;
+        }
         // Done: the limit and pop again (the men boarding count as gone).
         let p = self.squads[&q].owner;
         let pop_after = self
@@ -853,7 +886,7 @@ impl MatchState {
 
     /// The men `men` of squad `q` board abandoned vehicle `id`, which
     /// becomes the squad owner's (module docs).
-    fn man_vehicle(
+    pub(crate) fn man_vehicle(
         &mut self,
         ctx: &mut Ctx,
         id: SimId,
@@ -1034,6 +1067,10 @@ impl MatchState {
         for (&q, sq) in &self.squads {
             if let Order::Recrew { vehicle } = sq.order
                 && ctx.ents.kind.get(vehicle.index()) != Some(&EntityKind::Abandoned)
+                && !self.vehicles.get(&vehicle).is_some_and(|v| {
+                    v.served.is_some()
+                        && ctx.ents.kind.get(vehicle.index()) == Some(&EntityKind::Vehicle)
+                })
             {
                 idle.push(q);
                 continue;

@@ -1,0 +1,30 @@
+# The Pak 38's crew (S9): five soldiers in the gun's service slots (tag
+# `gun_crew`, never bought; the card is ger_pak38_squad). Order: gunner,
+# loader, commander, two ammo men.
+id = "ww2:ger_pak38_crew"
+name = "Pak-Bedienung (5 cm)"
+faction = "ww2:germany"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:p38"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:kar98k"
+
+[[members]]
+slot = "commander"
+weapon = "ww2:mp40"
+
+[[members]]
+slot = "ammo"
+count = 2
+weapon = "ww2:kar98k"

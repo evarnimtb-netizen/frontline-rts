@@ -80,6 +80,7 @@ pub fn dig_profile(name: &str) -> DigProfile {
         "mortar_pit" => DigProfile::MortarPit,
         "hq_pit" => DigProfile::HqPit,
         "dump_pit" => DigProfile::DumpPit,
+        "gun_pit" => DigProfile::GunPit,
         _ => DigProfile::Trench,
     }
 }

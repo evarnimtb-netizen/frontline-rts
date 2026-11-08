@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **10** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **12** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -114,6 +114,9 @@ kind the relay may not send. Clients cannot send relay messages.
   (`MAX_UNITS`), checked on the wire; both are bounded by the 1,024 B
   single-command limit. The save version is `-s18` (riders, door timers,
   pintle MG yaw). The one bump for the S8a slice.
+- Version 12 (S9) adds `Emplace { guns, facing }`, `PackGun { guns }`,
+  `PushGun { guns, point }`, `Hitch { guns, tow }`, `Unhitch { guns }` and
+  `SetAmbush { guns, range_m }` at the end of `CommandKind`.
 - Version 11 (S8b) adds `DropCrates { vehicle, point, count, kind }` at the
   end of `CommandKind`: a supply truck (a `u32` entity id) drives to a point
   (Q16.16) and sets down `count` (`u8`, 1 to 8) crates of `kind` (`SupplyKind`

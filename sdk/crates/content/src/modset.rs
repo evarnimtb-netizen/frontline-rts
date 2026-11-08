@@ -1219,6 +1219,20 @@ impl ModDefs {
                 }
             }
         }
+        // S9: a card's tow names a live card.
+        for (id, s) in &self.squads {
+            if let Some(t) = &s.tow
+                && !self.squads.get(t).is_some_and(|q| q.vehicle.is_some())
+            {
+                out.push(Issue::new(
+                    format!("squad `{id}`: tow"),
+                    format!(
+                        "unknown vehicle card `{t}`{}",
+                        did_you_mean(t, self.squads.keys())
+                    ),
+                ));
+            }
+        }
         // S3c: a vehicle's crew squad is a crew of its faction.
         for (id, v) in &self.vehicles {
             if let Some(c) = &v.crew_squad {

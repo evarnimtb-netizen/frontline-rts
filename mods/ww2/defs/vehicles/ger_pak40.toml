@@ -13,7 +13,7 @@ role = "at_gun"
 crew_model = "served"
 # Mass, kg (guns-artillery.md 5.2).
 mass_kg = 1425
-# Card price, MP: the roster's 380 + tow price comes from the card in Build B (S9-2, S9-4).
+# The gun's own price, MP (roster); the card adds its tow's (S9-2).
 cost = 380
 # S9-5 (A): a gun's pop is 1; its crew are counted as soldiers.
 pop = 1
@@ -58,6 +58,8 @@ pack_s = 18
 hitch_s = 20
 # Seconds to re-lay the trail for a target outside the arc (verify).
 relay_trail_s = 15
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 310
 
 [hull]
 # No tracks: no running-gear band.

@@ -421,9 +421,6 @@ impl SupplyState {
             if c.g > d.g || c.hp > d.boxes.first().map_or(0, |b| b.hp) || c.hp == 0 {
                 return Err("crate grams or hit points out of range");
             }
-            if d.faction != setup.players[c.owner.0 as usize].faction {
-                return Err("crate def of another faction");
-            }
             if !on_map(c.pos) || c.dest.is_some_and(|q| !on_map(q)) {
                 return Err("crate or its destination off the map");
             }
@@ -805,7 +802,11 @@ impl MatchState {
             .supply6
             .crates
             .get(&crate_id)
-            .is_some_and(|c| c.owner == p && c.carrier.is_none());
+            .is_some_and(|c| {
+                // S9: an enemy's set-down crate can be taken (it keeps its
+                // own faction's rounds, `source_for`).
+                c.carrier.is_none() && (c.owner == p || c.claim.is_none())
+            });
         if !ok {
             return self.refuse6(p, squad, SupplyRefusal::NoCrate);
         }
@@ -987,6 +988,8 @@ impl MatchState {
                         let cr = self.supply6.crates.get_mut(&id).expect("listed");
                         cr.carrier = Some(m);
                         cr.claim = None;
+                        // S9: a captured crate becomes the taker's.
+                        cr.owner = sq.owner;
                     }
                 }
             }
@@ -1047,8 +1050,14 @@ impl MatchState {
         feed: Fx,
         trucks: &[TruckSrc],
         reach: Reach,
+        gun_faction: Option<u16>,
     ) -> Option<Source> {
         let k = kind.index();
+        // S9: a gun takes only what fits it: its own def faction's stock.
+        // Crates carry their faction for everyone: a captured crate feeds
+        // only weapons of that faction.
+        let own = self.setup.players[p.0 as usize].faction;
+        let crate_faction = gun_faction.unwrap_or(own);
         let structure = self
             .supply6
             .structures
@@ -1057,6 +1066,7 @@ impl MatchState {
                 s.owner == p
                     && s.built
                     && s.stock_g[k] >= g
+                    && gun_faction.is_none_or(|f| self.setup.stocks[s.def as usize].faction == f)
                     && within(s.pos, pos, self.setup.stocks[s.def as usize].radius.into())
             })
             .map(|(&id, _)| Source::Structure(id));
@@ -1070,6 +1080,10 @@ impl MatchState {
                         t.owner == p
                             && within(t.pos, pos, t.vehicles)
                             && self.vehicles[&t.id].cargo_g[k] >= g
+                            && gun_faction.is_none_or(|f| {
+                                self.setup.vehicles[self.vehicles[&t.id].type_idx as usize].faction
+                                    == f
+                            })
                     })
                     .min_by_key(|t| (t.every, t.id.0))
                     .map(|t| (Source::Truck(t.id, t.owner.0), t.every)),
@@ -1096,6 +1110,7 @@ impl MatchState {
                     && c.carrier.is_none()
                     && c.g >= g
                     && self.setup.stocks[c.def as usize].supply == Some(kind)
+                    && self.setup.stocks[c.def as usize].faction == crate_faction
                     && within(c.pos, pos, feed)
             })
             .map(|(&id, _)| Source::Crate(id))
@@ -1187,7 +1202,7 @@ impl MatchState {
                 .min_by_key(|&(s, m)| (s, m.0))
                 .map(|(_, m)| m);
             let Some(taker) = taker else { continue };
-            let Some(src) = self.source_for(sq.owner, at, kind, g, feed, &[], Reach::NoTruck)
+            let Some(src) = self.source_for(sq.owner, at, kind, g, feed, &[], Reach::NoTruck, None)
             else {
                 continue;
             };
@@ -1406,7 +1421,10 @@ impl MatchState {
                 let Some(s) = self.setup.ammo[gun.ammo[k].ammo as usize].supply else {
                     continue;
                 };
-                let Some(src) = self.source_for(owner, at, s.kind, s.g, feed, trucks, reach) else {
+                let gun_faction = v.served().then_some(v.faction);
+                let Some(src) =
+                    self.source_for(owner, at, s.kind, s.g, feed, trucks, reach, gun_faction)
+                else {
                     continue;
                 };
                 // The chosen source's interval: one source, one draw per
@@ -1485,7 +1503,7 @@ impl MatchState {
             if g == 0 {
                 continue;
             }
-            let Some(src) = self.source_for(owner, at, kd, g, feed, trucks, reach) else {
+            let Some(src) = self.source_for(owner, at, kd, g, feed, trucks, reach, None) else {
                 continue;
             };
             let n = budget.min(spent).min(self.stock_held(src, kd) / g);

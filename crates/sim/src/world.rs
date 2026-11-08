@@ -1680,6 +1680,38 @@ impl World {
         true
     }
 
+    /// S9 staging tool: digs a finished `profile` pit along `line` at once
+    /// (the pit's spoil all round, ground under it settles every tick).
+    pub fn dig_pit_now(
+        &mut self,
+        line: &[FxVec2],
+        profile: frontline_content::DigProfile,
+    ) -> bool {
+        let Some(game) = self.state.game.as_ref() else {
+            return false;
+        };
+        if line.len() < 2 {
+            return false;
+        }
+        let dig = game.setup.rules.dig_profile(profile);
+        let n = dig.passes as i32;
+        let len = crate::squad::polyline_length(line);
+        crate::dig::stamp(
+            &mut self.state.terrain,
+            line,
+            0,
+            Fx::ZERO,
+            len,
+            n,
+            n,
+            dig,
+            self.state.tick,
+        );
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// S5b staging tool (mortar-bench): player `player` knows point `p`, as
     /// if an enemy had been seen there in a trench (an intel cell that
     /// stays for the match). Match worlds with `[fire_mission]` only.
@@ -1933,6 +1965,49 @@ impl World {
     /// S8a tools and tests: squad `squad` sits in own transport `vehicle`
     /// at once (lowest free slots, member order), as if it had boarded.
     /// False when it does not fit or anything is not as required.
+    /// S9 staging tool: a full set-down crate of stock def `def`, owned by
+    /// `owner`, at `pos` (the owner's faction need not match, S9-8).
+    pub fn add_crate_now(&mut self, owner: PlayerId, def: u16, pos: FxVec2) -> Option<u32> {
+        let game = self.state.game.as_mut()?;
+        let d = game.setup.stocks.get(def as usize)?;
+        let c = crate::structures::Crate {
+            owner,
+            def,
+            pos,
+            carrier: None,
+            dest: None,
+            claim: None,
+            g: d.g,
+            hp: d.boxes.first().map_or(1, |b| b.hp),
+        };
+        let id = game.supply6.next_crate;
+        game.supply6.next_crate += 1;
+        game.supply6.crates.insert(id, c);
+        game.rebuild_statics(&self.state.terrain);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        Some(id)
+    }
+
+    /// S9 staging tool: puts served gun `gun` on `tow`'s hitch, its crew
+    /// aboard if it fits.
+    pub fn hitch_gun_now(&mut self, gun: SimId, tow: SimId) -> bool {
+        let tick = self.state.tick;
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        let mut ctx = Ctx {
+            ents: &mut self.state.entities,
+            terrain: &self.state.terrain,
+            hash: &mut self.hash,
+            tick,
+        };
+        let ok = game.hitch_gun_now(&mut ctx, gun, tow);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        ok
+    }
+
     pub fn seat_now(&mut self, squad: SquadId, vehicle: SimId) -> bool {
         let tick = self.state.tick;
         let Some(game) = self.state.game.as_mut() else {

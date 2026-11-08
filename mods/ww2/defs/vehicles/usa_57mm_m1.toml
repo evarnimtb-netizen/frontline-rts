@@ -9,7 +9,7 @@ role = "at_gun"
 crew_model = "served"
 # Mass, kg (guns-artillery.md 5.2).
 mass_kg = 1230
-# Card price, MP: the roster's 340 + M3A1 tow in Build B (S9-2, S9-3).
+# The gun's own price, MP (roster); the card adds its tow's (S9-2).
 cost = 340
 pop = 1
 recall_cooldown_s = 90
@@ -43,6 +43,8 @@ emplace_s = 25
 pack_s = 16
 hitch_s = 18
 relay_trail_s = 12
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 290
 
 [hull]
 track_band_pct = 0

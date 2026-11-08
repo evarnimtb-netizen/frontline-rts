@@ -1,0 +1,28 @@
+# 5 cm PzGr 39 for the Pak 38 (S9, guns-artillery.md 6): APHE. Figures from
+# the design table, verify.
+id = "ww2:50mm_pzgr39"
+name = "5 cm PzGr 39"
+mechanism = "ap"
+# Complete round about 3.0 kg (verify).
+supply = { kind = "shells", g = 3000 }
+caliber_mm = 50
+muzzle_velocity_m_s = 823
+drag_coeff = 0
+# [range_m, mm] against plate at 30 deg, 50 % success (guns-artillery.md 6; verify).
+penetration = [[100, 69], [500, 59], [1000, 48], [1500, 38], [2000, 29]]
+pen_reference_angle_deg = 30
+ricochet_angle_deg = 70
+nonpen_damage = 25
+track_damage = 35
+sources = ["guns-artillery.md 6 (public tables, verify)"]
+
+# After penetration: a small core; starting values.
+[core]
+damage = 80
+length_cm = 130
+max_boxes = 2
+
+[spall]
+rays = 4
+damage = 25
+cone_deg = 25

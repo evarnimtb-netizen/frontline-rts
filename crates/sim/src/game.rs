@@ -403,6 +403,8 @@ pub struct PlayerState {
     pub s7: S7Counters,
     /// S8a: transport and small-arms counters (report).
     pub s8a: S8aCounters,
+    /// S9: gun counters (report).
+    pub s9: crate::guns::S9Counters,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -727,6 +729,7 @@ impl MatchState {
                     ..S7Counters::default()
                 },
                 s8a: S8aCounters::default(),
+                s9: crate::guns::S9Counters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -1010,7 +1013,11 @@ impl MatchState {
                 short: ty.cost - manpower,
             });
         }
-        if self.population(ents, player) + ty.pop(&s.vehicles) > s.rules.pop_cap {
+        // S9: the tow that comes with a gun card counts too.
+        let tow_pop = ty
+            .tow_card
+            .map_or(0, |t| s.squad_types[t as usize].pop(&s.vehicles));
+        if self.population(ents, player) + ty.pop(&s.vehicles) + tow_pop > s.rules.pop_cap {
             return Err(CallInRefusal::PopCap);
         }
         Ok(())
@@ -1036,6 +1043,8 @@ impl MatchState {
         {
             return false;
         }
+        // S9: an order that sends men away takes them off their guns first.
+        self.crew_ordered_off(ctx, p, &c.kind);
         match &c.kind {
             CommandKind::MoveSoldier { .. }
             | CommandKind::Spawn { .. }
@@ -1131,6 +1140,14 @@ impl MatchState {
                 vehicles,
                 over_sides,
             } => self.order_disembark(ctx, p, vehicles, *over_sides),
+            CommandKind::Emplace { guns, facing } => self.order_emplace(ctx, p, guns, *facing),
+            CommandKind::PackGun { guns } => self.order_pack(ctx, p, guns),
+            CommandKind::PushGun { guns, point } => self.order_push(ctx, p, guns, *point),
+            CommandKind::Hitch { guns, tow } => self.order_hitch(ctx, p, guns, *tow),
+            CommandKind::Unhitch { guns } => self.order_unhitch(ctx, p, guns),
+            CommandKind::SetAmbush { guns, range_m } => {
+                self.order_ambush(ctx, p, guns, *range_m)
+            }
         }
     }
 
@@ -1185,7 +1202,7 @@ impl MatchState {
         id: SquadId,
         order: Order,
     ) -> bool {
-        if !self.owned(p, id) {
+        if !self.owned(p, id) || self.is_gun_squad(ctx.ents, id) {
             return false;
         }
         self.clear_detached(ctx, id);
@@ -1499,7 +1516,9 @@ impl MatchState {
                         pl.ready_at[t] = pl.ready_at[t].max(ready);
                     }
                 }
-                Ok(self.spawn_squad(ctx, p, squad_type))
+                let q = self.spawn_squad(ctx, p, squad_type);
+                self.gun_arrives(ctx, p, squad_type, q);
+                Ok(q)
             }
         };
         // Unknown types are not logged: the presenter could not name them.

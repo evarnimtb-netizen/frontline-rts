@@ -850,6 +850,10 @@ pub struct MobilityDef {
     /// outside the arc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay_trail_s: Option<u32>,
+    /// S9 (`towed`): from the gun's origin to the trail tip that goes on
+    /// the tow's hitch (cm): the rigid bar when hitched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tow_bar_cm: Option<u32>,
 }
 
 /// An axis-aligned box in a frame, in centimetres: `center ± half`.
@@ -1378,18 +1382,20 @@ impl VehicleDef {
         );
 
         let m = &self.mobility;
+        // S9: a towed gun too heavy to push has speed 0 (3-inch M5).
+        let towed_gun = m.kind == MobilityKind::Towed;
         range(
             &mut out,
             "mobility.speed_cm_s",
             m.speed_cm_s as i64,
-            10,
+            if towed_gun { 0 } else { 10 },
             3000,
         );
         range(
             &mut out,
             "mobility.reverse_cm_s",
             m.reverse_cm_s as i64,
-            1,
+            if towed_gun { 0 } else { 1 },
             m.speed_cm_s as i64,
         );
         let wheeled = m.kind == MobilityKind::Wheeled;
@@ -2286,6 +2292,7 @@ impl VehicleDef {
             ("pack_s", m.pack_s, 1, 600),
             ("hitch_s", m.hitch_s, 1, 600),
             ("relay_trail_s", m.relay_trail_s, 1, 600),
+            ("tow_bar_cm", m.tow_bar_cm, 50, 1200),
         ];
         for (name, v, lo, hi) in keys {
             let p = format!("mobility.{name}");
@@ -2489,8 +2496,10 @@ impl VehicleDef {
                 ));
             }
         }
+        // S9: a gun tractor may have a [transport] (the crew rides it).
+        let tractor_rides = self.role == VehicleRole::Tractor && self.transport.is_some();
         let transport = self.role == VehicleRole::Transport;
-        match (&self.transport, transport) {
+        match (&self.transport, transport || tractor_rides) {
             (None, true) => out.push(
                 Issue::new("transport", "a `transport` vehicle needs [transport]")
                     .with_hint("[transport] capacity = 10 ..."),
@@ -2501,7 +2510,7 @@ impl VehicleDef {
             )),
             _ => {}
         }
-        if !transport && !self.passenger_slots.is_empty() {
+        if !transport && !tractor_rides && !self.passenger_slots.is_empty() {
             out.push(Issue::new(
                 "passenger_slots",
                 "only role = \"transport\" has passenger slots",
@@ -2917,6 +2926,8 @@ pub struct TowedSetup {
     pub pack_ticks: u32,
     pub hitch_ticks: u32,
     pub relay_trail_ticks: u32,
+    /// Gun origin to trail tip (m).
+    pub tow_bar: Fixed,
 }
 
 /// S9: one resolved service slot (`count` expanded).
@@ -3493,6 +3504,7 @@ pub(crate) fn lower_vehicle(
                 pack_ticks: m.pack_s.unwrap_or(0) * hz,
                 hitch_ticks: m.hitch_s.unwrap_or(0) * hz,
                 relay_trail_ticks: m.relay_trail_s.unwrap_or(0) * hz,
+                tow_bar: Fixed::from_cm(m.tow_bar_cm.unwrap_or(0)),
             }),
         },
         hull: v
@@ -3857,6 +3869,8 @@ pub(crate) fn check_vehicle(
         return Some("vehicles.faction: index out of range");
     }
     let m = &v.mobility;
+    // S9: a gun too heavy to push has speed 0.
+    let towed_gun = m.kind == MobilityKind::Towed;
     let turn_ok = if m.kind == MobilityKind::Wheeled {
         fx_in(m.turn_radius, 3, 20) && m.turn_radius > Fixed::ZERO && m.turn_deg_s == 0
     } else {
@@ -3871,8 +3885,8 @@ pub(crate) fn check_vehicle(
         || !fx_in(v.sight, 1, 2000)
         || !(1..=1000).contains(&v.spot_size_pct)
         || !fx_in(v.eye_height, 0, 10)
-        || !(m.speed > Fixed::ZERO && fx_in(m.speed, 0, 30))
-        || !(m.reverse > Fixed::ZERO && m.reverse <= m.speed)
+        || !((m.speed > Fixed::ZERO || towed_gun) && fx_in(m.speed, 0, 30))
+        || !((m.reverse > Fixed::ZERO || towed_gun) && m.reverse <= m.speed)
         || !turn_ok
         || !(1..=100).contains(&m.woods_speed_pct)
         || m.slope_loss_pct > 95
@@ -4176,7 +4190,10 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.shields: out of range");
     }
-    if (v.role == VehicleRole::Transport) != v.transport.is_some() {
+    // S9: a gun tractor may carry the crew.
+    if (v.role == VehicleRole::Transport)
+        != (v.transport.is_some() && v.role != VehicleRole::Tractor)
+    {
         return Some("vehicles.transport: exactly on a transport");
     }
     if let Some(t) = &v.transport {

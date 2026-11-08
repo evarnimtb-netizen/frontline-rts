@@ -194,6 +194,10 @@ pub struct SquadDef {
     /// (default 100). S7: 0 = the AI never buys the card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_weight: Option<u32>,
+    /// S9: the vehicle card that comes with this gun card: its price adds
+    /// to the card's and the tow arrives hitched with the crew riding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tow: Option<String>,
     /// S4: HUD tile name, at most 14 characters (default `name`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short_name: Option<String>,
@@ -1501,6 +1505,9 @@ pub struct DigProfilesDef {
     pub hq_pit: Option<DigProfileDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dump_pit: Option<DigProfileDef>,
+    /// S9: an AT gun pit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gun_pit: Option<DigProfileDef>,
 }
 
 /// A dug cross-section: a flat floor, walls sloping out to the lip, and a
@@ -2558,6 +2565,7 @@ impl RulesDef {
             ("mortar_pit", pits.mortar_pit.as_ref()),
             ("hq_pit", pits.hq_pit.as_ref()),
             ("dump_pit", pits.dump_pit.as_ref()),
+            ("gun_pit", pits.gun_pit.as_ref()),
         ]
         .into_iter()
         .filter_map(|(n, d)| d.map(|d| (n, d)))

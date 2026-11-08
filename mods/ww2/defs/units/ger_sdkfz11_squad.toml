@@ -1,0 +1,11 @@
+# The Sd.Kfz. 11 gun tractor card (S9; roster row: 180 MP, 45 s, pop 2,
+# cap 2, unlock 0:00). The Pak 40 card brings one of these with it. AI
+# weight 0 until Build C.
+id = "ww2:ger_sdkfz11_squad"
+name = "Sd.Kfz. 11"
+short_name = "Sd.Kfz. 11"
+faction = "ww2:germany"
+tags = ["vehicle"]
+vehicle = "ww2:ger_sdkfz11"
+ai_weight = 0
+max_alive = 2

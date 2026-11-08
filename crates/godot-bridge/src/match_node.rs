@@ -1888,6 +1888,7 @@ impl MatchRuntime {
                 "mortar_pit" => &profile(&rules.mortar_pit),
                 "hq_pit" => &profile(&rules.hq_pit),
                 "dump_pit" => &profile(&rules.dump_pit),
+                "gun_pit" => &profile(&rules.gun_pit),
             },
             // S6: crate feed distance and the HUD low marker.
             "supply" => &vdict! {

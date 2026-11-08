@@ -3307,6 +3307,9 @@ impl MatchState {
             && sl.man == Some(id)
         {
             sl.man = None;
+            if let Some(p) = self.players.get_mut(owner) {
+                p.s9.gun_crew_lost = p.s9.gun_crew_lost.saturating_add(1);
+            }
         }
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();

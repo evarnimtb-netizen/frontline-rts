@@ -1,12 +1,14 @@
 //! S9 armour-test cases (`docs/slices/S9-at-guns.md` 15): MG against a
 //! shielded crew (33), the ambush (34 Pak 40 v Sherman, 35 57 mm v Pz IV),
-//! the gun optic inside the arc (37). Build B and C add 36, 38-40.
+//! the gun optic inside the arc (37), recrew and capture (38), mobility
+//! and the tow (39), the gun pit (40). Build C adds 36.
 
 use anyhow::{Result, anyhow};
 use frontline_content::vehicle::VehicleSetup;
 use frontline_sim::scenarios::{at, dir_deg, members};
 use frontline_sim::unit::StanceOrder;
-use frontline_sim::{ArmourEventKind, Fx, FxVec2, FxVec3, PenResult, SimId, World};
+use frontline_sim::vehicle::GunState;
+use frontline_sim::{ArmourEventKind, EntityKind, Fx, FxVec2, FxVec3, PenResult, PlayerId, SimId, World};
 
 use super::{
     CaseReport, CommandKind, Env, disabled, hz, open_top_world, order, pos, spawn_card, vstate,
@@ -64,6 +66,15 @@ enum Fire {
 /// stopped on the gun, rounds fired)`. Every man is made whole after each
 /// round, so the count is hits per round and never saturates.
 fn mg_series(env: &Env, seed: u64, flip: u8, mode: Fire) -> Result<(u64, u64, u64)> {
+    mg_series_at(env, seed, flip, mode, false)
+}
+
+/// Case 40's frontal MG series with the gun in a dug pit.
+fn mg_series_in_pit(env: &Env, seed: u64, flip: u8) -> Result<(u64, u64, u64)> {
+    mg_series_at(env, seed, flip, Fire::Front, true)
+}
+
+fn mg_series_at(env: &Env, seed: u64, flip: u8, mode: Fire, pit: bool) -> Result<(u64, u64, u64)> {
     const ROUNDS: u64 = 500;
     const RANGE_M: i32 = 200;
     let (own, gun_card, crew_card) = gun_side(flip);
@@ -71,6 +82,12 @@ fn mg_series(env: &Env, seed: u64, flip: u8, mode: Fire) -> Result<(u64, u64, u6
     let mut w = open_top_world(env, seed)?;
     let gun_at = at(500, 500);
     let (_, v) = spawn_card(&mut w, own, gun_card, gun_at, dir_deg(0))?;
+    if pit {
+        w.dig_pit_now(
+            &[at(496, 500), at(500, 500)],
+            frontline_content::DigProfile::GunPit,
+        );
+    }
     let def = gun_def(&w, v)?.clone();
     let served = vstate(&w, v)
         .and_then(|x| x.served)
@@ -128,8 +145,10 @@ fn mg_series(env: &Env, seed: u64, flip: u8, mode: Fire) -> Result<(u64, u64, u6
         let aim = chest
             + (right * Fx::from_milli((ny * 1000.0) as i32))
                 .extend(Fx::from_milli((nz * 1000.0) as i32));
-        let from =
-            (chest.xy() + dir * Fx::from_int(RANGE_M)).extend(chest.z + Fx::from_ratio(1, 10));
+        // In a pit the MG stands on the ground around it, not on the floor.
+        let ground = if pit { Fx::from_ratio(55, 100) } else { Fx::ZERO };
+        let from = (chest.xy() + dir * Fx::from_int(RANGE_M))
+            .extend(chest.z + Fx::from_ratio(1, 10) + ground);
         let hp0: Vec<u16> = men
             .iter()
             .map(|&a| w.entities().combat()[a.index()].hp)
@@ -395,6 +414,471 @@ pub(super) fn case37(env: &Env) -> Result<CaseReport> {
         f64::from(out),
         "<= 350 (no optic: sight 175 m x the tank's 200 %)",
         "60 deg off the front (outside the +-32 deg arc)".to_string(),
+    );
+    Ok(r)
+}
+
+fn gun_state(w: &World, g: SimId) -> Option<GunState> {
+    vstate(w, g).and_then(|v| v.served).map(|s| s.state)
+}
+
+/// Runs until `f` holds (at most `max_s` s); the seconds it took.
+fn time_until(w: &mut World, max_s: u32, mut f: impl FnMut(&World) -> bool) -> Option<f64> {
+    let rate = hz(w) as f64;
+    let start = w.tick();
+    while ((w.tick() - start) as f64) < max_s as f64 * rate {
+        if f(w) {
+            return Some((w.tick() - start) as f64 / rate);
+        }
+        w.step(&[]);
+    }
+    None
+}
+
+fn shells_def(w: &World, player: u8) -> Result<u16> {
+    let s = w.match_setup().ok_or_else(|| anyhow!("setup"))?;
+    let f = s.players[player as usize].faction;
+    s.stocks
+        .iter()
+        .position(|d| {
+            d.faction == f
+                && d.kind == frontline_content::setup::StockKind::Crate
+                && d.supply == Some(frontline_content::setup::SupplyKind::Shells)
+        })
+        .map(|k| k as u16)
+        .ok_or_else(|| anyhow!("no shells crate"))
+}
+
+/// One capture run: `(swap s, neutral s, served, own-crate rounds, gun's
+/// faction crate rounds, fired rounds left)`.
+fn capture_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, bool, i64, i64, bool)> {
+    let (own, card, _) = gun_side(flip);
+    let enemy = 1 - own;
+    let mut w = open_top_world(env, seed)?;
+    let at0 = at(400, 500);
+    let (_, g) = spawn_card(&mut w, own, card, at0, dir_deg(0))?;
+    for _ in 0..hz(&w) {
+        w.step(&[]);
+    }
+    let slots = |w: &World| vstate(w, g).and_then(|v| v.served).map(|s| s.slots);
+    // The swap.
+    let gunner = slots(&w).and_then(|s| s[0].man).ok_or_else(|| anyhow!("no gunner"))?;
+    w.kill_soldier(gunner);
+    w.step(&[]);
+    let swap = time_until(&mut w, 12, |w: &World| {
+        slots(w).is_some_and(|s| s[0].man.is_some() && s[0].swap == 0)
+    })
+    .ok_or_else(|| anyhow!("no swap"))?;
+    // All dead: neutral.
+    for s in slots(&w).unwrap_or_default() {
+        if let Some(m) = s.man {
+            w.kill_soldier(m);
+        }
+    }
+    let neutral = time_until(&mut w, 30, |w: &World| {
+        w.entities().kind()[g.index()] == EntityKind::Abandoned
+    })
+    .ok_or_else(|| anyhow!("never neutral"))?;
+    // An enemy rifle squad serves it.
+    let card_e = if enemy == 0 {
+        "ww2:ger_grenadiergruppe"
+    } else {
+        "ww2:usa_rifle_squad"
+    };
+    let (rifles, _) = (spawn_soldiers(&mut w, enemy, card_e, at(405, 500))?, ());
+    order(
+        &mut w,
+        enemy,
+        vec![CommandKind::Recrew {
+            squad: rifles,
+            vehicle: g,
+        }],
+    );
+    let served = time_until(&mut w, 40, |w: &World| {
+        w.entities().kind()[g.index()] == EntityKind::Vehicle
+            && w.entities().owner()[g.index()] == PlayerId(enemy)
+            && slots(w).is_some_and(|s| s.iter().any(|x| x.man.is_some()))
+    })
+    .is_some();
+    let ammo = |w: &World| vstate(w, g).map_or(0, |v| v.ammo[0] as i64);
+    // The captor's own crate does not fit; a crate of the gun's faction does.
+    let n0 = ammo(&w);
+    w.edit_vehicle(g, |vs| vs.ammo[0] = (n0 as u16).saturating_sub(5));
+    let spent = ammo(&w);
+    let own_d = shells_def(&w, enemy)?;
+    w.add_crate_now(PlayerId(enemy), own_d, at(401, 500));
+    let rate = hz(&w);
+    for _ in 0..30 * rate {
+        w.step(&[]);
+    }
+    let own_rounds = ammo(&w) - spent;
+    let gun_d = shells_def(&w, own)?;
+    w.add_crate_now(PlayerId(enemy), gun_d, at(399, 500));
+    for _ in 0..60 * rate {
+        w.step(&[]);
+    }
+    let gun_rounds = ammo(&w) - spent - own_rounds;
+    // The rounds at the gun fire at the old owner's tank in the arc.
+    let tank = if own == 0 { GER_TANK } else { USA_TANK };
+    let (_, _t) = spawn_card(&mut w, own, tank, at(610, 500), dir_deg(180))?;
+    let left0 = ammo(&w);
+    let mut fired = false;
+    for _ in 0..40 * rate {
+        w.step(&[]);
+        if ammo(&w) < left0
+            || w
+                .snapshot()
+                .armour_events
+                .iter()
+                .any(|e| e.kind == ArmourEventKind::Fired as u8 && e.vehicle == g.0)
+        {
+            fired = true;
+            break;
+        }
+    }
+    Ok((swap, neutral, served, own_rounds, gun_rounds, fired))
+}
+
+/// Spawns the soldier card `card` and returns its squad.
+fn spawn_soldiers(w: &mut World, p: u8, card: &str, c: FxVec2) -> Result<frontline_sim::SquadId> {
+    let t = w
+        .match_setup()
+        .and_then(|s| s.squad_type_index(card))
+        .ok_or_else(|| anyhow!("no card {card}"))?;
+    w.spawn_squad_at(PlayerId(p), t, c, dir_deg(0))
+        .ok_or_else(|| anyhow!("cannot spawn {card}"))
+}
+
+/// Case 38 (T77, done-when 3): swap, neutral, an enemy squad serves the
+/// gun, and the captured gun's ammunition rule.
+pub(super) fn case38(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(38, "recrew, abandon and capture");
+    let (mut swap, mut neu, mut own_c, mut gun_c) = (0.0, 0.0, 0i64, 0i64);
+    let (mut served, mut fired, mut n) = (0u32, 0u32, 0u32);
+    let mut gun_refilled = 0u32;
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (a, b, s, oc, gc, f) = capture_run(env, seed * 31 + flip as u64, flip)?;
+        swap += a;
+        neu += b;
+        served += s as u32;
+        own_c += oc;
+        gun_c += gc;
+        gun_refilled += (gc > 0) as u32;
+        fired += f as u32;
+        n += 1;
+    }
+    let n1 = f64::from(n.max(1));
+    let (swap, neu) = (swap / n1, neu / n1);
+    let served_pct = 100.0 * f64::from(served) / n1;
+    let fired_pct = 100.0 * f64::from(fired) / n1;
+    let refill_pct = 100.0 * f64::from(gun_refilled) / n1;
+    r.check_v(
+        "slot_swap_s",
+        (2.5..=3.5).contains(&swap),
+        round3(swap),
+        "2.5..3.5",
+        format!("mean over {n} runs"),
+    );
+    r.check_v(
+        "neutral_after_s",
+        (9.0..=12.0).contains(&neu),
+        round3(neu),
+        "9..12",
+        "every man dead to neutral".to_string(),
+    );
+    r.check_v(
+        "enemy_serves_pct",
+        served_pct >= 100.0,
+        round3(served_pct),
+        ">= 100",
+        "enemy rifle squad's Recrew".to_string(),
+    );
+    r.check_v(
+        "own_crate_rounds",
+        own_c == 0,
+        own_c as f64,
+        "0",
+        "the captor's own crate never fits".to_string(),
+    );
+    r.check_v(
+        "gun_faction_crate_rounds",
+        gun_c >= 1,
+        gun_c as f64,
+        ">= 1",
+        format!("{refill_pct:.0} % of runs drew from a crate of the gun's own faction"),
+    );
+    r.check_v(
+        "left_rounds_fired_pct",
+        fired_pct >= 100.0,
+        round3(fired_pct),
+        ">= 100",
+        "the captured gun fires the rounds left at it".to_string(),
+    );
+    Ok(r)
+}
+
+/// One mobility run: `(emplace s, pack s, re-lay s, push m/s, tow m/s,
+/// crew on the tow)`.
+fn mobility_run(env: &Env, seed: u64, flip: u8) -> Result<(f64, f64, f64, f64, f64, bool)> {
+    let (own, card, _) = gun_side(flip);
+    let tow_card = if own == 0 {
+        "ww2:ger_sdkfz11_squad"
+    } else {
+        "ww2:usa_m3a1_squad"
+    };
+    let limber = |w: &mut World, g: SimId| {
+        w.edit_vehicle(g, |vs| {
+            if let Some(sv) = vs.served.as_mut() {
+                sv.state = GunState::Limbered;
+            }
+        });
+    };
+    let c = at(400, 500);
+    // Times: emplace, re-lay, pack.
+    let mut w = open_top_world(env, seed)?;
+    let (_, g) = spawn_card(&mut w, own, card, c, dir_deg(0))?;
+    for _ in 0..hz(&w) {
+        w.step(&[]);
+    }
+    limber(&mut w, g);
+    order(
+        &mut w,
+        own,
+        vec![CommandKind::Emplace {
+            guns: vec![g],
+            facing: at(800, 500),
+        }],
+    );
+    let emplace = time_until(&mut w, 60, |w: &World| gun_state(w, g) == Some(GunState::Emplaced))
+        .ok_or_else(|| anyhow!("never emplaced"))?;
+    order(
+        &mut w,
+        own,
+        vec![CommandKind::FaceUnits {
+            units: vec![g],
+            toward: at(400, 900),
+        }],
+    );
+    w.step(&[]);
+    let relay = time_until(&mut w, 40, |w: &World| {
+        vstate(w, g).and_then(|v| v.served).is_some_and(|s| s.relay_ticks == 0)
+    })
+    .ok_or_else(|| anyhow!("never re-laid"))?;
+    order(&mut w, own, vec![CommandKind::PackGun { guns: vec![g] }]);
+    let pack = time_until(&mut w, 40, |w: &World| gun_state(w, g) == Some(GunState::Limbered))
+        .ok_or_else(|| anyhow!("never packed"))?;
+    // Push.
+    let mut w = open_top_world(env, seed)?;
+    let (_, g) = spawn_card(&mut w, own, card, c, dir_deg(0))?;
+    for _ in 0..hz(&w) {
+        w.step(&[]);
+    }
+    limber(&mut w, g);
+    order(
+        &mut w,
+        own,
+        vec![CommandKind::PushGun {
+            guns: vec![g],
+            point: at(460, 500),
+        }],
+    );
+    for _ in 0..3 * hz(&w) {
+        w.step(&[]);
+    }
+    let p0 = pos(&w, g);
+    for _ in 0..10 * hz(&w) {
+        w.step(&[]);
+    }
+    let push = f64::from((pos(&w, g) - p0).length().to_f32()) / 10.0;
+    // Hitch, ride, tow.
+    let mut w = open_top_world(env, seed)?;
+    let (_, g) = spawn_card(&mut w, own, card, c, dir_deg(0))?;
+    let (tq, tow) = spawn_card(&mut w, own, tow_card, at(392, 500), dir_deg(180))?;
+    for _ in 0..hz(&w) {
+        w.step(&[]);
+    }
+    limber(&mut w, g);
+    order(
+        &mut w,
+        own,
+        vec![CommandKind::Hitch {
+            guns: vec![g],
+            tow,
+        }],
+    );
+    time_until(&mut w, 40, |w: &World| gun_state(w, g) == Some(GunState::Hitched))
+        .ok_or_else(|| anyhow!("never hitched"))?;
+    for _ in 0..25 * hz(&w) {
+        w.step(&[]);
+    }
+    let crew = gun_def(&w, g)?.service.len();
+    let rode = w.game().is_some_and(|g| g.riders_of(tow).len() == crew);
+    order(
+        &mut w,
+        own,
+        vec![CommandKind::Move {
+            squad: tq,
+            target: at(50, 500),
+        }],
+    );
+    for _ in 0..8 * hz(&w) {
+        w.step(&[]);
+    }
+    let t0 = pos(&w, tow);
+    for _ in 0..10 * hz(&w) {
+        w.step(&[]);
+    }
+    let tow_speed = f64::from((pos(&w, tow) - t0).length().to_f32()) / 10.0;
+    let hit = vstate(&w, g).and_then(|v| v.served).is_some_and(|s| s.state == GunState::Hitched);
+    Ok((emplace, pack, relay, push, if hit { tow_speed } else { 0.0 }, rode))
+}
+
+/// Case 39 (T78): the mobility times, push speed and the tow.
+pub(super) fn case39(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(39, "mobility and the tow");
+    let mut sum = [0.0f64; 5];
+    let (mut rode, mut n) = (0u32, 0u32);
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (e, p, l, s, t, c) = mobility_run(env, seed * 37 + flip as u64, flip)?;
+        for (x, v) in sum.iter_mut().zip([e, p, l, s, t]) {
+            *x += v;
+        }
+        rode += c as u32;
+        n += 1;
+    }
+    let n1 = f64::from(n.max(1));
+    let mean = |k: usize| sum[k] / n1;
+    let (e, p, l, s, t) = (mean(0), mean(1), mean(2), mean(3), mean(4));
+    r.check_v(
+        "emplace_s",
+        (27.0..=33.0).contains(&e),
+        round3(e),
+        "27..33 (Pak 40 30 s; 57 mm 25 s)",
+        format!("mean of {n} runs, both guns"),
+    );
+    r.check_v(
+        "pack_s",
+        (15.0..=21.0).contains(&p),
+        round3(p),
+        "15..21",
+        format!("mean of {n} runs"),
+    );
+    r.check_v(
+        "pushed_cm_s_full_crew",
+        (30.0..=40.0).contains(&(s * 100.0)),
+        round3(s * 100.0),
+        "30..40",
+        format!("over 10 s, flat firm ground, mean of {n} runs"),
+    );
+    r.check_v(
+        "hitched_tow_cm_s",
+        t * 100.0 >= 400.0,
+        round3(t * 100.0),
+        ">= 400",
+        "hitched, flat ground, the tow at its capped speed".to_string(),
+    );
+    r.check_v(
+        "relay_trail_s",
+        (12.0..=18.0).contains(&l),
+        round3(l),
+        "12..18",
+        format!("FaceUnits re-lay, mean of {n} runs"),
+    );
+    let rode_pct = 100.0 * f64::from(rode) / n1;
+    r.check_v(
+        "crew_ride_tow_pct",
+        rode_pct >= 100.0,
+        round3(rode_pct),
+        ">= 100",
+        "the whole crew aboard after the Hitch".to_string(),
+    );
+    Ok(r)
+}
+
+/// One pit series: AP rounds aimed at the carriage from 200 m in front,
+/// one gun per round (a penetration can wreck it); `(rounds that struck
+/// the gun at all, rounds that struck its shield)`. From the front the
+/// shield covers the axle, so what the pit changes is whether the round
+/// reaches the gun at all: earth instead of carriage (3.10).
+fn carriage_hits(env: &Env, seed: u64, flip: u8, in_pit: bool) -> Result<(u64, u64)> {
+    const ROUNDS: u64 = 12;
+    let (own, card, _) = gun_side(flip);
+    let enemy = 1 - own;
+    let c = at(150, 500);
+    let (mut carriage, mut other) = (0, 0);
+    for k in 0..ROUNDS {
+        let mut w = open_top_world(env, seed + k)?;
+        w.enable_hit_log();
+        let (_, g) = spawn_card(&mut w, own, card, c, dir_deg(0))?;
+        if in_pit {
+            w.dig_pit_now(
+                &[at(146, 500), at(150, 500)],
+                frontline_content::DigProfile::GunPit,
+            );
+        }
+        for _ in 0..hz(&w) {
+            w.step(&[]);
+        }
+        let weapon = weapon_idx(&w, "ww2:kwk40_l48")?;
+        let ammo = w
+            .match_setup()
+            .and_then(|s| s.ammo.iter().position(|a| a.id == "ww2:75mm_pzgr39"))
+            .ok_or_else(|| anyhow!("no round"))? as u16;
+        let ground = w.entities().transform()[g.index()].pos.z;
+        // Aimed at the axle, 45 cm over the gun's ground, plus 31 cm for
+        // the drop over 200 m (the tool has no compensation).
+        let dy = Fx::from_ratio((k % 7) as i64 - 3, 5);
+        let aim = c.extend(ground + Fx::from_ratio(76, 100))
+            + FxVec3::new(Fx::ZERO, dy, Fx::ZERO);
+        let origin = at(350, 500);
+        let from = origin.extend(w.terrain().height_at(origin) + Fx::from_ratio(15, 10));
+        if !w.fire_shell_now(enemy, weapon, ammo, from, aim) {
+            continue;
+        }
+        for _ in 0..hz(&w) {
+            w.step(&[]);
+        }
+        let log = w.take_hit_log();
+        let first = log.iter().find(|h| h.vehicle == g).map(|h| h.part.0);
+        carriage += u64::from(first.is_some());
+        other += u64::from(first == Some(1));
+    }
+    Ok((carriage, other))
+}
+
+/// Case 40 (T79): the pit: shots at the carriage strike the parapet; the
+/// crew's losses in a pit, reported against the open.
+pub(super) fn case40(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(40, "the AT gun pit");
+    let (mut open_c, mut pit_c, mut other) = (0u64, 0u64, 0u64);
+    let (mut pit_mg, mut open_mg) = (0u64, 0u64);
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (c0, _) = carriage_hits(env, seed * 41 + flip as u64, flip, false)?;
+        let (c1, o) = carriage_hits(env, seed * 41 + flip as u64, flip, true)?;
+        open_c += c0;
+        pit_c += c1;
+        other += o;
+        open_mg += mg_series(env, seed * 43 + flip as u64, flip, Fire::Front)?.0;
+        pit_mg += mg_series_in_pit(env, seed * 43 + flip as u64, flip)?.0;
+    }
+    let pct = 100.0 * pit_c as f64 / open_c.max(1) as f64;
+    r.check_v(
+        "pit_carriage_hits_pct",
+        pct <= 20.0,
+        round3(pct),
+        "<= 20",
+        format!("{pit_c} of the rounds aimed at the carriage reached the gun in a pit, {open_c} in the open ({other} shield)"),
+    );
+    let mg_pct = 100.0 * pit_mg as f64 / open_mg.max(1) as f64;
+    r.check_v(
+        "pit_crew_losses_pct_of_open",
+        true,
+        round3(mg_pct),
+        "report",
+        format!("{pit_mg} MG hits on the crew in a pit, {open_mg} with the gun in the open"),
     );
     Ok(r)
 }

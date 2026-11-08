@@ -849,8 +849,11 @@ impl MatchState {
                 continue;
             }
             let owner = ents.owner[id.index()].0 as usize;
+            // S9: a captured gun is not rearmed by its captor's base.
+            let faction = self.setup.players[owner].faction;
             let vs = self.vehicles.get_mut(&id).expect("listed");
-            if vs.base_ticks == 0 {
+            let vd = &self.setup.vehicles[vs.type_idx as usize];
+            if vs.base_ticks == 0 || (vd.served() && vd.faction != faction) {
                 vs.supply_due = 0;
                 continue;
             }

@@ -210,4 +210,20 @@ pub enum CommandKind {
         count: u8,
         kind: SupplyKind,
     },
+    // ---- S9 guns (`crate::guns`). `guns` holds 1 to `unit::MAX_UNITS` of
+    // the player's served guns (sorted and deduplicated when applied;
+    // others are dropped).
+    /// Emplace limbered guns facing the point `facing`: the crew work
+    /// `emplace_s`, the gun cannot move and fires when done.
+    Emplace { guns: Vec<SimId>, facing: FxVec2 },
+    /// Pack emplaced guns (limbered after `pack_s`).
+    PackGun { guns: Vec<SimId> },
+    /// The crew push limbered guns to `point` (on wheels, speed by men).
+    PushGun { guns: Vec<SimId>, point: FxVec2 },
+    /// Hitch the limbered gun nearest tow `tow` to it.
+    Hitch { guns: Vec<SimId>, tow: SimId },
+    /// Unhitch: `hitch_s`, the crew get down, the gun limbered.
+    Unhitch { guns: Vec<SimId> },
+    /// Hold fire until a target is within `range_m` (0: off; capped).
+    SetAmbush { guns: Vec<SimId>, range_m: u16 },
 }

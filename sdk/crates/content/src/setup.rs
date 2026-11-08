@@ -350,6 +350,8 @@ pub struct RulesSetup {
     pub mortar_pit: DigSetup,
     pub hq_pit: DigSetup,
     pub dump_pit: DigSetup,
+    /// S9: an AT gun pit.
+    pub gun_pit: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
     /// Vehicle rules (S3).
@@ -379,6 +381,7 @@ impl RulesSetup {
             DigProfile::MortarPit => &self.mortar_pit,
             DigProfile::HqPit => &self.hq_pit,
             DigProfile::DumpPit => &self.dump_pit,
+            DigProfile::GunPit => &self.gun_pit,
         }
     }
 }
@@ -410,6 +413,8 @@ pub enum DigProfile {
     HqPit = 3,
     /// S6: an ammunition dump's pit.
     DumpPit = 4,
+    /// S9: an AT gun pit (all-round spoil, engineers only).
+    GunPit = 5,
 }
 
 impl DigProfile {
@@ -417,7 +422,7 @@ impl DigProfile {
     pub fn is_pit(self) -> bool {
         matches!(
             self,
-            DigProfile::MortarPit | DigProfile::HqPit | DigProfile::DumpPit
+            DigProfile::MortarPit | DigProfile::HqPit | DigProfile::DumpPit | DigProfile::GunPit
         )
     }
 }
@@ -1084,6 +1089,9 @@ pub struct SquadTypeSetup {
     /// vehicle's (or the card's) cost, cooldowns, speed and sight;
     /// [`Self::pop`] is the vehicle's.
     pub vehicle: Option<u16>,
+    /// S9: the tow's card (index into `MatchSetup::squad_types`), bought
+    /// and spawned with this gun card (`cost` already includes its price).
+    pub tow_card: Option<u16>,
     /// S4: tags (indices into [`MatchSetup::tags`], ascending).
     pub tags: Vec<u16>,
     /// S4: [`Capability`] bits.
@@ -1484,7 +1492,7 @@ impl ModDefs {
             v.dedup();
             v
         };
-        let squad_types: Vec<SquadTypeSetup> = self
+        let mut squad_types: Vec<SquadTypeSetup> = self
             .squads
             .values()
             .filter(|s| !s.is_abstract)
@@ -1526,6 +1534,10 @@ impl ModDefs {
                         dig_rate_pct: 0,
                         steadiness_pct: crate::defs::DEFAULT_STEADINESS_PCT,
                         vehicle: Some(v),
+                        tow_card: s
+                            .tow
+                            .as_ref()
+                            .and_then(|t| index_of(self.playable_ids(), t)),
                         tags: tags_of(s),
                         caps: caps_of(s),
                         training: training_idx(s),
@@ -1623,6 +1635,7 @@ impl ModDefs {
                     dig_rate_pct: s.dig_rate_pct,
                     steadiness_pct: s.steadiness_pct,
                     vehicle: None,
+                    tow_card: None,
                     tags: tags_of(s),
                     caps: caps_of(s),
                     training: training_idx(s),
@@ -1634,6 +1647,13 @@ impl ModDefs {
                 }
             })
             .collect();
+        // S9 (S9-2 (A)): a gun card with a tow pays gun + tow.
+        for i in 0..squad_types.len() {
+            if let Some(t) = squad_types[i].tow_card {
+                let tow_cost = squad_types[t as usize].cost;
+                squad_types[i].cost += tow_cost;
+            }
+        }
         let squad_idx = |id: &String| index_of(self.playable_ids(), id).unwrap_or(0);
         // S4: the match date drops cards it is outside of from the rosters.
         let date = crate::variant::parse_month(&rules.call_in.date);
@@ -1759,6 +1779,7 @@ impl ModDefs {
                 mortar_pit: pit_setup(&rules.dig, |p| p.mortar_pit.as_ref()),
                 hq_pit: pit_setup(&rules.dig, |p| p.hq_pit.as_ref()),
                 dump_pit: pit_setup(&rules.dig, |p| p.dump_pit.as_ref()),
+                gun_pit: pit_setup(&rules.dig, |p| p.gun_pit.as_ref()),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -2407,7 +2428,14 @@ impl MatchSetup {
             "rules.movement.trench_cost_pct",
             "out of range",
         );
-        for d in [&r.dig, &r.at_ditch, &r.mortar_pit, &r.hq_pit, &r.dump_pit] {
+        for d in [
+            &r.dig,
+            &r.at_ditch,
+            &r.mortar_pit,
+            &r.hq_pit,
+            &r.dump_pit,
+            &r.gun_pit,
+        ] {
             check(
                 d.pit_line >= Fixed::ZERO && fx_in(d.pit_line, 0, 20),
                 "rules.dig.pit_line",
@@ -3038,6 +3066,28 @@ impl MatchSetup {
                     .all(|&i| !self.type_has_tag(i, "crew")),
                 "factions.roster",
                 "a crew squad cannot be bought or start on the field",
+            );
+        }
+        // S9: a card's tow is a vehicle card of a tow vehicle of its faction
+        // that can pull this gun.
+        for s in &self.squad_types {
+            let Some(t) = s.tow_card else { continue };
+            let gun = s.vehicle.and_then(|v| self.vehicles.get(v as usize));
+            let tow = self.squad_types.get(t as usize);
+            let tv = tow
+                .and_then(|t| t.vehicle)
+                .and_then(|v| self.vehicles.get(v as usize));
+            check(
+                match (gun, tow, tv) {
+                    (Some(g), Some(t), Some(tv)) => {
+                        g.served()
+                            && t.faction == s.faction
+                            && tv.tow.is_some_and(|d| d.max_kg >= g.mass_kg)
+                    }
+                    _ => false,
+                },
+                "squad_types.tow",
+                "a card's tow must be a vehicle card of its faction that can pull the gun",
             );
         }
         for v in &self.vehicles {

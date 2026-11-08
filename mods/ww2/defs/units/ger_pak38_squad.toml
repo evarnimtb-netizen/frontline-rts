@@ -1,0 +1,11 @@
+# The Pak 38 card (S9): the gun and its crew; second-line, no tow: it is
+# pushed (roster row: 260 MP, 60 s). AI weight 0 (S9-15 (A)).
+id = "ww2:ger_pak38_squad"
+name = "5 cm Pak 38"
+short_name = "Pak 38"
+faction = "ww2:germany"
+tags = ["vehicle"]
+vehicle = "ww2:ger_pak38"
+ai_weight = 0
+# S9-13 (A): at most 2 alive.
+max_alive = 2

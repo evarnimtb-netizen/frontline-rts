@@ -1,0 +1,22 @@
+# 3-inch Gun M5 (S9, data only, guns-artillery.md 5.2, 6): the M10's gun on a
+# towed carriage. Rounds are on the vehicle mount.
+id = "ww2:m5_3in"
+name = "3-inch Gun M5"
+class = "cannon"
+# Engagement range (m), as the tank guns.
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 12
+magazine = 1
+# Hand-loaded 3-inch fixed rounds, heavier than the 75 mm: as the KwK 40's
+# 6.5 s (ms; the crew rules scale it).
+reload_ms = 5000
+# 2.5 mrad stationary (urad), as the tank guns.
+spread_urad = 2500
+# 2,600 ft/s with the M62 (Hunnicutt), m/s.
+muzzle_velocity_m_s = 792
+suppression = 30
+# The muzzle blast gives it away: 300 % sight range for 3 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000

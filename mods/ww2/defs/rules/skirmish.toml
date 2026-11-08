@@ -141,6 +141,21 @@ all_round = true
 pit_length_cm = 300
 
 # Dump pit: 2.5 x 2.0 m outside, 1.2 m deep (about 6 m3).
+# S9 AT gun pit: 5 x 3 m (verify), 55 cm deep (S9-9 (A): under the gun's
+# wheel_block_dm 6, so no ramp), all-round spoil, engineers only; about 3 m3 of
+# earth (guns-artillery.md 3.10: about 2 min for 4 engineers).
+[dig.profiles.gun_pit]
+depth_cm = 55
+floor_cm = 300
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 6
+work_per_m = 60000
+passes = 3
+all_round = true
+pit_length_cm = 500
+engineers_only = true
+
 [dig.profiles.dump_pit]
 depth_cm = 120
 floor_cm = 120
@@ -749,6 +764,14 @@ slot_swap_s = 3
 # A man at a slot fires his own weapon only while the gun has no target and an
 # enemy is this close (m; S9-12 (A)).
 self_defence_m = 40
+# Fewest men at the slots who emplace, pack or re-lay a gun (S9, guns-artillery.md 3.3).
+min_men = 2
+# A gun with no man of its owner at a slot and none within this (m) for abandon_s turns neutral.
+hold_m = 15
+# Seconds before an unattended gun turns neutral (guns-artillery.md 3.6).
+abandon_s = 10
+# A tow's hitch point must be within this (m) of the gun's trail tip to hitch it.
+hitch_reach_m = 6
 
 [vehicles.transport]
 # Transports can be called in from this much match time on (s), instead of

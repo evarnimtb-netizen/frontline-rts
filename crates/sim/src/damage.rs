@@ -1472,7 +1472,7 @@ impl MatchState {
         let tick = ctx.tick;
         let r = self.setup.rules.vehicles.clone();
         let hz = self.setup.tick_hz.max(1);
-        self.guns_status(ctx);
+        self.guns_status(ctx, events);
         let ids: Vec<SimId> = self.vehicles.keys().copied().collect();
         let mut ko: Vec<(SimId, u8)> = Vec::new();
         for id in ids {
@@ -1791,7 +1791,11 @@ mod tests {
                 "ww2:ger_opel_blitz" | "ww2:usa_cckw" => (2, 0, 3),
                 // S9 served guns: no seat boxes (the crew are soldiers),
                 // one rack box; gun and recoil.
-                "ww2:ger_pak40" | "ww2:usa_57mm_m1" => (0, 1, 2),
+                "ww2:ger_pak40" | "ww2:usa_57mm_m1" | "ww2:ger_pak38" | "ww2:usa_3in_m5" => {
+                    (0, 1, 2)
+                }
+                // S9 tractor: two crew, no rack; engine and transmission.
+                "ww2:ger_sdkfz11" => (2, 0, 2),
                 _ => (5, 3, 4),
             };
             assert_eq!(racks, bins, "{}", v.id);

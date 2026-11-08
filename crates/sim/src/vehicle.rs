@@ -136,6 +136,7 @@ pub enum GunState {
     Pushing = 4,
     Hitched = 5,
     Hitching = 6,
+    Unhitching = 7,
 }
 
 /// S9: one service slot's occupant.
@@ -167,6 +168,8 @@ pub struct Served {
     pub abandon_ticks: u16,
     /// Ticks left of a trail re-lay (Build B).
     pub relay_ticks: u16,
+    /// The yaw an emplacing or re-laying gun is turning to.
+    pub relay_to: Option<Fx>,
 }
 
 /// One vehicle MG (coax or hull), in mount order after the main gun.
@@ -441,6 +444,7 @@ impl VehicleState {
                 hold_fire_m: 0,
                 abandon_ticks: 0,
                 relay_ticks: 0,
+                relay_to: None,
             }),
             towing: None,
             face: None,
@@ -520,6 +524,14 @@ impl VehicleState {
             || self.on_blocked
             || self.repairing.is_some()
             || self.immobilised(v)
+    }
+
+    /// S9: a served gun may fire only emplaced and not re-laying (every
+    /// other vehicle may).
+    pub fn gun_ready(&self) -> bool {
+        self.served
+            .as_ref()
+            .is_none_or(|s| s.state == GunState::Emplaced && s.relay_ticks == 0)
     }
 
     /// Mechanically unable to move (`vehicle_flags::IMMOBILISED`): no
@@ -1587,7 +1599,7 @@ impl VehicleDerived {
     #[inline]
     pub fn block_of(&self, v: &VehicleSetup) -> &BlockLayer {
         match &self.wheel_block {
-            Some(w) if v.mobility.kind == MobilityKind::Wheeled => w,
+            Some(w) if matches!(v.mobility.kind, MobilityKind::Wheeled | MobilityKind::Towed) => w,
             _ => &self.block,
         }
     }
@@ -1708,11 +1720,20 @@ pub fn drive(
         pct = pct * m.woods_speed_pct as i64 / 100;
     }
     let driver = vs.seat(v, SeatRole::Driver).map_or(0, |s| s.hp as u32);
-    if driver < r.wounded_hp {
-        pct = pct * 80 / 100;
+    // S9: a pushed gun has no driver or engine (parts a def lacks read 0);
+    // a tow with a gun on its hitch is slower.
+    if !v.served() {
+        if driver < r.wounded_hp {
+            pct = pct * 80 / 100;
+        }
+        if (vs.component(ComponentKind::Engine) as u32) < 50 {
+            pct = pct * 50 / 100;
+        }
     }
-    if (vs.component(ComponentKind::Engine) as u32) < 50 {
-        pct = pct * 50 / 100;
+    if vs.towing.is_some()
+        && let Some(t) = &v.tow
+    {
+        pct = pct * t.towed_speed_pct as i64 / 100;
     }
     // S3b: a damaged transmission (below half its HP) halves speed too.
     let gearbox = v
@@ -2162,7 +2183,12 @@ impl MatchState {
         let escorts: Vec<(SimId, Option<Fx>)> = self
             .vehicles
             .keys()
-            .map(|&id| (id, self.escort_speed(ents, id)))
+            .map(|&id| {
+                (
+                    id,
+                    self.push_speed(id).or_else(|| self.escort_speed(ents, id)),
+                )
+            })
             .collect();
         let MatchState {
             setup,
@@ -2178,7 +2204,16 @@ impl MatchState {
             }
             let v = &setup.vehicles[vs.type_idx as usize];
             let geo = &vderived.geo[vs.type_idx as usize];
-            let (throttle, steer) = if v.served() {
+            let pushed = vs
+                .served
+                .as_ref()
+                .is_some_and(|s| s.state == GunState::Pushing);
+            // S9: a gun pushed at walking pace is not "stuck".
+            if pushed {
+                vs.progress_at = ents.transform[i].pos.xy();
+                vs.progress_ticks = 0;
+            }
+            let (throttle, steer) = if v.served() && !pushed {
                 (0, 0)
             } else {
                 match ents.squad[i].and_then(|s| squads.get_mut(&s).map(|q| (s, q))) {
@@ -2242,6 +2277,7 @@ impl MatchState {
                 );
             }
         }
+        self.tow_bars(ents, terrain, hash);
         for (id, owner, pos) in bogged {
             let ev = ArmourEv::new(ArmourEventKind::Bogged, id, owner, NONE_U8).at(pos);
             self.push_event(events, ev);

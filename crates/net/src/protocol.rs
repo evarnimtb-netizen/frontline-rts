@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 /// (the one bump for the S6 slice). 10 (S8a): `Embark` and `Disembark`
 /// (the one bump for the S8a slice). 11 (S8b): `DropCrates` (the one bump
 /// for the S8b slice).
-pub const PROTOCOL_VERSION: u16 = 11;
+pub const PROTOCOL_VERSION: u16 = 12;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;

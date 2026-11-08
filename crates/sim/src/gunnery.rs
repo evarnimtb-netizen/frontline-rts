@@ -445,7 +445,7 @@ impl MatchState {
             // S9: a served gun's recoil system must be whole.
             let gun_ok = gunner
                 && vs.component(ComponentKind::Gun) > 0
-                && (!v.served() || vs.component(ComponentKind::Recoil) > 0)
+                && (!v.served() || (vs.component(ComponentKind::Recoil) > 0 && vs.gun_ready()))
                 && vs.repairing.is_none()
                 && !order_retreat;
             let ap_left = vs.loaded.is_some_and(|k| k != HE)

@@ -872,6 +872,16 @@ tuning_table! {
         /// A man at a slot fires his own weapon only while the gun has no
         /// target and an enemy is this close (m; 0: never).
         self_defence_m: 0..=500 = "default_guns_self_defence_m",
+        /// Fewest men at the slots who emplace, pack or re-lay a gun.
+        min_men: 1..=16 = "default_guns_min_men",
+        /// A gun with no man of its owner at a slot and none within this
+        /// (m) for `abandon_s` turns neutral.
+        hold_m: 1..=200 = "default_guns_hold_m",
+        /// Seconds before an unattended gun turns neutral (S9, 3.6).
+        abandon_s: 1..=600 = "default_guns_abandon_s",
+        /// A tow's hitch point must be within this of the gun's trail tip
+        /// (m) to hitch it.
+        hitch_reach_m: 1..=50 = "default_guns_hitch_reach_m",
     }
 }
 
@@ -881,12 +891,28 @@ fn default_guns_slot_swap_s() -> u32 {
 fn default_guns_self_defence_m() -> u32 {
     40
 }
+fn default_guns_min_men() -> u32 {
+    2
+}
+fn default_guns_hold_m() -> u32 {
+    15
+}
+fn default_guns_abandon_s() -> u32 {
+    10
+}
+fn default_guns_hitch_reach_m() -> u32 {
+    6
+}
 
 impl Default for GunsTuning {
     fn default() -> GunsTuning {
         GunsTuning {
             slot_swap_s: default_guns_slot_swap_s(),
             self_defence_m: default_guns_self_defence_m(),
+            min_men: default_guns_min_men(),
+            hold_m: default_guns_hold_m(),
+            abandon_s: default_guns_abandon_s(),
+            hitch_reach_m: default_guns_hitch_reach_m(),
         }
     }
 }

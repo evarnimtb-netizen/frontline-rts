@@ -1,0 +1,164 @@
+# 3-inch Gun M5 on carriage M1/M6 (S9, data only; guns-artillery.md 5.2, 6): too heavy to
+# push (speed 0), emplaced only until a tow exists for it. Built like the 57 mm M1:
+# 57 mm Gun M1 (S9, docs/slices/S9-at-guns.md 11; guns-artillery.md 5.2, 6): a towed
+# anti-tank gun, a served gun like the Pak 40. Figures with no source in the
+# design documents are marked "verify".
+id = "ww2:usa_3in_m5"
+name = "3-inch Gun M5"
+short_name = "3-inch M5"
+faction = "ww2:usa"
+role = "at_gun"
+crew_model = "served"
+# Mass, kg (guns-artillery.md 5.2).
+mass_kg = 2210
+# Starting price, MP: no roster card yet (data only; verify).
+cost = 400
+pop = 1
+recall_cooldown_s = 90
+initial_cooldown_s = 0
+sight_m = 175
+# A little lower than the Pak 40 (verify).
+spot_size_pct = 85
+# Kneeling behind the sight, cm (verify).
+eye_height_cm = 110
+crew_squad = "ww2:usa_3in_crew"
+# No rare rounds in 1944 stowage (S9-14).
+rare_cap = 0
+sources = ["guns-artillery.md 5.2, 6 (public tables, verify)", "owner roster, S9"]
+
+[mobility]
+type = "towed"
+# Too heavy to push (guns-artillery.md 3.3): re-lay only, cm/s.
+speed_cm_s = 0
+reverse_cm_s = 0
+turn_deg_s = 22
+accel_cm_s2 = 50
+brake_cm_s2 = 200
+max_slope_pct = 15
+ditch_block_dm = 6
+bog_pct = 0
+unbog_s = [0, 0]
+moving_spread_pct = 100
+push_men = 5
+# Seconds to emplace, pack, hitch; lighter than the Pak 40 (verify).
+emplace_s = 40
+pack_s = 25
+hitch_s = 25
+relay_trail_s = 20
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 290
+
+[hull]
+track_band_pct = 0
+track_mm = 0
+
+# Boxes as on the Pak 40: axle, shield (single 6.4 mm plate, verify), trail.
+[[boxes]]
+id = "axle"
+frame = "hull"
+box = { center = [0, 0, 45], half = [15, 90, 20] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "shield"
+frame = "hull"
+box = { center = [40, 0, 80], half = [3, 100, 50] }
+[boxes.armor]
+front = { thickness_mm = 6.4, slope_deg = 15 }
+side = { thickness_mm = 3 }
+rear = { thickness_mm = 3 }
+top = { thickness_mm = 3 }
+
+[[boxes]]
+id = "trail"
+frame = "hull"
+box = { center = [-160, 0, 25], half = [130, 20, 25] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[service]]
+role = "gunner"
+at = [-60, 50, 0]
+pose = "kneel"
+[[service]]
+role = "loader"
+at = [-60, -50, 0]
+pose = "kneel"
+[[service]]
+role = "commander"
+at = [-290, 70, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 85, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 0, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, -85, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-500, 45, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-500, -45, 0]
+pose = "kneel"
+
+# M18 telescope (S9-1 (A): 437 m inside the arc).
+[optic]
+sight_pct = 250
+
+[[weapons]]
+def = "ww2:m5_3in"
+mount = "casemate"
+pivot = [0, 0, 80]
+# L/50 barrel about 2.9 m (verify).
+muzzle = [380, 0, 10]
+# Traverse arc, 90 deg total (guns-artillery.md 5.2).
+traverse_deg = [-22, 22]
+traverse_deg_s = 9
+elevate_deg_s = 6
+elevation_deg = [-5, 15]
+# S9-14 (A): AP only in S9 (M303 HE is late 1944). Stowage 30 rounds (verify).
+ammo = [{ id = "ww2:3in_m62", count = 26 }, { id = "ww2:3in_m42a1", count = 14 }]
+barrel = { length_cm = 260, radius_cm = 4 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [-30, 0, 80], half = [28, 12, 12] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+box = { frame = "hull", center = [-120, -55, 20], half = [25, 25, 15] }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [0, 80, 40] }, { pos = [0, -80, 40] }]
+repair = { to_hp = 60, time_s = 30 }
+
+[[components]]
+type = "sight"
+hp = 30
+anchors = [{ pos = [-15, 28, 105] }]
+repair = { to_hp = 30, time_s = 30 }
+
+[[components]]
+type = "recoil"
+hp = 50
+box = { frame = "hull", center = [10, 0, 70], half = [22, 8, 8] }
+repair = { to_hp = 50, time_s = 40 }

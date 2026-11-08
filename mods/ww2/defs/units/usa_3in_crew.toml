@@ -1,0 +1,29 @@
+# The 3-inch gun's crew (S9, data only: the M5 has no roster card yet):
+# eight men. Order: gunner, loader, section leader, five ammo men.
+id = "ww2:usa_3in_crew"
+name = "3-inch Gun Squad"
+faction = "ww2:usa"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:m1911a1"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:m1_garand"
+
+[[members]]
+slot = "commander"
+weapon = "ww2:m1_garand"
+
+[[members]]
+slot = "ammo"
+count = 5
+weapon = "ww2:m1_garand"

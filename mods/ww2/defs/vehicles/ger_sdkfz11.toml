@@ -1,0 +1,153 @@
+# Sd.Kfz. 11 3-ton half-track tractor (S9; guns-artillery.md 3.3, vehicles.md
+# 6.10, 8.1): unarmoured, tows the Pak 40 and carries its crew. Dimensions and
+# speeds marked "verify": no figure in the design documents.
+id = "ww2:ger_sdkfz11"
+name = "Sd.Kfz. 11"
+short_name = "Sd.Kfz. 11"
+faction = "ww2:germany"
+role = "tractor"
+# Card price, MP (roster row).
+cost = 180
+pop = 2
+recall_cooldown_s = 45
+initial_cooldown_s = 0
+# Open cab, no optics, m.
+sight_m = 150
+# Tall, soft-skinned (a starting value).
+spot_size_pct = 150
+# The driver's eye, cm.
+eye_height_cm = 180
+sources = ["guns-artillery.md 3.3", "vehicles.md 6.10, 8.1", "owner roster, S9 (verify dimensions)"]
+crew_squad = "ww2:ger_tank_crew"
+rare_cap = 0
+weapons = []
+
+# What it can tow (kg): the Pak 40's 1,425 with margin (vehicles.md 6.10 3500; verify).
+# Towed speed = 80 % of its own (verify).
+[tow]
+max_kg = 3500
+towed_speed_pct = 80
+
+[mobility]
+type = "halftrack"
+# Practical cross-country speed, cm/s (verify; road about 53 km/h).
+speed_cm_s = 800
+reverse_cm_s = 250
+turn_deg_s = 24
+accel_cm_s2 = 110
+brake_cm_s2 = 350
+max_slope_pct = 45
+# Crosses trenches, stops at AT ditches, dm (as the 251).
+ditch_block_dm = 19
+bog_pct = 15
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+track_band_pct = 40
+track_mm = 5
+
+# Box 0 lower hull, box 1 engine, box 2 open crew compartment (5.55 x 1.82 x
+# 1.62 m; verify). No armour to speak of: thin sheet steel (all verify).
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 60], half = [277, 91, 30] }
+[boxes.armor]
+front = { thickness_mm = 4 }
+side = { thickness_mm = 4 }
+rear = { thickness_mm = 4 }
+top = { thickness_mm = 4 }
+
+[[boxes]]
+id = "engine"
+frame = "hull"
+box = { center = [200, 0, 115], half = [75, 80, 30] }
+[boxes.armor]
+front = { thickness_mm = 3 }
+side = { thickness_mm = 3 }
+rear = { thickness_mm = 3 }
+top = { thickness_mm = 3 }
+
+[[boxes]]
+id = "compartment"
+frame = "hull"
+box = { center = [-70, 0, 120], half = [205, 88, 40] }
+open = ["top"]
+[boxes.armor]
+front = { thickness_mm = 3 }
+side = { thickness_mm = 3 }
+rear = { thickness_mm = 3 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [90, 40, 115], half = [25, 25, 35] }
+in = "compartment"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [90, -40, 115], half = [25, 25, 35] }
+in = "compartment"
+
+[[components]]
+type = "engine"
+hp = 80
+box = { frame = "hull", center = [200, 0, 110], half = [60, 55, 25] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 80
+anchors = [{ pos = [40, 82, 35] }, { pos = [-120, 82, 35] }, { pos = [-250, 82, 35] }]
+repair = { to_hp = 80, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 80
+anchors = [{ pos = [40, -82, 35] }, { pos = [-120, -82, 35] }, { pos = [-250, -82, 35] }]
+repair = { to_hp = 80, time_s = 30 }
+
+[[components]]
+type = "transmission"
+hp = 80
+box = { frame = "hull", center = [120, 0, 75], half = [40, 30, 20] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [90, 88, 145]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [90, -88, 145]
+exit_ms = 2500
+
+# Eight men on two benches (the gun's crew and one more; the roster's capacity).
+[transport]
+capacity = 8
+# The side step at the rear of the cab, cm.
+entry = [-280, 0, 50]
+board_ms = 1000
+exit_ms = 800
+
+[[passenger_slots]]
+box = { center = [-10, 62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-70, 62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-130, 62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-190, 62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-10, -62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-70, -62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-130, -62, 125], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-190, -62, 125], half = [22, 18, 40] }

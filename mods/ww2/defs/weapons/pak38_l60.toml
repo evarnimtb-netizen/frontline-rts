@@ -1,0 +1,21 @@
+# 5 cm Pak 38 L/60 (S9, guns-artillery.md 5.2, 6): the second-line gun. Rounds
+# are on the vehicle mount.
+id = "ww2:pak38_l60"
+name = "5 cm Pak 38 L/60"
+class = "cannon"
+# Engagement range, m (as the tank guns).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 13 rounds/min (guns-artillery.md 5.2).
+rounds_per_min = 13
+magazine = 1
+# Reload, ms (13 rounds/min; verify).
+reload_ms = 4600
+# 2.5 mrad, urad (verify).
+spread_urad = 2500
+muzzle_velocity_m_s = 823
+suppression = 25
+# Muzzle blast and dust: seen at 300 % of sight for 5 s (verify).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
