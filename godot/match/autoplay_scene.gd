@@ -41,6 +41,9 @@ const SCENES := {
 	# MG shields, seated riders); the 251 selected (its card lists the
 	# passengers).
 	"halftracks": {"height": 14.0, "pitch": -40.0, "yaw": -20.0, "settle": 1.5},
+	# S8b: a 234/1, an M8 and a loaded truck (selected: stock bars, ring,
+	# the Drop button).
+	"recon_trucks": {"height": 15.0, "pitch": -38.0, "yaw": -25.0, "settle": 1.5},
 }
 
 var m: Node3D
@@ -112,6 +115,13 @@ func on_state(s: Dictionary) -> void:
 func _stage(s: Dictionary) -> bool:
 	var own := _own_vehicles(s)
 	match scene:
+		"recon_trucks":
+			# The truck selected: its card has the stock bars and its ring
+			# is drawn.
+			for v in own:
+				if v.has("cargo_kg"):
+					view.selection.select_only(PackedInt32Array([int(v.id)]))
+					view.selection.focus_squad = int(v.squad)
 		"halftracks":
 			# The 251 selected (its card lists the passengers), both in
 			# frame from the scene's focus between them.
@@ -257,6 +267,11 @@ func _check(s: Dictionary) -> String:
 							return ""
 					return "followers but no squads[].follow link"
 			return "no own vehicle with followers"
+		"recon_trucks":
+			var kinds := {}
+			for v in s.get("vehicles", []):
+				kinds[String(v.type)] = true
+			return "" if kinds.size() >= 3 else "%d vehicle types drawn" % kinds.size()
 		"halftracks":
 			var loaded := 0
 			for v in s.get("vehicles", []):

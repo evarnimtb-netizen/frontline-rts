@@ -49,7 +49,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use frontline_content::setup::Capability;
+use frontline_content::setup::{Capability, SupplyKind};
 use frontline_content::{ItemKind, MatchSetup, SeatRole, WeaponClass};
 use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
@@ -109,7 +109,7 @@ const MAX_ARMOUR_BACKLOG: usize = 256;
 /// State names of `ComponentKind::index`, `SeatRole::index`,
 /// zone ids (S7: box × 4 + group; a vehicle type's own names past the
 /// S3 eight) and `ArmourEventKind` (`match_state.md`).
-const COMPONENT_KEYS: [&str; 7] = [
+const COMPONENT_KEYS: [&str; 10] = [
     "engine",
     "track_l",
     "track_r",
@@ -117,6 +117,9 @@ const COMPONENT_KEYS: [&str; 7] = [
     "ring",
     "ammo_rack",
     "transmission",
+    "wheels_f",
+    "wheels_r",
+    "cargo",
 ];
 const SEAT_KEYS: [&str; 5] = ["driver", "gunner", "commander", "loader", "radio_mg"];
 const ARMOUR_KINDS: [&str; 12] = [
@@ -333,6 +336,29 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "seat_ids" => &seat_ids,
         };
         let mut d = d;
+        // S8b: wheels instead of tracks (the blockout: 8 on a long car, 6 on
+        // a truck and a short car), the wire screen, and a truck's cargo box.
+        if v.mobility.kind == frontline_content::vehicle::MobilityKind::Wheeled {
+            let long = 2.0 * fx(hull.half.x);
+            let truck = v.supply.is_some();
+            d.set("wheels", if truck || long < 5.0 { 3i64 } else { 4i64 });
+            d.set("screen", v.boxes.iter().any(|b| b.screen != 0));
+        }
+        if let Some(t) = &v.supply {
+            d.set("transport", true);
+            d.set("no_weapon", true);
+            d.set("supply_radius_m", fx(t.radius));
+            d.set("supply_vehicle_radius_m", fx(t.vehicle_radius));
+            if let Some(c) = v
+                .components
+                .iter()
+                .find(|c| c.kind == frontline_content::ComponentKind::Cargo)
+                .and_then(|c| c.parts.first())
+            {
+                d.set("cargo_center", v3(c.bounds.center));
+                d.set("cargo_half", v3(c.bounds.half));
+            }
+        }
         // S8a: a half-track's blockout (meshgen `transport`): the hull from
         // its boxes, the "turret" its first pintle's shield, the "gun" that
         // MG; the snapshot's turret yaw is the MG's yaw.
@@ -2196,7 +2222,41 @@ impl MatchRuntime {
                 );
             }
             d.set("recall_s", ty.recall_cooldown_ticks as f32 / hz);
-            if ty.vehicle.is_some() && locked_s > 0.0 {
+            // S8b-1: a card outside the limit counts its own `max_alive`
+            // (the tile's badge) and keeps its own unlock.
+            let outside = ty
+                .vehicle
+                .and_then(|v| setup.vehicles.get(v as usize))
+                .is_some_and(|v| v.role.outside_limit());
+            if outside {
+                let alive = ty.vehicle.map_or(0, |vt| {
+                    f.vehicles
+                        .iter()
+                        .filter(|v| {
+                            v.owner as usize == local
+                                && v.type_idx == vt
+                                && v.flags & vehicle_flags::WRECK == 0
+                        })
+                        .count()
+                });
+                d.set("own_cap", true);
+                d.set("alive", alive as i64);
+                d.set("max_alive", ty.max_alive as i64);
+                let vr = &setup.rules.vehicles;
+                let transport = ty
+                    .vehicle
+                    .and_then(|v| setup.vehicles.get(v as usize))
+                    .is_some_and(|v| v.transport.is_some());
+                let unlock = if transport {
+                    ty.initial_cooldown_ticks
+                        .max((vr.transport.unlock_s * setup.tick_hz).min(vr.unlock_ticks))
+                } else {
+                    ty.initial_cooldown_ticks
+                } as u64;
+                if unlock > f.tick {
+                    d.set("locked_s", (unlock - f.tick) as f32 / hz);
+                }
+            } else if ty.vehicle.is_some() && locked_s > 0.0 {
                 d.set("locked_s", locked_s);
             }
             catalog.push(&d.to_variant());
@@ -2465,6 +2525,34 @@ impl MatchRuntime {
                     _ => "",
                 },
             };
+            // S8b: an own truck's stock and its drop order.
+            if own
+                && let Some(t) = self
+                    .setup
+                    .vehicles
+                    .get(v.type_idx as usize)
+                    .and_then(|t| t.supply.as_ref())
+            {
+                let kg = |g: u32| g as f32 / 1000.0;
+                d.set(
+                    "cargo_kg",
+                    &vdict! {
+                        "small_arms" => kg(v.cargo_g[0]),
+                        "explosives" => kg(v.cargo_g[1]),
+                        "shells" => kg(v.cargo_g[2]),
+                    },
+                );
+                d.set("cargo_cap_kg", kg(t.cap_g));
+                d.set(
+                    "load_kg",
+                    &vdict! {
+                        "small_arms" => kg(t.load_g[0]),
+                        "explosives" => kg(t.load_g[1]),
+                        "shells" => kg(t.load_g[2]),
+                    },
+                );
+                d.set("drop_left", v.drop_left as i64);
+            }
             // S8a: an own transport lists its passengers' squads.
             if own && v.capacity > 0 {
                 let mut pass = VarArray::new();
@@ -2528,8 +2616,13 @@ impl MatchRuntime {
                     })
                     .collect();
                 let mut comps = VarDictionary::new();
+                // S8a-27: only the parts this vehicle has (a half-track has
+                // no gun, ring or rack; a wheeled car has wheels).
+                let parts = self.setup.vehicles.get(v.type_idx as usize);
                 for (k, name) in COMPONENT_KEYS.iter().enumerate() {
-                    comps.set(*name, v.components[k] as f32 / 100.0);
+                    if parts.is_none_or(|t| t.components.get(k).is_some_and(|c| c.hp > 0)) {
+                        comps.set(*name, v.components[k] as f32 / 100.0);
+                    }
                 }
                 d.set("crew", &crew);
                 d.set("components", &comps);
@@ -3206,6 +3299,43 @@ impl MatchRuntime {
                     squad: SquadId(s.id),
                     pos: sim_to_fx(to_sim(t, self.half)),
                 }));
+            }
+            // S8b: the selected own trucks go to `target` and set down
+            // `count` crates of `kind`.
+            "drop_crates" => {
+                let Some(t) = target else { return };
+                let kind = match data
+                    .get("kind")
+                    .map(|v| v.to_string())
+                    .unwrap_or_default()
+                    .as_str()
+                {
+                    "small_arms" => SupplyKind::SmallArms,
+                    "explosives" => SupplyKind::Explosives,
+                    _ => SupplyKind::Shells,
+                };
+                let count = data
+                    .get("count")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .unwrap_or(4)
+                    .clamp(1, 8) as u8;
+                let raw = data
+                    .get("units")
+                    .and_then(|v| v.try_to::<PackedInt32Array>().ok())
+                    .unwrap_or_default();
+                let f = self.newest();
+                for &id in raw.as_slice() {
+                    if let Ok(k) = f.vehicles.binary_search_by_key(&(id as u32), |v| v.id)
+                        && f.vehicles[k].owner == self.local
+                    {
+                        out.push(CommandKind::DropCrates {
+                            vehicle: frontline_sim::SimId(id as u32),
+                            point: sim_to_fx(to_sim(t, self.half)),
+                            count,
+                            kind,
+                        });
+                    }
+                }
             }
             // S6: the first selected squad picks up crate `crate`.
             "pick_up_crate" => {

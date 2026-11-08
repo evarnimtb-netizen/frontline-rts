@@ -354,7 +354,7 @@ func _draw_vehicle_card(r: Rect2, vid: int, font: Font, bold: Font) -> void:
 			crew_pip(self, Rect2(x, y, ps, ps), st, picked)
 		x += ps + float(m.pip_gap)
 	x += PART_GAP - float(m.pip_gap)
-	for c in Vehicles.STRIP:
+	for c in Vehicles.strip_of(v):
 		component_seg(self, Rect2(x, y, SEG_W, ps), Vehicles.component(v, c), String(v.get("repairing", "")) == c)
 		x += SEG_W + SEG_GAP
 	draw_ammo(self, font, bold, Vector2(r.end.x - 8.0, y + ps - 1.0), v, 1)
@@ -563,15 +563,18 @@ static func vehicle_tooltip(mv: MatchView, vid: int) -> String:
 		if crew[i] != "none":
 			seats.append("%s %s" % [Vehicles.SEAT_LETTERS[i], crew[i]])
 	var parts: Array = []
-	for c in Vehicles.COMPONENTS:
+	for c in Vehicles.parts_of(v):
 		parts.append("%s %d%%" % [Vehicles.COMPONENT_SHORT[c], roundi(Vehicles.component(v, c) * 100.0)])
 	var ammo: Dictionary = v.get("ammo", {})
 	var rounds := "AP %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("he", 0))]
 	if ammo.has("apcr"):
 		rounds = "AP %d · APCR %d · HE %d" % [int(ammo.get("ap", 0)), int(ammo.get("apcr", 0)), int(ammo.get("he", 0))]
 	if not ammo.has("ap"):
-		# S8a Fix (L4): no main gun (half-track).
+		# S8a Fix (L4): no main gun (half-track, truck).
 		rounds = "No main gun"
+	if v.has("cargo_kg"):
+		var cargo: Dictionary = v.cargo_kg
+		rounds = "Load: shells %d · small arms %d · explosives %d kg" % [roundi(float(cargo.get("shells", 0.0))), roundi(float(cargo.get("small_arms", 0.0))), roundi(float(cargo.get("explosives", 0.0)))]
 	if ammo.has("mg"):
 		# S3b Fix: MG belts left in stowage.
 		rounds += " · MG %d" % int(ammo.get("mg", 0))

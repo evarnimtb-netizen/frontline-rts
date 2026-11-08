@@ -67,6 +67,8 @@ const CREW := [&"crew", "Crew", &"order_crew", "Click an abandoned vehicle: the 
 ## S8a.
 const BOARD := [&"embark", "Board", &"order_embark", "Click an own half-track: the selected squads walk to its door and climb in, one man a second. A squad that does not fit is refused (squads never split). Right-click on it does the same."]
 const UNLOAD := [&"disembark", "Unload", &"order_disembark", "The half-track stops and its passengers get out by the rear door, one man every 0.8 s. Shift+U (or Shift+click): over the sides, faster (0.5 s) but each man stands up over the rim while he climbs out, on the side away from the last hit."]
+## S8b: trucks.
+const DROP := [&"drop_crates", "Drop", &"order_drop_crates", "Click a point: the truck drives there and sets down up to 4 crates (3 s each), where they feed mortars and men or stock an HQ inside its ring. I arms the tool; pressing I again changes the kind (shells, small arms, explosives). Nothing is paid here: the truck was paid for when it loaded at the base."]
 const BAIL := [&"bail", "Bail out", &"", "The crew leave the vehicle by its hatches and become a crew squad; the vehicle stays, abandoned, and can be re-crewed (by anyone, enemies included). Press twice within 2 s."]
 const ROW_VEHICLE := [
 	[&"reverse", "Reverse", &"order_reverse", "Back up to a point, front kept toward the enemy (Alt+right-click). The button arms a click-to-place tool."],
@@ -101,7 +103,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+const TOOLS := [&"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -122,6 +124,8 @@ var _pzf_slot := false
 var _mounted := false
 ## S8a Fix (L4): a selected vehicle has a main gun (ammo buttons shown).
 var _gun := true
+## S8b: a selected vehicle is a truck (Drop replaces Unload).
+var _truck := false
 
 
 func bind(v: MatchView) -> void:
@@ -137,18 +141,28 @@ func update_state(_s: Dictionary) -> void:
 		want = "supply"
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
 	var mounted: bool = not sel.unload_vehicles().is_empty()
+	var truck: bool = not sel.truck_vehicles().is_empty()
 	var gun := false
 	for id in sel.selected_vehicles():
 		if (view.vehicles_by_id.get(id, {}).get("ammo", {}) as Dictionary).has("ap"):
 			gun = true
-	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or mounted != _mounted or gun != _gun:
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun:
 		_size = size
 		grid_mode = want
 		_pzf_slot = pzf
 		_mounted = mounted
 		_gun = gun
+		_truck = truck
 		_layout()
 	queue_redraw()
+
+
+## S8b: the Drop button names the armed kind.
+func _drop_label() -> void:
+	for b in buttons:
+		if b.id == &"drop_crates":
+			var k: String = view.selection.drop_kind
+			b.label = "Drop " + {"shells": "shells", "small_arms": "ammo", "explosives": "expl."}.get(k, "") if view.selection.tool == &"drop_crates" else "Drop"
 
 
 func _layout() -> void:
@@ -168,7 +182,7 @@ func _layout() -> void:
 		# S3c: Bail out in the fifth slot of the orders row.
 		_add(BAIL, Rect2(4.0 * (bw + g), bh + g, bw, bh), "order")
 		# S8a: Unload in the fifth slot of the top row.
-		_add(UNLOAD, Rect2(4.0 * (abw + g), 0, abw, bh), "order")
+		_add(DROP if _truck else UNLOAD, Rect2(4.0 * (abw + g), 0, abw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
 		if not _gun:
 			return

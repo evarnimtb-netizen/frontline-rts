@@ -575,7 +575,8 @@ func _hit(v: Dictionary, s: Dictionary) -> void:
 		return
 	# Penetration: one or two components, maybe crew, maybe worse.
 	for k in 1 + src.rng.randi() % 2:
-		var c: String = Vehicles.COMPONENTS[src.rng.randi() % Vehicles.COMPONENTS.size()]
+		var parts: Array = Vehicles.COMPONENTS.filter(func(p: String) -> bool: return v.comp.has(p))
+		var c: String = parts[src.rng.randi() % parts.size()]
 		_damage(v, c, src.rng.randf_range(0.3, 0.9), s.owner, at)
 		if not _alive(v):
 			return

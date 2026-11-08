@@ -144,6 +144,16 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 ## placement ghost (the def's radius) under the cursor of a build tool.
 func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
 	var show: bool = sel.tool in [&"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+	# S8b: the selected trucks' reach: vehicles (solid), men (dashed).
+	for id in sel.truck_vehicles():
+		var tv: Dictionary = view.vehicles_by_id.get(id, {})
+		var vt: Dictionary = view.rules().get("vehicle_types", {}).get(String(tv.get("type", "")), {})
+		if vt.has("supply_vehicle_radius_m"):
+			_ring(tv.pos, float(vt.supply_vehicle_radius_m), 0.3, Color(HudStyle.ACCENT, 0.7), 64)
+			var men_r := float(vt.get("supply_radius_m", 8.0))
+			for k in 24:
+				if k % 2 == 0:
+					_arc(tv.pos, men_r, 0.25, TAU * k / 24.0, TAU * (k + 1) / 24.0, Color(HudStyle.ACCENT, 0.5), 3)
 	var mortar := false
 	for sid in sel.selected_squads():
 		var sq: Dictionary = view.squads_by_id.get(sid, {})

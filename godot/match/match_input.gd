@@ -43,6 +43,8 @@ const ACTIONS := {
 	# S8a transport, owner question S8a-7 (A).
 	&"order_embark": KEY_V,
 	&"order_disembark": KEY_U,
+	# S8b: Drop Crates (S8b-19 (A)).
+	&"order_drop_crates": KEY_I,
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
@@ -76,6 +78,7 @@ const LABELS := {
 	&"order_crew": "K",
 	&"order_embark": "V",
 	&"order_disembark": "U",
+	&"order_drop_crates": "I",
 	&"focus_call_in": "Tab",
 }
 

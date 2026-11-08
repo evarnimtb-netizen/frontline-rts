@@ -25,10 +25,10 @@ const SEATS := ["driver", "gunner", "commander", "loader", "radio_mg"]
 const SEAT_LETTERS := ["D", "G", "C", "L", "R"]
 const SEAT_NAMES := {"driver": "Driver", "gunner": "Gunner", "commander": "Commander", "loader": "Loader", "radio_mg": "Radio operator"}
 ## Components in snapshot order; STRIP is the card's component strip.
-const COMPONENTS := ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack", "transmission"]
-const STRIP := ["engine", "track_l", "track_r", "gun", "ring"]
-const COMPONENT_NAMES := {"engine": "Engine", "track_l": "Left track", "track_r": "Right track", "gun": "Main gun", "ring": "Turret ring", "ammo_rack": "Ammo rack", "transmission": "Transmission"}
-const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R", "gun": "Gun", "ring": "Ring", "ammo_rack": "Rack", "transmission": "Trans"}
+const COMPONENTS := ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack", "transmission", "wheels_f", "wheels_r", "cargo"]
+const STRIP := ["engine", "track_l", "track_r", "wheels_f", "wheels_r", "cargo", "gun", "ring"]
+const COMPONENT_NAMES := {"engine": "Engine", "track_l": "Left track", "track_r": "Right track", "gun": "Main gun", "ring": "Turret ring", "ammo_rack": "Ammo rack", "transmission": "Transmission", "wheels_f": "Front wheels", "wheels_r": "Rear wheels", "cargo": "Cargo"}
+const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R", "gun": "Gun", "ring": "Ring", "ammo_rack": "Rack", "transmission": "Trans", "wheels_f": "Whl F", "wheels_r": "Whl R", "cargo": "Cargo"}
 ## Below this fraction a component reads as damaged (S3 spec: < 50 HP of
 ## 100; the gun and ring have 80, so this is a presenter threshold).
 const DAMAGED := 0.5
@@ -111,6 +111,21 @@ static func abandoned_text(v: Dictionary, vt: Dictionary) -> String:
 static func badge(v: Dictionary) -> Array:
 	var st := String(v.get("state", "idle"))
 	return [STATE_TEXT.get(st, st.capitalize()), st in ALARM_STATES]
+
+
+## S8a-27: the parts this vehicle has, in snapshot order (the bridge sends
+## only those; every part when it sends none: enemies, the mock's tanks).
+static func parts_of(v: Dictionary) -> Array:
+	var have: Dictionary = v.get("components", {})
+	if have.is_empty():
+		return COMPONENTS
+	return COMPONENTS.filter(func(c: String) -> bool: return have.has(c))
+
+
+## The roster card's component strip: at most five of the parts it has.
+static func strip_of(v: Dictionary) -> Array:
+	var have: Array = parts_of(v)
+	return STRIP.filter(func(c: String) -> bool: return have.has(c)).slice(0, 5)
 
 
 ## Component fraction 0..1 (1 when the key is missing: enemies, wrecks).

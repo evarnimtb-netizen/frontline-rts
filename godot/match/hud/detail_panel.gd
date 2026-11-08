@@ -191,8 +191,9 @@ func _draw_vehicle(vid: int) -> void:
 	var cols := 4
 	var colw := (size.x - 2.0 * PAD) / float(cols)
 	var rep_c := String(v.get("repairing", ""))
-	for i in Vehicles.COMPONENTS.size():
-		var c: String = Vehicles.COMPONENTS[i]
+	var have_parts: Array = Vehicles.parts_of(v)
+	for i in have_parts.size():
+		var c: String = have_parts[i]
 		var cx := PAD + (i % cols) * colw
 		var cy := y + int(i / float(cols)) * rh
 		var label: String = Vehicles.COMPONENT_SHORT[c]
@@ -211,6 +212,9 @@ func _draw_vehicle(vid: int) -> void:
 	y += 2.0 * rh
 	# S8a: a half-track's last row lists its passengers (squad, men aboard,
 	# health) and its MG stowage instead of main-gun ammunition.
+	if v.has("cargo_kg"):
+		_draw_cargo(v, Rect2(PAD, y, size.x - 2.0 * PAD, rh), base)
+		return
 	if int(v.get("capacity", 0)) > 0:
 		_draw_passengers(v, Rect2(PAD, y, size.x - 2.0 * PAD, rh), base)
 		return
@@ -258,6 +262,38 @@ func _draw_passengers(v: Dictionary, r: Rect2, base: float) -> void:
 	var mg: Array = ROSTER.mg_label(v.get("ammo", {}))
 	if mg[0] != "" and x + HudStyle.text_w(bold, mg[0], HudStyle.FONT) < r.end.x:
 		HudStyle.text(self, bold, Vector2(r.end.x - HudStyle.text_w(bold, mg[0], HudStyle.FONT), y + base), mg[0], HudStyle.FONT, mg[1])
+
+
+## S8b: a truck's stock row (the HQ's gauges) and its drop order.
+func _draw_cargo(v: Dictionary, r: Rect2, base: float) -> void:
+	var font := get_theme_default_font()
+	var by := r.position.y + base
+	var left := int(v.get("drop_left", 0))
+	var end_x := r.end.x
+	if left > 0:
+		var tag := "Drop %d" % left
+		end_x -= HudStyle.text_w(font, tag, HudStyle.FONT_SMALL) + 8.0
+		HudStyle.text(self, font, Vector2(end_x + 4.0, by), tag, HudStyle.FONT_SMALL, HudStyle.ACCENT)
+	var low := float(view.rules().get("supply", {}).get("low_pct", 30)) / 100.0
+	_gauges(r.position.x, r.position.y + 2.0, r.size.y - 4.0, by, end_x, v.get("cargo_kg", {}), v.get("load_kg", {}), low)
+
+
+## S6/S8b: three stock gauges (the fill behind its label and "kg/cap kg").
+func _gauges(x0: float, y: float, h: float, by: float, end_x: float, have_kg: Dictionary, cap_kg: Dictionary, low: float) -> void:
+	var font := get_theme_default_font()
+	var x := x0
+	var bw := (end_x - x0) / 3.0
+	for k in [["shells", "Shells"], ["small_arms", "Rifle"], ["explosives", "Expl."]]:
+		var have := float(have_kg.get(k[0], 0.0))
+		var cap := maxf(float(cap_kg.get(k[0], 1.0)), 1.0)
+		var bar := Rect2(x, y, bw - 4.0, h)
+		draw_rect(bar, Color(0, 0, 0, 0.35))
+		var f := clampf(have / cap, 0.0, 1.0)
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), Color(HudStyle.DANGER if f < low else HudStyle.ACCENT, 0.45))
+		draw_rect(Rect2(bar.position.x + bar.size.x * low, bar.position.y, 1.0, bar.size.y), Color(HudStyle.TEXT, 0.6))
+		var label := "%s %d/%d kg" % [k[1], roundi(have), roundi(cap)]
+		HudStyle.text(self, font, Vector2(x + 4.0, by), HudStyle.fit(font, label, bar.size.x - 6.0, HudStyle.FONT_SMALL), HudStyle.FONT_SMALL, HudStyle.TEXT)
+		x += bw
 
 
 func _pair(font: Font, bold: Font, x: float, by: float, label: String, value: String) -> void:
@@ -538,22 +574,9 @@ func _draw_supply(sq: Dictionary) -> void:
 		HudStyle.text(self, font, Vector2(x, by), "Digging %d %%" % int(hq.get("build_pct", 0)), HudStyle.FONT_SMALL, HudStyle.TEXT)
 		return
 	var radio_w := 44.0
-	var bw := (r.end.x - x - radio_w - 8.0) / 3.0
 	var low := float(view.rules().get("supply", {}).get("low_pct", 30)) / 100.0
-	# Each kind a gauge: the fill (kg of the cap) behind its label and
-	# "kg/cap kg" (review S6 F7: named kinds, unit and cap; "Rifle", not
-	# "A", which read as the orders grid's "Ammo").
-	for k in [["shells", "Shells"], ["small_arms", "Rifle"], ["explosives", "Expl."]]:
-		var have := float(hq.stock_kg.get(k[0], 0.0))
-		var cap := maxf(float(hq.cap_kg.get(k[0], 1.0)), 1.0)
-		var bar := Rect2(x, y + 3.0, bw - 4.0, h - 6.0)
-		draw_rect(bar, Color(0, 0, 0, 0.35))
-		var f := clampf(have / cap, 0.0, 1.0)
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), Color(HudStyle.DANGER if f < low else HudStyle.ACCENT, 0.45))
-		draw_rect(Rect2(bar.position.x + bar.size.x * low, bar.position.y, 1.0, bar.size.y), Color(HudStyle.TEXT, 0.6))
-		var label := "%s %d/%d kg" % [k[1], roundi(have), roundi(cap)]
-		HudStyle.text(self, font, Vector2(x + 4.0, by), HudStyle.fit(font, label, bar.size.x - 6.0, HudStyle.FONT_SMALL), HudStyle.FONT_SMALL, HudStyle.TEXT)
-		x += bw
+	# Named kinds, unit and cap (review S6 F7: "Rifle", not "A").
+	_gauges(x, y + 3.0, h - 6.0, by, r.end.x - radio_w - 4.0, hq.stock_kg, hq.cap_kg, low)
 	var radio := bool(hq.get("radio", false))
 	HudStyle.text(self, font, Vector2(r.end.x - radio_w, by), "Radio" if radio else "No radio", HudStyle.FONT_SMALL, HudStyle.TEXT if radio else HudStyle.DANGER)
 

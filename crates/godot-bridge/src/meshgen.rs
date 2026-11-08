@@ -266,6 +266,13 @@ pub struct VehicleDims {
     pub turret_lift: f32,
     pub tboxes: [[f32; 7]; 4],
     pub n_tboxes: u8,
+    /// S8b: axles of a wheeled vehicle (0: tracked), a wire screen over an
+    /// open turret, no turret or gun (a truck), a truck's cargo box (sim
+    /// frame: centre, half; 0 half: none).
+    pub wheels: u8,
+    pub screen: bool,
+    pub no_weapon: bool,
+    pub cargo: [f32; 6],
 }
 
 impl Default for VehicleDims {
@@ -292,6 +299,10 @@ impl Default for VehicleDims {
             turret_lift: 0.0,
             tboxes: [[0.0; 7]; 4],
             n_tboxes: 0,
+            wheels: 0,
+            screen: false,
+            no_weapon: false,
+            cargo: [0.0; 6],
         }
     }
 }
@@ -432,8 +443,11 @@ impl MeshData {
 /// tinted except the running gear. Origin on the ground under the hull
 /// centre, facing −Z.
 pub fn vehicle_hull_mesh(d: &VehicleDims) -> MeshData {
-    if d.transport {
+    if d.transport && d.wheels == 0 {
         return halftrack_hull_mesh(d);
+    }
+    if d.wheels > 0 {
+        return wheeled_hull_mesh(d);
     }
     let mut m = MeshData::default();
     let paint = [1.0, 1.0, 1.0, TEAM_TINT];
@@ -531,17 +545,44 @@ pub fn vehicle_hull_mesh(d: &VehicleDims) -> MeshData {
     m
 }
 
-/// S8a half-track hull blockout: its hull-frame armour boxes (a closed box
-/// solid, an open one four 3 cm walls and a floor), front wheels and rear
-/// tracks. Team tinted except the running gear. Origin on the ground under
-/// the hull centre, facing −Z (sim x forward → −Z, y left → −X, z up → Y).
-pub fn halftrack_hull_mesh(d: &VehicleDims) -> MeshData {
+/// S8b wheeled blockout: the hull-frame boxes (a truck's cab and bed, an
+/// armoured car's hull) on `wheels` axles, the cargo box a truck carries.
+pub fn wheeled_hull_mesh(d: &VehicleDims) -> MeshData {
     let mut m = MeshData::default();
     let paint = [1.0, 1.0, 1.0, TEAM_TINT];
     let shade = [0.82, 0.82, 0.80, TEAM_TINT];
-    let track = [0.13, 0.12, 0.11, FIXED];
-    let wheel = [0.18, 0.17, 0.16, FIXED];
+    let wheel = [0.13, 0.12, 0.11, FIXED];
+    let load = [0.40, 0.36, 0.25, FIXED];
     let (hl, hw, g) = (d.hull_length * 0.5, d.hull_width * 0.5, d.hull_ground);
+    boxes_blockout(&mut m, d, paint, shade);
+    let n = d.wheels.max(2) as f32;
+    let r = (g * 0.85).clamp(0.35, 0.65);
+    for k in 0..d.wheels.max(2) {
+        let z = -hl * 0.72 + hl * 1.44 * k as f32 / (n - 1.0);
+        for side in [-1.0f32, 1.0] {
+            m.add_tube(
+                [side * (hw + 0.02), r, z],
+                [side * (hw - 0.22), r, z],
+                r,
+                r,
+                1.0,
+                12,
+                1,
+                wheel,
+                None,
+            );
+        }
+    }
+    if d.cargo[3] > 0.0 {
+        let c = [-d.cargo[1], d.cargo[2], -d.cargo[0]];
+        m.add_box(c, [d.cargo[4], d.cargo[5], d.cargo[3]], load, None);
+    }
+    m
+}
+
+/// The hull-frame boxes of a blockout: a closed box solid, an open one four
+/// 3 cm walls and a floor.
+fn boxes_blockout(m: &mut MeshData, d: &VehicleDims, paint: [f32; 4], shade: [f32; 4]) {
     for b in &d.tboxes[..(d.n_tboxes as usize).min(4)] {
         let c = [-b[1], b[2], -b[0]];
         let h = [b[4], b[5], b[3]];
@@ -581,6 +622,20 @@ pub fn halftrack_hull_mesh(d: &VehicleDims) -> MeshData {
             m.add_box(c, h, paint, None);
         }
     }
+}
+
+/// S8a half-track hull blockout: its hull-frame armour boxes (a closed box
+/// solid, an open one four 3 cm walls and a floor), front wheels and rear
+/// tracks. Team tinted except the running gear. Origin on the ground under
+/// the hull centre, facing −Z (sim x forward → −Z, y left → −X, z up → Y).
+pub fn halftrack_hull_mesh(d: &VehicleDims) -> MeshData {
+    let mut m = MeshData::default();
+    let paint = [1.0, 1.0, 1.0, TEAM_TINT];
+    let shade = [0.82, 0.82, 0.80, TEAM_TINT];
+    let track = [0.13, 0.12, 0.11, FIXED];
+    let wheel = [0.18, 0.17, 0.16, FIXED];
+    let (hl, hw, g) = (d.hull_length * 0.5, d.hull_width * 0.5, d.hull_ground);
+    boxes_blockout(&mut m, d, paint, shade);
     // Rear tracks (the back 60 %) and two steered front wheels.
     for side in [-1.0f32, 1.0] {
         m.add_box(
@@ -608,6 +663,16 @@ pub fn halftrack_hull_mesh(d: &VehicleDims) -> MeshData {
 /// at the turret pivot (turret ring centre, ring height), facing −Z.
 pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
     let mut m = MeshData::default();
+    if d.no_weapon {
+        // S8b: a truck: nothing visible on the turret ring.
+        m.add_box(
+            [0.0, 0.0, 0.0],
+            [0.001, 0.001, 0.001],
+            [0.0, 0.0, 0.0, FIXED],
+            None,
+        );
+        return m;
+    }
     let paint = [1.0, 1.0, 1.0, TEAM_TINT];
     let metal = [0.22, 0.21, 0.19, FIXED];
     let (tl, tw, th) = (d.turret_length * 0.5, d.turret_width * 0.5, d.turret_height);
@@ -652,6 +717,20 @@ pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
         // The gun's mount at the front wall.
         let (tf, ty) = d.trunnion();
         m.add_box([0.0, ty, -tf], [0.22, 0.2, 0.18], metal, None);
+        // S8b: a wire screen over the open top: a frame and four bars.
+        if d.screen {
+            let y = th + 0.03;
+            m.add_box([0.0, y, cz - tl], [tw, 0.015, 0.015], metal, None);
+            m.add_box([0.0, y, cz + tl], [tw, 0.015, 0.015], metal, None);
+            for k in 0..5 {
+                let x = -tw + 2.0 * tw * k as f32 / 4.0;
+                m.add_box([x, y, cz], [0.012, 0.012, tl], metal, None);
+            }
+            for k in 1..4 {
+                let z = cz - tl + 2.0 * tl * k as f32 / 4.0;
+                m.add_box([0.0, y, z], [tw, 0.012, 0.012], metal, None);
+            }
+        }
         return m;
     }
     // Top view (x, z): the front (−z) is narrower, the sides taper to the
@@ -698,6 +777,15 @@ pub fn vehicle_turret_mesh(d: &VehicleDims) -> MeshData {
 /// axis), barrel along −Z to the muzzle.
 pub fn vehicle_gun_mesh(d: &VehicleDims) -> MeshData {
     let mut m = MeshData::default();
+    if d.no_weapon {
+        m.add_box(
+            [0.0, 0.0, 0.0],
+            [0.001, 0.001, 0.001],
+            [0.0, 0.0, 0.0, FIXED],
+            None,
+        );
+        return m;
+    }
     let dark = [0.17, 0.16, 0.15, FIXED];
     if d.transport {
         // S8a: the MG, a thin barrel and its receiver.
@@ -1021,7 +1109,17 @@ mod gd_api {
         // S8a: a half-track's hull boxes.
         out.transport = flag("transport");
         out.turret_lift = get("turret_lift", 0.0);
-        if out.transport
+        out.wheels = get("wheels", 0.0) as u8;
+        out.screen = flag("screen");
+        out.no_weapon = flag("no_weapon");
+        let vec3 = |k: &str| {
+            d.get(k)
+                .and_then(|v| v.try_to::<godot::builtin::Vector3>().ok())
+                .unwrap_or_default()
+        };
+        let (cc, ch) = (vec3("cargo_center"), vec3("cargo_half"));
+        out.cargo = [cc.x, cc.y, cc.z, ch.x, ch.y, ch.z];
+        if (out.transport || out.wheels > 0)
             && let Some(arr) = d.get("boxes").and_then(|v| v.try_to::<VarArray>().ok())
         {
             let mut n = 0usize;

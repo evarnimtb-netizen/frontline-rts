@@ -96,6 +96,7 @@ func _run() -> void:
 	await _test_s5b()
 	await _test_s6()
 	_test_s8a()
+	_test_s8b()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1525,6 +1526,25 @@ func _test_s8a() -> void:
 	_view.orders.update_state(_view.state)
 	_check(_view.orders.label_of(&"embark") == "Board" and _view.orders.label_of(&"crew") == "Crew", "S8a: Board shares the Crew slot")
 	_check(_view.selection.unload_vehicles().is_empty() and not _view.selection.can(&"disembark"), "S8a: nothing to unload with nothing selected")
+
+
+## S8b: hotkey I, parts present only, the own-cap tile badge, the Drop tool
+## and intent, the fullest kind and its cycle on staged state dictionaries.
+func _test_s8b() -> void:
+	_check(MatchInput.ACTIONS.get(&"order_drop_crates") == KEY_I, "I arms Drop Crates")
+	var tank := {"components": {"engine": 1.0, "track_l": 1.0, "track_r": 1.0, "gun": 1.0, "ring": 1.0, "ammo_rack": 1.0, "transmission": 1.0}}
+	var ht := {"components": {"engine": 1.0, "track_l": 1.0, "track_r": 1.0, "transmission": 1.0}}
+	var truck := {"components": {"engine": 1.0, "transmission": 1.0, "wheels_f": 1.0, "wheels_r": 1.0, "cargo": 1.0}}
+	_check(Vehicles.parts_of(tank).size() == 7, "a tank lists seven parts")
+	_check(not Vehicles.parts_of(ht).has("gun") and not Vehicles.parts_of(ht).has("ring"), "no Gun or Ring bar on a half-track")
+	_check(Vehicles.strip_of(truck).has("wheels_f") and Vehicles.strip_of(truck).size() <= 5, "a truck's strip")
+	var ci: Control = _view.call_in
+	var card := {"type": "vehicle", "vehicle": "x", "own_cap": true, "alive": 1, "max_alive": 2}
+	_check(ci._badge(card) == "1/2" and not ci._full(card), "a transport tile shows its own cap")
+	card.alive = 2
+	_check(ci._full(card) and ci.blocked_reason(card) == "card", "at its own cap the tile is blocked")
+	var sel: Node = _view.selection
+	_check(sel.DROP_KINDS.size() == 3 and sel.DROP_COUNT == 4, "drop kinds and count")
 
 
 func _check(ok: bool, what: String) -> void:

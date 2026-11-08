@@ -911,7 +911,7 @@ pub fn stress(mut setup: MatchSetup, threads: usize) -> Result<Staged, SimError>
 // ------------------------------------------------------- Godot scenes --
 
 /// The staged autoplay scenes (`--autoplay_scene armour_<name>`).
-pub const SCENES: [&str; 13] = [
+pub const SCENES: [&str; 14] = [
     "callin_locked",
     "vehicle_card",
     "tank_firing",
@@ -932,6 +932,8 @@ pub const SCENES: [&str; 13] = [
     // S8a: a loaded SdKfz 251 and a loaded M3A1 side by side, stopped,
     // their MGs dry (the blockouts and seated riders for the screenshot).
     "halftracks",
+    // S8b: a 234/1, an M8 and a loaded truck, stopped, every weapon dry.
+    "recon_trucks",
 ];
 
 /// A staged scene: the world, the commands to send on the first step, the
@@ -1163,6 +1165,43 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
             focus = at(TRENCH_X + 1, LANE_Y);
             max_ticks = 30 * 5;
         }
+        "recon_trucks" => {
+            use frontline_content::VehicleRole;
+            let a = need(
+                vehicle_of_role(&mut w, 0, VehicleRole::Recon, at(TRENCH_X, LANE_Y + 7), EAST),
+                "German armoured car",
+            )?;
+            let b = need(
+                vehicle_of_role(
+                    &mut w,
+                    1,
+                    VehicleRole::Recon,
+                    at(TRENCH_X + 4, LANE_Y - 7),
+                    dir_deg(160),
+                ),
+                "US armoured car",
+            )?;
+            let t = need(
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::Truck,
+                    at(TRENCH_X - 9, LANE_Y - 2),
+                    EAST,
+                ),
+                "German truck",
+            )?;
+            for v in [a.1, b.1] {
+                w.edit_vehicle(v, |vs| {
+                    vs.ammo.iter_mut().for_each(|n| *n = 0);
+                    vs.loaded = None;
+                    vs.mgs.iter_mut().for_each(|m| m.spent = u32::MAX / 2);
+                });
+            }
+            w.edit_vehicle(t.1, |vs| vs.cargo_g = [120_000, 30_000, 220_000]);
+            focus = at(TRENCH_X - 2, LANE_Y);
+            max_ticks = 30 * 5;
+        }
         "hq_supply" => {
             let s = w.match_setup().expect("match");
             let f = s.players[0].faction;
@@ -1297,6 +1336,15 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
                 .filter(|v| v.flags & vehicle_flags::WRECK == 0)
                 .count()
                 >= 2
+                && w.tick() >= 30
+        }
+        // S8b: both cars and the truck in the world.
+        "recon_trucks" => {
+            snap.vehicles
+                .iter()
+                .filter(|v| v.flags & vehicle_flags::WRECK == 0)
+                .count()
+                >= 3
                 && w.tick() >= 30
         }
         // S8a: both half-tracks alive with men aboard.

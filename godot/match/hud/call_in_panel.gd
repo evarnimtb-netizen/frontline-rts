@@ -110,6 +110,20 @@ func tile_rect(i: int) -> Rect2:
 	return Rect2(col * (w + COL_GAP), float(m.ci_head) + row * float(m.tile_h), w, float(m.tile_h))
 
 
+## S8b-1: the tile's badge: this card's own alive/max for a card outside
+## the vehicle limit, else vehicles/limit.
+func _badge(c: Dictionary) -> String:
+	if bool(c.get("own_cap", false)):
+		return "%d/%d" % [int(c.get("alive", 0)), int(c.get("max_alive", 0))]
+	return "%d/%d" % [_vehicles, _vehicle_limit]
+
+
+func _full(c: Dictionary) -> bool:
+	if bool(c.get("own_cap", false)):
+		return int(c.get("max_alive", 0)) > 0 and int(c.get("alive", 0)) >= int(c.get("max_alive", 0))
+	return _vehicles >= _vehicle_limit
+
+
 static func is_vehicle(c: Dictionary) -> bool:
 	return String(c.get("type", "")) == "vehicle" or c.has("vehicle")
 
@@ -123,7 +137,11 @@ func blocked_reason(c: Dictionary) -> String:
 	if is_vehicle(c):
 		if float(c.get("locked_s", 0.0)) > 0.0:
 			return "locked"
-		if _vehicles >= _vehicle_limit:
+		if bool(c.get("own_cap", false)):
+			# S8b-1: recon cars, trucks and half-tracks count their own cap.
+			if int(c.get("max_alive", 0)) > 0 and int(c.get("alive", 0)) >= int(c.get("max_alive", 0)):
+				return "card"
+		elif _vehicles >= _vehicle_limit:
 			return "limit"
 	if float(c.get("cooldown_s", 0.0)) > 0.0:
 		return "cooldown"
@@ -160,6 +178,8 @@ func refusal_text(c: Dictionary) -> String:
 			return "vehicles unlock in %s" % UiPalette.mmss(ceilf(float(c.get("locked_s", 0.0))))
 		"limit":
 			return "vehicle limit reached (%d)" % _vehicle_limit
+		"card":
+			return "this card's limit reached (%d)" % int(c.get("max_alive", 0))
 		"cooldown":
 			return "ready again in %d s" % ceili(float(c.get("cooldown_s", 0.0)))
 		"pop cap":
@@ -293,10 +313,10 @@ func _draw_tile(i: int, font: Font, bold: Font) -> void:
 	# Vehicle limit badge ("2/4") on the title line.
 	var badge_w := 0.0
 	if vehicle:
-		var badge := "%d/%d" % [_vehicles, _vehicle_limit]
+		var badge := _badge(c)
 		badge_w = HudStyle.text_w(bold, badge, HudStyle.FONT_SMALL) + 8.0
 		var br := Rect2(x1 - badge_w, r.position.y + 4.0, badge_w, 16.0)
-		var full := _vehicles >= _vehicle_limit
+		var full := _full(c)
 		HudStyle.box(self, br, Color(HudStyle.DANGER, 0.35) if full else HudStyle.BG_CHIP, 3)
 		HudStyle.text(self, bold, Vector2(br.get_center().x, br.position.y + 12.5), badge, HudStyle.FONT_SMALL, HudStyle.TEXT, 0)
 		badge_w += 4.0
@@ -451,7 +471,7 @@ func _get_tooltip(at: Vector2) -> String:
 	var c: Dictionary = _catalog[i]
 	var what := "%d men" % int(c.get("men", 0))
 	if is_vehicle(c):
-		what = "%d pop, vehicle %d/%d" % [int(c.get("pop", 0)), _vehicles, _vehicle_limit]
+		what = "%d pop, %s %s" % [int(c.get("pop", 0)), "own limit" if bool(c.get("own_cap", false)) else "vehicle", _badge(c)]
 	var recall := float(c.get("recall_s", c.get("cooldown_total_s", 0.0)))
 	var after := "" if recall <= 0.0 else " Then %d s before the next." % int(recall)
 	var why := refusal_text(c)

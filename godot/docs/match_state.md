@@ -1386,3 +1386,34 @@ with men aboard and drops them from soldier commands).
   front wheels, the MG shield and MG turning with the pintle.
 - Autoplay: `--autoplay_scene armour_halftracks` (a loaded SdKfz 251 and a
   loaded M3A1, the 251 selected) saves `s3_halftracks.png`.
+
+## S8b: wheels, recon cars, trucks, Drop Crates
+
+Spec `docs/slices/S8b-trucks-recon.md` 10 (the bridge only; the mock has no
+truck, the tests stage dictionaries).
+
+- `vehicles[].components` lists only the parts the vehicle has (S8a-27):
+  `wheels_f`, `wheels_r` replace the tracks on a wheeled vehicle, `cargo` is a
+  truck's. `Vehicles.parts_of(v)` and `strip_of(v)` read what is present.
+- `vehicles[]` of an own truck: `cargo_kg { shells, small_arms, explosives }`
+  (float kg), `load_kg` (what it takes on in base), `cargo_cap_kg`,
+  `drop_left` (crates of the current order still to set down).
+- `rules.vehicle_types[t]` adds `wheels` (axles, 0 tracked), `screen` (a wire
+  screen over the open turret), `no_weapon` (a truck), `cargo_center`,
+  `cargo_half` (sim frame, m), `supply_radius_m`, `supply_vehicle_radius_m`.
+- Call-in catalog: a card outside the vehicle limit has `own_cap: true`,
+  `alive`, `max_alive`; its tile badge reads `alive/max` and `blocked_reason`
+  gives `"card"` at its cap. `locked_s` follows the card's own unlock.
+- Intent `drop_crates { units, target, kind, count }` (`kind`: `"shells"`,
+  `"small_arms"`, `"explosives"`; `units`: own trucks).
+- Hotkey I (`order_drop_crates`, S8b-19): arms the Drop tool on a selected
+  truck; pressing I again changes the kind (default: the fullest share of its
+  load); the button then names the kind. A click sends 4 crates.
+- A truck's card has three stock gauges (the HQ's, `load_kg` as their cap)
+  and `Drop n` while dropping; a selected truck draws its reach rings: the
+  vehicle radius solid, the men's radius dashed.
+- "MG dry" on the 251 card (S8a) was the `halftracks` scene, which empties
+  its MGs to hold fire; a fresh half-track reports its stowage
+  (`match_frame` test `a_fresh_half_track_reports_its_mg_stowage`).
+- `--autoplay_scene armour_recon_trucks` (a 234/1, an M8 and a loaded truck,
+  the truck selected) saves `s3_recon_trucks.png`.

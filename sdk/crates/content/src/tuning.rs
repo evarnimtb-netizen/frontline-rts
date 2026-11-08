@@ -1273,6 +1273,9 @@ tuning_table! {
         /// S8b: after getting off a squad keeps going to its point this
         /// long unless enemies are near (s; 0: no lock).
         ride_lock_s: 0..=600 = "d_tr_ride_lock_s",
+        /// S8b: a ride this long counts as "transported" (report; the S8a
+        /// threshold, kept while `min_ride_m` picks longer rides) (m).
+        counted_ride_m: 0..=2000 = "d_tr_counted_ride_m",
         /// S8b: the ride ends this far short of the point (m).
         drop_short_m: 0..=500 = "d_tr_drop_short_m",
         /// S8b: 1: the unload is ordered on arrival, while it still rolls;
@@ -1328,6 +1331,9 @@ fn d_tr_meet_stand_m() -> u32 {
 }
 fn d_tr_ride_lock_s() -> u32 {
     60
+}
+fn d_tr_counted_ride_m() -> u32 {
+    120
 }
 fn d_tr_drop_short_m() -> u32 {
     60
@@ -1457,6 +1463,7 @@ impl Default for AiTransportTuning {
             meet_ahead_m: d_tr_meet_ahead_m(),
             meet_stand_m: d_tr_meet_stand_m(),
             ride_lock_s: d_tr_ride_lock_s(),
+            counted_ride_m: d_tr_counted_ride_m(),
             drop_short_m: d_tr_drop_short_m(),
             unload_rolling: d_tr_unload_rolling(),
         }

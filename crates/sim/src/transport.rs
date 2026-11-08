@@ -641,7 +641,8 @@ impl MatchState {
         let owner = ctx.ents.owner[id.index()];
         let to = ctx.ents.transform[id.index()].pos.xy();
         let hz = self.setup.tick_hz.max(1) as u64;
-        let min_ride = Fx::from_int(self.setup.rules.ai.transport.min_ride_m.min(30_000) as i32);
+        let min_ride =
+            Fx::from_int(self.setup.rules.ai.transport.counted_ride_m.min(30_000) as i32);
         let dist = (to - trip.from).length();
         let dist_mm = (dist.raw().max(0) as u64 * 1000) >> Fx::FRAC_BITS;
         let walk = dist_mm * hz / trip.walk_mm_s.max(1) as u64;

@@ -1586,6 +1586,30 @@ mod tests {
         assert!(f.squads.iter().all(|s| s.owner == 0 || s.mission.is_none()));
     }
 
+    /// S8b (S8a HUD fault): the frame carries the stowed MG rounds of a
+    /// half-track (no main gun, `mounts` are all MGs).
+    #[test]
+    fn a_fresh_half_track_reports_its_mg_stowage() {
+        use frontline_sim::scenarios::{EAST, at};
+        let mut w = staged();
+        let setup = w.match_setup().unwrap().clone();
+        let t = setup.squad_type_index("ww2:ger_sdkfz251_1_squad").unwrap();
+        let sq = w
+            .spawn_squad_at(frontline_sim::PlayerId(0), t, at(400, 512), EAST)
+            .unwrap();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        for _ in 0..3 {
+            w.step(&[]);
+            f.fill(&w, &mut ctx, 0.0, Instant::now());
+        }
+        let v = f.vehicles.iter().find(|v| v.squad == sq.0).unwrap();
+        let vt = &setup.vehicles[v.type_idx as usize];
+        let full: u32 = vt.mg_mounts().iter().filter_map(|m| m.rounds).sum();
+        assert!(full > 0, "{}", vt.id);
+        assert_eq!(v.mg_rounds, full, "the card's MG count");
+    }
+
     #[test]
     fn vehicles_follow_the_fog_of_war() {
         use frontline_sim::scenarios::{EAST, WEST, at, tank};

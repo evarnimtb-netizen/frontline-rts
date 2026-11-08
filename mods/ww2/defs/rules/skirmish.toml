@@ -1265,6 +1265,7 @@ meet_ahead_m = 30            # m: S8b: the vehicle meets a farther squad this fa
 meet_stand_m = 20            # m: S8b: the squad boards when the vehicle stands this close (else it keeps walking)
 drop_short_m = 30            # m: S8b: the ride ends this far short of the point; the men walk the rest. Was dismount_back_m + 20 = 60 (spent 50 s on foot per ride)
 unload_rolling = 1           # S8b: 1: the unload is ordered on arrival, while it still rolls; 0: once stopped
+counted_ride_m = 120         # m: S8b: a ride this long counts as "transported" (report only: the S8a value, kept while min_ride_m picks longer rides)
 ride_lock_s = 60             # s: S8b: after getting off a squad keeps going to the point it rode for, unless enemies are near
 
 # S8b (docs/slices/S8b-trucks-recon.md 9): armoured cars scout ahead of the

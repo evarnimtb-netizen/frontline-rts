@@ -84,6 +84,10 @@ const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"
 ## S3c: Bail out needs a second press within this long.
 const BAIL_CONFIRM_MS := 2000
 
+## S8b: Drop Crates.
+const DROP_KINDS := ["shells", "small_arms", "explosives"]
+const DROP_COUNT := 4
+var drop_kind := "shells"
 var view: MatchView
 ## Selected own soldier ids, ascending.
 var selected := PackedInt32Array()
@@ -152,6 +156,8 @@ func prune() -> void:
 	if tool in [&"face", &"reverse"] and selected_vehicles().is_empty():
 		cancel_tool()
 	elif tool == &"crew" and not can(&"crew"):
+		cancel_tool()
+	elif tool == &"drop_crates" and truck_vehicles().is_empty():
 		cancel_tool()
 	elif tool == &"embark" and not can(&"embark"):
 		cancel_tool()
@@ -267,6 +273,29 @@ func selected_vehicles() -> PackedInt32Array:
 		if view.is_vehicle(id):
 			out.append(id)
 	return out
+
+
+## S8b: selected own trucks (the vehicles with a stock).
+func truck_vehicles() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in selected_vehicles():
+		if view.vehicles_by_id.get(id, {}).has("cargo_kg"):
+			out.append(id)
+	return out
+
+
+## S8b: the kind the selected trucks hold most of (share of their load).
+func fullest_cargo() -> String:
+	var best := "shells"
+	var best_f := -1.0
+	for id in truck_vehicles():
+		var v: Dictionary = view.vehicles_by_id.get(id, {})
+		for k in DROP_KINDS:
+			var f := float(v.get("cargo_kg", {}).get(k, 0.0)) / maxf(float(v.get("load_kg", {}).get(k, 1.0)), 1.0)
+			if f > best_f:
+				best_f = f
+				best = k
+	return best
 
 
 ## Selected soldiers (no vehicles), ascending.
@@ -592,6 +621,8 @@ func can(order: StringName) -> bool:
 		&"embark":
 			# S8a: infantry on foot (not vehicles' squads).
 			return not boarders().is_empty()
+		&"drop_crates":
+			return not truck_vehicles().is_empty()
 		&"disembark":
 			return not unload_vehicles().is_empty()
 		&"suppress":
@@ -684,6 +715,13 @@ func activate(order: StringName) -> void:
 			cancel_tool()
 		&"embark":
 			_set_tool(&"embark")
+		# S8b: arms the drop tool; again: the next kind.
+		&"drop_crates":
+			if tool == &"drop_crates":
+				drop_kind = DROP_KINDS[(DROP_KINDS.find(drop_kind) + 1) % DROP_KINDS.size()]
+			else:
+				drop_kind = fullest_cargo()
+				_set_tool(&"drop_crates")
 		# S6: a crate of that kind for each selected squad (in the base).
 		&"crate_shells", &"crate_small_arms", &"crate_explosives":
 			view.emit_intent(&"issue_crate", {"squads": selected_squads(), "kind": String(order).trim_prefix("crate_")})
@@ -1185,6 +1223,10 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			var fwd: Vector3 = -view.camera.global_transform.basis.z if view.camera != null else Vector3(0, 0, -1)
 			var across := Vector3(-fwd.z, 0, fwd.x)
 			view.emit_intent(&"build", {"squads": selected_squads(), "target": g, "what": "hq" if tool == &"build_hq" else "dump", "facing": across})
+		&"drop_crates":
+			view.emit_intent(&"drop_crates", {"units": truck_vehicles(), "target": g, "kind": drop_kind, "count": DROP_COUNT})
+			if not shift:
+				_set_tool(&"")
 		&"place_crate":
 			view.emit_intent(&"place_crate", {"squads": selected_squads(), "target": g})
 		&"pick_up":

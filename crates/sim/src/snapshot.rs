@@ -325,6 +325,10 @@ pub struct VehicleSnapshot {
     /// Own only (S3b Fix): MG rounds left in stowage, summed over the
     /// mounts that have a limit; `u32::MAX` when none has one.
     pub mg_rounds: u32,
+    /// S8b: a truck's cargo by `SupplyKind::index` (grams), and its drop
+    /// order: crates still to set down (0: none).
+    pub cargo_g: [u32; 3],
+    pub drop_left: u8,
     /// S3c: an abandoned vehicle's last owner (its `owner` is 255); the
     /// owner otherwise. Public.
     pub last_owner: u8,
@@ -1041,6 +1045,8 @@ impl RenderSnapshot {
                     .filter_map(|(m, st)| m.rounds.map(|n| n.saturating_sub(st.spent)))
                     .reduce(|a, b| a.saturating_add(b))
                     .unwrap_or(u32::MAX),
+                cargo_g: vs.cargo_g,
+                drop_left: vs.drop.map_or(0, |d| d.count),
                 last_owner: owner,
                 abandon_cause: vs.abandon_cause,
                 crew_squad: vs.crew_squad.map_or(NO_SQUAD, |q| q.0),
