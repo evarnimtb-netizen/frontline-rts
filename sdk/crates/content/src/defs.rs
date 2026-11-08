@@ -16,11 +16,11 @@ use serde::{Deserialize, Serialize};
 use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning,
-    AiSupplyTuning, AiTransportTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
-    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
-    FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning,
-    SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
+    AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
+    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
+    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
     VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
@@ -1661,6 +1661,10 @@ pub struct AiDef {
     /// S8a: the AI's half-tracks (default: the S8a starting values).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<AiTransportTuning>,
+    /// S8b: `[ai.recon]`.
+    pub recon: Option<AiReconTuning>,
+    /// S8b: `[ai.truck]`.
+    pub truck: Option<AiTruckTuning>,
 }
 
 impl AiDef {
@@ -2787,6 +2791,8 @@ impl RulesDef {
                 ai_mortar: &a.mortar_tuning(),
                 ai_supply: &a.supply.clone().unwrap_or_default(),
                 ai_transport: &a.transport.clone().unwrap_or_default(),
+                ai_recon: &a.recon.clone().unwrap_or_default(),
+                ai_truck: &a.truck.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

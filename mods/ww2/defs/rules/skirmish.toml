@@ -1248,10 +1248,10 @@ mortars_per_bearers = 2      # S6b: one bearer squad per this many own mortar sq
 # of known enemies (or at once when hit), support with the MG from
 # overwatch, return for the next squad. Starting values.
 [ai.transport]
-min_ride_m = 120             # m: a squad rides only to an objective farther than this; a ride this long counts as "transported" (report). S8a Tune: 150 -> 120 (USA 0.86 -> 1.12 transported per match, saved time per ride still +30 s)
-wait_s = 20                  # s: the vehicle waits at most this long at the base for its squad, then goes to support alone. S8a Tune: 30 -> 20
+min_ride_m = 200             # m: a squad rides only to an objective farther than this; a ride this long counts as "transported" (report). S8a Tune: 150 -> 120 (USA 0.86 -> 1.12 transported per match, saved time per ride still +30 s); S8b 120 -> 200 with drop_short_m 30 (rides this long pay: Germany -6 -> +8, USA -3 -> +19 s on the 40 set)
+wait_s = 10                  # s: the vehicle waits at most this long past the squad's walk to the door, then goes to support alone. S8a Tune: 30 -> 20; S8b 20 -> 10
 dismount_back_m = 40         # m: the men get off this far short of the first point on the way ...
-dismount_sight_m = 300       # m: ... within this of a known enemy with a clear line
+dismount_sight_m = 150       # m: ... within this of a known enemy with a clear line. S8b 300 -> 150 (about rifle range)
 los_rays = 8                 # sight-line rays per check along the way (0: distance only)
 hit_s = 2                    # s: a penetration this recent counts as "hit": everyone out
 rider_suppression_pct = 50   # %: a rider suppressed past this gets everyone out (the crouch threshold)
@@ -1260,6 +1260,38 @@ support_s = 30               # s: after unloading, the MG supports from overwatc
 arrive_m = 15                # m: a move that ends farther than this from its goal is a failed move ...
 max_fails = 2                # ... and after this many the job uses where the vehicle stands (no move loops, S7 tick fix)
 repath_s = 5                 # s: no job sends the same move again within this
+pick_m = 250                 # m: S8b: squads this close to the vehicle may be picked (S8b-15)
+meet_ahead_m = 30            # m: S8b: the vehicle meets a farther squad this far ahead of it, on its way to its point
+meet_stand_m = 20            # m: S8b: the squad boards when the vehicle stands this close (else it keeps walking)
+drop_short_m = 30            # m: S8b: the ride ends this far short of the point; the men walk the rest. Was dismount_back_m + 20 = 60 (spent 50 s on foot per ride)
+unload_rolling = 1           # S8b: 1: the unload is ordered on arrival, while it still rolls; 0: once stopped
+ride_lock_s = 60             # s: S8b: after getting off a squad keeps going to the point it rode for, unless enemies are near
+
+# S8b (docs/slices/S8b-trucks-recon.md 9): armoured cars scout ahead of the
+# infantry on their own share of the income, so they never take a tank's buy.
+[ai.recon]
+after_s = 90                 # s: first car from this match time ...
+second_after_s = 720         # s: ... a second one from this
+income_max_pct = 12          # %: all its cars cost at most this share of the income so far. S8b-17 start 8 bought the first car only after about 12 minutes
+view_back_m = 200            # m: it observes from this far short of the point the infantry goes for
+at_threat_m = 200            # m: a known AT team, tank or tank destroyer this close makes it back off ...
+backoff_m = 60               # m: ... this far per order
+
+# S8b: supply trucks, on their own share of the income.
+[ai.truck]
+min_vehicles = 2             # fighting vehicles alive before it buys one truck ...
+hq_wait_s = 300              # s: ... and the HQ stands or this much match time has passed
+income_max_pct = 9           # %: truck cards cost at most this share of the income so far. S8b-17 start 5 meant the 12th minute
+load_shells_kg = 160         # kg: shells it loads, at most the def's load_kg (half a load: 160 MP, the crate budget [ai.supply] shell_mp_max_pct limits it)
+load_wait_s = 90             # s: it waits in base this long for that load ...
+min_load_pct = 40            # %: ... and leaves with at least this share of it
+follow_m = 150               # m: it waits this far behind the centre of the armour (vehicles.md 7.5 supply_follow_m)
+los_rays = 8                 # sight-line rays per spot tested (0: no line test)
+return_below_pct = 20        # %: under this share of its load it goes back to the base
+flee_m = 120                 # m: it runs from any seen enemy this close
+arrive_m = 15                # m: a move that ends farther than this from its goal has failed ...
+max_fails = 2                # ... and after this many it takes where it stands (no move loops, S7 tick fix)
+repath_s = 8                 # s: no job sends the same move again within this
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

@@ -3297,6 +3297,8 @@ mod tests {
             from: FxVec2::from_int(100, 100),
             point: FxVec2::from_int(500, 500),
             rode: true,
+            aboard_at: 0,
+            off_at: 0,
         };
         let bytes = save_edited(&w, |s| {
             let g = s.game.as_mut().unwrap();
@@ -3339,6 +3341,97 @@ mod tests {
                 base,
                 "obj counter {k}"
             );
+        }
+        // S8b: the new AI state: hashed, round-trip equal, checked on load.
+        let on = |b: Vec<u8>, what: &str| {
+            let w = World::load(&b, 1).unwrap();
+            assert_ne!(w.full_state_hash(), base, "{what} is not hashed");
+            assert_eq!(
+                World::load(&w.save(), 2).unwrap().full_state_hash(),
+                w.full_state_hash(),
+                "{what} round trip"
+            );
+        };
+        let ai_edit = |f: &mut dyn FnMut(&mut crate::ai::AiState)| {
+            save_edited(&w, |s| {
+                let g = s.game.as_mut().unwrap();
+                f(g.ai.iter_mut().flatten().next().expect("an AI player"));
+            })
+        };
+        let lock = |until| crate::ai::AiRideLock {
+            until,
+            point: 0,
+            target: FxVec2::from_int(200, 200),
+        };
+        on(
+            ai_edit(&mut |a| {
+                a.ride_locks.insert(sid, lock(5));
+            }),
+            "a ride lock",
+        );
+        let bytes = ai_edit(&mut |a| {
+            a.ride_locks.insert(
+                sid,
+                crate::ai::AiRideLock {
+                    point: 200,
+                    ..lock(5)
+                },
+            );
+        });
+        assert!(World::load(&bytes, 1).is_err(), "a lock on no point");
+        on(
+            ai_edit(&mut |a| {
+                a.trucks.insert(sid, crate::ai::AiTruck::default());
+            }),
+            "a truck job",
+        );
+        let bytes = ai_edit(&mut |a| {
+            a.trucks.insert(
+                sid,
+                crate::ai::AiTruck {
+                    since: u64::MAX,
+                    ..crate::ai::AiTruck::default()
+                },
+            );
+        });
+        assert!(
+            World::load(&bytes, 1).is_err(),
+            "a truck job from the future"
+        );
+        on(
+            ai_edit(&mut |a| {
+                a.transports.insert(
+                    sid,
+                    crate::ai::AiTransport {
+                        phase: crate::ai::TransportPhase::Meet,
+                        pi: 1,
+                        ..crate::ai::AiTransport::default()
+                    },
+                );
+            }),
+            "a Meet job",
+        );
+        for k in 0..14 {
+            let bytes = ai_edit(&mut |a| {
+                let c = &mut a.counters;
+                match k {
+                    0 => c.obj_board_ticks += 1,
+                    1 => c.obj_foot_ticks += 1,
+                    2 => c.unload_exposed += 1,
+                    3 => c.unload_arrived += 1,
+                    4 => c.unload_stuck += 1,
+                    5 => c.unload_fire += 1,
+                    6 => c.ride_locks += 1,
+                    7 => c.recon_stops += 1,
+                    8 => c.recon_backoffs += 1,
+                    9 => c.recon_fails += 1,
+                    10 => c.truck_fails += 1,
+                    11 => c.truck_flees += 1,
+                    12 => c.truck_serves += 1,
+                    _ => c.stranded_served += 1,
+                }
+            });
+            on(bytes, "an S8b counter");
         }
     }
 

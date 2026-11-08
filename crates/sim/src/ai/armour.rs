@@ -92,6 +92,7 @@ impl Planner<'_> {
                     s.stocks[x.def as usize].radius,
                 )
             })
+            .chain(self.truck_stock(t.pos, round_g))
             .min_by_key(|&(d, p, _)| (d, p.x.raw(), p.y.raw()));
         let at_fwd = fwd.is_some_and(|(_, p, r)| (t.pos - p).length_sq_raw() <= sq_m(r.into()));
         let any_hq = g.supply6.structures.values().any(|x| {
@@ -166,6 +167,7 @@ impl Planner<'_> {
         // ... or bearers still taking crates at the base while every
         // source is far: hold for their run (it picks this tank first).
         if self.crate_for(t.pos, round_g)
+            || self.truck_coming(t.id)
             || (self.bearers_loading() && self.far_from_sources(t.pos, round_g))
         {
             if !matches!(g.squads[&t.squad].order, crate::game::Order::Idle) {

@@ -492,6 +492,71 @@ fn the_ai_rides_its_half_tracks_without_move_loops() {
     assert!(rides > 0 && rode.iter().any(|&r| r));
 }
 
+/// S8b: recon and truck AI in an AI-vs-AI match: both are bought, the moves
+/// do not loop, almost nothing is refused; the whole match (AI jobs, drops,
+/// Meet phases, ride locks) is deterministic at 1, 2, 3 and 8 threads and
+/// across a save and load. Slow in debug: run with `--release --
+/// --include-ignored`. Scans seeds 1-3 for a match with a truck drop.
+#[test]
+#[ignore]
+fn s8b_ai_recon_and_trucks_are_deterministic_and_do_not_loop() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap();
+    let ticks = 30 * 60 * 12u64;
+    let run = |seed: u64, threads: usize, split: Option<u64>| {
+        let req = MatchRequest::skirmish(seed, "ww2:germany", "ww2:usa", Difficulty::Normal);
+        let mut s = defs.resolve(&req).unwrap();
+        s.players.iter_mut().for_each(|p| p.is_ai = true);
+        let mut w = World::new_match(s, threads).unwrap();
+        for t in 0..ticks {
+            if Some(t) == split {
+                w = World::load(&w.save(), threads).unwrap();
+            }
+            w.step(&[]);
+        }
+        w
+    };
+    let mut found = None;
+    for seed in 1..=3u64 {
+        let w = run(seed, 1, None);
+        let g = w.game().unwrap();
+        let (mut drops, mut cars) = (0u32, 0u32);
+        for p in 0..2u8 {
+            let ai = g.ai(PlayerId(p)).unwrap();
+            let c = &ai.counters;
+            cars += c.recon_stops;
+            drops += c.truck_drops_ordered;
+            assert!(
+                c.truck_fails + c.recon_fails <= 20,
+                "seed {seed} p{p}: fails"
+            );
+            assert!(
+                ai.rejected * 50 <= ai.issued,
+                "seed {seed} p{p}: {} of {} refused",
+                ai.rejected,
+                ai.issued
+            );
+        }
+        if drops > 0 && cars > 0 {
+            found = Some((seed, w.full_state_hash()));
+            break;
+        }
+    }
+    let (seed, base) = found.expect("no truck drop and recon stop in seeds 1-3");
+    for threads in [2, 3, 8] {
+        assert_eq!(
+            run(seed, threads, None).full_state_hash(),
+            base,
+            "{threads} threads"
+        );
+    }
+    assert_eq!(
+        run(seed, 3, Some(ticks / 2)).full_state_hash(),
+        base,
+        "save/load/continue"
+    );
+}
+
 /// S8a Fix (review L3): the refusals, one case per row. Each starts from
 /// `loaded_world` (a 251 with a Grenadiergruppe behind it), sets the case
 /// up and sends one command that the sim must not apply.

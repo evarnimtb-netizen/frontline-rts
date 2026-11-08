@@ -187,13 +187,18 @@ mod mortar;
 mod overwatch;
 mod supply;
 mod transport;
+mod truck;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{
     END_FAST, END_GONE, END_LEASH, END_RETREAT, END_SPENT, END_TIMEOUT, END_UNSEEN, HUNT_END_NAMES,
     HUNT_ENDS, MAX_HUNTS,
 };
 pub use mortar::{AiSpotter, MAX_SPOTTERS, MODE_CHECKS, PLAN_RAYS};
-pub use transport::{AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase};
+pub use transport::{
+    AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
+};
+
+pub use truck::{AiTruck, MAX_TRUCKS, TruckPhase};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -313,6 +318,12 @@ pub struct AiState {
     /// S8a Fix (review M2): open ride measurements, by the riding squad
     /// (at most [`transport::MAX_RIDE_MEAS`]; report only).
     pub ride_meas: BTreeMap<SquadId, AiRideMeas>,
+    /// S8b: squads that got off keep going to their point (at most
+    /// [`transport::MAX_RIDE_MEAS`]; `ai::transport`).
+    pub ride_locks: BTreeMap<SquadId, AiRideLock>,
+    /// S8b: truck jobs, by the vehicle's squad (at most
+    /// [`truck::MAX_TRUCKS`]; `ai::truck`).
+    pub trucks: BTreeMap<SquadId, AiTruck>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -513,6 +524,27 @@ pub struct AiCounters {
     pub obj_ride_ticks: u64,
     pub obj_walk_ticks: u64,
     pub obj_lost: u32,
+    /// S8b: ticks from the order to the last man aboard and from getting
+    /// off to the point (the same rides as `obj_rides`); why unloads were
+    /// ordered; plans a ride lock held a squad.
+    pub obj_board_ticks: u64,
+    pub obj_foot_ticks: u64,
+    pub unload_exposed: u32,
+    pub unload_arrived: u32,
+    pub unload_stuck: u32,
+    pub unload_fire: u32,
+    pub ride_locks: u32,
+    /// S8b: recon cars stopped at a spot; backing off from an AT threat;
+    /// a spot given up; truck moves failed, fleeing plans, tanks served,
+    /// services ended with rounds gained, drops ordered.
+    pub recon_stops: u32,
+    pub recon_backoffs: u32,
+    pub recon_fails: u32,
+    pub truck_fails: u32,
+    pub truck_flees: u32,
+    pub truck_serves: u32,
+    pub stranded_served: u32,
+    pub truck_drops_ordered: u32,
 }
 
 impl AiState {
@@ -538,6 +570,8 @@ impl AiState {
             overwatch: BTreeMap::new(),
             transports: BTreeMap::new(),
             ride_meas: BTreeMap::new(),
+            ride_locks: BTreeMap::new(),
+            trucks: BTreeMap::new(),
         }
     }
 
@@ -643,6 +677,23 @@ impl AiState {
                     p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size
                 };
                 bad_squad(id) || m.order_tick > tick || !on(m.from) || !on(m.point)
+            })
+            || self.trucks.len() > truck::MAX_TRUCKS
+            || self.trucks.iter().any(|(id, j)| {
+                bad_squad(id)
+                    || j.since > tick
+                    || j.moved_at > tick
+                    || j.client.is_some_and(|c| c.index() >= ents_len)
+            })
+            || self.ride_locks.len() > transport::MAX_RIDE_MEAS
+            || self.ride_locks.iter().any(|(id, l)| {
+                let size = Fx::from_int(g.setup.map.size_m);
+                bad_squad(id)
+                    || l.point as usize >= np
+                    || l.target.x < Fx::ZERO
+                    || l.target.y < Fx::ZERO
+                    || l.target.x > size
+                    || l.target.y > size
             })
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
@@ -996,9 +1047,12 @@ impl Planner<'_> {
         // S8a: half-track jobs take their vehicles out of the tank habits
         // (but support, which is the overwatch habit).
         let waiting = self.transport_jobs(&mut tanks, &known, &busy);
+        self.ride_locks(&mut mine, &known);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
+        self.truck_jobs(&mut tanks, &known, &kv, &busy);
         self.crews(&crews, &known, &kv);
         self.buy(&kv);
+        self.buy_recon_truck();
         let mut points = self.evaluate_points(&known, &kv);
         let assigned = self.assign(&mine, &mut points);
         // S5a: Panzerfaust ambushes first; the hunts skip their squads.
@@ -1177,7 +1231,7 @@ impl Planner<'_> {
             // S8a Fix (review M4): transports stay outside the tank share
             // of the vehicle slot (they would take the tanks' buys).
             if let Some(r) = mix_slot(s, sq.type_idx)
-                && !g.is_transport_type(sq.type_idx)
+                && !g.is_outside_limit_type(sq.type_idx)
             {
                 counts[r] += 1;
             }
@@ -1214,7 +1268,7 @@ impl Planner<'_> {
             if let CommandKind::CallIn { squad_type } = c.kind {
                 let ty = &s.squad_types[squad_type as usize];
                 if let Some(r) = mix_slot(s, squad_type)
-                    && !g.is_transport_type(squad_type)
+                    && !g.is_outside_limit_type(squad_type)
                 {
                     counts[r] += 1;
                 }
@@ -1222,7 +1276,7 @@ impl Planner<'_> {
                 budget -= ty.cost as i64;
                 pop += ty.pop(&s.vehicles) as i64;
                 // S8a: transports are outside the vehicle limit.
-                vehicles += (ty.vehicle.is_some() && !g.is_transport_type(squad_type)) as u32;
+                vehicles += (ty.vehicle.is_some() && !g.is_outside_limit_type(squad_type)) as u32;
                 bought.push(squad_type);
             }
         }
@@ -1291,6 +1345,13 @@ impl Planner<'_> {
             mix[r] = ai.mix[r].pct;
         }
         let count_of = |counts: &[i64], r: Option<usize>| r.map_or(0, |r| counts[r]);
+        // S8b: a truck in sight is no reason for an AT team.
+        let armoured = kv
+            .iter()
+            .filter(|k| {
+                s.vehicles[k.type_idx as usize].role != frontline_content::VehicleRole::Truck
+            })
+            .count();
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
             let total: i64 = counts.iter().sum();
             let active = |r: usize| !cards[r].is_empty() && (!gated(r) || mix[r] > 0);
@@ -1328,7 +1389,7 @@ impl Planner<'_> {
             if let Some(a) = at_slot
                 && mix[a] > 0
                 && !cards[a].is_empty()
-                && 2 * kv.len() as i64
+                && 2 * armoured as i64
                     > 2 * (count_of(&counts, at_slot) + count_of(&counts, veh_slot)) + pzf_squads
             {
                 role = Some(a);
@@ -1403,7 +1464,7 @@ impl Planner<'_> {
             pop += men;
             bought.push(t);
             alive_by_type[t as usize] += 1;
-            if !g.is_transport_type(t) {
+            if !g.is_outside_limit_type(t) {
                 counts[r] += 1;
             }
             let c = &mut self.ai.counters;
@@ -1413,7 +1474,7 @@ impl Planner<'_> {
             c.bought[t as usize] += 1;
             if Some(r) == veh_slot {
                 c.vehicles_bought += 1;
-                if !g.is_transport_type(t) {
+                if !g.is_outside_limit_type(t) {
                     vehicles += 1;
                 }
                 if vehicles >= vr.limit && !cards[r].iter().any(|&x| g.is_transport_type(x)) {
@@ -1967,7 +2028,7 @@ impl Planner<'_> {
             .collect();
         for t in tanks {
             // S7: assault guns and tank destroyers hold overwatch.
-            if self.overwatch(t, points, known, kv) {
+            if self.overwatch(t, points, known, kv, target_point) {
                 continue;
             }
             let sq = &g.squads[&t.squad];

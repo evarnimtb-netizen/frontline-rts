@@ -1263,6 +1263,21 @@ tuning_table! {
         max_fails: 1..=10 = "d_tr_max_fails",
         /// No job sends the same move again within this (s).
         repath_s: 1..=120 = "d_tr_repath_s",
+        /// S8b: squads within this of the vehicle may be picked (m).
+        pick_m: 1..=2000 = "d_tr_pick_m",
+        /// S8b: the vehicle meets a squad farther than `meet_stand_m` this
+        /// far ahead of it on its way (m) ...
+        meet_ahead_m: 0..=500 = "d_tr_meet_ahead_m",
+        /// ... and the men board when it stands within this (m).
+        meet_stand_m: 1..=200 = "d_tr_meet_stand_m",
+        /// S8b: after getting off a squad keeps going to its point this
+        /// long unless enemies are near (s; 0: no lock).
+        ride_lock_s: 0..=600 = "d_tr_ride_lock_s",
+        /// S8b: the ride ends this far short of the point (m).
+        drop_short_m: 0..=500 = "d_tr_drop_short_m",
+        /// S8b: 1: the unload is ordered on arrival, while it still rolls;
+        /// 0: once stopped.
+        unload_rolling: 0..=1 = "d_tr_unload_rolling",
     }
 }
 
@@ -1302,6 +1317,121 @@ fn d_tr_max_fails() -> u32 {
 fn d_tr_repath_s() -> u32 {
     5
 }
+fn d_tr_pick_m() -> u32 {
+    250
+}
+fn d_tr_meet_ahead_m() -> u32 {
+    30
+}
+fn d_tr_meet_stand_m() -> u32 {
+    20
+}
+fn d_tr_ride_lock_s() -> u32 {
+    60
+}
+fn d_tr_drop_short_m() -> u32 {
+    60
+}
+fn d_tr_unload_rolling() -> u32 {
+    1
+}
+
+tuning_table! {
+    /// `[ai.recon]` (S8b, docs/slices/S8b-trucks-recon.md 9): how the AI
+    /// uses its armoured cars.
+    pub struct AiReconTuning {
+        /// First car from this match time (s) ...
+        after_s: 0..=3600,
+        /// ... a second one from this (s).
+        second_after_s: 0..=3600,
+        /// All its cars cost at most this share of the income so far (%).
+        income_max_pct: 0..=100,
+        /// It observes from this far short of the point the infantry goes
+        /// for (m).
+        view_back_m: 0..=1000,
+        /// Known AT teams, tanks and tank destroyers this close make it
+        /// back off (m; 0: never) ...
+        at_threat_m: 0..=2000,
+        /// ... this far per order (m).
+        backoff_m: 1..=500,
+    }
+}
+
+impl AiReconTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+impl Default for AiReconTuning {
+    /// S8b starting values (a rules def without `[ai.recon]`).
+    fn default() -> AiReconTuning {
+        AiReconTuning {
+            after_s: 90,
+            second_after_s: 480,
+            income_max_pct: 14,
+            view_back_m: 150,
+            at_threat_m: 200,
+            backoff_m: 60,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.truck]` (S8b, docs/slices/S8b-trucks-recon.md 9): how the AI
+    /// uses its supply trucks.
+    pub struct AiTruckTuning {
+        /// It buys one with this many fighting vehicles alive ...
+        min_vehicles: 1..=64,
+        /// ... once the HQ stands or this much match time has passed (s).
+        hq_wait_s: 0..=3600,
+        /// Truck cards cost at most this share of the income so far (%).
+        income_max_pct: 0..=100,
+        /// Kg of shells it loads (at most the def's `load_kg`).
+        load_shells_kg: 0..=10000,
+        /// It waits in base this long for a full load (s) ...
+        load_wait_s: 1..=3600,
+        /// ... and leaves with at least this share of it (%).
+        min_load_pct: 0..=100,
+        /// It waits this far behind the centre of the armour (m).
+        follow_m: 0..=2000,
+        /// Sight-line rays per spot tested (0: no line test).
+        los_rays: 0..=32,
+        /// Under this share of its load it goes back to the base (%).
+        return_below_pct: 0..=100,
+        /// It runs from any seen enemy this close (m; 0: never).
+        flee_m: 0..=2000,
+        /// A move that ends farther than this from its goal has failed (m).
+        arrive_m: 1..=200,
+        /// ... after this many it takes where it stands.
+        max_fails: 1..=10,
+        /// No job sends the same move again within this (s).
+        repath_s: 1..=120,
+    }
+}
+
+impl AiTruckTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+impl Default for AiTruckTuning {
+    /// S8b starting values (a rules def without `[ai.truck]`).
+    fn default() -> AiTruckTuning {
+        AiTruckTuning {
+            min_vehicles: 2,
+            hq_wait_s: 300,
+            income_max_pct: 9,
+            load_shells_kg: 160,
+            load_wait_s: 90,
+            min_load_pct: 40,
+            follow_m: 150,
+            los_rays: 8,
+            return_below_pct: 20,
+            flee_m: 120,
+            arrive_m: 15,
+            max_fails: 2,
+            repath_s: 8,
+        }
+    }
+}
 
 impl AiTransportTuning {
     fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
@@ -1323,6 +1453,12 @@ impl Default for AiTransportTuning {
             arrive_m: d_tr_arrive_m(),
             max_fails: d_tr_max_fails(),
             repath_s: d_tr_repath_s(),
+            pick_m: d_tr_pick_m(),
+            meet_ahead_m: d_tr_meet_ahead_m(),
+            meet_stand_m: d_tr_meet_stand_m(),
+            ride_lock_s: d_tr_ride_lock_s(),
+            drop_short_m: d_tr_drop_short_m(),
+            unload_rolling: d_tr_unload_rolling(),
         }
     }
 }
@@ -1624,6 +1760,8 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.mortar", AiMortarTuning::KEYS),
     ("ai.supply", AiSupplyTuning::KEYS),
     ("ai.transport", AiTransportTuning::KEYS),
+    ("ai.recon", AiReconTuning::KEYS),
+    ("ai.truck", AiTruckTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -1678,6 +1816,8 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_mortar: &'a AiMortarTuning,
     pub ai_supply: &'a AiSupplyTuning,
     pub ai_transport: &'a AiTransportTuning,
+    pub ai_recon: &'a AiReconTuning,
+    pub ai_truck: &'a AiTruckTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -1732,6 +1872,8 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_mortar.check(&p("ai.mortar"), out);
     t.ai_supply.check(&p("ai.supply"), out);
     t.ai_transport.check(&p("ai.transport"), out);
+    t.ai_recon.check(&p("ai.recon"), out);
+    t.ai_truck.check(&p("ai.truck"), out);
 }
 
 #[cfg(test)]

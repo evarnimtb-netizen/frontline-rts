@@ -3868,7 +3868,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 31] = [
+    let all: [(u32, CaseFn); 32] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3900,6 +3900,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (29, s8b::case29),
         (30, s8b::case30),
         (31, s8b::case31),
+        (32, s8b::case32),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

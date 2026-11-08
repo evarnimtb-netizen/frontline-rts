@@ -64,6 +64,7 @@ impl super::Planner<'_> {
         points: &[PointEval],
         known: &[Known],
         kv: &[KnownVehicle],
+        target_point: Option<usize>,
     ) -> bool {
         let g = self.g;
         let r = &g.setup.rules.ai.armour;
@@ -78,6 +79,11 @@ impl super::Planner<'_> {
             return false;
         };
         let open = v.boxes.iter().any(|b| b.open != 0);
+        // S8b: a recon car backs off from AT teams and armour first.
+        let recon = v.role == VehicleRole::Recon;
+        if recon && !t.immobile && self.recon_backoff(t, sq, known, kv) {
+            return true;
+        }
         // Open top: back away from infantry.
         if open && !t.immobile && r.open_top_infantry_m > 0 {
             let near = sq_m(Fx::from_int(r.open_top_infantry_m as i32));
@@ -110,6 +116,24 @@ impl super::Planner<'_> {
             .filter(|k| (k.pos - t.pos).length_sq_raw() <= sq_m(Fx::from_int(r.td_hunt_m as i32)))
             .min_by_key(|k| ((k.pos - t.pos).length_sq_raw(), k.id));
         let (anchor, axis, pi) = match hunt {
+            // S8b: `view_back_m` short of the point the infantry goes for.
+            _ if recon => {
+                let i = target_point.or_else(|| {
+                    (0..points.len()).max_by_key(|&i| (points[i].priority, -(i as i64)))
+                });
+                let Some(i) = i else {
+                    return false;
+                };
+                let p = points[i].pos;
+                let out = (p - g.base_of(self.me)).normalize_or_zero();
+                let view = Fx::from_int(g.setup.rules.ai.recon.view_back_m.min(30_000) as i32);
+                let anchor = self.terrain.clamp(p - out * view);
+                (
+                    anchor,
+                    self.terrain.clamp(p + out * Fx::from_int(ENEMY_SIDE_M)),
+                    i as u8,
+                )
+            }
             Some(k) => (t.pos, k.pos, super::NO_POINT),
             None => {
                 let held = (0..points.len())
@@ -184,6 +208,9 @@ impl super::Planner<'_> {
             && (t.pos - entry.spot).length_sq_raw() > sq_m(Fx::from_int(AT_SPOT_M))
         {
             entry.spot = t.pos;
+            if recon {
+                self.ai.counters.recon_fails += 1;
+            }
         }
         let at_spot = (t.pos - entry.spot).length_sq_raw() <= sq_m(Fx::from_int(AT_SPOT_M));
         if !at_spot && !t.immobile {
@@ -203,6 +230,9 @@ impl super::Planner<'_> {
                 entry.held = true;
                 entry.rounds = rounds;
                 self.ai.counters.overwatch_holds += 1;
+                if recon {
+                    self.ai.counters.recon_stops += 1;
+                }
             }
             // Face the threat while idle there and not engaged: a face would
             // clear `lay_turn` and swing a laid gun off its target.
@@ -229,6 +259,62 @@ impl super::Planner<'_> {
         }
         self.ai.overwatch.insert(t.squad, entry);
         self.task(t.squad, TaskKind::Defend, pi, entry.spot);
+        true
+    }
+
+    /// S8b: a recon car with a known AT team or armoured enemy within
+    /// `at_threat_m` reverses away from it (`ReverseUnits`).
+    fn recon_backoff(
+        &mut self,
+        t: &MyTank,
+        sq: &crate::game::Squad,
+        known: &[Known],
+        kv: &[KnownVehicle],
+    ) -> bool {
+        let g = self.g;
+        let r = &g.setup.rules.ai.recon;
+        if r.at_threat_m == 0 {
+            return false;
+        }
+        let near = sq_m(Fx::from_int(r.at_threat_m as i32));
+        let team = known
+            .iter()
+            .filter(|k| k.at)
+            .map(|k| (k.pos, k.id))
+            .chain(
+                kv.iter()
+                    .filter(|k| {
+                        matches!(
+                            g.setup.vehicles[k.type_idx as usize].role,
+                            VehicleRole::Tank
+                                | VehicleRole::AssaultGun
+                                | VehicleRole::TankDestroyer
+                        )
+                    })
+                    .map(|k| (k.pos, k.id)),
+            )
+            .filter(|(p, _)| (*p - t.pos).length_sq_raw() <= near)
+            .min_by_key(|(p, id)| ((*p - t.pos).length_sq_raw(), *id));
+        let Some((p, _)) = team else {
+            return false;
+        };
+        let away = (t.pos - p).normalize_or_zero();
+        let target = self
+            .terrain
+            .clamp(t.pos + away * Fx::from_int(r.backoff_m.min(30_000) as i32));
+        let going = matches!(&sq.order, Order::Move { target: tg }
+            if (*tg - target).length_sq_raw() <= sq_m(Fx::from_int(15)));
+        if !going && sq.order == Order::Idle {
+            self.ai.emit(
+                self.due,
+                CommandKind::ReverseUnits {
+                    units: vec![t.id],
+                    target,
+                },
+            );
+            self.ai.counters.recon_backoffs += 1;
+        }
+        self.task(t.squad, TaskKind::Retreat, super::NO_POINT, target);
         true
     }
 

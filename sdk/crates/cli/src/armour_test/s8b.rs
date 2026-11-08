@@ -10,7 +10,9 @@ use frontline_sim::armour::{self, deg, plate_shot};
 use frontline_sim::ecs::Velocity;
 use frontline_sim::scenarios::{at, dir_deg, members};
 use frontline_sim::vehicle::{DriveCtx, drive};
-use frontline_sim::{ArmourEventKind, Fx, FxVec2, FxVec3, ItemKind, SimId, Structure, World};
+use frontline_sim::{
+    ArmourEventKind, Fx, FxVec2, FxVec3, ItemKind, PlayerId, SimId, Structure, World,
+};
 
 use super::{
     CaseReport, CommandKind, Env, crew_hp, dist, hz, no_ammo, open_top_world, order, pos,
@@ -1082,6 +1084,67 @@ pub(super) fn case31(env: &Env) -> Result<CaseReport> {
         round3(gain),
         ">= 30",
         format!("{base} m to {settled} m"),
+    );
+    Ok(r)
+}
+
+/// Case 32 (owner request 2026-11-01, spec 9): the AI brings supply to a
+/// stranded tank. The tank stands immobile with 10 % of its rounds, 350 m
+/// from a base holding a loaded truck; no enemy on the map.
+pub(super) fn case32(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(32, "AI truck serves a stranded tank (7.5)");
+    let (mut served, mut gained) = (0u32, 0u64);
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (p, tc, tank) = side(flip);
+        let mut s = env.setup(seed * 37 + flip as u64)?;
+        let mut w = super::open_top_from(&mut s, env.threads, |s| {
+            s.players[p as usize].is_ai = true;
+        })?;
+        let setup = w.match_setup().ok_or_else(|| anyhow!("setup"))?.clone();
+        let b = &setup.map.bases[setup.players[p as usize].base as usize];
+        let base: FxVec2 = b.center.into();
+        let mid = FxVec2::from_int(setup.map.size_m / 2, setup.map.size_m / 2);
+        let toward = (mid - base).normalize_or_zero();
+        let to = base + toward * Fx::from_int(350);
+        let v = tank_at_tenth(&mut w, p, tank, to.x.floor_int(), to.y.floor_int())?;
+        w.edit_vehicle(v, |vs| {
+            for c in [ComponentKind::TrackLeft, ComponentKind::TrackRight] {
+                vs.components[c.index()] = 0;
+            }
+        });
+        let (_, t) = spawn_card(&mut w, p, tc, base, toward)?;
+        w.edit_vehicle(t, |vs| {
+            vs.cargo_g = [120_000, 40_000, 320_000];
+        });
+        let n0 = held_rounds(&w, v)?;
+        for _ in 0..150 * hz(&w) {
+            w.step(&[]);
+        }
+        let g = held_rounds(&w, v)?.saturating_sub(n0) as u64;
+        gained += g;
+        let serves = w
+            .game()
+            .and_then(|g| g.ai(PlayerId(p)))
+            .map_or(0, |a| a.counters.truck_serves);
+        served += u32::from(serves > 0 && g >= 1);
+    }
+    let runs = f64::from(r.runs);
+    let pct_served = round3(f64::from(served) * 100.0 / runs);
+    r.check_v(
+        "stranded_served_pct",
+        pct_served >= 80.0,
+        pct_served,
+        ">= 80",
+        format!("{served} of {} runs", r.runs),
+    );
+    let mean = round3(gained as f64 / runs);
+    r.check_v(
+        "rounds_gained_mean",
+        mean >= 5.0,
+        mean,
+        ">= 5",
+        format!("{gained} rounds in all"),
     );
     Ok(r)
 }

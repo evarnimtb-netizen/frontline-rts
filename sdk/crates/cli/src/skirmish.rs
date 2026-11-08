@@ -379,6 +379,13 @@ pub struct PlayerReport {
     /// Review M2: AI ride measurements (`AiCounters::obj_*`): rides that
     /// reached their point, order-to-arrival ticks, straight-walk ticks, lost.
     pub s8a_obj: (u32, u64, u64, u32),
+    /// S8b ride attribution (`AiCounters`): board and foot ticks, unloads
+    /// exposed, arrived, stuck, under fire.
+    pub s8b_ride: [u64; 6],
+    /// S8b AI counters: recon stops, backoffs, spots given up, truck moves
+    /// failed, flee plans, services started, tanks served, drops ordered;
+    /// failed transport moves are in `s8a_ai`.
+    pub s8b_ai: [u32; 8],
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -1273,6 +1280,30 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     let c = &a.counters;
                     (c.obj_rides, c.obj_ride_ticks, c.obj_walk_ticks, c.obj_lost)
                 }),
+                s8b_ai: ai.map_or([0; 8], |a| {
+                    let c = &a.counters;
+                    [
+                        c.recon_stops,
+                        c.recon_backoffs,
+                        c.recon_fails,
+                        c.truck_fails,
+                        c.truck_flees,
+                        c.truck_serves,
+                        c.stranded_served,
+                        c.truck_drops_ordered,
+                    ]
+                }),
+                s8b_ride: ai.map_or([0; 6], |a| {
+                    let c = &a.counters;
+                    [
+                        c.obj_board_ticks,
+                        c.obj_foot_ticks,
+                        c.unload_exposed as u64,
+                        c.unload_arrived as u64,
+                        c.unload_stuck as u64,
+                        c.unload_fire as u64,
+                    ]
+                }),
                 s8a_ai: ai.map_or([0; 5], |a| {
                     let c = &a.counters;
                     [
@@ -1713,6 +1744,17 @@ pub struct S8aFaction {
     pub obj_ride_ticks: u64,
     pub obj_walk_ticks: u64,
     pub obj_lost: u64,
+    /// S8b: obj_board_ticks, obj_foot_ticks, unloads exposed, arrived,
+    /// stuck, under fire.
+    pub ride: [u64; 6],
+    /// S8b: `Player::s8b_ai`, and the trucks' totals (`S6Account`).
+    pub ai8b: [u64; 8],
+    pub truck_loaded_g: u64,
+    pub truck_tank_rounds: u64,
+    pub truck_men_rounds: u64,
+    pub truck_crates_dropped: u64,
+    pub truck_lost_g: u64,
+    pub cargo_detonations: u64,
     #[serde(skip)]
     pub transport_cards: std::collections::BTreeSet<String>,
 }
@@ -2139,6 +2181,18 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             e.obj_ride_ticks += p.s8a_obj.1;
             e.obj_walk_ticks += p.s8a_obj.2;
             e.obj_lost += p.s8a_obj.3 as u64;
+            for (a, b) in e.ride.iter_mut().zip(p.s8b_ride) {
+                *a += b;
+            }
+            for (a, b) in e.ai8b.iter_mut().zip(p.s8b_ai) {
+                *a += b as u64;
+            }
+            e.truck_loaded_g += p.s6.truck_loaded_g.iter().map(|&g| g as u64).sum::<u64>();
+            e.truck_tank_rounds += p.s6.truck_tank_rounds as u64;
+            e.truck_men_rounds += p.s6.truck_men_rounds as u64;
+            e.truck_crates_dropped += p.s6.truck_crates_dropped as u64;
+            e.truck_lost_g += p.s6.truck_lost_g;
+            e.cargo_detonations += p.s6.cargo_detonations as u64;
             s4.pzf_hunts += q.pzf_hunts;
             s4.capture_orders += q.capture_orders;
             s4.pop_cap_holds += q.pop_cap_holds;

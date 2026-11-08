@@ -403,11 +403,59 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                 "obj_ride_s_per_ride": round3(e.obj_ride_ticks as f64 / 30.0 / e.obj_rides.max(1) as f64),
                 "obj_walk_s_per_ride": round3(e.obj_walk_ticks as f64 / 30.0 / e.obj_rides.max(1) as f64),
                 "obj_lost_per_match": round3(e.obj_lost as f64 / en),
+                "obj_board_s_per_ride": round3(e.ride[0] as f64 / 30.0 / e.obj_rides.max(1) as f64),
+                "obj_foot_s_per_ride": round3(e.ride[1] as f64 / 30.0 / e.obj_rides.max(1) as f64),
                 "riders_lost_per_match": round3(e.riders_lost as f64 / en),
                 "small_arms_pens_per_match": round3(e.small_arms_pens as f64 / en),
                 "dismounts_under_fire_pct": pct(e.dismounts_under_fire as f64, e.rides as f64),
                 "transports_bought": bought,
                 "transport_trips_per_bought": round3(e.transport_trips as f64 / bought.max(1) as f64),
+            }),
+        );
+    }
+    {
+        let e = &f.s8a;
+        let en = e.matches.max(1) as f64;
+        let unloads: u64 = e.ride[2] + e.ride[3] + e.ride[4] + e.ride[5];
+        o.insert(
+            "s8b".into(),
+            json!({
+                "unload_exposed": e.ride[2],
+                "unload_arrived": e.ride[3],
+                "unload_stuck": e.ride[4],
+                "unload_fire": e.ride[5],
+                "recon_stops": e.ai8b[0],
+                "recon_backoffs": e.ai8b[1],
+                "recon_fails": e.ai8b[2],
+                "truck_fails": e.ai8b[3],
+                "truck_flees": e.ai8b[4],
+                "truck_serves": e.ai8b[5],
+                "stranded_served": e.ai8b[6],
+                "truck_drops_ordered": e.ai8b[7],
+                "truck_loaded_kg": e.truck_loaded_g / 1000,
+                "truck_tank_rounds": e.truck_tank_rounds,
+                "truck_men_rounds": e.truck_men_rounds,
+                "truck_crates_dropped": e.truck_crates_dropped,
+                "truck_lost_kg": e.truck_lost_g / 1000,
+            }),
+        );
+        o.insert(
+            "s8b_derived".into(),
+            json!({
+                "unload_exposed_pct": pct(e.ride[2] as f64, unloads as f64),
+                "unload_arrived_pct": pct(e.ride[3] as f64, unloads as f64),
+                "recon_stops_per_match": round3(e.ai8b[0] as f64 / en),
+                "recon_backoffs_per_match": round3(e.ai8b[1] as f64 / en),
+                "stranded_served_per_match": round3(e.ai8b[6] as f64 / en),
+                "truck_serves_per_match": round3(e.ai8b[5] as f64 / en),
+                "truck_crates_dropped_per_match": round3(e.truck_crates_dropped as f64 / en),
+                "truck_tank_rounds_per_match": round3(e.truck_tank_rounds as f64 / en),
+                "truck_men_rounds_per_match": round3(e.truck_men_rounds as f64 / en),
+                "truck_loaded_kg_per_match": round3(e.truck_loaded_g as f64 / 1000.0 / en),
+                "cargo_detonations_per_match": round3(e.cargo_detonations as f64 / en),
+                "ai_move_fails_per_match": round3(
+                    (e.ai_fails + e.ai8b[2] + e.ai8b[3]) as f64 / en
+                ),
             }),
         );
     }

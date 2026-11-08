@@ -30,11 +30,11 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning,
-    AiSupplyTuning, AiTransportTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
-    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
-    FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning,
-    SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
+    AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
+    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
+    FireTuning, FormationTuning, GunneryTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
     VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
@@ -519,6 +519,10 @@ pub struct AiSetup {
     pub supply: AiSupplyTuning,
     /// S8a: `[ai.transport]` (or the S8a starting values).
     pub transport: AiTransportTuning,
+    /// S8b: `[ai.recon]` (or the S8b starting values).
+    pub recon: AiReconTuning,
+    /// S8b: `[ai.truck]` (or the S8b starting values).
+    pub truck: AiTruckTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1870,6 +1874,8 @@ impl ModDefs {
                         mortar: a.mortar_tuning(),
                         supply: a.supply.clone().unwrap_or_default(),
                         transport: a.transport.clone().unwrap_or_default(),
+                        recon: a.recon.clone().unwrap_or_default(),
+                        truck: a.truck.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2647,6 +2653,8 @@ impl MatchSetup {
                 ai_mortar: &a.mortar,
                 ai_supply: &a.supply,
                 ai_transport: &a.transport,
+                ai_recon: &a.recon,
+                ai_truck: &a.truck,
             },
         );
         r.at_ditch
