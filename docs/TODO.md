@@ -148,7 +148,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-13 (Plan) The push-limit reserve (`push_without_supply_m`, 7.6) is left out. (A) Yes, with the heavy wave.
   S8b-14 (Plan) AI tanks fire only 6.4-6.9 main-gun rounds per tank bought and start 0-4 rearm trips in 160 matches (S8a data), so truck rearms of tanks stay few; crates are the measured work and tank-round targets are reports. (A) Keep the truck as the owner asked. (B) Raise AI tank fire first, out of scope.
   S8b-15 (Plan) A half-track picks squads within 250 m and drives to them (was 120 m, waiting at base). (A) Yes.
-  S8b-16 (Plan) A wheeled vehicle drives on the undilated block layer (paths keep the 4-8 m clearance), so a truck parked by a new trench is not stranded. (A) Yes.
+  S8b-16 (Plan, Build A) A wheeled vehicle drives and paths on the undilated wheel layer (its dilation is the margin), so a truck parked by a new trench is not stranded and a 10 m trench gap stays open. (A) Yes.
   S8b-17 (Plan) AI own budgets: recon at most 8 %, trucks at most 5 % of income so far, outside the unit mix. (A) Start values; the Tune moves them.
   S8b-18 (Plan) The M8's .50 ring is a 360 degree hull-frame pintle, not a turret-mounted gun. (A) Yes.
   S8b-19 (Plan) Drop Crates hotkey `I`. (A) Yes.

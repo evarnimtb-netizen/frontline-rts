@@ -124,10 +124,10 @@ Target: T50 above 0 on the six set-faction pairs, T41b and T48b at least 1. Rech
   turning circle (`|to - c| < R` for the circle on the side it lies) makes it reverse with the opposite lock until it is outside
   (no new state: geometry each tick). `vs.face` is cleared. `waypoint_reach` and `arrive` from `wheeled_*`. Stuck, back-off and partial-
   path rules stay (S7 fix: a goal it cannot reach ends like an arrival).
-- **Layer.** `wheel_block` is a second `BlockLayer` with `line_only = false`: raw = (dug >= its dm anywhere) or wreck. `dug_dm` is the
-  deepest in the cell, so a 1.6 m trench is caught; `ditch_dm_of` is taken from non-wheeled defs only (code map). A* uses the dilated
-  layer. **Driving checks the raw layer only** for wheeled (`blocked()`): the dilation is 4-8 m, and a truck parked by a trench an
-  engineer digs after it stopped would otherwise read `on_blocked`, immobile for good. Test: such a truck drives away.
+- **Layer.** `wheel_block` is a second `BlockLayer` (`any_dug`): raw = (dug >= its dm anywhere) or wreck. `dug_dm` is the deepest in the
+  cell, so a 1.6 m trench is caught; `ditch_dm_of` is taken from non-wheeled defs only (code map). **Blocked is the raw nodes, not dilated**
+  (Build A; the plan's dilated A* closed a 10 m gap), and the dilation is its margin: a car is much narrower than a 4 m grid cell, and a
+  truck parked by a trench an engineer digs after it stopped must not read `on_blocked` (S8b-16). Test: such a car drives away.
 - **Wheels.** `WheelsFront`, `WheelsRear` are anchors-only, like tracks: band hit picks front or rear by `hit.local.x` (box frame),
   `blast_tracks` and the fragment band use `is_running_gear`; either at 0 immobilises.
 

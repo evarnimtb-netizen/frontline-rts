@@ -680,10 +680,12 @@ impl Geo {
             .components
             .iter()
             .find(|c| {
+                // S8b: the first running gear the def has (an absent
+                // part has no anchors).
                 matches!(
                     c.kind,
                     ComponentKind::TrackLeft | ComponentKind::WheelsFront
-                )
+                ) && !c.anchors.is_empty()
             })
             .and_then(|c| c.anchors.first())
             .map(|a| Fx::from(a.pos.y).abs())
