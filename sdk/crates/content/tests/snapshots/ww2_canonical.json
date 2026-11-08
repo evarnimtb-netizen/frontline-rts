@@ -798,7 +798,8 @@
         "ww2:ger_munitionstraeger",
         "ww2:ger_stug3_g_squad",
         "ww2:ger_sdkfz251_1_squad",
-        "ww2:ger_sdkfz234_1_squad"
+        "ww2:ger_sdkfz234_1_squad",
+        "ww2:ger_opel_blitz_squad"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -823,7 +824,8 @@
         "ww2:usa_ammo_bearers",
         "ww2:usa_m10_squad",
         "ww2:usa_m3a1_squad",
-        "ww2:usa_m8_squad"
+        "ww2:usa_m8_squad",
+        "ww2:usa_cckw_squad"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -1609,14 +1611,18 @@
         "base_crate_issue_s": 10,
         "base_small_arms_rounds_s": 30,
         "bullet_box_damage": 4,
+        "cargo_detonate_min_kg": 40,
         "cookoff_kg_per_burst": 16,
         "cookoff_max": 8,
         "cookoff_s": 6,
         "crate_bomb_s": 4,
         "crate_cap": 12,
         "crate_feed_m": 5,
+        "drop_reach_m": 8,
+        "drop_s": 3,
         "dump_max": 3,
         "explosives_mp_per_t": 500,
+        "fwd_mg_rounds_s": 50,
         "fwd_rearm_s": 4,
         "hq_max": 1,
         "low_pct": 30,
@@ -1633,6 +1639,7 @@
         "shell_mp_per_t": 1000,
         "small_arms_mp_per_t": 200,
         "structure_bomb_s": 2,
+        "truck_load_kg_s": 8,
         "unfired_s": 3
       },
       "tick_hz": 30,
@@ -2194,6 +2201,31 @@
       "unlock_s": 0,
       "weapon": ""
     },
+    "ww2:ger_opel_blitz_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_opel_blitz_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "Opel Blitz 3-ton truck",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "Blitz",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle",
+        "truck"
+      ],
+      "vehicle": "ww2:ger_opel_blitz",
+      "weapon": ""
+    },
     "ww2:ger_panzerschreck_team": {
       "capabilities": [
         "dig_basic",
@@ -2651,6 +2683,31 @@
         "at"
       ],
       "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_cckw_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_cckw_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "GMC CCKW 2.5-ton truck",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "CCKW",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle",
+        "truck"
+      ],
+      "vehicle": "ww2:usa_cckw",
       "weapon": ""
     },
     "ww2:usa_engineer_squad": {
@@ -3366,6 +3423,346 @@
     }
   },
   "vehicles": {
+    "ww2:ger_opel_blitz": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              170,
+              0,
+              150
+            ],
+            "half": [
+              130,
+              115,
+              60
+            ]
+          },
+          "frame": "hull",
+          "id": "cab"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              -130,
+              0,
+              145
+            ],
+            "half": [
+              170,
+              115,
+              55
+            ]
+          },
+          "floor_cm": 100,
+          "frame": "hull",
+          "id": "bed",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              250,
+              0,
+              135
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              45,
+              35
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "engine"
+        },
+        {
+          "box": {
+            "center": [
+              130,
+              0,
+              110
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              25,
+              18
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "transmission"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                230,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                230,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                -95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_rear"
+        },
+        {
+          "box": {
+            "center": [
+              -130,
+              0,
+              147
+            ],
+            "frame": "hull",
+            "half": [
+              150,
+              100,
+              45
+            ]
+          },
+          "hp": 60,
+          "type": "cargo"
+        }
+      ],
+      "cost": 170,
+      "crew_squad": "ww2:ger_tank_crew",
+      "eye_height_cm": 230,
+      "faction": "ww2:germany",
+      "hatches": [
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            115,
+            150
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            -115,
+            150
+          ],
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 40,
+        "track_mm": 3
+      },
+      "id": "ww2:ger_opel_blitz",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 120,
+        "bog_pct": 15,
+        "brake_cm_s2": 350,
+        "ditch_block_dm": 10,
+        "max_slope_pct": 40,
+        "moving_spread_pct": 100,
+        "reverse_cm_s": 200,
+        "slope_loss_pct": 85,
+        "speed_cm_s": 800,
+        "turn_deg_s": 0,
+        "turn_radius_cm": 850,
+        "type": "wheeled",
+        "unbog_s": [
+          25,
+          45
+        ],
+        "woods_speed_pct": 30
+      },
+      "name": "Opel Blitz 3-ton truck",
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 45,
+      "role": "truck",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              120,
+              60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "driver",
+          "in": "cab",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              120,
+              -60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "co_driver",
+          "in": "cab",
+          "role": "commander"
+        }
+      ],
+      "short_name": "Blitz",
+      "sight_m": 150,
+      "sources": [
+        "docs/design/roster/vehicles.md 7.3, 8.4",
+        "memory, verify (S8b-11): dimensions, payload, speed and sheet-metal thicknesses"
+      ],
+      "spot_size_pct": 150,
+      "stations": [
+        {
+          "id": "cab",
+          "seats": [
+            "driver",
+            "commander"
+          ]
+        }
+      ],
+      "supply": {
+        "cap_kg_total": 3000,
+        "cookoff": "ww2:75mm_sprgr34",
+        "crates": [
+          "ww2:ger_shells_crate",
+          "ww2:ger_small_arms_crate",
+          "ww2:ger_explosives_crate"
+        ],
+        "load_kg": {
+          "explosives": 40,
+          "shells": 320,
+          "small_arms": 120
+        },
+        "radius_m": 8,
+        "round_interval_s": 4,
+        "vehicle_radius_m": 15
+      },
+      "weapons": []
+    },
     "ww2:ger_pz4_h": {
       "boxes": [
         {
@@ -5380,6 +5777,346 @@
           "traverse_deg_s": 6
         }
       ]
+    },
+    "ww2:usa_cckw": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              170,
+              0,
+              150
+            ],
+            "half": [
+              130,
+              115,
+              60
+            ]
+          },
+          "frame": "hull",
+          "id": "cab"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              -130,
+              0,
+              145
+            ],
+            "half": [
+              170,
+              115,
+              55
+            ]
+          },
+          "floor_cm": 100,
+          "frame": "hull",
+          "id": "bed",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              250,
+              0,
+              135
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              45,
+              35
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "engine"
+        },
+        {
+          "box": {
+            "center": [
+              130,
+              0,
+              110
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              25,
+              18
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "transmission"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                235,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                235,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                -95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_rear"
+        },
+        {
+          "box": {
+            "center": [
+              -130,
+              0,
+              147
+            ],
+            "frame": "hull",
+            "half": [
+              150,
+              100,
+              45
+            ]
+          },
+          "hp": 60,
+          "type": "cargo"
+        }
+      ],
+      "cost": 180,
+      "crew_squad": "ww2:usa_tank_crew",
+      "eye_height_cm": 230,
+      "faction": "ww2:usa",
+      "hatches": [
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            115,
+            150
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            -115,
+            150
+          ],
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 40,
+        "track_mm": 3
+      },
+      "id": "ww2:usa_cckw",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 120,
+        "bog_pct": 15,
+        "brake_cm_s2": 350,
+        "ditch_block_dm": 10,
+        "max_slope_pct": 40,
+        "moving_spread_pct": 100,
+        "reverse_cm_s": 200,
+        "slope_loss_pct": 85,
+        "speed_cm_s": 800,
+        "turn_deg_s": 0,
+        "turn_radius_cm": 900,
+        "type": "wheeled",
+        "unbog_s": [
+          25,
+          45
+        ],
+        "woods_speed_pct": 30
+      },
+      "name": "GMC CCKW 2.5-ton truck",
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 45,
+      "role": "truck",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              120,
+              60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "driver",
+          "in": "cab",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              120,
+              -60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "co_driver",
+          "in": "cab",
+          "role": "commander"
+        }
+      ],
+      "short_name": "CCKW",
+      "sight_m": 150,
+      "sources": [
+        "docs/design/roster/vehicles.md 7.3, 8.4",
+        "memory, verify (S8b-11): dimensions, payload, speed and sheet-metal thicknesses"
+      ],
+      "spot_size_pct": 150,
+      "stations": [
+        {
+          "id": "cab",
+          "seats": [
+            "driver",
+            "commander"
+          ]
+        }
+      ],
+      "supply": {
+        "cap_kg_total": 2500,
+        "cookoff": "ww2:75mm_m48",
+        "crates": [
+          "ww2:usa_shells_crate",
+          "ww2:usa_small_arms_crate",
+          "ww2:usa_explosives_crate"
+        ],
+        "load_kg": {
+          "explosives": 40,
+          "shells": 320,
+          "small_arms": 120
+        },
+        "radius_m": 8,
+        "round_interval_s": 4,
+        "vehicle_radius_m": 15
+      },
+      "weapons": []
     },
     "ww2:usa_m10": {
       "boxes": [

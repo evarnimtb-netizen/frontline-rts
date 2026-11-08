@@ -1,14 +1,16 @@
 //! S8b armour-test cases (`docs/slices/S8b-trucks-recon.md` 12): wheels
-//! against trenches (25), the bicycle model (26), the grenade screen (30)
-//! and the recon guns, plates and optics (31).
+//! against trenches (25), the bicycle model (26), a tank rearming from a
+//! truck (27), cargo detonation (28), no stacking (29), the grenade screen
+//! (30), and the recon guns, plates, optics and MG against a truck (31).
 
 use anyhow::{Result, anyhow};
+use frontline_content::setup::{StockKind, SupplyKind};
 use frontline_content::{ComponentKind, PlateGroup};
 use frontline_sim::armour::{self, deg, plate_shot};
 use frontline_sim::ecs::Velocity;
 use frontline_sim::scenarios::{at, dir_deg, members};
 use frontline_sim::vehicle::{DriveCtx, drive};
-use frontline_sim::{ArmourEventKind, Fx, FxVec2, FxVec3, ItemKind, SimId, World};
+use frontline_sim::{ArmourEventKind, Fx, FxVec2, FxVec3, ItemKind, SimId, Structure, World};
 
 use super::{
     CaseReport, CommandKind, Env, crew_hp, dist, hz, no_ammo, open_top_world, order, pos,
@@ -18,6 +20,98 @@ use crate::report::round3;
 
 const GER: &str = "ww2:ger_sdkfz234_1_squad";
 const USA: &str = "ww2:usa_m8_squad";
+const GER_TRUCK: &str = "ww2:ger_opel_blitz_squad";
+const USA_TRUCK: &str = "ww2:usa_cckw_squad";
+const GER_TANK: &str = "ww2:ger_pz4_h_squad";
+const USA_TANK: &str = "ww2:usa_m4a3_75_squad";
+
+/// `(player, truck card, tank card, faction index)` of run `flip`.
+fn side(flip: u8) -> (u8, &'static str, &'static str) {
+    if flip == 0 {
+        (0, GER_TRUCK, GER_TANK)
+    } else {
+        (1, USA_TRUCK, USA_TANK)
+    }
+}
+
+/// A truck of `card` for `p` at `x, y` facing east holding `shells` kg.
+fn truck_at(
+    w: &mut World,
+    p: u8,
+    card: &str,
+    x: i32,
+    y: i32,
+    shells: u32,
+) -> Result<SimId> {
+    let (_, v) = spawn_card(w, p, card, at(x, y), dir_deg(0))?;
+    w.edit_vehicle(v, |vs| vs.cargo_g[SupplyKind::Shells.index()] = shells * 1000);
+    Ok(v)
+}
+
+/// A tank of `card` at `x, y` with 10 % of its standard rounds (its rare
+/// racks full, so only the standard interval runs).
+fn tank_at_tenth(w: &mut World, p: u8, card: &str, x: i32, y: i32) -> Result<SimId> {
+    let (_, v) = spawn_card(w, p, card, at(x, y), dir_deg(0))?;
+    let setup = w.match_setup().ok_or_else(|| anyhow!("setup"))?;
+    let t = vstate(w, v).ok_or_else(|| anyhow!("no tank"))?.type_idx as usize;
+    let counts: Vec<(u16, bool)> = setup.vehicles[t]
+        .main_ammo()
+        .iter()
+        .map(|a| (a.count, a.rare))
+        .collect();
+    w.edit_vehicle(v, |vs| {
+        for (k, &(c, rare)) in counts.iter().enumerate() {
+            vs.ammo[k] = if rare { c } else { (c / 10).max(1) };
+        }
+        vs.loaded = None;
+    });
+    Ok(v)
+}
+
+fn held_rounds(w: &World, v: SimId) -> Result<u32> {
+    let vs = vstate(w, v).ok_or_else(|| anyhow!("no vehicle"))?;
+    Ok(vs.ammo.iter().map(|&n| n as u32).sum::<u32>() + u32::from(vs.loaded.is_some()))
+}
+
+fn manpower(w: &World, p: u8) -> Result<u32> {
+    Ok(w.game().ok_or_else(|| anyhow!("no game"))?.players()[p as usize].manpower)
+}
+
+/// The account of `p` (S6 and S8b counters).
+fn acc(w: &World, p: u8) -> Result<frontline_sim::S6Account> {
+    Ok(w.game().ok_or_else(|| anyhow!("no game"))?.supply6().accounts[p as usize])
+}
+
+/// Grams a truck's shells fell by and rounds gained, per the current stock.
+fn shell_g(w: &World, v: SimId) -> Result<u32> {
+    Ok(vstate(w, v).ok_or_else(|| anyhow!("no truck"))?.cargo_g[SupplyKind::Shells.index()])
+}
+
+/// Rounds per ammo entry, the one in the breech included.
+fn rack_view(w: &World, v: SimId) -> Result<Vec<u16>> {
+    let vs = vstate(w, v).ok_or_else(|| anyhow!("no vehicle"))?;
+    let mut out = vs.ammo.clone();
+    if let Some(l) = vs.loaded {
+        out[l as usize] += 1;
+    }
+    Ok(out)
+}
+
+/// The grams of the rounds `v` gained since `before`, by ammo entry.
+fn grams_gained(w: &World, v: SimId, before: &[u16]) -> Result<u64> {
+    let setup = w.match_setup().ok_or_else(|| anyhow!("setup"))?;
+    let vs = vstate(w, v).ok_or_else(|| anyhow!("no vehicle"))?;
+    let vt = &setup.vehicles[vs.type_idx as usize];
+    let ammo = vt.main_ammo();
+    let mut g = 0u64;
+    for (k, &n) in vs.ammo.iter().enumerate() {
+        let now = n as u32 + u32::from(vs.loaded == Some(k as u8));
+        let was = before.get(k).copied().unwrap_or(0) as u32;
+        g += u64::from(now.saturating_sub(was))
+            * u64::from(setup.ammo[ammo[k].ammo as usize].supply.map_or(0, |s| s.g));
+    }
+    Ok(g)
+}
 
 /// `(player, card)` of run `flip`: the German car or the American.
 fn car(flip: u8) -> (u8, &'static str) {
@@ -360,6 +454,222 @@ fn dead(hp: &[u16]) -> usize {
     hp.iter().filter(|h| **h == 0).count()
 }
 
+/// Case 27 (7.3, 10): a tank at 10 % ammo 15 m from a truck: one standard
+/// round per 4 s; the truck's stock falls by the grams of the rounds; no
+/// manpower is charged.
+pub(super) fn case27(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(27, "tank rearms from a truck at 15 m (7.3)");
+    let (mut rounds, mut err, mut secs) = (0u64, 0u64, 0u64);
+    let mut free = true;
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (p, tc, tank) = side(flip);
+        let mut w = open_top_world(env, seed * 32 + flip as u64)?;
+        let t = truck_at(&mut w, p, tc, 515, 500, 600)?;
+        let v = tank_at_tenth(&mut w, p, tank, 500, 500)?;
+        w.step(&[]);
+        let before = rack_view(&w, v)?;
+        let stock0 = shell_g(&w, t)?;
+        let mp0 = manpower(&w, p)?;
+        let n0 = held_rounds(&w, v)?;
+        let t_s = 60u64;
+        for _ in 0..t_s * hz(&w) {
+            w.step(&[]);
+        }
+        let n1 = held_rounds(&w, v)?;
+        let gained = n1.saturating_sub(n0) as u64;
+        rounds += gained;
+        secs += t_s;
+        err += grams_gained(&w, v, &before)?.abs_diff(u64::from(stock0 - shell_g(&w, t)?));
+        free &= manpower(&w, p)? >= mp0;
+    }
+    let per = secs as f64 / rounds.max(1) as f64;
+    r.check_v(
+        "seconds_per_round",
+        (3.9..=4.1).contains(&per),
+        round3(per),
+        "3.9..=4.1",
+        format!("{rounds} rounds in {secs} s"),
+    );
+    r.check_v(
+        "stock_error_g",
+        err == 0,
+        err as f64,
+        "0",
+        "grams drawn minus grams of the rounds taken".to_string(),
+    );
+    r.check_v(
+        "no_mp_charged",
+        free,
+        f64::from(u8::from(free)),
+        ">= 1",
+        "manpower never fell".to_string(),
+    );
+    Ok(r)
+}
+
+/// Case 28 (7.3, 10): a bazooka rocket at the cargo box of a loaded and of
+/// an empty truck; a detonation or the fire after it counts.
+pub(super) fn case28(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(28, "cargo detonation (7.3)");
+    let trials = 3u64;
+    let (mut loaded, mut loaded_n) = (0u32, 0u32);
+    let (mut empty, mut empty_n) = (0u32, 0u32);
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (p, tc, _) = side(flip);
+        for full in [true, false] {
+            for k in 0..trials {
+                let mut w = open_top_world(env, seed * 64 + k * 2 + flip as u64)?;
+                let gun = weapon_idx(&w, "ww2:m9_bazooka")?;
+                let v = truck_at(&mut w, p, tc, 500, 500, if full { 320 } else { 0 })?;
+                w.step(&[]);
+                let b = w.entities().transform()[v.index()].pos;
+                // The cargo box's side: 1.3 m behind the hull centre, 1.5 m
+                // up, 1 m to the north of the hull's axis.
+                let aim = FxVec3::new(
+                    b.x - Fx::from_ratio(13, 10),
+                    b.y + Fx::ONE,
+                    b.z + Fx::from_ratio(3, 2),
+                );
+                let from = FxVec3::new(aim.x, aim.y + Fx::from_int(60), aim.z + Fx::from_ratio(1, 4));
+                // The rocket drops under gravity over 60 m at its speed.
+                let speed = w
+                    .match_setup()
+                    .and_then(|s| {
+                        let wd = &s.weapons[gun as usize];
+                        wd.ammo
+                            .and_then(|a| s.ammo.get(a as usize))
+                            .map(|a| a.speed)
+                    })
+                    .map_or(80.0, |sp| f64::from(Fx::from(sp).to_f32()));
+                let t = 60.0 / speed.max(1.0);
+                let drop = Fx::from_milli((0.5 * 9.81 * t * t * 1000.0) as i32);
+                let up = FxVec3::new(aim.x, aim.y, aim.z + drop);
+                if !w.fire_rocket_now(1 - p, gun, from, up) {
+                    return Err(anyhow!("cannot fire the rocket"));
+                }
+                let fire_s = w
+                    .match_setup()
+                    .map_or(30, |s| s.rules.vehicles.damage.ammo_fire_s as u64);
+                let n = (6 + fire_s) * hz(&w);
+                for _ in 0..n {
+                    w.step(&[]);
+                }
+                let a = acc(&w, p)?;
+                if full {
+                    loaded_n += 1;
+                    loaded += u32::from(a.cargo_detonations > 0);
+                } else {
+                    empty_n += 1;
+                    empty += u32::from(a.cargo_detonations > 0);
+                }
+            }
+        }
+    }
+    let lp = f64::from(loaded) * 100.0 / f64::from(loaded_n.max(1));
+    let ep = f64::from(empty) * 100.0 / f64::from(empty_n.max(1));
+    r.check_v(
+        "detonated_loaded_pct",
+        lp >= 50.0,
+        round3(lp),
+        ">= 50",
+        format!("{loaded} of {loaded_n}"),
+    );
+    r.check_v(
+        "detonated_empty_pct",
+        empty == 0,
+        round3(ep),
+        "0",
+        format!("{empty} of {empty_n}"),
+    );
+    Ok(r)
+}
+
+/// Case 29 (7.3, 10): a tank between an HQ and two trucks rearms at one
+/// source's rate.
+pub(super) fn case29(env: &Env) -> Result<CaseReport> {
+    let mut r = CaseReport::new(29, "tank between an HQ and two trucks: no stacking");
+    let (mut rounds, mut secs, mut srcs) = (0u64, 0u64, 0u32);
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (p, tc, tank) = side(flip);
+        let mut w = open_top_world(env, seed * 96 + flip as u64)?;
+        let f = w
+            .match_setup()
+            .ok_or_else(|| anyhow!("setup"))?
+            .players[p as usize]
+            .faction;
+        let hq = w
+            .match_setup()
+            .and_then(|s| s.stock_of(f, StockKind::Hq, None))
+            .ok_or_else(|| anyhow!("no HQ def"))?;
+        let boxes = w
+            .match_setup()
+            .map(|s| {
+                let d = &s.stocks[hq as usize];
+                [0, 1, 2, 3].map(|k| d.boxes.get(k).map_or(0, |b| b.hp))
+            })
+            .ok_or_else(|| anyhow!("setup"))?;
+        let mut hid = 0;
+        w.edit_supply6(|st| {
+            hid = st.next_structure;
+            st.next_structure += 1;
+            st.structures.insert(
+                hid,
+                Structure {
+                    owner: frontline_sim::PlayerId(p),
+                    def: hq,
+                    pos: at(505, 500),
+                    yaw: Fx::ZERO,
+                    builder: None,
+                    built: true,
+                    box_hp: boxes,
+                    radio: true,
+                    stock_g: [0, 0, 600_000],
+                },
+            );
+        });
+        let a = truck_at(&mut w, p, tc, 490, 500, 600)?;
+        let b = truck_at(&mut w, p, tc, 510, 512, 600)?;
+        let v = tank_at_tenth(&mut w, p, tank, 500, 500)?;
+        w.step(&[]);
+        let n0 = held_rounds(&w, v)?;
+        let (s0, ta0, tb0) = (600_000u32, shell_g(&w, a)?, shell_g(&w, b)?);
+        let t_s = 60u64;
+        for _ in 0..t_s * hz(&w) {
+            w.step(&[]);
+        }
+        rounds += u64::from(held_rounds(&w, v)?.saturating_sub(n0));
+        secs += t_s;
+        let stock = w
+            .game()
+            .and_then(|g| g.supply6().structures.get(&hid))
+            .map_or(0, |s| s.stock_g[SupplyKind::Shells.index()]);
+        let mut drawn = 0;
+        drawn += u32::from(stock < s0);
+        drawn += u32::from(shell_g(&w, a)? < ta0);
+        drawn += u32::from(shell_g(&w, b)? < tb0);
+        srcs = srcs.max(drawn);
+    }
+    let per = secs as f64 / rounds.max(1) as f64;
+    r.check_v(
+        "seconds_per_round",
+        (3.9..=4.1).contains(&per),
+        round3(per),
+        "3.9..=4.1",
+        format!("{rounds} rounds in {secs} s"),
+    );
+    r.check_v(
+        "sources_drawn",
+        srcs == 1,
+        f64::from(srcs),
+        "1",
+        "structures, trucks, crates".to_string(),
+    );
+    Ok(r)
+}
+
 /// Case 30 (6.5): grenades thrown at the screened 234/1 turret and at the
 /// M8; live grenades dropped on the screen; rounds through the screen.
 pub(super) fn case30(env: &Env) -> Result<CaseReport> {
@@ -661,6 +971,65 @@ pub(super) fn case31(env: &Env) -> Result<CaseReport> {
         round3(rifle),
         "0",
         format!("{pens} of {struck} rounds that struck"),
+    );
+    // MG 42 at a truck's side from 150 m (7.3): nearly every round through;
+    // how long until the driver or engine goes.
+    let mg = weapon_idx(&w, "ww2:mg42")?;
+    let interval_s = w
+        .match_setup()
+        .map_or(0.05, |s| f64::from(s.weapons[mg as usize].interval_milli) / 30_000.0);
+    let (mut mg_pens, mut mg_struck) = (0u32, 0u32);
+    let mut stop_shots: Vec<u32> = Vec::new();
+    for (seed, flip) in env.runs() {
+        r.runs += 1;
+        let (p, tc, _) = side(flip);
+        let shooter = 1 - p;
+        let mut w = open_top_world(env, seed * 128 + flip as u64)?;
+        let v = truck_at(&mut w, p, tc, 500, 500, 0)?;
+        w.step(&[]);
+        for k in 0..40u32 {
+            let f = *w
+                .game()
+                .and_then(|g| g.vehicle_derived().frame(v))
+                .ok_or_else(|| anyhow!("frame"))?;
+            let b = &f.boxes[0];
+            // The cab's right side, over the door by the driver.
+            let z = b.center + b.axes.y * (b.half.y - Fx::from_ratio(1, 10));
+            let off = b.axes.x * Fx::from_ratio((k as i64 % 5) * 20 - 80, 100)
+                + b.axes.z * Fx::from_ratio((k as i64 % 3) * 15 - 15, 100);
+            if let Some((hit, pen)) = super::small_shot(&mut w, shooter, mg, z + off, 90, 150) {
+                mg_struck += u32::from(hit);
+                mg_pens += u32::from(pen);
+            }
+            let Some(vs) = vstate(&w, v) else { break };
+            let engine = vs.components[ComponentKind::Engine.index()];
+            let driver = vs.seats[0].hp;
+            if engine == 0 || driver == 0 {
+                stop_shots.push(k + 1);
+                break;
+            }
+        }
+    }
+    let mg_pct = f64::from(mg_pens) * 100.0 / f64::from(mg_struck.max(1));
+    r.check_v(
+        "mg42_truck_pen_pct",
+        mg_pct >= 90.0,
+        round3(mg_pct),
+        ">= 90",
+        format!("{mg_pens} of {mg_struck} that struck"),
+    );
+    stop_shots.sort_unstable();
+    let med = stop_shots
+        .get(stop_shots.len() / 2)
+        .copied()
+        .map_or(f64::INFINITY, f64::from);
+    let stop_s = med * interval_s;
+    r.check_v(
+        "mg42_stops_truck_s",
+        stop_s <= 60.0,
+        round3(stop_s),
+        "<= 60",
+        format!("median {med} rounds through the cab, {} of the runs stopped", stop_shots.len()),
     );
     // The farthest tank (spot size 200 %) the car spots settled, against a
     // car with no stationary bonus: a ladder 400-660 m.

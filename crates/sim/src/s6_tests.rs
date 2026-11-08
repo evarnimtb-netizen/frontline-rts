@@ -9,15 +9,15 @@ use crate::fx::FxVec3;
 use crate::game::SquadId;
 use crate::structures::{Crate, S6Account, Structure, SupplyRefusal, SupplyState};
 
-const HZ: u64 = 30;
+pub(super) const HZ: u64 = 30;
 
 /// The ww2 mod on flat open ground, both players human.
-fn flat_world(threads: usize) -> World {
+pub(super) fn flat_world(threads: usize) -> World {
     flat_world_with(threads, |_| {})
 }
 
 /// [`flat_world`] with an edit of the setup (after the humans are set).
-fn flat_world_with(threads: usize, edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> World {
+pub(super) fn flat_world_with(threads: usize, edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> World {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
     let defs = frontline_content::ModDefs::load(&root).unwrap();
     let req = frontline_content::MatchRequest::skirmish(
@@ -39,14 +39,14 @@ fn ty(w: &World, id: &str) -> u16 {
     w.match_setup().unwrap().squad_type_index(id).unwrap()
 }
 
-fn def(w: &World, faction: u16, kind: StockKind, supply: Option<SupplyKind>) -> u16 {
+pub(super) fn def(w: &World, faction: u16, kind: StockKind, supply: Option<SupplyKind>) -> u16 {
     w.match_setup()
         .unwrap()
         .stock_of(faction, kind, supply)
         .unwrap()
 }
 
-fn spawn(w: &mut World, p: u8, card: &str, x: i32, y: i32) -> SquadId {
+pub(super) fn spawn(w: &mut World, p: u8, card: &str, x: i32, y: i32) -> SquadId {
     let t = ty(w, card);
     w.spawn_squad_at(
         PlayerId(p),
@@ -57,7 +57,7 @@ fn spawn(w: &mut World, p: u8, card: &str, x: i32, y: i32) -> SquadId {
     .unwrap()
 }
 
-fn run(w: &mut World, p: u8, seq: u32, kind: CommandKind) {
+pub(super) fn run(w: &mut World, p: u8, seq: u32, kind: CommandKind) {
     w.step(&[Command {
         player: PlayerId(p),
         seq,
@@ -65,13 +65,13 @@ fn run(w: &mut World, p: u8, seq: u32, kind: CommandKind) {
     }]);
 }
 
-fn steps(w: &mut World, n: u64) {
+pub(super) fn steps(w: &mut World, n: u64) {
     for _ in 0..n {
         w.step(&[]);
     }
 }
 
-fn members(w: &World, s: SquadId) -> Vec<SimId> {
+pub(super) fn members(w: &World, s: SquadId) -> Vec<SimId> {
     w.game().unwrap().squads[&s].members.clone()
 }
 
@@ -96,7 +96,7 @@ fn base_center(w: &World, p: u8) -> FxVec2 {
 }
 
 /// A built structure of def `d` for player `p` at `pos` with `stock_kg`.
-fn built(w: &World, p: u8, d: u16, pos: FxVec2, stock_kg: [u32; 3]) -> Structure {
+pub(super) fn built(w: &World, p: u8, d: u16, pos: FxVec2, stock_kg: [u32; 3]) -> Structure {
     let sd = &w.match_setup().unwrap().stocks[d as usize];
     let hp = |k: usize| sd.boxes.get(k).map_or(0, |b| b.hp);
     Structure {
@@ -127,17 +127,17 @@ fn crate_at(w: &World, p: u8, d: u16, pos: FxVec2) -> Crate {
     }
 }
 
-fn add_built(w: &mut World, p: u8, d: u16, pos: FxVec2, stock_kg: [u32; 3]) -> u32 {
+pub(super) fn add_built(w: &mut World, p: u8, d: u16, pos: FxVec2, stock_kg: [u32; 3]) -> u32 {
     let s = built(w, p, d, pos, stock_kg);
     add_structure(w, s)
 }
 
-fn add_crate_at(w: &mut World, p: u8, d: u16, pos: FxVec2) -> u32 {
+pub(super) fn add_crate_at(w: &mut World, p: u8, d: u16, pos: FxVec2) -> u32 {
     let c = crate_at(w, p, d, pos);
     add_crate(w, c)
 }
 
-fn add_structure(w: &mut World, s: Structure) -> u32 {
+pub(super) fn add_structure(w: &mut World, s: Structure) -> u32 {
     let mut id = 0;
     w.edit_supply6(|st| {
         id = st.next_structure;
@@ -157,7 +157,7 @@ fn add_crate(w: &mut World, c: Crate) -> u32 {
     id
 }
 
-fn acc(w: &World, p: usize) -> S6Account {
+pub(super) fn acc(w: &World, p: usize) -> S6Account {
     w.game().unwrap().supply6().accounts[p]
 }
 
@@ -1204,6 +1204,40 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
         ("acc.crates_lost", Box::new(|s| ac(s).crates_lost += 1)),
         ("acc.stock_out_g", Box::new(|s| ac(s).stock_out_g += 1)),
         ("acc.stock_lost_g", Box::new(|s| ac(s).stock_lost_g += 1)),
+        (
+            "acc.truck_loaded_g",
+            Box::new(|s| ac(s).truck_loaded_g[1] += 1),
+        ),
+        (
+            "acc.truck_load_micro",
+            Box::new(|s| ac(s).truck_load_micro += 1),
+        ),
+        ("acc.truck_out_g", Box::new(|s| ac(s).truck_out_g += 1)),
+        (
+            "acc.truck_dropped_g",
+            Box::new(|s| ac(s).truck_dropped_g += 1),
+        ),
+        ("acc.truck_lost_g", Box::new(|s| ac(s).truck_lost_g += 1)),
+        (
+            "acc.truck_crates_dropped",
+            Box::new(|s| ac(s).truck_crates_dropped += 1),
+        ),
+        (
+            "acc.truck_tank_rounds",
+            Box::new(|s| ac(s).truck_tank_rounds += 1),
+        ),
+        (
+            "acc.truck_men_rounds",
+            Box::new(|s| ac(s).truck_men_rounds += 1),
+        ),
+        (
+            "acc.fwd_belt_rounds",
+            Box::new(|s| ac(s).fwd_belt_rounds += 1),
+        ),
+        (
+            "acc.cargo_detonations",
+            Box::new(|s| ac(s).cargo_detonations += 1),
+        ),
     ];
     let base = w.full_state_hash();
     for (name, edit) in &edits {

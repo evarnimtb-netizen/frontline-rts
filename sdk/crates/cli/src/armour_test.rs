@@ -3868,7 +3868,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 28] = [
+    let all: [(u32, CaseFn); 31] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3895,6 +3895,9 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (24, case24),
         (25, s8b::case25),
         (26, s8b::case26),
+        (27, s8b::case27),
+        (28, s8b::case28),
+        (29, s8b::case29),
         (30, s8b::case30),
         (31, s8b::case31),
     ];

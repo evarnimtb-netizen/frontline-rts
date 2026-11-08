@@ -838,7 +838,6 @@ impl MatchState {
         let mut rack_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_RACK);
         let mut fire_rng = RngStream::new(ctx.seed, ctx.tick, rack_key, Purpose::AMMO_FIRE);
         let mut detonated = false;
-        let mut cargo_gone = false;
         let mut dead = 0u32;
         let mut evs: Vec<ArmourEv> = Vec::new();
         let vs = self.vehicles.get_mut(&id).expect("vehicle state");
@@ -911,9 +910,6 @@ impl MatchState {
                                 + vs.cargo_g[SupplyKind::Explosives.index()];
                             g / 1000 >= sp.cargo_detonate_min_kg && g > 0
                         });
-                    if kind == ComponentKind::Cargo && gone {
-                        cargo_gone = true;
-                    }
                     if (kind == ComponentKind::AmmoRack || cargo_any)
                         && (gone || d.dmg >= r.rack_min_damage)
                         && !detonated
@@ -942,12 +938,6 @@ impl MatchState {
         // is knocked out when every seat is empty.
         let living = vs.seats.iter().filter(|s| s.hp > 0).count() as u32;
         let crew_gone = living == 0 && !crate::bail::can_bail(v);
-        // S8b: a cargo box destroyed without a detonation loses its load.
-        if cargo_gone && !detonated {
-            let held: u64 = vs.cargo_g.iter().map(|&g| g as u64).sum();
-            vs.cargo_g = [0; 3];
-            self.supply6.accounts[owner as usize].truck_lost_g += held;
-        }
         for e in evs {
             self.push_event(events, e);
         }
@@ -1772,6 +1762,9 @@ mod tests {
                 // S8b armoured cars: four crew, two rack bins; engine,
                 // gun, turret ring and transmission.
                 "ww2:ger_sdkfz234_1" | "ww2:usa_m8" => (4, 2, 4),
+                // S8b trucks: two crew, no rack; engine, transmission and
+                // cargo.
+                "ww2:ger_opel_blitz" | "ww2:usa_cckw" => (2, 0, 3),
                 _ => (5, 3, 4),
             };
             assert_eq!(racks, bins, "{}", v.id);

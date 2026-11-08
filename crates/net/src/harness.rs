@@ -344,7 +344,7 @@ pub struct Scripter {
 }
 
 /// The S3 commands a vehicle script issues ([`Scripter::vehicles`]).
-pub const VEHICLE_COMMANDS: [&str; 12] = [
+pub const VEHICLE_COMMANDS: [&str; 13] = [
     "ReverseUnits",
     "FaceUnits",
     "AttackUnit",
@@ -359,6 +359,9 @@ pub const VEHICLE_COMMANDS: [&str; 12] = [
     // S8a: a squad boards a half-track; its passengers get out.
     "Embark",
     "Disembark",
+    // S8b: a truck drops crates (refused unless the vehicle is a truck
+    // with cargo; still on the wire).
+    "DropCrates",
 ];
 
 impl Scripter {
@@ -639,6 +642,16 @@ impl Scripter {
                     },
                 }
             }
+            12 => CommandKind::DropCrates {
+                vehicle: v,
+                point: near(&mut self.rng),
+                count: 1 + self.rng.below(8) as u8,
+                kind: match self.rng.below(3) {
+                    0 => frontline_content::setup::SupplyKind::SmallArms,
+                    1 => frontline_content::setup::SupplyKind::Explosives,
+                    _ => frontline_content::setup::SupplyKind::Shells,
+                },
+            },
             _ => {
                 let eng = game.squads().iter().find(|(_, q)| {
                     q.owner.0 == self.slot && setup.type_has_tag(q.type_idx, "engineer")

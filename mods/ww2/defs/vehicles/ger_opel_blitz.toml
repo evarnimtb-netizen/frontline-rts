@@ -83,13 +83,13 @@ rear = { thickness_mm = 1 }
 [[seats]]
 id = "driver"
 role = "driver"
-box = { frame = "hull", center = [120, 45, 150], half = [35, 30, 45] }
+box = { frame = "hull", center = [120, 60, 150], half = [35, 30, 45] }
 in = "cab"
 
 [[seats]]
 id = "co_driver"
 role = "commander"
-box = { frame = "hull", center = [120, -45, 150], half = [35, 30, 45] }
+box = { frame = "hull", center = [120, -60, 150], half = [35, 30, 45] }
 in = "cab"
 
 [[components]]

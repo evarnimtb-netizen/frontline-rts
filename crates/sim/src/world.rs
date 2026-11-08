@@ -2474,6 +2474,10 @@ impl World {
 mod s6_tests;
 
 #[cfg(test)]
+#[path = "s8b_tests.rs"]
+mod s8b_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ecs::{Velocity, Weapon};
@@ -4695,7 +4699,7 @@ mod tests {
 
     /// Applies `dealt` to vehicle `v` as the Damage stage would, at `tick`
     /// with the ammo-rack key `slot`. Returns the knock-out cause.
-    fn deal_now(
+    pub(super) fn deal_now(
         w: &mut World,
         v: SimId,
         dealt: &[crate::damage::Dealt],

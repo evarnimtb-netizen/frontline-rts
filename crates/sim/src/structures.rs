@@ -1508,7 +1508,8 @@ impl MatchState {
             let i = id.index();
             let v = &self.setup.vehicles[vs.type_idx as usize];
             let Some(t) = &v.supply else { continue };
-            if ents.kind[i] != EntityKind::Vehicle {
+            // A burning cargo serves nobody (it detonates or burns out).
+            if ents.kind[i] != EntityKind::Vehicle || vs.ammo_fire > 0 {
                 continue;
             }
             out.push(TruckSrc {
