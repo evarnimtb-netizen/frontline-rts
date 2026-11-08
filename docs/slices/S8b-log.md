@@ -103,3 +103,13 @@ timing40 alone at 3 jobs: p99 0.427 ms all, 0.522 ms peak (S8a after Fix 0.488 /
 SetHatch and unbuttoned seats need a per-seat exposed box and a command (the `still_ticks` hook is there). Radio
 observers need a recon `observer` trait in `fire_mission` and a link rule. Carried `[transport]` on trucks, towing,
 road speeds, trucks drawing from an HQ, the push-limit reserve: see spec 15.
+
+## Tune (M3A1 capacity 12)
+
+Owner decision applied first: twelfth slot, tests `halftracks` (cap 12) and `transport`
+(`a_squad_that_does_not_fit_is_refused`: the 12-man squad now fits alone, the refusal is for a pair; the first
+squad in id order that fits wins), canonical snapshot re-accepted (only the M3A1 changed). The sim is unchanged.
+Remeasure, 3 x 160: Germany 43.75 / 45.0 / 47.5 %, pooled 45.42 % (218 / 480); 0 no-winner. T41b (USA 1.13) and
+T50e (Germany +2.3 s) now pass; T70a / T70c miss on 101-180 only (USA 0.86 / 0.93), report type. Hard misses: T5c (one
+set, pool in band) and T33a (35.95 against 35, S8b-26). The tuner was not run: nothing a price move could fix
+without risking the pooled Germany reading, and the owner rule forbids touching existing cards.

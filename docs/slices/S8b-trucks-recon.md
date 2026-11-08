@@ -294,3 +294,6 @@ S8b-4 Bombs from a truck only as dropped crates: (A) yes. S8b-5 Trucks carry no 
 S8b-7 Trucks unarmed: (A) yes. S8b-8 No road speed: (A) yes. S8b-9 Detonation needs 40 kg of shells or explosives: (A) yes. S8b-10 Tanks keep `stationary_sight_pct` 100: (A) yes.
 S8b-11 Figures from memory are marked verify: (A) use them. S8b-12 2 cm gun: one-shot model with averaged reload: (A) yes. S8b-13 Push-limit reserve left out: (A) yes. S8b-14 AI tanks fire about 7 main rounds each, so truck rearms stay low; crates are the measured work: (A) keep.
 S8b-15 Half-track picks squads within 250 m: (A) yes. S8b-16 Wheeled driving uses the undilated layer: (A) yes. S8b-17 AI recon 8 %, trucks 5 % of income: (A) start values. S8b-18 M8 .50 ring is a hull-frame pintle: (A) yes. S8b-19 Drop Crates hotkey `I`: (A) yes. S8b-20 Trucks load only at base: (A) yes.
+
+## 17. Tune results
+M3A1 capacity 12 (S8a-2 (B)); 3 x 160, no tuner (pool passes): Germany 43.75 / 45.0 / 47.5 %, pooled 45.42 % (218/480); T41b, T50e now pass; misses T5c (set noise), T33a (35.95 vs 35, S8b-26), T70a/c (report). Log: S8b-log.md "Tune".
