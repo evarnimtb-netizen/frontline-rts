@@ -30,12 +30,12 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
-    AiGunsTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
-    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
-    FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning,
-    ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning,
-    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiGunsTuning, AiInfantryTuning, AiMortarTuning,
+    AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning,
+    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
+    FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning,
+    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
+    TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,

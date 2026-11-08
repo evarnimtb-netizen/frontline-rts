@@ -44,7 +44,11 @@ fn tank_v_gun(env: &Env, seed: u64, flip: u8) -> Result<(u64, u64, Option<f64>, 
     let before: Vec<_> = parts.iter().map(|&k| hp(&w, k)).collect();
     let men = |w: &World| {
         vstate(w, gun)
-            .and_then(|v| v.served.as_ref().map(|s| s.slots.iter().filter(|x| x.man.is_some()).count()))
+            .and_then(|v| {
+                v.served
+                    .as_ref()
+                    .map(|s| s.slots.iter().filter(|x| x.man.is_some()).count())
+            })
             .unwrap_or(0) as u64
     };
     let start_men = men(&w);

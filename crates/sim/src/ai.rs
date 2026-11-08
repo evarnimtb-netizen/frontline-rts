@@ -183,11 +183,11 @@ use frontline_content::ItemKind;
 mod ammo;
 mod armour;
 mod assault;
+mod guns;
 mod mortar;
 mod overwatch;
 mod supply;
 mod transport;
-mod guns;
 mod truck;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
 pub use assault::{

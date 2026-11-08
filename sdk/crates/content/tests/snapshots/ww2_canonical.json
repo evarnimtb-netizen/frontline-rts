@@ -1482,6 +1482,31 @@
         "dig_length_m": 20,
         "dig_offset_m": 10,
         "frag_group_men": 3,
+        "guns": {
+          "after_s": 120,
+          "approach_m": 350,
+          "arrive_m": 15,
+          "contact_m": 60,
+          "enemy_standoff_m": 80,
+          "engage_still_m": 400,
+          "go_max_s": 150,
+          "income_max_pct": 35,
+          "los_rays": 6,
+          "max_fails": 2,
+          "max_guns": 2,
+          "pit_engineer_m": 350,
+          "recrew_gap_s": 60,
+          "recrew_m": 100,
+          "relay_gap_s": 25,
+          "repath_s": 8,
+          "reserve_mp": 0,
+          "site_apart_m": 60,
+          "site_bearings": 11,
+          "site_max_m": 250,
+          "site_min_m": 100,
+          "site_rings": 7,
+          "site_spread_deg": 60
+        },
         "infantry": {
           "buys_per_plan": 2,
           "danger_close_m": 35,
@@ -1968,6 +1993,7 @@
         },
         "guns": {
           "abandon_s": 10,
+          "ambush_infantry_m": 200,
           "hitch_reach_m": 6,
           "hold_m": 15,
           "min_men": 2,
@@ -2593,7 +2619,7 @@
       "weapon": ""
     },
     "ww2:ger_pak40_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -3103,7 +3129,7 @@
       "weapon": ""
     },
     "ww2:usa_57mm_m1_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",

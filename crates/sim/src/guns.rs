@@ -620,7 +620,7 @@ impl MatchState {
         }
     }
 
-        fn squad_of_gun(&self, ents: &Entities, gun: SimId) -> Option<SquadId> {
+    fn squad_of_gun(&self, ents: &Entities, gun: SimId) -> Option<SquadId> {
         ents.squad.get(gun.index()).copied().flatten()
     }
 

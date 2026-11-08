@@ -817,12 +817,7 @@ impl super::Planner<'_> {
     /// Buys a card of `role`: its cost plus what the role has spent stays
     /// within `income_pct` of the income so far; at least `reserve`
     /// manpower stays.
-    pub(super) fn buy_role_within(
-        &mut self,
-        role: VehicleRole,
-        income_pct: u32,
-        reserve: u32,
-    ) {
+    pub(super) fn buy_role_within(&mut self, role: VehicleRole, income_pct: u32, reserve: u32) {
         let g = self.g;
         let s = &g.setup;
         let me = self.me;

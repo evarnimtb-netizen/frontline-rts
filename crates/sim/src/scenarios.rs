@@ -1171,7 +1171,13 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
         "guns" => {
             use frontline_content::VehicleRole;
             let a = need(
-                vehicle_of_role(&mut w, 0, VehicleRole::AtGun, at(TRENCH_X, LANE_Y + 5), EAST),
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::AtGun,
+                    at(TRENCH_X, LANE_Y + 5),
+                    EAST,
+                ),
                 "German gun",
             )?;
             let tow = need(
@@ -1185,7 +1191,13 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
                 "tractor",
             )?;
             let b = need(
-                vehicle_of_role(&mut w, 0, VehicleRole::AtGun, at(TRENCH_X - 8, LANE_Y - 9), EAST),
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::AtGun,
+                    at(TRENCH_X - 8, LANE_Y - 9),
+                    EAST,
+                ),
                 "second gun",
             )?;
             w.edit_vehicle(b.1, |vs| {
@@ -1382,10 +1394,9 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
         }
         // S9: a gun emplaced with its crew and one on a tow.
         "guns" => {
-            snap.vehicles
-                .iter()
-                .any(|v| v.gun_state == crate::vehicle::GunState::Emplaced as u8 + 1 && v.gun_men > 0)
-                && snap.vehicles.iter().any(|v| v.towing != u32::MAX)
+            snap.vehicles.iter().any(|v| {
+                v.gun_state == crate::vehicle::GunState::Emplaced as u8 + 1 && v.gun_men > 0
+            }) && snap.vehicles.iter().any(|v| v.towing != u32::MAX)
                 && w.tick() >= 30
         }
         // S8b: both cars and the truck in the world.

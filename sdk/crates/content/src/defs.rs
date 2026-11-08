@@ -16,12 +16,12 @@ use serde::{Deserialize, Serialize};
 use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiInfantryTuning, AiMortarTuning, AiReconTuning,
-    AiGunsTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning,
-    CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning,
-    FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning,
-    ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning,
-    TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiGunsTuning, AiInfantryTuning, AiMortarTuning,
+    AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning,
+    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
+    FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning,
+    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
+    TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).

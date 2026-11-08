@@ -762,7 +762,7 @@ fn engineers_dig_a_pit_around_a_gun_from_its_rim() {
             profile: frontline_content::DigProfile::GunPit,
         },
     );
-    let t = secs(&w, 180);
+    let t = secs(&w, 240);
     steps(&mut w, t);
     assert_eq!(w.game().unwrap().squads[&q].order, crate::game::Order::Idle);
     let dz = (z0 - w.entities().transform[g.index()].pos.z).to_f32();

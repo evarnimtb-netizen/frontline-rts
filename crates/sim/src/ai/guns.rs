@@ -113,13 +113,15 @@ impl super::Planner<'_> {
                 guns.push(MyTank { ..*t });
                 return false;
             }
-            vs.towing.is_none() && g.setup.vehicles[vs.type_idx as usize].role != VehicleRole::Tractor
+            vs.towing.is_none()
+                && g.setup.vehicles[vs.type_idx as usize].role != VehicleRole::Tractor
         });
         let mut serving: Vec<SquadId> = g
             .vehicles
             .iter()
             .filter(|&(id, _)| {
-                self.ents.kind[id.index()] == EntityKind::Vehicle && self.ents.owner[id.index()] == me
+                self.ents.kind[id.index()] == EntityKind::Vehicle
+                    && self.ents.owner[id.index()] == me
             })
             .filter_map(|(_, vs)| vs.served.as_ref()?.crew)
             .collect();
@@ -239,11 +241,7 @@ impl super::Planner<'_> {
         let idle = sq.order == Order::Idle;
         let arrive = sq_m(Fx::from_int(a.arrive_m as i32));
         let there = (tpos - job.site).length_sq_raw() <= arrive;
-        if idle
-            && !there
-            && job.moved_at != 0
-            && tick >= job.moved_at + a.repath_s as u64 * hz
-        {
+        if idle && !there && job.moved_at != 0 && tick >= job.moved_at + a.repath_s as u64 * hz {
             job.fails = job.fails.saturating_add(1);
             self.ai.counters.gun_ai_fails += 1;
         }
@@ -421,10 +419,12 @@ impl super::Planner<'_> {
                 .filter(|m| m.role == AiKind::Engineer && (m.lead - t.pos).length_sq_raw() <= r)
                 .min_by_key(|m| ((m.lead - t.pos).length_sq_raw(), m.id))
                 .map(|m| m.id);
-            if let Some(q) = eng.filter(|q| g.digs_profile(
-                &s.squad_types[g.squads[q].type_idx as usize],
-                DigProfile::GunPit,
-            )) {
+            if let Some(q) = eng.filter(|q| {
+                g.digs_profile(
+                    &s.squad_types[g.squads[q].type_idx as usize],
+                    DigProfile::GunPit,
+                )
+            }) {
                 let (sin, cos) = t.yaw.sin_cos();
                 let side = FxVec2::new(-sin, cos) * Fx::from_int(PIT_HALF_M);
                 self.ai.emit(
@@ -526,8 +526,7 @@ impl super::Planner<'_> {
         let close = sq_m(Fx::from_int(a.site_apart_m as i32));
         let mut best: Option<((i32, i32, i64, i32), FxVec2)> = None;
         for r in 0..rings {
-            let back = a.site_min_m as i32
-                + if rings > 1 { span * r / (rings - 1) } else { 0 };
+            let back = a.site_min_m as i32 + if rings > 1 { span * r / (rings - 1) } else { 0 };
             for b in 0..n {
                 let lean = if n > 1 {
                     deg(a.site_spread_deg as i32 * (2 * b - (n - 1)) / (n - 1))
@@ -537,7 +536,9 @@ impl super::Planner<'_> {
                 let (sin, cos) = lean.sin_cos();
                 let way = FxVec2::new(dir.x * cos - dir.y * sin, dir.x * sin + dir.y * cos);
                 let c = self.terrain.clamp(p - way * Fx::from_int(back));
-                if known.iter().any(|m| (m.pos - c).length_sq_raw() <= standoff)
+                if known
+                    .iter()
+                    .any(|m| (m.pos - c).length_sq_raw() <= standoff)
                     || others.iter().any(|&o| (o - c).length_sq_raw() <= close)
                 {
                     continue;
@@ -624,7 +625,10 @@ impl super::Planner<'_> {
                 .filter(|m| {
                     m.role == AiKind::Rifle
                         && (m.lead - at).length_sq_raw() <= r
-                        && crate::guns::can_serve(s, &s.squad_types[g.squads[&m.id].type_idx as usize])
+                        && crate::guns::can_serve(
+                            s,
+                            &s.squad_types[g.squads[&m.id].type_idx as usize],
+                        )
                 })
                 .min_by_key(|m| ((m.lead - at).length_sq_raw(), m.id))
                 .map(|m| m.id);

@@ -1075,10 +1075,9 @@ impl RenderSnapshot {
                 },
                 mg_yaw: [0usize, 1].map(|k| vs.mgs.get(k).map_or(0.0, |m| m.yaw.to_f32())),
                 gun_state: vs.served.as_ref().map_or(0, |s| s.state as u8 + 1),
-                gun_men: vs
-                    .served
-                    .as_ref()
-                    .map_or(0, |s| s.slots.iter().filter(|x| x.man.is_some()).count() as u8),
+                gun_men: vs.served.as_ref().map_or(0, |s| {
+                    s.slots.iter().filter(|x| x.man.is_some()).count() as u8
+                }),
                 gun_slots: vs
                     .served
                     .as_ref()

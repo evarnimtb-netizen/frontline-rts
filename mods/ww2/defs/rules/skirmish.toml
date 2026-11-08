@@ -1351,7 +1351,7 @@ go_max_s = 150               # s: the tow unhitches at the latest this long afte
 contact_m = 60               # m: no unhitching with an enemy this close (the site moves back)
 engage_still_m = 400         # m: holds fire until a target is this close (done-when; the design's 250 was before the 437 m optic)
 relay_gap_s = 25             # s: it re-lays the trail at most this often
-pit_engineer_m = 150         # m: an idle engineer squad this close digs its pit (0: never)
+pit_engineer_m = 350         # m: an idle engineer squad this close digs its pit (0: never)
 recrew_m = 100               # m: idle infantry this close serves a neutral gun with rounds (0: never)
 recrew_gap_s = 60            # s: one such order per gun within this
 

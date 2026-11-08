@@ -3363,7 +3363,9 @@ impl MatchRuntime {
                 let guns = crate::intents::unit_set(raw.as_slice(), |i| {
                     f.vehicles
                         .binary_search_by_key(&i, |v| v.id)
-                        .is_ok_and(|k| f.vehicles[k].owner == self.local && f.vehicles[k].gun_state != 0)
+                        .is_ok_and(|k| {
+                            f.vehicles[k].owner == self.local && f.vehicles[k].gun_state != 0
+                        })
                 });
                 if guns.is_empty() {
                     return;

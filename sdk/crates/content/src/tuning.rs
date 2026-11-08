@@ -1540,7 +1540,7 @@ impl Default for AiGunsTuning {
             contact_m: 60,
             engage_still_m: 400,
             relay_gap_s: 25,
-            pit_engineer_m: 150,
+            pit_engineer_m: 350,
             recrew_m: 100,
             recrew_gap_s: 60,
         }
