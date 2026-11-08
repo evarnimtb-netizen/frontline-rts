@@ -590,6 +590,10 @@ tuning_table! {
         /// S8b: throttle while a wheeled vehicle steers on a large heading
         /// error or backs out of its turning circle (%).
         wheeled_creep_pct: 1..=100,
+        /// S8b: stuck re-paths in one place (within
+        /// `wheeled_waypoint_reach_m`) before a wheeled vehicle gives the
+        /// move up and stops there.
+        wheeled_stuck_repaths: 1..=100,
         /// Over this heading error the driver stops pushing and turns (deg)
         /// ...
         pivot_err_deg: 1..=180,
@@ -1923,6 +1927,6 @@ mod tests {
     #[test]
     fn keys_list_every_field() {
         assert_eq!(BodyTuning::KEYS.len(), 11);
-        assert_eq!(DrivingTuning::KEYS.len(), 27);
+        assert_eq!(DrivingTuning::KEYS.len(), 28);
     }
 }

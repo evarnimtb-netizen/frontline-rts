@@ -1731,6 +1731,7 @@
           "waypoint_reach_m": 3,
           "wheeled_arrive_mm": 2500,
           "wheeled_creep_pct": 30,
+          "wheeled_stuck_repaths": 12,
           "wheeled_waypoint_reach_m": 6,
           "yield_len_pct": 150,
           "yield_still_mm_s": 500

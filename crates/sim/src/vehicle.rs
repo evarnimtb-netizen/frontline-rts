@@ -243,6 +243,10 @@ pub struct VehicleState {
     pub progress_ticks: u16,
     /// Tick of the last follower re-path (stuck or newly blocked).
     pub repath_tick: Option<u64>,
+    /// S8b, wheeled: where the current series of stuck re-paths began, and
+    /// its length (`wheeled_stuck_repaths`).
+    pub stuck_at: FxVec2,
+    pub stuck_repaths: u8,
     /// Soldiers escorting it (`FollowUnits`), ascending; listed afresh
     /// every Intent stage (`crate::orders`).
     pub followers: Vec<SimId>,
@@ -375,6 +379,8 @@ impl VehicleState {
             progress_at: FxVec2::ZERO,
             progress_ticks: 0,
             repath_tick: None,
+            stuck_at: FxVec2::ZERO,
+            stuck_repaths: 0,
             followers: Vec::new(),
             wreck_tick: None,
             face: None,
@@ -545,6 +551,8 @@ impl VehicleState {
             || self.repairing.is_some_and(|k| k as usize >= COMPONENTS)
             || !(Fx::ZERO..=map).contains(&self.progress_at.x)
             || !(Fx::ZERO..=map).contains(&self.progress_at.y)
+            || !(Fx::ZERO..=map).contains(&self.stuck_at.x)
+            || !(Fx::ZERO..=map).contains(&self.stuck_at.y)
             || self.repath_tick.is_some_and(|t| t > tick)
             || self.wreck_tick.is_some_and(|t| t > tick)
             || self.followers.len() > crate::unit::MAX_UNITS
@@ -2220,6 +2228,47 @@ fn lay_pivot(c: &Follow, yaw: Fx, vs: &mut VehicleState) -> (i8, i8) {
 /// The RTS path follower: throttle and steer for this tick from the
 /// squad's path (see the module docs). Arrival and the stuck and blocked
 /// checks update the squad; re-paths go to `repath`.
+/// S8b: counts a re-path of a wheeled vehicle at `pos`. Wheels cannot pivot
+/// off blocked ground and the search can keep returning a way they cannot
+/// take, so `wheeled_stuck_repaths` of them in one place end the move like
+/// an arrival (no endless re-search, S7 tick fix): true then.
+fn wheeled_gives_up(
+    c: &Follow,
+    nav: &mut Nav,
+    order: &mut Order,
+    vs: &mut VehicleState,
+    pos: FxVec2,
+) -> bool {
+    let d = c.drv;
+    if c.v.mobility.kind != MobilityKind::Wheeled {
+        return false;
+    }
+    let same = vs.stuck_repaths > 0
+        && (pos - vs.stuck_at).length_sq_raw()
+            <= FxVec2::from_int(d.wheeled_waypoint_reach_m as i32, 0).length_sq_raw();
+    if !same {
+        vs.stuck_at = pos;
+    }
+    vs.stuck_repaths = if same {
+        vs.stuck_repaths.saturating_add(1)
+    } else {
+        1
+    };
+    if (vs.stuck_repaths as u32) < d.wheeled_stuck_repaths {
+        return false;
+    }
+    vs.stuck_repaths = 0;
+    hold_vehicle(nav, pos);
+    if matches!(
+        *order,
+        Order::Move { .. } | Order::AttackMove { .. } | Order::Retreat
+    ) {
+        *order = Order::Idle;
+    }
+    vs.reverse = false;
+    true
+}
+
 fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Repath>) -> (i8, i8) {
     let i = c.id.index();
     let t = &c.ents.transform[i];
@@ -2292,7 +2341,7 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         // wreck, blocked ground) re-searched every tick at the full cap
         // (S7 tick-time fix).
         if nav.partial && nav.path.len() > 1 {
-            if gap_ok {
+            if gap_ok && !wheeled_gives_up(c, nav, &mut sq.order, vs, pos) {
                 repath.push((c.sid, nav.goal, None));
             }
         } else {
@@ -2327,6 +2376,9 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         vs.progress_ticks = vs.progress_ticks.saturating_add(1);
     }
     if vs.progress_ticks as u32 >= d.stuck_s * c.hz && gap_ok {
+        if wheeled_gives_up(c, nav, &mut sq.order, vs, pos) {
+            return (0, 0);
+        }
         let ahead = pos + dir * (c.geo.hull_half.x + Fx::from_int(SPACING_M));
         repath.push((c.sid, nav.goal, Some(node_at(c.terrain, ahead))));
         return (0, 0);
@@ -2344,7 +2396,9 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         if b.segment_blocked(c.terrain, pos + dir * c.geo.hull_half.x, wp)
             || next2.is_some_and(|n| b.segment_blocked(c.terrain, wp, n))
         {
-            repath.push((c.sid, nav.goal, None));
+            if !wheeled_gives_up(c, nav, &mut sq.order, vs, pos) {
+                repath.push((c.sid, nav.goal, None));
+            }
             return (0, 0);
         }
     }

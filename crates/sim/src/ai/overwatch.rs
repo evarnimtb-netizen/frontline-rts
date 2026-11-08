@@ -36,6 +36,7 @@ use frontline_content::{ItemKind, VehicleRole};
 
 use super::{AiOverwatch, Known, KnownVehicle, MyTank, PointEval, Rel, TaskKind, ThrowPick, sq_m};
 use crate::command::CommandKind;
+use crate::ecs::SimId;
 use crate::fx::{Fx, FxVec2};
 use crate::game::Order;
 
@@ -49,6 +50,16 @@ const ON_TRACK_M: i32 = 5;
 /// takes where it stands as the spot (s): the spot was on ground it cannot
 /// reach, and re-sending it there only re-runs a failed path search.
 const SPOT_GIVE_UP_S: u64 = 20;
+/// A recon car orders no second back-off within this (s): one it cannot
+/// drive ends idle at once, and re-sending it only re-runs a path search.
+const BACKOFF_GAP_S: u64 = 10;
+/// A recon car's spot is clear this far outside `at_threat_m` (m), more
+/// than `AT_SPOT_M`: stopped at it, the car is not in reach of the threat.
+const CLEAR_SLACK_M: i32 = 12;
+/// A spot in a threat's reach moves toward the own base in steps of this
+/// many metres, at most `CLEAR_STEPS` times.
+const CLEAR_STEP_M: i32 = 20;
+const CLEAR_STEPS: i32 = 16;
 /// The threat on the enemy side of a point with no known vehicle (m).
 const ENEMY_SIDE_M: i32 = 150;
 /// Sight-line heights above the ground at the threat (mm).
@@ -198,10 +209,15 @@ impl super::Planner<'_> {
                     rounds,
                     since: self.tick,
                     held: false,
+                    backed_at: None,
                 }
             }
         };
         let hz = g.setup.tick_hz.max(1) as u64;
+        // S8b: a recon car does not take a spot in reach of a known threat.
+        if recon {
+            entry.spot = self.recon_clear_spot(entry.spot, known, kv);
+        }
         if sq.order == Order::Idle
             && !t.immobile
             && self.tick >= entry.since + SPOT_GIVE_UP_S * hz
@@ -262,22 +278,11 @@ impl super::Planner<'_> {
         true
     }
 
-    /// S8b: a recon car with a known AT team or armoured enemy within
-    /// `at_threat_m` reverses away from it (`ReverseUnits`).
-    fn recon_backoff(
-        &mut self,
-        t: &MyTank,
-        sq: &crate::game::Squad,
-        known: &[Known],
-        kv: &[KnownVehicle],
-    ) -> bool {
+    /// S8b: the known AT teams and armoured enemies a recon car keeps away
+    /// from: (position, id).
+    fn recon_threats(&self, known: &[Known], kv: &[KnownVehicle]) -> Vec<(FxVec2, SimId)> {
         let g = self.g;
-        let r = &g.setup.rules.ai.recon;
-        if r.at_threat_m == 0 {
-            return false;
-        }
-        let near = sq_m(Fx::from_int(r.at_threat_m as i32));
-        let team = known
+        known
             .iter()
             .filter(|k| k.at)
             .map(|k| (k.pos, k.id))
@@ -293,6 +298,60 @@ impl super::Planner<'_> {
                     })
                     .map(|k| (k.pos, k.id)),
             )
+            .collect()
+    }
+
+    /// S8b: `spot`, or the first point toward the own base that no known
+    /// threat reaches (`at_threat_m` and `CLEAR_SLACK_M`).
+    fn recon_clear_spot(&self, spot: FxVec2, known: &[Known], kv: &[KnownVehicle]) -> FxVec2 {
+        let g = self.g;
+        let r = &g.setup.rules.ai.recon;
+        if r.at_threat_m == 0 {
+            return spot;
+        }
+        let reach = sq_m(Fx::from_int(
+            r.at_threat_m.min(30_000) as i32 + CLEAR_SLACK_M,
+        ));
+        let threats = self.recon_threats(known, kv);
+        let clear = |p: FxVec2| {
+            threats
+                .iter()
+                .all(|(e, _)| (*e - p).length_sq_raw() > reach)
+        };
+        if clear(spot) {
+            return spot;
+        }
+        let back = (g.base_of(self.me) - spot).normalize_or_zero();
+        let at = |k: i32| {
+            self.terrain
+                .clamp(spot + back * Fx::from_int(k * CLEAR_STEP_M))
+        };
+        (1..=CLEAR_STEPS)
+            .map(at)
+            .find(|&p| clear(p))
+            .unwrap_or_else(|| at(CLEAR_STEPS))
+    }
+
+    /// S8b: a recon car with a known AT team or armoured enemy within
+    /// `at_threat_m` reverses away from it (`ReverseUnits`) whatever it was
+    /// doing; the place it backs to is its spot from then on. False with
+    /// no such threat, or with no room to remember the back-off.
+    fn recon_backoff(
+        &mut self,
+        t: &MyTank,
+        sq: &crate::game::Squad,
+        known: &[Known],
+        kv: &[KnownVehicle],
+    ) -> bool {
+        let g = self.g;
+        let r = &g.setup.rules.ai.recon;
+        if r.at_threat_m == 0 {
+            return false;
+        }
+        let near = sq_m(Fx::from_int(r.at_threat_m as i32));
+        let team = self
+            .recon_threats(known, kv)
+            .into_iter()
             .filter(|(p, _)| (*p - t.pos).length_sq_raw() <= near)
             .min_by_key(|(p, id)| ((*p - t.pos).length_sq_raw(), *id));
         let Some((p, _)) = team else {
@@ -302,17 +361,51 @@ impl super::Planner<'_> {
         let target = self
             .terrain
             .clamp(t.pos + away * Fx::from_int(r.backoff_m.min(30_000) as i32));
-        let going = matches!(&sq.order, Order::Move { target: tg }
-            if (*tg - target).length_sq_raw() <= sq_m(Fx::from_int(15)));
-        if !going && sq.order == Order::Idle {
-            self.ai.emit(
-                self.due,
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let tick = self.tick;
+        let old = self.ai.overwatch.get(&t.squad).copied();
+        if old.is_none() && self.ai.overwatch.len() >= super::MAX_OVERWATCH {
+            return false;
+        }
+        // A move already taking it away from the threat is left alone (a
+        // short spot behind the car is a reverse too, but not away).
+        let here = (t.pos - p).length_sq_raw();
+        let backing =
+            matches!(&sq.order, Order::Move { target: tg } if (*tg - p).length_sq_raw() > here);
+        let recent = old
+            .and_then(|o| o.backed_at)
+            .is_some_and(|b| tick < b + BACKOFF_GAP_S * hz);
+        if !backing && !recent {
+            // Backing up only if the threat is ahead: a car that faces away
+            // drives off, not backward into it.
+            let (sn, cs) = t.yaw.sin_cos();
+            let ahead = FxVec2::new(cs, sn);
+            let kind = if ahead.x.mul(away.x) + ahead.y.mul(away.y) > Fx::ZERO {
+                CommandKind::Move {
+                    squad: t.squad,
+                    target,
+                }
+            } else {
                 CommandKind::ReverseUnits {
                     units: vec![t.id],
                     target,
-                },
-            );
+                }
+            };
+            self.ai.emit(self.due, kind);
             self.ai.counters.recon_backoffs += 1;
+            let mut entry = old.unwrap_or(AiOverwatch {
+                anchor: t.pos,
+                spot: target,
+                axis: p,
+                rounds: 0,
+                since: tick,
+                held: false,
+                backed_at: None,
+            });
+            entry.spot = target;
+            entry.held = false;
+            entry.backed_at = Some(tick);
+            self.ai.overwatch.insert(t.squad, entry);
         }
         self.task(t.squad, TaskKind::Retreat, super::NO_POINT, target);
         true

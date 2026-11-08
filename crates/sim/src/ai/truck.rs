@@ -19,8 +19,10 @@
 //! A truck runs from any seen enemy within `flee_m`.
 //!
 //! **No loops** (S7 tick fix): a move that ends idle short of its goal is a
-//! failed move; after `max_fails` it takes where it stands; no move is sent
-//! twice within `repath_s`.
+//! failed move; after `max_fails` the job gives the goal up. A goal given
+//! up (also a drop or a service that timed out, the base, a follow spot) is
+//! remembered in `AiTruck::gave_up` and not sent again near it until the
+//! truck has loaded again; no move is sent twice within `repath_s`.
 
 use frontline_content::VehicleRole;
 use frontline_content::setup::{StockKind, SupplyKind};
@@ -48,6 +50,8 @@ const FLEE_STEP_M: i32 = 60;
 const CRATE_NEAR_M: i32 = 12;
 /// A job serves or drops at most this long (s).
 const JOB_MAX_S: u64 = 180;
+/// Goals one job remembers giving up on.
+pub const GAVE_UP_GOALS: usize = 4;
 /// Eye heights of the sight lines (mm): an enemy's and a truck's.
 const ENEMY_EYE_MM: i32 = 1500;
 const TRUCK_MM: i32 = 2000;
@@ -79,6 +83,23 @@ pub struct AiTruck {
     pub moved_at: u64,
     /// The client's main-gun rounds at the start of the service.
     pub rounds: u16,
+    /// Goals given up on since the last load, latest first (module docs).
+    pub gave_up: [Option<FxVec2>; GAVE_UP_GOALS],
+}
+
+impl AiTruck {
+    fn give_up(&mut self, at: FxVec2) {
+        self.gave_up.rotate_right(1);
+        self.gave_up[0] = Some(at);
+    }
+
+    /// Whether `at` lies near a goal given up on.
+    fn gave_up_on(&self, at: FxVec2) -> bool {
+        self.gave_up
+            .iter()
+            .flatten()
+            .any(|&p| (p - at).length_sq_raw() <= sq_m(Fx::from_int(SETTLE_M)))
+    }
 }
 
 /// The client's main-gun rounds.
@@ -200,6 +221,8 @@ impl super::Planner<'_> {
             job.phase = phase;
             job.since = tick;
             job.fails = 0;
+            // A move sent for the last phase says nothing about this one.
+            job.moved_to = t.pos;
         };
         // Run from any seen enemy near (not in the base).
         if !in_base && a.flee_m > 0 {
@@ -236,6 +259,7 @@ impl super::Planner<'_> {
             TruckPhase::Load => {
                 if !in_base {
                     if self.truck_failed(t, job, idle) {
+                        job.give_up(base);
                         set(job, TruckPhase::Follow);
                     } else if idle {
                         self.truck_drive(t, job, base);
@@ -249,23 +273,26 @@ impl super::Planner<'_> {
                 let enough = held_g as u64 * 100 >= total_g as u64 * a.min_load_pct as u64;
                 let waited = tick >= job.since + a.load_wait_s as u64 * hz;
                 if done || (enough && (waited || self.supply_budget_spent())) {
+                    job.gave_up = [None; GAVE_UP_GOALS];
                     set(job, TruckPhase::Follow);
                 }
             }
             TruckPhase::Follow => {
-                if (held_g as u64) * 100 < total_g as u64 * a.return_below_pct as u64 {
+                if (held_g as u64) * 100 < total_g as u64 * a.return_below_pct as u64
+                    && !job.gave_up_on(base)
+                {
                     set(job, TruckPhase::Return);
                     self.truck_drive(t, job, base);
                     return;
                 }
-                if let Some((client, rounds)) = self.stranded_tank(t, vs) {
+                if let Some((client, rounds)) = self.stranded_tank(t, vs, job) {
                     job.client = Some(client);
                     job.rounds = rounds;
                     set(job, TruckPhase::Serve);
                     self.ai.counters.truck_serves += 1;
                     return;
                 }
-                if let Some(d) = self.truck_drop(t, vs, sup) {
+                if let Some(d) = self.truck_drop(t, vs, sup, job) {
                     self.ai.emit(
                         self.due,
                         CommandKind::DropCrates {
@@ -276,17 +303,21 @@ impl super::Planner<'_> {
                         },
                     );
                     self.ai.counters.truck_drops_ordered += 1;
+                    set(job, TruckPhase::Drop);
                     job.moved_to = d.point;
                     job.moved_at = tick;
-                    set(job, TruckPhase::Drop);
                     return;
                 }
                 if self.truck_failed(t, job, idle) {
+                    // It takes where it stands: this spot is not sent again.
+                    let spot = job.moved_to;
+                    job.give_up(spot);
                     job.fails = 0;
                     job.moved_to = t.pos;
                     return;
                 }
-                if let Some(spot) = self.follow_spot(t, known)
+                if let Some(spot) = self.follow_spot(t, known, kv)
+                    && !job.gave_up_on(spot)
                     && ((spot - job.moved_to).length_sq_raw() > sq_m(Fx::from_int(SETTLE_M))
                         || (idle
                             && (t.pos - spot).length_sq_raw()
@@ -309,16 +340,27 @@ impl super::Planner<'_> {
                 let cv = &s.vehicles[cs.type_idx as usize];
                 let round_g = super::supply::tank_round_g(s, cv);
                 let dry = vs.cargo_g[SupplyKind::Shells.index()] < round_g;
-                let late = tick >= job.since + JOB_MAX_S * hz;
-                if self.rearmed(cs, cv) || dry || late || self.truck_failed(t, job, idle) {
+                let at = self.ents.transform[c.index()].pos.xy();
+                let radius: Fx = sup.vehicle_radius.into();
+                let reach = sq_m(radius - Fx::from_int(3));
+                let in_reach = (t.pos - at).length_sq_raw() <= reach;
+                let gained = rounds_of(cs) > job.rounds;
+                // A service still giving rounds runs on past the limit, and
+                // a truck in reach has no move to fail.
+                let late = tick >= job.since + JOB_MAX_S * hz && !(in_reach && gained);
+                let failed = !in_reach && self.truck_failed(t, job, idle);
+                if self.rearmed(cs, cv) || dry || late || failed {
+                    if (late || failed) && !gained {
+                        job.give_up(at);
+                        if late && !failed {
+                            self.ai.counters.truck_fails += 1;
+                        }
+                    }
                     self.end_serve(job, false);
                     set(job, TruckPhase::Follow);
                     return;
                 }
-                let at = self.ents.transform[c.index()].pos.xy();
-                let radius: Fx = sup.vehicle_radius.into();
-                let reach = sq_m(radius - Fx::from_int(3));
-                if (t.pos - at).length_sq_raw() > reach {
+                if !in_reach {
                     let side = (t.pos - at).normalize_or_zero() * (radius - Fx::from_int(5));
                     let goal = self.terrain.clamp(at + side);
                     if idle || (goal - job.moved_to).length_sq_raw() > sq_m(Fx::from_int(SETTLE_M))
@@ -331,10 +373,20 @@ impl super::Planner<'_> {
             }
             TruckPhase::Drop => {
                 let late = tick >= job.since + JOB_MAX_S * hz;
+                let goal = job.moved_to;
+                let reach = s.rules.supply.as_ref().map_or(0, |sp| sp.drop_reach_m) + a.arrive_m;
                 if vs.drop.is_none() && tick >= job.since + hz {
+                    // Over without getting there (refused, or stopped short):
+                    // that point is not ordered again.
+                    if (t.pos - goal).length_sq_raw() > sq_m(Fx::from_int(reach as i32)) {
+                        job.give_up(goal);
+                        self.ai.counters.truck_fails += 1;
+                    }
                     set(job, TruckPhase::Follow);
                 } else if late {
                     self.ai.emit(self.due, CommandKind::Stop { squad: t.squad });
+                    job.give_up(goal);
+                    self.ai.counters.truck_fails += 1;
                     set(job, TruckPhase::Follow);
                 }
             }
@@ -345,6 +397,7 @@ impl super::Planner<'_> {
                     }
                     set(job, TruckPhase::Load);
                 } else if self.truck_failed(t, job, idle) {
+                    job.give_up(base);
                     set(job, TruckPhase::Follow);
                 } else if idle {
                     self.truck_drive(t, job, base);
@@ -388,8 +441,13 @@ impl super::Planner<'_> {
     }
 
     /// The nearest own vehicle stranded for want of rounds (module docs),
-    /// no other truck on it, no enemy vehicle near it.
-    fn stranded_tank(&self, t: &MyTank, truck: &VehicleState) -> Option<(SimId, u16)> {
+    /// no other truck on it, no enemy vehicle near it, not given up on.
+    fn stranded_tank(
+        &self,
+        t: &MyTank,
+        truck: &VehicleState,
+        job: &AiTruck,
+    ) -> Option<(SimId, u16)> {
         let g = self.g;
         let s = &g.setup;
         let shells = truck.cargo_g[SupplyKind::Shells.index()];
@@ -420,7 +478,7 @@ impl super::Planner<'_> {
                 continue;
             }
             let at = self.ents.transform[m.index()].pos.xy();
-            if crate::supply::in_own_base(s, self.me, at) {
+            if crate::supply::in_own_base(s, self.me, at) || job.gave_up_on(at) {
                 continue;
             }
             let (have, load) =
@@ -456,6 +514,7 @@ impl super::Planner<'_> {
         t: &MyTank,
         vs: &VehicleState,
         sup: &frontline_content::vehicle::TruckSupplySetup,
+        job: &AiTruck,
     ) -> Option<DropWant> {
         let g = self.g;
         let s = &g.setup;
@@ -488,7 +547,7 @@ impl super::Planner<'_> {
                     && (c.pos - at).length_sq_raw() <= sq_m(Fx::from_int(CRATE_NEAR_M))
             })
         };
-        let far_enough = |at: FxVec2| !crate::supply::in_own_base(s, me, at);
+        let far_enough = |at: FxVec2| !crate::supply::in_own_base(s, me, at) && !job.gave_up_on(at);
         // Mortars low on bombs (outside the base and the HQ's radius).
         if let Some(n) = can(SupplyKind::Shells) {
             let hq = g
@@ -540,7 +599,7 @@ impl super::Planner<'_> {
                 let low = cap != 0
                     && (h.stock_g[kind.index()] as u64) * 100
                         < cap as u64 * cfg.crate_run_below_pct as u64;
-                if low && !lying(h.pos, kind) {
+                if low && !lying(h.pos, kind) && !job.gave_up_on(h.pos) {
                     let side = (t.pos - h.pos).normalize_or_zero() * Fx::from_int(6);
                     return Some(DropWant {
                         point: self.terrain.clamp(h.pos + side),
@@ -580,8 +639,8 @@ impl super::Planner<'_> {
 
     /// Where the truck waits: `follow_m` behind the centre of the own
     /// armour (else behind the own front point), on the first candidate no
-    /// known enemy sees. `None`: nothing to follow.
-    fn follow_spot(&self, t: &MyTank, known: &[Known]) -> Option<FxVec2> {
+    /// known enemy (soldier or vehicle) sees. `None`: nothing to follow.
+    fn follow_spot(&self, t: &MyTank, known: &[Known], kv: &[KnownVehicle]) -> Option<FxVec2> {
         let g = self.g;
         let s = &g.setup;
         let a = &s.rules.ai.truck;
@@ -629,7 +688,9 @@ impl super::Planner<'_> {
         let turn = Fx::PI.mul_int(2).div_int(RING_N);
         let mut near: Vec<(u64, SimId, FxVec2)> = known
             .iter()
-            .map(|k| ((k.pos - at).length_sq_raw(), k.id, k.pos))
+            .map(|k| (k.pos, k.id))
+            .chain(kv.iter().map(|k| (k.pos, k.id)))
+            .map(|(p, id)| ((p - at).length_sq_raw(), id, p))
             .collect();
         near.sort_unstable_by_key(|(d, id, _)| (*d, *id));
         near.truncate(a.los_rays as usize);

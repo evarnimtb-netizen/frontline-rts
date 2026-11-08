@@ -528,6 +528,9 @@ arrive_mm = 2500
 wheeled_waypoint_reach_m = 6
 wheeled_arrive_mm = 2500
 wheeled_creep_pct = 30
+# S8b: stuck re-paths (count) in one place before a wheeled vehicle gives the
+# move up and stops: wheels cannot pivot off blocked ground.
+wheeled_stuck_repaths = 12
 # Over pivot_err_deg of heading error the driver stops pushing and turns,
 # on the spot below pivot_speed_mm_s (mm/s).
 pivot_err_deg = 60

@@ -415,6 +415,8 @@ impl MatchState {
         let followers = vs.followers.clone();
         let by = vs.last_attacker;
         let pos = ctx.ents.transform[i].pos;
+        // S8b: a crew that leaves drops no more crates (cargo stays aboard).
+        self.vehicles.get_mut(&id).expect("listed").drop = None;
         // Followers stop where they are (as for a knock-out).
         for m in followers {
             let mi = m.index();
@@ -1013,6 +1015,9 @@ impl MatchState {
                 pl.crew.scrapped += 1;
             }
             let _ = stats;
+            // S8b: scrapped cargo is lost, as a knock-out's (no detonation).
+            let pos = ctx.ents.transform[oldest.index()].pos;
+            self.truck_wrecked(oldest, owner.0 as usize, ctx.tick, pos, false, owner.0, 0);
             let removed = self.make_wreck(ctx.ents, ctx.hash, oldest, ctx.tick);
             for gone in std::iter::once(oldest).chain(removed) {
                 self.forget(ctx.ents, ctx.hash, gone);

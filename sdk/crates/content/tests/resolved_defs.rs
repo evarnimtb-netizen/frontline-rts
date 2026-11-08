@@ -112,15 +112,16 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // open_top_item_*`, `[ai.armour]` overwatch, `[ai.infantry]` throws).
 // S8b Build A re-recorded it (wheeled mobility keys, optics and screens,
 // the two armoured cars and their guns, `[vehicles.driving]` wheeled keys).
+// S8b Fix re-recorded it (`[vehicles.driving]` wheeled_stuck_repaths).
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xaecbd30b1d034c2a),
-    ("skirmish usa-ger seed 7 hard", 0x690a388d5e86f558),
-    ("test_unlock ger-usa seed 1 normal", 0xe8e1b894ab34166d),
-    ("example override ger-usa seed 1 normal", 0xaecbd30b1d034c2a),
-    ("human ger vs ai usa seed 3 easy", 0x3f426302eb5cadcf),
+    ("skirmish ger-usa seed 1 normal", 0x4303c45ff47fc09a),
+    ("skirmish usa-ger seed 7 hard", 0x41fb8ba3ecc1dabf),
+    ("test_unlock ger-usa seed 1 normal", 0xbbfd0ed98d68e622),
+    ("example override ger-usa seed 1 normal", 0x4303c45ff47fc09a),
+    ("human ger vs ai usa seed 3 easy", 0x2016c9257662a6eb),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x8ddc542883cd3448,
+        0x8ccaab186440a848,
     ),
 ];
 

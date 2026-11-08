@@ -2852,6 +2852,7 @@ mod tests {
                     rounds: 40,
                     since: 2,
                     held: false,
+                    backed_at: None,
                 },
             );
         }
@@ -2877,6 +2878,10 @@ mod tests {
             ("rounds", Box::new(move |s| ow(s, k, sq).rounds -= 1)),
             ("since", Box::new(move |s| ow(s, k, sq).since -= 1)),
             ("held", Box::new(move |s| ow(s, k, sq).held = true)),
+            (
+                "backed_at",
+                Box::new(move |s| ow(s, k, sq).backed_at = Some(1)),
+            ),
             (
                 "overwatch_holds",
                 Box::new(move |s| ai(s, k).counters.overwatch_holds += 1),
@@ -2910,6 +2915,7 @@ mod tests {
         }
         let bad: Vec<StateEdit> = vec![
             Box::new(move |s| ow(s, k, sq).since = 1_000_000),
+            Box::new(move |s| ow(s, k, sq).backed_at = Some(1_000_000)),
             Box::new(move |s| ow(s, k, sq).spot.x = Fx::from_int(-5)),
             Box::new(move |s| ow(s, k, sq).axis.y = Fx::from_int(100_000)),
             Box::new(move |s| {
@@ -3398,6 +3404,47 @@ mod tests {
             World::load(&bytes, 1).is_err(),
             "a truck job from the future"
         );
+        on(
+            ai_edit(&mut |a| {
+                let mut gave_up = [None; crate::ai::GAVE_UP_GOALS];
+                gave_up[1] = Some(FxVec2::from_int(100, 100));
+                a.trucks.insert(
+                    sid,
+                    crate::ai::AiTruck {
+                        gave_up,
+                        ..crate::ai::AiTruck::default()
+                    },
+                );
+            }),
+            "a truck job's given-up goals",
+        );
+        let bytes = ai_edit(&mut |a| {
+            let mut gave_up = [None; crate::ai::GAVE_UP_GOALS];
+            gave_up[0] = Some(FxVec2::from_int(-1, 100));
+            a.trucks.insert(
+                sid,
+                crate::ai::AiTruck {
+                    gave_up,
+                    ..crate::ai::AiTruck::default()
+                },
+            );
+        });
+        assert!(World::load(&bytes, 1).is_err(), "a goal off the map");
+        for edit in [
+            crate::ai::AiTransport {
+                pi: 200,
+                ..crate::ai::AiTransport::default()
+            },
+            crate::ai::AiTransport {
+                point: FxVec2::from_int(1_000_000, 0),
+                ..crate::ai::AiTransport::default()
+            },
+        ] {
+            let bytes = ai_edit(&mut |a| {
+                a.transports.insert(sid, edit);
+            });
+            assert!(World::load(&bytes, 1).is_err(), "a transport's bad point");
+        }
         on(
             ai_edit(&mut |a| {
                 a.transports.insert(
@@ -3974,6 +4021,8 @@ mod tests {
             progress_at: _,
             progress_ticks: _,
             repath_tick: _,
+            stuck_at: _,
+            stuck_repaths: _,
             followers: _,
             wreck_tick: _,
             face: _,
@@ -4082,6 +4131,8 @@ mod tests {
             ("progress_at", Box::new(|v| v.progress_at.x += Fx::EPSILON)),
             ("progress_ticks", Box::new(|v| v.progress_ticks += 1)),
             ("repath_tick", Box::new(|v| v.repath_tick = Some(1))),
+            ("stuck_at", Box::new(|v| v.stuck_at.x += Fx::EPSILON)),
+            ("stuck_repaths", Box::new(|v| v.stuck_repaths += 1)),
             ("followers", Box::new(|v| v.followers.push(SimId(1)))),
             ("wreck_tick", Box::new(|v| v.wreck_tick = Some(1))),
             ("face", Box::new(|v| v.face = Some(FxVec2::from_int(5, 6)))),

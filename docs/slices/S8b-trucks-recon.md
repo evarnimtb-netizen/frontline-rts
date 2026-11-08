@@ -207,7 +207,7 @@ German prices follow the S5a-37 cut (S8a formula); within 8.4's 260-300 and 150-
   S6 `shell_mp_max_pct` pattern; manpower left for the unit mix first. `is_transport_type` becomes `outside_limit`.
 - **Recon (`ai/recon.rs`, one saved job).** From `after_s` (start 90), one car; a second after `second_after_s` (start 480) if the first lives. It takes
   the point the infantry goes for (first non-own by priority), goes to `view_back_m` (start 150) short of it on the own side, through the S7
-  `overwatch_spot` (hull-down, stand-off, `SPOT_GIVE_UP_S`), stops for `settle_s`, and stays while nothing threatens. Backs off (ReverseUnits) at
+  `overwatch_spot` (hull-down, stand-off, `SPOT_GIVE_UP_S`), stops for `settle_s`, and stays while nothing threatens. Backs off (ReverseUnits; under way too; a car facing away drives off) at
   `at_threat_m` (start 200) from known AT teams, tanks, TDs, and from infantry within `open_top_infantry_m` when open-topped (the S7 block). Failed moves as `ai_fails`
   (`max_fails`, `repath_s`): takes where it stands. Screened cars still back off from infantry (bullets go through screens).
 - **Truck (`ai/truck.rs`, one saved job; phases Load, Follow, Serve, Drop, Return).**

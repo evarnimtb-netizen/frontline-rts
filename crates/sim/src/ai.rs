@@ -198,7 +198,7 @@ pub use transport::{
     AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
 };
 
-pub use truck::{AiTruck, MAX_TRUCKS, TruckPhase};
+pub use truck::{AiTruck, GAVE_UP_GOALS, MAX_TRUCKS, TruckPhase};
 
 /// Most AI commands waiting for their reaction delay.
 pub const MAX_PENDING: usize = 256;
@@ -342,6 +342,8 @@ pub struct AiOverwatch {
     /// Tick the spot was chosen; whether the vehicle has reached it.
     pub since: u64,
     pub held: bool,
+    /// S8b, recon: the tick of its last back-off order.
+    pub backed_at: Option<u64>,
 }
 
 /// S5a: most Panzerfaust ambushes one AI keeps.
@@ -598,6 +600,9 @@ impl AiState {
     ) -> Result<(), &'static str> {
         let np = g.points.len();
         let bad_squad = |id: &SquadId| id.0 >= g.next_squad;
+        let map_size = Fx::from_int(g.setup.map.size_m);
+        let on_map =
+            |p: FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= map_size && p.y <= map_size;
         // An escort is keyed by a vehicle squad of this AI; one that no
         // longer exists is dropped at the next plan.
         let bad_escort = |id: &SquadId| {
@@ -659,7 +664,11 @@ impl AiState {
                 let on = |p: FxVec2| {
                     p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size
                 };
-                o.since > tick || !on(o.anchor) || !on(o.spot) || !on(o.axis)
+                o.since > tick
+                    || o.backed_at.is_some_and(|t| t > tick)
+                    || !on(o.anchor)
+                    || !on(o.spot)
+                    || !on(o.axis)
             })
             // S8a.
             || self.transports.len() > MAX_TRANSPORTS
@@ -669,6 +678,8 @@ impl AiState {
                     || j.since > tick + 36_000
                     || j.moved_at > tick
                     || j.moving_at > tick
+                    || (j.pi != NO_POINT && j.pi as usize >= np)
+                    || !on_map(j.point)
             })
             || self.ride_meas.len() > transport::MAX_RIDE_MEAS
             || self.ride_meas.iter().any(|(id, m)| {
@@ -684,6 +695,7 @@ impl AiState {
                     || j.since > tick
                     || j.moved_at > tick
                     || j.client.is_some_and(|c| c.index() >= ents_len)
+                    || j.gave_up.iter().flatten().any(|&p| !on_map(p))
             })
             || self.ride_locks.len() > transport::MAX_RIDE_MEAS
             || self.ride_locks.iter().any(|(id, l)| {

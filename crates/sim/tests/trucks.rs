@@ -127,3 +127,151 @@ fn the_cargo_counters_balance_through_serving_and_dropping() {
         "cargo balance"
     );
 }
+
+/// A truck of `p` abandoned by its crew at (x, y) with `kg` of shells.
+fn abandoned_truck(w: &mut World, p: u8, x: i32, y: i32, kg: u32) -> SimId {
+    let (sq, v) = spawn(w, p, "ww2:ger_opel_blitz_squad", xy(x, y));
+    w.edit_vehicle(v, |vs| {
+        vs.cargo_g[SupplyKind::Shells.index()] = kg * 1000;
+        vs.drop = Some(frontline_sim::CrateDrop {
+            point: xy(x + 40, y),
+            count: 2,
+            kind: SupplyKind::Shells,
+            next_tick: 0,
+        });
+    });
+    w.step(&[]);
+    let seq = w.tick() as u32;
+    w.step(&[cmd(p, seq, CommandKind::Abandon { squad: sq })]);
+    for _ in 0..30 * 40 {
+        w.step(&[]);
+        if w.game().unwrap().vehicle(v).unwrap().abandoned.is_some() {
+            break;
+        }
+    }
+    assert!(w.game().unwrap().vehicle(v).unwrap().abandoned.is_some());
+    v
+}
+
+/// Review of S8b (M1): an abandoned truck scrapped over the cap leaves no
+/// cargo on the wreck, so the save loads, and the kilograms count as lost.
+#[test]
+fn a_scrapped_truck_loses_its_cargo_and_the_save_still_loads() {
+    let mut s = setup(2);
+    s.rules.vehicles.bail.abandoned_cap = 1;
+    let mut w = World::new_match(s, 1).unwrap();
+    let first = abandoned_truck(&mut w, 0, 500, 500, 320);
+    assert_eq!(
+        w.game().unwrap().vehicle(first).unwrap().drop,
+        None,
+        "a crew that left drops no more crates"
+    );
+    // The crates it dropped before the crew left are not lost.
+    let held = w.game().unwrap().vehicle(first).unwrap().cargo_g[SupplyKind::Shells.index()];
+    assert!(held > 0);
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    let second = abandoned_truck(&mut w, 0, 540, 500, 100);
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    let g = w.game().unwrap();
+    let vs = g.vehicle(first).unwrap();
+    assert!(vs.wreck_tick.is_some(), "the oldest was scrapped");
+    assert_eq!(vs.cargo_g, [0; 3], "a wreck holds no cargo");
+    assert_eq!(g.vehicle(second).unwrap().wreck_tick, None);
+    assert_eq!(g.supply6().accounts[0].truck_lost_g, held as u64);
+    let w2 = World::load(&w.save(), 1).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(w2.full_state_hash(), w.full_state_hash());
+}
+
+/// A square trench ring of half width `h` round (x, y): wheels cannot leave.
+fn trench_ring(w: &mut World, x: i32, y: i32, h: i32) {
+    let line: Vec<FxVec2> = [(-h, -h), (h, -h), (h, h), (-h, h), (-h, -h)]
+        .iter()
+        .map(|(a, b)| xy(x + a, y + b))
+        .collect();
+    assert!(w.dig_trench_now(&line, 1));
+    w.step(&[]);
+}
+
+/// Review of S8b (M3): an AI truck that cannot leave a ring is sent to its
+/// drop once: the point is remembered, the wheels stop, the crates come off
+/// where it stands, and no job loops on the same goal.
+#[test]
+#[ignore = "seven game minutes; the release run has it"]
+fn an_ai_truck_does_not_loop_on_a_goal_it_cannot_reach() {
+    let mut s = setup(3);
+    s.players[0].is_ai = true;
+    let mut w = World::new_match(s, 1).unwrap();
+    trench_ring(&mut w, 620, 620, 24);
+    let (tsq, t) = spawn(&mut w, 0, "ww2:ger_opel_blitz_squad", xy(620, 620));
+    w.edit_vehicle(t, |vs| vs.cargo_g = [100_000, 100_000, 300_000]);
+    spawn(&mut w, 0, "ww2:ger_pz4_h_squad", xy(740, 620));
+    for _ in 0..30 * 60 * 7 {
+        w.step(&[]);
+    }
+    let g = w.game().unwrap();
+    let ai = g.ai(PlayerId(0)).unwrap();
+    let job = ai.trucks[&tsq];
+    assert_eq!(ai.counters.truck_drops_ordered, 1, "no second order");
+    assert!(job.gave_up.iter().any(Option::is_some), "goal remembered");
+    assert_eq!(g.vehicle(t).unwrap().drop, None);
+    assert!(
+        g.vehicle(t).unwrap().cargo_g[SupplyKind::Shells.index()] < 300_000,
+        "a goal it cannot reach ends like an arrival"
+    );
+}
+
+/// Review of S8b (M2): a recon car under way backs off from known armour:
+/// driving on when it faces away, reversing when the threat is ahead.
+#[test]
+fn a_recon_car_under_way_backs_off_from_known_armour() {
+    let car = "ww2:ger_sdkfz234_1_squad";
+    let enemy = "ww2:usa_m4a3_75_squad";
+    for (seed, tank_at, must_reverse) in [
+        (1u64, xy(300, 306), false),
+        (2, xy(300, 306), false),
+        (3, xy(530, 400), true),
+        (4, xy(530, 400), true),
+    ] {
+        let mut s = setup(seed);
+        s.players[0].is_ai = true;
+        s.rules.ai.recon.at_threat_m = 200;
+        s.rules.vehicles.bail.under_fire_s = 0;
+        let mut w = World::new_match(s, 1).unwrap();
+        let (csq, c) = spawn(&mut w, 0, car, xy(400, 400));
+        let (_, tank) = spawn(&mut w, 1, enemy, tank_at);
+        // It only has to be known: it has no shot, and hits do not make its
+        // crew leave within the test.
+        let n = w.game().unwrap().vehicle(tank).unwrap().ammo.len();
+        w.edit_vehicle(tank, |vs| {
+            vs.ammo = vec![0; n];
+            vs.loaded = None;
+            vs.mgs.iter_mut().for_each(|m| m.spent = u32::MAX / 2);
+        });
+        let mut backed = false;
+        for _ in 0..30 * 12 {
+            w.step(&[]);
+            let g = w.game().unwrap();
+            let pos = w.entities().transform()[c.index()].pos.xy();
+            let Some(order) = g.squad(csq).map(|q| q.order.clone()) else {
+                break;
+            };
+            if let frontline_sim::Order::Move { target } = order
+                && g.ai(PlayerId(0)).unwrap().counters.recon_backoffs > 0
+                && (target - tank_at).length_sq_raw() > (pos - tank_at).length_sq_raw()
+                && (!must_reverse || g.vehicle(c).unwrap().reverse)
+            {
+                backed = true;
+                break;
+            }
+        }
+        assert!(
+            backed,
+            "seed {seed}: no back-off from a tank {}",
+            w.game().unwrap().vehicle(tank).is_some()
+        );
+    }
+}
