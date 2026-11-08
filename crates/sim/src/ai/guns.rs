@@ -409,7 +409,11 @@ impl super::Planner<'_> {
                 self.ai.counters.guns_in_cover += 1;
             }
         }
-        if !job.pit && a.pit_engineer_m > 0 && !self.gun_contact(t.pos, a.contact_m as i32, known, kv)
+        // Only a gun that has no cover yet gets a pit.
+        if !job.pit
+            && !job.counted
+            && a.pit_engineer_m > 0
+            && !self.gun_contact(t.pos, a.contact_m as i32, known, kv)
         {
             let r = sq_m(Fx::from_int(a.pit_engineer_m as i32));
             let eng = mine
@@ -589,7 +593,15 @@ impl super::Planner<'_> {
                 let i = id.index();
                 let free = match self.ents.kind[i] {
                     EntityKind::Abandoned => true,
-                    EntityKind::Vehicle => crate::guns::own_gun_unserved(self.ents, me, id, vs),
+                    // An own gun only once its crew is gone (they may be
+                    // riding or walking back to it).
+                    EntityKind::Vehicle => {
+                        crate::guns::own_gun_unserved(self.ents, me, id, vs)
+                            && vs.served.as_ref().is_some_and(|sv| {
+                                sv.state != GunState::Hitched
+                                    && sv.crew.is_none_or(|q| !g.squads.contains_key(&q))
+                            })
+                    }
                     _ => false,
                 };
                 free && vs.served.is_some() && rounds_of(vs) > 0

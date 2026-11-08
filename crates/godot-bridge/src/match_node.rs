@@ -109,7 +109,7 @@ const MAX_ARMOUR_BACKLOG: usize = 256;
 /// State names of `ComponentKind::index`, `SeatRole::index`,
 /// zone ids (S7: box × 4 + group; a vehicle type's own names past the
 /// S3 eight) and `ArmourEventKind` (`match_state.md`).
-const COMPONENT_KEYS: [&str; 10] = [
+const COMPONENT_KEYS: [&str; 12] = [
     "engine",
     "track_l",
     "track_r",
@@ -120,6 +120,8 @@ const COMPONENT_KEYS: [&str; 10] = [
     "wheels_f",
     "wheels_r",
     "cargo",
+    "sight",
+    "recoil",
 ];
 const SEAT_KEYS: [&str; 5] = ["driver", "gunner", "commander", "loader", "radio_mg"];
 const ARMOUR_KINDS: [&str; 12] = [
@@ -139,7 +141,7 @@ const ARMOUR_KINDS: [&str; 12] = [
 ];
 
 /// S3c `abandon_cause` names (`bail::AB_*`, index 0: not abandoned).
-const ABANDON_KEYS: [&str; 7] = [
+const ABANDON_KEYS: [&str; 8] = [
     "",
     "ammo_fire",
     "engine_fire",
@@ -147,10 +149,29 @@ const ABANDON_KEYS: [&str; 7] = [
     "useless",
     "under_fire",
     "order",
+    "gun_left",
 ];
 
 /// A vehicle's state badge (`match_state.md`): the first that applies.
 /// Enemies get only wreck, burning, moving or idle.
+/// S9: `vehicles[].gun_state` from the snapshot's `GunState` + 1.
+fn gun_state_word(v: u8) -> &'static str {
+    use frontline_sim::vehicle::GunState as G;
+    [
+        (G::Limbered, "limbered"),
+        (G::Emplaced, "emplaced"),
+        (G::Emplacing, "emplacing"),
+        (G::Packing, "packing"),
+        (G::Pushing, "pushing"),
+        (G::Hitched, "hitched"),
+        (G::Hitching, "hitching"),
+        (G::Unhitching, "unhitching"),
+    ]
+    .iter()
+    .find(|(s, _)| *s as u8 + 1 == v)
+    .map_or("limbered", |(_, w)| w)
+}
+
 fn vehicle_badge(flags: u16, speed: f32, own: bool) -> &'static str {
     use vehicle_flags::*;
     if flags & WRECK != 0 {
@@ -343,6 +364,19 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             let truck = v.supply.is_some();
             d.set("wheels", if truck || long < 5.0 { 3i64 } else { 4i64 });
             d.set("screen", v.boxes.iter().any(|b| b.screen != 0));
+        }
+        // S9: the gun's blockout from its boxes (meshgen `served`), its
+        // arc and optic range for the ground overlay.
+        if v.served() {
+            d.set("served", true);
+            if let Some([lo, hi]) = v.gun_arc_deg {
+                let arc = vdict! { "lo" => lo as i64, "hi" => hi as i64 };
+                d.set("arc_deg", &arc);
+            }
+            d.set(
+                "optic_m",
+                fx(v.sight) * v.optic_sight_pct.max(100) as f32 / 100.0,
+            );
         }
         if let Some(t) = &v.supply {
             d.set("transport", true);
@@ -2526,6 +2560,24 @@ impl MatchRuntime {
                     _ => "",
                 },
             };
+            // S9: a served gun; a vehicle towing one.
+            if v.gun_state != 0 {
+                d.set("gun_state", gun_state_word(v.gun_state));
+                d.set("gun_men", v.gun_men as i64);
+                d.set("gun_slots", v.gun_slots as i64);
+                if v.hitched != u32::MAX {
+                    d.set("hitched", v.hitched as i64);
+                }
+                if v.flags & (vehicle_flags::WRECK | vehicle_flags::ABANDONED) == 0 {
+                    d.set("state", gun_state_word(v.gun_state));
+                }
+                if own {
+                    d.set("hold_fire_m", v.hold_fire_m as i64);
+                }
+            }
+            if v.towing != u32::MAX {
+                d.set("towing", v.towing as i64);
+            }
             // S8b: an own truck's stock and its drop order.
             if own
                 && let Some(t) = self
@@ -3300,6 +3352,44 @@ impl MatchRuntime {
                     squad: SquadId(s.id),
                     pos: sim_to_fx(to_sim(t, self.half)),
                 }));
+            }
+            // S9: orders to the selected own guns.
+            "emplace" | "pack_gun" | "unhitch" | "set_ambush" | "push_gun" | "hitch" => {
+                let raw = data
+                    .get("units")
+                    .and_then(|v| v.try_to::<PackedInt32Array>().ok())
+                    .unwrap_or_default();
+                let f = self.newest();
+                let guns = crate::intents::unit_set(raw.as_slice(), |i| {
+                    f.vehicles
+                        .binary_search_by_key(&i, |v| v.id)
+                        .is_ok_and(|k| f.vehicles[k].owner == self.local && f.vehicles[k].gun_state != 0)
+                });
+                if guns.is_empty() {
+                    return;
+                }
+                let at = || target.map(|t| sim_to_fx(to_sim(t, self.half)));
+                let id = data.get("tow").and_then(|v| v.try_to::<i64>().ok());
+                let range = data
+                    .get("range_m")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .unwrap_or(0)
+                    .clamp(0, 2000) as u16;
+                let cmd = match kind {
+                    "emplace" => at().map(|facing| CommandKind::Emplace { guns, facing }),
+                    "pack_gun" => Some(CommandKind::PackGun { guns }),
+                    "unhitch" => Some(CommandKind::Unhitch { guns }),
+                    "set_ambush" => Some(CommandKind::SetAmbush {
+                        guns,
+                        range_m: range,
+                    }),
+                    "push_gun" => at().map(|point| CommandKind::PushGun { guns, point }),
+                    _ => id.map(|t| CommandKind::Hitch {
+                        guns,
+                        tow: frontline_sim::SimId(t as u32),
+                    }),
+                };
+                out.extend(cmd);
             }
             // S8b: the selected own trucks go to `target` and set down
             // `count` crates of `kind`.

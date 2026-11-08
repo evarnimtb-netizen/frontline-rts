@@ -847,6 +847,12 @@ pub fn enemy_view(v: &VehicleSnapshot, local: u8) -> VehicleSnapshot {
         capacity: v.capacity,
         unload: v.unload,
         mg_yaw: v.mg_yaw,
+        // S9: a gun's state and its crew are seen with it.
+        gun_state: v.gun_state,
+        gun_men: v.gun_men,
+        gun_slots: v.gun_slots,
+        hitched: v.hitched,
+        towing: v.towing,
         ..VehicleSnapshot::default()
     }
 }

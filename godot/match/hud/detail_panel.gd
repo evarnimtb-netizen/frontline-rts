@@ -218,6 +218,12 @@ func _draw_vehicle(vid: int) -> void:
 	if int(v.get("capacity", 0)) > 0:
 		_draw_passengers(v, Rect2(PAD, y, size.x - 2.0 * PAD, rh), base)
 		return
+	# S9: a gun's crew and ambush range.
+	if Vehicles.is_gun(v):
+		var hold := int(v.get("hold_fire_m", 0))
+		var men := "Crew %d/%d" % [int(v.get("gun_men", 0)), int(v.get("gun_slots", 0))]
+		var line := men if hold == 0 else "%s   Ambush %d m" % [men, hold]
+		HudStyle.text(self, font, Vector2(size.x * 0.5, y + base - rh), line, HudStyle.FONT_SMALL, HudStyle.TEXT)
 	# Ammo: counts with the loaded round, the choice (N), the reload.
 	var w := ROSTER.draw_ammo(self, font, bold, Vector2(PAD - 2.0, y + base), v, -1)
 	# S3c (B9): MG stowage left (amber under a quarter, red when dry).

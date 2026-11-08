@@ -184,6 +184,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S9-14 (Plan) The 57 mm has AP only in S9 (M303 HE is late 1944, verify). (A) Yes. (B) Give it HE from 1944-06 for balance.
   S9-15 (Plan) The AI buys only the Pak 40 and the 57 mm (Pak 38 stays `ai_weight` 0); very old neutral guns are scrapped by the abandoned cap. (A) Yes.
   S9-16 (Build B) Guns run on the wheel block layer of the trucks and cars (shallowest wheeled ditch 10 dm), not their own 6 dm: only standard trenches and deeper block them; a 6-10 dm scrape does not. (A) Accept until a third dig depth exists. (B) Give guns a third layer.
+  S9-17 (Build C) AI guns are placed by sight lines and cover, but they kill few tanks in matches: see the S9 log (about 0.05-0.08 tank knock-outs per gun bought; most rounds go at infantry inside 200 m). (A) Accept for this slice: the AI's use is cautious and costs both sides alike; revisit with re-siting and a tank-corridor search (design 9) in the next AI pass. (B) Put AT guns in S9b with a corridor search now.
+  S9-18 (Build C) `ambush_infantry_m` 200: a gun holding fire for an ambush breaks it for men only inside 200 m (done-when counts firing at all). (A) Keep. (B) Hold against men until the gun is struck.
 
 ## Planned work queue
 

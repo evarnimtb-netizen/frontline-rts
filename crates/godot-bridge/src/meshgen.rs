@@ -273,6 +273,9 @@ pub struct VehicleDims {
     pub screen: bool,
     pub no_weapon: bool,
     pub cargo: [f32; 6],
+    /// S9: a served gun: the hull is its boxes (axle, shield, trail, ...)
+    /// on two wheels, no turret, the gun a bare barrel at its pivot.
+    pub served: bool,
 }
 
 impl Default for VehicleDims {
@@ -303,6 +306,7 @@ impl Default for VehicleDims {
             screen: false,
             no_weapon: false,
             cargo: [0.0; 6],
+            served: false,
         }
     }
 }
@@ -542,6 +546,32 @@ pub fn vehicle_hull_mesh(d: &VehicleDims) -> MeshData {
         metal,
         None,
     );
+    m
+}
+
+/// S9 gun blockout: the carriage boxes and the two wheels on the axle (the
+/// first box).
+pub fn gun_carriage_mesh(d: &VehicleDims) -> MeshData {
+    let mut m = MeshData::default();
+    let paint = [1.0, 1.0, 1.0, TEAM_TINT];
+    let shade = [0.82, 0.82, 0.80, TEAM_TINT];
+    let wheel = [0.13, 0.12, 0.11, FIXED];
+    boxes_blockout(&mut m, d, paint, shade);
+    let axle = d.tboxes[0];
+    let (z, hw, r) = (-axle[0], axle[4] + 0.04, 0.42);
+    for side in [-1.0f32, 1.0] {
+        m.add_tube(
+            [side * (hw + 0.1), r, z],
+            [side * (hw - 0.1), r, z],
+            r,
+            r,
+            1.0,
+            14,
+            1,
+            wheel,
+            None,
+        );
+    }
     m
 }
 
@@ -834,6 +864,8 @@ pub fn vehicle_gun_mesh(d: &VehicleDims) -> MeshData {
 /// One vehicle part by name ("hull", "turret", "gun").
 pub fn vehicle_part_mesh(d: &VehicleDims, part: &str) -> Option<MeshData> {
     match part {
+        "hull" if d.served => Some(gun_carriage_mesh(d)),
+        "turret" if d.served => Some(MeshData::default()),
         "hull" => Some(vehicle_hull_mesh(d)),
         "turret" => Some(vehicle_turret_mesh(d)),
         "gun" => Some(vehicle_gun_mesh(d)),
@@ -1112,6 +1144,7 @@ mod gd_api {
         out.wheels = get("wheels", 0.0) as u8;
         out.screen = flag("screen");
         out.no_weapon = flag("no_weapon");
+        out.served = flag("served");
         let vec3 = |k: &str| {
             d.get(k)
                 .and_then(|v| v.try_to::<godot::builtin::Vector3>().ok())
@@ -1119,7 +1152,7 @@ mod gd_api {
         };
         let (cc, ch) = (vec3("cargo_center"), vec3("cargo_half"));
         out.cargo = [cc.x, cc.y, cc.z, ch.x, ch.y, ch.z];
-        if (out.transport || out.wheels > 0)
+        if (out.transport || out.wheels > 0 || out.served)
             && let Some(arr) = d.get("boxes").and_then(|v| v.try_to::<VarArray>().ok())
         {
             let mut n = 0usize;

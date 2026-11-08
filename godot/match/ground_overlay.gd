@@ -154,6 +154,16 @@ func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
 			for k in 24:
 				if k % 2 == 0:
 					_arc(tv.pos, men_r, 0.25, TAU * k / 24.0, TAU * (k + 1) / 24.0, Color(HudStyle.ACCENT, 0.5), 3)
+	# S9: a selected gun's arc: two rays to its optic range.
+	for id in sel.gun_vehicles():
+		var gv: Dictionary = view.vehicles_by_id.get(id, {})
+		var gt: Dictionary = view.rules().get("vehicle_types", {}).get(String(gv.get("type", "")), {})
+		if gt.has("arc_deg") and String(gv.get("gun_state", "")) == "emplaced":
+			var reach := float(gt.get("optic_m", 400.0))
+			for deg in [int(gt.arc_deg.lo), int(gt.arc_deg.hi)]:
+				var a: float = float(gv.yaw) + deg_to_rad(float(deg))
+				var ray := Vector3(-sin(a), 0.0, -cos(a))
+				_line(gv.pos + ray * 2.0, gv.pos + ray * reach, 0.18, Color(HudStyle.ACCENT, 0.55))
 	var mortar := false
 	for sid in sel.selected_squads():
 		var sq: Dictionary = view.squads_by_id.get(sid, {})

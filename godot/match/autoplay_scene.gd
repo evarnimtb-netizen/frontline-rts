@@ -44,6 +44,9 @@ const SCENES := {
 	# S8b: a 234/1, an M8 and a loaded truck (selected: stock bars, ring,
 	# the Drop button).
 	"recon_trucks": {"height": 15.0, "pitch": -38.0, "yaw": -25.0, "settle": 1.5},
+	# S9: an emplaced gun (selected: its arc and the gun orders) and a gun
+	# on a tractor's hitch.
+	"guns": {"height": 20.0, "pitch": -42.0, "yaw": -18.0, "settle": 1.5},
 }
 
 var m: Node3D
@@ -115,6 +118,11 @@ func on_state(s: Dictionary) -> void:
 func _stage(s: Dictionary) -> bool:
 	var own := _own_vehicles(s)
 	match scene:
+		"guns":
+			for v in own:
+				if String(v.get("gun_state", "")) == "emplaced":
+					view.selection.select_only(PackedInt32Array([int(v.id)]))
+					view.selection.focus_squad = int(v.squad)
 		"recon_trucks":
 			# The truck selected: its card has the stock bars and its ring
 			# is drawn.
@@ -267,6 +275,13 @@ func _check(s: Dictionary) -> String:
 							return ""
 					return "followers but no squads[].follow link"
 			return "no own vehicle with followers"
+		"guns":
+			var emplaced := false
+			var towed := false
+			for v in s.get("vehicles", []):
+				emplaced = emplaced or (String(v.get("gun_state", "")) == "emplaced" and int(v.get("gun_men", 0)) > 0)
+				towed = towed or v.has("towing")
+			return "" if emplaced and towed else "gun states not drawn (emplaced %s, towed %s)" % [emplaced, towed]
 		"recon_trucks":
 			var kinds := {}
 			for v in s.get("vehicles", []):

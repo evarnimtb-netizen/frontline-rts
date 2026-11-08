@@ -347,6 +347,17 @@ pub struct VehicleSnapshot {
     /// S8a: the first two MGs' yaw from the hull front (radians; pintles
     /// turn, other MGs read 0).
     pub mg_yaw: [f32; 2],
+    /// S9: a served gun: `GunState` + 1 (0: not a gun). Public.
+    pub gun_state: u8,
+    /// S9: men at its slots, and slots. Public (the men are seen).
+    pub gun_men: u8,
+    pub gun_slots: u8,
+    /// S9: the tow it is hitched to; the gun a tow pulls (`u32::MAX`: none).
+    /// Public.
+    pub hitched: u32,
+    pub towing: u32,
+    /// Own only (S9): the hold-fire range (m; 0: none).
+    pub hold_fire_m: u16,
 }
 
 /// `ShellSnapshot::kind`.
@@ -1063,6 +1074,22 @@ impl RenderSnapshot {
                     Some(_) => 1,
                 },
                 mg_yaw: [0usize, 1].map(|k| vs.mgs.get(k).map_or(0.0, |m| m.yaw.to_f32())),
+                gun_state: vs.served.as_ref().map_or(0, |s| s.state as u8 + 1),
+                gun_men: vs
+                    .served
+                    .as_ref()
+                    .map_or(0, |s| s.slots.iter().filter(|x| x.man.is_some()).count() as u8),
+                gun_slots: vs
+                    .served
+                    .as_ref()
+                    .map_or(0, |s| s.slots.len().min(u8::MAX as usize) as u8),
+                hitched: vs
+                    .served
+                    .as_ref()
+                    .and_then(|s| s.hitched)
+                    .map_or(u32::MAX, |t| t.0),
+                towing: vs.towing.map_or(u32::MAX, |t| t.0),
+                hold_fire_m: vs.served.as_ref().map_or(0, |s| s.hold_fire_m),
             });
         }
     }

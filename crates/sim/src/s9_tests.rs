@@ -746,6 +746,30 @@ fn a_target_outside_the_arc_re_lays_the_trail_and_the_gun_cannot_fire_meanwhile(
 }
 
 #[test]
+fn engineers_dig_a_pit_around_a_gun_from_its_rim() {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    let q = spawn(&mut w, 0, "ww2:ger_engineer_squad", 500, 515);
+    steps(&mut w, 2);
+    let z0 = w.entities().transform[g.index()].pos.z;
+    let line = vec![FxVec2::from_int(498, 500), FxVec2::from_int(502, 500)];
+    send(
+        &mut w,
+        0,
+        CommandKind::Dig {
+            squad: q,
+            line,
+            profile: frontline_content::DigProfile::GunPit,
+        },
+    );
+    let t = secs(&w, 180);
+    steps(&mut w, t);
+    assert_eq!(w.game().unwrap().squads[&q].order, crate::game::Order::Idle);
+    let dz = (z0 - w.entities().transform[g.index()].pos.z).to_f32();
+    assert!(dz > 0.4, "the gun settled into the pit: {dz}");
+}
+
+#[test]
 fn the_gun_pit_lowers_the_ground_under_the_gun_and_does_not_block_its_wheels() {
     let mut w = flat_world(1);
     let g = gun(&mut w, 0, 500, 500);

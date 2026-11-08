@@ -911,7 +911,7 @@ pub fn stress(mut setup: MatchSetup, threads: usize) -> Result<Staged, SimError>
 // ------------------------------------------------------- Godot scenes --
 
 /// The staged autoplay scenes (`--autoplay_scene armour_<name>`).
-pub const SCENES: [&str; 14] = [
+pub const SCENES: [&str; 15] = [
     "callin_locked",
     "vehicle_card",
     "tank_firing",
@@ -934,6 +934,9 @@ pub const SCENES: [&str; 14] = [
     "halftracks",
     // S8b: a 234/1, an M8 and a loaded truck, stopped, every weapon dry.
     "recon_trucks",
+    // S9: an emplaced Pak 40 with its crew at the slots and a second gun on
+    // a tractor's hitch, the crew beside it.
+    "guns",
 ];
 
 /// A staged scene: the world, the commands to send on the first step, the
@@ -1165,6 +1168,39 @@ pub fn scene(name: &str, mut setup: MatchSetup, threads: usize) -> Result<Scene,
             focus = at(TRENCH_X + 1, LANE_Y);
             max_ticks = 30 * 5;
         }
+        "guns" => {
+            use frontline_content::VehicleRole;
+            let a = need(
+                vehicle_of_role(&mut w, 0, VehicleRole::AtGun, at(TRENCH_X, LANE_Y + 5), EAST),
+                "German gun",
+            )?;
+            let tow = need(
+                vehicle_of_role(
+                    &mut w,
+                    0,
+                    VehicleRole::Tractor,
+                    at(TRENCH_X - 2, LANE_Y - 9),
+                    EAST,
+                ),
+                "tractor",
+            )?;
+            let b = need(
+                vehicle_of_role(&mut w, 0, VehicleRole::AtGun, at(TRENCH_X - 8, LANE_Y - 9), EAST),
+                "second gun",
+            )?;
+            w.edit_vehicle(b.1, |vs| {
+                if let Some(sv) = vs.served.as_mut() {
+                    sv.state = crate::vehicle::GunState::Limbered;
+                }
+            });
+            w.hitch_gun_now(b.1, tow.1);
+            w.edit_vehicle(a.1, |vs| {
+                vs.ammo.iter_mut().for_each(|n| *n = 0);
+                vs.loaded = None;
+            });
+            focus = at(TRENCH_X, LANE_Y - 1);
+            max_ticks = 30 * 5;
+        }
         "recon_trucks" => {
             use frontline_content::VehicleRole;
             let a = need(
@@ -1342,6 +1378,14 @@ pub fn scene_ready(name: &str, w: &World) -> bool {
                 .filter(|v| v.flags & vehicle_flags::WRECK == 0)
                 .count()
                 >= 2
+                && w.tick() >= 30
+        }
+        // S9: a gun emplaced with its crew and one on a tow.
+        "guns" => {
+            snap.vehicles
+                .iter()
+                .any(|v| v.gun_state == crate::vehicle::GunState::Emplaced as u8 + 1 && v.gun_men > 0)
+                && snap.vehicles.iter().any(|v| v.towing != u32::MAX)
                 && w.tick() >= 30
         }
         // S8b: both cars and the truck in the world.

@@ -3532,6 +3532,43 @@ mod tests {
             );
         });
         assert!(World::load(&bytes, 1).is_err(), "a lock on no point");
+        // S9.
+        on(
+            ai_edit(&mut |a| {
+                a.guns.insert(sid, crate::ai::AiGun::default());
+            }),
+            "a gun job",
+        );
+        on(
+            ai_edit(&mut |a| {
+                a.guns.insert(
+                    sid,
+                    crate::ai::AiGun {
+                        phase: crate::ai::GunPhase::Hold,
+                        counted: true,
+                        pit: true,
+                        ..crate::ai::AiGun::default()
+                    },
+                );
+            }),
+            "a gun job's phase and flags",
+        );
+        on(
+            ai_edit(&mut |a| {
+                a.gun_recrews.insert(SimId(3), 9);
+            }),
+            "a recrew remembered",
+        );
+        let bytes = ai_edit(&mut |a| {
+            a.guns.insert(
+                sid,
+                crate::ai::AiGun {
+                    site: FxVec2::from_int(-1, 5),
+                    ..crate::ai::AiGun::default()
+                },
+            );
+        });
+        assert!(World::load(&bytes, 1).is_err(), "a gun site off the map");
         on(
             ai_edit(&mut |a| {
                 a.trucks.insert(sid, crate::ai::AiTruck::default());

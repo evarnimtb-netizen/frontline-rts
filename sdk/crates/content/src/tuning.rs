@@ -891,7 +891,7 @@ fn default_guns_slot_swap_s() -> u32 {
     3
 }
 fn default_guns_ambush_infantry_m() -> u32 {
-    150
+    200
 }
 fn default_guns_self_defence_m() -> u32 {
     40
@@ -1521,14 +1521,14 @@ impl Default for AiGunsTuning {
     fn default() -> AiGunsTuning {
         AiGunsTuning {
             after_s: 120,
-            income_max_pct: 30,
+            income_max_pct: 35,
             reserve_mp: 0,
             max_guns: 2,
             site_min_m: 100,
             site_max_m: 250,
-            site_rings: 5,
-            site_bearings: 9,
-            site_spread_deg: 55,
+            site_rings: 7,
+            site_bearings: 11,
+            site_spread_deg: 60,
             site_apart_m: 60,
             approach_m: 350,
             los_rays: 6,

@@ -159,6 +159,8 @@ func prune() -> void:
 		cancel_tool()
 	elif tool == &"drop_crates" and truck_vehicles().is_empty():
 		cancel_tool()
+	elif tool in [&"emplace", &"hitch", &"push_gun"] and not can(tool):
+		cancel_tool()
 	elif tool == &"embark" and not can(&"embark"):
 		cancel_tool()
 	elif tool == &"dig" and not can(&"dig"):
@@ -273,6 +275,29 @@ func selected_vehicles() -> PackedInt32Array:
 		if view.is_vehicle(id):
 			out.append(id)
 	return out
+
+
+## S9: selected own guns.
+func gun_vehicles() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in selected_vehicles():
+		if Vehicles.is_gun(view.vehicles_by_id.get(id, {})):
+			out.append(id)
+	return out
+
+
+## S9: only guns selected (the gun grid, and the keys of its orders).
+func gun_only() -> bool:
+	var vs := selected_vehicles()
+	return not vs.is_empty() and selected_soldiers().is_empty() and gun_vehicles().size() == vs.size()
+
+
+## S9: whether a gun of the selection is in one of `states`.
+func _gun_in(states: Array) -> bool:
+	for id in gun_vehicles():
+		if String(view.vehicles_by_id[id].get("gun_state", "")) in states:
+			return true
+	return false
 
 
 ## S8b: selected own trucks (the vehicles with a stock).
@@ -623,6 +648,19 @@ func can(order: StringName) -> bool:
 			return not boarders().is_empty()
 		&"drop_crates":
 			return not truck_vehicles().is_empty()
+		# S9.
+		&"emplace":
+			return _gun_in(["limbered", "pushing"])
+		&"pack_gun":
+			return _gun_in(["emplaced", "emplacing"])
+		&"hitch":
+			return _gun_in(["limbered"])
+		&"unhitch":
+			return _gun_in(["hitched"])
+		&"ambush":
+			return gun_only()
+		&"push_gun":
+			return _gun_in(["limbered"])
 		&"disembark":
 			return not unload_vehicles().is_empty()
 		&"suppress":
@@ -682,6 +720,9 @@ func next_ammo() -> void:
 ## Starts an order tool or issues an instant order (stop, retreat, regroup).
 ## Abilities arm the throw tool: &"frag", &"smoke", &"satchel".
 func activate(order: StringName) -> void:
+	# S9: on a gun the shared keys mean the gun's own orders.
+	if gun_only():
+		order = {&"dig": &"emplace", &"regroup": &"pack_gun", &"embark": &"hitch", &"disembark": &"unhitch", &"barrage": &"ambush", &"move": &"push_gun"}.get(order, order)
 	if view.input_blocked() or not can(order):
 		if not selected.is_empty():
 			AudioManager.play_ui(&"error")
@@ -715,6 +756,16 @@ func activate(order: StringName) -> void:
 			cancel_tool()
 		&"embark":
 			_set_tool(&"embark")
+		# S9: gun orders.
+		&"emplace", &"hitch", &"push_gun":
+			_set_tool(order)
+		&"pack_gun", &"unhitch":
+			view.emit_intent(order, {"units": gun_vehicles()})
+			cancel_tool()
+		&"ambush":
+			var v: Dictionary = view.vehicles_by_id[gun_vehicles()[0]]
+			view.emit_intent(&"set_ambush", {"units": gun_vehicles(), "range_m": Vehicles.next_ambush(int(v.get("hold_fire_m", 0)))})
+			cancel_tool()
 		# S8b: arms the drop tool; again: the next kind.
 		&"drop_crates":
 			if tool == &"drop_crates":
@@ -1139,6 +1190,15 @@ func escort(vehicle: int) -> void:
 func order_to_ground(g: Vector3, attack := false, reverse := false) -> void:
 	if selected.is_empty():
 		return
+	# S9: a gun does not drive: limbered, its crew push it.
+	if gun_only():
+		if can(&"push_gun"):
+			view.emit_intent(&"push_gun", {"units": gun_vehicles(), "target": g})
+			if view.overlay != null:
+				view.overlay.marker(g, &"move")
+		else:
+			AudioManager.play_ui(&"error")
+		return
 	if reverse and not selected_vehicles().is_empty():
 		view.emit_intent(&"reverse_units", {"units": selected_vehicles(), "target": g})
 		send_order(&"move", {"target": g}, [], PackedInt32Array(), false)
@@ -1208,6 +1268,16 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			if not shift:
 				_set_tool(&"")
 			return
+		# S9: the own tow under the click; the point it faces, or goes to.
+		&"hitch":
+			var tow := pick_vehicle(screen, 1)
+			if tow == -1 or Vehicles.is_gun(view.vehicles_by_id.get(tow, {})):
+				AudioManager.play_ui(&"error")
+				return
+			view.emit_intent(&"hitch", {"units": gun_vehicles(), "tow": tow})
+			if not shift:
+				_set_tool(&"")
+			return
 		&"embark":
 			# S8a: the own half-track under the click.
 			var ev := pick_vehicle(screen, 1)
@@ -1223,6 +1293,10 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			var fwd: Vector3 = -view.camera.global_transform.basis.z if view.camera != null else Vector3(0, 0, -1)
 			var across := Vector3(-fwd.z, 0, fwd.x)
 			view.emit_intent(&"build", {"squads": selected_squads(), "target": g, "what": "hq" if tool == &"build_hq" else "dump", "facing": across})
+		&"emplace":
+			view.emit_intent(&"emplace", {"units": gun_vehicles(), "target": g})
+		&"push_gun":
+			view.emit_intent(&"push_gun", {"units": gun_vehicles(), "target": g})
 		&"drop_crates":
 			view.emit_intent(&"drop_crates", {"units": truck_vehicles(), "target": g, "kind": drop_kind, "count": DROP_COUNT})
 			if not shift:

@@ -204,3 +204,13 @@ S9-1 to S9-15 are in `docs/TODO.md` with (A) defaults. S9-1 (optic range), S9-2/
 - Guns use the wheel block layer shared with trucks and cars (shallowest wheeled ditch 10 dm), not their own 6 dm (S9-16): only standard trenches and deeper block them.
 - `Abandon` as a command does nothing for guns (no hatches): the neutral rule covers it. `AB_GUN` = 7 is the neutral cause.
 - Armour-test 40's series use one gun per round: a penetration can wreck the gun at once.
+
+## 21. Build C notes
+
+- `gunnery::gun_target`: a live gun with men at a slot is an HE aim at the first manned slot (`Aim { vehicle: false }`), including from other guns; a gun with no men is an ordinary AP target. Case 36: all rounds HE.
+- Hold fire: vehicles count at the hold range, men only inside `[vehicles.guns] ambush_infantry_m` (200): a crew does not break an ambush for riflemen at 400 m. This narrows the text of section 7.
+- AI buys through `buy_role_within`; `gun_pot()` holds `income_max_pct` of the income so far (capped at the card's price) back from the mix buys, from the time a gun may be bought. The other cards spend the rest; T83 caps the share.
+- `Planner::take_guns` takes guns, tows (`towing`, every `Tractor`) and crews (`Served.crew`) out of the habits before any runs. A tractor goes home once after unhitching; an M3A1 tow goes back to `transport_jobs` by itself.
+- Gun pits: the line is under the gun, so the men dig from the rim (`dig.rs::pit_rim`, floor half plus wall) and the squad walks to a point beside the gun (`pit_approach`). Before this fix the order never reached the line; a test covers it.
+- AI digs a pit only for a gun with no woods or hull-down site; `guns_in_cover` counts the site, or the pit once the engineers finish.
+- Infantry only recrew a gun whose crew squad is gone (never one with its crew riding or walking back).

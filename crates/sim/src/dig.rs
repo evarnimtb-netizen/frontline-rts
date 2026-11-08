@@ -73,6 +73,22 @@ pub struct DigSegment {
     pub digger: Option<SimId>,
 }
 
+/// S9: a gun pit's rim from the middle of the line (m): the floor's half
+/// width and the wall; 0 for every other kind of dig.
+fn pit_rim(profile: DigProfile, dig: &DigSetup) -> Fx {
+    if profile == DigProfile::GunPit {
+        Fx::from(dig.floor_width).div_int(2) + Fx::from(dig.wall_run)
+    } else {
+        Fx::ZERO
+    }
+}
+
+/// S9: the unit normal of a straight line's first segment.
+fn line_normal(line: &[FxVec2]) -> FxVec2 {
+    let d = (line[line.len() - 1] - line[0]).normalize_or_zero();
+    FxVec2::new(-d.y, d.x)
+}
+
 /// Digging state of a Dig order.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct DigJob {
@@ -412,12 +428,18 @@ impl MatchState {
                 }
             }
             // 3–4. Walk to the spot, work there, stamp finished passes.
-            for seg in job.segments.iter_mut() {
+            let rim = pit_rim(job.profile, dig);
+            let side = line_normal(line);
+            for (si, seg) in job.segments.iter_mut().enumerate() {
                 let Some(d) = seg.digger else { continue };
                 let Some(k) = sq.members.iter().position(|&m| m == d) else {
                     continue;
                 };
-                let spot = terrain.clamp(point_along(line, (seg.from + seg.to).div_int(2)));
+                // S9: a gun stands on the line; the men work from the rim,
+                // on both sides of it.
+                let along = point_along(line, (seg.from + seg.to).div_int(2));
+                let off = if si.is_multiple_of(2) { side } else { -side };
+                let spot = terrain.clamp(along + off * rim);
                 sq.nav.slots[k] = spot;
                 let at = ents.transform[d.index()].pos.xy();
                 // A man firing at the enemy puts the spade down.
@@ -442,6 +464,29 @@ impl MatchState {
                 sq.order = Order::Idle;
             }
         }
+    }
+
+    /// S9: where a squad ordered to dig a gun pit goes: beside the gun.
+    pub(crate) fn pit_approach(
+        &self,
+        ents: &Entities,
+        q: crate::game::SquadId,
+        line: &[FxVec2],
+        goal: FxVec2,
+        profile: DigProfile,
+    ) -> FxVec2 {
+        if profile != DigProfile::GunPit {
+            return goal;
+        }
+        let lead = ents.transform[self.squads[&q].lead(ents).index()].pos.xy();
+        let side = line_normal(line);
+        let toward = if (lead - goal).dot(side) >= Fx::ZERO {
+            side
+        } else {
+            -side
+        };
+        let rim = pit_rim(profile, self.setup.rules.dig_profile(profile));
+        goal + toward * (rim + Fx::from_int(2))
     }
 
     fn unit_dig_work(

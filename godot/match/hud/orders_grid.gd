@@ -67,6 +67,16 @@ const CREW := [&"crew", "Crew", &"order_crew", "Click an abandoned vehicle: the 
 ## S8a.
 const BOARD := [&"embark", "Board", &"order_embark", "Click an own half-track: the selected squads walk to its door and climb in, one man a second. A squad that does not fit is refused (squads never split). Right-click on it does the same."]
 const UNLOAD := [&"disembark", "Unload", &"order_disembark", "The half-track stops and its passengers get out by the rear door, one man every 0.8 s. Shift+U (or Shift+click): over the sides, faster (0.5 s) but each man stands up over the rim while he climbs out, on the side away from the last hit."]
+## S9: a gun selected (the gun grid; the keys are the ones its men do not
+## use for anything else: Y as dig, L as regroup, V as board, U as unload,
+## B as barrage).
+const ROW_GUN := [
+	[&"emplace", "Emplace", &"order_dig", "Set the gun up facing a point (click it): the crew spread the trail and dig the spades in. 25-30 s; it cannot fire until it is done. Limbered guns only."],
+	[&"pack_gun", "Pack", &"order_regroup", "Limber the gun to move it (about 17 s). A gun being set up limbers at once."],
+	[&"hitch", "Hitch", &"order_embark", "Click an own tractor or half-track near the limbered gun: the crew hitch it (20 s) and ride. The tow must stand still."],
+	[&"unhitch", "Unhitch", &"order_disembark", "The tow stops and the crew take the gun off the hitch (20 s); then order Emplace."],
+	[&"ambush", "Ambush", &"order_barrage", "Hold fire until a vehicle is this close (off, 400 m, 250 m); men only inside 200 m. The gun fires at once if it is struck."],
+]
 ## S8b: trucks.
 const DROP := [&"drop_crates", "Drop", &"order_drop_crates", "Click a point: the truck drives there and sets down up to 4 crates (3 s each), where they feed mortars and men or stock an HQ inside its ring. I arms the tool; pressing I again changes the kind (shells, small arms, explosives). Nothing is paid here: the truck was paid for when it loaded at the base."]
 const BAIL := [&"bail", "Bail out", &"", "The crew leave the vehicle by its hatches and become a crew squad; the vehicle stays, abandoned, and can be re-crewed (by anyone, enemies included). Press twice within 2 s."]
@@ -103,7 +113,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+const TOOLS := [&"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -137,6 +147,8 @@ func bind(v: MatchView) -> void:
 func update_state(_s: Dictionary) -> void:
 	var sel: Node = view.selection
 	var want := "vehicle" if not sel.selected_vehicles().is_empty() and sel.selected_soldiers().is_empty() else "soldier"
+	if want == "vehicle" and sel.gun_only():
+		want = "gun"
 	if want == "soldier" and sel.supply_only():
 		want = "supply"
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
@@ -174,6 +186,9 @@ func _layout() -> void:
 	var bh := (size.y - 2.0 * g) / 3.0
 	# S3b: five slots in the top row (the fifth is Suppress).
 	var abw := (ow - 4.0 * g) / 5.0
+	if grid_mode == "gun":
+		_layout_gun(abw, bw, bh, g)
+		return
 	if grid_mode == "vehicle":
 		for i in ROW_VEHICLE.size():
 			_add(ROW_VEHICLE[i], Rect2(i * (abw + g), 0, abw, bh), "order")
@@ -218,6 +233,19 @@ func _layout() -> void:
 	var fseg := sw / 3.0
 	for i in ROW_FIRE.size():
 		_add(ROW_FIRE[i], Rect2(i * fseg, 3.0 * (bh + g), fseg, fh), "fire")
+
+
+## S9: the gun orders on top, Push and Ammo below.
+func _layout_gun(abw: float, bw: float, bh: float, g: float) -> void:
+	for i in ROW_GUN.size():
+		_add(ROW_GUN[i], Rect2(i * (abw + g), 0, abw, bh), "order")
+	_add([&"push_gun", "Push", &"order_move", "Click a point: the crew push the limbered gun there. Right-click on the ground does the same."], Rect2(0, bh + g, bw, bh), "order")
+	_add(ROW_VEHICLE_ORDERS[2], Rect2(bw + g, bh + g, bw, bh), "order")
+	if not _gun:
+		return
+	var aw := 4.0 * bw + 3.0 * g
+	for i in ROW_AMMO.size():
+		_add(ROW_AMMO[i], Rect2(i * aw / ROW_AMMO.size(), 2.0 * (bh + g), aw / ROW_AMMO.size(), bh), "stance")
 
 
 func _add(def: Array, r: Rect2, kind: String) -> void:

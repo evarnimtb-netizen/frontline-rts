@@ -1417,3 +1417,28 @@ truck, the tests stage dictionaries).
   (`match_frame` test `a_fresh_half_track_reports_its_mg_stowage`).
 - `--autoplay_scene armour_recon_trucks` (a 234/1, an M8 and a loaded truck,
   the truck selected) saves `s3_recon_trucks.png`.
+
+## S9: AT guns
+
+Spec `docs/slices/S9-at-guns.md` (13). The bridge only; the mock has no gun, the tests stage dictionaries.
+
+- A gun is a vehicle (`vehicles[]`): `gun_state` is present on guns only:
+  `"limbered" | "emplaced" | "emplacing" | "packing" | "pushing" | "hitched" | "hitching" | "unhitching"`,
+  and `state` shows that word while the gun is not a wreck or neutral. `gun_men` / `gun_slots`
+  (public: men at the slots and slots), `hitched` (the tow's id, when hitched),
+  `hold_fire_m` (own only; 0: no ambush). A towing vehicle has `towing` (the gun's id).
+  The crew are ordinary soldiers in `soldiers[]`, at their slots; no new soldier field.
+- Neutral: `abandoned` true, `owner` -1, `last_owner`, `abandon_cause` `"gun_left"` (seen by all,
+  tinted grey by `vehicle_view.gd`). Serve it with the Crew tool (K), as any abandoned vehicle.
+- `rules.vehicle_types[t]` of a gun: `served` true, `arc_deg { lo, hi }` (degrees from the gun's
+  front), `optic_m` (m), `boxes` (axle, shield, trail: the blockout, meshgen `gun_carriage_mesh`);
+  `components` adds `sight` and `recoil` (`Vehicles.COMPONENTS`: 12).
+- Intents (own guns only, `units`): `emplace { target }` (the point it faces), `pack_gun`, `unhitch`,
+  `set_ambush { range_m }`, `push_gun { target }`, `hitch { tow }` (a vehicle id). A plain move of a
+  gun squad is refused by the sim: right-click on the ground sends `push_gun` for a gun-only selection.
+- HUD: a gun-only selection takes the gun grid (`orders_grid.gd` `ROW_GUN`). Keys reuse the actions its
+  men do not need: Y Emplace, L Pack, V Hitch, U Unhitch, B Ambush (off, 400, 250 m; men inside 200 m),
+  M Push; no new input actions, so nothing clashes (`test_match_view.gd` `_test_s9`).
+- A selected emplaced gun draws two rays along its arc to `optic_m` (`ground_overlay.gd`).
+- `--autoplay_scene armour_guns` (an emplaced Pak 40 selected, a second gun hitched to an Sd.Kfz. 11,
+  the crew aboard) saves `s3_guns.png`.

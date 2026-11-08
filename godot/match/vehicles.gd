@@ -25,10 +25,10 @@ const SEATS := ["driver", "gunner", "commander", "loader", "radio_mg"]
 const SEAT_LETTERS := ["D", "G", "C", "L", "R"]
 const SEAT_NAMES := {"driver": "Driver", "gunner": "Gunner", "commander": "Commander", "loader": "Loader", "radio_mg": "Radio operator"}
 ## Components in snapshot order; STRIP is the card's component strip.
-const COMPONENTS := ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack", "transmission", "wheels_f", "wheels_r", "cargo"]
-const STRIP := ["engine", "track_l", "track_r", "wheels_f", "wheels_r", "cargo", "gun", "ring"]
-const COMPONENT_NAMES := {"engine": "Engine", "track_l": "Left track", "track_r": "Right track", "gun": "Main gun", "ring": "Turret ring", "ammo_rack": "Ammo rack", "transmission": "Transmission", "wheels_f": "Front wheels", "wheels_r": "Rear wheels", "cargo": "Cargo"}
-const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R", "gun": "Gun", "ring": "Ring", "ammo_rack": "Rack", "transmission": "Trans", "wheels_f": "Whl F", "wheels_r": "Whl R", "cargo": "Cargo"}
+const COMPONENTS := ["engine", "track_l", "track_r", "gun", "ring", "ammo_rack", "transmission", "wheels_f", "wheels_r", "cargo", "sight", "recoil"]
+const STRIP := ["engine", "track_l", "track_r", "wheels_f", "wheels_r", "cargo", "gun", "ring", "sight", "recoil"]
+const COMPONENT_NAMES := {"engine": "Engine", "track_l": "Left track", "track_r": "Right track", "gun": "Main gun", "ring": "Turret ring", "ammo_rack": "Ammo rack", "transmission": "Transmission", "wheels_f": "Front wheels", "wheels_r": "Rear wheels", "cargo": "Cargo", "sight": "Sight", "recoil": "Recoil"}
+const COMPONENT_SHORT := {"engine": "Eng", "track_l": "Trk L", "track_r": "Trk R", "gun": "Gun", "ring": "Ring", "ammo_rack": "Rack", "transmission": "Trans", "wheels_f": "Whl F", "wheels_r": "Whl R", "cargo": "Cargo", "sight": "Sight", "recoil": "Recoil"}
 ## Below this fraction a component reads as damaged (S3 spec: < 50 HP of
 ## 100; the gun and ring have 80, so this is a presenter threshold).
 const DAMAGED := 0.5
@@ -36,6 +36,9 @@ const STATE_TEXT := {
 	"wreck": "Wreck", "abandoned": "Abandoned", "burning": "Burning", "bogged": "Bogged", "immobilised": "Immobilised",
 	"repairing": "Repairing", "crossing": "Crossing", "reversing": "Reversing", "moving": "Moving",
 	"idle": "Holding",
+	# S9: a gun's state.
+	"limbered": "Limbered", "emplaced": "Emplaced", "emplacing": "Emplacing", "packing": "Packing",
+	"pushing": "Pushing", "hitched": "Hitched", "hitching": "Hitching", "unhitching": "Unhitching",
 }
 ## Badge states drawn in the alarm (accent) colour.
 const ALARM_STATES := ["burning", "bogged", "immobilised", "abandoned"]
@@ -43,6 +46,7 @@ const ALARM_STATES := ["burning", "bogged", "immobilised", "abandoned"]
 const ABANDON_TEXT := {
 	"ammo_fire": "ammo fire", "engine_fire": "engine fire", "crew": "crew losses",
 	"useless": "gun and tracks out", "under_fire": "disabled under fire", "order": "ordered out",
+	"gun_left": "left without a crew",
 }
 ## S3b: "apcr" (the special round) only on guns that carry it.
 const AMMO_CHOICES := ["auto", "ap", "apcr", "he"]
@@ -72,6 +76,20 @@ static func next_ammo(choice: String, has_apcr := false) -> String:
 ## ammo counts).
 static func has_apcr(v: Dictionary) -> bool:
 	return (v.get("ammo", {}) as Dictionary).has("apcr")
+
+
+## S9: a served gun (not a wreck): `gun_state` is present.
+static func is_gun(v: Dictionary) -> bool:
+	return v.has("gun_state")
+
+
+## S9: the ambush ranges the Ambush order cycles through (m; 0: off).
+const AMBUSH_STEPS := [0, 400, 250]
+
+
+static func next_ambush(range_m: int) -> int:
+	var k := AMBUSH_STEPS.find(range_m)
+	return AMBUSH_STEPS[(k + 1) % AMBUSH_STEPS.size()]
 
 
 static func has(v: Dictionary, bit: int) -> bool:

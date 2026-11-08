@@ -1307,6 +1307,7 @@ impl MatchState {
             line: line.to_vec(),
             job,
         };
+        let goal = self.pit_approach(ctx.ents, id, line, goal, profile);
         self.request_path(id, goal);
         true
     }

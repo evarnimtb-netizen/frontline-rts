@@ -97,6 +97,7 @@ func _run() -> void:
 	await _test_s6()
 	_test_s8a()
 	_test_s8b()
+	_test_s9()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1545,6 +1546,25 @@ func _test_s8b() -> void:
 	_check(ci._full(card) and ci.blocked_reason(card) == "card", "at its own cap the tile is blocked")
 	var sel: Node = _view.selection
 	_check(sel.DROP_KINDS.size() == 3 and sel.DROP_COUNT == 4, "drop kinds and count")
+
+
+## S9: the gun grid and its keys, the state text, the ambush cycle, neutral.
+func _test_s9() -> void:
+	var v := {"id": 9000, "owner": 0, "type": "ger_pak40", "gun_state": "emplaced", "gun_men": 6, "gun_slots": 6, "hold_fire_m": 0, "pos": Vector3.ZERO, "yaw": 0.0, "components": {}}
+	_check(Vehicles.is_gun(v) and not Vehicles.is_gun({}), "gun_state marks a gun")
+	_check(Vehicles.STATE_TEXT.get("emplaced") == "Emplaced" and Vehicles.STATE_TEXT.get("hitched") == "Hitched", "gun state words")
+	_check(Vehicles.next_ambush(0) == 400 and Vehicles.next_ambush(400) == 250 and Vehicles.next_ambush(250) == 0, "the Ambush key cycles off, 400, 250")
+	_check(Vehicles.COMPONENTS.size() == 12 and Vehicles.COMPONENTS[11] == "recoil", "all 12 parts listed")
+	_check(Vehicles.ABANDON_TEXT.has("gun_left"), "a neutral gun has a cause text")
+	var sel: Node = _view.selection
+	# The gun grid borrows keys the men's grid uses; nothing new is bound.
+	var keys := {}
+	for a in MatchInput.ACTIONS:
+		_check(not keys.has(MatchInput.ACTIONS[a]), "key of %s is unique" % a)
+		keys[MatchInput.ACTIONS[a]] = true
+	var grid: Control = _view.orders
+	_check(grid.ROW_GUN.size() == 5 and grid.TOOLS.has(&"emplace") and grid.TOOLS.has(&"hitch"), "gun orders and tools")
+	_check(sel.has_method("gun_only") and sel.has_method("gun_vehicles"), "selection reads guns")
 
 
 func _check(ok: bool, what: String) -> void:
