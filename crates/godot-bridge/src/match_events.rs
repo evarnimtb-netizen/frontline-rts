@@ -176,6 +176,8 @@ fn component_words(c: u8) -> &'static str {
         4 => "turret ring",
         5 => "ammo rack",
         6 => "transmission",
+        7 | 8 => "wheels",
+        9 => "cargo",
         _ => "component",
     }
 }
@@ -898,11 +900,7 @@ mod tests {
         tr.armour(&s3c, &setup, &mut feed);
         tr.call_ins(&s3c, &setup, &mut feed);
         let lines: Vec<String> = feed.iter().map(|e| e.text.clone()).collect();
-        let seats = setup
-            .vehicles
-            .iter()
-            .find(|v| v.id == "ww2:ger_pz4_h")
-            .map_or(0, |v| v.seats.len());
+        let seats = setup.vehicles.first().map_or(0, |v| v.seats.len());
         assert_eq!(
             lines,
             vec![
