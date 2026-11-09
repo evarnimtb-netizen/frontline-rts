@@ -72,9 +72,17 @@ engine Build, Review or Fix.
   (tuner-fix session, 2026-11-03).
 - Tuning goes through `tools/autotune` (free local matches); agents pick the
   knobs, ranges and targets and read the report.
-- Agents run `tools/check.sh quick <base commit>` only; the orchestrator
-  runs `tools/check.sh full` before pushing. Both print a few lines (logs in
-  `target/check/`).
+- Agents run `tools/check.sh quick <base commit>` only (release tests of the
+  changed crates, `cargo fmt` applied); `tools/check.sh tests` is the whole
+  release suite between stages; the orchestrator runs `tools/verify.sh`
+  (which runs `check.sh full`) before pushing. All print a few lines (logs
+  in `target/check/`).
+- Since S9b (`docs/process/dev-speed.md`): no agent command blocks longer
+  than 4 minutes (the prompt cache lasts 5); the 160 sets, the pooled reading
+  and the targets come from `tools/measure.sh` (cached by `tools/batch.sh`),
+  never from an agent's own batch; tick time comes only from `verify.sh`;
+  ablations by script decide whether a Tune stage runs, and Review and Fix
+  come before it.
 - Slice numbers come from `frontline-cli targets docs/slices/targets/<slice>.toml`
   (one line per target) and from `--json FILE` results, never from reading
   the text tables (`docs/modding/tuning.md`).

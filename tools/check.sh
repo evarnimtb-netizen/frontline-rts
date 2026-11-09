@@ -3,12 +3,16 @@
 # full output. Full logs go to target/check/*.log.
 #
 #   tools/check.sh quick [BASE]   # what an agent runs while it works
+#   tools/check.sh tests          # the orchestrator, between stages
 #   tools/check.sh full           # what the orchestrator runs before pushing
 #
-# quick: cargo fmt --check, clippy -D warnings (workspace), and cargo test -q
+# quick: cargo fmt (applied, not only checked), clippy -D warnings (workspace), and the release
+#   tests (tools/ptest.py: test binaries three at a time, ignored tests left out)
 #   for the crates changed against BASE (default: $CHECK_BASE, else the
 #   merge-base with origin/<this branch>, else with main). Prints a pass/fail
 #   count per crate and, for a failing test, its first 40 lines.
+# tests: every release test of the workspace with the ignored ones, three
+#   binaries at a time (same tests as full, about a third of the time).
 # full: fmt, clippy, the whole workspace's tests including the ignored ones
 #   (release), golden ballistics, validate mods/ww2, the bridge build, the four
 #   Godot headless tests and a settings.cfg-unchanged check. One line each:
@@ -26,14 +30,15 @@ mkdir -p "$LOGS"
 FAILS=0
 
 SETTINGS_CFG="$HOME/Library/Application Support/Godot/app_userdata/Frontline/settings.cfg"
-SETTINGS_BAK="${SETTINGS_BAK:-/private/tmp/claude-501/-Users-evarnimtb-Documents-Claude/21d3d3cd-8805-4e7e-9ecf-7b70b7e7aea7/scratchpad/settings.cfg.bak}"
+SETTINGS_BAK="${SETTINGS_BAK:-$HOME/.claude/projects/-Users-evarnimtb-Documents-Claude-code-frontline-rts/keep/settings.cfg.bak}"
 
-ok() { echo "$1: ok${2:+ ($2)}"; }
+# Seconds since the step began (the caller sets T0=$SECONDS).
+ok() { echo "$1: ok${2:+ ($2)} [$((SECONDS - ${T0:-$SECONDS})) s]"; }
 bad() { echo "$1: FAIL (see $LOGS/$2.log)"; FAILS=$((FAILS + 1)); }
 
 # step NAME LOGNAME CMD...  -> one line; the first 12 log lines on failure
 step() {
-    local name=$1 log=$2
+    local name=$1 log=$2 T0=$SECONDS
     shift 2
     if "$@" >"$LOGS/$log.log" 2>&1; then
         ok "$name"
@@ -57,7 +62,7 @@ failing_tests() {
 }
 
 cargo_tests() { # NAME LOG CARGO-ARGS...
-    local name=$1 log=$2
+    local name=$1 log=$2 T0=$SECONDS
     shift 2
     if cargo test -q "$@" >"$LOGS/$log.log" 2>&1; then
         ok "$name" "$(counts "$LOGS/$log.log")"
@@ -69,6 +74,19 @@ cargo_tests() { # NAME LOG CARGO-ARGS...
         else
             grep -E '^error' -A6 "$LOGS/$log.log" | head -12 | sed 's/^/    /'
         fi
+    fi
+}
+
+# Release tests through tools/ptest.py (binaries side by side).
+ptests() { # NAME LOG PTEST-ARGS... -- CARGO-ARGS...
+    local name=$1 log=$2 T0=$SECONDS out
+    shift 2
+    if out=$(python3 -I tools/ptest.py "$LOGS/$log.log" "$@" 2>&1); then
+        ok "$name" "$(echo "$out" | head -1)"
+    else
+        echo "$name: FAIL ($(echo "$out" | head -1); see $LOGS/$log.log)"
+        echo "$out" | tail -n +2 | head -200
+        FAILS=$((FAILS + 1))
     fi
 }
 
@@ -98,16 +116,26 @@ crates_changed() { # BASE -> package names, one per line
 quick() {
     local base pk args=""
     base=$(base_commit "${1:-}")
-    step fmt fmt cargo fmt --all -- --check
+    # quick formats instead of failing: a stage's last check can then never
+    # end on a fmt failure with the tests not run again on the formatted code.
+    if cargo fmt --all -- --check >"$LOGS/fmt.log" 2>&1; then
+        echo "fmt: ok"
+    elif cargo fmt --all >>"$LOGS/fmt.log" 2>&1; then
+        echo "fmt: ok (cargo fmt applied; the changed files are in the working tree)"
+    else
+        bad fmt fmt
+    fi
     step clippy clippy cargo clippy -q --workspace --all-targets -- -D warnings
     pk=$(crates_changed "$base")
+    # Release, not debug: the same build the batches use, and the whole
+    # workspace's tests take 6 minutes in release against 18 in debug.
     if [ -z "$pk" ]; then
         echo "tests: skipped (no crate changed since ${base:0:9})"
     elif echo "$pk" | grep -qx ALL; then
-        cargo_tests "tests workspace" test_quick --workspace
+        ptests "tests workspace" test_quick -- --workspace
     else
         for p in $pk; do args="$args -p $p"; done
-        cargo_tests "tests ($(echo $pk | sed 's/frontline-//g; s/ /, /g'))" test_quick $args
+        ptests "tests ($(echo $pk | sed 's/frontline-//g; s/ /, /g'))" test_quick -- $args
     fi
 }
 
@@ -121,7 +149,7 @@ godot_bin() {
 }
 
 godot_test() { # NAME SCRIPT
-    local name=$1 script=$2 bin
+    local name=$1 script=$2 bin T0=$SECONDS
     bin=$(godot_bin)
     if [ -z "$bin" ]; then
         echo "no Godot binary found; set GODOT" >"$LOGS/$name.log"
@@ -174,9 +202,10 @@ full() {
 
 case "${1:-}" in
     quick) quick "${2:-}" ;;
+    tests) ptests "tests workspace, ignored included" test_all --include-ignored -- --workspace ;;
     full) full ;;
     *)
-        echo "usage: tools/check.sh quick [BASE] | full" >&2
+        echo "usage: tools/check.sh quick [BASE] | tests | full" >&2
         exit 2
         ;;
 esac
