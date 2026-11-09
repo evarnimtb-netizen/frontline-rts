@@ -261,6 +261,14 @@ fn the_next_man_takes_the_launcher_after_the_hand_over_and_reloads_alone() {
         loaded.step(&[]);
     }
     assert_eq!(loaded.state_hash(), w.state_hash());
+    // A save with the launcher in his hands loads: he does not keep his
+    // rifle's magazine count on a one-round weapon.
+    assert!(
+        w.entities().combat()[men[1].index()].mag as u32 <= rpzb(&w).magazine.max(1),
+        "the magazine of the weapon he dropped"
+    );
+    let again = World::load(&w.save(), 1).unwrap();
+    assert_eq!(again.state_hash(), w.state_hash());
     // Alone, he reloads in twice the time.
     let (_, _tank) = harmless_sherman(&mut w, xy(400, 500), WEST);
     let reload = rpzb(&w).reload_ticks as u16;

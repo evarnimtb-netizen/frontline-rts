@@ -1569,18 +1569,17 @@ impl MatchState {
             // He drops his own weapon and target and takes aim afresh.
             ents.combat[i].target = None;
             ents.combat[i].retarget = 0;
+            // A fresh belt (S5a: the rounds left in it); never the count of
+            // the magazine he just emptied into his pouches.
+            ents.combat[i].mag = if crate::supply::counted(ty) {
+                d.mag
+            } else {
+                w.magazine.min(u16::MAX as u32) as u16
+            };
             match &mut sq.launcher {
                 Some(l) if d.weapon == ty.weapon && l.carrier.is_none() => l.carrier = Some(p),
-                _ => {
-                    // A gun or tube: a fresh belt (S5a: the rounds left in
-                    // it), and set up again.
-                    ents.combat[i].mag = if crate::supply::counted(ty) {
-                        d.mag
-                    } else {
-                        w.magazine.min(u16::MAX as u32) as u16
-                    };
-                    ents.combat[i].still = 0;
-                }
+                // A gun or tube is set up again.
+                _ => ents.combat[i].still = 0,
             }
             hash.mark_entity_chunk(p.chunk());
             if let Some(pl) = self.players.get_mut(sq.owner.0 as usize) {
