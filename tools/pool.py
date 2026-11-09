@@ -50,6 +50,8 @@ def read(d):
             a.setdefault("fired", []).append(f["s9_derived"]["gun_fired_matches_pct"])
             a.setdefault("cover", []).append(f["s9_derived"]["gun_in_cover_pct"])
             a.setdefault("gun_mp", []).append(f["s9_derived"]["gun_mp_pct"])
+            if "gun_armour_out_per_match" in f["s9_derived"]:
+                a.setdefault("out", []).append(f["s9_derived"]["gun_armour_out_per_match"])
     return out
 
 
@@ -74,9 +76,21 @@ def show(o, base):
               f"guns bought {s.get('guns_bought', 0) / n:.2f}, rounds {s.get('gun_rounds', 0) / n:.1f}, "
               f"crew lost {s.get('gun_crew_lost', 0) / n:.2f}, re-sites {s.get('gun_resites', 0) / n:.2f}, "
               f"AI fails {s.get('gun_ai_fails', 0) / n:.2f} per match")
+        if a.get("out"):
+            print(f"    armour put out of action by its guns per match: {fmt(a['out'], 2)} (mean {sum(a['out']) / len(a['out']):.2f})")
         print(f"    fired in {fmt(a['fired'], 0)} % of matches (floor 60), in cover {fmt(a['cover'], 0)} % (floor 60), "
               f"gun MP {fmt(a['gun_mp'])} % (cap 20), vehicle kills {fmt(a['veh_kills'])} % (cap 30)")
         print(f"    bought in matches: {bought}; MP share: {mp}")
+    # One line for scripts and stage gates.
+    fs = o["f"].values()
+    gate = {"pool": round(pool, 2), "nowin": o["nowin"],
+            "fired_min": round(min(min(a["fired"]) for a in fs), 1),
+            "cover_min": round(min(min(a["cover"]) for a in fs), 1),
+            "gun_mp_max": round(max(max(a["gun_mp"]) for a in fs), 1)}
+    for name, a in sorted(o["f"].items()):
+        if a.get("out"):
+            gate["out_" + name] = round(sum(a["out"]) / len(a["out"]), 3)
+    print("  GATE " + " ".join(f"{k}={v}" for k, v in gate.items()))
 
 
 def main():
