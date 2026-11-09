@@ -40,7 +40,7 @@ workspace in `Cargo.toml`.
 | CLI | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff | `sdk/crates/cli/src/` |
 | Tools | autotune, check.sh, bridge/export | `tools/` |
 
-Not in the game yet: Jagdpanzer IV, 38(t), M18, AT guns (S9), on-map artillery, fortifications, wounds,
+Not in the game yet: Jagdpanzer IV, 38(t), M18, on-map artillery, fortifications, wounds,
 a third faction, a second map, radio, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle.
 
 ## Versions
@@ -51,6 +51,10 @@ S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 (wheels, cargo, st
 (DropCrates). A change to a save layout, the hash or a command bumps these in the same commit.
 `sdk/docs/net/relay-protocol.md` lists the commands. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
+
+## S9 (branch `s9-at-guns`, not merged)
+
+AT guns: vehicles with crews as soldiers in service slots, shield boxes, emplace, pack, push, hitch, tow (Sd.Kfz. 11, M3A1), neutral and capture, gun pit, gun optic in the arc; tanks fire HE at the crew; AI buys, sites and holds guns on its own budget (`ai/guns.rs`, `[ai.guns]`). SAVE 20, PROTOCOL 12. Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`. Build C report: Germany pooled 37.7 % over 480 (band 45-55, S8b 46.5): the Tune stage owes the balance (guns cost 17-19 % of MP for 2-5 % of the kills; the tractor is dead weight). T81 cover 56 / 44 % misses.
 
 ## S8b (branch `s8b-trucks-recon`, not on main)
 
