@@ -1,8 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S8a (`fa5c50a`, pushed 2026-11-07). S8b (trucks, recon cars, wheels) is built and
-reviewed on branch `s8b-trucks-recon`, not merged, not pushed. Read the sections you need, then the doc the
-index names. Checked 2026-11-08.
+Main holds S1 to S8a (`fa5c50a`, pushed 2026-11-07). S8b (trucks, recon cars, wheels) is on branch `s8b-trucks-recon`
+and S9 (AT guns) on `s9-at-guns`; neither is merged or pushed. Read the sections you need, then the doc the index
+names. Checked 2026-11-09.
 
 ## What the game is now
 
@@ -16,82 +16,76 @@ workspace in `Cargo.toml`.
 |---|---|---|
 | Terrain, trenches | two-tier heightfield; digging, craters, parapets | `crates/sim/src/terrain.rs`, `dig.rs` |
 | Movement, squads | A* on a 4 m grid, formations, soldier-level orders | `path.rs`, `squad.rs`, `unit.rs`, `orders.rs` |
-| Perception | ray-budgeted spotting, smoke, recon optics (S8b) | `spotting.rs` |
+| Perception | ray-budgeted spotting, smoke, recon optics (S8b), gun optic (S9) | `spotting.rs` |
 | Infantry combat | physical bullets and fragments, suppression, cover | `combat.rs`, `projectile.rs` |
 | Throwables, AT items | frag, smoke, satchel, Panzerfaust (single-shot) | `items.rs` |
-| Vehicles | box list, turret or casemate mount, open tops, crew seats, components, pintle MGs, shields (S8a), wheeled drive and wheel layer, grenade screens (S8b) | `vehicle.rs`, `damage.rs`, `gunnery.rs`, `armour.rs` |
-| Small arms vs thin plates (S8a) | weapon penetration tables, reach table, thin-plate fragment rule | `combat.rs`, `damage.rs`, `armour.rs` |
-| Riding and transport (S8a) | passengers stay soldiers (`Unit::riding`), slot boxes are hit volumes, door and side exits | `transport.rs`, `command.rs`, `ai/transport.rs` |
-| Supply trucks (S8b) | `role = "truck"`, `[supply]` stock, paid loading at base, one source function (HQ, dump, truck, crate), `DropCrates`, cargo that detonates | `supply.rs`, `structures.rs`, `ai/truck.rs` |
+| Vehicles | box list, turret or casemate mount, open tops, crew seats, components, pintle MGs, shields, wheeled drive and wheel layer, grenade screens | `vehicle.rs`, `damage.rs`, `gunnery.rs`, `armour.rs` |
+| AT guns (S9) | served guns: crew in service slots, shield and trail boxes, emplace/pack/push/hitch/tow, neutral and capture, gun pit, optic in the arc, HE at the crew | `guns.rs`, `ai/guns.rs`, `dig.rs` |
+| Small arms vs thin plates | weapon penetration tables, reach table, thin-plate fragment rule | `combat.rs`, `damage.rs`, `armour.rs` |
+| Riding and transport | passengers stay soldiers (`Unit::riding`), slot boxes are hit volumes, door and side exits | `transport.rs`, `command.rs`, `ai/transport.rs` |
+| Supply trucks (S8b) | `role = "truck"`, `[supply]` stock, paid loading at base, one source function, `DropCrates`, cargo that detonates | `supply.rs`, `structures.rs`, `ai/truck.rs` |
 | Casemate and open top (S7) | arc-limited casemate gun, pivot-to-lay; open faces with no plate | `gunnery.rs`, `damage.rs`, `items.rs` |
 | Armour physics | plates with sloped normals, penetration chance (the one ballistics function) | `armour.rs` |
-| Bail-out, re-crew | abandoned tanks, crew escape, capture | `bail.rs` |
-| Ammunition | counted rounds per man/gun/vehicle, priced base refill | `supply.rs` |
+| Bail-out, re-crew, capture | abandoned tanks, crew escape, capture (tanks S3c, guns S9) | `bail.rs` |
+| Ammunition | counted rounds per man/gun/vehicle, priced base refill; guns draw only their faction's rounds (S9) | `supply.rs` |
 | HQ, dumps, crates (S6) | pits, stock, crates, forward bombs, tank rearm, cook-off | `structures.rs`, `ai/supply.rs` |
 | Fire missions | mortars: modes direct/observed/map, observers, ranging, charges | `fire_mission.rs`, `indirect.rs` |
 | Match rules | tickets, manpower, capture, call-in cards with cooldowns | `rules.rs`, `game.rs`, `command.rs` |
-| AI commander | per-player controller: assault, armour, ammo, mortar, supply, transport, recon, truck habits | `ai.rs`, `ai/*.rs` |
+| AI commander | per-player controller: assault, armour, ammo, mortar, supply, transport, recon, truck, gun habits | `ai.rs`, `ai/*.rs` |
 | World, save, hash | tick loop, save/load, state hash, render snapshot | `world.rs`, `hash.rs`, `snapshot.rs` |
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
-| Mod `ww2` | 2 factions; cards per faction for tank, casemate TD, half-track, and on S8b recon car and truck; 10 vehicles (Pz IV H, M4A3 75, StuG III G, M10, SdKfz 251/1 D, M3A1, SdKfz 234/1, M8, Opel Blitz, GMC CCKW); `defs/supply/` | `mods/ww2/defs/` |
-| Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates (S8b) | `crates/net/src/` |
+| Mod `ww2` | 2 factions; cards for tank, casemate TD, half-track, recon car, truck, AT gun; 15 vehicles incl. 4 guns and the Sd.Kfz. 11; `defs/supply/` | `mods/ww2/defs/` |
+| Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands | `crates/net/src/` |
 | Godot bridge | GDExtension: match thread, intents, frames | `crates/godot-bridge/src/` |
-| Presenter | match view, HUD, menus, net lobby, mock, blockouts (half-tracks, S8b cars and trucks) | `godot/match/`, `godot/ui/`, `godot/net/` |
+| Presenter | match view, HUD, menus, net lobby, mock, blockouts (half-tracks, cars, trucks, guns) | `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff | `sdk/crates/cli/src/` |
 | Tools | autotune, check.sh, bridge/export | `tools/` |
 
-Not in the game yet: Jagdpanzer IV, 38(t), M18, on-map artillery, fortifications, wounds,
-a third faction, a second map, radio, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle.
+Not in the game yet: Jagdpanzer IV, 38(t), M18, on-map artillery, fortifications, wounds, a third faction,
+a second map, radio, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
+in the AI (data only, emplaced only), HE for the 57 mm (AP only).
 
 ## Versions
 
-`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a); on branch `s8b-trucks-recon`: 19 and 11.
-`SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`. History:
-S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 (wheels, cargo, still_ticks, AI jobs) and 11
-(DropCrates). A change to a save layout, the hash or a command bumps these in the same commit.
-`sdk/docs/net/relay-protocol.md` lists the commands. Each TOML value change refreshes the BASELINE in
-`sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
+`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a). On `s8b-trucks-recon`: 19 and 11. On `s9-at-guns`:
+**20 and 12**. `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
+History: S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 and 11; S9 20 and 12 (one bump each).
+A change to a save layout, the hash or a command bumps these in the same commit. `sdk/docs/net/relay-protocol.md`
+lists the commands. Each TOML value change refreshes the BASELINE in `sdk/crates/content/tests/resolved_defs.rs`
+and `crates/simbench/src/report.rs`.
 
-## S9 (branch `s9-at-guns`, not merged)
+## S9 (branch `s9-at-guns`, not merged, not pushed)
 
-AT guns: vehicles with crews as soldiers in service slots, shield boxes, emplace, pack, push, hitch, tow (Sd.Kfz. 11, M3A1), neutral and capture, gun pit, gun optic in the arc; tanks fire HE at the crew; AI buys, sites and holds guns on its own budget (`ai/guns.rs`, `[ai.guns]`). SAVE 20, PROTOCOL 12. Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`. Fix stage: Germany pooled 45.6 % over 480 (band 45-55, S8b 46.5) after the tractor went back to the transport habits and idle guns re-site; cover 78-86 %, fires in 69-78 % of matches; gun tank kills stay rare (S9-17).
+AT guns with crews as soldiers. A gun is a `Vehicle` with `crew_model = "served"`; men sit in `[[service]]` slots
+(`Serving { gun, slot }`) and mirror into `vs.seats` each tick. Shield boxes are thin `axle` and `trail` boxes (a
+validator keeps slot capsules out of them). Parts `Gun`, `Sight`, `Recoil`. Commands `Emplace`, `PackGun`, `PushGun`,
+`Hitch`, `Unhitch`, `SetAmbush`, `Recrew`. Tow bar (`tow_bar_cm`), tow pays with the card (Pak 40 560 MP, 57 mm 650 MP
+with M3A1). Unmanned gun goes neutral after `abandon_s` (`EntityKind::Abandoned`); capture keeps the crew alive. Guns
+draw only their faction's rounds. Optic in the arc: max(normal, 437 m). AI: `ai/guns.rs`, `[ai.guns]`, own budget
+(`gun_pot` 35 %, `max_guns` 2), jobs Site, Go, Unhitch, Emplace, Hold, Pit, Recrew, and re-site of idle guns (Fix).
+Tanks fire HE at the crew (`gunnery::gun_target`).
+
+Cards (`ai_weight` 5 for Pak 40 and 57 mm; Pak 38 0): Pak 40, 57 mm M1 (with M3A1 tow), Pak 38 (second line,
+limbered), 3-inch M5 (data), Sd.Kfz. 11 tractor (`[transport]`). Cards `max_alive` 2 from 0:00. Prices and tow
+figures without a design source are marked verify.
+
+Balance (after Fix, 3 x 160 sets, pooled 480): Germany **45.6 %** (sets 48.75 / 46.25 / 41.9; band 45-55). Build C was
+37.7 and the Tune could not move it. Hard target misses: 14 on the 160 sets, all at the edge of their bound (S9-19).
+Guns fire in 74-78 % (GER) and 69-72 % (USA) of matches (T80 floor 60); in cover 83-86 % (T81 passes); gun MP 17-19 %;
+tank knock-outs by guns 36 GER / 16 USA per 480 matches (S9-17: guns kill few tanks).
+
+Checks: `check.sh quick` 640 passed; release 676 passed, 0 failed (Fix). Tick p99 clean run 0.487 / 0.602 ms at jobs 3
+(baseline 0.441 / 0.532; Build C's 0.653 did not reproduce). Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
 
 ## S8b (branch `s8b-trucks-recon`, not on main)
 
-Log `docs/slices/S8b-log.md`, spec `S8b-trucks-recon.md`, targets `docs/slices/targets/S8b.toml`.
-- Wheeled mobility: bicycle drive (no pivot, turning radius), a wheel block layer (a ditch of `ditch_block_dm`
-  or more blocks wheels; a standard trench is a wall), `WheelsFront` and `WheelsRear` (a blast under a wheel
-  damages it), `reverse_cm_s` (234/1 reverse 1000 cm/s).
-- Recon optics: `[optics]` `stationary_sight_pct` after `settle_s` stopped, one multiplier through spotting.
-- Grenade screens: a screened open face stops thrown items (they bounce off beside the hull); bullets pass.
-- Cars: SdKfz 234/1 (2 cm KwK 38 + MG 42, open screened turret; 260 MP) and M8 Greyhound (37 mm M6 + coax + .50 pintle
-  ring; 300 MP). Trucks: Opel Blitz (150 MP) and GMC CCKW (200 MP), `role = "truck"`, no weapons.
-- Supply trucks: loads stock at base (price per kg, no distance surcharge), rearms vehicles within
-  `vehicle_radius_m` and men within `radius_m` through the same source function as HQ and dump (one source at a
-  time, fastest in reach, rates never stack). `DropCrates { vehicle, point, count, kind }` (PROTOCOL 11). Cargo that
-  is penetrated or set afire detonates at 40 kg or more.
-- AI: rides that pay (`Meet` phase, ride lock, shorter waits, unload on arrival); recon cars on the S7 overwatch with
-  their own budget (12 % of income); trucks (`ai/truck.rs`: Load, Follow, Serve stranded tanks, Drop, Return; 9 %);
-  tanks take the nearest stock including trucks. Presenter: wheels, cargo beds, Drop Crates (I), stock bars.
+Log `S8b-log.md`, spec `S8b-trucks-recon.md`. Wheeled mobility and wheel block layer, recon optics, grenade screens,
+recon cars, trucks, supply trucks (`DropCrates`), recon and truck AI. Pooled Germany 46.5 %.
 
-Balance (Fix build, 3 x 160 sets; `skirmish160` = seeds 1-80): Germany 41.9 / 47.5 / 50.0 %, pooled 46.5 % over 480
-(in band 45-55). Top vehicle kills: Pz IV 17.1 %, USA 14.6 % (cap 18, T32 holds). Vehicle manpower 36.0 / 35.5 % (cap
-35: T33a/b miss, S8b-26). Saved seconds per ride GER +2.0 / +4.5 / -2.8, USA +14.9 / +11.4 / +19.9 (ride pay: USA on
-all three sets, Germany on two). Rider moved 1.21 / 1.17 per match, trips per bought 1.22 / 1.29 on 1-80.
+## S8a, S7, S6b (on main)
 
-Checks: `check.sh quick` 610 passed; release 644 passed, 0 failed. Tick p99 on the final build, clean `timing40` alone: 0.449 / 0.568 ms (S8a 0.488 / 0.621).
-
-## S8a (on main)
-
-Half-tracks (`docs/slices/S8a-halftracks.md`, log `S8a-log.md`, targets `S8a.toml`). SdKfz 251/1 D (capacity 10) and
-M3A1 (capacity 12): cards 290 / 310 MP, pop 3, cap 2, unlock 2:00, outside the vehicle limit. Pintle MGs and shields;
-riders stay soldiers in slot boxes, exit by the door or over the sides; AI transport jobs (`[ai.transport]`). Balance
-(160 sets): Germany pooled 45.4 % over 480; T32 holds. Tick p99 0.493 / 0.625 ms (clean).
-
-## S7 and S6b (merged into main)
-
-S7: assault guns and TDs (StuG III G, M10); vehicle schema with armour boxes, `open` faces, `[turret]`, mounts, seats
-(`S7-casemate-td.md`). S6 and S6b: HQ, dumps and crates; mortar AI pass (S6b pooled Germany 47.0 % over 640).
+S8a half-tracks (`S8a-halftracks.md`, pooled Germany 45.4 %). S7 assault guns and TDs (`S7-casemate-td.md`). S6b mortar AI
+(pooled Germany 47.0 % over 640).
 
 ## Owner decisions in force
 
@@ -101,29 +95,30 @@ Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
   all tuning values in TOML. Trenches stay strong vs small arms (S4-43).
 - Call-in has no queue. No free ammo; distance costs only physical delivery. HQ and dumps fill only by carried crates.
   Tanks rearm at base, HQ, dump or truck. Historical squad sizes, pop 150.
-- German cards keep the 20 % price cut (S5a-37). Mortars tuned through AI mission size, never lethality (S5b-17).
+- German cards keep the 20 % price cut (S5a-37), except gun cards (S9-4). Mortars tuned through AI mission size.
 - Tank crews bail out. Vehicles before fortifications. Matches 10-40 min, median 15-30.
+- S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; capture as designed; T33 counts tanks and TDs only.
 
 ## Known gaps
 
-- Balance: T5c (Germany 41.9 % on seeds 1-80, pool in band, S8a-30), T33a/b (S8b-26), T50e (S8b-27).
-- Tick: settled by a clean run on the final build, no rise over S8a (S8b log, "Tick time").
-- Godot: all four checks pass on the final build (12-seat M3A1); `Vehicles.COMPONENTS` lists all 10 parts.
-- Net loopback sends `DropCrates` at a non-truck (refused there; covered by sim tests). Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels or fires Panzerfausts. No radio,
-  registered fire, cross-OS CI.
-- Data sourcing pass (branch `data-sourcing`, `docs/slices/sourcing-log.md`): CCKW payload 2270 kg; most "verify" figures stay unresolved.
+- Balance: S9 pooled 45.6 % but 14 hard target misses (S9-19). T5c and T50e are known noise (S8a-30, S8b-27).
+- Guns earn little (S9-17): no corridor search, no re-siting on contact. T87 `gun_ai_fails` counted, not analysed.
+- Tick: S9 clean run +10 % / +13 % (under the 25 % trigger); the Build C rise did not reproduce.
+- Not verified in S9: the eliminated-player path (a surrender ends the 1v1); a per-field hash audit beyond the named tests.
+- Net loopback refuses `DropCrates` at a non-truck (sim tests cover it). Structures cannot be selected in the HUD (S6-18).
+  AI rarely throws satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
 
 ## Roadmap position
 
-Done and on main: S1 to S7, S6b, infra, autotune fix, S8a half-tracks. S8b trucks, recon cars, wheeled mobility and
-recon optics: built, reviewed and fixed on `s8b-trucks-recon`; next is the merge and then S9 AT guns, S10a/b
+Done and on main: S1 to S7, S6b, infra, autotune fix, S8a. Built, reviewed and fixed on branches, not merged:
+S8b (`s8b-trucks-recon`) and S9 (`s9-at-guns`). Next: owner decision S9-19, then merges, then S10a/b
 fortifications, S11a/b artillery, S12 wounds, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
 `docs/process/workflows.md` section 1.
 
 ## How to check work (few lines of output)
 
 - `tools/check.sh quick [BASE]` while working; `full` before a push. Targets:
-  `frontline-cli targets docs/slices/targets/S8b.toml --jobs 6`. Ticks: `--jobs 3` only, from a clean machine.
+  `frontline-cli targets docs/slices/targets/S9.toml --jobs 6`. Ticks: `--jobs 3` only, from a clean machine.
 
 ## Index: for X read doc Y section Z
 
@@ -142,7 +137,7 @@ fortifications, S11a/b artillery, S12 wounds, S13 heavy wave, S14 assault kit, S
 | Ammunition: data model, rules, base refill, AI | `S5a-ammo.md`; log `S5a-log.md` |
 | Fire missions: modes, observers, charges, bench | `S5b-mortars.md`; `S5b-log.md` |
 | Mortar AI: map fire limit, reserve, bearers | `S6b-mortar-ai.md`; `S6b-log.md` |
-| HQ, dumps, crates | `S6-hq-crates.md`; `S6-log.md`; `structures.rs`, `ai/supply.rs`; `godot/docs/match_state.md` "S6" |
+| HQ, dumps, crates | `S6-hq-crates.md`; `S6-log.md`; `structures.rs`, `ai/supply.rs` |
 | TOML keys: ammo, fire missions, variants, `[supply]` | `docs/modding/ammo.md`; `fire-missions.md`; `variants.md` |
 | Tuning overrides, A/B, `--json`, targets, check.sh; autotune | `docs/modding/tuning.md`; `docs/modding/autotune.md` |
 | Roster plan, slice order, owner decisions | `docs/design/roster/roster-expansion.md` 1, 4, Appendix A |
@@ -150,5 +145,6 @@ fortifications, S11a/b artillery, S12 wounds, S13 heavy wave, S14 assault kit, S
 | Vehicle catalogue, systems, ammo, build waves | `docs/design/roster/vehicles.md` 4, 6, 7, 9, 10 |
 | S7 vehicle schema, casemate, open top, StuG/M10 | `docs/slices/S7-casemate-td.md`; log `S7-log.md`; `godot/docs/match_state.md` "S7" |
 | S8a half-tracks: riding, small arms, pintles, transport AI | `docs/slices/S8a-halftracks.md`; log `S8a-log.md`; `godot/docs/match_state.md` "S8a" |
-| S8b wheels, optics, screens, trucks, DropCrates, recon and truck AI | `docs/slices/S8b-trucks-recon.md` 5-9, 17; log `S8b-log.md`; `godot/docs/match_state.md` "S8b" |
+| S8b wheels, optics, screens, trucks, DropCrates, recon and truck AI | `docs/slices/S8b-trucks-recon.md` 5-9, 17; log `S8b-log.md` |
+| S9 guns: entity, slots, tow, capture, pit, AI, balance | `docs/slices/S9-at-guns.md` (spec, sections 1-22); log `S9-log.md` |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |

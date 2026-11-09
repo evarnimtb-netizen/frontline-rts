@@ -162,7 +162,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S8b-23 (Build C) "MG dry" on the 251 card was the `halftracks` screenshot scene, which empties the MGs to hold fire; the bridge test shows a fresh 251 reports its stowage. The "red hatched ammo bar" was the absent parts in the roster's component strip (S8a-27). (A) Closed.
   S8b-24 (Build C) Recon AI reuses the S7 overwatch entry (`AiOverwatch`), not a new saved `AiRecon` job; the float for rearming stays the existing `[ai.ammo] float_mp`; a new `ammo_float_mp` key adds nothing. (A) Yes.
   S8b-25 (Build C) Truck blockouts: 3 axles for every truck, 4 on a long armoured car (no axle field in the defs). (A) Accept until art.
-  S8b-26 (decided 2026-11-08: T33 counts tanks and tank destroyers/assault guns only; `tank_td_mp_pct` in S9.toml) (Build C) T33a (vehicles at most 35 % of manpower) reads 36.3 % on seeds 1-80: the cap predates recon cars and trucks (their manpower is 6 % and 3 % of spend). (A) Accept; raise the cap to 40 or count only tanks and TDs in the next vehicle slice.
+  S8b-26 (ANSWERED 2026-11-08 by the owner; closed in S9): T33 counts tanks and tank destroyers/assault guns only, not recon cars, trucks, half-tracks or guns. Field `tank_td_mp_pct` in `S9.toml`; no game change. S9 Build C reads 17.9 / 16.0 %, pass.
   S8b-28 (Fix) `wheeled_stuck_repaths` 12: a wheeled move re-pathed that often within 6 m ends idle where it stands, so a goal behind a closed trench line ends like an arrival (a DropCrates sets its crates there). Tracked vehicles keep re-pathing as before. (A) Accept. (B) Same rule for tracks in a later slice.
   S8b-29 (Fix) A recon car that backed off holds the place it backed to until its anchor moves or it is fired on, even if the threat is gone from sight; a car facing away drives off instead of reversing. (A) Accept. (B) Return to the spot when the threat has been unseen for some seconds.
   S8b-27 (Build C) T50e (Germany on 201-280) -8.75 s and T41b (USA on 1-80) 0.981: five of six ride pairs are above 0, rides per set are few (about 50), so each pair moves by about +-10 s by chance. (A) Accept; not chased further.
@@ -202,12 +202,13 @@ Full text in the archive file. None blocks a slice; answer any you care about.
    spec `docs/slices/S8a-halftracks.md`, targets `S8a.toml`, log `S8a-log.md`; Build A, B, Tune, review and Fix).
    Open: S8a-30, S8a-31 (S8a-28 and -29 settled by S8b). S8b trucks, recon cars, wheeled mobility, recon optics, supply trucks: built, tuned, reviewed and fixed on `s8b-trucks-recon` (Plan, Build A, B, C, Tune, Review, Fix, Docs; spec `docs/slices/S8b-trucks-recon.md`, targets `S8b.toml`, log `S8b-log.md`). Merge next.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
-8. S9 AT guns: Plan done on `s9-at-guns` (spec `docs/slices/S9-at-guns.md`, targets `S9.toml`, questions S9-1..15).
+8. S9 AT guns: built, tuned, reviewed and fixed on `s9-at-guns` (Plan, Build A/B/C, Tune, Review, Fix, Docs; log `docs/slices/S9-log.md`, spec `S9-at-guns.md`, targets `S9.toml`). Not merged. Pooled Germany 45.6 %, 14 hard target misses on the 160 sets. The owner decides next: S9-19 first, then merge. Open: S9-16, S9-17 (guns kill few tanks), S9-18.
 
 ## Known issues still open
 
 - S8a (on main): T5c, T41b, T48b missed on S8a (S8a-29/30); T41b and T48b pass on the S8b build; tick p99 0.493 / 0.625 ms against S7's 0.38 / 0.56, not profiled.
-- S8b (branch `s8b-trucks-recon`): T5c (Germany 41.9 % on 1-80; S8a-30), T33a/b (vehicles 36 % of manpower against a 35 cap; S8b-26), T50e (Germany -2.8 s per ride on 201-280; S8b-27). Net loopback refuses `DropCrates` at a non-truck.
+- S8b (branch `s8b-trucks-recon`): T5c (Germany 41.9 % on 1-80; S8a-30), T50e (Germany -2.8 s per ride on 201-280; S8b-27). T33a/b closed by S8b-26. Net loopback refuses `DropCrates` at a non-truck.
+- S9 (branch `s9-at-guns`): 14 hard target misses on the 160 sets (T8a/b HE share, T31 vehicle kill share, T40/T72 half-tracks bought, T54d/e/f tank floors, T55b M8 share); S9-19. Guns kill few tanks (S9-17). Tick clean run +10 % / +13 % (Fix), the Build C rise did not reproduce. Not verified: the eliminated-player path.
 
 Balance issues from S1-S3c are superseded by later measurements (latest:
 `docs/slices/S6-log.md` "Targets" and "Tune"). Still open:
