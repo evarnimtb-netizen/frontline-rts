@@ -497,7 +497,8 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             json!({
                 "guns_bought": c.guns_bought, "guns_emplaced": c.guns_emplaced,
                 "guns_in_cover": in_cover, "gun_rounds": c.gun_rounds,
-                "gun_ko_tanks": c.gun_ko_tanks, "gun_crew_lost": c.gun_crew_lost,
+                "gun_ko_tanks": c.gun_ko_tanks, "gun_armour_out": e.gun_armour_out,
+                "gun_crew_lost": c.gun_crew_lost,
                 "guns_neutral": c.guns_neutral, "guns_captured": c.guns_captured,
                 "guns_recrewed": c.guns_recrewed, "tows_lost": c.tows_lost,
                 "ai_unhitches": e.s9_ai[0], "ai_ambush_rounds": c.ai_ambush_rounds,
@@ -515,6 +516,7 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                 "guns_emplaced_per_match": round3(c.guns_emplaced as f64 / en),
                 "gun_rounds_per_match": round3(c.gun_rounds as f64 / en),
                 "gun_ko_tanks_per_match": round3(c.gun_ko_tanks as f64 / en),
+                "gun_armour_out_per_match": round3(e.gun_armour_out as f64 / en),
                 "gun_crew_lost_per_match": round3(c.gun_crew_lost as f64 / en),
                 "guns_neutral_per_match": round3(c.guns_neutral as f64 / en),
                 "guns_captured_per_match": round3(c.guns_captured as f64 / en),

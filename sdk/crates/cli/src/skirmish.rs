@@ -255,6 +255,12 @@ pub struct PlayerArmour {
     /// (credited by the last round that hit them).
     pub ko_by_gun: u32,
     pub ko_by_rocket: u32,
+    /// S9b: enemy tanks, assault guns and tank destroyers put out of action
+    /// (knocked out or abandoned) when the last round that struck them was
+    /// one of this player's served AT guns' (a gun of this player fired that
+    /// ammunition at that vehicle within 3 s before the impact, as
+    /// `tools/gun_funnel.py` matches them).
+    pub gun_armour_out: u32,
     /// Own vehicles put out of action, by cause: knocked out by crew
     /// losses (`ko_crew`, from penetrations), an ammo-rack detonation or
     /// fire; components destroyed (`track`, `engine`, `gun`,
@@ -631,6 +637,14 @@ struct ArmourTally {
     abandoned: BTreeMap<u32, u8>,
     /// S4: ammo indices fired by single-shot AT items (Panzerfausts).
     pzf_ammo: Vec<u16>,
+    /// S9b: by vehicle type, an AT gun and armour (tank, assault gun, tank
+    /// destroyer).
+    gun_type: Vec<bool>,
+    armour_type: Vec<bool>,
+    /// S9b: the last tick a gun of `attacker` fired `ammo` at vehicle
+    /// `target`, and per vehicle whether its last impact was such a round.
+    gun_shots: BTreeMap<(u8, u16, u32), u64>,
+    gun_hit_last: BTreeMap<u32, bool>,
 }
 
 /// S3c abandonment trigger names, by `bail::AB_*` (index 0 unused).
@@ -673,12 +687,30 @@ impl ArmourTally {
             .filter_map(|it| it.weapon)
             .filter_map(|w| setup.weapons.get(w as usize).and_then(|w| w.ammo))
             .collect();
+        use frontline_content::VehicleRole;
+        let gun_type = setup
+            .vehicles
+            .iter()
+            .map(|v| v.role == VehicleRole::AtGun)
+            .collect();
+        let armour_type = setup
+            .vehicles
+            .iter()
+            .map(|v| {
+                matches!(
+                    v.role,
+                    VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+                )
+            })
+            .collect();
         ArmourTally {
             players: vec![PlayerArmour::default(); n],
             at_men_lost: vec![0; n],
             vehicle_cost,
             man_value,
             pzf_ammo,
+            gun_type,
+            armour_type,
             ..ArmourTally::default()
         }
     }
@@ -687,12 +719,49 @@ impl ArmourTally {
         let g = w.game().expect("match world");
         let s = g.setup();
         let snap = w.snapshot();
+        let tick = w.tick();
+        let window = 3 * s.tick_hz as u64;
+        let type_of = |id: u32| {
+            snap.vehicles
+                .iter()
+                .find(|v| v.id == id)
+                .map(|v| v.type_idx as usize)
+        };
         for e in &snap.armour_events {
             let owner = e.owner as usize;
             if e.ammo != u16::MAX {
                 self.last_ammo.insert(e.vehicle, e.ammo);
             }
             let k = e.kind;
+            // S9b: gun rounds and which vehicle each impact came from.
+            if k == ArmourEventKind::Fired as u8 {
+                let shooter = snap.vehicles.iter().find(|v| v.id == e.vehicle);
+                if let Some(v) = shooter
+                    && self.gun_type.get(v.type_idx as usize) == Some(&true)
+                {
+                    self.gun_shots.insert((e.owner, e.ammo, v.target), tick);
+                }
+            } else if k == ArmourEventKind::Ricochet as u8
+                || k == ArmourEventKind::NonPenetration as u8
+                || k == ArmourEventKind::Penetration as u8
+            {
+                let by_gun = self
+                    .gun_shots
+                    .get(&(e.attacker, e.ammo, e.vehicle))
+                    .is_some_and(|&t| t + window >= tick);
+                self.gun_hit_last.insert(e.vehicle, by_gun);
+            }
+            let gun_out = (k == ArmourEventKind::Abandoned as u8
+                || k == ArmourEventKind::KnockedOut as u8)
+                && !self.abandoned.contains_key(&e.vehicle)
+                && self.gun_hit_last.remove(&e.vehicle) == Some(true)
+                && type_of(e.vehicle).and_then(|t| self.armour_type.get(t)) == Some(&true);
+            if gun_out && let Some(p) = self.players.get_mut(e.attacker as usize) {
+                p.gun_armour_out += 1;
+            }
+            if k == ArmourEventKind::Recrewed as u8 {
+                self.gun_hit_last.remove(&e.vehicle);
+            }
             let ammo = s.ammo.get(e.ammo as usize);
             let heat = ammo.is_some_and(|a| a.mechanism == AmmoMechanism::Heat);
             let impact = k == ArmourEventKind::Ricochet as u8
@@ -1818,6 +1887,9 @@ pub struct S8aFaction {
     pub s9: frontline_sim::S9Counters,
     pub s9_ai: [u64; 7],
     pub gun_fired_matches: u64,
+    /// S9b: enemy armour put out of action by this faction's guns
+    /// (`PlayerArmour::gun_armour_out`, summed).
+    pub gun_armour_out: u64,
     #[serde(skip)]
     pub transport_cards: std::collections::BTreeSet<String>,
 }
@@ -2268,6 +2340,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
                 *a += b as u64;
             }
             e.gun_fired_matches += (p.s9.gun_rounds > 0) as u64;
+            e.gun_armour_out += p.armour.gun_armour_out as u64;
             let (a, b) = (&mut e.s9, &p.s9);
             a.guns_bought += b.guns_bought;
             a.guns_emplaced += b.guns_emplaced;
@@ -2636,6 +2709,18 @@ pub fn many_text(r: &ManyReport) -> String {
             a.ray_holds,
             a.miss_holds,
             a.dry_drops,
+        );
+        let g = &f.s8a;
+        let gn = g.matches.max(1) as f64;
+        out += &format!(
+            "S9 {} guns: bought {:.2}/match, rounds {:.1}/match, fired in {:.0} % of matches; enemy armour put out of action by guns {:.2}/match ({} in all; wrecks only {:.3}/match)\n",
+            f.faction,
+            g.s9.guns_bought as f64 / gn,
+            g.s9.gun_rounds as f64 / gn,
+            g.gun_fired_matches as f64 * 100.0 / gn,
+            g.gun_armour_out as f64 / gn,
+            g.gun_armour_out,
+            g.s9.gun_ko_tanks as f64 / gn,
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
