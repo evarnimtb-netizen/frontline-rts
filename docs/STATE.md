@@ -1,8 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S8a (`fa5c50a`, pushed 2026-11-07). S8b (trucks, recon cars, wheels) is on branch `s8b-trucks-recon`
-and S9 (AT guns) on `s9-at-guns`; neither is merged or pushed. Read the sections you need, then the doc the index
-names. Checked 2026-11-09.
+Main holds S1 to S9 (`71cf02f`; S8b and S9 merged 2026-11-09). S9b (AI gun siting and budget) is on branch
+`s9b-ai-guns` (head `8aad271`), not merged, not pushed; its full suite FAILS on that head (one test, see Known gaps).
+S8b trucks are on main too. Read the sections you need, then the doc the index names. Checked 2026-11-10.
 
 ## What the game is now
 
@@ -48,13 +48,13 @@ in the AI (data only, emplaced only), HE for the 57 mm (AP only).
 ## Versions
 
 `SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a). On `s8b-trucks-recon`: 19 and 11. On `s9-at-guns`:
-**20 and 12**. `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
-History: S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 and 11; S9 20 and 12 (one bump each).
+**20 and 12** (S9, on main). On `s9b-ai-guns`: **21 and 12** (S9b Fix). `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
+History: S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12 (one bump each).
 A change to a save layout, the hash or a command bumps these in the same commit. `sdk/docs/net/relay-protocol.md`
 lists the commands. Each TOML value change refreshes the BASELINE in `sdk/crates/content/tests/resolved_defs.rs`
 and `crates/simbench/src/report.rs`.
 
-## S9 (branch `s9-at-guns`, not merged, not pushed)
+## S9 (on main since 2026-11-09; S9b siting and budget facts in the S9b section above)
 
 AT guns with crews as soldiers. A gun is a `Vehicle` with `crew_model = "served"`; men sit in `[[service]]` slots
 (`Serving { gun, slot }`) and mirror into `vs.seats` each tick. Shield boxes are thin `axle` and `trail` boxes (a
@@ -69,56 +69,53 @@ Cards (`ai_weight` 5 for Pak 40 and 57 mm; Pak 38 0): Pak 40, 57 mm M1 (with M3A
 limbered), 3-inch M5 (data), Sd.Kfz. 11 tractor (`[transport]`). Cards `max_alive` 2 from 0:00. Prices and tow
 figures without a design source are marked verify.
 
-Balance (after Fix, 3 x 160 sets, pooled 480): Germany **45.6 %** (sets 48.75 / 46.25 / 41.9; band 45-55). Build C was
-37.7 and the Tune could not move it. Hard target misses: 14 on the 160 sets, all at the edge of their bound (S9-19).
-Guns fire in 74-78 % (GER) and 69-72 % (USA) of matches (T80 floor 60); in cover 83-86 % (T81 passes); gun MP 17-19 %;
-tank knock-outs by guns 36 GER / 16 USA per 480 matches (S9-17: guns kill few tanks).
+Balance (after Fix, pooled 480): Germany **45.6 %**; 14 hard misses (S9-19). Tank KOs by guns 36 GER / 16 USA (S9-17).
+Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
 
-Checks: `check.sh quick` 640 passed; release 676 passed, 0 failed (Fix). Tick p99 clean run 0.433 / 0.534 ms at jobs 3
-(baseline 0.441 / 0.532; Build C's 0.653 did not reproduce). Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
+## S9b (branch `s9b-ai-guns`, not merged; log `S9b-log.md`, spec `S9b-ai-guns.md`)
 
-## S8b (branch `s8b-trucks-recon`, not on main)
+AI gun siting: `ai/guns.rs` searches the armour corridor (vehicle path, 25 m steps, 500 m) and picks a site that sees it
+inside the arc (`site_view_min_pct` 10), clear of enemy men, the other gun, enemy-held points and the corridor. CLI
+`gun_armour_out_per_match` counts each vehicle once. `income_max_pct` 35 kept. Pooled Germany **50.0 %** of 480; 167
+targets pass, 18 miss (hard 17); T88 misses (GER 0.54, USA 0.40 pooled). Lost to guns 26 / 19 % of armour (was 22 / 14).
+SAVE 21. Checks: quick ok; full suite 1 failed.
 
-Log `S8b-log.md`, spec `S8b-trucks-recon.md`. Wheeled mobility and wheel block layer, recon optics, grenade screens,
-recon cars, trucks, supply trucks (`DropCrates`), recon and truck AI. Pooled Germany 46.5 %.
+## S8b (on main, merged 2026-11-09; log `S8b-log.md`, spec `S8b-trucks-recon.md`)
 
 ## S8a, S7, S6b (on main)
 
-S8a half-tracks (`S8a-halftracks.md`, pooled Germany 45.4 %). S7 assault guns and TDs (`S7-casemate-td.md`). S6b mortar AI
-(pooled Germany 47.0 % over 640).
+S8a half-tracks (`S8a-halftracks.md`), S7 assault guns and TDs (`S7-casemate-td.md`), S6b mortar AI.
 
-## Owner decisions in force
+## Owner decisions in force (source: `docs/TODO.md`)
 
-Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
-
-- Our own design, not a recreation. Damage only from physical projectile or fragment contact; cost-balanced realism;
-  all tuning values in TOML. Trenches stay strong vs small arms (S4-43).
-- Call-in has no queue. No free ammo; distance costs only physical delivery. HQ and dumps fill only by carried crates.
-  Tanks rearm at base, HQ, dump or truck. Historical squad sizes, pop 150.
-- German cards keep the 20 % price cut (S5a-37), except gun cards (S9-4). Mortars tuned through AI mission size.
+- Our own design; damage only from projectile or fragment contact; all tuning in TOML; trenches strong vs small arms (S4-43).
+- Call-in has no queue; no free ammo; HQ and dumps fill only by carried crates; tanks rearm at base, HQ, dump or truck.
+  Historical squad sizes, pop 150. German cards keep the 20 % price cut (S5a-37), except gun cards (S9-4).
 - Tank crews bail out. Vehicles before fortifications. Matches 10-40 min, median 15-30.
-- S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; capture as designed; T33 counts tanks and TDs only.
+- S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; T33 counts tanks and TDs only.
 
 ## Known gaps
 
-- Balance: S9 pooled 45.6 % but 14 hard target misses (S9-19). T5c and T50e are known noise (S8a-30, S8b-27).
-- Guns earn little (S9-17): no corridor search, no re-siting on contact. T87 `gun_ai_fails` counted, not analysed.
-- Tick: S9 final clean run 0.433 / 0.534 ms, level with the baseline 0.441 / 0.532; the Build C rise did not reproduce.
-- Not verified in S9: the eliminated-player path (a surrender ends the 1v1); a per-field hash audit beyond the named tests.
+- Balance: S9 pooled 45.6 %, 14 hard misses (S9-19); S9b 50.0 % and 17 hard misses. T5c, T50e known noise (S8a-30, S8b-27).
+- S9b on `8aad271`: `ai_guns_resite_with_the_tow_and_survive_a_save` fails in `tools/check.sh tests` (Save error "a soldier's
+  rounds are inconsistent", `ai_guns.rs:105`); passed on `a9fa303`. Blocks merge. T88 armour-out below bar (S9b-1).
+- Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck (sim tests cover it). Structures cannot be selected in the HUD (S6-18).
   AI rarely throws satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
 
 ## Roadmap position
 
-Done and on main: S1 to S7, S6b, infra, autotune fix, S8a. Built, reviewed and fixed on branches, not merged:
-S8b (`s8b-trucks-recon`) and S9 (`s9-at-guns`). Next: owner decision S9-19, then merges, then S10a/b
-fortifications, S11a/b artillery, S12 wounds, S13 heavy wave, S14 assault kit, S15 USSR. Tiers:
-`docs/process/workflows.md` section 1.
+Done and on main: S1 to S9. Branch, not merged: S9b (`s9b-ai-guns`; fix the failing test and decide S9b-1 to S9b-3).
+Next: S10a after those, then S10b, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` section 1.
 
 ## How to check work (few lines of output)
 
-- `tools/check.sh quick [BASE]` while working; `full` before a push. Targets:
-  `frontline-cli targets docs/slices/targets/S9.toml --jobs 6`. Ticks: `--jobs 3` only, from a clean machine.
+- `tools/check.sh quick [BASE]` while working; `tools/check.sh tests` runs the whole release suite with ignored tests (2-6 min,
+  background it). `tools/verify.sh` is the orchestrator's full check of a slice branch before a push.
+- Balance: `tools/measure.sh OUTDIR docs/slices/targets/S9b.toml` (480 matches, 14 min uncached); `python3 -I tools/pool.py DIR`.
+  Quick look (40 matches, noise 11-15 points): `tools/batch.sh OUT.json -- skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45`.
+- Gun funnel: `tools/gun_trace.sh DIR [SEEDS]` (40 matches by default). Ticks: `--jobs 3` only, from a clean machine.
+- Targets: `frontline-cli targets docs/slices/targets/S9b.toml --jobs 6`.
 
 ## Index: for X read doc Y section Z
 
@@ -147,4 +144,6 @@ fortifications, S11a/b artillery, S12 wounds, S13 heavy wave, S14 assault kit, S
 | S8a half-tracks: riding, small arms, pintles, transport AI | `docs/slices/S8a-halftracks.md`; log `S8a-log.md`; `godot/docs/match_state.md` "S8a" |
 | S8b wheels, optics, screens, trucks, DropCrates, recon and truck AI | `docs/slices/S8b-trucks-recon.md` 5-9, 17; log `S8b-log.md` |
 | S9 guns: entity, slots, tow, capture, pit, AI, balance | `docs/slices/S9-at-guns.md` (spec, sections 1-22); log `S9-log.md` |
+| S9b AI gun siting (corridor), armour-out measure, budget, open T88 | `docs/slices/S9b-ai-guns.md` 3.2, 6; log `S9b-log.md` |
+| Development speed: where S9 time went, limits for check and measure runs | `docs/process/dev-speed.md` |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |
