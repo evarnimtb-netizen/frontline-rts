@@ -3555,6 +3555,54 @@ mod tests {
         );
         on(
             ai_edit(&mut |a| {
+                a.guns.insert(
+                    sid,
+                    crate::ai::AiGun {
+                        point: FxVec2::from_int(3, 5),
+                        ..crate::ai::AiGun::default()
+                    },
+                );
+            }),
+            "a gun job's point",
+        );
+        on(
+            ai_edit(&mut |a| {
+                a.guns.insert(
+                    sid,
+                    crate::ai::AiGun {
+                        site_cover: true,
+                        ..crate::ai::AiGun::default()
+                    },
+                );
+            }),
+            "a gun job's site cover",
+        );
+        on(
+            ai_edit(&mut |a| {
+                a.guns.insert(
+                    sid,
+                    crate::ai::AiGun {
+                        quiet_at: 5,
+                        ..crate::ai::AiGun::default()
+                    },
+                );
+            }),
+            "a gun job's quiet tick",
+        );
+        on(
+            ai_edit(&mut |a| {
+                a.guns.insert(
+                    sid,
+                    crate::ai::AiGun {
+                        resites: 1,
+                        ..crate::ai::AiGun::default()
+                    },
+                );
+            }),
+            "a gun job's moves",
+        );
+        on(
+            ai_edit(&mut |a| {
                 a.gun_recrews.insert(SimId(3), 9);
             }),
             "a recrew remembered",

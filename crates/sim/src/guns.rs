@@ -280,6 +280,21 @@ impl MatchState {
         self.gun_crew_tick(ctx, id);
         if ctx.ents.kind[id.index()] != EntityKind::Vehicle {
             self.unlink_tow(ctx, id);
+            // A wreck or a neutral gun is off the tow: the state says so too
+            // (`validate_guns`).
+            let sv = self
+                .vehicles
+                .get_mut(&id)
+                .and_then(|v| v.served.as_mut())
+                .expect("listed");
+            if matches!(
+                sv.state,
+                GunState::Hitched | GunState::Hitching | GunState::Unhitching
+            ) {
+                sv.state = GunState::Limbered;
+                sv.timer = 0;
+                ctx.hash.mark_entity_chunk(id.chunk());
+            }
             return;
         }
         self.gun_tow_link(ctx, id);
@@ -552,14 +567,15 @@ pub fn can_serve(s: &MatchSetup, ty: &frontline_content::setup::SquadTypeSetup) 
         || (ty.has(Capability::Recrew) && s.rules.vehicles.recrew.any_infantry != 0)
 }
 
-/// Whether live gun `id` is `p`'s and nobody serves it.
+/// Whether live gun `id` is `p`'s, not on the tow, and nobody serves it (the
+/// crew of a gun on the tow rides, and still is its crew).
 pub(crate) fn own_gun_unserved(ents: &Entities, p: PlayerId, id: SimId, vs: &VehicleState) -> bool {
     ents.kind.get(id.index()) == Some(&EntityKind::Vehicle)
         && ents.owner[id.index()] == p
-        && vs
-            .served
-            .as_ref()
-            .is_some_and(|sv| sv.slots.iter().all(|k| k.man.is_none()))
+        && vs.served.as_ref().is_some_and(|sv| {
+            !matches!(sv.state, GunState::Hitched | GunState::Hitching)
+                && sv.slots.iter().all(|k| k.man.is_none())
+        })
 }
 
 /// Men at the slots of `sv`.
@@ -746,15 +762,20 @@ impl MatchState {
         t.pos.xy() + yaw_dir(t.yaw) * (geo.hull_center.x - geo.hull_half.x)
     }
 
-    /// Whether `gun`'s trail tip is within `hitch_reach_m` of `tow`'s hitch.
-    fn in_hitch_reach(&self, ents: &Entities, gun: SimId, tow: SimId) -> bool {
+    /// Where `gun`'s trail ends on the ground.
+    pub(crate) fn trail_tip(&self, ents: &Entities, gun: SimId) -> FxVec2 {
         let vs = &self.vehicles[&gun];
         let bar = self.setup.vehicles[vs.type_idx as usize]
             .mobility
             .towed
             .map_or(Fx::ZERO, |t| Fx::from(t.tow_bar));
         let t = &ents.transform[gun.index()];
-        let tip = t.pos.xy() - yaw_dir(t.yaw) * bar;
+        t.pos.xy() - yaw_dir(t.yaw) * bar
+    }
+
+    /// Whether `gun`'s trail tip is within `hitch_reach_m` of `tow`'s hitch.
+    pub(crate) fn in_hitch_reach(&self, ents: &Entities, gun: SimId, tow: SimId) -> bool {
+        let tip = self.trail_tip(ents, gun);
         let r = Fx::from_int(self.setup.rules.vehicles.guns.hitch_reach_m as i32);
         (tip - self.hitch_point(ents, tow)).length_sq_raw()
             <= FxVec2::new(r, Fx::ZERO).length_sq_raw()
@@ -956,6 +977,31 @@ impl MatchState {
         }
     }
 
+    /// Squad `q` is no gun's crew any more (its men leave the slots), but
+    /// for the gun on tow `keep` (its crew rides there).
+    pub(crate) fn crew_leaves_guns(&mut self, ctx: &mut Ctx, q: SquadId, keep: Option<SimId>) {
+        let guns: Vec<SimId> = self
+            .vehicles
+            .iter()
+            .filter(|(_, v)| {
+                v.served
+                    .as_ref()
+                    .is_some_and(|s| s.crew == Some(q) && (keep.is_none() || s.hitched != keep))
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for g in guns {
+            self.release_men(ctx, g);
+            let sv = self
+                .vehicles
+                .get_mut(&g)
+                .and_then(|v| v.served.as_mut())
+                .expect("listed");
+            sv.crew = None;
+            ctx.hash.mark_entity_chunk(g.chunk());
+        }
+    }
+
     /// An order that sends men away takes them off their guns first: the
     /// squad-level orders release the crew for good (the gun no longer
     /// names it); the unit orders release the men named.
@@ -985,21 +1031,7 @@ impl MatchState {
         if let Some(q) = squad_order
             && self.squads.get(&q).is_some_and(|s| s.owner == p)
         {
-            let guns: Vec<SimId> = self
-                .vehicles
-                .iter()
-                .filter(|(_, v)| v.served.as_ref().is_some_and(|s| s.crew == Some(q)))
-                .map(|(&id, _)| id)
-                .collect();
-            for g in guns {
-                self.release_men(ctx, g);
-                let sv = self
-                    .vehicles
-                    .get_mut(&g)
-                    .and_then(|v| v.served.as_mut())
-                    .expect("listed");
-                sv.crew = None;
-            }
+            self.crew_leaves_guns(ctx, q, None);
         }
         let units: &[SimId] = match kind {
             CommandKind::MoveUnits { units, .. }

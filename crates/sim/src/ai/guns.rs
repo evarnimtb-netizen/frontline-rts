@@ -10,10 +10,14 @@
 //!   clear and the low line blocked), then the nearest.
 //! * **Go.** The tow drives to the site with the crew riding. No unhitching
 //!   with an enemy within `contact_m`: the site moves back toward the base.
-//! * **Unhitch, Emplace** facing the approach. A tractor goes home once; a
-//!   half-track goes back to the transport habits.
+//! * **Unhitch, Emplace** facing the approach. The tow goes back to the
+//!   transport habits (a tractor with `[transport]` too).
 //! * **Hold.** `SetAmbush` to `engage_still_m`; the usual targeting fires.
 //!   An armoured target in reach outside the arc re-lays the trail.
+//! * **Re-site.** With no vehicle in reach for `resite_idle_s` and armour
+//!   known at another held point out of reach, the gun packs, a free tow
+//!   (its own first) comes for it (`Pack`, `Fetch`) and the job starts
+//!   over at **Site**; at most `resite_max` times.
 //! * **Pit.** An idle engineer squad within `pit_engineer_m` digs a pit.
 //! * **Recrew.** Idle infantry within `recrew_m` serve a neutral gun with
 //!   rounds left, or an own gun whose crew is gone.
@@ -63,6 +67,10 @@ pub enum GunPhase {
     Hold = 4,
     /// Given up (`max_fails`): no more orders.
     Stop = 5,
+    /// Re-site: packing.
+    Pack = 6,
+    /// Re-site: waiting for the tow.
+    Fetch = 7,
 }
 
 /// One own gun's job (module docs).
@@ -79,14 +87,22 @@ pub struct AiGun {
     pub moved_at: u64,
     /// Failed moves, or `Emplace` orders sent, in this phase.
     pub fails: u8,
-    /// The tow's squad while the gun comes off it.
+    /// The tow that brought it, or is coming for it (re-site).
     pub tow: Option<SquadId>,
     /// The gun's place counted as cover (`guns_in_cover`) once.
     pub counted: bool,
     /// The engineers ordered to dig its pit.
     pub pit_by: Option<SquadId>,
-    /// A pit was ordered (never twice).
+    /// A pit was ordered (never twice at one place).
     pub pit: bool,
+    /// The point whose approach the site was chosen for.
+    pub point: FxVec2,
+    /// The site was chosen with cover: the gun must end up on it.
+    pub site_cover: bool,
+    /// Tick a vehicle was last in reach (or the gun came to Hold).
+    pub quiet_at: u64,
+    /// Moves made so far.
+    pub resites: u8,
 }
 
 /// The gun's main-gun rounds, loaded one included.
@@ -105,6 +121,13 @@ impl super::Planner<'_> {
         let g = self.g;
         let me = self.me;
         let mut guns = Vec::new();
+        let fetching: Vec<SquadId> = self
+            .ai
+            .guns
+            .values()
+            .filter(|j| matches!(j.phase, GunPhase::Pack | GunPhase::Fetch))
+            .filter_map(|j| j.tow)
+            .collect();
         tanks.retain(|t| {
             let Some(vs) = g.vehicles.get(&t.id) else {
                 return true;
@@ -113,8 +136,12 @@ impl super::Planner<'_> {
                 guns.push(MyTank { ..*t });
                 return false;
             }
+            // A tractor with seats works as a transport like any half-track;
+            // one with none has no habit to go to.
             vs.towing.is_none()
-                && g.setup.vehicles[vs.type_idx as usize].role != VehicleRole::Tractor
+                && !fetching.contains(&t.squad)
+                && (g.setup.vehicles[vs.type_idx as usize].role != VehicleRole::Tractor
+                    || g.transport_of(t.id).is_some())
         });
         let mut serving: Vec<SquadId> = g
             .vehicles
@@ -194,20 +221,36 @@ impl super::Planner<'_> {
         if job.phase == GunPhase::Stop {
             return;
         }
+        if sv.state == GunState::Hitched && job.phase == GunPhase::Fetch {
+            job.phase = GunPhase::Site;
+        }
         if job.phase == GunPhase::Site {
-            let Some((site, facing)) = self.gun_site(t, points, known, kv) else {
+            let Some((site, facing, point, cover)) = self.gun_site(t, points, known, kv) else {
                 return;
             };
             job.site = site;
             job.facing = facing;
+            job.point = point;
+            job.site_cover = cover;
             job.moved_to = t.pos;
             job.moved_at = 0;
             self.gun_set(job, GunPhase::Go);
         }
         match sv.state {
             GunState::Hitched => self.gun_go(t, sv.hitched, job, known, kv),
+            GunState::Limbered if matches!(job.phase, GunPhase::Pack | GunPhase::Fetch) => {
+                self.gun_fetch(t, job);
+            }
             GunState::Limbered => self.gun_limbered(t, job),
-            GunState::Emplaced => self.gun_hold(t, job, mine, known, kv),
+            // A `Pack` still on its way, or refused.
+            GunState::Emplaced if job.phase == GunPhase::Pack => {
+                let hz = g.setup.tick_hz.max(1) as u64;
+                if self.tick >= job.since + g.setup.rules.ai.guns.repath_s as u64 * hz {
+                    self.gun_set(job, GunPhase::Hold);
+                    job.quiet_at = self.tick;
+                }
+            }
+            GunState::Emplaced => self.gun_hold(t, job, mine, points, known, kv),
             _ => {}
         }
     }
@@ -239,8 +282,12 @@ impl super::Planner<'_> {
         let Some(sq) = g.squads.get(&tq) else { return };
         let tpos = self.ents.transform[tow.index()].pos.xy();
         let idle = sq.order == Order::Idle;
-        let arrive = sq_m(Fx::from_int(a.arrive_m as i32));
-        let there = (tpos - job.site).length_sq_raw() <= arrive;
+        // A covered site is only cover with the gun on it.
+        let there = if job.site_cover {
+            (t.pos - job.site).length_sq_raw() <= sq_m(Fx::from_int(a.arrive_cover_m as i32))
+        } else {
+            (tpos - job.site).length_sq_raw() <= sq_m(Fx::from_int(a.arrive_m as i32))
+        };
         if idle && !there && job.moved_at != 0 && tick >= job.moved_at + a.repath_s as u64 * hz {
             job.fails = job.fails.saturating_add(1);
             self.ai.counters.gun_ai_fails += 1;
@@ -255,7 +302,8 @@ impl super::Planner<'_> {
                 job.site = self.terrain.clamp(tpos + back * Fx::from_int(BACK_OFF_M));
                 job.fails = job.fails.saturating_add(1);
                 job.since = tick;
-                self.gun_drive(tq, job);
+                job.site_cover = false;
+                self.gun_drive(t, tq, tpos, job);
                 return;
             }
             self.ai
@@ -266,18 +314,21 @@ impl super::Planner<'_> {
             return;
         }
         if job.moved_to != job.site || (idle && tick >= job.moved_at + a.repath_s as u64 * hz) {
-            self.gun_drive(tq, job);
+            self.gun_drive(t, tq, tpos, job);
         }
     }
 
-    fn gun_drive(&mut self, tq: SquadId, job: &mut AiGun) {
-        self.ai.emit(
-            self.due,
-            CommandKind::Move {
-                squad: tq,
-                target: job.site,
-            },
-        );
+    /// The tow drives to the site; for a covered site, past it by the
+    /// tow's lead over the gun, so that the gun stops on it.
+    fn gun_drive(&mut self, t: &MyTank, tq: SquadId, tpos: FxVec2, job: &mut AiGun) {
+        let target = if job.site_cover {
+            let way = (job.site - tpos).normalize_or_zero();
+            self.terrain.clamp(job.site + way * (tpos - t.pos).length())
+        } else {
+            job.site
+        };
+        self.ai
+            .emit(self.due, CommandKind::Move { squad: tq, target });
         job.moved_to = job.site;
         job.moved_at = self.tick;
     }
@@ -287,22 +338,6 @@ impl super::Planner<'_> {
         let s = &g.setup;
         let a = &s.rules.ai.guns;
         let hz = s.tick_hz.max(1) as u64;
-        // Off the tow: a tractor goes home once.
-        if let Some(tq) = job.tow.take()
-            && let Some(q) = g.squads.get(&tq).filter(|q| q.owner == self.me)
-            && let Some(&v) = q.members.first()
-            && g.vehicles
-                .get(&v)
-                .is_some_and(|x| s.vehicles[x.type_idx as usize].role == VehicleRole::Tractor)
-        {
-            self.ai.emit(
-                self.due,
-                CommandKind::Move {
-                    squad: tq,
-                    target: g.base_of(self.me),
-                },
-            );
-        }
         if self.tick < job.moved_at + a.repath_s as u64 * hz && job.phase == GunPhase::Emplace {
             return;
         }
@@ -365,6 +400,7 @@ impl super::Planner<'_> {
         t: &MyTank,
         job: &mut AiGun,
         mine: &mut Vec<Mine>,
+        points: &[PointEval],
         known: &[Known],
         kv: &[KnownVehicle],
     ) {
@@ -384,15 +420,16 @@ impl super::Planner<'_> {
                     range_m: a.engage_still_m.min(2000) as u16,
                 },
             );
-            // A site chosen from elsewhere (a tow lost) is judged as it
-            // stands.
-            let dir = (job.facing - t.pos).normalize_or_zero();
-            let samples = self.gun_samples(t.pos + dir * Fx::from_int(a.site_min_m as i32), dir);
+            // Judged where it stands, on the sight lines the site was
+            // chosen with.
+            let dir = (job.facing - job.point).normalize_or_zero();
+            let samples = self.gun_samples(job.point, dir);
             job.counted = self.gun_cover(t.pos, &samples);
             if job.counted {
                 self.ai.counters.guns_in_cover += 1;
             }
             job.moved_at = tick;
+            job.quiet_at = tick;
         }
         // The pit is done (the engineers stopped digging).
         if let Some(q) = job.pit_by
@@ -441,11 +478,17 @@ impl super::Planner<'_> {
                 mine.retain(|m| m.id != q);
             }
         }
+        if self.gun_resite(t, job, points, known, kv) {
+            return;
+        }
         // Re-lay for an armoured target in reach outside the arc, with
-        // nothing to shoot inside it.
-        let (Some([lo, hi]), None) = (v.gun_arc_deg, vs.target) else {
+        // nothing to shoot inside it (or the target it holds lies outside).
+        let Some([lo, hi]) = v.gun_arc_deg else {
             return;
         };
+        if vs.target.is_some() && vs.lay_turn.is_none() {
+            return;
+        }
         if tick < job.moved_at + a.relay_gap_s as u64 * hz {
             return;
         }
@@ -473,14 +516,158 @@ impl super::Planner<'_> {
         }
     }
 
-    /// Where the gun goes: `(site, the point it faces)` (module docs).
+    /// Starts a re-site (module docs) when it is due. Whether it did.
+    fn gun_resite(
+        &mut self,
+        t: &MyTank,
+        job: &mut AiGun,
+        points: &[PointEval],
+        known: &[Known],
+        kv: &[KnownVehicle],
+    ) -> bool {
+        let g = self.g;
+        let s = &g.setup;
+        let a = &s.rules.ai.guns;
+        if a.resite_idle_s == 0 || job.resites as u32 >= a.resite_max {
+            return false;
+        }
+        let tick = self.tick;
+        let hz = s.tick_hz.max(1) as u64;
+        let vs = &g.vehicles[&t.id];
+        let reach = sq_m(Fx::from_int(a.engage_still_m as i32));
+        let armour_at = |k: &KnownVehicle| {
+            s.vehicles[k.type_idx as usize].role != VehicleRole::Truck
+                && (k.pos - t.pos).length_sq_raw() <= reach
+        };
+        if vs
+            .target
+            .is_some_and(|x| self.ents.kind[x.index()] == EntityKind::Vehicle)
+            || kv.iter().any(armour_at)
+        {
+            job.quiet_at = tick;
+            return false;
+        }
+        if tick < job.quiet_at + a.resite_idle_s as u64 * hz
+            || self.gun_contact(t.pos, a.contact_m as i32, known, kv)
+            || !points.iter().any(|p| {
+                p.rel != Rel::Enemy && p.armour > 0 && (p.pos - t.pos).length_sq_raw() > reach
+            })
+        {
+            return false;
+        }
+        // A free tow, its own first; never a truck on its supply round.
+        let mass = s.vehicles[vs.type_idx as usize].mass_kg;
+        let me = self.me;
+        let claimed: Vec<SquadId> = self
+            .ai
+            .guns
+            .values()
+            .filter(|j| matches!(j.phase, GunPhase::Pack | GunPhase::Fetch))
+            .filter_map(|j| j.tow)
+            .collect();
+        let own = job.tow;
+        let tow = g
+            .vehicles
+            .iter()
+            .filter(|&(&id, x)| {
+                let d = &s.vehicles[x.type_idx as usize];
+                self.ents.kind[id.index()] == EntityKind::Vehicle
+                    && self.ents.owner[id.index()] == me
+                    && x.towing.is_none()
+                    && x.riders.iter().all(Option::is_none)
+                    && d.role != VehicleRole::Truck
+                    && d.tow.is_some_and(|r| r.max_kg >= mass)
+            })
+            .filter_map(|(&id, _)| self.ents.squad[id.index()].map(|q| (id, q)))
+            .filter(|(_, q)| !claimed.contains(q))
+            .min_by_key(|&(id, q)| {
+                (
+                    Some(q) != own,
+                    (self.ents.transform[id.index()].pos.xy() - t.pos).length_sq_raw(),
+                    id.0,
+                )
+            })
+            .map(|(_, q)| q);
+        let Some(tq) = tow else { return false };
+        self.ai
+            .emit(self.due, CommandKind::PackGun { guns: vec![t.id] });
+        self.ai.counters.gun_resites += 1;
+        job.tow = Some(tq);
+        job.resites = job.resites.saturating_add(1);
+        job.site_cover = false;
+        job.pit = false;
+        job.pit_by = None;
+        self.gun_set(job, GunPhase::Pack);
+        true
+    }
+
+    /// Re-site: the gun is limbered; its tow comes and takes it. With no
+    /// tow left, or none in `go_max_s`, it goes back into action here.
+    fn gun_fetch(&mut self, t: &MyTank, job: &mut AiGun) {
+        let g = self.g;
+        let a = &g.setup.rules.ai.guns;
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let tick = self.tick;
+        if job.phase == GunPhase::Pack {
+            self.gun_set(job, GunPhase::Fetch);
+            job.moved_at = 0;
+        }
+        let tow = job
+            .tow
+            .and_then(|q| {
+                g.squads
+                    .get(&q)
+                    .filter(|x| x.owner == self.me)
+                    .map(|x| (q, x))
+            })
+            .and_then(|(q, x)| x.members.first().map(|&v| (q, x, v)))
+            .filter(|&(_, _, v)| {
+                self.ents.kind[v.index()] == EntityKind::Vehicle
+                    && g.vehicles.get(&v).is_some_and(|x| x.towing.is_none())
+            });
+        let late = tick >= job.since + a.go_max_s as u64 * hz;
+        let Some((tq, sq, v)) = tow.filter(|_| !late && job.fails as u32 <= a.max_fails) else {
+            self.ai.counters.gun_ai_fails += 1;
+            self.gun_set(job, GunPhase::Emplace);
+            job.moved_at = 0;
+            return;
+        };
+        let due = tick >= job.moved_at + a.repath_s as u64 * hz;
+        if g.in_hitch_reach(self.ents, t.id, v) {
+            if due {
+                self.ai.emit(
+                    self.due,
+                    CommandKind::Hitch {
+                        guns: vec![t.id],
+                        tow: v,
+                    },
+                );
+                job.fails = job.fails.saturating_add(1);
+                job.moved_at = tick;
+            }
+            return;
+        }
+        if job.moved_at == 0 || (sq.order == Order::Idle && due) {
+            if job.moved_at != 0 {
+                job.fails = job.fails.saturating_add(1);
+                self.ai.counters.gun_ai_fails += 1;
+            }
+            let target = self.terrain.clamp(g.trail_tip(self.ents, t.id));
+            self.ai
+                .emit(self.due, CommandKind::Move { squad: tq, target });
+            job.moved_at = tick;
+        }
+    }
+
+    /// Where the gun goes: `(site, the point it faces, the point it
+    /// covers, whether the site has cover)` (module docs).
     fn gun_site(
         &self,
         t: &MyTank,
         points: &[PointEval],
         known: &[Known],
         kv: &[KnownVehicle],
-    ) -> Option<(FxVec2, FxVec2)> {
+    ) -> Option<(FxVec2, FxVec2, FxVec2, bool)> {
         let g = self.g;
         let a = &g.setup.rules.ai.guns;
         let held = (0..points.len())
@@ -561,6 +748,7 @@ impl super::Planner<'_> {
             }
         }
         // Nowhere with a sight line: behind the point on the approach.
+        let cover = best.as_ref().is_some_and(|(k, _)| k.0 == 1);
         let site = best.map_or_else(
             || {
                 self.terrain
@@ -568,7 +756,7 @@ impl super::Planner<'_> {
             },
             |(_, c)| c,
         );
-        Some((site, facing))
+        Some((site, facing, p, cover))
     }
 
     /// Idle infantry near a gun with no crew serve it (module docs).

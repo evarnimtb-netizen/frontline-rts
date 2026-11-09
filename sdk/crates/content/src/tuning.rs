@@ -1484,6 +1484,8 @@ tuning_table! {
         enemy_standoff_m: 0..=500,
         /// A move that ends farther than this from its goal has failed (m).
         arrive_m: 1..=200,
+        /// A site with cover counts as reached with the gun this close (m).
+        arrive_cover_m: 1..=200,
         /// Failed moves before it unhitches where it stands.
         max_fails: 1..=10,
         /// No job sends the same order again within this (s).
@@ -1502,6 +1504,11 @@ tuning_table! {
         recrew_m: 0..=1000,
         /// One such order per gun within this (s).
         recrew_gap_s: 1..=1800,
+        /// A gun with no vehicle in reach this long moves to a held point
+        /// with armour (s; 0: never).
+        resite_idle_s: 0..=3600,
+        /// Most moves per gun.
+        resite_max: 0..=20,
     }
 }
 
@@ -1534,6 +1541,7 @@ impl Default for AiGunsTuning {
             los_rays: 6,
             enemy_standoff_m: 80,
             arrive_m: 15,
+            arrive_cover_m: 5,
             max_fails: 2,
             repath_s: 8,
             go_max_s: 150,
@@ -1543,6 +1551,8 @@ impl Default for AiGunsTuning {
             pit_engineer_m: 350,
             recrew_m: 100,
             recrew_gap_s: 60,
+            resite_idle_s: 120,
+            resite_max: 3,
         }
     }
 }

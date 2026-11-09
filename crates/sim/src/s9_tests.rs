@@ -3,7 +3,7 @@
 //! the AP core reaching a man behind the shield, hold fire, and the save
 //! and validation checks of the new state.
 
-use super::s6_tests::{flat_world, members, spawn, steps};
+use super::s6_tests::{flat_world, flat_world_with, members, spawn, steps};
 use super::*;
 use crate::FxVec3;
 use crate::vehicle::Slot;
@@ -984,4 +984,240 @@ fn own_infantry_serve_an_unmanned_gun_before_it_turns_neutral() {
             .seat(&v, frontline_content::SeatRole::Gunner)
             .is_some_and(|s| s.untrained)
     );
+}
+
+// ---- S9 Fix: review findings ----
+const RIFLE_DE: &str = "ww2:ger_grenadiergruppe";
+#[test]
+fn fix_a_hitched_gun_wrecked_still_saves_and_loads() {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    let (_, tow) = tow_for(&mut w, 0, 500, 500);
+    steps(&mut w, 2);
+    assert!(w.hitch_gun_now(g, tow));
+    steps(&mut w, 2);
+    assert!(w.wreck_vehicle(g));
+    steps(&mut w, 3);
+    let bytes = w.save();
+    assert_eq!(state(&w, g), GunState::Limbered);
+    assert!(World::load(&bytes, 1).is_ok());
+}
+
+#[test]
+fn fix_a_gun_taken_first_is_not_boarded_by_another_player() {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    steps(&mut w, 2);
+    kill_crew(&mut w, g);
+    let t = secs(&w, 11);
+    steps(&mut w, t);
+    assert_eq!(w.entities().kind[g.index()], EntityKind::Abandoned);
+    let a = spawn(&mut w, 1, "ww2:usa_rifle_squad", 505, 500);
+    let b = spawn(&mut w, 0, RIFLE_DE, 495, 500);
+    // A keeps three men, so three slots stay free.
+    let am = members(&w, a);
+    for m in am.iter().skip(3) {
+        assert!(w.kill_soldier(*m));
+    }
+    steps(&mut w, 1);
+    w.step(&[
+        Command {
+            player: PlayerId(1),
+            seq: 1,
+            kind: CommandKind::Recrew {
+                squad: a,
+                vehicle: g,
+            },
+        },
+        Command {
+            player: PlayerId(0),
+            seq: 1,
+            kind: CommandKind::Recrew {
+                squad: b,
+                vehicle: g,
+            },
+        },
+    ]);
+    let t = secs(&w, 60);
+    let mut first = None;
+    for k in 0..t {
+        w.step(&[]);
+        if first.is_none() && w.entities().kind[g.index()] == EntityKind::Vehicle {
+            first = Some(k);
+        }
+    }
+    let sv = w.game().unwrap().vehicles[&g].served.clone().unwrap();
+    let owners: Vec<u8> = sv
+        .slots
+        .iter()
+        .filter_map(|s| s.man)
+        .map(|m| w.entities().owner[m.index()].0)
+        .collect();
+    let r = World::load(&w.save(), 1);
+    assert!(r.is_ok());
+    assert!(owners.iter().all(|&o| o == 1));
+    assert_eq!(w.game().unwrap().squads[&b].order, Order::Idle);
+}
+
+#[test]
+fn fix_embark_takes_the_crew_off_the_gun() {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    let (_, tow) = tow_for(&mut w, 0, 500, 500);
+    steps(&mut w, 2);
+    let crew = w.game().unwrap().vehicles[&g]
+        .served
+        .as_ref()
+        .unwrap()
+        .crew
+        .unwrap();
+    send(
+        &mut w,
+        0,
+        CommandKind::Embark {
+            squads: vec![crew],
+            vehicle: tow,
+        },
+    );
+    let t = secs(&w, 30);
+    steps(&mut w, t);
+    let e = w.entities();
+    let sv = w.game().unwrap().vehicles[&g].served.clone().unwrap();
+    let both = w.game().unwrap().squads[&crew]
+        .members
+        .iter()
+        .filter(|m| e.unit[m.index()].serving.is_some() && e.unit[m.index()].riding.is_some())
+        .count();
+    let serving = sv.slots.iter().filter(|s| s.man.is_some()).count();
+    assert_eq!(both, 0);
+    assert_eq!(serving, 0, "off the slots");
+    assert_eq!(sv.crew, None, "the gun no longer names them");
+    assert!(World::load(&w.save(), 1).is_ok());
+}
+
+/// Their own tow is where a hitched gun's crew rides: still its crew.
+#[test]
+fn fix_embark_on_the_guns_own_tow_keeps_the_crew() {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    let (_, tow) = tow_for(&mut w, 0, 500, 500);
+    steps(&mut w, 2);
+    assert!(w.hitch_gun_now(g, tow));
+    steps(&mut w, 2);
+    let crew = w.game().unwrap().vehicles[&g]
+        .served
+        .as_ref()
+        .unwrap()
+        .crew
+        .unwrap();
+    send(
+        &mut w,
+        0,
+        CommandKind::Embark {
+            squads: vec![crew],
+            vehicle: tow,
+        },
+    );
+    steps(&mut w, 2);
+    assert_eq!(
+        w.game().unwrap().vehicles[&g].served.as_ref().unwrap().crew,
+        Some(crew)
+    );
+}
+
+/// A gun card near the cap counts its crew.
+#[test]
+fn fix_a_gun_card_counts_its_crew_against_the_pop_cap() {
+    let refused = |extra: u32| {
+        let cap = std::cell::Cell::new(0);
+        let probe = flat_world(1);
+        let g = probe.game().unwrap();
+        let s = g.setup();
+        let ty = s.squad_types.iter().position(|t| t.id == PAK).unwrap() as u16;
+        let card = &s.squad_types[ty as usize];
+        let tow = card
+            .tow_card
+            .map_or(0, |t| s.squad_types[t as usize].pop(&s.vehicles));
+        cap.set(g.population(probe.entities(), PlayerId(0)) + card.pop(&s.vehicles) + tow + extra);
+        let w = flat_world_with(1, |s| s.rules.pop_cap = cap.get());
+        let g = w.game().unwrap();
+        g.call_in_check(w.entities(), PlayerId(0), ty, w.tick())
+    };
+    assert!(matches!(
+        refused(5),
+        Err(crate::game::CallInRefusal::PopCap)
+    ));
+    assert!(!matches!(
+        refused(6),
+        Err(crate::game::CallInRefusal::PopCap)
+    ));
+}
+
+fn ambush_run(with_near: bool) -> (Option<SimId>, u32, u16, Vec<SimId>) {
+    let mut w = flat_world(1);
+    let g = gun(&mut w, 0, 500, 500);
+    steps(&mut w, 2);
+    send(
+        &mut w,
+        0,
+        CommandKind::FaceUnits {
+            units: vec![g],
+            toward: FxVec2::from_int(500, 800),
+        },
+    );
+    let t = secs(&w, 16);
+    steps(&mut w, t);
+    send(
+        &mut w,
+        0,
+        CommandKind::SetAmbush {
+            guns: vec![g],
+            range_m: 400,
+        },
+    );
+    let t2 = spawn(&mut w, 1, "ww2:usa_cckw_squad", 500, 850);
+    let t2id = members(&w, t2)[0];
+    let mut ids = vec![t2id];
+    if with_near {
+        let t1 = spawn(&mut w, 1, "ww2:usa_cckw_squad", 650, 500);
+        ids.push(members(&w, t1)[0]);
+    }
+    let t = secs(&w, 45);
+    steps(&mut w, t);
+    let vs = &w.game().unwrap().vehicles[&g];
+    (
+        vs.target,
+        w.game().unwrap().players[0].s9.gun_rounds,
+        vs.served.as_ref().unwrap().relay_ticks,
+        ids,
+    )
+}
+
+#[test]
+fn fix_a_nearer_vehicle_outside_the_arc_does_not_freeze_an_ambush() {
+    let (_, control, _, _) = ambush_run(false);
+    assert!(control > 0, "the control fires");
+    let (_, rounds, _, _) = ambush_run(true);
+    assert!(
+        rounds > 0,
+        "a truck outside the arc at 150 m does not freeze it"
+    );
+}
+
+#[test]
+fn fix_a_captured_crate_stays_out_of_the_captors_stock() {
+    use super::s6_tests::{add_crate_at, add_structure, built, def};
+    use frontline_content::setup::StockKind;
+    let mut w = flat_world(1);
+    let f = w.match_setup().unwrap().players[0].faction;
+    let dump = def(&w, f, StockKind::Hq, None);
+    let s = built(&w, 0, dump, FxVec2::from_int(400, 300), [0, 0, 0]);
+    let id = add_structure(&mut w, s);
+    let usa = shells(&w, 1);
+    // A US crate player 0 has captured, set down at his own German dump.
+    add_crate_at(&mut w, 0, usa, FxVec2::from_int(401, 300));
+    let t = secs(&w, 5);
+    steps(&mut w, t);
+    let st = w.game().unwrap().supply6();
+    assert_eq!(st.structures[&id].stock_g[2], 0);
 }

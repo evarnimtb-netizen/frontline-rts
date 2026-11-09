@@ -1009,6 +1009,12 @@ impl MatchState {
                 .unwrap_or(SupplyKind::Shells);
             let k = kind.index();
             let s = &self.supply6.structures[&sid];
+            // S9: a captured crate stays a crate; it does not fit this stock.
+            if self.setup.stocks[c.def as usize].faction
+                != self.setup.stocks[s.def as usize].faction
+            {
+                continue;
+            }
             let cap = self.setup.stocks[s.def as usize].cap_g[k];
             let room = cap.saturating_sub(s.stock_g[k]);
             let n = room.min(c.g);

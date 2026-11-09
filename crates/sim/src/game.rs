@@ -1013,10 +1013,16 @@ impl MatchState {
                 short: ty.cost - manpower,
             });
         }
-        // S9: the tow that comes with a gun card counts too.
+        // S9: the tow that comes with a gun card counts too, and the crew
+        // that come with a gun.
         let tow_pop = ty
             .tow_card
-            .map_or(0, |t| s.squad_types[t as usize].pop(&s.vehicles));
+            .map_or(0, |t| s.squad_types[t as usize].pop(&s.vehicles))
+            + ty.vehicle
+                .map(|v| &s.vehicles[v as usize])
+                .filter(|v| v.served())
+                .and_then(|v| v.crew_squad)
+                .map_or(0, |c| s.squad_types[c as usize].men as u32);
         if self.population(ents, player) + ty.pop(&s.vehicles) + tow_pop > s.rules.pop_cap {
             return Err(CallInRefusal::PopCap);
         }

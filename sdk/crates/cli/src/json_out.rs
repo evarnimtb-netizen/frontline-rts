@@ -503,6 +503,7 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
                 "ai_unhitches": e.s9_ai[0], "ai_ambush_rounds": c.ai_ambush_rounds,
                 "gun_ai_fails": e.s9_ai[2], "gun_pits": e.s9_ai[3],
                 "gun_relays": e.s9_ai[4], "gun_recrew_orders": e.s9_ai[5],
+                "gun_resites": e.s9_ai[6],
             }),
         );
         o.insert(

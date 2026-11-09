@@ -150,11 +150,12 @@ Defs in `mods/ww2/defs`: `vehicles/ger_pak40.toml` etc., `units/*_crew.toml`, `u
 `[ai.guns]`: `after_s` 120, `income_max_pct` 12, `max_guns` 2, `site_ring_m` 100-250, `unhitch_m`, `self_defence_m`. A gun card buys on its own budget (`mix_slot` excludes `AtGun` and `Tractor`, like S8b's recon and truck buys through `buy_role`), never a tank's slot.
 One saved job `AiGun` per gun, keyed by squad id, phases:
 - **Site.** Threat: the most threatened own or contested point, from the overwatch anchor (`ai/overwatch.rs`). Candidates on a ring 100-250 m behind it. Score: covers the vehicle approach inside the arc (arc centre within `arc_tolerance` of the threat line), woods edge or hull-down line, not within 80 m of known enemy men. Records `in_cover` (woods, hull-down or a pit).
-- **Go.** Tow drives to the site, crew rides; **Unhitch**, crew dismounts; **Emplace** facing the threat line. Tow returns to the base and its card. A Pak 38 pushes (slow).
+- **Go.** Tow drives to the site, crew rides; **Unhitch**, crew dismounts; **Emplace** facing the threat line. The tow then goes back to the transport habits (Fix: the Sd.Kfz. 11 too, it has `[transport]`). A Pak 38 pushes (slow).
 - **Hold.** `SetAmbush` to `engage_still_m` 400 (data). The gun fires by the usual targeting.
 - **Pit.** If an idle engineer squad is within 150 m and a pit job is free, order a `GunPit` dig (report `gun_pits_dug`).
 - **Recrew.** Idle infantry within 100 m of a neutral gun with rounds serve it (`Recrew`).
-Displace (S9-6): not in this slice beyond re-site when a Hold gun is overrun.
+- **Re-site (Fix, S9-17).** With no vehicle in reach for `resite_idle_s` 120 and armour known at another held point out of reach, the gun packs, a free tow (its own first, never a truck) comes (`Pack`, `Fetch`), hitches, and the job starts over at Site; at most `resite_max` 3 per gun. A covered site counts as reached only with the gun within `arrive_cover_m` 5, the tow driving past it by the tow's lead.
+Displace (S9-6): not in this slice (a gun under fire does not displace).
 Counters: `AiCounters::s9` for `guns_emplaced`, `guns_in_cover`, `gun_ai_fails`. The buy lives beside `buy_recon_truck`.
 
 ## 13. Presenter
@@ -242,3 +243,5 @@ number of guns (`max_guns` 1) changed nothing, so the loss is not proportional t
 Needs code (Fix stage): guns must earn their price in AI hands (S9-17: corridor search, re-siting, firing sooner,
 crews not idle away from the objectives), or the AI must stop buying them as a flat share (value-based buy).
 Specs and raw runs: scratchpad `s9/tune/`.
+
+Fix stage (review of 89b05cd): the tractor back in the transport habits, re-site, covered sites reached with the gun, in-arc targets first. Pool 45.6 % (480 matches, sets 48.75 / 46.25 / 41.9) at `income_max_pct` 35, unchanged: the value cut the review held in reserve was not needed. Fires in 69-78 % of matches, cover 78-86 %. Gun tank kills stay rare (36 GER, 16 USA over 480 matches).

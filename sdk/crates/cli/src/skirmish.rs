@@ -389,7 +389,7 @@ pub struct PlayerReport {
     /// S9 per-player counters, and the AI's gun counters: unhitches,
     /// guns in cover, gun jobs failed, pits, re-lays, recrew orders.
     pub s9: frontline_sim::S9Counters,
-    pub s9_ai: [u32; 6],
+    pub s9_ai: [u32; 7],
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -1324,7 +1324,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     ]
                 }),
                 s9: pl.s9,
-                s9_ai: ai.map_or([0; 6], |a| {
+                s9_ai: ai.map_or([0; 7], |a| {
                     let c = &a.counters;
                     [
                         c.gun_unhitches,
@@ -1333,6 +1333,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         c.gun_pits,
                         c.gun_relays,
                         c.gun_recrew_orders,
+                        c.gun_resites,
                     ]
                 }),
                 s8b_ride: ai.map_or([0; 6], |a| {
@@ -1799,7 +1800,7 @@ pub struct S8aFaction {
     pub cargo_detonations: u64,
     /// S9: `Player::s9` and `s9_ai` (sums), and matches with a gun round fired.
     pub s9: frontline_sim::S9Counters,
-    pub s9_ai: [u64; 6],
+    pub s9_ai: [u64; 7],
     pub gun_fired_matches: u64,
     #[serde(skip)]
     pub transport_cards: std::collections::BTreeSet<String>,

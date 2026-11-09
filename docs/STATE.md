@@ -54,7 +54,7 @@ S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 (wheels, cargo, st
 
 ## S9 (branch `s9-at-guns`, not merged)
 
-AT guns: vehicles with crews as soldiers in service slots, shield boxes, emplace, pack, push, hitch, tow (Sd.Kfz. 11, M3A1), neutral and capture, gun pit, gun optic in the arc; tanks fire HE at the crew; AI buys, sites and holds guns on its own budget (`ai/guns.rs`, `[ai.guns]`). SAVE 20, PROTOCOL 12. Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`. Build C report: Germany pooled 37.7 % over 480 (band 45-55, S8b 46.5): the Tune stage owes the balance (guns cost 17-19 % of MP for 2-5 % of the kills; the tractor is dead weight). T81 cover 56 / 44 % misses.
+AT guns: vehicles with crews as soldiers in service slots, shield boxes, emplace, pack, push, hitch, tow (Sd.Kfz. 11, M3A1), neutral and capture, gun pit, gun optic in the arc; tanks fire HE at the crew; AI buys, sites and holds guns on its own budget (`ai/guns.rs`, `[ai.guns]`). SAVE 20, PROTOCOL 12. Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`. Fix stage: Germany pooled 45.6 % over 480 (band 45-55, S8b 46.5) after the tractor went back to the transport habits and idle guns re-site; cover 78-86 %, fires in 69-78 % of matches; gun tank kills stay rare (S9-17).
 
 ## S8b (branch `s8b-trucks-recon`, not on main)
 

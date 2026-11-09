@@ -1485,6 +1485,7 @@
         "guns": {
           "after_s": 120,
           "approach_m": 350,
+          "arrive_cover_m": 5,
           "arrive_m": 15,
           "contact_m": 60,
           "enemy_standoff_m": 80,
@@ -1500,6 +1501,8 @@
           "relay_gap_s": 25,
           "repath_s": 8,
           "reserve_mp": 0,
+          "resite_idle_s": 120,
+          "resite_max": 3,
           "site_apart_m": 60,
           "site_bearings": 11,
           "site_max_m": 250,

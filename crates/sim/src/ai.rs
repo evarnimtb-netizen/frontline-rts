@@ -563,6 +563,8 @@ pub struct AiCounters {
     pub gun_pits: u32,
     pub gun_relays: u32,
     pub gun_recrew_orders: u32,
+    /// S9 Fix: guns packed to move to another held point.
+    pub gun_resites: u32,
 }
 
 impl AiState {
@@ -700,6 +702,8 @@ impl AiState {
                     || !on_map(j.site)
                     || !on_map(j.facing)
                     || !on_map(j.moved_to)
+                    || !on_map(j.point)
+                    || j.quiet_at > tick + 36_000
             })
             // S8a.
             || self.transports.len() > MAX_TRANSPORTS

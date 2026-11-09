@@ -1345,6 +1345,7 @@ approach_m = 350             # m: the approach sampled ahead of the point
 los_rays = 6                 # sight-line rays per site, along the approach
 enemy_standoff_m = 80        # m: no site within this of known enemy men
 arrive_m = 15                # m: a move that ends farther than this from its goal has failed ...
+arrive_cover_m = 5           # m: a site with cover (woods edge, crest) counts as reached only with the gun this close
 max_fails = 2                # ... after this many the tow unhitches where it stands (no move loops, S7 tick fix)
 repath_s = 8                 # s: no job sends the same order again within this
 go_max_s = 150               # s: the tow unhitches at the latest this long after setting off
@@ -1354,6 +1355,8 @@ relay_gap_s = 25             # s: it re-lays the trail at most this often
 pit_engineer_m = 350         # m: an idle engineer squad this close digs its pit (0: never)
 recrew_m = 100               # m: idle infantry this close serves a neutral gun with rounds (0: never)
 recrew_gap_s = 60            # s: one such order per gun within this
+resite_idle_s = 120          # s: a gun with no vehicle target or armour in reach this long packs and tows to a held point with armour (0: never; S9 review)
+resite_max = 3               # moves one gun makes in a match
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

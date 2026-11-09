@@ -71,3 +71,36 @@ fn ai_guns_emplace_and_are_deterministic() {
     assert_eq!(a.state_hash(), b.state_hash(), "at the load");
     assert_eq!(run(&mut a, 30 * 60), run(&mut b, 30 * 60), "after the load");
 }
+
+/// S9 Fix: a gun left idle packs, its tow comes for it, it moves and goes
+/// back into action; a save taken while the tow is coming continues alike.
+#[test]
+#[ignore = "slow in debug: runs in the release test pass"]
+fn ai_guns_resite_with_the_tow_and_survive_a_save() {
+    use frontline_sim::ai::GunPhase;
+    let fetching = |w: &World| {
+        let g = w.game().unwrap();
+        (0..2u8).find(|&p| {
+            g.ai(PlayerId(p))
+                .is_some_and(|a| a.guns.values().any(|j| j.phase == GunPhase::Fetch))
+        })
+    };
+    let moved = (11..51).any(|seed| {
+        let mut w = World::new_match(setup(seed), 1).unwrap();
+        let mut left = 30 * 1500u32;
+        while left > 0 && fetching(&w).is_none() {
+            w.step(&[]);
+            left -= 1;
+        }
+        let Some(p) = fetching(&w) else { return false };
+        let mut b = World::load(&w.save(), 1).unwrap();
+        assert_eq!(w.state_hash(), b.state_hash(), "at the load");
+        assert_eq!(run(&mut w, 30 * 30), run(&mut b, 30 * 30), "after the load");
+        let c = &w.game().unwrap().ai(PlayerId(p)).unwrap().counters;
+        let before = c.gun_unhitches;
+        run(&mut w, 30 * 200);
+        let g = w.game().unwrap();
+        g.ai(PlayerId(p)).unwrap().counters.gun_unhitches > before
+    });
+    assert!(moved, "a seed where a re-sited gun reaches a new place");
+}

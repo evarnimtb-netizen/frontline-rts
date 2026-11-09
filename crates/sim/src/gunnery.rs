@@ -1043,7 +1043,23 @@ impl MatchState {
                 if d > r {
                     continue;
                 }
-                let key = if vs.attack == Some(t) { 0 } else { d.max(1) };
+                // S9: a served gun takes targets inside its arc first (a
+                // nearer one outside it must not freeze an ambush).
+                let outside = match (v.served(), v.gun_arc_deg) {
+                    (true, Some([lo, hi])) => {
+                        let to = ents.transform[ti].pos.xy() - f.origin.xy();
+                        let b = (Fx::atan2(to.y, to.x) - f.yaw).wrap_angle();
+                        b < deg(lo) || b > deg(hi)
+                    }
+                    _ => false,
+                };
+                let key = if vs.attack == Some(t) {
+                    0
+                } else if outside {
+                    d.max(1).saturating_add(1u64 << 61)
+                } else {
+                    d.max(1)
+                };
                 cands.push((key, t));
             }
             cands.sort_unstable();

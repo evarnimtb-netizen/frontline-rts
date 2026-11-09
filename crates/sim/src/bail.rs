@@ -815,6 +815,13 @@ impl MatchState {
             if sq.order != (Order::Recrew { vehicle: id }) {
                 return None;
             }
+            // S9: a gun someone took first is nobody else's to board.
+            if vs.served.is_some()
+                && ctx.ents.kind[id.index()] != EntityKind::Abandoned
+                && !crate::guns::own_gun_unserved(ctx.ents, sq.owner, id, vs)
+            {
+                return None;
+            }
             let want = sq.members.len().min(empty);
             let near: Vec<SimId> = sq
                 .members
@@ -1065,10 +1072,10 @@ impl MatchState {
         for (&q, sq) in &self.squads {
             if let Order::Recrew { vehicle } = sq.order
                 && ctx.ents.kind.get(vehicle.index()) != Some(&EntityKind::Abandoned)
-                && !self.vehicles.get(&vehicle).is_some_and(|v| {
-                    v.served.is_some()
-                        && ctx.ents.kind.get(vehicle.index()) == Some(&EntityKind::Vehicle)
-                })
+                && !self
+                    .vehicles
+                    .get(&vehicle)
+                    .is_some_and(|v| crate::guns::own_gun_unserved(ctx.ents, sq.owner, vehicle, v))
             {
                 idle.push(q);
                 continue;

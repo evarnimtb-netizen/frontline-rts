@@ -197,6 +197,7 @@ impl MatchState {
                 continue;
             }
             promised += n;
+            self.crew_leaves_guns(ctx, sid, Some(vehicle));
             self.clear_detached(ctx, sid);
             self.squads.get_mut(&sid).expect("owned").order = Order::Embark { vehicle };
             self.request_path(sid, goal);
