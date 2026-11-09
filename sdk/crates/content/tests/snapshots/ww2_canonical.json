@@ -1488,6 +1488,10 @@
           "arrive_cover_m": 5,
           "arrive_m": 15,
           "contact_m": 60,
+          "corridor_clear_m": 150,
+          "corridor_m": 500,
+          "corridor_paths": 2,
+          "corridor_step_m": 25,
           "enemy_standoff_m": 80,
           "engage_still_m": 400,
           "go_max_s": 150,
@@ -1504,11 +1508,13 @@
           "resite_idle_s": 120,
           "resite_max": 3,
           "site_apart_m": 60,
-          "site_bearings": 11,
+          "site_bearings": 16,
+          "site_enemy_point_m": 250,
+          "site_forward_m": 0,
           "site_max_m": 250,
           "site_min_m": 100,
           "site_rings": 7,
-          "site_spread_deg": 60
+          "site_view_min_pct": 10
         },
         "infantry": {
           "buys_per_plan": 2,

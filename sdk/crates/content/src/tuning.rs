@@ -1464,21 +1464,40 @@ tuning_table! {
         reserve_mp: 0..=10000,
         /// Guns alive or called in at once.
         max_guns: 0..=8,
-        /// Sites lie this far behind the point (m) ...
+        /// Sites lie on rings around the point from this far (m) ...
         site_min_m: 1..=1000,
         /// ... up to this far (m) ...
         site_max_m: 1..=1000,
         /// ... on this many rings ...
         site_rings: 1..=8,
-        /// ... with this many bearings on each ...
+        /// ... with this many bearings on each, all around.
         site_bearings: 1..=16,
-        /// ... up to this far either side of the approach (degrees).
-        site_spread_deg: 0..=90,
+        /// No site is more than this nearer to the enemy base than the
+        /// point (m).
+        site_forward_m: 0..=1000 = "d_gun_site_forward_m",
+        /// No site within this of a point the enemy holds (m).
+        site_enemy_point_m: 0..=1000 = "d_gun_site_enemy_point_m",
+        /// Sites that see less than this share of the best site's corridor
+        /// samples are dropped (%).
+        site_view_min_pct: 0..=100 = "d_gun_site_view_min_pct",
+        /// The last stretch of the enemy's route to the point that is
+        /// sampled (m) ...
+        corridor_m: 1..=2000 = "d_gun_corridor_m",
+        /// ... every this far (m).
+        corridor_step_m: 1..=200 = "d_gun_corridor_step_m",
+        /// No site within this of the corridor (m): a gun on the route is
+        /// overrun; it fires across it from the side.
+        corridor_clear_m: 0..=1000 = "d_gun_corridor_clear_m",
+        /// Seen enemy armoured vehicles whose routes are searched, nearest
+        /// the point first.
+        corridor_paths: 0..=8 = "d_gun_corridor_paths",
         /// Two guns site at least this far apart (m).
         site_apart_m: 0..=500,
-        /// The approach sampled ahead of the point (m).
+        /// With no route: the straight approach sampled ahead of the point
+        /// (m) ...
         approach_m: 1..=1000,
-        /// Sight-line rays per site tested, along the approach.
+        /// ... at this many points. Also the fewest samples the routes of
+        /// seen armour must give before the enemy base's route is added.
         los_rays: 1..=16,
         /// No site within this of known enemy men (m).
         enemy_standoff_m: 0..=500,
@@ -1512,6 +1531,28 @@ tuning_table! {
     }
 }
 
+fn d_gun_site_forward_m() -> u32 {
+    0
+}
+fn d_gun_site_enemy_point_m() -> u32 {
+    250
+}
+fn d_gun_site_view_min_pct() -> u32 {
+    10
+}
+fn d_gun_corridor_m() -> u32 {
+    500
+}
+fn d_gun_corridor_step_m() -> u32 {
+    25
+}
+fn d_gun_corridor_clear_m() -> u32 {
+    150
+}
+fn d_gun_corridor_paths() -> u32 {
+    2
+}
+
 impl AiGunsTuning {
     fn check_more(&self, at: &str, out: &mut Vec<Issue>) {
         check_order(
@@ -1534,8 +1575,14 @@ impl Default for AiGunsTuning {
             site_min_m: 100,
             site_max_m: 250,
             site_rings: 7,
-            site_bearings: 11,
-            site_spread_deg: 60,
+            site_bearings: 16,
+            site_forward_m: d_gun_site_forward_m(),
+            site_enemy_point_m: d_gun_site_enemy_point_m(),
+            site_view_min_pct: d_gun_site_view_min_pct(),
+            corridor_m: d_gun_corridor_m(),
+            corridor_step_m: d_gun_corridor_step_m(),
+            corridor_clear_m: d_gun_corridor_clear_m(),
+            corridor_paths: d_gun_corridor_paths(),
             site_apart_m: 60,
             approach_m: 350,
             los_rays: 6,

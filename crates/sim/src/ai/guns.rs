@@ -1,13 +1,23 @@
 //! S9 AI habits for AT guns (`docs/slices/S9-at-guns.md` 12; `[ai.guns]`).
 //! One saved job per own gun ([`AiGun`], keyed by the gun's squad):
 //!
-//! * **Site.** The most threatened own or contested point; the approach is
-//!   the line from it toward the nearest known enemy vehicle, else the
-//!   enemy base. Candidates lie `site_min_m`..`site_max_m` behind the point
-//!   within `site_spread_deg` of that line, away from known enemy men. The
-//!   score is the sight lines from gun height to `los_rays` points along
-//!   the approach, then cover (woods, or hull-down: the gun-height line
-//!   clear and the low line blocked), then the nearest.
+//! * **Site** (S9b). The most threatened own or contested point. The
+//!   corridor is where enemy armour drives to it: the vehicle path from
+//!   each seen enemy armoured vehicle (at most `corridor_paths`, nearest
+//!   first), or from the enemy base with none seen, sampled every
+//!   `corridor_step_m` over its last `corridor_m`, at an enemy's eye
+//!   height; with no path, `los_rays` points on the straight line toward
+//!   that vehicle or base. Candidates lie on rings `site_min_m`..
+//!   `site_max_m` all around the point, never more than `site_forward_m`
+//!   nearer to the enemy base than the point, away from known enemy men,
+//!   the other gun and the points the enemy holds (`site_enemy_point_m`),
+//!   and not within `corridor_clear_m` of the corridor (a gun on the route
+//!   is overrun). The score is how many corridor samples within
+//!   `engage_still_m` the gun sees from gun height inside its arc when it
+//!   faces the middle of what it sees. Sites that see less than
+//!   `site_view_min_pct` of the best are dropped; among the rest cover
+//!   (woods, or hull-down: the gun-height line clear and the low line
+//!   blocked), then the count, then the nearest.
 //! * **Go.** The tow drives to the site with the crew riding. No unhitching
 //!   with an enemy within `contact_m`: the site moves back toward the base.
 //! * **Unhitch, Emplace** facing the approach. The tow goes back to the
@@ -29,14 +39,18 @@
 
 use frontline_content::VehicleRole;
 use frontline_content::setup::DigProfile;
+use frontline_content::tuning::AiGunsTuning;
+use frontline_content::vehicle::VehicleSetup;
 use serde::{Deserialize, Serialize};
 
 use super::{AiKind, Known, KnownVehicle, Mine, MyTank, PointEval, Rel, sq_m};
 use crate::armour::deg;
 use crate::command::CommandKind;
-use crate::ecs::{EntityKind, SimId};
+use crate::ecs::{EntityKind, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Order, SquadId};
+use crate::path::{PathCost, PathScratch, VehiclePathCost, find_vehicle_path};
+use crate::terrain::Heightfield;
 use crate::vehicle::GunState;
 
 /// Most gun jobs one AI keeps.
@@ -103,6 +117,247 @@ pub struct AiGun {
     pub quiet_at: u64,
     /// Moves made so far.
     pub resites: u8,
+}
+
+/// Armour for the corridor: what a gun is there to stop.
+fn is_armour(r: VehicleRole) -> bool {
+    matches!(
+        r,
+        VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+    )
+}
+
+/// Points on the polyline `way` every `step`, walking back from its end
+/// (included) over at most `len`.
+fn walk_back(way: &[FxVec2], step: Fx, len: Fx) -> Vec<FxVec2> {
+    let mut out = Vec::new();
+    let Some(&end) = way.last() else { return out };
+    out.push(end);
+    let mut walked = Fx::ZERO;
+    let mut next = step;
+    for pair in way.windows(2).rev() {
+        let (a, b) = (pair[0], pair[1]);
+        let seg = (a - b).length();
+        if seg == Fx::ZERO {
+            continue;
+        }
+        let d = (a - b).normalize_or_zero();
+        while next <= len && next <= walked + seg {
+            out.push(b + d * (next - walked));
+            next += step;
+        }
+        if next > len {
+            break;
+        }
+        walked += seg;
+    }
+    out
+}
+
+/// A candidate position with its place in the search order (ties go to the
+/// earlier one).
+struct Candidate {
+    pos: FxVec2,
+    order: i32,
+}
+
+/// Rings `site_min_m`..`site_max_m` all around `p`, bearing 0 on `dir`,
+/// never more than `site_forward_m` nearer to the enemy base than `p`.
+fn site_candidates(
+    terrain: &Heightfield,
+    p: FxVec2,
+    dir: FxVec2,
+    enemy_base: FxVec2,
+    a: &AiGunsTuning,
+) -> Vec<Candidate> {
+    let rings = a.site_rings.max(1) as i32;
+    let n = a.site_bearings.max(1) as i32;
+    let span = a.site_max_m.saturating_sub(a.site_min_m) as i32;
+    let limit = (p - enemy_base).length() - Fx::from_int(a.site_forward_m as i32);
+    let mut out = Vec::new();
+    for r in 0..rings {
+        let radius = a.site_min_m as i32 + if rings > 1 { span * r / (rings - 1) } else { 0 };
+        for b in 0..n {
+            let (sin, cos) = deg(360 * b / n).sin_cos();
+            let way = FxVec2::new(dir.x * cos - dir.y * sin, dir.x * sin + dir.y * cos);
+            let pos = terrain.clamp(p + way * Fx::from_int(radius));
+            if (pos - enemy_base).length() < limit {
+                continue;
+            }
+            out.push(Candidate {
+                pos,
+                order: -(r * n + b),
+            });
+        }
+    }
+    out
+}
+
+/// The samples a gun at `c` sees from gun height within `reach` and inside
+/// its arc `[lo, hi]` when it faces the middle of what it sees, and the
+/// point it would face. `None` when it sees none, or stands within `clear`
+/// of a sample.
+fn site_view(
+    terrain: &Heightfield,
+    c: FxVec2,
+    samples: &[FxVec3],
+    reach: Fx,
+    clear: Fx,
+    arc: Option<[i32; 2]>,
+) -> Option<(Vec<FxVec3>, FxVec2)> {
+    let eye = c.extend(terrain.height_at(c) + Fx::from_milli(GUN_EYE_MM));
+    let r = sq_m(reach);
+    let off_route = sq_m(clear);
+    if samples
+        .iter()
+        .any(|s| (s.xy() - c).length_sq_raw() < off_route)
+    {
+        return None;
+    }
+    let seen: Vec<FxVec3> = samples
+        .iter()
+        .filter(|s| (s.xy() - c).length_sq_raw() <= r)
+        .filter(|&&s| terrain.line_of_sight(eye, s))
+        .copied()
+        .collect();
+    let first = seen.first()?;
+    // Sums of offsets, not of positions: no overflow on any map.
+    let n = seen.len() as i64;
+    let (mut sx, mut sy) = (0i64, 0i64);
+    for s in &seen {
+        sx += (s.x - c.x).raw() as i64;
+        sy += (s.y - c.y).raw() as i64;
+    }
+    let mid = FxVec2::new(Fx::from_raw((sx / n) as i32), Fx::from_raw((sy / n) as i32));
+    let way = if mid == FxVec2::ZERO {
+        first.xy() - c
+    } else {
+        mid
+    };
+    let facing = c + way;
+    let in_arc: Vec<FxVec3> = match arc {
+        None => seen,
+        Some([lo, hi]) => {
+            let yaw = Fx::atan2(way.y, way.x);
+            seen.into_iter()
+                .filter(|s| {
+                    let to = s.xy() - c;
+                    let off = (Fx::atan2(to.y, to.x) - yaw).wrap_angle();
+                    off >= deg(lo) && off <= deg(hi)
+                })
+                .collect()
+        }
+    };
+    (!in_arc.is_empty()).then_some((in_arc, facing))
+}
+
+/// One candidate's result (`gun_site`).
+struct Site {
+    pos: FxVec2,
+    facing: FxVec2,
+    /// Corridor samples seen.
+    count: i32,
+    cover: bool,
+    /// Minus the squared distance from the gun.
+    near: i64,
+    order: i32,
+    seen: Vec<FxVec3>,
+}
+
+/// The fewest samples a site must see to stay in (`site_view_min_pct` of
+/// the best, rounded up, at least one).
+fn view_cut(sites: &[Site], pct: u32) -> i32 {
+    let best = sites.iter().map(|x| x.count).max().unwrap_or(0) as u32;
+    (best * pct).div_ceil(100).max(1) as i32
+}
+
+/// Cover, then the count, then the nearest, among the sites at `cut` or
+/// over.
+fn choose_site(sites: &[Site], cut: i32) -> Option<&Site> {
+    sites
+        .iter()
+        .filter(|x| x.count >= cut)
+        .max_by_key(|x| (x.cover, x.count, x.near, x.order))
+}
+
+/// Whether a gun at `at` has cover against `samples`: woods, or the
+/// ground masking its carriage from at least half of the points it sees
+/// from gun height (hull-down).
+fn gun_cover(terrain: &Heightfield, at: FxVec2, samples: &[FxVec3]) -> bool {
+    if terrain.woods_at(at) {
+        return true;
+    }
+    let ground = terrain.height_at(at);
+    let eye = at.extend(ground + Fx::from_milli(GUN_EYE_MM));
+    let low = at.extend(ground + Fx::from_milli(LOW_EYE_MM));
+    let seen: Vec<&FxVec3> = samples
+        .iter()
+        .filter(|&&p| terrain.line_of_sight(eye, p))
+        .collect();
+    let masked = seen
+        .iter()
+        .filter(|&&&p| !terrain.line_of_sight(low, p))
+        .count();
+    !seen.is_empty() && masked * 2 >= seen.len()
+}
+
+/// What the site search takes from the world (`gun_site`).
+struct SiteSearch<'a> {
+    terrain: &'a Heightfield,
+    /// The point to cover.
+    point: FxVec2,
+    /// Bearing 0 of the rings.
+    dir: FxVec2,
+    enemy_base: FxVec2,
+    /// Where enemy armour drives, at an enemy's eye height.
+    samples: &'a [FxVec3],
+    arc: Option<[i32; 2]>,
+    /// The gun.
+    from: FxVec2,
+    /// Known enemy men.
+    men: &'a [FxVec2],
+    /// The other gun's site.
+    others: &'a [FxVec2],
+    /// The points the enemy holds.
+    garrisons: &'a [FxVec2],
+}
+
+/// The best site and the point it faces, and whether it has cover (module
+/// docs). `None` when no site sees any of the corridor.
+fn best_site(q: &SiteSearch, a: &AiGunsTuning) -> Option<(FxVec2, FxVec2, bool)> {
+    let reach = Fx::from_int(a.engage_still_m as i32);
+    let clear = Fx::from_int(a.corridor_clear_m as i32);
+    let within = |list: &[FxVec2], c: FxVec2, m: u32| {
+        let r = sq_m(Fx::from_int(m as i32));
+        list.iter().any(|&o| (o - c).length_sq_raw() <= r)
+    };
+    let mut sites: Vec<Site> = Vec::new();
+    for c in site_candidates(q.terrain, q.point, q.dir, q.enemy_base, a) {
+        if within(q.men, c.pos, a.enemy_standoff_m)
+            || within(q.others, c.pos, a.site_apart_m)
+            || within(q.garrisons, c.pos, a.site_enemy_point_m)
+        {
+            continue;
+        }
+        let Some((seen, facing)) = site_view(q.terrain, c.pos, q.samples, reach, clear, q.arc)
+        else {
+            continue;
+        };
+        sites.push(Site {
+            pos: c.pos,
+            facing,
+            count: seen.len() as i32,
+            cover: false,
+            near: -((c.pos - q.from).length_sq_raw().min(i64::MAX as u64) as i64),
+            order: c.order,
+            seen,
+        });
+    }
+    let cut = view_cut(&sites, a.site_view_min_pct);
+    for x in sites.iter_mut().filter(|x| x.count >= cut) {
+        x.cover = gun_cover(q.terrain, x.pos, &x.seen);
+    }
+    choose_site(&sites, cut).map(|b| (b.pos, b.facing, b.cover))
 }
 
 /// The gun's main-gun rounds, loaded one included.
@@ -374,27 +629,6 @@ impl super::Planner<'_> {
             .collect()
     }
 
-    /// Whether a gun at `at` has cover against `samples`: woods, or the
-    /// ground masking its carriage from at least half of the points it
-    /// sees from gun height (hull-down).
-    fn gun_cover(&self, at: FxVec2, samples: &[FxVec3]) -> bool {
-        if self.terrain.woods_at(at) {
-            return true;
-        }
-        let ground = self.terrain.height_at(at);
-        let eye = at.extend(ground + Fx::from_milli(GUN_EYE_MM));
-        let low = at.extend(ground + Fx::from_milli(LOW_EYE_MM));
-        let seen: Vec<&FxVec3> = samples
-            .iter()
-            .filter(|&&p| self.terrain.line_of_sight(eye, p))
-            .collect();
-        let masked = seen
-            .iter()
-            .filter(|&&&p| !self.terrain.line_of_sight(low, p))
-            .count();
-        !seen.is_empty() && masked * 2 >= seen.len()
-    }
-
     fn gun_hold(
         &mut self,
         t: &MyTank,
@@ -420,11 +654,20 @@ impl super::Planner<'_> {
                     range_m: a.engage_still_m.min(2000) as u16,
                 },
             );
-            // Judged where it stands, on the sight lines the site was
-            // chosen with.
-            let dir = (job.facing - job.point).normalize_or_zero();
-            let samples = self.gun_samples(job.point, dir);
-            job.counted = self.gun_cover(t.pos, &samples);
+            // On the site that was chosen with cover it has that cover;
+            // anywhere else it is judged where it stands, along the way it
+            // faces.
+            let on_site = job.site_cover
+                && (t.pos - job.site).length_sq_raw()
+                    <= sq_m(Fx::from_int(a.arrive_cover_m as i32));
+            let dir = (job.facing - t.pos).normalize_or_zero();
+            let out = Fx::from_int(a.approach_m as i32).div_int(a.los_rays.max(1) as i32);
+            job.counted = on_site
+                || gun_cover(
+                    self.terrain,
+                    t.pos,
+                    &self.gun_samples(t.pos + dir * out, dir),
+                );
             if job.counted {
                 self.ai.counters.guns_in_cover += 1;
             }
@@ -659,6 +902,105 @@ impl super::Planner<'_> {
         }
     }
 
+    /// The vehicle route of a `ty` from `from` to `to`, start included;
+    /// `None` when the search does not reach `to`.
+    fn gun_route(
+        &self,
+        from: FxVec2,
+        to: FxVec2,
+        ty: &VehicleSetup,
+        scratch: &mut PathScratch,
+    ) -> Option<Vec<FxVec2>> {
+        let s = &self.g.setup;
+        let mv = &s.rules.movement;
+        let cost = PathCost {
+            slope_cost_pct: mv.slope_cost_pct,
+            max_slope_pct: ty.mobility.max_slope_pct,
+            trench_cost_pct: 100,
+            ditch_cost_pct: mv.ditch_cost_pct,
+        };
+        let veh = VehiclePathCost {
+            block: self.g.vderived.block_of(ty),
+            avoid: None,
+            costs: &s.rules.vehicles.path,
+        };
+        let r = find_vehicle_path(
+            self.terrain,
+            from,
+            to,
+            &cost,
+            &veh,
+            mv.path_max_expansions,
+            scratch,
+        );
+        r.reached.then(|| {
+            let mut way = Vec::with_capacity(r.points.len() + 1);
+            way.push(from);
+            way.extend(r.points);
+            way
+        })
+    }
+
+    /// The ground enemy armour drives over to reach `p` (module docs), at
+    /// an enemy's eye height. Empty when no route is found.
+    fn gun_corridor(&self, p: FxVec2, kv: &[KnownVehicle], enemy: PlayerId) -> Vec<FxVec3> {
+        let g = self.g;
+        let s = &g.setup;
+        let a = &s.rules.ai.guns;
+        let step = Fx::from_int(a.corridor_step_m.max(1) as i32);
+        let len = Fx::from_int(a.corridor_m as i32);
+        let mut scratch = PathScratch::default();
+        let mut out: Vec<FxVec2> = Vec::new();
+        let mut near: Vec<&KnownVehicle> = kv
+            .iter()
+            .filter(|k| is_armour(s.vehicles[k.type_idx as usize].role))
+            .collect();
+        near.sort_by_key(|k| ((k.pos - p).length_sq_raw(), k.id));
+        for k in near.iter().take(a.corridor_paths as usize) {
+            let ty = &s.vehicles[k.type_idx as usize];
+            if let Some(way) = self.gun_route(k.pos, p, ty, &mut scratch) {
+                out.extend(walk_back(&way, step, len));
+            }
+        }
+        // None seen, or they stand so near that their routes say little.
+        if out.len() < a.los_rays as usize {
+            let roster = &s.factions[s.players[enemy.0 as usize].faction as usize].roster;
+            let ty = roster
+                .iter()
+                .filter_map(|&t| s.vehicles.get(s.squad_types[t as usize].vehicle? as usize))
+                .filter(|v| is_armour(v.role))
+                .min_by_key(|v| v.mobility.max_slope_pct);
+            if let Some(way) =
+                ty.and_then(|ty| self.gun_route(g.base_of(enemy), p, ty, &mut scratch))
+            {
+                out.extend(walk_back(&way, step, len));
+            }
+        }
+        out.iter()
+            .map(|&c| {
+                let c = self.terrain.clamp(c);
+                c.extend(self.terrain.height_at(c) + Fx::from_milli(ENEMY_EYE_MM))
+            })
+            .collect()
+    }
+
+    /// The ground a site must see: the corridor, or with no route found
+    /// the straight line along `dir`.
+    fn gun_sight_samples(
+        &self,
+        p: FxVec2,
+        dir: FxVec2,
+        kv: &[KnownVehicle],
+        enemy: PlayerId,
+    ) -> Vec<FxVec3> {
+        let corridor = self.gun_corridor(p, kv, enemy);
+        if corridor.is_empty() {
+            self.gun_samples(p, dir)
+        } else {
+            corridor
+        }
+    }
+
     /// Where the gun goes: `(site, the point it faces, the point it
     /// covers, whether the site has cover)` (module docs).
     fn gun_site(
@@ -669,7 +1011,8 @@ impl super::Planner<'_> {
         kv: &[KnownVehicle],
     ) -> Option<(FxVec2, FxVec2, FxVec2, bool)> {
         let g = self.g;
-        let a = &g.setup.rules.ai.guns;
+        let s = &g.setup;
+        let a = &s.rules.ai.guns;
         let held = (0..points.len())
             .filter(|&i| points[i].rel != Rel::Enemy)
             .max_by_key(|&i| {
@@ -682,27 +1025,21 @@ impl super::Planner<'_> {
             })
             .or_else(|| (!points.is_empty()).then_some(0))?;
         let p = points[held].pos;
-        let enemy_base = (0..g.setup.players.len() as u8)
-            .map(crate::ecs::PlayerId)
-            .find(|&o| o != self.me)
-            .map(|o| g.base_of(o));
+        let enemy = (0..s.players.len() as u8)
+            .map(PlayerId)
+            .find(|&o| o != self.me)?;
+        let enemy_base = g.base_of(enemy);
         let toward = kv
             .iter()
-            .filter(|k| g.setup.vehicles[k.type_idx as usize].role != VehicleRole::Truck)
+            .filter(|k| s.vehicles[k.type_idx as usize].role != VehicleRole::Truck)
             .min_by_key(|k| ((k.pos - p).length_sq_raw(), k.id))
-            .map(|k| k.pos)
-            .or(enemy_base)?;
+            .map_or(enemy_base, |k| k.pos);
         let dir = (toward - p).normalize_or_zero();
         if dir == FxVec2::ZERO {
             return None;
         }
-        let out = Fx::from_int(a.approach_m as i32);
-        let facing = self.terrain.clamp(p + dir * out);
-        let samples = self.gun_samples(p, dir);
-        let standoff = sq_m(Fx::from_int(a.enemy_standoff_m as i32));
-        let rings = a.site_rings.max(1) as i32;
-        let n = a.site_bearings.max(1) as i32;
-        let span = a.site_max_m.saturating_sub(a.site_min_m) as i32;
+        let samples = self.gun_sight_samples(p, dir, kv, enemy);
+        let men: Vec<FxVec2> = known.iter().map(|m| m.pos).collect();
         let others: Vec<FxVec2> = self
             .ai
             .guns
@@ -710,52 +1047,33 @@ impl super::Planner<'_> {
             .filter(|&(&q, j)| q != t.squad && j.phase != GunPhase::Site)
             .map(|(_, j)| j.site)
             .collect();
-        let close = sq_m(Fx::from_int(a.site_apart_m as i32));
-        let mut best: Option<((i32, i32, i64, i32), FxVec2)> = None;
-        for r in 0..rings {
-            let back = a.site_min_m as i32 + if rings > 1 { span * r / (rings - 1) } else { 0 };
-            for b in 0..n {
-                let lean = if n > 1 {
-                    deg(a.site_spread_deg as i32 * (2 * b - (n - 1)) / (n - 1))
-                } else {
-                    Fx::ZERO
-                };
-                let (sin, cos) = lean.sin_cos();
-                let way = FxVec2::new(dir.x * cos - dir.y * sin, dir.x * sin + dir.y * cos);
-                let c = self.terrain.clamp(p - way * Fx::from_int(back));
-                if known
-                    .iter()
-                    .any(|m| (m.pos - c).length_sq_raw() <= standoff)
-                    || others.iter().any(|&o| (o - c).length_sq_raw() <= close)
-                {
-                    continue;
-                }
-                let ground = self.terrain.height_at(c);
-                let eye = c.extend(ground + Fx::from_milli(GUN_EYE_MM));
-                let sees = samples
-                    .iter()
-                    .filter(|&&s| self.terrain.line_of_sight(eye, s))
-                    .count() as i32;
-                if sees == 0 {
-                    continue;
-                }
-                let cover = self.gun_cover(c, &samples) as i32;
-                let near = -((c - t.pos).length_sq_raw().min(i64::MAX as u64) as i64);
-                let key = (cover, sees, near, -(r * n + b));
-                if best.as_ref().is_none_or(|(k, _)| key > *k) {
-                    best = Some((key, c));
-                }
-            }
-        }
-        // Nowhere with a sight line: behind the point on the approach.
-        let cover = best.as_ref().is_some_and(|(k, _)| k.0 == 1);
-        let site = best.map_or_else(
-            || {
-                self.terrain
-                    .clamp(p - dir * Fx::from_int(a.site_min_m as i32))
-            },
-            |(_, c)| c,
-        );
+        let garrisons: Vec<FxVec2> = points
+            .iter()
+            .filter(|x| x.rel == Rel::Enemy)
+            .map(|x| x.pos)
+            .collect();
+        let search = SiteSearch {
+            terrain: self.terrain,
+            point: p,
+            dir,
+            enemy_base,
+            samples: &samples,
+            arc: s.vehicles[g.vehicles[&t.id].type_idx as usize].gun_arc_deg,
+            from: t.pos,
+            men: &men,
+            others: &others,
+            garrisons: &garrisons,
+        };
+        let Some((site, facing, cover)) = best_site(&search, a) else {
+            // Nowhere with a sight line: behind the point on the approach.
+            let site = self
+                .terrain
+                .clamp(p - dir * Fx::from_int(a.site_min_m as i32));
+            let facing = self
+                .terrain
+                .clamp(p + dir * Fx::from_int(a.approach_m as i32));
+            return Some((site, facing, p, false));
+        };
         Some((site, facing, p, cover))
     }
 
@@ -890,5 +1208,225 @@ impl super::Planner<'_> {
             return;
         }
         self.buy_role_within(VehicleRole::AtGun, a.income_max_pct, a.reserve_mp);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::terrain::TerrainKind;
+
+    const SIZE: i32 = 1024;
+
+    fn at(x: i32, y: i32) -> FxVec2 {
+        FxVec2::new(Fx::from_int(x), Fx::from_int(y))
+    }
+
+    fn tuning() -> AiGunsTuning {
+        AiGunsTuning {
+            engage_still_m: 400,
+            site_forward_m: 0,
+            site_enemy_point_m: 250,
+            site_view_min_pct: 50,
+            corridor_clear_m: 150,
+            ..AiGunsTuning::default()
+        }
+    }
+
+    /// Enemy armour drives along y = 512 from x = 900 to the point at
+    /// (512, 512), every 25 m, at an enemy's eye height.
+    fn corridor(t: &Heightfield) -> Vec<FxVec3> {
+        (0..16)
+            .map(|k| {
+                let c = at(512 + 25 * k, 512);
+                c.extend(t.height_at(c) + Fx::from_milli(ENEMY_EYE_MM))
+            })
+            .collect()
+    }
+
+    /// Flat, with one 12 m ridge across the map behind the point (x 370..
+    /// 380) and one along the route to its south (y 440..450): only the
+    /// ground north of the route, on the enemy's side of the first ridge,
+    /// looks at the corridor.
+    fn ridges() -> Heightfield {
+        let mut t = Heightfield::generate(TerrainKind::Flat, SIZE, 1);
+        t.edit_heights_for_test(|gx, gy, h| {
+            let (x, y) = (gx as i32 * 4, gy as i32 * 4);
+            if (370..=380).contains(&x) || (440..=450).contains(&y) {
+                *h = Fx::from_int(12);
+            }
+        });
+        t
+    }
+
+    fn search<'a>(t: &'a Heightfield, samples: &'a [FxVec3]) -> SiteSearch<'a> {
+        SiteSearch {
+            terrain: t,
+            point: at(512, 512),
+            dir: FxVec2::new(Fx::ONE, Fx::ZERO),
+            enemy_base: at(960, 512),
+            samples,
+            arc: Some([-32, 32]),
+            from: at(300, 512),
+            men: &[],
+            others: &[],
+            garrisons: &[],
+        }
+    }
+
+    fn site(count: i32, cover: bool, order: i32) -> Site {
+        Site {
+            pos: at(order, 0),
+            facing: at(0, 0),
+            count,
+            cover,
+            near: 0,
+            order,
+            seen: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_gun_on_a_ridge_map_sees_the_corridor_within_reach() {
+        let t = ridges();
+        let samples = corridor(&t);
+        let a = tuning();
+        let (pos, facing, _) = best_site(&search(&t, &samples), &a).expect("a site");
+        assert!(
+            pos.y > Fx::from_int(450) && pos.x > Fx::from_int(380),
+            "the open ground north of the route: {pos:?}"
+        );
+        let eye = pos.extend(t.height_at(pos) + Fx::from_milli(GUN_EYE_MM));
+        let reach = sq_m(Fx::from_int(a.engage_still_m as i32));
+        let seen = samples
+            .iter()
+            .filter(|&&s| (s.xy() - pos).length_sq_raw() <= reach && t.line_of_sight(eye, s))
+            .count();
+        assert!(seen >= 8, "sees {seen} of {}", samples.len());
+        assert!(facing.y < pos.y, "faces the corridor: {facing:?}");
+        // Not on the route.
+        let clear = sq_m(Fx::from_int(a.corridor_clear_m as i32));
+        assert!(
+            samples
+                .iter()
+                .all(|s| (s.xy() - pos).length_sq_raw() >= clear)
+        );
+    }
+
+    #[test]
+    fn a_covered_site_that_sees_nothing_loses_to_an_open_one_that_does() {
+        let t = ridges();
+        let samples = corridor(&t);
+        let reach = Fx::from_int(400);
+        let clear = Fx::from_int(150);
+        // Behind the ridge: blind, so it is no site at all, whatever its
+        // cover.
+        assert!(site_view(&t, at(300, 512), &samples, reach, clear, None).is_none());
+        assert!(site_view(&t, at(512, 700), &samples, reach, clear, None).is_some());
+        // Sees too little of what the best site sees: dropped before cover
+        // counts.
+        let sites = [site(1, true, 1), site(10, false, 2)];
+        let cut = view_cut(&sites, 50);
+        assert_eq!(cut, 5);
+        assert_eq!(choose_site(&sites, cut).map(|x| x.order), Some(2));
+        // At the cut or over it, cover decides, then the count.
+        let sites = [site(6, true, 1), site(10, false, 2), site(5, true, 3)];
+        let cut = view_cut(&sites, 50);
+        assert_eq!(choose_site(&sites, cut).map(|x| x.order), Some(1));
+    }
+
+    #[test]
+    fn no_site_within_the_clearance_of_the_corridor() {
+        let t = Heightfield::generate(TerrainKind::Flat, SIZE, 1);
+        let samples = corridor(&t);
+        let reach = Fx::from_int(400);
+        let clear = Fx::from_int(150);
+        assert!(site_view(&t, at(512, 600), &samples, reach, clear, None).is_none());
+        assert!(site_view(&t, at(512, 700), &samples, reach, clear, None).is_some());
+    }
+
+    #[test]
+    fn no_site_forward_of_the_limit_or_near_a_point_the_enemy_holds() {
+        let t = Heightfield::generate(TerrainKind::Flat, SIZE, 1);
+        let samples = corridor(&t);
+        let p = at(512, 512);
+        let base = at(960, 512);
+        for forward in [0, 100] {
+            let a = AiGunsTuning {
+                site_forward_m: forward,
+                ..tuning()
+            };
+            let limit = (p - base).length() - Fx::from_int(forward as i32);
+            let list = site_candidates(&t, p, FxVec2::new(Fx::ONE, Fx::ZERO), base, &a);
+            assert!(!list.is_empty());
+            assert!(list.iter().all(|c| (c.pos - base).length() >= limit));
+        }
+        let garrison = [at(512, 760)];
+        let a = tuning();
+        let mut q = search(&t, &samples);
+        q.garrisons = &garrison;
+        let (pos, _, _) = best_site(&q, &a).expect("a site");
+        assert!((pos - garrison[0]).length() > Fx::from_int(a.site_enemy_point_m as i32));
+        // Every candidate taken away: no site, and the caller falls back.
+        let all_held = [at(512, 512)];
+        q.garrisons = &all_held;
+        let a = AiGunsTuning {
+            site_enemy_point_m: 300,
+            ..a
+        };
+        assert!(best_site(&q, &a).is_none());
+    }
+
+    #[test]
+    fn with_no_route_the_samples_are_the_straight_line() {
+        use frontline_content::{Difficulty, MatchRequest, ModDefs};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+        let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+        let mut setup = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+        setup.players.iter_mut().for_each(|p| p.is_ai = true);
+        let w = crate::World::new_match(setup, 1).unwrap();
+        let g = w.game().unwrap();
+        let enemy = PlayerId(1);
+        let p = at(512, 512);
+        let dir = (g.base_of(enemy) - p).normalize_or_zero();
+        // Open ground: the route, every `corridor_step_m` over its last
+        // `corridor_m`.
+        let mut ai = g.ai(PlayerId(0)).unwrap().clone();
+        let mut flat = Heightfield::generate(TerrainKind::Flat, g.setup().map.size_m, 1);
+        let samples = |ai: &mut super::super::AiState, terrain: &Heightfield| {
+            super::super::Planner {
+                g,
+                ai,
+                me: PlayerId(0),
+                ents: w.entities(),
+                terrain,
+                due: 0,
+                tick: 0,
+                quality: 100,
+                rng: crate::rng::RngStream::new(
+                    1,
+                    0,
+                    crate::ecs::SimId(0),
+                    crate::rng::Purpose::AI_PLAN,
+                ),
+                mortar_rays: 0,
+            }
+            .gun_sight_samples(p, dir, &[], enemy)
+        };
+        let a = &g.setup().rules.ai.guns;
+        let route = samples(&mut ai, &flat);
+        assert!(route.len() > a.los_rays as usize, "{}", route.len());
+        // A wall all around the point: no route, the straight line.
+        flat.edit_heights_for_test(|gx, gy, h| {
+            let (x, y) = (gx as i32 * 4 - 512, gy as i32 * 4 - 512);
+            if (x * x + y * y - 40 * 40).abs() < 800 {
+                *h = Fx::from_int(40);
+            }
+        });
+        let line = samples(&mut ai, &flat);
+        assert_eq!(line.len(), a.los_rays as usize);
+        let step = Fx::from_int(a.approach_m as i32).div_int(a.los_rays as i32);
+        assert!((line[1].xy() - (p + dir * step)).length() < Fx::from_int(1));
     }
 }

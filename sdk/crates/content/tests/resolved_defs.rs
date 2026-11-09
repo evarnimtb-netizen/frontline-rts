@@ -118,15 +118,16 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S9 Build B re-recorded it (Pak 38, 3-inch M5, Sd.Kfz. 11, the card tow,
 // the gun pit, `[vehicles.guns]` min_men, hold_m, abandon_s, hitch_reach_m).
 // S9 Fix re-recorded it (`[ai.guns]` arrive_cover_m, resite_idle_s, resite_max).
+// S9b re-recorded it (`[ai.guns]` corridor siting keys, `site_spread_deg` gone).
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xdc28216c69f1e8c5),
-    ("skirmish usa-ger seed 7 hard", 0x1e20705572daaaa6),
-    ("test_unlock ger-usa seed 1 normal", 0x4cc75e78b8576763),
-    ("example override ger-usa seed 1 normal", 0xdc28216c69f1e8c5),
-    ("human ger vs ai usa seed 3 easy", 0xaca94b0a0a334269),
+    ("skirmish ger-usa seed 1 normal", 0xfd436300fe29492f),
+    ("skirmish usa-ger seed 7 hard", 0x816cf0665736db2a),
+    ("test_unlock ger-usa seed 1 normal", 0x5d84b045d590fc92),
+    ("example override ger-usa seed 1 normal", 0xfd436300fe29492f),
+    ("human ger vs ai usa seed 3 easy", 0xe6856d6c71d1985e),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x3ab863b1c1b820d8,
+        0xc1327ae8eef9d7d4,
     ),
 ];
 
