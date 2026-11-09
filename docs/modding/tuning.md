@@ -184,7 +184,8 @@ frontline-cli fortify-test --seeds 10 --json /tmp/fort10.json
   `gun_armour_out`, and `gun_armour_out_per_match`: enemy tanks, assault
   guns and tank destroyers knocked out or abandoned per match when the last
   round that struck them was one of the faction's AT guns', a gun of the
-  faction having fired that ammunition at that vehicle within 3 s; a
+  faction having fired that ammunition at that vehicle within 3 s; each
+  vehicle once a match, however often it is recrewed and lost again; a
   bail-out counts, so it is about four times `gun_ko_tanks_per_match`,
   which counts wrecks) and `s3c`. `--ab` writes `{a, b}`.
 - armour-test file: `cases[]` (`id` `case9`, `name`, `pass`), each with

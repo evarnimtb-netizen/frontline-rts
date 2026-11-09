@@ -434,8 +434,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// vehicle kill counters). One bump for the whole slice. 20: S9 (served
 /// guns: `VehicleState::{served, towing}`, `Unit::serving`, service slots,
 /// optic, `[tow]` and `[vehicles.guns]` in the setup, two new components).
-/// One bump for the whole slice.
-const SAVE_VERSION: u32 = 20;
+/// One bump for the whole slice. 21: S9b (`[ai.guns]` in the setup:
+/// `site_spread_deg` gone, the corridor siting keys new; `AiGun::point`
+/// gone). One bump for the whole slice.
+const SAVE_VERSION: u32 = 21;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2739,6 +2741,56 @@ mod tests {
         assert!(load_err(&bytes).contains("projectile_cap"));
     }
 
+    /// S9b: a save from before the `[ai.guns]` layout changed is refused,
+    /// not read with every later setup field shifted.
+    #[test]
+    fn a_save_of_the_previous_version_is_refused() {
+        let w = busy_world();
+        let bytes = postcard::to_allocvec(&SaveRef {
+            magic: SAVE_MAGIC,
+            version: 20,
+            state: &w.state,
+        })
+        .unwrap();
+        assert!(load_err(&bytes).contains("unsupported save version 20"));
+    }
+
+    /// S9b: the siting keys live in the saved setup: each one round-trips,
+    /// is in the hash, and is range-checked on load.
+    #[test]
+    fn the_gun_site_keys_are_saved_hashed_and_checked_on_load() {
+        use frontline_content::tuning::AiGunsTuning;
+        type Key = (&'static str, fn(&mut AiGunsTuning) -> &mut u32, u32, u32);
+        let keys: [Key; 7] = [
+            ("site_forward_m", |a| &mut a.site_forward_m, 40, 1001),
+            (
+                "site_enemy_point_m",
+                |a| &mut a.site_enemy_point_m,
+                40,
+                1001,
+            ),
+            ("site_view_min_pct", |a| &mut a.site_view_min_pct, 40, 101),
+            ("corridor_m", |a| &mut a.corridor_m, 40, 2001),
+            ("corridor_step_m", |a| &mut a.corridor_step_m, 40, 201),
+            ("corridor_clear_m", |a| &mut a.corridor_clear_m, 40, 1001),
+            ("corridor_paths", |a| &mut a.corridor_paths, 7, 9),
+        ];
+        let w = match_world();
+        let base = w.full_state_hash();
+        for (name, key, good, bad) in keys {
+            let set = |v: u32| {
+                save_edited(&w, |s| {
+                    *key(&mut s.game.as_mut().unwrap().setup.rules.ai.guns) = v;
+                })
+            };
+            let loaded = World::load(&set(good), 1).unwrap();
+            assert_ne!(loaded.full_state_hash(), base, "{name} is not hashed");
+            let mut tuning = loaded.match_setup().unwrap().rules.ai.guns.clone();
+            assert_eq!(*key(&mut tuning), good, "{name} round trip");
+            assert!(World::load(&set(bad), 1).is_err(), "{name} out of range");
+        }
+    }
+
     fn match_world() -> World {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
         let defs = frontline_content::ModDefs::load(&root).unwrap();
@@ -3552,18 +3604,6 @@ mod tests {
                 );
             }),
             "a gun job's phase and flags",
-        );
-        on(
-            ai_edit(&mut |a| {
-                a.guns.insert(
-                    sid,
-                    crate::ai::AiGun {
-                        point: FxVec2::from_int(3, 5),
-                        ..crate::ai::AiGun::default()
-                    },
-                );
-            }),
-            "a gun job's point",
         );
         on(
             ai_edit(&mut |a| {

@@ -645,6 +645,8 @@ struct ArmourTally {
     /// `target`, and per vehicle whether its last impact was such a round.
     gun_shots: BTreeMap<(u8, u16, u32), u64>,
     gun_hit_last: BTreeMap<u32, bool>,
+    /// S9b: `(attacker, vehicle)` already counted in `gun_armour_out`.
+    gun_out_seen: BTreeSet<(u8, u32)>,
 }
 
 /// S3c abandonment trigger names, by `bail::AB_*` (index 0 unused).
@@ -715,6 +717,16 @@ impl ArmourTally {
         }
     }
 
+    /// A vehicle lost to `attacker`'s guns counts once a match: a crew that
+    /// comes back and bails out again is the same vehicle.
+    fn count_gun_out(&mut self, attacker: u8, vehicle: u32) {
+        if self.gun_out_seen.insert((attacker, vehicle))
+            && let Some(p) = self.players.get_mut(attacker as usize)
+        {
+            p.gun_armour_out += 1;
+        }
+    }
+
     fn observe(&mut self, w: &World) {
         let g = w.game().expect("match world");
         let s = g.setup();
@@ -756,8 +768,8 @@ impl ArmourTally {
                 && !self.abandoned.contains_key(&e.vehicle)
                 && self.gun_hit_last.remove(&e.vehicle) == Some(true)
                 && type_of(e.vehicle).and_then(|t| self.armour_type.get(t)) == Some(&true);
-            if gun_out && let Some(p) = self.players.get_mut(e.attacker as usize) {
-                p.gun_armour_out += 1;
+            if gun_out {
+                self.count_gun_out(e.attacker, e.vehicle);
             }
             if k == ArmourEventKind::Recrewed as u8 {
                 self.gun_hit_last.remove(&e.vehicle);
@@ -2833,4 +2845,38 @@ pub fn ab_text(r: &AbReport) -> String {
     );
     out += &row("HE share max (%)", a.he_share_max_pct, b.he_share_max_pct);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tally() -> ArmourTally {
+        ArmourTally {
+            players: vec![PlayerArmour::default(); 2],
+            ..ArmourTally::default()
+        }
+    }
+
+    /// The trace and `gun_armour_out` agree: a vehicle bailed out, recrewed
+    /// and lost again is one vehicle (`tools/gun_funnel.py`).
+    #[test]
+    fn a_vehicle_lost_twice_to_guns_counts_once() {
+        let mut t = tally();
+        t.count_gun_out(0, 25);
+        t.count_gun_out(0, 25);
+        assert_eq!(t.players[0].gun_armour_out, 1);
+        t.count_gun_out(0, 26);
+        assert_eq!(t.players[0].gun_armour_out, 2);
+    }
+
+    /// Taken over and lost to the other side's guns: once for each side.
+    #[test]
+    fn each_side_counts_a_vehicle_for_itself() {
+        let mut t = tally();
+        t.count_gun_out(0, 25);
+        t.count_gun_out(1, 25);
+        assert_eq!(t.players[0].gun_armour_out, 1);
+        assert_eq!(t.players[1].gun_armour_out, 1);
+    }
 }

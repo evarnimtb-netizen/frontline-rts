@@ -1501,6 +1501,7 @@ kind = "report"
 # --- T88: guns put enemy armour out of action (S9b done-when) ---------------
 # Baseline on the S9 build, traced over 80 matches (seeds 1-40, both bases):
 # Germany 0.41, USA 0.33 per match. The bar is "clearly above the baseline".
+# Those are distinct vehicles per match, and so is the measure since S9b Fix.
 [[target]]
 id = "T88a"
 metric = "skirmish160.factions.germany.s9_derived.gun_armour_out_per_match"

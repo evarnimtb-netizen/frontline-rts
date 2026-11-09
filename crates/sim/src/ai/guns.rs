@@ -1,8 +1,8 @@
 //! S9 AI habits for AT guns (`docs/slices/S9-at-guns.md` 12; `[ai.guns]`).
 //! One saved job per own gun ([`AiGun`], keyed by the gun's squad):
 //!
-//! * **Site** (S9b). The most threatened own or contested point. The
-//!   corridor is where enemy armour drives to it: the vehicle path from
+//! * **Site** (S9b). The most threatened own or contested point; with the
+//!   enemy holding them all the gun waits where it is. The corridor is where enemy armour drives to it: the vehicle path from
 //!   each seen enemy armoured vehicle (at most `corridor_paths`, nearest
 //!   first), or from the enemy base with none seen, sampled every
 //!   `corridor_step_m` over its last `corridor_m`, at an enemy's eye
@@ -109,8 +109,6 @@ pub struct AiGun {
     pub pit_by: Option<SquadId>,
     /// A pit was ordered (never twice at one place).
     pub pit: bool,
-    /// The point whose approach the site was chosen for.
-    pub point: FxVec2,
     /// The site was chosen with cover: the gun must end up on it.
     pub site_cover: bool,
     /// Tick a vehicle was last in reach (or the gun came to Hold).
@@ -360,6 +358,22 @@ fn best_site(q: &SiteSearch, a: &AiGunsTuning) -> Option<(FxVec2, FxVec2, bool)>
     choose_site(&sites, cut).map(|b| (b.pos, b.facing, b.cover))
 }
 
+/// The own or contested point a gun covers: the most armour, then threat,
+/// then priority, then the first. `None` when the enemy holds them all: a
+/// site around such a point is the enemy's ground.
+fn point_to_cover(points: &[PointEval]) -> Option<usize> {
+    (0..points.len())
+        .filter(|&i| points[i].rel != Rel::Enemy)
+        .max_by_key(|&i| {
+            (
+                points[i].armour,
+                points[i].threat,
+                points[i].priority,
+                -(i as i64),
+            )
+        })
+}
+
 /// The gun's main-gun rounds, loaded one included.
 fn rounds_of(vs: &crate::vehicle::VehicleState) -> u32 {
     vs.ammo.iter().map(|&n| n as u32).sum::<u32>() + u32::from(vs.loaded.is_some())
@@ -480,12 +494,11 @@ impl super::Planner<'_> {
             job.phase = GunPhase::Site;
         }
         if job.phase == GunPhase::Site {
-            let Some((site, facing, point, cover)) = self.gun_site(t, points, known, kv) else {
+            let Some((site, facing, cover)) = self.gun_site(t, points, known, kv) else {
                 return;
             };
             job.site = site;
             job.facing = facing;
-            job.point = point;
             job.site_cover = cover;
             job.moved_to = t.pos;
             job.moved_at = 0;
@@ -1001,30 +1014,19 @@ impl super::Planner<'_> {
         }
     }
 
-    /// Where the gun goes: `(site, the point it faces, the point it
-    /// covers, whether the site has cover)` (module docs).
+    /// Where the gun goes: `(site, the point it faces, whether the site
+    /// has cover)` (module docs). `None` leaves it where it is.
     fn gun_site(
         &self,
         t: &MyTank,
         points: &[PointEval],
         known: &[Known],
         kv: &[KnownVehicle],
-    ) -> Option<(FxVec2, FxVec2, FxVec2, bool)> {
+    ) -> Option<(FxVec2, FxVec2, bool)> {
         let g = self.g;
         let s = &g.setup;
         let a = &s.rules.ai.guns;
-        let held = (0..points.len())
-            .filter(|&i| points[i].rel != Rel::Enemy)
-            .max_by_key(|&i| {
-                (
-                    points[i].armour,
-                    points[i].threat,
-                    points[i].priority,
-                    -(i as i64),
-                )
-            })
-            .or_else(|| (!points.is_empty()).then_some(0))?;
-        let p = points[held].pos;
+        let p = points[point_to_cover(points)?].pos;
         let enemy = (0..s.players.len() as u8)
             .map(PlayerId)
             .find(|&o| o != self.me)?;
@@ -1072,9 +1074,9 @@ impl super::Planner<'_> {
             let facing = self
                 .terrain
                 .clamp(p + dir * Fx::from_int(a.approach_m as i32));
-            return Some((site, facing, p, false));
+            return Some((site, facing, false));
         };
-        Some((site, facing, p, cover))
+        Some((site, facing, cover))
     }
 
     /// Idle infantry near a gun with no crew serve it (module docs).
@@ -1231,6 +1233,40 @@ mod tests {
             corridor_clear_m: 150,
             ..AiGunsTuning::default()
         }
+    }
+
+    fn eval(rel: Rel, armour: u32) -> PointEval {
+        PointEval {
+            pos: at(512, 512),
+            rel,
+            threat: 0,
+            armour,
+            priority: 0,
+            demand: 0,
+            assigned: 0,
+            trench: None,
+            trench_done: false,
+        }
+    }
+
+    #[test]
+    fn with_every_point_enemy_held_a_gun_has_no_point_to_cover() {
+        assert_eq!(point_to_cover(&[]), None);
+        assert_eq!(
+            point_to_cover(&[eval(Rel::Enemy, 3), eval(Rel::Enemy, 1)]),
+            None
+        );
+    }
+
+    #[test]
+    fn the_point_to_cover_is_the_most_armoured_one_not_enemy_held() {
+        let points = [
+            eval(Rel::Enemy, 9),
+            eval(Rel::Neutral, 1),
+            eval(Rel::Own, 2),
+            eval(Rel::Own, 2),
+        ];
+        assert_eq!(point_to_cover(&points), Some(2));
     }
 
     /// Enemy armour drives along y = 512 from x = 900 to the point at

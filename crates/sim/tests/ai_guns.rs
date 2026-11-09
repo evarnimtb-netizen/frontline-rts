@@ -31,6 +31,15 @@ fn run(w: &mut World, ticks: u64) -> Vec<u64> {
     h
 }
 
+/// Every corridor ends at the point, so a ring nearer than `corridor_clear_m`
+/// could never be chosen.
+#[test]
+fn the_shipped_site_rings_start_outside_the_corridor_clearance() {
+    let a = &setup(1).rules.ai.guns;
+    assert!(a.site_min_m >= a.corridor_clear_m);
+    assert!(a.site_max_m >= a.site_min_m);
+}
+
 #[test]
 #[ignore = "slow in debug: runs in the release test pass"]
 fn ai_guns_emplace_and_are_deterministic() {

@@ -1512,8 +1512,8 @@
           "site_enemy_point_m": 250,
           "site_forward_m": 0,
           "site_max_m": 250,
-          "site_min_m": 100,
-          "site_rings": 7,
+          "site_min_m": 150,
+          "site_rings": 5,
           "site_view_min_pct": 10
         },
         "infantry": {
