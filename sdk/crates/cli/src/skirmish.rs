@@ -121,6 +121,11 @@ pub struct SkirmishArgs {
     /// diagnostics: position, order, speed, flags, components, target).
     #[arg(long)]
     pub trace_vehicles: bool,
+    /// Write the gun trace to this file (S9b diagnostics, `gun_trace.rs`:
+    /// armour events and, every 5 game seconds, every vehicle and each
+    /// gun's sight lines). Single matches only.
+    #[arg(long, value_name = "FILE", conflicts_with = "seeds")]
+    pub gun_trace: Option<PathBuf>,
     /// Tuning override (S3b): a partial TOML file merged onto the rules
     /// and defs (`docs/modding/tuning.md`). Repeatable; applied in order.
     /// Changes the match, so hashes differ.
@@ -173,6 +178,7 @@ impl Default for SkirmishArgs {
             paced: false,
             report: ReportFormat::Text,
             trace_vehicles: false,
+            gun_trace: None,
             rules_override: Vec::new(),
             seeds: None,
             both_bases: false,
@@ -1006,6 +1012,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     // S4: own population at POP_MINUTES, per player.
     let n_players = world.match_setup().map_or(0, |s| s.players.len());
     let mut pop_at: Vec<[Option<u32>; 3]> = vec![[None; 3]; n_players];
+    let mut gun_trace = match &args.gun_trace {
+        Some(p) => Some(crate::gun_trace::GunTrace::create(p, &world)?),
+        None => None,
+    };
     while running(&world) && world.tick() < limit {
         if args.paced {
             let deadline = start + period * (world.tick() - start_tick) as u32;
@@ -1052,10 +1062,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         if args.trace_vehicles && world.tick().is_multiple_of(10 * hz) {
             trace_vehicles(&world);
         }
+        if let Some(t) = gun_trace.as_mut() {
+            t.observe(&world)?;
+        }
         maybe_save(&world, false)?;
     }
     let wall = start.elapsed();
     maybe_save(&world, true)?;
+    if let Some(t) = gun_trace {
+        t.finish()?;
+    }
     s3c.finish();
 
     let threshold = (peak * PEAK_SHARE_PCT).div_ceil(100);

@@ -26,6 +26,7 @@ pub mod armour_test;
 pub mod ballistics;
 pub mod desync_diff;
 pub mod fortify;
+pub mod gun_trace;
 pub mod json_out;
 pub mod lower;
 pub mod mortar_bench;
