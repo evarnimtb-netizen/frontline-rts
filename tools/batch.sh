@@ -70,7 +70,13 @@ run_one() { # OUT.json OVERRIDES... -- SUBCOMMAND ARGS...
         return 0
     fi
     local jobs=()
-    case " ${args[*]} " in *" --seeds "* | *" mortar-bench "*) jobs=(--jobs "$JOBS") ;; esac
+    # Only these two subcommands take --jobs (armour-test and fortify-test do not).
+    case "${args[0]}" in skirmish | mortar-bench) jobs=(--jobs "$JOBS") ;; esac
+    # A single match has no --jobs either; a caller's own --jobs wins.
+    case " ${args[*]} " in *" --jobs "*) jobs=() ;; esac
+    if [ "${args[0]}" = skirmish ]; then
+        case " ${args[*]} " in *" --seeds "*) ;; *) jobs=() ;; esac
+    fi
     local t0=$SECONDS
     "$SNAP/frontline-cli" "${args[@]}" --mods "$SNAP/mods/ww2" ${ovargs[@]+"${ovargs[@]}"} ${jobs[@]+"${jobs[@]}"} --json "$out" >"$txt" 2>&1
     local rc=$?

@@ -40,7 +40,7 @@ timed check_full tools/check.sh full
 cat "$O/check_full.txt" >>"$SUM"
 
 # 2. Tick time: 40 matches at 3 jobs, alone, never from the cache.
-timed timing40 env BATCH_NO_CACHE=1 BATCH_JOBS=3 tools/batch.sh "$O/timing40.json" -- \
+timed run_timing40 env BATCH_NO_CACHE=1 BATCH_JOBS=3 tools/batch.sh "$O/timing40.json" -- \
     skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45
 cp "$O/timing40.json" "$O/skirmish40.json"
 python3 -I -c "
@@ -51,7 +51,7 @@ print('tick p99 ms:', json.dumps(t))" | tee -a "$SUM"
 # 3. The 160 sets, and beside them the armour, fortify and mortar runs.
 side() {
     timed fortify tools/batch.sh "$O/fortify10.json" -- fortify-test --seeds 10
-    timed armour5 tools/batch.sh "$O/armour5.json" -- armour-test --seeds 5
+    timed run_armour5 tools/batch.sh "$O/armour5.json" -- armour-test --seeds 5
     timed armour_stress tools/batch.sh "$O/armour_stress10.json" -- armour-test --stress --seeds 10
     timed mortar_bench "$C" mortar-bench --seeds 10 --jobs 2
 }
