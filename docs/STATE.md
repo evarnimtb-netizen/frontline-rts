@@ -74,7 +74,7 @@ Balance (after Fix, 3 x 160 sets, pooled 480): Germany **45.6 %** (sets 48.75 / 
 Guns fire in 74-78 % (GER) and 69-72 % (USA) of matches (T80 floor 60); in cover 83-86 % (T81 passes); gun MP 17-19 %;
 tank knock-outs by guns 36 GER / 16 USA per 480 matches (S9-17: guns kill few tanks).
 
-Checks: `check.sh quick` 640 passed; release 676 passed, 0 failed (Fix). Tick p99 clean run 0.487 / 0.602 ms at jobs 3
+Checks: `check.sh quick` 640 passed; release 676 passed, 0 failed (Fix). Tick p99 clean run 0.433 / 0.534 ms at jobs 3
 (baseline 0.441 / 0.532; Build C's 0.653 did not reproduce). Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
 
 ## S8b (branch `s8b-trucks-recon`, not on main)
@@ -103,7 +103,7 @@ Source: `docs/TODO.md` "Owner decisions in force" (full text in the archive).
 
 - Balance: S9 pooled 45.6 % but 14 hard target misses (S9-19). T5c and T50e are known noise (S8a-30, S8b-27).
 - Guns earn little (S9-17): no corridor search, no re-siting on contact. T87 `gun_ai_fails` counted, not analysed.
-- Tick: S9 clean run +10 % / +13 % (under the 25 % trigger); the Build C rise did not reproduce.
+- Tick: S9 final clean run 0.433 / 0.534 ms, level with the baseline 0.441 / 0.532; the Build C rise did not reproduce.
 - Not verified in S9: the eliminated-player path (a surrender ends the 1v1); a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck (sim tests cover it). Structures cannot be selected in the HUD (S6-18).
   AI rarely throws satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.

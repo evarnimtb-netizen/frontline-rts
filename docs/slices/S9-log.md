@@ -110,6 +110,7 @@ Baseline (verify-src `timing40`): p99 0.441 all / 0.532 peak.
 - Build C clean run: 0.653 / 0.769 (+48 % / +45 %). `sample` on six long matches found no gun function in the top stacks (1-2 of about 19000 samples).
 - Review, two clean runs alone: 0.414 / 0.519 and 0.419 / 0.519. The Build C rise did not reproduce, so it is not a property of the code.
 - Fix, clean `timing40` at `--jobs 3`, alone: 0.487 / 0.602 (+10 % / +13 %), under the 25 % profiling trigger. T14a passes.
+- Orchestrator verify on `fee52a7`, same clean run: 0.433 / 0.534, level with the baseline. 40 of 40 hashes, 676 tests, 252 of 267 targets, pool 45.62 % (219 of 480).
 
 Build C's 0.653 is unexplained; the later clean runs do not show it.
 
