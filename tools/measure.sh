@@ -25,6 +25,11 @@ mkdir -p "$OUT"
         grep -E '^error' -A6 "$OUT/build.log" | head -20
         exit 1
     fi
+    # One snapshot of the binary and mods for all four runs: later rebuilds
+    # and TOML edits do not reach them.
+    BATCH_WORLD=$(tools/batch.sh world) || exit 1
+    export BATCH_WORLD
+    echo "world $BATCH_WORLD"
     tools/batch.sh "$OUT/skirmish40.json" "$@" -- skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45
     tools/batch.sh sets "$OUT" "$@"
     python3 -I tools/pool.py ${BASELINE:+"$BASELINE"} "$OUT"

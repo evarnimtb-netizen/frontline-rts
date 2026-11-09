@@ -11,11 +11,18 @@
 # deterministic, so a second call with the same key copies the files back
 # instead of playing the matches again.
 #
+# Each call runs a snapshot of the binary and of mods/ kept under
+# target/batch-cache/world/KEY, so a rebuild or a TOML edit while a long run
+# plays cannot change it. BATCH_WORLD=KEY pins a call to a snapshot taken
+# earlier (tools/measure.sh does that for its four runs).
+#
 # Tick times in a cached file are from whichever run filled the cache: read
 # tick times only from a fresh `--jobs 3` run made with BATCH_NO_CACHE=1 on a
 # quiet machine.
 #
-# Env: BATCH_JOBS (default 6), BATCH_NO_CACHE=1 (always run, still stores).
+# Env: BATCH_JOBS (default 6), BATCH_NO_CACHE=1 (always run, still stores),
+# BATCH_WORLD (above). `tools/batch.sh world` prints the current key after
+# taking the snapshot. The cache is safe to delete: rm -rf target/batch-cache.
 set -u
 cd "$(dirname "$0")/.."
 CLI=target/release/frontline-cli
@@ -65,7 +72,7 @@ run_one() { # OUT.json OVERRIDES... -- SUBCOMMAND ARGS...
     local jobs=()
     case " ${args[*]} " in *" --seeds "* | *" mortar-bench "*) jobs=(--jobs "$JOBS") ;; esac
     local t0=$SECONDS
-    "$CLI" "${args[@]}" ${ovargs[@]+"${ovargs[@]}"} ${jobs[@]+"${jobs[@]}"} --json "$out" >"$txt" 2>&1
+    "$SNAP/frontline-cli" "${args[@]}" --mods "$SNAP/mods/ww2" ${ovargs[@]+"${ovargs[@]}"} ${jobs[@]+"${jobs[@]}"} --json "$out" >"$txt" 2>&1
     local rc=$?
     if [ $rc -eq 0 ] && [ -s "$out" ]; then
         mkdir -p "$dir"
@@ -76,10 +83,33 @@ run_one() { # OUT.json OVERRIDES... -- SUBCOMMAND ARGS...
     return $rc
 }
 
-[ -x "$CLI" ] || { echo "no $CLI: cargo build --release -p frontline-cli" >&2; exit 2; }
-WORLD=$(world_key)
+if [ -n "${BATCH_WORLD:-}" ]; then
+    WORLD=$BATCH_WORLD
+    SNAP=$CACHE/world/$WORLD
+    [ -x "$SNAP/frontline-cli" ] || { echo "no snapshot $SNAP" >&2; exit 2; }
+else
+    [ -x "$CLI" ] || { echo "no $CLI: cargo build --release -p frontline-cli" >&2; exit 2; }
+    WORLD=$(world_key)
+    SNAP=$CACHE/world/$WORLD
+    if [ ! -x "$SNAP/frontline-cli" ]; then
+        mkdir -p "$SNAP.tmp$$"
+        cp "$CLI" "$SNAP.tmp$$/frontline-cli"
+        cp -R mods "$SNAP.tmp$$/mods"
+        # Taken while something wrote the binary or mods: not a snapshot.
+        if [ "$(world_key)" != "$WORLD" ]; then
+            rm -rf "$SNAP.tmp$$"
+            echo "the binary or mods/ changed while the snapshot was taken: run again" >&2
+            exit 2
+        fi
+        mkdir -p "$CACHE/world"
+        mv "$SNAP.tmp$$" "$SNAP" 2>/dev/null || rm -rf "$SNAP.tmp$$"
+    fi
+fi
 
 case "${1:-}" in
+    world)
+        echo "$WORLD"
+        ;;
     sets)
         dir=${2:?usage: tools/batch.sh sets OUTDIR [-o OVERRIDE]...}
         shift 2
