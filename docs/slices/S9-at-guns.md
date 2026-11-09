@@ -214,3 +214,31 @@ S9-1 to S9-15 are in `docs/TODO.md` with (A) defaults. S9-1 (optic range), S9-2/
 - Gun pits: the line is under the gun, so the men dig from the rim (`dig.rs::pit_rim`, floor half plus wall) and the squad walks to a point beside the gun (`pit_approach`). Before this fix the order never reached the line; a test covers it.
 - AI digs a pit only for a gun with no woods or hull-down site; `guns_in_cover` counts the site, or the pit once the engineers finish.
 - Infantry only recrew a gun whose crew squad is gone (never one with its crew riding or walking back).
+
+## 22. Tune results
+
+No value in `mods/ww2` changed. Germany pooled stays 37.7 % (480 matches, 95 % interval about 33-42; band 45-55).
+Tests on the same three 160 sets (seeds 1-80, 101-180, 201-280, both bases), Germany %, pooled:
+
+| Change | Germany % |
+|---|---|
+| none (Build C) | 37.7 |
+| no gun bought by either side (`max_guns` 0) | 46.5 (= S8b) |
+| only one gun alive per side (`max_guns` 1) | 36.9 |
+| Sd.Kfz. 11 free (cost 1) | 41.7 |
+| Germany buys no guns (Pak 40 `ai_weight` 0) | 72.1 |
+| USA buys no guns (57 mm `ai_weight` 0) | 17.5 |
+| tuner's best corner, tractor 90 and 57 mm 460 | 38.1 |
+
+Reading: the side that buys guns loses 25-30 points to the side that does not, so a gun is worth far less than the
+tanks and infantry its price would buy in the AI's hands. The tractor explains about 4 points (the hypothesis is
+half right: its 180 MP buys nothing after the unhitch), the rest is the guns themselves. Run 1 (autotune, knobs
+tractor price 90-180 and 57 mm price 340-460, 760 matches): slopes -2.1 [-4.0, -0.2] points per 15 MP of tractor and
++1.9 [-0.8, +4.7] per 25 MP of the 57 mm; the solved level for 50 % lies outside the ranges (tractor 57, interval
+-760 to 112; 57 mm 519, unbounded), and the best corner is predicted 45.4 [37.1-54.1] but measured 38.1 on 480
+(confirmation failed, so not applied). Run 2 (knob `[ai.guns] income_max_pct` 10-35, 520 matches): 10 -> 37.5 [30-45],
+22 -> 40.5 [34-47], 35 -> 26.9 [21-34] on the tuner's own seeds; at 10 the interval still excludes 45. Halving the
+number of guns (`max_guns` 1) changed nothing, so the loss is not proportional to the money spent.
+Needs code (Fix stage): guns must earn their price in AI hands (S9-17: corridor search, re-siting, firing sooner,
+crews not idle away from the objectives), or the AI must stop buying them as a flat share (value-based buy).
+Specs and raw runs: scratchpad `s9/tune/`.
