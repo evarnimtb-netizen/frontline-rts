@@ -523,11 +523,15 @@ impl MatchState {
                 return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
             }
             w.step = WorkStep::Dig;
-        } else {
-            self.order_move(ctx, p, squad, Order::Fortify { work: id });
         }
         self.fort.next_work += 1;
         self.fort.works.insert(id, w);
+        if self.fort.works[&id].step != WorkStep::Dig {
+            let (site, _) = self.site_of(&self.fort.works[&id]);
+            self.clear_detached(ctx, squad);
+            self.squads.get_mut(&squad).expect("owned").order = Order::Fortify { work: id };
+            self.request_path(squad, site);
+        }
         self.fort.accounts[p.0 as usize].works_started += 1;
         true
     }

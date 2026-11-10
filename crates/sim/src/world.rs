@@ -2662,6 +2662,9 @@ impl World {
 mod s6_tests;
 
 #[cfg(test)]
+#[path = "s10a_tests.rs"]
+mod s10a_tests;
+#[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
 #[cfg(test)]
