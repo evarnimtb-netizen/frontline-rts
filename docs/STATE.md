@@ -1,7 +1,7 @@
 # Frontline RTS: state (read this first)
 
 Main holds S1 to S9 (`71cf02f`; S8b and S9 merged 2026-11-09). S9b (AI gun siting and budget) is on branch
-`s9b-ai-guns` (head `8aad271`), not merged, not pushed; its full suite FAILS on that head (one test, see Known gaps).
+`s9b-ai-guns` (head `1bfc92f`), not merged, pushed to the private remote; verified on that head (`tools/check.sh full` all ok).
 S8b trucks are on main too. Read the sections you need, then the doc the index names. Checked 2026-11-10.
 
 ## What the game is now
@@ -76,9 +76,9 @@ Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
 
 AI gun siting: `ai/guns.rs` searches the armour corridor (vehicle path, 25 m steps, 500 m) and picks a site that sees it
 inside the arc (`site_view_min_pct` 10), clear of enemy men, the other gun, enemy-held points and the corridor. CLI
-`gun_armour_out_per_match` counts each vehicle once. `income_max_pct` 35 kept. Pooled Germany **50.0 %** of 480; 167
-targets pass, 18 miss (hard 17); T88 misses (GER 0.54, USA 0.40 pooled). Lost to guns 26 / 19 % of armour (was 22 / 14).
-SAVE 21. Checks: quick ok; full suite 1 failed.
+`gun_armour_out_per_match` counts each vehicle once. `income_max_pct` 30 (was 35). Pooled Germany **48.75 %** of 480; 261
+targets pass, 10 miss (hard 10); T88 met for GER (0.575), not USA (0.356 pooled). Lost to guns 26 / 19 % of armour
+(was 22 / 14; 80-match trace on `a9fa303` at 35). SAVE 21. Checks on `1bfc92f`: full all ok (688 passed).
 
 ## S8b (on main, merged 2026-11-09; log `S8b-log.md`, spec `S8b-trucks-recon.md`)
 
@@ -96,16 +96,15 @@ S8a half-tracks (`S8a-halftracks.md`), S7 assault guns and TDs (`S7-casemate-td.
 
 ## Known gaps
 
-- Balance: S9 pooled 45.6 %, 14 hard misses (S9-19); S9b 50.0 % and 17 hard misses. T5c, T50e known noise (S8a-30, S8b-27).
-- S9b on `8aad271`: `ai_guns_resite_with_the_tow_and_survive_a_save` fails in `tools/check.sh tests` (Save error "a soldier's
-  rounds are inconsistent", `ai_guns.rs:105`); passed on `a9fa303`. Blocks merge. T88 armour-out below bar (S9b-1).
+- Balance: S9 pooled 45.6 %, 14 hard misses (S9-19); S9b 48.75 % and 10 hard misses (`income_max_pct` 30). T5c, T50e known noise (S8a-30, S8b-27).
+- S9b on `1bfc92f`: no failing test. The launcher save bug (`7e33e0e`) is fixed there; main has it until S9b merges. T88 for USA open (S9b-1).
 - Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck (sim tests cover it). Structures cannot be selected in the HUD (S6-18).
   AI rarely throws satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
 
 ## Roadmap position
 
-Done and on main: S1 to S9. Branch, not merged: S9b (`s9b-ai-guns`; fix the failing test and decide S9b-1 to S9b-3).
+Done and on main: S1 to S9. Branch, not merged: S9b (`s9b-ai-guns`; decide S9b-1 and S9b-3, then whether to merge).
 Next: S10a after those, then S10b, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` section 1.
 
 ## How to check work (few lines of output)

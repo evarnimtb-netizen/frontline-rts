@@ -74,18 +74,46 @@ the release test time, so binaries side by side give the speed-up without a new 
 | 9 | Short slices: the orchestrator writes the spec from a measured diagnosis; no Plan agent | 23 min, 1.4 M units | orchestrator time | applied to S9b |
 | 10 | Each new numeric target cites the rule or data line it comes from | the T76b kind of miss | none | applied (prompt rule) |
 | 11 | Build stages of at most about 50 turns, split by subsystem with a written hand-over | cache reads grow with the square of a stage's length: about 15 % | hand-over loss | not needed in S9b; for S10 |
-| 12 | Delete `target/debug` (40 GB): nothing but clippy uses it now | disk; `sccache` refills what is needed | 2 min rebuild once | owner question |
-| 13 | Fewer MCP servers, plugins and skills in this project's sessions | 65-80 k tokens on every agent turn: 15-20 % | changes the owner's setup | owner question |
-| 14 | Engine slices split into a mechanics slice (cards at `ai_weight` 0, proven neutral) and an AI and balance slice | S9's Tune, Fix and S9b were all the AI half | more owner stops | owner question |
+| 12 | Delete `target/debug` (40 GB): nothing but clippy uses it now | disk; `sccache` refills what is needed | 2 min rebuild once | owner approved; done after S9b's verify |
+| 13 | Fewer MCP servers, plugins and skills in this project's sessions | 65-80 k tokens on every agent turn: 15-20 % | changes the owner's setup | owner asked for the list (S9b report); nothing changed |
+| 14 | Engine slices split into a mechanics slice (cards at `ai_weight` 0, proven neutral) and an AI and balance slice | S9's Tune, Fix and S9b were all the AI half | more owner stops | owner approved: from S10 on |
 | 15 | Parallel worktrees for sim, presenter, docs | none here | 8 GB RAM, 13 GB free, one target dir serialises cargo | rejected for this machine |
 
 ## 5. Models (owner rule 2026-11-09: Fable orchestrates, Opus builds and reviews, Sonnet measures and tunes, Haiku documents)
 
-In S9 the two cheaper stages each cost a correction: the Sonnet Tune compared seed sets that are not comparable and
-did not isolate the cause; the Haiku Docs left stale lines. Both were given raw reports to interpret. From S9b on the
-cheaper models get scripts that print the numbers (`measure.sh`, `pool.py`, `gun_trace.sh`) and a decision rule, so
-the judgement left to them is small. S9b's stages and what they cost are in section 6.
+In S9 the two cheaper stages each cost a correction, both given raw reports to interpret. From S9b on the cheaper
+models get scripts that print the numbers (`measure.sh`, `pool.py`, `gun_trace.sh`) and a decision rule.
 
 ## 6. S9b against S9
 
-(filled in when S9b is verified)
+| Stage | Model | Wall min | Model working | Cost units | of it re-cached |
+|---|---|---|---|---|---|
+| Build, cut off when the session ended | Opus | 23 | 9 | 1.6 M | 0 |
+| Build, retry from the hand-over | Opus | 38 | 11 | 1.2 M | 0 |
+| Budget (four values, 480 matches each) | Sonnet | 42 | 0 | 0.4 M | 0.10 M |
+| Review | Opus | 13 | 9 | 0.8 M | 0 |
+| Fix | Opus | 17 | 5 | 0.8 M | 0 |
+| Measure, twice | Sonnet | 48 | 0 | 0.5 M | 0.09 M |
+| Docs | Haiku | 5 | 3 | 0.9 M | 0 |
+| **Total** | | **186 (3.1 h)** | **37** | **6.2 M** | **0.2 M (3 %)** |
+
+S9b is a smaller slice: totals are not like for like, rates are. S9: 654 min, 36.0 M units, 48 % re-cached, about 11 % of the weekly limit. S9b: about 7 % of the weekly limit (20 to 27 %),
+including this process review and the 1.6 M of the cut-off Build. "Cost units" weigh token kinds, not model prices.
+
+After the workflow the orchestrator spent about 90 min, mostly unattended: the save bug, two 480-match measures by
+script, the verify (33 min against 42.5, with the suite still serial, 504 s of it). Polling instead of blocking took
+re-caching from 48 % to 3 %; nothing was replayed by hand; tick time was read once and was clean.
+
+Where the process still failed, all caught late:
+
+- Review found the T88 count inflated after Budget had chosen on it. A new measure needs its own test before a stage
+  decides on it.
+- Fix's last check was `quick`, without the ignored tests. The failing save test surfaced two stages later and the
+  workflow still ran Docs. The workflow gate must stop on `tests_ok: false`.
+- Docs ran before verify and had to be redone. Docs belongs after the orchestrator's verify.
+
+**Models.** Sonnet measuring by script was right in its numbers, but spent 90 min polling what a shell script does for
+nothing: from S10 the orchestrator runs `measure.sh` between stages. Sonnet's Budget ran the ablations correctly, but
+Opus Review had to correct its conclusion, so a cheap Tune needs a Review after it. Haiku Docs was accurate, at more
+cost units than Review (33 turns of small edits): give it the exact text. Opus Build, Review and Fix needed no rework
+beyond the above.
