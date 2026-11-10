@@ -80,7 +80,7 @@ pub const TRAITS: [&str; 5] = [
 pub const RESERVED_TRAITS: [&str; 4] = ["officer", "radio", "medic", "sniper"];
 
 /// Capabilities in S4, in canonical order.
-pub const CAPABILITIES: [&str; 7] = [
+pub const CAPABILITIES: [&str; 12] = [
     "dig_basic",
     "dig_full",
     "fire_mission",
@@ -88,19 +88,19 @@ pub const CAPABILITIES: [&str; 7] = [
     "vehicle_crew",
     "at_hunt",
     "gun_crew",
+    "build_structure",
+    "build_heavy",
+    "place_wire",
+    "clear_wire",
+    "breach",
 ];
 /// Capabilities the content crate derives from the members' weapons
 /// (setting them is allowed only when the weapons give them).
 pub const DERIVED_CAPABILITIES: [&str; 2] = ["fire_mission", "at_hunt"];
 /// Capabilities reserved for later slices.
-pub const RESERVED_CAPABILITIES: [&str; 13] = [
-    "build_structure",
-    "build_heavy",
-    "place_wire",
-    "clear_wire",
+pub const RESERVED_CAPABILITIES: [&str; 8] = [
     "place_mines",
     "clear_mines",
-    "breach",
     "demolish",
     "observe",
     "radio",

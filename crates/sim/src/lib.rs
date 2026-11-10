@@ -45,6 +45,7 @@ pub mod damage;
 pub mod dig;
 pub mod ecs;
 pub mod fire_mission;
+pub mod fort;
 pub mod fx;
 pub mod game;
 pub mod gunnery;

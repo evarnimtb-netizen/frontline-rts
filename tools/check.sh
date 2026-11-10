@@ -6,7 +6,8 @@
 #   tools/check.sh tests          # the orchestrator, between stages
 #   tools/check.sh full           # what the orchestrator runs before pushing
 #
-# quick: cargo fmt (applied, not only checked), clippy -D warnings (workspace), and the release
+# quick: cargo fmt (applied, not only checked), clippy -D warnings (workspace),
+#   tools/test_neutral.py, and the release
 #   tests (tools/ptest.py: test binaries three at a time, ignored tests left out)
 #   for the crates changed against BASE (default: $CHECK_BASE, else the
 #   merge-base with origin/<this branch>, else with main). Prints a pass/fail
@@ -126,6 +127,8 @@ quick() {
         bad fmt fmt
     fi
     step clippy clippy cargo clippy -q --workspace --all-targets -- -D warnings
+    # S10a: the neutrality checker's unit tests (small fixtures, < 1 s).
+    step neutral.py test_neutral python3 -I tools/test_neutral.py
     pk=$(crates_changed "$base")
     # Release, not debug: the same build the batches use, and the whole
     # workspace's tests take 6 minutes in release against 18 in debug.

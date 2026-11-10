@@ -1979,6 +1979,100 @@ impl AiMortarTuning {
     }
 }
 
+tuning_table! {
+    /// S10a `[fortify.tiers.*]`: a tier's work rates (% of the field rate).
+    pub struct TierTuning {
+        /// % build rate of a builder of this tier.
+        build_pct: 0..=1000,
+        /// % wire-cutting rate of a cutter of this tier.
+        cut_pct: 0..=1000,
+    }
+}
+
+impl TierTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+}
+
+/// S10a `[fortify.tiers]`: field, assault and construction engineers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FortTiers {
+    pub field: TierTuning,
+    pub assault: TierTuning,
+    pub construction: TierTuning,
+}
+
+/// S10a `[fortify]`: fortifications, wire, materials and breaching
+/// (docs/slices/S10a-fortifications.md 3.2). A plain struct, not a
+/// `tuning_table!`, because it holds `[fortify.tiers]`; its flat keys are
+/// in [`FortTuning::KEYS`] (and [`TABLES`]) all the same.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FortTuning {
+    /// % of a man's speed inside a standing wire band.
+    pub wire_speed_pct: u32,
+    /// A* cost of a wire node for infantry (%).
+    pub wire_path_cost_pct: u32,
+    /// % of `frag_damage` a fragment crossing a wire section deals to it.
+    pub wire_frag_pct: u32,
+    /// s per wire section at 100 %.
+    pub cut_s: u32,
+    /// m: `CutWire` takes the nearest standing section within this.
+    pub cut_reach_m: u32,
+    /// m: builders draw from an own construction crate or truck this close.
+    pub material_reach_m: u32,
+    /// Construction kg one man carries.
+    pub carry_kg_per_man: u32,
+    /// MP per t of construction material at base.
+    pub construction_mp_per_t: u32,
+    /// hp a non-bursting main-gun round takes from a piece.
+    pub shot_piece_damage: u32,
+    pub tiers: FortTiers,
+}
+
+impl FortTuning {
+    /// The flat keys with their ranges.
+    pub const KEYS: &'static [TuningKey] = &[
+        ("wire_speed_pct", 1, 100),
+        ("wire_path_cost_pct", 100, 10_000),
+        ("wire_frag_pct", 0, 100),
+        ("cut_s", 1, 600),
+        ("cut_reach_m", 1, 200),
+        ("material_reach_m", 1, 100),
+        ("carry_kg_per_man", 0, 100),
+        ("construction_mp_per_t", 0, 100_000),
+        ("shot_piece_damage", 0, 10_000),
+    ];
+
+    fn values(&self) -> [u32; 9] {
+        [
+            self.wire_speed_pct,
+            self.wire_path_cost_pct,
+            self.wire_frag_pct,
+            self.cut_s,
+            self.cut_reach_m,
+            self.material_reach_m,
+            self.carry_kg_per_man,
+            self.construction_mp_per_t,
+            self.shot_piece_damage,
+        ]
+    }
+
+    /// Range checks (`table` is `fortify`).
+    pub fn check(&self, table: &str, out: &mut Vec<Issue>) {
+        for ((k, lo, hi), v) in Self::KEYS.iter().zip(self.values()) {
+            check_range(out, table, k, v, *lo, *hi);
+        }
+        self.tiers.field.check(&format!("{table}.tiers.field"), out);
+        self.tiers
+            .assault
+            .check(&format!("{table}.tiers.assault"), out);
+        self.tiers
+            .construction
+            .check(&format!("{table}.tiers.construction"), out);
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -2015,6 +2109,10 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("items.throw", ThrowTuning::KEYS),
     ("dig.common", DigCommonTuning::KEYS),
     ("call_in", CallInTuning::KEYS),
+    ("fortify", FortTuning::KEYS),
+    ("fortify.tiers.field", TierTuning::KEYS),
+    ("fortify.tiers.assault", TierTuning::KEYS),
+    ("fortify.tiers.construction", TierTuning::KEYS),
 ];
 
 /// Every tuning table of a rules def or setup, for [`check_tuning`].
@@ -2046,6 +2144,7 @@ pub(crate) struct TuningRefs<'a> {
     pub fire: &'a FireTuning,
     pub ai_ammo: &'a AiAmmoTuning,
     pub fire_mission: Option<&'a FireMissionTuning>,
+    pub fortify: Option<&'a FortTuning>,
     pub ai_mortar: &'a AiMortarTuning,
     pub ai_supply: &'a AiSupplyTuning,
     pub ai_transport: &'a AiTransportTuning,
@@ -2103,6 +2202,9 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_ammo.check(&p("ai.ammo"), out);
     if let Some(fm) = t.fire_mission {
         fm.check(&p("fire_mission"), out);
+    }
+    if let Some(f) = t.fortify {
+        f.check(&p("fortify"), out);
     }
     t.ai_mortar.check(&p("ai.mortar"), out);
     t.ai_supply.check(&p("ai.supply"), out);

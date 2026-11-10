@@ -254,6 +254,9 @@ pub struct VehicleState {
     /// S8b (section 7): a supply truck's stock in grams, by
     /// `SupplyKind::index` (0 on every other vehicle).
     pub cargo_g: [u32; 3],
+    /// S10a: a truck's construction material in grams (outside `cargo_g`;
+    /// `cargo_g` plus this stays within `cap_kg_total`).
+    pub material_g: u32,
     /// S8b: `DropCrates` in progress (only on a truck).
     pub drop: Option<CrateDrop>,
     /// Ticks the engine fire has burned (0: not burning).
@@ -415,6 +418,7 @@ impl VehicleState {
             since_fire: u16::MAX,
             still_ticks: 0,
             cargo_g: [0; 3],
+            material_g: 0,
             drop: None,
             burn: 0,
             ammo_fire: 0,
@@ -682,6 +686,11 @@ impl VehicleState {
             // S8b: cargo only on a truck, within its cap; a wreck holds none.
             || self.cargo_g.iter().any(|&g| g > v.supply.map_or(0, |t| t.cap_g))
             || (self.wreck_tick.is_some() && self.cargo_g != [0; 3])
+            // S10a: material only on a truck, cargo plus material within its cap.
+            || self.cargo_g.iter().map(|&g| g as u64).sum::<u64>() + self.material_g as u64
+                > v.supply.map_or(0, |t| t.cap_g) as u64
+                && self.material_g > 0
+            || (self.wreck_tick.is_some() && self.material_g != 0)
             || self.drop.is_some_and(|d| {
                 v.supply.is_none()
                     || self.wreck_tick.is_some()

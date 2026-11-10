@@ -284,6 +284,7 @@ pub fn item_kind(name: &str) -> Option<ItemKind> {
         "smoke" => ItemKind::Smoke,
         "satchel" => ItemKind::Satchel,
         "panzerfaust" => ItemKind::SingleShotAt,
+        "bangalore" => ItemKind::Bangalore,
         _ => return None,
     })
 }
@@ -294,6 +295,7 @@ pub fn item_name(k: ItemKind) -> &'static str {
         ItemKind::Smoke => "smoke",
         ItemKind::Satchel => "satchel",
         ItemKind::SingleShotAt => "panzerfaust",
+        ItemKind::Bangalore => "bangalore",
     }
 }
 

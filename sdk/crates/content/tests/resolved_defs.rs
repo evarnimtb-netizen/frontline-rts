@@ -120,15 +120,18 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S9 Fix re-recorded it (`[ai.guns]` arrive_cover_m, resite_idle_s, resite_max).
 // S9b re-recorded it (`[ai.guns]` corridor siting keys, `site_spread_deg` gone).
 // S9b Fix re-recorded it (default `site_min_m` 150 and `site_rings` 5: the same rings).
+// S10a layout (forts, pits, [fortify], Bangalore, capability bits) changed it;
+// the S9b values were 0xd3b9ad98eca65f60, 0xbce818eb2c6f70da,
+// 0x35297646d7e6b530, 0xd3b9ad98eca65f60, 0xb23d38c337cb5d20, 0x44ea26e805c4ec44.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xd3b9ad98eca65f60),
-    ("skirmish usa-ger seed 7 hard", 0xbce818eb2c6f70da),
-    ("test_unlock ger-usa seed 1 normal", 0x35297646d7e6b530),
-    ("example override ger-usa seed 1 normal", 0xd3b9ad98eca65f60),
-    ("human ger vs ai usa seed 3 easy", 0xb23d38c337cb5d20),
+    ("skirmish ger-usa seed 1 normal", 0xa0584615a71b264a),
+    ("skirmish usa-ger seed 7 hard", 0x8984ca27a8ea7eb4),
+    ("test_unlock ger-usa seed 1 normal", 0x2ba46897da09a2dd),
+    ("example override ger-usa seed 1 normal", 0xa0584615a71b264a),
+    ("human ger vs ai usa seed 3 easy", 0xc134756107a940f9),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x44ea26e805c4ec44,
+        0xdafb30aa4eb8084c,
     ),
 ];
 

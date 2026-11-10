@@ -708,7 +708,8 @@ impl MatchFrame {
                 Order::Recrew { vehicle } => v.follow = Some(vehicle.0),
                 // S8a: the transport it walks to or rides in.
                 Order::Embark { vehicle } => v.follow = Some(vehicle.0),
-                Order::Idle | Order::Retreat => {}
+                // S10a: building or cutting (Build C draws sites and wire).
+                Order::Idle | Order::Retreat | Order::Fortify { .. } | Order::CutWire { .. } => {}
             }
             self.squads.push(v);
         }

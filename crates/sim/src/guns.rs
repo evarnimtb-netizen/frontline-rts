@@ -1017,7 +1017,9 @@ impl MatchState {
             | CommandKind::Build { squad, .. }
             | CommandKind::IssueCrate { squad, .. }
             | CommandKind::PlaceCrate { squad, .. }
-            | CommandKind::PickUpCrate { squad, .. } => Some(*squad),
+            | CommandKind::PickUpCrate { squad, .. }
+            | CommandKind::Fortify { squad, .. }
+            | CommandKind::CutWire { squad, .. } => Some(*squad),
             CommandKind::Recrew { squad, vehicle } => {
                 let serving_it = self
                     .vehicles

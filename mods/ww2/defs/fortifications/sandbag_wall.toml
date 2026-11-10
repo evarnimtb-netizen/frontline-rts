@@ -1,0 +1,22 @@
+# S10a sandbag wall (docs/slices/S10a-fortifications.md 3.1): a line, one
+# 2 m piece per segment, built by field or construction engineers
+# (build_structure, S10a-1 (A)). Design 7.6: 20 s and 30 kg per 2 m.
+# Sizes, hp and the limit are starting values (verify). armour_mm 100 is
+# above every fragment's frag_pen_mm (12 max, S8a-13) and every small-arms
+# penetration, so only HE and main-gun shot damage it.
+id = "ww2:sandbag_wall"
+name = "Sandbag wall"
+shape = "line"
+capability = "build_structure"
+materials_kg = 30
+work_s = 20
+work_men = 5
+limit_per_player = 40
+segment_cm = 200
+max_length_m = 20
+max_slope_pct = 25
+pieces = [{ part = "sandbag", size_cm = [200, 60, 90], armour_mm = 100, hp = 400 }]
+sources = [
+    "infantry-structures.md 7.6: sandbag wall 20 s and 30 kg per 2 m",
+    "infantry-structures.md 7.1: max slope 25 %",
+]

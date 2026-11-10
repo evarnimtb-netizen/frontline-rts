@@ -157,6 +157,8 @@ pub(crate) fn engage(order: &Order) -> Engage {
         Order::Recrew { .. } | Order::Embark { .. } => Engage::Still,
         // Holding; area fire replaces target search (`aim_and_fire`).
         Order::Suppress { .. } => Engage::Still,
+        // S10a: building or cutting, as digging.
+        Order::Fortify { .. } | Order::CutWire { .. } => Engage::Still,
     }
 }
 
@@ -1851,8 +1853,9 @@ pub(crate) enum Blow {
     Stopped(SimId),
     /// S6: a round that does not burst stopped on static box `idx` (this
     /// tick's `MatchState::statics`): it takes `bullet_box_damage` (small
-    /// arms) or `shell_box_damage` (a main-gun round).
-    Static(u32),
+    /// arms) or `shell_box_damage` (a main-gun round). S10a: the second
+    /// field is the range from the muzzle (a piece's armour gate).
+    Static(u32, Fx),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -2195,7 +2198,7 @@ pub(crate) fn fly(
                 events.push(ev(if bursts {
                     Blow::Burst(p.pos)
                 } else {
-                    Blow::Static(k as u32)
+                    Blow::Static(k as u32, (p.pos - p.origin).xy().length())
                 }));
                 ended.push((slot_id, ProjectileEnd::VehicleHit));
                 *slot = None;
@@ -2380,7 +2383,10 @@ impl MatchState {
             if dist > supp_r && dist > blast_r {
                 continue;
             }
-            let clear = ctx.terrain.line_of_sight(lift, body) && self.out_of_box(b, lift, body);
+            // S10a: overhead cover: no piece of another player between.
+            let clear = ctx.terrain.line_of_sight(lift, body)
+                && self.out_of_box(b, lift, body)
+                && !self.piece_between(lift, body, b.player);
             if dist <= supp_r {
                 let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
                     / supp_r.raw().max(1) as i64) as u32;
@@ -2705,7 +2711,17 @@ impl MatchState {
                     let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
                     let dmg = (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS))
                         as u32;
-                    static_hits.push((k, dmg));
+                    // S10a: a piece takes a fragment only when the
+                    // fragment's pen there beats its armour (S8a rule).
+                    let armour = self.statics.0.get(k).map_or(0, |sb| sb.armour_mm);
+                    let pierces = armour == 0
+                        || Fx::from_raw(
+                            ((he.frag_pen_mm as i64 * pct.raw() as i64) / 100).min(i32::MAX as i64)
+                                as i32,
+                        ) > Fx::from_int(armour as i32);
+                    if pierces {
+                        static_hits.push((k, dmg));
+                    }
                     ctx.stats.frag_hits += 1;
                 }
                 continue;
@@ -3039,13 +3055,37 @@ impl MatchState {
                     self.suppress_riders(ctx, v, e.weapon, &rules);
                     None
                 }
-                Blow::Static(k) => {
+                Blow::Static(k, range) => {
                     ctx.stats.rounds_stopped += 1;
                     let sp = self.setup.rules.supply.as_ref();
-                    let dmg = if e.ammo == NO_AMMO {
-                        sp.map_or(0, |s| s.bullet_box_damage)
-                    } else {
-                        sp.map_or(0, |s| s.shell_box_damage)
+                    let piece = self
+                        .statics
+                        .0
+                        .get(k as usize)
+                        .filter(|sb| matches!(sb.of, crate::structures::StaticRef::Piece(_)))
+                        .map(|sb| sb.armour_mm);
+                    let dmg = match piece {
+                        // S10a: a bullet damages a piece only when its pen
+                        // at that range beats the piece's armour; a solid
+                        // main-gun round takes `shot_piece_damage`.
+                        Some(armour) if e.ammo == NO_AMMO => {
+                            let w = &self.setup.weapons[e.weapon as usize];
+                            let reach =
+                                armour::small_reach(w, Fx::from_int(armour as i32), Fx::ONE);
+                            if reach > Fx::ZERO && range <= reach {
+                                sp.map_or(0, |s| s.bullet_box_damage)
+                            } else {
+                                0
+                            }
+                        }
+                        Some(_) => self
+                            .setup
+                            .rules
+                            .fortify
+                            .as_ref()
+                            .map_or(0, |f| f.shot_piece_damage),
+                        None if e.ammo == NO_AMMO => sp.map_or(0, |s| s.bullet_box_damage),
+                        None => sp.map_or(0, |s| s.shell_box_damage),
                     };
                     self.hit_static(k as usize, dmg, None, ctx.tick);
                     None

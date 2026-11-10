@@ -77,6 +77,8 @@ pub struct ModDefs {
     pub cartridges: BTreeMap<String, CartridgeDef>,
     /// S6: HQ, dump and crate defs (`defs/supply/`).
     pub supply: BTreeMap<String, crate::defs::StockDef>,
+    /// S10a: fortification blueprints (`defs/fortifications/`).
+    pub forts: BTreeMap<String, crate::defs::FortDef>,
     /// S4: every def file as parsed TOML before `extends` (the SDK view).
     /// Tuning overrides patch these and every def resolves again.
     #[serde(skip)]
@@ -97,6 +99,7 @@ impl PartialEq for ModDefs {
             && self.training == o.training
             && self.cartridges == o.cartridges
             && self.supply == o.supply
+            && self.forts == o.forts
     }
 }
 
@@ -527,6 +530,12 @@ impl ModDefs {
             crate::defs::StockDef::validate,
             &mut is[k("supply")],
         );
+        let forts = plain(
+            raw,
+            "fortifications",
+            crate::defs::FortDef::validate,
+            &mut is[k("fortifications")],
+        );
         let factions = plain(
             raw,
             "factions",
@@ -557,6 +566,7 @@ impl ModDefs {
         self.training = training;
         self.cartridges = cartridges;
         self.supply = supply;
+        self.forts = forts;
         out
     }
 
@@ -938,6 +948,13 @@ impl ModDefs {
             &mut out,
         );
         diff(&before.supply, &self.supply, at("supply"), all, &mut out);
+        diff(
+            &before.forts,
+            &self.forts,
+            at("fortifications"),
+            all,
+            &mut out,
+        );
         diff(
             &before.rules,
             &self.rules,

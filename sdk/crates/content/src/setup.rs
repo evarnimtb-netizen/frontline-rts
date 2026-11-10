@@ -202,6 +202,64 @@ pub struct MatchSetup {
     pub cartridges: Vec<CartridgeSetup>,
     /// S6: HQ, dump and crate defs (`defs/supply/`), sorted by id.
     pub stocks: Vec<StockSetup>,
+    /// S10a: fortification blueprints (`defs/fortifications/`), sorted by
+    /// id; the same for every faction.
+    pub forts: Vec<FortSetup>,
+}
+
+pub use crate::defs::FortShape;
+
+/// S10a: one lowered piece box of a blueprint.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PieceSetup {
+    /// Index into `defs::PIECE_PARTS`.
+    pub part: u8,
+    /// Half extents (along the facing, across, up).
+    pub half: [Fixed; 3],
+    /// Offset in the facing frame; z of the box bottom.
+    pub offset: [Fixed; 3],
+    pub armour_mm: u32,
+    pub hp: u32,
+    /// z from the undug surface (a roof over a pit).
+    pub z_from_base: bool,
+}
+
+/// S10a: a wire blueprint's band, lowered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WireSetup {
+    pub band: Fixed,
+    pub height: Fixed,
+    pub hp: u32,
+}
+
+/// S10a: a lowered blueprint (`FortDef`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FortSetup {
+    pub id: String,
+    pub name: String,
+    pub shape: FortShape,
+    pub pit: Option<DigProfile>,
+    /// `Capability` bit index (`build_structure` or `place_wire`).
+    pub capability: u8,
+    /// Point: the whole work; line: per segment.
+    pub materials_g: u32,
+    pub work_ticks: u32,
+    pub work_men: u32,
+    pub limit_per_player: u32,
+    pub min_spacing: Fixed,
+    pub max_slope_pct: u32,
+    pub segment: Fixed,
+    pub max_length: Fixed,
+    pub pieces: Vec<PieceSetup>,
+    pub wire: Option<WireSetup>,
+}
+
+/// S10a: a Bangalore item's charge, lowered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BangaloreSetup {
+    pub length: Fixed,
+    pub bursts: u8,
+    pub place_ticks: u32,
 }
 
 pub use crate::defs::StockKind;
@@ -352,6 +410,9 @@ pub struct RulesSetup {
     pub dump_pit: DigSetup,
     /// S9: an AT gun pit.
     pub gun_pit: DigSetup,
+    /// S10a: the MG nest's and the dugout's pits.
+    pub mg_nest_pit: DigSetup,
+    pub dugout_pit: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
     /// Vehicle rules (S3).
@@ -370,6 +431,8 @@ pub struct RulesSetup {
     /// S5b: `[fire_mission]`; `None` (legacy content): missions run as the
     /// old barrage (S5b-1 (A)).
     pub fire_mission: Option<FireMissionTuning>,
+    /// S10a: `[fortify]`; `None`: nothing can be built.
+    pub fortify: Option<crate::tuning::FortTuning>,
 }
 
 impl RulesSetup {
@@ -382,6 +445,8 @@ impl RulesSetup {
             DigProfile::HqPit => &self.hq_pit,
             DigProfile::DumpPit => &self.dump_pit,
             DigProfile::GunPit => &self.gun_pit,
+            DigProfile::MgNestPit => &self.mg_nest_pit,
+            DigProfile::DugoutPit => &self.dugout_pit,
         }
     }
 }
@@ -415,6 +480,10 @@ pub enum DigProfile {
     DumpPit = 4,
     /// S9: an AT gun pit (all-round spoil, engineers only).
     GunPit = 5,
+    /// S10a: the MG nest's pit (engineers only).
+    MgNestPit = 6,
+    /// S10a: the dugout's pit (engineers only).
+    DugoutPit = 7,
 }
 
 impl DigProfile {
@@ -422,7 +491,12 @@ impl DigProfile {
     pub fn is_pit(self) -> bool {
         matches!(
             self,
-            DigProfile::MortarPit | DigProfile::HqPit | DigProfile::DumpPit | DigProfile::GunPit
+            DigProfile::MortarPit
+                | DigProfile::HqPit
+                | DigProfile::DumpPit
+                | DigProfile::GunPit
+                | DigProfile::MgNestPit
+                | DigProfile::DugoutPit
         )
     }
 }
@@ -871,6 +945,8 @@ pub struct ItemSetup {
     pub weapon: Option<u16>,
     /// S5a: weight and supply kind (priced refill).
     pub supply: Option<SupplySetup>,
+    /// S10a: Bangalore items' charge.
+    pub bangalore: Option<BangaloreSetup>,
 }
 
 /// An item's blast: a weapon-style [`HeSetup`] plus its own damage and
@@ -944,10 +1020,20 @@ pub enum Capability {
     AtHunt = 5,
     /// S9: a trained gun crew (no untrained penalties at a served gun).
     GunCrew = 6,
+    /// S10a: build fortifications (field engineers).
+    BuildStructure = 7,
+    /// S10a: construction engineers (construction tier).
+    BuildHeavy = 8,
+    /// S10a: lay barbed wire.
+    PlaceWire = 9,
+    /// S10a: cut barbed wire.
+    ClearWire = 10,
+    /// S10a: assault engineers (Bangalore torpedoes; assault tier).
+    Breach = 11,
 }
 
 impl Capability {
-    pub const ALL: [Capability; 7] = [
+    pub const ALL: [Capability; 12] = [
         Capability::DigBasic,
         Capability::DigFull,
         Capability::FireMission,
@@ -955,6 +1041,11 @@ impl Capability {
         Capability::VehicleCrew,
         Capability::AtHunt,
         Capability::GunCrew,
+        Capability::BuildStructure,
+        Capability::BuildHeavy,
+        Capability::PlaceWire,
+        Capability::ClearWire,
+        Capability::Breach,
     ];
 
     #[inline]
@@ -968,7 +1059,7 @@ impl Capability {
     }
 
     /// Every capability bit.
-    pub const MASK: u32 = (1 << 7) - 1;
+    pub const MASK: u32 = (1 << 12) - 1;
 }
 
 /// S4: one `[[members]]` slot, lowered.
@@ -1362,6 +1453,11 @@ impl ModDefs {
                 supply: it.supply.as_ref().map(|sp| SupplySetup {
                     kind: sp.kind(),
                     g: sp.g,
+                }),
+                bangalore: it.bangalore.as_ref().map(|b| BangaloreSetup {
+                    length: Fixed::from_cm(b.length_cm),
+                    bursts: b.bursts.min(8) as u8,
+                    place_ticks: b.place_s.saturating_mul(hz),
                 }),
             })
             .collect();
@@ -1782,6 +1878,8 @@ impl ModDefs {
                 hq_pit: pit_setup(&rules.dig, |p| p.hq_pit.as_ref()),
                 dump_pit: pit_setup(&rules.dig, |p| p.dump_pit.as_ref()),
                 gun_pit: pit_setup(&rules.dig, |p| p.gun_pit.as_ref()),
+                mg_nest_pit: pit_setup(&rules.dig, |p| p.mg_nest_pit.as_ref()),
+                dugout_pit: pit_setup(&rules.dig, |p| p.dugout_pit.as_ref()),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -1920,6 +2018,7 @@ impl ModDefs {
                     .collect(),
                 supply: rules.supply.clone(),
                 fire_mission: rules.fire_mission.clone(),
+                fortify: rules.fortify.clone(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -1985,6 +2084,7 @@ impl ModDefs {
                 })
                 .collect(),
             stocks,
+            forts: self.forts.values().map(|d| lower_fort(d, hz)).collect(),
         };
         let issues = setup.validate();
         if issues.is_empty() {
@@ -2252,7 +2352,7 @@ fn lower_stock(
             .iter()
             .filter_map(|t| tags.iter().position(|x| x == t).map(|i| i as u16))
             .collect(),
-        supply: d.supply.as_deref().and_then(SupplyKind::from_name),
+        supply: d.supply.as_deref().and_then(SupplyKind::from_crate_name),
         g: d.kg.saturating_mul(1000),
         carry_speed_pct: d.carry_speed_pct,
         cookoff: d.cookoff.as_ref().and_then(|c| index_of(ammo.keys(), c)),
@@ -2273,6 +2373,53 @@ fn lower_stock(
                 hp: b.hp,
             })
             .collect(),
+    }
+}
+
+/// S10a: lowers one blueprint.
+fn lower_fort(d: &crate::defs::FortDef, hz: u32) -> FortSetup {
+    let cm = |v: i32| Fixed::from_ratio(v as i64, 100);
+    FortSetup {
+        id: d.id.clone(),
+        name: d.name.clone(),
+        shape: d.shape,
+        pit: d.pit,
+        capability: crate::variant::CAPABILITIES
+            .iter()
+            .position(|c| *c == d.capability)
+            .unwrap_or(Capability::BuildStructure as usize) as u8,
+        materials_g: d.materials_kg.saturating_mul(1000),
+        work_ticks: d.work_s.saturating_mul(hz),
+        work_men: d.work_men,
+        limit_per_player: d.limit_per_player,
+        min_spacing: Fixed::from_int(d.min_spacing_m as i32),
+        max_slope_pct: d.max_slope_pct,
+        segment: Fixed::from_cm(d.segment_cm),
+        max_length: Fixed::from_int(d.max_length_m as i32),
+        pieces: d
+            .pieces
+            .iter()
+            .map(|b| PieceSetup {
+                part: crate::defs::PIECE_PARTS
+                    .iter()
+                    .position(|p| *p == b.part)
+                    .unwrap_or(0) as u8,
+                half: [
+                    cm(b.size_cm[0] as i32 / 2),
+                    cm(b.size_cm[1] as i32 / 2),
+                    cm(b.size_cm[2] as i32 / 2),
+                ],
+                offset: [cm(b.offset_cm[0]), cm(b.offset_cm[1]), cm(b.offset_cm[2])],
+                armour_mm: b.armour_mm,
+                hp: b.hp,
+                z_from_base: b.z_from.as_deref() == Some("base"),
+            })
+            .collect(),
+        wire: d.wire.as_ref().map(|w| WireSetup {
+            band: Fixed::from_cm(w.band_cm),
+            height: Fixed::from_cm(w.height_cm),
+            hp: w.hp,
+        }),
     }
 }
 
@@ -2438,6 +2585,8 @@ impl MatchSetup {
             &r.hq_pit,
             &r.dump_pit,
             &r.gun_pit,
+            &r.mg_nest_pit,
+            &r.dugout_pit,
         ] {
             check(
                 d.pit_line >= Fixed::ZERO && fx_in(d.pit_line, 0, 20),
@@ -2688,6 +2837,7 @@ impl MatchSetup {
                 fire: &c.fire,
                 ai_ammo: &a.ammo,
                 fire_mission: r.fire_mission.as_ref(),
+                fortify: r.fortify.as_ref(),
                 ai_mortar: &a.mortar,
                 ai_supply: &a.supply,
                 ai_transport: &a.transport,
@@ -2715,7 +2865,15 @@ impl MatchSetup {
                 "items.values",
                 "out of range",
             );
-            let he = matches!(it.kind, ItemKind::Frag | ItemKind::Satchel);
+            let he = matches!(
+                it.kind,
+                ItemKind::Frag | ItemKind::Satchel | ItemKind::Bangalore
+            );
+            check(
+                (it.kind == ItemKind::Bangalore) == it.bangalore.is_some(),
+                "items.bangalore",
+                "a Bangalore item has a charge; other items none",
+            );
             check(
                 he == it.he.is_some() && (it.kind == ItemKind::Smoke) == it.smoke.is_some(),
                 "items.effect",

@@ -1,0 +1,14 @@
+# S10a: a crate of construction material (sandbags, timber, wire; 40 kg,
+# verify). Issued in the own base by IssueCrate { kind: Construction } and
+# paid there ([fortify] construction_mp_per_t); builders within
+# [fortify] material_reach_m draw from it. Never emptied into an HQ or dump
+# stock, never a source of rounds.
+id = "ww2:usa_construction_crate"
+name = "Construction crate"
+faction = "ww2:usa"
+kind = "crate"
+supply = "construction"
+kg = 40
+carry_speed_pct = 70
+boxes = [{ part = "crate", size_cm = [80, 40, 40], hp = 40 }]
+sources = ["S10a spec 3.3: 40 kg, carry 70 % (verify)"]

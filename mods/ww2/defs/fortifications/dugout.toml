@@ -1,0 +1,20 @@
+# S10a dugout (3.1): a 2 m pit with a 0.5 m earth-and-timber roof over it
+# (z from the undug surface). Design 7.6: 6 min, 120 kg; 5.10.3: 2 m pit,
+# 0.5 m earth. hp 250 lies between the 81 mm's damage 150 and the satchel's
+# 300 (done-when: the roof survives an 81 mm hit, breaks under heavier HE).
+id = "ww2:dugout"
+name = "Dugout"
+shape = "point"
+pit = "dugout_pit"
+capability = "build_structure"
+materials_kg = 120
+work_s = 360
+work_men = 6
+limit_per_player = 3
+min_spacing_m = 10
+max_slope_pct = 25
+pieces = [{ part = "roof", size_cm = [320, 270, 70], z_from = "base", armour_mm = 100, hp = 250 }]
+sources = [
+    "infantry-structures.md 7.6: dugout 6 min, 120 kg",
+    "SYSTEM_DESIGN.md 5.10.3: 2 m deep pit, 0.5 m of earth on the roof",
+]

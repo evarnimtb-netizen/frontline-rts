@@ -436,8 +436,11 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// optic, `[tow]` and `[vehicles.guns]` in the setup, two new components).
 /// One bump for the whole slice. 21: S9b (`[ai.guns]` in the setup:
 /// `site_spread_deg` gone, the corridor siting keys new; `AiGun::point`
-/// gone). One bump for the whole slice.
-const SAVE_VERSION: u32 = 21;
+/// gone). One bump for the whole slice. 22: S10a (`MatchState::fort`,
+/// `Order::{Fortify, CutWire}`, `VehicleState::material_g`, the forts,
+/// pits, `[fortify]`, Bangalore and capability bits in the setup). One
+/// bump for the whole slice.
+const SAVE_VERSION: u32 = 22;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -507,6 +510,8 @@ pub struct World {
     fm_events: Vec<crate::fire_mission::FireMissionEvent>,
     /// S6: refused S6 commands of this tick.
     supply_events: Vec<crate::structures::SupplyEvent>,
+    /// S10a: refused S10a commands of this tick (the snapshot: Build C).
+    fort_events: Vec<crate::fort::FortEvent>,
 }
 
 impl World {
@@ -650,6 +655,7 @@ impl World {
             recrew_events: Vec::new(),
             fm_events: Vec::new(),
             supply_events: Vec::new(),
+            fort_events: Vec::new(),
             state,
         };
         if let Some(g) = world.state.game.as_mut() {
@@ -1508,6 +1514,8 @@ impl World {
                     tick,
                     &bombs_before,
                 );
+                // S10a: fortification works (nothing to do without any).
+                game.fort_tick(&mut self.state.entities, &self.state.terrain);
                 // S5a: squads holding fire spring to discipline.
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
                 // S5b: the players' knowledge maps.
@@ -1757,6 +1765,22 @@ impl World {
         game.start_smoke(item, pos);
         if let Some(c) = game.smoke.last_mut() {
             c.age = grow.min(u16::MAX as u32) as _;
+        }
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S10a staging tool (fortify-test, tests): blueprint `fort` (index
+    /// into `MatchSetup::forts`) stands at once along `line` (point and
+    /// over_hq: `[pos, toward]`) for `owner`, every segment built, no
+    /// builder and no materials. Match worlds only.
+    pub fn build_now(&mut self, fort: u16, line: &[FxVec2], owner: PlayerId) -> bool {
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if !game.build_now(&self.state.terrain, fort, line, owner) {
+            return false;
         }
         self.refresh_hashes();
         self.fill_snapshot();
@@ -2249,6 +2273,22 @@ impl World {
         true
     }
 
+    /// S10a: refused S10a commands of the last tick.
+    pub fn fort_refusals(&self) -> &[crate::fort::FortEvent] {
+        &self.fort_events
+    }
+
+    /// S10a test edit of the fort state (hashes and snapshot refreshed).
+    pub fn edit_fort(&mut self, f: impl FnOnce(&mut crate::fort::FortState)) -> bool {
+        let Some(g) = self.state.game.as_mut() else {
+            return false;
+        };
+        f(&mut g.fort);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Kills soldier `id` at once (staged tests): a corpse, out of his
     /// squad, a loss for his owner and a kill for nobody.
     pub fn kill_soldier(&mut self, id: SimId) -> bool {
@@ -2412,6 +2452,7 @@ impl World {
         self.recrew_events.clear();
         self.fm_events.clear();
         self.supply_events.clear();
+        self.fort_events.clear();
         if let Some(game) = &mut self.state.game {
             game.take_ai_commands(&self.state.entities, self.state.tick, &mut ai);
         }
@@ -2446,6 +2487,7 @@ impl World {
                 self.recrew_events.append(&mut game.recrew_events);
                 self.fm_events.append(&mut game.fm_events);
                 self.supply_events.append(&mut game.supply_events);
+                self.fort_events.append(&mut game.fort_events);
                 continue;
             }
             let ok = match c.kind {
@@ -4316,6 +4358,7 @@ mod tests {
             trip: _,
             served: _,
             towing: _,
+            material_g: _,
         } = vs.clone();
         type Edit = Box<dyn Fn(&mut VehicleState)>;
         let edits: Vec<(&str, Edit)> = vec![
@@ -4364,6 +4407,8 @@ mod tests {
             ("components", Box::new(|v| v.components[3] -= 1)),
             ("still_ticks", Box::new(|v| v.still_ticks ^= 1)),
             ("cargo_g", Box::new(|v| v.cargo_g[0] += 1)),
+            // S10a.
+            ("material_g", Box::new(|v| v.material_g += 1)),
             (
                 "drop",
                 Box::new(|v| {

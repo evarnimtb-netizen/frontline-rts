@@ -132,6 +132,12 @@ pub(crate) fn micro_price(setup: &MatchSetup, kind: SupplyKind, g: u32) -> u64 {
         SupplyKind::SmallArms => s.small_arms_mp_per_t,
         SupplyKind::Explosives => s.explosives_mp_per_t,
         SupplyKind::Shells => s.shell_mp_per_t,
+        // S10a: priced by `[fortify] construction_mp_per_t`.
+        SupplyKind::Construction => setup
+            .rules
+            .fortify
+            .as_ref()
+            .map_or(0, |f| f.construction_mp_per_t),
     };
     g as u64 * per_t as u64
 }

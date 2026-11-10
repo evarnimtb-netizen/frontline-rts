@@ -151,6 +151,18 @@ pub enum Order {
     Embark {
         vehicle: SimId,
     },
+    /// S10a `Fortify`: build work `work` (`crate::fort`). Becomes `Idle`
+    /// when the work is done (or gone).
+    Fortify {
+        work: u32,
+    },
+    /// S10a `CutWire`: cut wire section `section`; `man` the cutter,
+    /// `work` the points done. Becomes `Idle` when the section is gone.
+    CutWire {
+        section: u32,
+        man: Option<SimId>,
+        work: u64,
+    },
 }
 
 /// [`Order`] without its payload, for the snapshot.
@@ -173,6 +185,10 @@ pub enum OrderKind {
     Recrew = 8,
     /// S8a: boarding or riding a transport.
     Embark = 9,
+    /// S10a: building a fortification.
+    Fortify = 10,
+    /// S10a: cutting wire.
+    CutWire = 11,
 }
 
 impl Order {
@@ -188,6 +204,8 @@ impl Order {
             Order::Suppress { .. } => OrderKind::Suppress,
             Order::Recrew { .. } => OrderKind::Recrew,
             Order::Embark { .. } => OrderKind::Embark,
+            Order::Fortify { .. } => OrderKind::Fortify,
+            Order::CutWire { .. } => OrderKind::CutWire,
         }
     }
 }
@@ -674,6 +692,17 @@ pub struct MatchState {
     /// player (the T20 check; empty between ticks).
     #[serde(skip)]
     pub(crate) bombs_explained: Vec<u64>,
+    /// S10a: works, pieces, wire, charges, carried kg and accounts
+    /// (`crate::fort`; saved, hashed, validated).
+    pub(crate) fort: crate::fort::FortState,
+    /// S10a: refused S10a commands, moved to the snapshot like
+    /// `supply_events` (never saved, hashed or read by the sim).
+    #[serde(skip)]
+    pub(crate) fort_events: Vec<crate::fort::FortEvent>,
+    /// S10a test switch (`empty_fort_state_changes_nothing`): skip the fort
+    /// stage. Never saved or hashed; false in play.
+    #[serde(skip)]
+    pub(crate) fort_off: bool,
 }
 
 /// S4: a man picked up a fallen man's crew weapon (presentation only).
@@ -785,6 +814,9 @@ impl MatchState {
             statics: Default::default(),
             supply_events: Vec::new(),
             bombs_explained: Vec::new(),
+            fort: crate::fort::FortState::new(setup.players.len()),
+            fort_events: Vec::new(),
+            fort_off: false,
             setup,
         }
     }
@@ -1141,6 +1173,17 @@ impl MatchState {
                 count,
                 kind,
             } => self.order_drop_crates(ctx, p, vehicle, point, count, kind),
+            CommandKind::Fortify { squad, fort, line } => {
+                self.order_fortify(ctx, p, *squad, *fort, line)
+            }
+            &CommandKind::LoadMaterials { squad, kg } => self.load_materials(ctx, p, squad, kg),
+            // S10a Build B gives these behaviour; refused until then.
+            &CommandKind::CutWire { squad, .. } => {
+                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
+            }
+            CommandKind::PlaceBangalore { .. } => {
+                self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
+            }
             CommandKind::Embark { squads, vehicle } => self.order_embark(ctx, p, squads, *vehicle),
             CommandKind::Disembark {
                 vehicles,
@@ -1965,6 +2008,8 @@ impl MatchState {
         }
         // S6.
         self.supply6.validate(s, ents, &self.squads)?;
+        // S10a.
+        self.fort.validate(s, ents, &self.squads)?;
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
@@ -2520,7 +2565,9 @@ fn command_squad(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::Build { squad, .. }
         | CommandKind::IssueCrate { squad, .. }
         | CommandKind::PlaceCrate { squad, .. }
-        | CommandKind::PickUpCrate { squad, .. } => Some(*squad),
+        | CommandKind::PickUpCrate { squad, .. }
+        | CommandKind::Fortify { squad, .. }
+        | CommandKind::CutWire { squad, .. } => Some(*squad),
         _ => None,
     }
 }

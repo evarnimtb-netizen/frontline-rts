@@ -32,7 +32,7 @@ pub const MAX_EXTENDS_DEPTH: usize = 4;
 
 /// Def kinds, by their folder under `defs/` (also the `[defs.<kind>]` names
 /// of a tuning override).
-pub const DEF_KINDS: [&str; 11] = [
+pub const DEF_KINDS: [&str; 12] = [
     "units",
     "weapons",
     "items",
@@ -44,6 +44,7 @@ pub const DEF_KINDS: [&str; 11] = [
     "training",
     "cartridges",
     "supply",
+    "fortifications",
 ];
 
 /// Legacy soldier keys of a unit (replaced by `[[members]]`).

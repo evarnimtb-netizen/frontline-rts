@@ -1,0 +1,22 @@
+# S10a MG nest (3.1): dig its pit, then a ring of three sandbag walls, 60 cm
+# above the ground (verify). Design 7.6 and SYSTEM_DESIGN 5.10.9.
+id = "ww2:mg_nest"
+name = "MG nest"
+shape = "point"
+pit = "mg_nest_pit"
+capability = "build_structure"
+materials_kg = 60
+work_s = 90
+work_men = 4
+limit_per_player = 4
+min_spacing_m = 10
+max_slope_pct = 25
+pieces = [
+    { part = "sandbag", size_cm = [60, 220, 60], offset_cm = [130, 0, 0], armour_mm = 100, hp = 400 },
+    { part = "sandbag", size_cm = [200, 60, 60], offset_cm = [0, 130, 0], armour_mm = 100, hp = 400 },
+    { part = "sandbag", size_cm = [200, 60, 60], offset_cm = [0, -130, 0], armour_mm = 100, hp = 400 },
+]
+sources = [
+    "infantry-structures.md 7.6: MG nest (sandbagged emplacement)",
+    "SYSTEM_DESIGN.md 5.10.9: compressed build times",
+]

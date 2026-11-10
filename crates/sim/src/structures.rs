@@ -251,6 +251,8 @@ pub enum StaticRef {
     /// Structure id, box index.
     Structure(u32, u8),
     Crate(u32),
+    /// S10a: a fortification piece (`crate::fort`), by piece id.
+    Piece(u32),
 }
 
 /// This tick's static boxes (derived: rebuilt each tick before the
@@ -275,6 +277,9 @@ pub struct StaticBox {
     pub frame: BoxFrame,
     /// Bounding-sphere radius around `frame.center`.
     pub reach: Fx,
+    /// S10a: armour (mm) a bullet or fragment must beat to damage it (0:
+    /// an S6 box, no gate).
+    pub armour_mm: u32,
 }
 
 impl SupplyState {
@@ -725,16 +730,26 @@ impl MatchState {
             let short = (micro - have).div_ceil(MICRO) as u32;
             return self.refuse6(p, squad, SupplyRefusal::Manpower { short });
         }
-        let paid = self.pay(p.0 as usize, kind, micro, ctx.tick);
-        debug_assert!(paid);
-        // `pay` counts a round refilled; a crate is not one.
-        let r = &mut self.players[p.0 as usize].ammo.refilled[kind.index()];
-        *r = r.saturating_sub(1);
+        if kind.is_ammo() {
+            let paid = self.pay(p.0 as usize, kind, micro, ctx.tick);
+            debug_assert!(paid);
+            // `pay` counts a round refilled; a crate is not one.
+            let r = &mut self.players[p.0 as usize].ammo.refilled[kind.index()];
+            *r = r.saturating_sub(1);
+        } else {
+            // S10a: construction is outside the three-wide arrays.
+            self.pay_micro(p.0 as usize, micro);
+            let fa = &mut self.fort.accounts[p.0 as usize];
+            fa.materials_loaded_g += g as u64;
+            fa.materials_micro += micro;
+        }
         let hz = self.setup.tick_hz as u64;
         let acc = &mut self.supply6.accounts[p.0 as usize];
         acc.issue_at = ctx.tick + sp.base_crate_issue_s as u64 * hz;
-        acc.crates_issued[kind.index()] += 1;
-        acc.crate_micro += micro;
+        if kind.is_ammo() {
+            acc.crates_issued[kind.index()] += 1;
+            acc.crate_micro += micro;
+        }
         let id = self.supply6.next_crate;
         self.supply6.next_crate += 1;
         self.supply6.crates.insert(
@@ -1007,6 +1022,10 @@ impl MatchState {
             let kind = self.setup.stocks[c.def as usize]
                 .supply
                 .unwrap_or(SupplyKind::Shells);
+            // S10a: construction crates never enter a stock.
+            if !kind.is_ammo() {
+                continue;
+            }
             let k = kind.index();
             let s = &self.supply6.structures[&sid];
             // S9: a captured crate stays a crate; it does not fit this stock.
@@ -1258,7 +1277,11 @@ impl MatchState {
         }
         for (&id, c) in &self.supply6.crates {
             let kind = self.setup.stocks[c.def as usize].supply;
-            if c.carrier.is_none() && kind != Some(SupplyKind::Shells) {
+            // S10a: a construction crate serves no rounds.
+            if c.carrier.is_none()
+                && kind != Some(SupplyKind::Shells)
+                && kind != Some(SupplyKind::Construction)
+            {
                 sources.push((Source::Crate(id), c.owner, c.pos, feed));
             }
         }
@@ -1631,6 +1654,10 @@ impl MatchState {
         if !(1..=MAX_DROP).contains(&count) {
             return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
         }
+        // S10a: trucks drop ammunition crates only.
+        if !kind.is_ammo() {
+            return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
+        }
         let Some(def) = d.crates[kind.index()] else {
             return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
         };
@@ -1845,6 +1872,23 @@ impl MatchState {
                 ));
             }
         }
+        // S10a: pieces after the S6 boxes and crates (S6 indices and ray
+        // ties unchanged).
+        for (&id, q) in &self.fort.pieces {
+            let b = &self.setup.forts[q.fort as usize].pieces[q.part as usize];
+            let half = FxVec3::new(b.half[0].into(), b.half[1].into(), b.half[2].into());
+            self.statics.0.push(StaticBox {
+                owner: q.owner.0,
+                of: StaticRef::Piece(id),
+                frame: BoxFrame {
+                    center: FxVec3::new(q.pos.x, q.pos.y, q.z + half.z),
+                    axes: Basis::hull(q.yaw, Fx::ZERO, Fx::ZERO),
+                    half,
+                },
+                reach: half.length(),
+                armour_mm: b.armour_mm,
+            });
+        }
     }
 
     /// Takes `dmg` hit points from static box `idx` (this tick's list).
@@ -1866,6 +1910,18 @@ impl MatchState {
             .expect("statics need [supply]");
         // (def, kg of shells + explosives, owner) of what broke.
         let broke: Option<(u16, u32, PlayerId)> = match b.of {
+            StaticRef::Piece(id) => {
+                let Some(q) = self.fort.pieces.get_mut(&id) else {
+                    return;
+                };
+                q.hp = q.hp.saturating_sub(dmg);
+                if q.hp > 0 {
+                    return;
+                }
+                let q = self.fort.pieces.remove(&id).expect("listed");
+                self.fort.accounts[q.owner.0 as usize].pieces_lost += 1;
+                None
+            }
             StaticRef::Crate(id) => {
                 let Some(c) = self.supply6.crates.get_mut(&id) else {
                     return;
@@ -2029,6 +2085,7 @@ fn static_box(
             half,
         },
         reach: half.length(),
+        armour_mm: 0,
     }
 }
 
@@ -2072,6 +2129,7 @@ mod tests {
                 half: FxVec3::new(Fx::ONE, Fx::ONE, Fx::ONE),
             },
             reach: Fx::from_int(reach),
+            armour_mm: 0,
         };
         let from = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
         let d = FxVec3::new(Fx::from_int(20), Fx::ZERO, Fx::ZERO);

@@ -226,4 +226,26 @@ pub enum CommandKind {
     Unhitch { guns: Vec<SimId> },
     /// Hold fire until a target is within `range_m` (0: off; capped).
     SetAmbush { guns: Vec<SimId>, range_m: u16 },
+    // ---- S10a fortifications (`crate::fort`).
+    /// Build blueprint `fort` (index into `MatchSetup::forts`): point and
+    /// over_hq `line = [pos, toward]`; line blueprints 2..=16 points, at
+    /// most `max_length_m`. Refused (a `FortEvent` in the snapshot) without
+    /// the capability, at the cap, at a bad spot (spacing, slope, off the
+    /// map, an enemy base, no own built unroofed HQ within 5 m).
+    Fortify {
+        squad: SquadId,
+        fort: u16,
+        line: Vec<FxVec2>,
+    },
+    /// Load `kg` of construction material in the own base, paid there: a
+    /// `build_structure` or `place_wire` squad carries it (up to
+    /// `carry_kg_per_man` per living man), an own truck's squad fills
+    /// `VehicleState::material_g`.
+    LoadMaterials { squad: SquadId, kg: u16 },
+    /// A `clear_wire` squad cuts the nearest standing section within
+    /// `cut_reach_m` of `at`.
+    CutWire { squad: SquadId, at: FxVec2 },
+    /// The nearest man carrying a Bangalore in a `breach` squad lays it
+    /// toward `target`.
+    PlaceBangalore { units: Vec<SimId>, target: FxVec2 },
 }

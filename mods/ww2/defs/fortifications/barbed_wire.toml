@@ -1,0 +1,19 @@
+# S10a barbed wire (3.1): a line of 2 m sections (place_wire). Design 7.6
+# and 5.10.9: 30 s and 15 kg per 10 m, so 6 s and 3 kg a section. Band
+# width, height and hp are starting values (verify).
+id = "ww2:barbed_wire"
+name = "Barbed wire"
+shape = "line"
+capability = "place_wire"
+materials_kg = 3
+work_s = 6
+work_men = 2
+limit_per_player = 50
+segment_cm = 200
+max_length_m = 30
+max_slope_pct = 25
+wire = { band_cm = 150, height_cm = 90, hp = 200 }
+sources = [
+    "infantry-structures.md 7.6: wire 30 s and 15 kg per 10 m",
+    "SYSTEM_DESIGN.md 5.10.9",
+]

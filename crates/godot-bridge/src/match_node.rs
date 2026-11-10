@@ -2977,6 +2977,8 @@ impl MatchRuntime {
                 OrderKind::Suppress => "suppress",
                 OrderKind::Recrew => "recrew",
                 OrderKind::Embark => "embark",
+                OrderKind::Fortify => "fortify",
+                OrderKind::CutWire => "cut_wire",
             }
         };
         let pos = match self.anchors.get(&s.id) {

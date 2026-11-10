@@ -1,0 +1,14 @@
+# S10a HQ dugout (3.1, S10a-4 (A)): an optional roof over an own built S6
+# HQ; the HQ itself is unchanged. 120 kg (7.2, S6-4); 120 s is a starting
+# value (verify).
+id = "ww2:hq_dugout"
+name = "HQ dugout roof"
+shape = "over_hq"
+capability = "build_structure"
+materials_kg = 120
+work_s = 120
+work_men = 5
+limit_per_player = 1
+max_slope_pct = 100
+pieces = [{ part = "roof", size_cm = [320, 270, 70], z_from = "base", armour_mm = 100, hp = 250 }]
+sources = ["infantry-structures.md 7.2: HQ dugout 120 kg (S6-4)"]

@@ -167,6 +167,35 @@ passes = 4
 all_round = true
 pit_length_cm = 250
 
+# S10a pits (docs/slices/S10a-fortifications.md 3.2), engineers only, all-round
+# spoil, the S6 rate (about 5,250 points a m3). MG nest pit: 2.2 m long, 2.0 m
+# wide, 90 cm deep (verify; about 4.4 m3, 23,000 points on a 0.2 m line).
+[dig.profiles.mg_nest_pit]
+depth_cm = 90
+floor_cm = 120
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 5
+work_per_m = 115000
+passes = 3
+all_round = true
+pit_length_cm = 220
+engineers_only = true
+
+# Dugout pit: 3.0 x 2.5 m, 2 m deep (infantry-structures 5.10.3 "2 m deep pit";
+# about 11-15 m3, 75,000 points on a 0.5 m line; verify).
+[dig.profiles.dugout_pit]
+depth_cm = 200
+floor_cm = 170
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 5
+work_per_m = 150000
+passes = 4
+all_round = true
+pit_length_cm = 300
+engineers_only = true
+
 # Every dig profile: the spoil bank shape and how close a digger works.
 # S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
@@ -1439,3 +1468,22 @@ intel_snap_m = 25            # m: map fire within this of a known cell centre, a
 
 # --- Player orders ---
 player_rounds = 6            # rounds in a mission ordered from the HUD tool (1..=50)
+
+# S10a: fortifications, wire, materials and breaching
+# (docs/slices/S10a-fortifications.md 3.2; design infantry-structures 7.1-7.7).
+[fortify]
+wire_speed_pct = 20          # % of a man's speed inside a standing wire band (roster S10 done-when; 7.6)
+wire_path_cost_pct = 500     # A* cost of a wire node for infantry (1 / 20 %)
+wire_frag_pct = 25           # % of frag_damage a fragment crossing a wire section deals to it (verify)
+cut_s = 10                   # s per wire section at 100 % (7.6: 10 s per gap)
+cut_reach_m = 25             # m: CutWire takes the nearest standing section within this of its point
+material_reach_m = 15        # m: builders draw from an own construction crate or truck this close (7.1)
+carry_kg_per_man = 20        # construction kg one man carries (verify; 7.1 "each engineer carries some")
+construction_mp_per_t = 100  # MP per t at base (verify; owner D1: every kg priced once, at base)
+shot_piece_damage = 150      # hp a non-bursting main-gun round takes from a piece (= supply.shell_box_damage)
+
+# % work rates by tier (7.7: assault clears fast, construction builds fast, clears slow).
+[fortify.tiers]
+field = { build_pct = 100, cut_pct = 100 }
+assault = { build_pct = 0, cut_pct = 200 }
+construction = { build_pct = 150, cut_pct = 50 }

@@ -310,10 +310,13 @@ pub enum ItemKind {
     /// at a vehicle like a launcher (`weapon` names the launcher def it
     /// fires as); the tube is spent.
     SingleShotAt = 3,
+    /// S10a: a Bangalore torpedo: placed, not thrown; its `[he]` bursts
+    /// `bangalore.bursts` times along `bangalore.length_cm`.
+    Bangalore = 4,
 }
 
 /// Number of [`ItemKind`]s.
-pub const ITEM_KINDS: usize = 4;
+pub const ITEM_KINDS: usize = 5;
 
 impl ItemKind {
     pub const ALL: [ItemKind; ITEM_KINDS] = [
@@ -321,12 +324,13 @@ impl ItemKind {
         ItemKind::Smoke,
         ItemKind::Satchel,
         ItemKind::SingleShotAt,
+        ItemKind::Bangalore,
     ];
 
     /// Whether the item is thrown (frag, smoke, satchel).
     #[inline]
     pub const fn thrown(self) -> bool {
-        !matches!(self, ItemKind::SingleShotAt)
+        !matches!(self, ItemKind::SingleShotAt | ItemKind::Bangalore)
     }
 
     /// Position in [`ItemKind::ALL`] (per-soldier count arrays).
@@ -374,6 +378,21 @@ pub struct ItemDef {
     /// in the base; required in a mod with a rules `[supply]` table).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supply: Option<SupplyDef>,
+    /// S10a `bangalore` items: the charge's length and bursts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bangalore: Option<BangaloreDef>,
+}
+
+/// S10a: a Bangalore torpedo's charge (`[bangalore]` of a `bangalore` item).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BangaloreDef {
+    /// Length of the laid charge (cm).
+    pub length_cm: u32,
+    /// HE bursts spaced evenly along it, all in one tick.
+    pub bursts: u32,
+    /// The man works this long to lay it (s); the fuse is `fuse_ms` after.
+    pub place_s: u32,
 }
 
 /// An item's blast (like a weapon's [`HeDef`], plus damage and suppression).
@@ -790,6 +809,10 @@ pub enum SupplyKind {
     Explosives = 1,
     /// Mortar bombs, main-gun rounds.
     Shells = 2,
+    /// S10a: construction material (sandbags, timber, wire). Never in the
+    /// three-wide stock, cargo and account arrays (`ALL`, `NAMES`): only
+    /// crates, carried kg and `VehicleState::material_g` hold it.
+    Construction = 3,
 }
 
 impl SupplyKind {
@@ -807,12 +830,26 @@ impl SupplyKind {
         self as usize
     }
 
-    /// The kind named `s` (`construction` waits for S6).
+    /// The ammunition kind named `s` (never `construction`).
     pub fn from_name(s: &str) -> Option<SupplyKind> {
         Self::NAMES
             .iter()
             .position(|n| *n == s)
             .map(|i| Self::ALL[i])
+    }
+
+    /// S10a: a crate's kind: an ammunition kind or `construction`.
+    pub fn from_crate_name(s: &str) -> Option<SupplyKind> {
+        if s == "construction" {
+            return Some(SupplyKind::Construction);
+        }
+        Self::from_name(s)
+    }
+
+    /// Whether the kind indexes the three-wide ammunition arrays.
+    #[inline]
+    pub const fn is_ammo(self) -> bool {
+        !matches!(self, SupplyKind::Construction)
     }
 }
 
@@ -875,6 +912,186 @@ impl CartridgeDef {
         check_name(&mut out, "name", &self.name);
         range(&mut out, "caliber_mm", self.caliber_mm, 1, 300);
         self.supply.check("supply", &mut out);
+        out
+    }
+}
+
+/// S10a: a blueprint's shape (`FortDef::shape`).
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum FortShape {
+    /// One site at a point, facing a second point.
+    #[default]
+    Point = 0,
+    /// One piece (or wire section) per segment along a dragged line.
+    Line = 1,
+    /// Snaps to an own built HQ (the HQ dugout roof).
+    OverHq = 2,
+}
+
+/// S10a: piece part names (`PieceDef::part`; colour only), by setup index.
+pub const PIECE_PARTS: [&str; 3] = ["sandbag", "roof", "timber"];
+/// S10a: the capabilities a blueprint may need (`FortDef::capability`).
+pub const FORT_CAPABILITIES: [&str; 2] = ["build_structure", "place_wire"];
+
+/// S10a: one box of a blueprint (sandbags, a roof).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PieceDef {
+    /// `sandbag`, `roof` or `timber`.
+    pub part: String,
+    /// Along the facing, across, up (cm).
+    pub size_cm: [u32; 3],
+    /// Centre offset in the facing frame (cm); z of the box bottom.
+    #[serde(default)]
+    pub offset_cm: [i32; 3],
+    /// Armour a bullet or fragment must beat to damage it (mm).
+    pub armour_mm: u32,
+    pub hp: u32,
+    /// `base`: z from the undug surface (a roof over a pit); default the
+    /// ground under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z_from: Option<String>,
+}
+
+/// S10a: a wire blueprint's band.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WireDef {
+    /// Width of the band men are slowed in (cm).
+    pub band_cm: u32,
+    /// Height (cm): fragments below it hit it.
+    pub height_cm: u32,
+    pub hp: u32,
+}
+
+/// S10a: a fortification blueprint (`defs/fortifications/*.toml`), the
+/// same for every faction.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FortDef {
+    pub id: String,
+    pub name: String,
+    pub shape: FortShape,
+    /// A dig profile dug before the pieces are built (`mg_nest_pit`,
+    /// `dugout_pit`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pit: Option<DigProfile>,
+    /// `build_structure` or `place_wire`.
+    pub capability: String,
+    /// Point: the whole work; line: per segment.
+    pub materials_kg: u32,
+    /// Seconds of work at 100 % with `work_men` men (point: whole; line:
+    /// per segment).
+    pub work_s: u32,
+    pub work_men: u32,
+    /// Sites (point, over_hq) or pieces / sections (line) per player,
+    /// built or building.
+    pub limit_per_player: u32,
+    /// Point: no other own site of this def closer (m).
+    #[serde(default)]
+    pub min_spacing_m: u32,
+    pub max_slope_pct: u32,
+    /// Line: segment length (cm) and the longest line (m).
+    #[serde(default)]
+    pub segment_cm: u32,
+    #[serde(default)]
+    pub max_length_m: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pieces: Vec<PieceDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire: Option<WireDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+}
+
+impl FortDef {
+    pub fn validate(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        check_id(&mut out, "id", &self.id);
+        check_name(&mut out, "name", &self.name);
+        let wire = self.capability == "place_wire";
+        if !FORT_CAPABILITIES.contains(&self.capability.as_str()) {
+            out.push(Issue::new(
+                "capability",
+                format!(
+                    "`{}` is not one of build_structure, place_wire",
+                    self.capability
+                ),
+            ));
+        }
+        if wire {
+            if self.wire.is_none() || !self.pieces.is_empty() {
+                out.push(Issue::new(
+                    "wire",
+                    "a place_wire blueprint has a `wire` table and no pieces",
+                ));
+            }
+        } else if self.wire.is_some() || self.pieces.is_empty() || self.pieces.len() > 4 {
+            out.push(Issue::new("pieces", "needs 1..=4 pieces and no `wire`"));
+        }
+        if self.shape == FortShape::OverHq && self.pit.is_some() {
+            out.push(Issue::new("pit", "an over_hq blueprint digs no pit"));
+        }
+        if let Some(p) = self.pit
+            && !matches!(p, DigProfile::MgNestPit | DigProfile::DugoutPit)
+        {
+            out.push(Issue::new("pit", "one of mg_nest_pit, dugout_pit"));
+        }
+        if self.shape == FortShape::Line {
+            range(&mut out, "segment_cm", self.segment_cm, 50, 1000);
+            range(&mut out, "max_length_m", self.max_length_m, 1, 200);
+            if self.pit.is_some() {
+                out.push(Issue::new("pit", "a line blueprint digs no pit"));
+            }
+        }
+        range(&mut out, "materials_kg", self.materials_kg, 0, 10_000);
+        range(&mut out, "work_s", self.work_s, 1, 3600);
+        range(&mut out, "work_men", self.work_men, 1, 12);
+        range(&mut out, "limit_per_player", self.limit_per_player, 1, 200);
+        range(&mut out, "min_spacing_m", self.min_spacing_m, 0, 200);
+        range(&mut out, "max_slope_pct", self.max_slope_pct, 0, 100);
+        for (k, b) in self.pieces.iter().enumerate() {
+            if !PIECE_PARTS.contains(&b.part.as_str()) {
+                out.push(Issue::new(
+                    format!("pieces[{k}].part"),
+                    format!("`{}` is not one of sandbag, roof, timber", b.part),
+                ));
+            }
+            for (j, v) in b.size_cm.iter().enumerate() {
+                range(&mut out, &format!("pieces[{k}].size_cm[{j}]"), *v, 10, 600);
+            }
+            for (j, o) in b.offset_cm.iter().enumerate() {
+                if o.unsigned_abs() > 1000 {
+                    out.push(Issue::new(
+                        format!("pieces[{k}].offset_cm[{j}]"),
+                        "must be in -1000..=1000",
+                    ));
+                }
+            }
+            range(
+                &mut out,
+                &format!("pieces[{k}].armour_mm"),
+                b.armour_mm,
+                1,
+                2000,
+            );
+            range(&mut out, &format!("pieces[{k}].hp"), b.hp, 1, 10_000);
+            if b.z_from.as_deref().is_some_and(|z| z != "base") {
+                out.push(Issue::new(
+                    format!("pieces[{k}].z_from"),
+                    "the only value is `base`",
+                ));
+            }
+        }
+        if let Some(w) = &self.wire {
+            range(&mut out, "wire.band_cm", w.band_cm, 10, 1000);
+            range(&mut out, "wire.height_cm", w.height_cm, 10, 500);
+            range(&mut out, "wire.hp", w.hp, 1, 10_000);
+        }
         out
     }
 }
@@ -1001,7 +1218,7 @@ impl StockDef {
         }
         match self.kind {
             StockKind::Crate => {
-                match self.supply.as_deref().and_then(SupplyKind::from_name) {
+                match self.supply.as_deref().and_then(SupplyKind::from_crate_name) {
                     Some(_) => {}
                     None => out.push(
                         Issue::new("supply", "a crate names its supply kind")
@@ -1270,6 +1487,10 @@ pub struct RulesDef {
     /// (S5b-1 (A)).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fire_mission: Option<FireMissionTuning>,
+    /// S10a: fortification rules (`[fortify]`). Without it no blueprint
+    /// can be built.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fortify: Option<crate::tuning::FortTuning>,
 }
 
 /// `[call_in]` of a rules def: the S3b spawn tuning ([`CallInTuning`],
@@ -1508,6 +1729,11 @@ pub struct DigProfilesDef {
     /// S9: an AT gun pit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gun_pit: Option<DigProfileDef>,
+    /// S10a: the MG nest's and the dugout's pits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mg_nest_pit: Option<DigProfileDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dugout_pit: Option<DigProfileDef>,
 }
 
 /// A dug cross-section: a flat floor, walls sloping out to the lip, and a
@@ -2025,7 +2251,10 @@ impl ItemDef {
         range(&mut out, "windup_ms", self.windup_ms, 0, 10_000);
         range(&mut out, "fuse_ms", self.fuse_ms, 0, 30_000);
         range(&mut out, "scatter_pct", self.scatter_pct, 0, 100);
-        let he = matches!(self.kind, ItemKind::Frag | ItemKind::Satchel);
+        let he = matches!(
+            self.kind,
+            ItemKind::Frag | ItemKind::Satchel | ItemKind::Bangalore
+        );
         if he != self.he.is_some() {
             out.push(
                 Issue::new(
@@ -2060,6 +2289,20 @@ impl ItemDef {
         }
         if let Some(sp) = &self.supply {
             sp.check("supply", &mut out);
+        }
+        if (self.kind == ItemKind::Bangalore) != self.bangalore.is_some() {
+            out.push(
+                Issue::new(
+                    "bangalore",
+                    "bangalore items need a [bangalore] table, others must not",
+                )
+                .with_hint("[bangalore] length_cm = 300 ..."),
+            );
+        }
+        if let Some(b) = &self.bangalore {
+            range(&mut out, "bangalore.length_cm", b.length_cm, 50, 1000);
+            range(&mut out, "bangalore.bursts", b.bursts, 1, 8);
+            range(&mut out, "bangalore.place_s", b.place_s, 0, 120);
         }
         if let Some(s) = &self.smoke {
             range(&mut out, "smoke.radius_m", s.radius_m, 1, 50);
@@ -2568,6 +2811,8 @@ impl RulesDef {
             ("hq_pit", pits.hq_pit.as_ref()),
             ("dump_pit", pits.dump_pit.as_ref()),
             ("gun_pit", pits.gun_pit.as_ref()),
+            ("mg_nest_pit", pits.mg_nest_pit.as_ref()),
+            ("dugout_pit", pits.dugout_pit.as_ref()),
         ]
         .into_iter()
         .filter_map(|(n, d)| d.map(|d| (n, d)))
@@ -2802,6 +3047,7 @@ impl RulesDef {
                 fire: &self.combat.fire.clone().unwrap_or_default(),
                 ai_ammo: &a.ammo.clone().unwrap_or_default(),
                 fire_mission: self.fire_mission.as_ref(),
+                fortify: self.fortify.as_ref(),
                 ai_mortar: &a.mortar_tuning(),
                 ai_supply: &a.supply.clone().unwrap_or_default(),
                 ai_transport: &a.transport.clone().unwrap_or_default(),

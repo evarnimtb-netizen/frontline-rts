@@ -30,8 +30,10 @@ use serde::{Deserialize, Serialize};
 /// (the one bump for the S8a slice). 11 (S8b): `DropCrates` (the one bump
 /// for the S8b slice). 12 (S9): `Emplace`, `PackGun`, `PushGun`, `Hitch`,
 /// `Unhitch`, `SetAmbush` and the gun pit `DigProfile` (the one bump for
-/// the S9 slice).
-pub const PROTOCOL_VERSION: u16 = 12;
+/// the S9 slice). 13 (S10a): `Fortify`, `LoadMaterials`, `CutWire`,
+/// `PlaceBangalore`, `SupplyKind::Construction`, `ItemKind::Bangalore`
+/// and the two S10a pit `DigProfile`s (the one bump for the S10a slice).
+pub const PROTOCOL_VERSION: u16 = 13;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -595,6 +597,11 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         CommandKind::Disembark { vehicles, .. } => {
             !vehicles.is_empty() && vehicles.len() <= MAX_UNITS
         }
+        // S10a: a blueprint line as a dig line; a Bangalore's men as units.
+        CommandKind::Fortify { line, .. } => (1..=MAX_DIG_POINTS).contains(&line.len()),
+        CommandKind::PlaceBangalore { units, .. } => {
+            !units.is_empty() && units.len() <= MAX_UNITS
+        }
         CommandKind::MoveSoldier { .. }
         | CommandKind::Spawn { .. }
         | CommandKind::Despawn { .. }
@@ -615,7 +622,10 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::PlaceCrate { .. }
         | CommandKind::PickUpCrate { .. }
         // S8b: a vehicle id, a point, a count and a kind.
-        | CommandKind::DropCrates { .. } => true,
+        | CommandKind::DropCrates { .. }
+        // S10a: a squad and a count or a point.
+        | CommandKind::LoadMaterials { .. }
+        | CommandKind::CutWire { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }

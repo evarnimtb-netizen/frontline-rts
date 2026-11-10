@@ -71,6 +71,8 @@ fn price(s: &MatchSetup, f: Feed) -> u64 {
             SupplyKind::SmallArms => sp.small_arms_mp_per_t,
             SupplyKind::Explosives => sp.explosives_mp_per_t,
             SupplyKind::Shells => sp.shell_mp_per_t,
+            // S10a: no round is construction material.
+            SupplyKind::Construction => unreachable!("a feed is never construction"),
         } as u64
 }
 

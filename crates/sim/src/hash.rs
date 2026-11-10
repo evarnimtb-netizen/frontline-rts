@@ -431,6 +431,12 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
             Order::Follow { vehicle } => vehicle.0.put(out),
             Order::Suppress { line } => line.put(out),
             Order::Recrew { vehicle } | Order::Embark { vehicle } => vehicle.0.put(out),
+            Order::Fortify { work } => work.put(out),
+            Order::CutWire { section, man, work } => {
+                section.put(out);
+                put_postcard(man, out);
+                work.put(out);
+            }
         }
         let n = &sq.nav;
         (n.phase as u8).put(out);
@@ -570,6 +576,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     g.next_mission.put(out);
     // S6: structures, crates, cook-offs and accounts (every field).
     put_postcard(&g.supply6, out);
+    // S10a: works, pieces, wire, charges, carried kg and accounts.
+    put_postcard(&g.fort, out);
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {

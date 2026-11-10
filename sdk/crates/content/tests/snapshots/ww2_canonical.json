@@ -1743,6 +1743,18 @@
             "wall_cm": 120,
             "work_per_m": 22000
           },
+          "dugout_pit": {
+            "all_round": true,
+            "depth_cm": 200,
+            "engineers_only": true,
+            "floor_cm": 170,
+            "max_length_m": 5,
+            "parapet_cm": 40,
+            "passes": 4,
+            "pit_length_cm": 300,
+            "wall_cm": 40,
+            "work_per_m": 150000
+          },
           "dump_pit": {
             "all_round": true,
             "depth_cm": 120,
@@ -1778,6 +1790,18 @@
             "pit_length_cm": 300,
             "wall_cm": 40,
             "work_per_m": 116000
+          },
+          "mg_nest_pit": {
+            "all_round": true,
+            "depth_cm": 90,
+            "engineers_only": true,
+            "floor_cm": 120,
+            "max_length_m": 5,
+            "parapet_cm": 40,
+            "passes": 3,
+            "pit_length_cm": 220,
+            "wall_cm": 40,
+            "work_per_m": 115000
           },
           "mortar_pit": {
             "all_round": true,
@@ -1836,6 +1860,31 @@
         "ranging_keep_move_m": 10,
         "ranging_max_cells": 4,
         "ranging_step_pct": 50
+      },
+      "fortify": {
+        "carry_kg_per_man": 20,
+        "construction_mp_per_t": 100,
+        "cut_reach_m": 25,
+        "cut_s": 10,
+        "material_reach_m": 15,
+        "shot_piece_damage": 150,
+        "tiers": {
+          "assault": {
+            "build_pct": 0,
+            "cut_pct": 200
+          },
+          "construction": {
+            "build_pct": 150,
+            "cut_pct": 50
+          },
+          "field": {
+            "build_pct": 100,
+            "cut_pct": 100
+          }
+        },
+        "wire_frag_pct": 25,
+        "wire_path_cost_pct": 500,
+        "wire_speed_pct": 20
       },
       "hash_interval": 30,
       "id": "ww2:skirmish",
