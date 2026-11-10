@@ -85,9 +85,168 @@ pub fn dig_profile(name: &str) -> DigProfile {
     }
 }
 
-/// S6 `issue_crate` kind names (`match_state.md`).
+/// S6 `issue_crate` kind names (`match_state.md`); S10a adds
+/// `"construction"`.
 pub fn supply_kind(name: &str) -> Option<frontline_content::setup::SupplyKind> {
-    frontline_content::setup::SupplyKind::from_name(name)
+    frontline_content::setup::SupplyKind::from_crate_name(name)
+}
+
+/// S10a: a crate kind's name (`CrateSnapshot::kind`): the three ammunition
+/// kinds, then `"construction"`.
+pub fn crate_kind_name(kind: u8) -> &'static str {
+    use frontline_content::setup::SupplyKind;
+    match kind {
+        3 => "construction",
+        k => SupplyKind::NAMES[k as usize % SupplyKind::NAMES.len()],
+    }
+}
+
+// ------------------------------------------------------- S10a intents --
+
+/// S10a: the blueprint `what` names (`"sandbag_wall"`, `"barbed_wire"`,
+/// `"mg_nest"`, `"dugout"`, `"hq_dugout"`; a full id such as
+/// `"ww2:mg_nest"` works too), as an index into `MatchSetup::forts`.
+pub fn fort_index(setup: &MatchSetup, what: &str) -> Option<u16> {
+    setup
+        .forts
+        .iter()
+        .position(|f| f.id == what || f.id.rsplit(':').next() == Some(what))
+        .map(|i| i as u16)
+}
+
+/// S10a: whether squad type `t` may build blueprint `fort` (its capability).
+pub fn can_fortify(setup: &MatchSetup, t: u16, fort: u16) -> bool {
+    let (Some(ty), Some(f)) = (
+        setup.squad_types.get(t as usize),
+        setup.forts.get(fort as usize),
+    ) else {
+        return false;
+    };
+    ty.caps & (1u32 << f.capability) != 0
+}
+
+/// S10a `fortify`: the first of `squads` (`(id, type_idx)`, selection
+/// order) able to build `what`. A line blueprint takes `line` (sim xy,
+/// capped to 16 points; at least 2); a point or over-HQ blueprint takes
+/// `target` and `facing` (`[pos, pos + facing]`; `facing` defaults to
+/// east).
+pub fn fortify_command(
+    setup: &MatchSetup,
+    squads: &[(u32, u16)],
+    what: &str,
+    line: &[[f32; 2]],
+    target: Option<[f32; 2]>,
+    facing: Option<[f32; 2]>,
+) -> Option<CommandKind> {
+    use frontline_content::setup::FortShape;
+    let fort = fort_index(setup, what)?;
+    let &(squad, _) = squads.iter().find(|s| can_fortify(setup, s.1, fort))?;
+    let pts: Vec<[f32; 2]> = if setup.forts[fort as usize].shape == FortShape::Line {
+        if line.len() < 2 {
+            return None;
+        }
+        cap_points(line)
+    } else {
+        let p = target.or_else(|| line.first().copied())?;
+        let f = facing
+            .filter(|f| f[0].hypot(f[1]) > 1e-3)
+            .map(|f| {
+                let n = f[0].hypot(f[1]);
+                [f[0] / n, f[1] / n]
+            })
+            .unwrap_or([1.0, 0.0]);
+        vec![p, [p[0] + f[0], p[1] + f[1]]]
+    };
+    Some(CommandKind::Fortify {
+        squad: SquadId(squad),
+        fort,
+        line: pts.into_iter().map(sim_to_fx).collect(),
+    })
+}
+
+/// S10a `load_materials`: every one of `squads` (`(id, type_idx, men)`)
+/// able to build anything loads `kg` (default: a full load,
+/// `carry_kg_per_man` per man). The sim refuses outside the base.
+pub fn load_materials_commands(
+    setup: &MatchSetup,
+    squads: &[(u32, u16, u8)],
+    kg: Option<u32>,
+) -> Vec<CommandKind> {
+    use frontline_content::setup::Capability;
+    let per_man = setup
+        .rules
+        .fortify
+        .as_ref()
+        .map_or(0, |t| t.carry_kg_per_man);
+    squads
+        .iter()
+        .filter(|s| {
+            setup.squad_types.get(s.1 as usize).is_some_and(|ty| {
+                ty.has(Capability::BuildStructure) || ty.has(Capability::PlaceWire)
+            })
+        })
+        .filter_map(|&(id, _, men)| {
+            let kg = kg.unwrap_or(per_man * men as u32).min(u16::MAX as u32) as u16;
+            (kg > 0).then_some(CommandKind::LoadMaterials {
+                squad: SquadId(id),
+                kg,
+            })
+        })
+        .collect()
+}
+
+/// S10a `cut_wire`: the first of `squads` (`(id, type_idx)`) with
+/// `clear_wire` cuts the section nearest `at`.
+pub fn cut_wire_command(
+    setup: &MatchSetup,
+    squads: &[(u32, u16)],
+    at: [f32; 2],
+) -> Option<CommandKind> {
+    use frontline_content::setup::Capability;
+    let &(squad, _) = squads.iter().find(|s| {
+        setup
+            .squad_types
+            .get(s.1 as usize)
+            .is_some_and(|ty| ty.has(Capability::ClearWire))
+    })?;
+    Some(CommandKind::CutWire {
+        squad: SquadId(squad),
+        at: sim_to_fx(at),
+    })
+}
+
+/// S10a `bangalore`: the men of the first of `squads` (`(id, type_idx)`)
+/// with `breach` whose men (`men_of`) carry a Bangalore; the sim sends the
+/// nearest carrier.
+pub fn bangalore_command(
+    setup: &MatchSetup,
+    squads: &[(u32, u16)],
+    men_of: impl Fn(u32) -> Vec<(u32, u8)>,
+    target: [f32; 2],
+) -> Option<CommandKind> {
+    use frontline_content::setup::Capability;
+    for &(id, t) in squads {
+        if !setup
+            .squad_types
+            .get(t as usize)
+            .is_some_and(|ty| ty.has(Capability::Breach))
+        {
+            continue;
+        }
+        let men = men_of(id);
+        if !men.iter().any(|m| m.1 > 0) {
+            continue;
+        }
+        let mut ids: Vec<u32> = men.iter().map(|m| m.0).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.truncate(MAX_UNITS);
+        return Some(CommandKind::PlaceBangalore {
+            units: ids.into_iter().map(SimId).collect(),
+            target: sim_to_fx(target),
+        });
+    }
+    None
 }
 
 /// S6 `build` names: `"hq"` or `"dump"`.
@@ -605,5 +764,137 @@ mod tests {
         assert_eq!(c.len(), MAX_DIG_POINTS);
         assert_eq!(c[0], [0.0, 0.0]);
         assert_eq!(c[MAX_DIG_POINTS - 1], [39.0, 0.0]);
+    }
+
+    /// S10a: the fortification intents become their commands for the first
+    /// able squad; unable squads and missing input drop the intent.
+    #[test]
+    fn fortify_intents_make_commands() {
+        use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve};
+        use frontline_content::setup::SupplyKind;
+        let mods = find_mods_dir(&mods_candidates(None, None)).unwrap();
+        let setup = resolve(&mods, &MenuChoice::default()).unwrap();
+        let ty = |id: &str| setup.squad_types.iter().position(|t| t.id == id).unwrap() as u16;
+        let rifles = ty("ww2:ger_grenadiergruppe");
+        let eng = ty("ww2:ger_engineer_squad");
+        let sturm = ty("ww2:ger_sturmpioniergruppe");
+        let bau = ty("ww2:ger_baupioniergruppe");
+        let wall = fort_index(&setup, "sandbag_wall").unwrap();
+        let nest = fort_index(&setup, "ww2:mg_nest").unwrap();
+        assert_eq!(fort_index(&setup, "mg_nest"), Some(nest));
+        assert_eq!(fort_index(&setup, "bunker"), None);
+        for what in ["barbed_wire", "dugout", "hq_dugout"] {
+            assert!(fort_index(&setup, what).is_some(), "{what}");
+        }
+        // A wall line goes to the first able squad (rifles cannot build).
+        let line = [[10.0, 20.0], [14.0, 20.0], [18.0, 22.0]];
+        match fortify_command(
+            &setup,
+            &[(1, rifles), (2, eng), (3, bau)],
+            "sandbag_wall",
+            &line,
+            None,
+            None,
+        ) {
+            Some(CommandKind::Fortify {
+                squad,
+                fort,
+                line: l,
+            }) => {
+                assert_eq!((squad, fort), (SquadId(2), wall));
+                assert_eq!(l.len(), 3);
+                assert_eq!(l[2], sim_to_fx([18.0, 22.0]));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            fortify_command(
+                &setup,
+                &[(1, rifles), (4, sturm)],
+                "sandbag_wall",
+                &line,
+                None,
+                None
+            )
+            .is_none()
+        );
+        assert!(
+            fortify_command(&setup, &[(2, eng)], "sandbag_wall", &line[..1], None, None).is_none()
+        );
+        // A long drag is capped to 16 points.
+        let long: Vec<[f32; 2]> = (0..40).map(|i| [i as f32, 0.0]).collect();
+        match fortify_command(&setup, &[(2, eng)], "barbed_wire", &long, None, None) {
+            Some(CommandKind::Fortify { line, .. }) => assert_eq!(line.len(), MAX_DIG_POINTS),
+            other => panic!("{other:?}"),
+        }
+        // A point blueprint: [pos, pos + unit facing].
+        match fortify_command(
+            &setup,
+            &[(3, bau)],
+            "mg_nest",
+            &[],
+            Some([50.0, 60.0]),
+            Some([0.0, 4.0]),
+        ) {
+            Some(CommandKind::Fortify { squad, fort, line }) => {
+                assert_eq!((squad, fort), (SquadId(3), nest));
+                assert_eq!(line, vec![sim_to_fx([50.0, 60.0]), sim_to_fx([50.0, 61.0])]);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(fortify_command(&setup, &[(3, bau)], "mg_nest", &[], None, None).is_none());
+        // Materials: every able squad, a full load by default.
+        let per_man = setup.rules.fortify.as_ref().unwrap().carry_kg_per_man;
+        let cmds =
+            load_materials_commands(&setup, &[(1, rifles, 9), (2, eng, 6), (3, bau, 8)], None);
+        assert_eq!(
+            cmds,
+            vec![
+                CommandKind::LoadMaterials {
+                    squad: SquadId(2),
+                    kg: (per_man * 6) as u16
+                },
+                CommandKind::LoadMaterials {
+                    squad: SquadId(3),
+                    kg: (per_man * 8) as u16
+                },
+            ]
+        );
+        assert_eq!(
+            load_materials_commands(&setup, &[(2, eng, 6)], Some(30)),
+            vec![CommandKind::LoadMaterials {
+                squad: SquadId(2),
+                kg: 30
+            }]
+        );
+        // Cutting: the first clear_wire squad.
+        assert_eq!(
+            cut_wire_command(&setup, &[(1, rifles), (4, sturm), (2, eng)], [5.0, 6.0]),
+            Some(CommandKind::CutWire {
+                squad: SquadId(4),
+                at: sim_to_fx([5.0, 6.0])
+            })
+        );
+        assert!(cut_wire_command(&setup, &[(1, rifles)], [5.0, 6.0]).is_none());
+        // Bangalore: the breach squad's men, sorted, if one carries a charge.
+        let men = |id: u32| match id {
+            4 => vec![(41, 0), (40, 1), (42, 0)],
+            5 => vec![(50, 0)],
+            _ => vec![(10, 1)],
+        };
+        assert_eq!(
+            bangalore_command(&setup, &[(1, rifles), (4, sturm)], men, [7.0, 8.0]),
+            Some(CommandKind::PlaceBangalore {
+                units: vec![SimId(40), SimId(41), SimId(42)],
+                target: sim_to_fx([7.0, 8.0]),
+            })
+        );
+        assert!(bangalore_command(&setup, &[(5, sturm)], men, [7.0, 8.0]).is_none());
+        assert!(bangalore_command(&setup, &[(1, rifles), (2, eng)], men, [7.0, 8.0]).is_none());
+        // A construction crate.
+        assert_eq!(supply_kind("construction"), Some(SupplyKind::Construction));
+        assert_eq!(supply_kind("shells"), Some(SupplyKind::Shells));
+        assert_eq!(crate_kind_name(3), "construction");
+        assert_eq!(crate_kind_name(1), "explosives");
     }
 }

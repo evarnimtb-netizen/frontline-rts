@@ -111,6 +111,8 @@ pub struct SquadView {
     pub refilling: bool,
     /// S5b: own squads on a fire mission (S5b rules).
     pub mission: Option<MissionView>,
+    /// S10a: construction kg the squad carries (own squads; 0 otherwise).
+    pub materials_kg: f32,
 }
 
 /// S5b: an own squad's fire mission, for the mortar card and the observer
@@ -341,6 +343,10 @@ pub struct MatchFrame {
     /// a set-down crate's z is the ground there.
     pub structures: Vec<frontline_sim::StructureSnapshot>,
     pub crates: Vec<frontline_sim::CrateSnapshot>,
+    /// S10a: pieces, wire, sites and charges: own ones, and enemy ones
+    /// within sight of an own man (a site or charge: its own spot; wire
+    /// and pieces: either end or the centre).
+    pub fort: frontline_sim::FortSnapshot,
 }
 
 impl MatchFrame {
@@ -394,6 +400,7 @@ impl MatchFrame {
             intel: Vec::new(),
             structures: Vec::new(),
             crates: Vec::new(),
+            fort: frontline_sim::FortSnapshot::default(),
         }
     }
 
@@ -587,6 +594,37 @@ impl MatchFrame {
                 self.crates.push(c);
             }
         }
+        // S10a: fortifications the local player knows of.
+        let sf = &snap.fort;
+        let fort = &mut self.fort;
+        fort.pieces.clear();
+        fort.pieces.extend(
+            sf.pieces
+                .iter()
+                .filter(|q| q.owner == local || near(q.center, ctx.sight_m))
+                .cloned(),
+        );
+        fort.wire.clear();
+        fort.wire.extend(
+            sf.wire
+                .iter()
+                .filter(|w| w.owner == local || near(w.a, ctx.sight_m) || near(w.b, ctx.sight_m))
+                .cloned(),
+        );
+        fort.works.clear();
+        fort.works.extend(
+            sf.works
+                .iter()
+                .filter(|w| w.owner == local || near(w.site, ctx.sight_m))
+                .cloned(),
+        );
+        fort.charges.clear();
+        fort.charges.extend(
+            sf.charges
+                .iter()
+                .filter(|c| c.owner == local || near(c.from, ctx.sight_m))
+                .cloned(),
+        );
         self.scene_ready = ctx
             .scene
             .as_deref()
@@ -642,6 +680,11 @@ impl MatchFrame {
                 v.refilling = setup.rules.supply.is_some()
                     && v.ammo_pct.is_some_and(|p| p < 100)
                     && dx * dx + dy * dy <= r * r;
+                v.materials_kg = game
+                    .fort()
+                    .carried_g
+                    .get(sid)
+                    .map_or(0.0, |&g| g as f32 / 1000.0);
             }
             for m in &sq.members {
                 let c = &combat[m.index()];
@@ -1073,6 +1116,8 @@ pub struct TickEvents {
     pub pickups: Vec<PickupView>,
     /// S6: the local player's refused build and crate orders this tick.
     pub supply_refusals: Vec<frontline_sim::SupplyEvent>,
+    /// S10a: the local player's refused fortification orders this tick.
+    pub fort_refusals: Vec<frontline_sim::fort::FortEvent>,
 }
 
 /// S4: an own man picked up a fallen man's crew weapon.
@@ -1098,6 +1143,7 @@ impl TickEvents {
             && self.fire_mission_refusals.is_empty()
             && self.pickups.is_empty()
             && self.supply_refusals.is_empty()
+            && self.fort_refusals.is_empty()
     }
 
     /// This tick's events of `world` as seen by `ctx.local`. Call after
@@ -1194,6 +1240,12 @@ impl TickEvents {
         );
         ev.supply_refusals.extend(
             snap.supply_refusals
+                .iter()
+                .filter(|c| c.player.0 == local)
+                .copied(),
+        );
+        ev.fort_refusals.extend(
+            snap.fort_refusals
                 .iter()
                 .filter(|c| c.player.0 == local)
                 .copied(),

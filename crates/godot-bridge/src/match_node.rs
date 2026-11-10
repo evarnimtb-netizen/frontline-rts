@@ -206,6 +206,51 @@ fn vehicle_badge(flags: u16, speed: f32, own: bool) -> &'static str {
 /// `rules.vehicle_types` (`match_state.md`): every vehicle type by its
 /// key (the def id without the mod prefix), with the box sizes the meshes,
 /// footprints, picking and card silhouettes are built from.
+/// S10a: the blueprints and `[fortify]` numbers the build menu shows
+/// (`match_state.md` "S10a"), keyed by short blueprint id.
+fn fort_rules(setup: &MatchSetup, hz: f32) -> VarDictionary {
+    use frontline_content::setup::FortShape;
+    let fx = |v: frontline_content::Fixed| Fx::from(v).to_f32();
+    let mut bp = VarDictionary::new();
+    for f in &setup.forts {
+        let shape = match f.shape {
+            FortShape::Point => "point",
+            FortShape::Line => "line",
+            FortShape::OverHq => "over_hq",
+        };
+        let cap = frontline_content::variant::CAPABILITIES
+            .get(f.capability as usize)
+            .copied()
+            .unwrap_or("");
+        bp.set(
+            short_id(&f.id),
+            &vdict! {
+                "id" => f.id.as_str(),
+                "name" => f.name.as_str(),
+                "shape" => shape,
+                "capability" => cap,
+                "kg" => f.materials_g as f32 / 1000.0,
+                "work_s" => f.work_ticks as f32 / hz,
+                "work_men" => f.work_men as i64,
+                "limit" => f.limit_per_player as i64,
+                "segment_m" => fx(f.segment),
+                "max_length_m" => fx(f.max_length),
+                "wire" => f.wire.is_some(),
+                "pit" => f.pit.is_some(),
+            },
+        );
+    }
+    let t = setup.rules.fortify.as_ref();
+    vdict! {
+        "blueprints" => &bp,
+        "carry_kg_per_man" => t.map_or(0, |t| t.carry_kg_per_man as i64),
+        "mp_per_t" => t.map_or(0, |t| t.construction_mp_per_t as i64),
+        "cut_s" => t.map_or(0, |t| t.cut_s as i64),
+        "cut_reach_m" => t.map_or(0, |t| t.cut_reach_m as i64),
+        "wire_speed_pct" => t.map_or(100, |t| t.wire_speed_pct as i64),
+    }
+}
+
 fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
     let fx = |v: frontline_content::Fixed| Fx::from(v).to_f32();
     let mut out = VarDictionary::new();
@@ -1930,6 +1975,8 @@ impl MatchRuntime {
                 "low_pct" => rules.supply.as_ref().map_or(30, |s| s.low_pct as i64),
             },
             "vehicle_types" => &self.vehicle_types,
+            // S10a: blueprints and materials for the build menu.
+            "fortify" => &fort_rules(setup, hz),
         };
 
         let mut players = VarArray::new();
@@ -2031,7 +2078,7 @@ impl MatchRuntime {
                     "id" => c.id as i64,
                     "owner" => c.owner as i64,
                     "name" => d.name.as_str(),
-                    "kind" => kinds[c.kind as usize % 3],
+                    "kind" => crate::intents::crate_kind_name(c.kind),
                     "kg" => c.kg,
                     "pos" => Vector3::new(p[0], p[1], p[2]),
                     "carrier" => if c.carrier == u32::MAX { -1 } else { c.carrier as i64 },
@@ -2102,7 +2149,7 @@ impl MatchRuntime {
                     "crate",
                     &vdict! {
                         "id" => c.id as i64,
-                        "kind" => frontline_content::setup::SupplyKind::NAMES[c.kind as usize % 3],
+                        "kind" => crate::intents::crate_kind_name(c.kind),
                         "kg" => c.kg,
                     },
                 );
@@ -2431,6 +2478,7 @@ impl MatchRuntime {
             "vehicles" => &self.vehicles_state(),
             "structures" => &structures,
             "crates" => &crates,
+            "fort" => &self.fort_state(),
             "shells" => &shells,
             "armour_events" => &armour_events,
             "events" => &events,
@@ -2505,6 +2553,88 @@ impl MatchRuntime {
 
     /// `vehicles` in `get_state()`: the newest frame's vehicles (already
     /// fog-filtered) at their drawn, interpolated poses.
+    /// S10a: pieces, wire, sites and charges the local player knows of
+    /// (`match_state.md` "S10a"), Godot coordinates.
+    fn fort_state(&self) -> VarDictionary {
+        let f = &self.newest().fort;
+        let setup = &self.setup;
+        let parts = frontline_content::defs::PIECE_PARTS;
+        let bp = |i: u16| setup.forts.get(i as usize).map_or("", |d| short_id(&d.id));
+        let mut pieces = VarArray::new();
+        for q in &f.pieces {
+            pieces.push(
+                &vdict! {
+                    "id" => q.id as i64,
+                    "owner" => q.owner as i64,
+                    "blueprint" => bp(q.fort),
+                    "part" => parts.get(q.part as usize).copied().unwrap_or("sandbag"),
+                    "center" => self.godot(q.center),
+                    // Sim yaw (from +x, counter-clockwise) to a Godot
+                    // rotation about +y; half extents along, across, up.
+                    "yaw" => q.yaw,
+                    "size" => Vector3::new(q.half[0] * 2.0, q.half[2] * 2.0, q.half[1] * 2.0),
+                    "hp" => q.hp_pct as f32 / 100.0,
+                }
+                .to_variant(),
+            );
+        }
+        let mut wire = VarArray::new();
+        for w in &f.wire {
+            wire.push(
+                &vdict! {
+                    "id" => w.id as i64,
+                    "owner" => w.owner as i64,
+                    "a" => self.godot(w.a),
+                    "b" => self.godot(w.b),
+                    "band_m" => w.band,
+                    "height_m" => w.height,
+                    "hp" => w.hp_pct as f32 / 100.0,
+                }
+                .to_variant(),
+            );
+        }
+        let mut sites = VarArray::new();
+        for w in &f.works {
+            let line: PackedVector3Array = w.line.iter().map(|p| self.ground(*p)).collect();
+            sites.push(
+                &vdict! {
+                    "id" => w.id as i64,
+                    "owner" => w.owner as i64,
+                    "blueprint" => bp(w.fort),
+                    "builder" => w.builder as i64,
+                    "step" => match w.step { 0 => "dig", 1 => "materials", _ => "build" },
+                    "pos" => self.godot(w.site),
+                    "yaw" => w.yaw,
+                    "line" => &line,
+                    "seg" => w.seg as i64,
+                    "segments" => w.segments as i64,
+                    "progress" => w.progress_pct as f32 / 100.0,
+                    "materials" => w.materials_pct as f32 / 100.0,
+                }
+                .to_variant(),
+            );
+        }
+        let mut charges = VarArray::new();
+        for c in &f.charges {
+            charges.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "owner" => c.owner as i64,
+                    "from" => self.godot(c.from),
+                    "to" => self.godot(c.to),
+                    "fuse_s" => c.fuse_ticks as f32 / self.hz,
+                }
+                .to_variant(),
+            );
+        }
+        vdict! {
+            "pieces" => &pieces,
+            "wire" => &wire,
+            "sites" => &sites,
+            "charges" => &charges,
+        }
+    }
+
     fn vehicles_state(&self) -> VarArray {
         let f = self.newest();
         let setup = &self.setup;
@@ -3096,6 +3226,8 @@ impl MatchRuntime {
                 },
             );
             d.set("refilling", s.refilling);
+            // S10a: construction kg carried.
+            d.set("materials_kg", s.materials_kg);
         }
         s4(&mut d);
         d
@@ -3346,6 +3478,76 @@ impl MatchRuntime {
                     squad: SquadId(s.id),
                     kind,
                 }));
+            }
+            // S10a: the first selected squad able builds blueprint `what`
+            // along `polyline` (line blueprints) or at `target` facing
+            // `facing` (point and over-HQ ones).
+            "fortify" => {
+                let what = data.get("what").map(|v| v.to_string()).unwrap_or_default();
+                let line: Vec<[f32; 2]> = data
+                    .get("polyline")
+                    .and_then(|v| v.try_to::<PackedVector3Array>().ok())
+                    .map(|a| a.as_slice().iter().map(|v| to_sim(*v, self.half)).collect())
+                    .unwrap_or_default();
+                let facing = data
+                    .get("facing")
+                    .and_then(|v| v.try_to::<Vector3>().ok())
+                    .map(|f| [f.x, -f.z]);
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                out.extend(crate::intents::fortify_command(
+                    &self.setup,
+                    &squads,
+                    &what,
+                    &line,
+                    target.map(|t| to_sim(t, self.half)),
+                    facing,
+                ));
+            }
+            // S10a: every selected able squad loads construction kg in the
+            // base (`kg`, default a full load).
+            "load_materials" => {
+                let kg = data
+                    .get("kg")
+                    .and_then(|v| v.try_to::<i64>().ok())
+                    .map(|k| k.clamp(1, u16::MAX as i64) as u32);
+                let squads: Vec<(u32, u16, u8)> =
+                    own.iter().map(|s| (s.id, s.type_idx, s.men)).collect();
+                out.extend(crate::intents::load_materials_commands(
+                    &self.setup,
+                    &squads,
+                    kg,
+                ));
+            }
+            // S10a: the first selected `clear_wire` squad cuts the wire
+            // section nearest `target`.
+            "cut_wire" => {
+                let Some(t) = target else { return };
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                out.extend(crate::intents::cut_wire_command(
+                    &self.setup,
+                    &squads,
+                    to_sim(t, self.half),
+                ));
+            }
+            // S10a: the first selected `breach` squad with a Bangalore lays
+            // it toward `target` (its nearest carrier).
+            "bangalore" => {
+                let Some(t) = target else { return };
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                let k = ItemKind::Bangalore.index();
+                let f = self.newest();
+                let men_of = |sq: u32| -> Vec<(u32, u8)> {
+                    (0..f.ids.len())
+                        .filter(|&i| f.squad[i] == sq && f.owner[i] == self.local)
+                        .map(|i| (f.ids[i], f.items[i][k]))
+                        .collect()
+                };
+                out.extend(crate::intents::bangalore_command(
+                    &self.setup,
+                    &squads,
+                    men_of,
+                    to_sim(t, self.half),
+                ));
             }
             // S6: the selected squads set their crates down at `target`.
             "place_crate" => {

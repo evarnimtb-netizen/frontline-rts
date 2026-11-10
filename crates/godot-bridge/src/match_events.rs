@@ -144,6 +144,26 @@ pub fn supply_words(why: frontline_sim::SupplyRefusal, hz: u32) -> (&'static str
     }
 }
 
+/// S10a: a refused fortification order's reason word and feed text.
+pub fn fort_words(why: frontline_sim::fort::FortRefusal) -> (&'static str, String) {
+    use frontline_sim::fort::FortRefusal as R;
+    match why {
+        R::NotAllowed => (
+            "not_allowed",
+            "not this squad, blueprint or item".to_owned(),
+        ),
+        R::CannotBuild => ("cannot_build", "this squad cannot do that".to_owned()),
+        R::Cap => ("cap", "at the blueprint's limit".to_owned()),
+        R::BadSpot => ("bad_spot", "cannot build there".to_owned()),
+        R::Manpower { short } => ("manpower", format!("{short} manpower short")),
+        R::NotInBase => (
+            "not_in_base",
+            "materials load only in the own base".to_owned(),
+        ),
+        R::NoWire => ("no_wire", "no wire within reach".to_owned()),
+    }
+}
+
 pub fn recrew_words(why: frontline_sim::RecrewRefusal, setup: &MatchSetup) -> String {
     use frontline_sim::RecrewRefusal as R;
     match why {
@@ -401,6 +421,19 @@ impl EventTracker {
                 player: local as i32,
                 tick: ev.tick,
                 squad: Some(r.squad.0),
+                reason,
+            });
+        }
+        // S10a: refused fortification orders.
+        for r in &ev.fort_refusals {
+            let (reason, text) = fort_words(r.refusal);
+            out.push(UiEvent {
+                kind: "fort_refused",
+                text: format!("Refused: {text}."),
+                pos: None,
+                player: local as i32,
+                tick: ev.tick,
+                squad: r.squad.map(|q| q.0),
                 reason,
             });
         }

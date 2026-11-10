@@ -884,11 +884,9 @@ impl RenderSnapshot {
                     _ => 0,
                 },
                 items,
-                materials_kg: g
-                    .fort()
-                    .carried_g
-                    .get(id)
-                    .map_or(0.0, |&gr| gr as f32 / 1000.0),
+                materials_kg: g.fort().carried_g.get(id).map_or(0.0, |&gr| {
+                    crate::fx::Fx::from_ratio(gr as i64, 1000).to_f32()
+                }),
             });
         }
         let items = &g.setup().items;
@@ -1058,7 +1056,11 @@ impl RenderSnapshot {
                 owner: q.owner.0,
                 fort: q.fort,
                 part: b.part,
-                center: [q.pos.x.to_f32(), q.pos.y.to_f32(), q.z.to_f32() + half[2]],
+                center: [
+                    q.pos.x.to_f32(),
+                    q.pos.y.to_f32(),
+                    (q.z + crate::fx::Fx::from(b.half[2])).to_f32(),
+                ],
                 yaw: q.yaw.to_f32(),
                 half,
                 hp_pct: pct(q.hp as u64, b.hp as u64),
