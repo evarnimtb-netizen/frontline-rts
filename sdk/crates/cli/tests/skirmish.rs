@@ -514,3 +514,45 @@ min = 1
         "{t2}"
     );
 }
+
+/// S10a (spec 7): the AI uses nothing new, so every S10a counter stays
+/// zero, per player and per faction in the `--json` document.
+#[test]
+fn s10_counters_zero_without_fortifications() {
+    let r = run(short(3, 4, 2));
+    for p in &r.players {
+        let a = &p.s10.fort;
+        assert_eq!(*a, frontline_sim::fort::FortAccount::default(), "{p:?}");
+        assert_eq!(p.s10.new_cards_bought, 0);
+    }
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let file = tmp("s10.json");
+    let _ = std::fs::remove_file(&file);
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--seed", "3", "--seeds", "1"])
+        .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--json")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let j: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    for f in ["germany", "usa"] {
+        let s10 = j["factions"][f]["s10"].as_object().expect("an s10 block");
+        for k in [
+            "works_started",
+            "new_cards_bought",
+            "wire_built",
+            "bangalores",
+        ] {
+            assert!(s10.contains_key(k), "{f}.s10.{k}");
+        }
+        for (k, v) in s10 {
+            assert_eq!(v.as_f64(), Some(0.0), "{f}.s10.{k}");
+        }
+    }
+}

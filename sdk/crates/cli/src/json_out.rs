@@ -525,6 +525,22 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             }),
         );
     }
+    // S10a: fortification counters (spec 7; all zero in AI play).
+    {
+        let c = &f.s10;
+        o.insert(
+            "s10".into(),
+            json!({
+                "works_started": c.works_started, "pieces_built": c.pieces_built,
+                "pieces_lost": c.pieces_lost, "wire_built": c.wire_built,
+                "wire_cut": c.wire_cut, "wire_blown": c.wire_blown,
+                "wire_crushed": c.wire_crushed, "bangalores": c.bangalores,
+                "materials_loaded_kg": round3(c.materials_loaded_g as f64 / 1000.0),
+                "materials_used_kg": round3(c.materials_used_g as f64 / 1000.0),
+                "new_cards_bought": c.new_cards_bought,
+            }),
+        );
+    }
     o.insert(
         "s6_derived".into(),
         json!({

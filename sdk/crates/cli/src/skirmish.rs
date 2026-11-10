@@ -402,6 +402,23 @@ pub struct PlayerReport {
     /// guns in cover, gun jobs failed, pits, re-lays, recrew orders.
     pub s9: frontline_sim::S9Counters,
     pub s9_ai: [u32; 7],
+    /// S10a per-player fortification account (`FortAccount`) and the
+    /// squads fielded from the three S10a cards ([`S10A_CARDS`]).
+    pub s10: S10Player,
+}
+
+/// S10a: the three cards of the mechanics half (short ids; spec 3.4).
+pub const S10A_CARDS: [&str; 3] = [
+    "ger_sturmpioniergruppe",
+    "ger_baupioniergruppe",
+    "usa_assault_section",
+];
+
+/// S10a numbers of one player (spec 7: all zero in AI play).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S10Player {
+    pub fort: frontline_sim::fort::FortAccount,
+    pub new_cards_bought: u32,
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -1421,6 +1438,19 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     ]
                 }),
                 s9: pl.s9,
+                s10: S10Player {
+                    fort: g.fort().accounts.get(p).copied().unwrap_or_default(),
+                    new_cards_bought: fielded
+                        .values()
+                        .filter(|(o, t)| {
+                            owned(o) && {
+                                let id = &s.squad_types[*t as usize].id;
+                                let short = id.split_once(':').map_or(id.as_str(), |x| x.1);
+                                S10A_CARDS.contains(&short)
+                            }
+                        })
+                        .count() as u32,
+                },
                 s9_ai: ai.map_or([0; 7], |a| {
                     let c = &a.counters;
                     [
@@ -1856,6 +1886,44 @@ pub struct FactionSummary {
     pub s7: S7Faction,
     /// S8a counters over the run.
     pub s8a: S8aFaction,
+    /// S10a counters over the run (sums of `S10Player`).
+    pub s10: S10Faction,
+}
+
+/// S10a numbers of one faction over a `--seeds` run (sums; all zero in
+/// AI play: the AI uses nothing new).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S10Faction {
+    pub matches: u32,
+    pub works_started: u64,
+    pub pieces_built: u64,
+    pub pieces_lost: u64,
+    pub wire_built: u64,
+    pub wire_cut: u64,
+    pub wire_blown: u64,
+    pub wire_crushed: u64,
+    pub bangalores: u64,
+    pub materials_loaded_g: u64,
+    pub materials_used_g: u64,
+    pub new_cards_bought: u64,
+}
+
+impl S10Faction {
+    pub fn add(&mut self, p: &S10Player) {
+        let a = &p.fort;
+        self.matches += 1;
+        self.works_started += a.works_started as u64;
+        self.pieces_built += a.pieces_built as u64;
+        self.pieces_lost += a.pieces_lost as u64;
+        self.wire_built += a.wire_built as u64;
+        self.wire_cut += a.wire_cut as u64;
+        self.wire_blown += a.wire_blown as u64;
+        self.wire_crushed += a.wire_crushed as u64;
+        self.bangalores += a.bangalores as u64;
+        self.materials_loaded_g += a.materials_loaded_g;
+        self.materials_used_g += a.materials_used_g;
+        self.new_cards_bought += p.new_cards_bought as u64;
+    }
 }
 
 /// S8a numbers of one faction over a `--seeds` run (sums of
@@ -2315,6 +2383,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
                 .extend(p.s7.tank_td_vehicles.iter().cloned());
             u.gun_vehicles.extend(p.s7.gun_vehicles.iter().cloned());
             // S8a.
+            f.s10.add(&p.s10);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
