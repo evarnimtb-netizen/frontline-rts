@@ -1,8 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S9 (`71cf02f`; S8b and S9 merged 2026-11-09). S9b (AI gun siting and budget) is on branch
-`s9b-ai-guns` (head `1bfc92f`), not merged, pushed to the private remote; verified on that head (`tools/check.sh full` all ok).
-S8b trucks are on main too. Read the sections you need, then the doc the index names. Checked 2026-11-10.
+Main holds S1 to S9b (`ba0038f`; S9b merged 2026-11-10 with the owner's OK, verified on `1bfc92f`). Work now: S10a
+mechanics on branch `s10a-fortifications` (from `9753cd9`, docs only past main; spec `docs/slices/S10a-fortifications.md`).
+Read the sections you need, then the doc the index names. Checked 2026-11-10.
 
 ## What the game is now
 
@@ -47,8 +47,8 @@ in the AI (data only, emplaced only), HE for the 57 mm (AP only).
 
 ## Versions
 
-`SAVE_VERSION` 18 and `PROTOCOL_VERSION` 10 on main (since S8a). On `s8b-trucks-recon`: 19 and 11. On `s9-at-guns`:
-**20 and 12** (S9, on main). On `s9b-ai-guns`: **21 and 12** (S9b Fix). `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
+`SAVE_VERSION` **21** and `PROTOCOL_VERSION` **12** on main (S9b). S10a plans 22 and 13 (one bump each, in its layout
+commit). `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
 History: S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12 (one bump each).
 A change to a save layout, the hash or a command bumps these in the same commit. `sdk/docs/net/relay-protocol.md`
 lists the commands. Each TOML value change refreshes the BASELINE in `sdk/crates/content/tests/resolved_defs.rs`
@@ -72,7 +72,7 @@ figures without a design source are marked verify.
 Balance (after Fix, pooled 480): Germany **45.6 %**; 14 hard misses (S9-19). Tank KOs by guns 36 GER / 16 USA (S9-17).
 Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
 
-## S9b (branch `s9b-ai-guns`, not merged; log `S9b-log.md`, spec `S9b-ai-guns.md`)
+## S9b (on main since 2026-11-10; log `S9b-log.md`, spec `S9b-ai-guns.md`)
 
 AI gun siting: `ai/guns.rs` searches the armour corridor (vehicle path, 25 m steps, 500 m) and picks a site that sees it
 inside the arc (`site_view_min_pct` 10), clear of enemy men, the other gun, enemy-held points and the corridor. CLI
@@ -80,11 +80,9 @@ inside the arc (`site_view_min_pct` 10), clear of enemy men, the other gun, enem
 targets pass, 10 miss (hard 10); T88 met for GER (0.575), not USA (0.356 pooled). Lost to guns 26 / 19 % of armour
 (was 22 / 14; 80-match trace on `a9fa303` at 35). SAVE 21. Checks on `1bfc92f`: full all ok (688 passed).
 
-## S8b (on main, merged 2026-11-09; log `S8b-log.md`, spec `S8b-trucks-recon.md`)
+## S8b, S8a, S7, S6b (on main)
 
-## S8a, S7, S6b (on main)
-
-S8a half-tracks (`S8a-halftracks.md`), S7 assault guns and TDs (`S7-casemate-td.md`), S6b mortar AI.
+S8b trucks and recon (`S8b-trucks-recon.md`), S8a half-tracks (`S8a-halftracks.md`), S7 assault guns and TDs, S6b mortar AI.
 
 ## Owner decisions in force (source: `docs/TODO.md`)
 
@@ -93,19 +91,22 @@ S8a half-tracks (`S8a-halftracks.md`), S7 assault guns and TDs (`S7-casemate-td.
   Historical squad sizes, pop 150. German cards keep the 20 % price cut (S5a-37), except gun cards (S9-4).
 - Tank crews bail out. Vehicles before fortifications. Matches 10-40 min, median 15-30.
 - S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; T33 counts tanks and TDs only.
+- S9b (2026-11-10): S9b-1 (A) keep `income_max_pct` 30, the US T88 shortfall goes to the S10 AI half; S9b-2 (A) the
+  SAVE 21 bump stays; S9b-3 (A) the 10 hard misses carry to S10. Merge to main approved.
+- S10 on: each engine slice is a mechanics slice (new cards `ai_weight` 0, AI-vs-AI proven unchanged), then an AI half.
 
 ## Known gaps
 
 - Balance: S9 pooled 45.6 %, 14 hard misses (S9-19); S9b 48.75 % and 10 hard misses (`income_max_pct` 30). T5c, T50e known noise (S8a-30, S8b-27).
-- S9b on `1bfc92f`: no failing test. The launcher save bug (`7e33e0e`) is fixed there; main has it until S9b merges. T88 for USA open (S9b-1).
+- S9b: no failing test on `1bfc92f`; the launcher save bug fix (`7e33e0e`) is on main. T88 for USA open (S9b-1 (A)).
 - Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck (sim tests cover it). Structures cannot be selected in the HUD (S6-18).
   AI rarely throws satchels or fires Panzerfausts. No radio, registered fire, cross-OS CI.
 
 ## Roadmap position
 
-Done and on main: S1 to S9. Branch, not merged: S9b (`s9b-ai-guns`; decide S9b-1 and S9b-3, then whether to merge).
-Next: S10a after those, then S10b, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` section 1.
+Done and on main: S1 to S9b. Now: S10a mechanics (`s10a-fortifications`), then the S10a AI half, S10b (mechanics, AI),
+S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` section 1.
 
 ## How to check work (few lines of output)
 
@@ -144,5 +145,6 @@ Next: S10a after those, then S10b, S11a/b, S12 to S15. Tiers: `docs/process/work
 | S8b wheels, optics, screens, trucks, DropCrates, recon and truck AI | `docs/slices/S8b-trucks-recon.md` 5-9, 17; log `S8b-log.md` |
 | S9 guns: entity, slots, tow, capture, pit, AI, balance | `docs/slices/S9-at-guns.md` (spec, sections 1-22); log `S9-log.md` |
 | S9b AI gun siting (corridor), armour-out measure, budget, open T88 | `docs/slices/S9b-ai-guns.md` 3.2, 6; log `S9b-log.md` |
+| S10a fortifications (mechanics): pieces, materials, wire, breaching, engineer split, neutrality check | `docs/slices/S10a-fortifications.md` |
 | Development speed: where S9 time went, limits for check and measure runs | `docs/process/dev-speed.md` |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |
