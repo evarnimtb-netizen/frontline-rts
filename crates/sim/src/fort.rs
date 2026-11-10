@@ -1153,15 +1153,17 @@ impl FortState {
         }
     }
 
-    /// Takes `dmg` hp from wire section `id`; at 0 it is removed.
-    pub(crate) fn hurt_wire(&mut self, id: u32, dmg: u32, by: PlayerId, how: WireGone) {
+    /// Takes `dmg` hp from wire section `id`; at 0 it is removed (true).
+    pub(crate) fn hurt_wire(&mut self, id: u32, dmg: u32, by: PlayerId, how: WireGone) -> bool {
         let Some(s) = self.wire.get_mut(&id) else {
-            return;
+            return false;
         };
         s.hp = s.hp.saturating_sub(dmg);
         if s.hp == 0 {
             self.remove_wire(id, Some(by), how);
+            return true;
         }
+        false
     }
 }
 
@@ -1182,6 +1184,15 @@ pub(crate) fn wire_pace(fort: &FortState, setup: &MatchSetup, pos: FxVec2, v: Fx
 }
 
 impl MatchState {
+    /// Section `id` is gone: squads cutting it stop (`Idle`).
+    pub(crate) fn wire_gone(&mut self, id: u32) {
+        for q in self.squads.values_mut() {
+            if matches!(q.order, Order::CutWire { section, .. } if section == id) {
+                q.order = Order::Idle;
+            }
+        }
+    }
+
     /// `CutWire { squad, at }` (section 4, rule 5).
     pub(crate) fn order_cut_wire(
         &mut self,
@@ -1229,12 +1240,6 @@ impl MatchState {
     /// hulls cross (S10a-7 (A)). Nothing to do without wire.
     fn wire_tick(&mut self, ents: &Entities, terrain: &Heightfield, t: &FortTuning) {
         if self.fort.wire.is_empty() {
-            // Cutters whose wire is gone stop.
-            for q in self.squads.values_mut() {
-                if matches!(q.order, Order::CutWire { .. }) {
-                    q.order = Order::Idle;
-                }
-            }
             return;
         }
         let hz = self.setup.tick_hz as u64;
@@ -1289,9 +1294,9 @@ impl MatchState {
             let at = near_segment(here, s.a, s.b, CUT_REACH) && !ents.combat[man.index()].pinned;
             let work = if at { (work + rate).min(need) } else { work };
             if work >= need {
-                sq.order = Order::Idle;
-                self.fort
-                    .remove_wire(section, Some(sq.owner), WireGone::Cut);
+                let owner = sq.owner;
+                self.fort.remove_wire(section, Some(owner), WireGone::Cut);
+                self.wire_gone(section);
                 continue;
             }
             sq.order = Order::CutWire {
@@ -1322,6 +1327,7 @@ impl MatchState {
         for (sid, by) in crushed {
             if self.fort.wire.contains_key(&sid) {
                 self.fort.remove_wire(sid, Some(by), WireGone::Crushed);
+                self.wire_gone(sid);
             }
         }
     }
@@ -1368,7 +1374,9 @@ impl MatchState {
             WireGone::Broken
         };
         for id in hit {
-            self.fort.hurt_wire(id, damage, PlayerId(player), how);
+            if self.fort.hurt_wire(id, damage, PlayerId(player), how) {
+                self.wire_gone(id);
+            }
         }
     }
 
@@ -1523,6 +1531,7 @@ impl MatchState {
     /// Lays the charge of Bangalore item `item` that `m` (of `owner`)
     /// placed toward `target`: from his spot `length` toward it; it bursts
     /// at `tick + fuse`. False (item kept) when the list is full.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn lay_charge(
         &mut self,
         terrain: &Heightfield,

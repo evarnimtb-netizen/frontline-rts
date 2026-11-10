@@ -2886,8 +2886,12 @@ impl MatchState {
             crate::fort::WireGone::Broken
         };
         for (id, dmg) in wire_hits {
-            self.fort
-                .hurt_wire(id, dmg, crate::ecs::PlayerId(b.player), how);
+            if self
+                .fort
+                .hurt_wire(id, dmg, crate::ecs::PlayerId(b.player), how)
+            {
+                self.wire_gone(id);
+            }
         }
         // Tracks struck, ascending vehicle id (no fire, no rack: no
         // knock-out).

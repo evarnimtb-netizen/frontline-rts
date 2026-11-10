@@ -186,11 +186,11 @@ fn the_s4_content_resolves_with_historical_squads() {
     };
     assert_eq!((men("ww2:germany"), men("ww2:usa")), (28, 32));
     // Every S4 card is regular (S4-10 (A)); S5a adds the conscript
-    // VG-Sturmgruppe.
+    // VG-Sturmgruppe, S10a the conscript Baupioniergruppe (spec 3.4).
     assert!(
         s.squad_types
             .iter()
-            .filter(|t| t.id != "ww2:ger_vg_sturmgruppe")
+            .filter(|t| t.id != "ww2:ger_vg_sturmgruppe" && t.id != "ww2:ger_baupioniergruppe")
             .all(|t| s.training[t.training as usize].is_regular())
     );
     // The two-BAR card is dated; skirmish has no date filter.
