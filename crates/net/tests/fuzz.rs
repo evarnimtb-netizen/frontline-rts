@@ -20,6 +20,8 @@ struct Rig {
     now: u64,
     /// Genuine datagrams seen, both directions: (to relay?, bytes).
     seen: Vec<(bool, Vec<u8>)>,
+    /// Commands the clients got in bundles: (client, command).
+    bundled: Vec<(usize, frontline_sim::Command)>,
 }
 
 impl Rig {
@@ -47,6 +49,7 @@ impl Rig {
             relay_addr,
             now: 0,
             seen: Vec::new(),
+            bundled: Vec::new(),
         }
     }
 
@@ -75,6 +78,9 @@ impl Rig {
             }
             let evs: Vec<_> = self.clients[i].drain_events().collect();
             for ev in evs {
+                if let NetEvent::Bundle { cmds, .. } = &ev {
+                    self.bundled.extend(cmds.iter().map(|c| (i, c.clone())));
+                }
                 if let NetEvent::Welcome { slot } = ev {
                     let faction = if slot == 0 { "ww2:germany" } else { "ww2:usa" };
                     self.clients[i].set_lobby(LobbySet {
@@ -199,5 +205,75 @@ fn garbage_never_panics() {
         let bytes = junk(&mut r, &rig.seen);
         let _ = protocol::decode(&bytes);
         let _ = protocol::reject_version(&bytes);
+    }
+}
+
+/// S10a: the four fortification commands (and a construction crate) go
+/// through the relay to both clients unchanged, and junk built from their
+/// genuine datagrams never panics.
+#[test]
+fn fortify_commands_roundtrip_under_garbage() {
+    use frontline_content::setup::SupplyKind;
+    use frontline_sim::SimId;
+    let mut rig = Rig::new();
+    for _ in 0..5_000 {
+        rig.step();
+    }
+    assert!(rig.relay.phase() == frontline_net::relay::Phase::Running);
+    rig.seen.clear();
+    let sent = [
+        CommandKind::Fortify {
+            squad: SquadId(3),
+            fort: 1,
+            line: (0..16).map(|i| FxVec2::from_int(100 + 2 * i, 50)).collect(),
+        },
+        CommandKind::LoadMaterials {
+            squad: SquadId(3),
+            kg: 160,
+        },
+        CommandKind::CutWire {
+            squad: SquadId(5),
+            at: FxVec2::from_int(300, 310),
+        },
+        CommandKind::PlaceBangalore {
+            units: (0..12).map(SimId).collect(),
+            target: FxVec2::from_int(305, 320),
+        },
+        CommandKind::IssueCrate {
+            squad: SquadId(3),
+            kind: SupplyKind::Construction,
+        },
+    ];
+    for (k, cmd) in sent.iter().enumerate() {
+        assert!(rig.clients[k % 2].send_command(cmd.clone()), "{cmd:?}");
+        for _ in 0..50 {
+            rig.step();
+        }
+    }
+    for _ in 0..2_000 {
+        rig.step();
+    }
+    for (k, cmd) in sent.iter().enumerate() {
+        let from = rig.clients[k % 2].slot().expect("welcomed");
+        for client in 0..2 {
+            assert!(
+                rig.bundled
+                    .iter()
+                    .any(|(i, c)| *i == client && c.player.0 == from && c.kind == *cmd),
+                "client {client} got {cmd:?}"
+            );
+        }
+    }
+    // Junk from those datagrams, into the running match and plain decode.
+    let mut r = SplitMix::new(1010);
+    for k in 0..50_000u32 {
+        rig.junk(&mut r);
+        if k % 50 == 0 {
+            rig.step();
+        }
+    }
+    for _ in 0..50_000 {
+        let bytes = junk(&mut r, &rig.seen);
+        let _ = protocol::decode(&bytes);
     }
 }

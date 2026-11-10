@@ -956,6 +956,71 @@ mod tests {
         }
     }
 
+    /// S10a: the four fortification commands, at and past their limits.
+    #[test]
+    fn fortify_commands_in_limits() {
+        use frontline_content::setup::SupplyKind;
+        let pts = |n: usize| {
+            (0..n as i32)
+                .map(|i| FxVec2::from_int(i, 0))
+                .collect::<Vec<_>>()
+        };
+        let fortify = |n: usize| CommandKind::Fortify {
+            squad: SquadId(4),
+            fort: 2,
+            line: pts(n),
+        };
+        let bangalore = |n: usize| CommandKind::PlaceBangalore {
+            units: (0..n as u32).map(SimId).collect(),
+            target: FxVec2::from_int(30, 40),
+        };
+        let input = |k: CommandKind| {
+            Packet::Input(Input {
+                ack: BundleAck::default(),
+                turns: vec![InputTurn {
+                    target: 0,
+                    seq0: 0,
+                    cmds: vec![k],
+                }],
+            })
+        };
+        let mut buf = Vec::new();
+        let ok = [
+            fortify(1),
+            fortify(2),
+            fortify(MAX_DIG_POINTS),
+            bangalore(1),
+            bangalore(MAX_UNITS),
+            CommandKind::LoadMaterials {
+                squad: SquadId(4),
+                kg: u16::MAX,
+            },
+            CommandKind::CutWire {
+                squad: SquadId(4),
+                at: FxVec2::from_int(-5, 9),
+            },
+            CommandKind::IssueCrate {
+                squad: SquadId(4),
+                kind: SupplyKind::Construction,
+            },
+        ];
+        for k in ok {
+            assert!(command_in_limits(&k), "{k:?}");
+            roundtrip(input(k.clone()));
+        }
+        for k in [
+            fortify(0),
+            fortify(MAX_DIG_POINTS + 1),
+            bangalore(0),
+            bangalore(MAX_UNITS + 1),
+        ] {
+            assert!(!command_in_limits(&k), "{k:?}");
+            if encode(1, &input(k.clone()), &mut buf).is_ok() {
+                assert_eq!(decode(&buf), Err(DecodeError::Limit), "{k:?}");
+            }
+        }
+    }
+
     #[test]
     fn suppress_lines_hold_one_or_two_points() {
         let k = |n: usize| CommandKind::SuppressUnits {
