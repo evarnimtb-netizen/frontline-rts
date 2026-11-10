@@ -800,7 +800,11 @@ fn infantry_path_goes_through_a_gap() {
     // A 12 m gap at x 510..522 (six sections).
     let gap = sections_between(&w, 510, 522);
     assert_eq!(gap.len(), 6);
-    w.edit_fort(|f| gap.iter().for_each(|id| drop(f.wire.remove(id))));
+    w.edit_fort(|f| {
+        for id in &gap {
+            f.wire.remove(id);
+        }
+    });
     let m = walker(&mut w, 505, 470, c(505, 530));
     let trace = walk(&mut w, m, 520, 90 * HZ);
     let cross: Vec<Fx> = trace
