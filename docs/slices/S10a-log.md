@@ -35,7 +35,7 @@ canonical snapshot refreshed; `simbench/src/report.rs` holds no setup-hash basel
 
 **Tests and neutrality.** 21/21 Build A tests in `crates/sim/src/s10a_tests.rs` (engineer caps set by the test
 setup). `tools/neutral.py` + `test_neutral.py` (in `check.sh quick`); base vs base same; 40 set on `ccd82e2`:
-`same 40/40`. Final 40 set: see the report line below.
+`same 40/40`; final 40 set on `fd20621`: `skirmish40.json: same 40/40`.
 
 **Left for B.** Wire (slow, path layer, crush, HE and fragment damage), `CutWire`, Bangalore charges (accept the
 two commands; `fort_tick` has the hook), cards, engineer caps, items, content tests. `items.rs` has no static-box
