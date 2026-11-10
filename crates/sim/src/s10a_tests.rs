@@ -1139,3 +1139,87 @@ fn bangalore_needs_breach_and_an_item() {
         .sum();
     assert_eq!(after, 1);
 }
+
+// ------------------------------------------------------------ Build C --
+
+#[test]
+fn fort_snapshot_lists_pieces_wire_sites_charges() {
+    let mut w = world();
+    // Nothing yet: an empty fort snapshot.
+    w.step(&[]);
+    assert_eq!(w.snapshot().fort, crate::snapshot::FortSnapshot::default());
+    // A wall piece (player 0), enemy wire (player 1), a waiting site with
+    // carried kg on another squad, and a laid charge.
+    let piece = wall_at(&mut w, 0);
+    wire_line(&mut w, c(600, 480), c(600, 520));
+    let wall = fort(&w, "ww2:sandbag_wall");
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 400, 400);
+    fortify(&mut w, 0, eng, wall, vec![c(400, 405), c(404, 405)]);
+    let carrier = spawn(&mut w, 0, "ww2:ger_engineer_squad", 300, 300);
+    carry(&mut w, carrier, 12);
+    let sp = spawn(&mut w, 0, "ww2:ger_sturmpioniergruppe", 700, 480);
+    place(&mut w, 3, sp, c(700, 500));
+    let mut laid = false;
+    for _ in 0..30 * HZ {
+        w.step(&[]);
+        if !fs(&w).charges.is_empty() {
+            laid = true;
+            break;
+        }
+    }
+    assert!(laid, "a charge was laid");
+    let s = w.snapshot();
+    let f = &s.fort;
+    // Pieces: the wall piece with its box and full hp.
+    let q = f
+        .pieces
+        .iter()
+        .find(|q| q.id == piece)
+        .expect("the wall piece");
+    assert_eq!(q.owner, 0);
+    assert_eq!(q.fort, wall);
+    assert_eq!(q.part, 0, "sandbag");
+    assert_eq!(q.hp_pct, 100);
+    assert!((q.center[0] - 500.0).abs() < 0.5 && (q.center[1] - 500.0).abs() < 0.5);
+    assert!(q.half.iter().all(|&h| h > 0.0));
+    let ids: Vec<u32> = f.pieces.iter().map(|q| q.id).collect();
+    assert!(ids.windows(2).all(|p| p[0] < p[1]), "ascending id");
+    // Wire: twenty 2 m sections of player 1 with the def's band.
+    assert_eq!(f.wire.len(), fs(&w).wire.len());
+    assert_eq!(f.wire.len(), 20);
+    assert!(f.wire.iter().all(|x| x.owner == 1 && x.hp_pct == 100));
+    assert!(f.wire.iter().all(|x| (x.band - 1.5).abs() < 1e-3));
+    assert!(f.wire.iter().all(|x| (x.height - 0.9).abs() < 1e-3));
+    // The site: waiting for its kg, no progress, two segments.
+    assert_eq!(f.works.len(), 1);
+    let wk = &f.works[0];
+    assert_eq!((wk.owner, wk.fort, wk.builder), (0, wall, eng.0));
+    assert_eq!(wk.step, WorkStep::Wait as u8);
+    assert_eq!((wk.progress_pct, wk.materials_pct), (0, 0));
+    assert_eq!((wk.seg, wk.segments), (0, 2));
+    assert_eq!(wk.line.len(), 2);
+    // The carried kg on the carrier's squad.
+    let sq = s.squads.iter().find(|q| q.id == carrier.0).unwrap();
+    assert!((sq.materials_kg - 12.0).abs() < 1e-3);
+    assert!(
+        s.squads
+            .iter()
+            .filter(|q| q.id != carrier.0)
+            .all(|q| q.materials_kg == 0.0)
+    );
+    // The charge, its fuse counting down.
+    assert_eq!(f.charges.len(), 1);
+    let ch = &f.charges[0];
+    assert_eq!(ch.owner, 0);
+    assert_eq!(ch.item, item_id(&w, "ww2:gestreckte_ladung"));
+    assert!(ch.fuse_ticks > 0 && ch.fuse_ticks <= 8 * HZ as u32);
+    // A refusal shows in `fort_refusals` for that tick only.
+    let rifles = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 200, 200);
+    fortify(&mut w, 0, rifles, wall, vec![c(200, 205), c(202, 205)]);
+    assert_eq!(
+        w.snapshot().fort_refusals.last().map(|e| e.refusal),
+        Some(FortRefusal::CannotBuild)
+    );
+    w.step(&[]);
+    assert!(w.snapshot().fort_refusals.is_empty());
+}

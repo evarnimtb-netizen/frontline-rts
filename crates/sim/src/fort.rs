@@ -604,7 +604,7 @@ impl MatchState {
 
     /// The point a work's current step builds at: a point site, or the
     /// middle of the line's current segment.
-    fn site_of(&self, w: &Work) -> (FxVec2, Fx) {
+    pub(crate) fn site_of(&self, w: &Work) -> (FxVec2, Fx) {
         let d = &self.setup.forts[w.fort as usize];
         if d.shape != FortShape::Line {
             return (w.line[0], w.yaw);

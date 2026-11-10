@@ -2652,6 +2652,12 @@ impl World {
         self.snapshot
             .supply_refusals
             .clone_from(&self.supply_events);
+        self.snapshot.fort_refusals.clone_from(&self.fort_events);
+        self.snapshot.fill_fort(
+            self.state.tick,
+            &self.state.terrain,
+            self.state.game.as_ref(),
+        );
         self.snapshot
             .fill_shells(&self.state.projectiles, self.state.game.as_ref());
     }

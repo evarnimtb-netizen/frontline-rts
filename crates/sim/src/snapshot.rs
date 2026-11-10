@@ -76,6 +76,8 @@ pub struct SquadSnapshot {
     pub dig_pct: u8,
     /// Items the men carry, by [`ItemKind::index`] (frag, smoke, satchel).
     pub items: [u16; ITEM_KINDS],
+    /// S10a: construction kg the squad carries (`LoadMaterials`).
+    pub materials_kg: f32,
 }
 
 /// A thrown item in the air, or landed and waiting for its fuse.
@@ -489,6 +491,86 @@ pub struct CrateSnapshot {
     pub kg: f32,
 }
 
+/// S10a: one standing fortification piece, ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FortPieceSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    /// Index into `MatchSetup::forts`.
+    pub fort: u16,
+    /// Index into `frontline_content::defs::PIECE_PARTS` (sandbag, roof,
+    /// timber; the colour).
+    pub part: u8,
+    /// Box centre `[x, y, z]`, its yaw and half extents (along the facing,
+    /// across, up).
+    pub center: [f32; 3],
+    pub yaw: f32,
+    pub half: [f32; 3],
+    /// Hit points left (%).
+    pub hp_pct: u8,
+}
+
+/// S10a: one standing wire section, ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WireSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    pub fort: u16,
+    /// End points `[x, y, z]` (z on the ground).
+    pub a: [f32; 3],
+    pub b: [f32; 3],
+    /// Band width and height (m).
+    pub band: f32,
+    pub height: f32,
+    pub hp_pct: u8,
+}
+
+/// S10a: one site being dug or built, ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FortWorkSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    pub fort: u16,
+    pub builder: u32,
+    /// `WorkStep as u8`: 0 dig, 1 waiting for materials, 2 build.
+    pub step: u8,
+    /// The site of the current step (a line: its current segment) and yaw.
+    pub site: [f32; 3],
+    pub yaw: f32,
+    /// The whole line (point and over_hq: `[pos, toward]`).
+    pub line: Vec<[f32; 2]>,
+    /// Segment being built (lines; 0 otherwise) and the number of segments.
+    pub seg: u8,
+    pub segments: u8,
+    /// Progress of the current step (0..=100): pit dug, build work done.
+    pub progress_pct: u8,
+    /// kg of the current step drawn so far (0..=100 %).
+    pub materials_pct: u8,
+}
+
+/// S10a: a laid Bangalore charge, ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChargeSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    /// Index into `MatchSetup::items`.
+    pub item: u16,
+    pub from: [f32; 3],
+    pub to: [f32; 3],
+    /// Ticks until it bursts.
+    pub fuse_ticks: u32,
+}
+
+/// S10a: fortifications (match mode only). Enemy entries are listed too;
+/// the bridge hides the ones the local player has not seen.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FortSnapshot {
+    pub pieces: Vec<FortPieceSnapshot>,
+    pub wire: Vec<WireSnapshot>,
+    pub works: Vec<FortWorkSnapshot>,
+    pub charges: Vec<ChargeSnapshot>,
+}
+
 /// One capture point, in map order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PointSnapshot {
@@ -578,6 +660,10 @@ pub struct RenderSnapshot {
     pub fire_mission_refusals: Vec<crate::fire_mission::FireMissionEvent>,
     /// S6: this tick's refused S6 commands (the HUD says why).
     pub supply_refusals: Vec<crate::structures::SupplyEvent>,
+    /// S10a: this tick's refused S10a commands (the HUD says why).
+    pub fort_refusals: Vec<crate::fort::FortEvent>,
+    /// S10a: pieces, wire, sites and charges (match mode only).
+    pub fort: FortSnapshot,
     /// S6: HQs and dumps, ascending id (match mode only).
     pub structures: Vec<StructureSnapshot>,
     /// S6: crates, ascending id (match mode only).
@@ -798,6 +884,11 @@ impl RenderSnapshot {
                     _ => 0,
                 },
                 items,
+                materials_kg: g
+                    .fort()
+                    .carried_g
+                    .get(id)
+                    .map_or(0.0, |&gr| gr as f32 / 1000.0),
             });
         }
         let items = &g.setup().items;
@@ -928,6 +1019,118 @@ impl RenderSnapshot {
                 pos,
                 carrier: c.carrier.map_or(u32::MAX, |m| m.0),
                 kg: kg(c.g),
+            });
+        }
+    }
+
+    /// S10a: fills `fort` (pieces, wire, sites, charges, ascending id).
+    /// Called after `fill` with the terrain (wire ends and sites sit on
+    /// the ground); clears `fort` without a match.
+    pub(crate) fn fill_fort(
+        &mut self,
+        tick: u64,
+        terrain: &Heightfield,
+        game: Option<&MatchState>,
+    ) {
+        self.fort.pieces.clear();
+        self.fort.wire.clear();
+        self.fort.works.clear();
+        self.fort.charges.clear();
+        let Some(g) = game else {
+            return;
+        };
+        let f = g.fort();
+        if f.is_empty() {
+            return;
+        }
+        let setup = g.setup();
+        let pct = |a: u64, b: u64| (a.min(b) * 100 / b.max(1)) as u8;
+        let on = |p: crate::fx::FxVec2| [p.x.to_f32(), p.y.to_f32(), terrain.height_at(p).to_f32()];
+        for (&id, q) in &f.pieces {
+            let b = &setup.forts[q.fort as usize].pieces[q.part as usize];
+            let half = [
+                crate::fx::Fx::from(b.half[0]).to_f32(),
+                crate::fx::Fx::from(b.half[1]).to_f32(),
+                crate::fx::Fx::from(b.half[2]).to_f32(),
+            ];
+            self.fort.pieces.push(FortPieceSnapshot {
+                id,
+                owner: q.owner.0,
+                fort: q.fort,
+                part: b.part,
+                center: [q.pos.x.to_f32(), q.pos.y.to_f32(), q.z.to_f32() + half[2]],
+                yaw: q.yaw.to_f32(),
+                half,
+                hp_pct: pct(q.hp as u64, b.hp as u64),
+            });
+        }
+        for (&id, w) in &f.wire {
+            let d = &setup.forts[w.fort as usize];
+            let (band, height, hp) = d.wire.as_ref().map_or((0.0, 0.0, 1), |ws| {
+                (
+                    crate::fx::Fx::from(ws.band).to_f32(),
+                    crate::fx::Fx::from(ws.height).to_f32(),
+                    ws.hp,
+                )
+            });
+            self.fort.wire.push(WireSnapshot {
+                id,
+                owner: w.owner.0,
+                fort: w.fort,
+                a: on(w.a),
+                b: on(w.b),
+                band,
+                height,
+                hp_pct: pct(w.hp as u64, hp as u64),
+            });
+        }
+        for (&id, w) in &f.works {
+            let d = &setup.forts[w.fort as usize];
+            let (site, yaw) = g.site_of(w);
+            let progress_pct = match w.step {
+                crate::fort::WorkStep::Dig => match g.squad(w.builder).map(|q| &q.order) {
+                    Some(Order::Dig { job, .. }) => {
+                        job.progress_pct(job.rules(&setup.rules), setup.tick_hz)
+                    }
+                    _ => 0,
+                },
+                crate::fort::WorkStep::Wait => 0,
+                crate::fort::WorkStep::Build => {
+                    pct(w.work, d.work_ticks as u64 * d.work_men as u64 * 100)
+                }
+            };
+            let segments = if d.shape == frontline_content::setup::FortShape::Line {
+                crate::fort::segments(&w.line, d.segment).min(255) as u8
+            } else {
+                1
+            };
+            self.fort.works.push(FortWorkSnapshot {
+                id,
+                owner: w.owner.0,
+                fort: w.fort,
+                builder: w.builder.0,
+                step: w.step as u8,
+                site: on(site),
+                yaw: yaw.to_f32(),
+                line: w.line.iter().map(|p| p.to_f32()).collect(),
+                seg: w.seg,
+                segments,
+                progress_pct,
+                materials_pct: if w.step == crate::fort::WorkStep::Build {
+                    100
+                } else {
+                    pct(w.got_g as u64, d.materials_g as u64)
+                },
+            });
+        }
+        for c in &f.charges {
+            self.fort.charges.push(ChargeSnapshot {
+                id: c.id,
+                owner: c.owner.0,
+                item: c.item,
+                from: on(c.from),
+                to: on(c.to),
+                fuse_ticks: c.fuse_tick.saturating_sub(tick).min(u32::MAX as u64) as u32,
             });
         }
     }
