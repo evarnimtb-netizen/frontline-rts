@@ -1495,7 +1495,7 @@
           "enemy_standoff_m": 80,
           "engage_still_m": 400,
           "go_max_s": 150,
-          "income_max_pct": 35,
+          "income_max_pct": 30,
           "los_rays": 6,
           "max_fails": 2,
           "max_guns": 2,

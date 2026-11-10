@@ -1332,7 +1332,7 @@ repath_s = 8                 # s: no job sends the same move again within this
 # S9: AT guns (docs/slices/S9-at-guns.md 12). Each card carries gun, crew and tow.
 [ai.guns]
 after_s = 120                # s: it buys a gun from this match time, or once an enemy vehicle has been seen (S9-13)
-income_max_pct = 35          # %: all its gun cards cost at most this share of the income so far; the share is set aside from the time it may buy (the first gun near 4:30-5:30)
+income_max_pct = 30          # %: all its gun cards cost at most this share of the income so far (S9b: 35 cost the half-tracks and tanks more than the guns repaid: 17 hard misses against 10 at 30, 480 matches); the share is set aside from the time it may buy (the first gun near 4:30-5:30)
 reserve_mp = 0               # MP: left after a gun is bought
 max_guns = 2                 # guns alive or called in at once
 site_min_m = 150             # m: sites lie on rings around the point from this far (no nearer than corridor_clear_m: the corridor ends at the point) ...

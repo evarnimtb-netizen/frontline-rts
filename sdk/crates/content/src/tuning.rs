@@ -1569,7 +1569,7 @@ impl Default for AiGunsTuning {
     fn default() -> AiGunsTuning {
         AiGunsTuning {
             after_s: 120,
-            income_max_pct: 35,
+            income_max_pct: 30,
             reserve_mp: 0,
             max_guns: 2,
             site_min_m: 150,
