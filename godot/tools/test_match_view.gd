@@ -98,6 +98,7 @@ func _run() -> void:
 	_test_s8a()
 	_test_s8b()
 	_test_s9()
+	await _test_s10a()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1565,6 +1566,78 @@ func _test_s9() -> void:
 	var grid: Control = _view.orders
 	_check(grid.ROW_GUN.size() == 5 and grid.TOOLS.has(&"emplace") and grid.TOOLS.has(&"hitch"), "gun orders and tools")
 	_check(sel.has_method("gun_only") and sel.has_method("gun_vehicles"), "selection reads guns")
+
+
+## S10a: the Build button and the build menu by capability, the line and
+## point tools and their intents, materials, wire cutting, the key, the
+## fort blockouts.
+func _test_s10a() -> void:
+	var manned := -1
+	for t in ["engineer", "rifle", "mg", "at"]:
+		for sid in _source.squad_ids(0, t):
+			if manned == -1 and not _source.unit_ids(sid).is_empty():
+				manned = sid
+	_check(manned != -1, "S10a: a manned squad to stage with")
+	if manned == -1:
+		return
+	_check(MatchInput.ACTIONS.get(&"order_build_menu") == KEY_QUOTELEFT, "S10a: ` opens the build menu")
+	var grid: Control = _view.orders
+	_sel.select_squads(PackedInt32Array([manned]))
+	await _frames(1)
+	grid.update_state(_view.state)
+	_check(grid.label_of(&"build_menu") == "", "S10a: no Build button without a fortification capability")
+	_source.set_caps(manned, ["build_structure", "place_wire", "clear_wire"])
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(grid.label_of(&"build_menu") == "Build" and grid.enabled(&"build_menu"), "S10a: Build in the Mission slot for a building squad")
+	grid.press(&"build_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "fort" and grid.label_of(&"build_sandbags") == "Sandbags" and grid.label_of(&"roof_hq") == "Roof HQ", "S10a: the build menu")
+	_check(grid.enabled(&"build_wire") and grid.enabled(&"cut_wire") and grid.enabled(&"load_materials"), "S10a: wire, cutting and materials live")
+	_check(not grid.enabled(&"bangalore"), "S10a: no Bangalore without breach and a charge")
+	var tip: String = grid._get_tooltip(grid.button_rect(&"build_mg_nest").get_center())
+	_check(tip.contains("60 kg") and tip.contains("90 s") and tip.contains("build structure"), "S10a: the MG nest tooltip gives kg, time, capability (%s)" % tip)
+	var at: Vector3 = _source.squad_pos(manned) + Vector3(12, 0, 0)
+	_intents.clear()
+	grid.press(&"build_sandbags")
+	_check(_sel.tool == &"build_sandbags" and _sel.line_tool() and is_equal_approx(_sel.dig_max(), 20.0), "S10a: Sandbags arms a 20 m line tool")
+	_click(_ground_screen(at))
+	_click(_ground_screen(at + Vector3(0, 0, 8)))
+	_rclick(_ground_screen(at + Vector3(0, 0, 8)))
+	var fi: Variant = _last(&"fortify")
+	_check(fi != null and String(fi.what) == "sandbag_wall" and (fi.polyline as PackedVector3Array).size() == 2, "S10a: right-click sends fortify sandbag_wall with the line")
+	_check(_sel.tool == &"", "S10a: the line tool disarms after building")
+	grid.press(&"build_mg_nest")
+	_click(_ground_screen(at + Vector3(-6, 0, 0)))
+	var fp: Variant = _last(&"fortify")
+	_check(fp != null and String(fp.what) == "mg_nest" and fp.has("target") and fp.has("facing"), "S10a: a click sends fortify mg_nest with a facing")
+	grid.press(&"load_materials")
+	_check(_last(&"load_materials") != null, "S10a: Materials sends load_materials")
+	grid.press(&"crate_construction")
+	var cc: Variant = _last(&"issue_crate")
+	_check(cc != null and String(cc.kind) == "construction", "S10a: Crate sends issue_crate construction")
+	grid.press(&"cut_wire")
+	_click(_ground_screen(at))
+	_check(_last(&"cut_wire") != null, "S10a: Cut wire sends cut_wire")
+	# The blockouts.
+	_source.s10_fort = {
+		"pieces": [{"id": 0, "owner": 0, "part": "sandbag", "center": at + Vector3(0, 0.45, 0), "yaw": 0.0, "size": Vector3(2, 0.9, 0.6), "hp": 1.0}],
+		"wire": [{"id": 0, "owner": 1, "a": at + Vector3(0, 0, 20), "b": at + Vector3(2, 0, 20), "band_m": 1.5, "height_m": 0.9, "hp": 1.0}],
+		"sites": [{"id": 0, "owner": 0, "blueprint": "mg_nest", "step": "build", "pos": at + Vector3(-6, 0, 0), "yaw": 0.0, "progress": 0.5, "materials": 1.0}],
+		"charges": [{"id": 0, "owner": 0, "from": at + Vector3(1, 0, 17), "to": at + Vector3(1, 0, 20), "fuse_s": 4.0}],
+	}
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	_check(_match.fort_view.drawn == 1 + 3 + 13 and _match.fort_view.drawn_pipes == 1, "S10a: piece, wire posts and band, site ghost and ring, charge drawn (%d, %d)" % [_match.fort_view.drawn, _match.fort_view.drawn_pipes])
+	grid.press(&"build_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "soldier" and not _sel.fort_menu, "S10a: Back returns to the orders")
+	_source.s10_fort = {}
+	_source.set_caps(manned, [])
+	_sel.select_only(PackedInt32Array())
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	_check(_match.fort_view.drawn == 0, "S10a: nothing drawn without fortifications")
 
 
 func _check(ok: bool, what: String) -> void:

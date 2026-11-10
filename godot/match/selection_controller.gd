@@ -84,6 +84,15 @@ const VEHICLE_ONLY := [&"reverse", &"face", &"repair", &"ammo", &"ammo_auto", &"
 ## S3c: Bail out needs a second press within this long.
 const BAIL_CONFIRM_MS := 2000
 
+## S10a: the build menu (orders grid "fort" mode). Line tools take points
+## like the dig tool (right-click builds); point tools take one click (the
+## camera's forward is the facing); Cut wire and Bangalore click a point.
+const FORT_LINE_TOOLS := [&"build_sandbags", &"build_wire"]
+const FORT_POINT_TOOLS := [&"build_mg_nest", &"build_dugout", &"roof_hq"]
+## Build-menu ids -> blueprint short ids (`rules.fortify.blueprints`).
+const FORT_WHAT := {&"build_sandbags": "sandbag_wall", &"build_wire": "barbed_wire", &"build_mg_nest": "mg_nest", &"build_dugout": "dugout", &"roof_hq": "hq_dugout"}
+## Capabilities that open the build menu.
+const FORT_CAPS := ["build_structure", "place_wire", "clear_wire", "breach"]
 ## S8b: Drop Crates.
 const DROP_KINDS := ["shells", "small_arms", "explosives"]
 const DROP_COUNT := 4
@@ -101,6 +110,8 @@ var suppress_from: Variant = null
 ## Armed item while tool == &"throw": "frag", "smoke" or "satchel".
 var throw_item := ""
 var dig_points := PackedVector3Array()
+## S10a: the orders grid shows the build menu (Build button toggles it).
+var fort_menu := false
 ## Box drag in screen space while dragging.
 var dragging := false
 var drag_from := Vector2.ZERO
@@ -164,6 +175,8 @@ func prune() -> void:
 	elif tool == &"embark" and not can(&"embark"):
 		cancel_tool()
 	elif tool == &"dig" and not can(&"dig"):
+		cancel_tool()
+	elif (tool in FORT_LINE_TOOLS or tool in FORT_POINT_TOOLS or tool in [&"cut_wire", &"bangalore"]) and not can(tool):
 		cancel_tool()
 	elif tool == &"barrage" and not can(&"barrage"):
 		cancel_tool()
@@ -607,11 +620,35 @@ func crate_near(g: Vector3) -> int:
 	return best
 
 
+## S10a: the blueprint a build-menu id builds (`rules.fortify.blueprints`;
+## empty when the mod has none).
+func fort_blueprint(id: StringName) -> Dictionary:
+	var bps: Dictionary = view.rules().get("fortify", {}).get("blueprints", {})
+	return bps.get(FORT_WHAT.get(id, ""), {})
+
+
+## S10a: whether the dig-style line tool is armed (dig or a line blueprint).
+func line_tool() -> bool:
+	return tool == &"dig" or tool in FORT_LINE_TOOLS
+
+
 ## Whether an order is available for the current selection (orders grid).
 func can(order: StringName) -> bool:
 	if selected.is_empty():
 		return false
 	match order:
+		# S10a: the build menu, by capability.
+		&"build_menu":
+			return _has_cap(FORT_CAPS, [])
+		&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq":
+			var bp := fort_blueprint(order)
+			return not bp.is_empty() and _has_cap([String(bp.get("capability", ""))], [])
+		&"load_materials", &"crate_construction":
+			return _has_cap(["build_structure", "place_wire"], [])
+		&"cut_wire":
+			return _has_cap(["clear_wire"], [])
+		&"bangalore":
+			return _has_cap(["breach"], []) and item_count("bangalore") > 0
 		# S6.
 		&"build_hq":
 			return has_tag("hq")
@@ -774,12 +811,23 @@ func activate(order: StringName) -> void:
 				drop_kind = fullest_cargo()
 				_set_tool(&"drop_crates")
 		# S6: a crate of that kind for each selected squad (in the base).
-		&"crate_shells", &"crate_small_arms", &"crate_explosives":
+		&"crate_shells", &"crate_small_arms", &"crate_explosives", &"crate_construction":
 			view.emit_intent(&"issue_crate", {"squads": selected_squads(), "kind": String(order).trim_prefix("crate_")})
 			cancel_tool()
 		&"dig":
 			_set_tool(&"dig")
 			dig_points.clear()
+		# S10a: the build menu.
+		&"build_menu":
+			fort_menu = not fort_menu
+			cancel_tool()
+		&"load_materials":
+			view.emit_intent(&"load_materials", {"squads": selected_squads()})
+			cancel_tool()
+		&"build_sandbags", &"build_wire":
+			dig_points.clear()
+			tool = &""  # re-arm when the other line tool was armed
+			_set_tool(order)
 		&"frag", &"smoke", &"satchel":
 			throw_item = String(order)
 			tool = &""  # re-arm even when another item was armed
@@ -948,6 +996,8 @@ func dig_length() -> float:
 
 
 func dig_max() -> float:
+	if tool in FORT_LINE_TOOLS:
+		return float(fort_blueprint(tool).get("max_length_m", 20.0))
 	return float(view.rules().get("dig_max_m", 60.0))
 
 
@@ -969,6 +1019,12 @@ func dig_candidate(screen: Vector2) -> Variant:
 func _confirm_dig() -> void:
 	if dig_points.size() < 2 or dig_length() < 2.0:
 		AudioManager.play_ui(&"error")
+		return
+	if tool in FORT_LINE_TOOLS:
+		# S10a: the first able selected squad builds the line.
+		view.emit_intent(&"fortify", {"squads": selected_squads(), "what": FORT_WHAT[tool], "polyline": dig_points.duplicate()})
+		AudioManager.play_ui(&"confirm")
+		cancel_tool()
 		return
 	send_order(&"dig", {"polyline": dig_points.duplicate()}, MatchView.DIGGERS)
 	if view.overlay != null:
@@ -1303,6 +1359,15 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 				_set_tool(&"")
 		&"place_crate":
 			view.emit_intent(&"place_crate", {"squads": selected_squads(), "target": g})
+		# S10a: a point blueprint facing the camera's forward, a wire cut,
+		# a Bangalore.
+		&"build_mg_nest", &"build_dugout", &"roof_hq":
+			var f3: Vector3 = -view.camera.global_transform.basis.z if view.camera != null else Vector3(0, 0, -1)
+			view.emit_intent(&"fortify", {"squads": selected_squads(), "what": FORT_WHAT[tool], "target": g, "facing": Vector3(f3.x, 0, f3.z)})
+		&"cut_wire":
+			view.emit_intent(&"cut_wire", {"squads": selected_squads(), "target": g})
+		&"bangalore":
+			view.emit_intent(&"bangalore", {"squads": selected_squads(), "target": g})
 		&"pick_up":
 			var c := crate_near(g)
 			if c == -1:
@@ -1422,7 +1487,7 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 		return
 	if e.button_index == MOUSE_BUTTON_LEFT:
 		if e.pressed:
-			if tool == &"dig":
+			if line_tool():
 				var p: Variant = dig_candidate(e.position)
 				if p != null and (dig_points.is_empty() or dig_length() < dig_max() - 0.5):
 					dig_points.append(p)
@@ -1493,7 +1558,7 @@ func _mouse_button(e: InputEventMouseButton) -> void:
 			else:
 				_set_selection(PackedInt32Array([id]))
 	elif e.button_index == MOUSE_BUTTON_RIGHT and e.pressed:
-		if tool == &"dig":
+		if line_tool():
 			_confirm_dig()
 		elif tool != &"":
 			cancel_tool()
@@ -1527,11 +1592,15 @@ func _key(e: InputEventKey) -> void:
 			activate(order)
 			get_viewport().set_input_as_handled()
 			return
+	if e.is_action_pressed(&"order_build_menu"):
+		activate(&"build_menu")
+		get_viewport().set_input_as_handled()
+		return
 	if e.is_action_pressed(&"ammo_next"):
 		activate(&"ammo")
 		get_viewport().set_input_as_handled()
 		return
-	if e.is_action_pressed(&"dig_undo_point") and tool == &"dig" and not dig_points.is_empty():
+	if e.is_action_pressed(&"dig_undo_point") and line_tool() and not dig_points.is_empty():
 		dig_points.remove_at(dig_points.size() - 1)
 		get_viewport().set_input_as_handled()
 	elif e.is_action_pressed(&"focus_call_in"):

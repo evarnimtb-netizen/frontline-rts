@@ -1442,3 +1442,74 @@ Spec `docs/slices/S9-at-guns.md` (13). The bridge only; the mock has no gun, the
 - A selected emplaced gun draws two rays along its arc to `optic_m` (`ground_overlay.gd`).
 - `--autoplay_scene armour_guns` (an emplaced Pak 40 selected, a second gun hitched to an Sd.Kfz. 11,
   the crew aboard) saves `s3_guns.png`.
+
+## S10a: fortifications, wire, Bangalore (mechanics half)
+
+Design: `docs/slices/S10a-fortifications.md` 6. The bridge fills these from
+the render snapshot (`FortSnapshot`, `SquadSnapshot::materials_kg`,
+`fort_refusals`); the mock shows only what a test stages (`s10_fort`,
+`set_caps`). Structure selection stays out (S6-18).
+
+### State keys
+
+- `fort: {pieces, wire, sites, charges}` — own entries and enemy ones
+  within sight of an own man, ascending id each:
+  - `pieces[]: {id, owner, blueprint (short id, e.g. "mg_nest"), part:
+    "sandbag"|"roof"|"timber", center: Vector3 (box centre), yaw (rad,
+    sim: from +x counter-clockwise; the same angle about Godot +y), size:
+    Vector3 (along the facing, up, across, m), hp (0..1 left)}`;
+  - `wire[]: {id, owner, a: Vector3, b: Vector3 (section ends on the
+    ground, 2 m apart), band_m, height_m, hp (0..1)}`;
+  - `sites[]: {id, owner, blueprint, builder (squad id), step: "dig"|
+    "materials"|"build", pos: Vector3 (the current step's spot: a line's
+    current segment), yaw, line: PackedVector3Array (the ordered points),
+    seg, segments, progress (0..1 of the step: pit dug, work done),
+    materials (0..1 of the step's kg drawn)}`;
+  - `charges[]: {id, owner, from: Vector3, to: Vector3 (the pipe), fuse_s}`.
+- `squads[].materials_kg` (own squads) — construction kg carried.
+- `crates[].kind` and `soldiers[].crate.kind` may be `"construction"`.
+- `squads[].capabilities` may hold `build_structure`, `build_heavy`,
+  `place_wire`, `clear_wire`, `breach`; `soldiers[].items` and
+  `squads[].items` hold `bangalore`; a man laying a charge shows
+  `throwing` (the placing windup).
+- `rules.fortify: {blueprints: {<short id>: {id, name, shape: "point"|
+  "line"|"over_hq", capability, kg (point: whole work; line: per
+  segment), work_s, work_men, limit, segment_m, max_length_m, wire: bool,
+  pit: bool}}, carry_kg_per_man, mp_per_t, cut_s, cut_reach_m,
+  wire_speed_pct}`.
+- `events[]` kind `fort_refused` (text "Refused: <why>.", `reason` one of
+  not_allowed, cannot_build, cap, bad_spot, manpower, not_in_base,
+  no_wire; `squad` when the command named one).
+
+### Intents
+
+- `fortify {squads, what, polyline | target + facing}` — `what` a
+  blueprint short id (`sandbag_wall`, `barbed_wire`, `mg_nest`, `dugout`,
+  `hq_dugout`) or full id; the first selected squad with the blueprint's
+  capability builds it: a line blueprint along `polyline` (2..16 points,
+  longer drags are thinned), a point or over-HQ one at `target` facing
+  `facing` (a Vector3; default east).
+- `load_materials {squads, kg?}` — every selected squad with
+  `build_structure` or `place_wire` loads `kg` (default a full load,
+  `carry_kg_per_man` per man) in the own base, paid there.
+- `cut_wire {squads, target}` — the first selected `clear_wire` squad cuts
+  the nearest standing section within `cut_reach_m`.
+- `bangalore {squads, target}` — the men of the first selected `breach`
+  squad that carries a Bangalore; the sim sends the nearest carrier.
+- `issue_crate {kind: "construction"}` — a 40 kg construction crate.
+
+### Presenter
+
+- Orders grid: a `Build` button (key `, `order_build_menu`) in the
+  Mission slot for a selection with a fortification capability and no
+  mortar; it opens the "fort" mode: Sandbags, Wire (line tools as Dig in,
+  capped at the blueprint's `max_length_m`), MG nest, Dugout, Roof HQ
+  (point tools: one click, the camera's forward is the facing) on top;
+  Materials, Crate, Cut wire, Bangalore (tools: click the wire), Back
+  below; the stance strip stays. Tooltips give kg, time, men and the
+  capability from `rules.fortify`; buttons the selection cannot use are
+  grey.
+- `FortView` (`match/fort_view.gd`) blockouts: pieces as boxes (sandbag
+  tan, roof timber), wire as posts at each section end with a translucent
+  band, sites as a ghost box and a ring of twelve ticks lit to the step's
+  progress (amber while waiting for materials), charges as a thin pipe.

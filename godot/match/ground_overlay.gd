@@ -121,7 +121,7 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 		_draw_fire_preview(state)
 	_draw_mission_links(view, sel)
 	_draw_supply(view, sel, state)
-	if sel.tool == &"dig":
+	if sel.line_tool():
 		_draw_dig_ghost(sel)
 	elif sel.tool == &"throw":
 		_draw_throw_tool(view, sel)

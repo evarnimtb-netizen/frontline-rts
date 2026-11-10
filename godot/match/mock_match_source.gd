@@ -52,6 +52,17 @@ const RULES := {
 	"fire_mission_rounds": 6,
 	"capture_radius_m": 15.0,
 	"throw_range_m": {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)},
+	# S10a: the build menu's blueprints and materials (as mods/ww2).
+	"fortify": {
+		"blueprints": {
+			"sandbag_wall": {"id": "ww2:sandbag_wall", "name": "Sandbag wall", "shape": "line", "capability": "build_structure", "kg": 30.0, "work_s": 20.0, "work_men": 5, "limit": 40, "segment_m": 2.0, "max_length_m": 20.0, "wire": false, "pit": false},
+			"barbed_wire": {"id": "ww2:barbed_wire", "name": "Barbed wire", "shape": "line", "capability": "place_wire", "kg": 3.0, "work_s": 6.0, "work_men": 2, "limit": 50, "segment_m": 2.0, "max_length_m": 30.0, "wire": true, "pit": false},
+			"mg_nest": {"id": "ww2:mg_nest", "name": "MG nest", "shape": "point", "capability": "build_structure", "kg": 60.0, "work_s": 90.0, "work_men": 4, "limit": 4, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": true},
+			"dugout": {"id": "ww2:dugout", "name": "Dugout", "shape": "point", "capability": "build_structure", "kg": 120.0, "work_s": 360.0, "work_men": 6, "limit": 3, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": true},
+			"hq_dugout": {"id": "ww2:hq_dugout", "name": "HQ dugout", "shape": "over_hq", "capability": "build_structure", "kg": 120.0, "work_s": 120.0, "work_men": 5, "limit": 1, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": false},
+		},
+		"carry_kg_per_man": 20, "mp_per_t": 100, "cut_s": 10, "cut_reach_m": 25, "wire_speed_pct": 20,
+	},
 }
 const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6, "at": 3.2, "crew": 3.4}
 const RANGE := {"rifle": 160.0, "mg": 200.0, "engineer": 70.0, "mortar": 0.0, "at": 120.0, "crew": 30.0}
@@ -1579,6 +1590,7 @@ func _build_state() -> Dictionary:
 		"callin": {"catalog": catalog, "vehicles": veh.count(local_player), "vehicle_limit": veh.limit},
 		"vehicles": vs.vehicles,
 		"structures": s6_structures.duplicate(true),
+		"fort": s10_fort.duplicate(true),
 		"crates": _s6_crates_out(),
 		"shells": vs.shells,
 		"armour_events": vs.armour_events,
@@ -1721,7 +1733,7 @@ func _squad_state(sq: Dictionary, seen: Array) -> Dictionary:
 		"pos": _v3(sq.pos),
 		"units": units,
 		# S4: what the squad can do (orders follow it).
-		"capabilities": PackedStringArray(CAPABILITIES.get(sq.type, [])),
+		"capabilities": PackedStringArray(CAPABILITIES.get(sq.type, []) + sq.get("caps", [])),
 		# S6: card tags (the mock's squads have none unless a test sets them).
 		"tags": PackedStringArray(sq.get("tags", [])),
 	}
@@ -1832,6 +1844,17 @@ func _rounds_full(type: String, slot: int) -> int:
 var s6_structures: Array = []
 ## Crates: {id, owner, kind, kg, pos (Vector3), carrier (man id or -1)}.
 var s6_crates: Array = []
+
+
+## S10a: the state's `fort` as the bridge reports it; the mock only shows
+## what a test stages.
+var s10_fort: Dictionary = {}
+
+
+## S10a staging: squad `sid` gets capabilities `caps` on top of its type's.
+func set_caps(sid: int, caps: Array) -> void:
+	if squads.has(sid):
+		squads[sid].caps = caps
 
 
 ## S6 staging: squad `sid` gets card tags `tags` (e.g. ["hq"]).

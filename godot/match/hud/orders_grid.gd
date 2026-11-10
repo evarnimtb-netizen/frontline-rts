@@ -29,6 +29,30 @@ extends Control
 ##   row 3: the ammo toggle, a segmented strip Auto | AP | APCR | HE (N
 ##   cycles; APCR only lights on a gun that carries it, S3b).
 
+## S10a, the build menu (engineers, assault and construction squads: a
+## squad with build_structure, place_wire, clear_wire or breach). The
+## Build button takes the Mission slot of the ability row when no mortar is
+## selected; pressing it swaps the top two rows for:
+##   row 1: Sandbags, Wire (lines: click points, right-click builds, as Dig
+##          in), MG nest, Dugout, Roof HQ (click the spot; the camera's
+##          forward is the facing);
+##   row 2: Materials (load construction kg in the base, paid there),
+##          Crate (a construction crate), Cut wire (click the wire),
+##          Bangalore (click the wire: the nearest carrier lays it), Back.
+## Row 3 stays the stance strip. Tooltips give kg, time and the capability
+## from the rules (`rules.fortify`); buttons a squad cannot use are grey.
+const BUILD := [&"build_menu", "Build", &"order_build_menu", "Fortifications: sandbags, wire, MG nest, dugout, HQ roof; materials, wire cutting, Bangalore. Engineer, assault and construction squads."]
+const ROW_FORT := [&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq"]
+const ROW_FORT_ORDERS := [
+	[&"load_materials", "Materials", &"", "In the own base: the selected building squads load construction material (a full load of 20 kg a man unless the mod says otherwise), paid now. Builders draw it first, then own construction crates and trucks within 15 m."],
+	[&"crate_construction", "Crate", &"", "In the own base: each selected building squad takes a 40 kg construction crate, paid now. Set it down near a site: builders draw from it."],
+	[&"cut_wire", "Cut wire", &"", "Click wire: the nearest man cuts the nearest section (field engineers 10 s, assault engineers 5 s, construction engineers 20 s). Not while pinned."],
+	[&"bangalore", "Bangalore", &"", "Click wire: the nearest man carrying a Bangalore torpedo walks up, lays it (5 s) and it bursts 8 s later, blowing a gap. Assault engineers only."],
+	[&"build_menu", "Back", &"order_build_menu", "Back to the orders."],
+]
+## S10a: the build-menu buttons' labels.
+const FORT_LABELS := {&"build_sandbags": "Sandbags", &"build_wire": "Wire", &"build_mg_nest": "MG nest", &"build_dugout": "Dugout", &"roof_hq": "Roof HQ"}
+
 ## S3b: area fire without a spotted target (both grids).
 const SUPPRESS := [&"suppress", "Suppress", &"order_suppress", "Fire at an area without a spotted target to keep the enemy's heads down: click a point or drag a line (up to 40 m). Rifles and MGs hold and fire; vehicles fire their MGs and now and then HE. Mortars keep Fire mission. Lasts until another order."]
 const ROW_ABILITY := [
@@ -113,7 +137,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+const TOOLS := [&"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -136,6 +160,8 @@ var _mounted := false
 var _gun := true
 ## S8b: a selected vehicle is a truck (Drop replaces Unload).
 var _truck := false
+## S10a: the Build button shows in the Mission slot.
+var _build := false
 
 
 func bind(v: MatchView) -> void:
@@ -151,6 +177,12 @@ func update_state(_s: Dictionary) -> void:
 		want = "gun"
 	if want == "soldier" and sel.supply_only():
 		want = "supply"
+	# S10a: the build menu while it is open and someone can use it.
+	var build: bool = want == "soldier" and sel.can(&"build_menu") and not sel.can(&"barrage")
+	if sel.fort_menu and not build:
+		sel.fort_menu = false
+	if want == "soldier" and sel.fort_menu:
+		want = "fort"
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
 	var mounted: bool = not sel.unload_vehicles().is_empty()
 	var truck: bool = not sel.truck_vehicles().is_empty()
@@ -158,8 +190,9 @@ func update_state(_s: Dictionary) -> void:
 	for id in sel.selected_vehicles():
 		if (view.vehicles_by_id.get(id, {}).get("ammo", {}) as Dictionary).has("ap"):
 			gun = true
-	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun:
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun or build != _build:
 		_size = size
+		_build = build
 		grid_mode = want
 		_pzf_slot = pzf
 		_mounted = mounted
@@ -208,12 +241,22 @@ func _layout() -> void:
 	# `fire_h` + a gap taller, so the buttons keep their height).
 	var fh: float = m.get("fire_h", 20.0)
 	bh = (size.y - fh - 3.0 * g) / 3.0
-	var top: Array = ROW_SUPPLY if grid_mode == "supply" else ROW_ABILITY
-	for i in top.size():
-		var def: Array = PANZERFAUST if i == 2 and _pzf_slot and grid_mode != "supply" else top[i]
-		_add(def, Rect2(i * (abw + g), 0, abw, bh), "ability")
-	for i in ROW_ORDERS.size():
-		_add(ROW_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
+	if grid_mode == "fort":
+		for i in ROW_FORT.size():
+			_add(_fort_def(ROW_FORT[i]), Rect2(i * (abw + g), 0, abw, bh), "ability")
+		for i in ROW_FORT_ORDERS.size():
+			_add(_fort_order_def(ROW_FORT_ORDERS[i]), Rect2(i * (bw + g), bh + g, bw, bh), "order")
+	else:
+		var top: Array = ROW_SUPPLY if grid_mode == "supply" else ROW_ABILITY
+		for i in top.size():
+			var def: Array = top[i]
+			if i == 2 and _pzf_slot and grid_mode != "supply":
+				def = PANZERFAUST
+			elif i == 3 and _build and grid_mode != "supply":
+				def = BUILD
+			_add(def, Rect2(i * (abw + g), 0, abw, bh), "ability")
+		for i in ROW_ORDERS.size():
+			_add(ROW_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
 	# S3c: the stance strip spans three columns; Crew takes the fourth.
 	var sw := 3.0 * bw + 2.0 * g
 	var seg := sw / 4.0
@@ -233,6 +276,39 @@ func _layout() -> void:
 	var fseg := sw / 3.0
 	for i in ROW_FIRE.size():
 		_add(ROW_FIRE[i], Rect2(i * fseg, 3.0 * (bh + g), fseg, fh), "fire")
+
+
+## S10a: a blueprint button with its kg, time, men and capability from
+## `rules.fortify.blueprints`.
+func _fort_def(id: StringName) -> Array:
+	var bp: Dictionary = view.selection.fort_blueprint(id)
+	var tip := "Not in this mod."
+	if not bp.is_empty():
+		var per := " a 2 m segment" if bp.get("shape", "") == "line" else ""
+		var how := "Click points along the ground (up to %d m), right-click to build." % int(bp.get("max_length_m", 0.0)) if bp.get("shape", "") == "line" else "Click the spot; it faces the way the camera looks."
+		if bp.get("shape", "") == "over_hq":
+			how = "Click an own built HQ (within 5 m): a roof over its pit."
+		tip = "%s: %s kg and %d s with %d men%s (%s). %s%s Limit %d." % [
+			bp.get("name", ""), _num(bp.get("kg", 0.0)), int(round(float(bp.get("work_s", 0.0)))),
+			int(bp.get("work_men", 0)), per, String(bp.get("capability", "")).replace("_", " "), how,
+			" Dug first: its pit." if bp.get("pit", false) else "", int(bp.get("limit", 0))]
+	return [id, FORT_LABELS.get(id, String(id)), &"", tip]
+
+
+## S10a: Materials names the carried kg per man and the price.
+func _fort_order_def(def: Array) -> Array:
+	if def[0] != &"load_materials":
+		return def
+	var f: Dictionary = view.rules().get("fortify", {})
+	if f.is_empty():
+		return def
+	var tip := "In the own base: the selected building squads load construction material, %d kg a man, paid now (%d MP a tonne). Builders draw it first, then own construction crates and trucks within 15 m." % [int(f.get("carry_kg_per_man", 0)), int(f.get("mp_per_t", 0))]
+	return [def[0], def[1], def[2], tip]
+
+
+func _num(x: Variant) -> String:
+	var v := float(x)
+	return str(int(v)) if is_equal_approx(v, round(v)) else "%.1f" % v
 
 
 ## S9: the gun orders on top, Push and Ammo below.
@@ -285,6 +361,8 @@ func active(id: StringName) -> bool:
 		return enabled(id) and "fire_" + sel.active_fire() == String(id)
 	if id == &"bail":
 		return sel.bail_armed()
+	if id == &"build_menu":
+		return sel.fort_menu
 	return false
 
 

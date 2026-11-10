@@ -49,6 +49,8 @@ var vehicle_view: VehicleView
 var vehicle_fx: VehicleFx
 ## S6: HQs, dumps and crates (`match/supply_view.gd`).
 var supply_view: Node3D
+## S10a: pieces, wire, sites and charges (`match/fort_view.gd`).
+var fort_view: Node3D
 ## Screenshot staging: [seconds before the capture, Callable] still to run.
 var _capture_hooks: Array = []
 
@@ -63,6 +65,9 @@ func _ready() -> void:
 	supply_view = preload("res://match/supply_view.gd").new()
 	supply_view.name = "Supply"
 	add_child(supply_view)
+	fort_view = preload("res://match/fort_view.gd").new()
+	fort_view.name = "Fort"
+	add_child(fort_view)
 	var h: Callable = source.height_at
 	camera.height_fn = h
 	view.height_fn = h
@@ -177,6 +182,7 @@ func _process(_delta: float) -> void:
 	vehicle_view.update_state(s)
 	vehicle_fx.update_state(s)
 	supply_view.update_state(s)
+	fort_view.update_state(s)
 	if mock_world != null:
 		mock_world.update_state(s)
 	if world_fx != null:

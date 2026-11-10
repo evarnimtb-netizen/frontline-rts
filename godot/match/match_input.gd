@@ -19,6 +19,8 @@ extends RefCounted
 ## (click an own half-track: the selected squads board it; right-click on
 ## it does the same), U unloads the selected half-tracks (or the selected
 ## mounted squads' half-tracks) by the door, Shift+U over the sides.
+## S10a: ` (the key left of 1) opens and closes the build menu (engineer,
+## assault and construction squads; every letter is taken).
 
 const ACTIONS := {
 	&"order_move": KEY_M,
@@ -45,6 +47,8 @@ const ACTIONS := {
 	&"order_disembark": KEY_U,
 	# S8b: Drop Crates (S8b-19 (A)).
 	&"order_drop_crates": KEY_I,
+	# S10a: the build menu (orders grid "fort" mode).
+	&"order_build_menu": KEY_QUOTELEFT,
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
@@ -79,6 +83,7 @@ const LABELS := {
 	&"order_embark": "V",
 	&"order_disembark": "U",
 	&"order_drop_crates": "I",
+	&"order_build_menu": "`",
 	&"focus_call_in": "Tab",
 }
 
