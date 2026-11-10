@@ -556,3 +556,39 @@ fn s10_counters_zero_without_fortifications() {
         }
     }
 }
+
+/// S10a fortify rows (spec 7) on one seed, both factions: wire slows the
+/// leader to about 20 % and gaps do not; the roof holds an 81 mm bomb and
+/// breaks under a satchel; the breach reports every run.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+fn fortify_s10a_rows_report_wire_roof_breach() {
+    let args = FortifyArgs {
+        seeds: 1,
+        first_seed: 2,
+        ..FortifyArgs::default()
+    };
+    let r = frontline_cli::fortify::s10a::s10a_rows(&args, 2..3).unwrap();
+    let text = frontline_cli::fortify::s10a::summary_text(&r);
+    eprintln!("{text}");
+    assert_eq!(r.wire.runs.len(), 6);
+    assert!((19.0..=21.0).contains(&r.wire.inside_speed_pct), "{text}");
+    assert!(r.wire.cut_gap_speed_pct >= 95.0, "{text}");
+    assert!(r.wire.blown_gap_speed_pct >= 95.0, "{text}");
+    for run in r.wire.runs.iter().filter(|r| r.variant != "wire") {
+        assert!(run.sections_removed >= 2, "{run:?}");
+    }
+    assert_eq!(r.roof.runs.len(), 2);
+    assert_eq!(r.roof.survived_81mm_pct, 100.0, "{text}");
+    assert_eq!(r.roof.sheltered_losses, 0, "{text}");
+    assert_eq!(r.roof.broken_heavy_pct, 100.0, "{text}");
+    assert_eq!(r.breach.runs.len(), 4);
+    assert_eq!(r.breach.fortified.runs, 2);
+    assert_eq!(r.breach.control.runs, 2);
+    assert!(
+        r.breach
+            .runs
+            .iter()
+            .all(|b| b.defender_men > 0 && b.attacker_men > 0)
+    );
+}

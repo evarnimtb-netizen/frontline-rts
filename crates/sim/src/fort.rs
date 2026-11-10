@@ -1086,11 +1086,7 @@ pub(crate) enum WireGone {
 impl FortState {
     /// Section 5 rule 4: whether `pos` lies inside a standing wire band
     /// (false at once without wire).
-    pub(crate) fn in_wire(
-        &self,
-        forts: &[frontline_content::setup::FortSetup],
-        pos: FxVec2,
-    ) -> bool {
+    pub fn in_wire(&self, forts: &[frontline_content::setup::FortSetup], pos: FxVec2) -> bool {
         if self.wire.is_empty() {
             return false;
         }

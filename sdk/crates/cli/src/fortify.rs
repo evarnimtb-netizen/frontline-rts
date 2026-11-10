@@ -65,6 +65,9 @@ use serde::Serialize;
 
 use crate::skirmish::{SkirmishArgs, match_setup};
 
+/// S10a: the wire, roof and breach rows (spec 7; report rows).
+pub mod s10a;
+
 /// Longest rifle fight, in game seconds.
 pub const RIFLE_FIGHT_S: u64 = 180;
 /// Rifles pass when trench losses ≤ this share of open losses.
@@ -179,6 +182,8 @@ pub struct FortifyReport {
     pub smoke: SmokeExperiment,
     /// S3b: the MG-supported and the unsupported assault from 150 m.
     pub suppress: SuppressExperiment,
+    /// S10a: wire, roof and breach (report rows; not in `pass`).
+    pub s10a: s10a::S10aReport,
     /// Rifles, mortar and smoke pass (the grenade assault has no threshold
     /// yet).
     pub pass: bool,
@@ -1003,6 +1008,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         bail!("--threads must be at least 1");
     }
     let seeds = args.first_seed..args.first_seed + args.seeds as u64;
+    let s10a = s10a::s10a_rows(args, seeds.clone())?;
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1161,6 +1167,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         grenade,
         smoke,
         suppress,
+        s10a,
     })
 }
 
@@ -1360,6 +1367,7 @@ pub fn summary_text(r: &FortifyReport) -> String {
             pct(al2, am2)
         );
     }
+    out += &s10a::summary_text(&r.s10a);
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });
     out
 }

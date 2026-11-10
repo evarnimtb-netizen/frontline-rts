@@ -755,10 +755,42 @@ pub fn fortify(r: &FortifyReport) -> Value {
             json!({ "t10": r.suppress.supported_met, "t11": r.suppress.unsupported_met }),
         ),
     ];
+    // S10a (spec 7): the wire, roof and breach rows, at `s10a.*`.
+    let x = &r.s10a;
+    let breach = |t: &crate::fortify::s10a::BreachTotals| {
+        json!({
+            "runs": t.runs,
+            "defender_losses": t.defender_losses,
+            "defender_men": t.defender_men,
+            "attacker_losses": t.attacker_losses,
+            "attacker_men": t.attacker_men,
+            "defender_loss_pct": t.defender_loss_pct(),
+            "attacker_loss_pct": t.attacker_loss_pct(),
+            "gap_opened_pct": t.gap_opened_pct(),
+        })
+    };
+    let mut fortified = breach(&x.breach.fortified);
+    fortified["control"] = breach(&x.breach.control);
+    let s10a = json!({
+        "wire": {
+            "inside_speed_pct": x.wire.inside_speed_pct,
+            "cut_gap_speed_pct": x.wire.cut_gap_speed_pct,
+            "blown_gap_speed_pct": x.wire.blown_gap_speed_pct,
+            "runs": x.wire.runs.len(),
+        },
+        "roof": {
+            "survived_81mm_pct": x.roof.survived_81mm_pct,
+            "sheltered_losses": x.roof.sheltered_losses,
+            "broken_heavy_pct": x.roof.broken_heavy_pct,
+            "runs": x.roof.runs.len(),
+        },
+        "breach": fortified,
+    });
     json!({
         "schema": 1,
         "kind": "fortify-test",
         "pass": r.pass,
+        "s10a": s10a,
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,
