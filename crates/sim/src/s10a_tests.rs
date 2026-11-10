@@ -657,3 +657,481 @@ fn empty_fort_state_changes_nothing() {
     assert_eq!(h_on, h_off);
     assert!(e_on == e_off, "entity state differs");
 }
+
+// ------------------------------------------------------------ Build B --
+
+/// Enemy (player 1) wire from `a` to `b` (`World::build_now`).
+fn wire_line(w: &mut World, a: FxVec2, b: FxVec2) {
+    let f = fort(w, "ww2:barbed_wire");
+    assert!(w.build_now(f, &[a, b], PlayerId(1)));
+}
+
+/// Sections whose middle lies within `[x0, x1]` (m).
+fn sections_between(w: &World, x0: i32, x1: i32) -> Vec<u32> {
+    fs(w)
+        .wire
+        .iter()
+        .filter(|(_, s)| {
+            let mx = (s.a.x + s.b.x).div_int(2);
+            mx >= Fx::from_int(x0) && mx <= Fx::from_int(x1)
+        })
+        .map(|(&id, _)| id)
+        .collect()
+}
+
+/// A rifleman of a fresh player 0 squad at `(x, y)`, walking detached to
+/// `to`.
+fn walker(w: &mut World, x: i32, y: i32, to: FxVec2) -> SimId {
+    let s = spawn(w, 0, "ww2:ger_grenadiergruppe", x, y);
+    let m = members(w, s)[1];
+    run(
+        w,
+        0,
+        0,
+        CommandKind::MoveUnits {
+            units: vec![m],
+            target: to,
+        },
+    );
+    m
+}
+
+/// Steps until `m` is past `y_end` (or `max` ticks): per tick, the
+/// position he was steered from and the speed he was given.
+fn walk(w: &mut World, m: SimId, y_end: i32, max: u64) -> Vec<(FxVec2, Fx)> {
+    let mut out = Vec::new();
+    for _ in 0..max {
+        let from = w.state.entities.transform[m.index()].pos.xy();
+        w.step(&[]);
+        let moving = w.state.entities.unit[m.index()].nav.phase == NavPhase::Moving;
+        if moving {
+            out.push((from, w.state.entities.mover[m.index()].speed));
+        }
+        if w.state.entities.transform[m.index()].pos.y > Fx::from_int(y_end) {
+            break;
+        }
+    }
+    out
+}
+
+fn in_band(w: &World, p: FxVec2) -> bool {
+    w.game()
+        .unwrap()
+        .fort()
+        .in_wire(&w.match_setup().unwrap().forts, p)
+}
+
+#[test]
+fn wire_slows_infantry_to_wire_speed_pct() {
+    let mut w = world();
+    wire_line(&mut w, c(400, 500), c(600, 500));
+    assert_eq!(fs(&w).wire.len(), 100);
+    let m = walker(&mut w, 500, 485, c(500, 515));
+    let trace = walk(&mut w, m, 510, 60 * HZ);
+    let outside: Vec<Fx> = trace
+        .iter()
+        .filter(|(p, _)| !in_band(&w, *p))
+        .map(|x| x.1)
+        .collect();
+    let inside: Vec<Fx> = trace
+        .iter()
+        .filter(|(p, _)| in_band(&w, *p))
+        .map(|x| x.1)
+        .collect();
+    assert!(
+        inside.len() > 5,
+        "he never stood in the band: {}",
+        inside.len()
+    );
+    let full = outside[0];
+    assert!(full > Fx::ZERO && outside.iter().all(|&v| v == full));
+    // Exactly wire_speed_pct (20) of the same man's speed outside.
+    let slow = full.mul_int(20).div_int(100);
+    assert!(inside.iter().all(|&v| v == slow), "{inside:?} vs {slow:?}");
+    assert!(w.state.entities.transform[m.index()].pos.y > Fx::from_int(510));
+}
+
+#[test]
+fn cut_gap_restores_full_speed() {
+    let mut w = world();
+    wire_line(&mut w, c(400, 500), c(600, 500));
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 500, 490);
+    // Four cuts: the sections from x = 496 to 504 (an 8 m gap).
+    for k in 0..4 {
+        run(
+            &mut w,
+            0,
+            k,
+            CommandKind::CutWire {
+                squad: eng,
+                at: c(497 + 2 * k as i32, 500),
+            },
+        );
+        assert!(matches!(
+            w.game().unwrap().squads[&eng].order,
+            Order::CutWire { .. }
+        ));
+        for _ in 0..40 * HZ {
+            w.step(&[]);
+            if w.game().unwrap().squads[&eng].order == Order::Idle {
+                break;
+            }
+        }
+    }
+    assert_eq!(fs(&w).accounts[0].wire_cut, 4);
+    assert!(sections_between(&w, 496, 504).is_empty());
+    assert_eq!(fs(&w).wire.len(), 96);
+    // A man through the 8 m gap keeps his full speed.
+    let m = walker(&mut w, 500, 470, c(500, 530));
+    let trace = walk(&mut w, m, 520, 60 * HZ);
+    let full = trace[0].1;
+    let crossing: Vec<&(FxVec2, Fx)> = trace
+        .iter()
+        .filter(|(p, _)| (p.y - Fx::from_int(500)).abs() <= Fx::ONE)
+        .collect();
+    assert!(!crossing.is_empty());
+    assert!(crossing.iter().all(|(p, v)| *v == full && !in_band(&w, *p)));
+}
+
+#[test]
+fn infantry_path_goes_through_a_gap() {
+    let mut w = world();
+    wire_line(&mut w, c(400, 500), c(600, 500));
+    // A 12 m gap at x 510..522 (six sections).
+    let gap = sections_between(&w, 510, 522);
+    assert_eq!(gap.len(), 6);
+    w.edit_fort(|f| gap.iter().for_each(|id| drop(f.wire.remove(id))));
+    let m = walker(&mut w, 505, 470, c(505, 530));
+    let trace = walk(&mut w, m, 520, 90 * HZ);
+    let cross: Vec<Fx> = trace
+        .iter()
+        .filter(|(p, _)| (p.y - Fx::from_int(500)).abs() <= Fx::ONE)
+        .map(|(p, _)| p.x)
+        .collect();
+    assert!(!cross.is_empty());
+    assert!(
+        cross
+            .iter()
+            .all(|&x| x >= Fx::from_int(510) && x <= Fx::from_int(522)),
+        "crossed at {cross:?}"
+    );
+    // Through the gap at full speed.
+    assert!(trace.iter().all(|(p, _)| !in_band(&w, *p)));
+}
+
+#[test]
+fn vehicle_crushes_wire() {
+    let mut w = world();
+    wire_line(&mut w, c(480, 500), c(520, 500));
+    let tank = spawn(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 470);
+    let v = members(&w, tank)[0];
+    run(
+        &mut w,
+        0,
+        0,
+        CommandKind::Move {
+            squad: tank,
+            target: c(500, 540),
+        },
+    );
+    for _ in 0..60 * HZ {
+        w.step(&[]);
+        if w.state.entities.transform[v.index()].pos.y > Fx::from_int(515) {
+            break;
+        }
+    }
+    assert!(w.state.entities.transform[v.index()].pos.y > Fx::from_int(515));
+    let gone = 20 - fs(&w).wire.len() as u32;
+    assert!(gone >= 2, "{gone} sections crushed");
+    assert_eq!(fs(&w).accounts[0].wire_crushed, gone);
+    // Sections well away from the hull stand.
+    assert_eq!(sections_between(&w, 480, 490).len(), 5);
+    assert_eq!(sections_between(&w, 510, 520).len(), 5);
+}
+
+fn item_id(w: &World, id: &str) -> u16 {
+    w.match_setup()
+        .unwrap()
+        .items
+        .iter()
+        .position(|x| x.id == id)
+        .unwrap() as u16
+}
+
+#[test]
+fn he_burst_cuts_wire_in_blast_radius() {
+    let mut w = world();
+    wire_line(&mut w, c(470, 500), c(530, 500));
+    let ts = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 200, 200);
+    let thrower = members(&w, ts)[0];
+    let satchel = item_id(&w, "ww2:geballte_ladung");
+    assert!(w.drop_item_now(thrower, satchel, c(500, 500), Fx::ONE));
+    steps(&mut w, 4 * HZ);
+    // Overpressure (blast 4 m, damage 300 >= hp 200) breaks every section
+    // within the blast radius; fragments reach 8 m at most.
+    assert!(sections_between(&w, 497, 503).is_empty());
+    assert_eq!(sections_between(&w, 470, 490).len(), 10);
+    assert_eq!(sections_between(&w, 510, 530).len(), 10);
+    // Not a Bangalore: no counter.
+    assert_eq!(fs(&w).accounts[0].wire_blown, 0);
+}
+
+#[test]
+fn fragments_damage_wire_and_fly_on() {
+    // The same stick grenade 3 m short of the wire with enemy men 2-4 m
+    // behind it, with and without the wire: the wire takes fragment
+    // damage and the men take exactly the same hits (no ray stops).
+    let play = |wired: bool| {
+        let mut w = world();
+        if wired {
+            wire_line(&mut w, c(480, 500), c(520, 500));
+        }
+        let ts = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 200, 200);
+        let thrower = members(&w, ts)[0];
+        let foes = spawn(&mut w, 1, "ww2:usa_rifle_squad", 500, 503);
+        let frag = item_id(&w, "ww2:stielhandgranate");
+        assert!(w.drop_item_now(thrower, frag, c(500, 497), Fx::ONE));
+        steps(&mut w, 4 * HZ);
+        let hp: Vec<u16> = members(&w, foes)
+            .iter()
+            .map(|m| w.state.entities.combat[m.index()].hp)
+            .collect();
+        let wire_hp: u32 = fs(&w).wire.values().map(|s| s.hp).sum();
+        (hp, wire_hp, fs(&w).wire.len())
+    };
+    let (hp_w, wire_hp, n) = play(true);
+    let (hp_open, _, _) = play(false);
+    assert_eq!(n, 20, "a grenade breaks no section");
+    assert!(wire_hp < 20 * 200, "no fragment hit the wire");
+    assert_eq!(hp_w, hp_open);
+}
+
+#[test]
+fn cut_wire_needs_clear_wire() {
+    let mut w = world();
+    wire_line(&mut w, c(480, 500), c(520, 500));
+    let rifles = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 500, 490);
+    run(
+        &mut w,
+        0,
+        0,
+        CommandKind::CutWire {
+            squad: rifles,
+            at: c(500, 500),
+        },
+    );
+    assert_eq!(refused(&w), Some(FortRefusal::CannotBuild));
+    assert_eq!(w.game().unwrap().squads[&rifles].order, Order::Idle);
+    // An engineer squad, but no wire within cut_reach_m (25) of the point.
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 500, 600);
+    run(
+        &mut w,
+        0,
+        1,
+        CommandKind::CutWire {
+            squad: eng,
+            at: c(500, 560),
+        },
+    );
+    assert_eq!(refused(&w), Some(FortRefusal::NoWire));
+    // Each clear_wire card may.
+    for (k, card) in [
+        "ww2:ger_engineer_squad",
+        "ww2:ger_sturmpioniergruppe",
+        "ww2:ger_baupioniergruppe",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = spawn(&mut w, 0, card, 500, 490);
+        run(
+            &mut w,
+            0,
+            2 + k as u32,
+            CommandKind::CutWire {
+                squad: s,
+                at: c(500, 501),
+            },
+        );
+        assert!(
+            matches!(w.game().unwrap().squads[&s].order, Order::CutWire { .. }),
+            "{card}"
+        );
+    }
+}
+
+#[test]
+fn cut_time_follows_tier() {
+    for (card, secs) in [
+        ("ww2:ger_engineer_squad", 10),
+        ("ww2:ger_sturmpioniergruppe", 5),
+        ("ww2:ger_baupioniergruppe", 20),
+    ] {
+        let mut w = world();
+        wire_line(&mut w, c(480, 500), c(520, 500));
+        let s = spawn(&mut w, 0, card, 501, 495);
+        run(
+            &mut w,
+            0,
+            0,
+            CommandKind::CutWire {
+                squad: s,
+                at: c(501, 500),
+            },
+        );
+        let target = sections_between(&w, 500, 502);
+        assert_eq!(target.len(), 1);
+        // Ticks with work added: from the first tick whose work shows (the
+        // command's own tick included) to the one that removed it.
+        let mut first = None;
+        let mut done = None;
+        for t in 0..60 * HZ {
+            if t > 0 {
+                w.step(&[]);
+            }
+            if first.is_none()
+                && matches!(
+                    w.game().unwrap().squads[&s].order,
+                    Order::CutWire { work, .. } if work > 0
+                )
+            {
+                first = Some(t);
+            }
+            if !fs(&w).wire.contains_key(&target[0]) {
+                done = Some(t);
+                break;
+            }
+        }
+        let ticks = done.expect("cut") - first.expect("started") + 1;
+        assert_eq!(ticks, secs * HZ, "{card}");
+        assert_eq!(fs(&w).accounts[0].wire_cut, 1);
+        assert_eq!(fs(&w).wire.len(), 19);
+    }
+}
+
+fn place(w: &mut World, seq: u32, s: SquadId, target: FxVec2) {
+    let units = members(w, s);
+    run(w, 0, seq, CommandKind::PlaceBangalore { units, target });
+}
+
+#[test]
+fn bangalore_bursts_along_its_length() {
+    let mut w = world();
+    let s = spawn(&mut w, 0, "ww2:ger_sturmpioniergruppe", 500, 480);
+    let item = item_id(&w, "ww2:gestreckte_ladung");
+    place(&mut w, 0, s, c(500, 500));
+    let mut charge = None;
+    let mut bursts = Vec::new();
+    for _ in 0..40 * HZ {
+        w.step(&[]);
+        if charge.is_none() {
+            charge = fs(&w).charges.first().cloned();
+        }
+        let b: Vec<[f32; 3]> = w
+            .snapshot()
+            .explosions
+            .iter()
+            .filter(|e| e.weapon == item)
+            .map(|e| e.pos)
+            .collect();
+        if !b.is_empty() {
+            bursts = b;
+            break;
+        }
+    }
+    let ch = charge.expect("a charge was laid");
+    assert_eq!(fs(&w).accounts[0].bangalores, 1);
+    assert!(fs(&w).charges.is_empty());
+    // Laid from within 2.5 m of the target, 3 m long toward it.
+    assert!((ch.from - c(500, 500)).length() <= Fx::from_ratio(5, 2));
+    let len = (ch.to - ch.from).length();
+    assert!((len - Fx::from_int(3)).abs() < Fx::from_ratio(1, 20));
+    // Three bursts in one tick at 1/6, 3/6, 5/6 of its length.
+    assert_eq!(bursts.len(), 3);
+    for (k, b) in bursts.iter().enumerate() {
+        let want = ch.from + (ch.to - ch.from).mul_int(2 * k as i32 + 1).div_int(6);
+        let got = FxVec2::new(
+            Fx::from_milli((b[0] * 1000.0).round() as i32),
+            Fx::from_milli((b[1] * 1000.0).round() as i32),
+        );
+        assert!((got - want).length() < Fx::from_ratio(1, 20), "{k}");
+    }
+}
+
+#[test]
+fn bangalore_clears_a_gap_and_counts_blown() {
+    let mut w = world();
+    // A north-south line 20 m east of the section's line (its men stand
+    // along y, facing east: the carrier walks straight to it).
+    wire_line(&mut w, c(520, 480), c(520, 520));
+    let s = spawn(&mut w, 0, "ww2:usa_assault_section", 500, 500);
+    place(&mut w, 0, s, c(520, 500));
+    for _ in 0..40 * HZ {
+        w.step(&[]);
+        if fs(&w).accounts[0].bangalores == 1 && fs(&w).charges.is_empty() {
+            break;
+        }
+    }
+    steps(&mut w, 2);
+    let a = fs(&w).accounts[0];
+    assert_eq!(a.bangalores, 1);
+    // The two sections either side of the target are gone.
+    assert!(fs(&w).wire.values().all(|x| {
+        let mid = x.a + (x.b - x.a).div_int(2);
+        (mid - c(520, 500)).length() > Fx::from_int(2)
+    }));
+    let gone = 20 - fs(&w).wire.len() as u32;
+    assert!(gone >= 2);
+    assert_eq!(a.wire_blown, gone);
+    // The placer lives (no friendly blast).
+    assert!(
+        members(&w, s)
+            .iter()
+            .all(|m| w.state.entities.combat[m.index()].hp > 0)
+    );
+}
+
+#[test]
+fn bangalore_needs_breach_and_an_item() {
+    let mut w = world();
+    let k = frontline_content::ItemKind::Bangalore.index();
+    // No breach: rifles and the field engineers.
+    for (seq, card) in ["ww2:ger_grenadiergruppe", "ww2:ger_engineer_squad"]
+        .into_iter()
+        .enumerate()
+    {
+        let s = spawn(&mut w, 0, card, 500, 480);
+        place(&mut w, seq as u32, s, c(500, 500));
+        assert_eq!(refused(&w), Some(FortRefusal::CannotBuild), "{card}");
+    }
+    // Breach but no Bangalore left.
+    let sp = spawn(&mut w, 0, "ww2:ger_sturmpioniergruppe", 520, 480);
+    for m in members(&w, sp) {
+        w.edit_soldier(m, |kit, _| kit.items[k] = 0);
+    }
+    place(&mut w, 5, sp, c(520, 500));
+    assert_eq!(refused(&w), Some(FortRefusal::CannotBuild));
+    // With one: the nearest carrier takes it out and walks.
+    let sp = spawn(&mut w, 0, "ww2:ger_sturmpioniergruppe", 540, 480);
+    let before: u32 = members(&w, sp)
+        .iter()
+        .map(|m| w.state.entities.kit[m.index()].items[k] as u32)
+        .sum();
+    assert_eq!(before, 2);
+    place(&mut w, 6, sp, c(540, 500));
+    let placing: Vec<SimId> = members(&w, sp)
+        .into_iter()
+        .filter(|m| {
+            w.state.entities.kit[m.index()]
+                .windup
+                .is_some_and(|x| x.kind == frontline_content::ItemKind::Bangalore)
+        })
+        .collect();
+    assert_eq!(placing.len(), 1);
+    assert!(w.state.entities.unit[placing[0].index()].detached);
+    let after: u32 = members(&w, sp)
+        .iter()
+        .map(|m| w.state.entities.kit[m.index()].items[k] as u32)
+        .sum();
+    assert_eq!(after, 1);
+}
