@@ -27,6 +27,8 @@ roster = [
     "ww2:usa_cckw_squad",
     # S9: the AT gun (appended for the same reason; ai_weight 0 until Build C).
     "ww2:usa_57mm_m1_squad",
+    # S10a: the assault and construction engineers (appended; ai_weight 0 until the S10a AI half).
+    "ww2:usa_assault_section",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

@@ -668,6 +668,8 @@ impl MatchState {
             }
             let speed = squad::stance_speed(speed, u.stance, mv.prone_speed_pct);
             let pos = ctx.ents.transform[i].pos.xy();
+            // S10a: inside a wire band at `wire_speed_pct`.
+            let speed = crate::fort::wire_pace(&self.fort, &self.setup, pos, speed);
             let has_target = ctx.ents.combat[i].target.is_some();
             ctx.hash.mark_entity_chunk(m.chunk());
             let u = &mut ctx.ents.unit[i];
@@ -694,8 +696,12 @@ impl MatchState {
                             repath.push((m, nav.goal));
                         } else {
                             let goal = nav.goal;
-                            let cover =
-                                !matches!(u.order, UnitOrder::Dig { .. } | UnitOrder::Retreat);
+                            // S10a: a Bangalore carrier walks to his spot.
+                            let placing = ctx.ents.kit[i]
+                                .windup
+                                .is_some_and(|w| w.kind == frontline_content::ItemKind::Bangalore);
+                            let cover = !placing
+                                && !matches!(u.order, UnitOrder::Dig { .. } | UnitOrder::Retreat);
                             let goal = if cover {
                                 let mut slot = [goal];
                                 squad::seek_cover(

@@ -30,6 +30,9 @@ roster = [
     "ww2:ger_pak40_squad",
     "ww2:ger_pak38_squad",
     "ww2:ger_sdkfz11_squad",
+    # S10a: the assault and construction engineers (appended; ai_weight 0 until the S10a AI half).
+    "ww2:ger_sturmpioniergruppe",
+    "ww2:ger_baupioniergruppe",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

@@ -95,6 +95,10 @@ impl Purpose {
     pub const INSIDE_ITEM: Purpose = Purpose(32);
     /// S8a: the plate rule at an MG shield (per projectile slot).
     pub const SHIELD: Purpose = Purpose(33);
+    /// S10a: a Bangalore charge's burst crater (tick, charge id x 8 + k).
+    pub const CHARGE_CRATER: Purpose = Purpose(34);
+    /// S10a: a Bangalore charge's burst fragments (tick, as above).
+    pub const CHARGE_FRAGMENT: Purpose = Purpose(35);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

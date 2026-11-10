@@ -1276,7 +1276,7 @@ impl World {
                 tick,
             };
             game.vehicle_gunnery(entities, &gun_ctx, hash, fire_merged, armour_events);
-            stats.throws += game.release_throws(entities, terrain, hash, seed);
+            stats.throws += game.release_throws(entities, terrain, hash, seed, tick);
             fire_merged.sort_unstable();
             // S5a: every requested round is spent and counted (a request
             // the pool drops below included).

@@ -2423,6 +2423,18 @@ impl MatchState {
                 self.hit_static(k, b.damage, Some((b.player, b.class)), ctx.tick);
             }
         }
+        // S10a: overpressure on enemy wire (rule 4; nothing without wire).
+        if !self.fort.wire.is_empty() {
+            self.blast_wire(
+                ctx.terrain,
+                pos,
+                lift,
+                blast_r,
+                b.damage,
+                b.player,
+                b.key.1 == Purpose::CHARGE_CRATER,
+            );
+        }
         self.fragments(ctx, b, rays, struck, rules, dead, fires, events);
         // S7: the exposed crew of open-topped vehicles.
         self.blast_open_crew(
@@ -2593,6 +2605,8 @@ impl MatchState {
             Purpose::ITEM_FRAGMENT
         } else if b.key.1 == Purpose::COOKOFF_CRATER {
             Purpose::COOKOFF_FRAGMENT
+        } else if b.key.1 == Purpose::CHARGE_CRATER {
+            Purpose::CHARGE_FRAGMENT
         } else {
             Purpose::FRAGMENT
         };
@@ -2611,6 +2625,14 @@ impl MatchState {
             .map(|(k, sb)| (k, sb.frame))
             .collect();
         let mut static_hits: Vec<(usize, u32)> = Vec::new();
+        // S10a: wire sections struck (rule 4), in ray order.
+        let mut wire_hits: Vec<(u32, u32)> = Vec::new();
+        let wire_pct = self
+            .setup
+            .rules
+            .fortify
+            .as_ref()
+            .map_or(0, |f| f.wire_frag_pct);
         let mut rng = RngStream::new(ctx.seed, ctx.tick, b.key.0, purpose);
         let stratum = Fx::TAU.div_int(n as i32);
         let half = stratum.div_int(2);
@@ -2702,6 +2724,22 @@ impl MatchState {
                 .iter()
                 .filter_map(|(k, f)| armour::segment_box(f, o, d).map(|h| (h.0, *k)))
                 .min();
+            // S10a: a fragment crossing enemy wire below its height before
+            // the ray stops deals its share and flies on (rule 4).
+            if !self.fort.wire.is_empty() {
+                let stop = [man.map(|m| m.0), boxed.map(|x| x.0), sbox.map(|x| x.0)]
+                    .into_iter()
+                    .flatten()
+                    .min()
+                    .unwrap_or(Fx::ONE);
+                for (id, f) in self.frag_wire(ctx.terrain, o, d, stop, b.player) {
+                    let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(f);
+                    let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
+                    let dmg = (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS))
+                        as u32;
+                    wire_hits.push((id, dmg * wire_pct / 100));
+                }
+            }
             if let Some((st, k)) = sbox
                 && boxed.is_none_or(|(bt, _, _)| st < bt)
                 && man.is_none_or(|(ms, _)| st < ms)
@@ -2840,6 +2878,16 @@ impl MatchState {
         // explosives cooks off).
         for (k, dmg) in static_hits {
             self.hit_static(k, dmg, Some((b.player, b.class)), ctx.tick);
+        }
+        // S10a: wire struck, in ray order.
+        let how = if b.key.1 == Purpose::CHARGE_CRATER {
+            crate::fort::WireGone::Blown
+        } else {
+            crate::fort::WireGone::Broken
+        };
+        for (id, dmg) in wire_hits {
+            self.fort
+                .hurt_wire(id, dmg, crate::ecs::PlayerId(b.player), how);
         }
         // Tracks struck, ascending vehicle id (no fire, no rack: no
         // knock-out).
@@ -2997,6 +3045,8 @@ impl MatchState {
         // S5b: bursts of fire-mission rounds, for the observers.
         let mut mbursts: Vec<crate::fire_mission::MissionBurst> = Vec::new();
         self.take_fused(fused);
+        // S10a: Bangalore charges due now burst as items (rule 6).
+        self.take_charges(ctx.terrain, ctx.tick, fused);
         // S3b: the fragment budget, shared by this tick's bursts in
         // proportion to what each asks for.
         let requested: u64 = events
@@ -3213,7 +3263,14 @@ impl MatchState {
                     damage: h.damage,
                     suppression: h.suppression,
                     cut: h.cuts_trenches,
-                    key: (SimId(t.id), Purpose::ITEM_CRATER),
+                    key: (
+                        SimId(t.id),
+                        if it.kind == frontline_content::ItemKind::Bangalore {
+                            Purpose::CHARGE_CRATER
+                        } else {
+                            Purpose::ITEM_CRATER
+                        },
+                    ),
                     class: if h.cuts_trenches {
                         kill_class::SATCHEL
                     } else {

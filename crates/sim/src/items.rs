@@ -334,6 +334,7 @@ impl MatchState {
         terrain: &Heightfield,
         hash: &mut HashCache,
         seed: u64,
+        tick: u64,
     ) -> u64 {
         let mut released = 0;
         let throw = self.setup.rules.items.throw.clone();
@@ -344,6 +345,45 @@ impl MatchState {
             };
             let m = SimId(i as u32);
             hash.mark_entity_chunk(m.chunk());
+            // S10a: a Bangalore is placed, not thrown (`crate::fort`): the
+            // count runs once he is at his spot; then the charge is laid.
+            if w.kind == ItemKind::Bangalore {
+                let item = self.item_of(ents, m, w.kind).map(|(idx, _)| idx);
+                let full = self.full_kit(ents, m)[w.kind.index()];
+                let go = item.and(MatchState::placing(ents, m, w.target));
+                let k = &mut ents.kit[i];
+                match go {
+                    None => {
+                        let n = &mut k.items[w.kind.index()];
+                        *n = n.saturating_add(1).min(full);
+                        k.windup = None;
+                    }
+                    Some(false) => {}
+                    Some(true) => {
+                        w.ticks = w.ticks.saturating_sub(1);
+                        if w.ticks > 0 {
+                            k.windup = Some(w);
+                            continue;
+                        }
+                        k.windup = None;
+                        let t = ents.transform[i];
+                        let idx = item.expect("placing");
+                        if !self.lay_charge(
+                            terrain,
+                            ents.owner[i],
+                            t.pos.xy(),
+                            t.yaw,
+                            idx,
+                            w.target,
+                            tick,
+                        ) {
+                            let n = &mut ents.kit[i].items[w.kind.index()];
+                            *n = n.saturating_add(1).min(full);
+                        }
+                    }
+                }
+                continue;
+            }
             let u = &ents.unit[i];
             // S4: training scales the scatter.
             let scatter = ents.squad[i]
@@ -767,7 +807,12 @@ impl MatchState {
                     // thrown.
                     w.kind == ItemKind::SingleShotAt
                         || self.item_of(ents, m, w.kind).is_none_or(|(_, it)| {
-                            w.ticks == 0 || w.ticks as u32 > it.windup_ticks.max(1)
+                            // S10a: a Bangalore counts its `place_ticks`.
+                            let most = it
+                                .bangalore
+                                .as_ref()
+                                .map_or(it.windup_ticks, |b| b.place_ticks);
+                            w.ticks == 0 || w.ticks as u32 > most.max(1)
                         })
                         || !on_map(w.target)
                 });

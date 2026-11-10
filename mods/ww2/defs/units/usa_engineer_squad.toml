@@ -7,7 +7,9 @@ name = "Engineer Squad"
 short_name = "Engineers"
 faction = "ww2:usa"
 tags = ["engineer"]
-capabilities = ["dig_basic", "dig_full", "recrew"]
+# S10a: field engineers (infantry-structures.md 7.7): sandbags, MG nests,
+# dugouts and wire at the field rate, wire cut at the field rate.
+capabilities = ["dig_basic", "dig_full", "recrew", "build_structure", "place_wire", "clear_wire"]
 cost = 280
 cooldown_s = 30
 unlock_s = 0

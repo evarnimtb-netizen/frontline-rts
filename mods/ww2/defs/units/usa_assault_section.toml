@@ -1,0 +1,62 @@
+# S10a: US Assault Section (roster-expansion.md 3.2): twelve men, the
+# leader and five riflemen with the M1, a BAR team (gunner and assistant),
+# a bazooka team (M9 and loader) and two demolition men with M1A1 Bangalore
+# torpedoes. Assault tier: breach and cut wire (roster 3.2 gives no wire
+# cutters' rate of their own: the tier's). Mechanics half: ai_weight 0, the
+# AI never buys it (the S10a AI half gives it a weight).
+id = "ww2:usa_assault_section"
+name = "Assault Section"
+short_name = "Assault Sec."
+faction = "ww2:usa"
+tags = ["engineer", "assault"]
+ai_weight = 0
+capabilities = ["dig_basic", "clear_wire", "breach", "recrew"]
+# Roster 3.2: 380 MP (no German cut) (S10a-8 (A)).
+cost = 380
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "section_leader"
+weapon = "ww2:m1_garand"
+traits = ["leader"]
+items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 5
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "automatic_rifleman"
+weapon = "ww2:bar_m1918a2"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "asst_ar"
+weapon = "ww2:m1_garand"
+rounds = { "ww2:3006_bar" = 240 }
+traits = ["crew_assistant"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "bazooka_gunner"
+weapon = "ww2:m9_bazooka"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "bazooka_loader"
+weapon = "ww2:m1_garand"
+traits = ["crew_assistant"]
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "demolition"
+count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1, "ww2:m1a1_bangalore" = 1 }

@@ -1177,12 +1177,9 @@ impl MatchState {
                 self.order_fortify(ctx, p, *squad, *fort, line)
             }
             &CommandKind::LoadMaterials { squad, kg } => self.load_materials(ctx, p, squad, kg),
-            // S10a Build B gives these behaviour; refused until then.
-            &CommandKind::CutWire { squad, .. } => {
-                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
-            }
-            CommandKind::PlaceBangalore { .. } => {
-                self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
+            &CommandKind::CutWire { squad, at } => self.order_cut_wire(ctx, p, squad, at),
+            CommandKind::PlaceBangalore { units, target } => {
+                self.place_bangalore(ctx, p, units, *target)
             }
             CommandKind::Embark { squads, vehicle } => self.order_embark(ctx, p, squads, *vehicle),
             CommandKind::Disembark {
@@ -1877,9 +1874,28 @@ impl MatchState {
         let max_exp = mv.path_max_expansions;
         // Infantry: AT-ditch costs once a match has ditches (S3).
         let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
-        let foot_path = |from: FxVec2, to: FxVec2, scratch: &mut PathScratch| match ditches {
-            Some(d) => find_infantry_path(terrain, from, to, &cost, d, max_exp, scratch),
-            None => find_path(terrain, from, to, &cost, max_exp, scratch),
+        // S10a: the wire layer, built only when wire stands.
+        let wire_nodes = if self.fort.wire.is_empty() {
+            Vec::new()
+        } else {
+            self.fort.wire_nodes(&self.setup.forts, terrain.dim())
+        };
+        let wire = (!wire_nodes.is_empty()).then(|| crate::path::WireCost {
+            nodes: &wire_nodes,
+            cost_pct: self
+                .setup
+                .rules
+                .fortify
+                .as_ref()
+                .map_or(100, |f| f.wire_path_cost_pct),
+        });
+        let foot_path = |from: FxVec2, to: FxVec2, scratch: &mut PathScratch| match (ditches, wire)
+        {
+            (_, Some(_)) => crate::path::find_foot_path(
+                terrain, from, to, &cost, ditches, wire, max_exp, scratch,
+            ),
+            (Some(d), None) => find_infantry_path(terrain, from, to, &cost, d, max_exp, scratch),
+            (None, None) => find_path(terrain, from, to, &cost, max_exp, scratch),
         };
         let pq = &mut self.path_queue;
         let n = pq.queues.len();

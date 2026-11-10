@@ -41,6 +41,10 @@
 //! * Infantry in a match with AT ditches (S3, [`find_infantry_path`]): a
 //!   step into an AT-ditch node costs ×3 and gets no trench discount, so
 //!   men cross a ditch but never use it as a covered road.
+//! * S10a wire (`find_foot_path`): a step into a wire node (the sorted
+//!   layer `crate::fort` builds only when wire stands) costs
+//!   `wire_path_cost_pct`; smoothing never cuts across a wire node the grid
+//!   path it replaces avoided, so men go round a line or through its gaps.
 //!
 //! The scratch arrays here are reset per search and never carry state across
 //! ticks, so they are neither saved nor hashed.
@@ -207,6 +211,48 @@ pub fn find_infantry_path(
     )
 }
 
+/// S10a: infantry wire costs: the sorted wire nodes and the step cost
+/// into one (%).
+#[derive(Copy, Clone, Debug)]
+pub struct WireCost<'a> {
+    pub nodes: &'a [u32],
+    pub cost_pct: u32,
+}
+
+impl WireCost<'_> {
+    #[inline]
+    fn has(&self, n: u32) -> bool {
+        self.nodes.binary_search(&n).is_ok()
+    }
+}
+
+/// S10a: an infantry path with optional AT-ditch costs and wire costs
+/// (module docs). Without wire it is [`find_path`] or
+/// [`find_infantry_path`].
+#[allow(clippy::too_many_arguments)]
+pub fn find_foot_path(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    ditches: Option<&BlockLayer>,
+    wire: Option<WireCost>,
+    max_expansions: u32,
+    s: &mut PathScratch,
+) -> PathResult {
+    search_with(
+        terrain,
+        from,
+        to,
+        cost,
+        None,
+        ditches,
+        wire.as_ref(),
+        max_expansions,
+        s,
+    )
+}
+
 /// Finds a vehicle path (module docs): `cost.max_slope_pct` is the
 /// vehicle's, `cost.trench_cost_pct` is ignored.
 pub fn find_vehicle_path(
@@ -274,6 +320,31 @@ fn search(
     cost: &PathCost,
     vehicle: Option<&VehiclePathCost>,
     ditches: Option<&BlockLayer>,
+    max_expansions: u32,
+    s: &mut PathScratch,
+) -> PathResult {
+    search_with(
+        terrain,
+        from,
+        to,
+        cost,
+        vehicle,
+        ditches,
+        None,
+        max_expansions,
+        s,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_with(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    vehicle: Option<&VehiclePathCost>,
+    ditches: Option<&BlockLayer>,
+    wire: Option<&WireCost>,
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
@@ -383,6 +454,12 @@ fn search(
             } else if n_trench && terrain.is_trench(mx, my) && !ditch(n) {
                 c = (c as u64 * cost.trench_cost_pct as u64 / 100) as u32;
             }
+            // S10a: a wire node is dear for infantry.
+            if let Some(w) = wire
+                && w.has(m)
+            {
+                c = (c as u64 * w.cost_pct as u64 / 100).min(u32::MAX as u64 / 4) as u32;
+            }
             // Saturating: extreme slope rules on a large map could exceed
             // u32 (the sim panics on overflow).
             let g = g_n.saturating_add(c);
@@ -415,7 +492,7 @@ fn search(
     } else if grid.is_empty() {
         grid.push(terrain.clamp(from));
     }
-    let points = smooth(terrain, terrain.clamp(from), &grid, cost, vehicle);
+    let points = smooth(terrain, terrain.clamp(from), &grid, cost, vehicle, wire);
     PathResult {
         points,
         expansions,
@@ -465,7 +542,18 @@ fn smooth(
     grid: &[FxVec2],
     cost: &PathCost,
     vehicle: Option<&VehiclePathCost>,
+    wire: Option<&WireCost>,
 ) -> Vec<FxVec2> {
+    // S10a: whether a straight segment touches a wire node (1 m samples).
+    let wired = |w: &WireCost, a: FxVec2, b: FxVec2| -> bool {
+        let d = b - a;
+        let steps = (d.length().raw() >> Fx::FRAC_BITS).max(1);
+        (0..=steps).any(|k| {
+            let p = a + FxVec2::new(d.x.mul_int(k).div_int(steps), d.y.mul_int(k).div_int(steps));
+            let (gx, gy) = terrain.nearest_grid(p);
+            w.has(gy * terrain.dim() + gx)
+        })
+    };
     // Vehicles: the dearest node a segment touches (2 m samples), `None`
     // for a blocked one. A shortcut may not touch dearer ground than the
     // grid nodes it replaces, nor the clearance band.
@@ -493,6 +581,7 @@ fn smooth(
         };
         let mut all_trench = vehicle.is_none() && at(anchor);
         let mut path_dear = 0u64;
+        let mut path_wire = false;
         let hi = (i + SMOOTH_LOOKAHEAD).min(grid.len() - 1);
         for (j, &node) in grid.iter().enumerate().take(hi + 1).skip(i) {
             path_worst = path_worst.max(segment_grade(terrain, prev, node));
@@ -500,6 +589,10 @@ fn smooth(
             if let Some(v) = vehicle {
                 let (gx, gy) = terrain.nearest_grid(node);
                 path_dear = path_dear.max(vehicle_pct(terrain, v, gx, gy, true).unwrap_or(0));
+            }
+            if let Some(w) = wire {
+                let (gx, gy) = terrain.nearest_grid(node);
+                path_wire |= w.has(gy * terrain.dim() + gx);
             }
             prev = node;
             if j == i {
@@ -512,6 +605,7 @@ fn smooth(
                     !v.block.segment_in_margin(terrain, anchor, node)
                         && dear(v, anchor, node).is_some_and(|d| d <= path_dear.max(100))
                 })
+                && wire.is_none_or(|w| path_wire || !wired(w, anchor, node))
             {
                 best = j;
             }

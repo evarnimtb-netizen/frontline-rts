@@ -1,0 +1,34 @@
+# S10a: Baupioniergruppe (construction engineers, roster-expansion.md 3.1):
+# eight men with the Kar98k, conscript training. Construction tier: build
+# fast, cut wire slowly; the only German card with `build_heavy`
+# (docs/slices/S10a-fortifications.md 3.4). Mechanics half: ai_weight 0,
+# the AI never buys it (the S10a AI half gives it a weight).
+id = "ww2:ger_baupioniergruppe"
+name = "Baupioniergruppe"
+short_name = "Baupioniere"
+faction = "ww2:germany"
+tags = ["engineer", "construction"]
+ai_weight = 0
+capabilities = ["dig_basic", "dig_full", "build_structure", "build_heavy", "place_wire", "clear_wire"]
+training = "ww2:training_conscript"
+# Roster 3.1: 200 MP x 0.8 (S5a-37 German cut) x 1.033 (S6 tune) = 165 (S10a-8 (A)).
+cost = 165
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+# As the Pioniergruppe (verify).
+dig_rate_pct = 200
+
+[[members]]
+slot = "leader"
+weapon = "ww2:kar98k"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 1 }
+
+[[members]]
+slot = "baupionier"
+count = 7
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1 }

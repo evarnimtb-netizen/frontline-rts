@@ -1,0 +1,49 @@
+# S10a: Sturmpioniergruppe (assault engineers, roster-expansion.md 3.1):
+# eight men, the leader with an MP 40, three StG 44 and four MP 40; two
+# Bangalore torpedoes (gestreckte Ladung), two satchel charges and stick
+# grenades. Assault tier: cut wire fast, breach, no building
+# (docs/slices/S10a-fortifications.md 3.4). Mechanics half: ai_weight 0,
+# the AI never buys it (the S10a AI half gives it a weight).
+id = "ww2:ger_sturmpioniergruppe"
+name = "Sturmpioniergruppe"
+short_name = "Sturmpioniere"
+faction = "ww2:germany"
+tags = ["engineer", "assault"]
+ai_weight = 0
+capabilities = ["dig_basic", "clear_wire", "breach", "recrew"]
+# Roster 3.1: 320 MP x 0.8 (S5a-37 German cut) x 1.033 (S6 tune) = 264 (S10a-8 (A)).
+cost = 264
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+items = { "ww2:stielhandgranate" = 2, "ww2:gestreckte_ladung" = 1 }
+
+[[members]]
+slot = "sturmpionier_stg"
+count = 3
+weapon = "ww2:stg44"
+items = { "ww2:stielhandgranate" = 2 }
+
+[[members]]
+slot = "sprengtrupp"
+weapon = "ww2:mp40"
+items = { "ww2:stielhandgranate" = 2, "ww2:gestreckte_ladung" = 1 }
+
+[[members]]
+slot = "ladungstraeger"
+count = 2
+weapon = "ww2:mp40"
+items = { "ww2:stielhandgranate" = 2, "ww2:geballte_ladung" = 1 }
+
+[[members]]
+slot = "sturmpionier_smg"
+weapon = "ww2:mp40"
+items = { "ww2:stielhandgranate" = 2 }

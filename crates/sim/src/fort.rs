@@ -30,7 +30,7 @@ use frontline_content::setup::{Capability, FortShape, SupplyKind};
 use frontline_content::tuning::FortTuning;
 use serde::{Deserialize, Serialize};
 
-use crate::ecs::{Entities, PlayerId};
+use crate::ecs::{Entities, PlayerId, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
 use crate::game::{Ctx, MatchState, NavPhase, Order, SquadId};
 use crate::structures::StaticRef;
@@ -633,6 +633,7 @@ impl MatchState {
         let Some(t) = self.setup.rules.fortify.clone() else {
             return;
         };
+        self.wire_tick(ents, terrain, &t);
         // An HQ roof goes with its HQ.
         let gone: Vec<u32> = self
             .fort
@@ -974,6 +975,647 @@ impl MatchState {
                 && crate::armour::segment_box(&sb.frame, a, d).is_some()
         })
     }
+}
+
+// ------------------------------------------------------------ wire (B) --
+
+/// A man this close (m) to a section's line works on cutting it (rule 5).
+const CUT_REACH: Fx = Fx::from_ratio(3, 2);
+/// A cutter stands this far (m) from the section's middle, on his side.
+const CUT_STAND: Fx = Fx::ONE;
+/// A Bangalore carrier walks to within this (m) of his target, and places
+/// it from there (section 4).
+const PLACE_REACH: Fx = Fx::from_int(2);
+/// Slack (m) on [`PLACE_REACH`] for the man's arrival.
+const PLACE_SLACK: Fx = Fx::from_ratio(1, 2);
+/// Grid spacing of the path nodes (m; `crate::path`).
+const NODE_M: i32 = 4;
+/// A charge's bursts get keys `id * CHARGE_KEYS + k` (k < 8).
+const CHARGE_KEYS: u32 = 8;
+
+/// The point of segment `a -> b` closest to `p`.
+pub(crate) fn closest_on(p: FxVec2, a: FxVec2, b: FxVec2) -> FxVec2 {
+    let v = b - a;
+    let vv = v.dot_raw(v) as i128;
+    if vv == 0 {
+        return a;
+    }
+    let t = ((p - a).dot_raw(v) as i128).clamp(0, vv);
+    a + FxVec2::new(
+        Fx::from_raw((v.x.raw() as i128 * t / vv) as i32),
+        Fx::from_raw((v.y.raw() as i128 * t / vv) as i32),
+    )
+}
+
+/// Whether `p` lies within `r` of segment `a -> b`.
+pub(crate) fn near_segment(p: FxVec2, a: FxVec2, b: FxVec2, r: Fx) -> bool {
+    (p - closest_on(p, a, b)).length_sq_raw() <= (r.raw().max(0) as u64).pow(2)
+}
+
+/// 2D cross product of raw vectors (i128, no overflow).
+fn det128(a: FxVec2, b: FxVec2) -> i128 {
+    a.x.raw() as i128 * b.y.raw() as i128 - a.y.raw() as i128 * b.x.raw() as i128
+}
+
+/// Where segment `o -> o + d` crosses segment `a -> b`: the fraction of
+/// `d` (Fx in 0..=1), or `None`.
+pub(crate) fn crossing(o: FxVec2, d: FxVec2, a: FxVec2, b: FxVec2) -> Option<Fx> {
+    let e = b - a;
+    let den = det128(d, e);
+    if den == 0 {
+        return None;
+    }
+    let w = a - o;
+    let (s, u) = (det128(w, e), det128(w, d));
+    let inside = |n: i128| {
+        if den > 0 {
+            n >= 0 && n <= den
+        } else {
+            n <= 0 && n >= den
+        }
+    };
+    if !inside(s) || !inside(u) {
+        return None;
+    }
+    Some(Fx::from_raw(((s << Fx::FRAC_BITS) / den) as i32))
+}
+
+/// Whether segment `a -> b` meets the rectangle of half extents `half`
+/// centred at `c` with axes `f` (forward, unit) and `f.perp()`.
+fn segment_in_rect(a: FxVec2, b: FxVec2, c: FxVec2, f: FxVec2, half: FxVec2) -> bool {
+    let local = |p: FxVec2| {
+        let q = p - c;
+        FxVec2::new(q.dot(f), q.dot(f.perp()))
+    };
+    let (la, lb) = (local(a), local(b));
+    // Slab test on the two axes (Liang-Barsky), in raw i128.
+    let (mut t0, mut t1) = (0i128, 1i128 << 32);
+    let d = lb - la;
+    for (p0, dp, h) in [(la.x, d.x, half.x), (la.y, d.y, half.y)] {
+        let (p0, dp, h) = (p0.raw() as i128, dp.raw() as i128, h.raw() as i128);
+        if dp == 0 {
+            if p0 < -h || p0 > h {
+                return false;
+            }
+            continue;
+        }
+        let mut ta = ((-h - p0) << 32) / dp;
+        let mut tb = ((h - p0) << 32) / dp;
+        if ta > tb {
+            std::mem::swap(&mut ta, &mut tb);
+        }
+        t0 = t0.max(ta);
+        t1 = t1.min(tb);
+        if t0 > t1 {
+            return false;
+        }
+    }
+    true
+}
+
+/// How a wire section was removed (the account counter it adds to).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum WireGone {
+    Cut,
+    Blown,
+    Crushed,
+    /// HE or fragments other than a Bangalore's: no counter.
+    Broken,
+}
+
+impl FortState {
+    /// Section 5 rule 4: whether `pos` lies inside a standing wire band
+    /// (false at once without wire).
+    pub(crate) fn in_wire(
+        &self,
+        forts: &[frontline_content::setup::FortSetup],
+        pos: FxVec2,
+    ) -> bool {
+        if self.wire.is_empty() {
+            return false;
+        }
+        self.wire.values().any(|s| {
+            let half = forts
+                .get(s.fort as usize)
+                .and_then(|d| d.wire.as_ref())
+                .map_or(Fx::ZERO, |w| Fx::from(w.band).div_int(2));
+            near_segment(pos, s.a, s.b, half)
+        })
+    }
+
+    /// The infantry path layer (rule 4): the sorted path nodes (`dim` per
+    /// side, 4 m apart) within half a band plus half a node step of a
+    /// standing section, so every section marks the nodes it lies among.
+    /// Empty without wire.
+    pub(crate) fn wire_nodes(
+        &self,
+        forts: &[frontline_content::setup::FortSetup],
+        dim: u32,
+    ) -> Vec<u32> {
+        let mut out = Vec::new();
+        for s in self.wire.values() {
+            let band = forts
+                .get(s.fort as usize)
+                .and_then(|d| d.wire.as_ref())
+                .map_or(Fx::ZERO, |w| Fx::from(w.band).div_int(2));
+            let r = band + Fx::from_int(NODE_M / 2);
+            let lo = |a: Fx, b: Fx| ((a.min(b) - r).floor_int() / NODE_M).max(0) as u32;
+            let hi = |a: Fx, b: Fx| {
+                (((a.max(b) + r).floor_int() / NODE_M) + 1).clamp(0, dim as i32 - 1) as u32
+            };
+            for gy in lo(s.a.y, s.b.y)..=hi(s.a.y, s.b.y) {
+                for gx in lo(s.a.x, s.b.x)..=hi(s.a.x, s.b.x) {
+                    let p = FxVec2::from_int(gx as i32 * NODE_M, gy as i32 * NODE_M);
+                    if gx < dim && gy < dim && near_segment(p, s.a, s.b, r) {
+                        out.push(gy * dim + gx);
+                    }
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Removes wire section `id`, counting it for `by` as `how`.
+    pub(crate) fn remove_wire(&mut self, id: u32, by: Option<PlayerId>, how: WireGone) {
+        if self.wire.remove(&id).is_none() {
+            return;
+        }
+        let Some(acc) = by.and_then(|p| self.accounts.get_mut(p.0 as usize)) else {
+            return;
+        };
+        match how {
+            WireGone::Cut => acc.wire_cut += 1,
+            WireGone::Blown => acc.wire_blown += 1,
+            WireGone::Crushed => acc.wire_crushed += 1,
+            WireGone::Broken => {}
+        }
+    }
+
+    /// Takes `dmg` hp from wire section `id`; at 0 it is removed.
+    pub(crate) fn hurt_wire(&mut self, id: u32, dmg: u32, by: PlayerId, how: WireGone) {
+        let Some(s) = self.wire.get_mut(&id) else {
+            return;
+        };
+        s.hp = s.hp.saturating_sub(dmg);
+        if s.hp == 0 {
+            self.remove_wire(id, Some(by), how);
+        }
+    }
+}
+
+/// Section 5 rule 4: a man inside a standing wire band moves at
+/// `wire_speed_pct` of `v` (unchanged without wire).
+pub(crate) fn wire_pace(fort: &FortState, setup: &MatchSetup, pos: FxVec2, v: Fx) -> Fx {
+    if fort.wire.is_empty() {
+        return v;
+    }
+    let Some(t) = setup.rules.fortify.as_ref() else {
+        return v;
+    };
+    if fort.in_wire(&setup.forts, pos) {
+        v.mul_int(t.wire_speed_pct as i32).div_int(100)
+    } else {
+        v
+    }
+}
+
+impl MatchState {
+    /// `CutWire { squad, at }` (section 4, rule 5).
+    pub(crate) fn order_cut_wire(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        squad: SquadId,
+        at: FxVec2,
+    ) -> bool {
+        let Some(t) = self.setup.rules.fortify.clone() else {
+            return false;
+        };
+        if !self.owned(p, squad) || self.is_vehicle_squad(squad) {
+            return self.refuse_fort(p, Some(squad), FortRefusal::NotAllowed);
+        }
+        let ty = &self.setup.squad_types[self.squads[&squad].type_idx as usize];
+        if !ty.has(Capability::ClearWire) {
+            return self.refuse_fort(p, Some(squad), FortRefusal::CannotBuild);
+        }
+        let reach = Fx::from_int(t.cut_reach_m as i32);
+        let r2 = (reach.raw() as u64).pow(2);
+        let best = self
+            .fort
+            .wire
+            .iter()
+            .map(|(&id, s)| ((at - closest_on(at, s.a, s.b)).length_sq_raw(), id))
+            .filter(|&(d, _)| d <= r2)
+            .min();
+        let Some((_, section)) = best else {
+            return self.refuse_fort(p, Some(squad), FortRefusal::NoWire);
+        };
+        let s = &self.fort.wire[&section];
+        let lead = self.squads[&squad].lead(ctx.ents);
+        let spot = cut_spot(s, ctx.ents.transform[lead.index()].pos.xy());
+        self.clear_detached(ctx, squad);
+        self.squads.get_mut(&squad).expect("owned").order = Order::CutWire {
+            section,
+            man: None,
+            work: 0,
+        };
+        self.request_path(squad, ctx.terrain.clamp(spot));
+        true
+    }
+
+    /// Rule 5 per tick: cutters work; vehicles crush the sections their
+    /// hulls cross (S10a-7 (A)). Nothing to do without wire.
+    fn wire_tick(&mut self, ents: &Entities, terrain: &Heightfield, t: &FortTuning) {
+        if self.fort.wire.is_empty() {
+            // Cutters whose wire is gone stop.
+            for q in self.squads.values_mut() {
+                if matches!(q.order, Order::CutWire { .. }) {
+                    q.order = Order::Idle;
+                }
+            }
+            return;
+        }
+        let hz = self.setup.tick_hz as u64;
+        let need = t.cut_s as u64 * hz * 100;
+        let ids: Vec<SquadId> = self
+            .squads
+            .iter()
+            .filter(|(_, q)| matches!(q.order, Order::CutWire { .. }))
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            let sq = &self.squads[&id];
+            let Order::CutWire { section, man, work } = sq.order.clone() else {
+                continue;
+            };
+            let Some(s) = self.fort.wire.get(&section).cloned() else {
+                self.squads.get_mut(&id).expect("listed").order = Order::Idle;
+                continue;
+            };
+            let mid = s.a + (s.b - s.a).div_int(2);
+            // The cutter: kept while he lives in the squad, else the man
+            // nearest the section (ties: lowest id).
+            let able = |m: SimId| ents.is_alive(m) && !ents.unit[m.index()].detached;
+            let man = man
+                .filter(|m| sq.members.contains(m) && able(*m))
+                .or_else(|| {
+                    sq.members
+                        .iter()
+                        .copied()
+                        .filter(|&m| able(m))
+                        .min_by_key(|&m| {
+                            (
+                                (ents.transform[m.index()].pos.xy() - mid).length_sq_raw(),
+                                m,
+                            )
+                        })
+                });
+            let Some(man) = man else {
+                self.squads.get_mut(&id).expect("listed").order = Order::Idle;
+                continue;
+            };
+            let rate =
+                Self::tier_of(&self.setup.squad_types[sq.type_idx as usize], t).cut_pct as u64;
+            let here = ents.transform[man.index()].pos.xy();
+            let sq = self.squads.get_mut(&id).expect("listed");
+            if matches!(sq.nav.phase, NavPhase::Arriving | NavPhase::Holding)
+                && sq.nav.slots.len() == sq.members.len()
+                && let Some(k) = sq.members.iter().position(|&m| m == man)
+            {
+                sq.nav.slots[k] = terrain.clamp(cut_spot(&s, here));
+            }
+            let at = near_segment(here, s.a, s.b, CUT_REACH) && !ents.combat[man.index()].pinned;
+            let work = if at { (work + rate).min(need) } else { work };
+            if work >= need {
+                sq.order = Order::Idle;
+                self.fort
+                    .remove_wire(section, Some(sq.owner), WireGone::Cut);
+                continue;
+            }
+            sq.order = Order::CutWire {
+                section,
+                man: Some(man),
+                work,
+            };
+        }
+        // Vehicles crush the sections their hulls cross.
+        let mut crushed: Vec<(u32, PlayerId)> = Vec::new();
+        for (&v, vs) in &self.vehicles {
+            if vs.wreck_tick.is_some() || vs.speed == Fx::ZERO {
+                continue;
+            }
+            let Some(geo) = self.vderived.geo.get(vs.type_idx as usize) else {
+                continue;
+            };
+            let tr = &ents.transform[v.index()];
+            let f = dir(tr.yaw);
+            let c = tr.pos.xy() + f * geo.hull_center.x + f.perp() * geo.hull_center.y;
+            let half = FxVec2::new(geo.hull_half.x, geo.hull_half.y);
+            for (&sid, s) in &self.fort.wire {
+                if segment_in_rect(s.a, s.b, c, f, half) {
+                    crushed.push((sid, ents.owner[v.index()]));
+                }
+            }
+        }
+        for (sid, by) in crushed {
+            if self.fort.wire.contains_key(&sid) {
+                self.fort.remove_wire(sid, Some(by), WireGone::Crushed);
+            }
+        }
+    }
+
+    /// Rule 4: overpressure of a burst of `player` at `pos` within
+    /// `blast_r` with a clear line from `lift` takes `damage` from each
+    /// enemy wire section (`charge`: a Bangalore's, counted as blown).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn blast_wire(
+        &mut self,
+        terrain: &Heightfield,
+        pos: FxVec3,
+        lift: FxVec3,
+        blast_r: Fx,
+        damage: u32,
+        player: u8,
+        charge: bool,
+    ) {
+        if self.fort.wire.is_empty() || blast_r <= Fx::ZERO {
+            return;
+        }
+        let half_up = |s: &WireSection| {
+            self.setup.forts[s.fort as usize]
+                .wire
+                .as_ref()
+                .map_or(Fx::ZERO, |w| Fx::from(w.height).div_int(2))
+        };
+        let hit: Vec<u32> = self
+            .fort
+            .wire
+            .iter()
+            .filter(|(_, s)| s.owner.0 != player)
+            .filter_map(|(&id, s)| {
+                let q = closest_on(pos.xy(), s.a, s.b);
+                let at = q.extend(terrain.height_at(q) + half_up(s));
+                ((at - pos).length_sq_raw() <= (blast_r.raw() as u64).pow(2)
+                    && terrain.line_of_sight(lift, at))
+                .then_some(id)
+            })
+            .collect();
+        let how = if charge {
+            WireGone::Blown
+        } else {
+            WireGone::Broken
+        };
+        for id in hit {
+            self.fort.hurt_wire(id, damage, PlayerId(player), how);
+        }
+    }
+
+    /// Rule 4: enemy wire sections a fragment ray `o -> o + d` crosses
+    /// below their height before `stop` (fraction of `d`) with the earth
+    /// clear: `(section, fraction)` in ascending fraction.
+    pub(crate) fn frag_wire(
+        &self,
+        terrain: &Heightfield,
+        o: FxVec3,
+        d: FxVec3,
+        stop: Fx,
+        player: u8,
+    ) -> Vec<(u32, Fx)> {
+        let mut out = Vec::new();
+        for (&id, s) in &self.fort.wire {
+            if s.owner.0 == player {
+                continue;
+            }
+            let Some(f) = crossing(o.xy(), d.xy(), s.a, s.b) else {
+                continue;
+            };
+            if f >= stop {
+                continue;
+            }
+            let p = o + FxVec3::new(d.x.mul(f), d.y.mul(f), d.z.mul(f));
+            let ground = terrain.height_at(p.xy());
+            let h = self.setup.forts[s.fort as usize]
+                .wire
+                .as_ref()
+                .map_or(Fx::ZERO, |w| Fx::from(w.height));
+            if p.z < ground - Fx::from_ratio(1, 10) || p.z > ground + h {
+                continue;
+            }
+            if terrain.segment_hit(o, p).is_some() {
+                continue;
+            }
+            out.push((id, f));
+        }
+        out
+    }
+
+    /// `PlaceBangalore { units, target }` (section 4): the nearest man
+    /// carrying a Bangalore in a `breach` squad walks (detached) to within
+    /// 2 m of `target` and places it there (`Windup` of kind Bangalore,
+    /// counted down by `release_throws` once he is there).
+    pub(crate) fn place_bangalore(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        units: &[SimId],
+        target: FxVec2,
+    ) -> bool {
+        use frontline_content::ItemKind;
+        if self.setup.rules.fortify.is_none() {
+            return false;
+        }
+        if !ctx.terrain.contains(target) {
+            return self.refuse_fort(p, None, FortRefusal::BadSpot);
+        }
+        let Some(men) = self.unit_set(ctx, p, units) else {
+            return self.refuse_fort(p, None, FortRefusal::NotAllowed);
+        };
+        let k = ItemKind::Bangalore.index();
+        let best = men
+            .iter()
+            .copied()
+            .filter(|&m| {
+                let i = m.index();
+                let kit = &ctx.ents.kit[i];
+                kit.items[k] > 0
+                    && kit.windup.is_none()
+                    && !ctx.ents.combat[i].pinned
+                    && ctx.ents.squad[i]
+                        .and_then(|s| self.squads.get(&s))
+                        .is_some_and(|q| {
+                            let ty = &self.setup.squad_types[q.type_idx as usize];
+                            ty.has(Capability::Breach)
+                                && ty.kit(&self.setup.items, ItemKind::Bangalore).is_some()
+                        })
+            })
+            .min_by_key(|&m| {
+                (
+                    (target - ctx.ents.transform[m.index()].pos.xy()).length_sq_raw(),
+                    m,
+                )
+            });
+        let Some(m) = best else {
+            return self.refuse_fort(p, None, FortRefusal::CannotBuild);
+        };
+        let ticks = self
+            .item_of(ctx.ents, m, ItemKind::Bangalore)
+            .and_then(|(_, it)| it.bangalore.as_ref())
+            .map_or(1, |b| b.place_ticks.clamp(1, u16::MAX as u32) as u16);
+        let pos = ctx.ents.transform[m.index()].pos.xy();
+        let to = target - pos;
+        let facing = if to == FxVec2::ZERO {
+            dir(ctx.ents.transform[m.index()].yaw)
+        } else {
+            to.normalize_or_zero()
+        };
+        let far = to.length_sq_raw() > (PLACE_REACH.raw() as u64).pow(2);
+        if far {
+            let spot = ctx.terrain.clamp(target - facing * Fx::from_ratio(3, 2));
+            self.detach(
+                ctx,
+                m,
+                crate::unit::UnitOrder::Move { target: spot },
+                facing,
+            );
+            self.request_unit_path(ctx, m, spot);
+        } else {
+            self.detach(ctx, m, crate::unit::UnitOrder::Idle, facing);
+            let nav = &mut ctx.ents.unit[m.index()].nav;
+            nav.phase = NavPhase::Holding;
+            nav.goal = pos;
+        }
+        let kit = &mut ctx.ents.kit[m.index()];
+        kit.items[k] -= 1;
+        kit.windup = Some(crate::items::Windup {
+            kind: ItemKind::Bangalore,
+            target,
+            ticks,
+        });
+        ctx.hash.mark_entity_chunk(m.chunk());
+        true
+    }
+
+    /// Whether Bangalore carrier `m` with his windup toward `target` may
+    /// go on: `Some(true)` placing there now, `Some(false)` still walking,
+    /// `None` called off (`release_throws`).
+    pub(crate) fn placing(ents: &Entities, m: SimId, target: FxVec2) -> Option<bool> {
+        use crate::unit::UnitOrder;
+        let i = m.index();
+        let u = &ents.unit[i];
+        if ents.kind[i] != crate::ecs::EntityKind::Soldier || ents.combat[i].pinned || !u.detached {
+            return None;
+        }
+        let near = (target - ents.transform[i].pos.xy()).length_sq_raw()
+            <= ((PLACE_REACH + PLACE_SLACK).raw() as u64).pow(2);
+        match u.order {
+            UnitOrder::Idle => near.then_some(true),
+            UnitOrder::Move { target: t }
+                if (t - target).length_sq_raw() <= (PLACE_REACH.raw() as u64).pow(2) =>
+            {
+                Some(false)
+            }
+            _ => None,
+        }
+    }
+
+    /// Lays the charge of Bangalore item `item` that `m` (of `owner`)
+    /// placed toward `target`: from his spot `length` toward it; it bursts
+    /// at `tick + fuse`. False (item kept) when the list is full.
+    pub(crate) fn lay_charge(
+        &mut self,
+        terrain: &Heightfield,
+        owner: PlayerId,
+        from: FxVec2,
+        yaw: Fx,
+        item: u16,
+        target: FxVec2,
+        tick: u64,
+    ) -> bool {
+        if self.fort.charges.len() >= MAX_CHARGES {
+            return false;
+        }
+        let it = &self.setup.items[item as usize];
+        let Some(b) = it.bangalore.as_ref() else {
+            return false;
+        };
+        let mut f = (target - from).normalize_or_zero();
+        if f == FxVec2::ZERO {
+            f = dir(yaw);
+        }
+        let to = terrain.clamp(from + f * Fx::from(b.length));
+        let id = self.fort.next_charge;
+        self.fort.next_charge += 1;
+        self.fort.charges.push(Charge {
+            id,
+            owner,
+            item,
+            from: terrain.clamp(from),
+            to,
+            fuse_tick: tick + it.fuse_ticks.max(1) as u64,
+        });
+        if let Some(a) = self.fort.accounts.get_mut(owner.0 as usize) {
+            a.bangalores += 1;
+        }
+        true
+    }
+
+    /// Rule 6: the charges whose fuse runs out at `tick` (ascending id)
+    /// become `bursts` landed items each, evenly along the charge, appended
+    /// to `out` (the Damage stage bursts them as items; their keys are
+    /// `id * 8 + k`, their crater purpose `CHARGE_CRATER`).
+    pub(crate) fn take_charges(
+        &mut self,
+        terrain: &Heightfield,
+        tick: u64,
+        out: &mut Vec<crate::items::Thrown>,
+    ) {
+        if self.fort.charges.is_empty() {
+            return;
+        }
+        let mut k = 0;
+        while k < self.fort.charges.len() {
+            if self.fort.charges[k].fuse_tick > tick {
+                k += 1;
+                continue;
+            }
+            let c = self.fort.charges.remove(k);
+            let n = self.setup.items[c.item as usize]
+                .bangalore
+                .as_ref()
+                .map_or(1, |b| b.bursts.clamp(1, CHARGE_KEYS as u8)) as i32;
+            let v = c.to - c.from;
+            for j in 0..n {
+                let at = terrain.clamp(c.from + v.mul_int(2 * j + 1).div_int(2 * n));
+                let pos = at.extend(terrain.height_at(at));
+                out.push(crate::items::Thrown {
+                    id: c.id.wrapping_mul(CHARGE_KEYS).wrapping_add(j as u32),
+                    item: c.item,
+                    owner: c.owner,
+                    thrower: SimId(u32::MAX),
+                    from: pos,
+                    vel: FxVec3::ZERO,
+                    step: 0,
+                    pos,
+                    landed: true,
+                    fuse: 0,
+                    inside: None,
+                });
+            }
+        }
+    }
+}
+
+/// Where a cutter stands at section `s`: a metre from its middle, on the
+/// side of `from`.
+fn cut_spot(s: &WireSection, from: FxVec2) -> FxVec2 {
+    let mid = s.a + (s.b - s.a).div_int(2);
+    let mut n = (s.b - s.a).normalize_or_zero().perp();
+    if (from - mid).dot_raw(n) < 0 {
+        n = FxVec2::ZERO - n;
+    }
+    mid + n * CUT_STAND
 }
 
 /// Segments of a line blueprint (at least one).
