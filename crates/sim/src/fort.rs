@@ -438,7 +438,7 @@ impl MatchState {
 
     /// Sites (point, over_hq) or segments (line) player `p` has of
     /// blueprint `f`, built or building.
-    fn fort_used(&self, p: PlayerId, f: u16) -> u32 {
+    pub(crate) fn fort_used(&self, p: PlayerId, f: u16) -> u32 {
         let d = &self.setup.forts[f as usize];
         let mut n = 0u32;
         for w in self.fort.works.values() {

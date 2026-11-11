@@ -33,11 +33,11 @@ use frontline_content::setup::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{Known, Mine, MyTank, NO_POINT, PointEval, Rel, TaskKind, sq_m};
+use super::{Known, KnownVehicle, Mine, MyTank, NO_POINT, PointEval, Rel, TaskKind, sq_m};
 use crate::command::CommandKind;
 use crate::fort::{FortState, WorkStep};
 use crate::fx::{Fx, FxVec2};
-use crate::game::{Order, SquadId};
+use crate::game::{NavPhase, Order, SquadId};
 
 /// Most fort jobs one AI keeps (spec 4).
 pub const MAX_FORT_JOBS: usize = 16;
@@ -57,6 +57,22 @@ const WIRE_RETRY_M: i32 = 25;
 /// A truck run gives up this long after its start beyond
 /// `material_wait_s` (the drive there, s).
 const RUN_DRIVE_S: u64 = 180;
+/// Fix F4/F17: a refused work is remembered this long (s): its job stays
+/// in `AiState::forts` parked ([`AiFortJob::parked`]), its squad free,
+/// and the point does not want that work meanwhile (a job counts as the
+/// work existing). A constant: a tuning key would change the saved setup.
+const REFUSED_S: u64 = 300;
+/// Fix F5 (spec 3.3 "2 per player"): most dugouts one AI keeps.
+const DUGOUTS_MAX: u32 = 2;
+/// Fix F13: a watched work whose step (a line: its segment) has not moved
+/// for `WATCH_STALL_X` times the step's time at the squad's strength plus
+/// `WATCH_SLACK_S` ends its job (pinned men or men off their spots add no
+/// work).
+const WATCH_STALL_X: u64 = 3;
+const WATCH_SLACK_S: u64 = 60;
+/// Fix F13: a builder whose leader walks farther than this from the site
+/// is still on its way (no stall).
+const WATCH_NEAR_M: i32 = 12;
 /// Most men one dugout shelters, and the step between their spots (mm).
 pub(super) const SHELTER_SPOTS: usize = 8;
 const SHELTER_STEP_MM: i32 = 250;
@@ -93,7 +109,18 @@ pub struct AiFortJob {
     pub since: u64,
     /// The work id once the order was accepted.
     pub work: Option<u32>,
+    /// Load and Order: loads asked and refusals. Watch: the work's step
+    /// last seen (`WorkStep as u8`, the progress mark, fix F13). Done with
+    /// `MAX_FORT_TRIES` and no work: parked ([`Self::parked`]).
     pub tries: u8,
+}
+
+impl AiFortJob {
+    /// Fix F4/F17: a refused work remembered until `since` +
+    /// `REFUSED_S`; the squad is free meanwhile.
+    pub fn parked(&self) -> bool {
+        self.phase == FortPhase::Done && self.work.is_none() && self.tries == MAX_FORT_TRIES
+    }
 }
 
 /// The AI's use of a blueprint.
@@ -262,7 +289,7 @@ impl super::Planner<'_> {
             WorkKind::Wire => {
                 let out = out_m.unwrap_or(f.wire_out_m as i32);
                 let mut c = mid + enemy * Fx::from_int(out);
-                let h = Fx::from_int(f.wire_len_m as i32).div_int(2);
+                let h = self.wire_len().div_int(2);
                 if shifted {
                     c = c + along * self.wire_shift(i, c, along, h);
                 }
@@ -272,6 +299,43 @@ impl super::Planner<'_> {
             }
             WorkKind::Roof | WorkKind::Wall => None,
         }
+    }
+
+    /// The AI's wire line length: `wire_len_m`, at most the blueprint's
+    /// `max_length` (a longer line is always refused, fix F4).
+    fn wire_len(&self) -> Fx {
+        let s = &self.g.setup;
+        let want = Fx::from_int(s.rules.ai.fort.wire_len_m as i32);
+        fort_of(s, WorkKind::Wire)
+            .map_or(want, |w| want.min(Fx::from(s.forts[w as usize].max_length)))
+    }
+
+    /// Fix F4 (derived): blueprint `f`'s per-player use (the mechanics'
+    /// count) plus this AI's jobs not yet a work, in segments for a line.
+    fn fort_use(&self, f: u16) -> u32 {
+        let d = &self.g.setup.forts[f as usize];
+        let jobs: u32 = self
+            .ai
+            .forts
+            .values()
+            .filter(|j| j.fort == f && j.work.is_none() && !j.parked())
+            .map(|j| match d.shape {
+                FortShape::Line => crate::fort::segments(&j.line, d.segment),
+                _ => 1,
+            })
+            .sum();
+        self.g.fort_used(self.me, f).saturating_add(jobs)
+    }
+
+    /// Fix F4: whether a work of blueprint `f` on `line` fits under the
+    /// blueprint's `limit_per_player` (else the mechanics refuse it).
+    fn under_limit(&self, f: u16, line: &[FxVec2]) -> bool {
+        let d = &self.g.setup.forts[f as usize];
+        let need = match d.shape {
+            FortShape::Line => crate::fort::segments(line, d.segment),
+            _ => 1,
+        };
+        self.fort_use(f).saturating_add(need) <= d.limit_per_player
     }
 
     /// Whether an own work, piece, wire section or fort job of blueprint
@@ -316,10 +380,7 @@ impl super::Planner<'_> {
         let site = self.point_site(i, k, None)?;
         let shape = self.g.setup.forts[f as usize].shape;
         let r = match k {
-            WorkKind::Wire => {
-                Fx::from_int(self.g.setup.rules.ai.fort.wire_len_m as i32).div_int(2)
-                    + Fx::from_int(SITE_NEAR_M)
-            }
+            WorkKind::Wire => self.wire_len().div_int(2) + Fx::from_int(SITE_NEAR_M),
             _ => Fx::from_int(SITE_NEAR_M),
         };
         // The wire's 25 m retry counts too, and both unshifted (a shift
@@ -360,7 +421,15 @@ impl super::Planner<'_> {
                 have += 1;
                 continue;
             }
-            let wanted = switched_on(s, k)
+            // Fix F4: a work over the blueprint's per-player limit would be
+            // refused; fix F5: at most `DUGOUTS_MAX` dugouts.
+            let fits = fort_of(s, k)
+                .zip(self.point_site(i, k, None))
+                .is_some_and(|(fd, l)| self.under_limit(fd, &l))
+                && (k != WorkKind::Dugout
+                    || fort_of(s, k).is_some_and(|fd| self.fort_use(fd) < DUGOUTS_MAX));
+            let wanted = fits
+                && switched_on(s, k)
                 && match k {
                     // Wire once the nest is done or started, or the mod
                     // has no nest, or (stage D) `nest` alone is off. With
@@ -384,8 +453,8 @@ impl super::Planner<'_> {
         want
     }
 
-    /// Marks own points that still want works (the assign bonus keeps
-    /// builders there). Nothing with `works` and `wire` off.
+    /// Marks own points that still want works. Nothing with `works` and
+    /// `wire` off.
     pub(super) fn fort_points(&mut self, points: &mut [PointEval]) {
         if !habits_on(&self.g.setup) {
             return;
@@ -394,6 +463,112 @@ impl super::Planner<'_> {
         for (i, p) in points.iter_mut().enumerate() {
             let ok = p.rel == Rel::Own && p.trench_done && p.threat < max;
             p.wants_works = ok && !self.point_wants(i).is_empty();
+        }
+    }
+
+    /// Fort jobs under way (parked refusals left out).
+    fn active_jobs(&self) -> usize {
+        self.ai.forts.values().filter(|j| !j.parked()).count()
+    }
+
+    /// Whether another job may start (`builders_max`, and room in the
+    /// saved map for a squad not yet in it).
+    fn job_room(&self, started: usize) -> bool {
+        let cap = (self.g.setup.rules.ai.fort.builders_max as usize).min(MAX_FORT_JOBS);
+        self.active_jobs() + started < cap
+    }
+
+    /// Fix F12: a known enemy soldier or vehicle within `threat_radius` of
+    /// any of `at` (the builder and its site).
+    fn fort_threat(&self, known: &[Known], kv: &[KnownVehicle], at: &[FxVec2]) -> bool {
+        let r = sq_m(self.g.setup.rules.ai.threat_radius.into());
+        at.iter().any(|&p| {
+            known.iter().any(|e| (e.pos - p).length_sq_raw() <= r)
+                || kv.iter().any(|v| (v.pos - p).length_sq_raw() <= r)
+        })
+    }
+
+    /// `carry_kg_per_man` x living men of squad `sq` (g).
+    fn full_carry_g(&self, sq: SquadId) -> u32 {
+        let g = self.g;
+        let (Some(ft), Some(q)) = (g.setup.rules.fortify.as_ref(), g.squads.get(&sq)) else {
+            return 0;
+        };
+        let alive = q.members.iter().filter(|m| self.ents.is_alive(**m)).count() as u32;
+        ft.carry_kg_per_man
+            .saturating_mul(1000)
+            .saturating_mul(alive)
+    }
+
+    /// Fix F14: whether builder `sq` can bring one step of blueprint `f`
+    /// (a point work's kg, a line's segment): its full carry holds it, or
+    /// a truck is free for a run; and the kg it carries plus the budget
+    /// cover it.
+    fn can_supply(&self, sq: SquadId, f: u16) -> bool {
+        let need = self.g.setup.forts[f as usize].materials_g;
+        (self.full_carry_g(sq) >= need || self.truck_free())
+            && self.carried_g(sq).saturating_add(self.materials_room_g()) >= need
+    }
+
+    /// Whether free squad `m` could take a job for blueprint `f` with its
+    /// site at `site` now (fort_start's pick and the assign hold).
+    fn can_take(
+        &self,
+        m: &Mine,
+        f: u16,
+        site: FxVec2,
+        known: &[Known],
+        kv: &[KnownVehicle],
+    ) -> bool {
+        let d = &self.g.setup.forts[f as usize];
+        m.strength_pct >= 60
+            && builds(m.caps)
+            && m.caps & (1u32 << d.capability) != 0
+            && self.can_supply(m.id, f)
+            && !self.fort_threat(known, kv, &[m.lead, site])
+    }
+
+    /// Fix F15: the builder each wanting own point holds (the assign
+    /// bonus): one per point, points ascending, while `builders_max` has
+    /// room, a free engineer (no `breach`) that could start the first
+    /// wanted work it can, nearest first. Nothing with the habits off.
+    pub(super) fn fort_holds(
+        &mut self,
+        mine: &[Mine],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        points: &mut [PointEval],
+    ) {
+        if !habits_on(&self.g.setup) {
+            return;
+        }
+        let s = &self.g.setup;
+        let mut held: Vec<SquadId> = Vec::new();
+        for (i, pt) in points.iter_mut().enumerate() {
+            if !pt.wants_works {
+                continue;
+            }
+            if !self.job_room(held.len()) {
+                break;
+            }
+            let pos = pt.pos;
+            let pick = self.point_wants(i).into_iter().find_map(|k| {
+                let (f, line) = (fort_of(s, k)?, self.point_site(i, k, None)?);
+                let site = mid_of(s.forts[f as usize].shape, &line);
+                mine.iter()
+                    .filter(|m| {
+                        m.role == super::AiKind::Engineer
+                            && !m.can(Capability::Breach)
+                            && !held.contains(&m.id)
+                            && self.can_take(m, f, site, known, kv)
+                    })
+                    .min_by_key(|m| ((m.lead - pos).length_sq_raw(), m.id))
+                    .map(|m| m.id)
+            });
+            if let Some(id) = pick {
+                held.push(id);
+                pt.hold = Some(id);
+            }
         }
     }
 
@@ -467,6 +642,12 @@ impl super::Planner<'_> {
             return None;
         }
         Some(self.point_site(i, WorkKind::Dugout, None)?[0])
+    }
+
+    /// The dugout spot of own point `i` when a dugout stands there (fix F6).
+    pub(super) fn dugout_built(&self, i: usize) -> Option<FxVec2> {
+        let d = fort_of(&self.g.setup, WorkKind::Dugout)?;
+        self.dugout_spot(i).filter(|&at| self.built_near(d, at))
     }
 
     /// The dugout at own point `i` when its men should shelter now: built,
@@ -738,20 +919,22 @@ impl super::Planner<'_> {
             let late = tick > job.since + (f.material_wait_s as u64 + RUN_DRIVE_S) * hz;
             let unloaded =
                 in_base && vs.material_g == 0 && tick > job.since + 2 * self.plan_ticks();
+            // Fix F18: a line's run lasts until the line is done or gone
+            // or the truck is empty (each segment draws from it); a point
+            // work's ends once it builds.
+            let line = |w: &crate::fort::Work| s.forts[w.fort as usize].shape == FortShape::Line;
             let end = match work {
                 None => true,
-                Some(w) => w.step == WorkStep::Build || late || unloaded,
+                Some(w) => {
+                    (w.step == WorkStep::Build && !line(w))
+                        || late
+                        || unloaded
+                        || (!in_base && vs.material_g == 0)
+                }
             };
             if end {
                 self.ai.material_run = None;
-                job.phase = if in_base {
-                    super::truck::TruckPhase::Load
-                } else {
-                    super::truck::TruckPhase::Return
-                };
-                job.since = tick;
-                job.fails = 0;
-                job.moved_to = t.pos;
+                end_run(job, in_base, tick, t.pos);
                 return true;
             }
             let Some(w) = work else { return true };
@@ -761,7 +944,13 @@ impl super::Planner<'_> {
             let (site, _) = g.site_of(w);
             let reach = Fx::from_int(ft.material_reach_m as i32 - 3).max(Fx::ONE);
             if !near(t.pos, site, reach) {
-                let back = (t.pos - site).normalize_or_zero();
+                // Fix F18: it parks on the own base's side of the site, so
+                // a line's run follows the line behind it, never along it
+                // (a truck crushes wire).
+                let mut back = (g.base_of(self.me) - site).normalize_or_zero();
+                if back == FxVec2::ZERO {
+                    back = (t.pos - site).normalize_or_zero();
+                }
                 let goal = self
                     .terrain
                     .clamp(site + back * (reach - Fx::from_int(2)).max(Fx::ONE));
@@ -783,23 +972,27 @@ impl super::Planner<'_> {
         let cap = v.supply.as_ref().map_or(0, |x| x.cap_g as u64);
         let held = vs.cargo_g.iter().map(|&x| x as u64).sum::<u64>() + vs.material_g as u64;
         let room = cap.saturating_sub(held).min(u32::MAX as u64) as u32;
-        let kg = (f.truck_material_kg * 1000)
+        // Fix F18: kg still aboard from an earlier run count.
+        let have_kg = vs.material_g / 1000;
+        let kg = (f.truck_material_kg.saturating_sub(have_kg) * 1000)
             .min(room)
             .min(self.materials_room_g())
             / 1000;
         let need_kg = s.forts[g.fort.works[&wid].fort as usize]
             .materials_g
             .div_ceil(1000);
-        if kg == 0 || kg < need_kg.min(f.truck_material_kg) {
+        if have_kg + kg == 0 || have_kg + kg < need_kg.min(f.truck_material_kg) {
             return false;
         }
-        self.ai.emit(
-            self.due,
-            CommandKind::LoadMaterials {
-                squad: t.squad,
-                kg: kg.min(u16::MAX as u32) as u16,
-            },
-        );
+        if kg > 0 {
+            self.ai.emit(
+                self.due,
+                CommandKind::LoadMaterials {
+                    squad: t.squad,
+                    kg: kg.min(u16::MAX as u32) as u16,
+                },
+            );
+        }
         self.ai.material_run = Some((t.squad, wid));
         job.since = tick;
         self.ai.counters.material_runs[0] += 1;
@@ -833,12 +1026,17 @@ impl super::Planner<'_> {
     // ------------------------------------------------------------- jobs --
 
     /// Runs the fort jobs (before refills and assignment): a job's squad
-    /// leaves `mine`; jobs whose squad is gone, weak or threatened end.
-    /// Also the base loads. Nothing with `works` and `wire` off.
+    /// leaves `mine`; jobs whose squad is gone, weak or threatened (a known
+    /// enemy soldier or vehicle near it or its site, fix F12), or whose
+    /// point is lost or under `build_threat_max` (fix F13), end. Parked
+    /// refusals stay until `REFUSED_S` with their squads free. Also the
+    /// material run's deadline (fix F2) and the base loads. Nothing with
+    /// `works` and `wire` off.
     pub(super) fn fort_continue(
         &mut self,
         mine: &mut Vec<Mine>,
         known: &[Known],
+        kv: &[KnownVehicle],
         busy: &[SquadId],
     ) {
         let g = self.g;
@@ -846,6 +1044,8 @@ impl super::Planner<'_> {
             return;
         }
         let me = self.me;
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let tick = self.tick;
         if self
             .ai
             .material_run
@@ -853,8 +1053,17 @@ impl super::Planner<'_> {
         {
             self.ai.material_run = None;
         }
+        self.run_deadline();
         let ids: Vec<SquadId> = self.ai.forts.keys().copied().collect();
         for id in ids {
+            let job = &self.ai.forts[&id];
+            if job.parked() {
+                let owned = g.squads.get(&id).is_some_and(|q| q.owner == me);
+                if !owned || tick >= job.since.saturating_add(REFUSED_S * hz) {
+                    self.ai.forts.remove(&id);
+                }
+                continue;
+            }
             if busy.contains(&id) && g.squads.get(&id).is_some_and(|q| q.owner == me) {
                 continue;
             }
@@ -863,16 +1072,28 @@ impl super::Planner<'_> {
                 continue;
             };
             let m = &mine[k];
-            let r = sq_m(g.setup.rules.ai.threat_radius.into());
-            let threat = known.iter().any(|e| (e.pos - m.lead).length_sq_raw() <= r);
-            if m.strength_pct < 60 || threat {
+            let site = mid_of(g.setup.forts[job.fort as usize].shape, &job.line);
+            let lost = job.point != NO_POINT
+                && (g
+                    .points
+                    .get(job.point as usize)
+                    .is_none_or(|c| c.owner != Some(me))
+                    || g.setup.map.points.get(job.point as usize).is_some_and(|p| {
+                        self.threat_at(known, p.pos.into())
+                            >= g.setup.rules.ai.fort.build_threat_max
+                    }));
+            if m.strength_pct < 60 || lost || self.fort_threat(known, kv, &[m.lead, site]) {
                 self.ai.forts.remove(&id);
                 continue;
             }
-            let mut job = self.ai.forts[&id].clone();
+            let mut job = job.clone();
             self.run_fort_job(id, &mut job);
             if job.phase == FortPhase::Done {
-                self.ai.forts.remove(&id);
+                if job.parked() {
+                    self.ai.forts.insert(id, job);
+                } else {
+                    self.ai.forts.remove(&id);
+                }
                 // Free again this plan: it gets an infantry task.
                 continue;
             }
@@ -882,15 +1103,48 @@ impl super::Planner<'_> {
         self.base_loads(mine);
     }
 
+    /// Fix F2: a material run ends when its work is gone or it is late,
+    /// whether or not its truck reached `material_truck` this plan (a
+    /// truck that is immobile, repairing or fleeing skips it).
+    fn run_deadline(&mut self) {
+        let Some((sq, wid)) = self.ai.material_run else {
+            return;
+        };
+        let g = self.g;
+        let me = self.me;
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let tick = self.tick;
+        let wait = g.setup.rules.ai.fort.material_wait_s as u64;
+        let gone = g.fort.works.get(&wid).is_none_or(|w| w.owner != me);
+        let late = self
+            .ai
+            .trucks
+            .get(&sq)
+            .is_none_or(|j| tick > j.since + (wait + RUN_DRIVE_S) * hz);
+        if !(gone || late) {
+            return;
+        }
+        self.ai.material_run = None;
+        let at = g.squads.get(&sq).map(|q| {
+            let v = q.members[0];
+            (self.in_own_base(q), self.ents.transform[v.index()].pos.xy())
+        });
+        if let (Some(job), Some((in_base, pos))) = (self.ai.trucks.get_mut(&sq), at) {
+            end_run(job, in_base, tick, pos);
+        }
+    }
+
     /// Starts new fort jobs for free builders (after assignment and the
     /// hunts): point works, the HQ roof, walls at guns. Returns the squads
     /// it took.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn fort_start(
         &mut self,
         mine: &[Mine],
         assigned: &[(usize, usize)],
         points: &[PointEval],
         known: &[Known],
+        kv: &[KnownVehicle],
         taken: &[SquadId],
     ) -> Vec<SquadId> {
         let g = self.g;
@@ -900,76 +1154,76 @@ impl super::Planner<'_> {
             return out;
         }
         let f = &s.rules.ai.fort;
-        let r = sq_m(s.rules.ai.threat_radius.into());
-        let free = |m: &Mine, out: &[SquadId]| {
-            m.strength_pct >= 60
-                && builds(m.caps)
-                && !taken.contains(&m.id)
-                && !out.contains(&m.id)
-                && !known.iter().any(|e| (e.pos - m.lead).length_sq_raw() <= r)
-        };
-        let able = |m: &Mine, fort: u16| {
-            let d = &s.forts[fort as usize];
-            m.caps & (1u32 << d.capability) != 0
-        };
-        let room = |this: &Self, out: &[SquadId]| {
-            this.ai.forts.len() + out.len() < (f.builders_max as usize).min(MAX_FORT_JOBS)
-        };
+        // Fix F3: a started job is in `forts` already (`job_room` counts
+        // it); `out` only keeps a squad from a second job.
         // Point works, points ascending.
         for (i, p) in points.iter().enumerate() {
-            if !room(self, &out) {
+            if !self.job_room(0) {
                 break;
             }
             if p.rel != Rel::Own || !p.trench_done || p.threat >= f.build_threat_max {
                 continue;
             }
             for k in self.point_wants(i) {
-                if !room(self, &out) {
-                    break;
-                }
                 let (Some(fort), Some(line)) = (fort_of(s, k), self.point_site(i, k, None)) else {
                     continue;
                 };
+                let site = mid_of(s.forts[fort as usize].shape, &line);
                 let pick = assigned
                     .iter()
                     .filter(|&&(_, pi)| pi == i)
                     .map(|&(j, _)| &mine[j])
-                    .filter(|m| free(m, &out) && able(m, fort))
-                    .min_by_key(|m| m.id);
+                    .filter(|m| {
+                        !taken.contains(&m.id)
+                            && !out.contains(&m.id)
+                            && self.can_take(m, fort, site, known, kv)
+                    })
+                    .min_by_key(|m| (self.ai.forts.contains_key(&m.id), m.id));
                 let Some(m) = pick else { continue };
                 let id = m.id;
-                self.new_fort_job(id, fort, i as u8, line);
-                out.push(id);
+                if self.new_fort_job(id, fort, i as u8, line) {
+                    out.push(id);
+                }
                 // One job per point per plan: the next sees this one.
                 break;
             }
         }
-        if switched_on(s, WorkKind::Roof) {
-            let has_room = room(self, &out);
-            self.start_roof(mine, &free, &able, &mut out, has_room);
+        if switched_on(s, WorkKind::Roof) && self.job_room(0) {
+            self.start_roof(mine, known, kv, taken, &mut out);
         }
-        if switched_on(s, WorkKind::Wall) && room(self, &out) {
-            self.start_walls(mine, &free, &able, &mut out, &room);
+        if switched_on(s, WorkKind::Wall) && self.job_room(0) {
+            self.start_walls(mine, known, kv, taken, &mut out);
         }
-        // T97: plan-squads on a fort job over all plan-squads given
-        // infantry tasks (those on a job included).
-        let jobs = self.ai.forts.len() as u32;
-        self.ai.counters.fort_build_plans += jobs;
-        self.ai.counters.infantry_plans += mine.len() as u32 + jobs - out.len() as u32;
+        // T97: plan-squads on a fort job, and (fix F15) builders the
+        // assign bonus held at a point that got no job, over all
+        // plan-squads given infantry tasks (those on a job included).
+        let jobs = self.active_jobs() as u32;
+        let held = points
+            .iter()
+            .enumerate()
+            .filter(|&(i, p)| {
+                p.hold.is_some_and(|h| {
+                    !out.contains(&h) && assigned.iter().any(|&(j, pi)| pi == i && mine[j].id == h)
+                })
+            })
+            .count() as u32;
+        self.ai.counters.fort_build_plans += jobs + held;
+        self.ai.counters.infantry_plans +=
+            (mine.len() as u32 + jobs).saturating_sub(out.len() as u32);
         out
     }
 
     fn start_roof(
         &mut self,
         mine: &[Mine],
-        free: &dyn Fn(&Mine, &[SquadId]) -> bool,
-        able: &dyn Fn(&Mine, u16) -> bool,
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
         out: &mut Vec<SquadId>,
-        room: bool,
     ) {
         let g = self.g;
         let s = &g.setup;
-        if !room || !self.ai.enemy_mortar_seen {
+        if !self.ai.enemy_mortar_seen {
             return;
         }
         let Some(fort) = fort_of(s, WorkKind::Roof) else {
@@ -991,23 +1245,29 @@ impl super::Planner<'_> {
         let reach = Fx::from_int(s.rules.ai.fort.builder_reach_m as i32);
         let pick = mine
             .iter()
-            .filter(|m| free(m, out) && able(m, fort) && near(m.lead, at, reach))
-            .min_by_key(|m| m.id);
+            .filter(|m| {
+                !taken.contains(&m.id)
+                    && !out.contains(&m.id)
+                    && near(m.lead, at, reach)
+                    && self.can_take(m, fort, at, known, kv)
+            })
+            .min_by_key(|m| (self.ai.forts.contains_key(&m.id), m.id));
         if let Some(m) = pick {
             let id = m.id;
             let line = vec![at, self.terrain.clamp(at + FxVec2::new(Fx::ONE, Fx::ZERO))];
-            self.new_fort_job(id, fort, NO_POINT, line);
-            out.push(id);
+            if self.new_fort_job(id, fort, NO_POINT, line) {
+                out.push(id);
+            }
         }
     }
 
     fn start_walls(
         &mut self,
         mine: &[Mine],
-        free: &dyn Fn(&Mine, &[SquadId]) -> bool,
-        able: &dyn Fn(&Mine, u16) -> bool,
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
         out: &mut Vec<SquadId>,
-        room: &dyn Fn(&Self, &[SquadId]) -> bool,
     ) {
         let g = self.g;
         let s = &g.setup;
@@ -1027,7 +1287,7 @@ impl super::Planner<'_> {
             .map(|j| (j.site, j.facing))
             .collect();
         for (site, facing) in guns {
-            if !room(self, out) {
+            if !self.job_room(0) {
                 break;
             }
             let fwd = (facing - site).normalize_or_zero();
@@ -1037,26 +1297,36 @@ impl super::Planner<'_> {
             let c = site + fwd * Fx::from_int(f.gun_wall_m as i32);
             let half = fwd.perp() * Fx::from_int(WALL_LEN_M).div_int(2);
             let line = vec![self.terrain.clamp(c - half), self.terrain.clamp(c + half)];
-            if self.fort_near(
-                fort,
-                (line[0] + line[1]).div_int(2),
-                Fx::from_int(SITE_NEAR_M),
-            ) {
+            let mid = (line[0] + line[1]).div_int(2);
+            if self.fort_near(fort, mid, Fx::from_int(SITE_NEAR_M))
+                || !self.under_limit(fort, &line)
+            {
                 continue;
             }
             let pick = mine
                 .iter()
-                .filter(|m| free(m, out) && able(m, fort) && near(m.lead, site, reach))
-                .min_by_key(|m| m.id);
+                .filter(|m| {
+                    !taken.contains(&m.id)
+                        && !out.contains(&m.id)
+                        && near(m.lead, site, reach)
+                        && self.can_take(m, fort, mid, known, kv)
+                })
+                .min_by_key(|m| (self.ai.forts.contains_key(&m.id), m.id));
             if let Some(m) = pick {
                 let id = m.id;
-                self.new_fort_job(id, fort, NO_POINT, line);
-                out.push(id);
+                if self.new_fort_job(id, fort, NO_POINT, line) {
+                    out.push(id);
+                }
             }
         }
     }
 
-    fn new_fort_job(&mut self, id: SquadId, fort: u16, point: u8, line: Vec<FxVec2>) {
+    /// Starts a job (false when the saved map has no room: a squad not in
+    /// it with `MAX_FORT_JOBS` jobs and parked refusals).
+    fn new_fort_job(&mut self, id: SquadId, fort: u16, point: u8, line: Vec<FxVec2>) -> bool {
+        if !self.ai.forts.contains_key(&id) && self.ai.forts.len() >= MAX_FORT_JOBS {
+            return false;
+        }
         let mut job = AiFortJob {
             fort,
             point,
@@ -1069,6 +1339,7 @@ impl super::Planner<'_> {
         self.ai.counters.fort_jobs += 1;
         self.run_fort_job(id, &mut job);
         self.ai.forts.insert(id, job);
+        true
     }
 
     /// One plan of a fort job (module docs).
@@ -1090,6 +1361,12 @@ impl super::Planner<'_> {
             };
             let carried = self.carried_g(id);
             let full = self.carry_room_g(id) == 0;
+            // Fix F14: a step the squad cannot carry (and no truck can
+            // bring) ends the job instead of a load or a walk.
+            if self.full_carry_g(id) < d.materials_g && !self.truck_free() {
+                set(job, FortPhase::Done);
+                return;
+            }
             if carried >= need || (carried > 0 && full) {
                 set(job, FortPhase::Go);
             } else if self.in_own_base(sq) {
@@ -1147,8 +1424,9 @@ impl super::Planner<'_> {
                     .works
                     .iter()
                     .find(|(_, w)| w.owner == me && w.builder == id && w.fort == job.fort);
-                if let Some((&wid, _)) = work {
+                if let Some((&wid, w)) = work {
                     job.work = Some(wid);
+                    job.tries = w.step as u8;
                     set(job, FortPhase::Watch);
                     return;
                 }
@@ -1168,7 +1446,12 @@ impl super::Planner<'_> {
                         job.tries = MAX_FORT_TRIES.min(LOAD_TRIES + 2);
                         set(job, FortPhase::Go);
                     }
-                    None => set(job, FortPhase::Done),
+                    None => {
+                        // Fix F4/F17: parked, remembered for `REFUSED_S`.
+                        job.work = None;
+                        job.tries = MAX_FORT_TRIES;
+                        set(job, FortPhase::Done);
+                    }
                 }
             }
             FortPhase::Watch => {
@@ -1182,20 +1465,50 @@ impl super::Planner<'_> {
                     return;
                 };
                 // A line goes on from its first segment not yet standing.
+                let mut moved = job.tries != w.step as u8;
                 if d.shape == FortShape::Line
                     && let [_, .., end] = w.line[..]
                 {
                     let done = Fx::from(d.segment).mul_int(w.seg as i32);
-                    job.line = vec![crate::squad::point_along(&w.line, done), end];
+                    let line = vec![crate::squad::point_along(&w.line, done), end];
+                    moved |= line != job.line;
+                    job.line = line;
+                }
+                // Fix F13: `since` is the tick the work's step (or segment)
+                // last moved, or the squad last walked toward the site
+                // (from base: minutes); `tries` the step then.
+                let lead = self.ents.transform[sq.lead(self.ents).index()].pos.xy();
+                let (at, _) = g.site_of(w);
+                let (mut men, mut pinned) = (0u32, 0u32);
+                for &m in sq.members.iter().filter(|m| self.ents.is_alive(**m)) {
+                    men += 1;
+                    pinned += self.ents.combat[m.index()].pinned as u32;
+                }
+                moved |= !near(lead, at, Fx::from_int(WATCH_NEAR_M))
+                    && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
+                    && pinned * 2 < men;
+                if moved {
+                    job.tries = w.step as u8;
+                    job.since = tick;
                 }
                 if w.step != WorkStep::Wait || self.carried_g(id) > 0 {
-                    job.since = tick;
+                    if tick > job.since.saturating_add(self.stall_ticks(id, d, w.step)) {
+                        // No progress: the job ends, the squad is free
+                        // (its next order removes the work) and the point
+                        // is checked again by the next plans.
+                        set(job, FortPhase::Done);
+                    }
                     return;
                 }
                 let wid = job.work.unwrap_or(u32::MAX);
                 let run_here = self.ai.material_run.is_some_and(|(_, r)| r == wid);
                 let wait = f_wait(s) * hz;
                 if run_here || (self.truck_free() && tick < job.since + wait) {
+                    return;
+                }
+                // Fix F14: a step it cannot carry ends the job (no walk).
+                if self.full_carry_g(id) < d.materials_g {
+                    set(job, FortPhase::Done);
                     return;
                 }
                 // Walk back: the Move ends the work (its kg are lost).
@@ -1215,6 +1528,49 @@ impl super::Planner<'_> {
             FortPhase::Load | FortPhase::Done => {}
         }
     }
+
+    /// Fix F13: ticks a watched work's `step` may stand still:
+    /// `WATCH_STALL_X` x the step's time at squad `id`'s living men, plus
+    /// `WATCH_SLACK_S` (the pit: its dig work at 100 points a man-second;
+    /// the build: `work_ticks` x `work_men` over the men).
+    fn stall_ticks(
+        &self,
+        id: SquadId,
+        d: &frontline_content::setup::FortSetup,
+        step: WorkStep,
+    ) -> u64 {
+        let s = &self.g.setup;
+        let hz = s.tick_hz.max(1) as u64;
+        let men = self.g.squads.get(&id).map_or(1, |q| {
+            q.members.iter().filter(|m| self.ents.is_alive(**m)).count() as u64
+        });
+        let men = men.max(1);
+        let nominal = match (step, d.pit) {
+            (WorkStep::Dig, Some(pit)) => {
+                let dig = s.rules.dig_profile(pit);
+                let pts = (dig.work_per_m as u64 * Fx::from(dig.pit_line).raw().max(0) as u64)
+                    >> Fx::FRAC_BITS;
+                pts * hz / (100 * men)
+            }
+            _ => d.work_ticks as u64 * d.work_men as u64 / men,
+        };
+        nominal
+            .saturating_mul(WATCH_STALL_X)
+            .saturating_add(WATCH_SLACK_S * hz)
+    }
+}
+
+/// A material run's end for its truck job: back to Load in base, else
+/// Return.
+fn end_run(job: &mut super::AiTruck, in_base: bool, tick: u64, pos: FxVec2) {
+    job.phase = if in_base {
+        super::truck::TruckPhase::Load
+    } else {
+        super::truck::TruckPhase::Return
+    };
+    job.since = tick;
+    job.fails = 0;
+    job.moved_to = pos;
 }
 
 fn f_wait(s: &MatchSetup) -> u64 {

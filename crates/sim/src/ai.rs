@@ -1040,6 +1040,9 @@ struct PointEval {
     /// S10a-ai: an own point whose finished trench still wants a work
     /// (`ai::fort`; false with `works` and `wire` off).
     wants_works: bool,
+    /// S10a-ai fix F15: the builder the assign bonus holds here (one that
+    /// could start the point's work now; `ai::fort::fort_holds`).
+    hold: Option<SquadId>,
 }
 
 impl MatchState {
@@ -1223,7 +1226,7 @@ impl Planner<'_> {
         self.retreats(&mut mine, &known);
         // S10a-ai: shelled marks, then the fort jobs keep their squads.
         self.fort_marks(&known);
-        self.fort_continue(&mut mine, &known, &busy);
+        self.fort_continue(&mut mine, &known, &kv, &busy);
         // S10a-ai: enemy wire by sight, then the breach jobs keep theirs.
         self.wire_sight();
         self.breach_continue(&mut mine, &busy);
@@ -1244,6 +1247,7 @@ impl Planner<'_> {
         let mut points = self.evaluate_points(&known, &kv);
         self.fort_points(&mut points);
         self.gun_jobs(&guns, &mut mine, &points, &known, &kv);
+        self.fort_holds(&mine, &known, &kv, &mut points);
         let assigned = self.assign(&mine, &mut points);
         // S5a: Panzerfaust ambushes first; the hunts skip their squads.
         let ambushing = self.ambushes(&mine, &assigned, &points, &kv);
@@ -1252,7 +1256,7 @@ impl Planner<'_> {
         hunting.sort_unstable();
         hunting.dedup();
         // S10a-ai: new fort jobs take free builders (claimed as hunts are).
-        let building = self.fort_start(&mine, &assigned, &points, &known, &hunting);
+        let building = self.fort_start(&mine, &assigned, &points, &known, &kv, &hunting);
         hunting.extend(building);
         // S10a-ai: new breach jobs take an attacker that can open wire.
         let breaching = self.breach_start(&mine, &assigned, &points, &hunting);
@@ -1783,6 +1787,7 @@ impl Planner<'_> {
                 trench,
                 trench_done,
                 wants_works: false,
+                hold: None,
             });
         }
         out
@@ -1814,10 +1819,11 @@ impl Planner<'_> {
                     (AiKind::AntiTank, Rel::Own) => 40,
                     (AiKind::AntiTank, _) => -60,
                     // S10a-ai (spec 3.1): assault engineers go to attacks;
-                    // builders also stay for the works a point still wants.
+                    // the builder a point holds (fix F15: one that could
+                    // start its wanted work now) stays for it.
                     (AiKind::Engineer, Rel::Own)
                         if !m.can(Capability::Breach)
-                            && (!pt.trench_done || pt.wants_works && fort::builds(m.caps)) =>
+                            && (!pt.trench_done || pt.hold == Some(m.id)) =>
                     {
                         80
                     }
@@ -1882,9 +1888,11 @@ impl Planner<'_> {
                 assigned
                     .iter()
                     .filter(|&&(j, pi)| {
+                        // Fix F19: never the crew of a deployed weapon.
                         pi == i
                             && !claimed.contains(&mine[j].id)
                             && !escorting.contains(&mine[j].id)
+                            && !matches!(mine[j].role, AiKind::Mg | AiKind::AntiTank)
                     })
                     .map(|&(j, _)| &mine[j])
                     .min_by_key(|m| ((m.lead - at).length_sq_raw(), m.id))
@@ -2004,9 +2012,11 @@ impl Planner<'_> {
             let on_track = !sheltered
                 && match &sq.order {
                     Order::Idle if exact => near(m.lead, target, 8),
+                    // (Fix F6: only a built dugout; a slot-0 squad at an
+                    // unfinished trench stands near the spot.)
                     Order::Idle
                         if pt.rel == Rel::Own
-                            && self.dugout_spot(i).is_some_and(|d| near(m.lead, d, 4)) =>
+                            && self.dugout_built(i).is_some_and(|d| near(m.lead, d, 4)) =>
                     {
                         false
                     }

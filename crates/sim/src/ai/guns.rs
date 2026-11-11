@@ -1247,6 +1247,7 @@ mod tests {
             trench: None,
             trench_done: false,
             wants_works: false,
+            hold: None,
         }
     }
 
