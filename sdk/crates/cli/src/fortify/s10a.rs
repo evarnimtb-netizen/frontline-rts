@@ -1157,3 +1157,69 @@ pub fn summary_text(r: &S10aReport) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Spec 7 (Build C): the breach_ai row hands the attack to the AI's
+    /// breach job (it learns the wire, starts a job, aims its bases of fire
+    /// and ends it), and its control finds nothing to breach; the JSON
+    /// carries the row's fields.
+    #[test]
+    fn fortify_breach_ai_row_runs_the_ai_job() {
+        let args = FortifyArgs {
+            seeds: 1,
+            threads: 1,
+            ..FortifyArgs::default()
+        };
+        let run = breach_ai_run(&args, 1, 0, true).unwrap();
+        assert!(
+            matches!(run.job, "opened" | "given_up"),
+            "the AI job ran and ended: {}",
+            run.job
+        );
+        assert!(run.suppressions >= 1, "its bases fired for it");
+        let control = breach_ai_run(&args, 1, 0, false).unwrap();
+        assert_eq!(control.job, "none", "no wire: nothing to breach");
+        assert_eq!((control.bangalores, control.wire_cut), (0, 0));
+        let totals = |r: &BreachRun| {
+            let mut t = BreachTotals::default();
+            t.runs = 1;
+            t.placed = (r.bangalores + r.wire_cut > 0) as u32;
+            t.gaps_opened = (r.wire_blown + r.wire_cut > 0) as u32;
+            t
+        };
+        let report = S10aReport {
+            wire: WireExperiment {
+                name: "",
+                runs: Vec::new(),
+                inside_speed_pct: 0.0,
+                cut_gap_speed_pct: 0.0,
+                blown_gap_speed_pct: 0.0,
+            },
+            roof: RoofExperiment {
+                name: "",
+                runs: Vec::new(),
+                survived_81mm_pct: 0.0,
+                sheltered_losses: 0,
+                broken_heavy_pct: 0.0,
+            },
+            breach: BreachExperiment {
+                name: "",
+                runs: Vec::new(),
+                fortified: BreachTotals::default(),
+                control: BreachTotals::default(),
+            },
+            breach_ai: BreachExperiment {
+                name: "",
+                fortified: totals(&run),
+                control: totals(&control),
+                runs: vec![run, control],
+            },
+        };
+        let text = summary_text(&report);
+        assert!(text.contains("S10a-ai: ") && text.contains("T93f"));
+        assert!(report.breach_ai.fortified.placed_pct() <= 100.0);
+    }
+}

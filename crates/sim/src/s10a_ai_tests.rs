@@ -1861,3 +1861,208 @@ fn ai_breach_retries_a_pinned_carrier_then_gives_up() {
     attackers(&mut w, pos, dir, 130, ASSAULT);
     assert!(play_until(&mut w, 300, |w| acc(w, 1).bangalores >= 1));
 }
+
+/// Plays `secs`; returns (whether a player 1 leader got within 10 m of
+/// the point, leader-ticks inside a standing wire band, and how far along
+/// the wire line from its middle each leader crossed it, m).
+fn leaders_through(w: &mut World, secs: u64, pos: FxVec2, dir: FxVec2) -> (bool, u32, Vec<i32>) {
+    let (mut reached, mut inside, mut crossed) = (false, 0, Vec::new());
+    let mut side: std::collections::BTreeMap<SquadId, bool> = Default::default();
+    for _ in 0..secs * 30 {
+        steps(w, 1);
+        let g = w.game().unwrap();
+        for (&id, q) in g.squads.iter().filter(|(_, q)| q.owner == PlayerId(1)) {
+            let p = w.state.entities.transform[q.lead(&w.state.entities).index()]
+                .pos
+                .xy();
+            reached |= near_m(p, pos, 10);
+            inside += g.fort().in_wire(&g.setup().forts, p) as u32;
+            let out = (p - pos).dot(dir) > Fx::from_int(WIRE_OUT);
+            if side.insert(id, out) == Some(true) && !out {
+                crossed.push((p - pos).dot(dir.perp()).abs().floor_int());
+            }
+        }
+    }
+    (reached, inside, crossed)
+}
+
+#[test]
+fn ai_assault_goes_through_the_gap() {
+    // Control first: no breach habit, the attack walks through the wire.
+    let (mut w, pos, dir) = attacked(100, |s| s.rules.ai.fort.breach = 0);
+    defenders(&mut w, pos, dir, false);
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    let (_, wired, _) = leaders_through(&mut w, 300, pos, dir);
+    assert!(wired > 100, "no gap: leaders in the band ({wired} ticks)");
+    let (mut w, pos, dir) = attacked(100, |_| {});
+    defenders(&mut w, pos, dir, false);
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    assert!(play_until(&mut w, 200, |w| ai_ro(w)
+        .counters
+        .breaches_opened
+        >= 1));
+    assert!(ai_ro(&w).breaches.is_empty(), "the job ended opened");
+    let crossing = w.game().unwrap().fort().charges.len();
+    assert_eq!(crossing, 0);
+    let (reached, inside, crossed) = leaders_through(&mut w, 120, pos, dir);
+    assert!(reached, "the attack reached the point");
+    // The gap is about 4 m: a leader may brush its edge (the path's
+    // corner clips the next section's band, about 1.5 m at wire pace),
+    // never walk the band as without it.
+    assert!(
+        inside * 2 < wired,
+        "through the gap: {inside} ticks in a band, {wired} without"
+    );
+    assert!(!crossed.is_empty());
+    assert!(
+        // (the squads start 20 m to either side; the blown gap spans a
+        // few sections round the crossing)
+        crossed.iter().all(|&d| d <= 12),
+        "every leader crossed at the gap (m from the middle): {crossed:?}"
+    );
+}
+
+/// [`attacked`] where the only card the AI may buy is the assault section
+/// (weight 35), the engineer mix slot is empty and decisions are exact (no
+/// buy by weight or by a random pick).
+fn breach_buy_world(
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, FxVec2, FxVec2) {
+    attacked(100, |s| {
+        s.rules.start_manpower = 5_000;
+        s.rules.difficulty.normal.decision_quality_pct = 100;
+        let eng = s.tag("engineer").unwrap();
+        for m in s.rules.ai.mix.iter_mut().filter(|m| m.tag == eng) {
+            m.pct = 0;
+        }
+        for t in s.squad_types.iter_mut().filter(|t| t.id == ASSAULT) {
+            t.ai_weight = 35;
+        }
+        edit(s);
+    })
+}
+
+fn assault_buys(w: &World) -> u32 {
+    type_buys(w, 1, ASSAULT)
+}
+
+#[test]
+fn ai_buys_an_assault_card_when_a_breach_is_wanted() {
+    // Rifle squads attack across known wire: the next buy is the assault
+    // section, once (`breach_cards_max` 1).
+    let (mut w, pos, dir) = breach_buy_world(|_| {});
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        pos + dir * Fx::from_int(130),
+    );
+    assert!(play_until(&mut w, 30, |w| assault_buys(w) >= 1));
+    play(&mut w, 120);
+    assert_eq!(assault_buys(&w), 1, "at most one alive");
+    let ty = w.match_setup().unwrap().squad_type_index(ASSAULT).unwrap();
+    assert!(
+        w.game()
+            .unwrap()
+            .squads
+            .values()
+            .any(|q| q.owner == PlayerId(1) && q.type_idx == ty)
+    );
+    // No wire: no buy.
+    let (mut w, pos, dir) = {
+        let (mut w, pos, dir) = breach_buy_world(|_| {});
+        w.edit_fort(|f| f.wire.clear());
+        (w, pos, dir)
+    };
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        pos + dir * Fx::from_int(130),
+    );
+    play(&mut w, 40);
+    assert_eq!(assault_buys(&w), 0, "no wire");
+    // A squad that can cut is alive: no buy.
+    let (mut w, pos, dir) = breach_buy_world(|_| {});
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        pos + dir * Fx::from_int(130),
+    );
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_engineer_squad",
+        pos + dir * Fx::from_int(150),
+    );
+    play(&mut w, 40);
+    assert_eq!(assault_buys(&w), 0, "engineers can cut");
+    // Switches off: no buy.
+    for off in [0, 1] {
+        let (mut w, pos, dir) = breach_buy_world(|s| {
+            if off == 0 {
+                s.rules.ai.fort.breach = 0;
+            } else {
+                s.rules.ai.fort.cards = 0;
+            }
+        });
+        squad_of(
+            &mut w,
+            1,
+            "ww2:usa_rifle_squad",
+            pos + dir * Fx::from_int(130),
+        );
+        play(&mut w, 40);
+        assert_eq!(assault_buys(&w), 0, "switch {off} off");
+    }
+}
+
+/// The armed breach scene at `threads`.
+fn breach_scene(threads: usize) -> World {
+    let (mut w, pos, dir) = attacked_t(threads, 100, |_| {});
+    defenders(&mut w, pos, dir, true);
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    w
+}
+
+fn hashes(w: &mut World, ticks: u64) -> Vec<u64> {
+    let mut h = Vec::new();
+    for _ in 0..ticks {
+        w.step(&[]);
+        if w.state.tick.is_multiple_of(15) {
+            h.push(w.state_hash());
+        }
+    }
+    h
+}
+
+#[test]
+fn ai_breach_is_deterministic_across_threads_and_save_load() {
+    let ticks = 30 * 150;
+    let mut base = breach_scene(1);
+    let want = hashes(&mut base, ticks);
+    let c = &ai_ro(&base).counters;
+    assert!(
+        c.breaches_started >= 1 && c.breach_suppress >= 1,
+        "a breach ran"
+    );
+    for threads in [2, 3, 8] {
+        let mut w = breach_scene(threads);
+        assert_eq!(hashes(&mut w, ticks), want, "at {threads} threads");
+    }
+    // Save while a job runs, load, continue alike.
+    let mut a = breach_scene(1);
+    assert!(play_until(&mut a, 120, |w| !ai_ro(w).breaches.is_empty()));
+    play(&mut a, 3);
+    let mut b = World::load(&a.save(), 1).unwrap();
+    assert_eq!(a.state_hash(), b.state_hash(), "at the load");
+    assert_eq!(ai_ro(&a), ai_ro(&b));
+    assert!(!ai_ro(&b).wire_known.is_empty());
+    assert_eq!(
+        hashes(&mut a, 30 * 60),
+        hashes(&mut b, 30 * 60),
+        "after the load"
+    );
+    assert_eq!(ai_ro(&a), ai_ro(&b));
+}
