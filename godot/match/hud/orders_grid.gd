@@ -103,6 +103,8 @@ const ROW_GUN := [
 ]
 ## S8b: trucks.
 const DROP := [&"drop_crates", "Drop", &"order_drop_crates", "Click a point: the truck drives there and sets down up to 4 crates (3 s each), where they feed mortars and men or stock an HQ inside its ring. I arms the tool; pressing I again changes the kind (shells, small arms, explosives). Nothing is paid here: the truck was paid for when it loaded at the base."]
+## S10a: a selected truck loads construction material in the base.
+const TRUCK_MATERIALS := [&"load_materials", "Materials", &"", "In the own base: the truck fills its free room (its cap less the cargo) with construction material, paid now. Builders draw from own trucks within 15 m."]
 const BAIL := [&"bail", "Bail out", &"", "The crew leave the vehicle by its hatches and become a crew squad; the vehicle stays, abandoned, and can be re-crewed (by anyone, enemies included). Press twice within 2 s."]
 const ROW_VEHICLE := [
 	[&"reverse", "Reverse", &"order_reverse", "Back up to a point, front kept toward the enemy (Alt+right-click). The button arms a click-to-place tool."],
@@ -231,6 +233,9 @@ func _layout() -> void:
 		_add(BAIL, Rect2(4.0 * (bw + g), bh + g, bw, bh), "order")
 		# S8a: Unload in the fifth slot of the top row.
 		_add(DROP if _truck else UNLOAD, Rect2(4.0 * (abw + g), 0, abw, bh), "order")
+		# S10a: Materials on the third row of a truck (no ammo row there).
+		if _truck and not _gun and not view.rules().get("fortify", {}).is_empty():
+			_add(TRUCK_MATERIALS, Rect2(0, 2.0 * (bh + g), bw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
 		if not _gun:
 			return

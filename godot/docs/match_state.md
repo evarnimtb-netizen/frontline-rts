@@ -1491,7 +1491,9 @@ the render snapshot (`FortSnapshot`, `SquadSnapshot::materials_kg`,
   `facing` (a Vector3; default east).
 - `load_materials {squads, kg?}` — every selected squad with
   `build_structure` or `place_wire` loads `kg` (default a full load,
-  `carry_kg_per_man` per man) in the own base, paid there.
+  `carry_kg_per_man` per man) in the own base, paid there; a supply
+  truck's squad fills its truck (default all the room left: its cap less
+  cargo). The HUD's truck grid has a Materials button for it.
 - `cut_wire {squads, target}` — the first selected `clear_wire` squad cuts
   the nearest standing section within `cut_reach_m`.
 - `bangalore {squads, target}` — the men of the first selected `breach`

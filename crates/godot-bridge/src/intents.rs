@@ -129,7 +129,8 @@ pub fn can_fortify(setup: &MatchSetup, t: u16, fort: u16) -> bool {
 /// order) able to build `what`. A line blueprint takes `line` (sim xy,
 /// capped to 16 points; at least 2); a point or over-HQ blueprint takes
 /// `target` and `facing` (`[pos, pos + facing]`; `facing` defaults to
-/// east).
+/// east; the facing point is kept on the map: turned round at an edge,
+/// clamped in a corner, since the sim refuses an off-map one).
 pub fn fortify_command(
     setup: &MatchSetup,
     squads: &[(u32, u16)],
@@ -155,7 +156,16 @@ pub fn fortify_command(
                 [f[0] / n, f[1] / n]
             })
             .unwrap_or([1.0, 0.0]);
-        vec![p, [p[0] + f[0], p[1] + f[1]]]
+        let size = setup.map.size_m.max(0) as f32;
+        let on = |q: [f32; 2]| q.iter().all(|v| (0.0..=size).contains(v));
+        let mut q = [p[0] + f[0], p[1] + f[1]];
+        if !on(q) {
+            q = [p[0] - f[0], p[1] - f[1]];
+        }
+        if !on(q) {
+            q = [q[0].clamp(0.0, size), q[1].clamp(0.0, size)];
+        }
+        vec![p, q]
     };
     Some(CommandKind::Fortify {
         squad: SquadId(squad),
@@ -166,7 +176,9 @@ pub fn fortify_command(
 
 /// S10a `load_materials`: every one of `squads` (`(id, type_idx, men)`)
 /// able to build anything loads `kg` (default: a full load,
-/// `carry_kg_per_man` per man). The sim refuses outside the base.
+/// `carry_kg_per_man` per man), and every supply truck's squad fills its
+/// truck (default: all the room left, `u16::MAX` kg, which the sim clamps
+/// to the cap less cargo). The sim refuses outside the base.
 pub fn load_materials_commands(
     setup: &MatchSetup,
     squads: &[(u32, u16, u8)],
@@ -183,16 +195,32 @@ pub fn load_materials_commands(
         .filter(|s| {
             setup.squad_types.get(s.1 as usize).is_some_and(|ty| {
                 ty.has(Capability::BuildStructure) || ty.has(Capability::PlaceWire)
-            })
+            }) || is_supply_truck(setup, s.1)
         })
-        .filter_map(|&(id, _, men)| {
-            let kg = kg.unwrap_or(per_man * men as u32).min(u16::MAX as u32) as u16;
+        .filter_map(|&(id, t, men)| {
+            let full = if is_supply_truck(setup, t) {
+                u16::MAX as u32
+            } else {
+                per_man * men as u32
+            };
+            let kg = kg.unwrap_or(full).min(u16::MAX as u32) as u16;
             (kg > 0).then_some(CommandKind::LoadMaterials {
                 squad: SquadId(id),
                 kg,
             })
         })
         .collect()
+}
+
+/// S10a: whether squad type `t` is a supply truck's (it can carry
+/// construction material).
+pub fn is_supply_truck(setup: &MatchSetup, t: u16) -> bool {
+    setup
+        .squad_types
+        .get(t as usize)
+        .and_then(|ty| ty.vehicle)
+        .and_then(|v| setup.vehicles.get(v as usize))
+        .is_some_and(|v| v.supply.is_some())
 }
 
 /// S10a `cut_wire`: the first of `squads` (`(id, type_idx)`) with
@@ -867,6 +895,36 @@ mod tests {
                 kg: 30
             }]
         );
+        // A supply truck fills its room (the sim clamps u16::MAX kg); a
+        // tank does not load.
+        let truck = ty("ww2:ger_opel_blitz_squad");
+        let tank = ty("ww2:ger_pz4_h_squad");
+        assert!(is_supply_truck(&setup, truck) && !is_supply_truck(&setup, tank));
+        assert_eq!(
+            load_materials_commands(&setup, &[(7, truck, 1), (8, tank, 1)], None),
+            vec![CommandKind::LoadMaterials {
+                squad: SquadId(7),
+                kg: u16::MAX
+            }]
+        );
+        // A point blueprint at the map's west edge facing west: the facing
+        // point turns round onto the map; in a corner it is clamped.
+        let size = setup.map.size_m as f32;
+        for (p, f) in [([0.5, 60.0], [-1.0, 0.0]), ([0.0, 0.0], [-1.0, -1.0])] {
+            match fortify_command(&setup, &[(3, bau)], "mg_nest", &[], Some(p), Some(f)) {
+                Some(CommandKind::Fortify { line, .. }) => {
+                    let lim = sim_to_fx([size, size]);
+                    assert!(
+                        line.iter().all(|q| q.x >= Fx::ZERO
+                            && q.y >= Fx::ZERO
+                            && q.x <= lim.x
+                            && q.y <= lim.y),
+                        "{line:?}"
+                    );
+                }
+                other => panic!("{other:?}"),
+            }
+        }
         // Cutting: the first clear_wire squad.
         assert_eq!(
             cut_wire_command(&setup, &[(1, rifles), (4, sturm), (2, eng)], [5.0, 6.0]),

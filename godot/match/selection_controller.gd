@@ -322,6 +322,18 @@ func truck_vehicles() -> PackedInt32Array:
 	return out
 
 
+## S10a: the squads a Materials press loads: the selected squads and the
+## selected trucks' squads (ascending).
+func materials_squads() -> PackedInt32Array:
+	var out := selected_squads()
+	for id in truck_vehicles():
+		var sid := int(view.vehicles_by_id.get(id, {}).get("squad", -1))
+		if sid >= 0 and not out.has(sid):
+			out.append(sid)
+	out.sort()
+	return out
+
+
 ## S8b: the kind the selected trucks hold most of (share of their load).
 func fullest_cargo() -> String:
 	var best := "shells"
@@ -643,7 +655,10 @@ func can(order: StringName) -> bool:
 		&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq":
 			var bp := fort_blueprint(order)
 			return not bp.is_empty() and _has_cap([String(bp.get("capability", ""))], [])
-		&"load_materials", &"crate_construction":
+		&"load_materials":
+			# S10a: building squads carry it; selected trucks fill their room.
+			return _has_cap(["build_structure", "place_wire"], []) or not truck_vehicles().is_empty()
+		&"crate_construction":
 			return _has_cap(["build_structure", "place_wire"], [])
 		&"cut_wire":
 			return _has_cap(["clear_wire"], [])
@@ -822,7 +837,7 @@ func activate(order: StringName) -> void:
 			fort_menu = not fort_menu
 			cancel_tool()
 		&"load_materials":
-			view.emit_intent(&"load_materials", {"squads": selected_squads()})
+			view.emit_intent(&"load_materials", {"squads": materials_squads()})
 			cancel_tool()
 		&"build_sandbags", &"build_wire":
 			dig_points.clear()

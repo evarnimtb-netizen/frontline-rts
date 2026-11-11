@@ -39,7 +39,7 @@ sources = ["infantry-structures.md 7.6"]
 | `limit_per_player` | Point: sites; line: pieces or sections, built or building. |
 | `segment_cm`, `max_length_m` | Line only. |
 | `min_spacing_m` | Point only: from the player's other sites of the same blueprint. |
-| `max_slope_pct` | Refused on steeper ground (`BadSpot`). |
+| `max_slope_pct` | Refused on steeper ground (`BadSpot`): the undug base terrain, over 2 m, at a point site and along a line every 4 m (trenches, pits and craters do not count). |
 | `pieces` | 1 to 4 boxes. `part` is `sandbag`, `roof` or `timber` (the colour only). `size_cm` is along the facing, across, up (10 to 600 cm each); `offset_cm` the centre along, across, and the box bottom above the ground. `z_from = "base"` measures z from the undug surface (a roof over a pit). `armour_mm` 1 to 2000, `hp` 1 to 10 000. |
 | `wire` | `place_wire` blueprints only, and then no `pieces`: `{ band_cm, height_cm, hp }`. |
 
@@ -55,6 +55,11 @@ Pieces are static boxes, like the S6 HQ boxes:
   overpressure with a clear line takes the HE's `damage`;
 * overpressure on a man needs a line clear of every piece not owned by the
   burst's player, so a roof shelters the men under it;
+* a thrown item (grenade, satchel) stops at the first piece not its
+  thrower's player's: on its top (a roof, a wall's top) it rests and bursts
+  there, against a side it drops to the ground just short of it. A hand
+  grenade (damage 150) on a dugout roof (250 hp) leaves it standing; a
+  satchel (300) breaks it;
 * sight and walking go through pieces (owner decision S10a-2 (A)).
 
 At 0 hp a piece is removed. An HQ roof goes with its HQ.
@@ -132,7 +137,12 @@ never stocked in an HQ or dump:
   (`ger_construction_crate`, `usa_construction_crate`, 40 kg) issued by
   `IssueCrate`, set down near a site;
 * **trucked**: `LoadMaterials` on an own truck's squad in the base fills
-  the truck up to its cargo cap.
+  the truck up to its cargo cap (cargo plus material; the base auto-load
+  then fills cargo only into the room left). A wrecked truck's material is
+  lost.
+
+Carried kg shrink with the squad: a man lost takes his share
+(`carry_kg_per_man`) with him, a squad gone loses all of it.
 
 A step draws its kg when it starts: carried first, then own crates within
 `material_reach_m` (ascending id), then own trucks. Short, the site waits
