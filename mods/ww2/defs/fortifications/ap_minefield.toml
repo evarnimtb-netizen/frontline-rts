@@ -1,0 +1,17 @@
+# S10b anti-personnel minefield (docs/slices/S10b-obstacles.md R1): a line,
+# one `ap_mine` at each segment end, laid by place_mines squads. Design 7.6:
+# 20 s and 4 kg per mine; the spacing, line length, crew and cap are
+# starting values (verify).
+id = "ww2:ap_minefield"
+name = "AP minefield"
+shape = "line"
+capability = "place_mines"
+mine_item = "ww2:ap_mine"
+materials_kg = 4
+work_s = 20
+work_men = 2
+limit_per_player = 60
+segment_cm = 200
+max_length_m = 30
+max_slope_pct = 25
+sources = ["infantry-structures.md 7.6: AP mine 20 s, 4 kg"]

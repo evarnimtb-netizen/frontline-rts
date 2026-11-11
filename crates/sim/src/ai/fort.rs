@@ -150,12 +150,22 @@ pub(super) fn builds(caps: u32) -> bool {
 pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
     s.forts
         .iter()
-        .position(|d| match k {
-            WorkKind::Nest => d.shape == FortShape::Point && d.pit == Some(DigProfile::MgNestPit),
-            WorkKind::Dugout => d.shape == FortShape::Point && d.pit == Some(DigProfile::DugoutPit),
-            WorkKind::Roof => d.shape == FortShape::OverHq,
-            WorkKind::Wire => d.shape == FortShape::Line && d.wire.is_some(),
-            WorkKind::Wall => d.shape == FortShape::Line && d.wire.is_none(),
+        // S10b R29: minefields and obstacles are never an AI habit's
+        // blueprint (`ap_minefield` sorts before `sandbag_wall`).
+        .position(|d| {
+            d.mine_item.is_none()
+                && !d.blocks_vehicles
+                && match k {
+                    WorkKind::Nest => {
+                        d.shape == FortShape::Point && d.pit == Some(DigProfile::MgNestPit)
+                    }
+                    WorkKind::Dugout => {
+                        d.shape == FortShape::Point && d.pit == Some(DigProfile::DugoutPit)
+                    }
+                    WorkKind::Roof => d.shape == FortShape::OverHq,
+                    WorkKind::Wire => d.shape == FortShape::Line && d.wire.is_some(),
+                    WorkKind::Wall => d.shape == FortShape::Line && d.wire.is_none(),
+                }
         })
         .map(|i| i as u16)
 }

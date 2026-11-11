@@ -1,0 +1,15 @@
+# S10b anti-tank minefield (R2): a line, one `at_mine` at each segment end.
+# Design 7.6: 30 s and 9 kg per mine; spacing, length, crew and cap verify.
+id = "ww2:at_minefield"
+name = "AT minefield"
+shape = "line"
+capability = "place_mines"
+mine_item = "ww2:at_mine"
+materials_kg = 9
+work_s = 30
+work_men = 2
+limit_per_player = 30
+segment_cm = 400
+max_length_m = 40
+max_slope_pct = 25
+sources = ["infantry-structures.md 7.6: AT mine 30 s, 9 kg"]

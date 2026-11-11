@@ -161,9 +161,15 @@ fn fort_defs_validate() {
     assert_eq!(
         ids,
         [
+            // S10b: minefields, the bunker, hedgehog and log barrier.
+            "ww2:ap_minefield",
+            "ww2:at_minefield",
             "ww2:barbed_wire",
+            "ww2:bunker",
             "ww2:dugout",
+            "ww2:hedgehog",
             "ww2:hq_dugout",
+            "ww2:log_barrier",
             "ww2:mg_nest",
             "ww2:sandbag_wall"
         ]

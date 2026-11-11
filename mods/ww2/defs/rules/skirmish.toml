@@ -196,6 +196,20 @@ all_round = true
 pit_length_cm = 300
 engineers_only = true
 
+# S10b bunker pit (R22): 350 x 300 cm, 1.5 m deep, under the bunker's
+# 420 x 370 cm roof; dug like the dugout's pit (verify).
+[dig.profiles.bunker_pit]
+depth_cm = 150
+floor_cm = 220
+wall_cm = 40
+parapet_cm = 40
+max_length_m = 5
+work_per_m = 150000
+passes = 4
+all_round = true
+pit_length_cm = 350
+engineers_only = true
+
 # Every dig profile: the spoil bank shape and how close a digger works.
 # S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
@@ -1524,6 +1538,19 @@ material_reach_m = 15        # m: builders draw from an own construction crate o
 carry_kg_per_man = 20        # construction kg one man carries (verify; 7.1 "each engineer carries some")
 construction_mp_per_t = 100  # MP per t at base (verify; owner D1: every kg priced once, at base)
 shot_piece_damage = 150      # hp a non-bursting main-gun round takes from a piece (= supply.shell_box_damage)
+# S10b (docs/slices/S10b-obstacles.md rules table R8-R21; "verify" = no design figure).
+heavy_by_field_pct = 50      # % rate of build_structure squads on build_heavy blueprints (R21; 7.6 "Lv 2 at half rate")
+detect_cm = 150              # a sweeper finds a mine this close (R8; 7.6 "1.5 m")
+detect_pct_per_s = 50        # % chance per second per mine within detect_cm (R8; verify)
+sweep_speed_pct = 25         # % of walking speed while sweeping (R9; verify)
+lane_max_m = 50              # longest ClearMines lane (R9; verify)
+lane_half_cm = 200           # half width of a swept lane (R9; verify)
+lift_s = 20                  # s to lift one found mine at 100 % (R11; verify)
+demolish_place_s = 10        # s to place a demolition charge (R19; verify)
+demolish_fuse_s = 10         # s from placing to the burst (R19; verify)
+demolish_pct = 300           # % of the charge's damage the demolished piece takes, tamped (R20; verify)
+demolish_reach_m = 25        # Demolish takes the nearest piece within this of its point (R19; verify)
+vehicle_clear_m = 6          # no minefield, obstacle or bunker site this close to a vehicle hull (R18; verify)
 
 # % work rates by tier (7.7: assault clears fast, construction builds fast, clears slow).
 [fortify.tiers]

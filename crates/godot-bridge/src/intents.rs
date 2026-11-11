@@ -813,7 +813,8 @@ mod tests {
         let wall = fort_index(&setup, "sandbag_wall").unwrap();
         let nest = fort_index(&setup, "ww2:mg_nest").unwrap();
         assert_eq!(fort_index(&setup, "mg_nest"), Some(nest));
-        assert_eq!(fort_index(&setup, "bunker"), None);
+        // S10b ships a bunker; an unknown blueprint resolves to none.
+        assert_eq!(fort_index(&setup, "pillbox"), None);
         for what in ["barbed_wire", "dugout", "hq_dugout"] {
             assert!(fort_index(&setup, what).is_some(), "{what}");
         }

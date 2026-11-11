@@ -1,0 +1,17 @@
+# S10b Czech hedgehog (R14): one steel piece that blocks vehicle path nodes
+# (R16) and lets infantry through (R17). Design 7.6: 1 min, 60 kg; size,
+# hp, crew, cap and spacing verify. armour_mm 2000: no bullet, fragment or
+# shot pierces it; HE, main-gun shot damage and demolition wear it down.
+id = "ww2:hedgehog"
+name = "Hedgehog"
+shape = "point"
+capability = "build_heavy"
+blocks_vehicles = true
+materials_kg = 60
+work_s = 60
+work_men = 4
+limit_per_player = 20
+min_spacing_m = 3
+max_slope_pct = 25
+pieces = [{ part = "steel", size_cm = [180, 180, 130], armour_mm = 2000, hp = 600 }]
+sources = ["infantry-structures.md 7.6: hedgehog 1 min, 60 kg"]

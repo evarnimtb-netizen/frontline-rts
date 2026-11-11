@@ -1,0 +1,29 @@
+# S10b bunker (R22-R24): a 350 x 300 x 150 cm pit (bunker_pit), a 1000 hp
+# earth-and-timber roof 40 cm above the undug surface on three timber walls
+# (back, left, right); two front walls leave an 80 x 40 cm firing slit
+# between them, under the roof. Design 7.6: 8-10 min, 250 kg, a slit and a
+# thick earth roof; sizes, hp, crew, cap and spacing verify. The roof
+# survives three 81 mm hits (150) and a satchel (300); seven AP shots
+# (shot_piece_damage 150) break it (R24).
+id = "ww2:bunker"
+name = "Bunker"
+shape = "point"
+pit = "bunker_pit"
+capability = "build_heavy"
+materials_kg = 250
+work_s = 540
+work_men = 5
+limit_per_player = 2
+min_spacing_m = 30
+max_slope_pct = 15
+pieces = [
+    { part = "roof", size_cm = [420, 370, 80], offset_cm = [0, 0, 40], z_from = "base", armour_mm = 100, hp = 1000 },
+    { part = "timber", size_cm = [30, 370, 40], offset_cm = [-195, 0, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [360, 30, 40], offset_cm = [0, -170, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [360, 30, 40], offset_cm = [0, 170, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [30, 144, 40], offset_cm = [195, -112, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [30, 144, 40], offset_cm = [195, 112, 0], z_from = "base", armour_mm = 100, hp = 600 },
+]
+sources = [
+    "infantry-structures.md 7.6: bunker 8-10 min, 250 kg, firing slit, thick earth roof",
+]

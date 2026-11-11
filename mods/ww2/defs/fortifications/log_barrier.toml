@@ -1,0 +1,17 @@
+# S10b log barrier (R15): a line of 4 m timber pieces that block vehicle
+# path nodes (R16). Design 7.6: 2 min per segment; size, hp, kg, length and
+# cap verify.
+id = "ww2:log_barrier"
+name = "Log barrier"
+shape = "line"
+capability = "build_structure"
+blocks_vehicles = true
+materials_kg = 100
+work_s = 120
+work_men = 4
+limit_per_player = 10
+segment_cm = 400
+max_length_m = 20
+max_slope_pct = 25
+pieces = [{ part = "timber", size_cm = [400, 80, 100], armour_mm = 100, hp = 400 }]
+sources = ["infantry-structures.md 7.6: log barrier 2 min"]

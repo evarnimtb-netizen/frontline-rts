@@ -129,7 +129,11 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // `[ai.fort]` nest/dugout/roof/sandbags keys, wire 60 m, German engineer
 // weights) changed it; the Build A-C values were 0xcf34d01b95342d0f,
 // 0x2a1f3cd5c00abbb9, 0xd0129bd32566edf0, 0xcf34d01b95342d0f,
-// 0x43883242c0df2a86, 0x2ecb31b5c8f84cfa.
+// 0x43883242c0df2a86, 0x2ecb31b5c8f84cfa. S10b layout (mine items, the bunker
+// pit, capability bits 12-14, forts' mine_item and blocks_vehicles, twelve
+// `[fortify]` keys) changed it; the S10a-ai values were 0x5daa3cfaa0de2a90,
+// 0x2737846e6d465dee, 0x1a0b8e95f24eb92a, 0x5daa3cfaa0de2a90,
+// 0xdc014f6cd5547137, 0xb8067f406a0d5f0f.
 const BASELINE: [(&str, u64); 6] = [
     ("skirmish ger-usa seed 1 normal", 0x2f76ef89a48bc163),
     ("skirmish usa-ger seed 7 hard", 0x3b20aa290e6df141),
