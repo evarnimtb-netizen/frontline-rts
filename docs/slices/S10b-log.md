@@ -5,15 +5,17 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build A, chunk 2** (finish `S10b-build-A.md` step 5), then Build B. Chunk 1 stopped at the turn budget.
-* Done: layout `ba7478b` (SAVE 24, PROTOCOL 14; no stage changes either again), data and R29 guard `9a3d197`,
-  measures `20ade12` (`factions.<f>.s10b` + `used`, `fortify10.s10b` rows as nulls, `World::lay_mine_now`).
-* Left (step 5, sim tests in a new `crates/sim/src/s10b_tests.rs`, add `#[cfg(test)] #[path] mod` in `world.rs` beside
-  `s10a_tests`): `s10b_layout_roundtrips_and_hashes`, `empty_s10b_state_changes_nothing`,
-  `fort_of_ignores_s10b_blueprints`; `load_rejects_bad_s10b_state` in `crates/sim/tests/save_fuzz.rs` (one case per
-  spec 6 line; needs a pub `World::edit_squad` staging tool for the order cases, and a setup whose squad types carry
-  bits 12-14 since no card has them yet); CLI `s10b_counters_zero_without_use` (2-match skirmish, `s10b.used` 0, key
-  present). Each test names its control and must be seen failing once. Content tests are done (see section below).
+**Next: Build B** (`S10b-build-B.md`). Build A is done (two chunks).
+* Layout `ba7478b` (SAVE 24, PROTOCOL 14; no stage changes either again), data and R29 guard `9a3d197`,
+  measures `20ade12` (`factions.<f>.s10b` + `used`, `fortify10.s10b` rows as nulls, `World::lay_mine_now`),
+  tests `9180432`, `bde4ce7`, `76734d8`.
+* Test homes: sim `crates/sim/src/s10b_tests.rs` (helper `s10b_world()` stages every saved S10b field; engineer
+  cards get bits 12-14 there), load cases `load_rejects_bad_s10b_state` in `crates/sim/tests/save_fuzz.rs` (each
+  case asserts the error text of its own check: keep the texts or update the `why` list), CLI
+  `s10b_counters_zero_without_use` in `sdk/crates/cli/tests/skirmish.rs` (expects 13 keys, all 0: when B-E give
+  cards the caps, the AI still must not buy them, R27/R29).
+* Staging tools: `World::lay_mine_now`, `World::edit_squad` (new, pub), `World::edit_fort`, `World::build_now`.
+  `ai::fort` is now `pub(crate) mod` (the guard test calls `fort_of`).
 * Load checks live in `FortState::validate_s10b` (`fort.rs`); `validate` now takes `tick` (for `boom_tick == tick+1`).
   Lift and place totals: `lift_s * tick_hz * 100`, `demolish_place_s * tick_hz * 100` (work > total is rejected).
 * New S10b `FortAccount` counters are not in `counters_ok` (spec 6: any value): bump them with `saturating_add`.
@@ -24,10 +26,10 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 * AI guard sites (step 3): only `ai/fort.rs::fort_of` picks blueprints; other `setup.forts` uses index by a known
   fort (`ai.rs:853`, `ai/fort.rs` jobs, `ai/breach.rs:300` wire layer). No `caps ==`/`count_ones` test in `ai/`; no
   RNG key from an item or fort index (`ai/breach.rs` keys by player). Item and fort indices shift (mines and new
-  blueprints sort first); the 40 set is still same 40/40.
-* 40-set: `target/s10b-A/skirmish40.json` vs `target/s10b-base40`: same 40/40 (after `20ade12`). Targets parse on
-  `target/s10a-ai-verify`: 331 pass, T102-T108 "no such number".
-* Checks: `tools/check.sh quick 8acc534` while working; long jobs through `tools/run.sh` (200 s polls).
+  blueprints sort first).
+* 40-set: `target/s10b-A/skirmish40.json` vs `target/s10b-base40`: same 40/40 (after `76734d8`). Targets parse on
+  `target/s10a-ai-verify`: 331 pass, T102-T108 "no such number". The ignored mutation fuzz passes (69 s).
+* Checks: `tools/check.sh quick 8acc534` green after `76734d8` (795 tests); long jobs through `tools/run.sh`.
 
 ## Plan (2026-11-11)
 
@@ -58,4 +60,14 @@ controls seen failing: `demolish` back in RESERVED, the kit-mine check off, the 
 Bunker data: walls back/left/right 40 cm tall from the surface, roof bottom at 40 cm, two front walls 144 cm wide
 leave an 80 cm gap (the 80 x 40 slit). Mine items: `range_m` 1, `supply` explosives 4 / 9 kg (never refilled: no kit).
 `crates/simbench/src/report.rs` has no setup baseline to refresh (nothing changed there).
+
+## Build A chunk 2 (2026-11-12)
+
+Commits `9180432` (sim tests, `World::edit_squad`), `bde4ce7` (load cases), `76734d8` (CLI test). Tests and the
+control each was seen failing with: `s10b_layout_roundtrips_and_hashes` (`#[serde(skip)]` on `mines`: load fails),
+`empty_s10b_state_changes_nothing` (`is_empty` ignoring `mines`: the laid far mine leaves it empty),
+`fort_of_ignores_s10b_blueprints` (R29 filter off: `Wall` is `ap_minefield`), `load_rejects_bad_s10b_state` (22
+cases; the `boom_tick` check off: its case loads), `s10b_counters_zero_without_use` (the `s10b` insert in
+`json_out.rs` off: the block is the raw struct). Deviation: "without the new data" strips only the S10b blueprints
+from the setup (removing the mine items would shift every item index); the mine items are in no kit.
 
