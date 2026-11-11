@@ -1044,8 +1044,16 @@ impl RenderSnapshot {
         let setup = g.setup();
         let pct = |a: u64, b: u64| (a.min(b) * 100 / b.max(1)) as u8;
         let on = |p: crate::fx::FxVec2| [p.x.to_f32(), p.y.to_f32(), terrain.height_at(p).to_f32()];
+        // Entries naming no blueprint (a test edit before validation) are
+        // skipped: the snapshot never panics on state.
         for (&id, q) in &f.pieces {
-            let b = &setup.forts[q.fort as usize].pieces[q.part as usize];
+            let Some(b) = setup
+                .forts
+                .get(q.fort as usize)
+                .and_then(|d| d.pieces.get(q.part as usize))
+            else {
+                continue;
+            };
             let half = [
                 crate::fx::Fx::from(b.half[0]).to_f32(),
                 crate::fx::Fx::from(b.half[1]).to_f32(),
@@ -1067,7 +1075,9 @@ impl RenderSnapshot {
             });
         }
         for (&id, w) in &f.wire {
-            let d = &setup.forts[w.fort as usize];
+            let Some(d) = setup.forts.get(w.fort as usize) else {
+                continue;
+            };
             let (band, height, hp) = d.wire.as_ref().map_or((0.0, 0.0, 1), |ws| {
                 (
                     crate::fx::Fx::from(ws.band).to_f32(),
@@ -1087,7 +1097,12 @@ impl RenderSnapshot {
             });
         }
         for (&id, w) in &f.works {
-            let d = &setup.forts[w.fort as usize];
+            let Some(d) = setup.forts.get(w.fort as usize) else {
+                continue;
+            };
+            if w.line.is_empty() {
+                continue;
+            }
             let (site, yaw) = g.site_of(w);
             let progress_pct = match w.step {
                 crate::fort::WorkStep::Dig => match g.squad(w.builder).map(|q| &q.order) {
