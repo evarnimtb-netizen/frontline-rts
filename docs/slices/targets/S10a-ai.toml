@@ -1664,17 +1664,20 @@ kind = "report"
 [[target]]
 id = "T93f"
 metric = "fortify10.s10a.breach_ai.gap_opened_pct"
-min = 60
-# Two bases of fire read 41 %; wire and a nest add the walk to the wire: +19.
+min = 30
+# Owner 2026-11-11 (stage D, "fix smoke, lower bar"): one assault squad and two
+# bases against a trench, an MG nest and 100 m of wire open it in 3 of 10.
 [[target]]
 id = "T93g"
 metric = "fortify10.s10a.breach_ai.attacker_loss_pct"
 max = 60
-# A carrier sent, the charge laid or the cut done, in most runs (no pinned stall).
+kind = "report"
+note = "owner 2026-11-11: a report (16 defenders in range from 150 m out)"
+# A carrier sent, the charge laid or the cut done, in 3 of 10 (owner 2026-11-11).
 [[target]]
 id = "T93h"
 metric = "fortify10.s10a.breach_ai.placed_pct"
-min = 60
+min = 30
 [[target]]
 id = "T93i"
 metric = "fortify10.s10a.breach_ai.defender_loss_pct"
@@ -1848,8 +1851,9 @@ metric = "skirmish160_oos.factions.usa.s10_derived.fort_refused_per_match"
 max = 1
 
 # --- T100: the new cards are bought (ai_weight above 0, spec 3.1) -------------
-# 0.3 per match: at the engineer slot's share (about 2 engineer buys a match)
-# and the weights of spec 3.1 a new card is about a third of them.
+# 0.3 per match. Owner 2026-11-11 (stage D, "Germany by weight, USA report"):
+# Baupioniere are Germany's default builder by ai_weight (floor); the USA has
+# no construction card (only the 380 MP Assault Section), so its line is a report.
 [[target]]
 id = "T100a"
 metric = "skirmish160.factions.germany.s10_derived.new_cards_per_match"
@@ -1858,6 +1862,8 @@ min = 0.3
 id = "T100b"
 metric = "skirmish160.factions.usa.s10_derived.new_cards_per_match"
 min = 0.3
+kind = "report"
+note = "owner 2026-11-11: the US Engineer Squad stays the US builder"
 [[target]]
 id = "T100c"
 metric = "skirmish160_oos.factions.germany.s10_derived.new_cards_per_match"
@@ -1866,6 +1872,8 @@ min = 0.3
 id = "T100d"
 metric = "skirmish160_oos.factions.usa.s10_derived.new_cards_per_match"
 min = 0.3
+kind = "report"
+note = "owner 2026-11-11: the US Engineer Squad stays the US builder"
 
 # --- T101: what the fortification AI did (reports; spec 5) --------------------
 [[target]]

@@ -19,13 +19,15 @@
 //!   `clear_wire`, nearest, at least half strong. None: the urgent buy
 //!   (`ai.rs` `buy`) gets the faction's assault card.
 //! * **Phases.** *Stage*: the squad crouches and moves `stage_m` short of
-//!   the crossing on the side away from the point. *Suppress*: the point's
+//!   the crossing on the side away from the point (a squad with its own
+//!   smoke: no farther than its throw reaches the smoke aim, stage D). *Suppress*: the point's
 //!   base of fire (`ai::assault`) aims at the known defender nearest the
 //!   crossing, MG-team men first ([`super::Planner::breach_focus`]);
 //!   waited for at most twice `suppress_lead_s`. *Smoke*: a man with smoke
 //!   in the breach squad, else in a squad attacking the point, throws it
-//!   `smoke_frac_pct` of the way from the crossing to that defender
-//!   (capped at the throw range). *Go*: `suppress_lead_s` after the fire
+//!   `smoke_frac_pct` of the way from the crossing to that defender, at
+//!   most half the cloud radius past the crossing; only a man whose throw
+//!   reaches that spot throws (no cloud short of the wire). *Go*: `suppress_lead_s` after the fire
 //!   or the smoke, `PlaceBangalore` at the crossing if carried and a known
 //!   defender is within `cut_fire_m` of it, else `CutWire`. *Retry*: no
 //!   charge laid and no cut under way within `place_wait_s`: suppress,
@@ -63,6 +65,11 @@ const EYE_MM: i32 = 1500;
 const WIRE_MARK_MM: i32 = 500;
 /// The breach squad is at its stage spot this close (m).
 const STAGE_ARRIVE_M: i32 = 10;
+/// Stage D (owner "fix smoke"): a squad that throws its own smoke stages
+/// this much inside its throw reach (m; men stand around the leader) and
+/// is at its stage spot this close.
+const SMOKE_SLACK_M: i32 = 3;
+const SMOKE_ARRIVE_M: i32 = 3;
 /// A laid charge counts for the crossing this close (m).
 const CHARGE_NEAR_M: i32 = 6;
 
@@ -509,10 +516,25 @@ impl super::Planner<'_> {
         match job.phase {
             BreachPhase::Stage => {
                 let back = (job.crossing - point_pos).normalize_or_zero();
-                let spot = self
-                    .terrain
-                    .clamp(job.crossing + back * Fx::from_int(f.stage_m as i32));
-                let there = (m.lead - spot).length_sq_raw() <= sq_m(Fx::from_int(STAGE_ARRIVE_M));
+                // A squad with its own smoke stages within its throw reach
+                // of the aim (`smoke_aim`), so the cloud lands on the
+                // crossing and the last of the walk, not short of them.
+                let (stage, arrive) = match self.smoke_kit(m.id) {
+                    Some((range, radius)) => {
+                        let reach =
+                            range - Fx::ONE - radius.div_int(2) - Fx::from_int(SMOKE_SLACK_M);
+                        (
+                            Fx::from_int(f.stage_m as i32).min(reach.max(Fx::ZERO)),
+                            SMOKE_ARRIVE_M,
+                        )
+                    }
+                    None => (Fx::from_int(f.stage_m as i32), STAGE_ARRIVE_M),
+                };
+                let spot = self.terrain.clamp(job.crossing + back * stage);
+                let at_spot = (m.lead - spot).length_sq_raw() <= sq_m(Fx::from_int(arrive));
+                let stopped = (m.lead - spot).length_sq_raw() <= sq_m(Fx::from_int(STAGE_ARRIVE_M))
+                    && sq.order == Order::Idle;
+                let there = at_spot || stopped;
                 // It walks up once the base of fire fires (or after twice
                 // `suppress_lead_s` without one).
                 if job.suppress_at.is_none() && self.base_firing(job.point, m.id) {
@@ -650,14 +672,42 @@ impl super::Planner<'_> {
             .map(|k| k.pos)
     }
 
+    /// Throw range and full cloud radius of the smoke a man of squad `id`
+    /// still carries (the squad type's smoke item), if any.
+    fn smoke_kit(&self, id: SquadId) -> Option<(Fx, Fx)> {
+        let s = &self.g.setup;
+        let sq = self.g.squads.get(&id)?;
+        let (_, it) = s.squad_types[sq.type_idx as usize].kit(&s.items, ItemKind::Smoke)?;
+        let cloud = it.smoke.as_ref()?;
+        sq.members
+            .iter()
+            .any(|x| self.ents.kit[x.index()].items[ItemKind::Smoke.index()] > 0)
+            .then(|| (Fx::from(it.range_max), Fx::from(cloud.radius)))
+    }
+
+    /// Where breach smoke lands (stage D, owner "fix smoke"):
+    /// `smoke_frac_pct` of the way from the crossing toward `toward`, but
+    /// at most half the cloud's radius past the crossing, so the cloud
+    /// covers the crossing and the carrier's last metres from the defender.
+    fn smoke_aim(&self, job: &AiBreach, toward: FxVec2, radius: Fx) -> FxVec2 {
+        let frac = self.g.setup.rules.ai.fort.smoke_frac_pct.min(100) as i32;
+        let d = (toward - job.crossing).mul_int(frac).div_int(100);
+        let cap = radius.div_int(2);
+        let off = if d.length() > cap {
+            d.normalize_or_zero() * cap
+        } else {
+            d
+        };
+        self.terrain.clamp(job.crossing + off)
+    }
+
     /// Smoke for breach `job` toward `toward`: a man of the breach squad,
-    /// else of a squad attacking the point (ascending ids). Whether one
-    /// was ordered.
+    /// else of a squad attacking the point (ascending ids), who can throw
+    /// it onto [`Self::smoke_aim`] (no cloud thrown short of the
+    /// crossing). Whether one was ordered.
     fn breach_smoke(&mut self, id: SquadId, job: &AiBreach, toward: FxVec2) -> bool {
         let g = self.g;
         let s = &g.setup;
-        let frac = s.rules.ai.fort.smoke_frac_pct.min(100) as i32;
-        let want = job.crossing + (toward - job.crossing).mul_int(frac).div_int(100);
         let mut squads = vec![id];
         squads.extend(self.ai.tasks.iter().filter_map(|(&q, t)| {
             (q != id
@@ -674,7 +724,10 @@ impl super::Planner<'_> {
             let Some((_, it)) = ty.kit(&s.items, ItemKind::Smoke) else {
                 continue;
             };
-            let max = Fx::from(it.range_max) - Fx::ONE;
+            let Some(cloud) = it.smoke.as_ref() else {
+                continue;
+            };
+            let at = self.smoke_aim(job, toward, cloud.radius.into());
             for &man in &sq.members {
                 let i = man.index();
                 if self.ents.kit[i].items[ItemKind::Smoke.index()] == 0
@@ -682,14 +735,6 @@ impl super::Planner<'_> {
                 {
                     continue;
                 }
-                let from = self.ents.transform[i].pos.xy();
-                let d = want - from;
-                let at = if d.length() > max {
-                    from + d.normalize_or_zero() * max
-                } else {
-                    want
-                };
-                let at = self.terrain.clamp(at);
                 if self
                     .g
                     .can_throw(self.ents, man, ItemKind::Smoke, at)

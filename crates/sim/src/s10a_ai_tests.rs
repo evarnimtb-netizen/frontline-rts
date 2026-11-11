@@ -1785,6 +1785,75 @@ fn ai_breach_suppresses_the_nest_and_smokes_before_the_carrier_goes() {
     assert_eq!(ai_ro(&w).counters.breach_smokes, 0);
 }
 
+/// Stage D (owner "fix smoke"): at the tick the carrier is sent (the first
+/// `PlaceBangalore` or `CutWire` pending), the distance from the crossing
+/// to the nearest smoke cloud's centre and that cloud's full radius (m,
+/// floored); `None` when no carrier went or no cloud stood.
+fn cloud_at_go(w: &mut World, secs: u64) -> Option<(i32, i32)> {
+    for _ in 0..secs * 30 {
+        steps(w, 1);
+        let go = pending1(w).iter().any(|k| {
+            matches!(
+                k,
+                CommandKind::PlaceBangalore { .. } | CommandKind::CutWire { .. }
+            )
+        });
+        if !go {
+            continue;
+        }
+        let crossing = ai_ro(w).breaches.values().next()?.crossing;
+        let g = w.game().unwrap();
+        return g
+            .smoke
+            .iter()
+            .map(|c| {
+                let r = g.setup.items[c.item as usize]
+                    .smoke
+                    .as_ref()
+                    .map_or(0, |s| Fx::from(s.radius).floor_int());
+                ((c.pos.xy() - crossing).length().floor_int(), r)
+            })
+            .min();
+    }
+    None
+}
+
+#[test]
+fn ai_breach_smoke_covers_the_crossing_when_the_carrier_goes() {
+    // Defenders who cannot hurt (the carrier lives to go), an MG team in a
+    // nest 15 m to the point's side: the cloud stands within its radius of
+    // the crossing when the carrier is sent.
+    let scene = |edit: fn(&mut frontline_content::MatchSetup)| {
+        let (mut w, pos, dir) = attacked(100, edit);
+        let (_, _mg) = defenders(&mut w, pos, dir, false);
+        let nest = fort(&w, "ww2:mg_nest");
+        let at = pos + dir.perp() * Fx::from_int(15);
+        assert!(w.build_now(nest, &[at, at + dir], PlayerId(0)));
+        attackers(&mut w, pos, dir, 130, ASSAULT);
+        w
+    };
+    let mut w = scene(|_| {});
+    let (d, r) = cloud_at_go(&mut w, 150).expect("a carrier went with a cloud standing");
+    assert!(
+        r > 0 && d <= r,
+        "cloud centre {d} m from the crossing, radius {r} m"
+    );
+    assert!(ai_ro(&w).counters.breach_smokes >= 1);
+    // Control: the same attack with no smoke on any attacker: the carrier
+    // goes with no cloud at the crossing (the check can fail).
+    let mut w = scene(|s| {
+        let smoke = frontline_content::ItemKind::Smoke.index();
+        for t in s.squad_types.iter_mut() {
+            t.members.iter_mut().for_each(|m| m.items[smoke] = 0);
+        }
+    });
+    let near = cloud_at_go(&mut w, 150);
+    assert!(
+        near.is_none_or(|(d, r)| d > r),
+        "no smoke: no cloud at the crossing, got {near:?}"
+    );
+}
+
 #[test]
 fn ai_breach_blows_with_a_bangalore_else_cuts() {
     // Defenders known near the crossing: the assault section lays a
@@ -1821,14 +1890,19 @@ fn ai_breach_retries_a_pinned_carrier_then_gives_up() {
     defenders(&mut w, pos, dir, false);
     let [card, ..] = attackers(&mut w, pos, dir, 130, ASSAULT);
     // Every carrier is stopped as he sets off (as a pinned one is called
-    // off): each try fails, three in all, then the job is given up.
+    // off): each try fails, three in all, then the job is given up. (Stage
+    // D: with the closer stage spot the third try here has no defender
+    // known and no base firing, so its carrier goes to cut; it counts.)
     let mut sent = 0;
     let mut was = false;
     for _ in 0..30 * 400 {
         steps(&mut w, 1);
-        let now = pending1(&w)
-            .iter()
-            .any(|k| matches!(k, CommandKind::PlaceBangalore { .. }));
+        let now = pending1(&w).iter().any(|k| {
+            matches!(
+                k,
+                CommandKind::PlaceBangalore { .. } | CommandKind::CutWire { .. }
+            )
+        });
         sent += (now && !was) as u32;
         was = now;
         for m in members(&w, card) {
