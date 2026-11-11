@@ -82,7 +82,7 @@ Sim `crates/sim/src/fort.rs`; blueprints in `mods/ww2/defs/fortifications/`; com
 
 Verify 2026-11-11: 742 tests pass, 0 fail; tick p99 0.413 ms all / 0.518 ms peak; targets 282 pass, 12 miss, 10 hard (the S9b ten; T93a/b are the breach report misses). Neutrality: skirmish40, skirmish160, skirmish160_oos, skirmish160_s201 same; Germany 48.75 % of 480, unchanged.
 
-Fortify rows (10 seeds): wire inside 20 %, through a cut or blown gap 100 %; roof survives 81 mm 100 %; breach: no gap in 20 runs (AI and staging work, S10b). Review: 17 findings (4 save-load blockers), fixed with tests; re-review 3 more, fixed.
+Fortify rows (10 seeds): wire inside 20 %, through a cut or blown gap 100 %; roof survives 81 mm 100 %; breach: no gap in 20 runs (AI and staging work, S10b). Review: 17 findings (4 save-load blockers), 16 fixed with tests, 1 open (small wire gaps in path-finding, TODO); re-review 3 more, fixed.
 
 ## Owner decisions in force (source: `docs/TODO.md`)
 
