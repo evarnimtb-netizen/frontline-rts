@@ -80,3 +80,41 @@ Baupioniergruppe (spec 3.4). Canonical snapshot re-blessed; `resolved_defs.rs` B
 while a carrier places); CLI `s10` counters and the fortify rows (`wire`, `roof`, `breach`); net fuzz for
 `CutWire`/`PlaceBangalore`. Charges burst with `BlastKind::Frag` and kill class FRAG (no own kind yet). Known
 limits: a carrier at the far end of a holding line can stall in his own squad's crowd (ORCA) on the way.
+
+## Build C: presenter, bridge, net, CLI, docs
+
+**No layout change** (SAVE 22, PROTOCOL 13). Commits `dd3faf1` (snapshot) .. `565d773`. Snapshot `FortSnapshot`
+(pieces, wire, works with step/progress/kg, charges), `SquadSnapshot::materials_kg`, `fort_refusals`; bridge
+intents `fortify`, `load_materials`, `cut_wire`, `bangalore`, `issue_crate construction` (`intents.rs` helpers),
+state `fort`, `rules.fortify`, feed `fort_refused`; HUD Build button (Mission slot, key `) opens a "fort" grid;
+`godot/match/fort_view.gd` blockouts; `match_state.md` "S10a"; `relay-protocol.md` v13; `docs/modding/fortifications.md`.
+`FortState::in_wire` and `site_of` are now `pub`/`pub(crate)` (read-only helpers). Both Build A/B items for C done.
+
+**Tests added.** `fort_snapshot_lists_pieces_wire_sites_charges` (sim), `fortify_commands_in_limits` (net),
+`fortify_commands_roundtrip_under_garbage` (net fuzz), `fortify_intents_make_commands` (bridge),
+`s10_counters_zero_without_fortifications`, `fortify_s10a_rows_report_wire_roof_breach` (CLI), GD `_test_s10a` (18 checks).
+
+**Fortify rows (10 seeds x both factions, `fortify10.s10a.*`).** wire: inside 20.0 %, cut gap 100.0 %, blown gap
+100.0 % (T91 pass); roof: survived 81 mm 100 %, sheltered losses 0, satchel broke 100 % (T92 pass); breach:
+defenders 6.4 %, attackers 89.7 %, gap opened 0 %; control 7.6 % / 87.7 % (T93 report, misses the S3b bar).
+Targets on fortify10: `10 pass, 2 miss (hard: 0)`. fortify-test `pass` true.
+
+**How the rows are staged (deviations).** The wire walk ends 4 m past a standing 20 m line (from farther the path
+goes round it). The blown gap uses both charges, 3 m either side of the middle (12 m): one charge opens ~4 m and
+the leader drops to the stretched pace (70 %) as his column brushes the wire; two 2 m apart leave 150 cm craters on
+the walk line (crater slope: 91.5 % on seed 2). The breach engineers lay the Bangalore once their lead is 30 m from
+the wire or stalls 5 s, and resend a stopped carrier every 5 s.
+
+**Checks.** `tools/check.sh tests`: 729 passed, 0 failed (ignored included) on `565d773`. Godot (as `check.sh full`,
+one at a time): bridge built, check_project OK, test_match_view 358/358, test_net_ui 143/143, test_data_reload
+21/21; validate, golden 46/46, settings.cfg unchanged. 40 set on `565d773`: `skirmish40.json: same 40/40`.
+
+**Orchestrator must run.** `tools/measure.sh OUTDIR docs/slices/targets/S10a.toml` (the 480 + fortify/armour), then
+`python3 -I tools/neutral.py target/s10a-base OUTDIR` (same 160/160 x3), `tools/verify.sh`; T89-T90 read the new
+`factions.<f>.s10` block (all zero on the 40 set).
+
+**Open for the AI half.** (1) Breach: in all 20 runs the Bangalore never burst: carriers are pinned 25-35 m short
+of the wire under the trench and nest fire and the placing windup drops; the attacker MG suppresses only the trench,
+not the nest. Needs a suppress-the-nest step, smoke, or a placing rule under fire. (2) One Bangalore's 4 m gap is
+narrower than a squad column (stretched pace). (3) Build-menu key ` is a stand-in (all letters taken): owner
+decision. (4) Enemy sites/charges show within sight only; structure selection still S6-18.
