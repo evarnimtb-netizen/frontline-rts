@@ -534,7 +534,11 @@ impl super::Planner<'_> {
                 let at_spot = (m.lead - spot).length_sq_raw() <= sq_m(Fx::from_int(arrive));
                 let stopped = (m.lead - spot).length_sq_raw() <= sq_m(Fx::from_int(STAGE_ARRIVE_M))
                     && sq.order == Order::Idle;
-                let there = at_spot || stopped;
+                // Already nearer the crossing than the spot (the smoke man
+                // fell and the spot moved back): never walk back.
+                let nearer =
+                    (m.lead - job.crossing).length_sq_raw() <= sq_m(stage + Fx::from_int(arrive));
+                let there = at_spot || stopped || nearer;
                 // It walks up once the base of fire fires (or after twice
                 // `suppress_lead_s` without one).
                 if job.suppress_at.is_none() && self.base_firing(job.point, m.id) {
@@ -543,6 +547,22 @@ impl super::Planner<'_> {
                 }
                 let covered = job.suppress_at.is_some()
                     || tick >= job.since + 2 * f.suppress_lead_s as u64 * hz;
+                // Stage D: a smoke man whose throw reaches the smoke aim on
+                // the walk up throws at once (after the base fired); the
+                // carrier then goes `suppress_lead_s` later from there.
+                if job.suppress_at.is_some() && !there {
+                    let at = focus.unwrap_or(point_pos);
+                    if self.breach_smoke(m.id, job, at) {
+                        job.smoke_at = Some(tick);
+                        self.ai.counters.breach_smokes += 1;
+                        job.phase = BreachPhase::Smoke;
+                        job.since = tick;
+                        if sq.order != Order::Idle {
+                            self.ai.emit(self.due, CommandKind::Stop { squad: m.id });
+                        }
+                        return None;
+                    }
+                }
                 if there || (sq.order == Order::Idle && f.stage_m == 0) {
                     job.phase = BreachPhase::Suppress;
                     job.since = tick;

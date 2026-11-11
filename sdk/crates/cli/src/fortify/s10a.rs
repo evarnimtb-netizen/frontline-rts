@@ -1148,7 +1148,7 @@ pub fn summary_text(r: &S10aReport) -> String {
     }
     for (name, t) in [("fortified", &b.fortified), ("control", &b.control)] {
         out += &format!(
-            "  {name}: gap opened in {:.1} % of runs (T93f >= 60), placed {:.1} % (T93h >= 60), attackers lost {:.1} % (T93g <= 60), defenders {:.1} %\n",
+            "  {name}: gap opened in {:.1} % of runs (T93f >= 30), placed {:.1} % (T93h >= 30), attackers lost {:.1} % (T93g report, 60), defenders {:.1} %\n",
             t.gap_opened_pct(),
             t.placed_pct(),
             t.attacker_loss_pct(),
