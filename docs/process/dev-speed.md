@@ -149,3 +149,9 @@ Agent tools (all text-only, no build):
 - `tools/show.sh FILE:FROM-TO ...` prints ranges with a header and line numbers; refuses more than 400 lines per call.
 - `tools/run.sh LOG CMD...` starts CMD in the background, waits up to 200 s, prints one status line and the last 5 lines of LOG. `tools/run.sh --wait LOG` waits 200 s more. Exit code in `LOG.exit`.
 - Pinned seeds: `ai_guns` (11, 15) and `ai_fort` (1) try the pinned seed first and print a line if it stops qualifying; trucks and transport already stop at the first hit.
+
+Save/load test (`crates/sim/tests/save_fuzz.rs`, layout helper `tests/support/save_layout.rs`):
+
+- Roundtrip (every release pass, about 4 s): seed-1 fort match, save/load every 600 ticks to 12:00, hash and re-save compared; four loads run on 600 ticks against the original.
+- Fuzz (ignored, `tools/check.sh tests`, about 50 s on 4 workers): about 9,000 one-value mutations of three saves, picked by counter per field path (fort, vehicle, AI and entity paths get more). Each is rejected, or loads, runs 300 ticks and saves a state that loads again. Prints the counts.
+- A new saved field needs no test change; a load bound it needs shows up as a fuzz failure with the field path. Findings go into named `save_fuzz_*` regression tests; sim bugs into `KNOWN`.
