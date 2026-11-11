@@ -9,7 +9,10 @@ Compares the CLI JSON files present in both directories:
   records keyed by (seed, side) must be equal in every field but `hash`;
   the aggregate blocks equal recursively, ignoring tick_p99_ms, jobs,
   schema and wall times. A key only in NEW must be 0, empty or false (new
-  counters that stay zero); a key only in BASE fails.
+  counters that stay zero); a key only in BASE fails. The set header's
+  `overrides` list (the `-o` files a run was given) is not part of the
+  verdict: when it differs the line gets a note `(note: overrides N -> M
+  items)`.
 * any other JSON in both (fortify-test, armour-test): every BASE value
   equal (keys only in NEW are allowed: new rows).
 
@@ -27,6 +30,9 @@ import sys
 SKIRMISH = ["skirmish40.json", "skirmish160.json", "skirmish160_oos.json", "skirmish160_s201.json"]
 IGNORED = {"tick_p99_ms", "jobs", "schema"}
 MATCH_IGNORED = {"hash"}
+# Set-header fields that record how a run was made, not what it did: a
+# difference is printed as a note, never counted.
+HEADER_NOTED = {"overrides"}
 
 
 def ignored(key):
@@ -81,6 +87,17 @@ def diff(base, new, path, out, strict, skip=frozenset()):
         out.append(f"{path}: {json.dumps(base)[:40]} -> {json.dumps(new)[:40]}")
 
 
+def header_notes(base, new):
+    """Notes for set-header fields in HEADER_NOTED that differ."""
+    notes = []
+    for k in sorted(HEADER_NOTED):
+        b, n = base.get(k), new.get(k)
+        if b != n:
+            size = lambda v: len(v) if isinstance(v, list) else (0 if v is None else 1)
+            notes.append(f"{k} {size(b)} -> {size(n)} items")
+    return notes
+
+
 def skirmish(base, new):
     """(same, total, differences) of two skirmish JSON documents."""
     out = []
@@ -100,8 +117,8 @@ def skirmish(base, new):
             same += 1
     for k in sorted(set(nm) - set(bm), key=str):
         out.append(f"match {k}: only in NEW")
-    agg_b = {k: v for k, v in base.items() if k != "per_match"}
-    agg_n = {k: v for k, v in new.items() if k != "per_match"}
+    agg_b = {k: v for k, v in base.items() if k != "per_match" and k not in HEADER_NOTED}
+    agg_n = {k: v for k, v in new.items() if k != "per_match" and k not in HEADER_NOTED}
     diff(agg_b, agg_n, "", out, True)
     return same, len(bm), out
 
@@ -121,12 +138,14 @@ def compare(base_dir, new_dir):
         n += 1
         if f in SKIRMISH or (isinstance(b, dict) and "per_match" in b):
             same, total, d = skirmish(b, m)
+            notes = header_notes(b, m)
+            note = f" (note: {'; '.join(notes)})" if notes else ""
             if d:
                 ok = False
-                lines.append(f"{f}: DIFFERENT, same {same}/{total}; first differences:")
+                lines.append(f"{f}: DIFFERENT, same {same}/{total}{note}; first differences:")
                 lines.extend(f"    {x}" for x in d[:5])
             else:
-                lines.append(f"{f}: same {same}/{total}")
+                lines.append(f"{f}: same {same}/{total}{note}")
         else:
             d = []
             diff(b, m, "", d, False)

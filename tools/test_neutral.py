@@ -113,6 +113,27 @@ class Neutral(unittest.TestCase):
                 json.dump({"pass": True}, f)
             self.assertTrue(neutral.compare(a, b)[1])
 
+    def test_overrides_header_is_a_note_not_a_difference(self):
+        base = copy.deepcopy(BASE)
+        base["overrides"] = []
+        new = copy.deepcopy(base)
+        new["overrides"] = ["override all_off.toml: ai.fort.works: 1 -> 0", "x"]
+        lines, ok = self.run_dirs(base, new)
+        self.assertTrue(ok, lines)
+        self.assertEqual(lines, ["skirmish40.json: same 2/2 (note: overrides 0 -> 2 items)"])
+        # Missing in BASE (older sets) is a note too.
+        del base["overrides"]
+        self.assertTrue(self.run_dirs(base, new)[1])
+        # Control: a match difference still fails, and keeps the note.
+        new["per_match"][0]["length_s"] = 1.0
+        lines, ok = self.run_dirs(base, new)
+        self.assertFalse(ok)
+        self.assertIn("DIFFERENT, same 1/2 (note: overrides", lines[0])
+        # Control: another header field is still compared.
+        new = copy.deepcopy(base)
+        new["matches"] = 3
+        self.assertFalse(self.run_dirs(base, new)[1])
+
     def test_first_five_differences_only(self):
         new = copy.deepcopy(BASE)
         for m in new["per_match"]:
