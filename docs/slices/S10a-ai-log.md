@@ -39,3 +39,39 @@ account (`s10a_tests.rs`, `fortify/s10a.rs`); `s10_counters_zero_without_fortifi
 --both-bases --summary --minutes 45`): `neutral.py target/s10a-base40 target/s10a-ai-A` -> `skirmish40.json: same
 40/40` (also against `target/s10a-verify`); all `fort:` numbers 0. **For B:** drop gone squads' jobs at plan start;
 nothing reads `[ai.fort]` yet; no `ai_weight` changed.
+
+## Build B: buying, materials, building (`385b369`, `492aa6f`)
+
+**What exists.** Cards: `ai_weight` Baupioniere 50, Sturmpioniere 35, Assault Section 35; `cards = 0` skips the three
+(`fort::is_s10a_card`: `build_heavy` or `breach`). Trench digging needs `dig_full` or `build_structure`; the own-point
+engineer bonus skips `breach` squads and (deviation) also holds builders at an own point that still wants works
+(`PointEval::wants_works`, switches on). `ai/fort.rs`: `fort_marks` (shelled, `enemy_mortar_seen`), `fort_continue`
+(runs jobs before refills; job squads leave `mine`; drops gone/weak/threatened; base loads of builders under
+`load_min_kg`), `fort_start` (after the hunts: nest, wire, dugout per point; HQ roof; wall per gun in Hold),
+`material_truck` (called by `run_truck`), `nest_at`/`shelter_at`/`dugout_spot` (read in `order_infantry`: one MG team
+per built nest, shelter, back out). Blueprints found by shape and pit, never by id. Sites exist-checked by proximity of
+own works, pieces, wire and jobs (a destroyed work is rebuilt). `fort_refused` = AI Fortify/LoadMaterials/CutWire/
+PlaceBangalore refused in `apply` (`ai_rejected` takes the command). Overrides: `S10a-ai-ablations/all_off.toml`.
+**Deviations.** (1) Crate run NOT built (spec 11 drops it first): `material_runs[1]` stays 0, its test is missing.
+(2) Walk-back is a plain Move to base (not task Refill): the Fortify order is replaced, so the mechanics remove the
+work (that step's kg lost); a line resumes from its first unbuilt segment. (3) Truck run ends at `material_wait_s` +
+180 s from its start (no arrival tick in the layout), when the work builds or is gone, or the load failed. (4) Shelter:
+the men stop at the pit edge about 6 m from the dugout centre (path into the pit; mechanics question for Review); the
+test checks the order and task. (5) `infantry_plans` and `fort_build_plans` count only with `works` or `wire` on.
+(6) S9's pit habit takes engineers near a gun before a wall can (test sets `pit: true`).
+**Tests (pass).** All Build B tests of spec 7 except `ai_bearers_carry_a_construction_crate_to_a_waiting_work`
+(missing, crate run). `ai_fort_is_deterministic_across_threads_and_save_load` is `crates/sim/tests/ai_fort.rs`
+(ignored, release pass; 1/2/3/8 threads, save at 5:00). Each "nothing happens" test has a positive control. Changed:
+content `s10a_cards_resolve_with_ai_weight_zero` -> `..._with_their_ai_weights`; `empty_fort_state_changes_nothing`
+and CLI `s10_counters_zero_without_fortifications`, `s10_ai_fields_zero_with_the_ai_unchanged` run with all off.
+**Checks.** `tools/check.sh quick fa45332`: all ok (643 passed) on `492aa6f`.
+**Neutrality.** All off (`-o all_off.toml`, `target/s10a-ai-B-off`): `neutral.py target/s10a-base40` -> same 40/40
+per match; the only difference is the set header's `overrides` list (0 -> 4 items), the override's own record.
+**40 set on** (`target/s10a-ai-B`, noise 11-15 points): Germany **47.5 %**; read with `targets --from-json` on a
+40-set copy of the targets: T94 87.5 / 87.5 %, T95 82.5 / 62.5 %, T97 8.19 / 8.47 %, T98 1.11 / 0.97 %, T99 0 / 0,
+T100 **0.05 / 0.025 (miss)**; S10a-ai.toml's 12 skirmish40 targets pass. Works 2.50 / 2.27 a match, wire 12.4 / 9.7
+sections, lost kg 149 / 143 a match (GER / USA). An 8-match look (seeds 1-4): every work kind completed (nest, wire,
+dugout, roof, wall), truck runs 3 / 5, walk-backs 11 / 13, own tanks crush own wire (34 / 29 sections).
+**For C.** T100 misses: by the weight rule a new card is only the 2nd-3rd engineer buy and the slot buys about one a
+match; the urgent breach buy (C) adds assault cards, else Tune moves the weights. US wire share 62.5 % sits near the
+60 % floor. Shelter moves were 0 in the sample (marks need pinned defenders with no enemy within 150 m).
