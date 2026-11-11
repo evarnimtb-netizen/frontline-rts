@@ -206,6 +206,14 @@ pub fn evaluate(t: &TargetSpec, docs: &BTreeMap<String, Value>) -> Line {
             hard,
         };
     };
+    // Fix F10 (S10a-ai): a share over an empty set is null: skipped.
+    if json_out::lookup(doc, path).is_some_and(Value::is_null) {
+        return Line {
+            text: format!("{head} - {bounds} SKIP (no matches to measure)"),
+            verdict: Verdict::Skip,
+            hard,
+        };
+    }
     let value = json_out::lookup(doc, path).and_then(|v| match v {
         Value::Number(n) => n.as_f64(),
         Value::Bool(b) => Some(f64::from(u8::from(*b))),
@@ -431,6 +439,24 @@ mod tests {
         let (last, hard) = tally(&l);
         assert_eq!(last, "1 pass, 3 miss (hard: 2)");
         assert_eq!(hard, 2);
+    }
+
+    #[test]
+    fn a_null_share_is_skipped_not_missed() {
+        // S10a-ai fix F10: a share over an empty set is null.
+        let f = parse(FILE).unwrap();
+        let mut d = docs();
+        d.insert(
+            "arm".into(),
+            json!({"pass": true, "cases": [{"id": "case9", "checks": [{"id": "x", "value": null}]}]}),
+        );
+        let l = evaluate(&f.targets[3], &d);
+        assert!(
+            l.text.ends_with("SKIP (no matches to measure)"),
+            "{}",
+            l.text
+        );
+        assert_eq!(l.verdict, Verdict::Skip);
     }
 
     #[test]

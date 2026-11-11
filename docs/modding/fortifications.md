@@ -122,8 +122,7 @@ shipped values a section is cut in 10 s (field), 5 s (assault) or 20 s
 The shipped cards: Pioniergruppe and the US Engineer squad (field), the
 Sturmpioniergruppe and the US Assault Section (assault, two Bangalores
 each), the Baupioniergruppe (construction, conscripts, dig rate 200 %). The
-three new cards have `ai_weight = 0` in the mechanics half: the AI does not
-buy or use them.
+AI buys and uses all of them (S10a-ai; weights under "The AI" below).
 
 ## Materials
 
@@ -185,8 +184,8 @@ every distance, time and share is in `[ai.fort]` (`docs/modding/tuning.md`),
 spec `docs/slices/S10a-ai.md` 3.
 
 * **Buying.** The three S10a cards buy through the `engineer` mix slot by
-  their `ai_weight` (Baupioniere 50, Sturmpioniere and Assault Section 35;
-  Pioniergruppe and Engineer Squad keep 100). When a breach is wanted (known
+  their `ai_weight` (owner 2026-11-11: Pioniergruppe 40, Baupioniere 100,
+  Sturmpioniere 60; US Engineer Squad 100, Assault Section 35). When a breach is wanted (known
   enemy wire within `breach_near_m` of a point the AI attacks) and no own
   squad can open wire (`clear_wire`, or `breach` with a Bangalore), the next
   buy is the faction's assault card, at most `breach_cards_max` alive.
@@ -201,8 +200,17 @@ spec `docs/slices/S10a-ai.md` 3.
   the HQ roof once mortars were seen, and a sandbag wall in front of a gun
   that held `gun_hold_s`. They load carried materials in base (at most
   `materials_max_pct` of the income earned); a waiting work gets a truck
-  run, else the builder walks back. An MG team mans its point's nest.
-  Under shelling one defender squad shelters: its men go one by one to
+  run, else the builder walks back. A builder is held at its point only
+  while a job could start there for it (room under `builders_max`, 60 %
+  strength, the capability, a step it can carry or a free truck, no known
+  enemy soldier or vehicle within `threat_radius` of it or the site); a
+  job ends on such a threat, when its point is lost or threatened, or when
+  its work stands still for three times the step's time plus a minute. A
+  refused work is not tried again for 5 minutes, works over a blueprint's
+  `limit_per_player` are never asked for, and an AI keeps at most two
+  dugouts. An MG team (never the crew of a deployed MG) mans its point's
+  nest.
+  Under shelling one defender squad (not an MG or AT team) shelters: its men go one by one to
   trench spots under the dugout roof (the cover rule keeps men
   `[cover] gap_mm` apart, so the shipped 3 m pit holds two), and come out
   with the squad order when the mark is `shelter_s` old.

@@ -19,7 +19,9 @@
 # The line per ablation: pooled Germany and its change against ONDIR, and
 # whether it matters (spec 9: |change| >= 2 points) or decides Tune (>= 4).
 # all_off also runs tools/neutral.py against NEUTRAL_BASE (default
-# target/s10a-verify): it must say same 160/160 on all three sets.
+# target/s10a-verify): it must say same 160/160 on all three sets. A run
+# that measures all_off fails (before measuring) when NEUTRAL_BASE is
+# missing, and fails when neutral.py does not say same (S10a-ai fix F11).
 #
 # --dry-run builds nothing and plays nothing: every override file must hold
 # only `[ai.fort]` switch keys set to 0, the CLI (if built) must accept and
@@ -121,6 +123,12 @@ if [ $DRY -eq 1 ]; then
 fi
 
 [ -d "$ON" ] || { echo "ablate: $ON: no switches-on measure dir"; exit 1; }
+for n in "${NAMES[@]}"; do
+    if [ "$n" = all_off ] && [ ! -d "$NEUTRAL_BASE" ]; then
+        echo "ablate: all_off needs NEUTRAL_BASE $NEUTRAL_BASE (the neutrality verdict)"
+        exit 1
+    fi
+done
 gate() { # DIR -> pooled Germany (%), from tools/pool.py's GATE line
     python3 -I tools/pool.py "$1" 2>/dev/null | awk '/GATE pool=/ { sub(/.*pool=/, ""); print $1; exit }'
 }
@@ -143,9 +151,20 @@ d = off - on
 verdict = "decides Tune (>= 4)" if abs(d) >= 4 else "matters (>= 2)" if abs(d) >= 2 else "not decisive (< 2)"
 print(f"Germany {off:.2f} % (on {on:.2f}, change {d:+.2f}): {verdict}")
 ' "$ON_POOL" "$pool")
-    if [ "$n" = all_off ] && [ -d "$NEUTRAL_BASE" ]; then
-        neutral=$(python3 -I tools/neutral.py "$NEUTRAL_BASE" "$out" | tr '\n' ' ')
+    if [ "$n" = all_off ]; then
+        if neutral=$(python3 -I tools/neutral.py "$NEUTRAL_BASE" "$out"); then
+            st=0
+        else
+            st=1
+        fi
+        neutral=$(printf '%s' "$neutral" | tr '\n' ' ')
         line="$line; neutral vs $NEUTRAL_BASE: $neutral"
+        # neutral.py exits 0 only when every file compared is the same
+        # (and at least one was compared).
+        if [ $st -ne 0 ]; then
+            line="FAIL (not neutral) $line"
+            FAIL=1
+        fi
     fi
     LINES+=("$n: $line (pool.py change lines: $out/measure.txt)")
 done

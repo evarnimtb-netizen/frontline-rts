@@ -59,12 +59,13 @@ def read(d):
             d10 = f.get("s10_derived")
             if d10 is not None:
                 for k in FORT:
-                    a.setdefault("fort", {}).setdefault(k, []).append(d10.get(k, 0.0))
+                    a.setdefault("fort", {}).setdefault(k, []).append(d10.get(k))
     return out
 
 
 def fmt(xs, nd=1):
-    return " / ".join(f"{x:.{nd}f}" for x in xs)
+    # A share over an empty set is null in the JSON (S10a-ai fix F10): "-".
+    return " / ".join("-" if x is None else f"{x:.{nd}f}" for x in xs)
 
 
 def show(o, base):

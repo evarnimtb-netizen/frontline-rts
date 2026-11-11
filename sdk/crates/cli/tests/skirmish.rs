@@ -650,6 +650,12 @@ fn s10_ai_fields_zero_with_the_ai_unchanged() {
             .expect("s10_derived");
         assert_eq!(d.len(), 19, "{d:?}");
         for (k, v) in d {
+            // Fix F10: the two shares over a subset of matches (enemy wire
+            // met on a route, an HQ built) are null when it is empty.
+            if k == "breach_when_enemy_wire_pct" || k == "hq_roofed_pct" {
+                assert!(v.is_null(), "{f}.s10_derived.{k}: {v}");
+                continue;
+            }
             assert_eq!(v.as_f64(), Some(0.0), "{f}.s10_derived.{k}");
         }
     }
@@ -704,7 +710,9 @@ fn s10_derived_counts_matches_with_works_wire_gap() {
         ("matches_with_works_pct", 33.333),
         ("matches_with_wire_pct", 33.333),
         ("matches_with_gap_pct", 66.667),
-        ("breach_when_enemy_wire_pct", 50.0),
+        // Fix F10: over matches where the enemy's wire stood on a route
+        // (a bypassed or a breach started): `a` only (b met none).
+        ("breach_when_enemy_wire_pct", 100.0),
         ("builder_share_pct", 7.5),
         ("materials_mp_pct", 0.75),
         ("materials_loaded_kg_per_match", 53.333),
@@ -725,6 +733,32 @@ fn s10_derived_counts_matches_with_works_wire_gap() {
     for (k, v) in want {
         assert_eq!(d[k].as_f64(), Some(v), "{k}: {}", d[k]);
     }
+}
+
+/// S10a-ai fix F10: with no match where the enemy's wire stood on a route
+/// (wire laid elsewhere, or none) and no HQ built, the two shares are null
+/// (skipped by `targets`), not 0.
+#[test]
+fn s10_derived_shares_are_null_without_a_match_to_measure() {
+    use frontline_cli::skirmish::{S10Faction, S10Player};
+    let a = S10Player {
+        enemy_wire_built: 5,
+        income_mp: 1000,
+        ..S10Player::default()
+    };
+    let mut f = S10Faction::default();
+    f.add(&a);
+    let (_, d) = frontline_cli::json_out::s10_blocks(&f);
+    assert!(d["breach_when_enemy_wire_pct"].is_null(), "{d}");
+    assert!(d["hq_roofed_pct"].is_null(), "{d}");
+    // Control: the wire met on a route (gone round) and an HQ built.
+    let mut b = a.clone();
+    b.ai[13] = 1;
+    b.hq_built = true;
+    f.add(&b);
+    let (_, d) = frontline_cli::json_out::s10_blocks(&f);
+    assert_eq!(d["breach_when_enemy_wire_pct"].as_f64(), Some(0.0));
+    assert_eq!(d["hq_roofed_pct"].as_f64(), Some(0.0));
 }
 
 /// S10a fortify rows (spec 7) on one seed, both factions: wire slows the

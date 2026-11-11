@@ -73,6 +73,16 @@ fn ids<'a>(names: impl Iterator<Item = &'a str>) -> Vec<String> {
         .collect()
 }
 
+/// Fix F10: a share over an empty set is no number (null: `targets` skips
+/// it), not 0.
+fn pct_or_null(a: f64, b: f64) -> Value {
+    if b == 0.0 {
+        Value::Null
+    } else {
+        json!(pct(a, b))
+    }
+}
+
 fn pct(a: f64, b: f64) -> f64 {
     round3(if b == 0.0 { 0.0 } else { a * 100.0 / b })
 }
@@ -865,7 +875,7 @@ pub fn s10_blocks(c: &crate::skirmish::S10Faction) -> (Value, Value) {
         "matches_with_works_pct": pct(c.matches_with_works as f64, c.matches as f64),
         "matches_with_wire_pct": pct(c.matches_with_wire as f64, c.matches as f64),
         "matches_with_gap_pct": pct(c.matches_with_gap as f64, c.matches as f64),
-        "breach_when_enemy_wire_pct": pct(
+        "breach_when_enemy_wire_pct": pct_or_null(
             c.breach_when_enemy_wire as f64,
             c.matches_enemy_wire as f64
         ),
@@ -880,7 +890,7 @@ pub fn s10_blocks(c: &crate::skirmish::S10Faction) -> (Value, Value) {
         "breach_opened_pct": pct(ai("breaches_opened") as f64, ai("breaches_started") as f64),
         "men_lost_in_wire_per_match": per(c.men_lost_in_wire),
         "materials_lost_kg_per_match": round3(c.materials_lost_g as f64 / 1000.0 / n),
-        "hq_roofed_pct": pct(c.matches_hq_roofed as f64, c.matches_hq_built as f64),
+        "hq_roofed_pct": pct_or_null(c.matches_hq_roofed as f64, c.matches_hq_built as f64),
         "shelter_moves_per_match": per(ai("shelter_moves")),
         "wire_bypassed_per_match": per(ai("wire_bypassed")),
         "material_runs_per_match": per(runs),

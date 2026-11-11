@@ -2054,7 +2054,10 @@ impl S10Faction {
         self.matches_with_works += u32::from(p.works_non_wire > 0);
         self.matches_with_wire += u32::from(a.wire_built > 0);
         self.matches_with_gap += u32::from(a.wire_cut + a.wire_blown > 0);
-        if p.enemy_wire_built > 0 {
+        // Fix F10: only matches where the enemy's wire stood on a route
+        // this AI took (it went round it, wire_bypassed, S10_AI 13, or
+        // started a breach, 8): a faction cannot breach wire it never met.
+        if p.enemy_wire_built > 0 && (p.ai[8] > 0 || p.ai[13] > 0) {
             self.matches_enemy_wire += 1;
             // breaches_opened (S10_AI index 9).
             self.breach_when_enemy_wire += u32::from(p.ai[9] > 0);
@@ -2961,7 +2964,7 @@ pub fn many_text(r: &ManyReport) -> String {
         let (_, d) = crate::json_out::s10_blocks(&f.s10);
         let v = |k: &str| d[k].as_f64().unwrap_or(0.0);
         out += &format!(
-            "fort: {} works {:.2}/match (in {:.0} %), wire {:.1} sections/match (in {:.0} %), gaps in {:.0} %, breaches {:.2}/match (opened {:.0} %; when enemy wire {:.0} %), builders {:.1} %, materials {:.2} % of income, lost {:.1} kg/match, men lost in wire {:.2}/match\n",
+            "fort: {} works {:.2}/match (in {:.0} %), wire {:.1} sections/match (in {:.0} %), gaps in {:.0} %, breaches {:.2}/match (opened {:.0} %; when enemy wire met {} %), builders {:.1} %, materials {:.2} % of income, lost {:.1} kg/match, men lost in wire {:.2}/match\n",
             f.faction,
             v("works_per_match"),
             v("matches_with_works_pct"),
@@ -2970,7 +2973,9 @@ pub fn many_text(r: &ManyReport) -> String {
             v("matches_with_gap_pct"),
             v("breaches_started_per_match"),
             v("breach_opened_pct"),
-            v("breach_when_enemy_wire_pct"),
+            d["breach_when_enemy_wire_pct"]
+                .as_f64()
+                .map_or("-".into(), |x| format!("{x:.0}")),
             v("builder_share_pct"),
             v("materials_mp_pct"),
             v("materials_lost_kg_per_match"),
