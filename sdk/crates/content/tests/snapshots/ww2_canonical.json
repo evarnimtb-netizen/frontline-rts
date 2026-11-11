@@ -2282,7 +2282,7 @@
   },
   "units": {
     "ww2:ger_baupioniergruppe": {
-      "ai_weight": 0,
+      "ai_weight": 50,
       "capabilities": [
         "dig_basic",
         "dig_full",
@@ -3120,7 +3120,7 @@
       "weapon": ""
     },
     "ww2:ger_sturmpioniergruppe": {
-      "ai_weight": 0,
+      "ai_weight": 35,
       "capabilities": [
         "dig_basic",
         "recrew",
@@ -3523,7 +3523,7 @@
       "weapon": ""
     },
     "ww2:usa_assault_section": {
-      "ai_weight": 0,
+      "ai_weight": 35,
       "capabilities": [
         "dig_basic",
         "recrew",

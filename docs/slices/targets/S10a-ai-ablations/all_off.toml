@@ -1,0 +1,7 @@
+# S10a-ai ablation 1 (docs/slices/S10a-ai.md 9): every fortification habit
+# off. The AI must then play exactly as on S10a (neutral.py same).
+[ai.fort]
+works = 0
+wire = 0
+breach = 0
+cards = 0
