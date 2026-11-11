@@ -142,6 +142,9 @@ S11 `load_materials` takes supply-truck squads (kg default u16::MAX); truck grid
 S12-S14 tests: 81 mm exact roof damage + open-pit control; `a_wall_piece_covers_a_man_from_overpressure`; rifle volley
 controls (no wall, thin wall); `hq_roof_refused_over_an_already_roofed_hq`. CLI `survived_81mm_pct` needs 0 < hp < full.
 S17 left open: a tried "no added crossing" smoothing rule had no failing test (the hidden-gap case makes A* cross anyway).
-**Checks** (on the fix head): `check.sh tests` 740 passed, 0 failed; bridge, check_project, test_match_view 358/358, test_net_ui
-143/143, test_data_reload 21/21, golden 46/46, validate ok, settings.cfg unchanged; 40 set `skirmish40.json: same 40/40`;
-fortify10 T91a-c, T92a-c pass, T93a-b miss (report), `10 pass, 2 miss (hard: 0)`.
+**Checks** (fix head): tests 740/0; GD 358/143/21, golden 46, settings.cfg same; 40 set same 40/40; fortify10 `10 pass, 2 miss`.
+**Re-review R1-R3** (each test failed before). R1 a top hit off the map (edge piece overhang) lands on the clamped ground:
+`an_item_on_a_piece_over_the_map_edge_lands_on_the_map_and_saves`. R2 once any piece stood (`next_piece > 0`), a landed item
+above the ground with no live piece box under it drops to the ground: `an_item_on_a_roof_falls_when_the_roof_breaks`.
+R3 bridge `rules.fortify.enabled` ([fortify] table); `fort_enabled()` gates Materials (squads, truck row). Checks: tests 742/0,
+bridge, check_project, test_match_view 360 (+2 R3 checks), test_net_ui 143, test_data_reload 21.
