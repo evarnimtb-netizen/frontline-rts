@@ -211,7 +211,7 @@ fn pct1(a: f64, b: f64) -> f64 {
     }
 }
 
-fn fort_of(w: &World, id: &str) -> Result<u16> {
+pub(super) fn fort_of(w: &World, id: &str) -> Result<u16> {
     w.match_setup()
         .unwrap()
         .forts
@@ -223,7 +223,7 @@ fn fort_of(w: &World, id: &str) -> Result<u16> {
 
 /// Buys player `p`'s roster card with short id in `ids` and steps until it
 /// arrives.
-fn call_in_card(w: &mut World, p: u8, ids: &[&str]) -> Result<SquadId> {
+pub(super) fn call_in_card(w: &mut World, p: u8, ids: &[&str]) -> Result<SquadId> {
     let s = w.match_setup().expect("match world");
     let faction = &s.factions[s.players[p as usize].faction as usize];
     let Some(&ty) = faction.roster.iter().find(|&&t| {
@@ -270,7 +270,7 @@ fn place_lead_at(w: &mut World, sq: SquadId, p: FxVec2, facing: FxVec2) {
     }
 }
 
-fn alive(w: &World, m: SimId) -> bool {
+pub(super) fn alive(w: &World, m: SimId) -> bool {
     w.entities().kind()[m.index()] == frontline_sim::EntityKind::Soldier
         && w.entities().combat()[m.index()].hp > 0
 }
