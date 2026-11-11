@@ -22,6 +22,17 @@ fn run(args: SkirmishArgs) -> SkirmishReport {
     skirmish(&args).unwrap_or_else(|e| panic!("skirmish failed: {e:#}"))
 }
 
+/// [`short`] with the S10a-ai fortification habits off (the shipped
+/// `all_off` ablation override).
+fn short_all_off(seed: u64, minutes: u32, threads: usize) -> SkirmishArgs {
+    let all_off = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/slices/targets/S10a-ai-ablations/all_off.toml");
+    SkirmishArgs {
+        rules_override: vec![all_off],
+        ..short(seed, minutes, threads)
+    }
+}
+
 fn short(seed: u64, minutes: u32, threads: usize) -> SkirmishArgs {
     SkirmishArgs {
         seed,
@@ -519,7 +530,7 @@ min = 1
 /// zero, per player and per faction in the `--json` document.
 #[test]
 fn s10_counters_zero_without_fortifications() {
-    let r = run(short(3, 4, 2));
+    let r = run(short_all_off(3, 4, 2));
     for p in &r.players {
         let a = &p.s10.fort;
         assert_eq!(*a, frontline_sim::fort::FortAccount::default(), "{p:?}");
@@ -531,6 +542,8 @@ fn s10_counters_zero_without_fortifications() {
     let out = Command::new(exe)
         .args(["skirmish", "--ai-vs-ai", "--seed", "3", "--seeds", "1"])
         .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--rules-override")
+        .arg(&short_all_off(3, 3, 2).rules_override[0])
         .arg("--json")
         .arg(&file)
         .output()
@@ -586,8 +599,8 @@ fn s10_ai_fields_zero_with_the_ai_unchanged() {
     let got = S10Player::ai_counters(&c);
     assert_eq!(got, std::array::from_fn(|k| k as u32 + 1));
     assert_eq!(S10_AI[9], "breaches_opened");
-    // An AI-vs-AI match: all zero.
-    let r = run(short(3, 4, 2));
+    // An AI-vs-AI match with the S10a-ai habits off: all zero.
+    let r = run(short_all_off(3, 4, 2));
     for p in &r.players {
         let s = &p.s10;
         assert_eq!(s.ai, [0; 14], "{p:?}");
@@ -604,6 +617,8 @@ fn s10_ai_fields_zero_with_the_ai_unchanged() {
     let out = Command::new(exe)
         .args(["skirmish", "--ai-vs-ai", "--seed", "3", "--seeds", "1"])
         .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--rules-override")
+        .arg(&short_all_off(3, 3, 2).rules_override[0])
         .arg("--json")
         .arg(&file)
         .output()

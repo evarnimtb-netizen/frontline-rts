@@ -746,3 +746,715 @@ fn men_killed_in_enemy_wire_are_counted() {
     assert!(w.kill_soldier(g[2]));
     assert_eq!(acc(&w, 0).men_lost_in_wire, 1);
 }
+
+// ============================================ Build B: buys and building --
+
+use crate::ai::AiTrench;
+use crate::command::CommandKind;
+
+/// Seconds of play.
+fn play(w: &mut World, secs: u64) {
+    steps(w, secs * 30);
+}
+
+/// A world where AI player 1 (USA, no start squads, no buys) holds the
+/// map's only point with a finished AI trench across the way to player 0's
+/// base. Returns the world, the point and the trench line.
+fn held(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> (World, FxVec2, [FxVec2; 2]) {
+    held_dug(true, edit)
+}
+
+/// [`held`], the trench finished only when `dug`.
+fn held_dug(
+    dug: bool,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, FxVec2, [FxVec2; 2]) {
+    let mut w = flat_world_with(1, |s| {
+        s.players[1].is_ai = true;
+        s.map.points.truncate(1);
+        let f = s.players[1].faction as usize;
+        s.factions[f].start_squads.clear();
+        // No buys: no card has a weight.
+        s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);
+        edit(s);
+    });
+    let (pos, line) = {
+        let g = w.state.game.as_mut().unwrap();
+        g.points[0].owner = Some(PlayerId(1));
+        let s = &g.setup;
+        let pos: FxVec2 = s.map.points[0].pos.into();
+        let dir = (g.base_of(PlayerId(0)) - pos).normalize_or_zero();
+        let mid = pos + dir * Fx::from(s.rules.ai.dig_offset);
+        let half = dir.perp() * Fx::from(s.rules.ai.dig_length).div_int(2);
+        let line = [mid - half, mid + half];
+        g.ai[1]
+            .as_mut()
+            .unwrap()
+            .trenches
+            .push(AiTrench { point: 0, line });
+        (pos, line)
+    };
+    if dug {
+        trench_done(&mut w, line);
+    }
+    (w, pos, line)
+}
+
+/// The trench's middle dug to depth (what `evaluate_points` reads).
+fn trench_done(w: &mut World, line: [FxVec2; 2]) {
+    let depth = Fx::from(w.match_setup().unwrap().rules.dig.depth) + Fx::from_milli(300);
+    let tick = w.state.tick;
+    let mid = (line[0] + line[1]).div_int(2);
+    w.state
+        .terrain
+        .crater_cut(mid, Fx::from_int(3), depth, tick);
+}
+
+/// A player 1 squad at `at` carrying `kg`.
+fn squad_at(w: &mut World, card: &str, at: FxVec2, kg: u32) -> SquadId {
+    let (x, y) = (at.x.floor_int(), at.y.floor_int());
+    let id = spawn(w, 1, card, x, y);
+    if kg > 0 {
+        w.edit_fort(|f| {
+            f.carried_g.insert(id, kg * 1000);
+        });
+    }
+    id
+}
+
+fn ai_ro(w: &World) -> &crate::ai::AiState {
+    w.game().unwrap().ai[1].as_ref().unwrap()
+}
+
+/// Player 1's own pieces (part 0) and wire sections of blueprint `f`.
+fn built(w: &World, f: u16) -> Vec<FxVec2> {
+    let fs = w.game().unwrap().fort();
+    fs.pieces
+        .values()
+        .filter(|q| q.owner == PlayerId(1) && q.fort == f && q.part == 0)
+        .map(|q| q.pos)
+        .chain(
+            fs.wire
+                .values()
+                .filter(|s| s.owner == PlayerId(1) && s.fort == f)
+                .map(|s| (s.a + s.b).div_int(2)),
+        )
+        .collect()
+}
+
+/// The nest site of point 0 (index 0: the trench's second end, spec 3.3).
+fn nest_site(w: &World, line: [FxVec2; 2]) -> FxVec2 {
+    let off = w.match_setup().unwrap().rules.ai.fort.nest_offset_m as i32;
+    line[1] + (line[1] - line[0]).normalize_or_zero() * Fx::from_int(off)
+}
+
+/// Plays up to `secs`, stopping once `done` holds; whether it did.
+fn play_until(w: &mut World, secs: u64, mut done: impl FnMut(&World) -> bool) -> bool {
+    for _ in 0..secs {
+        if done(w) {
+            return true;
+        }
+        play(w, 1);
+    }
+    done(w)
+}
+
+/// Every AI command player 1 has pending for squad `id` (sampled).
+fn pending_for(w: &World, id: SquadId) -> Vec<CommandKind> {
+    ai_ro(w)
+        .pending
+        .iter()
+        .filter(|c| match &c.kind {
+            CommandKind::Move { squad, .. }
+            | CommandKind::AttackMove { squad, .. }
+            | CommandKind::Dig { squad, .. }
+            | CommandKind::Fortify { squad, .. }
+            | CommandKind::LoadMaterials { squad, .. } => *squad == id,
+            _ => false,
+        })
+        .map(|c| c.kind.clone())
+        .collect()
+}
+
+fn type_buys(w: &World, p: u8, card: &str) -> u32 {
+    let g = w.game().unwrap();
+    let t = g.setup().squad_type_index(card).unwrap() as usize;
+    g.ai[p as usize]
+        .as_ref()
+        .unwrap()
+        .counters
+        .bought
+        .get(t)
+        .copied()
+        .unwrap_or(0)
+}
+
+/// Both AIs buying only engineer cards, rich, no cooldowns: the buys of
+/// each faction's engineer cards after `secs`.
+fn engineer_buys(cards: u32, secs: u64) -> [[u32; 3]; 2] {
+    let mut w = flat_world_with(1, |s| {
+        s.players.iter_mut().for_each(|p| p.is_ai = true);
+        let eng = s.tag("engineer").unwrap();
+        s.rules.ai.mix.retain(|m| m.tag == eng);
+        s.rules.ai.fort.cards = cards;
+        s.rules.ai.fort.works = 0;
+        s.rules.ai.fort.wire = 0;
+        s.rules.start_manpower = 100_000;
+        s.rules.pop_cap = 1000;
+        // One buy a plan: a plan never buys one card twice.
+        s.rules.ai.infantry.buys_per_plan = 1;
+        for t in s.squad_types.iter_mut() {
+            t.recall_cooldown_ticks = 0;
+            t.initial_cooldown_ticks = 0;
+        }
+    });
+    play(&mut w, secs);
+    [
+        [
+            type_buys(&w, 0, "ww2:ger_engineer_squad"),
+            type_buys(&w, 0, "ww2:ger_baupioniergruppe"),
+            type_buys(&w, 0, "ww2:ger_sturmpioniergruppe"),
+        ],
+        [
+            type_buys(&w, 1, "ww2:usa_engineer_squad"),
+            0,
+            type_buys(&w, 1, "ww2:usa_assault_section"),
+        ],
+    ]
+}
+
+#[test]
+fn ai_buys_engineer_cards_by_weight() {
+    let [ger, usa] = engineer_buys(1, 240);
+    // Weights 100 / 50 / 35 (Germany) and 100 / 35 (USA): the buys come
+    // in that ratio, each within one buy of its share.
+    let n: u32 = ger.iter().sum();
+    assert!(n >= 10, "enough German buys to read a ratio: {ger:?}");
+    for (k, w) in [100u32, 50, 35].iter().enumerate() {
+        let share = n * w / 185;
+        assert!(
+            ger[k].abs_diff(share) <= n / 20 + 1,
+            "Germany {ger:?}, card {k}"
+        );
+    }
+    let n: u32 = usa.iter().sum();
+    assert!(n >= 8, "enough US buys: {usa:?}");
+    assert!(usa[0].abs_diff(n * 100 / 135) <= n / 20 + 1, "USA {usa:?}");
+    assert!(ger[0] > ger[1] && ger[1] > ger[2], "{ger:?}");
+    assert!(usa[2] >= 1, "the Assault Section is bought: {usa:?}");
+}
+
+#[test]
+fn ai_cards_switch_off_buys_none() {
+    let [ger, usa] = engineer_buys(0, 240);
+    assert_eq!((ger[1], ger[2], usa[2]), (0, 0, 0), "{ger:?} {usa:?}");
+    // Positive control: the engineer slot still buys its old card.
+    assert!(ger[0] >= 4 && usa[0] >= 4, "{ger:?} {usa:?}");
+}
+
+#[test]
+fn ai_builders_load_materials_in_base() {
+    let (mut w, pos, _) = held(|_| {});
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", base, 0);
+    let rifle = squad_at(&mut w, "ww2:usa_rifle_squad", base + c(6, 0), 0);
+    // Control: a builder outside the base loads nothing.
+    let away = squad_at(&mut w, "ww2:usa_engineer_squad", pos + c(0, -40), 0);
+    play(&mut w, 8);
+    let carried = |w: &World, s| {
+        w.game()
+            .unwrap()
+            .fort()
+            .carried_g
+            .get(&s)
+            .copied()
+            .unwrap_or(0)
+    };
+    let men = members(&w, eng).len() as u32;
+    assert_eq!(carried(&w, eng), men * 20_000, "full carry: 20 kg a man");
+    assert_eq!(carried(&w, rifle), 0, "no build capability, no load");
+    assert_eq!(carried(&w, away), 0, "not in base, no load");
+    assert_eq!(acc(&w, 1).materials_loaded_g, (men * 20_000) as u64);
+}
+
+#[test]
+fn ai_materials_budget_stops_loading() {
+    // 1 % of 600 MP = 6 MP = 60 kg at 100 MP/t.
+    let (mut w, _, _) = held(|s| s.rules.ai.fort.materials_max_pct = 1);
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let a = squad_at(&mut w, "ww2:usa_engineer_squad", base, 0);
+    let b = squad_at(&mut w, "ww2:usa_engineer_squad", base + c(8, 0), 0);
+    play(&mut w, 20);
+    let fs = w.game().unwrap().fort();
+    let got = |s| fs.carried_g.get(&s).copied().unwrap_or(0);
+    assert_eq!(got(a) + got(b), 60_000, "loads stop at the budget");
+    assert!(acc(&w, 1).materials_micro <= 6 * crate::supply::MICRO);
+    // Control: at 3 % both load in full.
+    let (mut w, _, _) = held(|_| {});
+    let a = squad_at(&mut w, "ww2:usa_engineer_squad", base, 0);
+    let b = squad_at(&mut w, "ww2:usa_engineer_squad", base + c(8, 0), 0);
+    play(&mut w, 20);
+    let fs = w.game().unwrap().fort();
+    let got = |s| fs.carried_g.get(&s).copied().unwrap_or(0);
+    assert!(got(a) > 0 && got(b) > 0 && got(a) + got(b) > 60_000);
+}
+
+/// The trench middle and the unit direction to the enemy (point 0).
+fn frame(pos: FxVec2, line: [FxVec2; 2]) -> (FxVec2, FxVec2) {
+    let mid = (line[0] + line[1]).div_int(2);
+    (mid, (mid - pos).normalize_or_zero())
+}
+
+/// Builds blueprint `id` for player 1 at a point site facing the enemy.
+fn prebuild(w: &mut World, id: &str, at: FxVec2, enemy: FxVec2) {
+    let f = fort(w, id);
+    let line = [at, at + enemy * Fx::from_int(10)];
+    assert!(w.build_now(f, &line, PlayerId(1)));
+}
+
+fn jobs_of(w: &World, f: u16) -> usize {
+    ai_ro(w).forts.values().filter(|j| j.fort == f).count()
+}
+
+fn near_m(a: FxVec2, b: FxVec2, m: i32) -> bool {
+    (a - b).length() <= Fx::from_int(m)
+}
+
+const ENG: &str = "ww2:usa_engineer_squad";
+
+#[test]
+fn ai_builds_mg_nest_after_trench() {
+    let (mut w, pos, line) = held(|_| {});
+    squad_at(&mut w, ENG, pos, 120);
+    let nest = fort(&w, "ww2:mg_nest");
+    let site = nest_site(&w, line);
+    let ok = play_until(&mut w, 400, |w| {
+        built(w, nest).iter().any(|p| near_m(*p, site, 6))
+    });
+    assert!(ok, "the nest stands at its site: {:?}", built(&w, nest));
+    assert!(ai_ro(&w).counters.fort_jobs >= 1);
+    // Control: the trench not finished: the engineers dig it, no nest job.
+    let (mut w, pos, _) = held_dug(false, |_| {});
+    let eng2 = squad_at(&mut w, ENG, pos, 120);
+    play(&mut w, 30);
+    assert_eq!(jobs_of(&w, nest), 0);
+    assert!(matches!(
+        w.game().unwrap().squads[&eng2].order,
+        Order::Dig { .. }
+    ));
+}
+
+#[test]
+fn ai_lays_wire_across_the_approach() {
+    let (mut w, pos, line) = held(|_| {});
+    let (mid, enemy) = frame(pos, line);
+    let wire = fort(&w, "ww2:barbed_wire");
+    let site = nest_site(&w, line);
+    prebuild(&mut w, "ww2:mg_nest", site, enemy);
+    squad_at(&mut w, ENG, pos, 120);
+    assert!(play_until(&mut w, 400, |w| built(w, wire).len() >= 15));
+    let along = (line[1] - line[0]).normalize_or_zero();
+    let fs = w.game().unwrap().fort();
+    for s in fs.wire.values().filter(|s| s.owner == PlayerId(1)) {
+        let m = (s.a + s.b).div_int(2) - mid;
+        let out = m.x * enemy.x + m.y * enemy.y;
+        let side = m.x * along.x + m.y * along.y;
+        assert!(
+            (out - Fx::from_int(35)).abs() <= Fx::from_int(2),
+            "35 m out: {out:?}"
+        );
+        assert!(
+            side.abs() <= Fx::from_int(16),
+            "within the 30 m line: {side:?}"
+        );
+        let d = s.b - s.a;
+        let across = (d.x * enemy.x + d.y * enemy.y).abs();
+        assert!(across <= Fx::from_milli(200), "parallel to the trench");
+    }
+}
+
+#[test]
+fn ai_does_not_build_under_threat() {
+    let nest_job = |enemies: bool| {
+        let (mut w, pos, line) = held(|_| {});
+        let (mid, enemy) = frame(pos, line);
+        squad_at(&mut w, ENG, pos, 120);
+        if enemies {
+            let at = mid + enemy * Fx::from_int(50);
+            spawn(
+                &mut w,
+                0,
+                "ww2:ger_grenadiergruppe",
+                at.x.floor_int(),
+                at.y.floor_int(),
+            );
+        }
+        let nest = fort(&w, "ww2:mg_nest");
+        let mut most = 0;
+        for _ in 0..40 {
+            play(&mut w, 1);
+            most = most.max(jobs_of(&w, nest));
+        }
+        (most, acc(&w, 1).works_started)
+    };
+    assert_eq!(nest_job(true), (0, 0), "enemies at the point: no work");
+    // Positive control: the same scene without them builds.
+    assert!(nest_job(false).0 >= 1);
+}
+
+#[test]
+fn ai_builder_limits_hold() {
+    let most_jobs = |edit: fn(&mut frontline_content::MatchSetup)| {
+        let (mut w, pos, _) = held(edit);
+        for k in 0..3 {
+            squad_at(&mut w, ENG, pos + c(4 * k, 0), 120);
+        }
+        let mut most = 0;
+        for _ in 0..60 {
+            play(&mut w, 1);
+            most = most.max(ai_ro(&w).forts.len());
+        }
+        most
+    };
+    assert_eq!(most_jobs(|s| s.rules.ai.fort.builders_max = 1), 1);
+    assert_eq!(most_jobs(|_| {}), 2, "builders_max 2");
+    // works_per_point 1 with the nest standing: no wire job.
+    let wire_jobs = |per_point: u32| {
+        let (mut w, pos, line) = held(|s| s.rules.ai.fort.works_per_point = per_point);
+        let (_, enemy) = frame(pos, line);
+        let site = nest_site(&w, line);
+        prebuild(&mut w, "ww2:mg_nest", site, enemy);
+        squad_at(&mut w, ENG, pos, 120);
+        play(&mut w, 30);
+        jobs_of(&w, fort(&w, "ww2:barbed_wire")) + built(&w, fort(&w, "ww2:barbed_wire")).len()
+    };
+    assert_eq!(wire_jobs(1), 0);
+    assert!(wire_jobs(3) > 0, "control: room for the wire");
+}
+
+#[test]
+fn ai_builder_is_not_reordered_mid_work() {
+    let (mut w, pos, line) = held(|s| s.rules.ai.fort.wire = 0);
+    let eng = squad_at(&mut w, ENG, pos, 120);
+    let nest = fort(&w, "ww2:mg_nest");
+    let site = nest_site(&w, line);
+    let mut watched = 0;
+    for _ in 0..(400 * 30) {
+        w.step(&[]);
+        let Some(j) = ai_ro(&w).forts.get(&eng) else {
+            if watched > 0 {
+                break;
+            }
+            continue;
+        };
+        if matches!(j.phase, FortPhase::Order | FortPhase::Watch) {
+            watched += 1;
+            let p = pending_for(&w, eng);
+            assert!(
+                !p.iter().any(|k| matches!(
+                    k,
+                    CommandKind::Move { .. }
+                        | CommandKind::AttackMove { .. }
+                        | CommandKind::Dig { .. }
+                )),
+                "re-ordered mid work: {p:?}"
+            );
+        }
+    }
+    assert!(watched > 0);
+    assert!(
+        built(&w, nest).iter().any(|p| near_m(*p, site, 6)),
+        "the work was finished"
+    );
+    // Positive control: without its job the squad is re-ordered at once.
+    let (mut w, pos, _) = held(|s| s.rules.ai.fort.wire = 0);
+    let eng = squad_at(&mut w, ENG, pos, 120);
+    assert!(play_until(&mut w, 60, |w| ai_ro(w)
+        .forts
+        .get(&eng)
+        .is_some_and(|j| j.phase == FortPhase::Watch)));
+    ai1(&mut w).forts.clear();
+    let mut moved = false;
+    for _ in 0..(10 * 30) {
+        w.step(&[]);
+        ai1(&mut w).forts.clear();
+        moved |= pending_for(&w, eng)
+            .iter()
+            .any(|k| matches!(k, CommandKind::Move { .. }));
+    }
+    assert!(moved, "the check sees a re-order");
+}
+
+#[test]
+fn ai_never_orders_without_the_capability() {
+    let (mut w, pos, line) = held(|_| {});
+    let (_, enemy) = frame(pos, line);
+    let rifle = squad_at(&mut w, "ww2:usa_rifle_squad", pos, 120);
+    let lmg = squad_at(&mut w, "ww2:usa_lmg_squad", pos + c(5, 0), 0);
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let rifle_b = squad_at(&mut w, "ww2:usa_rifle_squad", base, 0);
+    for _ in 0..(60 * 30) {
+        w.step(&[]);
+        for s in [rifle, lmg, rifle_b] {
+            let p = pending_for(&w, s);
+            assert!(
+                !p.iter().any(|k| matches!(
+                    k,
+                    CommandKind::Fortify { .. } | CommandKind::LoadMaterials { .. }
+                )),
+                "{s:?}: {p:?}"
+            );
+        }
+    }
+    assert!(ai_ro(&w).forts.is_empty() && acc(&w, 1).works_started == 0);
+    // `build_structure` without `place_wire`: the nest standing, no wire.
+    let wire_jobs = |strip: bool| {
+        let (mut w, pos, line) = held(|s| {
+            if strip {
+                for t in s.squad_types.iter_mut().filter(|t| t.id == ENG) {
+                    t.caps &= !Capability::PlaceWire.bit();
+                }
+            }
+        });
+        let site = nest_site(&w, line);
+        prebuild(&mut w, "ww2:mg_nest", site, enemy);
+        squad_at(&mut w, ENG, pos, 120);
+        play(&mut w, 30);
+        acc(&w, 1).works_started
+    };
+    assert_eq!(wire_jobs(true), 0);
+    assert!(
+        wire_jobs(false) > 0,
+        "control: with place_wire it lays wire"
+    );
+}
+
+#[test]
+fn ai_mg_team_mans_its_nest() {
+    let target = |with_nest: bool| {
+        let (mut w, pos, line) = held(|s| {
+            s.rules.ai.fort.works = 1;
+            s.rules.ai.fort.wire = 0;
+        });
+        let (_, enemy) = frame(pos, line);
+        let site = nest_site(&w, line);
+        if with_nest {
+            prebuild(&mut w, "ww2:mg_nest", site, enemy);
+        }
+        let lmg = squad_at(&mut w, "ww2:usa_lmg_squad", pos, 0);
+        play(&mut w, 15);
+        let t = ai_ro(&w).tasks[&lmg];
+        (t.kind, near_m(t.target, site, 1))
+    };
+    assert_eq!(target(true), (crate::ai::TaskKind::Defend, true));
+    assert_eq!(
+        target(false),
+        (crate::ai::TaskKind::Defend, false),
+        "control"
+    );
+}
+
+/// The dugout site of point 0.
+fn dugout_site(w: &World, pos: FxVec2, line: [FxVec2; 2]) -> FxVec2 {
+    let (mid, enemy) = frame(pos, line);
+    let back = w.match_setup().unwrap().rules.ai.fort.dugout_back_m as i32;
+    mid - enemy * Fx::from_int(back)
+}
+
+#[test]
+fn ai_marks_a_shelled_point_and_digs_a_dugout() {
+    let run = |pin: bool| {
+        let (mut w, pos, line) = held(|_| {});
+        let (_, enemy) = frame(pos, line);
+        let site = nest_site(&w, line);
+        prebuild(&mut w, "ww2:mg_nest", site, enemy);
+        let rifle = squad_at(&mut w, "ww2:usa_rifle_squad", pos, 0);
+        squad_at(&mut w, ENG, pos + c(3, 3), 120);
+        let dug = fort(&w, "ww2:dugout");
+        let mut marked = false;
+        let mut dugout_job = false;
+        for _ in 0..90 {
+            play(&mut w, 1);
+            if pin {
+                for m in members(&w, rifle) {
+                    w.edit_soldier(m, |_, c| c.suppression = 99_000);
+                }
+            }
+            marked |= ai_ro(&w).shelled.contains_key(&0);
+            dugout_job |= jobs_of(&w, dug) > 0;
+        }
+        (marked, dugout_job, ai_ro(&w).enemy_mortar_seen)
+    };
+    assert_eq!(
+        run(true),
+        (true, true, false),
+        "pinned with nobody near: shelled"
+    );
+    assert_eq!(run(false), (false, false, false), "control: quiet");
+}
+
+#[test]
+fn ai_shelters_in_the_dugout_and_returns() {
+    let (mut w, pos, line) = held(|s| s.rules.ai.fort.works_per_point = 0);
+    let (_, enemy) = frame(pos, line);
+    let site = dugout_site(&w, pos, line);
+    prebuild(&mut w, "ww2:dugout", site, enemy);
+    let rifle = squad_at(&mut w, "ww2:usa_rifle_squad", pos, 0);
+    play(&mut w, 10);
+    let goal = |w: &World| match w.game().unwrap().squads[&rifle].order {
+        Order::Move { target } => Some(target),
+        _ => None,
+    };
+    assert!(
+        !goal(&w).is_some_and(|t| near_m(t, site, 1)),
+        "not before a mark"
+    );
+    let tick = w.state.tick;
+    ai1(&mut w).shelled.insert(0, tick);
+    assert!(play_until(&mut w, 10, |w| goal(w).is_some_and(|t| near_m(t, site, 1))));
+    assert!(ai_ro(&w).counters.shelter_moves >= 1);
+    // The mark gets old (shelter_s 20): back out.
+    // (The men stop at the pit's edge: the order and task say where.)
+    assert!(play_until(&mut w, 40, |w| {
+        let t = ai_ro(w).tasks[&rifle].target;
+        !near_m(t, site, 1) && !goal(w).is_some_and(|g| near_m(g, site, 1))
+    }));
+}
+
+#[test]
+fn ai_roofs_its_hq_once_mortars_are_seen() {
+    let (mut w, pos, _) = held(|s| s.rules.ai.fort.works_per_point = 0);
+    let hq_at = pos + c(-20, 0);
+    let def = {
+        let s = w.match_setup().unwrap();
+        s.stock_of(
+            s.players[1].faction,
+            frontline_content::setup::StockKind::Hq,
+            None,
+        )
+        .unwrap()
+    };
+    w.edit_supply6(|s| {
+        s.structures.insert(
+            77,
+            crate::structures::Structure {
+                owner: PlayerId(1),
+                def,
+                pos: hq_at,
+                yaw: Fx::ZERO,
+                builder: None,
+                built: true,
+                box_hp: [1000; crate::structures::MAX_BOXES],
+                radio: true,
+                stock_g: [0; 3],
+            },
+        );
+        s.next_structure = s.next_structure.max(78);
+    });
+    squad_at(&mut w, ENG, hq_at + c(10, 0), 120);
+    let roof = fort(&w, "ww2:hq_dugout");
+    play(&mut w, 30);
+    assert_eq!(jobs_of(&w, roof), 0, "no mortar seen: no roof");
+    ai1(&mut w).enemy_mortar_seen = true;
+    assert!(play_until(&mut w, 30, |w| {
+        w.game()
+            .unwrap()
+            .fort()
+            .works
+            .values()
+            .any(|k| k.hq == Some(77))
+    }));
+}
+
+#[test]
+fn ai_sandbags_an_emplaced_gun() {
+    let run = |hold_s: u32| {
+        let (mut w, pos, line) = held(|s| {
+            s.rules.ai.fort.works_per_point = 0;
+            s.rules.ai.fort.gun_hold_s = hold_s;
+        });
+        let (_, enemy) = frame(pos, line);
+        let at = pos + c(20, 0);
+        let gsq = squad_at(&mut w, "ww2:usa_57mm_m1_squad", at, 0);
+        let gun = members(&w, gsq)[0];
+        let gpos = w.state.entities.transform[gun.index()].pos.xy();
+        let tick = w.state.tick;
+        ai1(&mut w).guns.insert(
+            gsq,
+            crate::ai::AiGun {
+                phase: crate::ai::GunPhase::Hold,
+                site: gpos,
+                facing: gpos + enemy * Fx::from_int(100),
+                moved_to: gpos,
+                moved_at: tick,
+                quiet_at: tick,
+                // (No S9 pit: that would take the engineers.)
+                pit: true,
+                ..Default::default()
+            },
+        );
+        squad_at(&mut w, ENG, gpos + c(-15, 0), 120);
+        let wall = fort(&w, "ww2:sandbag_wall");
+        let ok = play_until(&mut w, 30, |w| {
+            jobs_of(w, wall) > 0 || !built(w, wall).is_empty()
+        });
+        let (gp, fc) = {
+            let j = &ai_ro(&w).guns[&gsq];
+            (j.site, j.facing)
+        };
+        let want = gp + (fc - gp).normalize_or_zero() * Fx::from_int(4);
+        let at_gun = ai_ro(&w)
+            .forts
+            .values()
+            .any(|j| j.fort == wall && near_m((j.line[0] + j.line[1]).div_int(2), want, 1));
+        (ok, at_gun)
+    };
+    assert_eq!(run(0), (true, true), "a wall 4 m in front of the gun");
+    assert!(!run(3600).0, "control: not in Hold long enough");
+}
+
+#[test]
+fn ai_truck_brings_material_to_a_waiting_work() {
+    let (mut w, pos, line) = held(|_| {});
+    let (_, enemy) = frame(pos, line);
+    let site = nest_site(&w, line);
+    prebuild(&mut w, "ww2:mg_nest", site, enemy);
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    squad_at(&mut w, "ww2:usa_cckw_squad", base, 0);
+    squad_at(&mut w, ENG, pos, 0);
+    let ok = play_until(&mut w, 400, |w| acc(w, 1).materials_used_truck_g > 0);
+    let c = &ai_ro(&w).counters;
+    assert!(ok, "truck kg drawn: {:?} {:?}", c.material_runs, acc(&w, 1));
+    assert!(c.material_runs[0] >= 1);
+    assert_eq!(c.material_runs[2], 0, "nobody walked back");
+}
+
+#[test]
+fn ai_builder_walks_back_for_materials() {
+    let (mut w, pos, line) = held(|_| {});
+    let (_, enemy) = frame(pos, line);
+    let site = nest_site(&w, line);
+    prebuild(&mut w, "ww2:mg_nest", site, enemy);
+    let eng = squad_at(&mut w, ENG, pos, 0);
+    let wire = fort(&w, "ww2:barbed_wire");
+    assert!(play_until(&mut w, 30, |w| ai_ro(w).counters.material_runs
+        [2]
+        >= 1));
+    let carried = |w: &World| {
+        w.game()
+            .unwrap()
+            .fort()
+            .carried_g
+            .get(&eng)
+            .copied()
+            .unwrap_or(0)
+    };
+    assert!(
+        play_until(&mut w, 400, |w| carried(w) > 0),
+        "loaded in base"
+    );
+    assert!(
+        play_until(&mut w, 600, |w| built(w, wire).len() >= 15),
+        "and laid the wire"
+    );
+}

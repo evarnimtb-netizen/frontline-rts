@@ -1003,6 +1003,14 @@ struct Mine {
     role: AiKind,
     lead: FxVec2,
     strength_pct: u32,
+    /// S10a-ai: the card's capability bits (`SquadTypeSetup::caps`).
+    caps: u32,
+}
+
+impl Mine {
+    fn can(&self, c: Capability) -> bool {
+        self.caps & c.bit() != 0
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -1024,6 +1032,9 @@ struct PointEval {
     /// Index into `AiState::trenches`, and whether it is finished.
     trench: Option<usize>,
     trench_done: bool,
+    /// S10a-ai: an own point whose finished trench still wants a work
+    /// (`ai::fort`; false with `works` and `wire` off).
+    wants_works: bool,
 }
 
 impl MatchState {
@@ -1068,9 +1079,20 @@ impl MatchState {
     }
 
     /// Counts a rejected AI command for `player`.
-    pub(crate) fn ai_rejected(&mut self, player: PlayerId) {
+    /// S10a-ai: a refused `Fortify`, `LoadMaterials`, `CutWire` or
+    /// `PlaceBangalore` also counts in `AiCounters::fort_refused` (T99).
+    pub(crate) fn ai_rejected(&mut self, player: PlayerId, kind: &CommandKind) {
         if let Some(Some(ai)) = self.ai.get_mut(player.0 as usize) {
             ai.rejected += 1;
+            if matches!(
+                kind,
+                CommandKind::Fortify { .. }
+                    | CommandKind::LoadMaterials { .. }
+                    | CommandKind::CutWire { .. }
+                    | CommandKind::PlaceBangalore { .. }
+            ) {
+                ai.counters.fort_refused += 1;
+            }
         }
     }
 
@@ -1187,12 +1209,16 @@ impl Planner<'_> {
                 role: ai_kind(&g.setup, sq.type_idx),
                 lead: self.ents.transform[sq.lead(self.ents).index()].pos.xy(),
                 strength_pct: sq.members.len() as u32 * 100 / ty.men.max(1) as u32,
+                caps: ty.caps,
             });
         }
 
         // S9: guns, tows and crews are the gun jobs'.
         let guns = self.take_guns(&mut tanks, &mut mine);
         self.retreats(&mut mine, &known);
+        // S10a-ai: shelled marks, then the fort jobs keep their squads.
+        self.fort_marks(&known);
+        self.fort_continue(&mut mine, &known, &busy);
         // S5a: refill trips, staggered per point.
         self.refills(&mut mine, &known);
         // S6: the HQ, crate runs, dry mortars to the HQ.
@@ -1208,6 +1234,7 @@ impl Planner<'_> {
         self.buy_recon_truck();
         self.buy_gun();
         let mut points = self.evaluate_points(&known, &kv);
+        self.fort_points(&mut points);
         self.gun_jobs(&guns, &mut mine, &points, &known, &kv);
         let assigned = self.assign(&mine, &mut points);
         // S5a: Panzerfaust ambushes first; the hunts skip their squads.
@@ -1216,6 +1243,9 @@ impl Planner<'_> {
         hunting.extend(ambushing);
         hunting.sort_unstable();
         hunting.dedup();
+        // S10a-ai: new fort jobs take free builders (claimed as hunts are).
+        let building = self.fort_start(&mine, &assigned, &points, &known, &hunting);
+        hunting.extend(building);
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );
@@ -1345,6 +1375,11 @@ impl Planner<'_> {
         for &t in &faction.roster {
             // S7: `ai_weight = 0` keeps a card out of the AI's buys.
             if s.squad_types[t as usize].ai_weight == 0 {
+                continue;
+            }
+            // S10a-ai (spec 3.1): `[ai.fort] cards = 0` skips the three
+            // S10a cards as at `ai_weight` 0.
+            if ai.fort.cards == 0 && fort::is_s10a_card(&s.squad_types[t as usize]) {
                 continue;
             }
             if let Some(r) = mix_slot(s, t) {
@@ -1692,6 +1727,7 @@ impl Planner<'_> {
                 assigned: 0,
                 trench,
                 trench_done,
+                wants_works: false,
             });
         }
         out
@@ -1722,7 +1758,14 @@ impl Planner<'_> {
                     (AiKind::AntiTank, Rel::Own) if pt.armour > 0 => 150,
                     (AiKind::AntiTank, Rel::Own) => 40,
                     (AiKind::AntiTank, _) => -60,
-                    (AiKind::Engineer, Rel::Own) if !pt.trench_done => 80,
+                    // S10a-ai (spec 3.1): assault engineers go to attacks;
+                    // builders also stay for the works a point still wants.
+                    (AiKind::Engineer, Rel::Own)
+                        if !m.can(Capability::Breach)
+                            && (!pt.trench_done || pt.wants_works && fort::builds(m.caps)) =>
+                    {
+                        80
+                    }
                     (AiKind::Mg, Rel::Own) => 30,
                     (AiKind::Mg, Rel::Enemy) => -20,
                     (_, Rel::Own) if weak => 40,
@@ -1765,6 +1808,34 @@ impl Planner<'_> {
     ) {
         let g = self.g;
         let mut slot = vec![0u32; points.len()];
+        // S10a-ai (spec 3.3): one MG team into each built own nest; under
+        // shelling the defender squad nearest the dugout shelters in it.
+        let nests: Vec<Option<FxVec2>> = (0..points.len())
+            .map(|i| {
+                (points[i].rel == Rel::Own)
+                    .then(|| self.nest_at(i))
+                    .flatten()
+            })
+            .collect();
+        let mut nest_taken = vec![false; points.len()];
+        let shelters: Vec<Option<(FxVec2, SquadId)>> = (0..points.len())
+            .map(|i| {
+                if points[i].rel != Rel::Own {
+                    return None;
+                }
+                let at = self.shelter_at(i, known)?;
+                assigned
+                    .iter()
+                    .filter(|&&(j, pi)| {
+                        pi == i
+                            && !claimed.contains(&mine[j].id)
+                            && !escorting.contains(&mine[j].id)
+                    })
+                    .map(|&(j, _)| &mine[j])
+                    .min_by_key(|m| ((m.lead - at).length_sq_raw(), m.id))
+                    .map(|m| (at, m.id))
+            })
+            .collect();
         for &(j, i) in assigned {
             let m = &mine[j];
             if claimed.contains(&m.id) && !escorting.contains(&m.id) {
@@ -1781,7 +1852,10 @@ impl Planner<'_> {
             let k = slot[i];
             slot[i] += 1;
             let sq = &g.squads[&m.id];
+            // S10a-ai (spec 3.1): only squads with `dig_full` or
+            // `build_structure` dig the trench.
             let wants_dig = m.role == AiKind::Engineer
+                && (m.can(Capability::DigFull) || m.can(Capability::BuildStructure))
                 && pt.rel == Rel::Own
                 && !pt.trench_done
                 && pt.threat < 4;
@@ -1813,6 +1887,10 @@ impl Planner<'_> {
                 self.task(m.id, TaskKind::Dig, i as u8, mid);
                 continue;
             }
+            // S10a-ai: a nest or dugout spot is a few metres from the
+            // trench spot: the order must go there exactly.
+            let mut exact = false;
+            let mut shelter = false;
             let (kind, target) = match pt.rel {
                 Rel::Own => {
                     let target = match pt.trench {
@@ -1829,6 +1907,19 @@ impl Planner<'_> {
                         }
                         _ => ring_slot(pt.pos, k),
                     };
+                    let target = match (nests[i], shelters[i]) {
+                        (_, Some((at, sid))) if sid == m.id => {
+                            shelter = true;
+                            exact = true;
+                            at
+                        }
+                        (Some(at), _) if m.role == AiKind::Mg && !nest_taken[i] => {
+                            nest_taken[i] = true;
+                            exact = true;
+                            at
+                        }
+                        _ => target,
+                    };
                     (TaskKind::Defend, target)
                 }
                 Rel::Neutral => (TaskKind::Capture, ring_slot(pt.pos, k)),
@@ -1843,11 +1934,28 @@ impl Planner<'_> {
             let near =
                 |a: FxVec2, b: FxVec2, r: i32| (a - b).length_sq_raw() <= sq_m(Fx::from_int(r));
             let on_track = match &sq.order {
+                Order::Idle if exact => near(m.lead, target, 8),
+                Order::Idle
+                    if pt.rel == Rel::Own
+                        && self.dugout_spot(i).is_some_and(|d| near(m.lead, d, 4)) =>
+                {
+                    false
+                }
                 Order::Idle => near(m.lead, target, 20),
+                Order::Move { target: t } | Order::AttackMove { target: t } if exact => {
+                    *t == target
+                }
+                // S10a-ai: back out of the dugout once the shelter ends.
+                Order::Move { target: t }
+                    if pt.rel == Rel::Own && self.dugout_spot(i) == Some(*t) =>
+                {
+                    false
+                }
                 Order::Move { target: t } | Order::AttackMove { target: t } => near(*t, target, 10),
                 _ => false,
             };
             if !(same && on_track) {
+                self.ai.counters.shelter_moves += shelter as u32;
                 let cmd = if kind == TaskKind::Defend {
                     CommandKind::Move {
                         squad: m.id,

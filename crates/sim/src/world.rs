@@ -2480,7 +2480,7 @@ impl World {
                 } else {
                     self.state.stats.commands_rejected += 1;
                     if i >= n {
-                        game.ai_rejected(c.player);
+                        game.ai_rejected(c.player, &c.kind);
                     }
                 }
                 // Call-in results go to the snapshot; the match state

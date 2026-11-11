@@ -1246,6 +1246,7 @@ mod tests {
             assigned: 0,
             trench: None,
             trench_done: false,
+            wants_works: false,
         }
     }
 

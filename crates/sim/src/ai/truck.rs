@@ -172,7 +172,7 @@ impl super::Planner<'_> {
     }
 
     /// A move order for the truck, never the same one within `repath_s`.
-    fn truck_drive(&mut self, t: &MyTank, job: &mut AiTruck, goal: FxVec2) {
+    pub(super) fn truck_drive(&mut self, t: &MyTank, job: &mut AiTruck, goal: FxVec2) {
         let a = &self.g.setup.rules.ai.truck;
         let hz = self.g.setup.tick_hz.max(1) as u64;
         if job.moved_to == goal && self.tick < job.moved_at + a.repath_s as u64 * hz {
@@ -250,6 +250,10 @@ impl super::Planner<'_> {
                 }
                 return;
             }
+        }
+        // S10a-ai: a material run (`ai::fort`) first.
+        if self.material_truck(t, job, in_base, idle) {
+            return;
         }
         let want = self.truck_target(sup);
         let load: [u32; 3] = std::array::from_fn(|k| want[k].min(sup.load_g[k]));
