@@ -1,8 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S9b (`ba0038f`; S9b merged 2026-11-10 with the owner's OK, verified on `1bfc92f`). Work now: S10a
-mechanics on branch `s10a-fortifications` (from `9753cd9`, docs only past main; spec `docs/slices/S10a-fortifications.md`).
-Read the sections you need, then the doc the index names. Checked 2026-11-10.
+Main holds S1 to S9b (`ba0038f`; S9b merged 2026-11-10 with the owner's OK, verified on `1bfc92f`). S10a mechanics
+is built, reviewed, fixed and verified on branch `s10a-fortifications` (head `6d7b98c`); not merged, main waits for the owner's OK. Spec `docs/slices/S10a-fortifications.md`.
+Read the sections you need, then the doc the index names. Checked 2026-11-11.
 
 ## What the game is now
 
@@ -41,14 +41,14 @@ workspace in `Cargo.toml`.
 | CLI | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff | `sdk/crates/cli/src/` |
 | Tools | autotune, check.sh, bridge/export | `tools/` |
 
-Not in the game yet: Jagdpanzer IV, 38(t), M18, on-map artillery, fortifications, wounds, a third faction,
+Not in the game yet: Jagdpanzer IV, 38(t), M18, on-map artillery, fortification AI, wounds, a third faction,
 a second map, radio, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
 in the AI (data only, emplaced only), HE for the 57 mm (AP only).
 
 ## Versions
 
-`SAVE_VERSION` **21** and `PROTOCOL_VERSION` **12** on main (S9b). S10a plans 22 and 13 (one bump each, in its layout
-commit). `SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
+`SAVE_VERSION` **21** and `PROTOCOL_VERSION` **12** on main (S9b); **22** and **13** on `s10a-fortifications` (S10a, one bump each).
+`SAVE_VERSION` is in `crates/sim/src/world.rs`, `PROTOCOL_VERSION` in `crates/net/src/protocol.rs`.
 History: S5b 14 and 8; S6 15 and 9; S7 17 and 9; S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12 (one bump each).
 A change to a save layout, the hash or a command bumps these in the same commit. `sdk/docs/net/relay-protocol.md`
 lists the commands. Each TOML value change refreshes the BASELINE in `sdk/crates/content/tests/resolved_defs.rs`
@@ -74,15 +74,15 @@ Log `docs/slices/S9-log.md`, spec `S9-at-guns.md`.
 
 ## S9b (on main since 2026-11-10; log `S9b-log.md`, spec `S9b-ai-guns.md`)
 
-AI gun siting: `ai/guns.rs` searches the armour corridor (vehicle path, 25 m steps, 500 m) and picks a site that sees it
-inside the arc (`site_view_min_pct` 10), clear of enemy men, the other gun, enemy-held points and the corridor. CLI
-`gun_armour_out_per_match` counts each vehicle once. `income_max_pct` 30 (was 35). Pooled Germany **48.75 %** of 480; 261
-targets pass, 10 miss (hard 10); T88 met for GER (0.575), not USA (0.356 pooled). Lost to guns 26 / 19 % of armour
-(was 22 / 14; 80-match trace on `a9fa303` at 35). SAVE 21. Checks on `1bfc92f`: full all ok (688 passed).
+AI gun siting along the armour corridor (`ai/guns.rs`). Pooled Germany **48.75 %** of 480; 10 hard misses; SAVE 21.
 
-## S8b, S8a, S7, S6b (on main)
+## S10a fortifications, mechanics (branch `s10a-fortifications`, not merged; log `S10a-log.md`)
 
-S8b trucks and recon (`S8b-trucks-recon.md`), S8a half-tracks (`S8a-halftracks.md`), S7 assault guns and TDs, S6b mortar AI.
+Sim `crates/sim/src/fort.rs`; blueprints in `mods/ww2/defs/fortifications/`; commands Fortify, LoadMaterials, CutWire, PlaceBangalore; capabilities build_structure, build_heavy, place_wire, clear_wire, breach. Cards ger_sturmpioniergruppe 264 MP, ger_baupioniergruppe 165 MP, usa_assault_section 380 MP, all `ai_weight` 0. HUD build menu (key ` as a stand-in). Guide `docs/modding/fortifications.md`.
+
+Verify 2026-11-11: 742 tests pass, 0 fail; tick p99 0.413 ms all / 0.518 ms peak; targets 282 pass, 12 miss, 10 hard (the S9b ten; T93a/b are the breach report misses). Neutrality: skirmish40, skirmish160, skirmish160_oos, skirmish160_s201 same; Germany 48.75 % of 480, unchanged.
+
+Fortify rows (10 seeds): wire inside 20 %, through a cut or blown gap 100 %; roof survives 81 mm 100 %; breach: no gap in 20 runs (AI and staging work, S10b). Review: 17 findings (4 save-load blockers), fixed with tests; re-review 3 more, fixed.
 
 ## Owner decisions in force (source: `docs/TODO.md`)
 
@@ -105,7 +105,7 @@ S8b trucks and recon (`S8b-trucks-recon.md`), S8a half-tracks (`S8a-halftracks.m
 
 ## Roadmap position
 
-Done and on main: S1 to S9b. Now: S10a mechanics (`s10a-fortifications`), then the S10a AI half, S10b (mechanics, AI),
+Done and on main: S1 to S9b. S10a mechanics done on `s10a-fortifications` (not merged). Next: merge S10a on the owner's OK, then S10b (fortification AI and balance),
 S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` section 1.
 
 ## How to check work (few lines of output)
@@ -145,6 +145,6 @@ S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` section 1.
 | S8b wheels, optics, screens, trucks, DropCrates, recon and truck AI | `docs/slices/S8b-trucks-recon.md` 5-9, 17; log `S8b-log.md` |
 | S9 guns: entity, slots, tow, capture, pit, AI, balance | `docs/slices/S9-at-guns.md` (spec, sections 1-22); log `S9-log.md` |
 | S9b AI gun siting (corridor), armour-out measure, budget, open T88 | `docs/slices/S9b-ai-guns.md` 3.2, 6; log `S9b-log.md` |
-| S10a fortifications (mechanics): pieces, materials, wire, breaching, engineer split, neutrality check | `docs/slices/S10a-fortifications.md` |
+| S10a fortifications (mechanics): pieces, materials, wire, breaching, engineer split, neutrality check | `docs/slices/S10a-fortifications.md`; log `S10a-log.md` |
 | Development speed: where S9 time went, limits for check and measure runs | `docs/process/dev-speed.md` |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |

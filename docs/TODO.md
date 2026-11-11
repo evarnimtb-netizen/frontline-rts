@@ -191,7 +191,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S9b-1 (Budget) US guns put 0.36 armour out per match at income_max_pct 30 against the T88 floor of 0.45 (Germany 0.58 passes); at 35 neither side passes (0.54 / 0.40) and hard misses are 17 against 10. (A) Keep 30 and accept the US shortfall, carrying the sight gap to the AI slice of S10. (B) Go back to 35. (C) One more AI pass on US gun siting before S10a. Owner 2026-11-10: no preference; (A) stands.
   S9b-2 (Fix F1) `SAVE_VERSION` 20 -> 21 for the saved `[ai.guns]` layout (spec section 4 read as applying; rule 5 was the open point). Decided in practice: the bump stays, because the setup is saved (version 16 precedent), unless the owner objects. (A) Accept the bump. (B) Waive it and document the layout change under SAVE 20. Owner 2026-11-10: (A).
   S9b-3 (Fix) 10 hard misses remain (half-tracks T40/T72, StuG and M10 floors, HE share, USA vehicle kills; the USA armour floor is in S9b-1). They need another lever (`max_guns` 1, card priorities or the sight gap). (A) Accept for S9b and carry to S10a. (B) One more AI or card pass (S9c) before S10a. Owner 2026-11-10: no preference; (A) stands.
-- S10a-1..8 (Plan; `docs/slices/S10a-fortifications.md` section 12), each on its (A):
+- S10a-1..11 (`docs/slices/S10a-fortifications.md` section 12; 9-11 from the Build B-C review), each on its (A). All are built on (A); the owner confirms:
   S10a-1 Sandbag walls are built only by `build_structure` squads (engineers). (B) Any digging squad, from carried bags.
   S10a-2 Pieces stop rounds and fragments only; sight and walking pass them (wire is the one movement obstacle; camo net drawn only). (B) They block spotting too. (C) They block movement too.
   S10a-3 Own rounds pass own pieces (the S6 box rule), so an MG fires out of its nest ring. (B) Every piece stops every round; nests need a slit.
@@ -200,6 +200,9 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10a-6 Interrupted work is removed and its materials lost (S6-8). (B) The site stays and any squad can finish it.
   S10a-7 Vehicles crush wire they cross and are not slowed. (B) Wire stops wheeled vehicles.
   S10a-8 Card prices: Sturmpioniere 264, Baupioniere 165 (roster with the German cut and S6 factor), Assault Section 380. (B) Uncut 320 / 200 / 380.
+  S10a-9 A roof or any enemy piece top stops a thrown grenade or satchel, which bursts on it (a satchel breaks a dugout roof, a grenade does not; own pieces do not stop own throws). (A) As built; owner to confirm.
+  S10a-10 A roof that breaks under a burst does not stop that burst's fragments. (A) As built; owner to confirm.
+  S10a-11 The build menu key is ` (a stand-in; all letters are taken). (A) As built; owner to confirm.
 
 ## Planned work queue
 
@@ -217,7 +220,16 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 7. Sim profiling: S7 tick p99 doubling found and fixed (vehicle re-path loop); a general profile pass is still open.
 8. S9 AT guns: built, tuned, reviewed and fixed on `s9-at-guns` (Plan, Build A/B/C, Tune, Review, Fix, Docs; log `docs/slices/S9-log.md`, spec `S9-at-guns.md`, targets `S9.toml`). Not merged. Pooled Germany 45.6 %, 14 hard target misses on the 160 sets. On main since 2026-11-09 (owner OK). Next: S9b, a short AI gun pass (corridor search, then a budget tune; S9-17, S9-19). Open: S9-16, S9-18.
 9. S9b AI gun pass: built on `s9b-ai-guns` (Plan, Build, Review, Fix; log `docs/slices/S9b-log.md`, spec `S9b-ai-guns.md`, targets `S9b.toml`). Verified on `1bfc92f`: pooled Germany 48.75 %, 10 hard misses, `tools/check.sh full` all ok; T88 met for Germany, not USA. Owner 2026-11-10: S9b-1 (A), S9b-2 (A), S9b-3 (A); merged, main = `ba0038f` (owner OK). Next: S10a mechanics on `s10a-fortifications`.
-10. S10a fortifications, mechanics half: on `s10a-fortifications` from `9753cd9`. Plan done (spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`, owner questions S10a-1..8). Next: Build A (layout, content, pieces, materials), Build B (wire, breaching, engineer split), Build C (presenter, bridge, net, CLI); then the 480-match `tools/neutral.py` check against `9753cd9`, review, Fix. After it: the S10a AI half, then S10b.
+10. S10a fortifications, mechanics half: built, reviewed, fixed and verified on `s10a-fortifications` (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Not merged; merge waits for the owner's OK. Next: S10b (fortification AI and balance).
+
+## S10a open items (after the mechanics half)
+
+1. S17: the wire path layer marks nodes within band/2 + 2 m, so gaps under about 5.5 m do not show in path-finding, and men may cross standing wire beside a small gap.
+2. Carried material lost with dead men, and truck material lost in a wreck, is counted nowhere (a counter needs a save layout change).
+3. No Godot headless check of the truck Materials button (the mock has no truck).
+4. The breach row and T93 need AI or staging that suppresses the defenders first (S10b).
+5. tools/neutral.py: a 40-set-only run now fails against a four-set base folder; stage runs need a 40-only base folder or a set list option.
+6. Owner decisions S10a-9 to S10a-11 and S10a-1..8 (all on (A)): see the owner questions above.
 
 ## Known issues still open
 
