@@ -199,11 +199,19 @@ fn trench_ring(w: &mut World, x: i32, y: i32, h: i32) {
 /// Review of S8b (M3): an AI truck that cannot leave a ring is sent to its
 /// drop once: the point is remembered, the wheels stop, the crates come off
 /// where it stands, and no job loops on the same goal.
+///
+/// S10a-ai: the drop here was wanted by what the AI happened to buy (a
+/// point's defenders short of rounds); the engineer cards in the buy mix
+/// change that, so this scene runs with the fort switches off (the S10a
+/// buys) and `..._with_the_fort_switches_on` proves the rule with a fixed
+/// want.
 #[test]
 #[ignore = "seven game minutes; the release run has it"]
 fn an_ai_truck_does_not_loop_on_a_goal_it_cannot_reach() {
     let mut s = setup(3);
     s.players[0].is_ai = true;
+    let f = &mut s.rules.ai.fort;
+    (f.works, f.wire, f.breach, f.cards) = (0, 0, 0, 0);
     let mut w = World::new_match(s, 1).unwrap();
     trench_ring(&mut w, 620, 620, 24);
     let (tsq, t) = spawn(&mut w, 0, "ww2:ger_opel_blitz_squad", xy(620, 620));
@@ -222,6 +230,67 @@ fn an_ai_truck_does_not_loop_on_a_goal_it_cannot_reach() {
         g.vehicle(t).unwrap().cargo_g[SupplyKind::Shells.index()] < 300_000,
         "a goal it cannot reach ends like an arrival"
     );
+}
+
+/// S10a-ai twin of `an_ai_truck_does_not_loop_on_a_goal_it_cannot_reach`
+/// with every fort switch on: a built own HQ out of stock outside the ring
+/// wants crates; the truck is sent there, gives the point up, and while it
+/// remembers the point (`GAVE_UP_GOALS` = 4, latest first) never orders it
+/// again. (With the switches off the same scene re-orders the HQ once the
+/// point has been pushed out by four later give-ups, about 6 minutes on:
+/// an S8b rule, not a fort habit.)
+#[test]
+#[ignore = "seven game minutes; the release run has it"]
+fn an_ai_truck_does_not_loop_on_a_goal_it_cannot_reach_with_the_fort_switches_on() {
+    let mut s = setup(3);
+    s.players[0].is_ai = true;
+    let f = &s.rules.ai.fort;
+    assert!(f.works != 0 && f.wire != 0 && f.breach != 0 && f.cards != 0);
+    let mut w = World::new_match(s, 1).unwrap();
+    let hq = {
+        let s = w.match_setup().unwrap();
+        s.stock_of(
+            s.players[0].faction,
+            frontline_content::setup::StockKind::Hq,
+            None,
+        )
+        .unwrap()
+    };
+    let hq_at = xy(700, 700);
+    w.build_structure_now(PlayerId(0), hq, hq_at, Fx::ZERO, [0, 0, 0])
+        .unwrap();
+    trench_ring(&mut w, 620, 620, 24);
+    let (tsq, t) = spawn(&mut w, 0, "ww2:ger_opel_blitz_squad", xy(620, 620));
+    w.edit_vehicle(t, |vs| vs.cargo_g = [100_000, 100_000, 300_000]);
+    spawn(&mut w, 0, "ww2:ger_pz4_h_squad", xy(740, 620));
+    let near =
+        |a: FxVec2, b: FxVec2| (a - b).length_sq_raw() <= (FxVec2::from_int(40, 0)).length_sq_raw();
+    let (mut orders, mut gave_up_hq) = (0u32, false);
+    let mut last = None;
+    for _ in 0..30 * 60 * 7 {
+        w.step(&[]);
+        let g = w.game().unwrap();
+        let ai = g.ai(PlayerId(0)).unwrap();
+        let Some(job) = ai.trucks.get(&tsq).copied() else {
+            continue;
+        };
+        if ai.counters.truck_drops_ordered > orders {
+            orders = ai.counters.truck_drops_ordered;
+            // The goal of a new order is not one it remembered giving up.
+            let before: Option<frontline_sim::ai::AiTruck> = last;
+            let remembered =
+                before.is_some_and(|b| b.gave_up.iter().flatten().any(|&p| near(p, job.moved_to)));
+            assert!(
+                !remembered,
+                "order {orders} re-sends a remembered goal {:?}",
+                job.moved_to
+            );
+        }
+        gave_up_hq |= job.gave_up.iter().flatten().any(|&p| near(p, hq_at));
+        last = Some(job);
+    }
+    assert!(orders >= 1, "the empty HQ wants crates");
+    assert!(gave_up_hq, "the HQ goal was given up and remembered");
 }
 
 /// Review of S8b (M2): a recon car under way backs off from known armour:
