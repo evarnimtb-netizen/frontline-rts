@@ -796,3 +796,37 @@ fn fortify_s10a_rows_report_wire_roof_breach() {
             .all(|b| b.defender_men > 0 && b.attacker_men > 0)
     );
 }
+
+/// S10b Build A (spec 7, R28): a 2-match AI skirmish (both bases, the
+/// shipped AI) reports `factions.<f>.s10b` with the twelve counters and
+/// `used`, all 0: the AI uses nothing new. Control: the `s10b` insert in
+/// `json_out.rs` removed -> the block is the raw struct (2 keys; seen).
+#[test]
+fn s10b_counters_zero_without_use() {
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let file = tmp("s10b.json");
+    let _ = std::fs::remove_file(&file);
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--seed", "5", "--seeds", "1"])
+        .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--json")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains("s10b:"), "an s10b text line without use");
+    let j: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    for f in ["germany", "usa"] {
+        let b = j["factions"][f]["s10b"].as_object().expect("an s10b block");
+        assert_eq!(b.len(), 13, "{f}.s10b: twelve counters and used");
+        assert_eq!(b["used"].as_f64(), Some(0.0), "{f}.s10b.used");
+        for k in frontline_cli::skirmish::S10B_COUNTERS {
+            assert_eq!(b[k].as_f64(), Some(0.0), "{f}.s10b.{k}");
+        }
+    }
+}
