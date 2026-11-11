@@ -366,7 +366,7 @@ impl MatchState {
         let prone_pct = mv.prone_speed_pct;
         let mut form: Vec<SimId> = Vec::new();
         let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
-        let (fort, setup) = (&self.fort, &self.setup);
+        let (fort, setup, fort_off) = (&self.fort, &self.setup, self.fort_off);
         // S6: squads with a man carrying a crate walk at the slowest
         // crate's carry pace (ascending squad id, pace in %).
         let mut carrying: Vec<(SquadId, u32)> = Vec::new();
@@ -413,6 +413,9 @@ impl MatchState {
             // at `wire_speed_pct`, per man).
             let pace = |ents: &Entities, m: SimId, v: Fx| {
                 let v = stance_speed(v, ents.unit[m.index()].stance, prone_pct);
+                if fort_off {
+                    return v;
+                }
                 crate::fort::wire_pace(fort, setup, ents.transform[m.index()].pos.xy(), v)
             };
             let lpos = ctx.ents.transform[lead.index()].pos.xy();

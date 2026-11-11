@@ -2424,7 +2424,7 @@ impl MatchState {
             }
         }
         // S10a: overpressure on enemy wire (rule 4; nothing without wire).
-        if !self.fort.wire.is_empty() {
+        if !self.fort.wire.is_empty() && !self.fort_off {
             self.blast_wire(
                 ctx.terrain,
                 pos,
@@ -2726,7 +2726,7 @@ impl MatchState {
                 .min();
             // S10a: a fragment crossing enemy wire below its height before
             // the ray stops deals its share and flies on (rule 4).
-            if !self.fort.wire.is_empty() {
+            if !self.fort.wire.is_empty() && !self.fort_off {
                 let stop = [man.map(|m| m.0), boxed.map(|x| x.0), sbox.map(|x| x.0)]
                     .into_iter()
                     .flatten()
@@ -3050,7 +3050,9 @@ impl MatchState {
         let mut mbursts: Vec<crate::fire_mission::MissionBurst> = Vec::new();
         self.take_fused(fused);
         // S10a: Bangalore charges due now burst as items (rule 6).
-        self.take_charges(ctx.terrain, ctx.tick, fused);
+        if !self.fort_off {
+            self.take_charges(ctx.terrain, ctx.tick, fused);
+        }
         // S3b: the fragment budget, shared by this tick's bursts in
         // proportion to what each asks for.
         let requested: u64 = events
@@ -3116,7 +3118,10 @@ impl MatchState {
                         .statics
                         .0
                         .get(k as usize)
-                        .filter(|sb| matches!(sb.of, crate::structures::StaticRef::Piece(_)))
+                        .filter(|sb| {
+                            !self.fort_off
+                                && matches!(sb.of, crate::structures::StaticRef::Piece(_))
+                        })
                         .map(|sb| sb.armour_mm);
                     let dmg = match piece {
                         // S10a: a bullet damages a piece only when its pen
@@ -3481,6 +3486,11 @@ impl MatchState {
             for q in &mut self.path_queue.queues {
                 q.retain(|r| *r != PathReq::Squad(sid));
             }
+        }
+        // S10a: carried construction kg shrink with the squad (nothing to
+        // do without any).
+        if !self.fort_off {
+            self.trim_carried();
         }
     }
 }

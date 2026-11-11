@@ -196,7 +196,7 @@ pub struct Riding {
 impl Unit {
     /// Formation state, keeping the stance order (and the seat he rides
     /// in).
-    fn rejoin(&mut self) {
+    pub(crate) fn rejoin(&mut self) {
         *self = Unit {
             stance: self.stance,
             fire: self.fire,
@@ -669,7 +669,11 @@ impl MatchState {
             let speed = squad::stance_speed(speed, u.stance, mv.prone_speed_pct);
             let pos = ctx.ents.transform[i].pos.xy();
             // S10a: inside a wire band at `wire_speed_pct`.
-            let speed = crate::fort::wire_pace(&self.fort, &self.setup, pos, speed);
+            let speed = if self.fort_off {
+                speed
+            } else {
+                crate::fort::wire_pace(&self.fort, &self.setup, pos, speed)
+            };
             let has_target = ctx.ents.combat[i].target.is_some();
             ctx.hash.mark_entity_chunk(m.chunk());
             let u = &mut ctx.ents.unit[i];

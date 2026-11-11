@@ -357,6 +357,7 @@ impl MatchState {
                         let n = &mut k.items[w.kind.index()];
                         *n = n.saturating_add(1).min(full);
                         k.windup = None;
+                        self.placing_called_off(ents, m, w.target);
                     }
                     Some(false) => {}
                     Some(true) => {
@@ -469,6 +470,9 @@ impl MatchState {
         let armour = &self.armour;
         let setup = &self.setup;
         let players = &mut self.players;
+        // S10a: fortification pieces (nothing to test without any).
+        let statics = &self.statics.0;
+        let pieces = !self.fort.pieces.is_empty() && !self.fort_off;
         for t in self.thrown.iter_mut() {
             // Riding inside an open box.
             if let Some(i) = t.inside {
@@ -536,6 +540,41 @@ impl MatchState {
                             hit = Some((h.t, id, h));
                         }
                     }
+                }
+                // S10a: the first piece box not the thrower's player's on
+                // the step stops it: on its top (a roof, a wall's top) it
+                // comes to rest there; against a side it drops to the
+                // ground just short of it.
+                let mut piece: Option<(Fx, FxVec3, bool)> = None;
+                if pieces {
+                    for sb in statics {
+                        if !matches!(sb.of, crate::structures::StaticRef::Piece(_))
+                            || sb.owner == t.owner.0
+                            || sb.reach < Fx::ZERO
+                            || !crate::armour::segment_near(t.pos, d, sb.frame.center, sb.reach)
+                        {
+                            continue;
+                        }
+                        if let Some((pt, face, _)) = crate::armour::segment_box(&sb.frame, t.pos, d)
+                            && piece.is_none_or(|(b, _, _)| pt < b)
+                        {
+                            piece = Some((pt, t.pos + d * pt, face == crate::armour::Face::Top));
+                        }
+                    }
+                }
+                if let Some((pt, at, top)) = piece
+                    && ground_t.is_none_or(|gt| pt < gt)
+                    && hit.is_none_or(|(bt, _, _)| pt <= bt)
+                {
+                    t.landed = true;
+                    t.pos = if top {
+                        at
+                    } else {
+                        let back = d.xy().normalize_or_zero() * Fx::from_ratio(3, 10);
+                        let xy = terrain.clamp(at.xy() - back);
+                        xy.extend(terrain.height_at(xy))
+                    };
+                    break;
                 }
                 if let Some((bt, id, h)) = hit
                     && ground_t.is_none_or(|gt| bt < gt)

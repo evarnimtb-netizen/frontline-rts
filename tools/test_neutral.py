@@ -96,6 +96,23 @@ class Neutral(unittest.TestCase):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
             self.assertFalse(neutral.compare(a, b)[1])
 
+    def test_skirmish_set_missing_from_new_fails(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            for d in (a, b):
+                with open(os.path.join(d, "skirmish40.json"), "w") as f:
+                    json.dump(BASE, f)
+            with open(os.path.join(a, "skirmish160.json"), "w") as f:
+                json.dump(BASE, f)
+            lines, ok = neutral.compare(a, b)
+            self.assertFalse(ok, lines)
+            self.assertIn("skirmish160.json: only in BASE (missing from NEW)", lines)
+            self.assertIn("skirmish40.json: same 2/2", lines)
+            # Other JSON only in BASE is not compared (and does not fail).
+            os.remove(os.path.join(a, "skirmish160.json"))
+            with open(os.path.join(a, "fortify.json"), "w") as f:
+                json.dump({"pass": True}, f)
+            self.assertTrue(neutral.compare(a, b)[1])
+
     def test_first_five_differences_only(self):
         new = copy.deepcopy(BASE)
         for m in new["per_match"]:

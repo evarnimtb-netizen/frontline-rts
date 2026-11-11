@@ -139,23 +139,60 @@ fn fortify_refused_at_cap_spacing_slope_and_enemy_base() {
     assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
     fortify(&mut w, 0, eng, nest, vec![c(-5, 10), c(5, 10)]);
     assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
-    // Slope: the wall of a dug trench.
-    assert!(w.dig_pit_now(
-        &[c(700, 700), c(720, 700)],
-        frontline_content::DigProfile::Trench
-    ));
+    // Slope: tested on a ridge (`slope_reads_the_undug_ground_along_lines`).
+    assert!(fs(&w).works.is_empty());
+}
+
+/// A flat world with a north-south ridge along x = 700 (8 m high, 6 m to
+/// each side).
+fn ridge_world() -> World {
+    use frontline_content::setup::{BandSetup, Fixed, FixedVec2};
+    world_with(|s| {
+        s.map.terrain.bands.push(BandSetup {
+            from: FixedVec2::from_m([700, 550]),
+            to: FixedVec2::from_m([700, 850]),
+            height: Fixed::from_int(8),
+            half_width: Fixed::from_int(6),
+        })
+    })
+}
+
+#[test]
+fn slope_reads_the_undug_ground_along_lines() {
+    let mut w = ridge_world();
+    let wall = fort(&w, "ww2:sandbag_wall");
+    let nest = fort(&w, "ww2:mg_nest");
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 600, 600);
+    // A point on the ridge's flank.
     let steep = (0..60)
         .map(|k| {
             FxVec2::new(
-                Fx::from_int(710),
-                Fx::from_int(700) + Fx::from_milli(50 * k),
+                Fx::from_int(694) + Fx::from_milli(100 * k),
+                Fx::from_int(700),
             )
         })
         .find(|&p| crate::fort::slope_pct(&w.state.terrain, p) > 25)
-        .expect("a steep trench wall");
+        .expect("a steep flank");
     fortify(&mut w, 0, eng, nest, vec![steep, steep + c(5, 0)]);
     assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
+    // A wall whose two ends lie on flat ground but which crosses the
+    // ridge: refused (sampled along its length).
+    assert_eq!(crate::fort::slope_pct(&w.state.terrain, c(690, 650)), 0);
+    assert_eq!(crate::fort::slope_pct(&w.state.terrain, c(710, 650)), 0);
+    fortify(&mut w, 0, eng, wall, vec![c(690, 650), c(710, 650)]);
+    assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
     assert!(fs(&w).works.is_empty());
+    // Beside a dug trench (1.5 m off its centre line, a sample falls in
+    // it): the undug ground is flat, so the wall is accepted.
+    assert!(w.dig_pit_now(
+        &[c(300, 300), c(320, 300)],
+        frontline_content::DigProfile::Trench
+    ));
+    let by = FxVec2::new(Fx::from_int(305), Fx::from_milli(301_500));
+    let t = &w.state.terrain;
+    assert!(t.base_height_at(by + c(0, -1)) - t.height_at(by + c(0, -1)) > Fx::from_ratio(1, 2));
+    fortify(&mut w, 0, eng, wall, vec![by, by + c(10, 0)]);
+    assert_eq!(fs(&w).works.len(), 1, "{:?}", refused(&w));
 }
 
 #[test]
@@ -311,15 +348,45 @@ fn at(w: &World, x: i32, y: i32, z_cm: i32) -> FxVec3 {
 
 #[test]
 fn rifle_rounds_do_not_damage_sandbags() {
-    let mut w = world();
-    let id = wall_at(&mut w, 0);
-    let rifle = weapon(&w, "ww2:m1_garand");
-    for _ in 0..20 {
-        let (from, to) = (at(&w, 480, 500, 50), at(&w, 520, 500, 50));
-        assert!(w.fire_round_now(1, rifle, from, to));
-        steps(&mut w, HZ);
-    }
-    assert_eq!(hp(&w, id), Some(400));
+    // Twenty Garand rounds at a wall (armour `armour`, or none) with a man
+    // of the wall's owner 10 m behind it: (wall hp, the man's hp).
+    let volley = |armour: Option<u32>| {
+        let mut w = world_with(|s| {
+            for f in s.forts.iter_mut() {
+                for p in f.pieces.iter_mut() {
+                    p.armour_mm = armour.unwrap_or(100);
+                }
+            }
+        });
+        let id = armour.map(|_| wall_at(&mut w, 0));
+        let sq = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 300, 300);
+        let man = members(&w, sq)[0];
+        w.place_soldier(man, c(510, 500));
+        steps(&mut w, 1);
+        let rifle = weapon(&w, "ww2:m1_garand");
+        for _ in 0..20 {
+            let (from, to) = (at(&w, 480, 500, 50), at(&w, 520, 500, 50));
+            assert!(w.fire_round_now(1, rifle, from, to));
+            steps(&mut w, HZ);
+        }
+        (
+            id.and_then(|id| hp(&w, id)),
+            w.state.entities.combat[man.index()].hp,
+        )
+    };
+    let full = {
+        let mut w = world();
+        let sq = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 300, 300);
+        w.state.entities.combat[members(&w, sq)[0].index()].hp
+    };
+    // Armour 100: no damage, and the rounds stop at the wall.
+    assert_eq!(volley(Some(100)), (Some(400), full));
+    // Control: the same rounds hit the man with no wall in the way...
+    assert!(volley(None).1 < full, "the rounds reach the man");
+    // ...and damage a thin (1 mm) wall they reach.
+    let (thin, man) = volley(Some(1));
+    assert!(thin.is_none_or(|h| h < 400), "a thin wall takes the rounds");
+    assert_eq!(man, full, "and stops them");
 }
 
 #[test]
@@ -448,6 +515,12 @@ fn mg_nest_digs_its_pit_then_builds_its_ring() {
 /// A dugout of player 0 at (500, 500) (pit dug, roof built) with five men
 /// of a rifle squad under the roof.
 fn dugout(w: &mut World) -> (u32, Vec<SimId>) {
+    let (roof, men) = dugout_pit(w, true);
+    (roof.expect("roofed"), men)
+}
+
+/// [`dugout`], or (`roofed` false) only its pit with the five men in it.
+fn dugout_pit(w: &mut World, roofed: bool) -> (Option<u32>, Vec<SimId>) {
     let f = fort(w, "ww2:dugout");
     let pit = w.match_setup().unwrap().rules.dugout_pit.pit_line;
     let half = Fx::from(pit).div_int(2).max(Fx::from_milli(100));
@@ -457,8 +530,10 @@ fn dugout(w: &mut World) -> (u32, Vec<SimId>) {
         &[FxVec2::new(x - half, y), FxVec2::new(x + half, y)],
         frontline_content::DigProfile::DugoutPit
     ));
-    assert!(w.build_now(f, &[c(500, 500), c(510, 500)], PlayerId(0)));
-    let roof = pieces_of(w, f)[0];
+    let roof = roofed.then(|| {
+        assert!(w.build_now(f, &[c(500, 500), c(510, 500)], PlayerId(0)));
+        pieces_of(w, f)[0]
+    });
     let sq = spawn(w, 0, "ww2:ger_grenadiergruppe", 500, 500);
     let men: Vec<SimId> = members(w, sq).into_iter().take(5).collect();
     for (k, &m) in members(w, sq).iter().enumerate() {
@@ -473,34 +548,174 @@ fn dugout(w: &mut World) -> (u32, Vec<SimId>) {
     (roof, men)
 }
 
-fn alive(w: &World, men: &[SimId]) -> usize {
+/// Hit points of `men` (a full man has `combat.hp` of a fresh soldier).
+fn hps(w: &World, men: &[SimId]) -> Vec<u16> {
     men.iter()
-        .filter(|m| w.state.entities.combat[m.index()].hp > 0)
-        .count()
+        .map(|m| w.state.entities.combat[m.index()].hp)
+        .collect()
 }
 
 #[test]
 fn dugout_roof_survives_an_81mm_hit() {
-    let mut w = world();
-    let (roof, men) = dugout(&mut w);
-    let mortar = weapon(&w, "ww2:m1_mortar");
-    assert!(w.drop_shell_now(1, mortar, c(500, 500)));
-    steps(&mut w, 2 * HZ);
-    assert!(hp(&w, roof).is_some_and(|h| h > 0), "the roof stands");
-    assert_eq!(alive(&w, &men), 5, "nobody under it is lost");
+    let bomb = |roofed: bool| {
+        let mut w = world();
+        let (roof, men) = dugout_pit(&mut w, roofed);
+        let before = hps(&w, &men);
+        let mortar = weapon(&w, "ww2:m1_mortar");
+        assert!(w.drop_shell_now(1, mortar, c(500, 500)));
+        steps(&mut w, 2 * HZ);
+        let dmg = w.match_setup().unwrap().weapons[mortar as usize].damage;
+        (roof.map(|r| hp(&w, r)), before, hps(&w, &men), dmg)
+    };
+    // The bomb bursts on the roof: the roof takes its overpressure damage
+    // and stands; the men under it are not touched.
+    let (roof, before, after, dmg) = bomb(true);
+    assert_eq!(roof, Some(Some(250 - dmg)), "the roof takes the bomb");
+    assert_eq!(after, before, "nobody under it is hurt");
+    // Control: the same bomb into the open pit hurts them.
+    let (_, before, after, _) = bomb(false);
+    assert!(
+        after.iter().zip(&before).any(|(a, b)| a < b),
+        "the open pit is hit"
+    );
+}
+
+/// The top of piece `id` (m).
+fn top_of(w: &World, id: u32) -> Fx {
+    let q = &fs(w).pieces[&id];
+    let b = &w.match_setup().unwrap().forts[q.fort as usize].pieces[q.part as usize];
+    q.z + Fx::from(b.half[2]).mul_int(2)
+}
+
+/// Steps `ticks`, holding `men` where they stand (they would run from
+/// the item before its fuse ends). The height of the first burst of item
+/// `item`, if one went off.
+fn hold_and_step(w: &mut World, men: &[SimId], item: u16, ticks: u64) -> Option<f32> {
+    let spots: Vec<FxVec2> = men
+        .iter()
+        .map(|m| w.state.entities.transform[m.index()].pos.xy())
+        .collect();
+    let mut z = None;
+    for _ in 0..ticks {
+        for (m, p) in men.iter().zip(&spots) {
+            w.place_soldier(*m, *p);
+        }
+        w.step(&[]);
+        if z.is_none()
+            && let Some(e) = w.snapshot().explosions.iter().find(|e| e.weapon == item)
+        {
+            z = Some(e.pos[2]);
+        }
+    }
+    z
+}
+
+/// Drops item `kind` of player 1 from 2 m above `roof`'s top at (500,
+/// 500) and steps 5 s with `men` held in place. The burst's height.
+fn drop_on_roof(
+    w: &mut World,
+    roof: u32,
+    men: &[SimId],
+    kind: frontline_content::ItemKind,
+) -> Option<f32> {
+    // The thrower's squad far off (out of the fight).
+    let sq = spawn(w, 1, "ww2:usa_engineer_squad", 900, 100);
+    let thrower = members(w, sq)[0];
+    let item = item_of(w, kind);
+    let p = c(500, 500);
+    let above = top_of(w, roof) + Fx::from_int(2) - w.state.terrain.height_at(p);
+    assert!(w.drop_item_now(thrower, item, p, above));
+    hold_and_step(w, men, item, 5 * HZ)
 }
 
 #[test]
 fn dugout_roof_breaks_under_a_satchel() {
+    // A satchel dropped onto the roof comes to rest on it and bursts there
+    // (S10a fix S7: before, it fell through onto the pit floor): its
+    // overpressure (300) breaks the roof (250 hp). The men under it are
+    // not hurt: the roof stops that burst's overpressure (men are blasted
+    // before boxes). Its fragments come after the roof broke and could
+    // pass the broken box; on this staging none reaches the men.
     let mut w = world();
-    let (roof, _) = dugout(&mut w);
-    let sq = spawn(&mut w, 1, "ww2:usa_engineer_squad", 560, 540);
-    let thrower = members(&w, sq)[0];
-    let satchel = item_of(&w, frontline_content::ItemKind::Satchel);
-    assert!(w.drop_item_now(thrower, satchel, c(500, 500), Fx::from_int(2)));
-    steps(&mut w, 5 * HZ);
+    let (roof, men) = dugout(&mut w);
+    let top = top_of(&w, roof).to_f32();
+    let before = hps(&w, &men);
+    let z =
+        drop_on_roof(&mut w, roof, &men, frontline_content::ItemKind::Satchel).expect("it burst");
+    assert!(
+        (z - top).abs() < 0.05,
+        "on the roof: burst at {z}, top {top}"
+    );
     assert_eq!(hp(&w, roof), None, "the roof breaks");
     assert_eq!(fs(&w).accounts[0].pieces_lost, 1);
+    assert_eq!(hps(&w, &men), before, "the men under it are covered");
+}
+
+#[test]
+fn a_grenade_on_a_dugout_roof_hurts_nobody_inside() {
+    // A hand grenade on the roof: it rests and bursts there; the roof takes
+    // its overpressure (150 < 250 hp) and stands; the men are untouched.
+    let mut w = world();
+    let (roof, men) = dugout(&mut w);
+    let top = top_of(&w, roof).to_f32();
+    let before = hps(&w, &men);
+    let z = drop_on_roof(&mut w, roof, &men, frontline_content::ItemKind::Frag).expect("it burst");
+    assert!(
+        (z - top).abs() < 0.05,
+        "on the roof: burst at {z}, top {top}"
+    );
+    assert!(hp(&w, roof).is_some_and(|h| h < 250), "the roof takes it");
+    assert_eq!(hps(&w, &men), before, "nobody inside is hurt");
+    // Control: the same grenade into the open pit.
+    let mut w = world();
+    let (_, men) = dugout_pit(&mut w, false);
+    let before = hps(&w, &men);
+    let sq = spawn(&mut w, 1, "ww2:usa_engineer_squad", 900, 100);
+    let thrower = members(&w, sq)[0];
+    let frag = item_of(&w, frontline_content::ItemKind::Frag);
+    assert!(w.drop_item_now(thrower, frag, c(500, 500), Fx::from_int(2)));
+    hold_and_step(&mut w, &men, frag, 5 * HZ).expect("it burst");
+    let after = hps(&w, &men);
+    assert!(
+        after.iter().zip(&before).any(|(a, b)| a < b),
+        "the open pit is hit"
+    );
+}
+
+#[test]
+fn a_wall_piece_covers_a_man_from_overpressure() {
+    // A satchel (fragments off: overpressure only) 1.5 m in front of an
+    // enemy wall, its owner's man 1.2 m behind it (inside the 4 m blast):
+    // the wall stops the overpressure (rule 3, `piece_between`); without
+    // the wall he is hit.
+    let blast = |walled: bool| {
+        let mut w = world_with(|s| {
+            for it in s.items.iter_mut() {
+                if let Some(he) = it.he.as_mut() {
+                    he.blast.frag_count = 0;
+                }
+            }
+        });
+        if walled {
+            wall_at(&mut w, 0);
+        }
+        let sq = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 300, 300);
+        let man = members(&w, sq)[0];
+        w.place_soldier(man, FxVec2::new(Fx::from_milli(501_200), Fx::from_int(500)));
+        steps(&mut w, 1);
+        let before = w.state.entities.combat[man.index()].hp;
+        let ts = spawn(&mut w, 1, "ww2:usa_engineer_squad", 900, 100);
+        let thrower = members(&w, ts)[0];
+        let satchel = item_of(&w, frontline_content::ItemKind::Satchel);
+        let p = FxVec2::new(Fx::from_milli(498_500), Fx::from_int(500));
+        assert!(w.drop_item_now(thrower, satchel, p, Fx::from_ratio(1, 10)));
+        hold_and_step(&mut w, &[man], satchel, 5 * HZ).expect("it burst");
+        (before, w.state.entities.combat[man.index()].hp)
+    };
+    let (before, after) = blast(true);
+    assert_eq!(after, before, "covered by the wall");
+    let (before, after) = blast(false);
+    assert!(after < before, "hit in the open");
 }
 
 #[test]
@@ -546,6 +761,37 @@ fn hq_roof_only_over_an_own_built_hq() {
         Some(FortRefusal::BadSpot | FortRefusal::Cap)
     ));
     assert_eq!(fs(&w).works.len(), 1);
+}
+
+#[test]
+fn hq_roof_refused_over_an_already_roofed_hq() {
+    // The cap raised to 3: only the "already roofed" rule can refuse.
+    let mut w = world_with(|s| {
+        for f in s.forts.iter_mut().filter(|f| f.id == "ww2:hq_dugout") {
+            f.limit_per_player = 3;
+        }
+    });
+    let f = fort(&w, "ww2:hq_dugout");
+    let hq = def(&w, 0, StockKind::Hq, None);
+    let a = add_built(&mut w, 0, hq, c(600, 600), [0, 0, 0]);
+    let b = add_built(&mut w, 0, hq, c(700, 600), [0, 0, 0]);
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 620, 620);
+    fortify(&mut w, 0, eng, f, vec![c(600, 600), c(610, 600)]);
+    assert_eq!(fs(&w).works.values().next().unwrap().hq, Some(a));
+    // A second roof over the same HQ (a work under way): BadSpot.
+    let eng2 = spawn(&mut w, 0, "ww2:ger_engineer_squad", 640, 620);
+    fortify(&mut w, 0, eng2, f, vec![c(600, 600), c(610, 600)]);
+    assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
+    assert_eq!(fs(&w).works.len(), 1);
+    // Over a built roof too.
+    assert!(w.build_now(f, &[c(700, 600), c(710, 600)], PlayerId(0)));
+    assert!(fs(&w).pieces.values().any(|q| q.hq == Some(b)));
+    fortify(&mut w, 0, eng2, f, vec![c(700, 600), c(710, 600)]);
+    assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
+    // A third, unroofed HQ: accepted.
+    let third = add_built(&mut w, 0, hq, c(800, 600), [0, 0, 0]);
+    fortify(&mut w, 0, eng2, f, vec![c(800, 600), c(810, 600)]);
+    assert!(fs(&w).works.values().any(|wk| wk.hq == Some(third)));
 }
 
 #[test]
@@ -645,17 +891,52 @@ fn load_rejects_bad_fort_state() {
 
 #[test]
 fn empty_fort_state_changes_nothing() {
+    // An AI-vs-AI skirmish on the real map (hills, woods) for 15 game
+    // minutes, once as built and once with the test switch `fort_off`
+    // sending every S10a hook down its pre-S10a path (wire pace and path
+    // layer, piece statics, thrown items on pieces, overhead cover, wire
+    // blast and fragments, piece damage gates, charges, the fort stage):
+    // nothing is built, so each hook must leave play exactly as it was.
+    // Full state hashes are compared every second. (What the switch cannot
+    // reach, the new defs and setup bytes, is the 40/160-set neutral.py
+    // comparison against the base binary.)
     let run_ai = |off: bool| {
-        let mut w = flat_world_with(1, |s| s.players.iter_mut().for_each(|p| p.is_ai = true));
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+        let defs = frontline_content::ModDefs::load(&root).unwrap();
+        let req = frontline_content::MatchRequest::skirmish(
+            3,
+            "ww2:germany",
+            "ww2:usa",
+            frontline_content::Difficulty::Normal,
+        );
+        let mut setup = defs.resolve(&req).unwrap();
+        setup.players.iter_mut().for_each(|p| p.is_ai = true);
+        let mut w = World::new_match(setup, 1).unwrap();
         w.state.game.as_mut().unwrap().fort_off = off;
-        steps(&mut w, 600);
+        let mut hashes = Vec::new();
+        for t in 0..15 * 60 * HZ {
+            w.step(&[]);
+            if t % HZ == 0 {
+                hashes.push(w.full_state_hash());
+            }
+        }
         assert!(w.game().unwrap().fort().is_empty());
-        (w.state_hash(), w.state.entities.clone())
+        let losses: u32 = w.game().unwrap().players.iter().map(|p| p.losses).sum();
+        (
+            hashes,
+            losses,
+            w.state.stats.throws,
+            w.state.stats.frag_rays,
+        )
     };
-    let (h_on, e_on) = run_ai(false);
-    let (h_off, e_off) = run_ai(true);
-    assert_eq!(h_on, h_off);
-    assert!(e_on == e_off, "entity state differs");
+    let (on, losses, throws, rays) = run_ai(false);
+    let (off, ..) = run_ai(true);
+    assert!(
+        losses > 0 && throws > 0 && rays > 0,
+        "a fight: {losses} losses, {throws} throws, {rays} fragment rays"
+    );
+    let first = on.iter().zip(&off).position(|(a, b)| a != b);
+    assert_eq!(first, None, "hashes differ from second {first:?}");
 }
 
 // ------------------------------------------------------------ Build B --
@@ -1222,4 +1503,166 @@ fn fort_snapshot_lists_pieces_wire_sites_charges() {
     );
     w.step(&[]);
     assert!(w.snapshot().fort_refusals.is_empty());
+}
+
+// ------------------------------------------------------- Fix (review) --
+
+#[test]
+fn carried_kg_follow_casualties_and_save() {
+    let mut w = world();
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 500, 500);
+    let men = members(&w, eng);
+    let per = 20_000u32;
+    carry(&mut w, eng, 20 * men.len() as u32);
+    // One man killed: the kg shrink to what the rest may carry.
+    assert!(w.kill_soldier(men[0]));
+    assert_eq!(fs(&w).carried_g[&eng], per * (men.len() as u32 - 1));
+    steps(&mut w, 2);
+    let back = World::load(&w.save(), 1).expect("loads after a casualty");
+    assert_eq!(back.game().unwrap().fort(), fs(&w));
+    // Every man killed: the entry goes with the squad.
+    for &m in &men[1..] {
+        assert!(w.kill_soldier(m));
+    }
+    assert!(!fs(&w).carried_g.contains_key(&eng));
+    steps(&mut w, 2);
+    assert!(World::load(&w.save(), 1).is_ok(), "loads after a wipe-out");
+}
+
+#[test]
+fn wrecked_truck_loses_its_material_and_saves() {
+    let mut w = world();
+    let truck = spawn(&mut w, 0, "ww2:ger_opel_blitz_squad", 510, 500);
+    let tv = members(&w, truck)[0];
+    w.edit_vehicle(tv, |v| v.material_g = 80_000);
+    assert!(w.wreck_vehicle(tv));
+    assert_eq!(w.game().unwrap().vehicles[&tv].material_g, 0);
+    steps(&mut w, 2);
+    assert!(World::load(&w.save(), 1).is_ok(), "loads after the wreck");
+}
+
+#[test]
+fn truck_auto_load_counts_its_material() {
+    let mut w = world();
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    let truck = spawn(&mut w, 0, "ww2:ger_opel_blitz_squad", 0, 0);
+    let tv = members(&w, truck)[0];
+    w.place_squad(truck, base, FxVec2::new(Fx::ONE, Fx::ZERO));
+    w.edit_vehicle(tv, |v| v.cargo_g = [0; 3]);
+    let cap = {
+        let g = w.game().unwrap();
+        let ty = g.vehicles[&tv].type_idx as usize;
+        g.setup.vehicles[ty].supply.unwrap().cap_g
+    };
+    // Material for all but 100 kg of the cap, then the auto-load.
+    run(
+        &mut w,
+        0,
+        0,
+        CommandKind::LoadMaterials {
+            squad: truck,
+            kg: (cap / 1000 - 100) as u16,
+        },
+    );
+    assert_eq!(w.game().unwrap().vehicles[&tv].material_g, cap - 100_000);
+    steps(&mut w, 120 * HZ);
+    let vs = &w.game().unwrap().vehicles[&tv];
+    let held: u32 = vs.cargo_g.iter().sum::<u32>() + vs.material_g;
+    assert!(vs.cargo_g.iter().sum::<u32>() > 0, "it loaded some cargo");
+    assert!(held <= cap, "{held} > {cap}");
+    assert!(World::load(&w.save(), 1).is_ok());
+}
+
+#[test]
+fn point_fortify_refuses_an_off_map_facing_point() {
+    let mut w = world();
+    let nest = fort(&w, "ww2:mg_nest");
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 20, 500);
+    fortify(&mut w, 0, eng, nest, vec![c(3, 500), c(-2, 500)]);
+    assert_eq!(refused(&w), Some(FortRefusal::BadSpot));
+    assert!(fs(&w).works.is_empty());
+    // Facing inward: accepted, and the state saves and loads.
+    fortify(&mut w, 0, eng, nest, vec![c(3, 500), c(8, 500)]);
+    assert_eq!(fs(&w).works.len(), 1);
+    steps(&mut w, 2);
+    assert!(World::load(&w.save(), 1).is_ok());
+}
+
+#[test]
+fn load_rejects_a_dig_step_without_a_pit_and_the_tick_never_panics() {
+    let (w, eng) = busy();
+    let bytes = w.save();
+    // A sandbag wall (no pit) work at the Dig step; an over_hq-less roof.
+    let bad: Vec<FortEdit> = vec![
+        Box::new(|f| f.works.values_mut().next().unwrap().step = WorkStep::Dig),
+        Box::new(|f| f.works.values_mut().next().unwrap().hq = Some(0)),
+    ];
+    for (k, e) in bad.into_iter().enumerate() {
+        let mut x = World::load(&bytes, 1).unwrap();
+        x.edit_fort(|f| e(f));
+        assert!(World::load(&x.save(), 1).is_err(), "bad state {k} loaded");
+    }
+    let mut x = World::load(&bytes, 1).unwrap();
+    let roof = fort(&x, "ww2:hq_dugout");
+    x.edit_fort(|f| f.works.values_mut().next().unwrap().fort = roof);
+    assert!(
+        World::load(&x.save(), 1).is_err(),
+        "a roof work with no HQ loaded"
+    );
+    // The tick on such a state (not loaded: edited) removes the work.
+    let mut x = World::load(&bytes, 1).unwrap();
+    x.edit_fort(|f| f.works.values_mut().next().unwrap().step = WorkStep::Dig);
+    run(&mut x, 0, 9, CommandKind::Stop { squad: eng });
+    assert!(fs(&x).works.is_empty());
+}
+
+#[test]
+fn roof_work_whose_hq_goes_sets_its_builder_idle() {
+    let mut w = world();
+    let f = fort(&w, "ww2:hq_dugout");
+    let hq = def(&w, 0, StockKind::Hq, None);
+    let sid = add_built(&mut w, 0, hq, c(600, 600), [0, 0, 0]);
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 620, 620);
+    fortify(&mut w, 0, eng, f, vec![c(600, 600), c(610, 600)]);
+    let id = *fs(&w).works.keys().next().expect("accepted");
+    assert_eq!(
+        w.game().unwrap().squads[&eng].order,
+        Order::Fortify { work: id }
+    );
+    w.edit_supply6(|s| {
+        s.structures.remove(&sid);
+    });
+    steps(&mut w, 1);
+    assert!(fs(&w).works.is_empty());
+    assert_eq!(w.game().unwrap().squads[&eng].order, Order::Idle);
+}
+
+#[test]
+fn called_off_bangalore_carrier_rejoins_his_squad() {
+    let mut w = world();
+    let s = spawn(&mut w, 0, "ww2:ger_sturmpioniergruppe", 500, 440);
+    place(&mut w, 0, s, c(500, 500));
+    steps(&mut w, HZ);
+    let k = frontline_content::ItemKind::Bangalore;
+    let m = members(&w, s)
+        .into_iter()
+        .find(|m| {
+            w.state.entities.kit[m.index()]
+                .windup
+                .is_some_and(|x| x.kind == k)
+        })
+        .expect("a carrier walks");
+    assert!(w.state.entities.unit[m.index()].detached);
+    // Pinned on the way: the placing is called off.
+    w.edit_soldier(m, |_, c| c.pinned = true);
+    steps(&mut w, 1);
+    let u = &w.state.entities.unit[m.index()];
+    assert!(w.state.entities.kit[m.index()].windup.is_none());
+    assert!(!u.detached, "he rejoins his squad");
+    assert_eq!(u.order, crate::unit::UnitOrder::Idle);
+    assert_eq!(
+        w.state.entities.kit[m.index()].items[k.index()],
+        1,
+        "item back"
+    );
 }

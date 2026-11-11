@@ -13,6 +13,9 @@ Compares the CLI JSON files present in both directories:
 * any other JSON in both (fortify-test, armour-test): every BASE value
   equal (keys only in NEW are allowed: new rows).
 
+A skirmish set in BASE but missing from NEW fails (`X: only in BASE`). Other
+JSON is compared only when present in both.
+
 Prints one line per file (`same 40/40` or the first 5 differences) and exits
 0 only when every file compared is equal (and at least one was compared).
 """
@@ -133,6 +136,14 @@ def compare(base_dir, new_dir):
                 lines.extend(f"    {x}" for x in d[:5])
             else:
                 lines.append(f"{f}: same (every BASE row)")
+    # A skirmish set measured for BASE must be in NEW too (a crashed or
+    # unfinished batch is not a pass).
+    for f in SKIRMISH:
+        if os.path.isfile(os.path.join(base_dir, f)) and not os.path.isfile(
+            os.path.join(new_dir, f)
+        ):
+            lines.append(f"{f}: only in BASE (missing from NEW)")
+            ok = False
     if n == 0:
         lines.append("no JSON file in both directories")
         ok = False

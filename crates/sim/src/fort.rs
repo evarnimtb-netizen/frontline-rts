@@ -255,6 +255,15 @@ impl FortState {
             if w.got_g > d.materials_g {
                 return Err("work holds more kg than its step needs");
             }
+            if w.step == WorkStep::Dig && d.pit.is_none() {
+                return Err("work digs a pit its blueprint has not");
+            }
+            if (d.shape == FortShape::OverHq) != w.hq.is_some() {
+                return Err("work roofs no HQ, or an HQ it is not over");
+            }
+            if d.shape != FortShape::Line && w.line.len() != 2 {
+                return Err("point work without its facing point");
+            }
         }
         for (&id, p) in &self.pieces {
             let Some(d) = fort(p.fort) else {
@@ -443,9 +452,12 @@ impl MatchState {
                 .any(|o| in_own_base(&self.setup, PlayerId(o as u8), q))
         };
         let pts: &[FxVec2] = if point { &line[..1] } else { line };
-        if pts.iter().any(|&q| {
-            !ctx.terrain.contains(q) || enemy_base(q) || slope_pct(ctx.terrain, q) > d.max_slope_pct
-        }) {
+        // Every point on the map (a point site's facing point too: it is
+        // stored with the work); the site's points (and a line's every
+        // path-node step along it) on fair ground outside enemy bases.
+        if line.iter().any(|&q| !ctx.terrain.contains(q))
+            || along(pts).any(|q| enemy_base(q) || slope_pct(ctx.terrain, q) > d.max_slope_pct)
+        {
             return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
         }
         let need = if point { 1 } else { segments(line, d.segment) };
@@ -602,6 +614,31 @@ impl MatchState {
         true
     }
 
+    /// Carried kg follow the squads that carry them: a squad gone (wiped
+    /// out, boarded, merged) loses its kg, and one that lost men keeps at
+    /// most `carry_kg_per_man` per man left (the rest is lost with the men;
+    /// no counter). Nothing to do with nothing carried.
+    pub(crate) fn trim_carried(&mut self) {
+        if self.fort.carried_g.is_empty() {
+            return;
+        }
+        let per_man = self
+            .setup
+            .rules
+            .fortify
+            .as_ref()
+            .map_or(0, |f| f.carry_kg_per_man as u64 * 1000);
+        let squads = &self.squads;
+        self.fort.carried_g.retain(|sid, g| {
+            let Some(q) = squads.get(sid) else {
+                return false;
+            };
+            let cap = (per_man * q.members.len() as u64).min(u32::MAX as u64) as u32;
+            *g = (*g).min(cap);
+            *g > 0
+        });
+    }
+
     /// The point a work's current step builds at: a point site, or the
     /// middle of the line's current segment.
     pub(crate) fn site_of(&self, w: &Work) -> (FxVec2, Fx) {
@@ -630,6 +667,8 @@ impl MatchState {
         if self.fort.is_empty() || self.fort_off {
             return;
         }
+        // Squads boarded, recrewed or sent home this tick lose their kg.
+        self.trim_carried();
         let Some(t) = self.setup.rules.fortify.clone() else {
             return;
         };
@@ -668,14 +707,24 @@ impl MatchState {
                     _ => order == Some(Order::Fortify { work: id }),
                 };
             if !keep {
+                // Its builder, still on it (its HQ went), stops.
                 self.fort.works.remove(&id);
+                if let Some(q) = self.squads.get_mut(&w.builder)
+                    && q.order == (Order::Fortify { work: id })
+                {
+                    q.order = Order::Idle;
+                }
                 continue;
             }
             if w.step == WorkStep::Dig {
                 if matches!(order, Some(Order::Dig { .. })) {
                     continue;
                 }
-                let pit = d.pit.expect("a pit work");
+                let Some(pit) = d.pit else {
+                    // Never on a validated state: no pit to wait for.
+                    self.fort.works.remove(&id);
+                    continue;
+                };
                 let depth = Fx::from(self.setup.rules.dig_profile(pit).depth);
                 let c = w.line[0];
                 let dug = terrain.base_height_at(c) - terrain.height_at(c);
@@ -963,7 +1012,7 @@ impl MatchState {
     /// Section 5 rule 3: whether a piece not owned by `player` stands on
     /// the segment `a -> b` (false at once without pieces).
     pub(crate) fn piece_between(&self, a: FxVec3, b: FxVec3, player: u8) -> bool {
-        if self.fort.pieces.is_empty() {
+        if self.fort.pieces.is_empty() || self.fort_off {
             return false;
         }
         let d = b - a;
@@ -1524,6 +1573,33 @@ impl MatchState {
         }
     }
 
+    /// A called-off placing (`placing` gave `None`): a carrier still on
+    /// his placing walk (or standing where it ended) stops and rejoins his
+    /// squad; a man the player gave another order keeps it.
+    pub(crate) fn placing_called_off(&mut self, ents: &mut Entities, m: SimId, target: FxVec2) {
+        use crate::unit::UnitOrder;
+        let i = m.index();
+        let u = &ents.unit[i];
+        if ents.kind[i] != crate::ecs::EntityKind::Soldier || !u.detached {
+            return;
+        }
+        let walk = match u.order {
+            UnitOrder::Idle => true,
+            UnitOrder::Move { target: t } => {
+                (t - target).length_sq_raw() <= (PLACE_REACH.raw() as u64).pow(2)
+            }
+            _ => false,
+        };
+        if !walk {
+            return;
+        }
+        ents.unit[i].rejoin();
+        let owner = ents.owner[i].0 as usize;
+        if let Some(q) = self.path_queue.queues.get_mut(owner) {
+            q.retain(|r| *r != crate::game::PathReq::Unit(m));
+        }
+    }
+
     /// Lays the charge of Bangalore item `item` that `m` (of `owner`)
     /// placed toward `target`: from his spot `length` toward it; it bursts
     /// at `tick + fuse`. False (item kept) when the list is full.
@@ -1636,11 +1712,25 @@ pub(crate) fn segments(line: &[FxVec2], segment: frontline_content::setup::Fixed
     }
 }
 
-/// The ground slope at `p` (%): the steeper of the x and y differences
-/// over 2 m.
+/// The points of `pts` and, along each segment, one every path-node step
+/// (4 m; at least the far end).
+fn along(pts: &[FxVec2]) -> impl Iterator<Item = FxVec2> + '_ {
+    pts.first()
+        .copied()
+        .into_iter()
+        .chain(pts.windows(2).flat_map(|w| {
+            let d = w[1] - w[0];
+            let n = (d.length().floor_int() / NODE_M + 1).max(1);
+            (1..=n).map(move |k| w[0] + d.mul_int(k).div_int(n))
+        }))
+}
+
+/// The slope of the undug ground at `p` (%): the steeper of the x and y
+/// differences over 2 m of the base terrain (trenches, pits, spoil and
+/// craters do not count: a site beside a trench is on fair ground).
 pub(crate) fn slope_pct(terrain: &Heightfield, p: FxVec2) -> u32 {
     let one = Fx::ONE;
-    let h = |dx: Fx, dy: Fx| terrain.height_at(terrain.clamp(FxVec2::new(p.x + dx, p.y + dy)));
+    let h = |dx: Fx, dy: Fx| terrain.base_height_at(terrain.clamp(FxVec2::new(p.x + dx, p.y + dy)));
     let sx = (h(one, Fx::ZERO) - h(-one, Fx::ZERO)).abs();
     let sy = (h(Fx::ZERO, one) - h(Fx::ZERO, -one)).abs();
     (sx.max(sy).mul_int(50)).floor_int().max(0) as u32

@@ -699,8 +699,11 @@ pub struct MatchState {
     /// `supply_events` (never saved, hashed or read by the sim).
     #[serde(skip)]
     pub(crate) fort_events: Vec<crate::fort::FortEvent>,
-    /// S10a test switch (`empty_fort_state_changes_nothing`): skip the fort
-    /// stage. Never saved or hashed; false in play.
+    /// S10a test switch (`empty_fort_state_changes_nothing`): every S10a
+    /// hook (fort stage, wire pace and path layer, piece statics, thrown
+    /// items on pieces, overhead cover, wire blast and fragments, piece
+    /// damage gates, charges, carried-kg trim) takes the pre-S10a path.
+    /// Never saved or hashed; false in play.
     #[serde(skip)]
     pub(crate) fort_off: bool,
 }
@@ -1875,7 +1878,7 @@ impl MatchState {
         // Infantry: AT-ditch costs once a match has ditches (S3).
         let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
         // S10a: the wire layer, built only when wire stands.
-        let wire_nodes = if self.fort.wire.is_empty() {
+        let wire_nodes = if self.fort.wire.is_empty() || self.fort_off {
             Vec::new()
         } else {
             self.fort.wire_nodes(&self.setup.forts, terrain.dim())

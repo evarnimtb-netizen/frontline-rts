@@ -1588,8 +1588,16 @@ impl MatchState {
             let p = t.owner.0 as usize;
             for kind in SupplyKind::ALL {
                 let k = kind.index();
-                let held = self.vehicles[&t.id].cargo_g[k];
-                let room = d.load_g[k].min(d.cap_g).saturating_sub(held);
+                let vs = &self.vehicles[&t.id];
+                let held = vs.cargo_g[k];
+                let mut room = d.load_g[k].min(d.cap_g).saturating_sub(held);
+                // S10a: construction material shares the cap (cargo plus
+                // material within `cap_g`); without material as before.
+                if vs.material_g > 0 {
+                    let all =
+                        vs.cargo_g.iter().map(|&g| g as u64).sum::<u64>() + vs.material_g as u64;
+                    room = room.min((d.cap_g as u64).saturating_sub(all) as u32);
+                }
                 if room == 0 {
                     continue;
                 }
@@ -1874,6 +1882,9 @@ impl MatchState {
         }
         // S10a: pieces after the S6 boxes and crates (S6 indices and ray
         // ties unchanged).
+        if self.fort_off {
+            return;
+        }
         for (&id, q) in &self.fort.pieces {
             let b = &self.setup.forts[q.fort as usize].pieces[q.part as usize];
             let half = FxVec3::new(b.half[0].into(), b.half[1].into(), b.half[2].into());
