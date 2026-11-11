@@ -15,16 +15,10 @@ sites on the map, keys are the player's squads. **Deviation:** a key whose squad
 squads die between plans), so Build B must drop such jobs at plan start.
 **Counters.** Lost kg: trimmed part (`trim_carried`), `lose_squad_kg` before every `squads.remove`, truck kg at
 `make_wreck`, `lose_work` (kg a removed work drew). `men_lost_in_wire` in `kill`; `works_done` at a work's last step.
-**S17 (`5dbcc1e`).** A* prices a step whose segment comes within band/2 of a standing section
-(`FortState::step_in_wire`, exact), tested only when an end is in the coarse layer (now band/2 + 3 m,
-`WIRE_NODE_SLACK_M`, > half a diagonal step); smoothing uses the same exact test. A 2 m gap (0.5 m clear) is found
-when a grid step line passes it; one between node columns is not; 4 m gaps off the columns are. **Path cost** (20 m
-line, 4 m gap, ignored test `wire_path_cost_report`): before 45 expansions, 14.7 us, round the line end; after 15
-expansions, 14.4 us, through the gap. **Wire index:** `FortState::wire_index` (`serde(skip)`, `PartialEq` always true),
-16 m cells + coarse layer, rebuilt in `serve_paths` when `(wire.len(), next_wire)` changed; a stale index is never read
-(full-scan fallback), so answers never depend on it. **Side effect:** a man now goes round a 20 m line's end, so the
-fortify plain-wire row stages 100 m (`WIRE_THROUGH_LEN_M`; gap variants keep 20 m); seed 2 reads 20.0 % again. The
-scripted breach row (30 m wire) may path differently (report row).
+**S17 (`5dbcc1e`).** A* prices a step within band/2 of a standing section (`FortState::step_in_wire`, exact; coarse
+layer band/2 + 3 m); smoothing too. 2 m gaps on a grid step line and 4 m gaps are found (cost test
+`wire_path_cost_report`: 45 -> 15 expansions). `FortState::wire_index` (`serde(skip)`, never read stale). The fortify
+plain-wire row stages 100 m (`WIRE_THROUGH_LEN_M`: men go round a 20 m line's end).
 **CLI (`26d3205`).** `s10` adds the 14 AI counters, `works_done`, kg by source, `men_lost_in_wire`; `s10_derived` the 19
 fields of spec 5 (`json_out::s10_blocks`); a `fort:` text line per faction and in `pool.py`. **Tests (pass):** all of
 spec 7 Build A (both path tests fail on the S10a step rule, checked). **Neutrality:** 40 set same 40/40 against
@@ -42,41 +36,28 @@ engineer bonus skips `breach` squads and (deviation) also holds builders at an o
 per built nest, shelter, back out). Blueprints found by shape and pit, never by id. Sites exist-checked by proximity of
 own works, pieces, wire and jobs (a destroyed work is rebuilt). `fort_refused` = AI Fortify/LoadMaterials/CutWire/
 PlaceBangalore refused in `apply` (`ai_rejected` takes the command). Overrides: `S10a-ai-ablations/all_off.toml`.
-**Deviations.** (1) Crate run NOT built (spec 11 drops it first): `material_runs[1]` stays 0, its test is missing.
-(2) Walk-back is a plain Move to base (not task Refill): the Fortify order is replaced, so the mechanics remove the
-work (that step's kg lost); a line resumes from its first unbuilt segment. (3) Truck run ends at `material_wait_s` +
-180 s from its start (no arrival tick in the layout), when the work builds or is gone, or the load failed. (4) Shelter:
-the men stop at the pit edge about 6 m from the dugout centre (path into the pit; mechanics question for Review); the
-test checks the order and task. (5) `infantry_plans` and `fort_build_plans` count only with `works` or `wire` on.
-(6) S9's pit habit takes engineers near a gun before a wall can (test sets `pit: true`).
+**Deviations.** (1) Crate run NOT built: `material_runs[1]` stays 0, its test is missing. (2) Walk-back is a plain
+Move to base: the mechanics remove the work (that step's kg lost); a line resumes from its first unbuilt segment.
+(3) Truck run ends at `material_wait_s` + 180 s from its start. (4) Shelter: see C (3). (5) `infantry_plans` and
+`fort_build_plans` count only with `works` or `wire` on. (6) S9's pit habit takes engineers near a gun first.
 **Tests (pass).** All Build B tests of spec 7 except `ai_bearers_carry_a_construction_crate_to_a_waiting_work`
 (missing, crate run). `ai_fort_is_deterministic_across_threads_and_save_load` is `crates/sim/tests/ai_fort.rs`
 (ignored, release pass; 1/2/3/8 threads, save at 5:00). Each "nothing happens" test has a positive control. Changed:
 content `s10a_cards_resolve_with_ai_weight_zero` -> `..._with_their_ai_weights`; `empty_fort_state_changes_nothing`
 and CLI `s10_counters_zero_without_fortifications`, `s10_ai_fields_zero_with_the_ai_unchanged` run with all off.
-**Checks.** `tools/check.sh quick fa45332`: all ok (643 passed) on `492aa6f`.
-**Neutrality.** All off (`-o all_off.toml`, `target/s10a-ai-B-off`): `neutral.py target/s10a-base40` -> same 40/40
-per match; the only difference is the set header's `overrides` list (0 -> 4 items), the override's own record.
-**40 set on** (`target/s10a-ai-B`, noise 11-15 points): Germany **47.5 %**; read with `targets --from-json` on a
-40-set copy of the targets: T94 87.5 / 87.5 %, T95 82.5 / 62.5 %, T97 8.19 / 8.47 %, T98 1.11 / 0.97 %, T99 0 / 0,
-T100 **0.05 / 0.025 (miss)**; S10a-ai.toml's 12 skirmish40 targets pass. Works 2.50 / 2.27 a match, wire 12.4 / 9.7
-sections, lost kg 149 / 143 a match (GER / USA). An 8-match look (seeds 1-4): every work kind completed (nest, wire,
-dugout, roof, wall), truck runs 3 / 5, walk-backs 11 / 13, own tanks crush own wire (34 / 29 sections).
-**For C.** T100 misses: by the weight rule a new card is only the 2nd-3rd engineer buy and the slot buys about one a
-match; the urgent breach buy (C) adds assault cards, else Tune moves the weights. US wire share 62.5 % sits near the
-60 % floor. Shelter moves were 0 in the sample (marks need pinned defenders with no enemy within 150 m).
+**Neutrality (how every stage runs it).** `tools/batch.sh DIR/skirmish40.json -o
+docs/slices/targets/S10a-ai-ablations/all_off.toml -- skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary
+--minutes 45`, then `tools/neutral.py target/s10a-base40 DIR` -> same 40/40 (note: the header's `overrides` list).
+**40 set on** (`target/s10a-ai-B`): Germany 47.5 %; T100 0.05 / 0.025 (miss). Every work kind completed in an 8-match
+look; own tanks crush own wire (34 / 29 sections).
 
 ## Build C: breaching, AI breach row, ablation tooling, docs (`f5c7863`..`1403732`)
 
-**Fixes first.** (1) `trucks` `an_ai_truck_does_not_loop_...`: not Build B's habit (fails with works/wire off too); the
-drop it needed came from a defend squad the old buy mix bought; with `cards` on no drop is wanted. It now runs all off;
-twin `..._with_the_fort_switches_on` (empty HQ outside the ring) proves no remembered goal is re-sent (control: breaking
-`gave_up_on` fails it). Found: with switches off too, the HQ is re-ordered ~6 min later once four follow-spot give-ups
-push it out of `GAVE_UP_GOALS` (S8b rule; untouched, for Review). (2) `neutral.py`: a differing set-header `overrides`
-list is a note (`same 40/40 (note: overrides 0 -> 4 items)`), fixture test. (3) Shelter: men stood at the pit edge (squad
-Move: formation and `seek_cover`). Now `shelter_men` sends men one by one (`MoveUnits`) to trench spots under the roof
-box `cover.gap_mm` apart (so the cover rule keeps them): the shipped 3 m pit holds **2 men**; the throwers' regroup skips a
-sheltering squad; back out with the squad order. Test checks positions against the roof box (control: none before).
+**Fixes first.** (1) `trucks` `an_ai_truck_does_not_loop_...` runs all off; twin `..._with_the_fort_switches_on`
+proves no remembered goal is re-sent. Found: the HQ is re-ordered ~6 min later once four follow-spot give-ups push it
+out of `GAVE_UP_GOALS` (S8b rule, also all off). (2) `neutral.py`: a differing `overrides` header is a note.
+(3) Shelter: `shelter_men` sends men one by one (`MoveUnits`) to trench spots under the roof `cover.gap_mm` apart: the
+shipped 3 m pit holds **2 men**; back out with the squad order.
 **What exists.** `ai/breach.rs` per spec 3.4: sight (`wire_sight`), want (`breach_start`, path via `find_foot_path`),
 phases, `breach_focus` (base of fire in `fire_and_move` aims at it; breach squads count toward the 3 for a 2nd base),
 urgent buy in `buy` (`breach_wanted`: known wire near an attacked point, no squad that opens wire, card `ai_weight` > 0,
@@ -147,3 +128,23 @@ Pioniere 206 / Bau 165 vs US 280). (1) is the likeliest works_off lever; the fou
 Germany 45.0 % (18/40), mean length 20.1 min, no match without a winner; T94 95/87.5, T95 80/65, T96 0/0, T97 8.09/8.50, T98 0.99/0.95, T99 0/0,
 T100 0.825/0.025 (USA report), wire 24.0/19.7 sections, works 2.33/2.00; S10a-ai.toml's 12 skirmish40 targets pass.
 **Next must know.** Run `ablate.sh` with the four names on the D measure dir; T93f/h miss is the owner's call (above).
+
+## Fix (review `target/s10a-ai-review.json`; `723618d`..)
+
+Each fix has a test that failed on the code before (run on a detached copy of `723618d`). **F1** `FortState::validate`
+`checked_add`; the account counters saturate. **F15** `fort_holds`: the +80 goes to one builder per wanting point that
+could start now (room, 60 %, capability, carry or free truck, no threat; nearest); T97 adds a held builder left without a
+job. **F12** a known enemy vehicle or soldier within `threat_radius` of the builder or its site ends the job (free: it
+throws, hunts). **F13** Watch: `since` = the step/segment last moved (or the leader still walking, under half pinned),
+`tries` = the step; 3 x the step's time + 60 s still ends it; a lost or threatened point ends any job. **F14** a step
+the squad cannot carry and no free truck: no job, no walk. **F4/F17** a refused work is parked 300 s (`REFUSED_S`; Done,
+`tries` = 16, squad free; the job counts as the work existing); works over `limit_per_player` are never asked; the wire is
+at most the blueprint's length. **F5** at most 2 dugouts. **F3** a new job counted once. **F2** the run deadline is read
+every plan. **F18** a line's run lasts the line (truck parks on the base side: it crushed the line driving along it) and
+loads less what it holds. **F6** the Idle dugout arm needs a built dugout. **F19** no MG or AT team shelters. Constants,
+not keys (no setup change). **F7** s5a sums trips by faction; only a winner under 15 min may skip. **F10** T96 counts
+matches where the enemy's wire stood on a route (bypassed or a breach started); none: null, `targets` SKIP; same for
+`hq_roofed_pct`. **F11** `ablate.sh` fails without `NEUTRAL_BASE` or on a non-same verdict. **F9** doc weights.
+**Left open: F8** (the twin counting HQ orders fails: 2 in 7 min, the S8b `GAVE_UP_GOALS` eviction, all off too; a fix
+changes all-off play). Changed tests: CLI synthetic T96 50 -> 100, all-off derived nulls. **Numbers:** all off 40
+(`target/s10a-ai-F-off`) same 40/40; on 40 (`target/s10a-ai-F`): Germany 45.0 %, T97 7.6/8.6, T99 0/0.025, 12/12 pass.
