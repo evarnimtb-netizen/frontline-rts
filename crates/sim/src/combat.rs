@@ -3055,7 +3055,11 @@ impl MatchState {
         // S10a: Bangalore charges due now burst as items (rule 6).
         if !self.fort_off {
             self.take_charges(ctx.terrain, ctx.tick, fused);
+            // S10b: mines set off now burst the same way (R3-R7).
+            self.take_mines(ctx.ents, ctx.spatial, ctx.terrain, ctx.tick, fused);
         }
+        // S10b: men a mine burst dropped (`men_lost_to_mines`).
+        let mut mine_dead: Vec<SimId> = Vec::new();
         // S3b: the fragment budget, shared by this tick's bursts in
         // proportion to what each asks for.
         let requested: u64 = events
@@ -3256,6 +3260,7 @@ impl MatchState {
         }
         for t in fused.iter() {
             let it = &self.setup.items[t.item as usize];
+            let mine = it.kind == frontline_content::ItemKind::Mine;
             if let Some(h) = it.he.clone() {
                 ctx.stats.explosions += 1;
                 let kind = if h.cuts_trenches {
@@ -3299,6 +3304,7 @@ impl MatchState {
                 }
                 let rays = frag_share(h.blast.frag_count, requested);
                 ctx.stats.frag_rays_capped += (h.blast.frag_count - rays) as u64;
+                let before = dead.len();
                 self.burst(
                     ctx,
                     &b,
@@ -3309,9 +3315,24 @@ impl MatchState {
                     &mut fires,
                     armour_events,
                 );
+                if mine {
+                    mine_dead.extend(dead[before..].iter().map(|f| f.0));
+                }
                 if b.inside.is_some() {
                     continue;
                 }
+                // S10b: vehicles this mine immobilises (`vehicles_mined`).
+                let mobile: Vec<SimId> = if mine {
+                    self.vehicles
+                        .iter()
+                        .filter(|(_, vs)| {
+                            !vs.immobilised(&self.setup.vehicles[vs.type_idx as usize])
+                        })
+                        .map(|(&id, _)| id)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 self.blast_tracks(
                     ctx,
                     t.pos,
@@ -3323,6 +3344,19 @@ impl MatchState {
                     &mut fires,
                     armour_events,
                 );
+                let mined = mobile
+                    .iter()
+                    .filter(|id| {
+                        self.vehicles.get(id).is_some_and(|vs| {
+                            vs.immobilised(&self.setup.vehicles[vs.type_idx as usize])
+                        })
+                    })
+                    .count() as u32;
+                if mined > 0
+                    && let Some(a) = self.fort.accounts.get_mut(t.owner.0 as usize)
+                {
+                    a.vehicles_mined = a.vehicles_mined.saturating_add(mined);
+                }
             }
         }
         for t in fused.iter() {
@@ -3333,6 +3367,16 @@ impl MatchState {
         dead.append(&mut ctx.fallen);
         dead.sort_unstable();
         for (id, by, class) in dead {
+            if !mine_dead.is_empty()
+                && mine_dead.contains(&id)
+                && ctx.ents.kind[id.index()] == EntityKind::Soldier
+                && let Some(a) = self
+                    .fort
+                    .accounts
+                    .get_mut(ctx.ents.owner[id.index()].0 as usize)
+            {
+                a.men_lost_to_mines = a.men_lost_to_mines.saturating_add(1);
+            }
             self.kill(ctx.ents, ctx.hash, id, rules.corpse_ticks);
             ctx.stats.deaths += 1;
             if let Some(p) = self.players.get_mut(by as usize) {

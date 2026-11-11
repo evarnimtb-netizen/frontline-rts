@@ -595,7 +595,7 @@ impl MatchState {
             },
         );
         if let Some(a) = self.fort.accounts.get_mut(owner.0 as usize) {
-            a.mines_laid += 1;
+            a.mines_laid = a.mines_laid.saturating_add(1);
         }
         Some(id)
     }
@@ -659,6 +659,8 @@ impl MatchState {
             }
         }
         n + match d.shape {
+            // S10b: a minefield's laid mines (R1, R2).
+            FortShape::Line if d.mine_item.is_some() => self.mines_of(p, f),
             FortShape::Line if d.wire.is_some() => self
                 .fort
                 .wire
@@ -672,6 +674,33 @@ impl MatchState {
                 .filter(|q| q.owner == p && q.fort == f && q.part == 0)
                 .count() as u32,
         }
+    }
+
+    /// S10b: mines of blueprint `f` that `p` has standing.
+    pub(crate) fn mines_of(&self, p: PlayerId, f: u16) -> u32 {
+        self.fort
+            .mines
+            .values()
+            .filter(|m| m.owner == p && m.fort == f)
+            .count() as u32
+    }
+
+    /// S10b R18: whether a vehicle hull or wreck lies within
+    /// `vehicle_clear_m` of site `line` (a point site: its first point).
+    pub(crate) fn near_a_vehicle(&self, line: &[FxVec2]) -> bool {
+        let Some(t) = self.setup.rules.fortify.as_ref() else {
+            return false;
+        };
+        let clear = Fx::from_int(t.vehicle_clear_m as i32);
+        self.vderived.frames.iter().any(|f| {
+            let h = f.hull.half;
+            let r = clear + FxVec2::new(h.x, h.y).length();
+            let c = f.hull.center.xy();
+            match line {
+                [a] => near_segment(c, *a, *a, r),
+                _ => line.windows(2).any(|w| near_segment(c, w[0], w[1], r)),
+            }
+        })
     }
 
     /// `Fortify { squad, fort, line }` (section 4).
@@ -724,6 +753,11 @@ impl MatchState {
         if line.iter().any(|&q| !ctx.terrain.contains(q))
             || along(pts).any(|q| enemy_base(q) || slope_pct(ctx.terrain, q) > d.max_slope_pct)
         {
+            return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
+        }
+        // S10b R18: no minefield within `vehicle_clear_m` of a vehicle hull
+        // (or wreck), which would leave it `on_blocked` or on a mine.
+        if d.mine_item.is_some() && self.near_a_vehicle(line) {
             return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
         }
         let need = if point { 1 } else { segments(line, d.segment) };
@@ -1180,7 +1214,40 @@ impl MatchState {
         let w = self.fort.works[&id].clone();
         let d = self.setup.forts[w.fort as usize].clone();
         let acc = w.owner.0 as usize;
-        if let Some(wd) = &d.wire {
+        if let Some(item) = d.mine_item {
+            // S10b: one mine at the segment's end; over a cap the work ends.
+            let len = crate::squad::polyline_length(&w.line);
+            let end = Fx::from(d.segment).mul_int(w.seg as i32 + 1).min(len);
+            let pos = terrain.clamp(crate::squad::point_along(&w.line, end));
+            if self.fort.mines.len() >= MAX_MINES
+                || self.mines_of(w.owner, w.fort) >= d.limit_per_player
+                || self.fort.next_mine >= crate::bounds::MAX_ID_COUNTER
+            {
+                self.lose_work(id);
+                if let Some(q) = self.squads.get_mut(&w.builder)
+                    && q.order == (Order::Fortify { work: id })
+                {
+                    q.order = Order::Idle;
+                }
+                self.refuse_fort(w.owner, Some(w.builder), FortRefusal::Cap);
+                return;
+            }
+            let mid = self.fort.next_mine;
+            self.fort.next_mine += 1;
+            self.fort.mines.insert(
+                mid,
+                Mine {
+                    owner: w.owner,
+                    fort: w.fort,
+                    item,
+                    pos,
+                    known: 1 << w.owner.0.min(7),
+                    boom_tick: None,
+                },
+            );
+            let a = &mut self.fort.accounts[acc];
+            a.mines_laid = a.mines_laid.saturating_add(1);
+        } else if let Some(wd) = &d.wire {
             let half = dir(yaw) * Fx::from(d.segment).div_int(2);
             let sid = self.fort.next_wire;
             self.fort.next_wire += 1;
@@ -2127,7 +2194,133 @@ impl MatchState {
             }
         }
     }
+
+    /// S10b (R3-R7): the mines set off at `tick`, ascending id: an AP mine
+    /// by a living enemy soldier on foot within its `trigger_cm`, an AT
+    /// mine by an enemy vehicle (not a wreck) with a track's centreline
+    /// (first to last anchor) or a wheel anchor within its `trigger_cm`,
+    /// and every mine whose `boom_tick` is now (Build C). Each is removed
+    /// and appended to `out` as a landed item (key `MINE_KEY_BASE | id`, a
+    /// range disjoint from thrown ids and charge keys, which stay below
+    /// `MINE_KEY_BASE`). Own and allied units never set one off (R7).
+    pub(crate) fn take_mines(
+        &mut self,
+        ents: &Entities,
+        spatial: &crate::spatial::SpatialHash,
+        terrain: &Heightfield,
+        tick: u64,
+        out: &mut Vec<crate::items::Thrown>,
+    ) {
+        if self.fort.mines.is_empty() {
+            return;
+        }
+        let mut gone: Vec<(u32, bool)> = Vec::new();
+        for (&id, m) in &self.fort.mines {
+            if m.boom_tick == Some(tick) {
+                gone.push((id, false));
+                continue;
+            }
+            let Some(trig) = self
+                .setup
+                .items
+                .get(m.item as usize)
+                .and_then(|it| it.mine.as_ref())
+            else {
+                continue;
+            };
+            let r = Fx::from_milli(trig.trigger_cm as i32 * 10);
+            let r2 = (r.raw().max(0) as u64).pow(2);
+            let hit = if trig.trigger == 0 {
+                let mut any = false;
+                spatial.for_each_near(m.pos, r, |s| {
+                    let i = s.index();
+                    if !any
+                        && ents.is_alive(s)
+                        && ents.kind[i] == crate::ecs::EntityKind::Soldier
+                        && ents.owner[i] != m.owner
+                        && ents.unit[i].riding.is_none()
+                        && (ents.transform[i].pos.xy() - m.pos).length_sq_raw() <= r2
+                    {
+                        any = true;
+                    }
+                });
+                any
+            } else {
+                self.vehicle_over(ents, m, r)
+            };
+            if hit {
+                gone.push((id, true));
+            }
+        }
+        for (id, triggered) in gone {
+            let m = self.fort.mines.remove(&id).expect("listed");
+            if triggered && let Some(a) = self.fort.accounts.get_mut(m.owner.0 as usize) {
+                a.mines_set_off = a.mines_set_off.saturating_add(1);
+            }
+            let at = terrain.clamp(m.pos);
+            let pos = at.extend(terrain.height_at(at));
+            out.push(crate::items::Thrown {
+                id: MINE_KEY_BASE | id,
+                item: m.item,
+                owner: m.owner,
+                thrower: SimId(u32::MAX),
+                from: pos,
+                vel: FxVec3::ZERO,
+                step: 0,
+                pos,
+                landed: true,
+                fuse: 0,
+                inside: None,
+            });
+        }
+    }
+
+    /// R4: whether an enemy vehicle of mine `m` has a track centreline or
+    /// a wheel anchor within `r` of it.
+    fn vehicle_over(&self, ents: &Entities, m: &Mine, r: Fx) -> bool {
+        use frontline_content::vehicle::ComponentKind;
+        let mut ids: Vec<SimId> = Vec::new();
+        self.vderived
+            .index
+            .for_each_near(m.pos, r + self.vderived.max_reach, |id| ids.push(id));
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter().any(|id| {
+            if ents.kind.get(id.index()) != Some(&crate::ecs::EntityKind::Vehicle)
+                || ents.owner[id.index()] == m.owner
+            {
+                return false;
+            }
+            let (Some(f), Some(vs)) = (self.vderived.frame(id), self.vehicles.get(&id)) else {
+                return false;
+            };
+            if f.wreck || vs.wreck_tick.is_some() {
+                return false;
+            }
+            let v = &self.setup.vehicles[vs.type_idx as usize];
+            let at = |an: &frontline_content::vehicle::AnchorSetup| {
+                crate::damage::anchor_at(f, an.frame, crate::vehicle::v3(an.pos)).xy()
+            };
+            v.components.iter().any(|c| match c.kind {
+                ComponentKind::TrackLeft | ComponentKind::TrackRight => {
+                    match (c.anchors.first(), c.anchors.last()) {
+                        (Some(a), Some(b)) => near_segment(m.pos, at(a), at(b), r),
+                        _ => false,
+                    }
+                }
+                ComponentKind::WheelsFront | ComponentKind::WheelsRear => c
+                    .anchors
+                    .iter()
+                    .any(|a| near_segment(m.pos, at(a), at(a), r)),
+                _ => false,
+            })
+        })
+    }
 }
+
+/// S10b: mine bursts get keys `MINE_KEY_BASE | mine id` (mine ids stay
+/// below `MAX_ID_COUNTER` = 2^31; thrown ids too, under `ITEM_CRATER`).
+pub(crate) const MINE_KEY_BASE: u32 = 1 << 31;
 
 /// Where a cutter stands at section `s`: a metre from its middle, on the
 /// side of `from`.

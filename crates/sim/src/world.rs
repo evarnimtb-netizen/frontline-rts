@@ -2723,6 +2723,13 @@ impl World {
         } else {
             self.snapshot.pickups.clear();
         }
+        // S10b: refusals the tick's systems raised (a minefield work ended at
+        // its cap) reach this tick's events, not the next command's.
+        if let Some(game) = &mut self.state.game
+            && !game.fort_events.is_empty()
+        {
+            self.fort_events.append(&mut game.fort_events);
+        }
         self.snapshot.fill(
             self.state.tick,
             &self.state.entities,
