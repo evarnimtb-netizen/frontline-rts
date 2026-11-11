@@ -588,6 +588,50 @@ fn load_rejects_bad_ai_fort_state() {
     }
 }
 
+/// Fix F1: an account whose by-source kg overflow when added is refused
+/// by the load (it panicked in the validator), and the running counters
+/// stop at their maximum instead of overflowing.
+#[test]
+fn load_rejects_an_overflowing_fort_account_and_counters_saturate() {
+    let (w, _, _) = ai_busy();
+    let bytes = w.save();
+    let mut x = World::load(&bytes, 1).unwrap();
+    {
+        let a = acc_of(&mut x.state);
+        a.materials_used_crate_g = u64::MAX;
+        a.materials_used_truck_g = 1;
+        a.materials_used_g = 0;
+    }
+    let saved = x.save();
+    let r = std::panic::catch_unwind(|| World::load(&saved, 1).is_err());
+    assert_eq!(r.ok(), Some(true), "refused, not a panic");
+    // Control: by-source kg at their sum load.
+    let mut x = World::load(&bytes, 1).unwrap();
+    {
+        let a = acc_of(&mut x.state);
+        a.materials_used_crate_g = u64::MAX - 1;
+        a.materials_used_truck_g = 1;
+        a.materials_used_g = u64::MAX;
+    }
+    assert!(World::load(&x.save(), 1).is_ok());
+    // Counters at their maximum stay there.
+    let mut w = ai_world();
+    let f = fort(&w, "ww2:barbed_wire");
+    assert!(w.build_now(f, &[c(480, 500), c(520, 500)], PlayerId(1)));
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 500, 500);
+    w.edit_fort(|f| {
+        f.carried_g.insert(eng, 40_000);
+        f.accounts[0].men_lost_in_wire = u32::MAX;
+        f.accounts[0].materials_lost_g = u64::MAX;
+    });
+    let men = members(&w, eng);
+    for &m in &men {
+        assert!(w.kill_soldier(m));
+    }
+    assert_eq!(acc(&w, 0).men_lost_in_wire, u32::MAX);
+    assert_eq!(acc(&w, 0).materials_lost_g, u64::MAX);
+}
+
 // ------------------------------------------------ lost and by-kind kg --
 
 fn acc(w: &World, p: usize) -> crate::fort::FortAccount {

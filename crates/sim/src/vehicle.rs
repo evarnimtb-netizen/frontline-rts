@@ -2123,7 +2123,7 @@ impl MatchState {
             if vs.material_g > 0
                 && let Some(a) = self.fort.accounts.get_mut(ents.owner[i].0 as usize)
             {
-                a.materials_lost_g += vs.material_g as u64;
+                a.materials_lost_g = a.materials_lost_g.saturating_add(vs.material_g as u64);
             }
             vs.material_g = 0;
             vs.speed = Fx::ZERO;

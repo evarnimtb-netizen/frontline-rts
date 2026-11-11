@@ -267,7 +267,9 @@ impl FortState {
         }
         if self.accounts.iter().any(|a| {
             a.works_done.len() > setup.forts.len()
-                || a.materials_used_crate_g + a.materials_used_truck_g > a.materials_used_g
+                || a.materials_used_crate_g
+                    .checked_add(a.materials_used_truck_g)
+                    .is_none_or(|by_source| by_source > a.materials_used_g)
         }) {
             return Err("S10a account works or materials out of range");
         }
@@ -694,7 +696,9 @@ impl MatchState {
             let cap = (per_man * q.members.len() as u64).min(u32::MAX as u64) as u32;
             // S10a-ai: the trimmed grams are lost (spec 3.5).
             if let Some(a) = accounts.get_mut(q.owner.0 as usize) {
-                a.materials_lost_g += (*g).saturating_sub(cap) as u64;
+                a.materials_lost_g = a
+                    .materials_lost_g
+                    .saturating_add((*g).saturating_sub(cap) as u64);
             }
             *g = (*g).min(cap);
             *g > 0
@@ -713,7 +717,7 @@ impl MatchState {
             .get(&sid)
             .and_then(|q| self.fort.accounts.get_mut(q.owner.0 as usize))
         {
-            a.materials_lost_g += g as u64;
+            a.materials_lost_g = a.materials_lost_g.saturating_add(g as u64);
         }
     }
 
@@ -927,7 +931,8 @@ impl MatchState {
                 let g = c.g.min(need - got);
                 c.g -= g;
                 got += g;
-                self.fort.accounts[p.0 as usize].materials_used_crate_g += g as u64;
+                let a = &mut self.fort.accounts[p.0 as usize];
+                a.materials_used_crate_g = a.materials_used_crate_g.saturating_add(g as u64);
                 if c.g == 0 {
                     self.supply6.crates.remove(&id);
                 }
@@ -951,10 +956,12 @@ impl MatchState {
                 let g = vs.material_g.min(need - got);
                 vs.material_g -= g;
                 got += g;
-                self.fort.accounts[p.0 as usize].materials_used_truck_g += g as u64;
+                let a = &mut self.fort.accounts[p.0 as usize];
+                a.materials_used_truck_g = a.materials_used_truck_g.saturating_add(g as u64);
             }
         }
-        self.fort.accounts[p.0 as usize].materials_used_g += got as u64;
+        let a = &mut self.fort.accounts[p.0 as usize];
+        a.materials_used_g = a.materials_used_g.saturating_add(got as u64);
         got
     }
 
@@ -1025,7 +1032,7 @@ impl MatchState {
             if done.len() <= w.fort as usize {
                 done.resize(w.fort as usize + 1, 0);
             }
-            done[w.fort as usize] += 1;
+            done[w.fort as usize] = done[w.fort as usize].saturating_add(1);
             if let Some(q) = self.squads.get_mut(&w.builder) {
                 q.order = Order::Idle;
             }
@@ -1039,7 +1046,7 @@ impl MatchState {
             return;
         };
         if let Some(a) = self.fort.accounts.get_mut(w.owner.0 as usize) {
-            a.materials_lost_g += w.got_g as u64;
+            a.materials_lost_g = a.materials_lost_g.saturating_add(w.got_g as u64);
         }
     }
 

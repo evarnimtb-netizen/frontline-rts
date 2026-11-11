@@ -3428,7 +3428,7 @@ impl MatchState {
                 .in_enemy_wire(&self.setup.forts, fell_at, PlayerId(owner as u8))
             && let Some(a) = self.fort.accounts.get_mut(owner)
         {
-            a.men_lost_in_wire += 1;
+            a.men_lost_in_wire = a.men_lost_in_wire.saturating_add(1);
         }
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();
