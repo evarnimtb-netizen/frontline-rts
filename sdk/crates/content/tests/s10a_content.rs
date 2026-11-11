@@ -53,10 +53,13 @@ fn s10a_cards_resolve_with_their_ai_weights() {
         &usa[usa.len() - 2..],
         ["ww2:usa_57mm_m1_squad", "ww2:usa_assault_section"]
     );
-    // S10a-ai (S10a-12 (A)): weights 35 / 50 / 35 in the engineer slot.
+    // S10a-ai (S10a-12 (A)): weights in the engineer slot; stage D (owner
+    // 2026-11-11): Baupioniere 100 (Germany's default builder), Sturmpioniere
+    // 60, the Pioniergruppe 40; the Assault Section keeps 35.
+    assert_eq!(ty(&s, "ww2:ger_engineer_squad").ai_weight, 40);
     for (id, men, cost, tag, weight) in [
-        ("ww2:ger_sturmpioniergruppe", 8, 264, "assault", 35),
-        ("ww2:ger_baupioniergruppe", 8, 165, "construction", 50),
+        ("ww2:ger_sturmpioniergruppe", 8, 264, "assault", 60),
+        ("ww2:ger_baupioniergruppe", 8, 165, "construction", 100),
         ("ww2:usa_assault_section", 12, 380, "assault", 35),
     ] {
         let t = ty(&s, id);
@@ -178,6 +181,11 @@ fn fort_defs_validate() {
         (Fixed::from_cm(150), Fixed::from_cm(90), 200)
     );
     assert!(wire.pieces.is_empty());
+    // S10a-ai stage D (owner 2026-11-11): 60 m lines, 100 sections a player.
+    assert_eq!(
+        (wire.max_length, wire.limit_per_player),
+        (Fixed::from_int(60), 100)
+    );
     // A broken copy: a wire def with a piece is refused.
     let mut bad = defs.forts["ww2:barbed_wire"].clone();
     bad.pieces = defs.forts["ww2:sandbag_wall"].pieces.clone();

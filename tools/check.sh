@@ -131,7 +131,7 @@ quick() {
     step neutral.py test_neutral python3 -I tools/test_neutral.py
     # S10a-ai: the ablation override files and tools/ablate.sh (dry run:
     # plays 1-minute matches only if the release CLI is built).
-    step ablate.sh ablate_dry tools/ablate.sh --dry-run target/ablate-on target/ablate-dry
+    step ablate.sh ablate_dry tools/ablate.sh --dry-run target/ablate-on target/ablate-dry all
     pk=$(crates_changed "$base")
     # Release, not debug: the same build the batches use, and the whole
     # workspace's tests take 6 minutes in release against 18 in debug.

@@ -926,12 +926,13 @@ fn engineer_buys(cards: u32, secs: u64) -> [[u32; 3]; 2] {
 #[test]
 fn ai_buys_engineer_cards_by_weight() {
     let [ger, usa] = engineer_buys(1, 240);
-    // Weights 100 / 50 / 35 (Germany) and 100 / 35 (USA): the buys come
-    // in that ratio, each within one buy of its share.
+    // Weights 40 / 100 / 60 (Germany: Pioniere, Baupioniere, Sturmpioniere;
+    // stage D) and 100 / 35 (USA): the buys come in that ratio, each within
+    // one buy of its share.
     let n: u32 = ger.iter().sum();
     assert!(n >= 10, "enough German buys to read a ratio: {ger:?}");
-    for (k, w) in [100u32, 50, 35].iter().enumerate() {
-        let share = n * w / 185;
+    for (k, w) in [40u32, 100, 60].iter().enumerate() {
+        let share = n * w / 200;
         assert!(
             ger[k].abs_diff(share) <= n / 20 + 1,
             "Germany {ger:?}, card {k}"
@@ -940,7 +941,7 @@ fn ai_buys_engineer_cards_by_weight() {
     let n: u32 = usa.iter().sum();
     assert!(n >= 8, "enough US buys: {usa:?}");
     assert!(usa[0].abs_diff(n * 100 / 135) <= n / 20 + 1, "USA {usa:?}");
-    assert!(ger[0] > ger[1] && ger[1] > ger[2], "{ger:?}");
+    assert!(ger[1] > ger[2] && ger[2] > ger[0], "{ger:?}");
     assert!(usa[2] >= 1, "the Assault Section is bought: {usa:?}");
 }
 
@@ -1052,7 +1053,8 @@ fn ai_lays_wire_across_the_approach() {
     let site = nest_site(&w, line);
     prebuild(&mut w, "ww2:mg_nest", site, enemy);
     squad_at(&mut w, ENG, pos, 120);
-    assert!(play_until(&mut w, 400, |w| built(w, wire).len() >= 15));
+    // Stage D: a 60 m line (30 sections; was 30 m).
+    assert!(play_until(&mut w, 600, |w| built(w, wire).len() >= 30));
     let along = (line[1] - line[0]).normalize_or_zero();
     let fs = w.game().unwrap().fort();
     for s in fs.wire.values().filter(|s| s.owner == PlayerId(1)) {
@@ -1064,13 +1066,76 @@ fn ai_lays_wire_across_the_approach() {
             "35 m out: {out:?}"
         );
         assert!(
-            side.abs() <= Fx::from_int(16),
-            "within the 30 m line: {side:?}"
+            side.abs() <= Fx::from_int(31),
+            "within the 60 m line: {side:?}"
         );
         let d = s.b - s.a;
         let across = (d.x * enemy.x + d.y * enemy.y).abs();
         assert!(across <= Fx::from_milli(200), "parallel to the trench");
     }
+}
+
+/// Stage D: [`held`] with a second capture point (not held by player 1)
+/// 200 m from the first, `cs`, `sn` = (cos, sin) x 1000 of its bearing off
+/// the enemy direction; player 1 lays its wire (nest prebuilt). Returns the
+/// world, the point, the other point and the trench line.
+fn held_two(cs: i32, sn: i32) -> (World, FxVec2, FxVec2, [FxVec2; 2]) {
+    let mut other = FxVec2::ZERO;
+    let (mut w, pos, line) = held(|s| {
+        let p0: FxVec2 = s.map.points[0].pos.into();
+        let b0: FxVec2 = s.map.bases[s.players[0].base as usize].center.into();
+        let d = (b0 - p0).normalize_or_zero();
+        let dir = d * Fx::from_milli(cs) + d.perp() * Fx::from_milli(sn);
+        other = p0 + dir * Fx::from_int(200);
+        let mut q = s.map.points[0].clone();
+        q.pos = frontline_content::FixedVec2 {
+            x: frontline_content::Fixed(other.x.raw()),
+            y: frontline_content::Fixed(other.y.raw()),
+        };
+        s.map.points.push(q);
+    });
+    let (_, enemy) = frame(pos, line);
+    let site = nest_site(&w, line);
+    prebuild(&mut w, "ww2:mg_nest", site, enemy);
+    squad_at(&mut w, ENG, pos, 120);
+    (w, pos, other, line)
+}
+
+/// Player 1's wire sections whose band reaches within 2 m of the straight
+/// route from `pos` to `to`, and all its sections.
+fn wire_on_route(w: &World, pos: FxVec2, to: FxVec2) -> (usize, usize) {
+    let fs = w.game().unwrap().fort();
+    let own: Vec<_> = fs
+        .wire
+        .values()
+        .filter(|s| s.owner == PlayerId(1))
+        .collect();
+    let on = own
+        .iter()
+        .filter(|s| {
+            let m = (s.a + s.b).div_int(2);
+            crate::fort::near_segment(m, pos, to, Fx::from_int(3))
+        })
+        .count();
+    (on, own.len())
+}
+
+#[test]
+fn ai_wire_keeps_off_its_route_out() {
+    // The next point lies 25 degrees off the wire's facing: its straight
+    // route would cross the 60 m line 16 m from the middle, so the line
+    // slides along itself and the route stays clear; still 60 m.
+    let (mut w, pos, other, _) = held_two(906, 423);
+    let wire = fort(&w, "ww2:barbed_wire");
+    assert!(play_until(&mut w, 600, |w| built(w, wire).len() >= 30));
+    let (on, all) = wire_on_route(&w, pos, other);
+    assert_eq!(on, 0, "no section on the route out ({all} sections)");
+    // Control: the next point straight ahead (the approach the wire
+    // faces): the line stays across it.
+    let (mut w, pos, other, _) = held_two(1000, 0);
+    assert!(play_until(&mut w, 600, |w| built(w, wire).len() >= 30));
+    let (on, _) = wire_on_route(&w, pos, other);
+    assert!(on >= 1, "the faced approach keeps its wire");
 }
 
 #[test]
@@ -1264,7 +1329,9 @@ fn dugout_site(w: &World, pos: FxVec2, line: [FxVec2; 2]) -> FxVec2 {
 #[test]
 fn ai_marks_a_shelled_point_and_digs_a_dugout() {
     let run = |pin: bool| {
-        let (mut w, pos, line) = held(|_| {});
+        // (Stage D: wire off, the 60 m line would hold the one builder for
+        // the whole run; the dugout comes after the wire.)
+        let (mut w, pos, line) = held(|s| s.rules.ai.fort.wire = 0);
         let (_, enemy) = frame(pos, line);
         let site = nest_site(&w, line);
         prebuild(&mut w, "ww2:mg_nest", site, enemy);
@@ -1450,6 +1517,146 @@ fn ai_sandbags_an_emplaced_gun() {
     };
     assert_eq!(run(0), (true, true), "a wall 4 m in front of the gun");
     assert!(!run(3600).0, "control: not in Hold long enough");
+}
+
+/// Stage D: switch `k` of the per-work four (0 nest, 1 dugout, 2 roof,
+/// 3 sandbags) set to 0; `k` >= 4: all on.
+fn work_switch_off(s: &mut frontline_content::MatchSetup, k: usize) {
+    let f = &mut s.rules.ai.fort;
+    match k {
+        0 => f.nest = 0,
+        1 => f.dugout = 0,
+        2 => f.roof = 0,
+        3 => f.sandbags = 0,
+        _ => {}
+    }
+}
+
+/// Whether the AI starts (a job) or builds work kind `kind` (0 nest, 1
+/// dugout, 2 roof, 3 sandbags) within 40 s in that kind's scene, with
+/// switch `off` (as [`work_switch_off`]) set to 0. Wire is off throughout.
+fn work_started(kind: usize, off: usize) -> bool {
+    let (mut w, pos, line) = held(|s| {
+        s.rules.ai.fort.wire = 0;
+        if kind >= 2 {
+            // Roof and wall scenes: no point works take the builder.
+            s.rules.ai.fort.works_per_point = 0;
+            // A gun counts as held at once.
+            s.rules.ai.fort.gun_hold_s = 0;
+        }
+        work_switch_off(s, off);
+    });
+    let (_, enemy) = frame(pos, line);
+    match kind {
+        0 => {
+            squad_at(&mut w, ENG, pos, 120);
+            let f = fort(&w, "ww2:mg_nest");
+            play_until(&mut w, 40, |w| jobs_of(w, f) > 0 || !built(w, f).is_empty())
+        }
+        1 => {
+            let site = nest_site(&w, line);
+            prebuild(&mut w, "ww2:mg_nest", site, enemy);
+            squad_at(&mut w, ENG, pos, 120);
+            ai1(&mut w).enemy_mortar_seen = true;
+            let f = fort(&w, "ww2:dugout");
+            play_until(&mut w, 40, |w| jobs_of(w, f) > 0 || !built(w, f).is_empty())
+        }
+        2 => {
+            let hq_at = pos + c(-20, 0);
+            let def = {
+                let s = w.match_setup().unwrap();
+                s.stock_of(
+                    s.players[1].faction,
+                    frontline_content::setup::StockKind::Hq,
+                    None,
+                )
+                .unwrap()
+            };
+            w.edit_supply6(|s| {
+                s.structures.insert(
+                    77,
+                    crate::structures::Structure {
+                        owner: PlayerId(1),
+                        def,
+                        pos: hq_at,
+                        yaw: Fx::ZERO,
+                        builder: None,
+                        built: true,
+                        box_hp: [1000; crate::structures::MAX_BOXES],
+                        radio: true,
+                        stock_g: [0; 3],
+                    },
+                );
+                s.next_structure = s.next_structure.max(78);
+            });
+            squad_at(&mut w, ENG, hq_at + c(10, 0), 120);
+            ai1(&mut w).enemy_mortar_seen = true;
+            let f = fort(&w, "ww2:hq_dugout");
+            play_until(&mut w, 40, |w| {
+                jobs_of(w, f) > 0
+                    || w.game()
+                        .unwrap()
+                        .fort()
+                        .works
+                        .values()
+                        .any(|k| k.hq == Some(77))
+            })
+        }
+        _ => {
+            let at = pos + c(20, 0);
+            let gsq = squad_at(&mut w, "ww2:usa_57mm_m1_squad", at, 0);
+            let gun = members(&w, gsq)[0];
+            let gpos = w.state.entities.transform[gun.index()].pos.xy();
+            let tick = w.state.tick;
+            ai1(&mut w).guns.insert(
+                gsq,
+                crate::ai::AiGun {
+                    phase: crate::ai::GunPhase::Hold,
+                    site: gpos,
+                    facing: gpos + enemy * Fx::from_int(100),
+                    moved_to: gpos,
+                    moved_at: tick,
+                    quiet_at: tick,
+                    pit: true,
+                    ..Default::default()
+                },
+            );
+            squad_at(&mut w, ENG, gpos + c(-15, 0), 120);
+            let f = fort(&w, "ww2:sandbag_wall");
+            play_until(&mut w, 40, |w| jobs_of(w, f) > 0 || !built(w, f).is_empty())
+        }
+    }
+}
+
+#[test]
+fn ai_per_work_switches_stop_exactly_their_kind() {
+    // All on (positive control): every kind is started in its scene.
+    for kind in 0..4 {
+        assert!(work_started(kind, 4), "all on: kind {kind} started");
+    }
+    // `nest` off alone: the wire does not wait for a nest (it does with
+    // `works` 0, the measured works_off: no point wire either).
+    let wire_laid = |edit: fn(&mut frontline_content::MatchSetup)| {
+        let (mut w, pos, _) = held(edit);
+        squad_at(&mut w, ENG, pos, 120);
+        let f = fort(&w, "ww2:barbed_wire");
+        play_until(&mut w, 60, |w| jobs_of(w, f) > 0 || !built(w, f).is_empty())
+    };
+    assert!(wire_laid(|s| s.rules.ai.fort.nest = 0), "nest off: wire");
+    assert!(
+        !wire_laid(|s| s.rules.ai.fort.works = 0),
+        "works off: no wire"
+    );
+    // Each switch off: its own kind is not started, the other three are.
+    for off in 0..4 {
+        for kind in 0..4 {
+            assert_eq!(
+                work_started(kind, off),
+                kind != off,
+                "switch {off} off, kind {kind}"
+            );
+        }
+    }
 }
 
 #[test]

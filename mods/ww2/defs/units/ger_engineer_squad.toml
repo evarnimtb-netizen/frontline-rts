@@ -7,6 +7,10 @@ name = "Pioniergruppe"
 short_name = "Pioniere"
 faction = "ww2:germany"
 tags = ["engineer"]
+# S10a-ai stage D (owner 2026-11-11, "Germany by weight"): the Baupioniere are
+# Germany's default builder; the Pioniere come third in the engineer slot
+# (weights 100 Bau, 60 Sturm, 40 here: Bau, Sturm, Bau, Pioniere, ...).
+ai_weight = 40
 # S10a: field engineers (infantry-structures.md 7.7): sandbags, MG nests,
 # dugouts and wire at the field rate, wire cut at the field rate.
 capabilities = ["dig_basic", "dig_full", "recrew", "build_structure", "place_wire", "clear_wire"]

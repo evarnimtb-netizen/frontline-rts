@@ -133,13 +133,17 @@ pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
         .map(|i| i as u16)
 }
 
-/// Whether `[ai.fort]` lets the AI build `k`.
-fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
+/// Whether `[ai.fort]` lets the AI build `k` (`works` and the kind's own
+/// switch, stage D; wire: `wire`).
+pub(crate) fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
     let f = &s.rules.ai.fort;
     s.rules.fortify.is_some()
         && match k {
             WorkKind::Wire => f.wire != 0,
-            _ => f.works != 0,
+            WorkKind::Nest => f.works != 0 && f.nest != 0,
+            WorkKind::Dugout => f.works != 0 && f.dugout != 0,
+            WorkKind::Roof => f.works != 0 && f.roof != 0,
+            WorkKind::Wall => f.works != 0 && f.sandbags != 0,
         }
 }
 
@@ -183,6 +187,62 @@ impl super::Planner<'_> {
     /// The site line of work `k` at own point `i` (spec 3.3 table).
     /// `out_m` overrides the wire's distance (the 25 m retry).
     fn point_site(&self, i: usize, k: WorkKind, out_m: Option<i32>) -> Option<Vec<FxVec2>> {
+        self.point_site_at(i, k, out_m, true)
+    }
+
+    /// The nearest other capture point not held by this AI (ties by
+    /// index): where its squads leave point `i` for next.
+    fn route_out(&self, i: usize) -> Option<FxVec2> {
+        let g = self.g;
+        let pts = &g.setup.map.points;
+        let pos: FxVec2 = pts.get(i)?.pos.into();
+        (0..pts.len())
+            .filter(|&j| j != i && g.points.get(j).is_some_and(|c| c.owner != Some(self.me)))
+            .map(|j| -> FxVec2 { pts[j].pos.into() })
+            .min_by_key(|&p| ((p - pos).length_sq_raw(), p.x.raw(), p.y.raw()))
+    }
+
+    /// Stage D (owner "60 m lines"): how far a wire line centred at `c`
+    /// (unit `along`, half length `h`) at point `i` slides along itself
+    /// so it does not lie across the straight route from the point to
+    /// [`Self::route_out`]: when that route crosses the line more than
+    /// `SITE_NEAR_M` from its middle, the line slides so its near end
+    /// stops `SITE_NEAR_M` short of the route (at most `h`). A route
+    /// through the middle is the approach the wire faces: the line stays
+    /// (one unbroken line, S10a-14 (A); own men go round its end).
+    fn wire_shift(&self, i: usize, c: FxVec2, along: FxVec2, h: Fx) -> Fx {
+        let Some(to) = self.route_out(i) else {
+            return Fx::ZERO;
+        };
+        let Some(p) = self.g.setup.map.points.get(i) else {
+            return Fx::ZERO;
+        };
+        let pos: FxVec2 = p.pos.into();
+        let d = to - pos;
+        let Some(t) = crate::fort::crossing(pos, d, c - along * h, c + along * h) else {
+            return Fx::ZERO;
+        };
+        let x = pos + d * t;
+        let at = (x - c).dot(along);
+        let clear = Fx::from_int(SITE_NEAR_M);
+        if at.abs() < clear {
+            Fx::ZERO
+        } else if at > Fx::ZERO {
+            -(h + clear - at).min(h)
+        } else {
+            (h + clear + at).min(h)
+        }
+    }
+
+    /// [`Self::point_site`]; `shifted` false: the wire line before
+    /// [`Self::wire_shift`] (the exists check reads both).
+    fn point_site_at(
+        &self,
+        i: usize,
+        k: WorkKind,
+        out_m: Option<i32>,
+        shifted: bool,
+    ) -> Option<Vec<FxVec2>> {
         let f = &self.g.setup.rules.ai.fort;
         let ([a, b], along, enemy) = self.fort_frame(i)?;
         let mid = (a + b).div_int(2);
@@ -201,8 +261,12 @@ impl super::Planner<'_> {
             }
             WorkKind::Wire => {
                 let out = out_m.unwrap_or(f.wire_out_m as i32);
-                let c = mid + enemy * Fx::from_int(out);
-                let half = along * Fx::from_int(f.wire_len_m as i32).div_int(2);
+                let mut c = mid + enemy * Fx::from_int(out);
+                let h = Fx::from_int(f.wire_len_m as i32).div_int(2);
+                if shifted {
+                    c = c + along * self.wire_shift(i, c, along, h);
+                }
+                let half = along * h;
                 let line = vec![tr.clamp(c - half), tr.clamp(c + half)];
                 ((line[1] - line[0]).length() >= Fx::from_int(2)).then_some(line)
             }
@@ -258,13 +322,24 @@ impl super::Planner<'_> {
             }
             _ => Fx::from_int(SITE_NEAR_M),
         };
-        // The wire's 25 m retry counts too.
-        let alt = (k == WorkKind::Wire)
-            .then(|| self.point_site(i, k, Some(WIRE_RETRY_M)))
-            .flatten();
+        // The wire's 25 m retry counts too, and both unshifted (a shift
+        // is at most half the line: any shifted line's middle lies within
+        // `r` of the unshifted one; the route out may change).
+        let alts: Vec<Vec<FxVec2>> = if k == WorkKind::Wire {
+            [
+                self.point_site(i, k, Some(WIRE_RETRY_M)),
+                self.point_site_at(i, k, None, false),
+                self.point_site_at(i, k, Some(WIRE_RETRY_M), false),
+            ]
+            .into_iter()
+            .flatten()
+            .collect()
+        } else {
+            Vec::new()
+        };
         Some(
             self.fort_near(f, mid_of(shape, &site), r)
-                || alt.is_some_and(|l| self.fort_near(f, mid_of(shape, &l), r)),
+                || alts.iter().any(|l| self.fort_near(f, mid_of(shape, l), r)),
         )
     }
 
@@ -287,8 +362,16 @@ impl super::Planner<'_> {
             }
             let wanted = switched_on(s, k)
                 && match k {
-                    // Wire once the nest is done or started.
-                    WorkKind::Wire => nest == Some(true) || fort_of(s, WorkKind::Nest).is_none(),
+                    // Wire once the nest is done or started, or the mod
+                    // has no nest, or (stage D) `nest` alone is off. With
+                    // `works` 0 the wire still waits for a nest, so never
+                    // comes: the works_off ablation as measured (no works
+                    // and no point wire).
+                    WorkKind::Wire => {
+                        nest == Some(true)
+                            || fort_of(s, WorkKind::Nest).is_none()
+                            || (f.works != 0 && f.nest == 0)
+                    }
                     WorkKind::Dugout => shelled,
                     _ => true,
                 };
@@ -392,7 +475,7 @@ impl super::Planner<'_> {
     pub(super) fn shelter_at(&self, i: usize, known: &[Known]) -> Option<FxVec2> {
         let s = &self.g.setup;
         let f = &s.rules.ai.fort;
-        if s.rules.fortify.is_none() || f.works == 0 {
+        if !switched_on(s, WorkKind::Dugout) {
             return None;
         }
         let hz = s.tick_hz.max(1) as u64;
@@ -861,12 +944,12 @@ impl super::Planner<'_> {
                 break;
             }
         }
-        if f.works != 0 {
+        if switched_on(s, WorkKind::Roof) {
             let has_room = room(self, &out);
             self.start_roof(mine, &free, &able, &mut out, has_room);
-            if room(self, &out) {
-                self.start_walls(mine, &free, &able, &mut out, &room);
-            }
+        }
+        if switched_on(s, WorkKind::Wall) && room(self, &out) {
+            self.start_walls(mine, &free, &able, &mut out, &room);
         }
         // T97: plan-squads on a fort job over all plan-squads given
         // infantry tasks (those on a job included).

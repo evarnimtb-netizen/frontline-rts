@@ -1,4 +1,6 @@
-# S10a-ai ablation 2 (docs/slices/S10a-ai.md 9): no MG nest, dugout, HQ roof or sandbag wall (wire, breaching and the cards stay on).
+# S10a-ai ablation 2 (docs/slices/S10a-ai.md 9): no MG nest, dugout, HQ roof or sandbag wall (breaching and the cards stay on).
+# Found in stage D: point wire waits for the point's nest, so with works = 0 no wire is laid either
+# (the measured 480 reads wire in 0 %); nest_off.toml stops only the nest.
 # tools/ablate.sh runs tools/measure.sh with it against the switches-on dir.
 [ai.fort]
 works = 0

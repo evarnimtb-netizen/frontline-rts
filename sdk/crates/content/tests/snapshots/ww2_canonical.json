@@ -1581,6 +1581,7 @@
           "builders_max": 2,
           "cards": 1,
           "cut_fire_m": 100,
+          "dugout": 1,
           "dugout_back_m": 8,
           "gap_clear_m": 2,
           "gun_hold_s": 60,
@@ -1588,9 +1589,12 @@
           "load_min_kg": 40,
           "material_wait_s": 120,
           "materials_max_pct": 3,
+          "nest": 1,
           "nest_offset_m": 6,
           "place_wait_s": 30,
           "recheck_s": 60,
+          "roof": 1,
+          "sandbags": 1,
           "shelled_clear_m": 150,
           "shelled_pct": 50,
           "shelter_clear_m": 100,
@@ -1600,7 +1604,7 @@
           "suppress_lead_s": 6,
           "truck_material_kg": 200,
           "wire": 1,
-          "wire_len_m": 30,
+          "wire_len_m": 60,
           "wire_out_m": 35,
           "wire_rays": 16,
           "wire_seen_m": 150,
@@ -2282,7 +2286,7 @@
   },
   "units": {
     "ww2:ger_baupioniergruppe": {
-      "ai_weight": 50,
+      "ai_weight": 100,
       "capabilities": [
         "dig_basic",
         "dig_full",
@@ -2337,6 +2341,7 @@
       "weapon": ""
     },
     "ww2:ger_engineer_squad": {
+      "ai_weight": 40,
       "capabilities": [
         "dig_basic",
         "dig_full",
@@ -3120,7 +3125,7 @@
       "weapon": ""
     },
     "ww2:ger_sturmpioniergruppe": {
-      "ai_weight": 35,
+      "ai_weight": 60,
       "capabilities": [
         "dig_basic",
         "recrew",

@@ -1,0 +1,5 @@
+# S10a-ai stage D per-work ablation: no sandbag wall at a gun (MG nests, dugouts, the HQ roof, wire, breaching and the cards stay on).
+# Finds which part of works_off moves Germany (owner 2026-11-11).
+# tools/ablate.sh ONDIR OUTROOT nest_off dugout_off roof_off sandbags_off
+[ai.fort]
+sandbags = 0

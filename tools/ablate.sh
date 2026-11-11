@@ -5,12 +5,16 @@
 # five measure runs, over an hour uncached: start it in the background).
 #
 #   tools/ablate.sh ONDIR OUTROOT [NAME]...    # NAME: all_off works_off ...
-#   tools/ablate.sh --dry-run ONDIR OUTROOT    # checks, prints the commands
+#   tools/ablate.sh ONDIR OUTROOT nest_off dugout_off roof_off sandbags_off
+#   tools/ablate.sh --dry-run ONDIR OUTROOT [all]   # checks, prints the commands
 #
 # ONDIR    the switches-on measure dir (tools/measure.sh OUT TARGETS), the
 #          BASELINE of every ablation.
 # OUTROOT  each ablation measures into OUTROOT/NAME (measure.txt there).
-# NAMEs    default: every file in docs/slices/targets/S10a-ai-ablations/.
+# NAMEs    default: the five of spec 9 (all_off works_off wire_off breach_off
+#          cards_off); `all`: every file in docs/slices/targets/S10a-ai-ablations/
+#          (also the per-work four of stage D: nest_off dugout_off roof_off
+#          sandbags_off).
 #
 # The line per ablation: pooled Germany and its change against ONDIR, and
 # whether it matters (spec 9: |change| >= 2 points) or decides Tune (>= 4).
@@ -36,25 +40,28 @@ fi
 ON=${1:?usage: tools/ablate.sh [--dry-run] ONDIR OUTROOT [NAME]...}
 ROOT=${2:?usage: tools/ablate.sh [--dry-run] ONDIR OUTROOT [NAME]...}
 shift 2
-if [ $# -gt 0 ]; then
-    NAMES=("$@")
-else
+if [ $# -eq 1 ] && [ "$1" = all ]; then
     NAMES=()
     for f in "$DIR"/*.toml; do
         n=$(basename "$f" .toml)
         NAMES+=("$n")
     done
+elif [ $# -gt 0 ]; then
+    NAMES=("$@")
+else
+    NAMES=(all_off works_off wire_off breach_off cards_off)
 fi
 [ ${#NAMES[@]} -gt 0 ] || { echo "ablate: no override in $DIR"; exit 1; }
 
-# Each file: only [ai.fort] switches (works, wire, breach, cards) set to 0.
+# Each file: only [ai.fort] switches (works, wire, breach, cards, and the
+# per-work nest, dugout, roof, sandbags) set to 0.
 # (No tomllib on this Mac's python: the files are plain enough to read by
 # line.) Prints the number of keys.
 check_file() {
     python3 -I - "$1" <<'PY'
 import re, sys
 path = sys.argv[1]
-switches = {"works", "wire", "breach", "cards"}
+switches = {"works", "wire", "breach", "cards", "nest", "dugout", "roof", "sandbags"}
 table, keys = None, {}
 for n, raw in enumerate(open(path), 1):
     line = raw.split("#", 1)[0].strip()

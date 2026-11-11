@@ -29,26 +29,34 @@ fn ai_fort_tuning_parses_and_validates() {
     assert_eq!(s.rules.ai.fort, AiFortTuning::default());
     let f = &s.rules.ai.fort;
     assert_eq!((f.works, f.wire, f.breach, f.cards), (1, 1, 1, 1));
+    // Stage D: the per-work switches, all on; 60 m wire lines.
+    assert_eq!((f.nest, f.dugout, f.roof, f.sandbags), (1, 1, 1, 1));
     assert_eq!(
-        (f.wire_out_m, f.materials_max_pct, f.breach_tries),
-        (35, 3, 3)
+        (
+            f.wire_out_m,
+            f.wire_len_m,
+            f.materials_max_pct,
+            f.breach_tries
+        ),
+        (35, 60, 3, 3)
     );
-    assert_eq!(AiFortTuning::KEYS.len(), 35);
+    assert_eq!(AiFortTuning::KEYS.len(), 39);
     assert!(
         frontline_content::tuning::TABLES
             .iter()
-            .any(|(t, k)| *t == "ai.fort" && k.len() == 35)
+            .any(|(t, k)| *t == "ai.fort" && k.len() == 39)
     );
     // An override reaches the setup (the ablation switches).
     let off = write(
         "off",
-        "[ai.fort]\nworks = 0\nwire = 0\nbreach = 0\ncards = 0\n",
+        "[ai.fort]\nworks = 0\nwire = 0\nbreach = 0\ncards = 0\nnest = 0\nsandbags = 0\n",
     );
     defs.apply_override(&off, "ww2:skirmish")
         .unwrap_or_else(|e| panic!("{e}"));
     let s = defs.resolve(&req).unwrap();
     let f = &s.rules.ai.fort;
     assert_eq!((f.works, f.wire, f.breach, f.cards), (0, 0, 0, 0));
+    assert_eq!((f.nest, f.dugout, f.roof, f.sandbags), (0, 1, 1, 0));
     assert_eq!(f.wire_out_m, 35, "the other keys stay");
     // Out of range: the issue names the key and a fix.
     let bad = write("range", "[ai.fort]\nwire = 2\n");

@@ -1607,7 +1607,8 @@ impl Default for AiGunsTuning {
 tuning_table! {
     /// `[ai.fort]` (S10a-ai, docs/slices/S10a-ai.md 3.7): how the AI buys
     /// the engineer cards, carries materials, builds works and breaches
-    /// wire. The four switches (1 on, 0 off) are the ablations of spec 9.
+    /// wire. The four switches (1 on, 0 off) are the ablations of spec 9;
+    /// `nest`, `dugout`, `roof`, `sandbags` split `works` (stage D).
     pub struct AiFortTuning {
         /// Switch: MG nests, dugouts, the HQ roof, sandbags at guns.
         works: 0..=1,
@@ -1617,6 +1618,15 @@ tuning_table! {
         breach: 0..=1,
         /// Switch: the three S10a engineer cards are bought.
         cards: 0..=1,
+        /// Per-work switches under `works` (stage D ablations; 0 stops
+        /// only that kind): MG nests ...
+        nest: 0..=1,
+        /// ... dugouts (and so sheltering in one) ...
+        dugout: 0..=1,
+        /// ... the HQ roof ...
+        roof: 0..=1,
+        /// ... sandbag walls at guns.
+        sandbags: 0..=1,
         /// Fort jobs at once.
         builders_max: 0..=16,
         /// Works per point.
@@ -1697,6 +1707,10 @@ impl Default for AiFortTuning {
             wire: 1,
             breach: 1,
             cards: 1,
+            nest: 1,
+            dugout: 1,
+            roof: 1,
+            sandbags: 1,
             builders_max: 2,
             works_per_point: 3,
             build_threat_max: 4,
@@ -1707,7 +1721,7 @@ impl Default for AiFortTuning {
             material_wait_s: 120,
             nest_offset_m: 6,
             wire_out_m: 35,
-            wire_len_m: 30,
+            wire_len_m: 60,
             dugout_back_m: 8,
             gun_hold_s: 60,
             gun_wall_m: 4,

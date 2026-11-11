@@ -8,9 +8,10 @@ capability = "place_wire"
 materials_kg = 3
 work_s = 6
 work_men = 2
-limit_per_player = 50
+# S10a-ai stage D (owner 2026-11-11, "60 m lines"): 60 m lines, 100 sections.
+limit_per_player = 100
 segment_cm = 200
-max_length_m = 30
+max_length_m = 60
 max_slope_pct = 25
 wire = { band_cm = 150, height_cm = 90, hp = 200 }
 sources = [

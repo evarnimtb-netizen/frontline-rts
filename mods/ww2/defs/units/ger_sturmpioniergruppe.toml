@@ -2,8 +2,8 @@
 # eight men, the leader with an MP 40, three StG 44 and four MP 40; two
 # Bangalore torpedoes (gestreckte Ladung), two satchel charges and stick
 # grenades. Assault tier: cut wire fast, breach, no building
-# (docs/slices/S10a-fortifications.md 3.4). S10a-ai: ai_weight 35
-# in the engineer slot (S10a-12 (A); [ai.fort] cards = 0 skips it); the
+# (docs/slices/S10a-fortifications.md 3.4). S10a-ai: ai_weight 60
+# (stage D, owner 2026-11-11; was 35) in the engineer slot (S10a-12 (A); [ai.fort] cards = 0 skips it); the
 # leader carries one Nebelhandgranate 39 (the Pioniergruppe's smoke grenade,
 # S10a-13 (A)) so the AI can screen a Bangalore carrier.
 id = "ww2:ger_sturmpioniergruppe"
@@ -11,7 +11,7 @@ name = "Sturmpioniergruppe"
 short_name = "Sturmpioniere"
 faction = "ww2:germany"
 tags = ["engineer", "assault"]
-ai_weight = 35
+ai_weight = 60
 capabilities = ["dig_basic", "clear_wire", "breach", "recrew"]
 # Roster 3.1: 320 MP x 0.8 (S5a-37 German cut) x 1.033 (S6 tune) = 264 (S10a-8 (A)).
 cost = 264

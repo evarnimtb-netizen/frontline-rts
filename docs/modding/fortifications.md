@@ -193,7 +193,10 @@ spec `docs/slices/S10a-ai.md` 3.
   `cards = 0` skips the three cards.
 * **Building** (`ai/fort.rs`). Builders (`build_structure`, `place_wire`)
   at a held point with a finished AI trench build an MG nest past the
-  trench end, one wire line `wire_out_m` out (`wire = 0`: none), a dugout
+  trench end, one wire line `wire_out_m` out and `wire_len_m` long, slid
+  along itself so it does not lie across the straight route to the nearest
+  point the AI does not hold unless that route is the approach it faces
+  (`wire = 0`: none; it waits for the nest unless `nest = 0`), a dugout
   behind the trench once the point was shelled or enemy mortars were seen,
   the HQ roof once mortars were seen, and a sandbag wall in front of a gun
   that held `gun_hold_s`. They load carried materials in base (at most
@@ -213,7 +216,9 @@ spec `docs/slices/S10a-ai.md` 3.
   it (Bangalore first, else `clear_wire`) stages `stage_m` short of the
   crossing once the point's base of fire fires; the base aims at the known
   defender nearest the crossing (MG-team men first); a man with smoke
-  throws it between the crossing and that defender; `suppress_lead_s` later
+  throws it between the crossing and that defender, at most half the
+  cloud's radius past the crossing (a squad with its own smoke stages
+  within its throw reach of that spot; no cloud is thrown short of it); `suppress_lead_s` later
   a Bangalore goes in if defenders are about (known within `cut_fire_m`,
   the base fired, or the squad is taking fire), else the squad cuts. A
   carrier who falls is a failed try at once, a laid charge or a cut under
