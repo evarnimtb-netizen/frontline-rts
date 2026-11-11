@@ -123,7 +123,7 @@ pub struct Charge {
 }
 
 /// S10a per-player counters (report; saved and hashed).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct FortAccount {
     pub works_started: u32,
     pub pieces_built: u32,
@@ -138,6 +138,19 @@ pub struct FortAccount {
     pub materials_micro: u64,
     /// Grams drawn by works.
     pub materials_used_g: u64,
+    /// S10a-ai (spec 3.5): grams lost, never refunded: carried kg trimmed
+    /// with the men or squad, a truck's kg at its wreck, the kg a removed
+    /// work had drawn.
+    pub materials_lost_g: u64,
+    /// S10a-ai: own men killed inside an enemy wire band.
+    pub men_lost_in_wire: u32,
+    /// S10a-ai: works completed, by blueprint (index into
+    /// `MatchSetup::forts`; grows to the blueprint on its first work).
+    pub works_done: Vec<u32>,
+    /// S10a-ai: the grams of `materials_used_g` drawn from construction
+    /// crates and from trucks (the rest was carried).
+    pub materials_used_crate_g: u64,
+    pub materials_used_truck_g: u64,
 }
 
 /// All S10a state (`MatchState::fort`).
@@ -215,6 +228,12 @@ impl FortState {
         let np = setup.players.len();
         if self.accounts.len() != np {
             return Err("S10a accounts disagree with the players");
+        }
+        if self.accounts.iter().any(|a| {
+            a.works_done.len() > setup.forts.len()
+                || a.materials_used_crate_g + a.materials_used_truck_g > a.materials_used_g
+        }) {
+            return Err("S10a account works or materials out of range");
         }
         if self.works.len() > MAX_WORKS
             || self.pieces.len() > MAX_PIECES
@@ -629,14 +648,37 @@ impl MatchState {
             .as_ref()
             .map_or(0, |f| f.carry_kg_per_man as u64 * 1000);
         let squads = &self.squads;
+        let accounts = &mut self.fort.accounts;
         self.fort.carried_g.retain(|sid, g| {
+            // A squad removed without `lose_squad_kg` (none known): its
+            // owner is gone with it, so the kg go uncounted.
             let Some(q) = squads.get(sid) else {
                 return false;
             };
             let cap = (per_man * q.members.len() as u64).min(u32::MAX as u64) as u32;
+            // S10a-ai: the trimmed grams are lost (spec 3.5).
+            if let Some(a) = accounts.get_mut(q.owner.0 as usize) {
+                a.materials_lost_g += (*g).saturating_sub(cap) as u64;
+            }
             *g = (*g).min(cap);
             *g > 0
         });
+    }
+
+    /// S10a-ai: squad `sid` is about to be removed: the construction kg it
+    /// carries are lost for its owner (spec 3.5). Call before
+    /// `squads.remove`.
+    pub(crate) fn lose_squad_kg(&mut self, sid: SquadId) {
+        let Some(g) = self.fort.carried_g.remove(&sid) else {
+            return;
+        };
+        if let Some(a) = self
+            .squads
+            .get(&sid)
+            .and_then(|q| self.fort.accounts.get_mut(q.owner.0 as usize))
+        {
+            a.materials_lost_g += g as u64;
+        }
     }
 
     /// The point a work's current step builds at: a point site, or the
@@ -708,7 +750,7 @@ impl MatchState {
                 };
             if !keep {
                 // Its builder, still on it (its HQ went), stops.
-                self.fort.works.remove(&id);
+                self.lose_work(id);
                 if let Some(q) = self.squads.get_mut(&w.builder)
                     && q.order == (Order::Fortify { work: id })
                 {
@@ -722,14 +764,14 @@ impl MatchState {
                 }
                 let Some(pit) = d.pit else {
                     // Never on a validated state: no pit to wait for.
-                    self.fort.works.remove(&id);
+                    self.lose_work(id);
                     continue;
                 };
                 let depth = Fx::from(self.setup.rules.dig_profile(pit).depth);
                 let c = w.line[0];
                 let dug = terrain.base_height_at(c) - terrain.height_at(c);
                 if dug.mul_int(100) < depth.mul_int(crate::structures::BUILT_DEPTH_PCT) {
-                    self.fort.works.remove(&id);
+                    self.lose_work(id);
                     continue;
                 }
                 let sq = self.squads.get_mut(&w.builder).expect("alive");
@@ -849,6 +891,7 @@ impl MatchState {
                 let g = c.g.min(need - got);
                 c.g -= g;
                 got += g;
+                self.fort.accounts[p.0 as usize].materials_used_crate_g += g as u64;
                 if c.g == 0 {
                     self.supply6.crates.remove(&id);
                 }
@@ -872,6 +915,7 @@ impl MatchState {
                 let g = vs.material_g.min(need - got);
                 vs.material_g -= g;
                 got += g;
+                self.fort.accounts[p.0 as usize].materials_used_truck_g += g as u64;
             }
         }
         self.fort.accounts[p.0 as usize].materials_used_g += got as u64;
@@ -940,9 +984,26 @@ impl MatchState {
             wm.step = WorkStep::Wait;
         } else {
             self.fort.works.remove(&id);
+            // S10a-ai: a completed work, by blueprint.
+            let done = &mut self.fort.accounts[acc].works_done;
+            if done.len() <= w.fort as usize {
+                done.resize(w.fort as usize + 1, 0);
+            }
+            done[w.fort as usize] += 1;
             if let Some(q) = self.squads.get_mut(&w.builder) {
                 q.order = Order::Idle;
             }
+        }
+    }
+
+    /// Removes work `id` unfinished: the kg it drew for its current step
+    /// are lost for its owner (S10a-ai spec 3.5).
+    fn lose_work(&mut self, id: u32) {
+        let Some(w) = self.fort.works.remove(&id) else {
+            return;
+        };
+        if let Some(a) = self.fort.accounts.get_mut(w.owner.0 as usize) {
+            a.materials_lost_g += w.got_g as u64;
         }
     }
 
@@ -1122,6 +1183,14 @@ fn segment_in_rect(a: FxVec2, b: FxVec2, c: FxVec2, f: FxVec2, half: FxVec2) -> 
     true
 }
 
+/// Half the band width of section `s` (0 for a blueprint without wire).
+fn half_band(forts: &[frontline_content::setup::FortSetup], s: &WireSection) -> Fx {
+    forts
+        .get(s.fort as usize)
+        .and_then(|d| d.wire.as_ref())
+        .map_or(Fx::ZERO, |w| Fx::from(w.band).div_int(2))
+}
+
 /// How a wire section was removed (the account counter it adds to).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum WireGone {
@@ -1146,6 +1215,22 @@ impl FortState {
                 .map_or(Fx::ZERO, |w| Fx::from(w.band).div_int(2));
             near_segment(pos, s.a, s.b, half)
         })
+    }
+
+    /// S10a-ai: whether `pos` lies inside the band of a standing section
+    /// not owned by `player` (false at once without wire).
+    pub fn in_enemy_wire(
+        &self,
+        forts: &[frontline_content::setup::FortSetup],
+        pos: FxVec2,
+        player: PlayerId,
+    ) -> bool {
+        if self.wire.is_empty() {
+            return false;
+        }
+        self.wire
+            .values()
+            .any(|s| s.owner != player && near_segment(pos, s.a, s.b, half_band(forts, s)))
     }
 
     /// The infantry path layer (rule 4): the sorted path nodes (`dim` per

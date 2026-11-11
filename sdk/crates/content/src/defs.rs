@@ -16,12 +16,12 @@ use serde::{Deserialize, Serialize};
 use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiGunsTuning, AiInfantryTuning, AiMortarTuning,
-    AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning,
-    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
-    FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning,
-    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
-    TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
+    AiMortarTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning,
+    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
+    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning,
+    MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning,
+    ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -1903,6 +1903,9 @@ pub struct AiDef {
     pub truck: Option<AiTruckTuning>,
     /// S9: `[ai.guns]`.
     pub guns: Option<AiGunsTuning>,
+    /// S10a-ai: `[ai.fort]` (default: the S10a-ai starting values).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fort: Option<AiFortTuning>,
 }
 
 impl AiDef {
@@ -3054,6 +3057,7 @@ impl RulesDef {
                 ai_recon: &a.recon.clone().unwrap_or_default(),
                 ai_truck: &a.truck.clone().unwrap_or_default(),
                 ai_guns: &a.guns.clone().unwrap_or_default(),
+                ai_fort: &a.fort.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

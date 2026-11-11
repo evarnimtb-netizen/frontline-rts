@@ -123,15 +123,18 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S10a layout (forts, pits, [fortify], Bangalore, capability bits) changed it;
 // the S9b values were 0xd3b9ad98eca65f60, 0xbce818eb2c6f70da,
 // 0x35297646d7e6b530, 0xd3b9ad98eca65f60, 0xb23d38c337cb5d20, 0x44ea26e805c4ec44.
+// S10a-ai layout (`[ai.fort]` in the setup) changed it; the S10a values were
+// 0xa0584615a71b264a, 0x8984ca27a8ea7eb4, 0x2ba46897da09a2dd, 0xa0584615a71b264a,
+// 0xc134756107a940f9, 0xdafb30aa4eb8084c.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xa0584615a71b264a),
-    ("skirmish usa-ger seed 7 hard", 0x8984ca27a8ea7eb4),
-    ("test_unlock ger-usa seed 1 normal", 0x2ba46897da09a2dd),
-    ("example override ger-usa seed 1 normal", 0xa0584615a71b264a),
-    ("human ger vs ai usa seed 3 easy", 0xc134756107a940f9),
+    ("skirmish ger-usa seed 1 normal", 0xcf34d01b95342d0f),
+    ("skirmish usa-ger seed 7 hard", 0x2a1f3cd5c00abbb9),
+    ("test_unlock ger-usa seed 1 normal", 0xd0129bd32566edf0),
+    ("example override ger-usa seed 1 normal", 0xcf34d01b95342d0f),
+    ("human ger vs ai usa seed 3 easy", 0x43883242c0df2a86),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xdafb30aa4eb8084c,
+        0x2ecb31b5c8f84cfa,
     ),
 ];
 

@@ -1393,6 +1393,45 @@ recrew_gap_s = 60            # s: one such order per gun within this
 resite_idle_s = 120          # s: a gun with no vehicle target or armour in reach this long packs and tows to a held point with armour (0: never; S9 review)
 resite_max = 3               # moves one gun makes in a match
 
+# S10a-ai: fortification AI (docs/slices/S10a-ai.md 3.7). Starting values;
+# the four switches (1 on, 0 off) are the ablations of spec 9.
+[ai.fort]
+works = 1                    # switch: MG nests, dugouts, the HQ roof, sandbags at guns
+wire = 1                     # switch: barbed wire
+breach = 1                   # switch: wire knowledge, breach jobs, the urgent breach buy
+cards = 1                    # switch: the three S10a engineer cards are bought
+builders_max = 2             # fort jobs at once
+works_per_point = 3          # works per point
+build_threat_max = 4         # no building at a point with more threat than this
+builder_reach_m = 200        # m: a builder this close to a gun or the HQ may work there
+load_min_kg = 40             # kg: a builder carrying less loads in base
+materials_max_pct = 3        # %: materials cost at most this share of the income earned (S10a-18 (A))
+truck_material_kg = 200      # kg: one truck run
+material_wait_s = 120        # s: a truck waits at a work at most this long
+nest_offset_m = 6            # m: an MG nest stands this far past the trench end
+wire_out_m = 35              # m: wire lies this far out toward the enemy (design 7.6: 30-50 m) ...
+wire_len_m = 30              # m: ... this long
+dugout_back_m = 8            # m: a dugout stands this far behind the trench middle
+gun_hold_s = 60              # s: a gun in Hold this long gets a sandbag wall ...
+gun_wall_m = 4               # m: ... this far in front of it
+shelled_pct = 50             # %: a point is shelled when this share of its defenders is ducked or pinned ...
+shelled_clear_m = 150        # m: ... with no known enemy soldier this close (S10a-15 (A))
+shelter_s = 20               # s: men shelter while the shelled mark is this fresh ...
+shelter_clear_m = 100        # m: ... and no known enemy is this close
+wire_seen_m = 150            # m: enemy wire is seen from this close ...
+wire_rays = 16               # ... with at most this many rays per plan
+breach_near_m = 80           # m: known wire this close to an attacked point wants a breach
+recheck_s = 60               # s: one breach path search per point within this
+stage_m = 60                 # m: the breach squad stages this far short of the crossing
+smoke_frac_pct = 50          # %: smoke lands this share of the way from the crossing to the MG
+suppress_lead_s = 6          # s: the carrier goes this long after the suppression or smoke
+cut_fire_m = 100             # m: a Bangalore with a known defender this close to the crossing, else a cut
+place_wait_s = 30            # s: no charge laid or cut done within this: a retry ...
+breach_tries = 3             # ... at most this many tries
+breach_max_s = 180           # s: a breach job ends after this long
+gap_clear_m = 2              # m: a gap is open with no standing section this close to the crossing
+breach_cards_max = 1         # urgent breach buys alive at once
+
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
 # Direct (the mortar's own leader sees the point), Observed (another squad

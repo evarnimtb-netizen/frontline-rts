@@ -740,7 +740,7 @@ fn breach_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Result
             w.step(&[]);
         }
     }
-    let acc = w.game().unwrap().fort().accounts[p];
+    let acc = w.game().unwrap().fort().accounts[p].clone();
     Ok(BreachRun {
         seed,
         entrenched: faction(w.match_setup().unwrap(), dug),

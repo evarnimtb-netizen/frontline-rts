@@ -1452,7 +1452,7 @@ fn bangalore_clears_a_gap_and_counts_blown() {
         }
     }
     steps(&mut w, 2);
-    let a = fs(&w).accounts[0];
+    let a = fs(&w).accounts[0].clone();
     assert_eq!(a.bangalores, 1);
     // The two sections either side of the target are gone.
     assert!(fs(&w).wire.values().all(|x| {

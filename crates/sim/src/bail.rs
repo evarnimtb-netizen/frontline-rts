@@ -457,6 +457,7 @@ impl MatchState {
             for q in &mut self.path_queue.queues {
                 q.retain(|r| !matches!(r, PathReq::Vehicle { squad, .. } if *squad == sq));
             }
+            self.lose_squad_kg(sq);
             self.squads.remove(&sq);
         }
         ctx.ents.kind[i] = EntityKind::Abandoned;
@@ -941,6 +942,7 @@ impl MatchState {
             ctx.hash.mark_entity_chunk(m.chunk());
         }
         if self.squads[&q].members.is_empty() {
+            self.lose_squad_kg(q);
             self.squads.remove(&q);
             for queue in &mut self.path_queue.queues {
                 queue.retain(|r| *r != PathReq::Squad(q));
@@ -1102,6 +1104,7 @@ impl MatchState {
             sq.order = Order::Idle;
         }
         for q in gone {
+            self.lose_squad_kg(q);
             let sq = self.squads.remove(&q).expect("listed");
             for queue in &mut self.path_queue.queues {
                 queue.retain(|r| {

@@ -2109,6 +2109,7 @@ impl MatchState {
             return None;
         }
         if let Some(sid) = ents.squad[i].take() {
+            self.lose_squad_kg(sid);
             self.squads.remove(&sid);
         }
         ents.kind[i] = EntityKind::Wreck;
@@ -2117,7 +2118,13 @@ impl MatchState {
         hash.mark_entity_chunk(id.chunk());
         if let Some(vs) = self.vehicles.get_mut(&id) {
             vs.wreck_tick = Some(tick);
-            // S10a: a wreck's construction material is lost (no counter).
+            // S10a: a wreck's construction material is lost (S10a-ai:
+            // counted for its owner).
+            if vs.material_g > 0
+                && let Some(a) = self.fort.accounts.get_mut(ents.owner[i].0 as usize)
+            {
+                a.materials_lost_g += vs.material_g as u64;
+            }
             vs.material_g = 0;
             vs.speed = Fx::ZERO;
             vs.avg_vel = FxVec2::ZERO;

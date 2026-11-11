@@ -439,8 +439,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// gone). One bump for the whole slice. 22: S10a (`MatchState::fort`,
 /// `Order::{Fortify, CutWire}`, `VehicleState::material_g`, the forts,
 /// pits, `[fortify]`, Bangalore and capability bits in the setup). One
-/// bump for the whole slice.
-const SAVE_VERSION: u32 = 22;
+/// bump for the whole slice. 23: S10a-ai (`AiState` fort and breach
+/// state and counters, `FortAccount` lost and by-kind counters, `[ai.fort]`
+/// in the setup). One bump for the whole slice.
+const SAVE_VERSION: u32 = 23;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2667,6 +2669,9 @@ impl World {
 #[path = "s6_tests.rs"]
 mod s6_tests;
 
+#[cfg(test)]
+#[path = "s10a_ai_tests.rs"]
+mod s10a_ai_tests;
 #[cfg(test)]
 #[path = "s10a_tests.rs"]
 mod s10a_tests;

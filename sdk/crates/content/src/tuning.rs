@@ -1605,6 +1605,134 @@ impl Default for AiGunsTuning {
 }
 
 tuning_table! {
+    /// `[ai.fort]` (S10a-ai, docs/slices/S10a-ai.md 3.7): how the AI buys
+    /// the engineer cards, carries materials, builds works and breaches
+    /// wire. The four switches (1 on, 0 off) are the ablations of spec 9.
+    pub struct AiFortTuning {
+        /// Switch: MG nests, dugouts, the HQ roof, sandbags at guns.
+        works: 0..=1,
+        /// Switch: barbed wire.
+        wire: 0..=1,
+        /// Switch: wire knowledge, breach jobs, the urgent breach buy.
+        breach: 0..=1,
+        /// Switch: the three S10a engineer cards are bought.
+        cards: 0..=1,
+        /// Fort jobs at once.
+        builders_max: 0..=16,
+        /// Works per point.
+        works_per_point: 0..=16,
+        /// No building at a point with more threat than this.
+        build_threat_max: 0..=100,
+        /// A builder this close to a gun or the HQ may work there (m).
+        builder_reach_m: 0..=2000,
+        /// A builder carrying less than this loads in base (kg).
+        load_min_kg: 0..=2000,
+        /// Materials cost at most this share of the income earned (%).
+        materials_max_pct: 0..=100,
+        /// A truck run loads this much (kg).
+        truck_material_kg: 0..=10000,
+        /// A truck waits at a work at most this long (s).
+        material_wait_s: 1..=3600,
+        /// An MG nest stands this far past the trench end (m).
+        nest_offset_m: 0..=200,
+        /// Wire lies this far out from the trench toward the enemy (m) ...
+        wire_out_m: 1..=500,
+        /// ... this long (m).
+        wire_len_m: 2..=200,
+        /// A dugout stands this far behind the trench middle (m).
+        dugout_back_m: 0..=200,
+        /// A gun in Hold this long gets a sandbag wall (s).
+        gun_hold_s: 0..=3600,
+        /// The wall stands this far in front of the gun (m).
+        gun_wall_m: 0..=100,
+        /// A point is shelled when this share of its defenders is ducked
+        /// or pinned (%) ...
+        shelled_pct: 1..=100,
+        /// ... with no known enemy soldier this close (m).
+        shelled_clear_m: 0..=2000,
+        /// Men shelter while the shelled mark is this fresh (s) ...
+        shelter_s: 1..=600,
+        /// ... and no known enemy is this close (m).
+        shelter_clear_m: 0..=2000,
+        /// Enemy wire is seen from this close (m) ...
+        wire_seen_m: 1..=2000,
+        /// ... with at most this many rays per plan.
+        wire_rays: 0..=256,
+        /// Known wire this close to an attacked point wants a breach (m).
+        breach_near_m: 0..=2000,
+        /// One breach path search per point within this (s).
+        recheck_s: 1..=600,
+        /// The breach squad stages this far short of the crossing (m).
+        stage_m: 0..=1000,
+        /// Smoke lands this share of the way from the crossing to the MG (%).
+        smoke_frac_pct: 0..=100,
+        /// The carrier goes this long after the suppression or smoke (s).
+        suppress_lead_s: 0..=120,
+        /// A Bangalore is laid when a known defender is this close to the
+        /// crossing, else the wire is cut (m).
+        cut_fire_m: 0..=2000,
+        /// No charge laid or cut done within this: a retry (s).
+        place_wait_s: 1..=600,
+        /// Tries before a breach is given up.
+        breach_tries: 1..=10,
+        /// A breach job ends after this long (s).
+        breach_max_s: 1..=3600,
+        /// A gap is open with no standing section this close to the
+        /// crossing (m).
+        gap_clear_m: 0..=50,
+        /// Urgent breach buys alive at once.
+        breach_cards_max: 0..=8,
+    }
+}
+
+impl AiFortTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiFortTuning {
+    /// S10a-ai starting values (a rules def without `[ai.fort]`).
+    fn default() -> AiFortTuning {
+        AiFortTuning {
+            works: 1,
+            wire: 1,
+            breach: 1,
+            cards: 1,
+            builders_max: 2,
+            works_per_point: 3,
+            build_threat_max: 4,
+            builder_reach_m: 200,
+            load_min_kg: 40,
+            materials_max_pct: 3,
+            truck_material_kg: 200,
+            material_wait_s: 120,
+            nest_offset_m: 6,
+            wire_out_m: 35,
+            wire_len_m: 30,
+            dugout_back_m: 8,
+            gun_hold_s: 60,
+            gun_wall_m: 4,
+            shelled_pct: 50,
+            shelled_clear_m: 150,
+            shelter_s: 20,
+            shelter_clear_m: 100,
+            wire_seen_m: 150,
+            wire_rays: 16,
+            breach_near_m: 80,
+            recheck_s: 60,
+            stage_m: 60,
+            smoke_frac_pct: 50,
+            suppress_lead_s: 6,
+            cut_fire_m: 100,
+            place_wait_s: 30,
+            breach_tries: 3,
+            breach_max_s: 180,
+            gap_clear_m: 2,
+            breach_cards_max: 1,
+        }
+    }
+}
+
+tuning_table! {
     /// `[ai.truck]` (S8b, docs/slices/S8b-trucks-recon.md 9): how the AI
     /// uses its supply trucks.
     pub struct AiTruckTuning {
@@ -2087,6 +2215,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.recon", AiReconTuning::KEYS),
     ("ai.truck", AiTruckTuning::KEYS),
     ("ai.guns", AiGunsTuning::KEYS),
+    ("ai.fort", AiFortTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -2151,6 +2280,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_recon: &'a AiReconTuning,
     pub ai_truck: &'a AiTruckTuning,
     pub ai_guns: &'a AiGunsTuning,
+    pub ai_fort: &'a AiFortTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -2212,6 +2342,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_recon.check(&p("ai.recon"), out);
     t.ai_truck.check(&p("ai.truck"), out);
     t.ai_guns.check(&p("ai.guns"), out);
+    t.ai_fort.check(&p("ai.fort"), out);
 }
 
 #[cfg(test)]

@@ -3420,6 +3420,16 @@ impl MatchState {
                 p.s9.gun_crew_lost = p.s9.gun_crew_lost.saturating_add(1);
             }
         }
+        // S10a-ai: a man killed inside an enemy wire band.
+        if !self.fort.wire.is_empty()
+            && !self.fort_off
+            && self
+                .fort
+                .in_enemy_wire(&self.setup.forts, fell_at, PlayerId(owner as u8))
+            && let Some(a) = self.fort.accounts.get_mut(owner)
+        {
+            a.men_lost_in_wire += 1;
+        }
         ents.kind[i] = EntityKind::Corpse;
         ents.velocity[i] = Velocity::default();
         let prone = Fx::from_milli(self.setup.rules.combat.body.prone_mm as i32);
@@ -3482,6 +3492,7 @@ impl MatchState {
             q.retain(|r| *r != PathReq::Unit(id));
         }
         if sq.members.is_empty() {
+            self.lose_squad_kg(sid);
             self.squads.remove(&sid);
             for q in &mut self.path_queue.queues {
                 q.retain(|r| *r != PathReq::Squad(sid));

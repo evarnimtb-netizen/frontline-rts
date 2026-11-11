@@ -183,6 +183,8 @@ use frontline_content::ItemKind;
 mod ammo;
 mod armour;
 mod assault;
+mod breach;
+mod fort;
 mod guns;
 mod mortar;
 mod overwatch;
@@ -199,6 +201,8 @@ pub use transport::{
     AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
 };
 
+pub use breach::{AiBreach, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN};
+pub use fort::{AiFortJob, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use truck::{AiTruck, GAVE_UP_GOALS, MAX_TRUCKS, TruckPhase};
 
@@ -331,6 +335,25 @@ pub struct AiState {
     /// S9: guns infantry was sent to serve, and when (at most
     /// [`guns::MAX_RECREW_TRIES`]).
     pub gun_recrews: BTreeMap<SimId, u64>,
+    /// S10a-ai (`ai::fort`): fort jobs, by the builder squad (at most
+    /// [`MAX_FORT_JOBS`]).
+    pub forts: BTreeMap<SquadId, AiFortJob>,
+    /// S10a-ai (`ai::breach`): breach jobs, by the breach squad (at most
+    /// [`MAX_BREACHES`]).
+    pub breaches: BTreeMap<SquadId, AiBreach>,
+    /// S10a-ai: enemy wire sections known (ascending ids, at most
+    /// [`MAX_WIRE_KNOWN`]) and the next section the sight check reads.
+    pub wire_known: Vec<u32>,
+    pub wire_cursor: u32,
+    /// S10a-ai: tick each held point was last marked shelled (by point).
+    pub shelled: BTreeMap<u8, u64>,
+    /// S10a-ai: a known enemy soldier was in a `fire_mission` squad.
+    pub enemy_mortar_seen: bool,
+    /// S10a-ai: tick of each point's last breach path search (by point).
+    pub bypass: BTreeMap<u8, u64>,
+    /// S10a-ai: the material run under way (one per player): the carrying
+    /// squad (truck or bearers) and the work it serves.
+    pub material_run: Option<(SquadId, u32)>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -565,6 +588,25 @@ pub struct AiCounters {
     pub gun_recrew_orders: u32,
     /// S9 Fix: guns packed to move to another held point.
     pub gun_resites: u32,
+    /// S10a-ai (`ai::fort`): fort jobs started, `Fortify` orders refused,
+    /// plan-squads on a fort job and all plan-squads given infantry tasks
+    /// (`builder_share_pct` = the first over the second), shelter moves,
+    /// material runs by kind (index: truck, crate, walk).
+    pub fort_jobs: u32,
+    pub fort_refused: u32,
+    pub fort_build_plans: u32,
+    pub infantry_plans: u32,
+    pub shelter_moves: u32,
+    pub material_runs: [u32; 3],
+    /// S10a-ai (`ai::breach`): breach jobs started, gaps opened, jobs
+    /// given up, smoke thrown and suppression ordered for a breach, and
+    /// attacks whose path went round known wire.
+    pub breaches_started: u32,
+    pub breaches_opened: u32,
+    pub breaches_given_up: u32,
+    pub breach_smokes: u32,
+    pub breach_suppress: u32,
+    pub wire_bypassed: u32,
 }
 
 impl AiState {
@@ -594,6 +636,14 @@ impl AiState {
             trucks: BTreeMap::new(),
             guns: BTreeMap::new(),
             gun_recrews: BTreeMap::new(),
+            forts: BTreeMap::new(),
+            breaches: BTreeMap::new(),
+            wire_known: Vec::new(),
+            wire_cursor: 0,
+            shelled: BTreeMap::new(),
+            enemy_mortar_seen: false,
+            bypass: BTreeMap::new(),
+            material_run: None,
         }
     }
 
@@ -741,6 +791,8 @@ impl AiState {
                     || l.target.x > size
                     || l.target.y > size
             })
+            // S10a-ai.
+            || !self.validate_fort(g, player, tick)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             || self.pending.iter().any(|c| match &c.kind {
                 CommandKind::Dig { line, .. } => line.len() > MAX_DIG_POINTS,
@@ -766,6 +818,56 @@ impl AiState {
             return Err("AI state out of range");
         }
         Ok(())
+    }
+}
+
+impl AiState {
+    /// S10a-ai: the fort and breach state of a loaded AI (spec 4): caps,
+    /// sorted `wire_known`, jobs keyed by squads of `player` (a squad gone
+    /// since the last plan is allowed: the next plan drops its job), points
+    /// and blueprints in range, ticks not in the future, sites on the map.
+    fn validate_fort(&self, g: &MatchState, player: PlayerId, tick: u64) -> bool {
+        let np = g.points.len();
+        let size = Fx::from_int(g.setup.map.size_m);
+        let on_map = |p: &FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size;
+        let own = |id: &SquadId| {
+            id.0 < g.next_squad && g.squads.get(id).is_none_or(|q| q.owner == player)
+        };
+        let point = |p: u8| p == NO_POINT || (p as usize) < np;
+        self.forts.len() <= MAX_FORT_JOBS
+            && self.forts.iter().all(|(id, j)| {
+                own(id)
+                    && (j.fort as usize) < g.setup.forts.len()
+                    && point(j.point)
+                    && !j.line.is_empty()
+                    && j.line.len() <= crate::fort::MAX_FORT_POINTS
+                    && j.line.iter().all(on_map)
+                    && j.since <= tick
+                    && j.tries <= MAX_FORT_TRIES
+            })
+            && self.breaches.len() <= MAX_BREACHES
+            && self.breaches.iter().all(|(id, b)| {
+                own(id)
+                    && (b.point as usize) < np
+                    && on_map(&b.crossing)
+                    && b.since <= tick
+                    && b.tries <= MAX_BREACH_TRIES
+                    && b.suppress_at.is_none_or(|t| t <= tick)
+                    && b.smoke_at.is_none_or(|t| t <= tick)
+            })
+            && self.wire_known.len() <= MAX_WIRE_KNOWN
+            && self.wire_known.windows(2).all(|w| w[0] < w[1])
+            && self.shelled.len() <= np
+            && self
+                .shelled
+                .iter()
+                .all(|(&p, &t)| (p as usize) < np && t <= tick)
+            && self.bypass.len() <= np
+            && self
+                .bypass
+                .iter()
+                .all(|(&p, &t)| (p as usize) < np && t <= tick)
+            && self.material_run.is_none_or(|(id, _)| own(&id))
     }
 }
 

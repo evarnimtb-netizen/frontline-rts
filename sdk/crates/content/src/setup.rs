@@ -30,12 +30,12 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiGunsTuning, AiInfantryTuning, AiMortarTuning,
-    AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning,
-    BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning,
-    FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning, MortarTuning,
-    RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning,
-    TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
+    AiMortarTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning,
+    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
+    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning,
+    MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning,
+    ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -606,6 +606,8 @@ pub struct AiSetup {
     pub truck: AiTruckTuning,
     /// S9: `[ai.guns]` (or the S9 starting values).
     pub guns: AiGunsTuning,
+    /// S10a-ai: `[ai.fort]` (or the S10a-ai starting values).
+    pub fort: AiFortTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2004,6 +2006,7 @@ impl ModDefs {
                         recon: a.recon.clone().unwrap_or_default(),
                         truck: a.truck.clone().unwrap_or_default(),
                         guns: a.guns.clone().unwrap_or_default(),
+                        fort: a.fort.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2844,6 +2847,7 @@ impl MatchSetup {
                 ai_recon: &a.recon,
                 ai_truck: &a.truck,
                 ai_guns: &a.guns,
+                ai_fort: &a.fort,
             },
         );
         r.at_ditch

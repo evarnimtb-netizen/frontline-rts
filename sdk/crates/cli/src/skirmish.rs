@@ -1439,7 +1439,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 }),
                 s9: pl.s9,
                 s10: S10Player {
-                    fort: g.fort().accounts.get(p).copied().unwrap_or_default(),
+                    fort: g.fort().accounts.get(p).cloned().unwrap_or_default(),
                     new_cards_bought: fielded
                         .values()
                         .filter(|(o, t)| {
