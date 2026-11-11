@@ -1877,12 +1877,20 @@ impl MatchState {
         let max_exp = mv.path_max_expansions;
         // Infantry: AT-ditch costs once a match has ditches (S3).
         let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
-        // S10a: the wire layer, built only when wire stands.
-        let wire_nodes = if self.fort.wire.is_empty() || self.fort_off {
-            Vec::new()
+        // S10a: the wire layer, only when wire stands (S10a-ai: from the
+        // derived cell index, rebuilt only when the wire changed).
+        let wired = !self.fort.wire.is_empty() && !self.fort_off;
+        if wired {
+            self.fort
+                .refresh_wire_index(&self.setup.forts, terrain.dim());
+        }
+        let wire_nodes = if wired {
+            self.fort.path_nodes(&self.setup.forts, terrain.dim())
         } else {
-            self.fort.wire_nodes(&self.setup.forts, terrain.dim())
+            std::borrow::Cow::Borrowed(&[][..])
         };
+        let (fort, forts) = (&self.fort, &self.setup.forts);
+        let crosses = |a: FxVec2, b: FxVec2| fort.step_in_wire(forts, a, b);
         let wire = (!wire_nodes.is_empty()).then(|| crate::path::WireCost {
             nodes: &wire_nodes,
             cost_pct: self
@@ -1891,6 +1899,7 @@ impl MatchState {
                 .fortify
                 .as_ref()
                 .map_or(100, |f| f.wire_path_cost_pct),
+            crosses: &crosses,
         });
         let foot_path = |from: FxVec2, to: FxVec2, scratch: &mut PathScratch| match (ditches, wire)
         {

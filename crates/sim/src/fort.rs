@@ -169,6 +169,42 @@ pub struct FortState {
     pub carried_g: BTreeMap<SquadId, u32>,
     /// Per player.
     pub accounts: Vec<FortAccount>,
+    /// S10a-ai: the derived wire cell index (never saved or hashed;
+    /// rebuilt by [`FortState::refresh_wire_index`]).
+    #[serde(skip)]
+    pub(crate) wire_index: WireIndex,
+}
+
+/// Side of a wire index cell (m).
+pub const WIRE_CELL_M: i32 = 16;
+
+/// S10a-ai (spec 3.5 item 2): the standing sections by 16 m cell and the
+/// coarse path layer, derived from `FortState::wire`. Fresh while its key
+/// equals `(wire.len(), next_wire)` (every add raises `next_wire`, every
+/// removal lowers the length); a stale index is never read: the queries
+/// fall back to the full scan, so the answers never depend on it.
+#[derive(Clone, Debug, Default)]
+pub struct WireIndex {
+    key: Option<(usize, u32)>,
+    /// Cell key `cy << 16 | cx` -> section ids (ascending) whose band
+    /// box touches the cell.
+    cells: BTreeMap<u32, Vec<u32>>,
+    /// The coarse path layer ([`FortState::wire_nodes`]) for `dim`.
+    nodes: Vec<u32>,
+    dim: u32,
+}
+
+/// Derived data: equal whatever it holds (the state it derives from is
+/// compared).
+impl PartialEq for WireIndex {
+    fn eq(&self, _: &WireIndex) -> bool {
+        true
+    }
+}
+impl Eq for WireIndex {}
+
+fn cell_of(v: Fx) -> u32 {
+    (v.floor_int().max(0) / WIRE_CELL_M).min(0xFFFF) as u32
 }
 
 /// Why an S10a command was refused (presentation only, like
@@ -1100,6 +1136,9 @@ const PLACE_REACH: Fx = Fx::from_int(2);
 const PLACE_SLACK: Fx = Fx::from_ratio(1, 2);
 /// Grid spacing of the path nodes (m; `crate::path`).
 const NODE_M: i32 = 4;
+/// The coarse path layer reaches this far (m) past half a band: more than
+/// half a diagonal step (2.83 m).
+pub const WIRE_NODE_SLACK_M: i32 = 3;
 /// A charge's bursts get keys `id * CHARGE_KEYS + k` (k < 8).
 const CHARGE_KEYS: u32 = 8;
 
@@ -1202,19 +1241,101 @@ pub(crate) enum WireGone {
 }
 
 impl FortState {
-    /// Section 5 rule 4: whether `pos` lies inside a standing wire band
-    /// (false at once without wire).
-    pub fn in_wire(&self, forts: &[frontline_content::setup::FortSetup], pos: FxVec2) -> bool {
+    /// Whether the wire index matches the wire (tests read it too).
+    #[inline]
+    pub(crate) fn index_fresh(&self) -> bool {
+        self.wire_index.key == Some((self.wire.len(), self.next_wire))
+    }
+
+    /// Rebuilds the wire index (cells and the coarse path layer for a grid
+    /// of `dim` nodes per side) when the wire changed since the last
+    /// build. Cheap when nothing changed.
+    pub(crate) fn refresh_wire_index(
+        &mut self,
+        forts: &[frontline_content::setup::FortSetup],
+        dim: u32,
+    ) {
+        if self.index_fresh() && self.wire_index.dim == dim {
+            return;
+        }
+        let mut cells: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+        for (&id, s) in &self.wire {
+            let r = half_band(forts, s);
+            let (x0, x1) = (cell_of(s.a.x.min(s.b.x) - r), cell_of(s.a.x.max(s.b.x) + r));
+            let (y0, y1) = (cell_of(s.a.y.min(s.b.y) - r), cell_of(s.a.y.max(s.b.y) + r));
+            for cy in y0..=y1 {
+                for cx in x0..=x1 {
+                    cells.entry(cy << 16 | cx).or_default().push(id);
+                }
+            }
+        }
+        let nodes = self.wire_nodes(forts, dim);
+        self.wire_index = WireIndex {
+            key: Some((self.wire.len(), self.next_wire)),
+            cells,
+            nodes,
+            dim,
+        };
+    }
+
+    /// The coarse path layer of a fresh index for `dim` (else built now).
+    pub(crate) fn path_nodes(
+        &self,
+        forts: &[frontline_content::setup::FortSetup],
+        dim: u32,
+    ) -> std::borrow::Cow<'_, [u32]> {
+        if self.index_fresh() && self.wire_index.dim == dim {
+            std::borrow::Cow::Borrowed(&self.wire_index.nodes)
+        } else {
+            std::borrow::Cow::Owned(self.wire_nodes(forts, dim))
+        }
+    }
+
+    /// The sections whose band box touches a cell of the box `lo..=hi`
+    /// (ascending, deduplicated), or every section with a stale index.
+    fn sections_near(&self, lo: FxVec2, hi: FxVec2) -> Vec<u32> {
+        if !self.index_fresh() {
+            return self.wire.keys().copied().collect();
+        }
+        let mut out = Vec::new();
+        for cy in cell_of(lo.y)..=cell_of(hi.y) {
+            for cx in cell_of(lo.x)..=cell_of(hi.x) {
+                if let Some(v) = self.wire_index.cells.get(&(cy << 16 | cx)) {
+                    out.extend_from_slice(v);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Whether `pos` lies within half a band of a standing section passing
+    /// `keep` (the one predicate of [`Self::in_wire`] and friends).
+    fn in_band_of(
+        &self,
+        forts: &[frontline_content::setup::FortSetup],
+        pos: FxVec2,
+        keep: impl Fn(&WireSection) -> bool,
+    ) -> bool {
         if self.wire.is_empty() {
             return false;
         }
-        self.wire.values().any(|s| {
-            let half = forts
-                .get(s.fort as usize)
-                .and_then(|d| d.wire.as_ref())
-                .map_or(Fx::ZERO, |w| Fx::from(w.band).div_int(2));
-            near_segment(pos, s.a, s.b, half)
-        })
+        let hit = |s: &WireSection| keep(s) && near_segment(pos, s.a, s.b, half_band(forts, s));
+        if !self.index_fresh() {
+            return self.wire.values().any(hit);
+        }
+        let key = cell_of(pos.y) << 16 | cell_of(pos.x);
+        self.wire_index
+            .cells
+            .get(&key)
+            .is_some_and(|v| v.iter().any(|id| self.wire.get(id).is_some_and(hit)))
+    }
+
+    /// Section 5 rule 4: whether `pos` lies inside a standing wire band
+    /// (false at once without wire).
+    pub fn in_wire(&self, forts: &[frontline_content::setup::FortSetup], pos: FxVec2) -> bool {
+        self.in_band_of(forts, pos, |_| true)
     }
 
     /// S10a-ai: whether `pos` lies inside the band of a standing section
@@ -1225,18 +1346,40 @@ impl FortState {
         pos: FxVec2,
         player: PlayerId,
     ) -> bool {
+        self.in_band_of(forts, pos, |s| s.owner != player)
+    }
+
+    /// S10a-ai (S17): whether the straight step `a -> b` comes within half
+    /// a band of a standing section (exact: the segments cross, or an end
+    /// of one lies within half a band of the other).
+    pub fn step_in_wire(
+        &self,
+        forts: &[frontline_content::setup::FortSetup],
+        a: FxVec2,
+        b: FxVec2,
+    ) -> bool {
         if self.wire.is_empty() {
             return false;
         }
-        self.wire
-            .values()
-            .any(|s| s.owner != player && near_segment(pos, s.a, s.b, half_band(forts, s)))
+        let lo = FxVec2::new(a.x.min(b.x), a.y.min(b.y));
+        let hi = FxVec2::new(a.x.max(b.x), a.y.max(b.y));
+        self.sections_near(lo, hi).into_iter().any(|id| {
+            let s = &self.wire[&id];
+            let r = half_band(forts, s);
+            crossing(a, b - a, s.a, s.b).is_some()
+                || near_segment(a, s.a, s.b, r)
+                || near_segment(b, s.a, s.b, r)
+                || near_segment(s.a, a, b, r)
+                || near_segment(s.b, a, b, r)
+        })
     }
 
-    /// The infantry path layer (rule 4): the sorted path nodes (`dim` per
-    /// side, 4 m apart) within half a band plus half a node step of a
-    /// standing section, so every section marks the nodes it lies among.
-    /// Empty without wire.
+    /// The infantry path layer (rule 4; S10a-ai the A* prefilter): the
+    /// sorted path nodes (`dim` per side, 4 m apart) within half a band
+    /// plus [`WIRE_NODE_SLACK_M`] of a standing section. A step whose
+    /// segment comes within half a band of a section has an end in it
+    /// (no point of a diagonal step is farther than 2.83 m from both
+    /// ends). Empty without wire.
     pub(crate) fn wire_nodes(
         &self,
         forts: &[frontline_content::setup::FortSetup],
@@ -1244,11 +1387,7 @@ impl FortState {
     ) -> Vec<u32> {
         let mut out = Vec::new();
         for s in self.wire.values() {
-            let band = forts
-                .get(s.fort as usize)
-                .and_then(|d| d.wire.as_ref())
-                .map_or(Fx::ZERO, |w| Fx::from(w.band).div_int(2));
-            let r = band + Fx::from_int(NODE_M / 2);
+            let r = half_band(forts, s) + Fx::from_int(WIRE_NODE_SLACK_M);
             let lo = |a: Fx, b: Fx| ((a.min(b) - r).floor_int() / NODE_M).max(0) as u32;
             let hi = |a: Fx, b: Fx| {
                 (((a.max(b) + r).floor_int() / NODE_M) + 1).clamp(0, dim as i32 - 1) as u32

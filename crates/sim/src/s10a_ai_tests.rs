@@ -35,8 +35,18 @@ fn wire_with_gap(w: &mut World, a: FxVec2, b: FxVec2, x0: Fx, x1: Fx) {
     });
 }
 
-/// One infantry path search as `serve_paths` makes it.
-fn foot_path(w: &World, from: FxVec2, to: FxVec2) -> PathResult {
+/// One infantry path search as `serve_paths` makes it (the index
+/// refreshed first, as there).
+fn foot_path(w: &mut World, from: FxVec2, to: FxVec2) -> PathResult {
+    let dim = w.state.terrain.dim();
+    {
+        let g = w.state.game.as_mut().unwrap();
+        g.fort.refresh_wire_index(&g.setup.forts, dim);
+    }
+    foot_path_ro(w, from, to)
+}
+
+fn foot_path_ro(w: &World, from: FxVec2, to: FxVec2) -> PathResult {
     let g = w.game().unwrap();
     let terrain = &w.state.terrain;
     let mv = &g.setup().rules.movement;
@@ -46,10 +56,13 @@ fn foot_path(w: &World, from: FxVec2, to: FxVec2) -> PathResult {
         trench_cost_pct: mv.trench_cost_pct,
         ditch_cost_pct: mv.ditch_cost_pct,
     };
-    let nodes = g.fort().wire_nodes(&g.setup().forts, terrain.dim());
+    let (fort, forts) = (g.fort(), &g.setup().forts);
+    let nodes = fort.path_nodes(forts, terrain.dim());
+    let crosses = |a: FxVec2, b: FxVec2| fort.step_in_wire(forts, a, b);
     let wire = crate::path::WireCost {
         nodes: &nodes,
         cost_pct: g.setup().rules.fortify.as_ref().unwrap().wire_path_cost_pct,
+        crosses: &crosses,
     };
     let mut s = crate::path::PathScratch::default();
     crate::path::find_foot_path(
@@ -62,6 +75,252 @@ fn foot_path(w: &World, from: FxVec2, to: FxVec2) -> PathResult {
         mv.path_max_expansions,
         &mut s,
     )
+}
+
+/// Each leg of a smoothed path from `from` that meets a wire band.
+fn wired_legs(w: &World, from: FxVec2, r: &PathResult) -> Vec<(FxVec2, FxVec2)> {
+    let g = w.game().unwrap();
+    let mut prev = from;
+    let mut out = Vec::new();
+    for &p in &r.points {
+        if g.fort().step_in_wire(&g.setup().forts, prev, p) {
+            out.push((prev, p));
+        }
+        prev = p;
+    }
+    out
+}
+
+/// Where the path from `from` crosses the line y = `y` (x values).
+fn crossings_at(from: FxVec2, r: &PathResult, y: Fx) -> Vec<Fx> {
+    let mut prev = from;
+    let mut out = Vec::new();
+    for &p in &r.points {
+        if (prev.y - y).raw().signum() != (p.y - y).raw().signum() && prev.y != p.y {
+            let t = (y - prev.y) / (p.y - prev.y);
+            out.push(prev.x + (p.x - prev.x) * t);
+        }
+        prev = p;
+    }
+    out
+}
+
+#[test]
+fn path_finds_a_2m_and_a_4m_wire_gap() {
+    // A 2 m gap (one section, 0.5 m clear of both bands) on a node
+    // column, and a 4 m gap (two sections) off the node columns, each in
+    // an 80 m line 2 m off a node row. The S10a layer (every node within
+    // half a band + 2 m) priced both gaps and the path went round the line.
+    for (gap0, gap1, label) in [(499, 501, "2 m"), (501, 505, "4 m")] {
+        let mut w = flat_world_with(1, |_| {});
+        steps(&mut w, 1);
+        wire_with_gap(
+            &mut w,
+            c(461, 502),
+            c(541, 502),
+            Fx::from_int(gap0),
+            Fx::from_int(gap1),
+        );
+        let n = w.game().unwrap().fort().wire.len();
+        assert_eq!(n, 40 - (gap1 - gap0) as usize / 2, "{label}");
+        // From 12 m beside the gap: straight across costs two wired steps
+        // (500 %), the gap a short detour, so only a free gap draws it.
+        let x = (gap0 + gap1) / 2 - 12;
+        let from = c(x, 470);
+        let r = foot_path(&mut w, from, c(x, 534));
+        assert!(r.reached, "{label}");
+        let xs = crossings_at(from, &r, Fx::from_int(502));
+        assert_eq!(xs.len(), 1, "{label}: {:?}", r.points);
+        assert!(
+            xs[0] > Fx::from_int(gap0) && xs[0] < Fx::from_int(gap1),
+            "{label} gap not taken: crossed at {} ({:?})",
+            xs[0],
+            r.points
+        );
+        assert!(wired_legs(&w, from, &r).is_empty(), "{label}: touches wire");
+    }
+}
+
+#[test]
+fn path_never_steps_across_standing_wire_beside_a_gap() {
+    // (a) One 2 m section across the middle of a diagonal grid step
+    // (416,416)-(420,420): both nodes lie 2.83 m from it, outside the S10a
+    // layer (half a band + 2 m = 2.75 m), so that step crossed it unpriced.
+    let mut w = flat_world_with(1, |_| {});
+    steps(&mut w, 1);
+    let f = fort(&w, "ww2:barbed_wire");
+    let half = Fx::from_ratio(707, 1000);
+    w.edit_fort(|s| {
+        let id = s.next_wire;
+        s.next_wire += 1;
+        s.wire.insert(
+            id,
+            crate::fort::WireSection {
+                owner: PlayerId(1),
+                fort: f,
+                a: FxVec2::new(Fx::from_int(418) - half, Fx::from_int(418) + half),
+                b: FxVec2::new(Fx::from_int(418) + half, Fx::from_int(418) - half),
+                hp: 200,
+            },
+        );
+    });
+    let from = c(400, 400);
+    let r = foot_path(&mut w, from, c(440, 440));
+    assert!(r.reached);
+    assert_eq!(wired_legs(&w, from, &r), vec![], "path {:?}", r.points);
+    // Control: the straight line does meet the section.
+    let g = w.game().unwrap();
+    assert!(g.fort().step_in_wire(&g.setup().forts, from, c(440, 440)));
+    // (b) A 20 m line with a 2 m gap between node columns (no grid step
+    // passes it 0.75 m clear): the path goes round the line, never
+    // through the gap's bands.
+    let mut w = flat_world_with(1, |_| {});
+    steps(&mut w, 1);
+    wire_with_gap(
+        &mut w,
+        c(491, 502),
+        c(511, 502),
+        Fx::from_int(501),
+        Fx::from_int(503),
+    );
+    assert_eq!(w.game().unwrap().fort().wire.len(), 9);
+    let from = c(502, 470);
+    let r = foot_path(&mut w, from, c(502, 534));
+    assert!(r.reached);
+    assert_eq!(wired_legs(&w, from, &r), vec![], "path {:?}", r.points);
+    let xs = crossings_at(from, &r, Fx::from_int(502));
+    assert!(
+        xs.iter()
+            .all(|&x| x < Fx::from_int(491) || x > Fx::from_int(511)),
+        "went through: {xs:?}"
+    );
+}
+
+/// A tiny deterministic generator for the index test.
+struct Lcg(u64);
+impl Lcg {
+    fn next(&mut self, n: u32) -> u32 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((self.0 >> 33) % n as u64) as u32
+    }
+}
+
+#[test]
+fn wire_index_matches_a_full_scan() {
+    let mut w = flat_world_with(1, |_| {});
+    steps(&mut w, 1);
+    let f = fort(&w, "ww2:barbed_wire");
+    let dim = w.state.terrain.dim();
+    let mut rng = Lcg(7);
+    // Every query of the index against the full scan (a clone whose index
+    // is stale); returns how many answers were true.
+    let check = |w: &World, rng: &mut Lcg| -> u32 {
+        let g = w.game().unwrap();
+        let forts = &g.setup().forts;
+        let fresh = g.fort();
+        assert!(fresh.index_fresh(), "the index was not rebuilt");
+        let mut scan = fresh.clone();
+        scan.wire_index = Default::default();
+        assert!(!scan.index_fresh());
+        assert_eq!(fresh.path_nodes(forts, dim), scan.path_nodes(forts, dim));
+        let mut hits = 0;
+        for _ in 0..3000 {
+            // Points near the sections (a 64 m square at the map's middle).
+            let p = |r: &mut Lcg| {
+                FxVec2::new(
+                    Fx::from_raw((480 << 16) + r.next(64 << 16) as i32),
+                    Fx::from_raw((480 << 16) + r.next(64 << 16) as i32),
+                )
+            };
+            let (a, b) = (p(rng), p(rng));
+            let b = a + (b - a).div_int(8);
+            let pl = PlayerId(rng.next(2) as u8);
+            let q = [
+                fresh.in_wire(forts, a),
+                fresh.in_enemy_wire(forts, a, pl),
+                fresh.step_in_wire(forts, a, b),
+            ];
+            let s = [
+                scan.in_wire(forts, a),
+                scan.in_enemy_wire(forts, a, pl),
+                scan.step_in_wire(forts, a, b),
+            ];
+            assert_eq!(q, s, "at {a:?} -> {b:?}");
+            hits += q.iter().filter(|&&x| x).count() as u32;
+        }
+        hits
+    };
+    let refresh = |w: &mut World| {
+        let g = w.state.game.as_mut().unwrap();
+        g.fort.refresh_wire_index(&g.setup.forts, dim);
+    };
+    // Random sections of both owners, any direction, some across cell
+    // edges (16 m).
+    let add = |w: &mut World, rng: &mut Lcg, n: u32| {
+        w.edit_fort(|s| {
+            for _ in 0..n {
+                let a = FxVec2::new(
+                    Fx::from_raw((480 << 16) + rng.next(64 << 16) as i32),
+                    Fx::from_raw((480 << 16) + rng.next(64 << 16) as i32),
+                );
+                let d = FxVec2::new(
+                    Fx::from_raw(rng.next(4 << 16) as i32 - (2 << 16)),
+                    Fx::from_raw(rng.next(4 << 16) as i32 - (2 << 16)),
+                );
+                let id = s.next_wire;
+                s.next_wire += 1;
+                s.wire.insert(
+                    id,
+                    crate::fort::WireSection {
+                        owner: PlayerId((id % 2) as u8),
+                        fort: f,
+                        a,
+                        b: a + d,
+                        hp: 200,
+                    },
+                );
+            }
+        });
+    };
+    add(&mut w, &mut rng, 60);
+    refresh(&mut w);
+    let hits = check(&w, &mut rng);
+    assert!(hits > 100, "a vacuous test: {hits} hits");
+    // Adds.
+    add(&mut w, &mut rng, 30);
+    assert!(
+        !w.game().unwrap().fort().index_fresh(),
+        "an add makes it stale"
+    );
+    refresh(&mut w);
+    check(&w, &mut rng);
+    // Removals.
+    w.edit_fort(|s| {
+        let ids: Vec<u32> = s.wire.keys().copied().step_by(3).collect();
+        for id in ids {
+            s.remove_wire(id, None, crate::fort::WireGone::Broken);
+        }
+    });
+    assert!(
+        !w.game().unwrap().fort().index_fresh(),
+        "a removal makes it stale"
+    );
+    refresh(&mut w);
+    check(&w, &mut rng);
+    // After load: stale at first (not saved), the same answers once the
+    // first tick's path service rebuilt it.
+    let mut back = World::load(&w.save(), 1).unwrap();
+    assert!(!back.game().unwrap().fort().index_fresh());
+    steps(&mut back, 1);
+    assert_eq!(back.full_state_hash(), {
+        steps(&mut w, 1);
+        w.full_state_hash()
+    });
+    refresh(&mut back);
+    check(&back, &mut rng);
 }
 
 /// The path-search cost the Build A hand-over reports (a 20 m line with a
@@ -81,15 +340,15 @@ fn wire_path_cost_report() {
         Fx::from_int(502),
     );
     let (from, to) = (c(500, 470), c(500, 530));
-    let r = foot_path(&w, from, to);
+    let r = foot_path(&mut w, from, to);
     let n = 2000;
     let t0 = std::time::Instant::now();
     for _ in 0..n {
-        std::hint::black_box(foot_path(&w, from, to));
+        std::hint::black_box(foot_path_ro(&w, from, to));
     }
     let us = t0.elapsed().as_secs_f64() * 1e6 / n as f64;
     println!(
-        "wire path cost: {} expansions, reached {}, {:.1} us per search (layer build included), points {:?}",
+        "wire path cost: {} expansions, reached {}, {:.1} us per search, points {:?}",
         r.expansions, r.reached, us, r.points
     );
 }

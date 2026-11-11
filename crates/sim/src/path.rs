@@ -41,10 +41,12 @@
 //! * Infantry in a match with AT ditches (S3, [`find_infantry_path`]): a
 //!   step into an AT-ditch node costs ×3 and gets no trench discount, so
 //!   men cross a ditch but never use it as a covered road.
-//! * S10a wire (`find_foot_path`): a step into a wire node (the sorted
-//!   layer `crate::fort` builds only when wire stands) costs
-//!   `wire_path_cost_pct`; smoothing never cuts across a wire node the grid
-//!   path it replaces avoided, so men go round a line or through its gaps.
+//! * S10a wire (`find_foot_path`): a step whose segment comes within half a
+//!   band of a standing section costs `wire_path_cost_pct` (S10a-ai, S17:
+//!   the exact test, run only for steps with an end in the coarse layer
+//!   `crate::fort` keeps while wire stands); smoothing never keeps a
+//!   shortcut that meets wire the grid path it replaces did not, so men go
+//!   round a line or through its gaps (about 2 m and wider).
 //!
 //! The scratch arrays here are reset per search and never carry state across
 //! ticks, so they are neither saved nor hashed.
@@ -211,18 +213,37 @@ pub fn find_infantry_path(
     )
 }
 
-/// S10a: infantry wire costs: the sorted wire nodes and the step cost
-/// into one (%).
-#[derive(Copy, Clone, Debug)]
+/// S10a: infantry wire costs: the coarse wire layer (sorted nodes), the
+/// step cost of a wired step (%) and the exact step test (S10a-ai, S17:
+/// whether a straight segment comes within half a band of a standing
+/// section).
+#[derive(Copy, Clone)]
 pub struct WireCost<'a> {
     pub nodes: &'a [u32],
     pub cost_pct: u32,
+    pub crosses: &'a dyn Fn(FxVec2, FxVec2) -> bool,
+}
+
+impl std::fmt::Debug for WireCost<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WireCost")
+            .field("nodes", &self.nodes.len())
+            .field("cost_pct", &self.cost_pct)
+            .finish()
+    }
 }
 
 impl WireCost<'_> {
     #[inline]
     fn has(&self, n: u32) -> bool {
         self.nodes.binary_search(&n).is_ok()
+    }
+
+    /// Whether the grid step `n -> m` is priced: an end in the coarse
+    /// layer (prefilter) and the exact segment test.
+    #[inline]
+    fn step(&self, dim: u32, n: u32, m: u32) -> bool {
+        (self.has(n) || self.has(m)) && (self.crosses)(node_pos(dim, n), node_pos(dim, m))
     }
 }
 
@@ -454,9 +475,11 @@ fn search_with(
             } else if n_trench && terrain.is_trench(mx, my) && !ditch(n) {
                 c = (c as u64 * cost.trench_cost_pct as u64 / 100) as u32;
             }
-            // S10a: a wire node is dear for infantry.
+            // S10a: a step that meets a wire band is dear for infantry
+            // (S10a-ai, S17: the exact step test, so a gap of about 2 m up
+            // is found and no step crosses wire unpriced).
             if let Some(w) = wire
-                && w.has(m)
+                && w.step(dim, n, m)
             {
                 c = (c as u64 * w.cost_pct as u64 / 100).min(u32::MAX as u64 / 4) as u32;
             }
@@ -544,16 +567,6 @@ fn smooth(
     vehicle: Option<&VehiclePathCost>,
     wire: Option<&WireCost>,
 ) -> Vec<FxVec2> {
-    // S10a: whether a straight segment touches a wire node (1 m samples).
-    let wired = |w: &WireCost, a: FxVec2, b: FxVec2| -> bool {
-        let d = b - a;
-        let steps = (d.length().raw() >> Fx::FRAC_BITS).max(1);
-        (0..=steps).any(|k| {
-            let p = a + FxVec2::new(d.x.mul_int(k).div_int(steps), d.y.mul_int(k).div_int(steps));
-            let (gx, gy) = terrain.nearest_grid(p);
-            w.has(gy * terrain.dim() + gx)
-        })
-    };
     // Vehicles: the dearest node a segment touches (2 m samples), `None`
     // for a blocked one. A shortcut may not touch dearer ground than the
     // grid nodes it replaces, nor the clearance band.
@@ -591,8 +604,7 @@ fn smooth(
                 path_dear = path_dear.max(vehicle_pct(terrain, v, gx, gy, true).unwrap_or(0));
             }
             if let Some(w) = wire {
-                let (gx, gy) = terrain.nearest_grid(node);
-                path_wire |= w.has(gy * terrain.dim() + gx);
+                path_wire |= (w.crosses)(prev, node);
             }
             prev = node;
             if j == i {
@@ -605,7 +617,7 @@ fn smooth(
                     !v.block.segment_in_margin(terrain, anchor, node)
                         && dear(v, anchor, node).is_some_and(|d| d <= path_dear.max(100))
                 })
-                && wire.is_none_or(|w| path_wire || !wired(w, anchor, node))
+                && wire.is_none_or(|w| path_wire || !(w.crosses)(anchor, node))
             {
                 best = j;
             }
