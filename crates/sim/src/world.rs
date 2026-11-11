@@ -2351,6 +2351,28 @@ impl World {
         end
     }
 
+    /// S10b staging tool (tests: the save checks of the new orders): edits
+    /// squad `id` directly. The caller keeps it valid; false when there is
+    /// no such squad.
+    pub fn edit_squad(
+        &mut self,
+        id: crate::game::SquadId,
+        f: impl FnOnce(&mut crate::game::Squad),
+    ) -> bool {
+        let Some(q) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.squads.get_mut(&id))
+        else {
+            return false;
+        };
+        f(q);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// S10a test edit of the fort state (hashes and snapshot refreshed).
     pub fn edit_fort(&mut self, f: impl FnOnce(&mut crate::fort::FortState)) -> bool {
         let Some(g) = self.state.game.as_mut() else {
@@ -2746,6 +2768,9 @@ mod s10a_ai_tests;
 #[cfg(test)]
 #[path = "s10a_tests.rs"]
 mod s10a_tests;
+#[cfg(test)]
+#[path = "s10b_tests.rs"]
+mod s10b_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

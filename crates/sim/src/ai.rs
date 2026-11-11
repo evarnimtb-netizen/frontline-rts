@@ -184,7 +184,7 @@ mod ammo;
 mod armour;
 mod assault;
 mod breach;
-mod fort;
+pub(crate) mod fort;
 mod guns;
 mod mortar;
 mod overwatch;
