@@ -2359,12 +2359,7 @@ impl World {
         id: crate::game::SquadId,
         f: impl FnOnce(&mut crate::game::Squad),
     ) -> bool {
-        let Some(q) = self
-            .state
-            .game
-            .as_mut()
-            .and_then(|g| g.squads.get_mut(&id))
-        else {
+        let Some(q) = self.state.game.as_mut().and_then(|g| g.squads.get_mut(&id)) else {
             return false;
         };
         f(q);

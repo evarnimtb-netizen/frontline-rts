@@ -163,7 +163,10 @@ fn empty_s10b_state_changes_nothing() {
     assert!(with == without, "the S10b blueprints changed AI play");
     let (far, laid) = run_ai(false, true);
     assert!(far == with, "a far mine changed AI play");
-    assert!(laid, "a laid mine left the fort state empty (fast path taken)");
+    assert!(
+        laid,
+        "a laid mine left the fort state empty (fast path taken)"
+    );
 }
 
 #[test]

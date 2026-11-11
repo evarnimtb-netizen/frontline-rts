@@ -712,3 +712,306 @@ fn save_fuzz_slot_swap_out_of_range_is_rejected() {
     );
     assert_rejected(&b, "slot swap 65535");
 }
+
+/// S10b: one bad state per line of docs/slices/S10b-obstacles.md 6 (mines
+/// x9, `Charge::piece` x2, `Order::ClearMines` x7, `Order::Demolish` x4) must
+/// be rejected; the good base state loads. The engineer card gets bits
+/// 12-14 here (no card has them before Builds B-D). Control: comment out
+/// any one check in `FortState::validate` / `validate_s10b` -> its case
+/// loads (seen with the `boom_tick` check).
+#[test]
+fn load_rejects_bad_s10b_state() {
+    use frontline_content::ItemKind;
+    use frontline_content::setup::Capability;
+    use frontline_sim::fort::{Charge, FortState, Mine};
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::{Order, SquadId};
+
+    let mut s = setup(SEED);
+    for t in s.squad_types.iter_mut() {
+        if t.id.contains("engineer") {
+            t.caps |= Capability::PlaceMines.bit()
+                | Capability::ClearMines.bit()
+                | Capability::Demolish.bit();
+        }
+    }
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let fort = |id: &str| s.forts.iter().position(|f| f.id == id).unwrap() as u16;
+    let item = |k: &dyn Fn(&frontline_content::setup::ItemSetup) -> bool| {
+        s.items.iter().position(k).unwrap() as u16
+    };
+    let (wall, field) = (fort("ww2:sandbag_wall"), fort("ww2:ap_minefield"));
+    let satchel = item(&|i| i.kind == ItemKind::Satchel);
+    let bangalore = item(&|i| i.bangalore.is_some());
+    let other_item = item(&|i| i.kind == ItemKind::Satchel);
+    let limit = s.forts[field as usize].limit_per_player;
+    let ft = s.rules.fortify.clone().unwrap();
+    let (hz, size) = (s.tick_hz as u64, s.map.size_m);
+    let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
+    let rifles = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
+
+    let mut w = World::new_match(s, 1).unwrap();
+    let spawn = |w: &mut World, t: u16, x: i32| {
+        w.spawn_squad_at(PlayerId(0), t, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
+            .unwrap()
+    };
+    let (sweep, demo, rifle) = (
+        spawn(&mut w, eng, 280),
+        spawn(&mut w, eng, 380),
+        spawn(&mut w, rifles, 480),
+    );
+    assert!(w.build_now(wall, &[c(400, 400), c(410, 400)], PlayerId(1)));
+    let piece = *w.game().unwrap().fort().pieces.keys().next().unwrap();
+    let mine = w.lay_mine_now(field, c(300, 300), PlayerId(1)).unwrap();
+    let tick = w.tick();
+    w.edit_fort(|f| {
+        f.mines.get_mut(&mine).unwrap().known = 0b11;
+        f.charges.push(Charge {
+            id: f.next_charge,
+            owner: PlayerId(0),
+            item: satchel,
+            from: c(399, 400),
+            to: c(400, 400),
+            fuse_tick: tick + 90,
+            piece: Some(piece),
+        });
+        f.next_charge += 1;
+    });
+    let clear = Order::ClearMines {
+        a: c(280, 300),
+        b: c(320, 300),
+        along: Fx::from_int(12),
+        lift: Some(mine),
+        work: 100,
+    };
+    let dem = Order::Demolish {
+        piece,
+        man: None,
+        work: 200,
+    };
+    w.edit_squad(sweep, |q| q.order = clear.clone());
+    w.edit_squad(demo, |q| q.order = dem.clone());
+    let base = w.save();
+    World::load(&base, 1).unwrap_or_else(|e| panic!("the good S10b state: {e}"));
+    let rifle_man = w.game().unwrap().squads()[&rifle].members[0];
+
+    type Edit = Box<dyn Fn(&mut World)>;
+    let fort_edit =
+        |f: Box<dyn Fn(&mut FortState)>| -> Edit { Box::new(move |w| _ = w.edit_fort(&*f)) };
+    let mine_edit = move |f: Box<dyn Fn(&mut Mine)>| -> Edit {
+        Box::new(move |w| _ = w.edit_fort(|s| f(s.mines.get_mut(&mine).unwrap())))
+    };
+    let order = move |q: SquadId, o: Order| -> Edit {
+        Box::new(move |w| _ = w.edit_squad(q, |s| s.order = o.clone()))
+    };
+    let lift_total = ft.lift_s as u64 * hz * 100;
+    let place_total = ft.demolish_place_s as u64 * hz * 100;
+    let lane = ft.lane_max_m as i32;
+    let off = c(size + 1, 300);
+    let many = |n: u32, owner: u8| -> Edit {
+        Box::new(move |w| {
+            _ = w.edit_fort(|f| {
+                let m = f.mines[&mine].clone();
+                for k in 0..n {
+                    let id = f.next_mine;
+                    f.next_mine += 1;
+                    let owner = frontline_sim::PlayerId(if k % 2 == 0 { owner } else { 0 });
+                    f.mines.insert(
+                        id,
+                        Mine {
+                            owner,
+                            pos: c(10 + (k % 1000) as i32, 10),
+                            ..m.clone()
+                        },
+                    );
+                }
+            })
+        })
+    };
+    let cases: Vec<(&str, Edit)> = vec![
+        (
+            "mines above MAX_MINES",
+            many(frontline_sim::fort::MAX_MINES as u32, 1),
+        ),
+        (
+            "mine id >= next_mine",
+            fort_edit(Box::new(move |f| f.next_mine = mine)),
+        ),
+        (
+            "mine owner not a player",
+            mine_edit(Box::new(|m| m.owner = PlayerId(2))),
+        ),
+        (
+            "mine fort without mine_item",
+            mine_edit(Box::new(move |m| m.fort = wall)),
+        ),
+        (
+            "mine item not its mine_item",
+            mine_edit(Box::new(move |m| m.item = other_item)),
+        ),
+        (
+            "mine off the map",
+            mine_edit(Box::new(move |m| m.pos = off)),
+        ),
+        (
+            "mine known bit of no player",
+            mine_edit(Box::new(|m| m.known = 0b111)),
+        ),
+        (
+            "mine boom_tick not tick + 1",
+            mine_edit(Box::new(move |m| m.boom_tick = Some(tick + 2))),
+        ),
+        ("mines above limit_per_player", many(2 * limit, 1)),
+        (
+            "charge piece >= next_piece",
+            fort_edit(Box::new(move |f| f.charges[0].piece = Some(f.next_piece))),
+        ),
+        (
+            "charge piece on a Bangalore",
+            fort_edit(Box::new(move |f| f.charges[0].item = bangalore)),
+        ),
+        (
+            "ClearMines without clear_mines",
+            order(rifle, clear.clone()),
+        ),
+        (
+            "ClearMines a off the map",
+            order(
+                sweep,
+                Order::ClearMines {
+                    a: off,
+                    b: c(size - 10, 300),
+                    along: Fx::ZERO,
+                    lift: None,
+                    work: 0,
+                },
+            ),
+        ),
+        (
+            "ClearMines b off the map",
+            order(
+                sweep,
+                Order::ClearMines {
+                    a: c(size - 10, 300),
+                    b: off,
+                    along: Fx::ZERO,
+                    lift: None,
+                    work: 0,
+                },
+            ),
+        ),
+        (
+            "ClearMines lane above lane_max_m",
+            order(
+                sweep,
+                Order::ClearMines {
+                    a: c(100, 300),
+                    b: c(101 + lane, 300),
+                    along: Fx::ZERO,
+                    lift: None,
+                    work: 0,
+                },
+            ),
+        ),
+        (
+            "ClearMines along beyond the lane",
+            order(
+                sweep,
+                Order::ClearMines {
+                    a: c(280, 300),
+                    b: c(320, 300),
+                    along: Fx::from_int(41),
+                    lift: None,
+                    work: 0,
+                },
+            ),
+        ),
+        (
+            "ClearMines lifts an unknown mine",
+            Box::new(move |w: &mut World| {
+                _ = w.edit_fort(|f| f.mines.get_mut(&mine).unwrap().known = 0b10);
+            }),
+        ),
+        (
+            "ClearMines work beyond the lift total",
+            order(
+                sweep,
+                Order::ClearMines {
+                    a: c(280, 300),
+                    b: c(320, 300),
+                    along: Fx::ZERO,
+                    lift: Some(mine),
+                    work: lift_total + 1,
+                },
+            ),
+        ),
+        ("Demolish without demolish", order(rifle, dem.clone())),
+        (
+            "Demolish piece >= next_piece",
+            order(
+                demo,
+                Order::Demolish {
+                    piece: piece + 1000,
+                    man: None,
+                    work: 0,
+                },
+            ),
+        ),
+        (
+            "Demolish man not a member",
+            order(
+                demo,
+                Order::Demolish {
+                    piece,
+                    man: Some(rifle_man),
+                    work: 0,
+                },
+            ),
+        ),
+        (
+            "Demolish work beyond the place total",
+            order(
+                demo,
+                Order::Demolish {
+                    piece,
+                    man: None,
+                    work: place_total + 1,
+                },
+            ),
+        ),
+    ];
+    // The check each case must hit (its error text).
+    let why = [
+        "too many",
+        "mine id",
+        "mine id",
+        "mine_item",
+        "mine_item",
+        "position",
+        "not in the match",
+        "tick other",
+        "limit_per_player",
+        "demolition charge",
+        "demolition charge",
+        "without clear_mines",
+        "off the map",
+        "off the map",
+        "lane_max_m",
+        "outside its lane",
+        "does not know",
+        "lift total",
+        "without demolish",
+        "piece id",
+        "living member",
+        "place total",
+    ];
+    assert_eq!(cases.len(), why.len());
+    for ((what, edit), why) in cases.iter().zip(why) {
+        let mut b = World::load(&base, 1).unwrap();
+        edit(&mut b);
+        let bytes = b.save();
+        assert_rejected(&bytes, what);
+        let e = World::load(&bytes, 1).err().unwrap().to_string();
+        assert!(e.contains(why), "{what}: rejected by another check: {e}");
+    }
+}
