@@ -177,10 +177,60 @@ damages what its fragments reach; sections it removes count as blown. One
 charge opens about 4 m of the shipped wire; its craters (150 cm, 90 cm
 deep) slow men who walk through them.
 
+## The AI (S10a-ai)
+
+The skirmish AI uses the same commands as a player (`Fortify`,
+`LoadMaterials`, `CutWire`, `PlaceBangalore`, `Throw`, `SuppressUnits`);
+every distance, time and share is in `[ai.fort]` (`docs/modding/tuning.md`),
+spec `docs/slices/S10a-ai.md` 3.
+
+* **Buying.** The three S10a cards buy through the `engineer` mix slot by
+  their `ai_weight` (Baupioniere 50, Sturmpioniere and Assault Section 35;
+  Pioniergruppe and Engineer Squad keep 100). When a breach is wanted (known
+  enemy wire within `breach_near_m` of a point the AI attacks) and no own
+  squad can open wire (`clear_wire`, or `breach` with a Bangalore), the next
+  buy is the faction's assault card, at most `breach_cards_max` alive.
+  `cards = 0` skips the three cards.
+* **Building** (`ai/fort.rs`). Builders (`build_structure`, `place_wire`)
+  at a held point with a finished AI trench build an MG nest past the
+  trench end, one wire line `wire_out_m` out (`wire = 0`: none), a dugout
+  behind the trench once the point was shelled or enemy mortars were seen,
+  the HQ roof once mortars were seen, and a sandbag wall in front of a gun
+  that held `gun_hold_s`. They load carried materials in base (at most
+  `materials_max_pct` of the income earned); a waiting work gets a truck
+  run, else the builder walks back. An MG team mans its point's nest.
+  Under shelling one defender squad shelters: its men go one by one to
+  trench spots under the dugout roof (the cover rule keeps men
+  `[cover] gap_mm` apart, so the shipped 3 m pit holds two), and come out
+  with the squad order when the mark is `shelter_s` old.
+* **Knowing wire** (`ai/breach.rs`). An enemy section is known once an own
+  soldier within `wire_seen_m` has a clear terrain line from 1.5 m over his
+  ground to 0.5 m over its middle (`wire_rays` checks per plan). The AI
+  never uses wire it has not seen to decide a breach.
+* **Breaching.** For an attacked point with known wire near it, the AI
+  asks the path finder (wire costs included) once per `recheck_s`. A path
+  that crosses no known wire goes round. Otherwise the squad that can open
+  it (Bangalore first, else `clear_wire`) stages `stage_m` short of the
+  crossing once the point's base of fire fires; the base aims at the known
+  defender nearest the crossing (MG-team men first); a man with smoke
+  throws it between the crossing and that defender; `suppress_lead_s` later
+  a Bangalore goes in if defenders are about (known within `cut_fire_m`,
+  the base fired, or the squad is taking fire), else the squad cuts. A
+  carrier who falls is a failed try at once, a laid charge or a cut under
+  way is not; `breach_tries` tries in all. The job ends when no enemy
+  section stands within `gap_clear_m` of the crossing (the attack paths
+  through the gap), when the squad drops under half strength, the point is
+  taken or `breach_max_s` passes. `breach = 0`: none of this; squads attack
+  as on S10a.
+* **Measures.** `skirmish --json` `factions.<f>.s10` (the AI counters) and
+  `s10_derived` (shares per match); `fortify-test` `s10a.breach_ai` runs the
+  breach job alone through `World::drive_breach` against the S10a staging
+  (wire 100 m long so the path cannot go round; see the row's docs).
+
 ## Measuring
 
 * `frontline-cli fortify-test` adds the S10a rows (`s10a.wire`,
-  `s10a.roof`, `s10a.breach` in `--json`): the leader's speed in the wire
+  `s10a.roof`, `s10a.breach`, S10a-ai `s10a.breach_ai` in `--json`): the leader's speed in the wire
   band and through a cut and a blown gap, a dugout roof under an 81 mm bomb
   and a satchel, and the breach against a trench, MG nest and wire.
 * `frontline-cli skirmish --summary --json` reports per faction
