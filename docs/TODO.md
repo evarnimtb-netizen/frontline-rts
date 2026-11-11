@@ -38,6 +38,14 @@ next starts. Process rules: `docs/process/workflows.md`.
 - AT gun capture: kill the crew and the gun turns neutral; an enemy squad can serve it, only with the rounds left at the gun or from captured crates of the gun's faction (owner 2026-11-08).
 - T33 (vehicle manpower cap) counts tanks and tank destroyers/assault guns only (owner, S8b-26).
 - S10 on: an engine slice is split into a mechanics slice (cards at `ai_weight` 0, proven neutral) and an AI-and-balance slice (owner 2026-11-09).
+- Features first, balance later (owner 2026-11-11): no per-slice Tune; each slice measures and records 480 matches;
+  Germany's pooled share must stay in a 35-65 % guard band, outside it stop and diagnose. Fine balance to 45-55 % and the
+  soft per-unit targets wait for a dedicated balance pass (after S10b or S11). The next slice's targets file uses the
+  35-65 % band and marks T31/T55-type targets as reports.
+- Minor scope and price questions are settled on the recommended (A) and only reported; irreversible choices,
+  how-it-should-play choices and main updates are still asked (owner 2026-11-11).
+- S10a-ai decisions (owner 2026-11-11): breaching "fix smoke, lower bar" (T93f/h floor 30, T93g report); AI wire in 60 m
+  lines; cards Germany by weight (Bau 100, Sturm 60, Pioniere 40), USA floor a report; smoke on three men.
 - Workflows: tiers, review gate and model/effort rules in
   `docs/process/workflows.md` (owner 2026-11-03).
 
@@ -203,7 +211,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10a-9 A roof or any enemy piece top stops a thrown grenade or satchel, which bursts on it (a satchel breaks a dugout roof, a grenade does not; own pieces do not stop own throws). (A) As built; owner to confirm.
   S10a-10 A roof that breaks under a burst does not stop that burst's fragments. (A) As built; owner to confirm.
   S10a-11 The build menu key is ` (a stand-in; all letters are taken). (A) As built; owner to confirm.
-- S10a-12..19 (`docs/slices/S10a-ai.md` section 12, Plan 2026-11-11), each on its (A):
+- S10a-12..19 (`docs/slices/S10a-ai.md` section 12, Plan 2026-11-11): settled on (A), except S10a-12, -13, -14 and -16,
+  which the owner's 2026-11-11 decisions (Owner decisions in force) replaced:
   S10a-12 Engineer card buys: (A) engineer mix slot by weight (Pioniere 100, Baupioniere 50, Sturmpioniere and Assault Section 35) plus an urgent breach buy. (B) Assault cards only by the urgent rule. (C) Own `fort` mix slot.
   S10a-13 Smoke for the Sturmpioniere: (A) the leader carries one `ww2:nbhgr39`. (B) No smoke; the German AI only suppresses.
   S10a-14 Lanes in AI wire: (A) one unbroken line, own men go round. (B) A 6 m lane in the middle, usable by the enemy too.
@@ -212,6 +221,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10a-17 S9b-1 US gun sight gap: (A) defer to the next AI gun pass (not cheap here). (B) Fold a sight-first re-site into S10a-ai.
   S10a-18 Materials budget: (A) at most 3 % of income, builders load full at base. (B) No cap.
   S10a-19 HQ roof: (A) roofed once enemy mortars are seen. (B) Always, as soon as the HQ stands.
+- S10a-20 (new, 2026-11-11): make T93f/h and T96 reports until S11 combined arms. (A) yes, recommended. (B) Keep them
+  hard and add a lever now (a looser give-up rule, a closer start, a bigger cloud).
 
 ## Planned work queue
 
@@ -230,7 +241,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 8. S9 AT guns: built, tuned, reviewed and fixed on `s9-at-guns` (Plan, Build A/B/C, Tune, Review, Fix, Docs; log `docs/slices/S9-log.md`, spec `S9-at-guns.md`, targets `S9.toml`). Not merged. Pooled Germany 45.6 %, 14 hard target misses on the 160 sets. On main since 2026-11-09 (owner OK). Next: S9b, a short AI gun pass (corridor search, then a budget tune; S9-17, S9-19). Open: S9-16, S9-18.
 9. S9b AI gun pass: built on `s9b-ai-guns` (Plan, Build, Review, Fix; log `docs/slices/S9b-log.md`, spec `S9b-ai-guns.md`, targets `S9b.toml`). Verified on `1bfc92f`: pooled Germany 48.75 %, 10 hard misses, `tools/check.sh full` all ok; T88 met for Germany, not USA. Owner 2026-11-10: S9b-1 (A), S9b-2 (A), S9b-3 (A); merged, main = `ba0038f` (owner OK). Next: S10a mechanics on `s10a-fortifications`.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
-11. S10a-ai, the fortification AI and balance half: on branch `s10a-ai` (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Then S10b (mines, AT obstacles, bunker).
+11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified on branch `s10a-ai`, NOT merged (a main update needs the owner's OK). Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Then S10b (mines, AT obstacles, bunker).
+12. Dedicated balance pass, after S10b or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a/c/d, T55a/b) are settled there. Slice order: S10b, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
@@ -240,6 +252,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 4. The breach row and T93 need AI or staging that suppresses the defenders first: S10a-ai (AI-driven `breach_ai` row, S10a-16).
 5. tools/neutral.py: a 40-set-only run now fails against a four-set base folder; stage runs need a 40-only base folder or a set list option.
 6. Owner decisions S10a-9 to S10a-11 and S10a-1..8 (all on (A)): see the owner questions above.
+7. S10a-ai F8 (open, deferred to a later slice): an S8b truck forgets an HQ goal it cannot reach after four later give-ups and orders it again about 5 minutes later. It also happens with all switches off, so a fix changes the neutrality base.
 
 ## Known issues still open
 

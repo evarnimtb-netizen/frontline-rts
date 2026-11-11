@@ -117,3 +117,28 @@ nothing: from S10 the orchestrator runs `measure.sh` between stages. Sonnet's Bu
 Opus Review had to correct its conclusion, so a cheap Tune needs a Review after it. Haiku Docs was accurate, at more
 cost units than Review (33 turns of small edits): give it the exact text. Opus Build, Review and Fix needed no rework
 beyond the above.
+
+## 7. Audit 2026-11-11
+
+Full results: `target/process-audit.jsonl`.
+
+- Build stages are 70 % of S10a-ai's agent cost and 51 % of S10a's. They ran 120-231 turns each, with peak context 258-433 k tokens.
+- 38 % of Build, Fix and Plan turns are runs of single read-only calls.
+- `fort.rs` was read 50 times by 17 agents. Waiting on background jobs is 9 % of cost; prompt text is under 1 %.
+
+Adopted from the next slice:
+
+- Build stages capped at about 60 turns, with a written hand-over.
+- Agents batch reads and read an outline before ranges: `tools/outline.sh` and `tools/show.sh` (to be written).
+- One start-and-wait script, `tools/run.sh` (to be written).
+- Each stage reads only its spec part and the last hand-over block.
+- Pin the known seed in the slow seed-search tests (ai_guns, trucks, transport, ai_fort).
+- Switches and measures go into Build A.
+- A reusable save/load roundtrip-and-fuzz test.
+- One deadline-and-refusal rule for AI jobs, with a generic liveness test.
+- Every new test names the control that makes it fail.
+
+Not adopted: one review lens instead of three (revisit after the fuzz test); early stop of the 480 measure (ablations
+only); reuse of cached sets after a 40-match check.
+
+The small smoke step used the batching rule and took 58 turns.
