@@ -2401,7 +2401,8 @@
         "build_structure",
         "build_heavy",
         "place_wire",
-        "clear_wire"
+        "clear_wire",
+        "place_mines"
       ],
       "cooldown_s": 60,
       "cost": 165,
@@ -2456,7 +2457,8 @@
         "recrew",
         "build_structure",
         "place_wire",
-        "clear_wire"
+        "clear_wire",
+        "place_mines"
       ],
       "cooldown_s": 30,
       "cost": 206,
@@ -3836,7 +3838,8 @@
         "recrew",
         "build_structure",
         "place_wire",
-        "clear_wire"
+        "clear_wire",
+        "place_mines"
       ],
       "cooldown_s": 30,
       "cost": 280,

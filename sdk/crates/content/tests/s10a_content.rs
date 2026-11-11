@@ -120,7 +120,9 @@ fn promoted_capabilities_parse() {
                 Recrew,
                 BuildStructure,
                 PlaceWire,
-                ClearWire
+                ClearWire,
+                // S10b Build B (R27).
+                PlaceMines
             ],
             "{id}"
         );
@@ -137,7 +139,8 @@ fn promoted_capabilities_parse() {
             BuildStructure,
             BuildHeavy,
             PlaceWire,
-            ClearWire
+            ClearWire,
+            PlaceMines
         ]
     );
     // The bazooka derives `at_hunt` from its weapon.
