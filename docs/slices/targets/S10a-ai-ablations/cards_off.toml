@@ -1,0 +1,4 @@
+# S10a-ai ablation 5 (docs/slices/S10a-ai.md 9): the three S10a engineer cards are not bought (existing engineers still build and cut).
+# tools/ablate.sh runs tools/measure.sh with it against the switches-on dir.
+[ai.fort]
+cards = 0

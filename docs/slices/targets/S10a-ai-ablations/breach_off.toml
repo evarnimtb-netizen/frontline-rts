@@ -1,0 +1,4 @@
+# S10a-ai ablation 4 (docs/slices/S10a-ai.md 9): no wire knowledge, breach job or urgent assault-card buy (squads attack as on S10a; A* still prices wire).
+# tools/ablate.sh runs tools/measure.sh with it against the switches-on dir.
+[ai.fort]
+breach = 0

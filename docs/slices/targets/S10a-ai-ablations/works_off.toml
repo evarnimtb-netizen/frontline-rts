@@ -1,0 +1,4 @@
+# S10a-ai ablation 2 (docs/slices/S10a-ai.md 9): no MG nest, dugout, HQ roof or sandbag wall (wire, breaching and the cards stay on).
+# tools/ablate.sh runs tools/measure.sh with it against the switches-on dir.
+[ai.fort]
+works = 0

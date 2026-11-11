@@ -1,0 +1,4 @@
+# S10a-ai ablation 3 (docs/slices/S10a-ai.md 9): no barbed wire laid by the AI (works, breaching and the cards stay on).
+# tools/ablate.sh runs tools/measure.sh with it against the switches-on dir.
+[ai.fort]
+wire = 0
