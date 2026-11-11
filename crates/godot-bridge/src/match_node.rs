@@ -242,6 +242,9 @@ fn fort_rules(setup: &MatchSetup, hz: f32) -> VarDictionary {
     }
     let t = setup.rules.fortify.as_ref();
     vdict! {
+        // True only when the ruleset has a [fortify] table (the HUD gates
+        // Materials on it; the dictionary itself is always there).
+        "enabled" => t.is_some(),
         "blueprints" => &bp,
         "carry_kg_per_man" => t.map_or(0, |t| t.carry_kg_per_man as i64),
         "mp_per_t" => t.map_or(0, |t| t.construction_mp_per_t as i64),

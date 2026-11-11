@@ -54,6 +54,7 @@ const RULES := {
 	"throw_range_m": {"frag": Vector2(5, 30), "smoke": Vector2(5, 30), "satchel": Vector2(3, 8)},
 	# S10a: the build menu's blueprints and materials (as mods/ww2).
 	"fortify": {
+		"enabled": true,
 		"blueprints": {
 			"sandbag_wall": {"id": "ww2:sandbag_wall", "name": "Sandbag wall", "shape": "line", "capability": "build_structure", "kg": 30.0, "work_s": 20.0, "work_men": 5, "limit": 40, "segment_m": 2.0, "max_length_m": 20.0, "wire": false, "pit": false},
 			"barbed_wire": {"id": "ww2:barbed_wire", "name": "Barbed wire", "shape": "line", "capability": "place_wire", "kg": 3.0, "work_s": 6.0, "work_men": 2, "limit": 50, "segment_m": 2.0, "max_length_m": 30.0, "wire": true, "pit": false},

@@ -632,6 +632,12 @@ func crate_near(g: Vector3) -> int:
 	return best
 
 
+## S10a: whether the ruleset has fortification rules (`rules.fortify.enabled`,
+## true only with a [fortify] table): Materials needs them.
+func fort_enabled() -> bool:
+	return bool(view.rules().get("fortify", {}).get("enabled", false))
+
+
 ## S10a: the blueprint a build-menu id builds (`rules.fortify.blueprints`;
 ## empty when the mod has none).
 func fort_blueprint(id: StringName) -> Dictionary:
@@ -657,7 +663,7 @@ func can(order: StringName) -> bool:
 			return not bp.is_empty() and _has_cap([String(bp.get("capability", ""))], [])
 		&"load_materials":
 			# S10a: building squads carry it; selected trucks fill their room.
-			return _has_cap(["build_structure", "place_wire"], []) or not truck_vehicles().is_empty()
+			return fort_enabled() and (_has_cap(["build_structure", "place_wire"], []) or not truck_vehicles().is_empty())
 		&"crate_construction":
 			return _has_cap(["build_structure", "place_wire"], [])
 		&"cut_wire":

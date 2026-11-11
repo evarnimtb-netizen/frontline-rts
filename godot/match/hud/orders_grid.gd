@@ -234,7 +234,7 @@ func _layout() -> void:
 		# S8a: Unload in the fifth slot of the top row.
 		_add(DROP if _truck else UNLOAD, Rect2(4.0 * (abw + g), 0, abw, bh), "order")
 		# S10a: Materials on the third row of a truck (no ammo row there).
-		if _truck and not _gun and not view.rules().get("fortify", {}).is_empty():
+		if _truck and not _gun and view.selection.fort_enabled():
 			_add(TRUCK_MATERIALS, Rect2(0, 2.0 * (bh + g), bw, bh), "order")
 		var aw := 4.0 * bw + 3.0 * g
 		if not _gun:

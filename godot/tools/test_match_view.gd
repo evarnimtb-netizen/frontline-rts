@@ -1613,6 +1613,14 @@ func _test_s10a() -> void:
 	_check(fp != null and String(fp.what) == "mg_nest" and fp.has("target") and fp.has("facing"), "S10a: a click sends fortify mg_nest with a facing")
 	grid.press(&"load_materials")
 	_check(_last(&"load_materials") != null, "S10a: Materials sends load_materials")
+	# A ruleset without [fortify] (the bridge sends the dictionary, enabled false).
+	var rules_on: Dictionary = _view.state.get("rules", {})
+	var rules_off: Dictionary = rules_on.duplicate(true)
+	rules_off["fortify"]["enabled"] = false
+	_view.state["rules"] = rules_off
+	_check(not _sel.fort_enabled() and not grid.enabled(&"load_materials"), "S10a: no Materials without fortification rules")
+	_view.state["rules"] = rules_on
+	_check(_sel.fort_enabled() and grid.enabled(&"load_materials"), "S10a: Materials back with them")
 	grid.press(&"crate_construction")
 	var cc: Variant = _last(&"issue_crate")
 	_check(cc != null and String(cc.kind) == "construction", "S10a: Crate sends issue_crate construction")
