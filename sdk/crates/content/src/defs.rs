@@ -313,10 +313,13 @@ pub enum ItemKind {
     /// S10a: a Bangalore torpedo: placed, not thrown; its `[he]` bursts
     /// `bangalore.bursts` times along `bangalore.length_cm`.
     Bangalore = 4,
+    /// S10b: a mine: laid by a minefield blueprint (`FortDef::mine_item`),
+    /// never thrown, never in a kit; `[mine]` says what sets it off.
+    Mine = 5,
 }
 
 /// Number of [`ItemKind`]s.
-pub const ITEM_KINDS: usize = 5;
+pub const ITEM_KINDS: usize = 6;
 
 impl ItemKind {
     pub const ALL: [ItemKind; ITEM_KINDS] = [
@@ -325,12 +328,16 @@ impl ItemKind {
         ItemKind::Satchel,
         ItemKind::SingleShotAt,
         ItemKind::Bangalore,
+        ItemKind::Mine,
     ];
 
     /// Whether the item is thrown (frag, smoke, satchel).
     #[inline]
     pub const fn thrown(self) -> bool {
-        !matches!(self, ItemKind::SingleShotAt | ItemKind::Bangalore)
+        !matches!(
+            self,
+            ItemKind::SingleShotAt | ItemKind::Bangalore | ItemKind::Mine
+        )
     }
 
     /// Position in [`ItemKind::ALL`] (per-soldier count arrays).
@@ -381,7 +388,24 @@ pub struct ItemDef {
     /// S10a `bangalore` items: the charge's length and bursts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bangalore: Option<BangaloreDef>,
+    /// S10b `mine` items: what sets the mine off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mine: Option<MineDef>,
 }
+
+/// S10b: what sets a mine off (`[mine]` of a `mine` item).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MineDef {
+    /// `foot` (an enemy man on foot) or `vehicle` (an enemy vehicle's track
+    /// or wheel).
+    pub trigger: String,
+    /// How close the man or the track centreline must come (cm).
+    pub trigger_cm: u32,
+}
+
+/// S10b: the `[mine] trigger` values, by setup index.
+pub const MINE_TRIGGERS: [&str; 2] = ["foot", "vehicle"];
 
 /// S10a: a Bangalore torpedo's charge (`[bangalore]` of a `bangalore` item).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -933,15 +957,23 @@ pub enum FortShape {
 }
 
 /// S10a: piece part names (`PieceDef::part`; colour only), by setup index.
-pub const PIECE_PARTS: [&str; 3] = ["sandbag", "roof", "timber"];
-/// S10a: the capabilities a blueprint may need (`FortDef::capability`).
-pub const FORT_CAPABILITIES: [&str; 2] = ["build_structure", "place_wire"];
+pub const PIECE_PARTS: [&str; 4] = ["sandbag", "roof", "timber", "steel"];
+/// S10a: the capabilities a blueprint may need (`FortDef::capability`);
+/// S10b adds `build_heavy` (hedgehog, bunker) and `place_mines`.
+pub const FORT_CAPABILITIES: [&str; 4] = [
+    "build_structure",
+    "place_wire",
+    "build_heavy",
+    "place_mines",
+];
+/// S10b: most pieces of one blueprint (the bunker has six).
+pub const MAX_FORT_PIECES: usize = 6;
 
 /// S10a: one box of a blueprint (sandbags, a roof).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PieceDef {
-    /// `sandbag`, `roof` or `timber`.
+    /// `sandbag`, `roof`, `timber` or `steel`.
     pub part: String,
     /// Along the facing, across, up (cm).
     pub size_cm: [u32; 3],
@@ -1004,6 +1036,12 @@ pub struct FortDef {
     pub pieces: Vec<PieceDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wire: Option<WireDef>,
+    /// S10b minefields: the `mine` item laid, one per segment end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mine_item: Option<String>,
+    /// S10b obstacles: the pieces block vehicle path nodes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub blocks_vehicles: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
 }
@@ -1014,12 +1052,14 @@ impl FortDef {
         check_id(&mut out, "id", &self.id);
         check_name(&mut out, "name", &self.name);
         let wire = self.capability == "place_wire";
+        let mines = self.capability == "place_mines";
         if !FORT_CAPABILITIES.contains(&self.capability.as_str()) {
             out.push(Issue::new(
                 "capability",
                 format!(
-                    "`{}` is not one of build_structure, place_wire",
-                    self.capability
+                    "`{}` is not one of {}",
+                    self.capability,
+                    FORT_CAPABILITIES.join(", ")
                 ),
             ));
         }
@@ -1030,16 +1070,57 @@ impl FortDef {
                     "a place_wire blueprint has a `wire` table and no pieces",
                 ));
             }
-        } else if self.wire.is_some() || self.pieces.is_empty() || self.pieces.len() > 4 {
-            out.push(Issue::new("pieces", "needs 1..=4 pieces and no `wire`"));
+        } else if mines {
+            // S10b: a minefield lays mines, nothing else.
+            if self.mine_item.is_none()
+                || !self.pieces.is_empty()
+                || self.wire.is_some()
+                || self.shape != FortShape::Line
+            {
+                out.push(Issue::new(
+                    "mine_item",
+                    "a place_mines blueprint is a line with `mine_item`, no pieces and no `wire`",
+                ));
+            }
+        } else if self.wire.is_some()
+            || self.pieces.is_empty()
+            || self.pieces.len() > MAX_FORT_PIECES
+        {
+            out.push(Issue::new(
+                "pieces",
+                format!("needs 1..={MAX_FORT_PIECES} pieces and no `wire`"),
+            ));
+        }
+        if self.mine_item.is_some() && !mines {
+            out.push(Issue::new(
+                "mine_item",
+                "only a place_mines blueprint lays mines",
+            ));
+        }
+        if self.blocks_vehicles && self.pieces.is_empty() {
+            out.push(Issue::new("blocks_vehicles", "an obstacle needs pieces"));
+        }
+        if self.capability == "build_heavy"
+            && (self.shape == FortShape::OverHq || self.pieces.is_empty())
+        {
+            out.push(Issue::new(
+                "capability",
+                "build_heavy only on point or line blueprints with pieces",
+            ));
         }
         if self.shape == FortShape::OverHq && self.pit.is_some() {
             out.push(Issue::new("pit", "an over_hq blueprint digs no pit"));
         }
         if let Some(p) = self.pit
-            && !matches!(p, DigProfile::MgNestPit | DigProfile::DugoutPit)
+            && !matches!(
+                p,
+                DigProfile::MgNestPit | DigProfile::DugoutPit | DigProfile::BunkerPit
+            )
         {
-            out.push(Issue::new("pit", "one of mg_nest_pit, dugout_pit"));
+            out.push(Issue::new(
+                "pit",
+                "one of mg_nest_pit, dugout_pit, bunker_pit",
+            ));
         }
         if self.shape == FortShape::Line {
             range(&mut out, "segment_cm", self.segment_cm, 50, 1000);
@@ -1058,7 +1139,7 @@ impl FortDef {
             if !PIECE_PARTS.contains(&b.part.as_str()) {
                 out.push(Issue::new(
                     format!("pieces[{k}].part"),
-                    format!("`{}` is not one of sandbag, roof, timber", b.part),
+                    format!("`{}` is not one of {}", b.part, PIECE_PARTS.join(", ")),
                 ));
             }
             for (j, v) in b.size_cm.iter().enumerate() {
@@ -1734,6 +1815,9 @@ pub struct DigProfilesDef {
     pub mg_nest_pit: Option<DigProfileDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dugout_pit: Option<DigProfileDef>,
+    /// S10b: the bunker's pit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bunker_pit: Option<DigProfileDef>,
 }
 
 /// A dug cross-section: a flat floor, walls sloping out to the lip, and a
@@ -2256,7 +2340,7 @@ impl ItemDef {
         range(&mut out, "scatter_pct", self.scatter_pct, 0, 100);
         let he = matches!(
             self.kind,
-            ItemKind::Frag | ItemKind::Satchel | ItemKind::Bangalore
+            ItemKind::Frag | ItemKind::Satchel | ItemKind::Bangalore | ItemKind::Mine
         );
         if he != self.he.is_some() {
             out.push(
@@ -2301,6 +2385,21 @@ impl ItemDef {
                 )
                 .with_hint("[bangalore] length_cm = 300 ..."),
             );
+        }
+        if (self.kind == ItemKind::Mine) != self.mine.is_some() {
+            out.push(
+                Issue::new("mine", "mine items need a [mine] table, others must not")
+                    .with_hint("[mine] trigger = \"foot\"\ntrigger_cm = 30"),
+            );
+        }
+        if let Some(m) = &self.mine {
+            if !MINE_TRIGGERS.contains(&m.trigger.as_str()) {
+                out.push(Issue::new(
+                    "mine.trigger",
+                    format!("`{}` is not one of foot, vehicle", m.trigger),
+                ));
+            }
+            range(&mut out, "mine.trigger_cm", m.trigger_cm, 1, 200);
         }
         if let Some(b) = &self.bangalore {
             range(&mut out, "bangalore.length_cm", b.length_cm, 50, 1000);
@@ -2816,6 +2915,7 @@ impl RulesDef {
             ("gun_pit", pits.gun_pit.as_ref()),
             ("mg_nest_pit", pits.mg_nest_pit.as_ref()),
             ("dugout_pit", pits.dugout_pit.as_ref()),
+            ("bunker_pit", pits.bunker_pit.as_ref()),
         ]
         .into_iter()
         .filter_map(|(n, d)| d.map(|d| (n, d)))

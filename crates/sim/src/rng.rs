@@ -99,6 +99,9 @@ impl Purpose {
     pub const CHARGE_CRATER: Purpose = Purpose(34);
     /// S10a: a Bangalore charge's burst fragments (tick, as above).
     pub const CHARGE_FRAGMENT: Purpose = Purpose(35);
+    /// S10b: a sweeper's detection roll (tick, sweeper id; the mine id in
+    /// the stream).
+    pub const MINE_DETECT: Purpose = Purpose(36);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

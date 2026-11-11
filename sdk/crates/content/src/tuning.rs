@@ -2169,7 +2169,80 @@ pub struct FortTuning {
     pub construction_mp_per_t: u32,
     /// hp a non-bursting main-gun round takes from a piece.
     pub shot_piece_damage: u32,
+    /// S10b: % of their rate at which `build_structure` squads build `build_heavy` blueprints (R21).
+    #[serde(default = "fort_default_heavy_by_field_pct")]
+    pub heavy_by_field_pct: u32,
+    /// S10b: cm: a sweeper finds a mine this close (R8).
+    #[serde(default = "fort_default_detect_cm")]
+    pub detect_cm: u32,
+    /// S10b: % chance per second a sweeper finds a mine within `detect_cm` (R8).
+    #[serde(default = "fort_default_detect_pct_per_s")]
+    pub detect_pct_per_s: u32,
+    /// S10b: % of walking speed while sweeping (R9).
+    #[serde(default = "fort_default_sweep_speed_pct")]
+    pub sweep_speed_pct: u32,
+    /// S10b: m: the longest `ClearMines` lane (R9).
+    #[serde(default = "fort_default_lane_max_m")]
+    pub lane_max_m: u32,
+    /// S10b: cm: half the width of a swept lane (R9).
+    #[serde(default = "fort_default_lane_half_cm")]
+    pub lane_half_cm: u32,
+    /// S10b: s to lift one found mine at 100 % (R11).
+    #[serde(default = "fort_default_lift_s")]
+    pub lift_s: u32,
+    /// S10b: s to place a demolition charge (R19).
+    #[serde(default = "fort_default_demolish_place_s")]
+    pub demolish_place_s: u32,
+    /// S10b: s from placing to the burst (R19).
+    #[serde(default = "fort_default_demolish_fuse_s")]
+    pub demolish_fuse_s: u32,
+    /// S10b: % of the charge's damage the demolished piece takes (R20).
+    #[serde(default = "fort_default_demolish_pct")]
+    pub demolish_pct: u32,
+    /// S10b: m: `Demolish` takes the nearest piece within this of `at` (R19).
+    #[serde(default = "fort_default_demolish_reach_m")]
+    pub demolish_reach_m: u32,
+    /// S10b: m: no minefield, obstacle or bunker site this close to a vehicle hull (R18).
+    #[serde(default = "fort_default_vehicle_clear_m")]
+    pub vehicle_clear_m: u32,
     pub tiers: FortTiers,
+}
+
+fn fort_default_heavy_by_field_pct() -> u32 {
+    50
+}
+fn fort_default_detect_cm() -> u32 {
+    150
+}
+fn fort_default_detect_pct_per_s() -> u32 {
+    50
+}
+fn fort_default_sweep_speed_pct() -> u32 {
+    25
+}
+fn fort_default_lane_max_m() -> u32 {
+    50
+}
+fn fort_default_lane_half_cm() -> u32 {
+    200
+}
+fn fort_default_lift_s() -> u32 {
+    20
+}
+fn fort_default_demolish_place_s() -> u32 {
+    10
+}
+fn fort_default_demolish_fuse_s() -> u32 {
+    10
+}
+fn fort_default_demolish_pct() -> u32 {
+    300
+}
+fn fort_default_demolish_reach_m() -> u32 {
+    25
+}
+fn fort_default_vehicle_clear_m() -> u32 {
+    6
 }
 
 impl FortTuning {
@@ -2184,9 +2257,21 @@ impl FortTuning {
         ("carry_kg_per_man", 0, 100),
         ("construction_mp_per_t", 0, 100_000),
         ("shot_piece_damage", 0, 10_000),
+        ("heavy_by_field_pct", 1, 100),
+        ("detect_cm", 10, 1_000),
+        ("detect_pct_per_s", 1, 100),
+        ("sweep_speed_pct", 1, 100),
+        ("lane_max_m", 1, 200),
+        ("lane_half_cm", 50, 1_000),
+        ("lift_s", 1, 600),
+        ("demolish_place_s", 1, 600),
+        ("demolish_fuse_s", 1, 120),
+        ("demolish_pct", 1, 1_000),
+        ("demolish_reach_m", 1, 200),
+        ("vehicle_clear_m", 0, 100),
     ];
 
-    fn values(&self) -> [u32; 9] {
+    fn values(&self) -> [u32; 21] {
         [
             self.wire_speed_pct,
             self.wire_path_cost_pct,
@@ -2197,6 +2282,18 @@ impl FortTuning {
             self.carry_kg_per_man,
             self.construction_mp_per_t,
             self.shot_piece_damage,
+            self.heavy_by_field_pct,
+            self.detect_cm,
+            self.detect_pct_per_s,
+            self.sweep_speed_pct,
+            self.lane_max_m,
+            self.lane_half_cm,
+            self.lift_s,
+            self.demolish_place_s,
+            self.demolish_fuse_s,
+            self.demolish_pct,
+            self.demolish_reach_m,
+            self.vehicle_clear_m,
         ]
     }
 

@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 /// the S9 slice). 13 (S10a): `Fortify`, `LoadMaterials`, `CutWire`,
 /// `PlaceBangalore`, `SupplyKind::Construction`, `ItemKind::Bangalore`
 /// and the two S10a pit `DigProfile`s (the one bump for the S10a slice).
-pub const PROTOCOL_VERSION: u16 = 13;
+/// 14 (S10b): `ClearMines`, `Demolish`, `ItemKind::Mine` and the bunker pit
+/// `DigProfile` (the one bump for the S10b slice).
+pub const PROTOCOL_VERSION: u16 = 14;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -554,6 +556,9 @@ impl Packet {
 
 /// Most points of a `SuppressUnits` line (S3b).
 pub const MAX_SUPPRESS_POINTS: usize = 2;
+/// S10b: the longest `ClearMines` lane any rules allow (the top of
+/// `[fortify] lane_max_m`, m).
+pub const MAX_LANE_M: i32 = 200;
 
 /// The per-command limits the sim applies anyway (it ignores longer
 /// lists), checked on the wire so an oversized command never reaches it,
@@ -602,6 +607,14 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         CommandKind::PlaceBangalore { units, .. } => {
             !units.is_empty() && units.len() <= MAX_UNITS
         }
+        // S10b: a lane no longer than the largest `lane_max_m` allowed;
+        // the map and the match's own `lane_max_m` are the sim's checks.
+        CommandKind::ClearMines { a, b, .. } => {
+            let dx = b.x.raw() as i128 - a.x.raw() as i128;
+            let dy = b.y.raw() as i128 - a.y.raw() as i128;
+            let max = (MAX_LANE_M as i128) << 16;
+            dx * dx + dy * dy <= max * max
+        }
         CommandKind::MoveSoldier { .. }
         | CommandKind::Spawn { .. }
         | CommandKind::Despawn { .. }
@@ -625,7 +638,9 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::DropCrates { .. }
         // S10a: a squad and a count or a point.
         | CommandKind::LoadMaterials { .. }
-        | CommandKind::CutWire { .. } => true,
+        | CommandKind::CutWire { .. }
+        // S10b: a squad and a point.
+        | CommandKind::Demolish { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }

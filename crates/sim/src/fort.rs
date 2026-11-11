@@ -25,6 +25,7 @@
 
 use std::collections::BTreeMap;
 
+use frontline_content::ItemKind;
 use frontline_content::MatchSetup;
 use frontline_content::setup::{Capability, FortShape, SupplyKind};
 use frontline_content::tuning::FortTuning;
@@ -42,6 +43,8 @@ pub const MAX_WORKS: usize = 256;
 pub const MAX_PIECES: usize = 4096;
 pub const MAX_WIRE: usize = 2048;
 pub const MAX_CHARGES: usize = 64;
+/// S10b (R25): laid mines, all players.
+pub const MAX_MINES: usize = 2048;
 /// Most points of a `Fortify` line (as `Dig`).
 pub const MAX_FORT_POINTS: usize = 16;
 
@@ -120,6 +123,25 @@ pub struct Charge {
     pub from: FxVec2,
     pub to: FxVec2,
     pub fuse_tick: u64,
+    /// S10b: a demolition charge (a `satchel` item) tamped against this
+    /// piece; `None` for a Bangalore.
+    pub piece: Option<u32>,
+}
+
+/// S10b: one laid mine (`FortState::mines`).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Mine {
+    pub owner: PlayerId,
+    /// The minefield blueprint (index into `MatchSetup::forts`).
+    pub fort: u16,
+    /// Its `mine_item` (index into `MatchSetup::items`).
+    pub item: u16,
+    pub pos: FxVec2,
+    /// Players who know where it is (bit per player; the owner's team, a
+    /// finder's team, everyone once it has gone off).
+    pub known: u8,
+    /// Set off by a nearby burst: goes off on this tick (`tick + 1`).
+    pub boom_tick: Option<u64>,
 }
 
 /// S10a per-player counters (report; saved and hashed).
@@ -151,6 +173,19 @@ pub struct FortAccount {
     /// crates and from trucks (the rest was carried).
     pub materials_used_crate_g: u64,
     pub materials_used_truck_g: u64,
+    // ---- S10b (report only; any value).
+    pub mines_laid: u32,
+    pub mines_set_off: u32,
+    pub mines_blasted: u32,
+    pub mines_found: u32,
+    pub mines_lifted: u32,
+    pub men_lost_to_mines: u32,
+    pub vehicles_mined: u32,
+    pub obstacles_built: u32,
+    pub bunkers_built: u32,
+    pub sweeps: u32,
+    pub demolitions: u32,
+    pub pieces_demolished: u32,
 }
 
 /// All S10a state (`MatchState::fort`).
@@ -169,6 +204,9 @@ pub struct FortState {
     pub carried_g: BTreeMap<SquadId, u32>,
     /// Per player.
     pub accounts: Vec<FortAccount>,
+    /// S10b: laid mines by id.
+    pub mines: BTreeMap<u32, Mine>,
+    pub next_mine: u32,
     /// S10a-ai: the derived wire cell index (never saved or hashed;
     /// rebuilt by [`FortState::refresh_wire_index`]).
     #[serde(skip)]
@@ -225,6 +263,8 @@ pub enum FortRefusal {
     NotInBase,
     /// Nothing to cut / no wire within reach.
     NoWire,
+    /// S10b: no piece to demolish / no mine lane target.
+    NoTarget,
 }
 
 /// One refused S10a command (presentation only).
@@ -252,6 +292,7 @@ impl FortState {
             && self.wire.is_empty()
             && self.charges.is_empty()
             && self.carried_g.is_empty()
+            && self.mines.is_empty()
     }
 
     /// Checks a loaded state (untrusted saves).
@@ -260,6 +301,7 @@ impl FortState {
         setup: &MatchSetup,
         ents: &Entities,
         squads: &BTreeMap<SquadId, crate::game::Squad>,
+        tick: u64,
     ) -> Result<(), &'static str> {
         let np = setup.players.len();
         if self.accounts.len() != np {
@@ -290,14 +332,16 @@ impl FortState {
             || self.pieces.len() > MAX_PIECES
             || self.wire.len() > MAX_WIRE
             || self.charges.len() > MAX_CHARGES
+            || self.mines.len() > MAX_MINES
         {
-            return Err("too many S10a works, pieces, wire sections or charges");
+            return Err("too many S10a works, pieces, wire sections, charges or mines");
         }
         if [
             self.next_work,
             self.next_piece,
             self.next_wire,
             self.next_charge,
+            self.next_mine,
         ]
         .iter()
         .any(|&n| n > crate::bounds::MAX_ID_COUNTER)
@@ -376,14 +420,23 @@ impl FortState {
             if c.owner.0 as usize >= np || !on_map(c.from) || !on_map(c.to) {
                 return Err("charge owner or position out of range");
             }
-            if setup
-                .items
-                .get(c.item as usize)
-                .is_none_or(|it| it.bangalore.is_none())
-            {
-                return Err("charge item is not a Bangalore");
+            let kind = setup.items.get(c.item as usize).map(|it| it.kind);
+            match c.piece {
+                None if setup
+                    .items
+                    .get(c.item as usize)
+                    .is_none_or(|it| it.bangalore.is_none()) =>
+                {
+                    return Err("charge item is not a Bangalore");
+                }
+                // S10b: a demolition charge is a satchel on a piece id.
+                Some(p) if p >= self.next_piece || kind != Some(ItemKind::Satchel) => {
+                    return Err("demolition charge piece or item out of range");
+                }
+                _ => {}
             }
         }
+        self.validate_s10b(setup, ents, squads, tick, &on_map)?;
         let per_man = setup
             .rules
             .fortify
@@ -396,6 +449,110 @@ impl FortState {
             let alive = q.members.iter().filter(|m| ents.is_alive(**m)).count() as u64;
             if g == 0 || g as u64 > per_man * alive.max(q.members.len() as u64) {
                 return Err("carried construction kg above the squad's capacity");
+            }
+        }
+        Ok(())
+    }
+
+    /// S10b load checks (spec 6): mines and the `ClearMines` / `Demolish`
+    /// orders.
+    fn validate_s10b(
+        &self,
+        setup: &MatchSetup,
+        ents: &Entities,
+        squads: &BTreeMap<SquadId, crate::game::Squad>,
+        tick: u64,
+        on_map: &dyn Fn(FxVec2) -> bool,
+    ) -> Result<(), &'static str> {
+        let np = setup.players.len();
+        let mut per: BTreeMap<(u8, u16), u32> = BTreeMap::new();
+        for (&id, m) in &self.mines {
+            if id >= self.next_mine || m.owner.0 as usize >= np || !on_map(m.pos) {
+                return Err("mine id, owner or position out of range");
+            }
+            let Some(d) = setup.forts.get(m.fort as usize) else {
+                return Err("mine blueprint out of range");
+            };
+            if d.mine_item != Some(m.item) {
+                return Err("mine item is not its blueprint's mine_item");
+            }
+            if np < 8 && m.known >> np != 0 {
+                return Err("mine known to a player who is not in the match");
+            }
+            if m.boom_tick.is_some_and(|b| Some(b) != tick.checked_add(1)) {
+                return Err("mine set off for a tick other than the next");
+            }
+            let n = per.entry((m.owner.0, m.fort)).or_default();
+            *n += 1;
+            if *n > d.limit_per_player {
+                return Err("more mines than the blueprint's limit_per_player");
+            }
+        }
+        let t = setup.rules.fortify.as_ref();
+        let hz = setup.tick_hz as u64;
+        for q in squads.values() {
+            let caps = setup
+                .squad_types
+                .get(q.type_idx as usize)
+                .map_or(0, |ty| ty.caps);
+            match &q.order {
+                Order::ClearMines {
+                    a,
+                    b,
+                    along,
+                    lift,
+                    work,
+                } => {
+                    let Some(t) = t else {
+                        return Err("ClearMines without [fortify]");
+                    };
+                    if caps & Capability::ClearMines.bit() == 0 {
+                        return Err("ClearMines by a squad without clear_mines");
+                    }
+                    if !on_map(*a) || !on_map(*b) {
+                        return Err("ClearMines lane off the map");
+                    }
+                    let len = (*b - *a).length();
+                    if len > Fx::from_int(t.lane_max_m as i32) {
+                        return Err("ClearMines lane longer than lane_max_m");
+                    }
+                    if *along < Fx::ZERO || *along > len {
+                        return Err("ClearMines progress outside its lane");
+                    }
+                    if let Some(l) = lift
+                        && self
+                            .mines
+                            .get(l)
+                            .is_none_or(|m| m.known & (1 << q.owner.0.min(7)) == 0)
+                    {
+                        return Err("ClearMines lifts a mine its player does not know");
+                    }
+                    if *work > t.lift_s as u64 * hz * 100 {
+                        return Err("ClearMines lift work beyond the lift total");
+                    }
+                }
+                Order::Demolish { piece, man, work } => {
+                    let Some(t) = t else {
+                        return Err("Demolish without [fortify]");
+                    };
+                    if caps & Capability::Demolish.bit() == 0 {
+                        return Err("Demolish by a squad without demolish");
+                    }
+                    if *piece >= self.next_piece {
+                        return Err("Demolish piece id out of range");
+                    }
+                    if let Some(m) = man
+                        && (!q.members.contains(m)
+                            || !ents.is_alive(*m)
+                            || ents.kit[m.index()].items[ItemKind::Satchel.index()] == 0)
+                    {
+                        return Err("Demolish man is not a living member with a satchel");
+                    }
+                    if *work > t.demolish_place_s as u64 * hz * 100 {
+                        return Err("Demolish work beyond the place total");
+                    }
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -1883,6 +2040,7 @@ impl MatchState {
             from: terrain.clamp(from),
             to,
             fuse_tick: tick + it.fuse_ticks.max(1) as u64,
+            piece: None,
         });
         if let Some(a) = self.fort.accounts.get_mut(owner.0 as usize) {
             a.bangalores += 1;

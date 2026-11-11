@@ -161,6 +161,7 @@ pub fn fort_words(why: frontline_sim::fort::FortRefusal) -> (&'static str, Strin
             "materials load only in the own base".to_owned(),
         ),
         R::NoWire => ("no_wire", "no wire within reach".to_owned()),
+        R::NoTarget => ("no_target", "nothing to demolish or clear there".to_owned()),
     }
 }
 

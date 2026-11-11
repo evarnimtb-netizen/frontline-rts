@@ -437,6 +437,25 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
                 put_postcard(man, out);
                 work.put(out);
             }
+            // S10b.
+            Order::ClearMines {
+                a,
+                b,
+                along,
+                lift,
+                work,
+            } => {
+                a.put(out);
+                b.put(out);
+                along.put(out);
+                put_postcard(lift, out);
+                work.put(out);
+            }
+            Order::Demolish { piece, man, work } => {
+                piece.put(out);
+                put_postcard(man, out);
+                work.put(out);
+            }
         }
         let n = &sq.nav;
         (n.phase as u8).put(out);

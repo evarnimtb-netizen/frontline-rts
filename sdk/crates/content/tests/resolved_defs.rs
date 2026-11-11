@@ -131,14 +131,14 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // 0x2a1f3cd5c00abbb9, 0xd0129bd32566edf0, 0xcf34d01b95342d0f,
 // 0x43883242c0df2a86, 0x2ecb31b5c8f84cfa.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x5daa3cfaa0de2a90),
-    ("skirmish usa-ger seed 7 hard", 0x2737846e6d465dee),
-    ("test_unlock ger-usa seed 1 normal", 0x1a0b8e95f24eb92a),
-    ("example override ger-usa seed 1 normal", 0x5daa3cfaa0de2a90),
-    ("human ger vs ai usa seed 3 easy", 0xdc014f6cd5547137),
+    ("skirmish ger-usa seed 1 normal", 0x2f76ef89a48bc163),
+    ("skirmish usa-ger seed 7 hard", 0x3b20aa290e6df141),
+    ("test_unlock ger-usa seed 1 normal", 0xc12662df01c3b941),
+    ("example override ger-usa seed 1 normal", 0x2f76ef89a48bc163),
+    ("human ger vs ai usa seed 3 easy", 0x3dc8c506574b5338),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xb8067f406a0d5f0f,
+        0x2cc0548b91bc9dff,
     ),
 ];
 

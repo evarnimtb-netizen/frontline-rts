@@ -972,6 +972,7 @@ fn load_rejects_bad_fort_state() {
                 from: FxVec2::from_int(1, 1),
                 to: FxVec2::from_int(2, 2),
                 fuse_tick: 5,
+                piece: None,
             });
             f.next_charge = 1;
         }),

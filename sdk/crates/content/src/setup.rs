@@ -252,6 +252,19 @@ pub struct FortSetup {
     pub max_length: Fixed,
     pub pieces: Vec<PieceSetup>,
     pub wire: Option<WireSetup>,
+    /// S10b minefields: the `mine` item laid (index into
+    /// `MatchSetup::items`).
+    pub mine_item: Option<u16>,
+    /// S10b obstacles: the pieces block vehicle path nodes.
+    pub blocks_vehicles: bool,
+}
+
+/// S10b: what sets a mine off (`[mine]`), lowered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MineSetup {
+    /// Index into `defs::MINE_TRIGGERS` (0 foot, 1 vehicle).
+    pub trigger: u8,
+    pub trigger_cm: u32,
 }
 
 /// S10a: a Bangalore item's charge, lowered.
@@ -413,6 +426,8 @@ pub struct RulesSetup {
     /// S10a: the MG nest's and the dugout's pits.
     pub mg_nest_pit: DigSetup,
     pub dugout_pit: DigSetup,
+    /// S10b: the bunker's pit.
+    pub bunker_pit: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
     /// Vehicle rules (S3).
@@ -447,6 +462,7 @@ impl RulesSetup {
             DigProfile::GunPit => &self.gun_pit,
             DigProfile::MgNestPit => &self.mg_nest_pit,
             DigProfile::DugoutPit => &self.dugout_pit,
+            DigProfile::BunkerPit => &self.bunker_pit,
         }
     }
 }
@@ -484,6 +500,8 @@ pub enum DigProfile {
     MgNestPit = 6,
     /// S10a: the dugout's pit (engineers only).
     DugoutPit = 7,
+    /// S10b: the bunker's pit (engineers only).
+    BunkerPit = 8,
 }
 
 impl DigProfile {
@@ -497,6 +515,7 @@ impl DigProfile {
                 | DigProfile::GunPit
                 | DigProfile::MgNestPit
                 | DigProfile::DugoutPit
+                | DigProfile::BunkerPit
         )
     }
 }
@@ -949,6 +968,8 @@ pub struct ItemSetup {
     pub supply: Option<SupplySetup>,
     /// S10a: Bangalore items' charge.
     pub bangalore: Option<BangaloreSetup>,
+    /// S10b: mine items' trigger.
+    pub mine: Option<MineSetup>,
 }
 
 /// An item's blast: a weapon-style [`HeSetup`] plus its own damage and
@@ -1032,10 +1053,16 @@ pub enum Capability {
     ClearWire = 10,
     /// S10a: assault engineers (Bangalore torpedoes; assault tier).
     Breach = 11,
+    /// S10b: lay minefields.
+    PlaceMines = 12,
+    /// S10b: sweep and lift mines.
+    ClearMines = 13,
+    /// S10b: demolish obstacles and pieces with a satchel.
+    Demolish = 14,
 }
 
 impl Capability {
-    pub const ALL: [Capability; 12] = [
+    pub const ALL: [Capability; 15] = [
         Capability::DigBasic,
         Capability::DigFull,
         Capability::FireMission,
@@ -1048,6 +1075,9 @@ impl Capability {
         Capability::PlaceWire,
         Capability::ClearWire,
         Capability::Breach,
+        Capability::PlaceMines,
+        Capability::ClearMines,
+        Capability::Demolish,
     ];
 
     #[inline]
@@ -1061,7 +1091,7 @@ impl Capability {
     }
 
     /// Every capability bit.
-    pub const MASK: u32 = (1 << 12) - 1;
+    pub const MASK: u32 = (1 << 15) - 1;
 }
 
 /// S4: one `[[members]]` slot, lowered.
@@ -1460,6 +1490,13 @@ impl ModDefs {
                     length: Fixed::from_cm(b.length_cm),
                     bursts: b.bursts.min(8) as u8,
                     place_ticks: b.place_s.saturating_mul(hz),
+                }),
+                mine: it.mine.as_ref().map(|m| MineSetup {
+                    trigger: crate::defs::MINE_TRIGGERS
+                        .iter()
+                        .position(|t| *t == m.trigger)
+                        .unwrap_or(0) as u8,
+                    trigger_cm: m.trigger_cm,
                 }),
             })
             .collect();
@@ -1882,6 +1919,7 @@ impl ModDefs {
                 gun_pit: pit_setup(&rules.dig, |p| p.gun_pit.as_ref()),
                 mg_nest_pit: pit_setup(&rules.dig, |p| p.mg_nest_pit.as_ref()),
                 dugout_pit: pit_setup(&rules.dig, |p| p.dugout_pit.as_ref()),
+                bunker_pit: pit_setup(&rules.dig, |p| p.bunker_pit.as_ref()),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -2087,7 +2125,11 @@ impl ModDefs {
                 })
                 .collect(),
             stocks,
-            forts: self.forts.values().map(|d| lower_fort(d, hz)).collect(),
+            forts: self
+                .forts
+                .values()
+                .map(|d| lower_fort(d, hz, self.items.keys()))
+                .collect(),
         };
         let issues = setup.validate();
         if issues.is_empty() {
@@ -2380,7 +2422,11 @@ fn lower_stock(
 }
 
 /// S10a: lowers one blueprint.
-fn lower_fort(d: &crate::defs::FortDef, hz: u32) -> FortSetup {
+fn lower_fort<'a>(
+    d: &crate::defs::FortDef,
+    hz: u32,
+    items: impl Iterator<Item = &'a String>,
+) -> FortSetup {
     let cm = |v: i32| Fixed::from_ratio(v as i64, 100);
     FortSetup {
         id: d.id.clone(),
@@ -2423,6 +2469,8 @@ fn lower_fort(d: &crate::defs::FortDef, hz: u32) -> FortSetup {
             height: Fixed::from_cm(w.height_cm),
             hp: w.hp,
         }),
+        mine_item: d.mine_item.as_deref().and_then(|m| index_of(items, m)),
+        blocks_vehicles: d.blocks_vehicles,
     }
 }
 
@@ -2590,6 +2638,7 @@ impl MatchSetup {
             &r.gun_pit,
             &r.mg_nest_pit,
             &r.dugout_pit,
+            &r.bunker_pit,
         ] {
             check(
                 d.pit_line >= Fixed::ZERO && fx_in(d.pit_line, 0, 20),
@@ -2871,7 +2920,16 @@ impl MatchSetup {
             );
             let he = matches!(
                 it.kind,
-                ItemKind::Frag | ItemKind::Satchel | ItemKind::Bangalore
+                ItemKind::Frag | ItemKind::Satchel | ItemKind::Bangalore | ItemKind::Mine
+            );
+            check(
+                (it.kind == ItemKind::Mine)
+                    == it.mine.as_ref().is_some_and(|m| {
+                        (m.trigger as usize) < crate::defs::MINE_TRIGGERS.len()
+                            && (1..=200).contains(&m.trigger_cm)
+                    }),
+                "items.mine",
+                "a mine item has a trigger; other items none",
             );
             check(
                 (it.kind == ItemKind::Bangalore) == it.bangalore.is_some(),

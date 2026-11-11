@@ -1996,8 +1996,19 @@
         "construction_mp_per_t": 100,
         "cut_reach_m": 25,
         "cut_s": 10,
+        "demolish_fuse_s": 10,
+        "demolish_pct": 300,
+        "demolish_place_s": 10,
+        "demolish_reach_m": 25,
+        "detect_cm": 150,
+        "detect_pct_per_s": 50,
+        "heavy_by_field_pct": 50,
+        "lane_half_cm": 200,
+        "lane_max_m": 50,
+        "lift_s": 20,
         "material_reach_m": 15,
         "shot_piece_damage": 150,
+        "sweep_speed_pct": 25,
         "tiers": {
           "assault": {
             "build_pct": 0,
@@ -2012,6 +2023,7 @@
             "cut_pct": 100
           }
         },
+        "vehicle_clear_m": 6,
         "wire_frag_pct": 25,
         "wire_path_cost_pct": 500,
         "wire_speed_pct": 20

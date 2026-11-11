@@ -163,6 +163,23 @@ pub enum Order {
         man: Option<SimId>,
         work: u64,
     },
+    /// S10b `ClearMines`: sweep the lane `a`..`b`; `along` how far the
+    /// sweepers are, `lift` the mine being lifted, `work` its points done.
+    /// Becomes `Idle` at the lane end with no known mine left in it.
+    ClearMines {
+        a: FxVec2,
+        b: FxVec2,
+        along: Fx,
+        lift: Option<u32>,
+        work: u64,
+    },
+    /// S10b `Demolish`: `man` lays a satchel against piece `piece`; `work`
+    /// the placing points done. Becomes `Idle` when the charge is laid.
+    Demolish {
+        piece: u32,
+        man: Option<SimId>,
+        work: u64,
+    },
 }
 
 /// [`Order`] without its payload, for the snapshot.
@@ -189,6 +206,10 @@ pub enum OrderKind {
     Fortify = 10,
     /// S10a: cutting wire.
     CutWire = 11,
+    /// S10b: sweeping and lifting mines.
+    ClearMines = 12,
+    /// S10b: placing a demolition charge.
+    Demolish = 13,
 }
 
 impl Order {
@@ -206,6 +227,8 @@ impl Order {
             Order::Embark { .. } => OrderKind::Embark,
             Order::Fortify { .. } => OrderKind::Fortify,
             Order::CutWire { .. } => OrderKind::CutWire,
+            Order::ClearMines { .. } => OrderKind::ClearMines,
+            Order::Demolish { .. } => OrderKind::Demolish,
         }
     }
 }
@@ -1181,6 +1204,10 @@ impl MatchState {
             }
             &CommandKind::LoadMaterials { squad, kg } => self.load_materials(ctx, p, squad, kg),
             &CommandKind::CutWire { squad, at } => self.order_cut_wire(ctx, p, squad, at),
+            // S10b: accepted by Build C (`ClearMines`) and D (`Demolish`).
+            &CommandKind::ClearMines { squad, .. } | &CommandKind::Demolish { squad, .. } => {
+                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
+            }
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }
@@ -2038,7 +2065,7 @@ impl MatchState {
         // S6.
         self.supply6.validate(s, ents, &self.squads)?;
         // S10a.
-        self.fort.validate(s, ents, &self.squads)?;
+        self.fort.validate(s, ents, &self.squads, tick)?;
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
@@ -2611,7 +2638,9 @@ fn command_squad(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::PlaceCrate { squad, .. }
         | CommandKind::PickUpCrate { squad, .. }
         | CommandKind::Fortify { squad, .. }
-        | CommandKind::CutWire { squad, .. } => Some(*squad),
+        | CommandKind::CutWire { squad, .. }
+        | CommandKind::ClearMines { squad, .. }
+        | CommandKind::Demolish { squad, .. } => Some(*squad),
         _ => None,
     }
 }

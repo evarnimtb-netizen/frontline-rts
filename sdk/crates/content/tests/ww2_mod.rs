@@ -292,12 +292,12 @@ fn items_and_loadouts_resolve() {
     let rifleman = ty("ww2:ger_rifle_squad").members.len() as u8 - 1;
     assert_eq!(
         ty("ww2:ger_rifle_squad").full_kit(rifleman),
-        [1, 0, 0, 0, 0]
+        [1, 0, 0, 0, 0, 0]
     );
-    assert_eq!(ty("ww2:ger_rifle_squad").full_kit(0), [2, 1, 0, 0, 0]);
-    assert_eq!(ty("ww2:usa_engineer_squad").full_kit(0), [2, 1, 1, 0, 0]);
-    assert_eq!(ty("ww2:usa_mg_team").full_kit(0), [0, 0, 0, 0, 0]);
-    assert_eq!(ty("ww2:ger_mortar_team").full_kit(0), [0, 0, 0, 0, 0]);
+    assert_eq!(ty("ww2:ger_rifle_squad").full_kit(0), [2, 1, 0, 0, 0, 0]);
+    assert_eq!(ty("ww2:usa_engineer_squad").full_kit(0), [2, 1, 1, 0, 0, 0]);
+    assert_eq!(ty("ww2:usa_mg_team").full_kit(0), [0, 0, 0, 0, 0, 0]);
+    assert_eq!(ty("ww2:ger_mortar_team").full_kit(0), [0, 0, 0, 0, 0, 0]);
     let (_, it) = ty("ww2:usa_rifle_squad")
         .kit(&s.items, ItemKind::Frag)
         .unwrap();

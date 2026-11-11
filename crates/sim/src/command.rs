@@ -248,4 +248,15 @@ pub enum CommandKind {
     /// The nearest man carrying a Bangalore in a `breach` squad lays it
     /// toward `target`.
     PlaceBangalore { units: Vec<SimId>, target: FxVec2 },
+    // ---- S10b mines and obstacles (refused `NotAllowed` until Build C/D).
+    /// A `clear_mines` squad sweeps the lane `a`..`b` (at most
+    /// `lane_max_m`), lifting the mines it finds.
+    ClearMines {
+        squad: SquadId,
+        a: FxVec2,
+        b: FxVec2,
+    },
+    /// The nearest man with a satchel in a `demolish` squad lays it against
+    /// the nearest piece within `demolish_reach_m` of `at`.
+    Demolish { squad: SquadId, at: FxVec2 },
 }

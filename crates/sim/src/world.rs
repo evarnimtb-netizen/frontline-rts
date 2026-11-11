@@ -441,8 +441,13 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// pits, `[fortify]`, Bangalore and capability bits in the setup). One
 /// bump for the whole slice. 23: S10a-ai (`AiState` fort and breach
 /// state and counters, `FortAccount` lost and by-kind counters, `[ai.fort]`
-/// in the setup). One bump for the whole slice.
-const SAVE_VERSION: u32 = 23;
+/// in the setup). One bump for the whole slice. 24: S10b (`FortState::
+/// {mines, next_mine}`, `Charge::piece`, twelve `FortAccount` counters,
+/// `Order::{ClearMines, Demolish}`; in the setup `ItemKind::Mine` and
+/// `ItemSetup::mine`, `FortSetup::{mine_item, blocks_vehicles}`, the bunker
+/// pit, capability bits 12-14 and twelve `[fortify]` keys). One bump for
+/// the whole slice.
+const SAVE_VERSION: u32 = 24;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {

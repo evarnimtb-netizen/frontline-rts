@@ -330,7 +330,7 @@ fn members_tags_capabilities_and_dates_are_checked() {
 id = "ww2:zz_variant"
 extends = "ww2:usa_rifle_squad"
 tags = ["line", "Bad-Tag", "line"]
-capabilities = ["dig_basic", "demolish", "dig_ful", "fire_mission"]
+capabilities = ["dig_basic", "observe", "dig_ful", "fire_mission"]
 available_from = "1944-13"
 available_to = "1943-01"
 short_name = "A name far too long"
@@ -350,7 +350,7 @@ weapon = "ww2:m1_garnd"
     for want in [
         "tags[1]",
         "tags[2]: `line` is listed twice",
-        "capability `demolish` is reserved",
+        "capability `observe` is reserved",
         "did you mean `dig_full`",
         "`fire_mission` comes from a mortar",
         "available_from: `1944-13` is not a month",

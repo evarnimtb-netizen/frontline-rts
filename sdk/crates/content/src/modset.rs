@@ -989,6 +989,20 @@ impl ModDefs {
     /// ammo.
     pub fn cross_check(&self) -> Vec<Issue> {
         let mut out = Vec::new();
+        // S10b: a minefield names a `mine` item.
+        for (id, f) in &self.forts {
+            if let Some(m) = &f.mine_item
+                && self
+                    .items
+                    .get(m)
+                    .is_none_or(|it| it.kind != crate::defs::ItemKind::Mine)
+            {
+                out.push(Issue::new(
+                    format!("fortification `{id}`: mine_item"),
+                    format!("`{m}` is not a mine item"),
+                ));
+            }
+        }
         let squad_file = |id: &str| format!("squad `{id}`");
         for (id, s) in &self.squads {
             if !self.factions.contains_key(&s.faction) {
@@ -1087,6 +1101,10 @@ impl ModDefs {
                     None => out.push(Issue::new(
                         format!("{}: loadout[{i}].item", squad_file(id)),
                         format!("unknown item `{}`", l.item),
+                    )),
+                    Some(it) if it.kind == crate::defs::ItemKind::Mine => out.push(Issue::new(
+                        format!("{}: loadout[{i}].item", squad_file(id)),
+                        "a mine item is laid by a minefield blueprint, never carried in a kit",
                     )),
                     Some(it) if kinds[it.kind.index()] => out.push(Issue::new(
                         format!("{}: loadout[{i}].item", squad_file(id)),
@@ -1741,6 +1759,10 @@ impl ModDefs {
                             "unknown item `{item}`{}",
                             did_you_mean(item, self.items.keys())
                         ),
+                    )),
+                    Some(it) if it.kind == crate::defs::ItemKind::Mine => out.push(Issue::new(
+                        at(format!("{p}.items.\"{item}\"")),
+                        "a mine item is laid by a minefield blueprint, never carried in a kit",
                     )),
                     Some(it) if n > 0 && kinds[it.kind.index()] => out.push(Issue::new(
                         at(format!("{p}.items.\"{item}\"")),

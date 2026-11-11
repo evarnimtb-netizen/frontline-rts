@@ -158,7 +158,10 @@ pub(crate) fn engage(order: &Order) -> Engage {
         // Holding; area fire replaces target search (`aim_and_fire`).
         Order::Suppress { .. } => Engage::Still,
         // S10a: building or cutting, as digging.
-        Order::Fortify { .. } | Order::CutWire { .. } => Engage::Still,
+        Order::Fortify { .. }
+        | Order::CutWire { .. }
+        | Order::ClearMines { .. }
+        | Order::Demolish { .. } => Engage::Still,
     }
 }
 

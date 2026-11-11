@@ -472,6 +472,8 @@ pub fn item_kind(name: &str) -> Option<ItemKind> {
         "satchel" => ItemKind::Satchel,
         "panzerfaust" => ItemKind::SingleShotAt,
         "bangalore" => ItemKind::Bangalore,
+        // S10b: never in a kit, so a throw intent naming it is refused.
+        "mine" => ItemKind::Mine,
         _ => return None,
     })
 }
@@ -483,6 +485,7 @@ pub fn item_name(k: ItemKind) -> &'static str {
         ItemKind::Satchel => "satchel",
         ItemKind::SingleShotAt => "panzerfaust",
         ItemKind::Bangalore => "bangalore",
+        ItemKind::Mine => "mine",
     }
 }
 

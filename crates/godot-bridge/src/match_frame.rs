@@ -752,7 +752,13 @@ impl MatchFrame {
                 // S8a: the transport it walks to or rides in.
                 Order::Embark { vehicle } => v.follow = Some(vehicle.0),
                 // S10a: building or cutting (Build C draws sites and wire).
-                Order::Idle | Order::Retreat | Order::Fortify { .. } | Order::CutWire { .. } => {}
+                // S10b: sweeping and demolishing (Build F draws them).
+                Order::Idle
+                | Order::Retreat
+                | Order::Fortify { .. }
+                | Order::CutWire { .. }
+                | Order::ClearMines { .. }
+                | Order::Demolish { .. } => {}
             }
             self.squads.push(v);
         }
