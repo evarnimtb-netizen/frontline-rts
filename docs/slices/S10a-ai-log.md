@@ -25,20 +25,10 @@ expansions, 14.4 us, through the gap. **Wire index:** `FortState::wire_index` (`
 (full-scan fallback), so answers never depend on it. **Side effect:** a man now goes round a 20 m line's end, so the
 fortify plain-wire row stages 100 m (`WIRE_THROUGH_LEN_M`; gap variants keep 20 m); seed 2 reads 20.0 % again. The
 scripted breach row (30 m wire) may path differently (report row).
-**CLI (`26d3205`).** `s10` adds the 14 AI counters (`S10_AI` order), `works_done` (map by short def id),
-`materials_lost_kg`, `materials_used_crate_kg`, `materials_used_truck_kg`, `men_lost_in_wire`; `s10_derived` the 19
-fields of spec 5 (`json_out::s10_blocks`; `works_per_match` = non-wire works; `materials_mp_pct` over start + base
-income per whole minute, as AI budgets). Text: a `fort:` line per faction. `pool.py`: a `fort:` line when present.
-**Tests (pass).** `ai_fort_state_saves_loads_and_hashes`, `load_rejects_bad_ai_fort_state` (24 isolated edits),
-`fort_account_counts_lost_materials`, `works_done_and_kg_by_source_are_counted`, `men_killed_in_enemy_wire_are_counted`,
-`path_finds_a_2m_and_a_4m_wire_gap`, `path_never_steps_across_standing_wire_beside_a_gap` (both fail on the S10a step
-rule, checked), `wire_index_matches_a_full_scan`, content `ai_fort_tuning_parses_and_validates`, CLI
-`s10_ai_fields_zero_with_the_ai_unchanged`, `s10_derived_counts_matches_with_works_wire_gap`. Changed: clones of the
-account (`s10a_tests.rs`, `fortify/s10a.rs`); `s10_counters_zero_without_fortifications` reads `works_done` as `{}`.
-**Neutrality.** 40 set (`tools/batch.sh target/s10a-ai-A/skirmish40.json -- skirmish --ai-vs-ai --seed 1 --seeds 20
---both-bases --summary --minutes 45`): `neutral.py target/s10a-base40 target/s10a-ai-A` -> `skirmish40.json: same
-40/40` (also against `target/s10a-verify`); all `fort:` numbers 0. **For B:** drop gone squads' jobs at plan start;
-nothing reads `[ai.fort]` yet; no `ai_weight` changed.
+**CLI (`26d3205`).** `s10` adds the 14 AI counters, `works_done`, kg by source, `men_lost_in_wire`; `s10_derived` the 19
+fields of spec 5 (`json_out::s10_blocks`); a `fort:` text line per faction and in `pool.py`. **Tests (pass):** all of
+spec 7 Build A (both path tests fail on the S10a step rule, checked). **Neutrality:** 40 set same 40/40 against
+`target/s10a-base40`; all `fort:` numbers 0.
 
 ## Build B: buying, materials, building (`385b369`, `492aa6f`)
 
@@ -115,3 +105,45 @@ scripted row unchanged (7.0/88.7/0, control 7.6/87.7). Every AI carrier falls 25
 row's): the stage spot is 95 m from the MG, the squad drops under 50 % before or during the first tries.
 **Next must know.** T93f-h, T96 are mechanics/design limits, not wiring (spec 11): Tune knobs `wire_len_m` (paths go round
 30 m), `stage_m`, `suppress_lead_s`, else S10a-16 (B). T100 misses (urgent buy rare: engineers that can cut live).
+
+## Build D: owner decisions 2026-11-11 (`6578ff3`, `dacf9fb`, `71c0e4a`)
+
+**D1 smoke.** `smoke_aim` (breach.rs): `smoke_frac_pct` toward the focus, at most half the cloud radius past the crossing;
+only a man whose throw reaches it throws (no clamped short cloud). A breach squad with its own smoke stages at min(`stage_m`,
+range - 1 - radius/2 - 3) = 22 m (M15 and nbhgr39: 30 m, radius 8, unchanged), arrives within 3 m, throws on the walk up
+once in reach (after the base fired), never walks back (the spot moved out when the smoke man fell). Test
+`ai_breach_smoke_covers_the_crossing_when_the_carrier_goes` (Build C code: cloud 30 m off, fails; control without smoke).
+`ai_breach_retries_...` now counts a `CutWire` as that try's carrier (3rd try: no defender known, no base fire). T93f/h
+floor 30, T93g report; T100b/d report. **fortify10: T93f 0, T93h 0 (miss), T93g 77.7, smokes 0 in all rows**: the smoke
+man (the leader) falls 35-70 m out and the squad drops under 50 % (the `lost` rule) before it is in reach (traced, seed 1:
+US squad 41 % at 32 m, German 25 % at 66 m). With radius 8 and one grenade a squad, 30 % needs the owner: bigger cloud,
+smoke on more men, a closer start or a looser `lost` rule.
+**D2 wire.** `barbed_wire` max_length 60, limit 100; `wire_len_m` 60 (TOML and default); the 25 m-out retry kept. 60 m =
+30 sections, 90 kg (9 MP), inside one 160 kg carry and 3 % of the 600 MP start; 180 s of 2 men; T99 refusals 0/0. **Route
+rule** (`wire_shift`, fort.rs 213): when the straight line from the point to the nearest point the AI does not hold crosses
+the line over 6 m from its middle, the line slides so its end stops 6 m short (at most half its length); through the middle
+(the faced approach, also the enemy's way in) it stays. Exists check reads the unshifted sites too. Test
+`ai_wire_keeps_off_its_route_out` (25 degrees off: no section on the route; control straight ahead). Changed:
+`ai_lays_wire_across_the_approach` (30 sections, +-31 m), `ai_marks_a_shelled_point_and_digs_a_dugout` (wire 0: the long
+line held the single builder for the whole run).
+**D3 cards.** `ai_weight` Pioniergruppe 40 (was 100 by default), Baupioniere 100, Sturmpioniere 60: buys Bau, Sturm,
+Bau, Pioniere, ...; the German start squad stays a Pioniergruppe. US unchanged. Tests: buy shares, content weights.
+**D4 switches.** `[ai.fort]` `nest`, `dugout` (also shelter), `roof`, `sandbags` (`fort::switched_on`); deviation: setup
+layout change (SAVE stays 23; BASELINE, canonical snapshot refreshed). Files `{nest,dugout,roof,sandbags}_off.toml`;
+`tools/ablate.sh ONDIR OUTROOT nest_off dugout_off roof_off sandbags_off` (default the five; `all` every file; check.sh
+dry-runs all nine). **Found:** point wire waits for the nest (`point_wants`, fort.rs 370), so works_off (47.08 %) also laid
+no point wire (pool.py: wire in 0 %) and dropped the +80 builder hold: it is "all point building off", kept as measured;
+`nest = 0` alone lets the wire go ahead. Test `ai_per_work_switches_stop_exactly_their_kind` (16 scenes, all-on control).
+`s5a_ai` stall guard: seed 3 USA won in 12 min with no refill trip (switches off: 4 in 14 min); now the loser of each match
+and each player over the eight must make trips.
+**D5 (read only).** (1) ai.rs 1818: +80 at an own point for engineers while `wants_works`; Germany's held builder was its
+only SMG-and-satchel engineer (Pioniere 2 MP 40, satchel, smoke; US Engineer 1 M3, Garands); a refused or unreachable work
+keeps wanting and holds it all match. (2) fort.rs 867: a builder leaves only on a *known* enemy within 80 m or under 60 %;
+wire 35 m beyond the trench. (3) ai.rs 1868, fort.rs 253: one MG team per nest is pulled from its slot to a site chosen by
+point-index parity, mirrored by base side (unmeasured). (4) ai.rs 1876/1984: one defender squad shelters while the proxy
+mark lasts (hidden MG fire reads as shelling). (5) Costs: no German penalty (materials 100 MP/t both, 8-man builders both,
+Pioniere 206 / Bau 165 vs US 280). (1) is the likeliest works_off lever; the four ablations will say.
+**Numbers.** All off 40 (`target/s10a-ai-D-off`): `neutral.py target/s10a-base40` same 40/40. On 40 (`target/s10a-ai-D`):
+Germany 45.0 % (18/40), mean length 20.1 min, no match without a winner; T94 95/87.5, T95 80/65, T96 0/0, T97 8.09/8.50, T98 0.99/0.95, T99 0/0,
+T100 0.825/0.025 (USA report), wire 24.0/19.7 sections, works 2.33/2.00; S10a-ai.toml's 12 skirmish40 targets pass.
+**Next must know.** Run `ablate.sh` with the four names on the D measure dir; T93f/h miss is the owner's call (above).
