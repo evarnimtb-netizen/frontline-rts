@@ -1926,6 +1926,10 @@ impl Planner<'_> {
                 Rel::Enemy => (TaskKind::Attack, ring_slot(pt.pos, k)),
             };
             let target = self.terrain.clamp(target);
+            if shelter && self.shelter_men(m.id, target) {
+                self.task(m.id, kind, i as u8, target);
+                continue;
+            }
             let same = self
                 .ai
                 .tasks
@@ -1933,27 +1937,39 @@ impl Planner<'_> {
                 .is_some_and(|t| t.kind == kind && t.point == i as u8);
             let near =
                 |a: FxVec2, b: FxVec2, r: i32| (a - b).length_sq_raw() <= sq_m(Fx::from_int(r));
-            let on_track = match &sq.order {
-                Order::Idle if exact => near(m.lead, target, 8),
-                Order::Idle
-                    if pt.rel == Rel::Own
-                        && self.dugout_spot(i).is_some_and(|d| near(m.lead, d, 4)) =>
-                {
-                    false
-                }
-                Order::Idle => near(m.lead, target, 20),
-                Order::Move { target: t } | Order::AttackMove { target: t } if exact => {
-                    *t == target
-                }
-                // S10a-ai: back out of the dugout once the shelter ends.
-                Order::Move { target: t }
-                    if pt.rel == Rel::Own && self.dugout_spot(i) == Some(*t) =>
-                {
-                    false
-                }
-                Order::Move { target: t } | Order::AttackMove { target: t } => near(*t, target, 10),
-                _ => false,
-            };
+            // S10a-ai: men sent one by one under a dugout roof come out
+            // with the squad order once the shelter ends.
+            let sheltered = pt.rel == Rel::Own
+                && self.dugout_spot(i).is_some_and(|d| {
+                    sq.members.iter().any(|u| {
+                        let un = self.ents.unit.get(u.index());
+                        un.is_some_and(|un| un.detached && near(un.nav.goal, d, 3))
+                    })
+                });
+            let on_track = !sheltered
+                && match &sq.order {
+                    Order::Idle if exact => near(m.lead, target, 8),
+                    Order::Idle
+                        if pt.rel == Rel::Own
+                            && self.dugout_spot(i).is_some_and(|d| near(m.lead, d, 4)) =>
+                    {
+                        false
+                    }
+                    Order::Idle => near(m.lead, target, 20),
+                    Order::Move { target: t } | Order::AttackMove { target: t } if exact => {
+                        *t == target
+                    }
+                    // S10a-ai: back out of the dugout once the shelter ends.
+                    Order::Move { target: t }
+                        if pt.rel == Rel::Own && self.dugout_spot(i) == Some(*t) =>
+                    {
+                        false
+                    }
+                    Order::Move { target: t } | Order::AttackMove { target: t } => {
+                        near(*t, target, 10)
+                    }
+                    _ => false,
+                };
             if !(same && on_track) {
                 self.ai.counters.shelter_moves += shelter as u32;
                 let cmd = if kind == TaskKind::Defend {
@@ -2563,6 +2579,7 @@ impl Planner<'_> {
             // S5b: a mortar's spotter stays out.
             if !pending
                 && !self.ai.spotter_out(m.id)
+                && !self.sheltering(m.id)
                 && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
                 && detached.clone().next().is_some()
                 && detached.clone().all(|id| kit(id).windup.is_none())

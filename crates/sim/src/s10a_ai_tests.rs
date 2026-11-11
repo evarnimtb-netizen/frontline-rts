@@ -1293,31 +1293,70 @@ fn ai_marks_a_shelled_point_and_digs_a_dugout() {
     assert_eq!(run(false), (false, false, false), "control: quiet");
 }
 
+/// Player 1's men of squad `id` under the roof box of the dugout piece
+/// at `site` (inside the box in plan, below its bottom).
+fn under_roof(w: &World, id: SquadId, site: FxVec2) -> usize {
+    let f = fort(w, "ww2:dugout");
+    let half = w.match_setup().unwrap().forts[f as usize].pieces[0].half;
+    let roof = w
+        .game()
+        .unwrap()
+        .fort()
+        .pieces
+        .values()
+        .find(|q| q.fort == f && near_m(q.pos, site, 2))
+        .cloned()
+        .expect("a roof");
+    let (sn, cs) = roof.yaw.sin_cos();
+    let along = FxVec2::new(cs, sn);
+    members(w, id)
+        .iter()
+        .filter(|m| {
+            let p = w.state.entities.transform[m.index()].pos;
+            let d = p.xy() - roof.pos;
+            d.dot(along).abs() <= Fx::from(half[0])
+                && d.dot(along.perp()).abs() <= Fx::from(half[1])
+                && p.z + Fx::from_milli(1500) <= roof.z
+        })
+        .count()
+}
+
 #[test]
 fn ai_shelters_in_the_dugout_and_returns() {
     let (mut w, pos, line) = held(|s| s.rules.ai.fort.works_per_point = 0);
     let (_, enemy) = frame(pos, line);
     let site = dugout_site(&w, pos, line);
+    // The pit as the work digs it (along the facing), then the roof.
+    let half = Fx::from(w.match_setup().unwrap().rules.dugout_pit.pit_line).div_int(2);
+    assert!(w.dig_pit_now(
+        &[site - enemy * half, site + enemy * half],
+        frontline_content::DigProfile::DugoutPit
+    ));
     prebuild(&mut w, "ww2:dugout", site, enemy);
     let rifle = squad_at(&mut w, "ww2:usa_rifle_squad", pos, 0);
     play(&mut w, 10);
-    let goal = |w: &World| match w.game().unwrap().squads[&rifle].order {
-        Order::Move { target } => Some(target),
-        _ => None,
-    };
-    assert!(
-        !goal(&w).is_some_and(|t| near_m(t, site, 1)),
-        "not before a mark"
-    );
+    assert_eq!(under_roof(&w, rifle, site), 0, "not before a mark");
     let tick = w.state.tick;
     ai1(&mut w).shelled.insert(0, tick);
-    assert!(play_until(&mut w, 10, |w| goal(w).is_some_and(|t| near_m(t, site, 1))));
+    // The men the roof holds (trench spots `cover.gap_mm` apart) go in
+    // one by one and stay under it while the mark is fresh.
+    assert!(play_until(&mut w, 15, |w| under_roof(w, rifle, site) >= 2));
     assert!(ai_ro(&w).counters.shelter_moves >= 1);
-    // The mark gets old (shelter_s 20): back out.
-    // (The men stop at the pit's edge: the order and task say where.)
+    play(&mut w, 4);
+    assert!(under_roof(&w, rifle, site) >= 2, "they stay under the roof");
+    // The mark gets old (shelter_s 20): back out with the squad order
+    // (the cover rule may still pick the pit for a man whose formation
+    // slot lies near it: the order, not the spot, is checked here).
     assert!(play_until(&mut w, 40, |w| {
         let t = ai_ro(w).tasks[&rifle].target;
-        !near_m(t, site, 1) && !goal(w).is_some_and(|g| near_m(g, site, 1))
+        let to_site = match w.game().unwrap().squads[&rifle].order {
+            Order::Move { target } => near_m(target, site, 1),
+            _ => false,
+        };
+        let detached = members(w, rifle)
+            .iter()
+            .any(|m| w.state.entities.unit[m.index()].detached);
+        !near_m(t, site, 1) && !to_site && !detached
     }));
 }
 

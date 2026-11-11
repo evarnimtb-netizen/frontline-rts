@@ -228,7 +228,7 @@ fn trench_near(terrain: &Heightfield, p: FxVec2, radius_m: i32) -> bool {
 /// it are all `combat.body.trench_depth_mm` below the base surface, so `p`
 /// is near the middle of the floor and a man who stops within the arrive
 /// radius of it still stands in the trench.
-fn trench_spot(
+pub(crate) fn trench_spot(
     terrain: &Heightfield,
     ditches: Option<&BlockLayer>,
     p: FxVec2,

@@ -28,7 +28,9 @@
 //!   move, and puts one MG team into each built nest.
 
 use frontline_content::MatchSetup;
-use frontline_content::setup::{Capability, DigProfile, FortShape, SquadTypeSetup, StockKind};
+use frontline_content::setup::{
+    Capability, DigProfile, Fixed, FortShape, SquadTypeSetup, StockKind,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{Known, Mine, MyTank, NO_POINT, PointEval, Rel, TaskKind, sq_m};
@@ -55,6 +57,9 @@ const WIRE_RETRY_M: i32 = 25;
 /// A truck run gives up this long after its start beyond
 /// `material_wait_s` (the drive there, s).
 const RUN_DRIVE_S: u64 = 180;
+/// Most men one dugout shelters, and the step between their spots (mm).
+pub(super) const SHELTER_SPOTS: usize = 8;
+const SHELTER_STEP_MM: i32 = 250;
 
 /// Where a fort job stands (spec 3.3: Load -> Go -> Order -> Watch -> Done).
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -403,6 +408,117 @@ impl super::Planner<'_> {
         let d = fort_of(s, WorkKind::Dugout)?;
         let site = self.point_site(i, WorkKind::Dugout, None)?[0];
         self.built_near(d, site).then_some(site)
+    }
+
+    /// Spots under the built own dugout roof at `site` (shelter, spec
+    /// 3.3): trench spots (the cover rule's, so a man who arrives keeps
+    /// his) inside the roof box, at least `cover.gap_mm` apart, found on a
+    /// 0.25 m grid along then across the roof, at most [`SHELTER_SPOTS`].
+    /// Empty without a roof there.
+    pub(super) fn shelter_spots(&self, site: FxVec2) -> Vec<FxVec2> {
+        let s = &self.g.setup;
+        let me = self.me;
+        let Some(d) = fort_of(s, WorkKind::Dugout) else {
+            return Vec::new();
+        };
+        let Some(half) = s.forts[d as usize].pieces.first().map(|p| p.half) else {
+            return Vec::new();
+        };
+        let r = Fx::from_int(SITE_NEAR_M);
+        let roof = self
+            .g
+            .fort
+            .pieces
+            .values()
+            .filter(|q| q.owner == me && q.fort == d && q.part == 0 && near(q.pos, site, r))
+            .min_by_key(|q| ((q.pos - site).length_sq_raw(), q.pos.x.raw(), q.pos.y.raw()));
+        let Some(roof) = roof else { return Vec::new() };
+        let (sn, cs) = roof.yaw.sin_cos();
+        let along = FxVec2::new(cs, sn);
+        let across = along.perp();
+        let step = Fx::from_milli(SHELTER_STEP_MM);
+        let n = |h: Fixed| (Fx::from(h).raw() / step.raw()).clamp(0, 16);
+        let (na, nb) = (n(half[0]), n(half[1]));
+        let gap = Fx::from_milli(s.rules.cover.gap_mm as i32);
+        let mut out: Vec<FxVec2> = Vec::new();
+        for a in -na..=na {
+            for b in -nb..=nb {
+                let p = roof.pos + along * step.mul_int(a) + across * step.mul_int(b);
+                if self.terrain.contains(p)
+                    && crate::squad::trench_spot(self.terrain, None, p, &s.rules)
+                    && out.iter().all(|&q| !near(q, p, gap))
+                {
+                    out.push(p);
+                }
+            }
+        }
+        out.truncate(SHELTER_SPOTS);
+        out
+    }
+
+    /// Whether squad `id` has men sent under its point's dugout roof
+    /// ([`Self::shelter_men`]): the throwers' regroup leaves it alone.
+    pub(super) fn sheltering(&self, id: SquadId) -> bool {
+        let Some(t) = self.ai.tasks.get(&id) else {
+            return false;
+        };
+        if t.kind != TaskKind::Defend || t.point == NO_POINT {
+            return false;
+        }
+        let (Some(d), Some(q)) = (self.dugout_spot(t.point as usize), self.g.squads.get(&id))
+        else {
+            return false;
+        };
+        q.members.iter().any(|m| {
+            self.ents
+                .unit
+                .get(m.index())
+                .is_some_and(|u| u.detached && near(u.nav.goal, d, Fx::from_int(3)))
+        })
+    }
+
+    /// Sends squad `id`'s men (member order, at most the spots) one by one
+    /// to the spots under the dugout roof at `site`; a man already there or
+    /// walking there gets nothing. False without a roof (the caller then
+    /// sends the squad order). The rest of the squad keeps its order.
+    pub(super) fn shelter_men(&mut self, id: SquadId, site: FxVec2) -> bool {
+        let spots = self.shelter_spots(site);
+        if spots.is_empty() {
+            return false;
+        }
+        let Some(q) = self.g.squads.get(&id) else {
+            return false;
+        };
+        let ents = self.ents;
+        let mut men: Vec<_> = q
+            .members
+            .iter()
+            .copied()
+            .filter(|m| ents.kind.get(m.index()) == Some(&crate::ecs::EntityKind::Soldier))
+            .collect();
+        // By id: the member order changes (a new leader), the spots do not.
+        men.sort_unstable();
+        let close = Fx::from_milli(500);
+        let mut sent = false;
+        for (&m, &spot) in men.iter().zip(&spots) {
+            let i = m.index();
+            let u = &ents.unit[i];
+            let there = near(ents.transform[i].pos.xy(), spot, close);
+            let going = u.detached && near(u.nav.goal, spot, Fx::from_milli(100));
+            if there || going {
+                continue;
+            }
+            self.ai.emit(
+                self.due,
+                CommandKind::MoveUnits {
+                    units: vec![m],
+                    target: spot,
+                },
+            );
+            sent = true;
+        }
+        self.ai.counters.shelter_moves += sent as u32;
+        true
     }
 
     // -------------------------------------------------------- materials --
