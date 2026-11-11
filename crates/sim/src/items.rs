@@ -473,6 +473,7 @@ impl MatchState {
         // S10a: fortification pieces (nothing to test without any).
         let statics = &self.statics.0;
         let pieces = !self.fort.pieces.is_empty() && !self.fort_off;
+        let rests = self.fort.next_piece > 0 && !self.fort_off;
         for t in self.thrown.iter_mut() {
             // Riding inside an open box.
             if let Some(i) = t.inside {
@@ -491,6 +492,23 @@ impl MatchState {
                 continue;
             }
             if t.landed {
+                // S10a: an item at rest on a piece (a roof, a wall's top)
+                // falls to the ground once no live piece box holds it up
+                // (only once pieces have ever stood: no cost before).
+                if rests
+                    && t.pos.z > terrain.height_at(t.pos.xy()) + Fx::from_ratio(1, 100)
+                    && !statics.iter().any(|sb| {
+                        matches!(sb.of, crate::structures::StaticRef::Piece(_))
+                            && sb.reach >= Fx::ZERO
+                            && crate::armour::box_dist_sq_raw(
+                                &sb.frame,
+                                t.pos - FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_ratio(5, 100)),
+                            ) == 0
+                    })
+                {
+                    let xy = terrain.clamp(t.pos.xy());
+                    t.pos = xy.extend(terrain.height_at(xy));
+                }
                 continue;
             }
             for _ in 0..substeps {
@@ -567,8 +585,13 @@ impl MatchState {
                     && hit.is_none_or(|(bt, _, _)| pt <= bt)
                 {
                     t.landed = true;
-                    t.pos = if top {
+                    // A top off the map (a piece at the edge overhangs
+                    // it) lands it on the ground at the clamped point.
+                    t.pos = if top && terrain.contains(at.xy()) {
                         at
+                    } else if top {
+                        let xy = terrain.clamp(at.xy());
+                        xy.extend(terrain.height_at(xy))
                     } else {
                         let back = d.xy().normalize_or_zero() * Fx::from_ratio(3, 10);
                         let xy = terrain.clamp(at.xy() - back);

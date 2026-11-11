@@ -683,6 +683,100 @@ fn a_grenade_on_a_dugout_roof_hurts_nobody_inside() {
 }
 
 #[test]
+fn an_item_on_a_piece_over_the_map_edge_lands_on_the_map_and_saves() {
+    // A wall built along the map's east edge overhangs it (half its 0.6 m
+    // thickness). A grenade coming down steeply just inside the edge hits
+    // the top past the edge in the step that leaves the map: it lands on
+    // the ground at the clamped point (re-review R1), and the save loads.
+    let mut w = world();
+    let size = w.match_setup().unwrap().map.size_m;
+    let f = fort(&w, "ww2:sandbag_wall");
+    assert!(w.build_now(f, &[c(size, 499), c(size, 501)], PlayerId(0)));
+    let wall = *pieces_of(&w, f).last().unwrap();
+    let sq = spawn(&mut w, 1, "ww2:usa_engineer_squad", 900, 100);
+    let thrower = members(&w, sq)[0];
+    let frag = item_of(&w, frontline_content::ItemKind::Frag);
+    let from = FxVec3::new(
+        Fx::from_int(size) - Fx::from_ratio(2, 100),
+        Fx::from_int(500),
+        top_of(&w, wall) + Fx::from_ratio(25, 100),
+    );
+    let g = w.state.game.as_mut().unwrap();
+    g.thrown.push(crate::items::Thrown {
+        id: g.next_thrown,
+        item: frag,
+        owner: PlayerId(1),
+        thrower,
+        from,
+        vel: FxVec3::new(Fx::from_int(6), Fx::ZERO, Fx::from_int(-30)),
+        step: 0,
+        pos: from,
+        landed: false,
+        fuse: 90,
+        inside: None,
+    });
+    g.next_thrown += 1;
+    steps(&mut w, 2);
+    let t = &w.game().unwrap().thrown[0];
+    assert!(t.landed);
+    assert!(
+        w.state.terrain.contains(t.pos.xy()),
+        "on the map: {:?}",
+        t.pos
+    );
+    assert!(World::load(&w.save(), 1).is_ok(), "the save loads");
+}
+
+#[test]
+fn an_item_on_a_roof_falls_when_the_roof_breaks() {
+    // Two satchels on one dugout roof, the second 1 s later: the first
+    // breaks the roof; the second, at rest on it, falls to the pit floor
+    // and bursts there, not in mid-air (re-review R2).
+    let mut w = world();
+    let (roof, men) = dugout(&mut w);
+    let top = top_of(&w, roof).to_f32();
+    let sq = spawn(&mut w, 1, "ww2:usa_engineer_squad", 900, 100);
+    let thrower = members(&w, sq)[0];
+    let satchel = item_of(&w, frontline_content::ItemKind::Satchel);
+    let above =
+        |w: &World, p: FxVec2| top_of(w, roof) + Fx::from_int(2) - w.state.terrain.height_at(p);
+    let p1 = c(500, 500);
+    let h = above(&w, p1);
+    assert!(w.drop_item_now(thrower, satchel, p1, h));
+    steps(&mut w, HZ);
+    let p2 = FxVec2::new(Fx::from_milli(500_500), Fx::from_int(500));
+    let h = above(&w, p2);
+    assert!(w.drop_item_now(thrower, satchel, p2, h));
+    // Each burst's height and the ground under the second just before it
+    // (a satchel's crater reshapes the ground).
+    let mut zs = Vec::new();
+    for _ in 0..(6 * HZ) {
+        for &m in &men {
+            w.place_soldier(m, c(560, 540));
+        }
+        let ground = w.state.terrain.height_at(p2).to_f32();
+        w.step(&[]);
+        zs.extend(
+            w.snapshot()
+                .explosions
+                .iter()
+                .filter(|e| e.weapon == satchel)
+                .map(|e| (e.pos[2], ground)),
+        );
+    }
+    assert_eq!(zs.len(), 2, "both burst: {zs:?}");
+    assert!(
+        (zs[0].0 - top).abs() < 0.05,
+        "the first on the roof: {zs:?}"
+    );
+    assert_eq!(hp(&w, roof), None, "the roof breaks");
+    assert!(
+        (zs[1].0 - zs[1].1).abs() < 0.05 && zs[1].0 < top - 1.0,
+        "the second on the ground below the roof: {zs:?}"
+    );
+}
+
+#[test]
 fn a_wall_piece_covers_a_man_from_overpressure() {
     // A satchel (fragments off: overpressure only) 1.5 m in front of an
     // enemy wall, its owner's man 1.2 m behind it (inside the 4 m blast):
