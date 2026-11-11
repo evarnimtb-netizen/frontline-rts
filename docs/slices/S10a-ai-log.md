@@ -72,20 +72,14 @@ fallen or called-off carrier fails the try at once; a `CutWire` order under way 
 `breach_max_s`). (e) A path through wire not yet seen decides nothing (no bypass, no recheck tick). (f) `point not
 attacked` counts the breach squad's own task. (g) breach_ai row wire is **100 m** (`BREACH_AI_WIRE_LEN_M`): the path goes
 round 30 m. Drive mode: both support squads are bases (assault line before a defender is known).
-**Checks.** `tools/check.sh tests` on `1403732`: all ok (784 passed, 0 failed). **Tests (pass).** All 10 of spec 7 Build C, each with a control: `ai_learns_enemy_wire_only_by_sight`,
-`ai_goes_round_wire_when_the_path_avoids_it`, `ai_breach_suppresses_the_nest_and_smokes_before_the_carrier_goes`,
-`ai_breach_blows_with_a_bangalore_else_cuts`, `ai_breach_retries_a_pinned_carrier_then_gives_up`,
-`ai_assault_goes_through_the_gap` (leaders brush the ~4 m gap's edge: in-band ticks < half the no-gap control),
-`ai_buys_an_assault_card_when_a_breach_is_wanted`, `ai_breach_is_deterministic_across_threads_and_save_load` (lib),
-`ai_all_switches_off_emit_nothing_new` (`tests/ai_fort.rs`, ignored), CLI `fortify_breach_ai_row_runs_the_ai_job`.
-**Numbers.** All off 40 (`target/s10a-ai-C-off`): `neutral.py target/s10a-base40` -> same 40/40. On 40 (`target/s10a-ai-C`):
-Germany 47.5 %, median 19.8 min; T94 87.5/87.5, T95 82.5/62.5, T97 8.15/8.46, T98 1.11/0.96, T99 0/0, T100 **0.075/0.025
-miss**, T96 **0/0 miss**: breaches_started 0, wire_bypassed 4/3 in 40 matches (AI wire is 30 m: every path goes round).
-fortify10: T93f **0 miss**, T93g **77.0 miss** (<= 60), T93h **0 miss**, T93i 15.8, T93j 43.0; T91/T92/T13a pass; the
-scripted row unchanged (7.0/88.7/0, control 7.6/87.7). Every AI carrier falls 25-35 m short of the wire (as the scripted
-row's): the stage spot is 95 m from the MG, the squad drops under 50 % before or during the first tries.
-**Next must know.** T93f-h, T96 are mechanics/design limits, not wiring (spec 11): Tune knobs `wire_len_m` (paths go round
-30 m), `stage_m`, `suppress_lead_s`, else S10a-16 (B). T100 misses (urgent buy rare: engineers that can cut live).
+**Checks.** `check.sh tests` on `1403732` all ok (784). **Tests.** The 10 of spec 7 Build C, each with a control (lib
+`ai_learns_enemy_wire_...`, `ai_goes_round_wire_...`, `ai_breach_*`, `ai_assault_goes_through_the_gap`, `ai_buys_an_assault_card_...`;
+`tests/ai_fort.rs` `ai_all_switches_off_emit_nothing_new`, ignored; CLI `fortify_breach_ai_row_runs_the_ai_job`).
+**Numbers.** All off 40 (`target/s10a-ai-C-off`) same 40/40. On 40 (`target/s10a-ai-C`): Germany 47.5 %; T94 87.5/87.5,
+T95 82.5/62.5, T97 8.15/8.46, T98 1.11/0.96, T99 0/0, T100 **0.075/0.025 miss**, T96 **0/0 miss**: breaches_started 0,
+wire_bypassed 4/3 (30 m wire: paths go round). fortify10: T93f/h **0 miss**, T93g **77.0** (<= 60), T93i 15.8, T93j 43.0;
+T91/T92/T13a pass. AI carriers fall 25-35 m short of the wire (under 50 % in the first tries). **Next:** T93f-h, T96 are
+mechanics limits (spec 11): `wire_len_m`, `stage_m`, `suppress_lead_s`, else S10a-16 (B); T100 misses.
 
 ## Build D: owner decisions 2026-11-11 (`6578ff3`, `dacf9fb`, `71c0e4a`)
 
@@ -148,3 +142,9 @@ matches where the enemy's wire stood on a route (bypassed or a breach started); 
 **Left open: F8** (the twin counting HQ orders fails: 2 in 7 min, the S8b `GAVE_UP_GOALS` eviction, all off too; a fix
 changes all-off play). Changed tests: CLI synthetic T96 50 -> 100, all-off derived nulls. **Numbers:** all off 40
 (`target/s10a-ai-F-off`) same 40/40; on 40 (`target/s10a-ai-F`): Germany 45.0 %, T97 7.6/8.6, T99 0/0.025, 12/12 pass.
+## Smoke on three men (owner 2026-11-11; `ab90c3d`)
+Sturmpioniere: leader + 2 StG men (slot `sturmpionier_stg_nebel`) one nbhgr39 each; Assault Section: leader + 2 riflemen
+(`rifleman_smoke`) one M15 each. `breach_smoke`: any unpinned man with smoke, nearest the aim first. Test
+`ai_breach_smoke_outlives_the_leader` (fails on `7bf0494`). Canonical snapshot blessed (BASELINE unchanged). All off 40
+(`target/s10a-ai-G-off`) same 40/40; on 40 (`target/s10a-ai-G`) same 40/40 as F, Germany 45.0 %. **fortify10 still T93f 0,
+T93h 0, T93g 77.4, smokes 0**: `lost` (<50 %) ends every job in Stage, US carriers pinned/killed 27-38 m out, German 69-95 m.
