@@ -532,9 +532,11 @@ fn own_side_never_sets_off_own_mines() {
 
 #[test]
 fn mine_trigger_is_deterministic() {
-    // Control: iterate the mines through a `HashMap` in `take_mines` (not
-    // committed) -> hashes differ. Two runs of a 300-tick crossing with 40
-    // mines, and the second through save/load at tick 150.
+    // Control: a mine burst's key from a per-run `RandomState` hash of its
+    // id (not committed) -> hashes differ. (The spec's control, iterating
+    // the mines through a `HashMap`, passes: this tick's bursts commute.)
+    // Two runs of a 300-tick crossing with 40 mines, and the second through
+    // save/load at tick 150.
     let run = |reload: bool| {
         let mut w = flat(|_| {});
         let ap = fort(w.match_setup().unwrap(), "ww2:ap_minefield");

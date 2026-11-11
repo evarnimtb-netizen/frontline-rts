@@ -214,7 +214,14 @@ fn drive(w: &mut World, p: u8, start: FxVec2) -> Result<(bool, bool)> {
     };
     let v = members(w, tank)[0];
     let target = start + FxVec2::from_int(AT_RUN_M, 0);
-    step_with(w, p, vec![CommandKind::Move { squad: tank, target }]);
+    step_with(
+        w,
+        p,
+        vec![CommandKind::Move {
+            squad: tank,
+            target,
+        }],
+    );
     let hz = w.match_setup().unwrap().tick_hz as u64;
     let state = |w: &World| {
         let g = w.game().unwrap();
@@ -344,7 +351,7 @@ pub fn mine_rows(
     let (mut near, mut contact, mut ap_n) = (0u32, 0u32, 0u32);
     let mut veh_set = 0u32;
     let (mut lost, mut men) = (0u32, 0u32);
-    let mut cover = vec![0.0; 2];
+    let mut cover = [0.0; 2];
     for seed in seeds {
         for owner in [0u8, 1] {
             let t = 1 - owner;
@@ -361,7 +368,12 @@ pub fn mine_rows(
                 .and_then(|i| i.mine.as_ref())
                 .map_or(0, |m| m.trigger_cm as i32);
             cover[owner as usize] = at_coverage_pct(&ys, trig);
-            lay(&mut w, "ww2:at_minefield", owner, &[cm(TRENCH_X * 100, LINE_Y * 100 + left)])?;
+            lay(
+                &mut w,
+                "ww2:at_minefield",
+                owner,
+                &[cm(TRENCH_X * 100, LINE_Y * 100 + left)],
+            )?;
             let (imm, _) = drive(&mut w, t, at(fx, LINE_Y))?;
             direct += imm as u32;
             direct_n += 1;
@@ -370,11 +382,16 @@ pub fn mine_rows(
             // The tank keeps to its path-node line (y = LINE_Y): the field
             // moves by the lateral offset instead.
             let off = FxVec2::new(Fx::ZERO, Fx::from_milli(((seed * 37) % 400) as i32 * 10));
-            let mines: Vec<FxVec2> =
-                field(TRENCH_X - AT_ROW_GAP_M, 3, AT_ROW_GAP_M, AT_STEP_CM, AT_STEP_CM / 3)
-                    .into_iter()
-                    .map(|p| p - off)
-                    .collect();
+            let mines: Vec<FxVec2> = field(
+                TRENCH_X - AT_ROW_GAP_M,
+                3,
+                AT_ROW_GAP_M,
+                AT_STEP_CM,
+                AT_STEP_CM / 3,
+            )
+            .into_iter()
+            .map(|p| p - off)
+            .collect();
             lay(&mut w, "ww2:at_minefield", owner, &mines)?;
             let (imm, ko) = drive(&mut w, t, at(fx, LINE_Y))?;
             fimm += imm as u32;
@@ -388,7 +405,13 @@ pub fn mine_rows(
             contact += pass_mine(args, seed, owner, 20)? as u32;
             ap_n += 1;
             // AP field: a tank, then a fresh world and a rifle squad.
-            let ap = field(TRENCH_X - AP_ROW_GAP_M / 2, 2, AP_ROW_GAP_M, AP_STEP_CM, AP_STEP_CM / 2);
+            let ap = field(
+                TRENCH_X - AP_ROW_GAP_M / 2,
+                2,
+                AP_ROW_GAP_M,
+                AP_STEP_CM,
+                AP_STEP_CM / 2,
+            );
             let mut w = world(args, seed)?;
             let moved: Vec<FxVec2> = ap.iter().map(|&p| p - off).collect();
             lay(&mut w, "ww2:ap_minefield", owner, &moved)?;

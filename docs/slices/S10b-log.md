@@ -5,31 +5,30 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build B** (`S10b-build-B.md`). Build A is done (two chunks).
-* Layout `ba7478b` (SAVE 24, PROTOCOL 14; no stage changes either again), data and R29 guard `9a3d197`,
-  measures `20ade12` (`factions.<f>.s10b` + `used`, `fortify10.s10b` rows as nulls, `World::lay_mine_now`),
-  tests `9180432`, `bde4ce7`, `76734d8`.
-* Test homes: sim `crates/sim/src/s10b_tests.rs` (helper `s10b_world()` stages every saved S10b field; engineer
-  cards get bits 12-14 there), load cases `load_rejects_bad_s10b_state` in `crates/sim/tests/save_fuzz.rs` (each
-  case asserts the error text of its own check: keep the texts or update the `why` list), CLI
-  `s10b_counters_zero_without_use` in `sdk/crates/cli/tests/skirmish.rs` (expects 13 keys, all 0: when B-E give
-  cards the caps, the AI still must not buy them, R27/R29).
-* Staging tools: `World::lay_mine_now`, `World::edit_squad` (new, pub), `World::edit_fort`, `World::build_now`.
-  `ai::fort` is now `pub(crate) mod` (the guard test calls `fort_of`).
-* Load checks live in `FortState::validate_s10b` (`fort.rs`); `validate` now takes `tick` (for `boom_tick == tick+1`).
-  Lift and place totals: `lift_s * tick_hz * 100`, `demolish_place_s * tick_hz * 100` (work > total is rejected).
-* New S10b `FortAccount` counters are not in `counters_ok` (spec 6: any value): bump them with `saturating_add`.
-* `guns.rs` (served-crew squad-order list near line 1033) does not list `ClearMines`/`Demolish` yet: C and D add them
-  when the commands are accepted. `CommandKind::{ClearMines, Demolish}` refused `NotAllowed` in `game.rs` dispatch.
-* Protocol `command_in_limits`: `ClearMines` lane <= `MAX_LANE_M` 200 m (the key's top); map bounds and the match's
-  `lane_max_m` are sim checks (C), since the protocol has no map size.
-* AI guard sites (step 3): only `ai/fort.rs::fort_of` picks blueprints; other `setup.forts` uses index by a known
-  fort (`ai.rs:853`, `ai/fort.rs` jobs, `ai/breach.rs:300` wire layer). No `caps ==`/`count_ones` test in `ai/`; no
-  RNG key from an item or fort index (`ai/breach.rs` keys by player). Item and fort indices shift (mines and new
-  blueprints sort first).
-* 40-set: `target/s10b-A/skirmish40.json` vs `target/s10b-base40`: same 40/40 (after `76734d8`). Targets parse on
-  `target/s10a-ai-verify`: 331 pass, T102-T108 "no such number". The ignored mutation fuzz passes (69 s).
-* Checks: `tools/check.sh quick 8acc534` green after `76734d8` (795 tests); long jobs through `tools/run.sh`.
+**Next: Build C** (`S10b-build-C.md`). Builds A and B are done.
+* Build B commits: `034fa03` (laying, `take_mines`, bursts, R18, tests), `456bed3` (place_mines on the three cards,
+  content expectations, canonical snapshot), `86f2fa1` (fortify `atmine`/`apmine` rows), plus the log/test commit.
+* Laying: `stand_segment` lays a `Mine` at the segment end when `mine_item` is set; cap = standing mines of
+  (owner, blueprint) via `mines_of`, which `fort_used` now uses for minefields. Over the cap: work removed, `Cap`.
+* R18: `MatchState::near_a_vehicle(line)` (hull or wreck centre within `vehicle_clear_m` + hull half-diagonal of any
+  segment). Called for minefields only; D (obstacles) and E (bunker) add their blueprints at the same spot in
+  `order_fortify` (`d.mine_item.is_some() && ...`).
+* Trigger: `MatchState::take_mines` (fort.rs) runs in `apply_blows` right after `take_charges`. `boom_tick == tick`
+  mines burst there too but do NOT bump `mines_set_off` (only contact does): C counts `mines_blasted` where it sets
+  `boom_tick`, and makes the mine known to all (R13) there if it wants it shown before the burst.
+* Burst key range: `Thrown.id = MINE_KEY_BASE | mine id` (`MINE_KEY_BASE` = 2^31; thrown ids and mine ids stay below
+  `MAX_ID_COUNTER` = 2^31; charges use `CHARGE_CRATER`), crater purpose `ITEM_CRATER`.
+* Counters: `vehicles_mined` (owner; a vehicle whose `immobilised()` turned true in a mine's `blast_tracks`),
+  `men_lost_to_mines` (victim's player; men dropped by a mine item's `burst`), all `saturating_add`.
+* World: refusals a tick's systems raise (`game.fort_events`) now reach that tick's `fort_refusals` (before, only on
+  the next applied command). Snapshot-only; not hashed.
+* Numbers (`target/s10b-B/fortify10.json`, 10 seeds x 2 owners): T102a 100, T102b 75.0 (geometric coverage estimate
+  78.05; the floor 75 holds at exactly 75), T102c 0, T102d 0; T103a 0, T103b 100, T103c 0, T103d 53.6 (report).
+  `targets --from-json target/s10b-B --runs fortify10`: 20 pass, 5 miss (hard 0; the misses are C-E rows still null).
+* fortify CLI: a driven tank keeps to its path-node line, so the AT field moves by the lateral offset, not the tank.
+  Tanks are spawned with `spawn_squad_at` (a call-in of the medium tank never arrived in the fortify world).
+* 40-set: `target/s10b-B/skirmish40.json` vs `target/s10b-base40`: same 40/40.
+* Checks: `tools/check.sh quick 8acc534` green after the last commit (806 tests).
 
 ## Plan (2026-11-11)
 
@@ -71,3 +70,15 @@ cases; the `boom_tick` check off: its case loads), `s10b_counters_zero_without_u
 `json_out.rs` off: the block is the raw struct). Deviation: "without the new data" strips only the S10b blueprints
 from the setup (removing the mine items would shift every item index); the mine items are in no kit.
 
+
+## Build B (2026-11-12)
+
+Laying (R1, R2, R18), triggering (R3-R7), counters, the place_mines caps (R27) and the `atmine`/`apmine` rows. Tests
+in `s10b_tests.rs`, each seen failing with its control: `minefield_lays_one_mine_per_segment` (segment 300: 10
+mines), `mine_cap_per_player` (limit 100: no Cap), `mine_laying_ends_when_line_done_or_interrupted` (minefield works
+kept on re-order), `ap_mine_goes_off_on_contact_only` (trigger 60), `ap_mine_kills_the_man_who_steps_on_it` (damage
+10), `ap_mine_ignores_vehicles` / `at_mine_ignores_infantry` (triggers swapped), `at_mine_immobilises_a_tank_over_it`
+(vs_vehicle 10: track 60 hp), `own_side_never_sets_off_own_mines` (either owner filter off),
+`mine_trigger_is_deterministic` (per-run random burst key; the spec's HashMap-order control passes because one tick's
+bursts commute), `site_refused_near_a_vehicle` (vehicle_clear_m 0). Existing tests changed: `promoted_capabilities_parse`
+(the three cards gain `PlaceMines`), canonical snapshot blessed.
