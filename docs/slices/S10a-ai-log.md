@@ -75,3 +75,43 @@ dugout, roof, wall), truck runs 3 / 5, walk-backs 11 / 13, own tanks crush own w
 **For C.** T100 misses: by the weight rule a new card is only the 2nd-3rd engineer buy and the slot buys about one a
 match; the urgent breach buy (C) adds assault cards, else Tune moves the weights. US wire share 62.5 % sits near the
 60 % floor. Shelter moves were 0 in the sample (marks need pinned defenders with no enemy within 150 m).
+
+## Build C: breaching, AI breach row, ablation tooling, docs (`f5c7863`..`1403732`)
+
+**Fixes first.** (1) `trucks` `an_ai_truck_does_not_loop_...`: not Build B's habit (fails with works/wire off too); the
+drop it needed came from a defend squad the old buy mix bought; with `cards` on no drop is wanted. It now runs all off;
+twin `..._with_the_fort_switches_on` (empty HQ outside the ring) proves no remembered goal is re-sent (control: breaking
+`gave_up_on` fails it). Found: with switches off too, the HQ is re-ordered ~6 min later once four follow-spot give-ups
+push it out of `GAVE_UP_GOALS` (S8b rule; untouched, for Review). (2) `neutral.py`: a differing set-header `overrides`
+list is a note (`same 40/40 (note: overrides 0 -> 4 items)`), fixture test. (3) Shelter: men stood at the pit edge (squad
+Move: formation and `seek_cover`). Now `shelter_men` sends men one by one (`MoveUnits`) to trench spots under the roof
+box `cover.gap_mm` apart (so the cover rule keeps them): the shipped 3 m pit holds **2 men**; the throwers' regroup skips a
+sheltering squad; back out with the squad order. Test checks positions against the roof box (control: none before).
+**What exists.** `ai/breach.rs` per spec 3.4: sight (`wire_sight`), want (`breach_start`, path via `find_foot_path`),
+phases, `breach_focus` (base of fire in `fire_and_move` aims at it; breach squads count toward the 3 for a 2nd base),
+urgent buy in `buy` (`breach_wanted`: known wire near an attacked point, no squad that opens wire, card `ai_weight` > 0,
+alive < `breach_cards_max`; skipped with `cards` 0). Sturmpioniere leader `nbhgr39` (S10a-13 (A)). `World::drive_breach(ai,
+player, breach, support, point)` + `AiState::new` pub; fortify row `s10a.breach_ai` (+ `placed_pct`, `control`).
+Overrides `{works,wire,breach,cards}_off.toml`; `tools/ablate.sh` (+ `--dry-run`, in `check.sh quick`). Docs: tuning.md,
+fortifications.md "The AI". No layout change (SAVE 23, PROTOCOL 13).
+**Deviations.** (a) Job start = `bypass[point]` (no path search while a job runs), `since` = phase start. (b) The squad
+walks to its stage spot once the base fires (or 2 x `suppress_lead_s`). (c) Bangalore when a known defender is within
+`cut_fire_m`, OR the base fired this try, OR the squad lost men / has a man pinned (smoke hides the defenders). (d) A
+fallen or called-off carrier fails the try at once; a `CutWire` order under way is progress (a stalled cut ends at
+`breach_max_s`). (e) A path through wire not yet seen decides nothing (no bypass, no recheck tick). (f) `point not
+attacked` counts the breach squad's own task. (g) breach_ai row wire is **100 m** (`BREACH_AI_WIRE_LEN_M`): the path goes
+round 30 m. Drive mode: both support squads are bases (assault line before a defender is known).
+**Checks.** `tools/check.sh tests` on `1403732`: all ok (784 passed, 0 failed). **Tests (pass).** All 10 of spec 7 Build C, each with a control: `ai_learns_enemy_wire_only_by_sight`,
+`ai_goes_round_wire_when_the_path_avoids_it`, `ai_breach_suppresses_the_nest_and_smokes_before_the_carrier_goes`,
+`ai_breach_blows_with_a_bangalore_else_cuts`, `ai_breach_retries_a_pinned_carrier_then_gives_up`,
+`ai_assault_goes_through_the_gap` (leaders brush the ~4 m gap's edge: in-band ticks < half the no-gap control),
+`ai_buys_an_assault_card_when_a_breach_is_wanted`, `ai_breach_is_deterministic_across_threads_and_save_load` (lib),
+`ai_all_switches_off_emit_nothing_new` (`tests/ai_fort.rs`, ignored), CLI `fortify_breach_ai_row_runs_the_ai_job`.
+**Numbers.** All off 40 (`target/s10a-ai-C-off`): `neutral.py target/s10a-base40` -> same 40/40. On 40 (`target/s10a-ai-C`):
+Germany 47.5 %, median 19.8 min; T94 87.5/87.5, T95 82.5/62.5, T97 8.15/8.46, T98 1.11/0.96, T99 0/0, T100 **0.075/0.025
+miss**, T96 **0/0 miss**: breaches_started 0, wire_bypassed 4/3 in 40 matches (AI wire is 30 m: every path goes round).
+fortify10: T93f **0 miss**, T93g **77.0 miss** (<= 60), T93h **0 miss**, T93i 15.8, T93j 43.0; T91/T92/T13a pass; the
+scripted row unchanged (7.0/88.7/0, control 7.6/87.7). Every AI carrier falls 25-35 m short of the wire (as the scripted
+row's): the stage spot is 95 m from the MG, the squad drops under 50 % before or during the first tries.
+**Next must know.** T93f-h, T96 are mechanics/design limits, not wiring (spec 11): Tune knobs `wire_len_m` (paths go round
+30 m), `stage_m`, `suppress_lead_s`, else S10a-16 (B). T100 misses (urgent buy rare: engineers that can cut live).
