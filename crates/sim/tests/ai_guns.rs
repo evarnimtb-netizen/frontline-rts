@@ -40,22 +40,34 @@ fn the_shipped_site_rings_start_outside_the_corridor_clearance() {
     assert!(a.site_max_m >= a.site_min_m);
 }
 
+/// Seeds found by the search below; each test tries its own first.
+const PINNED_EMPLACE_SEED: u64 = 11;
+const PINNED_RESITE_SEED: u64 = 15;
+
 #[test]
 #[ignore = "slow in debug: runs in the release test pass"]
 fn ai_guns_emplace_and_are_deterministic() {
     let ticks = 30 * 360;
     // A seed in which both sides have a gun in place by the save point.
-    let seed = (11..31)
-        .find(|&s| {
-            let mut w = World::new_match(setup(s), 1).unwrap();
-            run(&mut w, 30 * 300);
-            let g = w.game().unwrap();
-            (0..2u8).all(|p| {
-                let a = g.ai(PlayerId(p)).unwrap();
-                g.players()[p as usize].s9.guns_emplaced >= 1 && !a.guns.is_empty()
-            })
+    let qualifies = |s: u64| {
+        let mut w = World::new_match(setup(s), 1).unwrap();
+        run(&mut w, 30 * 300);
+        let g = w.game().unwrap();
+        (0..2u8).all(|p| {
+            let a = g.ai(PlayerId(p)).unwrap();
+            g.players()[p as usize].s9.guns_emplaced >= 1 && !a.guns.is_empty()
         })
-        .expect("a seed with guns emplaced on both sides by 5:00");
+    };
+    // The known seed first; the full search only if it stops qualifying.
+    let seed = if qualifies(PINNED_EMPLACE_SEED) {
+        PINNED_EMPLACE_SEED
+    } else {
+        println!("pinned seed {PINNED_EMPLACE_SEED} no longer qualifies; searching 11..31");
+        (11..31)
+            .find(|&s| qualifies(s))
+            .expect("a seed with guns emplaced on both sides by 5:00")
+    };
+    println!("seed {seed}");
     let mut base = World::new_match(setup(seed), 1).unwrap();
     let want = run(&mut base, ticks);
     let g = base.game().unwrap();
@@ -94,7 +106,7 @@ fn ai_guns_resite_with_the_tow_and_survive_a_save() {
                 .is_some_and(|a| a.guns.values().any(|j| j.phase == GunPhase::Fetch))
         })
     };
-    let moved = (11..51).any(|seed| {
+    let try_seed = |seed: u64| {
         let mut w = World::new_match(setup(seed), 1).unwrap();
         let mut left = 30 * 1500u32;
         while left > 0 && fetching(&w).is_none() {
@@ -110,6 +122,13 @@ fn ai_guns_resite_with_the_tow_and_survive_a_save() {
         run(&mut w, 30 * 200);
         let g = w.game().unwrap();
         g.ai(PlayerId(p)).unwrap().counters.gun_unhitches > before
-    });
+    };
+    // The known seed first; the full search only if it stops qualifying.
+    let moved = try_seed(PINNED_RESITE_SEED) || {
+        println!("pinned seed {PINNED_RESITE_SEED} no longer qualifies; searching 11..51");
+        let found = (11..51).find(|&s| try_seed(s));
+        println!("resite seed {found:?}");
+        found.is_some()
+    };
     assert!(moved, "a seed where a re-sited gun reaches a new place");
 }

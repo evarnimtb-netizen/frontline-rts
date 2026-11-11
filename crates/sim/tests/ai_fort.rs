@@ -36,21 +36,32 @@ fn building(w: &World) -> bool {
     })
 }
 
+/// Found by the search below; tried first.
+const PINNED_SEED: u64 = 1;
+
 #[test]
 #[ignore = "slow in debug: runs in the release test pass"]
 fn ai_fort_is_deterministic_across_threads_and_save_load() {
     let save_at = 30 * 300;
-    let seed = (1..21)
-        .find(|&s| {
-            let mut w = World::new_match(setup(s), 1).unwrap();
-            run(&mut w, save_at);
-            building(&w)
-                && w.game()
-                    .unwrap()
-                    .ai(PlayerId(0))
-                    .is_some_and(|a| !a.forts.is_empty())
-        })
-        .expect("a seed with fort jobs on both sides and one live at 5:00");
+    let qualifies = |s: u64| {
+        let mut w = World::new_match(setup(s), 1).unwrap();
+        run(&mut w, save_at);
+        building(&w)
+            && w.game()
+                .unwrap()
+                .ai(PlayerId(0))
+                .is_some_and(|a| !a.forts.is_empty())
+    };
+    // The known seed first; the full search only if it stops qualifying.
+    let seed = if qualifies(PINNED_SEED) {
+        PINNED_SEED
+    } else {
+        println!("pinned seed {PINNED_SEED} no longer qualifies; searching 1..21");
+        (1..21)
+            .find(|&s| qualifies(s))
+            .expect("a seed with fort jobs on both sides and one live at 5:00")
+    };
+    println!("seed {seed}");
     let ticks = save_at + 30 * 60;
     let mut base = World::new_match(setup(seed), 1).unwrap();
     let want = run(&mut base, ticks);

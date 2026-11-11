@@ -129,8 +129,8 @@ Full results: `target/process-audit.jsonl`.
 Adopted from the next slice:
 
 - Build stages capped at about 60 turns, with a written hand-over.
-- Agents batch reads and read an outline before ranges: `tools/outline.sh` and `tools/show.sh` (to be written).
-- One start-and-wait script, `tools/run.sh` (to be written).
+- Agents batch reads and read an outline before ranges: `tools/outline.sh` and `tools/show.sh` (written).
+- One start-and-wait script, `tools/run.sh` (written).
 - Each stage reads only its spec part and the last hand-over block.
 - Pin the known seed in the slow seed-search tests (ai_guns, trucks, transport, ai_fort).
 - Switches and measures go into Build A.
@@ -142,3 +142,10 @@ Not adopted: one review lens instead of three (revisit after the fuzz test); ear
 only); reuse of cached sets after a 40-match check.
 
 The small smoke step used the batching rule and took 58 turns.
+
+Agent tools (all text-only, no build):
+
+- `tools/outline.sh FILE...` prints "from-to name" per fn, struct, enum, impl, trait, mod, const and `#[test]` (Rust) or func/class/signal (.gd).
+- `tools/show.sh FILE:FROM-TO ...` prints ranges with a header and line numbers; refuses more than 400 lines per call.
+- `tools/run.sh LOG CMD...` starts CMD in the background, waits up to 200 s, prints one status line and the last 5 lines of LOG. `tools/run.sh --wait LOG` waits 200 s more. Exit code in `LOG.exit`.
+- Pinned seeds: `ai_guns` (11, 15) and `ai_fort` (1) try the pinned seed first and print a line if it stops qualifying; trucks and transport already stop at the first hit.
