@@ -224,6 +224,17 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 - S10a-20 (settled 2026-11-11, owner chose (A); done in `S10a-ai.toml`): make T93f/h and T96 reports until S11 combined arms. (A) yes, recommended. (B) Keep them
   hard and add a lever now (a looser give-up rule, a closer start, a bigger cloud).
 
+- S10b-1..4 (`docs/slices/S10b-obstacles.md`; Plan 2026-11-11). The slice runs on (A); the owner confirms:
+  S10b-1 Own mines. (A) Own and allied units never set off own mines, and a mine's burst never hurts its owner's side
+  (the sim's HE already spares own men and vehicles). (B) Design 7.6: mines hit whoever touches them and own paths avoid
+  own mines (needs friendly HE damage and per-player path costs; changes every HE weapon's rule).
+  S10b-2 Paths and found mines. (A) No path avoidance in S10b: players steer round marked mines; avoidance comes with
+  S10b-ai. (B) Infantry and vehicle paths avoid own and found mines now (per-player path costs; more path work).
+  S10b-3 AT mine damage. (A) Running gear only (a track or wheel axle out: immobilised), no belly penetration: the
+  vehicle boxes have no belly plate. (B) Belly plates on every vehicle and a belly blast (armour data; a later slice).
+  S10b-4 Bunker slit. (A) Own rounds pass own pieces (S10a-3), so the slit matters only to incoming fire. (B)
+  Defenders must fire through the slit (own bunker pieces stop own rounds).
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -241,8 +252,13 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 8. S9 AT guns: built, tuned, reviewed and fixed on `s9-at-guns` (Plan, Build A/B/C, Tune, Review, Fix, Docs; log `docs/slices/S9-log.md`, spec `S9-at-guns.md`, targets `S9.toml`). Not merged. Pooled Germany 45.6 %, 14 hard target misses on the 160 sets. On main since 2026-11-09 (owner OK). Next: S9b, a short AI gun pass (corridor search, then a budget tune; S9-17, S9-19). Open: S9-16, S9-18.
 9. S9b AI gun pass: built on `s9b-ai-guns` (Plan, Build, Review, Fix; log `docs/slices/S9b-log.md`, spec `S9b-ai-guns.md`, targets `S9b.toml`). Verified on `1bfc92f`: pooled Germany 48.75 %, 10 hard misses, `tools/check.sh full` all ok; T88 met for Germany, not USA. Owner 2026-11-10: S9b-1 (A), S9b-2 (A), S9b-3 (A); merged, main = `ba0038f` (owner OK). Next: S10a mechanics on `s10a-fortifications`.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
-11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Then S10b (mines, AT obstacles, bunker).
-12. Dedicated balance pass, after S10b or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a/c/d, T55a/b) are settled there. Slice order: S10b, S11a/b, then this pass, then S12 to S15.
+11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
+12. **S10b mechanics (now)**: mines, AT obstacles, bunker, clearing and demolition, on branch `s10b-obstacles` from
+    `8acc534`. Plan done 2026-11-11: spec `docs/slices/S10b-obstacles.md` + `S10b-build-A..F.md`, targets `S10b.toml`
+    (T5c/T5d 35-65; T31a-d, T55a/b, T95b/d reports; new T102-T108), log `S10b-log.md`. Stages Build A-F, measure 480
+    with `neutral.py` against `target/s10a-ai-verify`, Review, Fix, Docs. No Tune (owner rule 1).
+13. S10b-ai: the AI lays, sweeps, demolishes and builds obstacles and bunkers; path avoidance of known mines (S10b-2).
+14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
@@ -250,7 +266,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 2. Carried material lost with dead men, and truck material lost in a wreck, is counted nowhere (a counter needs a save layout change). In S10a-ai Build A (its SAVE 23 layout commit).
 3. No Godot headless check of the truck Materials button (the mock has no truck). Deferred to the next presenter pass (the AI does not need it).
 4. The breach row and T93 need AI or staging that suppresses the defenders first: S10a-ai (AI-driven `breach_ai` row, S10a-16).
-5. tools/neutral.py: a 40-set-only run now fails against a four-set base folder; stage runs need a 40-only base folder or a set list option.
+5. tools/neutral.py: a 40-set-only run now fails against a four-set base folder; stage runs need a 40-only base folder or a set list option (S10b uses `target/s10b-base40`).
 6. Owner decisions S10a-9 to S10a-11 and S10a-1..8 (all on (A)): see the owner questions above.
 7. S10a-ai F8 (open, deferred to a later slice): an S8b truck forgets an HQ goal it cannot reach after four later give-ups and orders it again about 5 minutes later. It also happens with all switches off, so a fix changes the neutrality base.
 

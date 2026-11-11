@@ -1,7 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10a-ai (S10a-ai merged 2026-11-11 with the owner's OK, verified on `72fd940`). Next: S10b. Spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`, log `docs/slices/S10a-ai-log.md`.
-Read the sections you need, then the doc the index names. Checked 2026-11-11.
+Main `8acc534` holds S1 to S10a-ai (merged 2026-11-11, owner OK). **Work now: S10b mechanics** (mines, AT obstacles,
+bunker) on branch `s10b-obstacles`: spec `docs/slices/S10b-obstacles.md` + `S10b-build-A..F.md`, targets `S10b.toml`,
+log `S10b-log.md` (read its top block). Read the sections you need, then the doc the index names. Checked 2026-11-11.
 
 ## What the game is now
 
@@ -41,8 +42,8 @@ SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a
 
 ## Versions
 
-`SAVE_VERSION` **22** and `PROTOCOL_VERSION` **13** on main (S10a); S10a-ai sets SAVE **23**, PROTOCOL 13 (`world.rs`, `protocol.rs`). History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
-S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12; S10a 22 and 13. A save, hash or command change bumps these
+`SAVE_VERSION` **23** and `PROTOCOL_VERSION` **13** on main (`world.rs`, `protocol.rs`); S10b plans 24 and 14 (Build A). History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
+S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12; S10a 22 and 13; S10a-ai 23 and 13. A save, hash or command change bumps these
 in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -59,26 +60,21 @@ PlaceBangalore; capabilities build_structure, build_heavy, place_wire, clear_wir
 
 ## S10a-ai fortification AI and balance (on main since 2026-11-11; log `S10a-ai-log.md`)
 
-Verified by the orchestrator on `72fd940` plus formatting-only `a0aa700` (`target/s10a-ai-verify`).
-- Tests: 802 pass, 0 fail (release, ignored included). Tick p99 0.476 ms all, 0.574 ms peak.
-- Neutrality: with all `[ai.fort]` switches off, the 40 set is identical to the pre-slice base (40 of 40). The jobs-3
-  40 hashes are all in the jobs-6 160 run (40 of 40).
-- Balance, 480 matches, AI building on: Germany pooled **41.67 %** (sets 43.75 / 38.75 / 42.50), no match without a
-  winner. Before the slice: 48.75 %. Outside the old 45-55 % band, inside the new 35-65 % guard band.
-- Fort use (160 sets): Germany works 94 / 93 / 97 %, wire 78 / 82 / 79 %; USA works 82 / 79 / 80 %, wire 56 / 58 / 57 %
-  (floor 60: T95b, T95d miss). Builders 7.7-8.2 % of infantry plans (cap 12). Gaps 0 %, breaches started 0 in every set.
-- Targets at verify: 329 pass, 26 miss, 21 hard (15 hard after S10a-20 made T93f/h, T96a-d reports). Hard misses accepted from S9b: T8b, T31b, T40c, T54e, T88b, T88d.
-  Reports under owner rule 1, still hard in `S10a-ai.toml`: T5c, T5d, T31a, T31c, T31d, T55a, T55b.
-- Misses: T93f 0 and T93h 0 (floor 30); T95b 56.25 and T95d 58.125 (floor 60); T96a-d 0 (floor 60). T96 counts only
-  matches where the AI met enemy wire on a route; with none it is null (SKIP).
-- Breaching: smoke on three men (owner 2026-11-11), any living carrier throws; the breach row did not move. A throw needs
-  25-29 m from the wire; German squads fall 69-95 m out, US squads are pinned 27-38 m out. A lone squad cannot breach
-  defended wire without covering fire: S11 combined-arms work.
-- Ablations (Build D, 480 each): nest, dugout, roof, sandbags, wire each move Germany under 2 points (all point building off, earlier: +6.46).
-- Review: 19 findings (1 blocker, 6 majors after merging duplicates); 18 fixed, each with a test.
-  **Open: F8** (an S8b truck forgets an unreachable HQ goal after four give-ups and orders it again about 5 min later).
-  It also happens with all switches off, so a fix changes the neutrality base; deferred to a later slice.
-- Fix constants (`REFUSED_S` 300, `DUGOUTS_MAX` 2, `WATCH_*`) are code in `ai/fort.rs`, not keys (a key would change the setup layout).
+Verified on `72fd940` + `a0aa700` (`target/s10a-ai-verify`, the S10b neutrality base): 802 tests pass; tick p99
+0.476 / 0.574 ms. Germany pooled **41.67 %** of 480 (43.75 / 38.75 / 42.50; before: 48.75 %), inside the 35-65 % guard band.
+- Fort use (160 sets): Germany works 94-97 %, wire 78-82 %; USA works 79-82 %, wire 56-58 % (T95b/d floor 60 missed).
+- Hard misses on the base JSON (read by `S10b.toml`): T8b, T40c, T54e, T88b, T88d; T93f/h, T96a-d reports until S11.
+- Breaching: a lone squad cannot breach defended wire without covering fire (throws need 25-29 m; squads fall 69-95 m
+  out or are pinned 27-38 m out): S11 combined-arms work. Ablations: each piece type moves Germany under 2 points.
+- **Open: F8** (an S8b truck re-orders an unreachable HQ goal about 5 min after four give-ups; also with all switches
+  off, so a fix changes the neutrality base; later slice). Fix constants (`REFUSED_S`, `DUGOUTS_MAX`, `WATCH_*`) are code.
+
+## S10b mechanics (in progress on `s10b-obstacles`; log `S10b-log.md`)
+
+Plan 2026-11-11: AP/AT minefields (laid with `Fortify`, contact trigger, sweep detection, lifting, HE sets them off),
+hedgehogs and log barriers (block vehicle path nodes), the bunker (six pieces, a slit), `Demolish` (placed satchel).
+Mechanics only: no AI use, AI-vs-AI identical to main (`neutral.py` vs `target/s10a-ai-verify`), no Tune. Stages
+Build A-F (spec 8), then measure, Review, Fix, Docs. Owner questions S10b-1..4 on (A) (`docs/TODO.md`). Next: S10b-ai.
 
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
@@ -106,16 +102,16 @@ Verified by the orchestrator on `72fd940` plus formatting-only `a0aa700` (`targe
 
 ## Roadmap position
 
-Done and on main: S1 to S10a mechanics. S10a-ai is verified and merged to main (owner OK 2026-11-11).
-Then S10b (mines, AT obstacles, bunker), a dedicated balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
+Done and on main: S1 to S10a-ai. Now S10b mechanics, then S10b-ai (AI use of mines, obstacles, bunkers), a dedicated
+balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
 
 ## How to check work
 
 - `tools/check.sh quick [BASE]` while working; `tools/check.sh tests` runs the whole release suite with ignored tests
   (2-6 min, background it). `tools/verify.sh` is the orchestrator's full check before a push.
-- Balance: `tools/measure.sh OUTDIR docs/slices/targets/S10a-ai.toml` (480 matches, 14 min uncached); `python3 -I tools/pool.py DIR`.
+- Balance: `tools/measure.sh OUTDIR docs/slices/targets/S10b.toml` (480 matches, 14 min uncached); `python3 -I tools/pool.py DIR`.
   Quick look (40 matches, noise 11-15 points): `tools/batch.sh OUT.json -- skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45`.
-- Targets: `frontline-cli targets docs/slices/targets/S10a-ai.toml --jobs 6`. Ablations: `tools/ablate.sh`. Gun funnel:
+- Targets: `frontline-cli targets docs/slices/targets/S10b.toml --jobs 6`. Ablations: `tools/ablate.sh`. Gun funnel:
   `tools/gun_trace.sh DIR [SEEDS]`. Ticks: `--jobs 3` only, from a clean machine.
 
 ## Index: for X read doc Y section Z
@@ -146,5 +142,6 @@ Then S10b (mines, AT obstacles, bunker), a dedicated balance pass, S11a/b, S12 t
 | S9 guns (entity, slots, tow, capture, pit, AI, balance); S9b AI siting, corridor, budget, open T88 | `docs/slices/S9-at-guns.md` 1-22, `S9b-ai-guns.md` 3.2, 6; logs `S9-log.md`, `S9b-log.md` |
 | S10a fortifications (mechanics): pieces, materials, wire, breaching, engineer split, neutrality | `docs/slices/S10a-fortifications.md`; log `S10a-log.md` |
 | S10a-ai: AI buys, materials, building, breaching, ablations, T93 | `docs/slices/S10a-ai.md` 3-9; log `S10a-ai-log.md` |
+| S10b: mines, obstacles, bunker, demolition; rules R1-R30; stage files | `docs/slices/S10b-obstacles.md`; `S10b-build-X.md`; log `S10b-log.md` |
 | Development speed, the 2026-11-11 audit and adopted rules | `docs/process/dev-speed.md` section 7 |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |
