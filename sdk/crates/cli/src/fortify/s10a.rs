@@ -1183,12 +1183,11 @@ mod tests {
         let control = breach_ai_run(&args, 1, 0, false).unwrap();
         assert_eq!(control.job, "none", "no wire: nothing to breach");
         assert_eq!((control.bangalores, control.wire_cut), (0, 0));
-        let totals = |r: &BreachRun| {
-            let mut t = BreachTotals::default();
-            t.runs = 1;
-            t.placed = (r.bangalores + r.wire_cut > 0) as u32;
-            t.gaps_opened = (r.wire_blown + r.wire_cut > 0) as u32;
-            t
+        let totals = |r: &BreachRun| BreachTotals {
+            runs: 1,
+            placed: (r.bangalores + r.wire_cut > 0) as u32,
+            gaps_opened: (r.wire_blown + r.wire_cut > 0) as u32,
+            ..BreachTotals::default()
         };
         let report = S10aReport {
             wire: WireExperiment {
