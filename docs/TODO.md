@@ -221,7 +221,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10a-17 S9b-1 US gun sight gap: (A) defer to the next AI gun pass (not cheap here). (B) Fold a sight-first re-site into S10a-ai.
   S10a-18 Materials budget: (A) at most 3 % of income, builders load full at base. (B) No cap.
   S10a-19 HQ roof: (A) roofed once enemy mortars are seen. (B) Always, as soon as the HQ stands.
-- S10a-20 (new, 2026-11-11): make T93f/h and T96 reports until S11 combined arms. (A) yes, recommended. (B) Keep them
+- S10a-20 (settled 2026-11-11, owner chose (A); done in `S10a-ai.toml`): make T93f/h and T96 reports until S11 combined arms. (A) yes, recommended. (B) Keep them
   hard and add a lever now (a looser give-up rule, a closer start, a bigger cloud).
 
 ## Planned work queue
@@ -241,7 +241,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 8. S9 AT guns: built, tuned, reviewed and fixed on `s9-at-guns` (Plan, Build A/B/C, Tune, Review, Fix, Docs; log `docs/slices/S9-log.md`, spec `S9-at-guns.md`, targets `S9.toml`). Not merged. Pooled Germany 45.6 %, 14 hard target misses on the 160 sets. On main since 2026-11-09 (owner OK). Next: S9b, a short AI gun pass (corridor search, then a budget tune; S9-17, S9-19). Open: S9-16, S9-18.
 9. S9b AI gun pass: built on `s9b-ai-guns` (Plan, Build, Review, Fix; log `docs/slices/S9b-log.md`, spec `S9b-ai-guns.md`, targets `S9b.toml`). Verified on `1bfc92f`: pooled Germany 48.75 %, 10 hard misses, `tools/check.sh full` all ok; T88 met for Germany, not USA. Owner 2026-11-10: S9b-1 (A), S9b-2 (A), S9b-3 (A); merged, main = `ba0038f` (owner OK). Next: S10a mechanics on `s10a-fortifications`.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
-11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified on branch `s10a-ai`, NOT merged (a main update needs the owner's OK). Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Then S10b (mines, AT obstacles, bunker).
+11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Then S10b (mines, AT obstacles, bunker).
 12. Dedicated balance pass, after S10b or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a/c/d, T55a/b) are settled there. Slice order: S10b, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)

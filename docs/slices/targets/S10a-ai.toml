@@ -1665,6 +1665,8 @@ kind = "report"
 id = "T93f"
 metric = "fortify10.s10a.breach_ai.gap_opened_pct"
 min = 30
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
 # Owner 2026-11-11 (stage D, "fix smoke, lower bar"): one assault squad and two
 # bases against a trench, an MG nest and 100 m of wire open it in 3 of 10.
 [[target]]
@@ -1678,6 +1680,8 @@ note = "owner 2026-11-11: a report (16 defenders in range from 150 m out)"
 id = "T93h"
 metric = "fortify10.s10a.breach_ai.placed_pct"
 min = 30
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
 [[target]]
 id = "T93i"
 metric = "fortify10.s10a.breach_ai.defender_loss_pct"
@@ -1737,18 +1741,26 @@ min = 60
 id = "T96a"
 metric = "skirmish160.factions.germany.s10_derived.breach_when_enemy_wire_pct"
 min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
 [[target]]
 id = "T96b"
 metric = "skirmish160.factions.usa.s10_derived.breach_when_enemy_wire_pct"
 min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
 [[target]]
 id = "T96c"
 metric = "skirmish160_oos.factions.germany.s10_derived.breach_when_enemy_wire_pct"
 min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
 [[target]]
 id = "T96d"
 metric = "skirmish160_oos.factions.usa.s10_derived.breach_when_enemy_wire_pct"
 min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
 [[target]]
 id = "T96e"
 metric = "skirmish160.factions.germany.s10_derived.matches_with_gap_pct"

@@ -1,6 +1,6 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10a mechanics (`fa45332`). Work now: S10a-ai (fortification AI and balance) on branch `s10a-ai`, head `a0aa700`. It is built, reviewed, fixed and verified, but NOT merged to main. Spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`, log `docs/slices/S10a-ai-log.md`.
+Main holds S1 to S10a-ai (S10a-ai merged 2026-11-11 with the owner's OK, verified on `72fd940`). Next: S10b. Spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`, log `docs/slices/S10a-ai-log.md`.
 Read the sections you need, then the doc the index names. Checked 2026-11-11.
 
 ## What the game is now
@@ -57,7 +57,7 @@ Sim `crates/sim/src/fort.rs`; blueprints `mods/ww2/defs/fortifications/`; comman
 PlaceBangalore; capabilities build_structure, build_heavy, place_wire, clear_wire, breach. Cards ger_sturmpioniergruppe
 264 MP, ger_baupioniergruppe 165 MP, usa_assault_section 380 MP, `ai_weight` 0. Guide `docs/modding/fortifications.md`.
 
-## S10a-ai fortification AI and balance (branch `s10a-ai`, NOT on main; log `S10a-ai-log.md`)
+## S10a-ai fortification AI and balance (on main since 2026-11-11; log `S10a-ai-log.md`)
 
 Verified by the orchestrator on `72fd940` plus formatting-only `a0aa700` (`target/s10a-ai-verify`).
 - Tests: 802 pass, 0 fail (release, ignored included). Tick p99 0.476 ms all, 0.574 ms peak.
@@ -67,9 +67,9 @@ Verified by the orchestrator on `72fd940` plus formatting-only `a0aa700` (`targe
   winner. Before the slice: 48.75 %. Outside the old 45-55 % band, inside the new 35-65 % guard band.
 - Fort use (160 sets): Germany works 94 / 93 / 97 %, wire 78 / 82 / 79 %; USA works 82 / 79 / 80 %, wire 56 / 58 / 57 %
   (floor 60: T95b, T95d miss). Builders 7.7-8.2 % of infantry plans (cap 12). Gaps 0 %, breaches started 0 in every set.
-- Targets: 329 pass, 26 miss, 21 of them hard. Hard misses accepted from S9b: T8b, T31b, T40c, T54e, T88b, T88d.
+- Targets at verify: 329 pass, 26 miss, 21 hard (15 hard after S10a-20 made T93f/h, T96a-d reports). Hard misses accepted from S9b: T8b, T31b, T40c, T54e, T88b, T88d.
   Reports under owner rule 1, still hard in `S10a-ai.toml`: T5c, T5d, T31a, T31c, T31d, T55a, T55b.
-- **Open:** T93f 0 and T93h 0 (floor 30); T95b 56.25 and T95d 58.125 (floor 60); T96a-d 0 (floor 60). T96 counts only
+- Misses: T93f 0 and T93h 0 (floor 30); T95b 56.25 and T95d 58.125 (floor 60); T96a-d 0 (floor 60). T96 counts only
   matches where the AI met enemy wire on a route; with none it is null (SKIP).
 - Breaching: smoke on three men (owner 2026-11-11), any living carrier throws; the breach row did not move. A throw needs
   25-29 m from the wire; German squads fall 69-95 m out, US squads are pinned 27-38 m out. A lone squad cannot breach
@@ -87,7 +87,7 @@ Verified by the orchestrator on `72fd940` plus formatting-only `a0aa700` (`targe
    dedicated balance pass (after S10b or S11).
 2. Minor scope and price questions are settled on the recommended (A) and only reported. Irreversible choices, how-it-should-play choices and main updates are still asked.
 3. S10a-ai decisions: breaching "fix smoke, lower bar" (T93f/h floor 30, T93g report); AI wire in 60 m lines; cards Germany by weight (Bau 100, Sturm 60, Pioniere 40), USA floor a report; smoke on three men.
-- Open owner question S10a-20 (TODO): T93f/h and T96 reports until S11 (A, recommended), or hard plus a lever now (B).
+- S10a-20 settled (owner 2026-11-11): T93f/h and T96 are reports until S11 combined arms.
 
 ## Owner decisions in force (source: `docs/TODO.md`)
 
@@ -106,8 +106,8 @@ Verified by the orchestrator on `72fd940` plus formatting-only `a0aa700` (`targe
 
 ## Roadmap position
 
-Done and on main: S1 to S10a mechanics. S10a-ai is verified on its branch; it waits for the owner's merge decision and
-S10a-20. Then S10b (mines, AT obstacles, bunker), a dedicated balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
+Done and on main: S1 to S10a mechanics. S10a-ai is verified and merged to main (owner OK 2026-11-11).
+Then S10b (mines, AT obstacles, bunker), a dedicated balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
 
 ## How to check work
 
