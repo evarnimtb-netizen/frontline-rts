@@ -2158,7 +2158,10 @@ fn ai_breach_smoke_outlives_the_leader() {
     let dead = dead.expect("a breach started");
     let man = thrower.expect("another man threw the smoke");
     assert_ne!(man, dead);
-    assert!(members(&w, card).contains(&man), "a man of the breach squad");
+    assert!(
+        members(&w, card).contains(&man),
+        "a man of the breach squad"
+    );
     assert!(went, "the carrier goes after the smoke");
     let c = &ai_ro(&w).counters;
     assert!(c.breach_smokes >= 1 && c.breaches_given_up == 0, "{c:?}");
