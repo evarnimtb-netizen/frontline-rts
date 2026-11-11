@@ -46,6 +46,11 @@ pub const WIRE_RUN_M: i32 = 70;
 const WIRE_SETTLED_M: i32 = 35;
 /// Through standing wire the goal lies this far past it.
 const WIRE_GOAL_M: i32 = 4;
+/// S10a-ai: the plain-wire variant stages this long a line. Since the S17
+/// path fix a man walks round a 20 m line's end (2 m past it is free
+/// ground), so only a line whose detour costs more than two wired steps
+/// makes him walk through the band the row measures.
+pub const WIRE_THROUGH_LEN_M: i32 = 100;
 /// The breach: wire this far in front of the trench, this long.
 pub const BREACH_WIRE_M: i32 = 35;
 pub const BREACH_WIRE_LEN_M: i32 = 30;
@@ -264,7 +269,11 @@ fn wire_run(args: &FortifyArgs, seed: u64, side: u8, variant: &'static str) -> R
     let owner = 1 - side;
     let wx = TRENCH_X;
     let wire = fort_of(&w, "ww2:barbed_wire")?;
-    let half = WIRE_LEN_M / 2;
+    let half = if variant == "wire" {
+        WIRE_THROUGH_LEN_M / 2
+    } else {
+        WIRE_LEN_M / 2
+    };
     if !w.build_now(
         wire,
         &[at(wx, LINE_Y - half), at(wx, LINE_Y + half)],
@@ -781,7 +790,7 @@ pub fn s10a_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10a
         }
     };
     let wire = WireExperiment {
-        name: "rifle squad across 20 m of wire, through a cut gap and a Bangalore gap",
+        name: "rifle squad across 100 m of wire, through a cut gap and a Bangalore gap in 20 m",
         inside_speed_pct: mean("wire"),
         cut_gap_speed_pct: mean("cut"),
         blown_gap_speed_pct: mean("blown"),

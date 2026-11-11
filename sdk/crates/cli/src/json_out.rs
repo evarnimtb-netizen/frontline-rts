@@ -525,21 +525,12 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
             }),
         );
     }
-    // S10a: fortification counters (spec 7; all zero in AI play).
+    // S10a: fortification counters; S10a-ai: the AI's counters and the
+    // derived shares (docs/slices/S10a-ai.md 5).
     {
-        let c = &f.s10;
-        o.insert(
-            "s10".into(),
-            json!({
-                "works_started": c.works_started, "pieces_built": c.pieces_built,
-                "pieces_lost": c.pieces_lost, "wire_built": c.wire_built,
-                "wire_cut": c.wire_cut, "wire_blown": c.wire_blown,
-                "wire_crushed": c.wire_crushed, "bangalores": c.bangalores,
-                "materials_loaded_kg": round3(c.materials_loaded_g as f64 / 1000.0),
-                "materials_used_kg": round3(c.materials_used_g as f64 / 1000.0),
-                "new_cards_bought": c.new_cards_bought,
-            }),
-        );
+        let (raw, derived) = s10_blocks(&f.s10);
+        o.insert("s10".into(), raw);
+        o.insert("s10_derived".into(), derived);
     }
     o.insert(
         "s6_derived".into(),
@@ -817,6 +808,74 @@ pub fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
         };
     }
     Some(cur)
+}
+
+/// S10a and S10a-ai: a faction's `s10` sums and `s10_derived` shares
+/// (docs/slices/S10a-ai.md 5).
+pub fn s10_blocks(c: &crate::skirmish::S10Faction) -> (Value, Value) {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let kg = |g: u64| round3(g as f64 / 1000.0);
+    let ai = |name: &str| {
+        crate::skirmish::S10_AI
+            .iter()
+            .position(|k| *k == name)
+            .map_or(0, |k| c.ai[k])
+    };
+    let mut raw = Map::new();
+    for (k, v) in [
+        ("works_started", c.works_started),
+        ("pieces_built", c.pieces_built),
+        ("pieces_lost", c.pieces_lost),
+        ("wire_built", c.wire_built),
+        ("wire_cut", c.wire_cut),
+        ("wire_blown", c.wire_blown),
+        ("wire_crushed", c.wire_crushed),
+        ("bangalores", c.bangalores),
+        ("new_cards_bought", c.new_cards_bought),
+        ("men_lost_in_wire", c.men_lost_in_wire),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, g) in [
+        ("materials_loaded_kg", c.materials_loaded_g),
+        ("materials_used_kg", c.materials_used_g),
+        ("materials_lost_kg", c.materials_lost_g),
+        ("materials_used_crate_kg", c.materials_used_crate_g),
+        ("materials_used_truck_kg", c.materials_used_truck_g),
+    ] {
+        raw.insert(k.into(), json!(kg(g)));
+    }
+    for (k, name) in crate::skirmish::S10_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    raw.insert("works_done".into(), json!(c.works_done));
+    let runs = ai("material_runs_truck") + ai("material_runs_crate") + ai("material_runs_walk");
+    let derived = json!({
+        "matches_with_works_pct": pct(c.matches_with_works as f64, c.matches as f64),
+        "matches_with_wire_pct": pct(c.matches_with_wire as f64, c.matches as f64),
+        "matches_with_gap_pct": pct(c.matches_with_gap as f64, c.matches as f64),
+        "breach_when_enemy_wire_pct": pct(
+            c.breach_when_enemy_wire as f64,
+            c.matches_enemy_wire as f64
+        ),
+        "builder_share_pct": pct(ai("fort_build_plans") as f64, ai("infantry_plans") as f64),
+        "materials_mp_pct": pct(c.materials_micro as f64 / 1e6, c.income_mp as f64),
+        "materials_loaded_kg_per_match": round3(c.materials_loaded_g as f64 / 1000.0 / n),
+        "fort_refused_per_match": per(ai("fort_refused")),
+        "new_cards_per_match": per(c.new_cards_bought),
+        "works_per_match": per(c.works_non_wire),
+        "wire_sections_per_match": per(c.wire_built),
+        "breaches_started_per_match": per(ai("breaches_started")),
+        "breach_opened_pct": pct(ai("breaches_opened") as f64, ai("breaches_started") as f64),
+        "men_lost_in_wire_per_match": per(c.men_lost_in_wire),
+        "materials_lost_kg_per_match": round3(c.materials_lost_g as f64 / 1000.0 / n),
+        "hq_roofed_pct": pct(c.matches_hq_roofed as f64, c.matches_hq_built as f64),
+        "shelter_moves_per_match": per(ai("shelter_moves")),
+        "wire_bypassed_per_match": per(ai("wire_bypassed")),
+        "material_runs_per_match": per(runs),
+    });
+    (Value::Object(raw), derived)
 }
 
 #[cfg(test)]

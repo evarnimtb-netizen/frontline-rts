@@ -414,11 +414,65 @@ pub const S10A_CARDS: [&str; 3] = [
     "usa_assault_section",
 ];
 
+/// S10a-ai: the AI's fort and breach counters in report order (names
+/// of [`S10Player::ai`], `docs/slices/S10a-ai.md` 4).
+pub const S10_AI: [&str; 14] = [
+    "fort_jobs",
+    "fort_refused",
+    "fort_build_plans",
+    "infantry_plans",
+    "shelter_moves",
+    "material_runs_truck",
+    "material_runs_crate",
+    "material_runs_walk",
+    "breaches_started",
+    "breaches_opened",
+    "breaches_given_up",
+    "breach_smokes",
+    "breach_suppress",
+    "wire_bypassed",
+];
+
 /// S10a numbers of one player (spec 7: all zero in AI play).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S10Player {
     pub fort: frontline_sim::fort::FortAccount,
     pub new_cards_bought: u32,
+    /// S10a-ai: the AI counters ([`S10_AI`] order; zero for a human).
+    pub ai: [u32; 14],
+    /// S10a-ai: works completed by blueprint short id, those without wire
+    /// and those over an HQ (roofs).
+    pub works_done: BTreeMap<String, u32>,
+    pub works_non_wire: u32,
+    pub hq_roofs: u32,
+    /// S10a-ai: wire sections the other players built; whether this player
+    /// built an HQ; the income earned (start + base income per whole
+    /// minute, as the AI budgets count it; MP).
+    pub enemy_wire_built: u32,
+    pub hq_built: bool,
+    pub income_mp: u64,
+}
+
+impl S10Player {
+    /// The AI counters of `a` in [`S10_AI`] order.
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 14] {
+        [
+            a.fort_jobs,
+            a.fort_refused,
+            a.fort_build_plans,
+            a.infantry_plans,
+            a.shelter_moves,
+            a.material_runs[0],
+            a.material_runs[1],
+            a.material_runs[2],
+            a.breaches_started,
+            a.breaches_opened,
+            a.breaches_given_up,
+            a.breach_smokes,
+            a.breach_suppress,
+            a.wire_bypassed,
+        ]
+    }
 }
 
 /// S7 numbers of one player (`frontline_sim::S7Counters`), keyed by short
@@ -1440,6 +1494,58 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 s9: pl.s9,
                 s10: S10Player {
                     fort: g.fort().accounts.get(p).cloned().unwrap_or_default(),
+                    ai: ai.map_or([0; 14], |a| S10Player::ai_counters(&a.counters)),
+                    works_done: g
+                        .fort()
+                        .accounts
+                        .get(p)
+                        .map(|a| {
+                            a.works_done
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, n)| **n > 0)
+                                .map(|(k, &n)| {
+                                    let id = &s.forts[k].id;
+                                    let short = id.split_once(':').map_or(id.as_str(), |x| x.1);
+                                    (short.to_string(), n)
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    works_non_wire: g.fort().accounts.get(p).map_or(0, |a| {
+                        a.works_done
+                            .iter()
+                            .enumerate()
+                            .filter(|(k, _)| s.forts[*k].wire.is_none())
+                            .map(|(_, &n)| n)
+                            .sum()
+                    }),
+                    hq_roofs: g.fort().accounts.get(p).map_or(0, |a| {
+                        a.works_done
+                            .iter()
+                            .enumerate()
+                            .filter(|(k, _)| {
+                                s.forts[*k].shape == frontline_content::setup::FortShape::OverHq
+                            })
+                            .map(|(_, &n)| n)
+                            .sum()
+                    }),
+                    enemy_wire_built: g
+                        .fort()
+                        .accounts
+                        .iter()
+                        .enumerate()
+                        .filter(|(q, _)| *q != p)
+                        .map(|(_, a)| a.wire_built)
+                        .sum(),
+                    hq_built: g
+                        .supply6()
+                        .accounts
+                        .get(p)
+                        .is_some_and(|a| a.hq_built_at > 0),
+                    income_mp: s.rules.start_manpower as u64
+                        + s.rules.income_per_min as u64
+                            * (world.tick() / (60 * s.tick_hz.max(1) as u64)),
                     new_cards_bought: fielded
                         .values()
                         .filter(|(o, t)| {
@@ -1890,8 +1996,8 @@ pub struct FactionSummary {
     pub s10: S10Faction,
 }
 
-/// S10a numbers of one faction over a `--seeds` run (sums; all zero in
-/// AI play: the AI uses nothing new).
+/// S10a numbers of one faction over a `--seeds` run (sums; S10a-ai adds
+/// the AI's counters and the per-match tallies of the derived shares).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S10Faction {
     pub matches: u32,
@@ -1906,11 +2012,57 @@ pub struct S10Faction {
     pub materials_loaded_g: u64,
     pub materials_used_g: u64,
     pub new_cards_bought: u64,
+    /// S10a-ai sums.
+    pub ai: [u64; 14],
+    pub works_done: BTreeMap<String, u64>,
+    pub works_non_wire: u64,
+    pub materials_micro: u64,
+    pub materials_lost_g: u64,
+    pub materials_used_crate_g: u64,
+    pub materials_used_truck_g: u64,
+    pub men_lost_in_wire: u64,
+    pub income_mp: u64,
+    /// S10a-ai: matches with a non-wire work completed, with wire built,
+    /// with a gap made (`wire_cut + wire_blown > 0`), where the enemy built
+    /// wire and of those with a breach opened, with an HQ built and of
+    /// those with it roofed.
+    pub matches_with_works: u32,
+    pub matches_with_wire: u32,
+    pub matches_with_gap: u32,
+    pub matches_enemy_wire: u32,
+    pub breach_when_enemy_wire: u32,
+    pub matches_hq_built: u32,
+    pub matches_hq_roofed: u32,
 }
 
 impl S10Faction {
     pub fn add(&mut self, p: &S10Player) {
         let a = &p.fort;
+        for (k, v) in p.ai.iter().enumerate() {
+            self.ai[k] += *v as u64;
+        }
+        for (k, v) in &p.works_done {
+            *self.works_done.entry(k.clone()).or_default() += *v as u64;
+        }
+        self.works_non_wire += p.works_non_wire as u64;
+        self.materials_micro += a.materials_micro;
+        self.materials_lost_g += a.materials_lost_g;
+        self.materials_used_crate_g += a.materials_used_crate_g;
+        self.materials_used_truck_g += a.materials_used_truck_g;
+        self.men_lost_in_wire += a.men_lost_in_wire as u64;
+        self.income_mp += p.income_mp;
+        self.matches_with_works += u32::from(p.works_non_wire > 0);
+        self.matches_with_wire += u32::from(a.wire_built > 0);
+        self.matches_with_gap += u32::from(a.wire_cut + a.wire_blown > 0);
+        if p.enemy_wire_built > 0 {
+            self.matches_enemy_wire += 1;
+            // breaches_opened (S10_AI index 9).
+            self.breach_when_enemy_wire += u32::from(p.ai[9] > 0);
+        }
+        if p.hq_built {
+            self.matches_hq_built += 1;
+            self.matches_hq_roofed += u32::from(p.hq_roofs > 0);
+        }
         self.matches += 1;
         self.works_started += a.works_started as u64;
         self.pieces_built += a.pieces_built as u64;
@@ -2802,6 +2954,27 @@ pub fn many_text(r: &ManyReport) -> String {
             g.gun_armour_out as f64 / gn,
             g.gun_armour_out,
             g.s9.gun_ko_tanks as f64 / gn,
+        );
+    }
+    // S10a-ai (spec 5): one "fort:" line per faction.
+    for f in &s.factions {
+        let (_, d) = crate::json_out::s10_blocks(&f.s10);
+        let v = |k: &str| d[k].as_f64().unwrap_or(0.0);
+        out += &format!(
+            "fort: {} works {:.2}/match (in {:.0} %), wire {:.1} sections/match (in {:.0} %), gaps in {:.0} %, breaches {:.2}/match (opened {:.0} %; when enemy wire {:.0} %), builders {:.1} %, materials {:.2} % of income, lost {:.1} kg/match, men lost in wire {:.2}/match\n",
+            f.faction,
+            v("works_per_match"),
+            v("matches_with_works_pct"),
+            v("wire_sections_per_match"),
+            v("matches_with_wire_pct"),
+            v("matches_with_gap_pct"),
+            v("breaches_started_per_match"),
+            v("breach_opened_pct"),
+            v("breach_when_enemy_wire_pct"),
+            v("builder_share_pct"),
+            v("materials_mp_pct"),
+            v("materials_lost_kg_per_match"),
+            v("men_lost_in_wire_per_match"),
         );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";

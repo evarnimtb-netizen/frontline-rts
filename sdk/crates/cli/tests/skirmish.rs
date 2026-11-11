@@ -552,8 +552,163 @@ fn s10_counters_zero_without_fortifications() {
             assert!(s10.contains_key(k), "{f}.s10.{k}");
         }
         for (k, v) in s10 {
+            // S10a-ai: `works_done` is a map by blueprint (empty here).
+            if k == "works_done" {
+                assert_eq!(v, &serde_json::json!({}), "{f}.s10.{k}");
+                continue;
+            }
             assert_eq!(v.as_f64(), Some(0.0), "{f}.s10.{k}");
         }
+    }
+}
+
+/// S10a-ai Build A (spec 5): the new fields exist and stay zero while the
+/// AI does nothing new; the AI counters reach the report in order.
+#[test]
+fn s10_ai_fields_zero_with_the_ai_unchanged() {
+    use frontline_cli::skirmish::{S10_AI, S10Player};
+    // Plumbing control: distinct counters arrive in S10_AI order.
+    let c = frontline_sim::ai::AiCounters {
+        fort_jobs: 1,
+        fort_refused: 2,
+        fort_build_plans: 3,
+        infantry_plans: 4,
+        shelter_moves: 5,
+        material_runs: [6, 7, 8],
+        breaches_started: 9,
+        breaches_opened: 10,
+        breaches_given_up: 11,
+        breach_smokes: 12,
+        breach_suppress: 13,
+        wire_bypassed: 14,
+        ..Default::default()
+    };
+    let got = S10Player::ai_counters(&c);
+    assert_eq!(got, std::array::from_fn(|k| k as u32 + 1));
+    assert_eq!(S10_AI[9], "breaches_opened");
+    // An AI-vs-AI match: all zero.
+    let r = run(short(3, 4, 2));
+    for p in &r.players {
+        let s = &p.s10;
+        assert_eq!(s.ai, [0; 14], "{p:?}");
+        assert!(s.works_done.is_empty());
+        assert_eq!(
+            (s.works_non_wire, s.hq_roofs, s.enemy_wire_built),
+            (0, 0, 0)
+        );
+        assert!(s.income_mp > 0, "income is counted");
+    }
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let file = tmp("s10ai.json");
+    let _ = std::fs::remove_file(&file);
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--seed", "3", "--seeds", "1"])
+        .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--json")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("fort: ww2:germany works 0.00/match"),
+        "{text}"
+    );
+    let j: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    for f in ["germany", "usa"] {
+        let s10 = j["factions"][f]["s10"].as_object().expect("an s10 block");
+        for k in S10_AI.iter().copied().chain([
+            "materials_lost_kg",
+            "materials_used_crate_kg",
+            "materials_used_truck_kg",
+            "men_lost_in_wire",
+            "works_done",
+        ]) {
+            assert!(s10.contains_key(k), "{f}.s10.{k}");
+        }
+        let d = j["factions"][f]["s10_derived"]
+            .as_object()
+            .expect("s10_derived");
+        assert_eq!(d.len(), 19, "{d:?}");
+        for (k, v) in d {
+            assert_eq!(v.as_f64(), Some(0.0), "{f}.s10_derived.{k}");
+        }
+    }
+}
+
+/// S10a-ai Build A (spec 5): every derived field on synthetic per-match
+/// records.
+#[test]
+fn s10_derived_counts_matches_with_works_wire_gap() {
+    use frontline_cli::skirmish::{S10Faction, S10Player};
+    let mut a = S10Player {
+        works_non_wire: 2,
+        enemy_wire_built: 5,
+        hq_built: true,
+        hq_roofs: 1,
+        income_mp: 1000,
+        new_cards_bought: 1,
+        ..S10Player::default()
+    };
+    a.works_done.insert("mg_nest".into(), 1);
+    a.works_done.insert("hq_dugout".into(), 1);
+    a.fort.wire_built = 10;
+    a.fort.wire_cut = 1;
+    a.fort.materials_micro = 30_000_000;
+    a.fort.materials_loaded_g = 160_000;
+    a.fort.men_lost_in_wire = 3;
+    a.fort.materials_lost_g = 20_000;
+    // fort_jobs, refused, build plans, infantry plans, shelter, runs x3,
+    // started, opened, given up, smokes, suppress, bypassed.
+    a.ai = [1, 2, 3, 30, 1, 1, 1, 0, 2, 1, 1, 0, 0, 2];
+    let mut b = S10Player {
+        enemy_wire_built: 3,
+        hq_built: true,
+        income_mp: 1000,
+        ..S10Player::default()
+    };
+    b.fort.wire_blown = 1;
+    b.ai[3] = 10;
+    let c = S10Player {
+        income_mp: 2000,
+        ..S10Player::default()
+    };
+    let mut f = S10Faction::default();
+    for p in [&a, &b, &c] {
+        f.add(p);
+    }
+    let (raw, d) = frontline_cli::json_out::s10_blocks(&f);
+    assert_eq!(raw["works_done"]["mg_nest"], 1);
+    assert_eq!(raw["breaches_opened"], 1);
+    assert_eq!(raw["materials_lost_kg"], 20.0);
+    let want = [
+        ("matches_with_works_pct", 33.333),
+        ("matches_with_wire_pct", 33.333),
+        ("matches_with_gap_pct", 66.667),
+        ("breach_when_enemy_wire_pct", 50.0),
+        ("builder_share_pct", 7.5),
+        ("materials_mp_pct", 0.75),
+        ("materials_loaded_kg_per_match", 53.333),
+        ("fort_refused_per_match", 0.667),
+        ("new_cards_per_match", 0.333),
+        ("works_per_match", 0.667),
+        ("wire_sections_per_match", 3.333),
+        ("breaches_started_per_match", 0.667),
+        ("breach_opened_pct", 50.0),
+        ("men_lost_in_wire_per_match", 1.0),
+        ("materials_lost_kg_per_match", 6.667),
+        ("hq_roofed_pct", 50.0),
+        ("shelter_moves_per_match", 0.333),
+        ("wire_bypassed_per_match", 0.667),
+        ("material_runs_per_match", 0.667),
+    ];
+    assert_eq!(d.as_object().unwrap().len(), want.len());
+    for (k, v) in want {
+        assert_eq!(d[k].as_f64(), Some(v), "{k}: {}", d[k]);
     }
 }
 

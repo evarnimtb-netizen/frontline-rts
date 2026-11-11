@@ -17,6 +17,10 @@ import os
 import sys
 
 SETS = ("skirmish160", "skirmish160_oos", "skirmish160_s201")
+# S10a-ai: the four "uses it" shares (T94-T96, T100) and the builders' share
+# of the infantry plans (T97), per set from factions.<f>.s10_derived.
+FORT = ("matches_with_works_pct", "matches_with_wire_pct", "matches_with_gap_pct",
+        "breach_when_enemy_wire_pct", "builder_share_pct")
 BOUGHT = {"germany": ["ger_sdkfz251_1_squad", "ger_stug3_g_squad", "ger_pz4_h_squad"],
           "usa": ["usa_m3a1_squad", "usa_m10_squad", "usa_m4a3_75_squad"]}
 
@@ -52,6 +56,10 @@ def read(d):
             a.setdefault("gun_mp", []).append(f["s9_derived"]["gun_mp_pct"])
             if "gun_armour_out_per_match" in f["s9_derived"]:
                 a.setdefault("out", []).append(f["s9_derived"]["gun_armour_out_per_match"])
+            d10 = f.get("s10_derived")
+            if d10 is not None:
+                for k in FORT:
+                    a.setdefault("fort", {}).setdefault(k, []).append(d10.get(k, 0.0))
     return out
 
 
@@ -81,6 +89,11 @@ def show(o, base):
         print(f"    fired in {fmt(a['fired'], 0)} % of matches (floor 60), in cover {fmt(a['cover'], 0)} % (floor 60), "
               f"gun MP {fmt(a['gun_mp'])} % (cap 20), vehicle kills {fmt(a['veh_kills'])} % (cap 30)")
         print(f"    bought in matches: {bought}; MP share: {mp}")
+        if a.get("fort"):
+            fo = a["fort"]
+            print(f"    fort: works in {fmt(fo['matches_with_works_pct'], 0)} %, wire in {fmt(fo['matches_with_wire_pct'], 0)} %, "
+                  f"gaps in {fmt(fo['matches_with_gap_pct'], 0)} %, breach when enemy wire {fmt(fo['breach_when_enemy_wire_pct'], 0)} %; "
+                  f"builders {fmt(fo['builder_share_pct'])} % of infantry plans (cap 12)")
     # One line for scripts and stage gates.
     fs = o["f"].values()
     gate = {"pool": round(pool, 2), "nowin": o["nowin"],
