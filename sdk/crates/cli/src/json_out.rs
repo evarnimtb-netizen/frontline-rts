@@ -542,6 +542,16 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s10".into(), raw);
         o.insert("s10_derived".into(), derived);
     }
+    // S10b (spec 7, R28): the twelve counters and `used`.
+    {
+        let b = &f.s10b;
+        let mut m = Map::new();
+        for (k, v) in crate::skirmish::S10B_COUNTERS.iter().zip(b.counters) {
+            m.insert((*k).into(), json!(v));
+        }
+        m.insert("used".into(), json!(b.used()));
+        o.insert("s10b".into(), Value::Object(m));
+    }
     o.insert(
         "s6_derived".into(),
         json!({
@@ -802,6 +812,7 @@ pub fn fortify(r: &FortifyReport) -> Value {
         "kind": "fortify-test",
         "pass": r.pass,
         "s10a": s10a,
+        "s10b": serde_json::to_value(&r.s10b).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,

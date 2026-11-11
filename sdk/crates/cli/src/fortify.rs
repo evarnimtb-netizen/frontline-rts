@@ -67,6 +67,7 @@ use crate::skirmish::{SkirmishArgs, match_setup};
 
 /// S10a: the wire, roof and breach rows (spec 7; report rows).
 pub mod s10a;
+pub mod s10b;
 
 /// Longest rifle fight, in game seconds.
 pub const RIFLE_FIGHT_S: u64 = 180;
@@ -184,6 +185,9 @@ pub struct FortifyReport {
     pub suppress: SuppressExperiment,
     /// S10a: wire, roof and breach (report rows; not in `pass`).
     pub s10a: s10a::S10aReport,
+    /// S10b: mines, sweeping, obstacles, demolition, bunker (report rows;
+    /// not in `pass`; null until each row's stage).
+    pub s10b: s10b::S10bReport,
     /// Rifles, mortar and smoke pass (the grenade assault has no threshold
     /// yet).
     pub pass: bool,
@@ -1168,6 +1172,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         smoke,
         suppress,
         s10a,
+        s10b: s10b::S10bReport::default(),
     })
 }
 
@@ -1368,6 +1373,7 @@ pub fn summary_text(r: &FortifyReport) -> String {
         );
     }
     out += &s10a::summary_text(&r.s10a);
+    out += &s10b::summary_text(&r.s10b);
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });
     out
 }

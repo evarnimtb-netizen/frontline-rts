@@ -1800,6 +1800,19 @@ impl World {
         true
     }
 
+    /// S10b staging tool (tests and the fortify-test rows, like
+    /// [`World::build_now`]): lays one mine of minefield blueprint `fort` at
+    /// `pos` for `owner`, known to the owner only, without work or kg.
+    /// Returns its id; `None` off the map, for a blueprint without
+    /// `mine_item`, at `MAX_MINES` or at the blueprint's per-player cap.
+    pub fn lay_mine_now(&mut self, fort: u16, pos: FxVec2, owner: PlayerId) -> Option<u32> {
+        let game = self.state.game.as_mut()?;
+        let id = game.lay_mine_now(fort, pos, owner)?;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        Some(id)
+    }
+
     /// S7 staging tool (armour-test case 20): a shell of mortar weapon
     /// `weapon` (an index with `he`) for `player` falling straight down onto
     /// `p` from 20 m at 60 m/s. Match worlds only; false when the weapon is

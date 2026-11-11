@@ -565,6 +565,41 @@ impl MatchState {
         &self.fort
     }
 
+    /// S10b staging (`World::lay_mine_now`): one mine, no work, no kg.
+    pub(crate) fn lay_mine_now(&mut self, fort: u16, pos: FxVec2, owner: PlayerId) -> Option<u32> {
+        let d = self.setup.forts.get(fort as usize)?;
+        let item = d.mine_item?;
+        let size = Fx::from_int(self.setup.map.size_m);
+        let on_map = [pos.x, pos.y].iter().all(|v| *v >= Fx::ZERO && *v <= size);
+        let mine = |m: &&Mine| m.owner == owner && m.fort == fort;
+        let laid = self.fort.mines.values().filter(mine).count() as u32;
+        if !on_map
+            || owner.0 as usize >= self.setup.players.len()
+            || self.fort.mines.len() >= MAX_MINES
+            || laid >= d.limit_per_player
+            || self.fort.next_mine >= crate::bounds::MAX_ID_COUNTER
+        {
+            return None;
+        }
+        let id = self.fort.next_mine;
+        self.fort.next_mine += 1;
+        self.fort.mines.insert(
+            id,
+            Mine {
+                owner,
+                fort,
+                item,
+                pos,
+                known: 1 << owner.0.min(7),
+                boom_tick: None,
+            },
+        );
+        if let Some(a) = self.fort.accounts.get_mut(owner.0 as usize) {
+            a.mines_laid += 1;
+        }
+        Some(id)
+    }
+
     /// Records a refused S10a command; returns false (not applied).
     pub(crate) fn refuse_fort(
         &mut self,

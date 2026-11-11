@@ -1994,6 +1994,82 @@ pub struct FactionSummary {
     pub s8a: S8aFaction,
     /// S10a counters over the run (sums of `S10Player`).
     pub s10: S10Faction,
+    /// S10b counters over the run (sums of the twelve `FortAccount` S10b
+    /// counters; all 0 in AI play).
+    pub s10b: S10bFaction,
+}
+
+/// S10b: the twelve `FortAccount` counters in report order.
+pub const S10B_COUNTERS: [&str; 12] = [
+    "mines_laid",
+    "mines_set_off",
+    "mines_blasted",
+    "mines_found",
+    "mines_lifted",
+    "men_lost_to_mines",
+    "vehicles_mined",
+    "obstacles_built",
+    "bunkers_built",
+    "sweeps",
+    "demolitions",
+    "pieces_demolished",
+];
+
+/// S10b numbers of one faction over a `--seeds` run (sums; spec 7).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S10bFaction {
+    pub matches: u32,
+    /// [`S10B_COUNTERS`] order.
+    pub counters: [u64; 12],
+}
+
+impl S10bFaction {
+    /// The twelve S10b counters of one account ([`S10B_COUNTERS`] order).
+    pub fn of(a: &frontline_sim::fort::FortAccount) -> [u32; 12] {
+        [
+            a.mines_laid,
+            a.mines_set_off,
+            a.mines_blasted,
+            a.mines_found,
+            a.mines_lifted,
+            a.men_lost_to_mines,
+            a.vehicles_mined,
+            a.obstacles_built,
+            a.bunkers_built,
+            a.sweeps,
+            a.demolitions,
+            a.pieces_demolished,
+        ]
+    }
+
+    pub fn add(&mut self, a: &frontline_sim::fort::FortAccount) {
+        self.matches += 1;
+        for (k, v) in Self::of(a).iter().enumerate() {
+            self.counters[k] += *v as u64;
+        }
+    }
+
+    fn get(&self, name: &str) -> u64 {
+        S10B_COUNTERS
+            .iter()
+            .position(|k| *k == name)
+            .map_or(0, |k| self.counters[k])
+    }
+
+    /// Mechanics used at all: `mines_laid + obstacles_built +
+    /// bunkers_built + sweeps + demolitions` (0 in AI play, R28).
+    pub fn used(&self) -> u64 {
+        [
+            "mines_laid",
+            "obstacles_built",
+            "bunkers_built",
+            "sweeps",
+            "demolitions",
+        ]
+        .iter()
+        .map(|k| self.get(k))
+        .sum()
+    }
 }
 
 /// S10a numbers of one faction over a `--seeds` run (sums; S10a-ai adds
@@ -2539,6 +2615,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             u.gun_vehicles.extend(p.s7.gun_vehicles.iter().cloned());
             // S8a.
             f.s10.add(&p.s10);
+            f.s10b.add(&p.s10.fort);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -2981,6 +3058,23 @@ pub fn many_text(r: &ManyReport) -> String {
             v("materials_lost_kg_per_match"),
             v("men_lost_in_wire_per_match"),
         );
+    }
+    // S10b: only when a mechanic was used (AI play keeps the old text).
+    for f in &s.factions {
+        let b = &f.s10b;
+        if b.counters.iter().any(|v| *v > 0) {
+            let parts: Vec<String> = S10B_COUNTERS
+                .iter()
+                .zip(b.counters)
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect();
+            out += &format!(
+                "s10b: {} used {}: {}\n",
+                f.faction,
+                b.used(),
+                parts.join(", ")
+            );
+        }
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
     for m in &r.matches {
