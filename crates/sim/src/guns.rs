@@ -151,8 +151,19 @@ impl MatchState {
                 return Err("a gun's tow does not name it back");
             }
             // A turn in progress names where it ends; only then.
-            if sv.relay_to.is_some() != (sv.relay_ticks > 0 || sv.state == GunState::Emplacing) {
+            if sv.relay_to.is_some() != (sv.relay_ticks > 0 || sv.state == GunState::Emplacing)
+                || (sv.relay_ticks > 0 && sv.state != GunState::Emplaced)
+            {
                 return Err("a gun's turn target does not match its state");
+            }
+            // The slot swap is mirrored into seats, which carry at most this.
+            let r = &self.setup.rules.vehicles;
+            let swap_max = r
+                .seat_swap_ticks
+                .max(r.guns.slot_swap_s * self.setup.tick_hz)
+                .min(u16::MAX as u32) as u16;
+            if sv.slots.iter().any(|sl| sl.swap > swap_max) {
+                return Err("a service slot swap is out of range");
             }
             if let Some(q) = sv.crew
                 && self

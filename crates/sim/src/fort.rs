@@ -266,7 +266,20 @@ impl FortState {
             return Err("S10a accounts disagree with the players");
         }
         if self.accounts.iter().any(|a| {
-            a.works_done.len() > setup.forts.len()
+            // Counters bumped with `+=` (the save fuzz); the kg lost and
+            // used saturate instead.
+            !crate::bounds::counters_ok(&[
+                a.works_started,
+                a.pieces_built,
+                a.pieces_lost,
+                a.wire_built,
+                a.wire_cut,
+                a.wire_blown,
+                a.wire_crushed,
+                a.bangalores,
+            ]) || !crate::bounds::counters_ok(&[a.materials_loaded_g, a.materials_micro])
+                || !crate::bounds::counters_ok(&a.works_done)
+                || a.works_done.len() > setup.forts.len()
                 || a.materials_used_crate_g
                     .checked_add(a.materials_used_truck_g)
                     .is_none_or(|by_source| by_source > a.materials_used_g)
@@ -286,7 +299,8 @@ impl FortState {
             self.next_wire,
             self.next_charge,
         ]
-        .contains(&u32::MAX)
+        .iter()
+        .any(|&n| n > crate::bounds::MAX_ID_COUNTER)
         {
             return Err("an S10a id counter is exhausted");
         }
@@ -311,6 +325,9 @@ impl FortState {
             }
             if w.got_g > d.materials_g {
                 return Err("work holds more kg than its step needs");
+            }
+            if w.work > d.work_ticks as u64 * d.work_men as u64 * 100 {
+                return Err("work done beyond its step");
             }
             if w.step == WorkStep::Dig && d.pit.is_none() {
                 return Err("work digs a pit its blueprint has not");

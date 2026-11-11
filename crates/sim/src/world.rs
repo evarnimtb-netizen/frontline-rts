@@ -778,6 +778,12 @@ impl World {
         let st = &s.state;
         let err = |m: &str| SimError::Save(m.to_owned());
         st.config.validate()?;
+        if st.tick > crate::bounds::MAX_TICK {
+            return Err(err("tick out of range"));
+        }
+        if !crate::bounds::counters_ok(&st.stats) {
+            return Err(err("a stats counter is out of range"));
+        }
         st.entities.validate().map_err(err)?;
         let max_owner = st.config.players;
         if st

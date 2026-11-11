@@ -2019,7 +2019,7 @@ impl MatchState {
     pub(crate) fn validate(&self, ents: &Entities, tick: u64) -> Result<(), &'static str> {
         let s = &self.setup;
         let np = s.players.len();
-        // Id counters are bumped unchecked; one at the top would overflow.
+        // Id counters are bumped unchecked; one near the top would overflow.
         if [
             self.next_squad,
             self.next_unit_dig,
@@ -2030,7 +2030,8 @@ impl MatchState {
             self.supply6.next_crate,
             self.supply6.next_cookoff,
         ]
-        .contains(&u32::MAX)
+        .iter()
+        .any(|&n| n > crate::bounds::MAX_ID_COUNTER)
         {
             return Err("an id counter is exhausted");
         }
@@ -2085,6 +2086,21 @@ impl MatchState {
                 || pl.drain_acc >= per_min
             {
                 return Err("bad player state");
+            }
+            // Counters are bumped unchecked (the save fuzz).
+            use crate::bounds::counters_ok;
+            if !(counters_ok(&[pl.kills, pl.losses, pl.rockets])
+                && counters_ok(&pl.point_ticks)
+                && counters_ok(&pl.kills_by)
+                && counters_ok(&pl.crew)
+                && counters_ok(&pl.s4)
+                && counters_ok(&pl.ammo)
+                && counters_ok(&pl.fm)
+                && counters_ok(&pl.s7)
+                && counters_ok(&pl.s8a)
+                && counters_ok(&pl.s9))
+            {
+                return Err("a player counter is out of range");
             }
             // S5a: the prepaid credit stays below one point plus a round.
             if pl.ammo.credit as u64 >= crate::supply::MICRO + crate::supply::dearest_round(s)
@@ -2567,7 +2583,7 @@ fn dig_consistent(
         && line.iter().all(on_map)
         && len <= Fx::from(dig.max_length)
         && (1..=max_segments).contains(&job.segments.len())
-        && job.front.abs() == 1
+        && job.front.unsigned_abs() == 1
         && job.segments.iter().all(|g| {
             g.from >= Fx::ZERO
                 && g.from <= g.to

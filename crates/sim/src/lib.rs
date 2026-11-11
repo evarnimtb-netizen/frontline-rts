@@ -39,6 +39,7 @@
 pub mod ai;
 pub mod armour;
 pub mod bail;
+mod bounds;
 pub mod combat;
 pub mod command;
 pub mod damage;
