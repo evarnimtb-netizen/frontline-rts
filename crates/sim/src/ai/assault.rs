@@ -235,7 +235,16 @@ impl Planner<'_> {
                         && matches!(m.role, AiKind::Rifle | AiKind::Mg | AiKind::Engineer)
                 })
                 .collect();
-            if here.len() < 2 || free.is_empty() {
+            // S10a-ai: a breach squad of this point counts toward the
+            // bases (it left `mine` with its job).
+            let breaching = self
+                .ai
+                .breaches
+                .values()
+                .filter(|b| b.point as usize == i)
+                .count();
+            let n_here = here.len() + breaching;
+            if n_here < 2 || free.is_empty() {
                 continue;
             }
             // The base: the squad already suppressing for this point, else
@@ -261,12 +270,21 @@ impl Planner<'_> {
             else {
                 continue;
             };
-            let Some(line) = self.assault_line(base.lead, i, points, known) else {
+            // S10a-ai: during a breach the base aims at the defender
+            // nearest the crossing (`ai::breach`), not the point's middle.
+            let focus = self.breach_focus(i, known).map(|at| {
+                let len = cfg.trench_line_m as i32;
+                let half =
+                    (at - base.lead).normalize_or_zero().perp() * Fx::from_int(len).div_int(2);
+                [self.terrain.clamp(at - half), self.terrain.clamp(at + half)]
+            });
+            let Some(line) = focus.or_else(|| self.assault_line(base.lead, i, points, known))
+            else {
                 continue;
             };
             // S3c (B4): a second base when the first one's fire weight is
             // under the enemy's strongest MG team weapon's.
-            let second = if here.len() >= 3
+            let second = if n_here >= 3
                 && cfg.second_base_below_pct > 0
                 && self.fire_weight(base) * 100
                     < self.enemy_mg_weight() * cfg.second_base_below_pct as u64
@@ -357,7 +375,7 @@ impl Planner<'_> {
     /// and with a line of fire it suppresses the line, else it walks to a
     /// support spot (at least `ai.assault.second_base_gap_m` from `avoid`,
     /// the first base, for a second base). Returns where it fires from.
-    fn base_of_fire(
+    pub(super) fn base_of_fire(
         &mut self,
         base: &Mine,
         i: usize,

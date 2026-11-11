@@ -201,7 +201,9 @@ pub use transport::{
     AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
 };
 
-pub use breach::{AiBreach, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN};
+pub use breach::{
+    AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
+};
 pub use fort::{AiFortJob, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use truck::{AiTruck, GAVE_UP_GOALS, MAX_TRUCKS, TruckPhase};
@@ -610,7 +612,9 @@ pub struct AiCounters {
 }
 
 impl AiState {
-    pub(crate) fn new(first_plan: u64) -> AiState {
+    /// A fresh AI state whose first plan runs at `first_plan` (the
+    /// fortify-test breach hook keeps one outside the match).
+    pub fn new(first_plan: u64) -> AiState {
         AiState {
             next_plan: first_plan,
             next_seq: 0,
@@ -998,6 +1002,7 @@ struct MyTank {
 }
 
 /// One of the AI's own squads at plan time.
+#[derive(Clone)]
 struct Mine {
     id: SquadId,
     role: AiKind,
@@ -1219,6 +1224,9 @@ impl Planner<'_> {
         // S10a-ai: shelled marks, then the fort jobs keep their squads.
         self.fort_marks(&known);
         self.fort_continue(&mut mine, &known, &busy);
+        // S10a-ai: enemy wire by sight, then the breach jobs keep theirs.
+        self.wire_sight();
+        self.breach_continue(&mut mine, &busy);
         // S5a: refill trips, staggered per point.
         self.refills(&mut mine, &known);
         // S6: the HQ, crate runs, dry mortars to the HQ.
@@ -1246,6 +1254,9 @@ impl Planner<'_> {
         // S10a-ai: new fort jobs take free builders (claimed as hunts are).
         let building = self.fort_start(&mine, &assigned, &points, &known, &hunting);
         hunting.extend(building);
+        // S10a-ai: new breach jobs take an attacker that can open wire.
+        let breaching = self.breach_start(&mine, &assigned, &points, &hunting);
+        hunting.extend(breaching);
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );
@@ -1543,7 +1554,51 @@ impl Planner<'_> {
                 s.vehicles[k.type_idx as usize].role != frontline_content::VehicleRole::Truck
             })
             .count();
+        // S10a-ai (spec 3.1): a breach is wanted and no own squad can open
+        // wire: the faction's assault card first (as an urgent AT team),
+        // at most `breach_cards_max` of them alive.
+        let mut urgent_breach = if ai.fort.cards != 0 && self.breach_wanted() {
+            let is_assault = |t: u16| {
+                let ty = &s.squad_types[t as usize];
+                fort::is_s10a_card(ty) && ty.has(Capability::Breach)
+            };
+            let alive: u32 = (0..s.squad_types.len())
+                .filter(|&t| is_assault(t as u16))
+                .map(|t| alive_by_type[t])
+                .sum();
+            faction
+                .roster
+                .iter()
+                .copied()
+                .find(|&t| s.squad_types[t as usize].ai_weight > 0 && is_assault(t))
+                .filter(|_| alive < ai.fort.breach_cards_max)
+        } else {
+            None
+        };
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
+            if let Some(t) = urgent_breach.take()
+                && ready(t, &bought, &alive_by_type)
+            {
+                let ty = &s.squad_types[t as usize];
+                let men = ty.pop(&s.vehicles) as i64;
+                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                    self.ai
+                        .emit(self.due, CommandKind::CallIn { squad_type: t });
+                    budget -= ty.cost as i64;
+                    pop += men;
+                    bought.push(t);
+                    alive_by_type[t as usize] += 1;
+                    if let Some(r) = mix_slot(s, t) {
+                        counts[r] += 1;
+                    }
+                    let c = &mut self.ai.counters;
+                    if c.bought.len() < s.squad_types.len() {
+                        c.bought.resize(s.squad_types.len(), 0);
+                    }
+                    c.bought[t as usize] += 1;
+                    continue;
+                }
+            }
             let total: i64 = counts.iter().sum();
             let active = |r: usize| !cards[r].is_empty() && (!gated(r) || mix[r] > 0);
             let weight: i64 = (0..slots)

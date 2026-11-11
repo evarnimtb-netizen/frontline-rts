@@ -1497,3 +1497,367 @@ fn ai_builder_walks_back_for_materials() {
         "and laid the wire"
     );
 }
+
+// ================================================== Build C: breaching --
+
+const ASSAULT: &str = "ww2:usa_assault_section";
+const WIRE_OUT: i32 = 35;
+
+/// A world (`threads`) where AI player 1 (USA, no start squads, no buys)
+/// attacks the map's only point, held by player 0, across `wire_len` m of
+/// player 0's wire [`WIRE_OUT`] m in front of it (0: no wire). Returns
+/// the world, the point and the unit direction from it toward player 1.
+fn attacked_t(
+    threads: usize,
+    wire_len: i32,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, FxVec2, FxVec2) {
+    let mut w = flat_world_with(threads, |s| {
+        s.players[1].is_ai = true;
+        s.map.points.truncate(1);
+        s.factions.iter_mut().for_each(|f| f.start_squads.clear());
+        s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);
+        edit(s);
+    });
+    let (pos, dir) = {
+        let g = w.state.game.as_mut().unwrap();
+        g.points[0].owner = Some(PlayerId(0));
+        let pos: FxVec2 = g.setup.map.points[0].pos.into();
+        (pos, (g.base_of(PlayerId(1)) - pos).normalize_or_zero())
+    };
+    if wire_len > 0 {
+        let f = fort(&w, "ww2:barbed_wire");
+        let mid = pos + dir * Fx::from_int(WIRE_OUT);
+        let half = dir.perp() * Fx::from_int(wire_len).div_int(2);
+        assert!(w.build_now(f, &[mid - half, mid + half], PlayerId(0)));
+    }
+    (w, pos, dir)
+}
+
+fn attacked(
+    wire_len: i32,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, FxVec2, FxVec2) {
+    attacked_t(1, wire_len, edit)
+}
+
+/// A squad of player `p` at `at`.
+fn squad_of(w: &mut World, p: u8, card: &str, at: FxVec2) -> SquadId {
+    spawn(w, p, card, at.x.floor_int(), at.y.floor_int())
+}
+
+/// Player 0's defenders: a rifle squad on the point and an MG team 15 m
+/// to its side; `armed` false: no rounds (they cannot hurt the attackers).
+fn defenders(w: &mut World, pos: FxVec2, dir: FxVec2, armed: bool) -> (SquadId, SquadId) {
+    let rifle = squad_of(w, 0, "ww2:ger_grenadiergruppe", pos);
+    let mg = squad_of(
+        w,
+        0,
+        "ww2:ger_smg_gruppe",
+        pos + dir.perp() * Fx::from_int(15),
+    );
+    if !armed {
+        for m in members(w, rifle).into_iter().chain(members(w, mg)) {
+            w.edit_soldier(m, |k, c| {
+                k.rounds.iter_mut().for_each(|r| *r = 0);
+                k.items.iter_mut().for_each(|n| *n = 0);
+                c.mag = 0;
+            });
+        }
+    }
+    (rifle, mg)
+}
+
+/// Player 1's attackers `out` m from the point: the card, an MG team and
+/// a rifle squad 20 m to either side.
+fn attackers(w: &mut World, pos: FxVec2, dir: FxVec2, out: i32, card: &str) -> [SquadId; 3] {
+    let at = pos + dir * Fx::from_int(out);
+    let side = dir.perp() * Fx::from_int(20);
+    [
+        squad_of(w, 1, card, at),
+        squad_of(w, 1, "ww2:usa_lmg_squad", at - side),
+        squad_of(w, 1, "ww2:usa_rifle_squad", at + side),
+    ]
+}
+
+/// The pending AI commands of player 1 (sampled).
+fn pending1(w: &World) -> Vec<CommandKind> {
+    ai_ro(w).pending.iter().map(|c| c.kind.clone()).collect()
+}
+
+#[test]
+fn ai_learns_enemy_wire_only_by_sight() {
+    // In range in the open: known; its own wire never.
+    let (mut w, pos, dir) = attacked(30, |_| {});
+    let own = fort(&w, "ww2:barbed_wire");
+    let mid = pos + dir * Fx::from_int(80);
+    assert!(w.build_now(
+        own,
+        &[mid, mid + dir.perp() * Fx::from_int(10)],
+        PlayerId(1)
+    ));
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        pos + dir * Fx::from_int(130),
+    );
+    play(&mut w, 5);
+    let enemy: Vec<u32> = {
+        let f = w.game().unwrap().fort();
+        f.wire
+            .iter()
+            .filter(|(_, s)| s.owner == PlayerId(0))
+            .map(|(&id, _)| id)
+            .collect()
+    };
+    assert!(!enemy.is_empty());
+    assert_eq!(
+        ai_ro(&w).wire_known,
+        enemy,
+        "every enemy section, sorted, no own one"
+    );
+    // A section that no longer stands is forgotten.
+    let gone = enemy[0];
+    w.edit_fort(|f| {
+        f.wire.remove(&gone);
+    });
+    play(&mut w, 3);
+    assert!(!ai_ro(&w).wire_known.contains(&gone));
+
+    // Out of `wire_seen_m`: unknown.
+    let (mut w, pos, dir) = attacked(30, |_| {});
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        pos + dir * Fx::from_int(200),
+    );
+    play(&mut w, 5);
+    assert!(ai_ro(&w).wire_known.is_empty(), "165 m: not seen");
+
+    // In range but at the bottom of a hollow 4 m deep: the earth hides it
+    // (read at the first plans, before the squad walks out).
+    let (mut w, pos, dir) = attacked(30, |_| {});
+    let hole = pos + dir * Fx::from_int(130);
+    let tick = w.state.tick;
+    w.state
+        .terrain
+        .crater_cut(hole, Fx::from_int(30), Fx::from_int(4), tick);
+    w.refresh_hashes();
+    let sq = squad_of(&mut w, 1, "ww2:usa_rifle_squad", hole);
+    play(&mut w, 2);
+    assert!(ai_ro(&w).next_plan > 30, "a plan ran");
+    assert!(
+        ai_ro(&w).wire_known.is_empty(),
+        "no line of sight: not known"
+    );
+    // Control: the same men lifted out of the hollow see it.
+    let up = hole - dir * Fx::from_int(40);
+    w.place_squad(sq, up, -dir);
+    play(&mut w, 2);
+    assert!(!ai_ro(&w).wire_known.is_empty(), "in the open: known");
+
+    // Switch off: nothing learnt.
+    let (mut w, pos, dir) = attacked(30, |s| s.rules.ai.fort.breach = 0);
+    squad_of(
+        &mut w,
+        1,
+        "ww2:usa_rifle_squad",
+        pos + dir * Fx::from_int(130),
+    );
+    play(&mut w, 5);
+    assert!(ai_ro(&w).wire_known.is_empty());
+}
+
+#[test]
+fn ai_goes_round_wire_when_the_path_avoids_it() {
+    // 10 m of wire across the approach: the path goes round, no job.
+    let (mut w, pos, dir) = attacked(10, |_| {});
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    play(&mut w, 20);
+    let c = &ai_ro(&w).counters;
+    assert!(c.wire_bypassed >= 1, "went round");
+    assert_eq!(c.breaches_started, 0);
+    assert!(ai_ro(&w).breaches.is_empty());
+    // Control: 100 m across the whole approach: a breach job.
+    let (mut w, pos, dir) = attacked(100, |_| {});
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    play(&mut w, 20);
+    let c = &ai_ro(&w).counters;
+    assert_eq!(c.wire_bypassed, 0);
+    assert_eq!(c.breaches_started, 1);
+    assert_eq!(ai_ro(&w).breaches.len(), 1);
+}
+
+/// Ticks at which player 1 first had each kind of breach command pending
+/// (suppression aimed within 6 m of `aim`, smoke, the carrier's order),
+/// sampled every tick for `secs`.
+#[derive(Debug, Default)]
+struct BreachTicks {
+    suppress: Option<u64>,
+    suppress_elsewhere: Option<u64>,
+    smoke: Option<u64>,
+    bangalore: Option<u64>,
+    cut: Option<u64>,
+}
+
+fn watch_breach(w: &mut World, secs: u64, aim: &dyn Fn(&World) -> Vec<FxVec2>) -> BreachTicks {
+    let mut t = BreachTicks::default();
+    for _ in 0..secs * 30 {
+        steps(w, 1);
+        let tick = w.state.tick;
+        let aims = aim(w);
+        for k in pending1(w) {
+            match k {
+                CommandKind::SuppressUnits { line, .. } => {
+                    let mid = (line[0] + line[line.len() - 1]).div_int(2);
+                    if aims.iter().any(|&a| near_m(mid, a, 6)) {
+                        t.suppress.get_or_insert(tick);
+                    } else {
+                        t.suppress_elsewhere.get_or_insert(tick);
+                    }
+                }
+                CommandKind::Throw {
+                    item: frontline_content::ItemKind::Smoke,
+                    ..
+                } => {
+                    t.smoke.get_or_insert(tick);
+                }
+                CommandKind::PlaceBangalore { .. } => {
+                    t.bangalore.get_or_insert(tick);
+                }
+                CommandKind::CutWire { .. } => {
+                    t.cut.get_or_insert(tick);
+                }
+                _ => {}
+            }
+        }
+    }
+    t
+}
+
+/// Positions of squad `id`'s live men.
+fn men_at(w: &World, id: SquadId) -> Vec<FxVec2> {
+    w.game()
+        .unwrap()
+        .squads
+        .get(&id)
+        .map(|q| {
+            q.members
+                .iter()
+                .map(|m| w.state.entities.transform[m.index()].pos.xy())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn ai_breach_suppresses_the_nest_and_smokes_before_the_carrier_goes() {
+    let (mut w, pos, dir) = attacked(100, |_| {});
+    let (_, mg) = defenders(&mut w, pos, dir, false);
+    // The MG team in a built nest.
+    let nest = fort(&w, "ww2:mg_nest");
+    let at = pos + dir.perp() * Fx::from_int(15);
+    assert!(w.build_now(nest, &[at, at + dir], PlayerId(0)));
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    let t = watch_breach(&mut w, 150, &|w: &World| men_at(w, mg));
+    let c = &ai_ro(&w).counters;
+    assert_eq!(c.breaches_started, 1, "{t:?}");
+    let sup = t.suppress.expect("the base aims at the MG team");
+    let smoke = t.smoke.expect("smoke thrown");
+    let go = t.bangalore.or(t.cut).expect("the carrier goes");
+    assert!(sup <= smoke, "fire before smoke: {t:?}");
+    let lead = w.match_setup().unwrap().rules.ai.fort.suppress_lead_s as u64 * 30;
+    assert!(
+        go >= smoke + lead,
+        "the carrier waits the lead after the smoke: {t:?}"
+    );
+    assert!(c.breach_suppress >= 1 && c.breach_smokes >= 1);
+    // Control: the same attack with the switch off never aims at the MG,
+    // smokes for a breach or sends a carrier.
+    let (mut w, pos, dir) = attacked(100, |s| s.rules.ai.fort.breach = 0);
+    let (_, mg) = defenders(&mut w, pos, dir, false);
+    assert!(w.build_now(nest, &[at, at + dir], PlayerId(0)));
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    let t = watch_breach(&mut w, 150, &|w: &World| men_at(w, mg));
+    assert_eq!((t.bangalore, t.cut), (None, None), "{t:?}");
+    assert_eq!(ai_ro(&w).counters.breach_smokes, 0);
+}
+
+#[test]
+fn ai_breach_blows_with_a_bangalore_else_cuts() {
+    // Defenders known near the crossing: the assault section lays a
+    // Bangalore, which blows the gap (the job ends opened).
+    let (mut w, pos, dir) = attacked(100, |_| {});
+    defenders(&mut w, pos, dir, false);
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    let t = watch_breach(&mut w, 150, &|_: &World| Vec::new());
+    assert!(t.bangalore.is_some() && t.cut.is_none(), "{t:?}");
+    assert!(play_until(&mut w, 60, |w| ai_ro(w)
+        .counters
+        .breaches_opened
+        >= 1));
+    let a = acc(&w, 1);
+    assert!(a.bangalores >= 1 && a.wire_blown >= 1, "{a:?}");
+    // Nobody near the crossing and the squad unhurt: it cuts (alone, so
+    // no other squad walks onto the empty point first).
+    let (mut w, pos, dir) = attacked(100, |_| {});
+    squad_of(&mut w, 1, ASSAULT, pos + dir * Fx::from_int(130));
+    let t = watch_breach(&mut w, 150, &|_: &World| Vec::new());
+    assert!(t.cut.is_some() && t.bangalore.is_none(), "{t:?}");
+    assert!(play_until(&mut w, 90, |w| acc(w, 1).wire_cut >= 1));
+    // Field engineers (no Bangalore) cut even with defenders near.
+    let (mut w, pos, dir) = attacked(100, |_| {});
+    defenders(&mut w, pos, dir, false);
+    attackers(&mut w, pos, dir, 130, "ww2:usa_engineer_squad");
+    let t = watch_breach(&mut w, 150, &|_: &World| Vec::new());
+    assert!(t.cut.is_some() && t.bangalore.is_none(), "{t:?}");
+}
+
+#[test]
+fn ai_breach_retries_a_pinned_carrier_then_gives_up() {
+    let (mut w, pos, dir) = attacked(100, |s| s.rules.ai.fort.breach_tries = 3);
+    defenders(&mut w, pos, dir, false);
+    let [card, ..] = attackers(&mut w, pos, dir, 130, ASSAULT);
+    // Every carrier is stopped as he sets off (as a pinned one is called
+    // off): each try fails, three in all, then the job is given up.
+    let mut sent = 0;
+    let mut was = false;
+    for _ in 0..30 * 400 {
+        steps(&mut w, 1);
+        let now = pending1(&w)
+            .iter()
+            .any(|k| matches!(k, CommandKind::PlaceBangalore { .. }));
+        sent += (now && !was) as u32;
+        was = now;
+        for m in members(&w, card) {
+            let i = m.index();
+            if w.state.entities.kit[i]
+                .windup
+                .is_some_and(|x| x.kind == frontline_content::ItemKind::Bangalore)
+            {
+                // Called off with his charge still on him.
+                let b = frontline_content::ItemKind::Bangalore.index();
+                w.edit_soldier(m, |k, _| {
+                    k.windup = None;
+                    k.items[b] += 1;
+                });
+            }
+        }
+        if ai_ro(&w).counters.breaches_given_up >= 1 {
+            break;
+        }
+    }
+    let c = &ai_ro(&w).counters;
+    assert_eq!(c.breaches_given_up, 1);
+    assert_eq!(c.breaches_opened, 0);
+    assert_eq!(sent, 3, "one carrier per try");
+    assert!(c.breach_smokes >= 1);
+    assert_eq!(acc(&w, 1).bangalores, 0);
+    // Control: the same scene, carriers left alone: the charge is laid.
+    let (mut w, pos, dir) = attacked(100, |s| s.rules.ai.fort.breach_tries = 3);
+    defenders(&mut w, pos, dir, false);
+    attackers(&mut w, pos, dir, 130, ASSAULT);
+    assert!(play_until(&mut w, 300, |w| acc(w, 1).bangalores >= 1));
+}

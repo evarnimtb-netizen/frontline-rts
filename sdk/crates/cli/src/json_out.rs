@@ -762,6 +762,15 @@ pub fn fortify(r: &FortifyReport) -> Value {
     };
     let mut fortified = breach(&x.breach.fortified);
     fortified["control"] = breach(&x.breach.control);
+    // S10a-ai (spec 6): the AI-driven row; `placed_pct` beside the rest.
+    let ai_row = |t: &crate::fortify::s10a::BreachTotals| {
+        let mut v = breach(t);
+        v["placed"] = json!(t.placed);
+        v["placed_pct"] = json!(t.placed_pct());
+        v
+    };
+    let mut breach_ai = ai_row(&x.breach_ai.fortified);
+    breach_ai["control"] = ai_row(&x.breach_ai.control);
     let s10a = json!({
         "wire": {
             "inside_speed_pct": x.wire.inside_speed_pct,
@@ -776,6 +785,7 @@ pub fn fortify(r: &FortifyReport) -> Value {
             "runs": x.roof.runs.len(),
         },
         "breach": fortified,
+        "breach_ai": breach_ai,
     });
     json!({
         "schema": 1,

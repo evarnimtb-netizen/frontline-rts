@@ -35,6 +35,20 @@
 //!   [`BREACH_S`] in all. The control has no wire and no nest (the MG
 //!   team stands on the same spot) and advances straight to 25 m. Reported
 //!   against the S3b bar (T10: defenders lose >= 75 %, attackers <= 50 %).
+//! * **Breach by the AI** (S10a-ai spec 6, `breach_ai`). The same trench,
+//!   rifle squad and MG nest, the wire [`BREACH_AI_WIRE_LEN_M`] long (see
+//!   there), and the map's first point moved onto the trench's middle.
+//!   The attacker's assault card, an MG team and a rifle squad (the S3c
+//!   two-bases composition) stand [`SUPPRESS_START_M`] out; the AI's breach
+//!   habit alone (`World::drive_breach`, a fresh `AiState`, the planner's
+//!   own phase code: wire seen, path, stage, both support squads as bases
+//!   aimed at the defender nearest the crossing, smoke, Bangalore or cut,
+//!   retries) runs until its job ends (at most [`BREACH_S`]); then the
+//!   scripted assault phase of the breach row runs for [`BREACH_AI_ASSAULT_S`]
+//!   (the support squads lift as the MG did there). The control has no
+//!   wire and no nest: the hook finds nothing to breach and the assault
+//!   runs at once. `gap_opened_pct`: runs in which the attacker cut or blew
+//!   a section; `placed_pct`: a charge laid or a cut done.
 
 use super::*;
 
@@ -69,12 +83,21 @@ const STALL_S: u64 = 5;
 const RETRY_S: u64 = 5;
 /// Longest wait for a cut or a Bangalore (game seconds).
 const WAIT_S: u64 = 60;
+/// S10a-ai: the AI breach row's wire. Since the S17 path fix the AI's path
+/// goes round a 30 m line's end (a few metres' detour beats the wire's
+/// cost), so it would breach nothing; a line across the whole approach
+/// makes the path cross it (as `WIRE_THROUGH_LEN_M` does for the wire row).
+pub const BREACH_AI_WIRE_LEN_M: i32 = 100;
+/// S10a-ai: the AI breach row's assault after the job (game seconds).
+pub const BREACH_AI_ASSAULT_S: u64 = 150;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct S10aReport {
     pub wire: WireExperiment,
     pub roof: RoofExperiment,
     pub breach: BreachExperiment,
+    /// S10a-ai: the breach row driven by the AI's breach job.
+    pub breach_ai: BreachExperiment,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -150,8 +173,11 @@ pub struct BreachTotals {
     pub defender_men: u32,
     pub attacker_losses: u32,
     pub attacker_men: u32,
-    /// Runs in which a Bangalore blew a gap in the wire.
+    /// Runs in which a Bangalore blew a gap in the wire (S10a-ai row: or
+    /// a section was cut).
     pub gaps_opened: u32,
+    /// S10a-ai row: runs with a charge laid or a cut done.
+    pub placed: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -168,6 +194,13 @@ pub struct BreachRun {
     pub bangalores: u32,
     pub wire_blown: u32,
     pub frags_thrown: u32,
+    /// S10a-ai row: sections the attacker cut; how the AI job ended
+    /// (`opened`, `given_up`, `none`: nothing to breach, `running`: still
+    /// on at [`BREACH_S`]); its smokes and suppressions.
+    pub wire_cut: u32,
+    pub job: &'static str,
+    pub smokes: u32,
+    pub suppressions: u32,
 }
 
 fn pct1(a: f64, b: f64) -> f64 {
@@ -761,12 +794,173 @@ fn breach_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Result
         bangalores: acc.bangalores,
         wire_blown: acc.wire_blown,
         frags_thrown: (w.stats().throws - throws) as u32,
+        wire_cut: acc.wire_cut,
+        job: "scripted",
+        smokes: 0,
+        suppressions: 0,
+    })
+}
+
+/// A world for the AI breach row: the map's first point on the trench's
+/// middle (the point the AI attacks).
+fn breach_ai_world(args: &FortifyArgs, seed: u64) -> Result<World> {
+    let mut setup = match_setup(&SkirmishArgs {
+        seed,
+        mods: args.mods.clone(),
+        rules_override: args.rules_override.clone(),
+        ..SkirmishArgs::default()
+    })?;
+    setup.players.iter_mut().for_each(|p| p.is_ai = false);
+    setup.rules.start_manpower = 10_000;
+    let Some(p0) = setup.map.points.first_mut() else {
+        bail!("the map has no capture point");
+    };
+    p0.pos = frontline_content::setup::FixedVec2::from_m([TRENCH_X as u32, LINE_Y as u32]);
+    Ok(World::new_match(setup, args.threads)?)
+}
+
+/// One AI breach (see the module docs): `dug` defends, the other attacks.
+fn breach_ai_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Result<BreachRun> {
+    let mut w = breach_ai_world(args, seed)?;
+    let att = 1 - dug;
+    let a = squad(&w, dug, "line")?;
+    dig(&mut w);
+    w.place_squad(a, at(TRENCH_X, LINE_Y), EAST);
+    let nest_c = at(TRENCH_X, LINE_Y + NEST_DY);
+    let wire_x = TRENCH_X + BREACH_WIRE_M;
+    if fortified {
+        let nest = fort_of(&w, "ww2:mg_nest")?;
+        let pit = w.match_setup().unwrap().rules.mg_nest_pit.pit_line;
+        let half = Fx::from(pit).div_int(2).max(Fx::from_milli(100));
+        let e = FxVec2::new(half, Fx::ZERO);
+        if !w.dig_pit_now(
+            &[nest_c - e, nest_c + e],
+            frontline_content::DigProfile::MgNestPit,
+        ) || !w.build_now(nest, &[nest_c, nest_c + EAST], PlayerId(dug))
+        {
+            bail!("seed {seed}: the MG nest was not staged");
+        }
+        let wire = fort_of(&w, "ww2:barbed_wire")?;
+        let half = BREACH_AI_WIRE_LEN_M / 2;
+        if !w.build_now(
+            wire,
+            &[at(wire_x, LINE_Y - half), at(wire_x, LINE_Y + half)],
+            PlayerId(dug),
+        ) {
+            bail!("seed {seed}: the wire was not staged");
+        }
+    }
+    let mg = call_in(&mut w, dug, "mg")?;
+    w.place_squad(mg, nest_c, EAST);
+    let eng = call_in_card(&mut w, att, &ASSAULT_CARDS)?;
+    let start_x = TRENCH_X + SUPPRESS_START_M;
+    w.place_squad(eng, at(start_x, LINE_Y), WEST);
+    let amg = call_in(&mut w, att, "mg")?;
+    w.place_squad(amg, at(start_x, LINE_Y - 20), WEST);
+    let rifle = call_in(&mut w, att, "line")?;
+    w.place_squad(rifle, at(start_x, LINE_Y + 20), WEST);
+    let def_men = (members(&w, a).len() + members(&w, mg).len()) as u32;
+    let att_men =
+        (members(&w, eng).len() + members(&w, amg).len() + members(&w, rifle).len()) as u32;
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let start = w.tick();
+    let (lost_d, lost_a) = (losses(&w, dug), losses(&w, att));
+    let throws = w.stats().throws;
+    let p = att as usize;
+    // The AI's breach job.
+    let mut ai = frontline_sim::ai::AiState::new(w.tick());
+    let mut job = "running";
+    while w.tick() < start + BREACH_S * hz {
+        if let Some(end) = w.drive_breach(&mut ai, PlayerId(att), eng, &[amg, rifle], 0) {
+            job = match end {
+                Some(frontline_sim::ai::BreachEnd::Opened) => "opened",
+                Some(frontline_sim::ai::BreachEnd::GivenUp) => "given_up",
+                None => "none",
+            };
+            break;
+        }
+    }
+    // Commands the job still had waiting are dropped: the assault takes over.
+    let support = [amg, rifle];
+    let assault_end = w.tick() + BREACH_AI_ASSAULT_S * hz;
+    if w.game().unwrap().squad(eng).is_some() {
+        step_with(
+            &mut w,
+            att,
+            vec![CommandKind::Move {
+                squad: eng,
+                target: at(TRENCH_X + ASSAULT_GAP_M, LINE_Y),
+            }],
+        );
+    }
+    let throw_x = Fx::from_int(TRENCH_X + ASSAULT_THROW_M);
+    let lift_x =
+        Fx::from_int(TRENCH_X + w.match_setup().unwrap().rules.ai.assault.lift_fire_m as i32);
+    let (mut first_wave, mut closing, mut lifted) = (None, false, false);
+    while w.tick() < assault_end {
+        let lead = w
+            .game()
+            .unwrap()
+            .squad(eng)
+            .map(|s| (s.nav.phase, pos(&w, s.lead(w.entities())).x));
+        let Some((nav, lead_x)) = lead else {
+            w.step(&[]);
+            continue;
+        };
+        let close = nav == frontline_sim::NavPhase::Holding || lead_x <= throw_x;
+        let frags_left = members(&w, eng)
+            .iter()
+            .any(|m| w.entities().kit()[m.index()].items[ItemKind::Frag.index()] > 0);
+        if close && first_wave.is_none() {
+            first_wave = Some(w.tick());
+        }
+        if !closing && first_wave.is_some_and(|t| !frags_left || w.tick() >= t + CLOSE_IN_S * hz) {
+            closing = true;
+            step_with(
+                &mut w,
+                att,
+                vec![CommandKind::Move {
+                    squad: eng,
+                    target: at(TRENCH_X, LINE_Y),
+                }],
+            );
+        } else if !lifted && lead_x <= lift_x {
+            lifted = true;
+            let stops = support
+                .iter()
+                .filter(|&&q| w.game().unwrap().squad(q).is_some())
+                .map(|&q| CommandKind::Stop { squad: q })
+                .collect();
+            step_with(&mut w, att, stops);
+        } else if close && !closing && (w.tick() - start).is_multiple_of(hz) {
+            throw_wave(&mut w, att, eng);
+        } else {
+            w.step(&[]);
+        }
+    }
+    let acc = w.game().unwrap().fort().accounts[p].clone();
+    Ok(BreachRun {
+        seed,
+        entrenched: faction(w.match_setup().unwrap(), dug),
+        fortified,
+        defender_losses: losses(&w, dug) - lost_d,
+        defender_men: def_men,
+        attacker_losses: losses(&w, att) - lost_a,
+        attacker_men: att_men,
+        bangalores: acc.bangalores,
+        wire_blown: acc.wire_blown,
+        frags_thrown: (w.stats().throws - throws) as u32,
+        wire_cut: acc.wire_cut,
+        job,
+        smokes: ai.counters.breach_smokes,
+        suppressions: ai.counters.breach_suppress,
     })
 }
 
 /// The three S10a rows over `seeds`, each faction in turn.
 pub fn s10a_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10aReport> {
     let (mut wire, mut roof, mut breach) = (Vec::new(), Vec::new(), Vec::new());
+    let mut breach_ai = Vec::new();
     for seed in seeds {
         for side in [0u8, 1] {
             for variant in ["wire", "cut", "blown"] {
@@ -775,6 +969,9 @@ pub fn s10a_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10a
             roof.push(roof_run(args, seed, side)?);
             for fortified in [true, false] {
                 breach.push(breach_run(args, seed, side, fortified)?);
+            }
+            for fortified in [true, false] {
+                breach_ai.push(breach_ai_run(args, seed, side, fortified)?);
             }
         }
     }
@@ -812,25 +1009,38 @@ pub fn s10a_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10a
         ),
         runs: roof,
     };
-    let totals = |f: bool| {
+    let totals = |runs: &[BreachRun], f: bool, ai: bool| {
         let mut t = BreachTotals::default();
-        for r in breach.iter().filter(|r| r.fortified == f) {
+        for r in runs.iter().filter(|r| r.fortified == f) {
             t.runs += 1;
             t.defender_losses += r.defender_losses;
             t.defender_men += r.defender_men;
             t.attacker_losses += r.attacker_losses;
             t.attacker_men += r.attacker_men;
-            t.gaps_opened += (r.wire_blown > 0) as u32;
+            let cut = if ai { r.wire_cut } else { 0 };
+            t.gaps_opened += (r.wire_blown + cut > 0) as u32;
+            t.placed += (r.bangalores + cut > 0) as u32;
         }
         t
     };
     let breach = BreachExperiment {
         name: "assault engineers with an MG against a trench, MG nest and wire 35 m out (control: no wire, no nest)",
-        fortified: totals(true),
-        control: totals(false),
+        fortified: totals(&breach, true, false),
+        control: totals(&breach, false, false),
         runs: breach,
     };
-    Ok(S10aReport { wire, roof, breach })
+    let breach_ai = BreachExperiment {
+        name: "the AI's breach job: assault card, MG team and rifle squad against a trench, MG nest and 100 m of wire 35 m out (control: no wire, no nest)",
+        fortified: totals(&breach_ai, true, true),
+        control: totals(&breach_ai, false, true),
+        runs: breach_ai,
+    };
+    Ok(S10aReport {
+        wire,
+        roof,
+        breach,
+        breach_ai,
+    })
 }
 
 impl BreachTotals {
@@ -842,6 +1052,9 @@ impl BreachTotals {
     }
     pub fn gap_opened_pct(&self) -> f64 {
         pct1(self.gaps_opened as f64, self.runs as f64)
+    }
+    pub fn placed_pct(&self) -> f64 {
+        pct1(self.placed as f64, self.runs as f64)
     }
 }
 
@@ -910,6 +1123,36 @@ pub fn summary_text(r: &S10aReport) -> String {
             t.defender_loss_pct(),
             t.attacker_loss_pct(),
             t.gap_opened_pct()
+        );
+    }
+    let b = &r.breach_ai;
+    out += &format!("S10a-ai: {}\n", b.name);
+    out += "  seed  entrenched    fortified  defender_losses  attacker_losses  job       bangalores  blown  cut  smokes  frags\n";
+    for run in &b.runs {
+        out += &format!(
+            "  {:<5} {:<13} {:<10} {:>9} of {:<4} {:>9} of {:<4} {:<9} {:>10}  {:>5}  {:>3}  {:>6}  {:>5}\n",
+            run.seed,
+            run.entrenched,
+            if run.fortified { "yes" } else { "no" },
+            run.defender_losses,
+            run.defender_men,
+            run.attacker_losses,
+            run.attacker_men,
+            run.job,
+            run.bangalores,
+            run.wire_blown,
+            run.wire_cut,
+            run.smokes,
+            run.frags_thrown
+        );
+    }
+    for (name, t) in [("fortified", &b.fortified), ("control", &b.control)] {
+        out += &format!(
+            "  {name}: gap opened in {:.1} % of runs (T93f >= 60), placed {:.1} % (T93h >= 60), attackers lost {:.1} % (T93g <= 60), defenders {:.1} %\n",
+            t.gap_opened_pct(),
+            t.placed_pct(),
+            t.attacker_loss_pct(),
+            t.defender_loss_pct()
         );
     }
     out

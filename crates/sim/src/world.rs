@@ -2280,6 +2280,53 @@ impl World {
         &self.fort_events
     }
 
+    /// S10a-ai fortify-test hook (`docs/slices/S10a-ai.md` 6): one world
+    /// step with player `player`'s breach habit alone (`ai::breach`) run
+    /// on `ai`, a fresh state the caller keeps (not part of the match):
+    /// a plan every `replan_ticks` for squad `breach` attacking point
+    /// `point` with `support` as its bases of fire; its commands wait in
+    /// `ai.pending` for the reaction delay and are applied as the player's.
+    /// `Some(end)` once the job has ended (`Some(None)`: nothing to breach,
+    /// the path goes round); the caller stops calling then.
+    pub fn drive_breach(
+        &mut self,
+        ai: &mut crate::ai::AiState,
+        player: PlayerId,
+        breach: SquadId,
+        support: &[SquadId],
+        point: usize,
+    ) -> Option<Option<crate::ai::BreachEnd>> {
+        let tick = self.state.tick;
+        let end = {
+            let game = self.state.game.as_ref()?;
+            if player.0 as usize >= game.players.len() {
+                return Some(None);
+            }
+            game.drive_breach_plan(
+                ai,
+                &self.state.entities,
+                &self.state.terrain,
+                tick,
+                player,
+                breach,
+                support,
+                point,
+            )
+        };
+        let n = ai.pending.iter().take_while(|c| c.due <= tick).count();
+        let cmds: Vec<Command> = ai
+            .pending
+            .drain(..n)
+            .map(|c| Command {
+                player,
+                seq: c.seq,
+                kind: c.kind,
+            })
+            .collect();
+        self.step(&cmds);
+        end
+    }
+
     /// S10a test edit of the fort state (hashes and snapshot refreshed).
     pub fn edit_fort(&mut self, f: impl FnOnce(&mut crate::fort::FortState)) -> bool {
         let Some(g) = self.state.game.as_mut() else {
