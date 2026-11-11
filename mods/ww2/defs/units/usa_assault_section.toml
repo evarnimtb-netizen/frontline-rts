@@ -3,7 +3,9 @@
 # a bazooka team (M9 and loader) and two demolition men with M1A1 Bangalore
 # torpedoes. Assault tier: breach and cut wire (roster 3.2 gives no wire
 # cutters' rate of their own: the tier's). S10a-ai: ai_weight 35 in the
-# engineer slot (S10a-12 (A); [ai.fort] cards = 0 skips it).
+# engineer slot (S10a-12 (A); [ai.fort] cards = 0 skips it). The leader and
+# two riflemen carry one M15 smoke each (owner 2026-11-11: losing the leader
+# does not end the breach).
 id = "ww2:usa_assault_section"
 name = "Assault Section"
 short_name = "Assault Sec."
@@ -27,8 +29,14 @@ traits = ["leader"]
 items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
 
 [[members]]
+slot = "rifleman_smoke"
+count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1, "ww2:m15_smoke" = 1 }
+
+[[members]]
 slot = "rifleman"
-count = 5
+count = 3
 weapon = "ww2:m1_garand"
 items = { "ww2:mk2_grenade" = 1 }
 

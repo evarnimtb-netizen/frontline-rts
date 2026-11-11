@@ -4,8 +4,9 @@
 # grenades. Assault tier: cut wire fast, breach, no building
 # (docs/slices/S10a-fortifications.md 3.4). S10a-ai: ai_weight 60
 # (stage D, owner 2026-11-11; was 35) in the engineer slot (S10a-12 (A); [ai.fort] cards = 0 skips it); the
-# leader carries one Nebelhandgranate 39 (the Pioniergruppe's smoke grenade,
-# S10a-13 (A)) so the AI can screen a Bangalore carrier.
+# leader and two StG 44 men carry one Nebelhandgranate 39 each (the
+# Pioniergruppe's smoke grenade, S10a-13 (A); three men: owner 2026-11-11, so
+# losing the leader does not end the breach) to screen a Bangalore carrier.
 id = "ww2:ger_sturmpioniergruppe"
 name = "Sturmpioniergruppe"
 short_name = "Sturmpioniere"
@@ -29,8 +30,13 @@ traits = ["leader"]
 items = { "ww2:stielhandgranate" = 2, "ww2:gestreckte_ladung" = 1, "ww2:nbhgr39" = 1 }
 
 [[members]]
+slot = "sturmpionier_stg_nebel"
+count = 2
+weapon = "ww2:stg44"
+items = { "ww2:stielhandgranate" = 2, "ww2:nbhgr39" = 1 }
+
+[[members]]
 slot = "sturmpionier_stg"
-count = 3
 weapon = "ww2:stg44"
 items = { "ww2:stielhandgranate" = 2 }
 

@@ -23,8 +23,9 @@
 //!   smoke: no farther than its throw reaches the smoke aim, stage D). *Suppress*: the point's
 //!   base of fire (`ai::assault`) aims at the known defender nearest the
 //!   crossing, MG-team men first ([`super::Planner::breach_focus`]);
-//!   waited for at most twice `suppress_lead_s`. *Smoke*: a man with smoke
-//!   in the breach squad, else in a squad attacking the point, throws it
+//!   waited for at most twice `suppress_lead_s`. *Smoke*: a living man with
+//!   smoke (assault squads: three carry it; nearest the aim first) in the
+//!   breach squad, else in a squad attacking the point, throws it
 //!   `smoke_frac_pct` of the way from the crossing to that defender, at
 //!   most half the cloud radius past the crossing; only a man whose throw
 //!   reaches that spot throws (no cloud short of the wire). *Go*: `suppress_lead_s` after the fire
@@ -748,13 +749,24 @@ impl super::Planner<'_> {
                 continue;
             };
             let at = self.smoke_aim(job, toward, cloud.radius.into());
-            for &man in &sq.members {
-                let i = man.index();
-                if self.ents.kit[i].items[ItemKind::Smoke.index()] == 0
-                    || self.ents.combat[i].pinned
-                {
-                    continue;
-                }
+            // Any living man with smoke, nearest the aim first (owner
+            // 2026-11-11: smoke on three men, so the breach outlives the
+            // leader); ties by id.
+            let mut men: Vec<(u64, SimId)> = sq
+                .members
+                .iter()
+                .filter(|m| {
+                    let i = m.index();
+                    self.ents.kit[i].items[ItemKind::Smoke.index()] > 0
+                        && !self.ents.combat[i].pinned
+                })
+                .map(|&m| {
+                    let p = self.ents.transform[m.index()].pos.xy();
+                    ((p - at).length_sq_raw(), m)
+                })
+                .collect();
+            men.sort_unstable();
+            for (_, man) in men {
                 if self
                     .g
                     .can_throw(self.ents, man, ItemKind::Smoke, at)

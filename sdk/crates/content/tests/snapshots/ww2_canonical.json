@@ -3154,7 +3154,16 @@
           "weapon": "ww2:mp40"
         },
         {
-          "count": 3,
+          "count": 2,
+          "items": {
+            "ww2:nbhgr39": 1,
+            "ww2:stielhandgranate": 2
+          },
+          "slot": "sturmpionier_stg_nebel",
+          "weapon": "ww2:stg44"
+        },
+        {
+          "count": 1,
           "items": {
             "ww2:stielhandgranate": 2
           },
@@ -3558,7 +3567,16 @@
           "weapon": "ww2:m1_garand"
         },
         {
-          "count": 5,
+          "count": 2,
+          "items": {
+            "ww2:m15_smoke": 1,
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman_smoke",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 3,
           "items": {
             "ww2:mk2_grenade": 1
           },

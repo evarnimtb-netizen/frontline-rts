@@ -2106,6 +2106,65 @@ fn ai_breach_smoke_covers_the_crossing_when_the_carrier_goes() {
 }
 
 #[test]
+fn ai_breach_smoke_outlives_the_leader() {
+    // Owner 2026-11-11: an assault squad carries smoke on three men. Only
+    // the assault squad has smoke here (no other squad can screen); its
+    // leader is killed as the breach starts, on the walk up. Another of
+    // its men throws the smoke and the carrier still goes.
+    let (mut w, pos, dir) = attacked(100, |s| {
+        let smoke = frontline_content::ItemKind::Smoke.index();
+        for t in s.squad_types.iter_mut().filter(|t| t.id != ASSAULT) {
+            t.members.iter_mut().for_each(|m| m.items[smoke] = 0);
+        }
+    });
+    defenders(&mut w, pos, dir, false);
+    let nest = fort(&w, "ww2:mg_nest");
+    let at = pos + dir.perp() * Fx::from_int(15);
+    assert!(w.build_now(nest, &[at, at + dir], PlayerId(0)));
+    let [card, ..] = attackers(&mut w, pos, dir, 130, ASSAULT);
+    let smoke = frontline_content::ItemKind::Smoke.index();
+    let carriers = members(&w, card)
+        .into_iter()
+        .filter(|m| w.state.entities.kit[m.index()].items[smoke] > 0)
+        .count();
+    assert_eq!(carriers, 3, "leader plus two men carry smoke");
+    let mut dead = None;
+    let (mut thrower, mut went) = (None, false);
+    for _ in 0..150 * 30 {
+        steps(&mut w, 1);
+        if dead.is_none() && ai_ro(&w).counters.breaches_started >= 1 {
+            let lead = w.game().unwrap().squads[&card].lead(&w.state.entities);
+            assert!(w.state.entities.kit[lead.index()].items[smoke] > 0);
+            assert!(w.kill_soldier(lead));
+            dead = Some(lead);
+        }
+        for k in pending1(&w) {
+            match k {
+                CommandKind::Throw {
+                    item: frontline_content::ItemKind::Smoke,
+                    units,
+                    ..
+                } => {
+                    thrower.get_or_insert(units[0]);
+                }
+                CommandKind::PlaceBangalore { .. } | CommandKind::CutWire { .. } => went = true,
+                _ => {}
+            }
+        }
+        if went {
+            break;
+        }
+    }
+    let dead = dead.expect("a breach started");
+    let man = thrower.expect("another man threw the smoke");
+    assert_ne!(man, dead);
+    assert!(members(&w, card).contains(&man), "a man of the breach squad");
+    assert!(went, "the carrier goes after the smoke");
+    let c = &ai_ro(&w).counters;
+    assert!(c.breach_smokes >= 1 && c.breaches_given_up == 0, "{c:?}");
+}
+
+#[test]
 fn ai_breach_blows_with_a_bangalore_else_cuts() {
     // Defenders known near the crossing: the assault section lays a
     // Bangalore, which blows the gap (the job ends opened).

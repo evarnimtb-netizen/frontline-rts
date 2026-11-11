@@ -223,8 +223,9 @@ spec `docs/slices/S10a-ai.md` 3.
   that crosses no known wire goes round. Otherwise the squad that can open
   it (Bangalore first, else `clear_wire`) stages `stage_m` short of the
   crossing once the point's base of fire fires; the base aims at the known
-  defender nearest the crossing (MG-team men first); a man with smoke
-  throws it between the crossing and that defender, at most half the
+  defender nearest the crossing (MG-team men first); a living man with
+  smoke (the assault squads carry it on three men: leader and two others),
+  nearest that spot first, throws it between the crossing and that defender, at most half the
   cloud's radius past the crossing (a squad with its own smoke stages
   within its throw reach of that spot; no cloud is thrown short of it); `suppress_lead_s` later
   a Bangalore goes in if defenders are about (known within `cut_fire_m`,
