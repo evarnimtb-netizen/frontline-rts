@@ -238,14 +238,18 @@ fn counters(w: &World, p: u8) -> frontline_sim::ai::AiCounters {
 /// T10 stall guard: AI-vs-AI with every man's load cut to 10 % still ends
 /// with a winner inside 40 minutes, both sides make refill trips, and no
 /// match stalls (seeds 1-4, both base orders). S10a-ai stage D: the loser
-/// of every match makes refill trips and each player over the eight; a
-/// winner of a short match may need none (seed 3 with the stage D weights:
-/// the USA won in 12 min without one; all fort switches off it made 4 in
-/// 14 min, so a quick win, not a stall).
+/// of every match makes refill trips; a winner of a short match (under
+/// `QUICK_WIN_MIN`) may need none (seed 3 with the stage D weights: the USA
+/// won in 12 min without one; all fort switches off it made 4 in 14 min,
+/// so a quick win, not a stall). Fix F7: each faction (not player slot:
+/// the slots swap factions) makes trips over the eight matches.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
 fn ai_vs_ai_with_a_tenth_of_the_rounds_still_ends_with_refill_trips() {
+    const QUICK_WIN_MIN: u64 = 15;
+    // Trips by faction: [Germany, USA].
     let mut total = [0u32; 2];
+    let mut log = Vec::new();
     for seed in 1..=4u64 {
         for swapped in [false, true] {
             let s = ai_setup(seed, swapped, |s| {
@@ -271,19 +275,28 @@ fn ai_vs_ai_with_a_tenth_of_the_rounds_still_ends_with_refill_trips() {
             let Outcome::Won { winner } = g.outcome() else {
                 unreachable!()
             };
-            for p in 0..2 {
+            let min = w.tick() / (60 * 30);
+            for p in 0..2u8 {
                 let c = counters(&w, p);
-                total[p as usize] += c.refill_trips;
+                // Player 0 is Germany unless swapped.
+                let usa = (p == 1) != swapped;
+                total[usa as usize] += c.refill_trips;
+                log.push(format!(
+                    "seed {seed} swapped {swapped} {} {} trips in {min} min",
+                    ["Germany", "USA"][usa as usize],
+                    c.refill_trips
+                ));
                 assert!(
-                    c.refill_trips > 0 || PlayerId(p) == winner,
-                    "seed {seed} swapped {swapped}: the losing player {p} made no refill trip"
+                    c.refill_trips > 0 || (PlayerId(p) == winner && min < QUICK_WIN_MIN),
+                    "seed {seed} swapped {swapped}: player {p} made no refill trip in {min} min \
+                     (winner {winner:?}): {log:?}"
                 );
             }
         }
     }
     assert!(
         total.iter().all(|&t| t > 0),
-        "each player makes refill trips over the eight matches: {total:?}"
+        "each faction makes refill trips over the eight matches [Germany, USA]: {total:?} {log:?}"
     );
 }
 
