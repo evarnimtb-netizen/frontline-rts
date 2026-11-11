@@ -118,3 +118,30 @@ of the wire under the trench and nest fire and the placing windup drops; the att
 not the nest. Needs a suppress-the-nest step, smoke, or a placing rule under fire. (2) One Bangalore's 4 m gap is
 narrower than a squad column (stretched pace). (3) Build-menu key ` is a stand-in (all letters taken): owner
 decision. (4) Enemy sites/charges show within sight only; structure selection still S6-18.
+
+## Fix (review findings S1-S17)
+
+**No layout change** (SAVE 22, PROTOCOL 13). Each fix has a test that failed on `3e95afc` code (checked by reverse-applying the sim diff).
+S1 carried kg trimmed on casualties and squad loss (`trim_carried` in `kill` and `fort_tick`; lost, no counter): `carried_kg_follow_casualties_and_save`.
+S2 `make_wreck` clears `material_g`: `wrecked_truck_loses_its_material_and_saves`. S3 base auto-load room counts material
+(only when `material_g > 0`): `truck_auto_load_counts_its_material`. S4 every Fortify point on the map (facing point too:
+`BadSpot`); the bridge turns/clamps the facing point onto the map: `point_fortify_refuses_an_off_map_facing_point`, bridge test.
+S5 validate rejects Dig without pit, over_hq without hq (and hq on others), a point work without 2 points; the `expect`
+became a removal: `load_rejects_a_dig_step_without_a_pit_and_the_tick_never_panics`. S6 removed work sets its builder
+Idle: `roof_work_whose_hq_goes_sets_its_builder_idle`. S16 called-off placing: carrier rejoins (`placing_called_off`):
+`called_off_bangalore_carrier_rejoins_his_squad`. S15 slope on base ground, lines sampled every 4 m:
+`slope_reads_the_undug_ground_along_lines` (the trench-wall case left `fortify_refused_at_cap_...`).
+S7 `fly_thrown` stops at piece boxes not the thrower's: on a top face it rests and bursts there, on a side it drops short
+(skipped without pieces): `dugout_roof_breaks_under_a_satchel` (rewritten: from above, burst on the roof, men untouched),
+`a_grenade_on_a_dugout_roof_hurts_nobody_inside` (+ open-pit control); the CLI roof row drops the satchel from 2 m over the roof.
+S8 `fort_off` now sends every hook down its pre-S10a path; `empty_fort_state_changes_nothing` compares full hashes every
+second over 15 min of AI-vs-AI on the real map (asserts losses, throws, fragments). S9 `neutral.py` fails on a skirmish set
+only in BASE (test added); a 40-only NEW dir now exits 1 against `s10a-base`: use a 40-only base dir.
+S10 gap rows count ticks inside the removed span; a gap run that removed nothing makes the variant mean 0.
+S11 `load_materials` takes supply-truck squads (kg default u16::MAX); truck grid has a Materials button.
+S12-S14 tests: 81 mm exact roof damage + open-pit control; `a_wall_piece_covers_a_man_from_overpressure`; rifle volley
+controls (no wall, thin wall); `hq_roof_refused_over_an_already_roofed_hq`. CLI `survived_81mm_pct` needs 0 < hp < full.
+S17 left open: a tried "no added crossing" smoothing rule had no failing test (the hidden-gap case makes A* cross anyway).
+**Checks** (on the fix head): `check.sh tests` 740 passed, 0 failed; bridge, check_project, test_match_view 358/358, test_net_ui
+143/143, test_data_reload 21/21, golden 46/46, validate ok, settings.cfg unchanged; 40 set `skirmish40.json: same 40/40`;
+fortify10 T91a-c, T92a-c pass, T93a-b miss (report), `10 pass, 2 miss (hard: 0)`.
