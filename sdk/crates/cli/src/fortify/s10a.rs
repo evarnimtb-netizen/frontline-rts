@@ -18,8 +18,10 @@
 //!   before (`cut_gap_speed_pct`, `blown_gap_speed_pct`).
 //! * **Roof.** A dugout (pit dug and roof built at once) with five men of
 //!   a rifle squad under the roof: an 81 mm bomb of the other faction's
-//!   mortar on the roof centre (`World::drop_shell_now`), and in a fresh
-//!   world a satchel on it (`World::drop_item_now`): `survived_81mm_pct`,
+//!   mortar on the roof centre (`World::drop_shell_now`; it must damage
+//!   the roof and leave it standing), and in a fresh world a satchel
+//!   dropped from 2 m above the roof's top (`World::drop_item_now`; it
+//!   rests on the roof and bursts there): `survived_81mm_pct`,
 //!   `sheltered_losses`, `broken_heavy_pct`.
 //! * **Breach.** The fortify trench with a rifle squad, an MG team in an
 //!   MG nest [`NEST_DY`] beside it and 30 m of wire [`BREACH_WIRE_M`] out,
@@ -74,7 +76,8 @@ pub struct S10aReport {
 pub struct WireExperiment {
     pub name: &'static str,
     pub runs: Vec<WireRun>,
-    /// Means over the runs of each variant (0 when no run measured it).
+    /// Means over the runs of each variant (0 when any run measured
+    /// nothing: a cut or blown run that removed no section counts so).
     pub inside_speed_pct: f64,
     pub cut_gap_speed_pct: f64,
     pub blown_gap_speed_pct: f64,
@@ -96,7 +99,9 @@ pub struct WireRun {
     pub crossing_mps: f64,
     /// Ticks measured for `crossing_mps`.
     pub crossing_ticks: u32,
-    /// `crossing_mps` as a percentage of `outside_mps` (None: not measured).
+    /// `crossing_mps` as a percentage of `outside_mps` (None: not measured,
+    /// or a cut or blown run that opened no gap). Gap runs count only
+    /// ticks within the removed sections' span.
     pub speed_pct: Option<f64>,
 }
 
@@ -104,7 +109,7 @@ pub struct WireRun {
 pub struct RoofExperiment {
     pub name: &'static str,
     pub runs: Vec<RoofRun>,
-    /// Runs whose roof stood after the 81 mm bomb (%).
+    /// Runs whose roof took the 81 mm bomb and stood (hp between 0 and full; %).
     pub survived_81mm_pct: f64,
     /// Men under the roof lost to the 81 mm bombs, all runs.
     pub sheltered_losses: u32,
@@ -117,8 +122,9 @@ pub struct RoofRun {
     pub seed: u64,
     /// Faction of the dugout.
     pub sheltered: String,
-    /// Roof hit points left after the 81 mm bomb (0: broken).
+    /// Roof hit points left after the 81 mm bomb (0: broken) and before it.
     pub roof_hp_after_81mm: u32,
+    pub roof_hp_full: u32,
     pub sheltered_losses: u32,
     /// Whether the satchel broke the roof.
     pub broken_by_satchel: bool,
@@ -327,6 +333,10 @@ fn wire_run(args: &FortifyArgs, seed: u64, side: u8, variant: &'static str) -> R
         .filter(|(id, _)| !w.game().unwrap().fort().wire.contains_key(id))
         .map(|(_, s)| (s.a.y + s.b.y).div_int(2))
         .collect();
+    // The gap's span along the line (a crossing tick counts only there).
+    let span = gone.iter().fold(None, |acc: Option<(Fx, Fx)>, &y| {
+        Some(acc.map_or((y, y), |(lo, hi)| (lo.min(y), hi.max(y))))
+    });
     let walk_y = if gone.is_empty() {
         Fx::from_int(LINE_Y)
     } else {
@@ -374,7 +384,10 @@ fn wire_run(args: &FortifyArgs, seed: u64, side: u8, variant: &'static str) -> R
         let v = (to - from).length().to_f32() as f64 * hz;
         let in_band = w.game().unwrap().fort().in_wire(&forts, from);
         let x = from.x.to_f32() as f64;
-        let on_line = (x - wx as f64).abs() <= band;
+        let y = from.y.to_f32() as f64;
+        let in_gap = span
+            .is_some_and(|(lo, hi)| y >= lo.to_f32() as f64 - 1.0 && y <= hi.to_f32() as f64 + 1.0);
+        let on_line = (x - wx as f64).abs() <= band && (variant == "wire" || in_gap);
         entered |= in_band || on_line;
         if in_band {
             inside.push(v);
@@ -403,7 +416,9 @@ fn wire_run(args: &FortifyArgs, seed: u64, side: u8, variant: &'static str) -> R
         outside_mps: (out * 1000.0).round() / 1000.0,
         crossing_mps: (cross * 1000.0).round() / 1000.0,
         crossing_ticks: n as u32,
-        speed_pct: (n > 0 && out > 0.0).then(|| pct1(cross, out)),
+        // A gap variant that opened no gap measured nothing.
+        speed_pct: (n > 0 && out > 0.0 && (variant == "wire" || removed > 0))
+            .then(|| pct1(cross, out)),
     })
 }
 
@@ -474,6 +489,7 @@ fn roof_run(args: &FortifyArgs, seed: u64, own: u8) -> Result<RoofRun> {
     // The 81 mm bomb on the roof centre.
     let mut w = world(args, seed)?;
     let (roof, men) = dugout(&mut w, own)?;
+    let full = roof_hp(&w, roof);
     let mortar = mortar_of(&w, att)?;
     if !w.drop_shell_now(att, mortar, at(TRENCH_X, LINE_Y)) {
         bail!("seed {seed}: the bomb was not dropped");
@@ -496,7 +512,15 @@ fn roof_run(args: &FortifyArgs, seed: u64, own: u8) -> Result<RoofRun> {
         .iter()
         .position(|x| x.kind == ItemKind::Satchel)
         .ok_or_else(|| anyhow::anyhow!("no satchel item"))? as u16;
-    if !w.drop_item_now(thrower, satchel, at(TRENCH_X, LINE_Y), Fx::from_int(2)) {
+    // Dropped from 2 m above the roof's top: it comes to rest on the roof
+    // and bursts there.
+    let c = at(TRENCH_X, LINE_Y);
+    let q = w.game().unwrap().fort().pieces[&roof].clone();
+    let top = q.z
+        + Fx::from(w.match_setup().unwrap().forts[q.fort as usize].pieces[q.part as usize].half[2])
+            .mul_int(2);
+    let above = top + Fx::from_int(2) - w.terrain().height_at(c);
+    if !w.drop_item_now(thrower, satchel, c, above) {
         bail!("seed {seed}: the satchel was not dropped");
     }
     for _ in 0..5 * hz(&w) {
@@ -506,6 +530,7 @@ fn roof_run(args: &FortifyArgs, seed: u64, own: u8) -> Result<RoofRun> {
         seed,
         sheltered: faction(w.match_setup().unwrap(), own),
         roof_hp_after_81mm: hp_after,
+        roof_hp_full: full,
         sheltered_losses: lost,
         broken_by_satchel: roof_hp(&w, roof) == 0,
     })
@@ -744,13 +769,12 @@ pub fn s10a_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10a
             }
         }
     }
+    // A variant mean is 0 (the row fails) when any of its runs measured
+    // nothing (a gap variant that opened no gap included).
     let mean = |v: &str| {
-        let xs: Vec<f64> = wire
-            .iter()
-            .filter(|r| r.variant == v)
-            .filter_map(|r| r.speed_pct)
-            .collect();
-        if xs.is_empty() {
+        let runs: Vec<&WireRun> = wire.iter().filter(|r| r.variant == v).collect();
+        let xs: Vec<f64> = runs.iter().filter_map(|r| r.speed_pct).collect();
+        if xs.is_empty() || xs.len() < runs.len() {
             0.0
         } else {
             (xs.iter().sum::<f64>() * 10.0 / xs.len() as f64).round() / 10.0
@@ -767,7 +791,9 @@ pub fn s10a_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10a
     let roof = RoofExperiment {
         name: "dugout with five men under its roof: an 81 mm bomb, a satchel on the roof centre",
         survived_81mm_pct: pct1(
-            roof.iter().filter(|r| r.roof_hp_after_81mm > 0).count() as f64,
+            roof.iter()
+                .filter(|r| r.roof_hp_after_81mm > 0 && r.roof_hp_after_81mm < r.roof_hp_full)
+                .count() as f64,
             n,
         ),
         sheltered_losses: roof.iter().map(|r| r.sheltered_losses).sum(),
