@@ -3617,14 +3617,24 @@ impl MatchRuntime {
                     &line,
                 ));
             }
-            // S10b: the first selected `demolish` squad blows the piece
-            // nearest `target` (the sim sends its nearest satchel carrier).
+            // S10b: the first selected `demolish` squad with a satchel
+            // blows the piece nearest `target` (the sim sends its nearest
+            // satchel carrier).
             "demolish" => {
                 let Some(t) = target else { return };
                 let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                let k = ItemKind::Satchel.index();
+                let f = self.newest();
+                let satchels = |sq: u32| -> u32 {
+                    (0..f.ids.len())
+                        .filter(|&i| f.squad[i] == sq && f.owner[i] == self.local)
+                        .map(|i| f.items[i][k] as u32)
+                        .sum()
+                };
                 out.extend(crate::intents::demolish_command(
                     &self.setup,
                     &squads,
+                    satchels,
                     to_sim(t, self.half),
                 ));
             }

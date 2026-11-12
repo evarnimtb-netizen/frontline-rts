@@ -131,7 +131,8 @@ pub fn can_fortify(setup: &MatchSetup, t: u16, fort: u16) -> bool {
 }
 
 /// S10a `fortify`: the first of `squads` (`(id, type_idx)`, selection
-/// order) able to build `what`. A line blueprint takes `line` (sim xy,
+/// order) able to build `what` (one with the blueprint's own capability
+/// before an R21 half-rate one). A line blueprint takes `line` (sim xy,
 /// capped to 16 points; at least 2); a point or over-HQ blueprint takes
 /// `target` and `facing` (`[pos, pos + facing]`; `facing` defaults to
 /// east; the facing point is kept on the map: turned round at an edge,
@@ -146,7 +147,21 @@ pub fn fortify_command(
 ) -> Option<CommandKind> {
     use frontline_content::setup::FortShape;
     let fort = fort_index(setup, what)?;
-    let &(squad, _) = squads.iter().find(|s| can_fortify(setup, s.1, fort))?;
+    // A squad holding the blueprint's own capability first (full rate);
+    // an R21 half-rate one only when none is selected (review R11).
+    let bit = 1u32
+        .checked_shl(setup.forts[fort as usize].capability as u32)
+        .unwrap_or(0);
+    let own = |t: u16| {
+        setup
+            .squad_types
+            .get(t as usize)
+            .is_some_and(|ty| ty.caps & bit != 0)
+    };
+    let &(squad, _) = squads
+        .iter()
+        .find(|s| own(s.1))
+        .or_else(|| squads.iter().find(|s| can_fortify(setup, s.1, fort)))?;
     let pts: Vec<[f32; 2]> = if setup.forts[fort as usize].shape == FortShape::Line {
         if line.len() < 2 {
             return None;
@@ -309,11 +324,13 @@ pub fn clear_mines_command(
 }
 
 /// S10b `demolish`: the first of `squads` (`(id, type_idx)`) with
-/// `demolish` blows the piece nearest `at` (the sim picks the piece within
+/// `demolish` and a satchel (`satchels(squad id)`, its men's count; review
+/// R10) blows the piece nearest `at` (the sim picks the piece within
 /// `demolish_reach_m` and the nearest man with a satchel).
 pub fn demolish_command(
     setup: &MatchSetup,
     squads: &[(u32, u16)],
+    satchels: impl Fn(u32) -> u32,
     at: [f32; 2],
 ) -> Option<CommandKind> {
     use frontline_content::setup::Capability;
@@ -322,6 +339,7 @@ pub fn demolish_command(
             .squad_types
             .get(s.1 as usize)
             .is_some_and(|ty| ty.has(Capability::Demolish))
+            && satchels(s.0) > 0
     })?;
     Some(CommandKind::Demolish {
         squad: SquadId(squad),
@@ -1044,9 +1062,14 @@ mod tests {
             );
             assert!(fortify_command(&setup, &[(1, rifles)], what, &line, None, None).is_none());
         }
-        // Hedgehog: field engineers too (R21, half rate); bunker: heavy.
+        // Hedgehog: field engineers too (R21, half rate), but a selected
+        // build_heavy squad goes first (review R11: full rate; control:
+        // take the first `can_fortify` squad -> eng, SquadId(2)); bunker:
+        // heavy.
         for (what, squads, want) in [
-            ("hedgehog", vec![(1, rifles), (2, eng), (3, bau)], 2),
+            ("hedgehog", vec![(1, rifles), (2, eng), (3, bau)], 3),
+            ("hedgehog", vec![(1, rifles), (2, eng)], 2),
+            ("bunker", vec![(1, rifles), (2, eng), (3, bau)], 3),
             ("bunker", vec![(1, rifles), (3, bau)], 3),
         ] {
             let f = fort_index(&setup, what).expect(what);
@@ -1074,14 +1097,30 @@ mod tests {
             clear_mines_command(&setup, &[(4, sturm)], &lane[..1]).is_none(),
             "no drag"
         );
-        // Demolition: the first demolish squad (construction engineers cannot).
+        // Demolition: the first demolish squad with a satchel (construction
+        // engineers cannot; review R10: a demolish squad with none is
+        // passed over; control: ignore `satchels` -> SquadId(2) below).
+        let sat = |n2: u32| move |sq: u32| if sq == 2 { n2 } else { 1 };
         assert_eq!(
-            demolish_command(&setup, &[(1, rifles), (3, bau), (2, eng)], [7.0, 8.0]),
+            demolish_command(
+                &setup,
+                &[(1, rifles), (3, bau), (2, eng)],
+                sat(1),
+                [7.0, 8.0]
+            ),
             Some(CommandKind::Demolish {
                 squad: SquadId(2),
                 at: sim_to_fx([7.0, 8.0]),
             })
         );
-        assert!(demolish_command(&setup, &[(1, rifles), (3, bau)], [7.0, 8.0]).is_none());
+        assert_eq!(
+            demolish_command(&setup, &[(2, eng), (4, sturm)], sat(0), [7.0, 8.0]),
+            Some(CommandKind::Demolish {
+                squad: SquadId(4),
+                at: sim_to_fx([7.0, 8.0]),
+            })
+        );
+        assert!(demolish_command(&setup, &[(2, eng)], sat(0), [7.0, 8.0]).is_none());
+        assert!(demolish_command(&setup, &[(1, rifles), (3, bau)], sat(1), [7.0, 8.0]).is_none());
     }
 }

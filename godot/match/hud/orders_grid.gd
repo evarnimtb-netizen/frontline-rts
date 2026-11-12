@@ -170,6 +170,7 @@ var _gun := true
 var _truck := false
 ## S10a: the Build button shows in the Mission slot.
 var _build := false
+var _s10b := ""
 
 
 func bind(v: MatchView) -> void:
@@ -198,9 +199,16 @@ func update_state(_s: Dictionary) -> void:
 	for id in sel.selected_vehicles():
 		if (view.vehicles_by_id.get(id, {}).get("ammo", {}) as Dictionary).has("ap"):
 			gun = true
-	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun or build != _build:
+	# S10b: the able third-row entries (Demolish follows the satchels).
+	var s10b := ""
+	if want == "fort":
+		for id in ROW_FORT_S10B:
+			if sel.can(id):
+				s10b += String(id) + ","
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun or build != _build or s10b != _s10b:
 		_size = size
 		_build = build
+		_s10b = s10b
 		grid_mode = want
 		_pzf_slot = pzf
 		_mounted = mounted

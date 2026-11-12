@@ -1696,17 +1696,52 @@ func _test_s10b() -> void:
 	_click(_ground_screen(at + Vector3(4, 0, 10)))
 	_rclick(_ground_screen(at + Vector3(4, 0, 10)))
 	var cm: Variant = _last(&"clear_mines")
-	_check(cm != null and (cm.polyline as PackedVector3Array).size() == 2, "S10b: right-click sends clear_mines with the lane's ends")
+	# Review R14: the lane runs from the first click to the last.
+	var lane := PackedVector3Array() if cm == null else (cm.polyline as PackedVector3Array)
+	var flat := func(v: Vector3) -> Vector2: return Vector2(v.x, v.z)
+	var lane_ok: bool = lane.size() == 2 and flat.call(lane[0]).distance_to(flat.call(at)) < 0.5 and flat.call(lane[1]).distance_to(flat.call(at + Vector3(4, 0, 10))) < 0.5
+	_check(lane_ok, "S10b: right-click sends clear_mines from the first to the last click (%s)" % [lane])
+	# Demolish: staged satchels (review R14: the branch runs); a satchel in
+	# a squad without `demolish` does not enable it (review R10).
 	_source.set_caps(manned, ["build_structure", "demolish"])
+	for man in _source.squads[manned].men:
+		man.items["satchel"] = 0
+	var other := -1
+	for t in ["rifle", "mg", "at", "engineer"]:
+		for sid in _source.squad_ids(0, t):
+			if other == -1 and sid != manned and not _source.unit_ids(sid).is_empty():
+				other = sid
+	_check(other != -1, "S10b: a second manned squad")
+	if other != -1:
+		_source.set_caps(other, ["build_structure"])
+		_source.squads[other].men[0].items["satchel"] = 1
+		var both := PackedInt32Array([manned, other])
+		both.sort()
+		_sel.select_squads(both)
+		_view.update_state(_source.get_state())
+		await _frames(1)
+		if not _sel.fort_menu:
+			grid.press(&"build_menu")
+		grid.update_state(_view.state)
+		_check(grid.grid_mode == "fort" and grid.label_of(&"clear_mines") == "" and grid.label_of(&"demolish") == "", "S10b: no Demolish when only a non-demolish squad holds a satchel")
+		_source.squads[other].men[0].items["satchel"] = 0
+	_source.squads[manned].men[0].items["satchel"] = 1
+	_sel.select_squads(PackedInt32Array([manned]))
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	if not _sel.fort_menu:
+		grid.press(&"build_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "fort" and grid.label_of(&"demolish") == "Demolish", "S10b: Demolish for a satchel squad")
+	_intents.clear()
+	grid.press(&"demolish")
+	_click(_ground_screen(at))
+	var dm: Variant = _last(&"demolish")
+	_check(dm != null and flat.call(dm.target).distance_to(flat.call(at)) < 0.5 and Array(dm.squads).has(manned), "S10b: a click sends demolish at the clicked point (%s)" % [dm])
+	_source.squads[manned].men[0].items["satchel"] = 0
 	_view.update_state(_source.get_state())
 	grid.update_state(_view.state)
-	if _sel.item_count("satchel") > 0:
-		_check(grid.label_of(&"demolish") == "Demolish", "S10b: Demolish for a satchel squad")
-		grid.press(&"demolish")
-		_click(_ground_screen(at))
-		_check(_last(&"demolish") != null, "S10b: a click sends demolish")
-	else:
-		_check(grid.label_of(&"demolish") == "", "S10b: no Demolish without a satchel")
+	_check(grid.label_of(&"demolish") == "", "S10b: no Demolish without a satchel")
 	# The blockouts: two known mines drawn, an unknown enemy one not; a
 	# hedgehog's three bars; a bunker roof and its slit; a satchel box.
 	_source.s10_fort = {

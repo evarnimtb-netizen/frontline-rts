@@ -488,6 +488,15 @@ func panzerfaust_at(target: int) -> bool:
 
 
 ## Sum of an item over the selected men (ability button counts).
+## S10b review R10: a selected man with a satchel in a `demolish` squad (the
+## bridge sends Demolish to the first such squad).
+func _demolish_ready() -> bool:
+	for id in selected:
+		if view.item_count(view.soldiers_by_id.get(id, {}), "satchel") > 0 and squad_has_cap(view.soldier_squad(id), ["demolish"], []):
+			return true
+	return false
+
+
 func item_count(item: String) -> int:
 	var n := 0
 	for id in selected:
@@ -680,7 +689,7 @@ func can(order: StringName) -> bool:
 		&"clear_mines":
 			return fort_enabled() and _has_cap(["clear_mines"], [])
 		&"demolish":
-			return fort_enabled() and _has_cap(["demolish"], []) and item_count("satchel") > 0
+			return fort_enabled() and _demolish_ready()
 		&"load_materials":
 			# S10a: building squads carry it; selected trucks fill their room.
 			return fort_enabled() and (_has_cap(["build_structure", "place_wire"], []) or not truck_vehicles().is_empty())

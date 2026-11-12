@@ -1394,6 +1394,38 @@ mod tests {
         assert_eq!(f.extra[1].squads_called, f.extra[1].squads_called);
     }
 
+    /// S10b review R14: the frame keeps the mines the local player knows
+    /// (own, and an enemy one his side found) and drops an unknown enemy
+    /// mine, wherever it lies. Control: drop the `known` filter in `fill`
+    /// -> the unknown mine shows.
+    #[test]
+    fn frame_drops_unknown_enemy_mines() {
+        let mut w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let ap = setup
+            .forts
+            .iter()
+            .position(|f| f.id == "ww2:ap_minefield")
+            .unwrap() as u16;
+        let c = |x: i32| FxVec2::from_int(x, 300);
+        let own = w.lay_mine_now(ap, c(300), PlayerId(0)).unwrap();
+        let found = w.lay_mine_now(ap, c(310), PlayerId(1)).unwrap();
+        let hidden = w.lay_mine_now(ap, c(320), PlayerId(1)).unwrap();
+        assert!(w.edit_fort(|f| f.mines.get_mut(&found).unwrap().known |= 1));
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        let ids: Vec<u32> = f.fort.mines.iter().map(|m| m.id).collect();
+        assert!(ids.contains(&own) && ids.contains(&found), "{ids:?}");
+        assert!(!ids.contains(&hidden), "an unknown enemy mine: {ids:?}");
+        // Player 1's frame shows all three (his own).
+        let mut ctx1 = FrameCtx::new(&setup, 1);
+        f.fill(&w, &mut ctx1, 0.0, Instant::now());
+        let ids1: Vec<u32> = f.fort.mines.iter().map(|m| m.id).collect();
+        assert!(ids1.contains(&found) && ids1.contains(&hidden), "{ids1:?}");
+        assert!(!ids1.contains(&own), "{ids1:?}");
+    }
+
     #[test]
     fn events_carry_dug_tiles() {
         let mut w = test_world(false);
