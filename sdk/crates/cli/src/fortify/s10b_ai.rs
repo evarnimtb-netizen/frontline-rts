@@ -58,6 +58,23 @@
 //!   leader within [`MANNED_M`] m of the bunker centre). Exposure
 //!   `builder_alive_pct`. Control (`control.built_pct`, `control.manned_pct`):
 //!   `bunker` 0.
+//! * **Sweep** (Build D, R9, R10). For each player `p` and seed: the enemy
+//!   holds the capture point nearest `p`'s base; `p`'s rifle squad stands
+//!   [`SWEEP_RIFLE_M`] m short of it on the line from `p`'s base, its
+//!   engineers 10 m further back and 10 m aside (the line then runs through
+//!   the rifle leader, as `s10b_ai_sweep_tests::squads`: a lane on another
+//!   line misses the mines). The enemy's two-row AP field (30 m rows across
+//!   the line, mines every 2 m, rows [`AP_ROW_GAP_M`] m apart) stands
+//!   [`SWEEP_FIELD_M`] m short of the point, unknown to `p`; one enemy blast
+//!   is recorded in its first row. `drive_ai_habit(Sweep)` (engineers the
+//!   squad, the rifles `others`) until the habit ends (at most
+//!   [`SWEEP_DRIVE_S`]), then the scripted advance: the rifles are ordered
+//!   onto the point for at most [`SWEEP_ADVANCE_S`] s. `lane_swept_pct`
+//!   (the habit ended Done), `mines_lifted` (mean per run),
+//!   `attacker_mine_losses` (mean men of `p` lost to mines in the advance).
+//!   Exposure `sweep_wanted_pct` (runs with `sweep_wanted` > 0). Control
+//!   (`control.*`): `[ai.obstacles] sweep` 0 (a minute's drive, nothing
+//!   swept, the rifles walk the field).
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -107,6 +124,15 @@ pub const MANNED_M: i32 = 5;
 /// The builder card of each set, the MG card of each player.
 const BUNKER_BUILDERS: [&str; 2] = ["ger_baupioniergruppe", "usa_engineer_squad"];
 const MG_TEAMS: [&str; 2] = ["ger_smg_gruppe", "usa_lmg_squad"];
+
+/// The sweep row (module docs): the rifles' and the field's distance short
+/// of the point (m), the longest drive and advance (s).
+pub const SWEEP_RIFLE_M: i32 = 120;
+pub const SWEEP_FIELD_M: i32 = 60;
+pub const SWEEP_DRIVE_S: u64 = 600;
+pub const SWEEP_ADVANCE_S: u64 = 240;
+/// The rifle card of each player (faction order as `MEDIUM_TANKS`).
+const RIFLES: [&str; 2] = ["ger_grenadiergruppe", "usa_rifle_squad"];
 
 /// A route "priced" (left the straight line) past this many metres.
 pub const PRICED_OFF_M: i32 = 5;
@@ -223,6 +249,29 @@ pub struct BunkerRow {
     pub control: BunkerControl,
 }
 
+/// The control half of the sweep row: `sweep` 0.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SweepControl {
+    pub lane_swept_pct: Option<f64>,
+    /// Must be higher than the row's (T111j).
+    pub attacker_mine_losses: Option<f64>,
+}
+
+/// T111i/j: the AI sweeps a suspect lane before its attackers walk it.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SweepRow {
+    pub lane_swept_pct: Option<f64>,
+    /// Report: mean mines lifted per run.
+    pub mines_lifted: Option<f64>,
+    /// Mean men lost to mines in the advance, per run (Build D measure,
+    /// seeds 1-3: 3.0, control 8.0: a lane mine the sweep missed, then men
+    /// stepping out of the 4 m lane; owner question S10b-ai-D2).
+    pub attacker_mine_losses: Option<f64>,
+    /// Exposure: runs in which the AI wanted a sweep.
+    pub sweep_wanted_pct: Option<f64>,
+    pub control: SweepControl,
+}
+
 /// The S10b-ai rows (`fortify10.s10b_ai`).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S10bAiReport {
@@ -230,10 +279,11 @@ pub struct S10bAiReport {
     pub mines: MinesRow,
     pub obstacle: ObstacleRow,
     pub bunker: BunkerRow,
+    pub sweep: SweepRow,
 }
 
 /// The rows in summary order.
-const ROWS: &[&str] = &["paths", "mines", "obstacle", "bunker"];
+const ROWS: &[&str] = &["paths", "mines", "obstacle", "bunker", "sweep"];
 
 /// Summary lines, one per row.
 pub fn summary_text(r: &S10bAiReport) -> String {
@@ -591,7 +641,8 @@ pub fn s10b_ai_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S
         paths: paths_row(args, seeds.clone())?,
         mines: mines_row(args, seeds.clone())?,
         obstacle: obstacle_row(args, seeds.clone())?,
-        bunker: bunker_row(args, seeds)?,
+        bunker: bunker_row(args, seeds.clone())?,
+        sweep: sweep_row(args, seeds)?,
     })
 }
 
@@ -949,6 +1000,143 @@ pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Bun
     })
 }
 
+/// One sweep run (module docs) of player `p` with `[ai.obstacles] sweep`
+/// set: (habit ended Done, mines lifted, men lost to mines in the advance,
+/// sweep wanted).
+fn sweep_once(args: &FortifyArgs, seed: u64, p: u8, sweep: u32) -> Result<(bool, u32, u32, bool)> {
+    use frontline_sim::ai::{AiHabit, AiState, DriveArgs, HabitEnd};
+    use frontline_sim::fort::MineBlast;
+    let enemy = 1 - p;
+    let mut w = world_with(args, seed, |s| {
+        s.rules.ai.obstacles.sweep = sweep;
+    })?;
+    let (i, pt, base) = {
+        let g = w.game().unwrap();
+        let s = w.match_setup().unwrap();
+        let base = g.base_of(PlayerId(p));
+        let Some((i, q)) = s
+            .map
+            .points
+            .iter()
+            .enumerate()
+            .map(|(i, q)| (i, FxVec2::from(q.pos)))
+            .min_by_key(|(i, q)| ((*q - base).length_sq_raw(), *i))
+        else {
+            bail!("the map has no capture point");
+        };
+        (i, q, base)
+    };
+    if !w.set_point_owner(i, Some(PlayerId(enemy))) {
+        bail!("the point {i} was not staged");
+    }
+    let s = w.match_setup().unwrap();
+    let hz = s.tick_hz as u64;
+    let card = |c: &str| {
+        s.squad_type_index(&format!("ww2:{c}"))
+            .ok_or_else(|| anyhow::anyhow!("no {c} card"))
+    };
+    let (rty, ety) = (card(RIFLES[p as usize])?, card(ENGINEERS[p as usize])?);
+    let dir = (pt - base).normalize_or_zero();
+    let short = |d: FxVec2, m: i32| pt - d * Fx::from_int(m);
+    let Some(rifle) = w.spawn_squad_at(PlayerId(p), rty, short(dir, SWEEP_RIFLE_M), dir) else {
+        bail!("the rifles were not spawned");
+    };
+    let eng_at = short(dir, SWEEP_RIFLE_M + 10) + dir.perp() * Fx::from_int(10);
+    let Some(eng) = w.spawn_squad_at(PlayerId(p), ety, eng_at, dir) else {
+        bail!("the engineers were not spawned");
+    };
+    // The line through the rifle leader.
+    let dir = (pt - pos(&w, members(&w, rifle)[0])).normalize_or_zero();
+    let side = dir.perp();
+    let mut ap = Vec::new();
+    for k in 0..2 {
+        let row = short(dir, SWEEP_FIELD_M - k * AP_ROW_GAP_M);
+        let n = super::s10b::FIELD_ROW_M * 100 / AP_STEP_CM;
+        for j in 0..=n {
+            let y_cm = -super::s10b::FIELD_ROW_M * 50 + j * AP_STEP_CM + k * AP_STEP_CM / 2;
+            ap.push(row + side * Fx::from_milli(y_cm * 10));
+        }
+    }
+    lay_ids(&mut w, "ww2:ap_minefield", enemy, &ap)?;
+    let tick = w.tick();
+    w.edit_fort(|f| {
+        f.blasts.push(MineBlast {
+            pos: short(dir, SWEEP_FIELD_M),
+            owner: PlayerId(enemy),
+            tick: tick.saturating_sub(hz),
+        })
+    });
+    let mut ai = AiState::new(w.tick());
+    let drive = DriveArgs {
+        squad: Some(eng),
+        point: i,
+        others: vec![rifle],
+        ..Default::default()
+    };
+    let start = w.tick();
+    let drive_s = if sweep == 0 { 60 } else { SWEEP_DRIVE_S };
+    let mut end = None;
+    while end.is_none() && w.tick() < start + drive_s * hz {
+        end = w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Sweep, &drive);
+    }
+    let acc = |w: &World| w.game().unwrap().fort().accounts[p as usize].clone();
+    let before = acc(&w).men_lost_to_mines;
+    step_with(
+        &mut w,
+        p,
+        vec![CommandKind::Move {
+            squad: rifle,
+            target: pt,
+        }],
+    );
+    let t0 = w.tick();
+    let there = |w: &World| {
+        members(w, rifle)
+            .first()
+            .is_none_or(|&m| (pos(w, m) - pt).length() <= Fx::from_int(5))
+    };
+    while !there(&w) && w.tick() < t0 + SWEEP_ADVANCE_S * hz {
+        w.step(&[]);
+    }
+    let a = acc(&w);
+    Ok((
+        end == Some(HabitEnd::Done),
+        a.mines_lifted,
+        a.men_lost_to_mines - before,
+        ai.counters.sweep_wanted > 0,
+    ))
+}
+
+/// The sweep row (module docs).
+pub fn sweep_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<SweepRow> {
+    let (mut swept, mut lifted, mut lost, mut wanted, mut runs) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    let (mut c_swept, mut c_lost) = (0u32, 0u32);
+    for seed in seeds {
+        for p in [0u8, 1] {
+            let (s, l, m, wa) = sweep_once(args, seed, p, 1)?;
+            swept += s as u32;
+            lifted += l;
+            lost += m;
+            wanted += wa as u32;
+            let c = sweep_once(args, seed, p, 0)?;
+            c_swept += c.0 as u32;
+            c_lost += c.2;
+            runs += 1;
+        }
+    }
+    let mean = |a: u32| (runs > 0).then(|| a as f64 / runs as f64);
+    Ok(SweepRow {
+        lane_swept_pct: pct(swept, runs),
+        mines_lifted: mean(lifted),
+        attacker_mine_losses: mean(lost),
+        sweep_wanted_pct: pct(wanted, runs),
+        control: SweepControl {
+            lane_swept_pct: pct(c_swept, runs),
+            attacker_mine_losses: mean(c_lost),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,5 +1160,15 @@ mod tests {
         let args = FortifyArgs::default();
         let r = bunker_row(&args, 1..4).unwrap();
         println!("bunker {}", serde_json::to_string(&r).unwrap());
+    }
+
+    /// One-off measure of the sweep row: `cargo test --release -p
+    /// frontline-cli --lib sweep_row_one_off -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn sweep_row_one_off() {
+        let args = FortifyArgs::default();
+        let r = sweep_row(&args, 1..4).unwrap();
+        println!("sweep {}", serde_json::to_string(&r).unwrap());
     }
 }
