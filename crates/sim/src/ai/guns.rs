@@ -1451,6 +1451,7 @@ mod tests {
                 ),
                 mortar_rays: 0,
                 at_sites: Default::default(),
+                own_routes: Default::default(),
             }
             .gun_sight_samples(p, dir, &[], enemy)
         };

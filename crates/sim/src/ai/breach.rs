@@ -994,6 +994,7 @@ impl MatchState {
             ),
             mortar_rays: super::mortar::PLAN_RAYS,
             at_sites: Default::default(),
+            own_routes: Default::default(),
         }
         .drive_breach(breach, support, p)
     }

@@ -61,6 +61,16 @@ const SITE_NEAR_M: i32 = 6;
 const FACING_M: i32 = 10;
 /// The sandbag wall at a gun is this long (m; two 2 m segments).
 const WALL_LEN_M: i32 = 4;
+/// S10b-ai R5: the log barrier before a gun is this long at most (m).
+const BARRIER_LEN_M: i32 = 20;
+/// S10b-ai R5: a built bunker anchors its point's hedgehog row within this
+/// of the point (m).
+const BUNKER_NEAR_M: i32 = 40;
+/// S10b-ai `own_blocked`: an own blocking piece this near a failed own
+/// vehicle (m; spec 3 item 3).
+const OWN_BLOCKED_M: i32 = 8;
+/// S10b-ai (spec 5): another work this near an S10b job's site takes it (m).
+const SITE_TAKEN_M: i32 = 2;
 /// The wire's fallback distance when the first line is refused (m).
 const WIRE_RETRY_M: i32 = 25;
 /// A truck run gives up this long after its start beyond
@@ -409,6 +419,11 @@ impl super::Planner<'_> {
             }
             // R2: across the enemy vehicle approach.
             WorkKind::AtField => self.at_site(i),
+            // R5: the row's next free site.
+            WorkKind::Hedgehog => {
+                let p = self.hedgehog_next(i)?;
+                Some(vec![p, facing(p)])
+            }
             // S10b-ai obstacles and the bunker: their sites come in Build C.
             _ => None,
         }
@@ -444,16 +459,7 @@ impl super::Planner<'_> {
         let enemy = (0..s.players.len() as u8)
             .map(PlayerId)
             .find(|&o| o != self.me)?;
-        let roster = &s.factions[s.players[enemy.0 as usize].faction as usize].roster;
-        let vehicles: Vec<&frontline_content::vehicle::VehicleSetup> = roster
-            .iter()
-            .filter_map(|&t| s.vehicles.get(s.squad_types[t as usize].vehicle? as usize))
-            .collect();
-        let ty = vehicles
-            .iter()
-            .filter(|v| super::guns::is_armour(v.role))
-            .min_by_key(|v| v.mobility.max_slope_pct)
-            .or_else(|| vehicles.iter().min_by_key(|v| v.mobility.max_slope_pct))?;
+        let ty = self.route_vehicle(enemy)?;
         let mut scratch = crate::path::PathScratch::default();
         let way = self.gun_route(g.base_of(enemy), pos, ty, &mut scratch)?;
         let out = Fx::from_int(s.rules.ai.obstacles.at_out_m as i32);
@@ -480,6 +486,215 @@ impl super::Planner<'_> {
             walked += seg;
         }
         None
+    }
+
+    /// The vehicle type whose routes player `p`'s armour drives: its
+    /// roster's least slope-able armour, else any of its vehicles.
+    fn route_vehicle(&self, p: PlayerId) -> Option<&frontline_content::vehicle::VehicleSetup> {
+        let s = &self.g.setup;
+        let roster = &s.factions[s.players.get(p.0 as usize)?.faction as usize].roster;
+        let vehicles: Vec<&frontline_content::vehicle::VehicleSetup> = roster
+            .iter()
+            .filter_map(|&t| s.vehicles.get(s.squad_types[t as usize].vehicle? as usize))
+            .collect();
+        vehicles
+            .iter()
+            .filter(|v| super::guns::is_armour(v.role))
+            .min_by_key(|v| v.mobility.max_slope_pct)
+            .or_else(|| vehicles.iter().min_by_key(|v| v.mobility.max_slope_pct))
+            .copied()
+    }
+
+    /// S10b-ai R6: the own vehicle route of point `i` (memoised for the
+    /// plan): own base -> the point -> [`Self::route_out`] (two searches).
+    /// None: no own vehicle type or no route (nothing to keep clear).
+    fn own_route(&self, i: usize) -> Option<Vec<FxVec2>> {
+        if let Some((_, r)) = self.own_routes.borrow().iter().find(|(j, _)| *j == i) {
+            return r.clone();
+        }
+        let r = self.own_route_search(i);
+        self.own_routes.borrow_mut().push((i, r.clone()));
+        r
+    }
+
+    fn own_route_search(&self, i: usize) -> Option<Vec<FxVec2>> {
+        let g = self.g;
+        let pos: FxVec2 = g.setup.map.points.get(i)?.pos.into();
+        let ty = self.route_vehicle(self.me)?;
+        let mut scratch = crate::path::PathScratch::default();
+        let mut way = self.gun_route(g.base_of(self.me), pos, ty, &mut scratch)?;
+        if let Some(more) = self
+            .route_out(i)
+            .and_then(|to| self.gun_route(pos, to, ty, &mut scratch))
+        {
+            way.extend(more.into_iter().skip(1));
+        }
+        Some(way)
+    }
+
+    /// R6: whether footprint `foot` (a line, or one point) plus
+    /// `wreck_pad_m` lies within `own_route_m` of point `i`'s own route.
+    /// `own_route_m` 0: the rule is off (the spec's control).
+    fn on_own_route(&self, i: usize, foot: &[FxVec2]) -> bool {
+        let s = &self.g.setup;
+        let m = s.rules.ai.obstacles.own_route_m;
+        if m == 0 || foot.is_empty() {
+            return false;
+        }
+        let Some(way) = self.own_route(i) else {
+            return false;
+        };
+        let r = Fx::from_int(m as i32 + s.rules.vehicles.path.wreck_pad_m as i32);
+        let ns = crate::fort::near_segment;
+        let (c, d) = (foot[0], foot[foot.len() - 1]);
+        way.windows(2).any(|w| {
+            let (a, b) = (w[0], w[1]);
+            ns(c, a, b, r)
+                || ns(d, a, b, r)
+                || ns(a, c, d, r)
+                || ns(b, c, d, r)
+                || crate::fort::crossing(a, b - a, c, d).is_some()
+        })
+    }
+
+    /// R6 at site choice: footprint 0, else the mirrored footprint 1 once;
+    /// else an L3 refusal at footprint 0's middle, `own_route_rejects` += 1
+    /// (None).
+    fn own_route_side(&mut self, i: usize, feet: [Option<Vec<FxVec2>>; 2]) -> Option<usize> {
+        let first = feet[0].clone()?;
+        for (k, f) in feet.iter().enumerate() {
+            if let Some(f) = f
+                && !self.on_own_route(i, f)
+            {
+                return Some(k);
+            }
+        }
+        let at = (first[0] + first[first.len() - 1]).div_int(2);
+        self.ai.refuse(JobKind::Fort, at, self.tick);
+        self.ai.counters.own_route_rejects += 1;
+        self.ai.counters.s10b_refused += 1;
+        None
+    }
+
+    /// The map point nearest `at` (ties by index).
+    fn point_near(&self, at: FxVec2) -> Option<usize> {
+        let pts = &self.g.setup.map.points;
+        (0..pts.len()).min_by_key(|&j| {
+            let p: FxVec2 = pts[j].pos.into();
+            ((p - at).length_sq_raw(), j)
+        })
+    }
+
+    /// S10b-ai R5: the log barrier before a gun at `site` facing `facing`:
+    /// the blueprint length (at most `BARRIER_LEN_M`) across the arc
+    /// `obst_gun_m` out; `side` 0 centred, -1/+1 moved along itself by its
+    /// length (R6's mirrored site).
+    fn barrier_line(
+        &self,
+        fort: u16,
+        site: FxVec2,
+        facing: FxVec2,
+        side: i32,
+    ) -> Option<Vec<FxVec2>> {
+        let s = &self.g.setup;
+        let fwd = (facing - site).normalize_or_zero();
+        if fwd == FxVec2::ZERO {
+            return None;
+        }
+        let len = Fx::from(s.forts[fort as usize].max_length).min(Fx::from_int(BARRIER_LEN_M));
+        let c = site
+            + fwd * Fx::from_int(s.rules.ai.obstacles.obst_gun_m as i32)
+            + fwd.perp() * len.mul_int(side);
+        let half = fwd.perp() * len.div_int(2);
+        let line = vec![self.terrain.clamp(c - half), self.terrain.clamp(c + half)];
+        ((line[1] - line[0]).length() >= Fx::from_int(2)).then_some(line)
+    }
+
+    /// R5: what point `i`'s hedgehog row stands in front of: its built
+    /// nest, else an own built bunker near the point.
+    fn hedgehog_anchor(&self, i: usize) -> Option<FxVec2> {
+        let s = &self.g.setup;
+        if let (Some(f), Some(site)) = (
+            fort_of(s, WorkKind::Nest),
+            self.point_site(i, WorkKind::Nest, None),
+        ) && self.built_near(f, site[0])
+        {
+            return Some(site[0]);
+        }
+        let b = fort_of(s, WorkKind::Bunker)?;
+        let pos: FxVec2 = s.map.points.get(i)?.pos.into();
+        let me = self.me;
+        self.g
+            .fort
+            .pieces
+            .values()
+            .filter(|q| {
+                q.owner == me
+                    && q.fort == b
+                    && q.part == 0
+                    && near(q.pos, pos, Fx::from_int(BUNKER_NEAR_M))
+            })
+            .map(|q| q.pos)
+            .min_by_key(|&p| ((p - pos).length_sq_raw(), p.x.raw(), p.y.raw()))
+    }
+
+    /// R5: the `hedgehogs_row` sites of point `i`'s row, `hedgehog_step_m`
+    /// apart, starting `obst_work_m` in front of the anchor and running
+    /// along the trench away from its middle (`side` 1: mirrored, toward it).
+    fn hedgehog_row(&self, i: usize, side: usize) -> Option<Vec<FxVec2>> {
+        let o = &self.g.setup.rules.ai.obstacles;
+        let ([a, b], along, enemy) = self.fort_frame(i)?;
+        let anchor = self.hedgehog_anchor(i)?;
+        let mid = (a + b).div_int(2);
+        let out = (anchor - mid).dot(along) >= Fx::ZERO;
+        let dir = if out == (side == 0) {
+            along
+        } else {
+            FxVec2::ZERO - along
+        };
+        let first = anchor + enemy * Fx::from_int(o.obst_work_m as i32);
+        let step = Fx::from_int(o.hedgehog_step_m as i32);
+        Some(
+            (0..o.hedgehogs_row as i32)
+                .map(|k| self.terrain.clamp(first + dir * step.mul_int(k)))
+                .collect(),
+        )
+    }
+
+    /// How near an own hedgehog (work, piece or job) takes a row site.
+    fn hedgehog_r(&self) -> Fx {
+        Fx::from_int((self.g.setup.rules.ai.obstacles.hedgehog_step_m as i32 / 2).max(1))
+    }
+
+    /// R5 "sites fixed at the first start": the side of point `i`'s row
+    /// that has a hedgehog already (side 0 first); None: no row yet.
+    fn hedgehog_side(&self, i: usize) -> Option<usize> {
+        let f = fort_of(&self.g.setup, WorkKind::Hedgehog)?;
+        let r = self.hedgehog_r();
+        (0..2).find(|&side| {
+            self.hedgehog_row(i, side)
+                .is_some_and(|row| row.iter().any(|&p| self.fort_near(f, p, r)))
+        })
+    }
+
+    /// R5: the first free site of point `i`'s row (its fixed side, else
+    /// side 0), None when the row is full or has no anchor.
+    fn hedgehog_next(&self, i: usize) -> Option<FxVec2> {
+        let f = fort_of(&self.g.setup, WorkKind::Hedgehog)?;
+        let r = self.hedgehog_r();
+        let row = self.hedgehog_row(i, self.hedgehog_side(i).unwrap_or(0))?;
+        row.into_iter().find(|&p| !self.fort_near(f, p, r))
+    }
+
+    /// R5: the obstacles point `i` still wants (its hedgehog row).
+    fn obstacle_wants(&self, i: usize) -> Vec<WorkKind> {
+        let s = &self.g.setup;
+        let k = WorkKind::Hedgehog;
+        let ok = switched_on(s, k)
+            && s.rules.ai.obstacles.hedgehogs_row > 0
+            && fort_of(s, k).is_some()
+            && self.hedgehog_next(i).is_some();
+        if ok { vec![k] } else { Vec::new() }
     }
 
     /// The AI's wire line length: `wire_len_m`, at most the blueprint's
@@ -750,6 +965,7 @@ impl super::Planner<'_> {
         want.truncate(room);
         if s10b_on(s) {
             want.extend(self.field_wants(i));
+            want.extend(self.obstacle_wants(i));
         }
         want
     }
@@ -1469,6 +1685,7 @@ impl super::Planner<'_> {
         if s10b_on {
             self.ai
                 .drop_stale_refusals(tick, refusal_keep_ticks(&g.setup));
+            self.count_own_blocked();
         }
         let job_max = g.setup.rules.ai.obstacles.job_max_s as u64 * hz;
         let ids: Vec<SquadId> = self.ai.forts.keys().copied().collect();
@@ -1606,6 +1823,9 @@ impl super::Planner<'_> {
         if switched_on(s, WorkKind::Wall) && self.job_room(0) {
             self.start_walls(mine, known, kv, taken, &mut out);
         }
+        if switched_on(s, WorkKind::LogBarrier) && self.job_room(0) {
+            self.start_barriers(mine, known, kv, taken, &mut out);
+        }
         // T97: plan-squads on a fort job, and (fix F15) builders the
         // assign bonus held at a point that got no job, over all
         // plan-squads given infantry tasks (those on a job included).
@@ -1658,7 +1878,8 @@ impl super::Planner<'_> {
                 continue;
             }
             for k in self.point_wants(i) {
-                let (Some(fort), Some(line)) = (fort_of(s, k), self.point_site(i, k, None)) else {
+                let (Some(fort), Some(mut line)) = (fort_of(s, k), self.point_site(i, k, None))
+                else {
                     continue;
                 };
                 let site = mid_of(s.forts[fort as usize].shape, &line);
@@ -1675,8 +1896,29 @@ impl super::Planner<'_> {
                     {
                         continue;
                     }
-                    if self.recheck_plan() {
+                    if matches!(k, WorkKind::ApField | WorkKind::AtField) && self.recheck_plan() {
                         self.ai.counters.lay_sites += 1;
+                    }
+                }
+                // R6 at the row's first start (its sites are then fixed):
+                // side 0, else the mirrored row, else refused.
+                if k == WorkKind::Hedgehog
+                    && self.hedgehog_side(i).is_none()
+                    && self.can_build_any(mine, assigned, i, fort, site, known, kv, taken, out)
+                {
+                    let row = |side| self.hedgehog_row(i, side).filter(|r| !r.is_empty());
+                    let feet = [row(0), row(1)];
+                    match self.own_route_side(i, feet) {
+                        Some(1) => {
+                            let Some(p) = self.hedgehog_row(i, 1).and_then(|r| r.first().copied())
+                            else {
+                                continue;
+                            };
+                            let fwd = line[1] - line[0];
+                            line = vec![p, self.terrain.clamp(p + fwd)];
+                        }
+                        Some(_) => {}
+                        None => continue,
                     }
                 }
                 let pick = assigned
@@ -1691,6 +1933,10 @@ impl super::Planner<'_> {
                     .min_by_key(|m| (self.ai.forts.contains_key(&m.id), m.id));
                 let Some(m) = pick else { continue };
                 let id = m.id;
+                let site = mid_of(s.forts[fort as usize].shape, &line);
+                if !self.can_take(m, fort, site, known, kv) {
+                    continue;
+                }
                 if self.new_fort_job(id, fort, i as u8, line) {
                     out.push(id);
                 }
@@ -1698,6 +1944,185 @@ impl super::Planner<'_> {
                 break;
             }
         }
+    }
+
+    /// Whether a squad assigned to point `i` could take a job of `fort` at
+    /// `site` (R6's searches and refusal wait for a builder).
+    #[allow(clippy::too_many_arguments)]
+    fn can_build_any(
+        &self,
+        mine: &[Mine],
+        assigned: &[(usize, usize)],
+        i: usize,
+        fort: u16,
+        site: FxVec2,
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &[SquadId],
+    ) -> bool {
+        assigned
+            .iter()
+            .filter(|&&(_, pi)| pi == i)
+            .map(|&(j, _)| &mine[j])
+            .any(|m| {
+                !taken.contains(&m.id)
+                    && !out.contains(&m.id)
+                    && self.can_take(m, fort, site, known, kv)
+            })
+    }
+
+    /// S10b-ai R5, R6: a log barrier across the arc of each own gun in
+    /// Hold for `gun_hold_s` (one per gun), built by a builder within
+    /// `builder_reach_m` of the gun.
+    fn start_barriers(
+        &mut self,
+        mine: &[Mine],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &mut Vec<SquadId>,
+    ) {
+        let g = self.g;
+        let s = &g.setup;
+        let Some(fort) = fort_of(s, WorkKind::LogBarrier) else {
+            return;
+        };
+        let f = &s.rules.ai.fort;
+        let hz = s.tick_hz.max(1) as u64;
+        let reach = Fx::from_int(f.builder_reach_m as i32);
+        let len = Fx::from(s.forts[fort as usize].max_length).min(Fx::from_int(BARRIER_LEN_M));
+        let guns: Vec<(FxVec2, FxVec2)> = self
+            .ai
+            .guns
+            .values()
+            .filter(|j| {
+                j.phase == super::GunPhase::Hold && self.tick >= j.since + f.gun_hold_s as u64 * hz
+            })
+            .map(|j| (j.site, j.facing))
+            .collect();
+        for (site, facing) in guns {
+            if !self.s10b_room() {
+                break;
+            }
+            let Some(first) = self.barrier_line(fort, site, facing, 0) else {
+                continue;
+            };
+            let mid = (first[0] + first[1]).div_int(2);
+            // One per gun: a barrier, its work or job before it already.
+            if self.fort_near(fort, mid, len.mul_int(2))
+                || !self.under_limit(fort, &first)
+                || self.refused_here(mid)
+            {
+                continue;
+            }
+            let free = |m: &&Mine| {
+                !taken.contains(&m.id)
+                    && !out.contains(&m.id)
+                    && near(m.lead, site, reach)
+                    && self.can_take(m, fort, mid, known, kv)
+            };
+            if !mine.iter().any(|m| free(&m)) {
+                continue;
+            }
+            let Some(i) = self.point_near(site) else {
+                continue;
+            };
+            // R6: the mirrored site is the side farther from the route.
+            let alt = self.own_route(i).and_then(|way| {
+                let gap = |l: &Vec<FxVec2>| {
+                    let c = (l[0] + l[1]).div_int(2);
+                    way.iter()
+                        .map(|&p| (p - c).length_sq_raw())
+                        .min()
+                        .unwrap_or(0)
+                };
+                let a = self.barrier_line(fort, site, facing, 1);
+                let b = self.barrier_line(fort, site, facing, -1);
+                match (a, b) {
+                    (Some(a), Some(b)) => Some(if gap(&b) > gap(&a) { b } else { a }),
+                    (a, b) => a.or(b),
+                }
+            });
+            let line = match self.own_route_side(i, [Some(first), alt.clone()]) {
+                Some(0) => self.barrier_line(fort, site, facing, 0),
+                Some(_) => alt,
+                None => None,
+            };
+            let Some(line) = line.filter(|l| self.under_limit(fort, l)) else {
+                continue;
+            };
+            let at = (line[0] + line[1]).div_int(2);
+            let pick = mine
+                .iter()
+                .filter(|m| {
+                    !taken.contains(&m.id)
+                        && !out.contains(&m.id)
+                        && near(m.lead, site, reach)
+                        && self.can_take(m, fort, at, known, kv)
+                })
+                .min_by_key(|m| (self.ai.forts.contains_key(&m.id), m.id));
+            if let Some(m) = pick {
+                let id = m.id;
+                if self.new_fort_job(id, fort, NO_POINT, line) {
+                    out.push(id);
+                }
+            }
+        }
+    }
+
+    /// S10b-ai `own_blocked` (T115): own vehicles whose move failed (the
+    /// lead stands within 4 m of its served path's end, which is not its
+    /// goal: a reached path ends exactly on it) with an own `blocks_vehicles` piece within
+    /// `OWN_BLOCKED_M`; each (vehicle, piece) pair counts once, when it
+    /// first appears (`AiState::blocked_pairs`, sorted, not saved).
+    /// Nothing with `obstacles` off.
+    fn count_own_blocked(&mut self) {
+        let g = self.g;
+        let s = &g.setup;
+        if s.rules.fortify.is_none() || s.rules.ai.obstacles.obstacles == 0 {
+            return;
+        }
+        let me = self.me;
+        let r = Fx::from_int(OWN_BLOCKED_M);
+        let four = Fx::from_int(4);
+        let mut pairs: Vec<(SquadId, u32)> = Vec::new();
+        for (&id, q) in &g.squads {
+            let nav = &q.nav;
+            if q.owner != me
+                || q.members.is_empty()
+                || s.squad_types[q.type_idx as usize].vehicle.is_none()
+                || nav.phase == NavPhase::PathPending
+            {
+                continue;
+            }
+            let at = self.ents.transform[q.lead(self.ents).index()].pos.xy();
+            let Some(&end) = nav.path.last() else {
+                continue;
+            };
+            if near(end, nav.goal, Fx::from_milli(500)) || !near(end, at, four) {
+                continue;
+            }
+            for (&pid, p) in &g.fort.pieces {
+                if p.owner == me
+                    && s.forts
+                        .get(p.fort as usize)
+                        .is_some_and(|d| d.blocks_vehicles)
+                    && near(p.pos, at, r)
+                {
+                    pairs.push((id, pid));
+                }
+            }
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        let old = std::mem::take(&mut self.ai.blocked_pairs);
+        let new = pairs
+            .iter()
+            .filter(|p| old.binary_search(p).is_err())
+            .count();
+        self.ai.counters.own_blocked += new as u32;
+        self.ai.blocked_pairs = pairs;
     }
 
     /// S10b-ai fortify-test hook (`AiHabit::Fort`): one plan of the S10b
@@ -1750,6 +2175,9 @@ impl super::Planner<'_> {
             let assigned = vec![(0usize, args.point)];
             let mut out = Vec::new();
             self.point_starts(&mine, &assigned, &points, &known, &kv, &[], &mut out, true);
+            if !alive(self.ai) && switched_on(&g.setup, WorkKind::LogBarrier) {
+                self.start_barriers(&mine, &known, &kv, &[], &mut out);
+            }
         }
         let end = if self.ai.counters.s10b_refused > refused {
             HabitEnd::Failed
@@ -1808,7 +2236,14 @@ impl super::Planner<'_> {
     /// (built): an own mine or piece of its blueprint within
     /// `SITE_NEAR_M` of its line's end.
     fn s10b_laid(&self, job: &AiFortJob) -> bool {
-        let Some(&end) = job.line.last() else {
+        // A point work's line is (site, facing point): its site.
+        let point = self.g.setup.forts[job.fort as usize].shape != FortShape::Line;
+        let end = if point {
+            job.line.first()
+        } else {
+            job.line.last()
+        };
+        let Some(&end) = end else {
             return false;
         };
         let me = self.me;
@@ -2091,6 +2526,24 @@ impl super::Planner<'_> {
                     set(job, FortPhase::Done);
                     return;
                 };
+                // S10b-ai (spec 5): another work landed on the site: the
+                // job ends (`ai_s10b_site_taken_ends_job`).
+                if s10b_fort(d) {
+                    let at = mid_of(d.shape, &job.line);
+                    let r = Fx::from_int(SITE_TAKEN_M);
+                    let taken = g.fort.works.iter().any(|(&k, o)| {
+                        Some(k) != job.work
+                            && near(mid_of(s.forts[o.fort as usize].shape, &o.line), at, r)
+                    }) || g
+                        .fort
+                        .pieces
+                        .values()
+                        .any(|q| q.fort != job.fort && near(q.pos, at, r));
+                    if taken {
+                        set(job, FortPhase::Done);
+                        return;
+                    }
+                }
                 // A line goes on from its first segment not yet standing.
                 let mut moved = job.tries != w.step as u8;
                 if d.shape == FortShape::Line

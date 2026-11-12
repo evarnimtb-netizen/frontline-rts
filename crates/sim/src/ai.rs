@@ -373,6 +373,11 @@ pub struct AiState {
     /// S10b-ai (R9): the next `FortState::blasts` entry the suspect check
     /// reads (clamped to the list's length on read).
     pub suspects_seen: u32,
+    /// S10b-ai `own_blocked`: the (vehicle, own blocking piece) pairs
+    /// stuck at the last plan, ascending; a pair counts when it first
+    /// appears (derived, not saved: spec Build C item 3).
+    #[serde(skip)]
+    pub blocked_pairs: Vec<(SquadId, u32)>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -690,6 +695,7 @@ impl AiState {
             demolitions: BTreeMap::new(),
             refused: Vec::new(),
             suspects_seen: 0,
+            blocked_pairs: Vec::new(),
         }
     }
 
@@ -1184,6 +1190,7 @@ impl MatchState {
                     rng: RngStream::new(self.setup.seed, tick, SimId(p as u32), Purpose::AI_PLAN),
                     mortar_rays: mortar::PLAN_RAYS,
                     at_sites: Default::default(),
+                    own_routes: Default::default(),
                 }
                 .plan();
             }
@@ -1208,6 +1215,9 @@ struct Planner<'a> {
     /// S10b-ai (R2): this plan's AT field sites by point (one vehicle path
     /// search per point per plan; derived, never saved).
     at_sites: std::cell::RefCell<Vec<(usize, Option<Vec<FxVec2>>)>>,
+    /// S10b-ai (R6): this plan's own vehicle routes by point (base -> the
+    /// point -> the nearest non-own point; derived, never saved).
+    own_routes: std::cell::RefCell<Vec<(usize, Option<Vec<FxVec2>>)>>,
 }
 
 impl Planner<'_> {
