@@ -251,3 +251,91 @@ spec `docs/slices/S10a-ai.md` 3.
   `s10.{works_started, pieces_built, pieces_lost, wire_built, wire_cut,
   wire_blown, wire_crushed, bangalores, materials_loaded_kg,
   materials_used_kg, new_cards_bought}`.
+
+## S10b: mines, AT obstacles, the bunker
+
+The mechanics half (`docs/slices/S10b-obstacles.md`); the AI uses none of it
+yet: no new blueprint has an `ai_weight` above 0 and `fort_of` never returns
+a blueprint with `mine_item` or `blocks_vehicles` (S10b-ai adds that).
+
+### Minefields and mine items
+
+* A minefield is a line blueprint with `mine_item = "<item id>"` and no
+  `pieces`: one mine at each segment end (`segment_cm`), `materials_kg` and
+  `work_s` x `work_men` per mine, `limit_per_player` counts mines. Shipped:
+  `ap_minefield` (200 cm, 30 m, 4 kg, 20 s x 2 men, 60 mines) and
+  `at_minefield` (400 cm, 40 m, 9 kg, 30 s x 2 men, 30 mines), both
+  `place_mines`.
+* A mine item has `kind = "mine"`, a `[mine]` table (`trigger = "foot"` or
+  `"vehicle"`, `trigger_cm`) and an `[he]` table like any item; it may
+  appear in no kit, crate or roster (the validator refuses that). Shipped:
+  `ap_mine` (foot, 30 cm; damage 150, blast 100 cm, 60 fragments) and
+  `at_mine` (vehicle, 40 cm; damage 400 x `vs_vehicle_pct` 100, blast
+  150 cm, more than a track's 100 hp).
+* Rules in plain words: an AP mine goes off when an enemy man on foot (not
+  riding) comes within `trigger_cm`; vehicles never set it off (R3). An AT
+  mine goes off when the mine is within `trigger_cm` of an enemy vehicle's
+  track centreline or a wheel; men never set it off (R4); its burst breaks
+  the tracks over it (R5). Own and allied units never set off own mines,
+  and a burst belongs to the mine's owner (R7). A sweeping man finds a mine
+  his side does not know within `detect_cm` with `detect_pct_per_s` a
+  second (R8); up to two sweepers walk the lane at `sweep_speed_pct` of
+  walking speed, the lane at most `lane_max_m` long and `lane_half_cm` to
+  each side (R9); a sweeper never steps on a mine his side knows, the
+  nearest one lifts it in `lift_s` at the tier's `cut_pct` (field 100,
+  assault 200, construction 50; x0.3 suppressed, nothing pinned) (R10,
+  R11). Any HE burst with a clear line sets off mines within its blast
+  radius on the next tick, Bangalores included (R12). A mine that went off
+  is known to everyone; a found one to the finder's team only (R13).
+
+### Obstacles and the bunker
+
+* `blocks_vehicles = true` on a blueprint: each piece's box plus the wreck
+  pad blocks vehicle path nodes (tracked and wheeled) while it stands;
+  infantry walks through at full pace (R16, R17). Shipped: `hedgehog`
+  (point, `build_heavy`, one `steel` piece 180x180x130 cm, armour 2000,
+  hp 600, 60 kg, 60 s x 4 men, 20 a player, 3 m apart) and `log_barrier`
+  (line, `build_structure`, `timber` pieces 400x80x100 cm, armour 100,
+  hp 400, 100 kg and 120 s x 4 men a segment, 20 m, 10 segments).
+* `pieces` may hold 1 to 6 pieces (was 4). The `bunker` (point,
+  `build_heavy`, pit `bunker_pit` 350x300x150 cm without a spoil bank,
+  250 kg, 540 s x 5 men, 2 a player, 30 m apart, slope 15 %) has six:
+  0 the roof 420x370x80 cm on top (hp 1000; three 81 mm bombs and a satchel
+  do not break it, seven AP shots do), 1 the rear wall, 2 and 3 the side
+  walls, 4 and 5 the front walls (timber, hp 600, armour 100), which leave
+  the slit: 79 cm wide and 40 cm high above the undug surface, facing the
+  blueprint's facing. All pieces stand on the site's undug surface.
+* No minefield, obstacle or bunker site within `vehicle_clear_m` of a
+  vehicle hull (`BadSpot`, R18).
+* `build_heavy` blueprints: a `build_structure` squad without
+  `build_heavy` builds them at `heavy_by_field_pct` of its rate (R21).
+
+### Demolition
+
+`Demolish { squad, at }`: the nearest squad man with a `satchel` walks to
+1.5 m of the piece nearest `at` (within `demolish_reach_m`), works
+`demolish_place_s`, lays the satchel as a charge (used up) that bursts
+`demolish_fuse_s` later. The piece takes `demolish_pct` of the charge's
+damage (tamped; 900 from a 300 satchel); other pieces the normal rule
+(R19, R20).
+
+### New `[fortify]` keys (shipped values)
+
+`heavy_by_field_pct = 50`, `detect_cm = 150`, `detect_pct_per_s = 50`,
+`sweep_speed_pct = 25`, `lane_max_m = 50`, `lane_half_cm = 200`,
+`lift_s = 20`, `demolish_place_s = 10`, `demolish_fuse_s = 10`,
+`demolish_pct = 300`, `demolish_reach_m = 25`, `vehicle_clear_m = 6`
+(`--set` works for each).
+
+### Capabilities and cards
+
+| Capability | Gives | Shipped cards |
+|---|---|---|
+| `place_mines` | lay minefields (`Fortify`) | Pioniergruppe, US Engineers, Baupioniergruppe |
+| `clear_mines` | sweep and lift (`ClearMines`) | those three, Sturmpioniergruppe, US Assault Section |
+| `demolish` | place a satchel on a piece (`Demolish`) | Pioniergruppe, US Engineers, Sturmpioniergruppe (the cards with a satchel) |
+
+No kit, price or `ai_weight` changed. `skirmish --json` reports per faction
+`s10b` counters (mines laid, set off, blasted, found, lifted, men lost to
+mines, vehicles mined, obstacles and bunkers built, sweeps, demolitions,
+pieces demolished) and `used`; `fortify-test` adds the S10b rows (T102-T107).

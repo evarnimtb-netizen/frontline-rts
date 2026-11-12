@@ -1515,3 +1515,58 @@ the render snapshot (`FortSnapshot`, `SquadSnapshot::materials_kg`,
   tan, roof timber), wire as posts at each section end with a translucent
   band, sites as a ghost box and a ring of twelve ticks lit to the step's
   progress (amber while waiting for materials), charges as a thin pipe.
+
+## S10b: mines, AT obstacles, the bunker (mechanics half)
+
+Design: `docs/slices/S10b-obstacles.md` 1, 3, 4. The bridge fills these from
+`FortSnapshot::mines`, `ChargeSnapshot::piece`, `SquadSnapshot::clear_lane`
+and `demolish`; the mock shows only what a test stages (`s10_fort`,
+`set_caps`). The AI uses none of it yet (S10b-ai).
+
+### State keys
+
+- `fort.mines[]: {id, owner, blueprint ("ap_minefield"|"at_minefield"),
+  kind: "ap"|"at", pos: Vector3 (on the ground), known: bool}` — only mines
+  the local player knows: its team's own, ones its team found by sweeping,
+  and every one that has gone off (design 7.6, a presentation rule; the
+  bridge drops the others, the sim keeps them all).
+- `fort.charges[].piece` — the piece a demolition satchel is tamped
+  against (-1: a Bangalore).
+- `fort.pieces[].part` may be `"steel"` (hedgehog); blueprints `hedgehog`,
+  `log_barrier` (timber) and `bunker` (`roof` part 0, timber walls).
+- `squads[].clear_lane: PackedVector3Array [a, b]` and `clear_along` (m
+  from a) — an own squad sweeping; `squads[].demolish_piece` — an own
+  squad's demolition target; `order` `"clear_mines"`, `"demolish"`.
+- `squads[].capabilities` may hold `place_mines`, `clear_mines`,
+  `demolish`.
+- `rules.fortify.blueprints.<id>` gains `mine: bool` and
+  `blocks_vehicles: bool`; `rules.fortify` gains `heavy_by_field_pct,
+  lane_max_m, lift_s, demolish_place_s, demolish_fuse_s, demolish_reach_m`.
+- `events[]` `fort_refused` may carry reason `no_target`.
+
+### Intents
+
+- `fortify {what: "ap_minefield"|"at_minefield"|"log_barrier", polyline}`
+  and `{what: "hedgehog"|"bunker", target, facing}` — as S10a; a
+  `build_structure` squad may build the `build_heavy` hedgehog and bunker
+  (at `heavy_by_field_pct` of its rate).
+- `clear_mines {squads, polyline}` — the first selected `clear_mines`
+  squad sweeps the lane from the first point to the last (at most
+  `lane_max_m`).
+- `demolish {squads, target}` — the first selected `demolish` squad; the
+  sim takes the piece nearest `target` and the nearest satchel carrier.
+
+### Presenter
+
+- Orders grid "fort" mode: when the selection can use any S10b entry, the
+  third row shows the ones it can (AP mines, AT mines, Hedgehog, Logs,
+  Bunker, Clear mines, Demolish) instead of the stance strip. Line tools as
+  Wire; Clear mines takes points like a line and sends the ends; Demolish
+  clicks the piece (shown only with a satchel). Tooltips: kg, time, men,
+  capability, the limit, "Stops vehicles", and the half-rate note for a
+  field squad on a heavy blueprint.
+- `FortView`: mines as small discs (AP grey, AT dark green), drawn when
+  own or `known`; the hedgehog as three crossed steel bars; log segments as
+  timber boxes; the bunker's roof earth-brown with a dark slit box under
+  its front edge; a demolition charge as a satchel box until it bursts; an
+  own sweep lane as a dashed yellow line with a cross at `clear_along`.
