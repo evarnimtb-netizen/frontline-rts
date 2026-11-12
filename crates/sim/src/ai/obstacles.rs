@@ -264,11 +264,12 @@ impl AiState {
 }
 
 impl super::Planner<'_> {
-    /// The fortify-test hook (spec 3): one plan of habit `h` alone. Build A:
-    /// every habit ends `NotBuilt` (Build B, C and D fill them).
-    fn drive_habit(&mut self, h: AiHabit, _args: &DriveArgs) -> Option<HabitEnd> {
+    /// The fortify-test hook (spec 3): one plan of habit `h` alone. Fort:
+    /// Build B (`ai::fort::drive_fort`); Sweep and Demolish end `NotBuilt`
+    /// until Build D fills them.
+    fn drive_habit(&mut self, h: AiHabit, args: &DriveArgs) -> Option<HabitEnd> {
         match h {
-            AiHabit::Fort => Some(HabitEnd::NotBuilt),
+            AiHabit::Fort => self.drive_fort(args),
             AiHabit::Sweep => Some(HabitEnd::NotBuilt),
             AiHabit::Demolish => Some(HabitEnd::NotBuilt),
         }
@@ -313,6 +314,7 @@ impl MatchState {
                 crate::rng::Purpose::AI_PLAN,
             ),
             mortar_rays: super::mortar::PLAN_RAYS,
+            at_sites: Default::default(),
         }
         .drive_habit(h, args)
     }

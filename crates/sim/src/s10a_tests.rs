@@ -1009,6 +1009,8 @@ fn empty_fort_state_changes_nothing() {
         // S10a-ai: the fortification AI off (the S10a AI).
         let f = &mut setup.rules.ai.fort;
         (f.works, f.wire, f.breach, f.cards) = (0, 0, 0, 0);
+        // S10b-ai: its habits off too.
+        super::s10a_ai_tests::s10b_ai_off(&mut setup);
         let mut w = World::new_match(setup, 1).unwrap();
         w.state.game.as_mut().unwrap().fort_off = off;
         let mut hashes = Vec::new();

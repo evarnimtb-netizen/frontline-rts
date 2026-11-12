@@ -502,13 +502,19 @@ fn fort_of_returns_s10b_blueprints_for_new_kinds() {
     assert_eq!(id(WorkKind::Nest), "ww2:mg_nest");
 }
 
-/// The hook skeleton: each habit ends `NotBuilt` at its first plan and the
-/// world steps. Control: an arm returning `None` -> the loop runs out.
+/// The hook skeleton: each habit not yet built (Sweep, Demolish: Build D)
+/// ends `NotBuilt` at its first plan and the world steps; Fort (Build B)
+/// with no squad never ends. Control: an arm returning `None` -> the loop
+/// runs out.
 #[test]
 fn drive_ai_habit_skeleton_ends_not_built() {
     use crate::ai::{AiHabit, DriveArgs, HabitEnd};
     let mut w = ai_world();
-    for h in [AiHabit::Fort, AiHabit::Sweep, AiHabit::Demolish] {
+    let mut ai = AiState::new(w.state.tick);
+    let none = (0..10)
+        .find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Fort, &DriveArgs::default()));
+    assert_eq!(none, None, "Fort without a squad");
+    for h in [AiHabit::Sweep, AiHabit::Demolish] {
         let mut ai = AiState::new(w.state.tick);
         let t0 = w.state.tick;
         let end =
@@ -528,13 +534,50 @@ pub(crate) struct Stage {
     pub habit: crate::ai::AiHabit,
     pub args: crate::ai::DriveArgs,
     pub goal: FxVec2,
+    /// The caller-kept AI state the row starts from (a fresh one if None).
+    pub ai: Option<AiState>,
 }
 
-/// One row per job kind: the setup turns `ai_world()` into a world whose
-/// goal is unreachable for that kind (B: Fort; D: Sweep, Demolish,
-/// TruckGoal).
-type StageSetup = fn(&mut World) -> Stage;
-const LIVENESS: &[(JobKind, StageSetup)] = &[];
+/// One row per job kind: the setup builds a world whose goal is
+/// unreachable for that kind (B: Fort; D: Sweep, Demolish, TruckGoal).
+type StageSetup = fn() -> (World, Stage);
+const LIVENESS: &[(JobKind, StageSetup)] = &[(JobKind::Fort, fort_row)];
+
+/// The Fort row (Build B): an AI engineer with materials at its held,
+/// trenched point; its AP field site lies under an own tank (inside
+/// `vehicle_clear_m`), so every `Fortify` is refused (BadSpot). The match
+/// AI is taken out; the row's state keeps its trench. Control: `refused_s`
+/// 0 -> each refusal is followed by a restart the same plan (one job alive
+/// to the end: the check fails, seen).
+fn fort_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.obstacles.at_mines = 0;
+    });
+    let out = w.match_setup().unwrap().rules.ai.obstacles.ap_out_m as i32;
+    let goal = h.mid() + h.enemy * Fx::from_int(out);
+    spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        goal.x.floor_int(),
+        goal.y.floor_int(),
+    );
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
 
 /// Minutes each row runs (spec 5: 20 min).
 const LIVENESS_MIN: u64 = 20;
@@ -584,7 +627,10 @@ fn job_alive(ai: &AiState, kind: JobKind, squad: Option<SquadId>) -> bool {
 fn drive_row(w: &mut World, kind: JobKind, stage: &Stage, ticks: u64) -> Vec<Seen> {
     let near = w.match_setup().unwrap().rules.ai.obstacles.refused_m;
     let r2 = FxVec2::new(Fx::from_int(near as i32), Fx::ZERO).length_sq_raw();
-    let mut ai = AiState::new(w.state.tick);
+    let mut ai = stage
+        .ai
+        .clone()
+        .unwrap_or_else(|| AiState::new(w.state.tick));
     let mut out = Vec::with_capacity(ticks as usize);
     for _ in 0..ticks {
         let end = w.drive_ai_habit(&mut ai, PlayerId(1), stage.habit, &stage.args);
@@ -770,6 +816,7 @@ fn ai_jobs_end_and_never_reorder_a_refused_goal() {
         habit: AiHabit::Fort,
         args: DriveArgs::default(),
         goal: c(0, 0),
+        ai: None,
     };
     let tr = drive_row(&mut w, JobKind::Fort, &stage, 60);
     assert!(tr.iter().all(|s| !s.alive && s.refused_at.is_none()));
@@ -779,8 +826,7 @@ fn ai_jobs_end_and_never_reorder_a_refused_goal() {
     );
 
     for &(kind, setup) in LIVENESS {
-        let mut w = ai_world();
-        let stage = setup(&mut w);
+        let (mut w, stage) = setup();
         let s = w.match_setup().unwrap();
         let (hz, o) = (s.tick_hz as u64, s.rules.ai.obstacles.clone());
         let l = Limits {

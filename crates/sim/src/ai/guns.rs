@@ -118,7 +118,7 @@ pub struct AiGun {
 }
 
 /// Armour for the corridor: what a gun is there to stop.
-fn is_armour(r: VehicleRole) -> bool {
+pub(super) fn is_armour(r: VehicleRole) -> bool {
     matches!(
         r,
         VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
@@ -917,7 +917,7 @@ impl super::Planner<'_> {
 
     /// The vehicle route of a `ty` from `from` to `to`, start included;
     /// `None` when the search does not reach `to`.
-    fn gun_route(
+    pub(super) fn gun_route(
         &self,
         from: FxVec2,
         to: FxVec2,
@@ -1450,6 +1450,7 @@ mod tests {
                     crate::rng::Purpose::AI_PLAN,
                 ),
                 mortar_rays: 0,
+                at_sites: Default::default(),
             }
             .gun_sight_samples(p, dir, &[], enemy)
         };

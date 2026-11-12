@@ -357,10 +357,12 @@ fn wire_path_cost_report() {
 // ------------------------------------------------- layout: save, hash --
 
 /// The flat ww2 world with player 1 an AI; engineer squads get the field
-/// engineer caps (as `s10a_tests::world`).
+/// engineer caps (as `s10a_tests::world`). The S10b-ai laying habits are
+/// off ([`s10b_ai_off`]).
 fn ai_world() -> World {
     flat_world_with(1, |s| {
         s.players[1].is_ai = true;
+        s10b_ai_off(s);
         for t in s.squad_types.iter_mut() {
             if t.id.contains("engineer") {
                 t.caps |= Capability::BuildStructure.bit()
@@ -369,6 +371,13 @@ fn ai_world() -> World {
             }
         }
     })
+}
+
+/// S10b-ai: the `[ai.obstacles]` habits off (these tests are about the
+/// S10a habits; the engineers here also lay mines).
+pub(crate) fn s10b_ai_off(s: &mut frontline_content::MatchSetup) {
+    let o = &mut s.rules.ai.obstacles;
+    (o.mines, o.obstacles, o.bunker, o.sweep, o.demolish) = (0, 0, 0, 0, 0);
 }
 
 fn ai1(w: &mut World) -> &mut crate::ai::AiState {
@@ -822,6 +831,7 @@ fn held_dug(
         s.factions[f].start_squads.clear();
         // No buys: no card has a weight.
         s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);
+        s10b_ai_off(s);
         edit(s);
     });
     let (pos, line) = {
@@ -944,6 +954,7 @@ fn engineer_buys(cards: u32, secs: u64) -> [[u32; 3]; 2] {
         s.rules.ai.mix.retain(|m| m.tag == eng);
         s.rules.ai.fort.cards = cards;
         s.rules.ai.fort.works = 0;
+        s10b_ai_off(s);
         s.rules.ai.fort.wire = 0;
         s.rules.start_manpower = 100_000;
         s.rules.pop_cap = 1000;
@@ -1767,6 +1778,7 @@ fn attacked_t(
 ) -> (World, FxVec2, FxVec2) {
     let mut w = flat_world_with(threads, |s| {
         s.players[1].is_ai = true;
+        s10b_ai_off(s);
         s.map.points.truncate(1);
         s.factions.iter_mut().for_each(|f| f.start_squads.clear());
         s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);

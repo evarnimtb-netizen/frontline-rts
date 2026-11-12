@@ -1183,6 +1183,7 @@ impl MatchState {
                     quality: d.decision_quality_pct.min(100) as i64,
                     rng: RngStream::new(self.setup.seed, tick, SimId(p as u32), Purpose::AI_PLAN),
                     mortar_rays: mortar::PLAN_RAYS,
+                    at_sites: Default::default(),
                 }
                 .plan();
             }
@@ -1204,6 +1205,9 @@ struct Planner<'a> {
     /// S5b: sight-line rays the mortar planner may still cast this plan
     /// (`ai::mortar::PLAN_RAYS`).
     mortar_rays: usize,
+    /// S10b-ai (R2): this plan's AT field sites by point (one vehicle path
+    /// search per point per plan; derived, never saved).
+    at_sites: std::cell::RefCell<Vec<(usize, Option<Vec<FxVec2>>)>>,
 }
 
 impl Planner<'_> {

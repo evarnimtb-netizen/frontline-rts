@@ -993,6 +993,7 @@ impl MatchState {
                 crate::rng::Purpose::AI_PLAN,
             ),
             mortar_rays: super::mortar::PLAN_RAYS,
+            at_sites: Default::default(),
         }
         .drive_breach(breach, support, p)
     }
