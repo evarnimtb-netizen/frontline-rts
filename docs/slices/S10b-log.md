@@ -5,25 +5,18 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Fix chunk 2 stopped at the turn budget (2026-11-12); next: Fix chunk 3.** Findings in `target/s10b-review.json`
-(R1-R19 in file order). Fixed, each with a failing test first: R1-R3, R5-R7, R12, R15-R19, G1. Not started: R4, R8,
-R9, R10, R11, R13, R14.
-* R4: `staged_s10b()` in `crates/sim/tests/save_fuzz.rs` builds the staged save; still to add it to the fuzz set
-  (`fuzz_saves`, `plan` weights for `state.game.setup.forts` / `items[].mine`, `focus` for the order paths).
-* R10/R11/R14 touch `crates/godot-bridge/src/intents.rs` (`demolish_command` l.314, `fortify_command` l.139),
-  `godot/scripts/selection_controller.gd` and `godot/tools/test_match_view.gd`: the Godot checks must then run.
-* New (from R7): the slit row is now a real Demolish at the slit; it reads 100 % dead, and the same Demolish at the
-  back wall (`back_satchel_losses_pct`, T107l) also reads 100 %: a demolition charge at any bunker wall kills the
-  five inside, so the slit does not matter. Not fixed (a how-it-plays choice: owner question).
-* R5 found `tank_through` ended every run at tick 1 (`alive` is a soldier check): T105a/b and T106b were vacuous.
-  Now the tank drives: one seed gives crossed 0/0, approached 100, control 100, reached 100. T106b's number will
-  change (re-measure; it still waits for the owner).
-* New targets: T105e/f, T106d (report), T107i/j (controls), T107k/l (reports), T107m (charges laid 100).
-* Not yet run: `tools/check.sh tests`, the 40 set vs `target/s10b-base40`, fortify10 into `target/s10b-fix`.
-  Last check: `tools/check.sh quick` all ok (851 tests). Godot not touched.
-* Neutrality: R3's purpose pair and bound touch only demolition charges and charge ids >= 2^28; R12 only Demolish
-  orders; R17 only lifting; AI gives none of these (R29). Chunk 1's reasoning: R15 escape runs only near obstacle
-  pieces, G1 widens a load check, R18 is the new AP mine.
+**Fix done (chunk 3, 2026-11-12): all review findings R1-R19 and G1 fixed, each with a test seen failing first.**
+Findings in `target/s10b-review.json`. Open only by owner decision:
+* T106b (tank uses the demolished gap) still reads `gap_crossed_pct` 0 (MISS; the tank now really drives, R5).
+* A demolition charge at any bunker wall kills the five inside (slit T107d 100, uphill T107k 100, back wall
+  T107l 100): the slit does not matter. How it should play is an owner question.
+Numbers (fortify10 into `target/s10b-fix`): every T102-T107 line PASS except T106b; new T102e close passes 143,
+T104e Bangalore (blast-only count) 100, T107i/j controls 23920 hp / 45 %. 40 set vs `target/s10b-base40`:
+same 40/40. Checks: `tools/check.sh quick` all ok (856 tests), `tools/check.sh tests` all ok (881 tests),
+Godot test_match_view 379/379, check_project ok, test_net_ui 143/143, test_data_reload 21/21 (bridge rebuilt).
+Save fuzz with the staged S10b save: 9686 mutations, 0 panics, 0 unloadable. SAVE_VERSION 24, PROTOCOL 14 kept.
+Neutrality reasoning for chunk 3: CLI rows and tallies only observe (R8, R9, R13); R10/R11 change which selected
+squad the bridge picks (player intents, never AI); R14 and the grid relayout are HUD/test only.
 
 ## Plan (2026-11-11)
 
@@ -139,11 +132,13 @@ empty). Chunk 2: `c7bfe66` R5 (tank_through stops on a wreck, not `alive`; appro
 R6 (staged volleys with an armour-1 control; open-ground MG control), `1ea1390` R7 (real Demolish at the slit, both
 slope directions, back-wall control), `b6fba60` R3 (DEMO_CRATER/DEMO_FRAGMENT, charge ids < 2^28 with guards),
 `b5f458d` R17 (stand-off from the mine toward the lifter), `12bba9d` R12 (Demolish sees only visible pieces).
-Tests (control in each comment, each seen failing): save_mine_item_out_of_range_is_rejected,
-staged_s10b_save_holds_its_state, second_sweeper_lift_leaves_no_stale_lift, sweep_runs_with_zero_sweeps_counter,
-obstacle_waits_until_no_vehicle_is_on_its_nodes, vehicle_on_obstacle_nodes_drives_out,
-point_site_ignores_a_vehicle_near_its_facing_point, ap_mine_burst_does_not_break_a_track,
-save_fuzz_own_gun_boarded_while_unhitching_loads, obstacle_row_shows_the_tank_reaching_the_line,
-bunker_row_fills_every_field (R6/R7 asserts), charge_ids_stay_below_the_key_bound,
-lifter_does_not_cross_a_mine_behind_him, demolish_ignores_unseen_enemy_pieces. Code outside S10b changed:
-`VehicleState::validate`, `drive` (escape), `lay_charge` (id guard), CLI `world_with`.
+Chunk 3: `7844b15` R4 (staged S10b save in the fuzz set), `70028f9` R8 (squad walks the whole AT field, close
+passes T102e) and R9 (Bangalore counts blast set-offs only), `487c3e4` R13 (T108 `used` + works started and
+ClearMines/Demolish orders taken), `31ee326` R10/R11/R14 (Demolish to a squad with a satchel, own-capability
+squad first, grid relayout on the S10b row, Godot lane ends and Demolish path, frame mine filter).
+Tests (control in each comment, seen failing): chunks 1-2 as named in their commits; chunk 3
+fuzz_plan_reaches_s10b_state, infantry_walks_the_whole_at_field, contact_set_off_is_not_a_blast_clear,
+t108_counts_s10b_use_that_does_not_finish, s10b_intents_make_commands (updated: hedgehog to bau, satchels),
+frame_drops_unknown_enemy_mines, Godot `_test_s10b` (R10 case, lane ends, Demolish target).
+Code outside S10b changed: `VehicleState::validate`, `drive` (escape), `lay_charge` (id guard), CLI `world_with`,
+`orders_grid.gd` relayout key, `save_layout::Layout` Clone.
