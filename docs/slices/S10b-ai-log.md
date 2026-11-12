@@ -25,7 +25,7 @@ Fuzz: `staged_s10b_ai` stages a blast + `lost_on_known` (edit, not a stepped tri
 `holds()` gained "blasts", "lost_on_known". Roundtrip and the ignored mutation fuzz pass.
 Tests added (`crates/sim/src/s10b_ai_path_tests.rs`; controls seen failing): `paths_avoid_known_enemy_mines`,
 `paths_ignore_unknown_and_own_mines`, `mine_layer_matches_full_scan_after_load`, `blast_ring_keeps_32_newest`,
-`at_exposure_counts_enemy_vehicle_ticks` (in-test control). Failing tests: none. Last check: quick (see B1 below).
+`at_exposure_counts_enemy_vehicle_ticks` (in-test control). Failing tests: none. Last check: `tools/check.sh quick 72b2970` all ok (761 passed).
 Keep: `refused_near(.., refused_ticks, near_m)` takes TICKS; `drop_stale_refusals(tick, max(refused_s, 300 s) ticks)`.
 Chunks left: B 1, C 2, D 3. Owner questions S10b-ai-1..7 (spec 10).
 

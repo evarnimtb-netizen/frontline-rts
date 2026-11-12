@@ -53,11 +53,14 @@ pub struct S10bAiReport {
     pub paths: PathsRow,
 }
 
+/// The rows in summary order (Build B chunk 2 adds `mines`).
+const ROWS: &[&str] = &["paths"];
+
 /// Summary lines, one per row.
 pub fn summary_text(r: &S10bAiReport) -> String {
     let v = serde_json::to_value(r).unwrap_or_default();
     let mut out = String::new();
-    for row in ["paths"] {
+    for row in ROWS {
         out += &format!("  S10b-ai {row}: {}\n", fields(&v[row]));
     }
     out
