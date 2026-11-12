@@ -6,32 +6,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build C chunk 2 of 3 (rest of chunk 1 of the stage file).** Build C chunk 1 did the orchestrator's two items and
-stage item 4; STOP POINT 1 is NOT reached. Commits `4672951` `3b6dfb2` (+fmt) `062e5c1` (+clippy). Layout: SAVE 25,
-PROTOCOL 14 (unchanged). B's code map: "Build B chunk 1/2" below and the B2 notes (`point_site_at`, `field_wants`,
-`point_starts`, `s10b_end`, `s10b_laid`, budget `s10b_used_g`/`room_for`) in `crates/sim/src/ai/fort.rs`.
-Done: (1) `crates/sim/tests/ai_fort.rs` `ai_all_switches_off_emit_nothing_new`: "all off" now also sets the
-`[ai.obstacles]` habits to 0 (cause confirmed: only S10a switches were off, the AI laid mines); a second match with
-S10a off / S10b on must leave only S10b traces (forts, fort_jobs/refused, works, pieces, carried, accounts and walk
-runs `material_runs[2]`; asserted `material_runs[0..2]` = 0, no truck run). Binary run with `--include-ignored`: ok.
-(2) Why AI AT fields stopped no tank: vehicles drive the 4 m path grid and `at_site_search` centred the row on the
-route, so the middle mine lay under the hull's middle (tracks +-1.25 m, trigger 40 cm) and the next mines 2.75 m
-from a track; the fortify tank crossed at across 0.0 m for every seed (its 0-4 m offset does not move a grid-path
-tank). Fix: the row moves along itself by `half_gauge(ty)` (largest |y| of the route vehicle's track/wheel anchors,
-free fn before `mod tests` in fort.rs). Test `ai_at_field_catches_the_route_tank` (s10b_ai_lay_tests; seen failing
-before the fix). Fortify `s10b_ai.mines` seeds 1-5 (one-off run): tank_stopped_pct **100** (was 0), field_laid 100,
-laid_s 192, control stopped 0. Every seed crosses the same lane, so 100 % is the route-lane rate, not a spread rate;
-S10b-ai-B2a (single row vs two staggered rows) stays open on (A). 40 sets not rerun (match AT fields are rare).
-(3) Item 4: R13 `MatchState::known_obstacles(ents, me) -> Vec<u32>` and `Planner::known_obstacles()` in
-`crates/sim/src/ai/obstacles.rs` (`#[allow(dead_code)]` until D); test `ai_knows_obstacles_by_distance` (control
-`obst_seen_m` 1, seen failing).
-Left for chunk 1 of the stage file: items 1 (LogBarrier, Hedgehog row: new `point_site_at` arms, `field_wants`-like
-lists; `WorkKind::{LogBarrier,Hedgehog}` exist with `fort_of`), 2 (R6 own route, `own_route_rejects`), 3
-(`own_blocked`), 5 (liveness LogBarrier in `s10b_ai_tests.rs` table), tests `ai_builds_barrier_before_gun`,
-`ai_builds_hedgehogs_before_nest`, `ai_never_blocks_own_route`, `ai_s10b_site_taken_ends_job`; fortify row
-`s10b_ai.obstacle`; fuzz stage "staged_s10b_ai + a LogBarrier job in Watch and one standing hedgehog of a row".
-Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (771 passed); ai_fort binary ok.
-Chunks left: C 2 (rest of chunk 1, then chunk 2), D 3. Owner questions S10b-ai-1..7, S10b-ai-B2a open.
+**Next: Build C chunk 3 = stage chunk 2 (bunker R7, manning, determinism, 40 sets; STOP POINT 2).** STOP POINT 1 met.
+Commits (C1+C2): `4672951` `3b6dfb2` `062e5c1` (R13), `0441bbb` (R5/R6/own_blocked/site check + tests), `59a036f`
+(liveness LogBarrier row), `d46eac2` (fortify row `s10b_ai.obstacle`, fuzz stage). Layout: SAVE 25, PROTOCOL 14.
+Code map (`crates/sim/src/ai/fort.rs`): `route_vehicle(p)`, `own_route(i)` (memo `Planner::own_routes`, never saved),
+`on_own_route(i, foot)` (`own_route_m` 0 = rule off), `own_route_side(i, [foot0, foot1])` (L3 refusal +
+`own_route_rejects` + `s10b_refused`), `barrier_line(fort, site, facing, side)`, `start_barriers` (in `fort_start`
+after walls, and in `drive_fort`), `hedgehog_anchor(i)` (built nest, else own bunker piece within `BUNKER_NEAR_M` 40:
+chunk 2's bunker anchors rows already), `hedgehog_row(i, side)`, `hedgehog_side(i)` (fixed at the first start),
+`hedgehog_next(i)` (`point_site_at` arm), `obstacle_wants(i)` (in `point_wants`), `count_own_blocked` (in
+`fort_continue`; `AiState::blocked_pairs` is `#[serde(skip)]`), Watch site check (`SITE_TAKEN_M` 2: other works,
+pieces of other blueprints), `s10b_laid` reads a point work's first point. `point_starts`: `lay_sites` fields only.
+Tests (`crates/sim/src/s10b_ai_obst_tests.rs`, controls seen failing by mutation): `ai_builds_barrier_before_gun`,
+`ai_builds_hedgehogs_before_nest`, `ai_never_blocks_own_route`, `ai_counts_own_blocked`, `ai_s10b_site_taken_ends_job`;
+helpers `obst_world`, `gun_in_hold` (pub(crate), used by `s10b_ai_tests.rs::barrier_row`).
+Fortify `s10b_ai.obstacle` (seeds 1-3, both players, ignored test `obstacle_row_one_off` in cli `fortify/s10b_ai.rs`):
+barrier_built_pct **0** (barrier_pieces 4.0 of 5: the L1 deadline `job_max_s` 900 s ends a one-builder 20 m barrier;
+with 3600 s all 5 stand), builder_alive 100, enemy_time_in_arc_s 94.5 (control no barrier 98.6), own_blocked 0,
+control.own_blocked 0 (CONTROL-SAME: tanks path round a 20 m barrier on open ground), exposure
+enemy_tank_reached_barrier_pct 0 (unexposed: the tank never got within 10 m). The gun stands 60 m beside the point
+(`GUN_SIDE_M`): on the axis R6 refused every barrier (3 rejections a run, the own route out runs through the arc).
+Owner question S10b-ai-C1 (new): the AI barrier vs L1 (A) keep 20 m and 900 s (T112i misses), (B) 16 m barrier,
+(C) `job_max_s` 1200. S10b-ai-B2a, 1..7 open. Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (776
+passed); `ai_fort` binary with `--include-ignored` ok; save_fuzz ok. 40 sets not run this chunk (stage chunk 2 ends).
+Chunks left: C 1 (stage chunk 2), D 3.
 
 ## Plan (2026-11-12)
 
@@ -118,3 +116,15 @@ against the straight base-point line (flat map) with the field's ends on both si
 Owner question S10b-ai-B2a: one AI AT field is one 40 m row at the blueprint's 4 m step; a crossing tank sets one off
 rarely (fortify 0/10, matches 0). (A) keep the spec's single row; (B) two staggered rows per AT field.
 
+
+## Build C chunk 2 (2026-11-12; stage chunk 1 rest)
+
+Decided by default: R6 for a gun barrier uses the map point nearest the gun; its mirror is the line moved along itself
+by its length to the side farther from the route; the hedgehog row runs from in front of the anchor along the trench
+away from its middle (mirror: toward it), R6 checks the whole row once; "same builder" not enforced (`jobs_max` 1 keeps
+one job at a time); `own_route_m` 0 turns R6 off (the spec control); `own_blocked` = an own vehicle standing at its
+served path's end that is not its goal, own blocking piece within 8 m, pair counted when it first appears (the spec's
+control "barrier on the route -> own_blocked > 0" cannot happen on open ground: separate test `ai_counts_own_blocked`
+orders a tank onto its own barrier); hedgehog control is "no nest" (`hedgehogs_row` 0 is out of range 1..=16);
+liveness LogBarrier row refuses by an own tank on the site (the flat test map has no steep slope); fortify gun 60 m
+beside the point, 1500 s drive, 600 kg carried; enemy tank starts 150 m in front of the gun.
