@@ -6,28 +6,33 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build B chunk 2** (`S10b-ai-build-B.md` steps 4-6; STOP POINT 1 met, commit `af8c91d`). Build A done.
-Layout: SAVE 25 (`0ae000f`), PROTOCOL 14; no later chunk may change either. A's code map: section "Build A chunk 2".
-B1 code map: `path.rs`: `MineCost` (= `WireCost` alias), `find_foot_path(.., wire, mines, ..)`, `VehiclePathCost::mines`,
-`search_with(.., wire, mines, ..)` prices a mine step like wire, `smooth` never adds an unpriced-mine shortcut.
-`fort.rs`: `MineKey`, `MineSet { nodes, pos, r }::crosses`, `MineLayer` (`#[serde(skip)]` `FortState::mine_layer`),
-`FortState::{scan_mine_set, refresh_mine_layer, mine_set, mine_layer_fresh (cfg test)}`; `take_mines` prunes
-`blasts` (> `BLAST_KEEP_S` x tick_hz), pushes a `MineBlast` per mine gone (ring of `MAX_BLASTS`), counts
-`lost_on_known`/`own_mine_losses` on the victim's account; `MatchState::at_exposure` (`AT_EXPOSURE_M` 5).
-`game.rs` `serve_paths`: `mine_rule`/`mined` (switch on, mines stand, a request queued) -> `mines_of(player, vehicle)`.
-AI planning searches (`ai/guns.rs`, `ai/breach.rs`) pass no mines (chunk 2's AT-site `find_vehicle_path` may too).
-Fortify: `sdk/crates/cli/src/fortify/s10b_ai.rs` (`S10bAiReport { paths }`, `paths_row`, `tank_run`, `know`);
-`FortifyReport::s10b_ai`; chunk 2 adds `mines` there. s10b.rs helpers now `pub(super)` (`field`, `cross`, `lay_ids`, ...).
-Numbers (30 m AP field, 16 mines, foot 470->530): search 15 -> 56 nodes expanded, 60 -> 72 m; sim route lead 46 -> 61 m
-(20 m off line); tank over a 40 m AT row 120 -> 133 m. Fortify `--seeds 2`: paths foot_mine_losses_pct 0.0 (control
-29.5), tank_immobilised_pct 0.0 (control 50.0), priced_pct 100, routes_through_field_pct 100.
-Fuzz: `staged_s10b_ai` stages a blast + `lost_on_known` (edit, not a stepped trigger); `STAGED_MUST_HOLD`,
-`holds()` gained "blasts", "lost_on_known". Roundtrip and the ignored mutation fuzz pass.
-Tests added (`crates/sim/src/s10b_ai_path_tests.rs`; controls seen failing): `paths_avoid_known_enemy_mines`,
-`paths_ignore_unknown_and_own_mines`, `mine_layer_matches_full_scan_after_load`, `blast_ring_keeps_32_newest`,
-`at_exposure_counts_enemy_vehicle_ticks` (in-test control). Failing tests: none. Last check: `tools/check.sh quick 72b2970` all ok (761 passed).
-Keep: `refused_near(.., refused_ticks, near_m)` takes TICKS; `drop_stale_refusals(tick, max(refused_s, 300 s) ticks)`.
-Chunks left: B 1, C 2, D 3. Owner questions S10b-ai-1..7 (spec 10).
+**Next: Build C** (`S10b-ai-build-C.md`, chunk 1). Build B done (STOP POINT 2; `a7d5a2c` `667753f` `80cb53c` `eec1f21`).
+Layout: SAVE 25, PROTOCOL 14 (unchanged). B1 code map: section "Build B chunk 1" below; A's: "Build A code map".
+B2 code map (`crates/sim/src/ai/fort.rs`): `s10b_on`, `s10b_fort(d)` (mine, `blocks_vehicles` or BunkerPit blueprint),
+`habits_on` = `s10a_on` or `s10b_on` (base loads, truck runs, S10a plan counters: `s10a_on` only); `point_site_at`:
+`ApField` (R1), `AtField` -> `at_site` (memo `Planner::at_sites`, per plan) -> `at_site_search`
+(`guns::gun_route` from the enemy base, back `at_out_m`, perpendicular to that leg); `field_has`, `fields_of`,
+`recheck_plan` (stateless: one plan per `recheck_s` window), `field_wants` (appended in `point_wants`); `point_starts(.., s10b_only)` (split out of `fort_start`: `s10b_room` = `jobs_max`,
+`under_limit`, `refused_here` (L4), `lay_sites` on the recheck plan); `new_fort_job` counts `s10b_jobs` and the fixed
+300 s `refused_reorders` guard; `fort_continue`: `drop_stale_refusals`, L1 deadline, `s10b_end(job, failed)`
+(L3 refusal at the line middle, `s10b_refused`, `jobs_overdue` > 900 s + a plan), `s10b_laid`; refused S10b jobs are
+not parked (the refusal keeps the spot). Budget: `s10b_used_g` (own mines at blueprint g, gone mines at the cheapest,
+S10b works' `got_g`, S10b job squads' carry and pending loads), `s10b_room_g`, `room_for(f)`, `load_builder(sq, room)`;
+S10a's `materials_room_g` subtracts S10b grams. `drive_fort` (`AiHabit::Fort`). C adds obstacle/bunker sites as new
+`point_site_at` arms and kinds in `field_wants`-like lists; `s10b_laid` already accepts pieces; R6 own-route goes in.
+Tests: `crates/sim/src/s10b_ai_lay_tests.rs` (`held`, `squad_at`, `Held` are `pub(crate)`; the eight B tests), Fort
+liveness row `fort_row` in `s10b_ai_tests.rs` (`StageSetup` is now `fn() -> (World, Stage)`, `Stage::ai`). S10a tests
+call `s10a_ai_tests::s10b_ai_off`. Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (769 passed).
+Fortify `s10b_ai.mines` (`--seeds 5`): field_laid_pct 100 (builder_alive_pct 100, control 0), laid_s 192.5,
+tank_reached_field_pct 100, **tank_stopped_pct 0** (control 0): T110i (min 60) misses; laid_s is the same for every
+seed (the staging does not vary by seed but the tank's 0-4 m offset). Open: why no crossing tank triggers the one
+40 m row (4 m step, 40 cm trigger: ~40 % by geometry); check the track positions vs the mines (C or D).
+40 sets (`target/s10b-ai-b2-off`, `-on`): all-off `neutral.py target/s10b-base40` **same 40/40**. On-set: Germany
+22/40 = 55 % (all-off 18/40 = 45 %); mines in 55 % (ger) / 42 % (usa) of matches (7.58 / 5.85 laid a match), AT
+fields 0.03 / 0.05 a match (rare: offered on one plan per `recheck_s` and only to a builder assigned there),
+tanks stopped by mines 0.00 a match (vehicles_mined 0), refusals/re-orders 0, overdue 0, S10b materials 0.06 % of income.
+Fuzz: `staged_s10b_ai` adds an AT field job in Watch, its work (seg 3) and 3 laid mines; `holds()` "ai_at_field_watch".
+Chunks left: C 2, D 3. Owner questions S10b-ai-1..7 (spec 10); B2 adds S10b-ai-B2a (log below).
 
 ## Plan (2026-11-12)
 
@@ -97,3 +102,20 @@ clamp `suspects_seen` to `blasts.len()`. Chunks left: B 2, C 2, D 3. Owner quest
 Mine paths (R11), mine layer, blasts, sim counters, `s10b_ai.paths` row, fuzz stage. Deviations: the fuzz stage
 stages the blast by edit (stepping would fire the staged boom-tick mines); fortify field names follow the targets
 (`foot_mine_losses_pct`, plus `foot_losses`); `at_exposure_ticks` counts distinct enemy vehicles per owner per tick.
+B1 code map: `path.rs` `MineCost` (= `WireCost`), `find_foot_path(.., wire, mines, ..)`, `VehiclePathCost::mines`,
+`search_with` prices a mine step like wire, `smooth` keeps no unpriced-mine shortcut; `fort.rs` `MineKey`, `MineSet`,
+`MineLayer` (`#[serde(skip)]`), `FortState::{scan_mine_set, refresh_mine_layer, mine_set}`; `take_mines` blasts ring,
+`lost_on_known`, `own_mine_losses`; `MatchState::at_exposure`; `game.rs` `serve_paths` `mine_rule`/`mined` -> `mines_of`.
+
+## Build B chunk 2 (2026-11-12)
+
+Decided by default: S10b jobs reuse `AiFortJob` and the S10a phases; the per-plan AT site memo lives on `Planner`
+(never saved); "one search per point per `recheck_s`" is stateless (only the window's plan offers the AT field);
+`lay_sites` counts a field site offered on that plan; the S10b budget is derived from state (mines gone are priced at
+the cheapest S10b mine: a lower bound); S10a's budget leaves S10b grams out; spec control "`at_out_m` 0" is out of the
+key's range (1..=1000): the test uses 1 (field at the point, not 60 m out); the AT test checks "crosses the approach"
+against the straight base-point line (flat map) with the field's ends on both sides of it; `World::set_point_owner`
+(staging tool) added for the fortify row. Refusals seen: BadSpot (own tank on the site) in the liveness row and test.
+Owner question S10b-ai-B2a: one AI AT field is one 40 m row at the blueprint's 4 m step; a crossing tank sets one off
+rarely (fortify 0/10, matches 0). (A) keep the spec's single row; (B) two staggered rows per AT field.
+
