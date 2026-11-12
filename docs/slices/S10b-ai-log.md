@@ -6,17 +6,33 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build A chunk 1** (`S10b-ai-build-A.md`, steps 1-7, then STOP POINT 1).
-State: Plan done (2026-11-12); no code yet. Main and branch: SAVE 24, PROTOCOL 14.
-Build A's layout commit bumps SAVE to 25 once (AiState, FortState::blasts, FortAccount +4, `AiFortJob::start`,
-`[ai.obstacles]`, `[fortify]` mine path keys, `[ai.truck] refusal_memory`); PROTOCOL stays 14.
-Neutrality bases: 40 set `target/s10b-base40` (skirmish40.json of main code); full `target/s10b-verify`
-(Germany 41.67 % of 480; 373 pass, 25 miss, 6 hard incl. T106b, which is a report from now on).
-`docs/slices/targets/S10b-ai.toml` parses only after Build A chunk 2 adds `three_parts_from`, `exposure`,
-`exposure_min`, `control` to `frontline-cli targets` (until then use `S10b.toml` for old rows).
-Chunks: A 2, B 2, C 2, D 3 (one chunk is about 30 self-counted turns; stop at each STOP POINT).
-Each stage: targeted release tests through `tools/run.sh`; `tools/check.sh quick 72b2970` once per chunk end;
-every new saved field joins the staged save of `crates/sim/tests/save_fuzz.rs` in the stage that fills it.
+**Next: Build A chunk 2** (`S10b-ai-build-A.md` steps 8-12, then STOP POINT 2).
+Done (A1, layout commit `0ae000f`): SAVE 25 (the one bump), PROTOCOL 14. `tools/check.sh quick 72b2970` all ok.
+Content: `AiObstacleTuning` `[ai.obstacles]` (30 keys, `tuning.rs`, `TABLES`, `TuningRefs::ai_obstacles`,
+`AiDef/AiSetup::obstacles`); `FortTuning` += `mine_paths`, `mine_path_cost_pct`, `mine_band_foot_cm`,
+`mine_band_vehicle_cm` (serde defaults 1/2000/300/400); `AiTruckTuning::refusal_memory` (default 1). Switches all 1.
+Sim: `crates/sim/src/ai/obstacles.rs` (new): `AiSweep`, `AiDemolish`, `AiRefusal::key`, `JobKind`, `SweepPhase`
+(Go/Sweep/Done), `DemolishPhase` (Go/Charge/Repath/Done), `MAX_SWEEPS`, `MAX_DEMOLITIONS`, `MAX_REFUSED`,
+`REFUSAL_KEEP_MIN_S`, `AiState::{refuse, refused_near, drop_stale_refusals, validate_s10b}`, `AiHabit`, `DriveArgs
+{squad, point, others, at}`, `HabitEnd {Done, Failed, NotBuilt}`, `Planner::drive_habit` (each arm NotBuilt),
+`MatchState::drive_habit_plan`. `ai.rs`: `AiState::{sweeps, demolitions, refused, suspects_seen}`, 14 `AiCounters`
+(`s10b_jobs` ... `refused_reorders`). `ai/fort.rs`: `AiFortJob::start`, `WorkKind::{ApField, AtField, Hedgehog,
+LogBarrier, Bunker}` (fort_of by trigger / blocks_vehicles / BunkerPit; `switched_on` reads `[ai.obstacles]`).
+`fort.rs`: `MineBlast`, `FortState::blasts` (sorted by tick; in `is_empty`), `MAX_BLASTS`, `BLAST_KEEP_S`, 4
+`FortAccount` fields. `world.rs`: `World::{with_ai_state, drive_ai_habit}`; tests `crates/sim/src/s10b_ai_tests.rs`.
+Tests (each control seen failing): `s10b_ai_layout_roundtrips_and_hashes`, `load_rejects_bad_s10b_ai_state`,
+`refusal_memory_replaces_oldest_failure`, `fort_of_returns_s10b_blueprints_for_new_kinds`,
+`drive_ai_habit_skeleton_ends_not_built`, content `ai_obstacle_tuning_parses_and_validates`
+(`sdk/crates/content/tests/s10b_ai_content.rs`). Fuzz stage `staged_s10b_ai` in `save_fuzz.rs` (sweep, demolition
+with one piece done, two refusals, an ApField fort job with start, a blast): fuzz 0 panics, 0 unloadable.
+Semantics chunk 2+ must keep: `refused_near(kind, at, tick, refused_ticks, near_m)` takes TICKS (not s);
+`drop_stale_refusals(tick, keep_ticks)` gets max(refused_s, 300 s) in ticks; `suspects_seen` is checked only
+`<= MAX_BLASTS` and must be clamped to `blasts.len()` on read; nothing in a match calls the new code yet.
+Chunk 2 starts at step 8: `sdk/crates/cli/src/skirmish.rs` (`S10_AI`, `S10Player::ai_counters`), `json_out.rs`.
+Failing tests: none. Neutrality 40-set not run in chunk 1 (no behaviour; chunk 2 ends with it).
+Neutrality bases: 40 set `target/s10b-base40`; full `target/s10b-verify`. `targets/S10b-ai.toml` parses only
+after chunk 2 adds `three_parts_from`, `exposure`, `exposure_min`, `control` (until then `S10b.toml`).
+Chunks left: A 1, B 2, C 2, D 3. Owner questions S10b-ai-1..7 (spec 10).
 
 ## Plan (2026-11-12)
 
@@ -33,3 +49,12 @@ buys for sweepers or demolishers; vehicles avoid AT mines only, men AP only; F8 
 two 40-match control runs (`skirmish40_off`, `skirmish40_loose`) in `measure.sh`.
 Moved to later slices: own-mine avoidance (with S10b-1 (B)); per-man mine paths; chokepoint analysis; tank or
 mortar fire at obstacles and mines; presenter work. Owner questions S10b-ai-1..7 (spec 10).
+
+## Build A chunk 1 (2026-11-12, layout commit `0ae000f`)
+
+Decided by default: `refused_near` / `drop_stale_refusals` take ticks (no hz in the helper); `MineBlast` list must be
+sorted by tick on load (added to spec 6); `AiDemolish::pieces` uses `MAX_DEMOLISH_PIECES` 3; the staged-save checks
+went into `staged_s10b_save_holds_its_state` (the seed-match `MUST_HOLD` cannot reach S10b-ai state before Build B);
+`fuzz_plan_reaches_s10b_state` asserts entries (`.sweeps.{}`, `.demolitions.{}`, `.refused.[]`, `.blasts.[]`), since
+the bare names also match the new counters (`sweeps_started`, `refused_reorders`). `ablate.sh` dry run failed once on a
+stale CLI binary (old code rejects `[ai.obstacles]`); green after the rebuild.
