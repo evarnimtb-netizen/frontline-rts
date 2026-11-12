@@ -273,20 +273,19 @@ impl AiState {
 
 impl super::Planner<'_> {
     /// The fortify-test hook (spec 3): one plan of habit `h` alone. Fort:
-    /// Build B (`ai::fort::drive_fort`); Sweep: Build D (`ai::sweep`);
-    /// Demolish ends `NotBuilt` until Build D fills it.
+    /// Build B (`ai::fort::drive_fort`); Sweep and Demolish: Build D
+    /// (`ai::sweep`, `ai::demolish`).
     fn drive_habit(&mut self, h: AiHabit, args: &DriveArgs) -> Option<HabitEnd> {
         match h {
             AiHabit::Fort => self.drive_fort(args),
             AiHabit::Sweep => self.drive_sweep(args),
-            AiHabit::Demolish => Some(HabitEnd::NotBuilt),
+            AiHabit::Demolish => self.drive_demolish(args),
         }
     }
 }
 
 impl super::Planner<'_> {
     /// R13: the enemy obstacles this AI knows ([`MatchState::known_obstacles`]).
-    #[allow(dead_code)] // Build D's demolition jobs use it.
     pub(super) fn known_obstacles(&self) -> Vec<u32> {
         self.g.known_obstacles(self.ents, self.me)
     }

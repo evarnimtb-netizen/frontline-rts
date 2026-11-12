@@ -519,31 +519,22 @@ fn fort_of_returns_s10b_blueprints_for_new_kinds() {
     assert_eq!(id(WorkKind::Nest), "ww2:mg_nest");
 }
 
-/// The hook skeleton: each habit not yet built (Sweep, Demolish: Build D)
-/// ends `NotBuilt` at its first plan and the world steps; Fort (Build B)
-/// with no squad never ends. Control: an arm returning `None` -> the loop
-/// runs out.
+/// The hook skeleton: every habit is built (Fort: Build B; Sweep and
+/// Demolish: Build D); without a squad none ever ends and the world steps.
+/// Control: an arm returning `Some(NotBuilt)` -> the loop ends early (seen
+/// with Demolish before Build D filled it).
 #[test]
 fn drive_ai_habit_skeleton_ends_not_built() {
-    use crate::ai::{AiHabit, DriveArgs, HabitEnd};
+    use crate::ai::{AiHabit, DriveArgs};
     let mut w = ai_world();
-    let mut ai = AiState::new(w.state.tick);
-    let none = (0..10)
-        .find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Fort, &DriveArgs::default()));
-    assert_eq!(none, None, "Fort without a squad");
-    // Build D: Sweep is built (`ai::sweep`); without a squad it never ends.
-    let mut ai = AiState::new(w.state.tick);
-    let none = (0..10).find_map(|_| {
-        w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Sweep, &DriveArgs::default())
-    });
-    assert_eq!(none, None, "Sweep without a squad");
-    let h = AiHabit::Demolish;
-    let mut ai = AiState::new(w.state.tick);
-    let t0 = w.state.tick;
-    let end =
-        (0..10).find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), h, &DriveArgs::default()));
-    assert_eq!(end, Some(HabitEnd::NotBuilt), "{h:?}");
-    assert!(w.state.tick > t0);
+    for h in [AiHabit::Fort, AiHabit::Sweep, AiHabit::Demolish] {
+        let mut ai = AiState::new(w.state.tick);
+        let t0 = w.state.tick;
+        let none =
+            (0..10).find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), h, &DriveArgs::default()));
+        assert_eq!(none, None, "{h:?} without a squad");
+        assert!(w.state.tick > t0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +559,37 @@ const LIVENESS: &[(JobKind, StageSetup)] = &[
     (JobKind::Fort, barrier_row),
     (JobKind::Fort, bunker_row),
     (JobKind::Sweep, sweep_row),
+    (JobKind::Demolish, demolish_row),
 ];
+
+/// The Demolish row (Build D): a tank blocked inside a closed hedgehog
+/// ring and AI engineers with no satchel left, so every `Demolish` is
+/// refused (`NotAllowed`); the refusal is at the waiting tank. Control:
+/// `refused_s` 0 -> a restart each plan (the check fails, seen).
+fn demolish_row() -> (World, Stage) {
+    use super::s10b_ai_demolish_tests::blocked;
+    let b = blocked(|s| {
+        let k = frontline_content::ItemKind::Satchel.index();
+        for t in s.squad_types.iter_mut() {
+            t.members.iter_mut().for_each(|m| m.items[k] = 0);
+        }
+    });
+    let g = b.w.game().unwrap();
+    let v = g.squads[&b.tank].members[0];
+    let goal = b.w.state.entities.transform[v.index()].pos.xy();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Demolish,
+        args: crate::ai::DriveArgs {
+            squad: Some(b.eng),
+            point: 0,
+            others: vec![b.tank],
+            at: None,
+        },
+        goal,
+        ai: None,
+    };
+    (b.w, stage)
+}
 
 /// The Sweep row (Build D): an attacker, AI engineers and an enemy blast
 /// on the attack line; the caller fixes the lane end off the map, so every

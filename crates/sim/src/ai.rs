@@ -184,6 +184,7 @@ mod ammo;
 mod armour;
 mod assault;
 mod breach;
+mod demolish;
 pub(crate) mod fort;
 mod guns;
 mod mortar;
@@ -951,8 +952,10 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::Retreat { squad }
         | CommandKind::Dig { squad, .. }
         | CommandKind::FireMission { squad, .. }
-        // S10b-ai: the sweep jobs' order (no other AI habit sends it).
-        | CommandKind::ClearMines { squad, .. } => Some(*squad),
+        // S10b-ai: the sweep and demolition jobs' orders (no other AI
+        // habit sends them).
+        | CommandKind::ClearMines { squad, .. }
+        | CommandKind::Demolish { squad, .. } => Some(*squad),
         _ => None,
     }
 }
@@ -1307,6 +1310,8 @@ impl Planner<'_> {
         self.breach_continue(&mut mine, &busy);
         // S10b-ai: the sweep jobs keep their sweepers.
         self.sweep_continue(&mut mine, &busy);
+        // S10b-ai: the demolition jobs keep their squads and vehicles.
+        self.demolish_continue(&mut mine, &mut tanks, &busy);
         // S5a: refill trips, staggered per point.
         self.refills(&mut mine, &known);
         // S6: the HQ, crate runs, dry mortars to the HQ.
@@ -1341,6 +1346,9 @@ impl Planner<'_> {
         // S10b-ai: new sweep jobs take a `clear_mines` squad (R10).
         let sweeping = self.sweep_start(&mine, &assigned, &points, &hunting, None);
         hunting.extend(sweeping);
+        // S10b-ai: new demolition jobs for blocked vehicles (R14).
+        let demolishing = self.demolish_start(&mine, &mut tanks, &hunting);
+        hunting.extend(demolishing);
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );

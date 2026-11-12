@@ -150,6 +150,26 @@ fn holds(w: &World) -> Vec<&'static str> {
         }) && f.accounts.iter().any(|a| a.mines_lifted > 0),
         "ai_sweep_watch",
     );
+    // S10b-ai Build D: an AI demolition with one piece done (gone) and the
+    // charge on its next piece burning.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.demolitions.values().any(|j| {
+                    let d = j.done as usize;
+                    j.phase == frontline_sim::ai::DemolishPhase::Charge
+                        && d >= 1
+                        && j.pieces[d - 1].is_some_and(|x| !f.pieces.contains_key(&x))
+                        && j.pieces
+                            .get(d)
+                            .copied()
+                            .flatten()
+                            .is_some_and(|x| f.charges.iter().any(|c| c.piece == Some(x)))
+                })
+            })
+        }),
+        "ai_demolish_charge",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -761,6 +781,15 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
         .spawn_squad_at(PlayerId(0), tank, c(380, 330), east)
         .unwrap();
     let vehicle = w.game().unwrap().squads()[&veh_sq].members[0];
+    // Build D chunk 4: the demolition's first piece, blown already (a
+    // player-1 hedgehog built and gone); its second is `piece`, whose
+    // charge burns.
+    let hh = s_fort(w, "ww2:hedgehog");
+    let before = w.game().unwrap().fort().next_piece;
+    assert!(w.build_now(hh, &[c(390, 340), c(391, 340)], PlayerId(1)));
+    w.edit_fort(|f| {
+        f.pieces.remove(&before);
+    });
     let tick = w.tick();
     assert!(w.with_ai_state(0, |ai| {
         ai.sweeps.insert(
@@ -780,7 +809,7 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             demo,
             AiDemolish {
                 vehicle,
-                pieces: [Some(piece), None, None],
+                pieces: [Some(before), Some(piece), None],
                 done: 1,
                 start: tick,
                 since: tick,
@@ -1045,7 +1074,9 @@ fn staged_s10b_save_holds_its_state() {
 /// `+ a LogBarrier job in Watch and one standing hedgehog of a row`, Build
 /// C chunk 1. `+ a Bunker job in Watch with its pit dug`, Build C chunk 3.
 /// `+ an AiSweep in Watch mid-lane with one mine lifted`, Build D chunk 2.
-const STAGED_MUST_HOLD: [&str; 7] = [
+/// `+ an AiDemolish with one piece done and a charge burning`, Build D
+/// chunk 4.
+const STAGED_MUST_HOLD: [&str; 8] = [
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
@@ -1053,6 +1084,7 @@ const STAGED_MUST_HOLD: [&str; 7] = [
     "ai_hedgehog_row",
     "ai_bunker_watch",
     "ai_sweep_watch",
+    "ai_demolish_charge",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never

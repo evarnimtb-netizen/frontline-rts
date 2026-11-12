@@ -2861,6 +2861,9 @@ mod s10a_tests;
 #[path = "s10b_ai_bunker_tests.rs"]
 mod s10b_ai_bunker_tests;
 #[cfg(test)]
+#[path = "s10b_ai_demolish_tests.rs"]
+mod s10b_ai_demolish_tests;
+#[cfg(test)]
 #[path = "s10b_ai_lay_tests.rs"]
 mod s10b_ai_lay_tests;
 #[cfg(test)]
