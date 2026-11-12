@@ -5,30 +5,28 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build C** (`S10b-build-C.md`). Builds A and B are done.
-* Build B commits: `034fa03` (laying, `take_mines`, bursts, R18, tests), `456bed3` (place_mines on the three cards,
-  content expectations, canonical snapshot), `86f2fa1` (fortify `atmine`/`apmine` rows), plus the log/test commit.
-* Laying: `stand_segment` lays a `Mine` at the segment end when `mine_item` is set; cap = standing mines of
-  (owner, blueprint) via `mines_of`, which `fort_used` now uses for minefields. Over the cap: work removed, `Cap`.
-* R18: `MatchState::near_a_vehicle(line)` (hull or wreck centre within `vehicle_clear_m` + hull half-diagonal of any
-  segment). Called for minefields only; D (obstacles) and E (bunker) add their blueprints at the same spot in
-  `order_fortify` (`d.mine_item.is_some() && ...`).
-* Trigger: `MatchState::take_mines` (fort.rs) runs in `apply_blows` right after `take_charges`. `boom_tick == tick`
-  mines burst there too but do NOT bump `mines_set_off` (only contact does): C counts `mines_blasted` where it sets
-  `boom_tick`, and makes the mine known to all (R13) there if it wants it shown before the burst.
-* Burst key range: `Thrown.id = MINE_KEY_BASE | mine id` (`MINE_KEY_BASE` = 2^31; thrown ids and mine ids stay below
-  `MAX_ID_COUNTER` = 2^31; charges use `CHARGE_CRATER`), crater purpose `ITEM_CRATER`.
-* Counters: `vehicles_mined` (owner; a vehicle whose `immobilised()` turned true in a mine's `blast_tracks`),
-  `men_lost_to_mines` (victim's player; men dropped by a mine item's `burst`), all `saturating_add`.
-* World: refusals a tick's systems raise (`game.fort_events`) now reach that tick's `fort_refusals` (before, only on
-  the next applied command). Snapshot-only; not hashed.
-* Numbers (`target/s10b-B/fortify10.json`, 10 seeds x 2 owners): T102a 100, T102b 75.0 (geometric coverage estimate
-  78.05; the floor 75 holds at exactly 75), T102c 0, T102d 0; T103a 0, T103b 100, T103c 0, T103d 53.6 (report).
-  `targets --from-json target/s10b-B --runs fortify10`: 20 pass, 5 miss (hard 0; the misses are C-E rows still null).
-* fortify CLI: a driven tank keeps to its path-node line, so the AT field moves by the lateral offset, not the tank.
-  Tanks are spawned with `spawn_squad_at` (a call-in of the medium tank never arrived in the fortify world).
-* 40-set: `target/s10b-B/skirmish40.json` vs `target/s10b-base40`: same 40/40.
-* Checks: `tools/check.sh quick 8acc534` green after the last commit (806 tests).
+**Next: Build D** (`S10b-build-D.md`). Builds A, B and C are done.
+* Build C commits: `acd86f2` (sweep, HE hook, cards, tests), `21c19da` (fortify `sweep` row), plus the log commit.
+* Sweeping lives in `crates/sim/src/sweep.rs`: `order_clear_mines`, `sweep_tick` (called from `fort_tick` before its
+  `is_empty` return, gated by any `FortAccount::sweeps > 0`, so an empty lane still ends), `blast_mines`.
+* Detection as built: roll = top 32 bits of `mix64(rng(seed, tick, sweeper, MINE_DETECT) ^ mine id)`; found when
+  `roll * 100 * hz < detect_pct_per_s << 32` (`sweep::detects`). Sweepers: the two able members nearest the sweep
+  point `a + dir * along` (no saved field holds them); the rest hold 5 m behind `a`. Lifter's spot 1 m short of the
+  mine along the lane, every sweeper spot clamped back until clear of known mines by `trigger_cm + 50 cm`.
+* HE hook tick-order point: `combat::burst` right after the S10a `blast_wire`, before fragments (any owner's HE,
+  mines in `blast_radius` 2D with a line from the lift point to 10 cm above the mine): `boom_tick = tick + 1`,
+  `mines_blasted` on the owner, `known` = all players. `take_mines` (after `take_charges` in `apply_blows`) bursts
+  them next tick, so chains move one hop per tick.
+* Load check changed: a saved `boom_tick` may equal the saved tick (a burst on T sets T + 1 = the tick saved between
+  steps; before, such a save failed to load). The fuzz case (tick + 2) still fails.
+* `steer_squads`: a `ClearMines` squad walks at `sweep_speed_pct` in `Arriving`/`Holding` only (the walk to `a` is at
+  full pace). `guns.rs` served-crew list has `ClearMines`. `Demolish` is still refused `NotAllowed` in `game.rs`.
+* For D: `order_fortify`'s R18 call is still minefields only; `FortRefusal::NoTarget` unused so far.
+* Numbers (`target/s10b-C/fortify10.json`): T104a found_vs_expected 3.8 (found 82.0, expected 78.2), T104b lifted of
+  found 95.1, T104d sweeper losses 76 men over 20 sweeps, T104e Bangalore cleared 100. T102/T103 unchanged.
+  `targets --from-json target/s10b-C --runs fortify10`: 25 pass, 5 miss (hard 0; D-E rows null).
+* 40-set: `target/s10b-C/skirmish40.json` vs `target/s10b-base40`: same 40/40.
+* Checks: `tools/check.sh quick 8acc534` green after the last code commit (816 tests).
 
 ## Plan (2026-11-11)
 
@@ -82,3 +80,20 @@ kept on re-order), `ap_mine_goes_off_on_contact_only` (trigger 60), `ap_mine_kil
 `mine_trigger_is_deterministic` (per-run random burst key; the spec's HashMap-order control passes because one tick's
 bursts commute), `site_refused_near_a_vehicle` (vehicle_clear_m 0). Existing tests changed: `promoted_capabilities_parse`
 (the three cards gain `PlaceMines`), canonical snapshot blessed.
+
+## Build C (2026-11-12)
+
+Sweeping (R8-R11), HE sets mines off (R12, R13), `clear_mines` on the five R27 cards, the `sweep` row. Tests in
+`s10b_tests.rs`, each seen failing with its control: `sweep_finds_at_expected_rate` (sim detect 25: found 59.3 vs
+78.6), `sweeper_stops_short_of_a_found_mine` (lift spot on the mine, no clamp: lifter at 0.40 m), `lift_time_follows_tier`
+(field tier for all), `clear_mines_needs_capability` (grenadiers given the bit), `clear_ends_at_lane_end_with_no_known_mine_left`
+(end ignoring known mines), `found_mine_known_to_finder_only` (all bits on find), `burst_sets_off_mines_next_tick` (radius
+x 0.5), `bangalore_clears_mines_along_its_length` (laid 3 m short), `sweep_is_deterministic` (roll keyed by a
+process-wide counter); `sweep::tests::detection_roll_rate_is_p_per_tick` (control `<< 31` not run). Deviations: the
+rate test's expected n is the full-pass n from lane geometry with the run's pace (checked against the run's own n on
+misses): the run's n stops at a find, so `1 - (1 - p)^n` on it is biased low (47.7 vs 80 found); 1600 passes, not 400
+(at 400 the sd is 1.9 points against a 3-point bound). The fortify row uses the run's n for misses and the geometry
+for finds. The spec's determinism control (roll by tick only) stays deterministic, so another control was used. The
+Bangalore case stages its field after the lay (the carrier's walk set mines off otherwise). Existing tests changed:
+`promoted_capabilities_parse` (five cards gain `ClearMines`); canonical snapshot blessed.
+
