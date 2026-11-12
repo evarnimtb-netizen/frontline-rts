@@ -36,7 +36,7 @@ fn ai_ro(w: &World) -> &AiState {
 
 /// The held point with only the bunker habit on (no mines, obstacles, S10a
 /// works or wire); `bunker` the switch.
-fn bunker_world(
+pub(crate) fn bunker_world(
     bunker: u32,
     edit: impl FnOnce(&mut frontline_content::MatchSetup),
 ) -> (World, Held) {
@@ -51,7 +51,7 @@ fn bunker_world(
 
 /// R7's site at point 0 (even: the nest takes trench end `line[1]`, the
 /// bunker `line[0]`, `nest_offset_m` beyond it).
-fn bunker_site(w: &World, h: &Held) -> FxVec2 {
+pub(crate) fn bunker_site(w: &World, h: &Held) -> FxVec2 {
     let off = w.match_setup().unwrap().rules.ai.fort.nest_offset_m as i32;
     let [a, b] = h.line;
     a + (a - b).normalize_or_zero() * Fx::from_int(off)
@@ -60,7 +60,7 @@ fn bunker_site(w: &World, h: &Held) -> FxVec2 {
 /// A player 1 builder of `card` at the point carrying its full carry, and
 /// three 40 kg construction crates at the bunker site (250 kg is over any
 /// squad's carry: the kg at hand, `at_hand`).
-fn builder(w: &mut World, h: &Held, card: &str, at: FxVec2) -> SquadId {
+pub(crate) fn builder(w: &mut World, h: &Held, card: &str, at: FxVec2) -> SquadId {
     let site = bunker_site(w, h);
     let def = w
         .match_setup()
