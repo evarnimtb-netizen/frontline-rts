@@ -5,32 +5,25 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build E** (`S10b-build-E.md`). Builds A-D are done.
-* Build D commits: `3f98c04` (obstacles, R18/R21, Demolish, cards, tests), `0677e5c` (fortify rows), log commit.
-* Obstacles: `BlockLayer::update` gets wreck footprints then the `blocks_vehicles` piece footprints (box half, yaw;
-  the layer adds `wreck_pad_m`). `update_block` (end of tick, `refresh_hashes`) diffs the standing pieces against
-  `VehicleDerived::piece_feet` and calls `mark_piece_block` for each added or removed one, so every removal path
-  (`hit_static`, HQ roof, `edit_fort`, load) is seen; nothing new saved. No list is built without pieces.
-* R18 (`order_fortify`) now covers `mine_item`, `blocks_vehicles` and every `build_heavy` blueprint (the bunker too:
-  `MatchState::heavy_def`). R21: `build_structure` squads may take `build_heavy` blueprints; `build_rate` gives
-  tier `build_pct x heavy_by_field_pct / 100` unless the squad has `build_heavy` (Baupioniere 150). Only the S10b
-  blueprints are `build_heavy`, and the AI's `fort_of` never returns them.
-* Demolish in `crates/sim/src/demolish.rs`: `order_demolish`, `demolish_tick` (status stage, right after `fort_tick`
-  in `world.rs`, own `Ctx`; returns unless some squad has `Order::Demolish`), `demolish_piece` (R20). The burst
-  knows its piece through `Burst::piece` (not saved): `take_charges` returns `(charge id * 8, piece)` pairs for this
-  tick, matched to fused items with `thrower == SimId(u32::MAX)`. The tamped piece is hit whatever its owner, no line
-  check, and skipped by the overpressure loop. `guns.rs` served-crew list has `Demolish`.
-* For E: the bunker's satchel at the slit uses ordinary thrown satchels (no `Charge::piece`); a `Demolish` against a
-  bunker piece would take R20 (x3) on that one piece only.
-* Numbers (`target/s10b-D/fortify10.json`): T105a/b crossed 0/0, T105c infantry speed 103.5 %, T105d tank reached 0
-  (on the fortify map the tank does not reach a point 60 m behind in 120 s; in the flat test world it drives round a
-  30 m hedgehog line's end in about 19 s), T106a destroyed 100, T106c charge laid 15.6 s, **T106b gap crossed 0
-  (hard miss)**: with 3 m spacing one hedgehog gone leaves no way: a hedgehog blocks nodes within 0.9 + 2 m (pad)
-  of its centre, dilated one 4 m node, plus the margin band; a tank first got through with 5 adjacent hedgehogs gone
-  (18 m between standing centres; 1-4 gone: no way). Owner question in the report; T106b left as is.
-  `targets --from-json target/s10b-D --runs fortify10`: 31 pass, 6 miss (hard 1: T106b).
-* 40-set: `target/s10b-D/skirmish40.json` vs `target/s10b-base40`: same 40/40.
-* Checks: `tools/check.sh quick 8acc534` green after the last code commit (825 tests).
+**Next: Build F** (`S10b-build-F.md`). Builds A-E are done.
+* Build E commits: `8c8c6f1` (bunker geometry, `bunkers_built`, pit parapet 0, eight tests), `416db5f` (bunker row
+  in `sdk/crates/cli/src/fortify/bunker.rs`, base pieces on the site's surface, slope test), log commit.
+* Bunker as built (draw this): pieces in part order 0 roof 420x370x80 cm at z 40; 1 rear wall 40x370x40 at x -190;
+  2/3 side walls 420x40x40 at y -165/+165; 4/5 front walls 40x145x40 at x +190, y -112/+112 (the 79 cm slit at y 0
+  between z 0 and 40). +x = facing; every z from the undug surface at the site (all six on one plane now: `fort.rs`
+  `stand_segment` uses `base_height_at(site)` for `z_from = "base"`; the S10a roofs have offset 0, unchanged).
+  The pit (`bunker_pit`) has no spoil bank (parapet 0): a 40 cm bank filled the 40 cm slit.
+* `bunkers_built` +1 when a `bunker_pit` blueprint's build step completes (`stand_segment`).
+* T107 on the fortify map: the row's bunker faces west, down the site's ~8 % slope (facing up it, the lip in the slit
+  is 14 cm above the slit's bottom and the satchel's blast origin, lifted 30 cm, is inside the roof: 0 %).
+* MG and rifle fire do not reach men crouched in the 1.5 m pit, with or without the bunker (T107g/h 0/0, report).
+* Numbers (`target/s10b-E/fortify10.json`): T107a 0, b 100, c 0, d 100, e 0, f 7, g 0, h 0. `targets --from-json
+  target/s10b-E --runs fortify10`: 39 pass, 6 miss (hard 1: T106b gap 0, owner question from D; the others are the
+  T93 reports). T91-T93 rows same as `target/s10a-ai-verify` (`neutral.py`: fortify10 same every BASE row).
+* T102-T107: T102a-d pass (100, 75, 0, 0), T103a-d pass (0, 100, 0, 53.6), T104a-e pass (3.8, 95.1, 82, 76, 100),
+  T105a-d pass (0, 0, 103.5, 0), T106a pass 100, **T106b miss 0 (hard)**, T106c 15.6, T107a-h pass.
+* 40-set: `target/s10b-E/skirmish40.json` vs `target/s10b-base40`: same 40/40.
+* Checks: `tools/check.sh quick 8acc534` green after the last code commit (835 tests).
 
 ## Plan (2026-11-11)
 
@@ -115,4 +108,17 @@ nine hedgehogs, not one (one gap never opens a way, see T106b); the log line's b
 sit half way between two nodes, the wheeled layer's raw node there is 4.0001 m from the last piece); the tamped
 piece takes R20 whatever its owner (the order may target any owner's piece; the S6 overpressure spares own boxes).
 Existing tests changed: `promoted_capabilities_parse` (three cards gain `Demolish`); canonical snapshot blessed.
+
+## Build E (2026-11-12)
+
+The bunker (R21-R24, R26) and the `bunker` row. Tests in `s10b_tests.rs`: `bunker_digs_pit_then_builds_six_pieces`
+(five-piece def: 5 vs 6, seen), `bunker_needs_build_heavy_or_half_rate_field`, `small_arms_do_not_damage_bunker`,
+`bunker_roof_survives_three_81mm`, `roof_satchel_kills_nobody_inside`, `satchel_at_slit_reaches_men_inside`,
+`ap_shots_break_the_roof_after_seven`, `bunker_saves_loads_and_hashes` (each runs its control in-test: heavy 100,
+armour 1, roof 400 / 250, slit closed, `shot_piece_damage` 100, dropped piece), `bunker_pieces_share_one_base_on_a_slope`
+(per-piece base: fails, seen); CLI `bunker_row_fills_every_field` (control: default row). Deviations: the def's
+pieces moved to the stage file's sizes (A had 30 cm walls); tests give `carry_kg_per_man` 50 (one squad carries
+250 kg; the cap is 20 a man); `bunker_pit` parapet 40 -> 0 (verify value; it filled the slit); `z_from = "base"`
+pieces on the site's surface; the row's bunker faces down the slope; the row is its own module. No save change.
+Existing tests changed: canonical snapshot blessed (parapet).
 
