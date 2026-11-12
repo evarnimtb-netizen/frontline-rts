@@ -53,6 +53,9 @@ use super::{EAST, FortifyArgs, LINE_Y, TRENCH_X, at, members, pos, squad, step_w
 pub const AT_RUN_M: i32 = 120;
 /// A field row's length across the path.
 pub const FIELD_ROW_M: i32 = 30;
+/// Metres the rifle squad walks over the AT field (T102d): past all three
+/// rows (review R8).
+const AT_CROSS_M: i32 = AT_RUN_M;
 /// Gap between AT rows.
 pub const AT_ROW_GAP_M: i32 = 4;
 /// AT mines along a row (m).
@@ -69,6 +72,10 @@ pub struct AtMineRow {
     pub field_immobilised_pct: Option<f64>,
     pub field_knocked_out_pct: Option<f64>,
     pub infantry_triggered: Option<f64>,
+    /// Men (pairs of man and mine) of the crossing squad that came within
+    /// `trigger_cm` of a standing AT mine: `infantry_triggered` 0 means
+    /// something only when this is above 0 (review R8).
+    pub infantry_close_passes: Option<f64>,
     /// Report beside `field_immobilised_pct`: the geometric share of
     /// lateral offsets that put a mine under a track (mean of both tanks).
     pub coverage_est_pct: Option<f64>,
@@ -214,6 +221,41 @@ fn lay(w: &mut World, id: &str, owner: u8, pts: &[FxVec2]) -> Result<()> {
     Ok(())
 }
 
+/// Like `lay`, returning the mines' ids.
+fn lay_ids(w: &mut World, id: &str, owner: u8, pts: &[FxVec2]) -> Result<Vec<u32>> {
+    let f = fort_of(w, id)?;
+    pts.iter()
+        .map(|&p| {
+            w.lay_mine_now(f, p, PlayerId(owner))
+                .ok_or_else(|| anyhow::anyhow!("mine at {p:?} was not staged"))
+        })
+        .collect()
+}
+
+/// Steps `w` `ticks` ticks (or until `stop`), noting which of `ids` were
+/// set off by a blast (seen with a boom tick: R12/R13), not by a man's
+/// contact (removed at once). Review R9.
+fn step_watching_blasts(
+    w: &mut World,
+    ids: &[u32],
+    ticks: u64,
+    mut stop: impl FnMut(&World) -> bool,
+    blasted: &mut std::collections::BTreeSet<u32>,
+) {
+    for _ in 0..ticks {
+        w.step(&[]);
+        let mines = &w.game().unwrap().fort().mines;
+        for id in ids {
+            if mines.get(id).is_some_and(|m| m.boom_tick.is_some()) {
+                blasted.insert(*id);
+            }
+        }
+        if stop(w) {
+            break;
+        }
+    }
+}
+
 /// Rows across an eastward path (x in m from `x0`, every `gap` m): `rows`
 /// rows of `FIELD_ROW_M`, mines every `step_cm`, row k shifted by
 /// `k * shift_cm`, centred on `LINE_Y`.
@@ -333,13 +375,19 @@ fn pass_mine(args: &FortifyArgs, seed: u64, owner: u8, off_cm: i32) -> Result<bo
     Ok(set_off(&w, owner) > 0)
 }
 
-/// A line squad of `p` placed west of the field and moved `AT_RUN_M` east;
-/// (losses, men).
-fn cross(w: &mut World, p: u8, start: FxVec2) -> Result<(u32, u32)> {
+/// A line squad of `p` placed west of the field and moved `run_m` east
+/// (`watch` sees the world each tick); (losses, men).
+fn cross(
+    w: &mut World,
+    p: u8,
+    start: FxVec2,
+    run_m: i32,
+    mut watch: impl FnMut(&World, &[SimId]),
+) -> Result<(u32, u32)> {
     let sq = squad(w, p, "line")?;
     w.place_squad(sq, start, EAST);
     let men = members(w, sq);
-    let target = start + FxVec2::from_int(AT_RUN_M / 2, 0);
+    let target = start + FxVec2::from_int(run_m, 0);
     step_with(w, p, vec![CommandKind::Move { squad: sq, target }]);
     let hz = w.match_setup().unwrap().tick_hz as u64;
     for _ in 0..120 * hz {
@@ -353,12 +401,36 @@ fn cross(w: &mut World, p: u8, start: FxVec2) -> Result<(u32, u32)> {
             break;
         }
         w.step(&[]);
+        watch(w, &men);
     }
     for _ in 0..hz {
         w.step(&[]);
+        watch(w, &men);
     }
     let lost = men.iter().filter(|&&m| !alive(w, m)).count() as u32;
     Ok((lost, men.len() as u32))
+}
+
+/// Living men of `men` within `trigger_cm` of a standing mine of `owner`
+/// (pairs, each once into `seen`). Review R8.
+fn close_passes(
+    w: &World,
+    men: &[SimId],
+    owner: u8,
+    trigger_cm: i32,
+    seen: &mut std::collections::BTreeSet<(SimId, u32)>,
+) {
+    let r = Fx::from_milli(trigger_cm * 10);
+    for (&id, m) in &w.game().unwrap().fort().mines {
+        if m.owner != PlayerId(owner) {
+            continue;
+        }
+        for &s in men {
+            if alive(w, s) && (pos(w, s) - m.pos).length() <= r {
+                seen.insert((s, id));
+            }
+        }
+    }
 }
 
 fn pct(a: u32, b: u32) -> Option<f64> {
@@ -392,7 +464,7 @@ pub fn mine_rows(
     let fx = TRENCH_X - AT_RUN_M / 2;
     let (mut direct, mut direct_n) = (0u32, 0u32);
     let (mut fimm, mut fko, mut fn_) = (0u32, 0u32, 0u32);
-    let mut inf_set = 0u32;
+    let (mut inf_set, mut inf_close) = (0u32, 0u32);
     let (mut near, mut contact, mut ap_n) = (0u32, 0u32, 0u32);
     let mut veh_set = 0u32;
     let (mut lost, mut men) = (0u32, 0u32);
@@ -442,9 +514,15 @@ pub fn mine_rows(
             fimm += imm as u32;
             fko += ko as u32;
             fn_ += 1;
+            // The squad walks the whole field (review R8: past all three
+            // rows), counting men who came within trigger range of a mine.
             let before = set_off(&w, owner);
-            cross(&mut w, t, at(fx, LINE_Y - 8))?;
+            let mut seen = std::collections::BTreeSet::new();
+            cross(&mut w, t, at(fx, LINE_Y - 8), AT_CROSS_M, |w, men| {
+                close_passes(w, men, owner, trig, &mut seen)
+            })?;
             inf_set += set_off(&w, owner) - before;
+            inf_close += seen.len() as u32;
             // AP: near miss and contact.
             near += pass_mine(args, seed, owner, 50)? as u32;
             contact += pass_mine(args, seed, owner, 20)? as u32;
@@ -464,7 +542,13 @@ pub fn mine_rows(
             veh_set += set_off(&w, owner);
             let mut w = world(args, seed)?;
             lay(&mut w, "ww2:ap_minefield", owner, &ap)?;
-            let (l, m) = cross(&mut w, t, at(fx + AT_RUN_M / 4, LINE_Y))?;
+            let (l, m) = cross(
+                &mut w,
+                t,
+                at(fx + AT_RUN_M / 4, LINE_Y),
+                AT_RUN_M / 2,
+                |_, _| {},
+            )?;
             lost += l;
             men += m;
         }
@@ -475,6 +559,7 @@ pub fn mine_rows(
             field_immobilised_pct: pct(fimm, fn_),
             field_knocked_out_pct: pct(fko, fn_),
             infantry_triggered: Some(inf_set as f64),
+            infantry_close_passes: Some(inf_close as f64),
             coverage_est_pct: Some((cover[0] + cover[1]) / 2.0),
         },
         ApMineRow {
@@ -657,35 +742,30 @@ fn bangalore_once(args: &FortifyArgs, seed: u64, p: u8) -> Result<(u32, u32)> {
         pts.push(from + along + across * Fx::from_int(2 * k));
         pts.push(from + along.mul_int(2) + across * Fx::from_int(2 * k + 1));
     }
-    lay(&mut w, "ww2:ap_minefield", 1 - p, &pts)?;
-    for _ in 0..12 * hz {
-        w.step(&[]);
-        if w.game().unwrap().fort().charges.is_empty() {
-            break;
-        }
-    }
-    for _ in 0..3 * hz {
-        w.step(&[]);
-    }
+    let ids = lay_ids(&mut w, "ww2:ap_minefield", 1 - p, &pts)?;
+    // Only mines the burst set off count (review R9): a man of the laying
+    // squad standing on one sets it off by contact, which is not a clear.
+    let mut blasted = std::collections::BTreeSet::new();
+    step_watching_blasts(
+        &mut w,
+        &ids,
+        12 * hz,
+        |w| w.game().unwrap().fort().charges.is_empty(),
+        &mut blasted,
+    );
+    step_watching_blasts(&mut w, &ids, 3 * hz, |_| false, &mut blasted);
     let reach = Fx::from_milli(1500);
-    let near: Vec<FxVec2> = pts
+    let near: Vec<u32> = pts
         .iter()
-        .copied()
-        .filter(|q| {
+        .zip(&ids)
+        .filter(|(q, _)| {
             (0..3).any(|k| {
-                (*q - (from + (to - from).mul_int(2 * k + 1).div_int(6))).length() <= reach
+                (**q - (from + (to - from).mul_int(2 * k + 1).div_int(6))).length() <= reach
             })
         })
+        .map(|(_, &id)| id)
         .collect();
-    let standing: Vec<FxVec2> = w
-        .game()
-        .unwrap()
-        .fort()
-        .mines
-        .values()
-        .map(|m| m.pos)
-        .collect();
-    let gone = near.iter().filter(|q| !standing.contains(q)).count() as u32;
+    let gone = near.iter().filter(|id| blasted.contains(id)).count() as u32;
     Ok((near.len() as u32, gone))
 }
 
@@ -1014,6 +1094,65 @@ pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn infantry_walks_the_whole_at_field() {
+        // Review R8: the squad stopped at the second AT row. Control:
+        // `AT_CROSS_M` back to `AT_RUN_M / 2` (the men stop near TRENCH_X).
+        let args = FortifyArgs::default();
+        let mut w = world(&args, 1).unwrap();
+        let fx = TRENCH_X - AT_RUN_M / 2;
+        let mines = field(
+            TRENCH_X - AT_ROW_GAP_M,
+            3,
+            AT_ROW_GAP_M,
+            AT_STEP_CM,
+            AT_STEP_CM / 3,
+        );
+        lay(&mut w, "ww2:at_minefield", 1, &mines).unwrap();
+        let mut west = Fx::ZERO;
+        cross(&mut w, 0, at(fx, LINE_Y - 8), AT_CROSS_M, |w, men| {
+            west = men
+                .iter()
+                .filter(|&&m| alive(w, m))
+                .map(|&m| pos(w, m).x)
+                .min()
+                .unwrap_or(Fx::ZERO);
+        })
+        .unwrap();
+        let third = Fx::from_int(TRENCH_X + AT_ROW_GAP_M);
+        assert!(
+            west > third,
+            "every man past the third row: {west:?} vs {third:?}"
+        );
+        assert_eq!(set_off(&w, 1), 0, "AT mines do not go off for men");
+        // Whether a man comes within trigger range depends on the field's
+        // lateral offset (none here); the row's own seeds count it.
+        let (row, _) = mine_rows(&args, 1..2).unwrap();
+        assert_eq!(row.infantry_triggered, Some(0.0));
+        assert!(row.infantry_close_passes.unwrap() >= 1.0, "{row:?}");
+    }
+
+    #[test]
+    fn contact_set_off_is_not_a_blast_clear() {
+        // Review R9: a mine a man stands on goes off by contact and leaves
+        // `fort.mines`; the Bangalore row counted every missing mine as
+        // cleared. Control: count `!mines.contains_key(id)` instead of
+        // `blasted` and this fails.
+        let mut w = world(&FortifyArgs::default(), 1).unwrap();
+        let sq = squad(&w, 0, "line").unwrap();
+        w.place_squad(sq, at(TRENCH_X, LINE_Y), EAST);
+        let man = members(&w, sq)[0];
+        let under = pos(&w, man);
+        let ids = lay_ids(&mut w, "ww2:ap_minefield", 1, &[under]).unwrap();
+        let mut blasted = std::collections::BTreeSet::new();
+        step_watching_blasts(&mut w, &ids, 60, |_| false, &mut blasted);
+        assert!(
+            !w.game().unwrap().fort().mines.contains_key(&ids[0]),
+            "the mine went off under him"
+        );
+        assert!(blasted.is_empty(), "a contact is not a blast: {blasted:?}");
+    }
 
     #[test]
     fn obstacle_row_shows_the_tank_reaching_the_line() {

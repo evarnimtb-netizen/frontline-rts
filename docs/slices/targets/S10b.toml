@@ -2038,6 +2038,12 @@ note = "running gear only (S10b-3 (A)): expected 0"
 id = "T102d"
 metric = "fortify10.s10b.atmine.infantry_triggered"
 max = 0
+# T102d means something only if men came within trigger range of an AT mine
+# (review R8): pairs of man and mine closer than trigger_cm, all runs.
+[[target]]
+id = "T102e"
+metric = "fortify10.s10b.atmine.infantry_close_passes"
+min = 1
 
 # --- T103: an AP mine goes off only on contact (R3; done-when 2) -------------
 # A man passing 50 cm from an AP mine never sets it off; one stepping within
