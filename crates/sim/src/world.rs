@@ -446,8 +446,12 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `Order::{ClearMines, Demolish}`; in the setup `ItemKind::Mine` and
 /// `ItemSetup::mine`, `FortSetup::{mine_item, blocks_vehicles}`, the bunker
 /// pit, capability bits 12-14 and twelve `[fortify]` keys). One bump for
-/// the whole slice.
-const SAVE_VERSION: u32 = 24;
+/// the whole slice. 25: S10b-ai (`AiState::{sweeps, demolitions, refused,
+/// suspects_seen}`, `AiFortJob::start`, fourteen `AiCounters`,
+/// `FortState::blasts`, four `FortAccount` counters; in the setup
+/// `[ai.obstacles]`, four `[fortify]` mine path keys and `[ai.truck]
+/// refusal_memory`). One bump for the whole slice.
+const SAVE_VERSION: u32 = 25;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2375,6 +2379,69 @@ impl World {
         true
     }
 
+    /// S10b-ai staging tool (tests, the staged save): edits player
+    /// `player`'s AI state directly (hashes and snapshot refreshed). The
+    /// caller keeps it valid; false when the player has no AI.
+    pub fn with_ai_state(&mut self, player: u8, f: impl FnOnce(&mut crate::ai::AiState)) -> bool {
+        let Some(ai) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.ai.get_mut(player as usize))
+            .and_then(|a| a.as_mut())
+        else {
+            return false;
+        };
+        f(ai);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S10b-ai fortify-test hook (`docs/slices/S10b-ai.md` 3; as
+    /// [`Self::drive_breach`]): one world step with player `player`'s habit
+    /// `habit` alone (`ai::obstacles`) run on `ai`, a fresh state the
+    /// caller keeps (not part of the match): a plan every `replan_ticks`;
+    /// its commands wait in `ai.pending` for the reaction delay and are
+    /// applied as the player's. `Some(end)` once the job has ended (Build
+    /// A: `NotBuilt` at the first plan).
+    pub fn drive_ai_habit(
+        &mut self,
+        ai: &mut crate::ai::AiState,
+        player: PlayerId,
+        habit: crate::ai::AiHabit,
+        args: &crate::ai::DriveArgs,
+    ) -> Option<crate::ai::HabitEnd> {
+        let tick = self.state.tick;
+        let end = {
+            let game = self.state.game.as_ref()?;
+            if player.0 as usize >= game.players.len() {
+                return None;
+            }
+            game.drive_habit_plan(
+                ai,
+                &self.state.entities,
+                &self.state.terrain,
+                tick,
+                player,
+                habit,
+                args,
+            )
+        };
+        let n = ai.pending.iter().take_while(|c| c.due <= tick).count();
+        let cmds: Vec<Command> = ai
+            .pending
+            .drain(..n)
+            .map(|c| Command {
+                player,
+                seq: c.seq,
+                kind: c.kind,
+            })
+            .collect();
+        self.step(&cmds);
+        end
+    }
+
     /// S10a test edit of the fort state (hashes and snapshot refreshed).
     pub fn edit_fort(&mut self, f: impl FnOnce(&mut crate::fort::FortState)) -> bool {
         let Some(g) = self.state.game.as_mut() else {
@@ -2777,6 +2844,9 @@ mod s10a_ai_tests;
 #[cfg(test)]
 #[path = "s10a_tests.rs"]
 mod s10a_tests;
+#[cfg(test)]
+#[path = "s10b_ai_tests.rs"]
+mod s10b_ai_tests;
 #[cfg(test)]
 #[path = "s10b_tests.rs"]
 mod s10b_tests;

@@ -187,6 +187,7 @@ mod breach;
 pub(crate) mod fort;
 mod guns;
 mod mortar;
+pub(crate) mod obstacles;
 mod overwatch;
 mod supply;
 mod transport;
@@ -206,6 +207,10 @@ pub use breach::{
 };
 pub use fort::{AiFortJob, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
+pub use obstacles::{
+    AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
+    MAX_DEMOLITIONS, MAX_REFUSED, MAX_SWEEPS, REFUSAL_KEEP_MIN_S, SweepPhase,
+};
 pub use truck::{AiTruck, GAVE_UP_GOALS, MAX_TRUCKS, TruckPhase};
 
 /// Most AI commands waiting for their reaction delay.
@@ -356,6 +361,18 @@ pub struct AiState {
     /// S10a-ai: the material run under way (one per player): the carrying
     /// squad (truck or bearers) and the work it serves.
     pub material_run: Option<(SquadId, u32)>,
+    /// S10b-ai (`ai::obstacles`): sweep jobs, by the sweeper squad (at most
+    /// [`MAX_SWEEPS`]).
+    pub sweeps: BTreeMap<SquadId, AiSweep>,
+    /// S10b-ai: demolition jobs, by the demolishing squad (at most
+    /// [`MAX_DEMOLITIONS`]).
+    pub demolitions: BTreeMap<SquadId, AiDemolish>,
+    /// S10b-ai (L3): goals that failed, sorted by (kind, failed, x, y), at
+    /// most [`MAX_REFUSED`].
+    pub refused: Vec<AiRefusal>,
+    /// S10b-ai (R9): the next `FortState::blasts` entry the suspect check
+    /// reads (clamped to the list's length on read).
+    pub suspects_seen: u32,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -609,6 +626,27 @@ pub struct AiCounters {
     pub breach_smokes: u32,
     pub breach_suppress: u32,
     pub wire_bypassed: u32,
+    /// S10b-ai (`ai::obstacles`; counted only with their switch on): S10b
+    /// jobs started and refused, AI lay sites chosen, sweeps wanted,
+    /// started and done, demolitions wanted and started, gaps opened and
+    /// demolitions given up, obstacle sites rejected by the own route rule
+    /// and own routes found blocked, jobs alive over 900 s, starts or
+    /// commands within `refused_m` of a goal that failed in the last 300 s
+    /// (fixed windows, not keys: the `loose` control shows them).
+    pub s10b_jobs: u32,
+    pub s10b_refused: u32,
+    pub lay_sites: u32,
+    pub sweep_wanted: u32,
+    pub sweeps_started: u32,
+    pub sweeps_done: u32,
+    pub demolish_wanted: u32,
+    pub demolitions_started: u32,
+    pub gaps_opened: u32,
+    pub demolish_given_up: u32,
+    pub own_route_rejects: u32,
+    pub own_blocked: u32,
+    pub jobs_overdue: u32,
+    pub refused_reorders: u32,
 }
 
 impl AiState {
@@ -648,6 +686,10 @@ impl AiState {
             enemy_mortar_seen: false,
             bypass: BTreeMap::new(),
             material_run: None,
+            sweeps: BTreeMap::new(),
+            demolitions: BTreeMap::new(),
+            refused: Vec::new(),
+            suspects_seen: 0,
         }
     }
 
@@ -797,6 +839,8 @@ impl AiState {
             })
             // S10a-ai.
             || !self.validate_fort(g, player, tick)
+            // S10b-ai.
+            || !self.validate_s10b(g, player, tick)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
@@ -855,6 +899,7 @@ impl AiState {
                     && !j.line.is_empty()
                     && j.line.len() <= crate::fort::MAX_FORT_POINTS
                     && j.line.iter().all(on_map)
+                    && j.start <= j.since
                     && j.since <= tick
                     && j.tries <= MAX_FORT_TRIES
             })

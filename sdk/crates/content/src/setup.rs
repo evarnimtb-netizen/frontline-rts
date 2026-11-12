@@ -31,11 +31,12 @@ use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
     AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
-    AiMortarTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning, AiTruckTuning, BailTuning,
-    BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning, DrivingTuning,
-    EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning, GunsTuning,
-    MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning, SuppressionTuning,
-    ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning, VehiclePathTuning, check_tuning,
+    AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning,
+    AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning,
+    DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning,
+    GunsTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
+    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
+    VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -627,6 +628,8 @@ pub struct AiSetup {
     pub guns: AiGunsTuning,
     /// S10a-ai: `[ai.fort]` (or the S10a-ai starting values).
     pub fort: AiFortTuning,
+    /// S10b-ai: `[ai.obstacles]` (or the S10b-ai starting values).
+    pub obstacles: AiObstacleTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2045,6 +2048,7 @@ impl ModDefs {
                         truck: a.truck.clone().unwrap_or_default(),
                         guns: a.guns.clone().unwrap_or_default(),
                         fort: a.fort.clone().unwrap_or_default(),
+                        obstacles: a.obstacles.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2897,6 +2901,7 @@ impl MatchSetup {
                 ai_truck: &a.truck,
                 ai_guns: &a.guns,
                 ai_fort: &a.fort,
+                ai_obstacles: &a.obstacles,
             },
         );
         r.at_ditch

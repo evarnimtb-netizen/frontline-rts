@@ -1373,6 +1373,7 @@ flee_m = 120                 # m: it runs from any seen enemy this close
 arrive_m = 15                # m: a move that ends farther than this from its goal has failed ...
 max_fails = 2                # ... and after this many it takes where it stands (no move loops, S7 tick fix)
 repath_s = 8                 # s: no job sends the same move again within this
+refusal_memory = 1           # switch (S10b-ai F8, L5): a truck's give-up is remembered and not ordered again
 
 # S9: AT guns (docs/slices/S9-at-guns.md 12). Each card carries gun, crew and tow.
 [ai.guns]
@@ -1451,6 +1452,41 @@ breach_tries = 3             # ... at most this many tries
 breach_max_s = 180           # s: a breach job ends after this long
 gap_clear_m = 2              # m: a gap is open with no standing section this close to the crossing
 breach_cards_max = 1         # urgent breach buys alive at once
+
+# S10b-ai: the AI lays mines, builds obstacles and the bunker, sweeps and
+# demolishes (docs/slices/S10b-ai.md 2). Starting values; the six switches
+# (1 on, 0 off) are the ablations of spec 2.
+[ai.obstacles]
+mines = 1                    # switch: AP and AT minefields
+at_mines = 1                 # switch (under mines): AT minefields
+obstacles = 1                # switch: log barriers and hedgehog rows
+bunker = 1                   # switch: the bunker
+sweep = 1                    # switch: sweeping lanes before an attack
+demolish = 1                 # switch: demolishing obstacles in a vehicle's way
+jobs_max = 1                 # S10b jobs at once, inside [ai.fort] builders_max
+materials_max_pct = 3        # %: S10b materials cost at most this share of the income earned (own budget, R8)
+ap_beyond_wire_m = 5         # m: an AP field lies this far beyond the point's wire line (design 7.6 "among and before the wire") ...
+ap_out_m = 40                # m: ... or this far out from the trench with no wire
+at_out_m = 60                # m: an AT field lies this far out along the enemy vehicle approach (R2; verify)
+fields_per_point = 2         # minefields per point (R4)
+at_fields_max = 3            # AT minefields per player (R4)
+obst_gun_m = 40              # m: a log barrier stands this far out in an own gun's arc (R5; verify)
+obst_work_m = 20             # m: a hedgehog row stands this far in front of a nest or bunker (R5; verify)
+hedgehogs_row = 3            # hedgehogs in a row ...
+hedgehog_step_m = 4          # m: ... this far apart
+own_route_m = 10             # m: no obstacle this close to an own vehicle route (R6)
+bunkers_max = 1              # bunkers per player (R7)
+suspect_s = 600              # s: an enemy mine blast hurting own units marks a suspect this long (R9)
+sweep_near_m = 20            # m: a suspect or known mine this close to the attack line wants a sweep ...
+sweep_point_m = 30           # m: ... or a known mine this close to the point (R10)
+sweep_reach_m = 300          # m: a free sweeper this close may be sent (R10)
+demolish_pieces_max = 3      # pieces one demolition job blows before it gives up (R14)
+demolish_near_m = 30         # m: a known enemy piece this close to a stuck vehicle wants a demolition (R14)
+obst_seen_m = 150            # m: enemy obstacles are known this close to an own unit (R13)
+job_max_s = 900              # s: every S10b job ends after this long (L1)
+refused_s = 300              # s: a refused goal is not ordered again within this ... (L4)
+refused_m = 20               # m: ... within this distance (L4)
+recheck_s = 60               # s: one vehicle approach search per point within this (R2)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
@@ -1553,6 +1589,11 @@ demolish_fuse_s = 10         # s from placing to the burst (R19; verify)
 demolish_pct = 300           # % of the charge's damage the demolished piece takes, tamped (R20; verify)
 demolish_reach_m = 25        # Demolish takes the nearest piece within this of its point (R19; verify)
 vehicle_clear_m = 6          # no minefield, obstacle or bunker site this close to a vehicle hull (R18; verify)
+# S10b-ai (docs/slices/S10b-ai.md R11): paths avoid enemy mines the player knows.
+mine_paths = 1               # switch: price steps near known enemy mines (foot: AP, vehicles: AT)
+mine_path_cost_pct = 2000    # % A* cost of a priced step (S10b-2 (A))
+mine_band_foot_cm = 300      # a foot step this close to a known enemy AP mine is priced
+mine_band_vehicle_cm = 400   # a vehicle step this close to a known enemy AT mine is priced
 
 # % work rates by tier (7.7: assault clears fast, construction builds fast, clears slow).
 [fortify.tiers]

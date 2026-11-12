@@ -104,6 +104,8 @@ pub struct AiFortJob {
     /// The `Fortify` line (at most `fort::MAX_FORT_POINTS` points).
     pub line: Vec<FxVec2>,
     pub phase: FortPhase,
+    /// S10b-ai (L1): tick the job began (at most `since`).
+    pub start: u64,
     /// Tick the phase began (Watch: the last plan its work was not
     /// waiting for materials).
     pub since: u64,
@@ -125,12 +127,25 @@ impl AiFortJob {
 
 /// The AI's use of a blueprint.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+// The S10b-ai kinds have no caller until Build B (tests use them).
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum WorkKind {
     Nest,
     Wire,
     Dugout,
     Roof,
     Wall,
+    /// S10b-ai (spec 3): an AP minefield (a line blueprint laying a foot
+    /// mine).
+    ApField,
+    /// An AT minefield (a line blueprint laying a vehicle mine).
+    AtField,
+    /// A Czech hedgehog (a point blueprint blocking vehicles).
+    Hedgehog,
+    /// A log barrier (a line blueprint blocking vehicles).
+    LogBarrier,
+    /// The bunker (a point blueprint on a `bunker_pit`).
+    Bunker,
 }
 
 /// S10a-ai (spec 3.1): the three S10a cards (construction or assault
@@ -145,27 +160,49 @@ pub(super) fn builds(caps: u32) -> bool {
     caps & (Capability::BuildStructure.bit() | Capability::PlaceWire.bit()) != 0
 }
 
-/// The blueprint the AI uses for `k` (the first that fits; by shape and
-/// pit, never by id).
+/// The blueprint the AI uses for `k` (the first that fits; by shape, pit,
+/// mine trigger and `blocks_vehicles`, never by id).
 pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
+    // S10b-ai: the mine trigger of a minefield blueprint (0 foot, 1 vehicle).
+    let trigger = |d: &frontline_content::setup::FortSetup| {
+        d.mine_item
+            .and_then(|i| s.items.get(i as usize))
+            .and_then(|it| it.mine.as_ref())
+            .map(|m| m.trigger)
+    };
     s.forts
         .iter()
-        // S10b R29: minefields and obstacles are never an AI habit's
-        // blueprint (`ap_minefield` sorts before `sandbag_wall`).
-        .position(|d| {
-            d.mine_item.is_none()
-                && !d.blocks_vehicles
-                && match k {
-                    WorkKind::Nest => {
-                        d.shape == FortShape::Point && d.pit == Some(DigProfile::MgNestPit)
+        .position(|d| match k {
+            // S10b-ai (spec 3): the new kinds take exactly their S10b
+            // blueprints.
+            WorkKind::ApField => d.shape == FortShape::Line && trigger(d) == Some(0),
+            WorkKind::AtField => d.shape == FortShape::Line && trigger(d) == Some(1),
+            WorkKind::Hedgehog => d.shape == FortShape::Point && d.blocks_vehicles,
+            WorkKind::LogBarrier => d.shape == FortShape::Line && d.blocks_vehicles,
+            WorkKind::Bunker => {
+                d.mine_item.is_none()
+                    && !d.blocks_vehicles
+                    && d.shape == FortShape::Point
+                    && d.pit == Some(DigProfile::BunkerPit)
+            }
+            // S10b R29: minefields and obstacles are never an S10a habit's
+            // blueprint (`ap_minefield` sorts before `sandbag_wall`).
+            _ => {
+                d.mine_item.is_none()
+                    && !d.blocks_vehicles
+                    && match k {
+                        WorkKind::Nest => {
+                            d.shape == FortShape::Point && d.pit == Some(DigProfile::MgNestPit)
+                        }
+                        WorkKind::Dugout => {
+                            d.shape == FortShape::Point && d.pit == Some(DigProfile::DugoutPit)
+                        }
+                        WorkKind::Roof => d.shape == FortShape::OverHq,
+                        WorkKind::Wire => d.shape == FortShape::Line && d.wire.is_some(),
+                        WorkKind::Wall => d.shape == FortShape::Line && d.wire.is_none(),
+                        _ => false,
                     }
-                    WorkKind::Dugout => {
-                        d.shape == FortShape::Point && d.pit == Some(DigProfile::DugoutPit)
-                    }
-                    WorkKind::Roof => d.shape == FortShape::OverHq,
-                    WorkKind::Wire => d.shape == FortShape::Line && d.wire.is_some(),
-                    WorkKind::Wall => d.shape == FortShape::Line && d.wire.is_none(),
-                }
+            }
         })
         .map(|i| i as u16)
 }
@@ -174,6 +211,7 @@ pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
 /// switch, stage D; wire: `wire`).
 pub(crate) fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
     let f = &s.rules.ai.fort;
+    let o = &s.rules.ai.obstacles;
     s.rules.fortify.is_some()
         && match k {
             WorkKind::Wire => f.wire != 0,
@@ -181,6 +219,11 @@ pub(crate) fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
             WorkKind::Dugout => f.works != 0 && f.dugout != 0,
             WorkKind::Roof => f.works != 0 && f.roof != 0,
             WorkKind::Wall => f.works != 0 && f.sandbags != 0,
+            // S10b-ai `[ai.obstacles]` switches (spec 2).
+            WorkKind::ApField => o.mines != 0,
+            WorkKind::AtField => o.mines != 0 && o.at_mines != 0,
+            WorkKind::Hedgehog | WorkKind::LogBarrier => o.obstacles != 0,
+            WorkKind::Bunker => o.bunker != 0,
         }
 }
 
@@ -307,7 +350,8 @@ impl super::Planner<'_> {
                 let line = vec![tr.clamp(c - half), tr.clamp(c + half)];
                 ((line[1] - line[0]).length() >= Fx::from_int(2)).then_some(line)
             }
-            WorkKind::Roof | WorkKind::Wall => None,
+            // S10b-ai kinds: their sites come in Build B-C.
+            _ => None,
         }
     }
 
@@ -1342,6 +1386,7 @@ impl super::Planner<'_> {
             point,
             line,
             phase: FortPhase::Load,
+            start: self.tick,
             since: self.tick,
             work: None,
             tries: 0,

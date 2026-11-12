@@ -45,6 +45,11 @@ pub const MAX_WIRE: usize = 2048;
 pub const MAX_CHARGES: usize = 64;
 /// S10b (R25): laid mines, all players.
 pub const MAX_MINES: usize = 2048;
+/// S10b-ai (spec 3): most mine blasts remembered ...
+pub const MAX_BLASTS: usize = 32;
+/// ... each for this long (s; a sim constant, not a key: R9's suspects
+/// read them up to `[ai.obstacles] suspect_s`).
+pub const BLAST_KEEP_S: u64 = 600;
 /// Most points of a `Fortify` line (as `Dig`).
 pub const MAX_FORT_POINTS: usize = 16;
 
@@ -128,6 +133,17 @@ pub struct Charge {
     pub piece: Option<u32>,
 }
 
+/// S10b-ai: a mine that went off (`FortState::blasts`; known to every
+/// player, S10b R13).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct MineBlast {
+    pub pos: FxVec2,
+    /// The mine's owner.
+    pub owner: PlayerId,
+    /// The tick it went off.
+    pub tick: u64,
+}
+
 /// S10b: one laid mine (`FortState::mines`).
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Mine {
@@ -186,6 +202,16 @@ pub struct FortAccount {
     pub sweeps: u32,
     pub demolitions: u32,
     pub pieces_demolished: u32,
+    // ---- S10b-ai (report only; any value).
+    /// Men and vehicles that set off a mine their player knew.
+    pub lost_on_known: u32,
+    /// Enemy vehicle ticks within 5 m of the owner's AT mines.
+    pub at_exposure_ticks: u64,
+    /// Own or allied units hurt by the player's mines (0 by S10b R7; a
+    /// guard).
+    pub own_mine_losses: u32,
+    /// Own pieces the player's demolition charges took down.
+    pub own_pieces_demolished: u32,
 }
 
 /// All S10a state (`MatchState::fort`).
@@ -207,6 +233,9 @@ pub struct FortState {
     /// S10b: laid mines by id.
     pub mines: BTreeMap<u32, Mine>,
     pub next_mine: u32,
+    /// S10b-ai: mines that went off, oldest first (at most [`MAX_BLASTS`],
+    /// dropped after [`BLAST_KEEP_S`]).
+    pub blasts: Vec<MineBlast>,
     /// S10a-ai: the derived wire cell index (never saved or hashed;
     /// rebuilt by [`FortState::refresh_wire_index`]).
     #[serde(skip)]
@@ -293,6 +322,7 @@ impl FortState {
             && self.charges.is_empty()
             && self.carried_g.is_empty()
             && self.mines.is_empty()
+            && self.blasts.is_empty()
     }
 
     /// Checks a loaded state (untrusted saves).
@@ -498,6 +528,17 @@ impl FortState {
             if *n > d.limit_per_player {
                 return Err("more mines than the blueprint's limit_per_player");
             }
+        }
+        // S10b-ai (spec 6): blasts capped, oldest first, by a player, not
+        // in the future, on the map.
+        if self.blasts.len() > MAX_BLASTS
+            || self.blasts.windows(2).any(|w| w[0].tick > w[1].tick)
+            || self
+                .blasts
+                .iter()
+                .any(|b| b.owner.0 as usize >= np || b.tick > tick || !on_map(b.pos))
+        {
+            return Err("mine blasts out of range");
         }
         let t = setup.rules.fortify.as_ref();
         let hz = setup.tick_hz as u64;

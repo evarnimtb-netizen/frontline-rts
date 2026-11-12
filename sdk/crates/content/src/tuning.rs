@@ -1747,6 +1747,117 @@ impl Default for AiFortTuning {
 }
 
 tuning_table! {
+    /// `[ai.obstacles]` (S10b-ai, docs/slices/S10b-ai.md 2): how the AI lays
+    /// mines, builds obstacles and the bunker, sweeps lanes and demolishes
+    /// pieces. The six switches (1 on, 0 off) are the ablations of spec 2.
+    pub struct AiObstacleTuning {
+        /// Switch: AP and AT minefields.
+        mines: 0..=1,
+        /// Switch (under `mines`): AT minefields.
+        at_mines: 0..=1,
+        /// Switch: log barriers and hedgehog rows.
+        obstacles: 0..=1,
+        /// Switch: the bunker.
+        bunker: 0..=1,
+        /// Switch: sweeping lanes before an attack.
+        sweep: 0..=1,
+        /// Switch: demolishing obstacles in a vehicle's way.
+        demolish: 0..=1,
+        /// S10b jobs at once (inside `[ai.fort] builders_max`).
+        jobs_max: 1..=16,
+        /// S10b materials cost at most this share of the income earned (%).
+        materials_max_pct: 0..=100,
+        /// An AP field lies this far beyond the point's wire line (m) ...
+        ap_beyond_wire_m: 0..=200,
+        /// ... or this far out from the trench with no wire (m).
+        ap_out_m: 1..=500,
+        /// An AT field lies this far out along the vehicle approach (m).
+        at_out_m: 1..=1000,
+        /// Minefields per point.
+        fields_per_point: 0..=16,
+        /// AT minefields per player.
+        at_fields_max: 0..=64,
+        /// A log barrier stands this far out in an own gun's arc (m).
+        obst_gun_m: 1..=500,
+        /// A hedgehog row stands this far in front of a nest or bunker (m).
+        obst_work_m: 1..=500,
+        /// Hedgehogs in a row ...
+        hedgehogs_row: 1..=16,
+        /// ... this far apart (m).
+        hedgehog_step_m: 1..=50,
+        /// No obstacle this close to an own vehicle route (m).
+        own_route_m: 0..=200,
+        /// Bunkers per player.
+        bunkers_max: 0..=8,
+        /// An enemy mine blast hurting own units marks a suspect this long (s).
+        suspect_s: 1..=3600,
+        /// A suspect or known mine this close to the attack line wants a sweep (m) ...
+        sweep_near_m: 0..=500,
+        /// ... or a known mine this close to the point (m).
+        sweep_point_m: 0..=500,
+        /// A free sweeper this close may be sent (m).
+        sweep_reach_m: 0..=5000,
+        /// Pieces one demolition job blows before it gives up.
+        demolish_pieces_max: 1..=3,
+        /// A known enemy piece this close to a stuck vehicle wants a demolition (m).
+        demolish_near_m: 0..=500,
+        /// Enemy obstacles are known this close to an own unit (m).
+        obst_seen_m: 1..=2000,
+        /// Every S10b job ends after this long (s; L1).
+        job_max_s: 1..=36000,
+        /// A refused goal is not ordered again within this (s; L4) ...
+        refused_s: 0..=3600,
+        /// ... within this distance (m).
+        refused_m: 0..=500,
+        /// One vehicle approach search per point within this (s).
+        recheck_s: 1..=600,
+    }
+}
+
+impl AiObstacleTuning {
+    /// `at_mines` lives under `mines`; nothing else ties keys together.
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiObstacleTuning {
+    /// S10b-ai starting values (a rules def without `[ai.obstacles]`).
+    fn default() -> AiObstacleTuning {
+        AiObstacleTuning {
+            mines: 1,
+            at_mines: 1,
+            obstacles: 1,
+            bunker: 1,
+            sweep: 1,
+            demolish: 1,
+            jobs_max: 1,
+            materials_max_pct: 3,
+            ap_beyond_wire_m: 5,
+            ap_out_m: 40,
+            at_out_m: 60,
+            fields_per_point: 2,
+            at_fields_max: 3,
+            obst_gun_m: 40,
+            obst_work_m: 20,
+            hedgehogs_row: 3,
+            hedgehog_step_m: 4,
+            own_route_m: 10,
+            bunkers_max: 1,
+            suspect_s: 600,
+            sweep_near_m: 20,
+            sweep_point_m: 30,
+            sweep_reach_m: 300,
+            demolish_pieces_max: 3,
+            demolish_near_m: 30,
+            obst_seen_m: 150,
+            job_max_s: 900,
+            refused_s: 300,
+            refused_m: 20,
+            recheck_s: 60,
+        }
+    }
+}
+
+tuning_table! {
     /// `[ai.truck]` (S8b, docs/slices/S8b-trucks-recon.md 9): how the AI
     /// uses its supply trucks.
     pub struct AiTruckTuning {
@@ -1776,6 +1887,9 @@ tuning_table! {
         max_fails: 1..=10,
         /// No job sends the same move again within this (s).
         repath_s: 1..=120,
+        /// S10b-ai switch (F8, L5): a truck's give-up is remembered as a
+        /// refused goal and not ordered again.
+        refusal_memory: 0..=1 = "d_truck_refusal_memory",
     }
 }
 
@@ -1800,8 +1914,13 @@ impl Default for AiTruckTuning {
             arrive_m: 15,
             max_fails: 2,
             repath_s: 8,
+            refusal_memory: d_truck_refusal_memory(),
         }
     }
+}
+
+fn d_truck_refusal_memory() -> u32 {
+    1
 }
 
 impl AiTransportTuning {
@@ -2205,6 +2324,18 @@ pub struct FortTuning {
     /// S10b: m: no minefield, obstacle or bunker site this close to a vehicle hull (R18).
     #[serde(default = "fort_default_vehicle_clear_m")]
     pub vehicle_clear_m: u32,
+    /// S10b-ai switch: paths price steps near enemy mines the player knows (R11).
+    #[serde(default = "fort_default_mine_paths")]
+    pub mine_paths: u32,
+    /// S10b-ai: A* cost of a priced step (%; R11).
+    #[serde(default = "fort_default_mine_path_cost_pct")]
+    pub mine_path_cost_pct: u32,
+    /// S10b-ai: cm: a foot step this close to a known enemy AP mine is priced (R11).
+    #[serde(default = "fort_default_mine_band_foot_cm")]
+    pub mine_band_foot_cm: u32,
+    /// S10b-ai: cm: a vehicle step this close to a known enemy AT mine is priced (R11).
+    #[serde(default = "fort_default_mine_band_vehicle_cm")]
+    pub mine_band_vehicle_cm: u32,
     pub tiers: FortTiers,
 }
 
@@ -2244,6 +2375,18 @@ fn fort_default_demolish_reach_m() -> u32 {
 fn fort_default_vehicle_clear_m() -> u32 {
     6
 }
+fn fort_default_mine_paths() -> u32 {
+    1
+}
+fn fort_default_mine_path_cost_pct() -> u32 {
+    2000
+}
+fn fort_default_mine_band_foot_cm() -> u32 {
+    300
+}
+fn fort_default_mine_band_vehicle_cm() -> u32 {
+    400
+}
 
 impl FortTuning {
     /// The flat keys with their ranges.
@@ -2269,9 +2412,13 @@ impl FortTuning {
         ("demolish_pct", 1, 1_000),
         ("demolish_reach_m", 1, 200),
         ("vehicle_clear_m", 0, 100),
+        ("mine_paths", 0, 1),
+        ("mine_path_cost_pct", 100, 10_000),
+        ("mine_band_foot_cm", 0, 1_000),
+        ("mine_band_vehicle_cm", 0, 1_000),
     ];
 
-    fn values(&self) -> [u32; 21] {
+    fn values(&self) -> [u32; 25] {
         [
             self.wire_speed_pct,
             self.wire_path_cost_pct,
@@ -2294,6 +2441,10 @@ impl FortTuning {
             self.demolish_pct,
             self.demolish_reach_m,
             self.vehicle_clear_m,
+            self.mine_paths,
+            self.mine_path_cost_pct,
+            self.mine_band_foot_cm,
+            self.mine_band_vehicle_cm,
         ]
     }
 
@@ -2327,6 +2478,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.truck", AiTruckTuning::KEYS),
     ("ai.guns", AiGunsTuning::KEYS),
     ("ai.fort", AiFortTuning::KEYS),
+    ("ai.obstacles", AiObstacleTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -2392,6 +2544,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_truck: &'a AiTruckTuning,
     pub ai_guns: &'a AiGunsTuning,
     pub ai_fort: &'a AiFortTuning,
+    pub ai_obstacles: &'a AiObstacleTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -2454,6 +2607,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_truck.check(&p("ai.truck"), out);
     t.ai_guns.check(&p("ai.guns"), out);
     t.ai_fort.check(&p("ai.fort"), out);
+    t.ai_obstacles.check(&p("ai.obstacles"), out);
 }
 
 #[cfg(test)]

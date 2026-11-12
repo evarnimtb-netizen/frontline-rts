@@ -78,7 +78,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 24,
+        version: 25,
         state: w.state(),
     });
     assert!(
@@ -291,6 +291,11 @@ fn s10b_path(path: &str) -> bool {
         || (path.starts_with("state.game.setup.items") && path.contains(".mine"))
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
+        // Fuzz stage `staged_s10b_ai`.
+        || (path.starts_with("state.game.ai")
+            && [".sweeps.", ".demolitions.", ".refused.", ".suspects_seen", ".forts."]
+                .iter()
+                .any(|k| path.contains(k)))
 }
 
 /// The mutation plan for one save, fixed by counters: every field path gets
@@ -492,6 +497,27 @@ fn fuzz_plan_reaches_s10b_state() {
             .any(|p| p.contains(".piece") && p.starts_with("state.game.fort.charges"))
     );
     assert!(
+        planned.iter().any(|p| p.starts_with("state.game.ai")
+            && p.contains(".forts")
+            && p.ends_with(".start")),
+        "no planned mutation reaches AiFortJob::start"
+    );
+    // Fuzz stage `staged_s10b_ai`: entries, not the empty lists' lengths
+    // (nor the counters `sweeps_started`, `refused_reorders`, ...).
+    for (from, want) in [
+        ("state.game.ai", ".sweeps.{}"),
+        ("state.game.ai", ".demolitions.{}"),
+        ("state.game.ai", ".refused.[]"),
+        ("state.game.fort", ".blasts.[]"),
+    ] {
+        assert!(
+            planned
+                .iter()
+                .any(|p| p.starts_with(from) && p.contains(want)),
+            "no planned mutation reaches an entry of {from} {want}"
+        );
+    }
+    assert!(
         planned
             .iter()
             .any(|p| p.contains("Order.ClearMines") && p.contains("lift"))
@@ -590,7 +616,94 @@ fn staged_s10b() -> World {
             work: 200,
         }
     });
+    staged_s10b_ai(&mut w, ap, piece);
     w
+}
+
+/// Fuzz stage `staged_s10b_ai` (S10b-ai Build A): player 0's AI holds one
+/// sweep (the `ClearMines` squad), one demolition with one piece done for
+/// an own Panzer IV, two refusals, a fort job for the AP minefield with its
+/// start, and the fort state one mine blast.
+fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
+    use frontline_sim::ai::{
+        AiDemolish, AiFortJob, AiSweep, DemolishPhase, FortPhase, JobKind, SweepPhase,
+    };
+    use frontline_sim::fort::MineBlast;
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::SquadId;
+
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let s = w.match_setup().unwrap();
+    let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
+    let tank = s.squad_type_index("ww2:ger_pz4_h_squad").unwrap();
+    let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+    let own = |w: &World, o: &dyn Fn(&frontline_sim::game::Order) -> bool| -> SquadId {
+        let g = w.game().unwrap();
+        *g.squads()
+            .iter()
+            .find(|(_, q)| q.owner == PlayerId(0) && o(&q.order))
+            .unwrap()
+            .0
+    };
+    use frontline_sim::game::Order;
+    let sweep = own(w, &|o| matches!(o, Order::ClearMines { .. }));
+    let demo = own(w, &|o| matches!(o, Order::Demolish { .. }));
+    let builder = w
+        .spawn_squad_at(PlayerId(0), eng, c(480, 300), east)
+        .unwrap();
+    let veh_sq = w
+        .spawn_squad_at(PlayerId(0), tank, c(380, 330), east)
+        .unwrap();
+    let vehicle = w.game().unwrap().squads()[&veh_sq].members[0];
+    let tick = w.tick();
+    assert!(w.with_ai_state(0, |ai| {
+        ai.sweeps.insert(
+            sweep,
+            AiSweep {
+                point: 0,
+                a: c(280, 300),
+                b: c(320, 300),
+                start: tick,
+                since: tick,
+                phase: SweepPhase::Sweep,
+                tries: 1,
+            },
+        );
+        ai.demolitions.insert(
+            demo,
+            AiDemolish {
+                vehicle,
+                pieces: [Some(piece), None, None],
+                done: 1,
+                start: tick,
+                since: tick,
+                phase: DemolishPhase::Charge,
+            },
+        );
+        ai.refuse(JobKind::Fort, c(500, 300), tick);
+        ai.refuse(JobKind::TruckGoal, c(200, 200), tick);
+        ai.forts.insert(
+            builder,
+            AiFortJob {
+                fort: ap,
+                point: 0,
+                line: vec![c(500, 310), c(530, 310)],
+                phase: FortPhase::Go,
+                start: tick,
+                since: tick,
+                work: None,
+                tries: 0,
+            },
+        );
+        ai.suspects_seen = 1;
+    }));
+    w.edit_fort(|f| {
+        f.blasts.push(MineBlast {
+            pos: c(600, 600),
+            owner: PlayerId(1),
+            tick,
+        })
+    });
 }
 
 /// The staged S10b save holds what the fuzz should reach there, and loads.
@@ -618,6 +731,19 @@ fn staged_s10b_save_holds_its_state() {
             .any(|o| matches!(o, Order::ClearMines { lift: Some(_), .. }))
     );
     assert!(orders.iter().any(|o| matches!(o, Order::Demolish { .. })));
+    // Fuzz stage `staged_s10b_ai`.
+    let ai = g.ai(frontline_sim::PlayerId(0)).unwrap();
+    assert!(!ai.sweeps.is_empty() && !ai.demolitions.is_empty());
+    assert!(ai.demolitions.values().any(|d| d.done == 1));
+    assert_eq!(ai.refused.len(), 2);
+    let ap_fort = g
+        .setup()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:ap_minefield")
+        .unwrap() as u16;
+    assert!(ai.forts.values().any(|j| j.fort == ap_fort));
+    assert!(!f.blasts.is_empty());
 }
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
