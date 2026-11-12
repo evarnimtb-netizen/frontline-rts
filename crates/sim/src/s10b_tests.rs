@@ -1346,6 +1346,119 @@ fn infantry_walks_through_obstacles() {
     );
 }
 
+/// The vehicle id of `p`'s squad `card` at (x, y) facing +x.
+fn tank_at(w: &mut World, p: u8, card: &str, x: i32, y: i32) -> (SquadId, SimId) {
+    let sq = spawn(w, p, card, x, y);
+    (sq, super::s6_tests::members(w, sq)[0])
+}
+
+fn move_squad(w: &mut World, p: u8, squad: SquadId, to: FxVec2) {
+    super::s6_tests::run(w, p, 3, CommandKind::Move { squad, target: to });
+}
+
+/// S10b review R15: a hedgehog ordered 9.3 m from a tank's hull centre (R18
+/// passes) does not stand while its padded, dilated nodes cover a track
+/// sample; once the tank has driven off it stands. Control: drop the
+/// `obstacle_on_vehicle` wait in `fort_tick` -> the hedgehog stands at
+/// once and the tank is `on_blocked`.
+#[test]
+fn obstacle_waits_until_no_vehicle_is_on_its_nodes() {
+    let mut w = flat(|_| {});
+    let f = fort(w.match_setup().unwrap(), "ww2:hedgehog");
+    let (tank, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
+    let eng = spawn(&mut w, 0, "ww2:ger_baupioniergruppe", 520, 520);
+    w.edit_fort(|s| {
+        s.carried_g.insert(eng, 100_000);
+    });
+    w.step(&[]);
+    fortify(&mut w, 0, eng, f, vec![dm(5066, 5066), dm(5076, 5066)]);
+    assert_eq!(fs(&w).works.len(), 1, "{:?}", refused(&w));
+    for _ in 0..400 * HZ {
+        w.step(&[]);
+        assert!(
+            fs(&w).pieces.is_empty(),
+            "the hedgehog stood on the tank's nodes"
+        );
+        assert!(!w.game().unwrap().vehicles[&v].on_blocked);
+        let full = fs(&w).works.values().any(|x| {
+            let d = &w.match_setup().unwrap().forts[x.fort as usize];
+            x.step == crate::fort::WorkStep::Build
+                && x.work >= d.work_ticks as u64 * d.work_men as u64 * 100
+        });
+        if full {
+            break;
+        }
+    }
+    super::s6_tests::steps(&mut w, 2 * HZ);
+    assert!(fs(&w).pieces.is_empty());
+    assert_eq!(fs(&w).works.len(), 1, "the work waits");
+    move_squad(&mut w, 0, tank, c(440, 500));
+    for _ in 0..60 * HZ {
+        w.step(&[]);
+        if !fs(&w).pieces.is_empty() {
+            break;
+        }
+    }
+    assert!(!fs(&w).pieces.is_empty(), "stands once the tank is gone");
+    assert!(!w.game().unwrap().vehicles[&v].on_blocked);
+}
+
+/// S10b review R15: a tank whose track samples lie on nodes a hedgehog
+/// blocks (stood beside it by the test tool) can drive out, but not on
+/// through the obstacle. Control: `escape` always false -> it never moves.
+#[test]
+fn vehicle_on_obstacle_nodes_drives_out() {
+    let mut w = flat(|_| {});
+    let f = fort(w.match_setup().unwrap(), "ww2:hedgehog");
+    let (tank, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
+    w.step(&[]);
+    assert!(w.build_now(f, &[dm(5066, 5066), dm(5076, 5066)], PlayerId(0)));
+    super::s6_tests::steps(&mut w, 2);
+    assert!(w.game().unwrap().vehicles[&v].on_blocked, "the stand-in");
+    let start = pos(&w, v);
+    move_squad(&mut w, 0, tank, c(440, 500));
+    for _ in 0..60 * HZ {
+        w.step(&[]);
+    }
+    let end = pos(&w, v);
+    assert!(
+        (start - end).length() > Fx::from_int(20),
+        "drove out: {start:?} -> {end:?}"
+    );
+    assert!(!w.game().unwrap().vehicles[&v].on_blocked);
+    // Not on through: ordered past the hedgehog, it never gets nearer it.
+    let mut w = flat(|_| {});
+    let (tank, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
+    w.step(&[]);
+    assert!(w.build_now(f, &[dm(5066, 5066), dm(5076, 5066)], PlayerId(0)));
+    super::s6_tests::steps(&mut w, 2);
+    let hh = dm(5066, 5066);
+    let d0 = (pos(&w, v) - hh).length();
+    move_squad(&mut w, 0, tank, c(530, 530));
+    for _ in 0..30 * HZ {
+        w.step(&[]);
+        let d = (pos(&w, v) - hh).length();
+        assert!(
+            d >= d0 - Fx::from_milli(100),
+            "nearer the hedgehog: {d:?} < {d0:?}"
+        );
+    }
+}
+
+/// S10b review R19: a point site is checked at the site only, not along
+/// the line to its facing point. Control: `near_a_vehicle(line)` again ->
+/// BadSpot for the tank 70 m from the site.
+#[test]
+fn point_site_ignores_a_vehicle_near_its_facing_point() {
+    let mut w = flat(|_| {});
+    let f = fort(w.match_setup().unwrap(), "ww2:hedgehog");
+    tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 570);
+    let eng = spawn(&mut w, 0, "ww2:ger_baupioniergruppe", 520, 500);
+    w.step(&[]);
+    fortify(&mut w, 0, eng, f, vec![c(500, 500), c(500, 580)]);
+    assert_eq!(fs(&w).works.len(), 1, "{:?}", refused(&w));
+}
+
 #[test]
 fn obstacle_refused_near_a_vehicle() {
     // Control: `vehicle_clear_m` 0 -> the hedgehog 4 m from the hull is

@@ -483,7 +483,10 @@ fn staged_s10b() -> World {
     let lane_mine = w.lay_mine_now(ap, c(300, 300), PlayerId(1)).unwrap();
     let mut ids = vec![lane_mine];
     for (k, f) in [ap, at, ap, at].into_iter().enumerate() {
-        ids.push(w.lay_mine_now(f, c(600 + 20 * k as i32, 600), PlayerId(k as u8 % 2)).unwrap());
+        ids.push(
+            w.lay_mine_now(f, c(600 + 20 * k as i32, 600), PlayerId(k as u8 % 2))
+                .unwrap(),
+        );
     }
     let tick = w.tick();
     w.edit_fort(|f| {
@@ -540,7 +543,11 @@ fn staged_s10b_save_holds_its_state() {
     assert!(f.mines.values().any(|m| m.boom_tick.is_some()));
     assert!(f.charges.iter().any(|c| c.piece.is_some()));
     let orders: Vec<&Order> = g.squads().values().map(|q| &q.order).collect();
-    assert!(orders.iter().any(|o| matches!(o, Order::ClearMines { lift: Some(_), .. })));
+    assert!(
+        orders
+            .iter()
+            .any(|o| matches!(o, Order::ClearMines { lift: Some(_), .. }))
+    );
     assert!(orders.iter().any(|o| matches!(o, Order::Demolish { .. })));
 }
 

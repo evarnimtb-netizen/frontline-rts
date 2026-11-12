@@ -734,6 +734,55 @@ impl MatchState {
         })
     }
 
+    /// S10b review R15: whether the pieces of obstacle `d` at `site`/`yaw`
+    /// would block a node under a track sample of a vehicle (not a wreck):
+    /// a raw node within the piece box plus `wreck_pad_m`, dilated by one
+    /// node (the tracked layer; the wheeled layer blocks less).
+    pub(crate) fn obstacle_on_vehicle(
+        &self,
+        terrain: &Heightfield,
+        d: &frontline_content::setup::FortSetup,
+        site: FxVec2,
+        yaw: Fx,
+    ) -> bool {
+        use crate::terrain::SPACING_M;
+        let f = dir(yaw);
+        let left = f.perp();
+        let pad = Fx::from_int(self.setup.rules.vehicles.path.wreck_pad_m as i32);
+        let feet: Vec<(FxVec2, Fx, Fx)> = d
+            .pieces
+            .iter()
+            .map(|b| {
+                let c =
+                    terrain.clamp(site + f * Fx::from(b.offset[0]) + left * Fx::from(b.offset[1]));
+                (c, Fx::from(b.half[0]) + pad, Fx::from(b.half[1]) + pad)
+            })
+            .collect();
+        let max = terrain.dim() as i32 - 1;
+        self.vderived.frames.iter().filter(|v| !v.wreck).any(|v| {
+            let Some(geo) = self.vderived.geo.get(v.type_idx as usize) else {
+                return false;
+            };
+            let g = crate::vehicle::sample_ground(terrain, v.origin.xy(), v.yaw, geo);
+            g.xy.iter().flatten().any(|&p| {
+                let (gx, gy) = terrain.nearest_grid(p);
+                (-1..=1).any(|dy: i32| {
+                    (-1..=1).any(|dx: i32| {
+                        let (nx, ny) = (gx as i32 + dx, gy as i32 + dy);
+                        if nx < 0 || ny < 0 || nx > max || ny > max {
+                            return false;
+                        }
+                        let q = FxVec2::from_int(nx * SPACING_M, ny * SPACING_M);
+                        feet.iter().any(|&(c, hx, hy)| {
+                            let r = q - c;
+                            r.dot(f).abs() <= hx && r.det(f).abs() <= hy
+                        })
+                    })
+                })
+            })
+        })
+    }
+
     /// `Fortify { squad, fort, line }` (section 4).
     pub(crate) fn order_fortify(
         &mut self,
@@ -793,7 +842,7 @@ impl MatchState {
         // within `vehicle_clear_m` of a vehicle hull (or wreck), which would
         // leave it `on_blocked` or on a mine.
         if (d.mine_item.is_some() || d.blocks_vehicles || Self::heavy_def(&d))
-            && self.near_a_vehicle(line)
+            && self.near_a_vehicle(pts)
         {
             return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
         }
@@ -1174,6 +1223,11 @@ impl MatchState {
             let wm = self.fort.works.get_mut(&id).expect("listed");
             wm.work = (wm.work + add).min(need);
             if wm.work < need {
+                continue;
+            }
+            // S10b review R15: an obstacle never stands on the nodes under a
+            // vehicle's tracks; the finished work waits until they are clear.
+            if d.blocks_vehicles && self.obstacle_on_vehicle(terrain, &d, site, yaw) {
                 continue;
             }
             self.stand_segment(terrain, id, site, yaw);

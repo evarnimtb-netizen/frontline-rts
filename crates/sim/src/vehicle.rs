@@ -1700,6 +1700,12 @@ pub struct DriveCtx<'a> {
     pub rules: &'a VehicleRulesSetup,
     pub hz: u32,
     pub seed: u64,
+    /// S10b review R15: the vehicle stands on nodes blocked near an
+    /// obstacle piece (this one's centre, the nearest): it may move as long
+    /// as no more of its track samples lie on blocked nodes than now, or
+    /// its track samples' mean does not come nearer the piece (it can turn
+    /// and drive out, not on through).
+    pub escape: Option<FxVec2>,
 }
 
 /// Steps vehicle `id` one tick with the §5.12.3 inputs (see the module
@@ -1720,7 +1726,36 @@ pub fn drive(
     let hz = ctx.hz.max(1) as i32;
     let throttle = (throttle as i32).max(-127);
     let steer = (steer as i32).max(-127);
-    let immobile = vs.immobile(v);
+    // S10b review R15: on blocked ground beside an obstacle it may still
+    // drive out (the `escape` rule below), so only the other causes hold it.
+    let immobile = if ctx.escape.is_some() {
+        vs.wreck_tick.is_some()
+            || vs.abandoned.is_some()
+            || vs.bog > 0
+            || vs.repairing.is_some()
+            || vs.immobilised(v)
+    } else {
+        vs.immobile(v)
+    };
+    let on_blocked = |g: &Ground| {
+        g.xy.iter()
+            .flatten()
+            .filter(|p| ctx.block.blocked_at(ctx.terrain, **p))
+            .count()
+    };
+    // The track samples' mean, squared distance to the piece (raw).
+    let away = |g: &Ground, c: FxVec2| {
+        let mut sum = FxVec2::ZERO;
+        g.xy.iter().flatten().for_each(|p| sum = sum + (*p - c));
+        sum.div_int((2 * TRACK_SAMPLES) as i32).length_sq_raw()
+    };
+    let (held, held_d) = match ctx.escape {
+        Some(c) => {
+            let g0 = sample_ground(ctx.terrain, t.pos.xy(), t.yaw, ctx.geo);
+            (on_blocked(&g0), away(&g0, c))
+        }
+        None => (0, 0),
+    };
     if vs.bog > 0 {
         vs.bog -= 1;
     }
@@ -1808,8 +1843,12 @@ pub fn drive(
     let step = yaw_dir(yaw1) * speed.div_int(hz);
     let ok = |g: &Ground| {
         let gp = ground_pose(g, ctx.geo);
-        !blocked(ctx, g)
-            && !(grade_pct(gp.pitch) > m.max_slope_pct && gp.pitch.abs() > vs.pitch.abs())
+        let free = if let Some(c) = ctx.escape {
+            on_blocked(g) <= held || away(g, c) >= held_d
+        } else {
+            !blocked(ctx, g)
+        };
+        free && !(grade_pct(gp.pitch) > m.max_slope_pct && gp.pitch.abs() > vs.pitch.abs())
     };
     let moving = step != FxVec2::ZERO;
     let turning = yaw1 != yaw0;
@@ -2330,6 +2369,22 @@ impl MatchState {
                     None => (0, 0),
                 }
             };
+            let xy = ents.transform[i].pos.xy();
+            let reach = geo.reach
+                + Fx::from_int(setup.rules.vehicles.path.wreck_pad_m as i32 + 3 * SPACING_M);
+            let escape = if vs.on_blocked {
+                vderived
+                    .piece_feet
+                    .iter()
+                    .filter(|(_, f)| {
+                        let r = reach + FxVec2::new(f.half_x, f.half_y).length();
+                        (f.center - xy).length_sq_raw() <= (r.raw().max(0) as u64).pow(2)
+                    })
+                    .min_by_key(|(id, f)| ((f.center - xy).length_sq_raw(), *id))
+                    .map(|(_, f)| f.center)
+            } else {
+                None
+            };
             let ctx = DriveCtx {
                 terrain,
                 block: vderived.block_of(v),
@@ -2338,6 +2393,7 @@ impl MatchState {
                 rules: &setup.rules.vehicles,
                 hz,
                 seed,
+                escape,
             };
             let mut t = ents.transform[i];
             let mut vel = ents.velocity[i];
@@ -2913,6 +2969,7 @@ mod tests {
                     rules: &self.s.rules.vehicles,
                     hz: 30,
                     seed: 7,
+                    escape: None,
                 };
                 drive(
                     &ctx,
@@ -3088,6 +3145,7 @@ mod tests {
                 rules: &r.s.rules.vehicles,
                 hz: 30,
                 seed: 7,
+                escape: None,
             };
             drive(&ctx, SimId(3), &mut r.vs, &mut r.t, &mut r.vel, 127, 0);
         };
