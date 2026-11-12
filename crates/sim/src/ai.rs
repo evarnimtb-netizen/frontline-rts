@@ -1947,6 +1947,34 @@ impl Planner<'_> {
             })
             .collect();
         let mut nest_taken = vec![false; points.len()];
+        // S10b-ai R7: one squad defends from each built own bunker: the
+        // point's MG team (lowest id), else its defender nearest the bunker;
+        // the nest then takes a second MG team only.
+        let bunkers: Vec<Option<(FxVec2, SquadId)>> = (0..points.len())
+            .map(|i| {
+                if points[i].rel != Rel::Own {
+                    return None;
+                }
+                let at = self.bunker_at(i)?;
+                let free =
+                    |j: usize| !claimed.contains(&mine[j].id) && !escorting.contains(&mine[j].id);
+                let here = || {
+                    assigned
+                        .iter()
+                        .filter(|&&(j, pi)| pi == i && free(j))
+                        .map(|&(j, _)| &mine[j])
+                };
+                here()
+                    .filter(|m| m.role == AiKind::Mg)
+                    .min_by_key(|m| m.id)
+                    .or_else(|| {
+                        here()
+                            .filter(|m| !matches!(m.role, AiKind::Mg | AiKind::AntiTank))
+                            .min_by_key(|m| ((m.lead - at).length_sq_raw(), m.id))
+                    })
+                    .map(|m| (at, m.id))
+            })
+            .collect();
         let shelters: Vec<Option<(FxVec2, SquadId)>> = (0..points.len())
             .map(|i| {
                 if points[i].rel != Rel::Own {
@@ -2043,6 +2071,10 @@ impl Planner<'_> {
                             shelter = true;
                             exact = true;
                             at
+                        }
+                        _ if bunkers[i].is_some_and(|(_, b)| b == m.id) => {
+                            exact = true;
+                            bunkers[i].map_or(target, |(at, _)| at)
                         }
                         (Some(at), _) if m.role == AiKind::Mg && !nest_taken[i] => {
                             nest_taken[i] = true;

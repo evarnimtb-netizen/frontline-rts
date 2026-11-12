@@ -36,7 +36,7 @@
 
 use frontline_content::MatchSetup;
 use frontline_content::setup::{
-    Capability, DigProfile, Fixed, FortShape, SquadTypeSetup, StockKind,
+    Capability, DigProfile, Fixed, FortShape, SquadTypeSetup, StockKind, SupplyKind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -272,6 +272,17 @@ pub(crate) fn s10b_fort(d: &frontline_content::setup::FortSetup) -> bool {
     d.mine_item.is_some() || d.blocks_vehicles || d.pit == Some(DigProfile::BunkerPit)
 }
 
+/// S10b-ai R7 (S10b R21): whether a squad with capability bits `caps`
+/// builds blueprint `d` as a field builder only (`build_structure` on the
+/// `build_heavy` bunker, at `heavy_by_field_pct`; the AI's other heavy
+/// works keep `build_heavy`). Those builders come after `build_heavy` ones.
+fn heavy_by_field(d: &frontline_content::setup::FortSetup, caps: u32) -> bool {
+    d.pit == Some(DigProfile::BunkerPit)
+        && crate::game::MatchState::heavy_def(d)
+        && caps & (1u32 << d.capability) == 0
+        && caps & Capability::BuildStructure.bit() != 0
+}
+
 /// How long a refusal is kept (ticks; spec 3: max(`refused_s`, 300 s)).
 pub(super) fn refusal_keep_ticks(s: &MatchSetup) -> u64 {
     let hz = s.tick_hz.max(1) as u64;
@@ -424,7 +435,15 @@ impl super::Planner<'_> {
                 let p = self.hedgehog_next(i)?;
                 Some(vec![p, facing(p)])
             }
-            // S10b-ai obstacles and the bunker: their sites come in Build C.
+            // R7: the trench end opposite the nest (the nest's offset
+            // mirrored by parity), facing the enemy.
+            WorkKind::Bunker => {
+                let (end, other) = if i.is_multiple_of(2) { (a, b) } else { (b, a) };
+                let out = (end - other).normalize_or_zero();
+                let p = tr.clamp(end + out * Fx::from_int(f.nest_offset_m as i32));
+                Some(vec![p, facing(p)])
+            }
+            // The log barrier's site is the gun's (`start_barriers`).
             _ => None,
         }
     }
@@ -621,6 +640,13 @@ impl super::Planner<'_> {
         {
             return Some(site[0]);
         }
+        self.bunker_built(i)
+    }
+
+    /// The centre of an own built bunker within `BUNKER_NEAR_M` of point
+    /// `i` (its roof piece; the nearest, ties by position).
+    fn bunker_built(&self, i: usize) -> Option<FxVec2> {
+        let s = &self.g.setup;
         let b = fort_of(s, WorkKind::Bunker)?;
         let pos: FxVec2 = s.map.points.get(i)?.pos.into();
         let me = self.me;
@@ -636,6 +662,52 @@ impl super::Planner<'_> {
             })
             .map(|q| q.pos)
             .min_by_key(|&p| ((p - pos).length_sq_raw(), p.x.raw(), p.y.raw()))
+    }
+
+    /// R7 manning (for `order_infantry`): the built own bunker at own point
+    /// `i`; None with `bunker` off.
+    pub(super) fn bunker_at(&self, i: usize) -> Option<FxVec2> {
+        let s = &self.g.setup;
+        if !switched_on(s, WorkKind::Bunker) {
+            return None;
+        }
+        self.bunker_built(i)
+    }
+
+    /// R7: the own point with an AI trench nearest an enemy base (ties by
+    /// index): the one point that gets the bunker.
+    fn bunker_point(&self) -> Option<usize> {
+        let g = self.g;
+        let s = &g.setup;
+        let bases: Vec<FxVec2> = (0..s.players.len() as u8)
+            .map(PlayerId)
+            .filter(|&o| o != self.me)
+            .map(|o| g.base_of(o))
+            .collect();
+        (0..s.map.points.len())
+            .filter(|&j| {
+                g.points.get(j).is_some_and(|c| c.owner == Some(self.me))
+                    && self.ai.trenches.iter().any(|t| t.point as usize == j)
+            })
+            .filter_map(|j| {
+                let pos: FxVec2 = s.map.points[j].pos.into();
+                let d = bases.iter().map(|&b| (b - pos).length_sq_raw()).min()?;
+                Some((d, j))
+            })
+            .min()
+            .map(|(_, j)| j)
+    }
+
+    /// R7: the bunker point `i` still wants: it is the bunker point, the
+    /// player has fewer than `bunkers_max` (built, building or a job).
+    fn bunker_wants(&self, i: usize) -> Vec<WorkKind> {
+        let s = &self.g.setup;
+        let k = WorkKind::Bunker;
+        let ok = switched_on(s, k)
+            && fort_of(s, k).is_some_and(|b| self.fort_use(b) < s.rules.ai.obstacles.bunkers_max)
+            && self.bunker_point() == Some(i)
+            && self.point_has(i, k) == Some(false);
+        if ok { vec![k] } else { Vec::new() }
     }
 
     /// R5: the `hedgehogs_row` sites of point `i`'s row, `hedgehog_step_m`
@@ -964,6 +1036,7 @@ impl super::Planner<'_> {
         let room = f.works_per_point.saturating_sub(have) as usize;
         want.truncate(room);
         if s10b_on(s) {
+            want.extend(self.bunker_wants(i));
             want.extend(self.field_wants(i));
             want.extend(self.obstacle_wants(i));
         }
@@ -1021,11 +1094,56 @@ impl super::Planner<'_> {
     /// (a point work's kg, a line's segment): its full carry holds it, or
     /// a truck is free for a run; and the kg it carries plus the budget
     /// cover it.
-    fn can_supply(&self, sq: SquadId, f: u16) -> bool {
+    fn can_supply(&self, sq: SquadId, f: u16, site: FxVec2) -> bool {
         let d = &self.g.setup.forts[f as usize];
         let need = d.materials_g;
-        (self.full_carry_g(sq) >= need || self.truck_free())
+        (self.full_carry_g(sq) >= need || self.truck_free() || self.at_hand(sq, d, site))
             && self.carried_g(sq).saturating_add(self.room_for(f)) >= need
+    }
+
+    /// S10b-ai R7: an S10b step over the builder's full carry (the 250 kg
+    /// bunker) needs no truck run when its carry plus the own construction
+    /// crates and vehicle kg within `material_reach_m` of `site` (what the
+    /// work draws from) cover it.
+    fn at_hand(&self, sq: SquadId, d: &frontline_content::setup::FortSetup, site: FxVec2) -> bool {
+        if !s10b_fort(d) {
+            return false;
+        }
+        let g = self.g;
+        let me = self.me;
+        let need = d.materials_g as u64;
+        let mut got = self.carried_g(sq) as u64;
+        if got >= need {
+            return true;
+        }
+        let Some(ft) = g.setup.rules.fortify.as_ref() else {
+            return false;
+        };
+        let r = Fx::from_int(ft.material_reach_m as i32);
+        got += g
+            .supply6
+            .crates
+            .values()
+            .filter(|c| {
+                c.owner == me
+                    && c.carrier.is_none()
+                    && g.setup.stocks[c.def as usize].supply == Some(SupplyKind::Construction)
+                    && near(c.pos, site, r)
+            })
+            .map(|c| c.g as u64)
+            .sum::<u64>();
+        got += g
+            .vehicles
+            .iter()
+            .filter(|(v, vs)| {
+                vs.material_g > 0
+                    && vs.wreck_tick.is_none()
+                    && self.ents.owner[v.index()] == me
+                    && near(self.ents.transform[v.index()].pos.xy(), site, r)
+            })
+            .map(|(_, vs)| vs.material_g as u64)
+            .sum::<u64>();
+        got >= need
     }
 
     /// The budget room (g) for blueprint `f`: S10b works their own (R8).
@@ -1050,8 +1168,8 @@ impl super::Planner<'_> {
         let d = &self.g.setup.forts[f as usize];
         m.strength_pct >= 60
             && builds(m.caps)
-            && m.caps & (1u32 << d.capability) != 0
-            && self.can_supply(m.id, f)
+            && (m.caps & (1u32 << d.capability) != 0 || heavy_by_field(d, m.caps))
+            && self.can_supply(m.id, f, site)
             && !self.fort_threat(known, kv, &[m.lead, site])
     }
 
@@ -1089,7 +1207,14 @@ impl super::Planner<'_> {
                             && !held.contains(&m.id)
                             && self.can_take(m, f, site, known, kv)
                     })
-                    .min_by_key(|m| ((m.lead - pos).length_sq_raw(), m.id))
+                    .min_by_key(|m| {
+                        let d = &s.forts[f as usize];
+                        (
+                            heavy_by_field(d, m.caps),
+                            (m.lead - pos).length_sq_raw(),
+                            m.id,
+                        )
+                    })
                     .map(|m| m.id)
             });
             if let Some(id) = pick {
@@ -1930,7 +2055,14 @@ impl super::Planner<'_> {
                             && !out.contains(&m.id)
                             && self.can_take(m, fort, site, known, kv)
                     })
-                    .min_by_key(|m| (self.ai.forts.contains_key(&m.id), m.id));
+                    .min_by_key(|m| {
+                        let d = &s.forts[fort as usize];
+                        (
+                            self.ai.forts.contains_key(&m.id),
+                            heavy_by_field(d, m.caps),
+                            m.id,
+                        )
+                    });
                 let Some(m) = pick else { continue };
                 let id = m.id;
                 let site = mid_of(s.forts[fort as usize].shape, &line);
@@ -2425,7 +2557,10 @@ impl super::Planner<'_> {
             let full = self.carry_room_g(id) == 0;
             // Fix F14: a step the squad cannot carry (and no truck can
             // bring) ends the job instead of a load or a walk.
-            if self.full_carry_g(id) < d.materials_g && !self.truck_free() {
+            if self.full_carry_g(id) < d.materials_g
+                && !self.truck_free()
+                && !self.at_hand(id, d, mid_of(d.shape, &job.line))
+            {
                 set(job, FortPhase::Done);
                 return;
             }
