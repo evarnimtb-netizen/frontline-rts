@@ -240,6 +240,10 @@ pub struct FortState {
     /// rebuilt by [`FortState::refresh_wire_index`]).
     #[serde(skip)]
     pub(crate) wire_index: WireIndex,
+    /// S10b-ai (R11): the derived known-mine path layers (never saved or
+    /// hashed; rebuilt by [`FortState::refresh_mine_layer`]).
+    #[serde(skip)]
+    pub(crate) mine_layer: MineLayer,
 }
 
 /// Side of a wire index cell (m).
@@ -269,6 +273,60 @@ impl PartialEq for WireIndex {
     }
 }
 impl Eq for WireIndex {}
+
+/// S10b-ai (R11): what a [`MineLayer`] was built from: the mine count, the
+/// next mine id, per player the mines whose `known` bit it holds, the grid
+/// side and the two bands (cm). Every lay raises `next_mine`, every removal
+/// lowers the count, every new known bit raises a count.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct MineKey {
+    len: usize,
+    next: u32,
+    known: Vec<u32>,
+    dim: u32,
+    bands_cm: (u32, u32),
+}
+
+/// One player's known enemy mines of one trigger (foot or vehicle): the
+/// coarse path nodes (sorted) and the mine positions (sorted by x, then
+/// y) for the exact step test.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MineSet {
+    pub nodes: Vec<u32>,
+    pub pos: Vec<FxVec2>,
+    /// The band (m) round each mine.
+    pub r: Fx,
+}
+
+impl MineSet {
+    /// Whether the straight step `a -> b` comes within the band of a mine.
+    pub fn crosses(&self, a: FxVec2, b: FxVec2) -> bool {
+        let lo = a.x.min(b.x) - self.r;
+        let hi = a.x.max(b.x) + self.r;
+        let from = self.pos.partition_point(|p| p.x < lo);
+        self.pos[from..]
+            .iter()
+            .take_while(|p| p.x <= hi)
+            .any(|&p| near_segment(p, a, b, self.r))
+    }
+}
+
+/// S10b-ai (R11): per player `[foot, vehicle]` [`MineSet`]s, derived from
+/// `FortState::mines` (fresh while its key matches; a stale layer is never
+/// read: [`FortState::mine_set`] answers `None` and the caller rebuilds).
+#[derive(Clone, Debug, Default)]
+pub struct MineLayer {
+    key: Option<MineKey>,
+    sets: Vec<[MineSet; 2]>,
+}
+
+/// Derived data: equal whatever it holds.
+impl PartialEq for MineLayer {
+    fn eq(&self, _: &MineLayer) -> bool {
+        true
+    }
+}
+impl Eq for MineLayer {}
 
 fn cell_of(v: Fx) -> u32 {
     (v.floor_int().max(0) / WIRE_CELL_M).min(0xFFFF) as u32
@@ -1882,6 +1940,116 @@ impl FortState {
     }
 }
 
+impl FortState {
+    /// S10b-ai (R11): the key the mine layer is built from now.
+    fn mine_key(&self, dim: u32, bands_cm: (u32, u32)) -> MineKey {
+        let mut known = vec![0u32; self.accounts.len()];
+        for m in self.mines.values() {
+            for (p, k) in known.iter_mut().enumerate() {
+                *k += (m.known >> p & 1) as u32;
+            }
+        }
+        MineKey {
+            len: self.mines.len(),
+            next: self.next_mine,
+            known,
+            dim,
+            bands_cm,
+        }
+    }
+
+    /// Whether the mine layer matches the mines (tests).
+    #[cfg(test)]
+    pub(crate) fn mine_layer_fresh(&self, dim: u32, bands_cm: (u32, u32)) -> bool {
+        self.mine_layer.key.as_ref() == Some(&self.mine_key(dim, bands_cm))
+    }
+
+    /// The full scan: player `p`'s known enemy mines of one trigger
+    /// (`vehicle`: AT, else AP) with band `cm`, nodes within the band plus
+    /// [`WIRE_NODE_SLACK_M`] (a step that comes within the band of a mine
+    /// has an end among them).
+    pub(crate) fn scan_mine_set(
+        &self,
+        items: &[frontline_content::setup::ItemSetup],
+        dim: u32,
+        p: PlayerId,
+        vehicle: bool,
+        cm: u32,
+    ) -> MineSet {
+        let r = Fx::from_milli(cm as i32 * 10);
+        let mut pos: Vec<FxVec2> = self
+            .mines
+            .values()
+            .filter(|m| {
+                m.owner != p
+                    && m.known >> p.0 & 1 == 1
+                    && items
+                        .get(m.item as usize)
+                        .and_then(|it| it.mine.as_ref())
+                        .is_some_and(|t| (t.trigger == 1) == vehicle)
+            })
+            .map(|m| m.pos)
+            .collect();
+        pos.sort_unstable_by_key(|v| (v.x.raw(), v.y.raw()));
+        let reach = r + Fx::from_int(WIRE_NODE_SLACK_M);
+        let mut nodes = Vec::new();
+        for &q in &pos {
+            let lo = |a: Fx| ((a - reach).floor_int() / NODE_M).max(0) as u32;
+            let hi =
+                |a: Fx| (((a + reach).floor_int() / NODE_M) + 1).clamp(0, dim as i32 - 1) as u32;
+            for gy in lo(q.y)..=hi(q.y) {
+                for gx in lo(q.x)..=hi(q.x) {
+                    let n = FxVec2::from_int(gx as i32 * NODE_M, gy as i32 * NODE_M);
+                    if gx < dim && gy < dim && near_segment(n, q, q, reach) {
+                        nodes.push(gy * dim + gx);
+                    }
+                }
+            }
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        MineSet { nodes, pos, r }
+    }
+
+    /// Rebuilds the mine layer when the mines, a known bit, the grid or a
+    /// band changed since the last build. Cheap when nothing changed.
+    pub(crate) fn refresh_mine_layer(
+        &mut self,
+        items: &[frontline_content::setup::ItemSetup],
+        dim: u32,
+        bands_cm: (u32, u32),
+    ) {
+        let key = self.mine_key(dim, bands_cm);
+        if self.mine_layer.key.as_ref() == Some(&key) {
+            return;
+        }
+        let sets = (0..self.accounts.len())
+            .map(|p| {
+                let p = PlayerId(p as u8);
+                [
+                    self.scan_mine_set(items, dim, p, false, bands_cm.0),
+                    self.scan_mine_set(items, dim, p, true, bands_cm.1),
+                ]
+            })
+            .collect();
+        self.mine_layer = MineLayer {
+            key: Some(key),
+            sets,
+        };
+    }
+
+    /// Player `p`'s set of a fresh layer, `None` when it holds no mine (or
+    /// the layer was never built).
+    pub(crate) fn mine_set(&self, p: PlayerId, vehicle: bool) -> Option<&MineSet> {
+        self.mine_layer.key.as_ref()?;
+        self.mine_layer
+            .sets
+            .get(p.0 as usize)
+            .map(|s| &s[vehicle as usize])
+            .filter(|s| !s.pos.is_empty())
+    }
+}
+
 /// Section 5 rule 4: a man inside a standing wire band moves at
 /// `wire_speed_pct` of `v` (unchanged without wire).
 pub(crate) fn wire_pace(fort: &FortState, setup: &MatchSetup, pos: FxVec2, v: Fx) -> Fx {
@@ -2382,13 +2550,20 @@ impl MatchState {
         tick: u64,
         out: &mut Vec<crate::items::Thrown>,
     ) {
+        // S10b-ai: blasts older than `BLAST_KEEP_S` are dropped.
+        if !self.fort.blasts.is_empty() {
+            let keep = BLAST_KEEP_S * self.setup.tick_hz.max(1) as u64;
+            self.fort.blasts.retain(|b| b.tick + keep > tick);
+        }
         if self.fort.mines.is_empty() {
             return;
         }
-        let mut gone: Vec<(u32, bool)> = Vec::new();
+        self.at_exposure(ents);
+        // (id, the unit that set it off).
+        let mut gone: Vec<(u32, Option<SimId>)> = Vec::new();
         for (&id, m) in &self.fort.mines {
             if m.boom_tick == Some(tick) {
-                gone.push((id, false));
+                gone.push((id, None));
                 continue;
             }
             let Some(trig) = self
@@ -2402,32 +2577,57 @@ impl MatchState {
             let r = Fx::from_milli(trig.trigger_cm as i32 * 10);
             let r2 = (r.raw().max(0) as u64).pow(2);
             let hit = if trig.trigger == 0 {
-                let mut any = false;
+                let mut any = None;
                 spatial.for_each_near(m.pos, r, |s| {
                     let i = s.index();
-                    if !any
+                    if any.is_none()
                         && ents.is_alive(s)
                         && ents.kind[i] == crate::ecs::EntityKind::Soldier
                         && ents.owner[i] != m.owner
                         && ents.unit[i].riding.is_none()
                         && (ents.transform[i].pos.xy() - m.pos).length_sq_raw() <= r2
                     {
-                        any = true;
+                        any = Some(s);
                     }
                 });
                 any
             } else {
                 self.vehicle_over(ents, m, r)
             };
-            if hit {
-                gone.push((id, true));
+            if hit.is_some() {
+                gone.push((id, hit));
             }
         }
-        for (id, triggered) in gone {
+        for (id, by) in gone {
             let m = self.fort.mines.remove(&id).expect("listed");
-            if triggered && let Some(a) = self.fort.accounts.get_mut(m.owner.0 as usize) {
+            if by.is_some()
+                && let Some(a) = self.fort.accounts.get_mut(m.owner.0 as usize)
+            {
                 a.mines_set_off = a.mines_set_off.saturating_add(1);
             }
+            // S10b-ai: the victim's player knew the mine (R12 measure), or
+            // it was own (a guard: never, R7).
+            if let Some(v) = by {
+                let vp = ents.owner[v.index()];
+                let a = self.fort.accounts.get_mut(vp.0 as usize);
+                if let Some(a) = a {
+                    if m.known >> vp.0 & 1 == 1 {
+                        a.lost_on_known = a.lost_on_known.saturating_add(1);
+                    }
+                    if vp == m.owner {
+                        a.own_mine_losses = a.own_mine_losses.saturating_add(1);
+                    }
+                }
+            }
+            // S10b-ai: every mine that goes off is remembered (known to all).
+            if self.fort.blasts.len() >= MAX_BLASTS {
+                self.fort.blasts.remove(0);
+            }
+            self.fort.blasts.push(MineBlast {
+                pos: m.pos,
+                owner: m.owner,
+                tick,
+            });
             let at = terrain.clamp(m.pos);
             let pos = at.extend(terrain.height_at(at));
             out.push(crate::items::Thrown {
@@ -2448,7 +2648,7 @@ impl MatchState {
 
     /// R4: whether an enemy vehicle of mine `m` has a track centreline or
     /// a wheel anchor within `r` of it.
-    fn vehicle_over(&self, ents: &Entities, m: &Mine, r: Fx) -> bool {
+    fn vehicle_over(&self, ents: &Entities, m: &Mine, r: Fx) -> Option<SimId> {
         use frontline_content::vehicle::ComponentKind;
         let mut ids: Vec<SimId> = Vec::new();
         self.vderived
@@ -2456,7 +2656,7 @@ impl MatchState {
             .for_each_near(m.pos, r + self.vderived.max_reach, |id| ids.push(id));
         ids.sort_unstable();
         ids.dedup();
-        ids.into_iter().any(|id| {
+        ids.into_iter().find(|&id| {
             if ents.kind.get(id.index()) != Some(&crate::ecs::EntityKind::Vehicle)
                 || ents.owner[id.index()] == m.owner
             {
@@ -2488,6 +2688,56 @@ impl MatchState {
         })
     }
 }
+
+impl MatchState {
+    /// S10b-ai: each enemy vehicle (not a wreck) whose centre is within
+    /// [`AT_EXPOSURE_M`] of a player's AT mine adds one tick to that
+    /// player's `at_exposure_ticks` (one index query per AT mine; nothing
+    /// without AT mines).
+    fn at_exposure(&mut self, ents: &Entities) {
+        let r = Fx::from_int(AT_EXPOSURE_M);
+        let r2 = (r.raw() as u64).pow(2);
+        let mut seen: Vec<(u8, SimId)> = Vec::new();
+        for m in self.fort.mines.values() {
+            let at = self
+                .setup
+                .items
+                .get(m.item as usize)
+                .and_then(|it| it.mine.as_ref())
+                .is_some_and(|t| t.trigger == 1);
+            if !at {
+                continue;
+            }
+            self.vderived.index.for_each_near(m.pos, r, |id| {
+                let i = id.index();
+                if ents.kind.get(i) == Some(&crate::ecs::EntityKind::Vehicle)
+                    && ents.owner[i] != m.owner
+                    && self
+                        .vehicles
+                        .get(&id)
+                        .is_some_and(|v| v.wreck_tick.is_none())
+                    && (ents.transform[i].pos.xy() - m.pos).length_sq_raw() <= r2
+                {
+                    seen.push((m.owner.0, id));
+                }
+            });
+        }
+        if seen.is_empty() {
+            return;
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        for (p, _) in seen {
+            if let Some(a) = self.fort.accounts.get_mut(p as usize) {
+                a.at_exposure_ticks = a.at_exposure_ticks.saturating_add(1);
+            }
+        }
+    }
+}
+
+/// S10b-ai: the `at_exposure_ticks` reach (m, vehicle centre to an AT
+/// mine).
+pub const AT_EXPOSURE_M: i32 = 5;
 
 /// S10b: mine bursts get keys `MINE_KEY_BASE | mine id` (mine ids stay
 /// below `MAX_ID_COUNTER` = 2^31; thrown ids too, under `ITEM_CRATER`).

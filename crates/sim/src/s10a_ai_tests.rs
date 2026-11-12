@@ -72,6 +72,7 @@ fn foot_path_ro(w: &World, from: FxVec2, to: FxVec2) -> PathResult {
         &cost,
         None,
         Some(wire),
+        None,
         mv.path_max_expansions,
         &mut s,
     )

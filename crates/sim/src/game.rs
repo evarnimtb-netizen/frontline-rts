@@ -1902,6 +1902,34 @@ impl MatchState {
         let max_exp = mv.path_max_expansions;
         // Infantry: AT-ditch costs once a match has ditches (S3).
         let ditches = (!self.at_ditches.is_empty()).then_some(&self.vderived.block);
+        // S10b-ai (R11): known enemy mines priced, per player and trigger,
+        // only with `mine_paths` on, a mine standing and a request queued
+        // (the derived layer rebuilt only when the mines or known bits
+        // changed).
+        let mine_rule = self
+            .setup
+            .rules
+            .fortify
+            .as_ref()
+            .filter(|f| f.mine_paths == 1)
+            .map(|f| {
+                (
+                    f.mine_path_cost_pct,
+                    (f.mine_band_foot_cm, f.mine_band_vehicle_cm),
+                )
+            });
+        let mined = match mine_rule {
+            Some((_, bands))
+                if !self.fort_off
+                    && !self.fort.mines.is_empty()
+                    && self.path_queue.queues.iter().any(|q| !q.is_empty()) =>
+            {
+                self.fort
+                    .refresh_mine_layer(&self.setup.items, terrain.dim(), bands);
+                true
+            }
+            _ => false,
+        };
         // S10a: the wire layer, only when wire stands (S10a-ai: from the
         // derived cell index, rebuilt only when the wire changed).
         let wired = !self.fort.wire.is_empty() && !self.fort_off;
@@ -1914,7 +1942,15 @@ impl MatchState {
         } else {
             std::borrow::Cow::Borrowed(&[][..])
         };
+        let mine_pct = mine_rule.map_or(100, |r| r.0);
         let (fort, forts) = (&self.fort, &self.setup.forts);
+        let mines_of = |p: PlayerId, vehicle: bool| {
+            if mined {
+                fort.mine_set(p, vehicle)
+            } else {
+                None
+            }
+        };
         let crosses = |a: FxVec2, b: FxVec2| fort.step_in_wire(forts, a, b);
         let wire = (!wire_nodes.is_empty()).then(|| crate::path::WireCost {
             nodes: &wire_nodes,
@@ -1926,13 +1962,23 @@ impl MatchState {
                 .map_or(100, |f| f.wire_path_cost_pct),
             crosses: &crosses,
         });
-        let foot_path = |from: FxVec2, to: FxVec2, scratch: &mut PathScratch| match (ditches, wire)
-        {
-            (_, Some(_)) => crate::path::find_foot_path(
-                terrain, from, to, &cost, ditches, wire, max_exp, scratch,
-            ),
-            (Some(d), None) => find_infantry_path(terrain, from, to, &cost, d, max_exp, scratch),
-            (None, None) => find_path(terrain, from, to, &cost, max_exp, scratch),
+        let foot_path = |from: FxVec2, to: FxVec2, p: PlayerId, scratch: &mut PathScratch| {
+            let set = mines_of(p, false);
+            let cross = |a: FxVec2, b: FxVec2| set.is_some_and(|s| s.crosses(a, b));
+            let mines = set.map(|s| crate::path::MineCost {
+                nodes: &s.nodes,
+                cost_pct: mine_pct,
+                crosses: &cross,
+            });
+            match (ditches, wire, mines) {
+                (_, Some(_), _) | (_, _, Some(_)) => crate::path::find_foot_path(
+                    terrain, from, to, &cost, ditches, wire, mines, max_exp, scratch,
+                ),
+                (Some(d), None, None) => {
+                    find_infantry_path(terrain, from, to, &cost, d, max_exp, scratch)
+                }
+                (None, None, None) => find_path(terrain, from, to, &cost, max_exp, scratch),
+            }
         };
         let pq = &mut self.path_queue;
         let n = pq.queues.len();
@@ -1956,7 +2002,7 @@ impl MatchState {
                         continue;
                     }
                     let from = ctx.ents.transform[sq.lead(ctx.ents).index()].pos.xy();
-                    let r = foot_path(from, sq.nav.goal, scratch);
+                    let r = foot_path(from, sq.nav.goal, sq.owner, scratch);
                     avail -= r.expansions as i64;
                     let nav = &mut sq.nav;
                     nav.path = r.points;
@@ -1975,7 +2021,7 @@ impl MatchState {
                     }
                     let from = ctx.ents.transform[i].pos.xy();
                     let goal = ctx.ents.unit[i].nav.goal;
-                    let r = foot_path(from, goal, scratch);
+                    let r = foot_path(from, goal, ctx.ents.owner[i], scratch);
                     avail -= r.expansions as i64;
                     let nav = &mut ctx.ents.unit[i].nav;
                     nav.path = r.points;
@@ -2011,6 +2057,17 @@ impl MatchState {
                             .block_of(&self.setup.vehicles[self.vehicles[&v].type_idx as usize]),
                         avoid,
                         costs: &self.setup.rules.vehicles.path,
+                        mines: None,
+                    };
+                    let set = mines_of(sq.owner, true);
+                    let cross = |a: FxVec2, b: FxVec2| set.is_some_and(|s| s.crosses(a, b));
+                    let veh = VehiclePathCost {
+                        mines: set.map(|s| crate::path::MineCost {
+                            nodes: &s.nodes,
+                            cost_pct: mine_pct,
+                            crosses: &cross,
+                        }),
+                        ..veh
                     };
                     let from = ctx.ents.transform[v.index()].pos.xy();
                     let r = find_vehicle_path(

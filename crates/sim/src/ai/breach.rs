@@ -318,6 +318,7 @@ impl super::Planner<'_> {
             &cost,
             ditches,
             Some(wire),
+            None,
             mv.path_max_expansions,
             &mut scratch,
         )

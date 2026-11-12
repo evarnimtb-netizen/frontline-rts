@@ -2845,6 +2845,9 @@ mod s10a_ai_tests;
 #[path = "s10a_tests.rs"]
 mod s10a_tests;
 #[cfg(test)]
+#[path = "s10b_ai_path_tests.rs"]
+mod s10b_ai_path_tests;
+#[cfg(test)]
 #[path = "s10b_ai_tests.rs"]
 mod s10b_ai_tests;
 #[cfg(test)]

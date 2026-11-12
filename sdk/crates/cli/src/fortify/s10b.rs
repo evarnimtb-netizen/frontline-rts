@@ -59,11 +59,11 @@ const AT_CROSS_M: i32 = AT_RUN_M;
 /// Gap between AT rows.
 pub const AT_ROW_GAP_M: i32 = 4;
 /// AT mines along a row (m).
-const AT_STEP_CM: i32 = 400;
+pub(super) const AT_STEP_CM: i32 = 400;
 /// AP rows: gap and mine step.
-const AP_ROW_GAP_M: i32 = 4;
-const AP_STEP_CM: i32 = 200;
-const MEDIUM_TANKS: [&str; 2] = ["ger_pz4_h_squad", "usa_m4a3_75_squad"];
+pub(super) const AP_ROW_GAP_M: i32 = 4;
+pub(super) const AP_STEP_CM: i32 = 200;
+pub(super) const MEDIUM_TANKS: [&str; 2] = ["ger_pz4_h_squad", "usa_m4a3_75_squad"];
 
 /// T102: a tank driven over one AT mine, and through an AT field.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -176,7 +176,7 @@ pub struct S10bReport {
 }
 
 /// One row's fields as `name value` pairs (`-` for a row not yet run).
-fn fields(v: &serde_json::Value) -> String {
+pub(super) fn fields(v: &serde_json::Value) -> String {
     let Some(m) = v.as_object() else {
         return String::new();
     };
@@ -222,7 +222,7 @@ fn lay(w: &mut World, id: &str, owner: u8, pts: &[FxVec2]) -> Result<()> {
 }
 
 /// Like `lay`, returning the mines' ids.
-fn lay_ids(w: &mut World, id: &str, owner: u8, pts: &[FxVec2]) -> Result<Vec<u32>> {
+pub(super) fn lay_ids(w: &mut World, id: &str, owner: u8, pts: &[FxVec2]) -> Result<Vec<u32>> {
     let f = fort_of(w, id)?;
     pts.iter()
         .map(|&p| {
@@ -259,7 +259,7 @@ fn step_watching_blasts(
 /// Rows across an eastward path (x in m from `x0`, every `gap` m): `rows`
 /// rows of `FIELD_ROW_M`, mines every `step_cm`, row k shifted by
 /// `k * shift_cm`, centred on `LINE_Y`.
-fn field(x0: i32, rows: i32, gap: i32, step_cm: i32, shift_cm: i32) -> Vec<FxVec2> {
+pub(super) fn field(x0: i32, rows: i32, gap: i32, step_cm: i32, shift_cm: i32) -> Vec<FxVec2> {
     let mut out = Vec::new();
     for k in 0..rows {
         let n = FIELD_ROW_M * 100 / step_cm;
@@ -377,7 +377,7 @@ fn pass_mine(args: &FortifyArgs, seed: u64, owner: u8, off_cm: i32) -> Result<bo
 
 /// A line squad of `p` placed west of the field and moved `run_m` east
 /// (`watch` sees the world each tick); (losses, men).
-fn cross(
+pub(super) fn cross(
     w: &mut World,
     p: u8,
     start: FxVec2,
@@ -433,7 +433,7 @@ fn close_passes(
     }
 }
 
-fn pct(a: u32, b: u32) -> Option<f64> {
+pub(super) fn pct(a: u32, b: u32) -> Option<f64> {
     (b > 0).then(|| (a as f64 * 1000.0 / b as f64).round() / 10.0)
 }
 

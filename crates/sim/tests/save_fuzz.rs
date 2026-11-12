@@ -52,6 +52,11 @@ fn holds(w: &World) -> Vec<&'static str> {
     put(!f.pieces.is_empty(), "pieces");
     put(!f.wire.is_empty(), "wire");
     put(!f.charges.is_empty(), "charges");
+    put(!f.blasts.is_empty(), "blasts");
+    put(
+        f.accounts.iter().any(|a| a.lost_on_known > 0),
+        "lost_on_known",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -697,12 +702,17 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
         );
         ai.suspects_seen = 1;
     }));
+    // S10b-ai Build B: a player-1 AP mine on a field player 0 knew, set off
+    // by a player-0 man this tick (as `take_mines` leaves it: the mine gone,
+    // its blast remembered, the loss counted as on a known field).
     w.edit_fort(|f| {
         f.blasts.push(MineBlast {
             pos: c(600, 600),
             owner: PlayerId(1),
             tick,
-        })
+        });
+        f.accounts[1].mines_set_off += 1;
+        f.accounts[0].lost_on_known += 1;
     });
 }
 
@@ -743,8 +753,14 @@ fn staged_s10b_save_holds_its_state() {
         .position(|f| f.id == "ww2:ap_minefield")
         .unwrap() as u16;
     assert!(ai.forts.values().any(|j| j.fort == ap_fort));
-    assert!(!f.blasts.is_empty());
+    let h = holds(&w);
+    let miss: Vec<_> = STAGED_MUST_HOLD.iter().filter(|m| !h.contains(m)).collect();
+    assert!(miss.is_empty(), "the staged save lacks {miss:?}");
 }
+
+/// What the staged S10b save must hold beyond the S10b orders (fuzz stage
+/// `staged_s10b_ai + blasts and lost_on_known set`, S10b-ai Build B).
+const STAGED_MUST_HOLD: [&str; 2] = ["blasts", "lost_on_known"];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
 /// checked, so a mine whose blueprint names item 9999 loaded and the first

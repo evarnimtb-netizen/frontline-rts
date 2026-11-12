@@ -93,6 +93,8 @@ pub struct VehiclePathCost<'a> {
     pub avoid: Option<u32>,
     /// Woods, dug-ground, avoid and margin costs (`[vehicles.path]`).
     pub costs: &'a VehiclePathTuning,
+    /// S10b-ai (R11): known enemy AT mines (`None`: no mine costs).
+    pub mines: Option<MineCost<'a>>,
 }
 
 /// Result of [`find_path`].
@@ -247,9 +249,14 @@ impl WireCost<'_> {
     }
 }
 
-/// S10a: an infantry path with optional AT-ditch costs and wire costs
-/// (module docs). Without wire it is [`find_path`] or
-/// [`find_infantry_path`].
+/// S10b-ai (R11): the mine step layer, the same shape as [`WireCost`]:
+/// the coarse nodes near a known enemy mine, the step cost (%) and the
+/// exact test (a step within the band of such a mine).
+pub type MineCost<'a> = WireCost<'a>;
+
+/// S10a: an infantry path with optional AT-ditch costs, wire costs and
+/// (S10b-ai) known-mine costs (module docs). Without wire and mines it is
+/// [`find_path`] or [`find_infantry_path`].
 #[allow(clippy::too_many_arguments)]
 pub fn find_foot_path(
     terrain: &Heightfield,
@@ -258,6 +265,7 @@ pub fn find_foot_path(
     cost: &PathCost,
     ditches: Option<&BlockLayer>,
     wire: Option<WireCost>,
+    mines: Option<MineCost>,
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
@@ -269,6 +277,7 @@ pub fn find_foot_path(
         None,
         ditches,
         wire.as_ref(),
+        mines.as_ref(),
         max_expansions,
         s,
     )
@@ -352,6 +361,7 @@ fn search(
         vehicle,
         ditches,
         None,
+        vehicle.and_then(|v| v.mines.as_ref()),
         max_expansions,
         s,
     )
@@ -366,6 +376,7 @@ fn search_with(
     vehicle: Option<&VehiclePathCost>,
     ditches: Option<&BlockLayer>,
     wire: Option<&WireCost>,
+    mines: Option<&MineCost>,
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
@@ -483,6 +494,13 @@ fn search_with(
             {
                 c = (c as u64 * w.cost_pct as u64 / 100).min(u32::MAX as u64 / 4) as u32;
             }
+            // S10b-ai (R11): a step within the band of a known enemy mine
+            // (the same exact step test).
+            if let Some(w) = mines
+                && w.step(dim, n, m)
+            {
+                c = (c as u64 * w.cost_pct as u64 / 100).min(u32::MAX as u64 / 4) as u32;
+            }
             // Saturating: extreme slope rules on a large map could exceed
             // u32 (the sim panics on overflow).
             let g = g_n.saturating_add(c);
@@ -515,7 +533,15 @@ fn search_with(
     } else if grid.is_empty() {
         grid.push(terrain.clamp(from));
     }
-    let points = smooth(terrain, terrain.clamp(from), &grid, cost, vehicle, wire);
+    let points = smooth(
+        terrain,
+        terrain.clamp(from),
+        &grid,
+        cost,
+        vehicle,
+        wire,
+        mines,
+    );
     PathResult {
         points,
         expansions,
@@ -566,6 +592,7 @@ fn smooth(
     cost: &PathCost,
     vehicle: Option<&VehiclePathCost>,
     wire: Option<&WireCost>,
+    mines: Option<&MineCost>,
 ) -> Vec<FxVec2> {
     // Vehicles: the dearest node a segment touches (2 m samples), `None`
     // for a blocked one. A shortcut may not touch dearer ground than the
@@ -595,6 +622,7 @@ fn smooth(
         let mut all_trench = vehicle.is_none() && at(anchor);
         let mut path_dear = 0u64;
         let mut path_wire = false;
+        let mut path_mine = false;
         let hi = (i + SMOOTH_LOOKAHEAD).min(grid.len() - 1);
         for (j, &node) in grid.iter().enumerate().take(hi + 1).skip(i) {
             path_worst = path_worst.max(segment_grade(terrain, prev, node));
@@ -605,6 +633,9 @@ fn smooth(
             }
             if let Some(w) = wire {
                 path_wire |= (w.crosses)(prev, node);
+            }
+            if let Some(w) = mines {
+                path_mine |= (w.crosses)(prev, node);
             }
             prev = node;
             if j == i {
@@ -618,6 +649,7 @@ fn smooth(
                         && dear(v, anchor, node).is_some_and(|d| d <= path_dear.max(100))
                 })
                 && wire.is_none_or(|w| path_wire || !(w.crosses)(anchor, node))
+                && mines.is_none_or(|w| path_mine || !(w.crosses)(anchor, node))
             {
                 best = j;
             }
@@ -852,6 +884,7 @@ mod tests {
             block: &b,
             avoid: None,
             costs: &VCOSTS,
+            mines: None,
         };
         let mut s = PathScratch::default();
         let (from, to) = (FxVec2::from_int(60, 60), FxVec2::from_int(200, 60));
@@ -886,6 +919,7 @@ mod tests {
             block: &b,
             avoid: None,
             costs: &VCOSTS,
+            mines: None,
         };
         let mut s = PathScratch::default();
         let (from, to) = (FxVec2::from_int(60, 72), FxVec2::from_int(150, 72));
@@ -916,6 +950,7 @@ mod tests {
             block: &b,
             avoid: Some(gy * t.dim() + gx),
             costs: &VCOSTS,
+            mines: None,
         };
         let r = find_vehicle_path(&t, from, to, &COST, &avoided, 100_000, &mut s);
         let path = [&[from][..], &r.points].concat();

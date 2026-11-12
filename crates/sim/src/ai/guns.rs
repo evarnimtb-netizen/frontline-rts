@@ -936,6 +936,7 @@ impl super::Planner<'_> {
             block: self.g.vderived.block_of(ty),
             avoid: None,
             costs: &s.rules.vehicles.path,
+            mines: None,
         };
         let r = find_vehicle_path(
             self.terrain,
