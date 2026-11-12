@@ -15,10 +15,12 @@
 # tests: every release test of the workspace with the ignored ones, three
 #   binaries at a time (same tests as full, about a third of the time).
 # full: fmt, clippy, the whole workspace's tests including the ignored ones
-#   (release), golden ballistics, validate mods/ww2, the bridge build, the four
+#   (release, through ptest.py with PTEST_NO_CACHE=1: always all of them), golden ballistics, validate mods/ww2, the bridge build, the four
 #   Godot headless tests and a settings.cfg-unchanged check. One line each:
 #   "name: ok" or "name: FAIL (see LOG)".
 #
+# ptest.py skips a binary that passed with the same inputs ("cached"; see its
+# docstring); PTEST_NO_CACHE=1 turns that off.
 # Env: CARGO_BUILD_JOBS (default 4), GODOT (default ~/Applications/Godot.app),
 # SETTINGS_BAK (the saved copy of the Godot user settings.cfg to compare with).
 # Exit status is non-zero when anything fails.
@@ -189,7 +191,8 @@ timeout_run() {
 full() {
     step fmt fmt cargo fmt --all -- --check
     step clippy clippy cargo clippy -q --workspace --all-targets -- -D warnings
-    cargo_tests tests test_full --workspace --release -- --include-ignored
+    # The same parallel path as `tests`, never from the cache.
+    PTEST_NO_CACHE=1 ptests tests test_full --include-ignored -- --workspace
     step build-cli build_cli cargo build -q --release -p frontline-cli
     step golden golden target/release/frontline-cli ballistics --golden mods/ww2/tests/ballistics.toml
     step validate validate target/release/frontline-cli validate mods/ww2

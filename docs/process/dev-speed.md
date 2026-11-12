@@ -196,3 +196,14 @@ Proposed for the next slice (not yet adopted; the owner has not seen them):
 12. Review keeps three lenses but shares one read pack; the save lens is narrowed once the fuzz coverage test passes.
 
 Not recommended: parallel Fix worktrees; moving Build or Fix to a cheaper model.
+
+Adopted 2026-11-12:
+
+- `tools/ptest.py` caches passes per binary (key: sha256 of the executable, flags, mods/, godot/ text files and the release CLI);
+  net, godot-bridge and simbench (sockets, timing) never cache; failures never cache; `PTEST_NO_CACHE=1` turns it off. The
+  summary line prints "N cached". It also starts the longest known binaries first (`target/check/ptest-times.json`).
+- `tools/check.sh full` now runs the suite through ptest.py with `PTEST_NO_CACHE=1` (always everything).
+- `tools/verify.sh`: timing40 runs first and alone; then `check_full`, the 160 sets, fortify+mortar, armour5 and armour_stress
+  run beside each other (`VERIFY_SERIAL=1` keeps the old serial order). summary.txt lines are unchanged; their order differs.
+- `tools/show.sh FILE::name` prints a fn, struct, enum, trait, mod, impl or test by name (same parsing as outline.sh).
+- Measured: `check.sh tests` on an unchanged tree, 268 s first, 67 s second (53 of 63 binaries cached).

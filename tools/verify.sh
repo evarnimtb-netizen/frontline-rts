@@ -3,13 +3,13 @@
 # (docs/process/dev-speed.md). Same checks as the per-slice verify scripts of
 # S6-S9, minus the repeats: the release tests and the Godot tests run once
 # (inside check.sh full), the deterministic runs go through tools/batch.sh
-# (cached per binary + mods), and the armour and fortify runs play beside the
+# (cached per binary + mods), and check.sh full, the armour and fortify runs play beside the
 # 160 sets instead of after them.
 #
 #   tools/verify.sh OUTDIR TARGETS.toml
 #
 # Writes OUTDIR/summary.txt (one line per step with its seconds) and prints it.
-# Run it alone on a quiet machine: step 2 measures tick time.
+# Run it alone on a quiet machine: step 1 measures tick time, before anything else starts.
 # Env: SETTINGS_BAK (see check.sh), VERIFY_SERIAL=1 (armour after the sets).
 set -u
 cd "$(dirname "$0")/.."
@@ -34,12 +34,9 @@ timed() { # NAME CMD... (stdout+stderr to OUTDIR/NAME.txt)
     git status --porcelain | head -5
 } | tee -a "$SUM"
 
-# 1. fmt, clippy, release tests with the ignored ones, golden, validate,
-#    bridge, Godot tests, settings.cfg.
-timed check_full tools/check.sh full
-cat "$O/check_full.txt" >>"$SUM"
-
-# 2. Tick time: 40 matches at 3 jobs, alone, never from the cache.
+# 1. Tick time first, alone on a quiet machine: 40 matches at 3 jobs, never
+#    from the cache. (check.sh full builds the CLI later; build it here.)
+cargo build -q --release -p frontline-cli >"$O/build_cli.txt" 2>&1 || { cat "$O/build_cli.txt"; exit 2; }
 timed run_timing40 env BATCH_NO_CACHE=1 BATCH_JOBS=3 tools/batch.sh "$O/timing40.json" -- \
     skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45
 cp "$O/timing40.json" "$O/skirmish40.json"
@@ -48,22 +45,36 @@ import json,sys
 t=json.load(open('$O/timing40.json'))['tick_p99_ms']
 print('tick p99 ms:', json.dumps(t))" | tee -a "$SUM"
 
-# 3. The 160 sets, and beside them the armour, fortify and mortar runs.
+# 2. Beside each other: check.sh full (fmt, clippy, release tests with the
+#    ignored ones, golden, validate, bridge, Godot tests, settings.cfg), the
+#    160 sets, and the fortify/mortar run and the two armour runs.
 side() {
-    timed fortify tools/batch.sh "$O/fortify10.json" -- fortify-test --seeds 10
-    timed run_armour5 tools/batch.sh "$O/armour5.json" -- armour-test --seeds 5
-    timed armour_stress tools/batch.sh "$O/armour_stress10.json" -- armour-test --stress --seeds 10
-    timed mortar_bench "$C" mortar-bench --seeds 10 --jobs 2
+    if [ -n "${VERIFY_SERIAL:-}" ]; then
+        timed fortify tools/batch.sh "$O/fortify10.json" -- fortify-test --seeds 10
+        timed run_armour5 tools/batch.sh "$O/armour5.json" -- armour-test --seeds 5
+        timed armour_stress tools/batch.sh "$O/armour_stress10.json" -- armour-test --stress --seeds 10
+        timed mortar_bench "$C" mortar-bench --seeds 10 --jobs 2
+        return
+    fi
+    ( timed fortify tools/batch.sh "$O/fortify10.json" -- fortify-test --seeds 10
+      timed mortar_bench "$C" mortar-bench --seeds 10 --jobs 2 ) &
+    timed run_armour5 tools/batch.sh "$O/armour5.json" -- armour-test --seeds 5 &
+    timed armour_stress tools/batch.sh "$O/armour_stress10.json" -- armour-test --stress --seeds 10 &
+    wait
 }
 if [ -n "${VERIFY_SERIAL:-}" ]; then
+    timed check_full tools/check.sh full
     timed sets tools/batch.sh sets "$O"
     side
 else
+    timed check_full tools/check.sh full &
+    CHK=$!
     side &
     SIDE=$!
     timed sets tools/batch.sh sets "$O"
-    wait $SIDE
+    wait $SIDE $CHK
 fi
+cat "$O/check_full.txt" >>"$SUM"
 cat "$O/sets.txt" >>"$SUM"
 python3 -I tools/pool.py "$O" | tee -a "$SUM"
 
