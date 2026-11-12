@@ -754,7 +754,7 @@ pub(crate) fn push_varint(out: &mut Vec<u8>, mut v: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use frontline_sim::{FxVec2, PlayerId, SimId, game::SquadId};
+    use frontline_sim::{Fx, FxVec2, PlayerId, SimId, game::SquadId};
 
     fn roundtrip(p: Packet) {
         let mut buf = Vec::new();
@@ -1029,6 +1029,56 @@ mod tests {
             bangalore(0),
             bangalore(MAX_UNITS + 1),
         ] {
+            assert!(!command_in_limits(&k), "{k:?}");
+            if encode(1, &input(k.clone()), &mut buf).is_ok() {
+                assert_eq!(decode(&buf), Err(DecodeError::Limit), "{k:?}");
+            }
+        }
+    }
+
+    /// S10b: `ClearMines` lanes up to `MAX_LANE_M` pass, a longer one is
+    /// refused on the wire; `Demolish` is a point. Control: let a lane of
+    /// `MAX_LANE_M` + 1 m pass (`<= (max + 1)^2`) -> the over-long lane is
+    /// accepted and the test fails.
+    #[test]
+    fn net_s10b_commands_in_limits() {
+        let lane = |len_mm: i32| CommandKind::ClearMines {
+            squad: SquadId(4),
+            a: FxVec2::from_int(10, 10),
+            b: FxVec2::new(Fx::from_int(10), Fx::from_int(10) + Fx::from_milli(len_mm)),
+        };
+        let input = |k: CommandKind| {
+            Packet::Input(Input {
+                ack: BundleAck::default(),
+                turns: vec![InputTurn {
+                    target: 0,
+                    seq0: 0,
+                    cmds: vec![k],
+                }],
+            })
+        };
+        let mut buf = Vec::new();
+        let m = MAX_LANE_M * 1000;
+        let ok = [
+            lane(0),
+            lane(1000),
+            lane(m),
+            // A diagonal at the limit.
+            CommandKind::ClearMines {
+                squad: SquadId(4),
+                a: FxVec2::from_int(0, 0),
+                b: FxVec2::from_int(MAX_LANE_M * 3 / 5, MAX_LANE_M * 4 / 5),
+            },
+            CommandKind::Demolish {
+                squad: SquadId(4),
+                at: FxVec2::from_int(-5, 9),
+            },
+        ];
+        for k in ok {
+            assert!(command_in_limits(&k), "{k:?}");
+            roundtrip(input(k.clone()));
+        }
+        for k in [lane(m + 1000), lane(m + 1), lane(-m - 1000)] {
             assert!(!command_in_limits(&k), "{k:?}");
             if encode(1, &input(k.clone()), &mut buf).is_ok() {
                 assert_eq!(decode(&buf), Err(DecodeError::Limit), "{k:?}");

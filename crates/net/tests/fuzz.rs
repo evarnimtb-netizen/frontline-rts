@@ -208,7 +208,8 @@ fn garbage_never_panics() {
     }
 }
 
-/// S10a: the four fortification commands (and a construction crate) go
+/// S10a: the four fortification commands (and a construction crate; S10b:
+/// `ClearMines` and `Demolish`) go
 /// through the relay to both clients unchanged, and junk built from their
 /// genuine datagrams never panics.
 #[test]
@@ -242,6 +243,16 @@ fn fortify_commands_roundtrip_under_garbage() {
         CommandKind::IssueCrate {
             squad: SquadId(3),
             kind: SupplyKind::Construction,
+        },
+        // S10b: a sweep lane and a demolition.
+        CommandKind::ClearMines {
+            squad: SquadId(5),
+            a: FxVec2::from_int(300, 300),
+            b: FxVec2::from_int(300, 350),
+        },
+        CommandKind::Demolish {
+            squad: SquadId(3),
+            at: FxVec2::from_int(310, 330),
         },
     ];
     for (k, cmd) in sent.iter().enumerate() {

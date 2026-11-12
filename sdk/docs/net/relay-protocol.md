@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **13** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **14** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -131,6 +131,14 @@ kind the relay may not send. Clients cannot send relay messages.
   also adds the `SupplyKind` value 3 `Construction` that `IssueCrate` may carry
   and the `DigProfile`s 6 MG nest pit and 7 dugout pit. The save version is
   `-s22`. The one bump for the S10a slice.
+- Version 14 (S10b) adds two commands at the end of `CommandKind`:
+  `ClearMines { squad, a, b }` (a `u32` squad id and the lane's two Q16.16
+  ends; the lane is at most `MAX_LANE_M` = 200 m long on the wire, the
+  match's `[fortify] lane_max_m` in the sim) and `Demolish { squad, at }` (a
+  point: the sim takes the nearest piece within `demolish_reach_m`). Mines
+  are laid with the existing `Fortify` (minefield blueprints). It also adds
+  `ItemKind` 5 `Mine` and the `DigProfile` 8 bunker pit. The save version is
+  `-s24`. The one bump for the S10b slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -158,6 +166,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Squads per `Embark`, vehicles per `Disembark` (version 10) | 1–150 (`MAX_UNITS`) |
 | Points per `Fortify` line (version 13) | 1–16 (`MAX_DIG_POINTS`) |
 | Men per `PlaceBangalore` (version 13) | 1–150 (`MAX_UNITS`) |
+| `ClearMines` lane length (version 14) | 0–200 m (`MAX_LANE_M`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
 | Commands per bundled turn | 34 (2 × (16 + 1 relay-injected `Surrender`)) |
@@ -444,11 +453,12 @@ stays far below the 1,024-byte single-command limit. Version 10 adds
 `Embark` and `Disembark`, version 11 `DropCrates`, version 12 the six gun
 commands, and version 13 (S10a) `Fortify { squad, fort, line }`,
 `LoadMaterials { squad, kg }`, `CutWire { squad, at }` and
-`PlaceBangalore { units, target }`; `IssueCrate` may carry `SupplyKind` 3
-(construction) from version 13. `Dig` and `DigUnits`
+`PlaceBangalore { units, target }`, and version 14 (S10b)
+`ClearMines { squad, a, b }` and `Demolish { squad, at }`; `IssueCrate` may
+carry `SupplyKind` 3 (construction) from version 13. `Dig` and `DigUnits`
 end with `profile` (`DigProfile`: 0 trench, 1 AT ditch, from version 9
 2 mortar pit, 3 HQ pit, 4 dump pit, from version 12 5 gun pit, from version 13 6 MG nest pit,
-7 dugout pit). `SetAmmo` carries an
+7 dugout pit, from version 14 8 bunker pit). `SetAmmo` carries an
 `AmmoChoice` as its variant index: 0 `Auto`, 1 `Ap`, 2 `He`, and from
 version 4 3 `Apcr` (the special penetrator; the standard one on a gun
 without it). Every variant with a `units` list is held to 150 ids, every
