@@ -27,13 +27,13 @@ lane); `sweep_room` evicts the oldest Done at `MAX_SWEEPS`. `squad_of` now knows
 (one man killed -> lives), `ai_sweep_beside_own_tank` (incl. save/load mid-job, same hash; `sweep` 0). Helpers
 `attack_world`, `squads`, `blast`, `Attack::short`. Liveness row `sweep_row` (lane end off the map: BadSpot; control
 `refused_s` 0 -> "Sweep: refused_reorders 4", seen). `drive_ai_habit_skeleton_ends_not_built` now checks Demolish only.
-**Left in stage chunk 1:** fortify row `s10b_ai.sweep` (sdk/crates/cli/src/fortify/s10b_ai.rs; use `drive_ai_habit(Sweep)`
-with `DriveArgs{squad, point, others}` then the scripted advance; exposure `sweep_wanted_pct`; control `sweep` 0) and
-fuzz stage "staged_s10b_ai + an AiSweep in Watch mid-lane with one mine lifted" (save_fuzz.rs `staged_s10b_ai`: set
-the staged AiSweep's `tries` 13 = along 12 m, `accounts[0].mines_lifted` 1, add a `holds` key + `STAGED_MUST_HOLD`).
+**Left in stage chunk 1:** only the fortify row `s10b_ai.sweep` (sdk/crates/cli/src/fortify/s10b_ai.rs: rifle +
+engineer squads, two-row enemy AP field across the approach, one blast; `drive_ai_habit(Sweep)` with `DriveArgs{squad,
+point, others}`, then the scripted advance; `lane_swept_pct`, `mines_lifted`, `attacker_mine_losses`; exposure
+`sweep_wanted_pct`; control `sweep` 0). Fuzz stage done (`70b49ab`, `ai_sweep_watch`; save_fuzz incl. ignored 15 ok).
 Still open from D1: T115e (own tank never moves with obstacles on, `obstacle_once`), slow skirmish binary (now 651 s in
 quick; `own_route()` memo per plan, see D1 section), owner question S10b-ai-D1. Owner questions open: D1, C1, B2a, 1..7.
-Last check: see the D chunk 2 section. Failing tests: none. Chunks left: D 3 (sweep rest + demolition, F8 + docs).
+Last check: `tools/check.sh quick 72b2970` all ok (786). Failing tests: none. Chunks left: D 3 (sweep rest + demolition, F8 + docs).
 
 ## Plan (2026-11-12)
 
@@ -134,5 +134,5 @@ expects 18 + 16 raw keys. Germany 45.0 % on the default 40 set after the fix (47
 Bugs met while testing: `squad_of` lacked `ClearMines` (the job saw its own pending order as refused); a lane of exactly
 `lane_max_m` could be refused by rounding (now 10 cm under); a terrain-clamped lane end bent the lane off the line
 (now shortened along it). Quick: fmt, clippy, neutral.py, ablate.sh ok; tests cli+content+sim 786 passed, 0 failed
-(skirmish binary 651 s). Two quick runs overlapped by mistake (run.sh returned early); a clean rerun is in the report.
+(skirmish binary 651 s). Two quick runs overlapped by mistake (run.sh returned early); the clean rerun after `70b49ab`: all ok.
 All-off 40 set not replayed this chunk (sweep code returns before any work with `sweep` 0; holds empty).
