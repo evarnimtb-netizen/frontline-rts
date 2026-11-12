@@ -2288,3 +2288,45 @@ fn lifter_does_not_cross_a_mine_behind_him() {
         assert_eq!(a[0].mines_lifted, 1, "side {side}");
     }
 }
+
+/// Review R12: Demolish does not find enemy pieces the player cannot see;
+/// it refuses them as "nothing there". Control: drop the sight filter in
+/// `order_demolish` -> the order is accepted with no own man in sight.
+#[test]
+fn demolish_ignores_unseen_enemy_pieces() {
+    use crate::fort::FortRefusal;
+    let mut w = flat(|_| {});
+    // The frame's sight: the faction's longest squad sight.
+    let s = w.match_setup().unwrap();
+    let fac = s.players[0].faction;
+    let sight = s
+        .squad_types
+        .iter()
+        .filter(|t| t.faction == fac)
+        .map(|t| Fx::from(t.sight).round_int())
+        .max()
+        .unwrap()
+        .max(150);
+    let x = (sight + 60).min(900);
+    assert!(x - sight >= 40, "sight {sight} fits the map");
+    let hh = hedgehogs(&mut w, x, 500, 1, 1)[0];
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", x - sight - 20, 500);
+    w.step(&[]);
+    demolish(&mut w, 0, eng, c(x + 1, 501));
+    assert_eq!(
+        refused(&w),
+        Some(FortRefusal::NoTarget),
+        "unseen (sight {sight}): nothing there; order {:?}",
+        order_of(&w, eng)
+    );
+    assert_eq!(order_of(&w, eng), Order::Idle);
+    // A rifle squad of the same player 100 m off sees it: accepted.
+    spawn(&mut w, 0, "ww2:ger_grenadiergruppe", x - 100, 500);
+    w.step(&[]);
+    demolish(&mut w, 0, eng, c(x + 1, 501));
+    assert!(
+        matches!(order_of(&w, eng), Order::Demolish { piece, .. } if piece == hh),
+        "{:?}",
+        refused(&w)
+    );
+}

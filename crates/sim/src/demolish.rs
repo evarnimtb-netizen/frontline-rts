@@ -93,11 +93,36 @@ impl MatchState {
         }
         let reach = Fx::from_int(t.demolish_reach_m as i32);
         let r2 = (reach.raw() as u64).pow(2);
+        // Only pieces the player can see (the frame's rule: own, or the
+        // centre within the faction's longest squad sight, at least 150 m,
+        // of a living own man); a hidden piece refuses as "nothing there"
+        // (review R12).
+        let faction = self.setup.players.get(p.0 as usize).map(|x| x.faction);
+        let sight = self
+            .setup
+            .squad_types
+            .iter()
+            .filter(|ty| Some(ty.faction) == faction)
+            .map(|ty| Fx::from(ty.sight))
+            .fold(Fx::from_int(150), |a, b| if b > a { b } else { a });
+        let s2 = (sight.raw() as u64).pow(2);
+        let own_men: Vec<FxVec2> = self
+            .squads
+            .values()
+            .filter(|q| q.owner == p)
+            .flat_map(|q| q.members.iter())
+            .filter(|&&m| ctx.ents.is_alive(m))
+            .map(|&m| ctx.ents.transform[m.index()].pos.xy())
+            .collect();
         let best = self
             .fort
             .pieces
-            .keys()
-            .filter_map(|&id| {
+            .iter()
+            .filter(|(_, q)| {
+                q.owner == p || own_men.iter().any(|&m| (m - q.pos).length_sq_raw() <= s2)
+            })
+            .map(|(&id, _)| id)
+            .filter_map(|id| {
                 let pt = self.piece_point(id, at)?;
                 Some(((at - pt).length_sq_raw(), id))
             })
