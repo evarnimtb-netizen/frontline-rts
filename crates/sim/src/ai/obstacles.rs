@@ -273,12 +273,12 @@ impl AiState {
 
 impl super::Planner<'_> {
     /// The fortify-test hook (spec 3): one plan of habit `h` alone. Fort:
-    /// Build B (`ai::fort::drive_fort`); Sweep and Demolish end `NotBuilt`
-    /// until Build D fills them.
+    /// Build B (`ai::fort::drive_fort`); Sweep: Build D (`ai::sweep`);
+    /// Demolish ends `NotBuilt` until Build D fills it.
     fn drive_habit(&mut self, h: AiHabit, args: &DriveArgs) -> Option<HabitEnd> {
         match h {
             AiHabit::Fort => self.drive_fort(args),
-            AiHabit::Sweep => Some(HabitEnd::NotBuilt),
+            AiHabit::Sweep => self.drive_sweep(args),
             AiHabit::Demolish => Some(HabitEnd::NotBuilt),
         }
     }

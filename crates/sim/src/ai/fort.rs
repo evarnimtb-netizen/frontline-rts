@@ -319,9 +319,9 @@ pub(super) fn refusal_keep_ticks(s: &MatchSetup) -> u64 {
 }
 
 /// The fixed window of `refused_reorders` (s; spec 3).
-const REORDER_WINDOW_S: u64 = 300;
+pub(super) const REORDER_WINDOW_S: u64 = 300;
 /// The fixed age of `jobs_overdue` (s; spec 3).
-const OVERDUE_S: u64 = 900;
+pub(super) const OVERDUE_S: u64 = 900;
 
 fn near(a: FxVec2, b: FxVec2, m: Fx) -> bool {
     (a - b).length_sq_raw() <= sq_m(m)
@@ -1815,7 +1815,7 @@ impl super::Planner<'_> {
         })
     }
 
-    fn plan_ticks(&self) -> u64 {
+    pub(super) fn plan_ticks(&self) -> u64 {
         let s = &self.g.setup;
         let d = s
             .rules

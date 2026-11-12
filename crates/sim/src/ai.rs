@@ -190,6 +190,7 @@ mod mortar;
 pub(crate) mod obstacles;
 mod overwatch;
 mod supply;
+mod sweep;
 mod transport;
 mod truck;
 pub use ammo::{AMBUSH_END_NAMES, AMBUSH_ENDS};
@@ -949,7 +950,9 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::Stop { squad }
         | CommandKind::Retreat { squad }
         | CommandKind::Dig { squad, .. }
-        | CommandKind::FireMission { squad, .. } => Some(*squad),
+        | CommandKind::FireMission { squad, .. }
+        // S10b-ai: the sweep jobs' order (no other AI habit sends it).
+        | CommandKind::ClearMines { squad, .. } => Some(*squad),
         _ => None,
     }
 }
@@ -1302,6 +1305,8 @@ impl Planner<'_> {
         // S10a-ai: enemy wire by sight, then the breach jobs keep theirs.
         self.wire_sight();
         self.breach_continue(&mut mine, &busy);
+        // S10b-ai: the sweep jobs keep their sweepers.
+        self.sweep_continue(&mut mine, &busy);
         // S5a: refill trips, staggered per point.
         self.refills(&mut mine, &known);
         // S6: the HQ, crate runs, dry mortars to the HQ.
@@ -1333,6 +1338,9 @@ impl Planner<'_> {
         // S10a-ai: new breach jobs take an attacker that can open wire.
         let breaching = self.breach_start(&mine, &assigned, &points, &hunting);
         hunting.extend(breaching);
+        // S10b-ai: new sweep jobs take a `clear_mines` squad (R10).
+        let sweeping = self.sweep_start(&mine, &assigned, &points, &hunting, None);
+        hunting.extend(sweeping);
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );
@@ -1990,6 +1998,13 @@ impl Planner<'_> {
                     .map(|m| (at, m.id))
             })
             .collect();
+        // S10b-ai: where the attackers of each point hold while its sweep
+        // is alive (none without sweeps).
+        let holds: Vec<Option<FxVec2>> = if self.ai.sweeps.is_empty() {
+            vec![None; points.len()]
+        } else {
+            (0..points.len()).map(|i| self.sweep_hold(i)).collect()
+        };
         for &(j, i) in assigned {
             let m = &mine[j];
             if claimed.contains(&m.id) && !escorting.contains(&m.id) {
@@ -2079,6 +2094,16 @@ impl Planner<'_> {
                         _ => target,
                     };
                     (TaskKind::Defend, target)
+                }
+                // S10b-ai: attackers hold short of a live sweep's lane.
+                Rel::Neutral | Rel::Enemy if holds[i].is_some() => {
+                    exact = true;
+                    let kind = if pt.rel == Rel::Neutral {
+                        TaskKind::Capture
+                    } else {
+                        TaskKind::Attack
+                    };
+                    (kind, holds[i].unwrap_or(pt.pos))
                 }
                 Rel::Neutral => (TaskKind::Capture, ring_slot(pt.pos, k)),
                 Rel::Enemy => (TaskKind::Attack, ring_slot(pt.pos, k)),

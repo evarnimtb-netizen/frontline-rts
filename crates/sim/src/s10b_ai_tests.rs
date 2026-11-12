@@ -531,7 +531,13 @@ fn drive_ai_habit_skeleton_ends_not_built() {
     let none = (0..10)
         .find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Fort, &DriveArgs::default()));
     assert_eq!(none, None, "Fort without a squad");
-    for h in [AiHabit::Sweep, AiHabit::Demolish] {
+    // Build D: Sweep is built (`ai::sweep`); without a squad it never ends.
+    let mut ai = AiState::new(w.state.tick);
+    let none = (0..10).find_map(|_| {
+        w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Sweep, &DriveArgs::default())
+    });
+    assert_eq!(none, None, "Sweep without a squad");
+    for h in [AiHabit::Demolish] {
         let mut ai = AiState::new(w.state.tick);
         let t0 = w.state.tick;
         let end =
@@ -562,7 +568,32 @@ const LIVENESS: &[(JobKind, StageSetup)] = &[
     (JobKind::Fort, fort_row),
     (JobKind::Fort, barrier_row),
     (JobKind::Fort, bunker_row),
+    (JobKind::Sweep, sweep_row),
 ];
+
+/// The Sweep row (Build D): an attacker, AI engineers and an enemy blast
+/// on the attack line; the caller fixes the lane end off the map, so every
+/// `ClearMines` is refused (BadSpot). Control: `refused_s` 0 -> a restart
+/// each plan (the check fails, seen).
+fn sweep_row() -> (World, Stage) {
+    use super::s10b_ai_sweep_tests::{attack_world, blast, squads};
+    let (mut w, mut a) = attack_world(|_| {});
+    let (rifle, eng) = squads(&mut w, &mut a);
+    blast(&mut w, a.short(70), 0);
+    let off = c(-5, -5);
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Sweep,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            others: vec![rifle],
+            at: Some(off),
+        },
+        goal: (a.short(80) + off).div_int(2),
+        ai: None,
+    };
+    (w, stage)
+}
 
 /// The Fort row (Build B): an AI engineer with materials at its held,
 /// trenched point; its AP field site lies under an own tank (inside
