@@ -5,27 +5,20 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Builds A-F are done. Next: the orchestrator** (stage file F, 6): `tools/measure.sh target/s10b-measure
-docs/slices/targets/S10b.toml` (480), `python3 -I tools/neutral.py target/s10a-ai-verify target/s10b-measure` (expect
-`same` on all four sets and every old fortify and armour row), `python3 -I tools/pool.py target/s10b-measure` (Germany
-41.67 %), the targets (hard misses exactly T8b, T40c, T54e, T88b, T88d plus T106b from D), `tools/verify.sh`; then the
-Review gate (sim, save, protocol), Fix, and the Docs stage (STATE S10b row, SAVE 24 / PROTOCOL 14, measures; TODO
-owner questions S10b-1..4 with the slice's (A) answers). Build F did **not** edit STATE or TODO (harness rule).
-* Build F commits: `ed63350` snapshot, `dcd5ce9` bridge, `1534682` HUD + Godot checks, `d6cf464` net + relay doc,
-  `58d04e8` modding + match_state docs, then this log commit. No layout change (snapshot is not saved).
-* Snapshot: `FortSnapshot::mines` (every mine, `known` bits), `ChargeSnapshot::piece`, `SquadSnapshot::clear_lane`
-  / `demolish`. The bridge frame keeps only mines with the local player's `known` bit (owner's team, finders, all
-  once set off); `fort_view.gd` checks own-or-known again.
-* Bridge `can_fortify` now follows R21 (a `build_structure` squad may take a `build_heavy` blueprint, as the sim
-  does); this also lets field engineers take the S10a `build_heavy` blueprints from the HUD.
-* HUD: the fort menu's third row shows the able S10b entries in place of the stance strip (only when one is able).
-  Clear mines is a line tool sending the first and last point. Demolish shows only with a satchel in the selection.
-* Checks: `tools/check.sh full` all ok (863 tests incl. ignored; check_project, test_match_view 375/375, test_net_ui,
-  test_data_reload). 40-set `target/s10b-F/skirmish40.json` vs `target/s10b-base40`: same 40/40. fortify10
-  `target/s10b-F`: `targets` output identical to E (39 pass, 6 miss, hard 1 T106b); `neutral.py` vs E: same.
-* Left for S10b-ai: AI use of mines, obstacles, sweeping, demolition; path avoidance of known mines; T106b decision.
-* Not covered by a test: the bridge frame's mine filter (Rust) and the sweep-lane drawing (the mock has no
-  `clear_lane` squad); the Demolish button path runs only when the mock squad has a satchel (it had none).
+**Fix chunk 1 done (2026-11-12); next: Fix chunk 2.** Review findings in `target/s10b-review.json` (R1-R19 in file
+order). Fixed with a failing test first: R1, R2, R15, R16, R18, R19, G1. Left (not started): R5, R6, R7 (majors, CLI
+fortify rows in `sdk/crates/cli/src/fortify/s10b.rs` and `bunker.rs`), R3, R4, R8-R14, R17.
+* R4 groundwork exists: `staged_s10b()` in `crates/sim/tests/save_fuzz.rs` builds the staged S10b save (mines of both
+  kinds, two with boom_tick, ClearMines with a known lane mine, Demolish, a laid satchel charge;
+  `staged_s10b_save_holds_its_state`). Still to do: add it to the fuzz set (`fuzz_saves`, `plan` weights for
+  `state.game.setup.forts` / `items[].mine`, `focus` for the order paths; `describe` takes `FUZZ_SAVES` ticks).
+* `KNOWN` in `save_fuzz.rs` is now empty (G1 fixed in validation).
+* Not yet run this chunk: `tools/check.sh tests`, the 40 set vs `target/s10b-base40`, fortify10 into
+  `target/s10b-fix`. Last check: `tools/check.sh quick` all ok (847 tests). Godot not touched.
+* Neutrality reasoning: R15's drive escape runs only for a vehicle `on_blocked` within reach of an obstacle piece
+  (`piece_feet`), and the build wait only for `blocks_vehicles` works; AI never builds S10b works. R2's gate scans
+  squads for a ClearMines order (AI gives none). G1 only widens a load check. R18 changes the new AP mine only.
+* T106b still waits for the owner (untouched).
 
 ## Plan (2026-11-11)
 
@@ -131,3 +124,19 @@ Read: log top block, stage file F, spec 1, 3, 4, 7. Snapshot test `fort_snapshot
 fails, seen); net `net_s10b_commands_in_limits` (control limit + 1 m: fails, seen), fuzz roundtrip extended; Godot
 `_test_s10b` 15 checks (control: drop the known filter in `fort_view.gd` -> "unknown enemy one hidden" fails, seen).
 Docs: `fortifications.md` S10b, `match_state.md` S10b, `relay-protocol.md` v14. Numbers above in the top block.
+
+## Fix chunk 1 (2026-11-12)
+
+Commits `ae746b1` R1 (MatchSetup::validate checks every blueprint: mine_item a mine item, minefield/obstacle shape,
+pieces, segment; mine item guard in validate_s10b), `35b3f29` R16 (a finished lift clears the same lift in other
+squads' orders) and R2 (sweep gated on a standing ClearMines order), `0269ced` R15 (a finished obstacle waits while
+its padded, dilated nodes cover a live vehicle's track sample; `DriveCtx::escape` lets a vehicle on blocked nodes
+beside an obstacle turn and move as long as its blocked samples do not rise or it does not come nearer the piece) and
+R19 (point site checked at the site only), `2bb07ad` R18 (ap_mine vs_vehicle_pct 100 -> 10), `bf803a4` G1
+(validation accepts `board` on a live served gun; KNOWN empty; canonical snapshot blessed for the AP mine).
+Tests (each names its control, all seen failing first): save_mine_item_out_of_range_is_rejected,
+staged_s10b_save_holds_its_state, second_sweeper_lift_leaves_no_stale_lift, sweep_runs_with_zero_sweeps_counter,
+obstacle_waits_until_no_vehicle_is_on_its_nodes, vehicle_on_obstacle_nodes_drives_out,
+point_site_ignores_a_vehicle_near_its_facing_point, ap_mine_burst_does_not_break_a_track,
+save_fuzz_own_gun_boarded_while_unhitching_loads. Existing code changed outside S10b: `VehicleState::validate`
+(G1), `drive` (escape, inert without obstacle pieces), `DriveCtx` literal in `armour_test/s8b.rs`.
