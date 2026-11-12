@@ -198,3 +198,86 @@ fn ai_all_switches_off_emit_nothing_new() {
     run(&mut w, ticks);
     assert!(!traces(&w).is_empty(), "switches on: the AI fortifies");
 }
+
+/// Blueprint ids of the live S10b-ai fort jobs (minefield, obstacle,
+/// bunker blueprints) of both players.
+fn s10b_live(w: &World) -> Vec<String> {
+    let g = w.game().unwrap();
+    let s = w.match_setup().unwrap();
+    let mut out = Vec::new();
+    for p in 0..2u8 {
+        for j in g.ai(PlayerId(p)).unwrap().forts.values() {
+            let d = &s.forts[j.fort as usize];
+            let s10b = d.mine_item.is_some()
+                || d.blocks_vehicles
+                || d.pit == Some(frontline_content::setup::DigProfile::BunkerPit);
+            if s10b && !j.parked() && j.phase != frontline_sim::ai::FortPhase::Done {
+                out.push(format!("p{p} {}", d.id));
+            }
+        }
+    }
+    out
+}
+
+/// S10b-ai (spec 5, Build C): an AI-vs-AI skirmish with S10b-ai jobs live
+/// gives the same hashes at 1, 2, 3 and 8 threads, and saves at 5:00 and
+/// 12:00 (each moved to the first second after it with an S10b-ai job
+/// live, at most 6 min later) load to the same state and continue alike.
+/// Control: `#[serde(skip)]` on `AiFortJob::start` -> the loaded state
+/// differs (seen, see the log).
+#[test]
+#[ignore = "slow in debug: runs in the release test pass"]
+fn ai_s10b_deterministic_threads_and_save_load() {
+    let marks: [u64; 2] = [30 * 300, 30 * 720];
+    let saves_of = |s: u64| -> Option<[u64; 2]> {
+        let mut w = World::new_match(setup(s), 1).unwrap();
+        let mut out = [0; 2];
+        for (k, &m) in marks.iter().enumerate() {
+            let from = m.max(out[0] + 30 * 60);
+            let n = from.saturating_sub(w.tick());
+            run(&mut w, n);
+            while s10b_live(&w).is_empty() && w.tick() < from + 30 * 360 {
+                run(&mut w, 30);
+            }
+            let live = s10b_live(&w);
+            println!("seed {s}: at {} s {live:?}", w.tick() / 30);
+            if live.is_empty() {
+                return None;
+            }
+            out[k] = w.tick();
+        }
+        Some(out)
+    };
+    let (seed, saves) = (1..11)
+        .find_map(|s| saves_of(s).map(|v| (s, v)))
+        .expect("a seed with S10b-ai jobs live after 5:00 and 12:00");
+    println!("seed {seed}, saves at {saves:?} ticks");
+    let ticks = saves[1] + 30 * 60;
+    let mut base = World::new_match(setup(seed), 1).unwrap();
+    let want = run(&mut base, ticks);
+    for threads in [2, 3, 8] {
+        let mut w = World::new_match(setup(seed), threads).unwrap();
+        assert_eq!(run(&mut w, ticks), want, "at {threads} threads");
+    }
+    let mut a = World::new_match(setup(seed), 1).unwrap();
+    for save in saves {
+        let n = save - a.tick();
+        run(&mut a, n);
+        let mut b = World::load(&a.save(), 1).unwrap();
+        assert_eq!(a.state_hash(), b.state_hash(), "at the load {save}");
+        for p in 0..2u8 {
+            assert_eq!(
+                a.game().unwrap().ai(PlayerId(p)),
+                b.game().unwrap().ai(PlayerId(p)),
+                "p{p} AI state at {save}"
+            );
+        }
+        let mut c = World::load(&a.save(), 1).unwrap();
+        assert_eq!(
+            run(&mut c, 30 * 60),
+            run(&mut b, 30 * 60),
+            "after the load {save}"
+        );
+        assert_eq!(c.game().unwrap().fort(), b.game().unwrap().fort());
+    }
+}
