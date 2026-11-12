@@ -6,25 +6,25 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 4 = the stage file's chunk 2 (demolition, R13/R14), then chunk 5 = stage chunk 3 (F8, docs,
-stage check).** Stage chunk 1 (sweeping) is done: STOP POINT 1 met in D chunk 3. Layout: SAVE 25, PROTOCOL 14.
-**Sweep code** (`crates/sim/src/ai/sweep.rs`, module doc = the rules as built): Planner `suspects`,
-`known_enemy_mines`, `sweep_lane`, `sweep_start` (after `breach_start` in `plan`), `sweep_continue` (after
-`breach_continue`), `run_sweep`, `sweep_end`, `sweep_hold` (used in `order_infantry`), `drive_sweep` (hook). Copy this
-want/phase/end pattern for `ai/demolish.rs` (`demolish_start` / `demolish_continue` / `drive_demolish`; the
-`drive_ai_habit_skeleton_ends_not_built` test still checks Demolish only and must change when Demolish is built).
-**Tests** in `crates/sim/src/s10b_ai_sweep_tests.rs` (helpers `attack_world`, `squads`, `blast`, `Attack::short` are
-`pub(crate)` for the demolition tests); liveness row `sweep_row`; fuzz stage `ai_sweep_watch` in save_fuzz.
-**Fortify row `s10b_ai.sweep`** (`sdk/crates/cli/src/fortify/s10b_ai.rs`: `sweep_once`, `sweep_row`, one-off
-`sweep_row_one_off`; consts `SWEEP_RIFLE_M` 120, `SWEEP_FIELD_M` 60, `SWEEP_DRIVE_S` 600, `SWEEP_ADVANCE_S` 240).
-Seeds 1-3, both players: `lane_swept_pct` 100, `mines_lifted` 4.0/run, `attacker_mine_losses` 3.0/run, exposure
-`sweep_wanted_pct` 100; control (`sweep` 0) `lane_swept_pct` 0, `attacker_mine_losses` 8.0. T111i holds; T111j (max 1,
-"verify") misses: owner question S10b-ai-D2 (below), proceeding on (A). The rifles' moving column (two files 1.5 m
-apart) fits the 4 m lane; losses come from a lane mine the sweep missed (detection roll), then men leaving the lane.
-Still open from D1: T115e (own tank never moves with obstacles on, `obstacle_once`), slow skirmish binary
-(`own_route()` memo lives one plan, `Planner::own_routes`: gun_route A* searches run again every plan). Owner
-questions open: D2, D1, C1, B2a, 1..7. Last check: `tools/check.sh quick 72b2970` all ok (786; skirmish 290 s).
-Failing tests: none. Chunks left: D 4 (demolition), D 5 (F8 + docs + stage check).
+**Next: Build D chunk 5 = the rest of stage chunk 2: fortify row `s10b_ai.demolish` (STOP POINT 2), then chunk 6 =
+stage chunk 3 (F8, docs, stage check).** Layout: SAVE 25, PROTOCOL 14. Sweeping (stage chunk 1) done, see below.
+**Demolish code** (`crates/sim/src/ai/demolish.rs`, module doc = the rules as built): Planner `vehicle_way` (Some(true)
+reaches / Some(false) exhausted or move ended >= `THERE_M` 10 m short / None pending), `vehicle_blocked`,
+`demolish_pieces` (line crossing, then neighbours alternating sides), `demolish_start` (after `sweep_start` in `plan`;
+takes the vehicle out of `tanks`), `demolish_continue` (after `sweep_continue`), `run_demolish` (Go -> Charge ->
+Repath), `demolish_end` (L3 at the waiting vehicle), `drive_demolish` (hook: tasks the vehicles in `others` Assault,
+others without a vehicle join `mine`, start runs every plan). `squad_of` now names `Demolish`.
+**Tests** `crates/sim/src/s10b_ai_demolish_tests.rs`: helper `blocked(edit)` -> `Blocked { w, a, tank, eng, ring }`
+(AI M4 150 m short inside a closed player-0 hedgehog ring, radius 20 m, step 6 m; US engineers 40 m aside with 3
+satchels; the tank ordered to `a.short(60)`). 5 tests pass, every control seen failing. Liveness row `demolish_row`
+(no satchels: refused each try); fuzz stage `ai_demolish_charge` (STAGED_MUST_HOLD 8).
+**Fortify row to build** (`sdk/crates/cli/src/fortify/s10b_ai.rs`, copy `sweep_once`/`sweep_row`): stage like
+`blocked` (a ring or a line closed to the map edge), `drive_ai_habit(Demolish)`, then drive the tank on: `gap_opened_pct`,
+`tank_passed_pct`, `pieces_used` (account `demolitions`); exposure `tank_blocked_pct`; control `demolish` 0.
+**Finding (owner question S10b-ai-D3, below):** a tank gap opens only at ~24 m between standing piece centres (5
+pieces of a 4 m row); engineer cards carry 1 satchel. With a 4 m row T114e/f (min 60) will miss.
+Open: T115e (`obstacle_once`), slow skirmish binary (`Planner::own_routes` memo lives one plan), sweep row full fortify10.
+Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `f5a1993` all ok (791 passed; skirmish 299 s). Failing: none.
 
 ## Plan (2026-11-12)
 
@@ -137,4 +137,14 @@ aside. **Owner question S10b-ai-D2** (T111j, max 1 man per run, "verify"; measur
 a swept lane is not a sure lane (the S10b detection roll); (B) the AI sweeps two parallel lanes or a lane of
 `lane_half_cm` 300 for an attack (more sweep time); (C) attackers wait for a second pass over a lane where a mine was
 found. Proceeding on (A). Quick after `078e382`: fmt, clippy, neutral.py, ablate.sh ok; tests 786 passed (306 s).
+
+## Build D chunk 4 (2026-11-12; stage chunk 2 without the fortify row)
+
+Bugs met: `squad_of` lacked `Demolish` (the job saw its pending order as refused); the satchel man stuck behind the
+waiting tank (the squad now stands 4 m out and 4 m aside); after a failed move the tank is Holding with an empty path,
+so "exhausted" is read from the nav goal too. **Owner question S10b-ai-D3:** the vehicle block layer (footprint +
+`wreck_pad_m` + clearance) frees a tank node only ~24 m between standing piece centres (measured on a 4 m ring: 1-4
+gone blocked, 5 open); `demolish_pieces_max` is at most 3 (layout cap) and engineers carry 1 satchel, so the AI never
+opens a 4 m hedgehog row. (A) leave as is (T114e/f miss; L3 stops retries); (B) a later slice narrows the piece pad;
+(C) more satchels, higher cap (layout, later slice). Proceeding on (A); tests use a 6 m ring (opens after 3 pieces).
 
