@@ -5,28 +5,23 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Fix done (chunk 3, 2026-11-12): all review findings R1-R19 and G1 fixed, each with a test seen failing first.**
-Findings in `target/s10b-review.json`. Open only by owner decision:
-* T106b (tank uses the demolished gap) still reads `gap_crossed_pct` 0 (MISS; the tank now really drives, R5).
-* A demolition charge at any bunker wall kills the five inside (slit T107d 100, uphill T107k 100, back wall
-  T107l 100): the slit does not matter. How it should play is an owner question.
-Numbers (fortify10 into `target/s10b-fix`): every T102-T107 line PASS except T106b; new T102e close passes 143,
-T104e Bangalore (blast-only count) 100, T107i/j controls 23920 hp / 45 %. 40 set vs `target/s10b-base40`:
-same 40/40. Checks: `tools/check.sh quick` all ok (856 tests), `tools/check.sh tests` all ok (881 tests),
-Godot test_match_view 379/379, check_project ok, test_net_ui 143/143, test_data_reload 21/21 (bridge rebuilt).
-Save fuzz with the staged S10b save: 9686 mutations, 0 panics, 0 unloadable. SAVE_VERSION 24, PROTOCOL 14 kept.
-Neutrality reasoning for chunk 3: CLI rows and tallies only observe (R8, R9, R13); R10/R11 change which selected
-squad the bridge picks (player intents, never AI); R14 and the grid relayout are HUD/test only.
+**Final state (2026-11-12): S10b mechanics built, reviewed, fixed and verified on `s10b-obstacles`. NOT merged.**
+Head `2091994` before the docs commits. Main stays `8acc534`; SAVE 24 and PROTOCOL 14 on the branch (main 23 and 13).
+Verify (`tools/verify.sh target/s10b-verify`, 37 min 56 s): 881 tests pass, 0 fail; fmt, clippy, golden, validate,
+bridge, Godot checks ok; settings.cfg unchanged. Tick p99 0.487 ms (peak 0.638).
+Germany pooled 41.67 % of 480 (43.75 / 38.75 / 42.50), no-winner 0, in the 35-65 % band. AI-vs-AI identical to main
+(`tools/neutral.py` vs `target/s10a-ai-verify`: 160/160, 40/40, fortify10 same on every base row).
+Targets: 373 pass, 25 miss, 6 hard: T8b, T40c, T54e, T88b, T88d (accepted since S9b/S10a-ai) and **T106b** (owner
+decision S10b-5: one demolition charge leaves no tank gap in a hedgehog line; gap_crossed_pct 0 vs 80).
+Fuzz with the staged S10b save: 9686 mutations, 0 panics, 0 unloadable.
+Waits for the owner: S10b-5..9 (`docs/TODO.md`), the merge OK, and the open notes (F8, bunker MG and spoil).
+Next slice: S10b-ai (after the merge OK). Findings and numbers: `target/s10b-review.json`, `target/s10b-fix`.
 
 ## Plan (2026-11-11)
 
-Wrote the common spec (scope, data model, rules R1-R30, job ends, save rules, done-when), six stage files, the
-targets (S10a-ai body; T5c/T5d 35-65; T31a-d, T55a/b, T95b/d reports; new T102-T108), this log, STATE and TODO.
-Read: STATE, roster S10, infantry-structures 7.6/7.7, S10a spec, `fort.rs` outline, `ai/fort.rs` `fort_of`,
-`path.rs`/`vehicle.rs` block layer, `damage.rs` `blast_tracks`, `combat.rs` `Burst`, `fort.rs` `take_charges`.
-Design-code facts used: `burst` and `blast_tracks` never hurt own units (so S10b-1 (A)); vehicle boxes have no belly
-plate (S10b-3 (A)); charges become `Thrown` items, so a mine is an item def `kind = "mine"`; the block layer already
-takes wreck footprints, obstacles join them.
+Common spec (scope, data model, rules R1-R30, job ends, save rules, done-when), six stage files, targets (T5c/T5d
+35-65; T31a-d, T55a/b, T95b/d reports; new T102-T108). Facts used: `burst` and `blast_tracks` never hurt own units;
+vehicle boxes have no belly plate; a mine is an item def `kind = "mine"`; the block layer takes obstacles like wrecks.
 
 ## Build A chunk 1 (2026-11-11)
 

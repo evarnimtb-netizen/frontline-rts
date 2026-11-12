@@ -155,3 +155,44 @@ Save/load test (`crates/sim/tests/save_fuzz.rs`, layout helper `tests/support/sa
 - Roundtrip (every release pass, about 4 s): seed-1 fort match, save/load every 600 ticks to 12:00, hash and re-save compared; four loads run on 600 ticks against the original.
 - Fuzz (ignored, `tools/check.sh tests`, about 50 s on 4 workers): about 9,000 one-value mutations of three saves, picked by counter per field path (fort, vehicle, AI and entity paths get more). Each is rejected, or loads, runs 300 ticks and saves a state that loads again. Prints the counts.
 - A new saved field needs no test change; a load bound it needs shows up as a fuzz failure with the field path. Findings go into named `save_fuzz_*` regression tests; sim bugs into `KNOWN`.
+
+## 8. Audit 2026-11-12 (after S10b)
+
+Full results: `target/process-audit-2.jsonl`. Written by the S10b docs stage.
+
+Measured on S10b:
+
+- Cost: S10b 22.4 M cost units, against S10a-ai 27.3 M and S10a 28.6 M (18-22 % lower). Scope was not normalised, so
+  this is not a like-for-like speed gain.
+- Build is 56 % of the cost.
+- Peak context per Build stage: 173-237 k tokens (was 258-433 k in the 2026-11-11 audit).
+- The 60-turn cap was not met in fact. Agents under-count their own turns by about 1.75x: the real count is 100-129
+  turns per Build stage. 55 % of Build and Fix cost falls after turn 60.
+- Single read-only turns: 32 % of turns (was 29-37 %). No real improvement.
+- Waiting on background jobs: 4.3 % of Build cost (down).
+- Review duplicates: 0 of 19 findings.
+- Review plus Fix cost per finding: 0.34 M (was 0.5-0.62 M).
+
+Findings quality:
+
+- 8 of 19 review findings were measurement rows that passed with no real contact (R5-R9, R13, R14). A row that
+  cannot fail hides the bug it should catch.
+- 3-4 findings were save-class. The save fuzz could not reach them until Fix staged the new state.
+- The orchestrator's between-stage suite runs and the verify run cost about 40 min of avoidable machine time per slice.
+
+Proposed for the next slice (not yet adopted; the owner has not seen them):
+
+1. Row honesty: every measure row prints an exposure counter and a negative control; the targets tool fails a row without them.
+2. Each new saved state joins the fuzz staged save in the Build stage that adds it.
+3. Plan writes explicit stop points so a chunk is about 55-60 real turns. Fix takes at most 7 findings per chunk, grouped by file.
+4. ptest result cache keyed by binary hash, longest binaries first.
+5. `verify.sh` runs armour beside `check_full`.
+6. AI-neutral slices skip the pre-review 480 measure and compare hashes once on the final binary.
+7. Sampled save fuzz between stages; full fuzz in verify.
+8. Agents use targeted release tests and one quick check at stage end.
+9. `tools/show.sh FILE::name` and a code map in the hand-over.
+10. Spec section "what else can be true when this completes".
+11. One predicate for HUD button and command target, with a table test.
+12. Review keeps three lenses but shares one read pack; the save lens is narrowed once the fuzz coverage test passes.
+
+Not recommended: parallel Fix worktrees; moving Build or Fix to a cheaper model.
