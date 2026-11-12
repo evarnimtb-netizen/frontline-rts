@@ -199,10 +199,11 @@ impl AiState {
     }
 
     /// Drops refusals older than `keep_ticks` at `tick` (the caller passes
-    /// max(`refused_s`, [`REFUSAL_KEEP_MIN_S`]) in ticks).
+    /// max(`refused_s`, [`REFUSAL_KEEP_MIN_S`]) in ticks). Truck goals stay:
+    /// they end when a truck loads again (L5, `ai::truck`).
     pub fn drop_stale_refusals(&mut self, tick: u64, keep_ticks: u64) {
         self.refused
-            .retain(|r| tick.saturating_sub(r.failed) < keep_ticks);
+            .retain(|r| r.kind == JobKind::TruckGoal || tick.saturating_sub(r.failed) < keep_ticks);
     }
 
     /// S10b-ai load checks (spec 6): sweeps, demolitions, refusals.

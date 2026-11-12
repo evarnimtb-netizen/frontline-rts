@@ -23,13 +23,16 @@
 //! up (also a drop or a service that timed out, the base, a follow spot) is
 //! remembered in `AiTruck::gave_up` and not sent again near it until the
 //! truck has loaded again; no move is sent twice within `repath_s`.
+//! S10b-ai L5 (F8): with `[ai.truck] refusal_memory` 1 each give-up is
+//! also an `AiState` refusal (kind `TruckGoal`), so a goal pushed out of
+//! the four-goal memory is still not sent again until a truck loads.
 
 use frontline_content::VehicleRole;
 use frontline_content::setup::{StockKind, SupplyKind};
 use frontline_content::vehicle::VehicleSetup;
 use serde::{Deserialize, Serialize};
 
-use super::{AiKind, Known, KnownVehicle, MyTank, Rel, sq_m};
+use super::{AiKind, JobKind, Known, KnownVehicle, MyTank, Rel, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::{EntityKind, SimId};
 use crate::fx::{Fx, FxVec2, FxVec3};
@@ -171,6 +174,36 @@ impl super::Planner<'_> {
         }
     }
 
+    /// Gives goal `at` up (the job's own memory); with `[ai.truck]
+    /// refusal_memory` 1 also an L3 refusal of kind `TruckGoal` (S10b-ai
+    /// L5, F8), which outlives the job's four-goal memory.
+    fn truck_give_up(&mut self, job: &mut AiTruck, at: FxVec2) {
+        job.give_up(at);
+        if self.g.setup.rules.ai.truck.refusal_memory != 0 {
+            self.ai.refuse(JobKind::TruckGoal, at, self.tick);
+            self.ai.counters.s10b_refused += 1;
+        }
+    }
+
+    /// Whether goal `at` is not to be sent: given up by this job, or (with
+    /// `refusal_memory` 1) within `refused_m` of a `TruckGoal` refusal (L4).
+    /// A truck refusal does not age out after `refused_s`: it lives until
+    /// an own truck loads again (the S8b rule the four-goal memory broke;
+    /// a 300 s window let the F8 scene re-order the HQ 326 s after its
+    /// refusal). `refused_s` 0 still turns the check off (`loose`).
+    fn truck_refused(&self, job: &AiTruck, at: FxVec2) -> bool {
+        if job.gave_up_on(at) {
+            return true;
+        }
+        let s = &self.g.setup;
+        let o = &s.rules.ai.obstacles;
+        if s.rules.ai.truck.refusal_memory == 0 || o.refused_s == 0 {
+            return false;
+        }
+        self.ai
+            .refused_near(JobKind::TruckGoal, at, self.tick, u64::MAX, o.refused_m)
+    }
+
     /// A move order for the truck, never the same one within `repath_s`.
     pub(super) fn truck_drive(&mut self, t: &MyTank, job: &mut AiTruck, goal: FxVec2) {
         let a = &self.g.setup.rules.ai.truck;
@@ -263,7 +296,7 @@ impl super::Planner<'_> {
             TruckPhase::Load => {
                 if !in_base {
                     if self.truck_failed(t, job, idle) {
-                        job.give_up(base);
+                        self.truck_give_up(job, base);
                         set(job, TruckPhase::Follow);
                     } else if idle {
                         self.truck_drive(t, job, base);
@@ -278,12 +311,16 @@ impl super::Planner<'_> {
                 let waited = tick >= job.since + a.load_wait_s as u64 * hz;
                 if done || (enough && (waited || self.supply_budget_spent())) {
                     job.gave_up = [None; GAVE_UP_GOALS];
+                    // L5: a load ends the truck refusals (as the job's own).
+                    if a.refusal_memory != 0 {
+                        self.ai.refused.retain(|r| r.kind != JobKind::TruckGoal);
+                    }
                     set(job, TruckPhase::Follow);
                 }
             }
             TruckPhase::Follow => {
                 if (held_g as u64) * 100 < total_g as u64 * a.return_below_pct as u64
-                    && !job.gave_up_on(base)
+                    && !self.truck_refused(job, base)
                 {
                     set(job, TruckPhase::Return);
                     self.truck_drive(t, job, base);
@@ -315,13 +352,13 @@ impl super::Planner<'_> {
                 if self.truck_failed(t, job, idle) {
                     // It takes where it stands: this spot is not sent again.
                     let spot = job.moved_to;
-                    job.give_up(spot);
+                    self.truck_give_up(job, spot);
                     job.fails = 0;
                     job.moved_to = t.pos;
                     return;
                 }
                 if let Some(spot) = self.follow_spot(t, known, kv)
-                    && !job.gave_up_on(spot)
+                    && !self.truck_refused(job, spot)
                     && ((spot - job.moved_to).length_sq_raw() > sq_m(Fx::from_int(SETTLE_M))
                         || (idle
                             && (t.pos - spot).length_sq_raw()
@@ -355,7 +392,7 @@ impl super::Planner<'_> {
                 let failed = !in_reach && self.truck_failed(t, job, idle);
                 if self.rearmed(cs, cv) || dry || late || failed {
                     if (late || failed) && !gained {
-                        job.give_up(at);
+                        self.truck_give_up(job, at);
                         if late && !failed {
                             self.ai.counters.truck_fails += 1;
                         }
@@ -383,13 +420,13 @@ impl super::Planner<'_> {
                     // Over without getting there (refused, or stopped short):
                     // that point is not ordered again.
                     if (t.pos - goal).length_sq_raw() > sq_m(Fx::from_int(reach as i32)) {
-                        job.give_up(goal);
+                        self.truck_give_up(job, goal);
                         self.ai.counters.truck_fails += 1;
                     }
                     set(job, TruckPhase::Follow);
                 } else if late {
                     self.ai.emit(self.due, CommandKind::Stop { squad: t.squad });
-                    job.give_up(goal);
+                    self.truck_give_up(job, goal);
                     self.ai.counters.truck_fails += 1;
                     set(job, TruckPhase::Follow);
                 }
@@ -401,7 +438,7 @@ impl super::Planner<'_> {
                     }
                     set(job, TruckPhase::Load);
                 } else if self.truck_failed(t, job, idle) {
-                    job.give_up(base);
+                    self.truck_give_up(job, base);
                     set(job, TruckPhase::Follow);
                 } else if idle {
                     self.truck_drive(t, job, base);
@@ -482,7 +519,7 @@ impl super::Planner<'_> {
                 continue;
             }
             let at = self.ents.transform[m.index()].pos.xy();
-            if crate::supply::in_own_base(s, self.me, at) || job.gave_up_on(at) {
+            if crate::supply::in_own_base(s, self.me, at) || self.truck_refused(job, at) {
                 continue;
             }
             let (have, load) =
@@ -551,7 +588,8 @@ impl super::Planner<'_> {
                     && (c.pos - at).length_sq_raw() <= sq_m(Fx::from_int(CRATE_NEAR_M))
             })
         };
-        let far_enough = |at: FxVec2| !crate::supply::in_own_base(s, me, at) && !job.gave_up_on(at);
+        let far_enough =
+            |at: FxVec2| !crate::supply::in_own_base(s, me, at) && !self.truck_refused(job, at);
         // Mortars low on bombs (outside the base and the HQ's radius).
         if let Some(n) = can(SupplyKind::Shells) {
             let hq = g
@@ -603,7 +641,7 @@ impl super::Planner<'_> {
                 let low = cap != 0
                     && (h.stock_g[kind.index()] as u64) * 100
                         < cap as u64 * cfg.crate_run_below_pct as u64;
-                if low && !lying(h.pos, kind) && !job.gave_up_on(h.pos) {
+                if low && !lying(h.pos, kind) && !self.truck_refused(job, h.pos) {
                     let side = (t.pos - h.pos).normalize_or_zero() * Fx::from_int(6);
                     return Some(DropWant {
                         point: self.terrain.clamp(h.pos + side),

@@ -344,3 +344,213 @@ fn a_recon_car_under_way_backs_off_from_known_armour() {
         );
     }
 }
+
+/// The F8 scene (S10b-ai L5): the S8b truck with an own HQ out of stock
+/// outside its reach, fort switches off (the S10a buys). `ring`: the truck
+/// stands in a trench ring (the HQ is unreachable). Returns the world, the
+/// truck's squad and the HQ's spot.
+fn f8_world(memory: u32, ring: bool, hq_at: FxVec2) -> (World, SquadId, FxVec2) {
+    let mut s = setup(3);
+    s.players[0].is_ai = true;
+    let f = &mut s.rules.ai.fort;
+    (f.works, f.wire, f.breach, f.cards) = (0, 0, 0, 0);
+    s.rules.ai.truck.refusal_memory = memory;
+    let mut w = World::new_match(s, 1).unwrap();
+    let hq = {
+        let s = w.match_setup().unwrap();
+        s.stock_of(
+            s.players[0].faction,
+            frontline_content::setup::StockKind::Hq,
+            None,
+        )
+        .unwrap()
+    };
+    w.build_structure_now(PlayerId(0), hq, hq_at, Fx::ZERO, [0, 0, 0])
+        .unwrap();
+    if ring {
+        trench_ring(&mut w, 620, 620, 24);
+    }
+    let (tsq, t) = spawn(&mut w, 0, "ww2:ger_opel_blitz_squad", xy(620, 620));
+    w.edit_vehicle(t, |vs| vs.cargo_g = [100_000, 100_000, 300_000]);
+    spawn(&mut w, 0, "ww2:ger_pz4_h_squad", xy(740, 620));
+    (w, tsq, hq_at)
+}
+
+const HQ_NEAR: i32 = 400;
+
+fn near40(a: FxVec2, b: FxVec2) -> bool {
+    (a - b).length_sq_raw() <= (FxVec2::from_int(40, 0)).length_sq_raw()
+}
+
+/// What the F8 scene saw over some ticks.
+#[derive(Default, Debug)]
+struct F8Seen {
+    /// Ticks at which a drop at the HQ was ordered.
+    hq_orders: Vec<u64>,
+    /// `failed` ticks of `TruckGoal` refusals near the HQ.
+    refusals: Vec<u64>,
+    /// The first tick the job left `Drop`.
+    drop_end: Option<u64>,
+}
+
+/// Steps the F8 scene `ticks` ticks; the HQ is removed at tick `hq_gone_at`.
+fn f8_run(
+    w: &mut World,
+    tsq: SquadId,
+    hq_at: FxVec2,
+    ticks: u64,
+    hq_gone_at: Option<u64>,
+) -> F8Seen {
+    let mut seen = F8Seen::default();
+    let mut was_drop = false;
+    let mut orders = w
+        .game()
+        .unwrap()
+        .ai(PlayerId(0))
+        .unwrap()
+        .counters
+        .truck_drops_ordered;
+    for _ in 0..ticks {
+        if hq_gone_at == Some(w.tick()) {
+            assert!(w.edit_supply6(|sp| sp.structures.retain(|_, h| h.pos != hq_at)));
+        }
+        w.step(&[]);
+        let g = w.game().unwrap();
+        let ai = g.ai(PlayerId(0)).unwrap();
+        for r in &ai.refused {
+            if r.kind == frontline_sim::ai::JobKind::TruckGoal
+                && near40(r.at, hq_at)
+                && !seen.refusals.contains(&r.failed)
+            {
+                seen.refusals.push(r.failed);
+            }
+        }
+        let Some(job) = ai.trucks.get(&tsq).copied() else {
+            continue;
+        };
+        if job.phase != frontline_sim::ai::TruckPhase::Drop && was_drop && seen.drop_end.is_none() {
+            seen.drop_end = Some(w.tick());
+        }
+        was_drop = job.phase == frontline_sim::ai::TruckPhase::Drop;
+        if ai.counters.truck_drops_ordered > orders {
+            orders = ai.counters.truck_drops_ordered;
+            if near40(job.moved_to, hq_at) {
+                seen.hq_orders.push(w.tick());
+            }
+        }
+    }
+    seen
+}
+
+/// S10b-ai L5 (F8): with `refusal_memory` 1 the truck that gave the
+/// unreachable HQ goal up never orders it again (its refusal lives until a
+/// truck loads; this one cannot). Control: `refusal_memory` 0 -> the HQ is
+/// ordered again about 6 min after the first order, once four later
+/// give-ups pushed it out of the job's memory (the F8 fact; seen: orders at
+/// ticks 901 and 11761). A 300 s refusal alone (the spec's L4 window) also
+/// fails it: the re-order came 326 s after the refusal (seen).
+#[test]
+#[ignore = "two runs of eight game minutes; the release run has it"]
+fn truck_never_reorders_unreachable_hq() {
+    let minutes = 8 * 60 * 30;
+    let (mut w, tsq, hq) = f8_world(0, true, xy(700, 700));
+    let off = f8_run(&mut w, tsq, hq, minutes, None);
+    assert!(
+        off.hq_orders.len() >= 2 && off.hq_orders[1] - off.hq_orders[0] <= 7 * 60 * 30,
+        "control: the F8 re-order within 7 min ({:?})",
+        off.hq_orders
+    );
+    assert!(off.refusals.is_empty(), "memory 0 writes no truck refusal");
+    let (mut w, tsq, hq) = f8_world(1, true, xy(700, 700));
+    let on = f8_run(&mut w, tsq, hq, minutes, None);
+    assert_eq!(
+        on.hq_orders.len(),
+        1,
+        "the HQ is ordered once: {:?}",
+        on.hq_orders
+    );
+    assert_eq!(
+        on.refusals.len(),
+        1,
+        "one give-up, one refusal: {:?}",
+        on.refusals
+    );
+}
+
+/// S10b-ai spec 5 (truck goal, target gone): the HQ goes while the truck
+/// drives to it; the drop ends (crates set down at the point, which needs
+/// no HQ), no truck refusal is written and the gone HQ is not ordered
+/// again. Control: the HQ at (700, 700), out of reach within the drop's
+/// 180 s limit -> a refusal at the limit (seen: `[8700]`).
+#[test]
+fn truck_hq_gone_ends_goal() {
+    let (mut w, tsq, hq) = f8_world(1, false, xy(HQ_NEAR, HQ_NEAR));
+    // Up to the first HQ order (the truck loads in the base first).
+    let mut first = F8Seen::default();
+    for _ in 0..8 * 60 {
+        let s = f8_run(&mut w, tsq, hq, 30, None);
+        first.hq_orders.extend(s.hq_orders);
+        first.refusals.extend(s.refusals);
+        if !first.hq_orders.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(first.hq_orders.len(), 1, "the empty HQ wants crates");
+    let gone = w.tick() + 30;
+    let rest = f8_run(&mut w, tsq, hq, 6 * 60 * 30, Some(gone));
+    let g = w.game().unwrap();
+    assert!(
+        g.supply6().structures.values().all(|h| h.pos != hq),
+        "HQ gone"
+    );
+    let end = rest.drop_end.expect("the goal ended");
+    assert!(
+        end <= first.hq_orders[0] + 180 * 30 + 30,
+        "the drop ended by its 180 s limit ({end})"
+    );
+    assert!(
+        rest.hq_orders.is_empty(),
+        "the gone HQ is not ordered again"
+    );
+    assert!(
+        first.refusals.is_empty() && rest.refusals.is_empty(),
+        "no refusal needed: {:?}",
+        rest.refusals
+    );
+}
+
+/// S10b-ai L5: a truck refusal survives save and load: the loaded world
+/// hashes as the saved one, holds the refusal and, run on, plays as the
+/// unsaved world (no HQ re-order in either). Control: `refusal_memory` 0
+/// -> no refusal before the save (seen in the control run of
+/// `truck_never_reorders_unreachable_hq`: `refusals` empty).
+#[test]
+#[ignore = "eight game minutes twice; the release run has it"]
+fn truck_refusal_survives_save_load() {
+    let (mut w, tsq, hq) = f8_world(1, true, xy(700, 700));
+    let a = f8_run(&mut w, tsq, hq, 2400, None);
+    assert_eq!(
+        a.refusals.len(),
+        1,
+        "refused before the save: {:?}",
+        a.refusals
+    );
+    let mut back = World::load(&w.save(), 1).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(back.full_state_hash(), w.full_state_hash());
+    let kept = back
+        .game()
+        .unwrap()
+        .ai(PlayerId(0))
+        .unwrap()
+        .refused
+        .clone();
+    assert!(
+        kept.iter()
+            .any(|r| r.kind == frontline_sim::ai::JobKind::TruckGoal)
+    );
+    let rest = 6 * 60 * 30;
+    let b1 = f8_run(&mut w, tsq, hq, rest, None);
+    let b2 = f8_run(&mut back, tsq, hq, rest, None);
+    assert_eq!(back.full_state_hash(), w.full_state_hash());
+    assert!(b1.hq_orders.is_empty() && b2.hq_orders.is_empty());
+}
