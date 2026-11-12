@@ -533,7 +533,8 @@ pub(crate) struct Stage {
 /// One row per job kind: the setup turns `ai_world()` into a world whose
 /// goal is unreachable for that kind (B: Fort; D: Sweep, Demolish,
 /// TruckGoal).
-const LIVENESS: &[(JobKind, fn(&mut World) -> Stage)] = &[];
+type StageSetup = fn(&mut World) -> Stage;
+const LIVENESS: &[(JobKind, StageSetup)] = &[];
 
 /// Minutes each row runs (spec 5: 20 min).
 const LIVENESS_MIN: u64 = 20;

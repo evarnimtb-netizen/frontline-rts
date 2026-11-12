@@ -6,33 +6,33 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build A chunk 2** (`S10b-ai-build-A.md` steps 8-12, then STOP POINT 2).
-Done (A1, layout commit `0ae000f`): SAVE 25 (the one bump), PROTOCOL 14. `tools/check.sh quick 72b2970` all ok.
-Content: `AiObstacleTuning` `[ai.obstacles]` (30 keys, `tuning.rs`, `TABLES`, `TuningRefs::ai_obstacles`,
-`AiDef/AiSetup::obstacles`); `FortTuning` += `mine_paths`, `mine_path_cost_pct`, `mine_band_foot_cm`,
-`mine_band_vehicle_cm` (serde defaults 1/2000/300/400); `AiTruckTuning::refusal_memory` (default 1). Switches all 1.
-Sim: `crates/sim/src/ai/obstacles.rs` (new): `AiSweep`, `AiDemolish`, `AiRefusal::key`, `JobKind`, `SweepPhase`
-(Go/Sweep/Done), `DemolishPhase` (Go/Charge/Repath/Done), `MAX_SWEEPS`, `MAX_DEMOLITIONS`, `MAX_REFUSED`,
-`REFUSAL_KEEP_MIN_S`, `AiState::{refuse, refused_near, drop_stale_refusals, validate_s10b}`, `AiHabit`, `DriveArgs
-{squad, point, others, at}`, `HabitEnd {Done, Failed, NotBuilt}`, `Planner::drive_habit` (each arm NotBuilt),
-`MatchState::drive_habit_plan`. `ai.rs`: `AiState::{sweeps, demolitions, refused, suspects_seen}`, 14 `AiCounters`
-(`s10b_jobs` ... `refused_reorders`). `ai/fort.rs`: `AiFortJob::start`, `WorkKind::{ApField, AtField, Hedgehog,
-LogBarrier, Bunker}` (fort_of by trigger / blocks_vehicles / BunkerPit; `switched_on` reads `[ai.obstacles]`).
-`fort.rs`: `MineBlast`, `FortState::blasts` (sorted by tick; in `is_empty`), `MAX_BLASTS`, `BLAST_KEEP_S`, 4
-`FortAccount` fields. `world.rs`: `World::{with_ai_state, drive_ai_habit}`; tests `crates/sim/src/s10b_ai_tests.rs`.
-Tests (each control seen failing): `s10b_ai_layout_roundtrips_and_hashes`, `load_rejects_bad_s10b_ai_state`,
-`refusal_memory_replaces_oldest_failure`, `fort_of_returns_s10b_blueprints_for_new_kinds`,
-`drive_ai_habit_skeleton_ends_not_built`, content `ai_obstacle_tuning_parses_and_validates`
-(`sdk/crates/content/tests/s10b_ai_content.rs`). Fuzz stage `staged_s10b_ai` in `save_fuzz.rs` (sweep, demolition
-with one piece done, two refusals, an ApField fort job with start, a blast): fuzz 0 panics, 0 unloadable.
-Semantics chunk 2+ must keep: `refused_near(kind, at, tick, refused_ticks, near_m)` takes TICKS (not s);
-`drop_stale_refusals(tick, keep_ticks)` gets max(refused_s, 300 s) in ticks; `suspects_seen` is checked only
-`<= MAX_BLASTS` and must be clamped to `blasts.len()` on read; nothing in a match calls the new code yet.
-Chunk 2 starts at step 8: `sdk/crates/cli/src/skirmish.rs` (`S10_AI`, `S10Player::ai_counters`), `json_out.rs`.
-Failing tests: none. Neutrality 40-set not run in chunk 1 (no behaviour; chunk 2 ends with it).
-Neutrality bases: 40 set `target/s10b-base40`; full `target/s10b-verify`. `targets/S10b-ai.toml` parses only
-after chunk 2 adds `three_parts_from`, `exposure`, `exposure_min`, `control` (until then `S10b.toml`).
-Chunks left: A 1, B 2, C 2, D 3. Owner questions S10b-ai-1..7 (spec 10).
+**Next: Build B** (`S10b-ai-build-B.md`, its chunk 1). Build A is done (chunks 1 and 2; STOP POINT 2 met).
+Layout: SAVE 25 (commit `0ae000f`, the one bump), PROTOCOL 14; no later chunk may change either.
+Code map (A2): `sdk/crates/cli/src/skirmish.rs`: `S10B_AI` (14 names), `S10Player::{s10b_ai, s10b_chances,
+s10b_materials_g, s10b_materials_micro, s10b_ai_counters}`, `CHANCE_LAY/OBST/BUNKER`, `S10bAiSeen` (per tick: AI fort
+jobs by blueprint class -> chance bits; grams S10b works draw), `S10bAiFaction::{add, get}`, `FactionSummary::s10b_ai`,
+text line "s10b-ai:". `json_out.rs`: `s10b_ai_blocks` -> `factions.<f>.s10b_ai` (14 counters + `lost_on_known`,
+`at_exposure_ticks`, `own_mine_losses`, `own_pieces_demolished`) and `s10b_ai_derived` (22 fields of stage A step 8;
+`matches_with_bunker_pct`, `sweep_when_wanted_pct`, `demolish_when_wanted_pct` null with no chance/want).
+Chances (exposures; all from AI state, so 0 with switches off): lay = `lay_sites > 0` or an AI job on a mine
+blueprint; obst = AI job on a `blocks_vehicles` blueprint or `own_route_rejects > 0`; bunker = AI job on the
+BunkerPit blueprint. B/C must count `lay_sites`, `own_route_rejects` and keep `AiFortJob::fort` = the S10b blueprint.
+`targets.rs`: `TargetSpec::{exposure, exposure_min, control}`, `TargetsFile::three_parts_from`, `id_number`,
+`Verdict::{Unexposed, ControlSame}` (hard rows only; report rows print the parts), `tally` counts them as failing.
+`S10b-ai.toml` now parses (471 rows). `tools/measure.sh` plays every `skirmish40_*` run (flat TOML read, py 3.9).
+`tools/ablate.sh`: `ABLATIONS=DIR` (default `docs/slices/targets/S10b-ai-ablations`), TARGETS beside it,
+`NEUTRAL_BASE` default `target/s10b-verify`, default/`all` = every `*_off.toml` (8); `loose.toml` is the control.
+`tools/pool.py`: "s10b-ai:" line (mines/obstacles/bunker/sweep shares, own-side mistakes).
+Liveness (`crates/sim/src/s10b_ai_tests.rs`): `Stage {habit, args, goal}`, `LIVENESS: &[(JobKind, StageSetup)]`
+(`fn(&mut World) -> Stage`; empty: B adds Fort, D Sweep/Demolish/TruckGoal), `job_alive`, `drive_row`, `check_liveness(trace, Limits)`
+(L1 deadline + slack, one refusal per failed job, no start within `refused` ticks, at most one retry, reorders 0,
+at least one refusal). `job_alive(TruckGoal)` is false: D must fill it.
+40 set (defaults, `target/s10b-ai-a2-40`): `neutral.py target/s10b-base40` -> **same 40/40**.
+Tests added (controls seen failing): `unexposed_row_fails_not_hard`, `control_inside_bounds_fails`,
+`three_parts_required_from_id` (cli lib), `s10b_ai_derived_fields` (cli `--test skirmish`),
+`ai_jobs_end_and_never_reorder_a_refused_goal` (sim lib). Failing tests: none.
+Keep: `refused_near(.., refused_ticks, near_m)` takes TICKS; `drop_stale_refusals(tick, max(refused_s, 300 s) ticks)`;
+clamp `suspects_seen` to `blasts.len()`. Chunks left: B 2, C 2, D 3. Owner questions S10b-ai-1..7 (spec 10).
 
 ## Plan (2026-11-12)
 
@@ -58,3 +58,12 @@ went into `staged_s10b_save_holds_its_state` (the seed-match `MUST_HOLD` cannot 
 `fuzz_plan_reaches_s10b_state` asserts entries (`.sweeps.{}`, `.demolitions.{}`, `.refused.[]`, `.blasts.[]`), since
 the bare names also match the new counters (`sweeps_started`, `refused_reorders`). `ablate.sh` dry run failed once on a
 stale CLI binary (old code rejects `[ai.obstacles]`); green after the rebuild.
+
+## Build A chunk 2 (2026-11-12)
+
+Commits `30c6a34` (fields, targets tool, measure/ablate/pool, ablation files), `252f9be` (liveness harness).
+Decided by default: the three "chance" exposures come from AI state only (a nonzero fact-based chance would break
+`neutral.py`'s "new keys stay 0" on the defaults run); `s10b_materials_mp_pct` prices the grams S10b works draw at
+`construction_mp_per_t`; a null control is never CONTROL-SAME and a control run not played prints "(not played)"
+without failing; `ablate.sh` default set moved to S10b-ai (S10a via `ABLATIONS=`).
+
