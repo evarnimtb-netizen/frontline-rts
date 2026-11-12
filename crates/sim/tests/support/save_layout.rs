@@ -42,7 +42,7 @@ pub struct Field {
     pub value: i128,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Layout {
     pub bytes: Vec<u8>,
     pub fields: Vec<Field>,

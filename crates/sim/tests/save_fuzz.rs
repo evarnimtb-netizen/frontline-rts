@@ -280,6 +280,19 @@ fn focus(path: &str) -> bool {
     .any(|p| path.starts_with(p))
 }
 
+/// Index of the staged S10b save in `fuzz_set` (after `FUZZ_SAVES`).
+const STAGED: usize = FUZZ_SAVES.len();
+
+/// The S10b state of a save: mines, charges, the S10b orders, the
+/// blueprints and the mine items (S10b review R4).
+fn s10b_path(path: &str) -> bool {
+    path.starts_with("state.game.fort")
+        || path.starts_with("state.game.setup.forts")
+        || (path.starts_with("state.game.setup.items") && path.contains(".mine"))
+        || path.contains("Order.ClearMines")
+        || path.contains("Order.Demolish")
+}
+
 /// The mutation plan for one save, fixed by counters: every field path gets
 /// `occ` occurrences (spread over its fields by a multiplicative step) and
 /// `vals` values (rotating through `candidates` with the save number).
@@ -297,6 +310,10 @@ fn plan(save: usize, l: &save_layout::Layout) -> Vec<Mutation> {
         }
         let setup = path.starts_with("state.game.setup") || path.starts_with("state.config");
         let (occ, vals) = match () {
+            // The staged S10b save: its own state, the blueprints' mine
+            // items and the mine items' `[mine]` tables, at full weight.
+            _ if save == STAGED && !s10b_path(path) => continue,
+            _ if save == STAGED => (2, 3),
             _ if setup && p % 3 != save => continue,
             _ if setup => (1, 1),
             _ if focus(path) => (2, 3),
@@ -425,6 +442,70 @@ fn fuzz_saves() -> &'static [save_layout::Layout] {
             })
             .collect()
     })
+}
+
+/// The saves the mutation fuzz runs on: the `FUZZ_SAVES` of the seed match
+/// and the staged S10b save (`STAGED`), with the tick of each.
+fn fuzz_set() -> &'static (Vec<save_layout::Layout>, Vec<u64>) {
+    static SET: std::sync::OnceLock<(Vec<save_layout::Layout>, Vec<u64>)> =
+        std::sync::OnceLock::new();
+    SET.get_or_init(|| {
+        let w = staged_s10b();
+        let mut saves = fuzz_saves().to_vec();
+        saves.push(layout(&w));
+        let mut ticks = FUZZ_SAVES.to_vec();
+        ticks.push(w.tick());
+        (saves, ticks)
+    })
+}
+
+/// S10b review R4: the fuzz set reaches the S10b state (mine items, fort
+/// and boom tick, a charge's piece, the ClearMines lift, the Demolish man,
+/// the blueprints' mine items and the `[mine]` tables). Control: drop the
+/// staged save from `fuzz_set` (the AI saves hold none of these).
+#[test]
+fn fuzz_plan_reaches_s10b_state() {
+    let (saves, _) = fuzz_set();
+    let planned: Vec<&str> = (0..saves.len())
+        .flat_map(|s| {
+            plan(s, &saves[s])
+                .into_iter()
+                .map(move |m| saves[s].paths[m.field.path as usize].as_str())
+        })
+        .collect();
+    for want in [
+        "state.game.fort.mines",
+        "boom_tick",
+        "state.game.fort.charges",
+        "Order.ClearMines",
+        "Order.Demolish",
+        "state.game.setup.forts",
+    ] {
+        assert!(
+            planned.iter().any(|p| p.contains(want)),
+            "no planned mutation reaches {want}"
+        );
+    }
+    assert!(
+        planned
+            .iter()
+            .any(|p| p.contains(".piece") && p.starts_with("state.game.fort.charges"))
+    );
+    assert!(
+        planned
+            .iter()
+            .any(|p| p.contains("Order.ClearMines") && p.contains("lift"))
+    );
+    assert!(
+        planned
+            .iter()
+            .any(|p| p.starts_with("state.game.setup.forts") && p.ends_with("mine_item"))
+    );
+    assert!(
+        planned
+            .iter()
+            .any(|p| p.starts_with("state.game.setup.items") && p.contains(".mine"))
+    );
 }
 
 /// A staged S10b state (spec R4 of the S10b review): an engineer squad of
@@ -587,7 +668,8 @@ fn save_mine_item_out_of_range_is_rejected() {
     }
 }
 
-/// Part 2: every planned mutation of the three saves is rejected by
+/// Part 2: every planned mutation of the fuzz set (three AI saves and the
+/// staged S10b save) is rejected by
 /// `World::load` or loads into a world that runs 300 ticks without a panic.
 /// A hang (no progress for 60 s) fails with the mutation in flight.
 #[test]
@@ -595,11 +677,12 @@ fn save_mine_item_out_of_range_is_rejected() {
 fn save_mutations_are_rejected_or_run() {
     quiet_fuzz_panics();
     let t0 = Instant::now();
-    let saves = fuzz_saves();
+    let (saves, ticks) = fuzz_set();
     let t_match = t0.elapsed();
     let plans: Vec<Mutation> = (0..saves.len()).flat_map(|s| plan(s, &saves[s])).collect();
     let plans = std::sync::Arc::new(plans);
     let saves: &'static [save_layout::Layout] = saves;
+    let ticks: &'static [u64] = ticks;
     let workers = std::thread::available_parallelism().map_or(2, |n| n.get().clamp(2, 4));
     let next = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (tx, rx) = std::sync::mpsc::channel::<(usize, Outcome)>();
@@ -633,7 +716,7 @@ fn save_mutations_are_rejected_or_run() {
                 let hung: Vec<String> = f
                     .iter()
                     .filter(|&&i| i < plans.len() && outcomes[i].is_none())
-                    .map(|&i| describe(&plans[i], saves, &FUZZ_SAVES))
+                    .map(|&i| describe(&plans[i], saves, ticks))
                     .collect();
                 panic!("no progress for 60 s; in flight: {hung:#?}");
             }
@@ -648,7 +731,7 @@ fn save_mutations_are_rejected_or_run() {
             Outcome::Unloadable(msg) => {
                 ran += 1;
                 let path = &saves[plans[i].save].paths[plans[i].field.path as usize];
-                let line = format!("{}: {msg}", describe(&plans[i], saves, &FUZZ_SAVES));
+                let line = format!("{}: {msg}", describe(&plans[i], saves, ticks));
                 if KNOWN
                     .iter()
                     .any(|(p, m)| path.starts_with(p) && msg.contains(m))
@@ -658,10 +741,9 @@ fn save_mutations_are_rejected_or_run() {
                     unloadable.push(line);
                 }
             }
-            Outcome::Panicked(msg) => panics.push(format!(
-                "{}: {msg}",
-                describe(&plans[i], saves, &FUZZ_SAVES)
-            )),
+            Outcome::Panicked(msg) => {
+                panics.push(format!("{}: {msg}", describe(&plans[i], saves, ticks)))
+            }
         }
     }
     println!(
