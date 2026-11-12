@@ -1976,3 +1976,36 @@ fn bunker_pieces_share_one_base_on_a_slope() {
         assert_eq!(q.z, base + off, "part {}", q.part);
     }
 }
+
+// ---- Build F: snapshot.
+
+#[test]
+fn fort_snapshot_lists_mines_with_known_bits() {
+    // Control: fill `known` with all bits in `fill_fort` -> the enemy mine
+    // shows player 0's bit before anyone found it.
+    let mut w = flat(|_| {});
+    let m = mine_at(&mut w, "ww2:at_minefield", 5000, 5000, 1);
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 470, 500);
+    w.step(&[]);
+    let snap = &w.snapshot().fort.mines;
+    assert_eq!(snap.len(), 1, "every mine is listed");
+    assert_eq!(snap[0].id, m);
+    assert_eq!(snap[0].owner, 1);
+    assert_eq!(snap[0].known & 0b01, 0, "unknown to the enemy until found");
+    assert_ne!(snap[0].known & 0b10, 0, "known to its owner");
+    assert!((snap[0].pos[0] - 500.0).abs() < 0.01 && (snap[0].pos[1] - 500.0).abs() < 0.01);
+    w.edit_fort(|f| f.mines.get_mut(&m).unwrap().known |= 0b01);
+    w.step(&[]);
+    assert_eq!(
+        w.snapshot().fort.mines[0].known,
+        0b11,
+        "found: player 0's bit set"
+    );
+    // A `clear_mines` order shows its lane.
+    clear_mines(&mut w, 0, eng, c(470, 510), c(470, 540));
+    w.step(&[]);
+    let sq = w.snapshot().squads.iter().find(|s| s.id == eng.0).unwrap();
+    let lane = sq.clear_lane.expect("the lane");
+    assert_eq!((lane.a, lane.b), ([470.0, 510.0], [470.0, 540.0]));
+    assert_eq!(sq.demolish, None);
+}

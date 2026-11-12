@@ -78,6 +78,19 @@ pub struct SquadSnapshot {
     pub items: [u16; ITEM_KINDS],
     /// S10a: construction kg the squad carries (`LoadMaterials`).
     pub materials_kg: f32,
+    /// S10b `clear_mines` orders: the lane and how far along it the
+    /// sweepers are (`None` for other orders).
+    pub clear_lane: Option<ClearLaneSnapshot>,
+    /// S10b `demolish` orders: the target piece id.
+    pub demolish: Option<u32>,
+}
+
+/// S10b: a `clear_mines` order's lane (`a` to `b`, `along` metres from `a`).
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct ClearLaneSnapshot {
+    pub a: [f32; 2],
+    pub b: [f32; 2],
+    pub along: f32,
 }
 
 /// A thrown item in the air, or landed and waiting for its fuse.
@@ -559,6 +572,24 @@ pub struct ChargeSnapshot {
     pub to: [f32; 3],
     /// Ticks until it bursts.
     pub fuse_ticks: u32,
+    /// S10b: the piece a demolition charge is tamped against (`None`: a
+    /// Bangalore).
+    pub piece: Option<u32>,
+}
+
+/// S10b: one laid mine, ascending id. Every mine is listed; hiding the
+/// ones the local player does not know is the presenter's job (design 7.6,
+/// "a presentation rule").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MineSnapshot {
+    pub id: u32,
+    pub owner: u8,
+    /// The minefield blueprint (index into `MatchSetup::forts`).
+    pub fort: u16,
+    /// `[x, y, z]`, z on the ground.
+    pub pos: [f32; 3],
+    /// Players who know where it is (bit per player).
+    pub known: u8,
 }
 
 /// S10a: fortifications (match mode only). Enemy entries are listed too;
@@ -569,6 +600,8 @@ pub struct FortSnapshot {
     pub wire: Vec<WireSnapshot>,
     pub works: Vec<FortWorkSnapshot>,
     pub charges: Vec<ChargeSnapshot>,
+    /// S10b.
+    pub mines: Vec<MineSnapshot>,
 }
 
 /// One capture point, in map order.
@@ -887,6 +920,18 @@ impl RenderSnapshot {
                 materials_kg: g.fort().carried_g.get(id).map_or(0.0, |&gr| {
                     crate::fx::Fx::from_ratio(gr as i64, 1000).to_f32()
                 }),
+                clear_lane: match &sq.order {
+                    Order::ClearMines { a, b, along, .. } => Some(ClearLaneSnapshot {
+                        a: a.to_f32(),
+                        b: b.to_f32(),
+                        along: along.to_f32(),
+                    }),
+                    _ => None,
+                },
+                demolish: match &sq.order {
+                    Order::Demolish { piece, .. } => Some(*piece),
+                    _ => None,
+                },
             });
         }
         let items = &g.setup().items;
@@ -1034,6 +1079,7 @@ impl RenderSnapshot {
         self.fort.wire.clear();
         self.fort.works.clear();
         self.fort.charges.clear();
+        self.fort.mines.clear();
         let Some(g) = game else {
             return;
         };
@@ -1148,6 +1194,16 @@ impl RenderSnapshot {
                 from: on(c.from),
                 to: on(c.to),
                 fuse_ticks: c.fuse_tick.saturating_sub(tick).min(u32::MAX as u64) as u32,
+                piece: c.piece,
+            });
+        }
+        for (&id, m) in &f.mines {
+            self.fort.mines.push(MineSnapshot {
+                id,
+                owner: m.owner.0,
+                fort: m.fort,
+                pos: on(m.pos),
+                known: m.known,
             });
         }
     }
