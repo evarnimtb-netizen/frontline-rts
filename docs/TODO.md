@@ -40,7 +40,7 @@ next starts. Process rules: `docs/process/workflows.md`.
 - S10 on: an engine slice is split into a mechanics slice (cards at `ai_weight` 0, proven neutral) and an AI-and-balance slice (owner 2026-11-09).
 - Features first, balance later (owner 2026-11-11): no per-slice Tune; each slice measures and records 480 matches;
   Germany's pooled share must stay in a 35-65 % guard band, outside it stop and diagnose. Fine balance to 45-55 % and the
-  soft per-unit targets wait for a dedicated balance pass (after S10b or S11). The next slice's targets file uses the
+  soft per-unit targets wait for a dedicated balance pass (after S10b-ai or S11). The next slice's targets file uses the
   35-65 % band and marks T31/T55-type targets as reports.
 - Minor scope and price questions are settled on the recommended (A) and only reported; irreversible choices,
   how-it-should-play choices and main updates are still asked (owner 2026-11-11).
@@ -235,6 +235,16 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-4 Bunker slit. (A) Own rounds pass own pieces (S10a-3), so the slit matters only to incoming fire. (B)
   Defenders must fire through the slit (own bunker pieces stop own rounds).
 
+- S10b-5..9 (questions from the S10b verify, 2026-11-12). Each (A) is recommended; the owner picks.
+  S10b-5 Hedgehog gap (T106b). (A) Keep: a line needs several charges or a tank-gun/HE effort, and T106b becomes a report. (B) Smaller block pad so one destroyed piece opens a tank-wide gap.
+  S10b-6 Demolition charge at a bunker. Now a charge at ANY wall kills all five inside (slit 100 %, uphill slit 100 %, back wall 100 %). (A) Only the slit (and the door side) is deadly; a wall charge damages the piece. (B) Keep every wall deadly.
+  S10b-7 Sweeping cost. A sweep of a mixed field loses about 1.2 men per sweep (T104a) and lifts 77 % of mines. (A) Keep. (B) Make sweeping safer or slower.
+  S10b-8 Obstacle that waits for a vehicle. (A) Keep the wait without limit. (B) End the work with BadSpot after a time limit.
+  S10b-9 AP mine against vehicles. (A) Keep 10 % (the hand-grenade value, never breaks a track). (B) 0, no effect on vehicles at all.
+- S10b open notes (not numbered): merging S10b into main needs the owner's OK. F8 from S10a-ai (an S8b truck re-orders an
+  unreachable HQ goal about every 5 min) is still deferred. Bunker notes from Build E: MG fire from 150 m does not hit men
+  in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -253,11 +263,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 9. S9b AI gun pass: built on `s9b-ai-guns` (Plan, Build, Review, Fix; log `docs/slices/S9b-log.md`, spec `S9b-ai-guns.md`, targets `S9b.toml`). Verified on `1bfc92f`: pooled Germany 48.75 %, 10 hard misses, `tools/check.sh full` all ok; T88 met for Germany, not USA. Owner 2026-11-10: S9b-1 (A), S9b-2 (A), S9b-3 (A); merged, main = `ba0038f` (owner OK). Next: S10a mechanics on `s10a-fortifications`.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
 11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
-12. **S10b mechanics (now)**: mines, AT obstacles, bunker, clearing and demolition, on branch `s10b-obstacles` from
-    `8acc534`. Plan done 2026-11-11: spec `docs/slices/S10b-obstacles.md` + `S10b-build-A..F.md`, targets `S10b.toml`
-    (T5c/T5d 35-65; T31a-d, T55a/b, T95b/d reports; new T102-T108), log `S10b-log.md`. Stages Build A-F, measure 480
-    with `neutral.py` against `target/s10a-ai-verify`, Review, Fix, Docs. No Tune (owner rule 1).
-13. S10b-ai: the AI lays, sweeps, demolishes and builds obstacles and bunkers; path avoidance of known mines (S10b-2).
+12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Not merged: waits for the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
+13. **S10b-ai (next, after the owner's OK to merge)**: the AI lays, sweeps, demolishes and builds obstacles and bunkers; path avoidance of known mines (S10b-2); the AI job liveness contract.
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)

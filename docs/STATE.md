@@ -1,8 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main `8acc534` holds S1 to S10a-ai (merged 2026-11-11, owner OK). **Work now: S10b mechanics** (mines, AT obstacles,
-bunker) on branch `s10b-obstacles`: spec `docs/slices/S10b-obstacles.md` + `S10b-build-A..F.md`, targets `S10b.toml`,
-log `S10b-log.md` (read its top block). Read the sections you need, then the doc the index names. Checked 2026-11-11.
+Main `8acc534` holds S1 to S10a-ai (merged 2026-11-11, owner OK). **S10b mechanics is built, reviewed, fixed and verified**
+on branch `s10b-obstacles` (from main), **not merged**: it waits for the owner's OK. Spec `docs/slices/S10b-obstacles.md`,
+log `S10b-log.md` (read its top block), targets `S10b.toml`. Next: S10b-ai. Checked 2026-11-12.
 
 ## What the game is now
 
@@ -33,7 +33,8 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | World, save, hash | tick loop, save/load, state hash, render snapshot | `world.rs`, `hash.rs`, `snapshot.rs` |
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
 | Mod `ww2` | 2 factions; cards for tank, casemate TD, half-track, recon car, truck, AT gun; 15 vehicles incl. 4 guns and the Sd.Kfz. 11; `defs/supply/` | `mods/ww2/defs/` |
-| Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands | `crates/net/src/` |
+| Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands, ClearMines, Demolish | `crates/net/src/` |
+| Mines, obstacles, bunker (S10b, branch) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; no AI use | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs` `fort_of` guard |
 | Godot bridge and presenter | GDExtension (match thread, intents, frames); match view, HUD, menus, net lobby, mock, blockouts | `crates/godot-bridge/src/`, `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
@@ -42,7 +43,7 @@ SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a
 
 ## Versions
 
-`SAVE_VERSION` **23** and `PROTOCOL_VERSION` **13** on main (`world.rs`, `protocol.rs`); S10b plans 24 and 14 (Build A). History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
+`SAVE_VERSION` **23** and `PROTOCOL_VERSION` **13** on main (`world.rs`, `protocol.rs`); **24 and 14 on branch `s10b-obstacles`**. History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
 S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12; S10a 22 and 13; S10a-ai 23 and 13. A save, hash or command change bumps these
 in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
@@ -69,21 +70,23 @@ Verified on `72fd940` + `a0aa700` (`target/s10a-ai-verify`, the S10b neutrality 
 - **Open: F8** (an S8b truck re-orders an unreachable HQ goal about 5 min after four give-ups; also with all switches
   off, so a fix changes the neutrality base; later slice). Fix constants (`REFUSED_S`, `DUGOUTS_MAX`, `WATCH_*`) are code.
 
-## S10b mechanics (in progress on `s10b-obstacles`; log `S10b-log.md`)
+## S10b mechanics (branch `s10b-obstacles`, verified 2026-11-12; log `S10b-log.md`)
 
-Plan 2026-11-11: AP/AT minefields (laid with `Fortify`, contact trigger, sweep detection, lifting, HE sets them off),
-hedgehogs and log barriers (block vehicle path nodes), the bunker (six pieces, a slit), `Demolish` (placed satchel).
-Mechanics only: no AI use, AI-vs-AI identical to main (`neutral.py` vs `target/s10a-ai-verify`), no Tune. Stages
-Build A-F (spec 8), then measure, Review, Fix, Docs. Owner questions S10b-1..4 on (A) (`docs/TODO.md`). Next: S10b-ai.
+Mines (`ap_minefield`, `at_minefield`), hedgehog and log barrier (block vehicle nodes), bunker (six pieces, slit),
+`ClearMines` (sweep) and `Demolish` (placed satchel). Blueprints in `mods/ww2/defs/fortifications/`; items `ap_mine`, `at_mine`.
+Orchestrator verify (`tools/verify.sh`, 37 min 56 s): 881 tests pass, 0 fail; fmt, clippy, golden, validate, bridge, Godot checks ok.
+Tick p99 0.487 ms (peak 0.638). Germany pooled **41.67 %** of 480 (43.75 / 38.75 / 42.50), 0 no-winner, in the 35-65 % band.
+AI-vs-AI identical to main (`neutral.py` vs `target/s10a-ai-verify`). Targets: 373 pass, 25 miss, 6 hard.
+Hard misses: T8b, T40c, T54e, T88b, T88d (old) and **T106b** (a tank does not pass one demolished piece in a hedgehog line; owner decision).
+Owner questions S10b-5..9 are in `docs/TODO.md`. Fuzz: 9686 mutations, 0 panics, 0 unloadable.
 
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
 1. Features first, balance later: no per-slice Tune; each slice measures and records 480 matches. Germany's pooled share
    must stay in a 35-65 % guard band, else stop and diagnose. Fine balance (45-55 %) and soft per-unit targets wait for a
-   dedicated balance pass (after S10b or S11).
+   dedicated balance pass (after S10b-ai or S11).
 2. Minor scope and price questions are settled on the recommended (A) and only reported. Irreversible choices, how-it-should-play choices and main updates are still asked.
 3. S10a-ai decisions: breaching "fix smoke, lower bar" (T93f/h floor 30, T93g report); AI wire in 60 m lines; cards Germany by weight (Bau 100, Sturm 60, Pioniere 40), USA floor a report; smoke on three men.
-- S10a-20 settled (owner 2026-11-11): T93f/h and T96 are reports until S11 combined arms.
 
 ## Owner decisions in force (source: `docs/TODO.md`)
 
@@ -102,8 +105,8 @@ Build A-F (spec 8), then measure, Review, Fix, Docs. Owner questions S10b-1..4 o
 
 ## Roadmap position
 
-Done and on main: S1 to S10a-ai. Now S10b mechanics, then S10b-ai (AI use of mines, obstacles, bunkers), a dedicated
-balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
+Done and on main: S1 to S10a-ai. S10b mechanics done on its branch, merge awaits the owner. Then S10b-ai (AI use of
+mines, obstacles, bunkers), a balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
 
 ## How to check work
 
