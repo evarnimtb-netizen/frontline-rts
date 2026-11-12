@@ -6,30 +6,31 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build C chunk 3 = stage chunk 2 (bunker R7, manning, determinism, 40 sets; STOP POINT 2).** STOP POINT 1 met.
-Commits (C1+C2): `4672951` `3b6dfb2` `062e5c1` (R13), `0441bbb` (R5/R6/own_blocked/site check + tests), `59a036f`
-(liveness LogBarrier row), `d46eac2` (fortify row `s10b_ai.obstacle`, fuzz stage). Layout: SAVE 25, PROTOCOL 14.
-Code map (`crates/sim/src/ai/fort.rs`): `route_vehicle(p)`, `own_route(i)` (memo `Planner::own_routes`, never saved),
-`on_own_route(i, foot)` (`own_route_m` 0 = rule off), `own_route_side(i, [foot0, foot1])` (L3 refusal +
-`own_route_rejects` + `s10b_refused`), `barrier_line(fort, site, facing, side)`, `start_barriers` (in `fort_start`
-after walls, and in `drive_fort`), `hedgehog_anchor(i)` (built nest, else own bunker piece within `BUNKER_NEAR_M` 40:
-chunk 2's bunker anchors rows already), `hedgehog_row(i, side)`, `hedgehog_side(i)` (fixed at the first start),
-`hedgehog_next(i)` (`point_site_at` arm), `obstacle_wants(i)` (in `point_wants`), `count_own_blocked` (in
-`fort_continue`; `AiState::blocked_pairs` is `#[serde(skip)]`), Watch site check (`SITE_TAKEN_M` 2: other works,
-pieces of other blueprints), `s10b_laid` reads a point work's first point. `point_starts`: `lay_sites` fields only.
-Tests (`crates/sim/src/s10b_ai_obst_tests.rs`, controls seen failing by mutation): `ai_builds_barrier_before_gun`,
-`ai_builds_hedgehogs_before_nest`, `ai_never_blocks_own_route`, `ai_counts_own_blocked`, `ai_s10b_site_taken_ends_job`;
-helpers `obst_world`, `gun_in_hold` (pub(crate), used by `s10b_ai_tests.rs::barrier_row`).
-Fortify `s10b_ai.obstacle` (seeds 1-3, both players, ignored test `obstacle_row_one_off` in cli `fortify/s10b_ai.rs`):
-barrier_built_pct **0** (barrier_pieces 4.0 of 5: the L1 deadline `job_max_s` 900 s ends a one-builder 20 m barrier;
-with 3600 s all 5 stand), builder_alive 100, enemy_time_in_arc_s 94.5 (control no barrier 98.6), own_blocked 0,
-control.own_blocked 0 (CONTROL-SAME: tanks path round a 20 m barrier on open ground), exposure
-enemy_tank_reached_barrier_pct 0 (unexposed: the tank never got within 10 m). The gun stands 60 m beside the point
-(`GUN_SIDE_M`): on the axis R6 refused every barrier (3 rejections a run, the own route out runs through the arc).
-Owner question S10b-ai-C1 (new): the AI barrier vs L1 (A) keep 20 m and 900 s (T112i misses), (B) 16 m barrier,
-(C) `job_max_s` 1200. S10b-ai-B2a, 1..7 open. Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (776
-passed); `ai_fort` binary with `--include-ignored` ok; save_fuzz ok. 40 sets not run this chunk (stage chunk 2 ends).
-Chunks left: C 1 (stage chunk 2), D 3.
+**Next: Build D chunk 1 (sweeping, demolition, F8, docs).** Build C done: STOP POINT 2 met.
+C3 commits: `abf2559` (bunker R7, builders, kg at hand, manning, 2 tests), `1ad198d` (liveness Bunker row), `44244f8`
+(`ai_s10b_deterministic_threads_and_save_load`), `7f7af23` (fortify `s10b_ai.bunker`, hook manning), `0dc91b0` (fuzz).
+Layout: SAVE 25, PROTOCOL 14 (unchanged). Code map `crates/sim/src/ai/fort.rs`: `point_site_at` Bunker arm (nest end
+mirrored by parity), `bunker_point()` (own AI-trenched point nearest an enemy base), `bunker_wants(i)` (first of the S10b
+wants in `point_wants`), `bunker_built(i)`/`bunker_at(i)` (switch-gated), `bunker_crew(i, free)` (MG lowest id, else
+nearest non-MG/AT squad; used by `order_infantry` and the hook's `drive_crew` on `DriveArgs::others`),
+`heavy_by_field(d, caps)` (bunker only: build_structure builders, ranked after build_heavy in both picks), `at_hand(sq,
+d, site)` (S10b step over a full carry: carry + own construction crates/truck kg within `material_reach_m`).
+**What D needs:** `known_obstacles()` (R13, `crates/sim/src/ai/fort.rs`, tested by `ai_knows_obstacles_by_distance`).
+Tests (controls seen failing): `s10b_ai_bunker_tests.rs` `ai_builds_and_mans_one_bunker`,
+`ai_bunker_needs_heavy_or_field_builder`; `tests/ai_fort.rs` `ai_s10b_deterministic_threads_and_save_load` (seed
+search 1..10: seed 3, saves moved to the first live S10b job after 5:00/12:00: ticks 12270, 21600; AP field jobs only).
+Fortify `s10b_ai.bunker` (seeds 1-3, both players): built_pct 100, built_s 306.5, manned_pct 100, builder_alive 100;
+us_built_pct 100, us_built_s 747, us_manned_pct 100; control built 0, manned 0 (manned 0 with the hook manning cut).
+40 sets: defaults `target/s10b-c3-40` Germany **47.5 %**; all-off `target/s10b-c3-off40` vs `target/s10b-base40`:
+**same 40/40**. Defaults (pool.py): mines in 45/42 % (ger/usa), matches_with_obstacle_pct **22 / 5**,
+matches_with_bunker_pct **0 / 0** (of bunker chances), own_side_mistakes **0 / 0**, builder_share_pct **9.1 / 9.8**.
+**Open finding for D:** no bunker in 40 matches though the fortify row builds 100 %: in a match the 250 kg step needs
+`truck_free()` or kg at hand (no squad carries 250) and the S10b budget room (3 % of income); see which fails first
+(`can_supply`) before changing anything. T115 exposure `obstacle.own_tank_drove_pct` is not produced yet (row from C1).
+`AiState::blocked_pairs` is `#[serde(skip)]`: a non-empty list at save time would differ after load (PartialEq) and
+re-count a stuck pair; empty in every run so far. Owner questions open: S10b-ai-C1, B2a, 1..7.
+Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (778 passed); `ai_fort` with `--include-ignored` ok
+(3); save_fuzz ok incl. ignored. Chunks left: D 3.
 
 ## Plan (2026-11-12)
 
@@ -128,3 +129,14 @@ control "barrier on the route -> own_blocked > 0" cannot happen on open ground: 
 orders a tank onto its own barrier); hedgehog control is "no nest" (`hedgehogs_row` 0 is out of range 1..=16);
 liveness LogBarrier row refuses by an own tank on the site (the flat test map has no steep slope); fortify gun 60 m
 beside the point, 1500 s drive, 600 kg carried; enemy tank starts 150 m in front of the gun.
+
+## Build C chunk 3 (2026-11-12; stage chunk 2)
+
+Decided by default: the bunker comes first among the S10b wants (one strongpoint; hedgehog rows anchor on it);
+build_structure-for-heavy is allowed for the bunker only (R7 names it; hedgehogs keep build_heavy); a 250 kg step needs
+a truck or kg at hand (`at_hand`): two carries do not exist on the S10a path (a walk back ends the work); tests and the
+fortify row give a full carry plus three 40 kg crates at the site (carried kg are trimmed to the full carry); manning
+in the fortify row runs through the Fort hook (`DriveArgs::others`), as the hook has no `order_infantry`; the shelter
+rule still comes before the bunker for a rifle crew; bunker row keys `us_*` for the US set (targets T113g); liveness
+Bunker row refuses by an own tank on the site (flat map); determinism saves moved to the first live S10b job.
+
