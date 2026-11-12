@@ -75,6 +75,23 @@
 //!   Exposure `sweep_wanted_pct` (runs with `sweep_wanted` > 0). Control
 //!   (`control.*`): `[ai.obstacles] sweep` 0 (a minute's drive, nothing
 //!   swept, the rifles walk the field).
+//! * **Demolish** (Build D, R13, R14). For each player `p` and seed: `p`'s
+//!   medium tank stands [`DEMOLISH_TANK_M`] m short of the capture point
+//!   nearest `p`'s base (on the line from the base) inside a closed ring of
+//!   the enemy's hedgehogs (radius [`RING_M`] m, step [`RING_STEP_M`] m: no
+//!   way round on any map), ordered [`DEMOLISH_TANK_M`] - 60 m on toward the
+//!   point (it stops at the ring); `p`'s engineers stand 40 m aside, their
+//!   leader with [`DEMOLISH_SATCHELS`] satchels (the cards carry 1; a tank
+//!   gap needs about 24 m between standing piece centres, 3 pieces of this
+//!   ring and 5 of a 4 m row: owner question S10b-ai-D3).
+//!   `drive_ai_habit(Demolish)` (engineers the squad, the tank `others`)
+//!   until the habit ends (at most [`DEMOLISH_DRIVE_S`]), then
+//!   [`DEMOLISH_PASS_S`] s more (still driven): `gap_opened_pct` (the habit ended Done),
+//!   `tank_passed_pct` (the tank got [`RING_M`] + 5 m from its start),
+//!   `pieces_used` (report: mean `demolitions` of `p`). Exposure
+//!   `tank_blocked_pct` (runs in which the AI saw the tank blocked by a
+//!   known obstacle: `demolish_wanted` > 0). Control (`control.*`):
+//!   `[ai.obstacles] demolish` 0 (a minute's drive, the tank stays in).
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -133,6 +150,16 @@ pub const SWEEP_DRIVE_S: u64 = 600;
 pub const SWEEP_ADVANCE_S: u64 = 240;
 /// The rifle card of each player (faction order as `MEDIUM_TANKS`).
 const RIFLES: [&str; 2] = ["ger_grenadiergruppe", "usa_rifle_squad"];
+
+/// The demolish row (module docs): the tank's start distance short of the
+/// point, the ring's radius and hedgehog step (m), the leader's satchels,
+/// the longest drive and the drive on (s).
+pub const DEMOLISH_TANK_M: i32 = 150;
+pub const RING_M: i32 = 20;
+pub const RING_STEP_M: i32 = 6;
+pub const DEMOLISH_SATCHELS: u8 = 3;
+pub const DEMOLISH_DRIVE_S: u64 = 900;
+pub const DEMOLISH_PASS_S: u64 = 60;
 
 /// A route "priced" (left the straight line) past this many metres.
 pub const PRICED_OFF_M: i32 = 5;
@@ -272,6 +299,33 @@ pub struct SweepRow {
     pub control: SweepControl,
 }
 
+/// The control half of the demolish row: `demolish` 0.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct DemolishControl {
+    pub gap_opened_pct: Option<f64>,
+    /// Must be 0 (the ring is closed).
+    pub tank_passed_pct: Option<f64>,
+}
+
+/// T106b, T114e/f: the AI blows a tank gap in an enemy obstacle line.
+/// Build D measure (seeds 1-3): gap_opened 66.7, tank_passed 16.7,
+/// pieces_used 1.83, exposure 100, control 0 / 0. Two causes: the German
+/// leader's walk to the second piece's placing spot never arrives (the
+/// `Demolish` order stays at work 0 until L2 fails the job), and after 2
+/// pieces the served path reaches the goal (`opened`) but the tank stops
+/// about 12 m from its start, still inside the ring (path layer and
+/// vehicle movement disagree on the gap).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct DemolishRow {
+    pub gap_opened_pct: Option<f64>,
+    pub tank_passed_pct: Option<f64>,
+    /// Report: mean charges laid per run.
+    pub pieces_used: Option<f64>,
+    /// Exposure: runs in which the AI saw the tank blocked.
+    pub tank_blocked_pct: Option<f64>,
+    pub control: DemolishControl,
+}
+
 /// The S10b-ai rows (`fortify10.s10b_ai`).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S10bAiReport {
@@ -280,10 +334,11 @@ pub struct S10bAiReport {
     pub obstacle: ObstacleRow,
     pub bunker: BunkerRow,
     pub sweep: SweepRow,
+    pub demolish: DemolishRow,
 }
 
 /// The rows in summary order.
-const ROWS: &[&str] = &["paths", "mines", "obstacle", "bunker", "sweep"];
+const ROWS: &[&str] = &["paths", "mines", "obstacle", "bunker", "sweep", "demolish"];
 
 /// Summary lines, one per row.
 pub fn summary_text(r: &S10bAiReport) -> String {
@@ -642,7 +697,8 @@ pub fn s10b_ai_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S
         mines: mines_row(args, seeds.clone())?,
         obstacle: obstacle_row(args, seeds.clone())?,
         bunker: bunker_row(args, seeds.clone())?,
-        sweep: sweep_row(args, seeds)?,
+        sweep: sweep_row(args, seeds.clone())?,
+        demolish: demolish_row(args, seeds)?,
     })
 }
 
@@ -1137,6 +1193,147 @@ pub fn sweep_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Swee
     })
 }
 
+/// One demolish run (module docs) with `[ai.obstacles] demolish` as set:
+/// (habit ended Done, tank passed, charges laid, tank seen blocked).
+fn demolish_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+    demolish: u32,
+) -> Result<(bool, bool, u32, bool)> {
+    use frontline_sim::ItemKind;
+    use frontline_sim::ai::{AiHabit, AiState, DriveArgs, HabitEnd};
+    let enemy = 1 - p;
+    let eng_card = format!("ww2:{}", ENGINEERS[p as usize]);
+    let mut w = world_with(args, seed, |s| {
+        s.rules.ai.obstacles.demolish = demolish;
+        let k = ItemKind::Satchel.index();
+        for t in s.squad_types.iter_mut().filter(|t| t.id == eng_card) {
+            t.members[0].items[k] = DEMOLISH_SATCHELS;
+        }
+    })?;
+    let (i, pt, base) = {
+        let g = w.game().unwrap();
+        let s = w.match_setup().unwrap();
+        let base = g.base_of(PlayerId(p));
+        let Some((i, q)) = s
+            .map
+            .points
+            .iter()
+            .enumerate()
+            .map(|(i, q)| (i, FxVec2::from(q.pos)))
+            .min_by_key(|(i, q)| ((*q - base).length_sq_raw(), *i))
+        else {
+            bail!("the map has no capture point");
+        };
+        (i, q, base)
+    };
+    let s = w.match_setup().unwrap();
+    let hz = s.tick_hz as u64;
+    let card = |c: &str| {
+        s.squad_type_index(&format!("ww2:{c}"))
+            .ok_or_else(|| anyhow::anyhow!("no {c} card"))
+    };
+    let (tty, ety) = (
+        card(MEDIUM_TANKS[p as usize])?,
+        card(ENGINEERS[p as usize])?,
+    );
+    let Some(hedgehog) = s.forts.iter().position(|f| f.id == "ww2:hedgehog") else {
+        bail!("no hedgehog card");
+    };
+    let dir = (pt - base).normalize_or_zero();
+    let side = dir.perp();
+    let short = |m: i32| pt - dir * Fx::from_int(m);
+    let Some(tank) = w.spawn_squad_at(PlayerId(p), tty, short(DEMOLISH_TANK_M), dir) else {
+        bail!("the tank was not spawned");
+    };
+    let start = pos(&w, members(&w, tank)[0]);
+    // The closed ring: circumference / step, rounded up.
+    let n = (2 * 314 * RING_M) / (100 * RING_STEP_M) + 1;
+    for k in 0..n {
+        let ang = Fx::from_int(2 * 314 * k) / Fx::from_int(100 * n);
+        let (sn, co) = (ang.sin(), ang.cos());
+        let r = Fx::from_int(RING_M);
+        let q = start + FxVec2::new(co * r, sn * r);
+        let t = FxVec2::new(-sn, co);
+        if !w.build_now(hedgehog as u16, &[q, q + t], PlayerId(enemy)) {
+            bail!("hedgehog {k} of the ring was not built (seed {seed}, player {p})");
+        }
+    }
+    let eng_at = short(DEMOLISH_TANK_M) + side * Fx::from_int(40);
+    let Some(eng) = w.spawn_squad_at(PlayerId(p), ety, eng_at, dir) else {
+        bail!("the engineers were not spawned");
+    };
+    step_with(
+        &mut w,
+        p,
+        vec![CommandKind::Move {
+            squad: tank,
+            target: short(60),
+        }],
+    );
+    for _ in 0..20 * hz {
+        w.step(&[]);
+    }
+    let mut ai = AiState::new(w.tick());
+    let drive = DriveArgs {
+        squad: Some(eng),
+        point: i,
+        others: vec![tank],
+        ..Default::default()
+    };
+    let t0 = w.tick();
+    let drive_s = if demolish == 0 { 60 } else { DEMOLISH_DRIVE_S };
+    let mut end = None;
+    while end.is_none() && w.tick() < t0 + drive_s * hz {
+        end = w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Demolish, &drive);
+    }
+    // The drive on: the habit still driven (its last orders go out, as in
+    // `ai_demolishes_until_a_tank_gap_opens`).
+    for _ in 0..DEMOLISH_PASS_S * hz {
+        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Demolish, &drive);
+    }
+    let passed = members(&w, tank)
+        .first()
+        .is_some_and(|&v| (pos(&w, v) - start).length() > Fx::from_int(RING_M + 5));
+    let used = w.game().unwrap().fort().accounts[p as usize].demolitions;
+    Ok((
+        end == Some(HabitEnd::Done),
+        passed,
+        used,
+        ai.counters.demolish_wanted > 0,
+    ))
+}
+
+/// The demolish row (module docs).
+pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<DemolishRow> {
+    let (mut opened, mut passed, mut used, mut blocked, mut runs) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    let (mut c_opened, mut c_passed) = (0u32, 0u32);
+    for seed in seeds {
+        for p in [0u8, 1] {
+            let (o, pa, u, b) = demolish_once(args, seed, p, 1)?;
+            opened += o as u32;
+            passed += pa as u32;
+            used += u;
+            blocked += b as u32;
+            let c = demolish_once(args, seed, p, 0)?;
+            c_opened += c.0 as u32;
+            c_passed += c.1 as u32;
+            runs += 1;
+        }
+    }
+    Ok(DemolishRow {
+        gap_opened_pct: pct(opened, runs),
+        tank_passed_pct: pct(passed, runs),
+        pieces_used: (runs > 0).then(|| used as f64 / runs as f64),
+        tank_blocked_pct: pct(blocked, runs),
+        control: DemolishControl {
+            gap_opened_pct: pct(c_opened, runs),
+            tank_passed_pct: pct(c_passed, runs),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1170,5 +1367,15 @@ mod tests {
         let args = FortifyArgs::default();
         let r = sweep_row(&args, 1..4).unwrap();
         println!("sweep {}", serde_json::to_string(&r).unwrap());
+    }
+
+    /// One-off measure of the demolish row: `cargo test --release -p
+    /// frontline-cli --lib demolish_row_one_off -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn demolish_row_one_off() {
+        let args = FortifyArgs::default();
+        let r = demolish_row(&args, 1..4).unwrap();
+        println!("demolish {}", serde_json::to_string(&r).unwrap());
     }
 }
