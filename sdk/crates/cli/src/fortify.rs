@@ -1015,6 +1015,8 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let s10a = s10a::s10a_rows(args, seeds.clone())?;
     let (atmine, apmine) = s10b::mine_rows(args, seeds.clone())?;
     let sweep = s10b::sweep_row(args, seeds.clone())?;
+    let obstacle = s10b::obstacle_row(args, seeds.clone())?;
+    let demolish = s10b::demolish_row(args, seeds.clone())?;
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1178,6 +1180,8 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
             atmine,
             apmine,
             sweep,
+            obstacle,
+            demolish,
             ..s10b::S10bReport::default()
         },
     })

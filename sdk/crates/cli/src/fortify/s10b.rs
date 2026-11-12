@@ -30,6 +30,17 @@
 //!   `found_vs_expected_pts`, `lifted_of_found_pct`, `sweeper_losses`); each
 //!   player's assault squad lays a Bangalore into a two-row AP field
 //!   (`bangalore_cleared_pct`: mines within 150 cm of a burst removed).
+//! * **Obstacle** (Build D). The other player's 30 m hedgehog line (one
+//!   every 3 m) and, separately, a 20 m log barrier stand across x =
+//!   `TRENCH_X`; each player's medium tank starts 30 m west and is ordered
+//!   60 m east of the line (`hedgehog_crossed_pct`, `log_crossed_pct`: the
+//!   hull crossed the line between its ends; `tank_reached_pct`); the line
+//!   squad walks across (`infantry_speed_pct`: the leader's mean speed
+//!   within 3 m of the line over his speed elsewhere, lowest run).
+//! * **Demolish** (Build D). Each player's field engineers demolish the
+//!   middle hedgehog of the other's line (`destroyed_pct`, `charge_laid_s`
+//!   from the order); then the medium tank is ordered through
+//!   (`gap_crossed_pct`).
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -682,5 +693,255 @@ pub fn sweep_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Swee
         expected_pct,
         sweeper_losses: Some(lost as f64),
         bangalore_cleared_pct: pct(gone, near),
+    })
+}
+
+// ---- Build D: obstacles and demolition (T105, T106).
+
+/// Hedgehogs in a line (3 m apart, 30 m) at `TRENCH_X` across the tank's
+/// route; the log barrier's length.
+const HEDGEHOGS: i32 = 11;
+const HEDGEHOG_STEP_M: i32 = 3;
+const LOG_M: i32 = 20;
+/// The tank starts this far west of the line and is ordered this far east.
+const OBST_WEST_M: i32 = 30;
+const OBST_EAST_M: i32 = 60;
+
+/// Stages `owner`'s obstacle line across x = `TRENCH_X` (hedgehogs, or a
+/// log barrier); the line's (y0, y1); the hedgehogs' piece ids.
+fn obstacle_line(w: &mut World, owner: u8, log: bool) -> Result<(i32, i32, Vec<u32>)> {
+    let before: Vec<u32> = w.game().unwrap().fort().pieces.keys().copied().collect();
+    if log {
+        let f = fort_of(w, "ww2:log_barrier")?;
+        let (a, b) = (
+            at(TRENCH_X, LINE_Y - LOG_M / 2),
+            at(TRENCH_X, LINE_Y + LOG_M / 2),
+        );
+        if !w.build_now(f, &[a, b], PlayerId(owner)) {
+            bail!("the log barrier was not staged");
+        }
+        return Ok((LINE_Y - LOG_M / 2, LINE_Y + LOG_M / 2, Vec::new()));
+    }
+    let f = fort_of(w, "ww2:hedgehog")?;
+    let half = (HEDGEHOGS - 1) * HEDGEHOG_STEP_M / 2;
+    for k in 0..HEDGEHOGS {
+        let p = at(TRENCH_X, LINE_Y - half + k * HEDGEHOG_STEP_M);
+        if !w.build_now(f, &[p, p + EAST], PlayerId(owner)) {
+            bail!("hedgehog {k} was not staged");
+        }
+    }
+    let ids = w
+        .game()
+        .unwrap()
+        .fort()
+        .pieces
+        .keys()
+        .copied()
+        .filter(|id| !before.contains(id))
+        .collect();
+    Ok((LINE_Y - half, LINE_Y + half, ids))
+}
+
+/// Whether the path `track` crosses x = `x` between y0 and y1 (m).
+fn crosses(track: &[FxVec2], x: i32, y0: i32, y1: i32) -> bool {
+    let x = Fx::from_int(x);
+    track.windows(2).any(|s| {
+        let (a, b) = (s[0], s[1]);
+        if (a.x < x) == (b.x < x) || a.x == b.x {
+            return false;
+        }
+        let y = a.y + (b.y - a.y) * ((x - a.x) / (b.x - a.x));
+        y >= Fx::from_int(y0) && y <= Fx::from_int(y1)
+    })
+}
+
+/// `p`'s medium tank from `OBST_WEST_M` west of the line ordered
+/// `OBST_EAST_M` east of it (120 s at most): (hull track, reached).
+fn tank_through(w: &mut World, p: u8) -> Result<(Vec<FxVec2>, bool)> {
+    let s = w.match_setup().unwrap();
+    let Some(ty) = s.squad_type_index(&format!("ww2:{}", MEDIUM_TANKS[p as usize])) else {
+        bail!("no {} card", MEDIUM_TANKS[p as usize]);
+    };
+    let start = at(TRENCH_X - OBST_WEST_M, LINE_Y);
+    let Some(tank) = w.spawn_squad_at(PlayerId(p), ty, start, EAST) else {
+        bail!("the tank was not spawned at {start:?}");
+    };
+    let v = members(w, tank)[0];
+    let target = at(TRENCH_X + OBST_EAST_M, LINE_Y);
+    step_with(
+        w,
+        p,
+        vec![CommandKind::Move {
+            squad: tank,
+            target,
+        }],
+    );
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let mut track = vec![pos(w, v)];
+    let mut reached = false;
+    for _ in 0..120 * hz {
+        w.step(&[]);
+        if !alive(w, v) {
+            break;
+        }
+        track.push(pos(w, v));
+        if (pos(w, v) - target).length() <= Fx::from_int(5) {
+            reached = true;
+            break;
+        }
+    }
+    Ok((track, reached))
+}
+
+/// `p`'s line squad walks from 30 m west of the line to 30 m east: the
+/// leader's mean speed inside the line's band (x within 3 m of the line,
+/// y between its ends) over his speed outside it, in percent.
+fn infantry_band_pct(w: &mut World, p: u8, y0: i32, y1: i32) -> Result<Option<f64>> {
+    let sq = squad(w, p, "line")?;
+    w.place_squad(sq, at(TRENCH_X - 30, LINE_Y), EAST);
+    let lead = members(w, sq)[0];
+    let target = at(TRENCH_X + 30, LINE_Y);
+    step_with(w, p, vec![CommandKind::Move { squad: sq, target }]);
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let (mut din, mut tin, mut dout, mut tout) = (0.0f64, 0u32, 0.0f64, 0u32);
+    let band = |q: FxVec2| {
+        (q.x - Fx::from_int(TRENCH_X)).abs() <= Fx::from_int(3)
+            && q.y >= Fx::from_int(y0)
+            && q.y <= Fx::from_int(y1)
+    };
+    let mut last = pos(w, lead);
+    for _ in 0..90 * hz {
+        w.step(&[]);
+        if !alive(w, lead) {
+            break;
+        }
+        let now = pos(w, lead);
+        // Walking only: the first and last 8 m (starting, slowing) left out.
+        let walking = now.x >= Fx::from_int(TRENCH_X - 22) && now.x <= target.x - Fx::from_int(8);
+        let d = (now - last).length().to_f32() as f64;
+        if walking && d > 0.0 {
+            if band(now) {
+                din += d;
+                tin += 1;
+            } else {
+                dout += d;
+                tout += 1;
+            }
+        }
+        last = now;
+        if now.x >= target.x - Fx::from_int(8) {
+            break;
+        }
+    }
+    Ok((tin > 0 && tout > 0 && dout > 0.0)
+        .then(|| ((din / tin as f64) / (dout / tout as f64) * 1000.0).round() / 10.0))
+}
+
+/// The `obstacle` row (T105) over `seeds`, each player's tank and rifles
+/// against the other's lines.
+pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<ObstacleRow> {
+    let (mut hx, mut lx, mut reached, mut runs) = (0u32, 0u32, 0u32, 0u32);
+    let mut speed: Option<f64> = None;
+    for seed in seeds {
+        for p in [0u8, 1] {
+            for log in [false, true] {
+                let mut w = world(args, seed)?;
+                let (y0, y1, _) = obstacle_line(&mut w, 1 - p, log)?;
+                let (track, got) = tank_through(&mut w, p)?;
+                let crossed = crosses(&track, TRENCH_X, y0, y1) as u32;
+                if log {
+                    lx += crossed;
+                } else {
+                    hx += crossed;
+                }
+                reached += got as u32;
+                runs += 1;
+                let mut w = world(args, seed)?;
+                let (y0, y1, _) = obstacle_line(&mut w, 1 - p, log)?;
+                if let Some(s) = infantry_band_pct(&mut w, p, y0, y1)? {
+                    speed = Some(speed.map_or(s, |m| m.min(s)));
+                }
+            }
+        }
+    }
+    Ok(ObstacleRow {
+        hedgehog_crossed_pct: pct(hx, runs / 2),
+        log_crossed_pct: pct(lx, runs / 2),
+        infantry_speed_pct: speed,
+        tank_reached_pct: pct(reached, runs),
+    })
+}
+
+/// `p`'s field engineers demolish the middle hedgehog of the other
+/// player's line; then `p`'s tank is ordered through. (destroyed, ticks
+/// from the order to the charge, hz, crossed between the line's ends).
+fn demolish_once(args: &FortifyArgs, seed: u64, p: u8) -> Result<(bool, Option<u64>, u64, bool)> {
+    let mut w = world(args, seed)?;
+    let (y0, y1, ids) = obstacle_line(&mut w, 1 - p, false)?;
+    let mid = ids[ids.len() / 2];
+    let eng = super::s10a::call_in_card(&mut w, p, &super::s10a::FIELD_ENGINEERS)?;
+    w.place_squad(eng, at(TRENCH_X - 15, LINE_Y + 2), EAST);
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let t0 = w.tick();
+    step_with(
+        &mut w,
+        p,
+        vec![CommandKind::Demolish {
+            squad: eng,
+            at: at(TRENCH_X, LINE_Y),
+        }],
+    );
+    let mut laid = None;
+    for _ in 0..120 * hz {
+        if !w.game().unwrap().fort().charges.is_empty() {
+            laid = Some(w.tick() - t0);
+            break;
+        }
+        w.step(&[]);
+    }
+    let fuse = w
+        .match_setup()
+        .unwrap()
+        .rules
+        .fortify
+        .as_ref()
+        .map_or(10, |t| t.demolish_fuse_s as u64);
+    for _ in 0..(fuse + 2) * hz {
+        w.step(&[]);
+    }
+    let destroyed = !w.game().unwrap().fort().pieces.contains_key(&mid);
+    // The engineers step back west, out of the tank's way.
+    step_with(
+        &mut w,
+        p,
+        vec![CommandKind::Move {
+            squad: eng,
+            target: at(TRENCH_X - 20, LINE_Y + 20),
+        }],
+    );
+    let (track, _) = tank_through(&mut w, p)?;
+    Ok((destroyed, laid, hz, crosses(&track, TRENCH_X, y0, y1)))
+}
+
+/// The `demolish` row (T106) over `seeds`, each player demolishing in turn.
+pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<DemolishRow> {
+    let (mut gone, mut crossed, mut n) = (0u32, 0u32, 0u32);
+    let (mut laid_s, mut laid_n) = (0.0f64, 0u32);
+    for seed in seeds {
+        for p in [0u8, 1] {
+            let (d, laid, hz, x) = demolish_once(args, seed, p)?;
+            gone += d as u32;
+            crossed += x as u32;
+            n += 1;
+            if let Some(t) = laid {
+                laid_s += t as f64 / hz as f64;
+                laid_n += 1;
+            }
+        }
+    }
+    Ok(DemolishRow {
+        destroyed_pct: pct(gone, n),
+        gap_crossed_pct: pct(crossed, n),
+        charge_laid_s: (laid_n > 0).then(|| (laid_s / laid_n as f64 * 10.0).round() / 10.0),
     })
 }
