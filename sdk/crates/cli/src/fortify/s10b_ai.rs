@@ -29,6 +29,21 @@
 //!   (`FortAccount::at_exposure_ticks` > 0); `builder_alive_pct` (the
 //!   engineers lived through the drive). Control (`control.*`): the
 //!   same with `[ai.obstacles] mines` 0 (nothing laid, the tank drives on).
+//! * **Obstacle** (Build C, R5, R6). For each player `p` and seed: `p` holds
+//!   its nearest point (as the mines row, mines off); `p`'s emplaced AT gun
+//!   stands [`GUN_OUT_M`] m in front of the point and [`GUN_SIDE_M`] m to its
+//!   side in Hold, facing the enemy base; `p`'s engineers with
+//!   [`BARRIER_CARRY_KG`] kg beside it. `drive_ai_habit(Fort)` until the
+//!   barrier stands ([`BARRIER_PIECES`] pieces; at most [`OBST_DRIVE_S`]):
+//!   `barrier_built_pct`. Then the
+//!   enemy's medium tank, [`MINES_TANK_M`] m out, is ordered to the gun and
+//!   `p`'s own medium tank, at `p`'s base, to the nearest point `p` does not
+//!   hold, both for [`OBST_TANK_S`] s (the habit still driven):
+//!   `enemy_time_in_arc_s` (report: seconds the enemy tank spends inside the
+//!   gun's 90-degree arc within 400 m), `own_blocked` (the AI counter, must
+//!   be 0). Exposure `enemy_tank_reached_barrier_pct` (the enemy tank came
+//!   within 10 m of a barrier piece). Controls: `control.own_blocked` with
+//!   `own_route_m` 0, `control.enemy_time_in_arc_s` with `obstacles` 0.
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -49,6 +64,23 @@ pub const MINES_TANK_M: i32 = 150;
 pub const MINES_TANK_S: u64 = 120;
 /// The engineer card of each player (faction order as `MEDIUM_TANKS`).
 const ENGINEERS: [&str; 2] = ["ger_engineer_squad", "usa_engineer_squad"];
+
+/// The obstacle row (module docs): the gun's distance in front of the
+/// point (m), the engineers' kg, the pieces of a standing barrier, the
+/// tanks' drive (s).
+pub const GUN_OUT_M: i32 = 10;
+/// The gun stands this far to the side of the point (m): on the axis the
+/// barrier lies across the own route out of the point and R6 refuses it
+/// (Build C measure: 3 rejections a run, nothing built).
+pub const GUN_SIDE_M: i32 = 60;
+/// The longest drive of the obstacle row (s; five 2-minute segments and
+/// the walks).
+pub const OBST_DRIVE_S: u64 = 1500;
+pub const BARRIER_CARRY_KG: u32 = 600;
+pub const BARRIER_PIECES: usize = 5;
+pub const OBST_TANK_S: u64 = 180;
+/// The AT gun card of each player (faction order as `MEDIUM_TANKS`).
+const AT_GUNS: [&str; 2] = ["ger_pak40_squad", "usa_57mm_m1_squad"];
 
 /// A route "priced" (left the straight line) past this many metres.
 pub const PRICED_OFF_M: i32 = 5;
@@ -95,15 +127,47 @@ pub struct MinesRow {
     pub control: MinesControl,
 }
 
+/// The control half of the obstacle row.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ObstacleControl {
+    /// `obstacles` 0 (nothing built).
+    pub barrier_built_pct: Option<f64>,
+    /// `own_route_m` 0 (must be > 0 to show the rule matters).
+    pub own_blocked: Option<f64>,
+    /// `obstacles` 0 (no barrier).
+    pub enemy_time_in_arc_s: Option<f64>,
+}
+
+/// T111/T115: a log barrier before an own gun, never on the own route.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ObstacleRow {
+    pub barrier_built_pct: Option<f64>,
+    /// Report: mean barrier pieces standing after the drive (the L1
+    /// deadline `job_max_s` 900 s ends a one-builder 20 m barrier at 4 of
+    /// 5; Build C measure, owner question S10b-ai-C1).
+    pub barrier_pieces: Option<f64>,
+    /// Report: mean seconds the enemy tank spent in the gun's arc.
+    pub enemy_time_in_arc_s: Option<f64>,
+    /// Sum of the AI's `own_blocked` over the runs (must be 0).
+    pub own_blocked: Option<f64>,
+    /// Exposure: runs in which the enemy tank came within 10 m of the barrier.
+    pub enemy_tank_reached_barrier_pct: Option<f64>,
+    /// Exposure of `barrier_built_pct`: runs whose engineers lived through
+    /// the drive.
+    pub builder_alive_pct: Option<f64>,
+    pub control: ObstacleControl,
+}
+
 /// The S10b-ai rows (`fortify10.s10b_ai`).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S10bAiReport {
     pub paths: PathsRow,
     pub mines: MinesRow,
+    pub obstacle: ObstacleRow,
 }
 
 /// The rows in summary order.
-const ROWS: &[&str] = &["paths", "mines"];
+const ROWS: &[&str] = &["paths", "mines", "obstacle"];
 
 /// Summary lines, one per row.
 pub fn summary_text(r: &S10bAiReport) -> String {
@@ -290,22 +354,10 @@ pub fn paths_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Path
     })
 }
 
-/// One mines run of player `p` with `[ai.obstacles] mines` set: (field
-/// laid, seconds to lay it, tank stopped, tank reached the field, builder
-/// alive after the drive).
-fn mines_once(
-    args: &FortifyArgs,
-    seed: u64,
-    p: u8,
-    mines: u32,
-) -> Result<(bool, u64, bool, bool, bool)> {
-    use frontline_sim::ai::{AiHabit, AiState, AiTrench, DriveArgs};
-    let mut w = world_with(args, seed, |s| {
-        s.rules.ai.fort.works = 0;
-        s.rules.ai.fort.wire = 0;
-        s.rules.ai.obstacles.mines = mines;
-        s.rules.ai.obstacles.at_mines = 1;
-    })?;
+/// Stages `p` holding the capture point nearest its base with its AI
+/// trench dug across the way to the enemy base: (point index, point,
+/// enemy base, trench line).
+fn hold_point(w: &mut World, p: u8) -> Result<(usize, FxVec2, FxVec2, [FxVec2; 2])> {
     let enemy = 1 - p;
     let (i, pt, base_e, line) = {
         let g = w.game().unwrap();
@@ -330,6 +382,27 @@ fn mines_once(
     if !w.set_point_owner(i, Some(PlayerId(p))) || !w.dig_trench_now(&line, -1) {
         bail!("the held point {i} was not staged");
     }
+    Ok((i, pt, base_e, line))
+}
+
+/// One mines run of player `p` with `[ai.obstacles] mines` set: (field
+/// laid, seconds to lay it, tank stopped, tank reached the field, builder
+/// alive after the drive).
+fn mines_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+    mines: u32,
+) -> Result<(bool, u64, bool, bool, bool)> {
+    use frontline_sim::ai::{AiHabit, AiState, AiTrench, DriveArgs};
+    let mut w = world_with(args, seed, |s| {
+        s.rules.ai.fort.works = 0;
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.obstacles.mines = mines;
+        s.rules.ai.obstacles.at_mines = 1;
+    })?;
+    let enemy = 1 - p;
+    let (i, pt, base_e, line) = hold_point(&mut w, p)?;
     let s = w.match_setup().unwrap();
     let at_f = s.forts.iter().position(|f| f.id == "ww2:at_minefield");
     let hz = s.tick_hz as u64;
@@ -450,6 +523,217 @@ pub fn mines_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Mine
 pub fn s10b_ai_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S10bAiReport> {
     Ok(S10bAiReport {
         paths: paths_row(args, seeds.clone())?,
-        mines: mines_row(args, seeds)?,
+        mines: mines_row(args, seeds.clone())?,
+        obstacle: obstacle_row(args, seeds)?,
     })
+}
+
+/// One obstacle run (module docs). `mode` 0: as set; 1: `own_route_m` 0;
+/// 2: `obstacles` 0. (barrier built, seconds the enemy tank spent in the
+/// arc, own_blocked, enemy tank reached the barrier, barrier pieces).
+fn obstacle_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+    mode: u8,
+) -> Result<(bool, f64, u32, bool, usize, bool)> {
+    use frontline_sim::ai::{AiGun, AiHabit, AiState, AiTrench, DriveArgs, GunPhase};
+    let mut w = world_with(args, seed, |s| {
+        s.rules.ai.fort.works = 0;
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.fort.gun_hold_s = 0;
+        s.rules.ai.obstacles.mines = 0;
+        s.rules.ai.obstacles.obstacles = u32::from(mode != 2);
+        if mode == 1 {
+            s.rules.ai.obstacles.own_route_m = 0;
+        }
+    })?;
+    let enemy = 1 - p;
+    let (i, pt, base_e, line) = hold_point(&mut w, p)?;
+    let dir = (base_e - pt).normalize_or_zero();
+    let s = w.match_setup().unwrap();
+    let hz = s.tick_hz as u64;
+    let bar_f = s.forts.iter().position(|f| f.id == "ww2:log_barrier");
+    let card = |w: &World, c: &str| {
+        w.match_setup()
+            .unwrap()
+            .squad_type_index(&format!("ww2:{c}"))
+            .ok_or_else(|| anyhow::anyhow!("no {c} card"))
+    };
+    let gun_at = pt + dir * Fx::from_int(GUN_OUT_M) + dir.perp() * Fx::from_int(GUN_SIDE_M);
+    let gty = card(&w, AT_GUNS[p as usize])?;
+    let Some(gsq) = w.spawn_squad_at(PlayerId(p), gty, gun_at, dir) else {
+        bail!("the gun was not spawned at {gun_at:?}");
+    };
+    let site = pos(&w, members(&w, gsq)[0]);
+    let ety = card(&w, ENGINEERS[p as usize])?;
+    let Some(eng) = w.spawn_squad_at(PlayerId(p), ety, site - dir * Fx::from_int(8), EAST) else {
+        bail!("the engineers were not spawned");
+    };
+    w.edit_fort(|f| {
+        f.carried_g.insert(eng, BARRIER_CARRY_KG * 1000);
+    });
+    let mut ai = AiState::new(w.tick());
+    ai.trenches.push(AiTrench {
+        point: i as u8,
+        line,
+    });
+    let t = w.tick();
+    ai.guns.insert(
+        gsq,
+        AiGun {
+            phase: GunPhase::Hold,
+            site,
+            facing: site + dir * Fx::from_int(100),
+            moved_to: site,
+            moved_at: t,
+            quiet_at: t,
+            pit: true,
+            ..Default::default()
+        },
+    );
+    let drive = DriveArgs {
+        squad: Some(eng),
+        point: i,
+        ..Default::default()
+    };
+    let pieces = |w: &World| -> Vec<FxVec2> {
+        w.game()
+            .unwrap()
+            .fort()
+            .pieces
+            .values()
+            .filter(|q| q.owner == PlayerId(p) && Some(q.fort as usize) == bar_f)
+            .map(|q| q.pos)
+            .collect()
+    };
+    let drive_s = if mode == 2 { 60 } else { OBST_DRIVE_S };
+    while pieces(&w).len() < BARRIER_PIECES && w.tick() < t + drive_s * hz {
+        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+    }
+    let n_pieces = pieces(&w).len();
+    let built = n_pieces >= BARRIER_PIECES;
+    let alive = w.game().unwrap().squad(eng).is_some();
+    // The enemy tank drives onto the gun; the own tank from base to the
+    // nearest point `p` does not hold.
+    let s = w.match_setup().unwrap();
+    let next = s
+        .map
+        .points
+        .iter()
+        .enumerate()
+        .filter(|&(j, _)| j != i)
+        .map(|(j, q)| (j, FxVec2::from(q.pos)))
+        .min_by_key(|(j, q)| ((*q - pt).length_sq_raw(), *j))
+        .map(|(_, q)| q);
+    // In front of the gun, so its drive meets the barrier's line.
+    let from = site + dir * Fx::from_int(MINES_TANK_M);
+    let tt = card(&w, MEDIUM_TANKS[enemy as usize])?;
+    let Some(et) = w.spawn_squad_at(PlayerId(enemy), tt, from, -dir) else {
+        bail!("the enemy tank was not spawned at {from:?}");
+    };
+    let ev = members(&w, et)[0];
+    step_with(
+        &mut w,
+        enemy,
+        vec![CommandKind::Move {
+            squad: et,
+            target: site,
+        }],
+    );
+    if let Some(next) = next {
+        let base = w.game().unwrap().base_of(PlayerId(p));
+        let ot = card(&w, MEDIUM_TANKS[p as usize])?;
+        if let Some(own) = w.spawn_squad_at(PlayerId(p), ot, base, dir) {
+            step_with(
+                &mut w,
+                p,
+                vec![CommandKind::Move {
+                    squad: own,
+                    target: next,
+                }],
+            );
+        }
+    }
+    let bar = pieces(&w);
+    let (mut in_arc, mut reached) = (0u64, false);
+    let t0 = w.tick();
+    while w.tick() < t0 + OBST_TANK_S * hz {
+        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+        let Some(vs) = w.game().unwrap().vehicle(ev) else {
+            continue;
+        };
+        if vs.wreck_tick.is_some() {
+            continue;
+        }
+        let at = pos(&w, ev);
+        reached |= bar.iter().any(|b| (*b - at).length() <= Fx::from_int(10));
+        let v = at - site;
+        let ahead = v.dot(dir);
+        let side = v.dot(dir.perp()).abs();
+        if ahead > Fx::ZERO && side <= ahead && v.length() <= Fx::from_int(400) {
+            in_arc += 1;
+        }
+    }
+    Ok((
+        built,
+        in_arc as f64 / hz as f64,
+        ai.counters.own_blocked,
+        reached,
+        n_pieces,
+        alive,
+    ))
+}
+
+/// The obstacle row (module docs).
+pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<ObstacleRow> {
+    let (mut built, mut arc, mut blocked, mut reached, mut runs) = (0u32, 0f64, 0u32, 0u32, 0u32);
+    let (mut c_blocked, mut c_arc, mut n_pieces) = (0u32, 0f64, 0f64);
+    let (mut alive, mut c_built) = (0u32, 0u32);
+    for seed in seeds {
+        for p in [0u8, 1] {
+            let (b, a, o, r, n, l) = obstacle_once(args, seed, p, 0)?;
+            alive += l as u32;
+            n_pieces += n as f64;
+            built += b as u32;
+            arc += a;
+            blocked += o;
+            reached += r as u32;
+            c_blocked += obstacle_once(args, seed, p, 1)?.2;
+            let c = obstacle_once(args, seed, p, 2)?;
+            c_arc += c.1;
+            c_built += c.0 as u32;
+            runs += 1;
+        }
+    }
+    let mean = |x: f64| (runs > 0).then(|| x / runs as f64);
+    Ok(ObstacleRow {
+        barrier_built_pct: pct(built, runs),
+        barrier_pieces: mean(n_pieces),
+        enemy_time_in_arc_s: mean(arc),
+        own_blocked: (runs > 0).then_some(blocked as f64),
+        enemy_tank_reached_barrier_pct: pct(reached, runs),
+        builder_alive_pct: pct(alive, runs),
+        control: ObstacleControl {
+            barrier_built_pct: pct(c_built, runs),
+            own_blocked: (runs > 0).then_some(c_blocked as f64),
+            enemy_time_in_arc_s: mean(c_arc),
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One-off measure of the obstacle row (the full fortify run plays it
+    /// with the rest): `cargo test --release -p frontline-cli --lib
+    /// obstacle_row_one_off -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn obstacle_row_one_off() {
+        let args = FortifyArgs::default();
+        let r = obstacle_row(&args, 1..4).unwrap();
+        println!("obstacle {}", serde_json::to_string(&r).unwrap());
+    }
 }

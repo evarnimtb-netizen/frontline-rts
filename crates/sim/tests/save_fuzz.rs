@@ -84,6 +84,36 @@ fn holds(w: &World) -> Vec<&'static str> {
         }),
         "ai_at_field_watch",
     );
+    // S10b-ai Build C chunk 1: an AI log barrier job watching its work, and
+    // an AI hedgehog job of a row with one hedgehog of it standing.
+    let job_on = |pred: &dyn Fn(&frontline_content::setup::FortSetup) -> bool, watch: bool| {
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.forts.iter().any(|(sq, j)| {
+                    let d = &g.setup().forts[j.fort as usize];
+                    pred(d)
+                        && (!watch
+                            || (j.phase == frontline_sim::ai::FortPhase::Watch
+                                && j.work.is_some_and(|wid| {
+                                    f.works.get(&wid).is_some_and(|k| k.builder == *sq)
+                                })))
+                        && (watch
+                            || f.pieces
+                                .values()
+                                .any(|q| q.fort == j.fort && q.owner == PlayerId(p)))
+                })
+            })
+        })
+    };
+    use frontline_content::setup::FortShape;
+    put(
+        job_on(&|d| d.blocks_vehicles && d.shape == FortShape::Line, true),
+        "ai_barrier_watch",
+    );
+    put(
+        job_on(&|d| d.blocks_vehicles && d.shape == FortShape::Point, false),
+        "ai_hedgehog_row",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -790,6 +820,73 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
     }));
+    // S10b-ai Build C chunk 1: a log barrier job in Watch (its work on the
+    // second segment, the first piece standing), and a hedgehog row: one
+    // hedgehog standing, the job on the row's second site.
+    let (bar, hh) = (s_fort(w, "ww2:log_barrier"), s_fort(w, "ww2:hedgehog"));
+    let pio = w
+        .match_setup()
+        .unwrap()
+        .squad_type_index("ww2:ger_baupioniergruppe")
+        .unwrap_or(eng);
+    let (bb, hb) = (
+        w.spawn_squad_at(PlayerId(0), eng, c(560, 470), east)
+            .unwrap(),
+        w.spawn_squad_at(PlayerId(0), pio, c(620, 470), east)
+            .unwrap(),
+    );
+    assert!(w.build_now(bar, &[c(560, 480), c(564, 480)], PlayerId(0)));
+    assert!(w.build_now(hh, &[c(620, 480), c(620, 490)], PlayerId(0)));
+    let bline = vec![c(560, 480), c(580, 480)];
+    let mut bw = 0;
+    w.edit_fort(|f| {
+        bw = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            bw,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: bar,
+                line: bline.clone(),
+                yaw: Fx::ZERO,
+                builder: bb,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Build,
+                seg: 1,
+                work: 0,
+                got_g: 0,
+            },
+        );
+    });
+    w.edit_squad(bb, |q| q.order = Order::Fortify { work: bw });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.forts.insert(
+            bb,
+            AiFortJob {
+                fort: bar,
+                point: frontline_sim::ai::NO_POINT,
+                line: vec![c(564, 480), c(580, 480)],
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(bw),
+                tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+        ai.forts.insert(
+            hb,
+            AiFortJob {
+                fort: hh,
+                point: 0,
+                line: vec![c(624, 480), c(624, 490)],
+                phase: FortPhase::Load,
+                start: tick,
+                since: tick,
+                work: None,
+                tries: 0,
+            },
+        );
+    }));
 }
 
 /// Blueprint `id`'s index.
@@ -847,7 +944,15 @@ fn staged_s10b_save_holds_its_state() {
 /// What the staged S10b save must hold beyond the S10b orders (fuzz stage
 /// `staged_s10b_ai + blasts and lost_on_known set`, S10b-ai Build B chunk
 /// 1; `+ an AtField job in Watch with its work and 3 laid mines`, chunk 2).
-const STAGED_MUST_HOLD: [&str; 3] = ["blasts", "lost_on_known", "ai_at_field_watch"];
+/// `+ a LogBarrier job in Watch and one standing hedgehog of a row`, Build
+/// C chunk 1.
+const STAGED_MUST_HOLD: [&str; 5] = [
+    "blasts",
+    "lost_on_known",
+    "ai_at_field_watch",
+    "ai_barrier_watch",
+    "ai_hedgehog_row",
+];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
 /// checked, so a mine whose blueprint names item 9999 loaded and the first
