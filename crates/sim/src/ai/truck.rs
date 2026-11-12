@@ -205,13 +205,12 @@ impl super::Planner<'_> {
         let refused = self.ai.counters.s10b_refused;
         self.truck_jobs(&mut tanks, &[], &[], &busy);
         let now = self.ai.trucks.get(&sq).map(|j| j.phase);
-        (was == Some(TruckPhase::Drop) && now != Some(TruckPhase::Drop)).then(|| {
-            if self.ai.counters.s10b_refused > refused {
-                super::HabitEnd::Failed
-            } else {
-                super::HabitEnd::Done
-            }
-        })
+        let end = if self.ai.counters.s10b_refused > refused {
+            super::HabitEnd::Failed
+        } else {
+            super::HabitEnd::Done
+        };
+        (was == Some(TruckPhase::Drop) && now != Some(TruckPhase::Drop)).then_some(end)
     }
 
     /// Gives goal `at` up (the job's own memory); with `[ai.truck]
