@@ -5,30 +5,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-
-**Next: Build D stage chunk 3 = F8 truck refusal memory (L5), docs (tuning.md, fortifications.md, a STATE.md row, TODO.md
-owner questions D1-D3 and C1), the stage check, STOP POINT 3.** SAVE 25, PROTOCOL 14. All four defects P, Q, R, S done.
-P (`a4e3fbd`): not vehicle A*, the S10b-ai fortify rows' match time; `--no-s10b-ai` in 2 suite tests: 246 -> 105 s.
-Q (`889ef57`): row setup (the match was Won during the 25 min build drive); drain 0: own_tank_drove_pct 0 -> 100.
-**R (`7e692e3`, `ai/demolish.rs` `run_demolish` Repath, `vehicle_past`):** `opened` only once the vehicle's move ended
-at its goal or no known enemy piece within `demolish_near_m` lies ahead of it; a served path to the goal with the
-vehicle still short 60 s on takes the next piece. **S (`173ccd8`, sim `unit.rs` detached-man arrival):** not the stand
-point: the satchel man's `Demolish` walk ended in `seek_cover` (the blown 1st piece's spot, 4 m off, beyond the 2 m
-placing reach), so he never placed; he now walks to his spot as a Bangalore carrier does (an S10b demolition fix).
-Demolish row seeds 1-3 (before -> R -> R+S): gap_opened_pct 66.7 -> 16.7 -> 50.0, tank_passed_pct 16.7 -> 16.7 ->
-50.0, pieces_used 1.83 -> 2.17 -> 3.0, tank_blocked_pct 100, control 0/0. The other 50 % (US) uses all 3 pieces and
-the tank still does not pass: **follow-up outside this slice (S10b vehicle block layer vs movement):** after 2 ring
-pieces the vehicle path layer serves a path through the gap that the tank's movement cannot drive (it stops ~12 m on);
-blocking rules not changed here (relates to owner question D3). Obstacle row (unchanged): drove 100, own_blocked 0,
-control.own_blocked 0, pieces 3.5, built 0, arc 103.4 s vs 127.2 s.
-40 sets after `173ccd8`: all-off `target/s10b-d7-off40` vs `s10b-base40` same 40/40; defaults-on `target/s10b-d7-on40`
-vs `s10b-d1-fix` same 40/40 winners, only Germany `sweep_wanted` 0 -> 6 (sweeping came after d1-fix, not R/S).
-**Open (not done, small):** control.own_blocked stays 0: (a) seed 1 builds the barrier at the same spot in both modes;
-(b) `count_own_blocked` (`ai/fort.rs`) misses vehicles Holding with an empty path short of their goal. Proposed: count
-Holding > 10 m from `nav.goal` with an own blocking piece within `OWN_BLOCKED_M` AHEAD of it (dot toward the goal > 0;
-without "ahead", a vehicle that halted for a target or a Stop beside its own piece would count falsely). Counter only.
-Tests added: `demolish_opens_only_when_the_tank_passed`, `demolish_man_places_the_second_piece` (cli lib, release).
-Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `173ccd8` all ok (794 passed, skirmish 154 s). Failing: none.
+**Next: Build D stage chunk 3, the rest: item 8 docs and item 9 stage check, then STOP POINT 3.** SAVE 25, PROTOCOL 14.
+**Item 7 (F8, L5) done** (`fcc5239`, `12e1308`, clippy `HEAD`): `ai/truck.rs` `truck_give_up` (give-up + `AiState::refuse
+(TruckGoal)` when `[ai.truck] refusal_memory` 1, `s10b_refused` += 1) and `truck_refused` (the job's ring, or a TruckGoal
+refusal within `refused_m`) at every goal choice (base Return, follow spot, stranded tank, drop wants). **Deviation:** a
+truck refusal does not age out at `refused_s`; it lives until an own truck finishes a Load (all TruckGoal refusals cleared
+there); `drop_stale_refusals` keeps them; `refused_s` 0 still turns the check off. Why: with the spec's 300 s window the
+F8 scene re-ordered the HQ at tick 11761, 326 s after the refusal (tick 1980), same as the control (orders 901, 11761).
+Tests (sim `tests/trucks.rs`, scene `f8_world`/`f8_run`): `truck_never_reorders_unreachable_hq` (ignored; control memory
+0 -> 2 HQ orders, seen), `truck_hq_gone_ends_goal` (HQ at 400,400 reachable; control HQ at 700,700 -> refusal at the 180 s
+drop limit, seen), `truck_refusal_survives_save_load` (ignored). Liveness table row `(TruckGoal, truck_row)` in
+`s10b_ai_tests.rs`, hook habit `AiHabit::Truck` -> `Planner::drive_truck`; `job_alive` TruckGoal = truck job in `Drop`
+(control memory 0 -> "TruckGoal: no refusal", seen). The staged fuzz save already holds a TruckGoal refusal.
+**Not yet run after F8:** the 40 sets. `refusal_memory` is 1 in `skirmish.toml`, so the defaults-on 40 set may differ from
+`target/s10b-d7-on40` (F8 explains it); the all-off set must stay same 40/40 vs `target/s10b-base40`.
+**Item 8 docs:** `docs/modding/tuning.md` (`[ai.obstacles]`, `[fortify]` path keys, `refusal_memory` incl. the "until a
+load" rule), `docs/modding/fortifications.md` section "AI (S10b-ai)", a `docs/STATE.md` row (STATE.md at most 150 lines),
+owner questions D1 (bunker rare), D2 (sweep lane losses), D3 (tank gap needs 24 m), C1 copied into `docs/TODO.md`.
+**Item 9:** `tools/check.sh tests` (background), `frontline-cli targets docs/slices/targets/S10b-ai.toml --runs fortify10`,
+40 set on + all-off 40 set (same 40/40); STOP POINT 3; the orchestrator runs measure 480 and `ablate.sh` (S10b-ai-ablations).
+Earlier numbers (chunk 7): demolish row gap_opened 50.0, tank_passed 50.0, pieces 3.0; obstacle row drove 100,
+own_blocked 0, control 0; 40 sets d7 same 40/40. **Open follow-ups (not done):** `count_own_blocked` (`ai/fort.rs`) misses
+vehicles Holding short of the goal (proposed: Holding > 10 m from `nav.goal` with an own blocking piece within
+`OWN_BLOCKED_M` ahead); outside this slice: after 2 ring pieces the vehicle path layer serves a gap the tank cannot drive
+(stops ~12 m on; D3). Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `HEAD~1` all ok (795 passed). Failing: none.
 
 ## Plan (2026-11-12)
 
