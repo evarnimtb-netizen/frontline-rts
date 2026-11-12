@@ -1380,6 +1380,21 @@ mod tests {
         }
     }
 
+    /// Defect S (demolition fault 1): on the real map, Germany seeds 1-2,
+    /// the satchel man reaches his placing spot for the 2nd piece and lays
+    /// it (at least 2 charges). Control: the man's arrival seeking cover as
+    /// any detached man's does (the code before the fix) -> the cover by the
+    /// first piece's spot pulls him 4 m off, he never places, 1 charge and
+    /// L2 fails the job (seen).
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+    fn demolish_man_places_the_second_piece() {
+        for seed in [1u64, 2] {
+            let r = demolish_once(&FortifyArgs::default(), seed, 0, 1).unwrap();
+            assert!(r.2 >= 2, "seed {seed}: charges laid {}: {r:?}", r.2);
+        }
+    }
+
     /// T115e's exposure: after the full build drive the own tank still
     /// drives from base toward the next point (control: the usual ticket
     /// drain in `obstacle_once` -> the match is won before the tanks start,

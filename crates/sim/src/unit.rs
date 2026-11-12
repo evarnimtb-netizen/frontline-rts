@@ -700,10 +700,14 @@ impl MatchState {
                             repath.push((m, nav.goal));
                         } else {
                             let goal = nav.goal;
-                            // S10a: a Bangalore carrier walks to his spot.
+                            // S10a: a Bangalore carrier walks to his spot;
+                            // so does a satchel man on his `Demolish` walk
+                            // (cover nearby took him beyond his placing
+                            // reach, and he never placed: S10b-ai defect S).
                             let placing = ctx.ents.kit[i]
                                 .windup
-                                .is_some_and(|w| w.kind == frontline_content::ItemKind::Bangalore);
+                                .is_some_and(|w| w.kind == frontline_content::ItemKind::Bangalore)
+                                || matches!(sq.order, Order::Demolish { man: Some(d), .. } if d == m);
                             let cover = !placing
                                 && !matches!(u.order, UnitOrder::Dig { .. } | UnitOrder::Retreat);
                             let goal = if cover {
