@@ -5,20 +5,25 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Fix chunk 1 done (2026-11-12); next: Fix chunk 2.** Review findings in `target/s10b-review.json` (R1-R19 in file
-order). Fixed with a failing test first: R1, R2, R15, R16, R18, R19, G1. Left (not started): R5, R6, R7 (majors, CLI
-fortify rows in `sdk/crates/cli/src/fortify/s10b.rs` and `bunker.rs`), R3, R4, R8-R14, R17.
-* R4 groundwork exists: `staged_s10b()` in `crates/sim/tests/save_fuzz.rs` builds the staged S10b save (mines of both
-  kinds, two with boom_tick, ClearMines with a known lane mine, Demolish, a laid satchel charge;
-  `staged_s10b_save_holds_its_state`). Still to do: add it to the fuzz set (`fuzz_saves`, `plan` weights for
-  `state.game.setup.forts` / `items[].mine`, `focus` for the order paths; `describe` takes `FUZZ_SAVES` ticks).
-* `KNOWN` in `save_fuzz.rs` is now empty (G1 fixed in validation).
-* Not yet run this chunk: `tools/check.sh tests`, the 40 set vs `target/s10b-base40`, fortify10 into
-  `target/s10b-fix`. Last check: `tools/check.sh quick` all ok (847 tests). Godot not touched.
-* Neutrality reasoning: R15's drive escape runs only for a vehicle `on_blocked` within reach of an obstacle piece
-  (`piece_feet`), and the build wait only for `blocks_vehicles` works; AI never builds S10b works. R2's gate scans
-  squads for a ClearMines order (AI gives none). G1 only widens a load check. R18 changes the new AP mine only.
-* T106b still waits for the owner (untouched).
+**Fix chunk 2 stopped at the turn budget (2026-11-12); next: Fix chunk 3.** Findings in `target/s10b-review.json`
+(R1-R19 in file order). Fixed, each with a failing test first: R1-R3, R5-R7, R12, R15-R19, G1. Not started: R4, R8,
+R9, R10, R11, R13, R14.
+* R4: `staged_s10b()` in `crates/sim/tests/save_fuzz.rs` builds the staged save; still to add it to the fuzz set
+  (`fuzz_saves`, `plan` weights for `state.game.setup.forts` / `items[].mine`, `focus` for the order paths).
+* R10/R11/R14 touch `crates/godot-bridge/src/intents.rs` (`demolish_command` l.314, `fortify_command` l.139),
+  `godot/scripts/selection_controller.gd` and `godot/tools/test_match_view.gd`: the Godot checks must then run.
+* New (from R7): the slit row is now a real Demolish at the slit; it reads 100 % dead, and the same Demolish at the
+  back wall (`back_satchel_losses_pct`, T107l) also reads 100 %: a demolition charge at any bunker wall kills the
+  five inside, so the slit does not matter. Not fixed (a how-it-plays choice: owner question).
+* R5 found `tank_through` ended every run at tick 1 (`alive` is a soldier check): T105a/b and T106b were vacuous.
+  Now the tank drives: one seed gives crossed 0/0, approached 100, control 100, reached 100. T106b's number will
+  change (re-measure; it still waits for the owner).
+* New targets: T105e/f, T106d (report), T107i/j (controls), T107k/l (reports), T107m (charges laid 100).
+* Not yet run: `tools/check.sh tests`, the 40 set vs `target/s10b-base40`, fortify10 into `target/s10b-fix`.
+  Last check: `tools/check.sh quick` all ok (851 tests). Godot not touched.
+* Neutrality: R3's purpose pair and bound touch only demolition charges and charge ids >= 2^28; R12 only Demolish
+  orders; R17 only lifting; AI gives none of these (R29). Chunk 1's reasoning: R15 escape runs only near obstacle
+  pieces, G1 widens a load check, R18 is the new AP mine.
 
 ## Plan (2026-11-11)
 
@@ -125,18 +130,20 @@ fails, seen); net `net_s10b_commands_in_limits` (control limit + 1 m: fails, see
 `_test_s10b` 15 checks (control: drop the known filter in `fort_view.gd` -> "unknown enemy one hidden" fails, seen).
 Docs: `fortifications.md` S10b, `match_state.md` S10b, `relay-protocol.md` v14. Numbers above in the top block.
 
-## Fix chunk 1 (2026-11-12)
+## Fix (2026-11-12)
 
-Commits `ae746b1` R1 (MatchSetup::validate checks every blueprint: mine_item a mine item, minefield/obstacle shape,
-pieces, segment; mine item guard in validate_s10b), `35b3f29` R16 (a finished lift clears the same lift in other
-squads' orders) and R2 (sweep gated on a standing ClearMines order), `0269ced` R15 (a finished obstacle waits while
-its padded, dilated nodes cover a live vehicle's track sample; `DriveCtx::escape` lets a vehicle on blocked nodes
-beside an obstacle turn and move as long as its blocked samples do not rise or it does not come nearer the piece) and
-R19 (point site checked at the site only), `2bb07ad` R18 (ap_mine vs_vehicle_pct 100 -> 10), `bf803a4` G1
-(validation accepts `board` on a live served gun; KNOWN empty; canonical snapshot blessed for the AP mine).
-Tests (each names its control, all seen failing first): save_mine_item_out_of_range_is_rejected,
+Chunk 1: `ae746b1` R1 (setup blueprints checked at load), `35b3f29` R16 (a finished lift clears other squads' same
+lift) and R2 (sweep gated on a standing order), `0269ced` R15 (obstacle waits while it covers a vehicle; drive escape)
+and R19, `2bb07ad` R18 (ap_mine vs_vehicle_pct 10), `bf803a4` G1 (validation accepts `board` on a served gun; KNOWN
+empty). Chunk 2: `c7bfe66` R5 (tank_through stops on a wreck, not `alive`; approach and no-line control), `a39b7a9`
+R6 (staged volleys with an armour-1 control; open-ground MG control), `1ea1390` R7 (real Demolish at the slit, both
+slope directions, back-wall control), `b6fba60` R3 (DEMO_CRATER/DEMO_FRAGMENT, charge ids < 2^28 with guards),
+`b5f458d` R17 (stand-off from the mine toward the lifter), `12bba9d` R12 (Demolish sees only visible pieces).
+Tests (control in each comment, each seen failing): save_mine_item_out_of_range_is_rejected,
 staged_s10b_save_holds_its_state, second_sweeper_lift_leaves_no_stale_lift, sweep_runs_with_zero_sweeps_counter,
 obstacle_waits_until_no_vehicle_is_on_its_nodes, vehicle_on_obstacle_nodes_drives_out,
 point_site_ignores_a_vehicle_near_its_facing_point, ap_mine_burst_does_not_break_a_track,
-save_fuzz_own_gun_boarded_while_unhitching_loads. Existing code changed outside S10b: `VehicleState::validate`
-(G1), `drive` (escape, inert without obstacle pieces), `DriveCtx` literal in `armour_test/s8b.rs`.
+save_fuzz_own_gun_boarded_while_unhitching_loads, obstacle_row_shows_the_tank_reaching_the_line,
+bunker_row_fills_every_field (R6/R7 asserts), charge_ids_stay_below_the_key_bound,
+lifter_does_not_cross_a_mine_behind_him, demolish_ignores_unseen_enemy_pieces. Code outside S10b changed:
+`VehicleState::validate`, `drive` (escape), `lay_charge` (id guard), CLI `world_with`.

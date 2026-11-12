@@ -2283,7 +2283,10 @@ fn lifter_does_not_cross_a_mine_behind_him() {
             }
         }
         let a = &fs(&w).accounts;
-        assert_eq!(a[1].mines_set_off, 0, "side {side}: the lifter stepped on it");
+        assert_eq!(
+            a[1].mines_set_off, 0,
+            "side {side}: the lifter stepped on it"
+        );
         assert!(!fs(&w).mines.contains_key(&id), "side {side}: lifted");
         assert_eq!(a[0].mines_lifted, 1, "side {side}");
     }
