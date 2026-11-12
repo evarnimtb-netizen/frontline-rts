@@ -6,29 +6,29 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 7 = finish the orchestrator's defect items R and S, then stage chunk 3 (F8 truck refusal memory
-L5, docs incl. TODO.md owner questions D1-D3 and C1, the stage check, STOP POINT 3).** SAVE 25, PROTOCOL 14.
-Chunk 6 (defects P, Q) done: `a4e3fbd`, `889ef57`; only `sdk/crates/cli` changed, so the 40 sets are unchanged.
-**P measured:** not vehicle A*: a `sample` profile of the obstacle row shows no `find_vehicle_path` (time is world
-step: spatial rebuilds, combat search, snapshot fill), and the 40 set took 88 s on and 88 s all-off. The skirmish
-binary's time was `fortify_test_passes` (243 s) + `fortify_test_reports_each_run` (49 s), i.e. the S10b-ai fortify
-rows' simulated match time (obstacle row: up to 1500 s build + 180 s per seed, side and mode). Fix: `FortifyArgs::
-no_s10b_ai` (`--no-s10b-ai`), set by those two tests. Skirmish binary 246 s -> 105 s (quick: skirmish 149 s).
-**Q found:** row setup, not R6: the 25 min build drive outlived the enemy's tickets, the match was Won and every
-Move refused. `obstacle_once` now sets `ticket_drain_per_min_per_point` 0; the control (mode 1, `own_route_m` 0)
-runs first and both own tanks drive to its first barrier piece's spot (`goal` arg). Seeds 1-3: own_tank_drove_pct 100
-(was 0), own_blocked 0, control.own_blocked 0, barrier_pieces 3.5, barrier_built_pct 0 (C1), arc 103.4 s vs control
-127.2 s. **control.own_blocked stays 0 for two reasons (open):** (a) seed 1 builds the barrier at the same spot in
-mode 0 and mode 1 (R6 never moved it: the gun site is not on the own route for that seed); (b) `count_own_blocked`
-(`ai/fort.rs`) reads `nav.path.last()`, but a vehicle stopped short is `Holding` with an empty path (control tank 11 m
-from its goal beside its own piece, uncounted); fix: also count Holding vehicles > `THERE_M` from `nav.goal`.
-**R, S (not started):** demolition faults in `crates/sim/src/ai/demolish.rs` `run_demolish`: R = end `opened` only
-after the vehicle moved past the piece line (else next piece; say whether path-vs-movement disagreement is an S10b
-defect, list as follow-up, no blocking-rule change); S = Germany seeds 1-2 leader never reaches the 2nd piece's
-`stand_point` (L2 after ~170 s): pick a reachable stand point. Then rerun one-offs `obstacle_row_one_off`,
-`demolish_row_one_off` (`cargo test --release -p frontline-cli --lib NAME -- --ignored --nocapture`), and if sim
-code changed: all-off 40 set vs `target/s10b-base40` (neutral.py) and defaults-on vs `target/s10b-d1-fix`.
-Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `889ef57` all ok (792 passed). Failing: none.
+**Next: Build D stage chunk 3 = F8 truck refusal memory (L5), docs (tuning.md, fortifications.md, a STATE.md row, TODO.md
+owner questions D1-D3 and C1), the stage check, STOP POINT 3.** SAVE 25, PROTOCOL 14. All four defects P, Q, R, S done.
+P (`a4e3fbd`): not vehicle A*, the S10b-ai fortify rows' match time; `--no-s10b-ai` in 2 suite tests: 246 -> 105 s.
+Q (`889ef57`): row setup (the match was Won during the 25 min build drive); drain 0: own_tank_drove_pct 0 -> 100.
+**R (`7e692e3`, `ai/demolish.rs` `run_demolish` Repath, `vehicle_past`):** `opened` only once the vehicle's move ended
+at its goal or no known enemy piece within `demolish_near_m` lies ahead of it; a served path to the goal with the
+vehicle still short 60 s on takes the next piece. **S (`173ccd8`, sim `unit.rs` detached-man arrival):** not the stand
+point: the satchel man's `Demolish` walk ended in `seek_cover` (the blown 1st piece's spot, 4 m off, beyond the 2 m
+placing reach), so he never placed; he now walks to his spot as a Bangalore carrier does (an S10b demolition fix).
+Demolish row seeds 1-3 (before -> R -> R+S): gap_opened_pct 66.7 -> 16.7 -> 50.0, tank_passed_pct 16.7 -> 16.7 ->
+50.0, pieces_used 1.83 -> 2.17 -> 3.0, tank_blocked_pct 100, control 0/0. The other 50 % (US) uses all 3 pieces and
+the tank still does not pass: **follow-up outside this slice (S10b vehicle block layer vs movement):** after 2 ring
+pieces the vehicle path layer serves a path through the gap that the tank's movement cannot drive (it stops ~12 m on);
+blocking rules not changed here (relates to owner question D3). Obstacle row (unchanged): drove 100, own_blocked 0,
+control.own_blocked 0, pieces 3.5, built 0, arc 103.4 s vs 127.2 s.
+40 sets after `173ccd8`: all-off `target/s10b-d7-off40` vs `s10b-base40` same 40/40; defaults-on `target/s10b-d7-on40`
+vs `s10b-d1-fix` same 40/40 winners, only Germany `sweep_wanted` 0 -> 6 (sweeping came after d1-fix, not R/S).
+**Open (not done, small):** control.own_blocked stays 0: (a) seed 1 builds the barrier at the same spot in both modes;
+(b) `count_own_blocked` (`ai/fort.rs`) misses vehicles Holding with an empty path short of their goal. Proposed: count
+Holding > 10 m from `nav.goal` with an own blocking piece within `OWN_BLOCKED_M` AHEAD of it (dot toward the goal > 0;
+without "ahead", a vehicle that halted for a target or a Stop beside its own piece would count falsely). Counter only.
+Tests added: `demolish_opens_only_when_the_tank_passed`, `demolish_man_places_the_second_piece` (cli lib, release).
+Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `173ccd8` all ok (794 passed, skirmish 154 s). Failing: none.
 
 ## Plan (2026-11-12)
 
@@ -145,6 +145,6 @@ opens a 4 m hedgehog row. (A) leave as is (T114e/f miss; L3 stops retries); (B) 
 ## Build D chunk 5 (2026-11-12; stage chunk 2 rest: fortify row `s10b_ai.demolish`, STOP POINT 2)
 
 Ring, not the spec's line to the map edge (closed on any map); leader satchels 3 (staged); the 60 s on keeps driving
-the habit. Faults (1), (2) above found with a scratch per-5 s trace (not committed).
-Chunk 6 (defects P, Q): scratch traces (not committed): `sample` profile of `obstacle_row_one_off`; per-10 s own tank nav and `outcome()`
-in `obstacle_once` (Won at tick 45002 in mode 0). Controls seen failing: P flag ignored; Q usual drain.
+the habit. Faults (1), (2) found with a scratch per-5 s trace. Chunk 6 (P, Q): scratch `sample` profile, per-10 s tank
+nav and `outcome()` trace. Chunk 7 (R, S): scratch per-1 s satchel-man nav trace (his Arriving goal jumped to cover).
+Controls seen failing: P flag ignored; Q usual drain; R the old Repath rule; S the pre-fix `unit.rs`. (No traces kept.)
