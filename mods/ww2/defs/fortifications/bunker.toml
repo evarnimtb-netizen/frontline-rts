@@ -18,11 +18,11 @@ min_spacing_m = 30
 max_slope_pct = 15
 pieces = [
     { part = "roof", size_cm = [420, 370, 80], offset_cm = [0, 0, 40], z_from = "base", armour_mm = 100, hp = 1000 },
-    { part = "timber", size_cm = [30, 370, 40], offset_cm = [-195, 0, 0], z_from = "base", armour_mm = 100, hp = 600 },
-    { part = "timber", size_cm = [360, 30, 40], offset_cm = [0, -170, 0], z_from = "base", armour_mm = 100, hp = 600 },
-    { part = "timber", size_cm = [360, 30, 40], offset_cm = [0, 170, 0], z_from = "base", armour_mm = 100, hp = 600 },
-    { part = "timber", size_cm = [30, 144, 40], offset_cm = [195, -112, 0], z_from = "base", armour_mm = 100, hp = 600 },
-    { part = "timber", size_cm = [30, 144, 40], offset_cm = [195, 112, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [40, 370, 40], offset_cm = [-190, 0, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [420, 40, 40], offset_cm = [0, -165, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [420, 40, 40], offset_cm = [0, 165, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [40, 145, 40], offset_cm = [190, -112, 0], z_from = "base", armour_mm = 100, hp = 600 },
+    { part = "timber", size_cm = [40, 145, 40], offset_cm = [190, 112, 0], z_from = "base", armour_mm = 100, hp = 600 },
 ]
 sources = [
     "infantry-structures.md 7.6: bunker 8-10 min, 250 kg, firing slit, thick earth roof",

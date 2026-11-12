@@ -1963,7 +1963,7 @@
             "engineers_only": true,
             "floor_cm": 220,
             "max_length_m": 5,
-            "parapet_cm": 40,
+            "parapet_cm": 0,
             "passes": 4,
             "pit_length_cm": 350,
             "wall_cm": 40,

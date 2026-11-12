@@ -1340,6 +1340,11 @@ impl MatchState {
                 let a = &mut self.fort.accounts[acc];
                 a.obstacles_built = a.obstacles_built.saturating_add(1);
             }
+            // S10b R22: a finished bunker (its one build step).
+            if d.pit == Some(frontline_content::setup::DigProfile::BunkerPit) {
+                let a = &mut self.fort.accounts[acc];
+                a.bunkers_built = a.bunkers_built.saturating_add(1);
+            }
         }
         let more = d.shape == FortShape::Line && (w.seg as u32 + 1) < segments(&w.line, d.segment);
         if more {

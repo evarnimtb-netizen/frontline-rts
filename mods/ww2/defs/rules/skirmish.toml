@@ -197,12 +197,14 @@ pit_length_cm = 300
 engineers_only = true
 
 # S10b bunker pit (R22): 350 x 300 cm, 1.5 m deep, under the bunker's
-# 420 x 370 cm roof; dug like the dugout's pit (verify).
+# 420 x 370 cm roof; dug like the dugout's pit (verify). S10b Build E: no
+# spoil bank (parapet 0; the spoil is the roof's earth): a 40 cm bank round
+# the pit filled the 40 cm firing slit between the undug surface and the roof.
 [dig.profiles.bunker_pit]
 depth_cm = 150
 floor_cm = 220
 wall_cm = 40
-parapet_cm = 40
+parapet_cm = 0
 max_length_m = 5
 work_per_m = 150000
 passes = 4

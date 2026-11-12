@@ -1518,3 +1518,434 @@ fn demolition_is_deterministic() {
     assert_eq!(a, run(false));
     assert_eq!(a, run(true));
 }
+
+// --- Build E: the bunker (R21-R24, R26) ---
+
+use super::s6_tests::{members, steps};
+
+/// A flat world (seed `seed`) with the bunker blueprint edited.
+fn bunker_world(seed: u64, edit: impl FnOnce(&mut frontline_content::setup::FortSetup)) -> World {
+    flat_world_with(1, |s| {
+        s.seed = seed;
+        // 250 kg carried by one squad (the cap is 20 kg a man).
+        s.rules.fortify.as_mut().unwrap().carry_kg_per_man = 50;
+        let i = fort(s, "ww2:bunker") as usize;
+        edit(&mut s.forts[i]);
+    })
+}
+
+/// A bunker of player 0 at (500, 500) facing +x: its pit dug, its pieces
+/// standing when `built`; five men of a grenadier squad in the pit along x
+/// (0.4 m apart around the centre), the rest 60 m off. (Pieces, the five.)
+fn bunker_at(w: &mut World, built: bool) -> (Vec<u32>, Vec<SimId>) {
+    let s = w.match_setup().unwrap();
+    let f = fort(s, "ww2:bunker");
+    let half = Fx::from(s.rules.bunker_pit.pit_line).div_int(2);
+    let (x, y) = (Fx::from_int(500), Fx::from_int(500));
+    assert!(w.dig_pit_now(
+        &[FxVec2::new(x - half, y), FxVec2::new(x + half, y)],
+        frontline_content::DigProfile::BunkerPit
+    ));
+    if built {
+        assert!(w.build_now(f, &[c(500, 500), c(510, 500)], PlayerId(0)));
+    }
+    let pieces: Vec<u32> = fs(w)
+        .pieces
+        .iter()
+        .filter(|(_, q)| q.fort == f)
+        .map(|(&id, _)| id)
+        .collect();
+    let sq = spawn(w, 0, "ww2:ger_grenadiergruppe", 500, 500);
+    let all = members(w, sq);
+    for (k, &m) in all.iter().enumerate() {
+        let p = if k < 5 {
+            FxVec2::new(x + Fx::from_milli(400 * (k as i32 - 2)), y)
+        } else {
+            c(560 + k as i32, 560)
+        };
+        w.place_soldier(m, p);
+    }
+    steps(w, 1);
+    (pieces, all.into_iter().take(5).collect())
+}
+
+fn piece_hp(w: &World, id: u32) -> Option<u32> {
+    fs(w).pieces.get(&id).map(|q| q.hp)
+}
+
+/// Men of `men` dead (hp 0 or no longer a soldier).
+fn lost(w: &World, men: &[SimId]) -> usize {
+    men.iter()
+        .filter(|m| {
+            w.state.entities.kind[m.index()] != crate::ecs::EntityKind::Soldier
+                || w.state.entities.combat[m.index()].hp == 0
+        })
+        .count()
+}
+
+/// Steps `ticks` holding `men` on their spots (they would run).
+fn hold(w: &mut World, men: &[SimId], ticks: u64) {
+    let spots: Vec<FxVec2> = men.iter().map(|&m| pos(w, m)).collect();
+    for _ in 0..ticks {
+        for (m, p) in men.iter().zip(&spots) {
+            if w.state.entities.kind[m.index()] == crate::ecs::EntityKind::Soldier {
+                w.place_soldier(*m, *p);
+            }
+        }
+        w.step(&[]);
+    }
+}
+
+fn weapon_of(w: &World, id: &str) -> u16 {
+    w.match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.id == id)
+        .unwrap() as u16
+}
+
+fn satchel_item(w: &World) -> u16 {
+    w.match_setup()
+        .unwrap()
+        .items
+        .iter()
+        .position(|i| i.kind == frontline_content::ItemKind::Satchel)
+        .unwrap() as u16
+}
+
+/// A player-1 thrower far off.
+fn thrower(w: &mut World) -> SimId {
+    let sq = spawn(w, 1, "ww2:usa_engineer_squad", 900, 100);
+    members(w, sq)[0]
+}
+
+/// Piece `id`'s top (m).
+fn piece_top(w: &World, id: u32) -> Fx {
+    let q = &fs(w).pieces[&id];
+    let b = &w.match_setup().unwrap().forts[q.fort as usize].pieces[q.part as usize];
+    q.z + Fx::from(b.half[2]).mul_int(2)
+}
+
+#[test]
+fn bunker_digs_pit_then_builds_six_pieces() {
+    // Control: a five-piece def (drop the last front wall) -> the count
+    // assert fails (seen: "left: 5, right: 6").
+    let mut w = bunker_world(1, |_| {});
+    let f = fort(w.match_setup().unwrap(), "ww2:bunker");
+    let eng = spawn(&mut w, 0, "ww2:ger_baupioniergruppe", 495, 510);
+    w.edit_fort(|s| {
+        s.carried_g.insert(eng, 250_000);
+    });
+    fortify(&mut w, 0, eng, f, vec![c(500, 510), c(510, 510)]);
+    assert_eq!(fs(&w).works.len(), 1, "{:?}", refused(&w));
+    for _ in 0..(3600 * HZ / 30) {
+        steps(&mut w, 30);
+        if fs(&w).works.is_empty() {
+            break;
+        }
+    }
+    assert!(fs(&w).works.is_empty(), "the bunker is done");
+    let t = &w.state.terrain;
+    let dug = t.base_height_at(c(500, 510)) - t.height_at(c(500, 510));
+    assert!(dug > Fx::from_ratio(12, 10), "the pit is dug ({dug:?})");
+    let d = &w.match_setup().unwrap().forts[f as usize];
+    let pieces: Vec<_> = fs(&w).pieces.values().filter(|q| q.fort == f).collect();
+    assert_eq!(pieces.len(), 6);
+    // R23 positions (cm, facing +x): roof, rear, sides, front walls.
+    let want = [
+        (0, 0, 40),
+        (-190, 0, 0),
+        (0, -165, 0),
+        (0, 165, 0),
+        (190, -112, 0),
+        (190, 112, 0),
+    ];
+    for q in &pieces {
+        let (x, y, z) = want[q.part as usize];
+        let at = FxVec2::new(
+            Fx::from_int(500) + Fx::from_ratio(x, 100),
+            Fx::from_int(510) + Fx::from_ratio(y, 100),
+        );
+        assert!(
+            (q.pos - at).length() < Fx::from_milli(20),
+            "part {}",
+            q.part
+        );
+        let z_want = w.state.terrain.base_height_at(at) + Fx::from_ratio(z, 100);
+        assert!(
+            (q.z - z_want).abs() < Fx::from_milli(20),
+            "part {} z",
+            q.part
+        );
+        assert_eq!(q.hp, d.pieces[q.part as usize].hp);
+    }
+    let a = &fs(&w).accounts[0];
+    assert_eq!(a.works_done[f as usize], 1);
+    assert_eq!(a.bunkers_built, 1);
+    assert_eq!(a.obstacles_built, 0);
+}
+
+/// Ticks `card` (player 0) spends in the bunker's build step with
+/// `heavy_by_field_pct` `heavy` (kg carried; the pit is dug first).
+fn bunker_build_ticks(card: &str, heavy: u32) -> u64 {
+    let mut w = flat_world_with(1, |s| {
+        let t = s.rules.fortify.as_mut().unwrap();
+        t.heavy_by_field_pct = heavy;
+        t.carry_kg_per_man = 50;
+    });
+    let f = fort(w.match_setup().unwrap(), "ww2:bunker");
+    let eng = spawn(&mut w, 0, card, 495, 510);
+    w.edit_fort(|s| {
+        s.carried_g.insert(eng, 250_000);
+    });
+    fortify(&mut w, 0, eng, f, vec![c(500, 510), c(510, 510)]);
+    assert_eq!(fs(&w).works.len(), 1, "{card}: {:?}", refused(&w));
+    let mut ticks = 0;
+    for _ in 0..4800 * HZ {
+        w.step(&[]);
+        if fs(&w)
+            .works
+            .values()
+            .any(|x| x.step == crate::fort::WorkStep::Build && x.work > 0)
+        {
+            ticks += 1;
+        }
+        if fs(&w).works.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(fs(&w).accounts[0].bunkers_built, 1, "{card}");
+    ticks
+}
+
+#[test]
+fn bunker_needs_build_heavy_or_half_rate_field() {
+    // Control: `heavy_by_field_pct` 100 in the "half" run -> half == full,
+    // the ratio assert fails.
+    let mut w = bunker_world(1, |_| {});
+    let f = fort(w.match_setup().unwrap(), "ww2:bunker");
+    let rifles = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 495, 510);
+    fortify(&mut w, 0, rifles, f, vec![c(500, 510), c(510, 510)]);
+    assert_eq!(refused(&w), Some(crate::fort::FortRefusal::CannotBuild));
+    assert!(fs(&w).works.is_empty());
+    let half = bunker_build_ticks("ww2:usa_engineer_squad", 50);
+    let full = bunker_build_ticks("ww2:usa_engineer_squad", 100);
+    assert!(
+        (half * 100).abs_diff(full * 200) <= full * 200 / 20,
+        "half {half}, full {full}"
+    );
+}
+
+#[test]
+fn small_arms_do_not_damage_bunker() {
+    // 150 Kar98k and 150 MG 42 rounds of player 1 from 20 m in front at
+    // the slit and the front walls: no piece loses hp. Control: armour 1 on
+    // the walls -> hp lost (checked below with the same volley).
+    let volley = |armour: u32| {
+        let mut w = bunker_world(1, |d| {
+            for p in d.pieces.iter_mut().skip(1) {
+                p.armour_mm = armour;
+            }
+        });
+        let (pieces, men) = bunker_at(&mut w, true);
+        let full: u32 = pieces.iter().map(|&p| piece_hp(&w, p).unwrap()).sum();
+        let guns = [weapon_of(&w, "ww2:kar98k"), weapon_of(&w, "ww2:mg42")];
+        for k in 0..300 {
+            let g = guns[k % 2];
+            let ground = w.state.terrain.base_height_at(c(502, 500));
+            let y = Fx::from_milli(((k as i32 * 37) % 300) - 150);
+            let z = ground + Fx::from_milli(50 + (k as i32 * 13) % 300);
+            let from = crate::fx::FxVec3::new(Fx::from_int(522), y + Fx::from_int(500), z);
+            let to = crate::fx::FxVec3::new(Fx::from_int(500), y + Fx::from_int(500), z);
+            assert!(w.fire_round_now(1, g, from, to));
+            hold(&mut w, &men, 2);
+        }
+        hold(&mut w, &men, HZ);
+        let left: u32 = pieces.iter().map(|&p| piece_hp(&w, p).unwrap_or(0)).sum();
+        full - left
+    };
+    assert_eq!(volley(100), 0, "armour 100 takes no small-arms damage");
+    assert!(volley(1) > 0, "control: thin walls take the rounds");
+}
+
+#[test]
+fn bunker_roof_survives_three_81mm() {
+    // Three GrW 34 bombs of player 1 on the roof centre: the roof takes
+    // 3 x 150 and stands at 550; nobody of the five inside is lost.
+    // Control: roof hp 400 -> broken after three (checked below).
+    let bombs = |roof_hp: u32| {
+        let mut w = bunker_world(1, |d| d.pieces[0].hp = roof_hp);
+        let (pieces, men) = bunker_at(&mut w, true);
+        let roof = pieces[0];
+        let mortar = weapon_of(&w, "ww2:grw34");
+        for _ in 0..3 {
+            assert!(w.drop_shell_now(1, mortar, c(500, 500)));
+            hold(&mut w, &men, 2 * HZ);
+        }
+        (piece_hp(&w, roof), lost(&w, &men))
+    };
+    let dmg = {
+        let w = bunker_world(1, |_| {});
+        w.match_setup().unwrap().weapons[weapon_of(&w, "ww2:grw34") as usize].damage
+    };
+    assert_eq!(dmg, 150);
+    assert_eq!(bombs(1000), (Some(550), 0));
+    assert_eq!(bombs(400).0, None, "control: a 400 hp roof breaks");
+}
+
+#[test]
+fn roof_satchel_kills_nobody_inside() {
+    // A satchel of player 1 dropped onto the roof centre rests there and
+    // bursts: the roof takes 300 (700 left), nobody inside is lost.
+    // Control: roof hp 250 -> the roof breaks (checked below).
+    let satchel = |roof_hp: u32| {
+        let mut w = bunker_world(1, |d| d.pieces[0].hp = roof_hp);
+        let (pieces, men) = bunker_at(&mut w, true);
+        let roof = pieces[0];
+        let before: Vec<u16> = men
+            .iter()
+            .map(|m| w.state.entities.combat[m.index()].hp)
+            .collect();
+        let t = thrower(&mut w);
+        let item = satchel_item(&w);
+        let p = c(500, 500);
+        let above = piece_top(&w, roof) + Fx::from_int(2) - w.state.terrain.height_at(p);
+        assert!(w.drop_item_now(t, item, p, above));
+        hold(&mut w, &men, 5 * HZ);
+        let after: Vec<u16> = men
+            .iter()
+            .map(|m| w.state.entities.combat[m.index()].hp)
+            .collect();
+        (piece_hp(&w, roof), lost(&w, &men), before == after)
+    };
+    assert_eq!(satchel(1000), (Some(700), 0, true));
+    assert_eq!(satchel(250).0, None, "control: a 250 hp roof breaks");
+}
+
+/// A satchel of player 1 at the slit's inner lip (slit centre, on the
+/// surface, 10 cm inside the front walls' centre line), seed `seed`: men
+/// of the five lost or hurt to it, (lost, hurt).
+fn slit_satchel(seed: u64, closed: bool) -> (usize, usize) {
+    let mut w = bunker_world(seed, |d| {
+        if closed {
+            // The two front walls meet at y 0 (no slit).
+            for k in [4, 5] {
+                d.pieces[k].half[1] = frontline_content::setup::Fixed::from_ratio(185, 200);
+                d.pieces[k].offset[1] = frontline_content::setup::Fixed::from_ratio(
+                    if k == 4 { -925 } else { 925 },
+                    1000,
+                );
+            }
+        }
+    });
+    let (_, men) = bunker_at(&mut w, true);
+    let before: Vec<u16> = men
+        .iter()
+        .map(|m| w.state.entities.combat[m.index()].hp)
+        .collect();
+    let t = thrower(&mut w);
+    let item = satchel_item(&w);
+    let p = FxVec2::new(Fx::from_int(500) + Fx::from_milli(1800), Fx::from_int(500));
+    let above =
+        w.state.terrain.base_height_at(p) + Fx::from_milli(50) - w.state.terrain.height_at(p);
+    assert!(w.drop_item_now(t, item, p, above));
+    hold(&mut w, &men, 12 * HZ);
+    let hurt = men
+        .iter()
+        .zip(&before)
+        .filter(|(m, b)| w.state.entities.combat[m.index()].hp < **b)
+        .count();
+    (lost(&w, &men), hurt)
+}
+
+#[test]
+fn satchel_at_slit_reaches_men_inside() {
+    // Control: close the slit (the front walls meet) -> none lost
+    // (checked below on seed 1).
+    for seed in 1..=10 {
+        let (dead, _) = slit_satchel(seed, false);
+        assert!(dead >= 2, "seed {seed}: {dead} of 5 lost");
+    }
+    assert_eq!(slit_satchel(1, true), (0, 0), "control: no slit, no losses");
+}
+
+#[test]
+fn ap_shots_break_the_roof_after_seven() {
+    // PzGr 39 shots of player 1 into the roof's side (80 cm above the
+    // surface, under it only the pit): `shot_piece_damage` 150 each.
+    // Control: `shot_piece_damage` 100 -> seven leave it standing.
+    let shots = |n: u32, dmg: u32| {
+        let mut w = flat_world_with(1, |s| {
+            s.rules.fortify.as_mut().unwrap().shot_piece_damage = dmg
+        });
+        let (pieces, _) = bunker_at(&mut w, true);
+        let roof = pieces[0];
+        let s = w.match_setup().unwrap();
+        let wi = weapon_of(&w, "ww2:kwk40_l48");
+        let ai = s
+            .ammo
+            .iter()
+            .position(|a| a.id == "ww2:75mm_pzgr39")
+            .unwrap() as u16;
+        let z = w.state.terrain.base_height_at(c(500, 500)) + Fx::from_milli(800);
+        for _ in 0..n {
+            let from = crate::fx::FxVec3::new(Fx::from_int(500), Fx::from_int(470), z);
+            let to = crate::fx::FxVec3::new(Fx::from_int(500), Fx::from_int(530), z);
+            assert!(w.fire_shell_now(1, wi, ai, from, to));
+            steps(&mut w, HZ);
+        }
+        piece_hp(&w, roof)
+    };
+    assert_eq!(shots(6, 150), Some(100), "six leave it at 100");
+    assert_eq!(shots(7, 150), None, "seven break it");
+    assert!(shots(7, 100).is_some(), "control: at 100 seven do not");
+}
+
+#[test]
+fn bunker_saves_loads_and_hashes() {
+    // Control: one piece dropped after load -> the hash differs (below).
+    let mut w = bunker_world(1, |_| {});
+    let f = fort(w.match_setup().unwrap(), "ww2:bunker");
+    let eng = spawn(&mut w, 0, "ww2:ger_baupioniergruppe", 495, 510);
+    w.edit_fort(|s| {
+        s.carried_g.insert(eng, 250_000);
+    });
+    fortify(&mut w, 0, eng, f, vec![c(500, 510), c(510, 510)]);
+    // Mid-build: step until the build step has begun.
+    for _ in 0..3600 * HZ {
+        w.step(&[]);
+        if fs(&w)
+            .works
+            .values()
+            .any(|x| x.step == crate::fort::WorkStep::Build && x.work > 0)
+        {
+            break;
+        }
+    }
+    let mut built = bunker_world(1, |_| {});
+    bunker_at(&mut built, true);
+    for orig in [&w, &built] {
+        let bytes = orig.save();
+        let mut a = World::load(&bytes, 1).unwrap();
+        assert_eq!(a.state_hash(), orig.state_hash());
+        assert_eq!(a.game().unwrap().fort(), fs(orig));
+        let back = World::load(&a.save(), 1).unwrap();
+        assert_eq!(back.state_hash(), a.state_hash());
+        if !fs(&a).pieces.is_empty() {
+            let mut x = World::load(&bytes, 1).unwrap();
+            x.edit_fort(|s| {
+                let k = *s.pieces.keys().next().unwrap();
+                s.pieces.remove(&k);
+            });
+            assert_ne!(
+                x.state_hash(),
+                a.state_hash(),
+                "control: a dropped piece changes the hash"
+            );
+        } else {
+            assert!(!fs(&a).works.is_empty(), "mid-build state has its work");
+        }
+        steps(&mut a, HZ);
+    }
+}
