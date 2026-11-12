@@ -6,33 +6,32 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build C** (`S10b-ai-build-C.md`, chunk 1). Build B done (STOP POINT 2; `a7d5a2c` `667753f` `80cb53c` `eec1f21`).
-Layout: SAVE 25, PROTOCOL 14 (unchanged). B1 code map: section "Build B chunk 1" below; A's: "Build A code map".
-B2 code map (`crates/sim/src/ai/fort.rs`): `s10b_on`, `s10b_fort(d)` (mine, `blocks_vehicles` or BunkerPit blueprint),
-`habits_on` = `s10a_on` or `s10b_on` (base loads, truck runs, S10a plan counters: `s10a_on` only); `point_site_at`:
-`ApField` (R1), `AtField` -> `at_site` (memo `Planner::at_sites`, per plan) -> `at_site_search`
-(`guns::gun_route` from the enemy base, back `at_out_m`, perpendicular to that leg); `field_has`, `fields_of`,
-`recheck_plan` (stateless: one plan per `recheck_s` window), `field_wants` (appended in `point_wants`); `point_starts(.., s10b_only)` (split out of `fort_start`: `s10b_room` = `jobs_max`,
-`under_limit`, `refused_here` (L4), `lay_sites` on the recheck plan); `new_fort_job` counts `s10b_jobs` and the fixed
-300 s `refused_reorders` guard; `fort_continue`: `drop_stale_refusals`, L1 deadline, `s10b_end(job, failed)`
-(L3 refusal at the line middle, `s10b_refused`, `jobs_overdue` > 900 s + a plan), `s10b_laid`; refused S10b jobs are
-not parked (the refusal keeps the spot). Budget: `s10b_used_g` (own mines at blueprint g, gone mines at the cheapest,
-S10b works' `got_g`, S10b job squads' carry and pending loads), `s10b_room_g`, `room_for(f)`, `load_builder(sq, room)`;
-S10a's `materials_room_g` subtracts S10b grams. `drive_fort` (`AiHabit::Fort`). C adds obstacle/bunker sites as new
-`point_site_at` arms and kinds in `field_wants`-like lists; `s10b_laid` already accepts pieces; R6 own-route goes in.
-Tests: `crates/sim/src/s10b_ai_lay_tests.rs` (`held`, `squad_at`, `Held` are `pub(crate)`; the eight B tests), Fort
-liveness row `fort_row` in `s10b_ai_tests.rs` (`StageSetup` is now `fn() -> (World, Stage)`, `Stage::ai`). S10a tests
-call `s10a_ai_tests::s10b_ai_off`. Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (769 passed).
-Fortify `s10b_ai.mines` (`--seeds 5`): field_laid_pct 100 (builder_alive_pct 100, control 0), laid_s 192.5,
-tank_reached_field_pct 100, **tank_stopped_pct 0** (control 0): T110i (min 60) misses; laid_s is the same for every
-seed (the staging does not vary by seed but the tank's 0-4 m offset). Open: why no crossing tank triggers the one
-40 m row (4 m step, 40 cm trigger: ~40 % by geometry); check the track positions vs the mines (C or D).
-40 sets (`target/s10b-ai-b2-off`, `-on`): all-off `neutral.py target/s10b-base40` **same 40/40**. On-set: Germany
-22/40 = 55 % (all-off 18/40 = 45 %); mines in 55 % (ger) / 42 % (usa) of matches (7.58 / 5.85 laid a match), AT
-fields 0.03 / 0.05 a match (rare: offered on one plan per `recheck_s` and only to a builder assigned there),
-tanks stopped by mines 0.00 a match (vehicles_mined 0), refusals/re-orders 0, overdue 0, S10b materials 0.06 % of income.
-Fuzz: `staged_s10b_ai` adds an AT field job in Watch, its work (seg 3) and 3 laid mines; `holds()` "ai_at_field_watch".
-Chunks left: C 2, D 3. Owner questions S10b-ai-1..7 (spec 10); B2 adds S10b-ai-B2a (log below).
+**Next: Build C chunk 2 of 3 (rest of chunk 1 of the stage file).** Build C chunk 1 did the orchestrator's two items and
+stage item 4; STOP POINT 1 is NOT reached. Commits `4672951` `3b6dfb2` (+fmt) `062e5c1` (+clippy). Layout: SAVE 25,
+PROTOCOL 14 (unchanged). B's code map: "Build B chunk 1/2" below and the B2 notes (`point_site_at`, `field_wants`,
+`point_starts`, `s10b_end`, `s10b_laid`, budget `s10b_used_g`/`room_for`) in `crates/sim/src/ai/fort.rs`.
+Done: (1) `crates/sim/tests/ai_fort.rs` `ai_all_switches_off_emit_nothing_new`: "all off" now also sets the
+`[ai.obstacles]` habits to 0 (cause confirmed: only S10a switches were off, the AI laid mines); a second match with
+S10a off / S10b on must leave only S10b traces (forts, fort_jobs/refused, works, pieces, carried, accounts and walk
+runs `material_runs[2]`; asserted `material_runs[0..2]` = 0, no truck run). Binary run with `--include-ignored`: ok.
+(2) Why AI AT fields stopped no tank: vehicles drive the 4 m path grid and `at_site_search` centred the row on the
+route, so the middle mine lay under the hull's middle (tracks +-1.25 m, trigger 40 cm) and the next mines 2.75 m
+from a track; the fortify tank crossed at across 0.0 m for every seed (its 0-4 m offset does not move a grid-path
+tank). Fix: the row moves along itself by `half_gauge(ty)` (largest |y| of the route vehicle's track/wheel anchors,
+free fn before `mod tests` in fort.rs). Test `ai_at_field_catches_the_route_tank` (s10b_ai_lay_tests; seen failing
+before the fix). Fortify `s10b_ai.mines` seeds 1-5 (one-off run): tank_stopped_pct **100** (was 0), field_laid 100,
+laid_s 192, control stopped 0. Every seed crosses the same lane, so 100 % is the route-lane rate, not a spread rate;
+S10b-ai-B2a (single row vs two staggered rows) stays open on (A). 40 sets not rerun (match AT fields are rare).
+(3) Item 4: R13 `MatchState::known_obstacles(ents, me) -> Vec<u32>` and `Planner::known_obstacles()` in
+`crates/sim/src/ai/obstacles.rs` (`#[allow(dead_code)]` until D); test `ai_knows_obstacles_by_distance` (control
+`obst_seen_m` 1, seen failing).
+Left for chunk 1 of the stage file: items 1 (LogBarrier, Hedgehog row: new `point_site_at` arms, `field_wants`-like
+lists; `WorkKind::{LogBarrier,Hedgehog}` exist with `fort_of`), 2 (R6 own route, `own_route_rejects`), 3
+(`own_blocked`), 5 (liveness LogBarrier in `s10b_ai_tests.rs` table), tests `ai_builds_barrier_before_gun`,
+`ai_builds_hedgehogs_before_nest`, `ai_never_blocks_own_route`, `ai_s10b_site_taken_ends_job`; fortify row
+`s10b_ai.obstacle`; fuzz stage "staged_s10b_ai + a LogBarrier job in Watch and one standing hedgehog of a row".
+Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (771 passed); ai_fort binary ok.
+Chunks left: C 2 (rest of chunk 1, then chunk 2), D 3. Owner questions S10b-ai-1..7, S10b-ai-B2a open.
 
 ## Plan (2026-11-12)
 
