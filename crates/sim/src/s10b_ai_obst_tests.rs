@@ -281,6 +281,55 @@ fn ai_counts_own_blocked() {
     assert_eq!(go(0), 0, "control: an enemy barrier");
 }
 
+/// Build D: a pair stuck at the save is not counted again after the load
+/// (`AiState::blocked_pairs` is saved). The tank of `ai_counts_own_blocked`
+/// stays stuck by its own barrier; saved after its first count, the loaded
+/// world counts what the unsaved one counts. Control: `#[serde(skip)]` on
+/// `blocked_pairs` -> the loaded world counts the pair again (seen).
+#[test]
+fn own_blocked_counts_once_across_save_load() {
+    let (mut w, h) = obst_world(|_| {});
+    let bar = fort(&w, "ww2:log_barrier");
+    let p = h.pos + c(-60, 30);
+    assert!(w.build_now(bar, &[p, p + c(4, 0)], PlayerId(1)));
+    let t = spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        p.x.floor_int() + 2,
+        p.y.floor_int() - 7,
+    );
+    run(
+        &mut w,
+        1,
+        1,
+        crate::command::CommandKind::Move {
+            squad: t,
+            target: p + c(2, 0),
+        },
+    );
+    for _ in 0..60 {
+        if ai_ro(&w).counters.own_blocked > 0 {
+            break;
+        }
+        play(&mut w, 1);
+    }
+    let n = ai_ro(&w).counters.own_blocked;
+    assert!(
+        n >= 1 && !ai_ro(&w).blocked_pairs.is_empty(),
+        "stuck at the save: {n}"
+    );
+    let mut b = World::load(&w.save(), 1).unwrap();
+    assert_eq!(ai_ro(&b), ai_ro(&w), "loaded AI state");
+    play(&mut w, 20);
+    play(&mut b, 20);
+    assert_eq!(
+        ai_ro(&b).counters.own_blocked,
+        ai_ro(&w).counters.own_blocked,
+        "counted alike after the load"
+    );
+}
+
 /// Job table [C] "site taken": another work (player 0's hedgehog, built at
 /// once) lands on a watched AP field's site -> the job ends. Control: the site check in Watch skipped -> the
 /// job goes on (seen failing with the check commented out).

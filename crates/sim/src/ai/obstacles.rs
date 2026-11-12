@@ -28,6 +28,8 @@ pub const MAX_SWEEPS: usize = 4;
 pub const MAX_DEMOLITIONS: usize = 4;
 /// Most refused goals one AI remembers (L3).
 pub const MAX_REFUSED: usize = 32;
+/// Most (vehicle, own piece) pairs `AiState::blocked_pairs` keeps.
+pub const MAX_BLOCKED_PAIRS: usize = 32;
 /// A refusal is kept at least this long (s; spec 3: max(`refused_s`, 300)).
 pub const REFUSAL_KEEP_MIN_S: u64 = 300;
 /// Most pieces one demolition job lists (`demolish_pieces_max` is at most 3).
@@ -260,6 +262,12 @@ impl AiState {
             && self.refused.windows(2).all(|w| w[0].key() <= w[1].key())
             && self.refused.iter().all(|r| r.failed <= tick)
             && self.suspects_seen as usize <= crate::fort::MAX_BLASTS
+            && self.blocked_pairs.len() <= MAX_BLOCKED_PAIRS
+            && self.blocked_pairs.windows(2).all(|w| w[0] < w[1])
+            && self
+                .blocked_pairs
+                .iter()
+                .all(|&(_, p)| p < g.fort.next_piece)
     }
 }
 

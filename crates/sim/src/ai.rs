@@ -209,7 +209,7 @@ pub use fort::{AiFortJob, BUNKER_WHY, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
     AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
-    MAX_DEMOLITIONS, MAX_REFUSED, MAX_SWEEPS, REFUSAL_KEEP_MIN_S, SweepPhase,
+    MAX_BLOCKED_PAIRS, MAX_DEMOLITIONS, MAX_REFUSED, MAX_SWEEPS, REFUSAL_KEEP_MIN_S, SweepPhase,
 };
 pub use truck::{AiTruck, GAVE_UP_GOALS, MAX_TRUCKS, TruckPhase};
 
@@ -374,9 +374,9 @@ pub struct AiState {
     /// reads (clamped to the list's length on read).
     pub suspects_seen: u32,
     /// S10b-ai `own_blocked`: the (vehicle, own blocking piece) pairs
-    /// stuck at the last plan, ascending; a pair counts when it first
-    /// appears (derived, not saved: spec Build C item 3).
-    #[serde(skip)]
+    /// stuck at the last plan, strictly ascending, at most
+    /// [`MAX_BLOCKED_PAIRS`]; a pair counts when it first appears (saved,
+    /// Build D: a stuck pair is not counted again after a load).
     pub blocked_pairs: Vec<(SquadId, u32)>,
 }
 

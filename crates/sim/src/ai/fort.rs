@@ -2261,7 +2261,7 @@ impl super::Planner<'_> {
     /// lead stands within 4 m of its served path's end, which is not its
     /// goal: a reached path ends exactly on it) with an own `blocks_vehicles` piece within
     /// `OWN_BLOCKED_M`; each (vehicle, piece) pair counts once, when it
-    /// first appears (`AiState::blocked_pairs`, sorted, not saved).
+    /// first appears (`AiState::blocked_pairs`, sorted, saved).
     /// Nothing with `obstacles` off.
     fn count_own_blocked(&mut self) {
         let g = self.g;
@@ -2302,6 +2302,7 @@ impl super::Planner<'_> {
         }
         pairs.sort_unstable();
         pairs.dedup();
+        pairs.truncate(super::MAX_BLOCKED_PAIRS);
         let old = std::mem::take(&mut self.ai.blocked_pairs);
         let new = pairs
             .iter()

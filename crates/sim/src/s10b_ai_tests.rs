@@ -9,7 +9,7 @@ use super::*;
 use crate::ai::fort::{WorkKind, fort_of};
 use crate::ai::{
     AiDemolish, AiFortJob, AiRefusal, AiState, AiSweep, DemolishPhase, FortPhase, JobKind,
-    MAX_REFUSED, SweepPhase,
+    MAX_BLOCKED_PAIRS, MAX_REFUSED, SweepPhase,
 };
 use crate::fort::{MAX_BLASTS, MineBlast};
 use crate::game::SquadId;
@@ -370,6 +370,23 @@ fn load_rejects_bad_s10b_ai_state() {
                 let t = s.tick;
                 ai_of(s).refused.last_mut().unwrap().failed = t + 1;
             }),
+        ),
+        // `blocked_pairs` (Build D): <= 32, strictly ascending, pieces made.
+        (
+            "blocked_pairs over the cap",
+            Box::new(|s| {
+                ai_of(s).blocked_pairs = (0..=MAX_BLOCKED_PAIRS as u32)
+                    .map(|k| (SquadId(k), 0))
+                    .collect();
+            }),
+        ),
+        (
+            "blocked_pairs not sorted",
+            Box::new(|s| ai_of(s).blocked_pairs = vec![(SquadId(2), 0), (SquadId(1), 0)]),
+        ),
+        (
+            "blocked pair of a piece never made",
+            Box::new(|s| ai_of(s).blocked_pairs = vec![(SquadId(1), u32::MAX)]),
         ),
         // `blasts`: <= 32, owner a player, `tick <= now`, on the map.
         (

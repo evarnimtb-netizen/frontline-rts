@@ -374,7 +374,14 @@ fn s10b_path(path: &str) -> bool {
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
         || (path.starts_with("state.game.ai")
-            && [".sweeps.", ".demolitions.", ".refused.", ".suspects_seen", ".forts."]
+            && [
+                ".sweeps.",
+                ".demolitions.",
+                ".refused.",
+                ".suspects_seen",
+                ".forts.",
+                ".blocked_pairs.",
+            ]
                 .iter()
                 .any(|k| path.contains(k)))
 }
@@ -589,6 +596,7 @@ fn fuzz_plan_reaches_s10b_state() {
         ("state.game.ai", ".sweeps.{}"),
         ("state.game.ai", ".demolitions.{}"),
         ("state.game.ai", ".refused.[]"),
+        ("state.game.ai", ".blocked_pairs.[]"),
         ("state.game.fort", ".blasts.[]"),
     ] {
         assert!(
@@ -777,6 +785,8 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
         ai.suspects_seen = 1;
+        // Build D chunk 1: one own tank stuck by its own piece.
+        ai.blocked_pairs = vec![(veh_sq, piece)];
     }));
     // S10b-ai Build B: a player-1 AP mine on a field player 0 knew, set off
     // by a player-0 man this tick (as `take_mines` leaves it: the mine gone,
@@ -996,6 +1006,7 @@ fn staged_s10b_save_holds_its_state() {
     assert!(!ai.sweeps.is_empty() && !ai.demolitions.is_empty());
     assert!(ai.demolitions.values().any(|d| d.done == 1));
     assert_eq!(ai.refused.len(), 2);
+    assert_eq!(ai.blocked_pairs.len(), 1, "a stuck pair (Build D)");
     let ap_fort = g
         .setup()
         .forts
