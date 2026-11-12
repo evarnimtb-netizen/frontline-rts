@@ -6,31 +6,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 1 (sweeping, demolition, F8, docs).** Build C done: STOP POINT 2 met.
-C3 commits: `abf2559` (bunker R7, builders, kg at hand, manning, 2 tests), `1ad198d` (liveness Bunker row), `44244f8`
-(`ai_s10b_deterministic_threads_and_save_load`), `7f7af23` (fortify `s10b_ai.bunker`, hook manning), `0dc91b0` (fuzz).
-Layout: SAVE 25, PROTOCOL 14 (unchanged). Code map `crates/sim/src/ai/fort.rs`: `point_site_at` Bunker arm (nest end
-mirrored by parity), `bunker_point()` (own AI-trenched point nearest an enemy base), `bunker_wants(i)` (first of the S10b
-wants in `point_wants`), `bunker_built(i)`/`bunker_at(i)` (switch-gated), `bunker_crew(i, free)` (MG lowest id, else
-nearest non-MG/AT squad; used by `order_infantry` and the hook's `drive_crew` on `DriveArgs::others`),
-`heavy_by_field(d, caps)` (bunker only: build_structure builders, ranked after build_heavy in both picks), `at_hand(sq,
-d, site)` (S10b step over a full carry: carry + own construction crates/truck kg within `material_reach_m`).
-**What D needs:** `known_obstacles()` (R13, `crates/sim/src/ai/fort.rs`, tested by `ai_knows_obstacles_by_distance`).
-Tests (controls seen failing): `s10b_ai_bunker_tests.rs` `ai_builds_and_mans_one_bunker`,
-`ai_bunker_needs_heavy_or_field_builder`; `tests/ai_fort.rs` `ai_s10b_deterministic_threads_and_save_load` (seed
-search 1..10: seed 3, saves moved to the first live S10b job after 5:00/12:00: ticks 12270, 21600; AP field jobs only).
-Fortify `s10b_ai.bunker` (seeds 1-3, both players): built_pct 100, built_s 306.5, manned_pct 100, builder_alive 100;
-us_built_pct 100, us_built_s 747, us_manned_pct 100; control built 0, manned 0 (manned 0 with the hook manning cut).
-40 sets: defaults `target/s10b-c3-40` Germany **47.5 %**; all-off `target/s10b-c3-off40` vs `target/s10b-base40`:
-**same 40/40**. Defaults (pool.py): mines in 45/42 % (ger/usa), matches_with_obstacle_pct **22 / 5**,
-matches_with_bunker_pct **0 / 0** (of bunker chances), own_side_mistakes **0 / 0**, builder_share_pct **9.1 / 9.8**.
-**Open finding for D:** no bunker in 40 matches though the fortify row builds 100 %: in a match the 250 kg step needs
-`truck_free()` or kg at hand (no squad carries 250) and the S10b budget room (3 % of income); see which fails first
-(`can_supply`) before changing anything. T115 exposure `obstacle.own_tank_drove_pct` is not produced yet (row from C1).
-`AiState::blocked_pairs` is `#[serde(skip)]`: a non-empty list at save time would differ after load (PartialEq) and
-re-count a stuck pair; empty in every run so far. Owner questions open: S10b-ai-C1, B2a, 1..7.
-Failing: none. Last check: `tools/check.sh quick 72b2970` all ok (778 passed); `ai_fort` with `--include-ignored` ok
-(3); save_fuzz ok incl. ignored. Chunks left: D 3.
+**Next: Build D chunk 2 = the stage file's chunk 1 (sweeping R9/R10), not started.** D chunk 1 did the orchestrator
+items only: `58a3886` (bunker reasons + fix), `b179bbc` (T115e exposure), `c3e64bb` (`blocked_pairs` saved). Layout:
+SAVE 25, PROTOCOL 14 (no bump; `AiCounters::bunker_why [u32;16]` and saved `blocked_pairs` join the unreleased 25).
+**Bunker:** `AiCounters::bunker_why` (names `ai::BUNKER_WHY`; JSON `s10b_ai.bunker_why_*`; summary line `s10b-ai bunker
+why:`), counted in `fort.rs` `bunker_why()`/`bunker_block()` (per plan, first failing check) and `bunker_end()`. Bug
+fixed: in Watch a 250 kg step in `Wait` ended the job the plan its pit was dug unless a truck was in `Load` that plan
+(all 4 jobs in 40 matches died so); now `heavy` steps wait while `ai.trucks` is non-empty (L1 bounds it), S10b truck
+runs use `room_for` (S10b budget). Test `ai_bunker_waits_for_a_busy_truck`. Still 0 bunkers in the default 40 set
+(`target/s10b-d1-fix`, Germany 45.0 %): per-plan reasons ger/usa: point_not_ready 9291/8860, no_builder 6936/6615,
+builders_max 2801/1739, no_point 2591/3945, no_squad 1582/2187, s10b_room 1309/1457, other_first 80/66, no_carry 8/9,
+no_budget 0/2; jobs started 3/1; after the fix the trucks stay in Follow/Drop/Serve for tanks for minutes, and a
+job that gets its 250 kg (seed 11) is still in the 540 s Build step when the match ends (mean 21 min). Honest
+scarcity: owner question **S10b-ai-D1**, proceeding on (A) leave as is.
+**T115e:** `s10b_ai.obstacle.own_tank_drove_pct` exists and reads **0** (seeds 1-3): with obstacles on (modes 0, 1)
+the own tank's Move ends `Idle` at base, never moving; with `obstacles` 0 it drives 588 m. Not yet understood (the
+hook drives every tick; maybe its vehicle path is refused); T115e stays unexposed (no hard miss). Look before D ends.
+**blocked_pairs:** saved, `MAX_BLOCKED_PAIRS` 32 (truncated in `count_own_blocked`), validated in `validate_s10b`;
+fuzz stage `staged_s10b_ai + a stuck own pair`. Test `own_blocked_counts_once_across_save_load`.
+**Slow skirmish binary (item 4):** quick's skirmish binary took 332 s. Likely cause: `own_route()` memo lives one
+`Planner` (one plan), so every plan re-runs two vehicle A* searches (`gun_route`) per own point for each hedgehog/
+barrier site check (`own_route_side`, `on_own_route`); not changed here.
+Owner questions open: S10b-ai-D1 (new), C1, B2a, 1..7. Failing: none. Last check: `tools/check.sh quick 72b2970`
+all ok (780 passed); save_fuzz incl. ignored ok (15); all-off 40 `target/s10b-d1-off40` vs `target/s10b-base40`:
+**same 40/40**. Chunks left: D 3 (sweeping, demolition, F8 + docs + stage check).
 
 ## Plan (2026-11-12)
 
@@ -139,4 +138,11 @@ fortify row give a full carry plus three 40 kg crates at the site (carried kg ar
 in the fortify row runs through the Fort hook (`DriveArgs::others`), as the hook has no `order_infantry`; the shelter
 rule still comes before the bunker for a rifle crew; bunker row keys `us_*` for the US set (targets T113g); liveness
 Bunker row refuses by an own tank on the site (flat map); determinism saves moved to the first live S10b job.
+
+## Build D chunk 1 (2026-11-12; orchestrator items only)
+
+Found with a scratch trace of bunker jobs (seeds 2, 3, 11, 14, 17; not committed): every job died one plan after the
+pit (Watch, `Wait`, carried 0, no truck in `Load`). The fix keeps waiting; the rest is scarcity (S10b-ai-D1).
+Controls seen failing: `heavy` false; `#[serde(skip)]` back on `blocked_pairs`. CLI test `s10b_ai_derived_fields` now
+expects 18 + 16 raw keys. Germany 45.0 % on the default 40 set after the fix (47.5 % before).
 
