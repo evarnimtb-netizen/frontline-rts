@@ -102,6 +102,10 @@ pub struct SquadView {
     pub mounted: u8,
     /// S3b: the line a squad-level `SuppressUnits` fires at (sim xy).
     pub suppress_line: Option<[[f32; 2]; 2]>,
+    /// S10b: a `ClearMines` lane `(a, b, along m)` (sim xy) and a
+    /// `Demolish` target piece.
+    pub clear_lane: Option<([f32; 2], [f32; 2], f32)>,
+    pub demolish: Option<u32>,
     /// S5a: the squad's ammunition share (%, `None`: uncounted), its crew
     /// weapon and the rounds held for it, men holding fire, and whether it
     /// stands in its own base below a full load (the refill serves it).
@@ -625,6 +629,15 @@ impl MatchFrame {
                 .filter(|c| c.owner == local || near(c.from, ctx.sight_m))
                 .cloned(),
         );
+        // S10b: mines the local player knows (`known` holds the owner's team
+        // and every finder's team; all once one has gone off, R13).
+        fort.mines.clear();
+        fort.mines.extend(
+            sf.mines
+                .iter()
+                .filter(|m| local < 8 && m.known & (1u8 << local) != 0)
+                .cloned(),
+        );
         self.scene_ready = ctx
             .scene
             .as_deref()
@@ -752,13 +765,12 @@ impl MatchFrame {
                 // S8a: the transport it walks to or rides in.
                 Order::Embark { vehicle } => v.follow = Some(vehicle.0),
                 // S10a: building or cutting (Build C draws sites and wire).
-                // S10b: sweeping and demolishing (Build F draws them).
-                Order::Idle
-                | Order::Retreat
-                | Order::Fortify { .. }
-                | Order::CutWire { .. }
-                | Order::ClearMines { .. }
-                | Order::Demolish { .. } => {}
+                // S10b: the sweep lane and the demolition target.
+                Order::ClearMines { a, b, along, .. } => {
+                    v.clear_lane = Some((a.to_f32(), b.to_f32(), along.to_f32()));
+                }
+                Order::Demolish { piece, .. } => v.demolish = Some(*piece),
+                Order::Idle | Order::Retreat | Order::Fortify { .. } | Order::CutWire { .. } => {}
             }
             self.squads.push(v);
         }

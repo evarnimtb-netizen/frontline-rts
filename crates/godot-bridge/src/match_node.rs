@@ -237,6 +237,9 @@ fn fort_rules(setup: &MatchSetup, hz: f32) -> VarDictionary {
                 "max_length_m" => fx(f.max_length),
                 "wire" => f.wire.is_some(),
                 "pit" => f.pit.is_some(),
+                // S10b: a minefield (mines, no pieces), a vehicle obstacle.
+                "mine" => f.mine_item.is_some(),
+                "blocks_vehicles" => f.blocks_vehicles,
             },
         );
     }
@@ -251,6 +254,13 @@ fn fort_rules(setup: &MatchSetup, hz: f32) -> VarDictionary {
         "cut_s" => t.map_or(0, |t| t.cut_s as i64),
         "cut_reach_m" => t.map_or(0, |t| t.cut_reach_m as i64),
         "wire_speed_pct" => t.map_or(100, |t| t.wire_speed_pct as i64),
+        // S10b (R9, R11, R19, R21).
+        "heavy_by_field_pct" => t.map_or(100, |t| t.heavy_by_field_pct as i64),
+        "lane_max_m" => t.map_or(0, |t| t.lane_max_m as i64),
+        "lift_s" => t.map_or(0, |t| t.lift_s as i64),
+        "demolish_place_s" => t.map_or(0, |t| t.demolish_place_s as i64),
+        "demolish_fuse_s" => t.map_or(0, |t| t.demolish_fuse_s as i64),
+        "demolish_reach_m" => t.map_or(0, |t| t.demolish_reach_m as i64),
     }
 }
 
@@ -2626,6 +2636,31 @@ impl MatchRuntime {
                     "from" => self.godot(c.from),
                     "to" => self.godot(c.to),
                     "fuse_s" => c.fuse_ticks as f32 / self.hz,
+                    // S10b: a demolition satchel's piece (-1: a Bangalore).
+                    "piece" => c.piece.map_or(-1, |q| q as i64),
+                }
+                .to_variant(),
+            );
+        }
+        // S10b: mines the local player knows of (the frame keeps only those
+        // with the local player's `known` bit: own team's and found ones).
+        let mut mines = VarArray::new();
+        for m in &f.mines {
+            let kind = setup
+                .forts
+                .get(m.fort as usize)
+                .and_then(|d| d.mine_item)
+                .and_then(|i| setup.items.get(i as usize))
+                .and_then(|i| i.mine.as_ref())
+                .map_or("ap", |t| if t.trigger == 1 { "at" } else { "ap" });
+            mines.push(
+                &vdict! {
+                    "id" => m.id as i64,
+                    "owner" => m.owner as i64,
+                    "blueprint" => bp(m.fort),
+                    "kind" => kind,
+                    "pos" => self.godot(m.pos),
+                    "known" => self.local < 8 && m.known & (1u8 << self.local) != 0,
                 }
                 .to_variant(),
             );
@@ -2635,6 +2670,7 @@ impl MatchRuntime {
             "wire" => &wire,
             "sites" => &sites,
             "charges" => &charges,
+            "mines" => &mines,
         }
     }
 
@@ -3196,6 +3232,18 @@ impl MatchRuntime {
             let line: PackedVector3Array = l.iter().map(|p| self.ground(*p)).collect();
             d.set("suppress_line", &line);
         }
+        // S10b: an own sweep's lane (`clear_lane` [a, b], `clear_along` m
+        // from a) and a demolition's target piece.
+        if s.owner == self.local {
+            if let Some((a, b, along)) = s.clear_lane {
+                let line: PackedVector3Array = [a, b].iter().map(|p| self.ground(*p)).collect();
+                d.set("clear_lane", &line);
+                d.set("clear_along", along);
+            }
+            if let Some(q) = s.demolish {
+                d.set("demolish_piece", q as i64);
+            }
+        }
         // S3c: a crew squad's abandoned vehicle (the card's "Crew —
         // Panzer IV" and its jump button).
         if let Some(v) = self
@@ -3551,6 +3599,32 @@ impl MatchRuntime {
                     &self.setup,
                     &squads,
                     men_of,
+                    to_sim(t, self.half),
+                ));
+            }
+            // S10b: the first selected `clear_mines` squad sweeps the lane
+            // `polyline[0]`..`polyline[1]` (dragged).
+            "clear_mines" => {
+                let line: Vec<[f32; 2]> = data
+                    .get("polyline")
+                    .and_then(|v| v.try_to::<PackedVector3Array>().ok())
+                    .map(|a| a.as_slice().iter().map(|v| to_sim(*v, self.half)).collect())
+                    .unwrap_or_default();
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                out.extend(crate::intents::clear_mines_command(
+                    &self.setup,
+                    &squads,
+                    &line,
+                ));
+            }
+            // S10b: the first selected `demolish` squad blows the piece
+            // nearest `target` (the sim sends its nearest satchel carrier).
+            "demolish" => {
+                let Some(t) = target else { return };
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                out.extend(crate::intents::demolish_command(
+                    &self.setup,
+                    &squads,
                     to_sim(t, self.half),
                 ));
             }

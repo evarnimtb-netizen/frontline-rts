@@ -277,6 +277,53 @@ pub fn bangalore_command(
     None
 }
 
+/// S10b `clear_mines`: the first of `squads` (`(id, type_idx)`) with
+/// `clear_mines` sweeps the lane from `line[0]` to its last point (a drag).
+/// The sim refuses a lane over `lane_max_m`.
+pub fn clear_mines_command(
+    setup: &MatchSetup,
+    squads: &[(u32, u16)],
+    line: &[[f32; 2]],
+) -> Option<CommandKind> {
+    use frontline_content::setup::Capability;
+    let (&a, &b) = (line.first()?, line.last()?);
+    if line.len() < 2 || (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-3 {
+        return None;
+    }
+    let &(squad, _) = squads.iter().find(|s| {
+        setup
+            .squad_types
+            .get(s.1 as usize)
+            .is_some_and(|ty| ty.has(Capability::ClearMines))
+    })?;
+    Some(CommandKind::ClearMines {
+        squad: SquadId(squad),
+        a: sim_to_fx(a),
+        b: sim_to_fx(b),
+    })
+}
+
+/// S10b `demolish`: the first of `squads` (`(id, type_idx)`) with
+/// `demolish` blows the piece nearest `at` (the sim picks the piece within
+/// `demolish_reach_m` and the nearest man with a satchel).
+pub fn demolish_command(
+    setup: &MatchSetup,
+    squads: &[(u32, u16)],
+    at: [f32; 2],
+) -> Option<CommandKind> {
+    use frontline_content::setup::Capability;
+    let &(squad, _) = squads.iter().find(|s| {
+        setup
+            .squad_types
+            .get(s.1 as usize)
+            .is_some_and(|ty| ty.has(Capability::Demolish))
+    })?;
+    Some(CommandKind::Demolish {
+        squad: SquadId(squad),
+        at: sim_to_fx(at),
+    })
+}
+
 /// S6 `build` names: `"hq"` or `"dump"`.
 pub fn stock_kind(name: &str) -> Option<frontline_content::setup::StockKind> {
     use frontline_content::setup::StockKind;
@@ -958,5 +1005,74 @@ mod tests {
         assert_eq!(supply_kind("shells"), Some(SupplyKind::Shells));
         assert_eq!(crate_kind_name(3), "construction");
         assert_eq!(crate_kind_name(1), "explosives");
+    }
+
+    #[test]
+    fn s10b_intents_make_commands() {
+        // Control: map `demolish` to `CutWire` in `demolish_command` -> the
+        // Demolish assertion fails.
+        use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve};
+        let mods = find_mods_dir(&mods_candidates(None, None)).unwrap();
+        let setup = resolve(&mods, &MenuChoice::default()).unwrap();
+        let ty = |id: &str| setup.squad_types.iter().position(|t| t.id == id).unwrap() as u16;
+        let rifles = ty("ww2:ger_grenadiergruppe");
+        let eng = ty("ww2:ger_engineer_squad");
+        let sturm = ty("ww2:ger_sturmpioniergruppe");
+        let bau = ty("ww2:ger_baupioniergruppe");
+        // Mines and obstacles go through `fortify`: lines for the fields and
+        // the log barrier, points for the hedgehog and the bunker.
+        let line = [[10.0, 20.0], [30.0, 20.0]];
+        for (what, squads, want) in [
+            ("ap_minefield", vec![(1, rifles), (4, sturm), (3, bau)], 3),
+            ("at_minefield", vec![(2, eng), (3, bau)], 2),
+            ("log_barrier", vec![(1, rifles), (2, eng)], 2),
+        ] {
+            let f = fort_index(&setup, what).expect(what);
+            assert_eq!(
+                fortify_command(&setup, &squads, what, &line, None, None),
+                Some(CommandKind::Fortify {
+                    squad: SquadId(want),
+                    fort: f,
+                    line: line.iter().copied().map(sim_to_fx).collect(),
+                }),
+                "{what}"
+            );
+            assert!(fortify_command(&setup, &[(1, rifles)], what, &line, None, None).is_none());
+        }
+        for what in ["hedgehog", "bunker"] {
+            let f = fort_index(&setup, what).expect(what);
+            let pt = Some([50.0, 60.0]);
+            match fortify_command(&setup, &[(1, rifles), (3, bau)], what, &[], pt, None) {
+                Some(CommandKind::Fortify { squad, fort, line }) => {
+                    assert_eq!((squad, fort, line.len()), (SquadId(3), f, 2), "{what}");
+                    assert_eq!(line[0], sim_to_fx([50.0, 60.0]));
+                }
+                other => panic!("{what}: {other:?}"),
+            }
+        }
+        // Sweeping: the first clear_mines squad (assault engineers can).
+        let lane = [[5.0, 6.0], [5.0, 26.0]];
+        assert_eq!(
+            clear_mines_command(&setup, &[(1, rifles), (4, sturm), (2, eng)], &lane),
+            Some(CommandKind::ClearMines {
+                squad: SquadId(4),
+                a: sim_to_fx(lane[0]),
+                b: sim_to_fx(lane[1]),
+            })
+        );
+        assert!(clear_mines_command(&setup, &[(1, rifles)], &lane).is_none());
+        assert!(
+            clear_mines_command(&setup, &[(4, sturm)], &lane[..1]).is_none(),
+            "no drag"
+        );
+        // Demolition: the first demolish squad (construction engineers cannot).
+        assert_eq!(
+            demolish_command(&setup, &[(1, rifles), (3, bau), (2, eng)], [7.0, 8.0]),
+            Some(CommandKind::Demolish {
+                squad: SquadId(2),
+                at: sim_to_fx([7.0, 8.0]),
+            })
+        );
+        assert!(demolish_command(&setup, &[(1, rifles), (3, bau)], [7.0, 8.0]).is_none());
     }
 }
