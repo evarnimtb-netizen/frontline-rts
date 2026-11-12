@@ -114,15 +114,20 @@ pub fn fort_index(setup: &MatchSetup, what: &str) -> Option<u16> {
         .map(|i| i as u16)
 }
 
-/// S10a: whether squad type `t` may build blueprint `fort` (its capability).
+/// S10a: whether squad type `t` may build blueprint `fort` (its capability;
+/// S10b R21: a `build_structure` squad builds `build_heavy` ones too, at
+/// half rate).
 pub fn can_fortify(setup: &MatchSetup, t: u16, fort: u16) -> bool {
+    use frontline_content::setup::Capability;
     let (Some(ty), Some(f)) = (
         setup.squad_types.get(t as usize),
         setup.forts.get(fort as usize),
     ) else {
         return false;
     };
-    ty.caps & (1u32 << f.capability) != 0
+    let bit = 1u32.checked_shl(f.capability as u32).unwrap_or(0);
+    ty.caps & bit != 0
+        || (bit == Capability::BuildHeavy.bit() && ty.has(Capability::BuildStructure))
 }
 
 /// S10a `fortify`: the first of `squads` (`(id, type_idx)`, selection
@@ -1039,12 +1044,16 @@ mod tests {
             );
             assert!(fortify_command(&setup, &[(1, rifles)], what, &line, None, None).is_none());
         }
-        for what in ["hedgehog", "bunker"] {
+        // Hedgehog: field engineers too (R21, half rate); bunker: heavy.
+        for (what, squads, want) in [
+            ("hedgehog", vec![(1, rifles), (2, eng), (3, bau)], 2),
+            ("bunker", vec![(1, rifles), (3, bau)], 3),
+        ] {
             let f = fort_index(&setup, what).expect(what);
             let pt = Some([50.0, 60.0]);
-            match fortify_command(&setup, &[(1, rifles), (3, bau)], what, &[], pt, None) {
+            match fortify_command(&setup, &squads, what, &[], pt, None) {
                 Some(CommandKind::Fortify { squad, fort, line }) => {
-                    assert_eq!((squad, fort, line.len()), (SquadId(3), f, 2), "{what}");
+                    assert_eq!((squad, fort, line.len()), (SquadId(want), f, 2), "{what}");
                     assert_eq!(line[0], sim_to_fx([50.0, 60.0]));
                 }
                 other => panic!("{what}: {other:?}"),

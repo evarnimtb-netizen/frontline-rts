@@ -39,8 +39,12 @@ extends Control
 ##   row 2: Materials (load construction kg in the base, paid there),
 ##          Crate (a construction crate), Cut wire (click the wire),
 ##          Bangalore (click the wire: the nearest carrier lays it), Back.
-## Row 3 stays the stance strip. Tooltips give kg, time and the capability
-## from the rules (`rules.fortify`); buttons a squad cannot use are grey.
+## Row 3 stays the stance strip, unless the selection can use an S10b entry:
+##   row 3 (S10b): AP mines, AT mines, Hedgehog, Log barrier, Bunker, Clear
+##          mines (drag a lane: click points, right-click sweeps first to
+##          last), Demolish (click a piece); only the ones it can use.
+## Tooltips give kg, time and the capability from the rules
+## (`rules.fortify`); buttons a squad cannot use are grey.
 const BUILD := [&"build_menu", "Build", &"order_build_menu", "Fortifications: sandbags, wire, MG nest, dugout, HQ roof; materials, wire cutting, Bangalore. Engineer, assault and construction squads."]
 const ROW_FORT := [&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq"]
 const ROW_FORT_ORDERS := [
@@ -50,8 +54,10 @@ const ROW_FORT_ORDERS := [
 	[&"bangalore", "Bangalore", &"", "Click wire: the nearest man carrying a Bangalore torpedo walks up, lays it (5 s) and it bursts 8 s later, blowing a gap. Assault engineers only."],
 	[&"build_menu", "Back", &"order_build_menu", "Back to the orders."],
 ]
+## S10b: the third build-menu row (shown entry by entry to able squads).
+const ROW_FORT_S10B := [&"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
 ## S10a: the build-menu buttons' labels.
-const FORT_LABELS := {&"build_sandbags": "Sandbags", &"build_wire": "Wire", &"build_mg_nest": "MG nest", &"build_dugout": "Dugout", &"roof_hq": "Roof HQ"}
+const FORT_LABELS := {&"build_sandbags": "Sandbags", &"build_wire": "Wire", &"build_mg_nest": "MG nest", &"build_dugout": "Dugout", &"roof_hq": "Roof HQ", &"lay_ap_mines": "AP mines", &"lay_at_mines": "AT mines", &"build_hedgehog": "Hedgehog", &"build_log_barrier": "Logs", &"build_bunker": "Bunker", &"clear_mines": "Clear mines", &"demolish": "Demolish"}
 
 ## S3b: area fire without a spotted target (both grids).
 const SUPPRESS := [&"suppress", "Suppress", &"order_suppress", "Fire at an area without a spotted target to keep the enemy's heads down: click a point or drag a line (up to 40 m). Rifles and MGs hold and fire; vehicles fire their MGs and now and then HE. Mortars keep Fire mission. Lasts until another order."]
@@ -139,7 +145,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore"]
+const TOOLS := [&"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -251,6 +257,18 @@ func _layout() -> void:
 			_add(_fort_def(ROW_FORT[i]), Rect2(i * (abw + g), 0, abw, bh), "ability")
 		for i in ROW_FORT_ORDERS.size():
 			_add(_fort_order_def(ROW_FORT_ORDERS[i]), Rect2(i * (bw + g), bh + g, bw, bh), "order")
+		# S10b: the able entries take the stance strip's row.
+		var able: Array = ROW_FORT_S10B.filter(func(id: StringName) -> bool: return view.selection.can(id))
+		if not able.is_empty():
+			var rw := 5.0 * bw + 4.0 * g
+			var n := maxi(able.size(), 5)
+			var ew := (rw - (n - 1) * g) / n
+			for i in able.size():
+				_add(_fort_def(able[i]), Rect2(i * (ew + g), 2.0 * (bh + g), ew, bh), "ability")
+			var fseg0 := (3.0 * bw + 2.0 * g) / 3.0
+			for i in ROW_FIRE.size():
+				_add(ROW_FIRE[i], Rect2(i * fseg0, 3.0 * (bh + g), fseg0, fh), "fire")
+			return
 	else:
 		var top: Array = ROW_SUPPLY if grid_mode == "supply" else ROW_ABILITY
 		for i in top.size():
@@ -286,8 +304,16 @@ func _layout() -> void:
 ## S10a: a blueprint button with its kg, time, men and capability from
 ## `rules.fortify.blueprints`.
 func _fort_def(id: StringName) -> Array:
+	if id == &"clear_mines" or id == &"demolish":
+		return [id, FORT_LABELS.get(id, String(id)), &"", _s10b_order_tip(id)]
 	var bp: Dictionary = view.selection.fort_blueprint(id)
 	var tip := "Not in this mod."
+	if not bp.is_empty() and bp.get("mine", false):
+		# S10b: a minefield: one mine at each segment end.
+		tip = "%s: one mine every %s m along a line up to %d m (click points, right-click lays). %s kg and %d s with %d men a mine (%s). Hidden from the enemy until found or set off. Limit %d mines." % [
+			bp.get("name", ""), _num(bp.get("segment_m", 0.0)), int(bp.get("max_length_m", 0.0)), _num(bp.get("kg", 0.0)),
+			int(round(float(bp.get("work_s", 0.0)))), int(bp.get("work_men", 0)), String(bp.get("capability", "")).replace("_", " "), int(bp.get("limit", 0))]
+		return [id, FORT_LABELS.get(id, String(id)), &"", tip]
 	if not bp.is_empty():
 		var per := " a 2 m segment" if bp.get("shape", "") == "line" else ""
 		var how := "Click points along the ground (up to %d m), right-click to build." % int(bp.get("max_length_m", 0.0)) if bp.get("shape", "") == "line" else "Click the spot; it faces the way the camera looks."
@@ -297,7 +323,20 @@ func _fort_def(id: StringName) -> Array:
 			bp.get("name", ""), _num(bp.get("kg", 0.0)), int(round(float(bp.get("work_s", 0.0)))),
 			int(bp.get("work_men", 0)), per, String(bp.get("capability", "")).replace("_", " "), how,
 			" Dug first: its pit." if bp.get("pit", false) else "", int(bp.get("limit", 0))]
+		if bp.get("blocks_vehicles", false):
+			tip += " Stops vehicles; infantry walks through."
+		# S10b R21: field engineers build heavy blueprints at half rate.
+		if view.selection.fort_half_rate(bp):
+			tip += " Field engineers build it at %d %% of their rate." % int(view.rules().get("fortify", {}).get("heavy_by_field_pct", 50))
 	return [id, FORT_LABELS.get(id, String(id)), &"", tip]
+
+
+## S10b: Clear mines and Demolish tooltips from `rules.fortify`.
+func _s10b_order_tip(id: StringName) -> String:
+	var f: Dictionary = view.rules().get("fortify", {})
+	if id == &"clear_mines":
+		return "Drag a lane (click points, right-click; first to last, up to %d m): two men sweep it slowly, find mines nearby and lift each found one (%d s at field-engineer pace). Assault and engineer squads." % [int(f.get("lane_max_m", 50)), int(f.get("lift_s", 20))]
+	return "Click an obstacle or bunker (within %d m of the click): the nearest man with a satchel walks up, places it (%d s) and it bursts %d s later, wrecking the piece. Squads with satchels." % [int(f.get("demolish_reach_m", 25)), int(f.get("demolish_place_s", 10)), int(f.get("demolish_fuse_s", 10))]
 
 
 ## S10a: Materials names the carried kg per man and the price.

@@ -61,8 +61,15 @@ const RULES := {
 			"mg_nest": {"id": "ww2:mg_nest", "name": "MG nest", "shape": "point", "capability": "build_structure", "kg": 60.0, "work_s": 90.0, "work_men": 4, "limit": 4, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": true},
 			"dugout": {"id": "ww2:dugout", "name": "Dugout", "shape": "point", "capability": "build_structure", "kg": 120.0, "work_s": 360.0, "work_men": 6, "limit": 3, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": true},
 			"hq_dugout": {"id": "ww2:hq_dugout", "name": "HQ dugout", "shape": "over_hq", "capability": "build_structure", "kg": 120.0, "work_s": 120.0, "work_men": 5, "limit": 1, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": false},
+			# S10b (rules table R1, R2, R14, R15, R22).
+			"ap_minefield": {"id": "ww2:ap_minefield", "name": "AP minefield", "shape": "line", "capability": "place_mines", "kg": 4.0, "work_s": 20.0, "work_men": 2, "limit": 60, "segment_m": 2.0, "max_length_m": 30.0, "wire": false, "pit": false, "mine": true, "blocks_vehicles": false},
+			"at_minefield": {"id": "ww2:at_minefield", "name": "AT minefield", "shape": "line", "capability": "place_mines", "kg": 9.0, "work_s": 30.0, "work_men": 2, "limit": 30, "segment_m": 4.0, "max_length_m": 40.0, "wire": false, "pit": false, "mine": true, "blocks_vehicles": false},
+			"hedgehog": {"id": "ww2:hedgehog", "name": "Czech hedgehog", "shape": "point", "capability": "build_heavy", "kg": 60.0, "work_s": 60.0, "work_men": 4, "limit": 20, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": false, "mine": false, "blocks_vehicles": true},
+			"log_barrier": {"id": "ww2:log_barrier", "name": "Log barrier", "shape": "line", "capability": "build_structure", "kg": 100.0, "work_s": 120.0, "work_men": 4, "limit": 10, "segment_m": 4.0, "max_length_m": 20.0, "wire": false, "pit": false, "mine": false, "blocks_vehicles": true},
+			"bunker": {"id": "ww2:bunker", "name": "Bunker", "shape": "point", "capability": "build_heavy", "kg": 250.0, "work_s": 540.0, "work_men": 5, "limit": 2, "segment_m": 0.0, "max_length_m": 0.0, "wire": false, "pit": true, "mine": false, "blocks_vehicles": false},
 		},
 		"carry_kg_per_man": 20, "mp_per_t": 100, "cut_s": 10, "cut_reach_m": 25, "wire_speed_pct": 20,
+		"heavy_by_field_pct": 50, "lane_max_m": 50, "lift_s": 20, "demolish_place_s": 10, "demolish_fuse_s": 10, "demolish_reach_m": 25,
 	},
 }
 const SPEED := {"rifle": 3.4, "mg": 2.8, "engineer": 3.4, "mortar": 2.6, "at": 3.2, "crew": 3.4}

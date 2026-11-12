@@ -87,12 +87,15 @@ const BAIL_CONFIRM_MS := 2000
 ## S10a: the build menu (orders grid "fort" mode). Line tools take points
 ## like the dig tool (right-click builds); point tools take one click (the
 ## camera's forward is the facing); Cut wire and Bangalore click a point.
-const FORT_LINE_TOOLS := [&"build_sandbags", &"build_wire"]
-const FORT_POINT_TOOLS := [&"build_mg_nest", &"build_dugout", &"roof_hq"]
+## S10b: minefields and the log barrier are line tools, the hedgehog and the
+## bunker point tools; Clear mines takes a lane as a line (its first and last
+## points, up to `lane_max_m`), Demolish clicks the piece.
+const FORT_LINE_TOOLS := [&"build_sandbags", &"build_wire", &"lay_ap_mines", &"lay_at_mines", &"build_log_barrier"]
+const FORT_POINT_TOOLS := [&"build_mg_nest", &"build_dugout", &"roof_hq", &"build_hedgehog", &"build_bunker"]
 ## Build-menu ids -> blueprint short ids (`rules.fortify.blueprints`).
-const FORT_WHAT := {&"build_sandbags": "sandbag_wall", &"build_wire": "barbed_wire", &"build_mg_nest": "mg_nest", &"build_dugout": "dugout", &"roof_hq": "hq_dugout"}
+const FORT_WHAT := {&"build_sandbags": "sandbag_wall", &"build_wire": "barbed_wire", &"build_mg_nest": "mg_nest", &"build_dugout": "dugout", &"roof_hq": "hq_dugout", &"lay_ap_mines": "ap_minefield", &"lay_at_mines": "at_minefield", &"build_hedgehog": "hedgehog", &"build_log_barrier": "log_barrier", &"build_bunker": "bunker"}
 ## Capabilities that open the build menu.
-const FORT_CAPS := ["build_structure", "place_wire", "clear_wire", "breach"]
+const FORT_CAPS := ["build_structure", "build_heavy", "place_wire", "clear_wire", "breach", "place_mines", "clear_mines", "demolish"]
 ## S8b: Drop Crates.
 const DROP_KINDS := ["shells", "small_arms", "explosives"]
 const DROP_COUNT := 4
@@ -176,7 +179,7 @@ func prune() -> void:
 		cancel_tool()
 	elif tool == &"dig" and not can(&"dig"):
 		cancel_tool()
-	elif (tool in FORT_LINE_TOOLS or tool in FORT_POINT_TOOLS or tool in [&"cut_wire", &"bangalore"]) and not can(tool):
+	elif (tool in FORT_LINE_TOOLS or tool in FORT_POINT_TOOLS or tool in [&"cut_wire", &"bangalore", &"clear_mines", &"demolish"]) and not can(tool):
 		cancel_tool()
 	elif tool == &"barrage" and not can(&"barrage"):
 		cancel_tool()
@@ -645,9 +648,17 @@ func fort_blueprint(id: StringName) -> Dictionary:
 	return bps.get(FORT_WHAT.get(id, ""), {})
 
 
-## S10a: whether the dig-style line tool is armed (dig or a line blueprint).
+## S10a: whether the dig-style line tool is armed (dig or a line blueprint;
+## S10b: a Clear mines lane).
 func line_tool() -> bool:
-	return tool == &"dig" or tool in FORT_LINE_TOOLS
+	return tool == &"dig" or tool in FORT_LINE_TOOLS or tool == &"clear_mines"
+
+
+## S10b R21: whether the selection builds blueprint `bp` only at the
+## field engineers' share of their rate (`build_heavy` without the
+## capability, by a `build_structure` squad).
+func fort_half_rate(bp: Dictionary) -> bool:
+	return String(bp.get("capability", "")) == "build_heavy" and not _has_cap(["build_heavy"], []) and _has_cap(["build_structure"], [])
 
 
 ## Whether an order is available for the current selection (orders grid).
@@ -658,9 +669,18 @@ func can(order: StringName) -> bool:
 		# S10a: the build menu, by capability.
 		&"build_menu":
 			return _has_cap(FORT_CAPS, [])
-		&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq":
+		&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker":
 			var bp := fort_blueprint(order)
-			return not bp.is_empty() and _has_cap([String(bp.get("capability", ""))], [])
+			if bp.is_empty():
+				return false
+			var cap := String(bp.get("capability", ""))
+			# S10b R21: field engineers build heavy blueprints at half rate.
+			return _has_cap([cap], []) or (cap == "build_heavy" and _has_cap(["build_structure"], []))
+		# S10b.
+		&"clear_mines":
+			return fort_enabled() and _has_cap(["clear_mines"], [])
+		&"demolish":
+			return fort_enabled() and _has_cap(["demolish"], []) and item_count("satchel") > 0
 		&"load_materials":
 			# S10a: building squads carry it; selected trucks fill their room.
 			return fort_enabled() and (_has_cap(["build_structure", "place_wire"], []) or not truck_vehicles().is_empty())
@@ -845,7 +865,7 @@ func activate(order: StringName) -> void:
 		&"load_materials":
 			view.emit_intent(&"load_materials", {"squads": materials_squads()})
 			cancel_tool()
-		&"build_sandbags", &"build_wire":
+		&"build_sandbags", &"build_wire", &"lay_ap_mines", &"lay_at_mines", &"build_log_barrier", &"clear_mines":
 			dig_points.clear()
 			tool = &""  # re-arm when the other line tool was armed
 			_set_tool(order)
@@ -1019,6 +1039,8 @@ func dig_length() -> float:
 func dig_max() -> float:
 	if tool in FORT_LINE_TOOLS:
 		return float(fort_blueprint(tool).get("max_length_m", 20.0))
+	if tool == &"clear_mines":
+		return float(view.rules().get("fortify", {}).get("lane_max_m", 50))
 	return float(view.rules().get("dig_max_m", 60.0))
 
 
@@ -1044,6 +1066,12 @@ func _confirm_dig() -> void:
 	if tool in FORT_LINE_TOOLS:
 		# S10a: the first able selected squad builds the line.
 		view.emit_intent(&"fortify", {"squads": selected_squads(), "what": FORT_WHAT[tool], "polyline": dig_points.duplicate()})
+		AudioManager.play_ui(&"confirm")
+		cancel_tool()
+		return
+	if tool == &"clear_mines":
+		# S10b: the lane from the first point to the last.
+		view.emit_intent(&"clear_mines", {"squads": selected_squads(), "polyline": PackedVector3Array([dig_points[0], dig_points[dig_points.size() - 1]])})
 		AudioManager.play_ui(&"confirm")
 		cancel_tool()
 		return
@@ -1382,13 +1410,16 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			view.emit_intent(&"place_crate", {"squads": selected_squads(), "target": g})
 		# S10a: a point blueprint facing the camera's forward, a wire cut,
 		# a Bangalore.
-		&"build_mg_nest", &"build_dugout", &"roof_hq":
+		&"build_mg_nest", &"build_dugout", &"roof_hq", &"build_hedgehog", &"build_bunker":
 			var f3: Vector3 = -view.camera.global_transform.basis.z if view.camera != null else Vector3(0, 0, -1)
 			view.emit_intent(&"fortify", {"squads": selected_squads(), "what": FORT_WHAT[tool], "target": g, "facing": Vector3(f3.x, 0, f3.z)})
 		&"cut_wire":
 			view.emit_intent(&"cut_wire", {"squads": selected_squads(), "target": g})
 		&"bangalore":
 			view.emit_intent(&"bangalore", {"squads": selected_squads(), "target": g})
+		# S10b: the piece nearest the click (the sim's nearest satchel man).
+		&"demolish":
+			view.emit_intent(&"demolish", {"squads": selected_squads(), "target": g})
 		&"pick_up":
 			var c := crate_near(g)
 			if c == -1:

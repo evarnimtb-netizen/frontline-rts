@@ -99,6 +99,7 @@ func _run() -> void:
 	_test_s8b()
 	_test_s9()
 	await _test_s10a()
+	await _test_s10b()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1646,6 +1647,92 @@ func _test_s10a() -> void:
 	_view.update_state(_source.get_state())
 	await _frames(1)
 	_check(_match.fort_view.drawn == 0, "S10a: nothing drawn without fortifications")
+
+
+
+## S10b: the build menu's third row, the mine, sweep and obstacle tools and
+## their intents, the blockouts and the mine visibility rule.
+func _test_s10b() -> void:
+	var manned := -1
+	for t in ["engineer", "rifle", "mg", "at"]:
+		for sid in _source.squad_ids(0, t):
+			if manned == -1 and not _source.unit_ids(sid).is_empty():
+				manned = sid
+	_check(manned != -1, "S10b: a manned squad to stage with")
+	if manned == -1:
+		return
+	var grid: Control = _view.orders
+	_source.set_caps(manned, ["build_structure", "place_mines", "clear_mines"])
+	_sel.select_squads(PackedInt32Array([manned]))
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	if not _sel.fort_menu:
+		grid.press(&"build_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "fort" and grid.label_of(&"lay_ap_mines") == "AP mines" and grid.label_of(&"clear_mines") == "Clear mines", "S10b: the third build row")
+	_check(grid.label_of(&"build_hedgehog") == "Hedgehog" and grid.label_of(&"build_bunker") == "Bunker", "S10b: heavy blueprints for a field squad (R21)")
+	_check(grid.label_of(&"demolish") == "", "S10b: no Demolish without the capability")
+	var tip: String = grid._get_tooltip(grid.button_rect(&"build_hedgehog").get_center())
+	_check(tip.contains("60 kg") and tip.contains("50 %") and tip.contains("Stops vehicles"), "S10b: the hedgehog tooltip: kg, half rate, obstacle (%s)" % tip)
+	tip = grid._get_tooltip(grid.button_rect(&"lay_at_mines").get_center())
+	_check(tip.contains("every 4 m") and tip.contains("9 kg") and tip.contains("place mines"), "S10b: the AT mines tooltip (%s)" % tip)
+	var at: Vector3 = _source.squad_pos(manned) + Vector3(12, 0, 0)
+	_intents.clear()
+	grid.press(&"lay_at_mines")
+	_check(_sel.line_tool() and is_equal_approx(_sel.dig_max(), 40.0), "S10b: AT mines arm a 40 m line tool")
+	_click(_ground_screen(at))
+	_click(_ground_screen(at + Vector3(0, 0, 12)))
+	_rclick(_ground_screen(at + Vector3(0, 0, 12)))
+	var fi: Variant = _last(&"fortify")
+	_check(fi != null and String(fi.what) == "at_minefield" and (fi.polyline as PackedVector3Array).size() == 2, "S10b: right-click sends fortify at_minefield")
+	grid.press(&"build_hedgehog")
+	_click(_ground_screen(at + Vector3(-6, 0, 0)))
+	var fp: Variant = _last(&"fortify")
+	_check(fp != null and String(fp.what) == "hedgehog" and fp.has("target"), "S10b: a click sends fortify hedgehog")
+	grid.press(&"clear_mines")
+	_check(_sel.line_tool() and is_equal_approx(_sel.dig_max(), 50.0), "S10b: Clear mines arms a 50 m lane")
+	_click(_ground_screen(at))
+	_click(_ground_screen(at + Vector3(0, 0, 6)))
+	_click(_ground_screen(at + Vector3(4, 0, 10)))
+	_rclick(_ground_screen(at + Vector3(4, 0, 10)))
+	var cm: Variant = _last(&"clear_mines")
+	_check(cm != null and (cm.polyline as PackedVector3Array).size() == 2, "S10b: right-click sends clear_mines with the lane's ends")
+	_source.set_caps(manned, ["build_structure", "demolish"])
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	if _sel.item_count("satchel") > 0:
+		_check(grid.label_of(&"demolish") == "Demolish", "S10b: Demolish for a satchel squad")
+		grid.press(&"demolish")
+		_click(_ground_screen(at))
+		_check(_last(&"demolish") != null, "S10b: a click sends demolish")
+	else:
+		_check(grid.label_of(&"demolish") == "", "S10b: no Demolish without a satchel")
+	# The blockouts: two known mines drawn, an unknown enemy one not; a
+	# hedgehog's three bars; a bunker roof and its slit; a satchel box.
+	_source.s10_fort = {
+		"pieces": [
+			{"id": 1, "owner": 1, "blueprint": "hedgehog", "part": "steel", "center": at + Vector3(0, 0.65, 30), "yaw": 0.0, "size": Vector3(1.8, 1.3, 1.8), "hp": 1.0},
+			{"id": 2, "owner": 0, "blueprint": "bunker", "part": "roof", "center": at + Vector3(-10, 0.8, 0), "yaw": 0.0, "size": Vector3(4.2, 0.8, 3.7), "hp": 1.0},
+		],
+		"charges": [{"id": 3, "owner": 0, "from": at + Vector3(0, 0, 29), "to": at + Vector3(0, 0, 29), "fuse_s": 6.0, "piece": 1}],
+		"mines": [
+			{"id": 0, "owner": 0, "blueprint": "ap_minefield", "kind": "ap", "pos": at + Vector3(2, 0, 2), "known": true},
+			{"id": 1, "owner": 1, "blueprint": "at_minefield", "kind": "at", "pos": at + Vector3(2, 0, 20), "known": false},
+			{"id": 2, "owner": 1, "blueprint": "at_minefield", "kind": "at", "pos": at + Vector3(6, 0, 20), "known": true},
+		],
+	}
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	var fv: Node3D = _match.fort_view
+	_check(fv.drawn_discs == 2, "S10b: known mines drawn, the unknown enemy one hidden (%d)" % fv.drawn_discs)
+	_check(fv.drawn == 3 + 2 + 1 and fv.drawn_pipes == 0, "S10b: hedgehog bars, bunker roof and slit, satchel box (%d, %d)" % [fv.drawn, fv.drawn_pipes])
+	grid.press(&"build_menu")
+	_source.s10_fort = {}
+	_source.set_caps(manned, [])
+	_sel.select_only(PackedInt32Array())
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	_check(fv.drawn == 0 and fv.drawn_discs == 0, "S10b: nothing drawn without fortifications")
 
 
 func _check(ok: bool, what: String) -> void:
