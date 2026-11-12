@@ -5,25 +5,27 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build F** (`S10b-build-F.md`). Builds A-E are done.
-* Build E commits: `8c8c6f1` (bunker geometry, `bunkers_built`, pit parapet 0, eight tests), `416db5f` (bunker row
-  in `sdk/crates/cli/src/fortify/bunker.rs`, base pieces on the site's surface, slope test), log commit.
-* Bunker as built (draw this): pieces in part order 0 roof 420x370x80 cm at z 40; 1 rear wall 40x370x40 at x -190;
-  2/3 side walls 420x40x40 at y -165/+165; 4/5 front walls 40x145x40 at x +190, y -112/+112 (the 79 cm slit at y 0
-  between z 0 and 40). +x = facing; every z from the undug surface at the site (all six on one plane now: `fort.rs`
-  `stand_segment` uses `base_height_at(site)` for `z_from = "base"`; the S10a roofs have offset 0, unchanged).
-  The pit (`bunker_pit`) has no spoil bank (parapet 0): a 40 cm bank filled the 40 cm slit.
-* `bunkers_built` +1 when a `bunker_pit` blueprint's build step completes (`stand_segment`).
-* T107 on the fortify map: the row's bunker faces west, down the site's ~8 % slope (facing up it, the lip in the slit
-  is 14 cm above the slit's bottom and the satchel's blast origin, lifted 30 cm, is inside the roof: 0 %).
-* MG and rifle fire do not reach men crouched in the 1.5 m pit, with or without the bunker (T107g/h 0/0, report).
-* Numbers (`target/s10b-E/fortify10.json`): T107a 0, b 100, c 0, d 100, e 0, f 7, g 0, h 0. `targets --from-json
-  target/s10b-E --runs fortify10`: 39 pass, 6 miss (hard 1: T106b gap 0, owner question from D; the others are the
-  T93 reports). T91-T93 rows same as `target/s10a-ai-verify` (`neutral.py`: fortify10 same every BASE row).
-* T102-T107: T102a-d pass (100, 75, 0, 0), T103a-d pass (0, 100, 0, 53.6), T104a-e pass (3.8, 95.1, 82, 76, 100),
-  T105a-d pass (0, 0, 103.5, 0), T106a pass 100, **T106b miss 0 (hard)**, T106c 15.6, T107a-h pass.
-* 40-set: `target/s10b-E/skirmish40.json` vs `target/s10b-base40`: same 40/40.
-* Checks: `tools/check.sh quick 8acc534` green after the last code commit (835 tests).
+**Builds A-F are done. Next: the orchestrator** (stage file F, 6): `tools/measure.sh target/s10b-measure
+docs/slices/targets/S10b.toml` (480), `python3 -I tools/neutral.py target/s10a-ai-verify target/s10b-measure` (expect
+`same` on all four sets and every old fortify and armour row), `python3 -I tools/pool.py target/s10b-measure` (Germany
+41.67 %), the targets (hard misses exactly T8b, T40c, T54e, T88b, T88d plus T106b from D), `tools/verify.sh`; then the
+Review gate (sim, save, protocol), Fix, and the Docs stage (STATE S10b row, SAVE 24 / PROTOCOL 14, measures; TODO
+owner questions S10b-1..4 with the slice's (A) answers). Build F did **not** edit STATE or TODO (harness rule).
+* Build F commits: `ed63350` snapshot, `dcd5ce9` bridge, `1534682` HUD + Godot checks, `d6cf464` net + relay doc,
+  `58d04e8` modding + match_state docs, then this log commit. No layout change (snapshot is not saved).
+* Snapshot: `FortSnapshot::mines` (every mine, `known` bits), `ChargeSnapshot::piece`, `SquadSnapshot::clear_lane`
+  / `demolish`. The bridge frame keeps only mines with the local player's `known` bit (owner's team, finders, all
+  once set off); `fort_view.gd` checks own-or-known again.
+* Bridge `can_fortify` now follows R21 (a `build_structure` squad may take a `build_heavy` blueprint, as the sim
+  does); this also lets field engineers take the S10a `build_heavy` blueprints from the HUD.
+* HUD: the fort menu's third row shows the able S10b entries in place of the stance strip (only when one is able).
+  Clear mines is a line tool sending the first and last point. Demolish shows only with a satchel in the selection.
+* Checks: `tools/check.sh full` all ok (863 tests incl. ignored; check_project, test_match_view 375/375, test_net_ui,
+  test_data_reload). 40-set `target/s10b-F/skirmish40.json` vs `target/s10b-base40`: same 40/40. fortify10
+  `target/s10b-F`: `targets` output identical to E (39 pass, 6 miss, hard 1 T106b); `neutral.py` vs E: same.
+* Left for S10b-ai: AI use of mines, obstacles, sweeping, demolition; path avoidance of known mines; T106b decision.
+* Not covered by a test: the bridge frame's mine filter (Rust) and the sweep-lane drawing (the mock has no
+  `clear_lane` squad); the Demolish button path runs only when the mock squad has a satchel (it had none).
 
 ## Plan (2026-11-11)
 
@@ -122,3 +124,10 @@ pieces moved to the stage file's sizes (A had 30 cm walls); tests give `carry_kg
 pieces on the site's surface; the row's bunker faces down the slope; the row is its own module. No save change.
 Existing tests changed: canonical snapshot blessed (parapet).
 
+## Build F (2026-11-12)
+
+Read: log top block, stage file F, spec 1, 3, 4, 7. Snapshot test `fort_snapshot_lists_mines_with_known_bits`
+(control `known: 0xff` in `fill_fort`: fails, seen); bridge `s10b_intents_make_commands` (control demolish -> `CutWire`:
+fails, seen); net `net_s10b_commands_in_limits` (control limit + 1 m: fails, seen), fuzz roundtrip extended; Godot
+`_test_s10b` 15 checks (control: drop the known filter in `fort_view.gd` -> "unknown enemy one hidden" fails, seen).
+Docs: `fortifications.md` S10b, `match_state.md` S10b, `relay-protocol.md` v14. Numbers above in the top block.
