@@ -5,28 +5,32 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D** (`S10b-build-D.md`). Builds A, B and C are done.
-* Build C commits: `acd86f2` (sweep, HE hook, cards, tests), `21c19da` (fortify `sweep` row), plus the log commit.
-* Sweeping lives in `crates/sim/src/sweep.rs`: `order_clear_mines`, `sweep_tick` (called from `fort_tick` before its
-  `is_empty` return, gated by any `FortAccount::sweeps > 0`, so an empty lane still ends), `blast_mines`.
-* Detection as built: roll = top 32 bits of `mix64(rng(seed, tick, sweeper, MINE_DETECT) ^ mine id)`; found when
-  `roll * 100 * hz < detect_pct_per_s << 32` (`sweep::detects`). Sweepers: the two able members nearest the sweep
-  point `a + dir * along` (no saved field holds them); the rest hold 5 m behind `a`. Lifter's spot 1 m short of the
-  mine along the lane, every sweeper spot clamped back until clear of known mines by `trigger_cm + 50 cm`.
-* HE hook tick-order point: `combat::burst` right after the S10a `blast_wire`, before fragments (any owner's HE,
-  mines in `blast_radius` 2D with a line from the lift point to 10 cm above the mine): `boom_tick = tick + 1`,
-  `mines_blasted` on the owner, `known` = all players. `take_mines` (after `take_charges` in `apply_blows`) bursts
-  them next tick, so chains move one hop per tick.
-* Load check changed: a saved `boom_tick` may equal the saved tick (a burst on T sets T + 1 = the tick saved between
-  steps; before, such a save failed to load). The fuzz case (tick + 2) still fails.
-* `steer_squads`: a `ClearMines` squad walks at `sweep_speed_pct` in `Arriving`/`Holding` only (the walk to `a` is at
-  full pace). `guns.rs` served-crew list has `ClearMines`. `Demolish` is still refused `NotAllowed` in `game.rs`.
-* For D: `order_fortify`'s R18 call is still minefields only; `FortRefusal::NoTarget` unused so far.
-* Numbers (`target/s10b-C/fortify10.json`): T104a found_vs_expected 3.8 (found 82.0, expected 78.2), T104b lifted of
-  found 95.1, T104d sweeper losses 76 men over 20 sweeps, T104e Bangalore cleared 100. T102/T103 unchanged.
-  `targets --from-json target/s10b-C --runs fortify10`: 25 pass, 5 miss (hard 0; D-E rows null).
-* 40-set: `target/s10b-C/skirmish40.json` vs `target/s10b-base40`: same 40/40.
-* Checks: `tools/check.sh quick 8acc534` green after the last code commit (816 tests).
+**Next: Build E** (`S10b-build-E.md`). Builds A-D are done.
+* Build D commits: `3f98c04` (obstacles, R18/R21, Demolish, cards, tests), `0677e5c` (fortify rows), log commit.
+* Obstacles: `BlockLayer::update` gets wreck footprints then the `blocks_vehicles` piece footprints (box half, yaw;
+  the layer adds `wreck_pad_m`). `update_block` (end of tick, `refresh_hashes`) diffs the standing pieces against
+  `VehicleDerived::piece_feet` and calls `mark_piece_block` for each added or removed one, so every removal path
+  (`hit_static`, HQ roof, `edit_fort`, load) is seen; nothing new saved. No list is built without pieces.
+* R18 (`order_fortify`) now covers `mine_item`, `blocks_vehicles` and every `build_heavy` blueprint (the bunker too:
+  `MatchState::heavy_def`). R21: `build_structure` squads may take `build_heavy` blueprints; `build_rate` gives
+  tier `build_pct x heavy_by_field_pct / 100` unless the squad has `build_heavy` (Baupioniere 150). Only the S10b
+  blueprints are `build_heavy`, and the AI's `fort_of` never returns them.
+* Demolish in `crates/sim/src/demolish.rs`: `order_demolish`, `demolish_tick` (status stage, right after `fort_tick`
+  in `world.rs`, own `Ctx`; returns unless some squad has `Order::Demolish`), `demolish_piece` (R20). The burst
+  knows its piece through `Burst::piece` (not saved): `take_charges` returns `(charge id * 8, piece)` pairs for this
+  tick, matched to fused items with `thrower == SimId(u32::MAX)`. The tamped piece is hit whatever its owner, no line
+  check, and skipped by the overpressure loop. `guns.rs` served-crew list has `Demolish`.
+* For E: the bunker's satchel at the slit uses ordinary thrown satchels (no `Charge::piece`); a `Demolish` against a
+  bunker piece would take R20 (x3) on that one piece only.
+* Numbers (`target/s10b-D/fortify10.json`): T105a/b crossed 0/0, T105c infantry speed 103.5 %, T105d tank reached 0
+  (on the fortify map the tank does not reach a point 60 m behind in 120 s; in the flat test world it drives round a
+  30 m hedgehog line's end in about 19 s), T106a destroyed 100, T106c charge laid 15.6 s, **T106b gap crossed 0
+  (hard miss)**: with 3 m spacing one hedgehog gone leaves no way: a hedgehog blocks nodes within 0.9 + 2 m (pad)
+  of its centre, dilated one 4 m node, plus the margin band; a tank first got through with 5 adjacent hedgehogs gone
+  (18 m between standing centres; 1-4 gone: no way). Owner question in the report; T106b left as is.
+  `targets --from-json target/s10b-D --runs fortify10`: 31 pass, 6 miss (hard 1: T106b).
+* 40-set: `target/s10b-D/skirmish40.json` vs `target/s10b-base40`: same 40/40.
+* Checks: `tools/check.sh quick 8acc534` green after the last code commit (825 tests).
 
 ## Plan (2026-11-11)
 
@@ -96,4 +100,19 @@ misses): the run's n stops at a find, so `1 - (1 - p)^n` on it is biased low (47
 for finds. The spec's determinism control (roll by tick only) stays deterministic, so another control was used. The
 Bangalore case stages its field after the lay (the carrier's walk set mines off otherwise). Existing tests changed:
 `promoted_capabilities_parse` (five cards gain `ClearMines`); canonical snapshot blessed.
+
+## Build D (2026-11-12)
+
+Obstacles block vehicle nodes (R16, R17), R18 for obstacles and the bunker, R21, Demolish (R19, R20), `demolish` on
+the three R27 cards, the `obstacle` and `demolish` rows. Tests in `s10b_tests.rs`, each seen failing with its
+control: `obstacle_blocks_vehicle_nodes` (`blocks_vehicles` false), `removed_obstacle_reopens_the_path` (no mark for
+removed pieces), `infantry_walks_through_obstacles` (pieces halve pace in `wire_pace`: 192 vs 129 ticks),
+`obstacle_refused_near_a_vehicle` (`vehicle_clear_m` 0), `heavy_blueprint_at_half_rate_for_field_engineers` (no
+`heavy_by_field_pct` scaling), `demolish_lays_a_satchel_and_destroys_a_hedgehog` (`demolish_pct` 100: 300 hp left),
+`demolish_needs_capability_and_satchel` (grenadiers given the bit), `demolish_ends_when_charge_laid_or_target_gone`
+(order kept), `demolition_is_deterministic` (fuse + 1 tick in the reloaded run). Deviations: the reopen test removes
+nine hedgehogs, not one (one gap never opens a way, see T106b); the log line's blocked check starts 1 m in (its ends
+sit half way between two nodes, the wheeled layer's raw node there is 4.0001 m from the last piece); the tamped
+piece takes R20 whatever its owner (the order may target any owner's piece; the S6 overpressure spares own boxes).
+Existing tests changed: `promoted_capabilities_parse` (three cards gain `Demolish`); canonical snapshot blessed.
 
