@@ -133,6 +133,23 @@ fn holds(w: &World) -> Vec<&'static str> {
         }),
         "ai_bunker_watch",
     );
+    // S10b-ai Build D: an AI sweep watching its standing order mid-lane,
+    // one mine lifted.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.sweeps.iter().any(|(sq, j)| {
+                    j.phase == frontline_sim::ai::SweepPhase::Sweep
+                        && j.tries > 1
+                        && g.squads().get(sq).is_some_and(|q| {
+                            matches!(q.order, frontline_sim::game::Order::ClearMines { a, b, along, .. }
+                                if a == j.a && b == j.b && along > frontline_sim::fx::Fx::ZERO)
+                        })
+                })
+            })
+        }) && f.accounts.iter().any(|a| a.mines_lifted > 0),
+        "ai_sweep_watch",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -755,7 +772,8 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
                 start: tick,
                 since: tick,
                 phase: SweepPhase::Sweep,
-                tries: 1,
+                // Build D: the order stands at `along` 12 m (1 + 12).
+                tries: 13,
             },
         );
         ai.demolitions.insert(
@@ -799,6 +817,8 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
         });
         f.accounts[1].mines_set_off += 1;
         f.accounts[0].lost_on_known += 1;
+        // Build D chunk 2: the sweep lifted one mine before this one.
+        f.accounts[0].mines_lifted += 1;
     });
     // S10b-ai Build B chunk 2: an AT field job in Watch, its work on the
     // fourth segment of a 40 m line and the first three mines laid (as
@@ -1024,13 +1044,15 @@ fn staged_s10b_save_holds_its_state() {
 /// 1; `+ an AtField job in Watch with its work and 3 laid mines`, chunk 2).
 /// `+ a LogBarrier job in Watch and one standing hedgehog of a row`, Build
 /// C chunk 1. `+ a Bunker job in Watch with its pit dug`, Build C chunk 3.
-const STAGED_MUST_HOLD: [&str; 6] = [
+/// `+ an AiSweep in Watch mid-lane with one mine lifted`, Build D chunk 2.
+const STAGED_MUST_HOLD: [&str; 7] = [
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
     "ai_barrier_watch",
     "ai_hedgehog_row",
     "ai_bunker_watch",
+    "ai_sweep_watch",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
