@@ -42,7 +42,8 @@
 //!   `enemy_time_in_arc_s` (report: seconds the enemy tank spends inside the
 //!   gun's 90-degree arc within 400 m), `own_blocked` (the AI counter, must
 //!   be 0). Exposure `enemy_tank_reached_barrier_pct` (the enemy tank came
-//!   within 10 m of a barrier piece). Controls: `control.own_blocked` with
+//!   within 10 m of a barrier piece) and (T115e) `own_tank_drove_pct` (the
+//!   own tank got [`OWN_DROVE_M`] m from its start: its route was tried). Controls: `control.own_blocked` with
 //!   `own_route_m` 0, `control.enemy_time_in_arc_s` with `obstacles` 0.
 //! * **Bunker** (Build C, R7). For each player `p` and seed, in two sets
 //!   (`ger_baupioniergruppe`: `build_heavy`; `usa_engineer_squad`:
@@ -91,6 +92,8 @@ pub const GUN_SIDE_M: i32 = 60;
 pub const OBST_DRIVE_S: u64 = 1500;
 pub const BARRIER_CARRY_KG: u32 = 600;
 pub const BARRIER_PIECES: usize = 5;
+/// The obstacle row: the own tank drove when it got this far (m) from base.
+pub const OWN_DROVE_M: i32 = 30;
 pub const OBST_TANK_S: u64 = 180;
 /// The AT gun card of each player (faction order as `MEDIUM_TANKS`).
 const AT_GUNS: [&str; 2] = ["ger_pak40_squad", "usa_57mm_m1_squad"];
@@ -175,6 +178,9 @@ pub struct ObstacleRow {
     pub own_blocked: Option<f64>,
     /// Exposure: runs in which the enemy tank came within 10 m of the barrier.
     pub enemy_tank_reached_barrier_pct: Option<f64>,
+    /// Exposure of `own_blocked` (T115e): runs in which the own tank drove
+    /// [`OWN_DROVE_M`] m from its start.
+    pub own_tank_drove_pct: Option<f64>,
     /// Exposure of `barrier_built_pct`: runs whose engineers lived through
     /// the drive.
     pub builder_alive_pct: Option<f64>,
@@ -597,7 +603,7 @@ fn obstacle_once(
     seed: u64,
     p: u8,
     mode: u8,
-) -> Result<(bool, f64, u32, bool, usize, bool)> {
+) -> Result<(bool, f64, u32, bool, usize, bool, bool)> {
     use frontline_sim::ai::{AiGun, AiHabit, AiState, AiTrench, DriveArgs, GunPhase};
     let mut w = world_with(args, seed, |s| {
         s.rules.ai.fort.works = 0;
@@ -702,10 +708,13 @@ fn obstacle_once(
             target: site,
         }],
     );
+    let mut own_v = None;
     if let Some(next) = next {
         let base = w.game().unwrap().base_of(PlayerId(p));
         let ot = card(&w, MEDIUM_TANKS[p as usize])?;
         if let Some(own) = w.spawn_squad_at(PlayerId(p), ot, base, dir) {
+            let v = members(&w, own)[0];
+            own_v = Some((v, pos(&w, v)));
             step_with(
                 &mut w,
                 p,
@@ -717,10 +726,15 @@ fn obstacle_once(
         }
     }
     let bar = pieces(&w);
-    let (mut in_arc, mut reached) = (0u64, false);
+    let (mut in_arc, mut reached, mut drove) = (0u64, false, false);
     let t0 = w.tick();
     while w.tick() < t0 + OBST_TANK_S * hz {
         w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+        if let Some((v, from)) = own_v
+            && w.game().unwrap().vehicle(v).is_some()
+        {
+            drove |= (pos(&w, v) - from).length() >= Fx::from_int(OWN_DROVE_M);
+        }
         let Some(vs) = w.game().unwrap().vehicle(ev) else {
             continue;
         };
@@ -743,6 +757,7 @@ fn obstacle_once(
         reached,
         n_pieces,
         alive,
+        drove,
     ))
 }
 
@@ -750,11 +765,12 @@ fn obstacle_once(
 pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<ObstacleRow> {
     let (mut built, mut arc, mut blocked, mut reached, mut runs) = (0u32, 0f64, 0u32, 0u32, 0u32);
     let (mut c_blocked, mut c_arc, mut n_pieces) = (0u32, 0f64, 0f64);
-    let (mut alive, mut c_built) = (0u32, 0u32);
+    let (mut alive, mut c_built, mut drove) = (0u32, 0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (b, a, o, r, n, l) = obstacle_once(args, seed, p, 0)?;
+            let (b, a, o, r, n, l, d) = obstacle_once(args, seed, p, 0)?;
             alive += l as u32;
+            drove += d as u32;
             n_pieces += n as f64;
             built += b as u32;
             arc += a;
@@ -774,6 +790,7 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
         enemy_time_in_arc_s: mean(arc),
         own_blocked: (runs > 0).then_some(blocked as f64),
         enemy_tank_reached_barrier_pct: pct(reached, runs),
+        own_tank_drove_pct: pct(drove, runs),
         builder_alive_pct: pct(alive, runs),
         control: ObstacleControl {
             barrier_built_pct: pct(c_built, runs),
