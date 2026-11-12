@@ -674,6 +674,26 @@ impl super::Planner<'_> {
         self.bunker_built(i)
     }
 
+    /// R7 manning: the built own bunker at own point `i` and the squad of
+    /// `free` (the point's free squads) that defends from it: the MG team
+    /// (lowest id), else the squad nearest the bunker that is no MG or AT
+    /// crew. None with `bunker` off or no bunker.
+    pub(super) fn bunker_crew<'m>(
+        &self,
+        i: usize,
+        free: impl Iterator<Item = &'m Mine> + Clone,
+    ) -> Option<(FxVec2, SquadId)> {
+        let at = self.bunker_at(i)?;
+        free.clone()
+            .filter(|m| m.role == super::AiKind::Mg)
+            .min_by_key(|m| m.id)
+            .or_else(|| {
+                free.filter(|m| !matches!(m.role, super::AiKind::Mg | super::AiKind::AntiTank))
+                    .min_by_key(|m| ((m.lead - at).length_sq_raw(), m.id))
+            })
+            .map(|m| (at, m.id))
+    }
+
     /// R7: the own point with an AI trench nearest an enemy base (ties by
     /// index): the one point that gets the bunker.
     fn bunker_point(&self) -> Option<usize> {
@@ -2311,12 +2331,53 @@ impl super::Planner<'_> {
                 self.start_barriers(&mine, &known, &kv, &[], &mut out);
             }
         }
+        self.drive_crew(args);
         let end = if self.ai.counters.s10b_refused > refused {
             HabitEnd::Failed
         } else {
             HabitEnd::Done
         };
         ended.then_some(end)
+    }
+
+    /// The fortify-test hook's R7 manning: of `args.others` (own squads
+    /// at the point) the one `bunker_crew` picks is sent to the bunker
+    /// centre (as `order_infantry` sends it).
+    fn drive_crew(&mut self, args: &super::DriveArgs) {
+        let g = self.g;
+        let me = self.me;
+        let free: Vec<Mine> = args
+            .others
+            .iter()
+            .filter_map(|&id| {
+                let q = g
+                    .squads
+                    .get(&id)
+                    .filter(|q| q.owner == me && !q.members.is_empty())?;
+                let ty = &g.setup.squad_types[q.type_idx as usize];
+                Some(Mine {
+                    id,
+                    role: super::ai_kind(&g.setup, q.type_idx),
+                    lead: self.ents.transform[q.lead(self.ents).index()].pos.xy(),
+                    strength_pct: q.members.len() as u32 * 100 / ty.men.max(1) as u32,
+                    caps: ty.caps,
+                })
+            })
+            .collect();
+        let Some((at, id)) = self.bunker_crew(args.point, free.iter()) else {
+            return;
+        };
+        let target = self.terrain.clamp(at);
+        let going = matches!(g.squads[&id].order, Order::Move { target: t } if t == target);
+        let sent = self
+            .ai
+            .pending
+            .iter()
+            .any(|c| super::squad_of(&c.kind) == Some(id));
+        if !going && !sent {
+            self.ai
+                .emit(self.due, CommandKind::Move { squad: id, target });
+        }
     }
 
     /// S10b-ai R8: whether another S10b job may start (`jobs_max`).

@@ -44,6 +44,19 @@
 //!   be 0). Exposure `enemy_tank_reached_barrier_pct` (the enemy tank came
 //!   within 10 m of a barrier piece). Controls: `control.own_blocked` with
 //!   `own_route_m` 0, `control.enemy_time_in_arc_s` with `obstacles` 0.
+//! * **Bunker** (Build C, R7). For each player `p` and seed, in two sets
+//!   (`ger_baupioniergruppe`: `build_heavy`; `usa_engineer_squad`:
+//!   `build_structure` at `heavy_by_field_pct`, keys `us_*`): `p` holds its nearest point
+//!   (as the mines row, mines and obstacles off); the builders carry their
+//!   full carry of [`BUNKER_CARRY_KG`] kg and three 40 kg construction crates
+//!   stand by the bunker site (250 kg is over any squad's carry; a match
+//!   brings the rest by truck); `p`'s MG team stands at the point (the
+//!   hook's `others`). `drive_ai_habit(Fort)` until the bunker stands (at
+//!   most [`BUNKER_DRIVE_S`]): `built_pct`, `built_s` (report, mean over
+//!   built runs); then [`BUNKER_MAN_S`] s more: `manned_pct` (the MG team's
+//!   leader within [`MANNED_M`] m of the bunker centre). Exposure
+//!   `builder_alive_pct`. Control (`control.built_pct`, `control.manned_pct`):
+//!   `bunker` 0.
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -81,6 +94,16 @@ pub const BARRIER_PIECES: usize = 5;
 pub const OBST_TANK_S: u64 = 180;
 /// The AT gun card of each player (faction order as `MEDIUM_TANKS`).
 const AT_GUNS: [&str; 2] = ["ger_pak40_squad", "usa_57mm_m1_squad"];
+
+/// The bunker row (module docs): kg asked, the longest drive (s; 25 min),
+/// the manning wait (s), the manned distance (m).
+pub const BUNKER_CARRY_KG: u32 = 250;
+pub const BUNKER_DRIVE_S: u64 = 1500;
+pub const BUNKER_MAN_S: u64 = 60;
+pub const MANNED_M: i32 = 5;
+/// The builder card of each set, the MG card of each player.
+const BUNKER_BUILDERS: [&str; 2] = ["ger_baupioniergruppe", "usa_engineer_squad"];
+const MG_TEAMS: [&str; 2] = ["ger_smg_gruppe", "usa_lmg_squad"];
 
 /// A route "priced" (left the straight line) past this many metres.
 pub const PRICED_OFF_M: i32 = 5;
@@ -158,16 +181,53 @@ pub struct ObstacleRow {
     pub control: ObstacleControl,
 }
 
+/// The control half of the bunker row: `bunker` 0.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct BunkerControl {
+    pub built_pct: Option<f64>,
+    /// No bunker, so no squad in one (T113's control).
+    pub manned_pct: Option<f64>,
+}
+
+/// One builder set of the bunker row.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct BunkerSet {
+    pub built_pct: Option<f64>,
+    /// Report: seconds of driving until the bunker stood (built runs).
+    pub built_s: Option<f64>,
+    pub manned_pct: Option<f64>,
+    /// Exposure: runs whose builders lived through the drive.
+    pub builder_alive_pct: Option<f64>,
+    pub control: BunkerControl,
+}
+
+/// T113: the AI builds the bunker (Baupioniere; US engineers at 50 %: the
+/// `us_*` keys) and mans it.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct BunkerRow {
+    pub built_pct: Option<f64>,
+    pub built_s: Option<f64>,
+    pub manned_pct: Option<f64>,
+    pub builder_alive_pct: Option<f64>,
+    pub us_built_pct: Option<f64>,
+    pub us_built_s: Option<f64>,
+    pub us_manned_pct: Option<f64>,
+    pub us_builder_alive_pct: Option<f64>,
+    /// Both sets with `bunker` 0.
+    pub control: BunkerControl,
+}
+
 /// The S10b-ai rows (`fortify10.s10b_ai`).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S10bAiReport {
     pub paths: PathsRow,
     pub mines: MinesRow,
     pub obstacle: ObstacleRow,
+    pub bunker: BunkerRow,
 }
 
 /// The rows in summary order.
-const ROWS: &[&str] = &["paths", "mines", "obstacle"];
+const ROWS: &[&str] = &["paths", "mines", "obstacle", "bunker"];
 
 /// Summary lines, one per row.
 pub fn summary_text(r: &S10bAiReport) -> String {
@@ -524,7 +584,8 @@ pub fn s10b_ai_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S
     Ok(S10bAiReport {
         paths: paths_row(args, seeds.clone())?,
         mines: mines_row(args, seeds.clone())?,
-        obstacle: obstacle_row(args, seeds)?,
+        obstacle: obstacle_row(args, seeds.clone())?,
+        bunker: bunker_row(args, seeds)?,
     })
 }
 
@@ -722,6 +783,155 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
     })
 }
 
+/// One bunker run (module docs) of player `p` with builder set `set` and
+/// `[ai.obstacles] bunker` set: (built, seconds to build, manned, builders
+/// alive).
+fn bunker_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+    set: usize,
+    bunker: u32,
+) -> Result<(bool, u64, bool, bool)> {
+    use frontline_sim::ai::{AiHabit, AiState, AiTrench, DriveArgs};
+    let mut w = world_with(args, seed, |s| {
+        s.rules.ai.fort.works = 0;
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.obstacles.mines = 0;
+        s.rules.ai.obstacles.obstacles = 0;
+        s.rules.ai.obstacles.bunker = bunker;
+    })?;
+    let (i, pt, base_e, line) = hold_point(&mut w, p)?;
+    let dir = (base_e - pt).normalize_or_zero();
+    let s = w.match_setup().unwrap();
+    let hz = s.tick_hz as u64;
+    let bf = s.forts.iter().position(|f| f.id == "ww2:bunker");
+    // R7's site: the trench end opposite the nest (by the point's parity).
+    let [a, b] = line;
+    let (end, other) = if i % 2 == 0 { (a, b) } else { (b, a) };
+    let off = Fx::from_int(s.rules.ai.fort.nest_offset_m as i32);
+    let site = end + (end - other).normalize_or_zero() * off;
+    let Some(crate_def) = s
+        .stocks
+        .iter()
+        .position(|d| d.id == "ww2:usa_construction_crate")
+    else {
+        bail!("no construction crate");
+    };
+    let card = |w: &World, c: &str| {
+        w.match_setup()
+            .unwrap()
+            .squad_type_index(&format!("ww2:{c}"))
+            .ok_or_else(|| anyhow::anyhow!("no {c} card"))
+    };
+    for k in 0..3 {
+        let at = site - dir * Fx::from_int(6) + dir.perp() * Fx::from_int(k);
+        if w.add_crate_now(PlayerId(p), crate_def as u16, at).is_none() {
+            bail!("the crate was not placed");
+        }
+    }
+    let ety = card(&w, BUNKER_BUILDERS[set])?;
+    let Some(eng) = w.spawn_squad_at(PlayerId(p), ety, pt, EAST) else {
+        bail!("the builders were not spawned");
+    };
+    w.edit_fort(|f| {
+        f.carried_g.insert(eng, BUNKER_CARRY_KG * 1000);
+    });
+    let mty = card(&w, MG_TEAMS[p as usize])?;
+    let Some(mg) = w.spawn_squad_at(PlayerId(p), mty, pt - dir * Fx::from_int(8), EAST) else {
+        bail!("the MG team was not spawned");
+    };
+    let mut ai = AiState::new(w.tick());
+    ai.trenches.push(AiTrench {
+        point: i as u8,
+        line,
+    });
+    let drive = DriveArgs {
+        squad: Some(eng),
+        point: i,
+        others: vec![mg],
+        ..Default::default()
+    };
+    let roof = |w: &World| -> Option<FxVec2> {
+        w.game()
+            .unwrap()
+            .fort()
+            .pieces
+            .values()
+            .find(|q| q.owner == PlayerId(p) && Some(q.fort as usize) == bf && q.part == 0)
+            .map(|q| q.pos)
+    };
+    let start = w.tick();
+    let drive_s = if bunker == 0 { 60 } else { BUNKER_DRIVE_S };
+    while roof(&w).is_none() && w.tick() < start + drive_s * hz {
+        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+    }
+    let built_s = (w.tick() - start) / hz;
+    let alive = w.game().unwrap().squad(eng).is_some();
+    let Some(centre) = roof(&w) else {
+        return Ok((false, built_s, false, alive));
+    };
+    let t0 = w.tick();
+    while w.tick() < t0 + BUNKER_MAN_S * hz {
+        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+    }
+    let manned = members(&w, mg)
+        .first()
+        .is_some_and(|&m| (pos(&w, m) - centre).length() <= Fx::from_int(MANNED_M));
+    Ok((true, built_s, manned, alive))
+}
+
+/// One builder set of the bunker row.
+fn bunker_set(args: &FortifyArgs, seeds: std::ops::Range<u64>, set: usize) -> Result<BunkerSet> {
+    let (mut built, mut secs, mut manned, mut alive, mut c_built, mut runs) =
+        (0u32, 0u64, 0u32, 0u32, 0u32, 0u32);
+    let mut c_manned = 0u32;
+    for seed in seeds {
+        for p in [0u8, 1] {
+            let (b, t, m, a) = bunker_once(args, seed, p, set, 1)?;
+            built += b as u32;
+            secs += if b { t } else { 0 };
+            manned += m as u32;
+            alive += a as u32;
+            let c = bunker_once(args, seed, p, set, 0)?;
+            c_built += c.0 as u32;
+            c_manned += c.2 as u32;
+            runs += 1;
+        }
+    }
+    Ok(BunkerSet {
+        built_pct: pct(built, runs),
+        built_s: (built > 0).then(|| secs as f64 / built as f64),
+        manned_pct: pct(manned, runs),
+        builder_alive_pct: pct(alive, runs),
+        control: BunkerControl {
+            built_pct: pct(c_built, runs),
+            manned_pct: pct(c_manned, runs),
+        },
+    })
+}
+
+/// The bunker row (module docs).
+pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<BunkerRow> {
+    let heavy = bunker_set(args, seeds.clone(), 0)?;
+    let us = bunker_set(args, seeds, 1)?;
+    let both = |a: Option<f64>, b: Option<f64>| a.zip(b).map(|(a, b)| (a + b) / 2.0);
+    Ok(BunkerRow {
+        built_pct: heavy.built_pct,
+        built_s: heavy.built_s,
+        manned_pct: heavy.manned_pct,
+        builder_alive_pct: heavy.builder_alive_pct,
+        us_built_pct: us.built_pct,
+        us_built_s: us.built_s,
+        us_manned_pct: us.manned_pct,
+        us_builder_alive_pct: us.builder_alive_pct,
+        control: BunkerControl {
+            built_pct: both(heavy.control.built_pct, us.control.built_pct),
+            manned_pct: both(heavy.control.manned_pct, us.control.manned_pct),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -735,5 +945,15 @@ mod tests {
         let args = FortifyArgs::default();
         let r = obstacle_row(&args, 1..4).unwrap();
         println!("obstacle {}", serde_json::to_string(&r).unwrap());
+    }
+
+    /// One-off measure of the bunker row: `cargo test --release -p
+    /// frontline-cli --lib bunker_row_one_off -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn bunker_row_one_off() {
+        let args = FortifyArgs::default();
+        let r = bunker_row(&args, 1..4).unwrap();
+        println!("bunker {}", serde_json::to_string(&r).unwrap());
     }
 }

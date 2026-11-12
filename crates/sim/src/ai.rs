@@ -1955,24 +1955,15 @@ impl Planner<'_> {
                 if points[i].rel != Rel::Own {
                     return None;
                 }
-                let at = self.bunker_at(i)?;
-                let free =
-                    |j: usize| !claimed.contains(&mine[j].id) && !escorting.contains(&mine[j].id);
-                let here = || {
-                    assigned
-                        .iter()
-                        .filter(|&&(j, pi)| pi == i && free(j))
-                        .map(|&(j, _)| &mine[j])
-                };
-                here()
-                    .filter(|m| m.role == AiKind::Mg)
-                    .min_by_key(|m| m.id)
-                    .or_else(|| {
-                        here()
-                            .filter(|m| !matches!(m.role, AiKind::Mg | AiKind::AntiTank))
-                            .min_by_key(|m| ((m.lead - at).length_sq_raw(), m.id))
+                let free = assigned
+                    .iter()
+                    .filter(|&&(j, pi)| {
+                        pi == i
+                            && !claimed.contains(&mine[j].id)
+                            && !escorting.contains(&mine[j].id)
                     })
-                    .map(|m| (at, m.id))
+                    .map(|&(j, _)| &mine[j]);
+                self.bunker_crew(i, free)
             })
             .collect();
         let shelters: Vec<Option<(FxVec2, SquadId)>> = (0..points.len())
