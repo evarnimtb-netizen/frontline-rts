@@ -21,7 +21,8 @@
 //!   alone until `p` has an AT field standing (>= [`AT_FIELD_MINES`] AT
 //!   mines; at most [`MINES_DRIVE_S`]): `field_laid_pct`. Then the enemy's
 //!   medium tank, placed [`MINES_TANK_M`] m out on the straight line from
-//!   its base to the point, is ordered onto the point (unknown mines are
+//!   its base to the point (moved 0-4 m across it by the seed, the AT mine
+//!   step), is ordered onto the point (unknown mines are
 //!   not priced) for at most [`MINES_TANK_S`] s: `tank_stopped_pct`
 //!   (immobilised or wrecked). Exposure `tank_reached_field_pct`: runs in
 //!   which the tank came within 5 m of one of `p`'s AT mines
@@ -375,7 +376,10 @@ fn mines_once(
         bail!("no {} card", MEDIUM_TANKS[enemy as usize]);
     };
     let dir = (base_e - pt).normalize_or_zero();
-    let from = pt + dir * Fx::from_int(MINES_TANK_M);
+    // Moved across the approach by the seed's offset (0-4 m, the AT
+    // field's mine step), as the paths row moves its field.
+    let side = dir.perp() * Fx::from_milli(((seed * 37) % 400) as i32 * 10);
+    let from = pt + dir * Fx::from_int(MINES_TANK_M) + side;
     let Some(tank) = w.spawn_squad_at(PlayerId(enemy), tt, from, -dir) else {
         bail!("the tank was not spawned at {from:?}");
     };
@@ -385,7 +389,7 @@ fn mines_once(
         enemy,
         vec![CommandKind::Move {
             squad: tank,
-            target: pt,
+            target: pt + side,
         }],
     );
     let exp0 = w.game().unwrap().fort().accounts[p as usize].at_exposure_ticks;
@@ -397,7 +401,7 @@ fn mines_once(
     };
     let t0 = w.tick();
     while !stopped(&w)
-        && (pos(&w, v) - pt).length() > Fx::from_int(5)
+        && (pos(&w, v) - (pt + side)).length() > Fx::from_int(5)
         && w.tick() < t0 + MINES_TANK_S * hz
     {
         w.step(&[]);
