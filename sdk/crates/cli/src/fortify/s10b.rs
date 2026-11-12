@@ -1024,7 +1024,11 @@ mod tests {
         let r = obstacle_row(&FortifyArgs::default(), 1..2).unwrap();
         eprintln!("{r:?}");
         assert_eq!(r.approached_pct, Some(100.0), "every tank came to the line");
-        assert_eq!(r.control_crossed_pct, Some(100.0), "with no line it drives through");
+        assert_eq!(
+            r.control_crossed_pct,
+            Some(100.0),
+            "with no line it drives through"
+        );
         assert_eq!(r.hedgehog_crossed_pct, Some(0.0));
         assert_eq!(r.log_crossed_pct, Some(0.0));
     }

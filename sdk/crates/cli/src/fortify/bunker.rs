@@ -285,7 +285,14 @@ fn slit_demolish_run(
     w.place_squad(eng, c + side.mul_int(15), side.mul_int(-1));
     // 20 cm outside the slit's centre (the front's outer face is 2.1 m out).
     let click = c + side.mul_int(23).div_int(10);
-    step_with(&mut w, att, vec![CommandKind::Demolish { squad: eng, at: click }]);
+    step_with(
+        &mut w,
+        att,
+        vec![CommandKind::Demolish {
+            squad: eng,
+            at: click,
+        }],
+    );
     let hz = w.match_setup().unwrap().tick_hz as u64;
     let mut laid = false;
     for _ in 0..120 * hz {
