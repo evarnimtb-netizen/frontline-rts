@@ -241,7 +241,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-7 Sweeping cost. A sweep of a mixed field loses about 1.2 men per sweep (T104a) and lifts 77 % of mines. (A) Keep. (B) Make sweeping safer or slower.
   S10b-8 Obstacle that waits for a vehicle. (A) Keep the wait without limit. (B) End the work with BadSpot after a time limit.
   S10b-9 AP mine against vehicles. (A) Keep 10 % (the hand-grenade value, never breaks a track). (B) 0, no effect on vehicles at all.
-- S10b open notes (not numbered): merging S10b into main needs the owner's OK. F8 from S10a-ai (an S8b truck re-orders an
+- S10b open notes (not numbered): F8 from S10a-ai (an S8b truck re-orders an
   unreachable HQ goal about every 5 min) is still deferred. Bunker notes from Build E: MG fire from 150 m does not hit men
   in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
 
