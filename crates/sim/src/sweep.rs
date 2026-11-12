@@ -261,8 +261,14 @@ impl MatchState {
                     .copied()
                     .min_by_key(|&s| ((pos(s) - mp).length_sq_raw(), s))
                     .expect("a sweeper");
-                let toward = if d == FxVec2::ZERO {
-                    (pos(lifter) - mp).normalize_or_zero()
+                // From the mine toward the lifter: his straight walk to the
+                // stand-off stays on his side of it, never across (R10;
+                // review R17). The lane's back side when he is on it.
+                let mine_to_him = (pos(lifter) - mp).normalize_or_zero();
+                let toward = if mine_to_him != FxVec2::ZERO {
+                    mine_to_him
+                } else if d == FxVec2::ZERO {
+                    FxVec2::ZERO
                 } else {
                     FxVec2::ZERO - d
                 };

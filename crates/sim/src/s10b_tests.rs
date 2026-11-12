@@ -2237,3 +2237,54 @@ fn charge_ids_stay_below_the_key_bound() {
         "past the bound it does not"
     );
 }
+
+/// Review R17: a mine found behind and beside a sweeper. Control: the
+/// lifter's stand-off always `-d` (the lane's back side) -> his straight
+/// walk to it passes within 30 cm of the mine and sets it off.
+#[test]
+fn lifter_does_not_cross_a_mine_behind_him() {
+    let f = |w: &World| fort(w.match_setup().unwrap(), "ww2:ap_minefield");
+    for side in [1i32, -1] {
+        let mut w = flat(|_| {});
+        let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 470, 500);
+        w.step(&[]);
+        clear_mines(&mut w, 0, eng, c(480, 500), c(510, 500));
+        assert!(
+            matches!(order_of(&w, eng), Order::ClearMines { .. }),
+            "{:?}",
+            refused(&w)
+        );
+        let mut lead = None;
+        for _ in 0..120 * HZ {
+            w.step(&[]);
+            let along = match order_of(&w, eng) {
+                Order::ClearMines { along, .. } => along,
+                o => panic!("order {o:?}"),
+            };
+            if along >= Fx::from_int(10) {
+                // The front sweeper on the `side` half of the lane.
+                lead = super::s6_tests::members(&w, eng)
+                    .into_iter()
+                    .filter(|&m| (pos(&w, m).y - Fx::from_int(500)) * Fx::from_int(side) > Fx::ZERO)
+                    .max_by_key(|&m| pos(&w, m).x);
+                break;
+            }
+        }
+        let m = lead.expect("a sweeper on that side");
+        let p = pos(&w, m);
+        let at = p + FxVec2::new(Fx::from_milli(-500), Fx::from_milli(100 * side));
+        let fid = f(&w);
+        let id = w.lay_mine_now(fid, at, PlayerId(1)).unwrap();
+        w.edit_fort(|s| s.mines.get_mut(&id).unwrap().known |= 1);
+        for _ in 0..60 * HZ {
+            w.step(&[]);
+            if !fs(&w).mines.contains_key(&id) {
+                break;
+            }
+        }
+        let a = &fs(&w).accounts;
+        assert_eq!(a[1].mines_set_off, 0, "side {side}: the lifter stepped on it");
+        assert!(!fs(&w).mines.contains_key(&id), "side {side}: lifted");
+        assert_eq!(a[0].mines_lifted, 1, "side {side}");
+    }
+}
