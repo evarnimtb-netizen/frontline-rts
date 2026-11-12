@@ -39,9 +39,7 @@ fn field(
     w: &mut World,
     field: &str,
     owner: u8,
-    x0: i32,
-    x1: i32,
-    y: i32,
+    (x0, x1, y): (i32, i32, i32),
     step: usize,
     known_to: u8,
 ) {
@@ -171,7 +169,7 @@ fn paths_avoid_known_enemy_mines() {
     for on in [1u32, 0] {
         // Foot.
         let mut w = world(on);
-        field(&mut w, "ww2:ap_minefield", 1, 485, 515, 500, 2, 1);
+        field(&mut w, "ww2:ap_minefield", 1, (485, 515, 500), 2, 1);
         let sq = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 500, 470);
         let pts = route(&mut w, 0, sq, c(500, 530));
         let set = scan(&w, 0, false);
@@ -191,7 +189,7 @@ fn paths_avoid_known_enemy_mines() {
         }
         // Tank.
         let mut w = world(on);
-        field(&mut w, "ww2:at_minefield", 1, 480, 520, 500, 4, 1);
+        field(&mut w, "ww2:at_minefield", 1, (480, 520, 500), 4, 1);
         let tank = spawn(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 440);
         let pts = route(&mut w, 0, tank, c(500, 560));
         let set = scan(&w, 0, true);
@@ -222,9 +220,7 @@ fn paths_ignore_unknown_and_own_mines() {
             &mut w,
             "ww2:ap_minefield",
             owner,
-            485,
-            515,
-            500,
+            (485, 515, 500),
             2,
             known_to,
         );
@@ -236,9 +232,7 @@ fn paths_ignore_unknown_and_own_mines() {
             &mut w,
             "ww2:at_minefield",
             owner,
-            480,
-            520,
-            500,
+            (480, 520, 500),
             4,
             known_to,
         );
