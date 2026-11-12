@@ -1,8 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main `8acc534` holds S1 to S10a-ai (merged 2026-11-11, owner OK). **S10b mechanics is built, reviewed, fixed and verified**
-on branch `s10b-obstacles` (from main), **not merged**: it waits for the owner's OK. Spec `docs/slices/S10b-obstacles.md`,
-log `S10b-log.md` (read its top block), targets `S10b.toml`. Next: S10b-ai. Checked 2026-11-12.
+Main holds S1 to S10b mechanics (S10b merged 2026-11-12, owner OK; before that `8acc534`). **No slice in work.** S10b: spec
+`docs/slices/S10b-obstacles.md`, log `S10b-log.md` (read its top block), targets `S10b.toml`. Open owner questions S10b-5..9
+in `docs/TODO.md`. Next when the owner says: S10b-ai. Checked 2026-11-12.
 
 ## What the game is now
 
@@ -43,7 +43,7 @@ SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a
 
 ## Versions
 
-`SAVE_VERSION` **23** and `PROTOCOL_VERSION` **13** on main (`world.rs`, `protocol.rs`); **24 and 14 on branch `s10b-obstacles`**. History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
+`SAVE_VERSION` **23** and `PROTOCOL_VERSION` **13** on main (`world.rs`, `protocol.rs`); **24 and 14 since S10b** (main). History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
 S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12; S10a 22 and 13; S10a-ai 23 and 13. A save, hash or command change bumps these
 in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
@@ -105,7 +105,7 @@ Owner questions S10b-5..9 are in `docs/TODO.md`. Fuzz: 9686 mutations, 0 panics,
 
 ## Roadmap position
 
-Done and on main: S1 to S10a-ai. S10b mechanics done on its branch, merge awaits the owner. Then S10b-ai (AI use of
+Done and on main: S1 to S10a-ai. S10b mechanics merged 2026-11-12. Then S10b-ai (AI use of
 mines, obstacles, bunkers), a balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
 
 ## How to check work

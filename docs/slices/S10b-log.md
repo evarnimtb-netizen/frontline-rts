@@ -5,7 +5,7 @@ Branch `s10b-obstacles` from main `8acc534`. Two other agents may work in this c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Final state (2026-11-12): S10b mechanics built, reviewed, fixed and verified on `s10b-obstacles`. NOT merged.**
+**Final state (2026-11-12): S10b mechanics built, reviewed, fixed and verified on `s10b-obstacles`. Merged to main 2026-11-12 (owner OK).**
 Head `2091994` before the docs commits. Main stays `8acc534`; SAVE 24 and PROTOCOL 14 on the branch (main 23 and 13).
 Verify (`tools/verify.sh target/s10b-verify`, 37 min 56 s): 881 tests pass, 0 fail; fmt, clippy, golden, validate,
 bridge, Godot checks ok; settings.cfg unchanged. Tick p99 0.487 ms (peak 0.638).
@@ -14,8 +14,8 @@ Germany pooled 41.67 % of 480 (43.75 / 38.75 / 42.50), no-winner 0, in the 35-65
 Targets: 373 pass, 25 miss, 6 hard: T8b, T40c, T54e, T88b, T88d (accepted since S9b/S10a-ai) and **T106b** (owner
 decision S10b-5: one demolition charge leaves no tank gap in a hedgehog line; gap_crossed_pct 0 vs 80).
 Fuzz with the staged S10b save: 9686 mutations, 0 panics, 0 unloadable.
-Waits for the owner: S10b-5..9 (`docs/TODO.md`), the merge OK, and the open notes (F8, bunker MG and spoil).
-Next slice: S10b-ai (after the merge OK). Findings and numbers: `target/s10b-review.json`, `target/s10b-fix`.
+Waits for the owner: S10b-5..9 (`docs/TODO.md`), and the open notes (F8, bunker MG and spoil).
+Next slice: S10b-ai (when the owner says). Findings and numbers: `target/s10b-review.json`, `target/s10b-fix`.
 
 ## Plan (2026-11-11)
 
