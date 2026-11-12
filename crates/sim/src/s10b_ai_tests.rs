@@ -517,3 +517,279 @@ fn drive_ai_habit_skeleton_ends_not_built() {
         assert!(w.state.tick > t0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Liveness harness (L1-L4; spec 5 "Generic"). Build A: the harness and its
+// check on dummy traces; B, C and D add one `LIVENESS` row per job kind.
+
+/// What a liveness row drives: the habit, its args and the goal it can never
+/// reach (the refusal is looked for within `refused_m` of it).
+pub(crate) struct Stage {
+    pub habit: crate::ai::AiHabit,
+    pub args: crate::ai::DriveArgs,
+    pub goal: FxVec2,
+}
+
+/// One row per job kind: the setup turns `ai_world()` into a world whose
+/// goal is unreachable for that kind (B: Fort; D: Sweep, Demolish,
+/// TruckGoal).
+const LIVENESS: &[(JobKind, fn(&mut World) -> Stage)] = &[];
+
+/// Minutes each row runs (spec 5: 20 min).
+const LIVENESS_MIN: u64 = 20;
+
+/// One tick of a driven job, as the harness sees it.
+#[derive(Clone, Copy, Debug, Default)]
+struct Seen {
+    tick: u64,
+    /// A job of the row's kind is alive for the row's squad.
+    alive: bool,
+    /// What the hook returned this tick.
+    end: Option<crate::ai::HabitEnd>,
+    /// The newest `failed` tick of a refusal of the kind near the goal.
+    refused_at: Option<u64>,
+    refused_reorders: u32,
+}
+
+/// Limits of one check, in ticks.
+struct Limits {
+    job_max: u64,
+    refused: u64,
+    /// Plan cadence and hook latency allowed around each event.
+    slack: u64,
+}
+
+/// Whether a job of `kind` is alive for `squad` (Done jobs wait for the
+/// next plan to be dropped and do not count).
+fn job_alive(ai: &AiState, kind: JobKind, squad: Option<SquadId>) -> bool {
+    let Some(q) = squad else { return false };
+    match kind {
+        JobKind::Fort => ai.forts.get(&q).is_some_and(|j| j.phase != FortPhase::Done),
+        JobKind::Sweep => ai
+            .sweeps
+            .get(&q)
+            .is_some_and(|j| j.phase != SweepPhase::Done),
+        JobKind::Demolish => ai
+            .demolitions
+            .get(&q)
+            .is_some_and(|j| j.phase != DemolishPhase::Done),
+        // Build D fills the truck goal's liveness (F8, L5).
+        JobKind::TruckGoal => false,
+    }
+}
+
+/// Drives `stage` for `ticks` ticks on a caller-kept AI state and records
+/// what the harness checks.
+fn drive_row(w: &mut World, kind: JobKind, stage: &Stage, ticks: u64) -> Vec<Seen> {
+    let near = w.match_setup().unwrap().rules.ai.obstacles.refused_m;
+    let r2 = FxVec2::new(Fx::from_int(near as i32), Fx::ZERO).length_sq_raw();
+    let mut ai = AiState::new(w.state.tick);
+    let mut out = Vec::with_capacity(ticks as usize);
+    for _ in 0..ticks {
+        let end = w.drive_ai_habit(&mut ai, PlayerId(1), stage.habit, &stage.args);
+        let refused_at = ai
+            .refused
+            .iter()
+            .filter(|r| r.kind == kind && (r.at - stage.goal).length_sq_raw() <= r2)
+            .map(|r| r.failed)
+            .max();
+        out.push(Seen {
+            tick: w.state.tick,
+            alive: job_alive(&ai, kind, stage.args.squad),
+            end,
+            refused_at,
+            refused_reorders: ai.counters.refused_reorders,
+        });
+    }
+    out
+}
+
+/// L1-L4 on a trace: every job ends by its deadline (L1/L2); each end
+/// without success adds exactly one refusal (L3); no job starts within
+/// `refused` ticks of a refusal (L4) and at most one retry follows each;
+/// `refused_reorders` stays 0; at least one refusal (the goal is
+/// unreachable).
+fn check_liveness(trace: &[Seen], l: &Limits) -> Result<(), String> {
+    // Episodes: [start, end) of each alive run.
+    let mut eps: Vec<(u64, u64)> = Vec::new();
+    let mut open: Option<u64> = None;
+    for s in trace {
+        match (s.alive, open) {
+            (true, None) => open = Some(s.tick),
+            (false, Some(a)) => {
+                eps.push((a, s.tick));
+                open = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(a) = open {
+        let last = trace.last().map_or(a, |s| s.tick);
+        if last - a > l.job_max + l.slack {
+            return Err(format!(
+                "job alive from {a} to the end {last}: past its deadline (L1)"
+            ));
+        }
+    }
+    // Refusal events: each rise of the newest refusal's tick.
+    let mut refusals: Vec<u64> = Vec::new();
+    let mut last: Option<u64> = None;
+    for s in trace {
+        if s.refused_at > last {
+            refusals.extend(s.refused_at);
+            last = s.refused_at;
+        }
+    }
+    if refusals.is_empty() {
+        return Err("no refusal: the unreachable goal was never given up (L3)".into());
+    }
+    let done = |e: u64| {
+        trace.iter().any(|s| {
+            s.end == Some(crate::ai::HabitEnd::Done)
+                && s.tick + l.slack >= e
+                && s.tick <= e + l.slack
+        })
+    };
+    let mut failures = 0usize;
+    for &(a, e) in &eps {
+        if e - a > l.job_max + l.slack {
+            return Err(format!(
+                "job {a}..{e} outlived its deadline {} (L1/L2)",
+                l.job_max
+            ));
+        }
+        if done(e) {
+            continue;
+        }
+        failures += 1;
+        if !refusals
+            .iter()
+            .any(|&f| f + l.slack >= e && f <= e + l.slack)
+        {
+            return Err(format!(
+                "job {a}..{e} ended without success and no refusal (L3)"
+            ));
+        }
+    }
+    if refusals.len() != failures {
+        return Err(format!(
+            "{} refusals for {failures} failed jobs (L3: one each)",
+            refusals.len()
+        ));
+    }
+    for (k, &f) in refusals.iter().enumerate() {
+        let next = refusals.get(k + 1).copied().unwrap_or(u64::MAX);
+        let starts: Vec<u64> = eps
+            .iter()
+            .map(|e| e.0)
+            .chain(open)
+            .filter(|&a| a > f && a < next)
+            .collect();
+        if let Some(&a) = starts.first()
+            && a < f + l.refused
+        {
+            return Err(format!(
+                "job restarted at {a}, {} ticks after the refusal at {f} (L4)",
+                a - f
+            ));
+        }
+        if starts.len() > 1 {
+            return Err(format!(
+                "{} retries after the refusal at {f} (at most one)",
+                starts.len()
+            ));
+        }
+    }
+    match trace.last() {
+        Some(s) if s.refused_reorders > 0 => {
+            Err(format!("refused_reorders {}", s.refused_reorders))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A dummy job kind's trace: a job alive `run` ticks, failing, then waiting
+/// `wait` ticks before its retry, over `total` ticks; `refuses` writes the
+/// refusal at each failure.
+fn dummy_trace(run: u64, wait: u64, total: u64, refuses: bool) -> Vec<Seen> {
+    let mut out = Vec::new();
+    let mut refused_at = None;
+    let mut start = 1;
+    for t in 1..=total {
+        let in_job = t >= start && t < start + run;
+        if t == start + run {
+            if refuses {
+                refused_at = Some(t);
+            }
+            start = t + wait;
+        }
+        out.push(Seen {
+            tick: t,
+            alive: in_job,
+            end: (t == start.saturating_sub(wait) && t > 1).then_some(crate::ai::HabitEnd::Failed),
+            refused_at,
+            refused_reorders: 0,
+        });
+    }
+    out
+}
+
+/// L1-L4 for every job kind (spec 5): each row drives its kind at an
+/// unreachable goal for 20 min. With the table empty (Build A) it checks
+/// the harness: a dummy kind that fails, refuses and waits passes; the
+/// control, a dummy kind that never refuses, fails it (seen); a job past
+/// its deadline and a retry inside `refused_s` fail it too; and the drive
+/// loop runs on a world (each habit `NotBuilt`, no job).
+#[test]
+fn ai_jobs_end_and_never_reorder_a_refused_goal() {
+    use crate::ai::{AiHabit, DriveArgs, HabitEnd};
+    let hz = 30;
+    let l = Limits {
+        job_max: 900 * hz,
+        refused: 300 * hz,
+        slack: 5 * hz,
+    };
+    let total = LIVENESS_MIN * 60 * hz;
+    // A good dummy: fails after 600 s, waits refused_s, retries once.
+    let good = dummy_trace(600 * hz, 300 * hz, total, true);
+    check_liveness(&good, &l).unwrap();
+    // Control: never refuses.
+    let silent = dummy_trace(600 * hz, 300 * hz, total, false);
+    assert!(
+        check_liveness(&silent, &l).is_err(),
+        "a kind that never refuses passed"
+    );
+    // Past its deadline; and a retry 60 s after a refusal.
+    assert!(check_liveness(&dummy_trace(1000 * hz, 300 * hz, total, true), &l).is_err());
+    assert!(check_liveness(&dummy_trace(600 * hz, 60 * hz, total, true), &l).is_err());
+
+    // The drive loop on a world: no habit is built in A.
+    let mut w = ai_world();
+    let stage = Stage {
+        habit: AiHabit::Fort,
+        args: DriveArgs::default(),
+        goal: c(0, 0),
+    };
+    let tr = drive_row(&mut w, JobKind::Fort, &stage, 60);
+    assert!(tr.iter().all(|s| !s.alive && s.refused_at.is_none()));
+    assert!(
+        tr.iter()
+            .all(|s| matches!(s.end, None | Some(HabitEnd::NotBuilt)))
+    );
+
+    for &(kind, setup) in LIVENESS {
+        let mut w = ai_world();
+        let stage = setup(&mut w);
+        let s = w.match_setup().unwrap();
+        let (hz, o) = (s.tick_hz as u64, s.rules.ai.obstacles.clone());
+        let l = Limits {
+            job_max: o.job_max_s as u64 * hz,
+            refused: o.refused_s as u64 * hz,
+            slack: 2 * o.recheck_s.max(5) as u64 * hz,
+        };
+        let tr = drive_row(&mut w, kind, &stage, LIVENESS_MIN * 60 * hz);
+        if let Err(e) = check_liveness(&tr, &l) {
+            panic!("{kind:?}: {e}");
+        }
+    }
+}
