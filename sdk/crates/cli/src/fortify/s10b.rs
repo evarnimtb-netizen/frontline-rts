@@ -104,6 +104,13 @@ pub struct ObstacleRow {
     pub log_crossed_pct: Option<f64>,
     pub infantry_speed_pct: Option<f64>,
     pub tank_reached_pct: Option<f64>,
+    /// Runs whose tank came within [`APPROACH_M`] of the line (review R5:
+    /// without it a tank that never moved reads as blocked).
+    pub approached_pct: Option<f64>,
+    /// The same tank with no line staged: runs it drove through the band
+    /// the line would have held (must be 100, or the crossing check is
+    /// blind).
+    pub control_crossed_pct: Option<f64>,
 }
 
 /// T106: demolition opens an obstacle line.
@@ -112,6 +119,9 @@ pub struct DemolishRow {
     pub destroyed_pct: Option<f64>,
     pub gap_crossed_pct: Option<f64>,
     pub charge_laid_s: Option<f64>,
+    /// Runs whose tank came within [`APPROACH_M`] of the line after the
+    /// charge (review R5).
+    pub approached_pct: Option<f64>,
 }
 
 /// T107h: the open-pit control of the bunker's MG row.
@@ -706,6 +716,17 @@ const LOG_M: i32 = 20;
 /// The tank starts this far west of the line and is ordered this far east.
 const OBST_WEST_M: i32 = 30;
 const OBST_EAST_M: i32 = 60;
+/// A tank whose hull centre came this near the line's x reached it (half a
+/// medium tank's length plus the block pad and some slack).
+pub const APPROACH_M: i32 = 8;
+
+/// Whether `track` came within [`APPROACH_M`] of x = `TRENCH_X`.
+fn approached(track: &[FxVec2]) -> bool {
+    let x = Fx::from_int(TRENCH_X);
+    track
+        .iter()
+        .any(|q| (q.x - x).abs() <= Fx::from_int(APPROACH_M))
+}
 
 /// Stages `owner`'s obstacle line across x = `TRENCH_X` (hedgehogs, or a
 /// log barrier); the line's (y0, y1); the hedgehogs' piece ids.
@@ -779,9 +800,17 @@ fn tank_through(w: &mut World, p: u8) -> Result<(Vec<FxVec2>, bool)> {
     let hz = w.match_setup().unwrap().tick_hz as u64;
     let mut track = vec![pos(w, v)];
     let mut reached = false;
+    // A vehicle is never `alive` (that is a soldier check): the run stops
+    // on the wreck instead (review R5 found every run ending at tick 1).
+    let wrecked = |w: &World| {
+        w.game()
+            .unwrap()
+            .vehicle(v)
+            .is_none_or(|vs| vs.wreck_tick.is_some())
+    };
     for _ in 0..120 * hz {
         w.step(&[]);
-        if !alive(w, v) {
+        if wrecked(w) {
             break;
         }
         track.push(pos(w, v));
@@ -841,6 +870,7 @@ fn infantry_band_pct(w: &mut World, p: u8, y0: i32, y1: i32) -> Result<Option<f6
 /// against the other's lines.
 pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<ObstacleRow> {
     let (mut hx, mut lx, mut reached, mut runs) = (0u32, 0u32, 0u32, 0u32);
+    let (mut near, mut ctl, mut ctl_runs) = (0u32, 0u32, 0u32);
     let mut speed: Option<f64> = None;
     for seed in seeds {
         for p in [0u8, 1] {
@@ -855,6 +885,7 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
                     hx += crossed;
                 }
                 reached += got as u32;
+                near += approached(&track) as u32;
                 runs += 1;
                 let mut w = world(args, seed)?;
                 let (y0, y1, _) = obstacle_line(&mut w, 1 - p, log)?;
@@ -862,6 +893,12 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
                     speed = Some(speed.map_or(s, |m| m.min(s)));
                 }
             }
+            // Control: no line; the same tank must drive through the band.
+            let mut w = world(args, seed)?;
+            let half = (HEDGEHOGS - 1) * HEDGEHOG_STEP_M / 2;
+            let (track, _) = tank_through(&mut w, p)?;
+            ctl += crosses(&track, TRENCH_X, LINE_Y - half, LINE_Y + half) as u32;
+            ctl_runs += 1;
         }
     }
     Ok(ObstacleRow {
@@ -869,13 +906,19 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
         log_crossed_pct: pct(lx, runs / 2),
         infantry_speed_pct: speed,
         tank_reached_pct: pct(reached, runs),
+        approached_pct: pct(near, runs),
+        control_crossed_pct: pct(ctl, ctl_runs),
     })
 }
 
 /// `p`'s field engineers demolish the middle hedgehog of the other
 /// player's line; then `p`'s tank is ordered through. (destroyed, ticks
 /// from the order to the charge, hz, crossed between the line's ends).
-fn demolish_once(args: &FortifyArgs, seed: u64, p: u8) -> Result<(bool, Option<u64>, u64, bool)> {
+fn demolish_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+) -> Result<(bool, Option<u64>, u64, bool, bool)> {
     let mut w = world(args, seed)?;
     let (y0, y1, ids) = obstacle_line(&mut w, 1 - p, false)?;
     let mid = ids[ids.len() / 2];
@@ -920,17 +963,24 @@ fn demolish_once(args: &FortifyArgs, seed: u64, p: u8) -> Result<(bool, Option<u
         }],
     );
     let (track, _) = tank_through(&mut w, p)?;
-    Ok((destroyed, laid, hz, crosses(&track, TRENCH_X, y0, y1)))
+    Ok((
+        destroyed,
+        laid,
+        hz,
+        crosses(&track, TRENCH_X, y0, y1),
+        approached(&track),
+    ))
 }
 
 /// The `demolish` row (T106) over `seeds`, each player demolishing in turn.
 pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<DemolishRow> {
-    let (mut gone, mut crossed, mut n) = (0u32, 0u32, 0u32);
+    let (mut gone, mut crossed, mut near, mut n) = (0u32, 0u32, 0u32, 0u32);
     let (mut laid_s, mut laid_n) = (0.0f64, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (d, laid, hz, x) = demolish_once(args, seed, p)?;
+            let (d, laid, hz, x, a) = demolish_once(args, seed, p)?;
             gone += d as u32;
+            near += a as u32;
             crossed += x as u32;
             n += 1;
             if let Some(t) = laid {
@@ -943,5 +993,25 @@ pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<D
         destroyed_pct: pct(gone, n),
         gap_crossed_pct: pct(crossed, n),
         charge_laid_s: (laid_n > 0).then(|| (laid_s / laid_n as f64 * 10.0).round() / 10.0),
+        approached_pct: pct(near, n),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn obstacle_row_shows_the_tank_reaching_the_line() {
+        // Review R5. Control: drop the Move order in `tank_through` (the
+        // tank never leaves its start) -> the crossed pcts still read 0
+        // (T105a/b pass) but `approached_pct` and `control_crossed_pct`
+        // read 0 and this test fails.
+        let r = obstacle_row(&FortifyArgs::default(), 1..2).unwrap();
+        eprintln!("{r:?}");
+        assert_eq!(r.approached_pct, Some(100.0), "every tank came to the line");
+        assert_eq!(r.control_crossed_pct, Some(100.0), "with no line it drives through");
+        assert_eq!(r.hedgehog_crossed_pct, Some(0.0));
+        assert_eq!(r.log_crossed_pct, Some(0.0));
+    }
 }

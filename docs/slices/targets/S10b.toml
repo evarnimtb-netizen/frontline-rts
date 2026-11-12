@@ -2114,6 +2114,16 @@ metric = "fortify10.s10b.obstacle.tank_reached_pct"
 min = 0
 kind = "report"
 note = "goes round the line's end or stops at a partial path"
+# Review R5: T105a/b mean something only if the tank came to the line and,
+# with no line staged, drives through the same band.
+[[target]]
+id = "T105e"
+metric = "fortify10.s10b.obstacle.approached_pct"
+min = 100
+[[target]]
+id = "T105f"
+metric = "fortify10.s10b.obstacle.control_crossed_pct"
+min = 100
 
 # --- T106: demolition opens an obstacle line (R19-R21; done-when 5) ----------
 [[target]]
@@ -2130,6 +2140,12 @@ id = "T106c"
 metric = "fortify10.s10b.demolish.charge_laid_s"
 min = 0
 kind = "report"
+[[target]]
+id = "T106d"
+metric = "fortify10.s10b.demolish.approached_pct"
+min = 0
+kind = "report"
+note = "review R5: tanks that came within 8 m of the line after the charge"
 
 # --- T107: the bunker's protection against named weapons (R22-R26; done-when 6)
 # Five men inside a built bunker. Kar98k and MG 42 / M1919 fire at the front
