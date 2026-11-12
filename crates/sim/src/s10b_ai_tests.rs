@@ -541,7 +541,8 @@ pub(crate) struct Stage {
 /// One row per job kind: the setup builds a world whose goal is
 /// unreachable for that kind (B: Fort; D: Sweep, Demolish, TruckGoal).
 type StageSetup = fn() -> (World, Stage);
-const LIVENESS: &[(JobKind, StageSetup)] = &[(JobKind::Fort, fort_row)];
+const LIVENESS: &[(JobKind, StageSetup)] =
+    &[(JobKind::Fort, fort_row), (JobKind::Fort, barrier_row)];
 
 /// The Fort row (Build B): an AI engineer with materials at its held,
 /// trenched point; its AP field site lies under an own tank (inside
@@ -566,6 +567,43 @@ fn fort_row() -> (World, Stage) {
     );
     let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
     let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The LogBarrier row (Build C): an AI gun in Hold, an engineer with
+/// materials beside it; an own tank stands on the barrier's site (40 m out
+/// in the arc), so every `Fortify` is refused (BadSpot; the spec's "steep
+/// slope" needs relief the flat test map lacks, and any refusal drives
+/// L1-L4 the same). Control: `refused_s` 0 -> a restart each plan (the
+/// check fails, seen).
+fn barrier_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::squad_at;
+    use super::s10b_ai_obst_tests::{gun_in_hold, obst_world};
+    let (mut w, h) = obst_world(|_| {});
+    let at = h.pos + c(20, 0);
+    let gun = gun_in_hold(&mut w, at, at + h.enemy * Fx::from_int(100));
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let j = ai.as_ref().unwrap().guns[&gun];
+    let out = w.match_setup().unwrap().rules.ai.obstacles.obst_gun_m as i32;
+    let goal = j.site + (j.facing - j.site).normalize_or_zero() * Fx::from_int(out);
+    spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        goal.x.floor_int(),
+        goal.y.floor_int(),
+    );
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", at + c(-15, 0), 120);
     let stage = Stage {
         habit: crate::ai::AiHabit::Fort,
         args: crate::ai::DriveArgs {

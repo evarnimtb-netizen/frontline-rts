@@ -63,7 +63,7 @@ fn off_m(p: FxVec2, a: FxVec2, d: FxVec2) -> i32 {
 
 /// Puts a player 1 AT gun in Hold at `at` facing `facing` (as the S10a
 /// sandbag test).
-fn gun_in_hold(w: &mut World, at: FxVec2, facing: FxVec2) -> crate::game::SquadId {
+pub(crate) fn gun_in_hold(w: &mut World, at: FxVec2, facing: FxVec2) -> crate::game::SquadId {
     let gsq = squad_at(w, "ww2:usa_57mm_m1_squad", at, 0);
     let tick = w.state.tick;
     let gpos = {
@@ -88,7 +88,7 @@ fn gun_in_hold(w: &mut World, at: FxVec2, facing: FxVec2) -> crate::game::SquadI
 
 /// The held point with only the obstacle habits on (no mines, no S10a
 /// works or wire), a gun in Hold at once.
-fn obst_world(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> (World, Held) {
+pub(crate) fn obst_world(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> (World, Held) {
     held(|s| {
         s.rules.ai.fort.wire = 0;
         s.rules.ai.fort.gun_hold_s = 0;
