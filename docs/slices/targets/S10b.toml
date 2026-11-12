@@ -2148,9 +2148,10 @@ kind = "report"
 note = "review R5: tanks that came within 8 m of the line after the charge"
 
 # --- T107: the bunker's protection against named weapons (R22-R26; done-when 6)
-# Five men inside a built bunker. Kar98k and MG 42 / M1919 fire at the front
-# for 60 s from 150 m: no hp lost by any piece (armour 100 > every small-arms
-# pen, S10a 3.1).
+# Five men inside a built bunker. 300 staged rifle and MG rounds (Kar98k and
+# MG 42 / M1 Garand and M1919) from 20 m at the front walls and slit: no hp
+# lost by any piece (armour 100 > every small-arms pen, S10a 3.1). T107i is
+# its control (review R6).
 [[target]]
 id = "T107a"
 metric = "fortify10.s10b.bunker.small_arms_hp_lost"
@@ -2193,6 +2194,15 @@ id = "T107h"
 metric = "fortify10.s10b.bunker.control.mg_losses_pct"
 min = 0
 kind = "report"
+# Review R6: the controls that show the rounds and the MG reach the spot.
+[[target]]
+id = "T107i"
+metric = "fortify10.s10b.bunker.control.small_arms_hp_lost"
+min = 1
+[[target]]
+id = "T107j"
+metric = "fortify10.s10b.bunker.control.open_mg_losses_pct"
+min = 1
 
 # --- T108: the AI uses none of it (mechanics slice; owner 2026-11-09) --------
 # s10b.used = mines laid + obstacles and bunkers built + sweeps + demolitions.

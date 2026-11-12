@@ -8,8 +8,12 @@
 //! the slit stands 14 cm above the slit's bottom and a satchel's blast
 //! origin, 30 cm above it, lies in the roof), five men of the owner's rifle squad in the pit (0.4 m apart along
 //! x around the centre; the rest 60 m east), held on their spots.
-//! * `small_arms_hp_lost`: the other player's rifle squad and MG team 150 m
-//!   west fire for 60 s; hp lost over the six pieces, all runs.
+//! * `small_arms_hp_lost`: [`VOLLEY`] staged rounds of the other faction's
+//!   rifle and MG (alternating) from 20 m west, level, at the front walls
+//!   and the slit (y within 1.5 m of the centre, 5-35 cm above the walls'
+//!   base); hp lost over the six pieces, all runs. `control.
+//!   small_arms_hp_lost`: the same with armour 1 on the walls (review R6:
+//!   the auto-fire run had no evidence a round reached a piece).
 //! * `survived_81mm_x3_pct`, `sheltered_losses`: three 81 mm bombs of the
 //!   other faction's mortar on the roof centre, 2 s apart.
 //! * `roof_satchel_losses`: a satchel dropped 2 m above the roof's top.
@@ -19,8 +23,10 @@
 //! * `ap_shots_to_break`: the other side's medium tank gun AP round (Pz IV H
 //!   KwK 40 PzGr 39, M4A3 M3 M61) fired across the roof 80 cm above the
 //!   surface until it breaks (capped at [`AP_CAP`]); mean.
-//! * `mg_losses_pct` and `control.mg_losses_pct`: the MG team alone fires
-//!   60 s; share of the five dead, with the bunker and in the bare pit.
+//! * `mg_losses_pct`, `control.mg_losses_pct`, `control.open_mg_losses_pct`:
+//!   the MG team alone fires 60 s (auto-targeting, 150 m); share of the five
+//!   dead with the bunker, in the bare pit, and standing on open ground (no
+//!   pit: the open control shows the MG engages that spot).
 
 use super::*;
 
@@ -30,15 +36,28 @@ const FIRE_M: i32 = 150;
 const FIRE_S: u64 = 60;
 /// Most AP shots fired at the roof.
 pub const AP_CAP: u32 = 20;
+/// Staged small-arms rounds per run (T107a).
+pub const VOLLEY: u32 = 300;
+
+/// What stands at the site: the bunker, its bare pit, or open ground.
+#[derive(Clone, Copy, PartialEq)]
+enum Site {
+    Bunker,
+    Pit,
+    Open,
+}
 
 /// The bunker of `own` with its five men (pieces first the roof, then in
-/// part order), or only the pit when `built` is false.
-fn bunker(w: &mut World, own: u8, built: bool) -> Result<(Vec<u32>, Vec<SimId>)> {
+/// part order), only the pit, or open ground.
+fn bunker(w: &mut World, own: u8, site: Site) -> Result<(Vec<u32>, Vec<SimId>)> {
+    let built = site == Site::Bunker;
     let f = s10a::fort_of(w, "ww2:bunker")?;
     let half = Fx::from(w.match_setup().unwrap().rules.bunker_pit.pit_line).div_int(2);
     let c = at(TRENCH_X, LINE_Y);
     let e = FxVec2::new(half, Fx::ZERO);
-    if !w.dig_pit_now(&[c - e, c + e], frontline_content::DigProfile::BunkerPit) {
+    if site != Site::Open
+        && !w.dig_pit_now(&[c - e, c + e], frontline_content::DigProfile::BunkerPit)
+    {
         bail!("the bunker pit was not dug");
     }
     let before: Vec<u32> = w.game().unwrap().fort().pieces.keys().copied().collect();
@@ -73,8 +92,13 @@ fn bunker(w: &mut World, own: u8, built: bool) -> Result<(Vec<u32>, Vec<SimId>)>
 /// Steps `secs` holding `men` (living ones) on their spots.
 fn hold(w: &mut World, men: &[SimId], secs: u64) {
     let hz = w.match_setup().unwrap().tick_hz as u64;
+    hold_ticks(w, men, secs * hz);
+}
+
+/// [`hold`] for `ticks` ticks.
+fn hold_ticks(w: &mut World, men: &[SimId], ticks: u64) {
     let spots: Vec<FxVec2> = men.iter().map(|&m| pos(w, m)).collect();
-    for _ in 0..secs * hz {
+    for _ in 0..ticks {
         for (&m, &p) in men.iter().zip(&spots) {
             if s10a::alive(w, m) {
                 w.place_soldier(m, p);
@@ -123,35 +147,59 @@ fn weapon(w: &World, id: &str) -> Result<u16> {
         .ok_or_else(|| anyhow::anyhow!("no weapon {id}"))
 }
 
-/// `att`'s squads with tags `roles` fire for [`FIRE_S`] s from
-/// [`FIRE_M`] m east at `own`'s bunker (built or not): (piece hp lost, the
-/// five dead).
-fn fire_run(
-    args: &FortifyArgs,
-    seed: u64,
-    own: u8,
-    built: bool,
-    roles: &[&str],
-) -> Result<(u32, u32)> {
+/// `att`'s MG team fires for [`FIRE_S`] s from [`FIRE_M`] m west at
+/// `own`'s five at `site`: the five dead.
+fn fire_run(args: &FortifyArgs, seed: u64, own: u8, site: Site) -> Result<u32> {
     let att = 1 - own;
     let mut w = world(args, seed)?;
-    let (pieces, men) = bunker(&mut w, own, built)?;
-    let full = hp_sum(&w, &pieces);
-    for (k, role) in roles.iter().enumerate() {
-        let sq = match squad(&w, att, role) {
-            Ok(s) => s,
-            Err(_) => call_in(&mut w, att, role)?,
-        };
-        w.place_squad(sq, at(TRENCH_X - FIRE_M, LINE_Y - 5 + 10 * k as i32), EAST);
-    }
+    let (_, men) = bunker(&mut w, own, site)?;
+    let sq = match squad(&w, att, "mg") {
+        Ok(s) => s,
+        Err(_) => call_in(&mut w, att, "mg")?,
+    };
+    w.place_squad(sq, at(TRENCH_X - FIRE_M, LINE_Y), EAST);
     hold(&mut w, &men, FIRE_S);
-    Ok((full - hp_sum(&w, &pieces), dead(&w, &men)))
+    Ok(dead(&w, &men))
+}
+
+/// [`VOLLEY`] staged rounds of `1 - own`'s rifle and MG (alternating) from
+/// 20 m west at `own`'s bunker front, the walls at `armour` mm when given:
+/// piece hp lost.
+fn volley_run(args: &FortifyArgs, seed: u64, own: u8, armour: Option<u32>) -> Result<u32> {
+    let mut w = world_with(args, seed, |s| {
+        if let (Some(a), Some(f)) = (armour, s.forts.iter_mut().find(|f| f.id == "ww2:bunker")) {
+            f.pieces.iter_mut().skip(1).for_each(|p| p.armour_mm = a);
+        }
+    })?;
+    let (pieces, men) = bunker(&mut w, own, Site::Bunker)?;
+    let full = hp_sum(&w, &pieces);
+    let germany = faction(w.match_setup().unwrap(), 1 - own).ends_with("germany");
+    let guns = if germany {
+        [weapon(&w, "ww2:kar98k")?, weapon(&w, "ww2:mg42")?]
+    } else {
+        [weapon(&w, "ww2:m1_garand")?, weapon(&w, "ww2:m1919")?]
+    };
+    let c = at(TRENCH_X, LINE_Y);
+    // The front walls' base (the site's undug surface).
+    let base = w.game().unwrap().fort().pieces[&pieces[4]].z;
+    for k in 0..VOLLEY as i32 {
+        let y = Fx::from_milli((k * 37) % 3000 - 1500);
+        let z = base + Fx::from_milli(50 + (k * 13) % 300);
+        let to = FxVec2::new(c.x, c.y + y);
+        let from = to - FxVec2::new(Fx::from_int(20), Fx::ZERO);
+        if !w.fire_round_now(1 - own, guns[k as usize % 2], from.extend(z), to.extend(z)) {
+            bail!("seed {seed}: round {k} was not fired");
+        }
+        hold_ticks(&mut w, &men, 2);
+    }
+    hold(&mut w, &men, 1);
+    Ok(full - hp_sum(&w, &pieces))
 }
 
 /// Three bombs on the roof: (roof stood, the five dead).
 fn bombs_run(args: &FortifyArgs, seed: u64, own: u8) -> Result<(bool, u32)> {
     let mut w = world(args, seed)?;
-    let (pieces, men) = bunker(&mut w, own, true)?;
+    let (pieces, men) = bunker(&mut w, own, Site::Bunker)?;
     let mortar = s10a_mortar(&w, 1 - own)?;
     for _ in 0..3 {
         if !w.drop_shell_now(1 - own, mortar, at(TRENCH_X, LINE_Y)) {
@@ -180,7 +228,7 @@ fn s10a_mortar(w: &World, p: u8) -> Result<u16> {
 /// slit's inner lip: the five dead.
 fn satchel_run(args: &FortifyArgs, seed: u64, own: u8, slit: bool) -> Result<u32> {
     let mut w = world(args, seed)?;
-    let (pieces, men) = bunker(&mut w, own, true)?;
+    let (pieces, men) = bunker(&mut w, own, Site::Bunker)?;
     let t = thrower(&mut w, 1 - own)?;
     let item = satchel(&w)?;
     let c = at(TRENCH_X, LINE_Y);
@@ -208,7 +256,7 @@ fn satchel_run(args: &FortifyArgs, seed: u64, own: u8, slit: bool) -> Result<u32
 /// breaks: shots fired (at most [`AP_CAP`]).
 fn ap_run(args: &FortifyArgs, seed: u64, own: u8) -> Result<u32> {
     let mut w = world(args, seed)?;
-    let (pieces, _) = bunker(&mut w, own, true)?;
+    let (pieces, _) = bunker(&mut w, own, Site::Bunker)?;
     let s = w.match_setup().unwrap();
     let (gun, round) = if faction(s, 1 - own).ends_with("germany") {
         ("ww2:kwk40_l48", "ww2:75mm_pzgr39")
@@ -249,17 +297,20 @@ fn pct(a: u32, b: u32) -> Option<f64> {
 pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<s10b::BunkerRow> {
     let (mut hp_lost, mut stood, mut sheltered, mut roof_dead) = (0u32, 0u32, 0u32, 0u32);
     let (mut slit_dead, mut mg_dead, mut bare_dead, mut shots, mut n) = (0u32, 0, 0, 0, 0u32);
+    let (mut thin_lost, mut open_dead) = (0u32, 0u32);
     for seed in seeds {
         for own in [0u8, 1] {
-            hp_lost += fire_run(args, seed, own, true, &["line", "mg"])?.0;
+            hp_lost += volley_run(args, seed, own, None)?;
+            thin_lost += volley_run(args, seed, own, Some(1))?;
             let (s, d) = bombs_run(args, seed, own)?;
             stood += s as u32;
             sheltered += d;
             roof_dead += satchel_run(args, seed, own, false)?;
             slit_dead += satchel_run(args, seed, own, true)?;
             shots += ap_run(args, seed, own)?;
-            mg_dead += fire_run(args, seed, own, true, &["mg"])?.1;
-            bare_dead += fire_run(args, seed, own, false, &["mg"])?.1;
+            mg_dead += fire_run(args, seed, own, Site::Bunker)?;
+            bare_dead += fire_run(args, seed, own, Site::Pit)?;
+            open_dead += fire_run(args, seed, own, Site::Open)?;
             n += 1;
         }
     }
@@ -273,6 +324,8 @@ pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<s10
         mg_losses_pct: pct(mg_dead, 5 * n),
         control: s10b::BunkerControl {
             mg_losses_pct: pct(bare_dead, 5 * n),
+            small_arms_hp_lost: Some(thin_lost as f64),
+            open_mg_losses_pct: pct(open_dead, 5 * n),
         },
     })
 }
@@ -300,6 +353,17 @@ mod tests {
             assert!(v[k].is_number(), "{k} is filled");
         }
         assert!(r.control.mg_losses_pct.is_some());
+        // Review R6. Control: aim the volleys 30 m off the bunker (or never
+        // place the MG team) -> the controls read 0 and these fail, while
+        // the bunker's own 0s above would still pass.
+        assert!(
+            r.control.small_arms_hp_lost.unwrap() > 0.0,
+            "thin walls lose hp to the same volleys"
+        );
+        assert!(
+            r.control.open_mg_losses_pct.unwrap() > 0.0,
+            "the MG kills men on open ground at that spot"
+        );
         // The bunker's own claims (T107a-c, e) hold on one seed.
         assert_eq!(r.small_arms_hp_lost, Some(0.0));
         assert_eq!(r.survived_81mm_x3_pct, Some(100.0));

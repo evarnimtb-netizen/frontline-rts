@@ -426,6 +426,11 @@ fn faction(setup: &MatchSetup, p: u8) -> String {
 
 /// A hand-driven match world (both players human, plenty of manpower).
 fn world(args: &FortifyArgs, seed: u64) -> Result<World> {
+    world_with(args, seed, |_| {})
+}
+
+/// [`world`] with `edit` applied to the setup first (controls).
+fn world_with(args: &FortifyArgs, seed: u64, edit: impl FnOnce(&mut MatchSetup)) -> Result<World> {
     let mut setup = match_setup(&SkirmishArgs {
         seed,
         mods: args.mods.clone(),
@@ -434,6 +439,7 @@ fn world(args: &FortifyArgs, seed: u64) -> Result<World> {
     })?;
     setup.players.iter_mut().for_each(|p| p.is_ai = false);
     setup.rules.start_manpower = 10_000;
+    edit(&mut setup);
     Ok(World::new_match(setup, args.threads)?)
 }
 

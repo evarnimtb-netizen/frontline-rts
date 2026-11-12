@@ -128,6 +128,12 @@ pub struct DemolishRow {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BunkerControl {
     pub mg_losses_pct: Option<f64>,
+    /// T107a's control: the same staged volleys with armour 1 on the walls
+    /// (must lose hp, or the volleys never reached the bunker; review R6).
+    pub small_arms_hp_lost: Option<f64>,
+    /// T107g/h's control: the five on open ground, no pit (must lose men,
+    /// or the MG never engaged that spot; review R6).
+    pub open_mg_losses_pct: Option<f64>,
 }
 
 /// T107: the bunker against named weapons.
