@@ -6,34 +6,25 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 3 = the rest of the stage file's chunk 1 (sweeping: fortify row `s10b_ai.sweep` and the fuzz
-stage), then stage chunk 2 (demolition).** D chunk 2 built the AI sweep (`eb20b56` + the clippy/log commit). Layout:
-SAVE 25, PROTOCOL 14 (no bump). Start from `crates/sim/src/ai/sweep.rs` (module doc = the rules as built).
-**Sweep code:** `sweep_on`, Planner `suspects` (R9: other players' `FortState::blasts` younger than `suspect_s`; the
-blast keeps no victim, so every enemy blast counts; sets `suspects_seen` = blasts read), `known_enemy_mines`,
-`sweep_lane(p, from, to, suspects, mines, fixed_b)` (R10; lane 10 m short of the first, `lane_max_m` - 10 cm, shortened
-to stay on the map; candidates inside an existing lane of the point skipped), `sweep_start` (after `breach_start` in
-`plan`, claimed as hunts; sweeper: the point's `clear_mines` squad >= 60 %, else nearest within `sweep_reach_m`; L4;
-`refused_reorders`), `sweep_continue` (after `breach_continue`), `run_sweep` (Go: `Move` to `a`, within 8 m sends
-`ClearMines`; Sweep: `tries` 0 until the order stands, then 1 + whole m of `along` = L2 mark, stall 3 x `lift_s` + 60 s;
-Go stall 3 x `sweep_reach_m`/speed + 60 s; L1 `job_max_s`), `sweep_end` (L3 at lane middle, `s10b_refused`,
-`jobs_overdue`), `sweep_hold(p)` (attackers' target `HOLD_M` 10 m short of `a`; used in `order_infantry` via `holds`),
-`drive_sweep` (hook: `args.others` = attackers, tasks set Attack each plan, held while alive; `args.at` = fixed `b`).
-A swept job stays `SweepPhase::Done` (squad free) while the point is attacked, at most `suspect_s` (one sweep per
-lane); `sweep_room` evicts the oldest Done at `MAX_SWEEPS`. `squad_of` now knows `ClearMines` (pending check).
-**Tests** (`crates/sim/src/s10b_ai_sweep_tests.rs`, controls in-loop, all seen): `ai_marks_suspect_from_blast`
-(`suspect_s` 1), `ai_sweeps_suspect_lane_before_attack` (`sweep` 0), `ai_sweep_ends_when_lane_clear` (`sweep` 0),
-`ai_two_sweepers_never_share_lane` (`suspect_s` 1 + fresh blasts -> 2nd sweep), `ai_sweep_ends_when_sweeper_dies`
-(one man killed -> lives), `ai_sweep_beside_own_tank` (incl. save/load mid-job, same hash; `sweep` 0). Helpers
-`attack_world`, `squads`, `blast`, `Attack::short`. Liveness row `sweep_row` (lane end off the map: BadSpot; control
-`refused_s` 0 -> "Sweep: refused_reorders 4", seen). `drive_ai_habit_skeleton_ends_not_built` now checks Demolish only.
-**Left in stage chunk 1:** only the fortify row `s10b_ai.sweep` (sdk/crates/cli/src/fortify/s10b_ai.rs: rifle +
-engineer squads, two-row enemy AP field across the approach, one blast; `drive_ai_habit(Sweep)` with `DriveArgs{squad,
-point, others}`, then the scripted advance; `lane_swept_pct`, `mines_lifted`, `attacker_mine_losses`; exposure
-`sweep_wanted_pct`; control `sweep` 0). Fuzz stage done (`70b49ab`, `ai_sweep_watch`; save_fuzz incl. ignored 15 ok).
-Still open from D1: T115e (own tank never moves with obstacles on, `obstacle_once`), slow skirmish binary (now 651 s in
-quick; `own_route()` memo per plan, see D1 section), owner question S10b-ai-D1. Owner questions open: D1, C1, B2a, 1..7.
-Last check: `tools/check.sh quick 72b2970` all ok (786). Failing tests: none. Chunks left: D 3 (sweep rest + demolition, F8 + docs).
+**Next: Build D chunk 4 = the stage file's chunk 2 (demolition, R13/R14), then chunk 5 = stage chunk 3 (F8, docs,
+stage check).** Stage chunk 1 (sweeping) is done: STOP POINT 1 met in D chunk 3. Layout: SAVE 25, PROTOCOL 14.
+**Sweep code** (`crates/sim/src/ai/sweep.rs`, module doc = the rules as built): Planner `suspects`,
+`known_enemy_mines`, `sweep_lane`, `sweep_start` (after `breach_start` in `plan`), `sweep_continue` (after
+`breach_continue`), `run_sweep`, `sweep_end`, `sweep_hold` (used in `order_infantry`), `drive_sweep` (hook). Copy this
+want/phase/end pattern for `ai/demolish.rs` (`demolish_start` / `demolish_continue` / `drive_demolish`; the
+`drive_ai_habit_skeleton_ends_not_built` test still checks Demolish only and must change when Demolish is built).
+**Tests** in `crates/sim/src/s10b_ai_sweep_tests.rs` (helpers `attack_world`, `squads`, `blast`, `Attack::short` are
+`pub(crate)` for the demolition tests); liveness row `sweep_row`; fuzz stage `ai_sweep_watch` in save_fuzz.
+**Fortify row `s10b_ai.sweep`** (`sdk/crates/cli/src/fortify/s10b_ai.rs`: `sweep_once`, `sweep_row`, one-off
+`sweep_row_one_off`; consts `SWEEP_RIFLE_M` 120, `SWEEP_FIELD_M` 60, `SWEEP_DRIVE_S` 600, `SWEEP_ADVANCE_S` 240).
+Seeds 1-3, both players: `lane_swept_pct` 100, `mines_lifted` 4.0/run, `attacker_mine_losses` 3.0/run, exposure
+`sweep_wanted_pct` 100; control (`sweep` 0) `lane_swept_pct` 0, `attacker_mine_losses` 8.0. T111i holds; T111j (max 1,
+"verify") misses: owner question S10b-ai-D2 (below), proceeding on (A). The rifles' moving column (two files 1.5 m
+apart) fits the 4 m lane; losses come from a lane mine the sweep missed (detection roll), then men leaving the lane.
+Still open from D1: T115e (own tank never moves with obstacles on, `obstacle_once`), slow skirmish binary
+(`own_route()` memo lives one plan, `Planner::own_routes`: gun_route A* searches run again every plan). Owner
+questions open: D2, D1, C1, B2a, 1..7. Last check: `tools/check.sh quick 72b2970` all ok (786; skirmish 290 s).
+Failing tests: none. Chunks left: D 4 (demolition), D 5 (F8 + docs + stage check).
 
 ## Plan (2026-11-12)
 
@@ -136,3 +127,14 @@ Bugs met while testing: `squad_of` lacked `ClearMines` (the job saw its own pend
 (now shortened along it). Quick: fmt, clippy, neutral.py, ablate.sh ok; tests cli+content+sim 786 passed, 0 failed
 (skirmish binary 651 s). Two quick runs overlapped by mistake (run.sh returned early); the clean rerun after `70b49ab`: all ok.
 All-off 40 set not replayed this chunk (sweep code returns before any work with `sweep` 0; holds empty).
+
+## Build D chunk 3 (2026-11-12; stage chunk 1 rest: fortify row `s10b_ai.sweep`)
+
+Row geometry as the sweep tests: the line runs through the rifle leader; field rows across it 60 m and 56 m short of
+the point (30 m, every 2 m, row 2 shifted 1 m), the blast 60 m short, 1 s old. Debug trace (not committed): with the
+sweep, 4 of 6 runs lose 0 men; the losing runs had a second blast inside the lane (a missed mine), then blasts 2-5 m
+aside. **Owner question S10b-ai-D2** (T111j, max 1 man per run, "verify"; measured 3.0, control 8.0): (A) leave as is,
+a swept lane is not a sure lane (the S10b detection roll); (B) the AI sweeps two parallel lanes or a lane of
+`lane_half_cm` 300 for an attack (more sweep time); (C) attackers wait for a second pass over a lane where a mine was
+found. Proceeding on (A). Quick after `078e382`: fmt, clippy, neutral.py, ablate.sh ok; tests 786 passed (306 s).
+
