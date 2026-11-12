@@ -142,7 +142,15 @@ pub struct BunkerRow {
     pub small_arms_hp_lost: Option<f64>,
     pub survived_81mm_x3_pct: Option<f64>,
     pub sheltered_losses: Option<f64>,
+    /// Share of the five dead to a real Demolish at the slit, bunker facing
+    /// down the slope (review R7).
     pub slit_satchel_losses_pct: Option<f64>,
+    /// The same, bunker facing up the slope.
+    pub slit_satchel_uphill_losses_pct: Option<f64>,
+    /// Runs whose Demolish laid its charge (the losses count only those).
+    pub slit_charge_laid_pct: Option<f64>,
+    /// The same Demolish at the back wall (no opening): the slit's control.
+    pub back_satchel_losses_pct: Option<f64>,
     pub roof_satchel_losses: Option<f64>,
     pub ap_shots_to_break: Option<f64>,
     pub mg_losses_pct: Option<f64>,

@@ -17,9 +17,17 @@
 //! * `survived_81mm_x3_pct`, `sheltered_losses`: three 81 mm bombs of the
 //!   other faction's mortar on the roof centre, 2 s apart.
 //! * `roof_satchel_losses`: a satchel dropped 2 m above the roof's top.
-//! * `slit_satchel_losses_pct`: a satchel at the slit's inner lip (slit
-//!   centre, 5 cm above its bottom, 10 cm inside the front walls' centre
-//!   line): share of the five dead after 12 s.
+//! * `slit_satchel_losses_pct`: a real Demolish order (the other side's
+//!   field engineers, 15 m in front) clicked 20 cm outside the slit's
+//!   centre; the charge lies where Demolish lays it (the target piece's
+//!   outer face nearest the man, at terrain height; the roof and the front
+//!   walls tie there and the roof, the lower id, is chosen). The five wait
+//!   out of the fight until it is laid, the engineers are then moved off;
+//!   share of the five dead after the fuse + 2 s (review R7). `slit_satchel_
+//!   uphill_losses_pct`: the same with the bunker facing up the slope;
+//!   `back_satchel_losses_pct`: the same at the back wall (no opening). The
+//!   first fix run read 100/100/100: a charge at any wall kills the five,
+//!   so T107d does not show the slit (owner question in the S10b log).
 //! * `ap_shots_to_break`: the other side's medium tank gun AP round (Pz IV H
 //!   KwK 40 PzGr 39, M4A3 M3 M61) fired across the roof 80 cm above the
 //!   surface until it breaks (capped at [`AP_CAP`]); mean.
@@ -50,6 +58,16 @@ enum Site {
 /// The bunker of `own` with its five men (pieces first the roof, then in
 /// part order), only the pit, or open ground.
 fn bunker(w: &mut World, own: u8, site: Site) -> Result<(Vec<u32>, Vec<SimId>)> {
+    bunker_facing(w, own, site, WEST)
+}
+
+/// [`bunker`] with the bunker facing `face` (WEST is down the slope).
+fn bunker_facing(
+    w: &mut World,
+    own: u8,
+    site: Site,
+    face: FxVec2,
+) -> Result<(Vec<u32>, Vec<SimId>)> {
     let built = site == Site::Bunker;
     let f = s10a::fort_of(w, "ww2:bunker")?;
     let half = Fx::from(w.match_setup().unwrap().rules.bunker_pit.pit_line).div_int(2);
@@ -61,7 +79,7 @@ fn bunker(w: &mut World, own: u8, site: Site) -> Result<(Vec<u32>, Vec<SimId>)> 
         bail!("the bunker pit was not dug");
     }
     let before: Vec<u32> = w.game().unwrap().fort().pieces.keys().copied().collect();
-    if built && !w.build_now(f, &[c, c + WEST], PlayerId(own)) {
+    if built && !w.build_now(f, &[c, c + face], PlayerId(own)) {
         bail!("the bunker was not staged");
     }
     let fort = w.game().unwrap().fort();
@@ -224,32 +242,75 @@ fn s10a_mortar(w: &World, p: u8) -> Result<u16> {
     )
 }
 
-/// A satchel of the other player on the roof (`slit` false) or at the
-/// slit's inner lip: the five dead.
-fn satchel_run(args: &FortifyArgs, seed: u64, own: u8, slit: bool) -> Result<u32> {
+/// A satchel of the other player dropped on the roof: the five dead.
+fn satchel_run(args: &FortifyArgs, seed: u64, own: u8) -> Result<u32> {
     let mut w = world(args, seed)?;
     let (pieces, men) = bunker(&mut w, own, Site::Bunker)?;
     let t = thrower(&mut w, 1 - own)?;
     let item = satchel(&w)?;
     let c = at(TRENCH_X, LINE_Y);
-    let (p, z) = if slit {
-        // 5 cm above the slit's bottom (the front walls' base).
-        let p = c - FxVec2::new(Fx::from_milli(1800), Fx::ZERO);
-        (
-            p,
-            w.game().unwrap().fort().pieces[&pieces[4]].z + Fx::from_milli(50),
-        )
-    } else {
-        let q = w.game().unwrap().fort().pieces[&pieces[0]].clone();
-        let b = &w.match_setup().unwrap().forts[q.fort as usize].pieces[q.part as usize];
-        (c, q.z + Fx::from(b.half[2]).mul_int(2) + Fx::from_int(2))
-    };
-    let above = z - w.terrain().height_at(p);
-    if !w.drop_item_now(t, item, p, above) {
+    let q = w.game().unwrap().fort().pieces[&pieces[0]].clone();
+    let b = &w.match_setup().unwrap().forts[q.fort as usize].pieces[q.part as usize];
+    let z = q.z + Fx::from(b.half[2]).mul_int(2) + Fx::from_int(2);
+    let above = z - w.terrain().height_at(c);
+    if !w.drop_item_now(t, item, c, above) {
         bail!("seed {seed}: the satchel was not dropped");
     }
-    hold(&mut w, &men, if slit { 12 } else { 5 });
+    hold(&mut w, &men, 5);
     Ok(dead(&w, &men))
+}
+
+/// The other side's field engineers demolish at `own`'s bunker slit (a
+/// real Demolish order, the bunker facing `face`): the five dead, or None
+/// when no charge was laid in 120 s.
+fn slit_demolish_run(
+    args: &FortifyArgs,
+    seed: u64,
+    own: u8,
+    face: FxVec2,
+    back: bool,
+) -> Result<Option<u32>> {
+    let mut w = world(args, seed)?;
+    let (_, men) = bunker_facing(&mut w, own, Site::Bunker, face)?;
+    // The owner's squad waits far off while the engineers work (else the
+    // five and the engineers fight and the losses are not the charge's).
+    let spots: Vec<FxVec2> = men.iter().map(|&m| pos(&w, m)).collect();
+    let sq = squad(&w, own, "line")?;
+    w.place_squad(sq, at(TRENCH_X + 300, LINE_Y + 300), WEST);
+    let att = 1 - own;
+    let eng = s10a::call_in_card(&mut w, att, &s10a::FIELD_ENGINEERS)?;
+    let c = at(TRENCH_X, LINE_Y);
+    // `back`: the same at the back wall's centre (no opening there).
+    let side = if back { face.mul_int(-1) } else { face };
+    w.place_squad(eng, c + side.mul_int(15), side.mul_int(-1));
+    // 20 cm outside the slit's centre (the front's outer face is 2.1 m out).
+    let click = c + side.mul_int(23).div_int(10);
+    step_with(&mut w, att, vec![CommandKind::Demolish { squad: eng, at: click }]);
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let mut laid = false;
+    for _ in 0..120 * hz {
+        if !w.game().unwrap().fort().charges.is_empty() {
+            laid = true;
+            break;
+        }
+        w.step(&[]);
+    }
+    if !laid {
+        return Ok(None);
+    }
+    w.place_squad(eng, at(TRENCH_X - 300, LINE_Y - 300), EAST);
+    for (&m, &p) in men.iter().zip(&spots) {
+        w.place_soldier(m, p);
+    }
+    let fuse = w
+        .match_setup()
+        .unwrap()
+        .rules
+        .fortify
+        .as_ref()
+        .map_or(10, |t| t.demolish_fuse_s as u64);
+    hold(&mut w, &men, fuse + 2);
+    Ok(Some(dead(&w, &men)))
 }
 
 /// AP rounds of the other side's medium tank gun across the roof until it
@@ -298,6 +359,8 @@ pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<s10
     let (mut hp_lost, mut stood, mut sheltered, mut roof_dead) = (0u32, 0u32, 0u32, 0u32);
     let (mut slit_dead, mut mg_dead, mut bare_dead, mut shots, mut n) = (0u32, 0, 0, 0, 0u32);
     let (mut thin_lost, mut open_dead) = (0u32, 0u32);
+    let (mut slit_n, mut up_dead, mut up_n) = (0u32, 0u32, 0u32);
+    let (mut back_dead, mut back_n) = (0u32, 0u32);
     for seed in seeds {
         for own in [0u8, 1] {
             hp_lost += volley_run(args, seed, own, None)?;
@@ -305,8 +368,19 @@ pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<s10
             let (s, d) = bombs_run(args, seed, own)?;
             stood += s as u32;
             sheltered += d;
-            roof_dead += satchel_run(args, seed, own, false)?;
-            slit_dead += satchel_run(args, seed, own, true)?;
+            roof_dead += satchel_run(args, seed, own)?;
+            if let Some(d) = slit_demolish_run(args, seed, own, WEST, true)? {
+                back_dead += d;
+                back_n += 1;
+            }
+            if let Some(d) = slit_demolish_run(args, seed, own, WEST, false)? {
+                slit_dead += d;
+                slit_n += 1;
+            }
+            if let Some(d) = slit_demolish_run(args, seed, own, EAST, false)? {
+                up_dead += d;
+                up_n += 1;
+            }
             shots += ap_run(args, seed, own)?;
             mg_dead += fire_run(args, seed, own, Site::Bunker)?;
             bare_dead += fire_run(args, seed, own, Site::Pit)?;
@@ -318,7 +392,10 @@ pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<s10
         small_arms_hp_lost: Some(hp_lost as f64),
         survived_81mm_x3_pct: pct(stood, n),
         sheltered_losses: Some(sheltered as f64),
-        slit_satchel_losses_pct: pct(slit_dead, 5 * n),
+        slit_satchel_losses_pct: pct(slit_dead, 5 * slit_n),
+        slit_satchel_uphill_losses_pct: pct(up_dead, 5 * up_n),
+        slit_charge_laid_pct: pct(slit_n + up_n, 2 * n),
+        back_satchel_losses_pct: pct(back_dead, 5 * back_n),
         roof_satchel_losses: Some(roof_dead as f64),
         ap_shots_to_break: (n > 0).then(|| (shots as f64 * 10.0 / n as f64).round() / 10.0),
         mg_losses_pct: pct(mg_dead, 5 * n),
@@ -353,6 +430,9 @@ mod tests {
             assert!(v[k].is_number(), "{k} is filled");
         }
         assert!(r.control.mg_losses_pct.is_some());
+        // Review R7. Control: drop the Demolish command in
+        // `slit_demolish_run` -> no charge is laid and this fails.
+        assert_eq!(r.slit_charge_laid_pct, Some(100.0), "every Demolish laid");
         // Review R6. Control: aim the volleys 30 m off the bunker (or never
         // place the MG team) -> the controls read 0 and these fail, while
         // the bunker's own 0s above would still pass.

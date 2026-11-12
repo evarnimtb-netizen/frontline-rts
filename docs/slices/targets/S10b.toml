@@ -2167,7 +2167,10 @@ id = "T107c"
 metric = "fortify10.s10b.bunker.sheltered_losses"
 max = 0
 # A satchel laid at the slit (design 7.6 "satchel against the slit") kills
-# men inside through the opening; 40 verify.
+# men inside through the opening; 40 verify. Since review R7 it is a real
+# Demolish order clicked at the slit (the charge where Demolish lays it,
+# bunker facing down the slope); T107k (facing up) and T107l (the same at
+# the back wall, no opening) are reports beside it.
 [[target]]
 id = "T107d"
 metric = "fortify10.s10b.bunker.slit_satchel_losses_pct"
@@ -2194,6 +2197,21 @@ id = "T107h"
 metric = "fortify10.s10b.bunker.control.mg_losses_pct"
 min = 0
 kind = "report"
+[[target]]
+id = "T107k"
+metric = "fortify10.s10b.bunker.slit_satchel_uphill_losses_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T107l"
+metric = "fortify10.s10b.bunker.back_satchel_losses_pct"
+min = 0
+kind = "report"
+note = "the slit's control: equal to T107d means the opening does not matter"
+[[target]]
+id = "T107m"
+metric = "fortify10.s10b.bunker.slit_charge_laid_pct"
+min = 100
 # Review R6: the controls that show the rounds and the MG reach the spot.
 [[target]]
 id = "T107i"
