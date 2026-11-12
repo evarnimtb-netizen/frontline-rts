@@ -21,9 +21,12 @@
 //!   side) -> Charge (`Demolish` sent; the job waits while the order stands
 //!   and while its charge burns) -> Repath (the piece gone: `done` + 1 and a
 //!   `Move` of the vehicle to its own goal; the job waits for the served
-//!   path). The path reaching the goal ends the job `opened`
-//!   (`gaps_opened`); else the next standing piece (a gone one is skipped)
-//!   is Go; none left: `demolish_given_up` and L3.
+//!   path). The path reaching the goal and the vehicle then through (its
+//!   move ended at the goal, or no known enemy piece within
+//!   `demolish_near_m` ahead of it) ends the job `opened` (`gaps_opened`);
+//!   a path ending short, or the vehicle not through a minute after the
+//!   `Move`: the next standing piece (a gone one is skipped) is Go; none
+//!   left: `demolish_given_up` and L3.
 //! * **Ends.** The vehicle or the squad gone, the vehicle immobile: the job
 //!   ends (no refusal). The `Demolish` refused (no satchel, nothing there)
 //!   or the piece standing after its charge, a phase without its progress
@@ -288,6 +291,31 @@ impl super::Planner<'_> {
         Some(p + (out + out.perp()) * Fx::from_int(STAND_M))
     }
 
+    /// Whether own vehicle squad `squad` is through: its move has ended at
+    /// its goal (within [`THERE_M`]), or no known enemy obstacle within
+    /// `demolish_near_m` of it lies ahead of it (toward its goal).
+    fn vehicle_past(&self, squad: SquadId) -> bool {
+        let Some(q) = self.g.squads.get(&squad) else {
+            return false;
+        };
+        let Some(&lead) = q.members.first() else {
+            return false;
+        };
+        let at = self.ents.transform[lead.index()].pos.xy();
+        let goal = q.nav.goal;
+        if matches!(q.nav.phase, NavPhase::Holding | NavPhase::Arriving) {
+            return (at - goal).length_sq_raw() <= sq_m(Fx::from_int(THERE_M));
+        }
+        let o = &self.g.setup.rules.ai.obstacles;
+        let near = sq_m(Fx::from_int(o.demolish_near_m.min(i32::MAX as u32) as i32));
+        let dir = (goal - at).normalize_or_zero();
+        !self.known_obstacles().iter().any(|id| {
+            self.g.fort.pieces.get(id).is_some_and(|p| {
+                (p.pos - at).length_sq_raw() <= near && (p.pos - at).dot(dir) > Fx::ZERO
+            })
+        })
+    }
+
     /// The own vehicle `v`'s squad and lead position, if it lives, is own
     /// and can drive.
     fn job_vehicle(&self, v: SimId) -> Option<(SquadId, FxVec2)> {
@@ -492,7 +520,19 @@ impl super::Planner<'_> {
                         return (tick > job.since + STALL_SLACK_S * hz)
                             .then_some(DemolishEnd::Failed);
                     }
-                    Some(true) => return Some(DemolishEnd::Opened),
+                    // The served path reaching the goal is not enough (the
+                    // path layer can free a gap the tank then cannot drive
+                    // through): it must have driven past the pieces or
+                    // finished its move; still short a minute on, the gap
+                    // is too narrow and the next piece goes.
+                    Some(true) => {
+                        if self.vehicle_past(vsq) {
+                            return Some(DemolishEnd::Opened);
+                        }
+                        if tick <= job.since + STALL_SLACK_S * hz {
+                            return None;
+                        }
+                    }
                     Some(false) => {}
                 }
                 if self.next_piece(job).is_none() {

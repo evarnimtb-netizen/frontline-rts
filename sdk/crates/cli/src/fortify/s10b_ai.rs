@@ -1362,6 +1362,24 @@ pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<D
 mod tests {
     use super::*;
 
+    /// Defect R (demolition fault 2): on the real map a job ends `opened`
+    /// only once its tank has driven out of the ring, so every run that
+    /// opens also passes. Control: Repath ending `opened` as soon as the
+    /// served path reaches the goal (the code before the fix) -> US seed 1
+    /// ends Done with the tank stopped about 12 m on, inside the ring
+    /// (`opened && !passed`; seen).
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+    fn demolish_opens_only_when_the_tank_passed() {
+        for p in [0u8, 1] {
+            let r = demolish_once(&FortifyArgs::default(), 1, p, 1).unwrap();
+            assert!(
+                !r.0 || r.1,
+                "player {p}: opened but the tank did not pass: {r:?}"
+            );
+        }
+    }
+
     /// T115e's exposure: after the full build drive the own tank still
     /// drives from base toward the next point (control: the usual ticket
     /// drain in `obstacle_once` -> the match is won before the tanks start,
