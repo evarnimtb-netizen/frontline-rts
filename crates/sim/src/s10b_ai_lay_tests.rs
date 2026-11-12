@@ -556,7 +556,7 @@ fn ai_knows_obstacles_by_distance() {
         let (mut w, _) = held(|s| s.rules.ai.obstacles.obst_seen_m = seen_m);
         let hh = fort(&w, "ww2:hedgehog");
         squad_at(&mut w, ENG, c(400, 400), 0);
-        let mut put = |w: &mut World, x: i32, owner: u8| {
+        let put = |w: &mut World, x: i32, owner: u8| {
             let before: Vec<u32> = w.game().unwrap().fort().pieces.keys().copied().collect();
             assert!(
                 w.build_now(hh, &[c(x, 400), c(x + 1, 400)], PlayerId(owner)),

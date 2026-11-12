@@ -2204,6 +2204,24 @@ fn f_wait(s: &MatchSetup) -> u64 {
     s.rules.ai.fort.material_wait_s as u64
 }
 
+/// S10b-ai (R2): a vehicle's track (else wheel) half-gauge: the largest
+/// sideways anchor offset of its track or wheel components (0 without).
+fn half_gauge(v: &frontline_content::vehicle::VehicleSetup) -> Fx {
+    use frontline_content::vehicle::ComponentKind as K;
+    v.components
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.kind,
+                K::TrackLeft | K::TrackRight | K::WheelsFront | K::WheelsRear
+            )
+        })
+        .flat_map(|c| c.anchors.iter())
+        .map(|a| crate::vehicle::v3(a.pos).y.abs())
+        .max()
+        .unwrap_or(Fx::ZERO)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2244,22 +2262,4 @@ mod tests {
             assert!(fort_of(&s, k).is_some(), "{k:?}");
         }
     }
-}
-
-/// S10b-ai (R2): a vehicle's track (else wheel) half-gauge: the largest
-/// sideways anchor offset of its track or wheel components (0 without).
-fn half_gauge(v: &frontline_content::vehicle::VehicleSetup) -> Fx {
-    use frontline_content::vehicle::ComponentKind as K;
-    v.components
-        .iter()
-        .filter(|c| {
-            matches!(
-                c.kind,
-                K::TrackLeft | K::TrackRight | K::WheelsFront | K::WheelsRear
-            )
-        })
-        .flat_map(|c| c.anchors.iter())
-        .map(|a| crate::vehicle::v3(a.pos).y.abs())
-        .max()
-        .unwrap_or(Fx::ZERO)
 }
