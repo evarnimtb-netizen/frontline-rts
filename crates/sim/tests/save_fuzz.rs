@@ -114,6 +114,25 @@ fn holds(w: &World) -> Vec<&'static str> {
         job_on(&|d| d.blocks_vehicles && d.shape == FortShape::Point, false),
         "ai_hedgehog_row",
     );
+    // S10b-ai Build C chunk 3: an AI bunker job watching its work, the
+    // work past its pit (dug).
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.forts.iter().any(|(sq, j)| {
+                    g.setup().forts[j.fort as usize].pit
+                        == Some(frontline_content::setup::DigProfile::BunkerPit)
+                        && j.phase == frontline_sim::ai::FortPhase::Watch
+                        && j.work.is_some_and(|wid| {
+                            f.works.get(&wid).is_some_and(|k| {
+                                k.builder == *sq && k.step != frontline_sim::fort::WorkStep::Dig
+                            })
+                        })
+                })
+            })
+        }),
+        "ai_bunker_watch",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -887,6 +906,54 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
     }));
+    // S10b-ai Build C chunk 3: a bunker job in Watch, its pit dug and its
+    // work waiting for the rest of its 250 kg (160 drawn).
+    let bk = s_fort(w, "ww2:bunker");
+    let bsite = c(700, 520);
+    assert!(w.dig_pit_now(
+        &[bsite - c(1, 0), bsite + c(1, 0)],
+        frontline_content::setup::DigProfile::BunkerPit
+    ));
+    let bp = w
+        .spawn_squad_at(PlayerId(0), pio, c(690, 520), east)
+        .unwrap();
+    let bkline = vec![bsite, bsite + c(10, 0)];
+    let mut kw = 0;
+    w.edit_fort(|f| {
+        kw = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            kw,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: bk,
+                line: bkline.clone(),
+                yaw: Fx::ZERO,
+                builder: bp,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Wait,
+                seg: 0,
+                work: 0,
+                got_g: 160_000,
+            },
+        );
+    });
+    w.edit_squad(bp, |q| q.order = Order::Fortify { work: kw });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.forts.insert(
+            bp,
+            AiFortJob {
+                fort: bk,
+                point: 0,
+                line: bkline.clone(),
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(kw),
+                tries: frontline_sim::fort::WorkStep::Wait as u8,
+            },
+        );
+    }));
 }
 
 /// Blueprint `id`'s index.
@@ -945,13 +1012,14 @@ fn staged_s10b_save_holds_its_state() {
 /// `staged_s10b_ai + blasts and lost_on_known set`, S10b-ai Build B chunk
 /// 1; `+ an AtField job in Watch with its work and 3 laid mines`, chunk 2).
 /// `+ a LogBarrier job in Watch and one standing hedgehog of a row`, Build
-/// C chunk 1.
-const STAGED_MUST_HOLD: [&str; 5] = [
+/// C chunk 1. `+ a Bunker job in Watch with its pit dug`, Build C chunk 3.
+const STAGED_MUST_HOLD: [&str; 6] = [
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
     "ai_barrier_watch",
     "ai_hedgehog_row",
+    "ai_bunker_watch",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
