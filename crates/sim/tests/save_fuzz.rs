@@ -57,6 +57,33 @@ fn holds(w: &World) -> Vec<&'static str> {
         f.accounts.iter().any(|a| a.lost_on_known > 0),
         "lost_on_known",
     );
+    // S10b-ai Build B chunk 2: an AI AT field job watching its work, with
+    // mines of that field laid.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.forts.iter().any(|(sq, j)| {
+                    let d = &g.setup().forts[j.fort as usize];
+                    !d.blocks_vehicles
+                        && d.mine_item.is_some_and(|i| {
+                            g.setup().items[i as usize]
+                                .mine
+                                .as_ref()
+                                .is_some_and(|m| m.trigger == 1)
+                        })
+                        && j.phase == frontline_sim::ai::FortPhase::Watch
+                        && j.work
+                            .is_some_and(|wid| f.works.get(&wid).is_some_and(|k| k.builder == *sq))
+                        && f.mines
+                            .values()
+                            .filter(|m| m.fort == j.fort && m.owner == PlayerId(p))
+                            .count()
+                            >= 3
+                })
+            })
+        }),
+        "ai_at_field_watch",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -714,6 +741,65 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
         f.accounts[1].mines_set_off += 1;
         f.accounts[0].lost_on_known += 1;
     });
+    // S10b-ai Build B chunk 2: an AT field job in Watch, its work on the
+    // fourth segment of a 40 m line and the first three mines laid (as
+    // `fort::order_fortify` and the build steps leave them).
+    let at = s_fort(w, "ww2:at_minefield");
+    let layer = w
+        .spawn_squad_at(PlayerId(0), eng, c(560, 400), east)
+        .unwrap();
+    let line = vec![c(560, 410), c(600, 410)];
+    for k in 0..3 {
+        w.lay_mine_now(at, c(562 + 4 * k, 410), PlayerId(0))
+            .unwrap();
+    }
+    let mut wid = 0;
+    w.edit_fort(|f| {
+        wid = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            wid,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: at,
+                line: line.clone(),
+                yaw: Fx::ZERO,
+                builder: layer,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Build,
+                seg: 3,
+                work: 0,
+                got_g: 0,
+            },
+        );
+        f.accounts[0].mines_laid += 3;
+    });
+    w.edit_squad(layer, |q| q.order = Order::Fortify { work: wid });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.forts.insert(
+            layer,
+            AiFortJob {
+                fort: at,
+                point: 0,
+                line: vec![c(572, 410), c(600, 410)],
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(wid),
+                tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+    }));
+}
+
+/// Blueprint `id`'s index.
+fn s_fort(w: &World, id: &str) -> u16 {
+    w.match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == id)
+        .unwrap() as u16
 }
 
 /// The staged S10b save holds what the fuzz should reach there, and loads.
@@ -759,8 +845,9 @@ fn staged_s10b_save_holds_its_state() {
 }
 
 /// What the staged S10b save must hold beyond the S10b orders (fuzz stage
-/// `staged_s10b_ai + blasts and lost_on_known set`, S10b-ai Build B).
-const STAGED_MUST_HOLD: [&str; 2] = ["blasts", "lost_on_known"];
+/// `staged_s10b_ai + blasts and lost_on_known set`, S10b-ai Build B chunk
+/// 1; `+ an AtField job in Watch with its work and 3 laid mines`, chunk 2).
+const STAGED_MUST_HOLD: [&str; 3] = ["blasts", "lost_on_known", "ai_at_field_watch"];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
 /// checked, so a mine whose blueprint names item 9999 loaded and the first

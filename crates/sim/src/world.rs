@@ -2379,6 +2379,19 @@ impl World {
         true
     }
 
+    /// S10b-ai staging tool (the fortify `s10b_ai.mines` row): capture
+    /// point `i` is held by `owner` at once (hashes and snapshot
+    /// refreshed). False for no such point.
+    pub fn set_point_owner(&mut self, i: usize, owner: Option<PlayerId>) -> bool {
+        let Some(c) = self.state.game.as_mut().and_then(|g| g.points.get_mut(i)) else {
+            return false;
+        };
+        c.owner = owner;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// S10b-ai staging tool (tests, the staged save): edits player
     /// `player`'s AI state directly (hashes and snapshot refreshed). The
     /// caller keeps it valid; false when the player has no AI.
