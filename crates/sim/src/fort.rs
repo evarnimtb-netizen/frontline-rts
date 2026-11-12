@@ -1029,9 +1029,13 @@ impl MatchState {
         if self.fort_off {
             return;
         }
-        // S10b: sweeping (returns at once unless a `ClearMines` was given;
-        // runs with no mine laid too, so an empty lane ends).
-        if self.fort.accounts.iter().any(|a| a.sweeps > 0)
+        // S10b: sweeping (only while a `ClearMines` order stands; runs with
+        // no mine laid too, so an empty lane ends). Not gated on the report
+        // counter `sweeps` (review R2).
+        if self
+            .squads
+            .values()
+            .any(|q| matches!(q.order, Order::ClearMines { .. }))
             && let Some(t) = self.setup.rules.fortify.clone()
         {
             self.sweep_tick(ents, terrain, &t, tick);

@@ -865,6 +865,65 @@ fn lift_time_follows_tier() {
     }
 }
 
+/// S10b review R16: squad B (the higher id) lifts a mine that squad A (the
+/// lower id, handled first that tick) also has as its lift; the save made
+/// on that tick must load. Control: drop the stale-lift clean-up after
+/// `mines.remove` in `sweep_tick` -> "ClearMines lifts a mine its player
+/// does not know".
+#[test]
+fn second_sweeper_lift_leaves_no_stale_lift() {
+    let mut w = flat(|_| {});
+    let a = spawn(&mut w, 0, "ww2:ger_engineer_squad", 260, 200);
+    let mine = mine_at(&mut w, "ww2:ap_minefield", 3060, 2000, 1);
+    w.edit_fort(|f| f.mines.values_mut().for_each(|m| m.known |= 1));
+    let b = spawn(&mut w, 0, "ww2:ger_engineer_squad", 300, 200);
+    assert!(a < b);
+    w.step(&[]);
+    clear_mines(&mut w, 0, b, c(300, 200), c(312, 200));
+    clear_mines(&mut w, 0, a, c(280, 200), c(312, 200));
+    w.edit_squad(a, |q| {
+        q.order = Order::ClearMines {
+            a: c(280, 200),
+            b: c(312, 200),
+            along: Fx::from_int(24),
+            lift: Some(mine),
+            work: 0,
+        }
+    });
+    let mut lifted = false;
+    for _ in 0..90 * HZ {
+        w.step(&[]);
+        if !fs(&w).mines.contains_key(&mine) {
+            lifted = true;
+            break;
+        }
+    }
+    assert!(lifted, "B lifted the mine");
+    assert_eq!(fs(&w).accounts[0].mines_lifted, 1);
+    if let Err(e) = World::load(&w.save(), 1) {
+        panic!("the save on the lift tick: {e}");
+    }
+}
+
+/// S10b review R2: a loaded `ClearMines` order runs even when every
+/// player's `sweeps` report counter is 0. Control: gate `sweep_tick` on
+/// `sweeps > 0` again -> the order never advances.
+#[test]
+fn sweep_runs_with_zero_sweeps_counter() {
+    let (mut w, squads, _) = lanes(1, "ww2:ger_engineer_squad", 1, (60, 0), true, |_| {});
+    w.edit_fort(|f| f.accounts.iter_mut().for_each(|a| a.sweeps = 0));
+    let w = World::load(&w.save(), 1).unwrap();
+    let mut w = w;
+    for _ in 0..90 * HZ {
+        w.step(&[]);
+        if !matches!(order_of(&w, squads[0]), Order::ClearMines { .. }) {
+            break;
+        }
+    }
+    assert_eq!(fs(&w).accounts[0].mines_lifted, 1);
+    assert_eq!(order_of(&w, squads[0]), Order::Idle);
+}
+
 #[test]
 fn clear_mines_needs_capability() {
     // Control: give the grenadiers `clear_mines` -> accepted.

@@ -141,8 +141,8 @@ impl MatchState {
         spot
     }
 
-    /// Spec 5 "Clearing" per tick. Returns at once without a `ClearMines`
-    /// order ever given (no list build, no draw).
+    /// Spec 5 "Clearing" per tick (`fort_tick` calls it only while a
+    /// `ClearMines` order stands).
     pub(crate) fn sweep_tick(
         &mut self,
         ents: &Entities,
@@ -150,9 +150,6 @@ impl MatchState {
         t: &FortTuning,
         tick: u64,
     ) {
-        if self.fort.accounts.iter().all(|a| a.sweeps == 0) {
-            return;
-        }
         let ids: Vec<SquadId> = self
             .squads
             .iter()
@@ -286,6 +283,17 @@ impl MatchState {
                 }
                 if work >= need {
                     self.fort.mines.remove(&l);
+                    // Other squads lifting the same mine drop it now, so no
+                    // order points at a gone mine between ticks (review R16).
+                    for (oid, o) in self.squads.iter_mut() {
+                        if *oid != id
+                            && let Order::ClearMines { lift, work, .. } = &mut o.order
+                            && *lift == Some(l)
+                        {
+                            *lift = None;
+                            *work = 0;
+                        }
+                    }
                     let acc = &mut self.fort.accounts[owner.0 as usize];
                     acc.mines_lifted = acc.mines_lifted.saturating_add(1);
                     lift = None;
