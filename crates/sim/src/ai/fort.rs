@@ -239,8 +239,14 @@ pub(crate) fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
 /// Whether any fort habit is on (`works` or `wire`, or an S10b-ai laying
 /// switch).
 pub(super) fn habits_on(s: &MatchSetup) -> bool {
+    s10a_on(s) || s10b_on(s)
+}
+
+/// Whether an S10a fort habit is on (`works` or `wire`): the base loads
+/// and the truck runs are theirs.
+pub(super) fn s10a_on(s: &MatchSetup) -> bool {
     let f = &s.rules.ai.fort;
-    s.rules.fortify.is_some() && (f.works != 0 || f.wire != 0) || s10b_on(s)
+    s.rules.fortify.is_some() && (f.works != 0 || f.wire != 0)
 }
 
 /// S10b-ai: whether an `[ai.obstacles]` laying habit is on (`mines`,
@@ -1301,7 +1307,7 @@ impl super::Planner<'_> {
     ) -> bool {
         let g = self.g;
         let s = &g.setup;
-        if !habits_on(s) {
+        if !s10a_on(s) {
             return false;
         }
         let Some(ft) = s.rules.fortify.as_ref() else {
@@ -1533,7 +1539,10 @@ impl super::Planner<'_> {
             self.ai.forts.insert(id, job);
             mine.remove(k);
         }
-        self.base_loads(mine);
+        // S10a's base loads (not with only the S10b habits on).
+        if s10a_on(&g.setup) {
+            self.base_loads(mine);
+        }
     }
 
     /// Fix F2: a material run ends when its work is gone or it is late,
@@ -1596,6 +1605,10 @@ impl super::Planner<'_> {
         // T97: plan-squads on a fort job, and (fix F15) builders the
         // assign bonus held at a point that got no job, over all
         // plan-squads given infantry tasks (those on a job included).
+        // S10a's counters: not counted with only the S10b habits on.
+        if !s10a_on(s) {
+            return out;
+        }
         let jobs = self.active_jobs() as u32;
         let held = points
             .iter()
