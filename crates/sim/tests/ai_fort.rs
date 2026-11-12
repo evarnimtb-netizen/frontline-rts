@@ -185,7 +185,13 @@ fn ai_all_switches_off_emit_nothing_new() {
         .collect();
     assert_eq!(not_b, Vec::<String>::new(), "S10a off, S10b-ai on");
     for p in 0..2u8 {
-        let runs = w.game().unwrap().ai(PlayerId(p)).unwrap().counters.material_runs;
+        let runs = w
+            .game()
+            .unwrap()
+            .ai(PlayerId(p))
+            .unwrap()
+            .counters
+            .material_runs;
         assert_eq!(runs[..2], [0, 0], "p{p}: S10a off, no truck run");
     }
     let mut w = World::new_match(setup(3), 1).unwrap();
