@@ -43,6 +43,7 @@ mod bounds;
 pub mod combat;
 pub mod command;
 pub mod damage;
+mod demolish;
 pub mod dig;
 pub mod ecs;
 pub mod fire_mission;

@@ -1205,10 +1205,7 @@ impl MatchState {
             &CommandKind::LoadMaterials { squad, kg } => self.load_materials(ctx, p, squad, kg),
             &CommandKind::CutWire { squad, at } => self.order_cut_wire(ctx, p, squad, at),
             &CommandKind::ClearMines { squad, a, b } => self.order_clear_mines(ctx, p, squad, a, b),
-            // S10b: accepted by Build D (`Demolish`).
-            &CommandKind::Demolish { squad, .. } => {
-                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
-            }
+            &CommandKind::Demolish { squad, at } => self.order_demolish(ctx, p, squad, at),
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }

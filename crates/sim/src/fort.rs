@@ -650,6 +650,27 @@ impl MatchState {
         }
     }
 
+    /// S10b: whether blueprint `d` needs `build_heavy` (hedgehog, bunker).
+    pub(crate) fn heavy_def(d: &frontline_content::setup::FortSetup) -> bool {
+        1u32.checked_shl(d.capability as u32) == Some(Capability::BuildHeavy.bit())
+    }
+
+    /// S10b R21: the build rate (`build_pct`) of squad type `ty` on
+    /// blueprint `d`: its tier's, times `heavy_by_field_pct` / 100 on a
+    /// `build_heavy` blueprint it builds with `build_structure` only.
+    pub(crate) fn build_rate(
+        ty: &frontline_content::setup::SquadTypeSetup,
+        d: &frontline_content::setup::FortSetup,
+        t: &FortTuning,
+    ) -> u64 {
+        let rate = Self::tier_of(ty, t).build_pct as u64;
+        if Self::heavy_def(d) && !ty.has(Capability::BuildHeavy) {
+            rate * t.heavy_by_field_pct as u64 / 100
+        } else {
+            rate
+        }
+    }
+
     /// Sites (point, over_hq) or segments (line) player `p` has of
     /// blueprint `f`, built or building.
     pub(crate) fn fort_used(&self, p: PlayerId, f: u16) -> u32 {
@@ -730,7 +751,10 @@ impl MatchState {
             return self.refuse_fort(p, Some(squad), FortRefusal::Cap);
         }
         let ty = &self.setup.squad_types[self.squads[&squad].type_idx as usize];
-        let cap_ok = ty.caps & (1 << d.capability) != 0;
+        // S10b R21: a `build_structure` squad may build a `build_heavy`
+        // blueprint too (at `heavy_by_field_pct` of its rate).
+        let cap_ok = ty.caps & (1 << d.capability) != 0
+            || (Self::heavy_def(&d) && ty.has(Capability::BuildStructure));
         if !cap_ok || d.pit.is_some_and(|pit| !self.digs_profile(ty, pit)) {
             return self.refuse_fort(p, Some(squad), FortRefusal::CannotBuild);
         }
@@ -760,9 +784,12 @@ impl MatchState {
         {
             return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
         }
-        // S10b R18: no minefield within `vehicle_clear_m` of a vehicle hull
-        // (or wreck), which would leave it `on_blocked` or on a mine.
-        if d.mine_item.is_some() && self.near_a_vehicle(line) {
+        // S10b R18: no minefield, obstacle or bunker (`build_heavy`) site
+        // within `vehicle_clear_m` of a vehicle hull (or wreck), which would
+        // leave it `on_blocked` or on a mine.
+        if (d.mine_item.is_some() || d.blocks_vehicles || Self::heavy_def(&d))
+            && self.near_a_vehicle(line)
+        {
             return self.refuse_fort(p, Some(squad), FortRefusal::BadSpot);
         }
         let need = if point { 1 } else { segments(line, d.segment) };
@@ -1098,7 +1125,7 @@ impl MatchState {
             }
             // Build: men walk to spots around the site and work there.
             let ty = &self.setup.squad_types[self.squads[&w.builder].type_idx as usize];
-            let rate = Self::tier_of(ty, &t).build_pct as u64;
+            let rate = Self::build_rate(ty, &d, &t);
             let ring = d
                 .pieces
                 .iter()
@@ -1307,6 +1334,11 @@ impl MatchState {
                     },
                 );
                 self.fort.accounts[acc].pieces_built += 1;
+            }
+            // S10b: a finished hedgehog or log segment.
+            if d.blocks_vehicles {
+                let a = &mut self.fort.accounts[acc];
+                a.obstacles_built = a.obstacles_built.saturating_add(1);
             }
         }
         let more = d.shape == FortShape::Line && (w.seg as u32 + 1) < segments(&w.line, d.segment);
@@ -2174,6 +2206,7 @@ impl MatchState {
         terrain: &Heightfield,
         tick: u64,
         out: &mut Vec<crate::items::Thrown>,
+        demo: &mut Vec<(u32, u32)>,
     ) {
         if self.fort.charges.is_empty() {
             return;
@@ -2190,6 +2223,10 @@ impl MatchState {
                 .as_ref()
                 .map_or(1, |b| b.bursts.clamp(1, CHARGE_KEYS as u8)) as i32;
             let v = c.to - c.from;
+            // S10b: a demolition charge's burst (one: not a Bangalore).
+            if let Some(pid) = c.piece {
+                demo.push((c.id.wrapping_mul(CHARGE_KEYS), pid));
+            }
             for j in 0..n {
                 let at = terrain.clamp(c.from + v.mul_int(2 * j + 1).div_int(2 * n));
                 let pos = at.extend(terrain.height_at(at));

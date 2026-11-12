@@ -1529,6 +1529,13 @@ impl World {
                 );
                 // S10a: fortification works (nothing to do without any).
                 game.fort_tick(&mut self.state.entities, &self.state.terrain, tick);
+                // S10b: demolition charges placed (nothing without an order).
+                game.demolish_tick(&mut Ctx {
+                    ents: &mut self.state.entities,
+                    terrain: &self.state.terrain,
+                    hash: &mut self.hash,
+                    tick,
+                });
                 // S5a: squads holding fire spring to discipline.
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
                 // S5b: the players' knowledge maps.

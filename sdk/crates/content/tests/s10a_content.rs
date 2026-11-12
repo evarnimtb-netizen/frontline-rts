@@ -121,16 +121,17 @@ fn promoted_capabilities_parse() {
                 BuildStructure,
                 PlaceWire,
                 ClearWire,
-                // S10b Build B, C (R27).
+                // S10b Build B, C, D (R27).
                 PlaceMines,
-                ClearMines
+                ClearMines,
+                Demolish
             ],
             "{id}"
         );
     }
     assert_eq!(
         caps("ww2:ger_sturmpioniergruppe"),
-        [DigBasic, Recrew, ClearWire, Breach, ClearMines]
+        [DigBasic, Recrew, ClearWire, Breach, ClearMines, Demolish]
     );
     assert_eq!(
         caps("ww2:ger_baupioniergruppe"),
@@ -150,6 +151,9 @@ fn promoted_capabilities_parse() {
     for c in [DigBasic, Recrew, ClearWire, Breach, ClearMines] {
         assert!(us.contains(&c), "{c:?}");
     }
+    // S10b R27: `demolish` only on the cards with a satchel.
+    assert!(!us.contains(&Demolish));
+    assert!(!caps("ww2:ger_baupioniergruppe").contains(&Demolish));
     assert!(!us.contains(&BuildStructure) && !us.contains(&PlaceWire));
     // Line squads gained nothing.
     let rifles = caps("ww2:ger_grenadiergruppe");

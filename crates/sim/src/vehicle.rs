@@ -1306,8 +1306,8 @@ pub struct BlockLayer {
     any_dug: bool,
 }
 
-/// A wreck's footprint for the block layer.
-#[derive(Copy, Clone, Debug)]
+/// A wreck's (or S10b obstacle piece's) footprint for the block layer.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Footprint {
     pub center: FxVec2,
     pub fwd: FxVec2,
@@ -1577,6 +1577,11 @@ pub struct VehicleDerived {
     /// S8b: where wheeled vehicles cannot go (`None`: no wheeled def in the
     /// setup, nothing to keep up to date).
     pub wheel_block: Option<BlockLayer>,
+    /// S10b R16: the `blocks_vehicles` piece footprints the layers were
+    /// last updated with (ascending piece id). `update_block` compares the
+    /// standing pieces with it and marks the changed ones
+    /// (`mark_piece_block`), so every way a piece comes or goes is seen.
+    pub(crate) piece_feet: Vec<(u32, Footprint)>,
 }
 
 impl PartialEq for VehicleDerived {
@@ -1601,6 +1606,7 @@ impl VehicleDerived {
             block: BlockLayer::new(grid_dim, BlockLayer::ditch_dm_of(setup)),
             wheel_block: BlockLayer::wheeled_dm_of(setup)
                 .map(|dm| BlockLayer::new_wheeled(grid_dim, dm)),
+            piece_feet: Vec::new(),
         }
     }
 
@@ -2034,6 +2040,68 @@ impl MatchState {
         }
     }
 
+    /// S10b R16: footprints of the standing `blocks_vehicles` pieces
+    /// (box half extents and yaw; the pad is added by the layer), in
+    /// ascending piece id. Empty at once without pieces.
+    pub(crate) fn piece_footprints(&self) -> Vec<(u32, Footprint)> {
+        if self.fort.pieces.is_empty() {
+            return Vec::new();
+        }
+        self.fort
+            .pieces
+            .iter()
+            .filter_map(|(&id, q)| {
+                let d = self.setup.forts.get(q.fort as usize)?;
+                if !d.blocks_vehicles {
+                    return None;
+                }
+                let b = d.pieces.get(q.part as usize)?;
+                Some((
+                    id,
+                    Footprint {
+                        center: q.pos,
+                        fwd: yaw_dir(q.yaw),
+                        half_x: b.half[0].into(),
+                        half_y: b.half[1].into(),
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// S10b R16: marks both block layers around obstacle footprint `f`
+    /// (a `blocks_vehicles` piece added or removed).
+    pub(crate) fn mark_piece_block(&mut self, f: &Footprint) {
+        let pad = Fx::from_int(self.setup.rules.vehicles.path.wreck_pad_m as i32);
+        let r = FxVec2::new(f.half_x, f.half_y).length() + pad;
+        let rv = FxVec2::new(r, r);
+        self.vderived.block.mark_rect(f.center - rv, f.center + rv);
+        if let Some(w) = &mut self.vderived.wheel_block {
+            w.mark_rect(f.center - rv, f.center + rv);
+        }
+    }
+
+    /// S10b: marks the pieces that came or went since the last update
+    /// (`piece_feet`) and returns the standing ones. Nothing to do (no
+    /// list built) without pieces now or before.
+    fn sync_piece_blocks(&mut self) -> Vec<Footprint> {
+        if self.fort.pieces.is_empty() && self.vderived.piece_feet.is_empty() {
+            return Vec::new();
+        }
+        let now = self.piece_footprints();
+        if now != self.vderived.piece_feet {
+            let before = std::mem::take(&mut self.vderived.piece_feet);
+            for f in before.iter().filter(|x| !now.contains(x)) {
+                self.mark_piece_block(&f.1);
+            }
+            for f in now.iter().filter(|x| !before.contains(x)) {
+                self.mark_piece_block(&f.1);
+            }
+            self.vderived.piece_feet = now.clone();
+        }
+        now.into_iter().map(|(_, f)| f).collect()
+    }
+
     /// Marks the block layer around an AT-ditch line.
     pub(crate) fn mark_ditch_block(&mut self, line: &[FxVec2]) {
         let Some(&first) = line.first() else { return };
@@ -2062,7 +2130,9 @@ impl MatchState {
         if let Some(w) = &mut self.vderived.wheel_block {
             w.mark_tiles(tiles);
         }
-        let wrecks = self.wreck_footprints(ents);
+        let mut wrecks = self.wreck_footprints(ents);
+        // S10b R16: obstacle pieces after the wrecks (ascending piece id).
+        wrecks.extend(self.sync_piece_blocks());
         let MatchState {
             setup,
             vderived,

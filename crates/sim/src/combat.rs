@@ -2277,6 +2277,8 @@ pub(crate) struct Burst<'a> {
     pub class: u8,
     /// S7: a thrown item going off inside an open box (vehicle, box).
     pub inside: Option<(SimId, u8)>,
+    /// S10b R20: a demolition charge tamped against this piece.
+    pub piece: Option<u32>,
 }
 
 /// Mutable world parts the damage stage needs.
@@ -2405,6 +2407,18 @@ impl MatchState {
                 hurt(ctx.ents, ctx.hash, dead, id, b.damage, (b.player, b.class));
             }
         }
+        // S10b R20: a demolition charge's piece takes its tamped damage
+        // (whatever its owner, no line check) instead of the overpressure.
+        let tamped = b.piece.and_then(|pid| {
+            self.statics
+                .0
+                .iter()
+                .position(|sb| sb.of == crate::structures::StaticRef::Piece(pid))
+                .map(|k| (k, pid))
+        });
+        if let Some((k, pid)) = tamped {
+            self.demolish_piece(k, pid, b.damage, (b.player, b.class), ctx.tick);
+        }
         // S6: overpressure on structure boxes and crates within the blast
         // radius with a clear line (ascending index).
         if blast_r > Fx::ZERO && !self.statics.0.is_empty() {
@@ -2413,8 +2427,9 @@ impl MatchState {
                 .0
                 .iter()
                 .enumerate()
-                .filter(|(_, sb)| {
-                    sb.owner != b.player
+                .filter(|&(k, sb)| {
+                    tamped.is_none_or(|t| t.0 != k)
+                        && sb.owner != b.player
                         && sb.reach >= Fx::ZERO
                         && crate::armour::box_dist_sq_raw(&sb.frame, pos)
                             <= (blast_r.raw() as u64).pow(2)
@@ -3057,9 +3072,11 @@ impl MatchState {
         // S5b: bursts of fire-mission rounds, for the observers.
         let mut mbursts: Vec<crate::fire_mission::MissionBurst> = Vec::new();
         self.take_fused(fused);
+        // S10b: (burst key, piece) of the demolition charges due now.
+        let mut demo: Vec<(u32, u32)> = Vec::new();
         // S10a: Bangalore charges due now burst as items (rule 6).
         if !self.fort_off {
-            self.take_charges(ctx.terrain, ctx.tick, fused);
+            self.take_charges(ctx.terrain, ctx.tick, fused, &mut demo);
             // S10b: mines set off now burst the same way (R3-R7).
             self.take_mines(ctx.ents, ctx.spatial, ctx.terrain, ctx.tick, fused);
         }
@@ -3198,6 +3215,7 @@ impl MatchState {
                 cut: false,
                 key: (SimId(k as u32), Purpose::CRATER),
                 class: self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter),
+                piece: None,
                 inside: None,
             };
             let rays = frag_share(he.frag_count, requested);
@@ -3250,6 +3268,7 @@ impl MatchState {
                 key: (SimId(id), Purpose::COOKOFF_CRATER),
                 class,
                 inside: None,
+                piece: None,
             };
             let rays = frag_share(bl.blast.frag_count, requested);
             self.burst(
@@ -3302,6 +3321,11 @@ impl MatchState {
                         .inside
                         .filter(|i| self.vderived.frame(i.vehicle).is_some())
                         .map(|i| (i.vehicle, i.part)),
+                    piece: if t.thrower == SimId(u32::MAX) {
+                        demo.iter().find(|d| d.0 == t.id).map(|d| d.1)
+                    } else {
+                        None
+                    },
                 };
                 // S7: inside an open box, its inner rays first.
                 if b.inside.is_some() {

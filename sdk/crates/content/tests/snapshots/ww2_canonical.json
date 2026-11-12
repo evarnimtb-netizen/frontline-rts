@@ -2460,7 +2460,8 @@
         "place_wire",
         "clear_wire",
         "place_mines",
-        "clear_mines"
+        "clear_mines",
+        "demolish"
       ],
       "cooldown_s": 30,
       "cost": 206,
@@ -3243,7 +3244,8 @@
         "recrew",
         "clear_wire",
         "breach",
-        "clear_mines"
+        "clear_mines",
+        "demolish"
       ],
       "cooldown_s": 60,
       "cost": 264,
@@ -3844,7 +3846,8 @@
         "place_wire",
         "clear_wire",
         "place_mines",
-        "clear_mines"
+        "clear_mines",
+        "demolish"
       ],
       "cooldown_s": 30,
       "cost": 280,
