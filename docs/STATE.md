@@ -1,8 +1,9 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10b mechanics (S10b merged 2026-11-12, owner OK; before that `8acc534`). **No slice in work.** S10b: spec
-`docs/slices/S10b-obstacles.md`, log `S10b-log.md` (read its top block), targets `S10b.toml`. Open owner questions S10b-5..9
-in `docs/TODO.md`. Next when the owner says: S10b-ai. Checked 2026-11-12.
+Main holds S1 to S10b mechanics (main `72b2970`). **Work now: S10b-ai** (the AI uses mines, obstacles, the bunker,
+sweeping, demolition; paths avoid known enemy mines; job liveness) on branch `s10b-ai` from main `72b2970`: spec
+`docs/slices/S10b-ai.md`, stages `S10b-ai-build-A.md`..`-D.md`, log `S10b-ai-log.md` (read its top block), targets
+`S10b-ai.toml`. Plan done 2026-11-12; next Build A. Owner questions S10b-5..9 and S10b-ai-1..7 in `docs/TODO.md`.
 
 ## What the game is now
 
@@ -34,7 +35,7 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
 | Mod `ww2` | 2 factions; cards for tank, casemate TD, half-track, recon car, truck, AT gun; 15 vehicles incl. 4 guns and the Sd.Kfz. 11; `defs/supply/` | `mods/ww2/defs/` |
 | Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands, ClearMines, Demolish | `crates/net/src/` |
-| Mines, obstacles, bunker (S10b, branch) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; no AI use | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs` `fort_of` guard |
+| Mines, obstacles, bunker (S10b) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; AI use in S10b-ai | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs` `fort_of` guard |
 | Godot bridge and presenter | GDExtension (match thread, intents, frames); match view, HUD, menus, net lobby, mock, blockouts | `crates/godot-bridge/src/`, `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
@@ -43,15 +44,10 @@ SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a
 
 ## Versions
 
-`SAVE_VERSION` **23** and `PROTOCOL_VERSION` **13** on main (`world.rs`, `protocol.rs`); **24 and 14 since S10b** (main). History: S5b 14 and 8; S6 15 and 9; S7 17 and 9;
-S8a 18 and 10; S8b 19 and 11; S9 20 and 12; S9b 21 and 12; S10a 22 and 13; S10a-ai 23 and 13. A save, hash or command change bumps these
+`SAVE_VERSION` **24** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); S10b-ai Build A bumps SAVE to 25
+(PROTOCOL stays). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14. A save, hash or command change bumps these
 in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
-
-## S9 and S9b (on main; logs `S9-log.md`, `S9b-log.md`; specs `S9-at-guns.md`, `S9b-ai-guns.md`)
-
-AT guns with crews as soldiers (`crew_model = "served"`, `[[service]]` slots, tow bar, own AI budget). S9: Germany 45.6 %,
-14 hard misses; tank KOs by guns 36 GER / 16 USA. S9b corridor siting (`ai/guns.rs`): Germany 48.75 % of 480, 10 hard misses, SAVE 21.
 
 ## S10a fortifications, mechanics (on main since 2026-11-11; log `S10a-log.md`)
 
@@ -67,18 +63,21 @@ Verified on `72fd940` + `a0aa700` (`target/s10a-ai-verify`, the S10b neutrality 
 - Hard misses on the base JSON (read by `S10b.toml`): T8b, T40c, T54e, T88b, T88d; T93f/h, T96a-d reports until S11.
 - Breaching: a lone squad cannot breach defended wire without covering fire (throws need 25-29 m; squads fall 69-95 m
   out or are pinned 27-38 m out): S11 combined-arms work. Ablations: each piece type moves Germany under 2 points.
-- **Open: F8** (an S8b truck re-orders an unreachable HQ goal about 5 min after four give-ups; also with all switches
-  off, so a fix changes the neutrality base; later slice). Fix constants (`REFUSED_S`, `DUGOUTS_MAX`, `WATCH_*`) are code.
+- **Open: F8** (a truck re-orders an unreachable HQ goal after four give-ups): S10b-ai L5, behind `refusal_memory`.
 
-## S10b mechanics (branch `s10b-obstacles`, verified 2026-11-12; log `S10b-log.md`)
+## S10b mechanics (on main since 2026-11-12; log `S10b-log.md`)
 
 Mines (`ap_minefield`, `at_minefield`), hedgehog and log barrier (block vehicle nodes), bunker (six pieces, slit),
 `ClearMines` (sweep) and `Demolish` (placed satchel). Blueprints in `mods/ww2/defs/fortifications/`; items `ap_mine`, `at_mine`.
-Orchestrator verify (`tools/verify.sh`, 37 min 56 s): 881 tests pass, 0 fail; fmt, clippy, golden, validate, bridge, Godot checks ok.
-Tick p99 0.487 ms (peak 0.638). Germany pooled **41.67 %** of 480 (43.75 / 38.75 / 42.50), 0 no-winner, in the 35-65 % band.
+Verify: 881 tests pass; tick p99 0.487 ms (peak 0.638); neutrality base `target/s10b-verify` (40-only `target/s10b-base40`). Germany pooled **41.67 %** of 480 (43.75 / 38.75 / 42.50), 0 no-winner, in the 35-65 % band.
 AI-vs-AI identical to main (`neutral.py` vs `target/s10a-ai-verify`). Targets: 373 pass, 25 miss, 6 hard.
 Hard misses: T8b, T40c, T54e, T88b, T88d (old) and **T106b** (a tank does not pass one demolished piece in a hedgehog line; owner decision).
 Owner questions S10b-5..9 are in `docs/TODO.md`. Fuzz: 9686 mutations, 0 panics, 0 unloadable.
+
+## S10b-ai (in work, branch `s10b-ai`; plan 2026-11-12)
+
+Switches `[ai.obstacles]`, `[fortify] mine_paths`, `[ai.truck] refusal_memory`; all off = main match for match. New
+targets T109-T118 have value, exposure and control (`UNEXPOSED`, `CONTROL-SAME` verdicts from Build A).
 
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
@@ -105,14 +104,14 @@ Owner questions S10b-5..9 are in `docs/TODO.md`. Fuzz: 9686 mutations, 0 panics,
 
 ## Roadmap position
 
-Done and on main: S1 to S10a-ai. S10b mechanics merged 2026-11-12. Then S10b-ai (AI use of
-mines, obstacles, bunkers), a balance pass, S11a/b, S12 to S15. Tiers: `docs/process/workflows.md` 1.
+Done and on main: S1 to S10b mechanics. In work: S10b-ai (branch `s10b-ai`; Build A, B, C, D, measure and
+ablations, Review, Fix, verify, Docs; no Tune). Then a balance pass, S11a/b, S12 to S15. Tiers: `workflows.md` 1.
 
 ## How to check work
 
 - `tools/check.sh quick [BASE]` while working; `tools/check.sh tests` runs the whole release suite with ignored tests
   (2-6 min, background it). `tools/verify.sh` is the orchestrator's full check before a push.
-- Balance: `tools/measure.sh OUTDIR docs/slices/targets/S10b.toml` (480 matches, 14 min uncached); `python3 -I tools/pool.py DIR`.
+- Balance: `tools/measure.sh OUTDIR docs/slices/targets/S10b-ai.toml` (`S10b.toml` until S10b-ai Build A chunk 2) (480 matches, 14 min uncached); `python3 -I tools/pool.py DIR`.
   Quick look (40 matches, noise 11-15 points): `tools/batch.sh OUT.json -- skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45`.
 - Targets: `frontline-cli targets docs/slices/targets/S10b.toml --jobs 6`. Ablations: `tools/ablate.sh`. Gun funnel:
   `tools/gun_trace.sh DIR [SEEDS]`. Ticks: `--jobs 3` only, from a clean machine.
@@ -146,5 +145,6 @@ mines, obstacles, bunkers), a balance pass, S11a/b, S12 to S15. Tiers: `docs/pro
 | S10a fortifications (mechanics): pieces, materials, wire, breaching, engineer split, neutrality | `docs/slices/S10a-fortifications.md`; log `S10a-log.md` |
 | S10a-ai: AI buys, materials, building, breaching, ablations, T93 | `docs/slices/S10a-ai.md` 3-9; log `S10a-ai-log.md` |
 | S10b: mines, obstacles, bunker, demolition; rules R1-R30; stage files | `docs/slices/S10b-obstacles.md`; `S10b-build-X.md`; log `S10b-log.md` |
-| Development speed, the 2026-11-11 audit and adopted rules | `docs/process/dev-speed.md` section 7 |
+| S10b-ai: AI laying, sweeping, demolition, mine paths, liveness L1-L5, three-part targets | `docs/slices/S10b-ai.md`; `S10b-ai-build-X.md`; log `S10b-ai-log.md` |
+| Development speed, audits 2026-11-11 and 2026-11-12 (row honesty, stop points) | `docs/process/dev-speed.md` 7, 8 |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |
