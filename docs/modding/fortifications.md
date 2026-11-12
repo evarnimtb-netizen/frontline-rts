@@ -254,9 +254,8 @@ spec `docs/slices/S10a-ai.md` 3.
 
 ## S10b: mines, AT obstacles, the bunker
 
-The mechanics half (`docs/slices/S10b-obstacles.md`); the AI uses none of it
-yet: no new blueprint has an `ai_weight` above 0 and `fort_of` never returns
-a blueprint with `mine_item` or `blocks_vehicles` (S10b-ai adds that).
+The mechanics half (`docs/slices/S10b-obstacles.md`); the AI's use of it is
+in "AI (S10b-ai)" below.
 
 ### Minefields and mine items
 
@@ -339,3 +338,79 @@ No kit, price or `ai_weight` changed. `skirmish --json` reports per faction
 `s10b` counters (mines laid, set off, blasted, found, lifted, men lost to
 mines, vehicles mined, obstacles and bunkers built, sweeps, demolitions,
 pieces demolished) and `used`; `fortify-test` adds the S10b rows (T102-T107).
+
+### AI (S10b-ai)
+
+Spec `docs/slices/S10b-ai.md` (rules R1-R14, L1-L5); every value is in
+`[ai.obstacles]` (`docs/modding/tuning.md`), the path keys in `[fortify]`,
+the truck switch in `[ai.truck]`. Each habit has a switch (`mines`,
+`at_mines`, `obstacles`, `bunker`, `sweep`, `demolish`, `[fortify]
+mine_paths`, `[ai.truck] refusal_memory`); with all of them 0 the AI plays
+exactly as before the slice. No card, price or `ai_weight` changed: the AI
+uses the Pioniere and US Engineers it already buys.
+
+* **Jobs and budget.** S10b works run as S10a fort jobs (Load, Go, Order,
+  Watch), at most `jobs_max` at once inside `[ai.fort] builders_max`, on an
+  own budget: their materials cost at most `materials_max_pct` of the
+  income earned (S10a's 3 % is separate).
+* **Minefields** (`ai/fort.rs`). An AP field at a held, trenched point,
+  parallel to the trench, `ap_beyond_wire_m` beyond its wire line (no wire:
+  `ap_out_m` out). An AT field across the enemy vehicle approach: one
+  vehicle path from the enemy base to the point (one search per point per
+  `recheck_s`), the field `at_out_m` along it, across it. At most
+  `fields_per_point` fields a point and `at_fields_max` AT fields a player.
+  Own mines never hurt own units, so fields are never checked against own
+  routes.
+* **Obstacles.** A log barrier `obst_gun_m` out in the arc of an own gun
+  that held `gun_hold_s`; a hedgehog row (`hedgehogs_row` x
+  `hedgehog_step_m`) `obst_work_m` in front of an own nest or bunker. The
+  own-route rule: no obstacle footprint (plus the wreck pad) within
+  `own_route_m` of the own vehicle path base -> point -> nearest point not
+  held; one search at site choice, a mirrored retry, else the site is
+  refused (`own_route_m` 0: rule off).
+* **The bunker.** At most `bunkers_max`, at the own held, trenched point
+  nearest the enemy base, at the trench end opposite the nest, facing the
+  enemy; the point's MG team mans it (else the nearest defender). Its
+  250 kg step waits for a truck while one is working. In matches it is rare
+  (owner question S10b-ai-D1).
+* **Paths round known mines** (sim, every player, `mine_paths`). A path
+  step within `mine_band_foot_cm` of an enemy AP mine the squad's side
+  knows (vehicles: within `mine_band_vehicle_cm` of a known AT mine) costs
+  `mine_path_cost_pct` %; smoothing never keeps a priced step. Only the
+  lead's path is priced: formation men 2-4 m off it may still step on a
+  known mine (`lost_on_known`).
+* **Sweeping** (`ai/sweep.rs`). An enemy mine blast that hurt own units
+  marks a suspect for `suspect_s`. For a point the AI attacks, a suspect or
+  known enemy mine within `sweep_near_m` of the line from the nearest
+  attacker to the point (or a known one within `sweep_point_m` of the
+  point) wants a sweep: the lane starts 10 m short of the first and runs
+  `[fortify] lane_max_m` toward the point; the sweeper is the point's own
+  `clear_mines` squad, else the nearest free one within `sweep_reach_m`
+  (no buy). Attackers hold short of the lane until it is done. A swept
+  lane is not a sure lane (the S10b detection roll; owner question
+  S10b-ai-D2).
+* **Knowing obstacles.** An enemy `blocks_vehicles` piece is known once an
+  own unit is within `obst_seen_m` (no sight rays).
+* **Demolition** (`ai/demolish.rs`). An own AI vehicle with a task whose
+  path is exhausted or whose move ended short of its goal, with a known
+  enemy piece within `demolish_near_m`, gets the nearest own `demolish`
+  squad with a satchel. It blows the piece nearest the line vehicle ->
+  goal, then neighbours alternating sides, at most `demolish_pieces_max`
+  (cap 3). After each burst the vehicle re-paths; the job ends `opened`
+  only once the vehicle is through (its move ended at the goal, or no known
+  enemy piece within `demolish_near_m` ahead of it), else the next piece;
+  after the last it gives up and remembers the spot. The vehicle path layer
+  frees a gap only about 24 m between standing piece centres, so a 4 m
+  hedgehog row is never opened with 3 pieces (owner question S10b-ai-D3).
+* **Liveness (L1-L5).** Every S10b job ends by `job_max_s` whatever its
+  phase, or when its progress mark stands still for three times the step's
+  time plus a minute. A job that ends without success writes a refusal
+  (kind, place, tick; at most 32); no job starts and no command goes to a
+  goal within `refused_m` of a refusal of its kind younger than
+  `refused_s` (`refused_reorders` counts violations, must stay 0). With
+  `[ai.truck] refusal_memory` 1 a truck's give-up writes a TruckGoal
+  refusal that lasts until an own truck finishes a load (the S10a F8 fix).
+* **Measures.** `skirmish --json` `factions.<f>.s10b_ai` and
+  `s10b_ai_derived`; `fortify-test` rows `s10b_ai.paths`, `.mines`,
+  `.obstacle`, `.bunker`, `.sweep`, `.demolish` (T109-T118 in
+  `docs/slices/targets/S10b-ai.toml`; `--no-s10b-ai` leaves them out).

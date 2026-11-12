@@ -254,6 +254,20 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-6 Demolition for vehicles. (A) Only when an AI vehicle has no way round, at most 3 pieces per job, then give up
   and remember. (B) Never for vehicles (they only route round).
   S10b-ai-7 F8 truck fix. (A) On by default (`[ai.truck] refusal_memory` 1, measured in the 480). (B) Off until the balance pass.
+- S10b-ai build questions (log `docs/slices/S10b-ai-log.md`); the slice runs on (A):
+  S10b-ai-B2a AT field depth. One AI AT field is one 40 m row at the blueprint's 4 m step; a crossing tank rarely sets
+  one off (fortify 0/10, matches 0). (A) Keep the single row. (B) Two staggered rows per AT field.
+  S10b-ai-C1 AI barrier against the job deadline. The 20 m log barrier does not finish inside `job_max_s` 900 s (T112i
+  misses). (A) Keep 20 m and 900 s. (B) A 16 m AI barrier. (C) `job_max_s` 1200.
+  S10b-ai-D1 Bunker rare. The AI starts few bunker jobs in matches (no ready point, no free builder, 250 kg wait) and a
+  started one is often still in its 540 s step at match end: 0 bunkers in the default 40 set. (A) Leave as is (scarcity).
+  (B) Cheaper or faster AI bunker, or an earlier start.
+  S10b-ai-D2 Sweep lane losses. Attackers through a swept lane still lose men to missed mines (fortify 3.0 per run,
+  without sweeping 8.0; target "at most 1"). (A) Leave as is: a swept lane is not a sure lane (S10b detection roll).
+  (B) Two parallel lanes or `lane_half_cm` 300 for an attack. (C) Wait for a second pass where a mine was found.
+  S10b-ai-D3 Tank gap needs 24 m. The vehicle block layer (footprint + `wreck_pad_m` + clearance) frees a tank path only
+  about 24 m between standing piece centres, so 3 charges never open a 4 m hedgehog row (T114e/f). (A) Leave as is (L3
+  stops retries). (B) A later slice narrows the piece pad. (C) More satchels and a higher piece cap (layout, later).
 - S10b open notes (not numbered): F8 from S10a-ai (an S8b truck re-orders an
   unreachable HQ goal about every 5 min) is planned in S10b-ai Build D (L5, switch `refusal_memory`; droppable). Bunker notes from Build E: MG fire from 150 m does not hit men
   in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
@@ -277,7 +291,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
 11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
 12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Merged to main 2026-11-12 with the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
-13. **S10b-ai (in work, branch `s10b-ai` from main `72b2970`)**: the AI lays, sweeps, demolishes and builds obstacles and bunkers; paths avoid enemy mines the player knows (S10b-2, small version); the AI job liveness contract (L1-L5, F8 behind a switch). Plan done 2026-11-12: spec `docs/slices/S10b-ai.md`, stages `S10b-ai-build-A.md`..`-D.md` (chunks 2/2/2/3), targets `S10b-ai.toml` (T109-T118 in three-part form), log `S10b-ai-log.md`. Next: Build A.
+13. **S10b-ai (in work, branch `s10b-ai` from main `72b2970`)**: the AI lays, sweeps, demolishes and builds obstacles and bunkers; paths avoid enemy mines the player knows (S10b-2, small version); the AI job liveness contract (L1-L5, F8 behind a switch). Plan done 2026-11-12: spec `docs/slices/S10b-ai.md`, stages `S10b-ai-build-A.md`..`-D.md` (chunks 2/2/2/3), targets `S10b-ai.toml` (T109-T118 in three-part form), log `S10b-ai-log.md`. Builds A-D done; next measure 480, ablations, Review.
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
@@ -288,7 +302,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 4. The breach row and T93 need AI or staging that suppresses the defenders first: S10a-ai (AI-driven `breach_ai` row, S10a-16).
 5. tools/neutral.py: a 40-set-only run now fails against a four-set base folder; stage runs need a 40-only base folder or a set list option (S10b uses `target/s10b-base40`).
 6. Owner decisions S10a-9 to S10a-11 and S10a-1..8 (all on (A)): see the owner questions above.
-7. S10a-ai F8 (open; planned in S10b-ai Build D chunk 3 behind `[ai.truck] refusal_memory`, so all-off stays neutral): an S8b truck forgets an HQ goal it cannot reach after four later give-ups and orders it again about 5 minutes later.
+7. S10a-ai F8 (fixed on `s10b-ai` Build D behind `[ai.truck] refusal_memory` 1; all-off stays neutral): an S8b truck forgets an HQ goal it cannot reach after four later give-ups and orders it again about 5 minutes later.
 
 ## Known issues still open
 

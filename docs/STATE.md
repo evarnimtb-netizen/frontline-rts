@@ -3,7 +3,7 @@
 Main holds S1 to S10b mechanics (main `72b2970`). **Work now: S10b-ai** (the AI uses mines, obstacles, the bunker,
 sweeping, demolition; paths avoid known enemy mines; job liveness) on branch `s10b-ai` from main `72b2970`: spec
 `docs/slices/S10b-ai.md`, stages `S10b-ai-build-A.md`..`-D.md`, log `S10b-ai-log.md` (read its top block), targets
-`S10b-ai.toml`. Plan done 2026-11-12; next Build A. Owner questions S10b-5..9 and S10b-ai-1..7 in `docs/TODO.md`.
+`S10b-ai.toml`. Builds A-D done 2026-11-12; next measure 480, ablations, Review. Owner questions in `docs/TODO.md`.
 
 ## What the game is now
 
@@ -35,7 +35,7 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
 | Mod `ww2` | 2 factions; cards for tank, casemate TD, half-track, recon car, truck, AT gun; 15 vehicles incl. 4 guns and the Sd.Kfz. 11; `defs/supply/` | `mods/ww2/defs/` |
 | Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands, ClearMines, Demolish | `crates/net/src/` |
-| Mines, obstacles, bunker (S10b) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; AI use in S10b-ai | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs` `fort_of` guard |
+| Mines, obstacles, bunker (S10b, S10b-ai) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; the AI lays, builds, sweeps, demolishes (`[ai.obstacles]` switches), paths avoid known enemy mines, job liveness L1-L5, F8 fix (`[ai.truck] refusal_memory`) | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs`, `ai/sweep.rs`, `ai/demolish.rs`, `ai/truck.rs` |
 | Godot bridge and presenter | GDExtension (match thread, intents, frames); match view, HUD, menus, net lobby, mock, blockouts | `crates/godot-bridge/src/`, `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
@@ -63,7 +63,7 @@ Verified on `72fd940` + `a0aa700` (`target/s10a-ai-verify`, the S10b neutrality 
 - Hard misses on the base JSON (read by `S10b.toml`): T8b, T40c, T54e, T88b, T88d; T93f/h, T96a-d reports until S11.
 - Breaching: a lone squad cannot breach defended wire without covering fire (throws need 25-29 m; squads fall 69-95 m
   out or are pinned 27-38 m out): S11 combined-arms work. Ablations: each piece type moves Germany under 2 points.
-- **Open: F8** (a truck re-orders an unreachable HQ goal after four give-ups): S10b-ai L5, behind `refusal_memory`.
+- F8 (a truck re-orders an unreachable HQ goal after four give-ups): fixed on `s10b-ai` (L5, `refusal_memory` 1).
 
 ## S10b mechanics (on main since 2026-11-12; log `S10b-log.md`)
 
