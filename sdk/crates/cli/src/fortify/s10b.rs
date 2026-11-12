@@ -1134,6 +1134,55 @@ mod tests {
     }
 
     #[test]
+    fn t108_counts_s10b_use_that_does_not_finish() {
+        // Review R13: `used` counted only finished works, laid mines and
+        // laid charges. A Demolish order and a hedgehog work, neither
+        // finished, now count. Control: drop the `observe` call (or the
+        // `ordered` term of `used`) and this reads 0.
+        use crate::skirmish::{S10bFaction, S10bOrdered};
+        let mut w = world(&FortifyArgs::default(), 1).unwrap();
+        obstacle_line(&mut w, 1, false).unwrap();
+        let eng = super::super::s10a::call_in_card(&mut w, 0, &super::super::s10a::FIELD_ENGINEERS)
+            .unwrap();
+        w.place_squad(eng, at(TRENCH_X - 15, LINE_Y + 2), EAST);
+        let mut t = S10bOrdered::default();
+        step_with(
+            &mut w,
+            0,
+            vec![CommandKind::Demolish {
+                squad: eng,
+                at: at(TRENCH_X, LINE_Y),
+            }],
+        );
+        for _ in 0..30 {
+            w.step(&[]);
+            t.observe(&w);
+        }
+        assert_eq!(t.per_player, vec![1, 0], "the Demolish order");
+        let hog = fort_of(&w, "ww2:hedgehog").unwrap();
+        let p = at(TRENCH_X - 20, LINE_Y - 20);
+        step_with(
+            &mut w,
+            0,
+            vec![CommandKind::Fortify {
+                squad: eng,
+                fort: hog,
+                line: vec![p, p + EAST],
+            }],
+        );
+        for _ in 0..30 {
+            w.step(&[]);
+            t.observe(&w);
+        }
+        assert_eq!(t.per_player, vec![2, 0], "and the hedgehog work");
+        let acc = w.game().unwrap().fort().accounts[0].clone();
+        assert_eq!(acc.demolitions + acc.obstacles_built, 0, "nothing finished");
+        let mut f = S10bFaction::default();
+        f.add(&acc, t.per_player[0]);
+        assert_eq!(f.used(), 2);
+    }
+
+    #[test]
     fn contact_set_off_is_not_a_blast_clear() {
         // Review R9: a mine a man stands on goes off by contact and leaves
         // `fort.mines`; the Bangalore row counted every missing mine as

@@ -2229,7 +2229,8 @@ metric = "fortify10.s10b.bunker.control.open_mg_losses_pct"
 min = 1
 
 # --- T108: the AI uses none of it (mechanics slice; owner 2026-11-09) --------
-# s10b.used = mines laid + obstacles and bunkers built + sweeps + demolitions.
+# s10b.used = mines laid + obstacles and bunkers built + sweeps + demolitions
+# + ordered (S10b works started, ClearMines/Demolish orders taken; review R13).
 [[target]]
 id = "T108a"
 metric = "skirmish160.factions.germany.s10b.used"

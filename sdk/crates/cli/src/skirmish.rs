@@ -451,6 +451,8 @@ pub struct S10Player {
     pub enemy_wire_built: u32,
     pub hq_built: bool,
     pub income_mp: u64,
+    /// S10b use seen in the match ([`S10bOrdered`], review R13).
+    pub s10b_ordered: u32,
 }
 
 impl S10Player {
@@ -1152,6 +1154,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     };
     let mut tally = ArmourTally::new(world.match_setup().expect("match world"));
     let mut s3c = S3cTally::new(world.match_setup().expect("match world"));
+    let mut s10b_ordered = S10bOrdered::default();
     let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded);
 
@@ -1202,6 +1205,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         note_squads(&world, &mut fielded);
         tally.observe(&world);
         s3c.observe(&world);
+        s10b_ordered.observe(&world);
         for (k, &m) in POP_MINUTES.iter().enumerate() {
             if world.tick() == m * 60 * hz
                 && let Some(g) = world.game()
@@ -1543,6 +1547,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         .accounts
                         .get(p)
                         .is_some_and(|a| a.hq_built_at > 0),
+                    s10b_ordered: s10b_ordered.per_player.get(p).copied().unwrap_or(0),
                     income_mp: s.rules.start_manpower as u64
                         + s.rules.income_per_min as u64
                             * (world.tick() / (60 * s.tick_hz.max(1) as u64)),
@@ -2021,6 +2026,61 @@ pub struct S10bFaction {
     pub matches: u32,
     /// [`S10B_COUNTERS`] order.
     pub counters: [u64; 12],
+    /// S10b use that need not finish (review R13): works started with an
+    /// S10b blueprint and squads that took a ClearMines or Demolish order
+    /// ([`S10bOrdered`]).
+    pub ordered: u64,
+}
+
+/// Per-player S10b use seen tick by tick (review R13): works of an S10b
+/// blueprint (a minefield, an obstacle, the bunker) by id, and squads that
+/// enter a ClearMines or Demolish order. Counts started, interrupted and
+/// refused-later use the finished-work counters miss.
+#[derive(Clone, Debug, Default)]
+pub struct S10bOrdered {
+    works: BTreeSet<u32>,
+    in_order: BTreeSet<SquadId>,
+    pub per_player: Vec<u32>,
+}
+
+impl S10bOrdered {
+    /// Whether blueprint `f` is an S10b one.
+    pub fn s10b_blueprint(f: &frontline_content::setup::FortSetup) -> bool {
+        f.mine_item.is_some()
+            || f.blocks_vehicles
+            || matches!(f.pit, Some(frontline_content::setup::DigProfile::BunkerPit))
+    }
+
+    pub fn observe(&mut self, w: &World) {
+        let Some(g) = w.game() else { return };
+        let s = g.setup();
+        if self.per_player.len() < s.players.len() {
+            self.per_player.resize(s.players.len(), 0);
+        }
+        for (&id, wk) in &g.fort().works {
+            let s10b = s
+                .forts
+                .get(wk.fort as usize)
+                .is_some_and(Self::s10b_blueprint);
+            if s10b
+                && self.works.insert(id)
+                && let Some(n) = self.per_player.get_mut(wk.owner.0 as usize)
+            {
+                *n += 1;
+            }
+        }
+        for (&id, q) in g.squads() {
+            use frontline_sim::game::Order;
+            let on = matches!(q.order, Order::ClearMines { .. } | Order::Demolish { .. });
+            if !on {
+                self.in_order.remove(&id);
+            } else if self.in_order.insert(id)
+                && let Some(n) = self.per_player.get_mut(q.owner.0 as usize)
+            {
+                *n += 1;
+            }
+        }
+    }
 }
 
 impl S10bFaction {
@@ -2042,8 +2102,9 @@ impl S10bFaction {
         ]
     }
 
-    pub fn add(&mut self, a: &frontline_sim::fort::FortAccount) {
+    pub fn add(&mut self, a: &frontline_sim::fort::FortAccount, ordered: u32) {
         self.matches += 1;
+        self.ordered += ordered as u64;
         for (k, v) in Self::of(a).iter().enumerate() {
             self.counters[k] += *v as u64;
         }
@@ -2057,7 +2118,8 @@ impl S10bFaction {
     }
 
     /// Mechanics used at all: `mines_laid + obstacles_built +
-    /// bunkers_built + sweeps + demolitions` (0 in AI play, R28).
+    /// bunkers_built + sweeps + demolitions + ordered` (0 in AI play,
+    /// R28; `ordered` since review R13).
     pub fn used(&self) -> u64 {
         [
             "mines_laid",
@@ -2068,7 +2130,8 @@ impl S10bFaction {
         ]
         .iter()
         .map(|k| self.get(k))
-        .sum()
+        .sum::<u64>()
+            + self.ordered
     }
 }
 
@@ -2615,7 +2678,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             u.gun_vehicles.extend(p.s7.gun_vehicles.iter().cloned());
             // S8a.
             f.s10.add(&p.s10);
-            f.s10b.add(&p.s10.fort);
+            f.s10b.add(&p.s10.fort, p.s10.s10b_ordered);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
