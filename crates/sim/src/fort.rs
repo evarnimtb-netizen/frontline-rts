@@ -1313,8 +1313,11 @@ impl MatchState {
                 }
                 let pos =
                     terrain.clamp(site + f * Fx::from(b.offset[0]) + left * Fx::from(b.offset[1]));
+                // S10b Build E: every `z_from = "base"` piece stands on the
+                // undug surface at the site, so a bunker's roof meets its
+                // walls on a slope (one roof over the S10a pits: unchanged).
                 let ground = if b.z_from_base {
-                    terrain.base_height_at(pos)
+                    terrain.base_height_at(terrain.clamp(site))
                 } else {
                     terrain.height_at(pos)
                 };

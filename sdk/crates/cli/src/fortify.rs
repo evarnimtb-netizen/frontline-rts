@@ -65,6 +65,8 @@ use serde::Serialize;
 
 use crate::skirmish::{SkirmishArgs, match_setup};
 
+/// S10b Build E: the bunker row (T107).
+pub mod bunker;
 /// S10a: the wire, roof and breach rows (spec 7; report rows).
 pub mod s10a;
 pub mod s10b;
@@ -1017,6 +1019,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let sweep = s10b::sweep_row(args, seeds.clone())?;
     let obstacle = s10b::obstacle_row(args, seeds.clone())?;
     let demolish = s10b::demolish_row(args, seeds.clone())?;
+    let bunker = bunker::bunker_row(args, seeds.clone())?;
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1182,7 +1185,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
             sweep,
             obstacle,
             demolish,
-            ..s10b::S10bReport::default()
+            bunker,
         },
     })
 }

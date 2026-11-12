@@ -1672,7 +1672,7 @@ fn bunker_digs_pit_then_builds_six_pieces() {
             "part {}",
             q.part
         );
-        let z_want = w.state.terrain.base_height_at(at) + Fx::from_ratio(z, 100);
+        let z_want = w.state.terrain.base_height_at(c(500, 510)) + Fx::from_ratio(z, 100);
         assert!(
             (q.z - z_want).abs() < Fx::from_milli(20),
             "part {} z",
@@ -1823,8 +1823,8 @@ fn roof_satchel_kills_nobody_inside() {
     assert_eq!(satchel(250).0, None, "control: a 250 hp roof breaks");
 }
 
-/// A satchel of player 1 at the slit's inner lip (slit centre, on the
-/// surface, 10 cm inside the front walls' centre line), seed `seed`: men
+/// A satchel of player 1 at the slit's inner lip (slit centre, 5 cm above
+/// its bottom, 10 cm inside the front walls' centre line), seed `seed`: men
 /// of the five lost or hurt to it, (lost, hurt).
 fn slit_satchel(seed: u64, closed: bool) -> (usize, usize) {
     let mut w = bunker_world(seed, |d| {
@@ -1847,8 +1847,9 @@ fn slit_satchel(seed: u64, closed: bool) -> (usize, usize) {
     let t = thrower(&mut w);
     let item = satchel_item(&w);
     let p = FxVec2::new(Fx::from_int(500) + Fx::from_milli(1800), Fx::from_int(500));
-    let above =
-        w.state.terrain.base_height_at(p) + Fx::from_milli(50) - w.state.terrain.height_at(p);
+    // The slit's bottom: the front walls' base (the site's undug surface).
+    let bottom = fs(&w).pieces.values().find(|q| q.part == 4).unwrap().z;
+    let above = bottom + Fx::from_milli(50) - w.state.terrain.height_at(p);
     assert!(w.drop_item_now(t, item, p, above));
     hold(&mut w, &men, 12 * HZ);
     let hurt = men
@@ -1947,5 +1948,31 @@ fn bunker_saves_loads_and_hashes() {
             assert!(!fs(&a).works.is_empty(), "mid-build state has its work");
         }
         steps(&mut a, HZ);
+    }
+}
+
+#[test]
+fn bunker_pieces_share_one_base_on_a_slope() {
+    // On the skirmish map at (420, 420) (the fortify rows' site; the
+    // undug surface rises to the east) every piece stands on the site's
+    // undug surface, so the roof meets the walls and the slit is its full
+    // 40 cm. Control: each piece on the surface at its own centre (the
+    // S10a rule) -> the walls' z differ from the site's (seen).
+    let mut s = ai_setup(1);
+    s.players.iter_mut().for_each(|p| p.is_ai = false);
+    let mut w = World::new_match(s, 1).unwrap();
+    let f = fort(w.match_setup().unwrap(), "ww2:bunker");
+    let t = &w.state.terrain;
+    let (east, west) = (c(422, 420), c(418, 420));
+    assert!(
+        (t.base_height_at(east) - t.base_height_at(west)).abs() > Fx::from_milli(100),
+        "the site slopes"
+    );
+    assert!(w.build_now(f, &[c(420, 420), c(430, 420)], PlayerId(0)));
+    let base = w.state.terrain.base_height_at(c(420, 420));
+    let d = &w.match_setup().unwrap().forts[f as usize];
+    for q in fs(&w).pieces.values() {
+        let off = Fx::from(d.pieces[q.part as usize].offset[2]);
+        assert_eq!(q.z, base + off, "part {}", q.part);
     }
 }
