@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S10a-ai ablations (docs/slices/S10a-ai.md 9): one tools/measure.sh 480 per
+# Ablations (S10a-ai.md 9, S10b-ai.md 2): one tools/measure.sh 480 per
 # override file, each against the slice head's switches-on measure dir, and
 # one line per ablation at the end. The orchestrator runs it (a full run is
 # five measure runs, over an hour uncached: start it in the background).
@@ -11,29 +11,35 @@
 # ONDIR    the switches-on measure dir (tools/measure.sh OUT TARGETS), the
 #          BASELINE of every ablation.
 # OUTROOT  each ablation measures into OUTROOT/NAME (measure.txt there).
-# NAMEs    default: the five of spec 9 (all_off works_off wire_off breach_off
-#          cards_off); `all`: every file in docs/slices/targets/S10a-ai-ablations/
-#          (also the per-work four of stage D: nest_off dugout_off roof_off
-#          sandbags_off).
+# NAMEs    default with the S10a dir: the five of S10a-ai spec 9 (all_off
+#          works_off wire_off breach_off cards_off); otherwise, and with `all`:
+#          every *_off.toml in ABLATIONS (a control such as S10b-ai's
+#          loose.toml is not an ablation and is never run here).
 #
 # The line per ablation: pooled Germany and its change against ONDIR, and
 # whether it matters (spec 9: |change| >= 2 points) or decides Tune (>= 4).
 # all_off also runs tools/neutral.py against NEUTRAL_BASE (default
-# target/s10a-verify): it must say same 160/160 on all three sets. A run
+# target/s10b-verify): it must say same 160/160 on all three sets. A run
 # that measures all_off fails (before measuring) when NEUTRAL_BASE is
 # missing, and fails when neutral.py does not say same (S10a-ai fix F11).
 #
 # --dry-run builds nothing and plays nothing: every override file must hold
-# only `[ai.fort]` switch keys set to 0, the CLI (if built) must accept and
+# only switch keys set to 0 ([ai.fort] of S10a-ai; [ai.obstacles],
+# [fortify] mine_paths and [ai.truck] refusal_memory of S10b-ai), the CLI
+# (if built) must accept and
 # apply each one (a 1-minute match), and the measure commands are printed.
 # tools/check.sh quick runs it.
 #
-# Env: TARGETS (default docs/slices/targets/S10a-ai.toml), NEUTRAL_BASE.
+# Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
+# S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
+# slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
+# target/s10b-verify).
 set -u
 cd "$(dirname "$0")/.."
-DIR=docs/slices/targets/S10a-ai-ablations
-TARGETS=${TARGETS:-docs/slices/targets/S10a-ai.toml}
-NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10a-verify}
+DIR=${ABLATIONS:-docs/slices/targets/S10b-ai-ablations}
+DIR=${DIR%/}
+TARGETS=${TARGETS:-${DIR%-ablations}.toml}
+NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
 if [ "${1:-}" = "--dry-run" ]; then
     DRY=1
@@ -42,9 +48,10 @@ fi
 ON=${1:?usage: tools/ablate.sh [--dry-run] ONDIR OUTROOT [NAME]...}
 ROOT=${2:?usage: tools/ablate.sh [--dry-run] ONDIR OUTROOT [NAME]...}
 shift 2
-if [ $# -eq 1 ] && [ "$1" = all ]; then
+if { [ $# -eq 1 ] && [ "$1" = all ]; } || { [ $# -eq 0 ] && [ "$(basename "$DIR")" != S10a-ai-ablations ]; }; then
     NAMES=()
-    for f in "$DIR"/*.toml; do
+    for f in "$DIR"/*_off.toml; do
+        [ -f "$f" ] || continue
         n=$(basename "$f" .toml)
         NAMES+=("$n")
     done
@@ -55,15 +62,22 @@ else
 fi
 [ ${#NAMES[@]} -gt 0 ] || { echo "ablate: no override in $DIR"; exit 1; }
 
-# Each file: only [ai.fort] switches (works, wire, breach, cards, and the
-# per-work nest, dugout, roof, sandbags) set to 0.
+# Each file: only switches set to 0: [ai.fort] works, wire, breach, cards
+# and the per-work nest, dugout, roof, sandbags (S10a-ai); [ai.obstacles]
+# mines, at_mines, obstacles, bunker, sweep, demolish, [fortify] mine_paths
+# and [ai.truck] refusal_memory (S10b-ai).
 # (No tomllib on this Mac's python: the files are plain enough to read by
 # line.) Prints the number of keys.
 check_file() {
     python3 -I - "$1" <<'PY'
 import re, sys
 path = sys.argv[1]
-switches = {"works", "wire", "breach", "cards", "nest", "dugout", "roof", "sandbags"}
+switches = {
+    "ai.fort": {"works", "wire", "breach", "cards", "nest", "dugout", "roof", "sandbags"},
+    "ai.obstacles": {"mines", "at_mines", "obstacles", "bunker", "sweep", "demolish"},
+    "fortify": {"mine_paths"},
+    "ai.truck": {"refusal_memory"},
+}
 table, keys = None, {}
 for n, raw in enumerate(open(path), 1):
     line = raw.split("#", 1)[0].strip()
@@ -72,18 +86,18 @@ for n, raw in enumerate(open(path), 1):
     m = re.fullmatch(r"\[([A-Za-z0-9_.]+)\]", line)
     if m:
         table = m.group(1)
-        if table != "ai.fort":
-            sys.exit(f"{path}:{n}: only an [ai.fort] table, not [{table}]")
+        if table not in switches:
+            sys.exit(f"{path}:{n}: only the tables {sorted(switches)}, not [{table}]")
         continue
     m = re.fullmatch(r"([a-z_]+)\s*=\s*(-?[0-9]+)", line)
-    if not m or table != "ai.fort":
-        sys.exit(f"{path}:{n}: not an [ai.fort] integer key: {line}")
+    if not m or table not in switches:
+        sys.exit(f"{path}:{n}: not a switch table's integer key: {line}")
     k, v = m.group(1), int(m.group(2))
-    if k not in switches or v != 0:
-        sys.exit(f"{path}:{n}: only the switches {sorted(switches)} set to 0, not {k} = {v}")
-    if k in keys:
+    if k not in switches[table] or v != 0:
+        sys.exit(f"{path}:{n}: only the switches {sorted(switches[table])} set to 0, not {k} = {v}")
+    if (table, k) in keys:
         sys.exit(f"{path}:{n}: {k} twice")
-    keys[k] = v
+    keys[(table, k)] = v
 if not keys:
     sys.exit(f"{path}: no switch set")
 print(len(keys))
@@ -109,7 +123,7 @@ if [ $DRY -eq 1 ]; then
         if [ -x "$CLI" ]; then
             keys=$(check_file "$f")
             applied=$("$CLI" skirmish --ai-vs-ai --seed 1 --seeds 1 --minutes 1 --rules-override "$f" --summary 2>&1 |
-                grep -c "^override $f: .*ai\.fort\.[a-z]*: 1 -> 0")
+                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck)\.[a-z_]*: 1 -> 0")
             if [ "$applied" != "$keys" ]; then
                 echo "ablate: $n: the CLI applied $applied of $keys keys"
                 FAIL=1

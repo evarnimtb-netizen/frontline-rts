@@ -1,0 +1,15 @@
+# S10b-ai ablation (docs/slices/S10b-ai.md 2): every new S10b-ai switch off.
+# The AI must then play exactly as on main (neutral.py same; T108 reads it).
+[ai.obstacles]
+mines = 0
+at_mines = 0
+obstacles = 0
+bunker = 0
+sweep = 0
+demolish = 0
+
+[fortify]
+mine_paths = 0
+
+[ai.truck]
+refusal_memory = 0

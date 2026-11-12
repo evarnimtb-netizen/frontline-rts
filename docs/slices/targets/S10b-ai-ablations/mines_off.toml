@@ -1,0 +1,3 @@
+# S10b-ai ablation (docs/slices/S10b-ai.md 2): the AI lays no minefields (AP and AT).
+[ai.obstacles]
+mines = 0

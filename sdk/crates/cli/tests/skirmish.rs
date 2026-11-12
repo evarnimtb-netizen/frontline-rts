@@ -830,3 +830,108 @@ fn s10b_counters_zero_without_use() {
         }
     }
 }
+
+/// S10b-ai Build A step 12: every `s10b_ai_derived` field on synthetic
+/// per-match records, and nulls where no match was exposed. Control seen
+/// failing: `bunker_matches` counted without the chance bit (every built
+/// bunker) gives 100 % for `matches_with_bunker_pct` instead of 50 %.
+#[test]
+fn s10b_ai_derived_fields() {
+    use frontline_cli::skirmish::{
+        CHANCE_BUNKER, CHANCE_LAY, CHANCE_OBST, S10B_AI, S10Player, S10bAiFaction,
+    };
+    let at = |name: &str| S10B_AI.iter().position(|k| *k == name).unwrap();
+    // No match exposed: the three "when" shares are null, the rest 0.
+    let mut f = S10bAiFaction::default();
+    f.add(
+        &S10Player {
+            income_mp: 1000,
+            ..S10Player::default()
+        },
+        30,
+    );
+    let (raw, d) = frontline_cli::json_out::s10b_ai_blocks(&f);
+    assert_eq!(raw.as_object().unwrap().len(), 18, "{raw}");
+    for k in [
+        "matches_with_bunker_pct",
+        "sweep_when_wanted_pct",
+        "demolish_when_wanted_pct",
+    ] {
+        assert!(d[k].is_null(), "{k}: {d}");
+    }
+    for (k, v) in d.as_object().unwrap() {
+        assert!(v.is_null() || v.as_f64() == Some(0.0), "{k}: {v}");
+    }
+    // Four matches.
+    let mut a = S10Player {
+        income_mp: 1000,
+        s10b_chances: CHANCE_LAY | CHANCE_OBST | CHANCE_BUNKER,
+        s10b_materials_micro: 20_000_000,
+        ..S10Player::default()
+    };
+    a.works_done.insert("at_minefield".into(), 2);
+    a.fort.mines_laid = 30;
+    a.fort.vehicles_mined = 1;
+    a.fort.obstacles_built = 3;
+    a.fort.bunkers_built = 1;
+    a.fort.mines_lifted = 4;
+    a.fort.lost_on_known = 2;
+    a.fort.at_exposure_ticks = 300;
+    a.fort.own_pieces_demolished = 1;
+    a.s10b_ai[at("s10b_jobs")] = 5;
+    a.s10b_ai[at("sweep_wanted")] = 2;
+    a.s10b_ai[at("sweeps_started")] = 1;
+    a.s10b_ai[at("demolish_wanted")] = 1;
+    a.s10b_ai[at("gaps_opened")] = 2;
+    a.s10b_ai[at("own_blocked")] = 1;
+    a.s10b_ai[at("jobs_overdue")] = 1;
+    a.s10b_ai[at("refused_reorders")] = 3;
+    let mut b = S10Player {
+        income_mp: 1000,
+        s10b_chances: CHANCE_BUNKER,
+        ..S10Player::default()
+    };
+    b.s10b_ai[at("sweep_wanted")] = 1;
+    // A bunker built outside a chance match (not counted in the share).
+    let mut c = S10Player {
+        income_mp: 1000,
+        ..S10Player::default()
+    };
+    c.fort.bunkers_built = 1;
+    c.fort.own_mine_losses = 1;
+    f.add(&a, 30);
+    f.add(&b, 30);
+    f.add(&c, 30);
+    assert_eq!(f.matches, 4);
+    let (raw, d) = frontline_cli::json_out::s10b_ai_blocks(&f);
+    assert_eq!(raw["s10b_jobs"], 5);
+    assert_eq!(raw["at_exposure_ticks"], 300);
+    let want: [(&str, f64); 22] = [
+        ("matches_with_mines_pct", 25.0),
+        ("mines_laid_per_match", 7.5),
+        ("at_fields_per_match", 0.5),
+        ("lay_chance_matches", 1.0),
+        ("tanks_stopped_per_match", 0.25),
+        ("at_exposure_s_per_match", 2.5),
+        ("matches_with_obstacle_pct", 25.0),
+        ("obstacles_per_match", 0.75),
+        ("obst_chance_matches", 1.0),
+        ("matches_with_bunker_pct", 50.0),
+        ("bunker_chance_matches", 2.0),
+        ("sweep_when_wanted_pct", 50.0),
+        ("sweep_wanted_matches", 2.0),
+        ("mines_swept_per_match", 1.0),
+        ("demolish_when_wanted_pct", 0.0),
+        ("demolish_wanted_matches", 1.0),
+        ("gaps_opened_per_match", 0.5),
+        ("own_side_mistakes", 3.0),
+        ("s10b_materials_mp_pct", 0.5),
+        ("jobs_overdue", 1.0),
+        ("refused_reorders", 3.0),
+        ("lost_on_known_per_match", 0.5),
+    ];
+    assert_eq!(d.as_object().unwrap().len(), want.len());
+    for (k, v) in want {
+        assert_eq!(d[k].as_f64(), Some(v), "{k}: {}", d[k]);
+    }
+}

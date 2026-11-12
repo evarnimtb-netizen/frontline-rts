@@ -1,0 +1,8 @@
+# S10b-ai control, not an ablation (docs/slices/S10b-ai.md 2; run
+# skirmish40_loose): the S10b budget, the refusal memory and the job deadline
+# loosened, so the fixed-window counters (jobs_overdue, refused_reorders) and
+# the materials share show what the limits prevent.
+[ai.obstacles]
+materials_max_pct = 100
+refused_s = 0
+job_max_s = 36000

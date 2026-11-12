@@ -1,0 +1,3 @@
+# S10b-ai ablation (docs/slices/S10b-ai.md 2): paths do not price known enemy mines (R11).
+[fortify]
+mine_paths = 0

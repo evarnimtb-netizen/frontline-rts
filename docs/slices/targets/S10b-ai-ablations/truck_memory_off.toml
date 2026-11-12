@@ -1,0 +1,3 @@
+# S10b-ai ablation (docs/slices/S10b-ai.md 2): a truck's give-up writes no refusal (L5, F8).
+[ai.truck]
+refusal_memory = 0

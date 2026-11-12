@@ -18,6 +18,14 @@
 //!
 //! Output: `T5 skirmish40.wins.germany_pct 47.8 [35,65] PASS`, then
 //! `N pass, M miss (hard: K)`. Exit code 1 when a hard target misses.
+//!
+//! Row honesty (S10b-ai spec 7): a target may name `exposure` (a metric
+//! path), `exposure_min` and `control` (the same measure with the thing
+//! off). A file key `three_parts_from = "T109"` makes all three required
+//! from that id on (the id's number compared: T109 > T99). A hard row whose
+//! exposure is under `exposure_min` is `UNEXPOSED` (fails the run, never a
+//! hard miss); a hard row whose control also lies inside its bounds is
+//! `CONTROL-SAME` (fails). Report rows print exposure and control only.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -68,6 +76,20 @@ pub struct TargetsFile {
     pub runs: BTreeMap<String, RunSpec>,
     #[serde(default, rename = "target")]
     pub targets: Vec<TargetSpec>,
+    /// S10b-ai: from this id on (by number) every target needs `exposure`,
+    /// `exposure_min` and `control`.
+    #[serde(default)]
+    pub three_parts_from: Option<String>,
+}
+
+/// The number in a target id (`T109a` -> 109); `None` with no digits.
+pub fn id_number(id: &str) -> Option<u32> {
+    let d: String = id
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    d.parse().ok()
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +140,15 @@ pub struct TargetSpec {
     pub kind: String,
     #[serde(default)]
     pub note: Option<String>,
+    /// Row honesty: how often the thing really happened (a metric path)
+    /// and the least that judges the row.
+    #[serde(default)]
+    pub exposure: Option<String>,
+    #[serde(default)]
+    pub exposure_min: Option<f64>,
+    /// The same measure with the thing off (a metric path).
+    #[serde(default)]
+    pub control: Option<String>,
 }
 
 fn hard() -> String {
@@ -133,6 +164,10 @@ pub enum Verdict {
     Skip,
     /// The run exists but the metric path does not, or is not a number.
     NoMetric,
+    /// Exposure under `exposure_min`: the run fails, never a hard miss.
+    Unexposed,
+    /// A hard row whose control also lies inside its bounds: fails.
+    ControlSame,
 }
 
 /// One printed line's data.
@@ -168,13 +203,37 @@ pub fn parse(text: &str) -> Result<TargetsFile> {
         if t.min.is_none() && t.max.is_none() {
             bail!("target {}: give min, max or both", t.id);
         }
-        let run = t.metric.split('.').next().unwrap_or("");
-        if !f.runs.contains_key(run) {
-            bail!(
-                "target {}: metric {:?} starts with {run:?}, which is not a [runs.*] table",
-                t.id,
-                t.metric
-            );
+        for (what, m) in [
+            ("metric", Some(&t.metric)),
+            ("exposure", t.exposure.as_ref()),
+            ("control", t.control.as_ref()),
+        ] {
+            let Some(m) = m else { continue };
+            let run = m.split('.').next().unwrap_or("");
+            if !f.runs.contains_key(run) {
+                bail!(
+                    "target {}: {what} {m:?} starts with {run:?}, which is not a [runs.*] table",
+                    t.id
+                );
+            }
+        }
+        if t.exposure.is_some() != t.exposure_min.is_some() {
+            bail!("target {}: give exposure and exposure_min together", t.id);
+        }
+    }
+    if let Some(from) = &f.three_parts_from {
+        let Some(n0) = id_number(from) else {
+            bail!("three_parts_from {from:?} has no number");
+        };
+        for t in &f.targets {
+            if id_number(&t.id).is_some_and(|n| n >= n0)
+                && (t.exposure.is_none() || t.exposure_min.is_none() || t.control.is_none())
+            {
+                bail!(
+                    "target {}: from {from} on every target needs exposure, exposure_min and control",
+                    t.id
+                );
+            }
         }
     }
     Ok(f)
@@ -226,21 +285,56 @@ pub fn evaluate(t: &TargetSpec, docs: &BTreeMap<String, Value>) -> Line {
             hard,
         };
     };
-    let ok = t.min.is_none_or(|m| x >= m) && t.max.is_none_or(|m| x <= m);
-    let tag = match (ok, hard) {
-        (true, _) => "PASS",
-        (false, true) => "MISS",
-        (false, false) => "MISS (report)",
+    let inside = |x: f64| t.min.is_none_or(|m| x >= m) && t.max.is_none_or(|m| x <= m);
+    let ok = inside(x);
+    // Row honesty: exposure and control beside the value.
+    let read = |m: &str| -> Option<Option<f64>> {
+        let (run, path) = m.split_once('.').unwrap_or((m, ""));
+        let doc = docs.get(run)?;
+        Some(json_out::lookup(doc, path).and_then(Value::as_f64))
+    };
+    let mut extra = String::new();
+    let mut unexposed = false;
+    if let (Some(e), Some(min)) = (&t.exposure, t.exposure_min) {
+        match read(e) {
+            None => extra += &format!("; exposure {e} - (not played)"),
+            Some(v) => {
+                unexposed = v.is_none_or(|v| v < min);
+                extra += &format!(
+                    "; exposure {} (min {})",
+                    v.map_or("-".into(), num),
+                    num(min)
+                );
+            }
+        }
+    }
+    let mut same = false;
+    if let Some(c) = &t.control {
+        match read(c) {
+            None => extra += &format!("; control {c} - (not played)"),
+            Some(v) => {
+                same = v.is_some_and(inside);
+                extra += &format!("; control {}", v.map_or("null".into(), num));
+            }
+        }
+    }
+    let (tag, verdict) = match (ok, hard) {
+        _ if hard && unexposed => ("UNEXPOSED", Verdict::Unexposed),
+        (true, true) if same => ("CONTROL-SAME", Verdict::ControlSame),
+        (true, _) => ("PASS", Verdict::Pass),
+        (false, true) => ("MISS", Verdict::Miss),
+        (false, false) => ("MISS (report)", Verdict::Miss),
     };
     Line {
-        text: format!("{head} {} {bounds} {tag}", num(x)),
-        verdict: if ok { Verdict::Pass } else { Verdict::Miss },
+        text: format!("{head} {} {bounds} {tag}{extra}", num(x)),
+        verdict,
         hard,
     }
 }
 
-/// The last line: `N pass, M miss (hard: K)`, plus the skipped count when
-/// there is one. Returns it with the hard-miss count.
+/// The last line: `N pass, M miss (hard: K)`, plus the unexposed,
+/// control-same and skipped counts when there are any. Returns it with the
+/// count of failing lines (hard misses, unexposed, control-same).
 pub fn tally(lines: &[Line]) -> (String, usize) {
     let pass = lines.iter().filter(|l| l.verdict == Verdict::Pass).count();
     let miss: Vec<&Line> = lines
@@ -249,11 +343,25 @@ pub fn tally(lines: &[Line]) -> (String, usize) {
         .collect();
     let hard = miss.iter().filter(|l| l.hard).count();
     let skip = lines.iter().filter(|l| l.verdict == Verdict::Skip).count();
+    let unexposed = lines
+        .iter()
+        .filter(|l| l.verdict == Verdict::Unexposed)
+        .count();
+    let same = lines
+        .iter()
+        .filter(|l| l.verdict == Verdict::ControlSame)
+        .count();
     let mut s = format!("{pass} pass, {} miss (hard: {hard})", miss.len());
+    if unexposed > 0 {
+        s += &format!(", {unexposed} unexposed");
+    }
+    if same > 0 {
+        s += &format!(", {same} control-same");
+    }
     if skip > 0 {
         s += &format!(", {skip} skipped");
     }
-    (s, hard)
+    (s, hard + unexposed + same)
 }
 
 fn play(name: &str, r: &RunSpec, args: &TargetsArgs) -> Result<Value> {
@@ -322,7 +430,9 @@ pub fn run(args: &TargetsArgs) -> Result<(Vec<String>, bool)> {
     let wanted: BTreeSet<&str> = file
         .targets
         .iter()
-        .filter_map(|t| t.metric.split('.').next())
+        .flat_map(|t| [Some(&t.metric), t.exposure.as_ref(), t.control.as_ref()])
+        .flatten()
+        .filter_map(|m| m.split('.').next())
         .filter(|r| args.runs.is_empty() || args.runs.iter().any(|x| x == r))
         .collect();
     let stem = args
@@ -457,6 +567,112 @@ mod tests {
             l.text
         );
         assert_eq!(l.verdict, Verdict::Skip);
+    }
+
+    /// S10b-ai rows in three parts (value, exposure, control).
+    const THREE: &str = r#"
+        three_parts_from = "T109"
+        [runs.on]
+        kind = "skirmish"
+        seeds = 80
+        [runs.off]
+        kind = "skirmish"
+        seeds = 20
+        [[target]]
+        id = "T109a"
+        metric = "on.mines_pct"
+        min = 50
+        exposure = "on.chances"
+        exposure_min = 40
+        control = "off.mines_pct"
+        [[target]]
+        id = "T109b"
+        metric = "on.mines_pct"
+        min = 0
+        kind = "report"
+        exposure = "on.chances"
+        exposure_min = 40
+        control = "off.mines_pct"
+    "#;
+
+    fn three_docs(chances: u32, off: f64) -> BTreeMap<String, Value> {
+        let mut d = BTreeMap::new();
+        d.insert("on".into(), json!({"mines_pct": 70.0, "chances": chances}));
+        d.insert("off".into(), json!({"mines_pct": off}));
+        d
+    }
+
+    /// Control: the old evaluate path (no exposure read) passes the row at
+    /// 70 % although only 3 matches had a chance, and the run would not fail.
+    #[test]
+    fn unexposed_row_fails_not_hard() {
+        let f = parse(THREE).unwrap();
+        let d = three_docs(3, 0.0);
+        let l: Vec<Line> = f.targets.iter().map(|t| evaluate(t, &d)).collect();
+        assert_eq!(l[0].verdict, Verdict::Unexposed, "{}", l[0].text);
+        assert_eq!(
+            l[0].text,
+            "T109a on.mines_pct 70 [50,-] UNEXPOSED; exposure 3 (min 40); control 0"
+        );
+        // A report row only prints its parts.
+        assert_eq!(l[1].verdict, Verdict::Pass, "{}", l[1].text);
+        let (last, fails) = tally(&l);
+        assert_eq!(last, "1 pass, 0 miss (hard: 0), 1 unexposed");
+        assert_eq!(fails, 1);
+        // Exposed: the row passes.
+        let d = three_docs(60, 0.0);
+        let l = evaluate(&f.targets[0], &d);
+        assert_eq!(l.verdict, Verdict::Pass, "{}", l.text);
+        // A null control (no want with the thing off) is not "same".
+        let mut d = three_docs(60, 0.0);
+        d.insert("off".into(), json!({"mines_pct": null}));
+        assert_eq!(evaluate(&f.targets[0], &d).verdict, Verdict::Pass);
+    }
+
+    /// Control: the old evaluate path passes a row whose off-run reads the
+    /// same (the row cannot tell on from off).
+    #[test]
+    fn control_inside_bounds_fails() {
+        let f = parse(THREE).unwrap();
+        let d = three_docs(60, 55.0);
+        let l: Vec<Line> = f.targets.iter().map(|t| evaluate(t, &d)).collect();
+        assert_eq!(l[0].verdict, Verdict::ControlSame, "{}", l[0].text);
+        assert!(
+            l[0].text
+                .contains("CONTROL-SAME; exposure 60 (min 40); control 55"),
+            "{}",
+            l[0].text
+        );
+        // Report rows get no verdict from their control.
+        assert_eq!(l[1].verdict, Verdict::Pass, "{}", l[1].text);
+        let (last, fails) = tally(&l);
+        assert_eq!(last, "1 pass, 0 miss (hard: 0), 1 control-same");
+        assert_eq!(fails, 1);
+    }
+
+    /// Control: the old parse accepts a T109+ row without its parts.
+    #[test]
+    fn three_parts_required_from_id() {
+        assert!(parse(THREE).is_ok());
+        assert_eq!(id_number("T109a"), Some(109));
+        assert_eq!(id_number("T99"), Some(99));
+        // T110 without control: refused; T99 without parts: accepted.
+        let no_control = THREE.replace(
+            "        control = \"off.mines_pct\"\n        [[target]]",
+            "        [[target]]",
+        );
+        assert!(parse(&no_control).is_err());
+        let early =
+            format!("{THREE}\n[[target]]\nid = \"T99\"\nmetric = \"on.mines_pct\"\nmin = 1\n");
+        assert!(
+            parse(&early).is_ok(),
+            "T99 < T109 (numeric, not text, compare)"
+        );
+        let late =
+            format!("{THREE}\n[[target]]\nid = \"T110c\"\nmetric = \"on.mines_pct\"\nmin = 1\n");
+        assert!(parse(&late).is_err());
+        // A part's run must be a [runs.*] table.
+        assert!(parse(&THREE.replace("off.mines_pct", "nope.x")).is_err());
     }
 
     #[test]

@@ -453,6 +453,129 @@ pub struct S10Player {
     pub income_mp: u64,
     /// S10b use seen in the match ([`S10bOrdered`], review R13).
     pub s10b_ordered: u32,
+    /// S10b-ai: the AI's obstacle counters ([`S10B_AI`] order; zero for a
+    /// human and with every `[ai.obstacles]` switch off).
+    pub s10b_ai: [u32; 14],
+    /// S10b-ai chances seen ([`S10bAiSeen`]): [`CHANCE_LAY`],
+    /// [`CHANCE_OBST`], [`CHANCE_BUNKER`].
+    pub s10b_chances: u8,
+    /// S10b-ai: grams drawn by this player's S10b works and their µMP at
+    /// the construction price (R8, T117).
+    pub s10b_materials_g: u64,
+    pub s10b_materials_micro: u64,
+}
+
+/// S10b-ai: the AI's obstacle counters in report order (names of
+/// [`S10Player::s10b_ai`], `docs/slices/S10b-ai.md` 3).
+pub const S10B_AI: [&str; 14] = [
+    "s10b_jobs",
+    "s10b_refused",
+    "lay_sites",
+    "sweep_wanted",
+    "sweeps_started",
+    "sweeps_done",
+    "demolish_wanted",
+    "demolitions_started",
+    "gaps_opened",
+    "demolish_given_up",
+    "own_route_rejects",
+    "own_blocked",
+    "jobs_overdue",
+    "refused_reorders",
+];
+
+/// S10b-ai chance bits (exposure of T109-T113): the AI chose a lay site or
+/// held a job on a mine blueprint; held a job on an obstacle blueprint or
+/// rejected an obstacle site by the own route rule; held a bunker job.
+/// All come from the AI's own state, so they stay 0 with its switch off.
+pub const CHANCE_LAY: u8 = 1;
+pub const CHANCE_OBST: u8 = 2;
+pub const CHANCE_BUNKER: u8 = 4;
+
+impl S10Player {
+    /// The S10b-ai counters of `a` in [`S10B_AI`] order.
+    pub fn s10b_ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 14] {
+        [
+            a.s10b_jobs,
+            a.s10b_refused,
+            a.lay_sites,
+            a.sweep_wanted,
+            a.sweeps_started,
+            a.sweeps_done,
+            a.demolish_wanted,
+            a.demolitions_started,
+            a.gaps_opened,
+            a.demolish_given_up,
+            a.own_route_rejects,
+            a.own_blocked,
+            a.jobs_overdue,
+            a.refused_reorders,
+        ]
+    }
+}
+
+/// S10b-ai, seen tick by tick: per player the chance bits (AI fort jobs
+/// by blueprint class) and the grams S10b works drew (a work's `got_g`
+/// rises within a step and restarts at the next one).
+#[derive(Clone, Debug, Default)]
+pub struct S10bAiSeen {
+    got: BTreeMap<u32, u32>,
+    pub chances: Vec<u8>,
+    pub materials_g: Vec<u64>,
+}
+
+impl S10bAiSeen {
+    pub fn observe(&mut self, w: &World) {
+        let Some(g) = w.game() else { return };
+        let s = g.setup();
+        let n = s.players.len();
+        if self.chances.len() < n {
+            self.chances.resize(n, 0);
+            self.materials_g.resize(n, 0);
+        }
+        for (&id, wk) in &g.fort().works {
+            let Some(f) = s.forts.get(wk.fort as usize) else {
+                continue;
+            };
+            if !S10bOrdered::s10b_blueprint(f) {
+                continue;
+            }
+            let last = self.got.insert(id, wk.got_g).unwrap_or(0);
+            let add = if wk.got_g >= last {
+                wk.got_g - last
+            } else {
+                wk.got_g
+            };
+            if let Some(m) = self.materials_g.get_mut(wk.owner.0 as usize) {
+                *m += add as u64;
+            }
+        }
+        for p in 0..n {
+            let Some(ai) = g.ai(PlayerId(p as u8)) else {
+                continue;
+            };
+            let mut bits = 0u8;
+            for j in ai.forts.values() {
+                if let Some(f) = s.forts.get(j.fort as usize) {
+                    if f.mine_item.is_some() {
+                        bits |= CHANCE_LAY;
+                    } else if f.blocks_vehicles {
+                        bits |= CHANCE_OBST;
+                    } else if matches!(f.pit, Some(frontline_content::setup::DigProfile::BunkerPit))
+                    {
+                        bits |= CHANCE_BUNKER;
+                    }
+                }
+            }
+            if ai.counters.lay_sites > 0 {
+                bits |= CHANCE_LAY;
+            }
+            if ai.counters.own_route_rejects > 0 {
+                bits |= CHANCE_OBST;
+            }
+            self.chances[p] |= bits;
+        }
+    }
 }
 
 impl S10Player {
@@ -1155,6 +1278,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut tally = ArmourTally::new(world.match_setup().expect("match world"));
     let mut s3c = S3cTally::new(world.match_setup().expect("match world"));
     let mut s10b_ordered = S10bOrdered::default();
+    let mut s10b_ai_seen = S10bAiSeen::default();
     let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded);
 
@@ -1206,6 +1330,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         tally.observe(&world);
         s3c.observe(&world);
         s10b_ordered.observe(&world);
+        s10b_ai_seen.observe(&world);
         for (k, &m) in POP_MINUTES.iter().enumerate() {
             if world.tick() == m * 60 * hz
                 && let Some(g) = world.game()
@@ -1548,6 +1673,14 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         .get(p)
                         .is_some_and(|a| a.hq_built_at > 0),
                     s10b_ordered: s10b_ordered.per_player.get(p).copied().unwrap_or(0),
+                    s10b_ai: ai.map_or([0; 14], |a| S10Player::s10b_ai_counters(&a.counters)),
+                    s10b_chances: s10b_ai_seen.chances.get(p).copied().unwrap_or(0),
+                    s10b_materials_g: s10b_ai_seen.materials_g.get(p).copied().unwrap_or(0),
+                    s10b_materials_micro: s10b_ai_seen.materials_g.get(p).copied().unwrap_or(0)
+                        * s.rules
+                            .fortify
+                            .as_ref()
+                            .map_or(0, |f| f.construction_mp_per_t as u64),
                     income_mp: s.rules.start_manpower as u64
                         + s.rules.income_per_min as u64
                             * (world.tick() / (60 * s.tick_hz.max(1) as u64)),
@@ -2002,6 +2135,8 @@ pub struct FactionSummary {
     /// S10b counters over the run (sums of the twelve `FortAccount` S10b
     /// counters; all 0 in AI play).
     pub s10b: S10bFaction,
+    /// S10b-ai sums (the JSON block is `s10b_ai`, counters only).
+    pub s10b_ai: S10bAiFaction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -2132,6 +2267,98 @@ impl S10bFaction {
         .map(|k| self.get(k))
         .sum::<u64>()
             + self.ordered
+    }
+}
+
+/// S10b-ai numbers of one faction over a `--seeds` run (sums and per-match
+/// tallies of `s10b_ai_derived`; `docs/slices/S10b-ai-build-A.md` 8). The
+/// JSON block is [`crate::json_out::s10b_ai_blocks`]: only counters, so the
+/// all-off and no-behaviour runs stay blank for `neutral.py`.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S10bAiFaction {
+    pub matches: u32,
+    /// [`S10B_AI`] order.
+    pub ai: [u64; 14],
+    pub lost_on_known: u64,
+    pub at_exposure_ticks: u64,
+    /// Ticks per second of the runs (`at_exposure_s_per_match`).
+    pub tick_hz: u32,
+    pub own_mine_losses: u64,
+    pub own_pieces_demolished: u64,
+    pub mines_laid: u64,
+    /// `works_done.at_minefield`.
+    pub at_fields: u64,
+    pub vehicles_mined: u64,
+    pub obstacles_built: u64,
+    pub bunkers_built: u64,
+    pub mines_lifted: u64,
+    pub materials_micro: u64,
+    pub income_mp: u64,
+    pub matches_with_mines: u32,
+    pub lay_chance_matches: u32,
+    pub matches_with_obstacle: u32,
+    pub obst_chance_matches: u32,
+    /// Matches with a bunker built, among the bunker-chance matches.
+    pub bunker_matches: u32,
+    pub bunker_chance_matches: u32,
+    pub sweep_wanted_matches: u32,
+    /// Matches with a sweep wanted and one started.
+    pub sweep_when_wanted: u32,
+    pub demolish_wanted_matches: u32,
+    pub demolish_when_wanted: u32,
+}
+
+impl S10bAiFaction {
+    /// The sum of counter `name` ([`S10B_AI`]).
+    pub fn get(&self, name: &str) -> u64 {
+        S10B_AI
+            .iter()
+            .position(|k| *k == name)
+            .map_or(0, |k| self.ai[k])
+    }
+
+    /// Adds one match of one player (`tick_hz` of its setup).
+    pub fn add(&mut self, p: &S10Player, tick_hz: u32) {
+        let a = &p.fort;
+        let c = |name: &str| {
+            S10B_AI
+                .iter()
+                .position(|k| *k == name)
+                .map_or(0, |k| p.s10b_ai[k])
+        };
+        self.matches += 1;
+        self.tick_hz = tick_hz;
+        for (k, v) in p.s10b_ai.iter().enumerate() {
+            self.ai[k] += *v as u64;
+        }
+        self.lost_on_known += a.lost_on_known as u64;
+        self.at_exposure_ticks += a.at_exposure_ticks;
+        self.own_mine_losses += a.own_mine_losses as u64;
+        self.own_pieces_demolished += a.own_pieces_demolished as u64;
+        self.mines_laid += a.mines_laid as u64;
+        self.at_fields += p.works_done.get("at_minefield").copied().unwrap_or(0) as u64;
+        self.vehicles_mined += a.vehicles_mined as u64;
+        self.obstacles_built += a.obstacles_built as u64;
+        self.bunkers_built += a.bunkers_built as u64;
+        self.mines_lifted += a.mines_lifted as u64;
+        self.materials_micro += p.s10b_materials_micro;
+        self.income_mp += p.income_mp;
+        self.matches_with_mines += u32::from(a.mines_laid > 0);
+        self.lay_chance_matches += u32::from(p.s10b_chances & CHANCE_LAY != 0);
+        self.matches_with_obstacle += u32::from(a.obstacles_built > 0);
+        self.obst_chance_matches += u32::from(p.s10b_chances & CHANCE_OBST != 0);
+        if p.s10b_chances & CHANCE_BUNKER != 0 {
+            self.bunker_chance_matches += 1;
+            self.bunker_matches += u32::from(a.bunkers_built > 0);
+        }
+        if c("sweep_wanted") > 0 {
+            self.sweep_wanted_matches += 1;
+            self.sweep_when_wanted += u32::from(c("sweeps_started") > 0);
+        }
+        if c("demolish_wanted") > 0 {
+            self.demolish_wanted_matches += 1;
+            self.demolish_when_wanted += u32::from(c("demolitions_started") > 0);
+        }
     }
 }
 
@@ -2679,6 +2906,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             // S8a.
             f.s10.add(&p.s10);
             f.s10b.add(&p.s10.fort, p.s10.s10b_ordered);
+            f.s10b_ai.add(&p.s10, r.tick_hz as u32);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -3138,6 +3366,32 @@ pub fn many_text(r: &ManyReport) -> String {
                 parts.join(", ")
             );
         }
+    }
+    // S10b-ai (Build A step 8): one "s10b-ai:" line per faction.
+    for f in &s.factions {
+        let (_, d) = crate::json_out::s10b_ai_blocks(&f.s10b_ai);
+        let v = |k: &str| d[k].as_f64().unwrap_or(0.0);
+        let opt = |k: &str| d[k].as_f64().map_or("-".into(), |x| format!("{x:.0}"));
+        out += &format!(
+            "s10b-ai: {} mines in {:.0} % ({:.2} laid/match, AT fields {:.2}/match, chance {}), obstacles in {:.0} % (chance {}), bunker {} % (chance {}), sweep when wanted {} % ({}), demolish when wanted {} % ({}), mistakes {}, materials {:.2} % of income, overdue {}, re-orders {}\n",
+            f.faction,
+            v("matches_with_mines_pct"),
+            v("mines_laid_per_match"),
+            v("at_fields_per_match"),
+            d["lay_chance_matches"],
+            v("matches_with_obstacle_pct"),
+            d["obst_chance_matches"],
+            opt("matches_with_bunker_pct"),
+            d["bunker_chance_matches"],
+            opt("sweep_when_wanted_pct"),
+            d["sweep_wanted_matches"],
+            opt("demolish_when_wanted_pct"),
+            d["demolish_wanted_matches"],
+            d["own_side_mistakes"],
+            v("s10b_materials_mp_pct"),
+            d["jobs_overdue"],
+            d["refused_reorders"],
+        );
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
     for m in &r.matches {

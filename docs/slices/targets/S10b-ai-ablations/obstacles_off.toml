@@ -1,0 +1,3 @@
+# S10b-ai ablation (docs/slices/S10b-ai.md 2): the AI builds no hedgehogs or log barriers.
+[ai.obstacles]
+obstacles = 0

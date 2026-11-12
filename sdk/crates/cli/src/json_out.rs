@@ -552,6 +552,12 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         m.insert("used".into(), json!(b.used()));
         o.insert("s10b".into(), Value::Object(m));
     }
+    // S10b-ai (Build A step 8): the AI's counters and the derived shares.
+    {
+        let (raw, derived) = s10b_ai_blocks(&f.s10b_ai);
+        o.insert("s10b_ai".into(), raw);
+        o.insert("s10b_ai_derived".into(), derived);
+    }
     o.insert(
         "s6_derived".into(),
         json!({
@@ -905,6 +911,56 @@ pub fn s10_blocks(c: &crate::skirmish::S10Faction) -> (Value, Value) {
         "shelter_moves_per_match": per(ai("shelter_moves")),
         "wire_bypassed_per_match": per(ai("wire_bypassed")),
         "material_runs_per_match": per(runs),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S10b-ai: a faction's `s10b_ai` counters and `s10b_ai_derived` shares
+/// (`docs/slices/S10b-ai-build-A.md` 8). Shares over a subset of matches
+/// (a bunker chance, a sweep or demolition wanted) are null when it is
+/// empty; every field is 0 or null when no S10b-ai behaviour ran.
+pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let mut raw = Map::new();
+    for (k, name) in crate::skirmish::S10B_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, v) in [
+        ("lost_on_known", c.lost_on_known),
+        ("at_exposure_ticks", c.at_exposure_ticks),
+        ("own_mine_losses", c.own_mine_losses),
+        ("own_pieces_demolished", c.own_pieces_demolished),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    let m = c.matches as f64;
+    let derived = json!({
+        "matches_with_mines_pct": pct(c.matches_with_mines as f64, m),
+        "mines_laid_per_match": per(c.mines_laid),
+        "at_fields_per_match": per(c.at_fields),
+        "lay_chance_matches": c.lay_chance_matches,
+        "tanks_stopped_per_match": per(c.vehicles_mined),
+        "at_exposure_s_per_match": round3(c.at_exposure_ticks as f64 / c.tick_hz.max(1) as f64 / n),
+        "matches_with_obstacle_pct": pct(c.matches_with_obstacle as f64, m),
+        "obstacles_per_match": per(c.obstacles_built),
+        "obst_chance_matches": c.obst_chance_matches,
+        "matches_with_bunker_pct": pct_or_null(c.bunker_matches as f64, c.bunker_chance_matches as f64),
+        "bunker_chance_matches": c.bunker_chance_matches,
+        "sweep_when_wanted_pct": pct_or_null(c.sweep_when_wanted as f64, c.sweep_wanted_matches as f64),
+        "sweep_wanted_matches": c.sweep_wanted_matches,
+        "mines_swept_per_match": per(c.mines_lifted),
+        "demolish_when_wanted_pct": pct_or_null(
+            c.demolish_when_wanted as f64,
+            c.demolish_wanted_matches as f64
+        ),
+        "demolish_wanted_matches": c.demolish_wanted_matches,
+        "gaps_opened_per_match": per(c.get("gaps_opened")),
+        "own_side_mistakes": c.get("own_blocked") + c.own_mine_losses + c.own_pieces_demolished,
+        "s10b_materials_mp_pct": pct(c.materials_micro as f64 / 1e6, c.income_mp as f64),
+        "jobs_overdue": c.get("jobs_overdue"),
+        "refused_reorders": c.get("refused_reorders"),
+        "lost_on_known_per_match": per(c.lost_on_known),
     });
     (Value::Object(raw), derived)
 }
