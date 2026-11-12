@@ -591,12 +591,11 @@ impl super::Planner<'_> {
                 }
             }
         }
-        ended.then(|| {
-            if self.ai.counters.sweeps_done > done && self.ai.counters.s10b_refused == refused {
-                HabitEnd::Done
-            } else {
-                HabitEnd::Failed
-            }
+        let swept = self.ai.counters.sweeps_done > done && self.ai.counters.s10b_refused == refused;
+        ended.then_some(if swept {
+            HabitEnd::Done
+        } else {
+            HabitEnd::Failed
         })
     }
 }

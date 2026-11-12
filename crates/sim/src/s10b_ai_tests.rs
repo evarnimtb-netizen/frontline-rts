@@ -537,14 +537,13 @@ fn drive_ai_habit_skeleton_ends_not_built() {
         w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Sweep, &DriveArgs::default())
     });
     assert_eq!(none, None, "Sweep without a squad");
-    for h in [AiHabit::Demolish] {
-        let mut ai = AiState::new(w.state.tick);
-        let t0 = w.state.tick;
-        let end =
-            (0..10).find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), h, &DriveArgs::default()));
-        assert_eq!(end, Some(HabitEnd::NotBuilt), "{h:?}");
-        assert!(w.state.tick > t0);
-    }
+    let h = AiHabit::Demolish;
+    let mut ai = AiState::new(w.state.tick);
+    let t0 = w.state.tick;
+    let end =
+        (0..10).find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), h, &DriveArgs::default()));
+    assert_eq!(end, Some(HabitEnd::NotBuilt), "{h:?}");
+    assert!(w.state.tick > t0);
 }
 
 // ---------------------------------------------------------------------------

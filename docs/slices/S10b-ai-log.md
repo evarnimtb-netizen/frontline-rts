@@ -6,30 +6,34 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 2 = the stage file's chunk 1 (sweeping R9/R10), not started.** D chunk 1 did the orchestrator
-items only: `58a3886` (bunker reasons + fix), `b179bbc` (T115e exposure), `c3e64bb` (`blocked_pairs` saved). Layout:
-SAVE 25, PROTOCOL 14 (no bump; `AiCounters::bunker_why [u32;16]` and saved `blocked_pairs` join the unreleased 25).
-**Bunker:** `AiCounters::bunker_why` (names `ai::BUNKER_WHY`; JSON `s10b_ai.bunker_why_*`; summary line `s10b-ai bunker
-why:`), counted in `fort.rs` `bunker_why()`/`bunker_block()` (per plan, first failing check) and `bunker_end()`. Bug
-fixed: in Watch a 250 kg step in `Wait` ended the job the plan its pit was dug unless a truck was in `Load` that plan
-(all 4 jobs in 40 matches died so); now `heavy` steps wait while `ai.trucks` is non-empty (L1 bounds it), S10b truck
-runs use `room_for` (S10b budget). Test `ai_bunker_waits_for_a_busy_truck`. Still 0 bunkers in the default 40 set
-(`target/s10b-d1-fix`, Germany 45.0 %): per-plan reasons ger/usa: point_not_ready 9291/8860, no_builder 6936/6615,
-builders_max 2801/1739, no_point 2591/3945, no_squad 1582/2187, s10b_room 1309/1457, other_first 80/66, no_carry 8/9,
-no_budget 0/2; jobs started 3/1; after the fix the trucks stay in Follow/Drop/Serve for tanks for minutes, and a
-job that gets its 250 kg (seed 11) is still in the 540 s Build step when the match ends (mean 21 min). Honest
-scarcity: owner question **S10b-ai-D1**, proceeding on (A) leave as is.
-**T115e:** `s10b_ai.obstacle.own_tank_drove_pct` exists and reads **0** (seeds 1-3): with obstacles on (modes 0, 1)
-the own tank's Move ends `Idle` at base, never moving; with `obstacles` 0 it drives 588 m. Not yet understood (the
-hook drives every tick; maybe its vehicle path is refused); T115e stays unexposed (no hard miss). Look before D ends.
-**blocked_pairs:** saved, `MAX_BLOCKED_PAIRS` 32 (truncated in `count_own_blocked`), validated in `validate_s10b`;
-fuzz stage `staged_s10b_ai + a stuck own pair`. Test `own_blocked_counts_once_across_save_load`.
-**Slow skirmish binary (item 4):** quick's skirmish binary took 332 s. Likely cause: `own_route()` memo lives one
-`Planner` (one plan), so every plan re-runs two vehicle A* searches (`gun_route`) per own point for each hedgehog/
-barrier site check (`own_route_side`, `on_own_route`); not changed here.
-Owner questions open: S10b-ai-D1 (new), C1, B2a, 1..7. Failing: none. Last check: `tools/check.sh quick 72b2970`
-all ok (780 passed); save_fuzz incl. ignored ok (15); all-off 40 `target/s10b-d1-off40` vs `target/s10b-base40`:
-**same 40/40**. Chunks left: D 3 (sweeping, demolition, F8 + docs + stage check).
+**Next: Build D chunk 3 = the rest of the stage file's chunk 1 (sweeping: fortify row `s10b_ai.sweep` and the fuzz
+stage), then stage chunk 2 (demolition).** D chunk 2 built the AI sweep (`eb20b56` + the clippy/log commit). Layout:
+SAVE 25, PROTOCOL 14 (no bump). Start from `crates/sim/src/ai/sweep.rs` (module doc = the rules as built).
+**Sweep code:** `sweep_on`, Planner `suspects` (R9: other players' `FortState::blasts` younger than `suspect_s`; the
+blast keeps no victim, so every enemy blast counts; sets `suspects_seen` = blasts read), `known_enemy_mines`,
+`sweep_lane(p, from, to, suspects, mines, fixed_b)` (R10; lane 10 m short of the first, `lane_max_m` - 10 cm, shortened
+to stay on the map; candidates inside an existing lane of the point skipped), `sweep_start` (after `breach_start` in
+`plan`, claimed as hunts; sweeper: the point's `clear_mines` squad >= 60 %, else nearest within `sweep_reach_m`; L4;
+`refused_reorders`), `sweep_continue` (after `breach_continue`), `run_sweep` (Go: `Move` to `a`, within 8 m sends
+`ClearMines`; Sweep: `tries` 0 until the order stands, then 1 + whole m of `along` = L2 mark, stall 3 x `lift_s` + 60 s;
+Go stall 3 x `sweep_reach_m`/speed + 60 s; L1 `job_max_s`), `sweep_end` (L3 at lane middle, `s10b_refused`,
+`jobs_overdue`), `sweep_hold(p)` (attackers' target `HOLD_M` 10 m short of `a`; used in `order_infantry` via `holds`),
+`drive_sweep` (hook: `args.others` = attackers, tasks set Attack each plan, held while alive; `args.at` = fixed `b`).
+A swept job stays `SweepPhase::Done` (squad free) while the point is attacked, at most `suspect_s` (one sweep per
+lane); `sweep_room` evicts the oldest Done at `MAX_SWEEPS`. `squad_of` now knows `ClearMines` (pending check).
+**Tests** (`crates/sim/src/s10b_ai_sweep_tests.rs`, controls in-loop, all seen): `ai_marks_suspect_from_blast`
+(`suspect_s` 1), `ai_sweeps_suspect_lane_before_attack` (`sweep` 0), `ai_sweep_ends_when_lane_clear` (`sweep` 0),
+`ai_two_sweepers_never_share_lane` (`suspect_s` 1 + fresh blasts -> 2nd sweep), `ai_sweep_ends_when_sweeper_dies`
+(one man killed -> lives), `ai_sweep_beside_own_tank` (incl. save/load mid-job, same hash; `sweep` 0). Helpers
+`attack_world`, `squads`, `blast`, `Attack::short`. Liveness row `sweep_row` (lane end off the map: BadSpot; control
+`refused_s` 0 -> "Sweep: refused_reorders 4", seen). `drive_ai_habit_skeleton_ends_not_built` now checks Demolish only.
+**Left in stage chunk 1:** fortify row `s10b_ai.sweep` (sdk/crates/cli/src/fortify/s10b_ai.rs; use `drive_ai_habit(Sweep)`
+with `DriveArgs{squad, point, others}` then the scripted advance; exposure `sweep_wanted_pct`; control `sweep` 0) and
+fuzz stage "staged_s10b_ai + an AiSweep in Watch mid-lane with one mine lifted" (save_fuzz.rs `staged_s10b_ai`: set
+the staged AiSweep's `tries` 13 = along 12 m, `accounts[0].mines_lifted` 1, add a `holds` key + `STAGED_MUST_HOLD`).
+Still open from D1: T115e (own tank never moves with obstacles on, `obstacle_once`), slow skirmish binary (now 651 s in
+quick; `own_route()` memo per plan, see D1 section), owner question S10b-ai-D1. Owner questions open: D1, C1, B2a, 1..7.
+Last check: see the D chunk 2 section. Failing tests: none. Chunks left: D 3 (sweep rest + demolition, F8 + docs).
 
 ## Plan (2026-11-12)
 
@@ -64,35 +68,14 @@ Decided by default: the three "chance" exposures come from AI state only (a nonz
 `construction_mp_per_t`; a null control is never CONTROL-SAME and a control run not played prints "(not played)"
 without failing; `ablate.sh` default set moved to S10b-ai (S10a via `ABLATIONS=`).
 
-## Build A code map (the top block before B1)
+## Build A code map (short)
 
-**Next: Build B** (`S10b-ai-build-B.md`, its chunk 1). Build A is done (chunks 1 and 2; STOP POINT 2 met).
-Layout: SAVE 25 (commit `0ae000f`, the one bump), PROTOCOL 14; no later chunk may change either.
-Code map (A2): `sdk/crates/cli/src/skirmish.rs`: `S10B_AI` (14 names), `S10Player::{s10b_ai, s10b_chances,
-s10b_materials_g, s10b_materials_micro, s10b_ai_counters}`, `CHANCE_LAY/OBST/BUNKER`, `S10bAiSeen` (per tick: AI fort
-jobs by blueprint class -> chance bits; grams S10b works draw), `S10bAiFaction::{add, get}`, `FactionSummary::s10b_ai`,
-text line "s10b-ai:". `json_out.rs`: `s10b_ai_blocks` -> `factions.<f>.s10b_ai` (14 counters + `lost_on_known`,
-`at_exposure_ticks`, `own_mine_losses`, `own_pieces_demolished`) and `s10b_ai_derived` (22 fields of stage A step 8;
-`matches_with_bunker_pct`, `sweep_when_wanted_pct`, `demolish_when_wanted_pct` null with no chance/want).
-Chances (exposures; all from AI state, so 0 with switches off): lay = `lay_sites > 0` or an AI job on a mine
-blueprint; obst = AI job on a `blocks_vehicles` blueprint or `own_route_rejects > 0`; bunker = AI job on the
-BunkerPit blueprint. B/C must count `lay_sites`, `own_route_rejects` and keep `AiFortJob::fort` = the S10b blueprint.
-`targets.rs`: `TargetSpec::{exposure, exposure_min, control}`, `TargetsFile::three_parts_from`, `id_number`,
-`Verdict::{Unexposed, ControlSame}` (hard rows only; report rows print the parts), `tally` counts them as failing.
-`S10b-ai.toml` now parses (471 rows). `tools/measure.sh` plays every `skirmish40_*` run (flat TOML read, py 3.9).
-`tools/ablate.sh`: `ABLATIONS=DIR` (default `docs/slices/targets/S10b-ai-ablations`), TARGETS beside it,
-`NEUTRAL_BASE` default `target/s10b-verify`, default/`all` = every `*_off.toml` (8); `loose.toml` is the control.
-`tools/pool.py`: "s10b-ai:" line (mines/obstacles/bunker/sweep shares, own-side mistakes).
-Liveness (`crates/sim/src/s10b_ai_tests.rs`): `Stage {habit, args, goal}`, `LIVENESS: &[(JobKind, StageSetup)]`
-(`fn(&mut World) -> Stage`; empty: B adds Fort, D Sweep/Demolish/TruckGoal), `job_alive`, `drive_row`, `check_liveness(trace, Limits)`
-(L1 deadline + slack, one refusal per failed job, no start within `refused` ticks, at most one retry, reorders 0,
-at least one refusal). `job_alive(TruckGoal)` is false: D must fill it.
-40 set (defaults, `target/s10b-ai-a2-40`): `neutral.py target/s10b-base40` -> **same 40/40**.
-Tests added (controls seen failing): `unexposed_row_fails_not_hard`, `control_inside_bounds_fails`,
-`three_parts_required_from_id` (cli lib), `s10b_ai_derived_fields` (cli `--test skirmish`),
-`ai_jobs_end_and_never_reorder_a_refused_goal` (sim lib). Failing tests: none.
-Keep: `refused_near(.., refused_ticks, near_m)` takes TICKS; `drop_stale_refusals(tick, max(refused_s, 300 s) ticks)`;
-clamp `suspects_seen` to `blasts.len()`. Chunks left: B 2, C 2, D 3. Owner questions S10b-ai-1..7 (spec 10).
+CLI: `skirmish.rs` `S10B_AI` names, `S10bAiSeen` chances (lay/obst/bunker from AI state, 0 with switches off);
+`json_out.rs` `s10b_ai_blocks` -> `factions.<f>.s10b_ai` + `s10b_ai_derived`; `targets.rs` `exposure`, `exposure_min`,
+`control`, `three_parts_from`, verdicts `Unexposed`/`ControlSame`. `tools/measure.sh` plays every `skirmish40_*` run;
+`tools/ablate.sh` `ABLATIONS=DIR` (8 `*_off.toml`; `loose.toml` is the control); `tools/pool.py` "s10b-ai:" line.
+Liveness (`s10b_ai_tests.rs`): `Stage`, `LIVENESS` rows (Fort x3, Sweep), `job_alive` (TruckGoal false: D fills it),
+`drive_row`, `check_liveness`. Keep: `refused_near(.., refused_ticks, near_m)` takes ticks.
 
 ## Build B chunk 1 (2026-11-12)
 
@@ -146,3 +129,10 @@ pit (Watch, `Wait`, carried 0, no truck in `Load`). The fix keeps waiting; the r
 Controls seen failing: `heavy` false; `#[serde(skip)]` back on `blocked_pairs`. CLI test `s10b_ai_derived_fields` now
 expects 18 + 16 raw keys. Germany 45.0 % on the default 40 set after the fix (47.5 % before).
 
+## Build D chunk 2 (2026-11-12; stage chunk 1, sweeping, without the fortify row and fuzz stage)
+
+Bugs met while testing: `squad_of` lacked `ClearMines` (the job saw its own pending order as refused); a lane of exactly
+`lane_max_m` could be refused by rounding (now 10 cm under); a terrain-clamped lane end bent the lane off the line
+(now shortened along it). Quick: fmt, clippy, neutral.py, ablate.sh ok; tests cli+content+sim 786 passed, 0 failed
+(skirmish binary 651 s). Two quick runs overlapped by mistake (run.sh returned early); a clean rerun is in the report.
+All-off 40 set not replayed this chunk (sweep code returns before any work with `sweep` 0; holds empty).
