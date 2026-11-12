@@ -345,6 +345,7 @@ impl FortState {
         ]
         .iter()
         .any(|&n| n > crate::bounds::MAX_ID_COUNTER)
+            || self.next_charge > MAX_CHARGE_ID
         {
             return Err("an S10a id counter is exhausted");
         }
@@ -1542,6 +1543,9 @@ const NODE_M: i32 = 4;
 pub const WIRE_NODE_SLACK_M: i32 = 3;
 /// A charge's bursts get keys `id * CHARGE_KEYS + k` (k < 8).
 const CHARGE_KEYS: u32 = 8;
+/// Charge ids stay below this so `id * CHARGE_KEYS` neither wraps nor
+/// reaches the mine keys (`MINE_KEY_BASE`, 2^31; review R3).
+pub(crate) const MAX_CHARGE_ID: u32 = crate::bounds::MAX_ID_COUNTER / CHARGE_KEYS;
 
 /// The point of segment `a -> b` closest to `p`.
 pub(crate) fn closest_on(p: FxVec2, a: FxVec2, b: FxVec2) -> FxVec2 {
@@ -2240,6 +2244,9 @@ impl MatchState {
         tick: u64,
     ) -> bool {
         if self.fort.charges.len() >= MAX_CHARGES {
+            return false;
+        }
+        if self.fort.next_charge >= MAX_CHARGE_ID {
             return false;
         }
         let it = &self.setup.items[item as usize];

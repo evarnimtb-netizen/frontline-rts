@@ -2213,3 +2213,27 @@ fn fort_snapshot_lists_mines_with_known_bits() {
     assert_eq!((lane.a, lane.b), ([470.0, 510.0], [470.0, 540.0]));
     assert_eq!(sq.demolish, None);
 }
+
+#[test]
+fn charge_ids_stay_below_the_key_bound() {
+    // Review R3: charge ids stay below `MAX_CHARGE_ID` (2^28) so the burst
+    // keys `id * 8` cannot wrap into the mine keys. Control: drop the
+    // `next_charge < MAX_CHARGE_ID` guard in `demolish_tick` -> the charge
+    // is laid, the counter passes the bound and the save no longer loads.
+    use crate::fort::MAX_CHARGE_ID;
+    let mut w = flat(|_| {});
+    hedgehogs(&mut w, 500, 500, 1, 1);
+    let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 470, 500);
+    let before = satchels(&w, eng);
+    w.edit_fort(|s| s.next_charge = MAX_CHARGE_ID);
+    demolish(&mut w, 0, eng, c(501, 501));
+    assert_eq!(until_laid(&mut w, 120), None, "no charge past the bound");
+    assert_eq!(satchels(&w, eng), before, "the satchel is kept");
+    assert_eq!(fs(&w).next_charge, MAX_CHARGE_ID);
+    assert!(World::load(&w.save(), 1).is_ok(), "at the bound it loads");
+    w.edit_fort(|s| s.next_charge = MAX_CHARGE_ID + 1);
+    assert!(
+        World::load(&w.save(), 1).is_err(),
+        "past the bound it does not"
+    );
+}

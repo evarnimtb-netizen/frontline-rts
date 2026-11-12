@@ -102,6 +102,11 @@ impl Purpose {
     /// S10b: a sweeper's detection roll (tick, sweeper id; the mine id
     /// mixed into the roll, `sweep::detect_roll`).
     pub const MINE_DETECT: Purpose = Purpose(36);
+    /// S10b: a demolition charge's burst crater (tick, charge id x 8;
+    /// review R3: its own pair, not the thrown items').
+    pub const DEMO_CRATER: Purpose = Purpose(37);
+    /// S10b: a demolition charge's burst fragments (tick, as above).
+    pub const DEMO_FRAGMENT: Purpose = Purpose(38);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

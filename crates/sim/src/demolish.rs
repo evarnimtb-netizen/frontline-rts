@@ -243,6 +243,7 @@ impl MatchState {
             let item = self.item_of(ctx.ents, m, ItemKind::Satchel).map(|(x, _)| x);
             if let Some(item) = item
                 && self.fort.charges.len() < MAX_CHARGES
+                && self.fort.next_charge < crate::fort::MAX_CHARGE_ID
             {
                 ctx.ents.kit[i].items[k] -= 1;
                 ctx.hash.mark_entity_chunk(m.chunk());

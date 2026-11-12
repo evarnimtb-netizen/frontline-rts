@@ -2630,6 +2630,8 @@ impl MatchState {
             Purpose::COOKOFF_FRAGMENT
         } else if b.key.1 == Purpose::CHARGE_CRATER {
             Purpose::CHARGE_FRAGMENT
+        } else if b.key.1 == Purpose::DEMO_CRATER {
+            Purpose::DEMO_FRAGMENT
         } else {
             Purpose::FRAGMENT
         };
@@ -3285,6 +3287,11 @@ impl MatchState {
         for t in fused.iter() {
             let it = &self.setup.items[t.item as usize];
             let mine = it.kind == frontline_content::ItemKind::Mine;
+            // S10b: a demolition charge's target piece (never a mine's
+            // burst, which shares the u32::MAX thrower; review R3).
+            let demo_piece = (t.thrower == SimId(u32::MAX) && !mine)
+                .then(|| demo.iter().find(|d| d.0 == t.id).map(|d| d.1))
+                .flatten();
             if let Some(h) = it.he.clone() {
                 ctx.stats.explosions += 1;
                 let kind = if h.cuts_trenches {
@@ -3308,6 +3315,8 @@ impl MatchState {
                         SimId(t.id),
                         if it.kind == frontline_content::ItemKind::Bangalore {
                             Purpose::CHARGE_CRATER
+                        } else if demo_piece.is_some() {
+                            Purpose::DEMO_CRATER
                         } else {
                             Purpose::ITEM_CRATER
                         },
@@ -3321,11 +3330,7 @@ impl MatchState {
                         .inside
                         .filter(|i| self.vderived.frame(i.vehicle).is_some())
                         .map(|i| (i.vehicle, i.part)),
-                    piece: if t.thrower == SimId(u32::MAX) {
-                        demo.iter().find(|d| d.0 == t.id).map(|d| d.1)
-                    } else {
-                        None
-                    },
+                    piece: demo_piece,
                 };
                 // S7: inside an open box, its inner rays first.
                 if b.inside.is_some() {
