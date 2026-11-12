@@ -1014,6 +1014,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let seeds = args.first_seed..args.first_seed + args.seeds as u64;
     let s10a = s10a::s10a_rows(args, seeds.clone())?;
     let (atmine, apmine) = s10b::mine_rows(args, seeds.clone())?;
+    let sweep = s10b::sweep_row(args, seeds.clone())?;
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1176,6 +1177,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         s10b: s10b::S10bReport {
             atmine,
             apmine,
+            sweep,
             ..s10b::S10bReport::default()
         },
     })

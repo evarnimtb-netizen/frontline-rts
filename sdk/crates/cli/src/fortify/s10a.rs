@@ -250,9 +250,9 @@ pub(super) fn call_in_card(w: &mut World, p: u8, ids: &[&str]) -> Result<SquadId
 }
 
 /// The assault cards of the slice (spec 3.4).
-const ASSAULT_CARDS: [&str; 2] = ["ger_sturmpioniergruppe", "usa_assault_section"];
+pub(super) const ASSAULT_CARDS: [&str; 2] = ["ger_sturmpioniergruppe", "usa_assault_section"];
 /// The field engineer cards (cut wire at the field tier).
-const FIELD_ENGINEERS: [&str; 2] = ["ger_engineer_squad", "usa_engineer_squad"];
+pub(super) const FIELD_ENGINEERS: [&str; 2] = ["ger_engineer_squad", "usa_engineer_squad"];
 
 fn lead_pos(w: &World, sq: SquadId) -> Option<FxVec2> {
     w.game()

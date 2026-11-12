@@ -24,6 +24,12 @@
 //!   (`contact_triggered_pct`); the medium tank drives over a two-row AP
 //!   field (`vehicle_triggered`); a rifle squad crosses a two-row AP field
 //!   of 30 m, mines every 2 m (`crossing_losses_pct`).
+//! * **Sweep** (Build C). Each player's field engineers sweep a
+//!   [`SWEEP_LANE_M`] m lane with ten enemy AP mines at 0, 15, ... 135 cm
+//!   from the centreline (`found_pct`, `expected_pct`,
+//!   `found_vs_expected_pts`, `lifted_of_found_pct`, `sweeper_losses`); each
+//!   player's assault squad lays a Bangalore into a two-row AP field
+//!   (`bangalore_cleared_pct`: mines within 150 cm of a burst removed).
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -72,6 +78,10 @@ pub struct SweepRow {
     pub found_vs_expected_pts: Option<f64>,
     pub lifted_of_found_pct: Option<f64>,
     pub found_pct: Option<f64>,
+    /// Report beside `found_pct`: mean over mines of `1 - (1 - p)^n`
+    /// (a miss's own n, a find's full-pass n from the lane geometry).
+    pub expected_pct: Option<f64>,
+    /// Sweepers' men lost, all runs together.
     pub sweeper_losses: Option<f64>,
     pub bangalore_cleared_pct: Option<f64>,
 }
@@ -439,4 +449,238 @@ pub fn mine_rows(
             crossing_losses_pct: pct(lost, men),
         },
     ))
+}
+
+/// T104 lane: metres long, mines, their spacing along it and lateral step.
+pub const SWEEP_LANE_M: i32 = 30;
+const SWEEP_MINES: i32 = 10;
+const SWEEP_FIRST_CM: i32 = 300;
+const SWEEP_STEP_CM: i32 = 250;
+const SWEEP_OFFSET_CM: i32 = 15;
+
+/// Sweeper-ticks a mine at lateral offset `o` m would be within `r` m of a
+/// sweeper on a full pass: the sweepers walk +-1 m from the centreline at
+/// `step` m per tick; one whose line passes within `trig` m of the mine
+/// steps on it, so his count ends at the trigger circle.
+pub fn full_pass_ticks(o: f64, r: f64, trig: f64, step: f64) -> f64 {
+    [o - 1.0, o + 1.0]
+        .iter()
+        .map(|l| {
+            let l = l.abs();
+            if l >= r || step <= 0.0 {
+                0.0
+            } else if l < trig {
+                ((r * r - l * l).sqrt() - (trig * trig - l * l).sqrt()) / step
+            } else {
+                2.0 * (r * r - l * l).sqrt() / step
+            }
+        })
+        .sum::<f64>()
+        .floor()
+}
+
+/// One T104 sweep: player `p`'s field engineers sweep a [`SWEEP_LANE_M`] m
+/// lane east along `LINE_Y` with ten enemy AP mines. Returns (found,
+/// expected finds, lifted, sweepers lost, mines).
+fn sweep_once(args: &FortifyArgs, seed: u64, p: u8) -> Result<(u32, f64, u32, u32, u32)> {
+    let mut w = world(args, seed)?;
+    let eng = super::s10a::call_in_card(&mut w, p, &super::s10a::FIELD_ENGINEERS)?;
+    let a = at(TRENCH_X - SWEEP_LANE_M / 2, LINE_Y);
+    let b = a + FxVec2::from_int(SWEEP_LANE_M, 0);
+    w.place_squad(eng, a - FxVec2::from_int(3, 0), EAST);
+    let owner = 1 - p;
+    let f = fort_of(&w, "ww2:ap_minefield")?;
+    let mut mines = Vec::new();
+    for k in 0..SWEEP_MINES {
+        let pt = a + cm(SWEEP_FIRST_CM + k * SWEEP_STEP_CM, k * SWEEP_OFFSET_CM);
+        let Some(id) = w.lay_mine_now(f, pt, PlayerId(owner)) else {
+            bail!("seed {seed}: sweep mine {k} was not staged");
+        };
+        mines.push(id);
+    }
+    let setup = w.match_setup().unwrap();
+    let hz = setup.tick_hz as u64;
+    let t = setup
+        .rules
+        .fortify
+        .clone()
+        .unwrap_or_else(|| unreachable!("[fortify]"));
+    let pr = t.detect_pct_per_s as f64 / (100.0 * hz as f64);
+    let r = t.detect_cm as f64 / 100.0;
+    let trig = setup
+        .items
+        .iter()
+        .find(|i| i.id == "ww2:ap_mine")
+        .and_then(|i| i.mine.as_ref())
+        .map_or(0.0, |m| m.trigger_cm as f64 / 100.0);
+    let ty = w
+        .game()
+        .unwrap()
+        .squad(eng)
+        .map(|q| q.type_idx)
+        .unwrap_or(0);
+    let speed = Fx::from(setup.squad_types[ty as usize].speed).to_f32() as f64;
+    let step = speed * t.sweep_speed_pct as f64 / 100.0 / hz as f64;
+    let men = members(&w, eng);
+    step_with(
+        &mut w,
+        p,
+        vec![CommandKind::ClearMines { squad: eng, a, b }],
+    );
+    let bit = 1u8 << p;
+    // Per mine: found, sweeper-ticks in range while unknown, gone unknown.
+    let mut rec = vec![(false, 0u32, false); mines.len()];
+    for _ in 0..600 * hz {
+        let before: Vec<Option<u8>> = mines
+            .iter()
+            .map(|id| w.game().unwrap().fort().mines.get(id).map(|m| m.known))
+            .collect();
+        w.step(&[]);
+        let near: Vec<FxVec2> = men
+            .iter()
+            .filter(|&&m| alive(&w, m))
+            .map(|&m| pos(&w, m))
+            .collect();
+        for (k, id) in mines.iter().enumerate() {
+            let Some(known) = before[k] else { continue };
+            if known & bit != 0 {
+                continue;
+            }
+            match w.game().unwrap().fort().mines.get(id) {
+                Some(m) => {
+                    let d2 = Fx::from_milli(t.detect_cm as i32 * 10);
+                    rec[k].1 += near.iter().filter(|&&q| (q - m.pos).length() <= d2).count() as u32;
+                    if m.known & bit != 0 {
+                        rec[k].0 = true;
+                    }
+                }
+                None => rec[k].2 = true,
+            }
+        }
+        let sweeping = w
+            .game()
+            .unwrap()
+            .squad(eng)
+            .is_some_and(|q| matches!(q.order, frontline_sim::Order::ClearMines { .. }));
+        if !sweeping {
+            break;
+        }
+    }
+    let mut expected = 0.0;
+    for (k, &(found, n, _)) in rec.iter().enumerate() {
+        // A miss ran its full pass: its own count; a find cut the count
+        // short, so its full pass comes from the lane geometry.
+        let o = (k as i32 * SWEEP_OFFSET_CM) as f64 / 100.0;
+        let n = if found {
+            full_pass_ticks(o, r, trig, step)
+        } else {
+            n as f64
+        };
+        expected += 1.0 - (1.0 - pr).powf(n);
+    }
+    let found = rec.iter().filter(|x| x.0).count() as u32;
+    let lifted = w.game().unwrap().fort().accounts[p as usize].mines_lifted;
+    let lost = men.iter().filter(|&&m| !alive(&w, m)).count() as u32;
+    Ok((found, expected, lifted, lost, mines.len() as u32))
+}
+
+/// T104e: player `p`'s assault squad lays a Bangalore east toward
+/// `LINE_Y`; once the charge lies (its 8 s fuse running), a two-row enemy AP
+/// field is staged across it at 1 m and 2 m from its near end (mines every
+/// 2 m, the second row staggered by 1 m). (Mines within 150 cm of a burst,
+/// of them removed.) The field is staged after the lay so that the walk to
+/// the charge's spot sets none off: the row measures the burst only.
+fn bangalore_once(args: &FortifyArgs, seed: u64, p: u8) -> Result<(u32, u32)> {
+    let mut w = world(args, seed)?;
+    let eng = super::s10a::call_in_card(&mut w, p, &super::s10a::ASSAULT_CARDS)?;
+    w.place_squad(eng, at(TRENCH_X - 8, LINE_Y), EAST);
+    let units = members(&w, eng);
+    step_with(
+        &mut w,
+        p,
+        vec![CommandKind::PlaceBangalore {
+            units,
+            target: at(TRENCH_X, LINE_Y),
+        }],
+    );
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let mut charge = None;
+    for _ in 0..60 * hz {
+        w.step(&[]);
+        if let Some(c) = w.game().unwrap().fort().charges.first() {
+            charge = Some((c.from, c.to));
+            break;
+        }
+    }
+    let Some((from, to)) = charge else {
+        bail!("seed {seed}: no Bangalore was laid");
+    };
+    let along = (to - from).normalize_or_zero();
+    let across = along.perp();
+    let mut pts = Vec::new();
+    for k in -4..=4 {
+        pts.push(from + along + across * Fx::from_int(2 * k));
+        pts.push(from + along.mul_int(2) + across * Fx::from_int(2 * k + 1));
+    }
+    lay(&mut w, "ww2:ap_minefield", 1 - p, &pts)?;
+    for _ in 0..12 * hz {
+        w.step(&[]);
+        if w.game().unwrap().fort().charges.is_empty() {
+            break;
+        }
+    }
+    for _ in 0..3 * hz {
+        w.step(&[]);
+    }
+    let reach = Fx::from_milli(1500);
+    let near: Vec<FxVec2> = pts
+        .iter()
+        .copied()
+        .filter(|q| {
+            (0..3).any(|k| {
+                (*q - (from + (to - from).mul_int(2 * k + 1).div_int(6))).length() <= reach
+            })
+        })
+        .collect();
+    let standing: Vec<FxVec2> = w
+        .game()
+        .unwrap()
+        .fort()
+        .mines
+        .values()
+        .map(|m| m.pos)
+        .collect();
+    let gone = near.iter().filter(|q| !standing.contains(q)).count() as u32;
+    Ok((near.len() as u32, gone))
+}
+
+/// The `sweep` row over `seeds` (each player sweeping in turn).
+pub fn sweep_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<SweepRow> {
+    let (mut found, mut expected, mut lifted, mut lost, mut n) = (0u32, 0.0, 0u32, 0u32, 0u32);
+    let (mut near, mut gone) = (0u32, 0u32);
+    for seed in seeds {
+        for p in [0u8, 1] {
+            let (f, e, l, x, m) = sweep_once(args, seed, p)?;
+            found += f;
+            expected += e;
+            lifted += l;
+            lost += x;
+            n += m;
+            let (a, g) = bangalore_once(args, seed, p)?;
+            near += a;
+            gone += g;
+        }
+    }
+    let found_pct = pct(found, n);
+    let expected_pct = (n > 0).then(|| (expected * 1000.0 / n as f64).round() / 10.0);
+    Ok(SweepRow {
+        found_vs_expected_pts: found_pct
+            .zip(expected_pct)
+            .map(|(f, e)| ((f - e).abs() * 10.0).round() / 10.0),
+        lifted_of_found_pct: pct(lifted, found),
+        found_pct,
+        expected_pct,
+        sweeper_losses: Some(lost as f64),
+        bangalore_cleared_pct: pct(gone, near),
+    })
 }
