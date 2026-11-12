@@ -132,6 +132,8 @@ pub enum AiHabit {
     Fort,
     Sweep,
     Demolish,
+    /// An S8b truck's job (the truck goal's liveness row, L5).
+    Truck,
 }
 
 /// What the hook drives the habit with.
@@ -281,6 +283,7 @@ impl super::Planner<'_> {
             AiHabit::Fort => self.drive_fort(args),
             AiHabit::Sweep => self.drive_sweep(args),
             AiHabit::Demolish => self.drive_demolish(args),
+            AiHabit::Truck => self.drive_truck(args),
         }
     }
 }

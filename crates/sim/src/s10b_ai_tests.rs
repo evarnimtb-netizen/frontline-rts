@@ -527,7 +527,12 @@ fn fort_of_returns_s10b_blueprints_for_new_kinds() {
 fn drive_ai_habit_skeleton_ends_not_built() {
     use crate::ai::{AiHabit, DriveArgs};
     let mut w = ai_world();
-    for h in [AiHabit::Fort, AiHabit::Sweep, AiHabit::Demolish] {
+    for h in [
+        AiHabit::Fort,
+        AiHabit::Sweep,
+        AiHabit::Demolish,
+        AiHabit::Truck,
+    ] {
         let mut ai = AiState::new(w.state.tick);
         let t0 = w.state.tick;
         let none =
@@ -560,7 +565,45 @@ const LIVENESS: &[(JobKind, StageSetup)] = &[
     (JobKind::Fort, bunker_row),
     (JobKind::Sweep, sweep_row),
     (JobKind::Demolish, demolish_row),
+    (JobKind::TruckGoal, truck_row),
 ];
+
+/// The TruckGoal row (Build D, L5): the AI's loaded truck in a trench ring
+/// and its own HQ out of stock outside it, so the HQ drop can never be
+/// reached (the truck's 180 s drop limit ends it); the refusal is at the
+/// HQ. Control: `refusal_memory` 0 -> no refusal (the check fails: "no
+/// refusal", seen).
+fn truck_row() -> (World, Stage) {
+    use frontline_content::setup::StockKind;
+    let mut w = ai_world();
+    let hq_at = c(700, 700);
+    let hq = super::s6_tests::def(
+        &w,
+        w.match_setup().unwrap().players[1].faction,
+        StockKind::Hq,
+        None,
+    );
+    w.build_structure_now(PlayerId(1), hq, hq_at, Fx::ZERO, [0, 0, 0])
+        .unwrap();
+    let line: Vec<FxVec2> = [(-24, -24), (24, -24), (24, 24), (-24, 24), (-24, -24)]
+        .iter()
+        .map(|&(a, b)| c(620 + a, 620 + b))
+        .collect();
+    assert!(w.dig_trench_now(&line, 1));
+    let truck = spawn(&mut w, 1, "ww2:usa_cckw_squad", 620, 620);
+    let v = w.game().unwrap().squads[&truck].members[0];
+    w.edit_vehicle(v, |vs| vs.cargo_g = [100_000, 100_000, 300_000]);
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Truck,
+        args: crate::ai::DriveArgs {
+            squad: Some(truck),
+            ..Default::default()
+        },
+        goal: hq_at,
+        ai: None,
+    };
+    (w, stage)
+}
 
 /// The Demolish row (Build D): a tank blocked inside a closed hedgehog
 /// ring and AI engineers with no satchel left, so every `Demolish` is
@@ -757,8 +800,11 @@ fn job_alive(ai: &AiState, kind: JobKind, squad: Option<SquadId>) -> bool {
             .demolitions
             .get(&q)
             .is_some_and(|j| j.phase != DemolishPhase::Done),
-        // Build D fills the truck goal's liveness (F8, L5).
-        JobKind::TruckGoal => false,
+        // A truck goal is alive while the truck's drop runs (F8, L5).
+        JobKind::TruckGoal => ai
+            .trucks
+            .get(&q)
+            .is_some_and(|j| j.phase == crate::ai::TruckPhase::Drop),
     }
 }
 

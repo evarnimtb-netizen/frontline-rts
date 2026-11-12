@@ -174,6 +174,46 @@ impl super::Planner<'_> {
         }
     }
 
+    /// The fortify-test hook's truck habit (S10b-ai liveness row, L5): the
+    /// truck `args.squad` alone runs its job (no enemies known). The plan
+    /// its `Drop` ends returns `Failed` with a new truck refusal, else
+    /// `Done`.
+    pub(super) fn drive_truck(&mut self, args: &super::DriveArgs) -> Option<super::HabitEnd> {
+        let g = self.g;
+        let sq = args.squad?;
+        let q = g
+            .squads
+            .get(&sq)
+            .filter(|q| q.owner == self.me && !q.members.is_empty())?;
+        let v = q.members[0];
+        let vs = g.vehicles.get(&v)?;
+        let t = &self.ents.transform[v.index()];
+        let mut tanks = vec![MyTank {
+            squad: sq,
+            id: v,
+            pos: t.pos.xy(),
+            yaw: t.yaw,
+            immobile: vs.immobile(&g.setup.vehicles[vs.type_idx as usize]),
+        }];
+        let busy: Vec<SquadId> = self
+            .ai
+            .pending
+            .iter()
+            .filter_map(|c| super::squad_of(&c.kind))
+            .collect();
+        let was = self.ai.trucks.get(&sq).map(|j| j.phase);
+        let refused = self.ai.counters.s10b_refused;
+        self.truck_jobs(&mut tanks, &[], &[], &busy);
+        let now = self.ai.trucks.get(&sq).map(|j| j.phase);
+        (was == Some(TruckPhase::Drop) && now != Some(TruckPhase::Drop)).then(|| {
+            if self.ai.counters.s10b_refused > refused {
+                super::HabitEnd::Failed
+            } else {
+                super::HabitEnd::Done
+            }
+        })
+    }
+
     /// Gives goal `at` up (the job's own memory); with `[ai.truck]
     /// refusal_memory` 1 also an L3 refusal of kind `TruckGoal` (S10b-ai
     /// L5, F8), which outlives the job's four-goal memory.
