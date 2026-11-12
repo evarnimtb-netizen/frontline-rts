@@ -934,6 +934,10 @@ pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
     ] {
         raw.insert(k.into(), json!(v));
     }
+    // Build D: why no bunker started (per plan) and how bunker jobs ended.
+    for (k, name) in frontline_sim::ai::BUNKER_WHY.iter().enumerate() {
+        raw.insert(format!("bunker_why_{name}"), json!(c.bunker_why[k]));
+    }
     let m = c.matches as f64;
     let derived = json!({
         "matches_with_mines_pct": pct(c.matches_with_mines as f64, m),

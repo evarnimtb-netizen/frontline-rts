@@ -53,6 +53,35 @@ pub const MAX_FORT_JOBS: usize = 16;
 /// Most tries a fort job makes before it ends (an untrusted save cannot
 /// hold more).
 pub const MAX_FORT_TRIES: u8 = 16;
+
+/// S10b-ai Build D: names of `AiCounters::bunker_why`. 0-11: the first
+/// check that kept the bunker job from starting at a plan (no own trenched
+/// point; the point not ready (not own, trench not done, threat); no site
+/// or one stands; `builders_max`; `jobs_max`, the blueprint limit or a
+/// young refusal; another job started at the point this plan; no free
+/// squad assigned there; none of them a fit builder (60 %, caps); none
+/// can bring the 250 kg step (carry, free truck, kg at hand); the S10b
+/// budget room; a known enemy near; none of these (it would start).
+/// 12-15: bunker jobs ended by the deadline, dropped (squad gone, weak,
+/// point lost or threatened), failed, done.
+pub const BUNKER_WHY: [&str; 16] = [
+    "no_point",
+    "point_not_ready",
+    "no_site",
+    "builders_max",
+    "s10b_room",
+    "other_first",
+    "no_squad",
+    "no_builder",
+    "no_carry",
+    "no_budget",
+    "threat",
+    "would_start",
+    "end_deadline",
+    "end_dropped",
+    "end_failed",
+    "end_done",
+];
 /// Loads a job asks for before it goes with what it has.
 const LOAD_TRIES: u8 = 2;
 /// A nest, dugout or wall "exists" near its site within this (m).
@@ -1746,13 +1775,13 @@ impl super::Planner<'_> {
         let room = cap.saturating_sub(held).min(u32::MAX as u64) as u32;
         // Fix F18: kg still aboard from an earlier run count.
         let have_kg = vs.material_g / 1000;
+        // S10b-ai Build D: an S10b work's run draws on the S10b budget (R8).
+        let wf = g.fort.works[&wid].fort;
         let kg = (f.truck_material_kg.saturating_sub(have_kg) * 1000)
             .min(room)
-            .min(self.materials_room_g())
+            .min(self.room_for(wf))
             / 1000;
-        let need_kg = s.forts[g.fort.works[&wid].fort as usize]
-            .materials_g
-            .div_ceil(1000);
+        let need_kg = s.forts[wf as usize].materials_g.div_ceil(1000);
         if have_kg + kg == 0 || have_kg + kg < need_kg.min(f.truck_material_kg) {
             return false;
         }
@@ -1851,6 +1880,7 @@ impl super::Planner<'_> {
             if s10b && tick >= job.start.saturating_add(job_max) {
                 let job = job.clone();
                 self.ai.forts.remove(&id);
+                self.bunker_end(&job, 12);
                 self.s10b_end(&job, true);
                 continue;
             }
@@ -1858,6 +1888,7 @@ impl super::Planner<'_> {
                 if let Some(job) = self.ai.forts.remove(&id)
                     && s10b
                 {
+                    self.bunker_end(&job, 13);
                     self.s10b_end(&job, false);
                 }
                 continue;
@@ -1877,6 +1908,7 @@ impl super::Planner<'_> {
                 if let Some(job) = self.ai.forts.remove(&id)
                     && s10b
                 {
+                    self.bunker_end(&job, 13);
                     self.s10b_end(&job, false);
                 }
                 continue;
@@ -1889,6 +1921,7 @@ impl super::Planner<'_> {
                 // stalled or went without being laid, is a failure; a load
                 // out of budget or carry is not the goal's.
                 let failed = job.parked() || (was == FortPhase::Watch && !self.s10b_laid(&job));
+                self.bunker_end(&job, if failed { 14 } else { 15 });
                 self.s10b_end(&job, failed);
             }
             if job.phase == FortPhase::Done {
@@ -1962,6 +1995,7 @@ impl super::Planner<'_> {
             return out;
         }
         self.point_starts(mine, assigned, points, known, kv, taken, &mut out, false);
+        self.bunker_why(mine, assigned, points, known, kv, taken, &out);
         if switched_on(s, WorkKind::Roof) && self.job_room(0) {
             self.start_roof(mine, known, kv, taken, &mut out);
         }
@@ -2381,6 +2415,130 @@ impl super::Planner<'_> {
     }
 
     /// S10b-ai R8: whether another S10b job may start (`jobs_max`).
+    /// S10b-ai Build D: counts a bunker job's end (`BUNKER_WHY` index
+    /// `why`); other jobs are not counted.
+    fn bunker_end(&mut self, job: &AiFortJob, why: usize) {
+        if fort_of(&self.g.setup, WorkKind::Bunker) == Some(job.fort) {
+            self.ai.counters.bunker_why[why] += 1;
+        }
+    }
+
+    /// S10b-ai Build D: after a plan's point starts, with the bunker
+    /// switched on, under `bunkers_max` and no bunker job, counts the
+    /// first check that kept one from starting (`BUNKER_WHY` 0-11). Reads
+    /// state only (no RNG); nothing with the switch off.
+    #[allow(clippy::too_many_arguments)]
+    fn bunker_why(
+        &mut self,
+        mine: &[Mine],
+        assigned: &[(usize, usize)],
+        points: &[PointEval],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &[SquadId],
+    ) {
+        let s = &self.g.setup;
+        let k = WorkKind::Bunker;
+        if !s10b_on(s) || !switched_on(s, k) {
+            return;
+        }
+        let Some(b) = fort_of(s, k) else { return };
+        if self.fort_use(b) >= s.rules.ai.obstacles.bunkers_max {
+            return;
+        }
+        let why = self.bunker_block(b, mine, assigned, points, known, kv, taken, out);
+        self.ai.counters.bunker_why[why] += 1;
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn bunker_block(
+        &self,
+        b: u16,
+        mine: &[Mine],
+        assigned: &[(usize, usize)],
+        points: &[PointEval],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &[SquadId],
+    ) -> usize {
+        let s = &self.g.setup;
+        let k = WorkKind::Bunker;
+        let Some(i) = self.bunker_point() else {
+            return 0;
+        };
+        let Some(p) = points.get(i) else { return 1 };
+        if p.rel != Rel::Own || !p.trench_done || p.threat >= s.rules.ai.fort.build_threat_max {
+            return 1;
+        }
+        let Some(line) = self.point_site(i, k, None) else {
+            return 2;
+        };
+        if self.point_has(i, k) != Some(false) {
+            return 2;
+        }
+        if !self.job_room(0) {
+            return 3;
+        }
+        let site = mid_of(s.forts[b as usize].shape, &line);
+        if !self.s10b_room() || !self.under_limit(b, &line) || self.refused_here(site) {
+            return 4;
+        }
+        if self
+            .ai
+            .forts
+            .values()
+            .any(|j| j.point as usize == i && j.start == self.tick && !j.parked())
+        {
+            return 5;
+        }
+        let d = &s.forts[b as usize];
+        let free: Vec<&Mine> = assigned
+            .iter()
+            .filter(|&&(_, pi)| pi == i)
+            .map(|&(j, _)| &mine[j])
+            .filter(|m| !taken.contains(&m.id) && !out.contains(&m.id))
+            .collect();
+        if free.is_empty() {
+            return 6;
+        }
+        let fit: Vec<&&Mine> = free
+            .iter()
+            .filter(|m| {
+                m.strength_pct >= 60
+                    && builds(m.caps)
+                    && (m.caps & (1u32 << d.capability) != 0 || heavy_by_field(d, m.caps))
+            })
+            .collect();
+        if fit.is_empty() {
+            return 7;
+        }
+        let need = d.materials_g;
+        let carry: Vec<&&&Mine> = fit
+            .iter()
+            .filter(|m| {
+                self.full_carry_g(m.id) >= need || self.truck_free() || self.at_hand(m.id, d, site)
+            })
+            .collect();
+        if carry.is_empty() {
+            return 8;
+        }
+        if !carry
+            .iter()
+            .any(|m| self.carried_g(m.id).saturating_add(self.room_for(b)) >= need)
+        {
+            return 9;
+        }
+        if carry
+            .iter()
+            .all(|m| self.fort_threat(known, kv, &[m.lead, site]))
+        {
+            return 10;
+        }
+        11
+    }
+
     fn s10b_room(&self) -> bool {
         let s = &self.g.setup;
         let n = self
@@ -2779,7 +2937,21 @@ impl super::Planner<'_> {
                 let wid = job.work.unwrap_or(u32::MAX);
                 let run_here = self.ai.material_run.is_some_and(|(_, r)| r == wid);
                 let wait = f_wait(s) * hz;
-                if run_here || (self.truck_free() && tick < job.since + wait) {
+                // S10b-ai Build D (the bunker never built in a match): an
+                // S10b step over the builder's full carry (the 250 kg
+                // bunker) only comes by truck: while an own truck job lives
+                // it waits for runs (a 200 kg run leaves it short; the
+                // truck's return trip is minutes) up to L1's `job_max_s`;
+                // with none, `material_wait_s` from the last run. It used
+                // to end when no truck was free at the step's first plan.
+                let heavy = s10b_fort(d) && self.full_carry_g(id) < d.materials_g;
+                if heavy && run_here {
+                    job.since = tick;
+                }
+                if run_here
+                    || (heavy && !self.ai.trucks.is_empty())
+                    || ((heavy || self.truck_free()) && tick < job.since + wait)
+                {
                     return;
                 }
                 // Fix F14: a step it cannot carry ends the job (no walk).

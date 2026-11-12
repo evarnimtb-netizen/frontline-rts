@@ -205,7 +205,7 @@ pub use transport::{
 pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
 };
-pub use fort::{AiFortJob, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
+pub use fort::{AiFortJob, BUNKER_WHY, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
     AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
@@ -652,6 +652,10 @@ pub struct AiCounters {
     pub own_blocked: u32,
     pub jobs_overdue: u32,
     pub refused_reorders: u32,
+    /// S10b-ai Build D: per plan with the bunker switched on, under
+    /// `bunkers_max` and no bunker job, the first check that kept one from
+    /// starting; and how bunker jobs ended (`fort::BUNKER_WHY` order).
+    pub bunker_why: [u32; 16],
 }
 
 impl AiState {

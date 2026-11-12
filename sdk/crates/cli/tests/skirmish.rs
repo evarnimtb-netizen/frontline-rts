@@ -851,7 +851,12 @@ fn s10b_ai_derived_fields() {
         30,
     );
     let (raw, d) = frontline_cli::json_out::s10b_ai_blocks(&f);
-    assert_eq!(raw.as_object().unwrap().len(), 18, "{raw}");
+    // 18 counters and (Build D) the bunker reasons `bunker_why_*`.
+    assert_eq!(
+        raw.as_object().unwrap().len(),
+        18 + frontline_sim::ai::BUNKER_WHY.len(),
+        "{raw}"
+    );
     for k in [
         "matches_with_bunker_pct",
         "sweep_when_wanted_pct",

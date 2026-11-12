@@ -463,6 +463,9 @@ pub struct S10Player {
     /// the construction price (R8, T117).
     pub s10b_materials_g: u64,
     pub s10b_materials_micro: u64,
+    /// S10b-ai Build D: why no bunker started, how bunker jobs ended
+    /// (`frontline_sim::ai::BUNKER_WHY` order; zero for a human).
+    pub bunker_why: [u32; 16],
 }
 
 /// S10b-ai: the AI's obstacle counters in report order (names of
@@ -1674,6 +1677,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         .is_some_and(|a| a.hq_built_at > 0),
                     s10b_ordered: s10b_ordered.per_player.get(p).copied().unwrap_or(0),
                     s10b_ai: ai.map_or([0; 14], |a| S10Player::s10b_ai_counters(&a.counters)),
+                    bunker_why: ai.map_or([0; 16], |a| a.counters.bunker_why),
                     s10b_chances: s10b_ai_seen.chances.get(p).copied().unwrap_or(0),
                     s10b_materials_g: s10b_ai_seen.materials_g.get(p).copied().unwrap_or(0),
                     s10b_materials_micro: s10b_ai_seen.materials_g.get(p).copied().unwrap_or(0)
@@ -2306,6 +2310,8 @@ pub struct S10bAiFaction {
     pub sweep_when_wanted: u32,
     pub demolish_wanted_matches: u32,
     pub demolish_when_wanted: u32,
+    /// Sums of [`S10Player::bunker_why`].
+    pub bunker_why: [u64; 16],
 }
 
 impl S10bAiFaction {
@@ -2330,6 +2336,9 @@ impl S10bAiFaction {
         self.tick_hz = tick_hz;
         for (k, v) in p.s10b_ai.iter().enumerate() {
             self.ai[k] += *v as u64;
+        }
+        for (k, v) in p.bunker_why.iter().enumerate() {
+            self.bunker_why[k] += *v as u64;
         }
         self.lost_on_known += a.lost_on_known as u64;
         self.at_exposure_ticks += a.at_exposure_ticks;
@@ -3392,6 +3401,17 @@ pub fn many_text(r: &ManyReport) -> String {
             d["jobs_overdue"],
             d["refused_reorders"],
         );
+        // Build D: why no bunker started (plans) and how its jobs ended.
+        let why = &f.s10b_ai.bunker_why;
+        if why.iter().any(|&n| n > 0) {
+            let parts: Vec<String> = frontline_sim::ai::BUNKER_WHY
+                .iter()
+                .zip(why)
+                .filter(|&(_, &n)| n > 0)
+                .map(|(k, n)| format!("{k} {n}"))
+                .collect();
+            out += &format!("s10b-ai bunker why: {} {}\n", f.faction, parts.join(", "));
+        }
     }
     out += "seed  bases    winner         base  length  tanks lost p0/p1  rockets p0/p1  satchels p0/p1  HE %   hash\n";
     for m in &r.matches {

@@ -205,3 +205,58 @@ fn ai_bunker_needs_heavy_or_field_builder() {
         "control: no field builder -> none"
     );
 }
+
+/// Build D (the bunker never built in 40 default matches: every started
+/// job ended `end_failed` the second its pit was dug): the 250 kg step comes
+/// only by truck, and the one truck is busy (Return) when the step starts
+/// waiting; the job waits while a truck job lives (L1 bounds it), takes
+/// two 200 kg runs and the bunker stands. Control: the Watch wait for a
+/// truck not yet free dropped (`heavy` false) -> the job ends failed at
+/// once, "the bunker stands" fails (seen).
+#[test]
+fn ai_bunker_waits_for_a_busy_truck() {
+    let (mut w, h) = bunker_world(1, |s| {
+        // S10a on (its truck runs) with no S10a work of its own.
+        let f = &mut s.rules.ai.fort;
+        f.works = 1;
+        f.nest = 0;
+        f.dugout = 0;
+        f.roof = 0;
+        f.sandbags = 0;
+    });
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let truck = squad_at(&mut w, "ww2:usa_cckw_squad", base, 0);
+    squad_at(&mut w, BAU, h.pos, 40);
+    let b = bunker(&w);
+    let mut busy = false;
+    let mut done = false;
+    for _ in 0..30 * 1500 {
+        steps(&mut w, 1);
+        let g = w.game().unwrap();
+        let waiting = g
+            .fort()
+            .works
+            .values()
+            .any(|k| k.fort == b && k.step == crate::fort::WorkStep::Wait);
+        if waiting && !busy {
+            busy = true;
+            let t = w.state.tick;
+            let ai = w.state.game.as_mut().unwrap().ai[1].as_mut().unwrap();
+            let j = ai.trucks.get_mut(&truck).expect("a truck job");
+            j.phase = crate::ai::TruckPhase::Return;
+            j.since = t;
+        }
+        if !built(&w).is_empty() {
+            done = true;
+            break;
+        }
+    }
+    let c = &ai_ro(&w).counters;
+    println!(
+        "busy {busy}, runs {:?}, why {:?}",
+        c.material_runs, c.bunker_why
+    );
+    assert!(busy, "the step waited for kg");
+    assert!(done, "the bunker stands");
+    assert_eq!(c.bunker_why[14], 0, "no failed bunker job");
+}
