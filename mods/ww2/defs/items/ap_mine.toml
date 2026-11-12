@@ -31,4 +31,6 @@ pen_mm = 30
 inside_damage = 300
 inside_rays = 16
 inside_reach_cm = 150
-vs_vehicle_pct = 100
+# 10 % of its damage to track anchors, as the hand grenades: an AP mine set
+# off beside a track does not break it (S10b review R18; T103c).
+vs_vehicle_pct = 10

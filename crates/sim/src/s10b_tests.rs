@@ -453,6 +453,38 @@ fn ap_mine_ignores_vehicles() {
     assert_eq!(set_off(&w, 1), 0);
 }
 
+/// S10b review R18: an AP mine that goes off right under a tank's track
+/// (set off by a burst) leaves the track whole. Control: `vs_vehicle_pct`
+/// 100 in ap_mine.toml -> 150 on a 100 hp track: broken.
+#[test]
+fn ap_mine_burst_does_not_break_a_track() {
+    use frontline_content::vehicle::ComponentKind;
+    let mut w = flat(|_| {});
+    let y = left_track_y(&w, "ww2:ger_pz4_h_squad");
+    let (_, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
+    w.step(&[]);
+    let f = fort(w.match_setup().unwrap(), "ww2:ap_minefield");
+    let id = w
+        .lay_mine_now(
+            f,
+            FxVec2::new(Fx::from_int(500), Fx::from_int(500) + y),
+            PlayerId(1),
+        )
+        .unwrap();
+    let t = w.tick();
+    w.edit_fort(|s| s.mines.get_mut(&id).unwrap().boom_tick = Some(t));
+    let before = w.game().unwrap().vehicles[&v].component(ComponentKind::TrackLeft);
+    super::s6_tests::steps(&mut w, 3);
+    assert!(!fs(&w).mines.contains_key(&id), "it went off");
+    let vs = &w.game().unwrap().vehicles[&v];
+    let after = vs.component(ComponentKind::TrackLeft);
+    let setup = w.match_setup().unwrap();
+    assert!(
+        after > 0 && !vs.immobilised(&setup.vehicles[vs.type_idx as usize]),
+        "{before} -> {after}"
+    );
+}
+
 #[test]
 fn at_mine_ignores_infantry() {
     // Control: as `ap_mine_ignores_vehicles`.
