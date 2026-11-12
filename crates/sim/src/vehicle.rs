@@ -668,7 +668,11 @@ impl VehicleState {
                 e != 0 && (self.abandoned.is_none() || st.hp == 0)
             })
             || self.exit.iter().any(|&e| e as u32 > crate::bail::exit_max(v, s))
-            || (self.abandoned.is_none() && (self.crew_squad.is_some() || self.board.is_some()))
+            // A boarding squad on a live vehicle only on a served gun (S9:
+            // an own gun with no crew is boarded without being abandoned,
+            // bail.rs `own_gun_unserved`; fuzz finding G1).
+            || (self.abandoned.is_none()
+                && (self.crew_squad.is_some() || (self.board.is_some() && self.served.is_none())))
             || (self.abandoned.is_some()
                 && (self.target.is_some()
                     || self.attack.is_some()
@@ -1746,7 +1750,7 @@ pub fn drive(
     // The track samples' mean, squared distance to the piece (raw).
     let away = |g: &Ground, c: FxVec2| {
         let mut sum = FxVec2::ZERO;
-        g.xy.iter().flatten().for_each(|p| sum = sum + (*p - c));
+        g.xy.iter().flatten().for_each(|p| sum += *p - c);
         sum.div_int((2 * TRACK_SAMPLES) as i32).length_sq_raw()
     };
     let (held, held_d) = match ctx.escape {

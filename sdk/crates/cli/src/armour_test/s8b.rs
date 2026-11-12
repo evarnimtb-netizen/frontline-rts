@@ -267,6 +267,7 @@ fn free_drive(w: &World, v: SimId, throttle: i8, steer: i8, secs: u32) -> (Vec<F
         rules: &setup.rules.vehicles,
         hz: 30,
         seed: 1,
+        escape: None,
     };
     let mut t = w.entities().transform()[v.index()];
     let mut vel = Velocity::default();

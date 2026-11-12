@@ -1057,7 +1057,7 @@
         "pen_mm": 30,
         "suppression": 80,
         "suppression_radius_m": 18,
-        "vs_vehicle_pct": 100
+        "vs_vehicle_pct": 10
       },
       "id": "ww2:ap_mine",
       "kind": "mine",

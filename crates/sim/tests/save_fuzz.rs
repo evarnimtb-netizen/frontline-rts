@@ -401,19 +401,10 @@ fn describe(m: &Mutation, l: &[save_layout::Layout], ticks: &[u64]) -> String {
 }
 
 /// Findings that are sim bugs, not load-validation gaps: reported by the
-/// fuzz, not failed on. `(path prefix, message part)`.
-///
-/// 1. An AI `Move` of squad 20 (player 0) at 14400 to any point east of
-///    x = 500 m (on the map: the same with x = 1000 m, a legal target) has
-///    the unserved own gun 81 boarded by squad 19 while it unhitches:
-///    `VehicleState::board` is set on a vehicle that is not abandoned
-///    (bail.rs `try_board` for `own_gun_unserved`), which
-///    `VehicleState::validate` rejects ("vehicle state is out of range"):
-///    a save then does not load.
-const KNOWN: [(&str, &str); 1] = [(
-    "state.game.ai.[].pending.[].kind.CommandKind.Move.target",
-    "vehicle state is out of range",
-)];
+/// fuzz, not failed on. `(path prefix, message part)`. None open (G1, an
+/// own gun boarded while it unhitches, was fixed in validation:
+/// `save_fuzz_own_gun_boarded_while_unhitching_loads`).
+const KNOWN: [(&str, &str); 0] = [];
 
 /// Ticks of the mid-match saves the fuzz mutates.
 const FUZZ_SAVES: [u64; 3] = [9_600, 14_400, 20_400];
@@ -435,9 +426,6 @@ fn fuzz_saves() -> &'static [save_layout::Layout] {
             .collect()
     })
 }
-
-/// The tick label of the staged S10b save in fuzz reports.
-const STAGED_LABEL: u64 = 0;
 
 /// A staged S10b state (spec R4 of the S10b review): an engineer squad of
 /// player 0 in `ClearMines` with a known enemy AP mine in its lane, another
@@ -1176,5 +1164,39 @@ fn load_rejects_bad_s10b_state() {
         assert_rejected(&bytes, what);
         let e = World::load(&bytes, 1).err().unwrap().to_string();
         assert!(e.contains(why), "{what}: rejected by another check: {e}");
+    }
+}
+
+/// G1 (the fuzz finding of 2026-11-11, was in `KNOWN`): an AI `Move` east
+/// of x = 500 m in the 14400 save has an unserved own gun boarded while it
+/// unhitches (`board` set, `abandoned` None, as bail.rs `try_board` does
+/// for `own_gun_unserved`); the world's own save must load. Control: drop
+/// the served-gun exception for `board` in `VehicleState::validate`.
+#[test]
+fn save_fuzz_own_gun_boarded_while_unhitching_loads() {
+    let k = FUZZ_SAVES.iter().position(|&t| t == 14_400).unwrap();
+    let l = &fuzz_saves()[k];
+    let path = "state.game.ai.[].pending.[].kind.CommandKind.Move.target.x";
+    let p = l
+        .paths
+        .iter()
+        .position(|x| x == path)
+        .expect("a pending Move");
+    for f in l.fields.iter().filter(|f| f.path as usize == p) {
+        let b = apply(
+            &l.bytes,
+            &Mutation {
+                save: k,
+                field: *f,
+                new: Value::Int(1000 << 16),
+            },
+        );
+        let mut w = World::load(&b, 1).unwrap();
+        for _ in 0..RUN_TICKS {
+            w.step(&[]);
+        }
+        if let Err(e) = World::load(&w.save(), 1) {
+            panic!("pending Move at offset {} to x 1000: {e}", f.offset);
+        }
     }
 }

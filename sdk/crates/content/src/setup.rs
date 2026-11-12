@@ -3350,8 +3350,7 @@ impl MatchSetup {
             );
             check(
                 f.pieces.len() <= crate::defs::MAX_FORT_PIECES
-                    && f
-                        .pieces
+                    && f.pieces
                         .iter()
                         .all(|p| (p.part as usize) < crate::defs::PIECE_PARTS.len()),
                 "forts.pieces",
