@@ -2402,7 +2402,8 @@
         "build_heavy",
         "place_wire",
         "clear_wire",
-        "place_mines"
+        "place_mines",
+        "clear_mines"
       ],
       "cooldown_s": 60,
       "cost": 165,
@@ -2458,7 +2459,8 @@
         "build_structure",
         "place_wire",
         "clear_wire",
-        "place_mines"
+        "place_mines",
+        "clear_mines"
       ],
       "cooldown_s": 30,
       "cost": 206,
@@ -3240,7 +3242,8 @@
         "dig_basic",
         "recrew",
         "clear_wire",
-        "breach"
+        "breach",
+        "clear_mines"
       ],
       "cooldown_s": 60,
       "cost": 264,
@@ -3654,7 +3657,8 @@
         "recrew",
         "at_hunt",
         "clear_wire",
-        "breach"
+        "breach",
+        "clear_mines"
       ],
       "cooldown_s": 60,
       "cost": 380,
@@ -3839,7 +3843,8 @@
         "build_structure",
         "place_wire",
         "clear_wire",
-        "place_mines"
+        "place_mines",
+        "clear_mines"
       ],
       "cooldown_s": 30,
       "cost": 280,

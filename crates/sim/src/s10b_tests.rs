@@ -599,3 +599,524 @@ fn site_refused_near_a_vehicle() {
     fortify(&mut w, 0, eng, f, vec![c(490, 515), c(510, 515)]);
     assert_eq!(fs(&w).works.len(), 1, "{:?}", refused(&w));
 }
+
+// ---- Build C: sweeping, lifting, mines set off by HE (S10b-build-C.md 3).
+
+fn clear_mines(w: &mut World, p: u8, squad: SquadId, a: FxVec2, b: FxVec2) {
+    super::s6_tests::run(w, p, 0, CommandKind::ClearMines { squad, a, b });
+}
+
+fn order_of(w: &World, s: SquadId) -> Order {
+    w.game().unwrap().squads[&s].order.clone()
+}
+
+fn dm(x_dm: i32, y_dm: i32) -> FxVec2 {
+    FxVec2::new(Fx::from_milli(x_dm * 100), Fx::from_milli(y_dm * 100))
+}
+
+/// One mine's sweep record: found (its finder's bit set while it stood),
+/// `n` the (man, tick) pairs a living member of a sweeping squad stood
+/// within `detect_cm` of it while it was unknown, and whether it went off.
+#[derive(Clone, Copy, Debug, Default)]
+struct Pass {
+    found: bool,
+    n: u32,
+    off: bool,
+    /// The closest a member came after it was known and before it went
+    /// (m, f64 for the report only).
+    closest_known: f64,
+}
+
+/// Steps `w` up to `max` ticks while `squads` sweep, recording `mines`
+/// (owned by player 1; player 0 sweeps). Stops when every squad is idle.
+fn sweep_run(w: &mut World, squads: &[SquadId], mines: &[u32], max: u64) -> Vec<Pass> {
+    let detect = Fx::from_milli(
+        w.match_setup()
+            .unwrap()
+            .rules
+            .fortify
+            .as_ref()
+            .unwrap()
+            .detect_cm as i32
+            * 10,
+    );
+    let mut out = vec![
+        Pass {
+            closest_known: f64::MAX,
+            ..Pass::default()
+        };
+        mines.len()
+    ];
+    for _ in 0..max {
+        let before: Vec<Option<u8>> = mines
+            .iter()
+            .map(|id| fs(w).mines.get(id).map(|m| m.known))
+            .collect();
+        w.step(&[]);
+        let men: Vec<FxVec2> = squads
+            .iter()
+            .flat_map(|&s| super::s6_tests::members(w, s))
+            .filter(|&m| w.state.entities.is_alive(m))
+            .map(|m| pos(w, m))
+            .collect();
+        for (k, id) in mines.iter().enumerate() {
+            let Some(known) = before[k] else { continue };
+            let now = fs(w).mines.get(id).map(|m| (m.pos, m.known));
+            if known & 1 == 0 {
+                let p = now.map(|x| x.0).unwrap_or_default();
+                if now.is_some() {
+                    out[k].n += men.iter().filter(|&&q| (q - p).length() <= detect).count() as u32;
+                }
+                match now {
+                    Some((_, kn)) if kn & 1 != 0 => out[k].found = true,
+                    None => out[k].off = true,
+                    _ => {}
+                }
+            } else if let Some((p, _)) = now {
+                for q in &men {
+                    let d = (*q - p).length().to_f32() as f64;
+                    out[k].closest_known = out[k].closest_known.min(d);
+                }
+            }
+        }
+        if squads
+            .iter()
+            .all(|&s| !matches!(order_of(w, s), Order::ClearMines { .. }))
+        {
+            break;
+        }
+    }
+    out
+}
+
+#[test]
+fn sweep_finds_at_expected_rate() {
+    // Control: `detect_pct_per_s` 50 -> 25 in the sim only (the expected
+    // share still uses 50) -> found falls far under expected.
+    // 1600 single-mine passes: 80 seeds x 20 lanes, offsets 0..140 cm (the
+    // spec's 400 leave a 1.9-point sd, so 3 points failed on a fair sim
+    // in about one seed set in ten; 1600 make it 0.95).
+    // Expected per pass `1 - (1 - p)^n`, n the sweeper-ticks the mine would
+    // be in range on a full pass: each sweeper walks his +-1 m line at the
+    // pace measured in the run (`along` per tick), so a sweeper at lateral
+    // distance l is in range over the chord `2 sqrt(r^2 - l^2)`, or up to
+    // the trigger circle when l < `trigger_cm` (he steps on it). The n
+    // counted in the run itself stops at the find, which would bias the
+    // expectation low; it is used only to check the geometry on misses.
+    let (mut found, mut expected, mut passes) = (0u32, 0f64, 0u32);
+    for seed in 0..80u64 {
+        let mut w = flat(|s| s.seed = 100 + seed);
+        let t = w.match_setup().unwrap().rules.fortify.clone().unwrap();
+        let p = t.detect_pct_per_s as f64 / (100.0 * HZ as f64);
+        let mut squads = Vec::new();
+        let mut mines = Vec::new();
+        for k in 0..20 {
+            let y = 200 + 40 * k;
+            let s = spawn(&mut w, 0, "ww2:ger_engineer_squad", 300, y);
+            let off = ((k as u64 + seed) % 8) as i32 * 2; // dm: 0..140 cm
+            mines.push(mine_at(&mut w, "ww2:ap_minefield", 3060, y * 10 + off, 1));
+            squads.push(s);
+        }
+        w.step(&[]);
+        for (k, &s) in squads.iter().enumerate() {
+            let y = 200 + 40 * k as i32;
+            clear_mines(&mut w, 0, s, c(300, y), c(312, y));
+        }
+        let step = Fx::from(
+            w.match_setup().unwrap().squad_types
+                [w.game().unwrap().squads[&squads[0]].type_idx as usize]
+                .speed,
+        )
+        .mul_int(t.sweep_speed_pct as i32)
+        .div_int(100)
+        .div_int(HZ as i32)
+        .to_f32() as f64;
+        let r = t.detect_cm as f64 / 100.0;
+        for (k, run) in sweep_run(&mut w, &squads, &mines, 120 * HZ)
+            .into_iter()
+            .enumerate()
+        {
+            let o = (((k as u64 + seed) % 8) * 2) as f64 / 10.0;
+            let n: f64 = [o - 1.0, o + 1.0]
+                .iter()
+                .map(|l: &f64| {
+                    let l = l.abs();
+                    if l >= r {
+                        0.0
+                    } else if l < 0.3 {
+                        ((r * r - l * l).sqrt() - (0.09 - l * l).sqrt()) / step
+                    } else {
+                        2.0 * (r * r - l * l).sqrt() / step
+                    }
+                })
+                .sum();
+            if !run.found && !run.off {
+                assert!(
+                    (run.n as f64 - n).abs() <= 3.0,
+                    "lane {k}: {} vs {n:.1}",
+                    run.n
+                );
+            }
+            passes += 1;
+            found += u32::from(run.found);
+            expected += 1.0 - (1.0 - p).powf(n.floor());
+        }
+    }
+    let found_pct = 100.0 * found as f64 / passes as f64;
+    let exp_pct = 100.0 * expected / passes as f64;
+    assert_eq!(passes, 1600);
+    assert!(
+        (found_pct - exp_pct).abs() <= 3.0,
+        "found {found_pct:.1} % vs expected {exp_pct:.1} %"
+    );
+}
+
+/// `n` lanes 40 m apart, each with a `player` 0 `card` squad at its start
+/// (300, y) and a player-1 AP mine at `mine_dm` (x, lateral) from (300, y),
+/// known to player 0 when `known`; the sweep ordered. (World, squads,
+/// mines.)
+fn lanes(
+    seed: u64,
+    card: &str,
+    n: i32,
+    mine_dm: (i32, i32),
+    known: bool,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, Vec<SquadId>, Vec<u32>) {
+    let mut w = flat(|s| {
+        s.seed = seed;
+        edit(s);
+    });
+    let mut squads = Vec::new();
+    let mut mines = Vec::new();
+    for k in 0..n {
+        let y = 200 + 40 * k;
+        squads.push(spawn(&mut w, 0, card, 300, y));
+        mines.push(mine_at(
+            &mut w,
+            "ww2:ap_minefield",
+            3000 + mine_dm.0,
+            y * 10 + mine_dm.1,
+            1,
+        ));
+    }
+    if known {
+        w.edit_fort(|f| f.mines.values_mut().for_each(|m| m.known |= 1));
+    }
+    w.step(&[]);
+    for (k, &s) in squads.iter().enumerate() {
+        let y = 200 + 40 * k as i32;
+        clear_mines(&mut w, 0, s, c(300, y), c(312, y));
+    }
+    (w, squads, mines)
+}
+
+#[test]
+fn sweeper_stops_short_of_a_found_mine() {
+    // Control: the lifter's spot on the mine itself (`LIFT_STAND` 0, no
+    // clamp) -> he steps on it: it goes off.
+    for seed in 0..5u64 {
+        let (mut w, squads, mines) =
+            lanes(seed, "ww2:ger_engineer_squad", 10, (60, 0), true, |_| {});
+        let runs = sweep_run(&mut w, &squads, &mines, 90 * HZ);
+        let a = &fs(&w).accounts;
+        assert_eq!(a[1].mines_set_off, 0, "seed {seed}");
+        assert_eq!(a[0].mines_lifted, 10, "seed {seed}");
+        for (k, r) in runs.iter().enumerate() {
+            assert!(!r.off, "seed {seed} lane {k}");
+            // trigger_cm 30 + 50 cm.
+            assert!(r.closest_known >= 0.8, "seed {seed} lane {k}: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn lift_time_follows_tier() {
+    // Control: `tier_of` always field (100 %) -> 20 s for all three.
+    for (card, secs) in [
+        ("ww2:ger_engineer_squad", 20),
+        ("ww2:ger_sturmpioniergruppe", 10),
+        ("ww2:ger_baupioniergruppe", 40),
+    ] {
+        let (mut w, squads, mines) = lanes(1, card, 1, (60, 0), true, |_| {});
+        let s = squads[0];
+        let (mut prev, mut ticks) = (0u64, 0u64);
+        for _ in 0..90 * HZ {
+            w.step(&[]);
+            let work = match order_of(&w, s) {
+                Order::ClearMines { work, .. } => work,
+                _ => 0,
+            };
+            let gone = !fs(&w).mines.contains_key(&mines[0]);
+            if work > prev || (gone && prev > 0) {
+                ticks += 1;
+            }
+            prev = work;
+            if gone {
+                break;
+            }
+        }
+        assert_eq!(fs(&w).accounts[0].mines_lifted, 1, "{card}");
+        let want = secs * HZ;
+        assert!(
+            ticks.abs_diff(want) <= 1,
+            "{card}: {ticks} ticks, want {want}"
+        );
+    }
+}
+
+#[test]
+fn clear_mines_needs_capability() {
+    // Control: give the grenadiers `clear_mines` -> accepted.
+    let mut w = flat(|_| {});
+    let s = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 300, 300);
+    w.step(&[]);
+    clear_mines(&mut w, 0, s, c(300, 300), c(312, 300));
+    assert_eq!(refused(&w), Some(crate::fort::FortRefusal::CannotBuild));
+    assert!(!matches!(order_of(&w, s), Order::ClearMines { .. }));
+    assert_eq!(fs(&w).accounts[0].sweeps, 0);
+    // An engineer: a lane longer than `lane_max_m` (50 m) is `BadSpot`.
+    let e = spawn(&mut w, 0, "ww2:ger_engineer_squad", 300, 340);
+    w.step(&[]);
+    clear_mines(&mut w, 0, e, c(300, 340), c(351, 340));
+    assert_eq!(refused(&w), Some(crate::fort::FortRefusal::BadSpot));
+    clear_mines(&mut w, 0, e, c(300, 340), c(350, 340));
+    assert!(matches!(order_of(&w, e), Order::ClearMines { .. }));
+    assert_eq!(fs(&w).accounts[0].sweeps, 1);
+}
+
+#[test]
+fn clear_ends_at_lane_end_with_no_known_mine_left() {
+    // Control: end at the lane end ignoring known mines (`done` without
+    // the known-mine check) -> a found mine is left standing.
+    for seed in 0..6u64 {
+        let mut w = flat(|s| s.seed = 200 + seed);
+        let s = spawn(&mut w, 0, "ww2:usa_engineer_squad", 300, 300);
+        let mut mines = Vec::new();
+        for (x, y) in [
+            (40, 0),
+            (70, 12),
+            (100, -15),
+            (130, 5),
+            (160, -8),
+            (190, 18),
+        ] {
+            mines.push(mine_at(&mut w, "ww2:ap_minefield", 3000 + x, 3000 + y, 1));
+        }
+        w.step(&[]);
+        clear_mines(&mut w, 0, s, c(300, 300), c(320, 300));
+        let mut last = Fx::ZERO;
+        for _ in 0..400 * HZ {
+            w.step(&[]);
+            match order_of(&w, s) {
+                Order::ClearMines { along, .. } => last = along,
+                _ => break,
+            }
+        }
+        assert_eq!(order_of(&w, s), Order::Idle, "seed {seed}");
+        // Idle in the tick `along` reached 20 m: the last value seen is
+        // within one step (2.9 m/s x 25 % / 30 Hz = 2.4 cm) of it.
+        assert!(
+            last < Fx::from_int(20) && last + Fx::from_milli(25) >= Fx::from_int(20),
+            "seed {seed}: {last}"
+        );
+        let f = fs(&w);
+        for id in &mines {
+            assert!(
+                f.mines.get(id).is_none_or(|m| m.known & 1 == 0),
+                "seed {seed}: mine {id} known and left"
+            );
+        }
+        assert!(f.accounts[0].mines_found > 0, "seed {seed}");
+        // Every found mine was lifted, unless it went off first.
+        let (a0, a1) = (&f.accounts[0], &f.accounts[1]);
+        assert!(
+            a0.mines_lifted >= 1 && a0.mines_lifted <= a0.mines_found,
+            "seed {seed}"
+        );
+        assert!(
+            a0.mines_lifted + a1.mines_set_off + a1.mines_blasted >= a0.mines_found,
+            "seed {seed}"
+        );
+    }
+}
+
+fn weapon_id(w: &World, id: &str) -> u16 {
+    w.match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.id == id)
+        .unwrap() as u16
+}
+
+#[test]
+fn found_mine_known_to_finder_only() {
+    // Control: set every player's bit on a find -> `known` 0b11 after it.
+    let (mut w, squads, mines) = lanes(3, "ww2:ger_engineer_squad", 1, (60, 0), false, |_| {});
+    let m = mines[0];
+    w.edit_fort(|f| f.mines.get_mut(&m).unwrap().known = 0);
+    let mut seen = None;
+    for _ in 0..60 * HZ {
+        w.step(&[]);
+        let k = fs(&w).mines[&m].known;
+        if k != 0 {
+            seen = Some(k);
+            break;
+        }
+    }
+    assert_eq!(seen, Some(0b01), "the finder's bit only");
+    assert_eq!(fs(&w).accounts[0].mines_found, 1);
+    // A mortar bomb beside it: known to all when set off, gone a tick on.
+    let _ = squads;
+    let mortar = weapon_id(&w, "ww2:m1_mortar");
+    let at = fs(&w).mines[&m].pos;
+    assert!(w.drop_shell_now(1, mortar, at + FxVec2::from_int(0, 1)));
+    let mut all = false;
+    for _ in 0..2 * HZ {
+        w.step(&[]);
+        match fs(&w).mines.get(&m) {
+            Some(x) if x.boom_tick.is_some() => {
+                all = x.known == 0b11;
+            }
+            Some(_) => {}
+            None => break,
+        }
+    }
+    assert!(all, "known to all once set off");
+    assert!(!fs(&w).mines.contains_key(&m), "gone");
+}
+
+#[test]
+fn burst_sets_off_mines_next_tick() {
+    // Control: `blast_mines` radius x 0.5 -> the mine at 1.2 m stays.
+    let mut w = flat(|_| {});
+    let row: Vec<u32> = [5, 12, 25]
+        .iter()
+        .map(|&x| mine_at(&mut w, "ww2:ap_minefield", 5000 + x, 5000, 0))
+        .collect();
+    let mortar = weapon_id(&w, "ww2:m1_mortar");
+    assert!(w.drop_shell_now(1, mortar, c(500, 500)));
+    let mut set = None;
+    for _ in 0..2 * HZ {
+        w.step(&[]);
+        if fs(&w).mines.values().any(|m| m.boom_tick.is_some()) {
+            set = Some(w.tick());
+            break;
+        }
+    }
+    let t = set.expect("the burst set mines off");
+    let f = fs(&w);
+    assert_eq!(f.mines[&row[0]].boom_tick, Some(t));
+    assert_eq!(f.mines[&row[1]].boom_tick, Some(t));
+    assert_eq!(f.mines[&row[2]].boom_tick, None);
+    assert_eq!(f.accounts[0].mines_blasted, 2);
+    // A save between the burst and the mines' tick loads (boom = tick).
+    let back = World::load(&w.save(), 1).unwrap_or_else(|e| panic!("load: {e}"));
+    assert_eq!(back.full_state_hash(), w.full_state_hash());
+    w.step(&[]);
+    let f = fs(&w);
+    assert!(!f.mines.contains_key(&row[0]) && !f.mines.contains_key(&row[1]));
+    assert_eq!(f.accounts[0].mines_set_off, 0, "a blast is not a contact");
+    super::s6_tests::steps(&mut w, 3 * HZ);
+    // The two mine bursts (100 cm) do not reach the one at 2.5 m.
+    assert!(fs(&w).mines.contains_key(&row[2]));
+    assert_eq!(fs(&w).accounts[0].mines_blasted, 2);
+}
+
+/// A 2-row AP field (rows 1 m apart, mines every 2 m, the second row
+/// staggered by 1 m) and a German Bangalore laid from `from` to `to` (m,
+/// x 10), bursting next tick. Returns the mines standing after 3 s and the
+/// ones within 150 cm of a burst.
+fn bangalore_case(from: FxVec2, to: FxVec2) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
+    let mut w = flat(|_| {});
+    let mut all = Vec::new();
+    for k in 0..10 {
+        all.push(mine_at(&mut w, "ww2:ap_minefield", 4900 + 20 * k, 5000, 1));
+        all.push(mine_at(&mut w, "ww2:ap_minefield", 4910 + 20 * k, 5010, 1));
+    }
+    let item = w
+        .match_setup()
+        .unwrap()
+        .items
+        .iter()
+        .position(|i| i.id == "ww2:gestreckte_ladung")
+        .unwrap() as u16;
+    let tick = w.tick();
+    w.edit_fort(|f| {
+        f.charges.push(Charge {
+            id: f.next_charge,
+            owner: PlayerId(0),
+            item,
+            from,
+            to,
+            fuse_tick: tick + 1,
+            piece: None,
+        });
+        f.next_charge += 1;
+    });
+    let near: Vec<u32> = all
+        .iter()
+        .copied()
+        .filter(|id| {
+            let p = fs(&w).mines[id].pos;
+            (0..3).any(|k| {
+                let b = from + (to - from).mul_int(2 * k + 1).div_int(6);
+                (p - b).length() <= Fx::from_milli(1500)
+            })
+        })
+        .collect();
+    super::s6_tests::steps(&mut w, 3 * HZ);
+    let left: Vec<u32> = all
+        .iter()
+        .copied()
+        .filter(|id| fs(&w).mines.contains_key(id))
+        .collect();
+    (all, left, near)
+}
+
+#[test]
+fn bangalore_clears_mines_along_its_length() {
+    // Control: the Bangalore laid 3 m short (y 495.5..498.5) -> no mine
+    // within 150 cm of its bursts: none removed.
+    let (all, left, near) = bangalore_case(dm(5000, 4985), dm(5000, 5015));
+    assert!(near.len() >= 3, "{near:?}");
+    for id in &all {
+        assert_eq!(left.contains(id), !near.contains(id), "mine {id}");
+    }
+}
+
+#[test]
+fn sweep_is_deterministic() {
+    // Control: the detection roll keyed by a process-wide counter instead
+    // of the tick -> the second run finds other mines: hashes differ.
+    // (The spec's control, the roll keyed by tick only, stays
+    // deterministic and passes.)
+    let run = |reload: bool| {
+        let (mut w, squads, _) = lanes(9, "ww2:ger_engineer_squad", 4, (60, 4), false, |_| {});
+        for k in 0..4 {
+            let y = 200 + 40 * k;
+            for x in [90, 120, 150] {
+                mine_at(&mut w, "ww2:ap_minefield", 3000 + x, y * 10 - 6, 1);
+            }
+        }
+        for t in 0..900 {
+            if reload && t == 450 {
+                w = World::load(&w.save(), 1).unwrap();
+            }
+            w.step(&[]);
+        }
+        let a = &fs(&w).accounts[0];
+        let _ = &squads;
+        (
+            w.state_hash(),
+            w.full_state_hash(),
+            a.mines_found,
+            a.mines_lifted,
+        )
+    };
+    let a = run(false);
+    assert!(a.2 > 0, "{a:?}");
+    assert_eq!(a, run(false));
+    assert_eq!(a, run(true));
+}

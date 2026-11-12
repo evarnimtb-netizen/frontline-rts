@@ -1528,7 +1528,7 @@ impl World {
                     &bombs_before,
                 );
                 // S10a: fortification works (nothing to do without any).
-                game.fort_tick(&mut self.state.entities, &self.state.terrain);
+                game.fort_tick(&mut self.state.entities, &self.state.terrain, tick);
                 // S5a: squads holding fire spring to discipline.
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
                 // S5b: the players' knowledge maps.

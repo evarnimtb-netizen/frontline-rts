@@ -479,7 +479,12 @@ impl FortState {
             if np < 8 && m.known >> np != 0 {
                 return Err("mine known to a player who is not in the match");
             }
-            if m.boom_tick.is_some_and(|b| Some(b) != tick.checked_add(1)) {
+            // A burst on tick T sets `T + 1`; between ticks the saved tick
+            // is already `T + 1` (the mine goes off on the next step), so
+            // both the saved tick and the one after are valid.
+            if m.boom_tick
+                .is_some_and(|b| b != tick && Some(b) != tick.checked_add(1))
+            {
                 return Err("mine set off for a tick other than the next");
             }
             let n = per.entry((m.owner.0, m.fort)).or_default();
@@ -988,8 +993,18 @@ impl MatchState {
 
     /// S10a per-tick works (section 5 rule 7): pit, materials, build.
     /// Returns at once with nothing to do.
-    pub(crate) fn fort_tick(&mut self, ents: &mut Entities, terrain: &Heightfield) {
-        if self.fort.is_empty() || self.fort_off {
+    pub(crate) fn fort_tick(&mut self, ents: &mut Entities, terrain: &Heightfield, tick: u64) {
+        if self.fort_off {
+            return;
+        }
+        // S10b: sweeping (returns at once unless a `ClearMines` was given;
+        // runs with no mine laid too, so an empty lane ends).
+        if self.fort.accounts.iter().any(|a| a.sweeps > 0)
+            && let Some(t) = self.setup.rules.fortify.clone()
+        {
+            self.sweep_tick(ents, terrain, &t, tick);
+        }
+        if self.fort.is_empty() {
             return;
         }
         // Squads boarded, recrewed or sent home this tick lose their kg.

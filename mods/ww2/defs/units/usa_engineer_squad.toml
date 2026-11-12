@@ -9,7 +9,7 @@ faction = "ww2:usa"
 tags = ["engineer"]
 # S10a: field engineers (infantry-structures.md 7.7): sandbags, MG nests,
 # dugouts and wire at the field rate, wire cut at the field rate.
-capabilities = ["dig_basic", "dig_full", "recrew", "build_structure", "place_wire", "clear_wire", "place_mines"]
+capabilities = ["dig_basic", "dig_full", "recrew", "build_structure", "place_wire", "clear_wire", "place_mines", "clear_mines"]
 cost = 280
 cooldown_s = 30
 unlock_s = 0

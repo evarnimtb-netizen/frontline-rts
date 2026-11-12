@@ -66,6 +66,7 @@ mod spotting;
 mod squad;
 pub mod structures;
 pub mod supply;
+mod sweep;
 mod systems;
 pub mod terrain;
 pub mod transport;

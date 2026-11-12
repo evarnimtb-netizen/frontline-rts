@@ -497,6 +497,20 @@ impl MatchState {
                 NavPhase::Arriving | NavPhase::Holding => {
                     let yaw = Fx::atan2(sq.nav.facing.y, sq.nav.facing.x);
                     let mut all_there = true;
+                    // S10b: a sweeping squad walks its lane at
+                    // `sweep_speed_pct` (R9).
+                    let sweep_pct = match (&sq.order, &rules.fortify) {
+                        (Order::ClearMines { .. }, Some(t)) if !fort_off => {
+                            t.sweep_speed_pct as i32
+                        }
+                        _ => 100,
+                    };
+                    let (speed, fast) = if sweep_pct == 100 {
+                        (speed, fast)
+                    } else {
+                        let v = speed.mul_int(sweep_pct).div_int(100);
+                        (v, v)
+                    };
                     for (k, &m) in sq.members.iter().enumerate() {
                         let u = &ctx.ents.unit[m.index()];
                         if u.detached || u.riding.is_some() || u.serving.is_some() {

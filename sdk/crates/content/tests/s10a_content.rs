@@ -121,15 +121,16 @@ fn promoted_capabilities_parse() {
                 BuildStructure,
                 PlaceWire,
                 ClearWire,
-                // S10b Build B (R27).
-                PlaceMines
+                // S10b Build B, C (R27).
+                PlaceMines,
+                ClearMines
             ],
             "{id}"
         );
     }
     assert_eq!(
         caps("ww2:ger_sturmpioniergruppe"),
-        [DigBasic, Recrew, ClearWire, Breach]
+        [DigBasic, Recrew, ClearWire, Breach, ClearMines]
     );
     assert_eq!(
         caps("ww2:ger_baupioniergruppe"),
@@ -140,12 +141,13 @@ fn promoted_capabilities_parse() {
             BuildHeavy,
             PlaceWire,
             ClearWire,
-            PlaceMines
+            PlaceMines,
+            ClearMines
         ]
     );
     // The bazooka derives `at_hunt` from its weapon.
     let us = caps("ww2:usa_assault_section");
-    for c in [DigBasic, Recrew, ClearWire, Breach] {
+    for c in [DigBasic, Recrew, ClearWire, Breach, ClearMines] {
         assert!(us.contains(&c), "{c:?}");
     }
     assert!(!us.contains(&BuildStructure) && !us.contains(&PlaceWire));

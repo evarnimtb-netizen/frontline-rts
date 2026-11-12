@@ -1204,8 +1204,9 @@ impl MatchState {
             }
             &CommandKind::LoadMaterials { squad, kg } => self.load_materials(ctx, p, squad, kg),
             &CommandKind::CutWire { squad, at } => self.order_cut_wire(ctx, p, squad, at),
-            // S10b: accepted by Build C (`ClearMines`) and D (`Demolish`).
-            &CommandKind::ClearMines { squad, .. } | &CommandKind::Demolish { squad, .. } => {
+            &CommandKind::ClearMines { squad, a, b } => self.order_clear_mines(ctx, p, squad, a, b),
+            // S10b: accepted by Build D (`Demolish`).
+            &CommandKind::Demolish { squad, .. } => {
                 self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
             }
             CommandKind::PlaceBangalore { units, target } => {

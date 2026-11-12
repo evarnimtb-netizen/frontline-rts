@@ -2438,6 +2438,11 @@ impl MatchState {
                 b.key.1 == Purpose::CHARGE_CRATER,
             );
         }
+        // S10b R12: mines within the blast radius go off next tick
+        // (nothing without mines).
+        if !self.fort.mines.is_empty() && !self.fort_off {
+            self.blast_mines(ctx.terrain, pos.xy(), lift, blast_r, ctx.tick);
+        }
         self.fragments(ctx, b, rays, struck, rules, dead, fires, events);
         // S7: the exposed crew of open-topped vehicles.
         self.blast_open_crew(
