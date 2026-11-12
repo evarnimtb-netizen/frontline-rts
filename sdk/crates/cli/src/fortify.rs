@@ -161,6 +161,12 @@ pub struct FortifyArgs {
     /// defs. Repeatable; `docs/modding/tuning.md`.
     #[arg(long = "rules-override", value_name = "FILE")]
     pub rules_override: Vec<PathBuf>,
+    /// Leave the S10b-ai rows out (`s10b_ai` stays empty): the test
+    /// suite's own fortify runs, which do not read them (they simulate
+    /// about half an hour of match per seed and side; the targets' fortify
+    /// runs and the rows' one-off tests play them).
+    #[arg(long)]
+    pub no_s10b_ai: bool,
 }
 
 impl Default for FortifyArgs {
@@ -172,6 +178,7 @@ impl Default for FortifyArgs {
             mods: None,
             json: None,
             rules_override: Vec::new(),
+            no_s10b_ai: false,
         }
     }
 }
@@ -1031,7 +1038,11 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     let obstacle = s10b::obstacle_row(args, seeds.clone())?;
     let demolish = s10b::demolish_row(args, seeds.clone())?;
     let bunker = bunker::bunker_row(args, seeds.clone())?;
-    let s10b_ai = s10b_ai::s10b_ai_rows(args, seeds.clone())?;
+    let s10b_ai = if args.no_s10b_ai {
+        s10b_ai::S10bAiReport::default()
+    } else {
+        s10b_ai::s10b_ai_rows(args, seeds.clone())?
+    };
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();

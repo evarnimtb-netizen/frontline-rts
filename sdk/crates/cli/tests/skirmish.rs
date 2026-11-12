@@ -148,7 +148,13 @@ fn binary_runs_a_skirmish_and_prints_json() {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
 fn fortify_test_passes() {
-    let r = fortify_test(&FortifyArgs::default()).unwrap();
+    // S10b-ai: its rows are played by the targets' fortify runs and their
+    // one-off tests, not here (they doubled this binary's time).
+    let r = fortify_test(&FortifyArgs {
+        no_s10b_ai: true,
+        ..FortifyArgs::default()
+    })
+    .unwrap();
     assert_eq!(r.rifles.runs.len(), 10);
     assert_eq!(r.mortar.runs.len(), 20);
     assert!(r.rifles.open_losses >= 40, "{}", r.rifles.open_losses);
@@ -180,9 +186,15 @@ fn fortify_test_reports_each_run() {
     let r = fortify_test(&FortifyArgs {
         seeds: 1,
         first_seed: 3,
+        no_s10b_ai: true,
         ..FortifyArgs::default()
     })
     .unwrap();
+    // `no_s10b_ai` leaves the S10b-ai rows out (control: `fortify_test`
+    // ignoring the flag fills them, e.g. the obstacle row's
+    // `own_tank_drove_pct`, and the binary takes ~300 s again).
+    assert!(r.s10b_ai.obstacle.own_tank_drove_pct.is_none());
+    assert!(r.s10b_ai.demolish.gap_opened_pct.is_none());
     assert_eq!(r.rifles.runs.len(), 2);
     assert_eq!(r.mortar.runs.len(), 4);
     assert_eq!(r.grenade.runs.len(), 12);
