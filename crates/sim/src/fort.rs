@@ -473,7 +473,12 @@ impl FortState {
             let Some(d) = setup.forts.get(m.fort as usize) else {
                 return Err("mine blueprint out of range");
             };
-            if d.mine_item != Some(m.item) {
+            if d.mine_item != Some(m.item)
+                || setup
+                    .items
+                    .get(m.item as usize)
+                    .is_none_or(|i| i.kind != ItemKind::Mine || i.mine.is_none())
+            {
                 return Err("mine item is not its blueprint's mine_item");
             }
             if np < 8 && m.known >> np != 0 {

@@ -436,6 +436,162 @@ fn fuzz_saves() -> &'static [save_layout::Layout] {
     })
 }
 
+/// The tick label of the staged S10b save in fuzz reports.
+const STAGED_LABEL: u64 = 0;
+
+/// A staged S10b state (spec R4 of the S10b review): an engineer squad of
+/// player 0 in `ClearMines` with a known enemy AP mine in its lane, another
+/// in `Demolish` against an enemy sandbag wall, a satchel charge laid on
+/// that wall, an AT mine and an AP mine set off for the next tick, and
+/// mines of both kinds. AI on both sides (the world runs on after a load).
+fn staged_s10b() -> World {
+    use frontline_content::ItemKind;
+    use frontline_content::setup::Capability;
+    use frontline_sim::fort::Charge;
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::Order;
+
+    let mut s = setup(SEED);
+    for t in s.squad_types.iter_mut() {
+        if t.id.contains("engineer") {
+            t.caps |= Capability::PlaceMines.bit()
+                | Capability::ClearMines.bit()
+                | Capability::Demolish.bit();
+        }
+    }
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let fort = |id: &str| s.forts.iter().position(|f| f.id == id).unwrap() as u16;
+    let (wall, ap, at) = (
+        fort("ww2:sandbag_wall"),
+        fort("ww2:ap_minefield"),
+        fort("ww2:at_minefield"),
+    );
+    let satchel = s
+        .items
+        .iter()
+        .position(|i| i.kind == ItemKind::Satchel)
+        .unwrap() as u16;
+    let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
+    let mut w = World::new_match(s, 1).unwrap();
+    let spawn = |w: &mut World, x: i32| {
+        w.spawn_squad_at(PlayerId(0), eng, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
+            .unwrap()
+    };
+    let (sweep, demo) = (spawn(&mut w, 280), spawn(&mut w, 380));
+    assert!(w.build_now(wall, &[c(400, 400), c(410, 400)], PlayerId(1)));
+    let piece = *w.game().unwrap().fort().pieces.keys().next().unwrap();
+    let lane_mine = w.lay_mine_now(ap, c(300, 300), PlayerId(1)).unwrap();
+    let mut ids = vec![lane_mine];
+    for (k, f) in [ap, at, ap, at].into_iter().enumerate() {
+        ids.push(w.lay_mine_now(f, c(600 + 20 * k as i32, 600), PlayerId(k as u8 % 2)).unwrap());
+    }
+    let tick = w.tick();
+    w.edit_fort(|f| {
+        f.mines.get_mut(&lane_mine).unwrap().known = 0b11;
+        for id in &ids[1..3] {
+            f.mines.get_mut(id).unwrap().boom_tick = Some(tick + 1);
+        }
+        f.charges.push(Charge {
+            id: f.next_charge,
+            owner: PlayerId(0),
+            item: satchel,
+            from: c(399, 400),
+            to: c(400, 400),
+            fuse_tick: tick + 90,
+            piece: Some(piece),
+        });
+        f.next_charge += 1;
+    });
+    w.edit_squad(sweep, |q| {
+        q.order = Order::ClearMines {
+            a: c(280, 300),
+            b: c(320, 300),
+            along: Fx::from_int(12),
+            lift: Some(lane_mine),
+            work: 100,
+        }
+    });
+    w.edit_squad(demo, |q| {
+        q.order = Order::Demolish {
+            piece,
+            man: None,
+            work: 200,
+        }
+    });
+    w
+}
+
+/// The staged S10b save holds what the fuzz should reach there, and loads.
+/// Control: drop a part of `staged_s10b` (say the AT mines) and this fails.
+#[test]
+fn staged_s10b_save_holds_its_state() {
+    use frontline_sim::game::Order;
+    let w = staged_s10b();
+    World::load(&w.save(), 1).unwrap_or_else(|e| panic!("the staged S10b save: {e}"));
+    let g = w.game().unwrap();
+    let f = g.fort();
+    let item_of = |id: &str| {
+        let s = g.setup();
+        let fi = s.forts.iter().position(|f| f.id == id).unwrap();
+        s.forts[fi].mine_item.unwrap()
+    };
+    let (ap, at) = (item_of("ww2:ap_minefield"), item_of("ww2:at_minefield"));
+    assert!(f.mines.values().any(|m| m.item == ap) && f.mines.values().any(|m| m.item == at));
+    assert!(f.mines.values().any(|m| m.boom_tick.is_some()));
+    assert!(f.charges.iter().any(|c| c.piece.is_some()));
+    let orders: Vec<&Order> = g.squads().values().map(|q| &q.order).collect();
+    assert!(orders.iter().any(|o| matches!(o, Order::ClearMines { lift: Some(_), .. })));
+    assert!(orders.iter().any(|o| matches!(o, Order::Demolish { .. })));
+}
+
+/// S10b review R1: `FortSetup::mine_item` of a saved setup was never
+/// checked, so a mine whose blueprint names item 9999 loaded and the first
+/// step panicked in `apply_blows`. Control: drop the `forts` check in
+/// `MatchSetup::validate` and the second guard in `validate_s10b`.
+#[test]
+fn save_mine_item_out_of_range_is_rejected() {
+    let w = staged_s10b();
+    let frag = w
+        .game()
+        .unwrap()
+        .setup()
+        .items
+        .iter()
+        .position(|i| i.kind == frontline_content::ItemKind::Frag)
+        .unwrap() as i128;
+    let l = layout(&w);
+    // Every blueprint's mine_item and every mine's item, set together (so
+    // the old `mine_item == item` check still holds), applied from the
+    // back so earlier offsets stay valid.
+    let mut fs: Vec<save_layout::Field> = l
+        .fields
+        .iter()
+        .filter(|f| {
+            let p = &l.paths[f.path as usize];
+            !matches!(f.kind, save_layout::Kind::Tag)
+                && ((p.starts_with("state.game.setup.forts") && p.ends_with("mine_item"))
+                    || (p.starts_with("state.game.fort.mines") && p.ends_with(".item")))
+        })
+        .copied()
+        .collect();
+    assert!(fs.len() >= 6, "two blueprints and five mines: {}", fs.len());
+    fs.sort_by_key(|f| std::cmp::Reverse(f.offset));
+    for v in [9999, frag] {
+        let mut b = l.bytes.clone();
+        for f in &fs {
+            b = apply(
+                &b,
+                &Mutation {
+                    save: 0,
+                    field: *f,
+                    new: Value::Int(v),
+                },
+            );
+        }
+        assert_rejected(&b, &format!("mine_item and mine items {v}"));
+    }
+}
+
 /// Part 2: every planned mutation of the three saves is rejected by
 /// `World::load` or loads into a world that runs 300 ticks without a panic.
 /// A hang (no progress for 60 s) fails with the mutation in flight.

@@ -3328,6 +3328,41 @@ impl MatchSetup {
                 "not a crew squad of the vehicle's faction",
             );
         }
+        // S10a/S10b blueprints (a saved setup is checked here only; the
+        // defs checks run on the mod files).
+        for f in &self.forts {
+            let mine = f.mine_item.map(|i| {
+                self.items
+                    .get(i as usize)
+                    .is_some_and(|it| it.kind == ItemKind::Mine && it.mine.is_some())
+            });
+            check(
+                mine.is_none_or(|ok| {
+                    ok && f.shape == FortShape::Line && f.pieces.is_empty() && f.wire.is_none()
+                }),
+                "forts.mine_item",
+                "a minefield is a line with no pieces and no wire, laying a mine item",
+            );
+            check(
+                !f.blocks_vehicles || !f.pieces.is_empty(),
+                "forts.blocks_vehicles",
+                "an obstacle needs pieces",
+            );
+            check(
+                f.pieces.len() <= crate::defs::MAX_FORT_PIECES
+                    && f
+                        .pieces
+                        .iter()
+                        .all(|p| (p.part as usize) < crate::defs::PIECE_PARTS.len()),
+                "forts.pieces",
+                "at most MAX_FORT_PIECES pieces of known parts",
+            );
+            check(
+                f.shape != FortShape::Line || f.segment > Fixed::ZERO,
+                "forts.segment",
+                "a line blueprint needs a segment",
+            );
+        }
         check(
             (2..=MAX_MATCH_PLAYERS).contains(&self.players.len()),
             "players",
