@@ -140,19 +140,54 @@ fn traces(w: &World) -> Vec<String> {
     out
 }
 
-/// Spec 7 (Build C): with `works`, `wire`, `breach` and `cards` all 0 a
-/// 15-minute AI-vs-AI match leaves no S10a-ai trace at all; the same
-/// match with the switches on leaves some (the control).
+/// Spec 7 (Build C): with `works`, `wire`, `breach` and `cards` all 0 and
+/// the S10b-ai `[ai.obstacles]` habits (`mines`, `obstacles`, `bunker`,
+/// `sweep`, `demolish`) all 0 a 15-minute AI-vs-AI match leaves no S10a-ai
+/// or S10b-ai trace at all; the same match with the switches on leaves some
+/// (the control). With only the S10a switches off (S10b-ai on) the match
+/// leaves S10b traces only: fort jobs and works, carried grams, accounts and
+/// walk-back runs (`material_runs[2]`: an S10b builder walks home for mines),
+/// never an S10a trace (truck runs, breaches, wire, cards, plans).
+/// Control: drop the S10b override from the first match -> "all off" fails
+/// with the AI's mine jobs (seen: fort_jobs, forts, works, carried, accounts).
 #[test]
-#[ignore = "two 15-minute matches: runs in the release test pass"]
+#[ignore = "three 15-minute matches: runs in the release test pass"]
 fn ai_all_switches_off_emit_nothing_new() {
     let ticks = 30 * 60 * 15;
+    let s10a_off = |s: &mut MatchSetup| {
+        let f = &mut s.rules.ai.fort;
+        (f.works, f.wire, f.breach, f.cards) = (0, 0, 0, 0);
+    };
     let mut off = setup(3);
-    let f = &mut off.rules.ai.fort;
-    (f.works, f.wire, f.breach, f.cards) = (0, 0, 0, 0);
+    s10a_off(&mut off);
+    let o = &mut off.rules.ai.obstacles;
+    (o.mines, o.obstacles, o.bunker, o.sweep, o.demolish) = (0, 0, 0, 0, 0);
     let mut w = World::new_match(off, 1).unwrap();
     run(&mut w, ticks);
     assert_eq!(traces(&w), Vec::<String>::new(), "all off");
+    let mut only_b = setup(3);
+    s10a_off(&mut only_b);
+    let mut w = World::new_match(only_b, 1).unwrap();
+    run(&mut w, ticks);
+    let s10b = [
+        "forts",
+        "fort_jobs",
+        "fort_refused",
+        "fort works",
+        "fort pieces",
+        "fort carried",
+        "fort accounts",
+        "material_runs",
+    ];
+    let not_b: Vec<String> = traces(&w)
+        .into_iter()
+        .filter(|t| !s10b.contains(&t.trim_start_matches(['p', '0', '1', ' '])))
+        .collect();
+    assert_eq!(not_b, Vec::<String>::new(), "S10a off, S10b-ai on");
+    for p in 0..2u8 {
+        let runs = w.game().unwrap().ai(PlayerId(p)).unwrap().counters.material_runs;
+        assert_eq!(runs[..2], [0, 0], "p{p}: S10a off, no truck run");
+    }
     let mut w = World::new_match(setup(3), 1).unwrap();
     run(&mut w, ticks);
     assert!(!traces(&w).is_empty(), "switches on: the AI fortifies");
