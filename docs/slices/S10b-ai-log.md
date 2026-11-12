@@ -6,25 +6,25 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 5 = the rest of stage chunk 2: fortify row `s10b_ai.demolish` (STOP POINT 2), then chunk 6 =
-stage chunk 3 (F8, docs, stage check).** Layout: SAVE 25, PROTOCOL 14. Sweeping (stage chunk 1) done, see below.
-**Demolish code** (`crates/sim/src/ai/demolish.rs`, module doc = the rules as built): Planner `vehicle_way` (Some(true)
-reaches / Some(false) exhausted or move ended >= `THERE_M` 10 m short / None pending), `vehicle_blocked`,
-`demolish_pieces` (line crossing, then neighbours alternating sides), `demolish_start` (after `sweep_start` in `plan`;
-takes the vehicle out of `tanks`), `demolish_continue` (after `sweep_continue`), `run_demolish` (Go -> Charge ->
-Repath), `demolish_end` (L3 at the waiting vehicle), `drive_demolish` (hook: tasks the vehicles in `others` Assault,
-others without a vehicle join `mine`, start runs every plan). `squad_of` now names `Demolish`.
-**Tests** `crates/sim/src/s10b_ai_demolish_tests.rs`: helper `blocked(edit)` -> `Blocked { w, a, tank, eng, ring }`
-(AI M4 150 m short inside a closed player-0 hedgehog ring, radius 20 m, step 6 m; US engineers 40 m aside with 3
-satchels; the tank ordered to `a.short(60)`). 5 tests pass, every control seen failing. Liveness row `demolish_row`
-(no satchels: refused each try); fuzz stage `ai_demolish_charge` (STAGED_MUST_HOLD 8).
-**Fortify row to build** (`sdk/crates/cli/src/fortify/s10b_ai.rs`, copy `sweep_once`/`sweep_row`): stage like
-`blocked` (a ring or a line closed to the map edge), `drive_ai_habit(Demolish)`, then drive the tank on: `gap_opened_pct`,
-`tank_passed_pct`, `pieces_used` (account `demolitions`); exposure `tank_blocked_pct`; control `demolish` 0.
-**Finding (owner question S10b-ai-D3, below):** a tank gap opens only at ~24 m between standing piece centres (5
-pieces of a 4 m row); engineer cards carry 1 satchel. With a 4 m row T114e/f (min 60) will miss.
-Open: T115e (`obstacle_once`), slow skirmish binary (`Planner::own_routes` memo lives one plan), sweep row full fortify10.
-Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `f5a1993` all ok (791 passed; skirmish 299 s). Failing: none.
+**Next: Build D chunk 6 = stage chunk 3 (F8 truck refusal memory L5, docs, the stage check, STOP POINT 3).** Layout:
+SAVE 25, PROTOCOL 14. Stage chunks 1 (sweeping) and 2 (demolition) are done, STOP POINT 2 met (`ad09b0f`).
+**Demolish code** (`crates/sim/src/ai/demolish.rs`, module doc = the rules as built): `vehicle_way`, `vehicle_blocked`,
+`demolish_pieces`, `demolish_start` (after `sweep_start` in `plan`), `demolish_continue`, `run_demolish` (Go ->
+Charge -> Repath), `demolish_end` (L3), `drive_demolish` (hook). Tests `crates/sim/src/s10b_ai_demolish_tests.rs`
+(helper `blocked`, flat map, 6 m ring), liveness row `demolish_row`, fuzz stage `ai_demolish_charge`.
+**Fortify row `s10b_ai.demolish`** (`sdk/crates/cli/src/fortify/s10b_ai.rs`: `demolish_once`, `demolish_row`,
+`DemolishRow`; one-off test `demolish_row_one_off`): own medium tank 150 m short of the point nearest its base inside a
+closed enemy hedgehog ring (radius `RING_M` 20, step `RING_STEP_M` 6), engineers 40 m aside with the leader at
+`DEMOLISH_SATCHELS` 3 (cards carry 1, S10b-ai-D3), habit up to 900 s then 60 s more. Seeds 1-3: gap_opened_pct 66.7,
+tank_passed_pct 16.7, pieces_used 1.83; exposure tank_blocked_pct 100; control gap 0, passed 0.
+**Two real-map faults the row shows (not fixed; next owner of demolition):** (1) Germany seeds 1, 2: the leader's
+walk to the 2nd piece's placing spot never arrives (squad order `Demolish` stays at work 0 for 170 s, the job fails
+on L2: `s10b_refused` 1); (2) US all seeds: after 2 pieces the Repath path reaches the goal (job `opened`), but the
+tank's move ends ~12 m from its start, still inside the ring (vehicle path layer vs movement disagree on the gap).
+A fix for (2) would end `opened` only after the vehicle has moved past the piece line (else next piece).
+Open: T115e (`obstacle_once`: own tank never moves while obstacles are on), slow skirmish binary (likely
+`own_routes` memo lives one plan: `gun_route` A* every plan), full fortify10 not run for the sweep and demolish rows.
+Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `ad09b0f` all ok (791 passed; skirmish 290 s). Failing: none.
 
 ## Plan (2026-11-12)
 
@@ -115,18 +115,14 @@ Bunker row refuses by an own tank on the site (flat map); determinism saves move
 
 ## Build D chunk 1 (2026-11-12; orchestrator items only)
 
-Found with a scratch trace of bunker jobs (seeds 2, 3, 11, 14, 17; not committed): every job died one plan after the
-pit (Watch, `Wait`, carried 0, no truck in `Load`). The fix keeps waiting; the rest is scarcity (S10b-ai-D1).
-Controls seen failing: `heavy` false; `#[serde(skip)]` back on `blocked_pairs`. CLI test `s10b_ai_derived_fields` now
-expects 18 + 16 raw keys. Germany 45.0 % on the default 40 set after the fix (47.5 % before).
+Scratch trace of bunker jobs (not committed): every job died one plan after the pit (Watch, `Wait`, carried 0, no
+truck in `Load`); the fix keeps waiting, the rest is scarcity (S10b-ai-D1). Controls seen failing: `heavy` false;
+`#[serde(skip)]` on `blocked_pairs`. Germany 45.0 % on the default 40 set after the fix (47.5 % before).
 
 ## Build D chunk 2 (2026-11-12; stage chunk 1, sweeping, without the fortify row and fuzz stage)
 
-Bugs met while testing: `squad_of` lacked `ClearMines` (the job saw its own pending order as refused); a lane of exactly
-`lane_max_m` could be refused by rounding (now 10 cm under); a terrain-clamped lane end bent the lane off the line
-(now shortened along it). Quick: fmt, clippy, neutral.py, ablate.sh ok; tests cli+content+sim 786 passed, 0 failed
-(skirmish binary 651 s). Two quick runs overlapped by mistake (run.sh returned early); the clean rerun after `70b49ab`: all ok.
-All-off 40 set not replayed this chunk (sweep code returns before any work with `sweep` 0; holds empty).
+Bugs met: `squad_of` lacked `ClearMines`; a lane of exactly `lane_max_m` refused by rounding (now 10 cm under); a
+terrain-clamped lane end bent the lane (now shortened along it). Quick after `70b49ab` all ok (786 passed).
 
 ## Build D chunk 3 (2026-11-12; stage chunk 1 rest: fortify row `s10b_ai.sweep`)
 
@@ -148,3 +144,7 @@ gone blocked, 5 open); `demolish_pieces_max` is at most 3 (layout cap) and engin
 opens a 4 m hedgehog row. (A) leave as is (T114e/f miss; L3 stops retries); (B) a later slice narrows the piece pad;
 (C) more satchels, higher cap (layout, later slice). Proceeding on (A); tests use a 6 m ring (opens after 3 pieces).
 
+## Build D chunk 5 (2026-11-12; stage chunk 2 rest: fortify row `s10b_ai.demolish`, STOP POINT 2)
+
+Ring, not the spec's line to the map edge (closed on any map); leader satchels 3 (staged); the 60 s on keeps driving
+the habit. Faults (1), (2) above found with a scratch per-5 s trace (not committed).
