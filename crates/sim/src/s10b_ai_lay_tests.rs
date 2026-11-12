@@ -238,6 +238,48 @@ fn lay_at(edit: fn(&mut frontline_content::MatchSetup)) -> (World, Held, Vec<FxV
     (w, h, ms)
 }
 
+/// R2 (Build C fix): an enemy tank that drives the approach the AI laid
+/// its AT field across sets a mine off. Vehicles drive the 4 m path grid
+/// and the field's middle sits on that route, so a row centred on it puts a
+/// mine under the hull's middle, 1.25 m from each track (trigger 40 cm),
+/// and every mine 4 m out lies 2.75 m from the other track: the tank never
+/// set one off (fortify `s10b_ai.mines` 0/10, matches 0). The row is now
+/// moved along itself by the route vehicle's track half-gauge. Control:
+/// drop that shift in `at_site_search` -> the tank drives through (seen
+/// failing as "the route tank sets a mine off").
+#[test]
+fn ai_at_field_catches_the_route_tank() {
+    let (mut w, h, ms) = lay_at(|_| {});
+    assert!(ms.len() >= 10, "the AT field stands: {} mines", ms.len());
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    let dir = (base - h.pos).normalize_or_zero();
+    let from = h.pos + dir * Fx::from_int(150);
+    let tank = spawn(
+        &mut w,
+        0,
+        "ww2:ger_pz4_h_squad",
+        from.x.floor_int(),
+        from.y.floor_int(),
+    );
+    let v = members(&w, tank)[0];
+    run(
+        &mut w,
+        0,
+        1,
+        CommandKind::Move {
+            squad: tank,
+            target: h.pos,
+        },
+    );
+    let stopped = play_until(&mut w, 120, |w| {
+        let g = w.game().unwrap();
+        g.vehicle(v).is_none_or(|vs| {
+            vs.immobilised(&g.setup().vehicles[vs.type_idx as usize]) || vs.wreck_tick.is_some()
+        })
+    });
+    assert!(stopped, "the route tank sets a mine off");
+}
+
 /// R2: the AT field lies across the enemy vehicle approach `at_out_m` (60)
 /// from the point: on the flat map the vehicle path from the enemy base runs
 /// along the straight line, so the field's middle lies within 10 m of that

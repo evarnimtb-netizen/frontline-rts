@@ -377,7 +377,9 @@ fn mines_once(
     };
     let dir = (base_e - pt).normalize_or_zero();
     // Moved across the approach by the seed's offset (0-4 m, the AT
-    // field's mine step), as the paths row moves its field.
+    // field's mine step), as the paths row moves its field. The tank still
+    // drives the 4 m path grid: every seed crosses on the route's own lane
+    // (Build C measure, log), the lane the AI's row is laid for.
     let side = dir.perp() * Fx::from_milli(((seed * 37) % 400) as i32 * 10);
     let from = pt + dir * Fx::from_int(MINES_TANK_M) + side;
     let Some(tank) = w.spawn_squad_at(PlayerId(enemy), tt, from, -dir) else {

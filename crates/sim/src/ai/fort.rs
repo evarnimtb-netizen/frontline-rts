@@ -468,7 +468,11 @@ impl super::Planner<'_> {
             }
             if walked + seg >= out {
                 let d = (b - a).normalize_or_zero();
-                let p = b - d * (out - walked);
+                // A vehicle driving the route has its hull's middle on it:
+                // the row moves along itself by the track half-gauge so a
+                // mine lies under a track (fix: centred, the tracks straddle
+                // the middle mine and miss the next ones on the 4 m grid).
+                let p = b - d * (out - walked) + d.perp() * half_gauge(ty);
                 let half = d.perp() * half_len;
                 let line = vec![tr.clamp(p - half), tr.clamp(p + half)];
                 return ((line[1] - line[0]).length() >= Fx::from_int(2)).then_some(line);
@@ -2240,4 +2244,22 @@ mod tests {
             assert!(fort_of(&s, k).is_some(), "{k:?}");
         }
     }
+}
+
+/// S10b-ai (R2): a vehicle's track (else wheel) half-gauge: the largest
+/// sideways anchor offset of its track or wheel components (0 without).
+fn half_gauge(v: &frontline_content::vehicle::VehicleSetup) -> Fx {
+    use frontline_content::vehicle::ComponentKind as K;
+    v.components
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.kind,
+                K::TrackLeft | K::TrackRight | K::WheelsFront | K::WheelsRear
+            )
+        })
+        .flat_map(|c| c.anchors.iter())
+        .map(|a| crate::vehicle::v3(a.pos).y.abs())
+        .max()
+        .unwrap_or(Fx::ZERO)
 }
