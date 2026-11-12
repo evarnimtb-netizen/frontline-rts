@@ -544,3 +544,48 @@ fn ai_s10b_refused_spot_is_remembered() {
         "control: {jobs} jobs, {reorders} reorders"
     );
 }
+
+/// R13 (Build C, used by D): the AI knows an enemy obstacle by distance
+/// alone. Player 0's hedgehog 100 m from player 1's squad (within
+/// `obst_seen_m` 150) is known; one 300 m out is not; player 1's own
+/// hedgehog never is. Control: `obst_seen_m` 1 -> none known (seen failing
+/// as "the near hedgehog is known").
+#[test]
+fn ai_knows_obstacles_by_distance() {
+    let known = |seen_m: u32| {
+        let (mut w, _) = held(|s| s.rules.ai.obstacles.obst_seen_m = seen_m);
+        let hh = fort(&w, "ww2:hedgehog");
+        squad_at(&mut w, ENG, c(400, 400), 0);
+        let mut put = |w: &mut World, x: i32, owner: u8| {
+            let before: Vec<u32> = w.game().unwrap().fort().pieces.keys().copied().collect();
+            assert!(
+                w.build_now(hh, &[c(x, 400), c(x + 1, 400)], PlayerId(owner)),
+                "hedgehog at {x}"
+            );
+            let after = w.game().unwrap().fort().pieces.keys().copied();
+            after.filter(|k| !before.contains(k)).collect::<Vec<u32>>()
+        };
+        let near = put(&mut w, 500, 0);
+        let far = put(&mut w, 700, 0);
+        let own = put(&mut w, 450, 1);
+        assert!(!near.is_empty() && !far.is_empty() && !own.is_empty());
+        let got = w
+            .game()
+            .unwrap()
+            .known_obstacles(&w.state.entities, PlayerId(1));
+        (got, near, far, own)
+    };
+    let (got, near, far, own) = known(150);
+    assert!(
+        near.iter().all(|p| got.contains(p)),
+        "the near hedgehog is known: {got:?}"
+    );
+    assert!(!far.iter().any(|p| got.contains(p)), "the far one is not");
+    assert!(!own.iter().any(|p| got.contains(p)), "own pieces never");
+    assert!(got.windows(2).all(|x| x[0] < x[1]), "ascending");
+    let (got, near, _, _) = known(1);
+    assert!(
+        !near.iter().any(|p| got.contains(p)),
+        "control: obst_seen_m 1 knows none: {got:?}"
+    );
+}

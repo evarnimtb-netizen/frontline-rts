@@ -276,7 +276,55 @@ impl super::Planner<'_> {
     }
 }
 
+impl super::Planner<'_> {
+    /// R13: the enemy obstacles this AI knows ([`MatchState::known_obstacles`]).
+    #[allow(dead_code)] // Build D's demolition jobs use it.
+    pub(super) fn known_obstacles(&self) -> Vec<u32> {
+        self.g.known_obstacles(self.ents, self.me)
+    }
+}
+
 impl MatchState {
+    /// S10b-ai (R13): the ids (ascending) of enemy `blocks_vehicles`
+    /// pieces within `obst_seen_m` of an own soldier or vehicle entity (by
+    /// distance alone: no rays; the vehicle path layer is already global).
+    pub(crate) fn known_obstacles(&self, ents: &crate::ecs::Entities, me: PlayerId) -> Vec<u32> {
+        use crate::ecs::EntityKind;
+        let f = self.fort();
+        let enemy: Vec<(u32, FxVec2)> = f
+            .pieces
+            .iter()
+            .filter(|(_, p)| {
+                p.owner != me
+                    && self
+                        .setup
+                        .forts
+                        .get(p.fort as usize)
+                        .is_some_and(|d| d.blocks_vehicles)
+            })
+            .map(|(&id, p)| (id, p.pos))
+            .collect();
+        if enemy.is_empty() {
+            return Vec::new();
+        }
+        let r = Fx::from_int(self.setup.rules.ai.obstacles.obst_seen_m as i32);
+        let r2 = sq_m(r);
+        let own: Vec<FxVec2> = ents
+            .kind()
+            .iter()
+            .enumerate()
+            .filter(|&(i, k)| {
+                matches!(k, EntityKind::Soldier | EntityKind::Vehicle) && ents.owner()[i] == me
+            })
+            .map(|(i, _)| ents.transform()[i].pos.xy())
+            .collect();
+        enemy
+            .into_iter()
+            .filter(|(_, at)| own.iter().any(|u| (*u - *at).length_sq_raw() <= r2))
+            .map(|(id, _)| id)
+            .collect()
+    }
+
     /// S10b-ai fortify-test hook (`World::drive_ai_habit`): one plan of
     /// habit `h` of player `me` on the caller's (unsaved) state, if due
     /// (`ai.next_plan`). `Some(end)` once the job has ended.
