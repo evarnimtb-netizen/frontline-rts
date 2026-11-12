@@ -6,25 +6,29 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 
-**Next: Build D chunk 6 = stage chunk 3 (F8 truck refusal memory L5, docs, the stage check, STOP POINT 3).** Layout:
-SAVE 25, PROTOCOL 14. Stage chunks 1 (sweeping) and 2 (demolition) are done, STOP POINT 2 met (`ad09b0f`).
-**Demolish code** (`crates/sim/src/ai/demolish.rs`, module doc = the rules as built): `vehicle_way`, `vehicle_blocked`,
-`demolish_pieces`, `demolish_start` (after `sweep_start` in `plan`), `demolish_continue`, `run_demolish` (Go ->
-Charge -> Repath), `demolish_end` (L3), `drive_demolish` (hook). Tests `crates/sim/src/s10b_ai_demolish_tests.rs`
-(helper `blocked`, flat map, 6 m ring), liveness row `demolish_row`, fuzz stage `ai_demolish_charge`.
-**Fortify row `s10b_ai.demolish`** (`sdk/crates/cli/src/fortify/s10b_ai.rs`: `demolish_once`, `demolish_row`,
-`DemolishRow`; one-off test `demolish_row_one_off`): own medium tank 150 m short of the point nearest its base inside a
-closed enemy hedgehog ring (radius `RING_M` 20, step `RING_STEP_M` 6), engineers 40 m aside with the leader at
-`DEMOLISH_SATCHELS` 3 (cards carry 1, S10b-ai-D3), habit up to 900 s then 60 s more. Seeds 1-3: gap_opened_pct 66.7,
-tank_passed_pct 16.7, pieces_used 1.83; exposure tank_blocked_pct 100; control gap 0, passed 0.
-**Two real-map faults the row shows (not fixed; next owner of demolition):** (1) Germany seeds 1, 2: the leader's
-walk to the 2nd piece's placing spot never arrives (squad order `Demolish` stays at work 0 for 170 s, the job fails
-on L2: `s10b_refused` 1); (2) US all seeds: after 2 pieces the Repath path reaches the goal (job `opened`), but the
-tank's move ends ~12 m from its start, still inside the ring (vehicle path layer vs movement disagree on the gap).
-A fix for (2) would end `opened` only after the vehicle has moved past the piece line (else next piece).
-Open: T115e (`obstacle_once`: own tank never moves while obstacles are on), slow skirmish binary (likely
-`own_routes` memo lives one plan: `gun_route` A* every plan), full fortify10 not run for the sweep and demolish rows.
-Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `ad09b0f` all ok (791 passed; skirmish 290 s). Failing: none.
+**Next: Build D chunk 7 = finish the orchestrator's defect items R and S, then stage chunk 3 (F8 truck refusal memory
+L5, docs incl. TODO.md owner questions D1-D3 and C1, the stage check, STOP POINT 3).** SAVE 25, PROTOCOL 14.
+Chunk 6 (defects P, Q) done: `a4e3fbd`, `889ef57`; only `sdk/crates/cli` changed, so the 40 sets are unchanged.
+**P measured:** not vehicle A*: a `sample` profile of the obstacle row shows no `find_vehicle_path` (time is world
+step: spatial rebuilds, combat search, snapshot fill), and the 40 set took 88 s on and 88 s all-off. The skirmish
+binary's time was `fortify_test_passes` (243 s) + `fortify_test_reports_each_run` (49 s), i.e. the S10b-ai fortify
+rows' simulated match time (obstacle row: up to 1500 s build + 180 s per seed, side and mode). Fix: `FortifyArgs::
+no_s10b_ai` (`--no-s10b-ai`), set by those two tests. Skirmish binary 246 s -> 105 s (quick: skirmish 149 s).
+**Q found:** row setup, not R6: the 25 min build drive outlived the enemy's tickets, the match was Won and every
+Move refused. `obstacle_once` now sets `ticket_drain_per_min_per_point` 0; the control (mode 1, `own_route_m` 0)
+runs first and both own tanks drive to its first barrier piece's spot (`goal` arg). Seeds 1-3: own_tank_drove_pct 100
+(was 0), own_blocked 0, control.own_blocked 0, barrier_pieces 3.5, barrier_built_pct 0 (C1), arc 103.4 s vs control
+127.2 s. **control.own_blocked stays 0 for two reasons (open):** (a) seed 1 builds the barrier at the same spot in
+mode 0 and mode 1 (R6 never moved it: the gun site is not on the own route for that seed); (b) `count_own_blocked`
+(`ai/fort.rs`) reads `nav.path.last()`, but a vehicle stopped short is `Holding` with an empty path (control tank 11 m
+from its goal beside its own piece, uncounted); fix: also count Holding vehicles > `THERE_M` from `nav.goal`.
+**R, S (not started):** demolition faults in `crates/sim/src/ai/demolish.rs` `run_demolish`: R = end `opened` only
+after the vehicle moved past the piece line (else next piece; say whether path-vs-movement disagreement is an S10b
+defect, list as follow-up, no blocking-rule change); S = Germany seeds 1-2 leader never reaches the 2nd piece's
+`stand_point` (L2 after ~170 s): pick a reachable stand point. Then rerun one-offs `obstacle_row_one_off`,
+`demolish_row_one_off` (`cargo test --release -p frontline-cli --lib NAME -- --ignored --nocapture`), and if sim
+code changed: all-off 40 set vs `target/s10b-base40` (neutral.py) and defaults-on vs `target/s10b-d1-fix`.
+Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `889ef57` all ok (792 passed). Failing: none.
 
 ## Plan (2026-11-12)
 
@@ -90,7 +94,6 @@ against the straight base-point line (flat map) with the field's ends on both si
 Owner question S10b-ai-B2a: one AI AT field is one 40 m row at the blueprint's 4 m step; a crossing tank sets one off
 rarely (fortify 0/10, matches 0). (A) keep the spec's single row; (B) two staggered rows per AT field.
 
-
 ## Build C chunk 2 (2026-11-12; stage chunk 1 rest)
 
 Decided by default: R6 for a gun barrier uses the map point nearest the gun; its mirror is the line moved along itself
@@ -113,16 +116,11 @@ in the fortify row runs through the Fort hook (`DriveArgs::others`), as the hook
 rule still comes before the bunker for a rifle crew; bunker row keys `us_*` for the US set (targets T113g); liveness
 Bunker row refuses by an own tank on the site (flat map); determinism saves moved to the first live S10b job.
 
-## Build D chunk 1 (2026-11-12; orchestrator items only)
+## Build D chunks 1-2 (2026-11-12; orchestrator items; sweeping without row and fuzz stage)
 
-Scratch trace of bunker jobs (not committed): every job died one plan after the pit (Watch, `Wait`, carried 0, no
-truck in `Load`); the fix keeps waiting, the rest is scarcity (S10b-ai-D1). Controls seen failing: `heavy` false;
-`#[serde(skip)]` on `blocked_pairs`. Germany 45.0 % on the default 40 set after the fix (47.5 % before).
-
-## Build D chunk 2 (2026-11-12; stage chunk 1, sweeping, without the fortify row and fuzz stage)
-
-Bugs met: `squad_of` lacked `ClearMines`; a lane of exactly `lane_max_m` refused by rounding (now 10 cm under); a
-terrain-clamped lane end bent the lane (now shortened along it). Quick after `70b49ab` all ok (786 passed).
+Bunker jobs died one plan after the pit (Watch, `Wait`, carried 0, no truck in `Load`): fixed by waiting; the rest is
+scarcity (S10b-ai-D1). Controls seen failing: `heavy` false; `#[serde(skip)]` on `blocked_pairs`. Germany 45.0 % (40
+set). Bugs: `squad_of` lacked `ClearMines`; a lane of `lane_max_m` refused by rounding; a clamped lane end bent it.
 
 ## Build D chunk 3 (2026-11-12; stage chunk 1 rest: fortify row `s10b_ai.sweep`)
 
@@ -148,3 +146,5 @@ opens a 4 m hedgehog row. (A) leave as is (T114e/f miss; L3 stops retries); (B) 
 
 Ring, not the spec's line to the map edge (closed on any map); leader satchels 3 (staged); the 60 s on keeps driving
 the habit. Faults (1), (2) above found with a scratch per-5 s trace (not committed).
+Chunk 6 (defects P, Q): scratch traces (not committed): `sample` profile of `obstacle_row_one_off`; per-10 s own tank nav and `outcome()`
+in `obstacle_once` (Won at tick 45002 in mode 0). Controls seen failing: P flag ignored; Q usual drain.
