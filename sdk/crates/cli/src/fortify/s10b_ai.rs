@@ -37,8 +37,11 @@
 //!   barrier stands ([`BARRIER_PIECES`] pieces; at most [`OBST_DRIVE_S`]):
 //!   `barrier_built_pct`. Then the
 //!   enemy's medium tank, [`MINES_TANK_M`] m out, is ordered to the gun and
-//!   `p`'s own medium tank, at `p`'s base, to the nearest point `p` does not
-//!   hold, both for [`OBST_TANK_S`] s (the habit still driven):
+//!   `p`'s own medium tank, at `p`'s base, to the spot of the first barrier
+//!   piece the control (`own_route_m` 0, played first) built, i.e. a spot on
+//!   its own route (else the nearest point `p` does not hold), both for
+//!   [`OBST_TANK_S`] s (the habit still driven; the ticket drain is off so
+//!   the match outlives the 25 min build):
 //!   `enemy_time_in_arc_s` (report: seconds the enemy tank spends inside the
 //!   gun's 90-degree arc within 400 m), `own_blocked` (the AI counter, must
 //!   be 0). Exposure `enemy_tank_reached_barrier_pct` (the enemy tank came
@@ -703,14 +706,18 @@ pub fn s10b_ai_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S
 }
 
 /// One obstacle run (module docs). `mode` 0: as set; 1: `own_route_m` 0;
-/// 2: `obstacles` 0. (barrier built, seconds the enemy tank spent in the
-/// arc, own_blocked, enemy tank reached the barrier, barrier pieces).
+/// 2: `obstacles` 0. `goal`: where the own tank drives (mode 1: onto its
+/// own first barrier piece; None: the nearest other point). (barrier built, seconds the enemy tank spent in the
+/// arc, own_blocked, enemy tank reached the barrier, barrier pieces,
+/// builder alive, own tank drove, the first barrier piece's spot).
+#[allow(clippy::type_complexity)]
 fn obstacle_once(
     args: &FortifyArgs,
     seed: u64,
     p: u8,
     mode: u8,
-) -> Result<(bool, f64, u32, bool, usize, bool, bool)> {
+    goal: Option<FxVec2>,
+) -> Result<(bool, f64, u32, bool, usize, bool, bool, Option<FxVec2>)> {
     use frontline_sim::ai::{AiGun, AiHabit, AiState, AiTrench, DriveArgs, GunPhase};
     let mut w = world_with(args, seed, |s| {
         s.rules.ai.fort.works = 0;
@@ -718,6 +725,11 @@ fn obstacle_once(
         s.rules.ai.fort.gun_hold_s = 0;
         s.rules.ai.obstacles.mines = 0;
         s.rules.ai.obstacles.obstacles = u32::from(mode != 2);
+        // The build drive lasts up to 25 min: with the usual drain the
+        // enemy runs out of tickets about then (it holds no point), the
+        // match is won and every later command is refused, so neither tank
+        // moved (T115e unexposed, `own_tank_drove_pct` 0).
+        s.rules.ticket_drain_per_min_per_point = 0;
         if mode == 1 {
             s.rules.ai.obstacles.own_route_m = 0;
         }
@@ -800,6 +812,15 @@ fn obstacle_once(
         .map(|(j, q)| (j, FxVec2::from(q.pos)))
         .min_by_key(|(j, q)| ((*q - pt).length_sq_raw(), *j))
         .map(|(_, q)| q);
+    // The control's own tank drives onto its own barrier (on its route);
+    // the run as set drives to the same spot (`goal`).
+    let bar = pieces(&w);
+    let next = if mode == 1 {
+        bar.first().copied()
+    } else {
+        goal
+    }
+    .or(next);
     // In front of the gun, so its drive meets the barrier's line.
     let from = site + dir * Fx::from_int(MINES_TANK_M);
     let tt = card(&w, MEDIUM_TANKS[enemy as usize])?;
@@ -832,7 +853,6 @@ fn obstacle_once(
             );
         }
     }
-    let bar = pieces(&w);
     let (mut in_arc, mut reached, mut drove) = (0u64, false, false);
     let t0 = w.tick();
     while w.tick() < t0 + OBST_TANK_S * hz {
@@ -865,6 +885,7 @@ fn obstacle_once(
         n_pieces,
         alive,
         drove,
+        bar.first().copied(),
     ))
 }
 
@@ -875,7 +896,11 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
     let (mut alive, mut c_built, mut drove) = (0u32, 0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (b, a, o, r, n, l, d) = obstacle_once(args, seed, p, 0)?;
+            // The control first: its barrier lies on the own route (R6
+            // off), and both own tanks drive to its first piece's spot.
+            let c1 = obstacle_once(args, seed, p, 1, None)?;
+            c_blocked += c1.2;
+            let (b, a, o, r, n, l, d, _) = obstacle_once(args, seed, p, 0, c1.7)?;
             alive += l as u32;
             drove += d as u32;
             n_pieces += n as f64;
@@ -883,8 +908,7 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
             arc += a;
             blocked += o;
             reached += r as u32;
-            c_blocked += obstacle_once(args, seed, p, 1)?.2;
-            let c = obstacle_once(args, seed, p, 2)?;
+            let c = obstacle_once(args, seed, p, 2, None)?;
             c_arc += c.1;
             c_built += c.0 as u32;
             runs += 1;
@@ -1337,6 +1361,17 @@ pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T115e's exposure: after the full build drive the own tank still
+    /// drives from base toward the next point (control: the usual ticket
+    /// drain in `obstacle_once` -> the match is won before the tanks start,
+    /// their `Move`s are refused, `drove` false; seen).
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+    fn obstacle_own_tank_drives_after_the_build() {
+        let r = obstacle_once(&FortifyArgs::default(), 1, 0, 0, None).unwrap();
+        assert!(r.6, "own tank did not drive: {r:?}");
+    }
 
     /// One-off measure of the obstacle row (the full fortify run plays it
     /// with the rest): `cargo test --release -p frontline-cli --lib
