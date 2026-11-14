@@ -447,3 +447,95 @@ fn ai_attackers_file_through_swept_lane() {
         }
     }
 }
+
+/// Sweeps the rows' lane (a known AP mine 70 m short of the point) with the
+/// Sweep habit; the world, the hook's state, the args and the lane.
+fn swept_lane(
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, AiState, DriveArgs, SquadId, FxVec2, FxVec2) {
+    let (mut w, mut a) = attack_world(edit);
+    let (rifle, eng) = squads(&mut w, &mut a);
+    let ap = fort_id(&w, "ww2:ap_minefield");
+    let mine = w.lay_mine_now(ap, a.short(70), PlayerId(0)).unwrap();
+    w.edit_fort(|f| f.mines.get_mut(&mine).unwrap().known |= 0b10);
+    let mut ai = AiState::new(w.state.tick);
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let args = args(eng, rifle);
+    assert_eq!(
+        drive(&mut w, &mut ai, &args, 150 * hz),
+        Some(HabitEnd::Done)
+    );
+    let (la, lb) = (ai.sweeps[&eng].a, ai.sweeps[&eng].b);
+    (w, ai, args, eng, la, lb)
+}
+
+/// Review finding 18: a man who reaches the spot beyond the lane end and
+/// takes arrival cover (a trench across the lane 6 m short of that spot,
+/// so his cover slot lies back inside the lane) counts as through; he is
+/// not sent to the spot again every plan; the LaneFile habit ends Done
+/// within 240 s (under the filing bound) with every man past the lane end
+/// or in cover by the spot. Failing control: the pre-fix `lane_file` (past
+/// only at `along >= len + 2`, `going` read from the cover slot): men walk
+/// to the spot, back to the trench and again; the habit ended with a man
+/// back at 35 m of the 50 m lane (seen).
+#[test]
+fn ai_lane_file_ends_when_the_last_spot_takes_cover() {
+    let (mut w, mut ai, args, _, la, lb) = swept_lane(|_| {});
+    let d = (lb - la).normalize_or_zero();
+    let len = (lb - la).length();
+    let mid = la + d * (len - Fx::ONE);
+    let side = d.perp() * Fx::from_int(6);
+    assert!(w.dig_trench_now(&[mid - side, mid + side], 1));
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    let mut end = None;
+    for _ in 0..240 * hz {
+        end = w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::LaneFile, &args);
+        if end.is_some() {
+            break;
+        }
+    }
+    assert_eq!(end, Some(HabitEnd::Done), "still filing after 240 s");
+    // Every man stands past the lane end or in cover near the spot.
+    // The spot beyond the lane end (`FILE_PAST_M` 5 m).
+    let spot = lb + d * Fx::from_int(5);
+    let g = w.game().unwrap();
+    for m in &g.squads[&args.others[0]].members {
+        let p = w.state.entities.transform[m.index()].pos.xy();
+        let r = (p - la).dot(d);
+        assert!(
+            r >= len || (p - spot).length() <= Fx::from_int(11),
+            "{m:?} at {r:?} of {len:?}"
+        );
+    }
+}
+
+/// Review finding 18 (bound): a squad files through a lane for at most
+/// three nominal file walks plus 60 s after the sweep ended; then the habit
+/// ends (the squad gets its normal order). With the Done entry 400 s old
+/// (`suspect_s` 3600 keeps it) the habit ends Done within 5 s; the
+/// pre-fix code (no bound) was still filing (seen). Control: the sweep just
+/// ended -> still filing after 5 s.
+#[test]
+fn ai_lane_file_has_a_time_bound() {
+    for control in [false, true] {
+        let (mut w, mut ai, args, eng, _, _) = swept_lane(|s| {
+            s.rules.ai.obstacles.suspect_s = 3600;
+        });
+        let hz = w.match_setup().unwrap().tick_hz as u64;
+        // 400 s pass without plans; the control's sweep ended just now.
+        for _ in 0..400 * hz {
+            w.step(&[]);
+        }
+        if control {
+            ai.sweeps.get_mut(&eng).unwrap().since = w.state.tick;
+        }
+        let hz5 = 5 * hz;
+        let end =
+            (0..hz5).find_map(|_| w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::LaneFile, &args));
+        if control {
+            assert_eq!(end, None, "control: filing");
+        } else {
+            assert_eq!(end, Some(HabitEnd::Done), "bound: the squad stops filing");
+        }
+    }
+}

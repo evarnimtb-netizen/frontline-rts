@@ -40,6 +40,10 @@
 //!   the lane start once no man is less than [`FILE_GAP_M`] into the lane;
 //!   the others queue behind the start. With every man past, the squad
 //!   gets its normal attack order again (the squad order gathers them).
+//!   A man whose path ended at his spot is there wherever arrival cover
+//!   put him (beyond the end: past; at the start: in the lane). A squad
+//!   files at most three nominal file walks plus [`STALL_SLACK_S`] after
+//!   the sweep ended (review finding 18).
 //!
 //! Nothing runs with the switch off (no state read, no RNG).
 
@@ -249,6 +253,43 @@ impl super::Planner<'_> {
         let len = (b - a).length();
         let half = self.lane_half() + Fx::from_int(1);
         let m = Fx::from_int;
+        // Review finding 18 (bound): a squad files for at most three
+        // nominal file walks (lane, the spot beyond, one gap per man) plus
+        // [`STALL_SLACK_S`] after the sweep ended; then its squad order.
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let speed: Fx = g.setup.squad_types[q.type_idx as usize].speed.into();
+        let speed = speed.floor_int().max(1) as u64;
+        let walk = (len.floor_int().max(0) as u64
+            + FILE_PAST_M as u64
+            + FILE_GAP_M as u64 * q.members.len() as u64)
+            / speed;
+        let since = self
+            .ai
+            .sweeps
+            .values()
+            .filter(|j| j.phase == SweepPhase::Done && j.a == a && j.b == b)
+            .map(|j| j.since)
+            .min();
+        if since.is_some_and(|t| self.tick >= t + (walk * STALL_X + STALL_SLACK_S) * hz) {
+            return false;
+        }
+        let end = self.terrain.clamp(b + d * m(FILE_PAST_M));
+        let close = Fx::from_milli(500);
+        // Sent to `spot` and there: his path ends at it (arrival cover may
+        // have moved his own spot up to `[cover] radius_m` away).
+        let arrived = |u: SimId, spot: FxVec2| {
+            let un = &ents.unit[u.index()];
+            un.detached
+                && matches!(
+                    un.nav.phase,
+                    crate::game::NavPhase::Arriving | crate::game::NavPhase::Holding
+                )
+                && un
+                    .nav
+                    .path
+                    .last()
+                    .is_some_and(|&p| (p - spot).length() <= close)
+        };
         let mut men: Vec<SimId> = q
             .members
             .iter()
@@ -266,8 +307,12 @@ impl super::Planner<'_> {
             .map(|&u| {
                 let r = ents.transform[u.index()].pos.xy() - a;
                 let along = r.dot(d);
-                let past = along >= len + m(FILE_DONE_M);
-                let inside = !past && along >= -m(FILE_IN_M) && r.dot(side).abs() <= half;
+                // Finding 18: a man who reached the spot beyond the end is
+                // past wherever his cover put him; one who reached the
+                // lane start is in the lane.
+                let past = along >= len + m(FILE_DONE_M) || arrived(u, end);
+                let inside = !past
+                    && ((along >= -m(FILE_IN_M) && r.dot(side).abs() <= half) || arrived(u, a));
                 (u, along, inside, past)
             })
             .collect();
@@ -283,7 +328,6 @@ impl super::Planner<'_> {
             return false;
         }
         let free = !at.iter().any(|t| t.2 && t.1 < m(FILE_GAP_M));
-        let end = self.terrain.clamp(b + d * m(FILE_PAST_M));
         let mut rank = 0;
         let mut want: Vec<(SimId, FxVec2)> = Vec::new();
         for &(u, _, inside, past) in &at {
@@ -299,10 +343,9 @@ impl super::Planner<'_> {
             };
             want.push((u, spot));
         }
-        let close = Fx::from_milli(500);
         for (u, spot) in want {
             let un = &ents.unit[u.index()];
-            let going = un.detached && (un.nav.goal - spot).length() <= close;
+            let going = un.detached && ((un.nav.goal - spot).length() <= close || arrived(u, spot));
             let sent = self.ai.pending.iter().any(|c| {
                 matches!(&c.kind, CommandKind::MoveUnits { units, target }
                     if *target == spot && units.contains(&u))
