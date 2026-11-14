@@ -67,29 +67,13 @@ Bunker jobs died one plan after the pit (Watch, `Wait`, carried 0, no truck in `
 scarcity (S10b-ai-D1). Controls seen failing: `heavy` false; `#[serde(skip)]` on `blocked_pairs`. Germany 45.0 % (40
 set). Bugs: `squad_of` lacked `ClearMines`; a lane of `lane_max_m` refused by rounding; a clamped lane end bent it.
 
-## Build D chunk 3 (2026-11-12; stage chunk 1 rest: fortify row `s10b_ai.sweep`)
-Row geometry as the sweep tests: the line runs through the rifle leader; field rows across it 60 m and 56 m short of
-the point (30 m, every 2 m, row 2 shifted 1 m), the blast 60 m short, 1 s old. Debug trace (not committed): with the
-sweep, 4 of 6 runs lose 0 men; the losing runs had a second blast inside the lane (a missed mine), then blasts 2-5 m
-aside. **Owner question S10b-ai-D2** (T111j, max 1 man per run, "verify"; measured 3.0, control 8.0): (A) leave as is,
-a swept lane is not a sure lane (the S10b detection roll); (B) the AI sweeps two parallel lanes or a lane of
-`lane_half_cm` 300 for an attack (more sweep time); (C) attackers wait for a second pass over a lane where a mine was
-found. Proceeding on (A). Quick after `078e382`: fmt, clippy, neutral.py, ablate.sh ok; tests 786 passed (306 s).
-
-## Build D chunk 4 (2026-11-12; stage chunk 2 without the fortify row)
-Bugs met: `squad_of` lacked `Demolish` (the job saw its pending order as refused); the satchel man stuck behind the
-waiting tank (the squad now stands 4 m out and 4 m aside); after a failed move the tank is Holding with an empty path,
-so "exhausted" is read from the nav goal too. **Owner question S10b-ai-D3:** the vehicle block layer (footprint +
-`wreck_pad_m` + clearance) frees a tank node only ~24 m between standing piece centres (measured on a 4 m ring: 1-4
-gone blocked, 5 open); `demolish_pieces_max` is at most 3 (layout cap) and engineers carry 1 satchel, so the AI never
-opens a 4 m hedgehog row. (A) leave as is (T114e/f miss; L3 stops retries); (B) a later slice narrows the piece pad;
-(C) more satchels, higher cap (layout, later slice). Proceeding on (A); tests use a 6 m ring (opens after 3 pieces).
-
-## Build D chunk 5 (2026-11-12; stage chunk 2 rest: fortify row `s10b_ai.demolish`, STOP POINT 2)
-Ring, not the spec's line to the map edge (closed on any map); leader satchels 3 (staged); the 60 s on keeps driving
-the habit. Faults (1), (2) found with a scratch per-5 s trace. Chunk 6 (P, Q): scratch `sample` profile, per-10 s tank
-nav and `outcome()` trace. Chunk 7 (R, S): scratch per-1 s satchel-man nav trace (his Arriving goal jumped to cover).
-Controls seen failing: P flag ignored; Q usual drain; R the old Repath rule; S the pre-fix `unit.rs`. (No traces kept.)
+## Build D chunks 3-7 (2026-11-12; shortened)
+Sweep row: field rows across the rifle line 60/56 m short of the point, the blast 60 m short. **Owner questions**
+S10b-ai-D2 (T111j: a swept lane is not a sure lane; proceeding on (A) leave as is) and D3 (the vehicle block layer
+frees a tank node only ~24 m between piece centres; engineers carry 1 satchel, so the AI never opens a 4 m hedgehog
+row; proceeding on (A)). Bugs fixed: `squad_of` lacked `ClearMines`/`Demolish`; the satchel man stuck behind the
+tank; "exhausted" read from the nav goal; chunk 7 (S): the satchel man's arrival sought cover (`173ccd8`).
+Demolish row: a ring, not the spec's line to the map edge; leader satchels 3 (staged). Traces not kept.
 
 ## Fix save (2026-11-14; review findings 1, 2, 3, 22, 24 fixed; 4 not done)
 Commits `97e8255` + `0e9d0bd` (1: `validate_s10b` as `validate_fort`: a key squad gone since the plan loads, the
@@ -142,3 +126,18 @@ cap and budget lifted, pre-fix 21 -> 31). Fortify10 (`target/s10b-fix2lane-fort`
 controls sweep off 6.3, lane_file_off 3.1 (unchanged vs Build E); targets 61 pass, 9 miss (hard 3: T107d, T114e/f;
 T115e now passes, own_blocked 0, control 80). All-off 40 `target/s10b-fix2lane-off40`: same 40/40. quick
 72b2970 all ok (819 passed).
+
+## Fix2 slit-fuzz (2026-11-15; review findings 17, 4 done)
+`a05dcb3` (17, trace: the five were not the issue; the Demolish man's stand spot was 1.5 m out from the box point
+nearest *him*, so from the engineers' line 15 m out the roof's corner won and the charge lay at (2.1, 1.85) m,
+1.45 m beside the slit; pre-173ccd8 arrival cover moved him into the pit, which hid it. Now a click outside the box
+sends him out from the box point nearest the *click* (a click on the box: as before; the AI clicks piece centres, so
+AI play is unchanged); seek_cover not restored, satchel damage unchanged. Seeds 1-10 both owners: slit 83/100 dead
+(was 0), back wall 0/100, uphill 0; test `demolish_clicked_at_slit_lays_charge_in_slit` (old spot: charge 1.85 m off
+the slit, seen) and `bunker_row_fills_every_field` slit >= 40; `demolish_man_places_the_second_piece` green).
+`8e5daf9` (4: `staged_s10b_ai` adds a Done sweep, a sweep of a squad wiped out and a demolition of a tank wrecked
+just before the save, a Repath demolition, an AtRow2 job, refusals of every kind and blasts at 32; 7 new
+STAGED_MUST_HOLD keys; control (no kill/wreck) seen failing; mutation fuzz 10399, 0 panics). Not done from 4: the
+`done = 3` / `mines_laid = u32::MAX` load cases (unit tests in `s10b_ai_tests.rs` cover them since Fix save).
+quick 72b2970 all ok (820 passed); all-off 40 `target/s10b-fix2slit-off40`: neutral.py same 40/40. Fortify not replayed.
+
