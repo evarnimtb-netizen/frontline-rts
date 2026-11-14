@@ -2797,34 +2797,38 @@ note = "R12 limit (S10b-ai-2 (A)); exposure: the enemy laid mines (the other fac
 id = "T117a"
 metric = "skirmish160.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
 max = 3
+kind = "report"
 exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
-note = "own 3 % budget; control loose (materials_max_pct 100) must exceed it"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
 [[target]]
 id = "T117b"
 metric = "skirmish160.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
 max = 3
+kind = "report"
 exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
-note = "own 3 % budget; control loose (materials_max_pct 100) must exceed it"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
 [[target]]
 id = "T117c"
 metric = "skirmish160_oos.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
 max = 3
+kind = "report"
 exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
-note = "own 3 % budget; control loose (materials_max_pct 100) must exceed it"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
 [[target]]
 id = "T117d"
 metric = "skirmish160_oos.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
 max = 3
+kind = "report"
 exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
-note = "own 3 % budget; control loose (materials_max_pct 100) must exceed it"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
 [[target]]
 id = "T117e"
 metric = "skirmish160.factions.germany.s10_derived.builder_share_pct"
