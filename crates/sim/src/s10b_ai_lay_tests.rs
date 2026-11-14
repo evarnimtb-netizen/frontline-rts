@@ -638,8 +638,16 @@ fn ai_at_field_lays_a_staggered_second_row() {
     };
     let (h, ms) = lay(2);
     let n2 = row2_mines(&h, &ms, 10);
-    assert!(n2 >= 8, "a staggered second row: {n2} of {} mines: {ms:?}", ms.len());
+    assert!(
+        n2 >= 8,
+        "a staggered second row: {n2} of {} mines: {ms:?}",
+        ms.len()
+    );
     let (h, ms) = lay(1);
     assert!(ms.len() >= 10, "control: row 1 stands ({} mines)", ms.len());
-    assert_eq!(row2_mines(&h, &ms, 10), 0, "control: at_rows 1 keeps one row");
+    assert_eq!(
+        row2_mines(&h, &ms, 10),
+        0,
+        "control: at_rows 1 keeps one row"
+    );
 }
