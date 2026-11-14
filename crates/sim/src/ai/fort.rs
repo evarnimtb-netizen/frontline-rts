@@ -1090,9 +1090,51 @@ impl super::Planner<'_> {
                 .any(|j| j.fort == f && !j.parked() && near(mid_of(d.shape, &j.line), mid, r))
     }
 
+    /// Review finding 20: point `i`'s own AT mines within the field
+    /// radius (as [`Self::at_row1_laid`]), plus the segments of its own AT
+    /// works there and of its live AT jobs.
+    fn at_point_count(&self, i: usize, f: u16) -> u32 {
+        let g = self.g;
+        let s = &g.setup;
+        let me = self.me;
+        let Some(pt) = s.map.points.get(i) else {
+            return 0;
+        };
+        let at: FxVec2 = pt.pos.into();
+        let d = &s.forts[f as usize];
+        let r = Fx::from(d.max_length).div_int(2)
+            + Fx::from_int(SITE_NEAR_M)
+            + Fx::from_int(s.rules.ai.obstacles.at_out_m as i32);
+        let mines = g
+            .fort
+            .mines
+            .values()
+            .filter(|m| m.owner == me && m.fort == f && near(m.pos, at, r))
+            .count() as u32;
+        let works: u32 = g
+            .fort
+            .works
+            .values()
+            .filter(|w| w.owner == me && w.fort == f && near(mid_of(d.shape, &w.line), at, r))
+            .map(|w| crate::fort::segments(&w.line, d.segment))
+            .sum();
+        let jobs: u32 = self
+            .ai
+            .forts
+            .values()
+            .filter(|j| {
+                j.fort == f && j.point as usize == i && !j.parked() && j.phase != FortPhase::Done
+            })
+            .map(|j| crate::fort::segments(&j.line, d.segment))
+            .sum();
+        mines.saturating_add(works).saturating_add(jobs)
+    }
+
     /// R4 for the second row: wanted (on the recheck plan) once the first
     /// row is laid, the second is not, and the blueprint cap and the S10b
-    /// budget hold the whole row (else the field keeps one row).
+    /// budget hold the whole row (else the field keeps one row). Point-wide
+    /// (review finding 20): only while the point's own AT mines, works and
+    /// jobs are fewer than 1.5 rows, so a moved route lays no third row.
     fn at_row2_wanted(&self, i: usize) -> bool {
         let s = &self.g.setup;
         if !switched_on(s, WorkKind::AtRow2) || !self.recheck_plan() {
@@ -1108,7 +1150,11 @@ impl super::Planner<'_> {
             return false;
         };
         let d = &s.forts[f as usize];
-        let need_g = crate::fort::segments(&row, d.segment).saturating_mul(d.materials_g);
+        let one = crate::fort::segments(&row, d.segment);
+        if self.at_point_count(i, f).saturating_mul(2) >= one.saturating_mul(3) {
+            return false;
+        }
+        let need_g = one.saturating_mul(d.materials_g);
         !self.at_row2_has(f, &row) && self.under_limit(f, &row) && self.room_for(f) >= need_g
     }
 

@@ -652,6 +652,68 @@ fn ai_at_field_lays_a_staggered_second_row() {
     );
 }
 
+/// Review finding 20: row 2 is wanted only while the point's own AT mines
+/// (with works and jobs) within the field radius are fewer than 1.5 rows.
+/// Both rows laid (20 mines or more, row 2's job ended); then the second row's mines are moved 3 m
+/// further toward the point (as when the enemy route, and with it the
+/// row-2 site, shifts): no third row in 300 s (blueprint cap and S10b
+/// budget lifted, so only the row rule stops it). Control (in the test):
+/// the second row's mines taken away instead -> row 2 is laid again.
+/// Failing control: the pre-fix `at_row2_wanted` (only `at_row2_has` at the
+/// new site) lays a third row of up to 10 mines (seen).
+#[test]
+fn ai_at_field_lays_no_third_row_when_row_two_moved() {
+    for take in [false, true] {
+        // Room for a third row: the blueprint cap and the S10b budget off.
+        let (mut w, h) = at_world(|s| {
+            s.rules.ai.obstacles.at_rows = 2;
+            s.rules.ai.obstacles.materials_max_pct = 100;
+            for f in s.forts.iter_mut().filter(|f| f.mine_item.is_some()) {
+                f.limit_per_player = 1000;
+            }
+        });
+        squad_at(&mut w, ENG, h.pos, 200);
+        let at = fort(&w, "ww2:at_minefield");
+        assert!(play_until(&mut w, 1500, |w| mines_of(w, at).len() >= 20));
+        // Row 2's job finished (its last mines laid).
+        play_until(&mut w, 600, |w| jobs_of(w, at) == 0);
+        let ms = mines_of(&w, at);
+        let (a, b) = (ms[0], ms[9]);
+        let mut back = (b - a).normalize_or_zero().perp();
+        if back.dot(h.pos - a) < Fx::ZERO {
+            back = -back;
+        }
+        let ids: Vec<u32> = w
+            .game()
+            .unwrap()
+            .fort()
+            .mines
+            .iter()
+            .filter(|(_, m)| m.owner == PlayerId(1) && m.fort == at)
+            .map(|(k, _)| *k)
+            .skip(10)
+            .collect();
+        w.edit_fort(|f| {
+            for k in &ids {
+                if take {
+                    f.mines.remove(k);
+                } else {
+                    let m = f.mines.get_mut(k).unwrap();
+                    m.pos += back * Fx::from_int(3);
+                }
+            }
+        });
+        let n0 = mines_of(&w, at).len();
+        play(&mut w, 300);
+        let n1 = mines_of(&w, at).len();
+        if take {
+            assert!(n1 >= n0 + 8, "control: row 2 laid again ({n0} -> {n1})");
+        } else {
+            assert_eq!(n1, n0, "no third AT row ({n0} -> {n1})");
+        }
+    }
+}
+
 /// Review finding 3: the S10b budget saturates instead of overflowing
 /// with a crafted `mines_laid` (`u32::MAX`), an in-range 10 t minefield
 /// and `construction_mp_per_t` 100000 (4e21 > u64::MAX). Control:
