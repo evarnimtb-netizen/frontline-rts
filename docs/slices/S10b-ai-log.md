@@ -5,30 +5,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Next: Build D stage chunk 3, the rest: item 8 docs and item 9 stage check, then STOP POINT 3.** SAVE 25, PROTOCOL 14.
-**Item 7 (F8, L5) done** (`fcc5239`, `12e1308`, clippy `HEAD`): `ai/truck.rs` `truck_give_up` (give-up + `AiState::refuse
-(TruckGoal)` when `[ai.truck] refusal_memory` 1, `s10b_refused` += 1) and `truck_refused` (the job's ring, or a TruckGoal
-refusal within `refused_m`) at every goal choice (base Return, follow spot, stranded tank, drop wants). **Deviation:** a
-truck refusal does not age out at `refused_s`; it lives until an own truck finishes a Load (all TruckGoal refusals cleared
-there); `drop_stale_refusals` keeps them; `refused_s` 0 still turns the check off. Why: with the spec's 300 s window the
-F8 scene re-ordered the HQ at tick 11761, 326 s after the refusal (tick 1980), same as the control (orders 901, 11761).
-Tests (sim `tests/trucks.rs`, scene `f8_world`/`f8_run`): `truck_never_reorders_unreachable_hq` (ignored; control memory
-0 -> 2 HQ orders, seen), `truck_hq_gone_ends_goal` (HQ at 400,400 reachable; control HQ at 700,700 -> refusal at the 180 s
-drop limit, seen), `truck_refusal_survives_save_load` (ignored). Liveness table row `(TruckGoal, truck_row)` in
-`s10b_ai_tests.rs`, hook habit `AiHabit::Truck` -> `Planner::drive_truck`; `job_alive` TruckGoal = truck job in `Drop`
-(control memory 0 -> "TruckGoal: no refusal", seen). The staged fuzz save already holds a TruckGoal refusal.
-**Not yet run after F8:** the 40 sets. `refusal_memory` is 1 in `skirmish.toml`, so the defaults-on 40 set may differ from
-`target/s10b-d7-on40` (F8 explains it); the all-off set must stay same 40/40 vs `target/s10b-base40`.
-**Item 8 docs:** `docs/modding/tuning.md` (`[ai.obstacles]`, `[fortify]` path keys, `refusal_memory` incl. the "until a
-load" rule), `docs/modding/fortifications.md` section "AI (S10b-ai)", a `docs/STATE.md` row (STATE.md at most 150 lines),
-owner questions D1 (bunker rare), D2 (sweep lane losses), D3 (tank gap needs 24 m), C1 copied into `docs/TODO.md`.
-**Item 9:** `tools/check.sh tests` (background), `frontline-cli targets docs/slices/targets/S10b-ai.toml --runs fortify10`,
-40 set on + all-off 40 set (same 40/40); STOP POINT 3; the orchestrator runs measure 480 and `ablate.sh` (S10b-ai-ablations).
-Earlier numbers (chunk 7): demolish row gap_opened 50.0, tank_passed 50.0, pieces 3.0; obstacle row drove 100,
-own_blocked 0, control 0; 40 sets d7 same 40/40. **Open follow-ups (not done):** `count_own_blocked` (`ai/fort.rs`) misses
-vehicles Holding short of the goal (proposed: Holding > 10 m from `nav.goal` with an own blocking piece within
-`OWN_BLOCKED_M` ahead); outside this slice: after 2 ring pieces the vehicle path layer serves a gap the tank cannot drive
-(stops ~12 m on; D3). Owner questions: D3, D2, D1, C1, B2a, 1..7. Quick after `HEAD~1` all ok (795 passed). Failing: none.
+**Next: Build E chunk 2 (stage file `S10b-ai-build-E.md` items 3-5: tank gap pad, `lane_file`, `at_rows`), STOP POINT 2.**
+SAVE 25, PROTOCOL 14. Stage D is closed (its item 9 is E item 7). **E chunk 1 done** (`16854a6`, log commit after it):
+`[ai.obstacles]` keys (`tuning.rs` `AiObstacleTuning`, serde defaults `d_obst_one`, `d_obst_barrier_job_max_s`; setup
+baseline and canonical snapshot re-blessed): `bunker_assign` 1 (`ai/fort.rs` `point_starts`: a Bunker want with no pick
+at its point picks any free squad, `can_take`, key (parked, `heavy_by_field`, distance, id); `bunker_block` then counts
+over all free squads), `bunker_truck_first` 1 (`truck_for(f)` lets a bunker step count a live truck job as supply;
+`truck_divert` in `material_truck`: a Follow/Serve truck goes Return to base when the bunker work Waits, no truck is in
+Load/Return, room for the run; once per job = not after the step's `got_g` exceeds the builder's full carry; no new saved
+state), `barrier_job_max_s` 1200 (`job_max_s(s, fort)` L1; `OVERDUE_BARRIER_S` 1200 for `jobs_overdue`).
+Tests (controls seen failing): `ai_bunker_assigns_a_free_builder`, `ai_bunker_takes_a_truck_from_service` (bunker tests),
+`barrier_job_deadline_is_its_own` (obst tests); LIVENESS rows carry a 3rd field (barrier row on `barrier_job_max_s`).
+**Numbers.** Obstacle row (seeds 1-3, one-off): barrier_built_pct 100.0, pieces 5.0; control `job900_*` 0.0 / 4.0
+(row now sets `bunker` 0: the US engineers spent 360 s on a bunker pit that never dug, then refused). Default 40 set
+`target/s10b-e1-on40`: Germany 21/40; bunker Germany 12 % of chance matches (3 built / 26 chance; 3 of 40 matches),
+USA 0 % (0/18): **target 15 % not met**. Remaining `bunker_why` (Germany/USA): point_not_ready 7469/7928, no_builder
+7045/7067, no_point 2591/3936, builders_max 1857/926, s10b_room 691/591, no_carry 167/146 (no_squad gone). Ends Germany
+deadline 1, dropped 1, failed 2, done 3; USA deadline 2, dropped 3. Controls: `bunker_assign` 0 (`s10b-e1-assign0`)
+Germany 2/14, no_squad 1630; `bunker_truck_first` 0 (`s10b-e1-truck0`) Germany 1/5, no_carry 461. **Side effect:**
+Germany mines-in-matches 45 % (d9) -> 22 % with both keys (assign only 42 %, truck only 28 %): bunker jobs that count a
+busy truck as supply start more and hold the one S10b job slot (`jobs_max` 1) waiting; owner question E1 (below).
+All-off 40 set `target/s10b-e1-off40`: same 40/40 vs `target/s10b-base40`.
+**Open:** E1 (owner): may a waiting bunker job hold the S10b slot at the cost of mines, or should the slot pass on while
+it waits? Seen, not fixed: in the obstacle row the engineers' bunker pit Dig step made no progress for 342 s (work 0,
+passes 0); may end real bunker jobs too. `count_own_blocked` still misses Holding vehicles. Failing tests: none.
 
 ## Plan (2026-11-12)
 
