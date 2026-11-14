@@ -65,27 +65,12 @@ Chunk 1: mine paths (R11), mine layer, blasts, sim counters, `s10b_ai.paths` row
 S10a phases; the AT site memo lives on `Planner` (not saved); the S10b budget is derived from state; owner question
 B2a (one AT field = one 40 m row) since decided (TODO).
 
-## Build C chunk 2 (2026-11-12; stage chunk 1 rest)
-
-Decided by default: R6 for a gun barrier uses the map point nearest the gun; its mirror is the line moved along itself
-by its length to the side farther from the route; the hedgehog row runs from in front of the anchor along the trench
-away from its middle (mirror: toward it), R6 checks the whole row once; "same builder" not enforced (`jobs_max` 1 keeps
-one job at a time); `own_route_m` 0 turns R6 off (the spec control); `own_blocked` = an own vehicle standing at its
-served path's end that is not its goal, own blocking piece within 8 m, pair counted when it first appears (the spec's
-control "barrier on the route -> own_blocked > 0" cannot happen on open ground: separate test `ai_counts_own_blocked`
-orders a tank onto its own barrier); hedgehog control is "no nest" (`hedgehogs_row` 0 is out of range 1..=16);
-liveness LogBarrier row refuses by an own tank on the site (the flat test map has no steep slope); fortify gun 60 m
-beside the point, 1500 s drive, 600 kg carried; enemy tank starts 150 m in front of the gun.
-
-## Build C chunk 3 (2026-11-12; stage chunk 2)
-
-Decided by default: the bunker comes first among the S10b wants (one strongpoint; hedgehog rows anchor on it);
-build_structure-for-heavy is allowed for the bunker only (R7 names it; hedgehogs keep build_heavy); a 250 kg step needs
-a truck or kg at hand (`at_hand`): two carries do not exist on the S10a path (a walk back ends the work); tests and the
-fortify row give a full carry plus three 40 kg crates at the site (carried kg are trimmed to the full carry); manning
-in the fortify row runs through the Fort hook (`DriveArgs::others`), as the hook has no `order_infantry`; the shelter
-rule still comes before the bunker for a rifle crew; bunker row keys `us_*` for the US set (targets T113g); liveness
-Bunker row refuses by an own tank on the site (flat map); determinism saves moved to the first live S10b job.
+## Build C chunks 2-3 (2026-11-12, shortened)
+R6 for a gun barrier uses the map point nearest the gun, mirror = line moved by its length away from the route;
+hedgehog rows run along the trench from the anchor; `own_route_m` 0 = R6 off; `own_blocked` counted per new
+(vehicle, piece) pair; liveness LogBarrier/Bunker rows refuse by an own tank on the site; fortify gun 60 m aside.
+Bunker first among S10b wants; build_structure-for-heavy for the bunker only; fortify bunker row gives a full carry
+plus three 40 kg crates; manning via `DriveArgs::others`; US set keys `us_*` (T113g).
 
 ## Build D chunks 1-2 (2026-11-12; orchestrator items; sweeping without row and fuzz stage)
 
@@ -147,3 +132,15 @@ piece_near with "blocked samples may not grow" breaks `vehicle_on_obstacle_nodes
 (demolish row unchanged), reverted. Needs a trace of where the man stands and the blast origin vs the slit. 18, 19,
 20 not started (turns). quick 72b2970 all ok (812 passed); all-off 40 `target/s10b-fixbeh-off40`: neutral.py vs
 `target/s10b-base40` same 40/40.
+
+## Fix measures (2026-11-14; review findings 5, 7, 8, 9, 10, 13, 14 done, 11 note; 12 left)
+`c5d872f` (5: obstacle row's R6 pair puts the gun on the point's axis, no enemy tank; control builds across the way
+out and its tank, sent to the piece nearest point -> next point, is blocked; the run's R6 refuses (6 rejects seed 1)
+and its tank reaches the spot; test `obstacle_r6_blocks_only_the_control`, `R6_SIDE_M=60` = old row, run == control).
+`f0f8147` T110k (7: at_rows 2 vs 1 is report only; crossings stay on the 4 m lattice; no off-lattice crossing built).
+`241899c` (8: `matches_with_bunker_pct` over all matches, `bunker_done_when_started_pct` = old rate,
+`bunker_ready_matches` = exposure; control reads 0). `a0bd8dc` T116c/d exposures swapped (9). `aeb2a59` (10: targets print
+CONTROL-MISSING / EXPOSURE-MISSING and fail; demolish control writes `pieces_used`). `6753cf4` T117a-d report (11).
+`b73f2d1` (13: tests say the 3 satchels are staged). `36ba68a` (14: loose `barrier_job_max_s` 36000; docs).
+Not done: 12 (a lay_why counter would live in the saved AI counters); the LIVENESS barrier row still refuses at once
+(14, second half). No sim code changed, so no all-off set was played. Fortify and skirmish sets not replayed.

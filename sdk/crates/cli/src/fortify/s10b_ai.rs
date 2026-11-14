@@ -1557,7 +1557,10 @@ mod tests {
     #[test]
     #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
     fn obstacle_r6_blocks_only_the_control() {
-        let side = std::env::var("R6_SIDE_M").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let side = std::env::var("R6_SIDE_M")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let a = FortifyArgs::default();
         for p in [0u8, 1] {
             let c1 = obstacle_once(&a, 1, p, 1, side, None).unwrap();
