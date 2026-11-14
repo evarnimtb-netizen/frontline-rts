@@ -7,7 +7,7 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
 **Next: Build E chunk 2 continued (item 3 unfinished; then items 4, 5), STOP POINT 2.** SAVE 25, PROTOCOL 14.
 E chunk 1 done (`16854a6`): `[ai.obstacles]` `bunker_assign`, `bunker_truck_first`, `barrier_job_max_s` (see git log).
-**E chunk 2, item 3 started (WIP commit, 8 tests red).** New piece rule in `crates/sim/src/vehicle.rs`: `piece_half(f)`
+**E chunk 2, item 3 started (WIP `9b85671`; quick: 788 passed, 10 red).** New piece rule in `crates/sim/src/vehicle.rs`: `piece_half(f)`
 = the piece box's half extents, each at least `SPACING_M`/2 (2 m), no `wreck_pad_m`; `BlockLayer::update` takes
 `pieces: &[Footprint]` apart from `wrecks` and sets `blocked` on nodes inside that box directly (tracked and wheeled
 layer alike, no dilation; `margin` still dilates `blocked`); `update_block` passes `sync_piece_blocks()` as pieces;
@@ -20,7 +20,7 @@ free column). `obstacle_waits_until_no_vehicle_is_on_its_nodes` moved to 5.3 m w
 `s10b_ai_obst_tests::ai_counts_own_blocked` and `own_blocked_counts_once_across_save_load` (the M4 now reaches its
 goal beside the one-piece barrier and the AI re-tasks it; the test geometry needs the tank stopped short);
 `s10b_ai_tests::ai_jobs_end_and_never_reorder_a_refused_goal` (Demolish row: "the unreachable goal was never given
-up"); all five `s10b_ai_demolish_tests` (6 m ring `STEP_M` no longer closed: switch to a 4 m ring, 2 pieces to open).
+up"); all five `s10b_ai_demolish_tests` and cli `demolish_man_places_the_second_piece` (6 m ring `STEP_M` leaks now).
 Still to do for item 3: tests "intact 4 m row stops every vehicle (tracked, wheeled; also diagonal)", "2 adjacent
 gone -> a medium tank passes", log barrier and wreck pad still block, "path served => tank drives it" (the fault of
 `7e692e3`); fortify row `s10b_ai.demolish` in `sdk/crates/cli/src/fortify/s10b_ai.rs` back to cards' satchels and a
