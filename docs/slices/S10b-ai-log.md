@@ -5,30 +5,27 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Next: Build E chunk 3 (items 6-8, STOP POINT 3, stage check).** SAVE 25, PROTOCOL 14. Items 1-5 done (STOP POINT 2
-reached): E chunk 1 `16854a6`; item 3 `610ceda`; item 4 `6125125`; item 5 `127a5a5` (sim), `d48c5db` (row).
-**Item 5 (S10b-ai-B2a, `at_rows` 2):** the second AT row is a SEPARATE job (orchestrator decision (a)), no layout
-change: `WorkKind::AtRow2` (same blueprint as `AtField`, `switched_on` needs `at_rows >= 2`) in `crates/sim/src/ai/
-fort.rs`: `Planner::at_row2_site` (row 1's line + one `segment` toward the point + half a step along),
-`at_row1_laid` (an own AT mine near the point, no own AT work there, no running AT job of the point),
-`at_row2_has` (own AT mine within step/2 of the row-2 line, or a work/job middle within 3/4 step),
-`at_row2_wanted` (recheck plan only; `under_limit` and `room_for` (the S10b budget, not `materials_room_g`: S10b
-works draw on their own) must cover the whole row, else one row), pushed by `field_wants` after the
-`fields_per_point` cut. Test `s10b_ai_lay_tests::ai_at_field_lays_a_staggered_second_row` (control `at_rows` 1:
-"a staggered second row: 0 of 10 mines", seen). lib `s10b` 100/100; quick 72b2970 all ok, 803 passed.
-Row `s10b_ai.mines` (`sdk/crates/cli/src/fortify/s10b_ai.rs` `mines_once(.., rows)`, probe `mines_row_one_off`,
-seeds 1-5): tank offset -5.5..+6.5 m per seed; tank_stopped_pct **100**, control `rows1` (at_rows 1) **100**, control
-mines 0: 0; exposure two_rows_pct 100, tank_reached_field_pct 100, field_laid 100, laid_s 192. Row 1 alone already
-stops every tank: vehicles drive the 4 m path grid and row 1 is shifted by the track half-gauge so a mine lies
-under a track on every grid lane; the second row's gain is not measurable on the flat map's grid lanes.
-**Chunk 3 to do:** item 6 ablations (`lane_file_off`, `at_rows_off` = 1, plus earlier E keys `bunker_assign`,
-`bunker_truck_first`, `barrier_job_max_s`; `all_off.toml` turns them off), `docs/modding/tuning.md` rows; item 7
-stage check (fortify10 targets, default 40 and all-off 40 with neutral.py same 40/40); item 8 `docs/TODO.md`
-(B2a, C1, D1, D2, D3 decided 2026-11-14; open: rows key for players, wire debris; orchestrator (c): add S10b-ai-E1
-(bunker takes the single S10b slot, DE mine matches 45 % -> 22 %; (A) bunker first, (B) waiting bunker yields the
-slot, (C) bunker_truck_first off); E3 per orchestrator (b): try a satchel hand-over to a second free engineer squad
-within ~10 turns with a failing control, else keep E3 open in TODO (2 satchels on cards; hand-over; accept)).
-**Open:** E1, E3 as above; bunker 12 % (target 15 %); US bunker pit Dig stalled 342 s in the obstacle row.
+**Build E items 1-8 done (STOP POINT 3; E3 hand-over not built, kept open).** SAVE 25, PROTOCOL 14. Commits: item 6
+`77a3a13` (ablations `lane_file_off`, `at_rows_off` (1), `bunker_assign_off`, `bunker_truck_first_off`,
+`barrier_job_max_s_off` (900); `all_off.toml` has them; `tools/ablate.sh` check_file knows each key's off value and
+the dry-run counts any `N -> M`; `docs/modding/tuning.md` Build E row); item 7 `08f81c8` (fix: `json_out::fortify`
+now writes `s10b_ai`, so T110i-T116b read numbers; before: "no such number"); item 8 `d97782b` (TODO: B2a, C1,
+D1, D2, D3 decided; open E1, E3, E4 mine-row key, E5 wire debris). quick 72b2970 all ok, 803 passed.
+**Stage check (item 7), head d97782b:** all-off 40 `target/s10b-e3-off40`: neutral.py vs `target/s10b-base40` same
+40/40. Default 40 `target/s10b-e3-on40` (text `skirmish40.txt`): Germany 21/40 = 52.5 %. s10b used: DE mines_laid
+130, obstacles_built 9, bunkers_built 3, sweeps 0, demolitions 0; US mines_laid 91, obstacles 2, bunkers 0, sweeps
+0, demolitions 0. s10b-ai: DE mines in 22 % (3.25 laid/match), obstacles 12 %, bunker 12 %; US mines 20 %, obstacles
+5 %, bunker 0 %; sweep/demolish when wanted "-" (never wanted). DE bunker why: no_builder 7045, point_not_ready 7712.
+fortify10 targets (`target/s10b-e3-fort.log`): 59 pass, 10 miss (hard 4). Pass: T110i 100 (ctl 0), T110j 100,
+T111i 85, T111j 0.9 (ctl 6.3), T112i barrier 100 (ctl 0), T113e/f/g 100, T116a/b 0 (ctl 75/53.6).
+Hard misses: T114e gap_opened 0 and T114f tank_passed 0 (pieces_used 1: one satchel per engineer squad, a 4 m row
+needs 2 pieces = E3); T115e own_blocked 20 with control (own_route_m 0) also 20 (not looked at); T107d S10b
+slit_satchel_losses_pct 0 (min 40; S10b mechanics row, not looked at). Report misses: T93a/b/f/g/h, T106b.
+**E3 (orchestrator (b)) not built** (turn budget): plan if wanted: in `ai/demolish.rs` `demolish_continue`, at
+`DemolishPhase::Go` with the squad's satchels (sum of `ents.kit[m].items[ItemKind::Satchel]`) 0, move the job
+(`ai.demolitions` BTreeMap key) to the nearest free `Mine` with `Capability::Demolish` and a satchel within
+`sweep_reach_m`; a control needs a new `[ai.obstacles]` key (canonical snapshot + resolved_defs refresh).
+**Open:** owner questions E1, E3, E4, E5 (TODO); bunker 12 % DE / 0 % US (target 15 %); T114e/f, T115e, T107d.
 
 ## Plan (2026-11-12)
 
