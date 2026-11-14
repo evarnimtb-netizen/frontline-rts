@@ -2906,7 +2906,7 @@ max = 0
 exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.germany.s10b_ai_derived.jobs_overdue"
-note = "a job alive longer than 900 s (fixed); control job_max_s 36000"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
 [[target]]
 id = "T118f"
 metric = "skirmish160.factions.usa.s10b_ai_derived.jobs_overdue"
@@ -2914,7 +2914,7 @@ max = 0
 exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.usa.s10b_ai_derived.jobs_overdue"
-note = "a job alive longer than 900 s (fixed); control job_max_s 36000"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
 [[target]]
 id = "T118g"
 metric = "skirmish160_oos.factions.germany.s10b_ai_derived.jobs_overdue"
@@ -2922,7 +2922,7 @@ max = 0
 exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.germany.s10b_ai_derived.jobs_overdue"
-note = "a job alive longer than 900 s (fixed); control job_max_s 36000"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
 [[target]]
 id = "T118h"
 metric = "skirmish160_oos.factions.usa.s10b_ai_derived.jobs_overdue"
@@ -2930,4 +2930,4 @@ max = 0
 exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "skirmish40_loose.factions.usa.s10b_ai_derived.jobs_overdue"
-note = "a job alive longer than 900 s (fixed); control job_max_s 36000"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"

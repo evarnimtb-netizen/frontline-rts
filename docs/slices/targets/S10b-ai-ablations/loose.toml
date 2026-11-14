@@ -6,3 +6,5 @@
 materials_max_pct = 100
 refused_s = 0
 job_max_s = 36000
+# Review finding 14: the barrier job has its own deadline (Build E).
+barrier_job_max_s = 36000

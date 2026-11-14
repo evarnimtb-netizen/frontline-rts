@@ -399,10 +399,18 @@ uses the Pioniere and US Engineers it already buys.
   (cap 3). After each burst the vehicle re-paths; the job ends `opened`
   only once the vehicle is through (its move ended at the goal, or no known
   enemy piece within `demolish_near_m` ahead of it), else the next piece;
-  after the last it gives up and remembers the spot. The vehicle path layer
-  frees a gap only about 24 m between standing piece centres, so a 4 m
-  hedgehog row is never opened with 3 pieces (owner question S10b-ai-D3).
-* **Liveness (L1-L5).** Every S10b job ends by `job_max_s` whatever its
+  after the last it gives up and remembers the spot. Since Build E the
+  vehicle path layer opens a 4 m hedgehog row once two adjacent pieces are
+  gone (one gone stays closed), so a demolition needs at least 2 charges;
+  the engineer cards carry one satchel, so in a match the job opens one
+  piece and gives up (owner question S10b-ai-E3; the tests stage 3).
+  `bunker_assign` sends a free builder to a wanted bunker's point and
+  `bunker_truck_first` lets its material run take a truck once; with
+  `at_rows` 2 an AT field gets a second row as its own job; with
+  `lane_file` attackers walk a swept lane in single file
+  (`docs/modding/tuning.md`).
+* **Liveness (L1-L5).** Every S10b job ends by `job_max_s` (the log
+  barrier job by `barrier_job_max_s`, default 1200) whatever its
   phase, or when its progress mark stands still for three times the step's
   time plus a minute. A job that ends without success writes a refusal
   (kind, place, tick; at most 32); no job starts and no command goes to a
