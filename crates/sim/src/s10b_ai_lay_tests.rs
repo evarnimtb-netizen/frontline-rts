@@ -589,3 +589,57 @@ fn ai_knows_obstacles_by_distance() {
         "control: obst_seen_m 1 knows none: {got:?}"
     );
 }
+
+/// The second-row mines of an AT field `ms` (laid in id order, the first
+/// row's `n` first): each lies one step (4 m, +-0.75) behind the first
+/// row's line on the point's side and half a step (2 m, +-0.75) along it
+/// from the nearest first-row mine.
+fn row2_mines(h: &Held, ms: &[FxVec2], n: usize) -> usize {
+    if ms.len() <= n {
+        return 0;
+    }
+    let (a, b) = (ms[0], ms[n - 1]);
+    let along = (b - a).normalize_or_zero();
+    let mut back = along.perp();
+    if back.dot(h.pos - a) < Fx::ZERO {
+        back = -back;
+    }
+    let tol = Fx::from_milli(750);
+    let near = |x: Fx, v: i32| (x - Fx::from_int(v)).abs() <= tol;
+    ms[n..]
+        .iter()
+        .filter(|&&m| {
+            let behind = (m - a).dot(back);
+            let t = (m - a).dot(along);
+            let gap = ms[..n]
+                .iter()
+                .map(|&r| (t - (r - a).dot(along)).abs())
+                .min()
+                .unwrap();
+            near(behind, 4) && near(gap, 2)
+        })
+        .count()
+}
+
+/// S10b-ai Build E item 5 (S10b-ai-B2a, `at_rows` 2): once the AT field's
+/// first row (10 mines on 40 m) is laid, the AI lays a second row as its
+/// own job, one step behind it toward the point and half a step along it,
+/// so its mines lie between the first row's. Control: `at_rows` 1 -> no
+/// second row (seen failing as "a staggered second row").
+#[test]
+fn ai_at_field_lays_a_staggered_second_row() {
+    let lay = |rows: u32| {
+        let (mut w, h) = at_world(|s| s.rules.ai.obstacles.at_rows = rows);
+        squad_at(&mut w, ENG, h.pos, 200);
+        let at = fort(&w, "ww2:at_minefield");
+        play_until(&mut w, 1500, |w| mines_of(w, at).len() >= 20);
+        let ms = mines_of(&w, at);
+        (h, ms)
+    };
+    let (h, ms) = lay(2);
+    let n2 = row2_mines(&h, &ms, 10);
+    assert!(n2 >= 8, "a staggered second row: {n2} of {} mines: {ms:?}", ms.len());
+    let (h, ms) = lay(1);
+    assert!(ms.len() >= 10, "control: row 1 stands ({} mines)", ms.len());
+    assert_eq!(row2_mines(&h, &ms, 10), 0, "control: at_rows 1 keeps one row");
+}

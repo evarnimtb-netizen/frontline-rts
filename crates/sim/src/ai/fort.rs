@@ -188,6 +188,10 @@ pub(crate) enum WorkKind {
     ApField,
     /// An AT minefield (a line blueprint laying a vehicle mine).
     AtField,
+    /// S10b-ai Build E (`at_rows` 2, S10b-ai-B2a): the AT field's second
+    /// row, its own job on the AT minefield blueprint, once the first is
+    /// laid ([`super::Planner::at_row2_site`]).
+    AtRow2,
     /// A Czech hedgehog (a point blueprint blocking vehicles).
     Hedgehog,
     /// A log barrier (a line blueprint blocking vehicles).
@@ -224,7 +228,9 @@ pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
             // S10b-ai (spec 3): the new kinds take exactly their S10b
             // blueprints.
             WorkKind::ApField => d.shape == FortShape::Line && trigger(d) == Some(0),
-            WorkKind::AtField => d.shape == FortShape::Line && trigger(d) == Some(1),
+            WorkKind::AtField | WorkKind::AtRow2 => {
+                d.shape == FortShape::Line && trigger(d) == Some(1)
+            }
             WorkKind::Hedgehog => d.shape == FortShape::Point && d.blocks_vehicles,
             WorkKind::LogBarrier => d.shape == FortShape::Line && d.blocks_vehicles,
             WorkKind::Bunker => {
@@ -270,6 +276,7 @@ pub(crate) fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
             // S10b-ai `[ai.obstacles]` switches (spec 2).
             WorkKind::ApField => o.mines != 0,
             WorkKind::AtField => o.mines != 0 && o.at_mines != 0,
+            WorkKind::AtRow2 => o.mines != 0 && o.at_mines != 0 && o.at_rows >= 2,
             WorkKind::Hedgehog | WorkKind::LogBarrier => o.obstacles != 0,
             WorkKind::Bunker => o.bunker != 0,
         }
@@ -473,6 +480,7 @@ impl super::Planner<'_> {
             }
             // R2: across the enemy vehicle approach.
             WorkKind::AtField => self.at_site(i),
+            WorkKind::AtRow2 => self.at_row2_site(i),
             // R5: the row's next free site.
             WorkKind::Hedgehog => {
                 let p = self.hedgehog_next(i)?;
@@ -1000,6 +1008,106 @@ impl super::Planner<'_> {
         heads.len() as u32
     }
 
+    /// S10b-ai Build E (`at_rows` 2, S10b-ai-B2a): the second row of point
+    /// `i`'s AT field: the first row's line moved one step (`segment`)
+    /// toward the point and half a step along itself, so its mines lie
+    /// between the first row's lanes.
+    pub(super) fn at_row2_site(&self, i: usize) -> Option<Vec<FxVec2>> {
+        let s = &self.g.setup;
+        let f = fort_of(s, WorkKind::AtField)?;
+        let row = self.at_site(i)?;
+        let (a, b) = (row[0], row[row.len() - 1]);
+        let along = (b - a).normalize_or_zero();
+        let pos: FxVec2 = s.map.points.get(i)?.pos.into();
+        let mut back = along.perp();
+        if back.dot(pos - (a + b).div_int(2)) < Fx::ZERO {
+            back = -back;
+        }
+        let step = Fx::from(s.forts[f as usize].segment);
+        let shift = back * step + along * step.div_int(2);
+        let tr = self.terrain;
+        let line = vec![tr.clamp(a + shift), tr.clamp(b + shift)];
+        ((line[1] - line[0]).length() >= Fx::from_int(2)).then_some(line)
+    }
+
+    /// Whether point `i`'s first AT row is laid: an own AT mine near the
+    /// point (as [`Self::field_has`]), no own AT work there and no running
+    /// AT job of the point.
+    fn at_row1_laid(&self, i: usize, f: u16) -> bool {
+        let g = self.g;
+        let s = &g.setup;
+        let me = self.me;
+        let Some(pt) = s.map.points.get(i) else {
+            return false;
+        };
+        let at: FxVec2 = pt.pos.into();
+        let d = &s.forts[f as usize];
+        let r = Fx::from(d.max_length).div_int(2)
+            + Fx::from_int(SITE_NEAR_M)
+            + Fx::from_int(s.rules.ai.obstacles.at_out_m as i32);
+        g.fort
+            .mines
+            .values()
+            .any(|m| m.owner == me && m.fort == f && near(m.pos, at, r))
+            && !g
+                .fort
+                .works
+                .values()
+                .any(|w| w.owner == me && w.fort == f && near(mid_of(d.shape, &w.line), at, r))
+            && !self
+                .ai
+                .forts
+                .values()
+                .any(|j| j.fort == f && j.point as usize == i && j.phase != FortPhase::Done)
+    }
+
+    /// Whether `row` (a second-row line) has its row: an own AT mine
+    /// within half a step of it (the first row's lie a step away), or an
+    /// own AT work or job whose middle lies within 3/4 step of its middle.
+    fn at_row2_has(&self, f: u16, row: &[FxVec2]) -> bool {
+        let g = self.g;
+        let me = self.me;
+        let d = &g.setup.forts[f as usize];
+        let step = Fx::from(d.segment);
+        let (a, b) = (row[0], row[row.len() - 1]);
+        let mid = (a + b).div_int(2);
+        let r = step.mul_int(3).div_int(4);
+        g.fort.mines.values().any(|m| {
+            m.owner == me && m.fort == f && crate::fort::near_segment(m.pos, a, b, step.div_int(2))
+        }) || g
+            .fort
+            .works
+            .values()
+            .any(|w| w.owner == me && w.fort == f && near(mid_of(d.shape, &w.line), mid, r))
+            || self
+                .ai
+                .forts
+                .values()
+                .any(|j| j.fort == f && !j.parked() && near(mid_of(d.shape, &j.line), mid, r))
+    }
+
+    /// R4 for the second row: wanted (on the recheck plan) once the first
+    /// row is laid, the second is not, and the blueprint cap and the S10b
+    /// budget hold the whole row (else the field keeps one row).
+    fn at_row2_wanted(&self, i: usize) -> bool {
+        let s = &self.g.setup;
+        if !switched_on(s, WorkKind::AtRow2) || !self.recheck_plan() {
+            return false;
+        }
+        let Some(f) = fort_of(s, WorkKind::AtRow2) else {
+            return false;
+        };
+        if !self.at_row1_laid(i, f) {
+            return false;
+        }
+        let Some(row) = self.at_row2_site(i) else {
+            return false;
+        };
+        let d = &s.forts[f as usize];
+        let need_g = crate::fort::segments(&row, d.segment).saturating_mul(d.materials_g);
+        !self.at_row2_has(f, &row) && self.under_limit(f, &row) && self.room_for(f) >= need_g
+    }
+
     /// S10b-ai: the plan of each `recheck_s` window (stateless: plans come
     /// every `replan_ticks`, so one falls in each window).
     fn recheck_plan(&self) -> bool {
@@ -1049,6 +1157,11 @@ impl super::Planner<'_> {
             }
         }
         out.truncate(o.fields_per_point.saturating_sub(have) as usize);
+        // Build E: the second AT row belongs to the same field (no
+        // `fields_per_point` count).
+        if self.at_row2_wanted(i) {
+            out.push(WorkKind::AtRow2);
+        }
         out
     }
 
@@ -2177,7 +2290,9 @@ impl super::Planner<'_> {
                     {
                         continue;
                     }
-                    if matches!(k, WorkKind::ApField | WorkKind::AtField) && self.recheck_plan() {
+                    if matches!(k, WorkKind::ApField | WorkKind::AtField | WorkKind::AtRow2)
+                        && self.recheck_plan()
+                    {
                         self.ai.counters.lay_sites += 1;
                     }
                 }
