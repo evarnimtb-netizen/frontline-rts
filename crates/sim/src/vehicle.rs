@@ -1970,7 +1970,8 @@ pub fn drive(
                     !ctx.block.is_blocked(n) || ctx.block.is_piece(n)
                 });
                 let gp = ground_pose(&g2, ctx.geo);
-                let flat = !(grade_pct(gp.pitch) > m.max_slope_pct && gp.pitch.abs() > vs.pitch.abs());
+                let flat =
+                    !(grade_pct(gp.pitch) > m.max_slope_pct && gp.pitch.abs() > vs.pitch.abs());
                 if ok(&g2) || (piece_only && flat && away(&g2, c) > away(&g0, c)) {
                     (xy1, speed, g) = (xy2, speed0, g2);
                 }
