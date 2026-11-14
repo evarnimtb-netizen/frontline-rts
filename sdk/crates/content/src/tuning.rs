@@ -1821,6 +1821,12 @@ tuning_table! {
         /// S10b-ai Build E: the L1 deadline of a log barrier job (s; every
         /// other job keeps `job_max_s`).
         barrier_job_max_s: 1..=36000 = "d_obst_barrier_job_max_s",
+        /// S10b-ai Build E switch: attackers walk a swept lane in single
+        /// file on its centre line until past its end.
+        lane_file: 0..=1 = "d_obst_one",
+        /// S10b-ai Build E: rows of an AI AT field (the second one step
+        /// behind the first, shifted half a step along it).
+        at_rows: 1..=2 = "d_obst_at_rows",
     }
 }
 
@@ -1830,6 +1836,10 @@ fn d_obst_one() -> u32 {
 
 fn d_obst_barrier_job_max_s() -> u32 {
     1200
+}
+
+fn d_obst_at_rows() -> u32 {
+    2
 }
 
 impl AiObstacleTuning {
@@ -1874,6 +1884,8 @@ impl Default for AiObstacleTuning {
             bunker_assign: d_obst_one(),
             bunker_truck_first: d_obst_one(),
             barrier_job_max_s: d_obst_barrier_job_max_s(),
+            lane_file: d_obst_one(),
+            at_rows: d_obst_at_rows(),
         }
     }
 }

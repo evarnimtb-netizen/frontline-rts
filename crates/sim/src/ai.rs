@@ -2013,6 +2013,13 @@ impl Planner<'_> {
         } else {
             (0..points.len()).map(|i| self.sweep_hold(i)).collect()
         };
+        // S10b-ai Build E: the swept lane each point's attackers walk in
+        // single file (none without sweeps or with `lane_file` off).
+        let files: Vec<Option<(FxVec2, FxVec2)>> = if self.ai.sweeps.is_empty() {
+            vec![None; points.len()]
+        } else {
+            (0..points.len()).map(|i| self.file_lane(i)).collect()
+        };
         for &(j, i) in assigned {
             let m = &mine[j];
             if claimed.contains(&m.id) && !escorting.contains(&m.id) {
@@ -2063,6 +2070,27 @@ impl Planner<'_> {
                 }
                 self.task(m.id, TaskKind::Dig, i as u8, mid);
                 continue;
+            }
+            // S10b-ai Build E: through a swept lane in single file; once
+            // every man is past, a squad order gathers the detached men.
+            let mut regather = false;
+            if pt.rel != Rel::Own
+                && holds[i].is_none()
+                && let Some(lane) = files[i]
+            {
+                if self.lane_file(m.id, lane) {
+                    let kind = if pt.rel == Rel::Neutral {
+                        TaskKind::Capture
+                    } else {
+                        TaskKind::Attack
+                    };
+                    self.task(m.id, kind, i as u8, lane.1);
+                    continue;
+                }
+                regather = sq
+                    .members
+                    .iter()
+                    .any(|u| self.ents.unit.get(u.index()).is_some_and(|un| un.detached));
             }
             // S10a-ai: a nest or dugout spot is a few metres from the
             // trench spot: the order must go there exactly.
@@ -2138,6 +2166,7 @@ impl Planner<'_> {
                     })
                 });
             let on_track = !sheltered
+                && !regather
                 && match &sq.order {
                     Order::Idle if exact => near(m.lead, target, 8),
                     // (Fix F6: only a built dugout; a slot-0 squad at an

@@ -140,16 +140,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // 0x2cc0548b91bc9dff. S10b-ai Build E (`[ai.obstacles] bunker_assign,
 // bunker_truck_first, barrier_job_max_s`) changed it; the Build D values were
 // 0xc424340dd0d06dfe, 0xfabe2227cf61fb5b, 0x8878cc5fbd8eb1a7,
-// 0xc424340dd0d06dfe, 0x33f42ad7211cedcf, 0x9294ac68191a1fd5.
+// 0xc424340dd0d06dfe, 0x33f42ad7211cedcf, 0x9294ac68191a1fd5. Build E chunk 5
+// (`[ai.obstacles] lane_file, at_rows`) changed it; the chunk 1 values were
+// 0xed3e344352f5e554, 0xaa4f332cb114ca1f, 0x9577526eb7785017,
+// 0xed3e344352f5e554, 0xa23a77af71f9120d, 0x46f180c13093cc93.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xed3e344352f5e554),
-    ("skirmish usa-ger seed 7 hard", 0xaa4f332cb114ca1f),
-    ("test_unlock ger-usa seed 1 normal", 0x9577526eb7785017),
-    ("example override ger-usa seed 1 normal", 0xed3e344352f5e554),
-    ("human ger vs ai usa seed 3 easy", 0xa23a77af71f9120d),
+    ("skirmish ger-usa seed 1 normal", 0x0edd3625cbff8850),
+    ("skirmish usa-ger seed 7 hard", 0x0e0a12502122989d),
+    ("test_unlock ger-usa seed 1 normal", 0x771679e82a61e35a),
+    ("example override ger-usa seed 1 normal", 0x0edd3625cbff8850),
+    ("human ger vs ai usa seed 3 easy", 0xd98c0abff58b7f89),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x46f180c13093cc93,
+        0x83e1eae4d9de7cb1,
     ),
 ];
 

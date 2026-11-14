@@ -74,7 +74,10 @@
 //!   is recorded in its first row. `drive_ai_habit(Sweep)` (engineers the
 //!   squad, the rifles `others`) until the habit ends (at most
 //!   [`SWEEP_DRIVE_S`]), then the scripted advance: the rifles are ordered
-//!   onto the point for at most [`SWEEP_ADVANCE_S`] s. `lane_swept_pct`
+//!   onto the point for at most [`SWEEP_ADVANCE_S`] s; Build E: before
+//!   that, `drive_ai_habit(LaneFile)` (at most as long) walks them through
+//!   the swept lane in single file (`lane_filed_pct`; control
+//!   `control.lane_file_off`: `lane_file` 0). `lane_swept_pct`
 //!   (the habit ended Done), `mines_lifted` (mean per run),
 //!   `attacker_mine_losses` (mean men of `p` lost to mines in the advance).
 //!   Exposure `sweep_wanted_pct` (runs with `sweep_wanted` > 0). Control
@@ -291,6 +294,16 @@ pub struct SweepControl {
     pub lane_swept_pct: Option<f64>,
     /// Must be higher than the row's (T111j).
     pub attacker_mine_losses: Option<f64>,
+    /// Build E: `lane_file` 0 (sweep on).
+    pub lane_file_off: LaneFileControl,
+}
+
+/// The sweep row's `lane_file` 0 control (Build E, S10b-ai-D2).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct LaneFileControl {
+    pub attacker_mine_losses: Option<f64>,
+    /// 0: the habit ends Failed at once.
+    pub lane_filed_pct: Option<f64>,
 }
 
 /// T111i/j: the AI sweeps a suspect lane before its attackers walk it.
@@ -305,6 +318,9 @@ pub struct SweepRow {
     pub attacker_mine_losses: Option<f64>,
     /// Exposure: runs in which the AI wanted a sweep.
     pub sweep_wanted_pct: Option<f64>,
+    /// Build E exposure: runs in which the rifles walked the swept lane in
+    /// single file to its end (`AiHabit::LaneFile` ended Done).
+    pub lane_filed_pct: Option<f64>,
     pub control: SweepControl,
 }
 
@@ -1101,12 +1117,19 @@ pub fn bunker_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Bun
 /// One sweep run (module docs) of player `p` with `[ai.obstacles] sweep`
 /// set: (habit ended Done, mines lifted, men lost to mines in the advance,
 /// sweep wanted).
-fn sweep_once(args: &FortifyArgs, seed: u64, p: u8, sweep: u32) -> Result<(bool, u32, u32, bool)> {
+fn sweep_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+    sweep: u32,
+    lane_file: u32,
+) -> Result<(bool, u32, u32, bool, bool)> {
     use frontline_sim::ai::{AiHabit, AiState, DriveArgs, HabitEnd};
     use frontline_sim::fort::MineBlast;
     let enemy = 1 - p;
     let mut w = world_with(args, seed, |s| {
         s.rules.ai.obstacles.sweep = sweep;
+        s.rules.ai.obstacles.lane_file = lane_file;
     })?;
     let (i, pt, base) = {
         let g = w.game().unwrap();
@@ -1179,6 +1202,14 @@ fn sweep_once(args: &FortifyArgs, seed: u64, p: u8, sweep: u32) -> Result<(bool,
     }
     let acc = |w: &World| w.game().unwrap().fort().accounts[p as usize].clone();
     let before = acc(&w).men_lost_to_mines;
+    // Build E (S10b-ai-D2): the AI walks the rifles through the swept lane
+    // in single file first (ends at once without a Done lane or with
+    // `lane_file` 0).
+    let t0 = w.tick();
+    let mut filed = None;
+    while filed.is_none() && w.tick() < t0 + SWEEP_ADVANCE_S * hz {
+        filed = w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::LaneFile, &drive);
+    }
     step_with(
         &mut w,
         p,
@@ -1202,23 +1233,29 @@ fn sweep_once(args: &FortifyArgs, seed: u64, p: u8, sweep: u32) -> Result<(bool,
         a.mines_lifted,
         a.men_lost_to_mines - before,
         ai.counters.sweep_wanted > 0,
+        filed == Some(HabitEnd::Done),
     ))
 }
 
 /// The sweep row (module docs).
 pub fn sweep_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<SweepRow> {
     let (mut swept, mut lifted, mut lost, mut wanted, mut runs) = (0u32, 0u32, 0u32, 0u32, 0u32);
-    let (mut c_swept, mut c_lost) = (0u32, 0u32);
+    let (mut c_swept, mut c_lost, mut filed) = (0u32, 0u32, 0u32);
+    let (mut f_lost, mut f_filed) = (0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (s, l, m, wa) = sweep_once(args, seed, p, 1)?;
+            let (s, l, m, wa, fi) = sweep_once(args, seed, p, 1, 1)?;
             swept += s as u32;
             lifted += l;
             lost += m;
             wanted += wa as u32;
-            let c = sweep_once(args, seed, p, 0)?;
+            filed += fi as u32;
+            let c = sweep_once(args, seed, p, 0, 1)?;
             c_swept += c.0 as u32;
             c_lost += c.2;
+            let f = sweep_once(args, seed, p, 1, 0)?;
+            f_lost += f.2;
+            f_filed += f.4 as u32;
             runs += 1;
         }
     }
@@ -1228,9 +1265,14 @@ pub fn sweep_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Swee
         mines_lifted: mean(lifted),
         attacker_mine_losses: mean(lost),
         sweep_wanted_pct: pct(wanted, runs),
+        lane_filed_pct: pct(filed, runs),
         control: SweepControl {
             lane_swept_pct: pct(c_swept, runs),
             attacker_mine_losses: mean(c_lost),
+            lane_file_off: LaneFileControl {
+                attacker_mine_losses: mean(f_lost),
+                lane_filed_pct: pct(f_filed, runs),
+            },
         },
     })
 }

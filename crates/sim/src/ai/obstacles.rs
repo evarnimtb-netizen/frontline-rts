@@ -134,6 +134,10 @@ pub enum AiHabit {
     Demolish,
     /// An S8b truck's job (the truck goal's liveness row, L5).
     Truck,
+    /// Build E: `others` walk the point's swept lane in single file
+    /// (`ai::sweep`); ends Done once all are past, Failed at once with no
+    /// Done lane (or `lane_file` 0).
+    LaneFile,
 }
 
 /// What the hook drives the habit with.
@@ -284,6 +288,7 @@ impl super::Planner<'_> {
             AiHabit::Sweep => self.drive_sweep(args),
             AiHabit::Demolish => self.drive_demolish(args),
             AiHabit::Truck => self.drive_truck(args),
+            AiHabit::LaneFile => self.drive_lane_file(args),
         }
     }
 }

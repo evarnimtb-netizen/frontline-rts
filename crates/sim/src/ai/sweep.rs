@@ -32,6 +32,14 @@
 //!   lane middle).
 //! * **Attackers** of the point hold [`HOLD_M`] short of the lane start
 //!   while a sweep of the point is alive (`order_infantry`), then go on.
+//! * **Single file (Build E, S10b-ai-D2; switch `lane_file`).** While a
+//!   point keeps a Done lane, its attackers walk it one man after another
+//!   on the centre line (`Planner::lane_file`, stateless: worked out from
+//!   the men's positions each plan, per-man `MoveUnits`). A man in the lane
+//!   walks to [`FILE_PAST_M`] beyond its end; the first man waiting goes to
+//!   the lane start once no man is less than [`FILE_GAP_M`] into the lane;
+//!   the others queue behind the start. With every man past, the squad
+//!   gets its normal attack order again (the squad order gathers them).
 //!
 //! Nothing runs with the switch off (no state read, no RNG).
 
@@ -42,6 +50,7 @@ use super::{
     sq_m,
 };
 use crate::command::CommandKind;
+use crate::ecs::SimId;
 use crate::fort::near_segment;
 use crate::fx::{Fx, FxVec2};
 use crate::game::{Order, SquadId};
@@ -54,6 +63,18 @@ pub(super) const HOLD_M: i32 = 10;
 const ARRIVE_M: i32 = 8;
 /// A sweeper below this strength ends its job.
 const STRONG_PCT: u32 = 60;
+/// Single file: a man walks this far beyond the lane end (m) ...
+pub(super) const FILE_PAST_M: i32 = 5;
+/// ... and counts as past it this far beyond the end (m).
+const FILE_DONE_M: i32 = 2;
+/// The next man enters once the one before is this far into the lane (m);
+/// the queue behind the start keeps this spacing.
+const FILE_GAP_M: i32 = 3;
+/// A squad files once a man is this close to the lane start (m; the
+/// attackers hold [`HOLD_M`] short of it).
+const FILE_NEAR_M: i32 = 30;
+/// A man this far short of the lane start counts as in it (m).
+const FILE_IN_M: i32 = 2;
 /// L2: a phase's stall time is this many nominal steps ...
 const STALL_X: u64 = 3;
 /// ... plus this (s).
@@ -62,6 +83,12 @@ const STALL_SLACK_S: u64 = 60;
 /// Whether the AI sweeps (`[ai.obstacles] sweep` with fortifications on).
 pub(super) fn sweep_on(s: &MatchSetup) -> bool {
     s.rules.fortify.is_some() && s.rules.ai.obstacles.sweep != 0
+}
+
+/// Whether attackers walk swept lanes in single file (`lane_file` with
+/// sweeping on).
+pub(super) fn lane_file_on(s: &MatchSetup) -> bool {
+    sweep_on(s) && s.rules.ai.obstacles.lane_file != 0
 }
 
 /// How a sweep job ended.
@@ -186,6 +213,112 @@ impl super::Planner<'_> {
                     TaskKind::Attack | TaskKind::Capture | TaskKind::Suppress
                 )
         })
+    }
+
+    /// The swept lane point `p`'s attackers walk in single file (module
+    /// docs): the Done entry with the lowest squad id. `None` with the
+    /// switch off.
+    pub(super) fn file_lane(&self, p: usize) -> Option<(FxVec2, FxVec2)> {
+        if !lane_file_on(&self.g.setup) {
+            return None;
+        }
+        self.ai
+            .sweeps
+            .values()
+            .find(|j| j.point as usize == p && j.phase == SweepPhase::Done)
+            .map(|j| (j.a, j.b))
+    }
+
+    /// One plan of squad `id` walking `lane` in single file (module docs):
+    /// per-man `MoveUnits` where a man's goal is not already his spot.
+    /// `true` while a man is not yet past the lane end (the caller sends no
+    /// squad order), `false` once all are or while none is in the lane or
+    /// within [`FILE_NEAR_M`] of its start.
+    pub(super) fn lane_file(&mut self, id: SquadId, lane: (FxVec2, FxVec2)) -> bool {
+        let g = self.g;
+        let ents = self.ents;
+        let Some(q) = g.squads.get(&id) else {
+            return false;
+        };
+        let (a, b) = lane;
+        let d = (b - a).normalize_or_zero();
+        if d == FxVec2::ZERO {
+            return false;
+        }
+        let side = d.perp();
+        let len = (b - a).length();
+        let half = self.lane_half() + Fx::from_int(1);
+        let m = Fx::from_int;
+        let mut men: Vec<SimId> = q
+            .members
+            .iter()
+            .copied()
+            .filter(|u| {
+                ents.kind.get(u.index()) == Some(&crate::ecs::EntityKind::Soldier)
+                    && ents.unit[u.index()].riding.is_none()
+            })
+            .collect();
+        // By id: the member order changes (a new leader), the file does not.
+        men.sort_unstable();
+        // (man, along, in the lane, past)
+        let at: Vec<(SimId, Fx, bool, bool)> = men
+            .iter()
+            .map(|&u| {
+                let r = ents.transform[u.index()].pos.xy() - a;
+                let along = r.dot(d);
+                let past = along >= len + m(FILE_DONE_M);
+                let inside = !past && along >= -m(FILE_IN_M) && r.dot(side).abs() <= half;
+                (u, along, inside, past)
+            })
+            .collect();
+        if at.iter().all(|t| t.3) {
+            return false;
+        }
+        // Only squads that reached the lane: a man in it or near its start.
+        let near_start = at.iter().any(|t| {
+            t.2 || (ents.transform[t.0.index()].pos.xy() - a).length_sq_raw()
+                <= super::sq_m(m(FILE_NEAR_M))
+        });
+        if !near_start {
+            return false;
+        }
+        let free = !at.iter().any(|t| t.2 && t.1 < m(FILE_GAP_M));
+        let end = self.terrain.clamp(b + d * m(FILE_PAST_M));
+        let mut rank = 0;
+        let mut want: Vec<(SimId, FxVec2)> = Vec::new();
+        for &(u, _, inside, past) in &at {
+            if past {
+                continue;
+            }
+            let spot = if inside {
+                end
+            } else {
+                let back = if rank == 0 && free { 0 } else { rank + 1 };
+                rank += 1;
+                self.terrain.clamp(a - d * m(FILE_GAP_M * back))
+            };
+            want.push((u, spot));
+        }
+        let close = Fx::from_milli(500);
+        for (u, spot) in want {
+            let un = &ents.unit[u.index()];
+            let going = un.detached && (un.nav.goal - spot).length() <= close;
+            let sent = self.ai.pending.iter().any(|c| {
+                matches!(&c.kind, CommandKind::MoveUnits { units, target }
+                    if *target == spot && units.contains(&u))
+            });
+            if going || sent {
+                continue;
+            }
+            self.ai.emit(
+                self.due,
+                CommandKind::MoveUnits {
+                    units: vec![u],
+                    target: spot,
+                },
+            );
+        }
+        true
     }
 
     /// Where the attackers of point `p` hold while its sweep is alive.
@@ -597,5 +730,32 @@ impl super::Planner<'_> {
         } else {
             HabitEnd::Failed
         })
+    }
+
+    /// The fortify-test hook's LaneFile habit: `args.others` walk point
+    /// `args.point`'s swept lane in single file (their tasks set to Attack
+    /// each plan). Done once no squad files; Failed at once without a Done
+    /// lane (or with `lane_file` 0).
+    pub(super) fn drive_lane_file(&mut self, args: &DriveArgs) -> Option<HabitEnd> {
+        let g = self.g;
+        let me = self.me;
+        let p = args.point;
+        let Some(lane) = self.file_lane(p) else {
+            return Some(HabitEnd::Failed);
+        };
+        let at = g.setup.map.points.get(p).map(|q| FxVec2::from(q.pos))?;
+        let mut filing = false;
+        for &o in &args.others {
+            if !g
+                .squads
+                .get(&o)
+                .is_some_and(|q| q.owner == me && !q.members.is_empty())
+            {
+                continue;
+            }
+            self.task(o, TaskKind::Attack, p as u8, at);
+            filing |= self.lane_file(o, lane);
+        }
+        (!filing).then_some(HabitEnd::Done)
     }
 }

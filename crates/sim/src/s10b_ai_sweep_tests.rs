@@ -366,3 +366,84 @@ fn fort_id(w: &World, id: &str) -> u16 {
         .position(|f| f.id == id)
         .unwrap() as u16
 }
+
+/// Build E (S10b-ai-D2): after the sweep, the attackers walk the swept lane
+/// in single file on its centre line (`AiHabit::LaneFile` ends Done once
+/// all are past the lane end); no man strays more than 1.5 m from the
+/// centre line while along the lane from 5 m in (the lane starts 10 m short
+/// of the mine; men of the squad's hold line may still step a little past
+/// the start before the first file order lands). Control: `lane_file` 0 -> the habit
+/// ends Failed at once and the squad's own walk (a `Move` onto the point,
+/// as the fortify row's advance) spreads its men wider than that (seen).
+#[test]
+fn ai_attackers_file_through_swept_lane() {
+    use crate::command::{Command, CommandKind};
+    for control in [false, true] {
+        let (mut w, mut a) = attack_world(|s| {
+            if control {
+                s.rules.ai.obstacles.lane_file = 0;
+            }
+        });
+        let (rifle, eng) = squads(&mut w, &mut a);
+        let ap = fort_id(&w, "ww2:ap_minefield");
+        let mine = w.lay_mine_now(ap, a.short(70), PlayerId(0)).unwrap();
+        w.edit_fort(|f| f.mines.get_mut(&mine).unwrap().known |= 0b10);
+        let mut ai = AiState::new(w.state.tick);
+        let hz = w.match_setup().unwrap().tick_hz as u64;
+        let args = args(eng, rifle);
+        assert_eq!(
+            drive(&mut w, &mut ai, &args, 150 * hz),
+            Some(HabitEnd::Done)
+        );
+        let (la, lb) = (ai.sweeps[&eng].a, ai.sweeps[&eng].b);
+        let d = (lb - la).normalize_or_zero();
+        let len = (lb - la).length();
+        let mut worst = Fx::ZERO;
+        let mut look = |w: &World| {
+            let g = w.game().unwrap();
+            for m in &g.squads[&rifle].members {
+                let r = w.state.entities.transform[m.index()].pos.xy() - la;
+                let along = r.dot(d);
+                if along >= Fx::from_int(5) && along <= len {
+                    worst = worst.max(r.dot(d.perp()).abs());
+                }
+            }
+        };
+        let mut end = None;
+        for _ in 0..120 * hz {
+            end = w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::LaneFile, &args);
+            look(&w);
+            if end.is_some() {
+                break;
+            }
+        }
+        if control {
+            assert_eq!(end, Some(HabitEnd::Failed));
+            w.step(&[Command {
+                player: PlayerId(1),
+                seq: 1,
+                kind: CommandKind::Move {
+                    squad: rifle,
+                    target: a.pos,
+                },
+            }]);
+            for _ in 0..120 * hz {
+                w.step(&[]);
+                look(&w);
+            }
+            assert!(worst > Fx::from_milli(1500), "control in file: {worst:?}");
+            continue;
+        }
+        assert_eq!(end, Some(HabitEnd::Done));
+        assert!(
+            worst <= Fx::from_milli(1500),
+            "a man left the centre line: {worst:?}"
+        );
+        // Every man is past the lane end.
+        let g = w.game().unwrap();
+        for m in &g.squads[&rifle].members {
+            let r = w.state.entities.transform[m.index()].pos.xy() - la;
+            assert!(r.dot(d) >= len, "{m:?} not past");
+        }
+    }
+}
