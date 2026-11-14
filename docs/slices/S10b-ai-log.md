@@ -5,30 +5,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Next: Build E chunk 2 continued (items 4, 5), STOP POINT 2; then chunk 3.** SAVE 25, PROTOCOL 14. Stage D is
-closed except its item 9 (= E item 7). E chunk 1 done (`16854a6`); item 3 done (`9b85671`, `9cb8fc1`, `610ceda`, cli fix next commit).
-Item 3 in `crates/sim/src/vehicle.rs`: piece box `piece_half` (each half at least 2 m), `PIECE_BRIDGE_M` 10 bridges
-(`piece_bridges`, `piece_blocks`), one-node gap `pinched` in `BlockLayer::update`, `BlockLayer::is_piece`; `path.rs`
-`search` start rule; `ai/fort.rs` `count_own_blocked` counts Holding-short. Tests `crates/sim/src/s10b_gap_tests.rs`.
-**Chunk 4 (`610ceda`): the red `vehicle_on_obstacle_nodes_drives_out` is green.** Cause: off the piece's node the PzIV
-(escape rule off) had its rear sample on the edge of the piece node's cell; turn and turn-with-move were refused
-and `drive` never tried rolling straight. New `DriveCtx::piece_near` (nearest piece centre within reach, None with no
-pieces, so all-off play is unchanged): a refused turning step of a tracked hull may roll straight on if every blocked
-track sample is piece-only and the samples' mean gets farther from the piece. Control `piece_near` None (seen red).
-lib `s10b` 98/98, `vehicle` 34/34; quick 72b2970: all ok, 801 passed.
-Fortify row `s10b_ai.demolish` (card satchels, 4 m ring): gap_opened 0 %, tank_passed 0 %, exposure tank_blocked
-100 %, control 0/0: one satchel per engineer card, a gap needs two (owner question E3). Staged 3 satchels: 100/100.
-**Item 4 plan (not started):** key `lane_file` in `sdk/crates/content/src/tuning.rs` (`[ai.obstacles]`, as
-`barrier_job_max_s`; bump the `s10b_ai_content` key count 33 -> 35 with item 5; `resolved_defs.rs` note). The row
-`sweep_once` (`sdk/crates/cli/src/fortify/s10b_ai.rs` 1104) sends the rifles with a raw `Move` after the habit ends,
-so the file walk must be AI code the row drives: e.g. a stateless planner fn in `ai/sweep.rs` (per plan, from men's
-positions: a man not yet in the Done lane goes to lane start `a` only when the man before him is a spacing in; men in
-the lane go to `b` + 5 m on the centre line; queue behind `a`; all past -> normal attack order), called from the
-attack branch in `ai.rs` (~2107, `holds`) and from a new `AiHabit::LaneFile` (`ai/obstacles.rs` 130) the row drives
-before its Move (control `lane_file` 0: ends at once). Per-man `CommandKind::MoveUnits` (`game.rs` 1142). No layout.
-Item 5 (`at_rows`; mines row lateral offset per seed, tank_stopped_pct, control 1) not started. Chunk 3 as in the
-stage file (E keys in all_off.toml too). **Open:** E1 (waiting bunker job holds the S10b slot); bunker 12 % (target
-15 %); US bunker pit Dig stalled 342 s in the obstacle row; E3 (one satchel per engineer card).
+**Next: Build E item 5 (`at_rows`), STOP POINT 2; then chunk 3.** SAVE 25, PROTOCOL 14. Stage D closed except its
+item 9 (= E item 7). E chunk 1 `16854a6`; item 3 `9b85671`, `9cb8fc1`, `610ceda` (drives_out green).
+**Item 4 done (`6125125`).** Keys `lane_file` (0/1, 1) and `at_rows` (1..=2, 2, read nowhere yet) are in
+`sdk/crates/content/src/tuning.rs`, `mods/ww2/defs/rules/skirmish.toml`; key count 35; `resolved_defs.rs` BASELINE and
+the canonical snapshot re-blessed (no further content change needed for item 5). Code `crates/sim/src/ai/sweep.rs`:
+`lane_file_on`, `Planner::file_lane(p)` (the point's Done sweep entry), `Planner::lane_file(squad, lane)` (stateless:
+men by id; in the lane -> `b` + `FILE_PAST_M` 5 on the centre line; first waiting man -> `a` once no man is under
+`FILE_GAP_M` 3 m in; others queue behind `a`; only squads with a man within `FILE_NEAR_M` 30 of `a`; per-man
+`MoveUnits`), `drive_lane_file`; `AiHabit::LaneFile` (`ai/obstacles.rs`); `ai.rs` attack branch: `files[i]` after
+`holds`, `regather` forces the squad order once all are past. No counter (AiCounters is saved). Test
+`s10b_ai_sweep_tests::ai_attackers_file_through_swept_lane` (control `lane_file` 0: spread > 1.5 m, seen).
+Sweep row (seeds 1-3): attacker_mine_losses **0.0**, control sweep 0: 5.5, control `lane_file` 0: 2.67;
+exposure lane_swept 100 %, lane_filed 100 % (control 0 %). lib `s10b` 99/99; quick 72b2970 all ok, 802 passed.
+**Item 5 plan:** the AT field is one `Fortify` line (`ai/fort.rs` `at_site_search` ~516); mines fall every
+`segment` (4 m) of arc length (`fort.rs` `stand_segment`), the first at arc 4 m. Two rows as ONE polyline
+[p0, p1, q, q0]: q = p1 + d*s + along*(5s/12) (d = path direction toward the point, s = step), q0 = p0 + d*s +
+along*(s/2): total length (2n+1)s, so row 2 lands half a step shifted (the connector mine sits ~0.5 m off its slot).
+Catch: `at_minefield` max_length 40 m -> rows of 16 m (4 + 5 mines) instead of one 40 m row. Alternative: a
+second job for row 2 (`field_wants`/`field_has` treat any AT mine near the point as the field: needs a row-2 want).
+Pick one; "lacks mines": one row when `under_limit` or `materials_room_g` cannot cover 2n+1 segments. Row
+`s10b_ai.mines` (`mines_once` ~571): tank lateral offset per seed not a multiple of 4 m, tank_stopped_pct, control 1.
+Then chunk 3 (ablations incl. lane_file/at_rows, all_off, loose, tuning.md, stage check, TODO incl. E3).
+**Open:** E1 (waiting bunker job holds the S10b slot); bunker 12 % (target 15 %); US bunker pit Dig stalled 342 s in
+the obstacle row; E3 (one satchel per engineer card; demolish row 0/0 with card satchels).
 
 ## Plan (2026-11-12)
 
