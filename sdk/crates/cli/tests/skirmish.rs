@@ -846,7 +846,9 @@ fn s10b_counters_zero_without_use() {
 /// S10b-ai Build A step 12: every `s10b_ai_derived` field on synthetic
 /// per-match records, and nulls where no match was exposed. Control seen
 /// failing: `bunker_matches` counted without the chance bit (every built
-/// bunker) gives 100 % for `matches_with_bunker_pct` instead of 50 %.
+/// bunker) gives 100 % for `bunker_done_when_started_pct` instead of 50 %.
+/// Review finding 8: `matches_with_bunker_pct` is over all matches (0, not
+/// null, with no match exposed; 2 built of 4 here).
 #[test]
 fn s10b_ai_derived_fields() {
     use frontline_cli::skirmish::{
@@ -870,7 +872,7 @@ fn s10b_ai_derived_fields() {
         "{raw}"
     );
     for k in [
-        "matches_with_bunker_pct",
+        "bunker_done_when_started_pct",
         "sweep_when_wanted_pct",
         "demolish_when_wanted_pct",
     ] {
@@ -909,7 +911,8 @@ fn s10b_ai_derived_fields() {
         ..S10Player::default()
     };
     b.s10b_ai[at("sweep_wanted")] = 1;
-    // A bunker built outside a chance match (not counted in the share).
+    // A bunker built outside a chance match (not in the job share, in the
+    // all-matches share).
     let mut c = S10Player {
         income_mp: 1000,
         ..S10Player::default()
@@ -923,7 +926,7 @@ fn s10b_ai_derived_fields() {
     let (raw, d) = frontline_cli::json_out::s10b_ai_blocks(&f);
     assert_eq!(raw["s10b_jobs"], 5);
     assert_eq!(raw["at_exposure_ticks"], 300);
-    let want: [(&str, f64); 22] = [
+    let want: [(&str, f64); 24] = [
         ("matches_with_mines_pct", 25.0),
         ("mines_laid_per_match", 7.5),
         ("at_fields_per_match", 0.5),
@@ -934,6 +937,8 @@ fn s10b_ai_derived_fields() {
         ("obstacles_per_match", 0.75),
         ("obst_chance_matches", 1.0),
         ("matches_with_bunker_pct", 50.0),
+        ("bunker_ready_matches", 2.0),
+        ("bunker_done_when_started_pct", 50.0),
         ("bunker_chance_matches", 2.0),
         ("sweep_when_wanted_pct", 50.0),
         ("sweep_wanted_matches", 2.0),

@@ -2302,9 +2302,15 @@ pub struct S10bAiFaction {
     pub lay_chance_matches: u32,
     pub matches_with_obstacle: u32,
     pub obst_chance_matches: u32,
-    /// Matches with a bunker built, among the bunker-chance matches.
+    /// Matches with a bunker built, among the bunker-chance matches (the
+    /// matches in which the AI held a bunker job).
     pub bunker_matches: u32,
     pub bunker_chance_matches: u32,
+    /// Review finding 8: matches with a bunker built (all matches), and
+    /// matches whose bunker plans got past the point checks (a
+    /// `bunker_why` count from `no_site` on, or a bunker job).
+    pub matches_with_bunker: u32,
+    pub bunker_ready_matches: u32,
     pub sweep_wanted_matches: u32,
     /// Matches with a sweep wanted and one started.
     pub sweep_when_wanted: u32,
@@ -2356,6 +2362,9 @@ impl S10bAiFaction {
         self.lay_chance_matches += u32::from(p.s10b_chances & CHANCE_LAY != 0);
         self.matches_with_obstacle += u32::from(a.obstacles_built > 0);
         self.obst_chance_matches += u32::from(p.s10b_chances & CHANCE_OBST != 0);
+        self.matches_with_bunker += u32::from(a.bunkers_built > 0);
+        let ready = p.bunker_why[2..].iter().any(|&n| n > 0);
+        self.bunker_ready_matches += u32::from(ready || p.s10b_chances & CHANCE_BUNKER != 0);
         if p.s10b_chances & CHANCE_BUNKER != 0 {
             self.bunker_chance_matches += 1;
             self.bunker_matches += u32::from(a.bunkers_built > 0);
@@ -3382,7 +3391,7 @@ pub fn many_text(r: &ManyReport) -> String {
         let v = |k: &str| d[k].as_f64().unwrap_or(0.0);
         let opt = |k: &str| d[k].as_f64().map_or("-".into(), |x| format!("{x:.0}"));
         out += &format!(
-            "s10b-ai: {} mines in {:.0} % ({:.2} laid/match, AT fields {:.2}/match, chance {}), obstacles in {:.0} % (chance {}), bunker {} % (chance {}), sweep when wanted {} % ({}), demolish when wanted {} % ({}), mistakes {}, materials {:.2} % of income, overdue {}, re-orders {}\n",
+            "s10b-ai: {} mines in {:.0} % ({:.2} laid/match, AT fields {:.2}/match, chance {}), obstacles in {:.0} % (chance {}), bunker in {:.0} % of matches (ready {}; done when started {} % of {}), sweep when wanted {} % ({}), demolish when wanted {} % ({}), mistakes {}, materials {:.2} % of income, overdue {}, re-orders {}\n",
             f.faction,
             v("matches_with_mines_pct"),
             v("mines_laid_per_match"),
@@ -3390,7 +3399,9 @@ pub fn many_text(r: &ManyReport) -> String {
             d["lay_chance_matches"],
             v("matches_with_obstacle_pct"),
             d["obst_chance_matches"],
-            opt("matches_with_bunker_pct"),
+            v("matches_with_bunker_pct"),
+            d["bunker_ready_matches"],
+            opt("bunker_done_when_started_pct"),
             d["bunker_chance_matches"],
             opt("sweep_when_wanted_pct"),
             d["sweep_wanted_matches"],

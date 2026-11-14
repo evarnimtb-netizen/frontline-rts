@@ -24,7 +24,7 @@ FORT = ("matches_with_works_pct", "matches_with_wire_pct", "matches_with_gap_pct
 # S10b-ai: the four "matches with" shares (T109, T111-T113) and the own-side
 # mistakes (T115), per set from factions.<f>.s10b_ai_derived.
 S10B = ("matches_with_mines_pct", "matches_with_obstacle_pct", "matches_with_bunker_pct",
-        "sweep_when_wanted_pct", "own_side_mistakes")
+        "bunker_done_when_started_pct", "sweep_when_wanted_pct", "own_side_mistakes")
 BOUGHT = {"germany": ["ger_sdkfz251_1_squad", "ger_stug3_g_squad", "ger_pz4_h_squad"],
           "usa": ["usa_m3a1_squad", "usa_m10_squad", "usa_m4a3_75_squad"]}
 
@@ -106,8 +106,8 @@ def show(o, base):
         if a.get("s10b"):
             sb = a["s10b"]
             print(f"    s10b-ai: mines in {fmt(sb['matches_with_mines_pct'], 0)} %, obstacles in "
-                  f"{fmt(sb['matches_with_obstacle_pct'], 0)} %, bunker in {fmt(sb['matches_with_bunker_pct'], 0)} % "
-                  f"(of bunker chances), sweep when wanted {fmt(sb['sweep_when_wanted_pct'], 0)} %; "
+                  f"{fmt(sb['matches_with_obstacle_pct'], 0)} %, bunker in {fmt(sb['matches_with_bunker_pct'], 0)} % of matches "
+                  f"(done when started {fmt(sb['bunker_done_when_started_pct'], 0)} %), sweep when wanted {fmt(sb['sweep_when_wanted_pct'], 0)} %; "
                   f"own-side mistakes {fmt(sb['own_side_mistakes'], 0)} (must be 0)")
     # One line for scripts and stage gates.
     fs = o["f"].values()

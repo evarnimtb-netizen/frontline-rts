@@ -952,7 +952,11 @@ pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
         "matches_with_obstacle_pct": pct(c.matches_with_obstacle as f64, m),
         "obstacles_per_match": per(c.obstacles_built),
         "obst_chance_matches": c.obst_chance_matches,
-        "matches_with_bunker_pct": pct_or_null(c.bunker_matches as f64, c.bunker_chance_matches as f64),
+        // Review finding 8: over all matches; the job-completion rate
+        // under its own name; the exposure from the plans' checks.
+        "matches_with_bunker_pct": pct(c.matches_with_bunker as f64, m),
+        "bunker_ready_matches": c.bunker_ready_matches,
+        "bunker_done_when_started_pct": pct_or_null(c.bunker_matches as f64, c.bunker_chance_matches as f64),
         "bunker_chance_matches": c.bunker_chance_matches,
         "sweep_when_wanted_pct": pct_or_null(c.sweep_when_wanted as f64, c.sweep_wanted_matches as f64),
         "sweep_wanted_matches": c.sweep_wanted_matches,
@@ -975,6 +979,43 @@ pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review finding 8 (T113): `matches_with_bunker_pct` is over all the
+    /// set's matches; the share of bunker jobs that ended in a bunker is
+    /// `bunker_done_when_started_pct`; the exposure `bunker_ready_matches`
+    /// counts matches whose plans got past the point checks. With the
+    /// bunker off the share reads 0, not null. Failing control: the old
+    /// share divided by the job matches (1 of 2 = 50, control null).
+    #[test]
+    fn bunker_share_is_over_all_matches() {
+        use crate::skirmish::{CHANCE_BUNKER, S10Player, S10bAiFaction};
+        let mut f = S10bAiFaction::default();
+        let mut built = S10Player {
+            s10b_chances: CHANCE_BUNKER,
+            ..S10Player::default()
+        };
+        built.fort.bunkers_built = 1;
+        built.bunker_why[15] = 1;
+        let mut started = S10Player {
+            s10b_chances: CHANCE_BUNKER,
+            ..S10Player::default()
+        };
+        started.bunker_why[7] = 3;
+        let mut waiting = S10Player::default();
+        waiting.bunker_why[1] = 9;
+        for p in [&built, &started, &waiting, &S10Player::default()] {
+            f.add(p, 30);
+        }
+        let (_, d) = s10b_ai_blocks(&f);
+        assert_eq!(d["matches_with_bunker_pct"], json!(25.0));
+        assert_eq!(d["bunker_done_when_started_pct"], json!(50.0));
+        assert_eq!(d["bunker_ready_matches"], json!(2));
+        let mut off = S10bAiFaction::default();
+        off.add(&S10Player::default(), 30);
+        let (_, d) = s10b_ai_blocks(&off);
+        assert_eq!(d["matches_with_bunker_pct"], json!(0.0), "control reads 0");
+        assert_eq!(d["bunker_ready_matches"], json!(0));
+    }
 
     #[test]
     fn slugs_and_ids() {
