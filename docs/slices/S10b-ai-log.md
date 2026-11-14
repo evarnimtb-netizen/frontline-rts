@@ -5,30 +5,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Next: Build E chunk 2 continued (item 3 unfinished; then items 4, 5), STOP POINT 2.** SAVE 25, PROTOCOL 14.
-E chunk 1 done (`16854a6`): `[ai.obstacles]` `bunker_assign`, `bunker_truck_first`, `barrier_job_max_s` (see git log).
-**E chunk 2, item 3 started (WIP `9b85671`; quick: 788 passed, 10 red).** New piece rule in `crates/sim/src/vehicle.rs`: `piece_half(f)`
-= the piece box's half extents, each at least `SPACING_M`/2 (2 m), no `wreck_pad_m`; `BlockLayer::update` takes
-`pieces: &[Footprint]` apart from `wrecks` and sets `blocked` on nodes inside that box directly (tracked and wheeled
-layer alike, no dilation; `margin` still dilates `blocked`); `update_block` passes `sync_piece_blocks()` as pieces;
-`mark_piece_block` marks `piece_half`'s diagonal. `fort.rs` `obstacle_on_vehicle` uses the same box, no dilation.
-Wrecks keep raw + `wreck_pad_m` + dilation. Geometry: a 4 m row closes the grid at any offset; 2 pieces gone (12 m
-between centres) leaves 1-2 free node columns (not yet tested; a tank's track samples must stay within 2 m of the
-free column). `obstacle_waits_until_no_vehicle_is_on_its_nodes` moved to 5.3 m with `vehicle_clear_m` 0 (passes).
-**Red after the rule (fix or rewrite each):** `s10b_tests::vehicle_on_obstacle_nodes_drives_out` (hedgehog moved to
-(505.0, 501.6); the PzIV no longer backs out: moved 1.2 m in 60 s; look at the R15 `escape` rule in `drive`);
-`s10b_ai_obst_tests::ai_counts_own_blocked` and `own_blocked_counts_once_across_save_load` (the M4 now reaches its
-goal beside the one-piece barrier and the AI re-tasks it; the test geometry needs the tank stopped short);
-`s10b_ai_tests::ai_jobs_end_and_never_reorder_a_refused_goal` (Demolish row: "the unreachable goal was never given
-up"); all five `s10b_ai_demolish_tests` and cli `demolish_man_places_the_second_piece` (6 m ring `STEP_M` leaks now).
-Still to do for item 3: tests "intact 4 m row stops every vehicle (tracked, wheeled; also diagonal)", "2 adjacent
-gone -> a medium tank passes", log barrier and wreck pad still block, "path served => tank drives it" (the fault of
-`7e692e3`); fortify row `s10b_ai.demolish` in `sdk/crates/cli/src/fortify/s10b_ai.rs` back to cards' satchels and a
-4 m ring/row: report gap_opened_pct, tank_passed_pct; all-off 40 set same 40/40 vs `target/s10b-base40`.
-Items 4 (`lane_file`, sweep row attacker_mine_losses, control 0) and 5 (`at_rows`, mines row lateral offset per
-seed, control 1) not started. Chunk 3 as in the stage file.
-**Open from chunk 1:** owner question E1 (waiting bunker job holds the S10b slot: Germany mines 45 % -> 22 %); bunker 12 %
-(target 15 % not met); US bunker pit Dig stalled 342 s in the obstacle row; `count_own_blocked` misses Holding vehicles.
+**Next: Build E chunk 2 continued (items 4, 5), STOP POINT 2; then chunk 3.** SAVE 25, PROTOCOL 14.
+E chunk 1 done (`16854a6`): `[ai.obstacles]` `bunker_assign`, `bunker_truck_first`, `barrier_job_max_s`.
+**Item 3 done (`9b85671` + `9cb8fc1`; quick: 800 passed, 1 red).** `crates/sim/src/vehicle.rs`: a piece blocks the nodes in its
+`piece_half` box (each half at least 2 m); `PIECE_BRIDGE_M` 10: pieces at most 10 m apart block a band of 2 m either
+side of the line between centres (`piece_bridges`, `piece_blocks`); a free node between two piece nodes on a straight
+or diagonal grid line is blocked (`pinched` in `BlockLayer::update`); `BlockLayer::is_piece` marks piece-only nodes.
+`path.rs` `search`: near-start blocked nodes are passable only if not piece-only or the start node is blocked (the
+ring leak: the tank 4 m inside tunnelled out). `ai/fort.rs` `count_own_blocked` also counts Holding-short with no path.
+New `crates/sim/src/s10b_gap_tests.rs` (controls seen): intact 4 m row stops tank and truck (across, diagonal, 3
+offsets); 2 gone open across at 7/8 offsets (not when pieces sit half a step off the nodes) and diagonal 4/8; 1 gone
+always closed; 3 gone always open; the tank never stands on a blocked node; log barrier and wreck pad still block.
+Demolish tests on a 4 m ring (`STEP_M` 4); own_blocked tests start the M4 9 m east of the barrier.
+Fortify row `s10b_ai.demolish` (`sdk/crates/cli/src/fortify/s10b_ai.rs`, `RING_STEP_M` 4, card satchels):
+gap_opened 0 %, tank_passed 0 %, pieces 1.0, exposure tank_blocked 100 %, control 0/0 (seeds 1-3): the engineer
+cards carry ONE satchel, a gap needs two (owner question E3). Staged 3 satchels (`demolish_row_staged_one_off`):
+opened 100 %, passed 100 %, pieces 2.0, control 0/0. All-off 40 (`target/s10b-e2-off40`): same 40/40.
+**Red:** `s10b_tests::vehicle_on_obstacle_nodes_drives_out` (`cargo test --release -p frontline-sim --lib
+vehicle_on_obstacle_nodes`): the PzIV beside the hedgehog at (505, 501.6) turns to yaw -2.48 and stops (1.2 m in
+60 s); its path is fine (Moving, [496,500 -> 440,500]); a turn-on-spot allowance in `drive`'s escape `ok` changed
+nothing, so the hold is upstream (`follow`, e.g. its stuck back-off near line 2752). Two attempts made; not fixed.
+Items 4 (`lane_file`; sweep row attacker_mine_losses, control 0) and 5 (`at_rows`; mines row lateral offset per
+seed, tank_stopped_pct, control 1) not started. Chunk 3 as in the stage file (add the E keys to all_off.toml too).
+**Open:** owner question E1 (waiting bunker job holds the S10b slot); bunker 12 % (target 15 %); US bunker pit Dig
+stalled 342 s in the obstacle row; E3 (one satchel per engineer card).
 
 ## Plan (2026-11-12)
 
