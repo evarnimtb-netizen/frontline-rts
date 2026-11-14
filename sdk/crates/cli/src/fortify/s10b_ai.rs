@@ -21,14 +21,18 @@
 //!   alone until `p` has an AT field standing (>= [`AT_FIELD_MINES`] AT
 //!   mines; at most [`MINES_DRIVE_S`]): `field_laid_pct`. Then the enemy's
 //!   medium tank, placed [`MINES_TANK_M`] m out on the straight line from
-//!   its base to the point (moved 0-4 m across it by the seed, the AT mine
-//!   step), is ordered onto the point (unknown mines are
+//!   its base to the point (moved -5.5..+6.5 m across it by the seed,
+//!   never a multiple of the 4 m AT mine step: spread crossings, Build E),
+//!   is ordered onto the point (unknown mines are
 //!   not priced) for at most [`MINES_TANK_S`] s: `tank_stopped_pct`
-//!   (immobilised or wrecked). Exposure `tank_reached_field_pct`: runs in
+//!   (immobilised or wrecked). With `at_rows` 2 the drive goes on until
+//!   the second row stands too (2 x [`AT_FIELD_MINES`]; exposure
+//!   `two_rows_pct`). Exposure `tank_reached_field_pct`: runs in
 //!   which the tank came within 5 m of one of `p`'s AT mines
 //!   (`FortAccount::at_exposure_ticks` > 0); `builder_alive_pct` (the
 //!   engineers lived through the drive). Control (`control.*`): the
-//!   same with `[ai.obstacles] mines` 0 (nothing laid, the tank drives on).
+//!   same with `[ai.obstacles] mines` 0 (nothing laid, the tank drives on);
+//!   control `rows1.*` (Build E): the same with `at_rows` 1.
 //! * **Obstacle** (Build C, R5, R6). For each player `p` and seed: `p` holds
 //!   its nearest point (as the mines row, mines off); `p`'s emplaced AT gun
 //!   stands [`GUN_OUT_M`] m in front of the point and [`GUN_SIDE_M`] m to its
@@ -200,6 +204,7 @@ pub struct MinesControl {
 }
 
 /// T109/T110: the AI lays an AT field on the approach and it stops a tank.
+/// `two_rows_pct`: exposure of the second row (runs with both rows).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MinesRow {
     pub tank_stopped_pct: Option<f64>,
@@ -211,7 +216,11 @@ pub struct MinesRow {
     /// Exposure of `field_laid_pct`: runs whose engineer squad lived
     /// through the drive.
     pub builder_alive_pct: Option<f64>,
+    /// Build E: runs in which the second AT row stood too.
+    pub two_rows_pct: Option<f64>,
     pub control: MinesControl,
+    /// Build E control: `at_rows` 1 (one row).
+    pub rows1: MinesControl,
 }
 
 /// The control half of the obstacle row.
@@ -581,21 +590,23 @@ fn hold_point(w: &mut World, p: u8) -> Result<(usize, FxVec2, FxVec2, [FxVec2; 2
     Ok((i, pt, base_e, line))
 }
 
-/// One mines run of player `p` with `[ai.obstacles] mines` set: (field
-/// laid, seconds to lay it, tank stopped, tank reached the field, builder
-/// alive after the drive).
+/// One mines run of player `p` with `[ai.obstacles] mines` and `at_rows`
+/// set: (field laid, seconds to lay it, tank stopped, tank reached the
+/// field, builder alive after the drive, both rows laid).
 fn mines_once(
     args: &FortifyArgs,
     seed: u64,
     p: u8,
     mines: u32,
-) -> Result<(bool, u64, bool, bool, bool)> {
+    rows: u32,
+) -> Result<(bool, u64, bool, bool, bool, bool)> {
     use frontline_sim::ai::{AiHabit, AiState, AiTrench, DriveArgs};
     let mut w = world_with(args, seed, |s| {
         s.rules.ai.fort.works = 0;
         s.rules.ai.fort.wire = 0;
         s.rules.ai.obstacles.mines = mines;
         s.rules.ai.obstacles.at_mines = 1;
+        s.rules.ai.obstacles.at_rows = rows;
     })?;
     let enemy = 1 - p;
     let (i, pt, base_e, line) = hold_point(&mut w, p)?;
@@ -633,23 +644,30 @@ fn mines_once(
     let start = w.tick();
     // The control drives a minute (nothing to lay).
     let drive_s = if mines == 0 { 60 } else { MINES_DRIVE_S };
-    while at_mines(&w) < AT_FIELD_MINES && w.tick() < start + drive_s * hz {
+    let mut laid_at = None;
+    let want = AT_FIELD_MINES * rows.clamp(1, 2) as usize;
+    while at_mines(&w) < want && w.tick() < start + drive_s * hz {
         w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+        if laid_at.is_none() && at_mines(&w) >= AT_FIELD_MINES {
+            laid_at = Some(w.tick());
+        }
     }
     let laid = at_mines(&w) >= AT_FIELD_MINES;
+    let two = at_mines(&w) >= 2 * AT_FIELD_MINES;
     let alive = w.game().unwrap().squad(eng).is_some();
-    let laid_s = (w.tick() - start) / hz;
+    let laid_s = (laid_at.unwrap_or(w.tick()) - start) / hz;
     // The enemy tank drives the approach onto the point.
     let s = w.match_setup().unwrap();
     let Some(tt) = s.squad_type_index(&format!("ww2:{}", MEDIUM_TANKS[enemy as usize])) else {
         bail!("no {} card", MEDIUM_TANKS[enemy as usize]);
     };
     let dir = (base_e - pt).normalize_or_zero();
-    // Moved across the approach by the seed's offset (0-4 m, the AT
-    // field's mine step), as the paths row moves its field. The tank still
-    // drives the 4 m path grid: every seed crosses on the route's own lane
-    // (Build C measure, log), the lane the AI's row is laid for.
-    let side = dir.perp() * Fx::from_milli(((seed * 37) % 400) as i32 * 10);
+    // Moved across the approach by the seed's offset, -5.5..+6.5 m and
+    // never a multiple of the 4 m mine step (Build E): the tank drives the
+    // 4 m path grid, so offsets under 4 m kept every seed on the route's own
+    // lane (the one-lane rate); these cross on spread lanes.
+    let off_cm = ((seed * 7) % 13) as i32 * 100 - 550;
+    let side = dir.perp() * Fx::from_milli(off_cm * 10);
     let from = pt + dir * Fx::from_int(MINES_TANK_M) + side;
     let Some(tank) = w.spawn_squad_at(PlayerId(enemy), tt, from, -dir) else {
         bail!("the tank was not spawned at {from:?}");
@@ -681,24 +699,29 @@ fn mines_once(
         w.step(&[]);
     }
     let reached = w.game().unwrap().fort().accounts[p as usize].at_exposure_ticks > exp0;
-    Ok((laid, laid_s, stopped(&w), reached, alive))
+    Ok((laid, laid_s, stopped(&w), reached, alive, two))
 }
 
 /// The mines row (module docs).
 pub fn mines_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<MinesRow> {
     let (mut laid, mut laid_s, mut stopped, mut reached, mut runs) = (0u32, 0u64, 0u32, 0u32, 0u32);
     let (mut c_laid, mut c_stopped, mut alive) = (0u32, 0u32, 0u32);
+    let (mut two, mut r1_laid, mut r1_stopped) = (0u32, 0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (l, t, s, r, a) = mines_once(args, seed, p, 1)?;
+            let (l, t, s, r, a, b) = mines_once(args, seed, p, 1, 2)?;
             alive += a as u32;
             laid += l as u32;
             laid_s += if l { t } else { 0 };
             stopped += s as u32;
             reached += r as u32;
-            let (l, _, s, _, _) = mines_once(args, seed, p, 0)?;
+            two += b as u32;
+            let (l, _, s, _, _, _) = mines_once(args, seed, p, 0, 2)?;
             c_laid += l as u32;
             c_stopped += s as u32;
+            let (l, _, s, _, _, _) = mines_once(args, seed, p, 1, 1)?;
+            r1_laid += l as u32;
+            r1_stopped += s as u32;
             runs += 1;
         }
     }
@@ -708,9 +731,14 @@ pub fn mines_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Mine
         laid_s: (laid > 0).then(|| laid_s as f64 / laid as f64),
         tank_reached_field_pct: pct(reached, runs),
         builder_alive_pct: pct(alive, runs),
+        two_rows_pct: pct(two, runs),
         control: MinesControl {
             tank_stopped_pct: pct(c_stopped, runs),
             field_laid_pct: pct(c_laid, runs),
+        },
+        rows1: MinesControl {
+            tank_stopped_pct: pct(r1_stopped, runs),
+            field_laid_pct: pct(r1_laid, runs),
         },
     })
 }
@@ -1499,6 +1527,17 @@ mod tests {
         let args = FortifyArgs::default();
         let r = bunker_row(&args, 1..4).unwrap();
         println!("bunker {}", serde_json::to_string(&r).unwrap());
+    }
+
+    /// One-off measure of the mines row (Build E: spread crossings, control
+    /// `rows1` = `at_rows` 1): `cargo test --release -p frontline-cli --lib
+    /// mines_row_one_off -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn mines_row_one_off() {
+        let args = FortifyArgs::default();
+        let r = mines_row(&args, 1..6).unwrap();
+        println!("mines {}", serde_json::to_string(&r).unwrap());
     }
 
     /// One-off measure of the sweep row: `cargo test --release -p
