@@ -43,23 +43,13 @@ two 40-match control runs (`skirmish40_off`, `skirmish40_loose`) in `measure.sh`
 Moved to later slices: own-mine avoidance (with S10b-1 (B)); per-man mine paths; chokepoint analysis; tank or
 mortar fire at obstacles and mines; presenter work. Owner questions S10b-ai-1..7 (spec 10).
 
-## Build A chunks 1-2 (2026-11-12, layout `0ae000f`, `30c6a34`, `252f9be`)
-
-Default decisions: refusal helpers take ticks; `MineBlast` sorted by tick on load; `MAX_DEMOLISH_PIECES` 3; staged
-checks in `staged_s10b_save_holds_its_state`; fuzz plan asserts entries (`.sweeps.{}` ...). The three "chance"
-exposures come from AI state only; `s10b_materials_mp_pct` prices S10b grams at `construction_mp_per_t`.
-
-## Build A code map (short)
-
-CLI: `skirmish.rs` `S10B_AI` names, `S10bAiSeen` chances (lay/obst/bunker from AI state, 0 with switches off);
-`json_out.rs` `s10b_ai_blocks` -> `factions.<f>.s10b_ai` + `s10b_ai_derived`; `targets.rs` `exposure`, `exposure_min`,
-`control`, `three_parts_from`, verdicts `Unexposed`/`ControlSame`. `tools/measure.sh` plays every `skirmish40_*` run;
-`tools/ablate.sh` `ABLATIONS=DIR` (8 `*_off.toml`; `loose.toml` is the control); `tools/pool.py` "s10b-ai:" line.
-Liveness (`s10b_ai_tests.rs`): `Stage`, `LIVENESS` rows (Fort x3, Sweep), `job_alive` (TruckGoal false: D fills it),
-`drive_row`, `check_liveness`. Keep: `refused_near(.., refused_ticks, near_m)` takes ticks.
+## Build A chunks 1-2 + code map (2026-11-12, layout `0ae000f`, `30c6a34`, `252f9be`; shortened)
+Refusal helpers take ticks; `MineBlast` sorted by tick on load; `MAX_DEMOLISH_PIECES` 3. CLI: `skirmish.rs`
+`S10B_AI`, `json_out.rs` `s10b_ai_blocks`, `targets.rs` `exposure`/`control`/`three_parts_from`; `tools/measure.sh`
+plays every `skirmish40_*` run; `tools/ablate.sh` `ABLATIONS=DIR`. Liveness (`s10b_ai_tests.rs`): `LIVENESS` rows,
+`job_alive`, `drive_row`, `check_liveness`.
 
 ## Build B chunks 1-2 (2026-11-12, shortened)
-
 Chunk 1: mine paths (R11), mine layer, blasts, sim counters, `s10b_ai.paths` row, fuzz stage (`path.rs` `MineCost`,
 `fort.rs` `MineSet`/`MineLayer` (not saved), `game.rs` `mines_of`). Chunk 2: S10b jobs reuse `AiFortJob` and the
 S10a phases; the AT site memo lives on `Planner` (not saved); the S10b budget is derived from state; owner question
@@ -73,13 +63,11 @@ Bunker first among S10b wants; build_structure-for-heavy for the bunker only; fo
 plus three 40 kg crates; manning via `DriveArgs::others`; US set keys `us_*` (T113g).
 
 ## Build D chunks 1-2 (2026-11-12; orchestrator items; sweeping without row and fuzz stage)
-
 Bunker jobs died one plan after the pit (Watch, `Wait`, carried 0, no truck in `Load`): fixed by waiting; the rest is
 scarcity (S10b-ai-D1). Controls seen failing: `heavy` false; `#[serde(skip)]` on `blocked_pairs`. Germany 45.0 % (40
 set). Bugs: `squad_of` lacked `ClearMines`; a lane of `lane_max_m` refused by rounding; a clamped lane end bent it.
 
 ## Build D chunk 3 (2026-11-12; stage chunk 1 rest: fortify row `s10b_ai.sweep`)
-
 Row geometry as the sweep tests: the line runs through the rifle leader; field rows across it 60 m and 56 m short of
 the point (30 m, every 2 m, row 2 shifted 1 m), the blast 60 m short, 1 s old. Debug trace (not committed): with the
 sweep, 4 of 6 runs lose 0 men; the losing runs had a second blast inside the lane (a missed mine), then blasts 2-5 m
@@ -89,7 +77,6 @@ a swept lane is not a sure lane (the S10b detection roll); (B) the AI sweeps two
 found. Proceeding on (A). Quick after `078e382`: fmt, clippy, neutral.py, ablate.sh ok; tests 786 passed (306 s).
 
 ## Build D chunk 4 (2026-11-12; stage chunk 2 without the fortify row)
-
 Bugs met: `squad_of` lacked `Demolish` (the job saw its pending order as refused); the satchel man stuck behind the
 waiting tank (the squad now stands 4 m out and 4 m aside); after a failed move the tank is Holding with an empty path,
 so "exhausted" is read from the nav goal too. **Owner question S10b-ai-D3:** the vehicle block layer (footprint +
@@ -99,14 +86,12 @@ opens a 4 m hedgehog row. (A) leave as is (T114e/f miss; L3 stops retries); (B) 
 (C) more satchels, higher cap (layout, later slice). Proceeding on (A); tests use a 6 m ring (opens after 3 pieces).
 
 ## Build D chunk 5 (2026-11-12; stage chunk 2 rest: fortify row `s10b_ai.demolish`, STOP POINT 2)
-
 Ring, not the spec's line to the map edge (closed on any map); leader satchels 3 (staged); the 60 s on keeps driving
 the habit. Faults (1), (2) found with a scratch per-5 s trace. Chunk 6 (P, Q): scratch `sample` profile, per-10 s tank
 nav and `outcome()` trace. Chunk 7 (R, S): scratch per-1 s satchel-man nav trace (his Arriving goal jumped to cover).
 Controls seen failing: P flag ignored; Q usual drain; R the old Repath rule; S the pre-fix `unit.rs`. (No traces kept.)
 
 ## Fix save (2026-11-14; review findings 1, 2, 3, 22, 24 fixed; 4 not done)
-
 Commits `97e8255` + `0e9d0bd` (1: `validate_s10b` as `validate_fort`: a key squad gone since the plan loads, the
 demolition vehicle is any entity no infantry squad holds), `1592e22` (2: Charge needs `pieces[done]` on load;
 `run_demolish` ends Failed without it), `00cf868` (3: S10b budget saturates), `d38d62c` (22: `demolish_piece`
@@ -144,3 +129,16 @@ CONTROL-MISSING / EXPOSURE-MISSING and fail; demolish control writes `pieces_use
 `b73f2d1` (13: tests say the 3 satchels are staged). `36ba68a` (14: loose `barrier_job_max_s` 36000; docs).
 Not done: 12 (a lay_why counter would live in the saved AI counters); the LIVENESS barrier row still refuses at once
 (14, second half). No sim code changed, so no all-off set was played. Fortify and skirmish sets not replayed.
+
+## Fix2 lane (2026-11-14; review findings 18, 19, 20 done)
+`61ff1b7` (18: `lane_file` counts a man whose path ended at the spot beyond the lane end as past, at the lane start
+as in it, wherever arrival cover put him; a squad files at most 3 file walks + 60 s after the sweep). `a245cf4` (19:
+`sweep_continue` drops a Done lane with a known enemy mine or an enemy blast later than its `since` inside it;
+`sweep_lane`'s `covered` ignores a Done lane for a blast later than its sweep; so a new sweep starts and the
+attackers hold, no filing; test `ai_swept_lane_is_checked_again`; `ai_two_sweepers_never_share_lane`'s run now
+blasts fresh only until the first sweep ends). `dd8b6c8` (20: `at_point_count` = own AT mines + works + live jobs
+within the field radius; row 2 wanted only while under 1.5 rows; test `ai_at_field_lays_no_third_row_when_row_two_moved`,
+cap and budget lifted, pre-fix 21 -> 31). Fortify10 (`target/s10b-fix2lane-fort`): attacker_mine_losses 0.9,
+controls sweep off 6.3, lane_file_off 3.1 (unchanged vs Build E); targets 61 pass, 9 miss (hard 3: T107d, T114e/f;
+T115e now passes, own_blocked 0, control 80). All-off 40 `target/s10b-fix2lane-off40`: same 40/40. quick
+72b2970 all ok (819 passed).
