@@ -783,7 +783,8 @@ impl super::Planner<'_> {
 
     /// R5: the `hedgehogs_row` sites of point `i`'s row, `hedgehog_step_m`
     /// apart, starting `obst_work_m` in front of the anchor and running
-    /// along the trench away from its middle (`side` 1: mirrored, toward it).
+    /// along the trench away from its middle (`side` 1: mirrored, toward it,
+    /// from one step beyond side 0's first site: the sides share no site).
     fn hedgehog_row(&self, i: usize, side: usize) -> Option<Vec<FxVec2>> {
         let o = &self.g.setup.rules.ai.obstacles;
         let ([a, b], along, enemy) = self.fort_frame(i)?;
@@ -797,9 +798,12 @@ impl super::Planner<'_> {
         };
         let first = anchor + enemy * Fx::from_int(o.obst_work_m as i32);
         let step = Fx::from_int(o.hedgehog_step_m as i32);
+        // Side 1 starts one step beyond side 0's first site: the two rows
+        // share no site, so `hedgehog_side` reads the side R6 chose.
+        let k0 = side.min(1) as i32;
         Some(
             (0..o.hedgehogs_row as i32)
-                .map(|k| self.terrain.clamp(first + dir * step.mul_int(k)))
+                .map(|k| self.terrain.clamp(first + dir * step.mul_int(k + k0)))
                 .collect(),
         )
     }

@@ -203,6 +203,63 @@ fn ai_builds_hedgehogs_before_nest() {
     assert!(got.is_empty() && max_jobs == 0, "control: no nest, no row");
 }
 
+/// Fix 15: R6's mirrored side keeps its own sites. A hedgehog already on
+/// side 1's first site (one step toward the trench's middle) fixes the row
+/// to side 1: every later piece goes on that side, none at or beyond side
+/// 0's first site. Control: before the fix side 1 started at side 0's
+/// first site, so the row went on along side 0 (seen failing as "a piece
+/// on side 0").
+#[test]
+fn hedgehog_row_keeps_its_mirrored_side() {
+    let (mut w, h) = obst_world(|s| {
+        for t in s.squad_types.iter_mut().filter(|t| t.id == ENG) {
+            t.caps |= Capability::BuildHeavy.bit();
+        }
+    });
+    let s = w.match_setup().unwrap().clone();
+    let off = Fx::from_int(s.rules.ai.fort.nest_offset_m as i32);
+    let [a, b] = h.line;
+    let nest = b + (b - a).normalize_or_zero() * off;
+    let nf = fort(&w, "ww2:mg_nest");
+    assert!(w.build_now(nf, &[nest, nest + h.enemy * Fx::from_int(10)], PlayerId(1)));
+    let hh = fort(&w, "ww2:hedgehog");
+    let first = nest + h.enemy * Fx::from_int(s.rules.ai.obstacles.obst_work_m as i32);
+    let s1 = first - h.along * Fx::from_int(4);
+    assert!(w.build_now(hh, &[s1, s1 + h.enemy], PlayerId(1)));
+    squad_at(&mut w, ENG, h.pos, 120);
+    let built = |w: &World| -> Vec<FxVec2> {
+        w.game()
+            .unwrap()
+            .fort()
+            .pieces
+            .values()
+            .filter(|q| q.owner == PlayerId(1) && q.fort == hh)
+            .map(|q| q.pos)
+            .collect()
+    };
+    for _ in 0..1200 {
+        play(&mut w, 1);
+        for l in job_lines(&w, hh) {
+            assert!(
+                (l[0] - first).dot(h.along) < Fx::from_int(-3),
+                "a piece on side 0: {:?}",
+                l[0]
+            );
+        }
+        if built(&w).len() >= 3 {
+            break;
+        }
+    }
+    let got = built(&w);
+    assert_eq!(got.len(), 3, "the row stands: {got:?}");
+    for q in &got {
+        assert!(
+            (*q - first).dot(h.along) < Fx::from_int(-3),
+            "a piece on side 0: {q:?}"
+        );
+    }
+}
+
 /// R6: a gun on the own route 60 m before the point, its arc along the
 /// route: the barrier across the route is rejected, the mirrored one (20 m
 /// aside) is still within `own_route_m` + `wreck_pad_m` -> refused
@@ -308,7 +365,11 @@ fn own_blocked_ignores_a_halt_beside_an_own_piece() {
         play(&mut w, 1);
         run(&mut w, 1, 1, crate::command::CommandKind::Stop { squad: t });
         play(&mut w, 30);
-        assert_eq!(ai_ro(&w).counters.own_blocked, 0, "a halt is no block ({dy})");
+        assert_eq!(
+            ai_ro(&w).counters.own_blocked,
+            0,
+            "a halt is no block ({dy})"
+        );
     }
 }
 
