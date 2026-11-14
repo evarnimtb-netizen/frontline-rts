@@ -1067,7 +1067,8 @@ fn ai_jobs_end_and_never_reorder_a_refused_goal() {
 /// with "AI state out of range".
 #[test]
 fn saves_load_between_a_job_squads_loss_and_the_next_plan() {
-    let cases: [(&str, fn(&mut World, &Busy)); 3] = [
+    type Kill = fn(&mut World, &Busy);
+    let cases: [(&str, Kill); 3] = [
         ("sweeper wiped out", |w, b| {
             for m in w.game().unwrap().squads[&b.sweep].members.clone() {
                 assert!(w.kill_soldier(m));
