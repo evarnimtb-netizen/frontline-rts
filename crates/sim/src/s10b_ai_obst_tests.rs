@@ -367,3 +367,39 @@ fn ai_s10b_site_taken_ends_job() {
         "the job ended when its site was taken"
     );
 }
+
+/// Build E item 2 (S10b-ai-C1): a log barrier job's L1 deadline is
+/// `barrier_job_max_s`, not `job_max_s`: with `job_max_s` 40 and
+/// `barrier_job_max_s` 1200 the barrier job lives 60 s on; with them the
+/// other way round it ends by then (a failure: one refusal). Control: both
+/// 40 (the barrier on `job_max_s` as before) -> it ends (seen failing as
+/// "lives past job_max_s" with the control asserted to live).
+#[test]
+fn barrier_job_deadline_is_its_own() {
+    let run = |job_s: u32, barrier_s: u32| {
+        let (mut w, h) = obst_world(|s| {
+            s.rules.ai.obstacles.job_max_s = job_s;
+            s.rules.ai.obstacles.barrier_job_max_s = barrier_s;
+        });
+        let at = h.pos + c(20, 0);
+        gun_in_hold(&mut w, at, at + h.enemy * Fx::from_int(100));
+        squad_at(&mut w, ENG, at + c(-15, 0), 120);
+        let bar = fort(&w, "ww2:log_barrier");
+        assert!(
+            play_until(&mut w, 60, |w| !job_lines(w, bar).is_empty()),
+            "a barrier job"
+        );
+        let refused = ai_ro(&w).counters.s10b_refused;
+        play(&mut w, 60);
+        let alive = !job_lines(&w, bar).is_empty();
+        (alive, ai_ro(&w).counters.s10b_refused - refused)
+    };
+    let (alive, refused) = run(40, 1200);
+    assert!(alive, "the barrier job lives past job_max_s");
+    assert_eq!(refused, 0);
+    let (alive, refused) = run(1200, 40);
+    assert!(!alive, "the barrier job ends at barrier_job_max_s");
+    assert_eq!(refused, 1, "one refusal");
+    let (alive, _) = run(40, 40);
+    assert!(!alive, "control: both 40 -> it ends");
+}

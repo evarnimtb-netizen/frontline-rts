@@ -47,7 +47,9 @@
 //!   be 0). Exposure `enemy_tank_reached_barrier_pct` (the enemy tank came
 //!   within 10 m of a barrier piece) and (T115e) `own_tank_drove_pct` (the
 //!   own tank got [`OWN_DROVE_M`] m from its start: its route was tried). Controls: `control.own_blocked` with
-//!   `own_route_m` 0, `control.enemy_time_in_arc_s` with `obstacles` 0.
+//!   `own_route_m` 0, `control.enemy_time_in_arc_s` with `obstacles` 0,
+//!   `control.job900_barrier_built_pct` / `_pieces` with
+//!   `barrier_job_max_s` 900 (Build E, S10b-ai-C1).
 //! * **Bunker** (Build C, R7). For each player `p` and seed, in two sets
 //!   (`ger_baupioniergruppe`: `build_heavy`; `usa_engineer_squad`:
 //!   `build_structure` at `heavy_by_field_pct`, keys `us_*`): `p` holds its nearest point
@@ -218,15 +220,19 @@ pub struct ObstacleControl {
     pub own_blocked: Option<f64>,
     /// `obstacles` 0 (no barrier).
     pub enemy_time_in_arc_s: Option<f64>,
+    /// Build E (S10b-ai-C1): `barrier_job_max_s` 900 (the barrier job on
+    /// the old deadline): barrier built and mean pieces standing.
+    pub job900_barrier_built_pct: Option<f64>,
+    pub job900_barrier_pieces: Option<f64>,
 }
 
 /// T111/T115: a log barrier before an own gun, never on the own route.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ObstacleRow {
     pub barrier_built_pct: Option<f64>,
-    /// Report: mean barrier pieces standing after the drive (the L1
-    /// deadline `job_max_s` 900 s ends a one-builder 20 m barrier at 4 of
-    /// 5; Build C measure, owner question S10b-ai-C1).
+    /// Report: mean barrier pieces standing after the drive (Build C: the
+    /// L1 deadline 900 s ended a one-builder 20 m barrier at 4 of 5, owner
+    /// question S10b-ai-C1; Build E: `barrier_job_max_s` 1200).
     pub barrier_pieces: Option<f64>,
     /// Report: mean seconds the enemy tank spent in the gun's arc.
     pub enemy_time_in_arc_s: Option<f64>,
@@ -706,7 +712,7 @@ pub fn s10b_ai_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S
 }
 
 /// One obstacle run (module docs). `mode` 0: as set; 1: `own_route_m` 0;
-/// 2: `obstacles` 0. `goal`: where the own tank drives (mode 1: onto its
+/// 2: `obstacles` 0; 3: `barrier_job_max_s` 900 (Build E). `goal`: where the own tank drives (mode 1: onto its
 /// own first barrier piece; None: the nearest other point). (barrier built, seconds the enemy tank spent in the
 /// arc, own_blocked, enemy tank reached the barrier, barrier pieces,
 /// builder alive, own tank drove, the first barrier piece's spot).
@@ -724,6 +730,9 @@ fn obstacle_once(
         s.rules.ai.fort.wire = 0;
         s.rules.ai.fort.gun_hold_s = 0;
         s.rules.ai.obstacles.mines = 0;
+        // Build E: the held, trenched point wants the bunker first and the
+        // engineers (`build_structure`) took it for 360 s (Dig, refused).
+        s.rules.ai.obstacles.bunker = 0;
         s.rules.ai.obstacles.obstacles = u32::from(mode != 2);
         // The build drive lasts up to 25 min: with the usual drain the
         // enemy runs out of tickets about then (it holds no point), the
@@ -732,6 +741,9 @@ fn obstacle_once(
         s.rules.ticket_drain_per_min_per_point = 0;
         if mode == 1 {
             s.rules.ai.obstacles.own_route_m = 0;
+        }
+        if mode == 3 {
+            s.rules.ai.obstacles.barrier_job_max_s = 900;
         }
     })?;
     let enemy = 1 - p;
@@ -894,6 +906,7 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
     let (mut built, mut arc, mut blocked, mut reached, mut runs) = (0u32, 0f64, 0u32, 0u32, 0u32);
     let (mut c_blocked, mut c_arc, mut n_pieces) = (0u32, 0f64, 0f64);
     let (mut alive, mut c_built, mut drove) = (0u32, 0u32, 0u32);
+    let (mut j_built, mut j_pieces) = (0u32, 0f64);
     for seed in seeds {
         for p in [0u8, 1] {
             // The control first: its barrier lies on the own route (R6
@@ -911,6 +924,9 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
             let c = obstacle_once(args, seed, p, 2, None)?;
             c_arc += c.1;
             c_built += c.0 as u32;
+            let j = obstacle_once(args, seed, p, 3, c1.7)?;
+            j_built += j.0 as u32;
+            j_pieces += j.4 as f64;
             runs += 1;
         }
     }
@@ -927,6 +943,8 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
             barrier_built_pct: pct(c_built, runs),
             own_blocked: (runs > 0).then_some(c_blocked as f64),
             enemy_time_in_arc_s: mean(c_arc),
+            job900_barrier_built_pct: pct(j_built, runs),
+            job900_barrier_pieces: mean(j_pieces),
         },
     })
 }

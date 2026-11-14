@@ -559,13 +559,14 @@ pub(crate) struct Stage {
 /// One row per job kind: the setup builds a world whose goal is
 /// unreachable for that kind (B: Fort; D: Sweep, Demolish, TruckGoal).
 type StageSetup = fn() -> (World, Stage);
-const LIVENESS: &[(JobKind, StageSetup)] = &[
-    (JobKind::Fort, fort_row),
-    (JobKind::Fort, barrier_row),
-    (JobKind::Fort, bunker_row),
-    (JobKind::Sweep, sweep_row),
-    (JobKind::Demolish, demolish_row),
-    (JobKind::TruckGoal, truck_row),
+/// (kind, setup, the row's L1 key is `barrier_job_max_s`: Build E, C1).
+const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
+    (JobKind::Fort, fort_row, false),
+    (JobKind::Fort, barrier_row, true),
+    (JobKind::Fort, bunker_row, false),
+    (JobKind::Sweep, sweep_row, false),
+    (JobKind::Demolish, demolish_row, false),
+    (JobKind::TruckGoal, truck_row, false),
 ];
 
 /// The TruckGoal row (Build D, L5): the AI's loaded truck in a trench ring
@@ -1011,12 +1012,17 @@ fn ai_jobs_end_and_never_reorder_a_refused_goal() {
             .all(|s| matches!(s.end, None | Some(HabitEnd::NotBuilt)))
     );
 
-    for &(kind, setup) in LIVENESS {
+    for &(kind, setup, barrier) in LIVENESS {
         let (mut w, stage) = setup();
         let s = w.match_setup().unwrap();
         let (hz, o) = (s.tick_hz as u64, s.rules.ai.obstacles.clone());
+        let max_s = if barrier {
+            o.barrier_job_max_s
+        } else {
+            o.job_max_s
+        };
         let l = Limits {
-            job_max: o.job_max_s as u64 * hz,
+            job_max: max_s as u64 * hz,
             refused: o.refused_s as u64 * hz,
             slack: 2 * o.recheck_s.max(5) as u64 * hz,
         };

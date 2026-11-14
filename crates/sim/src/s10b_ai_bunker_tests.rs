@@ -260,3 +260,132 @@ fn ai_bunker_waits_for_a_busy_truck() {
     assert!(done, "the bunker stands");
     assert_eq!(c.bunker_why[14], 0, "no failed bunker job");
 }
+
+/// The bunker world with a second own point (no trench) 120 m from the
+/// bunker point; Baupioniere with the kg there are assigned to it, not to
+/// the bunker point.
+fn assign_world(assign: u32) -> (World, Held, SquadId) {
+    let (mut w, h) = bunker_world(1, |s| {
+        s.rules.ai.obstacles.bunker_assign = assign;
+        let mut p = s.map.points[0].clone();
+        p.pos.x.0 += 120 << 16;
+        s.map.points.push(p);
+    });
+    w.state.game.as_mut().unwrap().points[1].owner = Some(PlayerId(1));
+    let far: FxVec2 = w.match_setup().unwrap().map.points[1].pos.into();
+    let bau = builder(&mut w, &h, BAU, far + c(0, 5));
+    (w, h, bau)
+}
+
+/// Build E item 1 (`bunker_assign`, S10b-ai-D1): the only fit builder is
+/// assigned to another own point (the 40 set's `no_squad` / `no_builder`);
+/// the AI sends it to the bunker point for the bunker job. Control:
+/// `bunker_assign` 0 -> no bunker job, `bunker_why` counts `no_squad`
+/// (seen failing as "a bunker job" with the control asserted to start).
+#[test]
+fn ai_bunker_assigns_a_free_builder() {
+    let (mut w, _h, bau) = assign_world(1);
+    let mut got = false;
+    for _ in 0..90 {
+        play(&mut w, 1);
+        if jobs(&w).iter().any(|j| j.0 == bau) {
+            got = true;
+            break;
+        }
+    }
+    let why = ai_ro(&w).counters.bunker_why;
+    println!("assign 1: job {got}, why {why:?}");
+    assert!(got, "a bunker job for the Baupioniere");
+    let (mut w, _h, bau) = assign_world(0);
+    play(&mut w, 90);
+    let why = ai_ro(&w).counters.bunker_why;
+    println!("assign 0: why {why:?}");
+    assert!(
+        !jobs(&w).iter().any(|j| j.0 == bau),
+        "control: bunker_assign 0 -> no bunker job"
+    );
+    assert!(why[6] + why[7] > 0, "control: no_squad or no_builder");
+}
+
+/// Plays the bunker with one loaded truck in tank service (Follow) from the
+/// moment the bunker step waits for kg; `first` the `bunker_truck_first`
+/// key. (the truck was sent back for the run, the bunker stands, counters).
+fn truck_first_run(first: u32) -> (bool, bool, crate::ai::AiCounters) {
+    let (mut w, h) = bunker_world(1, |s| {
+        s.rules.ai.obstacles.bunker_truck_first = first;
+        let f = &mut s.rules.ai.fort;
+        f.works = 1;
+        f.nest = 0;
+        f.dugout = 0;
+        f.roof = 0;
+        f.sandbags = 0;
+    });
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let truck = squad_at(&mut w, "ww2:usa_cckw_squad", base, 0);
+    let tv = w.game().unwrap().squads[&truck].members[0];
+    squad_at(&mut w, BAU, h.pos, 40);
+    let b = bunker(&w);
+    let (mut serving, mut sent, mut done) = (false, false, false);
+    for _ in 0..30 * 1500 {
+        steps(&mut w, 1);
+        let g = w.game().unwrap();
+        let waiting = g
+            .fort()
+            .works
+            .values()
+            .any(|k| k.fort == b && k.step == crate::fort::WorkStep::Wait);
+        if waiting && !serving {
+            serving = true;
+            let t = w.state.tick;
+            let g = w.state.game.as_mut().unwrap();
+            // A full load of shells: Follow never returns on its own.
+            g.vehicles.get_mut(&tv).unwrap().cargo_g = [320_000, 120_000, 40_000];
+            let j = g.ai[1]
+                .as_mut()
+                .unwrap()
+                .trucks
+                .get_mut(&truck)
+                .expect("a truck job");
+            j.phase = crate::ai::TruckPhase::Follow;
+            j.since = t;
+        } else if serving && !sent {
+            sent = ai_ro(&w)
+                .trucks
+                .get(&truck)
+                .is_some_and(|j| j.phase == crate::ai::TruckPhase::Return);
+        }
+        if !built(&w).is_empty() {
+            done = true;
+            break;
+        }
+    }
+    assert!(serving, "the step waited for kg");
+    (sent, done, ai_ro(&w).counters.clone())
+}
+
+/// Build E item 1 (`bunker_truck_first`, S10b-ai-D1): the bunker's 250 kg
+/// step waits while the only truck serves tanks (Follow, loaded); it is sent
+/// back to base for one run and the bunker stands. Control:
+/// `bunker_truck_first` 0 -> the truck stays in service, the job ends at its
+/// deadline (`end_deadline`), no bunker (seen failing as "the truck was
+/// sent" with the control asserted to send).
+#[test]
+fn ai_bunker_takes_a_truck_from_service() {
+    let (sent, done, c) = truck_first_run(1);
+    println!(
+        "first 1: sent {sent}, built {done}, runs {:?}, why {:?}",
+        c.material_runs, c.bunker_why
+    );
+    assert!(sent, "the truck was sent back for the run");
+    assert!(done, "the bunker stands");
+    assert_eq!(c.bunker_why[14], 0, "no failed bunker job");
+    let (sent, done, c) = truck_first_run(0);
+    println!(
+        "first 0: sent {sent}, built {done}, runs {:?}, why {:?}",
+        c.material_runs, c.bunker_why
+    );
+    assert!(
+        !sent && !done,
+        "control: bunker_truck_first 0 -> no run, no bunker"
+    );
+}

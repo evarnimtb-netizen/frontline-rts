@@ -322,6 +322,20 @@ pub(super) fn refusal_keep_ticks(s: &MatchSetup) -> u64 {
 pub(super) const REORDER_WINDOW_S: u64 = 300;
 /// The fixed age of `jobs_overdue` (s; spec 3).
 pub(super) const OVERDUE_S: u64 = 900;
+/// S10b-ai Build E: the fixed age of `jobs_overdue` for a log barrier job
+/// (s; the default `barrier_job_max_s`).
+pub(super) const OVERDUE_BARRIER_S: u64 = 1200;
+
+/// S10b-ai L1: the deadline (s) of a fort job on blueprint `fort`: a log
+/// barrier's `barrier_job_max_s` (Build E, S10b-ai-C1), else `job_max_s`.
+pub(crate) fn job_max_s(s: &MatchSetup, fort: u16) -> u64 {
+    let o = &s.rules.ai.obstacles;
+    if fort_of(s, WorkKind::LogBarrier) == Some(fort) {
+        o.barrier_job_max_s as u64
+    } else {
+        o.job_max_s as u64
+    }
+}
 
 fn near(a: FxVec2, b: FxVec2, m: Fx) -> bool {
     (a - b).length_sq_raw() <= sq_m(m)
@@ -1146,7 +1160,7 @@ impl super::Planner<'_> {
     fn can_supply(&self, sq: SquadId, f: u16, site: FxVec2) -> bool {
         let d = &self.g.setup.forts[f as usize];
         let need = d.materials_g;
-        (self.full_carry_g(sq) >= need || self.truck_free() || self.at_hand(sq, d, site))
+        (self.full_carry_g(sq) >= need || self.truck_for(f) || self.at_hand(sq, d, site))
             && self.carried_g(sq).saturating_add(self.room_for(f)) >= need
     }
 
@@ -1689,6 +1703,92 @@ impl super::Planner<'_> {
                 .any(|j| j.phase == super::truck::TruckPhase::Load)
     }
 
+    /// Whether a truck can bring a step of blueprint `f`: one is free
+    /// ([`Self::truck_free`]), or (Build E, `bunker_truck_first`) `f` is
+    /// the bunker and an own truck job lives that [`Self::truck_divert`]
+    /// may take from tank service.
+    fn truck_for(&self, f: u16) -> bool {
+        self.truck_free()
+            || (self.divert_on()
+                && fort_of(&self.g.setup, WorkKind::Bunker) == Some(f)
+                && self.ai.material_run.is_none()
+                && !self.ai.trucks.is_empty())
+    }
+
+    /// Build E: whether `bunker_truck_first` is in force (S10b and the
+    /// bunker switched on).
+    fn divert_on(&self) -> bool {
+        let s = &self.g.setup;
+        s.rules.ai.obstacles.bunker_truck_first != 0
+            && s10b_on(s)
+            && switched_on(s, WorkKind::Bunker)
+    }
+
+    /// S10b-ai Build E (`bunker_truck_first`, S10b-ai-D1): a truck in tank
+    /// service (Follow or Serve) is sent back to base for the bunker's
+    /// material run while the bunker work waits for kg its builder cannot
+    /// carry, no truck is in or on its way to base (Load, Return) and the
+    /// truck has room for the run. Once per job: not after anyone but the
+    /// builder brought kg to the step (its drawn kg over the builder's
+    /// full carry). In base it takes the run as a loading truck does, then
+    /// goes back to loading and its service (`end_run`).
+    fn truck_divert(&mut self, t: &MyTank, job: &mut super::AiTruck) -> bool {
+        use super::truck::TruckPhase;
+        if !self.divert_on()
+            || self.ai.material_run.is_some()
+            || !matches!(job.phase, TruckPhase::Follow | TruckPhase::Serve)
+            || self.ai.trucks.iter().any(|(q, j)| {
+                *q != t.squad && matches!(j.phase, TruckPhase::Load | TruckPhase::Return)
+            })
+        {
+            return false;
+        }
+        let g = self.g;
+        let s = &g.setup;
+        let Some(b) = fort_of(s, WorkKind::Bunker) else {
+            return false;
+        };
+        let me = self.me;
+        let waiting = self.ai.forts.iter().any(|(sq, j)| {
+            j.fort == b
+                && j.work
+                    .and_then(|id| g.fort.works.get(&id))
+                    .is_some_and(|w| {
+                        w.owner == me
+                            && w.builder == *sq
+                            && w.step == WorkStep::Wait
+                            && self.carried_g(*sq) == 0
+                            && w.got_g <= self.full_carry_g(*sq)
+                    })
+        });
+        if !waiting {
+            return false;
+        }
+        let vs = &g.vehicles[&t.id];
+        let v = &s.vehicles[vs.type_idx as usize];
+        let cap = v.supply.as_ref().map_or(0, |x| x.cap_g as u64);
+        let held = vs.cargo_g.iter().map(|&x| x as u64).sum::<u64>() + vs.material_g as u64;
+        let run_kg = s
+            .rules
+            .ai
+            .fort
+            .truck_material_kg
+            .min(s.forts[b as usize].materials_g.div_ceil(1000));
+        if cap.saturating_sub(held) + (vs.material_g as u64) < run_kg as u64 * 1000 {
+            return false;
+        }
+        if job.phase == TruckPhase::Serve {
+            self.end_serve(job, false);
+        }
+        job.phase = TruckPhase::Return;
+        job.since = self.tick;
+        job.fails = 0;
+        job.moved_to = t.pos;
+        let base = g.base_of(me);
+        self.truck_drive(t, job, base);
+        true
+    }
+
     /// S10a-ai truck run (spec 3.2), called by `run_truck` for each own
     /// truck. True when the truck is on (or just took) a material run and
     /// its other habits wait.
@@ -1761,6 +1861,9 @@ impl super::Planner<'_> {
             } else if !idle {
                 self.ai.emit(self.due, CommandKind::Stop { squad: t.squad });
             }
+            return true;
+        }
+        if self.truck_divert(t, job) {
             return true;
         }
         if job.phase != super::truck::TruckPhase::Load || !in_base || !idle {
@@ -1861,7 +1964,6 @@ impl super::Planner<'_> {
                 .drop_stale_refusals(tick, refusal_keep_ticks(&g.setup));
             self.count_own_blocked();
         }
-        let job_max = g.setup.rules.ai.obstacles.job_max_s as u64 * hz;
         let ids: Vec<SquadId> = self.ai.forts.keys().copied().collect();
         for id in ids {
             let job = &self.ai.forts[&id];
@@ -1877,7 +1979,7 @@ impl super::Planner<'_> {
                 continue;
             }
             // S10b-ai L1: the deadline, whatever the phase (a failure).
-            if s10b && tick >= job.start.saturating_add(job_max) {
+            if s10b && tick >= job.start.saturating_add(job_max_s(&g.setup, job.fort) * hz) {
                 let job = job.clone();
                 self.ai.forts.remove(&id);
                 self.bunker_end(&job, 12);
@@ -2117,6 +2219,29 @@ impl super::Planner<'_> {
                             m.id,
                         )
                     });
+                // S10b-ai Build E (`bunker_assign`, S10b-ai-D1): a wanted
+                // bunker with no fit squad at its point takes one free
+                // squad from anywhere (`build_heavy` first, then nearest).
+                let pick = pick.or_else(|| {
+                    if k != WorkKind::Bunker || s.rules.ai.obstacles.bunker_assign == 0 {
+                        return None;
+                    }
+                    mine.iter()
+                        .filter(|m| {
+                            !taken.contains(&m.id)
+                                && !out.contains(&m.id)
+                                && self.can_take(m, fort, site, known, kv)
+                        })
+                        .min_by_key(|m| {
+                            let d = &s.forts[fort as usize];
+                            (
+                                self.ai.forts.contains_key(&m.id),
+                                heavy_by_field(d, m.caps),
+                                (m.lead - site).length_sq_raw(),
+                                m.id,
+                            )
+                        })
+                });
                 let Some(m) = pick else { continue };
                 let id = m.id;
                 let site = mid_of(s.forts[fort as usize].shape, &line);
@@ -2495,10 +2620,13 @@ impl super::Planner<'_> {
             return 5;
         }
         let d = &s.forts[b as usize];
-        let free: Vec<&Mine> = assigned
+        // Build E: with `bunker_assign` every free squad is a candidate.
+        let any = s.rules.ai.obstacles.bunker_assign != 0;
+        let free: Vec<&Mine> = mine
             .iter()
-            .filter(|&&(_, pi)| pi == i)
-            .map(|&(j, _)| &mine[j])
+            .enumerate()
+            .filter(|&(j, _)| any || assigned.iter().any(|&(a, pi)| a == j && pi == i))
+            .map(|(_, m)| m)
             .filter(|m| !taken.contains(&m.id) && !out.contains(&m.id))
             .collect();
         if free.is_empty() {
@@ -2519,7 +2647,7 @@ impl super::Planner<'_> {
         let carry: Vec<&&&Mine> = fit
             .iter()
             .filter(|m| {
-                self.full_carry_g(m.id) >= need || self.truck_free() || self.at_hand(m.id, d, site)
+                self.full_carry_g(m.id) >= need || self.truck_for(b) || self.at_hand(m.id, d, site)
             })
             .collect();
         if carry.is_empty() {
@@ -2570,11 +2698,17 @@ impl super::Planner<'_> {
 
     /// S10b-ai: an S10b job of squad `id` ends (L1-L3): a failure writes
     /// its refusal at the job's site middle; `jobs_overdue` counts a job
-    /// alive over 900 s (one plan of slack).
+    /// alive over 900 s (a log barrier job: [`OVERDUE_BARRIER_S`]; one
+    /// plan of slack).
     fn s10b_end(&mut self, job: &AiFortJob, failed: bool) {
         let s = &self.g.setup;
         let hz = s.tick_hz.max(1) as u64;
-        if self.tick.saturating_sub(job.start) > OVERDUE_S * hz + self.plan_ticks() {
+        let overdue = if fort_of(s, WorkKind::LogBarrier) == Some(job.fort) {
+            OVERDUE_BARRIER_S
+        } else {
+            OVERDUE_S
+        };
+        if self.tick.saturating_sub(job.start) > overdue * hz + self.plan_ticks() {
             self.ai.counters.jobs_overdue += 1;
         }
         if failed {
@@ -2778,7 +2912,7 @@ impl super::Planner<'_> {
             // Fix F14: a step the squad cannot carry (and no truck can
             // bring) ends the job instead of a load or a walk.
             if self.full_carry_g(id) < d.materials_g
-                && !self.truck_free()
+                && !self.truck_for(job.fort)
                 && !self.at_hand(id, d, mid_of(d.shape, &job.line))
             {
                 set(job, FortPhase::Done);
@@ -2800,7 +2934,7 @@ impl super::Planner<'_> {
                     return;
                 }
                 set(job, FortPhase::Go);
-            } else if carried > 0 || self.truck_free() {
+            } else if carried > 0 || self.truck_for(job.fort) {
                 set(job, FortPhase::Go);
             } else {
                 // Walk back to base for materials.

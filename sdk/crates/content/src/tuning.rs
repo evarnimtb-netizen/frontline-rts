@@ -1811,7 +1811,25 @@ tuning_table! {
         refused_m: 0..=500,
         /// One vehicle approach search per point within this (s).
         recheck_s: 1..=600,
+        /// S10b-ai Build E switch: a wanted bunker with no fit squad at its
+        /// point takes one free `build_heavy` (else `build_structure`)
+        /// squad from anywhere.
+        bunker_assign: 0..=1 = "d_obst_one",
+        /// S10b-ai Build E switch: once per bunker job, the run for its
+        /// heavy step may take a truck from tank service.
+        bunker_truck_first: 0..=1 = "d_obst_one",
+        /// S10b-ai Build E: the L1 deadline of a log barrier job (s; every
+        /// other job keeps `job_max_s`).
+        barrier_job_max_s: 1..=36000 = "d_obst_barrier_job_max_s",
     }
+}
+
+fn d_obst_one() -> u32 {
+    1
+}
+
+fn d_obst_barrier_job_max_s() -> u32 {
+    1200
 }
 
 impl AiObstacleTuning {
@@ -1853,6 +1871,9 @@ impl Default for AiObstacleTuning {
             refused_s: 300,
             refused_m: 20,
             recheck_s: 60,
+            bunker_assign: d_obst_one(),
+            bunker_truck_first: d_obst_one(),
+            barrier_job_max_s: d_obst_barrier_job_max_s(),
         }
     }
 }

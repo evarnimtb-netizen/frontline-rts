@@ -1487,6 +1487,9 @@ job_max_s = 900              # s: every S10b job ends after this long (L1)
 refused_s = 300              # s: a refused goal is not ordered again within this ... (L4)
 refused_m = 20               # m: ... within this distance (L4)
 recheck_s = 60               # s: one vehicle approach search per point within this (R2)
+bunker_assign = 1            # switch: a wanted bunker with no fit squad at its point takes one free build_heavy (else build_structure) squad
+bunker_truck_first = 1       # switch: once per bunker job, its heavy step's material run may take a truck from tank service
+barrier_job_max_s = 1200     # s: the L1 deadline of a log barrier job (every other job keeps job_max_s)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

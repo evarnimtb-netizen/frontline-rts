@@ -510,7 +510,7 @@ impl super::Planner<'_> {
     }
 
     /// The end of a service: counted when the tank gained rounds.
-    fn end_serve(&mut self, job: &mut AiTruck, gone: bool) {
+    pub(super) fn end_serve(&mut self, job: &mut AiTruck, gone: bool) {
         if let Some(c) = job.client.take()
             && !gone
             && let Some(cs) = self.g.vehicles.get(&c)
