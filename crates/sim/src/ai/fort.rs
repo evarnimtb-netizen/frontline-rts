@@ -1640,7 +1640,8 @@ impl super::Planner<'_> {
             .sum();
         // S10b-ai R8: S10b works draw on their own budget (0 with its
         // switches off, so S10a's is as before).
-        let s10b = self.s10b_used_g() * per_t;
+        // Saturating: a loaded `mines_laid` is not bounded (finding 3).
+        let s10b = self.s10b_used_g().saturating_mul(per_t);
         let spent =
             (g.fort.accounts[self.me.0 as usize].materials_micro + pending).saturating_sub(s10b);
         let pl = &g.players[self.me.0 as usize];
@@ -1685,29 +1686,32 @@ impl super::Planner<'_> {
             .accounts
             .get(me.0 as usize)
             .map_or(0, |a| a.mines_laid as u64);
-        used += laid.saturating_sub(standing) * cheapest;
-        used += fs
-            .works
-            .values()
-            .filter(|w| w.owner == me && s.forts.get(w.fort as usize).is_some_and(s10b_fort))
-            .map(|w| w.got_g as u64)
-            .sum::<u64>();
+        // Saturating: a loaded `mines_laid` is not bounded.
+        used = used.saturating_add(laid.saturating_sub(standing).saturating_mul(cheapest));
+        used = used.saturating_add(
+            fs.works
+                .values()
+                .filter(|w| w.owner == me && s.forts.get(w.fort as usize).is_some_and(s10b_fort))
+                .map(|w| w.got_g as u64)
+                .sum::<u64>(),
+        );
         for (sq, j) in &self.ai.forts {
             if j.parked() || !s.forts.get(j.fort as usize).is_some_and(s10b_fort) {
                 continue;
             }
-            used += self.carried_g(*sq) as u64;
-            used += self
-                .ai
-                .pending
-                .iter()
-                .filter_map(|c| match c.kind {
-                    CommandKind::LoadMaterials { squad, kg } if squad == *sq => {
-                        Some(kg as u64 * 1000)
-                    }
-                    _ => None,
-                })
-                .sum::<u64>();
+            used = used.saturating_add(self.carried_g(*sq) as u64);
+            used = used.saturating_add(
+                self.ai
+                    .pending
+                    .iter()
+                    .filter_map(|c| match c.kind {
+                        CommandKind::LoadMaterials { squad, kg } if squad == *sq => {
+                            Some(kg as u64 * 1000)
+                        }
+                        _ => None,
+                    })
+                    .sum::<u64>(),
+            );
         }
         used
     }
@@ -1727,7 +1731,7 @@ impl super::Planner<'_> {
         let income = s.rules.start_manpower as u64 + s.rules.income_per_min as u64 * minutes;
         let budget =
             income * s.rules.ai.obstacles.materials_max_pct as u64 / 100 * crate::supply::MICRO;
-        let spent = self.s10b_used_g() * per_t;
+        let spent = self.s10b_used_g().saturating_mul(per_t);
         let pending: u64 = self
             .ai
             .pending

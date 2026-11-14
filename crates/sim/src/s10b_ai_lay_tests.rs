@@ -651,3 +651,24 @@ fn ai_at_field_lays_a_staggered_second_row() {
         "control: at_rows 1 keeps one row"
     );
 }
+
+/// Review finding 3: the S10b budget saturates instead of overflowing
+/// with a crafted `mines_laid` (`u32::MAX`), an in-range 10 t minefield
+/// and `construction_mp_per_t` 100000 (4e21 > u64::MAX). Control:
+/// `s10b_used_g`'s `laid * cheapest` and the budget's `* per_t` back to
+/// plain `*` -> "attempt to multiply with overflow" (overflow checks on).
+#[test]
+fn ai_s10b_budget_saturates_on_a_huge_mines_laid() {
+    let (mut w, _) = held(|s| {
+        for f in s.forts.iter_mut().filter(|f| f.mine_item.is_some()) {
+            f.materials_g = 10_000_000;
+        }
+        s.rules.fortify.as_mut().unwrap().construction_mp_per_t = 100_000;
+    });
+    w.edit_fort(|f| f.accounts[1].mines_laid = u32::MAX);
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    squad_at(&mut w, ENG, base, 0);
+    play(&mut w, 30);
+    let fs = w.game().unwrap().fort();
+    assert_eq!(fs.accounts[1].materials_loaded_g, 0, "no room left");
+}
