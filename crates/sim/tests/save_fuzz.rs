@@ -170,6 +170,61 @@ fn holds(w: &World) -> Vec<&'static str> {
         }),
         "ai_demolish_charge",
     );
+    // S10b-ai review 4: the states the staged save adds for the fuzz.
+    use frontline_sim::ai::{DemolishPhase, SweepPhase};
+    let ai_any = |pred: &dyn Fn(&frontline_sim::ai::AiState) -> bool| {
+        (0..2u8).any(|p| g.ai(PlayerId(p)).is_some_and(pred))
+    };
+    put(
+        ai_any(&|ai| ai.sweeps.values().any(|j| j.phase == SweepPhase::Done)),
+        "ai_sweep_done",
+    );
+    put(
+        ai_any(&|ai| ai.sweeps.keys().any(|sq| !g.squads().contains_key(sq))),
+        "ai_sweep_gone",
+    );
+    put(
+        ai_any(&|ai| {
+            ai.demolitions
+                .values()
+                .any(|j| j.phase == DemolishPhase::Repath)
+        }),
+        "ai_demolish_repath",
+    );
+    put(
+        ai_any(&|ai| {
+            ai.demolitions
+                .values()
+                .any(|j| !g.squads().values().any(|q| q.members.contains(&j.vehicle)))
+        }),
+        "ai_demolish_wrecked",
+    );
+    put(
+        ai_any(&|ai| {
+            ai.forts.values().any(|a| {
+                ai.forts
+                    .values()
+                    .filter(|b| b.fort == a.fort && b.point == a.point)
+                    .count()
+                    >= 2
+                    && g.setup().forts[a.fort as usize].mine_item.is_some_and(|i| {
+                        g.setup().items[i as usize]
+                            .mine
+                            .as_ref()
+                            .is_some_and(|m| m.trigger == 1)
+                    })
+            })
+        }),
+        "ai_at_row2",
+    );
+    put(
+        ai_any(&|ai| ai.refused.len() == frontline_sim::ai::MAX_REFUSED),
+        "ai_refused_full",
+    );
+    put(
+        f.blasts.len() == frontline_sim::fort::MAX_BLASTS,
+        "blasts_full",
+    );
     put(f.carried_g.values().any(|g| *g > 0), "carried");
     put(v.values().any(|v| v.material_g > 0), "truck_material");
     put(v.values().any(|v| v.served.is_some()), "served_gun");
@@ -1013,6 +1068,102 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
     }));
+    // S10b-ai review 4: a finished sweep (Done), a demolition re-pathing
+    // its vehicle after a piece went down, the AT field's second row as its
+    // own job (AtRow2: a second AT job on point 0, 6 m nearer the point),
+    // the refusals at their cap of 32 (every kind; the next one evicts) and
+    // the blasts at theirs (the next one drops the oldest).
+    let spawn = |w: &mut World, ty: u16, x: i32, y: i32| {
+        w.spawn_squad_at(PlayerId(0), ty, c(x, y), east).unwrap()
+    };
+    let done_sq = spawn(w, eng, 280, 320);
+    let gone_sq = spawn(w, eng, 280, 340);
+    let rep_sq = spawn(w, eng, 380, 360);
+    let wreck_sq = spawn(w, eng, 380, 380);
+    let rep_tank = spawn(w, tank, 360, 360);
+    let wreck_tank = spawn(w, tank, 360, 380);
+    let row2_sq = spawn(w, eng, 560, 395);
+    let first = |w: &World, q: SquadId| w.game().unwrap().squads()[&q].members[0];
+    let (rep_v, wreck_v) = (first(w, rep_tank), first(w, wreck_tank));
+    assert!(w.with_ai_state(0, |ai| {
+        let lane = |y: i32, phase| AiSweep {
+            point: 0,
+            a: c(280, y),
+            b: c(320, y),
+            start: tick,
+            since: tick,
+            phase,
+            tries: 1,
+        };
+        ai.sweeps.insert(done_sq, lane(320, SweepPhase::Done));
+        ai.sweeps.insert(gone_sq, lane(340, SweepPhase::Sweep));
+        ai.demolitions.insert(
+            rep_sq,
+            AiDemolish {
+                vehicle: rep_v,
+                pieces: [Some(before), None, None],
+                done: 1,
+                start: tick,
+                since: tick,
+                phase: DemolishPhase::Repath,
+            },
+        );
+        ai.demolitions.insert(
+            wreck_sq,
+            AiDemolish {
+                vehicle: wreck_v,
+                pieces: [Some(piece), None, None],
+                done: 0,
+                start: tick,
+                since: tick,
+                phase: DemolishPhase::Go,
+            },
+        );
+        ai.forts.insert(
+            row2_sq,
+            AiFortJob {
+                fort: at,
+                point: 0,
+                line: vec![c(560, 404), c(600, 404)],
+                phase: FortPhase::Go,
+                start: tick,
+                since: tick,
+                work: None,
+                tries: 0,
+            },
+        );
+        let kinds = [
+            JobKind::Fort,
+            JobKind::Sweep,
+            JobKind::Demolish,
+            JobKind::TruckGoal,
+        ];
+        let mut k = 0;
+        while ai.refused.len() < frontline_sim::ai::MAX_REFUSED {
+            ai.refuse(kinds[k % 4], c(100 + 10 * k as i32, 150), tick);
+            k += 1;
+        }
+    }));
+    w.edit_fort(|f| {
+        let mut k = 0;
+        while f.blasts.len() < frontline_sim::fort::MAX_BLASTS {
+            f.blasts.insert(
+                0,
+                MineBlast {
+                    pos: c(650 + k, 650),
+                    owner: PlayerId(1),
+                    tick,
+                },
+            );
+            k += 1;
+        }
+    });
+    // Just before the save: the second sweeper squad is wiped out and the
+    // second demolition's tank wrecked (the next plan drops both jobs).
+    for m in w.game().unwrap().squads()[&gone_sq].members.clone() {
+        assert!(w.kill_soldier(m));
+    }
+    assert!(w.wreck_vehicle(wreck_v));
 }
 
 /// Blueprint `id`'s index.
@@ -1054,7 +1205,14 @@ fn staged_s10b_save_holds_its_state() {
     let ai = g.ai(frontline_sim::PlayerId(0)).unwrap();
     assert!(!ai.sweeps.is_empty() && !ai.demolitions.is_empty());
     assert!(ai.demolitions.values().any(|d| d.done == 1));
-    assert_eq!(ai.refused.len(), 2);
+    assert_eq!((ai.sweeps.len(), ai.demolitions.len()), (3, 3));
+    assert_eq!(ai.refused.len(), frontline_sim::ai::MAX_REFUSED);
+    for k in [
+        frontline_sim::ai::JobKind::Sweep,
+        frontline_sim::ai::JobKind::Demolish,
+    ] {
+        assert!(ai.refused.iter().any(|r| r.kind == k), "{k:?} refused");
+    }
     assert_eq!(ai.blocked_pairs.len(), 1, "a stuck pair (Build D)");
     let ap_fort = g
         .setup()
@@ -1075,8 +1233,10 @@ fn staged_s10b_save_holds_its_state() {
 /// C chunk 1. `+ a Bunker job in Watch with its pit dug`, Build C chunk 3.
 /// `+ an AiSweep in Watch mid-lane with one mine lifted`, Build D chunk 2.
 /// `+ an AiDemolish with one piece done and a charge burning`, Build D
-/// chunk 4.
-const STAGED_MUST_HOLD: [&str; 8] = [
+/// chunk 4. `+ a Done sweep, a sweep of a wiped-out squad, a Repath
+/// demolition, a demolition of a wrecked tank, an AtRow2 job, refusals and
+/// blasts at their caps of 32`, S10b-ai review 4.
+const STAGED_MUST_HOLD: [&str; 15] = [
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
@@ -1085,6 +1245,13 @@ const STAGED_MUST_HOLD: [&str; 8] = [
     "ai_bunker_watch",
     "ai_sweep_watch",
     "ai_demolish_charge",
+    "ai_sweep_done",
+    "ai_sweep_gone",
+    "ai_demolish_repath",
+    "ai_demolish_wrecked",
+    "ai_at_row2",
+    "ai_refused_full",
+    "blasts_full",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never
