@@ -343,6 +343,9 @@ pub struct DemolishControl {
     pub gap_opened_pct: Option<f64>,
     /// Must be 0 (the ring is closed).
     pub tank_passed_pct: Option<f64>,
+    /// Mean pieces demolished per run (0: nothing demolished; T114g's
+    /// control, review finding 10).
+    pub pieces_used: Option<f64>,
 }
 
 /// T106b, T114e/f: the AI blows a tank gap in an enemy obstacle line.
@@ -1466,7 +1469,7 @@ fn demolish_row_with(
     satchels: Option<u8>,
 ) -> Result<DemolishRow> {
     let (mut opened, mut passed, mut used, mut blocked, mut runs) = (0u32, 0u32, 0u32, 0u32, 0u32);
-    let (mut c_opened, mut c_passed) = (0u32, 0u32);
+    let (mut c_opened, mut c_passed, mut c_used) = (0u32, 0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
             let (o, pa, u, b) = demolish_once(args, seed, p, 1, satchels)?;
@@ -1477,6 +1480,7 @@ fn demolish_row_with(
             let c = demolish_once(args, seed, p, 0, satchels)?;
             c_opened += c.0 as u32;
             c_passed += c.1 as u32;
+            c_used += c.2;
             runs += 1;
         }
     }
@@ -1488,6 +1492,7 @@ fn demolish_row_with(
         control: DemolishControl {
             gap_opened_pct: pct(c_opened, runs),
             tank_passed_pct: pct(c_passed, runs),
+            pieces_used: (runs > 0).then(|| c_used as f64 / runs as f64),
         },
     })
 }

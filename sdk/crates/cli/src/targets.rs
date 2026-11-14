@@ -26,6 +26,8 @@
 //! exposure is under `exposure_min` is `UNEXPOSED` (fails the run, never a
 //! hard miss); a hard row whose control also lies inside its bounds is
 //! `CONTROL-SAME` (fails). Report rows print exposure and control only.
+//! A control or exposure key the played run lacks prints `CONTROL-MISSING`
+//! / `EXPOSURE-MISSING` and fails, report rows too (a JSON null does not).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -168,6 +170,10 @@ pub enum Verdict {
     Unexposed,
     /// A hard row whose control also lies inside its bounds: fails.
     ControlSame,
+    /// A played run without the control or exposure key (a typo, or a
+    /// number the run does not write): fails, report rows too (review
+    /// finding 10; a JSON null is not missing).
+    KeyMissing,
 }
 
 /// One printed line's data.
@@ -288,17 +294,28 @@ pub fn evaluate(t: &TargetSpec, docs: &BTreeMap<String, Value>) -> Line {
     let inside = |x: f64| t.min.is_none_or(|m| x >= m) && t.max.is_none_or(|m| x <= m);
     let ok = inside(x);
     // Row honesty: exposure and control beside the value.
-    let read = |m: &str| -> Option<Option<f64>> {
+    // None: run not played; Some(Err): the key names no number (fix 10);
+    // Some(Ok(None)): a JSON null.
+    let read = |m: &str| -> Option<Result<Option<f64>, ()>> {
         let (run, path) = m.split_once('.').unwrap_or((m, ""));
         let doc = docs.get(run)?;
-        Some(json_out::lookup(doc, path).and_then(Value::as_f64))
+        Some(match json_out::lookup(doc, path) {
+            Some(Value::Null) => Ok(None),
+            Some(v) => v.as_f64().map(Some).ok_or(()),
+            None => Err(()),
+        })
     };
     let mut extra = String::new();
     let mut unexposed = false;
+    let mut missing = None;
     if let (Some(e), Some(min)) = (&t.exposure, t.exposure_min) {
         match read(e) {
             None => extra += &format!("; exposure {e} - (not played)"),
-            Some(v) => {
+            Some(Err(())) => {
+                missing = Some("EXPOSURE-MISSING");
+                extra += &format!("; exposure {e} no such number");
+            }
+            Some(Ok(v)) => {
                 unexposed = v.is_none_or(|v| v < min);
                 extra += &format!(
                     "; exposure {} (min {})",
@@ -312,13 +329,18 @@ pub fn evaluate(t: &TargetSpec, docs: &BTreeMap<String, Value>) -> Line {
     if let Some(c) = &t.control {
         match read(c) {
             None => extra += &format!("; control {c} - (not played)"),
-            Some(v) => {
+            Some(Err(())) => {
+                missing = Some("CONTROL-MISSING");
+                extra += &format!("; control {c} no such number");
+            }
+            Some(Ok(v)) => {
                 same = v.is_some_and(inside);
                 extra += &format!("; control {}", v.map_or("null".into(), num));
             }
         }
     }
     let (tag, verdict) = match (ok, hard) {
+        _ if missing.is_some() => (missing.unwrap_or_default(), Verdict::KeyMissing),
         _ if hard && unexposed => ("UNEXPOSED", Verdict::Unexposed),
         (true, true) if same => ("CONTROL-SAME", Verdict::ControlSame),
         (true, _) => ("PASS", Verdict::Pass),
@@ -358,10 +380,17 @@ pub fn tally(lines: &[Line]) -> (String, usize) {
     if same > 0 {
         s += &format!(", {same} control-same");
     }
+    let missing = lines
+        .iter()
+        .filter(|l| l.verdict == Verdict::KeyMissing)
+        .count();
+    if missing > 0 {
+        s += &format!(", {missing} key-missing");
+    }
     if skip > 0 {
         s += &format!(", {skip} skipped");
     }
-    (s, hard + unexposed + same)
+    (s, hard + unexposed + same + missing)
 }
 
 fn play(name: &str, r: &RunSpec, args: &TargetsArgs) -> Result<Value> {
@@ -648,6 +677,30 @@ mod tests {
         let (last, fails) = tally(&l);
         assert_eq!(last, "1 pass, 0 miss (hard: 0), 1 control-same");
         assert_eq!(fails, 1);
+    }
+
+    /// Review finding 10: a control or exposure key that names no number in
+    /// a played run is an error line (CONTROL-MISSING / EXPOSURE-MISSING)
+    /// that fails the run, report rows too. A JSON null stays "null".
+    /// Failing control: the old lookup printed "control null" and passed.
+    #[test]
+    fn a_missing_control_or_exposure_key_fails() {
+        let f = parse(THREE).unwrap();
+        let mut d = three_docs(60, 0.0);
+        d.insert("off".into(), json!({"mines_pc": 0.0}));
+        let l: Vec<Line> = f.targets.iter().map(|t| evaluate(t, &d)).collect();
+        for x in &l {
+            assert_eq!(x.verdict, Verdict::KeyMissing, "{}", x.text);
+            assert!(x.text.contains("CONTROL-MISSING"), "{}", x.text);
+        }
+        let (last, fails) = tally(&l);
+        assert_eq!(last, "0 pass, 0 miss (hard: 0), 2 key-missing");
+        assert_eq!(fails, 2);
+        let mut d = three_docs(60, 0.0);
+        d.insert("on".into(), json!({"mines_pct": 70.0}));
+        let l = evaluate(&f.targets[0], &d);
+        assert_eq!(l.verdict, Verdict::KeyMissing, "{}", l.text);
+        assert!(l.text.contains("EXPOSURE-MISSING"), "{}", l.text);
     }
 
     /// Control: the old parse accepts a T109+ row without its parts.
