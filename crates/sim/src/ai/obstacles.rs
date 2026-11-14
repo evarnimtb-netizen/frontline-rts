@@ -273,6 +273,9 @@ impl AiState {
                     && vehicle(j.vehicle)
                     && j.pieces.iter().flatten().all(|&p| p < g.fort.next_piece)
                     && j.done as usize <= MAX_DEMOLISH_PIECES
+                    // Charge waits on the piece at `done` (`run_demolish`).
+                    && (j.phase != DemolishPhase::Charge
+                        || j.pieces.get(j.done as usize).is_some_and(|p| p.is_some()))
                     && j.start <= j.since
                     && j.since <= tick
             })

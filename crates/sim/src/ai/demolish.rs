@@ -479,7 +479,11 @@ impl super::Planner<'_> {
                 None
             }
             DemolishPhase::Charge => {
-                let piece = job.pieces[job.done as usize]?;
+                // A Charge always has its piece at `done` (Go moves on only
+                // after `next_piece`); one without (a crafted save) ends.
+                let Some(piece) = job.pieces.get(job.done as usize).copied().flatten() else {
+                    return Some(DemolishEnd::Failed);
+                };
                 // L2: a walk of `demolish_near_m`, the placing and the fuse.
                 let step = o.demolish_near_m as u64 / speed + place;
                 if tick > job.since + (step * STALL_X + STALL_SLACK_S) * hz {

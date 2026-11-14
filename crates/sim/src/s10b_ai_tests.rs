@@ -95,7 +95,7 @@ fn ai_busy() -> (World, Busy) {
             demo,
             AiDemolish {
                 vehicle,
-                pieces: [Some(piece), None, None],
+                pieces: [Some(piece), Some(piece), None],
                 done: 1,
                 start: tick - 2,
                 since: tick,
@@ -177,8 +177,11 @@ fn s10b_ai_layout_roundtrips_and_hashes() {
         Box::new(|s| ai_of(s).sweeps.values_mut().next().unwrap().tries += 1),
         Box::new(|s| ai_of(s).sweeps.values_mut().next().unwrap().phase = SweepPhase::Go),
         Box::new(|s| ai_of(s).sweeps.values_mut().next().unwrap().start -= 1),
-        Box::new(|s| ai_of(s).demolitions.values_mut().next().unwrap().done = 2),
-        Box::new(|s| ai_of(s).demolitions.values_mut().next().unwrap().pieces[1] = Some(0)),
+        Box::new(|s| ai_of(s).demolitions.values_mut().next().unwrap().done = 0),
+        Box::new(|s| {
+            let j = ai_of(s).demolitions.values_mut().next().unwrap();
+            j.pieces[2] = j.pieces[0];
+        }),
         Box::new(|s| ai_of(s).refused[0].failed -= 1),
         Box::new(|s| ai_of(s).suspects_seen += 1),
         Box::new(|s| ai_of(s).forts.values_mut().next().unwrap().start -= 1),
@@ -328,6 +331,20 @@ fn load_rejects_bad_s10b_ai_state() {
         (
             "demolition done over 3",
             Box::new(|s| ai_of(s).demolitions.values_mut().next().unwrap().done = 4),
+        ),
+        // Charge: a piece at `done` (review finding 2: `run_demolish`
+        // indexed `pieces[done]`).
+        (
+            "demolition in Charge with done 3",
+            Box::new(|s| {
+                let j = ai_of(s).demolitions.values_mut().next().unwrap();
+                j.pieces = [j.pieces[0]; 3];
+                j.done = 3;
+            }),
+        ),
+        (
+            "demolition in Charge with no piece at done",
+            Box::new(|s| ai_of(s).demolitions.values_mut().next().unwrap().done = 2),
         ),
         // `start <= since <= tick`.
         (
@@ -1085,5 +1102,33 @@ fn saves_load_between_a_job_squads_loss_and_the_next_plan() {
             "sweeper wiped out" => assert!(!ai.sweeps.contains_key(&b.sweep), "{what}"),
             _ => assert!(!ai.demolitions.contains_key(&b.demo), "{what}"),
         }
+    }
+}
+
+/// Review finding 2: a demolition in Charge without a piece at `done`
+/// (none listed there, or `done` 3) ends at the next plan instead of
+/// idling until L1 or panicking on `pieces[3]`. Control: `run_demolish`'s
+/// Charge back to `job.pieces[job.done as usize]?` -> the first case keeps
+/// its job, the second panics (index out of bounds).
+#[test]
+fn demolition_in_charge_without_a_piece_ends() {
+    for done in [2u8, 3] {
+        let (mut w, b) = ai_busy();
+        assert!(w.with_ai_state(1, |ai| {
+            let j = ai.demolitions.get_mut(&b.demo).unwrap();
+            if done == 3 {
+                j.pieces = [j.pieces[0]; 3];
+            }
+            j.done = done;
+        }));
+        let s = w.match_setup().unwrap();
+        let d = s.rules.difficulty.get(s.players[1].difficulty);
+        let plan = d.replan_ticks.max(1) as u64;
+        steps(&mut w, 2 * plan + 2);
+        let ai = w.game().unwrap().ai[1].as_ref().unwrap();
+        assert!(
+            !ai.demolitions.contains_key(&b.demo),
+            "done {done}: job kept"
+        );
     }
 }
