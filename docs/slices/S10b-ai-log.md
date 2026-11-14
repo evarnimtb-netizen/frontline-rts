@@ -5,30 +5,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Next: Build E item 5 (`at_rows`), STOP POINT 2; then chunk 3.** SAVE 25, PROTOCOL 14. Stage D closed except its
-item 9 (= E item 7). E chunk 1 `16854a6`; item 3 `9b85671`, `9cb8fc1`, `610ceda` (drives_out green).
-**Item 4 done (`6125125`).** Keys `lane_file` (0/1, 1) and `at_rows` (1..=2, 2, read nowhere yet) are in
-`sdk/crates/content/src/tuning.rs`, `mods/ww2/defs/rules/skirmish.toml`; key count 35; `resolved_defs.rs` BASELINE and
-the canonical snapshot re-blessed (no further content change needed for item 5). Code `crates/sim/src/ai/sweep.rs`:
-`lane_file_on`, `Planner::file_lane(p)` (the point's Done sweep entry), `Planner::lane_file(squad, lane)` (stateless:
-men by id; in the lane -> `b` + `FILE_PAST_M` 5 on the centre line; first waiting man -> `a` once no man is under
-`FILE_GAP_M` 3 m in; others queue behind `a`; only squads with a man within `FILE_NEAR_M` 30 of `a`; per-man
-`MoveUnits`), `drive_lane_file`; `AiHabit::LaneFile` (`ai/obstacles.rs`); `ai.rs` attack branch: `files[i]` after
-`holds`, `regather` forces the squad order once all are past. No counter (AiCounters is saved). Test
-`s10b_ai_sweep_tests::ai_attackers_file_through_swept_lane` (control `lane_file` 0: spread > 1.5 m, seen).
-Sweep row (seeds 1-3): attacker_mine_losses **0.0**, control sweep 0: 5.5, control `lane_file` 0: 2.67;
-exposure lane_swept 100 %, lane_filed 100 % (control 0 %). lib `s10b` 99/99; quick 72b2970 all ok, 802 passed.
-**Item 5 plan:** the AT field is one `Fortify` line (`ai/fort.rs` `at_site_search` ~516); mines fall every
-`segment` (4 m) of arc length (`fort.rs` `stand_segment`), the first at arc 4 m. Two rows as ONE polyline
-[p0, p1, q, q0]: q = p1 + d*s + along*(5s/12) (d = path direction toward the point, s = step), q0 = p0 + d*s +
-along*(s/2): total length (2n+1)s, so row 2 lands half a step shifted (the connector mine sits ~0.5 m off its slot).
-Catch: `at_minefield` max_length 40 m -> rows of 16 m (4 + 5 mines) instead of one 40 m row. Alternative: a
-second job for row 2 (`field_wants`/`field_has` treat any AT mine near the point as the field: needs a row-2 want).
-Pick one; "lacks mines": one row when `under_limit` or `materials_room_g` cannot cover 2n+1 segments. Row
-`s10b_ai.mines` (`mines_once` ~571): tank lateral offset per seed not a multiple of 4 m, tank_stopped_pct, control 1.
-Then chunk 3 (ablations incl. lane_file/at_rows, all_off, loose, tuning.md, stage check, TODO incl. E3).
-**Open:** E1 (waiting bunker job holds the S10b slot); bunker 12 % (target 15 %); US bunker pit Dig stalled 342 s in
-the obstacle row; E3 (one satchel per engineer card; demolish row 0/0 with card satchels).
+**Next: Build E chunk 3 (items 6-8, STOP POINT 3, stage check).** SAVE 25, PROTOCOL 14. Items 1-5 done (STOP POINT 2
+reached): E chunk 1 `16854a6`; item 3 `610ceda`; item 4 `6125125`; item 5 `127a5a5` (sim), `d48c5db` (row).
+**Item 5 (S10b-ai-B2a, `at_rows` 2):** the second AT row is a SEPARATE job (orchestrator decision (a)), no layout
+change: `WorkKind::AtRow2` (same blueprint as `AtField`, `switched_on` needs `at_rows >= 2`) in `crates/sim/src/ai/
+fort.rs`: `Planner::at_row2_site` (row 1's line + one `segment` toward the point + half a step along),
+`at_row1_laid` (an own AT mine near the point, no own AT work there, no running AT job of the point),
+`at_row2_has` (own AT mine within step/2 of the row-2 line, or a work/job middle within 3/4 step),
+`at_row2_wanted` (recheck plan only; `under_limit` and `room_for` (the S10b budget, not `materials_room_g`: S10b
+works draw on their own) must cover the whole row, else one row), pushed by `field_wants` after the
+`fields_per_point` cut. Test `s10b_ai_lay_tests::ai_at_field_lays_a_staggered_second_row` (control `at_rows` 1:
+"a staggered second row: 0 of 10 mines", seen). lib `s10b` 100/100; quick 72b2970 all ok, 803 passed.
+Row `s10b_ai.mines` (`sdk/crates/cli/src/fortify/s10b_ai.rs` `mines_once(.., rows)`, probe `mines_row_one_off`,
+seeds 1-5): tank offset -5.5..+6.5 m per seed; tank_stopped_pct **100**, control `rows1` (at_rows 1) **100**, control
+mines 0: 0; exposure two_rows_pct 100, tank_reached_field_pct 100, field_laid 100, laid_s 192. Row 1 alone already
+stops every tank: vehicles drive the 4 m path grid and row 1 is shifted by the track half-gauge so a mine lies
+under a track on every grid lane; the second row's gain is not measurable on the flat map's grid lanes.
+**Chunk 3 to do:** item 6 ablations (`lane_file_off`, `at_rows_off` = 1, plus earlier E keys `bunker_assign`,
+`bunker_truck_first`, `barrier_job_max_s`; `all_off.toml` turns them off), `docs/modding/tuning.md` rows; item 7
+stage check (fortify10 targets, default 40 and all-off 40 with neutral.py same 40/40); item 8 `docs/TODO.md`
+(B2a, C1, D1, D2, D3 decided 2026-11-14; open: rows key for players, wire debris; orchestrator (c): add S10b-ai-E1
+(bunker takes the single S10b slot, DE mine matches 45 % -> 22 %; (A) bunker first, (B) waiting bunker yields the
+slot, (C) bunker_truck_first off); E3 per orchestrator (b): try a satchel hand-over to a second free engineer squad
+within ~10 turns with a failing control, else keep E3 open in TODO (2 satchels on cards; hand-over; accept)).
+**Open:** E1, E3 as above; bunker 12 % (target 15 %); US bunker pit Dig stalled 342 s in the obstacle row.
 
 ## Plan (2026-11-12)
 
