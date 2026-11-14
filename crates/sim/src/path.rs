@@ -848,7 +848,7 @@ mod tests {
     fn layer(t: &Heightfield, walls: &[crate::vehicle::Footprint]) -> BlockLayer {
         let mut b = BlockLayer::new(t.dim(), 19);
         b.mark_all();
-        b.update(t, &[], walls, &VCOSTS);
+        b.update(t, &[], walls, &[], &VCOSTS);
         b
     }
 
@@ -999,7 +999,7 @@ mod tests {
         );
         let mut b = BlockLayer::new(t.dim(), 19);
         b.mark_all();
-        b.update(&t, &[line.to_vec()], &[], &VCOSTS);
+        b.update(&t, &[line.to_vec()], &[], &[], &VCOSTS);
         let mid = crate::vehicle::node_at(&t, FxVec2::from_int(130, 128));
         assert!(b.is_ditch(mid) && b.is_blocked(mid));
         let mut s = PathScratch::default();

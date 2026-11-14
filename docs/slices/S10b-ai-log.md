@@ -5,30 +5,30 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Next: Build E chunk 2 (stage file `S10b-ai-build-E.md` items 3-5: tank gap pad, `lane_file`, `at_rows`), STOP POINT 2.**
-SAVE 25, PROTOCOL 14. Stage D is closed (its item 9 is E item 7). **E chunk 1 done** (`16854a6`, log commit after it):
-`[ai.obstacles]` keys (`tuning.rs` `AiObstacleTuning`, serde defaults `d_obst_one`, `d_obst_barrier_job_max_s`; setup
-baseline and canonical snapshot re-blessed): `bunker_assign` 1 (`ai/fort.rs` `point_starts`: a Bunker want with no pick
-at its point picks any free squad, `can_take`, key (parked, `heavy_by_field`, distance, id); `bunker_block` then counts
-over all free squads), `bunker_truck_first` 1 (`truck_for(f)` lets a bunker step count a live truck job as supply;
-`truck_divert` in `material_truck`: a Follow/Serve truck goes Return to base when the bunker work Waits, no truck is in
-Load/Return, room for the run; once per job = not after the step's `got_g` exceeds the builder's full carry; no new saved
-state), `barrier_job_max_s` 1200 (`job_max_s(s, fort)` L1; `OVERDUE_BARRIER_S` 1200 for `jobs_overdue`).
-Tests (controls seen failing): `ai_bunker_assigns_a_free_builder`, `ai_bunker_takes_a_truck_from_service` (bunker tests),
-`barrier_job_deadline_is_its_own` (obst tests); LIVENESS rows carry a 3rd field (barrier row on `barrier_job_max_s`).
-**Numbers.** Obstacle row (seeds 1-3, one-off): barrier_built_pct 100.0, pieces 5.0; control `job900_*` 0.0 / 4.0
-(row now sets `bunker` 0: the US engineers spent 360 s on a bunker pit that never dug, then refused). Default 40 set
-`target/s10b-e1-on40`: Germany 21/40; bunker Germany 12 % of chance matches (3 built / 26 chance; 3 of 40 matches),
-USA 0 % (0/18): **target 15 % not met**. Remaining `bunker_why` (Germany/USA): point_not_ready 7469/7928, no_builder
-7045/7067, no_point 2591/3936, builders_max 1857/926, s10b_room 691/591, no_carry 167/146 (no_squad gone). Ends Germany
-deadline 1, dropped 1, failed 2, done 3; USA deadline 2, dropped 3. Controls: `bunker_assign` 0 (`s10b-e1-assign0`)
-Germany 2/14, no_squad 1630; `bunker_truck_first` 0 (`s10b-e1-truck0`) Germany 1/5, no_carry 461. **Side effect:**
-Germany mines-in-matches 45 % (d9) -> 22 % with both keys (assign only 42 %, truck only 28 %): bunker jobs that count a
-busy truck as supply start more and hold the one S10b job slot (`jobs_max` 1) waiting; owner question E1 (below).
-All-off 40 set `target/s10b-e1-off40`: same 40/40 vs `target/s10b-base40`.
-**Open:** E1 (owner): may a waiting bunker job hold the S10b slot at the cost of mines, or should the slot pass on while
-it waits? Seen, not fixed: in the obstacle row the engineers' bunker pit Dig step made no progress for 342 s (work 0,
-passes 0); may end real bunker jobs too. `count_own_blocked` still misses Holding vehicles. Failing tests: none.
+**Next: Build E chunk 2 continued (item 3 unfinished; then items 4, 5), STOP POINT 2.** SAVE 25, PROTOCOL 14.
+E chunk 1 done (`16854a6`): `[ai.obstacles]` `bunker_assign`, `bunker_truck_first`, `barrier_job_max_s` (see git log).
+**E chunk 2, item 3 started (WIP commit, 8 tests red).** New piece rule in `crates/sim/src/vehicle.rs`: `piece_half(f)`
+= the piece box's half extents, each at least `SPACING_M`/2 (2 m), no `wreck_pad_m`; `BlockLayer::update` takes
+`pieces: &[Footprint]` apart from `wrecks` and sets `blocked` on nodes inside that box directly (tracked and wheeled
+layer alike, no dilation; `margin` still dilates `blocked`); `update_block` passes `sync_piece_blocks()` as pieces;
+`mark_piece_block` marks `piece_half`'s diagonal. `fort.rs` `obstacle_on_vehicle` uses the same box, no dilation.
+Wrecks keep raw + `wreck_pad_m` + dilation. Geometry: a 4 m row closes the grid at any offset; 2 pieces gone (12 m
+between centres) leaves 1-2 free node columns (not yet tested; a tank's track samples must stay within 2 m of the
+free column). `obstacle_waits_until_no_vehicle_is_on_its_nodes` moved to 5.3 m with `vehicle_clear_m` 0 (passes).
+**Red after the rule (fix or rewrite each):** `s10b_tests::vehicle_on_obstacle_nodes_drives_out` (hedgehog moved to
+(505.0, 501.6); the PzIV no longer backs out: moved 1.2 m in 60 s; look at the R15 `escape` rule in `drive`);
+`s10b_ai_obst_tests::ai_counts_own_blocked` and `own_blocked_counts_once_across_save_load` (the M4 now reaches its
+goal beside the one-piece barrier and the AI re-tasks it; the test geometry needs the tank stopped short);
+`s10b_ai_tests::ai_jobs_end_and_never_reorder_a_refused_goal` (Demolish row: "the unreachable goal was never given
+up"); all five `s10b_ai_demolish_tests` (6 m ring `STEP_M` no longer closed: switch to a 4 m ring, 2 pieces to open).
+Still to do for item 3: tests "intact 4 m row stops every vehicle (tracked, wheeled; also diagonal)", "2 adjacent
+gone -> a medium tank passes", log barrier and wreck pad still block, "path served => tank drives it" (the fault of
+`7e692e3`); fortify row `s10b_ai.demolish` in `sdk/crates/cli/src/fortify/s10b_ai.rs` back to cards' satchels and a
+4 m ring/row: report gap_opened_pct, tank_passed_pct; all-off 40 set same 40/40 vs `target/s10b-base40`.
+Items 4 (`lane_file`, sweep row attacker_mine_losses, control 0) and 5 (`at_rows`, mines row lateral offset per
+seed, control 1) not started. Chunk 3 as in the stage file.
+**Open from chunk 1:** owner question E1 (waiting bunker job holds the S10b slot: Germany mines 45 % -> 22 %); bunker 12 %
+(target 15 % not met); US bunker pit Dig stalled 342 s in the obstacle row; `count_own_blocked` misses Holding vehicles.
 
 ## Plan (2026-11-12)
 

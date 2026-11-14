@@ -1388,14 +1388,19 @@ fn move_squad(w: &mut World, p: u8, squad: SquadId, to: FxVec2) {
     super::s6_tests::run(w, p, 3, CommandKind::Move { squad, target: to });
 }
 
-/// S10b review R15: a hedgehog ordered 9.3 m from a tank's hull centre (R18
-/// passes) does not stand while its padded, dilated nodes cover a track
+/// S10b review R15: a hedgehog ordered 5.3 m from a tank's hull centre (R18
+/// passes with `vehicle_clear_m` 0; S10b-ai E3: a piece's nodes reach only
+/// half a grid step past it) does not stand while its nodes cover a track
 /// sample; once the tank has driven off it stands. Control: drop the
 /// `obstacle_on_vehicle` wait in `fort_tick` -> the hedgehog stands at
 /// once and the tank is `on_blocked`.
 #[test]
 fn obstacle_waits_until_no_vehicle_is_on_its_nodes() {
-    let mut w = flat(|_| {});
+    let mut w = flat(|s| {
+        if let Some(f) = s.rules.fortify.as_mut() {
+            f.vehicle_clear_m = 0;
+        }
+    });
     let f = fort(w.match_setup().unwrap(), "ww2:hedgehog");
     let (tank, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
     let eng = spawn(&mut w, 0, "ww2:ger_baupioniergruppe", 520, 520);
@@ -1403,7 +1408,7 @@ fn obstacle_waits_until_no_vehicle_is_on_its_nodes() {
         s.carried_g.insert(eng, 100_000);
     });
     w.step(&[]);
-    fortify(&mut w, 0, eng, f, vec![dm(5066, 5066), dm(5076, 5066)]);
+    fortify(&mut w, 0, eng, f, vec![dm(5050, 5016), dm(5060, 5016)]);
     assert_eq!(fs(&w).works.len(), 1, "{:?}", refused(&w));
     for _ in 0..400 * HZ {
         w.step(&[]);
@@ -1444,7 +1449,7 @@ fn vehicle_on_obstacle_nodes_drives_out() {
     let f = fort(w.match_setup().unwrap(), "ww2:hedgehog");
     let (tank, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
     w.step(&[]);
-    assert!(w.build_now(f, &[dm(5066, 5066), dm(5076, 5066)], PlayerId(0)));
+    assert!(w.build_now(f, &[dm(5050, 5016), dm(5060, 5016)], PlayerId(0)));
     super::s6_tests::steps(&mut w, 2);
     assert!(w.game().unwrap().vehicles[&v].on_blocked, "the stand-in");
     let start = pos(&w, v);
@@ -1462,9 +1467,9 @@ fn vehicle_on_obstacle_nodes_drives_out() {
     let mut w = flat(|_| {});
     let (tank, v) = tank_at(&mut w, 0, "ww2:ger_pz4_h_squad", 500, 500);
     w.step(&[]);
-    assert!(w.build_now(f, &[dm(5066, 5066), dm(5076, 5066)], PlayerId(0)));
+    assert!(w.build_now(f, &[dm(5050, 5016), dm(5060, 5016)], PlayerId(0)));
     super::s6_tests::steps(&mut w, 2);
-    let hh = dm(5066, 5066);
+    let hh = dm(5050, 5016);
     let d0 = (pos(&w, v) - hh).length();
     move_squad(&mut w, 0, tank, c(530, 530));
     for _ in 0..30 * HZ {

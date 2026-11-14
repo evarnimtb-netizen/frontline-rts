@@ -1310,6 +1310,15 @@ pub struct BlockLayer {
     any_dug: bool,
 }
 
+/// S10b-ai E3: the half extents (along, across) of the box around an
+/// obstacle piece whose grid nodes it blocks: its own, at least half a grid
+/// step (so a row or line of pieces closes the grid whatever its offset),
+/// no pad. Path layer and movement read the same nodes.
+pub(crate) fn piece_half(f: &Footprint) -> (Fx, Fx) {
+    let min = Fx::from_int(SPACING_M).div_int(2);
+    (f.half_x.max(min), f.half_y.max(min))
+}
+
 /// A wreck's (or S10b obstacle piece's) footprint for the block layer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Footprint {
@@ -1456,13 +1465,17 @@ impl BlockLayer {
     }
 
     /// Recomputes the marked rectangles from the terrain, the AT-ditch
-    /// lines and the wreck footprints.
+    /// lines, the wreck footprints and the S10b obstacle pieces.
     /// `path` gives the ditch reach and wreck pad (`[vehicles.path]`).
+    /// S10b-ai E3: a piece blocks the nodes within [`piece_half`] of it
+    /// directly, without the wreck pad or the dilation, so a tank fits a
+    /// gap of two pieces in a 4 m row (12 m between standing centres).
     pub(crate) fn update(
         &mut self,
         terrain: &Heightfield,
         ditches: &[Vec<FxVec2>],
         wrecks: &[Footprint],
+        pieces: &[Footprint],
         path: &VehiclePathTuning,
     ) {
         if self.pending.is_empty() {
@@ -1497,6 +1510,14 @@ impl BlockLayer {
             }
         }
         let max = dim - 1;
+        let piece_at = |gx: u32, gy: u32| {
+            let p = FxVec2::from_int(gx as i32 * SPACING_M, gy as i32 * SPACING_M);
+            pieces.iter().any(|w| {
+                let (hx, hy) = piece_half(w);
+                let d = p - w.center;
+                d.dot(w.fwd).abs() <= hx && d.det(w.fwd).abs() <= hy
+            })
+        };
         // Two dilations: raw → blocked (rect + 1) → margin (rect + 2).
         let dilate = |from: &[bool], gx: u32, gy: u32| {
             (gy.saturating_sub(1)..=(gy + 1).min(max)).any(|ny| {
@@ -1517,7 +1538,7 @@ impl BlockLayer {
                                 self.raw[k]
                             } else {
                                 dilate(&self.raw, gx, gy)
-                            };
+                            } || (!pieces.is_empty() && piece_at(gx, gy));
                         } else {
                             self.margin[k] = dilate(&self.blocked, gx, gy);
                         }
@@ -2115,8 +2136,8 @@ impl MatchState {
     /// S10b R16: marks both block layers around obstacle footprint `f`
     /// (a `blocks_vehicles` piece added or removed).
     pub(crate) fn mark_piece_block(&mut self, f: &Footprint) {
-        let pad = Fx::from_int(self.setup.rules.vehicles.path.wreck_pad_m as i32);
-        let r = FxVec2::new(f.half_x, f.half_y).length() + pad;
+        let (hx, hy) = piece_half(f);
+        let r = FxVec2::new(hx, hy).length();
         let rv = FxVec2::new(r, r);
         self.vderived.block.mark_rect(f.center - rv, f.center + rv);
         if let Some(w) = &mut self.vderived.wheel_block {
@@ -2173,20 +2194,30 @@ impl MatchState {
         if let Some(w) = &mut self.vderived.wheel_block {
             w.mark_tiles(tiles);
         }
-        let mut wrecks = self.wreck_footprints(ents);
-        // S10b R16: obstacle pieces after the wrecks (ascending piece id).
-        wrecks.extend(self.sync_piece_blocks());
+        let wrecks = self.wreck_footprints(ents);
+        // S10b R16: obstacle pieces (ascending piece id), their own rule.
+        let pieces = self.sync_piece_blocks();
         let MatchState {
             setup,
             vderived,
             at_ditches,
             ..
         } = self;
-        vderived
-            .block
-            .update(terrain, at_ditches, &wrecks, &setup.rules.vehicles.path);
+        vderived.block.update(
+            terrain,
+            at_ditches,
+            &wrecks,
+            &pieces,
+            &setup.rules.vehicles.path,
+        );
         if let Some(w) = &mut vderived.wheel_block {
-            w.update(terrain, at_ditches, &wrecks, &setup.rules.vehicles.path);
+            w.update(
+                terrain,
+                at_ditches,
+                &wrecks,
+                &pieces,
+                &setup.rules.vehicles.path,
+            );
         }
     }
 
@@ -3118,7 +3149,7 @@ mod tests {
         };
         r.block.mark_all();
         r.block
-            .update(&r.terrain, &[], &[wreck], &r.s.rules.vehicles.path);
+            .update(&r.terrain, &[], &[wreck], &[], &r.s.rules.vehicles.path);
         assert!(r.block.blocked_at(&r.terrain, FxVec2::from_int(130, 100)));
         // Full throttle into it for 10 s: stops short (`drive` asserts no
         // sample is ever on a blocked node).
@@ -3138,7 +3169,7 @@ mod tests {
         };
         r.block.mark_all();
         r.block
-            .update(&r.terrain, &[], &[under], &r.s.rules.vehicles.path);
+            .update(&r.terrain, &[], &[under], &[], &r.s.rules.vehicles.path);
         let at = r.xy();
         let ctx_drive = |r: &mut Rig| {
             let ctx = DriveCtx {
@@ -3160,7 +3191,7 @@ mod tests {
         assert_eq!(r.xy(), at);
         r.block.mark_all();
         r.block
-            .update(&r.terrain, &[], &[], &r.s.rules.vehicles.path);
+            .update(&r.terrain, &[], &[], &[], &r.s.rules.vehicles.path);
         for _ in 0..30 {
             ctx_drive(&mut r);
         }
@@ -3356,13 +3387,14 @@ mod tests {
         }
         assert!(terrain.dug_dm(terrain.nearest_grid(FxVec2::from_int(72, 100)).0, 25) > 25);
         b.mark_all();
-        b.update(&terrain, &[], &[], &s.rules.vehicles.path);
+        b.update(&terrain, &[], &[], &[], &s.rules.vehicles.path);
         assert_eq!(b.blocked_count(), 0);
         // As a ditch line it blocks, dilated by a node, with a clearance band.
         b.mark_all();
         b.update(
             &terrain,
             std::slice::from_ref(&line),
+            &[],
             &[],
             &s.rules.vehicles.path,
         );
@@ -3372,10 +3404,10 @@ mod tests {
         assert!(!b.is_margin(at(76, 112)));
         // A rect update outside leaves it; one over it recomputes it.
         b.mark_rect(FxVec2::from_int(200, 200), FxVec2::from_int(210, 210));
-        b.update(&terrain, &[], &[], &s.rules.vehicles.path);
+        b.update(&terrain, &[], &[], &[], &s.rules.vehicles.path);
         assert!(b.is_blocked(at(76, 100)));
         b.mark_rect(FxVec2::from_int(70, 96), FxVec2::from_int(80, 104));
-        b.update(&terrain, &[], &[], &s.rules.vehicles.path);
+        b.update(&terrain, &[], &[], &[], &s.rules.vehicles.path);
         assert!(!b.is_blocked(at(76, 100)));
     }
 
