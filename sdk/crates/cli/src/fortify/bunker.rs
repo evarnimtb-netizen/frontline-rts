@@ -19,9 +19,9 @@
 //! * `roof_satchel_losses`: a satchel dropped 2 m above the roof's top.
 //! * `slit_satchel_losses_pct`: a real Demolish order (the other side's
 //!   field engineers, 15 m in front) clicked 20 cm outside the slit's
-//!   centre; the charge lies where Demolish lays it (the target piece's
-//!   outer face nearest the man, at terrain height; the roof and the front
-//!   walls tie there and the roof, the lower id, is chosen). The five wait
+//!   centre; the charge lies where Demolish lays it (the roof's outer face
+//!   point nearest the click, at terrain height: the man stands 1.5 m out
+//!   from it, S10b-ai review 17). The five wait
 //!   out of the fight until it is laid, the engineers are then moved off;
 //!   share of the five dead after the fuse + 2 s (review R7). `slit_satchel_
 //!   uphill_losses_pct`: the same with the bunker facing up the slope;
@@ -440,6 +440,14 @@ mod tests {
         // Review R7. Control: drop the Demolish command in
         // `slit_demolish_run` -> no charge is laid and this fails.
         assert_eq!(r.slit_charge_laid_pct, Some(100.0), "every Demolish laid");
+        // S10b-ai review 17 (T107d). Control: the stand spot from the box
+        // point nearest the man (the old `order_demolish`) -> the charge lies
+        // at the roof corner and this reads 0.
+        assert!(
+            r.slit_satchel_losses_pct.unwrap() >= 40.0,
+            "slit satchel losses {:?}",
+            r.slit_satchel_losses_pct
+        );
         // Review R6. Control: aim the volleys 30 m off the bunker (or never
         // place the MG team) -> the controls read 0 and these fail, while
         // the bunker's own 0s above would still pass.

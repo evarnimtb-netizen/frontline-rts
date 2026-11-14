@@ -6,7 +6,9 @@
 //!   box lies nearest `at` (2D, ascending id on ties) within
 //!   `demolish_reach_m`; the man is the living member nearest it who
 //!   carries an item of kind `satchel` (ascending `SimId` on ties). He
-//!   walks detached (as for a Bangalore) to 1.5 m from the box.
+//!   walks detached (as for a Bangalore) to 1.5 m from the box: out from
+//!   the box point nearest `at` when `at` lies outside the box, else out
+//!   from the box point nearest him.
 //! * **Placing**: within 2 m of the box he adds 100 points per tick (x0.3
 //!   suppressed, 0 pinned) toward `demolish_place_s x 100 x hz`; then one
 //!   satchel leaves his kit and a `Charge { from = to = the box point
@@ -148,9 +150,18 @@ impl MatchState {
             return self.refuse_fort(p, Some(squad), FortRefusal::NotAllowed);
         };
         let here = ctx.ents.transform[man.index()].pos.xy();
-        let spot = ctx
-            .terrain
-            .clamp(self.demolish_spot(piece, here).expect("standing"));
+        // A click outside the box: he stands 1.5 m out from the box point
+        // nearest the click (so a charge clicked at a bunker slit is laid
+        // at the slit, review 17); a click on the box: out from the box
+        // point nearest him.
+        let pt = self.piece_point(piece, at).expect("standing");
+        let out = (at - pt).normalize_or_zero();
+        let spot = if out != FxVec2::ZERO {
+            pt + out * STAND
+        } else {
+            self.demolish_spot(piece, here).expect("standing")
+        };
+        let spot = ctx.terrain.clamp(spot);
         self.clear_detached(ctx, squad);
         let facing = (centre - spot).normalize_or_zero();
         self.detach(ctx, man, UnitOrder::Move { target: spot }, facing);

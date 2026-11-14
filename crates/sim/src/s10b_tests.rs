@@ -2108,6 +2108,44 @@ fn satchel_at_slit_reaches_men_inside() {
     assert_eq!(slit_satchel(1, true), (0, 0), "control: no slit, no losses");
 }
 
+/// Review 17 (S10b-ai): a Demolish clicked just outside a bunker's slit,
+/// the engineers off to one side, lays its charge in the slit (|y| under
+/// the slit's 40 cm half-width), not at the box corner nearest the man.
+/// Control: the man's stand spot taken from the box point nearest him (the
+/// old `order_demolish`) -> the charge lies at the roof corner (y 1.85 m
+/// off the slit's centre; seen).
+#[test]
+fn demolish_clicked_at_slit_lays_charge_in_slit() {
+    let mut w = bunker_world(1, |_| {});
+    let (_, men) = bunker_at(&mut w, true);
+    // The five wait far off (else they and the engineers fight).
+    for (k, &m) in men.iter().enumerate() {
+        w.place_soldier(m, c(900 + k as i32, 900));
+    }
+    let eng = spawn(&mut w, 1, "ww2:usa_engineer_squad", 515, 507);
+    let click = FxVec2::new(Fx::from_int(502) + Fx::from_milli(300), Fx::from_int(500));
+    demolish(&mut w, 1, eng, click);
+    assert!(
+        matches!(order_of(&w, eng), Order::Demolish { .. }),
+        "{:?}",
+        refused(&w)
+    );
+    until_laid(&mut w, 120).expect("charge laid");
+    let ch = fs(&w).charges[0].clone();
+    let off = (ch.from.y - Fx::from_int(500)).abs();
+    assert!(
+        off < Fx::from_milli(400),
+        "charge {:?}: {off:?} off the slit",
+        ch.from
+    );
+    let out = ch.from.x - Fx::from_int(500);
+    assert!(
+        out > Fx::from_milli(1700),
+        "charge {:?} on the front",
+        ch.from
+    );
+}
+
 #[test]
 fn ap_shots_break_the_roof_after_seven() {
     // PzGr 39 shots of player 1 into the roof's side (80 cm above the
