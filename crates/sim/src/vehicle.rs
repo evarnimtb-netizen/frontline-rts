@@ -1797,6 +1797,14 @@ pub struct DriveCtx<'a> {
     /// its track samples' mean does not come nearer the piece (it can turn
     /// and drive out, not on through).
     pub escape: Option<FxVec2>,
+    /// S10b-ai Build E (item 3): the nearest obstacle piece's centre within
+    /// reach. A tracked hull whose turning step is refused may then still
+    /// roll straight on if that takes its track samples' mean farther from
+    /// the piece and every track sample on a blocked node is on a piece-only
+    /// node (a hull wedged beside a piece, its tail on the edge of the
+    /// piece's node, drives clear before it turns). None with no pieces on
+    /// the map, so play without obstacles is unchanged.
+    pub piece_near: Option<FxVec2>,
 }
 
 /// Steps vehicle `id` one tick with the §5.12.3 inputs (see the module
@@ -1943,6 +1951,7 @@ pub fn drive(
     };
     let moving = step != FxVec2::ZERO;
     let turning = yaw1 != yaw0;
+    let speed0 = speed;
     let (mut xy1, mut yaw, mut speed) = (ctx.terrain.clamp(xy + step), yaw1, speed);
     let mut g = sample_ground(ctx.terrain, xy1, yaw, ctx.geo);
     if (moving || turning) && !ok(&g) {
@@ -1952,6 +1961,20 @@ pub fn drive(
         if wheeled || !(turning && ok(&g)) {
             yaw = yaw0;
             g = sample_ground(ctx.terrain, xy1, yaw, ctx.geo);
+            if let Some(c) = ctx.piece_near.filter(|_| moving && turning && !wheeled) {
+                let xy2 = ctx.terrain.clamp(xy + yaw_dir(yaw0) * speed0.div_int(hz));
+                let g2 = sample_ground(ctx.terrain, xy2, yaw0, ctx.geo);
+                let g0 = sample_ground(ctx.terrain, xy, yaw0, ctx.geo);
+                let piece_only = g2.xy.iter().flatten().all(|p| {
+                    let n = node_at(ctx.terrain, *p);
+                    !ctx.block.is_blocked(n) || ctx.block.is_piece(n)
+                });
+                let gp = ground_pose(&g2, ctx.geo);
+                let flat = !(grade_pct(gp.pitch) > m.max_slope_pct && gp.pitch.abs() > vs.pitch.abs());
+                if ok(&g2) || (piece_only && flat && away(&g2, c) > away(&g0, c)) {
+                    (xy1, speed, g) = (xy2, speed0, g2);
+                }
+            }
         }
     }
 
@@ -2476,19 +2499,16 @@ impl MatchState {
             let xy = ents.transform[i].pos.xy();
             let reach = geo.reach
                 + Fx::from_int(setup.rules.vehicles.path.wreck_pad_m as i32 + 3 * SPACING_M);
-            let escape = if vs.on_blocked {
-                vderived
-                    .piece_feet
-                    .iter()
-                    .filter(|(_, f)| {
-                        let r = reach + FxVec2::new(f.half_x, f.half_y).length();
-                        (f.center - xy).length_sq_raw() <= (r.raw().max(0) as u64).pow(2)
-                    })
-                    .min_by_key(|(id, f)| ((f.center - xy).length_sq_raw(), *id))
-                    .map(|(_, f)| f.center)
-            } else {
-                None
-            };
+            let near = vderived
+                .piece_feet
+                .iter()
+                .filter(|(_, f)| {
+                    let r = reach + FxVec2::new(f.half_x, f.half_y).length();
+                    (f.center - xy).length_sq_raw() <= (r.raw().max(0) as u64).pow(2)
+                })
+                .min_by_key(|(id, f)| ((f.center - xy).length_sq_raw(), *id))
+                .map(|(_, f)| f.center);
+            let escape = if vs.on_blocked { near } else { None };
             let ctx = DriveCtx {
                 terrain,
                 block: vderived.block_of(v),
@@ -2498,6 +2518,7 @@ impl MatchState {
                 hz,
                 seed,
                 escape,
+                piece_near: near,
             };
             let mut t = ents.transform[i];
             let mut vel = ents.velocity[i];
@@ -3074,6 +3095,7 @@ mod tests {
                     hz: 30,
                     seed: 7,
                     escape: None,
+                    piece_near: None,
                 };
                 drive(
                     &ctx,
@@ -3250,6 +3272,7 @@ mod tests {
                 hz: 30,
                 seed: 7,
                 escape: None,
+                piece_near: None,
             };
             drive(&ctx, SimId(3), &mut r.vs, &mut r.t, &mut r.vel, 127, 0);
         };

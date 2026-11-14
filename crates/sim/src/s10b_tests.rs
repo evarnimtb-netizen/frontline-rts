@@ -1443,6 +1443,9 @@ fn obstacle_waits_until_no_vehicle_is_on_its_nodes() {
 /// S10b review R15: a tank whose track samples lie on nodes a hedgehog
 /// blocks (stood beside it by the test tool) can drive out, but not on
 /// through the obstacle. Control: `escape` always false -> it never moves.
+/// S10b-ai E3: off the piece's node it may roll straight on away from the
+/// piece over the node's edge. Control: `piece_near` None -> wedged at yaw
+/// -2.48, 1.2 m in 60 s (seen).
 #[test]
 fn vehicle_on_obstacle_nodes_drives_out() {
     let mut w = flat(|_| {});
