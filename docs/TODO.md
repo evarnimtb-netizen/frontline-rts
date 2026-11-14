@@ -254,20 +254,29 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-6 Demolition for vehicles. (A) Only when an AI vehicle has no way round, at most 3 pieces per job, then give up
   and remember. (B) Never for vehicles (they only route round).
   S10b-ai-7 F8 truck fix. (A) On by default (`[ai.truck] refusal_memory` 1, measured in the 480). (B) Off until the balance pass.
-- S10b-ai build questions (log `docs/slices/S10b-ai-log.md`); the slice runs on (A):
-  S10b-ai-B2a AT field depth. One AI AT field is one 40 m row at the blueprint's 4 m step; a crossing tank rarely sets
-  one off (fortify 0/10, matches 0). (A) Keep the single row. (B) Two staggered rows per AT field.
-  S10b-ai-C1 AI barrier against the job deadline. The 20 m log barrier does not finish inside `job_max_s` 900 s (T112i
-  misses). (A) Keep 20 m and 900 s. (B) A 16 m AI barrier. (C) `job_max_s` 1200.
-  S10b-ai-D1 Bunker rare. The AI starts few bunker jobs in matches (no ready point, no free builder, 250 kg wait) and a
-  started one is often still in its 540 s step at match end: 0 bunkers in the default 40 set. (A) Leave as is (scarcity).
-  (B) Cheaper or faster AI bunker, or an earlier start.
-  S10b-ai-D2 Sweep lane losses. Attackers through a swept lane still lose men to missed mines (fortify 3.0 per run,
-  without sweeping 8.0; target "at most 1"). (A) Leave as is: a swept lane is not a sure lane (S10b detection roll).
-  (B) Two parallel lanes or `lane_half_cm` 300 for an attack. (C) Wait for a second pass where a mine was found.
-  S10b-ai-D3 Tank gap needs 24 m. The vehicle block layer (footprint + `wreck_pad_m` + clearance) frees a tank path only
-  about 24 m between standing piece centres, so 3 charges never open a 4 m hedgehog row (T114e/f). (A) Leave as is (L3
-  stops retries). (B) A later slice narrows the piece pad. (C) More satchels and a higher piece cap (layout, later).
+- S10b-ai build questions (log `docs/slices/S10b-ai-log.md`). Decided by the owner 2026-11-14, built in Build E
+  (`docs/slices/S10b-ai-build-E.md`):
+  S10b-ai-B2a AT field depth: DECIDED (B) two staggered rows. `[ai.obstacles] at_rows` 2: the second row is its own
+  job once row 1 is laid, one 4 m step toward the point and half a step along, only if the field limit and the S10b
+  budget pay for the whole row (else one row). On the flat map's 4 m grid lanes row 1 already stops every tank.
+  S10b-ai-C1 AI barrier against the job deadline: DECIDED (C) for the barrier only: `barrier_job_max_s` 1200, every
+  other job keeps `job_max_s` 900.
+  S10b-ai-D1 Bunker rare: DECIDED change it, prices kept: `bunker_assign` (a free build_heavy/build_structure squad is
+  sent to the point) and `bunker_truck_first` (one truck run per bunker job may leave tank service). Default 40 set:
+  Germany bunker in 12 % of matches, USA 0 % (report target 15 %).
+  S10b-ai-D2 Sweep lane losses: DECIDED single file: `lane_file` 1, attackers walk a swept lane on its centre line.
+  S10b-ai-D3 Tank gap: DECIDED (B) narrowed now: the obstacle piece's vehicle block pad lets a medium tank through a
+  4 m hedgehog row once 2 adjacent pieces are gone (12 m between standing centres); path layer and movement agree.
+- S10b-ai open owner questions (not built; the slice runs on (A)):
+  S10b-ai-E1 Bunker and the single S10b job slot. The bunker job now takes the one S10b job slot for long (pit, 250 kg
+  step, build), and Germany's matches with mines fell from 45 % to 22 % (default 40 set). (A) Bunker first (as built).
+  (B) A bunker waiting for a truck yields the slot to a mine or obstacle job. (C) `bunker_truck_first` off.
+  S10b-ai-E3 One satchel per engineer squad. A hedgehog gap needs 2 pieces, an AI demolition squad carries 1 satchel,
+  so the AI job gives up after the first piece. (A) Accept (as built). (B) 2 satchels on the engineer cards (card
+  change). (C) The job hands the next piece to a second free engineer squad that still has a satchel.
+  S10b-ai-E4 Mine rows for the player: a key (not the wheel, which is camera zoom) to choose 1-3 rows while placing a
+  minefield (may need a protocol bump).
+  S10b-ai-E5 Wire debris: demolished wire leaves debris that slows walking.
 - S10b open notes (not numbered): F8 from S10a-ai (an S8b truck re-orders an
   unreachable HQ goal about every 5 min) is planned in S10b-ai Build D (L5, switch `refusal_memory`; droppable). Bunker notes from Build E: MG fire from 150 m does not hit men
   in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
