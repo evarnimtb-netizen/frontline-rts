@@ -234,6 +234,9 @@ fn ai_sweep_ends_when_lane_clear() {
 /// `MAX_SWEEPS`-style cap off is not a key; the control is the plan with
 /// the swept entry dropped at once (`suspect_s` 1 with the blast fresh
 /// each minute): a second sweep of the same lane then starts (seen).
+/// Review finding 19: a blast later than the sweep reopens the lane, so
+/// the run's blast is fresh only until the first sweep ends; the control
+/// keeps it fresh every 30 s.
 #[test]
 fn ai_two_sweepers_never_share_lane() {
     for control in [false, true] {
@@ -250,7 +253,7 @@ fn ai_two_sweepers_never_share_lane() {
         args.others.push(eng2);
         let mut most = 0;
         for k in 0..240 * hz {
-            if k % (30 * hz) == 0 {
+            if k % (30 * hz) == 0 && (control || ai.counters.sweeps_done == 0) {
                 blast(&mut w, a.short(70), 0);
             }
             w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Sweep, &args);
@@ -536,6 +539,52 @@ fn ai_lane_file_has_a_time_bound() {
             assert_eq!(end, None, "control: filing");
         } else {
             assert_eq!(end, Some(HabitEnd::Done), "bound: the squad stops filing");
+        }
+    }
+}
+
+/// Review finding 19: a swept (Done) lane is checked again. After the
+/// sweep, (a) a new enemy blast inside the lane, (b) an enemy mine laid
+/// and known inside it, (c) a new blast 10 m beside it each drop the Done
+/// entry and start a second sweep (the attackers hold again, no single
+/// file through the lane). Control (d): a blast inside the lane older than
+/// the sweep's end -> the Done entry stays, no second sweep. Failing
+/// control: the pre-fix code keeps the Done entry in (a)-(c) (seen).
+#[test]
+fn ai_swept_lane_is_checked_again() {
+    for case in 0..4 {
+        let (mut w, mut ai, args, eng, la, lb) = swept_lane(|_| {});
+        let hz = w.match_setup().unwrap().tick_hz as u64;
+        let d = (lb - la).normalize_or_zero();
+        let mid = la + d * Fx::from_int(20);
+        let since = ai.sweeps[&eng].since;
+        let started = ai.counters.sweeps_started;
+        match case {
+            0 => blast(&mut w, mid, 0),
+            1 => {
+                let ap = fort_id(&w, "ww2:ap_minefield");
+                let mine = w.lay_mine_now(ap, mid, PlayerId(0)).unwrap();
+                w.edit_fort(|f| f.mines.get_mut(&mine).unwrap().known |= 0b10);
+            }
+            2 => blast(&mut w, mid + d.perp() * Fx::from_int(10), 0),
+            _ => {
+                let ago = w.state.tick - since + 1;
+                blast(&mut w, mid, ago)
+            }
+        }
+        for _ in 0..10 * hz {
+            w.drive_ai_habit(&mut ai, PlayerId(1), AiHabit::Sweep, &args);
+            if ai.counters.sweeps_started > started {
+                break;
+            }
+        }
+        let again = ai.counters.sweeps_started > started;
+        if case == 3 {
+            assert!(!again, "control: no second sweep");
+            assert_eq!(ai.sweeps[&eng].phase, SweepPhase::Done);
+        } else {
+            assert!(again, "case {case}: no second sweep: {:?}", ai.sweeps);
+            assert!(ai.sweeps.values().all(|j| j.phase != SweepPhase::Done));
         }
     }
 }

@@ -23,7 +23,9 @@
 //!   then 1 + the whole metres of its `along`, the L2 progress mark) ->
 //!   Done. A swept lane stays as a Done entry (its squad free) while the
 //!   point is attacked, up to `suspect_s`, so its suspects want no second
-//!   sweep.
+//!   sweep. A known enemy mine or an enemy blast later than the sweep
+//!   inside the lane drops it, and a blast later than the sweep is not
+//!   covered by it (review finding 19): a new sweep, the attackers hold.
 //! * **Ends.** The order gone with the lane clear of known enemy mines:
 //!   `sweeps_done`. The sweeper gone or under 60 %, the point no longer
 //!   attacked: the job ends (no refusal). The order refused or gone with
@@ -153,6 +155,17 @@ impl super::Planner<'_> {
             .any(|&p| near_segment(p, a, b, half))
     }
 
+    /// Review finding 19: an enemy mine blast inside the lane `a`-`b`
+    /// later than tick `since`.
+    fn lane_blast_since(&self, a: FxVec2, b: FxVec2, since: u64) -> bool {
+        let half = self.lane_half();
+        self.g
+            .fort
+            .blasts
+            .iter()
+            .any(|x| x.owner != self.me && x.tick > since && near_segment(x.pos, a, b, half))
+    }
+
     /// R10: the lane of point `p` attacked from `from`, if a suspect or a
     /// known enemy mine wants one (those inside a lane the point already
     /// has are left out). `fixed_b`: the hook's caller fixes the lane end.
@@ -173,11 +186,21 @@ impl super::Planner<'_> {
         if d == FxVec2::ZERO {
             return None;
         }
+        // A swept lane does not cover a blast later than its sweep
+        // (finding 19).
+        let newer = |q: FxVec2, since: u64| {
+            self.g
+                .fort
+                .blasts
+                .iter()
+                .any(|x| x.owner != self.me && x.pos == q && x.tick > since)
+        };
         let covered = |q: FxVec2| {
-            self.ai
-                .sweeps
-                .values()
-                .any(|j| j.point as usize == p && near_segment(q, j.a, j.b, near))
+            self.ai.sweeps.values().any(|j| {
+                j.point as usize == p
+                    && near_segment(q, j.a, j.b, near)
+                    && !(j.phase == SweepPhase::Done && newer(q, j.since))
+            })
         };
         let first = suspects
             .iter()
@@ -544,6 +567,8 @@ impl super::Planner<'_> {
                     || !sweep_on(&g.setup)
                     || !self.sweep_attacked(job.point)
                     || self.tick >= job.since + keep
+                    || self.lane_has_mine(job.a, job.b)
+                    || self.lane_blast_since(job.a, job.b, job.since)
                 {
                     self.ai.sweeps.remove(&id);
                 }
