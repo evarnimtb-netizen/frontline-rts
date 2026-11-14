@@ -43,22 +43,11 @@ two 40-match control runs (`skirmish40_off`, `skirmish40_loose`) in `measure.sh`
 Moved to later slices: own-mine avoidance (with S10b-1 (B)); per-man mine paths; chokepoint analysis; tank or
 mortar fire at obstacles and mines; presenter work. Owner questions S10b-ai-1..7 (spec 10).
 
-## Build A chunk 1 (2026-11-12, layout commit `0ae000f`)
+## Build A chunks 1-2 (2026-11-12, layout `0ae000f`, `30c6a34`, `252f9be`)
 
-Decided by default: `refused_near` / `drop_stale_refusals` take ticks (no hz in the helper); `MineBlast` list must be
-sorted by tick on load (added to spec 6); `AiDemolish::pieces` uses `MAX_DEMOLISH_PIECES` 3; the staged-save checks
-went into `staged_s10b_save_holds_its_state` (the seed-match `MUST_HOLD` cannot reach S10b-ai state before Build B);
-`fuzz_plan_reaches_s10b_state` asserts entries (`.sweeps.{}`, `.demolitions.{}`, `.refused.[]`, `.blasts.[]`), since
-the bare names also match the new counters (`sweeps_started`, `refused_reorders`). `ablate.sh` dry run failed once on a
-stale CLI binary (old code rejects `[ai.obstacles]`); green after the rebuild.
-
-## Build A chunk 2 (2026-11-12)
-
-Commits `30c6a34` (fields, targets tool, measure/ablate/pool, ablation files), `252f9be` (liveness harness).
-Decided by default: the three "chance" exposures come from AI state only (a nonzero fact-based chance would break
-`neutral.py`'s "new keys stay 0" on the defaults run); `s10b_materials_mp_pct` prices the grams S10b works draw at
-`construction_mp_per_t`; a null control is never CONTROL-SAME and a control run not played prints "(not played)"
-without failing; `ablate.sh` default set moved to S10b-ai (S10a via `ABLATIONS=`).
+Default decisions: refusal helpers take ticks; `MineBlast` sorted by tick on load; `MAX_DEMOLISH_PIECES` 3; staged
+checks in `staged_s10b_save_holds_its_state`; fuzz plan asserts entries (`.sweeps.{}` ...). The three "chance"
+exposures come from AI state only; `s10b_materials_mp_pct` prices S10b grams at `construction_mp_per_t`.
 
 ## Build A code map (short)
 
@@ -145,3 +134,16 @@ Ring, not the spec's line to the map edge (closed on any map); leader satchels 3
 the habit. Faults (1), (2) found with a scratch per-5 s trace. Chunk 6 (P, Q): scratch `sample` profile, per-10 s tank
 nav and `outcome()` trace. Chunk 7 (R, S): scratch per-1 s satchel-man nav trace (his Arriving goal jumped to cover).
 Controls seen failing: P flag ignored; Q usual drain; R the old Repath rule; S the pre-fix `unit.rs`. (No traces kept.)
+
+## Fix save (2026-11-14; review findings 1, 2, 3, 22, 24 fixed; 4 not done)
+
+Commits `97e8255` + `0e9d0bd` (1: `validate_s10b` as `validate_fort`: a key squad gone since the plan loads, the
+demolition vehicle is any entity no infantry squad holds), `1592e22` (2: Charge needs `pieces[done]` on load;
+`run_demolish` ends Failed without it), `00cf868` (3: S10b budget saturates), `d38d62c` (22: `demolish_piece`
+counts `own_pieces_demolished`; the satchel overpressure already spares own boxes), `c1f8332` (24: divert only when
+`waiting_work` is the bunker's and the new `run_kg` (shared with the Load branch) passes; no saved state). Each test
+seen failing first (24: 121 sends with the S10b budget at 0). `ai_busy`'s demolition lists a second piece.
+Not done: finding 4 (fuzz stage extension: Done sweep, Repath demolition, dead sweeper, wrecked tank, AtRow2 job,
+refused and blasts at 32); the new load cases are unit tests in `s10b_ai_tests.rs` only. Residual for 24: cargo
+loaded at base after arrival could still shrink the room (not seen). quick 72b2970 all ok (808 passed); all-off 40
+`target/s10b-fixsave-off40`: neutral.py vs `target/s10b-base40` same 40/40.
