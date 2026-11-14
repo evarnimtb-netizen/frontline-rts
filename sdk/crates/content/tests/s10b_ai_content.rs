@@ -52,12 +52,18 @@ fn ai_obstacle_tuning_parses_and_validates() {
         ),
         (1, 3, 900, 300, 20)
     );
-    assert_eq!(AiObstacleTuning::KEYS.len(), 30);
+    // Build E: `bunker_assign`, `bunker_truck_first` (switches, on) and
+    // `barrier_job_max_s` 1200.
+    assert_eq!(
+        (o.bunker_assign, o.bunker_truck_first, o.barrier_job_max_s),
+        (1, 1, 1200)
+    );
+    assert_eq!(AiObstacleTuning::KEYS.len(), 33);
     let tables = frontline_content::tuning::TABLES;
     assert!(
         tables
             .iter()
-            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 30)
+            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 33)
     );
     let f = s.rules.fortify.as_ref().unwrap();
     assert_eq!(
