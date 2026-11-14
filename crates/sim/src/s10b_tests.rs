@@ -1637,6 +1637,31 @@ fn demolish_lays_a_satchel_and_destroys_a_hedgehog() {
     assert_eq!(fs(&w).accounts[1].pieces_lost, 1);
 }
 
+/// Review finding 22 (S10b-ai spec 3): a demolition that takes down the
+/// demolisher's own piece counts `own_pieces_demolished`; an enemy piece
+/// does not. Control: the own-piece check in `demolish_piece` removed ->
+/// the own hedgehog reads 0 ("own piece counted").
+#[test]
+fn demolishing_an_own_piece_counts_own_pieces_demolished() {
+    for owner in [0u8, 1] {
+        let mut w = flat(|_| {});
+        let hh = hedgehogs(&mut w, 500, 500, 1, owner)[0];
+        let eng = spawn(&mut w, 0, "ww2:ger_engineer_squad", 470, 500);
+        demolish(&mut w, 0, eng, c(501, 501));
+        until_laid(&mut w, 120).expect("charge laid");
+        super::s6_tests::steps(&mut w, 10 * HZ + 2);
+        assert!(!fs(&w).pieces.contains_key(&hh), "owner {owner}: stands");
+        let a = &fs(&w).accounts[0];
+        assert_eq!(a.pieces_demolished, 1, "owner {owner}");
+        let own = u32::from(owner == 0);
+        assert_eq!(
+            a.own_pieces_demolished, own,
+            "owner {owner}: own piece counted"
+        );
+        assert_eq!(fs(&w).accounts[1].own_pieces_demolished, 0);
+    }
+}
+
 #[test]
 fn demolish_needs_capability_and_satchel() {
     // Control: give the grenadiers `demolish` -> `NotAllowed` (no satchel)

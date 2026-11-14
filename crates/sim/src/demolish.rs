@@ -294,7 +294,7 @@ impl MatchState {
 
     /// R20: the tamped damage a demolition charge of `player` does to
     /// piece `piece` (its static box `idx` this tick); a piece it removes
-    /// counts `pieces_demolished`.
+    /// counts `pieces_demolished`, an own one `own_pieces_demolished` too.
     pub(crate) fn demolish_piece(
         &mut self,
         idx: usize,
@@ -310,14 +310,19 @@ impl MatchState {
             .as_ref()
             .map_or(100, |t| t.demolish_pct);
         let dmg = (damage as u64 * pct as u64 / 100).min(u32::MAX as u64) as u32;
-        if !self.fort.pieces.contains_key(&piece) {
+        let Some(owner) = self.fort.pieces.get(&piece).map(|q| q.owner) else {
             return;
-        }
+        };
         self.hit_static(idx, dmg, Some(he), tick);
         if !self.fort.pieces.contains_key(&piece)
             && let Some(a) = self.fort.accounts.get_mut(he.0 as usize)
         {
             a.pieces_demolished = a.pieces_demolished.saturating_add(1);
+            // S10b-ai spec 3: an own piece (the satchel's overpressure
+            // spares own boxes, so only the tamped target can be one).
+            if owner.0 == he.0 {
+                a.own_pieces_demolished = a.own_pieces_demolished.saturating_add(1);
+            }
         }
     }
 }
