@@ -2,6 +2,14 @@
 //! "Demolish"): the AI blows enemy obstacles in its blocked tank's way
 //! until the tank's path goes through, and its demolition jobs end on
 //! every path.
+//!
+//! STAGED SATCHELS (review finding 13, owner question S10b-ai-E3): every
+//! test here built on [`blocked`] gives the engineer leader 3 satchels. The
+//! engineer cards carry 1, and a 4 m ring opens only after 2 adjacent
+//! pieces, so in a match an AI demolition opens one piece, the second
+//! Demolish is refused and the job fails (fortify `s10b_ai.demolish`:
+//! `pieces_used` 1, `gap_opened_pct` 0). These tests check the job logic
+//! with enough satchels, not what a card squad can do.
 
 use super::s6_tests::{run, spawn, steps};
 use super::s10b_ai_sweep_tests::{Attack, attack_world};
@@ -21,8 +29,8 @@ const STEP_M: i32 = 4;
 
 /// A blocked tank: AI player 1's M4 150 m short of the point, inside a
 /// closed ring of player 0 hedgehogs, ordered 90 m on toward the point (it
-/// stops at the ring: no way round). AI engineers (leader with 3 satchels)
-/// 40 m aside. `edit` runs last on the setup.
+/// stops at the ring: no way round). AI engineers (leader STAGED with 3
+/// satchels; the card has 1, see the module docs) 40 m aside. `edit` runs last on the setup.
 pub(crate) struct Blocked {
     pub w: World,
     pub a: Attack,
