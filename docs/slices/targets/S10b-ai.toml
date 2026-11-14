@@ -2420,6 +2420,15 @@ min = 90
 exposure = "fortify10.s10b_ai.mines.builder_alive_pct"
 exposure_min = 80
 control = "fortify10.s10b_ai.mines.control.field_laid_pct"
+[[target]]
+id = "T110k"
+metric = "fortify10.s10b_ai.mines.tank_stopped_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.mines.two_rows_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.mines.rows1.tank_stopped_pct"
+note = "at_rows 2 vs 1, report only (review finding 7): the tank paths on the 4 m grid and the AT mine step is 4 m, so row 1 alone stops it on every lane (100 = 100); an honest crossing off the lattice (straight scripted drive or a diagonal approach) is not built"
 
 # --- T111: the AI sweeps known or suspected mines on its attack lines (R9, R10)
 [[target]]
