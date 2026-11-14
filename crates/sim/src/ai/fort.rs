@@ -1845,7 +1845,8 @@ impl super::Planner<'_> {
     /// service (Follow or Serve) is sent back to base for the bunker's
     /// material run while the bunker work waits for kg its builder cannot
     /// carry, no truck is in or on its way to base (Load, Return) and the
-    /// truck has room for the run. Once per job: not after anyone but the
+    /// run would start (the bunker's work is `waiting_work`'s, `run_kg`
+    /// holds: truck room and S10b budget). Once per job: not after anyone but the
     /// builder brought kg to the step (its drawn kg over the builder's
     /// full carry). In base it takes the run as a loading truck does, then
     /// goes back to loading and its service (`end_run`).
@@ -1866,32 +1867,20 @@ impl super::Planner<'_> {
             return false;
         };
         let me = self.me;
-        let waiting = self.ai.forts.iter().any(|(sq, j)| {
-            j.fort == b
-                && j.work
-                    .and_then(|id| g.fort.works.get(&id))
-                    .is_some_and(|w| {
-                        w.owner == me
-                            && w.builder == *sq
-                            && w.step == WorkStep::Wait
-                            && self.carried_g(*sq) == 0
-                            && w.got_g <= self.full_carry_g(*sq)
-                    })
-        });
-        if !waiting {
+        // The bunker's work must be the one a loading truck would serve
+        // (`waiting_work`) with its builder's kg alone drawn (once per job),
+        // and the run must start there (`run_kg`, the Load branch's test):
+        // a truck sent back that starts no run would be sent again at every
+        // plan (review finding 24).
+        let Some(wid) = self.waiting_work() else {
             return false;
-        }
-        let vs = &g.vehicles[&t.id];
-        let v = &s.vehicles[vs.type_idx as usize];
-        let cap = v.supply.as_ref().map_or(0, |x| x.cap_g as u64);
-        let held = vs.cargo_g.iter().map(|&x| x as u64).sum::<u64>() + vs.material_g as u64;
-        let run_kg = s
-            .rules
-            .ai
+        };
+        let bunker_waits = g
             .fort
-            .truck_material_kg
-            .min(s.forts[b as usize].materials_g.div_ceil(1000));
-        if cap.saturating_sub(held) + (vs.material_g as u64) < run_kg as u64 * 1000 {
+            .works
+            .get(&wid)
+            .is_some_and(|w| w.fort == b && w.got_g <= self.full_carry_g(w.builder));
+        if !bunker_waits || self.run_kg(t, wid).is_none() {
             return false;
         }
         if job.phase == TruckPhase::Serve {
@@ -1989,22 +1978,9 @@ impl super::Planner<'_> {
         let Some(wid) = self.waiting_work() else {
             return false;
         };
-        let v = &s.vehicles[vs.type_idx as usize];
-        let cap = v.supply.as_ref().map_or(0, |x| x.cap_g as u64);
-        let held = vs.cargo_g.iter().map(|&x| x as u64).sum::<u64>() + vs.material_g as u64;
-        let room = cap.saturating_sub(held).min(u32::MAX as u64) as u32;
-        // Fix F18: kg still aboard from an earlier run count.
-        let have_kg = vs.material_g / 1000;
-        // S10b-ai Build D: an S10b work's run draws on the S10b budget (R8).
-        let wf = g.fort.works[&wid].fort;
-        let kg = (f.truck_material_kg.saturating_sub(have_kg) * 1000)
-            .min(room)
-            .min(self.room_for(wf))
-            / 1000;
-        let need_kg = s.forts[wf as usize].materials_g.div_ceil(1000);
-        if have_kg + kg == 0 || have_kg + kg < need_kg.min(f.truck_material_kg) {
+        let Some(kg) = self.run_kg(t, wid) else {
             return false;
-        }
+        };
         if kg > 0 {
             self.ai.emit(
                 self.due,
@@ -2018,6 +1994,29 @@ impl super::Planner<'_> {
         job.since = tick;
         self.ai.counters.material_runs[0] += 1;
         true
+    }
+
+    /// The kg truck `t` loads for a run to work `wid` now, or `None` when
+    /// the run cannot start: the truck's room, the budget of the work's
+    /// kind (S10b-ai R8) and kg still aboard (fix F18) must bring the
+    /// work's step (at most `truck_material_kg`).
+    fn run_kg(&self, t: &MyTank, wid: u32) -> Option<u32> {
+        let g = self.g;
+        let s = &g.setup;
+        let f = &s.rules.ai.fort;
+        let vs = g.vehicles.get(&t.id)?;
+        let v = &s.vehicles[vs.type_idx as usize];
+        let cap = v.supply.as_ref().map_or(0, |x| x.cap_g as u64);
+        let held = vs.cargo_g.iter().map(|&x| x as u64).sum::<u64>() + vs.material_g as u64;
+        let room = cap.saturating_sub(held).min(u32::MAX as u64) as u32;
+        let have_kg = vs.material_g / 1000;
+        let wf = g.fort.works.get(&wid)?.fort;
+        let kg = (f.truck_material_kg.saturating_sub(have_kg) * 1000)
+            .min(room)
+            .min(self.room_for(wf))
+            / 1000;
+        let need_kg = s.forts[wf as usize].materials_g.div_ceil(1000);
+        (have_kg + kg > 0 && have_kg + kg >= need_kg.min(f.truck_material_kg)).then_some(kg)
     }
 
     /// The first own work (ascending id) of an AI fort job waiting for

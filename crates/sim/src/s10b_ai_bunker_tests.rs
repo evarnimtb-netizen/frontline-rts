@@ -309,8 +309,9 @@ fn ai_bunker_assigns_a_free_builder() {
 
 /// Plays the bunker with one loaded truck in tank service (Follow) from the
 /// moment the bunker step waits for kg; `first` the `bunker_truck_first`
-/// key. (the truck was sent back for the run, the bunker stands, counters).
-fn truck_first_run(first: u32) -> (bool, bool, crate::ai::AiCounters) {
+/// key; `starve`: from then on the S10b budget is 0 (no run can start).
+/// (times the truck was sent back, the bunker stands, counters).
+fn truck_first_run(first: u32, starve: bool) -> (u32, bool, crate::ai::AiCounters) {
     let (mut w, h) = bunker_world(1, |s| {
         s.rules.ai.obstacles.bunker_truck_first = first;
         let f = &mut s.rules.ai.fort;
@@ -325,7 +326,8 @@ fn truck_first_run(first: u32) -> (bool, bool, crate::ai::AiCounters) {
     let tv = w.game().unwrap().squads[&truck].members[0];
     squad_at(&mut w, BAU, h.pos, 40);
     let b = bunker(&w);
-    let (mut serving, mut sent, mut done) = (false, false, false);
+    let (mut serving, mut sent, mut done) = (false, 0u32, false);
+    let mut was_return = false;
     for _ in 0..30 * 1500 {
         steps(&mut w, 1);
         let g = w.game().unwrap();
@@ -348,11 +350,18 @@ fn truck_first_run(first: u32) -> (bool, bool, crate::ai::AiCounters) {
                 .expect("a truck job");
             j.phase = crate::ai::TruckPhase::Follow;
             j.since = t;
-        } else if serving && !sent {
-            sent = ai_ro(&w)
+            if starve {
+                g.setup.rules.ai.obstacles.materials_max_pct = 0;
+            }
+        } else if serving {
+            let ret = ai_ro(&w)
                 .trucks
                 .get(&truck)
                 .is_some_and(|j| j.phase == crate::ai::TruckPhase::Return);
+            if ret && !was_return {
+                sent += 1;
+            }
+            was_return = ret;
         }
         if !built(&w).is_empty() {
             done = true;
@@ -371,21 +380,38 @@ fn truck_first_run(first: u32) -> (bool, bool, crate::ai::AiCounters) {
 /// sent" with the control asserted to send).
 #[test]
 fn ai_bunker_takes_a_truck_from_service() {
-    let (sent, done, c) = truck_first_run(1);
+    let (sent, done, c) = truck_first_run(1, false);
     println!(
         "first 1: sent {sent}, built {done}, runs {:?}, why {:?}",
         c.material_runs, c.bunker_why
     );
-    assert!(sent, "the truck was sent back for the run");
+    assert!(sent > 0, "the truck was sent back for the run");
     assert!(done, "the bunker stands");
     assert_eq!(c.bunker_why[14], 0, "no failed bunker job");
-    let (sent, done, c) = truck_first_run(0);
+    let (sent, done, c) = truck_first_run(0, false);
     println!(
         "first 0: sent {sent}, built {done}, runs {:?}, why {:?}",
         c.material_runs, c.bunker_why
     );
     assert!(
-        !sent && !done,
+        sent == 0 && !done,
         "control: bunker_truck_first 0 -> no run, no bunker"
     );
+}
+
+/// Review finding 24: the truck is taken from service only when the run
+/// can start in base (the bunker's work is the waiting one and the truck
+/// and the S10b budget hold the kg it needs); with the S10b budget at 0
+/// it stays in service instead of shuttling between tanks and base until
+/// the job's deadline. Control: `truck_divert` without its
+/// `run_kg` check -> sent back again and again ("never sent").
+#[test]
+fn ai_bunker_divert_needs_a_run_that_can_start() {
+    let (sent, done, c) = truck_first_run(1, true);
+    println!(
+        "starved: sent {sent}, built {done}, runs {:?}, why {:?}",
+        c.material_runs, c.bunker_why
+    );
+    assert_eq!(sent, 0, "never sent");
+    assert!(!done);
 }
