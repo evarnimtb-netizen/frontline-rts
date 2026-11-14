@@ -281,6 +281,37 @@ fn ai_counts_own_blocked() {
     assert_eq!(go(0), 0, "control: an enemy barrier");
 }
 
+/// Fix 6/16: a tank halted beside its own barrier by a Stop (as the AI's
+/// own Stops and a target acquired on a Move do: path cleared, goal kept)
+/// is not blocked: its goal is still reachable -> 0. Control: the same tank
+/// ordered into the barrier -> counted (`ai_counts_own_blocked`). Before
+/// the fix this read 1.
+#[test]
+fn own_blocked_ignores_a_halt_beside_an_own_piece() {
+    for dy in [5, -6] {
+        let (mut w, h) = obst_world(|_| {});
+        let bar = fort(&w, "ww2:log_barrier");
+        let p = h.pos + c(-60, 30);
+        assert!(w.build_now(bar, &[p, p + c(4, 0)], PlayerId(1)));
+        let t = spawn(
+            &mut w,
+            1,
+            "ww2:usa_m4a3_75_squad",
+            p.x.floor_int() + 2,
+            p.y.floor_int() + dy,
+        );
+        let mv = crate::command::CommandKind::Move {
+            squad: t,
+            target: p + c(70, dy),
+        };
+        run(&mut w, 1, 1, mv);
+        play(&mut w, 1);
+        run(&mut w, 1, 1, crate::command::CommandKind::Stop { squad: t });
+        play(&mut w, 30);
+        assert_eq!(ai_ro(&w).counters.own_blocked, 0, "a halt is no block ({dy})");
+    }
+}
+
 /// Build D: a pair stuck at the save is not counted again after the load
 /// (`AiState::blocked_pairs` is saved). The tank of `ai_counts_own_blocked`
 /// stays stuck by its own barrier; saved after its first count, the loaded

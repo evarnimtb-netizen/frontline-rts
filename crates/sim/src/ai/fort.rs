@@ -2504,7 +2504,8 @@ impl super::Planner<'_> {
     /// lead stands within 4 m of its served path's end, which is not its
     /// goal: a reached path ends exactly on it; or it holds with no path
     /// more than 4 m from its goal) with an own `blocks_vehicles` piece within
-    /// `OWN_BLOCKED_M`; each (vehicle, piece) pair counts once, when it
+    /// `OWN_BLOCKED_M`, and no vehicle route from where it stands to its goal
+    /// (a halt for any other reason is no block); each (vehicle, piece) pair counts once, when it
     /// first appears (`AiState::blocked_pairs`, sorted, saved).
     /// Nothing with `obstacles` off.
     fn count_own_blocked(&mut self) {
@@ -2539,6 +2540,7 @@ impl super::Planner<'_> {
             if !failed {
                 continue;
             }
+            let start = pairs.len();
             for (&pid, p) in &g.fort.pieces {
                 if p.owner == me
                     && s.forts
@@ -2547,6 +2549,23 @@ impl super::Planner<'_> {
                     && near(p.pos, at, r)
                 {
                     pairs.push((id, pid));
+                }
+            }
+            // A real block only: the vehicle's own route from where it
+            // stands to its goal must not exist. A halt beside an own piece
+            // for another reason (a Stop, a target acquired, a wheeled
+            // give-up elsewhere) leaves the goal reachable: not counted.
+            // Searched only for the rare candidates near an own piece.
+            if pairs.len() > start {
+                let ty = s.squad_types[q.type_idx as usize]
+                    .vehicle
+                    .and_then(|v| s.vehicles.get(v as usize));
+                let reachable = ty.is_some_and(|ty| {
+                    let mut scratch = crate::path::PathScratch::default();
+                    self.gun_route(at, nav.goal, ty, &mut scratch).is_some()
+                });
+                if reachable {
+                    pairs.truncate(start);
                 }
             }
         }
