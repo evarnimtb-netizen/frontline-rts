@@ -2713,7 +2713,7 @@ max = 0
 exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "fortify10.s10b_ai.obstacle.control.own_blocked"
-note = "own_blocked + own_mine_losses + own_pieces_demolished; control: barrier on the own route (own_route_m 0)"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
 [[target]]
 id = "T115b"
 metric = "skirmish160.factions.usa.s10b_ai_derived.own_side_mistakes"
@@ -2721,7 +2721,7 @@ max = 0
 exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "fortify10.s10b_ai.obstacle.control.own_blocked"
-note = "own_blocked + own_mine_losses + own_pieces_demolished; control: barrier on the own route (own_route_m 0)"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
 [[target]]
 id = "T115c"
 metric = "skirmish160_oos.factions.germany.s10b_ai_derived.own_side_mistakes"
@@ -2729,7 +2729,7 @@ max = 0
 exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "fortify10.s10b_ai.obstacle.control.own_blocked"
-note = "own_blocked + own_mine_losses + own_pieces_demolished; control: barrier on the own route (own_route_m 0)"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
 [[target]]
 id = "T115d"
 metric = "skirmish160_oos.factions.usa.s10b_ai_derived.own_side_mistakes"
@@ -2737,7 +2737,7 @@ max = 0
 exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
 exposure_min = 20
 control = "fortify10.s10b_ai.obstacle.control.own_blocked"
-note = "own_blocked + own_mine_losses + own_pieces_demolished; control: barrier on the own route (own_route_m 0)"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
 [[target]]
 id = "T115e"
 metric = "fortify10.s10b_ai.obstacle.own_blocked"
@@ -2745,6 +2745,7 @@ max = 0
 exposure = "fortify10.s10b_ai.obstacle.own_tank_drove_pct"
 exposure_min = 100
 control = "fortify10.s10b_ai.obstacle.control.own_blocked"
+note = "R6 pair: gun on the point's axis, no enemy tank; the own tank drives to the spot where the control's barrier crosses the way out (fix 5)"
 
 # --- T116: paths avoid enemy mines the player knows (R11, R12) -------------
 [[target]]

@@ -39,19 +39,23 @@
 //!   side in Hold, facing the enemy base; `p`'s engineers with
 //!   [`BARRIER_CARRY_KG`] kg beside it. `drive_ai_habit(Fort)` until the
 //!   barrier stands ([`BARRIER_PIECES`] pieces; at most [`OBST_DRIVE_S`]):
-//!   `barrier_built_pct`. Then the
-//!   enemy's medium tank, [`MINES_TANK_M`] m out, is ordered to the gun and
-//!   `p`'s own medium tank, at `p`'s base, to the spot of the first barrier
-//!   piece the control (`own_route_m` 0, played first) built, i.e. a spot on
-//!   its own route (else the nearest point `p` does not hold), both for
-//!   [`OBST_TANK_S`] s (the habit still driven; the ticket drain is off so
-//!   the match outlives the 25 min build):
-//!   `enemy_time_in_arc_s` (report: seconds the enemy tank spends inside the
-//!   gun's 90-degree arc within 400 m), `own_blocked` (the AI counter, must
-//!   be 0). Exposure `enemy_tank_reached_barrier_pct` (the enemy tank came
-//!   within 10 m of a barrier piece) and (T115e) `own_tank_drove_pct` (the
-//!   own tank got [`OWN_DROVE_M`] m from its start: its route was tried). Controls: `control.own_blocked` with
-//!   `own_route_m` 0, `control.enemy_time_in_arc_s` with `obstacles` 0,
+//!   `barrier_built_pct`. Then the enemy's medium tank, [`MINES_TANK_M`] m
+//!   out, is ordered to the gun for [`OBST_TANK_S`] s (the habit still
+//!   driven; the ticket drain is off so the match outlives the 25 min
+//!   build): `enemy_time_in_arc_s` (report: seconds the enemy tank spends
+//!   inside the gun's 90-degree arc within 400 m); exposure
+//!   `enemy_tank_reached_barrier_pct` (it came within 10 m of a piece).
+//!   R6 (T115e, review finding 5) has its own pair of runs with the gun on
+//!   the point's axis (no side offset), so the barrier lies across the own
+//!   way out of the point, and no enemy tank: the control (`own_route_m` 0)
+//!   builds it there and sends `p`'s own medium tank from base to the piece
+//!   nearest the straight way point -> next point (`control.own_blocked`,
+//!   > 0: blocked); the run as set sends its tank to the same spot, which R6
+//!   kept clear (refused or mirrored): `own_blocked` (the AI counter, must
+//!   be 0); exposure `own_tank_drove_pct` (the own tank got [`OWN_DROVE_M`]
+//!   m from its start). Before: one gun [`GUN_SIDE_M`] m aside for both, so
+//!   R6 never bound and run and control built the same barrier (20 = 20).
+//!   Other controls: `control.enemy_time_in_arc_s` with `obstacles` 0,
 //!   `control.job900_barrier_built_pct` / `_pieces` with
 //!   `barrier_job_max_s` 900 (Build E, S10b-ai-C1).
 //! * **Bunker** (Build C, R7). For each player `p` and seed, in two sets
@@ -766,6 +770,7 @@ fn obstacle_once(
     seed: u64,
     p: u8,
     mode: u8,
+    side_m: i32,
     goal: Option<FxVec2>,
 ) -> Result<(bool, f64, u32, bool, usize, bool, bool, Option<FxVec2>)> {
     use frontline_sim::ai::{AiGun, AiHabit, AiState, AiTrench, DriveArgs, GunPhase};
@@ -802,7 +807,7 @@ fn obstacle_once(
             .squad_type_index(&format!("ww2:{c}"))
             .ok_or_else(|| anyhow::anyhow!("no {c} card"))
     };
-    let gun_at = pt + dir * Fx::from_int(GUN_OUT_M) + dir.perp() * Fx::from_int(GUN_SIDE_M);
+    let gun_at = pt + dir * Fx::from_int(GUN_OUT_M) + dir.perp() * Fx::from_int(side_m);
     let gty = card(&w, AT_GUNS[p as usize])?;
     let Some(gsq) = w.spawn_squad_at(PlayerId(p), gty, gun_at, dir) else {
         bail!("the gun was not spawned at {gun_at:?}");
@@ -868,30 +873,39 @@ fn obstacle_once(
         .map(|(j, q)| (j, FxVec2::from(q.pos)))
         .min_by_key(|(j, q)| ((*q - pt).length_sq_raw(), *j))
         .map(|(_, q)| q);
-    // The control's own tank drives onto its own barrier (on its route);
-    // the run as set drives to the same spot (`goal`).
+    // The control's own tank drives to the spot where its own barrier
+    // crosses its way out of the point (the piece nearest the straight
+    // way point -> next point); the run as set drives to the same spot
+    // (`goal`), which R6 keeps clear.
     let bar = pieces(&w);
-    let next = if mode == 1 {
-        bar.first().copied()
-    } else {
-        goal
-    }
-    .or(next);
+    let on_way = next.and_then(|n| {
+        bar.iter()
+            .copied()
+            .min_by_key(|&b| (way_off(b, pt, n).raw(), b.x.raw(), b.y.raw()))
+    });
+    let next = if mode == 1 { on_way } else { goal }.or(next);
     // In front of the gun, so its drive meets the barrier's line.
-    let from = site + dir * Fx::from_int(MINES_TANK_M);
-    let tt = card(&w, MEDIUM_TANKS[enemy as usize])?;
-    let Some(et) = w.spawn_squad_at(PlayerId(enemy), tt, from, -dir) else {
-        bail!("the enemy tank was not spawned at {from:?}");
+    // The R6 runs (gun on the axis, `side_m` 0) have no enemy tank: it
+    // met the own tank on the same axis and the duel, not a barrier,
+    // stopped or wrecked it (seen).
+    let ev = if side_m != 0 {
+        let from = site + dir * Fx::from_int(MINES_TANK_M);
+        let tt = card(&w, MEDIUM_TANKS[enemy as usize])?;
+        let Some(et) = w.spawn_squad_at(PlayerId(enemy), tt, from, -dir) else {
+            bail!("the enemy tank was not spawned at {from:?}");
+        };
+        step_with(
+            &mut w,
+            enemy,
+            vec![CommandKind::Move {
+                squad: et,
+                target: site,
+            }],
+        );
+        Some(members(&w, et)[0])
+    } else {
+        None
     };
-    let ev = members(&w, et)[0];
-    step_with(
-        &mut w,
-        enemy,
-        vec![CommandKind::Move {
-            squad: et,
-            target: site,
-        }],
-    );
     let mut own_v = None;
     if let Some(next) = next {
         let base = w.game().unwrap().base_of(PlayerId(p));
@@ -918,6 +932,9 @@ fn obstacle_once(
         {
             drove |= (pos(&w, v) - from).length() >= Fx::from_int(OWN_DROVE_M);
         }
+        let Some(ev) = ev else {
+            continue;
+        };
         let Some(vs) = w.game().unwrap().vehicle(ev) else {
             continue;
         };
@@ -941,8 +958,20 @@ fn obstacle_once(
         n_pieces,
         alive,
         drove,
-        bar.first().copied(),
+        on_way,
     ))
+}
+
+/// The distance of `b` from the segment `a -> c`.
+fn way_off(b: FxVec2, a: FxVec2, c: FxVec2) -> Fx {
+    let d = c - a;
+    let len = d.length();
+    if len == Fx::ZERO {
+        return (b - a).length();
+    }
+    let u = d.normalize_or_zero();
+    let t = (b - a).dot(u).max(Fx::ZERO).min(len);
+    (b - (a + u * t)).length()
 }
 
 /// The obstacle row (module docs).
@@ -953,22 +982,27 @@ pub fn obstacle_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<O
     let (mut j_built, mut j_pieces) = (0u32, 0f64);
     for seed in seeds {
         for p in [0u8, 1] {
-            // The control first: its barrier lies on the own route (R6
-            // off), and both own tanks drive to its first piece's spot.
-            let c1 = obstacle_once(args, seed, p, 1, None)?;
+            // R6 (T115e): the gun on the point's axis, so the barrier
+            // lies across the own way out. The control first (R6 off):
+            // its barrier stands there and its own tank drives to the
+            // piece on the way; the run as set drives to the same spot,
+            // which R6 kept clear (refused or mirrored).
+            let c1 = obstacle_once(args, seed, p, 1, 0, None)?;
             c_blocked += c1.2;
-            let (b, a, o, r, n, l, d, _) = obstacle_once(args, seed, p, 0, c1.7)?;
+            let r6 = obstacle_once(args, seed, p, 0, 0, c1.7)?;
+            blocked += r6.2;
+            drove += r6.6 as u32;
+            // R5 (T112i): the gun [`GUN_SIDE_M`] m aside, off the own route.
+            let (b, a, _, r, n, l, _, _) = obstacle_once(args, seed, p, 0, GUN_SIDE_M, None)?;
             alive += l as u32;
-            drove += d as u32;
             n_pieces += n as f64;
             built += b as u32;
             arc += a;
-            blocked += o;
             reached += r as u32;
-            let c = obstacle_once(args, seed, p, 2, None)?;
+            let c = obstacle_once(args, seed, p, 2, GUN_SIDE_M, None)?;
             c_arc += c.1;
             c_built += c.0 as u32;
-            let j = obstacle_once(args, seed, p, 3, c1.7)?;
+            let j = obstacle_once(args, seed, p, 3, GUN_SIDE_M, None)?;
             j_built += j.0 as u32;
             j_pieces += j.4 as f64;
             runs += 1;
@@ -1504,8 +1538,29 @@ mod tests {
     #[test]
     #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
     fn obstacle_own_tank_drives_after_the_build() {
-        let r = obstacle_once(&FortifyArgs::default(), 1, 0, 0, None).unwrap();
+        let r = obstacle_once(&FortifyArgs::default(), 1, 0, 0, 0, None).unwrap();
         assert!(r.6, "own tank did not drive: {r:?}");
+    }
+
+    /// Review finding 5 (T115e): R6 shows in the row. With the gun on the
+    /// point's axis the control (`own_route_m` 0) builds across the own way
+    /// out and its own tank, sent to the piece on that way, is blocked
+    /// (`own_blocked` > 0); the run as set sends its tank to the same spot,
+    /// R6 kept it clear: 0. Failing control: the gun [`GUN_SIDE_M`] m aside
+    /// (the row before the fix) -> both runs build the same barrier and
+    /// both count (seen: run == control).
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+    fn obstacle_r6_blocks_only_the_control() {
+        let side = std::env::var("R6_SIDE_M").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let a = FortifyArgs::default();
+        for p in [0u8, 1] {
+            let c1 = obstacle_once(&a, 1, p, 1, side, None).unwrap();
+            let r6 = obstacle_once(&a, 1, p, 0, side, c1.7).unwrap();
+            assert!(c1.2 > 0, "player {p}: control not blocked: {c1:?}");
+            assert!(r6.6, "player {p}: run's own tank did not drive: {r6:?}");
+            assert_eq!(r6.2, 0, "player {p}: run blocked: {r6:?} (control {c1:?})");
+        }
     }
 
     /// One-off measure of the obstacle row (the full fortify run plays it
