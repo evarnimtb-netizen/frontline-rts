@@ -103,6 +103,73 @@ fn intact_hedgehog_row_stops_every_vehicle() {
     }
 }
 
+/// Fix 23: a grazing approach. The vehicle starts `off` m beside an intact
+/// 4 m hedgehog row (through (520, 500) along `d`), 30 m before its middle,
+/// and is ordered 30 m past the middle and 10 m to the row's other side, so
+/// its way runs along the row and then turns into it (piece_near, escape
+/// mode, a repath from a piece node). It never crosses through the row
+/// (round its end does not count) at any offset, across its way and
+/// diagonal, tracked and wheeled. Control (code): the row left out -> it
+/// crosses (checked here, so the test can see a crossing).
+#[test]
+fn intact_row_holds_a_grazing_approach() {
+    let along = FxVec2::from_int(1, 0);
+    let cross_at = |d: FxVec2, card: &str, off: i32, shift: i32, built: bool| {
+        let mut w = flat_world_with(1, |_| {});
+        if built {
+            row(&mut w, "ww2:hedgehog", d, shift, &[]);
+        }
+        let c = FxVec2::from_int(520, 500);
+        let n = d.perp();
+        let from = c - d * Fx::from_int(30) + n * Fx::from_int(off);
+        let to = c + d * Fx::from_int(30) - n * Fx::from_int(10);
+        let sq: SquadId = spawn(&mut w, 1, card, from.x.floor_int(), from.y.floor_int());
+        let v = members(&w, sq)[0];
+        run(
+            &mut w,
+            1,
+            1,
+            CommandKind::Move {
+                squad: sq,
+                target: to,
+            },
+        );
+        let side = |w: &World| {
+            let p = w.state.entities.transform[v.index()].pos.xy();
+            (p - c).dot(n) > Fx::ZERO
+        };
+        let mut was = side(&w);
+        for _ in 0..HZ * 90 {
+            steps(&mut w, 1);
+            let p = w.state.entities.transform[v.index()].pos.xy();
+            let now = side(&w);
+            if now != was {
+                if (p - c).dot(d).abs() < Fx::from_int(38) {
+                    return true;
+                }
+                was = now;
+            }
+        }
+        false
+    };
+    for card in [TANK, TRUCK] {
+        for d in [along, diag()] {
+            for off in [3, 5, 8] {
+                for shift in [0, 2000] {
+                    assert!(
+                        !cross_at(d, card, off, shift, true),
+                        "{card} crossed the row {d:?} from {off} m at {shift} mm"
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        cross_at(along, TANK, 5, 0, false),
+        "control: no row -> it crosses"
+    );
+}
+
 /// Two adjacent hedgehogs gone from a 4 m row (12 m between the standing
 /// centres) open it for a medium tank; one gone keeps it closed, three gone
 /// always open it, and the tank never stands on a blocked node on its way
