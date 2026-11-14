@@ -250,7 +250,8 @@ fn load_rejects_bad_s10b_ai_state() {
                 }
             }),
         ),
-        // Keys: own living squads with `clear_mines` / `demolish`.
+        // Keys: squads made so far, own with `clear_mines` / `demolish`
+        // while they stand (a squad gone since the plan loads: finding 1).
         (
             "sweep of an enemy squad",
             Box::new(move |s| {
@@ -266,7 +267,7 @@ fn load_rejects_bad_s10b_ai_state() {
             }),
         ),
         (
-            "sweep of a squad that is gone",
+            "sweep of a squad never made",
             Box::new(move |s| {
                 let j = ai_of(s).sweeps.remove(&sweep).unwrap();
                 ai_of(s).sweeps.insert(SquadId(100_000), j);
@@ -309,6 +310,12 @@ fn load_rejects_bad_s10b_ai_state() {
                 let man = s.game.as_ref().unwrap().squads[&builder].members[0];
                 assert_ne!(man, vehicle);
                 ai_of(s).demolitions.values_mut().next().unwrap().vehicle = man
+            }),
+        ),
+        (
+            "demolition for a vehicle never made",
+            Box::new(|s| {
+                ai_of(s).demolitions.values_mut().next().unwrap().vehicle = SimId(u32::MAX)
             }),
         ),
         // Pieces < `next_piece`; `done <= 3`.
@@ -1029,6 +1036,54 @@ fn ai_jobs_end_and_never_reorder_a_refused_goal() {
         let tr = drive_row(&mut w, kind, &stage, LIVENESS_MIN * 60 * hz);
         if let Err(e) = check_liveness(&tr, &l) {
             panic!("{kind:?}: {e}");
+        }
+    }
+}
+
+// ------------------------------------------------------- Fix (review) --
+
+/// Review finding 1: a save made between a sweeper's or demolisher's death
+/// (or the demolition tank's loss) and the next AI plan loads, like the
+/// S10a fort jobs (`validate_fort`), and the next plan drops the job.
+/// Control: `validate_s10b` keys back to `own_with` (an own living squad)
+/// and the vehicle back to `own_vehicle` -> each of the three saves fails
+/// with "AI state out of range".
+#[test]
+fn saves_load_between_a_job_squads_loss_and_the_next_plan() {
+    let cases: [(&str, fn(&mut World, &Busy)); 3] = [
+        ("sweeper wiped out", |w, b| {
+            for m in w.game().unwrap().squads[&b.sweep].members.clone() {
+                assert!(w.kill_soldier(m));
+            }
+            assert!(!w.game().unwrap().squads.contains_key(&b.sweep));
+        }),
+        ("demolisher wiped out", |w, b| {
+            for m in w.game().unwrap().squads[&b.demo].members.clone() {
+                assert!(w.kill_soldier(m));
+            }
+            assert!(!w.game().unwrap().squads.contains_key(&b.demo));
+        }),
+        ("demolition tank wrecked", |w, b| {
+            assert!(w.wreck_vehicle(b.vehicle));
+            let g = w.game().unwrap();
+            assert!(!g.squads.values().any(|q| q.members.contains(&b.vehicle)));
+        }),
+    ];
+    for (what, kill) in cases {
+        let (mut w, b) = ai_busy();
+        kill(&mut w, &b);
+        let ai = w.game().unwrap().ai[1].as_ref().unwrap();
+        assert!(ai.sweeps.contains_key(&b.sweep) && ai.demolitions.contains_key(&b.demo));
+        let mut back = World::load(&w.save(), 1).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        // The next plans drop the job of the lost squad or tank.
+        let s = back.match_setup().unwrap();
+        let d = s.rules.difficulty.get(s.players[1].difficulty);
+        let plan = d.replan_ticks.max(1) as u64;
+        steps(&mut back, 2 * plan + 2);
+        let ai = back.game().unwrap().ai[1].as_ref().unwrap();
+        match what {
+            "sweeper wiped out" => assert!(!ai.sweeps.contains_key(&b.sweep), "{what}"),
+            _ => assert!(!ai.demolitions.contains_key(&b.demo), "{what}"),
         }
     }
 }

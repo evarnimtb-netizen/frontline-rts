@@ -212,33 +212,44 @@ impl AiState {
             .retain(|r| r.kind == JobKind::TruckGoal || tick.saturating_sub(r.failed) < keep_ticks);
     }
 
-    /// S10b-ai load checks (spec 6): sweeps, demolitions, refusals.
-    pub(super) fn validate_s10b(&self, g: &MatchState, player: PlayerId, tick: u64) -> bool {
+    /// S10b-ai load checks (spec 6): sweeps, demolitions, refusals. As in
+    /// `validate_fort`, a key squad gone since the last plan (wiped out) is
+    /// allowed, and so is a demolition vehicle that left its squad (wrecked,
+    /// bailed out): the next plan drops the job (`sweep_continue`: gone;
+    /// `run_demolish`: no `job_vehicle` -> Quit).
+    pub(super) fn validate_s10b(
+        &self,
+        g: &MatchState,
+        player: PlayerId,
+        tick: u64,
+        ents_len: usize,
+    ) -> bool {
         use frontline_content::setup::Capability;
         let np = g.points.len();
         let size = Fx::from_int(g.setup.map.size_m);
         let on_map = |p: &FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size;
-        // An own living squad whose type has `cap`.
+        // A squad made so far: gone, or own and of a type with `cap`.
         let own_with = |id: &SquadId, cap: Capability| {
-            g.squads.get(id).is_some_and(|q| {
-                q.owner == player
-                    && !q.members.is_empty()
-                    && g.setup
-                        .squad_types
-                        .get(q.type_idx as usize)
-                        .is_some_and(|t| t.has(cap))
-            })
+            id.0 < g.next_squad
+                && g.squads.get(id).is_none_or(|q| {
+                    q.owner == player
+                        && g.setup
+                            .squad_types
+                            .get(q.type_idx as usize)
+                            .is_some_and(|t| t.has(cap))
+                })
         };
-        // An own vehicle: the one member of an own vehicle squad.
-        let own_vehicle = |v: SimId| {
-            g.squads.values().any(|q| {
-                q.owner == player
-                    && q.members.contains(&v)
-                    && g.setup
-                        .squad_types
-                        .get(q.type_idx as usize)
-                        .is_some_and(|t| t.vehicle.is_some())
-            })
+        // A vehicle: an entity no infantry squad holds (in no squad once
+        // wrecked or abandoned; maybe re-crewed by anyone since).
+        let vehicle = |v: SimId| {
+            v.index() < ents_len
+                && g.squads.values().all(|q| {
+                    !q.members.contains(&v)
+                        || g.setup
+                            .squad_types
+                            .get(q.type_idx as usize)
+                            .is_some_and(|t| t.vehicle.is_some())
+                })
         };
         let lane_max = g
             .setup
@@ -259,7 +270,7 @@ impl AiState {
             && self.demolitions.len() <= MAX_DEMOLITIONS
             && self.demolitions.iter().all(|(id, j)| {
                 own_with(id, Capability::Demolish)
-                    && own_vehicle(j.vehicle)
+                    && vehicle(j.vehicle)
                     && j.pieces.iter().flatten().all(|&p| p < g.fort.next_piece)
                     && j.done as usize <= MAX_DEMOLISH_PIECES
                     && j.start <= j.since

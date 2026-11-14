@@ -852,7 +852,7 @@ impl AiState {
             // S10a-ai.
             || !self.validate_fort(g, player, tick)
             // S10b-ai.
-            || !self.validate_s10b(g, player, tick)
+            || !self.validate_s10b(g, player, tick, ents_len)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
