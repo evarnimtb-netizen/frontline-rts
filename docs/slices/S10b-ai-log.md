@@ -58,27 +58,12 @@ CLI: `skirmish.rs` `S10B_AI` names, `S10bAiSeen` chances (lay/obst/bunker from A
 Liveness (`s10b_ai_tests.rs`): `Stage`, `LIVENESS` rows (Fort x3, Sweep), `job_alive` (TruckGoal false: D fills it),
 `drive_row`, `check_liveness`. Keep: `refused_near(.., refused_ticks, near_m)` takes ticks.
 
-## Build B chunk 1 (2026-11-12)
+## Build B chunks 1-2 (2026-11-12, shortened)
 
-Mine paths (R11), mine layer, blasts, sim counters, `s10b_ai.paths` row, fuzz stage. Deviations: the fuzz stage
-stages the blast by edit (stepping would fire the staged boom-tick mines); fortify field names follow the targets
-(`foot_mine_losses_pct`, plus `foot_losses`); `at_exposure_ticks` counts distinct enemy vehicles per owner per tick.
-B1 code map: `path.rs` `MineCost` (= `WireCost`), `find_foot_path(.., wire, mines, ..)`, `VehiclePathCost::mines`,
-`search_with` prices a mine step like wire, `smooth` keeps no unpriced-mine shortcut; `fort.rs` `MineKey`, `MineSet`,
-`MineLayer` (`#[serde(skip)]`), `FortState::{scan_mine_set, refresh_mine_layer, mine_set}`; `take_mines` blasts ring,
-`lost_on_known`, `own_mine_losses`; `MatchState::at_exposure`; `game.rs` `serve_paths` `mine_rule`/`mined` -> `mines_of`.
-
-## Build B chunk 2 (2026-11-12)
-
-Decided by default: S10b jobs reuse `AiFortJob` and the S10a phases; the per-plan AT site memo lives on `Planner`
-(never saved); "one search per point per `recheck_s`" is stateless (only the window's plan offers the AT field);
-`lay_sites` counts a field site offered on that plan; the S10b budget is derived from state (mines gone are priced at
-the cheapest S10b mine: a lower bound); S10a's budget leaves S10b grams out; spec control "`at_out_m` 0" is out of the
-key's range (1..=1000): the test uses 1 (field at the point, not 60 m out); the AT test checks "crosses the approach"
-against the straight base-point line (flat map) with the field's ends on both sides of it; `World::set_point_owner`
-(staging tool) added for the fortify row. Refusals seen: BadSpot (own tank on the site) in the liveness row and test.
-Owner question S10b-ai-B2a: one AI AT field is one 40 m row at the blueprint's 4 m step; a crossing tank sets one off
-rarely (fortify 0/10, matches 0). (A) keep the spec's single row; (B) two staggered rows per AT field.
+Chunk 1: mine paths (R11), mine layer, blasts, sim counters, `s10b_ai.paths` row, fuzz stage (`path.rs` `MineCost`,
+`fort.rs` `MineSet`/`MineLayer` (not saved), `game.rs` `mines_of`). Chunk 2: S10b jobs reuse `AiFortJob` and the
+S10a phases; the AT site memo lives on `Planner` (not saved); the S10b budget is derived from state; owner question
+B2a (one AT field = one 40 m row) since decided (TODO).
 
 ## Build C chunk 2 (2026-11-12; stage chunk 1 rest)
 
@@ -147,3 +132,18 @@ Not done: finding 4 (fuzz stage extension: Done sweep, Repath demolition, dead s
 refused and blasts at 32); the new load cases are unit tests in `s10b_ai_tests.rs` only. Residual for 24: cargo
 loaded at base after arrival could still shrink the room (not seen). quick 72b2970 all ok (808 passed); all-off 40
 `target/s10b-fixsave-off40`: neutral.py vs `target/s10b-base40` same 40/40.
+
+## Fix behaviour (2026-11-14; review findings 6+16, 15, 21, 23 done; 17, 18, 19, 20 not done)
+`874a8f5` (6+16: `count_own_blocked` counts a (vehicle, piece) pair only when `gun_route` from the lead to
+`nav.goal` finds no way; a Stop or target halt beside an own piece is no block; test
+`own_blocked_ignores_a_halt_beside_an_own_piece` read 1 before). The measured own_side_mistakes 1 in oos and s201
+(Germany) were false positives: replayed at `874a8f5` (`target/s10b-fixbeh-ob`) both sets read 0, Germany's shares
+unchanged (41.25 / 41.25 %, mines 22 / 30, obstacles 8 / 5, bunker 9 / 8). `29a2760` (15: side 1 of a hedgehog row
+starts one step beyond side 0's first site; test `hedgehog_row_keeps_its_mirrored_side`). `6212c31` (21: a base
+TruckGoal give-up ages out after `refused_s`, the job's own base memory included, via `base_refused`; HQ/drop
+refusals keep until-a-load). `85d9596` (23: test `intact_row_holds_a_grazing_approach` passes on the code; tightening
+piece_near with "blocked samples may not grow" breaks `vehicle_on_obstacle_nodes_drives_out`, so not done).
+17 tried: charge laid 30 cm into the box from the face (toward the centre): fortify slit_satchel_losses_pct still 0
+(demolish row unchanged), reverted. Needs a trace of where the man stands and the blast origin vs the slit. 18, 19,
+20 not started (turns). quick 72b2970 all ok (812 passed); all-off 40 `target/s10b-fixbeh-off40`: neutral.py vs
+`target/s10b-base40` same 40/40.
