@@ -243,6 +243,27 @@ impl super::Planner<'_> {
             .refused_near(JobKind::TruckGoal, at, self.tick, u64::MAX, o.refused_m)
     }
 
+    /// Whether the own base is not to be sent (Follow -> Return). With
+    /// `refusal_memory` 1 and `refused_s` > 0 a base give-up ages out after
+    /// `refused_s` (L4), the job's own memory of it included: the base is
+    /// where a truck loads, so an until-a-load refusal there would strand a
+    /// lone truck for the match (fix 21). Else `truck_refused`.
+    fn base_refused(&self, job: &AiTruck, base: FxVec2) -> bool {
+        let s = &self.g.setup;
+        let o = &s.rules.ai.obstacles;
+        if s.rules.ai.truck.refusal_memory == 0 || o.refused_s == 0 {
+            return self.truck_refused(job, base);
+        }
+        let hz = s.tick_hz.max(1) as u64;
+        self.ai.refused_near(
+            JobKind::TruckGoal,
+            base,
+            self.tick,
+            o.refused_s as u64 * hz,
+            o.refused_m,
+        )
+    }
+
     /// A move order for the truck, never the same one within `repath_s`.
     pub(super) fn truck_drive(&mut self, t: &MyTank, job: &mut AiTruck, goal: FxVec2) {
         let a = &self.g.setup.rules.ai.truck;
@@ -359,7 +380,7 @@ impl super::Planner<'_> {
             }
             TruckPhase::Follow => {
                 if (held_g as u64) * 100 < total_g as u64 * a.return_below_pct as u64
-                    && !self.truck_refused(job, base)
+                    && !self.base_refused(job, base)
                 {
                     set(job, TruckPhase::Return);
                     self.truck_drive(t, job, base);

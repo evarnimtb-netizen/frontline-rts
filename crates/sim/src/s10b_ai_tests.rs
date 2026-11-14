@@ -1133,3 +1133,47 @@ fn demolition_in_charge_without_a_piece_ends() {
         );
     }
 }
+
+/// Fix 21: a lone truck that once gave up its own base (its Return failed)
+/// is sent back again after `refused_s` (300 s): the base refusal ages, the
+/// job's own memory of the base included. Before the fix it stayed in
+/// Follow, empty, for the match (seen failing as "never sent back").
+#[test]
+fn a_base_give_up_ages_so_a_lone_truck_returns() {
+    use crate::ai::{AiTruck, TruckPhase};
+    let mut w = ai_world();
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let truck = spawn(&mut w, 1, "ww2:usa_cckw_squad", 500, 500);
+    let v = w.game().unwrap().squads[&truck].members[0];
+    w.edit_vehicle(v, |vs| vs.cargo_g = [0, 0, 0]);
+    let tick = w.state.tick;
+    let ai = ai_of(&mut w.state);
+    let mut gave_up = [None; crate::ai::GAVE_UP_GOALS];
+    gave_up[0] = Some(base);
+    ai.trucks.insert(
+        truck,
+        AiTruck {
+            phase: TruckPhase::Follow,
+            since: tick,
+            gave_up,
+            ..Default::default()
+        },
+    );
+    ai.refuse(JobKind::TruckGoal, base, tick);
+    let phase = |w: &mut World| ai_of(&mut w.state).trucks.get(&truck).map(|j| j.phase);
+    steps(&mut w, 60 * 30);
+    assert_eq!(
+        phase(&mut w),
+        Some(TruckPhase::Follow),
+        "young refusal: kept off"
+    );
+    let mut back = false;
+    for _ in 0..300 {
+        steps(&mut w, 30);
+        back |= matches!(phase(&mut w), Some(TruckPhase::Return | TruckPhase::Load));
+        if back {
+            break;
+        }
+    }
+    assert!(back, "never sent back");
+}
