@@ -1,0 +1,4 @@
+# S10b-ai ablation (Build E item 1, S10b-ai-D1): no free build_heavy or
+# build_structure squad is sent to a point for a wanted bunker.
+[ai.obstacles]
+bunker_assign = 0

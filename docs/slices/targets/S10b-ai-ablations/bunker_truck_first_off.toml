@@ -1,0 +1,4 @@
+# S10b-ai ablation (Build E item 1, S10b-ai-D1): a bunker's 250 kg material run
+# never takes a truck away from tank service.
+[ai.obstacles]
+bunker_truck_first = 0

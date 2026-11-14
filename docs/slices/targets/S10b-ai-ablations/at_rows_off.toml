@@ -1,0 +1,4 @@
+# S10b-ai ablation (Build E item 5, S10b-ai-B2a): the AI's AT field keeps one
+# row (no staggered second row).
+[ai.obstacles]
+at_rows = 1

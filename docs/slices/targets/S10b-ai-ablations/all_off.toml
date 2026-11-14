@@ -7,6 +7,13 @@ obstacles = 0
 bunker = 0
 sweep = 0
 demolish = 0
+# Build E keys at their off value (at_rows 1 row, barrier_job_max_s the
+# job_max_s of every other job).
+lane_file = 0
+bunker_assign = 0
+bunker_truck_first = 0
+at_rows = 1
+barrier_job_max_s = 900
 
 [fortify]
 mine_paths = 0

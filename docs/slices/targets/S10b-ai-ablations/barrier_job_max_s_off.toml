@@ -1,0 +1,4 @@
+# S10b-ai ablation (Build E item 2, S10b-ai-C1): the log barrier job gets the
+# same 900 s limit (job_max_s) as every other job, not its own 1200 s.
+[ai.obstacles]
+barrier_job_max_s = 900

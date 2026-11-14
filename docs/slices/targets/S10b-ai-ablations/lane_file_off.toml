@@ -1,0 +1,4 @@
+# S10b-ai ablation (Build E item 4, S10b-ai-D2): attackers cross a swept lane
+# as before, not in single file on its centre line.
+[ai.obstacles]
+lane_file = 0

@@ -24,7 +24,7 @@
 # missing, and fails when neutral.py does not say same (S10a-ai fix F11).
 #
 # --dry-run builds nothing and plays nothing: every override file must hold
-# only switch keys set to 0 ([ai.fort] of S10a-ai; [ai.obstacles],
+# only switch keys set to their off value ([ai.fort] of S10a-ai; [ai.obstacles],
 # [fortify] mine_paths and [ai.truck] refusal_memory of S10b-ai), the CLI
 # (if built) must accept and
 # apply each one (a 1-minute match), and the measure commands are printed.
@@ -62,21 +62,29 @@ else
 fi
 [ ${#NAMES[@]} -gt 0 ] || { echo "ablate: no override in $DIR"; exit 1; }
 
-# Each file: only switches set to 0: [ai.fort] works, wire, breach, cards
-# and the per-work nest, dugout, roof, sandbags (S10a-ai); [ai.obstacles]
-# mines, at_mines, obstacles, bunker, sweep, demolish, [fortify] mine_paths
-# and [ai.truck] refusal_memory (S10b-ai).
+# Each file: only switches set to their off value: [ai.fort] works, wire,
+# breach, cards and the per-work nest, dugout, roof, sandbags (S10a-ai);
+# [ai.obstacles] mines, at_mines, obstacles, bunker, sweep, demolish,
+# [fortify] mine_paths and [ai.truck] refusal_memory (S10b-ai) at 0; the
+# S10b-ai Build E keys lane_file, bunker_assign, bunker_truck_first at 0,
+# at_rows at 1 and barrier_job_max_s at 900 (the job_max_s of every job).
 # (No tomllib on this Mac's python: the files are plain enough to read by
 # line.) Prints the number of keys.
 check_file() {
     python3 -I - "$1" <<'PY'
 import re, sys
 path = sys.argv[1]
+zero = lambda *ks: {k: 0 for k in ks}
 switches = {
-    "ai.fort": {"works", "wire", "breach", "cards", "nest", "dugout", "roof", "sandbags"},
-    "ai.obstacles": {"mines", "at_mines", "obstacles", "bunker", "sweep", "demolish"},
-    "fortify": {"mine_paths"},
-    "ai.truck": {"refusal_memory"},
+    "ai.fort": zero("works", "wire", "breach", "cards", "nest", "dugout", "roof", "sandbags"),
+    "ai.obstacles": {
+        **zero("mines", "at_mines", "obstacles", "bunker", "sweep", "demolish",
+               "lane_file", "bunker_assign", "bunker_truck_first"),
+        "at_rows": 1,
+        "barrier_job_max_s": 900,
+    },
+    "fortify": zero("mine_paths"),
+    "ai.truck": zero("refusal_memory"),
 }
 table, keys = None, {}
 for n, raw in enumerate(open(path), 1):
@@ -93,8 +101,9 @@ for n, raw in enumerate(open(path), 1):
     if not m or table not in switches:
         sys.exit(f"{path}:{n}: not a switch table's integer key: {line}")
     k, v = m.group(1), int(m.group(2))
-    if k not in switches[table] or v != 0:
-        sys.exit(f"{path}:{n}: only the switches {sorted(switches[table])} set to 0, not {k} = {v}")
+    if k not in switches[table] or v != switches[table][k]:
+        offs = ", ".join(f"{a} = {b}" for a, b in sorted(switches[table].items()))
+        sys.exit(f"{path}:{n}: only the switches at their off value ({offs}), not {k} = {v}")
     if (table, k) in keys:
         sys.exit(f"{path}:{n}: {k} twice")
     keys[(table, k)] = v
@@ -123,7 +132,7 @@ if [ $DRY -eq 1 ]; then
         if [ -x "$CLI" ]; then
             keys=$(check_file "$f")
             applied=$("$CLI" skirmish --ai-vs-ai --seed 1 --seeds 1 --minutes 1 --rules-override "$f" --summary 2>&1 |
-                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck)\.[a-z_]*: 1 -> 0")
+                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck)\.[a-z_]*: [0-9]+ -> [0-9]+$")
             if [ "$applied" != "$keys" ]; then
                 echo "ablate: $n: the CLI applied $applied of $keys keys"
                 FAIL=1
