@@ -387,6 +387,7 @@ fn search_with(
     let (tx, ty) = terrain.nearest_grid(to);
     let start = sy * dim + sx;
     let goal = ty * dim + tx;
+    let start_blocked = vehicle.is_some_and(|v| v.block.is_blocked(start));
     s.begin((dim * dim) as usize);
 
     let stamp = s.stamp;
@@ -453,8 +454,14 @@ fn search_with(
                 continue;
             }
             let diagonal = dx != 0 && dy != 0;
-            // Vehicles: blocked nodes are walls, except right at the start.
-            let near_start = |x: u32, y: u32| x.abs_diff(sx) <= 1 && y.abs_diff(sy) <= 1;
+            // Vehicles: blocked nodes are walls, except right at the start
+            // (S10b-ai E3: not obstacle piece nodes, unless the start node
+            // is blocked itself, or a path would cross a thin row).
+            let near_start = |x: u32, y: u32| {
+                x.abs_diff(sx) <= 1
+                    && y.abs_diff(sy) <= 1
+                    && (start_blocked || !vehicle.is_some_and(|v| v.block.is_piece(y * dim + x)))
+            };
             let vpct = match vehicle {
                 None => None,
                 Some(v) => match vehicle_pct(terrain, v, mx, my, near_start(mx, my)) {

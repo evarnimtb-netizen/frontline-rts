@@ -12,14 +12,12 @@ use frontline_content::ItemKind;
 
 const ENG: &str = "ww2:usa_engineer_squad";
 const TANK: &str = "ww2:usa_m4a3_75_squad";
-/// The ring's radius and hedgehog step (m). The vehicle block layer (piece
-/// footprint + `wreck_pad_m` + the tank's clearance) frees a tank gap only
-/// once the standing neighbours' centres are about 24 m apart (measured:
-/// in a 4 m row that is 5 pieces gone, more than `demolish_pieces_max`
-/// allows; owner question S10b-ai-D3). A 6 m ring is closed and opens
-/// after 3 pieces.
+/// The ring's radius and hedgehog step (m). S10b-ai E3: a piece blocks the
+/// vehicle nodes within its `piece_half` box (at least 2 m each way, no
+/// pad), so a 4 m ring is closed and opens for a medium tank after 2
+/// adjacent pieces (about 12 m between the standing centres).
 const RING_M: i32 = 20;
-const STEP_M: i32 = 6;
+const STEP_M: i32 = 4;
 
 /// A blocked tank: AI player 1's M4 150 m short of the point, inside a
 /// closed ring of player 0 hedgehogs, ordered 90 m on toward the point (it
@@ -151,7 +149,14 @@ fn ai_demolishes_until_a_tank_gap_opens() {
             continue;
         }
         assert_eq!(end, Some(HabitEnd::Done), "{:?}", ai.counters);
-        assert!((2..=3).contains(&used), "pieces used {used}");
+        let gone = {
+            let g = b.w.game().unwrap();
+            b.ring
+                .iter()
+                .filter(|p| !g.fort().pieces.contains_key(p))
+                .count()
+        };
+        assert!((2..=3).contains(&used), "pieces used {used}, gone {gone}");
         assert_eq!((c.demolitions_started, c.gaps_opened), (1, 1));
         assert!(c.demolish_wanted >= 1);
         drive(&mut b.w, &mut ai, &args, 60 * h);

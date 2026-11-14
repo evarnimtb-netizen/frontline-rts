@@ -260,8 +260,8 @@ fn ai_counts_own_blocked() {
             &mut w,
             1,
             "ww2:usa_m4a3_75_squad",
-            p.x.floor_int() + 2,
-            p.y.floor_int() - 7,
+            p.x.floor_int() + 9,
+            p.y.floor_int(),
         );
         let goal = p + c(2, 0);
         run(
@@ -296,8 +296,8 @@ fn own_blocked_counts_once_across_save_load() {
         &mut w,
         1,
         "ww2:usa_m4a3_75_squad",
-        p.x.floor_int() + 2,
-        p.y.floor_int() - 7,
+        p.x.floor_int() + 9,
+        p.y.floor_int(),
     );
     run(
         &mut w,

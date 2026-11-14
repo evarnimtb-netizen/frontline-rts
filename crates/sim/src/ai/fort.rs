@@ -2384,7 +2384,8 @@ impl super::Planner<'_> {
 
     /// S10b-ai `own_blocked` (T115): own vehicles whose move failed (the
     /// lead stands within 4 m of its served path's end, which is not its
-    /// goal: a reached path ends exactly on it) with an own `blocks_vehicles` piece within
+    /// goal: a reached path ends exactly on it; or it holds with no path
+    /// more than 4 m from its goal) with an own `blocks_vehicles` piece within
     /// `OWN_BLOCKED_M`; each (vehicle, piece) pair counts once, when it
     /// first appears (`AiState::blocked_pairs`, sorted, saved).
     /// Nothing with `obstacles` off.
@@ -2408,10 +2409,16 @@ impl super::Planner<'_> {
                 continue;
             }
             let at = self.ents.transform[q.lead(self.ents).index()].pos.xy();
-            let Some(&end) = nav.path.last() else {
-                continue;
+            // S10b-ai E: a move that ended short (Holding with no path, its
+            // goal more than 4 m off) counts too.
+            let failed = match nav.path.last() {
+                Some(&end) => !near(end, nav.goal, Fx::from_milli(500)) && near(end, at, four),
+                None => {
+                    matches!(nav.phase, NavPhase::Holding | NavPhase::Arriving)
+                        && !near(at, nav.goal, four)
+                }
             };
-            if near(end, nav.goal, Fx::from_milli(500)) || !near(end, at, four) {
+            if !failed {
                 continue;
             }
             for (&pid, p) in &g.fort.pieces {

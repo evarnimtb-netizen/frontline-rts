@@ -85,10 +85,9 @@
 //!   nearest `p`'s base (on the line from the base) inside a closed ring of
 //!   the enemy's hedgehogs (radius [`RING_M`] m, step [`RING_STEP_M`] m: no
 //!   way round on any map), ordered [`DEMOLISH_TANK_M`] - 60 m on toward the
-//!   point (it stops at the ring); `p`'s engineers stand 40 m aside, their
-//!   leader with [`DEMOLISH_SATCHELS`] satchels (the cards carry 1; a tank
-//!   gap needs about 24 m between standing piece centres, 3 pieces of this
-//!   ring and 5 of a 4 m row: owner question S10b-ai-D3).
+//!   point (it stops at the ring); `p`'s engineers stand 40 m aside with the
+//!   card's own satchels (S10b-ai E3: two adjacent pieces of a 4 m ring or
+//!   row open a medium tank's way; the tests stage [`DEMOLISH_SATCHELS`]).
 //!   `drive_ai_habit(Demolish)` (engineers the squad, the tank `others`)
 //!   until the habit ends (at most [`DEMOLISH_DRIVE_S`]), then
 //!   [`DEMOLISH_PASS_S`] s more (still driven): `gap_opened_pct` (the habit ended Done),
@@ -157,11 +156,12 @@ pub const SWEEP_ADVANCE_S: u64 = 240;
 const RIFLES: [&str; 2] = ["ger_grenadiergruppe", "usa_rifle_squad"];
 
 /// The demolish row (module docs): the tank's start distance short of the
-/// point, the ring's radius and hedgehog step (m), the leader's satchels,
-/// the longest drive and the drive on (s).
+/// point, the ring's radius and hedgehog step (m), the leader's satchels in
+/// the tests (the row keeps the card's), the longest drive and the drive on
+/// (s).
 pub const DEMOLISH_TANK_M: i32 = 150;
 pub const RING_M: i32 = 20;
-pub const RING_STEP_M: i32 = 6;
+pub const RING_STEP_M: i32 = 4;
 pub const DEMOLISH_SATCHELS: u8 = 3;
 pub const DEMOLISH_DRIVE_S: u64 = 900;
 pub const DEMOLISH_PASS_S: u64 = 60;
@@ -1242,6 +1242,7 @@ fn demolish_once(
     seed: u64,
     p: u8,
     demolish: u32,
+    satchels: Option<u8>,
 ) -> Result<(bool, bool, u32, bool)> {
     use frontline_sim::ItemKind;
     use frontline_sim::ai::{AiHabit, AiState, DriveArgs, HabitEnd};
@@ -1250,8 +1251,10 @@ fn demolish_once(
     let mut w = world_with(args, seed, |s| {
         s.rules.ai.obstacles.demolish = demolish;
         let k = ItemKind::Satchel.index();
-        for t in s.squad_types.iter_mut().filter(|t| t.id == eng_card) {
-            t.members[0].items[k] = DEMOLISH_SATCHELS;
+        if let Some(n) = satchels {
+            for t in s.squad_types.iter_mut().filter(|t| t.id == eng_card) {
+                t.members[0].items[k] = n;
+            }
         }
     })?;
     let (i, pt, base) = {
@@ -1349,16 +1352,25 @@ fn demolish_once(
 
 /// The demolish row (module docs).
 pub fn demolish_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<DemolishRow> {
+    demolish_row_with(args, seeds, None)
+}
+
+/// The demolish row with the leader's satchels staged (`None`: the card's).
+fn demolish_row_with(
+    args: &FortifyArgs,
+    seeds: std::ops::Range<u64>,
+    satchels: Option<u8>,
+) -> Result<DemolishRow> {
     let (mut opened, mut passed, mut used, mut blocked, mut runs) = (0u32, 0u32, 0u32, 0u32, 0u32);
     let (mut c_opened, mut c_passed) = (0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (o, pa, u, b) = demolish_once(args, seed, p, 1)?;
+            let (o, pa, u, b) = demolish_once(args, seed, p, 1, satchels)?;
             opened += o as u32;
             passed += pa as u32;
             used += u;
             blocked += b as u32;
-            let c = demolish_once(args, seed, p, 0)?;
+            let c = demolish_once(args, seed, p, 0, satchels)?;
             c_opened += c.0 as u32;
             c_passed += c.1 as u32;
             runs += 1;
@@ -1390,7 +1402,8 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
     fn demolish_opens_only_when_the_tank_passed() {
         for p in [0u8, 1] {
-            let r = demolish_once(&FortifyArgs::default(), 1, p, 1).unwrap();
+            let r =
+                demolish_once(&FortifyArgs::default(), 1, p, 1, Some(DEMOLISH_SATCHELS)).unwrap();
             assert!(
                 !r.0 || r.1,
                 "player {p}: opened but the tank did not pass: {r:?}"
@@ -1408,7 +1421,8 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
     fn demolish_man_places_the_second_piece() {
         for seed in [1u64, 2] {
-            let r = demolish_once(&FortifyArgs::default(), seed, 0, 1).unwrap();
+            let r = demolish_once(&FortifyArgs::default(), seed, 0, 1, Some(DEMOLISH_SATCHELS))
+                .unwrap();
             assert!(r.2 >= 2, "seed {seed}: charges laid {}: {r:?}", r.2);
         }
     }
@@ -1463,5 +1477,16 @@ mod tests {
         let args = FortifyArgs::default();
         let r = demolish_row(&args, 1..4).unwrap();
         println!("demolish {}", serde_json::to_string(&r).unwrap());
+    }
+
+    /// The demolish row with [`DEMOLISH_SATCHELS`] on the leader (the card
+    /// carries 1, one piece): `cargo test --release -p frontline-cli --lib
+    /// demolish_row_staged_one_off -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn demolish_row_staged_one_off() {
+        let args = FortifyArgs::default();
+        let r = demolish_row_with(&args, 1..4, Some(DEMOLISH_SATCHELS)).unwrap();
+        println!("demolish staged {}", serde_json::to_string(&r).unwrap());
     }
 }

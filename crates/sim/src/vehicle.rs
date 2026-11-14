@@ -1301,6 +1301,9 @@ pub struct BlockLayer {
     /// Blocked dilated once more: the clearance band a hull turning on a
     /// node there could clip (paths avoid it, smoothing never enters it).
     margin: Vec<bool>,
+    /// S10b-ai E3: the blocked nodes that only obstacle pieces block (box,
+    /// bridge or one-node gap): a path may not start through them.
+    piece: Vec<bool>,
     /// Node rectangles `[x0, y0, x1, y1]` (inclusive) to recompute.
     pending: Vec<[u32; 4]>,
     /// S8b: the wheeled layer: any ground dug `ditch_dm` deep blocks, on a
@@ -1317,6 +1320,47 @@ pub struct BlockLayer {
 pub(crate) fn piece_half(f: &Footprint) -> (Fx, Fx) {
     let min = Fx::from_int(SPACING_M).div_int(2);
     (f.half_x.max(min), f.half_y.max(min))
+}
+
+/// S10b-ai E3: two obstacle pieces whose centres are at most this far apart
+/// (m) close the ground between them for vehicles (a band half a grid step
+/// either side of the line between the centres): one piece gone from a 4 m
+/// row (8 m) stays closed, two gone (12 m) open, on a curve too.
+pub(crate) const PIECE_BRIDGE_M: i32 = 10;
+
+/// The bridges of [`PIECE_BRIDGE_M`] between `pieces` (centre pairs).
+pub(crate) fn piece_bridges(pieces: &[Footprint]) -> Vec<(FxVec2, FxVec2)> {
+    let lim = FxVec2::from_int(PIECE_BRIDGE_M, 0).length_sq_raw();
+    let mut out = Vec::new();
+    for (i, a) in pieces.iter().enumerate() {
+        for b in &pieces[i + 1..] {
+            if (b.center - a.center).length_sq_raw() <= lim {
+                out.push((a.center, b.center));
+            }
+        }
+    }
+    out
+}
+
+/// Whether `p` lies in a piece's [`piece_half`] box or within half a grid
+/// step of a bridge (the nodes the vehicle layers block for pieces).
+pub(crate) fn piece_blocks(pieces: &[Footprint], bridges: &[(FxVec2, FxVec2)], p: FxVec2) -> bool {
+    let half = Fx::from_int(SPACING_M).div_int(2);
+    pieces.iter().any(|w| {
+        let (hx, hy) = piece_half(w);
+        let d = p - w.center;
+        d.dot(w.fwd).abs() <= hx && d.det(w.fwd).abs() <= hy
+    }) || bridges.iter().any(|&(a, b)| {
+        let ab = b - a;
+        let len = ab.length();
+        if len == Fx::ZERO {
+            return false;
+        }
+        let u = ab.normalize_or_zero();
+        let d = p - a;
+        let along = d.dot(u);
+        along >= Fx::ZERO && along <= len && d.det(u).abs() <= half
+    })
 }
 
 /// A wreck's (or S10b obstacle piece's) footprint for the block layer.
@@ -1338,6 +1382,7 @@ impl BlockLayer {
             ditch: vec![false; n],
             blocked: vec![false; n],
             margin: vec![false; n],
+            piece: vec![false; n],
             pending: Vec::new(),
             any_dug: false,
         }
@@ -1384,6 +1429,11 @@ impl BlockLayer {
     #[inline]
     pub fn is_blocked(&self, node: u32) -> bool {
         self.blocked.get(node as usize).copied().unwrap_or(false)
+    }
+
+    /// S10b-ai E3: whether `node` is blocked by obstacle pieces only.
+    pub fn is_piece(&self, node: u32) -> bool {
+        self.piece.get(node as usize).copied().unwrap_or(false)
     }
 
     /// Whether `node` lies in an AT ditch (infantry: dear, no trench
@@ -1510,13 +1560,24 @@ impl BlockLayer {
             }
         }
         let max = dim - 1;
+        let bridges = piece_bridges(pieces);
         let piece_at = |gx: u32, gy: u32| {
             let p = FxVec2::from_int(gx as i32 * SPACING_M, gy as i32 * SPACING_M);
-            pieces.iter().any(|w| {
-                let (hx, hy) = piece_half(w);
-                let d = p - w.center;
-                d.dot(w.fwd).abs() <= hx && d.det(w.fwd).abs() <= hy
-            })
+            piece_blocks(pieces, &bridges, p)
+        };
+        // S10b-ai E3: a free node between two piece nodes on a straight or
+        // diagonal grid line (a one-node gap) is blocked
+        // too: a tank needs two free node columns to drive a gap.
+        let pinched = |gx: u32, gy: u32| {
+            let (x, y) = (gx as i32, gy as i32);
+            let on = |nx: i32, ny: i32| {
+                nx >= 0 && ny >= 0 && nx <= max as i32 && ny <= max as i32 && {
+                    piece_at(nx as u32, ny as u32)
+                }
+            };
+            [(1, 0), (0, 1), (1, 1), (1, -1)]
+                .iter()
+                .any(|&(dx, dy)| on(x + dx, y + dy) && on(x - dx, y - dy))
         };
         // Two dilations: raw → blocked (rect + 1) → margin (rect + 2).
         let dilate = |from: &[bool], gx: u32, gy: u32| {
@@ -1534,11 +1595,16 @@ impl BlockLayer {
                             // so the wheeled layer blocks the raw nodes
                             // only; the dilation is its margin (a 10 m gap
                             // in a trench stays a way through).
-                            self.blocked[k] = if self.any_dug {
+                            let other = if self.any_dug {
                                 self.raw[k]
                             } else {
                                 dilate(&self.raw, gx, gy)
-                            } || (!pieces.is_empty() && piece_at(gx, gy));
+                            };
+                            let piece = !other
+                                && !pieces.is_empty()
+                                && (piece_at(gx, gy) || pinched(gx, gy));
+                            self.blocked[k] = other || piece;
+                            self.piece[k] = piece;
                         } else {
                             self.margin[k] = dilate(&self.blocked, gx, gy);
                         }
@@ -2137,7 +2203,10 @@ impl MatchState {
     /// (a `blocks_vehicles` piece added or removed).
     pub(crate) fn mark_piece_block(&mut self, f: &Footprint) {
         let (hx, hy) = piece_half(f);
-        let r = FxVec2::new(hx, hy).length();
+        // Its bridges reach PIECE_BRIDGE_M (+ the band) from its centre.
+        let r = FxVec2::new(hx, hy)
+            .length()
+            .max(Fx::from_int(PIECE_BRIDGE_M + SPACING_M / 2));
         let rv = FxVec2::new(r, r);
         self.vderived.block.mark_rect(f.center - rv, f.center + rv);
         if let Some(w) = &mut self.vderived.wheel_block {
