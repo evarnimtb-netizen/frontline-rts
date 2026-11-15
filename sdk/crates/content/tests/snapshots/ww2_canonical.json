@@ -1661,8 +1661,8 @@
           "breach_near_m": 80,
           "breach_tries": 3,
           "build_threat_max": 4,
-          "builder_reach_m": 120,
-          "builders_max": 1,
+          "builder_reach_m": 200,
+          "builders_max": 2,
           "cards": 1,
           "cut_fire_m": 100,
           "dugout": 1,
@@ -1693,7 +1693,7 @@
           "wire_rays": 16,
           "wire_seen_m": 150,
           "works": 1,
-          "works_per_point": 2
+          "works_per_point": 3
         },
         "frag_group_men": 3,
         "guns": {

@@ -219,7 +219,6 @@ fn ai_bunker_waits_for_a_busy_truck() {
         // S10a on (its truck runs) with no S10a work of its own.
         let f = &mut s.rules.ai.fort;
         f.works = 1;
-        f.builders_max = 2;
         f.nest = 0;
         f.dugout = 0;
         f.roof = 0;
@@ -317,7 +316,6 @@ fn truck_first_run(first: u32, starve: bool) -> (u32, bool, crate::ai::AiCounter
         s.rules.ai.obstacles.bunker_truck_first = first;
         let f = &mut s.rules.ai.fort;
         f.works = 1;
-        f.builders_max = 2;
         f.nest = 0;
         f.dugout = 0;
         f.roof = 0;
@@ -430,7 +428,6 @@ fn yields_run(yields: u32) -> (bool, Option<u8>, crate::ai::AiCounters) {
         s.rules.ai.obstacles.at_mines = 0;
         let f = &mut s.rules.ai.fort;
         f.works = 1;
-        f.builders_max = 2;
         f.nest = 0;
         f.dugout = 0;
         f.roof = 0;
