@@ -8,21 +8,17 @@ PROTOCOL 14 stay. Minor scope questions are settled on the default and reported;
 
 - Germany pooled 41.88 % of 480 (sets 43.75 / 41.25 / 40.62), `target/s10b-ai-verify`. Pool noise about +-4.5 points,
   so 41.88 sits about 3 points under the 45 floor. No match without a winner. 410 pass, 46 miss, 26 hard.
-- History: 45-52 % from S5b to S10a (S9b and S10a 48.75 %). One step down at S10a-ai: 41.67 %. Unchanged since.
+- History: 45-52 % from S5b to S10a (48.75 % at S10a), one step to 41.67 % at S10a-ai, unchanged since.
 - S10a-ai ablations (480 each): all switches off 48.75 %, `works_off` 47.08 %. Wire, breach, cards, nest, dugout,
   roof, sandbags off one at a time: 37.5-43 %. So point building as a whole is the lever, not one work kind.
   `works_off` also stops point wire and the +80 builder hold (S10a-ai log D4).
 - Likeliest mechanism (S10a-ai D5, not measured): the fort AI holds an engineer at an own point while the point
   "wants works" (`crates/sim/src/ai/fort.rs` `fort_holds`). Germany's held builder is often its only SMG and satchel
   engineer. A refused work keeps wanting, so the hold can last the whole match.
-- The loss is infantry output. Germany fires 359k rifle rounds to USA 687k. Kill share 43.8 % (30852 / 39618).
-  Tank losses are even (1997 / 1976). Germany's AT guns do better than USA's (0.61 vs 0.34 armour out per match).
-  Germany sits at the pop cap far more (5015 holds vs 74).
-- Short matches carry the gap: under 20 min Germany wins 37.4 %, at 20 min or more 48.5 %. USA wins are the shorter
-  matches. Germany loses both sides of a seed pair 73 times and sweeps 34 times of 240.
-- Base side is not the cause: the lean flips sign between sets (map and seed noise).
-- Not in the data: income, end cause (tickets or base), losses by class, buy timing. The pass adds none of these
-  unless a stage needs one to explain a result (a CLI output field only, no sim layout change).
+- The loss is infantry output: rifle rounds 359k vs USA 687k, kill share 43.8 %. Tank losses are even (1997 / 1976),
+  Germany's guns do better (0.61 vs 0.34 armour out per match). Germany sits at the pop cap far more (5015 vs 74).
+- Short matches carry the gap: under 20 min Germany wins 37.4 %, at 20 min or more 48.5 %. Base side is not the
+  cause (its lean flips sign between sets).
 
 ## 2. Levers
 
@@ -64,8 +60,8 @@ Seeds are split so the pass does not fit the seeds it is judged on:
 
 Search order and machine time (`--jobs 6`, about 1.25 s per 45-minute match; start in the background, poll in steps of
 at most 200 s):
-1. Smoke: each lever at the far end of its range on 40 matches (seeds 1001-1020). About 1 min each. Keeps a lever only
-   if no-winner stays 0 and its own counters move (holds, buys, works). About 8 min for L1-L8.
+1. Smoke: each lever at the far end of its range, 40 matches (seeds 1001-1020), about 1 min each. Kept if no-winner
+   stays 0 and its own counters move.
 2. Screen: each kept lever at the far end on 160 matches (seeds 1001-1080), paired against an unchanged base on the
    same seeds, read with `tools/pool.py BASE DIR`. About 3.5 min each, about 25 min, plus 3.5 min for the base.
    A lever goes on if Germany moves at least +3 points with T94-T97 counters still above their floors.
@@ -77,15 +73,13 @@ at most 200 s):
 5. Held out: `tools/batch.sh target/b1-measure/skirmish160_h301.json -- skirmish --ai-vs-ai --seed 301 --seeds 80
    --both-bases --summary --minutes 45`, then `frontline-cli targets` for T5f. About 3.5 min. Played once. If it
    fails, no retune on it: the stage stops and reports.
-6. Tick time and the full suite only from the orchestrator's `tools/verify.sh` (last one took 249 min).
-Machine time for the pass, verify excluded: about 1.5-2 h.
+6. Tick time and the full suite only from the orchestrator's `tools/verify.sh`. Pass total, verify excluded: 1.5-2 h.
 
 Acceptance (all must hold):
 - Germany pooled 480 inside 45-55; each 160 set inside 40-60 (set noise is about +-7.7);
 - held-out 160 inside 40-60, and the 640 pool (480 plus held out) inside 45-55;
 - no match without a winner; no hard target that passes in `target/s10b-ai-verify` misses; T94-T97 pass;
-- re-labels (section 5) listed apart, never counted as closed misses;
-- tick p99 from verify.sh at most 10 % over 0.506 ms;
+- re-labels (section 5) listed apart, never counted as closed; tick p99 (verify.sh) at most 10 % over 0.506 ms;
 - every change has a before and after from `pool.py` or `frontline-cli targets` in the log.
 What replaces the all-switches-off neutrality (defaults move, so main's numbers no longer repeat):
 - revert check: the 40 set with `-o B1-levers/revert.toml` (every changed key at its old value) must give the same
@@ -103,11 +97,10 @@ What replaces the all-switches-off neutrality (defaults move, so main's numbers 
 - B1-3 Secondary targets (Sonnet, medium). L6, L7, L8 one at a time (160 screens), then one step 4 measure, the revert
   check, the soft per-unit look (T31, T55, T9b, T33, T54 reads, before and after), then step 5 once. STOP if the held
   out set fails.
-- B1-4 Review (Opus, short). Diff against the owner limits, the seed split, the acceptance list. Findings to B1-3's
-  agent only if a blocker.
+- B1-4 Review (Opus, short). Diff against the owner limits, the seed split and the acceptance list.
 - B1-5 Verify (orchestrator): `tools/verify.sh target/b1-verify`, tick p99, settings.cfg unchanged.
-- B1-6 Docs (Haiku, low allowed): STATE.md, TODO.md, log trimmed to 150 lines.
-A code lever (if the owner says yes in B1-0) adds a Build stage (Opus) before B1-1 and the Review gate of workflows.md.
+- B1-6 Docs (Haiku, low allowed): STATE.md, TODO.md, log at most 150 lines. A code lever (owner yes in B1-0) adds an
+  Opus Build stage before B1-1 and the Review gate of workflows.md.
 
 ## 5. Hard misses: try to close, or re-label
 
@@ -116,7 +109,7 @@ T8b oos HE share (L8, or as a side effect of more line squads).
 Re-label as report (in B1.toml, with a note), each with its reason:
 - T88b, T88d USA gun armour out: the only lever is `[ai.guns]`, which the pass does not move (owner "guns" limit;
   S9b-1 left it to the AI half; Germany's guns already do better). Re-labelled only if the owner agrees (ask Q4).
-- T6a 40-set base_max 62.5 vs 62: one match of noise on a 40 set; the 160 rows T6b-c stay hard. Kept hard, not chased.
+- T6a 40-set base_max 62.5 vs 62: one match of noise; kept hard, not chased (T6b-c on the 160 sets pass).
 - T109, T110a-d, T112a/c, T113a/c, T114e/f AI use: not balance; follow the owner's E1, E3, E6, E8 answers.
 - T93a/b/f/g, T106b fortify mechanics: fortify-test rows independent of the share; stay as they are.
 - T8b becomes a report only if L8 fails and the three-set mean is inside 20-26.3.
@@ -130,24 +123,21 @@ Ask (how it should play):
   last satchel engineer), an engine change with review, no layout change. (D) Faction-specific rule values (new keys).
 - Q2 Are S10b-ai-E1, E3, E6 (and E8) settled before balance or after? They change what is balanced: more mines,
   obstacles or bunkers will move the share again. Recommended: before; then this pass balances the game as it plays.
-- Q3 May the fort AI do less (fewer works per point, fewer builders) if that is what closes the gap? T94-T97 floors
-  stay.
+- Q3 May the fort AI do less (fewer works per point, fewer builders) if that closes the gap? T94-T97 floors stay.
 - Q4 T88b/d: accept USA gun results as a report, or open `[ai.guns]` to this pass?
 Decided by default (reported only):
 - S8b, S9 and S10 card prices count as existing prices and are not moved.
 - Vehicle card weights (L6, L7) may move inside their ranges, as S7-2 and S8a-21 did.
 - Cooldowns, `max_alive`, `unlock_s` are not moved.
-- Seeds 301-380 are the held-out set; tuning uses 1001 and up.
-- Soft per-unit targets (T31, T55, T9b) are read and reported, not tuned.
-- T6a kept hard and not chased; the held-out row T5f is a report with band 40-60.
-- No new output field unless a stage needs one to explain a result.
+- Seeds 301-380 are the held-out set (row T5f, report, band 40-60); tuning uses 1001 and up.
+- Soft per-unit targets (T31, T55, T9b) are read and reported, not tuned. T6a kept hard, not chased.
 
 ## 7. Risks
 
 - Fitting noise: a 3-point gap is under one set's noise. Guarded by the seed split and the held-out set.
 - The lever deletes the feature: lower builder keys may close the gap by building nothing. Guarded by T94-T97.
-- The mechanism is a guess (D5). If no TOML lever moves Germany, only Q1 (B), (C) or (D) is left: stop and ask.
-- E1, E3, E6 answered after the pass would undo it. Q2 is asked first for this reason.
-- Symmetric keys move USA too: T95b/d USA wire (57.5 / 56.25 vs 60) may fall further.
-- Side effects on other hard rows (S9b: one lever turned 10 misses into 17). Every measure diffs the targets.
+- The mechanism is a guess (D5): if no TOML lever moves Germany, only Q1 (B)-(D) is left; stop and ask.
+- E1, E3, E6 answered after the pass would undo it; Q2 is asked first. Not in the data: income, end cause, buy timing.
+- Symmetric keys move USA too (T95b/d USA wire 57.5 / 56.25 vs 60). Side effects on other hard rows (S9b: one lever
+  turned 10 misses into 17): every measure diffs the targets.
 - Verify time: the last parallel verify took 249 min, cause not examined.
