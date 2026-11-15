@@ -39,11 +39,9 @@ L1-L5 and L8 are symmetric values whose effect differs because the rosters diffe
 S7-2 and S8a-21 weight choices that were settled on the default. S8a-21 found 150 on the half-track cut HE kills, hence
 the lower cap on L7. Fort switches stay 1: switching works off would close the gap by deleting a feature and would
 break T94-T97. A lever that drops any of T94-T97 below its floor is rejected.
-
 Only with an owner yes (section 6, ask): engineer card weights (Pioniere 40, Bau 100, Sturm 60 are an owner decision of
 S10a-ai); a small AI code change to the builder hold; new per-faction rule values (Germany income or tickets; no such key
 exists, it would be a new rule); card `cooldown_s`, `max_alive`, `unlock_s`.
-
 Not moved: armour, penetration, weapons and gun cards, `[ai.guns]` (the owner's "guns"; S9b measured it, 35 cost more
 hard misses), ammo loads, `[supply]` prices and `[ai.supply]`, lethality, every card `cost` (S8b, S9, S10 cards
 included), squad sizes and members, `start_squads`, `[economy]`, tickets, pop cap, capture, the map, any `[ai.fort]`
@@ -51,9 +49,8 @@ or `[ai.obstacles]` switch, SAVE, PROTOCOL, the save layout, tick order, RNG use
 
 ## 3. Method
 
-Tools: scripted A/B through `tools/batch.sh` for screens, `tools/autotune` for the solve, `tools/measure.sh` and
-`tools/pool.py` for every reported number. Each lever's override file lives in `docs/slices/targets/B1-levers/`.
-Seeds are split so the pass does not fit the seeds it is judged on:
+Tools: `tools/batch.sh` A/B screens, `tools/autotune` for the solve, `tools/measure.sh` and `tools/pool.py` for every
+reported number. Overrides in `docs/slices/targets/B1-levers/`. Seeds are split so the pass does not fit its judges:
 - tuning and screening: seeds 1001 and up only (screens 1001-1080, autotune `seed_start` 1101);
 - measurement: the three 160 sets (1-80, 101-180, 201-280), used to confirm, never to search;
 - held out: seeds 301-380, both bases (run `skirmish160_h301`, row T5f), played once on the frozen change set.
