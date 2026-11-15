@@ -100,14 +100,12 @@ Open: finding 23 (`piece_near`), finding 12 (mine-want counter needs a save chan
 
 ## Known gaps
 
-- Balance: S10a-ai Germany 41.67 % (480); S10a 48.75 %; T88 USA open (S9b-1 (A)). T5c, T50e known noise.
-- Not verified: the eliminated-player path; a per-field hash audit beyond the named tests. No radio, registered fire, cross-OS CI.
+- Balance: S10a-ai Germany 41.67 % (480); S10a 48.75 %; T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests. No radio, registered fire, cross-OS CI.
 - Net loopback refuses `DropCrates` at a non-truck. Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels.
 
 ## Roadmap position
 
-Done and on main: S1 to S10b mechanics. Done on branch: S10b-ai (waits for the owner's OK to merge). Next after the OK:
-merge, then the balance pass or S11 (owner's choice). Then S12 to S15. Tiers: `workflows.md` 1.
+Done on main: S1 to S10b. Done on branch: S10b-ai (waits for the owner's OK). Next after the OK: merge, then the balance pass or S11 (owner's choice).
 
 ## How to check work
 
