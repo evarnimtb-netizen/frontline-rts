@@ -1,6 +1,6 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10b-ai (merged 2026-11-15, main `72b2970`). Branch `balance-pass`: balance pass B1, **NOT merged, NO default changed**
+Main holds S1 to S10b-ai (merged 2026-11-15, main `082332d`). Branch `balance-pass`: balance pass B1, **NOT merged, NO default changed**
 (see B1 below). Owner questions are in `docs/TODO.md`.
 
 ## What the game is now
