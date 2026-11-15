@@ -5,8 +5,7 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**S10b-ai final state (2026-11-15): done and verified on branch `s10b-ai` (head `d42c8fe`, then docs commits). Merged into main 2026-11-15 (owner OK);
-main stays `72b2970`.** SAVE 25, PROTOCOL 14 (main 24 and 14). Stages: Plan, Tools, Build A-E, 480 measure, three-lens Opus
+**S10b-ai final state (2026-11-15): done and verified on branch `s10b-ai` (head `d42c8fe`, then docs commits). Merged into main 2026-11-15 (owner OK).** SAVE 25, PROTOCOL 14 (main the same after the merge). Stages: Plan, Tools, Build A-E, 480 measure, three-lens Opus
 review (24 findings: 1 blocker, 10 major, 13 minor), Fix in two passes (22 closed). The blocker: a normal save failed to load
 after a sweeping or demolition squad (or its tank) was lost before the AI's next plan. Fixed.
 **Verify** (orchestrator, `tools/verify.sh target/s10b-ai-verify`, first parallel run, 248 min 52 s wall, cause not
