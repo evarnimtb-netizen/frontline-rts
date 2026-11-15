@@ -5,7 +5,7 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**S10b-ai final state (2026-11-15): done and verified on branch `s10b-ai` (head `d42c8fe`, then docs commits). NOT merged;
+**S10b-ai final state (2026-11-15): done and verified on branch `s10b-ai` (head `d42c8fe`, then docs commits). Merged into main 2026-11-15 (owner OK);
 main stays `72b2970`.** SAVE 25, PROTOCOL 14 (main 24 and 14). Stages: Plan, Tools, Build A-E, 480 measure, three-lens Opus
 review (24 findings: 1 blocker, 10 major, 13 minor), Fix in two passes (22 closed). The blocker: a normal save failed to load
 after a sweeping or demolition squad (or its tank) was lost before the AI's next plan. Fixed.
@@ -25,7 +25,7 @@ T110a-d, T112a, T112c, T113a, T113c; T114e, T114f.
 reverted); finding 12 (per-reason counter for mine wants, needs a save layout change); the liveness barrier row does not
 exercise `barrier_job_max_s` (finding 14, second half); off-lattice crossing for the second AT row (finding 7; T110k
 report-only); satchels for T114e/f (TODO E3).
-**Waits for the owner:** OK to merge into main; TODO questions S10b-ai-E1 and E3-E8; the 2026-11-12 audit process
+**Waits for the owner:** TODO questions S10b-ai-E1 and E3-E8; the 2026-11-12 audit process
 proposals (adopted for this slice, not yet confirmed); the 249-minute parallel verify needs a look. Next after the OK:
 merge, then the balance pass or S11 (owner's choice).
 

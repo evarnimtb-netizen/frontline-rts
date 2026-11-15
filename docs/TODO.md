@@ -284,7 +284,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   the part of the lane.
   S10b-ai-E8 T113 bunker target: 20 % was written for the old denominator. (A) Reset to about 10 % of all matches.
   (B) Keep 20 %.
-- S10b-ai not numbered, open: merging `s10b-ai` into main needs the owner's OK. The process proposals of the
+- S10b-ai not numbered, open: `s10b-ai` was merged into main 2026-11-15 with the owner's OK. The process proposals of the
   2026-11-12 audit were adopted by the orchestrator for this slice; the owner has not yet confirmed them. The parallel
   `tools/verify.sh` took 248 min 52 s (the old serial run took 38 min); it needs a look before the next slice.
 - S10b open notes (not numbered): F8 from S10a-ai (an S8b truck re-orders an
@@ -310,7 +310,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
 11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
 12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Merged to main 2026-11-12 with the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
-13. **S10b-ai: done on branch `s10b-ai` 2026-11-15, waiting for the owner's OK to merge** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Open questions S10b-ai-E1 and E3-E8 below.
+13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Open questions S10b-ai-E1 and E3-E8 below.
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)

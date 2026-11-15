@@ -1,7 +1,7 @@
 # Frontline RTS: state (read this first)
 
 Main holds S1 to S10b mechanics (main `72b2970`). **S10b-ai is done and verified on branch `s10b-ai`** (checked
-2026-11-15). It is not merged: main stays `72b2970` until the owner says so. Spec `docs/slices/S10b-ai.md`, log
+2026-11-15). Merged into main 2026-11-15 with the owner's OK (main = `s10b-ai`). Spec `docs/slices/S10b-ai.md`, log
 `S10b-ai-log.md` (top block), targets `S10b-ai.toml`. Owner questions E1-E8 are in `docs/TODO.md`.
 
 ## What the game is now
