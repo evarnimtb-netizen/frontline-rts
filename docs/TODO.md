@@ -292,6 +292,16 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   unreachable HQ goal about every 5 min) is planned in S10b-ai Build D (L5, switch `refusal_memory`; droppable). Bunker notes from Build E: MG fire from 150 m does not hit men
   in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
 
+## B1 balance pass open questions (asked 2026-11-16; branch `balance-pass`, log `docs/slices/B1-log.md`)
+
+- B1-1 Germany at about 42 % (42.29 % of 480 on seeds 1-280, band 45-55 missed). No fort setting passes both seed groups
+  with the floors. (A) Accept for now and balance again when the roster is stable. (B) Let the AI fortify less than the
+  minimum-use floors. (C) Another diagnosis outside fortification (why fortifying helps the USA more).
+- B1-2 Latent S10b-ai fault T115c: own obstacle rows at base 0 block own vehicles, and `count_own_blocked` recounts a
+  (vehicle, piece) pair each time it reappears (seed 104 normal: 13). Needs its own fix.
+- B1-3 USA wire floor is already missed at defaults (56-58 % of matches against 60).
+- B1-4 Delayed forts are mostly never built (cause not measured).
+
 ## Planned work queue
 
 1. Infra step (done; on main).

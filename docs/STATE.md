@@ -1,8 +1,7 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10b mechanics (main `72b2970`). **S10b-ai is done and verified on branch `s10b-ai`** (checked
-2026-11-15). Merged into main 2026-11-15 with the owner's OK (main = `s10b-ai`). Spec `docs/slices/S10b-ai.md`, log
-`S10b-ai-log.md` (top block), targets `S10b-ai.toml`. Owner questions E1-E8 are in `docs/TODO.md`.
+Main holds S1 to S10b-ai (merged 2026-11-15, main `72b2970`). Branch `balance-pass`: balance pass B1, **NOT merged, NO default changed**
+(see B1 below). Owner questions are in `docs/TODO.md`.
 
 ## What the game is now
 
@@ -53,33 +52,32 @@ Sim `crates/sim/src/fort.rs`; blueprints `mods/ww2/defs/fortifications/`; comman
 PlaceBangalore; capabilities build_structure, build_heavy, place_wire, clear_wire, breach. Cards 264 / 165 / 380 MP
 (`ai_weight` 0). Guide `docs/modding/fortifications.md`.
 
-## S10a-ai fortification AI and balance (on main since 2026-11-11; log `S10a-ai-log.md`)
+## S10a-ai fortification AI (on main since 2026-11-11; log `S10a-ai-log.md`)
 
-Verified on `72fd940` + `a0aa700` (`target/s10a-ai-verify`, the S10b neutrality base): 802 tests pass; tick p99
-0.476 / 0.574 ms. Germany pooled **41.67 %** of 480 (43.75 / 38.75 / 42.50; before: 48.75 %), inside the 35-65 % guard band.
-- Fort use (160 sets): Germany works 94-97 %, wire 78-82 %; USA works 79-82 %, wire 56-58 % (T95b/d floor 60 missed).
-- Breaching: a lone squad cannot breach defended wire without covering fire: S11 combined-arms work.
-- F8 (truck re-orders an unreachable HQ goal): fixed on `s10b-ai` (L5, `refusal_memory` 1).
+Germany pooled **41.67 %** of 480 at merge. USA wire 56-58 % (floor 60 missed). A lone squad cannot breach defended wire
+without covering fire (S11). F8 fixed on `s10b-ai` (L5, `refusal_memory` 1).
 
 ## S10b mechanics (on main since 2026-11-12; log `S10b-log.md`)
 
-Mines (`ap_minefield`, `at_minefield`), hedgehog and log barrier (block vehicle nodes), bunker (six pieces, slit),
-`ClearMines` (sweep) and `Demolish` (placed satchel). Blueprints in `mods/ww2/defs/fortifications/`; items `ap_mine`, `at_mine`.
-Verify: 881 tests pass; tick p99 0.487 ms (peak 0.638); neutrality base `target/s10b-verify` (40-only `target/s10b-base40`). Germany pooled **41.67 %** of 480 (43.75 / 38.75 / 42.50), 0 no-winner, in the 35-65 % band.
-AI-vs-AI identical to main (`neutral.py` vs `target/s10a-ai-verify`). Targets: 373 pass, 25 miss, 6 hard.
-Hard misses: T8b, T40c, T54e, T88b, T88d (old) and **T106b** (a tank does not pass one demolished piece in a hedgehog line; owner decision).
-Owner questions S10b-5..9 are in `docs/TODO.md`. Fuzz: 9686 mutations, 0 panics, 0 unloadable.
+Mines, hedgehog and log barriers, bunker, `ClearMines`, `Demolish` (blueprints `mods/ww2/defs/fortifications/`). 881 tests
+at verify; tick p99 0.487 ms. Hard misses: T8b, T40c, T54e, T88b, T88d, **T106b** (owner decision). Questions S10b-5..9 in `docs/TODO.md`.
 
-## S10b-ai (done on branch `s10b-ai`, verified 2026-11-15; not on main)
+## S10b-ai (merged to main 2026-11-15; log `S10b-ai-log.md`)
 
-Stages: Plan, Tools, Build A-E, 480 measure, Opus review (24 findings: 1 blocker, 10 major, 13 minor), Fix (two passes).
-Verify (`target/s10b-ai-verify`, 248 min 52 s wall): 965 tests pass, 0 fail; `check full` all ok; tick p99 0.506 ms (peak 0.709).
-Germany pooled **41.88 %** of 480 (43.75 / 41.25 / 40.62), no-winner 0, in the 35-65 % band. All switches off: 40 set = main 40/40.
-Targets: 410 pass, 46 miss, 26 hard, 6 unexposed. Own-side mistakes 0. Sweep and demolition never wanted in the 480.
-AI use, DE / US: mines 27/22/30 % and 15/12/12 % of matches (target 50); obstacles 12/8/4 % and 4/7/4 % (target 30, DE); bunker 9/4/4 % and 0/1/1 % (target 20, DE); AT fields at most 0.05 per match (target 0.5).
-Fortify (10 seeds): T110i 100 (ctl 0), T111i 85, T111j 0.9 (ctl 6.3), T112i 100, T113e/f/g 100, T115e 0 (ctl 80), T116a 0 (ctl 75), T116b 0 (ctl 53.6), T107d 83.
-Hard misses: T8b, T40c, T54e, T88b, T88d; near T6a, T40a, T72a; AI use T109a-h, T110a-d, T112a, T112c, T113a, T113c; T114e, T114f (0: one satchel per squad).
-Open: finding 23 (`piece_near`), finding 12 (mine-want counter needs a save change), barrier row vs `barrier_job_max_s`, off-lattice crossing (finding 7).
+Verify: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. All switches off: 40 set = main 40/40.
+AI use far under target (mines, obstacles, bunker, AT fields; owner E6). Open: finding 23 (`piece_near`), finding 12
+(mine-want counter needs a save change), barrier row vs `barrier_job_max_s`, off-lattice crossing (finding 7).
+
+## B1 balance pass (branch `balance-pass`, NOT merged, NO default changed; log `docs/slices/B1-log.md`)
+
+Built before balancing (owner 2026-11-15): `[ai.obstacles]` `demolish_handover` and `bunker_yields`, both on. New `[ai.fort]`
+keys `hold_max` 2, `build_after_s` 0, `build_min_squads` 0 (old behaviour); CLI `--side-detail` (read-only). Suite 974 green.
+SAVE_VERSION 25, PROTOCOL 14 unchanged. Germany 42.29 % of 480 on seeds 1-280 (43.12 / 42.50 / 41.25); band 45-55 not met.
+No fort setting or gate raises Germany on both seed groups while keeping the floors (works and wire >= 60 % of matches).
+Germany gains only as fortification is removed for both sides (works off +7.3, build_after_s 600 +8.5). Triple (+6.25) and
+builders_max 1 (+3.96) on fresh seeds 1001-1280 failed on 1-280 (-2.5, -1.7). Held-out seeds 301-380 NOT played.
+Rule: about 45 of 160 matches change winner under any change; paired 480 standard error near 2.4 points; accept only z >= 2.5 on both seed groups.
+Open questions B1-1..4 in `docs/TODO.md`.
 
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
@@ -105,7 +103,7 @@ Open: finding 23 (`piece_near`), finding 12 (mine-want counter needs a save chan
 
 ## Roadmap position
 
-Done on main: S1 to S10b. Done on branch: S10b-ai (waits for the owner's OK). Next after the OK: merge, then the balance pass or S11 (owner's choice).
+Done on main: S1 to S10b-ai. Branch `balance-pass`: B1 (not merged; open owner questions B1-1..4 in `docs/TODO.md`). Next: owner's choice on B1-1, then S11.
 
 ## How to check work
 
