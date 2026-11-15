@@ -1294,6 +1294,32 @@ impl super::Planner<'_> {
         self.active_jobs() + started < cap
     }
 
+    /// B1-5: own foot squads with a man alive (every own squad with no
+    /// vehicle that is not a crew: rifle, MG, AT, mortar, engineer,
+    /// other; squads on a job included).
+    pub(super) fn foot_squads(&self) -> u32 {
+        let g = self.g;
+        g.squads
+            .values()
+            .filter(|q| {
+                q.owner == self.me
+                    && !q.members.is_empty()
+                    && g.setup.squad_types[q.type_idx as usize].vehicle.is_none()
+                    && super::ai_kind(&g.setup, q.type_idx) != super::AiKind::Crew
+            })
+            .count() as u32
+    }
+
+    /// B1-5: whether new fort holds and jobs may start: match time at
+    /// least `build_after_s` and at least `build_min_squads` foot squads
+    /// ([`Self::foot_squads`]); a key at 0 is off. Running jobs go on.
+    pub(super) fn build_gate_open(&self) -> bool {
+        let f = &self.g.setup.rules.ai.fort;
+        let hz = self.g.setup.tick_hz.max(1) as u64;
+        (f.build_after_s == 0 || self.tick >= f.build_after_s as u64 * hz)
+            && (f.build_min_squads == 0 || self.foot_squads() >= f.build_min_squads)
+    }
+
     /// Fix F12: a known enemy soldier or vehicle within `threat_radius` of
     /// any of `at` (the builder and its site).
     fn fort_threat(&self, known: &[Known], kv: &[KnownVehicle], at: &[FxVec2]) -> bool {
@@ -1413,7 +1439,7 @@ impl super::Planner<'_> {
         kv: &[KnownVehicle],
         points: &mut [PointEval],
     ) {
-        if !habits_on(&self.g.setup) {
+        if !habits_on(&self.g.setup) || !self.build_gate_open() {
             return;
         }
         let s = &self.g.setup;
@@ -2265,16 +2291,20 @@ impl super::Planner<'_> {
         if !habits_on(s) {
             return out;
         }
-        self.point_starts(mine, assigned, points, known, kv, taken, &mut out, false);
-        self.bunker_why(mine, assigned, points, known, kv, taken, &out);
-        if switched_on(s, WorkKind::Roof) && self.job_room(0) {
-            self.start_roof(mine, known, kv, taken, &mut out);
-        }
-        if switched_on(s, WorkKind::Wall) && self.job_room(0) {
-            self.start_walls(mine, known, kv, taken, &mut out);
-        }
-        if switched_on(s, WorkKind::LogBarrier) && self.job_room(0) {
-            self.start_barriers(mine, known, kv, taken, &mut out);
+        // B1-5: before `build_after_s` or under `build_min_squads` no
+        // new job starts (running ones go on in `fort_continue`).
+        if self.build_gate_open() {
+            self.point_starts(mine, assigned, points, known, kv, taken, &mut out, false);
+            self.bunker_why(mine, assigned, points, known, kv, taken, &out);
+            if switched_on(s, WorkKind::Roof) && self.job_room(0) {
+                self.start_roof(mine, known, kv, taken, &mut out);
+            }
+            if switched_on(s, WorkKind::Wall) && self.job_room(0) {
+                self.start_walls(mine, known, kv, taken, &mut out);
+            }
+            if switched_on(s, WorkKind::LogBarrier) && self.job_room(0) {
+                self.start_barriers(mine, known, kv, taken, &mut out);
+            }
         }
         // T97: plan-squads on a fort job, and (fix F15) builders the
         // assign bonus held at a point that got no job, over all

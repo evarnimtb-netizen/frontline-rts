@@ -1660,6 +1660,8 @@
           "breach_max_s": 180,
           "breach_near_m": 80,
           "breach_tries": 3,
+          "build_after_s": 0,
+          "build_min_squads": 0,
           "build_threat_max": 4,
           "builder_reach_m": 200,
           "builders_max": 2,

@@ -1453,6 +1453,8 @@ breach_max_s = 180           # s: a breach job ends after this long
 gap_clear_m = 2              # m: a gap is open with no standing section this close to the crossing
 breach_cards_max = 1         # urgent breach buys alive at once
 hold_max = 2                 # B1-4: at most this many points hold a builder for their work (fix F15 assign bonus; inside builders_max)
+build_after_s = 0            # s, B1-5: no fort hold or new fort job (works, wire, S10b fields/obstacles) before this match time; 0 = off
+build_min_squads = 0         # B1-5: ... nor while fewer foot squads (not crews, no vehicle) live; 0 = off; running jobs go on
 
 # S10b-ai: the AI lays mines, builds obstacles and the bunker, sweeps and
 # demolishes (docs/slices/S10b-ai.md 2). Starting values; the six switches

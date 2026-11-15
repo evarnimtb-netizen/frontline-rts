@@ -153,15 +153,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // (`[ai.fort] hold_max`) changed it; the bunker_yields values were
 // 0x78ab8e38b1ec8a4e, 0x39f9a099bdbc2d57, 0x0c80ed27e0794560,
 // 0x78ab8e38b1ec8a4e, 0xfa771bad0d1d41c0, 0xa8cbb4b522ccd0ad.
+// B1-5 (`[ai.fort] build_after_s`, `build_min_squads`) changed it; the
+// hold_max values were 0x70fe1d236b6c3536, 0xdb2c08dad1cd5288,
+// 0x6bf2340bb8651f64, 0x70fe1d236b6c3536, 0x8a04fcd06bb1a586,
+// 0x1a6a1fe9fc9e0b87.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x70fe1d236b6c3536),
-    ("skirmish usa-ger seed 7 hard", 0xdb2c08dad1cd5288),
-    ("test_unlock ger-usa seed 1 normal", 0x6bf2340bb8651f64),
-    ("example override ger-usa seed 1 normal", 0x70fe1d236b6c3536),
-    ("human ger vs ai usa seed 3 easy", 0x8a04fcd06bb1a586),
+    ("skirmish ger-usa seed 1 normal", 0x3fda6cc1e7f9652d),
+    ("skirmish usa-ger seed 7 hard", 0x12007755d5f26050),
+    ("test_unlock ger-usa seed 1 normal", 0x05deb39271659bd5),
+    ("example override ger-usa seed 1 normal", 0x3fda6cc1e7f9652d),
+    ("human ger vs ai usa seed 3 easy", 0xfe6544dc30f25cd8),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x1a6a1fe9fc9e0b87,
+        0x45a2537d719f0f76,
     ),
 ];
 

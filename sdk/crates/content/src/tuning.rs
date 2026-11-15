@@ -1697,7 +1697,21 @@ tuning_table! {
         /// `builders_max` 2) is today's behaviour. Jobs still start for
         /// engineers assigned without a hold. Inside `builders_max`.
         hold_max: 0..=16 = "d_fort_hold_max",
+        /// B1-5: no fort hold and no new fort job (S10a works, wire and
+        /// the S10b point fields, obstacles, bunker, barriers) before this
+        /// many seconds of match time (s); 0 = off (today's behaviour). A
+        /// running job is never cancelled.
+        build_after_s: 0..=3600 = "d_fort_gate_off",
+        /// B1-5: no fort hold and no new fort job while the side has fewer
+        /// than this many foot squads with a man alive (every own squad
+        /// with no vehicle that is not a crew: rifle, MG, AT, mortar,
+        /// engineer, other); 0 = off. A running job is never cancelled.
+        build_min_squads: 0..=64 = "d_fort_gate_off",
     }
+}
+
+fn d_fort_gate_off() -> u32 {
+    0
 }
 
 fn d_fort_hold_max() -> u32 {
@@ -1752,6 +1766,8 @@ impl Default for AiFortTuning {
             gap_clear_m: 2,
             breach_cards_max: 1,
             hold_max: d_fort_hold_max(),
+            build_after_s: d_fort_gate_off(),
+            build_min_squads: d_fort_gate_off(),
         }
     }
 }
