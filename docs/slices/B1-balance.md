@@ -4,6 +4,11 @@ Branch `balance-pass`. Targets `docs/slices/targets/B1.toml` (S10b-ai.toml plus 
 Owner limits: no change to armour, penetration, guns, ammo, lethality or the price of any existing card. SAVE 25 and
 PROTOCOL 14 stay. Minor scope questions are settled on the default and reported; how-it-should-play choices are asked.
 
+**Owner answers 2026-11-15** (section 6): Q1 settings first (A), then an AI code fix of the builder hold (C) if
+needed (Opus Build stage plus review). Q2 settle the open AI questions before balancing, on the orchestrator's defaults;
+E1 and E3 decided (E3: (A) a second engineer squad takes over a demolition, no card change, built in B1-0). Q3 yes:
+the fort AI may build less, inside the T94-T97 floors. Q4 T88b/d become report rows; `[ai.guns]` stays closed.
+
 ## 1. Starting point and where the gap comes from
 
 - Germany pooled 41.88 % of 480 (sets 43.75 / 41.25 / 40.62), `target/s10b-ai-verify`. Pool noise about +-4.5 points,
