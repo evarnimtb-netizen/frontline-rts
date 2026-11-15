@@ -102,6 +102,68 @@ fn median(v: &mut [f64]) -> f64 {
 
 // ------------------------------------------------------------- skirmish --
 
+/// `--side-detail` (B1 diagnosis): adds `sides`, one object per player, to
+/// each `per_match` entry of a [`skirmish`] document. Read-only.
+pub fn add_sides(doc: &mut Value, r: &ManyReport) {
+    let Some(list) = doc.get_mut("per_match").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for (v, m) in list.iter_mut().zip(&r.matches) {
+        let sides: Vec<Value> = m
+            .report
+            .players
+            .iter()
+            .map(|p| {
+                let f = &p.s10.fort;
+                let ai = &p.s10.ai;
+                json!({
+                    "faction": p.faction,
+                    "base": p.base,
+                    "defeat": p.defeat,
+                    "tickets": p.tickets,
+                    "manpower": p.manpower,
+                    "kills": p.kills,
+                    "losses": p.losses,
+                    "squads_fielded": p.squads_fielded,
+                    "squads_alive": p.squads_alive,
+                    "soldiers_alive": p.soldiers_alive,
+                    "points_held": p.points_held,
+                    "hold_s": p.hold_s,
+                    "pop_at_min": p.s4.pop_at_min,
+                    "pop_cap_holds": p.s4.pop_cap_holds,
+                    "capture_orders": p.s4.capture_orders,
+                    "bought": p.s4.bought,
+                    "fired": fired_class::NAMES.iter().zip(p.s5a.fired).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
+                    "kills_by": kill_class::NAMES.iter().zip(p.s5a.kills_by).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
+                    "ammo_mp": round3(p.s5a.paid_micro.iter().sum::<u64>() as f64 / 1e6),
+                    "fort_jobs": ai[0],
+                    "fort_build_plans": ai[2],
+                    "infantry_plans": ai[3],
+                    "works_started": f.works_started,
+                    "pieces_built": f.pieces_built,
+                    "pieces_lost": f.pieces_lost,
+                    "works_done": p.s10.works_done,
+                    "wire_built": f.wire_built,
+                    "wire_crushed": f.wire_crushed,
+                    "men_lost_in_wire": f.men_lost_in_wire,
+                    "fort_mp": round3(f.materials_micro as f64 / 1e6),
+                    "s10b_mp": round3(p.s10.s10b_materials_micro as f64 / 1e6),
+                    "income_mp": p.s10.income_mp,
+                    "mines_laid": f.mines_laid,
+                    "obstacles_built": f.obstacles_built,
+                    "s10b_jobs": p.s10.s10b_ai[0],
+                    "own_blocked": p.s10.s10b_ai[11],
+                    "vehicles_lost": p.armour.vehicles_lost,
+                    "deaths": crate::skirmish::DEATH_PLACES.iter().zip(p.death_places).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
+                })
+            })
+            .collect();
+        if let Some(o) = v.as_object_mut() {
+            o.insert("sides".into(), Value::Array(sides));
+        }
+    }
+}
+
 /// The summary document of a `--seeds` run (or of one match).
 pub fn skirmish(r: &ManyReport) -> Value {
     let s = &r.summary;

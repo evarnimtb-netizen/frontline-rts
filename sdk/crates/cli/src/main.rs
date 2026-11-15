@@ -141,7 +141,11 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Skirmish(args) if args.seeds.is_some() => {
             let report = skirmish::skirmish_many(&args)?;
             if let Some(path) = &args.json {
-                json_out::write(path, &json_out::skirmish(&report))?;
+                let mut doc = json_out::skirmish(&report);
+                if args.side_detail {
+                    json_out::add_sides(&mut doc, &report);
+                }
+                json_out::write(path, &doc)?;
             }
             match (args.report, args.summary) {
                 (ReportFormat::Json, _) => println!("{}", serde_json::to_string_pretty(&report)?),

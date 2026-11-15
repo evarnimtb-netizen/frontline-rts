@@ -156,6 +156,11 @@ pub struct SkirmishArgs {
     /// unchanged. Works for one match, --seeds and --ab.
     #[arg(long, value_name = "FILE")]
     pub json: Option<PathBuf>,
+    /// With --seeds and --json: add `sides` (two per-player objects: kills,
+    /// losses, rounds fired, buys, works, mines, builder plans, own_blocked)
+    /// to each `per_match` entry (B1 diagnosis; read-only, off by default).
+    #[arg(long, requires_all = ["seeds", "json"])]
+    pub side_detail: bool,
 }
 
 impl Default for SkirmishArgs {
@@ -186,6 +191,7 @@ impl Default for SkirmishArgs {
             jobs: None,
             ab: false,
             json: None,
+            side_detail: false,
         }
     }
 }
@@ -405,6 +411,8 @@ pub struct PlayerReport {
     /// S10a per-player fortification account (`FortAccount`) and the
     /// squads fielded from the three S10a cards ([`S10A_CARDS`]).
     pub s10: S10Player,
+    /// B1 `--side-detail`: deaths by place ([`DEATH_PLACES`]; zero without it).
+    pub death_places: [u32; 6],
 }
 
 /// S10a: the three cards of the mechanics half (short ids; spec 3.4).
@@ -514,6 +522,95 @@ impl S10Player {
             a.jobs_overdue,
             a.refused_reorders,
         ]
+    }
+}
+
+/// B1 diagnosis (`--side-detail`): where each player's men died, by the
+/// fort state at the tick their body appeared ([`DEATH_PLACES`] order).
+/// Read-only: it reads the snapshot and the fort state.
+pub const DEATH_PLACES: [&str; 6] = [
+    "dead",
+    "near_enemy_nest",
+    "near_enemy_works",
+    "near_enemy_wire",
+    "near_own_works",
+    "near_own_wire",
+];
+/// Metres: a death this close to a piece counts as near its work.
+const DEATH_WORKS_M: f32 = 40.0;
+/// Metres: a death this close to a wire section counts as near it.
+const DEATH_WIRE_M: f32 = 10.0;
+
+#[derive(Clone, Debug, Default)]
+pub struct DeathPlaces {
+    seen: BTreeSet<frontline_sim::SimId>,
+    pub per: Vec<[u32; 6]>,
+}
+
+impl DeathPlaces {
+    pub fn observe(&mut self, w: &World) {
+        let Some(g) = w.game() else { return };
+        let s = g.setup();
+        let n = s.players.len();
+        if self.per.len() < n {
+            self.per.resize(n, [0; 6]);
+        }
+        let fort = g.fort();
+        let d2 = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2);
+        let seg = |p: [f32; 2], a: [f32; 2], b: [f32; 2]| {
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let l = dx * dx + dy * dy;
+            let t = if l > 0.0 {
+                (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            d2(p, [a[0] + t * dx, a[1] + t * dy])
+        };
+        for c in &w.snapshot().corpses {
+            if !self.seen.insert(c.id) {
+                continue;
+            }
+            let o = c.owner as usize;
+            let Some(row) = self.per.get_mut(o) else {
+                continue;
+            };
+            let p = [c.pos[0], c.pos[1]];
+            row[0] += 1;
+            let (mut en, mut ew, mut ow) = (false, false, false);
+            for pc in fort.pieces.values() {
+                let Some(f) = s.forts.get(pc.fort as usize) else {
+                    continue;
+                };
+                if f.blocks_vehicles || f.mine_item.is_some() {
+                    continue;
+                }
+                if d2(p, pc.pos.to_f32()) > DEATH_WORKS_M * DEATH_WORKS_M {
+                    continue;
+                }
+                if pc.owner.0 as usize == o {
+                    ow = true;
+                } else {
+                    ew = true;
+                    en |= f.id.ends_with("mg_nest");
+                }
+            }
+            let (mut ewire, mut owire) = (false, false);
+            for ws in fort.wire.values() {
+                if seg(p, ws.a.to_f32(), ws.b.to_f32()) <= DEATH_WIRE_M * DEATH_WIRE_M {
+                    if ws.owner.0 as usize == o {
+                        owire = true;
+                    } else {
+                        ewire = true;
+                    }
+                }
+            }
+            row[1] += en as u32;
+            row[2] += ew as u32;
+            row[3] += ewire as u32;
+            row[4] += ow as u32;
+            row[5] += owire as u32;
+        }
     }
 }
 
@@ -1282,6 +1379,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut s3c = S3cTally::new(world.match_setup().expect("match world"));
     let mut s10b_ordered = S10bOrdered::default();
     let mut s10b_ai_seen = S10bAiSeen::default();
+    let mut death_places = DeathPlaces::default();
     let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded);
 
@@ -1334,6 +1432,9 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         s3c.observe(&world);
         s10b_ordered.observe(&world);
         s10b_ai_seen.observe(&world);
+        if args.side_detail {
+            death_places.observe(&world);
+        }
         for (k, &m) in POP_MINUTES.iter().enumerate() {
             if world.tick() == m * 60 * hz
                 && let Some(g) = world.game()
@@ -1699,6 +1800,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         })
                         .count() as u32,
                 },
+                death_places: death_places.per.get(p).copied().unwrap_or([0; 6]),
                 s9_ai: ai.map_or([0; 7], |a| {
                     let c = &a.counters;
                     [
