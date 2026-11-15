@@ -267,16 +267,26 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-D2 Sweep lane losses: DECIDED single file: `lane_file` 1, attackers walk a swept lane on its centre line.
   S10b-ai-D3 Tank gap: DECIDED (B) narrowed now: the obstacle piece's vehicle block pad lets a medium tank through a
   4 m hedgehog row once 2 adjacent pieces are gone (12 m between standing centres); path layer and movement agree.
-- S10b-ai open owner questions (not built; the slice runs on (A)):
-  S10b-ai-E1 Bunker and the single S10b job slot. The bunker job now takes the one S10b job slot for long (pit, 250 kg
-  step, build), and Germany's matches with mines fell from 45 % to 22 % (default 40 set). (A) Bunker first (as built).
-  (B) A bunker waiting for a truck yields the slot to a mine or obstacle job. (C) `bunker_truck_first` off.
-  S10b-ai-E3 One satchel per engineer squad. A hedgehog gap needs 2 pieces, an AI demolition squad carries 1 satchel,
-  so the AI job gives up after the first piece. (A) Accept (as built). (B) 2 satchels on the engineer cards (card
-  change). (C) The job hands the next piece to a second free engineer squad that still has a satchel.
-  S10b-ai-E4 Mine rows for the player: a key (not the wheel, which is camera zoom) to choose 1-3 rows while placing a
-  minefield (may need a protocol bump).
-  S10b-ai-E5 Wire debris: demolished wire leaves debris that slows walking.
+- S10b-ai open owner questions (OPEN, asked 2026-11-15; the slice ran on (A) and (A) is listed first):
+  S10b-ai-E1 Bunker and the single job slot. The bunker takes the one S10b job slot for long, and Germany's mines
+  in matches fell from about 45 % to about 25 % once the bunker changes went in. (A) Keep bunker first.
+  (B) A bunker waiting for a truck gives up the slot. (C) `bunker_truck_first` off.
+  S10b-ai-E3 Satchels. The AI never opens a hedgehog row in a match (T114e/f 0). (A) A second engineer squad takes
+  over the job when the first has no satchel. (B) Two satchels on the engineer cards (a card change). (C) Accept.
+  S10b-ai-E4 Player key to choose 1-3 mine rows while placing a field (not the wheel; may need a protocol bump).
+  Not built. (A) Leave for a later slice. (B) Build in the next slice.
+  S10b-ai-E5 Demolished wire leaves debris that slows walking. Not built. (A) Leave for a later slice. (B) Build in
+  the next slice.
+  S10b-ai-E6 AI use is far under the targets (mines, obstacles, bunker, AT fields). (A) Leave for the balance pass;
+  treat T109, T110a-d, T112, T113 as reports until then. (B) A follow-up slice that raises use (more job slots,
+  builder assignment for mines).
+  S10b-ai-E7 A new blast in a swept lane costs a whole new sweep and the attackers wait. (A) Keep. (B) Re-sweep only
+  the part of the lane.
+  S10b-ai-E8 T113 bunker target: 20 % was written for the old denominator. (A) Reset to about 10 % of all matches.
+  (B) Keep 20 %.
+- S10b-ai not numbered, open: merging `s10b-ai` into main needs the owner's OK. The process proposals of the
+  2026-11-12 audit were adopted by the orchestrator for this slice; the owner has not yet confirmed them. The parallel
+  `tools/verify.sh` took 248 min 52 s (the old serial run took 38 min); it needs a look before the next slice.
 - S10b open notes (not numbered): F8 from S10a-ai (an S8b truck re-orders an
   unreachable HQ goal about every 5 min) is planned in S10b-ai Build D (L5, switch `refusal_memory`; droppable). Bunker notes from Build E: MG fire from 150 m does not hit men
   in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
@@ -300,7 +310,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
 11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
 12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Merged to main 2026-11-12 with the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
-13. **S10b-ai (in work, branch `s10b-ai` from main `72b2970`)**: the AI lays, sweeps, demolishes and builds obstacles and bunkers; paths avoid enemy mines the player knows (S10b-2, small version); the AI job liveness contract (L1-L5, F8 behind a switch). Plan done 2026-11-12: spec `docs/slices/S10b-ai.md`, stages `S10b-ai-build-A.md`..`-D.md` (chunks 2/2/2/3), targets `S10b-ai.toml` (T109-T118 in three-part form), log `S10b-ai-log.md`. Builds A-D done; next measure 480, ablations, Review.
+13. **S10b-ai: done on branch `s10b-ai` 2026-11-15, waiting for the owner's OK to merge** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Open questions S10b-ai-E1 and E3-E8 below.
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)

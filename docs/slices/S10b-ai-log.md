@@ -5,27 +5,29 @@ Branch `s10b-ai` from main `72b2970`. Another agent may work in this checkout: c
 (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Build E items 1-8 done (STOP POINT 3; E3 hand-over not built, kept open).** SAVE 25, PROTOCOL 14. Commits: item 6
-`77a3a13` (ablations `lane_file_off`, `at_rows_off` (1), `bunker_assign_off`, `bunker_truck_first_off`,
-`barrier_job_max_s_off` (900); `all_off.toml` has them; `tools/ablate.sh` check_file knows each key's off value and
-the dry-run counts any `N -> M`; `docs/modding/tuning.md` Build E row); item 7 `08f81c8` (fix: `json_out::fortify`
-now writes `s10b_ai`, so T110i-T116b read numbers; before: "no such number"); item 8 `d97782b` (TODO: B2a, C1,
-D1, D2, D3 decided; open E1, E3, E4 mine-row key, E5 wire debris). quick 72b2970 all ok, 803 passed.
-**Stage check (item 7), head d97782b:** all-off 40 `target/s10b-e3-off40`: neutral.py vs `target/s10b-base40` same
-40/40. Default 40 `target/s10b-e3-on40` (text `skirmish40.txt`): Germany 21/40 = 52.5 %. s10b used: DE mines_laid
-130, obstacles_built 9, bunkers_built 3, sweeps 0, demolitions 0; US mines_laid 91, obstacles 2, bunkers 0, sweeps
-0, demolitions 0. s10b-ai: DE mines in 22 % (3.25 laid/match), obstacles 12 %, bunker 12 %; US mines 20 %, obstacles
-5 %, bunker 0 %; sweep/demolish when wanted "-" (never wanted). DE bunker why: no_builder 7045, point_not_ready 7712.
-fortify10 targets (`target/s10b-e3-fort.log`): 59 pass, 10 miss (hard 4). Pass: T110i 100 (ctl 0), T110j 100,
-T111i 85, T111j 0.9 (ctl 6.3), T112i barrier 100 (ctl 0), T113e/f/g 100, T116a/b 0 (ctl 75/53.6).
-Hard misses: T114e gap_opened 0 and T114f tank_passed 0 (pieces_used 1: one satchel per engineer squad, a 4 m row
-needs 2 pieces = E3); T115e own_blocked 20 with control (own_route_m 0) also 20 (not looked at); T107d S10b
-slit_satchel_losses_pct 0 (min 40; S10b mechanics row, not looked at). Report misses: T93a/b/f/g/h, T106b.
-**E3 (orchestrator (b)) not built** (turn budget): plan if wanted: in `ai/demolish.rs` `demolish_continue`, at
-`DemolishPhase::Go` with the squad's satchels (sum of `ents.kit[m].items[ItemKind::Satchel]`) 0, move the job
-(`ai.demolitions` BTreeMap key) to the nearest free `Mine` with `Capability::Demolish` and a satchel within
-`sweep_reach_m`; a control needs a new `[ai.obstacles]` key (canonical snapshot + resolved_defs refresh).
-**Open:** owner questions E1, E3, E4, E5 (TODO); bunker 12 % DE / 0 % US (target 15 %); T114e/f, T115e, T107d.
+**S10b-ai final state (2026-11-15): done and verified on branch `s10b-ai` (head `d42c8fe`, then docs commits). NOT merged;
+main stays `72b2970`.** SAVE 25, PROTOCOL 14 (main 24 and 14). Stages: Plan, Tools, Build A-E, 480 measure, three-lens Opus
+review (24 findings: 1 blocker, 10 major, 13 minor), Fix in two passes (22 closed). The blocker: a normal save failed to load
+after a sweeping or demolition squad (or its tank) was lost before the AI's next plan. Fixed.
+**Verify** (orchestrator, `tools/verify.sh target/s10b-ai-verify`, first parallel run, 248 min 52 s wall, cause not
+examined): 965 tests pass, 0 fail; check full all ok; settings.cfg unchanged; tick p99 0.506 ms (peak 0.709). Germany pooled
+41.88 % of 480 (43.75 / 41.25 / 40.62), no-winner 0 (main 41.67 %). All switches off: 40 set same 40/40 as main
+(`tools/neutral.py` vs `target/s10b-verify`). Targets: 410 pass, 46 miss, 26 hard, 6 unexposed.
+**AI use (480, DE / US):** mines 27/22/30 % and 15/12/12 % (target 50); obstacles 12/8/4 % and 4/7/4 % (target 30, DE);
+bunker 9/4/4 % and 0/1/1 % of all matches (target 20, DE; finished when started 19/9/8 %); AT fields at most 0.05 per
+match (target 0.5); own-side mistakes 0; sweep and demolition never wanted (covered by fortify rows only).
+**Fortify rows (10 seeds):** T110i 100 (ctl 0); T111i 85; T111j 0.9 (ctl sweep off 6.3, lane_file off 3.1); T112i 100;
+T113e/f/g 100; T115e 0 (ctl 80); T116a 0 (ctl 75); T116b 0 (ctl 53.6); T107d 83 (was 0, fixed); T114e 0 and T114f 0
+(one satchel per engineer squad; 100 / 100 with three staged).
+**Hard misses (26):** T8b, T40c, T54e, T88b, T88d; near T6a (62.5 vs 62), T40a, T72a (58.75 vs 60); AI use T109a-h,
+T110a-d, T112a, T112c, T113a, T113c; T114e, T114f.
+**Left open (not done):** finding 23 (tightening `DriveCtx::piece_near` broke `vehicle_on_obstacle_nodes_drives_out`,
+reverted); finding 12 (per-reason counter for mine wants, needs a save layout change); the liveness barrier row does not
+exercise `barrier_job_max_s` (finding 14, second half); off-lattice crossing for the second AT row (finding 7; T110k
+report-only); satchels for T114e/f (TODO E3).
+**Waits for the owner:** OK to merge into main; TODO questions S10b-ai-E1 and E3-E8; the 2026-11-12 audit process
+proposals (adopted for this slice, not yet confirmed); the 249-minute parallel verify needs a look. Next after the OK:
+merge, then the balance pass or S11 (owner's choice).
 
 ## Plan (2026-11-12)
 
