@@ -268,8 +268,8 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-D3 Tank gap: DECIDED (B) narrowed now: the obstacle piece's vehicle block pad lets a medium tank through a
   4 m hedgehog row once 2 adjacent pieces are gone (12 m between standing centres); path layer and movement agree.
 - S10b-ai open owner questions (OPEN, asked 2026-11-15; the slice ran on (A) and (A) is listed first):
-  S10b-ai-E1 Bunker and the single job slot: DECIDED 2026-11-15 (owner B1 Q2: settled before the balance pass on
-  the orchestrator's default; built in a B1-0 stage, see `docs/slices/B1-log.md`). The bunker takes the one S10b job
+  S10b-ai-E1 Bunker and the single job slot: DECIDED 2026-11-15 (B) on the orchestrator's default (owner B1 Q2),
+  built in B1-0: switch `[ai.obstacles] bunker_yields` (default 1), see `docs/slices/B1-log.md`. The bunker takes the one S10b job
   slot for long, and Germany's mines in matches fell from about 45 % to about 25 % once the bunker changes went in.
   (A) Keep bunker first. (B) A bunker waiting for a truck gives up the slot. (C) `bunker_truck_first` off.
   S10b-ai-E3 Satchels: DECIDED 2026-11-15 (A) a second engineer squad takes over the job when the first has no
