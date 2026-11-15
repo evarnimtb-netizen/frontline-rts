@@ -413,6 +413,33 @@ pub struct PlayerReport {
     pub s10: S10Player,
     /// B1 `--side-detail`: deaths by place ([`DEATH_PLACES`]; zero without it).
     pub death_places: [u32; 6],
+    /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
+    /// man alive (no vehicle, not a crew) and own squads on a running
+    /// (not parked) AI fort job (`None`: over sooner, or no side detail).
+    pub squads_at_min: [Option<[u32; 2]>; 5],
+}
+
+/// B1-5: match minutes `--side-detail` samples the squads at.
+pub const SQUAD_MINUTES: [u64; 5] = [1, 2, 3, 5, 10];
+
+/// B1-5: player `p`'s foot squads with a man alive and squads on a
+/// running AI fort job (read-only).
+fn squads_now(g: &frontline_sim::MatchState, p: PlayerId) -> [u32; 2] {
+    let s = g.setup();
+    let foot = g
+        .squads()
+        .values()
+        .filter(|q| {
+            q.owner == p
+                && !q.members.is_empty()
+                && s.squad_types[q.type_idx as usize].vehicle.is_none()
+                && s.type_word(q.type_idx) != "crew"
+        })
+        .count() as u32;
+    let busy = g.ai(p).map_or(0, |a| {
+        a.forts.values().filter(|j| !j.parked()).count() as u32
+    });
+    [foot, busy]
 }
 
 /// S10a: the three cards of the mechanics half (short ids; spec 3.4).
@@ -1392,6 +1419,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     // S4: own population at POP_MINUTES, per player.
     let n_players = world.match_setup().map_or(0, |s| s.players.len());
     let mut pop_at: Vec<[Option<u32>; 3]> = vec![[None; 3]; n_players];
+    let mut squads_at: Vec<[Option<[u32; 2]>; 5]> = vec![[None; 5]; n_players];
     let mut gun_trace = match &args.gun_trace {
         Some(p) => Some(crate::gun_trace::GunTrace::create(p, &world)?),
         None => None,
@@ -1434,6 +1462,17 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         s10b_ai_seen.observe(&world);
         if args.side_detail {
             death_places.observe(&world);
+        }
+        if args.side_detail {
+            for (k, &m) in SQUAD_MINUTES.iter().enumerate() {
+                if world.tick() == m * 60 * hz
+                    && let Some(g) = world.game()
+                {
+                    for (p, at) in squads_at.iter_mut().enumerate() {
+                        at[k] = Some(squads_now(g, PlayerId(p as u8)));
+                    }
+                }
+            }
         }
         for (k, &m) in POP_MINUTES.iter().enumerate() {
             if world.tick() == m * 60 * hz
@@ -1801,6 +1840,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         .count() as u32,
                 },
                 death_places: death_places.per.get(p).copied().unwrap_or([0; 6]),
+                squads_at_min: squads_at.get(p).copied().unwrap_or([None; 5]),
                 s9_ai: ai.map_or([0; 7], |a| {
                     let c = &a.counters;
                     [

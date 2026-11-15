@@ -154,6 +154,7 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     "s10b_jobs": p.s10.s10b_ai[0],
                     "own_blocked": p.s10.s10b_ai[11],
                     "vehicles_lost": p.armour.vehicles_lost,
+                    "squads_at_min": p.squads_at_min,
                     "deaths": crate::skirmish::DEATH_PLACES.iter().zip(p.death_places).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
                 })
             })
