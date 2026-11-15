@@ -4,32 +4,32 @@ Plan `docs/slices/B1-balance.md`, targets `targets/B1.toml`. Branch `balance-pas
 your files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**B1-4 Build + Measure done (2026-11-15); no default changed.** Commit `8e1d075`: new key `[ai.fort] hold_max`
-(0..=16, default 2) caps the fix F15 builder holds in `ai/fort.rs` `fort_holds` (stop once `hold_max` points hold;
-jobs still start for engineers assigned without a hold; inside `builders_max`). Default bit-identical (40 set vs
-`target/b1-base`: same 40/40); no save or protocol change. Noise rule unchanged: z = (toDE - toUS) / sqrt(toDE +
-toUS), paired by (seed, side); nothing below z 2.5. Fresh blocks 1001/1101/1201 (480), base Germany 43.33 %.
-- hold0 (`B1-levers/hold0.toml`): 47.71 % (+4.38), flips 62/41, z 2.07; blocks 51.25 / 46.25 / 45.62. Base under
-  20 min 31/15, 20 min or more 31/26. FLOORS FAIL: wire in DE 41/43/36 %, US 41/29/39 % (floor 60); works DE 94, US
-  78 %; builders DE 7.1, US 7.6 %. Mines collapse (DE 28 -> 4 %, US 15 -> 4 % of matches); own_side_mistakes DE 8 ->
-  24 (8/7/9 by block), US 0.
-- hold1: identical to base (0 flips; block 1001 same 160/160 hashes): with builders_max 2 and one job running,
-  `job_room` already allows only one hold, so hold_max 1 never binds in these matches.
-- hold0 + L1 (`hold0.toml` + `L1_builders1.toml`): 47.08 % (+3.75), 63/45, z 1.73; blocks 48.75 / 49.38 / 43.12;
-  under 20 min 31/14, 20 min or more 32/31. Floors fail the same way (wire DE 39, US 35 %); mines DE 2, US 2 %;
-  own_side_mistakes DE 22, US 0.
-- Reading: removing the hold moves the opening the same way as works_off (gain in short matches) but below z 2.5 and
-  it takes the wire (and with it the AP mines laid beyond wire) away: the hold is how wire gets built. Not a fix.
-- For comparison (same blocks, earlier runs, re-pooled by `tools/pool.py`): L1 builders_max 1 +3.96 (36/17, z 2.61)
-  keeps the floors as base (wire DE 77, US 56 %, builders DE 7.8, US 7.9 %; mines DE 19, US 10 %).
-- Base itself misses the US wire floor (61 / 51 / 56 %, pooled about 56 %); every candidate inherits that.
-- RECOMMENDATION: replay ONE candidate on seeds 1-280: L1 alone (`B1-levers/L1_builders1.toml`, a setting). Do not
-  apply hold_max 0 or 1; keep hold_max 2. Nothing here is applied from fresh seeds alone.
-- Sets: `target/b1-4/s{1001,1101,1201}/{base(1001 only),hold0,hold1,hold0_L1}` (all `--side-detail`), pool dirs
-  `target/b1-4/pool/*`, flips `python3 -I target/b1-4/paired.py hold0 hold1 hold0_L1` (base = `b1-diag/s*/base`;
-  replay of 1001 base with the new binary: same 160/160 as `b1-diag/d1001/base`).
-- T115c note (B1-3) stands: own_blocked at base 0 rises whenever freed engineers build more obstacles.
-Last check: tools/check.sh quick 72b2970 all ok (826 tests), after the hold_max change (before the measure runs).
+**B1-5 Build + Measure done (2026-11-16); no default changed. Recommendation: replay NOTHING on seeds 1-280.**
+Commits `593ad69` (`[ai.fort] build_after_s`, `build_min_squads`, default 0 = off: no fort hold and no new
+`fort_start` job, S10b point jobs and barriers included, before that match time / under that many foot squads;
+running jobs go on) and `6cb97a9`, the read-only `--side-detail` `squads_at_min` (foot squads, squads on a fort job at
+1/2/3/5/10 min). Default 40 set vs `target/b1-base`: same 40/40; no save or protocol change. Fresh blocks
+1001/1101/1201 (480), paired by (seed, side) against `b1-diag/s*/base` (base 43.33 %; all three base blocks replayed
+160/160 equal but the final hash, which covers the setup bytes: `target/b1-5/same.py`).
+- HYPOTHESIS REFUTED by the counters: no builder is on a job before minute 3, and both sides already field
+  7/5 (DE/US) foot squads at minute 1, 9/7 at 3, 8.5/7.0 at 5 (base). Builders on a job, base: 0.70/0.49 at 5 min,
+  0.98/0.66 at 10. The opening is never "two squads"; build_min_squads 4/5 could never bind, so 8 and 10 were run.
+- after300: 46.88 % (+3.54), 85/68, z 1.37; blocks 48.75/50.00/41.88; <20 min 48/33, 20+ 37/35. Busy at 5 min
+  0/0, foot squads unchanged. Floors: works DE 89, US 69 %; wire DE 63, US 37 % FAIL; builders 8.1/6.9 %.
+- after600: 51.88 % (+8.54), 105/64, z 3.15; blocks 53.12/55.00/47.50; <20 min 67/31, 20+ 38/33. Foot squads at
+  5/10 min as base (8.6/7.0, 10.8/9.3). Floors FAIL: works DE 56, US 46 %; wire DE 13, US 10 %; builders 3.2/3.9.
+- minsq8: 46.88 % (+3.54), 57/40, z 1.73; binds the USA only (US busy at 5 min 0.05, DE 0.67). Wire US 31 % FAIL.
+- minsq10: 47.29 % (+3.96), 90/71, z 1.50; works US 51 %, wire DE 41, US 14 % FAIL.
+- Mines (DE/US % of matches): base 28/15, after300 20/9, after600 2/1, minsq8 25/7, minsq10 10/2.
+  own_side_mistakes DE 8 in every run (8/0/0 by block, as base); US 0 at base, 2 with after300, 1 with minsq10.
+- Reading: a delayed fort is mostly a lost fort (after600 leaves wire in 1 match in 8): once the front is
+  contested `build_threat_max` and the threat checks keep builders off. The gain tracks how much fortification is
+  removed (works_off, hold0, after600), not the army size in the opening. after600 is an ablation, not a fix.
+- So no existing or new setting passes both z 2.5 and the floors. Next: owner question (keep the fort floors
+  and accept 43 %, or look outside fortification: why the USA gains more from forts than Germany).
+- Sets `target/b1-5/s{1001,1101,1201}/{base,after300,after600,minsq8,minsq10}`, pool dirs `target/b1-5/pool/*`,
+  `python3 -I target/b1-5/paired.py base after300 after600 minsq8 minsq10` (flips, squads_at_min means).
+Last check: tools/check.sh quick 72b2970 all ok (829 tests), after the last code change and the measure runs.
 
 ## B1-0 handover (2026-11-15)
 Tests (`crates/sim/src/s10b_ai_demolish_tests.rs`, card satchel 1 each): `ai_demolish_hands_over_to_a_second_squad`
@@ -73,3 +73,16 @@ only point: the job still starts) and `ai_hold_max_1_holds_at_most_one_point` (s
 own points 0, 1 with neutral points 300 m behind each; jobs 0/1/2 for hold_max 0/1/2). Setup-bytes baseline, key
 count 40 and the canonical snapshot changed only for the new key. Queue `target/b1-4/queue.sh`, world
 `ba5fb262a4e747500a2d45d3`.
+L1 alone on seeds 1-280 (orchestrator, target/b1-l1): Germany 40.62 % against 42.29 %, flips 29/37, z -0.98; with
+the fresh blocks 65/54 over 960, z about 1.0. No existing setting helps on both seed groups; hold_max 0 breaks wire.
+
+## B1-5 build gates (2026-11-16)
+`593ad69`: `build_gate_open` in `ai/fort.rs` (match tick, `foot_squads`: own squads with a man alive, no vehicle,
+not a crew, those on a job included) gates `fort_holds` and the starts in `fort_start` (point works and wire, roof,
+walls, S10b point jobs, barriers: the same engineer squads). Not gated: trench digging, sweeps, demolitions, base
+loads, the fortify-test hook. Tests (`s10a_ai_tests.rs`):
+`ai_build_after_s_holds_no_builder_and_starts_no_job_before_the_time`,
+`ai_build_min_squads_starts_no_job_below_the_count`, `ai_build_gate_never_cancels_a_running_job`;
+controls gate 0; seen failing with the gate forced open (first two) and with a closed gate clearing jobs (third).
+Key count 42, setup-bytes baseline and canonical snapshot only for the new keys. Queue `target/b1-5/queue.sh`,
+world `71eff0a00aa3080adcad6fb2`; lever files `B1-levers/gate_{after300,after600,minsq8,minsq10}.toml`.
