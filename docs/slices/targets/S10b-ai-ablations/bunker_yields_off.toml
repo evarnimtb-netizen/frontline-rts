@@ -1,0 +1,4 @@
+# B1-0 ablation (owner S10b-ai-E1): a bunker job waiting for its truck-borne
+# material keeps the S10b job slot (jobs_max), as before.
+[ai.obstacles]
+bunker_yields = 0

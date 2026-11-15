@@ -1493,6 +1493,7 @@ barrier_job_max_s = 1200     # s: the L1 deadline of a log barrier job (every ot
 lane_file = 1                # switch: attackers walk a swept lane in single file on its centre line until past its end
 at_rows = 2                  # rows of an AT field (1..=2): the second one step behind the first, shifted half a step along it
 demolish_handover = 1        # switch (B1-0): a demolition squad without a satchel for its next piece hands the job to a free own demolish squad with one
+bunker_yields = 1            # switch (B1-0): a bunker job waiting for its truck-borne material gives up the S10b job slot (jobs_max)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

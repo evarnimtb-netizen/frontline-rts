@@ -62,12 +62,14 @@ fn ai_obstacle_tuning_parses_and_validates() {
     assert_eq!((o.lane_file, o.at_rows), (1, 2));
     // B1-0: `demolish_handover` (switch, on).
     assert_eq!(o.demolish_handover, 1);
-    assert_eq!(AiObstacleTuning::KEYS.len(), 36);
+    // B1-0: `bunker_yields` (switch, on).
+    assert_eq!(o.bunker_yields, 1);
+    assert_eq!(AiObstacleTuning::KEYS.len(), 37);
     let tables = frontline_content::tuning::TABLES;
     assert!(
         tables
             .iter()
-            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 36)
+            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 37)
     );
     let f = s.rules.fortify.as_ref().unwrap();
     assert_eq!(

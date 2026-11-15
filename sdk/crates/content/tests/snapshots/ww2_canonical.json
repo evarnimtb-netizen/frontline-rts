@@ -1771,6 +1771,7 @@
           "bunker": 1,
           "bunker_assign": 1,
           "bunker_truck_first": 1,
+          "bunker_yields": 1,
           "bunkers_max": 1,
           "demolish": 1,
           "demolish_handover": 1,

@@ -68,7 +68,7 @@ fi
 # [fortify] mine_paths and [ai.truck] refusal_memory (S10b-ai) at 0; the
 # S10b-ai Build E keys lane_file, bunker_assign, bunker_truck_first at 0,
 # at_rows at 1 and barrier_job_max_s at 900 (the job_max_s of every job);
-# B1-0 demolish_handover at 0.
+# B1-0 demolish_handover and bunker_yields at 0.
 # (No tomllib on this Mac's python: the files are plain enough to read by
 # line.) Prints the number of keys.
 check_file() {
@@ -81,7 +81,7 @@ switches = {
     "ai.obstacles": {
         **zero("mines", "at_mines", "obstacles", "bunker", "sweep", "demolish",
                "lane_file", "bunker_assign", "bunker_truck_first",
-               "demolish_handover"),
+               "demolish_handover", "bunker_yields"),
         "at_rows": 1,
         "barrier_job_max_s": 900,
     },

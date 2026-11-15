@@ -1831,6 +1831,10 @@ tuning_table! {
         /// has no satchel for its next piece passes to another free own
         /// `demolish` squad with one (nearest the vehicle first).
         demolish_handover: 0..=1 = "d_obst_one",
+        /// B1-0 switch (owner S10b-ai-E1): a bunker job whose heavy step
+        /// waits for material its squad does not carry gives up the S10b
+        /// job slot (`jobs_max`), so one other S10b job may start.
+        bunker_yields: 0..=1 = "d_obst_one",
     }
 }
 
@@ -1891,6 +1895,7 @@ impl Default for AiObstacleTuning {
             lane_file: d_obst_one(),
             at_rows: d_obst_at_rows(),
             demolish_handover: d_obst_one(),
+            bunker_yields: d_obst_one(),
         }
     }
 }

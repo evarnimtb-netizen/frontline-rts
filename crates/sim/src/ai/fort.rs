@@ -2867,12 +2867,42 @@ impl super::Planner<'_> {
         let n = self
             .ai
             .forts
-            .values()
-            .filter(|j| {
-                j.phase != FortPhase::Done && s.forts.get(j.fort as usize).is_some_and(s10b_fort)
+            .iter()
+            .filter(|&(&sq, j)| {
+                j.phase != FortPhase::Done
+                    && s.forts.get(j.fort as usize).is_some_and(s10b_fort)
+                    && !self.bunker_yields(sq, j)
             })
             .count();
         n < s.rules.ai.obstacles.jobs_max as usize
+    }
+
+    /// B1-0 (owner S10b-ai-E1, `[ai.obstacles] bunker_yields`): a bunker
+    /// job in Watch whose heavy step (over its builder's full carry) waits
+    /// for material its own squad does not carry gives up the S10b job
+    /// slot, so one other S10b job may start (`builders_max` and the S10b
+    /// budget still apply). Reads state only; false with the switch off.
+    fn bunker_yields(&self, sq: SquadId, j: &AiFortJob) -> bool {
+        let s = &self.g.setup;
+        if s.rules.ai.obstacles.bunker_yields == 0
+            || j.phase != FortPhase::Watch
+            || fort_of(s, WorkKind::Bunker) != Some(j.fort)
+        {
+            return false;
+        }
+        let Some(d) = s.forts.get(j.fort as usize) else {
+            return false;
+        };
+        let me = self.me;
+        j.work
+            .and_then(|wid| self.g.fort.works.get(&wid))
+            .is_some_and(|w| {
+                w.owner == me
+                    && w.builder == sq
+                    && w.step == WorkStep::Wait
+                    && self.carried_g(sq) == 0
+                    && self.full_carry_g(sq) < d.materials_g
+            })
     }
 
     /// S10b-ai L4: a fort goal at `at` within `refused_m` of a refusal
