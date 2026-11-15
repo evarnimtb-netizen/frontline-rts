@@ -4,22 +4,35 @@ Plan `docs/slices/B1-balance.md`, targets `targets/B1.toml`. Branch `balance-pas
 your files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**B1-0 done (2026-11-15): both owner-decided AI items built on `balance-pass`.** SAVE 25, PROTOCOL 14, no save layout
-change. Owner answers Q1-Q4 in B1-balance.md ("Owner answers 2026-11-15"); TODO marks S10b-ai-E1 (B) and E3 (A) built.
-- E3 `[ai.obstacles] demolish_handover` (default 1, `ai/demolish.rs`): see "B1-0 handover" below.
-- E1 `[ai.obstacles] bunker_yields` (default 1, `ai/fort.rs` `bunker_yields`, read by `s10b_room`): a bunker job in
-  Watch whose work is in `WorkStep::Wait`, whose own squad carries 0 g and whose step is over the squad's full carry
-  (the 250 kg truck step) does not count toward `jobs_max`; one other S10b job may start (`builders_max` and the S10b
-  budget still apply). Watch itself is unchanged, so the bunker goes on when the kg come. Reads state only.
-- Content key count 37; setup bytes baseline and canonical snapshot re-recorded (old values in the comment).
-  Ablation `S10b-ai-ablations/bunker_yields_off.toml`; key in `all_off.toml`, `tools/ablate.sh`, `tuning.md`.
-- 40 sets (seeds 1-20 both bases, `tools/pool.py` via a symlinked `skirmish160.json`), DE / US:
-  bunker_yields 0 (= before E1, E3 on): Germany 52.5 %; mines 22 / 20 %, obstacles 12 / 5 %, bunker 8 / 0 %.
-  default (both on): Germany 50.0 %; mines 28 / 20 %, obstacles 12 / 5 %, bunker 8 / 0 % (done when started 12 %).
-  all off: Germany 45.0 %, all S10b 0; `neutral.py` vs `target/s10b-base40` same 40/40.
-  Reading: E1 lifts Germany's mines by about 2 matches of 40 (22 -> 28 %), not back to the old ~45 %; the bunker
-  is not the only thing holding mines down. Bunker and obstacles unchanged. 40-match noise is about +-15 points.
-- Next: B1-1 screens on the default (both switches on). Skirmish demolition stays rare (T114a-d).
+**B1-1 Screen done (2026-11-15), measuring only; no mods/ or sim change.** Targets fix: T114h got its control
+(`fortify10...demolish.handover0.gap_opened_pct`); T88b, T88d are report rows (owner Q4). `frontline-cli targets`
+parses: on `target/b1-base` 263 pass, 36 miss (21 hard). Fresh seeds 1001-1080 both bases, 160 matches per run, one
+override file each in `docs/slices/targets/B1-levers/`, dirs `target/b1-screen/<name>/`, paired by (seed, side),
+`target/b1-screen/cmp.py`. Noise of one 160 set +-7.7; paired net flips under about 8 are noise.
+Run | Germany % | vs base | flips to DE / US | T94-T97 floors (works, wire >= 60, builders <= 12)
+- base (defaults) | 41.88 | - | - | ok (US wire 61, near the floor)
+- cause (a) all four [ai.fort] switches off | 32.50 | -9.38 | 28 / 43 | wire 0: FAIL
+- cause (b) works off only | 51.25 | +9.38 | 37 / 22 | FAIL (wire 0, US works 42)
+- L1 builders_max 1 | 45.62 | +3.75 | 12 / 6 | ok
+- L2 works_per_point 2 | 45.62 | +3.75 | 21 / 15 | ok; 1: 41.88, 21 / 21, wire 0 FAIL (wire needs the 2nd work)
+- L3 build_threat_max 3 and 2 | 41.88 both | 0 | 0 / 0 | ok; inert (no winner changes at all)
+- L4 builder_reach_m 160 / 120 | 42.50 / 45.62 | +0.62 / +3.75 | 14 / 13 and 18 / 12 | ok
+- L5 line 60 / 70 / 60 + engineer 10 | 38.75 / 28.75 / 32.50 | -3.12 / -13.12 / -9.38 | 16 / 21, 19 / 40, 16 / 31 | 70 and 60+10 FAIL
+- L1+L4(120) 43.12 (+1.25, 18 / 16); L1+L2(2) 45.62 (+3.75, 21 / 15); L2(2)+L4(120) 45.62 (+3.75, 22 / 16);
+  all three 46.25 (+4.38, 24 / 17, net +7), floors ok (US wire 62, builders 6.7-7.4 %).
+Cause check: works off alone does reproduce the gap (51.25 vs 41.88, same size as the old 47.08 vs 41.7 and net +15
+flips, about 2 sigma). All four off does NOT (32.50): cards or breach off costs Germany more than works gain (not
+split; the old all-off 48.75 was before S10b). Both end at floors that fail, so the cause is real but not a setting.
+Reading: nothing separates from noise alone. The best single levers (L1, L2=2, L4=120) each give +3.75 (net +6 flips,
+about 1 sigma of the paired count); together +4.38. Direction is consistent (all three help, L5 hurts clearly), but
+the three together reach about 46 %, which is inside 45-55 only barely. L5 (more rifle squads) lowers Germany: drop it.
+**Next (B1-2):** autotune on `builders_max` 1-2 is a coin flip (two values); better a joint run with
+`works_per_point` 2-3 and `builder_reach_m` 120-200 around the triple (L1=1, L2=2, L4=120), target share 47-53,
+seed_start 1101; expect the solved level near 46-47, so a margin is thin. If the autotune triple does not reach 47,
+the code fix of the builder hold (owner Q1 C, Opus Build stage) is the next step: works off alone is +9, so most of the
+gap sits in the hold. Do not use L3 (inert), L2 1 (kills wire) or L5.
+Last check: tools/check.sh quick 72b2970 (see below). Not run: the fort floors in the pool pass (screens read per 160 set).
+
 
 ## B1-0 handover (2026-11-15)
 Tests (`crates/sim/src/s10b_ai_demolish_tests.rs`, card satchel 1 each): `ai_demolish_hands_over_to_a_second_squad`

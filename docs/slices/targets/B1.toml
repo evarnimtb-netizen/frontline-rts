@@ -1551,6 +1551,8 @@ min = 0.55
 id = "T88b"
 metric = "skirmish160.factions.usa.s9_derived.gun_armour_out_per_match"
 min = 0.45
+kind = "report"
+note = "report row (owner Q4, B1): the only lever is [ai.guns], which the pass does not move"
 [[target]]
 id = "T88c"
 metric = "skirmish160_oos.factions.germany.s9_derived.gun_armour_out_per_match"
@@ -1559,6 +1561,8 @@ min = 0.55
 id = "T88d"
 metric = "skirmish160_oos.factions.usa.s9_derived.gun_armour_out_per_match"
 min = 0.45
+kind = "report"
+note = "report row (owner Q4, B1): the only lever is [ai.guns], which the pass does not move"
 
 # --- T89: fortification works started (report; was max 0 in the mechanics half) --
 # Retired by S10a-ai: the AI now builds (T94-T95 are the hard floors).
@@ -2722,6 +2726,7 @@ max = 0
 kind = "report"
 exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
 exposure_min = 100
+control = "fortify10.s10b_ai.demolish.handover0.gap_opened_pct"
 note = "B1-0 control: demolish_handover 0, one satchel per card squad, the ring stays closed (pieces_used 1)"
 
 # --- T115: own units lost or blocked by own-side mistakes = 0 (R3, R6) --------
