@@ -77,7 +77,7 @@ No fort setting or gate raises Germany on both seed groups while keeping the flo
 Germany gains only as fortification is removed for both sides (works off +7.3, build_after_s 600 +8.5). Triple (+6.25) and
 builders_max 1 (+3.96) on fresh seeds 1001-1280 failed on 1-280 (-2.5, -1.7). Held-out seeds 301-380 NOT played.
 Rule: about 45 of 160 matches change winner under any change; paired 480 standard error near 2.4 points; accept only z >= 2.5 on both seed groups.
-Open questions B1-1..4 in `docs/TODO.md`.
+Owner 2026-11-16: accept Germany at about 42 % for now (B1-1). Open questions B1-2..4 in `docs/TODO.md`.
 
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
@@ -103,7 +103,7 @@ Open questions B1-1..4 in `docs/TODO.md`.
 
 ## Roadmap position
 
-Done on main: S1 to S10b-ai. Branch `balance-pass`: B1 (not merged; open owner questions B1-1..4 in `docs/TODO.md`). Next: owner's choice on B1-1, then S11.
+Done on main: S1 to S10b-ai. Branch `balance-pass`: B1 (not merged; B1-1 decided: accept for now; open B1-2..4 in `docs/TODO.md`). Next: owner OK to merge, then S11.
 
 ## How to check work
 
