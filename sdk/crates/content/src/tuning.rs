@@ -1827,6 +1827,10 @@ tuning_table! {
         /// S10b-ai Build E: rows of an AI AT field (the second one step
         /// behind the first, shifted half a step along it).
         at_rows: 1..=2 = "d_obst_at_rows",
+        /// B1-0 switch (owner S10b-ai-E3): a demolition job whose squad
+        /// has no satchel for its next piece passes to another free own
+        /// `demolish` squad with one (nearest the vehicle first).
+        demolish_handover: 0..=1 = "d_obst_one",
     }
 }
 
@@ -1886,6 +1890,7 @@ impl Default for AiObstacleTuning {
             barrier_job_max_s: d_obst_barrier_job_max_s(),
             lane_file: d_obst_one(),
             at_rows: d_obst_at_rows(),
+            demolish_handover: d_obst_one(),
         }
     }
 }

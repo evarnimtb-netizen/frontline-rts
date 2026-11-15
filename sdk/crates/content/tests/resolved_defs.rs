@@ -143,16 +143,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // 0xc424340dd0d06dfe, 0x33f42ad7211cedcf, 0x9294ac68191a1fd5. Build E chunk 5
 // (`[ai.obstacles] lane_file, at_rows`) changed it; the chunk 1 values were
 // 0xed3e344352f5e554, 0xaa4f332cb114ca1f, 0x9577526eb7785017,
-// 0xed3e344352f5e554, 0xa23a77af71f9120d, 0x46f180c13093cc93.
+// 0xed3e344352f5e554, 0xa23a77af71f9120d, 0x46f180c13093cc93. B1-0
+// (`[ai.obstacles] demolish_handover`) changed it; the Build E values were
+// 0x0edd3625cbff8850, 0x0e0a12502122989d, 0x771679e82a61e35a,
+// 0x0edd3625cbff8850, 0xd98c0abff58b7f89, 0x83e1eae4d9de7cb1.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x0edd3625cbff8850),
-    ("skirmish usa-ger seed 7 hard", 0x0e0a12502122989d),
-    ("test_unlock ger-usa seed 1 normal", 0x771679e82a61e35a),
-    ("example override ger-usa seed 1 normal", 0x0edd3625cbff8850),
-    ("human ger vs ai usa seed 3 easy", 0xd98c0abff58b7f89),
+    ("skirmish ger-usa seed 1 normal", 0x0dbb2ea64d0f56cd),
+    ("skirmish usa-ger seed 7 hard", 0x2e7377f64b709c5b),
+    ("test_unlock ger-usa seed 1 normal", 0x08cccfc6cd91f66f),
+    ("example override ger-usa seed 1 normal", 0x0dbb2ea64d0f56cd),
+    ("human ger vs ai usa seed 3 easy", 0x63b149a1e71e2639),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x83e1eae4d9de7cb1,
+        0xbce2882c973caa06,
     ),
 ];
 

@@ -1773,6 +1773,7 @@
           "bunker_truck_first": 1,
           "bunkers_max": 1,
           "demolish": 1,
+          "demolish_handover": 1,
           "demolish_near_m": 30,
           "demolish_pieces_max": 3,
           "fields_per_point": 2,

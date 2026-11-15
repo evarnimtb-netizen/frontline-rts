@@ -2715,6 +2715,14 @@ kind = "report"
 exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
 exposure_min = 100
 control = "fortify10.s10b_ai.demolish.control.pieces_used"
+[[target]]
+id = "T114h"
+metric = "fortify10.s10b_ai.demolish.handover0.gap_opened_pct"
+max = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
+exposure_min = 100
+note = "B1-0 control: demolish_handover 0, one satchel per card squad, the ring stays closed (pieces_used 1)"
 
 # --- T115: own units lost or blocked by own-side mistakes = 0 (R3, R6) --------
 [[target]]

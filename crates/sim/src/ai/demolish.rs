@@ -36,8 +36,18 @@
 //! * The vehicle and the squad leave the plan's lists while the job lives:
 //!   the vehicle waits at its spot (one `Move` per piece, no re-path spam).
 //!
+//! * **Hand-over (B1-0, owner S10b-ai-E3; switch `demolish_handover`).**
+//!   In Go, before the order, a squad with no satchel left passes the job
+//!   (pieces, `done`, `start`, so the L1 deadline) to another free own
+//!   `demolish` squad with a satchel within `sweep_reach_m` of the vehicle,
+//!   nearest first, then id; the first squad is free again. None: the job
+//!   fails (L3) as a refused `Demolish` did. A new job takes a squad with
+//!   a satchel before one without. (Engineer cards carry one satchel; a
+//!   4 m hedgehog row wants two pieces gone.)
+//!
 //! Nothing runs with the switch off (no state read, no RNG).
 
+use frontline_content::ItemKind;
 use frontline_content::setup::{Capability, MatchSetup};
 
 use super::obstacles::MAX_DEMOLISH_PIECES;
@@ -78,9 +88,53 @@ enum DemolishEnd {
     Failed,
     /// Vehicle or squad lost (no refusal).
     Quit,
+    /// Go with no satchel left in the squad (hand-over on): another squad
+    /// takes the job, or it fails.
+    NoSatchel,
+}
+
+/// Whether the hand-over switch is on.
+fn handover_on(s: &MatchSetup) -> bool {
+    s.rules.ai.obstacles.demolish_handover != 0
 }
 
 impl super::Planner<'_> {
+    /// Whether squad `id` has a living member with a satchel.
+    fn has_satchel(&self, id: SquadId) -> bool {
+        self.g.squads.get(&id).is_some_and(|q| {
+            q.members.iter().any(|m| {
+                self.ents.is_alive(*m)
+                    && self.ents.kit[m.index()].items[ItemKind::Satchel.index()] > 0
+            })
+        })
+    }
+
+    /// The free own `demolish` squad in `mine` with a satchel nearest the
+    /// vehicle at `v` (then id), within `sweep_reach_m`, not `but` and in
+    /// no other demolition job, not `busy`.
+    fn handover_pick(
+        &self,
+        mine: &[Mine],
+        v: FxVec2,
+        but: SquadId,
+        busy: &[SquadId],
+    ) -> Option<usize> {
+        let o = &self.g.setup.rules.ai.obstacles;
+        let reach = sq_m(Fx::from_int(o.sweep_reach_m.min(i32::MAX as u32) as i32));
+        mine.iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                m.id != but
+                    && m.can(Capability::Demolish)
+                    && !busy.contains(&m.id)
+                    && !self.ai.demolitions.contains_key(&m.id)
+                    && (m.lead - v).length_sq_raw() <= reach
+                    && self.has_satchel(m.id)
+            })
+            .min_by_key(|(_, m)| ((m.lead - v).length_sq_raw(), m.id))
+            .map(|(k, _)| k)
+    }
+
     /// Own vehicle squad `squad`'s lead position, goal and way there:
     /// `Some(true)` its path reaches the goal (or it stands there),
     /// `Some(false)` its path is exhausted (it ends short and is not
@@ -234,7 +288,11 @@ impl super::Planner<'_> {
                         && !self.ai.demolitions.contains_key(&m.id)
                         && (m.lead - v).length_sq_raw() <= reach
                 })
-                .min_by_key(|m| ((m.lead - v).length_sq_raw(), m.id));
+                // Hand-over on: a squad with a satchel before one without.
+                .min_by_key(|m| {
+                    let dry = handover_on(s) && !self.has_satchel(m.id);
+                    (dry, (m.lead - v).length_sq_raw(), m.id)
+                });
             let Some(m) = pick else { continue };
             // L4 guard (fixed 300 s window; the `loose` control shows it).
             if self.ai.refused_near(
@@ -357,10 +415,37 @@ impl super::Planner<'_> {
                 tanks.retain(|t| t.id != job.vehicle);
                 continue;
             }
-            let end = match (k, demolish_on(&g.setup)) {
+            let mut end = match (k, demolish_on(&g.setup)) {
                 (Some(_), true) => self.run_demolish(id, &mut job),
                 _ => Some(DemolishEnd::Quit),
             };
+            if end == Some(DemolishEnd::NoSatchel) {
+                // B1-0 hand-over: the job (pieces, done, start) passes to
+                // the nearest free squad with a satchel; `id` is free.
+                let to = self.job_vehicle(job.vehicle).and_then(|(_, v)| {
+                    let n = self.handover_pick(mine, v, id, busy)?;
+                    Some((n, self.stand_point(&job, v)))
+                });
+                if let Some((n, to)) = to {
+                    let new = mine.remove(n).id;
+                    job.phase = DemolishPhase::Go;
+                    job.since = self.tick;
+                    self.ai.demolitions.remove(&id);
+                    self.ai.demolitions.insert(new, job.clone());
+                    if let Some(to) = to {
+                        self.ai.emit(
+                            self.due,
+                            CommandKind::Move {
+                                squad: new,
+                                target: to,
+                            },
+                        );
+                    }
+                    tanks.retain(|t| t.id != job.vehicle);
+                    continue;
+                }
+                end = Some(DemolishEnd::Failed);
+            }
             match end {
                 None => {
                     self.ai.demolitions.insert(id, job.clone());
@@ -401,7 +486,7 @@ impl super::Planner<'_> {
                 }
                 self.ai.counters.s10b_refused += 1;
             }
-            DemolishEnd::Quit => {}
+            DemolishEnd::Quit | DemolishEnd::NoSatchel => {}
         }
     }
 
@@ -452,6 +537,10 @@ impl super::Planner<'_> {
                 let Some(piece) = self.next_piece(job) else {
                     return Some(DemolishEnd::GaveUp);
                 };
+                // B1-0: no satchel for this piece, checked before the order.
+                if handover_on(s) && !self.has_satchel(id) {
+                    return Some(DemolishEnd::NoSatchel);
+                }
                 let to = self.stand_point(job, v)?;
                 if (lead - to).length_sq_raw() <= sq_m(Fx::from_int(ARRIVE_M)) {
                     let at = g.fort.pieces[&piece].pos;
@@ -559,7 +648,8 @@ impl super::Planner<'_> {
         let sq = args.squad?;
         let p = args.point;
         let at: FxVec2 = g.setup.map.points.get(p).map(|x| x.pos.into())?;
-        let was = self.ai.demolitions.contains_key(&sq);
+        // Any job (B1-0: a hand-over re-keys the job to another squad).
+        let was = !self.ai.demolitions.is_empty();
         let (opened, refused) = (self.ai.counters.gaps_opened, self.ai.counters.s10b_refused);
         let busy: Vec<SquadId> = self
             .ai
@@ -603,7 +693,7 @@ impl super::Planner<'_> {
         // As in a match: the jobs go on, then new ones start every plan.
         self.demolish_continue(&mut mine, &mut tanks, &busy);
         self.demolish_start(&mine, &mut tanks, &[]);
-        let alive = self.ai.demolitions.contains_key(&sq);
+        let alive = !self.ai.demolitions.is_empty();
         let ok = self.ai.counters.gaps_opened > opened && self.ai.counters.s10b_refused == refused;
         (was && !alive).then_some(if ok { HabitEnd::Done } else { HabitEnd::Failed })
     }
