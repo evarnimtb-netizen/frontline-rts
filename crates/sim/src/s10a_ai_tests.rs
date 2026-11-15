@@ -2546,6 +2546,124 @@ fn ai_holds_a_builder_only_while_its_job_can_start() {
     assert!(second(2).1, "control: room, b takes the dugout");
 }
 
+/// Fix F15 jobs over 20 s: the most fort jobs at once and whether squad
+/// `id` had one.
+fn jobs_seen(w: &mut World, id: SquadId) -> (usize, bool) {
+    let (mut most, mut had) = (0, false);
+    for _ in 0..20 {
+        play(w, 1);
+        most = most.max(ai_ro(w).forts.len());
+        had |= ai_ro(w).forts.contains_key(&id);
+    }
+    (most, had)
+}
+
+#[test]
+fn ai_hold_max_0_holds_no_builder_but_jobs_still_start() {
+    // B1-4 `hold_max` 0: the dugout point (a neutral point 360 m off)
+    // holds no builder, so the full engineer squad there goes to the
+    // other point and starts no job. Failing control: `hold_max` 2 (the
+    // default) holds it and it takes the dugout.
+    let far = |max: u32| {
+        let (mut w, pos, line) = held_far(360, |s| {
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.fort.hold_max = max;
+        });
+        dugout_wanted(&mut w, pos, line);
+        let a = squad_at(&mut w, ENG, pos, 120);
+        let (_, had) = jobs_seen(&mut w, a);
+        (had, task_point(&w, a))
+    };
+    assert_eq!(
+        far(0),
+        (false, Some(1)),
+        "hold_max 0: not held, at the other point"
+    );
+    assert!(far(2).0, "control hold_max 2: held, it takes the dugout");
+    // Yet a free engineer assigned to the point without a hold (the only
+    // point) still starts the job with `hold_max` 0. Its failing control
+    // is `far(0)` above: there the hold was what kept it at the point.
+    let (mut w, pos, _) = held(|s| s.rules.ai.fort.hold_max = 0);
+    let a = squad_at(&mut w, ENG, pos, 120);
+    assert!(jobs_seen(&mut w, a).1, "hold_max 0: the job still starts");
+}
+
+/// [`held`] with point 1 also player 1's (its trench dug, `sep` m from
+/// point 0 across the enemy direction) and neutral points 2 and 3 `back`
+/// m behind points 0 and 1 (away from the enemy); decision quality 100,
+/// wire off; one full engineer squad at each own point. Returns the world
+/// and the two squads (point 0's first).
+fn held_pair(sep: i32, back: i32, max: u32) -> (World, SquadId, SquadId) {
+    let mut p1 = FxVec2::ZERO;
+    let (mut w, pos, _) = held(|s| {
+        s.rules.difficulty.normal.decision_quality_pct = 100;
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.fort.hold_max = max;
+        let p0: FxVec2 = s.map.points[0].pos.into();
+        let b0: FxVec2 = s.map.bases[s.players[0].base as usize].center.into();
+        let d = (b0 - p0).normalize_or_zero();
+        let side = d.perp() * Fx::from_int(sep);
+        let back = d * Fx::from_int(-back);
+        for at in [p0 + side, p0 + back, p0 + side + back] {
+            let mut q = s.map.points[0].clone();
+            q.pos = frontline_content::FixedVec2 {
+                x: frontline_content::Fixed(at.x.raw()),
+                y: frontline_content::Fixed(at.y.raw()),
+            };
+            s.map.points.push(q);
+        }
+        p1 = p0 + side;
+    });
+    let line1 = {
+        let g = w.state.game.as_mut().unwrap();
+        g.points[1].owner = Some(PlayerId(1));
+        let s = &g.setup;
+        let dir = (g.base_of(PlayerId(0)) - p1).normalize_or_zero();
+        let mid = p1 + dir * Fx::from(s.rules.ai.dig_offset);
+        let half = dir.perp() * Fx::from(s.rules.ai.dig_length).div_int(2);
+        let line = [mid - half, mid + half];
+        g.ai[1]
+            .as_mut()
+            .unwrap()
+            .trenches
+            .push(AiTrench { point: 1, line });
+        line
+    };
+    trench_done(&mut w, line1);
+    let a = squad_at(&mut w, ENG, pos, 120);
+    let b = squad_at(&mut w, ENG, p1, 120);
+    (w, a, b)
+}
+
+#[test]
+fn ai_hold_max_1_holds_at_most_one_point() {
+    // B1-4 `hold_max` 1: two own trenched points want their nest, each
+    // with a full engineer squad; only point 0 (points ascending) holds
+    // its builder, point 1's goes to its neutral point: one job at most.
+    // Failing control: `hold_max` 2 holds both, two jobs at once.
+    let run = |max: u32| {
+        let (mut w, a, b) = held_pair(120, 300, max);
+        let (most, had_a) = jobs_seen(&mut w, a);
+        (
+            most,
+            had_a,
+            ai_ro(&w).forts.contains_key(&b) || task_point(&w, b) == Some(1),
+        )
+    };
+    let (most, had_a, b_home) = run(1);
+    assert_eq!(most, 1, "hold_max 1: one job at most");
+    assert!(
+        had_a && !b_home,
+        "point 0 holds its builder, point 1 does not"
+    );
+    assert_eq!(
+        run(2).0,
+        2,
+        "control hold_max 2: both points hold, two jobs"
+    );
+    assert_eq!(run(0).0, 0, "hold_max 0: no point holds, no job");
+}
+
 #[test]
 fn ai_builder_drops_its_job_for_an_enemy_vehicle() {
     // Fix F12: a known enemy vehicle near the builder (no enemy soldier

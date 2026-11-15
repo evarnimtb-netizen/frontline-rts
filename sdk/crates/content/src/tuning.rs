@@ -1692,7 +1692,16 @@ tuning_table! {
         gap_clear_m: 0..=50,
         /// Urgent breach buys alive at once.
         breach_cards_max: 0..=8,
+        /// B1-4: at most this many own points hold a builder for their
+        /// wanted work (fix F15, the assign bonus); 2 (the old cap, set by
+        /// `builders_max` 2) is today's behaviour. Jobs still start for
+        /// engineers assigned without a hold. Inside `builders_max`.
+        hold_max: 0..=16 = "d_fort_hold_max",
     }
+}
+
+fn d_fort_hold_max() -> u32 {
+    2
 }
 
 impl AiFortTuning {
@@ -1742,6 +1751,7 @@ impl Default for AiFortTuning {
             breach_max_s: 180,
             gap_clear_m: 2,
             breach_cards_max: 1,
+            hold_max: d_fort_hold_max(),
         }
     }
 }

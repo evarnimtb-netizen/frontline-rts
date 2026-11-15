@@ -1452,6 +1452,7 @@ breach_tries = 3             # ... at most this many tries
 breach_max_s = 180           # s: a breach job ends after this long
 gap_clear_m = 2              # m: a gap is open with no standing section this close to the crossing
 breach_cards_max = 1         # urgent breach buys alive at once
+hold_max = 2                 # B1-4: at most this many points hold a builder for their work (fix F15 assign bonus; inside builders_max)
 
 # S10b-ai: the AI lays mines, builds obstacles and the bunker, sweeps and
 # demolishes (docs/slices/S10b-ai.md 2). Starting values; the six switches

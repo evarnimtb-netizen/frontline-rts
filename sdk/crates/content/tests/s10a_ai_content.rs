@@ -40,11 +40,13 @@ fn ai_fort_tuning_parses_and_validates() {
         ),
         (35, 60, 3, 3)
     );
-    assert_eq!(AiFortTuning::KEYS.len(), 39);
+    // B1-4: `hold_max` (2, today's cap with builders_max 2).
+    assert_eq!(f.hold_max, 2);
+    assert_eq!(AiFortTuning::KEYS.len(), 40);
     assert!(
         frontline_content::tuning::TABLES
             .iter()
-            .any(|(t, k)| *t == "ai.fort" && k.len() == 39)
+            .any(|(t, k)| *t == "ai.fort" && k.len() == 40)
     );
     // An override reaches the setup (the ablation switches).
     let off = write(

@@ -1401,8 +1401,11 @@ impl super::Planner<'_> {
 
     /// Fix F15: the builder each wanting own point holds (the assign
     /// bonus): one per point, points ascending, while `builders_max` has
-    /// room, a free engineer (no `breach`) that could start the first
-    /// wanted work it can, nearest first. Nothing with the habits off.
+    /// room and fewer than `hold_max` (B1-4) points hold one, a free
+    /// engineer (no `breach`) that could start the first wanted work it
+    /// can, nearest first. Nothing with the habits off. `hold_max` caps
+    /// only the holds: `fort_start` still gives a job to a fit engineer
+    /// assigned to the point without one.
     pub(super) fn fort_holds(
         &mut self,
         mine: &[Mine],
@@ -1419,7 +1422,7 @@ impl super::Planner<'_> {
             if !pt.wants_works {
                 continue;
             }
-            if !self.job_room(held.len()) {
+            if held.len() >= s.rules.ai.fort.hold_max as usize || !self.job_room(held.len()) {
                 break;
             }
             let pos = pt.pos;

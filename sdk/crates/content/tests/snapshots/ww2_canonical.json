@@ -1670,6 +1670,7 @@
           "gap_clear_m": 2,
           "gun_hold_s": 60,
           "gun_wall_m": 4,
+          "hold_max": 2,
           "load_min_kg": 40,
           "material_wait_s": 120,
           "materials_max_pct": 3,
