@@ -1239,7 +1239,11 @@ fn ai_builder_limits_hold() {
         most
     };
     assert_eq!(most_jobs(|s| s.rules.ai.fort.builders_max = 1), 1);
-    assert_eq!(most_jobs(|_| {}), 2, "builders_max 2");
+    assert_eq!(
+        most_jobs(|s| s.rules.ai.fort.builders_max = 2),
+        2,
+        "builders_max 2"
+    );
     // works_per_point 1 with the nest standing: no wire job.
     let wire_jobs = |per_point: u32| {
         let (mut w, pos, line) = held(|s| s.rules.ai.fort.works_per_point = per_point);
@@ -2533,7 +2537,11 @@ fn ai_holds_a_builder_only_while_its_job_can_start() {
     assert!(weak(8).0, "control: the full squad takes the dugout");
     // builders_max reached: a second builder is not held at the point.
     let second = |max: u32| {
-        let (mut w, pos, line) = held_far(360, |s| s.rules.ai.fort.builders_max = max);
+        let (mut w, pos, line) = held_far(360, |s| {
+            s.rules.ai.fort.builders_max = max;
+            s.rules.ai.fort.works_per_point = 3;
+            s.rules.ai.fort.builder_reach_m = 200;
+        });
         dugout_wanted(&mut w, pos, line);
         let a = squad_at(&mut w, ENG, pos, 120);
         assert!(play_until(&mut w, 20, |w| ai_ro(w).forts.contains_key(&a)));
@@ -2749,7 +2757,10 @@ fn ai_keeps_at_most_two_dugouts() {
 fn ai_starts_two_jobs_in_one_plan() {
     // Fix F3: with builders_max 2, the point's nest and the HQ roof start
     // in the same plan (a started job was counted twice).
-    let (mut w, pos, _) = held(|s| s.rules.ai.fort.wire = 0);
+    let (mut w, pos, _) = held(|s| {
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.fort.builders_max = 2;
+    });
     let hq_at = pos + c(-20, 0);
     let def = {
         let s = w.match_setup().unwrap();
