@@ -8,7 +8,7 @@ use super::s10b_ai_lay_tests::{Held, held, squad_at};
 use super::s10b_ai_tests::{Stage, fort_row, truck_row};
 use super::*;
 use crate::ai::fort::front_points_of;
-use crate::ai::{AiCounters, AiState, MINE_WANT_WHY};
+use crate::ai::{AiCounters, AiState, FrontLane, MAX_FRONT_LANES, MINE_WANT_WHY};
 
 fn c(x: i32, y: i32) -> FxVec2 {
     FxVec2::from_int(x, y)
@@ -261,6 +261,8 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         c.belt_jobs = 12;
         c.belt_route_rejects = 13;
         c.builder_buys = 14;
+        // Addendum 1: two saved lanes (Build A leaves them empty in play).
+        ai.front_lanes = vec![lane(1, 0), lane(3, 1)];
     }));
     let bytes = w.save();
     let back = World::load(&bytes, 1).expect("the S10c-ai state loads");
@@ -275,6 +277,9 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
     fn o(s: &mut SimState) -> &mut frontline_content::tuning::AiObstacleTuning {
         &mut s.game.as_mut().unwrap().setup.rules.ai.obstacles
     }
+    fn lanes(s: &mut SimState) -> &mut Vec<FrontLane> {
+        &mut s.game.as_mut().unwrap().ai[1].as_mut().unwrap().front_lanes
+    }
     let edits: Vec<Edit> = vec![
         Box::new(|s| ai(s).fort_job_fails += 1),
         Box::new(|s| ai(s).truck_give_ups += 1),
@@ -287,6 +292,11 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         Box::new(|s| o(s).front_points = 3),
         Box::new(|s| o(s).belt_detour_pct = 200),
         Box::new(|s| o(s).builder_cards_min = 2),
+        Box::new(|s| o(s).front_slots = 2),
+        Box::new(|s| o(s).front_wire_len_m = 30),
+        Box::new(|s| lanes(s)[0].ap_done = true),
+        Box::new(|s| lanes(s)[1].wire[1] = c(301, 300)),
+        Box::new(|s| lanes(s)[1].since = 0),
     ];
     let same = World::load(&back.save(), 1).unwrap();
     assert_eq!(same.full_state_hash(), h);
@@ -295,5 +305,75 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         e(&mut x.state);
         let y = World::load(&x.save(), 1).unwrap_or_else(|e| panic!("edit {k}: {e:?}"));
         assert_ne!(y.full_state_hash(), h, "edit {k} is not hashed");
+    }
+}
+
+/// A front lane at `point` found at tick `since` (sites near (300, 300)).
+fn lane(point: u8, since: u64) -> FrontLane {
+    FrontLane {
+        point,
+        since,
+        ap: [c(290, 310), c(310, 310)],
+        wire: [c(295, 300), c(305, 300)],
+        ap_done: false,
+        wire_done: false,
+    }
+}
+
+/// Addendum 1: `front_lanes` loads only within its rules (spec 3): at most
+/// `MAX_FRONT_LANES`, points in range, unique and ascending, `since` not in
+/// the future, sites on the map. Control: the good lanes load (first
+/// assert); the S10c lines of `validate_fort` replaced by `true` -> the
+/// first case loads (seen).
+#[test]
+fn load_rejects_bad_front_lanes() {
+    let mut w = flat_world_with(1, |s| s.players[1].is_ai = true);
+    steps(&mut w, 3);
+    assert!(w.with_ai_state(1, |ai| ai.front_lanes = vec![lane(0, 1), lane(2, 2)]));
+    let bytes = w.save();
+    let back = World::load(&bytes, 1).expect("good front lanes load");
+    assert_eq!(ai_ro(&back).front_lanes.len(), 2);
+    fn lanes(s: &mut SimState) -> &mut Vec<FrontLane> {
+        &mut s.game.as_mut().unwrap().ai[1].as_mut().unwrap().front_lanes
+    }
+    type Edit = Box<dyn Fn(&mut SimState)>;
+    let bad: Vec<(&str, Edit)> = vec![
+        (
+            "over the cap",
+            Box::new(|s| {
+                // Kessel Ridge has 5 points, so more than 8 lanes also
+                // repeat a point: this case is caught by the cap and the
+                // order check together.
+                *lanes(s) = (0..=MAX_FRONT_LANES as u8)
+                    .map(|p| lane(p % 5, 1))
+                    .collect();
+            }),
+        ),
+        ("point out of range", Box::new(|s| lanes(s)[1].point = 9)),
+        ("points not unique", Box::new(|s| lanes(s)[1].point = 0)),
+        ("points not ascending", Box::new(|s| lanes(s).reverse())),
+        (
+            "lane found in the future",
+            Box::new(|s| {
+                let t = s.tick;
+                lanes(s)[0].since = t + 1;
+            }),
+        ),
+        (
+            "ap site off the map",
+            Box::new(|s| lanes(s)[0].ap[0] = c(-1, 300)),
+        ),
+        (
+            "wire site off the map",
+            Box::new(|s| lanes(s)[1].wire[1] = c(300, 5000)),
+        ),
+    ];
+    for (what, e) in bad {
+        let mut x = World::load(&bytes, 1).unwrap();
+        e(&mut x.state);
+        assert!(
+            World::load(&x.save(), 1).is_err(),
+            "bad front lanes loaded: {what}"
+        );
     }
 }

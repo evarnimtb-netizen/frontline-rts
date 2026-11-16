@@ -64,13 +64,13 @@ fn ai_obstacle_tuning_parses_and_validates() {
     assert_eq!(o.demolish_handover, 1);
     // B1-0: `bunker_yields` (switch, on).
     assert_eq!(o.bunker_yields, 1);
-    // S10c-ai: twelve more keys (s10c_ai_content.rs checks them).
-    assert_eq!(AiObstacleTuning::KEYS.len(), 49);
+    // S10c-ai: thirteen more keys (s10c_ai_content.rs checks them).
+    assert_eq!(AiObstacleTuning::KEYS.len(), 50);
     let tables = frontline_content::tuning::TABLES;
     assert!(
         tables
             .iter()
-            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 49)
+            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 50)
     );
     let f = s.rules.fortify.as_ref().unwrap();
     assert_eq!(

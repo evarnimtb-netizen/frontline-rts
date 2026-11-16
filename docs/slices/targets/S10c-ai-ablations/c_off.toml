@@ -6,3 +6,5 @@ mine_assign = 0
 belt = 0
 builder_cards_min = 0
 jobs_max = 1
+front_wire_len_m = 20
+front_slots = 1

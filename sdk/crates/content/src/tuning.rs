@@ -1885,6 +1885,9 @@ tuning_table! {
         front_site_threat_m: 0..=500 = "d_obst_front_site_threat_m",
         /// S10c-ai (F7): front AP fields per player.
         front_fields_max: 0..=16 = "d_obst_front_fields_max",
+        /// S10c-ai (C8): front jobs (FrontAp, FrontWire, a front AT field,
+        /// a belt) running at once.
+        front_slots: 0..=16 = "d_obst_one",
         /// S10c-ai (C4): blocking pieces in a belt ...
         belt_pieces: 0..=20 = "d_obst_belt_pieces",
         /// ... this far beyond the AT field, on the enemy side (m).
@@ -1911,7 +1914,7 @@ fn d_obst_front_out_m() -> u32 {
 }
 
 fn d_obst_front_wire_len_m() -> u32 {
-    40
+    20
 }
 
 fn d_obst_front_site_threat_m() -> u32 {
@@ -2000,6 +2003,7 @@ impl Default for AiObstacleTuning {
             front_wire_len_m: d_obst_front_wire_len_m(),
             front_site_threat_m: d_obst_front_site_threat_m(),
             front_fields_max: d_obst_front_fields_max(),
+            front_slots: d_obst_one(),
             belt_pieces: d_obst_belt_pieces(),
             belt_gap_m: d_obst_belt_gap_m(),
             belt_detour_pct: d_obst_belt_detour_pct(),

@@ -176,6 +176,26 @@ pub enum FortPhase {
     Done = 4,
 }
 
+/// S10c-ai (spec 3, review finding 4): most `AiState::front_lanes`.
+pub const MAX_FRONT_LANES: usize = 8;
+
+/// S10c-ai (F2, F3): the two site lines of one front point, fixed when the
+/// point's lane is first found, so every plan sees the front wants (Build B
+/// fills them; empty in Build A). Each line is (start, end).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct FrontLane {
+    /// Capture point index.
+    pub point: u8,
+    /// Tick the lane was found (at most the current tick).
+    pub since: u64,
+    /// The FrontAp line and the FrontWire line.
+    pub ap: [FxVec2; 2],
+    pub wire: [FxVec2; 2],
+    /// F6: a FrontAp / FrontWire job of this lane ended laid / built.
+    pub ap_done: bool,
+    pub wire_done: bool,
+}
+
 /// One builder squad's fort job (spec 4; keyed by the squad).
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct AiFortJob {

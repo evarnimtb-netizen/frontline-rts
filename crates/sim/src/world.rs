@@ -451,8 +451,9 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `FortState::blasts`, four `FortAccount` counters; in the setup
 /// `[ai.obstacles]`, four `[fortify]` mine path keys and `[ai.truck]
 /// refusal_memory`). One bump for the whole slice. 26: S10c-ai (fourteen
-/// `AiCounters` fields with `front_why` and `mine_want_why`; in the setup
-/// twelve `[ai.obstacles]` keys). One bump for the whole slice.
+/// `AiCounters` fields with `front_why` and `mine_want_why`,
+/// `AiState::front_lanes`; in the setup thirteen `[ai.obstacles]` keys).
+/// One bump for the whole slice.
 const SAVE_VERSION: u32 = 26;
 
 #[derive(Serialize)]

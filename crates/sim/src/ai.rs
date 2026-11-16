@@ -208,7 +208,8 @@ pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
 };
 pub use fort::{
-    AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES, MINE_WANT_WHY,
+    AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, FrontLane, MAX_FORT_JOBS, MAX_FORT_TRIES,
+    MAX_FRONT_LANES, MINE_WANT_WHY,
 };
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
@@ -382,6 +383,9 @@ pub struct AiState {
     /// [`MAX_BLOCKED_PAIRS`]; a pair counts when it first appears (saved,
     /// Build D: a stuck pair is not counted again after a load).
     pub blocked_pairs: Vec<(SquadId, u32)>,
+    /// S10c-ai (spec 3, F2): the saved lanes of the front points, strictly
+    /// ascending by point, at most [`MAX_FRONT_LANES`] (Build B fills it).
+    pub front_lanes: Vec<FrontLane>,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -734,6 +738,7 @@ impl AiState {
             refused: Vec::new(),
             suspects_seen: 0,
             blocked_pairs: Vec::new(),
+            front_lanes: Vec::new(),
         }
     }
 
@@ -970,6 +975,15 @@ impl AiState {
                 .iter()
                 .all(|(&p, &t)| (p as usize) < np && t <= tick)
             && self.material_run.is_none_or(|(id, _)| own(&id))
+            // S10c-ai: front lanes (spec 3): cap, points in range, unique
+            // and ascending, found in the past, sites on the map.
+            && self.front_lanes.len() <= MAX_FRONT_LANES
+            && self.front_lanes.windows(2).all(|w| w[0].point < w[1].point)
+            && self.front_lanes.iter().all(|l| {
+                (l.point as usize) < np
+                    && l.since <= tick
+                    && l.ap.iter().chain(l.wire.iter()).all(on_map)
+            })
     }
 }
 

@@ -1504,9 +1504,10 @@ mine_assign = 0              # switch (C2): a wanted front work with no fit squa
 belt = 0                     # switch (C4): a row of blocking pieces across the vehicle lane beyond a front AT field
 front_points = 2             # F1: this many own points nearest the enemy base are front points
 front_out_m = 50             # m (F3): the front wire lies this far out along the foot lane; the AP field ap_beyond_wire_m beyond it
-front_wire_len_m = 40        # m (F3): length of a front wire line
+front_wire_len_m = 20        # m (F3): length of a front wire line (10 m shorter than the AP row, so a way round crosses the mines)
 front_site_threat_m = 50     # m (F5): no front job start (and a drop) with a known enemy this close to the site; the builder keeps [ai] threat_radius
 front_fields_max = 2         # F7: front AP fields per player
+front_slots = 1              # C8: front jobs (FrontAp, FrontWire, front AT field, belt) at once
 belt_pieces = 5              # C4: blocking pieces in a belt ...
 belt_gap_m = 10              # m (C4): ... this far beyond the AT field, on the enemy side
 belt_detour_pct = 130        # % (C5): the own route round a belt is at most this share of the route without it; 0 = rule off
