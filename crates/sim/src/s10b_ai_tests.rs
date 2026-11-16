@@ -593,6 +593,7 @@ const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
     (JobKind::TruckGoal, truck_row, false),
     (JobKind::Fort, front_ap_row, false),
     (JobKind::Fort, belt_row, false),
+    (JobKind::Fort, front_wire_row, false),
 ];
 
 /// The TruckGoal row (Build D, L5): the AI's loaded truck in a trench ring
@@ -749,6 +750,55 @@ fn front_ap_row() -> (World, Stage) {
         goal.x.floor_int(),
         goal.y.floor_int(),
     );
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The FrontWire row (S10c-ai fix pass 1, finding B-1): the held point
+/// with `front` on (`front_home` 1), the S10a wire habit on, AT mines and
+/// the R1 field off, so FrontWire is the only want; its saved lane
+/// (found by 3 s of the match AI, FrontAp marked done, then taken out)
+/// with its wire line moved off the map, so every `Fortify` is refused
+/// (BadSpot). The refusal is at the line's middle. Control: `refused_s` 0 -> a restart
+/// each plan (the check fails, seen); and before the fix (a refused
+/// FrontWire job parked, not refused, and wanted again) the row failed:
+/// one job alive to the end, re-ordered every plan, 0 refusals (seen).
+pub(crate) fn front_wire_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        s.rules.ai.fort.wire = 1;
+        o.at_mines = 0;
+        o.fields_per_point = 0;
+        o.front = 1;
+        o.front_home = 1;
+    });
+    steps(&mut w, 3 * 30);
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .ap_done = true;
+    // Wire may stand on a vehicle and the flat map has no slope: the saved
+    // wire line is moved off the map's west edge (an in-memory edit; a
+    // save would refuse it), so every `Fortify` is refused (BadSpot).
+    let goal = c(-20, h.pos.y.floor_int());
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .wire = [goal - c(10, 0), goal + c(10, 0)];
     let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
     let ai = w.state.game.as_mut().unwrap().ai[1].take();
     let stage = Stage {
@@ -1287,4 +1337,51 @@ fn a_base_give_up_ages_so_a_lone_truck_returns() {
         }
     }
     assert!(back, "never sent back");
+}
+
+/// S10c-ai fix pass 1 (finding B-1): the FrontWire row alone, with its
+/// control in the test: `refused_s` 0 -> the job is re-ordered (and
+/// refused) every plan, one job alive to the end, so the check fails (L4).
+/// Before the fix the main run failed too ("job alive from 91 to the end:
+/// past its deadline (L1) (0 refusals)": a refused FrontWire job was
+/// parked, never refused, and re-ordered every plan; seen with the code
+/// edit `wire = false` in `fort_continue`). The row also runs in
+/// `ai_jobs_end_and_never_reorder_a_refused_goal`.
+#[test]
+fn front_wire_job_ends_and_is_not_reordered() {
+    let run = |refused_s: Option<u32>| {
+        let (mut w, stage) = front_wire_row();
+        if let Some(r) = refused_s {
+            w.state
+                .game
+                .as_mut()
+                .unwrap()
+                .setup
+                .rules
+                .ai
+                .obstacles
+                .refused_s = r;
+        }
+        let s = w.match_setup().unwrap();
+        let (hz, o) = (s.tick_hz as u64, s.rules.ai.obstacles.clone());
+        let l = Limits {
+            job_max: o.job_max_s as u64 * hz,
+            refused: o.refused_s as u64 * hz,
+            slack: 2 * o.recheck_s.max(5) as u64 * hz,
+        };
+        let tr = drive_row(&mut w, JobKind::Fort, &stage, LIVENESS_MIN * 60 * hz);
+        let refusals = tr
+            .windows(2)
+            .filter(|p| p[1].refused_at > p[0].refused_at)
+            .count();
+        (check_liveness(&tr, &l), refusals)
+    };
+    let (ok, n) = run(None);
+    if let Err(e) = ok {
+        panic!("FrontWire: {e} ({n} refusals)");
+    }
+    assert!((2..=5).contains(&n), "{n} refusals in 20 min");
+    let (bad, n) = run(Some(0));
+    assert!(bad.is_err(), "control refused_s 0 passed ({n} refusals)");
+    assert!(n > 100, "control: {n} refusals, not one each plan");
 }

@@ -90,6 +90,11 @@ pub const BUNKER_WHY: [&str; 16] = [
 /// the blueprint limit); no site; a young refusal there (L4); no job slot
 /// (`builders_max`, `jobs_max`); no fit free builder assigned there (60 %,
 /// caps, materials); every fit builder or the site has a known enemy near.
+/// Order of the checks (fix pass 1, findings A-1, A-2): a field laid or
+/// being laid is never counted; then not_own_or_trench, no_site,
+/// wire_first, cap (the want list), no_site (the line), slot, cap (the
+/// blueprint limit), refused, no_builder, threat. So `slot` is read before
+/// the blueprint cap and the refusal, unlike the spec's name list.
 pub const MINE_WANT_WHY: [&str; 8] = [
     "not_own_or_trench",
     "wire_first",
@@ -788,6 +793,10 @@ impl super::Planner<'_> {
     /// line keeps its end), or the AT field (either row) at a lane's point.
     fn front_kind(&self, j: &AiFortJob) -> Option<WorkKind> {
         let s = &self.g.setup;
+        // Fix pass 1 (finding B-5): no front kind with `front` off.
+        if !front_on(s) {
+            return None;
+        }
         let lane = self.ai.front_lanes.iter().find(|l| l.point == j.point)?;
         let end = *j.line.last()?;
         let r = Fx::from_int(2);
@@ -864,7 +873,7 @@ impl super::Planner<'_> {
             .filter(|m| {
                 !taken.contains(&m.id)
                     && !out.contains(&m.id)
-                    && self.can_take_at(m, fort, site, known, kv, true)
+                    && self.can_take_at(m, fort, site, line, known, kv, true)
                     && self.front_carry_ok(m.id, fort, line)
             })
             .min_by_key(|m| {
@@ -1041,8 +1050,8 @@ impl super::Planner<'_> {
     /// order: FrontAp (its lane's `ap_done` false, no live FrontAp job,
     /// fewer than `front_fields_max` lanes with a field, the blueprint
     /// cap), FrontWire (the same with `wire_done`), then the R2 AT field
-    /// (its trench condition lifted; `recheck_s` plans only, `at_fields_max`
-    /// and the blueprint cap) and its second row. Only at a front point
+    /// (its trench condition lifted; every plan since fix pass 1 C-1,
+    /// `at_fields_max` and the blueprint cap) and its second row. Only at a front point
     /// with a saved lane and `front` on.
     fn front_wants(&self, i: usize) -> Vec<WorkKind> {
         let s = &self.g.setup;
@@ -1074,8 +1083,11 @@ impl super::Planner<'_> {
                 out.push(k);
             }
         }
+        // Fix pass 1 (finding C-1): the front AT row is offered on every
+        // plan (the site search is memoised for the plan), not only on the
+        // `recheck_s` plan, so it is not left to the one plan a minute
+        // where FrontAp / FrontWire do not hold the front slot.
         if switched_on(s, WorkKind::AtField)
-            && self.recheck_plan()
             && let Some(f) = fort_of(s, WorkKind::AtField)
             && self.field_has(i, WorkKind::AtField, f) == Some(false)
             && self.fields_of(f) < o.at_fields_max
@@ -1125,6 +1137,10 @@ impl super::Planner<'_> {
         self.carried_g(sq) >= need
             || self.g.squads.get(&sq).is_some_and(|q| self.in_own_base(q))
             || self.truck_for(f)
+            // Fix pass 1 (C-1): the front AT row (90 kg) may send a builder
+            // that can carry it home to load (`run_fort_job` Load).
+            || (fort_of(&self.g.setup, WorkKind::AtField) == Some(f)
+                && self.full_carry_g(sq) >= need)
     }
 
     /// Whether `k` is a front kind at point `i` (FrontAp, FrontWire, or an
@@ -1713,30 +1729,49 @@ impl super::Planner<'_> {
     /// Whether an own work, piece, wire section or fort job of blueprint
     /// `f` lies within `r` of `at`.
     fn fort_near(&self, f: u16, at: FxVec2, r: Fx) -> bool {
+        self.fort_near_of(f, at, r, false)
+    }
+
+    /// [`Self::fort_near`]; `rear`: leave out what lies on a saved front
+    /// lane's FrontAp or FrontWire line and the front jobs (fix pass 1,
+    /// finding B-2: the hasty front works do not stand in for a trenched
+    /// point's 60 m wire or R1 field). No lanes (`front` off): the same.
+    fn fort_near_of(&self, f: u16, at: FxVec2, r: Fx, rear: bool) -> bool {
         let g = self.g;
         let me = self.me;
         let fs: &FortState = &g.fort;
         let shape = g.setup.forts[f as usize].shape;
-        fs.works
+        let on_lane = |p: FxVec2| {
+            rear && self.ai.front_lanes.iter().any(|l| {
+                let m = Fx::from_int(SITE_TAKEN_M);
+                crate::fort::near_segment(p, l.ap[0], l.ap[1], m)
+                    || crate::fort::near_segment(p, l.wire[0], l.wire[1], m)
+            })
+        };
+        fs.works.values().any(|w| {
+            w.owner == me && w.fort == f && {
+                let mid = mid_of(shape, &w.line);
+                near(mid, at, r) && !on_lane(mid)
+            }
+        }) || fs
+            .pieces
             .values()
-            .any(|w| w.owner == me && w.fort == f && near(mid_of(shape, &w.line), at, r))
-            || fs
-                .pieces
-                .values()
-                .any(|q| q.owner == me && q.fort == f && q.part == 0 && near(q.pos, at, r))
-            || fs
-                .wire
-                .values()
-                .any(|s| s.owner == me && s.fort == f && near((s.a + s.b).div_int(2), at, r))
+            .any(|q| q.owner == me && q.fort == f && q.part == 0 && near(q.pos, at, r))
+            || fs.wire.values().any(|s| {
+                s.owner == me && s.fort == f && {
+                    let mid = (s.a + s.b).div_int(2);
+                    near(mid, at, r) && !on_lane(mid)
+                }
+            })
             || fs
                 .mines
                 .values()
-                .any(|m| m.owner == me && m.fort == f && near(m.pos, at, r))
-            || self
-                .ai
-                .forts
-                .values()
-                .any(|j| j.fort == f && near(mid_of(shape, &j.line), at, r))
+                .any(|m| m.owner == me && m.fort == f && near(m.pos, at, r) && !on_lane(m.pos))
+            || self.ai.forts.values().any(|j| {
+                j.fort == f
+                    && near(mid_of(shape, &j.line), at, r)
+                    && !(rear && self.front_kind(j).is_some())
+            })
     }
 
     /// Whether a built own piece of blueprint `f` stands near `at`.
@@ -1777,9 +1812,13 @@ impl super::Planner<'_> {
         } else {
             Vec::new()
         };
+        // Fix pass 1 (B-2): the front wire does not count as the point's.
+        let rear = k == WorkKind::Wire;
         Some(
-            self.fort_near(f, mid_of(shape, &site), r)
-                || alts.iter().any(|l| self.fort_near(f, mid_of(shape, l), r)),
+            self.fort_near_of(f, mid_of(shape, &site), r, rear)
+                || alts
+                    .iter()
+                    .any(|l| self.fort_near_of(f, mid_of(shape, l), r, rear)),
         )
     }
 
@@ -1800,7 +1839,8 @@ impl super::Planner<'_> {
                 ((site[0] + site[site.len() - 1]).div_int(2), r)
             }
         };
-        Some(self.fort_near(f, at, r))
+        // Fix pass 1 (B-2): the front AP field does not count as R1's.
+        Some(self.fort_near_of(f, at, r, k == WorkKind::ApField))
     }
 
     /// S10b-ai R4: own fields of blueprint `f` (mines, works and jobs
@@ -2175,7 +2215,8 @@ impl super::Planner<'_> {
     /// holds, if any. `Some(true)`: a known enemy soldier or vehicle within
     /// `front_site_threat_m` of `site`; `Some(false)`: one within the
     /// builder's radius of `lead`, `[ai] threat_radius` while the leader is
-    /// more than `FRONT_AT_SITE_M` from the site (walking there), else
+    /// more than `FRONT_AT_SITE_M` from the nearest point of the work's
+    /// `line` (walking there; fix pass 1, B-4), else
     /// `front_site_threat_m`. None: no threat.
     fn front_threat(
         &self,
@@ -2183,6 +2224,7 @@ impl super::Planner<'_> {
         kv: &[KnownVehicle],
         lead: FxVec2,
         site: FxVec2,
+        line: &[FxVec2],
     ) -> Option<bool> {
         let s = &self.g.setup;
         let site_m = Fx::from_int(s.rules.ai.obstacles.front_site_threat_m as i32);
@@ -2194,7 +2236,18 @@ impl super::Planner<'_> {
         if hit(site, site_m) {
             return Some(true);
         }
-        let lead_m = if near(lead, site, Fx::from_int(FRONT_AT_SITE_M)) {
+        // Fix pass 1 (finding B-4): "at the site" is measured from the
+        // nearest point of the work's line (a 40 m AT row's far end is
+        // 20 m from its middle).
+        let at = Fx::from_int(FRONT_AT_SITE_M);
+        let at_site = match line {
+            [p] => near(lead, *p, at),
+            [] => near(lead, site, at),
+            _ => line
+                .windows(2)
+                .any(|w| crate::fort::near_segment(lead, w[0], w[1], at)),
+        };
+        let lead_m = if at_site {
             site_m
         } else {
             s.rules.ai.threat_radius.into()
@@ -2289,16 +2342,19 @@ impl super::Planner<'_> {
         known: &[Known],
         kv: &[KnownVehicle],
     ) -> bool {
-        self.can_take_at(m, f, site, known, kv, false)
+        self.can_take_at(m, f, site, &[site], known, kv, false)
     }
 
     /// [`Self::can_take`]; `front`: a front job, whose threat is F5's
-    /// [`Self::front_threat`] instead of `fort_threat` (80 m / 80 m).
+    /// [`Self::front_threat`] instead of `fort_threat` (80 m / 80 m);
+    /// `line`: the work's line (F5's "at the site", fix pass 1 B-4).
+    #[allow(clippy::too_many_arguments)]
     fn can_take_at(
         &self,
         m: &Mine,
         f: u16,
         site: FxVec2,
+        line: &[FxVec2],
         known: &[Known],
         kv: &[KnownVehicle],
         front: bool,
@@ -2309,7 +2365,7 @@ impl super::Planner<'_> {
             && (m.caps & (1u32 << d.capability) != 0 || heavy_by_field(d, m.caps))
             && self.can_supply(m.id, f, site)
             && if front {
-                self.front_threat(known, kv, m.lead, site).is_none()
+                self.front_threat(known, kv, m.lead, site, line).is_none()
             } else {
                 !self.fort_threat(known, kv, &[m.lead, site])
             }
@@ -2352,12 +2408,24 @@ impl super::Planner<'_> {
                 }
                 let (f, line) = (fort_of(s, k)?, self.point_site(i, k, None)?);
                 let site = mid_of(s.forts[f as usize].shape, &line);
+                // Fix pass 1 (finding B-3): a front work holds a builder
+                // only where `point_starts` could start it (R8 room, the
+                // blueprint cap, L4); rear works keep main's hold.
+                if front {
+                    let s10b = s10b_fort(&s.forts[f as usize]);
+                    if (s10b && !self.s10b_room())
+                        || !self.under_limit(f, &line)
+                        || ((s10b || k == WorkKind::FrontWire) && self.refused_here(site))
+                    {
+                        return None;
+                    }
+                }
                 mine.iter()
                     .filter(|m| {
                         m.role == super::AiKind::Engineer
                             && !m.can(Capability::Breach)
                             && !held.contains(&m.id)
-                            && self.can_take_at(m, f, site, known, kv, front)
+                            && self.can_take_at(m, f, site, &line, known, kv, front)
                             && (!front || self.front_carry_ok(m.id, f, &line))
                     })
                     .min_by_key(|m| {
@@ -3061,6 +3129,10 @@ impl super::Planner<'_> {
         for id in ids {
             let job = &self.ai.forts[&id];
             let s10b = s10b_on && g.setup.forts.get(job.fort as usize).is_some_and(s10b_fort);
+            // Fix pass 1 (finding B-1): a FrontWire job (an S10a wire
+            // blueprint) keeps L1, L3 and L4 as an S10b job does.
+            let wire = self.front_kind(job) == Some(WorkKind::FrontWire);
+            let live = s10b || wire;
             if job.parked() {
                 let owned = g.squads.get(&id).is_some_and(|q| q.owner == me);
                 if !owned || tick >= job.since.saturating_add(REFUSED_S * hz) {
@@ -3072,11 +3144,15 @@ impl super::Planner<'_> {
                 continue;
             }
             // S10b-ai L1: the deadline, whatever the phase (a failure).
-            if s10b && tick >= job.start.saturating_add(job_max_s(&g.setup, job.fort) * hz) {
+            if live && tick >= job.start.saturating_add(job_max_s(&g.setup, job.fort) * hz) {
                 let job = job.clone();
                 self.ai.forts.remove(&id);
-                self.bunker_end(&job, 12);
-                self.s10b_end(&job, true);
+                if s10b {
+                    self.bunker_end(&job, 12);
+                    self.s10b_end(&job, true);
+                } else {
+                    self.front_wire_end(&job, true);
+                }
                 continue;
             }
             // S10c-ai F5, F6, F8: a front job (FrontAp, FrontWire, an AT
@@ -3110,7 +3186,8 @@ impl super::Planner<'_> {
                     self.threat_at(known, p.pos.into()) >= g.setup.rules.ai.fort.build_threat_max
                 });
             let threat = if front {
-                self.front_threat(known, kv, m.lead, site).is_some()
+                self.front_threat(known, kv, m.lead, site, &job.line)
+                    .is_some()
             } else {
                 self.fort_threat(known, kv, &[m.lead, site])
             };
@@ -3146,10 +3223,18 @@ impl super::Planner<'_> {
                 self.bunker_end(&job, if failed { 14 } else { 15 });
                 self.s10b_end(&job, failed);
             }
+            // Fix pass 1 (B-1): the same L3 for a FrontWire job (built: its
+            // line's last wire section stands).
+            if job.phase == FortPhase::Done && wire {
+                let failed =
+                    job.parked() || (was == FortPhase::Watch && !self.front_line_built(&job));
+                self.front_wire_end(&job, failed);
+            }
             if job.phase == FortPhase::Done {
                 // S10b-ai: a refused S10b job is not parked; its L3
-                // refusal keeps the spot (L4).
-                if job.parked() && !s10b {
+                // refusal keeps the spot (L4). Fix pass 1 (B-1): nor a
+                // refused FrontWire job.
+                if job.parked() && !live {
                     self.ai.forts.insert(id, job);
                 } else {
                     self.ai.forts.remove(&id);
@@ -3258,7 +3343,7 @@ impl super::Planner<'_> {
 
     /// Point works for the squads assigned to own trenched points (points
     /// ascending, one job per point per plan); `s10b_only`: the S10b-ai
-    /// kinds alone (the fortify-test hook).
+    /// kinds alone (the fortify-test hook; and FrontWire, fix pass 1).
     #[allow(clippy::too_many_arguments)]
     fn point_starts(
         &mut self,
@@ -3304,7 +3389,9 @@ impl super::Planner<'_> {
                 };
                 let mut site = mid_of(s.forts[fort as usize].shape, &line);
                 let s10b = s10b_fort(&s.forts[fort as usize]);
-                if s10b_only && !s10b {
+                // Fix pass 1 (B-1): the hook drives FrontWire too (it keeps
+                // L1-L4 as an S10b job does).
+                if s10b_only && !s10b && k != WorkKind::FrontWire {
                     continue;
                 }
                 // S10b-ai R8 (`jobs_max`), R4 (blueprint cap), L4 (no
@@ -3326,6 +3413,10 @@ impl super::Planner<'_> {
                     {
                         self.ai.counters.lay_sites += 1;
                     }
+                }
+                // Fix pass 1 (finding B-1): L4 for a FrontWire job too.
+                if k == WorkKind::FrontWire && self.refused_here(site) {
+                    continue;
                 }
                 // R6 at the row's first start (its sites are then fixed):
                 // side 0, else the mirrored row, else refused.
@@ -3357,7 +3448,7 @@ impl super::Planner<'_> {
                         mine.iter().any(|m| {
                             !taken.contains(&m.id)
                                 && !out.contains(&m.id)
-                                && self.can_take_at(m, f, at, known, kv, true)
+                                && self.can_take_at(m, f, at, l, known, kv, true)
                                 && self.front_carry_ok(m.id, f, l)
                         })
                     };
@@ -3415,7 +3506,7 @@ impl super::Planner<'_> {
                     .filter(|m| {
                         !taken.contains(&m.id)
                             && !out.contains(&m.id)
-                            && self.can_take_at(m, fort, site, known, kv, front)
+                            && self.can_take_at(m, fort, site, &line, known, kv, front)
                             && (!front || self.front_carry_ok(m.id, fort, &line))
                     })
                     .min_by_key(|m| {
@@ -3460,7 +3551,7 @@ impl super::Planner<'_> {
                 let Some(m) = pick else { continue };
                 let id = m.id;
                 let site = mid_of(s.forts[fort as usize].shape, &line);
-                if !self.can_take_at(m, fort, site, known, kv, front) {
+                if !self.can_take_at(m, fort, site, &line, known, kv, front) {
                     continue;
                 }
                 // S10c-ai F6: a FrontAp / FrontWire line that holds part of
@@ -3731,6 +3822,15 @@ impl super::Planner<'_> {
         };
         let was = alive(self.ai);
         let refused = self.ai.counters.s10b_refused;
+        // Fix pass 1 (B-1): a FrontWire failure writes a refusal only.
+        let newest = |ai: &super::AiState| {
+            ai.refused
+                .iter()
+                .filter(|r| r.kind == JobKind::Fort)
+                .map(|r| r.failed)
+                .max()
+        };
+        let refused_at = newest(self.ai);
         let known = self.known_enemies();
         let kv = self.known_vehicles();
         let busy: Vec<SquadId> = self
@@ -3763,7 +3863,7 @@ impl super::Planner<'_> {
             }
         }
         self.drive_crew(args);
-        let end = if self.ai.counters.s10b_refused > refused {
+        let end = if self.ai.counters.s10b_refused > refused || newest(self.ai) > refused_at {
             HabitEnd::Failed
         } else {
             HabitEnd::Done
@@ -4001,7 +4101,7 @@ impl super::Planner<'_> {
     /// The `FRONT_WHY` index for front point `i`, or None when nothing is
     /// outstanding there (laid, built, switched off, a front job runs) or
     /// nothing keeps the first outstanding work (FrontAp, FrontWire, then
-    /// the AT field on a `recheck_s` plan) from starting.
+    /// the AT field) from starting.
     #[allow(clippy::too_many_arguments)]
     fn front_block(
         &self,
@@ -4033,7 +4133,6 @@ impl super::Planner<'_> {
         } else if switched_on(s, WorkKind::FrontWire) && !lane.wire_done {
             WorkKind::FrontWire
         } else if switched_on(s, WorkKind::AtField)
-            && self.recheck_plan()
             && at_f.is_some_and(|f| self.field_has(i, WorkKind::AtField, f) == Some(false))
         {
             WorkKind::AtField
@@ -4055,7 +4154,7 @@ impl super::Planner<'_> {
         let d = &s.forts[f as usize];
         let site = mid_of(d.shape, &line);
         let s10b = s10b_fort(d);
-        if s10b && self.refused_here(site) {
+        if (s10b || k == WorkKind::FrontWire) && self.refused_here(site) {
             return Some(4);
         }
         // C8: `front_slots` front jobs run (a slot of their own).
@@ -4106,13 +4205,13 @@ impl super::Planner<'_> {
         // point's `build_threat_max` gate is not a front work's).
         if carry
             .iter()
-            .all(|m| self.front_threat(known, kv, m.lead, site) == Some(true))
+            .all(|m| self.front_threat(known, kv, m.lead, site, &line) == Some(true))
         {
             return Some(11);
         }
         if carry
             .iter()
-            .all(|m| self.front_threat(known, kv, m.lead, site).is_some())
+            .all(|m| self.front_threat(known, kv, m.lead, site, &line).is_some())
         {
             return Some(10);
         }
@@ -4176,21 +4275,23 @@ impl super::Planner<'_> {
             return None;
         }
         let f = fort_of(s, k)?;
+        // Fix pass 1 (finding A-1): a laid field, or one a job lays, is not
+        // a want, whatever the trench or the threat there.
+        let has = self.field_has(i, k, f);
+        if has == Some(true)
+            || self
+                .ai
+                .forts
+                .values()
+                .any(|j| j.fort == f && j.point as usize == i && j.phase != FortPhase::Done)
+        {
+            return None;
+        }
         if !p.trench_done || p.threat >= s.rules.ai.fort.build_threat_max {
             return Some(0);
         }
-        match self.field_has(i, k, f) {
-            Some(true) => return None,
-            None => return Some(3),
-            Some(false) => {}
-        }
-        if self
-            .ai
-            .forts
-            .values()
-            .any(|j| j.fort == f && j.point as usize == i && j.phase != FortPhase::Done)
-        {
-            return None;
+        if has.is_none() {
+            return Some(3);
         }
         if k == WorkKind::ApField
             && self.ap_after_wire()
@@ -4332,15 +4433,7 @@ impl super::Planner<'_> {
         if !matches!(k, WorkKind::FrontAp | WorkKind::FrontWire) {
             return;
         }
-        let me = self.me;
-        let r = Fx::from_int(SITE_NEAR_M);
-        let wire = job.line.last().is_some_and(|&end| {
-            self.g.fort.wire.values().any(|w| {
-                w.owner == me && w.fort == job.fort && near((w.a + w.b).div_int(2), end, r)
-            })
-        });
-        let gone = job.work.is_none_or(|w| !self.g.fort.works.contains_key(&w));
-        if !(self.s10b_laid(job) || (gone && wire)) {
+        if !self.front_line_built(job) {
             return;
         }
         if let Some(l) = self
@@ -4354,6 +4447,38 @@ impl super::Planner<'_> {
             } else {
                 l.wire_done = true;
             }
+        }
+    }
+
+    /// S10c-ai F6: whether front job `job` ended laid (S10b) or built (its
+    /// work gone and a wire section of its blueprint within `SITE_NEAR_M`
+    /// of its line's end).
+    fn front_line_built(&self, job: &AiFortJob) -> bool {
+        let me = self.me;
+        let r = Fx::from_int(SITE_NEAR_M);
+        let wire = job.line.last().is_some_and(|&end| {
+            self.g.fort.wire.values().any(|w| {
+                w.owner == me && w.fort == job.fort && near((w.a + w.b).div_int(2), end, r)
+            })
+        });
+        let gone = job.work.is_none_or(|w| !self.g.fort.works.contains_key(&w));
+        self.s10b_laid(job) || (gone && wire)
+    }
+
+    /// Fix pass 1 (finding B-1): a FrontWire job ends (L1-L3 as
+    /// [`Self::s10b_end`]): a failure writes its refusal at the job's site
+    /// middle (L4 then keeps a new job off for `refused_s`); `jobs_overdue`
+    /// as an S10b job. The S10b counters (`fort_job_fails`,
+    /// `s10b_refused`) stay S10b-only.
+    fn front_wire_end(&mut self, job: &AiFortJob, failed: bool) {
+        let s = &self.g.setup;
+        let hz = s.tick_hz.max(1) as u64;
+        if self.tick.saturating_sub(job.start) > OVERDUE_S * hz + self.plan_ticks() {
+            self.ai.counters.jobs_overdue += 1;
+        }
+        if failed {
+            let at = mid_of(s.forts[job.fort as usize].shape, &job.line);
+            self.ai.refuse(JobKind::Fort, at, self.tick);
         }
     }
 
@@ -4548,6 +4673,12 @@ impl super::Planner<'_> {
             };
             let carried = self.carried_g(id);
             let full = self.carry_room_g(id) == 0;
+            // Fix pass 1 (C-1): a front AT row short of its kg (and no
+            // truck) walks home to load the whole row instead of going
+            // with a few mines' worth (F10's walk rule stays for the
+            // other front kinds).
+            let front_at =
+                self.front_kind(job) == Some(WorkKind::AtField) && self.full_carry_g(id) >= need;
             // Fix F14: a step the squad cannot carry (and no truck can
             // bring) ends the job instead of a load or a walk.
             if self.full_carry_g(id) < d.materials_g
@@ -4573,9 +4704,9 @@ impl super::Planner<'_> {
                     return;
                 }
                 set(job, FortPhase::Go);
-            } else if carried > 0 || self.truck_for(job.fort) {
+            } else if (carried > 0 && !front_at) || self.truck_for(job.fort) {
                 set(job, FortPhase::Go);
-            } else if self.front_kind(job).is_some() {
+            } else if self.front_kind(job).is_some() && !front_at {
                 // S10c-ai F10: no front job sends its squad walking home.
                 set(job, FortPhase::Done);
                 return;
@@ -4822,6 +4953,54 @@ fn half_gauge(v: &frontline_content::vehicle::VehicleSetup) -> Fx {
         .map(|a| crate::vehicle::v3(a.pos).y.abs())
         .max()
         .unwrap_or(Fx::ZERO)
+}
+
+#[cfg(test)]
+impl crate::game::MatchState {
+    /// Test probe (fix pass 1, finding B-4): F5's [`super::Planner::front_threat`]
+    /// for `me`'s builder at `lead` on front work `line` (site: its
+    /// middle), with one known enemy soldier at `enemy`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn front_threat_probe(
+        &self,
+        ai: &mut super::AiState,
+        ents: &crate::ecs::Entities,
+        terrain: &crate::terrain::Heightfield,
+        me: PlayerId,
+        lead: FxVec2,
+        line: &[FxVec2],
+        enemy: FxVec2,
+    ) -> Option<bool> {
+        let p = super::Planner {
+            g: self,
+            ai,
+            me,
+            ents,
+            terrain,
+            due: 0,
+            tick: 0,
+            quality: 100,
+            rng: crate::rng::RngStream::new(
+                self.setup.seed,
+                0,
+                crate::ecs::SimId(me.0 as u32),
+                crate::rng::Purpose::AI_PLAN,
+            ),
+            mortar_rays: super::mortar::PLAN_RAYS,
+            at_sites: Default::default(),
+            own_routes: Default::default(),
+        };
+        let known = [Known {
+            id: crate::ecs::SimId(0),
+            pos: enemy,
+            squad: 0,
+            in_trench: false,
+            at: false,
+            still: false,
+        }];
+        let site = mid_of(FortShape::Line, line);
+        p.front_threat(&known, &[], lead, site, line)
+    }
 }
 
 #[cfg(test)]

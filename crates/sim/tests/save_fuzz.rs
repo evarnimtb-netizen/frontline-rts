@@ -788,6 +788,9 @@ fn staged_s10b() -> World {
     use frontline_sim::game::Order;
 
     let mut s = setup(SEED);
+    // S10c-ai fix pass 1 (finding B-5): saved front lanes load only with
+    // the front rules on, so the staged save (it holds a lane) takes them.
+    s.rules.ai.obstacles.front = 1;
     for t in s.squad_types.iter_mut() {
         if t.id.contains("engineer") {
             t.caps |= Capability::PlaceMines.bit()

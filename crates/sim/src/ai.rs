@@ -978,6 +978,8 @@ impl AiState {
             // S10c-ai: front lanes (spec 3): cap, points in range, unique
             // and ascending, found in the past, sites on the map.
             && self.front_lanes.len() <= MAX_FRONT_LANES
+            // Fix pass 1 (finding B-5): no lanes with the front rules off.
+            && (self.front_lanes.is_empty() || fort::front_on(&g.setup))
             && self.front_lanes.windows(2).all(|w| w[0].point < w[1].point)
             && self.front_lanes.iter().all(|l| {
                 (l.point as usize) < np

@@ -1720,3 +1720,54 @@ fn ai_belt_deterministic_threads_and_save_load() {
         .start += 1;
     assert_ne!(x.state_hash(), y.state_hash(), "control: a belt job edit");
 }
+
+/// Fix pass 1 (finding C-1): a front AT row is wanted on every plan and a
+/// builder at the front carrying 20 kg of its 90 kg (no truck) takes it at
+/// once (within 30 s), walks home to load the whole row, comes back and
+/// lays it inside L1 (`jobs_overdue` 0, no failure). Control (code edit:
+/// the AT clause of `front_carry_ok` and the Load walk removed, F10 as
+/// before) -> no AT job for 570 s, until the squad happens to hold 111 kg
+/// (seen failing "started after 570 s").
+#[test]
+fn ai_front_at_row_loads_in_base_and_is_laid() {
+    let (mut w, f) = scene(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        o.at_rows = 1;
+        o.bunker = 0;
+        o.belt = 0;
+        s.rules.ai.fort.wire = 0;
+    });
+    own_by(&mut w, f.near, Some(0));
+    play(&mut w, 3);
+    let own = f.own;
+    ai_mut(&mut w)
+        .front_lanes
+        .iter_mut()
+        .find(|l| l.point as usize == own)
+        .expect("C's lane")
+        .ap_done = true;
+    let t0 = w.state.tick;
+    let eng = squad_at(&mut w, ENG, f.pos, 20);
+    let at = fort(&w, "ww2:at_minefield");
+    let mines = |w: &World| {
+        w.game()
+            .unwrap()
+            .fort()
+            .mines
+            .values()
+            .filter(|m| m.owner == PlayerId(1) && m.fort == at)
+            .count()
+    };
+    let mut start = None;
+    let laid = play_until(&mut w, 900, |w| {
+        if ai_ro(w).forts.get(&eng).is_some_and(|j| j.fort == at) {
+            start.get_or_insert((w.state.tick - t0) / 30);
+        }
+        mines(w) >= 10
+    });
+    let start = start.expect("no front AT job");
+    assert!(start <= 30, "started after {start} s");
+    assert!(laid, "{} AT mines laid in 900 s", mines(&w));
+    let c = &ai_ro(&w).counters;
+    assert_eq!((c.jobs_overdue, c.fort_job_fails), (0, 0));
+}

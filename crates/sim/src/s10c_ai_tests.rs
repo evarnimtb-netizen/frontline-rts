@@ -352,7 +352,13 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         Box::new(|s| ai(s).mine_want_why[0] += 1),
         Box::new(|s| ai(s).builder_buys += 1),
         // Build B chunk 2: `front` is on by default; `front_home` new.
-        Box::new(|s| o(s).front = 0),
+        // Fix pass 1 (B-5): `front` 0 with saved lanes no longer loads, so
+        // the switch edit clears them too (`mine_assign` alone below).
+        Box::new(|s| {
+            o(s).front = 0;
+            lanes(s).clear();
+        }),
+        Box::new(|s| o(s).mine_assign = 0),
         Box::new(|s| o(s).front_home = 1),
         Box::new(|s| o(s).front_points = 3),
         Box::new(|s| o(s).belt_detour_pct = 200),
@@ -442,4 +448,185 @@ fn load_rejects_bad_front_lanes() {
             "bad front lanes loaded: {what}"
         );
     }
+}
+
+// ------------------------------------------------------- Fix pass 1 --
+
+/// Finding A-1: a laid R1 field at a threatened point (here every point:
+/// `build_threat_max` 0) is not counted as `not_own_or_trench`; only the
+/// AP field is switched on. Control: no field laid -> one count each plan
+/// (seen: the main assertion fails with the old order, where the threat
+/// check came before "laid").
+#[test]
+fn mine_want_why_skips_a_laid_field_at_a_threatened_point() {
+    let run = |laid: bool| {
+        let (mut w, h): (World, Held) = held(|s| {
+            s.rules.ai.obstacles.at_mines = 0;
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.fort.build_threat_max = 0;
+        });
+        if laid {
+            let out = w.match_setup().unwrap().rules.ai.obstacles.ap_out_m as i32;
+            let at = h.mid() + h.enemy * Fx::from_int(out);
+            let ap = fort(&w, "ww2:ap_minefield");
+            w.lay_mine_now(ap, at, PlayerId(1)).unwrap();
+        }
+        steps(&mut w, 30 * 30);
+        ai_ro(&w).counters.mine_want_why
+    };
+    let at = |name: &str| MINE_WANT_WHY.iter().position(|n| *n == name).unwrap();
+    let why = run(true);
+    assert_eq!(why.iter().sum::<u32>(), 0, "laid field counted: {why:?}");
+    let why = run(false);
+    assert!(why[at("not_own_or_trench")] >= 2, "control: {why:?}");
+}
+
+/// Finding A-4: the lane cap on its own: on a map with ten points, nine
+/// lanes with unique, ascending points in range are refused by
+/// `MAX_FRONT_LANES` alone. Control: eight such lanes load.
+#[test]
+fn load_rejects_lanes_over_the_cap_alone() {
+    let mut w = flat_world_with(1, |s| {
+        s.players[1].is_ai = true;
+        let p0 = s.map.points[0].clone();
+        s.map.points = (0..10)
+            .map(|k| {
+                let mut p = p0.clone();
+                p.pos = frontline_content::setup::FixedVec2::from_m([100 + 80 * k, 500]);
+                p
+            })
+            .collect();
+    });
+    steps(&mut w, 3);
+    let n = MAX_FRONT_LANES as u8;
+    let with = |w: &mut World, k: u8| {
+        assert!(w.with_ai_state(1, |ai| ai.front_lanes =
+            (0..k).map(|p| lane(p, 1)).collect()));
+        World::load(&w.save(), 1)
+    };
+    assert!(with(&mut w, n).is_ok(), "control: {n} lanes load");
+    assert!(with(&mut w, n + 1).is_err(), "{} lanes loaded", n + 1);
+}
+
+/// Finding B-5: saved lanes with `front` 0 are refused on load (the front
+/// rules would apply on a crafted save). Control: the same lanes with
+/// `front` 1 load.
+#[test]
+fn load_rejects_front_lanes_with_front_off() {
+    for front in [1u32, 0] {
+        let mut w = flat_world_with(1, |s| {
+            s.players[1].is_ai = true;
+            s.rules.ai.obstacles.front = front;
+        });
+        steps(&mut w, 3);
+        assert!(w.with_ai_state(1, |ai| ai.front_lanes = vec![lane(0, 1)]));
+        let r = World::load(&w.save(), 1);
+        assert_eq!(r.is_ok(), front == 1, "front {front}");
+    }
+}
+
+/// Finding B-2: a front AP field (on the saved lane's FrontAp line, here
+/// 10 m beyond the trenched point's R1 site and inside its 21 m radius)
+/// does not stand in for the point's R1 field: an R1 job starts. Control
+/// (code edit: `field_has` back to `fort_near`, the lane's mines counted)
+/// -> no R1 job (seen).
+#[test]
+fn front_field_does_not_stand_in_for_the_r1_field() {
+    let (mut w, h) = held(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        s.rules.ai.fort.wire = 0;
+        o.at_mines = 0;
+        o.front = 1;
+        o.front_home = 1;
+    });
+    steps(&mut w, 3 * 30);
+    let out = w.match_setup().unwrap().rules.ai.obstacles.ap_out_m as i32;
+    let r1 = h.mid() + h.enemy * Fx::from_int(out);
+    let far = r1 + h.enemy * Fx::from_int(10);
+    let line = [
+        far - h.along * Fx::from_int(15),
+        far + h.along * Fx::from_int(15),
+    ];
+    assert!(w.with_ai_state(1, |ai| {
+        let l = &mut ai.front_lanes[0];
+        l.ap = line;
+        l.ap_done = true;
+        l.wire_done = true;
+    }));
+    let ap = fort(&w, "ww2:ap_minefield");
+    for k in 0..8 {
+        let p = line[0] + h.along * Fx::from_int(4 * k);
+        w.lay_mine_now(ap, p, PlayerId(1)).unwrap();
+    }
+    squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    let mut r1_job = false;
+    for _ in 0..60 {
+        steps(&mut w, 30);
+        r1_job |= ai_ro(&w).forts.values().any(|j| {
+            j.fort == ap
+                && j.line
+                    .last()
+                    .is_some_and(|e| (*e - line[1]).length() > Fx::from_int(5))
+        });
+    }
+    assert!(r1_job, "no R1 field job beside the front field");
+}
+
+/// Finding B-3: a front work under a young refusal (L4) holds no builder:
+/// the held point's only want is its FrontAp line, refused at its middle
+/// a moment ago; over 60 s no plan holds the engineer for it
+/// (`fort_build_plans` 0, S10a on through the wire habit). Control (code
+/// edit: the B-3 check in `fort_holds` removed) -> the engineer is held
+/// every plan (seen).
+#[test]
+fn a_refused_front_work_holds_no_builder() {
+    let (mut w, h) = held(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        o.at_mines = 0;
+        o.fields_per_point = 0;
+        o.front = 1;
+        o.front_home = 1;
+    });
+    steps(&mut w, 3 * 30);
+    let tick = w.state.tick;
+    assert!(w.with_ai_state(1, |ai| {
+        let l = &mut ai.front_lanes[0];
+        l.wire_done = true;
+        let mid = (l.ap[0] + l.ap[1]).div_int(2);
+        ai.refuse(crate::ai::JobKind::Fort, mid, tick);
+    }));
+    squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    steps(&mut w, 60 * 30);
+    let c = &ai_ro(&w).counters;
+    assert_eq!(c.fort_build_plans, 0, "held for a refused front work");
+    assert!(ai_ro(&w).forts.is_empty(), "a job started");
+}
+
+/// Finding B-4: F5's "at the site" is measured from the nearest point of
+/// the work's line: a builder 15 m beyond the end of a 40 m AT row (35 m
+/// from its middle) is at the site, so an enemy 70 m from it (78 m from the
+/// middle) is no threat (50 m), where the old middle rule gave it the walk's
+/// 80 m. Control: the builder 25 m beyond the end is walking -> threat
+/// (`Some(false)`); and the old rule (code edit: `near(lead, site, 20)`)
+/// fails the main assertion (seen).
+#[test]
+fn front_threat_at_site_is_measured_from_the_line() {
+    let w = flat_world_with(1, |s| s.players[1].is_ai = true);
+    let g = w.game().unwrap();
+    let mut ai = AiState::new(0);
+    let line = [c(300, 300), c(340, 300)];
+    let probe = |ai: &mut AiState, lead: FxVec2| {
+        let enemy = lead + c(0, 70);
+        g.front_threat_probe(
+            ai,
+            &w.state.entities,
+            &w.state.terrain,
+            PlayerId(1),
+            lead,
+            &line,
+            enemy,
+        )
+    };
+    assert_eq!(probe(&mut ai, c(285, 300)), None, "at the row's end");
+    assert_eq!(probe(&mut ai, c(275, 300)), Some(false), "control: walking");
 }
