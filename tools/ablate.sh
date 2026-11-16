@@ -147,6 +147,36 @@ print(len(keys))
 PY
 }
 
+# S10c-ai (fix pass 1, A-3): the keys of override FILE that the CLI output
+# on stdin echoed as changed to their file value, or that
+# mods/ww2/defs/rules/skirmish.toml already holds at that value. Prints the
+# count.
+s10c_applied() {
+    python3 -I - "$1" mods/ww2/defs/rules/skirmish.toml 3<&0 <<'PY'
+import os, re, sys
+out = os.fdopen(3).read()
+def table_keys(path):
+    table, keys = None, {}
+    for raw in open(path):
+        line = raw.split("#", 1)[0].strip()
+        m = re.fullmatch(r"\[([A-Za-z0-9_.]+)\]", line)
+        if m:
+            table = m.group(1)
+            continue
+        m = re.fullmatch(r"([a-z_]+)\s*=\s*(-?[0-9]+)", line)
+        if m and table:
+            keys[(table, m.group(1))] = int(m.group(2))
+    return keys
+want, mod = table_keys(sys.argv[1]), table_keys(sys.argv[2])
+n = 0
+for (t, k), v in want.items():
+    echoed = re.search(rf": {re.escape(t)}\.{k}: -?[0-9]+ -> {v}$", out, re.M)
+    if echoed or mod.get((t, k)) == v:
+        n += 1
+print(n)
+PY
+}
+
 FAIL=0
 for n in "${NAMES[@]}"; do
     f="$DIR/$n.toml"
@@ -169,12 +199,13 @@ if [ $DRY -eq 1 ]; then
             st=$?
             applied=$(printf '%s\n' "$out" |
                 grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck)\.[a-z_]*: [0-9]+ -> [0-9]+$")
-            # S10c-ai: a key may already hold its listed value (c_off is
-            # the default until Build B turns `front` on); the CLI must
-            # accept the file and change nothing but its keys.
-            if [ $S10C -eq 1 ] && [ $st -eq 0 ] && [ "$applied" -le "$keys" ] &&
-                printf '%s\n' "$out" | grep -qE "^override $f: "; then
-                applied=$keys
+            # S10c-ai: a key may already hold its listed value (c_off sets
+            # `front_slots` 1, the default). Fix pass 1 (finding A-3):
+            # each key of the file counts once, when the CLI echoed its
+            # change or the mod's skirmish.toml already holds that value;
+            # a key neither echoed nor at its default is not applied.
+            if [ $S10C -eq 1 ] && [ $st -eq 0 ]; then
+                applied=$(printf '%s\n' "$out" | s10c_applied "$f")
             fi
             if [ "$applied" != "$keys" ]; then
                 echo "ablate: $n: the CLI applied $applied of $keys keys"

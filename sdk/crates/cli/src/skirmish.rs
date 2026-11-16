@@ -4183,6 +4183,80 @@ mod tests {
         assert_eq!(far.mines_approached, 0, "control: 60 m away");
     }
 
+    /// Fix pass 1 (finding A-5): who counts as an approach. Germany's three
+    /// AP mines with its own rifle squad 20 m off (own: no count), two
+    /// German AT mines with a US rifle squad 20 m off (soldiers do not
+    /// approach an AT mine) and a US tank `tank_dx` m off them. Tank at
+    /// 20 m: the two AT mine ids count, nothing else (2). Control: the tank
+    /// at 60 m -> 0 (an own squad or a soldier at an AT mine counted would
+    /// make it 3 or more).
+    #[test]
+    fn s10c_observer_counts_enemy_soldiers_and_vehicles_only() {
+        use frontline_sim::FxVec2;
+        let run = |tank_dx: i32| {
+            let mut setup = match_setup(&SkirmishArgs {
+                seed: 1,
+                ..SkirmishArgs::default()
+            })
+            .unwrap();
+            setup.players.iter_mut().for_each(|p| p.is_ai = false);
+            let blueprint = |at: bool| {
+                setup
+                    .forts
+                    .iter()
+                    .position(|f| {
+                        f.mine_item
+                            .and_then(|i| setup.items[i as usize].mine.as_ref())
+                            .is_some_and(|m| (m.trigger != 0) == at)
+                    })
+                    .expect("a minefield blueprint") as u16
+            };
+            let (ap, at) = (blueprint(false), blueprint(true));
+            let ty = |id: &str| setup.squad_types.iter().position(|t| t.id == id).unwrap() as u16;
+            let (us_rifle, ger_rifle, tank) = (
+                ty("ww2:usa_rifle_squad"),
+                ty("ww2:ger_grenadiergruppe"),
+                ty("ww2:usa_m4a3_75_squad"),
+            );
+            let mut w = World::new_match(setup, 1).unwrap();
+            let usa = (0..2u8)
+                .find(|&p| {
+                    let s = w.match_setup().unwrap();
+                    s.factions[s.players[p as usize].faction as usize].id == "ww2:usa"
+                })
+                .unwrap();
+            let ger = 1 - usa;
+            for k in 0..3 {
+                w.lay_mine_now(ap, FxVec2::from_int(400 + 2 * k, 600), PlayerId(ger))
+                    .expect("AP mine laid");
+            }
+            for k in 0..2 {
+                w.lay_mine_now(at, FxVec2::from_int(400 + 4 * k, 700), PlayerId(ger))
+                    .expect("AT mine laid");
+            }
+            let west = FxVec2::from_int(-1, 0);
+            let mut put = |p: u8, t: u16, x: i32, y: i32| {
+                w.spawn_squad_at(PlayerId(p), t, FxVec2::from_int(x, y), west)
+                    .unwrap();
+            };
+            put(ger, ger_rifle, 422, 600);
+            put(usa, us_rifle, 424, 700);
+            put(usa, tank, 402, 700 + tank_dx);
+            let hz = w.match_setup().unwrap().tick_hz as u64;
+            let mut seen = S10cSeen::default();
+            for _ in 0..hz {
+                w.step(&[]);
+                if w.tick().is_multiple_of(hz) {
+                    seen.observe(&w);
+                }
+            }
+            seen.finish();
+            seen.per[ger as usize].mines_approached
+        };
+        assert_eq!(run(20), 2, "the tank's two AT mines only");
+        assert_eq!(run(60), 0, "control: the tank 60 m off");
+    }
+
     /// Build A item 7: every `s10c` / `s10c_derived` name the S10c-ai
     /// targets file reads is written by `json_out::s10c_blocks`. Control:
     /// renaming `knew_enemy_wire_pct` in `s10c_blocks` fails it (seen).

@@ -848,6 +848,36 @@ fn s10b_counters_zero_without_use() {
             assert_eq!(b[k].as_f64(), Some(0.0), "{f}.s10b.{k}");
         }
     }
+    // S10c-ai fix pass 1 (coverage note): the same run at the shipped
+    // defaults (front on) writes the same block shape, every counter a
+    // number, and the s10c blocks.
+    let file = tmp("s10b_default.json");
+    let _ = std::fs::remove_file(&file);
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--seed", "5", "--seeds", "1"])
+        .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--json")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let j: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    for f in ["germany", "usa"] {
+        let b = j["factions"][f]["s10b"].as_object().expect("an s10b block");
+        assert_eq!(b.len(), 13, "default: {f}.s10b: twelve counters and used");
+        for k in frontline_cli::skirmish::S10B_COUNTERS {
+            assert!(b[k].is_number(), "default: {f}.s10b.{k}");
+        }
+        assert!(j["factions"][f]["s10c"].is_object(), "default: {f}.s10c");
+        assert!(
+            j["factions"][f]["s10c_derived"].is_object(),
+            "default: {f}.s10c_derived"
+        );
+    }
 }
 
 /// S10b-ai Build A step 12: every `s10b_ai_derived` field on synthetic
