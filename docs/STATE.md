@@ -1,6 +1,6 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10b-ai (merged 2026-11-15, main `082332d`). Branch `balance-pass`: balance pass B1, **NOT merged, NO default changed**
+Main holds S1 to S10b-ai and balance pass B1 (merged 2026-11-16 with the owner's OK). B1: **NO default changed**
 (see B1 below). Owner questions are in `docs/TODO.md`.
 
 ## What the game is now
@@ -68,7 +68,7 @@ Verify: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 ha
 AI use far under target (mines, obstacles, bunker, AT fields; owner E6). Open: finding 23 (`piece_near`), finding 12
 (mine-want counter needs a save change), barrier row vs `barrier_job_max_s`, off-lattice crossing (finding 7).
 
-## B1 balance pass (branch `balance-pass`, NOT merged, NO default changed; log `docs/slices/B1-log.md`)
+## B1 balance pass (merged to main 2026-11-16, NO default changed; log `docs/slices/B1-log.md`)
 
 Built before balancing (owner 2026-11-15): `[ai.obstacles]` `demolish_handover` and `bunker_yields`, both on. New `[ai.fort]`
 keys `hold_max` 2, `build_after_s` 0, `build_min_squads` 0 (old behaviour); CLI `--side-detail` (read-only). Suite 974 green.
@@ -103,7 +103,7 @@ Owner 2026-11-16: accept Germany at about 42 % for now (B1-1). Open questions B1
 
 ## Roadmap position
 
-Done on main: S1 to S10b-ai. Branch `balance-pass`: B1 (not merged; B1-1 decided: accept for now; open B1-2..4 in `docs/TODO.md`). Next: owner OK to merge, then S11.
+Done on main: S1 to S10b-ai and B1 (B1-1 decided: accept for now; open B1-2..4 in `docs/TODO.md`). Next: S11.
 
 ## How to check work
 
