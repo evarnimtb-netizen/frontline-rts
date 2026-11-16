@@ -1,0 +1,3 @@
+# S10c-ai ablation (F5, owner question S10c-1 (B)): a front site keeps the 80 m threat radius.
+[ai.obstacles]
+front_site_threat_m = 80

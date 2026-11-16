@@ -1,0 +1,3 @@
+# S10c-ai ablation (C1): one S10b job at a time, as on main.
+[ai.obstacles]
+jobs_max = 1

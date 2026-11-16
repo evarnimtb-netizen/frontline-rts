@@ -1,0 +1,8 @@
+# S10c-ai control (docs/slices/S10c-ai.md 2): every S10c-ai key at its off value.
+# The AI must then play exactly as on main 54009f6 (tools/neutral.py same).
+[ai.obstacles]
+front = 0
+mine_assign = 0
+belt = 0
+builder_cards_min = 0
+jobs_max = 1

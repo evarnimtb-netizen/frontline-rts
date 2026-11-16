@@ -1,0 +1,3 @@
+# S10c-ai ablation: no front rules (F1-F9); fields, wire and obstacles as on main.
+[ai.obstacles]
+front = 0
