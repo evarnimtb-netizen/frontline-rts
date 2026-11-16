@@ -452,8 +452,9 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `[ai.obstacles]`, four `[fortify]` mine path keys and `[ai.truck]
 /// refusal_memory`). One bump for the whole slice. 26: S10c-ai (fourteen
 /// `AiCounters` fields with `front_why` and `mine_want_why`,
-/// `AiState::front_lanes`; in the setup thirteen `[ai.obstacles]` keys).
-/// One bump for the whole slice.
+/// `AiState::front_lanes`; in the setup fourteen `[ai.obstacles]` keys,
+/// `front_home` added in Build B chunk 2 with no bump: nothing released
+/// since). One bump for the whole slice.
 const SAVE_VERSION: u32 = 26;
 
 #[derive(Serialize)]

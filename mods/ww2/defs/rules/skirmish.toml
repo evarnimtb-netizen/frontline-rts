@@ -1499,7 +1499,7 @@ demolish_handover = 1        # switch (B1-0): a demolition squad without a satch
 bunker_yields = 1            # switch (B1-0): a bunker job waiting for its truck-borne material gives up the S10b job slot (jobs_max)
 # S10c-ai (docs/slices/S10c-ai.md 2): defences at the front. The three
 # switches start off (0) and each build stage turns its own on.
-front = 0                    # switch (F1-F9): hasty AP field, wire and AT field on the enemy lanes of the front points, no trench first
+front = 1                    # switch (F1-F9): hasty AP field, wire and AT field on the enemy lanes of the front points, no trench first
 mine_assign = 0              # switch (C2): a wanted front work with no fit squad at its point takes one free builder from anywhere
 belt = 0                     # switch (C4): a row of blocking pieces across the vehicle lane beyond a front AT field
 front_points = 2             # F1: this many own points nearest the enemy base are front points
@@ -1508,6 +1508,7 @@ front_wire_len_m = 20        # m (F3): length of a front wire line (10 m shorter
 front_site_threat_m = 50     # m (F5): no front job start (and a drop) with a known enemy this close to the site; the builder keeps [ai] threat_radius
 front_fields_max = 2         # F7: front AP fields per player
 front_slots = 1              # C8: front jobs (FrontAp, FrontWire, front AT field, belt) at once
+front_home = 0               # F1: 1 = the home point (nearest the own base) may be a front point; 0 = only as the only own point
 belt_pieces = 5              # C4: blocking pieces in a belt ...
 belt_gap_m = 10              # m (C4): ... this far beyond the AT field, on the enemy side
 belt_detour_pct = 130        # % (C5): the own route round a belt is at most this share of the route without it; 0 = rule off

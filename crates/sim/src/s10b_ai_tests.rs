@@ -591,6 +591,7 @@ const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
     (JobKind::Sweep, sweep_row, false),
     (JobKind::Demolish, demolish_row, false),
     (JobKind::TruckGoal, truck_row, false),
+    (JobKind::Fort, front_ap_row, false),
 ];
 
 /// The TruckGoal row (Build D, L5): the AI's loaded truck in a trench ring
@@ -697,6 +698,46 @@ pub(crate) fn fort_row() -> (World, Stage) {
     });
     let out = w.match_setup().unwrap().rules.ai.obstacles.ap_out_m as i32;
     let goal = h.mid() + h.enemy * Fx::from_int(out);
+    spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        goal.x.floor_int(),
+        goal.y.floor_int(),
+    );
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The FrontAp row (S10c-ai Build B chunk 2, spec 5 "Generic"): the
+/// held point with `front` on and its saved lane (found by a few seconds of
+/// the match AI, then taken out); an own tank stands on the AP line's
+/// middle (the spec's slope over 25 % needs relief the flat test map
+/// lacks; any refusal drives L1-L4 the same, as the LogBarrier row), so
+/// every `Fortify` is refused (BadSpot). The refusal is at the line's
+/// middle. Control: `refused_s` 0 -> a restart each plan (the check fails,
+/// seen).
+fn front_ap_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.obstacles.at_mines = 0;
+        s.rules.ai.obstacles.front = 1;
+    });
+    steps(&mut w, 3 * 30);
+    let lane = w.game().unwrap().ai[1].as_ref().unwrap().front_lanes[0];
+    let goal = (lane.ap[0] + lane.ap[1]).div_int(2);
     spawn(
         &mut w,
         1,

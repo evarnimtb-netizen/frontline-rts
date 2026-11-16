@@ -28,8 +28,15 @@ fn ai_obstacle_tuning_parses_and_validates() {
     let mut defs = ModDefs::load(&ww2_root()).unwrap_or_else(|e| panic!("{e}"));
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
-    // The mod restates the starting values, every switch on.
-    assert_eq!(s.rules.ai.obstacles, AiObstacleTuning::default());
+    // The mod restates the starting values, every switch on (S10c-ai
+    // Build B chunk 2: `front` on too, its starting value 0).
+    assert_eq!(
+        s.rules.ai.obstacles,
+        AiObstacleTuning {
+            front: 1,
+            ..AiObstacleTuning::default()
+        }
+    );
     let o = &s.rules.ai.obstacles;
     assert_eq!(
         (
@@ -64,13 +71,13 @@ fn ai_obstacle_tuning_parses_and_validates() {
     assert_eq!(o.demolish_handover, 1);
     // B1-0: `bunker_yields` (switch, on).
     assert_eq!(o.bunker_yields, 1);
-    // S10c-ai: thirteen more keys (s10c_ai_content.rs checks them).
-    assert_eq!(AiObstacleTuning::KEYS.len(), 50);
+    // S10c-ai: fourteen more keys (s10c_ai_content.rs checks them).
+    assert_eq!(AiObstacleTuning::KEYS.len(), 51);
     let tables = frontline_content::tuning::TABLES;
     assert!(
         tables
             .iter()
-            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 50)
+            .any(|(t, k)| *t == "ai.obstacles" && k.len() == 51)
     );
     let f = s.rules.fortify.as_ref().unwrap();
     assert_eq!(

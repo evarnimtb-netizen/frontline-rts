@@ -649,3 +649,491 @@ fn ai_front_wire_leaves_the_own_way_out() {
         "control: {before} -> {after} m, crosses {cross}"
     );
 }
+
+// ------------------------------------------------- Build B chunk 2 --
+// F5 (threat), F6 (drop and resume), F8 and the job ends (spec 5, first
+// row), determinism. The enemy that threatens a front site is a player-0
+// truck (a known enemy vehicle with no gun), so the builders are not shot
+// and only the threat rule is seen.
+
+const TRUCK: &str = "ww2:ger_opel_blitz_squad";
+
+/// A player-0 truck parked in its own base; [`show`] moves it.
+fn truck(w: &mut World) -> SimId {
+    let eb = w.game().unwrap().base_of(PlayerId(0));
+    let t = spawn(w, 0, TRUCK, eb.x.floor_int(), eb.y.floor_int());
+    members(w, t)[0]
+}
+
+fn show(w: &mut World, v: SimId, at: FxVec2) {
+    assert!(w.place_vehicle(v, at, Fx::ZERO));
+}
+
+/// Takes the truck away (to its base); a truck the builders shot to a
+/// wreck is gone already.
+fn hide(w: &mut World, v: SimId) {
+    let eb = w.game().unwrap().base_of(PlayerId(0));
+    let _ = w.place_vehicle(v, eb, Fx::ZERO);
+}
+
+/// Where squad `id`'s first living man stands.
+fn lead_of(w: &World, id: SquadId) -> Option<FxVec2> {
+    let g = w.game()?;
+    let q = g.squads.get(&id)?;
+    let m = q.members.iter().find(|m| w.state.entities.is_alive(**m))?;
+    Some(w.state.entities.transform[m.index()].pos.xy())
+}
+
+/// The middle of a saved line.
+fn mid2(l: [FxVec2; 2]) -> FxVec2 {
+    (l[0] + l[1]).div_int(2)
+}
+
+/// Whether squad `id` holds a live FrontAp job (blueprint `ap`).
+fn on_ap(w: &World, id: SquadId, ap: u16) -> bool {
+    ai_ro(w)
+        .forts
+        .get(&id)
+        .is_some_and(|j| j.fort == ap && j.phase != FortPhase::Done)
+}
+
+/// The front scene of C with `near` the enemy's, a builder with 120 kg at
+/// C; plays until its FrontAp job runs and its leader is within 20 m of
+/// the AP line's middle.
+fn front_at_site(
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, Front, FrontLane, SquadId, u16) {
+    let (mut w, f) = scene(|s| {
+        s.rules.ai.obstacles.at_mines = 0;
+        s.rules.ai.fort.wire = 0;
+        edit(s);
+    });
+    own_by(&mut w, f.near, Some(0));
+    play(&mut w, 3);
+    let lane = lane_of(&w, f.own).expect("a lane");
+    let eng = squad_at(&mut w, ENG, f.pos, 120);
+    let ap = fort(&w, "ww2:ap_minefield");
+    let site = mid2(lane.ap);
+    let at = play_until(&mut w, 120, |w| {
+        on_ap(w, eng, ap) && lead_of(w, eng).is_some_and(|p| (p - site).length() < Fx::from_int(20))
+    });
+    assert!(at, "the builder reached the AP site on its job");
+    (w, f, lane, eng, ap)
+}
+
+/// F5 (S10c-1 (A)): an enemy (a truck) 60 m beyond the AP site, 115 m from
+/// the point, shown as the builder arrives: the FrontAp job is alive 60 s
+/// later and has laid mines, `front_drops` 0. The same enemy there from
+/// the start does not keep the job from starting (the builder's 80 m on
+/// the walk stays clear of it). Control: `front_site_threat_m` 80 -> the
+/// job is dropped (no refusal, `front_drops` 1; seen failing "alive").
+#[test]
+fn ai_front_job_survives_an_enemy_60_m_from_the_site() {
+    let run = |site_m: u32| {
+        let (mut w, f, lane, eng, ap) =
+            front_at_site(|s| s.rules.ai.obstacles.front_site_threat_m = site_m);
+        let site = mid2(lane.ap);
+        let out = (site - f.pos).normalize_or_zero();
+        let v = truck(&mut w);
+        show(&mut w, v, site + out * Fx::from_int(60));
+        let before = mines_on(&w, ap, lane.ap);
+        play(&mut w, 60);
+        let c = &ai_ro(&w).counters;
+        (
+            on_ap(&w, eng, ap) || lane_of(&w, f.own).is_some_and(|l| l.ap_done),
+            mines_on(&w, ap, lane.ap) - before,
+            c.front_drops,
+            c.fort_job_fails,
+        )
+    };
+    let (alive, laid, drops, fails) = run(50);
+    assert!(alive, "the job is alive (or done) 60 s later");
+    assert!(laid >= 3, "it laid {laid} mines meanwhile");
+    assert_eq!((drops, fails), (0, 0));
+    let (alive, _, drops, fails) = run(80);
+    assert!(!alive, "control: site 80 m -> dropped");
+    assert_eq!((drops, fails), (1, 0), "control: a drop, no refusal");
+    // The enemy there from the start: the job still starts.
+    let (mut w, f) = scene(|s| {
+        s.rules.ai.obstacles.at_mines = 0;
+        s.rules.ai.fort.wire = 0;
+    });
+    own_by(&mut w, f.near, Some(0));
+    play(&mut w, 3);
+    let lane = lane_of(&w, f.own).expect("a lane");
+    let site = mid2(lane.ap);
+    let v = truck(&mut w);
+    show(
+        &mut w,
+        v,
+        site + (site - f.pos).normalize_or_zero() * Fx::from_int(60),
+    );
+    let eng = squad_at(&mut w, ENG, f.pos, 120);
+    let ap = fort(&w, "ww2:ap_minefield");
+    assert!(
+        play_until(&mut w, 30, |w| on_ap(w, eng, ap)),
+        "the job starts with the enemy 60 m beyond the site"
+    );
+}
+
+/// F6: an enemy shown 40 m from the site when the 6th mine is laid drops
+/// the job (no refusal); it is taken away 60 s later and the builder takes
+/// the rest of the line: 15 mines in the end, `front_drops` 1,
+/// `front_resumes` 1, `fort_job_fails` 0. Control: the resume want taken
+/// away (the lane marked `ap_done` at the drop, as a want blind to the
+/// laid part) -> the field stays at 5-7 mines (seen failing "15").
+#[test]
+fn ai_front_job_resumes_after_a_threat_drop() {
+    let run = |resume: bool| {
+        let (mut w, f, lane, eng, ap) = front_at_site(|_| {});
+        let site = mid2(lane.ap);
+        let out = (site - f.pos).normalize_or_zero();
+        let v = truck(&mut w);
+        assert!(play_until(&mut w, 200, |w| mines_on(w, ap, lane.ap) >= 6));
+        show(&mut w, v, site + out * Fx::from_int(40));
+        assert!(
+            play_until(&mut w, 10, |w| !on_ap(w, eng, ap)),
+            "dropped by the enemy at 40 m"
+        );
+        let at_drop = mines_on(&w, ap, lane.ap);
+        if !resume {
+            ai_mut(&mut w)
+                .front_lanes
+                .iter_mut()
+                .for_each(|l| l.ap_done = true);
+        }
+        play(&mut w, 60);
+        hide(&mut w, v);
+        play_until(&mut w, 400, |w| {
+            lane_of(w, f.own).is_some_and(|l| l.ap_done) && !on_ap(w, eng, ap)
+        });
+        let c = &ai_ro(&w).counters;
+        (
+            at_drop,
+            mines_on(&w, ap, lane.ap),
+            c.front_drops,
+            c.front_resumes,
+            c.fort_job_fails,
+        )
+    };
+    let (at_drop, end, drops, resumes, fails) = run(true);
+    assert!((6..=7).contains(&at_drop), "{at_drop} mines at the drop");
+    assert_eq!(end, 15, "the field finished");
+    assert_eq!((drops, resumes, fails), (1, 1, 0));
+    let (at_drop, end, _, resumes, _) = run(false);
+    // The dropped squad's order may finish the mine in hand.
+    assert!(
+        end <= at_drop + 1 && end < 15,
+        "control: no resume, {at_drop} -> {end} mines"
+    );
+    assert_eq!(resumes, 0);
+}
+
+/// F6: a laid front field (every site laid -> `ap_done`) whose mines are
+/// set off later is not laid again: no FrontAp job in 60 s with a builder
+/// carrying 120 kg at the point. Control: `ap_done` cleared after the
+/// blasts -> the FrontAp job lays the three gaps (seen failing "no job").
+#[test]
+fn ai_front_field_set_off_is_not_relaid() {
+    let run = |clear: bool| {
+        let (mut w, f) = scene(|s| {
+            s.rules.ai.obstacles.at_mines = 0;
+            s.rules.ai.fort.wire = 0;
+        });
+        own_by(&mut w, f.near, Some(0));
+        play(&mut w, 3);
+        let lane = lane_of(&w, f.own).expect("a lane");
+        let ap = fort(&w, "ww2:ap_minefield");
+        assert!(w.build_now(ap, &lane.ap, PlayerId(1)));
+        play(&mut w, 3);
+        assert!(lane_of(&w, f.own).unwrap().ap_done, "every site laid");
+        // The last three mines of the line go off (removed, as
+        // `take_mines` leaves them), so a resume would lay just those.
+        let mut ids: Vec<(i64, u32)> = w
+            .game()
+            .unwrap()
+            .fort()
+            .mines
+            .iter()
+            .filter(|(_, m)| m.owner == PlayerId(1))
+            .map(|(&k, m)| ((m.pos - lane.ap[0]).length_sq_raw() as i64, k))
+            .collect();
+        ids.sort_unstable();
+        let ids: Vec<u32> = ids.iter().rev().take(3).map(|&(_, k)| k).collect();
+        w.edit_fort(|f| {
+            for k in &ids {
+                f.mines.remove(k);
+            }
+        });
+        if clear {
+            ai_mut(&mut w)
+                .front_lanes
+                .iter_mut()
+                .for_each(|l| l.ap_done = false);
+        }
+        let eng = squad_at(&mut w, ENG, f.pos, 120);
+        let mut job = false;
+        for _ in 0..60 {
+            play(&mut w, 1);
+            job |= on_ap(&w, eng, ap);
+        }
+        play_until(&mut w, 120, |w| mines_on(w, ap, lane.ap) >= 15);
+        (job, mines_on(&w, ap, lane.ap))
+    };
+    let (job, n) = run(false);
+    assert!(!job, "no FrontAp job on a set-off field");
+    assert_eq!(n, 12);
+    let (job, n) = run(true);
+    assert!(job && n == 15, "control: ap_done cleared -> relaid ({n})");
+}
+
+/// Spec 5, FrontAp "target gone": the point is lost mid-field: the job
+/// ends, no refusal, the laid mines stay. Control: the point kept -> the
+/// job is alive (seen failing "ended").
+#[test]
+fn ai_front_job_ends_when_the_point_is_lost() {
+    let run = |lose: bool| {
+        let (mut w, f, lane, eng, ap) = front_at_site(|_| {});
+        assert!(play_until(&mut w, 200, |w| mines_on(w, ap, lane.ap) >= 4));
+        let laid = mines_on(&w, ap, lane.ap);
+        if lose {
+            own_by(&mut w, f.own, Some(0));
+        }
+        play(&mut w, 8);
+        let c = &ai_ro(&w).counters;
+        (
+            on_ap(&w, eng, ap),
+            laid,
+            mines_on(&w, ap, lane.ap),
+            c.fort_job_fails,
+            ai_ro(&w).refused.len(),
+        )
+    };
+    let (alive, laid, now, fails, refused) = run(true);
+    assert!(!alive, "the job ended");
+    assert!(now >= laid, "the laid part stays: {laid} -> {now}");
+    assert_eq!((fails, refused), (0, 0), "no refusal");
+    let (alive, ..) = run(false);
+    assert!(alive, "control: the point kept");
+}
+
+/// Spec 5, FrontAp "squad dead": the builder is wiped out mid-field: the
+/// job ends with no refusal, `front_lost` 1, the mines stay, and a second
+/// builder takes the rest (`front_resumes` 1, 15 mines). Control: one man
+/// killed (strength over 60 %) -> the job goes on, `front_lost` 0 (seen
+/// failing "ended").
+#[test]
+fn ai_front_builder_dies_mid_field() {
+    let run = |kill_all: bool| {
+        let (mut w, f, lane, eng, ap) = front_at_site(|_| {});
+        assert!(play_until(&mut w, 200, |w| mines_on(w, ap, lane.ap) >= 5));
+        let men = members(&w, eng);
+        let n = if kill_all { men.len() } else { 1 };
+        for &m in men.iter().take(n) {
+            assert!(w.kill_soldier(m));
+        }
+        play(&mut w, 8);
+        let alive = on_ap(&w, eng, ap);
+        let lost = ai_ro(&w).counters.front_lost;
+        let laid = mines_on(&w, ap, lane.ap);
+        if kill_all {
+            squad_at(&mut w, ENG, f.pos, 120);
+            play_until(&mut w, 400, |w| {
+                lane_of(w, f.own).is_some_and(|l| l.ap_done)
+            });
+        }
+        let c = &ai_ro(&w).counters;
+        (
+            alive,
+            lost,
+            laid,
+            mines_on(&w, ap, lane.ap),
+            c.front_resumes,
+            c.fort_job_fails,
+        )
+    };
+    let (alive, lost, laid, end, resumes, fails) = run(true);
+    assert!(!alive && lost == 1, "ended, front_lost {lost}");
+    assert!(laid >= 5, "the laid part stays: {laid}");
+    assert_eq!((end, resumes, fails), (15, 1, 0));
+    let (alive, lost, ..) = run(false);
+    assert!(alive && lost == 0, "control: one man lost, the job goes on");
+}
+
+/// F8: with `front_fields_max` 1 and `front_points` 1, the AI holds every
+/// point but B (on the enemy's side, nearest the enemy base); C (the
+/// front) holds a laid field. The AI takes B: B is now the front and C no
+/// longer is, so C's lane entry goes and B's FrontAp is wanted: the first
+/// check that keeps it from starting is `no_builder` (no squad there), not
+/// `cap`; C's 15 mines stay. (A lost point is the same rule; the entry is
+/// kept only while a front job lives.) Control: `front_points` 2 (B and C
+/// both front) -> C's field fills the cap: `front_why` cap at B (seen
+/// failing "no cap").
+///
+/// Deviation: the spec's "a new front point still gets its field" is shown
+/// by the want, not a started job: with a builder placed at B, assign sent
+/// it to C (the more central point, priority over distance) where it took
+/// C's rear R1 field, whatever B's hold; the F8 rule itself is the lane
+/// drop and the freed cap.
+#[test]
+fn ai_front_fields_survive_a_lost_point() {
+    let run = |one: bool| {
+        let (mut w, f) = scene(|s| {
+            s.rules.ai.obstacles.at_mines = 0;
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.obstacles.front_fields_max = 1;
+            s.rules.ai.obstacles.front_points = if one { 1 } else { 2 };
+        });
+        let b = point(&w, "B");
+        for n in ["A", "D", "E"] {
+            let i = point(&w, n);
+            own_by(&mut w, i, Some(1));
+        }
+        play(&mut w, 3);
+        let lane = lane_of(&w, f.own).expect("C's lane");
+        let ap = fort(&w, "ww2:ap_minefield");
+        assert!(w.build_now(ap, &lane.ap, PlayerId(1)));
+        // Just before the next recheck plan (60 s).
+        play(&mut w, 54);
+        assert!(lane_of(&w, f.own).unwrap().ap_done);
+        own_by(&mut w, b, Some(1));
+        play(&mut w, 6);
+        let before = ai_ro(&w).counters.front_why;
+        play(&mut w, 30);
+        let after = ai_ro(&w).counters.front_why;
+        let grew = |k: &str| after[why(k)] - before[why(k)];
+        (
+            lane_of(&w, b).is_some_and(|l| !l.ap_done),
+            grew("cap"),
+            grew("no_builder"),
+            mines_on(&w, ap, lane.ap),
+            lane_of(&w, f.own).is_some(),
+        )
+    };
+    let (b_lane, cap, none, n, c_lane) = run(true);
+    assert!(b_lane, "B has its lane");
+    assert!(!c_lane, "C's lane entry dropped");
+    assert_eq!(cap, 0, "no cap at B");
+    assert!(none >= 5, "B's field wanted, no builder there ({none})");
+    assert_eq!(n, 15, "C's mines stay");
+    let (b_lane, cap, _, _, c_lane) = run(false);
+    assert!(b_lane && c_lane, "control: both lanes");
+    assert!(
+        cap >= 5,
+        "control: C's field fills front_fields_max 1 ({cap})"
+    );
+}
+
+/// The default skirmish (Kessel Ridge, both sides AI, `front` 1) at
+/// `threads`.
+fn skirmish(threads: usize) -> World {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = frontline_content::ModDefs::load(&root).unwrap();
+    let req = frontline_content::MatchRequest::skirmish(
+        1,
+        "ww2:germany",
+        "ww2:usa",
+        frontline_content::Difficulty::Normal,
+    );
+    let mut s = defs.resolve(&req).unwrap();
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    assert_eq!(s.rules.ai.obstacles.front, 1, "front on by default");
+    World::new_match(s, threads).unwrap()
+}
+
+fn hashes(w: &mut World, ticks: u64) -> Vec<u64> {
+    let mut h = Vec::new();
+    for _ in 0..ticks {
+        w.step(&[]);
+        if w.state.tick.is_multiple_of(30) {
+            h.push(w.state_hash());
+        }
+    }
+    h
+}
+
+/// Whether a live front job (FrontAp / FrontWire on its lane, or an AT
+/// field at a lane's point) runs for either side.
+fn front_job_live(w: &World) -> bool {
+    let g = w.game().unwrap();
+    g.ai.iter().flatten().any(|ai| {
+        ai.forts.values().any(|j| {
+            j.phase != FortPhase::Done
+                && ai.front_lanes.iter().any(|l| {
+                    l.point == j.point
+                        && (j.line.last() == Some(&l.ap[1]) || j.line.last() == Some(&l.wire[1]))
+                })
+        })
+    })
+}
+
+/// Determinism (spec 5): the default skirmish with front jobs gives the
+/// same hashes at 1, 2, 3 and 8 threads over 12:30, and a save at 5:00
+/// and at 12:00 (each with a front job live and lanes saved) loads and
+/// plays on alike. Control: a loaded copy whose one saved lane is edited
+/// (`ap_done` flipped) hashes differently at once (the comparison sees
+/// the front state; seen).
+#[test]
+fn ai_front_deterministic_threads_and_save_load() {
+    let five = 30 * 300;
+    let twelve = 30 * 720;
+    let mut base = skirmish(1);
+    let mut want = hashes(&mut base, five);
+    want.extend(hashes(&mut base, twelve - five + 30 * 30));
+    let jobs: u32 = base
+        .game()
+        .unwrap()
+        .ai
+        .iter()
+        .flatten()
+        .map(|a| a.counters.front_jobs)
+        .sum();
+    assert!(jobs >= 2, "front jobs ran: {jobs}");
+    for threads in [2, 3, 8] {
+        let mut w = skirmish(threads);
+        let mut h = hashes(&mut w, five);
+        h.extend(hashes(&mut w, twelve - five + 30 * 30));
+        assert_eq!(h, want, "at {threads} threads");
+    }
+    // The saves: at the first second from 5:00 (12:00) with a front job
+    // live, within 4 minutes.
+    let mut a = skirmish(1);
+    let mut at = 0;
+    for stop in [five, twelve] {
+        hashes(&mut a, stop.saturating_sub(at));
+        at = at.max(stop);
+        let mut s = 0;
+        while !front_job_live(&a) && s < 240 {
+            hashes(&mut a, 30);
+            at += 30;
+            s += 1;
+        }
+        assert!(front_job_live(&a), "a front job live from {} s", stop / 30);
+        eprintln!("save at {} s", at / 30);
+        let mut b = World::load(&a.save(), 1).unwrap();
+        assert_eq!(a.state_hash(), b.state_hash(), "at the load");
+        assert_eq!(ai_of(&a), ai_of(&b));
+        assert!(ai_of(&b).iter().any(|ai| !ai.front_lanes.is_empty()));
+        // Control: one lane edited -> another hash.
+        let mut c = World::load(&a.save(), 1).unwrap();
+        c.state
+            .game
+            .as_mut()
+            .unwrap()
+            .ai
+            .iter_mut()
+            .flatten()
+            .find(|ai| !ai.front_lanes.is_empty())
+            .unwrap()
+            .front_lanes[0]
+            .ap_done ^= true;
+        assert_ne!(c.state_hash(), a.state_hash(), "control: a lane edit");
+        let (ha, hb) = (hashes(&mut a, 30 * 30), hashes(&mut b, 30 * 30));
+        assert_eq!(ha, hb, "after the load at {} s", stop / 30);
+        at += 30 * 30;
+    }
+}
+
+fn ai_of(w: &World) -> Vec<AiState> {
+    w.game().unwrap().ai.iter().flatten().cloned().collect()
+}

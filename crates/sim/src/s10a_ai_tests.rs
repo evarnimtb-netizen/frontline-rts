@@ -378,6 +378,9 @@ fn ai_world() -> World {
 pub(crate) fn s10b_ai_off(s: &mut frontline_content::MatchSetup) {
     let o = &mut s.rules.ai.obstacles;
     (o.mines, o.obstacles, o.bunker, o.sweep, o.demolish) = (0, 0, 0, 0, 0);
+    // S10c-ai Build B chunk 2: the front rules (on by default) too, so
+    // these scenes keep testing the S10a works at a lone point.
+    o.front = 0;
 }
 
 fn ai1(w: &mut World) -> &mut crate::ai::AiState {

@@ -35,7 +35,8 @@
 # mine_assign_off, belt_off, jobs1, builders2, site80), and a file may hold
 # only the S10c keys at their listed values ([ai.obstacles] front,
 # mine_assign, belt 0; jobs_max 1; builder_cards_min 0 or 2;
-# front_site_threat_m 80; front_wire_len_m 20; front_slots 1). c_off is the
+# front_site_threat_m 80; front_wire_len_m 20; front_slots 1; front_home 0
+# or 1, the orchestrator's front_home_on of 2026-11-16). c_off is the
 # neutrality control there (as all_off: neutral.py against NEUTRAL_BASE,
 # default target/s10c-base40, the 40 set of main 54009f6).
 #
@@ -100,7 +101,7 @@ allowed = {
     "ai.obstacles": {
         "front": {0}, "mine_assign": {0}, "belt": {0}, "jobs_max": {1},
         "builder_cards_min": {0, 2}, "front_site_threat_m": {80},
-        "front_wire_len_m": {20}, "front_slots": {1},
+        "front_wire_len_m": {20}, "front_slots": {1}, "front_home": {0, 1},
     },
 }
 switches = {

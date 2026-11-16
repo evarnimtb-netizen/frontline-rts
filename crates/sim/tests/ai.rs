@@ -93,7 +93,10 @@ fn ai_commands_wait_for_the_reaction_delay() {
 fn ai_takes_the_map_from_an_idle_human() {
     let mut w =
         World::new_match(setup(2, Difficulty::Normal, Difficulty::Normal, false), 2).unwrap();
-    while w.tick() < 6 * 60 * 30 {
+    // S10c-ai Build B chunk 2: with `[ai.obstacles] front` 1 (default) the
+    // builder lays the front field at its first points before it walks on,
+    // so the fourth point falls at 7:30 on this seed (was before 6:00).
+    while w.tick() < 8 * 60 * 30 {
         w.step(&[]);
     }
     let g = w.game().unwrap();

@@ -34,6 +34,10 @@ fn setup(seed: u64) -> MatchSetup {
     let req = MatchRequest::skirmish(seed, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
     s.players.iter_mut().for_each(|p| p.is_ai = true);
+    // S10c-ai Build B chunk 2: the played saves keep the match they were
+    // tuned on (states at fixed ticks) with the front rules off; the staged
+    // save holds the front state (a saved lane and a FrontAp job in Watch).
+    s.rules.ai.obstacles.front = 0;
     s
 }
 
@@ -220,6 +224,34 @@ fn holds(w: &World) -> Vec<&'static str> {
     put(
         ai_any(&|ai| ai.refused.len() == frontline_sim::ai::MAX_REFUSED),
         "ai_refused_full",
+    );
+    // S10c-ai Build B chunk 2: a FrontAp job (its line ending at its saved
+    // lane's AP line end) watching its work, 5 mines of the line laid.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.front_lanes.iter().any(|l| {
+                    ai.forts.iter().any(|(sq, j)| {
+                        j.point == l.point
+                            && j.line.last() == Some(&l.ap[1])
+                            && j.phase == frontline_sim::ai::FortPhase::Watch
+                            && j.work.is_some_and(|wid| {
+                                f.works.get(&wid).is_some_and(|k| k.builder == *sq)
+                            })
+                            && f.mines
+                                .values()
+                                .filter(|m| {
+                                    m.owner == PlayerId(p)
+                                        && m.fort == j.fort
+                                        && m.pos.y == l.ap[0].y
+                                })
+                                .count()
+                                >= 5
+                    })
+                })
+            })
+        }),
+        "ai_front_ap_watch",
     );
     put(
         f.blasts.len() == frontline_sim::fort::MAX_BLASTS,
@@ -1158,6 +1190,63 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             k += 1;
         }
     });
+    // S10c-ai Build B chunk 2 (fuzz stage `staged_s10b_ai + a FrontAp job
+    // in Watch with 5 mines laid`): player 0's saved front lane of point 0
+    // and a FrontAp job on it watching its work on the sixth segment, the
+    // first five mines laid; the job's line is the rest of the lane line.
+    let ap_line = [c(640, 560), c(670, 560)];
+    let front_sq = w
+        .spawn_squad_at(PlayerId(0), eng, c(650, 555), east)
+        .unwrap();
+    for k in 0..5 {
+        w.lay_mine_now(ap, c(642 + 2 * k, 560), PlayerId(0))
+            .unwrap();
+    }
+    let mut fw = 0;
+    w.edit_fort(|f| {
+        fw = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            fw,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: ap,
+                line: ap_line.to_vec(),
+                yaw: Fx::ZERO,
+                builder: front_sq,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Build,
+                seg: 5,
+                work: 0,
+                got_g: 0,
+            },
+        );
+        f.accounts[0].mines_laid += 5;
+    });
+    w.edit_squad(front_sq, |q| q.order = Order::Fortify { work: fw });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.front_lanes = vec![frontline_sim::ai::FrontLane {
+            point: 0,
+            since: tick,
+            ap: ap_line,
+            wire: [c(645, 570), c(665, 570)],
+            ap_done: false,
+            wire_done: false,
+        }];
+        ai.forts.insert(
+            front_sq,
+            AiFortJob {
+                fort: ap,
+                point: 0,
+                line: vec![c(650, 560), c(670, 560)],
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(fw),
+                tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+    }));
     // Just before the save: the second sweeper squad is wiped out and the
     // second demolition's tank wrecked (the next plan drops both jobs).
     for m in w.game().unwrap().squads()[&gone_sq].members.clone() {
@@ -1235,8 +1324,9 @@ fn staged_s10b_save_holds_its_state() {
 /// `+ an AiDemolish with one piece done and a charge burning`, Build D
 /// chunk 4. `+ a Done sweep, a sweep of a wiped-out squad, a Repath
 /// demolition, a demolition of a wrecked tank, an AtRow2 job, refusals and
-/// blasts at their caps of 32`, S10b-ai review 4.
-const STAGED_MUST_HOLD: [&str; 15] = [
+/// blasts at their caps of 32`, S10b-ai review 4. `+ a FrontAp job in
+/// Watch with 5 mines laid`, S10c-ai Build B chunk 2.
+const STAGED_MUST_HOLD: [&str; 16] = [
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
@@ -1252,6 +1342,7 @@ const STAGED_MUST_HOLD: [&str; 15] = [
     "ai_at_row2",
     "ai_refused_full",
     "blasts_full",
+    "ai_front_ap_watch",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never

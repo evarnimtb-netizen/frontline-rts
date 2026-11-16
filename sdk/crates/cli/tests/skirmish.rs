@@ -813,14 +813,21 @@ fn fortify_s10a_rows_report_wire_roof_breach() {
 /// shipped AI) reports `factions.<f>.s10b` with the twelve counters and
 /// `used`, all 0: the AI uses nothing new. Control: the `s10b` insert in
 /// `json_out.rs` removed -> the block is the raw struct (2 keys; seen).
+/// S10c-ai Build B chunk 2: with `[ai.obstacles] front` on by default the
+/// AI lays front mines within 3 minutes, so the run takes the S10c-ai
+/// control `c_off` (front off: the AI as on main).
 #[test]
 fn s10b_counters_zero_without_use() {
     let exe = env!("CARGO_BIN_EXE_frontline-cli");
     let file = tmp("s10b.json");
     let _ = std::fs::remove_file(&file);
+    let c_off = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/slices/targets/S10c-ai-ablations/c_off.toml");
     let out = Command::new(exe)
         .args(["skirmish", "--ai-vs-ai", "--seed", "5", "--seeds", "1"])
         .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--rules-override")
+        .arg(&c_off)
         .arg("--json")
         .arg(&file)
         .output()

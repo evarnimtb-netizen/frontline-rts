@@ -1888,6 +1888,10 @@ tuning_table! {
         /// S10c-ai (C8): front jobs (FrontAp, FrontWire, a front AT field,
         /// a belt) running at once.
         front_slots: 0..=16 = "d_obst_one",
+        /// S10c-ai F1 (orchestrator 2026-11-16): 1 = the home point (the
+        /// map point nearest the own base) may be a front point; 0 = only
+        /// while it is the player's only own point. Off: 0.
+        front_home: 0..=1 = "d_obst_zero",
         /// S10c-ai (C4): blocking pieces in a belt ...
         belt_pieces: 0..=20 = "d_obst_belt_pieces",
         /// ... this far beyond the AT field, on the enemy side (m).
@@ -2004,6 +2008,7 @@ impl Default for AiObstacleTuning {
             front_site_threat_m: d_obst_front_site_threat_m(),
             front_fields_max: d_obst_front_fields_max(),
             front_slots: d_obst_one(),
+            front_home: d_obst_zero(),
             belt_pieces: d_obst_belt_pieces(),
             belt_gap_m: d_obst_belt_gap_m(),
             belt_detour_pct: d_obst_belt_detour_pct(),

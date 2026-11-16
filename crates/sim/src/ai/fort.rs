@@ -134,6 +134,12 @@ const BUNKER_NEAR_M: i32 = 40;
 const OWN_BLOCKED_M: i32 = 8;
 /// S10b-ai (spec 5): another work this near an S10b job's site takes it (m).
 const SITE_TAKEN_M: i32 = 2;
+/// S10c-ai F5: a front builder whose leader is this near its site (m) is
+/// "at the site": its own threat radius is then `front_site_threat_m`.
+const FRONT_AT_SITE_M: i32 = 20;
+/// S10c-ai F6: a mine (wire section) of a front line counts as laid when an
+/// own one of the blueprint is this near its site (m).
+const FRONT_LAID_M: i32 = 1;
 /// The wire's fallback distance when the first line is refused (m).
 const WIRE_RETRY_M: i32 = 25;
 /// A truck run gives up this long after its start beyond
@@ -420,10 +426,16 @@ pub(crate) fn job_max_s(s: &MatchSetup, fort: u16) -> u64 {
 
 /// S10c-ai F1: the `[ai.obstacles] front_points` points `me` owns nearest
 /// the enemy base (straight distance, ties by index), nearest first. With
-/// one own point that point is the front. Reads state only.
+/// one own point that point is the front. Orchestrator 2026-11-16
+/// (`front_home` 0, with `front` on): `me`'s home point (the map point
+/// nearest its own base, ties by index) is a front point only while it is
+/// `me`'s only own point. With `front` off the home rule is not applied
+/// (the Build A `front_plans` counters stay as they were). Reads state
+/// only.
 pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<usize> {
     let s = &g.setup;
-    let n = s.rules.ai.obstacles.front_points as usize;
+    let o = &s.rules.ai.obstacles;
+    let n = o.front_points as usize;
     let Some(enemy) = (0..s.players.len() as u8).map(PlayerId).find(|&o| o != me) else {
         return Vec::new();
     };
@@ -436,6 +448,17 @@ pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<
         .filter(|(_, (c, _))| c.owner == Some(me))
         .map(|(i, (_, ps))| ((FxVec2::from(ps.pos) - eb).length_sq_raw(), i))
         .collect();
+    if o.front != 0 && o.front_home == 0 && own.len() > 1 {
+        let ob = g.base_of(me);
+        let home = s
+            .map
+            .points
+            .iter()
+            .enumerate()
+            .min_by_key(|(i, ps)| ((FxVec2::from(ps.pos) - ob).length_sq_raw(), *i))
+            .map(|(i, _)| i);
+        own.retain(|&(_, i)| Some(i) != home);
+    }
     own.sort_unstable();
     own.truncate(n);
     own.into_iter().map(|(_, i)| i).collect()
@@ -535,8 +558,12 @@ impl super::Planner<'_> {
         // S10c-ai: the front kinds take their saved lane lines and the AT
         // field its vehicle-path site: none needs the trench frame (F3).
         match k {
-            WorkKind::FrontAp => return self.front_lane(i).map(|l| l.ap.to_vec()),
-            WorkKind::FrontWire => return self.front_lane(i).map(|l| l.wire.to_vec()),
+            // F6: from the first site not yet laid (built) to the end.
+            WorkKind::FrontAp | WorkKind::FrontWire => {
+                let l = self.front_lane(i)?;
+                let full = if k == WorkKind::FrontAp { l.ap } else { l.wire };
+                return self.front_rest(k, full);
+            }
             WorkKind::AtField => return self.at_site(i),
             WorkKind::AtRow2 => return self.at_row2_site(i),
             _ => {}
@@ -671,6 +698,45 @@ impl super::Planner<'_> {
         self.ai.front_lanes.iter().find(|l| l.point as usize == i)
     }
 
+    /// S10c-ai F6: the part of saved front line `full` (kind `k`) still to
+    /// lay: from the start of its first segment whose mine site (the
+    /// segment's end, as `stand_segment` lays it) has no own mine of the
+    /// blueprint within `FRONT_LAID_M`, or (wire) whose middle has no own
+    /// wire section of the blueprint within it, to the line's end (so
+    /// `front_kind` still knows the job). The whole line when nothing is
+    /// laid; None when every site is laid (or no blueprint).
+    fn front_rest(&self, k: WorkKind, full: [FxVec2; 2]) -> Option<Vec<FxVec2>> {
+        let s = &self.g.setup;
+        let f = fort_of(s, k)?;
+        let d = &s.forts[f as usize];
+        let me = self.me;
+        let fs = &self.g.fort;
+        let tr = self.terrain;
+        let r = Fx::from_int(FRONT_LAID_M);
+        let seg = Fx::from(d.segment).max(Fx::from_milli(100));
+        let len = (full[1] - full[0]).length();
+        let n = crate::fort::segments(&full, d.segment);
+        let at = |x: Fx| tr.clamp(crate::squad::point_along(&full, x.min(len)));
+        let first = (0..n).find(|&j| {
+            let (a, b) = (seg.mul_int(j as i32), seg.mul_int(j as i32 + 1));
+            if d.mine_item.is_some() {
+                let p = at(b);
+                !fs.mines
+                    .values()
+                    .any(|m| m.owner == me && m.fort == f && near(m.pos, p, r))
+            } else {
+                let p = (at(a) + at(b)).div_int(2);
+                !fs.wire
+                    .values()
+                    .any(|w| w.owner == me && w.fort == f && near((w.a + w.b).div_int(2), p, r))
+            }
+        })?;
+        if first == 0 {
+            return Some(full.to_vec());
+        }
+        Some(vec![at(seg.mul_int(first as i32)), full[1]])
+    }
+
     /// S10c-ai F1 with `front` on: this player's front points (nearest the
     /// enemy base first); none with it off.
     fn front_on_points(&self) -> Vec<usize> {
@@ -763,6 +829,29 @@ impl super::Planner<'_> {
             .collect();
         let mut k = keep.into_iter();
         self.ai.front_lanes.retain(|_| k.next().unwrap_or(false));
+        // F6: a line whose every site is laid (built) with no live job of
+        // its kind is done (a job dropped after its last mine).
+        let done: Vec<(bool, bool)> = self
+            .ai
+            .front_lanes
+            .iter()
+            .map(|l| {
+                let i = l.point as usize;
+                let full = |k: WorkKind, line| {
+                    fort_of(&self.g.setup, k).is_some()
+                        && !self.front_live(i, k)
+                        && self.front_rest(k, line).is_none()
+                };
+                (
+                    full(WorkKind::FrontAp, l.ap),
+                    full(WorkKind::FrontWire, l.wire),
+                )
+            })
+            .collect();
+        for (l, (ap, wire)) in self.ai.front_lanes.iter_mut().zip(done) {
+            l.ap_done |= ap;
+            l.wire_done |= wire;
+        }
         if !self.recheck_plan() {
             return;
         }
@@ -1694,8 +1783,15 @@ impl super::Planner<'_> {
         for (i, p) in points.iter_mut().enumerate() {
             // S10c-ai F4: a front point wants its front works without a
             // trench (`wants_at`); every other want keeps `trench_done`.
-            let ok = p.rel == Rel::Own && p.threat < max;
-            p.wants_works = ok && !self.wants_at(i, p.trench_done).is_empty();
+            // F5: the point's `build_threat_max` gate is not a front work's
+            // (its threat is `front_threat`, at the start).
+            let wants = self.wants_at(i, p.trench_done);
+            p.wants_works = p.rel == Rel::Own
+                && if p.threat < max {
+                    !wants.is_empty()
+                } else {
+                    wants.iter().any(|&k| self.front_work(i, k))
+                };
         }
     }
 
@@ -1745,6 +1841,38 @@ impl super::Planner<'_> {
             known.iter().any(|e| (e.pos - p).length_sq_raw() <= r)
                 || kv.iter().any(|v| (v.pos - p).length_sq_raw() <= r)
         })
+    }
+
+    /// S10c-ai F5: the threat rule of a front job, the same at its start
+    /// (`can_take_at`) and for the drop (`fort_continue`): which part
+    /// holds, if any. `Some(true)`: a known enemy soldier or vehicle within
+    /// `front_site_threat_m` of `site`; `Some(false)`: one within the
+    /// builder's radius of `lead`, `[ai] threat_radius` while the leader is
+    /// more than `FRONT_AT_SITE_M` from the site (walking there), else
+    /// `front_site_threat_m`. None: no threat.
+    fn front_threat(
+        &self,
+        known: &[Known],
+        kv: &[KnownVehicle],
+        lead: FxVec2,
+        site: FxVec2,
+    ) -> Option<bool> {
+        let s = &self.g.setup;
+        let site_m = Fx::from_int(s.rules.ai.obstacles.front_site_threat_m as i32);
+        let hit = |p: FxVec2, m: Fx| {
+            let r = sq_m(m);
+            known.iter().any(|e| (e.pos - p).length_sq_raw() <= r)
+                || kv.iter().any(|v| (v.pos - p).length_sq_raw() <= r)
+        };
+        if hit(site, site_m) {
+            return Some(true);
+        }
+        let lead_m = if near(lead, site, Fx::from_int(FRONT_AT_SITE_M)) {
+            site_m
+        } else {
+            s.rules.ai.threat_radius.into()
+        };
+        hit(lead, lead_m).then_some(false)
     }
 
     /// `carry_kg_per_man` x living men of squad `sq` (g).
@@ -1834,12 +1962,30 @@ impl super::Planner<'_> {
         known: &[Known],
         kv: &[KnownVehicle],
     ) -> bool {
+        self.can_take_at(m, f, site, known, kv, false)
+    }
+
+    /// [`Self::can_take`]; `front`: a front job, whose threat is F5's
+    /// [`Self::front_threat`] instead of `fort_threat` (80 m / 80 m).
+    fn can_take_at(
+        &self,
+        m: &Mine,
+        f: u16,
+        site: FxVec2,
+        known: &[Known],
+        kv: &[KnownVehicle],
+        front: bool,
+    ) -> bool {
         let d = &self.g.setup.forts[f as usize];
         m.strength_pct >= 60
             && builds(m.caps)
             && (m.caps & (1u32 << d.capability) != 0 || heavy_by_field(d, m.caps))
             && self.can_supply(m.id, f, site)
-            && !self.fort_threat(known, kv, &[m.lead, site])
+            && if front {
+                self.front_threat(known, kv, m.lead, site).is_none()
+            } else {
+                !self.fort_threat(known, kv, &[m.lead, site])
+            }
     }
 
     /// Fix F15: the builder each wanting own point holds (the assign
@@ -1871,16 +2017,20 @@ impl super::Planner<'_> {
                 break;
             }
             let pos = pt.pos;
+            let hot = pt.threat >= s.rules.ai.fort.build_threat_max;
             let pick = self.wants_at(i, pt.trench_done).into_iter().find_map(|k| {
+                let front = self.front_work(i, k);
+                if hot && !front {
+                    return None;
+                }
                 let (f, line) = (fort_of(s, k)?, self.point_site(i, k, None)?);
                 let site = mid_of(s.forts[f as usize].shape, &line);
-                let front = self.front_work(i, k);
                 mine.iter()
                     .filter(|m| {
                         m.role == super::AiKind::Engineer
                             && !m.can(Capability::Breach)
                             && !held.contains(&m.id)
-                            && self.can_take(m, f, site, known, kv)
+                            && self.can_take_at(m, f, site, known, kv, front)
                             && (!front || self.front_carry_ok(m.id, f, &line))
                     })
                     .min_by_key(|m| {
@@ -2602,27 +2752,50 @@ impl super::Planner<'_> {
                 self.s10b_end(&job, true);
                 continue;
             }
+            // S10c-ai F5, F6, F8: a front job (FrontAp, FrontWire, an AT
+            // row at a front point) ends without a refusal when its squad
+            // is gone or weak (`front_lost`), its point is lost, or F5's
+            // threat holds (`front_drops`); what it laid stays and the rest
+            // of its line is wanted again.
+            let front = self.front_kind(job).is_some();
             let Some(k) = mine.iter().position(|m| m.id == id) else {
-                if let Some(job) = self.ai.forts.remove(&id)
-                    && s10b
-                {
-                    self.bunker_end(&job, 13);
-                    self.s10b_end(&job, false);
+                if let Some(job) = self.ai.forts.remove(&id) {
+                    if front {
+                        self.ai.counters.front_lost += 1;
+                    }
+                    if s10b {
+                        self.bunker_end(&job, 13);
+                        self.s10b_end(&job, false);
+                    }
                 }
                 continue;
             };
             let m = &mine[k];
             let site = mid_of(g.setup.forts[job.fort as usize].shape, &job.line);
-            let lost = job.point != NO_POINT
-                && (g
-                    .points
+            let owner_lost = job.point != NO_POINT
+                && g.points
                     .get(job.point as usize)
-                    .is_none_or(|c| c.owner != Some(me))
-                    || g.setup.map.points.get(job.point as usize).is_some_and(|p| {
-                        self.threat_at(known, p.pos.into())
-                            >= g.setup.rules.ai.fort.build_threat_max
-                    }));
-            if m.strength_pct < 60 || lost || self.fort_threat(known, kv, &[m.lead, site]) {
+                    .is_none_or(|c| c.owner != Some(me));
+            // F5: the point's `build_threat_max` gate is not a front job's.
+            let hot = !front
+                && job.point != NO_POINT
+                && g.setup.map.points.get(job.point as usize).is_some_and(|p| {
+                    self.threat_at(known, p.pos.into()) >= g.setup.rules.ai.fort.build_threat_max
+                });
+            let threat = if front {
+                self.front_threat(known, kv, m.lead, site).is_some()
+            } else {
+                self.fort_threat(known, kv, &[m.lead, site])
+            };
+            let weak = m.strength_pct < 60;
+            if weak || owner_lost || hot || threat {
+                if front {
+                    if weak {
+                        self.ai.counters.front_lost += 1;
+                    } else if threat && !owner_lost {
+                        self.ai.counters.front_drops += 1;
+                    }
+                }
                 if let Some(job) = self.ai.forts.remove(&id)
                     && s10b
                 {
@@ -2783,10 +2956,17 @@ impl super::Planner<'_> {
             if !self.job_room(0) {
                 break;
             }
-            if p.rel != Rel::Own || p.threat >= f.build_threat_max {
+            if p.rel != Rel::Own {
                 continue;
             }
+            // S10c-ai F5: the point's `build_threat_max` gate keeps only
+            // the non-front works (a front work has `front_threat`).
+            let hot = p.threat >= f.build_threat_max;
             for k in self.wants_at(i, p.trench_done) {
+                let front = self.front_work(i, k);
+                if hot && !front {
+                    continue;
+                }
                 let (Some(fort), Some(mut line)) = (fort_of(s, k), self.point_site(i, k, None))
                 else {
                     continue;
@@ -2796,7 +2976,6 @@ impl super::Planner<'_> {
                 if s10b_only && !s10b {
                     continue;
                 }
-                let front = self.front_work(i, k);
                 // S10b-ai R8 (`jobs_max`), R4 (blueprint cap), L4 (no
                 // start near a young refusal).
                 if s10b {
@@ -2845,7 +3024,7 @@ impl super::Planner<'_> {
                     .filter(|m| {
                         !taken.contains(&m.id)
                             && !out.contains(&m.id)
-                            && self.can_take(m, fort, site, known, kv)
+                            && self.can_take_at(m, fort, site, known, kv, front)
                             && (!front || self.front_carry_ok(m.id, fort, &line))
                     })
                     .min_by_key(|m| {
@@ -2882,15 +3061,25 @@ impl super::Planner<'_> {
                 let Some(m) = pick else { continue };
                 let id = m.id;
                 let site = mid_of(s.forts[fort as usize].shape, &line);
-                if !self.can_take(m, fort, site, known, kv) {
+                if !self.can_take_at(m, fort, site, known, kv, front) {
                     continue;
                 }
+                // S10c-ai F6: a FrontAp / FrontWire line that holds part of
+                // its work already (it starts past the saved line's start).
+                let resumed = matches!(k, WorkKind::FrontAp | WorkKind::FrontWire)
+                    && self.front_lane(i).is_some_and(|l| {
+                        let full = if k == WorkKind::FrontAp { l.ap } else { l.wire };
+                        line.first() != Some(&full[0])
+                    });
                 if self.new_fort_job(id, fort, i as u8, line) {
                     out.push(id);
                     // S10c-ai: a front job started (FrontAp, FrontWire, an
                     // AT row at a front point).
                     if front {
                         self.ai.counters.front_jobs += 1;
+                    }
+                    if resumed {
+                        self.ai.counters.front_resumes += 1;
                     }
                 }
                 // One job per point per plan: the next sees this one.
@@ -3461,7 +3650,7 @@ impl super::Planner<'_> {
         if !self.job_room(0) {
             return Some(6);
         }
-        let p = points.get(i)?;
+        points.get(i)?;
         let fit: Vec<&Mine> = assigned
             .iter()
             .filter(|&&(_, pi)| pi == i)
@@ -3495,12 +3684,18 @@ impl super::Planner<'_> {
         {
             return Some(9);
         }
-        // The point's own threat gate (`build_threat_max`) and the fort
-        // threat at the site come before the builders' own.
-        if p.threat >= s.rules.ai.fort.build_threat_max || self.fort_threat(known, kv, &[site]) {
+        // F5: the threat at the site comes before the builders' own (the
+        // point's `build_threat_max` gate is not a front work's).
+        if carry
+            .iter()
+            .all(|m| self.front_threat(known, kv, m.lead, site) == Some(true))
+        {
             return Some(11);
         }
-        if carry.iter().all(|m| self.fort_threat(known, kv, &[m.lead])) {
+        if carry
+            .iter()
+            .all(|m| self.front_threat(known, kv, m.lead, site).is_some())
+        {
             return Some(10);
         }
         None

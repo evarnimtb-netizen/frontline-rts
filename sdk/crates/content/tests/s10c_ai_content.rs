@@ -1,7 +1,8 @@
-//! S10c-ai (docs/slices/S10c-ai.md 2, 6): the thirteen new `[ai.obstacles]`
-//! keys parse from the ww2 rules at their off values, the `c_off` control
-//! file reaches the setup, and every key is range-checked (overrides and
-//! untrusted saves).
+//! S10c-ai (docs/slices/S10c-ai.md 2, 6): the fourteen new `[ai.obstacles]`
+//! keys parse from the ww2 rules (at their off values but `front` 1, Build
+//! B item 10), the `c_off` control file reaches the setup, and every key is
+//! range-checked (overrides and untrusted saves). `front_home` (0/1, off 0)
+//! is the orchestrator's key of 2026-11-16.
 
 use std::path::{Path, PathBuf};
 
@@ -30,7 +31,8 @@ fn load_rejects_bad_s10c_keys() {
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
     let o = &s.rules.ai.obstacles;
-    // The mod states the off values (spec 2): switches 0, the floor 0.
+    // The mod states the off values (spec 2): switches 0, the floor 0;
+    // Build B item 10 turns `front` on.
     assert_eq!(
         (
             o.front,
@@ -39,7 +41,7 @@ fn load_rejects_bad_s10c_keys() {
             o.builder_cards_min,
             o.jobs_max
         ),
-        (0, 0, 0, 0, 1)
+        (1, 0, 0, 0, 1)
     );
     assert_eq!(
         (
@@ -48,15 +50,22 @@ fn load_rejects_bad_s10c_keys() {
             o.front_wire_len_m,
             o.front_site_threat_m,
             o.front_fields_max,
-            o.front_slots
+            o.front_slots,
+            o.front_home
         ),
-        (2, 50, 20, 50, 2, 1)
+        (2, 50, 20, 50, 2, 1, 0)
     );
     assert_eq!(
         (o.belt_pieces, o.belt_gap_m, o.belt_detour_pct),
         (5, 10, 130)
     );
-    assert_eq!(*o, AiObstacleTuning::default());
+    assert_eq!(
+        *o,
+        AiObstacleTuning {
+            front: 1,
+            ..AiObstacleTuning::default()
+        }
+    );
     // The control file applies and changes nothing (all keys at off).
     let c_off = root().join("docs/slices/targets/S10c-ai-ablations/c_off.toml");
     defs.apply_override(&c_off, "ww2:skirmish")
@@ -86,6 +95,7 @@ fn load_rejects_bad_s10c_keys() {
         ("front_site_threat_m", 501),
         ("front_fields_max", 17),
         ("front_slots", 17),
+        ("front_home", 2),
         ("belt_pieces", 21),
         ("belt_gap_m", 501),
         ("belt_detour_pct", 1001),
