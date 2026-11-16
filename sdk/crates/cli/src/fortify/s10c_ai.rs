@@ -9,13 +9,21 @@
 //! `wire_done`: the row is about the AT field and the belt), S10a works,
 //! wire and the bunker off, `at_rows` 1. `p`'s Baupioniere (US: engineers,
 //! no `build_heavy`: the log line) stand at the point; their carry is
-//! topped up to [`BELT_CARRY_KG`] kg every second (staged supply: a belt is
-//! over any squad's carry and F10 sends no front squad home, so in a match
-//! the rest comes by truck; the stage file's "loaded truck"). Then
+//! topped up to [`BELT_CARRY_KG`] kg every second until the AT row stands
+//! (staged supply). Fix pass 2 (finding C-3): then the belt's kg come by
+//! truck: `p`'s supply truck stands in its base and its habit
+//! (`drive_ai_habit(Truck)`) is driven after every fort plan; between
+//! material runs its job is staged back to Load (it waits in its base, as
+//! a truck back from a run; with no armour to follow it would otherwise
+//! leave Load for good after its first shells); `[ai.fort]
+//! works` 1 with every S10a kind off, so the S10a material runs are on and
+//! no S10a work is wanted. Then
 //! `drive_ai_habit(Fort)` until the AI's AT field row 1 stands
 //! ([`AT_ROW_MINES`] AT mines) and the belt stands ([`BELT_PIECES`] own
 //! blocking pieces beyond the field), at most [`BELT_DRIVE_S`]:
-//! `belt_built_pct`, `belt_pieces` (report, mean). Then the enemy's medium
+//! `belt_built_pct`, `belt_pieces` (report, mean), `log_belt_built_pct`
+//! (US runs: the 500 kg log line), `truck_runs` (material runs, sum),
+//! `belt_route_rejects` (C5, sum; on this open map 0). Then the enemy's medium
 //! tank is spawned at its base and ordered onto the point, and `p`'s own
 //! medium tank at its base ordered to the nearest other point, for
 //! [`BELT_TANK_S`] s (the habit still driven): `enemy_tank_mined_pct` (the
@@ -47,6 +55,8 @@ pub const BELT_TANK_S: u64 = 300;
 pub const REACHED_M: i32 = 15;
 
 const BUILDERS: [&str; 2] = ["ger_baupioniergruppe", "usa_engineer_squad"];
+/// Fix pass 2 (C-3): the supply truck that brings the belt's kg.
+const TRUCKS: [&str; 2] = ["ger_opel_blitz_squad", "usa_cckw_squad"];
 
 /// The control half of the belt row.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -56,6 +66,8 @@ pub struct BeltControl {
     pub enemy_tank_mined_pct: Option<f64>,
     /// `belt_detour_pct` 0 (sum over the runs).
     pub own_blocked: Option<f64>,
+    /// `belt_detour_pct` 0: C5 refusals (sum; 0 with the rule off).
+    pub belt_route_rejects: Option<f64>,
 }
 
 /// C7: the belt beyond the AI's AT field.
@@ -64,6 +76,12 @@ pub struct BeltRow {
     pub belt_built_pct: Option<f64>,
     /// Report: mean belt pieces standing after the drive.
     pub belt_pieces: Option<f64>,
+    /// Fix pass 2 (C-3): the US runs (one log barrier line, 500 kg).
+    pub log_belt_built_pct: Option<f64>,
+    /// Material runs the truck made (sum over the runs).
+    pub truck_runs: Option<f64>,
+    /// C5 refusals (sum over the runs).
+    pub belt_route_rejects: Option<f64>,
     pub enemy_tank_mined_pct: Option<f64>,
     /// Sum of the AI's `own_blocked` over the runs (must be 0).
     pub own_blocked: Option<f64>,
@@ -98,14 +116,23 @@ struct Once {
     reached: bool,
     own_blocked: u32,
     alive: bool,
+    truck_runs: u32,
+    rejects: u32,
 }
 
 /// One belt run of player `p`; `mode` 0: as set, 1: `belt` 0, 2:
 /// `belt_detour_pct` 0.
 fn belt_once(args: &FortifyArgs, seed: u64, p: u8, mode: u8) -> Result<Once> {
-    use frontline_sim::ai::{AiHabit, AiState, AiTrench, DriveArgs, FrontLane};
+    use frontline_sim::ai::{AiState, AiTrench, DriveArgs, FrontLane, TruckPhase};
     let mut w = world_with(args, seed, |s| {
-        s.rules.ai.fort.works = 0;
+        // Fix pass 2 (C-3): `works` 1 for the S10a truck runs, no S10a
+        // kind wanted.
+        let f = &mut s.rules.ai.fort;
+        f.works = 1;
+        f.nest = 0;
+        f.dugout = 0;
+        f.roof = 0;
+        f.sandbags = 0;
         s.rules.ai.fort.wire = 0;
         let o = &mut s.rules.ai.obstacles;
         o.front = 1;
@@ -142,6 +169,16 @@ fn belt_once(args: &FortifyArgs, seed: u64, p: u8, mode: u8) -> Result<Once> {
     let bty = card(&w, BUILDERS[p as usize])?;
     let Some(bau) = w.spawn_squad_at(PlayerId(p), bty, pt, EAST) else {
         bail!("the builders were not spawned");
+    };
+    let base = w.game().unwrap().base_of(PlayerId(p));
+    let tty = card(&w, TRUCKS[p as usize])?;
+    let Some(truck) = w.spawn_squad_at(PlayerId(p), tty, base, EAST) else {
+        bail!("the truck was not spawned");
+    };
+    let truck_drive = DriveArgs {
+        squad: Some(truck),
+        point: i,
+        ..Default::default()
     };
     let dir = (base_e - pt).normalize_or_zero();
     let side = dir.perp() * Fx::from_int(10);
@@ -211,14 +248,23 @@ fn belt_once(args: &FortifyArgs, seed: u64, p: u8, mode: u8) -> Result<Once> {
         if (laid && (mode == 1 || belt(&w).len() >= BELT_PIECES)) || w.tick() >= t + drive_s * hz {
             break;
         }
-        if w.tick() >= last + hz {
+        if !laid && w.tick() >= last + hz {
             last = w.tick();
             w.edit_fort(|f| {
                 let g = f.carried_g.entry(bau).or_insert(0);
                 *g = (*g).max(BELT_CARRY_KG * 1000);
             });
         }
-        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+        // Staged: between material runs the truck waits in its base in
+        // its Load phase (in a match: a truck that has come back to load),
+        // so a waiting belt work can call it (`truck_for`).
+        if laid
+            && ai.material_run.is_none()
+            && let Some(j) = ai.trucks.get_mut(&truck)
+        {
+            j.phase = TruckPhase::Load;
+        }
+        fort_and_truck(&mut w, &mut ai, p, &drive, &truck_drive);
     }
     let laid = at_mines(&w).len() >= AT_ROW_MINES;
     let pieces = belt(&w);
@@ -271,7 +317,7 @@ fn belt_once(args: &FortifyArgs, seed: u64, p: u8, mode: u8) -> Result<Once> {
     let mut reached = false;
     let t0 = w.tick();
     while w.tick() < t0 + BELT_TANK_S * hz {
-        w.drive_ai_habit(&mut ai, PlayerId(p), AiHabit::Fort, &drive);
+        fort_and_truck(&mut w, &mut ai, p, &drive, &truck_drive);
         if w.game().unwrap().vehicle(ev).is_some() {
             let at = pos(&w, ev);
             reached |= pieces
@@ -287,7 +333,30 @@ fn belt_once(args: &FortifyArgs, seed: u64, p: u8, mode: u8) -> Result<Once> {
         reached,
         own_blocked: ai.counters.own_blocked,
         alive,
+        truck_runs: ai.counters.material_runs[0],
+        rejects: ai.counters.belt_route_rejects,
     })
+}
+
+/// One step of the row's AI: the fort habit, and right after each fort
+/// plan the truck habit's plan (one more step; the two share the plan
+/// clock `next_plan`, which the fort plan sets).
+fn fort_and_truck(
+    w: &mut World,
+    ai: &mut frontline_sim::ai::AiState,
+    p: u8,
+    drive: &frontline_sim::ai::DriveArgs,
+    truck: &frontline_sim::ai::DriveArgs,
+) {
+    use frontline_sim::ai::AiHabit;
+    let before = ai.next_plan;
+    w.drive_ai_habit(ai, PlayerId(p), AiHabit::Fort, drive);
+    if ai.next_plan != before {
+        let next = ai.next_plan;
+        ai.next_plan = 0;
+        w.drive_ai_habit(ai, PlayerId(p), AiHabit::Truck, truck);
+        ai.next_plan = next;
+    }
 }
 
 /// The belt row (module docs).
@@ -296,6 +365,8 @@ pub fn belt_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<BeltR
         (0u32, 0u32, 0usize, 0u32, 0u32);
     let (mut blocked, mut laid, mut alive) = (0u32, 0u32, 0u32);
     let (mut c_built, mut c_mined, mut c_blocked) = (0u32, 0u32, 0u32);
+    let (mut us_runs, mut us_built, mut truck_runs, mut rejects, mut c_rejects) =
+        (0u32, 0u32, 0u32, 0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
             let r = belt_once(args, seed, p, 0)?;
@@ -307,16 +378,26 @@ pub fn belt_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<BeltR
             blocked += r.own_blocked;
             laid += r.laid as u32;
             alive += r.alive as u32;
+            truck_runs += r.truck_runs;
+            rejects += r.rejects;
+            if p == 1 {
+                us_runs += 1;
+                us_built += r.built as u32;
+            }
             let c = belt_once(args, seed, p, 1)?;
             c_built += c.built as u32;
             c_mined += c.mined as u32;
             let c = belt_once(args, seed, p, 2)?;
             c_blocked += c.own_blocked;
+            c_rejects += c.rejects;
         }
     }
     Ok(BeltRow {
         belt_built_pct: pct(built, runs),
         belt_pieces: (runs > 0).then(|| pieces as f64 / runs as f64),
+        log_belt_built_pct: pct(us_built, us_runs),
+        truck_runs: (runs > 0).then_some(truck_runs as f64),
+        belt_route_rejects: (runs > 0).then_some(rejects as f64),
         enemy_tank_mined_pct: pct(mined, runs),
         own_blocked: (runs > 0).then_some(blocked as f64),
         enemy_tank_reached_belt_pct: pct(reached, runs),
@@ -326,6 +407,7 @@ pub fn belt_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<BeltR
             belt_built_pct: pct(c_built, runs),
             enemy_tank_mined_pct: pct(c_mined, runs),
             own_blocked: (runs > 0).then_some(c_blocked as f64),
+            belt_route_rejects: (runs > 0).then_some(c_rejects as f64),
         },
     })
 }

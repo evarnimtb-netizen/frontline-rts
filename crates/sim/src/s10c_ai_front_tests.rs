@@ -1146,6 +1146,88 @@ fn ai_front_deterministic_threads_and_save_load() {
         at += 30 * 30;
         stop = at;
     }
+    // Fix pass 2 (finding C-9): a staged mid-match save. At 12:30 the side
+    // with a saved lane gets a fresh builder squad at the lane's point
+    // (carry staged to 100 kg) and a FrontAp job on the lane's full line;
+    // 20 s later (the job ordered or watching its work) the match is
+    // saved, loaded at 1, 2, 3 and 8 threads, and every copy plays 60 s
+    // with the original's hashes. Control: a copy whose staged job's
+    // start is edited hashes differently.
+    hashes(&mut a, twelve.saturating_sub(at));
+    let (p, lane) = {
+        let g = a.game().unwrap();
+        (0..g.ai.len())
+            .find_map(|p| {
+                let ai = g.ai[p].as_ref()?;
+                ai.front_lanes.first().map(|l| (p, *l))
+            })
+            .expect("a saved lane at 12:30")
+    };
+    let card = ["ww2:ger_baupioniergruppe", ENG][p];
+    let pt = pos_of(&a, lane.point as usize);
+    let sq = spawn(&mut a, p as u8, card, pt.x.floor_int(), pt.y.floor_int());
+    a.edit_fort(|f| {
+        f.carried_g.insert(sq, 100_000);
+    });
+    let tick = a.state.tick;
+    let ap = fort(&a, "ww2:ap_minefield");
+    a.state.game.as_mut().unwrap().ai[p]
+        .as_mut()
+        .unwrap()
+        .forts
+        .insert(
+            sq,
+            crate::ai::AiFortJob {
+                fort: ap,
+                point: lane.point,
+                line: lane.ap.to_vec(),
+                phase: FortPhase::Load,
+                start: tick,
+                since: tick,
+                work: None,
+                tries: 0,
+            },
+        );
+    hashes(&mut a, 30 * 20);
+    let staged = |w: &World| {
+        w.game().unwrap().ai[p]
+            .as_ref()
+            .unwrap()
+            .forts
+            .get(&sq)
+            .map(|j| j.phase)
+    };
+    let phase = staged(&a);
+    eprintln!("staged save at {} s, job {phase:?}", a.state.tick / 30);
+    assert!(
+        matches!(
+            phase,
+            Some(FortPhase::Order | FortPhase::Watch | FortPhase::Go)
+        ),
+        "the staged front job runs at the save: {phase:?}"
+    );
+    assert!(front_job_live(&a), "a front job live at the staged save");
+    let bytes = a.save();
+    let want = hashes(&mut a, 30 * 60);
+    for threads in [1, 2, 3, 8] {
+        let mut x = World::load(&bytes, threads).unwrap();
+        assert_eq!(staged(&x), phase, "the job loads");
+        assert_eq!(
+            hashes(&mut x, 30 * 60),
+            want,
+            "staged save at {threads} threads"
+        );
+    }
+    let x = World::load(&bytes, 1).unwrap();
+    let mut y = World::load(&bytes, 1).unwrap();
+    y.state.game.as_mut().unwrap().ai[p]
+        .as_mut()
+        .unwrap()
+        .forts
+        .get_mut(&sq)
+        .unwrap()
+        .start += 1;
+    assert_ne!(x.state_hash(), y.state_hash(), "control: a staged job edit");
 }
 
 fn ai_of(w: &World) -> Vec<AiState> {
@@ -1267,6 +1349,9 @@ fn ai_mine_assign_sends_a_builder_to_the_front() {
         let (mut w, f) = scene(|s| {
             s.rules.ai.obstacles.at_mines = 0;
             s.rules.ai.obstacles.mine_assign = on;
+            // Fix pass 2 (C-7): the site is about 350 m from `near`, over
+            // the default reach (300 m).
+            s.rules.ai.obstacles.sweep_reach_m = 1000;
         });
         own_by(&mut w, f.near, Some(1));
         let at = pos_of(&w, f.near);
@@ -1287,6 +1372,66 @@ fn ai_mine_assign_sends_a_builder_to_the_front() {
     assert!(!ok, "control: mine_assign 0 -> no front job");
     assert_eq!(task, Some(f.near), "control: assigned to the home point");
     assert!(fw[why("no_builder")] > 0, "control: no_builder {fw:?}");
+}
+
+/// Fix pass 2 (findings C-7, C-8): the C2 pick's limits, in the scene of
+/// [`ai_mine_assign_sends_a_builder_to_the_front`] (builder at `near`,
+/// about 350 m from C's FrontAp site): with `sweep_reach_m` 1000 it takes
+/// the job; with 100 (out of reach), or in a running escort (staged every
+/// tick: an `AiEscort` holding it), it does not, and `front_why` reads
+/// no_builder (the
+/// same squads as the pick, C-8). Controls (code edits): no `assign_free`
+/// in the pick -> the job in both (seen failing as "out of reach: no
+/// job"); `front_block` reading every assigned squad as before ->
+/// no_builder 0 (seen failing as "no_builder").
+#[test]
+fn ai_mine_assign_keeps_its_reach_and_off_escorts() {
+    use crate::ai::AiEscort;
+    let run = |reach: u32, escort: bool| {
+        let (mut w, f) = scene(|s| {
+            s.rules.ai.obstacles.at_mines = 0;
+            s.rules.ai.obstacles.mine_assign = 1;
+            s.rules.ai.obstacles.sweep_reach_m = reach;
+        });
+        own_by(&mut w, f.near, Some(1));
+        let at = pos_of(&w, f.near);
+        let eng = squad_at(&mut w, ENG, at, 120);
+        let ap = fort(&w, "ww2:ap_minefield");
+        let mut ok = false;
+        for _ in 0..30 * 60 {
+            if escort {
+                let tick = w.state.tick;
+                ai_mut(&mut w).escorts.insert(
+                    SquadId(u32::MAX - 1),
+                    AiEscort {
+                        point: f.far as u8,
+                        squads: vec![eng],
+                        started: vec![eng],
+                        since: tick,
+                        reached: false,
+                    },
+                );
+            }
+            steps(&mut w, 1);
+            if ai_ro(&w)
+                .forts
+                .get(&eng)
+                .is_some_and(|j| j.fort == ap && j.point as usize == f.own)
+            {
+                ok = true;
+                break;
+            }
+        }
+        (ok, ai_ro(&w).counters.front_why[why("no_builder")])
+    };
+    let (ok, _) = run(1000, false);
+    assert!(ok, "within reach: the FrontAp job");
+    let (ok, nb) = run(100, false);
+    assert!(!ok, "out of reach: no job");
+    assert!(nb > 0, "out of reach: no_builder ({nb})");
+    let (ok, nb) = run(1000, true);
+    assert!(!ok, "in an escort: no job");
+    assert!(nb > 0, "in an escort: no_builder ({nb})");
 }
 
 /// AI player 1 (USA, buys on: rifle squads weight 100, engineers 1; the
@@ -1384,6 +1529,103 @@ fn ai_builder_floor_never_overbuys() {
     assert_eq!(bought(&w, ENG), 3, "exactly one more");
     assert!(most <= 2, "never above the floor: {most}");
     assert_eq!(ai_ro(&w).counters.builder_buys, 3);
+}
+
+/// Fix pass 2 (finding C-6): a builder squad under 60 % strength counts
+/// for nothing in the floor (it can take no fort job): two engineers stand,
+/// one loses men down to under 60 % -> one more buy. Control (code edit:
+/// every living builder counts, as before) -> no buy (seen failing as "a
+/// weak builder is not a builder").
+#[test]
+fn ai_builder_floor_counts_fit_squads() {
+    let mut w = buy_world(2);
+    assert!(
+        play_until(&mut w, 300, |w| engineers(w).len() >= 2),
+        "two engineers arrived"
+    );
+    play(&mut w, 30);
+    assert_eq!(bought(&w, ENG), 2, "no buy over the floor");
+    let men = w.match_setup().unwrap().squad_types
+        [w.match_setup().unwrap().squad_type_index(ENG).unwrap() as usize]
+        .men as usize;
+    let weak = engineers(&w)[0];
+    // Kill down to one man under 60 % (at least one left).
+    let keep = (men * 60).div_ceil(100).saturating_sub(1).max(1);
+    for m in members(&w, weak).into_iter().skip(keep) {
+        w.kill_soldier(m);
+    }
+    assert_eq!(members(&w, weak).len(), keep, "{keep} of {men} left");
+    let again = play_until(&mut w, 300, |w| bought(w, ENG) >= 3);
+    assert!(again, "a weak builder is not a builder");
+    play(&mut w, 120);
+    assert_eq!(bought(&w, ENG), 3, "exactly one more");
+}
+
+/// The CallIn cards in player 1's queue, in order (empty: none).
+fn queued_buys(w: &World) -> Vec<u16> {
+    ai_ro(w)
+        .pending
+        .iter()
+        .filter_map(|c| match c.kind {
+            CommandKind::CallIn { squad_type } => Some(squad_type),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Fix pass 2 (finding C-6): the floor comes after the urgent AT buy. AI
+/// player 1 (USA; mix `line` and `at`, no cooldowns, vehicles unlocked)
+/// has a rifle squad that sees an enemy tank 120 m off and no builder,
+/// floor 2: its first plan's buys are the bazooka team (urgent AT), then
+/// the engineers. Control (code edit: the floor's `at_due` check
+/// removed, the old order) -> the engineers first (seen failing as "the
+/// urgent AT team first").
+#[test]
+fn ai_builder_floor_waits_for_the_urgent_at_buy() {
+    let mut w = flat_world_with(1, |s| {
+        let (line, at) = (s.tag("line").unwrap(), s.tag("at").unwrap());
+        s.rules.ai.mix.retain(|m| m.tag == line || m.tag == at);
+        s.rules.vehicles.unlock_ticks = 0;
+        s.players[1].is_ai = true;
+        let f = s.players[1].faction as usize;
+        s.factions[f].start_squads.clear();
+        for t in s.squad_types.iter_mut() {
+            t.initial_cooldown_ticks = 0;
+            t.ai_weight = match t.id.as_str() {
+                "ww2:usa_rifle_squad" => 100,
+                "ww2:usa_bazooka_team" => 100,
+                ENG => 1,
+                _ => 0,
+            };
+        }
+        s.rules.ai.obstacles.builder_cards_min = 2;
+    });
+    let cc = point(&w, "C");
+    w.state.game.as_mut().unwrap().points[cc].owner = Some(PlayerId(1));
+    let at = pos_of(&w, cc);
+    let (x, y) = (at.x.floor_int(), at.y.floor_int());
+    spawn(&mut w, 1, "ww2:usa_rifle_squad", x, y);
+    spawn(&mut w, 0, "ww2:ger_pz4_h_squad", x + 120, y);
+    let mut order = Vec::new();
+    for _ in 0..30 * 120 {
+        steps(&mut w, 1);
+        order = queued_buys(&w);
+        if !order.is_empty() {
+            break;
+        }
+    }
+    let s = w.match_setup().unwrap();
+    let names: Vec<&str> = order
+        .iter()
+        .map(|&t| s.squad_types[t as usize].id.as_str())
+        .collect();
+    assert!(ai_ro(&w).enemy_vehicle_seen, "the tank was seen");
+    assert_eq!(
+        names.first().copied(),
+        Some("ww2:usa_bazooka_team"),
+        "the urgent AT team first: {names:?}"
+    );
+    assert!(names.contains(&ENG), "then the engineers: {names:?}");
 }
 
 // ------------------------------------------------ Build C chunk 2 (C4-C7) --
@@ -1527,6 +1769,40 @@ fn ai_builds_a_belt_before_its_at_field() {
     assert_eq!((n, jobs, all), (0, 0, 0), "control: belt 0");
 }
 
+/// Fix pass 2 (finding C-4): a log barrier belt ended after one segment
+/// (staged: the line's first 4 m segment stands, no job) is not the
+/// finished belt: a US engineer squad (staged supply) builds the rest from
+/// the first missing segment (five pieces on the belt's sites, one belt
+/// job, no second line). Control (code edit: `belt_wanted` reads
+/// `belt_next` alone, which has no site for a log barrier side, as
+/// before) -> no belt job, one piece (seen failing as "the rest of the
+/// line").
+#[test]
+fn ai_finishes_a_partial_log_belt() {
+    let (mut w, f, u, v) = belt_scene(|_| {});
+    let log = fort(&w, "ww2:log_barrier");
+    // The frame's `along` runs from the staged row's lower (x, y) end.
+    let row = |k: i32| f.pos + u * Fx::from_int(AT_OUT) + v * Fx::from_int(k);
+    let key = |p: FxVec2| (p.x.raw(), p.y.raw());
+    let (a, b) = if key(row(-18)) <= key(row(18)) {
+        (row(-18), row(18))
+    } else {
+        (row(18), row(-18))
+    };
+    let along = (b - a).normalize_or_zero();
+    let start = f.pos + u * Fx::from_int(AT_OUT + 10) - along * Fx::from_int(10);
+    assert!(w.build_now(log, &[start, start + along * Fx::from_int(4)], PlayerId(1)));
+    assert_eq!(pieces_of(&w, log).len(), 1, "one segment stands");
+    let eng = squad_at(&mut w, ENG, f.pos, 500);
+    let sites = belt_sites(&f, u, v);
+    play_fed(&mut w, &[eng], 500, 1500, |w| {
+        pieces_at(w, log, &sites) >= 5
+    });
+    assert_eq!(pieces_at(&w, log, &sites), 5, "the rest of the line");
+    assert_eq!(pieces_of(&w, log).len(), 5, "no second line");
+    assert_eq!(ai_ro(&w).counters.belt_jobs, 1, "one belt job");
+}
+
 /// C4 "one belt per lane", job table row Belt: two Baupioniere squads with
 /// two front slots never run two belt jobs at once and build five
 /// hedgehogs, no more (`belt_jobs` 5). Then the AT field is swept (its
@@ -1574,6 +1850,17 @@ fn ai_one_belt_per_lane() {
     assert_eq!(ai_ro(&w).counters.belt_jobs, 5, "no belt without row 1");
 }
 
+/// Fix pass 2 (finding C-2): player 1's own route of point `i` (C5's
+/// base -> point -> `route_out`) on the live vehicle block layer, in
+/// metres (None: no route).
+fn own_route_m(w: &World, i: usize) -> Option<i32> {
+    let mut ai = ai_ro(w).clone();
+    w.game()
+        .unwrap()
+        .own_route_len_probe(&mut ai, &w.state.entities, &w.state.terrain, PlayerId(1), i)
+        .map(|l| l.floor_int())
+}
+
 /// C5: C ringed by enemy log barriers 70 m out (player 0's, doubled; only
 /// the belt is own), open only in a 20 m gap across the lane where the
 /// belt goes: there it would leave the own vehicles no way out (the own
@@ -1584,7 +1871,10 @@ fn ai_one_belt_per_lane() {
 /// `belt_detour_pct` 0 (rule off) -> the belt closes the gap and the tank
 /// never leaves the ring (seen failing as "the own tank drives out of the
 /// ring"; the spec's `own_blocked` > 0 is not reached, see the control's
-/// comment).
+/// comment). Fix pass 2 (finding C-2): the number the rule keeps is
+/// measured as well: the own route's length with the belt standing over
+/// its length before (`detour` %): at most 130 % with the rule; the
+/// control has no own route at all (None), or one over 130 %.
 #[test]
 fn ai_belt_leaves_the_own_way_round() {
     let go = |pct: u32| {
@@ -1618,11 +1908,13 @@ fn ai_belt_leaves_the_own_way_round() {
         for l in &lines {
             assert!(w.build_now(log, l, PlayerId(0)), "ring line {l:?}");
         }
+        let before = own_route_m(&w, f.own).expect("an own route through the gap");
         let eng = squad_at(&mut w, ENG, f.pos, 500);
         play_fed(&mut w, &[eng], 500, 900, |w| {
             let c = &ai_ro(w).counters;
             (c.belt_jobs > 0 && live_jobs(w, log, f.own) == 0) || c.belt_route_rejects > 0
         });
+        let detour = own_route_m(&w, f.own).map(|m| m * 100 / before.max(1));
         // The tank waits behind the field, 15 m short of the belt.
         let from = at(55, 0);
         let tank = spawn(
@@ -1649,20 +1941,36 @@ fn ai_belt_leaves_the_own_way_round() {
             (p - f.pos).dot(u) > Fx::from_int(80)
         });
         let c = &ai_ro(&w).counters;
-        (c.own_blocked, out, c.belt_jobs, c.belt_route_rejects)
+        (
+            c.own_blocked,
+            out,
+            c.belt_jobs,
+            c.belt_route_rejects,
+            detour,
+        )
     };
-    let (blocked, out, jobs, rejects) = go(130);
+    let (blocked, out, jobs, rejects, detour) = go(130);
+    eprintln!("belt_detour_pct 130: detour {detour:?} %, rejects {rejects}, jobs {jobs}");
     assert!(jobs + rejects >= 1, "the belt was considered");
     assert_eq!(blocked, 0, "own_blocked 0");
     assert!(out, "the own tank drives out of the ring");
+    assert!(
+        detour.is_some_and(|d| d <= 130),
+        "the own route at most 130 % of its length: {detour:?}"
+    );
     // Control: the gap is closed. The AI re-tasks its tank (AttackMove to
     // E) and it halts at the ring's corner, beyond `OWN_BLOCKED_M` of the
     // belt, so `own_blocked` stays 0 here (it counts a halt within 8 m of
     // an own piece only); the way out is what the rule keeps.
-    let (_, out, jobs, _) = go(0);
+    let (_, out, jobs, _, detour) = go(0);
+    eprintln!("control belt_detour_pct 0: detour {detour:?} %, jobs {jobs}");
     assert!(
         jobs >= 1 && !out,
         "control: belt_detour_pct 0 closes the gap"
+    );
+    assert!(
+        detour.is_none_or(|d| d > 130),
+        "control: no own route within 130 % ({detour:?})"
     );
 }
 

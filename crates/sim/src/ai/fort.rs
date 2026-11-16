@@ -583,6 +583,10 @@ impl super::Planner<'_> {
             WorkKind::AtRow2 => return self.at_row2_site(i),
             // C4: the belt row's next free hedgehog site, facing the enemy.
             WorkKind::Belt => {
+                // Fix pass 2 (C-4): a log barrier belt's rest.
+                if let Some((side, WorkKind::LogBarrier)) = self.belt_side(i) {
+                    return self.belt_log_rest(i, side);
+                }
                 let (_, _, enemy) = self.belt_frame(i)?;
                 let p = self.belt_next(i)?;
                 return Some(vec![
@@ -848,10 +852,28 @@ impl super::Planner<'_> {
         n < self.g.setup.rules.ai.obstacles.front_slots as usize
     }
 
+    /// Fix pass 2 (finding C-7): whether C2 may pull squad `m` to front
+    /// work at `site`: its leader within `sweep_reach_m` of the site (the
+    /// reach the sweep and demolish picks use), and it is on no escort (a
+    /// running escort's squad: `vehicle_tasks` runs after the fort starts)
+    /// or transport task (a half-track job carries or waits for it, a ride
+    /// lock). Hunts and AT follows are this plan's `taken` already.
+    fn assign_free(&self, m: &Mine, site: FxVec2) -> bool {
+        let o = &self.g.setup.rules.ai.obstacles;
+        let reach = sq_m(Fx::from_int(o.sweep_reach_m.min(i32::MAX as u32) as i32));
+        let id = m.id;
+        (m.lead - site).length_sq_raw() <= reach
+            && !self.ai.escorts.values().any(|e| e.squads.contains(&id))
+            && !self.ai.transports.values().any(|t| t.squad == Some(id))
+            && !self.ai.ride_locks.contains_key(&id)
+    }
+
     /// S10c-ai C2 (`mine_assign` 1): the free squad (not in `taken` or
     /// `out`) from anywhere that can take front work `fort` on `line`
     /// (F5's threat, F10's carry rule), nearest the site first, then id;
-    /// independent of the point assignment (as `bunker_assign`).
+    /// independent of the point assignment (as `bunker_assign`). Fix pass
+    /// 2 (C-7): only within reach and off escort and transport tasks
+    /// ([`Self::assign_free`]).
     #[allow(clippy::too_many_arguments)]
     fn mine_assign_pick<'m>(
         &self,
@@ -873,6 +895,7 @@ impl super::Planner<'_> {
             .filter(|m| {
                 !taken.contains(&m.id)
                     && !out.contains(&m.id)
+                    && self.assign_free(m, site)
                     && self.can_take_at(m, fort, site, line, known, kv, true)
                     && self.front_carry_ok(m.id, fort, line)
             })
@@ -1289,6 +1312,38 @@ impl super::Planner<'_> {
         })
     }
 
+    /// Fix pass 2 (finding C-4): the part of side `side`'s log barrier
+    /// belt of point `i` still to build: from the start of its first
+    /// segment whose middle holds no own log barrier piece (within
+    /// `SITE_TAKEN_M`) to the line's end (as F6's `front_rest` for wire), so
+    /// a line ended after a segment is wanted again; None when every
+    /// segment stands (the belt is complete).
+    fn belt_log_rest(&self, i: usize, side: usize) -> Option<Vec<FxVec2>> {
+        let s = &self.g.setup;
+        let lf = fort_of(s, WorkKind::LogBarrier)?;
+        let d = &s.forts[lf as usize];
+        let full = self.belt_log(i, side)?;
+        let me = self.me;
+        let fs = &self.g.fort;
+        let tr = self.terrain;
+        let r = Fx::from_int(SITE_TAKEN_M);
+        let seg = Fx::from(d.segment).max(Fx::from_milli(100));
+        let len = (full[1] - full[0]).length();
+        let n = crate::fort::segments(&full, d.segment);
+        let at = |x: Fx| tr.clamp(crate::squad::point_along(&full, x.min(len)));
+        let first = (0..n).find(|&j| {
+            let p = (at(seg.mul_int(j as i32)) + at(seg.mul_int(j as i32 + 1))).div_int(2);
+            !fs.pieces
+                .values()
+                .any(|q| q.owner == me && q.fort == lf && q.part == 0 && near(q.pos, p, r))
+        })?;
+        if first == 0 {
+            return Some(full);
+        }
+        let line = vec![at(seg.mul_int(first as i32)), full[1]];
+        ((line[1] - line[0]).length() >= Fx::ONE).then_some(line)
+    }
+
     /// C4: the first free hedgehog site of point `i`'s belt row (its taken
     /// side, else side 0); None when a log barrier holds the belt or the
     /// row is full.
@@ -1307,13 +1362,30 @@ impl super::Planner<'_> {
 
     /// C4: whether point `i` wants (the next piece of) its belt: belts on,
     /// its AT row 1 laid (no AT job of the point running), no belt job
-    /// live there, and a free hedgehog site left (no log barrier belt).
+    /// live there, and a free hedgehog site left, or (fix pass 2, C-4) a
+    /// log barrier belt with a segment still to build.
     fn belt_wanted(&self, i: usize) -> bool {
         let s = &self.g.setup;
         self.belt_on()
             && fort_of(s, WorkKind::AtField).is_some_and(|f| self.at_row1_laid(i, f))
             && !self.front_live(i, WorkKind::Belt)
-            && self.belt_next(i).is_some()
+            && match self.belt_side(i) {
+                Some((side, WorkKind::LogBarrier)) => self.belt_log_rest(i, side).is_some(),
+                _ => self.belt_next(i).is_some(),
+            }
+    }
+
+    /// The blueprint a want of kind `k` at point `i` builds: `fort_of`,
+    /// except a belt whose taken side is a log barrier line (fix pass 2,
+    /// C-4: its rest is a log barrier job, not a hedgehog).
+    fn want_fort(&self, i: usize, k: WorkKind) -> Option<u16> {
+        let s = &self.g.setup;
+        if k == WorkKind::Belt
+            && let Some((_, WorkKind::LogBarrier)) = self.belt_side(i)
+        {
+            return fort_of(s, WorkKind::LogBarrier);
+        }
+        fort_of(s, k)
     }
 
     /// C4: whether fort job `j` builds a belt: belts on, a hedgehog or log
@@ -2406,7 +2478,7 @@ impl super::Planner<'_> {
                 if (hot && !front) || (front && !self.front_slot_free()) {
                     return None;
                 }
-                let (f, line) = (fort_of(s, k)?, self.point_site(i, k, None)?);
+                let (f, line) = (self.want_fort(i, k)?, self.point_site(i, k, None)?);
                 let site = mid_of(s.forts[f as usize].shape, &line);
                 // Fix pass 1 (finding B-3): a front work holds a builder
                 // only where `point_starts` could start it (R8 room, the
@@ -3383,7 +3455,8 @@ impl super::Planner<'_> {
                 if front && !self.front_slot_free() {
                     continue;
                 }
-                let (Some(mut fort), Some(mut line)) = (fort_of(s, k), self.point_site(i, k, None))
+                let (Some(mut fort), Some(mut line)) =
+                    (self.want_fort(i, k), self.point_site(i, k, None))
                 else {
                     continue;
                 };
@@ -4166,12 +4239,19 @@ impl super::Planner<'_> {
         }
         points.get(i)?;
         // C2: with `mine_assign` on, a fit builder from anywhere (so
-        // `no_builder` means none at all).
+        // `no_builder` means none at all). Fix pass 2 (C-8): the squads
+        // the starts read: those assigned to the point, and with
+        // `mine_assign` every free squad the C2 pick may pull
+        // (`assign_free`), not only the assigned ones.
         let anywhere = o.mine_assign != 0;
-        let fit: Vec<&Mine> = assigned
+        let here = |m: &Mine| {
+            assigned
+                .iter()
+                .any(|&(j, pi)| pi == i && mine.get(j).is_some_and(|x| x.id == m.id))
+        };
+        let fit: Vec<&Mine> = mine
             .iter()
-            .filter(|&&(_, pi)| anywhere || pi == i)
-            .map(|&(j, _)| &mine[j])
+            .filter(|m| here(m) || (anywhere && self.assign_free(m, site)))
             .filter(|m| {
                 !taken.contains(&m.id)
                     && !out.contains(&m.id)
@@ -5000,6 +5080,41 @@ impl crate::game::MatchState {
         }];
         let site = mid_of(FortShape::Line, line);
         p.front_threat(&known, &[], lead, site, line)
+    }
+
+    /// Test probe (fix pass 2, finding C-2): the length of `me`'s own
+    /// route of point `i` (C5's [`super::Planner::route_len_on`]: base ->
+    /// the point -> `route_out`) on the live vehicle block layer of its
+    /// route vehicle, standing pieces included; None: no such route.
+    pub(crate) fn own_route_len_probe(
+        &self,
+        ai: &mut super::AiState,
+        ents: &crate::ecs::Entities,
+        terrain: &crate::terrain::Heightfield,
+        me: PlayerId,
+        i: usize,
+    ) -> Option<Fx> {
+        let p = super::Planner {
+            g: self,
+            ai,
+            me,
+            ents,
+            terrain,
+            due: 0,
+            tick: 0,
+            quality: 100,
+            rng: crate::rng::RngStream::new(
+                self.setup.seed,
+                0,
+                crate::ecs::SimId(me.0 as u32),
+                crate::rng::Purpose::AI_PLAN,
+            ),
+            mortar_rays: super::mortar::PLAN_RAYS,
+            at_sites: Default::default(),
+            own_routes: Default::default(),
+        };
+        let ty = p.route_vehicle(me)?;
+        p.route_len_on(i, self.vderived.block_of(ty))
     }
 }
 

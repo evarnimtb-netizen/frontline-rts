@@ -1512,8 +1512,10 @@ impl Planner<'_> {
     /// None (`builder_cards_min` 0, habits off, no own point, enough
     /// builders alive or bought, no such card the AI buys: `ai_weight` 0,
     /// or an S10a card with `[ai.fort] cards` 0; its mix slot is not
-    /// needed).
-    fn builder_floor_card(&self, alive_by_type: &[u32]) -> Option<u16> {
+    /// needed). Fix pass 2 (finding C-6): a living builder squad counts
+    /// only at 60 % strength or more (a weaker one can take no fort job,
+    /// `can_take`); pending buys count.
+    fn builder_floor_card(&self) -> Option<u16> {
         let g = self.g;
         let s = &g.setup;
         let n = s.rules.ai.obstacles.builder_cards_min;
@@ -1530,11 +1532,25 @@ impl Planner<'_> {
                 && ty.has(Capability::BuildStructure)
                 && !ty.has(Capability::Breach)
         };
-        let alive: u32 = (0..s.squad_types.len())
-            .filter(|&t| is_builder(t))
-            .map(|t| alive_by_type[t])
-            .sum();
-        if alive >= n {
+        let fit = g
+            .squads
+            .values()
+            .filter(|q| {
+                let ty = &s.squad_types[q.type_idx as usize];
+                q.owner == self.me
+                    && is_builder(q.type_idx as usize)
+                    && q.members.len() as u32 * 100 >= 60 * ty.men.max(1) as u32
+            })
+            .count() as u32;
+        let pending = self
+            .ai
+            .pending
+            .iter()
+            .filter(|c| {
+                matches!(c.kind, CommandKind::CallIn { squad_type } if is_builder(squad_type as usize))
+            })
+            .count() as u32;
+        if fit + pending >= n {
             return None;
         }
         let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
@@ -1764,37 +1780,17 @@ impl Planner<'_> {
         };
         // S10c-ai C3 (`[ai.obstacles] builder_cards_min` N > 0): with the
         // fort habits on, an own point (a habit may want works there) and
-        // fewer than N own living builder squads (`place_mines` and
-        // `build_structure`, no `breach`; squads on a job and pending buys
-        // count), the faction's cheapest such card (roster order on a tie)
-        // comes before the weighted pick, if ready, affordable and inside
-        // the pop cap.
-        let mut urgent_builder = self.builder_floor_card(&alive_by_type);
+        // fewer than N own living builder squads at 60 % strength or more
+        // (`place_mines` and `build_structure`, no `breach`; squads on a
+        // job and pending buys count), the faction's cheapest such card
+        // (roster order on a tie) comes before the weighted pick, if ready,
+        // affordable and inside the pop cap. Fix pass 2 (finding C-6): it
+        // comes after the urgent buys: the urgent breach card first (as
+        // before the floor), then an urgent AT team (more enemy vehicles in
+        // sight than own AT teams and vehicles, an AT card ready), then
+        // the floor.
+        let mut urgent_builder = self.builder_floor_card();
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
-            if let Some(t) = urgent_builder.take()
-                && ready(t, &bought, &alive_by_type)
-            {
-                let ty = &s.squad_types[t as usize];
-                let men = ty.pop(&s.vehicles) as i64;
-                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
-                    self.ai
-                        .emit(self.due, CommandKind::CallIn { squad_type: t });
-                    budget -= ty.cost as i64;
-                    pop += men;
-                    bought.push(t);
-                    alive_by_type[t as usize] += 1;
-                    if let Some(r) = mix_slot(s, t) {
-                        counts[r] += 1;
-                    }
-                    let c = &mut self.ai.counters;
-                    if c.bought.len() < s.squad_types.len() {
-                        c.bought.resize(s.squad_types.len(), 0);
-                    }
-                    c.bought[t as usize] += 1;
-                    c.builder_buys += 1;
-                    continue;
-                }
-            }
             if let Some(t) = urgent_breach.take()
                 && ready(t, &bought, &alive_by_type)
             {
@@ -1815,6 +1811,41 @@ impl Planner<'_> {
                         c.bought.resize(s.squad_types.len(), 0);
                     }
                     c.bought[t as usize] += 1;
+                    continue;
+                }
+            }
+            // The urgent AT rule of the weighted pick below, with an AT
+            // card ready: the floor waits for a later buy.
+            let at_due = urgent_builder.is_some()
+                && at_slot.is_some_and(|a| {
+                    mix[a] > 0
+                        && cards[a].iter().any(|&t| ready(t, &bought, &alive_by_type))
+                        && 2 * armoured as i64
+                            > 2 * (count_of(&counts, at_slot) + count_of(&counts, veh_slot))
+                                + pzf_squads
+                });
+            if !at_due
+                && let Some(t) = urgent_builder.take()
+                && ready(t, &bought, &alive_by_type)
+            {
+                let ty = &s.squad_types[t as usize];
+                let men = ty.pop(&s.vehicles) as i64;
+                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                    self.ai
+                        .emit(self.due, CommandKind::CallIn { squad_type: t });
+                    budget -= ty.cost as i64;
+                    pop += men;
+                    bought.push(t);
+                    alive_by_type[t as usize] += 1;
+                    if let Some(r) = mix_slot(s, t) {
+                        counts[r] += 1;
+                    }
+                    let c = &mut self.ai.counters;
+                    if c.bought.len() < s.squad_types.len() {
+                        c.bought.resize(s.squad_types.len(), 0);
+                    }
+                    c.bought[t as usize] += 1;
+                    c.builder_buys += 1;
                     continue;
                 }
             }
