@@ -334,6 +334,43 @@ Spec `docs/slices/S10c-ai.md` 10 (the first option is (A)); log `docs/slices/S10
   - The front AT row waits behind FrontAp and wire (`at_wait` in the log; options A and B there, not decided).
   - Not run yet: the full release suite (`check.sh tests`), `tools/verify.sh` and GitHub CI on the branch.
 
+## S11a1 open owner questions (asked 2026-11-16 by the Plan stage; each runs on (A): "assumed overnight 2026-11-16, owner asleep")
+
+Spec `docs/slices/S11a1.md` 11; log `docs/slices/S11a1-log.md`; targets `docs/slices/targets/S11a1.toml`. Nothing is
+measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share targets" is met (S5b 13.3-13.9 %, S6
+19.4 %, cap 26.3 %; S10c-ai 19.8 %), so it is not a question.
+
+- S11a1-1 Split of S11a. (A) Two slices as the design's critic note proposes: S11a1 (gun fire missions, radio
+  observers, leIG 18 and 105 mm M3, basic AI, preparation fire for the breach) and S11a2 (crate-only shells, friendly
+  fire, registration, counter-battery, displacement, defensive fire). **(A) assumed overnight 2026-11-16, owner
+  asleep.** (B) One slice S11a (about 0.9x S3; not buildable in three stages).
+- S11a1-2 Shells in S11a1. (A) Infantry guns rearm in base at the S9 shell price (every shell paid; the AI keeps a
+  25 % budget) until S11a2 adds crates at the gun and AI crate carrying; switch `[supply] arty_base_rearm`. **(A)
+  assumed overnight 2026-11-16, owner asleep.** (B) HQ, dump and truck only now: an AI gun in base fires one load
+  (10-12 rounds) a card. Either way Q4's "the base does not refill guns" becomes the default in S11a2.
+- S11a1-3 Friendly fire from indirect HE (Q22, decided yes for S11a). (A) Built in S11a2 behind its own switch and
+  ablation, because it changes every mortar mission of both sides; until then the AI lifts fire with own men within
+  50 m and a human's own shells do not hurt his men. **(A) assumed overnight 2026-11-16, owner asleep.** (B) In S11a1.
+- S11a1-4 Tows. (A) Both gun cards come without a tow; the AI emplaces the gun where it arrives (in base: both guns
+  cover Kessel Ridge from there); tow variants, siting and displacement in S11a2. **(A) assumed overnight 2026-11-16,
+  owner asleep.** (B) The M3 card brings a CCKW now (380 + tow); the AI still does not move it.
+- S11a1-5 Prices and caps. (A) leIG 18 320 MP (gun cards have no German cut, S9-4), 105 mm M3 380, VB-Trupp 80 (the
+  roster's 100 less the German 20 % cut, S5a-37), FO Party 120; guns at most 2 alive, unlock 3:00 / 4:00; the AI buys
+  at most one gun and one observer team. **(A) assumed overnight 2026-11-16, owner asleep.** (B) VB-Trupp 100 (no cut
+  for a support team).
+- S11a1-6 Preparation fire. (A) Only the breach job waits for it, at most 60 s; ordinary assaults go as today.
+  **(A) assumed overnight 2026-11-16, owner asleep.** (B) Every assault on a point with a known trench holds its first
+  bound 60 s for the guns (design 6.4; changes every attack, so it needs its own ablation: S11a2 candidate).
+- S11a1-7 Breach target T131. (A) Hard: with preparation fire the staged AI breach opens the wire and places its
+  charge in at least 60 % of 20 runs (the S10a-16 (A) bar; 30 % today), attackers' losses a report. **(A) assumed
+  overnight 2026-11-16, owner asleep.** (B) A report until S11a2. Note: breach jobs still do not START in matches
+  (T123, S10c-6); preparation fire does not change that.
+- S11a1-8 HEAT rounds (Igr 38 HL, M67). (A) In S11a2 (2 a gun, rare cap), so this slice's measure does not move the
+  armour rows. **(A) assumed overnight 2026-11-16, owner asleep.** (B) Now.
+- S11a1-9 Human play before a presenter pass. (A) The four cards are buyable on the branch although the HUD has no
+  gun fire-mission tool and no model for them; a presenter pass and the `godot` headless tests come before a merge to
+  main is asked. **(A) assumed overnight 2026-11-16, owner asleep.** (B) Add a `hidden` card key and hide them first.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -356,6 +393,7 @@ Spec `docs/slices/S10c-ai.md` 10 (the first option is (A)); log `docs/slices/S10
 13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Questions S10b-ai-E1 and E3-E8 are all decided (see above).
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), not on main.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
+16. **S11a1: planned 2026-11-16 on branch `claude/project-thread-e7nsak` (base `730e67f`), nothing built.** Spec `docs/slices/S11a1.md` (S11a2 outline in its section 12), stages `S11a1-build-A.md`, `-B.md`, `-C.md`, log `S11a1-log.md`, targets `S11a1.toml`. Stages: Build A (SAVE 27 layout, keys, solver and mask, gun fire missions, radio link), Build B (leIG 18, 105 mm M3, VB-Trupp, FO Party, fortify rows, JSON; gate T128-T130), Build C (artillery AI, preparation fire for the breach), measure and ablations, Review, Fix, verify, Docs. Owner questions S11a1-1..9 above, all assumed on (A).
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

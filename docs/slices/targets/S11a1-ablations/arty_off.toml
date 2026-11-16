@@ -1,0 +1,3 @@
+# S11a1 ablation: the AI buys no infantry gun (A1 off; observers and prep then have nothing to do for guns).
+[ai.arty]
+buy = 0

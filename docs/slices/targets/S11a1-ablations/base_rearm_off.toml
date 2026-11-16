@@ -1,0 +1,3 @@
+# S11a1 ablation (owner question S11a1-2 (B)): infantry guns do not rearm in base (HQ, dump, truck only).
+[supply]
+arty_base_rearm = 0
