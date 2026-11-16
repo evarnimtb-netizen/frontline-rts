@@ -156,16 +156,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // B1-5 (`[ai.fort] build_after_s`, `build_min_squads`) changed it; the
 // hold_max values were 0x70fe1d236b6c3536, 0xdb2c08dad1cd5288,
 // 0x6bf2340bb8651f64, 0x70fe1d236b6c3536, 0x8a04fcd06bb1a586,
-// 0x1a6a1fe9fc9e0b87.
+// 0x1a6a1fe9fc9e0b87. S10c-ai Build A (twelve `[ai.obstacles]` keys at
+// their off values) changed it; the B1-5 values were 0x3fda6cc1e7f9652d,
+// 0x12007755d5f26050, 0x05deb39271659bd5, 0x3fda6cc1e7f9652d,
+// 0xfe6544dc30f25cd8, 0x45a2537d719f0f76.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x3fda6cc1e7f9652d),
-    ("skirmish usa-ger seed 7 hard", 0x12007755d5f26050),
-    ("test_unlock ger-usa seed 1 normal", 0x05deb39271659bd5),
-    ("example override ger-usa seed 1 normal", 0x3fda6cc1e7f9652d),
-    ("human ger vs ai usa seed 3 easy", 0xfe6544dc30f25cd8),
+    ("skirmish ger-usa seed 1 normal", 0x9593ad852cb77c7f),
+    ("skirmish usa-ger seed 7 hard", 0xc4ca2fa4e0ae9a91),
+    ("test_unlock ger-usa seed 1 normal", 0x3d7b158596ff4ef5),
+    ("example override ger-usa seed 1 normal", 0x9593ad852cb77c7f),
+    ("human ger vs ai usa seed 3 easy", 0x9fc35b22ef854e62),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x45a2537d719f0f76,
+        0xf8178a4c8cd678c8,
     ),
 ];
 

@@ -450,8 +450,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// suspects_seen}`, `AiFortJob::start`, fourteen `AiCounters`,
 /// `FortState::blasts`, four `FortAccount` counters; in the setup
 /// `[ai.obstacles]`, four `[fortify]` mine path keys and `[ai.truck]
-/// refusal_memory`). One bump for the whole slice.
-const SAVE_VERSION: u32 = 25;
+/// refusal_memory`). One bump for the whole slice. 26: S10c-ai (fourteen
+/// `AiCounters` fields with `front_why` and `mine_want_why`; in the setup
+/// twelve `[ai.obstacles]` keys). One bump for the whole slice.
+const SAVE_VERSION: u32 = 26;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2884,6 +2886,9 @@ mod s10b_gap_tests;
 #[cfg(test)]
 #[path = "s10b_tests.rs"]
 mod s10b_tests;
+#[cfg(test)]
+#[path = "s10c_ai_tests.rs"]
+mod s10c_ai_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

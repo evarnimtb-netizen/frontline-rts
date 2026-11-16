@@ -220,6 +220,7 @@ impl super::Planner<'_> {
         job.give_up(at);
         if self.g.setup.rules.ai.truck.refusal_memory != 0 {
             self.ai.refuse(JobKind::TruckGoal, at, self.tick);
+            self.ai.counters.truck_give_ups += 1;
             self.ai.counters.s10b_refused += 1;
         }
     }

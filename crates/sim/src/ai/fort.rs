@@ -82,6 +82,40 @@ pub const BUNKER_WHY: [&str; 16] = [
     "end_failed",
     "end_done",
 ];
+/// S10c-ai (review finding 12): names of `AiCounters::mine_want_why`, the
+/// first check that kept an R1 (AP) or R2 (AT) field from starting at an
+/// own point, per plan (AT fields on `recheck_s` plans only, as R2): the
+/// trench not done or the point threatened (`build_threat_max`); the AP
+/// field waits for the wire; a cap (`fields_per_point`, `at_fields_max`,
+/// the blueprint limit); no site; a young refusal there (L4); no job slot
+/// (`builders_max`, `jobs_max`); no fit free builder assigned there (60 %,
+/// caps, materials); every fit builder or the site has a known enemy near.
+pub const MINE_WANT_WHY: [&str; 8] = [
+    "not_own_or_trench",
+    "wire_first",
+    "cap",
+    "no_site",
+    "refused",
+    "slot",
+    "no_builder",
+    "threat",
+];
+/// S10c-ai (Build B): names of `AiCounters::front_why`, the first check
+/// that kept a wanted front work from starting (as `BUNKER_WHY`).
+pub const FRONT_WHY: [&str; 12] = [
+    "no_front",
+    "lane_none",
+    "site_bad",
+    "cap",
+    "refused",
+    "slot",
+    "builders_max",
+    "no_builder",
+    "no_carry",
+    "no_budget",
+    "threat_squad",
+    "threat_site",
+];
 /// Loads a job asks for before it goes with what it has.
 const LOAD_TRIES: u8 = 2;
 /// A nest, dugout or wall "exists" near its site within this (m).
@@ -342,6 +376,29 @@ pub(crate) fn job_max_s(s: &MatchSetup, fort: u16) -> u64 {
     } else {
         o.job_max_s as u64
     }
+}
+
+/// S10c-ai F1: the `[ai.obstacles] front_points` points `me` owns nearest
+/// the enemy base (straight distance, ties by index), nearest first. With
+/// one own point that point is the front. Reads state only.
+pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<usize> {
+    let s = &g.setup;
+    let n = s.rules.ai.obstacles.front_points as usize;
+    let Some(enemy) = (0..s.players.len() as u8).map(PlayerId).find(|&o| o != me) else {
+        return Vec::new();
+    };
+    let eb = g.base_of(enemy);
+    let mut own: Vec<(u64, usize)> = g
+        .points
+        .iter()
+        .zip(&s.map.points)
+        .enumerate()
+        .filter(|(_, (c, _))| c.owner == Some(me))
+        .map(|(i, (_, ps))| ((FxVec2::from(ps.pos) - eb).length_sq_raw(), i))
+        .collect();
+    own.sort_unstable();
+    own.truncate(n);
+    own.into_iter().map(|(_, i)| i).collect()
 }
 
 fn near(a: FxVec2, b: FxVec2, m: Fx) -> bool {
@@ -642,6 +699,7 @@ impl super::Planner<'_> {
         let at = (first[0] + first[first.len() - 1]).div_int(2);
         self.ai.refuse(JobKind::Fort, at, self.tick);
         self.ai.counters.own_route_rejects += 1;
+        self.ai.counters.route_refusals += 1;
         self.ai.counters.s10b_refused += 1;
         None
     }
@@ -2296,6 +2354,7 @@ impl super::Planner<'_> {
         if self.build_gate_open() {
             self.point_starts(mine, assigned, points, known, kv, taken, &mut out, false);
             self.bunker_why(mine, assigned, points, known, kv, taken, &out);
+            self.mine_want_why(mine, assigned, points, known, kv, taken, &out);
             if switched_on(s, WorkKind::Roof) && self.job_room(0) {
                 self.start_roof(mine, known, kv, taken, &mut out);
             }
@@ -2895,6 +2954,152 @@ impl super::Planner<'_> {
         11
     }
 
+    /// S10c-ai F1: this player's front points (`front_points_of`).
+    pub(super) fn front_points(&self) -> Vec<usize> {
+        front_points_of(self.g, self.me)
+    }
+
+    /// S10c-ai: `front_plans` and `front_calm_plans` (no known enemy
+    /// within `[ai] threat_radius` of any front point). Every plan, every
+    /// switch value: it reads state only (the gate of spec 8).
+    pub(super) fn front_count(&mut self, known: &[Known], kv: &[KnownVehicle]) {
+        let front = self.front_points();
+        if front.is_empty() {
+            return;
+        }
+        let at: Vec<FxVec2> = front
+            .iter()
+            .map(|&i| self.g.setup.map.points[i].pos.into())
+            .collect();
+        let calm = !self.fort_threat(known, kv, &at);
+        let c = &mut self.ai.counters;
+        c.front_plans += 1;
+        if calm {
+            c.front_calm_plans += 1;
+        }
+    }
+
+    /// S10c-ai (review finding 12): `mine_want_why` for each own point
+    /// whose R1 (AP) or R2 (AT) field is switched on and not laid nor
+    /// being laid (`MINE_WANT_WHY`). Called after `point_starts`, beside
+    /// `bunker_why`; reads state only (the R2 site search fills only this
+    /// plan's `at_sites` memo).
+    #[allow(clippy::too_many_arguments)]
+    fn mine_want_why(
+        &mut self,
+        mine: &[Mine],
+        assigned: &[(usize, usize)],
+        points: &[PointEval],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &[SquadId],
+    ) {
+        let s = &self.g.setup;
+        if !s10b_on(s) || !switched_on(s, WorkKind::ApField) {
+            return;
+        }
+        let mut whys = Vec::new();
+        for (i, p) in points.iter().enumerate() {
+            if p.rel != Rel::Own {
+                continue;
+            }
+            for k in [WorkKind::ApField, WorkKind::AtField] {
+                if let Some(why) = self.mine_block(i, p, k, mine, assigned, known, kv, taken, out) {
+                    whys.push(why);
+                }
+            }
+        }
+        for why in whys {
+            self.ai.counters.mine_want_why[why] += 1;
+        }
+    }
+
+    /// The `MINE_WANT_WHY` index for field kind `k` at own point `i`, or
+    /// None when it is not counted (switched off, laid, a job lays it, an
+    /// AT field off a `recheck_s` plan, or nothing keeps it from starting).
+    #[allow(clippy::too_many_arguments)]
+    fn mine_block(
+        &self,
+        i: usize,
+        p: &PointEval,
+        k: WorkKind,
+        mine: &[Mine],
+        assigned: &[(usize, usize)],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &[SquadId],
+    ) -> Option<usize> {
+        let s = &self.g.setup;
+        if !switched_on(s, k) || (k == WorkKind::AtField && !self.recheck_plan()) {
+            return None;
+        }
+        let f = fort_of(s, k)?;
+        if !p.trench_done || p.threat >= s.rules.ai.fort.build_threat_max {
+            return Some(0);
+        }
+        match self.field_has(i, k, f) {
+            Some(true) => return None,
+            None => return Some(3),
+            Some(false) => {}
+        }
+        if self
+            .ai
+            .forts
+            .values()
+            .any(|j| j.fort == f && j.point as usize == i && j.phase != FortPhase::Done)
+        {
+            return None;
+        }
+        if k == WorkKind::ApField
+            && self.ap_after_wire()
+            && self.point_has(i, WorkKind::Wire) != Some(true)
+        {
+            return Some(1);
+        }
+        if !self.field_wants(i).contains(&k) {
+            return Some(2);
+        }
+        let Some(line) = self.point_site(i, k, None) else {
+            return Some(3);
+        };
+        if !self.job_room(0) || !self.s10b_room() {
+            return Some(5);
+        }
+        if !self.under_limit(f, &line) {
+            return Some(2);
+        }
+        let site = mid_of(s.forts[f as usize].shape, &line);
+        if self.refused_here(site) {
+            return Some(4);
+        }
+        let d = &s.forts[f as usize];
+        let fit: Vec<&Mine> = assigned
+            .iter()
+            .filter(|&&(_, pi)| pi == i)
+            .map(|&(j, _)| &mine[j])
+            .filter(|m| {
+                !taken.contains(&m.id)
+                    && !out.contains(&m.id)
+                    && m.strength_pct >= 60
+                    && builds(m.caps)
+                    && (m.caps & (1u32 << d.capability) != 0 || heavy_by_field(d, m.caps))
+                    && self.can_supply(m.id, f, site)
+            })
+            .collect();
+        if fit.is_empty() {
+            return Some(6);
+        }
+        if fit
+            .iter()
+            .all(|m| self.fort_threat(known, kv, &[m.lead, site]))
+        {
+            return Some(7);
+        }
+        None
+    }
+
     fn s10b_room(&self) -> bool {
         let s = &self.g.setup;
         let n = self
@@ -2971,6 +3176,7 @@ impl super::Planner<'_> {
         if failed {
             let at = mid_of(s.forts[job.fort as usize].shape, &job.line);
             self.ai.refuse(JobKind::Fort, at, self.tick);
+            self.ai.counters.fort_job_fails += 1;
             self.ai.counters.s10b_refused += 1;
         }
     }

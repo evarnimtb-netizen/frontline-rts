@@ -598,7 +598,7 @@ const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
 /// reached (the truck's 180 s drop limit ends it); the refusal is at the
 /// HQ. Control: `refusal_memory` 0 -> no refusal (the check fails: "no
 /// refusal", seen).
-fn truck_row() -> (World, Stage) {
+pub(crate) fn truck_row() -> (World, Stage) {
     use frontline_content::setup::StockKind;
     let mut w = ai_world();
     let hq_at = c(700, 700);
@@ -689,7 +689,7 @@ fn sweep_row() -> (World, Stage) {
 /// AI is taken out; the row's state keeps its trench. Control: `refused_s`
 /// 0 -> each refusal is followed by a restart the same plan (one job alive
 /// to the end: the check fails, seen).
-fn fort_row() -> (World, Stage) {
+pub(crate) fn fort_row() -> (World, Stage) {
     use super::s10b_ai_lay_tests::{held, squad_at};
     let (mut w, h) = held(|s| {
         s.rules.ai.fort.wire = 0;

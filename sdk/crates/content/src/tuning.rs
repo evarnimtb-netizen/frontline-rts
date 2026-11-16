@@ -1861,7 +1861,77 @@ tuning_table! {
         /// waits for material its squad does not carry gives up the S10b
         /// job slot (`jobs_max`), so one other S10b job may start.
         bunker_yields: 0..=1 = "d_obst_one",
+        /// S10c-ai switch (F1-F9, docs/slices/S10c-ai.md 2): hasty works
+        /// (AP field, wire, AT field) on the enemy approach lanes of the
+        /// front points, with no trench, nest or wire first. Off: 0.
+        front: 0..=1 = "d_obst_zero",
+        /// S10c-ai switch (C2): a wanted front work with no fit squad at
+        /// its point takes one free builder from anywhere. Off: 0.
+        mine_assign: 0..=1 = "d_obst_zero",
+        /// S10c-ai switch (C4): a blocking belt across the vehicle lane
+        /// beyond a front point's AT field. Off: 0.
+        belt: 0..=1 = "d_obst_zero",
+        /// S10c-ai (F1): the own points nearest the enemy base that are
+        /// front points.
+        front_points: 0..=8 = "d_obst_front_points",
+        /// S10c-ai (F3): the front wire lies this far out along the foot
+        /// lane (m; the AP field `ap_beyond_wire_m` beyond it).
+        front_out_m: 0..=500 = "d_obst_front_out_m",
+        /// S10c-ai (F3): length of a front wire line (m).
+        front_wire_len_m: 0..=500 = "d_obst_front_wire_len_m",
+        /// S10c-ai (F5): a front job does not start, and is dropped, while
+        /// a known enemy is this close to its site (m; the builder keeps
+        /// `[ai] threat_radius`).
+        front_site_threat_m: 0..=500 = "d_obst_front_site_threat_m",
+        /// S10c-ai (F7): front AP fields per player.
+        front_fields_max: 0..=16 = "d_obst_front_fields_max",
+        /// S10c-ai (C4): blocking pieces in a belt ...
+        belt_pieces: 0..=20 = "d_obst_belt_pieces",
+        /// ... this far beyond the AT field, on the enemy side (m).
+        belt_gap_m: 0..=500 = "d_obst_belt_gap_m",
+        /// S10c-ai (C5): the own route round a belt may be at most this
+        /// share of the route without it (%; 0 = rule off).
+        belt_detour_pct: 0..=1000 = "d_obst_belt_detour_pct",
+        /// S10c-ai (C3): with fewer living builder squads than this the
+        /// next buy is the faction's builder card (0 = off).
+        builder_cards_min: 0..=8 = "d_obst_zero",
     }
+}
+
+fn d_obst_zero() -> u32 {
+    0
+}
+
+fn d_obst_front_points() -> u32 {
+    2
+}
+
+fn d_obst_front_out_m() -> u32 {
+    50
+}
+
+fn d_obst_front_wire_len_m() -> u32 {
+    40
+}
+
+fn d_obst_front_site_threat_m() -> u32 {
+    50
+}
+
+fn d_obst_front_fields_max() -> u32 {
+    2
+}
+
+fn d_obst_belt_pieces() -> u32 {
+    5
+}
+
+fn d_obst_belt_gap_m() -> u32 {
+    10
+}
+
+fn d_obst_belt_detour_pct() -> u32 {
+    130
 }
 
 fn d_obst_one() -> u32 {
@@ -1922,6 +1992,18 @@ impl Default for AiObstacleTuning {
             at_rows: d_obst_at_rows(),
             demolish_handover: d_obst_one(),
             bunker_yields: d_obst_one(),
+            front: d_obst_zero(),
+            mine_assign: d_obst_zero(),
+            belt: d_obst_zero(),
+            front_points: d_obst_front_points(),
+            front_out_m: d_obst_front_out_m(),
+            front_wire_len_m: d_obst_front_wire_len_m(),
+            front_site_threat_m: d_obst_front_site_threat_m(),
+            front_fields_max: d_obst_front_fields_max(),
+            belt_pieces: d_obst_belt_pieces(),
+            belt_gap_m: d_obst_belt_gap_m(),
+            belt_detour_pct: d_obst_belt_detour_pct(),
+            builder_cards_min: d_obst_zero(),
         }
     }
 }

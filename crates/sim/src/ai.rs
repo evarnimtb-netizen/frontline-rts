@@ -207,7 +207,9 @@ pub use transport::{
 pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
 };
-pub use fort::{AiFortJob, BUNKER_WHY, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
+pub use fort::{
+    AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES, MINE_WANT_WHY,
+};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
     AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
@@ -658,6 +660,36 @@ pub struct AiCounters {
     /// `bunkers_max` and no bunker job, the first check that kept one from
     /// starting; and how bunker jobs ended (`fort::BUNKER_WHY` order).
     pub bunker_why: [u32; 16],
+    /// S10c-ai (docs/slices/S10c-ai.md 3), the refusal split: S10b fort
+    /// jobs ended failed (`s10b_end`), truck give-ups remembered (L5) and
+    /// own-route (R6) rejects that wrote an L3 refusal. `s10b_refused` is
+    /// still their sum plus the sweep and demolition refusals.
+    pub fort_job_fails: u32,
+    pub truck_give_ups: u32,
+    pub route_refusals: u32,
+    /// S10c-ai: plans with at least one front point (`fort::front_points`),
+    /// and of those the plans with no known enemy within `[ai]
+    /// threat_radius` of any front point (counted with `front` 0 too).
+    pub front_plans: u32,
+    pub front_calm_plans: u32,
+    /// S10c-ai (Build B): front jobs started, dropped by the site threat
+    /// rule (F5), ended by the squad gone or under 60 %, resumed (F6).
+    pub front_jobs: u32,
+    pub front_drops: u32,
+    pub front_lost: u32,
+    pub front_resumes: u32,
+    /// S10c-ai (Build B): the first check that kept a wanted front work
+    /// from starting (`fort::FRONT_WHY` order).
+    pub front_why: [u32; 12],
+    /// S10c-ai (review finding 12): per plan and own point whose R1 or R2
+    /// field is switched on and not laid, the first check that kept it from
+    /// starting (`fort::MINE_WANT_WHY` order).
+    pub mine_want_why: [u32; 8],
+    /// S10c-ai (Build C): belt jobs started, belt sites rejected by the
+    /// own-route detour rule (C5), builder cards bought by the floor (C3).
+    pub belt_jobs: u32,
+    pub belt_route_rejects: u32,
+    pub builder_buys: u32,
 }
 
 impl AiState {
@@ -1328,6 +1360,8 @@ impl Planner<'_> {
         self.buy_gun();
         let mut points = self.evaluate_points(&known, &kv);
         self.fort_points(&mut points);
+        // S10c-ai: front exposure (counters only, every plan).
+        self.front_count(&known, &kv);
         self.gun_jobs(&guns, &mut mine, &points, &known, &kv);
         self.fort_holds(&mine, &known, &kv, &mut points);
         let assigned = self.assign(&mine, &mut points);
