@@ -924,6 +924,19 @@ impl super::Planner<'_> {
         ty: &VehicleSetup,
         scratch: &mut PathScratch,
     ) -> Option<Vec<FxVec2>> {
+        self.gun_route_on(from, to, ty, self.g.vderived.block_of(ty), scratch)
+    }
+
+    /// [`Self::gun_route`] on block layer `block` (S10c-ai C5: the layer
+    /// with a belt's nodes blocked).
+    pub(super) fn gun_route_on(
+        &self,
+        from: FxVec2,
+        to: FxVec2,
+        ty: &VehicleSetup,
+        block: &crate::vehicle::BlockLayer,
+        scratch: &mut PathScratch,
+    ) -> Option<Vec<FxVec2>> {
         let s = &self.g.setup;
         let mv = &s.rules.movement;
         let cost = PathCost {
@@ -933,7 +946,7 @@ impl super::Planner<'_> {
             ditch_cost_pct: mv.ditch_cost_pct,
         };
         let veh = VehiclePathCost {
-            block: self.g.vderived.block_of(ty),
+            block,
             avoid: None,
             costs: &s.rules.vehicles.path,
             mines: None,

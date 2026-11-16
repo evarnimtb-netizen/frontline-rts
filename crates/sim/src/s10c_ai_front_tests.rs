@@ -1385,3 +1385,328 @@ fn ai_builder_floor_never_overbuys() {
     assert!(most <= 2, "never above the floor: {most}");
     assert_eq!(ai_ro(&w).counters.builder_buys, 3);
 }
+
+// ------------------------------------------------ Build C chunk 2 (C4-C7) --
+
+const BAU: &str = "ww2:ger_baupioniergruppe";
+/// How far out the staged AT row lies (the R2 `at_out_m`).
+const AT_OUT: i32 = 60;
+
+/// The staged belt (C4): [`scene`] with `belt` on, the point wire off and
+/// one AT row (`at_rows` 1); the enemy owns `near`, C's lane is found (3 s)
+/// and its FrontAp marked done; ten own AT mines 4 m apart lie on a row
+/// across the straight way C -> `near`, `AT_OUT` m from C (the field's row
+/// 1, laid). Returns the world, the front, `u` (unit, C toward `near`) and
+/// `v` (along the row).
+fn belt_scene(
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, Front, FxVec2, FxVec2) {
+    let (mut w, f) = scene(|s| {
+        s.rules.ai.obstacles.belt = 1;
+        s.rules.ai.obstacles.at_rows = 1;
+        s.rules.ai.obstacles.bunker = 0;
+        s.rules.ai.fort.wire = 0;
+        edit(s);
+    });
+    own_by(&mut w, f.near, Some(0));
+    play(&mut w, 3);
+    let own = f.own;
+    let l = ai_mut(&mut w)
+        .front_lanes
+        .iter_mut()
+        .find(|l| l.point as usize == own)
+        .expect("C's lane");
+    l.ap_done = true;
+    l.wire_done = true;
+    let u = (pos_of(&w, f.near) - f.pos).normalize_or_zero();
+    let v = u.perp();
+    let at = fort(&w, "ww2:at_minefield");
+    for k in 0..10 {
+        let p = f.pos + u * Fx::from_int(AT_OUT) + v * Fx::from_int(4 * k - 18);
+        w.lay_mine_now(at, p, PlayerId(1)).expect("an AT mine");
+    }
+    (w, f, u, v)
+}
+
+/// Staged supply: squad `id` carries at least `kg` again (a belt is over
+/// any squad's carry and F10 sends no front squad walking home, so in a
+/// match its later pieces come by truck; the tests stage that run).
+fn refill(w: &mut World, id: SquadId, kg: u32) {
+    w.edit_fort(|f| {
+        let g = f.carried_g.entry(id).or_insert(0);
+        *g = (*g).max(kg * 1000);
+    });
+}
+
+/// Plays `secs`, refilling `ids` to `kg` each second, until `done`.
+fn play_fed(
+    w: &mut World,
+    ids: &[SquadId],
+    kg: u32,
+    secs: u64,
+    mut done: impl FnMut(&World) -> bool,
+) -> bool {
+    for _ in 0..secs {
+        if done(w) {
+            return true;
+        }
+        for &id in ids {
+            refill(w, id, kg);
+        }
+        play(w, 1);
+    }
+    done(w)
+}
+
+/// The five belt sites C4 puts the row on: 10 m (`belt_gap_m`) beyond the
+/// staged row, 4 m apart, centred on the lane.
+fn belt_sites(f: &Front, u: FxVec2, v: FxVec2) -> Vec<FxVec2> {
+    (-2..=2)
+        .map(|k| f.pos + u * Fx::from_int(AT_OUT + 10) + v * Fx::from_int(4 * k))
+        .collect()
+}
+
+/// How many of `sites` have a player 1 piece of blueprint `f` within 2 m.
+fn pieces_at(w: &World, f: u16, sites: &[FxVec2]) -> usize {
+    let fs = w.game().unwrap().fort();
+    sites
+        .iter()
+        .filter(|&&p| {
+            fs.pieces.values().any(|q| {
+                q.owner == PlayerId(1)
+                    && q.fort == f
+                    && (q.pos - p).length() <= Fx::from_int(2)
+            })
+        })
+        .count()
+}
+
+/// Player 1's pieces of blueprint `f`.
+fn pieces_of(w: &World, f: u16) -> Vec<FxVec2> {
+    w.game()
+        .unwrap()
+        .fort()
+        .pieces
+        .values()
+        .filter(|q| q.owner == PlayerId(1) && q.fort == f)
+        .map(|q| q.pos)
+        .collect()
+}
+
+/// C4: once a front point's AT row 1 is laid, a Baupioniere squad (100 kg,
+/// staged supply: [`refill`]) builds the belt: five hedgehogs 4 m apart across the lane, 10 m beyond
+/// the field on the enemy side (`belt_jobs` 5, one per piece); a US
+/// engineer squad (no `build_heavy`; 500 kg staged) builds one log barrier line
+/// there instead (S10c-4 (A); `belt_jobs` 1). Control: `belt` 0 -> no
+/// piece, no belt job (seen failing as "five hedgehogs").
+#[test]
+fn ai_builds_a_belt_before_its_at_field() {
+    let go = |belt: u32, card: &str, kg: u32, id: &str| {
+        let (mut w, f, u, v) = belt_scene(|s| s.rules.ai.obstacles.belt = belt);
+        let sq = squad_at(&mut w, card, f.pos, kg);
+        let b = fort(&w, id);
+        let sites = belt_sites(&f, u, v);
+        play_fed(&mut w, &[sq], kg, 1500, |w| pieces_at(w, b, &sites) >= 5);
+        let beyond = pieces_of(&w, b)
+            .iter()
+            .all(|&p| (p - f.pos).dot(u) > Fx::from_int(AT_OUT));
+        (
+            pieces_at(&w, b, &sites),
+            ai_ro(&w).counters.belt_jobs,
+            beyond,
+            pieces_of(&w, b).len(),
+        )
+    };
+    let (n, jobs, beyond, all) = go(1, BAU, 100, "ww2:hedgehog");
+    assert_eq!(n, 5, "five hedgehogs on the belt sites");
+    assert_eq!((jobs, all), (5, 5), "one job per hedgehog, no other");
+    assert!(beyond, "beyond the field");
+    let (n, jobs, beyond, _) = go(1, ENG, 500, "ww2:log_barrier");
+    assert_eq!(n, 5, "a log barrier line across the lane");
+    assert_eq!(jobs, 1, "one belt job");
+    assert!(beyond, "beyond the field");
+    let (n, jobs, _, all) = go(0, BAU, 100, "ww2:hedgehog");
+    assert_eq!((n, jobs, all), (0, 0, 0), "control: belt 0");
+}
+
+/// C4 "one belt per lane", job table row Belt: two Baupioniere squads with
+/// two front slots never run two belt jobs at once and build five
+/// hedgehogs, no more (`belt_jobs` 5). Then the AT field is swept (its
+/// mines removed; `at_mines` 0 so it is not laid again): the belt stays
+/// and no belt job starts without row 1. Control (code edit): drop the
+/// "no live belt job" check in `belt_wanted` -> two belt jobs at once
+/// (seen failing as "one at a time").
+#[test]
+fn ai_one_belt_per_lane() {
+    let (mut w, f, u, v) = belt_scene(|s| {
+        s.rules.ai.obstacles.front_slots = 2;
+        s.rules.ai.fort.builders_max = 4;
+    });
+    let a = squad_at(&mut w, BAU, f.pos, 100);
+    let b = squad_at(&mut w, BAU, f.pos + c(4, 0), 100);
+    let hh = fort(&w, "ww2:hedgehog");
+    let sites = belt_sites(&f, u, v);
+    let mut most = 0;
+    play_fed(&mut w, &[a, b], 100, 1500, |w| {
+        most = most.max(live_jobs(w, hh, f.own));
+        pieces_at(w, hh, &sites) >= 5 && live_jobs(w, hh, f.own) == 0
+    });
+    play_fed(&mut w, &[a, b], 100, 60, |_| false);
+    assert_eq!(most, 1, "one belt job at a time");
+    assert_eq!(pieces_at(&w, hh, &sites), 5, "the belt stands");
+    assert_eq!(pieces_of(&w, hh).len(), 5, "no second belt");
+    assert_eq!(ai_ro(&w).counters.belt_jobs, 5);
+    // The field swept: the belt stays, no belt job without row 1.
+    let at = fort(&w, "ww2:at_minefield");
+    w.edit_fort(|fs| fs.mines.retain(|_, m| !(m.owner == PlayerId(1) && m.fort == at)));
+    w.state.game.as_mut().unwrap().setup.rules.ai.obstacles.at_mines = 0;
+    play(&mut w, 120);
+    assert_eq!(pieces_at(&w, hh, &sites), 5, "the belt stays");
+    assert_eq!(ai_ro(&w).counters.belt_jobs, 5, "no belt without row 1");
+}
+
+
+/// C5: C ringed by enemy log barriers 70 m out (player 0's, doubled; only
+/// the belt is own), open only in a 20 m gap across the lane where the
+/// belt goes: there it would leave the own vehicles no way out (the own
+/// route base -> C -> `near` runs through the gap). With the rule
+/// (`belt_detour_pct` 130) side 0 is rejected and the belt goes to the
+/// other side (or is refused): an own tank 15 m short of the belt, ordered
+/// 15 m beyond it, drives out of the ring, `own_blocked` 0. Control:
+/// `belt_detour_pct` 0 (rule off) -> the belt closes the gap and the tank
+/// never leaves the ring (seen failing as "the own tank drives out of the
+/// ring"; the spec's `own_blocked` > 0 is not reached, see the control's
+/// comment).
+#[test]
+fn ai_belt_leaves_the_own_way_round() {
+    let go = |pct: u32| {
+        let (mut w, f, u, v) = belt_scene(|s| {
+            let o = &mut s.rules.ai.obstacles;
+            o.belt_detour_pct = pct;
+            o.demolish = 0;
+            if let Some(d) = s.forts.iter_mut().find(|d| d.id == "ww2:log_barrier") {
+                d.limit_per_player = 1000;
+            }
+        });
+        let log = fort(&w, "ww2:log_barrier");
+        let at = |a: i32, b: i32| f.pos + u * Fx::from_int(a) + v * Fx::from_int(b);
+        // The ring: three closed sides of seven 20 m lines, the front side
+        // (toward the enemy) from the gap's edges out to the corners.
+        // Each side doubled 2 m further out: one thin rotated row leaves
+        // diagonal node gaps a tank finds.
+        let mut lines = Vec::new();
+        for r in [70, 72] {
+            for k in 0..8 {
+                let (a, b) = (-80 + 20 * k, -60 + 20 * k);
+                lines.push([at(-r, a), at(-r, b)]);
+                lines.push([at(a, r), at(b, r)]);
+                lines.push([at(a, -r), at(b, -r)]);
+            }
+            for (a, b) in [(10, 30), (30, 50), (50, 70), (70, 80)] {
+                lines.push([at(r, a), at(r, b)]);
+                lines.push([at(r, -a), at(r, -b)]);
+            }
+        }
+        for l in &lines {
+            assert!(w.build_now(log, l, PlayerId(0)), "ring line {l:?}");
+        }
+        let eng = squad_at(&mut w, ENG, f.pos, 500);
+        play_fed(&mut w, &[eng], 500, 900, |w| {
+            let c = &ai_ro(w).counters;
+            (c.belt_jobs > 0 && live_jobs(w, log, f.own) == 0) || c.belt_route_rejects > 0
+        });
+        // The tank waits behind the field, 15 m short of the belt.
+        let from = at(55, 0);
+        let tank = spawn(
+            &mut w,
+            1,
+            "ww2:usa_m4a3_75_squad",
+            from.x.floor_int(),
+            from.y.floor_int(),
+        );
+        // Just beyond the belt, on the lane.
+        let goal = at(85, 0);
+        run(
+            &mut w,
+            1,
+            1,
+            CommandKind::Move {
+                squad: tank,
+                target: goal,
+            },
+        );
+        let tv = members(&w, tank)[0];
+        let out = play_until(&mut w, 60, |w| {
+            let p = w.state.entities.transform[tv.index()].pos.xy();
+            (p - f.pos).dot(u) > Fx::from_int(80)
+        });
+        let p = w.state.entities.transform[tv.index()].pos.xy() - f.pos;
+        let c = &ai_ro(&w).counters;
+        (c.own_blocked, out, c.belt_jobs, c.belt_route_rejects)
+    };
+    let (blocked, out, jobs, rejects) = go(130);
+    assert!(jobs + rejects >= 1, "the belt was considered");
+    assert_eq!(blocked, 0, "own_blocked 0");
+    assert!(out, "the own tank drives out of the ring");
+    // Control: the gap is closed. The AI re-tasks its tank (AttackMove to
+    // E) and it halts at the ring's corner, beyond `OWN_BLOCKED_M` of the
+    // belt, so `own_blocked` stays 0 here (it counts a halt within 8 m of
+    // an own piece only); the way out is what the rule keeps.
+    let (_, out, jobs, _) = go(0);
+    assert!(jobs >= 1 && !out, "control: belt_detour_pct 0 closes the gap");
+}
+
+/// Determinism with a belt job live (spec 5 row Belt, "same test as B,
+/// with a belt job"; staged, see the log): the belt scene is saved while a
+/// belt job runs with a hedgehog standing, loaded at 1, 2, 3 and 8 threads,
+/// and every copy plays the next 90 s (the same staged supply) with the
+/// hashes of the original. Control: a loaded copy whose belt job's start
+/// tick is edited hashes differently (seen failing the thread comparison
+/// with the edit applied to each loaded copy).
+#[test]
+fn ai_belt_deterministic_threads_and_save_load() {
+    let (mut w, f, u, v) = belt_scene(|_| {});
+    let b = squad_at(&mut w, BAU, f.pos, 100);
+    let hh = fort(&w, "ww2:hedgehog");
+    let sites = belt_sites(&f, u, v);
+    // A belt job building its piece (its work under way), one standing.
+    let building = |w: &World| {
+        let works = &w.game().unwrap().fort().works;
+        ai_ro(w).forts.values().any(|j| {
+            j.fort == hh
+                && j.phase == FortPhase::Watch
+                && j.work.is_some_and(|k| works.contains_key(&k))
+        })
+    };
+    let live = play_fed(&mut w, &[b], 100, 900, |w| {
+        pieces_at(w, hh, &sites) >= 1 && building(w)
+    });
+    assert!(live, "a belt job live with a hedgehog standing");
+    let bytes = w.save();
+    let run = |w: &mut World| {
+        let mut h = Vec::new();
+        for _ in 0..90 {
+            refill(w, b, 100);
+            play(w, 1);
+            h.push(w.state_hash());
+        }
+        h
+    };
+    let want = run(&mut w);
+    assert!(pieces_at(&w, hh, &sites) >= 2, "the belt went on");
+    for threads in [1, 2, 3, 8] {
+        let mut x = World::load(&bytes, threads).unwrap();
+        assert_eq!(run(&mut x), want, "at {threads} threads");
+    }
+    let x = World::load(&bytes, 1).unwrap();
+    let mut y = World::load(&bytes, 1).unwrap();
+    y.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .forts
+        .values_mut()
+        .find(|j| j.fort == hh)
+        .unwrap()
+        .start += 1;
+    assert_ne!(x.state_hash(), y.state_hash(), "control: a belt job edit");
+}

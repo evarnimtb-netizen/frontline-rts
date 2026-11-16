@@ -253,6 +253,34 @@ fn holds(w: &World) -> Vec<&'static str> {
         }),
         "ai_front_ap_watch",
     );
+    // S10c-ai Build C chunk 2: a belt's hedgehog job (a point blocking
+    // piece) watching its work, two hedgehogs of its row standing within
+    // 10 m of its site.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.forts.iter().any(|(sq, j)| {
+                    let d = &g.setup().forts[j.fort as usize];
+                    d.blocks_vehicles
+                        && d.shape == FortShape::Point
+                        && j.phase == frontline_sim::ai::FortPhase::Watch
+                        && j.work.is_some_and(|wid| {
+                            f.works.get(&wid).is_some_and(|k| k.builder == *sq)
+                        })
+                        && f.pieces
+                            .values()
+                            .filter(|q| {
+                                q.owner == PlayerId(p)
+                                    && q.fort == j.fort
+                                    && (q.pos - j.line[0]).length() <= frontline_sim::fx::Fx::from_int(10)
+                            })
+                            .count()
+                            >= 2
+                })
+            })
+        }),
+        "ai_belt_watch",
+    );
     put(
         f.blasts.len() == frontline_sim::fort::MAX_BLASTS,
         "blasts_full",
@@ -1247,6 +1275,53 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
     }));
+    // S10c-ai Build C chunk 2 (fuzz stage `staged_s10b_ai + a Belt job in
+    // Watch with two pieces standing`): two of player 0's hedgehogs 4 m
+    // apart and a Baupioniere squad's hedgehog job of point 0 watching its
+    // work on the row's third site.
+    let belt_sq = w
+        .spawn_squad_at(PlayerId(0), pio, c(604, 612), east)
+        .unwrap();
+    for x in [600, 604] {
+        assert!(w.build_now(hh, &[c(x, 620), c(x, 630)], PlayerId(0)));
+    }
+    let belt_line = vec![c(608, 620), c(608, 630)];
+    let mut bwk = 0;
+    w.edit_fort(|f| {
+        bwk = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            bwk,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: hh,
+                line: belt_line.clone(),
+                yaw: Fx::ZERO,
+                builder: belt_sq,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Build,
+                seg: 0,
+                work: 0,
+                got_g: 0,
+            },
+        );
+    });
+    w.edit_squad(belt_sq, |q| q.order = Order::Fortify { work: bwk });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.forts.insert(
+            belt_sq,
+            AiFortJob {
+                fort: hh,
+                point: 0,
+                line: belt_line.clone(),
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(bwk),
+                tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+    }));
     // Just before the save: the second sweeper squad is wiped out and the
     // second demolition's tank wrecked (the next plan drops both jobs).
     for m in w.game().unwrap().squads()[&gone_sq].members.clone() {
@@ -1325,8 +1400,9 @@ fn staged_s10b_save_holds_its_state() {
 /// chunk 4. `+ a Done sweep, a sweep of a wiped-out squad, a Repath
 /// demolition, a demolition of a wrecked tank, an AtRow2 job, refusals and
 /// blasts at their caps of 32`, S10b-ai review 4. `+ a FrontAp job in
-/// Watch with 5 mines laid`, S10c-ai Build B chunk 2.
-const STAGED_MUST_HOLD: [&str; 16] = [
+/// Watch with 5 mines laid`, S10c-ai Build B chunk 2. `+ a Belt job in
+/// Watch with two pieces standing`, S10c-ai Build C chunk 2.
+const STAGED_MUST_HOLD: [&str; 17] = [
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
@@ -1343,6 +1419,7 @@ const STAGED_MUST_HOLD: [&str; 16] = [
     "ai_refused_full",
     "blasts_full",
     "ai_front_ap_watch",
+    "ai_belt_watch",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never

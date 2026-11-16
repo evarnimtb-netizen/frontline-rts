@@ -592,6 +592,7 @@ const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
     (JobKind::Demolish, demolish_row, false),
     (JobKind::TruckGoal, truck_row, false),
     (JobKind::Fort, front_ap_row, false),
+    (JobKind::Fort, belt_row, false),
 ];
 
 /// The TruckGoal row (Build D, L5): the AI's loaded truck in a trench ring
@@ -754,6 +755,68 @@ fn front_ap_row() -> (World, Stage) {
         habit: crate::ai::AiHabit::Fort,
         args: crate::ai::DriveArgs {
             squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The Belt row (S10c-ai Build C chunk 2, spec 5 "Generic"): the held
+/// point with `front` and `belt` on (`front_home` 1: the lone point is a
+/// front point), its saved lane (found by 3 s of the match AI, FrontAp
+/// marked done, then taken out) and its AT row 1 laid (ten own AT mines
+/// 60 m out across the way to the enemy base, `at_rows` 1); a Baupioniere
+/// squad carrying 100 kg (`fields_per_point` 0: no R1 field). An own tank stands on the belt's first hedgehog
+/// site (10 m beyond the row, 8 m toward its lower end), so every
+/// `Fortify` there is refused (BadSpot; the flat map has no slope). The
+/// refusal is at that site. Control: `refused_s` 0 -> a restart each plan
+/// (the check fails, seen).
+fn belt_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        s.rules.ai.fort.wire = 0;
+        o.front = 1;
+        o.front_home = 1;
+        o.belt = 1;
+        o.at_rows = 1;
+        // No R1 field at the trenched point (it would take the squad
+        // the plan its belt job fails).
+        o.fields_per_point = 0;
+    });
+    steps(&mut w, 3 * 30);
+    w.state.game.as_mut().unwrap().ai[1].as_mut().unwrap().front_lanes[0].ap_done = true;
+    let at = fort_of(w.match_setup().unwrap(), WorkKind::AtField).unwrap();
+    let row = |k: i32| h.pos + h.enemy * Fx::from_int(60) + h.along * Fx::from_int(4 * k - 18);
+    for k in 0..10 {
+        w.lay_mine_now(at, row(k), PlayerId(1)).unwrap();
+    }
+    // C4's row: centred 10 m beyond the field, its first site 8 m toward
+    // the field's lower end (positions sorted by x, then y).
+    let (e0, e1) = (row(0), row(9));
+    let lo = if (e0.x.raw(), e0.y.raw()) <= (e1.x.raw(), e1.y.raw()) {
+        e0
+    } else {
+        e1
+    };
+    let centre = h.pos + h.enemy * Fx::from_int(70);
+    let goal = centre + (lo - (e0 + e1).div_int(2)).normalize_or_zero() * Fx::from_int(8);
+    spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        goal.x.floor_int(),
+        goal.y.floor_int(),
+    );
+    let bau = squad_at(&mut w, "ww2:ger_baupioniergruppe", h.pos, 100);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(bau),
             point: 0,
             ..Default::default()
         },

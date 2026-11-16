@@ -264,6 +264,10 @@ pub(crate) enum WorkKind {
     /// S10c-ai F3: the short wire line across a front point's foot lane
     /// (the wire blueprint, its line from `FrontLane::wire`).
     FrontWire,
+    /// S10c-ai C4: the belt, a row of blocking pieces across a front
+    /// point's vehicle lane beyond its AT field (the hedgehog blueprint
+    /// here; a log barrier line when no `build_heavy` squad can take it).
+    Belt,
 }
 
 /// S10a-ai (spec 3.1): the three S10a cards (construction or assault
@@ -299,7 +303,9 @@ pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
             WorkKind::AtField | WorkKind::AtRow2 => {
                 d.shape == FortShape::Line && trigger(d) == Some(1)
             }
-            WorkKind::Hedgehog => d.shape == FortShape::Point && d.blocks_vehicles,
+            WorkKind::Hedgehog | WorkKind::Belt => {
+                d.shape == FortShape::Point && d.blocks_vehicles
+            }
             WorkKind::LogBarrier => d.shape == FortShape::Line && d.blocks_vehicles,
             WorkKind::Bunker => {
                 d.mine_item.is_none()
@@ -353,6 +359,8 @@ pub(crate) fn switched_on(s: &MatchSetup, k: WorkKind) -> bool {
             // switch of what they lay.
             WorkKind::FrontAp => o.front != 0 && o.mines != 0,
             WorkKind::FrontWire => o.front != 0 && f.wire != 0,
+            // C4: `belt` with the obstacle habit.
+            WorkKind::Belt => o.front != 0 && o.belt != 0 && o.obstacles != 0,
         }
 }
 
@@ -570,6 +578,12 @@ impl super::Planner<'_> {
             }
             WorkKind::AtField => return self.at_site(i),
             WorkKind::AtRow2 => return self.at_row2_site(i),
+            // C4: the belt row's next free hedgehog site, facing the enemy.
+            WorkKind::Belt => {
+                let (_, _, enemy) = self.belt_frame(i)?;
+                let p = self.belt_next(i)?;
+                return Some(vec![p, self.terrain.clamp(p + enemy * Fx::from_int(FACING_M))]);
+            }
             _ => {}
         }
         let ([a, b], along, enemy) = self.fort_frame(i)?;
@@ -782,6 +796,8 @@ impl super::Planner<'_> {
             Some(WorkKind::FrontWire)
         } else if fort_of(s, WorkKind::AtField) == Some(j.fort) {
             Some(WorkKind::AtField)
+        } else if self.belt_job(j) {
+            Some(WorkKind::Belt)
         } else {
             None
         }
@@ -1071,6 +1087,10 @@ impl super::Planner<'_> {
         if self.at_row2_wanted(i) {
             out.push(WorkKind::AtRow2);
         }
+        // C4: the belt once the AT row 1 is laid.
+        if self.belt_wanted(i) {
+            out.push(WorkKind::Belt);
+        }
         out
     }
 
@@ -1095,9 +1115,12 @@ impl super::Planner<'_> {
     /// (it loads there), or a truck brings it (`truck_for`).
     fn front_carry_ok(&self, sq: SquadId, f: u16, line: &[FxVec2]) -> bool {
         let d = &self.g.setup.forts[f as usize];
-        let need = d
-            .materials_g
-            .saturating_mul(crate::fort::segments(line, d.segment));
+        // A point work (a belt hedgehog, C4) is one step.
+        let steps = match d.shape {
+            FortShape::Line => crate::fort::segments(line, d.segment),
+            _ => 1,
+        };
+        let need = d.materials_g.saturating_mul(steps);
         self.carried_g(sq) >= need
             || self.g.squads.get(&sq).is_some_and(|q| self.in_own_base(q))
             || self.truck_for(f)
@@ -1107,12 +1130,260 @@ impl super::Planner<'_> {
     /// AT row at a front point with a saved lane).
     fn front_work(&self, i: usize, k: WorkKind) -> bool {
         match k {
-            WorkKind::FrontAp | WorkKind::FrontWire => true,
+            WorkKind::FrontAp | WorkKind::FrontWire | WorkKind::Belt => true,
             WorkKind::AtField | WorkKind::AtRow2 => {
                 self.front_lane(i).is_some() && self.front_on_points().contains(&i)
             }
             _ => false,
         }
+    }
+
+    // ------------------------------------------------------------- belt --
+
+    /// S10c-ai C4: whether belts are on (`front`, `belt`, `obstacles`).
+    fn belt_on(&self) -> bool {
+        let s = &self.g.setup;
+        front_on(s) && switched_on(s, WorkKind::Belt)
+    }
+
+    /// C4: the frame of point `i`'s belt, read from its laid AT field (own
+    /// AT mines within the field radius of [`Self::at_row1_laid`]), not
+    /// from the enemy's vehicle path, which bends round the belt once it
+    /// stands: (centre, along, enemy). `along` runs between the field's
+    /// two farthest-apart mines (positions sorted, the first pair kept on
+    /// ties); `enemy` is its normal away from the point; the centre lies on
+    /// the middle of that pair (the field is centred on the lane, within
+    /// the track half-gauge), `belt_gap_m` beyond the field's enemy-side
+    /// edge. None: belts off, or fewer than two such mines.
+    fn belt_frame(&self, i: usize) -> Option<(FxVec2, FxVec2, FxVec2)> {
+        if !self.belt_on() {
+            return None;
+        }
+        let g = self.g;
+        let s = &g.setup;
+        let f = fort_of(s, WorkKind::AtField)?;
+        let pos: FxVec2 = s.map.points.get(i)?.pos.into();
+        let d = &s.forts[f as usize];
+        let r = Fx::from(d.max_length).div_int(2)
+            + Fx::from_int(SITE_NEAR_M)
+            + Fx::from_int(s.rules.ai.obstacles.at_out_m as i32);
+        let me = self.me;
+        let mut ms: Vec<FxVec2> = g
+            .fort
+            .mines
+            .values()
+            .filter(|m| m.owner == me && m.fort == f && near(m.pos, pos, r))
+            .map(|m| m.pos)
+            .collect();
+        ms.sort_unstable_by_key(|p| (p.x.raw(), p.y.raw()));
+        let mut best: Option<(u64, FxVec2, FxVec2)> = None;
+        for (k, &a) in ms.iter().enumerate() {
+            for &b in &ms[k + 1..] {
+                let l = (b - a).length_sq_raw();
+                if best.is_none_or(|(m, _, _)| l > m) {
+                    best = Some((l, a, b));
+                }
+            }
+        }
+        let (_, a, b) = best?;
+        let along = (b - a).normalize_or_zero();
+        if along == FxVec2::ZERO {
+            return None;
+        }
+        let mid = (a + b).div_int(2);
+        let mut enemy = along.perp();
+        if enemy.dot(mid - pos) < Fx::ZERO {
+            enemy = -enemy;
+        }
+        let edge = ms
+            .iter()
+            .map(|&m| (m - mid).dot(enemy))
+            .max()
+            .unwrap_or(Fx::ZERO)
+            .max(Fx::ZERO);
+        let gap = Fx::from_int(s.rules.ai.obstacles.belt_gap_m as i32);
+        Some((mid + enemy * (edge + gap), along, enemy))
+    }
+
+    /// C4: the `belt_pieces` hedgehog sites of point `i`'s belt,
+    /// `hedgehog_step_m` apart along the field's line, centred on the
+    /// frame's centre; `side` 1 (C5's other side) moved along itself by
+    /// its own length (`belt_pieces` steps), so the sides share no site.
+    fn belt_row(&self, i: usize, side: usize) -> Option<Vec<FxVec2>> {
+        let o = &self.g.setup.rules.ai.obstacles;
+        let n = o.belt_pieces as i32;
+        if n == 0 {
+            return None;
+        }
+        let (c, along, _) = self.belt_frame(i)?;
+        let step = Fx::from_int(o.hedgehog_step_m as i32);
+        let shift = step.mul_int(n * side.min(1) as i32);
+        Some(
+            (0..n)
+                .map(|k| {
+                    let at = step.mul_int(2 * k - (n - 1)).div_int(2) + shift;
+                    self.terrain.clamp(c + along * at)
+                })
+                .collect(),
+        )
+    }
+
+    /// C4 (S10c-4 (A)): the belt as one log barrier line: `belt_pieces` x
+    /// `hedgehog_step_m` long (at most the blueprint's `max_length`),
+    /// centred where [`Self::belt_row`]'s side `side` is.
+    fn belt_log(&self, i: usize, side: usize) -> Option<Vec<FxVec2>> {
+        let s = &self.g.setup;
+        let o = &s.rules.ai.obstacles;
+        let lf = fort_of(s, WorkKind::LogBarrier)?;
+        let (c, along, _) = self.belt_frame(i)?;
+        let step = Fx::from_int(o.hedgehog_step_m as i32);
+        let n = o.belt_pieces as i32;
+        let len = step
+            .mul_int(n)
+            .min(Fx::from(s.forts[lf as usize].max_length));
+        let c = c + along * step.mul_int(n * side.min(1) as i32);
+        let half = along * len.div_int(2);
+        let line = vec![self.terrain.clamp(c - half), self.terrain.clamp(c + half)];
+        ((line[1] - line[0]).length() >= Fx::from_int(2)).then_some(line)
+    }
+
+    /// C4 "one belt per lane", C5 "the side taken": the side of point
+    /// `i`'s belt that holds an own hedgehog (on a row site) or log barrier
+    /// (near its line's middle) work, piece or job, side 0 first, and which
+    /// of the two it is. None: no belt yet.
+    fn belt_side(&self, i: usize) -> Option<(usize, WorkKind)> {
+        let s = &self.g.setup;
+        let hh = fort_of(s, WorkKind::Hedgehog);
+        let lf = fort_of(s, WorkKind::LogBarrier);
+        let r = self.hedgehog_r();
+        (0..2).find_map(|side| {
+            if let Some(f) = hh
+                && self
+                    .belt_row(i, side)
+                    .is_some_and(|row| row.iter().any(|&p| self.fort_near(f, p, r)))
+            {
+                return Some((side, WorkKind::Hedgehog));
+            }
+            let f = lf?;
+            let line = self.belt_log(i, side)?;
+            let half = (line[1] - line[0]).length().div_int(2);
+            self.fort_near(f, mid_of(FortShape::Line, &line), half)
+                .then_some((side, WorkKind::LogBarrier))
+        })
+    }
+
+    /// C4: the first free hedgehog site of point `i`'s belt row (its taken
+    /// side, else side 0); None when a log barrier holds the belt or the
+    /// row is full.
+    fn belt_next(&self, i: usize) -> Option<FxVec2> {
+        let f = fort_of(&self.g.setup, WorkKind::Hedgehog)?;
+        let side = match self.belt_side(i) {
+            Some((_, WorkKind::LogBarrier)) => return None,
+            Some((side, _)) => side,
+            None => 0,
+        };
+        let r = self.hedgehog_r();
+        self.belt_row(i, side)?
+            .into_iter()
+            .find(|&p| !self.fort_near(f, p, r))
+    }
+
+    /// C4: whether point `i` wants (the next piece of) its belt: belts on,
+    /// its AT row 1 laid (no AT job of the point running), no belt job
+    /// live there, and a free hedgehog site left (no log barrier belt).
+    fn belt_wanted(&self, i: usize) -> bool {
+        let s = &self.g.setup;
+        self.belt_on()
+            && fort_of(s, WorkKind::AtField).is_some_and(|f| self.at_row1_laid(i, f))
+            && !self.front_live(i, WorkKind::Belt)
+            && self.belt_next(i).is_some()
+    }
+
+    /// C4: whether fort job `j` builds a belt: belts on, a hedgehog or log
+    /// barrier job of a point with a saved lane whose site lies within one
+    /// `hedgehog_step_m` of either side's row.
+    fn belt_job(&self, j: &AiFortJob) -> bool {
+        let s = &self.g.setup;
+        if !self.belt_on() || j.point == NO_POINT {
+            return false;
+        }
+        let Some(d) = s.forts.get(j.fort as usize) else {
+            return false;
+        };
+        if fort_of(s, WorkKind::Hedgehog) != Some(j.fort)
+            && fort_of(s, WorkKind::LogBarrier) != Some(j.fort)
+        {
+            return false;
+        }
+        let site = mid_of(d.shape, &j.line);
+        let r = Fx::from_int(s.rules.ai.obstacles.hedgehog_step_m as i32).max(Fx::ONE);
+        (0..2).any(|side| {
+            self.belt_row(j.point as usize, side).is_some_and(|row| {
+                crate::fort::near_segment(site, row[0], row[row.len() - 1], r)
+            })
+        })
+    }
+
+    /// C5: the own route of point `i` ([`Self::own_route`]'s legs) on block
+    /// layer `block`, its length; None when the leg to the point, or the
+    /// leg on to [`Self::route_out`] (when there is one), is not found.
+    fn route_len_on(&self, i: usize, block: &crate::vehicle::BlockLayer) -> Option<Fx> {
+        let g = self.g;
+        let pos: FxVec2 = g.setup.map.points.get(i)?.pos.into();
+        let ty = self.route_vehicle(self.me)?;
+        let mut scratch = crate::path::PathScratch::default();
+        let mut way = self.gun_route_on(g.base_of(self.me), pos, ty, block, &mut scratch)?;
+        if let Some(to) = self.route_out(i) {
+            let more = self.gun_route_on(pos, to, ty, block, &mut scratch)?;
+            way.extend(more.into_iter().skip(1));
+        }
+        Some(
+            way.windows(2)
+                .fold(Fx::ZERO, |acc, w| acc + (w[1] - w[0]).length()),
+        )
+    }
+
+    /// C5 (replaces R6's 10 m for belts): footprint 0 when the own route
+    /// of point `i` with its nodes blocked (sampled every metre along it)
+    /// exists and is at most `belt_detour_pct` of the route without it;
+    /// else footprint 1 the same; else an L3 refusal at footprint 0's
+    /// middle, `belt_route_rejects` += 1 (None). `belt_detour_pct` 0: the
+    /// rule is off (footprint 0). No own route at all: nothing to keep
+    /// clear (as R6).
+    fn belt_route_side(&mut self, i: usize, feet: [Option<Vec<FxVec2>>; 2]) -> Option<usize> {
+        let s = &self.g.setup;
+        let first = feet[0].clone()?;
+        let pct = s.rules.ai.obstacles.belt_detour_pct;
+        if pct == 0 {
+            return Some(0);
+        }
+        let Some(ty) = self.route_vehicle(self.me) else {
+            return Some(0);
+        };
+        let layer = self.g.vderived.block_of(ty);
+        let Some(base) = self.route_len_on(i, layer) else {
+            return Some(0);
+        };
+        for (k, f) in feet.iter().enumerate() {
+            let Some(f) = f else { continue };
+            let (a, b) = (f[0], f[f.len() - 1]);
+            let n = (b - a).length().floor_int().max(1);
+            let pts: Vec<FxVec2> = (0..=n)
+                .map(|t| a + ((b - a) * Fx::from_int(t)).div_int(n))
+                .collect();
+            let blocked = layer.with_pieces_at(self.terrain, &pts);
+            if let Some(len) = self.route_len_on(i, &blocked)
+                && len.raw() as i128 * 100 <= base.raw() as i128 * pct as i128
+            {
+                return Some(k);
+            }
+        }
+        let at = (first[0] + first[first.len() - 1]).div_int(2);
+        self.ai.refuse(JobKind::Fort, at, self.tick);
+        self.ai.counters.belt_route_rejects += 1;
+        self.ai.counters.route_refusals += 1;
+        self.ai.counters.s10b_refused += 1;
+        None
     }
 
     /// The vehicle type whose routes player `p`'s armour drives: its
@@ -3027,11 +3298,12 @@ impl super::Planner<'_> {
                 if front && !self.front_slot_free() {
                     continue;
                 }
-                let (Some(fort), Some(mut line)) = (fort_of(s, k), self.point_site(i, k, None))
+                let (Some(mut fort), Some(mut line)) =
+                    (fort_of(s, k), self.point_site(i, k, None))
                 else {
                     continue;
                 };
-                let site = mid_of(s.forts[fort as usize].shape, &line);
+                let mut site = mid_of(s.forts[fort as usize].shape, &line);
                 let s10b = s10b_fort(&s.forts[fort as usize]);
                 if s10b_only && !s10b {
                     continue;
@@ -3076,6 +3348,66 @@ impl super::Planner<'_> {
                         Some(_) => {}
                         None => continue,
                     }
+                }
+                // S10c-ai C4, C5 at the belt's first start (its sites are
+                // then fixed): hedgehogs when a free `build_heavy` squad can
+                // take the first, else one log barrier line (S10c-4 (A));
+                // side 0, else the other side, else refused.
+                if k == WorkKind::Belt && self.belt_side(i).is_none() {
+                    let takes = |f: u16, l: &[FxVec2], at: FxVec2| {
+                        mine.iter().any(|m| {
+                            !taken.contains(&m.id)
+                                && !out.contains(&m.id)
+                                && self.can_take_at(m, f, at, known, kv, true)
+                                && self.front_carry_ok(m.id, f, l)
+                        })
+                    };
+                    let heavy = takes(fort, &line, site);
+                    let log = if heavy {
+                        None
+                    } else {
+                        let Some(lf) = fort_of(s, WorkKind::LogBarrier) else {
+                            continue;
+                        };
+                        let Some(l) = self.belt_log(i, 0) else {
+                            continue;
+                        };
+                        let at = mid_of(FortShape::Line, &l);
+                        if !self.under_limit(lf, &l) || self.refused_here(at) || !takes(lf, &l, at)
+                        {
+                            continue;
+                        }
+                        Some(lf)
+                    };
+                    let foot = |side| {
+                        if log.is_some() {
+                            self.belt_log(i, side)
+                        } else {
+                            self.belt_row(i, side)
+                        }
+                    };
+                    let feet = [foot(0), foot(1)];
+                    let Some(side) = self.belt_route_side(i, feet) else {
+                        continue;
+                    };
+                    if let Some(lf) = log {
+                        let Some(l) = self.belt_log(i, side) else {
+                            continue;
+                        };
+                        fort = lf;
+                        line = l;
+                    } else {
+                        let Some(p) = self.belt_row(i, side).and_then(|r| r.first().copied())
+                        else {
+                            continue;
+                        };
+                        let fwd = line[1] - line[0];
+                        line = vec![p, self.terrain.clamp(p + fwd)];
+                    }
+                    if !self.under_limit(fort, &line) {
+                        continue;
+                    }
+                    site = mid_of(s.forts[fort as usize].shape, &line);
                 }
                 let pick = assigned
                     .iter()
@@ -3148,6 +3480,10 @@ impl super::Planner<'_> {
                     }
                     if resumed {
                         self.ai.counters.front_resumes += 1;
+                    }
+                    // C4: one count per belt job (a hedgehog or the line).
+                    if k == WorkKind::Belt {
+                        self.ai.counters.belt_jobs += 1;
                     }
                 }
                 // One job per point per plan: the next sees this one.
