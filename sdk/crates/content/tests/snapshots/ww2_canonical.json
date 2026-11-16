@@ -1771,7 +1771,7 @@
           "at_out_m": 60,
           "at_rows": 2,
           "barrier_job_max_s": 1200,
-          "belt": 0,
+          "belt": 1,
           "belt_detour_pct": 130,
           "belt_gap_m": 10,
           "belt_pieces": 5,

@@ -264,15 +264,15 @@ fn holds(w: &World) -> Vec<&'static str> {
                     d.blocks_vehicles
                         && d.shape == FortShape::Point
                         && j.phase == frontline_sim::ai::FortPhase::Watch
-                        && j.work.is_some_and(|wid| {
-                            f.works.get(&wid).is_some_and(|k| k.builder == *sq)
-                        })
+                        && j.work
+                            .is_some_and(|wid| f.works.get(&wid).is_some_and(|k| k.builder == *sq))
                         && f.pieces
                             .values()
                             .filter(|q| {
                                 q.owner == PlayerId(p)
                                     && q.fort == j.fort
-                                    && (q.pos - j.line[0]).length() <= frontline_sim::fx::Fx::from_int(10)
+                                    && (q.pos - j.line[0]).length()
+                                        <= frontline_sim::fx::Fx::from_int(10)
                             })
                             .count()
                             >= 2

@@ -788,7 +788,11 @@ fn belt_row() -> (World, Stage) {
         o.fields_per_point = 0;
     });
     steps(&mut w, 3 * 30);
-    w.state.game.as_mut().unwrap().ai[1].as_mut().unwrap().front_lanes[0].ap_done = true;
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .ap_done = true;
     let at = fort_of(w.match_setup().unwrap(), WorkKind::AtField).unwrap();
     let row = |k: i32| h.pos + h.enemy * Fx::from_int(60) + h.along * Fx::from_int(4 * k - 18);
     for k in 0..10 {

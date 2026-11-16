@@ -576,7 +576,7 @@ pub fn paths_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Path
 /// Stages `p` holding the capture point nearest its base with its AI
 /// trench dug across the way to the enemy base: (point index, point,
 /// enemy base, trench line).
-fn hold_point(w: &mut World, p: u8) -> Result<(usize, FxVec2, FxVec2, [FxVec2; 2])> {
+pub(super) fn hold_point(w: &mut World, p: u8) -> Result<(usize, FxVec2, FxVec2, [FxVec2; 2])> {
     let enemy = 1 - p;
     let (i, pt, base_e, line) = {
         let g = w.game().unwrap();

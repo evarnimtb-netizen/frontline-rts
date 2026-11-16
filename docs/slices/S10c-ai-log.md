@@ -5,30 +5,33 @@ Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may wor
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Build C chunk 1 done (2026-11-16; quick 54009f6: all ok, 861 passed). STOP POINT 1. Next: Build C chunk 2 (belts, C4/C5/C7).**
-- Defaults now: `front` 1, `front_home` 0 (new meaning, F1), `jobs_max` 2 (C1), `front_slots` 1 (C8, now enforced),
-  `mine_assign` 1 (C2, turned on here so the `mine_assign_off` ablation means something), `builder_cards_min` 0
-  (C3; `builders2` ablation). `c_off` neutral: `python3 -I tools/neutral.py target/s10c-baseA40 target/s10c-C1off40`
-  -> `skirmish40.json: same 40/40 (note: overrides 1 -> 3 items)`. The stage file's "all C keys off = `target/s10c-B40`"
-  no longer holds: the F1 change moves the `front`-only run on purpose. Sets: default `target/s10c-C1a40`,
-  `builders2` `target/s10c-C1b40`, `mine_assign_off` `target/s10c-C1c40`, `c_off` `target/s10c-C1off40`.
-- **Home works floor still missed at defaults** (limit: nests >= 0.7425 / 0.6525 a match, works >= 85.5 / 83.25 %):
-  default DE nests 0.70, works 87.5 %; US 0.525, 77.5 %. `mine_assign_off`: DE 0.775 / 97.5 % (passes), US 0.55 /
-  77.5 % (misses: the US loss comes with `front` itself, B40 had US works 80.0 %). `builders2` passes both (DE 0.90 /
-  100 %, US 0.80 / 95.0 %). So: `mine_assign` costs DE nests (one builder goes to the front, F4 visits front points
-  first); the US miss needs a second builder. Chunk 2 must not turn `belt` on while this stands (stage file rule);
-  the orchestrator decides: `mine_assign` 0, or `builders2` (owner S10c-2), or a rule "a front pick never takes the
-  last free builder while a home work is wanted" (not built; proposed).
-- Front now works: front share of mines DE 52.7 / US 40.6 % (B40 12.7 / 18.1), mines approached 42.9 / 20.0 %, set off
-  0.475 / 0.25 a match, enemy wire seen 62.1 / 34.8 %. But mines in only 70.0 / 50.0 % of matches (B40 90 / 70): with
-  the new F1 the opening no longer lays front fields at the home point. Germany 40.0 % (c_off 50.0; 40-set noise 11-15).
-- B1-2 (C6): recount fixed (a pair stays in `blocked_pairs` while vehicle squad and piece live). Cause found, not
-  fixed: see the chunk 1 section. Proposed rule R6b below; it needs a key (c_off neutrality).
-- Code map (chunk 1): `fort.rs` `front_slot_free` (C8; used by `point_starts`, `fort_holds`, `front_block` -> `slot`),
-  `mine_assign_pick` (C2; after the assigned pick in `point_starts`), `front_block` reads all of `mine` with
-  `mine_assign` on; `ai.rs` `builder_floor_card` + `urgent_builder` in `buy` (C3); `count_own_blocked` keeps pairs.
-- For C4: `front_kind` counts an AtField job at a lane point as front, so a Belt kind must join `front_kind` to fall
-  under `front_slots` (C8 names it). `builders_max` 2 caps all builder jobs: three jobs need `builders_max` >= 3.
+**Build C chunk 2 done (2026-11-16). STOP POINT 2. Next: orchestrator measure + ablations, then Review.**
+- Defaults now: `front` 1, `front_home` 0, `jobs_max` 2, `front_slots` 1, `mine_assign` 1, `builder_cards_min` 2
+  (orchestrator, S10c-2 proposed (B), waiting for the owner), `belt` 1. `c_off` keeps every switch 0 and the floor 0.
+- Neutral (C2 code, release CLI rebuilt): `python3 -I tools/neutral.py target/s10c-baseA40 target/s10c-C2off40`
+  -> `skirmish40.json: same 40/40 (note: overrides 1 -> 5 items)`.
+- Home works floor holds at defaults (`target/s10c-C40` vs baseA40): DE nests 0.90 (0.825), works 100 % (95.0);
+  US 0.80 (0.725), 95.0 % (92.5). So `belt` 1 was turned on.
+- **Belts never ran in a match:** `belt_jobs` 0 / 0 in C40; the AI laid a front AT row 1 in 1 of 80 faction-matches
+  (`at_fields_per_match` 0.025 / 0). `belt_off` (`target/s10c-C2belt0`) is same 40/40 as C40, and C40 equals
+  chunk 1's `builders2` set number for number. The belt's match value is unmeasured until front AT fields happen
+  (Review: why front AT rows are so rare; the F-rules lay AP and wire first and `front_slots` 1 holds the slot).
+- Fortify row `s10c.belt` (seeds 1-5, both sides): belt built 50 % (Germany hedgehogs; US log line not built, see
+  deviations), pieces 2.5, enemy tank mined 80 %, reached belt 20 %, own_blocked 0, field laid 100 %; controls:
+  `belt` 0 mined 100 % (the belt adds nothing over the field here: report row, as the stage file allows),
+  `belt_detour_pct` 0 own_blocked 0 (the control does not bind in this staging; the sim test covers C5).
+- Open for Review: (1) R6b not built (no fitting key; needs its own key, `c_off` 0). (2) Belts in matches: front AT
+  rows rare (above). (3) Hedgehog belts need truck runs (F10: no walk home); a partial belt stays partial until
+  supply comes; a parked or failed belt job blocks a retry there as R5 does. (4) A partial log line counts as "the
+  belt". (5) `front_why` has no belt entry. (6) The way-round test's control does not reach `own_blocked` > 0 (the AI
+  re-tasks the tank; it halts beyond `OWN_BLOCKED_M`); it asserts the tank does not get out. (7) Fortify row: US
+  log line not built and the `belt_detour_pct` 0 control reads 0. (8) S10c-2 still waits for the owner.
+- Ignored save fuzz (`--ignored`, 10852 mutations): 2 panics outside this slice's code, overflow on mutated
+  supply accounts (`fwd_belt_rounds` at `structures.rs:1540`, `crate_bombs` at `structures.rs:1245`, value
+  4294967294); not fixed here (not S10c code; the played saves changed with the new defaults). Open for Review.
+- Code map (chunk 2): `fort.rs` `WorkKind::Belt`, `belt_frame`, `belt_row`, `belt_log`, `belt_side`, `belt_next`,
+  `belt_wanted`, `belt_job` (-> `front_kind`), `belt_route_side` (C5), the Belt block in `point_starts`;
+  `vehicle.rs` `BlockLayer::with_pieces_at`; `guns.rs` `gun_route_on`; CLI `fortify/s10c_ai.rs`.
 
 ## Plan (2026-11-16)
 Cause chain read in the code (spec 0): `trench_done` gate, the nest -> wire -> AP order, `fort_threat` (one known
@@ -45,60 +48,19 @@ report); with one builder squad per match the front work competes with the rear 
 every stage end.
 Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are a per-plan memo; no new job type.
 
-## Build A chunk 2 (2026-11-16)
-- Layout `6cd959c` (`front_lanes`, `front_slots`, `front_wire_len_m` 20; SAVE 26); observers, JSON, `neutral.py` skip,
-  `ablate.sh` files `233f9b7`. Quick all ok (837). Observer cost on the 40 set +0.0 to +0.4 % (limit 5 %).
-- Tests with controls seen failing: `load_rejects_bad_front_lanes`, `s10c_observer_counts_an_approach` (60 m -> 0),
-  `s10c_json_names_match_the_targets_file`, `test_neutral.py` s10c skip. A panic in `S10cSeen` (works-done index) was
-  fixed before any number was read.
-- Deviations: the observer test places the enemy squad (no walk); a mine laid and gone within one sampled second is
-  not seen; extra raw keys (`mines_seen`, `mines_approached`, `mines_set_off`, `s10b_jobs`, `matches_*`); approach
-  counts soldiers on foot; `c_off.toml` also lists `front_wire_len_m` 20 and `front_slots` 1.
-
-## Build B chunk 1 (2026-11-16)
-- Commit `571e841`: lanes, sites, wants, starts (F1-F4, F7, F10 carry rule, `front_why`, `front_jobs`). Quick all ok
-  (847). Neutral: `c_off` `target/s10c-B1off40` vs `target/s10c-baseA40` same 40/40.
-- Tests (`s10c_ai_front_tests.rs`), each with a built-in control asserting the opposite: lane (no enemy point -> from
-  the base), lays without a trench (`front` 0), before the nest (`front` 0 -> `mg_nest`), caps, every plan (lane
-  removed -> after the recheck), empty builder (0 kg -> `no_carry`), deadline (`job_max_s` 120), detour
-  (`front_wire_len_m` 40), way out; two builders by code edit. F10: a FrontAp job from a base 590 m away took 312 s.
-- Deviations: US engineers in tests; `front_jobs` counted after `new_fort_job`; lane test against the foot path; the
-  way-out test owns the other of B/D; `front_why` counts the first outstanding kind per front point; the deadline
-  test keeps only C; no detour finding (at 20 m the leader crossed the row and a mine went off).
-
-## Build B chunk 2 (2026-11-16)
-- Commit `71b8bdd`: F5, F6, F8 ends, determinism, liveness row, fuzz stage, `front` 1, `front_home`. SAVE 26 (the setup
-  gains one key, no bump: nothing released since 26), PROTOCOL 14. Quick 54009f6: all ok (854 passed).
-- Orchestrator decision 2026-11-16: `[ai.obstacles] front_home` (0/1, default and `c_off` 0): with `front` on, the
-  home point (map point nearest the own base) is a front point only as the only own point; 1 = plain F1 (ablation
-  `front_home_on.toml`). Spec F1 row updated; tuning.rs, skirmish.toml, tuning.md, key count 51, BASELINE, snapshot.
-- Tests and controls (each seen failing): `ai_front_points_are_nearest_the_enemy_base` home case (control
-  `front_home` 1 -> [C, B]); `ai_front_job_survives_an_enemy_60_m_from_the_site` (control `front_site_threat_m` 80 ->
-  dropped; code edit: front jobs back on `fort_threat` -> "alive" fails); `ai_front_job_resumes_after_a_threat_drop`
-  (control: `ap_done` set at the drop -> 6-7 mines; code edit: resume from the whole line -> 22 mines, fails);
-  `ai_front_field_set_off_is_not_relaid` (control `ap_done` cleared -> relaid); `ai_front_job_ends_when_the_point_is_
-  lost` (control point kept -> alive); `ai_front_builder_dies_mid_field` (control one man killed -> goes on; code edit
-  `front_lost` not counted -> fails); `ai_front_fields_survive_a_lost_point` (control `front_points` 2 -> cap);
-  `ai_front_deterministic_threads_and_save_load` (1/2/3/8 threads over 12:30; saves at 8:24 and 12:00, the first
-  seconds from 5:00 / 12:00 with a front job live; control: a lane edit changes the hash); liveness row FrontAp
-  (control `refused_s` 0 as the other rows); fuzz `staged_s10b_ai + a FrontAp job in Watch with 5 mines laid`.
-- Deviations: (1) the threatening enemy in the F5/F6 tests is a player-0 truck (known vehicle, no gun), so builders
-  are not shot; it is moved in and out with `place_vehicle`. (2) The F5 rule also lifts the point's `build_threat_max`
-  gate for front works (spec F5: "the same rule"; chunk 1 note (1)). (3) Resume: a dropped squad's standing order
-  can finish the mine in hand (control allows +1). (4) `ai_front_fields_survive_a_lost_point` shows the new front
-  point's field by its want (`front_why` no_builder, not cap) and moves the front by taking B instead of losing C:
-  a builder placed at the new front point was sent by assign to C (see `no_builder` above). (5) The liveness row
-  blocks the site with an own tank (flat map: no 25 % slope), as the LogBarrier row. (6) Default on broke tests of
-  main behaviour: S10a/S10b scene helpers (`s10b_ai_off`, lay `held`), the played save-fuzz match and the CLI
-  `s10b_counters_zero_without_use` (`c_off`) take `front` 0; `ai_takes_the_map_from_an_idle_human` waits 8 min
-  (the 4th point falls at 7:30, was before 6:00). (7) A set-off mine before `ap_done` is relaid by a resume (rule).
-- 40 sets, `BATCH_JOBS=4` (DE / US). Default (`front` 1, `front_home` 0), Germany 50.0 %:
-  front field 70.0 / 65.0 %; `mines_home`/`mines_front` 555/81, 385/85 (share 12.7 / 18.1 %); approached 11.1 / 17.9 %;
-  set off 0.075 / 0.25; wire seen 25.8 / 11.5 %; knew enemy wire 7.5 / 20.0 %; breaches 0 / 0; front jobs 3.3 /
-  2.65; drops 24.2 / 23.6 %; lost 0.30 / 0.175; why no_builder 17395 / 19556, slot 4837 / 3520, lane_none 3550 /
-  3185; works 97.5 / 80.0 %; nests 0.35 / 0.225 a match (`c_off`: 95.0 / 92.5 %, 0.825 / 0.725).
-  `front_home_on` (`target/s10c-B2home40`), Germany 47.5 %: front share 13.6 / 6.9 %; works 97.5 / 80.0 %; nests
-  0.225 / 0.175. lane_none (10 matches): all before the first recheck plan; 119 lane searches, 0 failed.
+## Build A and Build B (2026-11-16, shortened)
+- A2 layout `6cd959c` (`front_lanes`, `front_slots`, `front_wire_len_m` 20; SAVE 26); observers, JSON, `neutral.py`
+  skip, `ablate.sh` `233f9b7`. Observer cost +0.0 to +0.4 %. Deviations: observer test places the enemy squad; a mine
+  laid and gone within one sampled second is not seen; extra raw keys; approach counts soldiers on foot.
+- B1 `571e841`: lanes, sites, wants, starts (F1-F4, F7, F10, `front_why`, `front_jobs`); neutral `B1off40` same
+  40/40. F10: a FrontAp job from a base 590 m away took 312 s. Deviations: US engineers in tests; lane test against
+  the foot path; no detour finding (at 20 m the leader crossed the row).
+- B2 `71b8bdd`: F5, F6, F8, determinism, liveness row, fuzz stage, `front` 1, `front_home` (orchestrator: 0 = home
+  point a front point only as the only own point). SAVE 26, PROTOCOL 14. Every test seen failing with its control.
+  Deviations: threat is a player-0 truck; F5 lifts `build_threat_max` for front works; resume may finish the mine in
+  hand; the liveness row blocks with an own tank; default on moved S10a/S10b scene tests to `front` 0.
+- B2 40 set (DE / US), Germany 50.0 %: front share 12.7 / 18.1 %; approached 11.1 / 17.9 %; works 97.5 / 80.0 %;
+  nests 0.35 / 0.225 (`c_off` 95.0 / 92.5 %, 0.825 / 0.725). `front_home_on` Germany 47.5 %.
 
 ## Build C chunk 1 (2026-11-16)
 - Orchestrator additions (2026-11-16): (1) F1 with `front_home` 0: the home point is a front point only while the
@@ -144,3 +106,29 @@ Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are 
   16.7 %; set off 0.075 / 0.05; wire seen 19.0 / 13.6 %; knew 7.5 / 10.0 %; breaches 0 / 0; jobs 1.95 / 1.40; lost
   0.30 / 0.225; why no_builder 23209 / 25080, no_front 4730 / 4995, lane_none 3440 / 3515; buys 0 / 0; nests 0.775 /
   0.55; works 97.5 / 77.5 %; wire 52.5 / 55.0 %; own_blocked 0 / 0.
+
+## Build C chunk 2 (2026-11-16)
+- Commits: `a641988` `builder_cards_min` 2 (orchestrator; it broke `s10c_ai_layout_roundtrips_and_hashes`: its edit
+  set the new default 2 and changed nothing, so it now sets 3; seen failing, then fixed; `builders0.toml` added);
+  `0130677` belt code and tests; then the defaults, CLI row and docs commit.
+- C4/C5 as built: see the spec rows. Belt = front job (orchestrator item 2). R6b not built (orchestrator item 3).
+- Tests and how each control was seen failing: `ai_builds_a_belt_before_its_at_field` (`belt` 0 -> "five hedgehogs"
+  left 0); `ai_one_belt_per_lane` (code edit: no `!front_live` in `belt_wanted` -> 2 jobs at once); `ai_belt_leaves_
+  the_own_way_round` (`belt_detour_pct` 0 -> the tank does not get out); `ai_belt_deterministic_threads_and_save_load`
+  (1/2/3/8 threads, save in Watch with work under way; control: an edit of the job's `start` -> "at 1 threads"
+  fails); liveness row Belt (`refused_s` 0 -> L1 "past its deadline"); fuzz stage "ai_belt_watch" (17 stages).
+- Deviations: (1) tests feed the builders (staged refill: carry is clamped to about 100 kg, trucks were busy) and
+  take `bunker` 0; (2) the way-round control asserts "not out", not `own_blocked` > 0; (3) the determinism test is
+  staged, not a full skirmish; (4) the liveness row takes `fields_per_point` 0 (an AP job started in the same tick);
+  (5) `front_carry_ok` needs one step for a point blueprint (it counted line segments: no belt job started);
+  (6) the fortify row feeds 160 kg a second instead of a loaded truck, stages the lane done and takes `front_home` 1;
+  the US log line (500 kg job) was not built there; its `belt_detour_pct` 0 control reads 0.
+- 40 sets (`BATCH_JOBS=4`, world `85eeb1da`; DE / US): **C40** (`target/s10c-C40`), Germany 42.5 %: mines 95.0 /
+  82.5 %; front share 56.2 / 45.5 %; approached 63.2 / 51.5 %; set off 0.675 / 0.375; AT fields 0.025 / 0; tanks
+  stopped 0 / 0; belt 0 / 0 %; obstacle approached 0 / 0 %; demolitions wanted 0 / 0; wire seen 45.9 / 54.1 %;
+  breaches 0 / 0; front builders lost 0.65 / 0.80; nests 0.90 / 0.80; works 100 / 95.0 %; wire 92.5 / 92.5 %;
+  own_blocked 0 / 0; own-side mistakes 0 / 0. **belt_off** (`target/s10c-C2belt0`): same 40/40 as C40.
+  **builders0** (`target/s10c-C2b0`), Germany 40.0 %: mines 70.0 / 50.0 %; front share 52.7 / 40.6 %; approached
+  42.9 / 20.0 %; set off 0.475 / 0.25; AT fields 0 / 0; stopped 0 / 0; belt 0 / 0 %; obstacle approached 0 / 0 %;
+  demolitions wanted 0 / 0; wire seen 62.1 / 34.8 %; breaches 0 / 0; lost 0.60 / 0.55; nests 0.70 / 0.525; works
+  87.5 / 77.5 %; wire 72.5 / 57.5 %; own_blocked 0 / 0; mistakes 0 / 0 (= chunk 1's default set).

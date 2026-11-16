@@ -898,6 +898,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
         // S10b-ai Build E stage check: the S10b-ai rows (T110i-T116b read
         // `fortify10.s10b_ai.*`); before this they were only in the text.
         "s10b_ai": serde_json::to_value(&r.s10b_ai).unwrap_or_default(),
+        // S10c-ai Build C chunk 2 (C7): `fortify10.s10c.belt.*`.
+        "s10c": serde_json::to_value(&r.s10c).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,

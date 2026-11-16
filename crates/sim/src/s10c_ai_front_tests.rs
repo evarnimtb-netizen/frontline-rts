@@ -1473,9 +1473,7 @@ fn pieces_at(w: &World, f: u16, sites: &[FxVec2]) -> usize {
         .iter()
         .filter(|&&p| {
             fs.pieces.values().any(|q| {
-                q.owner == PlayerId(1)
-                    && q.fort == f
-                    && (q.pos - p).length() <= Fx::from_int(2)
+                q.owner == PlayerId(1) && q.fort == f && (q.pos - p).length() <= Fx::from_int(2)
             })
         })
         .count()
@@ -1558,13 +1556,23 @@ fn ai_one_belt_per_lane() {
     assert_eq!(ai_ro(&w).counters.belt_jobs, 5);
     // The field swept: the belt stays, no belt job without row 1.
     let at = fort(&w, "ww2:at_minefield");
-    w.edit_fort(|fs| fs.mines.retain(|_, m| !(m.owner == PlayerId(1) && m.fort == at)));
-    w.state.game.as_mut().unwrap().setup.rules.ai.obstacles.at_mines = 0;
+    w.edit_fort(|fs| {
+        fs.mines
+            .retain(|_, m| !(m.owner == PlayerId(1) && m.fort == at))
+    });
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .setup
+        .rules
+        .ai
+        .obstacles
+        .at_mines = 0;
     play(&mut w, 120);
     assert_eq!(pieces_at(&w, hh, &sites), 5, "the belt stays");
     assert_eq!(ai_ro(&w).counters.belt_jobs, 5, "no belt without row 1");
 }
-
 
 /// C5: C ringed by enemy log barriers 70 m out (player 0's, doubled; only
 /// the belt is own), open only in a 20 m gap across the lane where the
@@ -1640,7 +1648,6 @@ fn ai_belt_leaves_the_own_way_round() {
             let p = w.state.entities.transform[tv.index()].pos.xy();
             (p - f.pos).dot(u) > Fx::from_int(80)
         });
-        let p = w.state.entities.transform[tv.index()].pos.xy() - f.pos;
         let c = &ai_ro(&w).counters;
         (c.own_blocked, out, c.belt_jobs, c.belt_route_rejects)
     };
@@ -1653,7 +1660,10 @@ fn ai_belt_leaves_the_own_way_round() {
     // belt, so `own_blocked` stays 0 here (it counts a halt within 8 m of
     // an own piece only); the way out is what the rule keeps.
     let (_, out, jobs, _) = go(0);
-    assert!(jobs >= 1 && !out, "control: belt_detour_pct 0 closes the gap");
+    assert!(
+        jobs >= 1 && !out,
+        "control: belt_detour_pct 0 closes the gap"
+    );
 }
 
 /// Determinism with a belt job live (spec 5 row Belt, "same test as B,

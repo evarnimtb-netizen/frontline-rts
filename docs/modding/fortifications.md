@@ -422,3 +422,34 @@ uses the Pioniere and US Engineers it already buys.
   `s10b_ai_derived`; `fortify-test` rows `s10b_ai.paths`, `.mines`,
   `.obstacle`, `.bunker`, `.sweep`, `.demolish` (T109-T118 in
   `docs/slices/targets/S10b-ai.toml`; `--no-s10b-ai` leaves them out).
+
+### AI at the front (S10c-ai)
+
+The spec is `docs/slices/S10c-ai.md`; keys under `[ai.obstacles]` in
+`docs/modding/tuning.md`. With `front` on, the AI's front points (the own
+points nearest the enemy base, `front_points`) get a hasty AP field, wire
+and an AT field on their enemy approach lanes, without a trench and before
+the nest; `front_slots` front jobs run at once so a builder stays for the
+home works, and `builder_cards_min` keeps that many builder squads bought.
+
+* **Belts** (`belt`, C4). Once a front point's AT row 1 is laid, a row of
+  `belt_pieces` blocking pieces, `hedgehog_step_m` apart, goes across the
+  vehicle lane `belt_gap_m` beyond the field on the enemy side, so a
+  vehicle that rounds the row crosses the field. The lane and the row's
+  frame are read from the laid AT mines (the enemy path bends round a belt
+  once it stands, so the frame does not move). A `build_heavy` squad sets
+  hedgehogs one job per piece; any other builder sets one log barrier line
+  of the same length. One belt per lane: it is not started again while a
+  belt job runs or once its pieces stand, and a cleared field brings no new
+  belt. A belt job is a front job (`front_slots`).
+* **Own way round** (`belt_detour_pct`, C5). Before a belt starts, the own
+  route vehicle's path base -> point -> way out is searched again with the
+  belt's pieces blocked; the belt is taken when that path exists and is at
+  most `belt_detour_pct` % of the path without it, else moved by its own
+  length to the other side of the lane once, else refused there
+  (`belt_route_rejects`). 0 turns the check off.
+* **Demolitions** stay R14 (only with no way round): a belt makes a
+  demolition possible, not likely.
+* **Measures.** `skirmish --json` `factions.<f>.s10c` and `s10c_derived`
+  (`belt_jobs`, `belt_route_rejects`, `matches_with_belt_pct`);
+  `fortify-test` row `s10c.belt` (`--no-s10b-ai` leaves it out).

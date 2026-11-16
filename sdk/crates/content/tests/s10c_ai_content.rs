@@ -33,7 +33,7 @@ fn load_rejects_bad_s10c_keys() {
     let o = &s.rules.ai.obstacles;
     // The mod states the off values (spec 2): switches 0, the floor 0;
     // Build B item 10 turns `front` on; Build C chunk 1 `mine_assign` and
-    // `jobs_max` 2 (C1); chunk 2 (orchestrator 2026-11-16) the floor 2.
+    // `jobs_max` 2 (C1); chunk 2 (orchestrator 2026-11-16) the floor 2 and `belt`.
     assert_eq!(
         (
             o.front,
@@ -42,7 +42,7 @@ fn load_rejects_bad_s10c_keys() {
             o.builder_cards_min,
             o.jobs_max
         ),
-        (1, 1, 0, 2, 2)
+        (1, 1, 1, 2, 2)
     );
     assert_eq!(
         (
@@ -65,6 +65,7 @@ fn load_rejects_bad_s10c_keys() {
         AiObstacleTuning {
             front: 1,
             mine_assign: 1,
+            belt: 1,
             jobs_max: 2,
             builder_cards_min: 2,
             ..AiObstacleTuning::default()

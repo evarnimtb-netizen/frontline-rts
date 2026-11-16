@@ -303,9 +303,7 @@ pub(crate) fn fort_of(s: &MatchSetup, k: WorkKind) -> Option<u16> {
             WorkKind::AtField | WorkKind::AtRow2 => {
                 d.shape == FortShape::Line && trigger(d) == Some(1)
             }
-            WorkKind::Hedgehog | WorkKind::Belt => {
-                d.shape == FortShape::Point && d.blocks_vehicles
-            }
+            WorkKind::Hedgehog | WorkKind::Belt => d.shape == FortShape::Point && d.blocks_vehicles,
             WorkKind::LogBarrier => d.shape == FortShape::Line && d.blocks_vehicles,
             WorkKind::Bunker => {
                 d.mine_item.is_none()
@@ -582,7 +580,10 @@ impl super::Planner<'_> {
             WorkKind::Belt => {
                 let (_, _, enemy) = self.belt_frame(i)?;
                 let p = self.belt_next(i)?;
-                return Some(vec![p, self.terrain.clamp(p + enemy * Fx::from_int(FACING_M))]);
+                return Some(vec![
+                    p,
+                    self.terrain.clamp(p + enemy * Fx::from_int(FACING_M)),
+                ]);
             }
             _ => {}
         }
@@ -1318,9 +1319,8 @@ impl super::Planner<'_> {
         let site = mid_of(d.shape, &j.line);
         let r = Fx::from_int(s.rules.ai.obstacles.hedgehog_step_m as i32).max(Fx::ONE);
         (0..2).any(|side| {
-            self.belt_row(j.point as usize, side).is_some_and(|row| {
-                crate::fort::near_segment(site, row[0], row[row.len() - 1], r)
-            })
+            self.belt_row(j.point as usize, side)
+                .is_some_and(|row| crate::fort::near_segment(site, row[0], row[row.len() - 1], r))
         })
     }
 
@@ -3298,8 +3298,7 @@ impl super::Planner<'_> {
                 if front && !self.front_slot_free() {
                     continue;
                 }
-                let (Some(mut fort), Some(mut line)) =
-                    (fort_of(s, k), self.point_site(i, k, None))
+                let (Some(mut fort), Some(mut line)) = (fort_of(s, k), self.point_site(i, k, None))
                 else {
                     continue;
                 };
