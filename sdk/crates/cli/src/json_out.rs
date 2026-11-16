@@ -116,7 +116,10 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
             .map(|p| {
                 let f = &p.s10.fort;
                 let ai = &p.s10.ai;
-                json!({
+                // S10c-ai: the same raw counters as `factions.<f>.s10c`.
+                let mut one = crate::skirmish::S10cFaction::default();
+                one.add(&p.s10c, &p.s10);
+                let mut side = json!({
                     "faction": p.faction,
                     "base": p.base,
                     "defeat": p.defeat,
@@ -156,7 +159,11 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     "vehicles_lost": p.armour.vehicles_lost,
                     "squads_at_min": p.squads_at_min,
                     "deaths": crate::skirmish::DEATH_PLACES.iter().zip(p.death_places).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
-                })
+                });
+                if let Some(o) = side.as_object_mut() {
+                    o.insert("s10c".into(), s10c_blocks(&one).0);
+                }
+                side
             })
             .collect();
         if let Some(o) = v.as_object_mut() {
@@ -621,6 +628,12 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s10b_ai".into(), raw);
         o.insert("s10b_ai_derived".into(), derived);
     }
+    // S10c-ai (docs/slices/S10c-ai.md 7): counters, exposure, shares.
+    {
+        let (raw, derived) = s10c_blocks(&f.s10c);
+        o.insert("s10c".into(), raw);
+        o.insert("s10c_derived".into(), derived);
+    }
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1035,6 +1048,76 @@ pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
         "jobs_overdue": c.get("jobs_overdue"),
         "refused_reorders": c.get("refused_reorders"),
         "lost_on_known_per_match": per(c.lost_on_known),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S10c-ai: a faction's `s10c` (raw: the S10c counters by name,
+/// `front_why_<name>`, `mine_want_why_<name>`, the by-point arrays in map
+/// point order, `mines_home`, `mines_front`, the exposure tallies) and
+/// `s10c_derived` (spec 7). A share over an empty set is null, not 0.
+pub fn s10c_blocks(c: &crate::skirmish::S10cFaction) -> (Value, Value) {
+    let n = c.matches.max(1) as f64;
+    let m = c.matches as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let mut raw = Map::new();
+    for (k, name) in crate::skirmish::S10C_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, name) in frontline_sim::ai::FRONT_WHY.iter().enumerate() {
+        raw.insert(format!("front_why_{name}"), json!(c.front_why[k]));
+    }
+    for (k, name) in frontline_sim::ai::MINE_WANT_WHY.iter().enumerate() {
+        raw.insert(format!("mine_want_why_{name}"), json!(c.mine_want_why[k]));
+    }
+    raw.insert("works_by_point".into(), json!(c.works_by_point));
+    raw.insert("mines_by_point".into(), json!(c.mines_by_point));
+    for (k, v) in [
+        ("mines_home", c.mines_home),
+        ("mines_front", c.mines_front),
+        ("mines_seen", c.mines_seen),
+        ("mines_approached", c.mines_approached),
+        ("mines_set_off", c.mines_set_off),
+        ("s10b_jobs", c.s10b_jobs),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, v) in [
+        ("matches_with_mines", c.matches_with_mines),
+        ("matches_mines_approached", c.matches_mines_approached),
+        ("matches_wire_seen", c.matches_wire_seen),
+        ("matches_wire_approached", c.matches_wire_approached),
+        ("matches_obstacle_approached", c.matches_obstacle_approached),
+        ("matches_knew_enemy_wire", c.matches_knew_enemy_wire),
+        ("matches_with_front_field", c.matches_with_front_field),
+        ("matches_with_belt", c.matches_with_belt),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    let mines = (c.mines_home + c.mines_front) as f64;
+    let derived = json!({
+        "defence_job_fail_pct": pct_or_null(c.get("fort_job_fails") as f64, c.s10b_jobs as f64),
+        "front_mines_share_pct": pct_or_null(c.mines_front as f64, mines),
+        "matches_mines_approached_pct": pct_or_null(
+            c.matches_mines_approached as f64,
+            c.matches_with_mines as f64
+        ),
+        "mines_set_off_per_match": per(c.mines_set_off),
+        "matches_with_wire": c.matches_with_wire,
+        "wire_seen_by_enemy_pct": pct_or_null(c.matches_wire_seen as f64, c.matches_with_wire as f64),
+        "matches_wire_approached_pct": pct_or_null(
+            c.matches_wire_approached as f64,
+            c.matches_with_wire as f64
+        ),
+        "matches_obstacle_approached_pct": pct_or_null(c.matches_obstacle_approached as f64, m),
+        "front_calm_pct": pct_or_null(c.get("front_calm_plans") as f64, c.get("front_plans") as f64),
+        "front_jobs_per_match": per(c.get("front_jobs")),
+        "front_drop_pct": pct_or_null(c.get("front_drops") as f64, c.get("front_jobs") as f64),
+        "front_builders_lost_per_match": per(c.get("front_lost")),
+        "matches_with_belt_pct": pct_or_null(c.matches_with_belt as f64, m),
+        "matches_with_front_field_pct": pct_or_null(c.matches_with_front_field as f64, m),
+        "builder_buys_per_match": per(c.get("builder_buys")),
+        "knew_enemy_wire_pct": pct_or_null(c.matches_knew_enemy_wire as f64, m),
     });
     (Value::Object(raw), derived)
 }

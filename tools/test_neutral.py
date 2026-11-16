@@ -72,6 +72,27 @@ class Neutral(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("only in NEW", "\n".join(lines))
 
+    def test_s10c_keys_skipped_only_when_base_lacks_them(self):
+        # S10c-ai Build A: observer blocks read state, so they are not zero
+        # with the switches off. Control: the same block under another name
+        # fails (only in NEW and not zero).
+        new = copy.deepcopy(BASE)
+        new["factions"]["germany"]["s10c"] = {"mines_seen": 7}
+        new["factions"]["germany"]["s10c_derived"] = {"front_calm_pct": 50.0}
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        other = copy.deepcopy(BASE)
+        other["factions"]["germany"]["x10c"] = {"mines_seen": 7}
+        lines, ok = self.run_dirs(BASE, other)
+        self.assertFalse(ok, lines)
+        # Both have it: compared.
+        base = copy.deepcopy(new)
+        changed = copy.deepcopy(new)
+        changed["factions"]["germany"]["s10c"]["mines_seen"] = 8
+        lines, ok = self.run_dirs(base, changed)
+        self.assertFalse(ok, lines)
+        self.assertIn("factions.germany.s10c.mines_seen: 7 -> 8", lines[1])
+
     def test_key_only_in_base_fails(self):
         new = copy.deepcopy(BASE)
         del new["wins"]["usa"]

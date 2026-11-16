@@ -9,7 +9,10 @@ Compares the CLI JSON files present in both directories:
   records keyed by (seed, side) must be equal in every field but `hash`;
   the aggregate blocks equal recursively, ignoring tick_p99_ms, jobs,
   schema and wall times. A key only in NEW must be 0, empty or false (new
-  counters that stay zero); a key only in BASE fails. The set header's
+  counters that stay zero); a key only in BASE fails. S10c-ai (Build A):
+  a key starting `s10c` that BASE lacks is skipped (its observer counters
+  read state, so they are not zero with the switches off); when both have
+  it, it is compared like any other. The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
   items)`.
@@ -66,6 +69,8 @@ def diff(base, new, path, out, strict, skip=frozenset()):
             if k not in new:
                 out.append(f"{p}: only in BASE")
             elif k not in base:
+                if k.startswith("s10c"):
+                    continue
                 if strict and not is_blank(new[k]):
                     out.append(f"{p}: only in NEW and not zero ({json.dumps(new[k])[:60]})")
             else:

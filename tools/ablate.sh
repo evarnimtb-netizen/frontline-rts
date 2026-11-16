@@ -30,15 +30,31 @@
 # apply each one (a 1-minute match), and the measure commands are printed.
 # tools/check.sh quick runs it.
 #
+# S10c-ai (docs/slices/S10c-ai.md 2): with ABLATIONS=docs/slices/targets/
+# S10c-ai-ablations every *.toml there is an override (c_off, front_off,
+# mine_assign_off, belt_off, jobs1, builders2, site80), and a file may hold
+# only the S10c keys at their listed values ([ai.obstacles] front,
+# mine_assign, belt 0; jobs_max 1; builder_cards_min 0 or 2;
+# front_site_threat_m 80; front_wire_len_m 20; front_slots 1). c_off is the
+# neutrality control there (as all_off: neutral.py against NEUTRAL_BASE,
+# default target/s10c-base40, the 40 set of main 54009f6).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
-# target/s10b-verify).
+# target/s10b-verify; target/s10c-base40 with the S10c dir).
 set -u
 cd "$(dirname "$0")/.."
 DIR=${ABLATIONS:-docs/slices/targets/S10b-ai-ablations}
 DIR=${DIR%/}
 TARGETS=${TARGETS:-${DIR%-ablations}.toml}
+S10C=0
+NEUTRAL_NAME=all_off
+if [ "$(basename "$DIR")" = S10c-ai-ablations ]; then
+    S10C=1
+    NEUTRAL_NAME=c_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10c-base40}
+fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
 if [ "${1:-}" = "--dry-run" ]; then
@@ -50,7 +66,9 @@ ROOT=${2:?usage: tools/ablate.sh [--dry-run] ONDIR OUTROOT [NAME]...}
 shift 2
 if { [ $# -eq 1 ] && [ "$1" = all ]; } || { [ $# -eq 0 ] && [ "$(basename "$DIR")" != S10a-ai-ablations ]; }; then
     NAMES=()
-    for f in "$DIR"/*_off.toml; do
+    GLOB="$DIR/*_off.toml"
+    [ $S10C -eq 1 ] && GLOB="$DIR/*.toml"
+    for f in $GLOB; do
         [ -f "$f" ] || continue
         n=$(basename "$f" .toml)
         NAMES+=("$n")
@@ -72,10 +90,19 @@ fi
 # (No tomllib on this Mac's python: the files are plain enough to read by
 # line.) Prints the number of keys.
 check_file() {
-    python3 -I - "$1" <<'PY'
+    python3 -I - "$1" "$S10C" <<'PY'
 import re, sys
 path = sys.argv[1]
+s10c = sys.argv[2] == "1"
 zero = lambda *ks: {k: 0 for k in ks}
+# S10c-ai: each key with the values its override files may set.
+allowed = {
+    "ai.obstacles": {
+        "front": {0}, "mine_assign": {0}, "belt": {0}, "jobs_max": {1},
+        "builder_cards_min": {0, 2}, "front_site_threat_m": {80},
+        "front_wire_len_m": {20}, "front_slots": {1},
+    },
+}
 switches = {
     "ai.fort": zero("works", "wire", "breach", "cards", "nest", "dugout", "roof", "sandbags"),
     "ai.obstacles": {
@@ -88,6 +115,10 @@ switches = {
     "fortify": zero("mine_paths"),
     "ai.truck": zero("refusal_memory"),
 }
+if s10c:
+    switches = allowed
+else:
+    switches = {t: {k: {v} for k, v in ks.items()} for t, ks in switches.items()}
 table, keys = None, {}
 for n, raw in enumerate(open(path), 1):
     line = raw.split("#", 1)[0].strip()
@@ -103,8 +134,8 @@ for n, raw in enumerate(open(path), 1):
     if not m or table not in switches:
         sys.exit(f"{path}:{n}: not a switch table's integer key: {line}")
     k, v = m.group(1), int(m.group(2))
-    if k not in switches[table] or v != switches[table][k]:
-        offs = ", ".join(f"{a} = {b}" for a, b in sorted(switches[table].items()))
+    if k not in switches[table] or v not in switches[table][k]:
+        offs = ", ".join(f"{a} = {'/'.join(map(str, sorted(b)))}" for a, b in sorted(switches[table].items()))
         sys.exit(f"{path}:{n}: only the switches at their off value ({offs}), not {k} = {v}")
     if (table, k) in keys:
         sys.exit(f"{path}:{n}: {k} twice")
@@ -133,8 +164,17 @@ if [ $DRY -eq 1 ]; then
         f="$DIR/$n.toml"
         if [ -x "$CLI" ]; then
             keys=$(check_file "$f")
-            applied=$("$CLI" skirmish --ai-vs-ai --seed 1 --seeds 1 --minutes 1 --rules-override "$f" --summary 2>&1 |
+            out=$("$CLI" skirmish --ai-vs-ai --seed 1 --seeds 1 --minutes 1 --rules-override "$f" --summary 2>&1)
+            st=$?
+            applied=$(printf '%s\n' "$out" |
                 grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck)\.[a-z_]*: [0-9]+ -> [0-9]+$")
+            # S10c-ai: a key may already hold its listed value (c_off is
+            # the default until Build B turns `front` on); the CLI must
+            # accept the file and change nothing but its keys.
+            if [ $S10C -eq 1 ] && [ $st -eq 0 ] && [ "$applied" -le "$keys" ] &&
+                printf '%s\n' "$out" | grep -qE "^override $f: "; then
+                applied=$keys
+            fi
             if [ "$applied" != "$keys" ]; then
                 echo "ablate: $n: the CLI applied $applied of $keys keys"
                 FAIL=1
@@ -149,8 +189,8 @@ fi
 
 [ -d "$ON" ] || { echo "ablate: $ON: no switches-on measure dir"; exit 1; }
 for n in "${NAMES[@]}"; do
-    if [ "$n" = all_off ] && [ ! -d "$NEUTRAL_BASE" ]; then
-        echo "ablate: all_off needs NEUTRAL_BASE $NEUTRAL_BASE (the neutrality verdict)"
+    if [ "$n" = "$NEUTRAL_NAME" ] && [ ! -d "$NEUTRAL_BASE" ]; then
+        echo "ablate: $n needs NEUTRAL_BASE $NEUTRAL_BASE (the neutrality verdict)"
         exit 1
     fi
 done
@@ -176,7 +216,7 @@ d = off - on
 verdict = "decides Tune (>= 4)" if abs(d) >= 4 else "matters (>= 2)" if abs(d) >= 2 else "not decisive (< 2)"
 print(f"Germany {off:.2f} % (on {on:.2f}, change {d:+.2f}): {verdict}")
 ' "$ON_POOL" "$pool")
-    if [ "$n" = all_off ]; then
+    if [ "$n" = "$NEUTRAL_NAME" ]; then
         if neutral=$(python3 -I tools/neutral.py "$NEUTRAL_BASE" "$out"); then
             st=0
         else

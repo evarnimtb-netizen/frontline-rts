@@ -413,6 +413,8 @@ pub struct PlayerReport {
     pub s10: S10Player,
     /// B1 `--side-detail`: deaths by place ([`DEATH_PLACES`]; zero without it).
     pub death_places: [u32; 6],
+    /// S10c-ai: the AI's S10c counters and the exposure seen ([`S10cSeen`]).
+    pub s10c: S10cPlayer,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -701,6 +703,302 @@ impl S10bAiSeen {
                 bits |= CHANCE_OBST;
             }
             self.chances[p] |= bits;
+        }
+    }
+}
+
+/// S10c-ai (docs/slices/S10c-ai.md 3, 7): the AI's S10c counters in report
+/// order (names of [`S10cPlayer::ai`]).
+pub const S10C_AI: [&str; 12] = [
+    "fort_job_fails",
+    "truck_give_ups",
+    "route_refusals",
+    "front_plans",
+    "front_calm_plans",
+    "front_jobs",
+    "front_drops",
+    "front_lost",
+    "front_resumes",
+    "belt_jobs",
+    "belt_route_rejects",
+    "builder_buys",
+];
+
+/// S10c-ai: an enemy this close (m) to an own mine, wire middle or blocking
+/// piece "approached" it (spec 7).
+pub const S10C_NEAR_M: f32 = 30.0;
+
+/// S10c-ai numbers of one player in one match: the AI's counters and what
+/// [`S10cSeen`] saw (read-only, once a second).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S10cPlayer {
+    /// [`S10C_AI`] order (zero for a human).
+    pub ai: [u32; 12],
+    /// `frontline_sim::ai::FRONT_WHY` and `MINE_WANT_WHY` order.
+    pub front_why: [u32; 12],
+    pub mine_want_why: [u32; 8],
+    /// Own mines seen at a sampled second, and of those the ones an enemy
+    /// soldier (AP) or enemy vehicle (AT) came within 30 m of.
+    pub mines_seen: u32,
+    pub mines_approached: u32,
+    /// Own wire stood at a sampled second; an enemy soldier came within
+    /// 30 m of a section's middle; an enemy vehicle within 30 m of an own
+    /// blocking piece.
+    pub wire_stood: bool,
+    pub wire_approached: bool,
+    pub obstacle_approached: bool,
+    /// The other AI's `wire_known` held a section of this player; this
+    /// player's AI held a section of another player.
+    pub wire_seen_by_enemy: bool,
+    pub knew_enemy_wire: bool,
+    /// A saved front lane of this AI had its FrontAp field laid (Build B).
+    pub front_field: bool,
+    /// Own works done and own mines seen, by nearest map point (map order).
+    pub works_by_point: Vec<u32>,
+    pub mines_by_point: Vec<u32>,
+    /// Mines seen whose nearest map point is the home point (the point
+    /// nearest the layer's base), and the others.
+    pub mines_home: u32,
+    pub mines_front: u32,
+}
+
+impl S10cPlayer {
+    /// The S10c counters of `a` in [`S10C_AI`] order.
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 12] {
+        [
+            a.fort_job_fails,
+            a.truck_give_ups,
+            a.route_refusals,
+            a.front_plans,
+            a.front_calm_plans,
+            a.front_jobs,
+            a.front_drops,
+            a.front_lost,
+            a.front_resumes,
+            a.belt_jobs,
+            a.belt_route_rejects,
+            a.builder_buys,
+        ]
+    }
+}
+
+/// S10c-ai: a unit in the observer's grid (owner, position, vehicle).
+type S10cUnit = (u8, [f32; 2], bool);
+
+/// S10c-ai exposure observer (Build A item 4), called once a second
+/// (`tick % hz == 0`) and once at the end. Read-only: it reads the entity
+/// columns, the fort state and the AI states. Enemy units go into a 30 m
+/// grid, so each mine, wire section and piece looks at 9 cells only.
+#[derive(Clone, Debug, Default)]
+pub struct S10cSeen {
+    /// Every mine seen: id -> (owner, nearest point).
+    mines: BTreeMap<u32, (u8, u8)>,
+    approached: BTreeSet<u32>,
+    /// Works alive at the last look: id -> (owner, blueprint, nearest point).
+    works: BTreeMap<u32, (u8, u16, u8)>,
+    /// `FortAccount::works_done` per player at the last look.
+    done: Vec<Vec<u32>>,
+    points: Vec<[f32; 2]>,
+    home: Vec<u8>,
+    pub per: Vec<S10cPlayer>,
+}
+
+impl S10cSeen {
+    fn nearest(&self, p: [f32; 2]) -> u8 {
+        let d2 = |a: [f32; 2]| (a[0] - p[0]).powi(2) + (a[1] - p[1]).powi(2);
+        (0..self.points.len())
+            .min_by(|&a, &b| d2(self.points[a]).total_cmp(&d2(self.points[b])))
+            .unwrap_or(0) as u8
+    }
+
+    pub fn observe(&mut self, w: &World) {
+        use std::collections::HashMap;
+        let Some(g) = w.game() else { return };
+        let s = g.setup();
+        let n = s.players.len();
+        if self.per.len() < n {
+            self.points = s
+                .map
+                .points
+                .iter()
+                .map(|ps| frontline_sim::fx::FxVec2::from(ps.pos).to_f32())
+                .collect();
+            self.per = vec![
+                S10cPlayer {
+                    works_by_point: vec![0; self.points.len()],
+                    mines_by_point: vec![0; self.points.len()],
+                    ..S10cPlayer::default()
+                };
+                n
+            ];
+            self.home = (0..n)
+                .map(|p| self.nearest(g.base_of(PlayerId(p as u8)).to_f32()))
+                .collect();
+            self.done = vec![Vec::new(); n];
+        }
+        // Enemy candidates: soldiers on foot and vehicles, by 30 m cell.
+        let cell = |p: [f32; 2]| {
+            (
+                (p[0] / S10C_NEAR_M).floor() as i32,
+                (p[1] / S10C_NEAR_M).floor() as i32,
+            )
+        };
+        let ents = w.entities();
+        let (kind, owner, tf, unit) = (ents.kind(), ents.owner(), ents.transform(), ents.unit());
+        let mut grid: HashMap<(i32, i32), Vec<S10cUnit>> = HashMap::new();
+        for i in 0..ents.len() {
+            use frontline_sim::ecs::EntityKind;
+            let vehicle = match kind[i] {
+                EntityKind::Soldier if unit[i].riding.is_none() => false,
+                EntityKind::Vehicle => true,
+                _ => continue,
+            };
+            let p = tf[i].pos.xy().to_f32();
+            grid.entry(cell(p))
+                .or_default()
+                .push((owner[i].0, p, vehicle));
+        }
+        let r2 = S10C_NEAR_M * S10C_NEAR_M;
+        // Whether a unit of another player than `own` (a vehicle when
+        // `vehicle`, else a soldier) stands within 30 m of `p`.
+        let near = |p: [f32; 2], own: u8, vehicle: bool| {
+            let (cx, cy) = cell(p);
+            (cx - 1..=cx + 1).any(|x| {
+                (cy - 1..=cy + 1).any(|y| {
+                    grid.get(&(x, y)).is_some_and(|v| {
+                        v.iter().any(|&(o, q, veh)| {
+                            o != own
+                                && veh == vehicle
+                                && (q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) <= r2
+                        })
+                    })
+                })
+            })
+        };
+        let fort = g.fort();
+        for (&id, m) in &fort.mines {
+            let o = m.owner.0;
+            let p = m.pos.to_f32();
+            if !self.mines.contains_key(&id) {
+                let pt = self.nearest(p);
+                self.mines.insert(id, (o, pt));
+                if let Some(r) = self.per.get_mut(o as usize) {
+                    r.mines_seen += 1;
+                }
+            }
+            if self.approached.contains(&id) {
+                continue;
+            }
+            let at = s
+                .items
+                .get(m.item as usize)
+                .and_then(|it| it.mine.as_ref())
+                .is_some_and(|t| t.trigger == 1);
+            if near(p, o, at) {
+                self.approached.insert(id);
+                if let Some(r) = self.per.get_mut(o as usize) {
+                    r.mines_approached += 1;
+                }
+            }
+        }
+        for ws in fort.wire.values() {
+            let o = ws.owner.0;
+            let Some(r) = self.per.get_mut(o as usize) else {
+                continue;
+            };
+            r.wire_stood = true;
+            if !r.wire_approached {
+                let (a, b) = (ws.a.to_f32(), ws.b.to_f32());
+                r.wire_approached = near([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0], o, false);
+            }
+        }
+        for pc in fort.pieces.values() {
+            let o = pc.owner.0;
+            if !s
+                .forts
+                .get(pc.fort as usize)
+                .is_some_and(|f| f.blocks_vehicles)
+            {
+                continue;
+            }
+            if let Some(r) = self.per.get_mut(o as usize)
+                && !r.obstacle_approached
+            {
+                r.obstacle_approached = near(pc.pos.to_f32(), o, true);
+            }
+        }
+        for p in 0..n {
+            let Some(ai) = g.ai(PlayerId(p as u8)) else {
+                continue;
+            };
+            for id in &ai.wire_known {
+                if let Some(ws) = fort.wire.get(id)
+                    && ws.owner.0 as usize != p
+                {
+                    self.per[p].knew_enemy_wire = true;
+                    if let Some(r) = self.per.get_mut(ws.owner.0 as usize) {
+                        r.wire_seen_by_enemy = true;
+                    }
+                }
+            }
+            if ai.front_lanes.iter().any(|l| l.ap_done) {
+                self.per[p].front_field = true;
+            }
+        }
+        // Works done: a work gone since the last look while its owner's
+        // `works_done` of that blueprint rose (in id order).
+        let mut gone: Vec<(u8, u16, u8)> = Vec::new();
+        self.works.retain(|id, v| {
+            let keep = fort.works.contains_key(id);
+            if !keep {
+                gone.push(*v);
+            }
+            keep
+        });
+        for (&id, wk) in &fort.works {
+            if !self.works.contains_key(&id) {
+                let a = wk.line.first().map_or([0.0; 2], |v| v.to_f32());
+                let b = wk.line.last().map_or(a, |v| v.to_f32());
+                let pt = self.nearest([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]);
+                self.works.insert(id, (wk.owner.0, wk.fort, pt));
+            }
+        }
+        for p in 0..n {
+            let now = fort
+                .accounts
+                .get(p)
+                .map_or(Vec::new(), |a| a.works_done.clone());
+            let was = &mut self.done[p];
+            for &(o, f, pt) in &gone {
+                let f = f as usize;
+                if was.len() <= f {
+                    was.resize(f + 1, 0);
+                }
+                if o as usize == p && now.get(f).copied().unwrap_or(0) > was[f] {
+                    was[f] += 1;
+                    if let Some(c) = self.per[p].works_by_point.get_mut(pt as usize) {
+                        *c += 1;
+                    }
+                }
+            }
+            *was = now;
+        }
+    }
+
+    /// Mines by point and home / front, from every mine seen.
+    pub fn finish(&mut self) {
+        for &(o, pt) in self.mines.values() {
+            let Some(r) = self.per.get_mut(o as usize) else {
+                continue;
+            };
+            if let Some(c) = r.mines_by_point.get_mut(pt as usize) {
+                *c += 1;
+            }
+            if self.home.get(o as usize) == Some(&pt) {
+                r.mines_home += 1;
+            } else {
+                r.mines_front += 1;
+            }
         }
     }
 }
@@ -1407,6 +1705,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut s10b_ordered = S10bOrdered::default();
     let mut s10b_ai_seen = S10bAiSeen::default();
     let mut death_places = DeathPlaces::default();
+    let mut s10c_seen = S10cSeen::default();
     let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded);
 
@@ -1460,6 +1759,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         s3c.observe(&world);
         s10b_ordered.observe(&world);
         s10b_ai_seen.observe(&world);
+        // S10c-ai: exposure, once a second (read-only).
+        if world.tick().is_multiple_of(hz) {
+            s10c_seen.observe(&world);
+        }
         if args.side_detail {
             death_places.observe(&world);
         }
@@ -1497,6 +1800,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         t.finish()?;
     }
     s3c.finish();
+    s10c_seen.observe(&world);
+    s10c_seen.finish();
 
     let threshold = (peak * PEAK_SHARE_PCT).div_ceil(100);
     let mut peak_ns: Vec<u64> = tick_ns
@@ -1840,6 +2145,15 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         .count() as u32,
                 },
                 death_places: death_places.per.get(p).copied().unwrap_or([0; 6]),
+                s10c: {
+                    let mut c = s10c_seen.per.get(p).cloned().unwrap_or_default();
+                    if let Some(a) = ai {
+                        c.ai = S10cPlayer::ai_counters(&a.counters);
+                        c.front_why = a.counters.front_why;
+                        c.mine_want_why = a.counters.mine_want_why;
+                    }
+                    c
+                },
                 squads_at_min: squads_at.get(p).copied().unwrap_or([None; 5]),
                 s9_ai: ai.map_or([0; 7], |a| {
                     let c = &a.counters;
@@ -2283,6 +2597,8 @@ pub struct FactionSummary {
     pub s10b: S10bFaction,
     /// S10b-ai sums (the JSON block is `s10b_ai`, counters only).
     pub s10b_ai: S10bAiFaction,
+    /// S10c-ai sums (the JSON blocks `s10c` and `s10c_derived`).
+    pub s10c: S10cFaction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -2519,6 +2835,92 @@ impl S10bAiFaction {
             self.demolish_wanted_matches += 1;
             self.demolish_when_wanted += u32::from(c("demolitions_started") > 0);
         }
+    }
+}
+
+/// S10c-ai numbers of one faction over a `--seeds` run (sums and per-match
+/// tallies of `s10c_derived`; docs/slices/S10c-ai.md 7). The JSON blocks
+/// are [`crate::json_out::s10c_blocks`].
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S10cFaction {
+    pub matches: u32,
+    /// [`S10C_AI`] order.
+    pub ai: [u64; 12],
+    pub front_why: [u64; 12],
+    pub mine_want_why: [u64; 8],
+    pub works_by_point: Vec<u64>,
+    pub mines_by_point: Vec<u64>,
+    pub mines_home: u64,
+    pub mines_front: u64,
+    pub mines_seen: u64,
+    pub mines_approached: u64,
+    /// `s10b_jobs` (the AI's S10b jobs) and own mines set off (account).
+    pub s10b_jobs: u64,
+    pub mines_set_off: u64,
+    /// Matches with own mines laid (`FortAccount::mines_laid`), and of
+    /// those with one approached; with own wire standing, and of those
+    /// seen by the enemy AI and approached; with an own blocking piece
+    /// approached; where this side's AI knew enemy wire; with a front
+    /// field; with a belt job.
+    pub matches_with_mines: u32,
+    pub matches_mines_approached: u32,
+    pub matches_with_wire: u32,
+    pub matches_wire_seen: u32,
+    pub matches_wire_approached: u32,
+    pub matches_obstacle_approached: u32,
+    pub matches_knew_enemy_wire: u32,
+    pub matches_with_front_field: u32,
+    pub matches_with_belt: u32,
+}
+
+impl S10cFaction {
+    /// The sum of counter `name` ([`S10C_AI`]).
+    pub fn get(&self, name: &str) -> u64 {
+        S10C_AI
+            .iter()
+            .position(|k| *k == name)
+            .map_or(0, |k| self.ai[k])
+    }
+
+    /// Adds one match of one player.
+    pub fn add(&mut self, c: &S10cPlayer, s10: &S10Player) {
+        self.matches += 1;
+        for (k, v) in c.ai.iter().enumerate() {
+            self.ai[k] += *v as u64;
+        }
+        for (k, v) in c.front_why.iter().enumerate() {
+            self.front_why[k] += *v as u64;
+        }
+        for (k, v) in c.mine_want_why.iter().enumerate() {
+            self.mine_want_why[k] += *v as u64;
+        }
+        for (sum, v) in [
+            (&mut self.works_by_point, &c.works_by_point),
+            (&mut self.mines_by_point, &c.mines_by_point),
+        ] {
+            if sum.len() < v.len() {
+                sum.resize(v.len(), 0);
+            }
+            for (k, n) in v.iter().enumerate() {
+                sum[k] += *n as u64;
+            }
+        }
+        self.mines_home += c.mines_home as u64;
+        self.mines_front += c.mines_front as u64;
+        self.mines_seen += c.mines_seen as u64;
+        self.mines_approached += c.mines_approached as u64;
+        self.s10b_jobs += s10.s10b_ai[0] as u64;
+        self.mines_set_off += s10.fort.mines_set_off as u64;
+        let mines = s10.fort.mines_laid > 0;
+        self.matches_with_mines += u32::from(mines);
+        self.matches_mines_approached += u32::from(mines && c.mines_approached > 0);
+        self.matches_with_wire += u32::from(c.wire_stood);
+        self.matches_wire_seen += u32::from(c.wire_stood && c.wire_seen_by_enemy);
+        self.matches_wire_approached += u32::from(c.wire_stood && c.wire_approached);
+        self.matches_obstacle_approached += u32::from(c.obstacle_approached);
+        self.matches_knew_enemy_wire += u32::from(c.knew_enemy_wire);
+        self.matches_with_front_field += u32::from(c.front_field);
+        self.matches_with_belt += u32::from(c.ai[9] > 0);
     }
 }
 
@@ -3067,6 +3469,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s10.add(&p.s10);
             f.s10b.add(&p.s10.fort, p.s10.s10b_ordered);
             f.s10b_ai.add(&p.s10, r.tick_hz as u32);
+            f.s10c.add(&p.s10c, &p.s10);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -3709,5 +4112,112 @@ mod tests {
         t.count_gun_out(1, 25);
         assert_eq!(t.players[0].gun_armour_out, 1);
         assert_eq!(t.players[1].gun_armour_out, 1);
+    }
+
+    /// S10c-ai Build A item 4: player 0 lays three AP mines; an enemy rifle
+    /// squad stands `dx` m from them for one second; the observer reads.
+    fn approach_scene(dx: i32) -> S10cPlayer {
+        use frontline_sim::FxVec2;
+        let mut setup = match_setup(&SkirmishArgs {
+            seed: 1,
+            ..SkirmishArgs::default()
+        })
+        .unwrap();
+        setup.players.iter_mut().for_each(|p| p.is_ai = false);
+        let ap = setup
+            .forts
+            .iter()
+            .position(|f| {
+                f.mine_item
+                    .and_then(|i| setup.items[i as usize].mine.as_ref())
+                    .is_some_and(|m| m.trigger == 0)
+            })
+            .expect("an AP minefield blueprint") as u16;
+        let rifle = setup
+            .squad_types
+            .iter()
+            .position(|t| t.id == "ww2:usa_rifle_squad")
+            .unwrap() as u16;
+        let mut w = World::new_match(setup, 1).unwrap();
+        let usa = (0..2u8)
+            .find(|&p| {
+                let s = w.match_setup().unwrap();
+                s.factions[s.players[p as usize].faction as usize].id == "ww2:usa"
+            })
+            .unwrap();
+        let ger = 1 - usa;
+        for k in 0..3 {
+            w.lay_mine_now(ap, FxVec2::from_int(400 + 2 * k, 600), PlayerId(ger))
+                .expect("mine laid");
+        }
+        w.spawn_squad_at(
+            PlayerId(usa),
+            rifle,
+            FxVec2::from_int(402 + dx, 600),
+            FxVec2::from_int(-1, 0),
+        )
+        .unwrap();
+        let hz = w.match_setup().unwrap().tick_hz as u64;
+        let mut seen = S10cSeen::default();
+        for _ in 0..hz {
+            w.step(&[]);
+            if w.tick().is_multiple_of(hz) {
+                seen.observe(&w);
+            }
+        }
+        seen.finish();
+        let r = seen.per[ger as usize].clone();
+        assert_eq!(r.mines_seen, 3, "the three mines are seen");
+        assert_eq!(seen.per[usa as usize].mines_approached, 0);
+        r
+    }
+
+    /// An enemy rifle squad 20 m from an own AP field: its three mine ids
+    /// count once each. Control: 60 m -> 0 (seen with the squad at 60 m).
+    #[test]
+    fn s10c_observer_counts_an_approach() {
+        let near = approach_scene(20);
+        assert_eq!(near.mines_approached, 3);
+        assert_eq!(near.mines_home + near.mines_front, 3);
+        let far = approach_scene(60);
+        assert_eq!(far.mines_approached, 0, "control: 60 m away");
+    }
+
+    /// Build A item 7: every `s10c` / `s10c_derived` name the S10c-ai
+    /// targets file reads is written by `json_out::s10c_blocks`. Control:
+    /// renaming `knew_enemy_wire_pct` in `s10c_blocks` fails it (seen).
+    #[test]
+    fn s10c_json_names_match_the_targets_file() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../docs/slices/targets/S10c-ai.toml");
+        let f = crate::targets::parse(&fs::read_to_string(path).unwrap()).unwrap();
+        let mut one = S10cFaction::default();
+        one.add(&S10cPlayer::default(), &S10Player::default());
+        let (raw, derived) = crate::json_out::s10c_blocks(&one);
+        let mut n = 0;
+        for t in &f.targets {
+            for m in [Some(&t.metric), t.exposure.as_ref(), t.control.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                let parts: Vec<&str> = m.split('.').collect();
+                let Some(k) = parts.iter().position(|p| p.starts_with("s10c")) else {
+                    continue;
+                };
+                let block = match parts[k] {
+                    "s10c" => &raw,
+                    "s10c_derived" => &derived,
+                    other => panic!("{}: unknown block {other}", t.id),
+                };
+                let rest = parts[k + 1..].join(".");
+                assert!(
+                    crate::json_out::lookup(block, &rest).is_some(),
+                    "{}: {m} is not written",
+                    t.id
+                );
+                n += 1;
+            }
+        }
+        assert!(n >= 40, "only {n} s10c paths in the targets file");
     }
 }
