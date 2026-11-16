@@ -16,10 +16,13 @@ a match; **mines set off 0; of 7908 deaths 0 within 40 m of enemy works, 0 withi
 no enemy soldier within 30 m of any; `wire_known` empty in all 39,500 breach checks. Sides end holding 1 or 4 points,
 so A, C, E are owned for long stretches, yet nothing is built there. The chain that stops it (code, not tuning):
 1. `point_starts` / `fort_points` need `trench_done`; the trench needs an engineer at a point with threat < 4.
-2. AP waits for the wire, the wire for the nest (`point_wants`, `field_wants`): three jobs before the first mine.
+2. AP waits until the wire exists and the wire until the nest exists (`point_has`: a work or job counts, not "done";
+   `point_wants`, `field_wants`): three job starts before the first mine. Digging has its own gate: `wants_dig`
+   hard-codes threat < 4 (`ai.rs`), a second reason `build_threat_max` 8 changed no match.
 3. `can_take` / `fort_continue` use `fort_threat`: ONE known enemy within `threat_radius` 80 m of builder or site
    blocks or drops the job. That is why `build_threat_max` 4 -> 8 changed no match. B1-5: a delayed fort is a lost fort.
-4. Sites come from the trench frame (parallel to the trench), not from where the enemy walks or drives.
+4. AP, wire and hedgehog sites come from the trench frame (parallel to the trench), not from where the enemy walks.
+   Only the AT field already lies on the enemy vehicle path (`at_site_search`), and it too needs the trench.
 5. About 0.9 builder squads are bought per match and side (70 Baupioniere, 61 US engineers in 80 matches); the
    bunker's first blocker is `no_builder`. One S10b slot (`jobs_max` 1).
 6. `s10b_refused` (66 of 87 jobs) mostly counts truck give-ups (`ai/truck.rs` `truck_give_up`, L5), not defence jobs:
@@ -36,7 +39,8 @@ detour-cost demolition want (S10c-3 (B)); card weights and prices; presenter wor
 
 ## 2. Switches and keys (all added in Build A's layout commit at their OFF value; a stage turns its own on)
 `[ai.obstacles]` switches (1/0): `front` (F1-F9), `mine_assign` (C2), `belt` (C4). Values: `front_points` 2,
-`front_out_m` 50, `front_wire_len_m` 40, `front_site_threat_m` 50, `front_fields_max` 2, `belt_pieces` 5,
+`front_out_m` 50, `front_wire_len_m` 20 (was 40 in the first plan; review finding 2), `front_site_threat_m` 50,
+`front_fields_max` 2, `front_slots` 1 (front jobs at once; C8), `belt_pieces` 5,
 `belt_gap_m` 10, `belt_detour_pct` 130, `builder_cards_min` 0 (C3: 0 = off; the ablation runs 2). `jobs_max` goes
 1 -> 2 in Build C. Off values: the three switches 0, `builder_cards_min` 0, `jobs_max` 1.
 Override files `targets/S10c-ai-ablations/{c_off,front_off,mine_assign_off,belt_off,jobs1,builders2,site80}.toml`;
@@ -51,26 +55,32 @@ Override files `targets/S10c-ai-ablations/{c_off,front_off,mine_assign_off,belt_
 `front_why: [u32; 12]` (names `FRONT_WHY`, the first check that kept a wanted front work from starting, as
 `BUNKER_WHY`: no_front, lane_none, site_bad, cap, refused, slot, builders_max, no_builder, no_carry, no_budget,
 threat_squad, threat_site), `mine_want_why: [u32; 8]` (review finding 12: the same for the R1/R2 fields),
-`belt_jobs`, `belt_route_rejects`, `builder_buys`. `WorkKind` += `FrontAp, FrontWire, Belt` (not saved; jobs stay
-`AiFortJob`). No new `AiState` list: lanes are a per-plan memo on `Planner` beside `at_sites` (one search per point
-per `recheck_s`); which side a belt took is read from the standing pieces (as `hedgehog_side`).
+`belt_jobs`, `belt_route_rejects`, `builder_buys`. `WorkKind` += `FrontAp, FrontWire, Belt` (not saved; jobs stay `AiFortJob`).
+**Saved lanes (review finding 4):** `AiState::front_lanes: Vec<FrontLane>`, ascending by point, at most
+`MAX_FRONT_LANES` 8; `FrontLane { point: u8, since: u64, ap: [FxVec2; 2], wire: [FxVec2; 2], ap_done: bool,
+wire_done: bool }` holds the two site lines of a front point, fixed when first found, so every plan (not only the
+recheck plan) sees the front wants. Validated on load (point in range, unique, ascending, positions on the map).
+Which side a belt took is read from the standing pieces (as `hedgehog_side`).
 `blocked_pairs` (B1-2): a counted pair stays while its vehicle and piece live (no recount); same field, same cap.
-**SAVE_VERSION 25 -> 26** once (Build A: `AiCounters`, setup keys). **PROTOCOL stays 14** (no command, kind or limit).
+**SAVE_VERSION 25 -> 26** once (Build A: `AiCounters` in chunk 1, `front_lanes` in chunk 2; nothing is released
+between the chunks, so one bump). **PROTOCOL stays 14** (no command, kind or limit).
 CLI only, read-only (no sim state): `S10cSeen` in `skirmish.rs`, observed once a second beside `S10bAiSeen`.
 
 ## 4. Rules (value; source; proving test). Integer m and s, no RNG, ascending ids
 | Id | Rule | Value | Source | Proved by |
 |---|---|---|---|---|
 | F1 | Front points: the `front_points` own points nearest the enemy base (straight distance, ties by index). With one own point that point is the front | 2 | diagnosis 0.1 | `ai_front_points_are_nearest_the_enemy_base` |
-| F2 | Foot lane of a front point: one `find_foot_path` from the nearest enemy-owned point (none: the enemy base) to the point, per point per `recheck_s`, memo per plan. Vehicle lane: the R2 path (enemy base -> point), unchanged | 60 s | as R2 | `ai_front_lane_runs_from_the_nearest_enemy_point` |
-| F3 | Hasty works of a front point, wanted as soon as it is own (no trench, nest or wire): `FrontAp` (blueprint length, across the foot lane `front_out_m` + `ap_beyond_wire_m` from the point), then `FrontWire` (`front_wire_len_m`, across the lane at `front_out_m`), then the R2 AT field. Each line is perpendicular to the lane there, centred, clamped | 55 m; 40 m at 50 m | 7.6 "AP mines among and before the wire" | `ai_lays_front_field_without_a_trench` (control `front` 0: none) |
+| F2 | Lane of a front point, found once: on a recheck plan with no `front_lanes` entry for the point, one `find_foot_path` (as `breach_path`, wire cost off) from the nearest enemy-owned point (none: the enemy base) to the point; the two site lines of F3 are saved in `front_lanes`. The entry is dropped when the point is no longer an own front point and holds no live front job. Vehicle lane: the R2 path, unchanged | 60 s | as R2; finding 4 | `ai_front_lane_runs_from_the_nearest_enemy_point`, `ai_front_wants_show_on_every_plan` (control: entry removed -> no want until the next recheck) |
+| F3 | Hasty works, wanted as soon as the point is own (no trench, nest or wire): `FrontAp` (blueprint length 30 m, across the lane `front_out_m` + `ap_beyond_wire_m` from the point), then `FrontWire` (`front_wire_len_m`, across the lane at `front_out_m`), then the R2 AT field. Both lines perpendicular to the lane, centred on it, clamped. The wire is 10 m shorter than the field: 500 % wire cost sends attackers round a wire end (about 12 m off the lane), which is inside the mine row (15 m each side). `wire_shift` is NOT applied (it would slide the wire off the lane); the own way out stays open because a 20 m line adds at most about 12 m to a foot route, own mines are harmless (S10b R7) and vehicles crush wire | 55 m; 20 m at 50 m | 7.6; findings 2, 3 | `ai_lays_front_field_without_a_trench` (control `front` 0), `front_wire_detour_crosses_the_field` (a staged enemy squad ordered along the lane: its path passes within 15 m of the lane at the mine row and a mine goes off; control `front_wire_len_m` 40: the path passes outside the row), `ai_front_wire_leaves_the_own_way_out` (own foot path point -> `route_out` at most 15 m longer with the wire standing) |
 | F4 | Order: at a front point the hasty wants come before nest, wire, dugout and the R1 field; `fort_points` marks the point `wants_works` without `trench_done`; `fort_holds` and `point_starts` visit front points first. Rear points keep S10a and R1-R7 as on main | - | 0.2, 0.5 | `ai_front_wants_come_before_the_nest` |
-| F5 | Threat for a front job: no start and a drop while a known enemy is within `threat_radius` of the builder, or within `front_site_threat_m` of the site (the site lies toward the enemy by design). Every other job keeps 80 / 80 | 80 / 50 m | 0.3; S10c-1 (A) | `ai_front_job_starts_with_an_enemy_60_m_from_the_site` (control `front_site_threat_m` 80: no job) |
-| F6 | A front job dropped by F5 writes no refusal (L3 is for failures); the mines and wire sections laid stay; the next calm plan starts a job for the rest (lines go on from the first segment not standing, the S10a rule) | - | B1-5 "delayed = lost" | `ai_front_job_resumes_after_a_threat_drop` |
-| F7 | Caps: at most `front_fields_max` `FrontAp` fields a player (blueprint cap R4 holds); `fields_per_point` counts R1 and front fields; the S10b budget R8 pays mines, the S10a budget wire | 2 | cap | `ai_front_caps_hold` |
-| F8 | A lost point: its fields stay the layer's (hidden mines keep working); they count toward the caps until set off or swept | - | S10b R7 | `ai_front_fields_survive_a_lost_point` |
+| F5 | Threat for a front job, the same rule in `can_take` (start) and `fort_continue` (drop): a known enemy within `front_site_threat_m` of the site; or within `threat_radius` of the builder while its leader is more than `FRONT_AT_SITE_M` 20 m from the site (walking there), within `front_site_threat_m` of the builder once it is at the site. Every other job keeps 80 / 80 | 50 m at the site, 80 m on the walk | 0.3; finding 1; S10c-1 (A) | `ai_front_job_survives_an_enemy_60_m_from_the_site` (the job starts and is still alive, builder at the site, 60 s later; control `front_site_threat_m` 80: dropped) |
+| F6 | A front job dropped by F5, or ended by its builder gone or weak, writes no refusal; mines and wire sections laid stay. `FrontAp` stays wanted while the lane's `ap_done` is false (set when a FrontAp job ends laid, `s10b_laid`); the new job's line runs from the first mine site of the saved line with no own mine within 1 m to the line's end. `FrontWire` the same with `wire_done` (S10a rule: from the first segment not standing). Mines set off later are not laid again | - | B1-5; finding 6 | `ai_front_job_resumes_after_a_threat_drop`, `ai_front_field_set_off_is_not_relaid` |
+| F7 | Caps: one `FrontAp` and one `FrontWire` per saved lane; at most `front_fields_max` lanes hold a field or a FrontAp job (counted from `front_lanes`, not from `fields_of`); the front field does not count in `fields_per_point` (the R1 field still may follow at a trenched point); the blueprint caps hold (60 AP mines = 4 fields: `front_why` cap); S10b budget R8 pays mines, the S10a budget wire | 2 | findings 5 | `ai_front_caps_hold` |
+| F8 | A lost or no-longer-front point: its lane entry is dropped (F2), so its field leaves the `front_fields_max` count; the hidden mines keep working and count only toward the blueprint cap until set off or swept | - | S10b R7; finding 5 | `ai_front_fields_survive_a_lost_point` (a new front point still gets its field) |
+| F10 | Materials: a front job is taken only by a squad that carries the whole first work (`carried_g` >= its need), or stands in the own base (it loads there), or has a truck (`truck_for`); a builder at the front with nothing carried is not picked (`front_why` no_carry) and no front job sends a squad walking home. L1 for front kinds is `barrier_job_max_s` 1200 if the test shows 900 s cannot hold a 600 m walk plus 15 mines (say which in the log) | - | finding 8 | `ai_front_job_from_base_ends_inside_its_deadline` (base 600 m away: done, `jobs_overdue` 0), `ai_empty_builder_takes_no_front_job` (control carried 60 kg: job) |
 | F9 | Nothing new for the attacker: `wire_sight` (150 m), R9/R10 sweeps and the breach job then find the wire and mines by the existing rules | - | 0 | 40 set: `wire_seen_by_enemy_pct`, `sweep_wanted` |
 | C1 | `jobs_max` 2 (inside `builders_max` 2) | 2 | E6 (B) | `ai_two_s10b_jobs_run_at_once` (control `jobs_max` 1) |
+| C8 | At most `front_slots` front jobs (FrontAp, FrontWire, AT field at a front point, Belt) at once, so one of the two builder slots stays for nest, wire, dugout, roof and the R1 works | 1 | finding 8 | `ai_front_jobs_leave_a_slot_for_home_works` (control `front_slots` 2: both slots at the front) |
 | C2 | `mine_assign`: a wanted front work with no fit squad assigned to its point takes one free builder from anywhere, nearest first (as `bunker_assign`; F5 holds) | - | E6 (B) | `ai_mine_assign_sends_a_builder_to_the_front` (control 0) |
 | C3 | `builder_cards_min` N: with fewer than N living builder squads (`place_mines` and `build_structure`, no `breach`) the next buy is the faction's builder card (affordable, pop room). Default 0; measured as the `builders2` ablation only | 0 | 0.5; S10c-2 (A) | `ai_buys_a_builder_under_the_floor` (control 0) |
 | C4 | Belt: after a front point's AT row 1 is laid, a row of `belt_pieces` blocking pieces `hedgehog_step_m` apart across the vehicle lane, centred on it, `belt_gap_m` beyond the AT field (enemy side), so a vehicle rounding the row crosses the 40 m field. Hedgehogs with a `build_heavy` squad, else one log barrier line | 5 x 4 m; 10 m | S10b-ai-3 (B) | `ai_builds_a_belt_before_its_at_field`, fortify row `s10c.belt` |
@@ -82,7 +92,7 @@ L1-L5 hold unchanged for the new kinds: they are fort jobs (`job_max_s`, stall, 
 ## 5. What else can be true when a job completes or ends (each a named test; stage in brackets)
 | Job | Target gone | Another squad on it | Squad dead or re-ordered | Enemy arrives | Save/load mid-job |
 |---|---|---|---|---|---|
-| FrontAp / FrontWire | point lost mid-job: job ends, laid part stays `ai_front_job_ends_when_the_point_is_lost` [B] | one job per site `ai_two_builders_never_share_a_front_site` [B] | job ends, no refusal, rest wanted again `ai_front_builder_dies_mid_field` [B] | F5 drop, F6 resume (above) [B] | `ai_front_deterministic_threads_and_save_load` [B] |
+| FrontAp / FrontWire | point lost mid-job: job ends, laid part stays `ai_front_job_ends_when_the_point_is_lost` [B] | one job per site `ai_two_builders_never_share_a_front_site` [B] | job ends, no refusal, rest wanted again `ai_front_builder_dies_mid_field` [B] | F5 drop only inside 50 m at the site, F6 resume (above) [B] | `ai_front_deterministic_threads_and_save_load` [B] |
 | Belt | AT field swept or blasted: belt stays, no new belt without row 1 [C] | one belt per lane `ai_one_belt_per_lane` [C] | as fort job [C] | F5 | same test as B, with a belt job [C] |
 | Builder buy (C3) | builder dies after the buy: one more buy, never above N `ai_builder_floor_never_overbuys` [C] | - | - | - | derived from state |
 Generic: `ai_jobs_end_and_never_reorder_a_refused_goal` gains rows FrontAp (lane site on a slope over 25 %) and Belt.
@@ -103,7 +113,8 @@ mine, at a sampled second), `mines_set_off_per_match`, `matches_with_wire`, `wir
 where this side's wire stood: the enemy AI's `wire_known` held one of its sections), `matches_wire_approached_pct`,
 `matches_obstacle_approached_pct` (enemy vehicle within 30 m of an own blocking piece), `front_calm_pct`,
 `front_jobs_per_match`, `front_drop_pct`, `front_builders_lost_per_match` (front jobs ended by the squad gone or
-under 60 %), `matches_with_belt_pct`, `matches_with_front_field_pct`, `builder_buys_per_match`.
+under 60 %), `matches_with_belt_pct`, `matches_with_front_field_pct`, `builder_buys_per_match`, `knew_enemy_wire_pct` (matches
+where THIS side's AI held an enemy section in `wire_known` at a sampled second: the same-side exposure of T123).
 Observer counters read state, so they are not zero with the switches off; `tools/neutral.py` skips the `s10c*` keys
 when the base lacks them (Build A), and later stages compare against a base replayed with Build A's binary + `c_off`.
 Every new row has value, exposure and control (`skirmish40_c_off`, where the front rows must miss their bounds).
@@ -111,14 +122,20 @@ Every new row has value, exposure and control (`skirmish40_c_off`, where the fro
 ## 8. Done when (480 = seeds 1-80, 101-180, 201-280; per faction on skirmish160 and skirmish160_oos)
 1. Mines in >= 45 % of matches, both sides (T109 at 45); front share of mines >= 40 % (T119).
 2. An enemy came within 30 m of a mine in >= 30 % of the matches with mines (T120); mines set off >= 0.3 a match (T121).
-3. Enemy wire seen in >= 50 % of the matches where it stands (T122); breaches started >= 0.05 a match (T123).
-4. Defence jobs failed <= 30 % (T124); front builders lost <= 0.5 squads a match (T125).
+3. Enemy wire seen in >= 50 % of the matches where it stands (T122). Breaches started (T123) is a REPORT: a 20 m
+   front line is cheaper to round than to cut, so the attacker's answer is the sweep after a blast (R9/R10,
+   `sweep_wanted_matches` reported beside it); breaches need the long home lines or S10c-6 (B).
+4. Reports with an orchestrator bound (hard rows would be CONTROL-SAME, finding 7): defence jobs failed <= 30 %
+   (T124), front builders lost <= 0.5 squads a match (T125); over the bound: S10c-1 goes back to the owner.
+   Home works floor (hard, Build C and the 480): MG nests done per match and `matches_with_works_pct`, per
+   faction, not more than 10 % (relative) under the `c_off` run of the same seeds; else stop and report.
 5. Reports with exposure: demolitions wanted in >= 5 % of matches (T126), belts and AT exposure (T127), bunker 10 % (T113).
 6. Own-side mistakes 0 (T115); `refused_reorders`, `jobs_overdue` 0 (T118). Germany pooled 35-65 %; no match without
    a winner; no new hard miss beyond S10b-ai's list. 7. `c_off` 40 set = main 40/40 (`neutral.py`). 8. Named tests
    pass; SAVE 26, PROTOCOL 14; save fuzz 0 panics, 0 unloadable. 9. Tick p99 <= 25 % above 0.506 ms.
-**Gate after Build A (orchestrator):** read `front_calm_pct` and `front_why_*` on the 40 set. If front points are calm
-under 10 % of their plans, Build B's premise fails: stop and bring S10c-1 to the owner before building B.
+**Gate after Build A (orchestrator):** read `front_calm_pct` on the 40 set. It checks 80 m round the point, while
+front sites lie 50-55 m toward the enemy, so it is an UPPER bound of what front jobs will see (finding 10). If it is
+under 10 %, Build B's premise fails: stop and bring S10c-1 to the owner before building B.
 
 ## 9. Build stages (stop points in each file; a chunk is about 30 self-counted turns, 55-60 real)
 A layout, switches, counters, observers, targets rows (`-build-A.md`, 2 chunks); B front rules (`-B`, 2 chunks);
@@ -126,8 +143,9 @@ C builder supply, belts, B1-2 (`-C`, 2 chunks). Then orchestrator measure + abla
 `ABLATIONS=docs/slices/targets/S10c-ai-ablations`) -> Review -> Fix -> verify -> Docs. No Tune stage.
 
 ## 10. Owner questions (the slice runs on each (A); the orchestrator copies them to `docs/TODO.md`)
-S10c-1 Builders near the enemy. (A) A front job runs while no known enemy is within 80 m of the builder and 50 m of
-the site; losses are measured (T125). (B) Keep 80 m for the site too (safer, far fewer front fields).
+S10c-1 Builders near the enemy. (A) A builder at a front site keeps working until a known enemy is within 50 m of
+the site or of the squad (80 m while it is still walking there); losses are measured (T125). (B) 80 m throughout
+(safer; an enemy 60 m off stops the work, so far fewer front fields).
 S10c-2 Builder squads. The AI buys about 0.9 a match. (A) Keep the buys; the slice measures a floor of 2 as an
 ablation and reports win share and use. (B) Make the floor of 2 the default now (one rifle squad fewer).
 S10c-3 Demolition. (A) Vehicles keep driving round an obstacle when a way round exists; demolition stays rare and is
@@ -135,3 +153,17 @@ reported. (B) Also demolish when the way round is much longer (new path searches
 S10c-4 USA belts. The USA has no `build_heavy` card. (A) US engineers build the belt as one log barrier line (500 kg,
 a truck run). (B) Belts for Germany only.
 S10c-5 T109. (A) Mines in 45 % of matches (the plan Eva approved) replaces the 50 % of S10b-ai. (B) Keep 50 %.
+S10c-6 Front wire shape. (A) A short 20 m line with a 30 m mine row behind it: attackers go round the wire into the
+mines; sweeps are the answer, breaches stay rare. (B) Long 60 m lines with a field at each end, so cutting or blowing
+the wire is the answer (two fields a point, more materials; a later slice).
+
+## 11. Addendum for Build A chunk 2 (added after the plan review; chunk 1 was already running)
+1. Layout, same SAVE 26: `AiState::front_lanes: Vec<FrontLane>` exactly as section 3 (empty in Build A),
+   `MAX_FRONT_LANES` 8, load validation (point in range, ascending, unique, positions on the map), in the save
+   roundtrip and hash tests, a `load_rejects_bad_front_lanes` case.
+2. Keys: add `[ai.obstacles] front_slots` 1 (range 0..=16); change `front_wire_len_m` to 20; both in `c_off.toml`,
+   `skirmish.toml` comments, `docs/modding/tuning.md`, key count, BASELINE, snapshot.
+3. CLI: `s10c_derived.knew_enemy_wire_pct` (section 7), read from this player's `AiState::wire_known` each sampled
+   second; T123's exposure reads it.
+4. Log: record `front_calm_pct` as an upper bound (section 8 gate), and MG nests done per match and
+   `matches_with_works_pct` per faction on `target/s10c-baseA40` (the home works floor of section 8).
