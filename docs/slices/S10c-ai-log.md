@@ -5,32 +5,32 @@ Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may wor
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Build A done (2026-11-16; `2651354`, `6cd959c`, `233f9b7`; quick 54009f6: all ok, 837 passed). STOP POINT 2.**
-**Next: the orchestrator's gate (spec 8), then Build B.**
-- Neutral: `neutral.py target/s10c-base40 target/s10c-baseA40` -> `skirmish40.json: same 40/40 (note: overrides 0 -> 1 items)`.
-  `target/s10c-A40` = this binary, defaults; `target/s10c-baseA40` = this binary + `c_off` (the base for B and C).
-- Gate numbers, `target/s10c-A40` (40 matches; DE / US): `front_plans` 22923 / 22784; `front_calm_pct` **87.8 / 88.9**
-  (an UPPER bound, spec 8 finding 10: 80 m round the point; gate < 10 % not hit). `mine_want_why` (plan x point counts):
-  not_own_or_trench 37143 / 36750, no_builder 7117 / 7791, slot 3373 / 2789, wire_first 3120 / 3842, refused 1 / 0,
-  no_site 0 / 6. `mines_home` / `mines_front` 155 / 0 and 91 / 0 (`front_mines_share_pct` 0); `mines_by_point` DE
-  [0,90,0,65,0], US [0,40,0,51,0] (B and D only). `matches_mines_approached_pct` 0 / 0 (of 11 / 8 matches with mines);
-  `mines_set_off_per_match` 0 / 0; `wire_seen_by_enemy_pct` 3.2 / 0 (of 31 / 28 matches with wire);
-  `knew_enemy_wire_pct` 0 / 2.5; `defence_job_fail_pct` 10.2 / 9.5 (5 of 49, 4 of 42); `truck_give_ups` 23 / 16,
-  `route_refusals` 4 / 0; `matches_obstacle_approached_pct` 0 / 0; front_why all 0 (Build B fills it).
-- Home works floor (spec 8.4, addendum 4), `target/s10c-baseA40`: MG nests done 33 / 29 (0.825 / 0.725 a match),
-  `s10_derived.matches_with_works_pct` 95.0 / 92.5.
-- Code map (chunk 2): `ai::FrontLane`, `MAX_FRONT_LANES` (`ai/fort.rs`), `AiState::front_lanes` (checked in
-  `validate_fort`); keys `front_slots` 1, `front_wire_len_m` 20 (key count 50). CLI `skirmish.rs`: `S10C_AI`,
-  `S10cPlayer` (`PlayerReport::s10c`), `S10cSeen` (`observe` once a second + at the end, `finish`), `S10cFaction`
-  (`FactionSummary::s10c`); `json_out::s10c_blocks` -> `factions.<f>.s10c` / `s10c_derived`; `--side-detail` sides
-  carry the same raw `s10c`. `front_field` reads `front_lanes[].ap_done`; `matches_with_belt` reads `belt_jobs` > 0.
-- For B: fill `front_lanes` (F2) and set `ap_done`; count `front_jobs`, `front_drops`, `front_lost`, `front_resumes`,
-  `front_why`. Compare against `target/s10c-baseA40` with `neutral.py` (both now carry `s10c`, so it is compared).
-- Ablations: `ABLATIONS=docs/slices/targets/S10c-ai-ablations tools/ablate.sh` takes every `*.toml` there; `c_off` is
-  the neutrality control (NEUTRAL_BASE default `target/s10c-base40`); `check.sh quick` dry-runs both sets.
-- Targets: every `s10c*` path of `S10c-ai.toml` resolves (copies of A40 as the 160 runs: 0 "no such number").
-  T124a-d PASS (report); T125 PASS but unexposed; T119-T122 UNEXPOSED; T123, T126, T127 MISS (report).
-- S10c-1..5 not yet in TODO (orchestrator).
+**Build B chunk 1 done (2026-11-16; `571e841`; quick 54009f6: all ok, 847 passed). STOP POINT 1. Next: B chunk 2.**
+- Neutral: `neutral.py target/s10c-baseA40 target/s10c-B1off40` (this binary + `c_off`) -> `same 40/40`.
+  Front-on set (`[ai.obstacles] front = 1` override; default still 0): `target/s10c-B1on40`.
+- Code map (`ai/fort.rs`): `WorkKind::FrontAp/FrontWire` (`fort_of`: AP / wire blueprint; `switched_on`: `front` and
+  `mines` / `[ai.fort] wire`); `front_on`; Planner `front_lane`, `front_on_points`, `point_order` (front points
+  first, else 0..n), `front_kind(job)` (a job is FrontAp/FrontWire when its line ENDS within 2 m of the lane line's
+  end; any AT job at a lane's point is a front AT field), `front_live`, `front_fields` (F7, from lanes),
+  `front_lanes_update` (in `fort_points`: drop, then search on recheck plans), `front_lane_search` + `lane_line`
+  (F2/F3), `front_wants`, `wants_at(i, trench_done)` (F4; used by `fort_points`, `fort_holds`, `point_starts`),
+  `front_carry_ok` (F10), `front_work`, `front_mark_done` (sets `ap_done`/`wire_done` when a job ends from Watch with
+  its work gone and its mines / wire near the line end), `front_why` + `front_block`. `point_site` for FrontAp,
+  FrontWire, AtField, AtRow2 no longer needs the trench frame. `front_jobs` += 1 in `point_starts` on a start.
+- For chunk 2: (1) F5: `can_take` and `fort_continue` still use `fort_threat` (80/80) for front jobs, and front points
+  still need `p.threat < build_threat_max` (`point_starts`, `fort_points`) and drop on it (`lost`); `front_block`
+  reports that gate as `threat_site`. (2) F6: a re-started FrontAp gets the WHOLE saved line; the resume line must
+  keep `lane.ap[1]` as its end or `front_kind` stops matching. (3) `front_drops`, `front_lost`, `front_resumes` are
+  still 0. (4) FrontWire is an S10a work (S10a budget, outside `jobs_max`, no L1-L4); its Order retry is off.
+- Early 40 set, front on (DE / US): Germany 18 / 40 (45 %; `c_off` 20 / 40); `matches_with_front_field_pct` 92.5 /
+  62.5; `mines_home` / `mines_front` 667 / 140 and 538 / 50 (`front_mines_share_pct` 17.3 / 8.5): the home point is
+  one of the two front points most of the match, so most "front" fields lie at B or D (`mines_by_point` DE [87,352,1,
+  315,52], US [11,231,0,307,39]); `matches_mines_approached_pct` 13.5 / 7.4; `mines_set_off_per_match` 0.15 / 0;
+  `front_jobs_per_match` 4.0 / 3.1; `front_drop_pct` 0 / 0 (not counted yet); `wire_seen_by_enemy_pct` 11.1 / 3.7;
+  `defence_job_fail_pct` 3.0 / 15.7. `front_why` (plan x point): no_builder 20344 / 22544, slot 5901 / 5079,
+  lane_none 3819 / 3622, no_front 2001 / 2123, no_carry 315 / 442, builders_max 466 / 206, threat_site 215 / 124,
+  refused 0 / 594, cap 2 / 2, threat_squad 5 / 2. Not yet known: how much of lane_none is the 60 s recheck wait and
+  how much failed searches (8000 expansions); measure before C.
 
 ## Plan (2026-11-16)
 Cause chain read in the code (spec 0): `trench_done` gate, the nest -> wire -> AP order, `fort_threat` (one known
@@ -69,3 +69,28 @@ Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are 
   `knew_enemy_wire_pct`, `matches_with_belt_pct`, `matches_with_front_field_pct` over all matches (null only with 0
   matches). Approach counts soldiers on foot (not riding), as a mine trigger does. `c_off.toml` also lists
   `front_wire_len_m` 20 and `front_slots` 1 (addendum 2).
+
+## Build B chunk 1 (2026-11-16)
+- Commit `571e841`: lanes, sites, wants, starts (F1-F4, F7, F10 carry rule, `front_why`, `front_jobs`).
+  `tools/check.sh quick 54009f6`: all ok (847 passed, 0 failed), after the release CLI rebuild.
+- Neutral: `c_off` 40 set into `target/s10c-B1off40`; `python3 -I tools/neutral.py target/s10c-baseA40
+  target/s10c-B1off40` -> `skirmish40.json: same 40/40`.
+- Tests (`s10c_ai_front_tests.rs`) and controls: each has a built-in control whose run asserts the opposite outcome
+  (the main assertion fails under it): lane (no enemy point -> from the base, not across C -> E), lays without a
+  trench (`front` 0 -> 0 mines on the line, no lane), before the nest (`front` 0 -> `mg_nest` first), caps
+  (`front_fields_max` 9 -> the job; 2 and the 60-mine blueprint cap -> none, `front_why` cap), every plan (lane removed
+  -> no job before the 60 s recheck, one after), empty builder (60 kg -> job; 0 kg -> none, `no_carry`), deadline
+  (`job_max_s` 120 -> not laid), detour (`front_wire_len_m` 40 -> leader crosses the row line > 15 m off the lane),
+  way out (wire 60 m at 10 m out -> longer by > 15 m or through it). Two builders: control by code edit (the live-job
+  check removed from `front_wants`) -> "two jobs on one front site: 2 AP, 0 wire", seen.
+- F10: 900 s held: from base about 590 m away the FrontAp job took 312 s (load, walk, 15 mines); front kinds keep
+  `job_max_s`.
+- Deviations: (1) the test squads are US engineers (player 1 of the test world is USA), not Pioniere. (2) `front_jobs`
+  counts in `point_starts` after `new_fort_job` (it knows the kind). (3) The lane test checks the lines against the
+  foot path itself: A* legs are grid-aligned, so the lane toward E is not the straight line. (4) The way-out test
+  makes the other of B/D the AI's so `route_out` is the lane's source (with both at 300 m it chose the point
+  behind); its control (60 m wire at 10 m) is mine, the spec names none. (5) `front_why` counts the first
+  outstanding front kind per front point, none while a front job runs there, `no_front` once a plan with no front
+  point; `site_bad` = no site line. (6) The deadline test keeps only C on the map: with other points the builder
+  went to capture D first (assign), then took an R1 job at C. (7) No detour finding: at 20 m the leader crossed the
+  mine row within 15 m and a mine went off; the wire was not shortened.
