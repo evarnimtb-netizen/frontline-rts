@@ -267,7 +267,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-D2 Sweep lane losses: DECIDED single file: `lane_file` 1, attackers walk a swept lane on its centre line.
   S10b-ai-D3 Tank gap: DECIDED (B) narrowed now: the obstacle piece's vehicle block pad lets a medium tank through a
   4 m hedgehog row once 2 adjacent pieces are gone (12 m between standing centres); path layer and movement agree.
-- S10b-ai open owner questions (OPEN, asked 2026-11-15; the slice ran on (A) and (A) is listed first):
+- S10b-ai owner questions (asked 2026-11-15; ALL DECIDED, E4-E8 by the owner 2026-11-16 on the recommendation; (A) is listed first):
   S10b-ai-E1 Bunker and the single job slot: DECIDED 2026-11-15 (B) on the orchestrator's default (owner B1 Q2),
   built in B1-0: switch `[ai.obstacles] bunker_yields` (default 1), see `docs/slices/B1-log.md`. The bunker takes the one S10b job
   slot for long, and Germany's mines in matches fell from about 45 % to about 25 % once the bunker changes went in.
@@ -275,16 +275,18 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-E3 Satchels: DECIDED 2026-11-15 (A) a second engineer squad takes over the job when the first has no
   satchel; no card change. Switch `[ai.obstacles] demolish_handover` (default 1), built in B1-0 (`B1-log.md`).
   S10b-ai-E4 Player key to choose 1-3 mine rows while placing a field (not the wheel; may need a protocol bump).
-  Not built. (A) Leave for a later slice. (B) Build in the next slice.
-  S10b-ai-E5 Demolished wire leaves debris that slows walking. Not built. (A) Leave for a later slice. (B) Build in
-  the next slice.
-  S10b-ai-E6 AI use is far under the targets (mines, obstacles, bunker, AT fields). (A) Leave for the balance pass;
+  Not built. DECIDED 2026-11-16 (A) leave for a later slice (with other work that needs a protocol bump). (B) Build in the next slice.
+  S10b-ai-E5 Demolished wire leaves debris that slows walking. Not built. DECIDED 2026-11-16 (A) leave for a later
+  slice. (B) Build in the next slice.
+  S10b-ai-E6 AI use is far under the targets (mines, obstacles, bunker, AT fields). DECIDED 2026-11-16 (B) a
+  follow-up slice that raises use; not scheduled or built yet (B1 built E1 and E3 only). (A) Leave for the balance pass;
   treat T109, T110a-d, T112, T113 as reports until then. (B) A follow-up slice that raises use (more job slots,
   builder assignment for mines).
-  S10b-ai-E7 A new blast in a swept lane costs a whole new sweep and the attackers wait. (A) Keep. (B) Re-sweep only
-  the part of the lane.
-  S10b-ai-E8 T113 bunker target: 20 % was written for the old denominator. (A) Reset to about 10 % of all matches.
-  (B) Keep 20 %.
+  S10b-ai-E7 A new blast in a swept lane costs a whole new sweep and the attackers wait. DECIDED 2026-11-16 (A) keep.
+  (B) Re-sweep only the part of the lane.
+  S10b-ai-E8 T113 bunker target: 20 % was written for the old denominator. DECIDED 2026-11-16 (A) reset to about
+  10 % of all matches; NOT YET APPLIED: T113a still has `min = 20` in `targets/S10b-ai.toml` and `targets/B1.toml`,
+  change it in the next slice's targets. (B) Keep 20 %.
 - S10b-ai not numbered, open: `s10b-ai` was merged into main 2026-11-15 with the owner's OK. The process proposals of the
   2026-11-12 audit were adopted by the orchestrator for this slice; the owner has not yet confirmed them. The parallel
   `tools/verify.sh` took 248 min 52 s (the old serial run took 38 min); it needs a look before the next slice.
@@ -321,7 +323,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
 11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
 12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Merged to main 2026-11-12 with the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
-13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Open questions S10b-ai-E1 and E3-E8 below.
+13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Questions S10b-ai-E1 and E3-E8 are all decided (see above).
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
