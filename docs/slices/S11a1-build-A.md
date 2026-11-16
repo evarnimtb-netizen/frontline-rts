@@ -12,7 +12,8 @@ with `BATCH_JOBS=4`; never quote tick times; commit only your files (`git commit
 
 Files owned: `sdk/crates/content/src/{tuning.rs,defs.rs,setup.rs,vehicle.rs}`; `crates/sim/src/{fire_mission.rs,
 indirect.rs,game.rs,combat.rs,gunnery.rs,guns.rs,supply.rs,damage.rs,world.rs,hash.rs,ai.rs}` (in `ai.rs` only the
-new fields and their validation), `crates/sim/src/ai/breach.rs` (field `prep_at` only), new
+new fields and their validation), `crates/sim/src/ai/breach.rs` (field `prep_at` only), `crates/sim/src/ai/guns.rs` (the role split only),
+`crates/sim/src/structures.rs` and the other holders of a kill class (the widening only), new
 `crates/sim/src/ai/arty.rs` (types `AiArty`, `ArtyPhase`, `AiFo`, caps, validation; no planner code), new
 `crates/sim/src/s11a1_tests.rs`; `crates/sim/tests/save_fuzz.rs`; `mods/ww2/defs/rules/skirmish.toml`;
 `docs/modding/{tuning.md,fire-missions.md}`; the BASELINE files (`sdk/crates/content/tests/resolved_defs.rs`,
@@ -37,8 +38,10 @@ pattern for a SAVE bump.
 `730e67f`; the cache may already hold it). Log Germany's wins of 40 and the file's path.
 
 ## Chunk 1: one layout commit, keys, solver
-1. Layout commit (nothing else in it): `SAVE_VERSION` 26 -> 27; every saved field of spec 3 at its zero default
-   (`S11Counters`, `AiState::arty`, `AiState::fo`, `AiBreach::prep_at`, the `AiCounters` fields, `FireMissionRefusal`
+1. Layout commit (nothing else in it): `SAVE_VERSION` 26 -> 27; the kill-class carrier widened to `u16` (spec 3
+   "Vehicle type cap": `game.rs` `kill_class` 540-573, every store and pass of it; test
+   `seventeen_vehicle_types_keep_their_kill_rows`); every saved field of spec 3 at its zero default
+   (`S11Counters`, `AiState::arty`, `AiState::fo`, `AiState::fo_lost_at`, `AiBreach::prep_at`, the `AiCounters` fields, `FireMissionRefusal`
    `Masked`, `NotReady`); load validation and hash for each; `save_fuzz.rs` staged save gains one `AiArty`, one
    `AiFo` and a `prep_at`; `load_rejects_bad_s11a1_state` (one case per check). `PROTOCOL_VERSION` stays 14: say so
    in the commit text. `STATE.md` "Versions" line.
@@ -46,8 +49,11 @@ pattern for a SAVE bump.
    (`gun_missions` 1, `radio_link` 1, `mask` 1 and the seven values), `[supply] arty_base_rearm` 1, new table
    `[ai.arty]` (`buy`, `fo`, `prep` 0 and the values). Content schema: `[indirect]` `low_angle`, `range_m`,
    `spread_mrad`; member trait `radio` (bit 32, `NAMES`, `ALL`); `VehicleRole::InfGun` ("inf_gun": served like
-   `AtGun` in the two checks of `vehicle.rs`, in the vehicle-role group of `ai.rs` 1073 so the mix never buys it,
-   NOT in `ai/guns.rs` `take_guns` / `gun_pot` / `of_role(AtGun)`). `load_rejects_bad_s11a1_keys`.
+   `AtGun` in the two checks of `vehicle.rs`, in the vehicle-role group of `ai.rs` 1073 so the mix never buys it, in
+   `VehicleRole::outside_limit`). `ai/guns.rs` `take_guns` 400-405, `gun_jobs` 448-455 and `gun_recrews` select by
+   `vs.served` today: split them by role `AtGun` now (test `at_gun_ai_ignores_infantry_guns` with a test-only
+   `inf_gun` def; an `inf_gun` then stays in the AI's `tanks` list: check no armour habit orders it, else park it
+   in an empty list until Build C). `load_rejects_bad_s11a1_keys`.
 3. Override files exist (Plan) under `docs/slices/targets/S11a1-ablations/`: make `tools/ablate.sh --dry-run`
    accept them (`ABLATIONS=docs/slices/targets/S11a1-ablations`; the allowed keys and values are those six files)
    and add the step to `tools/check.sh quick` beside the S10c one.
@@ -57,7 +63,9 @@ pattern for a SAVE bump.
 needs, anything of spec 3 that had to differ); return if more than 45 self-counted turns are used.
 
 ## Chunk 2: gun missions, radio, ends, rearm
-5. G1, G3, G4, G6 in this order, each with its tests (spec 4). Test scenes use a test-only gun def built in
+5. G1, G3, G4, G6 in this order, each with its tests (spec 4). G3 includes: the load check of `game.rs`
+   2484-2531 for a gun squad's mission and ranging cells, `end_mission` using the gun's position, the mission
+   ttl formula, hull-pitch laying, and the counter split (an `inf_gun` only in `S11Counters`). Test scenes use a test-only gun def built in
    `s11a1_tests.rs` (the Pak 38 def with an `[indirect]` table, band 0..73, `low_angle` true; a second with band
    0..30): ww2 gets its guns in Build B. Read every `match` on `sq.order` that a vehicle squad reaches (spec 10
    risk 3) and list in the log the ones that needed a `FireMission` arm.

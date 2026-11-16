@@ -35,8 +35,9 @@ and summary text, `belt_row`), `fortify/s10a.rs` (`breach_ai_world`, `breach_ai_
    S11a1 switch of `skirmish.toml` (as `s10c_ai_content.rs` does for `c_off`).
 3. `frontline-cli validate mods/ww2` clean; BASELINE and snapshot refreshed (new defs only: no old value moves).
 4. Neutrality now, before any CLI work: the default 40 set into `target/s11a1-B1-40/` and `neutral.py` against
-   `target/s11a1-base40`: `same 40/40`. If the new roster entries change a match, find the code that reads the
-   roster by position or count (spec 10 risk 6) and fix that, not the test.
+   `target/s11a1-base40`: `same 40/40`. The two new vehicle defs sort into the middle of the type list and make 17
+   types: Build A's widened kill class keeps the per-type rows (spec 3); if a match or a per-vehicle map still
+   differs, find the code that reads a type or roster by position or count (spec 10 risk 6) and fix that.
 **STOP POINT 1.** `check.sh quick 730e67f` green; commit; log top block; return if over 45 self-counted turns.
 
 ## Chunk 2: rows, JSON

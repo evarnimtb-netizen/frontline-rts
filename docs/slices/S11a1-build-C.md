@@ -10,7 +10,7 @@ push, no tick times). No RNG in any plan; iterate `BTreeMap`s and ascending ids 
 
 Files owned: `crates/sim/src/ai/arty.rs` (planner code), `crates/sim/src/ai.rs` (the call order in the plan, the
 buy hook), `crates/sim/src/ai/mortar.rs` (the scorer made generic, the P1 entry), `crates/sim/src/ai/breach.rs`
-(P2), `crates/sim/src/ai/guns.rs` (only if a role filter is missing), new `crates/sim/src/s11a1_ai_tests.rs`;
+(P2), `crates/sim/src/ai/fort.rs` (only the two `gun_pot()` lines 2824 and 2921), new `crates/sim/src/s11a1_ai_tests.rs`;
 `sdk/crates/cli/src/fortify/s11a1.rs` (`breach_prep`), `sdk/crates/cli/src/fortify/s10a.rs` (only to share
 `breach_ai_world`); `mods/ww2/defs/rules/skirmish.toml` (`buy`, `fo`, `prep` to 1, BASELINE, snapshot);
 `docs/modding/tuning.md`; `docs/slices/S11a1-log.md`.
@@ -24,8 +24,12 @@ called); `game.rs` (`mission_refusal`, `mode_for`, `known_by_record`); `crates/s
 (`ai_breach_*` scenes) and `s9_tests.rs` (AI gun scenes) for staging.
 
 ## Chunk 1: the gun and its observer (A1-A6)
-1. A1 buy and A2 emplace with their tests. The AT-gun habits must not see an `inf_gun` (test
-   `at_gun_ai_ignores_infantry_guns`: an AI with one leIG and `[ai.guns]` on starts no `AiGun` job for it).
+1. Wiring first (spec 4 A1 "Wiring"): `take_arty` beside `take_guns` moves infantry guns and observer squads out
+   of `tanks` / `mine` before `assign` (`ai.rs` about 1341; `order_infantry` 1412 must never see an observer);
+   `arty_pot()` joins `gun_pot()` at `ai.rs` 1663 and `ai/fort.rs` 2824, 2921 through one helper (0 with `buy` 0);
+   `arty` is called after `mortars` (1413) and uses the rays `mortars` left. Tests
+   `ai_observer_gets_no_infantry_order`, `arty_pot_is_kept_from_other_buys` (control `buy` 0: the budgets equal
+   base). Then A1 buy and A2 emplace with their tests (Build A's `at_gun_ai_ignores_infantry_guns` stays green).
 2. A3 observer: buy, post search (bounded rays, saved cursor), move and crouch, clear and retry; its three tests.
 3. A4 fire, A5 budget, A6 lift with their tests. `mortar_targets` becomes generic over (range band, danger-close
    distance) without changing one mortar decision: test `mortar_targets_unchanged_for_mortars` (the existing

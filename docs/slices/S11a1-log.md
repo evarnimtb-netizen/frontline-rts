@@ -27,8 +27,12 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
     `base_ticks` and `supply.rs` `rearm_vehicles` 845 at the shells price.
   - `fire_mission.rs` `linked` 389 knows the voice link only; trait `observer` (1,200 m) exists and no ww2 unit
     has it; `squad_leader` returns `None` for a vehicle squad.
-  - `vehicle.rs` 4020 requires `served() == (role == AtGun)`; the AI's AT-gun code selects by `VehicleRole::AtGun`
-    (`ai/guns.rs` 1180-1226), so a new role keeps infantry guns out of it.
+  - `vehicle.rs` 4020 requires `served() == (role == AtGun)`. The AI's AT-gun BUY selects by role (`ai/guns.rs`
+    1180-1226), but `take_guns` 400-405, `gun_jobs` 448-455 and `gun_recrews` take every `vs.served` gun: Build A
+    splits them by role. `outside_limit` (`vehicle.rs` 385) must list the new role.
+  - ww2 has 15 vehicle defs = `kill_class::MAX_VEHICLE_TYPES` (`game.rs` 548), sorted by id; the class u8 is
+    saved (`structures.rs` 129). Two more defs need the widening of spec 3 in the SAVE 27 commit.
+  - The load check `game.rs` 2484-2531 and `end_mission` (`combat.rs` 1260) assume a mortar squad.
   - `ai/breach.rs` `run_breach` 487: phase Stage leaves on `covered` (a base of fire, or twice `suppress_lead_s`);
     `breach_max_s` 180; breach jobs start 0 times in 480 matches (the front wire is rounded).
   - `tools/neutral.py` compares `per_match` records field by field; S10c-ai added the rule "a key starting `s10c`
@@ -36,6 +40,14 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 - Stop rules for every stage: red `check.sh quick` is never left; a non-neutral `a_off` 40 set is a bug to find;
   no value of lethality, armour, penetration or price is changed to reach a target (owner rule: features first,
   cost and availability before stats).
+
+## Plan revision (2026-11-16, after an independent review: 1 blocker, 6 major, 4 minor; all verified in the code, none rejected)
+Spec 3: kill-class carrier widened in the SAVE 27 commit (15-type cap), `fo_lost_at`, `guns_bought`,
+`gun_direct_rounds`. G2: mask steps 2..=16 at 0.5 m, hull-pitch limit, test with zero error. G3: mission ttl, load
+check and `end_mission` for gun squads, infantry guns counted only in `S11Counters` (T80, T84, mortar rows clean).
+A1: role split of `take_guns` / `gun_jobs` / `gun_recrews` and `outside_limit` moved into Build A; Build C wiring
+(lists before `assign`, `arty_pot` beside `gun_pot` incl. `ai/fort.rs`, `mortars` before `arty`). Balance note: the
+high-angle leIG may favour Germany; the measure reads `arty_off` first.
 
 ## Plan (2026-11-16)
 Scope (spec 1): gun fire missions on the S5b mission code and the S9 gun entity; low- and high-angle solutions

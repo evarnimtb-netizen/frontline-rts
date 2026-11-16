@@ -8,7 +8,8 @@
 # played by this slice); screening uses 1001 and up only.
 # ROW HONESTY rules of S10b-ai.toml hold unchanged (three_parts_from T109).
 # The s11a1 metric names are fixed by docs/slices/S11a1.md 4 (C5) and 7
-# (Build B builds them; Build C fills breach_prep). Cap rows are reports
+# (Build B builds them; Build C fills breach_prep). Infantry guns count only
+# in s11a1 (spec 4 G3), so T80, T84 and the mortar rows are unchanged. Cap rows are reports
 # with a bound: a hard cap row whose control is 0 would be CONTROL-SAME.
 # T93f/h and T96 stay reports: T131 is the breach row with preparation fire.
 name = "S11a1: gun fire missions, infantry guns, artillery AI (S10c-ai targets plus T128-T138)"
