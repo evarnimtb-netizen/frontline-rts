@@ -41,9 +41,9 @@ detour-cost demolition want (S10c-3 (B)); card weights and prices; presenter wor
 `[ai.obstacles]` switches (1/0): `front` (F1-F9), `mine_assign` (C2), `belt` (C4). Values: `front_points` 2,
 `front_out_m` 50, `front_wire_len_m` 20 (was 40 in the first plan; review finding 2), `front_site_threat_m` 50,
 `front_fields_max` 2, `front_slots` 1 (front jobs at once; C8), `belt_pieces` 5,
-`belt_gap_m` 10, `belt_detour_pct` 130, `builder_cards_min` 0 (C3: 0 = off; the ablation runs 2). `jobs_max` goes
+`belt_gap_m` 10, `belt_detour_pct` 130, `builder_cards_min` 0 (C3: 0 = off; default 2 since Build C chunk 2, orchestrator 2026-11-16; ablation `builders0`). `jobs_max` goes
 1 -> 2 in Build C. Off values: the three switches 0, `builder_cards_min` 0, `jobs_max` 1.
-Override files `targets/S10c-ai-ablations/{c_off,front_off,mine_assign_off,belt_off,jobs1,builders2,site80}.toml`;
+Override files `targets/S10c-ai-ablations/{c_off,front_off,mine_assign_off,belt_off,jobs1,builders2,builders0,site80}.toml`;
 `c_off` sets every S10c key to its off value and must equal main (`neutral.py`); `site80` sets `front_site_threat_m` 80.
 
 ## 3. Data model (every saved field in Build A's layout commit; B and C change no layout)
@@ -82,7 +82,7 @@ CLI only, read-only (no sim state): `S10cSeen` in `skirmish.rs`, observed once a
 | C1 | `jobs_max` 2 (inside `builders_max` 2) | 2 | E6 (B) | `ai_two_s10b_jobs_run_at_once` (control `jobs_max` 1) |
 | C8 | At most `front_slots` front jobs (FrontAp, FrontWire, AT field at a front point, Belt) at once, so one of the two builder slots stays for nest, wire, dugout, roof and the R1 works | 1 | finding 8 | `ai_front_jobs_leave_a_slot_for_home_works` (control `front_slots` 2: both slots at the front) |
 | C2 | `mine_assign`: a wanted front work with no fit squad assigned to its point takes one free builder from anywhere, nearest the site first (as `bunker_assign`; F5 and F10 hold). Orchestrator 2026-11-16: the pick reads every free squad, not the point assignment, so the assign bonus at own untrenched points cannot outbid it; `front_why` no_builder then means none anywhere | - | E6 (B) | `ai_mine_assign_sends_a_builder_to_the_front` (control 0) |
-| C3 | `builder_cards_min` N: with fewer than N living builder squads (`place_mines` and `build_structure`, no `breach`) the next buy is the faction's builder card (affordable, pop room). Default 0; measured as the `builders2` ablation only | 0 | 0.5; S10c-2 (A) | `ai_buys_a_builder_under_the_floor` (control 0) |
+| C3 | `builder_cards_min` N: with fewer than N living builder squads (`place_mines` and `build_structure`, no `breach`) the next buy is the faction's builder card (affordable, pop room). Orchestrator 2026-11-16 (Build C chunk 2): default 2, owner question S10c-2 now proposed as (B) and waiting for the owner; `c_off` keeps 0; ablation `builders0` (0) beside `builders2`. Reason: on the chunk 1 40 sets only the floor of 2 keeps the home works floor, and it lifts mines to 95 / 82.5 % of matches | 2 | 0.5; S10c-2 (B proposed) | `ai_buys_a_builder_under_the_floor` (control 0) |
 | C4 | Belt: after a front point's AT row 1 is laid, a row of `belt_pieces` blocking pieces `hedgehog_step_m` apart across the vehicle lane, centred on it, `belt_gap_m` beyond the AT field (enemy side), so a vehicle rounding the row crosses the 40 m field. Hedgehogs with a `build_heavy` squad, else one log barrier line | 5 x 4 m; 10 m | S10b-ai-3 (B) | `ai_builds_a_belt_before_its_at_field`, fortify row `s10c.belt` |
 | C5 | Belt own-route rule (replaces R6's 10 m for belts only): the own route vehicle's path base -> point -> `route_out` with the belt's nodes blocked must exist and be at most `belt_detour_pct` of the path without; else the mirrored side once, else L3 and `belt_route_rejects` | 130 % | R6; T115 | `ai_belt_leaves_the_own_way_round` (control `belt_detour_pct` 0 = rule off: `own_blocked` > 0) |
 | C6 | B1-2: `count_own_blocked` counts a (vehicle, piece) pair once while both live; the cause on seed 104 (own rows at base 0) is found first and fixed if it fits the chunk | - | TODO B1-2 | `own_blocked_pair_is_counted_once` |

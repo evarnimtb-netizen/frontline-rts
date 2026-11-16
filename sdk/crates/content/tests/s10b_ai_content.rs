@@ -30,13 +30,15 @@ fn ai_obstacle_tuning_parses_and_validates() {
     let s = defs.resolve(&req).unwrap();
     // The mod restates the starting values, every switch on (S10c-ai
     // Build B chunk 2: `front` on too, its starting value 0; Build C chunk
-    // 1: `jobs_max` 2 and `mine_assign` 1, starting values 1 and 0).
+    // 1: `jobs_max` 2 and `mine_assign` 1, starting values 1 and 0; chunk 2:
+    // `builder_cards_min` 2, starting value 0).
     assert_eq!(
         s.rules.ai.obstacles,
         AiObstacleTuning {
             front: 1,
             jobs_max: 2,
             mine_assign: 1,
+            builder_cards_min: 2,
             ..AiObstacleTuning::default()
         }
     );

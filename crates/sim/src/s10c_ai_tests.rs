@@ -356,7 +356,8 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         Box::new(|s| o(s).front_home = 1),
         Box::new(|s| o(s).front_points = 3),
         Box::new(|s| o(s).belt_detour_pct = 200),
-        Box::new(|s| o(s).builder_cards_min = 2),
+        // Build C chunk 2: the default is 2, so the edit sets 3.
+        Box::new(|s| o(s).builder_cards_min = 3),
         Box::new(|s| o(s).front_slots = 2),
         Box::new(|s| o(s).front_wire_len_m = 30),
         Box::new(|s| lanes(s)[0].ap_done = true),

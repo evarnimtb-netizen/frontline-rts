@@ -32,7 +32,7 @@
 #
 # S10c-ai (docs/slices/S10c-ai.md 2): with ABLATIONS=docs/slices/targets/
 # S10c-ai-ablations every *.toml there is an override (c_off, front_off,
-# mine_assign_off, belt_off, jobs1, builders2, site80), and a file may hold
+# mine_assign_off, belt_off, jobs1, builders2, builders0, site80), and a file may hold
 # only the S10c keys at their listed values ([ai.obstacles] front,
 # mine_assign, belt 0; jobs_max 1; builder_cards_min 0 or 2;
 # front_site_threat_m 80; front_wire_len_m 20; front_slots 1; front_home 0

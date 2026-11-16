@@ -1775,7 +1775,7 @@
           "belt_detour_pct": 130,
           "belt_gap_m": 10,
           "belt_pieces": 5,
-          "builder_cards_min": 0,
+          "builder_cards_min": 2,
           "bunker": 1,
           "bunker_assign": 1,
           "bunker_truck_first": 1,
