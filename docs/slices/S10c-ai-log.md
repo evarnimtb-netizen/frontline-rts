@@ -4,23 +4,26 @@ Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may wor
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Fix pass 2 done (2026-11-16): C-2, C-3, C-4, C-6, C-7, C-8, C-9 fixed; C-5 NOT fixed (it needs a saved AT line,
-a layout change; see "Fix pass 2"). Next: verify.**
-- Defaults unchanged (`front` 1, `front_home` 0, `jobs_max` 2, `front_slots` 1, `mine_assign` 1, `builder_cards_min`
-  2, `belt` 1); no key, save field or layout change (SAVE 26, PROTOCOL 14). Neutral (release CLI rebuilt):
-  `python3 -I tools/neutral.py target/s10c-baseA40 target/s10c-F2off40` -> `skirmish40.json: same 40/40 (note:
-  overrides 1 -> 5 items)`.
-- Default 40 set `target/s10c-F2-40` (DE / US), Germany 47.5 %: mines 75.0 / 87.5 % of matches; front share 35.5 /
-  16.2 %; approached 50.0 / 17.1 %; set off 0.475 / 0.075; AT fields 0.325 / 0.425 a match; tanks stopped 0 / 0; belt
-  7.5 / 2.5 % (belt jobs 3 / 1, route rejects 0 / 0); wire seen by enemy 47.5 / 13.9 %; knew enemy wire 12.5 / 47.5 %;
-  breaches 0 / 0; front builders lost 0.45 / 0.625; builder buys 1.925 / 2.275; MG nests 0.90 / 0.825; works 100 /
-  100 %; wire 100 / 90.0 %; defence jobs failed 10.6 / 9.8 %; own_blocked 0 / 0; `jobs_overdue` 0 / 0. Home works
-  floor vs baseA40 (0.825 / 0.725, 95.0 / 92.5 %): holds.
-- Open: (1) C-5. (2) C-7's reach (`sweep_reach_m` 300) cuts the C2 pick: vs F1-40 front share 55.1 / 37.7 -> 35.5 /
-  16.2 %, US set off 0.35 -> 0.075 (T119, T121); diagnostic `target/s10c-F2reach40` (`sweep_reach_m` 1000, sweeps too):
-  52.8 / 40.4 %, set off 1.0 / 0.2, but US front builders lost 1.0 (bound 0.5); a reach key of its own is a setup
-  change: orchestrator. (3) `front_why` has no AT entry (saved `[u32; 12]`). (4) AT row behind FrontAp ("Fix pass 1").
-  (5) R6b not built; S10c-2 waits for the owner.
+**Fix pass 3 done (2026-11-16, the last): C-5 fixed (saved AT line), `front_why` `at_wait`, the key
+`mine_assign_reach_m` 450. Next: the orchestrator's final measure and verify.**
+- Layout inside SAVE 26 (no version-26 save exists outside this branch, so no bump; PROTOCOL 14): `FrontLane::at`,
+  `front_why: [u32; 13]`, setup key `[ai.obstacles] mine_assign_reach_m` (0..=2000, default 450). Defaults otherwise
+  as pass 2 (`front` 1, `front_home` 0, `jobs_max` 2, `front_slots` 1, `mine_assign` 1, `builder_cards_min` 2, `belt` 1).
+- Neutral (release CLI rebuilt after the last code change): `python3 -I tools/neutral.py target/s10c-baseA40
+  target/s10c-F3off40` -> `skirmish40.json: same 40/40 (note: overrides 1 -> 5 items)`.
+- Code `c1302b3`; last `tools/check.sh quick 54009f6`: `tests (cli, content, sim): ok (881 passed, 0 failed, 55
+  binaries, 54 cached, 154 s)`, `quick: all ok`.
+- Default 40 set `target/s10c-F3-40` (= `reach450`, same numbers; DE / US), Germany 40.0 %: mines 97.5 / 95.0 % of
+  matches; front share 55.0 / 43.3 %; approached 61.5 / 26.3 %; set off 0.95 / 0.45; AT fields 0.15 / 0.20 a match;
+  tanks stopped 0.075 / 0.025; belt 7.5 / 0 % (belt jobs 3 / 0, route rejects 0 / 0); wire seen by enemy 59.0 / 34.2 %;
+  knew enemy wire 32.5 / 57.5 %; breaches 0 / 0; front builders lost 0.45 / **1.05** (T125 bound 0.5); builder buys
+  2.0 / 2.575; MG nests 0.975 / 0.775; works 100 / 100 %; wire 97.5 / 95.0 %; defence jobs failed 9.5 / 10.5 %;
+  `jobs_overdue` 0 / 0; own_blocked **1** / 0 (seed 15 normal, Germany at base 0: the B1-2 match, R6b not built);
+  `front_why` at_wait 24916 / 25966 (slot 10942 / 10262). Home works floor vs baseA40 (0.825 / 0.725, 95.0 / 92.5 %):
+  holds.
+- Open: (1) US front builders lost over the bound at every reach measured (S10c-1 to the owner, spec 8.4). (2) The AT
+  row waits behind FrontAp / FrontWire (`at_wait` about 2.4x `slot`; "Fix pass 1" options A/B). (3) own_blocked 1:
+  R6b (B1-2) not built. (4) S10c-2 waits for the owner.
 
 ## Plan (2026-11-16)
 Cause chain (spec 0): `trench_done` gate, nest -> wire -> AP order, `fort_threat` (one known enemy within 80 m of
@@ -45,105 +48,84 @@ front first; `builders2` measures a second); B1: fortifying helps the USA more, 
 - B2 40 set (DE / US), Germany 50.0 %: front share 12.7 / 18.1 %; approached 11.1 / 17.9 %; works 97.5 / 80.0 %;
   nests 0.35 / 0.225 (`c_off` 95.0 / 92.5 %, 0.825 / 0.725). `front_home_on` Germany 47.5 %.
 
-## Build C chunk 1 (2026-11-16)
-- Orchestrator additions: (1) F1, `front_home` 0: the home point is a front point only while the enemy owns over half
-  the points. (2) C2's pick reads every free squad (`mine`), as `bunker_assign`; the hold bonus no longer decides it,
-  but hunts and ambushes run first, and assign sends the builder back to the nearest own untrenched point (+80);
-  no_builder 23209 / 25080 (`mine_assign_off`) -> 16181 / 20804 (= "no fit free builder anywhere").
-- C1 `jobs_max` 2 (`skirmish.toml`, snapshot, content tests; BASELINE unchanged: it hashes the frozen S3c fixtures).
-  C8 `front_slots` gate in `point_starts`, `fort_holds`, `front_block`. C3: "a habit want exists" = fort habits on,
-  build gate open, an own point (a want flag would be unsaved). Card: cheapest roster card with `place_mines` and
-  `build_structure`, no `breach`, `ai_weight` > 0 (S10a cards need `[ai.fort] cards`); no mix slot needed.
-- Tests (control in brackets, seen failing): `ai_two_s10b_jobs_run_at_once` [jobs_max 1: 1], `ai_front_jobs_leave_
-  a_slot_for_home_works` [front_slots 2: 2], `ai_mine_assign_sends_a_builder_to_the_front` [0: no job, no_builder],
-  `ai_buys_a_builder_under_the_floor` [0: rifles], `ai_builder_floor_never_overbuys` [alive count ignored: 3 buys],
-  `own_blocked_pair_is_counted_once` [old list: 2], `ai_bunker_yields_a_slot_with_two_slots` [bunker_yields 0: 1 job
-  beside the bunker; `builders_max` 4], F1 home case [`front_home` 1: [C, B]].
-- B1-2 cause (C6b): seed 104 reads 0 on main now; B40 had DE 31 in seed 15 normal: one Opel Blitz (truck job Load /
-  Return, goal the own base centre) against two pieces of an own log barrier 2-3 m from the base centre (base 0),
-  coming and going as it shunted (recount: 2). R6 checks base -> point -> `route_out` only, `own_route` was most
-  likely None (no vehicle path from the base centre) and R6 passes every site then. Proposed R6b (own key, off in
-  `c_off`): no blocking piece within `own_route_m` + `wreck_pad_m` of the base centre; a failed search refuses.
-- Deviations: (1) `mine_assign` default 1 already in chunk 1. (2) Tests on a lone held point or C alone take
-  `front_home` 1 (`ai_front_wants_come_before_the_nest`, `..._from_base_ends_inside_its_deadline`, liveness FrontAp).
-  (3) Determinism: second save at the first live front job from the end of the first save's replay (seed 1: none
-  9:52-24:52; saves 8:22, about 8:52), window 15 min. (4) `yields_run` pins `jobs_max` 1. (5) No key for the C6
-  recount (a counter only; `c_off` same 40/40).
-- 40 sets (DE / US). Default `C1a40`, Germany 40.0 %: mines 70.0 / 50.0 %; home/front 218/243, 171/117 (front share
-  52.7 / 40.6 %); approached 42.9 / 20.0 %; set off 0.475 / 0.25; wire seen 62.1 / 34.8 %; knew 20.0 / 45.0 %; breaches
-  0 / 0; front jobs 5.45 / 4.33; lost 0.60 / 0.55; why no_builder 16181 / 20804, slot 5390 / 3870, no_front 4730 /
-  4995; buys 0 / 0; nests 0.70 / 0.525; works 87.5 / 77.5 %; wire 72.5 / 57.5 %; own_blocked 0 / 0. `builders2` `C1b40`,
-  Germany 42.5 %: mines 95.0 / 82.5 %; 398/510, 342/285 (56.2 / 45.5 %); approached 63.2 / 51.5 %; set off 0.675 /
-  0.375; wire seen 45.9 / 54.1 %; knew 50.0 / 42.5 %; breaches 0 / 0; jobs 8.45 / 9.35; lost 0.65 / 0.80; why slot
-  7070 / 6602, no_builder 5789 / 5704, no_front 4730 / 5001; buys 1.7 / 1.925; nests 0.90 / 0.80; works 100 / 95.0 %;
-  wire 92.5 / 92.5 %; own_blocked 0 / 0. `mine_assign_off` `C1c40`, Germany 45.0 %: mines 45.0 / 30.0 %; front share
-  31.9 / 13.0 %; nests 0.775 / 0.55.
+## Build C chunk 1 (2026-11-16, shortened)
+- Orchestrator: (1) F1 `front_home` 0: the home point is a front point only while the enemy owns over half the points.
+  (2) C2's pick reads every free squad, as `bunker_assign` (hunts and ambushes first); no_builder 23209 / 25080
+  (`mine_assign_off`) -> 16181 / 20804. C1 `jobs_max` 2; C8 `front_slots` gate in `point_starts`, `fort_holds`,
+  `front_block`; C3 "a habit want exists" = fort habits on, build gate open, an own point; card: cheapest roster card
+  with `place_mines` + `build_structure`, no `breach`, `ai_weight` > 0.
+- Tests [control seen failing]: `ai_two_s10b_jobs_run_at_once` [jobs_max 1], `ai_front_jobs_leave_a_slot_for_home_
+  works` [front_slots 2], `ai_mine_assign_sends_a_builder_to_the_front` [0], `ai_buys_a_builder_under_the_floor` [0],
+  `ai_builder_floor_never_overbuys` [3 buys], `own_blocked_pair_is_counted_once` [2], `ai_bunker_yields_a_slot_with_
+  two_slots` [1 job], F1 home case [`front_home` 1].
+- B1-2 cause (C6b): seed 15 normal, DE base 0: an Opel Blitz shunting against an own log barrier 2-3 m from the base
+  centre; R6 checks base -> point -> `route_out` only. Proposed R6b (own key, off in `c_off`): not built.
+- Deviations: `mine_assign` 1 in chunk 1; lone-point tests take `front_home` 1; determinism save at the first live
+  front job (window 15 min); `yields_run` pins `jobs_max` 1; no key for the C6 recount.
+- 40 sets (DE / US): default `C1a40` Germany 40.0 %: front share 52.7 / 40.6 %, set off 0.475 / 0.25, lost 0.60 /
+  0.55, nests 0.70 / 0.525, works 87.5 / 77.5 %; `builders2` `C1b40` 42.5 %: front share 56.2 / 45.5 %, set off
+  0.675 / 0.375, lost 0.65 / 0.80, nests 0.90 / 0.80, works 100 / 95.0 %; `mine_assign_off` `C1c40` 45.0 %: front
+  share 31.9 / 13.0 %, nests 0.775 / 0.55.
 
-## Build C chunk 2 (2026-11-16)
-- Commits: `a641988` `builder_cards_min` 2 (orchestrator; `s10c_ai_layout_roundtrips_and_hashes` now sets 3, seen
-  failing first; `builders0.toml`); `0130677` belt code and tests; then defaults, CLI row, docs. C4/C5: spec rows; belt
-  = front job (orchestrator item 2); R6b not built (item 3).
-- Tests [control]: `ai_builds_a_belt_before_its_at_field` [`belt` 0: no piece]; `ai_one_belt_per_lane` [no
-  `!front_live` in `belt_wanted`: 2 jobs at once]; `ai_belt_leaves_the_own_way_round` [`belt_detour_pct` 0: tank not
-  out]; `ai_belt_deterministic_threads_and_save_load` [job `start` edited: "at 1 threads" fails]; liveness row Belt
-  [`refused_s` 0: past its deadline]; fuzz stage "ai_belt_watch" (17 stages).
-- Deviations: (1) tests feed the builders (staged refill) and take `bunker` 0; (2) the way-round control asserts "not
-  out", not `own_blocked` > 0; (3) the belt determinism test is staged; (4) the liveness row takes `fields_per_point`
-  0; (5) `front_carry_ok` counts one step for a point blueprint; (6) the fortify row stages the lane done, takes
-  `front_home` 1 and fed 160 kg a second (US log line not built, its control read 0; fix pass 2 C-3 adds a truck).
-- 40 sets (`BATCH_JOBS=4`, world `85eeb1da`; DE / US): **C40** (`target/s10c-C40`) = chunk 1's `builders2` C1b40 row
-  (Germany 42.5 %) and: AT fields 0.025 / 0; tanks stopped 0 / 0; belt 0 / 0 %; obstacle approached 0 / 0 %;
-  demolitions wanted 0 / 0; breaches 0 / 0; own_blocked 0 / 0; own-side mistakes 0 / 0. **belt_off**
-  (`target/s10c-C2belt0`): same 40/40 as C40. **builders0** (`target/s10c-C2b0`) = chunk 1's default C1a40 row
-  (Germany 40.0 %) and the same zeros (AT fields, stopped, belt, demolitions, breaches, own_blocked, mistakes).
+## Build C chunk 2 (2026-11-16, shortened)
+- `a641988` `builder_cards_min` 2 (orchestrator; `builders0.toml`); `0130677` belt code and tests. Belt = front job
+  (orchestrator item 2); R6b not built (item 3). Tests [control]: `ai_builds_a_belt_before_its_at_field` [`belt` 0];
+  `ai_one_belt_per_lane` [no `!front_live`: 2 jobs]; `ai_belt_leaves_the_own_way_round` [`belt_detour_pct` 0];
+  `ai_belt_deterministic_threads_and_save_load` [job `start` edited]; liveness row Belt [`refused_s` 0]; fuzz stage
+  "ai_belt_watch". Deviations: tests feed the builders and take `bunker` 0; the way-round control asserts "not out";
+  belt determinism test staged; liveness row `fields_per_point` 0; `front_carry_ok` one step for a point blueprint;
+  the fortify row stages the lane done, `front_home` 1, fed 160 kg a second.
+- 40 sets (DE / US): C40 = C1b40 (Germany 42.5 %) with AT fields 0.025 / 0, belt 0 / 0, demolitions 0, breaches 0,
+  own_blocked 0; `belt_off` same 40/40 as C40; `builders0` = C1a40 (40.0 %) with the same zeros.
 
-## Fix pass 1 (2026-11-16; findings in `/tmp/claude-0/s10c-open-findings.md`)
-- A-1 `mine_block`: laid field or running job not counted, before the trench/threat check (`mine_want_why_skips_a_
-  laid_field_at_a_threatened_point`, control old order: 15). A-2: order in `MINE_WANT_WHY` doc. A-3 `ablate.sh`: a key
-  counts only echoed or at the mod default (control: 1 of 2 -> 1). A-4 `load_rejects_lanes_over_the_cap_alone` (8 load,
-  9 refused). A-5 CLI `s10c_observer_counts_enemy_soldiers_and_vehicles_only` (own squad, soldier at AT mine: 0; tank
-  20 m: 2; 60 m: 0); `s10b_counters_zero_without_use` also runs the shipped defaults (no control).
-- B-1 FrontWire keeps L1, L3 (refusal on a refused order or a Watch end not built) and L4 (`refused_here` in
-  `point_starts`, `front_block`, `fort_holds`); no parking. In C40 136 of 247 FrontWire ends were re-ordered within
-  10 s. `front_wire_row` + `front_wire_job_ends_and_is_not_reordered`: 2-5 refusals in 20 min [`refused_s` 0 or old
-  code: alive to the end]. Deviation: FrontWire failures write the refusal only; the test hook drives FrontWire.
-- B-2 `fort_near_of(.., rear)`: front lines and jobs do not count as the point's 60 m wire or R1 field
-  (`front_field_does_not_stand_in_for_the_r1_field` [no R1 job]). B-3 `fort_holds` checks R8 room, cap, L4
-  (`a_refused_front_work_holds_no_builder` [held 30 plans]). B-4 "at the site" from the line's nearest point
-  (`front_threat_at_site_is_measured_from_the_line`). B-5 load refuses lanes with `front` 0 (`load_rejects_front_
-  lanes_with_front_off`).
-- C-1 diagnosis (C40 code, temporary prints): the front AT row was wanted on 1169 recheck plans, started 9 times (of
-  712 front starts). AP or wire not done on 1030; slot held on 481. Slot free (688): builder under 60 % 296, no builder
-  180, F10 no carry 72 (0-81 kg held of 90), threat 55, refused 28, startable 57 (FrontAp took the builder 46). Fix:
-  the row is offered every plan and a builder whose full carry holds 90 kg loads it at home (Load `front_at`) ->
-  `ai_front_at_row_loads_in_base_and_is_laid` [start after 575 s]. AT fields 0.025 / 0 -> 0.175 / 0.225.
-- Design limit (F3 order, one front slot): the row waits while FrontAp is re-tried. Options: (A) offer the AT row
-  before FrontAp once a FrontAp job there was dropped or refused; (B) `front_slots` counts FrontAp / FrontWire only.
-- F1-40 (DE / US), Germany 52.5 %: mines 97.5 / 85.0 %; front share 55.1 / 37.7 %; set off 0.525 / 0.35; AT 0.175 /
-  0.225; belt 2.5 / 0 %; wire seen 41.0 / 29.4 %; nests 0.925 / 0.675; works 100 / 97.5 %; `F1off40` same 40/40.
+## Fix pass 1 (2026-11-16, shortened; findings in `/tmp/claude-0/s10c-open-findings.md`)
+- A-1 `mine_block` order (laid field before the trench/threat check) [old order: 15]; A-2 doc; A-3 `ablate.sh` counts a
+  key echoed or at the mod default; A-4 `load_rejects_lanes_over_the_cap_alone`; A-5 CLI observer counts enemy soldiers
+  and vehicles only (tank 20 m: 2; 60 m: 0).
+- B-1 FrontWire keeps L1, L3, L4 (`front_wire_job_ends_and_is_not_reordered` [`refused_s` 0: alive to the end]); B-2
+  front lines are not the point's R1 field or 60 m wire; B-3 `fort_holds` checks R8 room, cap, L4; B-4 "at the site"
+  from the line's nearest point; B-5 load refuses lanes with `front` 0.
+- C-1 (C40 code, temporary prints): the front AT row was wanted on 1169 recheck plans, started 9 times; AP or wire not
+  done on 1030, slot held on 481 (pass 3 counts this as `at_wait`). Fix: the row is offered every plan and a builder
+  whose full carry holds 90 kg loads it at home (`ai_front_at_row_loads_in_base_and_is_laid` [start after 575 s]).
+  Design limit: the row waits while FrontAp is re-tried; options (A) AT row before FrontAp once FrontAp was dropped or
+  refused, (B) `front_slots` counts FrontAp / FrontWire only.
+- F1-40 (DE / US), Germany 52.5 %: front share 55.1 / 37.7 %; set off 0.525 / 0.35; AT 0.175 / 0.225; `F1off40` same.
 
-## Fix pass 2 (2026-11-16; C-2..C-9; each control seen failing, how in brackets)
-- C-2: probe `own_route_len_probe`; `ai_belt_leaves_the_own_way_round` measures the own route with the belt over its
-  length before: 100 % (`belt_detour_pct` 130, side 1) vs no route (control 0: None). The fortify row adds
-  `belt_route_rejects` (and in its control): 0 / 0 on the open map (report).
-- C-3: no sim change (in a match `truck_for` lets a log belt start while a truck loads). Row `s10c.belt`: `works` 1
-  with every S10a kind off (`material_truck` needs `s10a_on`), a truck per side driven after each Fort plan, refill
-  only until the AT row stands, the truck staged back to Load between runs (with no armour it follows for good).
-  Seeds 1-5: belt 100 %, US log line 100 %, pieces 5.0, truck runs 30, enemy tank mined 50 % (control `belt` 0: 80 %),
-  reached belt 50 %, own_blocked 0 / 0 [no Load staging: 0 runs, log line 0 %]. Left: with `works` and `wire` 0
-  `truck_for` says yes but no truck run comes (no default hits it).
-- C-4: `belt_log_rest` (from the first segment with no own log piece within 2 m of its middle); `belt_wanted`,
-  `point_site(Belt)`, `want_fort`. `ai_finishes_a_partial_log_belt` [old `belt_next` check: 1 piece].
-- C-5 NOT fixed (stopped as told): `FrontLane` saves only the FrontAp and FrontWire lines (foot lane); the AT site is
-  the R2 vehicle-path search, unsaved, and it moves too. A fixed frame needs e.g. `FrontLane::at` (SAVE 27).
-- C-6: the floor counts builder squads at >= 60 % (and pending buys); order: urgent breach (was after the floor),
-  urgent AT (S4 rule, an AT card ready), the floor. `ai_builder_floor_counts_fit_squads` [any living counts: no buy],
-  `ai_builder_floor_waits_for_the_urgent_at_buy` [no AT check: engineers first]. No cap (a key is a setup change):
-  `builder_buys_per_match` 1.925 / 2.275; floor buys cost about 4.8 / 9.5 % of card manpower (builder card
-  `mp_share_pct` 5.2 / 11.0 % x floor buys / card buys).
-- C-7, C-8: `assign_free`: leader within `sweep_reach_m` (300) of the site, in no running escort, no half-track job
-  carries or waits for it, no ride lock (hunts, AT follows: `taken`). `front_block` reads the point's squads plus every
-  `assign_free` one. `ai_mine_assign_keeps_its_reach_and_off_escorts` [pick without it: job; old `front_block`:
-  no_builder 0]; `ai_mine_assign_sends_a_builder_to_the_front` takes reach 1000 (site 350 m off). Effect: top, open (2).
-- C-9: the determinism test stages a builder and a FrontAp job on a saved lane at 12:30, saves 20 s later (Watch),
-  loads at 1/2/3/8 threads: 60 s of equal hashes; control: the job's `start` edited -> another hash.
+## Fix pass 2 (2026-11-16, shortened; C-2..C-9)
+- C-2 probe `own_route_len_probe`: belt detour measured over the belt's length [`belt_detour_pct` 0: None]; fortify row
+  `belt_route_rejects` 0 / 0. C-3: no sim change; row `s10c.belt` drives a truck per side (seeds 1-5: belt 100 %, US
+  log line 100 %, enemy tank mined 50 %, control `belt` 0: 80 %) [no Load staging: 0 runs]. C-4 `belt_log_rest`
+  (`ai_finishes_a_partial_log_belt` [1 piece]). C-5 not fixed then (pass 3). C-6 builder floor counts squads >= 60 %
+  after the urgent breach and AT buys (`ai_builder_floor_counts_fit_squads`, `..._waits_for_the_urgent_at_buy`); floor
+  buys cost about 4.8 / 9.5 % of card manpower. C-7, C-8 `assign_free` (reach, no escort, no half-track job, no ride
+  lock), `front_block` reads the same squads. C-9 determinism test staged FrontAp job, 1/2/3/8 threads [`start` edited].
+- F2-40 (DE / US), Germany 47.5 %: front share 35.5 / 16.2 %; set off 0.475 / 0.075; lost 0.45 / 0.625; `F2off40` same
+  40/40; `F2reach40` (`sweep_reach_m` 1000, sweeps too): 52.8 / 40.4 %, set off 1.0 / 0.2, lost 0.65 / 1.0.
+
+## Fix pass 3 (2026-11-16, the last; orchestrator decisions of 2026-11-16; each control seen failing, how in brackets)
+- Layout stays SAVE 26: the slice bumped 25 -> 26 and no save of version 26 exists outside this branch.
+- 1a (C-5): `FrontLane::at: Option<[FxVec2; 2]>`, the AT row 1 line, saved once when its job starts on the R2 site
+  (`new_fort_job`: line = `at_site`), else (row laid before the lane was found, or staged) once from the live mines
+  (`at_line_from_mines`: farthest pair moved to the field's enemy edge, the old frame). `belt_frame` reads only `at`:
+  centre `belt_gap_m` beyond its middle. Load: `at` on the map. Tests: `ai_belt_keeps_its_frame_when_at_mines_go` (4
+  of 10 AT mines removed at one end, belt on the whole row's sites, `at` unchanged) [frame from the live mines: 3 of 5
+  on the sites]; `ai_front_at_line_is_saved_when_sited` [no save at the job start: None]; roundtrip/hash edits (value,
+  tag, other lane); `load_rejects_bad_front_lanes` "at site off the map" [check removed: loads]; save fuzz staged lane
+  holds an `at`. Deviation: the fallback from mines is mine (the orchestrator named the sited case only); without it a
+  lane re-found after its row was laid never gets a belt. The liveness row Belt (`s10b_ai_tests.rs` `belt_row`) now
+  stages `at` from its laid mines (the drive hook runs no `front_lanes_update`; without it: "Fort: no refusal").
+- 1b: `FRONT_WHY` 13 entries, `at_wait` counted beside the first-check reason (not instead): AT row 1 wanted (switched
+  on, not laid nor being laid, a site) while the lane's FrontAp or FrontWire is not finished, a front job of the point
+  runs, or the slots are full. JSON `front_why_at_wait`. Tests: `front_why_counts_the_at_row_waiting` (control in the
+  test: FrontAp and FrontWire done -> 0, no_builder instead); CLI `s10c_json_names_match_the_targets_file` checks every
+  `front_why_<name>` [`s10c_blocks` writing 12 names: "front_why_at_wait is not written"].
+- 2: `[ai.obstacles] mine_assign_reach_m` (0..=2000) in `assign_free` (C2 pick and `front_block`); sweeps and
+  demolitions keep `sweep_reach_m` 300. tuning.rs, skirmish.toml, tuning.md, fortifications.md, key count 52, BASELINE,
+  snapshot, `c_off.toml` (at its default), `ablate.sh` allowed values. `ai_mine_assign_keeps_its_reach_and_off_escorts`
+  now sets the new key and `sweep_reach_m` 100 [`assign_free` reading `sweep_reach_m`: "within reach" fails].
+- Reach 40 sets (`reach450/600/800.toml`, `target/s10c-F3reachN`; DE / US: front share %, set off a match, approached
+  %, front builders lost a match; Germany %). Pass 2 300 m: 35.5 / 16.2, 0.475 / 0.075, 50.0 / 17.1, 0.45 / 0.625;
+  47.5 %. 450: 55.0 / 43.3, 0.95 / 0.45, 61.5 / 26.3, 0.45 / 1.05; 40.0 %. 600: 57.4 / 47.5, 0.925 / 0.25, 60.0 /
+  33.3, 0.65 / 0.90; 40.0 %. 800: 53.0 / 40.3, 0.775 / 0.20, 57.5 / 30.6, 0.625 / 0.95; 42.5 %. No value keeps both
+  factions at or under 0.65 lost, so 450 (the rule). These runs include 1a and 1b (pass 2's 300 m row did not).
