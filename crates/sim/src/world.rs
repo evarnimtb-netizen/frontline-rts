@@ -2888,6 +2888,9 @@ mod s10b_gap_tests;
 #[path = "s10b_tests.rs"]
 mod s10b_tests;
 #[cfg(test)]
+#[path = "s10c_ai_front_tests.rs"]
+mod s10c_ai_front_tests;
+#[cfg(test)]
 #[path = "s10c_ai_tests.rs"]
 mod s10c_ai_tests;
 #[cfg(test)]
