@@ -5,33 +5,23 @@ Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may wor
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Build C chunk 2 done (2026-11-16). STOP POINT 2. Next: orchestrator measure + ablations, then Review.**
-- Defaults now: `front` 1, `front_home` 0, `jobs_max` 2, `front_slots` 1, `mine_assign` 1, `builder_cards_min` 2
-  (orchestrator, S10c-2 proposed (B), waiting for the owner), `belt` 1. `c_off` keeps every switch 0 and the floor 0.
-- Neutral (C2 code, release CLI rebuilt): `python3 -I tools/neutral.py target/s10c-baseA40 target/s10c-C2off40`
+**Fix pass 1 done (2026-11-16): A-1..A-5, B-1..B-5 and C-1 fixed (see "Fix pass 1"). Next: fix pass 2 (C-2..C-9).**
+- Defaults unchanged: `front` 1, `front_home` 0, `jobs_max` 2, `front_slots` 1, `mine_assign` 1, `builder_cards_min` 2,
+  `belt` 1. No key, save field or layout change (SAVE 26, PROTOCOL 14); B-5 adds a load check only.
+- Neutral (fix code, release CLI rebuilt): `python3 -I tools/neutral.py target/s10c-baseA40 target/s10c-F1off40`
   -> `skirmish40.json: same 40/40 (note: overrides 1 -> 5 items)`.
-- Home works floor holds at defaults (`target/s10c-C40` vs baseA40): DE nests 0.90 (0.825), works 100 % (95.0);
-  US 0.80 (0.725), 95.0 % (92.5). So `belt` 1 was turned on.
-- **Belts never ran in a match:** `belt_jobs` 0 / 0 in C40; the AI laid a front AT row 1 in 1 of 80 faction-matches
-  (`at_fields_per_match` 0.025 / 0). `belt_off` (`target/s10c-C2belt0`) is same 40/40 as C40, and C40 equals
-  chunk 1's `builders2` set number for number. The belt's match value is unmeasured until front AT fields happen
-  (Review: why front AT rows are so rare; the F-rules lay AP and wire first and `front_slots` 1 holds the slot).
-- Fortify row `s10c.belt` (seeds 1-5, both sides): belt built 50 % (Germany hedgehogs; US log line not built, see
-  deviations), pieces 2.5, enemy tank mined 80 %, reached belt 20 %, own_blocked 0, field laid 100 %; controls:
-  `belt` 0 mined 100 % (the belt adds nothing over the field here: report row, as the stage file allows),
-  `belt_detour_pct` 0 own_blocked 0 (the control does not bind in this staging; the sim test covers C5).
-- Open for Review: (1) R6b not built (no fitting key; needs its own key, `c_off` 0). (2) Belts in matches: front AT
-  rows rare (above). (3) Hedgehog belts need truck runs (F10: no walk home); a partial belt stays partial until
-  supply comes; a parked or failed belt job blocks a retry there as R5 does. (4) A partial log line counts as "the
-  belt". (5) `front_why` has no belt entry. (6) The way-round test's control does not reach `own_blocked` > 0 (the AI
-  re-tasks the tank; it halts beyond `OWN_BLOCKED_M`); it asserts the tank does not get out. (7) Fortify row: US
-  log line not built and the `belt_detour_pct` 0 control reads 0. (8) S10c-2 still waits for the owner.
-- Ignored save fuzz (`--ignored`, 10852 mutations): 2 panics outside this slice's code, overflow on mutated
-  supply accounts (`fwd_belt_rounds` at `structures.rs:1540`, `crate_bombs` at `structures.rs:1245`, value
-  4294967294); not fixed here (not S10c code; the played saves changed with the new defaults). Open for Review.
-- Code map (chunk 2): `fort.rs` `WorkKind::Belt`, `belt_frame`, `belt_row`, `belt_log`, `belt_side`, `belt_next`,
-  `belt_wanted`, `belt_job` (-> `front_kind`), `belt_route_side` (C5), the Belt block in `point_starts`;
-  `vehicle.rs` `BlockLayer::with_pieces_at`; `guns.rs` `gun_route_on`; CLI `fortify/s10c_ai.rs`.
+- Default 40 set `target/s10c-F1-40` (DE / US), Germany 52.5 %: mines 97.5 / 85.0 % of matches; set off 0.525 / 0.35;
+  AT fields 0.175 / 0.225 a match (C40: 0.025 / 0); belt 2.5 / 0 % (2 belt jobs, DE); wire seen by enemy 41.0 /
+  29.4 % (C40 45.9 / 54.1: fewer FrontWire re-orders, T122's 50 % now missed on both); MG nests 0.925 / 0.675; works
+  100 / 97.5 %; own_blocked 0 / 0; `jobs_overdue` 0 / 0. Home works floor vs baseA40 (0.825 / 0.725, 95.0 / 92.5 %):
+  holds (US nests -6.9 % relative).
+- Open: (1) `front_why` has no AT entry: `FRONT_WHY` is a saved `[u32; 12]`, a 13th needs a layout change (not done;
+  the AT numbers below come from temporary prints). (2) AT row still behind FrontAp (spec F3 order) and one front slot:
+  two options under "Fix pass 1". (3) Belts still rare (2 jobs in 80 faction-matches). (4) R6b not built; S10c-2 waits
+  for the owner; C-2..C-9 for fix pass 2.
+- Code map (fix pass 1): `fort.rs` `front_wire_end`, `front_line_built`, `fort_near_of` (B-2), `front_threat(.., line)`
+  (B-4), `front_carry_ok` and Load `front_at` (C-1), `front_threat_probe` (test only); `ai.rs` `validate_fort` (B-5);
+  `tools/ablate.sh` `s10c_applied` (A-3).
 
 ## Plan (2026-11-16)
 Cause chain read in the code (spec 0): `trench_done` gate, the nest -> wire -> AP order, `fort_threat` (one known
@@ -46,7 +36,6 @@ Honest limits: on the open map a 20 m belt never leaves "no way round", so R14 d
 report); with one builder squad per match the front work competes with the rear works (F4 puts the front first;
 `builders2` measures a second squad); B1 found that fortifying helps the USA more, so the guard band is watched at
 every stage end.
-Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are a per-plan memo; no new job type.
 
 ## Build A and Build B (2026-11-16, shortened)
 - A2 layout `6cd959c` (`front_lanes`, `front_slots`, `front_wire_len_m` 20; SAVE 26); observers, JSON, `neutral.py`
@@ -102,10 +91,7 @@ Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are 
   set off 0.675 / 0.375; wire seen 45.9 / 54.1 %; knew 50.0 / 42.5 %; breaches 0 / 0; jobs 8.45 / 9.35; lost 0.65 /
   0.80; why slot 7070 / 6602, no_builder 5789 / 5704, no_front 4730 / 5001; buys 1.7 / 1.925; nests 0.90 / 0.80;
   works 100 / 95.0 %; wire 92.5 / 92.5 %; own_blocked 0 / 0.
-  `mine_assign_off` `C1c40`, Germany 45.0 %: mines 45.0 / 30.0 %; 169/79, 140/21 (31.9 / 13.0 %); approached 22.2 /
-  16.7 %; set off 0.075 / 0.05; wire seen 19.0 / 13.6 %; knew 7.5 / 10.0 %; breaches 0 / 0; jobs 1.95 / 1.40; lost
-  0.30 / 0.225; why no_builder 23209 / 25080, no_front 4730 / 4995, lane_none 3440 / 3515; buys 0 / 0; nests 0.775 /
-  0.55; works 97.5 / 77.5 %; wire 52.5 / 55.0 %; own_blocked 0 / 0.
+  `mine_assign_off` `C1c40`, Germany 45.0 %: mines 45.0 / 30.0 %; front share 31.9 / 13.0 %; nests 0.775 / 0.55.
 
 ## Build C chunk 2 (2026-11-16)
 - Commits: `a641988` `builder_cards_min` 2 (orchestrator; it broke `s10c_ai_layout_roundtrips_and_hashes`: its edit
@@ -132,3 +118,32 @@ Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are 
   42.9 / 20.0 %; set off 0.475 / 0.25; AT fields 0 / 0; stopped 0 / 0; belt 0 / 0 %; obstacle approached 0 / 0 %;
   demolitions wanted 0 / 0; wire seen 62.1 / 34.8 %; breaches 0 / 0; lost 0.60 / 0.55; nests 0.70 / 0.525; works
   87.5 / 77.5 %; wire 72.5 / 57.5 %; own_blocked 0 / 0; mistakes 0 / 0 (= chunk 1's default set).
+
+## Fix pass 1 (2026-11-16; findings in `/tmp/claude-0/s10c-open-findings.md`)
+- A-1 `mine_block`: laid field or running job -> not counted, before the trench/threat check (test
+  `mine_want_why_skips_a_laid_field_at_a_threatened_point`, control old order: 15 counts). A-2: order in `MINE_WANT_WHY` doc.
+  A-3 `ablate.sh`: a key counts only when echoed or at the mod default (control: 1 of 2 echoed -> 1). A-4
+  `load_rejects_lanes_over_the_cap_alone` (10-point map: 8 load, 9 refused). A-5 CLI
+  `s10c_observer_counts_enemy_soldiers_and_vehicles_only` (own squad, soldier at AT mine: 0; tank 20 m: 2; 60 m: 0);
+  CLI `s10b_counters_zero_without_use` also runs the shipped defaults (block shape, `s10c` blocks; no control).
+- B-1 FrontWire keeps L1 (`job_max_s`), L3 (refusal on a refused order or a Watch end not built) and L4 (`refused_here`
+  in `point_starts`, `front_block`, `fort_holds`); no parking. In C40 136 of 247 FrontWire ends came within 10 s of the
+  last for the same squad and point (work gone, not built, re-ordered next plan). Liveness row `front_wire_row` (wire
+  line off the map: BadSpot) + `front_wire_job_ends_and_is_not_reordered`: 2-5 refusals in 20 min; control
+  `refused_s` 0 -> refused every plan, alive to the end; old code -> alive to the end, 0 refusals (seen). Deviation:
+  FrontWire failures write the refusal only (`fort_job_fails`, `s10b_refused` stay S10b); the test hook drives FrontWire.
+- B-2 `fort_near_of(.., rear)`: front lane lines and front jobs do not count as the point's 60 m wire or R1 field
+  (`front_field_does_not_stand_in_for_the_r1_field`, control code edit: no R1 job). B-3 `fort_holds`: front works check
+  R8 room, cap, L4 (`a_refused_front_work_holds_no_builder`, control: held 30 plans). B-4 "at the site" from the line's
+  nearest point (`front_threat_at_site_is_measured_from_the_line`, control old rule). B-5 load refuses lanes with `front`
+  0; `front_kind` None then (`load_rejects_front_lanes_with_front_off`; layout test and staged fuzz save take `front` 1).
+- C-1 diagnosis (C40 code, temporary prints, 40 set, both sides): the front AT row was wanted on 1169 recheck plans,
+  started 9 times (of 712 front starts: FrontAp 332, FrontWire 371). AP or wire not done on 1030 (88 %); the front slot
+  was held on 481 (41 %). Slot free (688): builder under 60 % 296, no builder 180, F10 no carry 72 (held 0-81 kg of
+  90; full carry 100-160), threat 55, refused 28, startable 57, of which FrontAp took the builder 46, FrontWire 2.
+  Fix (orchestrator hint): the row is offered every plan (memoised site) and a builder whose full carry holds the
+  90 kg row takes it and walks home to load (Load `front_at`; F10 kept for other kinds) -> `ai_front_at_row_loads_in_
+  base_and_is_laid` (start within 30 s, laid inside 900 s; control: start after 575 s). AT fields 0.025 / 0 -> 0.175 / 0.225.
+- Still a design limit (spec F3 order, one `front_slots` slot): the row waits while FrontAp is re-tried. Options: (A) on
+  a front point with a lane, offer the AT row before FrontAp once a FrontAp job there was dropped or refused; (B) let
+  `front_slots` count FrontAp / FrontWire only, so the AT row and the belt use the second builder slot.
