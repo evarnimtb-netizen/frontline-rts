@@ -1,7 +1,8 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10b-ai and balance pass B1 (merged 2026-11-16 with the owner's OK). B1: **NO default changed**
-(see B1 below). Owner questions are in `docs/TODO.md`.
+Main holds S1 to S10b-ai and balance pass B1 (merged 2026-11-16 with the owner's OK). S10c-ai (defences at the
+front) is done on branch `claude/project-thread-e7nsak`, not on main. B1: **NO default changed** (see B1 below).
+Owner questions are in `docs/TODO.md`.
 
 ## What the game is now
 
@@ -33,7 +34,7 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
 | Mod `ww2` | 2 factions; cards for tank, casemate TD, half-track, recon car, truck, AT gun; 15 vehicles incl. 4 guns and the Sd.Kfz. 11; `defs/supply/` | `mods/ww2/defs/` |
 | Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands, ClearMines, Demolish | `crates/net/src/` |
-| Mines, obstacles, bunker (S10b; S10b-ai on branch) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; the AI lays, builds, sweeps, demolishes (`[ai.obstacles]`, 35 keys), paths avoid known enemy mines, liveness L1-L5, F8 (`[ai.truck] refusal_memory`). Build E: bunker assign and truck first, a 4 m row opens for a medium tank after two gaps, single-file lanes, AT fields in two rows | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs`, `ai/sweep.rs`, `ai/demolish.rs`, `ai/truck.rs` |
+| Mines, obstacles, bunker (S10b; S10b-ai on main; S10c-ai on branch) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; the AI lays, builds, sweeps, demolishes (`[ai.obstacles]`, 52 keys on the branch), paths avoid known enemy mines, liveness L1-L5, F8 (`[ai.truck] refusal_memory`). Build E: bunker assign and truck first, a 4 m row opens for a medium tank after two gaps, single-file lanes, AT fields in two rows. S10c-ai: hasty front fields, wire, AT fields and belts at the 2 front points, builder-card floor | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs`, `ai/sweep.rs`, `ai/demolish.rs`, `ai/truck.rs`; `ai.rs`; `sdk/crates/cli/src/fortify/s10c_ai.rs` |
 | Godot bridge and presenter | GDExtension (match thread, intents, frames); match view, HUD, menus, net lobby, mock, blockouts | `crates/godot-bridge/src/`, `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
@@ -42,7 +43,7 @@ SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a
 
 ## Versions
 
-`SAVE_VERSION` **25** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **26** and **14** on the S10c-ai branch `claude/project-thread-e7nsak` (Build A: `AiCounters`, `AiState::front_lanes`, thirteen `[ai.obstacles]` keys; Build B: `front_home`, `front` on by default). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14. A save, hash or command change bumps these
+`SAVE_VERSION` **25** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **26** and **14** on the S10c-ai branch `claude/project-thread-e7nsak` (one bump: `AiCounters`, `AiState::front_lanes`, `FrontLane::at`; no version-26 save exists outside the branch). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14 (branch). A save, hash or command change bumps these
 in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -79,6 +80,13 @@ builders_max 1 (+3.96) on fresh seeds 1001-1280 failed on 1-280 (-2.5, -1.7). He
 Rule: about 45 of 160 matches change winner under any change; paired 480 standard error near 2.4 points; accept only z >= 2.5 on both seed groups.
 Owner 2026-11-16: accept Germany at about 42 % for now (B1-1). Open questions B1-2..4 in `docs/TODO.md`.
 
+## S10c-ai (done on branch `claude/project-thread-e7nsak`, measured 2026-11-16; not on main)
+
+Built (log `S10c-ai-log.md`): hasty AP field, wire and AT field at the 2 front points nearest the enemy base (`[ai.obstacles]` `front`, `front_points`, `front_site_threat_m` 50); `mine_assign` (a free builder within `mine_assign_reach_m` 450); belts (`belt`, `belt_pieces` 5); `jobs_max` 2; `builder_cards_min` 2 (owner S10c-2 open). Checks: `check.sh quick` ok, 881 tests; c_off 40 set = main 40/40.
+480 matches (seeds 1-80, 101-180, 201-280; Germany / USA per set): Germany pooled **40.00 %** (40.6 / 37.5 / 41.9). Front share of mines 46.6 / 45.9, 49.7 / 42.3, 52.7 / 42.3 %; enemy within 30 m of mines 59.0 / 36.6, 58.4 / 32.4, 55.8 / 35.1 %; mines set off 0.73 / 0.42, 0.99 / 0.29, 0.74 / 0.44 a match; own wire seen by enemy AI 55.5 / 40.1, 51.0 / 27.8, 43.0 / 36.2 %; belts 10.0 / 1.9, 8.75 / 1.25, 8.1 / 2.5 %; front builders lost 0.55 / 0.84, 0.61 / 0.76, 0.69 / 0.66 a match; breaches 0; own-side mistakes 3 / 2, 0 / 1, 0 / 0.
+Targets (skirmish sets): 270 pass, 71 miss, 41 hard. Misses: builder share of infantry plans 15.9-17.3 % (cap 12, T97); sweeps wanted in 26-31 % (T111); AT fields 0.21-0.29 a match (T110, bound 0.5); bunker 5.6-6.3 % (T113, bound 10); own-side mistakes (T115); US mines set off 0.294 (T121d) and wire seen 40.1 / 27.8 % (T122b, T122d). The 28 hard rows not on the S10b-ai list are named in the log.
+Open: owner questions S10c-1..6 (`docs/TODO.md`); own_blocked 3 / 2 on seeds 1-80 (R6b, not built); breaches 0 (S10c-6, covering fire is S11); front builders lost over 0.5 on both sides; belts rare, no demolition wanted. Not run yet: full release suite (`check.sh tests`), `tools/verify.sh`, GitHub CI on the branch.
+
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
 1. Features first, balance later: no per-slice Tune; each slice measures and records 480 matches. Germany's pooled share
@@ -103,7 +111,7 @@ Owner 2026-11-16: accept Germany at about 42 % for now (B1-1). Open questions B1
 
 ## Roadmap position
 
-Done on main: S1 to S10b-ai and B1 (B1-1 decided: accept for now; open B1-2..4 in `docs/TODO.md`). Next: S11.
+Done on main: S1 to S10b-ai and B1 (B1-1 decided: accept for now; open B1-2..4 in `docs/TODO.md`). Done on the branch, not merged: S10c-ai (verify steps open). Next: owner answers S10c-1..6, the S10c-ai merge decision, then S11.
 
 ## How to check work
 

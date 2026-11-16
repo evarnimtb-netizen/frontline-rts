@@ -3,27 +3,33 @@ Spec: common `docs/slices/S10c-ai.md`, stages `S10c-ai-build-A.md`, `-B.md`, `-C
 Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may work in this checkout: commit only your
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
-## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Fix pass 3 done (2026-11-16, the last): C-5 fixed (saved AT line), `front_why` `at_wait`, the key
-`mine_assign_reach_m` 450. Next: the orchestrator's final measure and verify.**
-- Layout inside SAVE 26 (no version-26 save exists outside this branch, so no bump; PROTOCOL 14): `FrontLane::at`,
-  `front_why: [u32; 13]`, setup key `[ai.obstacles] mine_assign_reach_m` (0..=2000, default 450). Defaults otherwise
-  as pass 2 (`front` 1, `front_home` 0, `jobs_max` 2, `front_slots` 1, `mine_assign` 1, `builder_cards_min` 2, `belt` 1).
-- Neutral (release CLI rebuilt after the last code change): `python3 -I tools/neutral.py target/s10c-baseA40
-  target/s10c-F3off40` -> `skirmish40.json: same 40/40 (note: overrides 1 -> 5 items)`.
-- Code `c1302b3`; last `tools/check.sh quick 54009f6`: `tests (cli, content, sim): ok (881 passed, 0 failed, 55
-  binaries, 54 cached, 154 s)`, `quick: all ok`.
-- Default 40 set `target/s10c-F3-40` (= `reach450`, same numbers; DE / US), Germany 40.0 %: mines 97.5 / 95.0 % of
-  matches; front share 55.0 / 43.3 %; approached 61.5 / 26.3 %; set off 0.95 / 0.45; AT fields 0.15 / 0.20 a match;
-  tanks stopped 0.075 / 0.025; belt 7.5 / 0 % (belt jobs 3 / 0, route rejects 0 / 0); wire seen by enemy 59.0 / 34.2 %;
-  knew enemy wire 32.5 / 57.5 %; breaches 0 / 0; front builders lost 0.45 / **1.05** (T125 bound 0.5); builder buys
-  2.0 / 2.575; MG nests 0.975 / 0.775; works 100 / 100 %; wire 97.5 / 95.0 %; defence jobs failed 9.5 / 10.5 %;
-  `jobs_overdue` 0 / 0; own_blocked **1** / 0 (seed 15 normal, Germany at base 0: the B1-2 match, R6b not built);
-  `front_why` at_wait 24916 / 25966 (slot 10942 / 10262). Home works floor vs baseA40 (0.825 / 0.725, 95.0 / 92.5 %):
-  holds.
-- Open: (1) US front builders lost over the bound at every reach measured (S10c-1 to the owner, spec 8.4). (2) The AT
-  row waits behind FrontAp / FrontWire (`at_wait` about 2.4x `slot`; "Fix pass 1" options A/B). (3) own_blocked 1:
-  R6b (B1-2) not built. (4) S10c-2 waits for the owner.
+## For the next stage (final state 2026-11-16; rewritten, not appended; at most 30 lines)
+**S10c-ai is done on branch `claude/project-thread-e7nsak` (code `c1302b3`, fix pass 3), not merged. Waiting: the owner's
+answers S10c-1..6 (`docs/TODO.md`), the verify steps below, then the merge decision.**
+- Stages done: spec; Build A (SAVE 26 layout, switches, counters, observers); Build B (F1-F10 front rules); Build C
+  (chunk 1: `jobs_max` 2, C2 `mine_assign`, C8 slots; chunk 2: C3 builder floor, C4 belts, C5 belt route); fix passes 1-3.
+- Checks so far: `tools/check.sh quick 54009f6` all ok, 881 tests passed; c_off 40 set same 40/40 as
+  `target/s10c-baseA40`; SAVE_VERSION 26, PROTOCOL 14.
+- Orchestrator measure at `cc4af7c` (480 matches: seeds 1-80, 101-180, 201-280; `target/s10c-verify/measure.txt`):
+  Germany pooled **40.00 %** (sets 40.62 / 37.50 / 41.88), no winner 0. Per set, Germany / USA: front share of mines
+  46.6 / 45.9, 49.7 / 42.3, 52.7 / 42.3 %; mines set off 0.73 / 0.42, 0.99 / 0.29, 0.74 / 0.44 a match (main 0);
+  own wire seen by the enemy AI 55.5 / 40.1, 51.0 / 27.8, 43.0 / 36.2 %; belts 10.0 / 1.9, 8.75 / 1.25, 8.1 / 2.5 %;
+  front builders lost 0.55 / 0.84, 0.61 / 0.76, 0.69 / 0.66 a match; breaches 0 everywhere; own-side mistakes 3 / 2,
+  0 / 1, 0 / 0.
+- Targets (skirmish sets only): 270 pass, 71 miss, 41 hard, 4 unexposed, 4 control-same, 161 skipped. Armour, fortify
+  and timing rows are in `tools/verify.sh`, not run yet.
+- New hard misses (not on the S10b-ai hard list, `S10b-ai-log.md` line 21; 28 rows): T8a (HE share 19.8, bound 20),
+  T30b-d, T40b, T40d, T54b, T54d, T54f, T72b, T88a, T88c (bought and armour rows, in `measure.txt`), T97a-d (builder share of infantry plans 15.9-17.3 %, cap 12), T111a-d (sweep when wanted
+  26-31 %, bound 50), T112b, T112d (obstacles 11.9-14.4 %, bound 30), T115a, T115b, T115d (own-side mistakes, bound 0),
+  T121d (mines set off 0.294, bound 0.3), T122b, T122d (own wire seen 40.1 / 27.8 %, bound 50).
+- Reports over their bound (not hard): T96 breach when enemy wire 0, T123 breaches 0, T125 front builders lost (both
+  sides, bound 0.5), T126 demolitions wanted 0, T127 AT exposure.
+- Waits for the owner: S10c-1 (front builders lost over 0.5 on both sides; (B) 80 m not run); S10c-2 (run on (B),
+  floor 2 default: on the 40 set floor 0 gave mines in 70 / 50 % of matches and missed the home works floor, floor 2
+  gave 95 / 82.5 %); S10c-3..6 as run on (A) in `docs/TODO.md`; own_blocked 3 / 2 on seeds 1-80 needs R6b (B1-2, not
+  built, needs its own key); breaches stay 0 until S10c-6 (B) or covering fire (S11).
+- Open, not run: the full release suite (`check.sh tests`), `tools/verify.sh` (tick times, fortify rows, armour) and
+  GitHub CI on the branch. Front AT row waits behind AP and wire (`at_wait`; options A/B in fix pass 1 below).
 
 ## Plan (2026-11-16)
 Cause chain (spec 0): `trench_done` gate, nest -> wire -> AP order, `fort_threat` (one known enemy within 80 m of

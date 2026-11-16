@@ -304,6 +304,36 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 - B1-3 USA wire floor is already missed at defaults (56-58 % of matches against 60).
 - B1-4 Delayed forts are mostly never built (cause not measured).
 
+## S10c-ai open owner questions (asked 2026-11-16; the slice ran on the listed default)
+
+Spec `docs/slices/S10c-ai.md` 10 (the first option is (A)); log `docs/slices/S10c-ai-log.md`; measures from
+`target/s10c-verify/measure.txt` (480 matches, commit `cc4af7c`). Two numbers per set are Germany / USA.
+
+- S10c-1 Builders near the enemy. Ran on (A): a front builder works on until a known enemy is within 50 m of the site
+  (80 m on the walk). (B) 80 m throughout: safer, far fewer front fields (not run). Measured: front builders lost a
+  match 0.55 / 0.84, 0.61 / 0.76, 0.69 / 0.66 (T125 report, bound 0.5): both sides over the bound in all three sets.
+- S10c-2 Builder squads. Ran on (B), not (A): `builder_cards_min` 2 is the default, waiting for the owner's answer.
+  Measured on the 40 set (floor 0 `C1a40`, floor 2 `C1b40`): mines in 70 / 50 % of matches at floor 0 and 95 / 82.5 %
+  at floor 2; floor 0 missed the home works floor, floor 2 kept it. Builder buys a match 1.91 / 2.56, 1.95 / 2.45,
+  2.04 / 2.35 on the 480.
+- S10c-3 Demolition. Ran on (A): vehicles drive round an obstacle when a way round exists; demolition stays rare and is
+  reported. Measured: demolitions wanted 0 in every set (T126 report).
+- S10c-4 USA belts. Ran on (A): US engineers build the belt as one log barrier line. Measured: belts in 10.0 / 1.9,
+  8.75 / 1.25, 8.1 / 2.5 % of matches.
+- S10c-5 T109 mines. Ran on (A): 45 % of matches (`S10c-ai.toml`), in place of 50 %. Measured: T109 is not among the
+  misses in `measure.txt`.
+- S10c-6 Front wire shape. Ran on (A): a 20 m front line with a 30 m mine row behind it. Measured: own wire seen by the
+  enemy AI 55.5 / 40.1, 51.0 / 27.8, 43.0 / 36.2 % (T122 bound 50; the US rows miss); breaches 0 in every set (T123
+  report). (B) 60 m lines with a field at each end stays open for a later slice.
+- Open items, no answer needed yet:
+  - own_blocked 3 / 2 on seeds 1-80 (0 / 1 and 0 / 0 on the other sets; T115, bound 0). Cause in the log (seed 15,
+    Germany base 0). Rule R6b (B1-2) is proposed in the log and not built; it needs its own key.
+  - Breaches stay 0: the short front line is rounded (S10c-6); covering fire is S11.
+  - Front builders lost is over the 0.5 bound on both sides, not only the US.
+  - Belts are rare (1.25-10 % of matches) and no demolition is wanted.
+  - The front AT row waits behind FrontAp and wire (`at_wait` in the log; options A and B there, not decided).
+  - Not run yet: the full release suite (`check.sh tests`), `tools/verify.sh` and GitHub CI on the branch.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -325,6 +355,7 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Merged to main 2026-11-12 with the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
 13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Questions S10b-ai-E1 and E3-E8 are all decided (see above).
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
+15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), not on main.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
