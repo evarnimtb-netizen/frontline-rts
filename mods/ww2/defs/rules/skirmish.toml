@@ -1513,6 +1513,7 @@ belt_pieces = 5              # C4: blocking pieces in a belt ...
 belt_gap_m = 10              # m (C4): ... this far beyond the AT field, on the enemy side
 belt_detour_pct = 130        # % (C5): the own route round a belt is at most this share of the route without it; 0 = rule off
 builder_cards_min = 2        # C3: with fewer living builder squads the next buy is a builder card; 0 = off (orchestrator 2026-11-16: 2, owner S10c-2 proposed (B))
+mine_assign_reach_m = 450    # m (C2): mine_assign pulls a free builder only within this of the site (sweeps keep sweep_reach_m; fix pass 3: 450 of 450/600/800, none kept US losses <= 0.65)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

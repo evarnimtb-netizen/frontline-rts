@@ -1263,6 +1263,9 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             wire: [c(645, 570), c(665, 570)],
             ap_done: false,
             wire_done: false,
+            // Fix pass 3 (C-5): a saved AT row line (the fuzz mutates its
+            // tag and positions).
+            at: Some([c(640, 600), c(680, 600)]),
         }];
         ai.forts.insert(
             front_sq,

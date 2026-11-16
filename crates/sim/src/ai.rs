@@ -683,8 +683,9 @@ pub struct AiCounters {
     pub front_lost: u32,
     pub front_resumes: u32,
     /// S10c-ai (Build B): the first check that kept a wanted front work
-    /// from starting (`fort::FRONT_WHY` order).
-    pub front_why: [u32; 12],
+    /// from starting (`fort::FRONT_WHY` order; fix pass 3: a 13th entry,
+    /// `at_wait`, counted beside them).
+    pub front_why: [u32; 13],
     /// S10c-ai (review finding 12): per plan and own point whose R1 or R2
     /// field is switched on and not laid, the first check that kept it from
     /// starting (`fort::MINE_WANT_WHY` order).
@@ -985,6 +986,8 @@ impl AiState {
                 (l.point as usize) < np
                     && l.since <= tick
                     && l.ap.iter().chain(l.wire.iter()).all(on_map)
+                    // Fix pass 3 (C-5): the saved AT row line too.
+                    && l.at.iter().flatten().all(on_map)
             })
     }
 }

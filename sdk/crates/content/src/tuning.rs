@@ -1902,6 +1902,10 @@ tuning_table! {
         /// S10c-ai (C3): with fewer living builder squads than this the
         /// next buy is the faction's builder card (0 = off).
         builder_cards_min: 0..=8 = "d_obst_zero",
+        /// S10c-ai C2 (fix pass 3, orchestrator 2026-11-16): `mine_assign`
+        /// pulls a free builder only within this of the site (m; sweeps
+        /// and demolitions keep `sweep_reach_m`).
+        mine_assign_reach_m: 0..=2000 = "d_obst_mine_assign_reach_m",
     }
 }
 
@@ -1939,6 +1943,10 @@ fn d_obst_belt_gap_m() -> u32 {
 
 fn d_obst_belt_detour_pct() -> u32 {
     130
+}
+
+fn d_obst_mine_assign_reach_m() -> u32 {
+    450
 }
 
 fn d_obst_one() -> u32 {
@@ -2013,6 +2021,7 @@ impl Default for AiObstacleTuning {
             belt_gap_m: d_obst_belt_gap_m(),
             belt_detour_pct: d_obst_belt_detour_pct(),
             builder_cards_min: d_obst_zero(),
+            mine_assign_reach_m: d_obst_mine_assign_reach_m(),
         }
     }
 }

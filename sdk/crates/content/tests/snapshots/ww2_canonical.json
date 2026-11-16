@@ -1801,6 +1801,7 @@
           "lane_file": 1,
           "materials_max_pct": 3,
           "mine_assign": 1,
+          "mine_assign_reach_m": 450,
           "mines": 1,
           "obst_gun_m": 40,
           "obst_seen_m": 150,

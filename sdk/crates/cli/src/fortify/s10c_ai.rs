@@ -200,6 +200,7 @@ fn belt_once(args: &FortifyArgs, seed: u64, p: u8, mode: u8) -> Result<Once> {
         ],
         ap_done: true,
         wire_done: true,
+        at: None,
     });
     let drive = DriveArgs {
         squad: Some(bau),

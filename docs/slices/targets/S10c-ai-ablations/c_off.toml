@@ -9,3 +9,4 @@ jobs_max = 1
 front_wire_len_m = 20
 front_slots = 1
 front_home = 0
+mine_assign_reach_m = 450

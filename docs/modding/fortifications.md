@@ -431,13 +431,19 @@ points nearest the enemy base, `front_points`) get a hasty AP field, wire
 and an AT field on their enemy approach lanes, without a trench and before
 the nest; `front_slots` front jobs run at once so a builder stays for the
 home works, and `builder_cards_min` keeps that many builder squads bought.
+With `mine_assign` a wanted front work with no fit squad at its point
+takes a free builder from anywhere within `mine_assign_reach_m` (450 m) of
+its site.
 
 * **Belts** (`belt`, C4). Once a front point's AT row 1 is laid, a row of
   `belt_pieces` blocking pieces, `hedgehog_step_m` apart, goes across the
   vehicle lane `belt_gap_m` beyond the field on the enemy side, so a
-  vehicle that rounds the row crosses the field. The lane and the row's
-  frame are read from the laid AT mines (the enemy path bends round a belt
-  once it stands, so the frame does not move). A `build_heavy` squad sets
+  vehicle that rounds the row crosses the field. The row's frame is the AT
+  row 1 line the lane saved when that row was first sited (or, for a row
+  laid before the lane was found, the line its mines showed then), so the
+  belt does not move when AT mines go off, are swept or a second row is
+  added (the enemy path bends round a belt once it stands, so it is not
+  read either). A `build_heavy` squad sets
   hedgehogs one job per piece; any other builder sets one log barrier line
   of the same length. One belt per lane: it is not started again while a
   belt job runs or once its pieces stand, and a cleared field brings no new

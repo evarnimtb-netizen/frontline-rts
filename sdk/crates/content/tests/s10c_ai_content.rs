@@ -1,8 +1,9 @@
-//! S10c-ai (docs/slices/S10c-ai.md 2, 6): the fourteen new `[ai.obstacles]`
+//! S10c-ai (docs/slices/S10c-ai.md 2, 6): the fifteen new `[ai.obstacles]`
 //! keys parse from the ww2 rules (at their off values but `front` 1, Build
 //! B item 10), the `c_off` control file reaches the setup, and every key is
 //! range-checked (overrides and untrusted saves). `front_home` (0/1, off 0)
-//! is the orchestrator's key of 2026-11-16.
+//! is the orchestrator's key of 2026-11-16; `mine_assign_reach_m` (fix
+//! pass 3, default 450 m) the fifteenth.
 
 use std::path::{Path, PathBuf};
 
@@ -60,6 +61,7 @@ fn load_rejects_bad_s10c_keys() {
         (o.belt_pieces, o.belt_gap_m, o.belt_detour_pct),
         (5, 10, 130)
     );
+    assert_eq!(o.mine_assign_reach_m, 450);
     assert_eq!(
         *o,
         AiObstacleTuning {
@@ -105,6 +107,7 @@ fn load_rejects_bad_s10c_keys() {
         ("belt_gap_m", 501),
         ("belt_detour_pct", 1001),
         ("builder_cards_min", 9),
+        ("mine_assign_reach_m", 2001),
     ] {
         let f = write(key, &format!("[ai.obstacles]\n{key} = {bad}\n"));
         let e = defs

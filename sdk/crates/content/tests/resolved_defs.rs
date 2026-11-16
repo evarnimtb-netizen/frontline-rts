@@ -167,15 +167,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // changed it; the Build A chunk 2 values were 0x8e1ac06d2914f09e,
 // 0x3f920dd77be28a04, 0x0eeeb39b82fd2eb3, 0x8e1ac06d2914f09e,
 // 0xbd30df1752d8f7db, 0x97b96122cc6d095c.
+// S10c-ai fix pass 3 (the new `[ai.obstacles] mine_assign_reach_m` 450)
+// changed it; the Build B chunk 2 values were 0xcaa4642889a6f13c,
+// 0x13c5225b50488cd8, 0x1a0487ab11070c7c, 0xcaa4642889a6f13c,
+// 0x9ed4bb657bfadea6, 0x23d580882bba6d30.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xcaa4642889a6f13c),
-    ("skirmish usa-ger seed 7 hard", 0x13c5225b50488cd8),
-    ("test_unlock ger-usa seed 1 normal", 0x1a0487ab11070c7c),
-    ("example override ger-usa seed 1 normal", 0xcaa4642889a6f13c),
-    ("human ger vs ai usa seed 3 easy", 0x9ed4bb657bfadea6),
+    ("skirmish ger-usa seed 1 normal", 0xe3126bd862ff1dca),
+    ("skirmish usa-ger seed 7 hard", 0x1aef21fc0c166eb7),
+    ("test_unlock ger-usa seed 1 normal", 0x22d77a202d9da7d1),
+    ("example override ger-usa seed 1 normal", 0xe3126bd862ff1dca),
+    ("human ger vs ai usa seed 3 easy", 0x6fa9aae9eeab9435),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x23d580882bba6d30,
+        0x82578541945f24ad,
     ),
 ];
 

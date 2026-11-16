@@ -326,6 +326,10 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         c.builder_buys = 14;
         // Addendum 1: two saved lanes (Build A leaves them empty in play).
         ai.front_lanes = vec![lane(1, 0), lane(3, 1)];
+        // Fix pass 3 (C-5): the second lane holds a saved AT row line.
+        ai.front_lanes[1].at = Some([FxVec2::from_int(280, 330), FxVec2::from_int(320, 330)]);
+        // Fix pass 3: the thirteenth `front_why` entry (`at_wait`).
+        ai.counters.front_why[12] = 15;
     }));
     let bytes = w.save();
     let back = World::load(&bytes, 1).expect("the S10c-ai state loads");
@@ -369,6 +373,13 @@ fn s10c_ai_layout_roundtrips_and_hashes() {
         Box::new(|s| lanes(s)[0].ap_done = true),
         Box::new(|s| lanes(s)[1].wire[1] = c(301, 300)),
         Box::new(|s| lanes(s)[1].since = 0),
+        // Fix pass 3: the saved AT line (value and tag), `at_wait`, and the
+        // key `mine_assign_reach_m`.
+        Box::new(|s| lanes(s)[1].at = Some([c(281, 330), c(320, 330)])),
+        Box::new(|s| lanes(s)[1].at = None),
+        Box::new(|s| lanes(s)[0].at = Some([c(280, 330), c(320, 330)])),
+        Box::new(|s| ai(s).front_why[12] += 1),
+        Box::new(|s| o(s).mine_assign_reach_m = 600),
     ];
     let same = World::load(&back.save(), 1).unwrap();
     assert_eq!(same.full_state_hash(), h);
@@ -389,6 +400,7 @@ fn lane(point: u8, since: u64) -> FrontLane {
         wire: [c(295, 300), c(305, 300)],
         ap_done: false,
         wire_done: false,
+        at: None,
     }
 }
 
@@ -401,7 +413,10 @@ fn lane(point: u8, since: u64) -> FrontLane {
 fn load_rejects_bad_front_lanes() {
     let mut w = flat_world_with(1, |s| s.players[1].is_ai = true);
     steps(&mut w, 3);
-    assert!(w.with_ai_state(1, |ai| ai.front_lanes = vec![lane(0, 1), lane(2, 2)]));
+    assert!(w.with_ai_state(1, |ai| {
+        ai.front_lanes = vec![lane(0, 1), lane(2, 2)];
+        ai.front_lanes[1].at = Some([c(280, 330), c(320, 330)]);
+    }));
     let bytes = w.save();
     let back = World::load(&bytes, 1).expect("good front lanes load");
     assert_eq!(ai_ro(&back).front_lanes.len(), 2);
@@ -438,6 +453,11 @@ fn load_rejects_bad_front_lanes() {
         (
             "wire site off the map",
             Box::new(|s| lanes(s)[1].wire[1] = c(300, 5000)),
+        ),
+        (
+            // Fix pass 3 (C-5): the saved AT row line is on the map too.
+            "at site off the map",
+            Box::new(|s| lanes(s)[1].at = Some([c(300, 300), c(-1, 300)])),
         ),
     ];
     for (what, e) in bad {

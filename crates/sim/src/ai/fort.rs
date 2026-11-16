@@ -106,8 +106,12 @@ pub const MINE_WANT_WHY: [&str; 8] = [
     "threat",
 ];
 /// S10c-ai (Build B): names of `AiCounters::front_why`, the first check
-/// that kept a wanted front work from starting (as `BUNKER_WHY`).
-pub const FRONT_WHY: [&str; 12] = [
+/// that kept a wanted front work from starting (as `BUNKER_WHY`). Fix
+/// pass 3 (orchestrator 2026-11-16): `at_wait` is counted beside the
+/// others, not instead of one: per plan and front point whose AT row 1 is
+/// wanted while its lane's FrontAp or FrontWire is not finished, a front
+/// job runs at the point, or the front slots are full.
+pub const FRONT_WHY: [&str; 13] = [
     "no_front",
     "lane_none",
     "site_bad",
@@ -120,6 +124,7 @@ pub const FRONT_WHY: [&str; 12] = [
     "no_budget",
     "threat_squad",
     "threat_site",
+    "at_wait",
 ];
 /// Loads a job asks for before it goes with what it has.
 const LOAD_TRIES: u8 = 2;
@@ -205,6 +210,13 @@ pub struct FrontLane {
     /// F6: a FrontAp / FrontWire job of this lane ended laid / built.
     pub ap_done: bool,
     pub wire_done: bool,
+    /// Fix pass 3 (finding C-5): the front AT row 1's line (start, end),
+    /// saved when the row is first sited (its AT field job starts on the
+    /// R2 site), else when the row is first seen laid (the line of its two
+    /// farthest-apart mines, moved to the field's enemy-side edge). The
+    /// belt frame (C4) is read from it, so the belt does not move when AT
+    /// mines go off, are swept or a second row is added. None: not yet.
+    pub at: Option<[FxVec2; 2]>,
 }
 
 /// One builder squad's fort job (spec 4; keyed by the squad).
@@ -853,14 +865,17 @@ impl super::Planner<'_> {
     }
 
     /// Fix pass 2 (finding C-7): whether C2 may pull squad `m` to front
-    /// work at `site`: its leader within `sweep_reach_m` of the site (the
-    /// reach the sweep and demolish picks use), and it is on no escort (a
+    /// work at `site`: its leader within `mine_assign_reach_m` of the site
+    /// (fix pass 3: its own key; pass 2 read `sweep_reach_m`, the sweep
+    /// and demolish picks' reach), and it is on no escort (a
     /// running escort's squad: `vehicle_tasks` runs after the fort starts)
     /// or transport task (a half-track job carries or waits for it, a ride
     /// lock). Hunts and AT follows are this plan's `taken` already.
     fn assign_free(&self, m: &Mine, site: FxVec2) -> bool {
         let o = &self.g.setup.rules.ai.obstacles;
-        let reach = sq_m(Fx::from_int(o.sweep_reach_m.min(i32::MAX as u32) as i32));
+        let reach = sq_m(Fx::from_int(
+            o.mine_assign_reach_m.min(i32::MAX as u32) as i32
+        ));
         let id = m.id;
         (m.lead - site).length_sq_raw() <= reach
             && !self.ai.escorts.values().any(|e| e.squads.contains(&id))
@@ -957,6 +972,26 @@ impl super::Planner<'_> {
             l.ap_done |= ap;
             l.wire_done |= wire;
         }
+        // Fix pass 3 (C-5): a lane whose AT row 1 stands laid with no line
+        // saved (laid before the lane was found, or staged) saves the line
+        // its mines show now, once.
+        let at_f = fort_of(&self.g.setup, WorkKind::AtField);
+        let seen: Vec<Option<[FxVec2; 2]>> = self
+            .ai
+            .front_lanes
+            .iter()
+            .map(|l| {
+                let i = l.point as usize;
+                (l.at.is_none() && at_f.is_some_and(|f| self.at_row1_laid(i, f)))
+                    .then(|| self.at_line_from_mines(i))
+                    .flatten()
+            })
+            .collect();
+        for (l, at) in self.ai.front_lanes.iter_mut().zip(seen) {
+            if at.is_some() {
+                l.at = at;
+            }
+        }
         if !self.recheck_plan() {
             return;
         }
@@ -1039,6 +1074,7 @@ impl super::Planner<'_> {
             wire: self.lane_line(&way, out_w, wire_len)?,
             ap_done: false,
             wire_done: false,
+            at: None,
         })
     }
 
@@ -1186,19 +1222,42 @@ impl super::Planner<'_> {
         front_on(s) && switched_on(s, WorkKind::Belt)
     }
 
-    /// C4: the frame of point `i`'s belt, read from its laid AT field (own
-    /// AT mines within the field radius of [`Self::at_row1_laid`]), not
-    /// from the enemy's vehicle path, which bends round the belt once it
-    /// stands: (centre, along, enemy). `along` runs between the field's
-    /// two farthest-apart mines (positions sorted, the first pair kept on
-    /// ties); `enemy` is its normal away from the point; the centre lies on
-    /// the middle of that pair (the field is centred on the lane, within
-    /// the track half-gauge), `belt_gap_m` beyond the field's enemy-side
-    /// edge. None: belts off, or fewer than two such mines.
+    /// C4: the frame of point `i`'s belt: (centre, along, enemy). Fix
+    /// pass 3 (finding C-5): read from the AT row 1 line saved in the
+    /// point's lane (`FrontLane::at`), not from the live mines, so it does
+    /// not move when mines go off, are swept or row 2 is added. `along`
+    /// runs along the saved line; `enemy` is its normal away from the
+    /// point; the centre lies `belt_gap_m` beyond the line's middle on the
+    /// enemy side. None: belts off, no lane or no saved line.
     fn belt_frame(&self, i: usize) -> Option<(FxVec2, FxVec2, FxVec2)> {
         if !self.belt_on() {
             return None;
         }
+        let s = &self.g.setup;
+        let [a, b] = self.front_lane(i)?.at?;
+        let pos: FxVec2 = s.map.points.get(i)?.pos.into();
+        let along = (b - a).normalize_or_zero();
+        if along == FxVec2::ZERO {
+            return None;
+        }
+        let mid = (a + b).div_int(2);
+        let mut enemy = along.perp();
+        if enemy.dot(mid - pos) < Fx::ZERO {
+            enemy = -enemy;
+        }
+        let gap = Fx::from_int(s.rules.ai.obstacles.belt_gap_m as i32);
+        Some((mid + enemy * gap, along, enemy))
+    }
+
+    /// Fix pass 3 (C-5): point `i`'s AT row line read from its laid AT
+    /// field (own AT mines within the field radius of
+    /// [`Self::at_row1_laid`]): the line between the two farthest-apart
+    /// mines (positions sorted, the first pair kept on ties), moved along
+    /// its normal away from the point to the field's enemy-side edge (the
+    /// frame C4 read from the live mines before). Used once, for a lane
+    /// whose row was laid before its line was saved. None: fewer than two
+    /// such mines.
+    fn at_line_from_mines(&self, i: usize) -> Option<[FxVec2; 2]> {
         let g = self.g;
         let s = &g.setup;
         let f = fort_of(s, WorkKind::AtField)?;
@@ -1241,8 +1300,8 @@ impl super::Planner<'_> {
             .max()
             .unwrap_or(Fx::ZERO)
             .max(Fx::ZERO);
-        let gap = Fx::from_int(s.rules.ai.obstacles.belt_gap_m as i32);
-        Some((mid + enemy * (edge + gap), along, enemy))
+        let tr = self.terrain;
+        Some([tr.clamp(a + enemy * edge), tr.clamp(b + enemy * edge)])
     }
 
     /// C4: the `belt_pieces` hedgehog sites of point `i`'s belt,
@@ -4165,10 +4224,41 @@ impl super::Planner<'_> {
             if let Some(w) = self.front_block(i, mine, assigned, points, known, kv, taken, out) {
                 whys.push(w);
             }
+            if self.front_at_waits(i) {
+                whys.push(12);
+            }
         }
         for w in whys {
             self.ai.counters.front_why[w] += 1;
         }
+    }
+
+    /// Fix pass 3 (`FRONT_WHY` `at_wait`): whether front point `i`'s AT
+    /// row 1 is wanted (switched on, not laid nor being laid, a site, its
+    /// lane saved) but waits: the lane's FrontAp or FrontWire (switched on)
+    /// is not finished, a front job of the point runs, or the front slots
+    /// are full.
+    fn front_at_waits(&self, i: usize) -> bool {
+        let s = &self.g.setup;
+        let Some(lane) = self.front_lane(i) else {
+            return false;
+        };
+        let wanted = switched_on(s, WorkKind::AtField)
+            && fort_of(s, WorkKind::AtField)
+                .is_some_and(|f| self.field_has(i, WorkKind::AtField, f) == Some(false))
+            && self.at_site(i).is_some();
+        if !wanted {
+            return false;
+        }
+        (switched_on(s, WorkKind::FrontAp) && !lane.ap_done)
+            || (switched_on(s, WorkKind::FrontWire) && !lane.wire_done)
+            || self.ai.forts.values().any(|j| {
+                j.point as usize == i
+                    && !j.parked()
+                    && j.phase != FortPhase::Done
+                    && self.front_kind(j).is_some()
+            })
+            || !self.front_slot_free()
     }
 
     /// The `FRONT_WHY` index for front point `i`, or None when nothing is
@@ -4717,6 +4807,25 @@ impl super::Planner<'_> {
                 self.ai.counters.refused_reorders += 1;
             }
             self.ai.counters.s10b_jobs += 1;
+        }
+        // Fix pass 3 (C-5): the front AT row 1 is first sited: its lane
+        // saves the line (the belt frame), once. Row 1 is the R2 site
+        // (row 2 lies a step behind it).
+        if point != NO_POINT
+            && front_on(s)
+            && fort_of(s, WorkKind::AtField) == Some(fort)
+            && line.len() >= 2
+            && self
+                .ai
+                .front_lanes
+                .iter()
+                .any(|l| l.point == point && l.at.is_none())
+            && self.at_site(point as usize).as_deref() == Some(&line[..])
+        {
+            let at = [line[0], line[line.len() - 1]];
+            if let Some(l) = self.ai.front_lanes.iter_mut().find(|l| l.point == point) {
+                l.at = Some(at);
+            }
         }
         let mut job = AiFortJob {
             fort,

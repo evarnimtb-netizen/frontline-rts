@@ -454,7 +454,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `AiCounters` fields with `front_why` and `mine_want_why`,
 /// `AiState::front_lanes`; in the setup fourteen `[ai.obstacles]` keys,
 /// `front_home` added in Build B chunk 2 with no bump: nothing released
-/// since). One bump for the whole slice.
+/// since; fix pass 3 added `FrontLane::at`, a thirteenth `front_why`
+/// entry and the key `mine_assign_reach_m`, also with no bump: no save of
+/// version 26 exists outside the slice branch). One bump for the whole
+/// slice.
 const SAVE_VERSION: u32 = 26;
 
 #[derive(Serialize)]

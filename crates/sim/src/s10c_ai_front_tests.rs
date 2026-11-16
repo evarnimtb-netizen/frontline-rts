@@ -1349,9 +1349,9 @@ fn ai_mine_assign_sends_a_builder_to_the_front() {
         let (mut w, f) = scene(|s| {
             s.rules.ai.obstacles.at_mines = 0;
             s.rules.ai.obstacles.mine_assign = on;
-            // Fix pass 2 (C-7): the site is about 350 m from `near`, over
-            // the default reach (300 m).
-            s.rules.ai.obstacles.sweep_reach_m = 1000;
+            // Fix pass 2 (C-7): the site is about 350 m from `near`; fix
+            // pass 3: the pick's own reach key.
+            s.rules.ai.obstacles.mine_assign_reach_m = 1000;
         });
         own_by(&mut w, f.near, Some(1));
         let at = pos_of(&w, f.near);
@@ -1376,14 +1376,16 @@ fn ai_mine_assign_sends_a_builder_to_the_front() {
 
 /// Fix pass 2 (findings C-7, C-8): the C2 pick's limits, in the scene of
 /// [`ai_mine_assign_sends_a_builder_to_the_front`] (builder at `near`,
-/// about 350 m from C's FrontAp site): with `sweep_reach_m` 1000 it takes
-/// the job; with 100 (out of reach), or in a running escort (staged every
-/// tick: an `AiEscort` holding it), it does not, and `front_why` reads
-/// no_builder (the
-/// same squads as the pick, C-8). Controls (code edits): no `assign_free`
-/// in the pick -> the job in both (seen failing as "out of reach: no
-/// job"); `front_block` reading every assigned squad as before ->
-/// no_builder 0 (seen failing as "no_builder").
+/// about 350 m from C's FrontAp site): with `mine_assign_reach_m` 1000 it
+/// takes the job; with 100 (out of reach), or in a running escort (staged
+/// every tick: an `AiEscort` holding it), it does not, and `front_why`
+/// reads no_builder (the same squads as the pick, C-8). Fix pass 3: the
+/// pick reads its own key, so `sweep_reach_m` 100 in every run changes
+/// nothing. Controls (code edits): no `assign_free` in the pick -> the job
+/// in both (seen failing as "out of reach: no job"); `front_block` reading
+/// every assigned squad as before -> no_builder 0 (seen failing as
+/// "no_builder"); `assign_free` reading `sweep_reach_m` as in pass 2 ->
+/// no job within reach (seen failing as "within reach: the FrontAp job").
 #[test]
 fn ai_mine_assign_keeps_its_reach_and_off_escorts() {
     use crate::ai::AiEscort;
@@ -1391,7 +1393,8 @@ fn ai_mine_assign_keeps_its_reach_and_off_escorts() {
         let (mut w, f) = scene(|s| {
             s.rules.ai.obstacles.at_mines = 0;
             s.rules.ai.obstacles.mine_assign = 1;
-            s.rules.ai.obstacles.sweep_reach_m = reach;
+            s.rules.ai.obstacles.mine_assign_reach_m = reach;
+            s.rules.ai.obstacles.sweep_reach_m = 100;
         });
         own_by(&mut w, f.near, Some(1));
         let at = pos_of(&w, f.near);
@@ -2078,4 +2081,149 @@ fn ai_front_at_row_loads_in_base_and_is_laid() {
     assert!(laid, "{} AT mines laid in 900 s", mines(&w));
     let c = &ai_ro(&w).counters;
     assert_eq!((c.jobs_overdue, c.fort_job_fails), (0, 0));
+}
+
+/// Fix pass 3 (finding C-5): the belt frame is saved, so the belt does not
+/// move when AT mines go. [`belt_scene`]'s row of ten AT mines is laid
+/// before C's lane saved a line, so the first plan saves the line its
+/// mines show (`FrontLane::at`); then the four mines at one end (offsets
+/// +6 to +18 m along the row) are removed (set off or swept) and a
+/// Baupioniere squad (staged supply) builds the belt: its five hedgehogs
+/// stand on the sites of the whole row (the saved line unchanged). Control
+/// (code edit: `belt_frame` reads `at_line_from_mines`, the live mines, as
+/// before) -> the row's middle moves 8 m and the belt with it (seen
+/// failing as "the belt on the whole row's sites": 3).
+#[test]
+fn ai_belt_keeps_its_frame_when_at_mines_go() {
+    let (mut w, f, u, v) = belt_scene(|_| {});
+    play_until(&mut w, 10, |w| {
+        lane_of(w, f.own).is_some_and(|l| l.at.is_some())
+    });
+    let saved = lane_of(&w, f.own)
+        .and_then(|l| l.at)
+        .expect("the AT line saved");
+    let at = fort(&w, "ww2:at_minefield");
+    let gone: Vec<u32> = w
+        .game()
+        .unwrap()
+        .fort()
+        .mines
+        .iter()
+        .filter(|(_, m)| {
+            m.owner == PlayerId(1) && m.fort == at && (m.pos - f.pos).dot(v) > Fx::from_int(4)
+        })
+        .map(|(&id, _)| id)
+        .collect();
+    assert_eq!(gone.len(), 4, "the four mines at one end");
+    w.edit_fort(|fs| {
+        for id in &gone {
+            fs.mines.remove(id);
+        }
+    });
+    let sq = squad_at(&mut w, BAU, f.pos, 100);
+    let hh = fort(&w, "ww2:hedgehog");
+    let sites = belt_sites(&f, u, v);
+    play_fed(&mut w, &[sq], 100, 1500, |w| pieces_of(w, hh).len() >= 5);
+    assert_eq!(
+        lane_of(&w, f.own).and_then(|l| l.at),
+        Some(saved),
+        "the line kept"
+    );
+    assert_eq!(
+        pieces_at(&w, hh, &sites),
+        5,
+        "the belt on the whole row's sites"
+    );
+    assert_eq!(pieces_of(&w, hh).len(), 5, "no other piece");
+}
+
+/// Fix pass 3 (finding C-5): the front AT row's line is saved in its lane
+/// when the row is first sited: as its job starts (the builder of
+/// [`ai_front_at_row_loads_in_base_and_is_laid`]'s scene), `FrontLane::at`
+/// holds the job's line ends, before any AT mine is laid. Control (code
+/// edit: no save in `new_fort_job`) -> None at the start (seen failing as
+/// "saved at the start").
+#[test]
+fn ai_front_at_line_is_saved_when_sited() {
+    let (mut w, f) = scene(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        o.at_rows = 1;
+        o.bunker = 0;
+        o.belt = 0;
+        s.rules.ai.fort.wire = 0;
+    });
+    own_by(&mut w, f.near, Some(0));
+    play(&mut w, 3);
+    let own = f.own;
+    ai_mut(&mut w)
+        .front_lanes
+        .iter_mut()
+        .find(|l| l.point as usize == own)
+        .expect("C's lane")
+        .ap_done = true;
+    assert_eq!(
+        lane_of(&w, own).and_then(|l| l.at),
+        None,
+        "nothing sited yet"
+    );
+    let eng = squad_at(&mut w, ENG, f.pos, 20);
+    let at = fort(&w, "ww2:at_minefield");
+    assert!(
+        play_until(&mut w, 60, |w| ai_ro(w)
+            .forts
+            .get(&eng)
+            .is_some_and(|j| j.fort == at)),
+        "the AT job"
+    );
+    let line = ai_ro(&w).forts[&eng].line.clone();
+    let mines = w
+        .game()
+        .unwrap()
+        .fort()
+        .mines
+        .values()
+        .filter(|m| m.fort == at)
+        .count();
+    assert_eq!(mines, 0, "no AT mine yet");
+    assert_eq!(
+        lane_of(&w, own).and_then(|l| l.at),
+        Some([line[0], line[line.len() - 1]]),
+        "saved at the start"
+    );
+}
+
+/// Fix pass 3 (orchestrator 2026-11-16): `front_why` `at_wait` counts the
+/// plans where C's AT row 1 is wanted but its lane's FrontAp is not
+/// finished (no builder anywhere, so nothing starts). Control: the lane's
+/// FrontAp and FrontWire marked done -> the AT row is the first
+/// outstanding work and no `at_wait` (no_builder counts it instead).
+#[test]
+fn front_why_counts_the_at_row_waiting() {
+    let run = |done: bool| {
+        let (mut w, f) = scene(|s| {
+            s.rules.ai.obstacles.at_rows = 1;
+            s.rules.ai.obstacles.bunker = 0;
+        });
+        own_by(&mut w, f.near, Some(0));
+        play(&mut w, 3);
+        let own = f.own;
+        let l = ai_mut(&mut w)
+            .front_lanes
+            .iter_mut()
+            .find(|l| l.point as usize == own)
+            .expect("C's lane");
+        l.ap_done = done;
+        l.wire_done = done;
+        let before = ai_ro(&w).counters.front_why;
+        play(&mut w, 30);
+        let after = ai_ro(&w).counters.front_why;
+        let d = |k: &str| after[why(k)] - before[why(k)];
+        (d("at_wait"), d("no_builder"))
+    };
+    assert_eq!(FRONT_WHY.len(), 13);
+    let (wait, nb) = run(false);
+    assert!(wait > 0, "at_wait while FrontAp is not finished ({nb})");
+    let (wait, nb) = run(true);
+    assert_eq!(wait, 0, "control: FrontAp and FrontWire done");
+    assert!(nb > 0, "control: the AT row counts no_builder");
 }

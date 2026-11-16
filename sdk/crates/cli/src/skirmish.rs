@@ -735,7 +735,7 @@ pub struct S10cPlayer {
     /// [`S10C_AI`] order (zero for a human).
     pub ai: [u32; 12],
     /// `frontline_sim::ai::FRONT_WHY` and `MINE_WANT_WHY` order.
-    pub front_why: [u32; 12],
+    pub front_why: [u32; 13],
     pub mine_want_why: [u32; 8],
     /// Own mines seen at a sampled second, and of those the ones an enemy
     /// soldier (AP) or enemy vehicle (AT) came within 30 m of.
@@ -2846,7 +2846,7 @@ pub struct S10cFaction {
     pub matches: u32,
     /// [`S10C_AI`] order.
     pub ai: [u64; 12],
-    pub front_why: [u64; 12],
+    pub front_why: [u64; 13],
     pub mine_want_why: [u64; 8],
     pub works_by_point: Vec<u64>,
     pub mines_by_point: Vec<u64>,
@@ -4293,5 +4293,16 @@ mod tests {
             }
         }
         assert!(n >= 40, "only {n} s10c paths in the targets file");
+        // Fix pass 3: every `front_why` reason is written by name, the
+        // thirteenth (`at_wait`) too. Control: `json_out::s10c_blocks`
+        // writing only the first 12 names fails it (seen).
+        assert_eq!(frontline_sim::ai::FRONT_WHY.len(), 13);
+        assert_eq!(frontline_sim::ai::FRONT_WHY[12], "at_wait");
+        for name in frontline_sim::ai::FRONT_WHY {
+            assert!(
+                crate::json_out::lookup(&raw, &format!("front_why_{name}")).is_some(),
+                "front_why_{name} is not written"
+            );
+        }
     }
 }

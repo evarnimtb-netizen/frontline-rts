@@ -858,6 +858,15 @@ fn belt_row() -> (World, Stage) {
     };
     let centre = h.pos + h.enemy * Fx::from_int(70);
     let goal = centre + (lo - (e0 + e1).div_int(2)).normalize_or_zero() * Fx::from_int(8);
+    // S10c-ai fix pass 3 (C-5): the lane's saved AT row line, as the next
+    // plan's `front_lanes_update` saves it from these mines (the drive
+    // hook runs the habit only).
+    let hi = if lo == e0 { e1 } else { e0 };
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .at = Some([lo, hi]);
     spawn(
         &mut w,
         1,
