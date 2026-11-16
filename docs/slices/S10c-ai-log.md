@@ -5,35 +5,32 @@ Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may wor
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Build A chunk 1 done (2026-11-16, `2651354`; quick 54009f6: all ok, 834 passed). Next: A chunk 2 (items 4-7).**
-- Layout: `AiCounters` += the 14 fields of spec 3 (`front_why: [u32; 12]`, `mine_want_why: [u32; 8]`); names
-  `ai::FRONT_WHY`, `ai::MINE_WANT_WHY` (re-exported like `BUNKER_WHY`). `[ai.obstacles]` += 12 keys at their off
-  values (key count 49); setup-bytes BASELINE and canonical snapshot re-recorded for them only. Counters enter the
-  state hash (postcard of `AiState`), so hashes differ from main; commands and outcomes do not. `save_fuzz.rs` mirror 26.
-- Filled (no new behaviour): `fort_job_fails` (`s10b_end` failed), `truck_give_ups` (`truck_give_up`, only with
-  `refusal_memory` 1, as its `s10b_refused`), `route_refusals` (`own_route_side`, = `own_route_rejects`: every R6
-  reject writes L3). `s10b_refused` unchanged. `front_plans` / `front_calm_plans`: `Planner::front_count` every plan,
-  right after `fort_points` (any switch value; calm = `fort_threat` of known men and vehicles at the front points).
-  `mine_want_why`: `Planner::mine_want_why` / `mine_block` in `ai/fort.rs`, called in `fort_start` after
-  `bunker_why` (inside the B1-5 build gate). Own points only; not counted: laid, a running job of that blueprint at
-  the point, AT off `recheck_s` plans, or nothing blocks. Check order (index): point not trenched or
-  `build_threat_max` (0), AP waits for wire (1), not in `field_wants` (2), no site (3), `job_room`/`s10b_room` (5),
-  `under_limit` (2), refused (4), no fit free assigned builder (6), all fit builders or site threatened (7).
-- F1 helper: `fort::front_points_of(g, me)` (free fn, testable) and `Planner::front_points`.
-- Tests: content `load_rejects_bad_s10c_keys` (`s10c_ai_content.rs`); sim `s10c_ai_tests.rs`:
-  `s10c_refusal_split_adds_up`, `ai_front_points_are_nearest_the_enemy_base`, `mine_want_why_names_the_wire_gate`,
-  `s10c_ai_layout_roundtrips_and_hashes`. Every control seen failing (main path switched to the control value:
-  front_points 0 -> `[]`; wire built -> wire_first 0; refusal_memory 0 -> truck scene [0,0,0,0]; an edit `+= 0` ->
-  "edit 0 is not hashed"; `front_points: 0..=9` -> "front_points = 9 was accepted"). `fort_row`, `truck_row` made
-  `pub(crate)` in `s10b_ai_tests.rs`.
-- Deviations: the refusal split uses three staged worlds (fort row, truck row, the `ai_never_blocks_own_route`
-  scene), summed, not one world (each needs its own staging). `crates/simbench/src/report.rs` has no setup-bytes
-  BASELINE (B1-4/B1-5 did not touch it); nothing changed there. `front_fields_max` range 0..=16 (spec 6 names none).
-- For chunk 2 / orchestrator: `tools/ablate.sh` check_file accepts only S10a/S10b switch keys; it will refuse the
-  S10c files (`front`, `jobs_max`, `builder_cards_min` 2, `front_site_threat_m` 80) and its default name list is
-  `*_off.toml` only. Extend it before `ABLATIONS=docs/slices/targets/S10c-ai-ablations` runs.
-  `target/s10c-base40` (a `54009f6` 40 set) is needed for chunk 2 item 6; neutrality is measured there (no new code
-  touches RNG, order or commands). Gate (spec 8): `front_calm_pct` < 10 % stops B. S10c-1..5 not yet in TODO.
+**Build A done (2026-11-16; `2651354`, `6cd959c`, `233f9b7`; quick 54009f6: all ok, 837 passed). STOP POINT 2.**
+**Next: the orchestrator's gate (spec 8), then Build B.**
+- Neutral: `neutral.py target/s10c-base40 target/s10c-baseA40` -> `skirmish40.json: same 40/40 (note: overrides 0 -> 1 items)`.
+  `target/s10c-A40` = this binary, defaults; `target/s10c-baseA40` = this binary + `c_off` (the base for B and C).
+- Gate numbers, `target/s10c-A40` (40 matches; DE / US): `front_plans` 22923 / 22784; `front_calm_pct` **87.8 / 88.9**
+  (an UPPER bound, spec 8 finding 10: 80 m round the point; gate < 10 % not hit). `mine_want_why` (plan x point counts):
+  not_own_or_trench 37143 / 36750, no_builder 7117 / 7791, slot 3373 / 2789, wire_first 3120 / 3842, refused 1 / 0,
+  no_site 0 / 6. `mines_home` / `mines_front` 155 / 0 and 91 / 0 (`front_mines_share_pct` 0); `mines_by_point` DE
+  [0,90,0,65,0], US [0,40,0,51,0] (B and D only). `matches_mines_approached_pct` 0 / 0 (of 11 / 8 matches with mines);
+  `mines_set_off_per_match` 0 / 0; `wire_seen_by_enemy_pct` 3.2 / 0 (of 31 / 28 matches with wire);
+  `knew_enemy_wire_pct` 0 / 2.5; `defence_job_fail_pct` 10.2 / 9.5 (5 of 49, 4 of 42); `truck_give_ups` 23 / 16,
+  `route_refusals` 4 / 0; `matches_obstacle_approached_pct` 0 / 0; front_why all 0 (Build B fills it).
+- Home works floor (spec 8.4, addendum 4), `target/s10c-baseA40`: MG nests done 33 / 29 (0.825 / 0.725 a match),
+  `s10_derived.matches_with_works_pct` 95.0 / 92.5.
+- Code map (chunk 2): `ai::FrontLane`, `MAX_FRONT_LANES` (`ai/fort.rs`), `AiState::front_lanes` (checked in
+  `validate_fort`); keys `front_slots` 1, `front_wire_len_m` 20 (key count 50). CLI `skirmish.rs`: `S10C_AI`,
+  `S10cPlayer` (`PlayerReport::s10c`), `S10cSeen` (`observe` once a second + at the end, `finish`), `S10cFaction`
+  (`FactionSummary::s10c`); `json_out::s10c_blocks` -> `factions.<f>.s10c` / `s10c_derived`; `--side-detail` sides
+  carry the same raw `s10c`. `front_field` reads `front_lanes[].ap_done`; `matches_with_belt` reads `belt_jobs` > 0.
+- For B: fill `front_lanes` (F2) and set `ap_done`; count `front_jobs`, `front_drops`, `front_lost`, `front_resumes`,
+  `front_why`. Compare against `target/s10c-baseA40` with `neutral.py` (both now carry `s10c`, so it is compared).
+- Ablations: `ABLATIONS=docs/slices/targets/S10c-ai-ablations tools/ablate.sh` takes every `*.toml` there; `c_off` is
+  the neutrality control (NEUTRAL_BASE default `target/s10c-base40`); `check.sh quick` dry-runs both sets.
+- Targets: every `s10c*` path of `S10c-ai.toml` resolves (copies of A40 as the 160 runs: 0 "no such number").
+  T124a-d PASS (report); T125 PASS but unexposed; T119-T122 UNEXPOSED; T123, T126, T127 MISS (report).
+- S10c-1..5 not yet in TODO (orchestrator).
 
 ## Plan (2026-11-16)
 Cause chain read in the code (spec 0): `trench_done` gate, the nest -> wire -> AP order, `fort_threat` (one known
@@ -49,3 +46,26 @@ report); with one builder squad per match the front work competes with the rear 
 `builders2` measures a second squad); B1 found that fortifying helps the USA more, so the guard band is watched at
 every stage end.
 Layout: only `AiCounters` fields and setup keys (SAVE 26 in Build A); lanes are a per-plan memo; no new job type.
+
+## Build A chunk 2 (2026-11-16)
+- Layout commit `6cd959c` (spec 11 items 1-2): `front_lanes`, `front_slots`, `front_wire_len_m` 20; SAVE stays 26.
+  BASELINE and snapshot re-recorded for the two keys only. Sim suite 692 passed, content all passed.
+- Observers (item 4) and JSON (item 5), `neutral.py` skip (item 6), `ablate.sh` S10c files: `233f9b7`.
+  `tools/check.sh quick 54009f6`: all ok (837 passed, 0 failed).
+- Wall time, 40 set, `BATCH_JOBS=4`, `BATCH_NO_CACHE=1`, same machine, back to back: before (observer call switched
+  off) 114.7 s; after 114.4 s (defaults), 115.1 s (`c_off`): +0.0 % to +0.4 % (limit +5 %).
+- Tests and their controls (each seen failing): `load_rejects_bad_front_lanes` (the S10c lines of `validate_fort` made
+  true -> "over the cap" loads); `s10c_observer_counts_an_approach` (built-in control 60 m -> 0; also seen failing
+  with `S10C_NEAR_M` 10: left 0); `s10c_json_names_match_the_targets_file` (`knew_enemy_wire_pct` renamed -> "T123a:
+  ... is not written"); `test_neutral.py` `test_s10c_keys_skipped_only_when_base_lacks_them` (skip removed -> fails;
+  an `x10c` block is the in-test control).
+- First 40-set attempt panicked in `S10cSeen` (works-done list indexed past its length when an account's
+  `works_done` was shorter than the blueprint index); fixed before any number above was read.
+- Deviations: `S10cSeen` places the enemy squad 20 m from the field (`spawn_squad_at`) instead of walking it there.
+  A mine laid and gone within one sampled second is not seen (DE 155 seen = 155 laid; US 91 = 91 here).
+  Works done are matched to the work that vanished in the same second with its owner's `works_done` risen (all 134 /
+  106 placed). Extra raw keys beyond spec 7 (`mines_seen`, `mines_approached`, `mines_set_off`, `s10b_jobs`, the
+  `matches_*` tallies). `matches_wire_approached_pct` is over matches with wire; `matches_obstacle_approached_pct`,
+  `knew_enemy_wire_pct`, `matches_with_belt_pct`, `matches_with_front_field_pct` over all matches (null only with 0
+  matches). Approach counts soldiers on foot (not riding), as a mine trigger does. `c_off.toml` also lists
+  `front_wire_len_m` 20 and `front_slots` 1 (addendum 2).
