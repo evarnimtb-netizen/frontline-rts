@@ -734,6 +734,9 @@ fn front_ap_row() -> (World, Stage) {
         s.rules.ai.fort.wire = 0;
         s.rules.ai.obstacles.at_mines = 0;
         s.rules.ai.obstacles.front = 1;
+        // S10c-ai Build C (F1): the lone held point is the home point;
+        // plain F1 keeps it a front point.
+        s.rules.ai.obstacles.front_home = 1;
     });
     steps(&mut w, 3 * 30);
     let lane = w.game().unwrap().ai[1].as_ref().unwrap().front_lanes[0];

@@ -495,3 +495,62 @@ fn barrier_job_deadline_is_its_own() {
     let (alive, _) = run(40, 40);
     assert!(!alive, "control: both 40 -> it ends");
 }
+
+/// S10c-ai C6 (B1-2): the tank of `ai_counts_own_blocked` stuck at its own
+/// barrier (counted once); then taken 60 m off (placed there, holding at
+/// its goal: the pair clears) for 5 s, and put back stuck as it was (its
+/// position and move restored): the same (vehicle, piece) pair is not
+/// counted again (`own_blocked` 1). Control: the old code (the saved list
+/// replaced by each plan's pairs) counts it again, 2 (seen failing, code
+/// edit).
+#[test]
+fn own_blocked_pair_is_counted_once() {
+    let (mut w, h) = obst_world(|_| {});
+    let bar = fort(&w, "ww2:log_barrier");
+    let p = h.pos + c(-60, 30);
+    assert!(w.build_now(bar, &[p, p + c(4, 0)], PlayerId(1)));
+    let t = spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        p.x.floor_int() + 9,
+        p.y.floor_int(),
+    );
+    let mv = crate::command::CommandKind::Move {
+        squad: t,
+        target: p + c(2, 0),
+    };
+    run(&mut w, 1, 1, mv);
+    play_until(&mut w, 30, |w| ai_ro(w).counters.own_blocked > 0);
+    assert_eq!(ai_ro(&w).counters.own_blocked, 1, "stuck: counted");
+    assert!(!ai_ro(&w).blocked_pairs.is_empty());
+    let v = w.game().unwrap().squads[&t].members[0];
+    let (at, yaw) = {
+        let tr = &w.state.entities.transform[v.index()];
+        (tr.pos.xy(), tr.yaw)
+    };
+    let nav = w.game().unwrap().squads[&t].nav.clone();
+    let away = at + c(60, 0);
+    assert!(w.place_vehicle(v, away, yaw));
+    {
+        let q = w.state.game.as_mut().unwrap().squads.get_mut(&t).unwrap();
+        q.nav.goal = away;
+        q.nav.path.clear();
+    }
+    play(&mut w, 5);
+    assert!(w.place_vehicle(v, at, yaw));
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .squads
+        .get_mut(&t)
+        .unwrap()
+        .nav = nav;
+    play(&mut w, 5);
+    assert_eq!(
+        ai_ro(&w).counters.own_blocked,
+        1,
+        "the same pair again is not new"
+    );
+}

@@ -1506,6 +1506,51 @@ impl Planner<'_> {
 
     // -------------------------------------------------------------- buy --
 
+    /// S10c-ai C3: the builder card the floor buys now (see `buy`), or
+    /// None (`builder_cards_min` 0, habits off, no own point, enough
+    /// builders alive or bought, no such card the AI buys: `ai_weight` 0,
+    /// or an S10a card with `[ai.fort] cards` 0; its mix slot is not
+    /// needed).
+    fn builder_floor_card(&self, alive_by_type: &[u32]) -> Option<u16> {
+        let g = self.g;
+        let s = &g.setup;
+        let n = s.rules.ai.obstacles.builder_cards_min;
+        if n == 0
+            || !fort::habits_on(s)
+            || !self.build_gate_open()
+            || !g.points.iter().any(|c| c.owner == Some(self.me))
+        {
+            return None;
+        }
+        let is_builder = |t: usize| {
+            let ty = &s.squad_types[t];
+            ty.has(Capability::PlaceMines)
+                && ty.has(Capability::BuildStructure)
+                && !ty.has(Capability::Breach)
+        };
+        let alive: u32 = (0..s.squad_types.len())
+            .filter(|&t| is_builder(t))
+            .map(|t| alive_by_type[t])
+            .sum();
+        if alive >= n {
+            return None;
+        }
+        let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
+        faction
+            .roster
+            .iter()
+            .copied()
+            .filter(|&t| {
+                let ty = &s.squad_types[t as usize];
+                is_builder(t as usize)
+                    && ty.ai_weight > 0
+                    && (s.rules.ai.fort.cards != 0 || !fort::is_s10a_card(ty))
+            })
+            .enumerate()
+            .min_by_key(|&(k, t)| (s.squad_types[t as usize].cost, k))
+            .map(|(_, t)| t)
+    }
+
     fn buy(&mut self, kv: &[KnownVehicle]) {
         let g = self.g;
         let s = &g.setup;
@@ -1715,7 +1760,39 @@ impl Planner<'_> {
         } else {
             None
         };
+        // S10c-ai C3 (`[ai.obstacles] builder_cards_min` N > 0): with the
+        // fort habits on, an own point (a habit may want works there) and
+        // fewer than N own living builder squads (`place_mines` and
+        // `build_structure`, no `breach`; squads on a job and pending buys
+        // count), the faction's cheapest such card (roster order on a tie)
+        // comes before the weighted pick, if ready, affordable and inside
+        // the pop cap.
+        let mut urgent_builder = self.builder_floor_card(&alive_by_type);
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
+            if let Some(t) = urgent_builder.take()
+                && ready(t, &bought, &alive_by_type)
+            {
+                let ty = &s.squad_types[t as usize];
+                let men = ty.pop(&s.vehicles) as i64;
+                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                    self.ai
+                        .emit(self.due, CommandKind::CallIn { squad_type: t });
+                    budget -= ty.cost as i64;
+                    pop += men;
+                    bought.push(t);
+                    alive_by_type[t as usize] += 1;
+                    if let Some(r) = mix_slot(s, t) {
+                        counts[r] += 1;
+                    }
+                    let c = &mut self.ai.counters;
+                    if c.bought.len() < s.squad_types.len() {
+                        c.bought.resize(s.squad_types.len(), 0);
+                    }
+                    c.bought[t as usize] += 1;
+                    c.builder_buys += 1;
+                    continue;
+                }
+            }
             if let Some(t) = urgent_breach.take()
                 && ready(t, &bought, &alive_by_type)
             {

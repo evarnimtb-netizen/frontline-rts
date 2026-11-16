@@ -426,12 +426,15 @@ pub(crate) fn job_max_s(s: &MatchSetup, fort: u16) -> u64 {
 
 /// S10c-ai F1: the `[ai.obstacles] front_points` points `me` owns nearest
 /// the enemy base (straight distance, ties by index), nearest first. With
-/// one own point that point is the front. Orchestrator 2026-11-16
-/// (`front_home` 0, with `front` on): `me`'s home point (the map point
-/// nearest its own base, ties by index) is a front point only while it is
-/// `me`'s only own point. With `front` off the home rule is not applied
-/// (the Build A `front_plans` counters stay as they were). Reads state
-/// only.
+/// one own point that point is the front. Orchestrator 2026-11-16, as
+/// changed for Build C (`front_home` 0, with `front` on): `me`'s home
+/// point (the map point nearest its own base, ties by index) is a front
+/// point only while the enemy owns more than half of the map's points
+/// (`me` is pushed back); before that the front points are `me`'s other
+/// own points only (none while the home point is its only one), so the
+/// opening builds the home works as on main. `front_home` 1: plain F1.
+/// With `front` off the home rule is not applied (the Build A
+/// `front_plans` counters stay as they were). Reads state only.
 pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<usize> {
     let s = &g.setup;
     let o = &s.rules.ai.obstacles;
@@ -448,7 +451,8 @@ pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<
         .filter(|(_, (c, _))| c.owner == Some(me))
         .map(|(i, (_, ps))| ((FxVec2::from(ps.pos) - eb).length_sq_raw(), i))
         .collect();
-    if o.front != 0 && o.front_home == 0 && own.len() > 1 {
+    let theirs = g.points.iter().filter(|c| c.owner == Some(enemy)).count();
+    if o.front != 0 && o.front_home == 0 && theirs * 2 <= g.points.len() {
         let ob = g.base_of(me);
         let home = s
             .map
@@ -802,6 +806,58 @@ impl super::Planner<'_> {
             .iter()
             .filter(|l| l.ap_done || self.front_live(l.point as usize, WorkKind::FrontAp))
             .count() as u32
+    }
+
+    /// S10c-ai C8: whether fewer than `front_slots` front jobs (FrontAp,
+    /// FrontWire, an AT row at a lane's point; not parked, not done) run,
+    /// so a new one may start and one builder slot stays for the home
+    /// works.
+    fn front_slot_free(&self) -> bool {
+        let n = self
+            .ai
+            .forts
+            .values()
+            .filter(|j| !j.parked() && j.phase != FortPhase::Done && self.front_kind(j).is_some())
+            .count();
+        n < self.g.setup.rules.ai.obstacles.front_slots as usize
+    }
+
+    /// S10c-ai C2 (`mine_assign` 1): the free squad (not in `taken` or
+    /// `out`) from anywhere that can take front work `fort` on `line`
+    /// (F5's threat, F10's carry rule), nearest the site first, then id;
+    /// independent of the point assignment (as `bunker_assign`).
+    #[allow(clippy::too_many_arguments)]
+    fn mine_assign_pick<'m>(
+        &self,
+        mine: &'m [Mine],
+        fort: u16,
+        line: &[FxVec2],
+        known: &[Known],
+        kv: &[KnownVehicle],
+        taken: &[SquadId],
+        out: &[SquadId],
+    ) -> Option<&'m Mine> {
+        let s = &self.g.setup;
+        if s.rules.ai.obstacles.mine_assign == 0 {
+            return None;
+        }
+        let d = &s.forts[fort as usize];
+        let site = mid_of(d.shape, line);
+        mine.iter()
+            .filter(|m| {
+                !taken.contains(&m.id)
+                    && !out.contains(&m.id)
+                    && self.can_take_at(m, fort, site, known, kv, true)
+                    && self.front_carry_ok(m.id, fort, line)
+            })
+            .min_by_key(|m| {
+                (
+                    self.ai.forts.contains_key(&m.id),
+                    heavy_by_field(d, m.caps),
+                    (m.lead - site).length_sq_raw(),
+                    m.id,
+                )
+            })
     }
 
     /// S10c-ai F2: keeps `AiState::front_lanes` (every plan, `front` on):
@@ -2020,7 +2076,7 @@ impl super::Planner<'_> {
             let hot = pt.threat >= s.rules.ai.fort.build_threat_max;
             let pick = self.wants_at(i, pt.trench_done).into_iter().find_map(|k| {
                 let front = self.front_work(i, k);
-                if hot && !front {
+                if (hot && !front) || (front && !self.front_slot_free()) {
                     return None;
                 }
                 let (f, line) = (fort_of(s, k)?, self.point_site(i, k, None)?);
@@ -2967,6 +3023,10 @@ impl super::Planner<'_> {
                 if hot && !front {
                     continue;
                 }
+                // S10c-ai C8: no new front job while `front_slots` run.
+                if front && !self.front_slot_free() {
+                    continue;
+                }
                 let (Some(fort), Some(mut line)) = (fort_of(s, k), self.point_site(i, k, None))
                 else {
                     continue;
@@ -3057,6 +3117,14 @@ impl super::Planner<'_> {
                                 m.id,
                             )
                         })
+                });
+                // S10c-ai C2 (`mine_assign`): a front work with no fit
+                // squad at its point takes one free builder from anywhere.
+                let pick = pick.or_else(|| {
+                    if !front {
+                        return None;
+                    }
+                    self.mine_assign_pick(mine, fort, &line, known, kv, taken, out)
                 });
                 let Some(m) = pick else { continue };
                 let id = m.id;
@@ -3219,7 +3287,8 @@ impl super::Planner<'_> {
     /// more than 4 m from its goal) with an own `blocks_vehicles` piece within
     /// `OWN_BLOCKED_M`, and no vehicle route from where it stands to its goal
     /// (a halt for any other reason is no block); each (vehicle, piece) pair counts once, when it
-    /// first appears (`AiState::blocked_pairs`, sorted, saved).
+    /// first appears (`AiState::blocked_pairs`, sorted, saved; S10c-ai C6:
+    /// kept while both live, so it is not counted again when it reappears).
     /// Nothing with `obstacles` off.
     fn count_own_blocked(&mut self) {
         let g = self.g;
@@ -3291,6 +3360,16 @@ impl super::Planner<'_> {
             .filter(|p| old.binary_search(p).is_err())
             .count();
         self.ai.counters.own_blocked += new as u32;
+        // S10c-ai C6 (B1-2): a counted pair stays while its vehicle squad
+        // and its piece both live, so a pair that clears and reappears
+        // (the vehicle moved off and back) is not new.
+        pairs.extend(old.into_iter().filter(|(sq, pid)| {
+            g.squads.get(sq).is_some_and(|q| !q.members.is_empty())
+                && g.fort.pieces.contains_key(pid)
+        }));
+        pairs.sort_unstable();
+        pairs.dedup();
+        pairs.truncate(super::MAX_BLOCKED_PAIRS);
         self.ai.blocked_pairs = pairs;
     }
 
@@ -3644,16 +3723,20 @@ impl super::Planner<'_> {
         if s10b && self.refused_here(site) {
             return Some(4);
         }
-        if s10b && !self.s10b_room() {
+        // C8: `front_slots` front jobs run (a slot of their own).
+        if (s10b && !self.s10b_room()) || !self.front_slot_free() {
             return Some(5);
         }
         if !self.job_room(0) {
             return Some(6);
         }
         points.get(i)?;
+        // C2: with `mine_assign` on, a fit builder from anywhere (so
+        // `no_builder` means none at all).
+        let anywhere = o.mine_assign != 0;
         let fit: Vec<&Mine> = assigned
             .iter()
-            .filter(|&&(_, pi)| pi == i)
+            .filter(|&&(_, pi)| anywhere || pi == i)
             .map(|&(j, _)| &mine[j])
             .filter(|m| {
                 !taken.contains(&m.id)

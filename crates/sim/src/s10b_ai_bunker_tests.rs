@@ -423,8 +423,49 @@ fn ai_bunker_divert_needs_a_run_that_can_start() {
 /// the `[ai.obstacles] bunker_yields` key. (an AP job started while the
 /// bunker job still waited, the AP job's point, counters).
 fn yields_run(yields: u32) -> (bool, Option<u8>, crate::ai::AiCounters) {
+    // S10c-ai C1 made 2 the default; this scene is about one slot.
+    let (mut w, h, bau, b) = yields_world(yields, 1);
+    squad_at(&mut w, ENG, h.pos + c(5, 0), 120);
+    let ap = w
+        .match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:ap_minefield")
+        .unwrap() as u16;
+    let (mut started, mut point) = (false, None);
+    for _ in 0..180 {
+        play(&mut w, 1);
+        let ai = ai_ro(&w);
+        let bunker_waits = ai
+            .forts
+            .get(&bau)
+            .is_some_and(|j| j.fort == b && j.phase == FortPhase::Watch);
+        if let Some(j) = ai
+            .forts
+            .values()
+            .find(|j| j.fort == ap && j.phase != FortPhase::Done)
+        {
+            started = bunker_waits;
+            point = Some(j.point);
+            break;
+        }
+    }
+    (started, point, ai_ro(&w).counters.clone())
+}
+
+/// The bunker world of [`yields_run`] played until the bunker step waits
+/// (truck in service, mines switched on then); `jobs_max` as given.
+/// (world, point, the bunker squad, the bunker blueprint).
+fn yields_world(yields: u32, jobs_max: u32) -> (World, Held, SquadId, u16) {
     let (mut w, h) = bunker_world(1, |s| {
         s.rules.ai.obstacles.bunker_yields = yields;
+        s.rules.ai.obstacles.jobs_max = jobs_max;
+        // Two slots: room for three builder jobs (`builders_max` 2 would
+        // stop the third whatever the slots).
+        if jobs_max > 1 {
+            s.rules.ai.fort.builders_max = 4;
+        }
         s.rules.ai.obstacles.at_mines = 0;
         let f = &mut s.rules.ai.fort;
         f.works = 1;
@@ -438,13 +479,6 @@ fn yields_run(yields: u32) -> (bool, Option<u8>, crate::ai::AiCounters) {
     let tv = w.game().unwrap().squads[&truck].members[0];
     let bau = squad_at(&mut w, BAU, h.pos, 40);
     let b = bunker(&w);
-    let ap = w
-        .match_setup()
-        .unwrap()
-        .forts
-        .iter()
-        .position(|f| f.id == "ww2:ap_minefield")
-        .unwrap() as u16;
     let mut waited = false;
     for _ in 0..30 * 600 {
         steps(&mut w, 1);
@@ -480,26 +514,56 @@ fn yields_run(yields: u32) -> (bool, Option<u8>, crate::ai::AiCounters) {
         g.setup.rules.ai.obstacles.bunker_truck_first = 0;
         g.setup.rules.ai.obstacles.mines = 1;
     }
-    squad_at(&mut w, ENG, h.pos + c(5, 0), 120);
-    let (mut started, mut point) = (false, None);
-    for _ in 0..180 {
-        play(&mut w, 1);
-        let ai = ai_ro(&w);
-        let bunker_waits = ai
-            .forts
-            .get(&bau)
-            .is_some_and(|j| j.fort == b && j.phase == FortPhase::Watch);
-        if let Some(j) = ai
-            .forts
-            .values()
-            .find(|j| j.fort == ap && j.phase != FortPhase::Done)
-        {
-            started = bunker_waits;
-            point = Some(j.point);
-            break;
+    (w, h, bau, b)
+}
+
+/// S10c-ai C1 (Build C item 1): with two S10b slots (`jobs_max` 2) and the
+/// bunker waiting as in [`yields_run`], two engineers (AT mines on too)
+/// start the AP and the AT field at once beside it: a third S10b job.
+/// Control: `bunker_yields` 0 -> one of them only (the bunker keeps its
+/// slot).
+#[test]
+fn ai_bunker_yields_a_slot_with_two_slots() {
+    let most = |yields: u32| {
+        let (mut w, h, bau, b) = yields_world(yields, 2);
+        w.state
+            .game
+            .as_mut()
+            .unwrap()
+            .setup
+            .rules
+            .ai
+            .obstacles
+            .at_mines = 1;
+        squad_at(&mut w, ENG, h.pos + c(5, 0), 120);
+        squad_at(&mut w, ENG, h.pos + c(-5, 0), 120);
+        let s = w.match_setup().unwrap().clone();
+        let mut most = 0;
+        for _ in 0..180 {
+            play(&mut w, 1);
+            let ai = ai_ro(&w);
+            if !ai
+                .forts
+                .get(&bau)
+                .is_some_and(|j| j.fort == b && j.phase == FortPhase::Watch)
+            {
+                continue;
+            }
+            let n = ai
+                .forts
+                .values()
+                .filter(|j| {
+                    j.phase != FortPhase::Done
+                        && j.fort != b
+                        && s.forts[j.fort as usize].mine_item.is_some()
+                })
+                .count();
+            most = most.max(n);
         }
-    }
-    (started, point, ai_ro(&w).counters.clone())
+        most
+    };
+    assert_eq!(most(1), 2, "AP and AT beside the waiting bunker");
+    assert_eq!(most(0), 1, "control: bunker_yields 0");
 }
 
 /// B1-0 (owner S10b-ai-E1, `bunker_yields`): while the bunker job waits for

@@ -124,11 +124,13 @@ fn point(w: &World, name: &str) -> usize {
         .unwrap()
 }
 
-/// F1 (orchestrator 2026-11-16, `front` 1): B is this player's home point
-/// (nearest its base). `front_home` 0: own B and C -> [C] (the home point
-/// only as the only own point); own B only -> [B]; own A, B and C -> [C, A];
-/// control `front_home` 1 (plain F1): own B and C -> [C, B] (seen failing
-/// the `front_home` 0 assertion there). And plain F1 below (with `front`
+/// F1 (orchestrator 2026-11-16, Build C meaning, `front` 1): B is this
+/// player's home point (nearest its base). `front_home` 0: own B and C ->
+/// [C]; own A, B and C -> [C, A]; own B only -> none (the home point is
+/// front only while the enemy owns more than half of the points); enemy D
+/// and E (2 of 5) -> still none; enemy A, D, E (3 of 5) -> [B], and with C
+/// own too [C, B]. Control `front_home` 1 (plain F1): own B and C -> [C, B]
+/// (seen failing the `front_home` 0 assertion there). And plain F1 below (with `front`
 /// 0 the home rule is not applied, so the Build A counters stay):
 /// own B and C -> [C, B] (C nearer the enemy base); own B only -> [B];
 /// none own -> none. The plan counters: an AI owning C counts front plans,
@@ -143,6 +145,7 @@ fn ai_front_points_are_nearest_the_enemy_base() {
             s.rules.ai.obstacles.front_home = front_home;
         });
         let (a, b, cc) = (point(&w, "A"), point(&w, "B"), point(&w, "C"));
+        let (d, e) = (point(&w, "D"), point(&w, "E"));
         let g = w.state.game.as_mut().unwrap();
         assert_eq!(g.base_of(PlayerId(me)), c(96, 96), "B is the home point");
         g.points[b].owner = Some(PlayerId(me));
@@ -153,15 +156,40 @@ fn ai_front_points_are_nearest_the_enemy_base() {
         g.points[a].owner = None;
         g.points[cc].owner = None;
         let only = front_points_of(g, PlayerId(me));
-        (two, three, only, [a, b, cc])
+        // Build C (orchestrator 2026-11-16): pushed back, the enemy owns
+        // more than half of the points (A, D, E of 5): the home point is
+        // front again; with two of 5 it is not.
+        g.points[d].owner = Some(PlayerId(1 - me));
+        g.points[e].owner = Some(PlayerId(1 - me));
+        let half = front_points_of(g, PlayerId(me));
+        g.points[a].owner = Some(PlayerId(1 - me));
+        let pushed = front_points_of(g, PlayerId(me));
+        g.points[cc].owner = Some(PlayerId(me));
+        let pushed2 = front_points_of(g, PlayerId(me));
+        (two, three, only, half, pushed, pushed2, [a, b, cc])
     };
-    let (two, three, only, [a, b, cc]) = home(0);
+    let (two, three, only, half, pushed, pushed2, [a, b, cc]) = home(0);
     assert_eq!(two, vec![cc], "front_home 0: the home point B is not front");
     assert_eq!(three, vec![cc, a]);
-    assert_eq!(only, vec![b], "the only own point is the front");
-    let (two, three, only, _) = home(1);
+    assert!(
+        only.is_empty(),
+        "the home point alone is no front: {only:?}"
+    );
+    assert!(half.is_empty(), "enemy owns 2 of 5: not pushed: {half:?}");
+    assert_eq!(
+        pushed,
+        vec![b],
+        "enemy owns 3 of 5: the home point is front"
+    );
+    assert_eq!(
+        pushed2,
+        vec![cc, b],
+        "pushed: B counts like any other point"
+    );
+    let (two, three, only, half, pushed, pushed2, _) = home(1);
     assert_eq!(two, vec![cc, b], "control: front_home 1");
-    assert_eq!((three, only), (vec![cc, a], vec![b]));
+    assert_eq!((three, only, half), (vec![cc, a], vec![b], vec![b]));
+    assert_eq!((pushed, pushed2), (vec![b], vec![cc, b]));
     let run = |n: u32| {
         let (mut w, me) = front_world(|s| {
             s.rules.ai.obstacles.front = 0;

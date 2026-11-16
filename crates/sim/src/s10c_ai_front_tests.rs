@@ -263,9 +263,12 @@ fn ai_lays_front_field_without_a_trench() {
 #[test]
 fn ai_front_wants_come_before_the_nest() {
     let first = |front: u32| {
+        // Build C (F1): the lone held point is the home point; plain F1
+        // (`front_home` 1) keeps it a front point.
         let (mut w, h) = held(|s| {
             s.rules.ai.fort.works = 1;
             s.rules.ai.obstacles.front = front;
+            s.rules.ai.obstacles.front_home = 1;
         });
         squad_at(&mut w, ENG, h.pos, 120);
         play_until(&mut w, 30, |w| !ai_ro(w).forts.is_empty());
@@ -436,8 +439,10 @@ fn ai_empty_builder_takes_no_front_job() {
 fn ai_front_job_from_base_ends_inside_its_deadline() {
     let run = |max_s: u32| {
         // C alone on the map: the builder has no other point to go to.
+        // Build C (F1): C is then the home point, so plain F1 makes it front.
         let (mut w, f) = scene(|s| {
             s.map.points.retain(|p| p.name == "C");
+            s.rules.ai.obstacles.front_home = 1;
             s.rules.ai.obstacles.at_mines = 0;
             s.rules.ai.fort.wire = 0;
             s.rules.ai.obstacles.job_max_s = max_s;
@@ -1068,8 +1073,10 @@ fn front_job_live(w: &World) -> bool {
 }
 
 /// Determinism (spec 5): the default skirmish with front jobs gives the
-/// same hashes at 1, 2, 3 and 8 threads over 12:30, and a save at 5:00
-/// and at 12:00 (each with a front job live and lanes saved) loads and
+/// same hashes at 1, 2, 3 and 8 threads over 12:30, and a save at the
+/// first second from 5:00 with a front job live and a second one from the
+/// end of its 30 s replay (Build C: seed 1 has none from 9:52 to 24:52;
+/// both with lanes saved) loads and
 /// plays on alike. Control: a loaded copy whose one saved lane is edited
 /// (`ap_done` flipped) hashes differently at once (the comparison sees
 /// the front state; seen).
@@ -1095,15 +1102,21 @@ fn ai_front_deterministic_threads_and_save_load() {
         h.extend(hashes(&mut w, twelve - five + 30 * 30));
         assert_eq!(h, want, "at {threads} threads");
     }
-    // The saves: at the first second from 5:00 (12:00) with a front job
-    // live, within 4 minutes.
+    // The saves: at the first second from 5:00 (then from the end of the
+    // first save's replay) with a front job live, within 15 minutes.
     let mut a = skirmish(1);
     let mut at = 0;
-    for stop in [five, twelve] {
+    // Build C: the second save looks from the end of the first one's 30 s
+    // replay (seed 1 has no live front job from 9:52 to 24:52 now, so it
+    // may be the same job, later).
+    let mut stop = five;
+    for _ in 0..2 {
         hashes(&mut a, stop.saturating_sub(at));
         at = at.max(stop);
         let mut s = 0;
-        while !front_job_live(&a) && s < 240 {
+        // Build C: the home point is no front point before the side is
+        // pushed back (F1), so front jobs are rarer: 15 minutes to look.
+        while !front_job_live(&a) && s < 900 {
             hashes(&mut a, 30);
             at += 30;
             s += 1;
@@ -1131,9 +1144,244 @@ fn ai_front_deterministic_threads_and_save_load() {
         let (ha, hb) = (hashes(&mut a, 30 * 30), hashes(&mut b, 30 * 30));
         assert_eq!(ha, hb, "after the load at {} s", stop / 30);
         at += 30 * 30;
+        stop = at;
     }
 }
 
 fn ai_of(w: &World) -> Vec<AiState> {
     w.game().unwrap().ai.iter().flatten().cloned().collect()
+}
+
+// ------------------------------------------------ Build C chunk 1 (C1-C3) --
+
+/// Player 1's live S10b mine jobs (any blueprint with a mine item).
+fn mine_jobs(w: &World) -> usize {
+    let s = w.match_setup().unwrap();
+    ai_ro(w)
+        .forts
+        .values()
+        .filter(|j| j.phase != FortPhase::Done && s.forts[j.fort as usize].mine_item.is_some())
+        .count()
+}
+
+/// C1: `jobs_max` 2: at a held, trenched point (front off, wire off) two
+/// builders lay the R1 AP field and the R2 AT field at once. Control:
+/// `jobs_max` 1 -> never two mine jobs at once.
+#[test]
+fn ai_two_s10b_jobs_run_at_once() {
+    let most = |jobs_max: u32| {
+        let (mut w, h) = held(|s| {
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.fort.builders_max = 4;
+            s.rules.ai.obstacles.jobs_max = jobs_max;
+        });
+        squad_at(&mut w, ENG, h.pos, 120);
+        squad_at(&mut w, ENG, h.pos + c(4, 0), 120);
+        let mut most = 0;
+        for _ in 0..180 {
+            play(&mut w, 1);
+            most = most.max(mine_jobs(&w));
+        }
+        most
+    };
+    assert_eq!(most(2), 2, "jobs_max 2: two mine jobs at once");
+    assert_eq!(most(1), 1, "control: jobs_max 1");
+}
+
+/// The front jobs (by their lane's lines, as `front_kind`) and the other
+/// live jobs of player 1 at point `i`.
+fn front_and_home(w: &World, i: usize) -> (usize, usize) {
+    let Some(lane) = lane_of(w, i) else {
+        return (0, 0);
+    };
+    let s = w.match_setup().unwrap();
+    let (ap, wire) = (fort(w, "ww2:ap_minefield"), fort(w, "ww2:barbed_wire"));
+    let r = Fx::from_int(2);
+    let (mut front, mut home) = (0, 0);
+    for j in ai_ro(w)
+        .forts
+        .values()
+        .filter(|j| j.phase != FortPhase::Done)
+    {
+        let end = j.line.last().copied().unwrap_or_default();
+        let is_front = (j.fort == ap && (end - lane.ap[1]).length() <= r)
+            || (j.fort == wire && (end - lane.wire[1]).length() <= r)
+            || s.forts[j.fort as usize].id == "ww2:at_minefield";
+        if is_front {
+            front += 1;
+        } else {
+            home += 1;
+        }
+    }
+    (front, home)
+}
+
+/// C8: two builders at a held, trenched point that is a front point
+/// (`front_home` 1), S10a nest on, `jobs_max` 2: with `front_slots` 1 one
+/// takes a front job and the other the nest (a home work) while it runs;
+/// never two front jobs. Control: `front_slots` 2 -> both slots at the
+/// front (FrontAp and FrontWire at once).
+#[test]
+fn ai_front_jobs_leave_a_slot_for_home_works() {
+    let run = |slots: u32| {
+        let (mut w, h) = held(|s| {
+            s.rules.ai.obstacles.front = 1;
+            s.rules.ai.obstacles.front_home = 1;
+            s.rules.ai.obstacles.front_slots = slots;
+            s.rules.ai.obstacles.at_mines = 0;
+            s.rules.ai.obstacles.jobs_max = 2;
+            s.rules.ai.fort.builders_max = 4;
+            let f = &mut s.rules.ai.fort;
+            f.works = 1;
+            f.nest = 1;
+            f.dugout = 0;
+            f.roof = 0;
+            f.sandbags = 0;
+        });
+        squad_at(&mut w, ENG, h.pos, 120);
+        squad_at(&mut w, ENG, h.pos + c(4, 0), 120);
+        let (mut most_front, mut both) = (0, false);
+        for _ in 0..120 {
+            play(&mut w, 1);
+            let (front, home) = front_and_home(&w, 0);
+            most_front = most_front.max(front);
+            both |= front == 1 && home >= 1;
+        }
+        (most_front, both)
+    };
+    let (most, both) = run(1);
+    assert_eq!(most, 1, "front_slots 1: one front job at a time");
+    assert!(both, "a home work runs beside the front job");
+    let (most, _) = run(2);
+    assert_eq!(most, 2, "control: front_slots 2 -> both slots at the front");
+}
+
+/// C2: AI player 1 owns C (front) and `near` (its home point, not front:
+/// the enemy owns no point). A builder at `near` is assigned there (the
+/// dig bonus at every own untrenched point, and `near` is 300 m closer);
+/// with `mine_assign` 1 it takes the FrontAp job at C anyway. Control:
+/// `mine_assign` 0 -> no front job (seen failing as "the FrontAp job").
+#[test]
+fn ai_mine_assign_sends_a_builder_to_the_front() {
+    let run = |on: u32| {
+        let (mut w, f) = scene(|s| {
+            s.rules.ai.obstacles.at_mines = 0;
+            s.rules.ai.obstacles.mine_assign = on;
+        });
+        own_by(&mut w, f.near, Some(1));
+        let at = pos_of(&w, f.near);
+        let eng = squad_at(&mut w, ENG, at, 120);
+        let ap = fort(&w, "ww2:ap_minefield");
+        let ok = play_until(&mut w, 60, |w| {
+            ai_ro(w)
+                .forts
+                .get(&eng)
+                .is_some_and(|j| j.fort == ap && j.point as usize == f.own)
+        });
+        let task = ai_ro(&w).tasks.get(&eng).map(|t| t.point as usize);
+        (ok, task, ai_ro(&w).counters.front_why, f)
+    };
+    let (ok, _, fw, _) = run(1);
+    assert!(ok, "mine_assign 1: the FrontAp job at C ({fw:?})");
+    let (ok, task, fw, f) = run(0);
+    assert!(!ok, "control: mine_assign 0 -> no front job");
+    assert_eq!(task, Some(f.near), "control: assigned to the home point");
+    assert!(fw[why("no_builder")] > 0, "control: no_builder {fw:?}");
+}
+
+/// AI player 1 (USA, buys on: rifle squads weight 100, engineers 1; the
+/// mix keeps only the `line` slot, so the weighted pick never buys an
+/// engineer) owns C, no start squads; `min` = `builder_cards_min`.
+fn buy_world(min: u32) -> World {
+    let mut w = flat_world_with(1, |s| {
+        let line = s.tag("line").unwrap();
+        s.rules.ai.mix.retain(|m| m.tag == line);
+        s.players[1].is_ai = true;
+        let f = s.players[1].faction as usize;
+        s.factions[f].start_squads.clear();
+        for t in s.squad_types.iter_mut() {
+            t.ai_weight = match t.id.as_str() {
+                "ww2:usa_rifle_squad" => 100,
+                ENG => 1,
+                _ => 0,
+            };
+        }
+        s.rules.ai.obstacles.builder_cards_min = min;
+    });
+    let cc = point(&w, "C");
+    w.state.game.as_mut().unwrap().points[cc].owner = Some(PlayerId(1));
+    w
+}
+
+fn bought(w: &World, card: &str) -> u32 {
+    let t = w.match_setup().unwrap().squad_type_index(card).unwrap();
+    ai_ro(w)
+        .counters
+        .bought
+        .get(t as usize)
+        .copied()
+        .unwrap_or(0)
+}
+
+/// Player 1's living engineer squads.
+fn engineers(w: &World) -> Vec<SquadId> {
+    let t = w.match_setup().unwrap().squad_type_index(ENG).unwrap();
+    w.game()
+        .unwrap()
+        .squads
+        .iter()
+        .filter(|(_, q)| q.owner == PlayerId(1) && q.type_idx == t && !q.members.is_empty())
+        .map(|(&id, _)| id)
+        .collect()
+}
+
+/// C3: `builder_cards_min` 2 with no builder alive: the first buys are
+/// two engineer squads (`builder_buys` 2) before any weighted pick.
+/// Control: 0 -> the weighted pick (rifle squads; no builder buy).
+#[test]
+fn ai_buys_a_builder_under_the_floor() {
+    let any = |w: &World| ai_ro(w).counters.bought.iter().sum::<u32>() > 0;
+    let mut w = buy_world(2);
+    assert!(play_until(&mut w, 30, any), "a buy");
+    assert_eq!(bought(&w, ENG), 1, "the first buy is the engineer card");
+    // The card's cooldown: the second engineer when it is ready.
+    play_until(&mut w, 300, |w| bought(w, ENG) >= 2);
+    assert_eq!(bought(&w, ENG), 2, "two engineer buys");
+    assert_eq!(ai_ro(&w).counters.builder_buys, 2);
+    let mut w = buy_world(0);
+    assert!(play_until(&mut w, 30, any), "control: a buy");
+    assert_eq!(
+        (bought(&w, ENG), ai_ro(&w).counters.builder_buys),
+        (0, 0),
+        "control: builder_cards_min 0 -> the weighted pick"
+    );
+    assert!(bought(&w, "ww2:usa_rifle_squad") > 0, "control: rifles");
+}
+
+/// C3, job table "Builder buy": a builder squad killed after the buy -> one
+/// more buy; living and pending engineers never above the floor (2).
+#[test]
+fn ai_builder_floor_never_overbuys() {
+    let mut w = buy_world(2);
+    let mut most = 0;
+    let arrived = play_until(&mut w, 300, |w| engineers(w).len() >= 2);
+    assert!(arrived, "two engineers arrived");
+    for _ in 0..60 {
+        play(&mut w, 1);
+        most = most.max(engineers(&w).len());
+    }
+    assert_eq!(bought(&w, ENG), 2, "no buy over the floor");
+    let dead = engineers(&w)[0];
+    for m in members(&w, dead) {
+        w.kill_soldier(m);
+    }
+    let again = play_until(&mut w, 300, |w| bought(w, ENG) >= 3);
+    assert!(again, "one more buy after a loss");
+    for _ in 0..300 {
+        play(&mut w, 1);
+        most = most.max(engineers(&w).len());
+    }
+    assert_eq!(bought(&w, ENG), 3, "exactly one more");
+    assert!(most <= 2, "never above the floor: {most}");
+    assert_eq!(ai_ro(&w).counters.builder_buys, 3);
 }
