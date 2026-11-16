@@ -5,17 +5,35 @@ Branch `claude/project-thread-e7nsak` from main `54009f6`. Another agent may wor
 files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`.
 
 ## For the next stage (rewritten by each stage, not appended; at most 30 lines)
-**Plan done (2026-11-16). Next: Build A chunk 1 (`S10c-ai-build-A.md`).** No code changed yet; SAVE 25, PROTOCOL 14.
-- Base facts (main `54009f6`, 80 matches seeds 1-40 both bases, `--side-detail`; file
-  `/mnt/project-files/ai-defences-2026-11-15/b1main80.json` if the orchestrator copied it, else replay): Germany 45.0 %;
-  mines 30 / 18 % of matches, obstacles 15 / 4 %, bunker 5 / 0 %; mines set off 0; deaths within 40 m of enemy works
-  0 of 7908; breaches, sweeps, demolitions wanted 0; builder cards bought about 0.9 a match and side.
-- The orchestrator must provide `target/s10c-base40` (the 40 set from a `54009f6` build) before Build A chunk 2.
-- Gate after Build A (spec 8): `front_calm_pct` under 10 % stops Build B (owner question S10c-1 first).
-- Owner questions S10c-1..5 (spec 10) are not yet in `docs/TODO.md` (another thread edits it: the orchestrator adds
-  them). E6 (B) and E8 (A) are decided; T113 is 10 % and T109 45 % in `S10c-ai.toml` only.
-- Not checked by the Plan (no cargo run): that `frontline-cli targets` accepts the new rows as written (float
-  `exposure_min` 0.5 in T125; a `control` on another namespace than the metric). Build A chunk 2 item 7 checks it.
+**Build A chunk 1 done (2026-11-16, `2651354`; quick 54009f6: all ok, 834 passed). Next: A chunk 2 (items 4-7).**
+- Layout: `AiCounters` += the 14 fields of spec 3 (`front_why: [u32; 12]`, `mine_want_why: [u32; 8]`); names
+  `ai::FRONT_WHY`, `ai::MINE_WANT_WHY` (re-exported like `BUNKER_WHY`). `[ai.obstacles]` += 12 keys at their off
+  values (key count 49); setup-bytes BASELINE and canonical snapshot re-recorded for them only. Counters enter the
+  state hash (postcard of `AiState`), so hashes differ from main; commands and outcomes do not. `save_fuzz.rs` mirror 26.
+- Filled (no new behaviour): `fort_job_fails` (`s10b_end` failed), `truck_give_ups` (`truck_give_up`, only with
+  `refusal_memory` 1, as its `s10b_refused`), `route_refusals` (`own_route_side`, = `own_route_rejects`: every R6
+  reject writes L3). `s10b_refused` unchanged. `front_plans` / `front_calm_plans`: `Planner::front_count` every plan,
+  right after `fort_points` (any switch value; calm = `fort_threat` of known men and vehicles at the front points).
+  `mine_want_why`: `Planner::mine_want_why` / `mine_block` in `ai/fort.rs`, called in `fort_start` after
+  `bunker_why` (inside the B1-5 build gate). Own points only; not counted: laid, a running job of that blueprint at
+  the point, AT off `recheck_s` plans, or nothing blocks. Check order (index): point not trenched or
+  `build_threat_max` (0), AP waits for wire (1), not in `field_wants` (2), no site (3), `job_room`/`s10b_room` (5),
+  `under_limit` (2), refused (4), no fit free assigned builder (6), all fit builders or site threatened (7).
+- F1 helper: `fort::front_points_of(g, me)` (free fn, testable) and `Planner::front_points`.
+- Tests: content `load_rejects_bad_s10c_keys` (`s10c_ai_content.rs`); sim `s10c_ai_tests.rs`:
+  `s10c_refusal_split_adds_up`, `ai_front_points_are_nearest_the_enemy_base`, `mine_want_why_names_the_wire_gate`,
+  `s10c_ai_layout_roundtrips_and_hashes`. Every control seen failing (main path switched to the control value:
+  front_points 0 -> `[]`; wire built -> wire_first 0; refusal_memory 0 -> truck scene [0,0,0,0]; an edit `+= 0` ->
+  "edit 0 is not hashed"; `front_points: 0..=9` -> "front_points = 9 was accepted"). `fort_row`, `truck_row` made
+  `pub(crate)` in `s10b_ai_tests.rs`.
+- Deviations: the refusal split uses three staged worlds (fort row, truck row, the `ai_never_blocks_own_route`
+  scene), summed, not one world (each needs its own staging). `crates/simbench/src/report.rs` has no setup-bytes
+  BASELINE (B1-4/B1-5 did not touch it); nothing changed there. `front_fields_max` range 0..=16 (spec 6 names none).
+- For chunk 2 / orchestrator: `tools/ablate.sh` check_file accepts only S10a/S10b switch keys; it will refuse the
+  S10c files (`front`, `jobs_max`, `builder_cards_min` 2, `front_site_threat_m` 80) and its default name list is
+  `*_off.toml` only. Extend it before `ABLATIONS=docs/slices/targets/S10c-ai-ablations` runs.
+  `target/s10c-base40` (a `54009f6` 40 set) is needed for chunk 2 item 6; neutrality is measured there (no new code
+  touches RNG, order or commands). Gate (spec 8): `front_calm_pct` < 10 % stops B. S10c-1..5 not yet in TODO.
 
 ## Plan (2026-11-16)
 Cause chain read in the code (spec 0): `trench_done` gate, the nest -> wire -> AP order, `fort_threat` (one known
