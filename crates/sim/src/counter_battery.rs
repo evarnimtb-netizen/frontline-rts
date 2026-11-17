@@ -15,6 +15,13 @@ use crate::fx::{Fx, FxVec2};
 use crate::game::MatchState;
 use crate::rng::{Purpose, RngStream};
 
+#[cfg(test)]
+thread_local! {
+    /// Test control of the K2 marker draw (review A-6): the length is the
+    /// full error (the mission aim offset's rule), the draws unchanged.
+    pub(crate) static FIXED_LEN_DRAW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Most spots one player keeps (`PlayerState::cb`).
 pub const MAX_CB_SPOTS: usize = 8;
 
@@ -241,7 +248,13 @@ impl MatchState {
                     Purpose::CB_MARK,
                 );
                 let a = rng.range_fx(Fx::ZERO, Fx::TAU);
-                let len = rng.range_i32(0, err_mm.min(i32::MAX as u32) as i32) as u32;
+                #[allow(unused_mut)]
+                let mut len = rng.range_i32(0, err_mm.min(i32::MAX as u32) as i32) as u32;
+                // Test control (review A-6): the draw made fixed-length.
+                #[cfg(test)]
+                if FIXED_LEN_DRAW.with(|f| f.get()) {
+                    len = err_mm;
+                }
                 let (sn, cs) = a.sin_cos();
                 let l = from_mm(len);
                 let at = s.pos + FxVec2::new(cs.mul(l), sn.mul(l));

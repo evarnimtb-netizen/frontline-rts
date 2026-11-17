@@ -388,9 +388,11 @@ fn own_loss(w: &mut World, ms: &[SimId], mission: u32, at: FxVec2, n: u64) -> u3
 }
 
 /// F1: only mission rounds' bursts are friendly-fire capable. With the
-/// switch 1, a burst of the same mortar with no mission (as direct HE,
-/// a cook-off or an item) on own men hurts none and suppresses none.
-/// Control: the same burst from a mission round hurts.
+/// switch 1, a burst of the same mortar with no mission (as direct HE or
+/// a cook-off) on own men hurts none and suppresses none; nor do an own
+/// grenade or satchel; an own AP mine hurts own men exactly as with the
+/// switch 0 (review A-6). Controls: the same burst from a mission round
+/// hurts; the items hurt with an enemy thrower; men 30 m from the mine.
 #[test]
 fn direct_he_still_spares_own_men() {
     let mut w = ff_world(1);
@@ -404,6 +406,102 @@ fn direct_he_still_spares_own_men() {
     let mut w = ff_world(1);
     let ms: Vec<SimId> = (0..4).map(|k| lone(&mut w, 0, 501 + 2 * k, 500)).collect();
     assert!(own_loss(&mut w, &ms, 7, c(500, 500), 6) > 0);
+    // Review A-6: the item paths. A grenade and a satchel of an own
+    // thrower among own men hurt none with the switch 1. Control: the
+    // same item of an enemy thrower hurts.
+    for kind in [
+        frontline_content::ItemKind::Frag,
+        frontline_content::ItemKind::Satchel,
+    ] {
+        assert_eq!(item_hurt(kind, 0), 0, "{kind:?} of an own thrower");
+        assert!(
+            item_hurt(kind, 1) > 0,
+            "control: {kind:?} of an enemy thrower"
+        );
+    }
+    // An AP mine hurts the men around it whoever owns them, as before
+    // S11a2 (own mines count as today, spec F4): the switch changes
+    // nothing. Control: the men stand 30 m off: unhurt.
+    let own = mine_hurt(1, 3);
+    assert!(
+        own > 0,
+        "an own mine's burst reaches own men (pre-S11a2 rule)"
+    );
+    assert_eq!(
+        own,
+        mine_hurt(0, 3),
+        "friendly_fire does not touch mine bursts"
+    );
+    assert_eq!(mine_hurt(1, 30), 0, "control: 30 m off");
+}
+
+/// HP player 0's four men at (501..507, 500) lose to item `kind` dropped
+/// at (500, 500) by a soldier of `thrower` (friendly fire 1).
+fn item_hurt(kind: frontline_content::ItemKind, thrower: u8) -> u32 {
+    let mut w = ff_world(1);
+    let ms: Vec<SimId> = (0..4).map(|k| lone(&mut w, 0, 501 + 2 * k, 500)).collect();
+    let t = lone(&mut w, thrower, 900, 100 + 700 * thrower as i32);
+    let item = w
+        .match_setup()
+        .unwrap()
+        .items
+        .iter()
+        .position(|x| x.kind == kind)
+        .unwrap() as u16;
+    let before: u32 = ms.iter().map(|&m| hp(&w, m) as u32).sum();
+    assert!(w.drop_item_now(t, item, c(500, 500), Fx::from_int(1)));
+    let mut burst = false;
+    for _ in 0..10 * 30 {
+        // The men held where they stand (they would walk to their slots).
+        for (k, &m) in ms.iter().enumerate() {
+            w.place_soldier(m, c(501 + 2 * k as i32, 500));
+        }
+        w.step(&[]);
+        burst |= w.snapshot().explosions.iter().any(|e| e.weapon == item);
+    }
+    assert!(burst, "{kind:?} burst");
+    before - ms.iter().map(|&m| hp(&w, m) as u32).sum::<u32>()
+}
+
+/// HP lost by three of player 0's men standing `dy` m beside player 0's
+/// AP mine at (500, 500) when an enemy man (player 1) steps onto it, with
+/// `friendly_fire` `ff`.
+fn mine_hurt(ff: u32, dy: i32) -> u32 {
+    let mut w = ff_world(ff);
+    let ms: Vec<SimId> = (0..3).map(|k| lone(&mut w, 0, 499 + k, 500 + dy)).collect();
+    let f = w
+        .match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:ap_minefield")
+        .unwrap() as u16;
+    w.lay_mine_now(f, c(500, 500), PlayerId(0)).unwrap();
+    let walker = lone(&mut w, 1, 490, 500);
+    // Nobody shoots the walker.
+    for &m in &ms {
+        w.edit_soldier(m, |k, c| {
+            k.rounds = [0; frontline_content::setup::MAX_FEEDS];
+            c.mag = 0;
+        });
+    }
+    let before: u32 = ms.iter().map(|&m| hp(&w, m) as u32).sum();
+    // The enemy man steps onto the mine (moved 20 cm at a time).
+    for k in 0..30 * 10 {
+        for (j, &m) in ms.iter().enumerate() {
+            w.place_soldier(m, c(499 + j as i32, 500 + dy));
+        }
+        if w.state.entities.combat[walker.index()].hp > 0 {
+            let x = Fx::from_int(490) + Fx::from_milli(200 * k.min(100));
+            w.place_soldier(walker, FxVec2::new(x, Fx::from_int(500)));
+        }
+        w.step(&[]);
+    }
+    assert!(
+        w.game().unwrap().fort().mines.is_empty(),
+        "the mine went off"
+    );
+    before - ms.iter().map(|&m| hp(&w, m) as u32).sum::<u32>()
 }
 
 /// F2: an own mission burst's overpressure and suppression reach own men.
@@ -966,15 +1064,12 @@ fn first_misses(w: &mut World, fixed_len: bool) -> Vec<u64> {
             note(w, p, t);
         }
         let due = spots(w, 1)[0].mark_at;
+        // The control (review A-6): the sim's own draw made fixed-length.
+        crate::counter_battery::FIXED_LEN_DRAW.with(|f| f.set(fixed_len));
         cb_ticks(w, due, due);
-        let mut s = spots(w, 1)[0];
+        crate::counter_battery::FIXED_LEN_DRAW.with(|f| f.set(false));
+        let s = spots(w, 1)[0];
         assert!(s.marked);
-        if fixed_len {
-            // The control: the offset pushed out to the full error.
-            let off = s.at - s.pos;
-            let e = Fx::from_raw((((s.err_mm as u64) << 16) / 1000) as i32);
-            s.at = s.pos + off.normalize_or_zero() * e;
-        }
         let miss = (((s.at - s.pos).length().raw() as u64) * 1000) >> 16;
         out.push(miss * 1000 / s.heard_mm as u64);
     }
