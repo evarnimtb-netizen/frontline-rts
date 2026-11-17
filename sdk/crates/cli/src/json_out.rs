@@ -1136,7 +1136,7 @@ pub fn s11a1_blocks(c: &crate::skirmish::S11a1Faction) -> (Value, Value) {
         "gun_kill_share_pct": pct_or_null(c.gun_kills as f64, c.kills as f64),
         "gun_shell_mp_pct": pct_or_null(c.gun_shell_micro as f64 / 1e6, c.income_mp as f64),
         "near_own_bursts_per_match": per(c.near_own_bursts),
-        "gun_refused_total": c.masked + c.not_ready,
+        "gun_refused_total": c.gun_refused,
         "prep_missions_per_match": per(c.get("arty_prep_missions") + c.get("mortar_prep_missions")),
         "fo_lost_per_match": per(c.get("fo_lost")),
         "fo_post_fail_pct": pct_or_null(c.get("fo_post_fails") as f64, posts as f64),

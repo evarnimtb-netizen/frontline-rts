@@ -735,6 +735,10 @@ pub struct S11a1Player {
     pub s11: frontline_sim::fire_mission::S11Counters,
     /// [`S11A1_AI`] order (zero for a human).
     pub ai: [u32; 14],
+    /// Review B-1: every fire-mission refusal of a gun squad (any kind),
+    /// read from the refusal events (the sim counts only `masked` and
+    /// `not_ready`).
+    pub gun_refused: u32,
 }
 
 impl S11a1Player {
@@ -780,6 +784,8 @@ pub struct S11a1Faction {
     pub guns_bought: u64,
     pub gun_direct_rounds: u64,
     pub near_own_bursts: u64,
+    /// Review B-1: gun-squad refusals of every kind.
+    pub gun_refused: u64,
     /// [`S11A1_AI`] order.
     pub ai: [u64; 14],
     /// The faction's kills and income (MP) over the run (denominators).
@@ -821,6 +827,7 @@ impl S11a1Faction {
         self.guns_bought += s.guns_bought as u64;
         self.gun_direct_rounds += s.gun_direct_rounds as u64;
         self.near_own_bursts += s.near_own_bursts as u64;
+        self.gun_refused += c.gun_refused as u64;
         for (k, v) in c.ai.iter().enumerate() {
             self.ai[k] += *v as u64;
         }
@@ -1845,6 +1852,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let n_players = world.match_setup().map_or(0, |s| s.players.len());
     let mut pop_at: Vec<[Option<u32>; 3]> = vec![[None; 3]; n_players];
     let mut squads_at: Vec<[Option<[u32; 2]>; 5]> = vec![[None; 5]; n_players];
+    // Review B-1: gun-squad fire-mission refusals of every kind, by player.
+    let mut gun_refused: Vec<u32> = vec![0; n_players];
     let mut gun_trace = match &args.gun_trace {
         Some(p) => Some(crate::gun_trace::GunTrace::create(p, &world)?),
         None => None,
@@ -1881,6 +1890,18 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             smoke_seen = smoke_seen.max(c.id as u64 + 1);
         }
         note_squads(&world, &mut fielded);
+        if let (Some(g), Some(ms)) = (world.game(), world.match_setup()) {
+            for e in &world.snapshot().fire_mission_refusals {
+                let gun = g.squads().get(&e.squad).is_some_and(|q| {
+                    ms.squad_types
+                        .get(q.type_idx as usize)
+                        .is_some_and(|t| t.vehicle.is_some())
+                });
+                if gun && let Some(n) = gun_refused.get_mut(e.player.0 as usize) {
+                    *n += 1;
+                }
+            }
+        }
         tally.observe(&world);
         s3c.observe(&world);
         s10b_ordered.observe(&world);
@@ -2110,6 +2131,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 s11a1: S11a1Player {
                     s11: pl.s11,
                     ai: ai.map_or([0; 14], |a| S11a1Player::ai_counters(&a.counters)),
+                    gun_refused: gun_refused.get(p).copied().unwrap_or(0),
                 },
                 s5b_ai: ai.map_or_else(S5bAi::default, |a| S5bAi::of(&a.counters)),
                 s6: g.supply6().accounts.get(p).copied().unwrap_or_default(),
