@@ -67,7 +67,7 @@ pub const FO_CANDIDATES: u8 = 15;
 /// are squads that exist or existed (`< next_squad`; a squad that still
 /// exists must be the player's: records of dead squads are dropped at the
 /// next plan, so a save between may hold one), sizes within the caps, the
-/// post on the map, the point in range, times not after `tick`.
+/// post on the map, the point in range (or `NO_POINT` before the first plan), times not after `tick`.
 pub(super) fn validate_arty(
     g: &MatchState,
     player: PlayerId,
@@ -88,7 +88,8 @@ pub(super) fn validate_arty(
             .all(|(id, a)| ok_squad(id) && a.since <= tick && a.last_order <= tick)
         && fo.iter().all(|(id, f)| {
             ok_squad(id)
-                && (f.point as usize) < g.points.len()
+                // Fix C-5: a new record has no point yet.
+                && (f.point == super::NO_POINT || (f.point as usize) < g.points.len())
                 && f.post.is_none_or(on_map)
                 && f.cursor <= FO_CANDIDATES
                 && f.since <= tick
@@ -322,7 +323,7 @@ impl super::Planner<'_> {
                 self.ai.fo.insert(
                     id,
                     AiFo {
-                        point: u8::MAX,
+                        point: super::NO_POINT,
                         since: tick,
                         ..AiFo::default()
                     },

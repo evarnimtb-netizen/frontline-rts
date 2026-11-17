@@ -124,6 +124,11 @@ fn load_rejects_bad_s11a1_state() {
     fn ai(s: &mut SimState) -> &mut crate::ai::AiState {
         s.game.as_mut().unwrap().ai[1].as_mut().unwrap()
     }
+    // Fix C-5: a new observer record (no point yet) loads; 99 below does
+    // not.
+    let mut x = World::load(&bytes, 1).unwrap();
+    ai(&mut x.state).fo.get_mut(&b).unwrap().point = crate::ai::NO_POINT;
+    World::load(&x.save(), 1).expect("a new observer record loads");
     let mut cases: Vec<(&str, Edit)> = vec![
         (
             "arty over its cap",
