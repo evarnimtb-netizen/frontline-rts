@@ -647,11 +647,20 @@ impl super::Planner<'_> {
             self.ai.counters.cb_wide_holds += 1;
             return None;
         }
-        // New evidence: shots other than the ones last answered (a spot's
-        // `shots` never fall, so `!=` also sees a switch to another
-        // marker with fewer shots; fix B-3). A spot with no shots was
-        // heard only from counter-fire rounds (fix B-1): nothing to answer.
-        if best.shots == 0 || best.shots == rec.cb_shots {
+        // New evidence: at least `cb_rounds_to_mark` shots more than the
+        // ones last answered (fix B-1: one heard round per mission let
+        // counter-fire take most gun rounds), or fewer: a spot's `shots`
+        // never fall, so fewer is another marker (fix B-3). A spot with no
+        // shots was heard only from counter-fire rounds (fix B-1).
+        let to_mark = g
+            .setup
+            .rules
+            .fire_mission
+            .as_ref()
+            .map_or(1, |f| f.cb_rounds_to_mark.max(1));
+        let fresh =
+            best.shots < rec.cb_shots || best.shots as u64 >= rec.cb_shots as u64 + to_mark as u64;
+        if best.shots == 0 || !fresh {
             self.ai.counters.cb_stale_holds += 1;
             return None;
         }

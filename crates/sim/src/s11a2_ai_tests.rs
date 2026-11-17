@@ -472,8 +472,9 @@ fn ai_gun_answers_a_marker() {
 }
 
 /// R2: one mission per new evidence: 40 plans with no new enemy round
-/// give one counter-fire mission (`cb_stale_holds` after it). Control: one
-/// more round heard: a second mission.
+/// give one counter-fire mission (`cb_stale_holds` after it). Fix B-1: new
+/// evidence is `cb_rounds_to_mark` (3) more rounds heard: two more give
+/// none; control: a third gives a second mission.
 #[test]
 fn ai_counter_fire_waits_for_new_evidence() {
     let (mut w, gun) = cf_scene(1, 0, LEIG, 100, MARK, false, |_| {});
@@ -488,11 +489,15 @@ fn ai_counter_fire_waits_for_new_evidence() {
     assert_eq!(k.cb_missions, 1);
     assert!(k.cb_stale_holds > 0, "held for no new evidence");
     add_shot(&mut w, 0);
+    add_shot(&mut w, 0);
+    plans(&mut w, 40, &mut sent);
+    assert_eq!(counters(&w).cb_missions, 1, "two new rounds: still held");
+    add_shot(&mut w, 0);
     plans(&mut w, 40, &mut sent);
     assert_eq!(
         counters(&w).cb_missions,
         2,
-        "control: new evidence, a new mission"
+        "control: three new rounds, a new mission"
     );
 }
 
