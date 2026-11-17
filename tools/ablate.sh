@@ -49,6 +49,13 @@
 # neutrality control there (NEUTRAL_BASE default target/s11a1-base40, the
 # 40 set of base 730e67f).
 #
+# S11a2 (docs/slices/S11a2.md 2): with ABLATIONS=docs/slices/targets/
+# S11a2-ablations every *.toml there is an override (b_off, ff_off,
+# ff_safe_off, cb_off, counter_fire_off), and a file may hold only the
+# S11a2 switches at 0: [fire_mission] friendly_fire, counter_battery;
+# [ai.arty] ff_safe, counter_fire. b_off is the neutrality control there
+# (NEUTRAL_BASE default target/s11a2-base40, the 40 set of base b74ed58).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -74,6 +81,13 @@ if [ "$(basename "$DIR")" = S11a1-ablations ]; then
     MODE=s11a1
     NEUTRAL_NAME=a_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s11a1-base40}
+fi
+if [ "$(basename "$DIR")" = S11a2-ablations ]; then
+    # The S10c rules for listing and applying, the S11a2 key list.
+    S10C=1
+    MODE=s11a2
+    NEUTRAL_NAME=b_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s11a2-base40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -146,6 +160,12 @@ if mode == "s10c":
     switches = allowed
 elif mode == "s11a1":
     switches = allowed_s11a1
+elif mode == "s11a2":
+    # S11a2: its four switches, at 0 only.
+    switches = {
+        "fire_mission": {"friendly_fire": {0}, "counter_battery": {0}},
+        "ai.arty": {"ff_safe": {0}, "counter_fire": {0}},
+    }
 else:
     switches = {t: {k: {v} for k, v in ks.items()} for t, ks in switches.items()}
 table, keys = None, {}
