@@ -2917,6 +2917,9 @@ mod s11a1_ai_tests;
 #[path = "s11a1_tests.rs"]
 mod s11a1_tests;
 #[cfg(test)]
+#[path = "s11a2_ai_tests.rs"]
+mod s11a2_ai_tests;
+#[cfg(test)]
 #[path = "s11a2_tests.rs"]
 mod s11a2_tests;
 #[cfg(test)]

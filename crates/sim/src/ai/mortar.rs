@@ -223,7 +223,7 @@ impl Planner<'_> {
             let gunner = g
                 .mortar_gunner(self.ents, sq)
                 .map_or(m.lead, |g| self.ents.transform[g.index()].pos.xy());
-            let mut targets = self.mortar_targets(sq, gunner, known, &own);
+            let mut targets = self.mortar_targets(m.id, sq, gunner, known, &own);
             // S11a1 P1: the breach job's focus first (`prep` 1 only).
             if s.rules.ai.arty.prep != 0 {
                 let w = &s.weapons[s.squad_types[sq.type_idx as usize].weapon as usize];
@@ -234,7 +234,7 @@ impl Planner<'_> {
                 // Fix C-4: P3's distance (`[ai.arty]`), so P3 does not
                 // lift what P1 just ordered.
                 let danger = s.rules.ai.arty.danger_close_m;
-                if let Some(t) = self.prep_target(gunner, min, max, danger, known, &own) {
+                if let Some(t) = self.prep_target(gunner, min, max, danger, known, &own, m.id) {
                     targets.insert(0, t);
                 }
             }
@@ -469,6 +469,7 @@ impl Planner<'_> {
     /// Step 1: the squad's targets, best first.
     fn mortar_targets(
         &mut self,
+        id: SquadId,
         sq: &Squad,
         gunner: FxVec2,
         known: &[Known],
@@ -479,12 +480,15 @@ impl Planner<'_> {
         let min = Fx::from(w.range_min) + Fx::from_int(20);
         let max = Fx::from(w.range_max) - Fx::from_int(10);
         let danger_m = s.rules.ai.infantry.danger_close_m;
-        self.fire_targets(gunner, min, max, danger_m, true, known, own)
+        self.fire_targets(gunner, min, max, danger_m, true, known, own, id)
     }
 
     /// Step 1 for any tube at `gunner` (S11a1: generic over the band
     /// `min..=max`, the danger-close distance and the noise, which the
     /// infantry-gun planner leaves out: no RNG there). Best first.
+    /// S11a2 S2: with `[ai.arty] ff_safe` 1 the own-men test is
+    /// `own_near` (squad `firing` aside) in place of the `danger_m`
+    /// distance; a target in the band it refuses counts `ff_holds`.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn fire_targets(
         &mut self,
@@ -495,13 +499,26 @@ impl Planner<'_> {
         noise: bool,
         known: &[Known],
         own: &[FxVec2],
+        firing: SquadId,
     ) -> Vec<Target> {
         let g = self.g;
         let s = &g.setup;
         let danger = sq_m(Fx::from_int(danger_m.min(2000) as i32));
+        let safe = s.rules.ai.arty.ff_safe != 0;
+        let holds = std::cell::Cell::new(0u32);
+        let (ents, me) = (self.ents, self.me);
         let ok = |c: FxVec2| {
             let d = (c - gunner).length();
-            d >= min && d <= max && !own.iter().any(|o| (*o - c).length_sq_raw() <= danger)
+            if d < min || d > max {
+                return false;
+            }
+            if safe {
+                let near = super::arty::own_near(g, ents, me, c, Some(firing));
+                holds.set(holds.get() + u32::from(near));
+                !near
+            } else {
+                !own.iter().any(|o| (*o - c).length_sq_raw() <= danger)
+            }
         };
         // Enemy groups by squad: (sum x, sum y, men, men in trenches, men
         // standing still).
@@ -583,6 +600,7 @@ impl Planner<'_> {
                 prep: false,
             });
         }
+        self.ai.counters.ff_holds += holds.get();
         out.sort_by(|a, b| {
             b.score
                 .cmp(&a.score)
@@ -679,7 +697,15 @@ impl Planner<'_> {
         }
         let side = FxVec2::new(-dir.y, dir.x);
         let link = Fx::from_int(fm.observer_link_m as i32 - 10);
-        let short = d - Fx::from_int(s.rules.ai.infantry.danger_close_m as i32);
+        // S11a2 S2: with `ff_safe` 1 the spotter stands outside the own-men
+        // filter (`[ai.arty] danger_close_m + 20`, the `+ 20` of `in_band`),
+        // so he is no reason to lift.
+        let stand_off = if s.rules.ai.arty.ff_safe != 0 {
+            s.rules.ai.arty.danger_close_m as i32 + 20
+        } else {
+            s.rules.ai.infantry.danger_close_m as i32
+        };
+        let short = d - Fx::from_int(stand_off);
         let observe = sq_m(Fx::from_int(fm.observe_leader_m as i32 - 10));
         let clear = sq_m(Fx::from_int(SPOT_CLEAR_M));
         let to = target.extend(
@@ -826,5 +852,44 @@ impl Planner<'_> {
             let Some(front) = front else { continue };
             self.support_move(m, sq, front);
         }
+    }
+}
+
+#[cfg(test)]
+impl crate::game::MatchState {
+    /// Test hook (S11a2 S2): the spotter spot of player `me`'s mortar
+    /// squad `id` at `gunner` for `target` (no known enemies, 16 rays).
+    pub(crate) fn test_spot_for(
+        &self,
+        ai: &mut AiState,
+        me: crate::ecs::PlayerId,
+        ents: &crate::ecs::Entities,
+        terrain: &crate::terrain::Heightfield,
+        tick: u64,
+        id: SquadId,
+        gunner: FxVec2,
+        target: FxVec2,
+    ) -> Option<FxVec2> {
+        let p = Planner {
+            g: self,
+            ai,
+            me,
+            ents,
+            terrain,
+            due: tick + 1,
+            tick,
+            quality: 100,
+            rng: crate::rng::RngStream::new(
+                1,
+                tick,
+                crate::ecs::SimId(0),
+                crate::rng::Purpose::AI_PLAN,
+            ),
+            mortar_rays: 0,
+            at_sites: Default::default(),
+            own_routes: Default::default(),
+        };
+        let mut rays = SPOTS.len();
+        p.spot_for(&self.squads[&id], gunner, target, &[], &mut rays)
     }
 }

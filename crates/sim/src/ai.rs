@@ -1521,6 +1521,9 @@ impl Planner<'_> {
         let loading = self.transport_loads(&waiting, &mine, &assigned, &points, &claimed);
         claimed.extend(loading);
         self.order_infantry(&mine, &assigned, &mut points, &known, &escorting, &claimed);
+        // S11a2 S3: lift every own mission with own men near its target
+        // before the mortar and gun steps (`ff_safe` 1).
+        self.ff_lift();
         self.mortars(&mine, &points, &known);
         // S11a1: the infantry guns and observers, with the rays left.
         self.arty(&points, &known);

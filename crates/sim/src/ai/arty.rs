@@ -149,6 +149,34 @@ const FO_ARRIVED_M: i32 = 10;
 /// The post candidates' steps from `post_m` (m), in order.
 const POST_STEPS: [i32; 5] = [0, -50, 50, -100, 100];
 
+/// S11a2 S1 for player `me` ([`super::Planner::own_near`]; a free function
+/// so a closure that does not hold the planner can call it).
+pub(super) fn own_near(
+    g: &MatchState,
+    ents: &crate::ecs::Entities,
+    me: PlayerId,
+    target: FxVec2,
+    firing: Option<SquadId>,
+) -> bool {
+    let a = &g.setup.rules.ai.arty;
+    let danger = sq_m(Fx::from_int(a.danger_close_m.min(2000) as i32));
+    let lift = sq_m(Fx::from_int(a.lift_m.min(2000) as i32));
+    g.squads.iter().any(|(&id, q)| {
+        if q.owner != me || Some(id) == firing || q.members.is_empty() {
+            return false;
+        }
+        let man = q.members.iter().any(|m| {
+            let i = m.index();
+            ents.kind[i] == EntityKind::Soldier
+                && ents.combat[i].hp > 0
+                && (ents.transform[i].pos.xy() - target).length_sq_raw() < danger
+        });
+        man || (q.nav.phase != crate::game::NavPhase::Holding
+            && (q.nav.goal - target).length_sq_raw() < danger
+            && (ents.transform[q.lead(ents).index()].pos.xy() - target).length_sq_raw() <= lift)
+    })
+}
+
 impl super::Planner<'_> {
     /// S11a1 A3: whether squad type `t` is an observer team (a man with
     /// `observer` and a man with `radio`; no vehicle).
@@ -343,8 +371,9 @@ impl super::Planner<'_> {
         for id in &ids {
             self.run_arty(*id, known, &own);
         }
-        // P3.
-        if a.prep != 0 {
+        // P3 (with `ff_safe` 1 the S3 lift step covers prep missions too:
+        // review A-3, no second `Stop`).
+        if a.prep != 0 && a.ff_safe == 0 {
             self.lift_mortar_prep(known, &own);
         }
         // A3.
@@ -413,10 +442,12 @@ impl super::Planner<'_> {
             return;
         }
         let sq = &g.squads[&id];
-        // A6: lift a mission with own men near its target.
+        // A6: lift a mission with own men near its target. S11a2 S3: with
+        // `ff_safe` 1 the lift step (`ff_lift`, before the mortars) lifts
+        // every own mission instead, so A6 sends no second `Stop`.
         if let Order::FireMission { target, .. } = sq.order {
             let r = sq_m(Fx::from_int(a.danger_close_m.min(2000) as i32));
-            if !busy && own.iter().any(|o| (*o - target).length_sq_raw() <= r) {
+            if a.ff_safe == 0 && !busy && own.iter().any(|o| (*o - target).length_sq_raw() <= r) {
                 self.ai.emit(self.due, CommandKind::Stop { squad: id });
                 self.ai.counters.arty_lifts += 1;
                 rec.last_order = tick;
@@ -444,9 +475,9 @@ impl super::Planner<'_> {
         let min = Fx::from(w.range_min) + Fx::from_int(20);
         // The table's reach (`range_m`), as the sim's order check reads it.
         let max = Fx::from(ind.range) - Fx::from_int(10);
-        let mut targets = self.fire_targets(pos, min, max, a.danger_close_m, false, known, own);
+        let mut targets = self.fire_targets(pos, min, max, a.danger_close_m, false, known, own, id);
         // P1: the breach job's focus first.
-        if let Some(t) = self.prep_target(pos, min, max, a.danger_close_m, known, own) {
+        if let Some(t) = self.prep_target(pos, min, max, a.danger_close_m, known, own, id) {
             targets.insert(0, t);
         }
         if targets.is_empty() {
@@ -518,6 +549,9 @@ impl super::Planner<'_> {
     /// S11a1 P1: the preparation target for a tube at `at` with the band
     /// `min..=max`, when there is one in the band with no own man within
     /// `danger_m` of it (score above every scored target; no RNG).
+    /// S11a2: with `ff_safe` 1 the own-men test is [`Self::own_near`]
+    /// (squad `firing` aside).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn prep_target(
         &self,
         at: FxVec2,
@@ -526,17 +560,60 @@ impl super::Planner<'_> {
         danger_m: u32,
         known: &[Known],
         own: &[FxVec2],
+        firing: SquadId,
     ) -> Option<super::mortar::Target> {
         let f = self.prep_focus(known)?;
         let d = (f - at).length();
         let danger = sq_m(Fx::from_int(danger_m.min(2000) as i32));
-        (d >= min && d <= max && !own.iter().any(|o| (*o - f).length_sq_raw() <= danger)).then_some(
-            super::mortar::Target {
-                score: i64::MAX,
-                pos: f,
-                prep: true,
-            },
-        )
+        let near = if self.g.setup.rules.ai.arty.ff_safe != 0 {
+            self.own_near(f, Some(firing))
+        } else {
+            own.iter().any(|o| (*o - f).length_sq_raw() <= danger)
+        };
+        (d >= min && d <= max && !near).then_some(super::mortar::Target {
+            score: i64::MAX,
+            pos: f,
+            prep: true,
+        })
+    }
+
+    /// S11a2 S1 (spec 4): own men near `target` for a mission of squad
+    /// `firing` (its own men aside): (i) a living own man strictly inside
+    /// `[ai.arty] danger_close_m` of it, or (ii) an own squad walking in:
+    /// on the move (not holding), its `nav.goal` within `danger_close_m`
+    /// of the target and its lead within `lift_m` of it. Squads in id
+    /// order, members in squad order; no rays, no RNG.
+    pub(super) fn own_near(&self, target: FxVec2, firing: Option<SquadId>) -> bool {
+        own_near(self.g, self.ents, self.me, target, firing)
+    }
+
+    /// S11a2 S3 (spec 4): with `ff_safe` 1, before the mortar and gun
+    /// steps, every own fire mission (mortar or gun, any order source)
+    /// whose target has [`Self::own_near`] gets one `Stop` (`ff_lifts`); a
+    /// squad with a command pending is left for the next plan (its `Stop`
+    /// may be that command).
+    pub(super) fn ff_lift(&mut self) {
+        let g = self.g;
+        if g.setup.rules.fire_mission.is_none() || g.setup.rules.ai.arty.ff_safe == 0 {
+            return;
+        }
+        let lift: Vec<SquadId> = g
+            .squads
+            .iter()
+            .filter(|(id, q)| q.owner == self.me && !self.arty_busy(**id))
+            .filter_map(|(&id, q)| match q.order {
+                Order::FireMission { target, .. } if self.own_near(target, Some(id)) => Some(id),
+                _ => None,
+            })
+            .collect();
+        for id in lift {
+            self.ai.emit(self.due, CommandKind::Stop { squad: id });
+            self.ai.counters.ff_lifts += 1;
+            if let Some(rec) = self.ai.arty.get_mut(&id) {
+                rec.last_order = self.tick;
+                rec.prep = false;
+            }
+        }
     }
 
     /// S11a1 P3: a mortar mission ordered as preparation (fix C-4: aimed
