@@ -347,6 +347,36 @@ fn a_gun_mission_gets_one_stop_not_two() {
     assert_eq!(run(0), (1, 0, 1), "control: one Stop, from A6");
 }
 
+/// Fix B-6: S1 (ii) also reads the AI's own commands not yet applied: a
+/// squad 90 m from the target with a pending `Move` onto it is walking in
+/// the same plan. Control: no pending command: not near (its `nav.goal`
+/// is still its own spot).
+#[test]
+fn own_near_sees_a_pending_move_onto_the_target() {
+    let mut w = ai_world(1, 1, |_| {});
+    let own = spawn(&mut w, 0, WALKER, 590, 500);
+    unarm(&mut w, own);
+    w.step(&[]);
+    let target = c(500, 500);
+    let pend = [crate::ai::AiCommand {
+        due: w.tick() + 30,
+        seq: 1,
+        kind: CommandKind::Move { squad: own, target },
+    }];
+    let near = |p: &[crate::ai::AiCommand]| {
+        crate::ai::arty::own_near(
+            w.game().unwrap(),
+            &w.state.entities,
+            PlayerId(0),
+            target,
+            None,
+            p,
+        )
+    };
+    assert!(near(&pend), "a pending move onto the target");
+    assert!(!near(&[]), "control: no pending move");
+}
+
 // ------------------------------------------------- counter-fire (R) --
 
 /// Gives player `p` one marker of player `1 - p`'s gun at `at` with

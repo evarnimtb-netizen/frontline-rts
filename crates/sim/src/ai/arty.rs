@@ -151,19 +151,23 @@ const POST_STEPS: [i32; 5] = [0, -50, 50, -100, 100];
 
 /// S11a2 S1 for player `me` ([`super::Planner::own_near`]; a free function
 /// so a closure that does not hold the planner can call it).
-pub(super) fn own_near(
+pub(crate) fn own_near(
     g: &MatchState,
     ents: &crate::ecs::Entities,
     me: PlayerId,
     target: FxVec2,
     firing: Option<SquadId>,
+    pending: &[crate::ai::AiCommand],
 ) -> bool {
     let d = Fx::from_int(g.setup.rules.ai.arty.danger_close_m.min(2000) as i32);
-    own_near_within(g, ents, me, target, firing, d)
+    own_near_within(g, ents, me, target, firing, d, pending)
 }
 
 /// [`own_near`] with the distance `danger_m` in place of `danger_close_m`
-/// (counter-fire adds its aim error; fix B-4).
+/// (counter-fire adds its aim error; fix B-4). (ii) also reads the
+/// player's AI commands not yet applied (`pending`: a `Move` or
+/// `AttackMove` of this plan or an earlier one still waiting), so a squad
+/// ordered in is seen the same plan (fix B-6).
 pub(super) fn own_near_within(
     g: &MatchState,
     ents: &crate::ecs::Entities,
@@ -171,24 +175,42 @@ pub(super) fn own_near_within(
     target: FxVec2,
     firing: Option<SquadId>,
     danger_m: Fx,
+    pending: &[crate::ai::AiCommand],
 ) -> bool {
     let a = &g.setup.rules.ai.arty;
     let danger = sq_m(danger_m);
     let lift = sq_m(Fx::from_int(a.lift_m.min(2000) as i32));
-    g.squads.iter().any(|(&id, q)| {
-        if q.owner != me || Some(id) == firing || q.members.is_empty() {
-            return false;
+    let walking_in = |id: SquadId, goal: FxVec2| {
+        Some(id) != firing
+            && (goal - target).length_sq_raw() < danger
+            && g.squads.get(&id).is_some_and(|q| {
+                q.owner == me
+                    && !q.members.is_empty()
+                    && (ents.transform[q.lead(ents).index()].pos.xy() - target).length_sq_raw()
+                        <= lift
+            })
+    };
+    let ordered_in = pending.iter().any(|c| match c.kind {
+        CommandKind::Move { squad, target: t } | CommandKind::AttackMove { squad, target: t } => {
+            walking_in(squad, t)
         }
-        let man = q.members.iter().any(|m| {
-            let i = m.index();
-            ents.kind[i] == EntityKind::Soldier
-                && ents.combat[i].hp > 0
-                && (ents.transform[i].pos.xy() - target).length_sq_raw() < danger
-        });
-        man || (q.nav.phase != crate::game::NavPhase::Holding
-            && (q.nav.goal - target).length_sq_raw() < danger
-            && (ents.transform[q.lead(ents).index()].pos.xy() - target).length_sq_raw() <= lift)
-    })
+        _ => false,
+    });
+    ordered_in
+        || g.squads.iter().any(|(&id, q)| {
+            if q.owner != me || Some(id) == firing || q.members.is_empty() {
+                return false;
+            }
+            let man = q.members.iter().any(|m| {
+                let i = m.index();
+                ents.kind[i] == EntityKind::Soldier
+                    && ents.combat[i].hp > 0
+                    && (ents.transform[i].pos.xy() - target).length_sq_raw() < danger
+            });
+            man || (q.nav.phase != crate::game::NavPhase::Holding
+                && (q.nav.goal - target).length_sq_raw() < danger
+                && (ents.transform[q.lead(ents).index()].pos.xy() - target).length_sq_raw() <= lift)
+        })
 }
 
 impl super::Planner<'_> {
@@ -666,7 +688,15 @@ impl super::Planner<'_> {
             }
         });
         let danger = Fx::from_int(g.setup.rules.ai.arty.danger_close_m.min(2000) as i32) + aim;
-        if own_near_within(g, self.ents, self.me, at, Some(id), danger) {
+        if own_near_within(
+            g,
+            self.ents,
+            self.me,
+            at,
+            Some(id),
+            danger,
+            &self.ai.pending,
+        ) {
             return false;
         }
         if g.mission_refusal(self.ents, self.terrain, id, at, rounds, self.tick)
@@ -731,7 +761,7 @@ impl super::Planner<'_> {
     /// of the target and its lead within `lift_m` of it. Squads in id
     /// order, members in squad order; no rays, no RNG.
     pub(super) fn own_near(&self, target: FxVec2, firing: Option<SquadId>) -> bool {
-        own_near(self.g, self.ents, self.me, target, firing)
+        own_near(self.g, self.ents, self.me, target, firing, &self.ai.pending)
     }
 
     /// S11a2 S3 (spec 4): with `ff_safe` 1, before the mortar and gun

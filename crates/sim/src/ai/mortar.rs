@@ -507,13 +507,18 @@ impl Planner<'_> {
         let safe = s.rules.ai.arty.ff_safe != 0;
         let holds = std::cell::Cell::new(0u32);
         let (ents, me) = (self.ents, self.me);
+        let pending = if safe {
+            self.ai.pending.clone()
+        } else {
+            Vec::new()
+        };
         let ok = |c: FxVec2| {
             let d = (c - gunner).length();
             if d < min || d > max {
                 return false;
             }
             if safe {
-                let near = super::arty::own_near(g, ents, me, c, Some(firing));
+                let near = super::arty::own_near(g, ents, me, c, Some(firing), &pending);
                 holds.set(holds.get() + u32::from(near));
                 !near
             } else {
