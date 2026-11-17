@@ -1138,6 +1138,13 @@ impl MatchState {
             c.high_rounds = c.high_rounds.saturating_add(1);
         }
         c.radio_rounds = c.radio_rounds.saturating_add(radio as u32);
+        // S11a2 K4: a counter-fire mission's rounds, by mode.
+        if m.cb {
+            let c = &mut self.players[sq_owner.0 as usize].s11a2;
+            c.cb_rounds[md] = c.cb_rounds[md].saturating_add(1);
+        }
+        // S11a2 K1: the enemy hears the round.
+        self.cb_note(ents, sq_owner, gp, tick);
         let left = rounds - 1;
         let sq = self.squads.get_mut(&sid).expect("live");
         if let Order::FireMission { rounds, m: sm, .. } = &mut sq.order {

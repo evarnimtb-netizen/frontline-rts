@@ -4,7 +4,7 @@
 //! that makes it fail.
 
 use super::s6_tests::{spawn, steps};
-use super::s11a1_tests::{Scene, TARGET, mission, order, scene_with};
+use super::s11a1_tests::{Scene, TARGET, mission, order, run_out, scene_with};
 use super::*;
 use crate::ai::AiArty;
 use crate::counter_battery::{CbSpot, MAX_CB_SPOTS};
@@ -606,7 +606,7 @@ fn mission_scene(threads: usize, ff: u32, victim: u8, rounds: u16) -> (World, Sq
 
 /// Runs the mission out and 40 s more (the last bombs land).
 fn finish(w: &mut World, mortar: SquadId) {
-    super::s11a1_tests::run_out(w, mortar, 400);
+    run_out(w, mortar, 400);
     steps(w, 40 * 30);
 }
 
@@ -752,4 +752,495 @@ fn friendly_fire_deterministic_threads_and_save_load() {
     assert_eq!(run(4, 1, false), a, "4 threads");
     assert_eq!(run(1, 1, true), a, "save/load mid-mission");
     assert_ne!(run(1, 0, false).0, a.0, "control: switch 0");
+}
+
+// ------------------------------------------- counter-battery (K) --
+
+use crate::counter_battery::whole_second;
+
+const GUN: (i32, i32) = (100, 500);
+const MAP_TARGET: (i32, i32) = (500, 250);
+
+/// The K scene: player 0's real leIG 18 at (100, 500), a lone listener of
+/// player 1 800 m east, `counter_battery` 1; `edit` changes the setup.
+fn cb_scene(
+    threads: usize,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, SquadId, SimId) {
+    let mut w = flat_world_with(threads, |s| {
+        s.rules.fire_mission.as_mut().unwrap().counter_battery = 1;
+        edit(s);
+    });
+    steps(&mut w, 2);
+    let gun = spawn(&mut w, 0, "ww2:ger_leig18_squad", GUN.0, GUN.1);
+    let ear = lone(&mut w, 1, GUN.0 + 800, GUN.1);
+    steps(&mut w, 30);
+    (w, gun, ear)
+}
+
+/// Orders `n` rounds of map fire on [`MAP_TARGET`] (marked known first).
+fn map_fire(w: &mut World, gun: SquadId, n: u16) {
+    assert!(w.mark_intel(PlayerId(0), c(MAP_TARGET.0, MAP_TARGET.1)));
+    assert_eq!(order(w, gun, c(MAP_TARGET.0, MAP_TARGET.1), n), None);
+}
+
+fn fired(w: &World, gun: SquadId) -> u16 {
+    mission(w, gun).map_or(0, |m| m.fired)
+}
+
+fn gun_pos(w: &World, gun: SquadId) -> FxVec2 {
+    let v = w.game().unwrap().squads[&gun].members[0];
+    w.state.entities.transform[v.index()].pos.xy()
+}
+
+fn spots(w: &World, p: usize) -> Vec<CbSpot> {
+    pl(w, p).cb.clone()
+}
+
+/// [`MatchState::cb_note`] for player 0's gun at `at` now.
+fn note(w: &mut World, at: FxVec2, tick: u64) {
+    let SimState { entities, game, .. } = &mut w.state;
+    game.as_mut()
+        .unwrap()
+        .cb_note(entities, PlayerId(0), at, tick);
+}
+
+/// [`MatchState::cb_tick`] on every whole second of `from..=to`.
+fn cb_ticks(w: &mut World, from: u64, to: u64) {
+    let SimState { entities, game, .. } = &mut w.state;
+    let g = game.as_mut().unwrap();
+    let mut t = whole_second(from, 30);
+    while t <= to {
+        g.cb_tick(entities, t);
+        t += 30;
+    }
+}
+
+/// K1: each mission round of an infantry gun counts with the enemy: one
+/// spot of player 0 at the gun, with as much evidence as rounds. Controls:
+/// `counter_battery` 0 (no spot), a mortar's mission (no spot).
+#[test]
+fn gun_rounds_leave_evidence_with_the_enemy() {
+    let (mut w, gun, _) = cb_scene(1, |_| {});
+    map_fire(&mut w, gun, 2);
+    run_out(&mut w, gun, 300);
+    let sp = spots(&w, 1);
+    assert_eq!(sp.len(), 1, "{sp:?}");
+    assert_eq!((sp[0].of, sp[0].evidence, sp[0].shots), (0, 2, 2));
+    assert!((sp[0].pos - gun_pos(&w, gun)).length() < Fx::ONE);
+    assert_eq!(pl(&w, 0).s11a2.cb_heard, 2);
+    assert!(spots(&w, 0).is_empty(), "nothing heard of player 1");
+    // Control: switch 0.
+    let (mut w, gun, _) = cb_scene(1, |s| {
+        s.rules.fire_mission.as_mut().unwrap().counter_battery = 0;
+    });
+    map_fire(&mut w, gun, 2);
+    run_out(&mut w, gun, 300);
+    assert!(spots(&w, 1).is_empty(), "control: switch 0");
+    assert_eq!(pl(&w, 0).s11a2.cb_heard, 0);
+    // Control: a mortar mission.
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    let mortar = spawn(&mut w, 0, "ww2:ger_mortar_team", 150, 500);
+    steps(&mut w, 30);
+    assert!(w.mark_intel(PlayerId(0), c(450, 500)));
+    assert_eq!(order(&mut w, mortar, c(450, 500), 3), None);
+    run_out(&mut w, mortar, 300);
+    assert!(spots(&w, 1).is_empty(), "control: mortars leave none");
+}
+
+/// K1 (D 10 test 5): a gun that hops 60 m keeps its spot; 80 m (beyond
+/// `cb_reset_m` 75) starts a new one, unless the spot's marker error is
+/// wider than the hop.
+#[test]
+fn a_short_hop_keeps_the_spot() {
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    let t = w.tick();
+    let p = c(GUN.0, GUN.1);
+    note(&mut w, p, t);
+    note(&mut w, p + c(0, 60), t);
+    assert_eq!(spots(&w, 1).len(), 1, "60 m: the same spot");
+    assert_eq!(spots(&w, 1)[0].evidence, 2);
+    note(&mut w, p + c(0, 80), t);
+    assert_eq!(spots(&w, 1).len(), 2, "80 m unmarked: a new spot");
+    // A marked spot with a 90 m error takes the 80 m hop.
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    note(&mut w, p, t);
+    assert!(w.edit_player(PlayerId(1), |pl| {
+        let s = &mut pl.cb[0];
+        s.marked = true;
+        s.err_mm = 90_000;
+        s.heard_mm = 800_000;
+    }));
+    note(&mut w, p + c(0, 80), t);
+    assert_eq!(spots(&w, 1).len(), 1, "inside the marker's error");
+}
+
+/// Spec 5 "Spot / marker": two guns of one player within `cb_reset_m`
+/// share one spot with twice the evidence. Control: 200 m apart: two.
+#[test]
+fn two_guns_within_reset_share_a_spot() {
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    let t = w.tick();
+    for _ in 0..2 {
+        note(&mut w, c(100, 500), t);
+        note(&mut w, c(100, 540), t);
+    }
+    let sp = spots(&w, 1);
+    assert_eq!((sp.len(), sp[0].evidence), (1, 4));
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    note(&mut w, c(100, 500), t);
+    note(&mut w, c(100, 700), t);
+    assert_eq!(spots(&w, 1).len(), 2, "control: 200 m apart");
+}
+
+/// K2: the third round marks the gun `cb_delay_s` later, within 15 % of
+/// the listener's 800 m. Control: `cb_rounds_to_mark` 9: no marker from
+/// 8 rounds.
+#[test]
+fn third_round_marks_the_gun_within_15_pct() {
+    let (mut w, gun, _) = cb_scene(1, |_| {});
+    map_fire(&mut w, gun, 8);
+    let end = w.tick() + 600 * 30;
+    let mut t3 = None;
+    while mission(&w, gun).is_some() || t3.is_none_or(|t| w.tick() < t + 20 * 30) {
+        assert!(w.tick() < end);
+        w.step(&[]);
+        let sp = spots(&w, 1);
+        if t3.is_none() && sp.first().is_some_and(|s| s.evidence >= 3) {
+            t3 = Some(w.tick());
+        }
+        if let (Some(t), Some(s)) = (t3, sp.first()) {
+            if w.tick() < t + 15 * 30 - 1 {
+                assert!(!s.marked, "no marker before round 3 + 15 s");
+            }
+        } else {
+            assert!(sp.iter().all(|s| !s.marked));
+        }
+    }
+    let s = spots(&w, 1)[0];
+    assert!(s.marked, "marked");
+    let miss = (s.at - gun_pos(&w, gun)).length();
+    assert!(miss <= Fx::from_int(120), "miss {miss:?}");
+    assert!(
+        s.heard_mm > 790_000 && s.heard_mm < 810_000,
+        "{}",
+        s.heard_mm
+    );
+    assert_eq!(pl(&w, 1).s11a2.cb_marks, 1);
+    // Control.
+    let (mut w, gun, _) = cb_scene(1, |s| {
+        s.rules.fire_mission.as_mut().unwrap().cb_rounds_to_mark = 9;
+    });
+    map_fire(&mut w, gun, 8);
+    run_out(&mut w, gun, 600);
+    steps(&mut w, 30 * 30);
+    assert!(spots(&w, 1).iter().all(|s| !s.marked), "control: 9 rounds");
+}
+
+/// The first misses of 40 markers (each from 3 rounds at the same gun, the
+/// draws keyed by their own ticks) as tenths of a % of `heard_mm`.
+fn first_misses(w: &mut World, fixed_len: bool) -> Vec<u64> {
+    let p = c(GUN.0, GUN.1);
+    let base = whole_second(w.tick(), 30);
+    let mut out = Vec::new();
+    for k in 0..40u64 {
+        assert!(w.edit_player(PlayerId(1), |pl| pl.cb.clear()));
+        let t = base + k * 3600 * 30;
+        for _ in 0..3 {
+            note(w, p, t);
+        }
+        let due = spots(w, 1)[0].mark_at;
+        cb_ticks(w, due, due);
+        let mut s = spots(w, 1)[0];
+        assert!(s.marked);
+        if fixed_len {
+            // The control: the offset pushed out to the full error.
+            let off = s.at - s.pos;
+            let e = Fx::from_raw((((s.err_mm as u64) << 16) / 1000) as i32);
+            s.at = s.pos + off.normalize_or_zero() * e;
+        }
+        let miss = (((s.at - s.pos).length().raw() as u64) * 1000) >> 16;
+        out.push(miss * 1000 / s.heard_mm as u64);
+    }
+    out
+}
+
+/// K2: marker misses are spread inside the error (uniform length): mean
+/// 5-10 % of the listener distance, at least one under 4 %, none over
+/// 15 %. Control: a fixed-length offset (the mission aim's rule) fails the
+/// mean.
+#[test]
+fn marker_offsets_are_spread_inside_the_error() {
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    let m = first_misses(&mut w, false);
+    let mean = m.iter().sum::<u64>() / m.len() as u64;
+    assert!((50..=100).contains(&mean), "mean {mean} / 1000: {m:?}");
+    assert!(m.iter().any(|&x| x < 40), "{m:?}");
+    assert!(m.iter().all(|&x| x <= 150), "{m:?}");
+    let (mut w, _, _) = cb_scene(1, |_| {});
+    let m = first_misses(&mut w, true);
+    let mean = m.iter().sum::<u64>() / m.len() as u64;
+    assert!(mean > 100, "control: fixed length, mean {mean}");
+}
+
+/// K2, K3: a gun firing one round a minute is marked by its fourth round
+/// (evidence decays one per 300 s). Control: `cb_decay_s` 30: never.
+#[test]
+fn slow_gun_is_marked_by_its_fourth_round() {
+    let run = |decay: u32| {
+        let (mut w, _, _) = cb_scene(1, |s| {
+            s.rules.fire_mission.as_mut().unwrap().cb_decay_s = decay;
+        });
+        let t0 = whole_second(w.tick(), 30);
+        let p = c(GUN.0, GUN.1);
+        for k in 0..4u64 {
+            let t = t0 + k * 60 * 30;
+            cb_ticks(&mut w, t.saturating_sub(59 * 30), t);
+            note(&mut w, p, t);
+        }
+        let t4 = t0 + 3 * 60 * 30;
+        cb_ticks(&mut w, t4 + 1, t4 + 16 * 30);
+        spots(&w, 1).iter().any(|s| s.marked)
+    };
+    assert!(run(300), "marked by the fourth round");
+    assert!(!run(30), "control: decay 30 s");
+}
+
+/// K3: five more rounds at 800 m sharpen the first 120 m error to the
+/// 40 m floor (5 %), the marker moving toward the gun along its offset.
+/// Control: `cb_error_step_pct` 100: unchanged.
+#[test]
+fn marker_sharpens_to_the_floor() {
+    let run = |step: u32| {
+        let (mut w, _, _) = cb_scene(1, |s| {
+            s.rules.fire_mission.as_mut().unwrap().cb_error_step_pct = step;
+        });
+        let t = whole_second(w.tick(), 30);
+        let p = c(GUN.0, GUN.1);
+        for _ in 0..3 {
+            note(&mut w, p, t);
+        }
+        let due = spots(&w, 1)[0].mark_at;
+        cb_ticks(&mut w, due, due);
+        let s0 = spots(&w, 1)[0];
+        for _ in 0..5 {
+            note(&mut w, p, due + 30);
+        }
+        (s0, spots(&w, 1)[0])
+    };
+    let (s0, s1) = run(80);
+    assert!((119_000..=121_000).contains(&s0.err_mm), "{}", s0.err_mm);
+    assert!((39_000..=41_000).contains(&s1.err_mm), "{}", s1.err_mm);
+    let p = c(GUN.0, GUN.1);
+    assert!((s1.at - p).length() <= (s0.at - p).length());
+    let (s0, s1) = run(100);
+    assert_eq!((s0.err_mm, s0.at), (s1.err_mm, s1.at), "control: step 100");
+}
+
+/// K3: three rounds, then 900 s: the spot and its marker are gone (one
+/// piece of evidence per 300 s). Control: 600 s: still there.
+#[test]
+fn evidence_decays_and_the_marker_goes() {
+    let run = |wait_s: u64| {
+        let (mut w, _, _) = cb_scene(1, |_| {});
+        let t = whole_second(w.tick(), 30);
+        for _ in 0..3 {
+            note(&mut w, c(GUN.0, GUN.1), t);
+        }
+        cb_ticks(&mut w, t, t + wait_s * 30);
+        (spots(&w, 1).len(), pl(&w, 1).s11a2.cb_dropped)
+    };
+    assert_eq!(run(900), (0, 1), "gone");
+    assert_eq!(run(600).0, 1, "control: 600 s");
+}
+
+/// Spec 5 "Spot / marker": the gun dies; its marker stays until decay.
+/// Control: the decay (as above) removes it.
+#[test]
+fn marker_outlives_the_gun_until_decay() {
+    let (mut w, gun, _) = cb_scene(1, |_| {});
+    map_fire(&mut w, gun, 4);
+    run_out(&mut w, gun, 300);
+    steps(&mut w, 20 * 30);
+    assert!(spots(&w, 1)[0].marked);
+    for m in members(&w, gun) {
+        let _ = w.kill_soldier(m);
+    }
+    let crew: Vec<SimId> = w
+        .game()
+        .unwrap()
+        .squads
+        .values()
+        .filter(|q| q.owner == PlayerId(0))
+        .flat_map(|q| q.members.clone())
+        .collect();
+    for m in crew {
+        let _ = w.kill_soldier(m);
+    }
+    steps(&mut w, 60 * 30);
+    assert!(spots(&w, 1)[0].marked, "the marker outlives the gun");
+    steps(&mut w, 1200 * 30);
+    assert!(spots(&w, 1).is_empty(), "then decays");
+}
+
+/// Spec 3: a save between a round (or the marking) and the next whole
+/// second loads (K1, K2 times rounded up). Control: the same save with
+/// `decay_at` a second further back is refused.
+#[test]
+fn save_between_the_round_and_the_next_second_loads() {
+    let (mut w, gun, _) = cb_scene(1, |_| {});
+    map_fire(&mut w, gun, 4);
+    let end = w.tick() + 300 * 30;
+    let mut saved = 0;
+    while mission(&w, gun).is_some() {
+        assert!(w.tick() < end);
+        let n0 = fired(&w, gun);
+        w.step(&[]);
+        if fired(&w, gun) > n0 && !w.tick().is_multiple_of(30) {
+            let b = w.save();
+            let back = World::load(&b, 1).expect("a save just after a round loads");
+            assert_eq!(back.full_state_hash(), w.full_state_hash());
+            saved += 1;
+        }
+    }
+    assert!(saved > 0);
+    // Pending marker: a save mid-second loads too.
+    while !w.tick().is_multiple_of(30) || spots(&w, 1)[0].mark_at == 0 {
+        w.step(&[]);
+        if spots(&w, 1)[0].marked {
+            break;
+        }
+    }
+    w.step(&[]);
+    World::load(&w.save(), 1).expect("a pending marker loads");
+    let mut x = World::load(&w.save(), 1).unwrap();
+    let t = x.tick();
+    x.state.game.as_mut().unwrap().players[1].cb[0].decay_at = t - 30;
+    assert!(World::load(&x.save(), 1).is_err(), "control");
+}
+
+/// K1-K3: deterministic across threads and a save/load with a pending
+/// and then a sharpening marker. Control: `counter_battery` 0 ends with
+/// another hash.
+#[test]
+fn counter_battery_deterministic_threads_and_save_load() {
+    let run = |threads: usize, on: u32, reload: &[u16]| {
+        let (mut w, gun, _) = cb_scene(threads, |s| {
+            s.rules.fire_mission.as_mut().unwrap().counter_battery = on;
+        });
+        map_fire(&mut w, gun, 8);
+        let mut done = Vec::new();
+        let end = w.tick() + 600 * 30;
+        while mission(&w, gun).is_some() {
+            assert!(w.tick() < end);
+            w.step(&[]);
+            let f = fired(&w, gun);
+            if reload.contains(&f) && !done.contains(&f) {
+                done.push(f);
+                w = World::load(&w.save(), threads).unwrap();
+            }
+        }
+        steps(&mut w, 30 * 30);
+        (w.full_state_hash(), spots(&w, 1))
+    };
+    let a = run(1, 1, &[]);
+    assert!(a.1.first().is_some_and(|s| s.marked && s.evidence >= 6));
+    assert_eq!(run(4, 1, &[]), a, "4 threads");
+    // Round 3 (marker pending) and round 6 (sharpening).
+    assert_eq!(run(1, 1, &[3, 6]), a, "save/load");
+    assert_ne!(run(1, 0, &[]).0, a.0, "control: switch 0");
+}
+
+/// K4: map fire on an own marker is known ground. Control:
+/// `counter_battery` 0 (no marker): `UnknownGround`.
+#[test]
+fn map_fire_on_a_marker_is_accepted() {
+    let run = |on: u32| {
+        let (mut w, gun, _) = cb_scene(1, |s| {
+            s.rules.fire_mission.as_mut().unwrap().counter_battery = on;
+        });
+        // Player 1's own gun, 900 m from player 0's.
+        let us = spawn(&mut w, 1, "ww2:usa_105mm_m3_squad", 950, 300);
+        steps(&mut w, 30);
+        map_fire(&mut w, gun, 3);
+        run_out(&mut w, gun, 300);
+        steps(&mut w, 20 * 30);
+        let at = spots(&w, 1).first().map_or(c(GUN.0, GUN.1), |s| s.at);
+        w.step(&[crate::command::Command {
+            player: PlayerId(1),
+            seq: 7,
+            kind: crate::command::CommandKind::FireMission {
+                squad: us,
+                target: at,
+                rounds: 2,
+            },
+        }]);
+        let refusal = w
+            .snapshot()
+            .fire_mission_refusals
+            .iter()
+            .find(|e| e.squad == us)
+            .map(|e| e.refusal);
+        (refusal, mission(&w, us).map(|m| m.cb))
+    };
+    assert_eq!(run(1), (None, Some(true)), "accepted, flagged");
+    assert_eq!(
+        run(0).0,
+        Some(crate::fire_mission::FireMissionRefusal::UnknownGround),
+        "control: no marker"
+    );
+}
+
+/// K4: a marker reveals nothing: the gun's `seen_by` and player 1's
+/// knowledge map are as with the switch off. Control: the marker exists
+/// (the runs differ in that only).
+#[test]
+fn marker_does_not_reveal_the_gun() {
+    let run = |on: u32| {
+        let (mut w, gun, _) = cb_scene(1, |s| {
+            s.rules.fire_mission.as_mut().unwrap().counter_battery = on;
+        });
+        map_fire(&mut w, gun, 4);
+        run_out(&mut w, gun, 300);
+        steps(&mut w, 20 * 30);
+        let v = w.game().unwrap().squads[&gun].members[0];
+        (
+            w.state.entities.combat[v.index()].seen_by,
+            pl(&w, 1).intel.clone(),
+            spots(&w, 1).iter().any(|s| s.marked),
+        )
+    };
+    let (on, off) = (run(1), run(0));
+    assert!(on.2 && !off.2, "control: only the marker differs");
+    assert_eq!((on.0, on.1), (off.0, off.1));
+}
+
+/// K4: a gun mission within `intel_snap_m` of an own marker is flagged
+/// counter-fire (`cb_missions`). Control: 60 m off the marker (known by
+/// intel there): not flagged.
+#[test]
+fn counter_fire_mission_is_flagged() {
+    let run = |off: i32| {
+        let (mut w, gun, _) = cb_scene(1, |_| {});
+        let us = spawn(&mut w, 1, "ww2:usa_105mm_m3_squad", 950, 300);
+        steps(&mut w, 30);
+        map_fire(&mut w, gun, 3);
+        run_out(&mut w, gun, 300);
+        steps(&mut w, 20 * 30);
+        let at = spots(&w, 1)[0].at + c(0, off);
+        assert!(w.mark_intel(PlayerId(1), at));
+        w.step(&[crate::command::Command {
+            player: PlayerId(1),
+            seq: 7,
+            kind: crate::command::CommandKind::FireMission {
+                squad: us,
+                target: at,
+                rounds: 2,
+            },
+        }]);
+        let m = mission(&w, us).expect("accepted");
+        (m.cb, pl(&w, 1).s11a2.cb_missions)
+    };
+    assert_eq!(run(0), (true, 1));
+    assert_eq!(run(60), (false, 0), "control: 60 m off");
 }

@@ -1799,10 +1799,16 @@ impl MatchState {
             ready_at: ctx.tick + prep as u64 * hz as u64,
             observer: obs,
             ranged: remembered.is_some(),
+            // S11a2 K4: aimed at one of the player's markers.
+            cb: self.near_own_marker(p, target),
             ..Mission::default()
         };
         self.next_mission += 1;
         self.players[p.0 as usize].s11.gun_missions[mode0 as usize] += 1;
+        if m.cb {
+            let c = &mut self.players[p.0 as usize].s11a2;
+            c.cb_missions = c.cb_missions.saturating_add(1);
+        }
         let sq = self.squads.get_mut(&id).expect("owned");
         sq.ranging = cells;
         sq.order = Order::FireMission { target, rounds, m };

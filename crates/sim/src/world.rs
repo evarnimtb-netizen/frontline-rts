@@ -1562,6 +1562,8 @@ impl World {
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
                 // S5b: the players' knowledge maps.
                 game.update_intel(&self.state.entities, tick);
+                // S11a2 K2, K3: counter-battery spots (nothing without any).
+                game.cb_tick(&self.state.entities, tick);
                 game.update_rules(&self.state.entities);
             }
         }

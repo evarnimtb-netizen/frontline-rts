@@ -715,6 +715,11 @@ impl MatchState {
         if s.map.points.iter().any(|c| within(c.pos.into(), pt, cap)) {
             return true;
         }
+        // S11a2 K4: (d) one of the player's counter-battery markers
+        // (it reveals nothing else).
+        if self.near_own_marker(p, pt) {
+            return true;
+        }
         // (c) an intel cell within the snap distance.
         if let Some(intel) = self.players.get(p.0 as usize).map(|pl| &pl.intel)
             && !intel.is_empty()
@@ -913,6 +918,7 @@ impl MatchState {
             }
             let off = mi.offset.length();
             let map = mi.mode == mode::MAP;
+            let mcb = mi.cb;
             // Bursts within `[ai.arty] danger_close_m` of an own man (a
             // report; S11a1 for guns, S11a2 for mortars).
             let r = m(self.setup.rules.ai.arty.danger_close_m);
@@ -928,6 +934,21 @@ impl MatchState {
             });
             // S11a1: a gun's bursts count in `S11Counters` only.
             if gun {
+                // S11a2 K4: a counter-fire burst, near a living enemy
+                // infantry gun or not (a report; live missions only).
+                let cb_near = mcb && {
+                    let r = m(fm.cb_near_m);
+                    self.vehicles.iter().any(|(&v, vs)| {
+                        ents.kind.get(v.index()) == Some(&EntityKind::Vehicle)
+                            && ents.owner[v.index()].0 as usize != owner
+                            && self.setup.vehicles[vs.type_idx as usize].role
+                                == frontline_content::VehicleRole::InfGun
+                            && within(ents.transform[v.index()].pos.xy(), p, r)
+                    })
+                };
+                let c = &mut self.players[owner].s11a2;
+                c.cb_bursts = c.cb_bursts.saturating_add(mcb as u32);
+                c.cb_near_bursts = c.cb_near_bursts.saturating_add(cb_near as u32);
                 let c = &mut self.players[owner].s11;
                 c.near_own_bursts = c.near_own_bursts.saturating_add(near as u32);
             } else {
