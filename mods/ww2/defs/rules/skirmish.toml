@@ -1525,7 +1525,7 @@ mine_assign_reach_m = 450    # m (C2): mine_assign pulls a free builder only wit
 [ai.arty]
 buy = 1                      # A1 switch: buy an infantry gun
 fo = 1                       # A3 switch: buy and post an observer team
-prep = 0                     # P1-P3 switch: preparation fire for the breach job
+prep = 1                     # P1-P3 switch: preparation fire for the breach job
 after_s = 240                # s (A1): no gun before this (D 4.7 unlock 3:00 / 4:00)
 income_max_pct = 15          # % (A1): infantry-gun cards cost at most this share of the income so far (half the AT-gun share)
 reserve_mp = 0               # A1: manpower that stays after a gun is bought
