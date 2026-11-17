@@ -1726,9 +1726,9 @@
         },
         "arty": {
           "after_s": 240,
-          "buy": 0,
+          "buy": 1,
           "danger_close_m": 50,
-          "fo": 0,
+          "fo": 1,
           "fo_max": 1,
           "fo_rebuy_s": 180,
           "income_max_pct": 15,
@@ -2960,7 +2960,7 @@
       "weapon": ""
     },
     "ww2:ger_leig18_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -3863,7 +3863,7 @@
       "weapon": ""
     },
     "ww2:usa_105mm_m3_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",
