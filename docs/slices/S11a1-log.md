@@ -57,7 +57,9 @@ error; a report), orders 20. **T130** trench vs open 11.8 % (open 68.0 %, trench
 gun 530 m from target; barrage M3 500 m, FO 350 m. Rows wall 22.6 s for 10 seeds (threads, under load).
 Neutral: `neutral.py base40 B40` `same 40/40`; `base40 B40off` (a_off) `same 40/40`. Tests: content `s11a1_content`
 4, sim s11a1 25, CLI `fortify_s11a1_rows_run`, `s11a1_json_names_match_the_targets_file`, neutral 13.
-Check: `check.sh quick 730e67f` and the full `fortify-test --seeds 10` run pending at this commit.
+Check: `tools/check.sh quick 730e67f` all ok, 915 tests (release CLI rebuilt; first run failed two roster-order
+tests, fixed in `aaae560`). Full `fortify-test --seeds 10` (`target/s11a1-B40/fortify10.json`, with the 30-min S10b-ai
+rows) and `targets --from-json` were still running at this commit (a container restart lost the first run).
 
 ## Build A (2026-11-17)
 Commits: `9ed0bf0` layout (SAVE 27, kill class u16, S11 counters, AI records), `84a972a` keys / schema / radio /
