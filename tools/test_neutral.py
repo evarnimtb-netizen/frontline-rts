@@ -94,13 +94,22 @@ class Neutral(unittest.TestCase):
         self.assertIn("factions.germany.s10c.mines_seen: 7 -> 8", lines[1])
 
     def test_neutral_skips_s11a1_keys_the_base_lacks(self):
-        # S11a1 Build B: the `s11a1` blocks are skipped when BASE lacks them.
-        # Control: the same block under another name fails.
+        # S11a1 (review B-4): an `s11a1` block BASE lacks passes when its
+        # counters are zero (denominators may be set). Controls: a non-zero
+        # counter fails; the same block under another name fails.
         new = copy.deepcopy(BASE)
-        new["factions"]["germany"]["s11a1"] = {"guns_bought": 1}
-        new["factions"]["germany"]["s11a1_derived"] = {"gun_observed_pct": 50.0}
+        new["factions"]["germany"]["s11a1"] = {
+            "guns_bought": 0, "matches": 40, "kills": 9, "income_mp": 900,
+            "gun_kills_in_tank_he": True, "gun_rounds": [0, 0, 0]}
+        new["factions"]["germany"]["s11a1_derived"] = {"gun_observed_pct": None}
         lines, ok = self.run_dirs(BASE, new)
         self.assertTrue(ok, lines)
+        bad = copy.deepcopy(new)
+        bad["factions"]["germany"]["s11a1"]["guns_bought"] = 1
+        self.assertFalse(self.run_dirs(BASE, bad)[1])
+        bad = copy.deepcopy(new)
+        bad["factions"]["germany"]["s11a1_derived"]["gun_observed_pct"] = 50.0
+        self.assertFalse(self.run_dirs(BASE, bad)[1])
         other = copy.deepcopy(BASE)
         other["factions"]["germany"]["x11a1"] = {"guns_bought": 1}
         self.assertFalse(self.run_dirs(BASE, other)[1])
@@ -117,6 +126,11 @@ class Neutral(unittest.TestCase):
         new["factions"]["germany"]["s5b"]["refused"] = [1, 0, 2, 0, 1]
         self.assertFalse(self.run_dirs(base, new)[1])
         new["factions"]["germany"]["s5b"]["refused"] = [1, 0]
+        self.assertFalse(self.run_dirs(base, new)[1])
+        # Review B-3: another list with a zero tail still fails.
+        base["factions"]["germany"]["s5b"]["other"] = [1, 0, 2]
+        new = copy.deepcopy(base)
+        new["factions"]["germany"]["s5b"]["other"] = [1, 0, 2, 0]
         self.assertFalse(self.run_dirs(base, new)[1])
 
     def test_key_only_in_base_fails(self):
